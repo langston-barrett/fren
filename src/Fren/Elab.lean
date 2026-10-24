@@ -554,18 +554,19 @@ def pathExpr (ref : Syntax) (n : Name) : TermElabM Syntax := do
   return tmpl.raw.setArg 0 (mkNode ``Lang.fren_path #[mkNullNode #[mkIdentFrom ref n]])
 
 /-- For `x.m(a)`, an application of a dotted name, the receiver `x` and the
-method `m`: where the root of `x` is a variable or binder, or, so that a
-constant can be a receiver, where it is not an instance and `m` names a
-method. This does not resolve the root: the receiver, elaborated as a path,
-reports a root that is not a value, such as a misspelled name or an
-enumeration. -/
+method `m`. Paths are written with `::`, so an applied dotted name is always
+a method call, as the `fren` command parses it, unless its root is an
+instance. This does not resolve the root or the method: elaborating the
+receiver reports a root that is not a value, such as a misspelled name or an
+enumeration, and elaborating the call a method that its type does not
+have. -/
 def methodApp? (cx : ExprCtx) (e : Syntax) : Option (Name × Name) := do
   guard (e.isOfKind ``Lang.appExpr)
   let segs := pathSegs e[0]
   guard (segs.size == 1)
   let n := segs[0]!.getId
   guard (!n.isAtomic && ((cx.binder? n.getRoot).isSome || cx.vars.any (·.name.getRoot == n.getRoot)
-    || (!cx.insts.contains n.getRoot && (Core.Method.ofName? n.getString!).isSome)))
+    || !cx.insts.contains n.getRoot))
   return (n.getPrefix, Name.mkSimple n.getString!)
 
 /-- How many variables `e` mentions, counted with repetition, where `bs`

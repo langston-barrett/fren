@@ -1,0 +1,5 @@
+-- A method that a constant's type does not have, called on the constant:
+-- both front ends report the method.
+
+const GREETING: String := "hello"
+expect unknown_method: GREETING.foo(1) = 1   --~ error: `String` has no method `foo`

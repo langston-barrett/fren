@@ -34,7 +34,8 @@ tested lang::declared_before: "test/ui/scoping.fren"
 tested inst::earlier: "test/ui/instances_static.fren"
 tested lint::history: "test/cli/f0709_forbid.fren"
 tested lang::identifier: "test/ui/syntax_lexical.fren", "test/ui/syntax_identifier.fren",
-  "test/ui/syntax_identifier_letters.fren", "test/ui/syntax_identifier_quoted.fren", "test/cli/f0119_identifier.fren"
+  "test/ui/syntax_identifier_letters.fren", "test/ui/syntax_identifier_quoted.fren", "test/ui/syntax_identifier_claim.fren",
+  "test/cli/f0119_identifier.fren"
 tested lang::identifier_end: "test/ui/syntax_lexical.fren"
 tested lang::escape_sequence: "test/ui/syntax_lexical.fren", "test/cli/f0115_escape.fren"
 tested lang::punctuator_end: "test/ui/syntax_lexical.fren", "test/cli/f0105_eqeq.fren"
