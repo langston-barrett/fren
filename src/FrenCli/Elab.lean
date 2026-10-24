@@ -1646,7 +1646,8 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) : M Unit
     (x, (match place with | .binding k => .binding (k + 1) | p => p), sp, ren goal)
   let tested := Fren.Core.Tested.ofSettings (← evidenceInEffect)
     ((a.props.filter (·.kind == .assume)).map (·.name)) (props.filter (·.kind == .expect) |>.map (·.name, none))
-    #[(w, none)] #[]
+    -- `a`'s instances too, for the definedness of their bindings.
+    (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
   modify fun s => { s with
     table := s.table.addItem { kind := .expectItem, path := st.module ++ n, isPub := false, owner := s.module }
     refinements := s.refinements.push { path := st.module ++ n, file := s.file, span := name.span, vars, props, insts

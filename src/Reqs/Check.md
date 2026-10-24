@@ -457,6 +457,8 @@ that of the member's checks, which takes precedence:
 | an instance | the instance's assumptions, and the definedness of its bindings |
 | a `det out` | its determinism |
 | a component | all of the component's checks |
+| a global expectation | its expectation, its vacuity and its definedness |
+| a [refinement](Lang/Refinement.md) | all of the checks of its obligation, including the definedness of the bindings of the abstract component's instances |
 
 As with a [lint setting](Lint.md), `set_option` without `in` sets the
 evidence of every later component, global expectation and

@@ -37,6 +37,33 @@ refine by_proof: precise refines rough by
   refine ⟨trivial, fun ⟨_, _⟩ => ?_⟩
   omega
 
+-- Set to testing, with an instance in the abstract component whose binding
+-- has an index: Lean asks the solver nothing about it, not even that
+-- binding's definedness, so it adds nothing to the summary.
+pub comp helper {
+    in v: Int
+    pub out w: Int
+    req r: w = v
+}
+
+pub comp first {
+    in q: Seq(Int)
+    pub out y: Int
+    assume nonempty: q != []
+    inst h: helper { v := q[0] }
+    req r: y = h.w
+}
+
+pub comp exact {
+    in q: Seq(Int)
+    pub out y: Int
+    assume nonempty: q != []
+    req r: y = q[0]
+}
+
+set_option fren.evidence "tested" in
+refine same: exact refines first
+
 pub comp other { in x: Int pub out z: Int req r: z = x }
 
 /--
@@ -55,7 +82,9 @@ help: strengthen the requirements so that it follows, or correct the expectation
 ---
 info: the checks of `refinement_test::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
-info: fren: 10 passed, 1 failed, 0 inconclusive, 0 redundant
+info: the checks of `refinement_test::same` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+---
+info: fren: 20 passed, 1 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in
 #fren_check

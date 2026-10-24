@@ -1883,7 +1883,9 @@ nothing. -/
   let w := Name.mkSimple c.path.getString!
   if a.insts.any (·.name == w) then throwErrorAt stx[5] (Core.dupMemberMsg w).text
   let tested := Core.Tested.ofSettings (← evidenceTested nameStx (fren.evidence.get (← getOptions)))
-    (a.assumes.map (·.name)) ((a.reqs.map (·.name) ++ a.defs.map (·.1)).map (·, none)) #[(w, none)] #[]
+    (a.assumes.map (·.name)) ((a.reqs.map (·.name) ++ a.defs.map (·.1)).map (·, none))
+    -- `a`'s instances too, for the definedness of their bindings.
+    (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
   let proof? := if stx[6].isNone then none else some stx[6][1]
   let info ← liftTermElabM do
     let inputs := c.vars.filter fun v => v.name.isAtomic && v.role == .input
