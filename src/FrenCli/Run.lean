@@ -506,10 +506,7 @@ def evalCmd (args : Args) : IO UInt32 := do
   let status := match ev.status? with
     | some .Meets => "meets" | some .Violates => "violates" | some .Inadmissible => "inadmissible" | none => "unknown"
   IO.println s!"status: {status}"
-  let complete := vars.all (env.contains ·.name)
-  if !complete then return 3
-  if ev.status? == some .Meets && !ev.expectFalse then return 0
-  return 1
+  return Eval.evalExit true (vars.all (env.contains ·.name)) ev.status? ev.expectFalse
 
 /-- Runs `fren trace`, printing diagnostics to stderr and the evidence
 report to stdout; returns the exit code. -/

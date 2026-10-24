@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCli.Confirm
 import FrenCli.Search
+import FrenCli.Verdicts
 -- keep-sorted end
 
 /-!
@@ -93,17 +94,12 @@ structure Report where
   admissible behaviours (`F0612`). -/
   untriggered : Array CheckResult := #[]
 
-def verdictOf (kind : CheckKind) (t : Tally) : Fren.Core.Verdict :=
-  match t.refuted? with
-  | some _ => if kind == .realizable then .inconclusive else .fail
-  | none => if t.tests > 0 then .pass else .inconclusive
+def verdictOf (kind : CheckKind) (t : Tally) : Fren.Core.Verdict := testVerdict kind t.refuted?.isSome t.tests
 
 /-- Whether a test that found what a check is about, in `env`, reaches it:
 whether the check's trigger, if any, holds there (`eval::reaches`). -/
 def reaches (I : Interp) (pfx : Name) (trigger? : Option Ex) (env : Env) : Bool :=
-  match trigger? with
-  | none => true
-  | some t => ({ label := .anonymous, pfx, e := t } : Atom).eval I env.look == some true
+  reached true trigger?.isSome (trigger?.any fun t => ({ label := .anonymous, pfx, e := t } : Atom).eval I env.look == some true)
 
 /-- Tests the comp `c` (`eval::test_verdict`). -/
 def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
@@ -229,13 +225,6 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
 
 /-! ## `fren eval` -/
 
-/-- `eval::Status`. -/
-inductive Status where
-  | Inadmissible
-  | Violates
-  | Meets
-  deriving BEq, Repr
-
 /-- The value of each constraint and instance of `c` in `env`, and the
 behaviour's status (`eval::status`), `none` if unknown. -/
 structure Evaluation where
@@ -257,9 +246,8 @@ def Spec.evaluate (sp : Spec) (I : Interp) (c : Comp) (env : Env) : Evaluation :
   let adm := conj ((as.map (·.2)) ++ (is.map (·.2)))
   let met := conj (rs.map (·.2))
   let status? := match adm, met with
-    | some false, _ => some .Inadmissible
-    | some true, some false => some .Violates
-    | some true, some true => some .Meets
+    | some false, _ => some (statusOf false true true)
+    | some true, some r => some (statusOf true true r)
     | _, _ => none
   let lines := (as ++ rs ++ es).map (fun (p, v) => (s!"{kw p.kind} {p.name}", v))
     ++ is.map fun (i, v) => (s!"inst {i.name}", v)
