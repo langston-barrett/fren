@@ -399,6 +399,13 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     shown := shown.push msg
   return (results, shown)
 
+/-- Whether the result `r` of testing the refinement `c` is about its
+obligation (`Reqs/Lang/Refinement#the-obligation`): of the instances, only
+the instance of the concrete component, since the abstract component's
+instances are hypotheses there. -/
+def refinementKeeps (c : CComp) (r : Fren.Core.CheckResult) : Bool :=
+  Fren.Core.refinementRuns r.kind && (r.kind != .inst || r.prop? == c.insts[0]?.map (·.name))
+
 /-- Runs `fren check`, printing diagnostics and the summary to stderr and
 any solver queries to stdout; returns the exit code. -/
 def check (args : Args) : IO UInt32 := do
@@ -409,8 +416,8 @@ def check (args : Args) : IO UInt32 := do
   let mut shown := st.diags.map (·.msg)
   -- Each comp, global expectation and refinement (`Reqs/Lang/Refinement`),
   -- with the checks that run on it.
-  let todo := st.comps.map (·, false, Fren.Core.kindsFor false) ++ st.globals.map (·, true, Fren.Core.kindsFor true)
-    ++ st.refinements.map (·, false, Fren.Core.CheckKind.all.filter Fren.Core.refinementRuns)
+  let todo := st.comps.map (·, false, Fren.Core.kindsFor false, false) ++ st.globals.map (·, true, Fren.Core.kindsFor true, false)
+    ++ st.refinements.map (·, false, Fren.Core.CheckKind.all.filter Fren.Core.refinementRuns, true)
   -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
   let spec? := specOf files
   let mut internal := #[]
@@ -418,7 +425,7 @@ def check (args : Args) : IO UInt32 := do
   if let .error e := spec? then
     internal := internal.push (Msg.internal s!"the evaluator cannot read the spec: {e}")
     printDiag args.paint files { file := 0, span := default, msg := internal.back! }
-  for (c, global, kinds) in todo do
+  for (c, global, kinds, refinement) in todo do
     let n ← IO.mkRef 0
     let dump? := if args.dumpSmt then some fun script => do
         n.modify (· + 1)
@@ -455,10 +462,13 @@ def check (args : Args) : IO UInt32 := do
         if let some ec := sp.counterpart? c global then
           let keep (r : Fren.Core.CheckResult) :=
             kinds.contains r.kind && c.tested.covers r && Fren.Core.runOf r.kind true == .byTesting
+              && (!refinement || refinementKeeps c r)
           let (tested, msgs) ← testComp args files sp c ec global keep (byCheck := true)
           shown := shown ++ msgs
           all := all ++ tested
           byTesting := byTesting + (tested.filter (·.verdict == .pass)).size
+      -- The evaluator's internal error, printed above, explains why the
+      -- checks set to testing are missing from the summary.
       | .error _ => pure ()
   IO.eprintln (Fren.Core.summary all byTesting)
   if shown.any (·.code?.isSome) then
@@ -485,10 +495,7 @@ def quickcheck (args : Args) : IO UInt32 := do
       | let msg := Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"
         printDiag args.paint files { file := c.file, span := c.span, msg }
         sevs := sevs.push .error
-    -- For a refinement, the checks of its obligation: of `a`'s instances,
-    -- only the instance of `c` (`Reqs/Lang/Refinement#the-obligation`).
-    let keep (r : Fren.Core.CheckResult) := !refinement ||
-      (Fren.Core.refinementRuns r.kind && (r.kind != .inst || r.prop? == c.insts[0]?.map (·.name)))
+    let keep (r : Fren.Core.CheckResult) := !refinement || refinementKeeps c r
     let (results, msgs) ← testComp args files sp c ec global keep
     shown := shown ++ msgs
     all := all ++ results

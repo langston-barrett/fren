@@ -145,7 +145,9 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
     for e in expects, k in [0:expects.size] do
       let trigger? := e.e.trigger?
       -- A behaviour in which the trigger holds, searched for from a new
-      -- input if this one's does not.
+      -- input if this one's does not. It need only meet the component,
+      -- which is what an expectation is about, so instance assumptions are
+      -- hypotheses there, as in the solver's query, not obligations.
       let env? ← if reaches I .anonymous trigger? env then pure (some env) else
         -- Once refuted, an expectation needs no more searching.
         let some t := trigger? | pure none

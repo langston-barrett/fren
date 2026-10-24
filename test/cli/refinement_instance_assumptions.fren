@@ -1,0 +1,26 @@
+-- A refinement set to testing tests only its obligation: the assumption of
+-- the abstract component's instance `g` is a hypothesis, so it is not
+-- tested, and the summary counts one test, the expectation `r`.
+pub comp guarded {
+    in k: Int
+    pub out m: Int
+    assume pos: k > 0
+    req r: m = k
+}
+
+pub comp abstract {
+    in x: Int
+    pub out y: Int
+    assume pos: x > 0
+    inst g: guarded { k := x }
+    req r: y >= g.m
+}
+
+pub comp concrete {
+    in x: Int
+    pub out y: Int
+    req r: y = x + 1
+}
+
+set_option fren.evidence "tested" in
+refine fits: concrete refines abstract

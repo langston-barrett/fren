@@ -1612,7 +1612,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) : M Unit
     unless ok do
       let why := match cv? with
         | none => s!"it has no variable `{v.name}`"
-        | some cv => if cv.ty != v.ty then s!"its `{v.name}` has type `{cv.ty.show}`, not `{v.ty.show}`"
+        | some cv => if cv.ty != v.ty then s!"its `{v.name}` has another type"
           else if input then s!"its `{v.name}` is not an input"
           else if cv.role == Role.input then s!"its `{v.name}` is an input, not an output"
           else s!"its output `{v.name}` is not public"
@@ -1638,7 +1638,8 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) : M Unit
   -- Reported at the refinement (`Reqs/Lang/Refinement#the-obligation`).
   let props := (a.props.filter (·.kind == .assume)).map ({ · with span := name.span, triggerSpan? := none })
     ++ (a.props.filter (·.kind == .req)).map (fun p =>
-      { p with kind := .expect, smt := ren p.smt, trigger? := p.trigger?.map ren, span := name.span, triggerSpan? := none })
+      -- No triggers, as in Lean: vacuity does not run on a refinement.
+      { p with kind := .expect, smt := ren p.smt, trigger? := none, span := name.span, triggerSpan? := none })
     ++ a.defs.map fun (d, e) =>
       { kind := .expect, name := d, span := name.span
         smt := s!"(= {quote (w ++ d).toString} {ren e})", trigger? := none, triggerSpan? := none : CProp }
