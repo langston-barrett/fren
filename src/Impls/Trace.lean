@@ -33,6 +33,7 @@ tested lang::path_shape: "test/ui/scoping.fren"
 tested lang::declared_before: "test/ui/scoping.fren"
 tested inst::earlier: "test/ui/instances_static.fren"
 tested lint::history: "test/cli/f0709_forbid.fren"
+tested lint::stepwise: "test/cli/f0709_forbid.fren"
 tested lang::identifier: "test/ui/syntax_lexical.fren", "test/ui/syntax_identifier.fren",
   "test/ui/syntax_identifier_letters.fren", "test/ui/syntax_identifier_quoted.fren", "test/ui/syntax_identifier_claim.fren",
   "test/ui/syntax_identifier_token.fren", "test/ui/syntax_identifier_unclosed.fren",
@@ -41,6 +42,8 @@ tested lang::identifier_shape: "test/ui/syntax_lexical.fren"
 tested lang::longest_identifier: "test/ui/syntax_lexical.fren"
 tested lang::escape_sequence: "test/ui/syntax_lexical.fren", "test/cli/f0115_escape.fren"
 tested lang::punctuator_end: "test/ui/syntax_lexical.fren", "test/cli/f0105_eqeq.fren"
+tested lang::escape_text: "test/ui/syntax_lexical.fren"
+tested lang::longest_punctuator: "test/ui/syntax_lexical.fren"
 tested lang::unbounded: "test/ui/relations_static.fren", "test/ui/datatypes_static.fren"
 
 trusted view::build: "Lake fails a build whose modules log an error, and with `--wfail` one whose modules log a warning"

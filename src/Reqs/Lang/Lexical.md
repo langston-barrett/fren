@@ -278,6 +278,27 @@ pub comp escape_sequence {
 }
 ```
 
+`lang::escape_text` says what the length is: the `\` and exactly the
+characters of one escape sequence. `escape_sequence` refines it. Reading
+that many characters is a slice of a length that is not a constant,
+outside the [decidable core](Decidability.md#strings), so `escape_text`
+allows it, and the refinement is checked by testing:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp escape_text {
+    in remaining: String     -- the input after a `\` in a literal
+    pub out accepted?
+    pub out length: Int
+
+    req exact: when accepted?, remaining.slice(0, length - 1).matches?(r#"[nrt\\"']|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}"#)
+    req rejected: when not accepted?, length = 0
+}
+
+set_option fren.evidence "tested" in
+refine escape_sequence_is_exact: escape_sequence refines escape_text
+```
+
 ## Punctuators
 
 ```
@@ -330,4 +351,31 @@ pub comp punctuator_end {
     expect path_glob: when lexeme = "::" and remaining.starts_with?("*"), not ends?
     expect no_triple: when lexeme.len = 3, ends?
 }
+```
+
+That one character decides is a property of `PUNCTUATORS`, which
+`lang::longest_punctuator` states: a punctuator ends exactly when neither
+one nor two more characters make a longer one. `punctuator_end` refines
+it, so no punctuator is reached only through a string that is not one.
+The instances' bindings concatenate, outside the core for a binding, so
+the refinement is tested:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
+pub comp longest_punctuator {
+    in lexeme: String
+    in remaining: String     -- the input after the lexeme
+    pub out ends?
+
+    inst p: punctuator { lexeme }
+    inst one: punctuator { lexeme := lexeme ++ remaining.slice(0, 1) }
+    inst two: punctuator { lexeme := lexeme ++ remaining.slice(0, 2) }
+
+    req longest: when p.accepted? and remaining != "", ends? iff not (one.accepted? or two.accepted?)
+    req at_end: when remaining = "", ends?
+}
+
+set_option fren.evidence "tested" in
+refine punctuator_end_is_longest: punctuator_end refines longest_punctuator
 ```
