@@ -81,12 +81,13 @@ already be evaluated is false. A variable's candidates are:
 - both `Bool`s, and each variant of an enumeration, with a payload built
   from the candidates of its types, to a bounded depth;
 - for an `Int`, small integers, the integer literals and constants of the
-  component and their neighbours, random integers, and the value of
+  component, its expectations included, and their neighbours, random integers, and the value of
   any expression that a constraint equates the variable with, such as `x
   + 1` in `y = x + 1`;
 - for an abstract type `T`, `T#0` up to a random bound;
 - for a `String`, `""`, `"a"` and `"b"`; the string literals and constants
-  of the component, each also with `"a"` before and after it, so that
+  of the component, its expectations included, each also with `"a"` before
+  and after it, so that
   `s.contains?("..")` and `s.starts_with?("x")` have strings that satisfy
   them; a few random strings that match each pattern of a `matches?` in
   the component; and the value of any expression that a constraint equates
@@ -208,8 +209,8 @@ suggests that the component is not realizable, without showing it. That
 gives a warning, `F0609`, and an inconclusive result. A check that no test
 reached, because no admissible behaviour was found, is also inconclusive,
 with the warning `F0610`. A check with a trigger that no test reached,
-though some found admissible behaviours, is inconclusive with the warning
-`F0612`, at the check. `eval::test_verdict` gives the verdict of testing one
+though some found what it is about, is inconclusive with the warning
+`F0612`, at the check, unless the component already has `F0610`. `eval::test_verdict` gives the verdict of testing one
 check, from whether some test refuted it and how many tests reached it:
 
 ```fren

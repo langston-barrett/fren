@@ -147,7 +147,9 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       -- A behaviour in which the trigger holds, searched for from a new
       -- input if this one's does not.
       let env? ← if reaches I .anonymous trigger? env then pure (some env) else
+        -- Once refuted, an expectation needs no more searching.
         let some t := trigger? | pure none
+        if (expT[k]?.bind (·.refuted?)).isSome then pure none else
         let atoms := all.push { label := e.name, pfx := .anonymous, e := t }
         ({ vars := sp.order c, atoms, ints, strs : Problem }.solve sp w I {})
       let some envE := env? | continue
@@ -179,7 +181,8 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
     ++ (dets.zip detT).map (fun (x, t) => result .determinism (some x.name) t)
   let untested := behaviours == 0 && noOutputs?.isNone
   -- Admissible behaviours were found, but none in which the trigger held.
-  let untriggered :=
+  -- Not beside `F0610`, which already says that nothing was tested.
+  let untriggered := if untested then #[] else
     ((instAssumes.zip (instT.zip instFound)).filterMap fun ((w, d, a, t?), (t, found)) =>
       if t?.isSome && t.tests == 0 && found > 0 then some (result .inst (some w) t (some (d, a))) else none)
     ++ (expects.zip expT).filterMap fun (e, t) =>
