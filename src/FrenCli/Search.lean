@@ -131,25 +131,26 @@ partial def Ex.equated (x : Name) : Ex → Array Ex
   | .match e arms => e.equated x ++ arms.flatMap (·.2.equated x)
 
 /-- Every value of `ty` up to `depth`, at most `cap` of them. -/
-partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (cap : Nat) (depth : Nat) : VTy → Array Val
+partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array String) (cap : Nat) (depth : Nat) :
+    VTy → Array Val
   | .bool => #[.bool false, .bool true]
   | .int => ints.map .int
-  -- A few strings; constraints that equate a variable with a string give
-  -- the others.
-  | .string => #[.str "", .str "a", .str "b"]
+  -- A few strings, and those of the constraints (`stringsOf`);
+  -- constraints that equate a variable with a string give the others.
+  | .string => (#["", "a", "b"] ++ strs.filter (!["", "a", "b"].contains ·)).map .str
   -- The empty set and singletons; constraints that equate a variable with a
   -- set give the others.
-  | .set t => #[.set #[]] ++ ((smallValues sp w ints cap depth t).extract 0 4).map (Val.setOf #[·])
+  | .set t => #[.set #[]] ++ ((smallValues sp w ints strs cap depth t).extract 0 4).map (Val.setOf #[·])
   -- The empty sequence, singletons and pairs of candidates, so that
   -- indexes at `0` and `1` have something to read.
   | .seq t => Id.run do
-    let vs := (smallValues sp w ints cap depth t).extract 0 3
+    let vs := (smallValues sp w ints strs cap depth t).extract 0 3
     return #[.seq #[]] ++ vs.map (Val.seq #[·]) ++ (vs.zip (vs.extract 1)).map fun (a, b) => .seq #[a, b]
   -- The empty relation, single pairs, and a chain of pairs, so that
   -- `closure` has something to close.
   | .rel a b => Id.run do
-    let as := (smallValues sp w ints cap depth a).extract 0 3
-    let bs := (smallValues sp w ints cap depth b).extract 0 3
+    let as := (smallValues sp w ints strs cap depth a).extract 0 3
+    let bs := (smallValues sp w ints strs cap depth b).extract 0 3
     let pairs := as.flatMap fun x => bs.map (Val.pair x ·)
     let mut out := #[.set #[]] ++ (pairs.extract 0 6).map (Val.setOf #[·])
     if a == b && as.size ≥ 3 then
@@ -163,7 +164,7 @@ partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (cap : Nat) (
       if depth == 0 && !c.fields.isEmpty then continue
       let mut combos : Array (Array Val) := #[#[]]
       for (_, t) in c.fields do
-        let vs := smallValues sp w ints cap (depth - 1) t
+        let vs := smallValues sp w ints strs cap (depth - 1) t
         combos := (combos.flatMap fun pre => vs.map pre.push).extract 0 cap
       out := out ++ combos.map (.ctor p idx ·)
     return out.extract 0 cap
@@ -175,6 +176,8 @@ structure Problem where
   atoms : Array Atom
   /-- The integers that the constraints mention, and their neighbours. -/
   ints : Array Int := #[]
+  /-- The strings that the constraints mention or match (`stringsOf`). -/
+  strs : Array String := #[]
 
 abbrev Env := Std.HashMap Name Val
 
@@ -189,7 +192,7 @@ def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (env :
     else #[]
   let mut ints := p.ints
   for _ in [0:2] do ints := ints.push (((← below 41) : Int) - 20)
-  let pool ← shuffle (smallValues sp w ints 24 2 ty)
+  let pool ← shuffle (smallValues sp w ints p.strs 24 2 ty)
   let eqs := eqs.foldl (fun acc v => if acc.contains v then acc else acc.push v) #[]
   return eqs ++ pool.filter (!eqs.contains ·)
 
@@ -229,6 +232,72 @@ def intsOf (atoms : Array Atom) : Array Int := Id.run do
     for i in a.e.lits do
       for j in [i - 1, i, i + 1] do
         unless out.contains j do out := out.push j
+  return out
+
+/-- The strings in `v`, a value of a literal or constant. -/
+partial def Val.strs : Val → Array String
+  | .str s => #[s]
+  | .set ms | .seq ms => ms.flatMap (·.strs)
+  | .pair a b => a.strs ++ b.strs
+  | .ctor _ _ args => args.flatMap (·.strs)
+  | _ => #[]
+
+/-- The string literals of `e`, and the patterns of its `matches?`, which
+are not literals of strings that it constrains. -/
+partial def Ex.strLits : Ex → Array String × Array String
+  | .lit v => (v.strs, #[])
+  | .var _ | .bound _ => (#[], #[])
+  | .method .matches r #[.lit (.str p)] => let (ls, ps) := r.strLits; (ls, ps.push p)
+  | .not a | .neg a | .field a _ | .card a => a.strLits
+  | .bin _ a b | .when _ a b | .pair a b | .index a b _ => join #[a, b]
+  | .ite c a b => join #[c, a, b]
+  | .app _ args | .ctor _ _ args | .setLit args | .seqLit args => join args
+  | .method _ r args => join (#[r] ++ args)
+  | .match e arms => join (#[e] ++ arms.map (·.2))
+where
+  join (es : Array Ex) : Array String × Array String :=
+    es.foldl (fun (ls, ps) e => let (l, p) := e.strLits; (ls ++ l, ps ++ p)) (#[], #[])
+
+/-- A random string that matches `r`, if one was found within `fuel`
+steps: each repetition repeats at most twice. -/
+partial def Re.sample (fuel : Nat := 40) : Fren.Core.Re → R (Option (List Char))
+  | .none => return none
+  | .str cs => return some cs
+  | .any => return some ['a']
+  | .cls false rs => do
+    let some (lo, hi) := rs[← below rs.length]? | return none
+    return some [Char.ofNat (lo.toNat + (← below (hi.toNat - lo.toNat + 1)))]
+  | .cls true rs => return (['a', 'A', '0', ' ', '.', '-', '_'].find? (!Fren.Core.inRanges rs ·)).map ([·])
+  | .union a b => do
+    let (x, y) := if (← below 2) == 0 then (a, b) else (b, a)
+    match ← Re.sample fuel x with
+    | some cs => return some cs
+    | none => Re.sample fuel y
+  | .cat a b => do
+    let some xs ← Re.sample fuel a | return none
+    let some ys ← Re.sample fuel b | return none
+    return some (xs ++ ys)
+  | .star a => do
+    let mut out := []
+    let n ← if fuel == 0 then pure 0 else below 3
+    for _ in [0:n] do
+      let some cs ← Re.sample (fuel - 1) a | break
+      out := out ++ cs
+    return some out
+
+/-- The strings that `atoms` mention, each also with `"a"` before and after
+it, and a few random strings that match each of their patterns
+(`Reqs/Eval#searching-for-behaviours`). -/
+def stringsOf (atoms : Array Atom) : R (Array String) := do
+  let (lits, pats) := atoms.foldl (fun (ls, ps) a => let (l, p) := a.e.strLits; (ls ++ l, ps ++ p)) (#[], #[])
+  let mut out : Array String := #[]
+  let add (out : Array String) (s : String) := if out.contains s then out else out.push s
+  for s in lits do
+    for t in [s, "a" ++ s, s ++ "a"] do out := add out t
+  for p in pats do
+    let .ok r := Fren.Core.parseRe p | continue
+    for _ in [0:3] do
+      if let some cs ← Re.sample 40 r then out := add out (String.ofList cs)
   return out
 
 /-- The variables of `c` nested at `pfx` in the order the search chooses

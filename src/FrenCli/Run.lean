@@ -437,6 +437,18 @@ def quickcheck (args : Args) : IO UInt32 := do
       let msg := Fren.Core.untestedMsg subject args.nTests
       warn msg
       shown := shown.push msg
+    -- At the trigger of each check that no test reached (`F0612`).
+    for r in rep.untriggered do
+      let some n := r.prop? | continue
+      let (what, span) := match r.kind, r.target? with
+        | .inst, some (d, a) =>
+          (s!"the assumption `{Fren.Core.showComp (d ++ a)}` of instance `{n}`", ((c.insts.find? (·.name == n)).map (·.span)).getD c.span)
+        | _, _ =>
+          let p? := c.props.find? (·.name == n)
+          (if global then subject else s!"`{Fren.Core.showComp (c.path ++ n)}`", (p?.map fun p => p.triggerSpan?.getD p.span).getD c.span)
+      let msg := Fren.Core.untriggeredMsg what args.nTests
+      printDiag args.paint files { file := c.file, span, severity := .warning, msg }
+      shown := shown.push msg
     all := all ++ rep.results
   let count v := (all.filter (·.verdict == v)).size
   IO.eprintln s!"fren: {count .pass} passed, {count .fail} failed, {count .inconclusive} inconclusive, in {args.nTests} tests each"
@@ -477,7 +489,8 @@ def evalCmd (args : Args) : IO UInt32 := do
   let (w, rng) := (Eval.World.random sp).run ⟨args.seed.toUInt64⟩
   let I := w.interp sp
   let atoms := sp.meaning c
-  let p : Eval.Problem := { vars := Eval.remaining (sp.order c) given, atoms, ints := Eval.intsOf atoms }
+  let (strs, rng) := (Eval.stringsOf atoms).run rng
+  let p : Eval.Problem := { vars := Eval.remaining (sp.order c) given, atoms, ints := Eval.intsOf atoms, strs }
   let found := (p.solve sp w I given 100000).run' rng
   let env := found.getD given
   -- `env` is now fixed.

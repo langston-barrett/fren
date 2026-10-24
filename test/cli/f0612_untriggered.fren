@@ -1,0 +1,9 @@
+--@ args: quickcheck
+-- Behaviours are found, but none in which the expectation's trigger holds:
+-- only `x = 17637` satisfies it.
+comp c {
+    in x: Int
+    pub out big?
+    req r: big? iff x > 1000
+    expect e: when 7 * x = 123459, big?
+}

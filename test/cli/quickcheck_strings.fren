@@ -1,0 +1,16 @@
+--@ args: quickcheck
+-- A test counts only where the trigger holds (`eval::reaches`), and the
+-- strings tried include the spec's literals and members of its patterns,
+-- so both false expectations are refuted.
+mod words
+
+pub comp word {
+    in text: String
+    pub det out accepted?
+
+    req rule: accepted? iff text.matches?(r"[a-z]+")
+
+    expect no_zz: when text.contains?("zz"), not accepted?
+    expect digit_first: when text.matches?(r"[0-9][a-z]*"), accepted?
+    expect lower: when accepted?, not text.contains?("A")
+}
