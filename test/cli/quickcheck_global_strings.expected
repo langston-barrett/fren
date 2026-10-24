@@ -4,7 +4,7 @@ error[F0603]: expectation `words::no_zz` does not hold
 13 | expect no_zz: forall (a: word), when a.text.contains?("zz"), not a.accepted?
    |        ^^^^^ does not follow from the requirements
    |
-   = counterexample: a.text = "azz", a.accepted? = true
+   = counterexample: a.text = "zza", a.accepted? = true
    = help: strengthen the requirements so that it follows, or correct the expectation
 
 fren: 2 passed, 1 failed, 0 inconclusive, in 100 tests each

@@ -73,8 +73,11 @@ are not.
 ## Searching for behaviours
 
 Both commands search for behaviours. The search chooses the variables in
-order: the inputs, then each instance's variables, the instance's inputs
-being its bindings' values, then the outputs. It tries each variable's
+order: the inputs, then the [defined
+outputs](Lang/Components.md#defined-outputs) whose definitions mention
+only inputs and such outputs, computed from them, then each instance's
+variables, the instance's inputs being its bindings' values, then the
+other outputs. It tries each variable's
 candidates in a random order, and backtracks when a constraint that can
 already be evaluated is false. A variable's candidates are:
 
@@ -87,18 +90,21 @@ already be evaluated is false. A variable's candidates are:
 - for an abstract type `T`, `T#0` up to a random bound;
 - for a `String`, `""`, `"a"` and `"b"`; the string literals and constants
   of the component, its expectations included, each also with `"a"` before
-  and after it, so that
+  and after it, and, for those of up to six characters, what remains after
+  each of their first characters, such as the `:*` of `::*`, so that
   `s.contains?("..")` and `s.starts_with?("x")` have strings that satisfy
   them; a few random strings that match each pattern of a `matches?` in
-  the component; and the value of any expression that a constraint equates
+  the component, each also followed by `"a"`; and the value of any expression that a constraint equates
   the variable with;
 - for a `Set(T)`, the empty set and singletons of the candidates of `T`,
   and the value of any expression that a constraint equates the variable
   with;
 - for a `Seq(T)`, the empty sequence, and sequences of one and two of the
-  candidates of `T`, and the value of any expression that a constraint
-  equates the variable with. An index out of range has no value that the
-  evaluator knows, since it is part of the interpretation;
+  candidates of `T`; for each integer candidate from 3 to 4, such as the
+  `3` of `q.len = 3`, a few random sequences of that length; and the value
+  of any expression that a constraint equates the variable with. An index
+  out of range has no value that the evaluator knows, since it is part of
+  the interpretation;
 - for a `Rel(A, B)`, the empty relation, single pairs of candidates of `A`
   and `B`, and, if `A` is `B`, a chain of two pairs, so that `closure` has
   something to close.
@@ -185,8 +191,17 @@ seldom satisfies a narrow trigger, testing searches for one that does:
 - a global expectation's test searches for behaviours of the binders in
   which the body's trigger holds.
 
+Testing also searches for counterexamples directly: for an expectation or
+a global expectation not yet refuted, each test searches for a behaviour
+that meets the component, or behaviours of the binders, in which it is
+false. Backtracking then tries combinations of candidates that random
+behaviours seldom reach, such as a lexeme and the input after it that
+together refute a rule about both. A behaviour found is a counterexample;
+none found says nothing.
+
 So a trigger that no search satisfies costs one more search in each test,
-for each expectation that has it. An instance assumption's trigger gets no
+for each expectation that has it, and an expectation not refuted one more
+again. An instance assumption's trigger gets no
 such search: it is about an instance's inputs, which its bindings give.
 
 `eval::reaches` states when a test reaches a check:
