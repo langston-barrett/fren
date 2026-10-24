@@ -241,12 +241,13 @@ pub comp punctuator_end {
     in remaining: String     -- the input after the lexeme
     pub det out ends?
 
+    assume a_punctuator: lexeme in PUNCTUATORS
+
     out longer: String := lexeme ++ remaining.slice(0, 1)
     inst one: punctuator { lexeme := longer }
     req maximal_munch: ends? iff (remaining = "" or not one.accepted?)
 
-    inst p: punctuator { lexeme }
     expect path_glob: when lexeme = "::" and remaining.starts_with?("*"), not ends?
-    expect no_triple: when p.accepted? and lexeme.len = 3, ends?
+    expect no_triple: when lexeme.len = 3, ends?
 }
 ```

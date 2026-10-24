@@ -257,4 +257,59 @@ impl punctuator: lang::punctuator for (s : String) {
   intro s _
   simp [fren_spec, FrenCli.punctuators]
 
+namespace Lexical
+
+open Fren.Core (inRanges isIdStart isIdRest Re)
+
+/-- A one-character range is that character. -/
+theorem le_le_self (d c : Char) : (decide (d ≤ c) && decide (c ≤ d)) = (c == d) := by
+  apply Bool.eq_iff_iff.mpr
+  simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq]
+  exact ⟨fun ⟨h1, h2⟩ => Char.le_antisymm h2 h1, fun h => h ▸ ⟨Char.le_refl _, Char.le_refl _⟩⟩
+
+/-- `[A-Za-z_]` is `isIdStart`. -/
+theorem start_class (c : Char) : inRanges [('A', 'Z'), ('a', 'z'), ('_', '_')] c = isIdStart c := by
+  simp [inRanges, isIdStart, le_le_self, Bool.or_assoc]
+
+/-- `[A-Za-z0-9_'?]` is what continues an identifier. -/
+theorem continue_class (c : Char) :
+    inRanges [('A', 'Z'), ('a', 'z'), ('0', '9'), ('_', '_'), ('\'', '\''), ('?', '?')] c = (isIdRest c || c == '?') := by
+  simp [inRanges, isIdRest, le_le_self, Bool.or_assoc]
+
+theorem dot_class (c : Char) : inRanges [('.', '.')] c = (c == '.') := by
+  simp [inRanges, le_le_self]
+
+/-- `ends_with?("?")` is about the last character. -/
+theorem endsWith_question (cs : List Char) :
+    Fren.Str.endsWith (String.ofList cs) (Fren.Str.lit "?") = (cs.getLast? == some '?') := by
+  rcases List.eq_nil_or_concat cs with h | ⟨l, x, rfl⟩
+  · subst h; rfl
+  · simp [Fren.Str.endsWith, Fren.Str.lit, List.isSuffixOf, List.isPrefixOf]
+    rw [Bool.eq_iff_iff]
+    simp only [beq_iff_eq]
+    exact eq_comm
+
+end Lexical
+
+-- For every lexeme and the input after it: whether the lexer continues it.
+impl identifier_end: lang::identifier_end for (cs rest : List Char) {
+  lexeme := String.ofList cs,
+  remaining := String.ofList rest,
+  ends? := Fren.Core.identExtends rest.toArray (cs.getLast?.getD ' ') 0 == 0,
+} by
+  rintro cs rest -
+  simp only [fren_spec, Lexical.endsWith_question, Fren.Core.Re.matches, String.toList_ofList,
+    Fren.Core.Re.mat_cat_cls, Fren.Core.Re.mat_star_any]
+  cases h : cs.getLast? with
+  | some l =>
+    by_cases hl : l = '?'
+    · subst hl; simp [Fren.Core.identExtends]
+    · rcases rest with _ | ⟨c, _ | ⟨d, t⟩⟩ <;>
+        simp [Fren.Core.identExtends, hl, Lexical.continue_class, Lexical.dot_class, Lexical.start_class] <;>
+        split <;> (try split) <;> (try simp_all) <;> (rename_i hc; rcases hc with hc | hc <;> simp_all)
+  | none =>
+    rcases rest with _ | ⟨c, _ | ⟨d, t⟩⟩ <;>
+      simp [Fren.Core.identExtends, Lexical.continue_class, Lexical.dot_class, Lexical.start_class] <;>
+      split <;> (try split) <;> (try simp_all) <;> (rename_i hc; rcases hc with hc | hc <;> simp_all)
+
 end Fren.Impls
