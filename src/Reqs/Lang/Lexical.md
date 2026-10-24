@@ -225,8 +225,10 @@ does.
 Punctuators follow maximal munch too, so `::*` is one punctuator and not
 `::` followed by `*`. A punctuator that extends a shorter one does so one
 character at a time, through punctuators (`:`, `::`, `::*`), so one
-character of lookahead decides whether a punctuator ends. `lang::punctuator_end` states
-this, for a `lexeme` that is a punctuator:
+character of lookahead decides whether a punctuator ends.
+`lang::punctuator_end` states this. The lexer asks only where a
+punctuator that it has read ends, never where some other text would, so
+the rule assumes that `lexeme` is a punctuator:
 
 ```fren
 -- Longest first, as the lexer tries them.

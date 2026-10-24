@@ -698,7 +698,8 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
         if let some v := cx.vars.find? (·.name == n) then
           return ← readFields (.var n) v.ty (parts.drop (k + 1))
       if parts.length > 1 then
-        -- A constant, then the methods applied to its value.
+        -- A constant, then the fields read from its value, or the methods
+        -- without arguments applied to it.
         let st ← get
         let .ok (.item { kind := .constItem, path, .. }) := st.table.resolvePath st.scope #[Name.mkSimple parts.head!]
           | throw s!"`{segs[0]!.name}` names no variable"

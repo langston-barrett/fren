@@ -58,21 +58,28 @@ Lean's letter-like characters such as `α`, `_`, or the `«` of a quoted
 component. -/
 def isLeanIdStart (c : Char) : Bool := Lean.isIdFirst c || Lean.isIdBeginEscape c
 
+/-- The end of the run of `p` from `j`. -/
+def runWhile (src : Array Char) (p : Char → Bool) (j : Nat) : Nat :=
+  if h : j < src.size then if p src[j] then runWhile src p (j + 1) else j else j
+termination_by src.size - j
+
 /-- Where Lean's lexer ends the identifier that starts at `i`, by Lean's own
-rules, which allow more than Fren's: `?` and `!` anywhere after the first
-character, letters other than ASCII, and quoted components, as in `«a b»`. -/
+rules (`Lean.Parser.identFnAux`), which allow more than Fren's: `?` and `!`
+anywhere after the first character, letters other than ASCII, and quoted
+components, as in `«a b»`. Each component is quoted, or a letter and the
+characters that may follow it, and a `.` continues the identifier only
+before another component. An unquoted `«` ends at the end of its line. -/
 def leanIdentEnd (src : Array Char) (i : Nat) : Nat := go i
 where
+  /-- From `j`, the start of a component. -/
   go (j : Nat) : Nat :=
-    if _h : j < src.size then
-      let c := src[j]
-      if Lean.isIdBeginEscape c then
-        -- A quoted component runs to its `»`.
-        let close := ((src.extract (j + 1) src.size).findIdx? Lean.isIdEndEscape).map (· + j + 1) |>.getD src.size
-        go (max (close + 1) (j + 1))
-      else if Lean.isIdRest c then go (j + 1)
-      else if c == '.' && (src[j + 1]?).any isLeanIdStart then go (j + 1)
-      else j
+    if j < src.size then
+      let stop :=
+        if Lean.isIdBeginEscape src[j]! then
+          let close := runWhile src (fun c => !Lean.isIdEndEscape c && c != '\n') (j + 1)
+          if src[close]? == some '»' then close + 1 else close
+        else runWhile src Lean.isIdRest (j + 1)
+      if src[stop]? == some '.' && (src[stop + 1]?).any isLeanIdStart then go (max (stop + 1) (j + 1)) else stop
     else j
   termination_by src.size - j
 
@@ -80,6 +87,7 @@ where
 def leanIdentifierMsg (s : String) : Msg :=
   { code? := some "F0119", headline := s!"`{s}` is not an identifier in Fren", label? := some "not a Fren identifier"
     notes := #["note: an identifier is ASCII letters, digits, `_` and `'`, with `.` between components and an optional `?` at the end"]
-      ++ if s.contains '!' then #["help: `!` is not part of an identifier; to compare, write `a != b`, with spaces"] else #[] }
+      ++ (if s.contains '!' then #["help: `!` is not part of an identifier; to compare, write `a != b`, with spaces"] else #[])
+      ++ if s.contains '«' && !s.contains '»' then #["note: the `«` is not closed on its line"] else #[] }
 
 end Fren.Core

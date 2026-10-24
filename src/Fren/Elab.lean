@@ -1177,12 +1177,15 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
             let some t ← varRef? cx id v.name | throwError "internal error: no variable `{v.name}`"
             pure (some ((t, v.type), n.components.drop k))
           | none =>
-            -- A constant, then the methods applied to its value.
+            -- A constant, then the fields read from its value, or the
+            -- methods without arguments applied to it.
             let root := n.getRoot
             if n.isAtomic || cx.insts.contains root then pure none else
             match (← getState).table.resolvePath cx.modName #[root] cx.shadowing with
-            | .ok r@(.item { kind := .constItem, path, .. }) =>
-              recordUsedItem r
+            | .ok (.item { kind := .constItem, .. }) =>
+              -- Resolved again, to record its use and any import it uses.
+              let .item { kind := .constItem, path, .. } ← resolvePath cx.modName #[mkIdentFrom id root] cx.shadowing
+                | pure none
               let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
               let t ← `(($(← exprToSyntax c.value) : $(← exprToSyntax c.type)))
               pure (some ((t, c.type), n.components.drop 1))
