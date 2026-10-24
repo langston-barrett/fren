@@ -375,7 +375,8 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     if r.verdict == .fail then shown := shown ++ (← printResult args.paint files c r)
   let warn (msg : Msg) : IO Unit := printDiag args.paint files { file := c.file, span := c.span, severity := .warning, msg }
   if let some input := rep.noOutputs? then
-    if results.any (·.kind == .realizable) then
+    -- It explains why the checks it selects were not reached, too.
+    if !results.isEmpty then
       let msg := Fren.Core.noOutputsMsg subject input
       warn msg
       shown := shown.push msg

@@ -42,7 +42,7 @@ installation. It is built by `lake build fren`.
 | `--comp PATH` | `eval`: the component to evaluate |
 | `--set VAR=VALUE` | `eval`: the value of a variable; may be repeated |
 | `--seed N` | `eval`, `quickcheck`, and `check` for [checks by testing](Check.md#checking-by-testing): where the random search starts (default 0) |
-| `--tests N` | `quickcheck`: tests per component and global expectation; `check`: tests per [check by testing](Check.md#checking-by-testing) (default 100) |
+| `--tests N` | `quickcheck`: tests per component and global expectation; `check`: tests per component or global expectation with [checks by testing](Check.md#checking-by-testing) (default 100) |
 | `--color WHEN` | colour the output: `auto` (the default), `always` or `never` |
 
 ## Input files

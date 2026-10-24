@@ -268,9 +268,10 @@ structure State where
   src : Array Char := #[]
   /-- Where the outermost `set_option ... in` around the current item starts. -/
   settingStart? : Option Nat := none
-  /-- `set_option fren.evidence` around the current item: whether its
-  checks are tested. -/
-  evidenceTested? : Option Bool := none
+  /-- `set_option fren.evidence` in effect for the current item: its value,
+  checked where it applies (`Reqs/Check#checking-by-testing`), and the
+  value's span. -/
+  evidence? : Option (String × Span) := none
   /-- The edits of `fren fix`, by file. -/
   edits : Array (Nat × Fren.Core.Range × String) := #[]
   /-- The current file's private enumerations and constants, and the items
@@ -1431,6 +1432,15 @@ def declareMemberUses (path : Name) (members : Array Member) : M Unit := do
       modify fun s => { s with scope := path }
     | _ => pure ()
 
+/-- Whether the `set_option fren.evidence` in effect sets checks to testing
+(`F0214` if its value is invalid). -/
+def evidenceInEffect : M Bool := do
+  match (← get).evidence? with
+  | none => return false
+  | some (value, sp) =>
+    let some b := Fren.Core.evidenceTested? value | err sp (Fren.Core.invalidEvidenceMsg value)
+    return b
+
 /-- The checks of a comp with `members` that are tested
 (`Reqs/Check#checking-by-testing`): `all` if the comp is set to testing,
 then each member's own setting. -/
@@ -1561,7 +1571,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     if constant then lint .constantOutput v.span (Fren.Core.constantOutputMsg v.name)
     if definable then lint .definableOutput v.span (Fren.Core.definableOutputMsg v.name about[0]!.1)
   let path := st.module ++ n
-  let tested ← testedOf (st.evidenceTested?.getD false) members
+  let tested ← testedOf (← evidenceInEffect) members
   let (relational, counts) ← checkCounts
   modify fun s => { s with
     table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
@@ -1572,6 +1582,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr) : M Unit := do
   let n := Name.mkSimple name.name
+  let all ← evidenceInEffect
   if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
   modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[] }
   let st ← get
@@ -1617,7 +1628,7 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
     table := s.table.addItem { kind := .expectItem, path := st.module ++ n, isPub := false, owner := s.module }
     globals := s.globals.push { path := s.module, file := s.file, span := name.span, vars, props := #[prop], insts, indexes
                                 decidable := !s.outsideCore
-                                tested := Fren.Core.Tested.ofSettings (st.evidenceTested?.getD false) #[] #[(n, none)] #[] #[] } }
+                                tested := Fren.Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] } }
 
 partial def elabItem : Item → M Unit
   | .mod isPub segs => do
@@ -1792,16 +1803,12 @@ partial def elabItem : Item → M Unit
     | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a component or a global expectation" r)
   | .lintSetting stx opt value valueSpan removal body? => do
     if opt.name == "fren.evidence" then
-      let some b := Fren.Core.evidenceTested? value | err valueSpan (Fren.Core.invalidEvidenceMsg value)
-      let what := match body? with
-        | some (.comp ..) | some (.global ..) | some (.lintSetting ..) => none
-        | some _ => some "an item that is not a component or a global expectation"
-        | none => some "the rest of the file: write `in` and a component or global expectation"
-      if let some w := what then err stx (Fren.Core.misplacedEvidenceMsg w)
+      -- Like a lint setting: for the item after `in`, or the rest of the file.
       let st ← get
-      modify fun s => { s with evidenceTested? := some b }
-      if let some body := body? then elabItem body
-      modify fun s => { s with evidenceTested? := st.evidenceTested? }
+      modify fun s => { s with evidence? := some (value, valueSpan) }
+      if let some body := body? then
+        elabItem body
+        modify fun s => { s with evidence? := st.evidence? }
       return
     let some rest := opt.name.dropPrefix? "fren.lint." | internal opt.span "not a lint option"
     let some lint := Lint.ofName? rest.toString | err opt.span (Fren.Core.unknownLintMsg rest.toString)
@@ -1902,7 +1909,7 @@ def finishLints : StateM State Unit := do
 error per failed item. `fren fix` fixes the lints `fixing` in it. -/
 def elabFile (file : Nat) (src : Array Char) (items : Array Item) (fixing : Array Lint := #[]) :
     StateM State Unit := do
-  modify fun s => { s with file, src, fixing, module := .anonymous, scope := .anonymous, levels := s.cliLevels, useRecords := #[],
+  modify fun s => { s with file, src, fixing, module := .anonymous, scope := .anonymous, levels := s.cliLevels, useRecords := #[], evidence? := none,
                            used := #[], expectations := #[], lintReports := #[], useLocs := #[],
                            expectationRemovals := #[], items := #[], usedItems := #[], boolFixes := #[],
                            lintFixes := #[] }

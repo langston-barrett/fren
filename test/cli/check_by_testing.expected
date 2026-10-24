@@ -7,7 +7,26 @@ error[F0603]: expectation `lex::word::wrong` does not hold
    = counterexample: text = "ax", accepted? = true
    = help: strengthen the requirements so that it follows, or correct the expectation
 
-fren: 9 passed (3 by testing), 1 failed, 0 inconclusive, 0 redundant
+error[F0604]: the assumption `pos` of `lex::positive` may not hold for instance `lex::caller::p`
+  --> test/cli/check_by_testing.fren:38:10
+   |
+38 |     inst p: positive { k := m }
+   |          ^ may violate `lex::positive::pos`
+   |
+   = counterexample: m = 0
+   = help: bind the instance's inputs so that the assumption holds, or add an `assume` that guarantees it
 
-For more information about this error, try `fren --explain F0603`.
+error[F0603]: expectation `lex::global_wrong` does not hold
+  --> test/cli/check_by_testing.fren:48:8
+   |
+48 | expect global_wrong: forall (p: parity), when p.n = 2, not p.even?
+   |        ^^^^^^^^^^^^ does not follow from the requirements
+   |
+   = counterexample: p.n = 2, p.even? = true
+   = help: strengthen the requirements so that it follows, or correct the expectation
+
+fren: 12 passed (3 by testing), 3 failed, 0 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0603, F0604.
+For more information about an error, try `fren --explain F0603`.
 exit=1

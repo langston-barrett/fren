@@ -440,7 +440,9 @@ it applies, and have such a check tested instead, as `fren quickcheck`
 tests it (see [Evaluation](Eval.md#fren-quickcheck)):
 
 ```
-evidence-setting := "set_option" "fren.evidence" STRING "in"
+item   := evidence-setting ["in" item] | ...
+member := evidence-setting "in" member | ...
+evidence-setting := "set_option" "fren.evidence" STRING
 ```
 
 `set_option fren.evidence "tested" in` before a component, an expectation
@@ -456,9 +458,14 @@ that of the member's checks, which takes precedence:
 | a `det out` | its determinism |
 | a component | all of the component's checks |
 
-The setting is a statement that the solver cannot be relied on there, so it
-is never reported as unneeded. Any other value is an error (`F0214`), as
-is the setting before anything else, such as a requirement (`F0215`).
+As with a [lint setting](Lint.md), `set_option` without `in` sets the
+evidence of every later component and global expectation in the file, and
+before any other item it sets nothing. Within a component, the setting must
+be followed by `in` and by a member whose checks it sets: before anything
+else, such as a requirement, it is an error (`F0215`). The setting is a
+statement that the solver cannot be relied on there, so it is never
+reported as unneeded. A value other than `"tested"` or `"solver"` is an
+error (`F0214`) where it would set a check.
 
 `fren check` asks the solver nothing about a check whose evidence is
 testing. It tests the check with `--tests` tests (default 100) from

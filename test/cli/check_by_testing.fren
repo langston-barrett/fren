@@ -25,3 +25,24 @@ pub comp parity {
     req r: even? iff (n = 0 or n = 2 or n = 4)
     expect zero: when n = 0, even?
 }
+
+-- An instance set to testing: its assumption is tested, and false.
+pub comp positive {
+    in k: Int
+    assume pos: k > 0
+}
+
+pub comp caller {
+    in m: Int
+    set_option fren.evidence "tested" in
+    inst p: positive { k := m }
+}
+
+-- Before an item that is not a component, it sets nothing.
+set_option fren.evidence "tested" in
+pub const LIMIT: Int := 3
+
+-- Without `in`, it sets every later component and global expectation.
+set_option fren.evidence "tested"
+
+expect global_wrong: forall (p: parity), when p.n = 2, not p.even?
