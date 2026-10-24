@@ -406,7 +406,10 @@ def check (args : Args) : IO UInt32 := do
   let mut all := #[]
   -- Warnings from lints, already printed.
   let mut shown := st.diags.map (·.msg)
-  let todo := st.comps.map (·, false) ++ st.globals.map (·, true)
+  -- Each comp, global expectation and refinement (`Reqs/Lang/Refinement`),
+  -- with the checks that run on it.
+  let todo := st.comps.map (·, false, Fren.Core.kindsFor false) ++ st.globals.map (·, true, Fren.Core.kindsFor true)
+    ++ st.refinements.map (·, false, Fren.Core.CheckKind.all.filter Fren.Core.refinementRuns)
   -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
   let spec? := specOf files
   let mut internal := #[]
@@ -414,8 +417,7 @@ def check (args : Args) : IO UInt32 := do
   if let .error e := spec? then
     internal := internal.push (Msg.internal s!"the evaluator cannot read the spec: {e}")
     printDiag args.paint files { file := 0, span := default, msg := internal.back! }
-  for (c, global) in todo do
-    let kinds := Fren.Core.kindsFor global
+  for (c, global, kinds) in todo do
     let n ← IO.mkRef 0
     let dump? := if args.dumpSmt then some fun script => do
         n.modify (· + 1)
@@ -475,12 +477,13 @@ def quickcheck (args : Args) : IO UInt32 := do
   let mut all := #[]
   let mut shown := st.diags.map (·.msg)
   let mut sevs := st.diags.map (·.severity)
-  for (c, global) in st.comps.map (·, false) ++ st.globals.map (·, true) do
+  for (c, global, refinement) in st.comps.map (·, false, false) ++ st.globals.map (·, true, false)
+      ++ st.refinements.map (·, false, true) do
     let some ec := sp.counterpart? c global
       | let msg := Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"
         printDiag args.paint files { file := c.file, span := c.span, msg }
         sevs := sevs.push .error
-    let (results, msgs) ← testComp args files sp c ec global fun _ => true
+    let (results, msgs) ← testComp args files sp c ec global fun r => !refinement || Fren.Core.refinementRuns r.kind
     shown := shown ++ msgs
     all := all ++ results
   let count v := (all.filter (·.verdict == v)).size

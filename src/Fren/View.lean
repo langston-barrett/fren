@@ -44,10 +44,11 @@ def checkAndReport (paths : Array Name) : CommandElabM Unit := do
   let s ← getState
   let mut all := #[]
   for p in paths do
-    let (c, kinds) ← match s.comps.get? p, s.globals.get? p with
-      | some c, _ => pure (c, Core.kindsFor false)
-      | none, some g => pure (g, Core.kindsFor true)
-      | none, none => continue
+    let (c, kinds) ← match s.comps.get? p, s.globals.get? p, s.refinements.get? p with
+      | some c, _, _ => pure (c, Core.kindsFor false)
+      | none, some g, _ => pure (g, Core.kindsFor true)
+      | none, none, some r => pure (r, Core.CheckKind.all.filter Core.refinementRuns)
+      | none, none, none => continue
     let results ← liftTermElabM <| checkComp c kinds
     for r in results do
       report c r
@@ -63,7 +64,7 @@ def checkAndReport (paths : Array Name) : CommandElabM Unit := do
   checkIdentifiers stx
   if stx[1].isNone then
     let l ← getLocal
-    checkAndReport (l.comps ++ l.globals)
+    checkAndReport (l.comps ++ l.globals ++ l.refinements)
   else
     let r ← resolvePath (← getLocal).currentModule (pathSegs stx[1][0])
     match r with

@@ -13,6 +13,7 @@
 - [Modules and visibility](Lang/Modules.md)
 - [Instances](Lang/Instances.md)
 - [Global expectations](Lang/Global.md)
+- [Refinement](Lang/Refinement.md)
 - [Decidability](Lang/Decidability.md)
 
 # Checking

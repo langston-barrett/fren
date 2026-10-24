@@ -330,6 +330,15 @@ A global expectation is an expectation about components as a whole rather
 than about one of their behaviours, such as two components agreeing, or one
 component being monotone. See [Global expectations](Global.md).
 
+## Refinements
+
+```
+refinement := "refine" IDENT ":" path "refines" path ["by" TACTICS]
+```
+
+`refine r: c refines a` states that component `c` refines component `a`,
+and has Fren check it. See [Refinement](Refinement.md).
+
 ## Checks
 
 ```

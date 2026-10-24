@@ -122,6 +122,8 @@ written, and the body if the function is uninterpreted. -/
   | comp (isPub : Bool) (name : Ident) (members : Array Member)
   /-- `expect n: forall (a b: c) ..., e`: each binder's names and comp. -/
   | global (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr)
+  /-- `refine r: c refines a` (`Reqs/Lang/Refinement`). -/
+  | refine (name : Ident) (concrete abstract : Array Ident)
   /-- `tested c: "file", ...` or `trusted c: "why"`, with each string's span. -/
   | claim (tested : Bool) (comp : Array Ident) (texts : Array (String × Span))
   /-- `#fren_check [path]` or `#fren_trace`. -/
@@ -741,6 +743,21 @@ partial def item : P Item := do
       let removal := { span with stop := (← peek).span.start }
       return .lintSetting span { name, span := o.span } value v.span removal (some (← item))
     return .lintSetting span { name, span := o.span } value v.span span none
+  if isKw t "refine" then
+    discard bump
+    let name ← ident
+    discard (expectKw ":")
+    let (concrete, _) ← path false
+    let r ← peek
+    unless isWord r "refines" do fail r "`refines`"
+    discard bump
+    let (abstract, _) ← path false
+    let b ← peek
+    if isWord b "by" then
+      err b.span "F0112" "Lean code is not supported in .fren files" (some "a proof needs Lean")
+        #["note: a refinement is proved with `by` only in Lean; the `fren` command checks it with the solver, or by testing",
+          "help: move it to a Lean file that opens `Fren.Lang`, and check it with `lake build`"]
+    return .refine name concrete abstract
   if isKw t "tested" || isKw t "trusted" then
     discard bump
     let (comp, _) ← path false

@@ -210,5 +210,9 @@ syntax fren_binder := "(" ident+ " : " fren_path ")"
 /-- `expect n: forall (a b: c), e`, a global expectation. -/
 scoped syntax (name := globalCmd) "expect " ident " : " ("forall " fren_binder+ ", ")? fren_expr : command
 
+/-- `refine r: c refines a [by tactics]`, a refinement (`Reqs/Lang/Refinement`). -/
+scoped syntax (name := refineCmd) "refine " ident " : " fren_path ppSpace &"refines " fren_path
+  (" by " Lean.Parser.Tactic.tacticSeq)? : command
+
 
 end Fren.Lang

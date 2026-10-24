@@ -3,6 +3,7 @@ import FrenCli.Parse
 import FrenCore.Evidence
 import FrenCore.Lint
 import FrenCore.Names
+import FrenCore.Refine
 import FrenCore.Regex
 import FrenCore.Trace
 import FrenCore.Ty
@@ -247,6 +248,9 @@ structure State where
   /-- Global expectations, each a `CComp` whose path is its module, with an
   instance per binder and the expectation as its only constraint. -/
   globals : Array CComp := #[]
+  /-- Refinements, each a `CComp` whose path is the refinement's
+  (`Reqs/Lang/Refinement`). -/
+  refinements : Array CComp := #[]
   diags : Array Diag := #[]
   /-- The lint levels from the command line, with which each file starts. -/
   cliLevels : Levels := Levels.defaults
@@ -1579,6 +1583,74 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     comps := s.comps.push { path, file := s.file, span := name.span, vars, props, insts, defs, indexes, decidable := !s.outsideCore
                             relational, counts, tested } }
 
+/-- Elaborates `refine name: concrete refines abstract` into the comp that
+checks it (`Reqs/Lang/Refinement`): `concrete`'s inputs, `abstract`'s
+assumptions, an instance of `concrete` named as it is, `abstract`'s
+instances, and `abstract`'s requirements and definitions as expectations,
+over the instance's outputs. -/
+def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) : M Unit := do
+  let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkItemName "refinement" n)
+  let st ← get
+  liftMsg name.span (st.table.checkFresh st.module n)
+  let comp (segs : Array Ident) : M CComp := do
+    let sp := segs[0]!.span.to segs.back!.span
+    let path ← match ← resolve segs with
+      | .item { kind := .compItem, path, .. } => pure path
+      | r => err sp (Fren.Core.notACompMsg r)
+    let some c := (← get).comps.find? (·.path == path) | internal sp s!"unknown comp `{path}`"
+    return c
+  let c ← comp concreteSegs
+  let a ← comp abstractSegs
+  let aSpan := abstractSegs[0]!.span.to abstractSegs.back!.span
+  -- The interface (`refinement::interface`).
+  for v in a.vars.filter (·.name.isAtomic) do
+    let cv? := c.vars.find? (·.name == v.name)
+    let input := v.role == Role.input
+    let ok := Fren.Core.interfaceAccepted input cv?.isSome (cv?.any (·.role == Role.input))
+      (cv?.any (·.isPub)) (cv?.any (·.ty == v.ty))
+    unless ok do
+      let why := match cv? with
+        | none => s!"it has no variable `{v.name}`"
+        | some cv => if cv.ty != v.ty then s!"its `{v.name}` has type `{cv.ty.show}`, not `{v.ty.show}`"
+          else if input then s!"its `{v.name}` is not an input"
+          else if cv.role == Role.input then s!"its `{v.name}` is an input, not an output"
+          else s!"its output `{v.name}` is not public"
+      err aSpan (Fren.Core.interfaceMsg c.path a.path v.name why)
+  -- The instance of `concrete`, named as it is.
+  let w := Name.mkSimple (c.path.getString!)
+  if a.insts.any (·.name == w) then err aSpan (Fren.Core.dupMemberMsg w)
+  let outs := a.vars.filter fun v => v.name.isAtomic && v.role == .output
+  let ren (smt : String) := rename w outs smt
+  let inputs := c.vars.filter fun v => v.name.isAtomic && v.role == .input
+  let vars := inputs ++ c.vars.map (fun v =>
+      let role := Role.ofInst v.role v.isPub
+      { v with name := w ++ v.name, role, isPub := role != .instHidden, isDet := false, defn? := none })
+    ++ a.vars.filter (!·.name.isAtomic)
+  let instC : CInst := { name := w, comp := c.path, span := name.span
+                         bindings := conj (inputs.map fun v => s!"(= {quote (w ++ v.name).toString} {quote v.name.toString})")
+                         behaviour := rename w c.vars c.meaning
+                         assumes := (c.props.filter (·.kind == .assume)).map fun p => (p.name, rename w c.vars p.smt) }
+  let insts := #[instC] ++ a.insts.map fun i =>
+    { i with bindings := ren i.bindings, behaviour := ren i.behaviour, assumes := i.assumes.map fun (x, f) => (x, ren f) }
+  -- Reported at the refinement (`Reqs/Lang/Refinement#the-obligation`).
+  let props := (a.props.filter (·.kind == .assume)).map ({ · with span := name.span, triggerSpan? := none })
+    ++ (a.props.filter (·.kind == .req)).map (fun p =>
+      { p with kind := .expect, smt := ren p.smt, trigger? := p.trigger?.map ren, span := name.span, triggerSpan? := none })
+    ++ a.defs.map fun (d, e) =>
+      { kind := .expect, name := d, span := name.span
+        smt := s!"(= {quote (w ++ d).toString} {ren e})", trigger? := none, triggerSpan? := none : CProp }
+  let indexes := a.indexes.map fun (x, place, sp, goal) =>
+    (x, (match place with | .binding k => .binding (k + 1) | p => p), sp, ren goal)
+  let tested := Fren.Core.Tested.ofSettings (← evidenceInEffect)
+    ((a.props.filter (·.kind == .assume)).map (·.name)) (props.filter (·.kind == .expect) |>.map (·.name, none))
+    #[(w, none)] #[]
+  modify fun s => { s with
+    table := s.table.addItem { kind := .expectItem, path := st.module ++ n, isPub := false, owner := s.module }
+    refinements := s.refinements.push { path := st.module ++ n, file := s.file, span := name.span, vars, props, insts
+                                        indexes, decidable := c.decidable && a.decidable
+                                        relational := c.relational || a.relational, counts := c.counts || a.counts, tested } }
+
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr) : M Unit := do
   let n := Name.mkSimple name.name
@@ -1789,6 +1861,7 @@ partial def elabItem : Item → M Unit
       table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
       consts := s.consts.insert path (smt, t) }
   | .global name binders body => elabGlobal name binders body
+  | .refine name c a => elabRefine name c a
   | .claim tested segs texts => do
     let path ← match ← resolve segs with
       | .item { kind := .compItem, path, .. } => pure path

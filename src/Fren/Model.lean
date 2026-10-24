@@ -5,6 +5,7 @@ import FrenCore.Check
 import FrenCore.Evidence
 import FrenCore.Lint
 import FrenCore.Names
+import FrenCore.Refine
 import Lean
 -- keep-sorted end
 
@@ -259,6 +260,8 @@ inductive Entry where
   /-- A global expectation, as a `CompInfo` whose path is its module, with
   an instance per binder and the expectation as its only constraint. -/
   | globalInfo (path : Name) (c : CompInfo)
+  /-- A refinement, as the comp that checks it (`Reqs/Lang/Refinement`). -/
+  | refinementInfo (c : CompInfo)
   | implInfo (i : ImplInfo)
   | claimInfo (c : ClaimInfo)
   deriving Inhabited
@@ -283,6 +286,8 @@ structure State where
   interps : NameMap Name := {}
   /-- Global expectations, by full path. -/
   globals : NameMap CompInfo := {}
+  /-- Refinements, as the comps that check them, by path. -/
+  refinements : NameMap CompInfo := {}
   /-- The `impl`s of each comp. -/
   impls : NameMap (Array Name) := {}
   /-- The `impl`s proved by the solver, which are axioms. -/
@@ -307,6 +312,7 @@ def State.add (s : State) : Entry → State
   | .definedInfo d => { s with defined := s.defined.insert d.path d }
   | .interpInfo p d => { s with interps := s.interps.insert p d }
   | .globalInfo p c => { s with globals := s.globals.insert p c }
+  | .refinementInfo c => { s with refinements := s.refinements.insert c.path c }
   | .implInfo i =>
     { s with impls := s.impls.insert i.comp ((s.impls.getD i.comp #[]).push i.decl)
              axiomImpls := if i.isAxiom then s.axiomImpls.insert i.decl else s.axiomImpls }
@@ -342,6 +348,8 @@ structure LocalState where
   comps : Array Name := #[]
   /-- Global expectations declared in this file, in order. -/
   globals : Array Name := #[]
+  /-- Refinements declared in this file, in order. -/
+  refinements : Array Name := #[]
   /-- What the lints of this file need (`Fren.Lint`): its `use`s, the names
   resolved through imports, its expectations, and its other lints. -/
   useRecords : Array (Core.UseRecord × Syntax) := #[]

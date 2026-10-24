@@ -1413,6 +1413,27 @@ from the inputs, or constrain it with a requirement instead:
 comp c { in x: Int out a: Int := b + x out b: Int := x pub out y: Int req r: y = a }
 ```
 "# },
+  { code := "F0412", explanation := r#"A refinement whose components do not share the abstract one's interface.
+
+Erroneous code example:
+
+```fren
+comp precise { in x: Int pub out y: Int req r: y = x }
+comp rough { in x: Int pub out z: Int req r: z >= x }
+refine fits: precise refines rough
+```
+
+`refine r: c refines a` relates `c` and `a` through `a`'s variables: each
+input of `a` must be an input of `c`, and each output of `a` a public
+output of `c`, with the same name and type (see `Reqs/Lang/Refinement`).
+`precise` has no output `z`. Name the outputs alike:
+
+```fren
+comp precise { in x: Int pub out y: Int req r: y = x }
+comp rough { in x: Int pub out y: Int req r: y >= x }
+refine fits: precise refines rough
+```
+"# },
   { code := "F0501", explanation := r#"A `tested` claim names a file that cannot be read.
 
 Erroneous code example:

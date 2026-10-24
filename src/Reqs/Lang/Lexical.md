@@ -145,7 +145,7 @@ which:
 pub const RESERVED: Set(String) := {
     "mod", "use", "pub", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp",
     "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
-    "in", "if", "then", "else", "match", "forall",
+    "in", "if", "then", "else", "match", "forall", "refine",
 }
 
 pub comp reserved_word {

@@ -210,7 +210,7 @@ def errorCodes : IO (Array String) := do
   return failures
 
 def ownSpec : IO (Array String) := do
-  let files := #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Expressions", "Lang/Modules", "Lang/Instances", "Check", "View", "Lint", "Cli", "Eval", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
+  let files := #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Expressions", "Lang/Modules", "Lang/Instances", "Check", "View", "Lint", "Cli", "Eval", "Lang/Refinement", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
   let (out, code) ← runCheck files
   return if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"]
 

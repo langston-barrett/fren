@@ -1,0 +1,32 @@
+-- Refinement (`Reqs/Lang/Refinement`): `word` refines `shape`, which the
+-- solver finds hard, so it is tested; it does not refine `wrong`, which
+-- the solver refutes with a counterexample at the refinement.
+mod lexref
+
+-- The precise rule, which the solver struggles with.
+pub comp word {
+    in text: String
+    pub det out accepted?
+    req rule: accepted? iff text.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?")
+}
+
+-- A simpler shape: a word never contains `..`, and never starts with a digit.
+pub comp shape {
+    in text: String
+    pub out accepted?
+    req no_dots: when text.contains?(".."), not accepted?
+    req no_digit: when text.starts_with?("1"), not accepted?
+    expect dots_rejected: when text = "a..b", not accepted?
+}
+
+set_option fren.evidence "tested" in
+refine word_has_shape: word refines shape
+
+-- False: `word` accepts "ab", which `wrong` rejects.
+pub comp wrong {
+    in text: String
+    pub out accepted?
+    req never: when text != "", not accepted?
+}
+
+refine word_is_wrong: word refines wrong

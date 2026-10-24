@@ -7,8 +7,6 @@ Roughly in order, to be specified in Fren as each is started:
 - Lean proofs: generate theorems for passing checks, proved by reconstruction
   (`lean-smt`) or by an explicit trust axiom, and accept user-written proofs
   when the solver gives up.
-- Refinement: one component refines another (assumes no more, guarantees no less,
-  over the `pub` interface).
 - Checks: conflict enumeration, model minimisation.
 - Bindings that mention the component's own outputs (needs a check that the
   instance's inputs do not depend on its outputs).

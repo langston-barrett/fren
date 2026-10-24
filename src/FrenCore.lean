@@ -9,6 +9,7 @@ import FrenCore.Lexical
 import FrenCore.Lint
 import FrenCore.Literate
 import FrenCore.Names
+import FrenCore.Refine
 import FrenCore.Regex
 import FrenCore.Sound
 import FrenCore.Str
