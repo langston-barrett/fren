@@ -4,7 +4,6 @@ error[F0111]: `self.E` is not a single name
 3 | comp c { in e: self.E }
   |                ^^^^^^ `.` reads an instance's variable, or a value's field or method
   |
-  = help: to read a field or method of a constant of another module, bring it into scope with `use` and write `self.E`
 help: if it is a path, separate its segments with `::`
   |
 3 - comp c { in e: self.E }

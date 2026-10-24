@@ -218,13 +218,14 @@ def expectKw (s : String) : P Token := do
   | some t => return t
   | none => fail (← peek) s!"`{s}`"
 
-def ident : P Ident := do
+def ident (afterPath := false) : P Ident := do
   let t ← peek
   match t.tok with
   | .ident s =>
     discard bump
     if s.contains '.' then
-      throw { span := t.span, msg := Fren.Core.dottedNameMsg ((s.splitOn ".").foldl Lean.Name.mkStr .anonymous) #[] (inExpr := false) }
+      let n := (s.splitOn ".").foldl Lean.Name.mkStr .anonymous
+      throw { span := t.span, msg := Fren.Core.dottedNameMsg n #[] (inExpr := false) (afterPath := afterPath) }
     return { name := s, span := t.span }
   | _ => fail t "a name"
 
@@ -232,7 +233,7 @@ def ident : P Ident := do
 def path (allowGlob : Bool) : P (Array Ident × Bool) := do
   let mut segs := #[← ident]
   repeat
-    if (← eatKw "::").isSome then segs := segs.push (← ident)
+    if (← eatKw "::").isSome then segs := segs.push (← ident (afterPath := true))
     else if allowGlob then
       if (← eatKw "::*").isSome then return (segs, true)
       break

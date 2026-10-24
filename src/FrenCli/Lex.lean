@@ -153,7 +153,8 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
       -- Fren's rule does not start, the two front ends would differ.
       let lean := Fren.Core.leanIdentEnd src start
       if lean > i then
-        return .error { span := ⟨start, lean⟩, msg := Fren.Core.leanIdentifierMsg (String.ofList (src.extract start lean).toList) }
+        let lexeme := String.ofList (src.extract start lean).toList
+        return .error { span := ⟨start, lean⟩, msg := Fren.Core.leanIdentifierMsg lexeme (src[lean]? == some '=') }
       let s := String.ofList (src.extract start i).toList
       toks := toks.push { tok := if reserved.contains s then .kw s else .ident s, span := ⟨start, i⟩ }
     else if c == '"' then

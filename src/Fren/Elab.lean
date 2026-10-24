@@ -43,14 +43,15 @@ partial def checkIdentifiers (stx : Syntax) : CommandElabM Unit := do
   match stx with
   | .ident _ raw _ _ =>
     let s := raw.toString
-    unless Core.identifierAccepted s do throwErrorAt stx (Core.leanIdentifierMsg s).text
+    let beforeEq := String.Pos.Raw.get raw.str raw.stopPos == '='
+    unless Core.identifierAccepted s do throwErrorAt stx (Core.leanIdentifierMsg s beforeEq).text
   | .node _ _ args => args.forM checkIdentifiers
   | _ => pure ()
 
 @[command_elab Lang.modCmd] def elabMod : CommandElab := fun stx => do
   checkIdentifiers stx
   let segs := pathSegs stx[2]
-  let names ← segs.mapM segName
+  let names ← segNames segs
   let (path, new) ← liftResolve segs ((← getState).table.declareModule names (!stx[0].isNone))
   for i in new do
     let ref := (segs[i.path.components.length - 1]?).getD stx
@@ -62,7 +63,7 @@ partial def checkIdentifiers (stx : Syntax) : CommandElabM Unit := do
 with `scope`, into the component of that path. -/
 def declareUse (segs : Array Syntax) (glob : Bool) (ref : Syntax) (scope : Option Name := none) : CommandElabM Unit := do
   let modName := (← getLocal).currentModule
-  let u ← liftResolve segs ((← getState).table.declareUse modName (← segs.mapM segName) glob (scope.getD modName))
+  let u ← liftResolve segs ((← getState).table.declareUse modName (← segNames segs) glob (scope.getD modName))
   record (.useDef u)
   recordUse u ref
 
@@ -299,12 +300,12 @@ def ExprCtx.shadowing (cx : ExprCtx) : Array Name :=
 /-- Whether the path `p`, applied, builds a variant rather than applying a
 function. -/
 def isVariant (cx : ExprCtx) (p : Syntax) : TermElabM Bool := do
-  let names ← (pathSegs p).mapM segName
+  let names ← segNames (pathSegs p)
   return (← getState).table.resolvePath cx.modName names cx.shadowing matches .ok (.variant ..)
 
 /-- The defined function that the path `p`, applied, applies, if any. -/
 def definedFn? (cx : ExprCtx) (p : Syntax) : TermElabM (Option DefinedInfo) := do
-  let names ← (pathSegs p).mapM segName
+  let names ← segNames (pathSegs p)
   let s ← getState
   let .ok (.item { kind := .fnItem, path, .. }) := s.table.resolvePath cx.modName names cx.shadowing | return none
   return s.defined.get? path

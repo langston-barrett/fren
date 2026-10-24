@@ -85,7 +85,7 @@ where
   termination_by src.size - j
 
 /-- An identifier that Lean reads, but that is not one of Fren's. -/
-def leanIdentifierMsg (s : String) : Msg :=
+def leanIdentifierMsg (s : String) (beforeEq := false) : Msg :=
   -- An unclosed `«` runs to the end of the input: name only its first line.
   let shown := match s.splitOn "\n" with
     | [line] => line
@@ -93,7 +93,7 @@ def leanIdentifierMsg (s : String) : Msg :=
     | [] => s
   { code? := some "F0119", headline := s!"`{shown}` is not an identifier in Fren", label? := some "not a Fren identifier"
     notes := #["note: an identifier is ASCII letters, digits, `_` and `'`, with `.` between components and an optional `?` at the end"]
-      ++ (if s.endsWith "!" then #["help: `!` is not part of an identifier; to compare, write `a != b`, with spaces"] else #[])
+      ++ (if beforeEq && s.endsWith "!" then #["help: `!` is not part of an identifier; to compare, write `a != b`, with spaces"] else #[])
       ++ if s.contains '«' && !s.contains '»' then #["note: the `«` is not closed"] else #[] }
 
 end Fren.Core
