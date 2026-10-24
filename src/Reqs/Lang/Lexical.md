@@ -35,10 +35,12 @@ command reads identifiers by Lean's rule too, and reports any that Fren's
 would read differently, such as `a?b`, `xα`, or `y!` in `y!=1`. Write
 spaces around `!=` after an identifier.
 
-One case differs. Some identifiers that end in `!` are Lean tokens, such
-as `s!` and `m!`, which Lean reads in preference to an identifier. So in
-`s!=1` the Lean front end reports a syntax error, while the `fren` command
-reports that `s!` is not an identifier.
+Two cases differ, where Lean's parser reports the lexeme before the Lean
+front end sees it. Some identifiers that end in `!` are Lean tokens, such
+as `s!` and `m!`, which Lean reads in preference to an identifier, so in
+`s!=1` the Lean front end reports a syntax error. And a `«` that is never
+closed is a syntax error in Lean. In both, the `fren` command reports that
+the lexeme is not an identifier.
 
 ```fren
 pub mod lang

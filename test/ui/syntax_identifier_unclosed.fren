@@ -1,0 +1,7 @@
+-- fren-covers: lang::identifier
+-- A `«` that is never closed: a syntax error in Lean, and in the `fren`
+-- command an identifier that is not Fren's (`Lexical.md#identifiers`).
+
+comp c { in «ab: Int }
+--~^[hosted] error: unterminated identifier escape
+--~^^[cli] error: `«ab: Int }…` is not an identifier in Fren

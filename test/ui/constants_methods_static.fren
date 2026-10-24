@@ -1,5 +1,6 @@
--- A method that a constant's type does not have, called on the constant:
--- both front ends report the method.
+-- A method called on a constant that does not exist or lacks it: both front
+-- ends report the same error.
 
 const GREETING: String := "hello"
-expect unknown_method: GREETING.foo(1) = 1   --~ error: `String` has no method `foo`
+expect unknown_method: GREETING.foo(1) = 1               --~ error: `String` has no method `foo`
+expect misspelled_root: GRETING.starts_with?("h")       --~ error: cannot find `GRETING` in this scope

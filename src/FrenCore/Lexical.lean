@@ -68,7 +68,8 @@ rules (`Lean.Parser.identFnAux`), which allow more than Fren's: `?` and `!`
 anywhere after the first character, letters other than ASCII, and quoted
 components, as in `«a b»`. Each component is quoted, or a letter and the
 characters that may follow it, and a `.` continues the identifier only
-before another component. An unquoted `«` ends at the end of its line. -/
+before another component. A quoted component runs to its `»`, across lines,
+or to the end of the input. -/
 def leanIdentEnd (src : Array Char) (i : Nat) : Nat := go i
 where
   /-- From `j`, the start of a component. -/
@@ -76,7 +77,7 @@ where
     if j < src.size then
       let stop :=
         if Lean.isIdBeginEscape src[j]! then
-          let close := runWhile src (fun c => !Lean.isIdEndEscape c && c != '\n') (j + 1)
+          let close := runWhile src (fun c => !Lean.isIdEndEscape c) (j + 1)
           if src[close]? == some '»' then close + 1 else close
         else runWhile src Lean.isIdRest (j + 1)
       if src[stop]? == some '.' && (src[stop + 1]?).any isLeanIdStart then go (max (stop + 1) (j + 1)) else stop
@@ -85,9 +86,14 @@ where
 
 /-- An identifier that Lean reads, but that is not one of Fren's. -/
 def leanIdentifierMsg (s : String) : Msg :=
-  { code? := some "F0119", headline := s!"`{s}` is not an identifier in Fren", label? := some "not a Fren identifier"
+  -- An unclosed `«` runs to the end of the input: name only its first line.
+  let shown := match s.splitOn "\n" with
+    | [line] => line
+    | line :: _ => line ++ "…"
+    | [] => s
+  { code? := some "F0119", headline := s!"`{shown}` is not an identifier in Fren", label? := some "not a Fren identifier"
     notes := #["note: an identifier is ASCII letters, digits, `_` and `'`, with `.` between components and an optional `?` at the end"]
       ++ (if s.contains '!' then #["help: `!` is not part of an identifier; to compare, write `a != b`, with spaces"] else #[])
-      ++ if s.contains '«' && !s.contains '»' then #["note: the `«` is not closed on its line"] else #[] }
+      ++ if s.contains '«' && !s.contains '»' then #["note: the `«` is not closed"] else #[] }
 
 end Fren.Core

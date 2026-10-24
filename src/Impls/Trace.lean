@@ -35,7 +35,7 @@ tested inst::earlier: "test/ui/instances_static.fren"
 tested lint::history: "test/cli/f0709_forbid.fren"
 tested lang::identifier: "test/ui/syntax_lexical.fren", "test/ui/syntax_identifier.fren",
   "test/ui/syntax_identifier_letters.fren", "test/ui/syntax_identifier_quoted.fren", "test/ui/syntax_identifier_claim.fren",
-  "test/ui/syntax_identifier_token.fren", "test/cli/f0119_identifier.fren"
+  "test/ui/syntax_identifier_token.fren", "test/ui/syntax_identifier_unclosed.fren", "test/cli/f0119_identifier.fren"
 tested lang::escape_sequence: "test/ui/syntax_lexical.fren", "test/cli/f0115_escape.fren"
 tested lang::punctuator_end: "test/ui/syntax_lexical.fren", "test/cli/f0105_eqeq.fren"
 tested lang::unbounded: "test/ui/relations_static.fren", "test/ui/datatypes_static.fren"
