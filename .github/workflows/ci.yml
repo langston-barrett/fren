@@ -21,6 +21,14 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
+    # The dependencies (cvc5, lean-smt, ...) depend only on the toolchain and
+    # the manifest. `lean-action` saves `.lake` only when the build succeeds,
+    # and a warning fails it, so they are cached apart, whatever the outcome.
+    - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      id: packages
+      with:
+        path: .lake/packages
+        key: lake-packages-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
     # `lake build` builds the library, the regression tests (`FrenTest`, which
     # check their own output with `#guard_msgs`), Fren's own requirements
     # (`Reqs`, which `#fren_check` checks with the SMT solver), the links from
@@ -33,3 +41,14 @@ jobs:
         build-args: --wfail
         test: true
         lint: false
+    # Only once the packages Fren imports, `Smt` and `cvc5`, are built (and so
+    # everything they import): a fetch or a dependency build that failed
+    # partway must not be saved, as the exact key would keep it.
+    - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+      if: >-
+        ${{ !cancelled() && steps.packages.outputs.cache-hit != 'true' &&
+            hashFiles('.lake/packages/cvc5/.lake/build/lib/lean/cvc5.olean') != '' &&
+            hashFiles('.lake/packages/smt/.lake/build/lib/lean/Smt.olean') != '' }}
+      with:
+        path: .lake/packages
+        key: ${{ steps.packages.outputs.cache-primary-key }}
