@@ -46,6 +46,10 @@ jobs:
             are specified there first, and that the code and its
             requirements agree.
 
+            Do the review yourself, in this session: don't delegate it to
+            agents or subagents. The run ends when you stop, so anything
+            left running in the background is lost and nothing is posted.
+
             Use `gh pr comment` to post a single summary comment with your
             findings, and inline comments for specific issues. Read the
             changed files in the checkout with Read, Grep and Glob, rather
@@ -59,3 +63,4 @@ jobs:
           claude_args: >-
             --model claude-opus-5-5
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob,Write"
+            --disallowedTools "Agent,Task"
