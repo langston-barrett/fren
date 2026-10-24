@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCore.Lexical
 import FrenCore.Syntax
 -- keep-sorted end
 
@@ -66,37 +67,6 @@ structure LexError where
 def unterminatedString : Fren.Core.Msg :=
   { code? := some "F0103", headline := "unterminated string literal", label? := some "string starts here"
     notes := #["note: a string literal ends with `\"` on the same line"] }
-
-/-- `[A-Za-z_]`: starts an identifier (`lang::identifier`). -/
-def isIdStart (c : Char) : Bool := ('A' ≤ c && c ≤ 'Z') || ('a' ≤ c && c ≤ 'z') || c == '_'
-
-/-- `[A-Za-z0-9_']`: continues an identifier. -/
-def isIdRest (c : Char) : Bool :=
-  ('A' ≤ c && c ≤ 'Z') || ('a' ≤ c && c ≤ 'z') || ('0' ≤ c && c ≤ '9') || c == '_' || c == '\''
-
-/-- How many characters at `i` continue an identifier whose last character
-is `last`, or `0` where it ends (`lang::identifier_end`): a character of an
-identifier, a final `?`, or a `.` and the start of another component. -/
-def identExtends (src : Array Char) (last : Char) (i : Nat) : Nat :=
-  if last == '?' then 0 else
-  match src[i]? with
-  | some c =>
-    if isIdRest c || c == '?' then 1
-    else if c == '.' && (src[i + 1]?).any isIdStart then 2
-    else 0
-  | none => 0
-
-/-- Where the identifier that starts at `i` ends: like Lean, `a.b` is one
-identifier, of two components (`lang::identifier`). -/
-def identEnd (src : Array Char) (i : Nat) : Nat := go src[i]! (i + 1)
-where
-  go (last : Char) (j : Nat) : Nat :=
-    if _h : j < src.size then
-      match identExtends src last j with
-      | 0 => j
-      | k + 1 => go src[j + k]! (j + k + 1)
-    else j
-  termination_by src.size - j
 
 /-- The value of a hexadecimal digit, `[0-9a-fA-F]`. -/
 def hexValue? (d : Char) : Option Nat :=
@@ -176,9 +146,13 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
       if i ≥ n then return .error { span := ⟨start, i⟩, msg := unterminatedString }
       toks := toks.push { tok := .str (String.ofList (src.extract bodyStart i).toList), span := ⟨start, i + close.length⟩ }
       i := i + close.length
-    else if isIdStart c then
+    else if Fren.Core.isIdStart c then
       let start := i
-      i := identEnd src i
+      i := Fren.Core.identEnd src i
+      -- Where Lean would read further, the two front ends would differ.
+      let lean := Fren.Core.leanIdentEnd src start
+      if lean > i then
+        return .error { span := ⟨start, lean⟩, msg := Fren.Core.leanIdentifierMsg (String.ofList (src.extract start lean).toList) }
       let s := String.ofList (src.extract start i).toList
       toks := toks.push { tok := if reserved.contains s then .kw s else .ident s, span := ⟨start, i⟩ }
     else if c == '"' then

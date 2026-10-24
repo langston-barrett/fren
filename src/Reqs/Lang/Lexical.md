@@ -9,8 +9,8 @@ delimit a block comment, and block comments nest.
 
 ## Identifiers
 
-Identifiers are Lean identifiers: a letter or `_`, then letters, digits, `_`
-and `'`. An identifier may end in `?`, which is significant: see
+Identifiers are ASCII: a letter or `_`, then letters, digits, `_` and
+`'`. An identifier may end in `?`, which is significant: see
 [Types](Types.md#boolean-names). `_` alone is an identifier, the wildcard
 of a [`match` arm](Expressions.md#matches).
 
@@ -19,20 +19,19 @@ the components `a` and `b`, as is `a.b.c`. It refers to the variable `b`
 of the instance `a` (see [Instances](Instances.md#instance-variables)),
 the field `b` of the record `a` (see [Records](Expressions.md#records)), or
 the [method](Expressions.md#methods) `b` applied to `a`, which may be a
-variable or a [constant](Items.md#constants). It is never a path. A `?` ends an identifier, so it is never followed by
-`.`. An identifier is a keyword if it is a [reserved word](#keywords).
+variable or a [constant](Items.md#constants). It is never a path. A `?`
+ends an identifier, so it is never followed by `.`. An identifier is a
+keyword if it is a [reserved word](#keywords).
 
-`lang::identifier` states which lexemes are identifiers for the `fren`
-command. Lean's identifiers are a superset, so the two front ends differ:
-
-- Lean accepts letters other than ASCII, such as `α`, and quoted
-  identifiers, such as `«a b»`, which only the Lean front end can then
-  check.
-- Lean lets `?` and `!` appear anywhere after the first character, so it
-  reads `a?b` as one identifier where the `fren` command reads `a?` then
-  `b`, and `a!=b` as `a!` then `=`. Some identifiers ending in `!` are
-  Lean tokens too, such as `m!` and `s!`. Write spaces around `!=` after
-  an identifier.
+`lang::identifier` states which lexemes are identifiers. Lean's
+identifiers are a superset of Fren's: they may have `?` and `!` anywhere
+after the first character, letters other than ASCII, such as `α`, and
+quotes, as in `«a b»`. So that a spec reads alike in both front ends, each
+reports what Lean reads as one identifier but Fren does not: the Lean
+front end checks each identifier against this rule, and the `fren`
+command reports a lexeme that Lean's rule would read further than Fren's,
+such as `a?b`, or `y!` in `y!=1`. Write spaces around `!=` after an
+identifier.
 
 ```fren
 pub mod lang
@@ -47,11 +46,6 @@ pub comp identifier {
     expect components: when lexeme = "w.x.y?", accepted?
     expect wildcard: when lexeme = "_", accepted?
     expect question_last: when lexeme = "a?b" or lexeme = "a?.b", not accepted?
-    -- Stronger: the two front ends lex alike, `identifier` holding also of
-    -- the Lean front end. That needs either the `fren` command to lex `?`
-    -- and `!` as Lean does, and to reject them where Fren does not allow
-    -- them, or the Lean front end to check each identifier against this
-    -- rule.
     expect letter_first: when lexeme.matches?(r"[0-9'.?].*"), not accepted?
     expect no_trailing_dot: when lexeme.ends_with?("."), not accepted?
     -- Stronger: no component is empty anywhere, `when

@@ -5,6 +5,7 @@ import Fren.Model
 import Fren.Resolve
 import Fren.SimpSet
 import Fren.Syntax
+import FrenCore.Lexical
 import FrenCore.Regex
 import FrenCore.Syntax
 -- keep-sorted end
@@ -36,7 +37,18 @@ def checkItemName (what : String) (id : Syntax) : CommandElabM Name := do
 def checkFresh (modName n : Name) (ref : Syntax) : CommandElabM Unit := do
   liftMsg ref ((← getState).table.checkFresh modName n)
 
+/-- Reports the first identifier of `stx` that Lean read but that is not one
+of Fren's (`lang::identifier`), as the `fren` command's lexer does. -/
+partial def checkIdentifiers (stx : Syntax) : CommandElabM Unit := do
+  match stx with
+  | .ident _ raw _ _ =>
+    let s := raw.toString
+    unless Core.identifierAccepted s do throwErrorAt stx (Core.leanIdentifierMsg s).text
+  | .node _ _ args => args.forM checkIdentifiers
+  | _ => pure ()
+
 @[command_elab Lang.modCmd] def elabMod : CommandElab := fun stx => do
+  checkIdentifiers stx
   let segs := pathSegs stx[2]
   let names ← segs.mapM segName
   let (path, new) ← liftResolve segs ((← getState).table.declareModule names (!stx[0].isNone))
@@ -54,10 +66,12 @@ def declareUse (segs : Array Syntax) (glob : Bool) (ref : Syntax) (scope : Optio
   record (.useDef u)
   recordUse u ref
 
-@[command_elab Lang.useCmd] def elabUse : CommandElab := fun stx =>
+@[command_elab Lang.useCmd] def elabUse : CommandElab := fun stx => do
+  checkIdentifiers stx
   declareUse (pathSegs stx[1]) (!stx[2].isNone) stx[1]
 
 @[command_elab Lang.useGroupCmd] def elabUseGroup : CommandElab := fun stx => do
+  checkIdentifiers stx
   for p in stx[3].getSepArgs do
     declareUse (pathSegs stx[1] ++ pathSegs p) false p
 
@@ -143,6 +157,7 @@ partial def typeSyntax (t : Expr) : Term :=
   else Unhygienic.run `(_)
 
 @[command_elab Lang.enumCmd] def elabEnum : CommandElab := fun stx => do
+  checkIdentifiers stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -197,6 +212,7 @@ partial def typeSyntax (t : Expr) : Term :=
   unless isPub do recordItem .enumeration path nameStx
 
 @[command_elab Lang.structCmd] def elabStruct : CommandElab := fun stx => do
+  checkIdentifiers stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1305,6 +1321,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
     record (.abstractInfo { path := inhabitedName path, placeholder := inst, isType := false, deps := #[placeholder] })
 
 @[command_elab Lang.typeCmd] def elabAbstractType : CommandElab := fun stx => do
+  checkIdentifiers stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1317,6 +1334,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   unless isPub do recordItem .abstractType path nameStx
 
 @[command_elab Lang.fnCmd] def elabFunction : CommandElab := fun stx => do
+  checkIdentifiers stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1441,6 +1459,7 @@ def elabInst (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) (decl : Name) 
 
 open Lang in
 @[command_elab Lang.compCmd] def elabComp : CommandElab := fun stx => do
+  checkIdentifiers stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1659,6 +1678,7 @@ open Lang in
 /-! ## Constants and global expectations -/
 
 @[command_elab Lang.constCmd] def elabConst : CommandElab := fun stx => do
+  checkIdentifiers stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1749,6 +1769,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
              decidable := !(← getLocal).outsideCore, indexes }
 
 @[command_elab Lang.globalCmd] def elabGlobal : CommandElab := fun stx => do
+  checkIdentifiers stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx

@@ -1,0 +1,9 @@
+-- fren-covers: lang::identifier
+-- `?` inside an identifier, which Lean reads as one identifier and Fren
+-- would not (F0119), in both front ends.
+
+comp c {
+    in a?b: Int    --~ error: `a?b` is not an identifier in Fren
+    pub out y: Int
+    req r: y = 1
+}

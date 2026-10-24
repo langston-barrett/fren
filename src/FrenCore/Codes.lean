@@ -327,6 +327,25 @@ so `[z-a]` would match nothing:
 comp c { in s: String pub out p? req r: p? iff s.matches?(r"[a-z]+") }
 ```
 "# },
+  { code := "F0119", explanation := r#"A lexeme that Lean reads as one identifier, but that is not one of Fren's.
+
+Erroneous code example:
+
+```fren
+comp c { in a?b: Int pub out y: Int req r: y = a?b }
+```
+
+Fren's identifiers are ASCII letters, digits, `_` and `'`, with `.` between
+components and an optional `?` at the end. Lean's are a superset: they may
+have `?` and `!` anywhere after the first character, and letters other than
+ASCII. So that a spec reads alike in Lean and in the `fren` command, both
+report what Lean would read differently. A common case is `x!=y`, which
+Lean reads as `x!` then `=`:
+
+```fren
+comp c { in ab: Int pub out y: Int req r: y = ab }
+```
+"# },
   { code := "F0201", explanation := r#"A name that is not in scope.
 
 Erroneous code example:
