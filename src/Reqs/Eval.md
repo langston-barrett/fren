@@ -85,8 +85,12 @@ already be evaluated is false. A variable's candidates are:
   any expression that a constraint equates the variable with, such as `x
   + 1` in `y = x + 1`;
 - for an abstract type `T`, `T#0` up to a random bound;
-- for a `String`, `""`, `"a"` and `"b"`, and the value of any expression
-  that a constraint equates the variable with.
+- for a `String`, `""`, `"a"` and `"b"`; the string literals and constants
+  of the component, each also with `"a"` before and after it, so that
+  `s.contains?("..")` and `s.starts_with?("x")` have strings that satisfy
+  them; a few random strings that match each pattern of a `matches?` in
+  the component; and the value of any expression that a constraint equates
+  the variable with;
 - for a `Set(T)`, the empty set and singletons of the candidates of `T`,
   and the value of any expression that a constraint equates the variable
   with;
@@ -164,19 +168,51 @@ positions (see [Check results](View.md#check-results)):
 Vacuity and redundancy are not tested: they ask whether something can
 hold at all, which a failed search does not refute.
 
+A test *reaches* a check when it finds what the check is about, as in the
+table: a behaviour that meets the component, for an expectation; an
+admissible input with behaviours of the earlier instances, for an
+instance assumption; and so on. For an expectation, a global expectation
+or an instance assumption with a [trigger](Lang/Components.md#triggers),
+the trigger must also hold: where it is false, the constraint holds by its
+trigger alone, so the test says nothing about it. Since a random behaviour
+seldom satisfies a narrow trigger, testing searches for one that does:
+
+- for an expectation with a trigger, each test whose behaviour does not
+  reach it searches again, from a new input, for a behaviour that meets the
+  component and in which the trigger holds;
+- a global expectation's test searches for behaviours of the binders in
+  which the body's trigger holds.
+
+`eval::reaches` states when a test reaches a check:
+
+```fren
+pub comp reaches {
+    in found?            -- the test found what the check is about
+    in has_trigger?
+    in trigger?          -- the trigger holds in what the test found
+    pub det out reached?
+
+    req rule: reached? iff (found? and (not has_trigger? or trigger?))
+
+    expect false_trigger_never: when has_trigger? and not trigger?, not reached?
+}
+```
+
 A counterexample from testing is genuine, so it fails the check. But
 the search can miss outputs, so an input for which none were found
 suggests that the component is not realizable, without showing it. That
 gives a warning, `F0609`, and an inconclusive result. A check that no test
 reached, because no admissible behaviour was found, is also inconclusive,
-with the warning `F0610`. `eval::test_verdict` gives the verdict of testing one
+with the warning `F0610`. A check with a trigger that no test reached,
+though some found admissible behaviours, is inconclusive with the warning
+`F0612`, at the check. `eval::test_verdict` gives the verdict of testing one
 check, from whether some test refuted it and how many tests reached it:
 
 ```fren
 pub comp test_verdict {
     in kind: Kind
     in refuted?          -- some test is a counterexample, or an input without outputs
-    in n_tests: Int      -- the tests that reached the check
+    in n_tests: Int      -- the tests that reached the check (`reaches`)
     pub det out verdict: Verdict
 
     assume counts: n_tests >= 0

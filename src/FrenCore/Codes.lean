@@ -1729,6 +1729,36 @@ comp c {
 }
 ```
 "# },
+  { code := "F0612", args := some ["quickcheck"], explanation := r#"Testing never reached a check: its trigger held in no test (a warning).
+
+Erroneous code example:
+
+```fren
+comp c {
+  in x: Int
+  pub out big?
+  req r: big? iff x > 1000
+  expect e: when 7 * x = 123459, big?
+}
+```
+
+`fren quickcheck` found behaviours of the component, but in none of them
+did the trigger of `e`, `7 * x = 123459`, hold: only `x = 17637` satisfies
+it, and the search does not try that value. Where a trigger is false, the
+constraint holds by its trigger alone, so those tests say nothing about
+it, and its result is inconclusive. Testing searches for behaviours in
+which the trigger holds, but tries only some values, and can miss them.
+Raise `--tests`, rely on `fren check`, or widen the trigger:
+
+```fren
+comp c {
+  in x: Int
+  pub out big?
+  req r: big? iff x > 1000
+  expect e: when x > 2000, big?
+}
+```
+"# },
   { code := "F0701", explanation := r#"An import that nothing uses (the lint `unused_imports`, a warning by default).
 
 Erroneous code example:

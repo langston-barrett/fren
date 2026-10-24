@@ -620,6 +620,14 @@ def untestedMsg (subject : String) (tests : Nat) : Msg :=
     notes := #["note: so none of its checks were tested",
       "help: run `fren check` to decide whether its assumptions and requirements can hold, or raise `--tests`"] }
 
+/-- Testing found admissible behaviours, but none in which a check's
+trigger held (`eval::reaches`). -/
+def untriggeredMsg (subject : String) (tests : Nat) : Msg :=
+  { code? := some "F0612", headline := s!"testing never reached {subject} in {tests} tests: its trigger held in none of them"
+    label? := some "never held"
+    notes := #["note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it",
+      "help: run `fren check` to decide it, or raise `--tests`"] }
+
 /-- The severity of the summary of a run (`view::summary`): always
 information, whatever the results. -/
 def summarySeverity (_results : Array CheckResult) : Severity := .info
