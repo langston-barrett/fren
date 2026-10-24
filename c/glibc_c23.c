@@ -10,6 +10,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* Compiled as C23, `strtol` would be `__isoc23_strtol`, which would call
+   itself: fail the build instead. */
+#ifdef __GLIBC_USE
+#if __GLIBC_USE(C2X_STRTOL) || __GLIBC_USE(C23_STRTOL)
+#error "glibc_c23.c must not be compiled as C23: strtol would call itself"
+#endif
+#endif
+
 long __isoc23_strtol(const char *s, char **end, int base) { return strtol(s, end, base); }
 
 int __isoc23_fscanf(FILE *f, const char *format, ...) {

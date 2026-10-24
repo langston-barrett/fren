@@ -50,7 +50,8 @@ input_file test_main where
 
 -- `__isoc23_strtol` and `__isoc23_fscanf`, which cvc5's static Linux release
 -- calls but the older glibc that Lean links executables against lacks
--- (`c/glibc_c23.c`). Linked into every executable; unused elsewhere.
+-- (`c/glibc_c23.c`). Linked into every executable; unused elsewhere. Lean
+-- links with lld, which resolves archives in any order on the link line.
 target glibc_c23.o pkg : FilePath := do
   let src ← inputTextFile (pkg.dir / "c" / "glibc_c23.c")
   buildO (pkg.buildDir / "c" / "glibc_c23.o") src #[] #["-std=gnu17", "-fPIC", "-O2"]
