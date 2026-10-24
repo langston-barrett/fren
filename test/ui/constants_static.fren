@@ -21,7 +21,7 @@ comp c2 { in ONE: Int pub out y: Int req r: y = ONE * ONE }
 --~^^^[hosted] warning: variable `ONE` should have a snake case name
 --~^^^^[hosted] warning: variable `ONE` shadows the constant `ONE`
 comp d { in x: Int pub out y: Int req r: y = ONE.x }
---~^ error: `ONE.x` is not a single name
+--~^ error: `Int` is not a record, so it has no field `x`
 const VALUE: E := E::A
 comp e { pub out y: Int req r: y = E }  --~ error: expected a value, but `E` is an enum
 comp f { pub out y: ONE }             --~ error: expected a type, but `ONE` is a constant

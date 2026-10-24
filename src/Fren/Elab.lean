@@ -544,7 +544,9 @@ def methodApp? (cx : ExprCtx) (e : Syntax) : Option (Name × Name) := do
   let segs := pathSegs e[0]
   guard (segs.size == 1)
   let n := segs[0]!.getId
-  guard (!n.isAtomic && ((cx.binder? n.getRoot).isSome || cx.vars.any (·.name.getRoot == n.getRoot)))
+  guard (!n.isAtomic && ((cx.binder? n.getRoot).isSome || cx.vars.any (·.name.getRoot == n.getRoot)
+    -- Otherwise a constant's, whose receiver reports what else it is.
+    || (!cx.insts.contains n.getRoot && (Core.Method.ofName? n.getString!).isSome)))
   return (n.getPrefix, Name.mkSimple n.getString!)
 
 /-- How many variables `e` mentions, counted with repetition, where `bs`
@@ -1155,7 +1157,17 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
           | some (v, k) =>
             let some t ← varRef? cx id v.name | throwError "internal error: no variable `{v.name}`"
             pure (some ((t, v.type), n.components.drop k))
-          | none => pure none
+          | none =>
+            -- A constant, then the methods applied to its value.
+            let root := n.getRoot
+            if n.isAtomic || cx.insts.contains root then pure none else
+            match (← getState).table.resolvePath cx.modName #[root] cx.shadowing with
+            | .ok r@(.item { kind := .constItem, path, .. }) =>
+              recordUsedItem r
+              let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
+              let t ← `(($(← exprToSyntax c.value) : $(← exprToSyntax c.type)))
+              pure (some ((t, c.type), n.components.drop 1))
+            | _ => pure none
       if let some (base, fields) := base? then
         let parts := n.components
         let first := parts.length - fields.length

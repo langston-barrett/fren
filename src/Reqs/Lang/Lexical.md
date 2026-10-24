@@ -16,9 +16,10 @@ of a [`match` arm](Expressions.md#matches).
 
 As in Lean, `a.b` (with no spaces) is a single token, an identifier with
 the components `a` and `b`, as is `a.b.c`. It refers to the variable `b`
-of the instance `a` (see [Instances](Instances.md#instance-variables)) or
-the field `b` of the record `a` (see [Records](Expressions.md#records)),
-and is never a path. A `?` ends an identifier, so it is never followed by
+of the instance `a` (see [Instances](Instances.md#instance-variables)),
+the field `b` of the record `a` (see [Records](Expressions.md#records)), or
+the [method](Expressions.md#methods) `b` applied to `a`, which may be a
+variable or a [constant](Items.md#constants). It is never a path. A `?` ends an identifier, so it is never followed by
 `.`. An identifier is a keyword if it is a [reserved word](#keywords).
 
 `lang::identifier` states which lexemes are identifiers for the `fren`

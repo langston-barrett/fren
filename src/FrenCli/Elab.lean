@@ -1093,7 +1093,18 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
               | .ok () => pure ()
               | .error msg => err span (if u.name == v.name then msg else Fren.Core.throughDefinition v.name msg)
             pure (some ((quote v.name.toString, v.ty), n.components.drop k))
-          | none => pure none
+          | none =>
+            -- A constant, then the methods applied to its value.
+            let root := n.getRoot
+            if n.isAtomic || cx.insts.contains root then pure none else
+            let st ← get
+            match st.table.resolvePath st.scope #[root] cx.shadowing with
+            | .ok (.item { kind := .constItem, .. }) =>
+              let rootSeg : Ident := { name := root.toString, span := { span with stop := span.start + root.toString.length } }
+              let .item { kind := .constItem, path, .. } ← resolve #[rootSeg] cx.shadowing | pure none
+              let some c := (← get).consts.find? path | internal span s!"unknown constant `{path}`"
+              pure (some (c, n.components.drop 1))
+            | _ => pure none
       if let some (base, fields) := base? then
         -- The span of each component of the dotted name.
         let parts := segs[0]!.name.splitOn "."
