@@ -89,7 +89,7 @@ def leanIdentifierMsg (s : String) : Msg :=
   -- An unclosed `«` runs to the end of the input: name only its first line.
   let shown := match s.splitOn "\n" with
     | [line] => line
-    | line :: _ => line ++ "…"
+    | line :: rest => if rest.all (·.all Char.isWhitespace) then line else line ++ "…"
     | [] => s
   { code? := some "F0119", headline := s!"`{shown}` is not an identifier in Fren", label? := some "not a Fren identifier"
     notes := #["note: an identifier is ASCII letters, digits, `_` and `'`, with `.` between components and an optional `?` at the end"]
