@@ -37,15 +37,20 @@ def checkItemName (what : String) (id : Syntax) : CommandElabM Name := do
 def checkFresh (modName n : Name) (ref : Syntax) : CommandElabM Unit := do
   liftMsg ref ((← getState).table.checkFresh modName n)
 
-/-- Reports the first identifier of `stx` that Lean read but that is not one
-of Fren's (`lang::identifier`), as the `fren` command's lexer does. -/
+/-- Reports the first identifier or integer literal of `stx` that Lean read
+but that is not one of Fren's (`lang::identifier`,
+`lang::integer_literal`), as the `fren` command's lexer does. -/
 partial def checkIdentifiers (stx : Syntax) : CommandElabM Unit := do
   match stx with
   | .ident _ raw _ _ =>
     let s := raw.toString
     let beforeEq := String.Pos.Raw.get raw.str raw.stopPos == '='
     unless Core.identifierAccepted s do throwErrorAt stx (Core.leanIdentifierMsg s beforeEq).text
-  | .node _ _ args => args.forM checkIdentifiers
+  | .node _ k args =>
+    if k == numLitKind then
+      if let some s := stx.isLit? numLitKind then
+        unless Core.integerLiteral s do throwErrorAt stx (Core.malformedIntegerMsg s).text
+    else args.forM checkIdentifiers
   | _ => pure ()
 
 @[command_elab Lang.modCmd] def elabMod : CommandElab := fun stx => do

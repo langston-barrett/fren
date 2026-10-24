@@ -175,10 +175,34 @@ starts an input.
 
 ## Literals
 
-Integer literals are decimal and unbounded, such as `0` or `120`. They have
-type `Int`. A negative number is written with unary minus, `-1` (see
+Integer literals are Lean's, and unbounded: decimal, such as `0` or
+`120`, or hexadecimal, binary or octal after `0x`, `0b` or `0o`, such as
+`0x1F`, `0b101` or `0o17`. A `_` may separate digits, as in `1_000`, and
+may follow the base, as in `0x_FF`, but a literal ends in a digit. They
+have type `Int`. A negative number is written with unary minus, `-1` (see
 [Expressions](Expressions.md)). `true` and `false` are the literals of type
 `Bool`.
+
+`lang::integer_literal` states which lexemes are integer literals. Lean
+reads `0_1` as a number but cannot give its value, so it is not one:
+
+```fren
+pub comp integer_literal {
+    in lexeme: String
+    pub det out accepted?
+
+    req rule: accepted? iff ((lexeme.matches?(r"[0-9]([0-9_]*[0-9])?") and not lexeme.starts_with?("0_"))
+        or lexeme.matches?(r"0[xX][0-9a-fA-F_]*[0-9a-fA-F]") or lexeme.matches?(r"0[bB][0-1_]*[0-1]")
+        or lexeme.matches?(r"0[oO][0-7_]*[0-7]"))
+
+    expect decimal: when lexeme = "120" or lexeme = "0", accepted?
+    expect bases: when lexeme = "0x1F" or lexeme = "0b101" or lexeme = "0o17", accepted?
+    expect separated: when lexeme = "1_000" or lexeme = "0x_FF", accepted?
+    expect digit_last: when lexeme.ends_with?("_"), not accepted?
+    expect base_needs_digits: when lexeme = "0x" or lexeme = "0b", not accepted?
+    expect base_digits: when lexeme = "0b2" or lexeme = "0o8", not accepted?
+}
+```
 
 String literals are Lean's, such as `"ab"` or `"a\n"`, and have type
 `String`. A literal may use Lean's escape sequences: `\\`, `\"`, `\'`,

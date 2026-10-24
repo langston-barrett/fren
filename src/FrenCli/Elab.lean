@@ -838,7 +838,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   let lintLength (op : String) (a b : Expr) : M Unit := do
     unless cx.noteIndexes do return
     let (.num _ d, some (recv, card), some c) := (b, lengthOf? a, Fren.Core.Comparison.ofOp? op) | return
-    let (fires, empty) := Fren.Core.lengthZero c d.toNat!
+    let (fires, empty) := Fren.Core.lengthZero c d
     unless fires do return
     -- Only its type: what elaborating it reports is reported where it is.
     let saved ← get
@@ -870,7 +870,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
                  notes := #["note: `if c then a else b` is `a` or `b`, so both must have the same type"] }
     return (s!"(ite {c} {x} {y})", tx)
   | .neg _ a => return (s!"(- {← expect a .int (opNote "-" .int)})", .int)
-  | .num _ d => return (d, .int)
+  | .num _ v => return (toString v, .int)
   | .set span elems =>
     if elems.isEmpty then
       let some t := expected? | err span Fren.Core.emptySetTypeMsg

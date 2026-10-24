@@ -695,7 +695,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     return (.bin o x y, t)
   | .not _ a => do return (.not (← lowerExpr cx a).1, .bool)
   | .neg _ a => do return (.neg (← lowerExpr cx a).1, .int)
-  | .num _ d => return (.lit (.int d.toNat!), .int)
+  | .num _ v => return (.lit (.int v), .int)
   | .str _ v => return (.lit (.str v), .string)
   | .set _ es => do
     let es ← es.mapM (lowerExpr cx)

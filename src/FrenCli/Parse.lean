@@ -48,7 +48,7 @@ inductive Expr where
   | bin (span : Span) (op : String) (lhs rhs : Expr)
   | not (span : Span) (e : Expr)
   | neg (span : Span) (e : Expr)
-  | num (span : Span) (digits : String)
+  | num (span : Span) (value : Nat)
   | bool (span : Span) (b : Bool)
   | path (span : Span) (segs : Array Ident)
   /-- `f(a, b)`, a function application, or `E::V(a, b)`, a variant with a
@@ -437,7 +437,7 @@ partial def indexArg : P Expr := do
 partial def atom : P Expr := do
   let t ← peek
   match t.tok with
-  | .num d => discard bump; return .num t.span d
+  | .num _ v => discard bump; return .num t.span v
   | .str v => discard bump; fieldReads callArgs indexArg (.str t.span v)
   | .ident "true" => discard bump; return .bool t.span true
   | .ident "false" => discard bump; return .bool t.span false

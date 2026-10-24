@@ -1,0 +1,4 @@
+-- `0_1`, which Lean reads as a number but cannot give a value (F0120), in
+-- both front ends.
+
+expect leading: 0_1 = 1    --~ error: `0_1` is not an integer literal

@@ -22,7 +22,8 @@ def Span.to (a b : Span) : Span := { start := a.start, stop := b.stop }
 
 inductive Tok where
   | ident (s : String)
-  | num (s : String)
+  /-- An integer literal, as written, and its value. -/
+  | num (s : String) (value : Nat)
   /-- A string literal, unescaped. -/
   | str (s : String)
   /-- A reserved word or a symbol. -/
@@ -32,7 +33,7 @@ inductive Tok where
 
 def Tok.describe : Tok → String
   | .ident s => s!"identifier `{s}`"
-  | .num s => s!"number `{s}`"
+  | .num s _ => s!"number `{s}`"
   | .str _ => "string literal"
   | .kw s => if s.all Char.isAlpha then s!"keyword `{s}`" else s!"`{s}`"
   | .eof => "end of file"
@@ -178,10 +179,13 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
           i := i + k
         | some ch => s := s.push ch; i := i + 1
       toks := toks.push { tok := .str s, span := ⟨start, i⟩ }
-    else if c.isDigit then
+    else if Fren.Core.isDecimalDigit c then
       let start := i
-      while i < n && src[i]!.isDigit do i := i + 1
-      toks := toks.push { tok := .num (String.ofList (src.extract start i).toList), span := ⟨start, i⟩ }
+      i := Fren.Core.integerEnd src i
+      let s := String.ofList (src.extract start i).toList
+      unless Fren.Core.integerLiteral s do
+        return .error { span := ⟨start, i⟩, msg := Fren.Core.malformedIntegerMsg s }
+      toks := toks.push { tok := .num s (Fren.Core.integerValue s), span := ⟨start, i⟩ }
     else
       match lexCommands.find? (startsWith i) <|> punctuatorAt src i with
       | some s =>

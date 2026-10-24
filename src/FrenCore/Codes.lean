@@ -351,6 +351,23 @@ comp c { in y: Int pub out z? req r: z? iff y != 1 }
 An identifier such as `a?b` or `xα` needs another name, such as `a_b` or
 `x_alpha`.
 "# },
+  { code := "F0120", explanation := r#"A number that is not an integer literal.
+
+Erroneous code example:
+
+```fren
+const BIG: Int := 1_
+```
+
+Integer literals are Lean's: decimal digits, or `0x`, `0b` or `0o` and the
+digits of that base, with `_`s between the digits, as in `1_000` or
+`0x_FF`. A literal ends in a digit, and Lean cannot give a value to `0_1`,
+so it is not one either:
+
+```fren
+const BIG: Int := 1_000
+```
+"# },
   { code := "F0201", explanation := r#"A name that is not in scope.
 
 Erroneous code example:
