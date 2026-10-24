@@ -198,7 +198,10 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
              untested := true }
   let order := ds.flatMap fun (i, d) => sp.order d i.name
   let meaning := ds.flatMap fun (i, d) => sp.meaning d i.name
-  let strs ← stringsOf meaning
+  -- The literals of the body too, as of a component's expectations.
+  let lits := meaning.push { label := body.name, pfx := .anonymous, e := body.e }
+  let strs ← stringsOf lits
+  let ints := intsOf lits
   let mut t : Tally := {}
   let mut found := false
   for _ in [0:tests] do
@@ -211,10 +214,10 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
       | none => meaning
     -- The budget that each binder had when they were chosen in turn.
     let budget := 4000 * max 1 ds.size
-    let some env ← ({ vars := order, atoms, ints := intsOf atoms, strs : Problem }.solve sp w I {} budget)
+    let some env ← ({ vars := order, atoms, ints, strs : Problem }.solve sp w I {} budget)
       | -- Whether any behaviours were found, to tell `F0610` from `F0612`.
         if trigger.isSome && !found then
-          found := (← ({ vars := order, atoms := meaning, ints := intsOf meaning, strs : Problem }.solve sp w I {} budget)).isSome
+          found := (← ({ vars := order, atoms := meaning, ints, strs : Problem }.solve sp w I {} budget)).isSome
         continue
     found := true
     unless reaches I .anonymous trigger env do continue

@@ -183,6 +183,10 @@ seldom satisfies a narrow trigger, testing searches for one that does:
 - a global expectation's test searches for behaviours of the binders in
   which the body's trigger holds.
 
+So a trigger that no search satisfies costs one more search in each test,
+for each expectation that has it. An instance assumption's trigger gets no
+such search: it is about an instance's inputs, which its bindings give.
+
 `eval::reaches` states when a test reaches a check:
 
 ```fren

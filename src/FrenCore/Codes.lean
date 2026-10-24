@@ -1772,6 +1772,8 @@ it, and the search does not try that value. Where a trigger is false, the
 constraint holds by its trigger alone, so those tests say nothing about
 it, and its result is inconclusive. Testing searches for behaviours in
 which the trigger holds, but tries only some values, and can miss them.
+An instance assumption with a trigger gets no such search, since its
+instance's inputs come from the bindings, so it reports this more often.
 Raise `--tests`, rely on `fren check`, or widen the trigger:
 
 ```fren

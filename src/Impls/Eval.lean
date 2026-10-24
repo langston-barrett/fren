@@ -97,6 +97,6 @@ impl confirmed: eval::confirmed_verdict for (v : Verdict) (c : Confirmation) {
   intro v c _
   cases v <;> cases c <;> decide
 
-trusted eval::sound: "a counterexample from testing is a behaviour that the evaluator found to meet the component and to falsify the check, and `fren check` confirms every model it is given with the same evaluator (`eval::confirm`), so the solver cannot pass a check that such a behaviour refutes without its model of the negation being refuted, which makes the check inconclusive"
+trusted eval::sound: "a counterexample from testing is a behaviour that the evaluator found to meet the component and to falsify the check, so it is genuine if the evaluator is right; `fren check` passes such a check only on an `Unsat` answer, which comes with no model to confirm, so this rests on the solver and Fren's translation being sound on `Unsat`, which is trusted, not checked"
 
 end Fren.Impls
