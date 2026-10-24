@@ -1,0 +1,8 @@
+-- Contradictory assumptions (F0602).
+comp c {
+    in x: Int
+    pub out y?
+    assume big: x > 10
+    assume small: x < 5
+    req r: y? iff x > 7
+}

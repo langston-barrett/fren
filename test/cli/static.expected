@@ -1,0 +1,36 @@
+error[F0303]: `Bool` variable `flag` must end in `?`
+ --> test/cli/static.fren:3:13
+  |
+3 | comp c { in flag: Bool }
+  |             ^^^^ does not end in `?`
+  |
+  = note: a variable's name ends in `?` if and only if it is a `Bool`
+help: rename it to `flag?`
+  |
+3 - comp c { in flag: Bool }
+3 + comp c { in flag?: Bool }
+  |
+
+error[F0301]: missing type for `x`
+ --> test/cli/static.fren:4:13
+  |
+4 | comp d { in x }
+  |             ^ needs a type
+  |
+  = note: only variables whose names end in `?` can omit their type, which is `Bool`
+help: add a type
+  |
+4 | comp d { in x: Int }
+  |              +++++
+  |
+help: if it is a `Bool`, name it `x?`
+  |
+4 - comp d { in x }
+4 + comp d { in x? }
+  |
+
+error: could not check due to 2 previous errors
+
+Some errors have detailed explanations: F0301, F0303.
+For more information about an error, try `fren --explain F0301`.
+exit=2

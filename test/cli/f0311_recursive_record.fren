@@ -1,0 +1,2 @@
+-- A record with a field of its own type.
+struct Chain { head: Int, rest: Chain }

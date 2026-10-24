@@ -1,0 +1,27 @@
+-- Snapshot of the binary's full output for failing checks: message layout,
+-- help and notes, counterexample values, the summary and the exit code.
+comp exit {
+    in n_fail: Int
+    in n_inconc: Int
+    pub out code: Int
+    out scratch: Int
+    assume counts: n_fail >= 0 and n_inconc >= 0
+    req failures: when n_fail > 0, code = 1
+    req inconc: when n_inconc > 0, code = 3
+    req negative: when n_fail < 0, code = 4
+    req scratch_def: scratch = n_fail
+    expect zero: when n_fail = 0, code = 0
+}
+
+-- Instances: only earlier instances appear in an instance's counterexample,
+-- and instance variables can't be assumed about.
+comp chooser { pub out b? }
+comp uses {
+    in n_fail: Int
+    pub out ok?
+    inst first: exit { n_fail, n_inconc := 0 }
+    inst second: exit { n_fail := first.code, n_inconc := n_fail }
+    inst pick: chooser {}
+    req r: ok? iff pick.b?
+    req lucky: pick.b?
+}

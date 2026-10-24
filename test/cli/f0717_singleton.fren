@@ -1,0 +1,2 @@
+-- `singleton_membership`.
+comp c { in x: Int pub out p? req r: p? iff x in {1} }

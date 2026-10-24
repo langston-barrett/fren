@@ -1,0 +1,12 @@
+error[F0328]: cannot join `Rel(Int, String)` with `Rel(Int, Bool)`
+ --> test/cli/f0328_join.fren:8:32
+  |
+8 |     req s: p? iff (1, true) in r join q
+  |                                ^^^^^^^^ the middle types differ
+  |
+  = note: `r join q` composes `r: Rel(A, B)` with `q: Rel(B, C)`: the second type of `r` is the first of `q`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0328`.
+exit=2

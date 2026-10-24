@@ -1,0 +1,12 @@
+error[F0332]: cannot index a `Set(Int)`
+ --> test/cli/f0332_index.fren:6:16
+  |
+6 |     req r: x = s[0]
+  |                ^ not a sequence
+  |
+  = note: only a sequence, `Seq(T)`, is indexed, as `q[i]`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0332`.
+exit=2

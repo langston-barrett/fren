@@ -1,0 +1,3 @@
+-- An arm after `_`.
+enum Mode { Off, On }
+comp c { in m: Mode pub out y: Int req r: y = match m { _ => 0, Mode::On => 1 } }

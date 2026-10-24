@@ -1,0 +1,45 @@
+-- Or-patterns in `match`, and `use` in a component.
+
+pub enum Method { Len, Card, Rev, Slice, Update }
+pub enum Shape { Circle(Int), Square(Int), Empty }
+
+comp arity {
+    use self::Method::*   --~ warning: `use Method::*` imports every variant of `Method`
+    in method: Method
+    pub det out n: Int
+
+    req rule: n = match method {
+        | Len
+        | Card
+        | Rev => 0,
+        Slice | Update => 2,
+    }
+
+    expect len: when method = Len, n = 0
+    expect slice: when method = Method::Slice, n = 2
+    expect wrong: n = 0             --~ error: expectation `arity::wrong` does not hold
+}
+
+-- Payloads are ignored with `_`.
+comp round {
+    in s: Shape
+    pub det out r?
+
+    req rule: r? iff match s { Shape::Circle(_) | Shape::Empty => true, _ => false }
+
+    expect circle: when s = Shape::Circle(3), r?
+    expect square: when s = Shape::Square(3), not r?
+}
+
+-- A component's imports are its own.
+comp named {
+    use self::Shape::{Circle, Square}
+    in s: Shape
+    pub det out k: Int
+
+    req rule: k = match s { Circle(x) => x, Square(x) => 2 * x, Shape::Empty => 0 }
+
+    expect doubled: when s = Square(2), k = 4
+}
+
+--@ summary: 19 passed, 1 failed, 0 inconclusive, 0 redundant

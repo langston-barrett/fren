@@ -1,0 +1,3 @@
+-- An assumption about an instance's variable (F0401).
+comp sub { in a: Int pub out b: Int req r: b = a }
+comp c { in i: Int inst s: sub { a := i } assume a: s.b > 0 }

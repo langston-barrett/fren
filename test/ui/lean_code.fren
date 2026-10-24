@@ -1,0 +1,5 @@
+-- The binary accepts Fren only (`cli::accepts`).
+-- fren-covers: cli::accepts
+def notFren := 1  --~ error: Lean code is not supported in .fren files
+--@ only: cli
+--@ exit: 2

@@ -1,0 +1,3 @@
+-- `pub in` (F0110).
+comp c { pub in x: Int }
+-- fren-covers: lang::modifiers

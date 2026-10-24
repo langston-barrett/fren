@@ -1,0 +1,27 @@
+-- Static rules for defined functions.
+-- fren-covers: lang::function_body
+set_option fren.lint.dead_code "allow"
+
+type Name
+fn arity(Name): Int
+
+fn named(n: Int): Int               --~ error: the parameters of uninterpreted function `named` have no names
+fn unnamed(Int): Int := 1           --~ error: the parameters of defined function `unnamed` must be named
+fn again(n: Int): Int := again(n)   --~ error: defined function `again` applies itself
+fn wraps(n: Name): Int := arity(n)  --~ error: a defined function's body cannot apply uninterpreted function `arity`
+fn typed(n: Int): Int := n > 0
+--~^[cli] error: type mismatch: expected `Int`, found `Bool`
+--~^^[hosted] error: Type mismatch
+fn unused(n: Int, m: Int): Int := n  --~ warning: unused parameter `m`
+fn dup(n: Int, n: Int): Int := n    --~ error: parameter `n` is defined multiple times
+fn square(n: Int): Int := n * n     --~ error: nonlinear arithmetic is not supported
+fn untyped(n): Int := 1             --~ error: the parameters of defined function `untyped` must be named
+fn one(n: Int): Int := n
+
+const C: Int := one(3)
+
+comp product { in x: Int in z: Int pub out y: Int req r: y = one(x) * z }
+--~^ error: nonlinear arithmetic is not supported
+comp scaled { in x: Int pub out y: Int req r: y = one(x) * C }
+comp too_many { in x: Int pub out y: Int req r: y = one(x, x) }
+--~^ error: `one` takes 1 argument, but 2 were given

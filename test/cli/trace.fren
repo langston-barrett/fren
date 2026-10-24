@@ -1,0 +1,11 @@
+--@ args: trace --tests test/fixtures/*.txt --require tested
+-- Snapshot of `fren trace`: levels, derived evidence, `--require`, and
+-- markers that no claim names.
+
+comp shown { in x? pub out y? req r: y? iff x? }
+comp hidden { in x? pub out y? req r: y? iff x? }
+comp derived { in x? inst s: shown { x? } }
+comp untraced { in x? pub out y? req r: y? iff not x? }
+
+tested shown: "test/fixtures/covers_shown.txt"
+trusted hidden: "the hardware guarantees it"

@@ -1,0 +1,2 @@
+-- An invalid timeout.
+--@ args: check --timeout soon

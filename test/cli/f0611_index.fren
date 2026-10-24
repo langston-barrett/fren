@@ -1,0 +1,7 @@
+-- An index that may be out of range is reported at its `[`.
+comp first {
+    in q: Seq(Int)
+    pub out x: Int
+
+    req r: x = q[0]
+}

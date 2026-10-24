@@ -1,0 +1,2 @@
+-- A variant name ending in `?` (F0211).
+enum Ready { Yes?, No }

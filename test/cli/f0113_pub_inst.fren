@@ -1,0 +1,4 @@
+-- `pub inst` (F0113).
+comp sub {}
+comp c { pub inst s: sub {} }
+-- fren-covers: lang::modifiers

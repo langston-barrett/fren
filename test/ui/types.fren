@@ -1,0 +1,23 @@
+-- Types and the `in`/`out` discipline.
+-- fren-covers: lang::operator_type
+
+enum E { A }
+
+comp nonlinear { in x: Int pub out y: Int req r: y = x * x }   --~ error: nonlinear arithmetic is not supported
+comp linear { in x: Int pub out y: Int req r: y = 2 * x - x * (-3) }
+comp on_out { in x: Int pub out y: Int assume a: y > 0 }       --~ error: assumptions may only mention `in` variables, but `y` is an `out`
+
+comp mismatch { in x: Int req r: x + true = 1 }
+--~^[cli] error: type mismatch: expected `Int`, found `Bool`
+--~^^[hosted] error: failed to synthesize instance of type class
+comp compare { in e: E req r: e = 1 }
+--~^[cli] error: cannot compare `E` with `Int`
+--~^^[hosted] error: Type mismatch
+comp branches { in c? pub out y: Int req r: y = if c? then 1 else true }
+--~^[cli] error: the branches of `if` have different types: `Int` and `Bool`
+--~^^[hosted] error: type mismatch
+comp condition { in x: Int pub out y: Int req r: y = if x then 1 else 2 }
+--~^[cli] error: type mismatch: expected `Bool`, found `Int`
+--~^^[hosted] error: type mismatch
+
+--@ exit: 2

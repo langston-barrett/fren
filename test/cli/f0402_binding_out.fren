@@ -1,0 +1,3 @@
+-- A binding that mentions an `out` (F0402).
+comp sub { in a: Int pub out b: Int req r: b = a }
+comp c { pub out o: Int inst s: sub { a := o } req r: o = 0 }

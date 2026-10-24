@@ -1,0 +1,2 @@
+-- An enum whose every variant contains it.
+enum Stream { More(Int, Stream) }

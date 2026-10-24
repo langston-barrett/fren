@@ -1,0 +1,4 @@
+error: unknown option `--colr`
+  = help: an option with a similar name exists: `--color`
+  = help: run `fren --help` for usage
+exit=2

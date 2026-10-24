@@ -1,0 +1,13 @@
+error[F0502]: `test/fixtures/covers_shown.txt` does not say that it covers `other`
+ --> test/cli/f0502_no_marker.fren:3:15
+  |
+3 | tested other: "test/fixtures/covers_shown.txt"
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `fren-covers: other` in this file
+  |
+  = note: a test names the components it covers, so that claims cannot silently go stale
+  = help: add a comment `fren-covers: other` to `test/fixtures/covers_shown.txt`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0502`.
+exit=2

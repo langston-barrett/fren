@@ -1,0 +1,3 @@
+-- A `Bool` in arithmetic (F0304).
+comp c { in b? pub out y: Int req r: y = 1 + b? }
+-- fren-covers: lang::operator_type

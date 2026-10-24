@@ -1,0 +1,6 @@
+-- A name imported twice (F0207).
+mod a
+pub enum Shown { S }
+
+mod b
+use a::{Shown, Shown}

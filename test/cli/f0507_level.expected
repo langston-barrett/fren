@@ -1,0 +1,4 @@
+error[F0507]: unknown evidence level `tests`
+  = note: the levels are `trusted`, `tested`, `solver` and `proved`, weakest first
+  = help: run `fren --help` for usage
+exit=2

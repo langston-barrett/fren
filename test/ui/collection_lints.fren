@@ -1,0 +1,32 @@
+-- The lints of collections, outputs and indexes, in both front ends.
+set_option fren.lint.membership_chain "warn"
+set_option fren.lint.definable_output "warn"
+
+enum E { A, B, C }
+
+comp lints {
+    in s: String
+    in t: Set(Int)
+    in q: Seq(Int)
+    in e: E
+    in x: Int
+    pub out p?                   --~ warning: `r1` could be the definition of `p?`
+    pub out k: Int := 3          --~ warning: defined output `k` is the same in every behaviour
+    pub out y: Int               --~ warning: `r3` could be the definition of `y`
+    pub out z?                   --~ warning: `r2` could be the definition of `z?`
+
+    req r1: p? iff s.len = 0     --~ warning: say whether it is empty with `""`, not `len`
+    req r2: z? iff (t.card > 0 or e = E::A or e = E::B or e = E::C)
+    --~^ warning: say whether it is empty with `{}`, not `card`
+    req r3: y = x + 1
+    expect r4: when x in {1}, x = 1  --~ warning: membership in a set of one member is equality
+    expect r5: when q.len > 0 and (e = E::A or e = E::B or e = E::C), q != []
+    --~^ warning: say whether it is empty with `[]`, not `len`
+    --~^^ warning: this is `e` in a set of 3
+    expect r6: when q[0] = 1 and q.len > 0, true
+    --~^ warning: the bound comes after the index it guards
+    --~^^ warning: say whether it is empty with `[]`, not `len`
+    --~^^^ error: an index of `lints::r6` may be out of range
+}
+--@ summary: 10 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

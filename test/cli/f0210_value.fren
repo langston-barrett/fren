@@ -1,0 +1,3 @@
+-- An enum where a value was expected (F0210).
+enum E { A }
+comp c { in e: E pub out y? req r: y? iff e = E }

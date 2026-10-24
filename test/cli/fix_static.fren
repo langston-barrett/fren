@@ -1,0 +1,6 @@
+--@ args: fix --check
+-- A static error stops `fren fix`; a denied lint does not.
+set_option fren.lint.unused_imports "deny"
+pub enum Mode { Heat, Cool }
+use Mode::Cool
+comp c { in m: Mode pub out h? req r: h? iff m = Nope }

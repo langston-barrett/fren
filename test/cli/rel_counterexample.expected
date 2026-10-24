@@ -1,0 +1,13 @@
+error[F0603]: expectation `reach::direct_only` does not hold
+  --> test/cli/rel_counterexample.fren:12:12
+   |
+12 |     expect direct_only: when reaches?, (a, b) in follows
+   |            ^^^^^^^^^^^ does not follow from the requirements
+   |
+   = counterexample: follows = {(User::Ann, User::Bob), (User::Bob, User::Ann)}, a = User::Ann, b = User::Ann, reaches? = true
+   = help: strengthen the requirements so that it follows, or correct the expectation
+
+fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0603`.
+exit=1

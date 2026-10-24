@@ -1,0 +1,3 @@
+-- `=` instead of `:=` in a binding (F0104).
+comp sub { in a: Int }
+comp c { inst s: sub { a = 1 } }

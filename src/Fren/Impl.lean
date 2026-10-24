@@ -1,0 +1,411 @@
+-- keep-sorted start
+import Fren.Check
+import Fren.Elab
+-- keep-sorted end
+
+/-!
+# `impl`: linking comps to Lean code
+
+`impl n: c for (xs) { x := t, ... }` interprets each `in` and `pub out` of
+comp `c` as a Lean term over the binders `xs`, and adds a theorem `n`
+stating that the interpretation satisfies `c` (`Reqs/Impl`, module `impls`):
+
+  `∀ xs, c.assumes ins outs default → ∃ hidden, c.defs ins outs hidden ∧ c.reqs ins outs hidden ∧ c.inst.w ... ∧ ...`
+
+where `hidden` are `c`'s private `out`s and its instances' variables, which
+assumptions never mention, and `c.defs` is there only if `c` has defined
+outputs. The proof is the one written after `by`; without
+one, `decide` (evaluated by the kernel), then the solver, whose success adds
+the statement as an axiom.
+-/
+
+open Lean Elab Command Term Meta
+
+namespace Fren
+
+namespace Lang
+
+syntax fren_impl_map := ident " := " term
+
+/-- `(x y : T)`. Only explicit binders: `{` starts the terms. -/
+syntax fren_impl_binder := "(" ident+ " : " term ")"
+
+/-- `impl n: c for (xs) { x := t, ... } [by tac]`: the terms satisfy comp `c`. -/
+scoped syntax (name := implCmd) "impl " ident " : " fren_path (" for " fren_impl_binder+)?
+  " { " sepBy(fren_impl_map, ", ", ", ", allowTrailingSep) " }" (" by " Lean.Parser.Tactic.tacticSeq)? : command
+
+/-- `interp p := t`: the Lean meaning of abstract type or function `p`. -/
+scoped syntax (name := interpCmd) "interp " fren_path " := " term : command
+
+end Lang
+
+/-- What an `interp` names (`impls::Interpreted`). -/
+inductive Interpreted where
+  | abstractType
+  | function
+  | other
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- Whether an `interp` is accepted, from what it names, how many
+interpretations of it there already are, whether its term has the required
+type, and for a function, whether the abstract types of its signature are
+interpreted (`impls::interpretation`). -/
+def interpAccepted (what : Interpreted) (earlier : Nat) (typed typesInterpreted : Bool) : Bool :=
+  what != .other && earlier == 0 && typed && (what != .function || typesInterpreted)
+
+/-- Whether an `impl` is accepted, from the abstract types and functions its
+component uses, and those interpreted (`impls::interpreted`). -/
+def interpretedAccepted (used interpreted : Array Name) : Bool := used.all interpreted.contains
+
+/-- The interpretations of the placeholders `uses`, as constants, or the
+first item that has none. -/
+def interpsOf (uses : Array Name) : MetaM (Except Name (Array Expr)) := do
+  let s ← getState
+  let mut used := #[]
+  for u in uses do
+    let some a := s.abstracts.foldl (init := none) fun acc _ a => if a.placeholder == u then some a else acc
+      | return .error u
+    used := used.push a.path
+  -- An abstract type's `Inhabited` instance is the interpretation's own.
+  let own := used.filter (!isInhabitedName ·)
+  let interpreted := s.interps.foldl (init := #[]) fun acc p _ => acc.push p
+  unless interpretedAccepted own interpreted do
+    return .error ((own.find? (!interpreted.contains ·)).getD .anonymous)
+  let mut ι := #[]
+  for p in used do
+    if isInhabitedName p then
+      let some t := (used.idxOf? (p.getPrefix)).bind (ι[·]?) | return .error p
+      let some inst ← synthInstance? (mkApp (Lean.mkConst ``Inhabited [levelOne]) t) | return .error p
+      ι := ι.push inst
+    else if let some d := s.interps.get? p then ι := ι.push (Lean.mkConst d)
+  return .ok ι
+
+/-- The verdict on an `impl`'s obligation, whether to report a
+counterexample, and whether the statement is added as an axiom
+(`impls::obligation`). `decideQ` is `unsat` if `decide` proves it, `sat` if it
+evaluates to false and `unknown` if it does not apply. -/
+def implVerdict (written writtenOk : Bool) (decideQ smtQ : Core.Answer) : Core.Verdict × Bool × Bool :=
+  if written then (if writtenOk then .pass else .fail, false, false)
+  else match decideQ with
+    | .unsat => (.pass, false, false)
+    | .sat => (.fail, true, false)
+    | .unknown => if smtQ == .unsat then (.pass, false, true) else (.inconclusive, false, false)
+
+/-- Whether an `impl`'s statement is added, as a theorem or an axiom
+(`impls::statement`). -/
+def implAdded (verdict : Core.Verdict) : Bool := verdict == .pass
+
+/-- Whether an added `impl` holds only because no values of its binders
+satisfy its component's assumptions (`impls::vacuity`). `found` is whether
+trying every value of finite binders (`finite`) finds some that do, and
+`smtQ` is the solver's answer to whether none do, asked otherwise. -/
+def implVacuous (added finite found : Bool) (smtQ : Core.Answer) : Bool :=
+  added && (if finite then !found else smtQ == .unsat)
+
+/-- Whether an `impl` is evidence for its component (`impls::vacuity`). -/
+def implEvidence (added vacuous : Bool) : Bool := added && !vacuous
+
+/-- Whether a variable may be given `n` terms by an `impl`
+(`impls::mapping`): each `in` and `pub out` exactly once, anything else
+never. -/
+def mappingOk (role : Core.Role) (isPub : Bool) (n : Nat) : Bool :=
+  n == if role == .input || (role == .output && isPub) then 1 else 0
+
+/-- Whether an `impl` that gives terms for `names` is accepted, where `vars`
+are the component's variables (name, role and visibility). -/
+def mappingAccepted (vars : Array (Name × Core.Role × Bool)) (names : Array Name) : Bool :=
+  names.all (fun n => vars.any (·.1 == n)) && vars.all fun (v, r, p) => mappingOk r p (names.count v)
+
+/-- Checks the names an `impl` maps (`mappingAccepted`), explaining the
+first problem. -/
+def checkMapping (c : CompInfo) (names : Array Name) : Except (Option Nat × String) Unit := do
+  if mappingAccepted (c.vars.map fun v => (v.name, v.role, v.isPub)) names then return
+  let comp := Core.showComp c.path
+  for n in names, i in [0:names.size] do
+    match c.vars.find? (·.name == n) with
+    | none => throw (some i, s!"`{comp}` has no variable `{n}`")
+    | some v =>
+      if v.role == .output && !v.isPub then
+        throw (some i, s!"`{n}` is a private `out` of `{comp}`\n\nnote: private `out`s are internal: the obligation only says they exist")
+      if v.role != .input && v.role != .output then
+        throw (some i, s!"`{n}` belongs to instance `{n.getRoot}` of `{comp}`\n\nnote: instances are internal: the obligation only says their variables exist")
+      if names[:i].toArray.contains n then throw (some i, s!"`{n}` is mapped multiple times")
+  let missing := c.vars.filter fun v =>
+    (v.role == .input || (v.role == .output && v.isPub)) && !names.contains v.name
+  unless missing.isEmpty do
+    let ns := ", ".intercalate (missing.toList.map fun v => s!"`{v.name}`")
+    throw (none, s!"missing {ns} of `{comp}`\n\nnote: every `in` and `pub out` is given a term")
+  throw (none, s!"internal error: the terms for `{comp}` are rejected without a reason")
+
+/-- `decide p`, evaluated: `some (true | false)`, or `none` if `p` is not
+decidable or the evaluation gets stuck. -/
+def evalDecide (p : Expr) : MetaM (Option Bool) := do
+  try
+    let .some inst ← trySynthInstance (mkApp (mkConst ``Decidable) p) | return none
+    let r ← withTransparency .all <| whnf (mkApp2 (mkConst ``Decidable.decide) p inst)
+    if r.isConstOf ``Bool.true then return some true
+    if r.isConstOf ``Bool.false then return some false
+    return none
+  catch _ => return none
+
+/-- Every value of `ty`, from its `Fren.Finite` instance. -/
+def finiteValues (ty : Expr) : MetaM (Option (Array Expr)) := do
+  -- A function type is never listed, and searching for an instance for one
+  -- can leave universe metavariables behind.
+  if (← whnf ty).isForall then return none
+  try
+    let .some inst ← trySynthInstance (mkApp (mkConst ``Fren.Finite) ty) | return none
+    let mut l ← whnf (mkApp2 (mkConst ``Fren.Finite.all) ty inst)
+    let mut vals := #[]
+    while l.isAppOfArity ``List.cons 3 do
+      vals := vals.push (← whnf l.appFn!.appArg!)
+      l ← whnf l.appArg!
+    return if l.isAppOfArity ``List.nil 1 then some vals else none
+  catch _ => return none
+
+/-- Every combination of values of the binders `xs`, if they are all finite
+and there are at most `limit` combinations. -/
+def assignments (xs : Array Expr) (limit : Nat := 4096) : MetaM (Option (Array (Array Expr))) := do
+  let mut domains := #[]
+  for x in xs do
+    let some vs ← finiteValues (← inferType x) | return none
+    domains := domains.push vs
+  if domains.foldl (· * ·.size) 1 > limit then return none
+  return some <| domains.foldl (init := #[#[]]) fun acc vs => acc.flatMap fun c => vs.map c.push
+
+/-- Values of the binders `xs` for which `p` is false, if they are all
+finite and there are not too many combinations. -/
+def counterexample (xs : Array Expr) (p : Expr) : MetaM (Option (Array Expr)) := do
+  let some combos ← assignments xs | return none
+  for vals in combos do
+    if (← evalDecide (p.replaceFVars xs vals)) == some false then return some vals
+  return none
+
+/-- The statement of an `impl` and what reporting needs from it. -/
+structure Obligation where
+  stmt : Expr
+  /-- `decideQ` for `implVerdict`. -/
+  decideQ : Core.Answer
+  /-- A failure: binder names and values, and the requirements they falsify. -/
+  failure? : Option (Array (Name × String) × Array Name) := none
+  /-- That no values of the binders satisfy the assumptions. -/
+  never : Expr
+  /-- For finite binders, whether some values satisfy the assumptions. -/
+  found? : Option Bool
+  deriving Inhabited
+
+open Lang in
+/-- Builds the obligation of `impl` for comp `c` with binders `binders`
+and maps `maps`, and, unless the `impl` has a written proof (`written`),
+evaluates it with `decide` if possible. -/
+def mkObligation (c : CompInfo) (binders : Array Syntax) (maps : Array Syntax) (written : Bool) :
+    TermElabM Obligation := do
+  -- The interpretations of the abstract types and functions it uses.
+  let ι ← match ← interpsOf c.uses with
+    | .ok ι => pure ι
+    | .error p => throwError s!"`{Core.showComp c.path}` uses `{Core.showComp p}`, which has no interpretation\n\n\
+        help: give it one with `interp {Core.showComp p} := ...` before this `impl`"
+  let c : CompInfo := { c with vars := c.vars.map fun (v : Var) => { v with «type» := replaceUses c.uses ι v.type } }
+  elabBinders binders fun xs => do
+    -- The comp's variables: mapped terms, or bound below
+    let mut args : Array (Option Expr) := #[]
+    for v in c.vars do
+      match maps.find? (·[0].getId == v.name) with
+      | some m =>
+        let t ← withoutErrToSorry <| withSynthesize <| elabTermEnsuringType m[2] v.type
+        let t ← instantiateMVars t
+        if t.hasMVar || t.hasSorry then throwErrorAt m[2] "could not elaborate this term"
+        args := args.push (some t)
+      | none => args := args.push none
+    let hidden := (c.vars.zip args).filterMap fun (v, a) => if a.isNone then some v else none
+    withLocalDeclsD (hidden.map fun v => (v.name, fun _ => pure v.type)) fun hs => do
+      let mut full := #[]
+      let mut withDefaults := #[]
+      let mut k := 0
+      for v in c.vars, a in args do
+        match a with
+        | some t => full := full.push t; withDefaults := withDefaults.push t
+        | none =>
+          full := full.push hs[k]!
+          withDefaults := withDefaults.push (← mkAppOptM ``Inhabited.default #[v.type, none])
+          k := k + 1
+      let assumes := mkAppN (mkConst (c.decl ++ `assumes)) (ι ++ withDefaults)
+      let reqs := mkAppN (mkConst (c.decl ++ `reqs)) (ι ++ full)
+      let defs := if c.defs.isEmpty then [] else [mkAppN (mkConst (c.decl ++ `defs)) (ι ++ full)]
+      let body := mkAndN (defs ++ reqs :: c.insts.toList.map fun i => mkAppN (Lean.mkConst i.decl) (ι ++ full))
+      let ex ← hs.foldrM (init := body) fun h acc => do mkAppM ``Exists #[← mkLambdaFVars #[h] acc]
+      synthesizeSyntheticMVarsNoPostponing
+      let inner ← instantiateMVars (← mkArrow assumes ex)
+      let stmt ← instantiateMVars (← mkForallFVars xs inner)
+      if stmt.hasMVar || stmt.hasLevelMVar then throwError "could not elaborate the statement{indentExpr stmt}"
+      -- Whether the assumptions can hold: if not, the statement says nothing.
+      let assumes ← instantiateMVars assumes
+      let never ← mkForallFVars xs (mkNot assumes)
+      let found? ← (← assignments xs).mapM fun combos =>
+        combos.anyM fun vals => return (← evalDecide (assumes.replaceFVars xs vals)) == some true
+      if written then return { stmt, decideQ := .unknown, never, found? }
+      let some ok ← evalDecide stmt | return { stmt, decideQ := .unknown, never, found? }
+      if ok then return { stmt, decideQ := .unsat, never, found? }
+      -- Find values that falsify it, and name the requirements they falsify.
+      let some vals ← counterexample xs inner | return { stmt, decideQ := .sat, never, found? }
+      let names ← xs.mapM fun x => return (← x.fvarId!.getDecl).userName
+      let shown ← (xs.zip vals).mapM fun (x, v) => do return render (← inferType x) v
+      let shown ← shown.mapM id
+      let falsified ← if !hs.isEmpty then pure #[] else
+        c.reqs.filterM fun p => do
+          let r := mkAppN (mkConst p.decl) (ι ++ full)
+          return (← evalDecide ((← mkArrow assumes r).replaceFVars xs vals)) == some false
+      return { stmt, decideQ := .sat, failure? := some (names.zip shown, falsified.map (·.name)), never, found? }
+
+/-- The Lean definitions Fren generated for comps. -/
+def generatedDecls : MetaM NameSet := do
+  let mut ns : NameSet := {}
+  for (_, c) in (← getState).comps do
+    ns := ns.insert (c.decl ++ `assumes) |>.insert (c.decl ++ `reqs)
+    for p in c.props do ns := ns.insert p.decl
+    unless c.defs.isEmpty do ns := ns.insert (c.decl ++ `defs)
+    for (d, _) in c.defs do ns := ns.insert (c.decl ++ `def ++ d)
+    for i in c.insts do ns := ns.insert i.decl
+  for (_, d) in (← getState).defined do ns := ns.insert d.decl
+  return ns
+
+/-- Asks the solver to prove `stmt`, with Fren's generated definitions, and
+the interpretations if `interps`, unfolded, and the implementation's treated
+as uninterpreted. -/
+def solverAnswer (stmt : Expr) (interps := false) : MetaM Core.Answer := do
+  -- A binder of a function type is beyond the solver's first-order logic,
+  -- and lean-smt's preprocessing fails on one.
+  if ← forallTelescopeReducing stmt fun xs _ => xs.anyM fun x => return (← whnf (← inferType x)).isForall then
+    return .unknown
+  let mut gen ← generatedDecls
+  if interps then
+    for (_, d) in (← getState).interps do gen := gen.insert d
+  let stmt ← Meta.deltaExpand stmt gen.contains
+  let stmt ← Core.betaReduce stmt
+  let mv ← mkFreshExprMVar stmt
+  try
+    match ← Smt.smt { trust := true, timeout := some (fren.timeout.get (← getOptions)) } mv.mvarId! #[] with
+    | .unsat .. => return .unsat
+    | .sat .. => return .sat
+    | .unknown _ => return .unknown
+  catch _ => return .unknown
+
+open Lang in
+@[command_elab Lang.implCmd] def elabImpl : CommandElab := fun stx => do
+  let nameStx := stx[1]
+  let declName := (← getCurrNamespace) ++ nameStx.getId
+  let r ← resolvePath (← getLocal).currentModule (pathSegs stx[3])
+  let .item { kind := .compItem, path, .. } := r
+    | throwErrorAt stx[3] (Core.notACompMsg r).text
+  let some c := (← getState).comps.get? path | throwError "internal error: unknown comp `{path}`"
+  let compStr := Core.showComp path
+  let binders ← if stx[4].isNone then pure #[] else stx[4][1].getArgs.mapM fun b =>
+    `(bracketedBinder| ($(b[1].getArgs.map (⟨·⟩))* : $(⟨b[3]⟩)))
+  let maps := stx[6].getSepArgs
+  match checkMapping c (maps.map (·[0].getId)) with
+  | .ok () => pure ()
+  | .error (some i, msg) => throwErrorAt maps[i]![0] msg
+  | .error (none, msg) => throwErrorAt nameStx msg
+  let ob ← liftTermElabM <| mkObligation c binders maps (!stx[8].isNone)
+  -- Records an added statement as evidence, unless it holds only because
+  -- the assumptions never do.
+  let recordEvidence (isAxiom : Bool) : CommandElabM Unit := do
+    let smtQ ← if ob.found?.isSome then pure .unknown else liftTermElabM (solverAnswer ob.never (interps := true))
+    let vacuous := implVacuous true ob.found?.isSome (ob.found?.getD false) smtQ
+    if implEvidence true vacuous then
+      record (.implInfo (ImplInfo.mk declName path isAxiom))
+    else
+      logWarningAt nameStx s!"`{nameStx.getId}` holds only because no values of its binders satisfy the assumptions of `{compStr}`\n\n\
+        note: it is not evidence for `{compStr}`\n\
+        help: check the terms it gives the inputs, and the interpretations they use"
+  -- A written proof
+  if !stx[8].isNone then
+    let tac : TSyntax ``Lean.Parser.Tactic.tacticSeq := ⟨stx[8][1]⟩
+    let errorsBefore := (← get).messages.toList.filter (·.severity == .error) |>.length
+    let pf ← liftTermElabM do
+      let pf ← elabTermEnsuringType (← `(by $tac)) ob.stmt
+      synthesizeSyntheticMVarsNoPostponing
+      instantiateMVars pf
+    let errors := (← get).messages.toList.filter (·.severity == .error) |>.length
+    let (verdict, _, _) := implVerdict true (errors == errorsBefore && !pf.hasMVar) .unknown .unknown
+    if implAdded verdict then
+      liftCoreM <| addDecl (.thmDecl { name := declName, levelParams := [], «type» := ob.stmt, value := pf })
+      recordEvidence false
+    return
+  let smtQ ← if ob.decideQ == .unknown then liftTermElabM (solverAnswer ob.stmt) else pure .unknown
+  let (verdict, namesFailures, isAxiom) := implVerdict false false ob.decideQ smtQ
+  if implAdded verdict then
+    if isAxiom then
+      liftCoreM <| addDecl (.axiomDecl { name := declName, levelParams := [], «type» := ob.stmt, isUnsafe := false })
+      recordEvidence true
+      return
+    else
+      let pf ← liftTermElabM do
+        let inst ← synthInstance (mkApp (mkConst ``Decidable) ob.stmt)
+        return mkApp3 (mkConst ``of_decide_eq_true) ob.stmt inst
+          (mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Bool) (mkConst ``Bool.true))
+      liftCoreM <| addDecl (.thmDecl { name := declName, levelParams := [], «type» := ob.stmt, value := pf })
+    recordEvidence false
+    return
+  match verdict with
+  | .pass => pure ()
+  | .fail =>
+    let subject := s!"`{nameStx.getId}` does not implement `{compStr}`"
+    match namesFailures, ob.failure? with
+    | true, some (vals, falsified) =>
+      let at_ := Core.showAssignment vals
+      if falsified.isEmpty then logErrorAt nameStx s!"{subject} when {at_}"
+      else
+        let verb := if falsified.size == 1 then "is" else "are"
+        logErrorAt nameStx s!"{subject}: {Core.showNames falsified} {verb} false when {at_}"
+    | _, _ => logErrorAt nameStx s!"{subject}: `decide` evaluates its statement to false"
+  | .inconclusive =>
+    logWarningAt nameStx s!"could not prove that `{nameStx.getId}` implements `{compStr}`\n\nnote: `decide` does not apply, and the solver does not see the definitions of the implementation\nhelp: write a proof after `by`"
+
+open Lang in
+@[command_elab Lang.interpCmd] def elabInterp : CommandElab := fun stx => do
+  let segs := pathSegs stx[1]
+  let r ← resolvePath (← getLocal).currentModule segs
+  let defined := (← getState).defined
+  let (what, path) := match r with
+    | .item { kind := .typeItem, path, .. } => (Interpreted.abstractType, path)
+    -- A defined function's body gives its meaning.
+    | .item { kind := .fnItem, path, .. } => (if defined.contains path then .other else .function, path)
+    | r => (.other, r.path)
+  if what == .other then throwErrorAt stx[1] (Core.wrongKindMsg "an abstract type or an uninterpreted function" r).text
+  let s ← getState
+  let earlier := if s.interps.contains path then 1 else 0
+  if earlier > 0 then
+    throwErrorAt stx[1] s!"`{Core.showComp path}` is already interpreted\n\n\
+      note: each abstract type and function has one interpretation, which every `impl` uses"
+  let some a := s.abstracts.get? path | throwError "internal error: unknown abstract item `{path}`"
+  let decl := (← getCurrNamespace) ++ path
+  liftTermElabM do
+    -- The type the term must have: the function's, over the interpretations
+    -- of its abstract types.
+    let (expected, typesInterpreted) ← match ← interpsOf a.deps with
+      | .ok ι => pure (replaceUses a.deps ι (← getConstInfo a.placeholder).type, true)
+      | .error p =>
+        if what == .function then
+          throwErrorAt stx[1] s!"`{Core.showComp path}` mentions `{Core.showComp p}`, which has no interpretation\n\n\
+            help: interpret `{Core.showComp p}` first"
+        pure (mkSort (.succ .zero), false)
+    let t ← withoutErrToSorry <| withSynthesize <| elabTermEnsuringType stx[3] expected
+    let t ← instantiateMVars t
+    if t.hasMVar || t.hasSorry then throwErrorAt stx[3] "could not elaborate this term"
+    -- An abstract type has at least one value.
+    let typed ← if what == .abstractType then do
+        let r ← trySynthInstance (mkApp (Lean.mkConst ``Inhabited [.succ .zero]) t)
+        pure (r matches LOption.some _)
+      else pure true
+    unless typed do
+      throwErrorAt stx[3] "an abstract type's interpretation must have an `Inhabited` instance\n\n\
+        note: an abstract type has at least one value"
+    unless interpAccepted what earlier typed typesInterpreted do
+      throwErrorAt stx[1] "internal error: the interpretation is rejected without a reason"
+    addDecl (.defnDecl { name := decl, levelParams := [], «type» := expected, value := t, hints := .abbrev, safety := .safe })
+    setReducibleAttribute decl
+  record (.interpInfo path decl)
+  elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
+
+end Fren

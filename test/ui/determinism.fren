@@ -1,0 +1,42 @@
+-- `det out` and the determinism check (`check::determinism`).
+
+enum Mode { Off, Heat, Cool }
+
+use Mode::{Cool, Heat, Off}
+
+comp chooser {
+    in temp: Int
+    pub det out mode: Mode
+    pub out fan?            -- not `det`: not checked
+    --~^ warning: unused variable `fan?`
+
+    req heat: when temp < 18, mode = Heat
+    req cool: when temp > 24, mode = Cool
+    req off: when temp >= 18 and temp <= 24, mode = Off
+}
+
+comp loose {
+    in temp: Int
+    pub det out level: Int  --~ error: `loose::level` is not determined by the inputs
+    det out scratch: Int    -- private, but determined
+
+    req above: level >= temp
+    req below: level <= temp + 1
+    req scratch_def: scratch = 2 * temp
+}
+
+-- Determined by the inputs only if the instance's output is.
+comp wraps {
+    in temp: Int
+    pub det out mode: Mode
+    pub det out level: Int  --~ error: `wraps::level` is not determined by the inputs
+
+    inst c: chooser { temp }
+    inst l: loose { temp }
+
+    req mode_def: mode = c.mode
+    req level_def: level = l.level
+}
+
+--@ summary: 17 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

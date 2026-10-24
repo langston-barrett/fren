@@ -1,0 +1,6 @@
+comp c {
+    in s: String
+    pub out n: Int
+
+    req r: n = s.length
+}

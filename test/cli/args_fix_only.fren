@@ -1,0 +1,3 @@
+--@ args: check --only unused_imports
+-- `--only` is an option of `fren fix`.
+comp c {}

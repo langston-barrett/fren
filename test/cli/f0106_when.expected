@@ -1,0 +1,17 @@
+error[F0106]: expected `,` after the condition of `when`, found identifier `y`
+ --> test/cli/f0106_when.fren:2:53
+  |
+2 | comp c { in x: Int pub out y: Int req r: when x > 1 y = 3 }
+  |                                                     ^ expected `,`
+  |
+  = note: the condition of `when` ends with a comma
+help: add a comma
+  |
+2 | comp c { in x: Int pub out y: Int req r: when x > 1, y = 3 }
+  |                                                    +
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0106`.
+exit=2

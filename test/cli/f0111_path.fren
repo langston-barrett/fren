@@ -1,0 +1,3 @@
+-- A dotted name in a path (F0111).
+enum E { A }
+comp c { in e: self.E }

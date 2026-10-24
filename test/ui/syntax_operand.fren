@@ -1,0 +1,6 @@
+-- `when` as an operand needs parentheses.
+comp c { in x: Int req r: x > 0 and when x > 1, x > 2 }
+--~^[cli] error: `when` must be parenthesized here
+--~^^[hosted] error: unexpected identifier; expected '}'
+comp ok { in x: Int pub out y? req r: y? iff (x > 0 and (when x > 1, x > 2)) }
+--@ exit: 2

@@ -1,0 +1,2 @@
+-- `card_zero`.
+comp c { in s: Set(Int) pub out p? req r: p? iff s.card > 0 }

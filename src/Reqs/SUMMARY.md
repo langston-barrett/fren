@@ -1,0 +1,45 @@
+# Summary
+
+[Introduction](README.md)
+
+# Language
+
+- [Overview](Lang/Overview.md)
+- [Lexical structure](Lang/Lexical.md)
+- [Types](Lang/Types.md)
+- [Items](Lang/Items.md)
+- [Components](Lang/Components.md)
+- [Expressions](Lang/Expressions.md)
+- [Modules and visibility](Lang/Modules.md)
+- [Instances](Lang/Instances.md)
+- [Global expectations](Lang/Global.md)
+- [Decidability](Lang/Decidability.md)
+
+# Checking
+
+- [Checks](Check.md)
+- [Diagnostics](View.md)
+- [Lints](Lint.md)
+
+# Using Fren
+
+- [Lean embedding](Lean.md)
+  - [Generated Lean declarations](Generated.md)
+  - [Implementations](Impl.md)
+- [Markdown specs](Markdown.md)
+- [The `fren` command](Cli.md)
+  - [Formatting](Fmt.md)
+  - [Evaluation and testing](Eval.md)
+- [Traceability](Trace.md)
+
+# Appendices
+
+- [Grammar](Grammar.md)
+- [Glossary](Glossary.md)
+
+# Contributing to Fren
+
+- [Overview](dev/Overview.md)
+- [Architecture](dev/Architecture.md)
+- [Testing](dev/Testing.md)
+- [Roadmap](dev/Roadmap.md)

@@ -1,0 +1,3 @@
+-- An enum as a condition (F0304).
+enum Mode { Off, On }
+comp c { in m: Mode pub out y? req r: when m, y? }

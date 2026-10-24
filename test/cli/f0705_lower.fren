@@ -1,0 +1,2 @@
+-- A constant not named in upper case (F0705).
+const max_temp: Int := 100

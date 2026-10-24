@@ -1,0 +1,3 @@
+-- `//` for a comment (F0101).
+// a comment
+comp c {}

@@ -1,0 +1,9 @@
+-- `join` needs the second type of its left operand to be the first of its right.
+-- fren-covers: lang::relation_op
+comp c {
+    in r: Rel(Int, String)
+    in q: Rel(Int, Bool)
+    pub out p?
+
+    req s: p? iff (1, true) in r join q
+}

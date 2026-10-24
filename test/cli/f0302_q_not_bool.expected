@@ -1,0 +1,17 @@
+error[F0302]: `n?` ends in `?` but is not a `Bool`
+ --> test/cli/f0302_q_not_bool.fren:2:13
+  |
+2 | comp c { in n?: Int }
+  |             ^^ ends in `?`
+  |
+  = note: a variable's name ends in `?` if and only if it is a `Bool`
+help: rename it to `n`
+  |
+2 - comp c { in n?: Int }
+2 + comp c { in n: Int }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0302`.
+exit=2

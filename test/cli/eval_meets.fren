@@ -1,0 +1,10 @@
+--@ args: eval --comp c --set x=3
+-- `y` is found by the search.
+comp c {
+    in x: Int
+    pub out y: Int
+
+    req r: y = x + 1
+
+    expect bigger: y > x
+}

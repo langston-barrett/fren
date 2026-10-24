@@ -1,0 +1,9 @@
+--@ args: fmt --check
+-- `fren fmt --check` on a formatted file: no output.
+pub enum Mode { Heat, Cool }
+
+comp c {
+    in t: Int  -- the temperature
+    pub out mode: Mode
+    req r: mode = if t < 18 then Mode::Heat else Mode::Cool
+}

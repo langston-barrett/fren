@@ -1,0 +1,4 @@
+error: `E0308` is not an error code
+  = note: error codes are written like `F0105`, as they are in Fren's messages
+  = help: run `fren --help` for usage
+exit=2

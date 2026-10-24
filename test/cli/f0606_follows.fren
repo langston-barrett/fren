@@ -1,0 +1,7 @@
+-- A redundant requirement (F0606).
+comp c {
+    in x: Int
+    pub out y: Int
+    req y_def: y = x + 1
+    req bigger: y > x
+}

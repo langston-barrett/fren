@@ -1,0 +1,3 @@
+-- `unless` as a binding (F0109).
+comp sub { in a? in b? }
+comp c { in x? inst s: sub { a? := unless x?, x?, b? := x? } }

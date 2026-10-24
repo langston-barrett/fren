@@ -1,0 +1,8 @@
+# Fren's reference manual: the requirements in `src/Reqs`, which are also
+# checked by `lake build`. `mdbook build` writes it to `book/`.
+[book]
+title = "Fren"
+src = "src/Reqs"
+
+[build]
+build-dir = "book"

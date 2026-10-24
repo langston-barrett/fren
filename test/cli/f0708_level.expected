@@ -1,0 +1,12 @@
+error[F0708]: invalid lint level `off`
+ --> test/cli/f0708_level.fren:2:37
+  |
+2 | set_option fren.lint.unused_imports "off"
+  |                                     ^^^^^ not a lint level
+  |
+  = note: a lint level is `"allow"`, `"expect"`, `"warn"`, `"deny"` or `"forbid"`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0708`.
+exit=2

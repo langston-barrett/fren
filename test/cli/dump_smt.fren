@@ -1,0 +1,11 @@
+--@ args: check --dump-smt
+-- `--dump-smt`: each solver query, as SMT-LIB, before the results.
+enum Mode { Off, On }
+comp c {
+    in m: Mode
+    in x: Int
+    pub out y: Int
+    assume pos: x > 0
+    req on: when m = Mode::On, y = x
+    req off: when m = Mode::Off, y = 0
+}

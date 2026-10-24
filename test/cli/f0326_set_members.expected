@@ -1,0 +1,12 @@
+error[F0326]: the members of a set have different types: `Int` and `Bool`
+ --> test/cli/f0326_set_members.fren:5:27
+  |
+5 |     req r: p? iff s = {1, true}
+  |                           ^^^^ a `Bool`
+  |
+  = note: the first member is a `Int`, so the literal is a `Set(Int)`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0326`.
+exit=2

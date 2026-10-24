@@ -1,0 +1,5 @@
+--@ args: fix --check -D unused_imports
+-- A denied lint is fixed.
+pub enum Mode { Heat, Cool }
+use Mode::Cool
+comp c { in m: Mode pub out h? req r: h? iff m = Mode::Heat }
