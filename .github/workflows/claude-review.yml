@@ -40,7 +40,11 @@ jobs:
             requirements agree.
 
             Use `gh pr comment` to post a single summary comment with your
-            findings, and inline comments for specific issues.
+            findings, and inline comments for specific issues. Read the
+            changed files in the checkout with Read, Grep and Glob, rather
+            than piping `gh pr diff`. If you cannot complete the review,
+            still post a summary comment saying why, so that a review never
+            ends without a trace.
           claude_args: >-
             --model claude-opus-5-5
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
