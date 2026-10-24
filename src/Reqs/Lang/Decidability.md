@@ -170,8 +170,10 @@ true, but cvc5 does not prove it within any time limit tried, and neither
 does Z3, so the chapter leaves it as a comment. Raising `--timeout`
 does not help, and bounding the string's `len` only turns a query that
 never ends into a slow one.
-Such a check stays `Inconclusive`; `fren quickcheck` (see
-[Evaluation](../Eval.md#fren-quickcheck)) gives evidence for it instead of proof.
+Such a check stays `Inconclusive`. A spec can say so where it applies,
+with `set_option fren.evidence "tested" in`, and have the check tested
+instead (see [Checking by testing](../Check.md#checking-by-testing)), which
+gives evidence for it, not proof.
 
 Relational operators together with `card` are outside the core for the
 same reason (see [Relations](#relations)).

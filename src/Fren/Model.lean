@@ -2,6 +2,7 @@
 import Fren.FinSet
 import Fren.Seq
 import FrenCore.Check
+import FrenCore.Evidence
 import FrenCore.Lint
 import FrenCore.Names
 import Lean
@@ -23,6 +24,11 @@ Module paths are `Name`s (`check`, `a.b`); the root module is
 open Lean
 
 namespace Fren
+
+register_option fren.evidence : String := {
+  defValue := "solver"
+  descr := "the evidence of the checks of the next component or global expectation: \"tested\" to have the `fren` command test them, or \"solver\""
+}
 
 export Core (ItemKind Item EnumDef UseDef)
 
@@ -197,6 +203,9 @@ structure CompInfo where
   /-- Each index of its constraints and definitions: the item it is in,
   where that is, the index, and the closed formula that it is in range. -/
   indexes : Array (Name × Core.IndexPlace × Syntax × Expr) := #[]
+  /-- The checks that only the `fren` command runs, by testing
+  (`Reqs/Check#checking-by-testing`). -/
+  tested : Core.Tested := {}
   deriving Inhabited
 
 def CompInfo.assumes (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .assume)

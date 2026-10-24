@@ -51,6 +51,8 @@ def checkAndReport (paths : Array Name) : CommandElabM Unit := do
     let results ← liftTermElabM <| checkComp c kinds
     for r in results do
       report c r
+    if c.tested.any then
+      logInfoAt c.ref m!"the checks of `{Core.showComp c.path}` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)"
     all := all ++ results
   match Core.summarySeverity all with
   | .info => logInfo (Core.summary all)

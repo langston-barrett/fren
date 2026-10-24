@@ -593,6 +593,50 @@ binds. Rename one of them.
 comp c { in x: Int pub out y: Int req r: y = x }
 ```
 "# },
+  { code := "F0214", explanation := r#"A `set_option fren.evidence` value that does not exist.
+
+Erroneous code example:
+
+```fren
+set_option fren.evidence "testing" in
+comp c { in x? pub det out y? req r: y? iff x? }
+```
+
+The evidence of a check is `"tested"`, to have it tested instead of asked of
+the solver, or `"solver"`, the default (see `Reqs/Check`, "Checking by
+testing").
+
+```fren
+set_option fren.evidence "tested" in
+comp c { in x? pub det out y? req r: y? iff x? }
+```
+"# },
+  { code := "F0215", explanation := r#"A `set_option fren.evidence` before something that has no checks to test.
+
+Erroneous code example:
+
+```fren
+comp c {
+  in x?
+  pub out y?
+  set_option fren.evidence "tested" in
+  req r: y? iff x?
+}
+```
+
+A requirement is not itself checked: the checks of a component are about
+its expectations, instances, `det out`s and the component as a whole, so
+the setting goes before one of those, or before the component.
+
+```fren
+set_option fren.evidence "tested" in
+comp c {
+  in x?
+  pub out y?
+  req r: y? iff x?
+}
+```
+"# },
   { code := "F0301", explanation := r#"A variable has no type.
 
 Erroneous code example:

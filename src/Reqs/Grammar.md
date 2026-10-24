@@ -18,7 +18,7 @@
 ```
 spec           := item*
 item           := module | use | enumeration | record | abstract-type | function | constant
-                | component | expectation | check | claim | lint-setting | lean-item
+                | component | expectation | check | claim | lint-setting | evidence-setting item | lean-item
 
 module         := ["pub"] "mod" path
 use            := "use" path ["::*" | "::{" path ("," path)* [","] "}"]
@@ -37,6 +37,7 @@ check          := "#fren_check" [path] | "#fren_trace"
 claim          := "tested" path ":" STRING ("," STRING)* [","]
                 | "trusted" path ":" STRING
 lint-setting   := "set_option" lint-option STRING ["in" item]
+evidence-setting := "set_option" "fren.evidence" STRING "in"
 lint-option    := "fren.lint." IDENT
 
 lean-item      := implementation
@@ -59,6 +60,7 @@ member         := "in" variable
                 | "expect" IDENT ":" expr
                 | instance
                 | use
+                | evidence-setting member
 variable       := IDENT [":" type]
 instance       := "inst" IDENT ":" path "{" [binding ("," binding)* [","]] "}"
 binding        := IDENT [":=" expr]

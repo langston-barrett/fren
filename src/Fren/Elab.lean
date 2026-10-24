@@ -1466,6 +1466,52 @@ def elabInst (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) (decl : Name) 
     behaviour := ← mkLambdaFVars fvs behaviour
     assumes := ← pi.comp.assumes.mapM fun a => return (a.name, ← mkLambdaFVars fvs (a.body.beta slice)) }
 
+/-- Whether the evidence `value`, written at `ref`, is testing
+(`Reqs/Check#checking-by-testing`). -/
+def evidenceTested (ref : Syntax) (value : String) : CommandElabM Bool := do
+  let some b := Core.evidenceTested? value | throwErrorAt ref (Core.invalidEvidenceMsg value).text
+  return b
+
+open Lang in
+/-- A member without its `set_option fren.evidence ... in`, and the
+setting, if it has one: the innermost, if there are several. -/
+partial def unwrapEvidence (m : Syntax) : CommandElabM (Syntax × Option (Bool × Syntax)) := do
+  unless m.isOfKind ``Lang.evidenceMember do return (m, none)
+  unless m[1].getId == `fren.evidence do
+    throwErrorAt m[1] "only `fren.evidence` can be set before a member"
+  let b ← evidenceTested m[2] (m[2].isStrLit?.getD "")
+  let (inner, set?) ← unwrapEvidence m[4]
+  return (inner, set?.getD (b, m))
+
+open Lang in
+/-- The members of a comp without their evidence settings, and the checks
+that those and the comp's setting `all` set to testing. -/
+def testedOf (all : Bool) (raw : Array Syntax) : CommandElabM (Array Syntax × Core.Tested) := do
+  let mut members := #[]
+  let mut expects := #[]
+  let mut insts := #[]
+  let mut dets := #[]
+  let mut constraints := #[]
+  for m0 in raw do
+    let (m, set?) ← unwrapEvidence m0
+    members := members.push m
+    let b? := set?.map (·.1)
+    let misplaced (what : String) : CommandElabM Unit := do
+      if let some (_, ref) := set? then throwErrorAt ref (Core.misplacedEvidenceMsg what).text
+    match m with
+    | `(fren_member| expect $x:ident : $_) => expects := expects.push (x.getId, b?)
+    | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => insts := insts.push (x.getId, b?)
+    | `(fren_member| assume $x:ident : $_) => misplaced "an assumption"; constraints := constraints.push x.getId
+    | `(fren_member| req $x:ident : $_) => misplaced "a requirement"; constraints := constraints.push x.getId
+    | _ =>
+      if m.isOfKind ``Lang.outMember then
+        -- `[pub] [det] out x [: T] [:= e]`
+        if !m[1].isNone then dets := dets.push (m[3].getId, b?)
+        else misplaced "an output that is not `det`"
+        if !m[5].isNone then constraints := constraints.push m[3].getId
+      else misplaced (if m.isOfKind ``Lang.inMember then "an input" else "a `use`")
+  return (members, Core.Tested.ofSettings all constraints expects insts dets)
+
 open Lang in
 @[command_elab Lang.compCmd] def elabComp : CommandElab := fun stx => do
   checkIdentifiers stx
@@ -1477,7 +1523,8 @@ open Lang in
   lintName .component n nameStx
   let path := modName ++ n
   let declBase := (← getCurrNamespace) ++ path
-  let members := stx[4].getArgs
+  -- The evidence settings, apart from the members they set.
+  let (members, tested) ← testedOf (← evidenceTested nameStx (fren.evidence.get (← getOptions))) stx[4].getArgs
   -- Its `use`s, and the scope that its paths resolve in.
   for m in members do
     if m.isOfKind ``Lang.useMember then declareUse (pathSegs m[1]) (!m[2].isNone) m[1] (some path)
@@ -1677,7 +1724,7 @@ open Lang in
       record (.item { item := { kind := .compItem, path, isPub, owner := modName }, ref := nameStx })
       let (relational, counts) ← checkCounts
       record (.compInfo { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
-                          decidable := !(← getLocal).outsideCore, relational, counts, indexes })
+                          decidable := !(← getLocal).outsideCore, relational, counts, indexes, tested })
     return (ok, generated)
   if ok = true then
     for d in generated do
@@ -1789,6 +1836,8 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   let decl := (← getCurrNamespace) ++ path
   let binders := if stx[3].isNone then #[] else stx[3][1].getArgs
   let info ← liftTermElabM <| elabGlobalInfo modName n nameStx binders stx[4] decl
+  let all ← evidenceTested nameStx (fren.evidence.get (← getOptions))
+  let info := { info with tested := Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] }
   record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })
   record (.globalInfo path info)
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))

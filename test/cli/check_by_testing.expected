@@ -1,0 +1,13 @@
+error[F0603]: expectation `lex::word::wrong` does not hold
+  --> test/cli/check_by_testing.fren:16:12
+   |
+16 |     expect wrong: when text.contains?("x"), not accepted?
+   |            ^^^^^ does not follow from the requirements
+   |
+   = counterexample: text = "ax", accepted? = true
+   = help: strengthen the requirements so that it follows, or correct the expectation
+
+fren: 9 passed (3 by testing), 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0603`.
+exit=1

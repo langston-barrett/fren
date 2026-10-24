@@ -160,6 +160,9 @@ scoped syntax &"inst " ident " : " fren_path " { " sepBy(fren_binding, ", ", ", 
 /-- `use`, as a member: its names are in scope in the component only. -/
 scoped syntax (name := useMember) "use " fren_path ("::*")? : fren_member
 scoped syntax (name := useGroupMember) "use " fren_path "::{" sepBy1(fren_path, ", ", ", ", allowTrailingSep) "}" : fren_member
+/-- `set_option fren.evidence "tested" in`, before a member whose checks it
+sets (`Reqs/Check#checking-by-testing`). -/
+scoped syntax (name := evidenceMember) "set_option " ident ppSpace str " in " fren_member : fren_member
 
 /-- `mod a::b` makes `a::b` the current module for the rest of the file. -/
 scoped syntax (name := modCmd) ("pub ")? "mod " fren_path : command

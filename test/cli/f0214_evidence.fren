@@ -1,0 +1,7 @@
+-- A `fren.evidence` value other than "tested" or "solver".
+set_option fren.evidence "testing" in
+comp c {
+    in x?
+    pub det out y?
+    req r: y? iff x?
+}

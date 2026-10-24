@@ -12,7 +12,7 @@ import FrenCore.Literate
 # Running `fren`
 
 ```
-fren check [--timeout SECONDS] [--dump-smt] [-A|-W|-D|-F LINT]... FILE...
+fren check [--timeout SECONDS] [--dump-smt] [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
@@ -48,7 +48,7 @@ namespace FrenCli
 open Fren.Core (Msg Paint)
 
 def usage : String :=
-  "usage: fren check [--timeout SECONDS] [--dump-smt] [LINT OPTIONS] [--color WHEN] FILE...\n       \
+  "usage: fren check [--timeout SECONDS] [--dump-smt] [--tests N] [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren trace [--tests GLOB]... [--require LEVEL] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren fmt [--check] [--ignore GLOB]... [--color WHEN] FILE...\n       \
   fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [LINT OPTIONS] [--color WHEN] FILE...\n       \
@@ -58,7 +58,8 @@ def usage : String :=
   `check` checks Fren specs. Exit status: 0 all checks passed, 1 some check\n\
   failed, 2 the checks could not run, 3 no failures but some check was\n\
   inconclusive, some constraint redundant or some lint warned. `--dump-smt` writes each solver\n\
-  query to stdout, as SMT-LIB; diagnostics go to stderr.\n\n\
+  query to stdout, as SMT-LIB; diagnostics go to stderr. `--tests N` and\n\
+  `--seed N` are as for `quickcheck`, for checks set to testing.\n\n\
   `trace` reports the evidence for every component, and scans the tests for\n\
   `fren-covers:` markers. LEVEL is trusted, tested, solver or proved. Exit\n\
   status: 0 nothing below LEVEL and no stray markers, 1 otherwise, 2 the\n\
@@ -203,7 +204,7 @@ where
         code? := none, headline := s!"invalid `--set` value `{x}`"
         notes := #["note: a variable is set as `VAR=VALUE`, such as `--set x=3` or `--set w.ready?=true`"] })
     | "--seed" :: n :: rest, a =>
-      if a.command != .eval && a.command != .quickcheck then only "--seed" "eval` and `fren quickcheck" else
+      if a.command != .eval && a.command != .quickcheck && a.command != .check then only "--seed" "check`, `fren eval` and `fren quickcheck" else
       match n.toNat? with
       | some k => go rest { a with seed := k }
       | none => .error (argError p {
@@ -211,7 +212,7 @@ where
           notes := #["note: the seed is a whole number, such as `--seed 7`"] })
     | "--tests" :: n :: rest, a =>
       if a.command == .trace then go rest { a with tests := a.tests.push n }
-      else if a.command != .quickcheck then only "--tests" "trace` and `fren quickcheck" else
+      else if a.command != .quickcheck && a.command != .check then only "--tests" "check`, `fren trace` and `fren quickcheck" else
       match n.toNat? with
       | some k => go rest { a with nTests := k }
       | none => .error (argError p {
@@ -357,6 +358,45 @@ def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (
     shown := shown.push m.msg
   return shown
 
+/-- Tests the comp or global expectation `c`, whose counterpart is `ec`
+(`Reqs/Eval#fren-quickcheck`), and prints what testing found about the
+checks that `keep` selects: their results, and those that are not run
+are dropped. Returns the results and the messages printed. -/
+def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spec) (c : CComp) (ec : Eval.Comp)
+    (global : Bool) (keep : Fren.Core.CheckResult → Bool) : IO (Array Fren.Core.CheckResult × Array Msg) := do
+  -- Each comp has its own stream, so a run does not depend on the others.
+  let rng : Eval.Rng := ⟨Eval.mix args.seed.toUInt64 (hash c.path)⟩
+  let rep := (if global then sp.quickGlobal ec args.nTests else sp.quickComp ec args.nTests).run' rng
+  let results := rep.results.filter keep
+  let mut shown := #[]
+  let subject := s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
+  for r in results do
+    -- Inconclusive results are reported below, once for the comp.
+    if r.verdict == .fail then shown := shown ++ (← printResult args.paint files c r)
+  let warn (msg : Msg) : IO Unit := printDiag args.paint files { file := c.file, span := c.span, severity := .warning, msg }
+  if let some input := rep.noOutputs? then
+    if results.any (·.kind == .realizable) then
+      let msg := Fren.Core.noOutputsMsg subject input
+      warn msg
+      shown := shown.push msg
+  else if rep.untested && !results.isEmpty then
+    let msg := Fren.Core.untestedMsg subject args.nTests
+    warn msg
+    shown := shown.push msg
+  -- At the trigger of each check that no test reached (`F0612`).
+  for r in rep.untriggered.filter keep do
+    let some n := r.prop? | continue
+    let (what, span) := match r.kind, r.target? with
+      | .inst, some (d, a) =>
+        (s!"the assumption `{Fren.Core.showComp (d ++ a)}` of instance `{n}`", ((c.insts.find? (·.name == n)).map (·.span)).getD c.span)
+      | _, _ =>
+        let p? := c.props.find? (·.name == n)
+        (if global then subject else s!"`{Fren.Core.showComp (c.path ++ n)}`", (p?.map fun p => p.triggerSpan?.getD p.span).getD c.span)
+    let msg := Fren.Core.untriggeredMsg what args.nTests
+    printDiag args.paint files { file := c.file, span, severity := .warning, msg }
+    shown := shown.push msg
+  return (results, shown)
+
 /-- Runs `fren check`, printing diagnostics and the summary to stderr and
 any solver queries to stdout; returns the exit code. -/
 def check (args : Args) : IO UInt32 := do
@@ -369,6 +409,7 @@ def check (args : Args) : IO UInt32 := do
   -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
   let spec? := specOf files
   let mut internal := #[]
+  let mut byTesting := 0
   if let .error e := spec? then
     internal := internal.push (Msg.internal s!"the evaluator cannot read the spec: {e}")
     printDiag args.paint files { file := 0, span := default, msg := internal.back! }
@@ -383,12 +424,18 @@ def check (args : Args) : IO UInt32 := do
     let log ← IO.mkRef #[]
     let raw ← match spec? with
       | .ok sp => match sp.counterpart? c global with
-        | some ec => Fren.Core.checkComp (fun k => confirming sp ec k log (bk k)) (pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start))) kinds
+        | some ec =>
+          -- The checks set to testing are not asked of the solver (`check::by_testing`).
+          let (core, ks) := (pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start))).untested c.tested kinds
+          Fren.Core.checkComp (fun k => confirming sp ec k log (bk k)) core ks
         | none =>
           internal := internal.push (Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`")
           printDiag args.paint files { file := c.file, span := c.span, msg := internal.back! }
-          Fren.Core.checkComp bk (toCore c) kinds
-      | .error _ => Fren.Core.checkComp bk (toCore c) kinds
+          let (core, ks) := (toCore c).untested c.tested kinds
+          Fren.Core.checkComp bk core ks
+      | .error _ =>
+        let (core, ks) := (toCore c).untested c.tested kinds
+        Fren.Core.checkComp bk core ks
     let (results, refuted) := applyRefutations raw (← log.get)
     for (r, msg) in refuted do
       let span := (r.prop?.bind fun n => c.props.find? (·.name == n)).map (·.span) |>.getD c.span
@@ -397,7 +444,18 @@ def check (args : Args) : IO UInt32 := do
     for r in results do
       shown := shown ++ (← printResult args.paint files c r)
     all := all ++ results
-  IO.eprintln (Fren.Core.summary all)
+    -- The checks set to testing, tested (`Reqs/Check#checking-by-testing`).
+    if c.tested.any then
+      match spec? with
+      | .ok sp =>
+        if let some ec := sp.counterpart? c global then
+          let (tested, msgs) ← testComp args files sp c ec global fun r =>
+            kinds.contains r.kind && c.tested.covers r && Fren.Core.runOf r.kind true == .byTesting
+          shown := shown ++ msgs
+          all := all ++ tested
+          byTesting := byTesting + (tested.filter (·.verdict == .pass)).size
+      | .error _ => pure ()
+  IO.eprintln (Fren.Core.summary all byTesting)
   if shown.any (·.code?.isSome) then
     IO.eprintln ""
     printExplainHint shown
@@ -421,35 +479,9 @@ def quickcheck (args : Args) : IO UInt32 := do
       | let msg := Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"
         printDiag args.paint files { file := c.file, span := c.span, msg }
         sevs := sevs.push .error
-    -- Each comp has its own stream, so a run does not depend on the others.
-    let rng : Eval.Rng := ⟨Eval.mix args.seed.toUInt64 (hash c.path)⟩
-    let rep := (if global then sp.quickGlobal ec args.nTests else sp.quickComp ec args.nTests).run' rng
-    let subject := s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
-    for r in rep.results do
-      -- Inconclusive results are reported below, once for the comp.
-      if r.verdict == .fail then shown := shown ++ (← printResult args.paint files c r)
-    let warn (msg : Msg) : IO Unit := printDiag args.paint files { file := c.file, span := c.span, severity := .warning, msg }
-    if let some input := rep.noOutputs? then
-      let msg := Fren.Core.noOutputsMsg subject input
-      warn msg
-      shown := shown.push msg
-    else if rep.untested then
-      let msg := Fren.Core.untestedMsg subject args.nTests
-      warn msg
-      shown := shown.push msg
-    -- At the trigger of each check that no test reached (`F0612`).
-    for r in rep.untriggered do
-      let some n := r.prop? | continue
-      let (what, span) := match r.kind, r.target? with
-        | .inst, some (d, a) =>
-          (s!"the assumption `{Fren.Core.showComp (d ++ a)}` of instance `{n}`", ((c.insts.find? (·.name == n)).map (·.span)).getD c.span)
-        | _, _ =>
-          let p? := c.props.find? (·.name == n)
-          (if global then subject else s!"`{Fren.Core.showComp (c.path ++ n)}`", (p?.map fun p => p.triggerSpan?.getD p.span).getD c.span)
-      let msg := Fren.Core.untriggeredMsg what args.nTests
-      printDiag args.paint files { file := c.file, span, severity := .warning, msg }
-      shown := shown.push msg
-    all := all ++ rep.results
+    let (results, msgs) ← testComp args files sp c ec global fun _ => true
+    shown := shown ++ msgs
+    all := all ++ results
   let count v := (all.filter (·.verdict == v)).size
   IO.eprintln s!"fren: {count .pass} passed, {count .fail} failed, {count .inconclusive} inconclusive, in {args.nTests} tests each"
   if shown.any (·.code?.isSome) then

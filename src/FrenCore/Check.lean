@@ -644,9 +644,10 @@ def summarySeverity (_results : Array CheckResult) : Severity := .info
 failures, which are errors (`view::summary`). -/
 def CheckResult.isRedundant (r : CheckResult) : Bool := r.kind == .redundancy && r.verdict == .fail
 
-def summary (results : Array CheckResult) : String :=
+def summary (results : Array CheckResult) (byTesting : Nat := 0) : String :=
   let count v := (results.filter fun r => r.verdict == v && !r.isRedundant).size
-  s!"fren: {count .pass} passed, {count .fail} failed, {count .inconclusive} inconclusive, \
+  let tested := if byTesting == 0 then "" else s!" ({byTesting} by testing)"
+  s!"fren: {count .pass} passed{tested}, {count .fail} failed, {count .inconclusive} inconclusive, \
     {(results.filter (·.isRedundant)).size} redundant"
 
 end Fren.Core

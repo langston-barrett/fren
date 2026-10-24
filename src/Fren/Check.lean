@@ -175,6 +175,8 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
       defs := ← c.defs.filterMapM fun (d, e) => do
         let some i := c.vars.findIdx? (·.name == d) | return none
         return some (d, ← mkEq fvs[i]! (beta e), beta e) }
+    -- Only the `fren` command runs the checks set to testing (`check::by_testing`).
+    let (comp, kinds) := comp.untested c.tested kinds
     Core.checkComp (fun _ => leanBackend c fvs primes) comp kinds
 
 end Fren
