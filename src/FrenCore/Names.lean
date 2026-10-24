@@ -590,8 +590,8 @@ def dottedNameMsg (n : Name) (insts : Array Name) (vars : Array Name := #[]) (in
   else
     let path := "::".intercalate (n.components.map (·.toString))
     { code? := some "F0111", headline := s!"`{n}` is not a single name"
-      label? := some "`.` is only for the variables of instances"
-      notes := if inExpr then #[s!"note: there is no instance named `{n.getRoot}`"] else #[]
+      label? := some "`.` reads an instance's variable, or a value's field or method"
+      notes := if inExpr then #[s!"note: `{n.getRoot}` is not an instance, a variable or a constant"] else #[]
       fixes := #[{ msg := "separate path segments with `::`", replacement := path }] }
 
 /-- Whether a name may be bound `n` times by an instance, given what it is

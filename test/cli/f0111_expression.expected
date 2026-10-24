@@ -2,9 +2,9 @@ error[F0111]: `E.A` is not a single name
  --> test/cli/f0111_expression.fren:3:47
   |
 3 | comp c { in e: E pub out y? req r: y? iff e = E.A }
-  |                                               ^^^ `.` is only for the variables of instances
+  |                                               ^^^ `.` reads an instance's variable, or a value's field or method
   |
-  = note: there is no instance named `E`
+  = note: `E` is not an instance, a variable or a constant
 help: separate path segments with `::`
   |
 3 - comp c { in e: E pub out y? req r: y? iff e = E.A }

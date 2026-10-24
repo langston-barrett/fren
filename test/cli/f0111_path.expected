@@ -2,7 +2,7 @@ error[F0111]: `self.E` is not a single name
  --> test/cli/f0111_path.fren:3:16
   |
 3 | comp c { in e: self.E }
-  |                ^^^^^^ `.` is only for the variables of instances
+  |                ^^^^^^ `.` reads an instance's variable, or a value's field or method
   |
 help: separate path segments with `::`
   |

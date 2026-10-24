@@ -198,7 +198,7 @@ Only outputs are private by default, so only `out` takes `pub`.
 comp c { in x: Int }
 ```
 "# },
-  { code := "F0111", explanation := r#"A name with a `.` that is not a variable of an instance.
+  { code := "F0111", explanation := r#"A name with a `.` whose first component is not an instance or a value.
 
 Erroneous code example:
 
@@ -207,8 +207,9 @@ enum E { A, B }
 comp c { in e: E pub out y? req r: y? iff e = E.A }
 ```
 
-`a.b` means the variable `b` of the instance `a`. Paths, such as an item of
-a module or a variant of an enum, are separated by `::`.
+`a.b` means the variable `b` of the instance `a`, or the field or method
+`b` of the value `a`, a variable or a constant. Paths, such as an item of a
+module or a variant of an enum, are separated by `::`.
 
 ```fren
 enum E { A, B }
