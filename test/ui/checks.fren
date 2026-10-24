@@ -13,7 +13,7 @@ comp exit {   --~ error: `exit` is not realizable: for the input strict? = true,
     req strict_inconc: when strict? and n_inconc > 0, code = 2  --~ info: conflicts with `failures`
     req clean: when n_fail = 0 and n_inconc = 0, code = 0
     req negative: when n_fail < 0, code = 3                 --~ error: `exit::negative` is vacuous: its condition can never hold, given `counts`
-    req scratch_def: scratch = 2 * n_fail - (-1)
+    req scratch_def: scratch = 2 * n_fail - (-1)  --~ warning: this negation can be the other operator
 
     expect inconc_passes: when n_fail = 0 and not strict?, code = 0
     --~^ error: expectation `exit::inconc_passes` does not hold

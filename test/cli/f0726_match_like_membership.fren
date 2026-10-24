@@ -1,0 +1,9 @@
+-- `match_like_membership`.
+enum E { A, B, C }
+
+comp c {
+    in e: E
+    pub out p?
+
+    req r: p? iff match e { E::A => true, E::B => false, E::C => true }
+}

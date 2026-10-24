@@ -1,5 +1,8 @@
 -- Strings: literals, `++`, ordering and methods, in both front ends.
 
+-- `contains?("")` is tested on purpose.
+set_option fren.lint.empty_argument "allow"
+
 const PREFIX: String := "user-"
 
 comp handle {
@@ -22,7 +25,7 @@ comp handle {
 expect escapes: "a\"b\\c\n".len = 6 and "\x41é" = "Aé"
 expect raw: r"a\b".len = 3 and r#"say "hi""#.len = 8
 expect methods: "abc".starts_with?("ab") and "abc".ends_with?("bc") and "abc".contains?("")
-expect concat: ("ab" ++ "c").len = 3 and "x" ++ "" = "x"
+expect concat: ("ab" ++ "c").len = 3 and "x" ++ "" = "x"  --~ warning: this operation has no effect
 
 -- A definition may concatenate, and its output then be compared with a
 -- constant or be the receiver of a method.

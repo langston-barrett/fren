@@ -1,0 +1,34 @@
+-- The lints on conditionals, and the rules of `nonminimal_bool` for `if`,
+-- in both front ends.
+set_option fren.lint.if_not_else "warn"
+
+comp conditionals {
+    in a?
+    in b?
+    in x: Int
+    in y: Int
+    pub out p? := a? and b?
+    pub out n: Int := if a? then x else y
+
+    expect e1: unless not a?, a?                --~ warning: this `unless` has a negated condition
+    expect e2: unless x != y, x = y             --~ warning: this `unless` has a negated condition
+    expect e3: unless x < 3, x >= 3
+    expect e4: when a?, when b?, p?             --~ warning: this conditional can be collapsed
+    expect e5: unless a? iff b?, unless a?, b?  --~ warning: this conditional can be collapsed
+    expect e6: unless a?, when b?, not p?
+    expect e7: when not a?, n = y
+    expect e8: p? = (if a? then b? else false)  --~ warning: this `Bool` expression can be simpler
+    expect e9: (if a? then true else b?) iff a? or b?
+    --~^ warning: this `Bool` expression can be simpler
+    expect e10: (if p? then false else a?) iff a? and not b?
+    --~^ warning: this `Bool` expression can be simpler
+    expect e11: if a? then b? else true         --~ warning: this `Bool` expression can be simpler
+    --~^ error: expectation `conditionals::e11` does not hold
+    expect e12: n = if not a? then y else x     --~ warning: this `if` has a negated condition
+    expect e13: n = if x != y then n else if a? then x else y
+    expect e14: when b?, p? iff if not a? then false else b?
+    --~^ warning: this `if` has a negated condition
+    --~^^ warning: this `Bool` expression can be simpler
+}
+--@ summary: 22 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

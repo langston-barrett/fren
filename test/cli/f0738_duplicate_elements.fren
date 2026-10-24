@@ -1,0 +1,2 @@
+-- `duplicate_elements`, which removes each repeat.
+comp c { in t: Set(Int) pub out p? req r: p? iff t = {1, 2, 1} }

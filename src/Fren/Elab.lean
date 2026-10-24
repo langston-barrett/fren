@@ -152,10 +152,29 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
   | .item { kind := .typeItem, path, .. } => return Lean.mkConst (placeholderName path)
   | r => throwErrorAt ty (Core.notATypeMsg r).text
 
+/-- Where the annotation `: T` of the type `ty` is, from the end of what
+precedes it. -/
+def annotationRef (ty : Syntax) : Syntax := Id.run do
+  let some sub := ty.getSubstring? false false | return ty
+  let before := (String.Pos.Raw.extract sub.str 0 sub.startPos).toList.reverse
+  let ws := before.takeWhile Char.isWhitespace
+  let rest := before.drop ws.length
+  let colon := if rest.head? == some ':' then [':'] else []
+  let ws' := (rest.drop colon.length).takeWhile Char.isWhitespace
+  let n := (ws ++ colon ++ ws').foldl (fun n c => n + c.utf8Size) 0
+  return .atom (.synthetic ⟨sub.startPos.byteIdx - n⟩ sub.stopPos) ""
+
+/-- Records `redundant_bool_type` on the declaration of `n` with the type
+`ty`, if it is `Bool` (`lint::redundant_bool_type`). -/
+def lintBoolType (n : Name) (ty : Syntax) (t : Expr) : TermElabM Unit := do
+  if Core.redundantBoolType n (some (t.isConstOf ``Bool)) then
+    recordLint .redundantBoolType (annotationRef ty) (Core.redundantBoolTypeMsg n)
+
 def varType (modName : Name) (name : Syntax) (ty? : Option Syntax) : TermElabM Expr := do
   let n := name.getId
   let t ← ty?.mapM (elabType modName)
   liftMsg name (Core.checkVarName n (t.map (·.isConstOf ``Bool)))
+  if let (some ty, some t) := (ty?, t) then lintBoolType n ty t
   return t.getD (Lean.mkConst ``Bool)
 
 /-- The paths within the `Set(...)`s and `Rel(...)`s of the type `ty`, and
@@ -288,6 +307,7 @@ partial def typeSyntax (t : Expr) : Term :=
     let t ← if f[1].isNone then pure (Lean.mkConst ``Bool) else fieldType modName f[1][1] (some decl) false n
     -- As for a variable (`lang::bool_naming`).
     liftMsg f[0] (Core.checkVarName fn (if f[1].isNone then none else some (t.isConstOf ``Bool)))
+    unless f[1].isNone do liftTermElabM (lintBoolType fn f[1][1] t)
     fields := fields.push (fn, t)
   let st ← getState
   let unbounded := fields.any fun (_, t) => st.unbounded t
@@ -347,9 +367,15 @@ structure ExprCtx where
   check, and report its lints: not when it is elaborated a second time, as
   a trigger. -/
   noteIndexes : Bool := true
-  /-- This expression is an operand of `or`, whose chain `membership_chain`
-  looks at from its top. -/
-  inOr : Bool := false
+  /-- This expression is an operand of `or`, or of `and`, whose chain
+  `membership_chain` looks at from its top: that operator, or `""`. -/
+  chain : String := ""
+  /-- The expression this one is part of, if any: where a `match` is, for
+  the match lints. -/
+  parent? : Option Syntax := none
+  /-- This expression is the `else` branch of an `if`, whose chain
+  `if_chain_match` looks at from its top. -/
+  inElse : Bool := false
 
 def ExprCtx.binder? (cx : ExprCtx) (n : Name) : Option MatchBinder := cx.binders.reverse.find? (·.name == n)
 
@@ -824,8 +850,14 @@ partial def hasConcat (cx : ExprCtx) (e : Syntax) : TermElabM Bool := do
     return ← match definitionOf? cx e with | some d => hasConcat cx d | none => pure false
   e.getArgs.anyM (hasConcat cx)
 
-/-- `e` as `nonminimal_bool` sees it, with ranges in characters from `base`
-in `str`. Parentheses are dropped, as by the `fren` command's parser. -/
+/-- The nodes in `e`'s arguments, through lists such as a call's arguments. -/
+partial def subNodes (e : Syntax) : Array Syntax :=
+  e.getArgs.flatMap fun a =>
+    if a.isAtom || a.isIdent || a.isMissing then #[] else if a.isOfKind nullKind then subNodes a else #[a]
+
+/-- `e` as the lints that rewrite it (`Core.ExLint`) and the operator lints
+see it, with ranges in characters from `base` in `str`. Parentheses are
+dropped, as by the `fren` command's parser. -/
 partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.BNode Syntax :=
   let off (p : String.Pos.Raw) := (String.Pos.Raw.extract str base p).length
   let range : Core.Range := { start := off (e.getPos?.getD base), stop := off (e.getTailPos?.getD base) }
@@ -833,26 +865,85 @@ partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.
   let atom (i : Nat) := if e[i].isAtom then e[i].getAtomVal.trimAscii.toString else ""
   -- `true` and `false` are also paths.
   if e.isOfKind choiceKind then go ((e.getArgs.find? fun a => a.getNumArgs == 1 && a[0].isAtom).getD e[0]) else
+  if e.isOfKind ``Lang.methodExpr then
+    let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
+    let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
+    .mk (.method m) range e (#[go e[0]] ++ e[4].getSepArgs.map go)
+  else if e.isOfKind ``Lang.appExpr && (pathSegs e[0]).size == 1 && !(pathSegs e[0])[0]!.getId.isAtomic then
+    -- `x.m(a)`: a method call on `x`, which may itself be dotted.
+    let id := (pathSegs e[0])[0]!
+    let m := id.getId.getString!
+    let recvStop := off (id.getTailPos?.getD base) - m.length - 1
+    .mk (.method m) range e (#[.mk .atom { range with stop := recvStop } id #[]] ++ e[2].getSepArgs.map go)
+  else
   match e.getNumArgs, atom 0, atom 1 with
   | 3, "(", _ => go e[1]
-  | 4, "when", _ | 4, "unless", _ => .mk .when range e #[go e[1], go e[3]]
+  | 4, "when", _ => .mk (.when false) range e #[go e[1], go e[3]]
+  | 4, "unless", _ => .mk (.when true) range e #[go e[1], go e[3]]
   | 6, "if", _ => .mk .ite range e #[go e[1], go e[3], go e[5]]
   | 2, "not", _ => .mk .not range e #[go e[1]]
   | 2, "-", _ => .mk .neg range e #[go e[1]]
-  | 3, _, op => if op.isEmpty then .mk .atom range e #[] else .mk (.bin op) range e #[go e[0], go e[2]]
+  | 3, _, op => if Core.binaryOps.contains op then .mk (.bin op) range e #[go e[0], go e[2]] else .mk .atom range e (subNodes e |>.map go)
   | 1, "true", _ => .mk (.lit true) range e #[]
   | 1, "false", _ => .mk (.lit false) range e #[]
-  | _, _, _ => .mk .atom range e #[]
+  | _, _, _ => .mk .atom range e (subNodes e |>.map go)
 
-/-- Records the `Bool` expressions in `e` that have a simpler form
-(`nonminimal_bool`). -/
+/-- Whether `e` is in parentheses, `(e')`. -/
+def isParen (e : Syntax) : Bool :=
+  e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(" && !e[1].isOfKind nullKind
+
+/-- Whether `e`, written in `str`, is in parentheses directly around
+parentheses, with nothing but whitespace between them. -/
+def isDoubleParen (str : String) (e : Syntax) : Bool :=
+  let blank (a b : Syntax) := match a.getTailPos?, b.getPos? with
+    | some p, some q => (String.Pos.Raw.extract str p q).all Char.isWhitespace
+    | _, _ => false
+  isParen e && isParen e[1] && blank e[0] e[1] && blank e[1] e[2]
+
+/-- Records `double_parens` in `e`, written in `str` (`lint::double_parens`),
+where `inParens` says that `e` is directly in parentheses: once for each
+run of pairs, at its outermost. -/
+partial def lintParens (fixable : Bool) (str : String) (e : Syntax) (inParens : Bool := false) : TermElabM Unit := do
+  if isParen e && !inParens then
+    let mut inner := e
+    let mut depth := 1
+    while isDoubleParen str inner do
+      inner := inner[1]
+      depth := depth + 1
+    if Core.doubleParens depth then
+      let msg := Core.doubleParensMsg ((inner.reprint.getD "").trimAscii.toString)
+      recordLint .doubleParens e { msg with notes := if fixable then msg.notes.push Core.fixHelp else msg.notes }
+  for a in e.getArgs, i in [0:e.getNumArgs] do lintParens fixable str a (i == 1 && isDoubleParen str e)
+
+/-- Records the expressions in `e` that the lints that rewrite them
+(`Core.ExLint`) report, such as `Bool` expressions with a simpler form
+(`nonminimal_bool`), the operator and method lints, the arithmetic lints
+and double parentheses in it, once `e` is elaborated. -/
 def lintBools (e : Syntax) : TermElabM Unit := do
   let some sub := e.getSubstring? false false | return
   let src := (String.Pos.Raw.extract sub.str sub.startPos sub.stopPos).toList.toArray
   -- `fren fix` reads Markdown specs, but not Lean files.
   let fixable := (← getLocal).inMarkdown
-  for r in Core.simplerBools src (boolNode sub.str sub.startPos e) do
-    recordLint .nonminimalBool r.ref (Core.nonminimalMsg r fixable)
+  let node := boolNode sub.str sub.startPos e
+  for (l, ref, msg) in Core.rewriteReports src node fixable do
+    recordLint l ref msg
+  let boolEqs := (← getLocal).boolEqs
+  modifyLocal fun l => { l with boolEqs := #[] }
+  for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) node do
+    recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ (if fixable then #[Core.fixHelp] else #[]) }
+  for r in Core.arithReports src node do
+    recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ (if fixable then #[Core.fixHelp] else #[]) }
+  lintParens fixable sub.str e
+
+/-- The text that `stx` is written with. -/
+def srcText (stx : Syntax) : String := ((stx.reprint.getD "").trimAscii).toString
+
+/-- `redundant_bindings` on the binding, or field, `b`, a `fren_binding`
+(`lint::redundant_bindings`). -/
+def lintRedundant (b : Syntax) (field : Bool) : TermElabM Unit := do
+  unless b[1].isNone do
+    if Core.redundantBinding (srcText b[0]) (srcText b[1][1]) then
+      recordLint .redundantBindings b (Core.redundantBindingMsg (srcText b[0]) field)
 
 open Lang in
 /-- Translates a record literal, where `go` translates its values. -/
@@ -867,14 +958,83 @@ def recordTerm (go : Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : Te
   | .error (none, msg) => throwError msg.text
   let args ← info.fields.mapM fun (f, _) => do
     let some b := given.find? (·[0].getId == f) | throwError "internal error: no field `{f}`"
+    if cx.noteIndexes then lintRedundant b true
     if b[1].isNone then go (← `(fren_expr| $(⟨b[0]⟩):ident)) else go b[1][1]
   `($(mkCIdentFrom e[0] (recordCtor info.decl)) $args*)
+
+/-- The text that `stx` is written with, without what is around it. -/
+def exactText (stx : Syntax) : String :=
+  match stx.getSubstring? false false with
+  | some sub => String.Pos.Raw.extract sub.str sub.startPos sub.stopPos
+  | none => ((stx.reprint.getD "").trimAscii).toString
+
+open Lang in
+/-- The precedence of `e`'s operator, as `lang::operand` uses it: an
+expression in parentheses, or a field read, is an atom. -/
+def exprPrec (e : Syntax) : Nat :=
+  if (e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(") || e.isOfKind ``Lang.fieldExpr then Core.BKind.atom.prec
+  else match boolNode "" 0 e with | .mk k .. => k.prec
+
+open Lang in
+/-- Where `e`, an operand of `p`, is, as `lang::operand` sees it; `none`
+where any expression can be written. -/
+def operandSlot (p e : Syntax) : Option Core.Slot :=
+  let same (a : Syntax) := a.getPos? == e.getPos? && a.getTailPos? == e.getTailPos?
+  let atom (i : Nat) := if p[i].isAtom then p[i].getAtomVal.trimAscii.toString else ""
+  let at_ (k : Core.BKind) (idxs : Array Nat) := (idxs.findIdx? (same p[·])).bind (k.slots[·]?.join)
+  if p.isOfKind ``Lang.fieldExpr || p.isOfKind ``Lang.methodExpr || p.isOfKind ``Lang.indexExpr then
+    if same p[0] then some Core.receiverSlot else none
+  else if p.isOfKind ``Lang.matchExpr then
+    if same p[1] then some Core.receiverSlot else none
+  else match p.getNumArgs, atom 0, atom 1 with
+    | 3, "(", _ => none
+    | 4, "when", _ => at_ (.when false) #[1, 3]
+    | 4, "unless", _ => at_ (.when true) #[1, 3]
+    | 2, "not", _ => at_ .not #[1]
+    | 2, "-", _ => at_ .neg #[1]
+    | 3, _, op => if op.isEmpty then none else at_ (.bin op) #[0, 2]
+    | _, _, _ => none
+
+/-- The match lints of the `match` `e` on a value of the enumeration
+`info`, whose arms name the variants `pats`, or `_` for `none`, where
+`slot` is (`Reqs/Lint#matches`). -/
+def lintMatch (cx : ExprCtx) (e : Syntax) (info : EnumInfo) (pats : Array (Option (Array Nat)))
+    (slot : Option Core.Slot) : TermElabM Unit := do
+  let arms := e[3].getSepArgs
+  let infos : Array Core.ArmInfo := arms.map fun arm =>
+    let alts := patternAlts arm
+    { alts := alts.map exactText, binds := (patternBinders arm).any (·.isIdent), noPayload := alts.all (·[1].isNone)
+      body := { text := exactText arm[2], prec := exprPrec arm[2] } }
+  -- `fren fix` reads Markdown specs, but not Lean files.
+  let fixable := (← getLocal).inMarkdown
+  let help (m : Core.Msg) := if fixable then m.note Core.fixHelp else m
+  -- `trivial_match` (`lint::trivial_match`).
+  if let #[i] := infos then
+    if Core.trivialMatch infos.size i.binds then recordLint .trivialMatch e (Core.trivialMatchMsg (i.body.inSlot slot))
+  for g in Core.sameArmGroups infos do
+    let (i, msg) := Core.sameArmsMsg infos g slot
+    recordLint .matchSameArms arms[i]! (help msg)
+  let scrutinee : Core.BText := { text := exactText e[1], prec := exprPrec e[1] }
+  if let some (pre, post) := Core.membershipParts? infos scrutinee slot then
+    recordLint .matchLikeMembership e (help (Core.membershipMsg (pre ++ scrutinee.text ++ post)))
+  let some w := pats.findIdx? (·.isNone) | return
+  let covered := (List.range info.variants.size).filter fun k => !pats.any (·.any (·.contains k))
+  unless Core.wildcardSingle covered.length do return
+  let k := covered[0]!
+  let v := info.variants[k]!
+  let siblings ← (arms.flatMap patternAlts).mapM fun p => (pathSegs p[0]).mapM segName
+  let n := info.payloads[k]!.size
+  let pat? := ((← getState).table.variantPath? cx.modName cx.shadowing info.path v siblings).map fun segs =>
+    "::".intercalate (segs.map toString).toList ++ (if n == 0 then "" else s!"({", ".intercalate (List.replicate n "_")})")
+  let msg := Core.wildcardMsg (info.path ++ v) pat?
+  recordLint .wildcardSingleVariant arms[w]![0] (if pat?.isSome then help msg else msg)
 
 open Lang in
 /-- Translates a `match` into a chain of `if`s that compare its scrutinee
 with each arm's variant, built from the scrutinee's own payload, where
 `toTerm` translates its parts. -/
-def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
+def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (slot : Option Core.Slot) :
+    TermElabM Term := withRef e do
   let go := toTerm cx
   let scrutinee := e[1]
   let s ← go scrutinee
@@ -909,6 +1069,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   | .error (some (i, some j), msg) => throwErrorAt (patternAlts arms[i]!)[j]! msg.text
   | .error (some (i, none), msg) => throwErrorAt arms[i]![0] msg.text
   | .error (none, msg) => throwError msg.text
+  if cx.noteIndexes then lintMatch cx e info pats slot
   let mut bodies : Array Term := #[]
   -- An arm is evaluated when its pattern matches and no earlier one does.
   let test (idxs : Array Nat) : TermElabM Term := do
@@ -953,9 +1114,6 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
 /-- Whether `e` is `{}`, which takes its type from where it is written. -/
 def isEmptySet (e : Syntax) : Bool := e.isOfKind ``Lang.setExpr && e[1].getSepArgs.isEmpty
 
-/-- The text that `stx` is written with. -/
-def srcText (stx : Syntax) : String := ((stx.reprint.getD "").trimAscii).toString
-
 /-- Strips parentheses from `e`. -/
 partial def unparen (e : Syntax) : Syntax :=
   if e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(" then unparen e[1] else e
@@ -964,11 +1122,72 @@ partial def unparen (e : Syntax) : Syntax :=
 def isBinOp (e : Syntax) (op : String) : Bool :=
   e.getNumArgs == 3 && e[1].isAtom && e[1].getAtomVal.trimAscii.toString == op
 
-/-- The disjuncts of a chain of `or`, through parentheses, as the `fren`
-command's parser, which drops them, sees it. -/
-partial def orDisjuncts (e : Syntax) : Array Syntax :=
+/-- The operands of a chain of `op`, `or` or `and`, through parentheses, as
+the `fren` command's parser, which drops them, sees it. -/
+partial def chainOperands (op : String) (e : Syntax) : Array Syntax :=
   let e := unparen e
-  if isBinOp e "or" then orDisjuncts e[0] ++ orDisjuncts e[2] else #[e]
+  if isBinOp e op then chainOperands op e[0] ++ chainOperands op e[2] else #[e]
+
+/-- Whether `e` is `if c then a else b`. -/
+def isIte (e : Syntax) : Bool := e.getNumArgs == 6 && e[0].isAtom && e[0].getAtomVal.trimAscii.toString == "if"
+
+/-- Whether `e` is a `when` or an `unless`. -/
+def isConditional (e : Syntax) : Bool :=
+  e.getNumArgs == 4 && e[0].isAtom && ["when", "unless"].contains e[0].getAtomVal.trimAscii.toString
+
+/-- The variant that `v` names, if it is a path to one without a payload:
+its enumeration, its index and its text. -/
+def variantOf? (cx : ExprCtx) (v : Syntax) : TermElabM (Option (Name × Nat × String)) := do
+  let v := unparen v
+  let p := if v.getNumArgs == 1 then v[0] else v
+  unless p.isOfKind ``Lang.fren_path do return none
+  let st ← getState
+  let .ok (.variant en idx) := st.table.resolvePath cx.modName ((pathSegs p).map (·.getId)) cx.shadowing | return none
+  unless (st.enums.get? en.path).any (·.payloads[idx]?.any (·.isEmpty)) do return none
+  return some (en.path, idx, srcText p)
+
+/-- `e` as a test of which variant a scrutinee is, if it is one
+(`Fren.Core.VariantTest`). -/
+partial def variantTest? (cx : ExprCtx) (e : Syntax) : TermElabM (Option Core.VariantTest) := do
+  let e := unparen e
+  if isBinOp e "or" then
+    let some x ← variantTest? cx e[0] | return none
+    let some y ← variantTest? cx e[2] | return none
+    return x.or y
+  if isBinOp e "=" then
+    let some (en, i, t) ← variantOf? cx e[2] | return none
+    return some { scrutinee := srcText (unparen e[0]), enum := en, variants := #[(i, t)] }
+  let s := unparen e[2]
+  unless e.isOfKind ``Lang.memberExpr && s.isOfKind ``Lang.setExpr do return none
+  let mut out : Array (Nat × String) := #[]
+  let mut en? : Option Name := none
+  for v in s[1].getSepArgs do
+    let some (en, i, t) ← variantOf? cx v | return none
+    unless en?.all (· == en) do return none
+    en? := some en
+    out := out.push (i, t)
+  let some en := en? | return none
+  return some { scrutinee := srcText (unparen e[0]), enum := en, variants := out }
+
+/-- The tests, the branches and the final `else` of a chain of `if`. -/
+partial def ifChain (e : Syntax) : Array Syntax × Array Syntax × Syntax :=
+  let e := unparen e
+  if isIte e then let (cs, as, z) := ifChain e[5]; (#[e[1]] ++ cs, #[e[3]] ++ as, z) else (#[], #[], e)
+
+/-- The text of `e` as the body of a `match` arm. -/
+def armBodyOf (e : Syntax) : String := let e := unparen e; Core.armBody (srcText e) (isConditional e)
+
+/-- `if_chain_match` on the chain of `if` that starts at `e`
+(`lint::if_chain_match`). -/
+def lintIfChain (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
+  let (cs, as, z) := ifChain e
+  let ts? := Core.sameScrutinee (← cs.mapM (variantTest? cx))
+  let ts := ts?.getD #[]
+  let enums := (← getState).enums
+  let n := ((ts[0]?.bind fun t => enums.get? t.enum).map (·.variants.size)).getD 0
+  let (fires, wildcard) := Core.ifChainMatch cs.size ts?.isSome (Core.repeatedVariants ts) (Core.untestedVariants n ts)
+  if fires then
+    recordLint .ifChainMatch e (Core.ifChainMatchMsg ts (as.map armBodyOf) (if wildcard then some (armBodyOf z) else none))
 
 /-- The sequences that `e` indexes, as their text. -/
 partial def indexedIn (e : Syntax) : Array String :=
@@ -997,10 +1216,15 @@ def lintLength (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   unless cx.noteIndexes do return
   let (a, b) := (e[0], e[2])
   let some c := Core.Comparison.ofOp? e[1].getAtomVal.trimAscii.toString | return
-  let some d := (if b.getNumArgs == 1 then b[0] else b).isNatLit? | return
-  let (fires, empty) := Core.lengthZero c d
+  let lit? (x : Syntax) := (if x.getNumArgs == 1 then x[0] else x).isNatLit?
+  -- The length, the literal, and whether the length is on the left.
+  let (n, d, left) ← match lit? b, lit? a with
+    | some d, _ => pure (a, d, true)
+    | none, some d => pure (b, d, false)
+    | none, none => return
+  let (fires, empty) := Core.lengthZero c d left
   unless fires do return
-  let some (recv, card) ← lengthOf? a | return
+  let some (recv, card) ← lengthOf? n | return
   -- Only its type: what elaborating it reports is reported where it is.
   let saved ← getLocal
   let some t ← try some <$> typeOf (← toTerm { cx with noteIndexes := false, concatOk := true } recv) catch _ => pure none
@@ -1008,7 +1232,97 @@ def lintLength (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   modifyLocal fun _ => saved
   unless card == t.isAppOfArity ``Fren.FinSet 1 do return
   let emptyText := if t.isConstOf ``String then "\"\"" else if t.isAppOfArity ``Fren.Seq 1 then "[]" else "{}"
-  recordLint (if card then .cardZero else .lengthZero) e (Core.lengthZeroMsg card (srcText recv) emptyText empty)
+  recordLint (if card then .cardZero else .lengthZero) e (Core.lengthZeroMsg card (srcText recv) emptyText empty d)
+
+/-- `eq_op` on `e`, if it is an infix operator (`lint::eq_op`). -/
+def lintEqOp (e : Syntax) : TermElabM Unit := do
+  unless e.getNumArgs == 3 && e[1].isAtom do return
+  let some op := Core.InfixOp.ofOp? e[1].getAtomVal.trimAscii.toString | return
+  let a := exactText (unparen e[0])
+  if let some v := Core.eqOp op (Core.writtenSame a (exactText (unparen e[2]))) then
+    recordLint .eqOp e (Core.eqOpMsg op v a)
+
+/-- `same_branches` on `e`, `if c then a else b` (`lint::same_branches`). -/
+def lintSameBranches (e a b : Syntax) : TermElabM Unit := do
+  let (a, b) := (unparen a, unparen b)
+  unless Core.sameBranches (Core.writtenSame (exactText a) (exactText b)) do return
+  let some sub := e.getSubstring? false false | return
+  let .mk kind .. := boolNode "" 0 a
+  recordLint .sameBranches e (Core.sameBranchesMsg (exactText a) kind.prec (String.Pos.Raw.extract sub.str 0 sub.startPos))
+
+/-- `duplicate_elements` on the set literal `e` (`lint::duplicate_elements`). -/
+def lintDuplicates (e : Syntax) (elems : Array Syntax) : TermElabM Unit := do
+  let repeats := Core.repeatedElements (elems.map exactText)
+  unless Core.duplicateElements repeats.size do return
+  let some sub := e.getSubstring? false false | return
+  let src := (String.Pos.Raw.extract sub.str sub.startPos sub.stopPos).toList.toArray
+  let off (p : String.Pos.Raw) := (String.Pos.Raw.extract sub.str sub.startPos p).length
+  let range (s : Syntax) : Core.Range :=
+    { start := off (s.getPos?.getD sub.startPos), stop := off (s.getTailPos?.getD sub.startPos) }
+  recordLint .duplicateElements e (Core.duplicateElementsMsg src ⟨0, src.size⟩ (elems.map range) repeats)
+
+/-- The receiver of `e` and the name it reads, if it reads a field or calls a
+method without arguments. -/
+def lastName? (e : Syntax) : TermElabM (Option (Syntax × String)) := do
+  if e.isOfKind ``Lang.fieldExpr then return some (e[0], e[2].getId.toString)
+  let p := if e.getNumArgs == 1 then e[0] else e
+  unless p.isOfKind ``Lang.fren_path && (pathSegs p).size == 1 do return none
+  let .str pre m := (pathSegs p)[0]!.getId | return none
+  if pre.isAnonymous then return none
+  return some (← pathExpr e pre, m)
+
+/-- The names that `e` reads one after another, innermost first, each with
+its receiver. -/
+partial def namesRead (e : Syntax) : TermElabM (Array (Syntax × String)) := do
+  match ← lastName? e with
+  | some (r, n) => return (← namesRead (unparen r)).push (r, n)
+  | none => return #[]
+
+/-- `e` without parentheses, as an operand: its text and precedence. -/
+def bareText (e : Syntax) : Core.BText := { text := srcText (unparen e), prec := exprPrec (unparen e) }
+
+/-- Records `redundant_method_chain` on `e`, the end of a chain of names
+(`lint::method_chain`), an operand of `parent?`: not on the receiver of a
+field read. -/
+def lintChain (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (parent? : Option Syntax) (e : Syntax) :
+    TermElabM Unit := do
+  let inChain := parent?.any fun p =>
+    p.isOfKind ``Lang.fieldExpr && p[0].getPos? == e.getPos? && p[0].getTailPos? == e.getTailPos?
+  unless cx.noteIndexes && !inChain do return
+  let steps ← namesRead e
+  let ms := steps.map (Core.Method.ofName? ·.2)
+  let shortens (i : Nat) := match ms[i]?, ms[i + 1]? with
+    | some (some a), some (some b) => Core.methodChain a b != .keep
+    | _, _ => false
+  unless (List.range steps.size).any shortens do return
+  -- The first receiver that is a relation or a sequence, which has no
+  -- fields: the names after it are its methods.
+  for (recv, _) in steps, i in [0:steps.size] do
+    -- Only its type: elaborating it has no other effect.
+    let saved ← saveState
+    let t? ← try some <$> typeOf (← toTerm { cx with noteIndexes := false, concatOk := true } recv)
+      catch _ => pure none
+    saved.restore
+    let some t := t? | continue
+    let relation := t.isAppOfArity ``Fren.FinSet 1 && t.appArg!.isAppOfArity ``Prod 2
+    unless t.isAppOfArity ``Fren.Seq 1 || relation do continue
+    let some chain := (ms.extract i).mapM id | return
+    let short := Core.shortestChain chain.toList
+    if short.length < chain.size then
+      let fixed : Core.BText := if short.isEmpty then bareText recv
+        else { text := srcText recv ++ String.join (short.map (s!".{·.name}")), prec := Core.BKind.atom.prec }
+      recordLint .redundantMethodChain e (Core.methodChainMsg (fixed.inSlot (parent?.bind (operandSlot · e))))
+    return
+
+/-- Records `trivial_pattern` on `e`, `recv.matches?(args)`, an operand of
+`parent?` (`lint::trivial_pattern`). -/
+def lintPattern (cx : ExprCtx) (parent? : Option Syntax) (e recv : Syntax) (args : Array Syntax) : TermElabM Unit := do
+  unless cx.noteIndexes do return
+  let #[p] := args | return
+  let some lit := (if p.getNumArgs == 1 then p[0] else p).isStrLit? | return
+  let some (fix, s) := Core.trivialPattern? lit | return
+  let fixed := (Core.trivialPatternText (bareText recv) (srcText recv) fix s).inSlot (parent?.bind (operandSlot · e))
+  recordLint .trivialPattern e (Core.trivialPatternMsg fix fixed)
 
 open Lang in
 /-- `a = b`, `a != b` and the orderings; on strings, checks the decidable
@@ -1024,6 +1338,10 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
     -- `++` is in the core against a constant.
     let (x, y) := (← toTerm { cx with concatOk := cb, emptyOk := !isEmptySet b } a,
       ← toTerm { cx with concatOk := ca, emptyOk := !isEmptySet a } b)
+    -- For `bool_equality`, at the end of the expression.
+    let tx ← typeOf x
+    if cx.noteIndexes && (tx.isConstOf ``Bool || tx.isProp) then
+      modifyLocal fun l => { l with boolEqs := l.boolEqs.push (e.getPos?, e.getTailPos?) }
     -- A side whose definition has a `++` stands for it, and is reported here.
     let named (s : Syntax) : TermElabM Bool := do return (definitionOf? cx s).isSome && (← hasConcat cx s)
     if ((← named a) || (← named b)) && (← string x) then
@@ -1083,6 +1401,11 @@ def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     let c := (Core.Method.ofName? m).map (·.construct) |>.getD .stringAtom
     checkCore cx e c constantArgs true (#[recvStx] ++ args) (constantArgs && (← isConstant cx recvStx))
   let t := (← callMethod ref r rty m as).1
+  -- `empty_argument` (`lint::empty_argument`).
+  if let (some meth, true) := (Core.Method.ofName? m, cx.noteIndexes) then
+    let recv := if ref.isOfKind ``Lang.fren_path then ((exactText ref).dropEnd (m.length + 1)).toString else exactText recvStx
+    if let some msg := Core.emptyArgumentMsg? meth seq recv (args.map (exactText <| unparen ·)) then
+      recordLint .emptyArgument e msg
   checkRelational cx e rty m (#[recvStx] ++ args)
   checkRelationalCard cx e rty m recvStx
   return t
@@ -1104,6 +1427,7 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     unless emptyOk do throwErrorAt e Core.emptySetTypeMsg.text
     return ← `((∅ : Fren.FinSet _))
   checkCore cx e .setAlgebra true true elems
+  if cx.noteIndexes then lintDuplicates e elems
   let xs ← elems.mapM (pairOrTerm toTerm { cx with emptyOk := true })
   `(($(← finSetLit xs) : Fren.FinSet _))
 
@@ -1151,17 +1475,20 @@ is guarded by `c`, or by `not c` if `negated` (`Reqs/Lang/Expressions#sequences`
 def guardedTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (c d : Syntax) (negated : Bool)
     (op : Join := .implies) : TermElabM Term := do
   let e ← getRef
-  -- `membership_chain`, at the top of a chain of `or` (`lint::membership_chain`).
-  if op matches .or && !cx.inOr && cx.noteIndexes then
-    let ds := orDisjuncts e
-    let eqs := ds.filterMap fun d => let d := unparen d; if isBinOp d "=" then some (d[0], d[2]) else none
+  let j := match op with | .or => "or" | .and => "and" | .implies => ""
+  -- `membership_chain`, at the top of a chain of `or` or of `and` (`lint::membership_chain`).
+  if !j.isEmpty && cx.chain != j && cx.noteIndexes then
+    let ds := chainOperands j e
+    let cmp := if op matches .and then "!=" else "="
+    let eqs := ds.filterMap fun d => let d := unparen d; if isBinOp d cmp then some (d[0], d[2]) else none
     let lefts := eqs.map (srcText ·.1)
-    if Core.membershipChainFires ds.size (eqs.size == ds.size && lefts.all (· == lefts[0]!)) then
-      recordLint .membershipChain e (Core.membershipChainMsg lefts[0]! (eqs.map (srcText ·.2)))
+    let laterIndexes := (eqs.extract 1).any fun (_, v) => !(indexedIn v).isEmpty
+    if Core.membershipChainFires ds.size (eqs.size == ds.size && lefts.all (· == lefts[0]!)) laterIndexes then
+      recordLint .membershipChain e (Core.membershipChainMsg lefts[0]! (eqs.map (srcText ·.2)) (op matches .and))
   -- `index_after_use` (`lint::index_after_use`).
   if op matches .and && cx.noteIndexes then
     if (indexedIn c).any (fun q => boundsSeq d q && !boundsSeq c q) then recordLint .indexAfterUse e (Core.indexAfterUseMsg (srcText c) (srcText d))
-  let cx := { cx with inOr := op matches .or }
+  let cx := { cx with chain := j }
   let x ← toTerm cx c
   let g ← if negated then `(¬$x) else pure x
   let y ← toTerm { cx with guards := cx.guards.push g } d
@@ -1216,9 +1543,12 @@ become references to the generated constructors. -/
 partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   let concatOk := cx.concatOk
   let emptyOk := cx.emptyOk
-  -- Only `or`'s own operands continue its chain.
-  let cx := { cx with concatOk := false, emptyOk := false, inOr := cx.inOr && isBinOp (unparen e) "or" }
+  -- An operand of `or` or `and` continues its chain only if it is one too.
+  let parent? := cx.parent?
+  let cx := { cx with concatOk := false, emptyOk := false, chain := if isBinOp (unparen e) cx.chain then cx.chain else ""
+                      parent? := some e, inElse := cx.inElse && isIte (unparen e) }
   let go := toTerm cx
+  if cx.noteIndexes then lintEqOp e
   match e with
   | `(fren_expr| when $c, $d) => guardedTerm toTerm cx c d false
   | `(fren_expr| unless $c, $d) => guardedTerm toTerm cx c d true
@@ -1226,10 +1556,12 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $a or $b) => guardedTerm toTerm cx a b true (op := .or)
   | `(fren_expr| $a and $b) => guardedTerm toTerm cx a b false (op := .and)
   | `(fren_expr| not $a) => `(¬$(← go a))
-  | `(fren_expr| if $c then $a else $b) =>
-    let c ← go c
-    let x ← toTerm { cx with emptyOk := emptyOk || !isEmptySet b, guards := cx.guards.push c } a
-    let y ← toTerm { cx with emptyOk := emptyOk || !isEmptySet a, guards := cx.guards.push (← `(¬$c)) } b
+  | `(fren_expr| if $c' then $a else $b) =>
+    if cx.noteIndexes && !cx.inElse then lintIfChain cx e
+    if cx.noteIndexes then lintSameBranches e a b
+    let c ← toTerm { cx with inElse := false } c'
+    let x ← toTerm { cx with emptyOk := emptyOk || !isEmptySet b, guards := cx.guards.push c, inElse := false } a
+    let y ← toTerm { cx with emptyOk := emptyOk || !isEmptySet a, guards := cx.guards.push (← `(¬$c)), inElse := true } b
     `(if $c then $x else $y)
   | `(fren_expr| $_ = $_) | `(fren_expr| $_ != $_) | `(fren_expr| $_ < $_) | `(fren_expr| $_ <= $_)
   | `(fren_expr| $_ > $_) | `(fren_expr| $_ >= $_) => compareTerm toTerm cx e
@@ -1254,6 +1586,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $p:fren_path) =>
     let segs := pathSegs p
     if h : segs.size = 1 then
+      lintChain toTerm cx parent? e
       let id := segs[0]
       let n := id.getId
       -- A binder or variable, then any fields read from it.
@@ -1300,7 +1633,9 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
     | r => throwError (Core.notAValueMsg r).text
   | `(fren_expr| $p:fren_path($args,*)) =>
     if let some (recv, m) := methodApp? cx e then
-      return ← methodTerm toTerm cx e p (← pathExpr p recv) m.toString args.getElems
+      let recv ← pathExpr p recv
+      if m.toString == "matches?" then lintPattern cx parent? e recv args.getElems
+      return ← methodTerm toTerm cx e p recv m.toString args.getElems
     let segs := pathSegs p
     if segs.size == 1 && (cx.vars.any (·.name == segs[0]!.getId) || (cx.binder? segs[0]!.getId).isSome) then
       throwErrorAt p (Core.varNotAFunctionMsg segs[0]!.getId).text
@@ -1335,11 +1670,13 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
     `($(mkCIdentFrom p a.placeholder) $args*)
   | _ =>
     if e.isOfKind ``Lang.fieldExpr then
+      lintChain toTerm cx parent? e
       return ← fieldTerm cx e (← toTerm { cx with concatOk := true } e[0])
     else if e.isOfKind ``Lang.methodExpr then
       -- `at` is a keyword of Lean's.
       let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
       let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
+      if m == "matches?" then lintPattern cx parent? e e[0] e[4].getSepArgs
       methodTerm toTerm cx e e[2] e[0] m e[4].getSepArgs
     else if e.isOfKind ``Lang.setExpr then setLitTerm toTerm cx emptyOk e
     else if e.isOfKind ``Lang.memberExpr || e.isOfKind ``Lang.subsetExpr || e.isOfKind ``Lang.unionExpr
@@ -1348,7 +1685,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
     else if e.isOfKind ``Lang.seqExpr then seqLitTerm toTerm cx emptyOk e
     else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
     else if e.isOfKind ``Lang.recordExpr then recordTerm (toTerm { cx with emptyOk := true }) cx e
-    else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm cx e
+    else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm cx e (parent?.bind (operandSlot · e))
     else throwError "unsupported Fren expression"
 
 open Lang in
@@ -1544,6 +1881,7 @@ def elabBindings (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) : TermElab
     let x := b[0]
     let t ← if b[1].isNone then toTerm cx (← `(fren_expr| $(⟨x⟩):ident)) else toTerm { cx with emptyOk := true } b[1][1]
     unless b[1].isNone do lintBools b[1][1]
+    lintRedundant b false
     let some idx := cx.vars.findIdx? (·.name == pi.name ++ x.getId)
       | throwError "internal error: no variable for `{x.getId}`"
     let fv := fvs[idx]!
@@ -1795,6 +2133,35 @@ open Lang in
         let (constant, definable) := Core.outputLints v.defn?.isSome mentions about.size equation
         if constant then recordLint .constantOutput v.ref (Core.constantOutputMsg v.name)
         if definable then recordLint .definableOutput v.ref (Core.definableOutputMsg v.name about[0]!.1)
+      -- `case_split_reqs` (`lint::case_split_reqs`): each requirement `when T, y = e`, as its name, where it is
+      -- reported, `y`, the operator, `T` and the text of `e`.
+      let mut cases : Array (Name × Syntax × String × String × Core.VariantTest × String) := #[]
+      for m in members do
+        let `(fren_member| req $x:ident : $e) := m | continue
+        let e := unparen e.raw
+        unless isConditional e && e[0].getAtomVal.trimAscii.toString == "when" do continue
+        let body := unparen e[3]
+        let op := if isBinOp body "=" then "=" else if isBinOp body "iff" then "iff" else ""
+        if op.isEmpty then continue
+        let y := unparen body[0]
+        let y := if y.getNumArgs == 1 then y[0] else y
+        unless y.isOfKind ``Lang.fren_path && (pathSegs y).size == 1 do continue
+        let yn := (pathSegs y)[0]!.getId
+        unless vars.any (fun v => v.role == .output && v.name == yn) do continue
+        let some t ← variantTest? lcx e[1] | continue
+        cases := cases.push (x.getId, x, srcText y, op, t, armBodyOf body[2])
+      let mut grouped : Array Nat := #[]
+      for i in [0:cases.size] do
+        if grouped.contains i then continue
+        let (_, _, y, op, t, _) := cases[i]!
+        let group := (Array.range cases.size).filter fun j =>
+          j ≥ i && cases[j]!.2.2.1 == y && cases[j]!.2.2.2.2.1.key == t.key && cases[j]!.2.2.2.2.1.enum == t.enum
+        grouped := grouped ++ group
+        let cs := group.map fun j => let (n, _, _, _, t, e) := cases[j]!; (n, t, e)
+        let ts := cs.map (·.2.1)
+        let n := (((← getState).enums.get? t.enum).map (·.variants.size)).getD 0
+        if Core.caseSplitReqs cs.size (Core.repeatedVariants ts) then
+          recordLint .caseSplitReqs cases[group[1]!]!.2.1 (Core.caseSplitReqsMsg y op cs (Core.untestedVariants n ts))
       let uses ← usesOf ((← fvs.mapM fun x => inferType x) ++ defs.map (·.2))
       if good then
         let appD (decl : Name) := mkAppN (Lean.mkConst decl) (uses.map (Lean.mkConst ·) ++ fvs)

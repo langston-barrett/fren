@@ -31,6 +31,9 @@ comp codes {
 
 expect repetition: "aaa".matches?(r"a{2,3}") and not "a".matches?(r"a{2,3}") and "ab".matches?(r"(a|b)+")
 expect escapes: "a.b".matches?(r"a\.b") and not "axb".matches?(r"a\.b") and "?".matches?(r"\?")
+--~^ warning: this pattern has no operator but `.*`
+--~^^ warning: this pattern has no operator but `.*`
+--~^^^ warning: this pattern has no operator but `.*`
 expect classes: "-".matches?(r"[a-]") and "q".matches?(r"[^a-p]") and not "a".matches?(r"[^a-p]")
 --@ summary: 21 passed, 1 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

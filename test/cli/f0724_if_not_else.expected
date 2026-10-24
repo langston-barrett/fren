@@ -1,0 +1,19 @@
+warning[F0724]: this `if` has a negated condition
+  --> test/cli/f0724_if_not_else.fren:11:17
+   |
+11 |     req r1: m = if not a? then x else y
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^ negated condition
+   |
+   = note: `if not C then A else B` is `if C then B else A`, and `if a != b then A else B` is `if a = b then B else A`
+   = help: `fren fix` can fix this
+   = note: `if_not_else` is set to `warn`
+help: write `if a? then y else x`
+   |
+11 -     req r1: m = if not a? then x else y
+11 +     req r1: m = if a? then y else x
+   |
+
+fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0724`.
+exit=3

@@ -1,0 +1,15 @@
+--@ args: fix --check
+-- `fren fix` writes an `if` with a `Bool` literal branch as `and` or `or`.
+comp c {
+    in a?
+    in b?
+    pub out o?
+    pub out p?
+    pub out q?
+    pub out w?
+
+    req r1: o? iff (if a? then b? else false)
+    req r2: p? iff (if a? or b? then true else b?)
+    req r3: q? iff (if a? then false else b? iff a?)
+    req r4: w? iff (if a? then b? else true)
+}

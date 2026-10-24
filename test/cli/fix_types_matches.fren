@@ -1,0 +1,19 @@
+--@ args: fix --check
+-- `fren fix` removes a `: Bool` that a name implies, and replaces a trivial
+-- `match` with its arm's body, in parentheses where it needs them.
+pub enum E { A, B }
+pub enum One { Only }
+pub struct R { ok? : Bool, n: Int }
+pub fn even?(Int): Bool
+pub fn pos?(n: Int, big?: Bool): Bool := n > 0 and big?
+pub comp c {
+    in e: E
+    in o: One
+    in x: Int
+    in ready?: Bool
+    pub out d?: Bool := ready?
+    pub out y: Int
+
+    req r1: y = match e { _ => 1 } + match o { One::Only => x + 1 } * 2
+    req r2: y = match e { E::A | E::B => (x) } and match o { One::Only => d? }
+}

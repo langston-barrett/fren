@@ -46,6 +46,8 @@ inductive Kind where
 def space (before after : Kind) : Bool :=
   if before == .comment || after == .comment then true
   else if before == .brace && after == .closeBrace then false
+  -- `--` starts a comment.
+  else if before == .negation && after == .negation then true
   else !(before matches .paren | .call | .group | .path | .negation) &&
     !(after matches .closeParen | .closeGroup | .path | .comma | .colon | .group | .call)
 

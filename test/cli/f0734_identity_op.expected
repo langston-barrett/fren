@@ -1,0 +1,32 @@
+warning[F0734]: this negation can be the other operator
+ --> test/cli/f0734_identity_op.fren:2:56
+  |
+2 | comp c { in x: Int in y: Int pub out n: Int req r: n = 2 * ((x - y) + 0) - -(x + y) }
+  |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ an operand that is a negation
+  |
+  = help: `fren fix` can fix this
+  = note: `identity_op` is `warn` by default
+  = help: to allow it, `set_option fren.lint.identity_op "allow"`
+help: write `2 * ((x - y) + 0) + (x + y)`
+  |
+2 - comp c { in x: Int in y: Int pub out n: Int req r: n = 2 * ((x - y) + 0) - -(x + y) }
+2 + comp c { in x: Int in y: Int pub out n: Int req r: n = 2 * ((x - y) + 0) + (x + y) }
+  |
+
+warning[F0734]: this operation has no effect
+ --> test/cli/f0734_identity_op.fren:2:61
+  |
+2 | comp c { in x: Int in y: Int pub out n: Int req r: n = 2 * ((x - y) + 0) - -(x + y) }
+  |                                                             ^^^^^^^^^^^ leaves its other operand as it is
+  |
+  = help: `fren fix` can fix this
+help: write `x - y`
+  |
+2 - comp c { in x: Int in y: Int pub out n: Int req r: n = 2 * ((x - y) + 0) - -(x + y) }
+2 + comp c { in x: Int in y: Int pub out n: Int req r: n = 2 * (x - y) - -(x + y) }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0734`.
+exit=3

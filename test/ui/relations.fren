@@ -2,6 +2,9 @@
 -- counterexamples with relations, in both front ends.
 -- fren-covers: lang::relation_op, lang::pair_membership
 
+-- A literal with a repeat is tested on purpose.
+set_option fren.lint.duplicate_elements "allow"
+
 enum Role { Viewer, Editor, Admin }
 
 use self::Role::{Admin, Viewer}
@@ -50,8 +53,8 @@ comp shapes {
 
     req rule: held? iff u in r.domain
 
-    expect inverse_range: r.inverse.domain = r.range
-    expect inverse_twice: r.inverse.inverse = r
+    expect inverse_range: r.inverse.domain = r.range  --~ warning: this chain of methods has a shorter form
+    expect inverse_twice: r.inverse.inverse = r  --~ warning: this chain of methods has a shorter form
     expect domain_empty: (r = {}) iff (r.domain = {})
 }
 

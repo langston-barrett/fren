@@ -107,7 +107,8 @@ There is no space after an opening bracket or a unary `-`, and none before a
 closing bracket, a separator, a `:` or the `(` of a call. So `x: Int`,
 `a::b`, `use a::{b, c}`, `(a or b)`, `f(x, y)`, `f(p).x` and `-1`, but `{ a, b }`, as braces other than
 `::{` have spaces inside. Empty braces are written `{}`. A comment always
-has a space on both sides, unless it starts or ends the line.
+has a space on both sides, unless it starts or ends the line, and so does a
+unary `-` before another, `- -1`, since `--` starts a comment.
 
 ```fren
 pub enum Kind { Open, Call, Close, Brace, CloseBrace, Group, CloseGroup, Path, Comma, Colon, Negation, Comment, Other }
@@ -134,7 +135,9 @@ pub comp space {
 
     req comment: when before = Comment or after = Comment, space?
     req empty: when before = Brace and after = CloseBrace, not space?
-    req tight: unless before = Comment or after = Comment or (before = Brace and after = CloseBrace),
+    req negations: when before = Negation and after = Negation, space?
+    req tight: unless before = Comment or after = Comment or (before = Brace and after = CloseBrace)
+        or (before = Negation and after = Negation),
         space? iff not (before = Open or before = Call or before = Group or before = Path or before = Negation
         or after = Close or after = CloseGroup or after = Path or after = Comma or after = Colon
         or after = Group or after = Call)

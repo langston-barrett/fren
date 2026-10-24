@@ -1,0 +1,56 @@
+-- Double parentheses and the arithmetic lints, and the forms that
+-- `length_zero` and `membership_chain` fire on, in both front ends.
+set_option fren.lint.membership_chain "warn"
+
+fn f(Int): Int
+
+comp arith {
+    in x: Int
+    in y: Int
+    in s: String
+    in t: Set(Int)
+    in q: Seq(Int)
+
+    pub out a1? := ((x > 0))            --~ warning: parentheses directly around parentheses
+    pub out a2? := (((x > 1)))          --~ warning: parentheses directly around parentheses
+    pub out a3? := f((x)) = f(((y)))    --~ warning: parentheses directly around parentheses
+    -- A comment between them: no lint.
+    pub out a4? := (  -- the bound
+        (x > 2))
+    pub out b1: Int := - -x             --~ warning: negating twice is the operand itself
+    pub out b2: Int := -(-(x)) + f(-(-y))
+    --~^ warning: negating twice is the operand itself
+    --~^^ warning: negating twice is the operand itself
+    pub out c1: Int := x * -1 + -1 * y + x * (-1)
+    --~^ warning: multiplying by `-1` is negation
+    --~^^ warning: multiplying by `-1` is negation
+    --~^^^ warning: multiplying by `-1` is negation
+    pub out d1? := x >= y + 1 and x >= 1 + y and x - 1 >= y
+    --~^ warning: over integers, this is a strict comparison
+    --~^^ warning: over integers, this is a strict comparison
+    --~^^^ warning: over integers, this is a strict comparison
+    pub out d2? := y + 1 <= x and 1 + y <= x and y <= x - 1
+    --~^ warning: over integers, this is a strict comparison
+    --~^^ warning: over integers, this is a strict comparison
+    --~^^^ warning: over integers, this is a strict comparison
+    -- Strict, or not off by one: no lint.
+    pub out d3? := x > y - 1 and x + 1 >= y and x >= y - 1 and x <= y + 1 and x * -2 > 0
+    pub out e1? := s.len != 0 and 0 < s.len and 1 <= q.len and t.card >= 1
+    --~^ warning: say whether it is empty with `""`, not `len`
+    --~^^ warning: say whether it is empty with `""`, not `len`
+    --~^^^ warning: say whether it is empty with `[]`, not `len`
+    --~^^^^ warning: say whether it is empty with `{}`, not `card`
+    pub out e2? := q.len < 1 or 0 = s.len or 0 >= t.card or 1 > q.len
+    --~^ warning: say whether it is empty with `[]`, not `len`
+    --~^^ warning: say whether it is empty with `""`, not `len`
+    --~^^^ warning: say whether it is empty with `{}`, not `card`
+    --~^^^^ warning: say whether it is empty with `[]`, not `len`
+    -- Always true, or not about emptiness: no lint.
+    pub out e3? := s.len >= 0 and 0 <= q.len and t.card != 2 and q.len <= 1
+    pub out m1? := x != 1 and x != 2 and x != 3 and x != 4  --~ warning: this is `x` not in a set of 4
+    pub out m2? := x = 1 or x = 2 or x = 3 or x = 4         --~ warning: this is `x` in a set of 4
+    -- A later value indexes a sequence: no lint.
+    pub out m3? := when q != [], x != 1 and x != q[0] and x != 3
+    pub out m4? := when q != [], q[0] != 1 and q[0] != 2 and q[0] != 3
+    --~^ warning: this is `q[0]` not in a set of 3
+}

@@ -1,0 +1,4 @@
+-- `manual_method`, negated, on a sequence.
+set_option fren.lint.undecidable "allow"
+
+comp c { in q: Seq(Int) pub out p? req r: p? iff q.index_of([1], 0) < 0 }

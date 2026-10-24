@@ -2,6 +2,9 @@
 -- front ends.
 -- fren-covers: lang::finite
 
+-- A literal with a repeat is tested on purpose.
+set_option fren.lint.duplicate_elements "allow"
+
 enum Lint { Unused, Glob, Naming }
 
 comp fix_selected {
@@ -34,7 +37,7 @@ comp counts {
     expect defined: n = both.card
 }
 
-expect literals: {1, 1, 2}.card = 2 and ({} union {1}).card = 1 and 3 in ({1, 2, 3} minus {2})
+expect literals: {1, 1, 2}.card = 2 and ({} union {1}).card = 1 and 3 in ({1, 2, 3} minus {2})  --~ warning: this operation has no effect
 expect precedence: {1} union {2} inter {3} = {1}
 
 -- An `in` at the start of a line starts an input, so `s` ends `r`.

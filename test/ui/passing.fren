@@ -45,6 +45,8 @@ comp brightness {
     expect bounded: level >= 1 and level <= 3
 }
 
+-- `nonminimal_bool` would write the binding of `dim?` with `or`.
+set_option fren.lint.nonminimal_bool "allow" in
 comp panel {
     in mode: Mode
     pub out level: Int

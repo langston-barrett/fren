@@ -1,0 +1,51 @@
+warning[F0728]: `_` matches only `E::D`
+  --> test/cli/fix_match.fren:19:51
+   |
+19 |     req r2: b = match e { A => 1, B => 2, C => 3, _ => 3 }
+   |                                                   ^ matches one variant
+   |
+   = note: named, a variant added later makes the `match` non-exhaustive, an error, rather than matched by `_`
+   = help: `fren fix` can fix this
+help: name the variant
+   |
+19 -     req r2: b = match e { A => 1, B => 2, C => 3, _ => 3 }
+19 +     req r2: b = match e { A => 1, B => 2, C => 3, E::D => 3 }
+   |
+
+warning[F0728]: `_` matches only `E::D`
+  --> test/cli/fix_match.fren:25:9
+   |
+25 |         _ => true,
+   |         ^ matches one variant
+   |
+   = note: named, a variant added later makes the `match` non-exhaustive, an error, rather than matched by `_`
+   = help: `fren fix` can fix this
+help: name the variant
+   |
+25 -         _ => true,
+25 +         E::D => true,
+   |
+
+--- test/cli/fix_match.fren
++++ test/cli/fix_match.fren
+@@ -17 +17 @@
+-    req r1: a = match e { A => x  +  1, B => 2, C => x+1, _ => 3 }
++    req r1: a = match e { A | C => x  +  1, B => 2, E::D => 3 }
+@@ -19,10 +19,5 @@
+-    req r2: b = match e { A => 1, B => 2, C => 3, _ => 3 }
+-    req r3: c? = (match e { A | B => true, _ => false }) and x > 0
+-    req r4: d? = match e {
+-        | A
+-        | B => false,
+-        C => true,
+-        _ => true,
+-    }
+-    req r5: f = 2 * match e { A => x + 1, B => x + 1, _ => x + 1 }
+-    req r6: g = match e { A => 1, B => 2, C => 3, _ => 4 }
++    req r2: b = match e { A => 1, B => 2, _ => 3 }
++    req r3: (c? iff e in {A, B}) and x > 0
++    req r4: d? iff not e in {A, B}
++    req r5: f = 2 * (x + 1)
++    req r6: g = match e { A => 1, B => 2, C => 3, E::D => 4 }
+For more information about this error, try `fren --explain F0728`.
+exit=1

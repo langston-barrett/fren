@@ -2,13 +2,16 @@
 -- give as the solver's theory of strings does. Constants only, so every
 -- expression is in the decidable core.
 
+-- The edges include those of empty arguments.
+set_option fren.lint.empty_argument "allow"
+
 expect at_inside: "abc".at(1) = "b"
 expect at_outside: "abc".at(3) = "" and "abc".at(-1) = ""
 expect slice_inside: "abcd".slice(1, 2) = "bc"
 expect slice_end: "abc".slice(2, 5) = "c"
 expect slice_outside: "abc".slice(3, 1) = "" and "abc".slice(-1, 2) = "" and "abc".slice(0, 0) = ""
 expect index_found: "abcabc".index_of("c", 3) = 5 and "abc".index_of("bc", 0) = 1
-expect index_missing: "abc".index_of("d", 0) = -1 and "abc".index_of("b", -1) = -1
+expect index_missing: "abc".index_of("d", 0) = -1 and "abc".index_of("b", -1) = -1  --~ warning: this is a call of `contains?`
 expect index_empty: "abc".index_of("", 3) = 3 and "abc".index_of("", 4) = -1
 expect replace_first: "abcb".replace("b", "x") = "axcb" and "abc".replace("d", "x") = "abc"
 expect replace_empty: "abc".replace("", "x") = "xabc"

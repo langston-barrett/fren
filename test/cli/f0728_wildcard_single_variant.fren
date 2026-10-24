@@ -1,0 +1,11 @@
+-- `wildcard_single_variant`, allowed by default.
+set_option fren.lint.wildcard_single_variant "warn"
+
+enum Shape { Circle(Int), Rect(Int, Int), Dot }
+
+comp c {
+    in s: Shape
+    pub out n: Int
+
+    req r: n = match s { Shape::Circle(r) => r, Shape::Dot => 0, _ => 1 }
+}

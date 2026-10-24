@@ -1,0 +1,8 @@
+--- test/cli/fix_patterns.fren
++++ test/cli/fix_patterns.fren
+@@ -10,2 +10,2 @@
+-    req r1: p? iff s.matches?("abc") and s.matches?(r"a\.b\\.*") and s.matches?(".*x") and s.matches?(r#".*"\(.*"#) and s.matches?("a\nb")
+-    req r2: k? = (s ++ t).matches?("q") and not (s ++ t).matches?(".*q")
++    req r1: p? iff s = "abc" and s.starts_with?("a.b\\") and s.ends_with?("x") and s.contains?("\"(") and s = "a\nb"
++    req r2: k? = (s ++ t = "q") and not (s ++ t).ends_with?("q")
+exit=1

@@ -1,0 +1,68 @@
+-- The lints of variant tests and bindings, in both front ends.
+set_option fren.lint.pedantic "warn"
+set_option fren.lint.definable_output "allow"
+
+enum E { A, B, C, D }
+enum S { Dot, Line(Int) }
+struct P { x: Int, y: Int }
+
+-- A set type, for the solver's logic.
+pub const ALL: Set(E) := {E::A, E::B, E::C, E::D}
+
+comp sub {
+    in x: Int
+    pub out o?
+
+    req r: o? iff x > 0
+}
+
+comp chains {
+    use E::{A, B}
+    in e: E
+    in s: S
+    in x: Int
+    in c?
+    pub out y1: Int
+    pub out y2: Int
+    pub out p?
+    inst w: sub { x := x }       --~ warning: `x := x` is `x`
+    inst v: sub { x := (x) }
+
+    req r1: y1 = if e = E::A then 1 else if e in {E::B, E::C} then 2 else 3  --~ warning: this chain of `if` tests which variant `e` is
+    req r2: y2 = if e = A or e = B then 1 else (if e = E::C then 2 else if e = E::D then 4 else 5)
+    --~^ warning: this chain of `if` tests which variant `e` is
+    req r3: p? iff if e = E::A then c? else if e = E::B then (when x > 0, c?) else not c?
+    --~^ warning: this chain of `if` tests which variant `e` is
+    -- Not chains of variant tests.
+    expect r4: (if e = E::A then 1 else if e = E::A then 2 else 3) > 0
+    expect r5: (if e = E::A then 1 else 3) > 0
+    expect r6: (if e = E::A then 1 else if x > 0 then 2 else 3) > 0
+    expect r7: (if s = S::Dot then 1 else if s = S::Line(1) then 2 else 3) > 0
+    expect r8: (if e = E::A then 1 else if e = E::B or x > 0 then 2 else 3) > 0
+    expect r9: P { x := x, y := 1 }.x = x  --~ warning: `x := x` is `x`
+}
+
+comp cases {
+    in e: E
+    in x: Int
+    pub out y: Int
+    pub out z: Int
+    pub out p?
+
+    req y_a: when e = E::A, y = 1
+    req y_bc: when e in {E::B, E::C} or e = E::D, y = x  --~ warning: `y_a` and `y_bc` constrain `y` case by case on which variant `e` is
+    -- `unless` is not counted.
+    req z_a: when e = E::A, z = 1
+    req z_b: unless e = E::A, z = 2
+    req p_a: when e = E::A, p? iff x > 0
+    req p_b: when e = E::B, p? iff x > 1  --~ warning: `p_a`, `p_b` and `p_c` constrain `p?` case by case on which variant `e` is
+    req p_c: when e = E::C, p? = (x > 2)  --~ warning: equality of `Bool`s is `iff`
+}
+
+comp repeated {
+    in e: E
+    pub out y: Int
+
+    req a: when e = E::A, y = 1  --~ warning: `repeated::a` is redundant
+    req b: when e in {E::A, E::B}, y = 1
+}

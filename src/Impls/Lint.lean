@@ -8,13 +8,15 @@ open Fren.Lang
 
 namespace Fren.Impls
 
-open Fren.Core (LintLevel Case Named ImportFix setLevel effectiveLevel unusedImport inCase
-  expectationFulfilled expectationReported importFix fixExit fixSelected Comparison deadItem literalNegated)
+open Fren.Core (LintLevel Group Case Named ImportFix setLevel effectiveLevel groupAccepted outsideLevel unusedImport
+  inCase expectationFulfilled expectationReported importFix fixExit fixSelected Comparison deadItem literalNegated Head)
 
 instance : Fren.Finite LintLevel :=
   ⟨[.allow, .expect, .warn, .deny, .forbid], by intro x; cases x <;> simp⟩
 
 instance : Fren.Finite Case := ⟨[.snake, .camel, .upper], by intro x; cases x <;> simp⟩
+
+instance : Fren.Finite Group := ⟨Group.all.toList, by intro x; cases x <;> simp [Group.all]⟩
 
 instance : Fren.Finite Named :=
   ⟨[.module, .component, .variable, .field, .binder, .function, .instance, .constraint, .global, .enumeration,
@@ -22,6 +24,8 @@ instance : Fren.Finite Named :=
     by intro x; cases x <;> simp⟩
 
 instance : Fren.Finite Comparison := ⟨Comparison.all.toList, by intro x; cases x <;> simp [Comparison.all]⟩
+
+instance : Fren.Finite Head := ⟨[.not, .unequal, .ite, .when, .unless, .other], by intro x; cases x <;> simp⟩
 
 def toComparison : Comparison → lint.Comparison
   | .eq => .Eq
@@ -31,10 +35,28 @@ def toComparison : Comparison → lint.Comparison
   | .gt => .Gt
   | .ge => .Ge
 
+def toHead : Head → lint.Head
+  | .not => .Not
+  | .unequal => .Unequal
+  | .ite => .If
+  | .when => .When
+  | .unless => .Unless
+  | .other => .Other
+
+def toOffset : Fren.Core.Offset → lint.Offset
+  | .zero => .Zero
+  | .plusOne => .PlusOne
+  | .minusOne => .MinusOne
+
 def toImportFix : ImportFix → lint.ImportFix
   | .keep => .Keep
   | .remove => .Remove
   | .byName => .ByName
+
+def toArmsFix : Fren.Core.ArmsFix → lint.ArmsFix
+  | .merge => .Merge
+  | .remove => .Remove
+  | .replace => .Replace
 
 def toLintLevel : LintLevel → lint.Level
   | .allow => .Allow
@@ -42,6 +64,15 @@ def toLintLevel : LintLevel → lint.Level
   | .warn => .Warn
   | .deny => .Deny
   | .forbid => .Forbid
+
+def toGroup : Group → lint.Group
+  | .unused => .Unused
+  | .nonstandardStyle => .NonstandardStyle
+  | .style => .Style
+  | .complexity => .Complexity
+  | .suspicious => .Suspicious
+  | .pedantic => .Pedantic
+  | .decidability => .Decidability
 
 def toCase : Case → lint.Case
   | .snake => .Snake
@@ -85,6 +116,32 @@ impl lint_effective: lint::effective for (d : LintLevel) (cs : Bool) (c : LintLe
   after_cli := toLintLevel (effectiveLevel d (if cs then some c else none) none).1,
   level := toLintLevel (effectiveLevel d (if cs then some c else none) (if ss then some s else none)).1,
   error? := (effectiveLevel d (if cs then some c else none) (if ss then some s else none)).2,
+}
+
+impl lint_group_default: lint::group_default for (g : Group) {
+  group := toGroup g,
+  level := toLintLevel g.default,
+}
+
+-- Over `Nat`, so `decide` does not apply: a proof by cases. Both front ends
+-- decide a group's setting with `groupAccepted`, in `LintTarget.rejectedBy?`.
+impl lint_group_setting: lint::group_setting for (c : LintLevel) (n : Nat) (r : LintLevel) {
+  current := toLintLevel c,
+  n_forbidden := n,
+  requested := toLintLevel r,
+  accepted? := groupAccepted n r,
+  level := toLintLevel (if groupAccepted n r then r else c),
+} by
+  intro c n r _
+  cases c <;> cases r <;> rcases n with _ | n <;> simp +decide [fren_spec, groupAccepted, toLintLevel] <;> omega
+
+impl lint_outside_options: lint::outside_options for (d : LintLevel) (os : Bool) (o : LintLevel) (gs : Bool) (g : LintLevel) {
+  default_level := toLintLevel d,
+  own_set? := os,
+  own := toLintLevel o,
+  group_set? := gs,
+  group := toLintLevel g,
+  level := toLintLevel (outsideLevel d (if os then some o else none) (if gs then some g else none)),
 }
 
 -- Over `Nat`, so `decide` does not apply: a proof by cases.
@@ -289,22 +346,24 @@ impl lint_undecidable_fires: lint::undecidable_fires for (c : Fren.Core.Construc
 /-! ## Collections, outputs and indexes -/
 
 -- Both front ends decide `length_zero` and `card_zero` with `lengthZero`.
-impl length_zero: lint::length_zero for (c : Comparison) (b : Int) {
+impl length_zero: lint::length_zero for (c : Comparison) (b : Int) (l : Bool) {
   op := toComparison c,
   bound := b,
-  fires? := (Fren.Core.lengthZero c b).1,
-  empty? := (Fren.Core.lengthZero c b).2,
+  left? := l,
+  fires? := (Fren.Core.lengthZero c b l).1,
+  empty? := (Fren.Core.lengthZero c b l).2,
 } by
-  intro c b _
-  cases c <;> simp [fren_spec, toComparison, Fren.Core.lengthZero]
+  intro c b l _
+  cases c <;> cases l <;> simp [fren_spec, toComparison, Fren.Core.lengthZero, Fren.Core.Comparison.mirror]
 
-impl membership_chain: lint::membership_chain for (n : Nat) (same : Bool) {
+impl membership_chain: lint::membership_chain for (n : Nat) (same later : Bool) {
   n := n,
   same_left? := same,
-  fires? := Fren.Core.membershipChainFires n same,
+  later_indexes? := later,
+  fires? := Fren.Core.membershipChainFires n same later,
 } by
-  intro n same _
-  cases same <;> simp [fren_spec, Fren.Core.membershipChainFires] <;> omega
+  intro n same later _
+  cases same <;> cases later <;> simp [fren_spec, Fren.Core.membershipChainFires] <;> omega
 
 impl output_lints: lint::output_lints for (d v : Bool) (r : Nat) (eq : Bool) {
   defined? := d,
@@ -322,5 +381,342 @@ impl index_after_use: lint::index_after_use for (l r : Bool) {
   bounds_right? := r,
   fires? := Fren.Core.indexAfterUse l r,
 }
+
+/-! ## Conditionals -/
+
+-- Both front ends decide with `Ex.simplerForm`, whose rules for these lints
+-- fire when these functions say, given `negatedCond_isSome`.
+impl unless_not: lint::unless_not for (n : Bool) (c : Head) {
+  unless? := n,
+  condition := toHead c,
+  fires? := Fren.Core.unlessNot n c,
+} by
+  intro n c _
+  cases n <;> cases c <;> simp [fren_spec, toHead, Fren.Core.unlessNot, Fren.Core.Head.negation]
+
+impl collapsible_when: lint::collapsible_when for (n : Bool) (d : Head) {
+  unless? := n,
+  body := toHead d,
+  fires? := Fren.Core.collapsibleWhen n d,
+} by
+  intro n d _
+  cases n <;> cases d <;> simp [fren_spec, toHead, Fren.Core.collapsibleWhen]
+
+impl if_not_else: lint::if_not_else for (c b : Head) {
+  condition := toHead c,
+  else_branch := toHead b,
+  fires? := Fren.Core.ifNotElse c b,
+} by
+  intro c b _
+  cases c <;> cases b <;> simp [fren_spec, toHead, Fren.Core.ifNotElse, Fren.Core.Head.negation]
+
+/-! ## Matches -/
+
+-- Both front ends group the arms with `sameArmGroups`, which joins two
+-- arms by `sameArmsFires`, and fix a group by `sameArmsFix`.
+impl match_same_arms: lint::match_same_arms for (s b w a : Bool) {
+  same_body? := s,
+  binds? := b,
+  wildcard? := w,
+  all? := a,
+  fires? := Fren.Core.sameArmsFires s b,
+  fix := toArmsFix (Fren.Core.sameArmsFix a w),
+} by
+  intro s b w a _
+  cases s <;> cases b <;> cases w <;> cases a <;> simp [fren_spec, Fren.Core.sameArmsFires, Fren.Core.sameArmsFix, toArmsFix]
+
+impl match_like_membership: lint::match_like_membership for (bb np w wt : Bool) (t f : Nat) {
+  bool_bodies? := bb,
+  no_payloads? := np,
+  wildcard? := w,
+  wildcard_true? := wt,
+  n_true := t,
+  n_false := f,
+  fires? := (Fren.Core.matchMembership bb np w wt t f).1,
+  negated? := (Fren.Core.matchMembership bb np w wt t f).2,
+} by
+  intro bb np w wt t f _
+  cases bb <;> cases np <;> cases w <;> cases wt <;> simp [fren_spec, Fren.Core.matchMembership] <;> omega
+
+impl wildcard_single_variant: lint::wildcard_single_variant for (n : Nat) {
+  n_matched := n,
+  fires? := Fren.Core.wildcardSingle n,
+} by
+  intro n _
+  simp [fren_spec, Fren.Core.wildcardSingle]
+  omega
+
+/-! ## Matches and bindings -/
+
+-- Both front ends decide `if_chain_match` with `ifChainMatch`, from the
+-- chain's tests read by `sameScrutinee`, `repeatedVariants` and
+-- `untestedVariants`.
+impl if_chain_match: lint::if_chain_match for (n : Nat) (v : Bool) (r u : Nat) {
+  n_tests := n,
+  variant_tests? := v,
+  n_repeated := r,
+  n_untested := u,
+  fires? := (Fren.Core.ifChainMatch n v r u).1,
+  wildcard? := (Fren.Core.ifChainMatch n v r u).2,
+} by
+  intro n v r u _
+  cases v <;> simp [fren_spec, Fren.Core.ifChainMatch] <;> omega
+
+impl case_split_reqs: lint::case_split_reqs for (n r : Nat) {
+  n_cases := n,
+  n_repeated := r,
+  fires? := Fren.Core.caseSplitReqs n r,
+} by
+  intro n r _
+  simp [fren_spec, Fren.Core.caseSplitReqs] <;> omega
+
+impl redundant_bindings: lint::redundant_bindings for (n v : String) {
+  name := n,
+  value := v,
+  fires? := Fren.Core.redundantBinding n v,
+} by
+  intro n v _
+  simpa [fren_spec, Fren.Core.redundantBinding] using eq_comm
+
+/-! ## Suspicious expressions -/
+
+instance : Fren.Finite Fren.Core.InfixOp :=
+  ⟨Fren.Core.InfixOp.all.toList, by intro x; cases x <;> simp [Fren.Core.InfixOp.all]⟩
+
+def toInfixOp : Fren.Core.InfixOp → lint.InfixOp
+  | .iff => .Iff
+  | .or => .Or
+  | .and => .And
+  | .eq => .Eq
+  | .ne => .Ne
+  | .lt => .Lt
+  | .le => .Le
+  | .gt => .Gt
+  | .ge => .Ge
+  | .in => .In
+  | .subset => .Subset
+  | .add => .Add
+  | .sub => .Sub
+  | .concat => .Concat
+  | .union => .Union
+  | .minus => .Minus
+  | .mul => .Mul
+  | .inter => .Inter
+  | .join => .Join
+
+def toEqOpValue : Fren.Core.EqOpValue → lint.EqOpValue
+  | .alwaysTrue => .AlwaysTrue
+  | .alwaysFalse => .AlwaysFalse
+  | .zero => .Zero
+  | .empty => .Empty
+  | .operand => .Operand
+
+-- Both front ends decide `eq_op`, and the value its message gives, with `eqOp`.
+impl eq_op: lint::eq_op for (op : Fren.Core.InfixOp) (same : Bool) {
+  op := toInfixOp op,
+  same? := same,
+  fires? := (Fren.Core.eqOp op same).isSome,
+  value := toEqOpValue ((Fren.Core.eqOp op same).getD .operand),
+} by
+  intro op same _
+  cases op <;> cases same <;> simp [fren_spec, toInfixOp, toEqOpValue, Fren.Core.eqOp]
+
+impl same_branches: lint::same_branches for (same : Bool) {
+  same? := same,
+  fires? := Fren.Core.sameBranches same,
+}
+
+impl duplicate_elements: lint::duplicate_elements for (n : Nat) {
+  n_repeats := n,
+  fires? := Fren.Core.duplicateElements n,
+} by
+  intro n _
+  simp [fren_spec, Fren.Core.duplicateElements]
+
+impl empty_argument: lint::empty_argument for (m : Fren.Core.Method) (i : Nat) (e : Bool) {
+  method := toMethod m,
+  index := i,
+  empty? := e,
+  fires? := Fren.Core.emptyArgument m i e,
+} by
+  intro m i e _
+  cases m <;> cases e <;> simp [fren_spec, toMethod, Fren.Core.emptyArgument] <;> omega
+
+/-! ## Operators and methods -/
+
+instance : Fren.Finite Ordering := ⟨[.lt, .eq, .gt], by intro x; cases x <;> simp⟩
+
+instance : Fren.Finite Fren.Core.IdentityOperator :=
+  ⟨[.add, .sub, .mul, .concat, .union, .minus], by intro x; cases x <;> simp⟩
+
+instance : Fren.Finite Fren.Core.IdentityOperand := ⟨[.zero, .one, .empty, .negation, .other], by intro x; cases x <;> simp⟩
+
+def toOrder : Ordering → lint.Order
+  | .lt => .Below
+  | .eq => .Same
+  | .gt => .Above
+
+def toIndexTest : Fren.Core.IndexTest → lint.IndexTest
+  | .found => .Found
+  | .absent => .Absent
+  | .atStart => .AtStart
+  | .other => .Other
+
+def toAssoc : Fren.Core.Assoc → lang.Assoc
+  | .left => .Left
+  | .right => .Right
+  | .nonAssoc => .NonAssoc
+
+def toIdentityOperator : Fren.Core.IdentityOperator → lint.IdentityOperator
+  | .add => .Add
+  | .sub => .Sub
+  | .mul => .Mul
+  | .concat => .Concat
+  | .union => .Union
+  | .minus => .Minus
+
+def toIdentityOperand : Fren.Core.IdentityOperand → lint.IdentityOperand
+  | .zero => .Zero
+  | .one => .One
+  | .empty => .Empty
+  | .negation => .Negation
+  | .other => .Other
+
+def toRewrite : Fren.Core.Rewrite → lint.Rewrite
+  | .keepLeft => .KeepLeft
+  | .keepRight => .KeepRight
+  | .flip => .Flip
+  | .unchanged => .Unchanged
+
+impl comparison_holds: lint::comparison_holds for (c : Comparison) (o : Ordering) {
+  op := toComparison c,
+  order := toOrder o,
+  holds? := c.holds o,
+}
+
+-- Both front ends decide `double_comparison` with `doubleComparison`.
+impl double_comparison: lint::double_comparison for (conj : Bool) (l r : Comparison) {
+  conjunction? := conj,
+  first := toComparison l,
+  second := toComparison r,
+  fires? := (Fren.Core.doubleComparison conj l r).isSome,
+  result := toComparison ((Fren.Core.doubleComparison conj l r).getD l),
+}
+
+impl bool_equality: lint::bool_equality for (c : Comparison) (b l : Bool) {
+  op := toComparison c,
+  bools? := b,
+  literal? := l,
+  fires? := Fren.Core.boolEquality c b l,
+}
+
+impl index_test: lint::index_test for (c : Comparison) (b p : Int) {
+  op := toComparison c,
+  bound := b,
+  position := p,
+  test := toIndexTest (Fren.Core.indexTest c b),
+} by
+  intro c b p _
+  cases c <;> by_cases h0 : b = 0 <;> by_cases h1 : b = -1 <;> simp_all [fren_spec, toComparison, Fren.Core.indexTest, toIndexTest]
+
+-- The instance's `bare?` is `bareOperand`, which meets `operand`'s rules.
+impl else_extends: lint::else_extends for (o i : Nat) (a : Fren.Core.Assoc) (r : Bool) {
+  outer := o,
+  inner := i,
+  assoc := toAssoc a,
+  right? := r,
+  fires? := Fren.Core.elseExtends o i a r,
+} by
+  intro o i a r _
+  simp only [fren_spec]
+  refine ⟨_, _, _, _, Fren.Core.bareOperand o i a r, by simp [Fren.Core.elseExtends], ⟨rfl, rfl, rfl, rfl⟩, trivial, ?_⟩
+  simp only [Fren.Core.bareOperand]
+  cases a <;> cases r <;> refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> intros <;> simp_all [toAssoc] <;> omega
+
+impl identity_op: lint::identity_op for (o : Fren.Core.IdentityOperator) (l r : Fren.Core.IdentityOperand) {
+  op := toIdentityOperator o,
+  left := toIdentityOperand l,
+  right := toIdentityOperand r,
+  rewrite := toRewrite (Fren.Core.identityRewrite o l r),
+}
+
+/-! ## Arithmetic and parentheses -/
+
+-- Both front ends decide these with `arithReports`, which asks the pure
+-- functions below.
+impl double_neg: lint::double_neg for (n : Bool) {
+  negated_operand? := n,
+  fires? := Fren.Core.doubleNeg n,
+}
+
+impl neg_multiply: lint::neg_multiply for (a b : Bool) {
+  left_minus_one? := a,
+  right_minus_one? := b,
+  fires? := (Fren.Core.negMultiply a b).1,
+  negate_left? := (Fren.Core.negMultiply a b).2,
+} by
+  intro a b _
+  cases a <;> cases b <;> simp [fren_spec, Fren.Core.negMultiply]
+
+impl int_plus_one: lint::int_plus_one for (c : Comparison) (l r : Fren.Core.Offset) {
+  op := toComparison c,
+  left := toOffset l,
+  right := toOffset r,
+  fires? := (Fren.Core.intPlusOne c l r).1,
+  result := toComparison (Fren.Core.intPlusOne c l r).2.1,
+  drop_left? := (Fren.Core.intPlusOne c l r).2.2,
+} by
+  intro c l r _
+  cases c <;> cases l <;> cases r <;> simp [fren_spec, toComparison, toOffset, Fren.Core.intPlusOne]
+
+impl double_parens: lint::double_parens for (d : Nat) {
+  depth := d,
+  fires? := Fren.Core.doubleParens d,
+} by
+  intro d _
+  simp [fren_spec, Fren.Core.doubleParens]
+  omega
+
+/-! ## Methods, patterns, types and matches -/
+
+def toChainFix : Fren.Core.ChainFix → lint.ChainFix
+  | .keep => .Keep
+  | .receiver => .Receiver
+  | .single _ => .Single
+
+-- Both front ends shorten a chain with `shortestChain`, which rewrites the
+-- pairs that `methodChain` does.
+impl method_chain: lint::method_chain for (i o : Fren.Core.Method) {
+  inner := toMethod i,
+  outer := toMethod o,
+  fix := toChainFix (Fren.Core.methodChain i o),
+  single := match Fren.Core.methodChain i o with
+    | .single m => toMethod m
+    | _ => toMethod o,
+} by
+  intro i o _
+  cases i <;> cases o <;> simp [fren_spec, toMethod, toChainFix, Fren.Core.methodChain]
+
+-- For every name, as `checkVarName` reads its suffix.
+impl redundant_bool_type: lint::redundant_bool_type for (s : String) (a : lang.Annot) {
+  name := s,
+  annot := a,
+  fires? := Fren.Core.redundantBoolType (.mkSimple s) (isBool? a),
+} by
+  intro s a _
+  have hs : Fren.Core.nameText (.mkSimple s) = s := rfl
+  cases h : Fren.Str.endsWith s "?" <;> cases a <;> simp [fren_spec, Fren.Core.redundantBoolType, isBool?, hs, h]
+
+impl trivial_match: lint::trivial_match for (n : Nat) (b : Bool) {
+  n_arms := n,
+  binds? := b,
+  fires? := Fren.Core.trivialMatch n b,
+} by
+  intro n b _
+  cases b <;> simp [fren_spec, Fren.Core.trivialMatch] <;> omega
+
+-- `trivialPattern?` reads the pattern's characters; the spec states the
+-- same with a pattern, which the tests check against it.
+tested lint::trivial_pattern: "test/ui/method_lints.fren", "test/cli/f0744_trivial_pattern.fren"
 
 end Fren.Impls

@@ -1,0 +1,19 @@
+warning[F0728]: `_` matches only `Shape::Rect`
+  --> test/cli/f0728_wildcard_single_variant.fren:10:66
+   |
+10 |     req r: n = match s { Shape::Circle(r) => r, Shape::Dot => 0, _ => 1 }
+   |                                                                  ^ matches one variant
+   |
+   = note: named, a variant added later makes the `match` non-exhaustive, an error, rather than matched by `_`
+   = help: `fren fix` can fix this
+   = note: `wildcard_single_variant` is set to `warn`
+help: name the variant
+   |
+10 -     req r: n = match s { Shape::Circle(r) => r, Shape::Dot => 0, _ => 1 }
+10 +     req r: n = match s { Shape::Circle(r) => r, Shape::Dot => 0, Shape::Rect(_, _) => 1 }
+   |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0728`.
+exit=3

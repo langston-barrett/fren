@@ -1,0 +1,12 @@
+error[F0709]: `allow` for `pedantic` is incompatible with an earlier `forbid` of `membership_chain`
+ --> test/cli/f0709_forbid_group.fren:4:1
+  |
+4 | set_option fren.lint.pedantic "allow"
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot change the level of `membership_chain`, which is in `pedantic`
+  |
+  = note: once a lint is `forbid`, its level cannot be changed, so neither can its group's
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0709`.
+exit=2
