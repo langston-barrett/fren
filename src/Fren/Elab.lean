@@ -557,7 +557,7 @@ def pathExpr (ref : Syntax) (n : Name) : TermElabM Syntax := do
 method `m`. Paths are written with `::`, so an applied dotted name is a
 method call, as the `fren` command parses it: of a value, or of a variable
 read from an instance, as in `w.x.len()`. Only a root that is an instance
-without variables is not a receiver. This does not resolve the root or the
+without variables, and not a binder, which shadows it, is not a receiver. This does not resolve the root or the
 method: elaborating the receiver reports a root that is not a value, such
 as a misspelled name or an enumeration, and elaborating the call a method
 that its type does not have. -/
@@ -566,7 +566,8 @@ def methodApp? (cx : ExprCtx) (e : Syntax) : Option (Name × Name) := do
   let segs := pathSegs e[0]
   guard (segs.size == 1)
   let n := segs[0]!.getId
-  guard (!n.isAtomic && (!cx.insts.contains n.getRoot || cx.vars.any (·.name.getRoot == n.getRoot)))
+  guard (!n.isAtomic && ((cx.binder? n.getRoot).isSome || !cx.insts.contains n.getRoot
+    || cx.vars.any (·.name.getRoot == n.getRoot)))
   return (n.getPrefix, Name.mkSimple n.getString!)
 
 /-- How many variables `e` mentions, counted with repetition, where `bs`

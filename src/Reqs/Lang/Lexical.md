@@ -29,7 +29,8 @@ identifiers are a superset of Fren's: they may have `?` and `!` anywhere
 after the first character, letters other than ASCII, such as `α`, and
 quotes, as in `«a b»`. So that a spec reads alike in both front ends, each
 reports what Lean reads as one identifier but Fren does not: the Lean
-front end checks each identifier against this rule, and the `fren`
+front end checks each identifier of an item, `use` or claim against
+this rule (but not of `impl` or `interp`, whose bodies are Lean), and the `fren`
 command reads identifiers by Lean's rule too, and reports any that Fren's
 would read differently, such as `a?b`, `xα`, or `y!` in `y!=1`. Write
 spaces around `!=` after an identifier.

@@ -292,6 +292,9 @@ theorem endsWith_question (cs : List Char) :
 end Lexical
 
 -- For every lexeme and the input after it: whether the lexer continues it.
+-- The lexer calls `identExtends src last j` on the whole input, which reads
+-- only `src[j]` and `src[j + 1]`, so it is this applied to the input after
+-- `j`.
 impl identifier_end: lang::identifier_end for (cs rest : List Char) {
   lexeme := String.ofList cs,
   remaining := String.ofList rest,
