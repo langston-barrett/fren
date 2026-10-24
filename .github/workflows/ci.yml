@@ -41,15 +41,14 @@ jobs:
         build-args: --wfail
         test: true
         lint: false
-    # Only once every dependency is built: a fetch or a dependency build that
-    # failed partway must not be saved, as the exact key would keep it.
+    # Only once the packages Fren imports, `Smt` and `cvc5`, are built (and so
+    # everything they import): a fetch or a dependency build that failed
+    # partway must not be saved, as the exact key would keep it.
     - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
       if: >-
         ${{ !cancelled() && steps.packages.outputs.cache-hit != 'true' &&
             hashFiles('.lake/packages/cvc5/.lake/build/lib/lean/cvc5.olean') != '' &&
-            hashFiles('.lake/packages/smt/.lake/build/lib/lean/Smt.olean') != '' &&
-            hashFiles('.lake/packages/auto/.lake/build/lib/lean/Auto.olean') != '' &&
-            hashFiles('.lake/packages/Qq/.lake/build/lib/lean/Qq.olean') != '' }}
+            hashFiles('.lake/packages/smt/.lake/build/lib/lean/Smt.olean') != '' }}
       with:
         path: .lake/packages
         key: ${{ steps.packages.outputs.cache-primary-key }}
