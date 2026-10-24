@@ -1,0 +1,6 @@
+-- A variant name opened from two enums (F0205).
+enum E { A, B }
+enum F { A, C }
+use E::*
+use F::*
+comp c { in e: E pub out y? req r: y? iff e = A }

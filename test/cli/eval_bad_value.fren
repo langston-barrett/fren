@@ -1,0 +1,7 @@
+--@ args: eval --comp c --set x=true
+comp c {
+    in x: Int
+    pub out y: Int
+
+    req r: y = x + 1
+}

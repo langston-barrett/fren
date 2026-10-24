@@ -1,0 +1,7 @@
+comp c {
+    in x: Int
+    in s: Set(String)
+    pub out p?
+
+    req r: p? iff x in s
+}

@@ -1,0 +1,135 @@
+; c: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
+(declare-const |m| |Mode|)
+(declare-const |x| Int)
+(declare-const |y| Int)
+(declare-const |y'| Int)
+(assert (> |x| 0)) ; pos
+(assert (not false))
+(check-sat)
+(reset)
+
+; c: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
+(declare-const |m| |Mode|)
+(declare-const |x| Int)
+(declare-const |y| Int)
+(declare-const |y'| Int)
+(assert (> |x| 0)) ; pos
+(assert (not (exists ((|y| Int)) (and (=> (= |m| |Mode::On|) (= |y| |x|)) (=> (= |m| |Mode::Off|) (= |y| 0))))))
+(check-sat)
+(reset)
+
+; c: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
+(declare-const |m| |Mode|)
+(declare-const |x| Int)
+(declare-const |y| Int)
+(declare-const |y'| Int)
+(assert (> |x| 0)) ; pos
+(assert (=> (= |m| |Mode::On|) (= |y| |x|))) ; on
+(assert (=> (= |m| |Mode::Off|) (= |y| 0))) ; off
+(assert (not (not (= |m| |Mode::On|))))
+(check-sat)
+(reset)
+
+; c: query 4
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
+(declare-const |m| |Mode|)
+(declare-const |x| Int)
+(declare-const |y| Int)
+(declare-const |y'| Int)
+(assert (> |x| 0)) ; pos
+(assert (=> (= |m| |Mode::On|) (= |y| |x|))) ; on
+(assert (=> (= |m| |Mode::Off|) (= |y| 0))) ; off
+(assert (not (not (= |m| |Mode::Off|))))
+(check-sat)
+(reset)
+
+; c: query 5
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
+(declare-const |m| |Mode|)
+(declare-const |x| Int)
+(declare-const |y| Int)
+(declare-const |y'| Int)
+(assert (> |x| 0)) ; pos
+(assert (not false))
+(check-sat)
+(reset)
+
+; c: query 6
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
+(declare-const |m| |Mode|)
+(declare-const |x| Int)
+(declare-const |y| Int)
+(declare-const |y'| Int)
+(assert (not (> |x| 0)))
+(check-sat)
+(reset)
+
+; c: query 7
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
+(declare-const |m| |Mode|)
+(declare-const |x| Int)
+(declare-const |y| Int)
+(declare-const |y'| Int)
+(assert (> |x| 0)) ; pos
+(assert (=> (= |m| |Mode::On|) (= |y| |x|))) ; on
+(assert (=> (= |m| |Mode::Off|) (= |y| 0))) ; off
+(assert (not false))
+(check-sat)
+(reset)
+
+; c: query 8
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
+(declare-const |m| |Mode|)
+(declare-const |x| Int)
+(declare-const |y| Int)
+(declare-const |y'| Int)
+(assert (> |x| 0)) ; pos
+(assert (=> (= |m| |Mode::Off|) (= |y| 0))) ; off
+(assert (not (=> (= |m| |Mode::On|) (= |y| |x|))))
+(check-sat)
+(reset)
+
+; c: query 9
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
+(declare-const |m| |Mode|)
+(declare-const |x| Int)
+(declare-const |y| Int)
+(declare-const |y'| Int)
+(assert (> |x| 0)) ; pos
+(assert (=> (= |m| |Mode::On|) (= |y| |x|))) ; on
+(assert (not (=> (= |m| |Mode::Off|) (= |y| 0))))
+(check-sat)
+(reset)
+
+fren: 6 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0

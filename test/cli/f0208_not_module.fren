@@ -1,0 +1,3 @@
+-- A `mod` through an enum (F0208).
+enum E { A }
+mod E::inner

@@ -1,0 +1,13 @@
+error[F0115]: unknown escape in a string literal
+ --> test/cli/f0115_escape.fren:1:26
+  |
+1 | const PATH: String := "C:\qux"
+  |                          ^^ not an escape
+  |
+  = note: the escapes are `\\`, `\"`, `\'`, `\n`, `\t`, `\r`, `\xHH` and `\uHHHH`
+  = help: for a literal `\`, write `\\`, or use a raw literal, `r"..."`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0115`.
+exit=2

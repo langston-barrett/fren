@@ -1,0 +1,2 @@
+-- Members separated by commas (F0104).
+comp c { in x: Int, in y: Int }

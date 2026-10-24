@@ -1,0 +1,16 @@
+error[F0111]: `self.E` is not a single name
+ --> test/cli/f0111_path.fren:3:16
+  |
+3 | comp c { in e: self.E }
+  |                ^^^^^^ `.` is only for the variables of instances
+  |
+help: separate path segments with `::`
+  |
+3 - comp c { in e: self.E }
+3 + comp c { in e: self::E }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0111`.
+exit=2

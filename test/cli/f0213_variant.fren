@@ -1,0 +1,2 @@
+-- A variant defined twice (F0213).
+enum V { A, B, A }

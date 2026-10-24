@@ -1,0 +1,13 @@
+error[F0404]: instance `second` is not declared before this binding
+ --> test/cli/f0404_later.fren:3:43
+  |
+3 | comp c { in i: Int inst first: sub { a := second.b } inst second: sub { a := i } }
+  |                                           ^^^^^^^^ declared later, or this is its own binding
+  |
+  = note: bindings may only mention earlier instances, so that instances form no cycles
+  = help: declare `second` before the instance whose binding mentions it
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0404`.
+exit=2

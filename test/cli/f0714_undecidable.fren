@@ -1,0 +1,8 @@
+comp c {
+    in a: String
+    in b: String
+    pub out p?
+
+    req r: p? iff a.starts_with?(b)
+    req s: a ++ b = b ++ a
+}

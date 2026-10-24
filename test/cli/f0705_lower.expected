@@ -1,0 +1,30 @@
+warning[F0705]: constant `max_temp` should have an upper case name
+ --> test/cli/f0705_lower.fren:2:7
+  |
+2 | const max_temp: Int := 100
+  |       ^^^^^^^^ not in UPPER_CASE
+  |
+  = note: `non_upper_case_constants` is `warn` by default
+  = help: to allow it, `set_option fren.lint.non_upper_case_constants "allow"`
+help: rename it to `MAX_TEMP`
+  |
+2 - const max_temp: Int := 100
+2 + const MAX_TEMP: Int := 100
+  |
+
+warning[F0711]: constant `max_temp` is never used
+ --> test/cli/f0705_lower.fren:2:7
+  |
+2 | const max_temp: Int := 100
+  |       ^^^^^^^^ never used
+  |
+  = note: it is private, and nothing in this file uses it
+  = help: remove it, or make it `pub`
+  = note: `dead_code` is `warn` by default
+  = help: to allow it, `set_option fren.lint.dead_code "allow"`
+
+fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0705, F0711.
+For more information about an error, try `fren --explain F0705`.
+exit=3

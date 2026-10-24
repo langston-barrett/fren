@@ -1,0 +1,2 @@
+-- A file that cannot be read.
+--@ argv: check test/cli/no_such_file.fren

@@ -1,0 +1,2 @@
+error: could not read `test/cli/no_such_file.fren`: no such file or directory
+exit=2

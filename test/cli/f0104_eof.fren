@@ -1,0 +1,2 @@
+-- A component that is not closed (F0104).
+comp c { in x: Int

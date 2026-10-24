@@ -1,0 +1,25 @@
+error[F0202]: `Hidden` is private to module `a`
+ --> test/cli/f0202_private.fren:6:8
+  |
+6 | use a::Hidden
+  |        ^^^^^^ private
+  |
+  = note: an item is visible only in the module that declares it and that module's submodules
+  = help: declare it `pub` in module `a`
+
+warning[F0711]: enum `Hidden` is never used
+ --> test/cli/f0202_private.fren:3:6
+  |
+3 | enum Hidden { H }
+  |      ^^^^^^ never used
+  |
+  = note: it is private, and nothing in this file uses it
+  = help: remove it, or make it `pub`
+  = note: `dead_code` is `warn` by default
+  = help: to allow it, `set_option fren.lint.dead_code "allow"`
+
+error: could not check due to 1 previous error
+
+Some errors have detailed explanations: F0202, F0711.
+For more information about an error, try `fren --explain F0202`.
+exit=2

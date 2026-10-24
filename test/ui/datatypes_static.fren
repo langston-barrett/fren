@@ -1,0 +1,75 @@
+-- Static rules for records, payloads and `match`.
+-- fren-covers: lang::unbounded
+set_option fren.lint.dead_code "allow"
+
+type Name
+struct P { x: Int, y: Int }
+enum S { A(Int), B, C(Bool, Int) }
+enum L { Nil, Cons(Int, L) }
+
+struct Bad1 { n: Name }             --~ error: a field cannot have the abstract type `Name`
+struct Bad2 { me: Bad2 }            --~ error: record `Bad2` has a field of its own type
+enum Bad3 { More(Int, Bad3) }       --~ error: enum `Bad3` has no values
+enum Bad4 { A(Name) }               --~ error: a payload cannot have the abstract type `Name`
+struct Bad5 { x: Int, x: Int }      --~ error: field `x` is defined multiple times
+struct Bad6 { ok: Bool }            --~ error: `Bool` variable `ok` must end in `?`
+struct point { x: Int }             --~ warning: record `point` should have a camel case name
+struct Q { Big: Int }               --~ warning: field `Big` should have a snake case name
+struct Bad7 { ns: Set(Name) }       --~ error: a field's type cannot have the abstract type `Name` within it
+enum Bad8 { A(Set(Set(Name))) }     --~ error: a payload's type cannot have the abstract type `Name` within it
+enum Bad9 { Leaf, Node(Set(Bad9)) }  --~ error: `Bad9` cannot be an element type within itself
+struct Bad10 { s: Set(Bad10) }      --~ error: `Bad10` cannot be an element type within itself
+struct Ok1 { s: Set(Int), t: Set(S) }
+
+comp unbounded { in l: L pub out o: L }   --~ error: output `o` has the unbounded type `L`
+
+const K1: P := P { x := 1 }                  --~ error: missing field `y` of `P`
+const K2: P := P { x := 1, y := 2, z := 3 }  --~ error: record `P` has no field `z`
+const K3: P := P { x := 1, x := 2, y := 3 }  --~ error: field `x` is given multiple times
+const K4: S := S::A(1)
+const K5: Int := match K4 { S::A(a) => a, _ => 0 }
+
+comp no_field { in p: P pub out z: Int req r: z = p.w }        --~ error: record `P` has no field `w`
+comp not_record { in i: Int pub out z: Int req r: z = i.w }    --~ error: `Int` is not a record, so it has no field `w`
+comp not_enum { in x: Int pub out z: Int req r: z = match x { _ => 0 } }   --~ error: cannot match on `Int`
+comp missing_arm { in s: S pub out z: Int req r: z = match s { S::A(a) => a, S::B => 0 } }
+--~^ error: non-exhaustive match: `S::C` not covered
+comp after_wild { in s: S pub out z: Int req r: z = match s { _ => 0, S::B => 1 } }
+--~^ error: unreachable arm
+comp useless_wild { in s: S pub out z: Int req r: z = match s { S::A(a) => a, S::B => 0, S::C(b?, n) => n, _ => 0 } }
+--~^ error: unreachable arm
+comp repeated { in s: S pub out z: Int req r: z = match s { S::B => 0, S::B => 1, _ => 2 } }
+--~^ error: unreachable arm
+comp other_enum { in s: S pub out z: Int req r: z = match s { L::Nil => 0, _ => 1 } }
+--~^ error: expected a variant of `S`, but this is a variant of `L`
+comp arm_types { in s: S pub out z: Int req r: z = match s { S::A(a) => a, _ => false } }
+--~^[cli] error: the arms of `match` have different types: `Int` and `Bool`
+--~^^[hosted] error: type mismatch
+comp binders { in s: S pub out z: Int req r: z = match s { S::A(a, b) => a, _ => 0 } }
+--~^ error: `S::A` takes 1 binder, but 2 were given
+comp no_binders { in s: S pub out z: Int req r: z = match s { S::A => 1, _ => 0 } }
+--~^ error: variant `S::A` must be applied to its payload
+comp unapplied { pub out s: S req r: s = S::A }                 --~ error: variant `S::A` must be applied to its payload
+comp no_payload { pub out s: S req r: s = S::B(1) }             --~ error: variant `S::B` has no payload
+comp payload_arity { pub out s: S req r: s = S::C(true) }       --~ error: `S::C` takes 2 values, but 1 was given
+comp bool_binder { in s: S pub out z: Int req r: z = match s { S::C(b, n) => n, _ => 0 } }
+--~^ error: `Bool` variable `b` must end in `?`
+comp dup_binder { in s: S pub out z: Int req r: z = match s { S::C(n?, n?) => 0, _ => 0 } }
+--~^ error: `n?` is bound multiple times in this pattern
+comp upper_binder { in s: S pub out z: Int req r: z = match s { S::A(Big) => Big, _ => 0 } }
+--~^ warning: binder `Big` should have a snake case name
+
+-- A binder mentions what its scrutinee mentions.
+fn f(Int): Int
+comp binder_output { in i: Int out s: S pub out z: Int req r: z = match s { S::A(a) => f(a), _ => i } }
+--~^ error: the arguments of a function may not mention an `out`, but `s` is one
+comp binder_input { in s: S pub out z: Int req r: z = match s { S::A(a) => f(a), _ => 0 } }
+comp field_output { in i: Int out p: P pub out z: Int req r: z = f(p.x) + i }
+--~^ error: the arguments of a function may not mention an `out`, but `p` is one
+comp binder_assume { in i: Int out s: S assume a: match s { S::A(a) => a > 0, _ => true } req r: s = S::B }
+--~^ error: assumptions may only mention `in` variables, but `s` is an `out`
+comp binder_linear { in s: S in t: S pub out z: Int
+    req r: z = (match s { S::A(a) => a, _ => 0 }) * (match t { S::A(b) => b, _ => 0 }) }   --~ error: nonlinear arithmetic is not supported
+comp constant_linear { in s: S pub out z: Int req r: z = (match K4 { S::A(a) => a, _ => 1 }) * (match s { S::A(b) => b, _ => 0 }) }
+
+--@ exit: 2

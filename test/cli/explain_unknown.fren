@@ -1,0 +1,2 @@
+-- `--explain` with something that is not a code.
+--@ argv: --explain E0308

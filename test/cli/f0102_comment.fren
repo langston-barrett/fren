@@ -1,0 +1,3 @@
+-- An unterminated block comment (F0102).
+comp c {}
+/- no end

@@ -1,0 +1,17 @@
+error[F0315]: record `Point` has no field `z`
+ --> test/cli/f0315_no_field.fren:3:50
+  |
+3 | comp c { in p: Point pub out z: Int req r: z = p.z }
+  |                                                  ^ unknown field
+  |
+  = note: the fields of `Point` are `x` and `y`
+help: a field with a similar name exists: `x`
+  |
+3 - comp c { in p: Point pub out z: Int req r: z = p.z }
+3 + comp c { in p: Point pub out z: Int req r: z = p.x }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0315`.
+exit=2

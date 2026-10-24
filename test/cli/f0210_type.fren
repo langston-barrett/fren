@@ -1,0 +1,3 @@
+-- A component where a type was expected (F0210).
+comp d {}
+comp c { in x: d }

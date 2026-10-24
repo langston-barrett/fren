@@ -1,0 +1,12 @@
+error[F0210]: expected a type, but `d` is a component
+ --> test/cli/f0210_type.fren:3:16
+  |
+3 | comp c { in x: d }
+  |                ^ not a type
+  |
+  = note: types are `Bool`, `Int`, enums, records and abstract types
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0210`.
+exit=2

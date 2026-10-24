@@ -1,0 +1,2 @@
+-- Lean code in a .fren file (F0112).
+def limit := 10

@@ -1,0 +1,41 @@
+-- Static rules for strings: methods, types, and the decidable core.
+set_option fren.lint.unused_variables "allow"
+
+comp unknown { in s: String pub out n: Int req r: n = s.length }
+--~^ error: `String` has no method `length`
+comp no_methods { in x: Int pub out p? req r: p? iff (x).contains?(1) }
+--~^ error: `Int` has no methods, so it has no method `contains?`
+comp arity { in s: String pub out p? req r: p? iff s.starts_with?("a", "b") }
+--~^ error: `starts_with?` takes 1 argument, but 2 were given
+comp arg_type { in s: String pub out t: String := s.at("1") }
+--~^[cli] error: type mismatch: expected `Int`, found `String`
+--~^^[hosted] error: type mismatch: expected `Int`, found `String`
+comp unbounded { in s: String out t: String req r: t = s }
+--~^ error: output `t` has the unbounded type `String`
+comp concat_type { in s: String pub out n: Int := (s ++ 1).len }
+--~^[cli] error: type mismatch: expected `String`, found `Int`
+--~^^[hosted] error: type mismatch: expected `String`, found `Int`
+
+-- Outside the decidable core.
+comp search { in s: String pub out i: Int req r: i = s.index_of("x", 0) }
+--~^ error: outside the decidable core: searching a string
+comp argument { in s: String in t: String pub out p? req r: p? iff s.starts_with?(t) }
+--~^ error: outside the decidable core: its argument is not a constant
+comp position { in s: String in i: Int pub out t: String := s.at(i) }
+--~^ error: outside the decidable core: its position is not a constant
+comp words { in a: String in b: String pub out p? req r: p? iff a ++ b = b ++ a }
+--~^ error: outside the decidable core: searching a string, or `++` here
+--~^^ error: outside the decidable core: searching a string, or `++` here
+comp named_words { in a: String in b: String pub out ab: String := a ++ b pub out p? req r: p? iff ab = b }
+--~^ error: outside the decidable core: searching a string, or `++` here
+comp compare { in a: String in b: String pub out p? req r: p? iff a < b }
+--~^ error: outside the decidable core: it compares two strings
+comp output { in x: Int out o: Int out s: String := if o > x then "a" else "b" pub out n: Int req r: n = s.len }
+--~^ error: outside the decidable core: an operand mentions an output of an infinite type
+
+-- Opting out.
+set_option fren.lint.undecidable "allow" in
+comp opted { in a: String in b: String pub out p? req r: p? iff a.starts_with?(b) }
+comp uses { in x: String inst w: opted { a := x, b := x } }
+--~^ error: `opted` is outside the decidable core, and so is what instantiates it
+--@ exit: 2

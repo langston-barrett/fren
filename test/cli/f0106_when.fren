@@ -1,0 +1,2 @@
+-- No comma after the condition of `when` (F0106).
+comp c { in x: Int pub out y: Int req r: when x > 1 y = 3 }

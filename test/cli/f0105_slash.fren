@@ -1,0 +1,2 @@
+-- Division (F0105).
+comp c { in x: Int pub out y: Int req r: y = x / 2 }

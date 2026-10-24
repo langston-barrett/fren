@@ -1,0 +1,19 @@
+-- Variables and binders that nothing mentions.
+pub comp sub {
+    in a: Int
+    pub out b: Int
+
+    req r: b = a
+}
+
+pub comp c {
+    in x: Int
+    in spare: Int
+    pub out y: Int
+    pub out loose?
+    inst s: sub { a := x }
+
+    req r: y = x
+}
+
+expect g: forall (p q: c), p.y = p.x

@@ -1,0 +1,2 @@
+-- A lint that does not exist (F0707).
+set_option fren.lint.unused_import "allow"

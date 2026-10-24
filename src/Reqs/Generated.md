@@ -1,0 +1,158 @@
+# Generated Lean declarations
+
+In Lean, each enumeration, record, defined function, constant, component and
+global expectation becomes ordinary Lean declarations,
+so that Lean code can use a spec. An item at the Fren path `a::b::c` gets
+the Lean name `a.b.c`, prefixed by the current Lean namespace. Below, `p`
+stands for that name.
+
+## Enumerations
+
+An enumeration becomes `inductive p`, with one constructor for each
+variant, deriving `DecidableEq`, `Repr` and `Inhabited`. For example,
+`climate::Mode` becomes `climate.Mode`, with constructors
+`climate.Mode.Off`, `climate.Mode.Heat` and `climate.Mode.Cool`.
+
+A variant with a payload becomes a constructor with one explicit
+parameter for each value of its payload, of the Lean type of the
+payload's type (see [Components](#components)): `enum Shape { Circle(Int),
+Empty }` gives `Shape.Circle : Int → Shape`. A recursive enumeration
+becomes a recursive inductive type. The `k`th value of a payload, counted
+from 0, is the constructor's parameter `xk`, and is read by the selector
+`p.V.xk`, such as `Shape.Circle.x0 : Shape → Int`, which gives `default`
+for any other variant. A [`match`](Lang/Expressions.md#matches) becomes
+`if`s that compare the scrutinee with each arm's variant, built from the
+scrutinee's own payload, and reads binders with the selectors.
+
+Each enumeration whose variants have no payloads also has an instance
+`p.instFinite` of `Fren.Finite`, a class whose instances list every value
+of a type.
+
+## Records
+
+A record becomes `structure p`, with one field of the same name for each
+of its fields, in order, deriving `DecidableEq`, `Repr` and `Inhabited`.
+For example, `struct Point { x: Int, y: Int }` becomes `Point`, with
+fields `Point.x : Point → Int` and `Point.y`, so that `p.x` in Lean is
+`p.x` in Fren. A field whose name ends in `?` keeps it. The constructor
+is `p.«{}»`, rather than `p.mk`, which could be a field: a record literal
+`Point { x := 1, y := 2 }` becomes `Point.«{}» 1 2`.
+
+## Abstract types and uninterpreted functions
+
+An [abstract type](Lang/Types.md#abstract-types) or
+[uninterpreted function](Lang/Items.md#uninterpreted-functions) generates nothing: its Lean meaning is
+given by an [interpretation](Impl.md#interpretations), which may come
+later, so the definitions that use it take it as a parameter (see
+[Components](#components)). An interpretation generates the definition `p`.
+
+## Defined functions
+
+A [defined function](Lang/Items.md#defined-functions) becomes `def p`, with
+one explicit parameter for each of its parameters, of the same name and of
+its Lean type, as for variables below, and its body as its value. For
+example, `fn double(n: Int): Int := 2 * n` becomes `double : Int → Int`.
+Like a component's definitions, it first takes a parameter for each
+abstract type it uses: those that its parameter and result types, and its
+body, mention.
+
+## Constants
+
+A constant becomes `def p : T`, where `T` is the Lean type of its type, as
+for variables below. For example, `climate::MAX_TARGET` becomes
+`climate.MAX_TARGET : Int`. Fren uses the constant's value directly, so
+this definition is only for Lean code that uses the spec.
+
+## Components
+
+A component becomes a family of definitions, each a proposition over the
+component's variables:
+
+| Definition | Meaning |
+|---|---|
+| `p.assume.n`, `p.req.n`, `p.expect.n` | the assumption, requirement or expectation `n` |
+| `p.inst.w` | the instance `w`: its bindings, and the [meaning](Lang/Components.md#meaning) of the instantiated component |
+| `p.assumes` | the conjunction of the assumptions |
+| `p.reqs` | the conjunction of the requirements |
+| `p.def.d` | the definition of the [defined output](Lang/Components.md#defined-outputs) `d`, as the proposition `d = e` |
+| `p.defs` | the conjunction of the definitions |
+| `p.out.d` | when the definition of `d` mentions only inputs: its value, as a function of the inputs |
+
+In the assumptions, each defined output is replaced by its definition, so
+`p.assumes` never depends on the outputs' parameters. `p.out.d` takes the
+parameters for abstract types and functions, as below, and then only the
+component's inputs, in order. For example, with `in a: Int` and `out
+double: Int := 2 * a`, `p.out.double : Int → Int`, which an implementation
+can use as the term for `double`.
+
+The parameters of every definition are the component's variables, in the
+order of their declarations, followed by the variables of each instance in
+order: those of the instantiated component, including its own instances',
+named `w.x`. A variable of type `Bool`, `Int`, `String`, an enumeration
+`E` or a record `R` has the Lean type `Bool`, `Int`, `String`, or the
+inductive or structure for `E` or `R`. A variable of type `Set(T)` has the
+Lean type `Fren.FinSet T'`, where `T'` is that of `T`: a list up to having
+the same members, with `∈`, `∪`, `∩`, `\`, `⊆`, `∅`, `{a, b}` and
+`Fren.FinSet.card`, each with a `simp` lemma stating it by membership. A
+variable of type `Rel(A, B)` has the Lean type `Fren.FinSet (A' × B')`, and
+`r join q`, `r.inverse`, `r.closure`, `r.image(s)`, `r.domain` and
+`r.range` are `Fren.FinSet.join r q`, `Fren.FinSet.inverse r`, and so on,
+each with a `simp` lemma stating it by membership, except `closure`, whose
+lemma `Fren.FinSet.mem_closure` states it by `Relation.TransGen`. Where the
+type it ranges over is finite, `r.domain` is the image of `r.inverse` under
+the set of every value of `B`, and `r.range` the image of `r` under every
+value of `A`. A variable of type `Seq(T)` has the Lean type `Fren.Seq T'`,
+a wrapper around `List T'`; `[]`, `[a, b]`, `q ++ r` and `x in q` are `∅`,
+`Fren.Seq.unit a ++ Fren.Seq.unit b`, `++` and `∈`, `q[i]` is
+`Fren.Seq.nth q i`, which is `default` out of range, and each method is the
+definition of `Fren.Seq` of its name, with a `simp` lemma that states it by
+`List` functions. `default` is one interpretation of an out-of-range
+index, so every check that passes holds of it. An abstract type's value
+out of range needs an `Inhabited` instance, so a generated definition that
+indexes a sequence of an abstract type `T` takes one, `[Inhabited T]`,
+after `T`, which an implementation gives from its interpretation of `T`. A
+string method is a definition of
+`Fren.Str`, over `Int` positions, such as `Fren.Str.len : String → Int`,
+whose `@[simp]` lemmas relate it to Lean's `String` functions.
+
+A component *uses* the abstract types and uninterpreted functions that its
+variables' types, its constraints and its bindings mention, those that its
+instances' components and the defined functions it applies use, and the
+parameter and result types of the functions it uses. Before its variables, every definition of the component takes one
+explicit parameter for each abstract type and function it uses, in the
+order of their declarations: `(T : Type)` for an abstract type `T`, and for
+a function, a Lean function from its parameter types to its result type,
+where each abstract type is the parameter for it. A variable of an
+abstract type has the parameter for it as its Lean type. For example, with
+
+```
+type Name
+fn ends_in_q?(Name)
+
+comp c { in n: Name pub out q? req r: q? iff ends_in_q?(n) }
+```
+
+`c.reqs` has type `(Name : Type) → (Name → Bool) → Name → Bool → Prop`.
+
+For example, `climate.thermostat.reqs` has type `Int → Int → climate.Mode →
+Prop`, for `temp`, `target` and `mode`.
+
+## Global expectations
+
+A global expectation becomes `def p : Prop`: for all values of the
+binders' variables, if the [meaning](Lang/Global.md#meaning) of each
+binder's component holds, then so does the body. Each binder's variables
+are named `w.x`. Like a component's definitions, it first takes a
+parameter for each abstract type and function it uses: those that its
+body mentions and that its binders' components use.
+
+## Proofs
+
+The definitions are reducible, so that `decide` and type-class instances see
+through them. They are also in the simp set `fren_spec`, so `simp
+[fren_spec]` unfolds them. Where `Fren.Lang` is open, `decide` also decides
+`∀` and `∃` over `Bool`, enumerations, and any type with a `Fren.Finite`
+instance.
+
+These declarations need only `import Fren.Spec` (see [Lean
+embedding](Lean.md#libraries)).

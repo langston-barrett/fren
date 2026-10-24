@@ -1,0 +1,35 @@
+name: lean ci
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        persist-credentials: false
+    # `lake build` builds the library, the regression tests (`FrenTest`, which
+    # check their own output with `#guard_msgs`), Fren's own requirements
+    # (`Reqs`, which `#fren_check` checks with the SMT solver), the links from
+    # Fren's code to them (`Impls`, whose `#fren_trace` warns about any
+    # requirement without evidence) and the `fren` binary; warnings, including
+    # inconclusive checks and untraced requirements, fail it. `lake test` runs
+    # the ui, snapshot and agreement tests.
+    - uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6 # v1.6.2
+      with:
+        build-args: --wfail
+        test: true
+        lint: false

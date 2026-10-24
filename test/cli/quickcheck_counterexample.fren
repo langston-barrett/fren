@@ -1,0 +1,32 @@
+--@ args: quickcheck
+-- Testing refutes an expectation, a `det out` and a global expectation,
+-- each with a genuine behaviour, and passes the rest.
+mod climate
+
+pub enum Mode { Off, Heat, Cool }
+
+use self::Mode::{Cool, Heat, Off}
+
+pub comp thermostat {
+    in temp: Int
+    in target: Int
+    pub out mode: Mode
+
+    assume sane_target: 50 <= target and target <= 90
+
+    req heat: when temp < target - 2, mode = Heat
+    req cool: when temp > target + 2, mode = Cool
+    req idle: unless temp < target - 2 or temp > target + 2, mode = Off
+
+    expect cold_heats: when temp < 40, mode = Heat
+    expect wrong: when temp < 60, mode = Heat
+}
+
+pub comp loose {
+    in a?
+    pub det out b?
+
+    req r: when a?, b?
+}
+
+expect same: forall (x y: loose), when x.a? = y.a?, x.b? = y.b?

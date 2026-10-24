@@ -1,0 +1,3 @@
+-- An empty `trusted` justification (F0503).
+comp c {}
+trusted c: "  "

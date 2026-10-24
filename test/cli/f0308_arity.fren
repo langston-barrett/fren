@@ -1,0 +1,4 @@
+-- A function applied to the wrong number of arguments (F0308).
+type Name
+fn arity(Name): Int
+comp c { in x: Name pub out y: Int req r: y = arity(x, x) }

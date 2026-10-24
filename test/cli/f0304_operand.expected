@@ -1,0 +1,13 @@
+error[F0304]: type mismatch: expected `Bool`, found `Int`
+ --> test/cli/f0304_operand.fren:2:45
+  |
+2 | comp c { in x: Int pub out y? req r: y? iff x }
+  |                                             ^ expected `Bool`, found `Int`
+  |
+  = note: the operands of `iff` are `Bool`s
+  = help: compare it to make a `Bool`, e.g. `x > 0` or `x != 0`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0304`.
+exit=2

@@ -1,0 +1,4 @@
+error: invalid timeout `soon`
+  = note: the timeout is a whole number of seconds, such as `--timeout 30`
+  = help: run `fren --help` for usage
+exit=2

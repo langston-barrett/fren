@@ -1,0 +1,13 @@
+error[F0307]: nonlinear arithmetic is not supported
+ --> test/cli/f0307_nonlinear.fren:2:46
+  |
+2 | comp c { in x: Int pub out y: Int req r: y = x * x }
+  |                                              ^^^^^ both sides mention variables
+  |
+  = note: the solver decides only linear integer arithmetic
+  = help: one side of `*` must mention no variable, such as `2 * x` or `(MAX - MIN) * x`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0307`.
+exit=2

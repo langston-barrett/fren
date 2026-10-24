@@ -1,0 +1,79 @@
+-- Defined outputs: an output that stands for its definition.
+
+enum IntList { Nil, Cons(Int, IntList) }
+
+comp handle {
+    in length: Int
+    in taken?
+    -- A private definition names a condition, like a `let`.
+    out long? := length > 40
+    pub det out accepted?
+
+    req rule: accepted? iff not (long? or taken?)
+
+    expect short: when accepted?, length <= 40
+}
+
+-- A defined output may have an unbounded type: it is never searched for.
+comp listed {
+    in head: Int
+    pub det out l: IntList := IntList::Cons(head, IntList::Nil)
+
+    expect first: match l { IntList::Cons(h, _) => h = head, IntList::Nil => false }
+}
+
+-- Definitions may mention outputs and each other, in any order.
+comp chained {
+    in a: Int
+    out p: Int
+    pub out total: Int := twice + p
+    out twice: Int := 2 * a
+
+    req pos: p >= 0
+
+    expect at_least: total >= 2 * a
+    expect exact: total = 2 * a     --~ error: expectation `chained::exact` does not hold
+}
+
+-- A definition of the inputs only may occur in an assumption, a binding,
+-- and a function's argument.
+fn f(Int): Int
+
+comp mentions {
+    in x: Int
+    out k: Int := x + 1
+    pub out y: Int
+
+    inst w: chained { a := k }
+
+    assume positive: k > 0
+
+    req r: f(k) = y
+
+    expect through: w.total >= 2 * x + 2
+}
+
+-- An instance's defined outputs are determined by its definitions.
+comp determined {
+    in a: Int
+    inst w: listed { head := a }
+    pub det out h: Int
+
+    req r: h = match w.l { IntList::Cons(x, _) => x, IntList::Nil => 0 }
+}
+
+-- A definition is not a constraint, so it is never reported as redundant
+-- or conflicting.
+comp conflict {                     --~ error: `conflict` is not realizable
+    in a: Int
+    out d: Int := a
+    pub out o: Int
+
+    req r1: o = d                   --~ info: conflicts with `r2`
+    req r2: o != a                  --~ info: conflicts with `r1`
+}
+
+expect defined: forall (u: chained), u.total >= 2 * u.a
+
+--@ summary: 19 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

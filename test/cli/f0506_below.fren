@@ -1,0 +1,3 @@
+-- Evidence below `--require` (F0506).
+--@ args: trace --require trusted
+comp c { in x? pub out y? req r: y? iff x? }

@@ -1,0 +1,2 @@
+--@ argv: check --color
+-- `--color` without its value.

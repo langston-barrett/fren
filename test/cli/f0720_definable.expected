@@ -1,0 +1,13 @@
+warning[F0720]: `r` could be the definition of `y`
+ --> test/cli/f0720_definable.fren:4:28
+  |
+4 | comp c { in x: Int pub out y: Int req r: y = x + 1 }
+  |                            ^ constrained by one equation
+  |
+  = help: write the expression as `y`'s definition, `out y := ...`, and remove `r`
+  = note: `definable_output` is set to `warn`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0720`.
+exit=3

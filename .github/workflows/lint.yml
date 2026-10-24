@@ -1,0 +1,46 @@
+name: lint
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        persist-credentials: false
+    - uses: langston-barrett/gha/.github/actions/install-linters@a35f858a9bcd26fc0c80928ac8b0a85c0f791c06
+    - name: Install keep-sorted
+      run: | # zizmor: ignore[github-env]
+        set -euo pipefail
+        install_dir="${HOME}/.local/bin"
+        mkdir -p "${install_dir}"
+        echo "${install_dir}" >> "${GITHUB_PATH}"
+        curl \
+          --fail \
+          --location \
+          --proto '=https' \
+          --retry 1 \
+          --retry-delay 3 \
+          --show-error \
+          --silent \
+          --tlsv1.2 \
+          --output "${install_dir}/keep-sorted" \
+          https://github.com/google/keep-sorted/releases/download/v0.10.0/keep-sorted_linux_amd64
+        echo "079710c01619cc3dc11c9ddce18ac8db8d86701e7d12f9c5b62b8c4c4a664cca  ${install_dir}/keep-sorted" | sha256sum --check
+        chmod +x "${install_dir}/keep-sorted"
+    - uses: langston-barrett/lun/.github/actions/lun@aff233f8a5cf4c72a8332941af8d6e56719aba78
+      with:
+        run-flags: "--check"

@@ -1,0 +1,20 @@
+-- Naming rules (`lang::bool_naming`) and uniqueness.
+
+enum Bad? { X }                   --~ error: enum names cannot end in `?`
+enum Int { A }                    --~ error: `Int` is a built-in type and cannot be redefined
+enum V { A, A }                   --~ error: variant `A` is defined multiple times
+
+comp untyped { in x }             --~ error: missing type for `x`
+comp bool_no_q { in flag: Bool }  --~ error: `Bool` variable `flag` must end in `?`
+comp q_not_bool { in n?: Int }    --~ error: `n?` ends in `?` but is not a `Bool`
+comp req_q { in x: Int req r?: x > 0 }  --~ error: constraint names cannot end in `?`
+comp dup { req d: true req d: false }   --~ error: `d` is defined multiple times in this comp
+
+enum E { A }
+enum E { B }                      --~ error: the name `E` is already defined in the root module (as an enum)
+--~^^ warning: enum `E` is never used
+
+-- Untyped `?` names are `Bool`s.
+comp fine { in ok? pub out done? req r: done? iff ok? }
+
+--@ exit: 2

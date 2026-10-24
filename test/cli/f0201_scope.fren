@@ -1,0 +1,2 @@
+-- A name not in scope, with a similar one (F0201).
+comp c { in count: Int pub out y: Int req r: y = cuont }

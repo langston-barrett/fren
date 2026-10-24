@@ -1,0 +1,22 @@
+error[F0301]: missing type for `count`
+ --> test/cli/color_never.fren:3:13
+  |
+3 | comp c { in count }
+  |             ^^^^^ needs a type
+  |
+  = note: only variables whose names end in `?` can omit their type, which is `Bool`
+help: add a type
+  |
+3 | comp c { in count: Int }
+  |                  +++++
+  |
+help: if it is a `Bool`, name it `count?`
+  |
+3 - comp c { in count }
+3 + comp c { in count? }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0301`.
+exit=2

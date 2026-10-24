@@ -1,0 +1,3 @@
+-- An enum where a component was expected (F0210).
+enum E { A }
+comp c { inst s: E {} }

@@ -1,0 +1,3 @@
+-- Markers that no claim matches (F0504, F0505).
+--@ args: trace --tests test/fixtures/stray.txt
+comp shown { in x? pub out y? req r: y? iff x? }

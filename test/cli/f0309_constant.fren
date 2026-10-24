@@ -1,0 +1,3 @@
+-- A constant whose value applies a function (F0309).
+fn rate(Int): Int
+const RATE: Int := rate(1)

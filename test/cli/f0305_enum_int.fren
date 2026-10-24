@@ -1,0 +1,4 @@
+-- Comparing an enum with a number (F0305).
+enum Mode { Off, On }
+comp c { in m: Mode pub out y? req r: y? iff m = 1 }
+-- fren-covers: lang::operator_type

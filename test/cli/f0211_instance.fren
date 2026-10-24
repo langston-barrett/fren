@@ -1,0 +1,3 @@
+-- An instance name ending in `?` (F0211).
+comp sub {}
+comp c { inst s?: sub {} }

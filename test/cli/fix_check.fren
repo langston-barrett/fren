@@ -1,0 +1,23 @@
+--@ args: fix --check
+-- `fren fix --check`: a diff of the fixes, and the lints that it cannot fix.
+mod m
+pub enum Mode { Heat, Cool, Off }
+pub const LIMIT: Int := 3
+pub const MAX: Int := 4
+
+mod n
+-- Imported by name.
+use m::Mode::*
+-- Unused, and a repeated glob.
+use m::Mode::*
+use m::LIMIT  -- the limit
+-- Unused names leave a group.
+use m::{MAX, Mode}
+set_option fren.lint.non_snake_case "expect" in
+comp c {
+    in x: Int
+    pub out y?
+    req r: y? iff (x = MAX or Heat = Cool)
+}
+-- Not fixed: a rename.
+comp Bad {}

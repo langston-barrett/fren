@@ -1,0 +1,3 @@
+-- An operand of the wrong type (F0304).
+comp c { in x: Int pub out y? req r: y? iff x }
+-- fren-covers: lang::operator_type

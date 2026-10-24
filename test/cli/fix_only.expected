@@ -1,0 +1,19 @@
+warning[F0702]: `use Mode::*` imports every variant of `Mode`
+ --> test/cli/fix_only.fren:4:5
+  |
+4 | use Mode::*
+  |     ^^^^ glob import
+  |
+  = note: a name opened with `*` does not say where it comes from, and a variant added later can make a name ambiguous
+  = help: import the variants used here by name: `use Mode::Heat`
+  = help: or write them qualified, as in `Mode::Heat`
+  = help: `fren fix` can fix this
+  = note: `glob_imports` is `warn` by default
+  = help: to allow it, `set_option fren.lint.glob_imports "allow"`
+
+--- test/cli/fix_only.fren
++++ test/cli/fix_only.fren
+@@ -5 +4,0 @@
+-use Mode::Cool
+For more information about this error, try `fren --explain F0702`.
+exit=1

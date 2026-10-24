@@ -1,0 +1,7 @@
+-- A `det out` that is not determined (F0607).
+comp c {
+    in x: Int
+    pub det out y: Int
+    req above: y >= x
+    req below: y <= x + 1
+}

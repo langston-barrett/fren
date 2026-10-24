@@ -1,0 +1,6 @@
+x = 3
+y = 4
+req r: true
+expect bigger: true
+status: meets
+exit=0

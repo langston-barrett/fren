@@ -1,0 +1,20 @@
+-- Private enumerations and constants that nothing in the file uses. A use
+-- as a type, through a variant, or in another unused item counts.
+set_option fren.lint.unused_variables "allow"
+enum Unused { A }
+enum Typed { B }
+enum ByVariant { C, D }
+const SPARE: Int := 3
+const USED_BY_SPARE: Int := 1
+const CHAIN: Int := USED_BY_SPARE + 1
+pub const SHOWN: Int := 2
+
+set_option fren.lint.dead_code "allow" in
+const ALLOWED: Int := 4
+
+pub comp c {
+    in t: Typed
+    pub out d?
+
+    req r: d? iff ByVariant::C = ByVariant::D
+}

@@ -1,0 +1,78 @@
+-- Static rules for defined outputs.
+set_option fren.lint.dead_code "allow"
+
+fn f(Int): Int
+
+enum IntList { Nil, Cons(Int, IntList) }
+
+comp cycle {
+    in x: Int
+    out a: Int := b + x             --~ error: the definition of `a` mentions itself
+    out b: Int := a
+    pub out o: Int
+
+    req r: o = a
+}
+
+comp in_assumption {
+    in x: Int
+    out o: Int
+    out d: Int := o + x
+    pub out p: Int
+
+    assume a: d > 0                 --~ error: assumptions may only mention `in` variables, but `o` is an `out`
+    req r: p = o
+}
+
+comp in_argument {
+    in x: Int
+    out o: Int
+    out d: Int := o + x
+    pub out p: Int
+
+    req r: p = f(d)                 --~ error: the arguments of a function may not mention an `out`, but `o` is one
+    req s: o = 0
+}
+
+comp nonlinear {
+    in x: Int
+    in y: Int
+    out d: Int := x + 1
+    pub out p: Int
+
+    req r: p = d * y                --~ error: nonlinear arithmetic is not supported
+}
+
+comp unbounded {
+    in x: Int
+    out l: IntList                     --~ error: output `l` has the unbounded type `IntList`
+    pub out p?
+
+    req r: p? iff l = IntList::Nil
+}
+
+comp typed {
+    in x: Int
+    pub out d: Int := x > 0
+    --~^[cli] error: type mismatch: expected `Int`, found `Bool`
+    --~^^[hosted] error: Type mismatch
+}
+
+comp source {
+    in a: Int
+    pub out d: Int := a
+}
+
+comp binds {
+    in x: Int
+    inst w: source { a := x, d := x }  --~ error: `d` is an `out` of `source`
+}
+
+comp unused {
+    in x: Int
+    out d: Int := x                 --~ warning: unused variable `d`
+    pub out p: Int
+
+    req r: p = x
+}
+--@ exit: 2

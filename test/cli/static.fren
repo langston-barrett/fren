@@ -1,0 +1,4 @@
+-- Snapshot of the binary's full output for static errors: multi-line help,
+-- the closing line, and the exit code.
+comp c { in flag: Bool }
+comp d { in x }
