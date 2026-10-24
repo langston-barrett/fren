@@ -5,7 +5,7 @@ error[F0111]: `E.A` is not a single name
   |                                               ^^^ `.` reads an instance's variable, or a value's field or method
   |
   = note: `E` is not an instance, a variable or a constant
-help: separate path segments with `::`
+help: if it is a path, separate its segments with `::`
   |
 3 - comp c { in e: E pub out y? req r: y? iff e = E.A }
 3 + comp c { in e: E pub out y? req r: y? iff e = E::A }

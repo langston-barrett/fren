@@ -93,7 +93,7 @@ def leanIdentifierMsg (s : String) : Msg :=
     | [] => s
   { code? := some "F0119", headline := s!"`{shown}` is not an identifier in Fren", label? := some "not a Fren identifier"
     notes := #["note: an identifier is ASCII letters, digits, `_` and `'`, with `.` between components and an optional `?` at the end"]
-      ++ (if s.contains '!' then #["help: `!` is not part of an identifier; to compare, write `a != b`, with spaces"] else #[])
+      ++ (if s.endsWith "!" then #["help: `!` is not part of an identifier; to compare, write `a != b`, with spaces"] else #[])
       ++ if s.contains '«' && !s.contains '»' then #["note: the `«` is not closed"] else #[] }
 
 end Fren.Core
