@@ -259,7 +259,29 @@ mentions the variables that its record mentions: `p.x` mentions `p`.
 variant `Circle` with the payload `2`, written as a [function
 application](#function-applications) is. A variant with a payload is
 mentioned only by applying it, and a variant without one only by its
-path: `Shape::Circle` and `Shape::Empty()` are errors. As for a function,
+path: `Shape::Circle` and `Shape::Empty()` are errors. The same holds for
+a variant in a [`match` arm](#matches)'s pattern, which binds the payload's
+values. `lang::variant_mention` states this:
+
+```fren
+pub mod lang
+
+pub comp variant_mention {
+    in payload: Int          -- how many values the variant's payload has
+    in applied?              -- it is applied to values, or in a pattern to binders
+    pub det out accepted?
+
+    assume counted: payload >= 0
+
+    req rule: accepted? iff (applied? iff payload > 0)
+
+    expect plain: when payload = 0 and not applied?, accepted?
+    expect unapplied: when payload > 0 and not applied?, not accepted?
+    expect empty_parentheses: when payload = 0 and applied?, not accepted?
+}
+```
+
+As for a function,
 `lang::application` gives whether the application is accepted, where the
 parameters are the payload's types. Unlike a function's value, a
 variant's value is fixed: building one is not an application for the

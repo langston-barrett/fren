@@ -452,4 +452,14 @@ impl integer_literal: lang::integer_literal for (s : String) {
     Lexical.decimalRe, Lexical.basedRe, List.cons_append, List.nil_append, Bool.or_eq_true, Bool.and_eq_true,
     Bool.not_eq_true', Bool.not_eq_true, or_assoc]
 
+-- For every payload and mention: the elaborators' check, which both front
+-- ends call through `variantMentionMsg?`.
+impl variant_mention: lang::variant_mention for (n : Nat) (a : Bool) {
+  payload := n,
+  applied? := a,
+  accepted? := Fren.Core.variantMentionAccepted n a,
+} by
+  intro n a _
+  cases a <;> rcases n with _ | n <;> simp [fren_spec, Fren.Core.variantMentionAccepted] <;> omega
+
 end Fren.Impls

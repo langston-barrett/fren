@@ -819,11 +819,9 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
           throwErrorAt p (Core.notAVariantOfMsg info.path s!"a variant of `{Core.showPath en.path}`").text
         let v := info.path ++ en.variants[idx]!
         let n := info.payloads[idx]!.size
-        if p[1].isNone then
-          if n > 0 then throwErrorAt p (Core.unappliedVariantMsg v n).text
-        else
+        if let some msg := Core.variantMentionMsg? v n (!p[1].isNone) then throwErrorAt p msg.text
+        unless p[1].isNone do
           let bs := altBinders p
-          if n == 0 then throwErrorAt p (Core.noPayloadMsg v).text
           unless bs.size == n do throwErrorAt p (Core.arityMsg v n bs.size "binder").text
           if alts.size > 1 then
             if let some b := bs.find? (·.isIdent) then throwErrorAt b (Core.orBinderMsg b.getId).text
@@ -1208,7 +1206,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
     | .variant en idx =>
       let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
       let n := (info.payloads[idx]?.map (·.size)).getD 0
-      if n > 0 then throwError (Core.unappliedVariantMsg (en.path ++ en.variants[idx]!) n).text
+      if let some msg := Core.variantMentionMsg? (en.path ++ en.variants[idx]!) n false then throwError msg.text
       return mkCIdentFrom e (info.decl ++ en.variants[idx]!)
     | .item { kind := .constItem, path, .. } =>
       let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
@@ -1231,7 +1229,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
       let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
       let v := en.path ++ en.variants[idx]!
       let n := (info.payloads[idx]?.map (·.size)).getD 0
-      if n == 0 then throwError (Core.noPayloadMsg v).text
+      if let some msg := Core.variantMentionMsg? v n true then throwError msg.text
       unless args.getElems.size == n do throwError (Core.arityMsg v n args.getElems.size "value").text
       let args ← args.getElems.mapM (toTerm { cx with emptyOk := true })
       return ← `($(mkCIdentFrom p (info.decl ++ en.variants[idx]!)) $args*)
