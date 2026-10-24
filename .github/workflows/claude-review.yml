@@ -32,6 +32,10 @@ jobs:
           # The report, in the step summary, shows the tools used and denied.
           # The repository is private and the input is its own PRs.
           display_report: "true"
+          # Logs the whole conversation, to find what is denied when a review
+          # posts nothing. The repository is private and the reviewer has no
+          # secrets in reach; remove once reviews post reliably.
+          show_full_output: "true"
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
@@ -45,9 +49,11 @@ jobs:
             Use `gh pr comment` to post a single summary comment with your
             findings, and inline comments for specific issues. Read the
             changed files in the checkout with Read, Grep and Glob, rather
-            than piping `gh pr diff`. Write the summary to a file with Write
-            and post it with `gh pr comment <number> --body-file <file>`:
-            a command substitution such as `--body "$(cat ...)"` is denied.
+            than piping `gh pr diff`. Write the summary with Write to
+            `review.md` in the current directory (Write is denied outside
+            it, such as in /tmp), then post it with
+            `gh pr comment <number> --body-file review.md`: a command
+            substitution such as `--body "$(cat ...)"` is denied.
             If you cannot complete the review, still post a summary comment
             saying why, so that a review never ends without a trace.
           claude_args: >-
