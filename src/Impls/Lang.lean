@@ -142,7 +142,7 @@ impl match_arms: lang::match_arms for (vs : List Lean.Name) (p : Lean.Name → B
   accepted? := Fren.Core.matchArmsAccepted vs.length (vs.filter p).length w r a,
 } by
   intro vs p w r a _
-  have hle := List.length_filter_le p vs
+  have _hle := List.length_filter_le p vs
   cases w <;> simp [fren_spec, Fren.Core.matchArmsAccepted, ofList_filter_eq] <;> omega
 
 impl function_params: lang::function_params for (d : Bool) (p n : Nat) {

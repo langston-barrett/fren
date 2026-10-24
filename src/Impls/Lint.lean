@@ -245,7 +245,7 @@ impl lint_fix_selected: lint::fix_selected for (l : Fren.Core.Lint) (only skip :
   fixed? := fixSelected only skip l,
 } by
   intro l only skip _
-  simp [fren_spec, fixSelected, Array.contains_iff_mem]
+  simp [fren_spec, fixSelected]
 
 -- Over `Nat`, so `decide` does not apply: a proof by cases.
 impl lint_dead_item: lint::dead_item for (w : Named) (p : Bool) (n : Nat) {
