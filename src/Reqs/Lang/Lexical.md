@@ -183,9 +183,11 @@ have type `Int`. A negative number is written with unary minus, `-1` (see
 [Expressions](Expressions.md)). `true` and `false` are the literals of type
 `Bool`.
 
-Like an identifier, a number is as long as it can be, as Lean reads it:
-after a base, it runs over that base's digits and `_`s, and otherwise over
-decimal digits and `_`s. So `0b12` is `0b1` then `2`, and `1_foo` starts
+Like an identifier, a number is as long as it can be, as Lean reads an
+integer: after a base, it runs over that base's digits and `_`s, and
+otherwise over decimal digits and `_`s. Fren has no scientific literals,
+so in `1.5` and `1e3` the number is `1`, where Lean would read on. So
+`0b12` is `0b1` then `2`, and `1_foo` starts
 with `1_`, which is not an integer literal. `lang::integer_literal` states
 which lexemes are integer literals. Lean reads `0_1` as a number but
 cannot give its value, so it is not one:
@@ -204,7 +206,6 @@ pub comp integer_literal {
     expect separated: when lexeme = "1_000" or lexeme = "0x_FF", accepted?
     expect digit_last: when lexeme.ends_with?("_"), not accepted?
     expect base_needs_digits: when lexeme = "0x" or lexeme = "0b", not accepted?
-    expect base_digits: when lexeme = "0b2" or lexeme = "0o8", not accepted?
 }
 ```
 
