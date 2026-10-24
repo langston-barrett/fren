@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCli.Search
 import FrenCli.Smt
+import FrenCli.Verdicts
 -- keep-sorted end
 
 /-!
@@ -309,11 +310,12 @@ def confirming (sp : Spec) (ec : Comp) (kind : Fren.Core.CheckKind) (log : IO.Re
       let o ← b.query (hyps.map fun (n, f) => (n, f.1)) goal.1 true
       if let .sat model := o then
         let (env, I) := readModel sp sy model
-        let bad := hyps.find? fun (_, f) => f.2.eval sp sy I env tys == some false
-        let refuted := match bad with
-          | some (n, _) => some (some n)
-          | none => if goal.2.eval sp sy I env tys == some true then some none else none
-        if let some hyp? := refuted then
+        let vals := hyps.map fun (n, f) => (n, f.2.eval sp sy I env tys)
+        let bad := vals.find? (·.2 == some false)
+        let g := goal.2.eval sp sy I env tys
+        -- Only a refuted model is reported (`eval::confirm`).
+        if confirmation bad.isSome (g == some true) (vals.all (·.2.isSome) && g.isSome) == .Refuted then
+          let hyp? := bad.map (·.1)
           log.modify (·.push { kind, subject? := goal.2.subject?, hyp?, model })
         return if wantModel then o else .sat #[]
       return o
@@ -406,7 +408,7 @@ def applyRefutations (results : Array Fren.Core.CheckResult) (log : Array Refuta
   for r in results do
     match log.find? (·.about r) with
     | some x =>
-      out := out.push { r with verdict := .inconclusive, detail := .unknown "the solver's model was refuted" }
+      out := out.push { r with verdict := confirmedVerdict r.verdict .Refuted, detail := .unknown "the solver's model was refuted" }
       errs := errs.push (r, x.msg r)
     | none => out := out.push r
   return (out, errs)

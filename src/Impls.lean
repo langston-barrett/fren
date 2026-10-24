@@ -3,6 +3,7 @@
 -- keep-sorted start
 import Impls.Check
 import Impls.Cli
+import Impls.Eval
 import Impls.Fmt
 import Impls.Impl
 import Impls.Inst
