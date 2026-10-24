@@ -1,0 +1,13 @@
+error[F0109]: `unless` must be parenthesized here
+ --> test/cli/syntax/f0109_binding.fren:3:36
+  |
+3 | comp c { in x? inst s: sub { a? := unless x?, x?, b? := x? } }
+  |                                    ^^^^^^ needs parentheses
+  |
+  = note: `unless` has the lowest precedence, and its body extends as far right as possible
+  = help: wrap it in parentheses: `(unless c, e)`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0109`.
+exit=2

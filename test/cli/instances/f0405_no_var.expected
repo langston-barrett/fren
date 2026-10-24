@@ -1,0 +1,17 @@
+error[F0405]: instance `s` has no `in` or `pub out` named `totl`
+ --> test/cli/instances/f0405_no_var.fren:3:69
+  |
+3 | comp c { in i: Int pub out o: Int inst s: sub { a := i } req r: o = s.totl }
+  |                                                                     ^^^^^^ unknown variable
+  |
+  = note: the variables of `s` are `a` and `total`
+help: a variable with a similar name exists: `s.total`
+  |
+3 - comp c { in i: Int pub out o: Int inst s: sub { a := i } req r: o = s.totl }
+3 + comp c { in i: Int pub out o: Int inst s: sub { a := i } req r: o = s.total }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0405`.
+exit=2

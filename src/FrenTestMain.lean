@@ -8,12 +8,12 @@ import Lean.Elab.Frontend
 /-!
 # `lake test`
 
-- **ui tests:** every `test/ui/*.fren` is checked by both front ends against
+- **ui tests:** every `test/ui/**/*.fren` is checked by both front ends against
   its annotations (`FrenTest.Ui`). The binary's checker runs in-process; the
   Lean front end elaborates the file in an environment that imports `Fren`.
   Passing both is how `cli::agreement` is tested.
-- **Snapshots:** each `test/cli/X.fren` must make the binary print
-  `test/cli/X.expected` exactly (output and exit code), for formatting that
+- **Snapshots:** each `test/cli/**/X.fren` must make the binary print
+  `test/cli/**/X.expected` exactly (output and exit code), for formatting that
   annotations don't cover. A line `--@ args: ARGS` runs `fren ARGS X.fren`
   instead of `fren check X.fren`. `lake test -- --bless` (or `FREN_BLESS=1`)
   rewrites them.
@@ -33,9 +33,10 @@ reported sorted.
 
 open System Lean FrenTest.Ui
 
+/-- The files under `dir`, in its subdirectories too, with extension `ext`. -/
 def sortedFiles (dir : FilePath) (ext : String) : IO (Array FilePath) := do
-  let es ← dir.readDir
-  return (es.filter (·.path.extension == some ext)).map (·.path) |>.qsort (·.toString < ·.toString)
+  let fs ← dir.walkDir
+  return (fs.filter (·.extension == some ext)) |>.qsort (·.toString < ·.toString)
 
 /-! ## Snapshots -/
 
@@ -241,9 +242,9 @@ def specFiles : IO (Array String) := do
 not formatted, and those that `fren fmt` cannot parse, such as tests of
 syntax errors and of Lean code, and the examples of Markdown specs. -/
 def fmtIgnore : List String :=
-  ["test/cli/f01*.fren", "test/cli/f0216_member_option.fren", "test/cli/fix_*.fren", "test/cli/fmt_check.fren",
-   "test/cli/fmt_parse_error.fren", "test/cli/fmt_shadow.fren", "test/cli/mutate_unformatted.fren", "test/ui/syntax_*.fren",
-   "test/ui/impl.fren", "test/ui/lean_*.fren", "test/ui/trace.fren", "src/Reqs/Markdown.md",
+  ["test/cli/syntax/*.fren", "test/cli/names/f0216_member_option.fren", "test/cli/fix/*.fren", "test/cli/fmt/check.fren",
+   "test/cli/fmt/parse_error.fren", "test/cli/fmt/shadow.fren", "test/cli/commands/mutate_unformatted.fren",
+   "test/ui/syntax/*.fren", "test/ui/lean/*.fren", "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
    -- `#fren_md` in a block, which only the Lean front end reads.
    "src/FrenTest/chapters/LiterateOuter.md"]
 
@@ -401,7 +402,7 @@ def formatting : IO (Array String) := do
   -- In place: the file becomes formatted, and is then left alone.
   IO.FS.createDirAll (".lake" / "fmt-test")
   let file := ".lake/fmt-test/spec.fren"
-  let src ← IO.FS.readFile ("test" / "cli" / "fmt_check.fren")
+  let src ← IO.FS.readFile ("test" / "cli" / "fmt" / "check.fren")
   IO.FS.writeFile file src
   let (out, code) ← runFren ["fmt", file]
   let written ← IO.FS.readFile file

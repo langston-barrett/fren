@@ -151,7 +151,7 @@ impl variable_type: lang::variable_type for (o u d : Bool) {
 -- This proves the rule, given `hides?`, not that `hides?` is computed
 -- correctly: `Table.hidden?`, `bindingLocals`, and a function's absence from
 -- the table while its parameters are declared, which `o` stands for, are
--- tested (`test/ui/shadowing_static.fren`), not proved.
+-- tested (`test/ui/lang/shadowing_static.fren`), not proved.
 impl shadowing: lang::shadowing for (n : Lean.Name) (w : String) (h b o : Bool) {
   hides? := h,
   bang? := b,

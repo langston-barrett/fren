@@ -1,0 +1,14 @@
+error[F0701]: unused import `Mode::Heat`
+ --> test/cli/lints/settings/lint_deny.fren:4:5
+  |
+4 | use Mode::Heat
+  |     ^^^^^^^^^^ unused
+  |
+  = help: remove this `use`
+  = help: `fren fix` can fix this
+  = note: `unused_imports` is set to `deny`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0701`.
+exit=2

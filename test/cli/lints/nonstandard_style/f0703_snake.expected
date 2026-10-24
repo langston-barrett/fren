@@ -1,0 +1,42 @@
+warning[F0703]: component `TempSensor` should have a snake case name
+ --> test/cli/lints/nonstandard_style/f0703_snake.fren:2:6
+  |
+2 | comp TempSensor {
+  |      ^^^^^^^^^^ not in snake_case
+  |
+  = note: `non_snake_case` is `warn` by default
+  = help: to allow it, `set_option fren.lint.non_snake_case "allow"`
+help: rename it to `temp_sensor`
+  |
+2 - comp TempSensor {
+2 + comp temp_sensor {
+  |
+
+warning[F0703]: variable `tempC` should have a snake case name
+ --> test/cli/lints/nonstandard_style/f0703_snake.fren:3:8
+  |
+3 |     in tempC: Int
+  |        ^^^^^ not in snake_case
+  |
+help: rename it to `temp_c`
+  |
+3 -     in tempC: Int
+3 +     in temp_c: Int
+  |
+
+warning[F0703]: constraint `IsHot` should have a snake case name
+ --> test/cli/lints/nonstandard_style/f0703_snake.fren:5:9
+  |
+5 |     req IsHot: hot? iff tempC > 30
+  |         ^^^^^ not in snake_case
+  |
+help: rename it to `is_hot`
+  |
+5 -     req IsHot: hot? iff tempC > 30
+5 +     req is_hot: hot? iff tempC > 30
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0703`.
+exit=3

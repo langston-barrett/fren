@@ -1,0 +1,12 @@
+--- test/cli/fix/bool_if.fren
++++ test/cli/fix/bool_if.fren
+@@ -11,4 +11,4 @@
+-    req r1: o? iff (if a? then b? else false)
+-    req r2: p? iff (if a? or b? then true else b?)
+-    req r3: q? iff (if a? then false else b? iff a?)
+-    req r4: w? iff (if a? then b? else true)
++    req r1: o? iff (a? and b?)
++    req r2: p? iff (a? or b? or b?)
++    req r3: q? iff (not a? and (b? iff a?))
++    req r4: w? iff (not a? or b?)
+exit=1

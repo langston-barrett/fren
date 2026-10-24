@@ -1,0 +1,19 @@
+warning[F0740]: negating twice is the operand itself
+ --> test/cli/lints/style/f0740_double_neg.fren:2:50
+  |
+2 | comp c { in x: Int pub out y: Int req r: y = 2 * - -(x + 1) }
+  |                                                  ^^^^^^^^^^ a double negation
+  |
+  = help: `fren fix` can fix this
+  = note: `double_neg` is `warn` by default
+  = help: to allow it, `set_option fren.lint.double_neg "allow"`
+help: write `(x + 1)`
+  |
+2 - comp c { in x: Int pub out y: Int req r: y = 2 * - -(x + 1) }
+2 + comp c { in x: Int pub out y: Int req r: y = 2 * (x + 1) }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0740`.
+exit=3

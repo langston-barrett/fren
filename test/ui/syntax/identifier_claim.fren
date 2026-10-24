@@ -1,0 +1,5 @@
+-- fren-covers: lang::identifier
+-- An identifier that Lean reads but Fren does not, in a claim (F0119), in
+-- both front ends.
+
+tested a?b: "test/ui/syntax/identifier_claim.fren"   --~ error: `a?b` is not an identifier in Fren

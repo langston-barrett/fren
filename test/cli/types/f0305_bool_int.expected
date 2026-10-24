@@ -1,0 +1,13 @@
+error[F0305]: cannot compare `Bool` with `Int`
+ --> test/cli/types/f0305_bool_int.fren:2:41
+  |
+2 | comp c { in b? pub out y? req r: y? iff b? = 1 }
+  |                                         ^^^^^^ `Bool` and `Int`
+  |
+  = note: both sides of `=` must have the same type
+  = note: `Bool`s are not numbers: `true` and `false` are `Bool`s
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0305`.
+exit=2

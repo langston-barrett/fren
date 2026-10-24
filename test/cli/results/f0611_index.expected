@@ -1,0 +1,14 @@
+error[F0611]: an index of `first::r` may be out of range
+ --> test/cli/results/f0611_index.fren:6:16
+  |
+6 |     req r: x = q[0]
+  |                ^^^^ may be out of range
+  |
+  = counterexample: q = [], x = 0
+  = note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there
+  = help: guard it with a bound, as in `i < q.len and q[i] = x`, before it in an `and`, or in a `when`
+
+fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0611`.
+exit=1

@@ -1,0 +1,20 @@
+--- test/cli/fix/types_matches.fren
++++ test/cli/fix/types_matches.fren
+@@ -6,3 +6,3 @@
+-pub struct R { ok? : Bool, n: Int }
+-pub fn even?(Int): Bool
+-pub fn pos?(n: Int, big?: Bool): Bool := n > 0 and big?
++pub struct R { ok?, n: Int }
++pub fn even?(Int)
++pub fn pos?(n: Int, big?) := n > 0 and big?
+@@ -13,2 +13,2 @@
+-    in ready?: Bool
+-    pub out d?: Bool := ready?
++    in ready?
++    pub out d? := ready?
+@@ -17,2 +17,2 @@
+-    req r1: y = match e { _ => 1 } + match o { One::Only => x + 1 } * 2
+-    req r2: y = match e { E::A | E::B => (x) } and match o { One::Only => d? }
++    req r1: y = 1 + (x + 1) * 2
++    req r2: y = (x) and d?
+exit=1

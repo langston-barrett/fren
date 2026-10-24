@@ -1,0 +1,32 @@
+warning[F0710]: unused variable `spare`
+  --> test/cli/lints/unused/f0710_unused.fren:11:8
+   |
+11 |     in spare: Int
+   |        ^^^^^ never mentioned
+   |
+   = note: nothing in its component depends on it
+   = help: remove it, or mention it in a constraint
+   = note: `unused_variables` is `warn` by default
+   = help: to allow it, `set_option fren.lint.unused_variables "allow"`
+
+warning[F0710]: unused variable `loose?`
+  --> test/cli/lints/unused/f0710_unused.fren:13:13
+   |
+13 |     pub out loose?
+   |             ^^^^^^ never mentioned
+   |
+   = note: nothing constrains it, so it can take any value
+   = help: remove it, or mention it in a constraint
+
+warning[F0710]: unused binder `q`
+  --> test/cli/lints/unused/f0710_unused.fren:19:21
+   |
+19 | expect g: forall (p q: c), p.y = p.x
+   |                     ^ never mentioned
+   |
+   = help: remove it, or mention it in the expectation
+
+fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0710`.
+exit=3

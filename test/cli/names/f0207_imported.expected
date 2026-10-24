@@ -1,0 +1,12 @@
+error[F0207]: the name `Shown` is already imported into module `b`
+ --> test/cli/names/f0207_imported.fren:6:16
+  |
+6 | use a::{Shown, Shown}
+  |                ^^^^^ `Shown` defined or imported again here
+  |
+  = note: a `use` and an item, or two `use`s, of the same name would make `Shown` ambiguous
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0207`.
+exit=2

@@ -1,0 +1,13 @@
+error[F0415]: a binding of an input of `rough` may only mention `in` variables of `precise`, but `y` is an `out`
+ --> test/cli/instances/f0415_refine_input_out.fren:5:43
+  |
+5 | refine fits: precise refines rough { n := y }
+  |                                           ^ an `out`
+  |
+  = note: the inputs of `rough` are chosen by the environment, before `precise` chooses its outputs
+  = help: bind an output of the refined component to it instead
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0415`.
+exit=2

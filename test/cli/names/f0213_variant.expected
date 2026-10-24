@@ -1,0 +1,10 @@
+error[F0213]: variant `A` is defined multiple times
+ --> test/cli/names/f0213_variant.fren:2:16
+  |
+2 | enum V { A, B, A }
+  |                ^ defined again here
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0213`.
+exit=2

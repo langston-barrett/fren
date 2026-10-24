@@ -717,6 +717,6 @@ impl trivial_match: lint::trivial_match for (n : Nat) (b : Bool) {
 
 -- `trivialPattern?` reads the pattern's characters; the spec states the
 -- same with a pattern, which the tests check against it.
-tested lint::trivial_pattern: "test/ui/method_lints.fren", "test/cli/f0744_trivial_pattern.fren"
+tested lint::trivial_pattern: "test/ui/lints/methods.fren", "test/cli/lints/style/f0744_trivial_pattern.fren"
 
 end Fren.Impls

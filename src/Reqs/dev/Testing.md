@@ -1,6 +1,6 @@
 # Testing
 
-- **ui tests** (`lake test`): each `test/ui/*.fren` covers one topic and
+- **ui tests** (`lake test`): each `test/ui/**/*.fren` covers one topic and
   states its expected messages as comments:
   `--~ error: TEXT` expects an error on that line whose text contains `TEXT`
   (`--~^` for the line above), every message must be expected, and `--@`
@@ -9,11 +9,18 @@
   few messages that legitimately differ (parse and type errors, which the Lean
   front end gets from Lean). This is how `cli::agreement` is tested. See
   `src/FrenTest/Ui.lean` for the format.
-- **Snapshots** (`lake test`): `test/cli/X.fren` must make the `fren` command print
-  `test/cli/X.expected` exactly, for formatting that annotations don't cover.
+- **Snapshots** (`lake test`): `test/cli/**/X.fren` must make the `fren` command print
+  `test/cli/**/X.expected` exactly, for formatting that annotations don't cover.
   Each distinct message has one, named after its code (`f0105_eqeq.fren`).
   A line `--@ args: ARGS` runs `fren ARGS X.fren`, and `--@ argv: ARGS` runs
   `fren ARGS` alone. `lake test -- --bless` updates them.
+- **Layout:** tests are in subdirectories by area. Under `test/cli/`, the
+  snapshots of codes are by their [group](../View.md#error-codes) (`syntax/`,
+  `names/`, `types/`, `instances/`, `traceability/`, `results/`), those of
+  lints by lint group (`lints/style/` and so on, and `lints/settings/` for
+  setting levels), and the others by command (`args/`, `fix/`, `fmt/`,
+  `commands/`). Under `test/ui/`, they are `lang/`, `checks/`, `lints/`,
+  `syntax/` and `lean/`.
 - **Error codes** (`lake test`): every code used in the sources must be
   explained in `src/FrenCore/Codes.lean` and reported by some snapshot.
   Each explanation's first ```` ```fren ```` block must report its code,

@@ -1,0 +1,18 @@
+warning[F0718]: this is `x` in a set of 3
+ --> test/cli/lints/pedantic/f0718_chain.fren:4:46
+  |
+4 | comp c { in x: Int pub out p? req r: p? iff (x = 1 or x = 2 or x = 3) }
+  |                                              ^^^^^^^^^^^^^^^^^^^^^^^ a chain of `or`
+  |
+  = help: `fren fix` can fix this
+  = note: `membership_chain` is set to `warn`
+help: write it as a membership
+  |
+4 - comp c { in x: Int pub out p? req r: p? iff (x = 1 or x = 2 or x = 3) }
+4 + comp c { in x: Int pub out p? req r: p? iff (x in {1, 2, 3}) }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0718`.
+exit=3

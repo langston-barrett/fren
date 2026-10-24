@@ -1,0 +1,13 @@
+error[F0707]: unknown lint `shadowed_constants`
+ --> test/cli/lints/settings/f0707_removed_lint.fren:2:12
+  |
+2 | set_option fren.lint.shadowed_constants "allow"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no such lint
+  |
+  = note: `shadowed_constants` was removed; shadowing without `!` is now an error (F0217)
+  = note: the lints are `card_zero`, `constant_output`, `dead_code`, `definable_output`, `glob_imports`, `index_after_use`, `length_zero`, `membership_chain`, `non_camel_case_types`, `non_snake_case`, `non_upper_case_constants`, `nonminimal_bool`, `singleton_membership`, `undecidable`, `unfulfilled_lint_expectations`, `unused_imports`, `unused_variables`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0707`.
+exit=2

@@ -1,0 +1,10 @@
+error[F0210]: expected a component, but `E` is an enum
+ --> test/cli/names/f0210_component.fren:3:18
+  |
+3 | comp c { inst s: E {} }
+  |                  ^ not a component
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0210`.
+exit=2

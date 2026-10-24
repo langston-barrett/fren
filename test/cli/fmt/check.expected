@@ -1,0 +1,30 @@
+--- test/cli/fmt/check.fren
++++ test/cli/fmt/check.fren
+@@ -3 +2,0 @@
+-use view::Severity::Warning
+@@ -5 +4 @@
+-use view::Severity::{Info, Error}
++use view::Severity::{Error, Info, Warning}
+@@ -7,10 +6,8 @@
+-pub enum Mode {Heat,Cool}
+-comp   c{
+-in t:Int -- the temperature
+-      pub out mode:Mode
+-  req r :mode = if t< -18 then Mode::Heat else Mode::Cool
+-  inst h: d {
+-    x := 1
+-  }
+-
+-
++pub enum Mode { Heat, Cool }
++comp c {
++    in t: Int  -- the temperature
++    pub out mode: Mode
++    req r: mode = if t < -18 then Mode::Heat else Mode::Cool
++    inst h: d {
++        x := 1,
++    }
+@@ -18 +15 @@
+-tested c: "a", "b",
++tested c: "a", "b"
+exit=1

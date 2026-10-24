@@ -1,0 +1,19 @@
+warning[F0732]: this is a call of `contains?`
+ --> test/cli/lints/complexity/f0732_manual_method.fren:4:50
+  |
+4 | comp c { in q: Seq(Int) pub out p? req r: p? iff q.index_of([1], 0) < 0 }
+  |                                                  ^^^^^^^^^^^^^^^^^^^^^^ compares a position
+  |
+  = help: `fren fix` can fix this
+  = note: `manual_method` is `warn` by default
+  = help: to allow it, `set_option fren.lint.manual_method "allow"`
+help: call `contains?`
+  |
+4 - comp c { in q: Seq(Int) pub out p? req r: p? iff q.index_of([1], 0) < 0 }
+4 + comp c { in q: Seq(Int) pub out p? req r: p? iff not q.contains?([1]) }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0732`.
+exit=3

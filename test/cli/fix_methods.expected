@@ -1,8 +1,0 @@
---- test/cli/fix_methods.fren
-+++ test/cli/fix_methods.fren
-@@ -9,2 +9,2 @@
--    req r1: p? iff (q ++ q).rev.rev = q and r.inverse.inverse.domain = {} and (q.rev).rev.len = 1
--    req r2: q.rev.rev[0] = 1 and r.closure.closure.closure = r and q.rev.rev.rev = q
-+    req r1: p? iff q ++ q = q and r.domain = {} and q.len = 1
-+    req r2: q[0] = 1 and r.closure = r and q.rev = q
-exit=1

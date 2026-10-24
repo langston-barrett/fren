@@ -1,0 +1,13 @@
+error[F0401]: assumptions may only mention `in` variables, but `s.b` belongs to instance `s`
+ --> test/cli/instances/f0401_instance.fren:3:53
+  |
+3 | comp c { in i: Int inst s: sub { a := i } assume a: s.b > 0 }
+  |                                                     ^^^ a variable of instance `s`
+  |
+  = note: assumptions constrain the environment; instances are part of the system
+  = help: if it constrains the instance, make it a `req`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0401`.
+exit=2

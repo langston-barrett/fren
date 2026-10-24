@@ -1,0 +1,16 @@
+--- test/cli/fix/arith.fren
++++ test/cli/fix/arith.fren
+@@ -14,6 +14,6 @@
+-    pub out a? := (((x > 0))) and f(((y))) > 0
+-    pub out b: Int := - -(x + y) * 2 + f(-(-(x))) + f(- - -y)
+-    pub out d: Int := (x + y) * -1 + -1 * f(x) + x * (-1) * -1
+-    pub out e? := x >= y + 1 and 1 + y <= x and x - 1 >= y and y <= x - 1 and x - 1 >= y + 1
+-    pub out g? := 0 < s.len or 1 <= q.len or s.len != 0 or q.len < 1 or 0 = s.len
+-    pub out h? := (x != 1 and x != 2 and x != 3) or (q != [] and (y = 1 or y = q[0] or y = 2))
++    pub out a? := (x > 0) and f((y)) > 0
++    pub out b: Int := (x + y) * 2 + f(x) + f(-y)
++    pub out d: Int := -(x + y) - f(x) + x
++    pub out e? := x > y and y < x and x > y and y < x and x - 1 > y
++    pub out g? := s != "" or q != [] or s != "" or q = [] or s = ""
++    pub out h? := (not x in {1, 2, 3}) or (q != [] and (y = 1 or y = q[0] or y = 2))
+exit=1

@@ -1,0 +1,13 @@
+error[F0108]: comparisons cannot be chained
+ --> test/cli/syntax/f0108_chain.fren:2:54
+  |
+2 | comp c { in x: Int pub out ok? req r: ok? iff 0 <= x <= 10 }
+  |                                                      ^^ second comparison
+  |
+  = note: `a < b < c` would compare the `Bool` `a < b` with `c`
+  = help: split it with `and`, e.g. `a < b and b < c`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0108`.
+exit=2

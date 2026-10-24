@@ -1,0 +1,13 @@
+error[F0312]: enum `Stream` has no values
+ --> test/cli/types/f0312_no_values.fren:2:6
+  |
+2 | enum Stream { More(Int, Stream) }
+  |      ^^^^^^ every variant contains itself
+  |
+  = note: every variant of `Stream` has a payload of type `Stream`, so no value can be built
+  = help: add a variant whose payload does not contain it, e.g. `Nil`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0312`.
+exit=2

@@ -1,0 +1,13 @@
+error[F0105]: `%` is not an operator in Fren
+ --> test/cli/syntax/f0105_percent.fren:2:48
+  |
+2 | comp c { in x: Int pub out y: Int req r: y = x % 2 }
+  |                                                ^ not a Fren operator
+  |
+  = note: Fren has no division: the solver decides only linear integer arithmetic
+  = help: multiply the other side instead, e.g. `2 * y = x` rather than `y = x / 2`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0105`.
+exit=2

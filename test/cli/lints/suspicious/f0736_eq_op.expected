@@ -1,0 +1,14 @@
+warning[F0736]: both operands of `=` are written the same
+ --> test/cli/lints/suspicious/f0736_eq_op.fren:2:65
+  |
+2 | comp c { in x: Int in y: Int pub out p? req r: p? iff (x < y or x = x) }
+  |                                                                 ^^^^^ always `true`
+  |
+  = note: one of them is probably not the operand meant
+  = note: `eq_op` is `warn` by default
+  = help: to allow it, `set_option fren.lint.eq_op "allow"`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0736`.
+exit=3

@@ -1,0 +1,23 @@
+error[F0603]: expectation `same` does not hold
+  --> test/cli/results/f0603_global.fren:13:8
+   |
+13 | expect same: forall (a b: band),
+   |        ^^^^ does not follow from the requirements
+   |
+   = counterexample: a.temp = -2, a.target = 0, a.too_cold? = false, b.temp = -2, b.target = 1, b.too_cold? = true
+   = help: strengthen the requirements so that it follows, or correct the expectation
+
+error[F0605]: `never` is vacuous: its condition can never hold, given `a`
+  --> test/cli/results/f0603_global.fren:15:33
+   |
+15 | expect never: forall (a: band), when a.target > HIGH, a.too_cold?
+   |                                 ^^^^^^^^^^^^^^^^^^^^ this condition is always false
+   |
+   = note: a constraint whose condition never holds says nothing
+   = help: correct the condition, or the constraints that rule it out
+
+fren: 5 passed, 2 failed, 0 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0603, F0605.
+For more information about an error, try `fren --explain F0603`.
+exit=1

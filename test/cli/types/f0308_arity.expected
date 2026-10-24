@@ -1,0 +1,10 @@
+error[F0308]: `arity` takes 1 argument, but 2 were given
+ --> test/cli/types/f0308_arity.fren:4:47
+  |
+4 | comp c { in x: Name pub out y: Int req r: y = arity(x, x) }
+  |                                               ^^^^^^^^^^^ expected 1 argument
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0308`.
+exit=2
