@@ -192,6 +192,10 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
   let some body := g.constraints[0]? | return {}
   let trigger := body.e.trigger?
   let ds := g.insts.filterMap fun i => (sp.comp? i.comp).map (i, ·)
+  -- A binder whose comp is unknown leaves it untested.
+  if ds.size != g.insts.size then
+    return { results := #[{ kind := .expect, comp := g.path, prop? := some body.name, verdict := .inconclusive, detail := .none }]
+             untested := true }
   let order := ds.flatMap fun (i, d) => sp.order d i.name
   let meaning := ds.flatMap fun (i, d) => sp.meaning d i.name
   let strs ← stringsOf meaning
@@ -205,10 +209,12 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
     let atoms := match trigger with
       | some t => meaning.push { label := body.name, pfx := .anonymous, e := t }
       | none => meaning
-    let some env ← ({ vars := order, atoms, ints := intsOf atoms, strs : Problem }.solve sp w I {})
+    -- The budget that each binder had when they were chosen in turn.
+    let budget := 4000 * max 1 ds.size
+    let some env ← ({ vars := order, atoms, ints := intsOf atoms, strs : Problem }.solve sp w I {} budget)
       | -- Whether any behaviours were found, to tell `F0610` from `F0612`.
         if trigger.isSome && !found then
-          found := (← ({ vars := order, atoms := meaning, ints := intsOf meaning, strs : Problem }.solve sp w I {})).isSome
+          found := (← ({ vars := order, atoms := meaning, ints := intsOf meaning, strs : Problem }.solve sp w I {} budget)).isSome
         continue
     found := true
     unless reaches I .anonymous trigger env do continue

@@ -135,9 +135,11 @@ partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array
     VTy → Array Val
   | .bool => #[.bool false, .bool true]
   | .int => ints.map .int
-  -- A few strings, and those of the constraints (`stringsOf`);
-  -- constraints that equate a variable with a string give the others.
-  | .string => (#["", "a", "b"] ++ strs.filter (!["", "a", "b"].contains ·)).map .str
+  -- The strings of the constraints (`stringsOf`) first, so that sets
+  -- and sequences of strings, which take the first few, have them; then a
+  -- few others. Constraints that equate a variable with a string give the
+  -- rest.
+  | .string => (strs ++ #["", "a", "b"].filter (!strs.contains ·)).map .str
   -- The empty set and singletons; constraints that equate a variable with a
   -- set give the others.
   | .set t => #[.set #[]] ++ ((smallValues sp w ints strs cap depth t).extract 0 4).map (Val.setOf #[·])
