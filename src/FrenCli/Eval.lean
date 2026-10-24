@@ -699,7 +699,8 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
           return ← readFields (.var n) v.ty (parts.drop (k + 1))
       if parts.length > 1 then
         -- A constant, then the fields read from its value, or the methods
-        -- without arguments applied to it.
+        -- without arguments applied to it. The spec has been checked, so
+        -- the root is not an instance and nothing shadows it here.
         let st ← get
         let .ok (.item { kind := .constItem, path, .. }) := st.table.resolvePath st.scope #[Name.mkSimple parts.head!]
           | throw s!"`{segs[0]!.name}` names no variable"

@@ -1,0 +1,8 @@
+-- fren-covers: lang::identifier
+-- `s!` is a Lean token, the prefix of `s!"..."`, which Lean reads in
+-- preference to an identifier: the one case where the two front ends report
+-- a lexeme that Fren rejects differently (`Lexical.md#identifiers`).
+
+comp c { in s: Int pub out z? req r: z? iff s!=1 }
+--~^[hosted] error: unexpected token 's!'; expected fren_expr
+--~^^[cli] error: `s!` is not an identifier in Fren

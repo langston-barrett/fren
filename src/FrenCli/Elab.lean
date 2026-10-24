@@ -1104,6 +1104,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
               -- Resolved again, to record its use and any import it uses;
               -- the first lookup leaves a root that is not a constant to the
               -- errors below.
+              -- The lexer admits only ASCII identifiers, so characters are
+              -- offsets.
               let text := (segs[0]!.name.splitOn ".").head!
               let rootSeg : Ident := { name := text, span := { span with stop := span.start + text.length } }
               let .item { kind := .constItem, path, .. } ← resolve #[rootSeg] cx.shadowing | pure none
