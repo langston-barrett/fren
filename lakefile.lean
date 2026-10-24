@@ -10,15 +10,6 @@ package fren where
 -- Mathlib-free fork of lean-smt (the fork Veil uses).
 require smt from git "https://github.com/verse-lab/lean-smt.git"@"v4.32.0-veil-no-mathlib"
 
-/-- The link arguments of the executables, which link cvc5 in. On Linux,
-cvc5's static release is built against glibc 2.38 or later, whose C23
-`strtol` and `fscanf` are `__isoc23_strtol` and `__isoc23_fscanf`, but Lean
-links against an older glibc that lacks them; they are aliased to the
-functions they replace. -/
-def cvc5LinkArgs : Array String :=
-  if Platform.isWindows || Platform.isOSX then #[]
-  else #["-Wl,--defsym=__isoc23_strtol=strtol", "-Wl,--defsym=__isoc23_fscanf=fscanf"]
-
 -- Shared by the Lean library and the binary; depends only on Lean core.
 @[default_target] lean_lib FrenCore
 
@@ -57,23 +48,28 @@ input_file test_main where
 -- Regression tests: each file checks its own messages with `#guard_msgs`.
 @[default_target] lean_lib FrenTest where globs := #[`FrenTest.+]
 
+-- `__isoc23_strtol` and `__isoc23_fscanf`, which cvc5's static Linux release
+-- calls but the older glibc that Lean links executables against lacks
+-- (`c/glibc_c23.c`). Linked into every executable; unused elsewhere.
+target glibc_c23.o pkg : FilePath := do
+  let src ← inputTextFile (pkg.dir / "c" / "glibc_c23.c")
+  buildO (pkg.buildDir / "c" / "glibc_c23.o") src #[] #["-std=gnu17", "-fPIC", "-O2"]
+
+extern_lib glibc_c23 pkg := do
+  buildStaticLib (pkg.staticLibDir / nameToStaticLib "glibc_c23") #[← glibc_c23.o.fetch]
+
 -- The standalone binary for `.fren` files: a native executable with cvc5
 -- linked in, needing no .olean files at runtime.
 lean_lib FrenCli
 
-@[default_target] lean_exe fren where
-  root := `FrenCli.Main
-  moreLinkArgs := cvc5LinkArgs
+@[default_target] lean_exe fren where root := `FrenCli.Main
 
 -- `lake test`: ui tests through both front ends, and snapshot tests for the
 -- binary. It loads Fren's Lean environment at runtime, hence the interpreter.
 lean_exe fren_test where
   root := `FrenTestMain
   supportInterpreter := true
-  moreLinkArgs := cvc5LinkArgs
 
 -- `lake exe fren_fuzz`: random specs, checked by `fren check` and by brute
 -- force from the evaluator (`Reqs/dev/Testing`).
-lean_exe fren_fuzz where
-  root := `FrenFuzz
-  moreLinkArgs := cvc5LinkArgs
+lean_exe fren_fuzz where root := `FrenFuzz
