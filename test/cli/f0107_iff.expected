@@ -1,0 +1,12 @@
+error[F0107]: `iff` is not associative
+ --> test/cli/f0107_iff.fren:2:50
+  |
+2 | comp c { in a? in b? pub out d? req r: d? iff a? iff b? }
+  |                                                  ^^^ second `iff`
+  |
+  = help: add parentheses to say which `iff` applies first, e.g. `a iff (b iff c)`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0107`.
+exit=2

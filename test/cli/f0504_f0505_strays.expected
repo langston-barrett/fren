@@ -1,0 +1,23 @@
+error[F0505]: `fren-covers:` names `shown`, but no `tested` claim for it names `test/fixtures/stray.txt`
+ --> test/fixtures/stray.txt:2:17
+  |
+2 | -- fren-covers: shown, nowhere
+  |                 ^^^^^ `shown` does not claim this file
+  |
+  = note: a marker records that a test covers a component; a `tested` claim makes it count as evidence
+  = help: add `tested shown: "test/fixtures/stray.txt"`, or `"test/fixtures/stray.txt"` to an existing `tested shown` claim
+
+error[F0504]: `fren-covers:` names `nowhere`, which is not a component
+ --> test/fixtures/stray.txt:2:24
+  |
+2 | -- fren-covers: shown, nowhere
+  |                        ^^^^^^^ no component `nowhere`
+  |
+  = note: components are named by their full path, such as `a::b::c`
+
+evidence: 0 proved, 0 solver, 0 tested, 0 trusted, 1 missing
+missing: `shown`
+
+Some errors have detailed explanations: F0504, F0505.
+For more information about an error, try `fren --explain F0504`.
+exit=1

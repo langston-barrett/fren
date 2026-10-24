@@ -1,0 +1,2 @@
+-- An option without its value.
+--@ argv: trace --require

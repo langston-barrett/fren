@@ -1,0 +1,36 @@
+-- Static rules for constants. Most of them are never used.
+set_option fren.lint.dead_code "allow"
+
+enum E { A }
+const max_t: Int := 1                 --~ warning: constant `max_t` should have an upper case name
+const _X: Int := 1                    --~ warning: constant `_X` should have an upper case name
+const Mixed: Int := 1                 --~ warning: constant `Mixed` should have an upper case name
+const ONE: Int := 1
+const ONE: Int := 2                   --~ error: the name `ONE` is already defined in the root module
+const LATER: Int := AFTER             --~ error: cannot find `AFTER` in this scope
+const AFTER: Int := 3
+const WRONG: Bool := 1
+--~^[cli] error: type mismatch: expected `Bool`, found `Int`
+--~^^[hosted] error: Type mismatch
+const BAD_TYPE: comp_x := 1           --~ error: cannot find `comp_x` in this scope
+const NOT_TYPE: ONE := 1              --~ error: expected a type, but `ONE` is a constant
+comp c { in x: Int pub out y: Int req r: y = x * ONE + -ONE * x }  -- linear
+comp c2 { in ONE: Int pub out y: Int req r: y = ONE * ONE }
+--~^ error: nonlinear arithmetic is not supported
+-- The `fren` command drops the lints of an item with an error.
+--~^^^[hosted] warning: variable `ONE` should have a snake case name
+--~^^^^[hosted] warning: variable `ONE` shadows the constant `ONE`
+comp d { in x: Int pub out y: Int req r: y = ONE.x }
+--~^ error: `ONE.x` is not a single name
+const VALUE: E := E::A
+comp e { pub out y: Int req r: y = E }  --~ error: expected a value, but `E` is an enum
+comp f { pub out y: ONE }             --~ error: expected a type, but `ONE` is a constant
+
+mod m
+comp g { pub out y: Int req r: y = ONE }  --~ error: cannot find `ONE` in this scope
+comp h { pub out y: Int req r: y = super_ONE }  --~ error: cannot find `super_ONE` in this scope
+
+mod n
+const SECRET: Int := 1
+mod p
+use n::SECRET                         --~ error: `SECRET` is private to module `n`

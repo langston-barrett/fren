@@ -1,0 +1,3 @@
+-- An unterminated string literal (F0103).
+comp c {}
+trusted c: "no end

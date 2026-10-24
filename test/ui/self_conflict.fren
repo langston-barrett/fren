@@ -1,0 +1,9 @@
+-- A requirement that only mentions inputs constrains the environment, so on
+-- its own it is unrealizable.
+-- fren-covers: check::minimal
+comp c {           --~ error: `c` is not realizable: for the input x = 0, no outputs satisfy `r`
+    in x: Int
+    req r: x > 0   --~ info: is false when x = 0
+}
+--@ summary: 1 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

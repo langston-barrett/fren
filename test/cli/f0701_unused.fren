@@ -1,0 +1,4 @@
+-- An import that nothing uses (F0701).
+pub enum Mode { Off, Heat }
+use Mode::Heat
+comp c { in m: Mode pub out off? req r: off? iff m = Mode::Off }

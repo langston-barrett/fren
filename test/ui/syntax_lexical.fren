@@ -1,0 +1,33 @@
+-- fren-covers: lang::identifier, lang::identifier_end, lang::escape_sequence, lang::punctuator_end
+-- Identifiers, escape sequences and punctuators, written as tightly as
+-- they lex, which both front ends must read alike.
+
+expect escapes: "\x41\u0042\t\\\"\'".len = 6 and "\x41\u0042\t\\\"\'".starts_with?("AB")
+expect raw: r"a\n".len = 3 and r#"say "hi""#.len = 8
+
+comp counter {
+    in x': Int
+    in ready?
+    pub det out y: Int
+
+    req rule: y = (if ready? then x' + 1 else x')
+}
+
+enum Mode { Off, Low, High }
+
+comp outer {
+    in a: Int
+    in m: Mode
+    pub det out level: Int
+
+    inst c: counter { x' := a, ready? := true }
+    req level_rule: level = match m { Mode::Off => 0, _ => 1 }
+
+    expect dotted: c.y=a+1
+    expect symbols: c.y>=a and a<=c.y and a<c.y
+    expect wildcard: when m != Mode::Off, level=1
+    expect wrong: c.y = a                                                  --~ error: expectation `outer::wrong` does not hold
+}
+
+--@ summary: 12 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

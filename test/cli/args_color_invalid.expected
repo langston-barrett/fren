@@ -1,0 +1,4 @@
+error: invalid value `sometimes` for `--color`
+  = note: `--color` is `auto`, `always` or `never`
+  = help: run `fren --help` for usage
+exit=2

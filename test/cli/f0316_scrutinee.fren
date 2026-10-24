@@ -1,0 +1,2 @@
+-- A `match` on an `Int`.
+comp c { in x: Int pub out y: Int req r: y = match x { _ => 0 } }

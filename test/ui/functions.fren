@@ -1,0 +1,50 @@
+-- Abstract types and uninterpreted functions: the checks hold under every
+-- interpretation, which instances, both copies of determinism, and the
+-- binders of a global expectation share.
+
+type Name
+fn ends_in_q?(Name)
+fn arity(Name): Int
+fn rename(Name): Name
+
+comp naming {
+    in name: Name
+    in annotated?
+    pub det out accepted?           -- a function of the inputs is determined
+
+    req rule: accepted? iff (ends_in_q?(name) or annotated?)
+
+    expect q_accepted: when ends_in_q?(name), accepted?
+    expect always: accepted?        --~ error: expectation `naming::always` does not hold
+}
+
+comp distinct {
+    in a: Name
+    in b: Name
+    pub out same?
+    pub out first: Name             -- an output of an abstract type
+
+    assume injective: when arity(a) = arity(b), a = b
+    req r: same? iff a = b
+    req pick: first = a
+
+    expect by_arity: when arity(a) = arity(b), same?
+    expect congruence: when same?, rename(a) = rename(b)
+    -- Nothing is known of `rename` beyond being a function.
+    expect fixed: rename(a) = a     --~ error: expectation `distinct::fixed` does not hold
+}
+
+comp renamed {
+    in n: Name
+    pub out ok?
+
+    inst w: naming { name := rename(n), annotated? := false }
+
+    req r: ok? iff w.accepted?
+    expect same_function: ok? iff ends_in_q?(rename(n))  -- the instance's function is this one
+}
+
+expect consistent: forall (x y: naming),
+    when x.name = y.name and x.annotated? = y.annotated?, x.accepted? = y.accepted?
+
+--@ summary: 18 passed, 2 failed, 0 inconclusive, 0 redundant

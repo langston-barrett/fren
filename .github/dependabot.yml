@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # See https://docs.zizmor.sh/audits/#dependabot-cooldown
+    cooldown:
+      default-days: 4

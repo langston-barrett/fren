@@ -1,0 +1,12 @@
+warning[F0606]: `c::trivial` is redundant: it always holds
+ --> test/cli/f0606_always.fren:6:9
+  |
+6 |     req trivial: y? or not y?
+  |         ^^^^^^^ redundant
+  |
+  = help: if it is meant as a consequence, make it an `expect`, so that it is checked
+
+fren: 2 passed, 0 failed, 0 inconclusive, 1 redundant
+
+For more information about this error, try `fren --explain F0606`.
+exit=3

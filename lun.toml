@@ -1,0 +1,23 @@
+refs = ["origin/main"]
+
+# Lean code is checked by `lake build --wfail` in the `lean ci` workflow.
+
+[[tool]]
+name = "mdlynx"
+
+[[tool]]
+name = "ttlint"
+
+[[tool]]
+name = "typos"
+configs = []
+
+[[tool]]
+name = "zizmor"
+configs = []
+
+[[formatter]]
+name = "keep-sorted"
+cmd = "keep-sorted --mode fix --"
+files = ["*.lean"]
+check = "keep-sorted --mode lint --"

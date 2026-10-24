@@ -1,0 +1,37 @@
+-- Static rules for relations: typing, pairs, and the decidable core.
+-- fren-covers: lang::relation_op, lang::pair_membership, lang::finite, lang::unbounded
+set_option fren.lint.unused_variables "allow"
+
+type Name
+
+enum Role { Viewer, Admin }
+
+comp closure_type { in r: Rel(Int, String) pub out p? req q: p? iff (1, 2) in r.closure }
+--~^ error: `closure` needs a relation of a type with itself, found `Rel(Int, String)`
+comp join_types { in r: Rel(Role, Role) in q: Rel(Int, Role) pub out p? req s: p? iff r join q = r }
+--~^ error: cannot join `Rel(Role, Role)` with `Rel(Int, Role)`
+comp join_set { in s: Set(Role) in q: Rel(Role, Role) pub out p? req t: p? iff s join q = q }
+--~^ error: `join` needs relations, found `Set(Role)`
+comp pair { in x: Int pub out p? req q: p? iff (x, 1) = (1, x) }
+--~^ error: a pair can only be a member of a relation literal or the left of `in`
+comp unknown { in r: Rel(Role, Role) pub out n: Int req q: n = r.size }
+--~^ error: `Rel(Role, Role)` has no method `size`
+comp pair_type { in r: Rel(Role, Role) pub out p? req q: p? iff (1, Role::Admin) in r }
+--~^ error: `in` needs a `Rel(Int, Role)` on its right, found `Rel(Role, Role)`
+comp unbounded { in x: Role out r: Rel(Role, Role) req q: (x, x) in r }
+--~^ error: output `r` has the unbounded type `Rel(Role, Role)`
+struct Abstract { r: Rel(Name, Role) }
+--~^ error: a field's type cannot have the abstract type `Name` within it
+
+-- Outside the decidable core: relational operators over types that are not
+-- finite.
+comp reach { in parent: Rel(Name, Name) in a: Name in b: Name pub out p? req q: p? iff (a, b) in parent.closure }
+--~^ error: outside the decidable core: a relational operator over a type that is not finite
+comp middle { in r: Rel(Role, Int) in q: Rel(Int, Role) pub out p? req s: p? iff (Role::Admin, Role::Viewer) in r join q }
+--~^ error: outside the decidable core: a relational operator over a type that is not finite
+comp finite_ok { in r: Rel(Role, Role) in a: Role pub out p? req q: p? iff (a, a) in r.closure and a in r.domain }
+
+-- Opting out.
+set_option fren.lint.undecidable "allow" in
+comp opted { in parent: Rel(Name, Name) in a: Name pub out p? req q: p? iff (a, a) in parent.closure }
+--@ exit: 2

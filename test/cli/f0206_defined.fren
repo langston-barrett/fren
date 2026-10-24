@@ -1,0 +1,3 @@
+-- A name defined twice in a module (F0206).
+enum E { A }
+enum E { B }

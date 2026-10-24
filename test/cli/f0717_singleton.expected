@@ -1,0 +1,38 @@
+warning[F0717]: membership in a set of one member is equality
+ --> test/cli/f0717_singleton.fren:2:45
+  |
+2 | comp c { in x: Int pub out p? req r: p? iff x in {1} }
+  |                                             ^^^^^^^^ a set of one
+  |
+  = help: `fren fix` can fix this
+  = note: `singleton_membership` is `warn` by default
+  = help: to allow it, `set_option fren.lint.singleton_membership "allow"`
+help: write it as an equation
+  |
+2 - comp c { in x: Int pub out p? req r: p? iff x in {1} }
+2 + comp c { in x: Int pub out p? req r: p? iff x = 1 }
+  |
+
+warning[F0608]: could not decide whether `c` is realizable: solver error: cvc5.Error.error "Symbol 'set.singleton' not declared as a variable"
+ --> test/cli/f0717_singleton.fren:2:6
+  |
+2 | comp c { in x: Int pub out p? req r: p? iff x in {1} }
+  |      ^ undecided
+  |
+  = note: the solver gave up, so this check neither passed nor failed
+  = help: raise the time limit with `--timeout`, or simplify the constraints involved
+
+warning[F0608]: could not decide whether `c::r` is redundant: solver error: cvc5.Error.error "Symbol 'set.singleton' not declared as a variable"
+ --> test/cli/f0717_singleton.fren:2:35
+  |
+2 | comp c { in x: Int pub out p? req r: p? iff x in {1} }
+  |                                   ^ undecided
+  |
+  = note: the solver gave up, so this check neither passed nor failed
+  = help: raise the time limit with `--timeout`, or simplify the constraints involved
+
+fren: 0 passed, 0 failed, 2 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0608, F0717.
+For more information about an error, try `fren --explain F0608`.
+exit=3

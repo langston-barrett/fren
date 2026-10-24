@@ -1,0 +1,63 @@
+-- Instances: what they contribute to checks, and the `instance` check.
+
+comp counter {
+    in n: Int
+    pub out next: Int
+    out scratch: Int
+
+    assume nonneg: n >= 0
+
+    req inc: next = n + 1
+    req copy: scratch = n
+}
+
+-- `b`'s assumption follows from `a`'s requirements.
+comp twice {
+    in n: Int
+    pub out m: Int
+
+    assume nonneg: n >= 0
+
+    inst a: counter { n }
+    inst b: counter { n := a.next }
+
+    req result: m = b.next
+
+    expect plus_two: m = n + 2
+}
+
+comp unguarded {
+    in n: Int
+    pub out m: Int
+
+    inst c: counter { n }  --~ error: the assumption `nonneg` of `counter` may not hold for instance `unguarded::c`
+
+    req result: m = c.next
+}
+
+comp chooser {
+    pub out b?
+    --~^ warning: unused variable `b?`
+}
+
+-- Instance variables are not the comp's to choose: whatever `pick` does, the
+-- comp must cope.
+comp hopes {   --~ error: `hopes` is not realizable: for the input pick.b? = false, no outputs satisfy `lucky`
+    pub out x: Int
+    inst pick: chooser {}
+    req lucky: pick.b? and x = 0  --~ info: is false when pick.b? = false
+}
+
+comp observes {
+    in n: Int
+
+    assume nonneg: n >= 0
+
+    inst c: counter { n }
+
+    req zero: when c.next = 0, n = 0  --~ error: `observes::zero` is vacuous: its condition can never hold, given `c`
+    expect big: c.next > 5           --~ error: expectation `observes::big` does not hold
+}
+
+--@ summary: 17 passed, 4 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

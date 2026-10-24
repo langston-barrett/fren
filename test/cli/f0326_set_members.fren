@@ -1,0 +1,6 @@
+comp c {
+    in s: Set(Int)
+    pub out p?
+
+    req r: p? iff s = {1, true}
+}

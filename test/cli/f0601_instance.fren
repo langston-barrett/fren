@@ -1,0 +1,7 @@
+-- Unrealizable because of an instance (F0601).
+comp chooser { pub out b? }
+comp c {
+    pub out x: Int
+    inst pick: chooser {}
+    req lucky: pick.b? and x = 0
+}

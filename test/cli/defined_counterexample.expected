@@ -1,0 +1,13 @@
+error[F0603]: expectation `c::e` does not hold
+ --> test/cli/defined_counterexample.fren:9:12
+  |
+9 |     expect e: y = next
+  |            ^ does not follow from the requirements
+  |
+  = counterexample: x = -2, next = -1, y = 0
+  = help: strengthen the requirements so that it follows, or correct the expectation
+
+fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0603`.
+exit=1

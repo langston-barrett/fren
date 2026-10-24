@@ -1,0 +1,22 @@
+-- `#fren_trace`: levels, derived evidence and `fren.requireEvidence`.
+--@ only: hosted
+
+comp shown { in x? pub out y? req r: y? iff x? }
+comp hidden { in x? pub out y? req r: y? iff x? }
+comp proved { in x? pub out y? req r: y? iff x? }
+comp derived { in x? inst p: proved { x? } expect same: p.y? iff x? }
+comp weakly { in x? inst h: hidden { x? } }
+
+impl proved_impl: proved for (b : Bool) { x? := b, y? := b }
+
+tested shown: "test/fixtures/covers_shown.txt"
+trusted hidden: "because"
+
+set_option fren.requireEvidence "tested" in
+#fren_trace
+--~^ warning: `hidden` has evidence `trusted`, below `tested`
+--~^^ warning: `weakly` has evidence `trusted`, below `tested`
+--~^^^ info: evidence: 2 proved, 0 solver, 1 tested, 2 trusted, 0 missing
+
+set_option fren.requireEvidence "best" in
+#fren_trace   --~ error: unknown evidence level `best`

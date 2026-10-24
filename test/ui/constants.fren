@@ -1,0 +1,53 @@
+-- Constants: values, types, scope, and use in every kind of expression.
+
+mod climate
+pub enum Mode { Off, Heat }
+pub const MIN_T: Int := 50
+pub const MAX_T: Int := MIN_T + 40          -- an earlier constant
+const NEG: Int := -3
+const STRICT: Bool := MAX_T > 80            -- a `Bool` constant has no `?`
+pub const DEFAULT: Mode := Mode::Off
+
+pub comp band {
+    in temp: Int
+    in target: Int
+    pub out too_cold?
+    pub out mode: Mode
+
+    assume sane: MIN_T <= target and target <= MAX_T  -- constants in assumptions
+    req cold: too_cold? iff temp < target + NEG
+    req off: unless too_cold?, mode = DEFAULT
+    req heat: when too_cold?, mode = Mode::Heat
+
+    expect strict: STRICT
+    expect lowest: when target = MIN_T and temp < 47, too_cold?
+}
+
+comp scaled {
+    in t: Int
+    pub out y: Int
+    req r: y = (MAX_T - MIN_T) * t + 2 * 3 * t  -- operands with no variables
+    expect at_one: when t = 1, y = 46
+}
+
+mod other
+use climate::{MAX_T, band}
+
+comp user {
+    in t: Int
+    pub out cold?
+    inst b: band { temp := t, target := MAX_T }  -- a constant in a binding
+    req r: cold? iff b.too_cold?
+    expect at_max: when t < MAX_T - 3, cold?
+}
+
+comp shadow {
+    in MAX_T: Int                            -- a variable shadows the constant
+    --~^ warning: variable `MAX_T` should have a snake case name
+    --~^^ warning: variable `MAX_T` shadows the constant `climate::MAX_T`
+    pub out y: Int
+    req r: y = MAX_T
+    expect same: y = MAX_T
+}
+
+--@ summary: 22 passed, 0 failed, 0 inconclusive, 0 redundant

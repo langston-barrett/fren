@@ -1,0 +1,14 @@
+warning[F0506]: `c` has evidence `missing`, below `trusted` (`--require`)
+ --> test/cli/f0506_below.fren:3:6
+  |
+3 | comp c { in x? pub out y? req r: y? iff x? }
+  |      ^ evidence `missing`
+  |
+  = note: `--require` requires every component to have evidence `trusted` or stronger
+  = help: add an `impl`, a `tested` claim or a `trusted` claim for it
+
+evidence: 0 proved, 0 solver, 0 tested, 0 trusted, 1 missing
+missing: `c`
+
+For more information about this error, try `fren --explain F0506`.
+exit=1

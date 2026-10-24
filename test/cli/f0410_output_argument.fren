@@ -1,0 +1,4 @@
+-- A function applied to an output (F0410).
+type Name
+fn ok?(Name)
+comp c { in x: Name pub out y: Name req r: ok?(y) }

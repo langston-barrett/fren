@@ -1,0 +1,25 @@
+error[F0304]: type mismatch: expected `Int`, found `Bool`
+ --> test/cli/f0304_binding.fren:3:35
+  |
+3 | comp c { in b? inst s: sub { a := b? } }
+  |                                   ^^ expected `Int`, found `Bool`
+  |
+  = note: `a` of `sub` has type `Int`
+  = help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`
+
+warning[F0710]: unused variable `a`
+ --> test/cli/f0304_binding.fren:2:15
+  |
+2 | comp sub { in a: Int }
+  |               ^ never mentioned
+  |
+  = note: nothing in its component depends on it
+  = help: remove it, or mention it in a constraint
+  = note: `unused_variables` is `warn` by default
+  = help: to allow it, `set_option fren.lint.unused_variables "allow"`
+
+error: could not check due to 1 previous error
+
+Some errors have detailed explanations: F0304, F0710.
+For more information about an error, try `fren --explain F0304`.
+exit=2

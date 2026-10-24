@@ -1,0 +1,40 @@
+-- Redundant constraints are warnings, and are not checked where the
+-- constraints are contradictory or the requirement is vacuous (`check`).
+-- fren-covers: check::minimal
+
+comp thermostat {
+    in temp: Int
+    in target: Int
+    pub out heat?
+    pub out cool?
+
+    assume sane: target >= 5 and target <= 30
+    assume warm: target >= 0             --~ warning: `thermostat::warm` is redundant: it follows from `sane`
+
+    req heats: heat? iff temp < target - 2
+    req cools: cool? iff temp > target + 2
+    req exclusive: not (heat? and cool?)  --~ warning: `thermostat::exclusive` is redundant: it follows from `heats`, `cools`
+    req trivial: heat? or not heat?      --~ warning: `thermostat::trivial` is redundant: it always holds
+}
+
+-- A vacuous requirement is reported once, by the vacuity check.
+comp vacuous {
+    in x: Int
+    pub out y: Int
+
+    assume pos: x > 0
+
+    req y_def: y = x
+    req never: when x < 0, y = x         --~ error: `vacuous::never` is vacuous: its condition can never hold, given `pos`
+}
+
+-- Contradictory constraints entail everything: only realizability fails.
+comp contradictory {  --~ error: `contradictory` is not realizable: for the input (any values), no outputs satisfy `up`, `down`
+    pub out y: Int
+
+    req up: y > 0   --~ info: conflicts with `down` when (any values)
+    req down: y < 0  --~ info: conflicts with `up` when (any values)
+}
+
+--@ summary: 7 passed, 2 failed, 0 inconclusive, 3 redundant
+--@ exit: 1

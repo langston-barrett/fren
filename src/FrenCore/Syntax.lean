@@ -1,0 +1,33 @@
+-- keep-sorted start
+import FrenCore.Diagnostic
+-- keep-sorted end
+
+/-!
+# Messages about syntax
+
+Shared by both front ends where both detect the problem: operators from
+other languages, which both parse so as to say what to write instead.
+-/
+
+namespace Fren.Core
+
+/-- The Fren operator to write instead of `op`, from another language. -/
+def foreignOpFix? : String → Option (String × String)
+  | "==" => some ("=", "use `=` to test for equality")
+  | "&&" => some ("and", "use `and`")
+  | "||" => some ("or", "use `or`")
+  | "|" => some ("or", "use `or`")
+  | "!" => some ("not ", "use `not` for negation")
+  | _ => none
+
+/-- `op` is an operator of other languages but not Fren's. -/
+def foreignOpMsg (op : String) : Msg :=
+  let base : Msg := { code? := some "F0105", headline := s!"`{op}` is not an operator in Fren", label? := some "not a Fren operator" }
+  match op, foreignOpFix? op with
+  | _, some (r, msg) => { base with fixes := #[{ msg, replacement := r }] }
+  | "=>", _ => { base with notes := #["help: write an implication as `when a, b`"] }
+  | "/", _ | "%", _ => { base with notes := #["note: Fren has no division: the solver decides only linear integer arithmetic",
+      "help: multiply the other side instead, e.g. `2 * y = x` rather than `y = x / 2`"] }
+  | _, _ => base
+
+end Fren.Core

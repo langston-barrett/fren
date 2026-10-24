@@ -1,0 +1,2 @@
+-- Names that should be in CamelCase (F0704).
+enum fan_speed { low, High }

@@ -1,0 +1,3 @@
+-- `det in` (F0113).
+comp c { det in x: Int }
+-- fren-covers: lang::modifiers

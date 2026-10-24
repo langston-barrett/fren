@@ -1,0 +1,3 @@
+-- `if` branches of different types (F0306).
+comp c { in b? pub out y: Int req r: y = if b? then 1 else true }
+-- fren-covers: lang::operator_type

@@ -1,0 +1,271 @@
+-- keep-sorted start
+import Fren.FinSet
+import Fren.Seq
+import FrenCore.Regex
+import FrenCore.Str
+import Smt
+-- keep-sorted end
+
+/-!
+# Translating fields, payloads and strings for lean-smt
+
+lean-smt declares each inductive type it meets as an SMT-LIB datatype, with
+a selector for each field of each constructor named `{ctor}.{field}`, and
+translates constructor applications, but not projections. This translates
+a field read, `p.x` or a projection `.proj`, of a structure, and the
+selectors that Fren generates for payloads (`Fren.selectorName`), which
+are named after the constructor's fields, to those selectors.
+-/
+
+open Lean Meta Smt Translator Term
+
+namespace Fren
+
+/-- The selector of the field `field` of the constructor `ctor`, as
+lean-smt names it, applied to `arg`; `none` if `ctor` belongs to a
+parametric or indexed inductive, which lean-smt does not declare. -/
+def selectorApp (ctor : Name) (field : Name) (arg : Expr) : TranslationM (Option Smt.Term) := do
+  let some (.ctorInfo c) := (← getEnv).find? ctor | return none
+  let some (.inductInfo i) := (← getEnv).find? c.induct | return none
+  if i.numParams != 0 || i.numIndices != 0 then return none
+  -- The datatype that declares the selector.
+  modify fun st => { st with depConstants := st.depConstants.insert c.induct }
+  return some (appT (symbolT s!"{ctor}.{field}") (← applyTranslators! arg))
+
+@[smt_translate] def translateSelector : Translator := fun e => do
+  let env ← getEnv
+  match e with
+  | .proj s idx arg =>
+    let some info := getStructureInfo? env s | return none
+    let some field := info.fieldNames[idx]? | return none
+    selectorApp (getStructureCtor env s).name field arg
+  | .app (.const f _) arg =>
+    if let some p := env.getProjectionFnInfo? f then
+      if p.fromClass || p.numParams != 0 then return none
+      return ← selectorApp p.ctorName (Name.mkSimple f.getString!) arg
+    -- A payload selector, `ctor.xk` (`Fren.selectorName`).
+    let some (.ctorInfo _) := env.find? f.getPrefix | return none
+    let some (.defnInfo _) := env.find? f | return none
+    selectorApp f.getPrefix (Name.mkSimple f.getString!) arg
+  | _ => return none
+
+/-- The character that `e`, as `Lean.ToExpr` writes one, stands for. -/
+def charOf? (e : Expr) : Option Char :=
+  match e.consumeMData with
+  | .app (.const ``Char.ofNat _) (.lit (.natVal k)) => some (Char.ofNat k)
+  | _ => none
+
+/-- The list that `e`, built from `List.cons` and `List.nil`, stands for. -/
+partial def listOf? (f : Expr → Option α) (e : Expr) : Option (List α) :=
+  match e.consumeMData.getAppFnArgs with
+  | (``List.nil, #[_]) => some []
+  | (``List.cons, #[_, h, t]) => do return (← f h) :: (← listOf? f t)
+  | _ => none
+
+/-- The pattern that `e`, a closed term built from constructors, stands for:
+what `Lean.ToExpr` makes of a `Fren.Core.Re`. -/
+partial def exprToRe? (e : Expr) : Option Fren.Core.Re :=
+  let pair (e : Expr) : Option (Char × Char) := match e.consumeMData.getAppFnArgs with
+    | (``Prod.mk, #[_, _, a, b]) => do return (← charOf? a, ← charOf? b)
+    | _ => none
+  match e.consumeMData.getAppFnArgs with
+  | (``Fren.Core.Re.none, #[]) => some .none
+  | (``Fren.Core.Re.any, #[]) => some .any
+  | (``Fren.Core.Re.str, #[cs]) => do return .str (← listOf? charOf? cs)
+  | (``Fren.Core.Re.cls, #[neg, rs]) => do return .cls (neg.isConstOf ``Bool.true) (← listOf? pair rs)
+  | (``Fren.Core.Re.union, #[a, b]) => do return .union (← exprToRe? a) (← exprToRe? b)
+  | (``Fren.Core.Re.cat, #[a, b]) => do return .cat (← exprToRe? a) (← exprToRe? b)
+  | (``Fren.Core.Re.star, #[a]) => do return .star (← exprToRe? a)
+  | _ => none
+
+/-- Fren's string literals and methods (`Fren.Str`), as SMT-LIB's string
+functions. lean-smt translates `++` and `<` on strings, but writes literals
+without escaping them, and `>` as `str.>`, which is not SMT-LIB: so Fren
+wraps literals in `Fren.Str.lit`, and writes `a > b` as `b < a`. -/
+@[smt_translate] def translateStr : Translator := fun e => do
+  let tr := applyTranslators!
+  match_expr e with
+  | Fren.Str.lit s =>
+    let .lit (.strVal v) := s.consumeMData | return none
+    return literalT (Fren.Core.smtStringLit v)
+  | Fren.Str.len s => return appT (symbolT "str.len") (← tr s)
+  | Fren.Str.startsWith s p => return mkApp2 (symbolT "str.prefixof") (← tr p) (← tr s)
+  | Fren.Str.endsWith s p => return mkApp2 (symbolT "str.suffixof") (← tr p) (← tr s)
+  | Fren.Str.contains s t => return mkApp2 (symbolT "str.contains") (← tr s) (← tr t)
+  | Fren.Str.«at» s i => return mkApp2 (symbolT "str.at") (← tr s) (← tr i)
+  | Fren.Str.slice s i n => return mkApp3 (symbolT "str.substr") (← tr s) (← tr i) (← tr n)
+  | Fren.Str.indexOf s t i => return mkApp3 (symbolT "str.indexof") (← tr s) (← tr t) (← tr i)
+  | Fren.Str.replace s a b => return mkApp3 (symbolT "str.replace") (← tr s) (← tr a) (← tr b)
+  | Fren.Str.replaceAll s a b => return mkApp3 (symbolT "str.replace_all") (← tr s) (← tr a) (← tr b)
+  | Fren.Core.Re.matches r s =>
+    let some re := exprToRe? r | return none
+    return mkApp2 (symbolT "str.in_re") (← tr s) (literalT re.toSmt)
+  | LE.le α _ a b =>
+    unless α.isConstOf ``String do return none
+    return mkApp2 (symbolT "str.<=") (← tr a) (← tr b)
+  | _ => return none
+
+/-- Fren's sets (`Fren.FinSet`), as cvc5's: every set is a unary relation, a
+set of 1-tuples (`Reqs/Cli`). -/
+@[smt_translate] def translateSet : Translator := fun e => do
+  let tr := applyTranslators!
+  let isSet (γ : Expr) : Bool := γ.isAppOfArity ``Fren.FinSet 1
+  -- A member: a relation's pairs are 2-tuples, written only as `Prod.mk`.
+  let tuple (x : Expr) : TranslationM Smt.Term := do
+    match_expr x with
+    | Prod.mk _ _ a b => return mkApp2 (symbolT "tuple") (← tr a) (← tr b)
+    | _ => return appT (symbolT "tuple") (← tr x)
+  match_expr e with
+  | Fren.FinSet α =>
+    match_expr α with
+    | Prod a b => return appT (symbolT "Set") (mkApp2 (symbolT "Tuple") (← tr a) (← tr b))
+    | _ => return appT (symbolT "Set") (appT (symbolT "Tuple") (← tr α))
+  | Membership.mem _ γ _ s x =>
+    unless isSet γ do return none
+    return mkApp2 (symbolT "set.member") (← tuple x) (← tr s)
+  | HasSubset.Subset γ _ s t =>
+    unless isSet γ do return none
+    return mkApp2 (symbolT "set.subset") (← tr s) (← tr t)
+  | Union.union γ _ s t =>
+    unless isSet γ do return none
+    return mkApp2 (symbolT "set.union") (← tr s) (← tr t)
+  | Inter.inter γ _ s t =>
+    unless isSet γ do return none
+    return mkApp2 (symbolT "set.inter") (← tr s) (← tr t)
+  | SDiff.sdiff γ _ s t =>
+    unless isSet γ do return none
+    return mkApp2 (symbolT "set.minus") (← tr s) (← tr t)
+  | EmptyCollection.emptyCollection γ _ =>
+    unless isSet γ do return none
+    return mkApp2 (symbolT "as") (symbolT "set.empty") (← tr γ)
+  | Singleton.singleton _ γ _ x =>
+    unless isSet γ do return none
+    return appT (symbolT "set.singleton") (← tuple x)
+  | Insert.insert _ γ _ x s =>
+    unless isSet γ do return none
+    return mkApp2 (symbolT "set.insert") (← tuple x) (← tr s)
+  | Fren.FinSet.card _ _ s => return appT (symbolT "set.card") (← tr s)
+  | Fren.FinSet.join _ _ _ _ r q => return mkApp2 (symbolT "rel.join") (← tr r) (← tr q)
+  | Fren.FinSet.inverse _ _ r => return appT (symbolT "rel.transpose") (← tr r)
+  | Fren.FinSet.closure _ _ r => return appT (symbolT "rel.tclosure") (← tr r)
+  -- `s` is a unary relation, so the image is a join.
+  | Fren.FinSet.image _ _ _ r s => return mkApp2 (symbolT "rel.join") (← tr s) (← tr r)
+  | Fren.FinSet.domain _ _ r => return appT (literalT "(_ rel.project 0)") (← tr r)
+  | Fren.FinSet.range _ _ r => return appT (literalT "(_ rel.project 1)") (← tr r)
+  | _ => return none
+
+/-- Fren's sequences (`Fren.Seq`), as cvc5's (`Reqs/Cli`). -/
+@[smt_translate] def translateSeq : Translator := fun e => do
+  let tr := applyTranslators!
+  let isSeq (γ : Expr) : Bool := γ.isAppOfArity ``Fren.Seq 1
+  match_expr e with
+  | Fren.Seq α => return appT (symbolT "Seq") (← tr α)
+  | EmptyCollection.emptyCollection γ _ =>
+    unless isSeq γ do return none
+    return mkApp2 (symbolT "as") (symbolT "seq.empty") (← tr γ)
+  | HAppend.hAppend γ _ _ _ q r =>
+    unless isSeq γ do return none
+    return mkApp2 (symbolT "seq.++") (← tr q) (← tr r)
+  | Membership.mem _ γ _ q x =>
+    unless isSeq γ do return none
+    return mkApp2 (symbolT "seq.contains") (← tr q) (appT (symbolT "seq.unit") (← tr x))
+  | Fren.Seq.unit _ x => return appT (symbolT "seq.unit") (← tr x)
+  | Fren.Seq.len _ q => return appT (symbolT "seq.len") (← tr q)
+  | Fren.Seq.nth _ _ q i => return mkApp2 (symbolT "seq.nth") (← tr q) (← tr i)
+  | Fren.Seq.«at» _ q i => return mkApp2 (symbolT "seq.at") (← tr q) (← tr i)
+  | Fren.Seq.slice _ q i n => return mkApp3 (symbolT "seq.extract") (← tr q) (← tr i) (← tr n)
+  | Fren.Seq.indexOf _ _ q t i => return mkApp3 (symbolT "seq.indexof") (← tr q) (← tr t) (← tr i)
+  | Fren.Seq.startsWith _ _ q p => return mkApp2 (symbolT "seq.prefixof") (← tr p) (← tr q)
+  | Fren.Seq.endsWith _ _ q p => return mkApp2 (symbolT "seq.suffixof") (← tr p) (← tr q)
+  | Fren.Seq.contains _ _ q t => return mkApp2 (symbolT "seq.contains") (← tr q) (← tr t)
+  | Fren.Seq.replace _ _ q a b => return mkApp3 (symbolT "seq.replace") (← tr q) (← tr a) (← tr b)
+  | Fren.Seq.update _ q i x => return mkApp3 (symbolT "seq.update") (← tr q) (← tr i) (appT (symbolT "seq.unit") (← tr x))
+  | Fren.Seq.rev _ q => return appT (symbolT "seq.rev") (← tr q)
+  | _ => return none
+
+/-- A sequence in a model. -/
+@[smt_sort_reconstruct] def reconstructSeqSort : Smt.SortReconstructor := fun s => do
+  match s.getKind! with
+  | .SEQUENCE_SORT =>
+    let α ← Smt.Reconstruct.reconstructSort s.getSequenceElementSort!
+    return mkApp (mkConst ``Fren.Seq [Level.zero]) α
+  | _ => return none
+
+@[smt_term_reconstruct] def reconstructSeq : Smt.TermReconstructor := fun t => do
+  let seqOf (ty : Expr) : Option Expr := if ty.isAppOfArity ``Fren.Seq 1 then some ty.appArg! else none
+  match t.getKind! with
+  | .CONST_SEQUENCE =>
+    let ty ← Smt.Reconstruct.reconstructSort t.getSort!
+    let some α := seqOf ty | return none
+    -- Only the empty sequence is a constant; others are units and joins.
+    return Lean.mkApp2 (mkConst ``EmptyCollection.emptyCollection [Level.zero]) ty
+      (mkApp (mkConst ``Fren.Seq.instEmptyCollection [Level.zero]) α)
+  | .SEQ_UNIT =>
+    let ty ← Smt.Reconstruct.reconstructSort t.getSort!
+    let some α := seqOf ty | return none
+    return Lean.mkApp2 (mkConst ``Fren.Seq.unit [Level.zero]) α (← Smt.Reconstruct.reconstructTerm t[0]!)
+  | .STRING_CONCAT =>
+    let ty ← Smt.Reconstruct.reconstructSort t.getSort!
+    let some α := seqOf ty | return none
+    let parts ← (Array.range t.getNumChildren).mapM fun i => Smt.Reconstruct.reconstructTerm t[i]!
+    let app (a b : Expr) := Lean.mkApp6 (mkConst ``HAppend.hAppend [Level.zero, Level.zero, Level.zero]) ty ty ty
+      (Lean.mkApp2 (mkConst ``instHAppendOfAppend [Level.zero]) ty (mkApp (mkConst ``Fren.Seq.instAppend [Level.zero]) α)) a b
+    return some (parts.pop.foldr app parts.back!)
+  | _ => return none
+
+/-- A set in a model: a set of 1-tuples. -/
+@[smt_sort_reconstruct] def reconstructSetSort : Smt.SortReconstructor := fun s => do
+  match s.getKind! with
+  | .SET_SORT =>
+    let e := s.getSetElementSort!
+    unless e.isTuple do return none
+    let ts := e.getTupleSorts!
+    if ts.size == 2 then
+      let a ← Smt.Reconstruct.reconstructSort ts[0]!
+      let b ← Smt.Reconstruct.reconstructSort ts[1]!
+      return mkApp (mkConst ``Fren.FinSet [Level.zero]) (mkApp2 (mkConst ``Prod [Level.zero, Level.zero]) a b)
+    unless ts.size == 1 do return none
+    let α ← Smt.Reconstruct.reconstructSort ts[0]!
+    return mkApp (mkConst ``Fren.FinSet [Level.zero]) α
+  | _ => return none
+
+@[smt_term_reconstruct] def reconstructSet : Smt.TermReconstructor := fun t => do
+  let setOf (ty : Expr) : Option Expr := if ty.isAppOfArity ``Fren.FinSet 1 then some ty.appArg! else none
+  match t.getKind! with
+  | .SET_EMPTY =>
+    let ty ← Smt.Reconstruct.reconstructSort t.getSort!
+    let some α := setOf ty | return none
+    return mkApp2 (mkConst ``EmptyCollection.emptyCollection [Level.zero]) ty
+      (mkApp (mkConst ``Fren.FinSet.instEmptyCollection [Level.zero]) α)
+  | .SET_SINGLETON =>
+    let ty ← Smt.Reconstruct.reconstructSort t.getSort!
+    let some α := setOf ty | return none
+    -- The member is a 1-tuple, whose only field is its last child, or a
+    -- relation's 2-tuple, a pair.
+    let tup := t[0]!
+    let n := tup.getNumChildren
+    let x ← if α.isAppOfArity ``Prod 2 then
+        pure (mkApp4 (mkConst ``Prod.mk [Level.zero, Level.zero]) α.appFn!.appArg! α.appArg!
+          (← Smt.Reconstruct.reconstructTerm tup[n - 2]!) (← Smt.Reconstruct.reconstructTerm tup[n - 1]!))
+      else Smt.Reconstruct.reconstructTerm tup[n - 1]!
+    return mkApp4 (mkConst ``Singleton.singleton [Level.zero, Level.zero]) α ty
+      (mkApp (mkConst ``Fren.FinSet.instSingleton [Level.zero]) α) x
+  | .SET_UNION =>
+    let ty ← Smt.Reconstruct.reconstructSort t.getSort!
+    let some α := setOf ty | return none
+    return mkApp4 (mkConst ``Union.union [Level.zero]) ty (mkApp (mkConst ``Fren.FinSet.instUnion [Level.zero]) α)
+      (← Smt.Reconstruct.reconstructTerm t[0]!) (← Smt.Reconstruct.reconstructTerm t[1]!)
+  | _ => return none
+
+/-- A string in a model. -/
+@[smt_sort_reconstruct] def reconstructStringSort : Smt.SortReconstructor := fun s => do
+  match s.getKind! with
+  | .STRING_SORT => return mkConst ``String
+  | _ => return none
+
+@[smt_term_reconstruct] def reconstructString : Smt.TermReconstructor := fun t => do
+  match t.getKind! with
+  | .CONST_STRING => return (Fren.Core.parseSmtString? (toString t)).map mkStrLit
+  | _ => return none
+
+end Fren

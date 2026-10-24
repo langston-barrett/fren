@@ -1,0 +1,27 @@
+-- Static rules for global expectations.
+
+comp sub {
+    in x: Int
+    pub out z: Int
+    out hidden: Int
+    req r: z = x
+    req h: hidden = x
+}
+enum E { A }
+
+expect hides: forall (a: sub), a.hidden = a.x  --~ error: `a.hidden` is private to instance `a`
+expect no_var: forall (a: sub), a.nope = 0     --~ error: instance `a` has no `in` or `pub out` named `nope`
+expect not_comp: forall (a: E), true           --~ error: expected a component, but `E` is an enum
+expect twice: forall (a: sub) (a: sub), true   --~ error: `a` is bound multiple times in this expectation
+expect twice2: forall (a a: sub), true         --~ error: `a` is bound multiple times in this expectation
+expect q?: forall (a: sub), true               --~ error: constraint names cannot end in `?`
+expect q_binder: forall (a?: sub), true        --~ error: instance names cannot end in `?`
+expect no_binder: x = 0                        --~ error: cannot find `x` in this scope
+expect not_bool: forall (a: sub), a.z
+--~^[cli] error: type mismatch: expected `Bool`, found `Int`
+--~^^[hosted] error: Type mismatch
+expect sub: true                               --~ error: the name `sub` is already defined in the root module
+expect ok: forall (a: sub), a.z = a.x
+expect ok: true                                --~ error: the name `ok` is already defined in the root module
+expect unknown: forall (a: nothing), true      --~ error: cannot find `nothing` in this scope
+comp uses { pub out y: Int req r: y = ok }     --~ error: expected a value, but `ok` is a global expectation

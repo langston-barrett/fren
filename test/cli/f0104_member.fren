@@ -1,0 +1,2 @@
+-- A token where a member was expected (F0104).
+comp c { in x: Int 42 }

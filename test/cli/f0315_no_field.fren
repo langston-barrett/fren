@@ -1,0 +1,3 @@
+-- A field that the record does not have.
+struct Point { x: Int, y: Int }
+comp c { in p: Point pub out z: Int req r: z = p.z }

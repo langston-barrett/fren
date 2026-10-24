@@ -1,0 +1,2 @@
+-- An option of the other command.
+--@ args: check --require tested

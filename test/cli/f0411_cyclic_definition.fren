@@ -1,0 +1,8 @@
+comp c {
+    in x: Int
+    out a: Int := b + x
+    out b: Int := a
+    pub out y: Int
+
+    req r: y = a
+}

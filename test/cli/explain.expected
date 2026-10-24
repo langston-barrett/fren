@@ -1,0 +1,20 @@
+An operator from another language, which Fren does not have.
+
+Erroneous code example:
+
+```fren
+comp c { in x: Int pub out y? req r: y? iff x == 1 }
+```
+
+Fren's operators are words where other languages use symbols:
+
+- `=` for equality, not `==`
+- `and`, `or` and `not`, not `&&`, `||` and `!`
+- `when a, b` for implication, not `=>`
+
+`!=` is inequality, as in other languages. There is no division.
+
+```fren
+comp c { in x: Int pub out y? req r: y? iff x = 1 }
+```
+exit=0

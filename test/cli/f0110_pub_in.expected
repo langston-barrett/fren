@@ -1,0 +1,17 @@
+error[F0110]: inputs cannot be declared `pub`
+ --> test/cli/f0110_pub_in.fren:2:10
+  |
+2 | comp c { pub in x: Int }
+  |          ^^^ not allowed on `in`
+  |
+  = note: inputs are always public
+help: remove `pub`
+  |
+2 - comp c { pub in x: Int }
+2 + comp c { in x: Int }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0110`.
+exit=2

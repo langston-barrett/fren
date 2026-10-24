@@ -1,0 +1,3 @@
+-- A record literal that misses a field.
+struct Point { x: Int, y: Int }
+const ORIGIN: Point := Point { x := 0 }

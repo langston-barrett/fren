@@ -1,0 +1,7 @@
+-- A component that is not realizable (F0601).
+comp c {
+    in x: Int
+    pub out y: Int
+    req big: y > x
+    req small: y < 0
+}

@@ -1,0 +1,48 @@
+-- Static rules for instances (`inst::binding`, `inst::mention`).
+-- fren-covers: inst::earlier
+
+comp sub {
+    in x: Int
+    in y?
+    --~^ warning: unused variable `y?`
+    pub out z: Int
+    out hidden: Int
+
+    req r: z = x
+    req h: hidden = x
+}
+
+enum E { A }
+
+comp missing { in y? inst s: sub { y? } }                  --~ error: missing input `x` of `sub`
+comp extra { in y? inst s: sub { x := 1, y?, w := 2 } }    --~ error: `sub` has no input `w`
+comp bound_out { in y? inst s: sub { x := 1, y?, z := 2 } }  --~ error: `z` is an `out` of `sub`
+comp bound_twice { in y? inst s: sub { x := 1, x := 2, y? } }  --~ error: input `x` is bound multiple times
+comp not_comp { inst s: E {} }                             --~ error: expected a component, but `E` is an enum
+comp q_name { in y? inst s?: sub { x := 1, y? } }          --~ error: instance names cannot end in `?`
+comp dup_name { in y? inst y?: sub { x := 1, y? } }        --~ error: `y?` is defined multiple times in this comp
+
+comp out_bound { in y? pub out o: Int inst s: sub { x := o, y? } req r: o = 0 }
+--~^ error: bindings may only mention `in` variables and earlier instances, but `o` is an `out`
+comp later { in y? inst a: sub { x := b.z, y? } inst b: sub { x := 1, y? } }
+--~^ error: instance `b` is not declared before this binding
+comp itself { in y? inst a: sub { x := a.z, y? } }         --~ error: instance `a` is not declared before this binding
+comp private_var { in y? pub out o: Int inst a: sub { x := 1, y? } req r: o = a.hidden }
+--~^ error: `a.hidden` is private to instance `a`
+comp assumes_inst { in y? inst a: sub { x := 1, y? } assume bad: a.z = 0 }
+--~^ error: assumptions may only mention `in` variables, but `a.z` belongs to instance `a`
+comp no_field { in y? pub out o: Int inst a: sub { x := 1, y? } req r: o = a.nope }
+--~^ error: instance `a` has no `in` or `pub out` named `nope`
+comp not_inst { pub out o: Int req r: o = q.z }            --~ error: `q.z` is not a single name
+comp mistyped { in y? inst a: sub { x := y?, y? } }
+--~^[cli] error: type mismatch: expected `Int`, found `Bool`
+--~^^[hosted] error: Type mismatch
+
+mod m
+comp secret {}
+
+mod n
+use m                                                      --~ warning: unused import `m`
+comp outside { inst s: m::secret {} }                      --~ error: `secret` is private to module `m`
+
+--@ exit: 2

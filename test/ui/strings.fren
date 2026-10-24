@@ -1,0 +1,71 @@
+-- Strings: literals, `++`, ordering and methods, in both front ends.
+
+const PREFIX: String := "user-"
+
+comp handle {
+    in name: String
+    in taken?
+    pub out accepted?
+
+    assume nonempty: name != ""
+
+    req shape: accepted? iff (name.len <= 20 and not taken? and not name.contains?(" ")
+        and name.starts_with?("a"))
+
+    expect short_enough: when accepted?, (PREFIX ++ name).len <= 25
+    expect no_spaces: when accepted?, not name.contains?(" ")
+    expect ordered: when accepted?, name >= "a" and name < "b"
+    expect wrong: when accepted?, name.ends_with?("z")  --~ error: expectation `handle::wrong` does not hold
+}
+
+-- Escapes and raw literals have the same values in both front ends.
+expect escapes: "a\"b\\c\n".len = 6 and "\x41é" = "Aé"
+expect raw: r"a\b".len = 3 and r#"say "hi""#.len = 8
+expect methods: "abc".starts_with?("ab") and "abc".ends_with?("bc") and "abc".contains?("")
+expect concat: ("ab" ++ "c").len = 3 and "x" ++ "" = "x"
+
+-- A definition may concatenate, and its output then be compared with a
+-- constant or be the receiver of a method.
+comp keyed {
+    in name: String
+    pub det out key: String := PREFIX ++ name ++ "!"
+
+    expect prefixed: key.starts_with?(PREFIX) and key.len = name.len + 6
+    expect not_bare: key != "user-"
+    expect wrong: key.ends_with?("?")  --~ error: expectation `keyed::wrong` does not hold
+}
+
+-- A method call is linear in its receiver.
+comp lengths {
+    in s: String
+    in t: String
+    pub out total: Int
+
+    req r: total = 2 * s.len + t.len
+
+    expect non_negative: total >= 0
+}
+
+-- A record may have a `String` field, and a defined output may be a
+-- `String`.
+struct User { name: String, admin? }
+
+comp greeting {
+    in u: User
+    pub det out text: String := if u.admin? then "admin" else u.name
+
+    expect named: when not u.admin?, text = u.name
+    expect short: when u.admin?, text.len = 5
+}
+
+-- Counterexamples show strings as literals, escaped.
+comp shown {
+    in s: String
+    pub out q?
+
+    req r: q? iff s = "a\nb"
+
+    expect never: not q?                                  --~ error: expectation `shown::never` does not hold
+}
+--@ summary: 29 passed, 3 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

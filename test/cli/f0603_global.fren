@@ -1,0 +1,15 @@
+-- A global expectation that does not hold (F0603), and one that is vacuous
+-- (F0605).
+const HIGH: Int := 10
+
+comp band {
+    in temp: Int
+    in target: Int
+    pub out too_cold?
+    assume sane: 0 <= target and target <= HIGH
+    req cold: too_cold? iff temp < target - 2
+}
+
+expect same: forall (a b: band),
+    when a.temp = b.temp, a.too_cold? iff b.too_cold?
+expect never: forall (a: band), when a.target > HIGH, a.too_cold?

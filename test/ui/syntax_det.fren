@@ -1,0 +1,7 @@
+-- `det` applies only to outputs.
+comp c {
+  det in x: Int
+  --~^[cli] error: `det` applies only to outputs, not to an input
+  --~^^[hosted] error: expected 'out'
+}
+--@ exit: 2

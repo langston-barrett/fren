@@ -1,0 +1,2 @@
+-- A type cannot be built from sets of itself.
+enum Tree { Leaf, Node(Set(Tree)) }

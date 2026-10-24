@@ -1,0 +1,2 @@
+--@ args: check --color sometimes
+-- An invalid value for `--color`.

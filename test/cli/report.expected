@@ -1,0 +1,88 @@
+warning[F0710]: unused variable `b?`
+  --> test/cli/report.fren:18:24
+   |
+18 | comp chooser { pub out b? }
+   |                        ^^ never mentioned
+   |
+   = note: nothing constrains it, so it can take any value
+   = help: remove it, or mention it in a constraint
+   = note: `unused_variables` is `warn` by default
+   = help: to allow it, `set_option fren.lint.unused_variables "allow"`
+
+error[F0601]: `exit` is not realizable: for the input n_fail = 1, n_inconc = 1, no outputs satisfy `failures`, `inconc`
+ --> test/cli/report.fren:3:6
+  |
+3 | comp exit {
+  |      ^^^^ not realizable
+  |
+  = help: weaken one of them, or add an `assume` that rules this input out
+
+note: conflicts with `inconc` when n_fail = 1, n_inconc = 1
+ --> test/cli/report.fren:9:9
+  |
+9 |     req failures: when n_fail > 0, code = 1
+  |         ^^^^^^^^
+
+note: conflicts with `failures` when n_fail = 1, n_inconc = 1
+  --> test/cli/report.fren:10:9
+   |
+10 |     req inconc: when n_inconc > 0, code = 3
+   |         ^^^^^^
+
+error[F0603]: expectation `exit::zero` does not hold
+  --> test/cli/report.fren:13:12
+   |
+13 |     expect zero: when n_fail = 0, code = 0
+   |            ^^^^ does not follow from the requirements
+   |
+   = counterexample: n_fail = 0, n_inconc = 0, code = 1
+   = note: private `out`s are not shown
+   = help: strengthen the requirements so that it follows, or correct the expectation
+
+error[F0605]: `exit::negative` is vacuous: its condition can never hold, given `counts`
+  --> test/cli/report.fren:11:19
+   |
+11 |     req negative: when n_fail < 0, code = 4
+   |                   ^^^^^^^^^^^^^^^ this condition is always false
+   |
+   = note: a constraint whose condition never holds says nothing
+   = help: correct the condition, or the constraints that rule it out
+
+error[F0601]: `uses` is not realizable: for the input n_fail = 0, first.code = 0, second.code = 0, pick.b? = false, no outputs satisfy `lucky`
+  --> test/cli/report.fren:19:6
+   |
+19 | comp uses {
+   |      ^^^^ not realizable
+   |
+   = help: weaken one of them
+   = note: instance variables are part of the system: whatever the instances do, the component must cope
+
+note: is false when n_fail = 0, first.code = 0, second.code = 0, pick.b? = false
+  --> test/cli/report.fren:26:9
+   |
+26 |     req lucky: pick.b?
+   |         ^^^^^
+
+error[F0604]: the assumption `counts` of `exit` may not hold for instance `uses::first`
+  --> test/cli/report.fren:22:10
+   |
+22 |     inst first: exit { n_fail, n_inconc := 0 }
+   |          ^^^^^ may violate `exit::counts`
+   |
+   = counterexample: n_fail = -1
+   = help: bind the instance's inputs so that the assumption holds, or add an `assume` that guarantees it
+
+error[F0604]: the assumption `counts` of `exit` may not hold for instance `uses::second`
+  --> test/cli/report.fren:23:10
+   |
+23 |     inst second: exit { n_fail := first.code, n_inconc := n_fail }
+   |          ^^^^^^ may violate `exit::counts`
+   |
+   = counterexample: n_fail = 0, first.code = -1
+   = help: bind the instance's inputs so that the assumption holds, or add an `assume` that guarantees it
+
+fren: 10 passed, 6 failed, 0 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0601, F0603, F0604, F0605, F0710.
+For more information about an error, try `fren --explain F0601`.
+exit=1

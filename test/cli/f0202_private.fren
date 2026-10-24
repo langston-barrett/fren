@@ -1,0 +1,6 @@
+-- An item private to its module (F0202).
+mod a
+enum Hidden { H }
+
+mod b
+use a::Hidden

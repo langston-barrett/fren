@@ -1,0 +1,2 @@
+-- Multiplying two variables (F0307).
+comp c { in x: Int pub out y: Int req r: y = x * x }

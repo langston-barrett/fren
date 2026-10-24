@@ -1,0 +1,2 @@
+-- `length_zero`.
+comp c { in s: String pub out p? req r: p? iff s.len = 0 }

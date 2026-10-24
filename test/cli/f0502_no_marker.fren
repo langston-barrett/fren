@@ -1,0 +1,3 @@
+-- A `tested` claim naming a file without a marker (F0502).
+comp other {}
+tested other: "test/fixtures/covers_shown.txt"

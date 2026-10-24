@@ -1,0 +1,2 @@
+-- A test that a ui test claims covers its component `shown` (test/ui/trace.fren).
+-- fren-covers: shown

@@ -1,0 +1,2 @@
+-- A member defined twice (F0213).
+comp c { in x: Int pub out x: Int }

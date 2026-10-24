@@ -1,0 +1,17 @@
+error[F0111]: `E.A` is not a single name
+ --> test/cli/f0111_expression.fren:3:47
+  |
+3 | comp c { in e: E pub out y? req r: y? iff e = E.A }
+  |                                               ^^^ `.` is only for the variables of instances
+  |
+  = note: there is no instance named `E`
+help: separate path segments with `::`
+  |
+3 - comp c { in e: E pub out y? req r: y? iff e = E.A }
+3 + comp c { in e: E pub out y? req r: y? iff e = E::A }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0111`.
+exit=2

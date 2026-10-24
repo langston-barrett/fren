@@ -1,0 +1,5 @@
+-- An expectation that no lint fulfils (F0706), and one that a lint does.
+set_option fren.lint.non_snake_case "expect" in
+comp BadName {}
+set_option fren.lint.glob_imports "expect"
+comp c {}

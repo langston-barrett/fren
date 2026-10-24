@@ -1,0 +1,6 @@
+--@ args: fix --check --fmt
+-- `fren fix --fmt`: the fixes, then formatting.
+pub enum Mode {Heat,Cool}
+use Mode::*
+use Mode::Cool
+comp c { in m:Mode pub out h? req r: h? iff m = Heat }

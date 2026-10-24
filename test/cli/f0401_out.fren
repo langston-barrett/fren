@@ -1,0 +1,2 @@
+-- An assumption about an `out` (F0401).
+comp c { in x: Int pub out y: Int assume a: y > 0 req r: y = x }

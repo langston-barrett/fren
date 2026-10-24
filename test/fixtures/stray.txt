@@ -1,0 +1,2 @@
+-- A test file with a marker that no claim names.
+-- fren-covers: shown, nowhere

@@ -1,0 +1,401 @@
+-- keep-sorted start
+import Fren.FinSet
+import Fren.Seq
+import FrenCore.Check
+import FrenCore.Lint
+import FrenCore.Names
+import Lean
+-- keep-sorted end
+
+/-!
+# The Fren model
+
+Fren's own representation of specifications: modules, items, imports, enums
+and comps. It lives in environment extensions and is changed only by Fren's
+elaborators (`Fren.Elab`). Everything else reads it. In particular, Fren never
+recovers the meaning of a spec by inspecting the Lean declarations it
+generates; those are derived artifacts for users.
+
+Module paths are `Name`s (`check`, `a.b`); the root module is
+`Name.anonymous`.
+-/
+
+open Lean
+
+namespace Fren
+
+export Core (ItemKind Item EnumDef UseDef)
+
+/-- `p₁ ∧ (p₂ ∧ ...)`, or `True`. -/
+def mkAndN : List Expr → Expr
+  | [] => mkConst ``True
+  | [p] => p
+  | p :: ps => mkAnd p (mkAndN ps)
+
+/-- Where an item was declared. -/
+structure ItemRef where
+  item : Item
+  ref : Syntax
+  deriving Inhabited
+
+/-- An enum and the Lean inductive generated for it. -/
+structure EnumInfo where
+  path : Name
+  decl : Name
+  variants : Array Name
+  /-- The Lean types of each variant's payload. -/
+  payloads : Array (Array Expr) := #[]
+  /-- Its values can be arbitrarily large (`Reqs/Lang/Types`). -/
+  unbounded : Bool := false
+  deriving Inhabited
+
+/-- The selector of the `k`th value of the payload of the constructor
+`ctor`, generated for an enum. Its name is that of lean-smt's selector of
+the constructor's field, which is named `xk`. -/
+def selectorName (ctor : Name) (k : Nat) : Name := ctor ++ Name.mkSimple s!"x{k}"
+
+/-- A record and the Lean structure generated for it. -/
+structure RecordInfo where
+  path : Name
+  decl : Name
+  /-- The fields, with their Lean types. -/
+  fields : Array (Name × Expr)
+  unbounded : Bool := false
+  deriving Inhabited
+
+/-- The constructor of the structure generated for a record: not `mk`,
+which may be a field. -/
+def recordCtor (decl : Name) : Name := decl ++ `«{}»
+
+/-- A constant and the Lean definition generated for it. -/
+structure ConstInfo where
+  path : Name
+  decl : Name
+  type : Expr
+  /-- Closed; used wherever the constant is mentioned. -/
+  value : Expr
+  deriving Inhabited
+
+/-- An abstract type or a function. In the model it is a placeholder: an
+axiom of its type, which every expression that mentions it uses, so that
+instances and global expectations need no plumbing. Where a spec leaves the
+model, the placeholder is replaced: by a parameter in the generated
+definitions, a local for the solver, and an interpretation in an `impl`. -/
+structure AbstractInfo where
+  path : Name
+  /-- The placeholder axiom. -/
+  placeholder : Name
+  isType : Bool
+  /-- The placeholders of the abstract types in a function's signature. -/
+  deps : Array Name := #[]
+  deriving Inhabited
+
+/-- The placeholder for the item at `path`. -/
+def placeholderName (path : Name) : Name := `Fren.Abstract ++ path
+
+/-- The placeholder of the `Inhabited` instance of the abstract type whose
+placeholder, or path, is `n`: not a Fren name, which cannot contain `#`. -/
+def inhabitedName (n : Name) : Name := n.str "#inhabited"
+
+/-- Whether `n` is the path or placeholder of an abstract type's `Inhabited`
+instance. -/
+def isInhabitedName (n : Name) : Bool := n matches .str _ "#inhabited"
+
+/-- A defined function: the generated definition `decl`, which takes a
+parameter for each placeholder of `uses`, then its own parameters, and
+which the solver unfolds. -/
+structure DefinedInfo where
+  path : Name
+  decl : Name
+  uses : Array Name
+  nParams : Nat
+  deriving Inhabited
+
+/-- `e` with each placeholder of `uses` replaced by the corresponding
+expression of `xs`. -/
+def replaceUses (uses : Array Name) (xs : Array Expr) (e : Expr) : Expr :=
+  e.replace fun
+    | .const c _ => (uses.idxOf? c).map (xs[·]!)
+    | _ => none
+
+/-- A comp variable: one of its own, or one of an instance's (`w.x`). -/
+structure Var where
+  name : Name
+  role : Core.Role
+  /-- Shown in counterexamples: inputs, `pub out`s and instances' `pub out`s. -/
+  isPub : Bool
+  /-- A `det out` of the comp itself. -/
+  isDet : Bool := false
+  type : Expr
+  ref : Syntax
+  /-- The definition of a defined output of the comp itself. -/
+  defn? : Option Syntax := none
+  deriving Inhabited
+
+inductive PropKind where
+  | assume
+  | req
+  | expect
+  deriving Inhabited, BEq, Repr
+
+def PropKind.keyword : PropKind → String
+  | .assume => "assume"
+  | .req => "req"
+  | .expect => "expect"
+
+/-- An `assume`, `req` or `expect`. Expressions are closed lambdas over all
+of the comp's variables (`CompInfo.vars`). -/
+structure PropInfo where
+  kind : PropKind
+  name : Name
+  ref : Syntax
+  body : Expr
+  /-- The conditions of the top-level `when`/`unless` chain, if any. -/
+  trigger? : Option Expr
+  triggerRef? : Option Syntax
+  /-- The Lean definition generated for this item. -/
+  decl : Name
+  deriving Inhabited
+
+/-- An instance. Expressions are closed lambdas over all of the
+instantiating comp's variables. -/
+structure InstInfo where
+  name : Name
+  comp : Name
+  ref : Syntax
+  bindings : Expr
+  /-- The instantiated comp's meaning (`CompInfo.meaning`) over the instance's
+  variables. -/
+  behaviour : Expr
+  /-- The instantiated comp's assumptions over the instance's variables. -/
+  assumes : Array (Name × Expr)
+  decl : Name
+  deriving Inhabited
+
+structure CompInfo where
+  path : Name
+  /-- Its own variables in declaration order, then each instance's. -/
+  vars : Array Var
+  props : Array PropInfo
+  insts : Array InstInfo := #[]
+  ref : Syntax
+  /-- The prefix of the Lean definitions generated for it. -/
+  decl : Name
+  /-- The placeholders of the abstract types and functions it uses, in
+  declaration order: its generated definitions take a parameter for each. -/
+  uses : Array Name := #[]
+  /-- Each defined output and its definition, a closed lambda over all of
+  the comp's variables that mentions no defined output. -/
+  defs : Array (Name × Expr) := #[]
+  /-- No construct of it is outside the decidable core
+  (`view::inconclusive_advice`). -/
+  decidable : Bool := true
+  /-- It, or one of its instances, applies a relational operator. -/
+  relational : Bool := false
+  /-- It, or one of its instances, uses `card`. -/
+  counts : Bool := false
+  /-- Each index of its constraints and definitions: the item it is in,
+  where that is, the index, and the closed formula that it is in range. -/
+  indexes : Array (Name × Core.IndexPlace × Syntax × Expr) := #[]
+  deriving Inhabited
+
+def CompInfo.assumes (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .assume)
+def CompInfo.reqs (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .req)
+def CompInfo.expects (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .expect)
+
+/-- Everything a comp says about its variables `args`: assumptions,
+requirements and instances. -/
+def CompInfo.meaning (c : CompInfo) (args : Array Expr) : Expr :=
+  let defEq (d : Name) (e : Expr) : Expr := match c.vars.findIdx? (·.name == d) with
+    | some i => mkApp3 (mkConst ``Eq [1]) (c.vars[i]!.type) args[i]! (e.beta args)
+    | none => mkConst ``True
+  mkAndN <| c.defs.toList.map (fun (d, e) => defEq d e) ++ (c.assumes ++ c.reqs).toList.map (·.body.beta args)
+    ++ c.insts.toList.map fun i => mkAnd (i.bindings.beta args) (i.behaviour.beta args)
+
+/-- `CompInfo.meaning` as applications of the generated definitions, to the
+placeholders it uses. -/
+def CompInfo.meaningDecl (c : CompInfo) (args : Array Expr) : Expr :=
+  let args := c.uses.map (mkConst ·) ++ args
+  mkAndN <| ((if c.defs.isEmpty then [] else [`defs]) ++ [`assumes, `reqs]).map (fun n => mkAppN (mkConst (c.decl ++ n)) args)
+    ++ c.insts.toList.map fun i => mkAppN (mkConst i.decl) args
+
+/-- An `impl` whose obligation was proved (or added as an axiom). -/
+structure ImplInfo where
+  /-- The theorem or axiom. -/
+  decl : Name
+  comp : Name
+  /-- Proved by the solver, so `decl` is an axiom. -/
+  isAxiom : Bool := false
+  deriving Inhabited
+
+/-- A `tested` or `trusted` claim. -/
+structure ClaimInfo where
+  comp : Name
+  /-- `tested`: the test files; `trusted`: the justification. -/
+  tested : Bool
+  texts : Array String
+  deriving Inhabited
+
+inductive Entry where
+  | item (i : ItemRef)
+  | enumInfo (e : EnumInfo)
+  | recordInfo (r : RecordInfo)
+  | useDef (u : UseDef)
+  | compInfo (c : CompInfo)
+  | constInfo (c : ConstInfo)
+  | abstractInfo (a : AbstractInfo)
+  | definedInfo (d : DefinedInfo)
+  /-- An `interp` of the item at `path`, as the definition `decl`. -/
+  | interpInfo (path decl : Name)
+  /-- A global expectation, as a `CompInfo` whose path is its module, with
+  an instance per binder and the expectation as its only constraint. -/
+  | globalInfo (path : Name) (c : CompInfo)
+  | implInfo (i : ImplInfo)
+  | claimInfo (c : ClaimInfo)
+  deriving Inhabited
+
+/-- Everything declared so far, across all imported Lean files. -/
+structure State where
+  /-- Names, modules and visibility, shared with the standalone binary. -/
+  table : Core.Table := {}
+  refs : NameMap Syntax := {}
+  enums : NameMap EnumInfo := {}
+  records : NameMap RecordInfo := {}
+  comps : NameMap CompInfo := {}
+  consts : NameMap ConstInfo := {}
+  /-- Abstract types and functions, by path. -/
+  abstracts : NameMap AbstractInfo := {}
+  /-- Each placeholder's position in declaration order. -/
+  placeholders : NameMap Nat := {}
+  /-- Defined functions, by path. -/
+  defined : NameMap DefinedInfo := {}
+  /-- The definition of each abstract type's and function's interpretation,
+  by path. -/
+  interps : NameMap Name := {}
+  /-- Global expectations, by full path. -/
+  globals : NameMap CompInfo := {}
+  /-- The `impl`s of each comp. -/
+  impls : NameMap (Array Name) := {}
+  /-- The `impl`s proved by the solver, which are axioms. -/
+  axiomImpls : NameSet := {}
+  /-- The files of each component's `tested` claims. -/
+  tested : NameMap (Array String) := {}
+  /-- The justifications of each component's `trusted` claims. -/
+  trusted : NameMap (Array String) := {}
+  deriving Inhabited
+
+def State.add (s : State) : Entry → State
+  | .item i => { s with table := s.table.addItem i.item, refs := s.refs.insert i.item.path i.ref }
+  | .enumInfo e =>
+    { s with table := s.table.addEnum { path := e.path, variants := e.variants }, enums := s.enums.insert e.path e }
+  | .recordInfo r => { s with records := s.records.insert r.path r }
+  | .useDef u => { s with table := s.table.addUse u }
+  | .compInfo c => { s with comps := s.comps.insert c.path c }
+  | .constInfo c => { s with consts := s.consts.insert c.path c }
+  | .abstractInfo a =>
+    { s with abstracts := s.abstracts.insert a.path a
+             placeholders := s.placeholders.insert a.placeholder s.placeholders.size }
+  | .definedInfo d => { s with defined := s.defined.insert d.path d }
+  | .interpInfo p d => { s with interps := s.interps.insert p d }
+  | .globalInfo p c => { s with globals := s.globals.insert p c }
+  | .implInfo i =>
+    { s with impls := s.impls.insert i.comp ((s.impls.getD i.comp #[]).push i.decl)
+             axiomImpls := if i.isAxiom then s.axiomImpls.insert i.decl else s.axiomImpls }
+  | .claimInfo c =>
+    if c.tested then { s with tested := s.tested.insert c.comp (s.tested.getD c.comp #[] ++ c.texts) }
+    else { s with trusted := s.trusted.insert c.comp (s.trusted.getD c.comp #[] ++ c.texts) }
+
+initialize frenExt : SimplePersistentEnvExtension Entry State ←
+  registerSimplePersistentEnvExtension {
+    addEntryFn := State.add
+    addImportedFn := fun arrays => arrays.foldl (fun s es => es.foldl State.add s) {}
+  }
+
+/-- The enum whose generated inductive is `decl`. -/
+def State.enumOfDecl? (s : State) (decl : Name) : Option EnumInfo :=
+  s.enums.foldl (init := none) fun acc _ e => acc <|> if e.decl == decl then some e else none
+
+/-- The record whose generated structure is `decl`. -/
+def State.recordOfDecl? (s : State) (decl : Name) : Option RecordInfo :=
+  s.records.foldl (init := none) fun acc _ r => acc <|> if r.decl == decl then some r else none
+
+/-- Whether the Lean type of a Fren type is unbounded (`Reqs/Lang/Types`). -/
+def State.unbounded (s : State) (ty : Expr) : Bool :=
+  ty.isConstOf ``String || ty.isAppOf ``Fren.FinSet || ty.isAppOf ``Fren.Seq || match ty.constName? with
+  | some d => (s.enumOfDecl? d).any (·.unbounded) || (s.recordOfDecl? d).any (·.unbounded)
+  | none => false
+
+/-- Per-file state; not visible to importing files. -/
+structure LocalState where
+  /-- The module that items are currently being declared in. -/
+  currentModule : Name := .anonymous
+  /-- Comps declared in this file, in order. -/
+  comps : Array Name := #[]
+  /-- Global expectations declared in this file, in order. -/
+  globals : Array Name := #[]
+  /-- What the lints of this file need (`Fren.Lint`): its `use`s, the names
+  resolved through imports, its expectations, and its other lints. -/
+  useRecords : Array (Core.UseRecord × Syntax) := #[]
+  used : Array Core.UsedName := #[]
+  expectations : Array (Core.ExpectationRecord × Syntax) := #[]
+  lintReports : Array (Core.LintReport Syntax) := #[]
+  /-- The file's private enumerations and constants, and the items that
+  paths in it resolve to (`dead_code`). -/
+  items : Array (Core.ItemRecord × Syntax) := #[]
+  usedItems : Array Name := #[]
+  /-- Elaborating a Markdown spec (`#fren_md`), which reports its own lints. -/
+  inMarkdown : Bool := false
+  /-- Some construct of the current item is outside the decidable core,
+  whatever the level of `undecidable` (`view::inconclusive_advice`). -/
+  outsideCore : Bool := false
+  /-- Whether the current comp, or an instance of it, applies a relational
+  operator; with `card`, it is outside the decidable core. -/
+  relationalUsed : Bool := false
+  /-- Where the current comp counts: its `card`s, and its instances whose
+  comps count. -/
+  countRefs : Array Syntax := #[]
+  /-- The indexes of the constraint being elaborated, each with the term
+  that it is in range where it is evaluated (`check::definedness`). -/
+  indexes : Array (Syntax × Lean.Term) := #[]
+  deriving Inhabited
+
+initialize localExt : EnvExtension LocalState ←
+  registerEnvExtension (pure {})
+
+variable {m : Type → Type} [Monad m] [MonadEnv m]
+
+def getState : m State := return frenExt.getState (← getEnv)
+
+/-- The placeholders that `es` mention, and those in the signatures of the
+functions among them, in declaration order. -/
+def usesOf (es : Array Expr) : m (Array Name) := do
+  let s ← getState
+  let direct := es.foldl (init := #[]) fun acc e =>
+    e.foldConsts acc fun c acc => if s.placeholders.contains c && !acc.contains c then acc.push c else acc
+  let deps := direct.foldl (init := direct) fun acc c =>
+    let ds := s.abstracts.foldl (init := #[]) fun ds _ a => if a.placeholder == c then a.deps else ds
+    ds.foldl (fun acc d => if acc.contains d then acc else acc.push d) acc
+  return deps.qsort fun a b => s.placeholders.getD a 0 < s.placeholders.getD b 0
+
+def record (e : Entry) : m Unit := modifyEnv (frenExt.addEntry · e)
+
+/-- Runs `k` with a local for each placeholder of `uses`, in order, named
+after its item: a type for an abstract type, and for a function, its type
+over the earlier locals. -/
+def withUses {α : Type} (uses : Array Name) (k : Array Expr → Meta.MetaM α) : Meta.MetaM α :=
+  go 0 #[]
+where
+  go (i : Nat) (xs : Array Expr) : Meta.MetaM α := do
+    if h : i < uses.size then
+      let ty := replaceUses uses xs (← getConstInfo uses[i]).type
+      -- An abstract type's `Inhabited` instance is an instance argument.
+      let bi := if isInhabitedName uses[i] then .instImplicit else .default
+      Meta.withLocalDecl (Name.mkSimple uses[i].getString!) bi ty fun x => go (i + 1) (xs.push x)
+    else k xs
+
+def getLocal : m LocalState := return localExt.getState (← getEnv)
+
+def modifyLocal (f : LocalState → LocalState) : m Unit :=
+  modifyEnv (localExt.modifyState · f)
+
+end Fren

@@ -1,0 +1,2 @@
+-- A lint level that does not exist (F0708).
+set_option fren.lint.unused_imports "off"

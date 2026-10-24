@@ -1,0 +1,7 @@
+--@ args: quickcheck
+comp c {
+    in x: Int
+    pub out y: Int
+    req above: y > x
+    req below: y < x
+}

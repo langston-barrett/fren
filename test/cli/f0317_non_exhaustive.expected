@@ -1,0 +1,12 @@
+error[F0317]: non-exhaustive match: `Shape::Empty` not covered
+ --> test/cli/f0317_non_exhaustive.fren:3:48
+  |
+3 | comp c { in s: Shape pub out a: Int req r: a = match s { Shape::Circle(r) => 3 * r, Shape::Square(w) => w } }
+  |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Shape::Empty` not covered
+  |
+  = note: a `match` has an arm for every variant, or a last arm `_`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0317`.
+exit=2

@@ -1,0 +1,39 @@
+-- Static rules for abstract types and functions.
+-- fren-covers: lang::argument
+set_option fren.lint.dead_code "allow"
+
+type Name
+fn ok?(Name)
+fn arity(Name): Int
+fn missing(Name)                    --~ error: missing type for `missing`
+fn wrong?(Name): Int                --~ error: `wrong?` ends in `?` but is not a `Bool`
+type name                           --~ warning: abstract type `name` should have a camel case name
+fn Arity2(Name): Int                --~ warning: function `Arity2` should have a snake case name
+type Name                           --~ error: the name `Name` is already defined in the root module
+
+const K: Int := arity(1)
+--~^[cli] error: type mismatch: expected `Name`, found `Int`
+--~^^[hosted] error: Application type mismatch
+const N: Name := 1                  --~ error: a constant cannot have an abstract type
+fn rate(Int): Int
+const R: Int := rate(1)             --~ error: a constant's value cannot apply an uninterpreted function
+
+comp outputs { in x: Name pub out y: Name req r: ok?(y) }
+--~^ error: the arguments of a function may not mention an `out`, but `y` is one
+comp private_out { in x: Name out y: Name req r: ok?(if ok?(x) then y else x) }
+--~^ error: the arguments of a function may not mention an `out`, but `y` is one
+comp arity_wrong { in x: Name pub out y: Int req r: y = arity(x, x) }
+--~^ error: `arity` takes 1 argument, but 2 were given
+comp unapplied { in x: Name pub out y: Int req r: y = arity }
+--~^ error: function `arity` must be applied to arguments
+comp not_fn { in x: Name pub out y: Int req r: y = x(x) }
+--~^ error: expected a function, but `x` is a variable
+comp ordered { in x: Name in z: Name pub out y? req r: y? iff x < z }
+--~^[cli] error: type mismatch: expected `Int`, found `Name`
+--~^^[hosted] error: failed to synthesize
+comp nonlinear { in x: Int pub out y: Int req r: y = x * rate(1) }
+--~^ error: nonlinear arithmetic is not supported
+
+-- Inputs and instances' outputs may be arguments.
+comp inner { in a: Name pub out b: Name req r: b = a }
+comp fine { in x: Name pub out y? inst w: inner { a := x } req r: y? iff ok?(w.b) and ok?(x) }

@@ -1,0 +1,6 @@
+--@ args: fix --check --only unused_imports
+-- `fren fix --only`: the glob is reported, but not fixed.
+pub enum Mode { Heat, Cool }
+use Mode::*
+use Mode::Cool
+comp c { in m: Mode pub out h? req r: h? iff m = Heat }

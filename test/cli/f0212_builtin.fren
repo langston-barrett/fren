@@ -1,0 +1,2 @@
+-- Redefining a built-in type (F0212).
+enum Int { Small, Big }

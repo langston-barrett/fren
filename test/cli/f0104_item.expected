@@ -1,0 +1,16 @@
+error[F0104]: expected an item (`mod`, `use`, `enum`, `struct`, `type`, `fn`, `const`, `comp`, `expect`, `tested` or `trusted`), found identifier `component`
+ --> test/cli/f0104_item.fren:2:1
+  |
+2 | component c {}
+  | ^^^^^^^^^ expected an item (`mod`, `use`, `enum`, `struct`, `type`, `fn`, `const`, `comp`, `expect`, `tested` or `trusted`)
+  |
+help: a keyword with a similar name exists: `comp`
+  |
+2 - component c {}
+2 + comp c {}
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0104`.
+exit=2

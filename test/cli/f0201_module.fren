@@ -1,0 +1,6 @@
+-- A name not in a module (F0201).
+mod m
+pub enum Mode { Off }
+
+mod n
+use m::Mod
