@@ -1934,7 +1934,7 @@ partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (n : BNode α)
   own ++ (n.kids.mapIdx fun i k => opReportsIn src boolEq k (slots[i]?.join) n.range).flatten
 
 /-- The messages of the operator and method lints in an expression written
-in `src` (`Reqs/Lint#operators`), where `boolEq` says whether a comparison
+in `src` (`Reqs/Lint/Complexity#comparisons`), where `boolEq` says whether a comparison
 compares `Bool`s. -/
 def opReports (src : Array Char) (boolEq : α → Bool) (root : BNode α) : Array (OpReport α) :=
   opReportsIn src boolEq root none root.range

@@ -1013,7 +1013,7 @@ def checkRelational (cx : ExprCtx) (span : Span) (tys : Array Ty) (operands : Ar
 
 /-- The match lints of the `match` `e` on a value of the enumeration `d`,
 whose arms name the variants `pats`, or `_` for `none`, where `slot` is
-(`Reqs/Lint#matches`). -/
+(`Reqs/Lint/Style#matches-that-are-memberships`, `Reqs/Lint/Pedantic#matches`). -/
 def lintMatch (cx : ExprCtx) (e : Expr) (d : DataDecl) (pats : Array (Option (Array Nat))) (slot : Option Fren.Core.Slot) :
     M Unit := do
   let .match span scrutinee arms := e | return

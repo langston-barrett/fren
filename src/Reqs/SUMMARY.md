@@ -21,6 +21,13 @@
 - [Checks](Check.md)
 - [Diagnostics](View.md)
 - [Lints](Lint.md)
+  - [Unused](Lint/Unused.md)
+  - [Nonstandard style](Lint/NonstandardStyle.md)
+  - [Style](Lint/Style.md)
+  - [Complexity](Lint/Complexity.md)
+  - [Suspicious](Lint/Suspicious.md)
+  - [Pedantic](Lint/Pedantic.md)
+  - [Decidability](Lint/Decidability.md)
 
 # Using Fren
 

@@ -1,8 +1,9 @@
 /-!
 # Rewriting expressions, proved
 
-The rules of `nonminimal_bool` (`Reqs/Lint#simpler-bool-expressions`) and
-of the lints on conditionals (`Reqs/Lint#conditionals`) over a model of
+The rules of `nonminimal_bool` (`Reqs/Lint/Complexity#simpler-bool-expressions`) and
+of the lints on conditionals (`Reqs/Lint/Style#conditionals`,
+`Reqs/Lint/Pedantic#negated-conditions`) over a model of
 expressions (`Ex`), with a proof that the rewritten form means what the
 expression means (`Ex.simp_eval`).
 
@@ -161,8 +162,8 @@ def Ex.eval (ρ : Nat → Val) : Ex → Option Val
 /-! ## Rules -/
 
 /-- A lint whose rules rewrite an expression: `nonminimal_bool`
-(`Reqs/Lint#simpler-bool-expressions`) and the lints on conditionals
-(`Reqs/Lint#conditionals`). -/
+(`Reqs/Lint/Complexity#simpler-bool-expressions`) and the lints on conditionals
+(`Reqs/Lint/Style#conditionals`, `Reqs/Lint/Pedantic#negated-conditions`). -/
 inductive ExLint where
   | nonminimalBool
   | unlessNot
@@ -205,7 +206,7 @@ def literalShape (equal : Bool) (a b : Ex) (pa pb : Pick) : Option (Bool × Shap
   | _, _ => none
 
 /-- The simpler form of `e` by the rules of `nonminimal_bool`, if it has
-one, and a label for the message (`Reqs/Lint#simpler-bool-expressions`). -/
+one, and a label for the message (`Reqs/Lint/Complexity#simpler-bool-expressions`). -/
 def Ex.nonminimal : Ex → Option (String × Shape)
   | .bin op a b => do
     let equal ← op.literalOp?

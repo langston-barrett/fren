@@ -997,7 +997,8 @@ def operandSlot (p e : Syntax) : Option Core.Slot :=
 
 /-- The match lints of the `match` `e` on a value of the enumeration
 `info`, whose arms name the variants `pats`, or `_` for `none`, where
-`slot` is (`Reqs/Lint#matches`). -/
+`slot` is (`Reqs/Lint/Style#matches-that-are-memberships`,
+`Reqs/Lint/Pedantic#matches`). -/
 def lintMatch (cx : ExprCtx) (e : Syntax) (info : EnumInfo) (pats : Array (Option (Array Nat)))
     (slot : Option Core.Slot) : TermElabM Unit := do
   let arms := e[3].getSepArgs
