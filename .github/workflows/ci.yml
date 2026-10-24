@@ -29,6 +29,15 @@ jobs:
       with:
         path: .lake/packages
         key: lake-packages-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
+    # The dependencies first, without `--wfail`: one that builds from source
+    # warns that it couldn't fetch a release, and `--wfail` would count that
+    # warning as a failure of Fren's build.
+    - uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6 # v1.6.2
+      with:
+        build-args: +Smt +cvc5
+        test: false
+        lint: false
+        use-github-cache: false
     # `lake build` builds the library, the regression tests (`FrenTest`, which
     # check their own output with `#guard_msgs`), Fren's own requirements
     # (`Reqs`, which `#fren_check` checks with the SMT solver), the links from
