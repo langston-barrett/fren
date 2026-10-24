@@ -459,7 +459,8 @@ that of the member's checks, which takes precedence:
 | a component | all of the component's checks |
 
 As with a [lint setting](Lint.md), `set_option` without `in` sets the
-evidence of every later component and global expectation in the file, and
+evidence of every later component, global expectation and
+[refinement](Lang/Refinement.md) in the file, and
 before any other item it sets nothing. Within a component, the setting must
 be followed by `in` and by a member whose checks it sets: before anything
 else, such as a requirement, it is an error (`F0215`). The setting is a

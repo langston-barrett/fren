@@ -146,8 +146,9 @@ pub comp eval_exit {
 
 ## `fren quickcheck`
 
-`fren quickcheck FILE...` tests every component and global expectation of
-the spec on random behaviours. For each, it runs `--tests` tests (default
+`fren quickcheck FILE...` tests every component, global expectation and
+[refinement](Lang/Refinement.md) of the spec on random behaviours: a
+refinement as the component that checks it, for the checks that run on it. For each, it runs `--tests` tests (default
 100), starting from `--seed` (default 0), so a run can be repeated. Each
 test chooses a random interpretation and searches for an admissible input.
 For each instance in turn, it confirms the instance's assumptions on the

@@ -25,8 +25,11 @@ pub mod refinement
 
 `a` and `c` are related through `a`'s variables: each input of `a` must be
 an input of `c`, and each output of `a` a public output of `c`, of the same
-type. `c` may have more inputs and outputs than `a`; an input of `c` that
-`a` does not have is unconstrained by `a`'s assumptions. `a`'s instances
+type. A private output of `a` must be a public output of `c` too: `a`'s
+requirements may mention it, and the refinement can read it only from
+`c`'s public outputs, since a private output says nothing about how `c`
+computes it. `c` may have more inputs and outputs than `a`; an input of
+`c` that `a` does not have is unconstrained by `a`'s assumptions. `a`'s instances
 are `a`'s own, and stay hidden. A variable of `a` that `c` does not have
 with the right role and type is an error (`F0412`). `refinement::interface`
 states the rule for one variable of `a`:
@@ -64,7 +67,9 @@ Fren checks this as it checks a component: the refinement is a component
 whose inputs are `c`'s, whose assumptions are `a`'s, with an instance of
 `c` named as `c` is, and `a`'s instances, and whose expectations are `a`'s
 requirements and the definitions of `a`'s defined outputs, over the
-outputs of the instance of `c`. The first part of the obligation is then
+outputs of the instance of `c`. `a`'s instances are hypotheses there, as
+`I_a` is above: their assumptions are `a`'s own obligations, checked in
+`a`. The first part of the obligation is then
 the [instance assumption](../Check.md#instance-assumptions) check of the
 instance of `c`, and the second part its [expectation
 checks](../Check.md#expectations). A failure is reported as for those

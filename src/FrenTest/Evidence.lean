@@ -27,10 +27,15 @@ pub comp all_tested {
     expect wrong: when n = 4, not big?
 }
 
+set_option fren.evidence "tested" in
+expect global_tested: forall (a: all_tested), when a.n = 4, a.big?
+
 /--
 info: the checks of `evidence_test::word` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
 info: the checks of `evidence_test::all_tested` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+---
+info: the checks of `evidence_test::global_tested` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
 info: fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
 -/

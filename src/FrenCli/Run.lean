@@ -363,7 +363,8 @@ def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (
 checks that `keep` selects: their results, and those that are not run
 are dropped. Returns the results and the messages printed. -/
 def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spec) (c : CComp) (ec : Eval.Comp)
-    (global : Bool) (keep : Fren.Core.CheckResult → Bool) : IO (Array Fren.Core.CheckResult × Array Msg) := do
+    (global : Bool) (keep : Fren.Core.CheckResult → Bool) (byCheck : Bool := false) :
+    IO (Array Fren.Core.CheckResult × Array Msg) := do
   -- Each comp has its own stream, so a run does not depend on the others.
   let rng : Eval.Rng := ⟨Eval.mix args.seed.toUInt64 (hash c.path)⟩
   let rep := (if global then sp.quickGlobal ec args.nTests else sp.quickComp ec args.nTests).run' rng
@@ -377,11 +378,11 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
   if let some input := rep.noOutputs? then
     -- It explains why the checks it selects were not reached, too.
     if !results.isEmpty then
-      let msg := Fren.Core.noOutputsMsg subject input
+      let msg := Fren.Core.noOutputsMsg subject input byCheck
       warn msg
       shown := shown.push msg
   else if rep.untested && !results.isEmpty then
-    let msg := Fren.Core.untestedMsg subject args.nTests
+    let msg := Fren.Core.untestedMsg subject args.nTests byCheck
     warn msg
     shown := shown.push msg
   -- At the trigger of each check that no test reached (`F0612`).
@@ -393,7 +394,7 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
       | _, _ =>
         let p? := c.props.find? (·.name == n)
         (if global then subject else s!"`{Fren.Core.showComp (c.path ++ n)}`", (p?.map fun p => p.triggerSpan?.getD p.span).getD c.span)
-    let msg := Fren.Core.untriggeredMsg what args.nTests
+    let msg := Fren.Core.untriggeredMsg what args.nTests byCheck
     printDiag args.paint files { file := c.file, span, severity := .warning, msg }
     shown := shown.push msg
   return (results, shown)
@@ -452,8 +453,9 @@ def check (args : Args) : IO UInt32 := do
       match spec? with
       | .ok sp =>
         if let some ec := sp.counterpart? c global then
-          let (tested, msgs) ← testComp args files sp c ec global fun r =>
+          let keep (r : Fren.Core.CheckResult) :=
             kinds.contains r.kind && c.tested.covers r && Fren.Core.runOf r.kind true == .byTesting
+          let (tested, msgs) ← testComp args files sp c ec global keep (byCheck := true)
           shown := shown ++ msgs
           all := all ++ tested
           byTesting := byTesting + (tested.filter (·.verdict == .pass)).size
@@ -483,7 +485,11 @@ def quickcheck (args : Args) : IO UInt32 := do
       | let msg := Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"
         printDiag args.paint files { file := c.file, span := c.span, msg }
         sevs := sevs.push .error
-    let (results, msgs) ← testComp args files sp c ec global fun r => !refinement || Fren.Core.refinementRuns r.kind
+    -- For a refinement, the checks of its obligation: of `a`'s instances,
+    -- only the instance of `c` (`Reqs/Lang/Refinement#the-obligation`).
+    let keep (r : Fren.Core.CheckResult) := !refinement ||
+      (Fren.Core.refinementRuns r.kind && (r.kind != .inst || r.prop? == c.insts[0]?.map (·.name)))
+    let (results, msgs) ← testComp args files sp c ec global keep
     shown := shown ++ msgs
     all := all ++ results
   let count v := (all.filter (·.verdict == v)).size

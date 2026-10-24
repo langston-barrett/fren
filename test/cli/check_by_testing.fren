@@ -46,3 +46,13 @@ pub const LIMIT: Int := 3
 set_option fren.evidence "tested"
 
 expect global_wrong: forall (p: parity), when p.n = 2, not p.even?
+
+-- A check set to testing whose trigger never held: the help does not send
+-- the user back to `fren check`.
+pub comp narrow {
+    in x: Int
+    pub out big?
+    req r: big? iff x > 1000
+    set_option fren.evidence "tested" in
+    expect e: when 7 * x = 123459, big?
+}

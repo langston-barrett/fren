@@ -1631,8 +1631,10 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) : M Unit
                          bindings := conj (inputs.map fun v => s!"(= {quote (w ++ v.name).toString} {quote v.name.toString})")
                          behaviour := rename w c.vars c.meaning
                          assumes := (c.props.filter (·.kind == .assume)).map fun p => (p.name, rename w c.vars p.smt) }
+  -- `a`'s instances are hypotheses: their assumptions are `a`'s own
+  -- obligations, checked in `a` (`Reqs/Lang/Refinement#the-obligation`).
   let insts := #[instC] ++ a.insts.map fun i =>
-    { i with bindings := ren i.bindings, behaviour := ren i.behaviour, assumes := i.assumes.map fun (x, f) => (x, ren f) }
+    { i with bindings := ren i.bindings, behaviour := ren i.behaviour, assumes := #[] }
   -- Reported at the refinement (`Reqs/Lang/Refinement#the-obligation`).
   let props := (a.props.filter (·.kind == .assume)).map ({ · with span := name.span, triggerSpan? := none })
     ++ (a.props.filter (·.kind == .req)).map (fun p =>

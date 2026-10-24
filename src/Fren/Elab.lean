@@ -1909,9 +1909,10 @@ nothing. -/
                                 bindings := ← lam (mkAndN bindings.toList)
                                 behaviour := ← lam (c.meaning sliceC)
                                 assumes := ← c.assumes.mapM fun p => return (p.name, ← lam (p.body.beta sliceC)) }
+      -- `a`'s instances are hypotheses: their assumptions are `a`'s own
+      -- obligations, checked in `a` (`Reqs/Lang/Refinement#the-obligation`).
       let instsA ← a.insts.mapM fun i => return { i with
-        bindings := ← lam (i.bindings.beta argsA), behaviour := ← lam (i.behaviour.beta argsA)
-        assumes := ← i.assumes.mapM fun (x, e) => return (x, ← lam (e.beta argsA)) }
+        bindings := ← lam (i.bindings.beta argsA), behaviour := ← lam (i.behaviour.beta argsA), assumes := #[] }
       let indexes ← a.indexes.mapM fun (x, place, ref, goal) => do
         let place := match place with | .binding k => .binding (k + 1) | p => p
         return (x, place, ref, ← lam (goal.beta argsA))
