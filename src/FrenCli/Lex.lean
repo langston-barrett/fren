@@ -183,9 +183,10 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
       let start := i
       i := Fren.Core.integerEnd src i
       let s := String.ofList (src.extract start i).toList
-      unless Fren.Core.integerLiteral s do
-        return .error { span := ⟨start, i⟩, msg := Fren.Core.malformedIntegerMsg s }
-      toks := toks.push { tok := .num s (Fren.Core.integerValue s), span := ⟨start, i⟩ }
+      -- Both halves of the rule: well formed, and Lean decodes it.
+      let some v := if Fren.Core.integerLiteral s then Fren.Core.integerValue? s else none
+        | return .error { span := ⟨start, i⟩, msg := Fren.Core.malformedIntegerMsg s }
+      toks := toks.push { tok := .num s v, span := ⟨start, i⟩ }
     else
       match lexCommands.find? (startsWith i) <|> punctuatorAt src i with
       | some s =>

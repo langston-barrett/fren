@@ -143,14 +143,15 @@ where
     if h : j < src.size then if digit src[j] || src[j] == '_' then run digit (j + 1) else j else j
   termination_by src.size - j
 
-/-- The value of an integer literal. -/
-def integerValue (s : String) : Nat := (Lean.Syntax.decodeNatLitVal? s).getD 0
+/-- The value of an integer literal, as Lean decodes it: `none` for what
+Lean cannot decode, which `integerLiteral` should already have rejected. -/
+def integerValue? (s : String) : Option Nat := Lean.Syntax.decodeNatLitVal? s
 
 /-- A number that Lean's lexer reads, but that is not an integer literal. -/
 def malformedIntegerMsg (s : String) : Msg :=
   { code? := some "F0120", headline := s!"`{s}` is not an integer literal", label? := some "malformed number"
     notes := #["note: an integer literal is decimal digits, or `0x`, `0b` or `0o` and the digits of that base, \
-      with `_`s between the digits, and ends in a digit"] }
+      with `_`s between the digits or after the base, and ends in a digit"] }
 
 /-- An identifier that Lean reads, but that is not one of Fren's. -/
 def leanIdentifierMsg (s : String) (beforeEq := false) : Msg :=

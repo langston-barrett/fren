@@ -1,0 +1,12 @@
+error[F0120]: `0b` is not an integer literal
+ --> test/cli/f0120_base.fren:3:20
+  |
+3 | const MASK: Int := 0b2
+  |                    ^^ malformed number
+  |
+  = note: an integer literal is decimal digits, or `0x`, `0b` or `0o` and the digits of that base, with `_`s between the digits or after the base, and ends in a digit
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0120`.
+exit=2

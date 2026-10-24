@@ -4,7 +4,7 @@ error[F0120]: `1_` is not an integer literal
 2 | const BIG: Int := 1_
   |                   ^^ malformed number
   |
-  = note: an integer literal is decimal digits, or `0x`, `0b` or `0o` and the digits of that base, with `_`s between the digits, and ends in a digit
+  = note: an integer literal is decimal digits, or `0x`, `0b` or `0o` and the digits of that base, with `_`s between the digits or after the base, and ends in a digit
 
 error: could not check due to 1 previous error
 

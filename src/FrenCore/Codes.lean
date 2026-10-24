@@ -356,17 +356,20 @@ An identifier such as `a?b` or `xα` needs another name, such as `a_b` or
 Erroneous code example:
 
 ```fren
-const BIG: Int := 1_
+const ONE: Int := 0_1
 ```
 
 Integer literals are Lean's: decimal digits, or `0x`, `0b` or `0o` and the
-digits of that base, with `_`s between the digits, as in `1_000` or
-`0x_FF`. A literal ends in a digit, and Lean cannot give a value to `0_1`,
-so it is not one either:
+digits of that base, with `_`s between the digits or after the base, as in
+`1_000` or `0x_FF`, ending in a digit. Lean reads `0_1` as a number but
+cannot give its value, so it is not an integer literal either:
 
 ```fren
-const BIG: Int := 1_000
+const ONE: Int := 1
 ```
+
+The `fren` command also reports this for other malformed numbers, such as
+`1_`, `0x` or `0b2`. In Lean, Lean's own parser reports those first.
 "# },
   { code := "F0201", explanation := r#"A name that is not in scope.
 

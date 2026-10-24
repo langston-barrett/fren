@@ -276,6 +276,7 @@ pub comp variant_mention {
     req rule: accepted? iff (applied? iff payload > 0)
 
     expect plain: when payload = 0 and not applied?, accepted?
+    expect applied: when payload > 0 and applied?, accepted?
     expect unapplied: when payload > 0 and not applied?, not accepted?
     expect empty_parentheses: when payload = 0 and applied?, not accepted?
 }
