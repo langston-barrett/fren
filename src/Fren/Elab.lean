@@ -553,15 +553,18 @@ def pathExpr (ref : Syntax) (n : Name) : TermElabM Syntax := do
   let tmpl ← `(fren_expr| x)
   return tmpl.raw.setArg 0 (mkNode ``Lang.fren_path #[mkNullNode #[mkIdentFrom ref n]])
 
-/-- For `x.m(a)`, an application of a dotted name whose root is a variable
-or binder, the receiver `x` and the method `m`. -/
+/-- For `x.m(a)`, an application of a dotted name, the receiver `x` and the
+method `m`: where the root of `x` is a variable or binder, or, so that a
+constant can be a receiver, where it is not an instance and `m` names a
+method. This does not resolve the root: the receiver, elaborated as a path,
+reports a root that is not a value, such as a misspelled name or an
+enumeration. -/
 def methodApp? (cx : ExprCtx) (e : Syntax) : Option (Name × Name) := do
   guard (e.isOfKind ``Lang.appExpr)
   let segs := pathSegs e[0]
   guard (segs.size == 1)
   let n := segs[0]!.getId
   guard (!n.isAtomic && ((cx.binder? n.getRoot).isSome || cx.vars.any (·.name.getRoot == n.getRoot)
-    -- Otherwise a constant's, whose receiver reports what else it is.
     || (!cx.insts.contains n.getRoot && (Core.Method.ofName? n.getString!).isSome)))
   return (n.getPrefix, Name.mkSimple n.getString!)
 

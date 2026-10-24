@@ -53,16 +53,25 @@ def identifierAccepted (s : String) : Bool :=
   | some c => isIdStart c && identEnd a 0 == a.size
   | none => false
 
-/-- Where Lean's lexer ends the identifier that starts at `i`, of the
-characters that Fren allows: Lean also allows `?` and `!` anywhere after the
-first character. -/
-def leanIdentEnd (src : Array Char) (i : Nat) : Nat := go (i + 1)
+/-- Whether Lean's lexer starts an identifier with `c`: a letter, including
+Lean's letter-like characters such as `α`, `_`, or the `«` of a quoted
+component. -/
+def isLeanIdStart (c : Char) : Bool := Lean.isIdFirst c || Lean.isIdBeginEscape c
+
+/-- Where Lean's lexer ends the identifier that starts at `i`, by Lean's own
+rules, which allow more than Fren's: `?` and `!` anywhere after the first
+character, letters other than ASCII, and quoted components, as in `«a b»`. -/
+def leanIdentEnd (src : Array Char) (i : Nat) : Nat := go i
 where
   go (j : Nat) : Nat :=
     if _h : j < src.size then
       let c := src[j]
-      if isIdRest c || c == '?' || c == '!' then go (j + 1)
-      else if c == '.' && (src[j + 1]?).any isIdStart then go (j + 2)
+      if Lean.isIdBeginEscape c then
+        -- A quoted component runs to its `»`.
+        let close := ((src.extract (j + 1) src.size).findIdx? Lean.isIdEndEscape).map (· + j + 1) |>.getD src.size
+        go (max (close + 1) (j + 1))
+      else if Lean.isIdRest c then go (j + 1)
+      else if c == '.' && (src[j + 1]?).any isLeanIdStart then go (j + 1)
       else j
     else j
   termination_by src.size - j

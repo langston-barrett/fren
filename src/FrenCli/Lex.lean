@@ -146,10 +146,11 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
       if i ≥ n then return .error { span := ⟨start, i⟩, msg := unterminatedString }
       toks := toks.push { tok := .str (String.ofList (src.extract bodyStart i).toList), span := ⟨start, i + close.length⟩ }
       i := i + close.length
-    else if Fren.Core.isIdStart c then
+    else if Fren.Core.isLeanIdStart c then
       let start := i
-      i := Fren.Core.identEnd src i
-      -- Where Lean would read further, the two front ends would differ.
+      if Fren.Core.isIdStart c then i := Fren.Core.identEnd src i
+      -- Where Lean would read further, as it does all of an identifier that
+      -- Fren's rule does not start, the two front ends would differ.
       let lean := Fren.Core.leanIdentEnd src start
       if lean > i then
         return .error { span := ⟨start, lean⟩, msg := Fren.Core.leanIdentifierMsg (String.ofList (src.extract start lean).toList) }

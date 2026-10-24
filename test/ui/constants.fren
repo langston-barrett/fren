@@ -55,4 +55,9 @@ const GREETING: String := "hello"
 const PRIMES: Seq(Int) := [2, 3, 5]
 expect constant_methods: GREETING.len = 5 and GREETING.starts_with?("he") and PRIMES.len = 3
 
---@ summary: 23 passed, 0 failed, 0 inconclusive, 0 redundant
+-- A field of a constant record, and a method applied to a field.
+struct Place { name: String, floor: Int }
+const LOBBY: Place := Place { name := "lobby", floor := 0 }
+expect constant_fields: LOBBY.floor = 0 and LOBBY.name.len = 5 and LOBBY.name.starts_with?("lob")
+
+--@ summary: 24 passed, 0 failed, 0 inconclusive, 0 redundant

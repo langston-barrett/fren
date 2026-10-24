@@ -332,19 +332,23 @@ comp c { in s: String pub out p? req r: p? iff s.matches?(r"[a-z]+") }
 Erroneous code example:
 
 ```fren
-comp c { in a?b: Int pub out y: Int req r: y = a?b }
+comp c { in y: Int pub out z? req r: z? iff y!=1 }
 ```
 
 Fren's identifiers are ASCII letters, digits, `_` and `'`, with `.` between
 components and an optional `?` at the end. Lean's are a superset: they may
-have `?` and `!` anywhere after the first character, and letters other than
-ASCII. So that a spec reads alike in Lean and in the `fren` command, both
-report what Lean would read differently. A common case is `x!=y`, which
-Lean reads as `x!` then `=`:
+have `?` and `!` anywhere after the first character, letters other than
+ASCII, such as `α`, and quoted components, such as `«a b»`. So that a spec
+reads alike in Lean and in the `fren` command, both report what Lean would
+read differently. Here Lean reads `y!` then `=`, so write spaces around
+`!=`:
 
 ```fren
-comp c { in ab: Int pub out y: Int req r: y = ab }
+comp c { in y: Int pub out z? req r: z? iff y != 1 }
 ```
+
+An identifier such as `a?b` or `xα` needs another name, such as `a_b` or
+`x_alpha`.
 "# },
   { code := "F0201", explanation := r#"A name that is not in scope.
 

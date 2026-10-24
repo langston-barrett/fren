@@ -299,8 +299,8 @@ pub comp constant {
 
 A constant stands for its value wherever it is mentioned: in assumptions,
 requirements, expectations, bindings, and the values of other constants,
-and as the receiver of a [method](Expressions.md#methods), as in
-`GREETING.len`.
+and as a record whose field is read or the receiver of a
+[method](Expressions.md#methods), as in `LOBBY.floor` or `GREETING.len`.
 It is not a variable, so the rules for which variables an expression may
 mention (see [Instances](Instances.md#instance-variables)) do not apply to
 it. Like any other item, a constant is visible according to `pub`, and can

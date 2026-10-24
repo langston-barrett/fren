@@ -15,11 +15,12 @@ Identifiers are ASCII: a letter or `_`, then letters, digits, `_` and
 of a [`match` arm](Expressions.md#matches).
 
 As in Lean, `a.b` (with no spaces) is a single token, an identifier with
-the components `a` and `b`, as is `a.b.c`. It refers to the variable `b`
-of the instance `a` (see [Instances](Instances.md#instance-variables)),
-the field `b` of the record `a` (see [Records](Expressions.md#records)), or
-the [method](Expressions.md#methods) `b` applied to `a`, which may be a
-variable or a [constant](Items.md#constants). It is never a path. A `?`
+the components `a` and `b`, as is `a.b.c`. Where `a` is an instance, it
+refers to the instance's variable `b` (see
+[Instances](Instances.md#instance-variables)). Otherwise `a` is a value, a
+variable or a [constant](Items.md#constants), and `a.b` reads its field
+`b` (see [Records](Expressions.md#records)) or applies the
+[method](Expressions.md#methods) `b` to it. It is never a path. A `?`
 ends an identifier, so it is never followed by `.`. An identifier is a
 keyword if it is a [reserved word](#keywords).
 
@@ -29,9 +30,14 @@ after the first character, letters other than ASCII, such as `α`, and
 quotes, as in `«a b»`. So that a spec reads alike in both front ends, each
 reports what Lean reads as one identifier but Fren does not: the Lean
 front end checks each identifier against this rule, and the `fren`
-command reports a lexeme that Lean's rule would read further than Fren's,
-such as `a?b`, or `y!` in `y!=1`. Write spaces around `!=` after an
-identifier.
+command reads identifiers by Lean's rule too, and reports any that Fren's
+would read differently, such as `a?b`, `xα`, or `y!` in `y!=1`. Write
+spaces around `!=` after an identifier.
+
+One case differs. Some identifiers that end in `!` are Lean tokens, such
+as `s!` and `m!`, which Lean reads in preference to an identifier. So in
+`s!=1` the Lean front end reports a syntax error, while the `fren` command
+reports that `s!` is not an identifier.
 
 ```fren
 pub mod lang
