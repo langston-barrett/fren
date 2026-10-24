@@ -57,11 +57,30 @@ pub comp identifier {
     expect question_last: when lexeme = "a?b" or lexeme = "a?.b", not accepted?
     expect letter_first: when lexeme.matches?(r"[0-9'.?].*"), not accepted?
     expect no_trailing_dot: when lexeme.ends_with?("."), not accepted?
-    -- Stronger: no component is empty anywhere, `when
-    -- lexeme.contains?(".."), not accepted?`. That is the emptiness of an
-    -- intersection of two regular languages, in the decidable core, but cvc5
-    -- times out on it.
 }
+```
+
+`lang::identifier_shape` states the shape of an identifier without a
+pattern: no component is empty, it starts with neither a digit nor `'`,
+`.` or `?`, and `?` comes only last. `identifier` refines it. That no
+component is empty is the emptiness of an intersection of two regular
+languages, in the decidable core, but cvc5 does not decide it within any
+time limit tried (see [Decidability](Decidability.md#in-practice)), so the
+refinement is checked by testing:
+
+```fren
+pub comp identifier_shape {
+    in lexeme: String
+    pub out accepted?
+
+    req no_empty_component: when lexeme.contains?(".."), not accepted?
+    req letter_first: when lexeme.matches?(r"[0-9'.?].*"), not accepted?
+    req no_trailing_dot: when lexeme.ends_with?("."), not accepted?
+    req question_last: when lexeme.contains?("?") and not lexeme.ends_with?("?"), not accepted?
+}
+
+set_option fren.evidence "tested" in
+refine identifier_has_shape: identifier refines identifier_shape
 ```
 
 Identifiers follow the rule of *maximal munch*: an identifier is the
@@ -85,24 +104,39 @@ pub comp identifier_end {
     expect component: when lexeme = "w" and remaining = ".x", not ends?
     expect field_of_call: when lexeme = "w" and remaining = ".(", ends?
     expect after_question: when lexeme = "a?" and remaining = "b", ends?
-    -- Stronger, and what maximal munch means: no prefix `p` of `remaining`
-    -- continues the identifier, `not (lexeme ++ p).matches?(...)` for every
-    -- `p`. That quantifies over prefixes, so instead these would check the
-    -- one or two characters that decide it, against `identifier`:
-    --
-    --     out longer: String := lexeme ++ remaining.slice(0, 1)
-    --     inst w: identifier { lexeme }
-    --     inst one: identifier { lexeme := longer }
-    --     expect longest: when w.accepted? and ends? and remaining != "",
-    --         not one.accepted?
-    --
-    -- with the same for two characters, and the converse, that an
-    -- identifier that does not end is continued by one or two. Each is a
-    -- regular constraint with straight-line `++`, inside the decidable
-    -- core. cvc5 decides `longest` for the `fren` command in under a second,
-    -- but times out on it through the Lean front end, and on the others
-    -- through both.
 }
+```
+
+What maximal munch means is that no prefix `p` of `remaining` continues
+the identifier: `(lexeme ++ p)` is not one. That quantifies over prefixes,
+but the one or two characters after the identifier decide it, since a
+`.` continues it only before a letter or `_`. `lang::longest_identifier`
+states it so, against `identifier` itself, and `identifier_end` refines
+it. Its instances' bindings concatenate, which is outside the [decidable
+core](Decidability.md#strings) for a binding, and cvc5 does not decide
+them in practice, so the refinement, and `longest_identifier`'s own
+checks, are tested:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
+pub comp longest_identifier {
+    in lexeme: String
+    in remaining: String     -- the input after the lexeme
+    pub out ends?
+
+    inst w: identifier { lexeme }
+    inst one: identifier { lexeme := lexeme ++ remaining.slice(0, 1) }
+    inst two: identifier { lexeme := lexeme ++ remaining.slice(0, 2) }
+
+    req longest: when w.accepted? and remaining != "", ends? iff not (one.accepted? or two.accepted?)
+    req at_end: when remaining = "", ends?
+
+    expect dotted: when lexeme = "w" and remaining = ".x", not ends?
+}
+
+set_option fren.evidence "tested" in
+refine identifier_end_is_longest: identifier_end refines longest_identifier
 ```
 
 ## Paths

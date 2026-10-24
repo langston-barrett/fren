@@ -1,4 +1,4 @@
--- fren-covers: lang::identifier, lang::escape_sequence, lang::punctuator_end
+-- fren-covers: lang::identifier, lang::identifier_shape, lang::longest_identifier, lang::escape_sequence, lang::punctuator_end
 -- Identifiers, escape sequences and punctuators, written as tightly as
 -- they lex, which both front ends must read alike.
 
