@@ -25,5 +25,9 @@ Verifier in Lean", Dafny '26):
 | `Reqs` | Fren's requirements | `Fren` |
 | `Impls` | Fren's code linked to `Reqs` with `impl` | `Reqs`, `FrenCore`, `FrenCli.Exit` |
 
+The executables also link `c/glibc_c23.c`, the one non-Lean source: it
+defines the C23 glibc functions that cvc5's static Linux release calls,
+which the older glibc that Lean links against lacks.
+
 Importing `Fren` never builds `FrenCli`, and building the `fren` command never builds
 lean-smt or lean-auto (Lake still clones them, as `require` is per package).
