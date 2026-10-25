@@ -8,6 +8,7 @@ import FrenCore.Evidence
 import FrenCore.Lexical
 import FrenCore.Lint
 import FrenCore.Literate
+import FrenCore.Mentions
 import FrenCore.Names
 import FrenCore.Refine
 import FrenCore.Regex

@@ -6,6 +6,7 @@ import Fren.Resolve
 import Fren.SimpSet
 import Fren.Syntax
 import FrenCore.Lexical
+import FrenCore.Mentions
 import FrenCore.Regex
 import FrenCore.Syntax
 -- keep-sorted end
@@ -600,36 +601,44 @@ def methodApp? (cx : ExprCtx) (e : Syntax) : Option (Name × Name) := do
     || cx.vars.any (·.name.getRoot == n.getRoot)))
   return (n.getPrefix, Name.mkSimple n.getString!)
 
-/-- How many variables `e` mentions, counted with repetition, where `bs`
-are the binders of `e` around the subexpression, each with the count of its
-scrutinee. A name that is not a variable, such as a constant, is not counted
-(`lang::linear_product`). -/
-partial def varsMentioned (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Nat) := #[]) : TermElabM Nat := do
-  let sum (es : Array Syntax) (bs : Array (Name × Nat)) := es.foldlM (init := 0) fun n a => return n + (← varsMentioned cx a bs)
+/-- The shape of `e`, for what it mentions (`lang::mentions`), where `bs`
+are the binders of `e` around the subexpression, each with the shape of its
+scrutinee. -/
+partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.MentionShape) := #[]) : TermElabM Core.MentionShape := do
+  let parts (k : Core.MentionKind) (es : Array Syntax) : TermElabM Core.MentionShape :=
+    return .node k (← es.toList.mapM (shapeOf cx · bs))
   if let some (recv, _) := methodApp? cx e then
-    -- A method has a fixed meaning, like a variant.
-    return (← varsMentioned cx ((← pathExpr e recv)[0]) bs) + (← sum e[2].getSepArgs bs)
+    return ← parts .method (#[(← pathExpr e recv)[0]] ++ e[2].getSepArgs)
   if e.isOfKind ``Lang.appExpr then
-    -- A function's value is unknown, like a variable's; a variant's is not.
-    let n ← sum e[2].getSepArgs bs
-    -- A defined function's value is linear in its arguments'.
-    return if (← isVariant cx e[0]) || (← definedFn? cx e[0]).isSome then n else n + 1
+    let k : Core.MentionKind ← if ← isVariant cx e[0] then pure .construction
+      else if (← definedFn? cx e[0]).isSome then pure .defined else pure .uninterpreted
+    parts k e[2].getSepArgs
+  else if e.isOfKind ``Lang.recordExpr then
+    -- A field without `:= e` is `x := x`.
+    parts .construction (← e[2].getSepArgs.mapM fun b =>
+      if b[1].isNone then return (← pathExpr b[0] b[0].getId)[0] else pure b[1][1])
   else if e.isOfKind ``Lang.matchExpr then
-    let k ← varsMentioned cx e[1] bs
-    e[3].getSepArgs.foldlM (init := k) fun n arm => do
-      let new := (patternBinders arm).filter (·.isIdent) |>.map fun b => ((declaredIdent b).1.getId, k)
-      return n + (← varsMentioned cx arm[2] (bs ++ new))
+    let s ← shapeOf cx e[1] bs
+    let arms ← e[3].getSepArgs.toList.mapM fun arm => do
+      let new := (patternBinders arm).filter (·.isIdent) |>.map fun b => ((declaredIdent b).1.getId, Core.MentionShape.node .binder [s])
+      shapeOf cx arm[2] (bs ++ new)
+    return .node .compound (s :: arms)
   else if e.isOfKind ``Lang.fren_path then
     let segs := pathSegs e
-    if segs.size != 1 then return 0
+    if segs.size != 1 then return .leaf .constant
     let n := segs[0]!.getId
     if let some (_, k) := bs.reverse.find? (·.1 == n.getRoot) then return k
-    if let some b := cx.binder? n.getRoot then return ← varsMentioned (cx.at b) b.scrutinee
-    -- A defined output counts as its definition (acyclic, so this ends).
+    if let some b := cx.binder? n.getRoot then return .node .binder [← shapeOf (cx.at b) b.scrutinee]
+    -- Definitions are acyclic, so this ends.
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
-      return ← varsMentioned { cx with binders := #[] } d
-    return if cx.vars.any (·.name.isPrefixOf n) then 1 else 0
-  else sum e.getArgs bs
+      return .node .definedOutput [← shapeOf { cx with binders := #[] } d]
+    return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable else .constant)
+  else if e.isAtom || e.isIdent then return .leaf .literal
+  else parts .compound e.getArgs
+
+/-- Whether `e` mentions a variable or an uninterpreted function
+(`lang::mentions`). -/
+def mentionsAny (cx : ExprCtx) (e : Syntax) : TermElabM Bool := return (← shapeOf cx e).mentions
 
 /-- The applications of uninterpreted functions in `e`. -/
 partial def applications (cx : ExprCtx) (e : Syntax) : TermElabM (Array Syntax) := do
@@ -663,9 +672,9 @@ partial def mentionsInfiniteOutput (cx : ExprCtx) (e : Syntax) : TermElabM Bool 
       if u.role == .output && (← infiniteType u.type) then return true
   return false
 
-/-- Whether `e` is a constant: it mentions no variable, binder or
-uninterpreted function. -/
-def isConstant (cx : ExprCtx) (e : Syntax) : TermElabM Bool := return (← varsMentioned cx e) == 0
+/-- Whether `e` is a constant: it mentions no variable or uninterpreted
+function (`lang::mentions`). -/
+def isConstant (cx : ExprCtx) (e : Syntax) : TermElabM Bool := return !(← mentionsAny cx e)
 
 /-- The definition of `e`, if it names a defined output. -/
 partial def definitionOf? (cx : ExprCtx) (e : Syntax) : Option Syntax :=
@@ -1189,7 +1198,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $a + $b) => `($(← go a) + $(← go b))
   | `(fren_expr| $a - $b) => `($(← go a) - $(← go b))
   | `(fren_expr| $a * $b) =>
-    unless Core.productAccepted (← varsMentioned cx a) (← varsMentioned cx b) do
+    unless Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do
       throwError Core.nonlinearMsg.text
     `($(← go a) * $(← go b))
   | `(fren_expr| -$a) => `(-$(← go a))
@@ -1743,8 +1752,8 @@ open Lang in
             (isBinOp e "=" || isBinOp e "iff")
               && ((isX e[0] && !(pathMentions e[2]).contains v.name) || (isX e[2] && !(pathMentions e[0]).contains v.name))
           | _ => false
-        let nVars ← match v.defn? with | some d => varsMentioned lcx d | none => pure 1
-        let (constant, definable) := Core.outputLints v.defn?.isSome nVars about.size equation
+        let mentions ← match v.defn? with | some d => mentionsAny lcx d | none => pure true
+        let (constant, definable) := Core.outputLints v.defn?.isSome mentions about.size equation
         if constant then recordLint .constantOutput v.ref (Core.constantOutputMsg v.name)
         if definable then recordLint .definableOutput v.ref (Core.definableOutputMsg v.name about[0]!.1)
       let uses ← usesOf ((← fvs.mapM fun x => inferType x) ++ defs.map (·.2))

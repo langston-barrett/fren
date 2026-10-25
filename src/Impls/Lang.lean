@@ -28,14 +28,35 @@ impl bool_naming: lang::bool_naming for (s : String) (a : lang.Annot) {
   cases h : Fren.Str.endsWith s "?" <;> cases a <;>
     simp [fren_spec, Fren.Core.checkVarName, Fren.Core.checkVarKind, isBool?, hs, h, Except.isOk, Except.toBool] <;> rfl
 
--- Over `Nat`, so a proof by cases.
-impl linear_product: lang::linear_product for (a b : Nat) {
-  a_vars := a,
-  b_vars := b,
+def toExprKind : Fren.Core.MentionKind → lang.ExprKind
+  | .literal => .Literal
+  | .constant => .Constant
+  | .variable => .Variable
+  | .definedOutput => .DefinedOutput
+  | .binder => .Binder
+  | .construction => .Construction
+  | .method => .Method
+  | .uninterpreted => .Uninterpreted
+  | .defined => .Defined
+  | .compound => .Compound
+
+-- For every expression's shape, which both front ends build and decide by
+-- `MentionShape.mentions`.
+impl mentions: lang::mentions for (k : Fren.Core.MentionKind) (ps : List Fren.Core.MentionShape) {
+  expr_kind := toExprKind k,
+  parts? := Fren.Core.MentionShape.anyMentions ps,
+  mentions? := (Fren.Core.MentionShape.node k ps).mentions,
+} by
+  intro k ps _
+  cases k <;> simp [fren_spec, toExprKind, Fren.Core.MentionShape.mentions, Fren.Core.kindMentions]
+
+impl linear_product: lang::linear_product for (a b : Bool) {
+  a_mentions? := a,
+  b_mentions? := b,
   accepted? := Fren.Core.productAccepted a b,
 } by
   intro a b _
-  rcases a with _ | a <;> rcases b with _ | b <;> simp [fren_spec, Fren.Core.productAccepted] <;> omega
+  cases a <;> cases b <;> simp [fren_spec, Fren.Core.productAccepted]
 
 interp lang::Ty := Fren.Core.Ty
 
