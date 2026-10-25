@@ -1478,7 +1478,7 @@ setting, if it has one: the innermost, if there are several. -/
 partial def unwrapEvidence (m : Syntax) : CommandElabM (Syntax × Option (Bool × Syntax)) := do
   unless m.isOfKind ``Lang.evidenceMember do return (m, none)
   unless m[1].getId == `fren.evidence do
-    throwErrorAt m[1] "only `fren.evidence` can be set before a member"
+    throwErrorAt m[1] (Core.memberOptionMsg m[1].getId.toString).text
   let b ← evidenceTested m[2] (m[2].isStrLit?.getD "")
   let (inner, set?) ← unwrapEvidence m[4]
   return (inner, set?.getD (b, m))
@@ -1915,9 +1915,10 @@ nothing. -/
       -- obligations, checked in `a` (`Reqs/Lang/Refinement#the-obligation`).
       let instsA ← a.insts.mapM fun i => return { i with
         bindings := ← lam (i.bindings.beta argsA), behaviour := ← lam (i.behaviour.beta argsA), assumes := #[] }
-      let indexes ← a.indexes.mapM fun (x, place, ref, goal) => do
+      -- Reported at the refinement, as its other checks are.
+      let indexes ← a.indexes.mapM fun (x, place, _, goal) => do
         let place := match place with | .binding k => .binding (k + 1) | p => p
-        return (x, place, ref, ← lam (goal.beta argsA))
+        return (x, place, nameStx, ← lam (goal.beta argsA))
       -- The obligation: `A_a → A_c ∧ (I_c ∧ R_c ∧ D_c ∧ I_a → R_a ∧ D_a)`.
       let hypsA := mkAndN (assumes.map (·.body.beta fvs)).toList
       let goal := mkAnd (mkAndN (instC.assumes.map (·.2.beta fvs)).toList)

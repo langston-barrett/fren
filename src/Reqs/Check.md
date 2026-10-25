@@ -465,7 +465,8 @@ evidence of every later component, global expectation and
 [refinement](Lang/Refinement.md) in the file, and
 before any other item it sets nothing. Within a component, the setting must
 be followed by `in` and by a member whose checks it sets: before anything
-else, such as a requirement, it is an error (`F0215`). The setting is a
+else, such as a requirement, it is an error (`F0215`), and so is a
+`set_option` of any other option before a member (`F0216`). The setting is a
 statement that the solver cannot be relied on there, so it is never
 reported as unneeded. A value other than `"tested"` or `"solver"` is an
 error (`F0214`) where it would set a check.

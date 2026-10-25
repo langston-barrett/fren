@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Lex
+import FrenCore.Evidence
 import FrenCore.Names
 -- keep-sorted end
 
@@ -630,9 +631,7 @@ def member : P Member := do
     let t ← bump
     let o ← peek
     let .ident name := o.tok | fail o "an option name"
-    unless name == "fren.evidence" do
-      err o.span "F0112" "Lean code is not supported in .fren files" (some "not `fren.evidence`")
-        #["note: within a component, the `fren` command accepts `set_option` only for `fren.evidence`"]
+    unless name == "fren.evidence" do throw { span := o.span, msg := Fren.Core.memberOptionMsg name }
     discard bump
     let v ← peek
     let .str value := v.tok | fail v "a string literal"

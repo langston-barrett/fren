@@ -229,7 +229,7 @@ def specFiles : IO (Array String) := do
 not formatted, and those that `fren fmt` cannot parse, such as tests of
 syntax errors and of Lean code, and the examples of Markdown specs. -/
 def fmtIgnore : List String :=
-  ["test/cli/f01*.fren", "test/cli/fix_*.fren", "test/cli/fmt_check.fren", "test/cli/fmt_parse_error.fren", "test/ui/syntax_*.fren",
+  ["test/cli/f01*.fren", "test/cli/f0216_member_option.fren", "test/cli/fix_*.fren", "test/cli/fmt_check.fren", "test/cli/fmt_parse_error.fren", "test/ui/syntax_*.fren",
    "test/ui/impl.fren", "test/ui/lean_*.fren", "test/ui/trace.fren", "src/Reqs/Markdown.md"]
 
 /-- What formatting keeps (`fmt::safe`): the tokens, but for the trailing

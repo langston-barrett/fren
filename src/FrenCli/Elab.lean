@@ -1643,8 +1643,9 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) : M Unit
     ++ a.defs.map fun (d, e) =>
       { kind := .expect, name := d, span := name.span
         smt := s!"(= {quote (w ++ d).toString} {ren e})", trigger? := none, triggerSpan? := none : CProp }
-  let indexes := a.indexes.map fun (x, place, sp, goal) =>
-    (x, (match place with | .binding k => .binding (k + 1) | p => p), sp, ren goal)
+  -- Reported at the refinement, as its other checks are.
+  let indexes := a.indexes.map fun (x, place, _, goal) =>
+    (x, (match place with | .binding k => .binding (k + 1) | p => p), name.span, ren goal)
   let tested := Fren.Core.Tested.ofSettings (← evidenceInEffect)
     ((a.props.filter (·.kind == .assume)).map (·.name)) (props.filter (·.kind == .expect) |>.map (·.name, none))
     -- `a`'s instances too, for the definedness of their bindings.

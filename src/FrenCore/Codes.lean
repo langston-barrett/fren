@@ -637,6 +637,32 @@ comp c {
 }
 ```
 "# },
+  { code := "F0216", explanation := r#"A `set_option` before a member, of an option other than `fren.evidence`.
+
+Erroneous code example:
+
+```fren
+comp c {
+  in x?
+  pub out y?
+  set_option fren.lint.nonminimal_bool "allow" in
+  req r: y? iff x?
+}
+```
+
+Within a component, only the evidence of a member's checks can be set
+(see `Reqs/Check`, "Checking by testing"). Set other options, such as a
+lint's level, before the component:
+
+```fren
+set_option fren.lint.nonminimal_bool "allow" in
+comp c {
+  in x?
+  pub out y?
+  req r: y? iff x?
+}
+```
+"# },
   { code := "F0301", explanation := r#"A variable has no type.
 
 Erroneous code example:

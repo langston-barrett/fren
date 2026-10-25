@@ -92,6 +92,12 @@ def misplacedEvidenceMsg (what : String) : Msg :=
     label? := some "has no checks to test"
     notes := #["note: it can be set before a component, an expectation or global expectation, an instance or a `det out`"] }
 
+/-- `set_option` before a member, of an option other than `fren.evidence`. -/
+def memberOptionMsg (option : String) : Msg :=
+  { code? := some "F0216", headline := s!"`{option}` cannot be set before a member"
+    label? := some "not `fren.evidence`"
+    notes := #["note: before a member, `set_option` sets only `fren.evidence`; other options are set before the component"] }
+
 /-- The value of `set_option fren.evidence`: whether it is testing, or
 `none` if the value is invalid. -/
 def evidenceTested? : String → Option Bool

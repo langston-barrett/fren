@@ -63,3 +63,16 @@ pub comp misplaced {
     set_option fren.evidence "tested" in
     req r: y? iff x?
 }
+
+/--
+error: `fren.lint.nonminimal_bool` cannot be set before a member
+
+note: before a member, `set_option` sets only `fren.evidence`; other options are set before the component
+-/
+#guard_msgs in
+pub comp other_option {
+    in x?
+    pub out y?
+    set_option fren.lint.nonminimal_bool "allow" in
+    req r: y? iff x?
+}
