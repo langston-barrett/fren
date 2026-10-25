@@ -1230,15 +1230,18 @@ def lintBools (e : Expr) : M Unit := do
   let w := e.writtenSpan full
   let src := full.extract w.start w.stop
   let root := e.boolNode full w.start
+  -- A fix's own range is counted in `src`, from `w.start`.
+  let shift (m : Msg) : Msg :=
+    { m with fixes := m.fixes.map fun f => { f with range? := f.range?.map fun r => { start := r.start + w.start, stop := r.stop + w.start } } }
   for (l, ref, msg) in Fren.Core.rewriteReports src root do
-    lintFix l ref msg
+    lintFix l ref (shift msg)
   let (boolEqs, variants, absEnds, mentioning) := ((← get).boolEqs, (← get).variants, (← get).absEnds, (← get).mentioning)
   modify fun s => { s with boolEqs := #[], variants := #[], absEnds := #[], mentioning := #[] }
   let variant? (sp : Span) := (variants.find? (·.1 == sp)).map (·.2)
   for r in Fren.Core.opReports src boolEqs.contains variant? (absEnds.contains ·.stop) mentioning.contains root do
-    lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) r.msg
+    lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) (shift r.msg)
   for r in Fren.Core.arithReports src root do
-    lintFix r.lint r.ref r.msg
+    lintFix r.lint r.ref (shift r.msg)
   lintParens e
 
 /-- Whether `t` is an ordered enumeration (`Reqs/Lang/Items#enumerations`). -/
