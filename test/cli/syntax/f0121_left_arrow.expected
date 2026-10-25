@@ -11,7 +11,7 @@ help: write `< -` to compare with a negation
 2 + comp c { in x: Int pub out p? req r: p? iff x < - 1 }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0121`.
 exit=2

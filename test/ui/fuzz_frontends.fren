@@ -35,6 +35,7 @@ comp member {
 -- Methods without arguments chained after a literal or a parenthesized
 -- receiver, whose names Lean lexes as one dotted identifier (#97).
 expect chained_literal: {(1, 2)}.range.card = 1 and {(1, 2)}.inverse.image({2}) = {1}
+--~^ warning: this expectation mentions no variable
 
 enum Dir { Up, Down }
 

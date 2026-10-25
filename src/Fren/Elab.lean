@@ -1051,10 +1051,6 @@ partial def subNodes (e : Syntax) : Array Syntax :=
   e.getArgs.flatMap fun a =>
     if a.isAtom || a.isIdent || a.isMissing then #[] else if a.isOfKind nullKind then subNodes a else #[a]
 
-/-- Strips parentheses from `e`. -/
-partial def unparen (e : Syntax) : Syntax :=
-  if e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(" then unparen e[1] else e
-
 /-- `e` as the lints that rewrite it (`Core.ExLint`) and the operator lints
 see it, with ranges in characters from `base` in `str`. Parentheses are
 dropped, as by the `fren` command's parser. -/
