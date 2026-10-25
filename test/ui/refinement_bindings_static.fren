@@ -22,4 +22,8 @@ refine mistyped: c refines a { n := b?, z := y }
 --~^[cli] error: type mismatch: expected `Int`, found `Bool`
 --~^^[hosted] error: Type mismatch
 
+-- `{ k }` alone means `k := k`, so it needs a variable `k` of `c`.
+comp b { in k: Int pub out z: Int req r: z >= k }
+refine shorthand: c refines b { z := y, k }  --~ error: cannot find `k` in this scope
+
 --@ exit: 2

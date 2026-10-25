@@ -1947,7 +1947,11 @@ and the solver is asked nothing. -/
     -- instance's: a defined output is an output (`refinement::mention`).
     let own := (c.vars.filter (·.name.isAtomic)).map fun v =>
       { v with role := if v.role == .input then .input else Core.Role.ofInst v.role v.isPub, defn? := none }
+    -- The mix of relational operators and counting, as in a component
+    -- (`Reqs/Lang/Decidability#relations`): `c`'s, `a`'s and the bindings'.
     modifyLocal fun l => { l with outsideCore := false, relationalUsed := false, countRefs := #[] }
+    noteCounts c stx[3]
+    noteCounts a stx[5]
     let bindingsA ← withLocalDeclsD (own.map fun v => (v.name, fun _ => pure v.type)) fun cfvs => do
       discard (takeIndexes cfvs)
       bs.mapM fun b => do
@@ -1959,6 +1963,7 @@ and the solver is asked nothing. -/
         unless b[1].isNone do lintBools b[1][1]
         let e ← mkLambdaFVars cfvs (← elabProp t v.type)
         return (v, e, ← takeIndexes cfvs)
+    let (relational, counts) ← checkCounts
     let l ← getLocal
     let inputs := c.vars.filter fun v => v.name.isAtomic && v.role == .input
     let vars := inputs ++ c.vars.map (fun v =>
@@ -2009,8 +2014,7 @@ and the solver is asked nothing. -/
       addUsesDef uses decl value
       return { path, vars, props := assumes ++ reqs ++ defs, insts := #[instC] ++ instsA, ref := nameStx, decl, uses
                decidable := c.decidable && a.decidable && !l.outsideCore
-               relational := c.relational || a.relational || l.relationalUsed
-               counts := c.counts || a.counts || !l.countRefs.isEmpty, indexes, tested : CompInfo }
+               relational, counts, indexes, tested : CompInfo }
   record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
   match proof? with

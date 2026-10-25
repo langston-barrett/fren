@@ -56,8 +56,8 @@ pub comp interface {
 ## Bindings
 
 Where the names differ, or `a` is more abstract than `c`, a refinement
-can bind variables of `a`, written as an [instance](Instances.md#bindings)'s
-bindings are:
+can bind variables of `a`. The bindings are written as an
+[instance](Instances.md#bindings)'s are, in braces after `a`:
 
 ```
 refine fmt_exit_status: fmt::exit refines cli::exit_status { ran? := all_parsed? }
@@ -116,6 +116,13 @@ pub comp mention {
     expect private_hidden: when not concrete_input? and not concrete_pub?, not allowed?
 }
 ```
+
+A binding is part of the refinement, which is checked as a component (see
+[The obligation](#the-obligation)), so the [decidable
+core](Decidability.md#relations) is a component's: if the refinement
+applies a relational operator, in a binding or through `c` or `a`, then a
+`card` of anything but a constant in a binding is outside the core, and
+so are `c` and `a` if they count.
 
 The indexes of a binding are checked for
 [definedness](../Check.md#definedness) where it is read: an input's

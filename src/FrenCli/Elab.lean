@@ -1644,7 +1644,12 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
   -- the instance's: a defined output is an output (`refinement::mention`).
   let own := (c.vars.filter (·.name.isAtomic)).map fun v =>
     { v with role := if v.role == .input then .input else Role.ofInst v.role v.isPub, defn? := none }
+  -- The mix of relational operators and counting, as in a component
+  -- (`Reqs/Lang/Decidability#relations`): `concrete`'s, `abstract`'s and
+  -- the bindings'.
   modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[] }
+  noteCounts c (concreteSegs[0]!.span.to concreteSegs.back!.span)
+  noteCounts a aSpan
   discard takeIndexes
   let mut bindings := #[]
   for (b, e?) in bs do
@@ -1656,6 +1661,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
     unless t == v.ty do mismatch e v.ty t (some s!"note: `{b.name}` of `{showPath a.path}` has type `{v.ty.show}`")
     lintBools e
     bindings := bindings.push (v, smt, ← takeIndexes)
+  let (relational, counts) ← checkCounts
   let afterBindings ← get
   -- `concrete`'s variables as a binding reads them, its outputs from the instance.
   let ownC (smt : String) := rename w (own.filter (·.role != .input)) smt
@@ -1701,8 +1707,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
     table := s.table.addItem { kind := .expectItem, path := st.module ++ n, isPub := false, owner := s.module }
     refinements := s.refinements.push { path := st.module ++ n, file := s.file, span := name.span, vars, props, insts
                                         indexes, decidable := c.decidable && a.decidable && !afterBindings.outsideCore
-                                        relational := c.relational || a.relational || afterBindings.relationalUsed
-                                        counts := c.counts || a.counts || !afterBindings.countSpans.isEmpty, tested } }
+                                        relational, counts, tested } }
 
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr) : M Unit := do
