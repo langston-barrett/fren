@@ -54,6 +54,16 @@ partial def checkLexemes (stx : Syntax) : CommandElabM Unit := do
     else args.forM checkLexemes
   | _ => pure ()
 
+/-- Reports the first pattern binder of `stx` that is not a single name, as
+the `fren` command's parser does, before any other check of its item. -/
+partial def checkPatternBinders (stx : Syntax) : CommandElabM Unit := do
+  if stx.isOfKind ``Lang.altsPattern then
+    for alt in stx[1].getSepArgs do
+      unless alt[1].isNone do
+        for b in alt[1][1].getSepArgs do
+          if b[0].isIdent then discard (segName b[0])
+  stx.getArgs.forM checkPatternBinders
+
 @[command_elab Lang.modCmd] def elabMod : CommandElab := fun stx => do
   checkLexemes stx
   let segs := pathSegs stx[2]
@@ -876,7 +886,6 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       let ctor := info.decl ++ info.variants[idx]!
       -- Distinct names (`lang::distinct_names`); `_` binds nothing.
       let named := (patternBinders arm).filter (·.isIdent)
-      for b in named do discard (segName b)
       -- By the names they declare, without the `!` of shadowing.
       let declared := named.map fun b => (declaredIdent b).1.getId
       if let some k := (Core.repeatsAt declared)[0]? then
@@ -1380,6 +1389,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
 
 @[command_elab Lang.fnCmd] def elabFunction : CommandElab := fun stx => do
   checkLexemes stx
+  checkPatternBinders stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1573,6 +1583,7 @@ def memberName? (m : Syntax) : Option Syntax :=
 open Lang in
 @[command_elab Lang.compCmd] def elabComp : CommandElab := fun stx => do
   checkLexemes stx
+  checkPatternBinders stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1591,16 +1602,16 @@ open Lang in
   let scope := if members.any (fun m => m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember) then path
     else modName
   modifyLocal fun l => { l with outsideCore := false, relationalUsed := false, countRefs := #[] }
-  -- Distinct names (`lang::distinct_names`): each member that declares a
-  -- name again is reported, and then skipped.
+  -- Distinct names (`lang::distinct_names`): variables, instances and
+  -- constraints share one namespace.
   let named := members.filterMap memberName?
   for x in named do discard (segName x)
   -- By the names they declare, without the `!` of shadowing.
-  let repeated := (Core.repeatsAt (named.map fun x => (declaredIdent x).1.getId)).map (named[·]!)
-  for x in repeated do logErrorAt x (Core.dupMemberMsg (declaredIdent x).1.getId).text
-  let isRepeat (x : Syntax) : Bool := repeated.any (·.getPos? == x.getPos?)
+  let declared := named.map fun x => (declaredIdent x).1.getId
+  if let some k := (Core.repeatsAt declared)[0]? then
+    throwErrorAt named[k]! (Core.dupMemberMsg declared[k]!).text
   let (ok, generated) ← liftTermElabM do
-    let mut ok := repeated.isEmpty
+    let mut ok := true
     let mut generated : Array Name := #[]
     let mut names : NameSet := {}
     -- Variables
@@ -1616,7 +1627,6 @@ open Lang in
           pure (.output, !m[0].isNone, !m[1].isNone, m[3], if m[4].isNone then none else some m[4][1],
             if m[5].isNone then none else some m[5][1])
         | _ => continue
-      if isRepeat x then continue
       -- An error in shadowing leaves the variable's meaning clear.
       let x ← try declare x scope
         catch ex => logException ex; ok := false; pure (declaredIdent x).1
@@ -1638,7 +1648,6 @@ open Lang in
     let mut pending : Array PendingInst := #[]
     for m in members do
       let `(fren_member| inst $x:ident : $p:fren_path { $bs,* }) := m | continue
-      if isRepeat x then continue
       let x ← try declare x scope
         catch ex => logException ex; ok := false; pure (declaredIdent x).1
       names := names.insert x.getId
@@ -1700,7 +1709,6 @@ open Lang in
           | `(fren_member| req $x:ident : $e) => pure (.req, x, e)
           | `(fren_member| expect $x:ident : $e) => pure (.expect, x, e)
           | _ => continue
-        if isRepeat x then continue
         if let .error msg := Core.checkNoBang x.getId then
           logErrorAt x msg.text; good := false; continue
         names := names.insert x.getId
@@ -1803,6 +1811,7 @@ open Lang in
 
 @[command_elab Lang.constCmd] def elabConst : CommandElab := fun stx => do
   checkLexemes stx
+  checkPatternBinders stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1901,6 +1910,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
 
 @[command_elab Lang.globalCmd] def elabGlobal : CommandElab := fun stx => do
   checkLexemes stx
+  checkPatternBinders stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx
@@ -1929,6 +1939,8 @@ bindings or as `c`'s of the same names, and `c`'s outputs from the
 instance. With `by`, the tactics prove the obligation, generated as `r`,
 and the solver is asked nothing. -/
 @[command_elab Lang.refineCmd] def elabRefine : CommandElab := fun stx => do
+  checkLexemes stx
+  checkPatternBinders stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx

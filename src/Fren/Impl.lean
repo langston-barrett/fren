@@ -121,6 +121,7 @@ first problem. -/
 def checkMapping (c : CompInfo) (names : Array Name) : Except (Option Nat × String) Unit := do
   if mappingAccepted (c.vars.map fun v => (v.name, v.role, v.isPub)) names then return
   let comp := Core.showComp c.path
+  let again := Core.repeatsAt names
   for n in names, i in [0:names.size] do
     match c.vars.find? (·.name == n) with
     | none => throw (some i, s!"`{comp}` has no variable `{n}`")
@@ -129,7 +130,7 @@ def checkMapping (c : CompInfo) (names : Array Name) : Except (Option Nat × Str
         throw (some i, s!"`{n}` is a private `out` of `{comp}`\n\nnote: private `out`s are internal: the obligation only says they exist")
       if v.role != .input && v.role != .output then
         throw (some i, s!"`{n}` belongs to instance `{n.getRoot}` of `{comp}`\n\nnote: instances are internal: the obligation only says their variables exist")
-      if names[:i].toArray.contains n then throw (some i, s!"`{n}` is mapped multiple times")
+      if again.contains i then throw (some i, s!"`{n}` is mapped multiple times")
   let missing := c.vars.filter fun v =>
     (v.role == .input || (v.role == .output && v.isPub)) && !names.contains v.name
   unless missing.isEmpty do

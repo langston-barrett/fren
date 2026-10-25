@@ -1,0 +1,7 @@
+-- A pattern binder that is not a single segment is reported before an
+-- or-pattern's binders are, in both front ends.
+
+pub enum S { A(Int), B }
+
+comp alternatives { in s: S pub out z: Int req r: z = match s { S::A(a.b) | S::B => 0, _ => 1 } }
+--~^ error: `a.b` is not a single name

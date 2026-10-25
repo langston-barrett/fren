@@ -781,10 +781,11 @@ def checkBindings (comp : Name) (vars : Array (Name × Role)) (bound : Array Nam
   if bindingsAccepted vars bound then return
   let c := showPath comp
   let inputs := inputsOf vars
+  let again := repeatsAt bound
   for b in bound, i in [0:bound.size] do
     match vars.find? (·.1 == b) with
     | some (_, .input) =>
-      if bound[:i].toArray.contains b then
+      if again.contains i then
         throw (some i, { code? := some "F0406", headline := s!"input `{b}` is bound multiple times"
                          label? := some "bound again here", notes := #["note: each input of an instance is bound exactly once"] })
     | some (_, .output) =>
@@ -1018,10 +1019,11 @@ at the literal. -/
 def checkFieldInits (r : Name) (fields given : Array Name) : Except (Option Nat × Msg) Unit := do
   if recordLiteralAccepted fields given then return
   let rs := showPath r
+  let again := repeatsAt given
   for g in given, i in [0:given.size] do
     unless fieldInitOk (fields.contains g) (given.count g) do
       if fields.contains g then
-        if given[:i].toArray.contains g then
+        if again.contains i then
           throw (some i, { code? := some "F0314", headline := s!"field `{g}` is given multiple times", label? := some "given again here"
                            notes := #["note: a record literal gives each field exactly once"] })
       else

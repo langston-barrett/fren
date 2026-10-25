@@ -116,7 +116,12 @@ the variables, instances and constraints of a component, which share one
 namespace, and the binders of a global expectation or of a pattern. A
 pattern's `_` declares no name. A name declared again is an error,
 reported where it is declared again, in the order the declarations are
-written, whatever their kinds.
+written, whatever their kinds. Only the first such name is reported, and
+the rest of its item is not checked, so a component with two repeated
+names and an unknown type reports the first repeat alone. Each declared
+name must be a single segment, which is checked before the rest of its
+item, as the item is parsed: `A(x.y)` reports `x.y`, even in a pattern
+with the wrong number of binders or in an or-pattern.
 `lang::distinct_names` states this, from how many names a list declares
 and the set of them:
 
@@ -222,7 +227,9 @@ its parameters and result may have any type, including records and
 enumerations with payloads. As for a variable, the result
 type of a function whose name ends in `?` is `Bool`, and need not be
 written, and any other function must have its result type written (see
-[Boolean names](Types.md#boolean-names)).
+[Boolean names](Types.md#boolean-names)). The types are checked in the
+order they are written, so the parameters come before the result:
+`fn f(Nope): Gone` reports `Nope`.
 
 A function written with `:= e` is *defined*, and any other is
 *uninterpreted*.

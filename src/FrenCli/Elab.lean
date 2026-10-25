@@ -1919,11 +1919,12 @@ partial def elabItem : Item → M Unit
     unless Fren.Core.functionParamsAccepted body.isSome params.size (params.filter named).size do
       let bad := (params.find? (named · != body.isSome)).map (·.1[0]!.span) |>.getD name.span
       err bad (Fren.Core.functionParamsMsg path body.isSome)
-    -- As for a variable, with the result type (`lang::bool_naming`).
-    let r ← varTy result name
     match body with
     | none =>
       let ps ← params.mapM (elabTy ·.1)
+      -- As for a variable, with the result type (`lang::bool_naming`),
+      -- after the parameters, in source order.
+      let r ← varTy result name
       modify fun s => { s with funs := s.funs.push (path, ps, r) }
     | some body =>
       -- The parameters, declared like a comp's inputs.
@@ -1939,6 +1940,7 @@ partial def elabItem : Item → M Unit
         lintName .variable xn x.span
         let t ← varTy ty? x
         vars := vars.push { name := xn, role := .input, isPub := true, ty := t, span := x.span }
+      let r ← varTy result name
       let (smt, t) ← elabExpr { vars, place := .prop, selfFn := some n } body
       unless t == r do mismatch body r t (some s!"note: `{n}` returns `{r.show}`")
       lintBools body
