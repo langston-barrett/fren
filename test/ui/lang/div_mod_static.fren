@@ -1,0 +1,41 @@
+-- Static rules for `div`, `mod` and the methods of `Int`: the divisor is a
+-- literal or a constant, other than `0`, whose value is known.
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.non_snake_case "allow"
+
+const ZERO: Int := 4 - 2 * 2
+const LENGTH: Int := "abcd".len
+const WORD: String := "a"
+
+comp by_variable { in x: Int in y: Int pub out q: Int := x div y }
+--~^ error: the divisor of `div` must be an integer literal or a constant
+comp expression { in x: Int pub out q: Int := x mod (2 * 3) }
+--~^ error: the divisor of `mod` must be an integer literal or a constant
+comp zero { in x: Int pub out q: Int := x div 0 }
+--~^ error: `div` by zero
+comp negated_zero { in x: Int pub out q: Int := x mod -(0) }
+--~^ error: `mod` by zero
+comp zero_constant { in x: Int pub out q: Int := x mod ZERO }
+--~^ error: `mod` by zero
+comp unknown_constant { in x: Int pub out q: Int := x div LENGTH }
+--~^ error: the value of `LENGTH`, the divisor of `div`, is not known when the spec is read
+comp shadowed { in ZERO!: Int in x: Int pub out q: Int := x div ZERO }
+--~^ error: the divisor of `div` must be an integer literal or a constant
+comp method_divisor { in x: Int pub out q: Int := x div (-2).abs }
+--~^ error: the divisor of `div` must be an integer literal or a constant
+comp string_divisor { in x: Int pub out q: Int := x div WORD }
+--~^ error: type mismatch: expected `Int`, found `String`
+comp bool_dividend { in p? pub out q: Int := p? div 2 }
+--~^ error: type mismatch: expected `Int`, found `Bool`
+
+comp unknown_method { in x: Int pub out q: Int := x.absolute }
+--~^ error: `Int` has no method `absolute`
+comp min_arity { in x: Int pub out q: Int := x.min(1, 2) }
+--~^ error: `min` takes 1 argument, but 2 were given
+comp max_type { in x: Int in p? pub out q: Int := x.max(p?) }
+--~^ error: type mismatch: expected `Int`, found `Bool`
+comp nonlinear { in x: Int in y: Int pub out q: Int := x * y.abs }
+--~^ error: nonlinear arithmetic is not supported
+
+--@ exit: 2

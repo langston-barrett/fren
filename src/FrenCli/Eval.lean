@@ -76,7 +76,7 @@ structure DataDef where
   deriving Inhabited
 
 inductive Op where
-  | and | or | iff | eq | ne | lt | le | gt | ge | add | sub | mul | concat
+  | and | or | iff | eq | ne | lt | le | gt | ge | add | sub | mul | div | mod | concat
   | member | union | inter | minus | subset | join
   deriving Inhabited, BEq, Repr
 
@@ -85,6 +85,7 @@ def Op.ofString? : String → Option Op
   | "=" => some .eq | "!=" => some .ne
   | "<" => some .lt | "<=" => some .le | ">" => some .gt | ">=" => some .ge
   | "+" => some .add | "-" => some .sub | "*" => some .mul | "++" => some .concat
+  | "div" => some .div | "mod" => some .mod
   | "in" => some .member | "union" => some .union | "inter" => some .inter | "minus" => some .minus
   | "subset" => some .subset | "join" => some .join
   | _ => none
@@ -283,6 +284,9 @@ def binV : Op → Option Val → Option Val → Option Val
   | .add => intOp fun x y => .int (x + y)
   | .sub => intOp fun x y => .int (x - y)
   | .mul => intOp fun x y => .int (x * y)
+  -- Euclidean, as SMT-LIB's; the divisor is never `0`.
+  | .div => intOp fun x y => .int (Int.ediv x y)
+  | .mod => intOp fun x y => .int (Int.emod x y)
 
 partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := []) : Ex → Option Val
   | .lit v => some v
@@ -347,6 +351,13 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
         | .update => do some (back (Fren.Seq.update q (int 0) (num (← args[1]?))))
         | .rev => some (back (Fren.Seq.rev q))
         | _ => none
+    -- An `Int`'s methods.
+    if let .int x := r then
+      return ← match m, (args[0]? : Option Val) with
+        | .abs, _ => some (.int (if x < 0 then -x else x))
+        | .min, some (.int y) => some (.int (if x ≤ y then x else y))
+        | .max, some (.int y) => some (.int (if x ≥ y then x else y))
+        | _, _ => none
     let .str s := r | none
     let str (k : Nat) := match args[k]? with | some (Val.str a) => a | _ => ""
     let int (k : Nat) := match args[k]? with | some (Val.int i) => i | _ => 0
@@ -595,8 +606,8 @@ def readFields (e : Ex) (ty : VTy) (fs : List String) : L (Ex × VTy) := do
       e := .method m e #[]
       ty := methodTy m ty
       continue
-    -- A method of a `String`, without arguments.
-    if ty == .string then
+    -- A method of a `String` or an `Int`, without arguments.
+    if ty == .string || ty == .int then
       let some m := Fren.Core.Method.ofName? f | throw s!"unknown method `{f}`"
       e := .method m e #[]
       ty := methodTy m ty
@@ -740,7 +751,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     let (x, ta) ← lowerExpr cx a
     let (y, tb) ← lowerExpr cx b
     let t := match o, ta, tb with
-      | .add, _, _ | .sub, _, _ | .mul, _, _ => VTy.int
+      | .add, _, _ | .sub, _, _ | .mul, _, _ | .div, _, _ | .mod, _, _ => VTy.int
       | .concat, _, _ => ta
       | .union, _, _ | .inter, _, _ | .minus, _, _ => ta
       | .join, .rel a _, .rel _ c => .rel a c

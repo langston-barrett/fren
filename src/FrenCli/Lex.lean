@@ -42,7 +42,8 @@ structure Token where
   tok : Tok
   span : Span
   /-- A line ends between the previous token and this one: a membership's
-  `in` cannot start a line (`Reqs/Lang/Lexical#keywords`). -/
+  `in` and a remainder's `mod` cannot start a line
+  (`Reqs/Lang/Lexical#keywords`). -/
   nlBefore : Bool := false
   deriving Inhabited
 
@@ -50,7 +51,7 @@ structure Token where
 `else`, `match` and `forall`): `lang::reserved_word`. Other Fren keywords
 (`when`, `out`, `req`, ...) are contextual and lexed as identifiers. -/
 def reserved : List String :=
-  ["mod", "use", "pub", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join", "is", "in", "if", "then", "else", "match", "forall", "refine"]
+  ["mod", "use", "pub", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join", "div", "is", "in", "if", "then", "else", "match", "forall", "refine"]
 
 /-- The punctuators (`Reqs/Lang/Lexical#punctuators`), longest first.
 Includes tokens Fren doesn't use but Lean lexes (`==`, `&&`, `||`), so that

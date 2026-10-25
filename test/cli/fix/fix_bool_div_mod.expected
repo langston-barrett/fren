@@ -1,0 +1,10 @@
+--- test/cli/fix/fix_bool_div_mod.fren
++++ test/cli/fix/fix_bool_div_mod.fren
+@@ -11,3 +11,3 @@
+-    req r1: o? iff not (x mod 2 = 0)
+-    req r2: p? iff not not (x div -3 < y mod 4 * 2)
+-    req r3: q? iff not ((x - y).abs >= x.min(y)) and not (2 * x div 3 != (x + 1) mod 5)
++    req r1: o? iff x mod 2 != 0
++    req r2: p? iff x div -3 < y mod 4 * 2
++    req r3: q? iff (x - y).abs < x.min(y) and 2 * x div 3 = (x + 1) mod 5
+exit=1

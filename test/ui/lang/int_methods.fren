@@ -1,0 +1,46 @@
+-- The methods of `Int`: `abs`, `min` and `max`, which are conditionals,
+-- with negative operands.
+
+const LOW: Int := -5
+
+expect abs_values: (-3).abs = 3 and (3).abs = 3 and (0).abs = 0 and LOW.abs = 5
+expect min_values: (-3).min(2) = -3 and (2).min(-3) = -3 and LOW.min(LOW) = LOW
+expect max_values: (-3).max(2) = 2 and (2).max(-3) = 2 and LOW.max(0) = 0
+expect chained: LOW.abs.min(3) = 3 and (LOW - 2).abs.max(1) = 7
+
+comp tolerance {
+    in a: Int
+    in b: Int
+    pub out close?
+    pub out low: Int
+    pub out high: Int
+
+    req c: close? iff (a - b).abs <= 2
+    req l: low = a.min(b)
+    req h: high = a.max(b)
+
+    expect ordered: low <= high
+    expect sum: low + high = a + b
+    expect close_range: when close?, high - low <= 2
+    expect linear: 2 * a.abs >= a + a
+    expect wrong: low = a                            --~ error: expectation `tolerance::wrong` does not hold
+}
+
+-- `nonminimal_bool` keeps the operands of a comparison bare.
+comp simpler {
+    in a: Int
+    pub out s?
+
+    req r: s? iff not ((a - 1).abs > a.max(0) mod 4)  --~ warning: write `(a - 1).abs <= a.max(0) mod 4`
+}
+
+-- `identity_op` keeps the operands of `div` and `mod` bound as written.
+comp identity {
+    in a: Int
+    pub out t: Int
+
+    req r: t = 1 * (a + 1) mod 3                       --~ warning: write `(a + 1)`
+}
+
+--@ summary: 17 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

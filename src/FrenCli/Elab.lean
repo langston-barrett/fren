@@ -274,6 +274,9 @@ structure State where
   comps : Array CComp := #[]
   /-- Each constant's value, as SMT-LIB, and type. -/
   consts : NameMap (String × Ty) := {}
+  /-- The value of each constant whose value is an integer constant
+  expression (`Reqs/Lang/Expressions#division-and-remainder`). -/
+  constInts : NameMap Int := {}
   /-- The abstract types, in order. -/
   sorts : Array Name := #[]
   /-- Each uninterpreted function's parameter and result types, in order. -/
@@ -533,6 +536,62 @@ def ExprCtx.at (cx : ExprCtx) (b : CBinder) : ExprCtx := { cx with binders := cx
 def ExprCtx.shadowing (cx : ExprCtx) : Array Name :=
   (cx.vars.filter (·.name.isAtomic) |>.map (·.name)) ++ cx.binders.map (·.name)
 
+
+/-- The constant that `segs` names, without recording its use. -/
+def constPath? (cx : ExprCtx) (segs : Array Ident) : M (Option Name) := do
+  let st ← get
+  let .ok (.item { kind := .constItem, path, .. }) := st.table.resolvePath st.scope (segNames segs) cx.shadowing
+    | return none
+  return some path
+
+/-- The value of `e`, if it is an integer constant expression: integer
+literals and constants whose values are, combined by `+`, `-`, `*`, `div`,
+`mod`, `abs`, `min` and `max` (`Reqs/Lang/Expressions#division-and-remainder`). -/
+partial def intConstValue? (cx : ExprCtx) (e : Expr) : M (Option Int) := do
+  match e with
+  | .num _ v => return some v
+  | .neg _ a => return (← intConstValue? cx a).map (- ·)
+  | .bin _ op a b =>
+    let some x ← intConstValue? cx a | return none
+    let some y ← intConstValue? cx b | return none
+    return Fren.Core.intConstOp? op x y
+  | .path _ segs =>
+    -- A constant, then the methods without arguments applied to it.
+    let parts := if segs.size == 1 then segs[0]!.name.splitOn "." else [""]
+    let root := if segs.size == 1 then #[{ segs[0]! with name := parts.head! }] else segs
+    if segs.size > 1 && segs.any (·.name.contains '.') then return none
+    if root.size == 1 && (cx.vars.any (·.name.getRoot == Name.mkSimple parts.head!) || (cx.binder? (Name.mkSimple parts.head!)).isSome) then
+      return none
+    let some path ← constPath? cx root | return none
+    let some v := (← get).constInts.find? path | return none
+    return parts.tail.foldlM (fun x m => Fren.Core.intConstMethod? m x []) v
+  | .method _ r m args =>
+    let some x ← intConstValue? cx r | return none
+    let some ys := (← args.toList.mapM (intConstValue? cx)).mapM id | return none
+    return Fren.Core.intConstMethod? m.name x ys
+  | .field _ r f =>
+    let some x ← intConstValue? cx r | return none
+    return Fren.Core.intConstMethod? f.name x []
+  | _ => return none
+
+/-- The form of the divisor `k` (`lang::divisor`), without its `-`: its form,
+its value if it is known, and the constant it names, if any. -/
+partial def divisorForm (cx : ExprCtx) (k : Expr) : M (Fren.Core.DivisorForm × Int × Name) := do
+  match k with
+  | .neg _ a => let (f, v, c) ← divisorForm cx a; return (f, -v, c)
+  | .num _ v => return (.literal, v, .anonymous)
+  | .path _ segs =>
+    if segs.any (·.name.contains '.') then return (.other, 0, .anonymous)
+    if segs.size == 1 && (cx.vars.any (·.name == identName segs[0]!.name) || (cx.binder? (identName segs[0]!.name)).isSome) then
+      return (.other, 0, .anonymous)
+    let some path ← constPath? cx segs | return (.other, 0, .anonymous)
+    return match (← get).constInts.find? path with
+      | some v => (.knownConstant, v, path)
+      | none => (.unknownConstant, 0, path)
+  | _ => return (.other, 0, .anonymous)
+
+/-- An integer as SMT-LIB. -/
+def intSmt (v : Int) : String := if v < 0 then s!"(- {v.natAbs})" else toString v
 
 /-- Whether `segs`, applied, builds a variant rather than applying a
 function. -/
@@ -884,6 +943,21 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
       | .update => s!"(seq.update {recv} {a} (seq.unit {b}))"
       | _ => s!"(seq.rev {recv})"
     return (smt, tyOf method.result)
+  if t == .int then
+    let some method := (Fren.Core.Method.ofName? m).filter (·.accepts false false (int := true))
+      | err span (Fren.Core.unknownMethodMsg m t.show false (int := true))
+    unless args.size == method.arity do err span (Fren.Core.arityMsg (Name.mkSimple m) method.arity args.size)
+    for (_, ta, sp) in args, k in [0:args.size] do
+      unless ta == .int do
+        err sp { code? := some "F0304", headline := s!"type mismatch: expected `Int`, found `{ta.show}`"
+                 label? := some s!"expected `Int`, found `{ta.show}`"
+                 notes := #[s!"note: argument {k + 1} of `{m}` is an `Int`"] }
+    -- Conditionals, so that they stay linear.
+    let y := (args.map (·.1))[0]?.getD ""
+    return (match method with
+      | .min => s!"(ite (<= {recv} {y}) {recv} {y})"
+      | .max => s!"(ite (>= {recv} {y}) {recv} {y})"
+      | _ => s!"(ite (< {recv} 0) (- {recv}) {recv})", .int)
   unless t == .string do err span (Fren.Core.noMethodsMsg m t.show)
   let some method := (Fren.Core.Method.ofName? m).filter (·.accepts true false)
     | err span (Fren.Core.unknownMethodMsg m t.show)
@@ -914,7 +988,7 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
 /-- Reads the field `f` of the value `smt` of type `t`; of a `String`, calls
 the method `f`, without arguments. -/
 def readField (span : Span) (smt : String) (t : Ty) (f : Name) : M (String × Ty) := do
-  if t matches .string | .set _ | .rel .. | .seq _ then return ← callMethod span smt t f.toString #[]
+  if t matches .string | .set _ | .rel .. | .seq _ | .int then return ← callMethod span smt t f.toString #[]
   let .record p := t | err span (Fren.Core.noFieldMsg f t.show #[])
   let fields : Array (Name × Ty) := ((← get).dataOf? p).map (·.ctors[0]!.2) |>.getD #[]
   let some (_, ft) := fields.find? (·.1 == f) | err span (Fren.Core.noFieldMsg f t.show (fields.map (·.1)))
@@ -1545,6 +1619,13 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     | "*" =>
       unless Fren.Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do err span Fren.Core.nonlinearMsg
       return (s!"(* {← expect a .int (opNote op .int)} {← expect b .int (opNote op .int)})", .int)
+    | "div" | "mod" =>
+      -- By the divisor's value (`lang::divisor`).
+      let x ← expect a .int (opNote op .int)
+      discard (expect b .int (opNote op .int))
+      let (form, value, c) ← divisorForm cx b
+      liftMsg b.span (Fren.Core.checkDivisor op form value c)
+      return (s!"({op} {x} {intSmt value})", .int)
     | _ => return (s!"({op} {← expect a .int (opNote op .int)} {← expect b .int (opNote op .int)})", .int)
   | .path _ segs =>
     if segs.size == 1 then
@@ -2485,9 +2566,11 @@ partial def elabItem : Item → M Unit
     let path := module ++ n
     unless isPub do
       modify fun s => { s with items := s.items.push ({ what := .constant, path, level := s.levels.get .deadCode }, name.span) }
+    let int? ← if t == .int then intConstValue? { vars := #[], place := .prop } value else pure none
     modify fun s => { s with
       table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
-      consts := s.consts.insert path (smt, t) }
+      consts := s.consts.insert path (smt, t)
+      constInts := match int? with | some v => s.constInts.insert path v | none => s.constInts }
   | .global name binders body => elabGlobal name binders body
   | .refine name c a bs => elabRefine name c a bs
   | .claim tested segs texts => do

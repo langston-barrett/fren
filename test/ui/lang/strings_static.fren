@@ -3,8 +3,8 @@ set_option fren.lint.unused_variables "allow"
 
 comp unknown { in s: String pub out n: Int req r: n = s.length }
 --~^ error: `String` has no method `length`
-comp no_methods { in x: Int pub out p? req r: p? iff (x).contains?(1) }
---~^ error: `Int` has no methods, so it has no method `contains?`
+comp no_methods { in b? pub out p? req r: p? iff (b?).contains?(1) }
+--~^ error: `Bool` has no methods, so it has no method `contains?`
 comp arity { in s: String pub out p? req r: p? iff s.starts_with?("a", "b") }
 --~^ error: `starts_with?` takes 1 argument, but 2 were given
 comp arg_type { in s: String pub out t: String := s.at("1") }

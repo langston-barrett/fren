@@ -10,7 +10,7 @@ not   := "not" not | cmp
 cmp   := sum [("=" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "subset") sum]
        | sum "is" pattern
 sum   := sum ("+" | "-" | "++" | "union" | "minus") prod | prod
-prod  := prod ("*" | "inter" | "join") neg | neg
+prod  := prod ("*" | "div" | "mod" | "inter" | "join") neg | neg
 neg   := "-" neg | atom
 atom  := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | "(" expr ")"
        | "if" expr "then" expr "else" expr
@@ -55,6 +55,7 @@ equally tightly:
 | 7 | `A ++ B` | concatenation | `String`, or `Seq(T)` | the same | left |
 | 7 | `S union T`, `S minus T` | union, difference | `Set(T)`, or `Rel(A, B)` | the same | left |
 | 8 | `A * B` | multiplication | `Int` | `Int` | left |
+| 8 | `A div K`, `A mod K` | [division and remainder](#division-and-remainder) by a constant | `Int` | `Int` | left |
 | 8 | `S inter T` | intersection | `Set(T)`, or `Rel(A, B)` | the same | left |
 | 8 | `R join Q` | composition | `Rel(A, B)` and `Rel(B, C)` | `Rel(A, C)` | left |
 | 9 | `-A` | negation | `Int` | `Int` | |
@@ -66,7 +67,11 @@ equally tightly:
 - `iff` and `=` agree on `Bool`, but `iff` binds more loosely:
   `a? iff b? = c?` means `a? iff (b? = c?)`.
 - Prefix operators, `not` and `-`, apply to everything to their right that
-  binds more tightly: `not a? and b?` means `(not a?) and b?`.
+  binds more tightly: `not a? and b?` means `(not a?) and b?`, and
+  `x div -2` means `x div (-2)`.
+- The `mod` of a remainder is on the line of its left operand, as the `in`
+  of a membership is: a `mod` at the start of a line starts a
+  [module](Modules.md) (see [Keywords](Lexical.md#keywords)).
 
 `lang::operand` states when an operand can be written without parentheses,
 from the precedence of its operator (`inner`) and of the operator it is an
@@ -225,6 +230,78 @@ whatever the other operand:
 ```fren
 expect defined_scales: forall (m: mentions) (p: linear_product),
     when m.expr_kind = ExprKind::Defined and not m.parts? and (p.a_mentions? iff m.mentions?), p.accepted?
+```
+
+## Division and remainder
+
+`a div k` and `a mod k` are the quotient and the remainder of `a` divided
+by `k`. They are Euclidean, as SMT-LIB's `div` and `mod` and Lean's
+`Int.ediv` and `Int.emod` are: the remainder is never negative and is less
+than `k.abs`, and `a = (a div k) * k + a mod k`. So `7 div 2` is `3` and
+`7 mod 2` is `1`, `-7 div 2` is `-4` and `-7 mod 2` is `1`, and
+`7 div -2` is `-3` and `7 mod -2` is `1`. For a positive `k`, `div` rounds
+down; for a negative one, up.
+
+The divisor `k` is an integer literal or a [constant](Items.md#constants),
+possibly negated or in parentheses, such as `2`, `-2`, `N` or `-N`, and its
+value is not `0`. Dividing by a constant stays within linear integer
+arithmetic, which the solver decides, as multiplying by one does (see
+[Linear arithmetic](#linear-arithmetic)). So `x div y`, with `y` a
+variable, is an error, as `x * y` is. So is `x mod 0`: SMT-LIB leaves
+division by zero unspecified, where Lean's is `0`, so the two front ends
+would disagree. Any other expression, such as `x div (2 * 3)`, is an error
+too: declare a constant for it.
+
+A constant divisor's value must be known when the spec is read, without
+evaluating it: the constant's value is an *integer constant expression*,
+built from integer literals and constants whose values are integer
+constant expressions by `+`, `-`, `*`, `div`, `mod`, `abs`, `min` and
+`max`, and parentheses. So with `const N: Int := 2 * 4`, `x mod N` is
+accepted, but with `const N: Int := "abcd".len`, it is an error.
+`lang::divisor` states the rule, from the form of the divisor without its
+`-` and parentheses, and its value:
+
+```fren
+-- `KnownConstant` is a constant whose value is an integer constant
+-- expression, and `UnknownConstant` one whose value is not; `OtherDivisor`
+-- is any other expression, such as a variable or `2 * 3`.
+pub enum DivisorForm { LiteralDivisor, KnownConstant, UnknownConstant, OtherDivisor }
+
+pub comp divisor {
+    use self::DivisorForm::{KnownConstant, LiteralDivisor, OtherDivisor}
+    in form: DivisorForm
+    in value: Int            -- its value, for a literal or a known constant
+    pub det out accepted?
+
+    req rule: accepted? iff (form in {LiteralDivisor, KnownConstant} and value != 0)
+
+    expect no_zero: when value = 0, not accepted?
+    expect literals: when form = LiteralDivisor and value != 0, accepted?
+    expect no_variables: when form = OtherDivisor, not accepted?
+}
+```
+
+`lang::division` states the laws of `div` and `mod`, for a positive and a
+negative divisor:
+
+```fren
+const NEGATIVE_DIVISOR: Int := -3
+
+pub comp division {
+    in x: Int
+    in y: Int
+
+    expect euclidean: x = (x div 3) * 3 + x mod 3
+    expect remainder_range: 0 <= x mod 3 and x mod 3 < 3
+    expect euclidean_negative: x = (x div NEGATIVE_DIVISOR) * NEGATIVE_DIVISOR + x mod NEGATIVE_DIVISOR
+    expect remainder_range_negative: 0 <= x mod NEGATIVE_DIVISOR and x mod NEGATIVE_DIVISOR < NEGATIVE_DIVISOR.abs
+    expect negated_divisor: x div -3 = -(x div 3) and x mod -3 = x mod 3
+    expect multiples: (3 * x) div 3 = x and (3 * x) mod 3 = 0
+    expect periodic: (x + 3) mod 3 = x mod 3 and (x + 3) div 3 = x div 3 + 1
+    expect rounds_down: (x div 3) * 3 <= x and x < (x div 3) * 3 + 3
+    expect monotone: when x <= y, x div 3 <= y div 3
+    expect by_one: x div 1 = x and x mod 1 = 0
+}
 ```
 
 ## Conditionals
@@ -688,6 +765,41 @@ read does, and it is not a function application for the rules of
 a method has a fixed meaning. So `2 * s.len` is linear, and
 `const N: Int := "abc".len` is a constant.
 
+The methods of `Int`, where `x` is the receiver:
+
+| Method | Meaning | Result |
+|---|---|---|
+| `x.abs` | the absolute value: `x` if `x >= 0`, else `-x` | `Int` |
+| `x.min(y)` | the lesser of `x` and `y` | `Int` |
+| `x.max(y)` | the greater of `x` and `y` | `Int` |
+
+Each is a conditional, such as `if x < 0 then -x else x`, so each stays
+within linear arithmetic: `(a - b).abs <= TOLERANCE` and `2 * x.min(y)`
+are linear. A literal is not a receiver as written, since `3.abs` is not
+an identifier: write `(3).abs`, or `(-3).abs`. `lang::int_methods` states
+their laws:
+
+```fren
+pub comp int_methods {
+    in x: Int
+    in y: Int
+
+    expect abs_nonnegative: x.abs >= 0
+    expect abs_cases: (x >= 0 and x.abs = x) or (x < 0 and x.abs = -x)
+    expect abs_negation: (-x).abs = x.abs
+    expect abs_triangle: (x + y).abs <= x.abs + y.abs
+    expect abs_bounds: -x.abs <= x and x <= x.abs
+    expect min_below: x.min(y) <= x and x.min(y) <= y
+    expect min_either: x.min(y) = x or x.min(y) = y
+    expect max_above: x.max(y) >= x and x.max(y) >= y
+    expect max_either: x.max(y) = x or x.max(y) = y
+    expect min_max_sum: x.min(y) + x.max(y) = x + y
+    expect commutative: x.min(y) = y.min(x) and x.max(y) = y.max(x)
+    expect abs_is_max: x.abs = x.max(-x)
+    expect idempotent: x.min(x) = x and x.max(x) = x
+}
+```
+
 The methods of `String`, where `s` is the receiver:
 
 | Method | Meaning | Result |
@@ -835,11 +947,12 @@ pub comp collection_methods {
 ```fren
 pub enum Method {
     Len, StartsWith, EndsWith, Contains, Matches, At, Slice, IndexOf, Replace, ReplaceAll, Card,
-    Inverse, Closure, Image, Domain, Range, Update, Rev,
+    Inverse, Closure, Image, Domain, Range, Update, Rev, Abs, Min, Max,
 }
 
 pub comp method_type {
     use self::Method::{
+        Abs,
         At,
         Card,
         Closure,
@@ -851,6 +964,8 @@ pub comp method_type {
         Inverse,
         Len,
         Matches,
+        Max,
+        Min,
         Range,
         Replace,
         ReplaceAll,
@@ -871,17 +986,18 @@ pub comp method_type {
         Inverse | Closure | Image | Domain | Range => receiver = RelTy,
         Update | Rev => receiver = SeqTy,
         Matches | ReplaceAll => receiver = StringTy,
+        Abs | Min | Max => receiver = IntTy,
         _ => receiver in {StringTy, SeqTy},
     }
     req results: result = match method {
         StartsWith | EndsWith | Contains | Matches => BoolTy,
-        Len | IndexOf | Card => IntTy,
+        Len | IndexOf | Card | Abs | Min | Max => IntTy,
         Inverse | Closure => RelTy,
         Image | Domain | Range => SetTy,
         _ => receiver,
     }
     req arities: n_params = match method {
-        Len | Card | Inverse | Closure | Domain | Range | Rev => 0,
+        Len | Card | Inverse | Closure | Domain | Range | Rev | Abs => 0,
         Slice | IndexOf | Replace | ReplaceAll | Update => 2,
         _ => 1,
     }
@@ -905,6 +1021,9 @@ pub comp method_type {
         Range => "range",
         Update => "update",
         Rev => "rev",
+        Abs => "abs",
+        Min => "min",
+        Max => "max",
     }).ends_with?("?")
 }
 ```
@@ -962,7 +1081,7 @@ pattern rather than an operand, is typed in its own section.
 
 ```fren
 -- `Logic` is `when`, `unless`, `iff`, `or`, `and` and `not`; `Ordering` is
--- `<`, `<=`, `>` and `>=`; `Arithmetic` is `+`, `-` and `*`; `Concat` is `++`;
+-- `<`, `<=`, `>` and `>=`; `Arithmetic` is `+`, `-`, `*`, `div` and `mod`; `Concat` is `++`;
 -- `SetAlgebra` is `union`, `inter` and `minus`, on sets or relations. For
 -- `Membership`, `a` is the element and `b` the set; a pair's membership,
 -- and `join`, are typed by `pair_membership` and `relation_op`. The arms of a `match` are typed as a

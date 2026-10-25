@@ -18,6 +18,8 @@ def foreignOpFix? : String → Option (String × String)
   | "||" => some ("or", "use `or`")
   | "|" => some ("or", "use `or`")
   | "!" => some ("not ", "use `not` for negation")
+  | "/" => some ("div", "use `div`, which divides by a constant")
+  | "%" => some ("mod", "use `mod`, the remainder by a constant")
   | _ => none
 
 /-- `op` is an operator of other languages but not Fren's. -/
@@ -26,8 +28,6 @@ def foreignOpMsg (op : String) : Msg :=
   match op, foreignOpFix? op with
   | _, some (r, msg) => { base with fixes := #[{ msg, replacement := r }] }
   | "=>", _ => { base with notes := #["help: write an implication as `when a, b`"] }
-  | "/", _ | "%", _ => { base with notes := #["note: Fren has no division: the solver decides only linear integer arithmetic",
-      "help: multiply the other side instead, e.g. `2 * y = x` rather than `y = x / 2`"] }
   | _, _ => base
 
 end Fren.Core

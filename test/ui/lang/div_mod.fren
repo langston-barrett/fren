@@ -1,0 +1,45 @@
+-- Division and remainder by a constant, which are Euclidean in both front
+-- ends, as in SMT-LIB: the remainder is never negative.
+
+const EIGHT: Int := 2 * 4
+const NEGATIVE: Int := -3
+const DERIVED: Int := (EIGHT div 3).max(NEGATIVE.abs) - 1
+
+expect positive: 7 div 2 = 3 and 7 mod 2 = 1
+expect negative_dividend: -7 div 2 = -4 and -7 mod 2 = 1
+expect negative_divisor: 7 div -2 = -3 and 7 mod -2 = 1
+expect both_negative: -7 div -2 = 4 and -7 mod -2 = 1
+expect exact: -6 div 3 = -2 and -6 mod 3 = 0
+expect constants: 17 div EIGHT = 2 and 17 mod EIGHT = 1 and -17 mod NEGATIVE = 1 and -17 div NEGATIVE = 6
+expect negated_constant: 17 div -EIGHT = -2 and 17 mod (-EIGHT) = 1
+expect derived: DERIVED = 2 and 5 mod DERIVED = 1
+expect precedence: 2 * 7 div 3 = 4 and 7 div 3 * 2 = 4 and 1 + 7 mod 3 = 2 and -7 div 2 = (-7) div 2
+
+comp parity {
+    in x: Int
+    pub out even?
+    pub out half: Int
+    pub out rest: Int
+
+    req e: even? iff x mod 2 = 0
+    req h: half = x div 2
+    req r: rest = x mod -4
+
+    expect euclidean: x = half * 2 + x mod 2
+    expect even_halves: when even?, 2 * half = x
+    expect rest_range: 0 <= rest and rest < 4
+    expect floor: when x < 0, half < 0
+    expect rounds_down: half * 2 <= x and x < half * 2 + 2
+    expect wrong: when x = -3, half = -1              --~ error: expectation `parity::wrong` does not hold
+}
+
+-- A `mod` at the start of a line starts a module, and does not continue the
+-- expression before it.
+const LAST: Int := 7
+expect last: LAST mod 2 = 1
+mod inner
+
+expect wrong_quotient: 7 div 2 = 4                    --~ error: expectation `inner::wrong_quotient` does not hold
+
+--@ summary: 22 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

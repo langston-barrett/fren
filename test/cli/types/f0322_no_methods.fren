@@ -1,6 +1,6 @@
 comp c {
-    in x: Int
+    in b?
     pub out p?
 
-    req r: p? iff (x).contains?(1)
+    req r: p? iff (b?).contains?(1)
 }

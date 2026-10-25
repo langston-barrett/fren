@@ -211,7 +211,7 @@ which:
 pub const RESERVED: Set(String) := {
     "mod", "use", "pub", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp",
     "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
-    "is", "in", "if", "then", "else", "match", "forall", "refine",
+    "div", "is", "in", "if", "then", "else", "match", "forall", "refine",
 }
 
 pub comp reserved_word {
@@ -242,7 +242,11 @@ in `x = true` the `true` is a literal.
 `in` is both the keyword of an input and the [membership
 operator](Expressions.md#sets). The `in` of a membership must be on the
 same line as the end of its left operand: an `in` at the start of a line
-starts an input.
+starts an input. Likewise, `mod` is both the keyword of a module and the
+[remainder](Expressions.md#division-and-remainder) operator, and the `mod`
+of a remainder must be on the line where its left operand ends: a `mod` at
+the start of a line starts a module, so that a constant's value followed by
+`mod m` on the next line is not read as a remainder.
 
 ## Literals
 
@@ -374,7 +378,8 @@ Operators of other languages are errors, with a message that says what to
 write instead: `==` (write `=`), `&&` (write `and`), `||` (write `or`), `!`
 (write `not`; a `!` directly after an identifier is part of it) and,
 outside a [`match` arm](Expressions.md#matches), `=>`
-(write `when a, b`) and `|` (write `or`). There is no division. The first
+(write `when a, b`) and `|` (write `or`), and `/` and `%` (write `div`
+and `mod`, which [divide by a constant](Expressions.md#division-and-remainder)). The first
 three are lexed as punctuators, so that the message names them as Lean's
 does.
 

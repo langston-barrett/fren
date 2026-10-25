@@ -3,7 +3,8 @@
 -- instance bindings, constants and defined functions. Expectations, local
 -- and global, are not mutated. Swapping the first `and` of a chain, or
 -- the last `or`, adds parentheses, and an operand that replaces its
--- operator keeps its own.
+-- operator keeps its own. A divisor is never made `0`: `STEP`, which one
+-- names, is not changed, and neither is the `1` of `-1` changed to `0`.
 mod m
 
 pub enum Mode { Off, Heat, Cool }
@@ -13,6 +14,7 @@ pub enum Reading { Value(Int), Missing, Stale(Int) }
 use self::Mode::{Cool, Heat, Off}
 
 const LIMIT: Int := 10
+const STEP: Int := 1
 
 fn twice(x: Int): Int := x + x
 
@@ -37,6 +39,7 @@ pub comp c {
     -- `a` is not removed from `[a^b]` or `[a^]`, which would negate them.
     req carets: s.matches?(r"[a^b][a^]") or ok?
     req chained: ok? or x = 4 or x = 6
+    req parity: x mod STEP = 0 or x div -1 > 2
     req chain: unless m = Off, (ok? or x = 1) and m in {Heat, Cool} and [1, 2].len = 2
     req known: ok? or rd is Reading::Value(_) | Reading::Stale(_) | Reading::Missing
     -- One alternative per line, after a leading `|`.

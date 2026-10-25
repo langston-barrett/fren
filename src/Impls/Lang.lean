@@ -140,6 +140,22 @@ impl linear_product: lang::linear_product for (a b : Bool) {
   intro a b _
   cases a <;> cases b <;> simp [fren_spec, Fren.Core.productAccepted]
 
+def toDivisorForm : Fren.Core.DivisorForm → lang.DivisorForm
+  | .literal => .LiteralDivisor
+  | .knownConstant => .KnownConstant
+  | .unknownConstant => .UnknownConstant
+  | .other => .OtherDivisor
+
+-- For every divisor, by the form and value that both front ends give
+-- `Fren.Core.checkDivisor`.
+impl divisor: lang::divisor for (f : Fren.Core.DivisorForm) (v : Int) {
+  form := toDivisorForm f,
+  value := v,
+  accepted? := Fren.Core.divisorAccepted f v,
+} by
+  intro f v _
+  cases f <;> simp [fren_spec, toDivisorForm, Fren.Core.divisorAccepted]
+
 interp lang::Ty := Fren.Core.Ty
 
 -- For every application, over the types that the `fren` command compares.
@@ -326,12 +342,15 @@ def toMethod : Fren.Core.Method → lang.Method
   | .range => .Range
   | .update => .Update
   | .rev => .Rev
+  | .abs => .Abs
+  | .min => .Min
+  | .max => .Max
 
 -- The table of methods that both front ends use.
 impl method_type: lang::method_type for (m : Fren.Core.Method) (k : lang.ValueType) {
   method := toMethod m,
   receiver := k,
-  accepted? := m.accepts (k == .StringTy) (k == .SetTy) (k == .RelTy) (k == .SeqTy),
+  accepted? := m.accepts (k == .StringTy) (k == .SetTy) (k == .RelTy) (k == .SeqTy) (k == .IntTy),
   -- `string` is the receiver's type, and `elem` is never a result.
   result := match m.result with
     | .bool => .BoolTy | .int => .IntTy | .string | .elem => k | .set => .SetTy | .rel => .RelTy,

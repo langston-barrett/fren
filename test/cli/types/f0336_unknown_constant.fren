@@ -1,0 +1,4 @@
+-- A constant divisor whose value is not an integer constant expression (F0336).
+const WIDTH: Int := "abcd".len
+
+comp c { in x: Int pub out r: Int := x mod WIDTH }

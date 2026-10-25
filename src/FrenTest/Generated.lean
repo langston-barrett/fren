@@ -93,7 +93,43 @@ info: @[reducible] def check.deterministic : Prop :=
 -- The definition reduces to the value.
 example : check.FAILED = 1 := by decide
 
-/-- info: fren: 15 passed, 0 failed, 0 inconclusive, 0 redundant -/
+-- `div` and `mod` are Lean's `/` and `%` on `Int`, by the divisor's value as
+-- a numeral, and the methods of `Int` are conditionals.
+const STRIDE: Int := 2 * 2
+
+comp arith {
+  in x: Int
+  in y: Int
+  pub out q: Int
+  pub out r: Int
+  pub out a: Int
+
+  req quotient: q = x div -STRIDE
+  req remainder: r = x mod 3
+  req absolute: a = (x - y).abs.min(y.max(0))
+}
+
+/--
+info: @[reducible] def check.arith.req.quotient : Int → Int → Int → Int → Int → Prop :=
+fun x y q r a => q = x / -4
+-/
+#guard_msgs in
+#print check.arith.req.quotient
+
+/--
+info: @[reducible] def check.arith.req.absolute : Int → Int → Int → Int → Int → Prop :=
+fun x y q r a =>
+  a =
+    if (if x - y < 0 then -(x - y) else x - y) ≤ if y ≥ 0 then y else 0 then if x - y < 0 then -(x - y) else x - y
+    else if y ≥ 0 then y else 0
+-/
+#guard_msgs in
+#print check.arith.req.absolute
+
+-- Euclidean, as in SMT-LIB.
+example : (-7 : Int) / 2 = -4 ∧ (-7 : Int) % 2 = 1 ∧ (7 : Int) / -2 = -3 ∧ (7 : Int) % -2 = 1 := by decide
+
+/-- info: fren: 19 passed, 0 failed, 0 inconclusive, 0 redundant -/
 #guard_msgs in
 #fren_check
 

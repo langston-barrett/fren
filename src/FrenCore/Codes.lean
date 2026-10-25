@@ -1136,13 +1136,14 @@ comp c { in s: String pub out n: Int req r: n = s.len }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out p? req r: p? iff x.contains?(1) }
+comp c { in b? pub out p? req r: p? iff (b?).contains?(1) }
 ```
 
-Only `String`s have methods. Use the operators of the type instead:
+Only `Int`s, `String`s, sets, relations and sequences have methods. Use
+the operators of the type instead:
 
 ```fren
-comp c { in x: Int pub out p? req r: p? iff x = 1 }
+comp c { in b? pub out p? req r: p? iff not b? }
 ```
 "# },
   { code := "F0323", explanation := r#"The argument of `matches?` is not a string literal.
@@ -1334,6 +1335,43 @@ values with `=` or `in`:
 
 ```fren
 comp c { in x: Int pub out small? req r: small? iff x in {0, 1} }
+```
+"# },
+  { code := "F0336", explanation := r#"The divisor of `div` or `mod` is not an integer literal or a constant, or is a constant whose value is not known when the spec is read.
+
+Erroneous code example:
+
+```fren
+comp c { in x: Int in y: Int pub out q: Int := x div y }
+```
+
+Fren's checks are decided by an SMT solver over linear integer arithmetic,
+which divides only by constants. The divisor of `div` and `mod` is an
+integer literal or a constant, possibly negated, such as `2`, `-2` or `N`.
+A constant's value must be an integer constant expression: built from
+integer literals and such constants by `+`, `-`, `*`, `div`, `mod`, `abs`,
+`min` and `max`, so that its value is known when the spec is read.
+
+```fren
+const N: Int := 2 * 4
+
+comp c { in x: Int pub out q: Int := x div N }
+```
+"# },
+  { code := "F0337", explanation := r#"The divisor of `div` or `mod` is `0`.
+
+Erroneous code example:
+
+```fren
+comp c { in x: Int pub out r: Int := x mod 0 }
+```
+
+SMT-LIB leaves division by zero unspecified, and Lean makes it `0`, so the
+two front ends would give `x mod 0` different meanings. Divide by a
+constant other than `0`:
+
+```fren
+comp c { in x: Int pub out r: Int := x mod 2 }
 ```
 "# },
   { code := "F0330", explanation := r#"A function's parameters are named, but it has no body, or it has a body, but a parameter has no name.

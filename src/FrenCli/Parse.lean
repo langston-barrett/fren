@@ -271,15 +271,18 @@ def withRecords (x : P α) : P α := do
 touches both. After `.`, `x.y` is one (dotted) identifier. If `(` follows
 the last of them, without a space, it is a method call, whose arguments
 `args` parses. -/
-def fieldReads (args : P (Array Expr)) (index : P Expr) (e : Expr) : P Expr := do
+def fieldReads (args : P (Array Expr)) (index : P Expr) (e : Expr) (start? : Option Span := none) : P Expr := do
   let mut e := e
+  -- Where the expression starts: before the parentheses of `(e).f`.
+  let mut first := start?.getD e.span
   repeat
     let s ← get
     -- `q[i]`: indexing, with no space before `[`.
     if let (some b, some prev) := (s.toks[s.pos]?, s.toks[s.pos - 1]?) then
       if isKw b "[" && prev.span.stop == b.span.start then
         let i ← index
-        e := .index (e.span.to (← lastSpan)) e i
+        e := .index (first.to (← lastSpan)) e i
+        first := e.span
         continue
     let some dot := s.toks[s.pos]? | break
     let some next := s.toks[s.pos + 1]? | break
@@ -292,15 +295,18 @@ def fieldReads (args : P (Array Expr)) (index : P Expr) (e : Expr) : P Expr := d
     let parts := name.splitOn "."
     for f in parts.dropLast do
       let span : Span := { start, stop := start + f.length }
-      e := .field (e.span.to span) e { name := f, span }
+      e := .field (first.to span) e { name := f, span }
+      first := e.span
       start := span.stop + 1
     let last : Ident := { name := parts.getLast!, span := { start, stop := next.span.stop } }
     let s ← get
     if (s.toks[s.pos]?).any fun t => isKw t "(" && t.span.start == next.span.stop then
       let as ← args
-      e := .method (e.span.to (← lastSpan)) e last as
+      e := .method (first.to (← lastSpan)) e last as
+      first := e.span
     else
-      e := .field (e.span.to last.span) e last
+      e := .field (first.to last.span) e last
+      first := e.span
   return e
 
 /-- An alternative of a pattern: `E::V` or `E::V(a, _)`. -/
@@ -420,6 +426,10 @@ partial def mul : P Expr := do
     if (← eatKw "*").isSome then l ← bin start "*" l (← unary)
     else if isKw (← peek) "inter" then discard bump; l ← bin start "inter" l (← unary)
     else if isKw (← peek) "join" then discard bump; l ← bin start "join" l (← unary)
+    else if isKw (← peek) "div" then discard bump; l ← bin start "div" l (← unary)
+    -- A remainder's `mod` is on the line of its left operand; at the start
+    -- of a line, it starts a module.
+    else if isKw (← peek) "mod" && !(← peek).nlBefore then discard bump; l ← bin start "mod" l (← unary)
     else break
   return l
 partial def unary : P Expr := do
@@ -557,8 +567,9 @@ partial def atom : P Expr := do
       let f ← withRecords expr
       discard (expectKw ")")
       return .pair (← spanFrom t.span) e f
-    discard (expectKw ")")
-    fieldReads callArgs indexArg e
+    let close ← expectKw ")"
+    -- A field read, method call or index of it starts at its `(`.
+    fieldReads callArgs indexArg e (some (t.span.to close.span))
   | _ => fail t "an expression"
 end
 

@@ -12,8 +12,8 @@ code (including Fren's own implementation, in `Fren`) can keep using them as
 names. Spec files start with `open Fren.Lang`.
 
 Precedence, lowest first: `when`/`unless`, `iff`, `or`, `and`, `not`,
-comparisons and `is`, `+ -`, `*`, unary `-`; `if` is an atom whose `else`
-branch extends as far right as possible.
+comparisons and `is`, `+ -`, `* div mod`, unary `-`; `if` is an atom whose
+`else` branch extends as far right as possible.
 -/
 
 namespace Fren.Lang
@@ -113,6 +113,13 @@ that an `in` starting a line starts an input (`Reqs/Lang/Lexical`). -/
 /-- `{a, b}`, a set literal; `{}` is the empty set. -/
 scoped syntax:max (name := setExpr) "{" sepBy(fren_expr, ", ", ", ", allowTrailingSep) "}" : fren_expr
 scoped syntax:70 fren_expr:70 " * " fren_expr:71 : fren_expr
+scoped syntax:70 (name := divExpr) fren_expr:70 " div " fren_expr:71 : fren_expr
+
+open Lean Parser in
+/-- `a mod k`, the remainder. Its `mod` must be on the line where `a` ends,
+so that a `mod` starting a line starts a module (`Reqs/Lang/Lexical`). -/
+@[scoped fren_expr_parser] def modExpr := trailing_parser:70:70 sameLineAsLeft >> " mod " >> categoryParser `fren_expr 71
+
 scoped syntax:75 "-" fren_expr:75 : fren_expr
 /-! Operators of other languages, parsed only to say what to write instead
 (`Fren.Core.foreignOpMsg`). -/

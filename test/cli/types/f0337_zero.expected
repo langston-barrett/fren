@@ -1,0 +1,12 @@
+error[F0337]: `mod` by zero
+ --> test/cli/types/f0337_zero.fren:4:44
+  |
+4 | comp c { in x: Int pub out r: Int := x mod NONE }
+  |                                            ^^^^ the divisor is `0`
+  |
+  = note: SMT-LIB leaves division by zero unspecified, and Lean makes it `0`, so Fren rejects it
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0337`.
+exit=2

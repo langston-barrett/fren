@@ -526,6 +526,20 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
         unless ← isDefEq tx (set a) do
           throwErrorAt stx s!"type mismatch: expected `{← typeName (set a)}`, found `{← typeName tx}`"
         return (← `(Fren.FinSet.image $t $x), set b)
+  if ty.isConstOf ``Int then
+    let some method := (Core.Method.ofName? m).filter (·.accepts false false (int := true))
+      | throwErrorAt ref (Core.unknownMethodMsg m "Int" false (int := true)).text
+    unless args.size == method.arity do throwErrorAt ref (Core.arityMsg (Name.mkSimple m) method.arity args.size).text
+    for (a, stx) in args do
+      let ta ← typeOf a
+      unless ta.isConstOf ``Int do throwErrorAt stx s!"type mismatch: expected `Int`, found `{← typeName ta}`"
+    -- Conditionals, so that they stay linear.
+    let y : Term := (args.map (·.1))[0]?.getD t
+    let term ← match method with
+      | .min => `(if $t ≤ $y then $t else $y)
+      | .max => `(if $t ≥ $y then $t else $y)
+      | _ => `(if $t < 0 then -$t else $t)
+    return (term, Lean.mkConst ``Int)
   unless ty.isConstOf ``String do throwErrorAt ref (Core.noMethodsMsg m (← typeName ty)).text
   let some method := (Core.Method.ofName? m).filter (·.accepts true false)
     | throwErrorAt ref (Core.unknownMethodMsg m "String").text
@@ -558,7 +572,7 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
 /-- Reads the field `f` of the term `t` of Lean type `ty`; of a `String` or
 a set, calls the method `f`, without arguments. -/
 def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term × Expr) := do
-  if ty.isConstOf ``String || (relTypes? ty).isSome || ty.isAppOfArity ``Fren.Seq 1 then
+  if ty.isConstOf ``String || ty.isConstOf ``Int || (relTypes? ty).isSome || ty.isAppOfArity ``Fren.Seq 1 then
     return ← callMethod ref t ty f.toString #[]
   if ty.isAppOfArity ``Fren.FinSet 1 then
     unless f == `card do throwErrorAt ref (Core.unknownSetMethodMsg f.toString (← typeName ty)).text
@@ -1627,6 +1641,99 @@ def indexTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   noteIndex cx e q i
   `(Fren.Seq.nth $q $i)
 
+/-- `(e).a.b` or `(e).a.m(x)`, whose name after the `.` is dotted, as the
+reads one after another, `((e).a).b` or `((e).a).m(x)`, as the `fren`
+command's parser reads it; `none` for any other expression. -/
+def splitDotted? (e : Syntax) : Option Syntax := do
+  guard (e.isOfKind ``Lang.fieldExpr || e.isOfKind ``Lang.methodExpr)
+  guard e[2].isIdent
+  let n := e[2].getId
+  guard !n.isAtomic
+  let recv := n.components.dropLast.foldl (init := e[0]) fun (r : Syntax) c =>
+    Syntax.node .none ``Lang.fieldExpr #[r, e[1], mkIdentFrom e[2] c]
+  return (e.setArg 0 recv).setArg 2 (mkIdentFrom e[2] (Name.mkSimple n.getString!))
+
+/-- The constant that the path of names `names` names, without recording its
+use. -/
+def constPath? (cx : ExprCtx) (names : Array Name) : TermElabM (Option Name) := do
+  let .ok (.item { kind := .constItem, path, .. }) := (← getState).table.resolvePath cx.modName names cx.shadowing
+    | return none
+  return some path
+
+open Lang in
+/-- The value of `e`, if it is an integer constant expression: integer
+literals and constants whose values are, combined by `+`, `-`, `*`, `div`,
+`mod`, `abs`, `min` and `max`, as the `fren` command computes it
+(`Reqs/Lang/Expressions#division-and-remainder`). -/
+partial def intConstValue? (cx : ExprCtx) (e : Syntax) : TermElabM (Option Int) := do
+  let e := unparen e
+  if let some e' := splitDotted? e then return ← intConstValue? cx e'
+  let method (recv : Syntax) (m : String) (args : Array Syntax) : TermElabM (Option Int) := do
+    let some x ← intConstValue? cx recv | return none
+    let some ys := (← args.toList.mapM (intConstValue? cx)).mapM id | return none
+    return Core.intConstMethod? m x ys
+  if let some (recv, m) := methodApp? cx e then
+    return ← method (← pathExpr e[0] recv) m.toString e[2].getSepArgs
+  if e.isOfKind ``Lang.methodExpr then
+    let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
+    return ← method e[0] (if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString) e[4].getSepArgs
+  if e.isOfKind ``Lang.fieldExpr then return ← method e[0] e[2].getId.toString #[]
+  match e with
+  | `(fren_expr| $n:num) => return some n.getNat
+  | `(fren_expr| -$a) => return (← intConstValue? cx a).map (- ·)
+  | `(fren_expr| $p:fren_path) =>
+    let segs := pathSegs p
+    -- A constant, then the methods without arguments applied to it.
+    let (names, methods) ← if h : segs.size = 1 then
+        let n := segs[0].getId
+        pure (#[Name.mkSimple n.getRoot.toString], n.components.drop 1)
+      else if segs.any (!·.getId.isAtomic) then return none
+      else pure (← segNames segs, [])
+    if names.size == 1 && ((cx.binder? names[0]!).isSome || cx.vars.any (·.name.getRoot == names[0]!)) then return none
+    let some path ← constPath? cx names | return none
+    let some v := ((← getState).consts.get? path).bind (·.int?) | return none
+    return methods.foldlM (fun x m => Core.intConstMethod? m.toString x []) v
+  | _ =>
+    if e.getNumArgs == 3 && e[1].isAtom then
+      let some x ← intConstValue? cx e[0] | return none
+      let some y ← intConstValue? cx e[2] | return none
+      return Core.intConstOp? e[1].getAtomVal.trimAscii.toString x y
+    return none
+
+open Lang in
+/-- The form of the divisor `k` (`lang::divisor`), without its `-` and
+parentheses: its form, its value if it is known, and the constant it names,
+if any. -/
+partial def divisorForm (cx : ExprCtx) (k : Syntax) : TermElabM (Core.DivisorForm × Int × Name) := do
+  match unparen k with
+  | `(fren_expr| -$a) => let (f, v, c) ← divisorForm cx a; return (f, -v, c)
+  | `(fren_expr| $n:num) => return (.literal, n.getNat, .anonymous)
+  | `(fren_expr| $p:fren_path) =>
+    let segs := pathSegs p
+    if segs.any (!·.getId.isAtomic) then return (.other, 0, .anonymous)
+    let names ← segNames segs
+    if names.size == 1 && ((cx.binder? names[0]!).isSome || cx.vars.any (·.name == names[0]!)) then
+      return (.other, 0, .anonymous)
+    let some path ← constPath? cx names | return (.other, 0, .anonymous)
+    return match ((← getState).consts.get? path).bind (·.int?) with
+      | some v => (.knownConstant, v, path)
+      | none => (.unknownConstant, 0, path)
+  | _ => return (.other, 0, .anonymous)
+
+/-- `a div k` or `a mod k` (`op`), which divides by the value of the divisor
+`k` (`lang::divisor`), written as a numeral. -/
+def divTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (op : String) : TermElabM Term :=
+    withRef e do
+  let x ← toTerm cx e[0]
+  for (t, stx) in [(x, e[0]), (← toTerm cx e[2], e[2])] do
+    let ty ← typeOf t
+    unless ty.isConstOf ``Int do throwErrorAt stx s!"type mismatch: expected `Int`, found `{← typeName ty}`"
+  let (form, value, c) ← divisorForm cx e[2]
+  liftMsg e[2] (Core.checkDivisor op form value c)
+  let n := Syntax.mkNumLit (toString value.natAbs)
+  let k ← if value < 0 then `((-$n : Int)) else `(($n : Int))
+  if op == "div" then `($x / $k) else `($x % $k)
+
 open Lang in
 /-- A path in an expression: a binder, a variable or a constant, with the
 fields read from it, or a variant. `toTerm` translates its parts, and
@@ -1764,6 +1871,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
     unless Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do
       throwError Core.nonlinearMsg.text
     `($(← go a) * $(← go b))
+  | `(fren_expr| $_ div $_) => divTerm toTerm cx e "div"
   | `(fren_expr| -$a) => `(-$(← go a))
   | `(fren_expr| $_ == $_) | `(fren_expr| $_ && $_) | `(fren_expr| $_ || $_) | `(fren_expr| $_ | $_) =>
     throwErrorAt e[1] (Core.foreignOpMsg e[1].getAtomVal.trimAscii.toString).text
@@ -1776,6 +1884,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $p:fren_path) => pathTerm toTerm cx parent? e p
   | `(fren_expr| $p:fren_path($args,*)) => appTerm toTerm cx parent? e p args
   | _ =>
+    if let some e' := splitDotted? e then return ← toTerm cx e'
     if e.isOfKind ``Lang.fieldExpr then
       lintChain toTerm cx parent? e
       return ← fieldTerm cx e (← toTerm { cx with concatOk := true } e[0])
@@ -1785,6 +1894,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
       let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
       if m == "matches?" then lintPattern cx parent? e e[0] e[4].getSepArgs
       methodTerm toTerm cx e e[2] e[0] m e[4].getSepArgs
+    else if e.isOfKind ``Lang.modExpr then divTerm toTerm cx e "mod"
     else if e.isOfKind ``Lang.setExpr then setLitTerm toTerm cx emptyOk e
     else if e.isOfKind ``Lang.memberExpr || e.isOfKind ``Lang.subsetExpr || e.isOfKind ``Lang.unionExpr
         || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr || e.isOfKind ``Lang.joinExpr then setOpTerm toTerm { cx with emptyOk } e
@@ -2351,7 +2461,9 @@ open Lang in
     addDecl (.defnDecl { name := decl, levelParams := [], type, value, hints := .abbrev, safety := .safe })
     setReducibleAttribute decl
     record (.item { item := { kind := .constItem, path, isPub, owner := modName }, ref := nameStx })
-    record (.constInfo { path, decl, type, value })
+    let int? ← if type.isConstOf ``Int then intConstValue? { modName, vars := #[], insts := #[], place := .prop } stx[6]
+      else pure none
+    record (.constInfo { path, decl, type, value, int? })
     unless isPub do recordItem .constant path nameStx
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
 

@@ -155,7 +155,60 @@ def comparisonSwap? : String → Option String
 def arithmeticSwap? : String → Option String
   | "+" => some "-"
   | "-" => some "+"
+  | "div" => some "mod"
+  | "mod" => some "div"
   | _ => none
+
+/-- The operands of `e`. -/
+def exprChildren : Expr → Array Expr
+  | .when _ _ c b | .bin _ _ c b | .pair _ c b | .index _ c b => #[c, b]
+  | .ite _ c a b => #[c, a, b]
+  | .not _ e | .neg _ e | .field _ e _ => #[e]
+  | .app _ _ as | .set _ as | .seq _ as => as
+  | .record _ _ fs => fs.filterMap (·.2)
+  | .match _ sc arms => #[sc] ++ arms.map (·.2)
+  | .method _ r _ as => #[r] ++ as
+  | _ => #[]
+
+/-- Every expression of `items`, and their subexpressions. -/
+partial def allExprs (items : Array Item) : Array Expr :=
+  let rec sub (e : Expr) : Array Expr := #[e] ++ (exprChildren e).flatMap sub
+  let rec ofItem : Item → Array Expr
+    | .const _ _ _ v | .global _ _ v | .function _ _ _ _ (some v) => #[v]
+    | .comp _ _ members => members.flatMap fun
+      | .prop _ _ e | .var _ _ _ _ _ (some e) => #[e]
+      | .inst _ _ bs => bs.filterMap (·.2)
+      | _ => #[]
+    | .refine _ _ _ bs => bs.filterMap (·.2)
+    | .lintSetting _ _ _ _ _ (some body) => ofItem body
+    | _ => #[]
+  (items.flatMap ofItem).flatMap sub
+
+/-- The last segment of the name of each constant that a divisor of `items`
+names, and of each constant that the value of such a constant names, which
+changing could make a divisor `0` (`Reqs/Mutate#mutants`). -/
+partial def divisorConstants (items : Array Item) : Std.HashSet String := Id.run do
+  let rec named : Expr → Option String
+    | .neg _ e => named e
+    | .path _ segs => some ((segs.back!.name.splitOn ".").head!)
+    | _ => none
+  let mut out : Std.HashSet String := {}
+  for e in allExprs items do
+    if let .bin _ op _ k := e then
+      if op == "div" || op == "mod" then
+        if let some n := named k then out := out.insert n
+  -- Through the values of constants, until nothing is new.
+  let values := items.filterMap fun | .const _ n _ v => some (n.name, v) | _ => none
+  let mut changed := true
+  while changed do
+    changed := false
+    for (n, v) in values do
+      unless out.contains n do continue
+      for e in allExprs #[.const false { name := n, span := default } #[] v] do
+        if let .path _ segs := e then
+          let m := (segs.back!.name.splitOn ".").head!
+          unless out.contains m do out := out.insert m; changed := true
+  return out
 
 /-- The items of the class that starts after the `[` at `i` of pattern `p`,
 as offsets in `p`, and the offset of its `]`. -/
@@ -216,7 +269,7 @@ structure Edit where
 /-- The edits of expression `e`. `inAndLeft` says that `e` is the left
 operand of an `and`, unparenthesized, where an `or` needs parentheses; an
 `or` whose left operand is an unparenthesized `or` parenthesizes it. -/
-partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) : Array Edit :=
+partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bool := false) : Array Edit :=
   let here : Array Edit := match e with
     | .bin sp op l r =>
       let opTok? := s.wordIn { start := l.span.stop, stop := r.span.start } op
@@ -250,7 +303,8 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) : Array Edit 
       #[{ origin := .negateTrigger, span := { start := sp.start, stop := sp.start + kw.length }, after := if negated then "when" else "unless",
           context := sp }]
     -- In decimal, whatever the literal's radix.
-    | .num sp n => (#[n + 1] ++ (if n > 0 then #[n - 1] else #[])).map fun k =>
+    -- A divisor is never made `0`.
+    | .num sp n => (#[n + 1] ++ (if n > 0 && !(divisor && n == 1) then #[n - 1] else #[])).map fun k =>
         { origin := .shiftInteger, span := sp, after := toString k, context := sp }
     | .bool sp b => #[{ origin := .flipBool, span := sp, after := if b then "false" else "true", context := sp }]
     | .set sp es | .seq sp es =>
@@ -282,8 +336,9 @@ where
     | .ite _ c a b => #[edits s c, edits s a, edits s b]
     | .bin sp op l r =>
       -- `l` is unparenthesized when its span starts the `and`'s.
-      #[edits s l (op == "and" && s.outer sp l.span == l.span), edits s r]
-    | .not _ e | .neg _ e | .field _ e _ => #[edits s e]
+      #[edits s l (op == "and" && s.outer sp l.span == l.span), edits s r (divisor := op == "div" || op == "mod")]
+    | .neg _ e => #[edits s e (divisor := divisor)]
+    | .not _ e | .field _ e _ => #[edits s e]
     | .app _ _ as | .set _ as | .seq _ as => as.map (edits s ·)
     | .record _ _ fs => fs.filterMap fun (_, e?) => e?.map (edits s ·)
     | .match _ sc arms => #[edits s sc] ++ arms.map fun (_, b) => edits s b
@@ -340,12 +395,21 @@ def hex12 (h : UInt64) : String :=
   let digits := String.ofList (Nat.toDigits 16 (h.toNat % 2 ^ 48))
   String.ofList (List.replicate (12 - digits.length) '0') ++ digits
 
-/-- The mutants of one file, in order of position. -/
-def ofFile (s : Src) (items : Array Item) : Array Mutant := Id.run do
+/-- The mutants of one file, in order of position. The constants named
+`divisors`, and those that `divisorConstants` finds in the file, are left
+alone. -/
+def ofFile (s : Src) (items : Array Item) (divisors : Std.HashSet String := {}) : Array Mutant := Id.run do
   let mut out := #[]
   -- How many identical mutants each item has had so far.
   let mut seen : Std.HashMap String Nat := {}
+  let divisors := divisors.insertMany (divisorConstants items)
+  let rec constName? : Item → Option String
+    | .const _ n _ _ => some n.name
+    | .lintSetting _ _ _ _ _ (some body) => constName? body
+    | _ => none
+  let consts := items.filterMap constName?
   for (item, comp?, e) in sites items do
+    if comp?.isNone && consts.contains item.getString! && divisors.contains item.getString! then continue
     for ed in edits s e do
       let before := s.text ed.span
       let key := "\x00".intercalate [ed.origin.name, idPath s.path, item.toString, idText (s.text ed.context), idText before, idText ed.after]

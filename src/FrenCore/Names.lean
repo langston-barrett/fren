@@ -931,6 +931,74 @@ def nonlinearMsg : Msg :=
     notes := #["note: the solver decides only linear integer arithmetic",
       "help: one side of `*` must mention no variable and no uninterpreted function, such as `2 * x` or `(MAX - MIN) * x`"] }
 
+/-- The form of a divisor, without its `-` and parentheses
+(`lang::divisor`): an integer literal, a constant whose value is an integer
+constant expression, a constant whose value is not, or any other
+expression. -/
+inductive DivisorForm where
+  | literal
+  | knownConstant
+  | unknownConstant
+  | other
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- Whether a divisor of `div` or `mod` is accepted, from its form and its
+value, which is known for a literal or a known constant
+(`lang::divisor`). -/
+def divisorAccepted : DivisorForm → Int → Bool
+  | .literal, value | .knownConstant, value => value != 0
+  | .unknownConstant, _ | .other, _ => false
+
+/-- The divisor of `op`, `div` or `mod`, which is not an integer literal or
+a constant. -/
+def divisorFormMsg (op : String) : Msg :=
+  { code? := some "F0336", headline := s!"the divisor of `{op}` must be an integer literal or a constant"
+    label? := some "not a literal or a constant"
+    notes := #["note: the solver decides only linear integer arithmetic, which divides only by constants",
+      s!"help: divide by a literal or a constant, such as `x {op} 2`, or declare a constant for the divisor"] }
+
+/-- The divisor of `op`, the constant `c`, whose value is not an integer
+constant expression. -/
+def divisorUnknownMsg (op : String) (c : Name) : Msg :=
+  { code? := some "F0336", headline := s!"the value of `{showPath c}`, the divisor of `{op}`, is not known when the spec is read"
+    label? := some "value not known"
+    notes := #["note: a constant divisor's value is built from integer literals and such constants by `+`, `-`, `*`, `div`, `mod`, `abs`, `min` and `max`",
+      s!"help: give `{showPath c}` such a value, or divide by a literal"] }
+
+/-- The divisor of `op`, `div` or `mod`, is `0`. -/
+def divisorZeroMsg (op : String) : Msg :=
+  { code? := some "F0337", headline := s!"`{op}` by zero", label? := some "the divisor is `0`"
+    notes := #["note: SMT-LIB leaves division by zero unspecified, and Lean makes it `0`, so Fren rejects it"] }
+
+/-- Checks the divisor of `op` (`lang::divisor`): of the form `form`, with
+the value `value` if it is a literal or a known constant, and, for a
+constant, its path `c`. -/
+def checkDivisor (op : String) (form : DivisorForm) (value : Int) (c : Name := .anonymous) : Except Msg Unit :=
+  if divisorAccepted form value then .ok () else match form with
+    | .literal | .knownConstant => .error (divisorZeroMsg op)
+    | .unknownConstant => .error (divisorUnknownMsg op c)
+    | .other => .error (divisorFormMsg op)
+
+/-- `a op b`, for an operator of an integer constant expression: `+`, `-`,
+`*`, and Euclidean `div` and `mod`, which are not defined by `0`. -/
+def intConstOp? (op : String) (a b : Int) : Option Int :=
+  match op with
+  | "+" => some (a + b)
+  | "-" => some (a - b)
+  | "*" => some (a * b)
+  | "div" => if b == 0 then none else some (Int.ediv a b)
+  | "mod" => if b == 0 then none else some (Int.emod a b)
+  | _ => none
+
+/-- `x.m(args)`, for a method of an integer constant expression: `abs`,
+`min` and `max`. -/
+def intConstMethod? (m : String) (x : Int) (args : List Int) : Option Int :=
+  match m, args with
+  | "abs", [] => some (if x < 0 then -x else x)
+  | "min", [y] => some (if x ≤ y then x else y)
+  | "max", [y] => some (if x ≥ y then x else y)
+  | _, _ => none
+
 def dupMemberMsg (n : Name) : Msg :=
   { code? := some "F0213", headline := s!"`{n}` is defined multiple times in this component", label? := some "defined again here"
     notes := #["note: the variables, instances and constraints of a component share one namespace"] }
@@ -1253,11 +1321,14 @@ inductive Method where
   | range
   | update
   | rev
+  | abs
+  | min
+  | max
   deriving Inhabited, BEq, DecidableEq, Repr
 
 def Method.all : Array Method :=
   #[.len, .startsWith, .endsWith, .contains, .matches, .at, .slice, .indexOf, .replace, .replaceAll, .card,
-    .inverse, .closure, .image, .domain, .range, .update, .rev]
+    .inverse, .closure, .image, .domain, .range, .update, .rev, .abs, .min, .max]
 
 def Method.name : Method → String
   | .len => "len"
@@ -1278,6 +1349,9 @@ def Method.name : Method → String
   | .range => "range"
   | .update => "update"
   | .rev => "rev"
+  | .abs => "abs"
+  | .min => "min"
+  | .max => "max"
 
 def Method.ofName? (s : String) : Option Method := Method.all.find? (·.name == s)
 
@@ -1290,16 +1364,17 @@ def Method.relational : Method → Bool
   | _ => false
 
 /-- Whether the method applies to a receiver whose type is a `String`
-(`string`), a set (`set`), a relation (`rel`) or a sequence (`seq`)
-(`lang::method_type`): `card` is a set's and a relation's, the relational
-methods a relation's, `update` and `rev` a sequence's, `matches?` and
-`replace_all` a `String`'s, and the others both a `String`'s and a
-sequence's. -/
-def Method.accepts (m : Method) (string set : Bool) (rel := false) (seq := false) : Bool :=
+(`string`), a set (`set`), a relation (`rel`), a sequence (`seq`) or an
+`Int` (`int`) (`lang::method_type`): `card` is a set's and a relation's,
+the relational methods a relation's, `update` and `rev` a sequence's,
+`matches?` and `replace_all` a `String`'s, `abs`, `min` and `max` an
+`Int`'s, and the others both a `String`'s and a sequence's. -/
+def Method.accepts (m : Method) (string set : Bool) (rel := false) (seq := false) (int := false) : Bool :=
   match m with
   | .card => set || rel
   | .update | .rev => seq
   | .matches | .replaceAll => string
+  | .abs | .min | .max => int
   | m => if m.relational then rel else string || seq
 
 /-- The kinds of value that methods take and give; a set's or relation's
@@ -1317,14 +1392,15 @@ inductive MethodTy where
 /-- The type of its result. -/
 def Method.result : Method → MethodTy
   | .startsWith | .endsWith | .contains | .matches => .bool
-  | .len | .indexOf | .card => .int
+  | .len | .indexOf | .card | .abs | .min | .max => .int
   | .at | .slice | .replace | .replaceAll | .update | .rev => .string
   | .inverse | .closure => .rel
   | .image | .domain | .range => .set
 
 /-- The types of its parameters; the pattern of `matches?` is a literal. -/
 def Method.params : Method → List MethodTy
-  | .len | .card | .inverse | .closure | .domain | .range | .rev => []
+  | .len | .card | .inverse | .closure | .domain | .range | .rev | .abs => []
+  | .min | .max => [.int]
   | .update => [.int, .elem]
   | .image => [.set]
   | .startsWith | .endsWith | .contains | .matches => [.string]
@@ -1366,8 +1442,9 @@ def patternNotLiteralMsg : Msg :=
       "help: write the pattern here, as a raw literal such as `r\"[a-z]+\"`"] }
 
 /-- `e.m`, where the type of `e`, `ty`, has no method `m`. -/
-def unknownMethodMsg (m : String) (ty : String) (string := true) (set := false) (rel := false) (seq := false) : Msg :=
-  let names := (Method.all.filter (·.accepts string set rel seq)).map (·.name)
+def unknownMethodMsg (m : String) (ty : String) (string := true) (set := false) (rel := false) (seq := false) (int := false) :
+    Msg :=
+  let names := (Method.all.filter (·.accepts string set rel seq int)).map (·.name)
   let suggestion := ((methodAliases.lookup m) <|> similarStr m names).toArray
   { code? := some "F0321", headline := s!"`{ty}` has no method `{m}`", label? := some "unknown method"
     notes := #[s!"note: the methods of `{ty}` are {", ".intercalate (names.toList.map (s!"`{·}`"))}"]
@@ -1376,7 +1453,7 @@ def unknownMethodMsg (m : String) (ty : String) (string := true) (set := false) 
 /-- `e.m`, where the type of `e`, `ty`, has no methods at all. -/
 def noMethodsMsg (m : String) (ty : String) : Msg :=
   { code? := some "F0322", headline := s!"`{ty}` has no methods, so it has no method `{m}`", label? := some "no methods"
-    notes := #["note: only `String`s have methods"] }
+    notes := #["note: only `Int`s, `String`s, sets, relations and sequences have methods"] }
 
 /-- Whether a construct is in the decidable core (`lang::in_core`); one
 whose operands are all constants (`ground`) has a fixed value. -/
