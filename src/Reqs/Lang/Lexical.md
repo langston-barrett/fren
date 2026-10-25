@@ -51,6 +51,12 @@ the Lean front end sees it: a `«` that is never closed is a syntax error
 in Lean, while the `fren` command reports that the lexeme is not an
 identifier.
 
+The tokens read as identifiers are those that importing `Fren` brings in.
+A Lean file that also imports a library adding its own such token, such as
+Mathlib's `ring!`, cannot declare that name with `!`: Lean's parser reports
+an error there, while the `fren` command, which knows only Fren's imports,
+accepts the declaration.
+
 ```fren
 pub mod lang
 
