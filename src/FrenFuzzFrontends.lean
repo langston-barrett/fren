@@ -47,7 +47,7 @@ What legitimately differs is normalized away (`compareFrontends`):
 
 `--avoid-known` keeps the generator clear of the differences already
 known, to find others: it parenthesizes every method's receiver that is
-not a name, and gives every component a set input.
+not a name.
 -/
 
 open Lean FrenCli FrenCli.Eval
@@ -274,11 +274,6 @@ def genWide (avoidKnown : Bool := false) : R String := do
       vars := vars.push (n, t, true)
       shown := shown.push (n, t)
       out := out ++ s!"    in {n}{if t == .bool then "" else s!": {t.name relElem}"}\n"
-    -- The binary declares no sets for a `card` of a literal unless a
-    -- variable is a set, a known difference.
-    if avoidKnown then
-      vars := vars.push ("st9", .set, true)
-      out := out ++ "    in st9: Set(Int)\n    assume a9: not 7 in st9\n"
     -- An instance of an earlier comp, its inputs bound to expressions of
     -- this one's.
     if !comps.isEmpty && (← chance 50) then

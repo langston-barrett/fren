@@ -4,11 +4,27 @@
 -- Methods chained after a literal, where the first takes arguments.
 expect sliced: "ab".slice(0, 1).len = 1 and ("a").len = 1
 
--- `card` of a literal, with a set variable in the component.
+-- `card` of a literal, with no set variable: the solver must still be
+-- told of sets.
+expect counted_literal: {1, 2}.card = 2
+
 comp counted {
     in x: Int
-    in t: Set(Int)
     pub out y?
-    req q: y? iff ({x}.card = 1 and not 7 in t)
+    req q: y? iff {x}.card = 1
 }
---@ summary: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+
+-- A member of a set literal read from an instance.
+comp source {
+    in x: Int
+    pub out y: Int
+    req q: y = x
+}
+
+comp member {
+    in x: Int
+    inst w: source { x }
+    pub out z?
+    req q: z? iff x in {w.y, 0}
+}
+--@ summary: 8 passed, 0 failed, 0 inconclusive, 0 redundant
