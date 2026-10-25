@@ -1,0 +1,127 @@
+-- keep-sorted start
+import FrenTest.Frontends
+import FrenTest.Messages
+-- keep-sorted end
+
+/-!
+# Comparing the front ends' reports
+
+Regression tests for `FrenTest.Frontends.compare`, which
+`fren_fuzz_frontends` relies on: each spec here, with the reports that the
+front ends gave or could give on it, must be reported as differing (or as
+agreeing), so that a normalization never hides a real difference.
+-/
+
+namespace FrenTest.FrontendsCompare
+
+open FrenTest.Ui (Diagnostic)
+open FrenTest.Frontends
+
+def err (line : Nat) (text : String) (code? : Option String := none) : Diagnostic :=
+  { line, severity := "error", text, code? }
+
+def warn (line : Nat) (text : String) (code? : Option String := none) : Diagnostic :=
+  { line, severity := "warning", text, code? }
+
+def none0 : String := "0 passed, 0 failed, 0 inconclusive, 0 redundant"
+
+def differs (text : String) (cli hosted : Report) : Bool := !(compare text cli hosted).1.isEmpty
+
+def agrees (text : String) (cli hosted : Report) : Bool := (compare text cli hosted).1.isEmpty
+
+/-! ## Lean rejects what the binary accepts -/
+
+-- #97 in a constant, an item without checks.
+def constant : String := "pub const K: Int := {(1, 2)}.range.card\n"
+
+#guard differs constant { diags := #[], summary? := none0, exit? := some 0 }
+  { diags := #[err 1 "`Rel(Int, Int)` has no method `range.card`"], summary? := none0 }
+
+-- One of Lean's own errors with no error of the binary on its line.
+#guard differs constant { diags := #[], summary? := none0, exit? := some 0 }
+  { diags := #[err 1 "unknown identifier 'K'"], summary? := none0 }
+
+-- ... but it stands for an error of the binary on the same line.
+#guard agrees constant { diags := #[err 1 "type mismatch: expected `Int`, found `Bool`" "F0304"], exit? := some 2 }
+  { diags := #[err 1 "Type mismatch\n  x\nhas type Bool"] }
+
+-- A static error of the binary hides Lean's lints of its item, but not
+-- Lean's errors on other lines of it.
+def item : String := "comp c {\n    in x: Int\n    pub out y: Int\n    req q: y = x * x\n    req r: y = K\n}\n"
+
+#guard agrees item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", warn 2 "unused variable `x`"] }
+
+#guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", err 5 "unknown identifier 'K'"] }
+
+/-! ## The binary cannot parse what Lean accepts -/
+
+def parse : String := "comp c {\n    in x: Int\n    req q: x = 1\n}\n\ncomp d {\n    in y: Int\n    req q: y = 1\n}\n"
+
+-- Lean's only error is a failed check in another item.
+#guard differs parse { diags := #[err 3 "expected an expression, found keyword `expect`" "F0104"], exit? := some 2 }
+  { diags := #[err 7 "`d` is not realizable: for the input y = 0, no outputs satisfy `q`"] }
+
+-- Lean's own parse error, on the line before the binary's, in its item.
+#guard agrees parse { diags := #[err 3 "expected an expression, found keyword `expect`" "F0104"], exit? := some 2 }
+  { diags := #[err 2 "unexpected token 'expect'; expected fren_expr", err 7 "`d` is vacuous: its condition can never hold"] }
+
+/-! ## Summaries and exit codes -/
+
+def checked : String := "comp c {\n    in x: Int\n    pub out y?\n    req q: y? iff x = 1\n}\n"
+
+-- A summary that differs with no undecided check to explain it.
+#guard differs checked { diags := #[], summary? := "2 passed, 0 failed, 0 inconclusive, 0 redundant", exit? := some 0 }
+  { diags := #[], summary? := "1 passed, 0 failed, 0 inconclusive, 1 redundant" }
+
+#guard !(compare checked { diags := #[], summary? := "2 passed, 0 failed, 0 inconclusive, 0 redundant", exit? := some 0 }
+  { diags := #[], summary? := "1 passed, 0 failed, 0 inconclusive, 1 redundant" }).2
+
+-- ... but an undecided check, on one side, is a matter of time.
+#guard (compare checked
+  { diags := #[warn 4 "could not decide whether `c::q` is redundant: the solver returned unknown (TIMEOUT)" "F0608"],
+    summary? := "1 passed, 0 failed, 1 inconclusive, 0 redundant", exit? := some 3 }
+  { diags := #[], summary? := "2 passed, 0 failed, 0 inconclusive, 0 redundant" }).2
+
+-- An exit code that disagrees with Lean's messages.
+#guard differs checked { diags := #[], summary? := none0, exit? := some 1 } { diags := #[], summary? := none0 }
+#guard differs checked { diags := #[], summary? := none0, exit? := some 3 } { diags := #[], summary? := none0 }
+#guard agrees checked { diags := #[warn 2 "unused variable `x`" "F0710"], summary? := none0, exit? := some 3 }
+  { diags := #[warn 2 "unused variable `x`"], summary? := none0 }
+#guard differs checked { diags := #[warn 2 "unused variable `x`" "F0710"], summary? := none0, exit? := some 0 }
+  { diags := #[warn 2 "unused variable `x`"], summary? := none0 }
+
+/-! ## Messages without a location -/
+
+#guard (FrenTest.Ui.cliDiagnostics "a.fren" "error: internal error: oops\n  = note: this is a bug in Fren\n"
+  (keepUnlocated := true)).1.size == 1
+
+#guard (FrenTest.Ui.cliDiagnostics "a.fren" "error: internal error: oops\n").1.isEmpty
+
+-- The binary's line when a static error stops it has no counterpart.
+def stopped : Array Diagnostic :=
+  #[err 4 "nonlinear arithmetic is not supported" "F0307", err 0 "could not check due to 1 previous error"]
+
+#guard agrees item { diags := stopped, exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported"] }
+
+#guard differs checked { diags := #[err 0 "internal error: oops"], summary? := none0, exit? := some 2 }
+  { diags := #[], summary? := none0 }
+
+/-! ## Normalized headlines -/
+
+-- Values are masked; the names of a conflict's constraints are not.
+#guard normHead "conflicts with `q1` when x = 1" == normHead "conflicts with `q1` when x = 2"
+#guard normHead "conflicts with `q1` when x = 1" != normHead "conflicts with `q2` when x = 1"
+#guard normHead "`c` is not realizable: for the input x = 1, no outputs satisfy `q`"
+  == normHead "`c` is not realizable: for the input (any values), no outputs satisfy `q`"
+#guard normHead "`c` is not realizable: for the input x = 1, no outputs satisfy `q`"
+  != normHead "`c` is not realizable: for the input x = 1, no outputs satisfy `r`"
+-- " when " elsewhere is text, not values.
+#guard normHead "`p` holds when a" != normHead "`p` holds when b"
+
+#guard isCheckResult (err 3 "expectation `c::x` does not hold")
+#guard !isCheckResult (err 3 "expectation `c::x` does not hold here, but is a lint")
+
+end FrenTest.FrontendsCompare

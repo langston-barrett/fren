@@ -8,7 +8,7 @@ import Lean.Elab.Frontend
 
 The messages that either front end reports about a `.fren` file, as
 `Diagnostic`s, for the ui tests (`FrenTestMain`) and the front-end fuzzer
-(`FrenFuzz`, `--frontends`): the binary's from its rendered output, and the
+(`fren_fuzz_frontends`, in `FrenFuzzFrontends`): the binary's from its rendered output, and the
 Lean front end's from elaborating the file in an environment that imports
 `Fren`.
 -/
@@ -32,32 +32,38 @@ def header? (line : String) : Option (String × Option String × String) :=
     return (sev, code?, text)
 
 /-- The binary's messages about `file`, and its summary line. A message's
-text is its headline, then its `= note` lines and `help:` suggestions. -/
-def cliDiagnostics (file : String) (out : String) : Array Diagnostic × Option String := Id.run do
-  let mut diags : Array Diagnostic := #[]
+text is its headline, then its `= note` lines and `help:` suggestions. With
+`keepUnlocated`, a message without a location (such as an internal error)
+is kept, on line 0; otherwise it is dropped, as are messages about other
+files. -/
+def cliDiagnostics (file : String) (out : String) (keepUnlocated := false) : Array Diagnostic × Option String := Id.run do
+  -- Each message, and whether to keep it: located in `file`, or unlocated
+  -- and kept.
+  let mut diags : Array (Diagnostic × Bool) := #[]
   let mut summary := none
-  -- A header whose ` --> ` line is still to come
-  let mut pending : Option (String × Option String × String) := none
+  -- Whether the last header's ` --> ` line may still come.
+  let mut pending := false
   for line in out.splitOn "\n" do
     let trimmed := line.trimAscii.toString
-    if let some h := header? line then
-      pending := some h
+    if let some (sev, code?, text) := header? line then
+      diags := diags.push ({ line := 0, severity := sev, text, code? }, keepUnlocated)
+      pending := true
     else if let some loc := trimmed.dropPrefix? "--> " then
-      if let some (sev, code?, text) := pending then
+      if pending then
         -- `file:line:col`
         let parts := loc.toString.splitOn ":"
-        if parts.length ≥ 3 && ":".intercalate (parts.take (parts.length - 2)) == file then
-          diags := diags.push { line := parts[parts.length - 2]!.toNat!, severity := sev, text, code? }
-        else diags := diags.push { line := 0, severity := "other-file", text }
-      pending := none
+        let ours := parts.length ≥ 3 && ":".intercalate (parts.take (parts.length - 2)) == file
+        diags := diags.modify (diags.size - 1) fun (d, _) =>
+          ({ d with line := if ours then parts[parts.length - 2]!.toNat! else 0 }, ours)
+      pending := false
     else if line.startsWith "fren: " then
       summary := some (line.drop 6).toString
-    else if let some d := diags.back? then
+    else if let some (d, k) := diags.back? then
       if let some n := trimmed.dropPrefix? "= " then
-        diags := diags.pop.push { d with text := d.text ++ "\n" ++ n.toString }
+        diags := diags.pop.push ({ d with text := d.text ++ "\n" ++ n.toString }, k)
       else if line.startsWith "help: " then
-        diags := diags.pop.push { d with text := d.text ++ "\n" ++ line }
-  return (diags.filter (·.severity != "other-file"), summary)
+        diags := diags.pop.push ({ d with text := d.text ++ "\n" ++ line }, k)
+  return (diags.filterMap fun (d, k) => if k then some d else none, summary)
 
 /-- The Lean front end's messages about the Fren source `src`, and its
 summary. Its messages have no codes. -/

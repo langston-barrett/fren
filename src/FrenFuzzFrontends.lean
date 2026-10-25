@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Fren
 import FrenCli.Run
+import FrenTest.Frontends
 import FrenTest.Messages
 import Lean.Elab.Frontend
 -- keep-sorted end
@@ -23,27 +24,11 @@ string methods with constant and non-constant arguments and `++`, products
 of every kind of operand, and sets and relations with `card`, so that it
 reaches `linear_product`, the decidable core and the lints.
 
-What legitimately differs is normalized away (`compareFrontends`):
-
-- Lean's own errors (`isLeanOwn`, such as `Type mismatch`) stand for any
-  error that the binary reports on the same line, as `--~[hosted]` does in
-  the ui tests. After a parse error (`F01xx`) the binary stops, but Lean
-  recovers at the next command, so then Lean need only report an error.
-- Messages are compared by line, severity and first line. The Lean front
-  end shows no code, so the code itself is not compared. The values of a
-  model (`for the input …`, `it can be …`, `when …`) are masked, since
-  counterexample values may differ (`cli::agreement`), and so is the
-  solver's reason for an undecided check, which is its own words. The
-  names of a conflict's or a vacuity's constraints are compared.
-- Checks whose evidence is testing, which Lean does not run, are left
-  out: messages on such a member, testing's warnings, Lean's note that it
-  does not run them, and the summary.
-- A static error, including a denied lint, stops the binary's checks but
-  not Lean's, so then the checks' results and the summary are not
-  compared; and the binary drops the lints of an item with a static error
-  other than a lint, so then Lean's are not compared either.
-- A spec where they differ only in undecided checks (not solver errors)
-  is counted apart, since the solvers' time limits may explain it.
+What legitimately differs is normalized away by
+`FrenTest.Frontends.compare`, whose documentation lists it, as does
+`Reqs/dev/Testing`. Specs run in worker processes (`--worker`), so that a
+solver that aborts, or a spec that runs too long (`--spec-timeout`), is
+recorded against its spec and the run goes on.
 
 `--avoid-known` keeps the generator clear of the differences already
 known, to find others: it parenthesizes every method's receiver that is
@@ -318,137 +303,25 @@ def genWide (avoidKnown : Bool := false) : R String := do
 
 end Wide
 
-/-! ### Comparing the front ends -/
+/-! ### Running the front ends -/
 
 open FrenTest.Ui (Diagnostic)
-
-/-- Replaces the text between `start` and the first `stop` after it (or
-the end) with `…`. -/
-def maskBetween (s start : String) (stops : List String) : String :=
-  match s.splitOn start with
-  | pre :: rest@(_ :: _) =>
-    let after := start.intercalate rest
-    let cut := stops.filterMap fun st => match after.splitOn st with
-      | a :: b :: more => some (a.length, st ++ st.intercalate (b :: more))
-      | _ => none
-    let tail := ((cut.toArray.qsort (·.1 < ·.1))[0]?.map (·.2)).getD ""
-    pre ++ start ++ "…" ++ tail
-  | _ => s
-
-/-- The first line of a message, with the values of a model masked:
-counterexample values may differ (`cli::agreement`), and the Lean front end
-may show none. Names, such as those of a conflict's constraints, are kept. -/
-def normHead (text : String) : String :=
-  let head := (text.splitOn "\n").head!
-  -- Why a check is undecided is the solver's own words.
-  let head := if head.startsWith "could not decide whether" then (head.splitOn ": ").head! else head
-  let head := maskBetween head "for the input " [", no outputs", ", it can be"]
-  let head := maskBetween head ", it can be " []
-  maskBetween head " when " []
-
-/-- A check's result, rather than a static error or a lint. -/
-def isCheckResult (d : Diagnostic) : Bool :=
-  d.code?.any (·.startsWith "F06") ||
-  ["could not decide whether ", "the assumptions of ", " is not realizable: ", "an index of ",
-   "the assumption `", "expectation `", " is vacuous: ", " is redundant: ", " is not determined by the inputs",
-   "is false when ", "conflicts with ", "testing "].any fun p => (d.text.splitOn "\n").head!.contains p
-
-/-- Lean's own errors, which the Lean front end reports for parse and type
-errors that the binary reports with a Fren code (as `--~[hosted]` does in
-the ui tests). -/
-def leanOwn : List String :=
-  ["Type mismatch", "type mismatch", "Application type mismatch", "failed to synthesize",
-   "unexpected token", "unexpected identifier", "unknown identifier", "unknown constant",
-   "Function expected", "function expected", "invalid", "ambiguous", "elaboration function",
-   "typeclass instance problem", "don't know how to synthesize", "unterminated"]
-
-def isLeanOwn (d : Diagnostic) : Bool := leanOwn.any (d.text.startsWith ·)
-
-/-- The 1-based lines of each top-level item of `text`: an item starts at
-a line that is neither indented, blank, a comment nor a closing brace. -/
-def itemOf (text : String) : Array Nat := Id.run do
-  let mut out := #[0]
-  let mut item := 0
-  for line in text.splitOn "\n", k in [1:text.length + 2] do
-    if !line.isEmpty && !line.startsWith " " && !line.startsWith "}" && !line.startsWith "--" then item := k
-    out := out.push item
-  return out
-
-/-- How the front ends' reports on a spec differ: each difference as a
-line, and whether all of them are about inconclusive results, which the
-solvers' time limits can explain. -/
-def compareFrontends (text : String) (cli hosted : Array Diagnostic) (cliSum hostedSum : Option String) :
-    Array String × Bool := Id.run do
-  -- A parse error stops the binary, but Lean recovers at the next
-  -- command: then Lean need only report an error too.
-  if cli.any (·.code?.any (·.startsWith "F01")) then
-    if hosted.any (·.severity == "error") then return (#[], false)
-    return (#["fren reports a parse error, and Lean no error"], false)
-  let lines := text.splitOn "\n"
-  let lineText (n : Nat) := lines[n - 1]?.getD ""
-  -- Checks whose evidence is testing, which Lean does not run.
-  let tested (d : Diagnostic) := (lineText d.line).contains "fren.evidence \"tested\""
-  let items := itemOf text
-  let itemAt (n : Nat) := items[n]?.getD 0
-  -- The binary drops the lints of an item with a static error other than
-  -- a lint, as the ui tests say (`constants_static.fren`).
-  let isLint (d : Diagnostic) := d.code?.any (·.startsWith "F07")
-  let errorItems := (cli.filter fun d => d.severity == "error" && !isCheckResult d && !isLint d).map (itemAt ·.line)
-    ++ (hosted.filter fun d => d.severity == "error" && isLeanOwn d).map (itemAt ·.line)
-  -- A static error, including a denied lint, stops the binary's checks,
-  -- but not Lean's.
-  let staticError := cli.any fun d => d.severity == "error" && !isCheckResult d
-  -- Testing's own messages, which Lean does not run, and Lean's note that
-  -- it does not.
-  let anyTested := text.contains "fren.evidence \"tested\""
-  let testing (d : Diagnostic) := anyTested &&
-    (d.code?.any (["F0609", "F0610", "F0612"].contains ·) || (d.severity == "info" && d.text.contains "set to testing"))
-  let keep (d : Diagnostic) := !tested d && !testing d && !(staticError && isCheckResult d)
-  let mut cs := cli.filter keep
-  let mut hs := hosted.filter keep
-  -- The same message: same line, severity and masked headline.
-  let mut hostedOnly := #[]
-  for h in hs do
-    match cs.findIdx? fun c => c.line == h.line && c.severity == h.severity && normHead c.text == normHead h.text with
-    | some i => cs := cs.eraseIdx! i
-    | none => hostedOnly := hostedOnly.push h
-  -- Lean's own errors for those of the binary on the same line.
-  let leanLines := hostedOnly.filter isLeanOwn |>.map (·.line)
-  hostedOnly := hostedOnly.filter fun h => !(isLeanOwn h && cs.any fun c => c.line == h.line && c.severity == "error")
-  cs := cs.filter fun c => !(c.severity == "error" && leanLines.contains c.line)
-  -- Lean's lints of an item with a static error, which the binary drops.
-  hostedOnly := hostedOnly.filter fun h => !errorItems.contains (itemAt h.line)
-  let mut out := #[]
-  for c in cs do out := out.push s!"line {c.line}: only fren reports {c.severity}[{c.code?.getD "-"}]: {(c.text.splitOn "\n").head!}"
-  for h in hostedOnly do out := out.push s!"line {h.line}: only Lean reports {h.severity}: {(h.text.splitOn "\n").head!}"
-  -- Undecided for lack of time, not for a solver error.
-  let inconclusive (d : Diagnostic) := d.text.startsWith "could not decide whether" && !d.text.contains "solver error"
-  let allInconclusive := cs.all inconclusive && hostedOnly.all inconclusive
-  -- The summary, unless a check is tested, or a static error stops the
-  -- binary.
-  let mut sumDiffers := false
-  if !anyTested && !staticError && cliSum != hostedSum then
-    sumDiffers := true
-    out := out.push s!"summary: fren says `{cliSum.getD "(none)"}`, Lean says `{hostedSum.getD "(none)"}`"
-  -- A summary that differs only in its inconclusive count is a matter of
-  -- time too.
-  let sumOk := !sumDiffers || (cliSum.getD "").contains "inconclusive" && allInconclusive && !cs.isEmpty || !hostedOnly.isEmpty
-  return (out, allInconclusive && sumOk && !out.isEmpty)
+open FrenTest.Frontends (Report maskBetween headOf)
 
 /-- Checks `text` with both front ends; returns how they differ, whether
-only in inconclusive results, and the two reports. -/
-def runFrontends (env : Environment) (dir : System.FilePath) (text : String) :
+only in undecided checks, both reports, and the binary's error codes. -/
+def runFrontends (env : Environment) (path : System.FilePath) (text : String) :
     IO (Array String × Bool × String × Array String) := do
-  let path := dir / "current.fren"
   IO.FS.writeFile path text
-  let (out, _) ← IO.FS.withIsolatedStreams (FrenCli.check { files := #[path.toString] })
-  let (cli, cliSum) := FrenTest.Ui.cliDiagnostics path.toString out
+  let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files := #[path.toString] })
+  let (cli, cliSum) := FrenTest.Ui.cliDiagnostics path.toString out (keepUnlocated := true)
   let (hosted, hostedSum) ← FrenTest.Ui.hostedDiagnostics env path.toString text
-  let (found, flaky) := compareFrontends text cli hosted cliSum hostedSum
+  let (found, flaky) := FrenTest.Frontends.compare text
+    { diags := cli, summary? := cliSum, exit? := some code.toNat } { diags := hosted, summary? := hostedSum }
   let render (ds : Array Diagnostic) (s : Option String) :=
-    String.join (ds.toList.map fun d => s!"--   {d.line}: {d.severity}{(d.code?.map (s!"[{·}]")).getD ""}: {(d.text.splitOn "\n").head!}\n")
+    String.join (ds.toList.map fun d => s!"--   {d.line}: {d.severity}{(d.code?.map (s!"[{·}]")).getD ""}: {headOf d}\n")
       ++ s!"--   summary: {s.getD "(none)"}\n"
-  return (found, flaky, s!"-- fren:\n{render cli cliSum}-- Lean:\n{render hosted hostedSum}",
+  return (found, flaky, s!"-- fren (exit {code}):\n{render cli cliSum}-- Lean:\n{render hosted hostedSum}",
     cli.filterMap fun d => if d.severity == "error" then d.code? else none)
 
 unsafe def loadFren : IO Environment := do
@@ -462,7 +335,7 @@ unsafe def mainFiles (files : List String) (dir : String) : IO UInt32 := do
   let env ← loadFren
   let mut bad := 0
   for f in files do
-    let (found, _, reports, _) ← runFrontends env dir (← IO.FS.readFile f)
+    let (found, _, reports, _) ← runFrontends env (dir / s!"current-files-{← IO.Process.getPID}.fren") (← IO.FS.readFile f)
     IO.println s!"{f}: {if found.isEmpty then "the front ends agree" else "the front ends differ"}"
     for x in found do IO.println s!"  {x}"
     unless found.isEmpty do bad := bad + 1; IO.println reports
@@ -486,47 +359,54 @@ def signature (f : String) : String := Id.run do
   let masked := maskBetween out "for the input " [", no outputs", ", it can be"]
   return maskBetween (maskBetween masked "fren says " [", Lean says"]) "Lean says " []
 
-/-- What a worker found on one spec, one JSON object per line of
-`DIR/results.jsonl`, so that a worker that crashes loses nothing. -/
+/-- What a worker found on one spec, one JSON object per line of the run's
+results file, so that a worker that crashes loses nothing. -/
 structure Outcome where
   seed : Nat
-  /-- `ok`, `differ`, `inconclusive` (differ only in undecided checks) or
-  `crash`. -/
+  /-- `ok`, `differ`, `inconclusive` (differ only in undecided checks),
+  `crash` or `timeout`. -/
   status : String
   errors : Array String := #[]
   signatures : Array String := #[]
   deriving ToJson, FromJson
 
-def resultsFile (dir : String) : System.FilePath := dir / "results.jsonl"
+/-- A run's work files, named after the driver's process, so that runs
+sharing `--out` do not mix them. -/
+structure Run where
+  dir : String
+  id : String
 
-def progressFile (dir : String) : System.FilePath := dir / "current.seed"
+def Run.results (r : Run) : System.FilePath := r.dir / s!"results-{r.id}.jsonl"
+def Run.progress (r : Run) : System.FilePath := r.dir / s!"current-{r.id}.seed"
+def Run.spec (r : Run) : System.FilePath := r.dir / s!"current-{r.id}.fren"
 
-def record (dir : String) (o : Outcome) : IO Unit := do
-  let h ← IO.FS.Handle.mk (resultsFile dir) .append
+def record (r : Run) (o : Outcome) : IO Unit := do
+  let h ← IO.FS.Handle.mk r.results .append
   h.putStrLn (toJson o).compress
   h.flush
 
+def flags (avoidKnown : Bool) : String := if avoidKnown then " --avoid-known" else ""
+
 /-- Checks the specs of seeds `[seed, seed + count)` in this process,
 writing each one's outcome to the results file. -/
-unsafe def worker (count seed : Nat) (dir : String) (avoidKnown : Bool) : IO UInt32 := do
+unsafe def worker (count seed : Nat) (run : Run) (avoidKnown : Bool) : IO UInt32 := do
   let env ← loadFren
   for i in [0:count] do
     let s := seed + i
-    IO.FS.writeFile (progressFile dir) (toString s)
+    IO.FS.writeFile run.progress (toString s)
     let text : String := Id.run ((Wide.genWide avoidKnown).run' (rngOf s))
     let t0 ← IO.monoMsNow
-    let (found, flaky, reports, errs) ← runFrontends env dir text
+    let (found, flaky, reports, errs) ← runFrontends env run.spec text
     let elapsed := (← IO.monoMsNow) - t0
     if elapsed > 20000 then IO.eprintln s!"seed {s}: slow, {elapsed / 1000}s"
     let status := if found.isEmpty then "ok" else if flaky then "inconclusive" else "differ"
     unless found.isEmpty do
-      let file : System.FilePath := dir / s!"{if flaky then "inconclusive-" else ""}fe-seed{s}.fren"
+      let file : System.FilePath := run.dir / s!"{if flaky then "inconclusive-" else ""}fe-seed{s}.fren"
       let header := String.join (found.toList.map fun f => s!"-- {f.replace "\n" " "}\n")
-      IO.FS.writeFile file (s!"-- fren_fuzz_frontends{if avoidKnown then " --avoid-known" else ""} --seed {s}\n"
-        ++ header ++ reports ++ text)
+      IO.FS.writeFile file (s!"-- fren_fuzz_frontends{flags avoidKnown} --seed {s}\n" ++ header ++ reports ++ text)
       IO.eprintln s!"seed {s}: front ends differ{if flaky then " (only in inconclusive results)" else ""}, written to {file}"
       for f in found.extract 0 4 do IO.eprintln s!"  {f}"
-    record dir { seed := s, status, errors := errs.toList.eraseDups.toArray, signatures := found.map signature }
+    record run { seed := s, status, errors := errs.toList.eraseDups.toArray, signatures := found.map signature }
   return 0
 
 /-- Counts `x` in a tally. -/
@@ -536,27 +416,48 @@ def tally (xs : Array (String × Nat × Nat)) (x : String) (seed : Nat) : Array 
   | none => xs.push (x, 1, seed)
 
 /-- Runs workers until every seed is checked. The solver can abort the
-process (a failed assertion in cvc5), so each spec runs in a worker,
-and a crash is recorded as the outcome of the spec it was checking. -/
-unsafe def mainFrontends (count seed : Nat) (dir : String) (avoidKnown : Bool) : IO UInt32 := do
+process (a failed assertion in cvc5), so specs run in a worker, and a
+crash is recorded as the outcome of the spec it was checking. A spec that
+takes longer than `limit` seconds is stopped and recorded as a timeout. -/
+unsafe def mainFrontends (count seed : Nat) (dir : String) (avoidKnown : Bool) (limit : Nat) : IO UInt32 := do
   let start ← IO.monoMsNow
-  IO.FS.writeFile (resultsFile dir) ""
+  let run : Run := { dir, id := toString (← IO.Process.getPID) }
+  IO.FS.writeFile run.results ""
   let mut next := seed
   while next < seed + count do
-    let args := #["--worker", "--count", toString (seed + count - next), "--seed", toString next, "--out", dir]
+    IO.FS.writeFile run.progress ""
+    let args := #["--worker", run.id, "--count", toString (seed + count - next), "--seed", toString next, "--out", dir]
       ++ (if avoidKnown then #["--avoid-known"] else #[])
     let child ← IO.Process.spawn { cmd := (← IO.appPath).toString, args, stdin := .null, stdout := .inherit, stderr := .inherit }
-    let code ← child.wait
-    if code == 0 then break
-    let crashed := ((← IO.FS.readFile (progressFile dir)).trimAscii.toString.toNat?).getD next
-    IO.eprintln s!"seed {crashed}: the worker crashed (exit {code})"
-    let text : String := Id.run ((Wide.genWide avoidKnown).run' (rngOf crashed))
-    IO.FS.writeFile (dir / s!"crash-seed{crashed}.fren")
-      (s!"-- fren_fuzz_frontends{if avoidKnown then " --avoid-known" else ""} --seed {crashed}: crashed\n" ++ text)
-    record dir { seed := crashed, status := "crash" }
-    next := crashed + 1
-  let outcomes : Array Outcome := ((← IO.FS.readFile (resultsFile dir)).splitOn "\n").toArray.filterMap fun l =>
+    -- Wait, and stop the worker if one spec takes too long.
+    let mut current := ""
+    let mut since ← IO.monoMsNow
+    let mut code? : Option UInt32 := none
+    let mut timedOut := false
+    repeat
+      if let some c ← child.tryWait then code? := some c; break
+      let now ← IO.monoMsNow
+      let cur := (← (IO.FS.readFile run.progress).toBaseIO).toOption.getD current
+      if cur != current then current := cur; since := now
+      else if now - since > limit * 1000 && !current.isEmpty then
+        child.kill
+        let _ ← child.wait
+        timedOut := true
+        break
+      IO.sleep 200
+    if code? == some 0 then break
+    let failed := ((← IO.FS.readFile run.progress).trimAscii.toString.toNat?).getD next
+    let what := if timedOut then s!"took more than {limit}s" else s!"crashed (exit {code?.getD 0})"
+    IO.eprintln s!"seed {failed}: the worker {what}"
+    let text : String := Id.run ((Wide.genWide avoidKnown).run' (rngOf failed))
+    let kind := if timedOut then "timeout" else "crash"
+    IO.FS.writeFile (dir / s!"{kind}-seed{failed}.fren") (s!"-- fren_fuzz_frontends{flags avoidKnown} --seed {failed}: {what}\n" ++ text)
+    record run { seed := failed, status := kind }
+    next := failed + 1
+  let outcomes : Array Outcome := ((← IO.FS.readFile run.results).splitOn "\n").toArray.filterMap fun l =>
     (Json.parse l >>= fromJson? : Except String Outcome).toOption
+  for f in [run.progress, run.spec] do
+    try IO.FS.removeFile f catch _ => pure ()
   let mut sigs := #[]
   let mut codes := #[]
   for o in outcomes do
@@ -569,10 +470,21 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (avoidKnown : Bool) :
   let codeList := ", ".intercalate ((codes.qsort (·.2.1 > ·.2.1)).toList.map fun (e, k, _) => s!"{e} ×{k}")
   IO.eprintln s!"specs with errors from `fren check`: {(outcomes.filter (!·.errors.isEmpty)).size} ({codeList})"
   IO.eprintln s!"fren_fuzz_frontends: {outcomes.size} specs in {((← IO.monoMsNow) - start) / 1000}s, {n "differ"} where \
-    the front ends differ, {n "inconclusive"} more only in inconclusive results, {n "crash"} crashed"
+    the front ends differ, {n "inconclusive"} more only in inconclusive results, {n "crash"} crashed, \
+    {n "timeout"} took more than {limit}s (results in {run.results})"
   return if n "differ" + n "crash" == 0 then 0 else 1
 
-def usage : String := "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] | --files FILE... | [--avoid-known] --print SEED"
+def usage : String :=
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--spec-timeout SECONDS]\n" ++
+  "       fren_fuzz_frontends --files FILE...\n" ++
+  "       fren_fuzz_frontends [--avoid-known] --print SEED"
+
+structure Opts where
+  count : Nat := 100
+  seed : Nat := 0
+  dir : String := ".lake/fuzz"
+  limit : Nat := 120
+  worker? : Option String := none
 
 unsafe def main (args : List String) : IO UInt32 := do
   if let "--files" :: files := args then
@@ -584,17 +496,19 @@ unsafe def main (args : List String) : IO UInt32 := do
     let some s := n.toNat? | IO.eprintln usage; return 2
     IO.print (Id.run ((Wide.genWide avoidKnown).run' (rngOf s)))
     return 0
-  let rec parse : List String → Nat × Nat × String → Option (Nat × Nat × String)
-    | [], a => some a
-    | "--count" :: n :: rest, (_, s, d) => n.toNat?.bind fun n => parse rest (n, s, d)
-    | "--seed" :: n :: rest, (c, _, d) => n.toNat?.bind fun n => parse rest (c, n, d)
-    | "--out" :: d :: rest, (c, s, _) => parse rest (c, s, d)
+  let rec parse : List String → Opts → Option Opts
+    | [], o => some o
+    | "--count" :: n :: rest, o => n.toNat?.bind fun n => parse rest { o with count := n }
+    | "--seed" :: n :: rest, o => n.toNat?.bind fun n => parse rest { o with seed := n }
+    | "--out" :: d :: rest, o => parse rest { o with dir := d }
+    | "--spec-timeout" :: n :: rest, o => n.toNat?.bind fun n => parse rest { o with limit := n }
+    | "--worker" :: id :: rest, o => parse rest { o with worker? := some id }
     | _, _ => none
-  let isWorker := args.contains "--worker"
-  let args := args.filter (· != "--worker")
-  let some (count, seed, dir) := parse args (100, 0, ".lake/fuzz") | IO.eprintln usage; return 2
-  IO.FS.createDirAll dir
-  if isWorker then worker count seed dir avoidKnown else mainFrontends count seed dir avoidKnown
+  let some o := parse args {} | IO.eprintln usage; return 2
+  IO.FS.createDirAll o.dir
+  match o.worker? with
+  | some id => worker o.count o.seed { dir := o.dir, id } avoidKnown
+  | none => mainFrontends o.count o.seed o.dir avoidKnown o.limit
 
 end FrenFuzzFrontends
 
