@@ -427,10 +427,12 @@ def fixing : IO (Array String) := do
 The tests are independent, so `main` runs them as jobs, in parallel, each
 in a process of its own (`fren_test --job NAME ARG...`): the binary's
 output is captured by redirecting the process's streams, which threads
-cannot share. A job prints its failures, as JSON, on its last line. -/
+cannot share. A job prints its failures, as JSON, on its last line. When
+blessing, `snapshots` rewrites the snapshots that `errorCodes` reads, so it
+runs first, alone. -/
 
-/-- The ui tests run in batches of this many files, each in a process that
-imports `Fren` once. -/
+/-- The ui tests run in batches of at most this many files, each in a
+process that imports `Fren` once. -/
 def uiBatch : Nat := 8
 
 /-- The jobs, as the arguments of `--job`, the slowest first. -/
@@ -489,7 +491,8 @@ unsafe def main (args : List String) : IO UInt32 := do
   if let "--job" :: job := args then
     IO.println (toJson (← runJob bless (job.filter (· != "--bless")))).compress
     return 0
-  let failures := (← runJobs bless (← jobs)).qsort (· < ·)
+  let (first, rest) := (← jobs).partition (bless && · == ["snapshots"])
+  let failures := ((← runJobs bless first) ++ (← runJobs bless rest)).qsort (· < ·)
   for f in failures do IO.eprintln s!"FAIL {f}"
   if failures.isEmpty then
     IO.println "fren_test: all passed"
