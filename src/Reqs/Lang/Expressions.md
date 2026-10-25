@@ -563,9 +563,14 @@ Every method is total: its value at the edges, such as `"abc".at(5)`, is the
 one the solver's theory of strings gives it, so that Lean and the solver
 agree.
 
-`lang::collection_methods` states laws of the methods of sequences, sets
-and relations, and of the relational operators, which a relation over a
-finite type keeps in the core:
+`lang::collection_methods` states laws of the methods and operators of
+sequences, sets and relations: the methods of `Seq(T)` that it shares
+with `String`, with the same meanings, and those of its own; the set
+operators `union`, `inter` and `minus`, and `card`; and the relational
+methods, which a relation over a finite type keeps in the core. `rev`,
+`++`, `at`, `slice`, `contains?`, `index_of` and `replace` on sequences
+are outside the [decidable core](Decidability.md#sequences), so it allows
+that:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -585,6 +590,15 @@ pub comp collection_methods {
     expect update_reads: when 0 <= i and i < q.len, q.update(i, x)[i] = x
     expect update_outside: when i < 0 or i >= q.len, q.update(i, x) = q
     expect at_outside: when i < 0 or i >= q.len, q.at(i) = []
+    expect at_inside: when 0 <= i and i < q.len, q.at(i) = [q[i]]
+    expect slice_whole: q.slice(0, q.len) = q
+    expect slice_short: when x >= 0, q.slice(i, x).len <= x
+    expect slice_occurs: q.contains?(q.slice(i, x))
+    expect empty_contained: q.contains?([]) and q.starts_with?([]) and q.ends_with?([])
+    expect concat_prefix: (p ++ q).starts_with?(p) and (p ++ q).ends_with?(q)
+    expect index_of_absent: when not q.contains?(p), q.index_of(p, i) = -1
+    expect replace_empty: q.replace([], p) = p ++ q
+    expect replace_absent: when not q.contains?(p), q.replace(p, [x]) = q
 
     expect union_contains: s subset (s union t) and t subset (s union t)
     expect inter_within: (s inter t) subset s and (s inter t) subset t

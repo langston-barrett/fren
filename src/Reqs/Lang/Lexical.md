@@ -385,10 +385,15 @@ refine punctuator_end_is_longest: punctuator_end refines longest_punctuator
 
 ## Tokens apart
 
-The kinds of token do not overlap, so that what a lexeme is never
-depends on which rule is tried first: a reserved word has the shape of an
-identifier, which is why it must be reserved, and a punctuator is neither
-an identifier nor a reserved word:
+Identifiers, reserved words and punctuators are told apart without
+depending on which rule is tried first. Reserved words are the one
+overlap: each has the shape of an identifier, which is why it must be
+reserved, and reserving it settles which it is. A punctuator is neither an
+identifier nor a reserved word; the second follows from the first and
+`reserved_are_identifiers`, and is stated for the reader. A literal starts
+with a digit or a quote, or, for a raw string, with `r` and then a quote
+or `#`, which no identifier or punctuator starts with, so the first two
+characters tell a literal apart:
 
 ```fren
 expect reserved_are_identifiers: forall (r: reserved_word) (i: identifier),
