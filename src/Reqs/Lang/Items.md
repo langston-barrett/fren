@@ -255,9 +255,10 @@ pub comp function_params {
 
 The parameters' names must be distinct, and may
 [shadow](Components.md#shadowing) the constants, functions and variants
-of the function's module, written with `!`. The body mentions no component's variables: only the
-parameters, binders of its own [`match` arms](Expressions.md#matches),
-constants, variants, and defined functions declared before the function.
+of the function's module, written with `!`. The body mentions no
+component's variables: only the parameters, binders of its own [`match`
+arms](Expressions.md#matches), constants, variants, and defined functions
+declared before the function.
 So a function is not in scope in its own body, and defined functions are
 never recursive, directly or through each other. Nor does the body apply
 an uninterpreted function, so a defined function's values are fully

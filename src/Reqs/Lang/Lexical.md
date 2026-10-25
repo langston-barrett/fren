@@ -67,17 +67,18 @@ pub comp identifier {
     expect question_last: when lexeme = "a?b" or lexeme = "a?.b", not accepted?
     expect bang: when lexeme = "x!" or lexeme = "ready?!", accepted?
     expect bang_last: when lexeme = "a!?" or lexeme = "a!b" or lexeme = "a!!", not accepted?
-    expect letter_first: when lexeme.matches?(r"[0-9'.?].*"), not accepted?
+    expect letter_first: when lexeme.matches?(r"[0-9'.?!].*"), not accepted?
     expect no_trailing_dot: when lexeme.ends_with?("."), not accepted?
 }
 ```
 
 `lang::identifier_shape` states the shape of an identifier without a
 pattern: no component is empty, it starts with neither a digit nor `'`,
-`.` or `?`, it does not end with `.`, and a `?` comes only last, once. `identifier` refines it. That no
-component is empty is the emptiness of an intersection of two regular
-languages, in the decidable core, but cvc5 does not decide it within any
-time limit tried (see [Decidability](Decidability.md#in-practice)), so the
+`.`, `?` or `!`, it does not end with `.`, a `!` comes only last, once,
+and a `?` only last, once, or just before that `!`. `identifier` refines
+it. That no component is empty is the emptiness of an intersection of
+two regular languages, in the decidable core, but cvc5 does not decide it
+within any time limit tried (see [Decidability](Decidability.md#in-practice)), so the
 refinement is checked by testing:
 
 ```fren
@@ -86,12 +87,15 @@ pub comp identifier_shape {
     pub out accepted?
 
     req no_empty_component: when lexeme.contains?(".."), not accepted?
-    req letter_first: when lexeme.matches?(r"[0-9'.?].*"), not accepted?
+    req letter_first: when lexeme.matches?(r"[0-9'.?!].*"), not accepted?
     req no_trailing_dot: when lexeme.ends_with?("."), not accepted?
-    req question_last: when lexeme.contains?("?") and not lexeme.ends_with?("?"), not accepted?
+    req question_last: when lexeme.contains?("?") and not (lexeme.ends_with?("?") or lexeme.ends_with?("?!")),
+        not accepted?
     req one_question: when lexeme.contains?("??"), not accepted?
+    req bang_last: when lexeme.contains?("!") and not lexeme.ends_with?("!"), not accepted?
+    req one_bang: when lexeme.contains?("!!"), not accepted?
 
-    expect first_characters: when lexeme in {"1", "1x", "'x", ".x", "?", "?x"}, not accepted?
+    expect first_characters: when lexeme in {"1", "1x", "'x", ".x", "?", "?x", "!", "!x"}, not accepted?
 }
 
 set_option fren.evidence "tested" in

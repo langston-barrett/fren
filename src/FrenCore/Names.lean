@@ -197,10 +197,13 @@ def cannotFindMsg (n : Name) (where_ : String) (cands : Array Name) : Msg :=
   match n with
   | .str .anonymous s =>
     if s.endsWith "!" && s.length > 1 then
+      -- `x!=1` reads `x!` then `=`, so `!=` is the likelier meaning, and
+      -- removing the `!` would make the comparison its opposite.
+      let base := (s.dropEnd 1).toString
       { msg with
-        notes := #["note: `!` is written only where a name is declared, to shadow another",
-          "note: for `!=`, write a space before it"]
-        fixes := #[{ msg := "remove the `!`", replacement := (s.dropEnd 1).toString }] }
+        notes := #["note: `!` is written only where a name is declared, to shadow another"]
+        fixes := #[{ msg := "for `!=`, write a space before the `!`", replacement := s!"{base} !" },
+          { msg := s!"for the name `{base}`, remove the `!`", replacement := base }] }
     else msg
   | _ => msg
 

@@ -1500,8 +1500,9 @@ def testedOf (all : Bool) (members : Array Member) : M Fren.Core.Tested := do
     let set? := pending.map (·.1)
     match m, pending with
     | .prop .expect x _, _ => expects := expects.push (Name.mkSimple x.name, set?)
-    | .inst x _ _, _ => insts := insts.push (Name.mkSimple x.name, set?)
-    | .var false _ true x _ _, _ => dets := dets.push (Name.mkSimple x.name, set?)
+    -- By the names they declare, without the `!` of shadowing.
+    | .inst x _ _, _ => insts := insts.push (Name.mkSimple (declaredIdent x).1.name, set?)
+    | .var false _ true x _ _, _ => dets := dets.push (Name.mkSimple (declaredIdent x).1.name, set?)
     | _, some (_, span) =>
       let what := match m with
         | .prop .assume .. => "an assumption" | .prop .req .. => "a requirement"
@@ -1510,7 +1511,7 @@ def testedOf (all : Bool) (members : Array Member) : M Fren.Core.Tested := do
     | _, none => pure ()
     match m with
     | .prop .assume x _ | .prop .req x _ => constraints := constraints.push (Name.mkSimple x.name)
-    | .var false _ _ x _ (some _) => constraints := constraints.push (Name.mkSimple x.name)
+    | .var false _ _ x _ (some _) => constraints := constraints.push (Name.mkSimple (declaredIdent x).1.name)
     | _ => pure ()
     pending := none
   if let some (_, span) := pending then err span (Fren.Core.misplacedEvidenceMsg "the end of the component")

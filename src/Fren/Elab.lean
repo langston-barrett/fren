@@ -1534,15 +1534,17 @@ def testedOf (all : Bool) (raw : Array Syntax) : CommandElabM (Array Syntax × C
       if let some (_, ref) := set? then throwErrorAt ref (Core.misplacedEvidenceMsg what).text
     match m with
     | `(fren_member| expect $x:ident : $_) => expects := expects.push (x.getId, b?)
-    | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => insts := insts.push (x.getId, b?)
+    -- By the names they declare, without the `!` of shadowing.
+    | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => insts := insts.push ((declaredIdent x).1.getId, b?)
     | `(fren_member| assume $x:ident : $_) => misplaced "an assumption"; constraints := constraints.push x.getId
     | `(fren_member| req $x:ident : $_) => misplaced "a requirement"; constraints := constraints.push x.getId
     | _ =>
       if m.isOfKind ``Lang.outMember then
         -- `[pub] [det] out x [: T] [:= e]`
-        if !m[1].isNone then dets := dets.push (m[3].getId, b?)
+        let y := (declaredIdent m[3]).1.getId
+        if !m[1].isNone then dets := dets.push (y, b?)
         else misplaced "an output that is not `det`"
-        if !m[5].isNone then constraints := constraints.push m[3].getId
+        if !m[5].isNone then constraints := constraints.push y
       else misplaced (if m.isOfKind ``Lang.inMember then "an input" else "a `use`")
   return (members, Core.Tested.ofSettings all constraints expects insts dets)
 

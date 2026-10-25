@@ -208,10 +208,9 @@ pub comp effective {
 ```
 
 The level that applies to a lint's message is the one in effect at the
-item it is about: the `use` for the import lints; for the naming lints,
-and `unused_variables`, the item that declares the
-name, which for a member is its component and for a variant its
-enumeration; for `dead_code`, the unused item; and for `nonminimal_bool`,
+item it is about: the `use` for the import lints; for the naming lints
+and `unused_variables`, the item that declares the name, which for a
+member is its component and for a variant its enumeration; for `dead_code`, the unused item; and for `nonminimal_bool`,
 the item the expression is in. So `set_option ... in` before an item sets
 the level for that item alone.
 

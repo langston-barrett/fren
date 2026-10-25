@@ -1,0 +1,32 @@
+-- Evidence settings reach members declared with `!`, which they name
+-- without it: a `det out`, an instance, and, for a component set to
+-- testing, the definedness of a defined output. Only the `fren` command
+-- tests (`Reqs/Check#checking-by-testing`).
+--@ only: cli
+pub fn y(Int): Int
+pub fn p(Int): Int
+pub fn d(Int): Int
+
+pub comp positive {
+    in k: Int
+    assume pos: k > 0
+}
+
+pub comp members {
+    in n: Int
+    set_option fren.evidence "tested" in
+    pub det out y!: Int
+    set_option fren.evidence "tested" in
+    inst p!: positive { k := 1 }
+
+    req r: y = n + p.k
+}
+
+set_option fren.evidence "tested" in
+pub comp defined {
+    in q: Seq(Int)
+    assume nonempty: q != []
+    pub out d!: Int := q[0]
+}
+
+--@ summary: 7 passed (3 by testing), 0 failed, 0 inconclusive, 0 redundant
