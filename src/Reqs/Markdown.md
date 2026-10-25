@@ -36,8 +36,11 @@ including later `#fren_md` commands.
 
 Diagnostics about the Markdown file are reported at the `#fren_md` command,
 with text that starts with the Markdown file's name and position, such as
-`climate.md:12:3:`. A `#fren_check` must be inside a `fren` block to report
-positions correctly. Lake does not know that a Lean file depends on the
+`climate.md:12:3:`. A diagnostic about an item names the Markdown file that
+declares it and the position there, even when a `#fren_check` in another
+file reports it, as when one chapter checks the items of every chapter
+before it. A `#fren_check` written in the Lean file itself puts that name
+and position in the text of a diagnostic at the `#fren_check`. Lake does not know that a Lean file depends on the
 Markdown files it reads, so it rebuilds a module that uses `#fren_md` after
 the Markdown changes only if the library declares those files with `needs`,
 for example:

@@ -33,10 +33,22 @@ def report (c : CompInfo) (r : CheckResult) : CommandElabM Unit := do
       | none, some n => (c.insts.find? (·.name == n)).map (·.ref)
         |>.orElse (fun _ => (c.vars.find? (·.name == n)).map (·.ref)) |>.getD c.ref
       | none, none => c.ref
-    match msg.severity with
-    | .error => logErrorAt ref msg.text
-    | .warning => logWarningAt ref msg.text
-    | .info => logInfoAt ref msg.text
+    let severity := match msg.severity with
+      | .error => MessageSeverity.error
+      | .warning => .warning
+      | .info => .information
+    match (← getLocal).mdSources.find? c.path with
+    | some (rel, fileMap) =>
+      -- Declared in a Markdown spec, so `ref` has positions in that spec's
+      -- text, which may not be the text being elaborated.
+      let pos := fileMap.toPosition ((ref.getPos?).getD 0)
+      if (← getLocal).inMarkdown then
+        -- `#fren_md` names the spec of each message by its file.
+        logMessage { fileName := rel, pos, endPos := fileMap.toPosition <$> ref.getTailPos?, severity,
+                     data := msg.text }
+      else
+        logAt (← getRef) m!"{rel}:{pos.line}:{pos.column}: {msg.text}" severity
+    | none => logAt ref msg.text severity
 
 /-- Checks the comps and global expectations `paths`, and reports the
 results. -/

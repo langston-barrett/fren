@@ -362,6 +362,10 @@ structure LocalState where
   usedItems : Array Name := #[]
   /-- Elaborating a Markdown spec (`#fren_md`), which reports its own lints. -/
   inMarkdown : Bool := false
+  /-- For each comp, global expectation and refinement declared in a
+  Markdown spec, the spec's path as `#fren_md` names it and its text's line
+  map. Its syntax has positions in that text, wherever it is checked. -/
+  mdSources : NameMap (String × FileMap) := {}
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false
