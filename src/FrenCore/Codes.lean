@@ -12,7 +12,7 @@ and that the fixed versions do not.
 
 Codes are grouped by hundreds: `F01xx` syntax, `F02xx` names and items,
 `F03xx` types, `F04xx` instances and where variables may be mentioned,
-`F05xx` traceability, `F06xx` the results of checks, `F07xx` lints and
+`F05xx` traceability, `F06xx` the results of checks, `F07xx` and `F08xx` lints and
 their levels.
 -/
 
