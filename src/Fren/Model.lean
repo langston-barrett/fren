@@ -366,6 +366,10 @@ structure LocalState where
   Markdown spec, the spec's path as `#fren_md` names it and its text's line
   map. Its syntax has positions in that text, wherever it is checked. -/
   mdSources : NameMap (String × FileMap) := {}
+  /-- While a Markdown spec is elaborated, the Lean file that reads it: its
+  name, its text's line map, and the items it declares itself, whose
+  messages that map places. -/
+  leanFile? : Option (String × FileMap × NameSet) := none
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false

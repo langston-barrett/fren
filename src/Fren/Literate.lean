@@ -15,8 +15,11 @@ Messages about the blocks are logged at the command, with text starting
 `file.md:line:col:`. They cannot simply carry the Markdown file's name:
 Lake replaces the file name of every message with the module's. An item's
 syntax has positions in the text of the file that declares it, so each
-file's items are recorded with that text (`mdSources`), and `Fren.report`
-places their messages by it, wherever they are checked.
+spec's items are recorded with that text (`mdSources`), and the Lean file's
+text is kept while a spec is read (`leanFile?`). `Fren.logAbout` places each
+message about an item by its own file's text, wherever it is checked: a
+spec's item at this command, with the spec's name and the position in its
+text, and the Lean file's item at its own position.
 
 Lake does not see the dependency on the Markdown file; the library declares
 it with `needs`.
@@ -49,8 +52,13 @@ end Lang
   -- rather than by the end-of-file linter, whose messages would bypass the
   -- relocation below.
   let outer ← getLocal
+  -- The Lean file's text, for its own items' messages; a spec read by a spec
+  -- keeps the outermost.
+  let ownItems := (outer.comps ++ outer.globals ++ outer.refinements).filter (!outer.mdSources.contains ·)
+  let leanFile? ← if outer.inMarkdown then pure outer.leanFile? else
+    pure (some (← getFileName, ← getFileMap, ownItems.foldl (·.insert ·) {}))
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
-                                items := #[], usedItems := #[], inMarkdown := true }
+                                items := #[], usedItems := #[], inMarkdown := true, leanFile? }
   let s ← get
   let st ← IO.processCommands inputCtx {} { s with messages := {} }
   set st.commandState
@@ -66,15 +74,17 @@ end Lang
   let pos := fileMap.toPosition range.start
   let endPos := fileMap.toPosition range.stop
   let fileName ← getFileName
-  -- A message about another spec's item already names that spec
-  -- (`Fren.report`).
+  -- A message about another spec's item already names that spec, and one
+  -- about the Lean file's item is placed in it (`Fren.logAbout`).
   let msgs := inner.messages.toList.map fun m =>
+    if m.fileName == fileName then m else
     let shown := if m.fileName == path.toString then rel else m.fileName
     { m with fileName, pos, endPos, data := m!"{shown}:{m.pos.line}:{m.pos.column}: " ++ m.data }
   -- Info trees refer to the Markdown file's text, so they are dropped.
   set { inner with messages := msgs.foldl (·.add) s.messages, infoState := s.infoState }
   modifyLocal fun l => { l with useRecords := outer.useRecords, used := outer.used,
                                 expectations := outer.expectations, lintReports := outer.lintReports,
-                                items := outer.items, usedItems := outer.usedItems, inMarkdown := outer.inMarkdown }
+                                items := outer.items, usedItems := outer.usedItems, inMarkdown := outer.inMarkdown,
+                                leanFile? := outer.leanFile? }
 
 end Fren
