@@ -263,7 +263,9 @@ scoped syntax (name := useGroupCmd) "use " fren_path "::{" sepBy1(fren_path, ", 
 /-- `V` or `V(T, U)`, a variant with a payload. -/
 syntax fren_variant := frenIdent (noWs "(" sepBy1(fren_type, ", ") ")")?
 
-scoped syntax (name := enumCmd) ("pub ")? "enum " frenIdent " { " sepBy1(fren_variant, ", ", ", ", allowTrailingSep) " }" : command
+/-- `[pub] [ordered] enum E { A, B }`: `ordered` orders the variants as they
+are declared (`Reqs/Lang/Items#enumerations`). -/
+scoped syntax (name := enumCmd) ("pub ")? ("ordered ")? "enum " frenIdent " { " sepBy1(fren_variant, ", ", ", ", allowTrailingSep) " }" : command
 
 /-- `x: T`, or `x?` for a `Bool`. -/
 syntax fren_field := frenIdent (" : " fren_type)?

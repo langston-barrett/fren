@@ -1137,6 +1137,37 @@ def illFoundedMsg (n : Name) : Msg :=
     notes := #[s!"note: every variant of `{n}` has a payload of type `{n}`, so no value can be built",
       "help: add a variant whose payload does not contain it, e.g. `Nil`"] }
 
+/-- Whether an enumeration is accepted, from whether it is declared
+`ordered` and how many of its variants have a payload
+(`lang::ordered_enumeration`). -/
+def orderedEnumAccepted (ordered : Bool) (nPayloads : Nat) : Bool := !ordered || nPayloads == 0
+
+/-- The variant `v`, with a payload, of the ordered enumeration `n`. -/
+def orderedPayloadMsg (n v : Name) : Msg :=
+  { code? := some "F0353", headline := s!"the ordered enum `{n}` cannot have a variant with a payload"
+    label? := some s!"`{v}` has a payload"
+    notes := #["note: an ordered enum orders its variants as they are declared, which would not order their payloads",
+      s!"help: remove the payload of `{v}`, or declare `{n}` without `ordered`"] }
+
+/-- The help of a message about the enumeration `ty`, which is not
+ordered: its declaration, by the last segment of its path. -/
+def orderHelp (ty : String) : String :=
+  s!"help: to order its variants as they are declared, declare it `ordered enum {(ty.splitOn "::").getLast!} \{ ... }`"
+
+/-- `a OP b`, an ordering `op` of values of the enumeration `ty`, which is
+not ordered. -/
+def unorderedCompareMsg (op ty : String) : Msg :=
+  { code? := some "F0352", headline := s!"`{ty}` is not ordered, so its values cannot be compared with `{op}`"
+    label? := some s!"`{ty}` is not ordered"
+    notes := #["note: only `Int`s, `String`s and the values of an ordered enum are ordered", orderHelp ty] }
+
+/-- `x.m(y)`, `min` or `max`, of a value of the enumeration `ty`, which is
+not ordered. -/
+def unorderedMethodMsg (m ty : String) : Msg :=
+  { code? := some "F0354", headline := s!"`{ty}` is not ordered, so it has no method `{m}`"
+    label? := some s!"`{ty}` is not ordered"
+    notes := #["note: only `Int`s and the values of an ordered enum have `min` and `max`", orderHelp ty] }
+
 /-- Whether a variable's type is accepted, from whether it is an output,
 whether its type is unbounded, and whether it is defined
 (`lang::variable_type`). -/
@@ -1379,19 +1410,24 @@ def Method.relational : Method → Bool
 (`string`), a set (`set`), a relation (`rel`), a sequence (`seq`) or an
 `Int` (`int`) (`lang::method_type`): `card` is a set's and a relation's,
 the relational methods a relation's, `update` and `rev` a sequence's,
-`matches?` and `replace_all` a `String`'s, `abs`, `min` and `max` an
-`Int`'s, and the others both a `String`'s and a sequence's. -/
-def Method.accepts (m : Method) (string set : Bool) (rel := false) (seq := false) (int := false) : Bool :=
+`matches?` and `replace_all` a `String`'s, `abs` an `Int`'s, `min` and
+`max` an `Int`'s and an ordered enumeration's (`ordered`), and the others
+both a `String`'s and a sequence's. -/
+def Method.accepts (m : Method) (string set : Bool) (rel := false) (seq := false) (int := false) (ordered := false) :
+    Bool :=
   match m with
   | .card => set || rel
   | .update | .rev => seq
   | .matches | .replaceAll => string
-  | .abs | .min | .max => int
+  | .abs => int
+  | .min | .max => int || ordered
   | m => if m.relational then rel else string || seq
 
 /-- The kinds of value that methods take and give; a set's or relation's
 element types are the receiver's business. `string` is the receiver's
-type, a `String` or a sequence, and `elem` a sequence's element type. -/
+type, a `String` or a sequence, and `elem` a sequence's element type. The
+`min` and `max` of an ordered enumeration take and give the receiver's
+type, rather than the `Int`s here, which are an `Int`'s or a `Nat`'s. -/
 inductive MethodTy where
   | bool
   | int
@@ -1454,9 +1490,9 @@ def patternNotLiteralMsg : Msg :=
       "help: write the pattern here, as a raw literal such as `r\"[a-z]+\"`"] }
 
 /-- `e.m`, where the type of `e`, `ty`, has no method `m`. -/
-def unknownMethodMsg (m : String) (ty : String) (string := true) (set := false) (rel := false) (seq := false) (int := false) :
-    Msg :=
-  let names := (Method.all.filter (·.accepts string set rel seq int)).map (·.name)
+def unknownMethodMsg (m : String) (ty : String) (string := true) (set := false) (rel := false) (seq := false) (int := false)
+    (ordered := false) : Msg :=
+  let names := (Method.all.filter (·.accepts string set rel seq int ordered)).map (·.name)
   let suggestion := ((methodAliases.lookup m) <|> similarStr m names).toArray
   { code? := some "F0321", headline := s!"`{ty}` has no method `{m}`", label? := some "unknown method"
     notes := #[s!"note: the methods of `{ty}` are {", ".intercalate (names.toList.map (s!"`{·}`"))}"]
@@ -1465,7 +1501,7 @@ def unknownMethodMsg (m : String) (ty : String) (string := true) (set := false) 
 /-- `e.m`, where the type of `e`, `ty`, has no methods at all. -/
 def noMethodsMsg (m : String) (ty : String) : Msg :=
   { code? := some "F0322", headline := s!"`{ty}` has no methods, so it has no method `{m}`", label? := some "no methods"
-    notes := #["note: only `Int`s, `String`s, sets, relations and sequences have methods"] }
+    notes := #["note: only `Int`s, `String`s, sets, relations, sequences and the values of an ordered enum have methods"] }
 
 /-- Whether a construct is in the decidable core (`lang::in_core`); one
 whose operands are all constants (`ground`) has a fixed value. -/

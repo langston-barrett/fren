@@ -1,0 +1,2 @@
+-- An ordered enum with a payload (F0353).
+ordered enum Size { Small, Custom(Int) }

@@ -1,0 +1,7 @@
+-- `ordered` is a reserved word, so it is not a name.
+comp ordered { in x: Int pub out y: Int req r: y = x }
+--~^[cli] error: expected a name, found keyword `ordered`
+--~^^[hosted] error: expected identifier
+--~^^^[hosted] error: unexpected token '{'; expected 'enum'
+--~^^^^[hosted] error: unexpected identifier; expected 'comp'
+--@ exit: 2

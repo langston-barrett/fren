@@ -76,6 +76,8 @@ structure DataDecl where
   `fren mutate` does for every mutant. -/
   text : String := ""
   syms : Array String := #[]
+  /-- An ordered enumeration (`Reqs/Lang/Items#enumerations`). -/
+  ordered : Bool := false
   deriving Inhabited
 
 def DataDecl.ctorSym (d : DataDecl) (c : Name) : String :=
@@ -92,6 +94,14 @@ def DataDecl.tester (d : DataDecl) (idx : Nat) (smt : String) : String :=
   if fs.isEmpty then s!"(= {smt} {d.ctorSym c})" else
   let sels := (List.range fs.size).map fun k => s!"({d.selSym c k} {smt})"
   s!"(= {smt} ({d.ctorSym c} {" ".intercalate sels}))"
+
+/-- The position of `smt`'s variant among the variants of the ordered
+enumeration `d`, an `Int`: a conditional on each variant but the last, so
+that comparing two values compares their positions without quantifiers.
+Fren generates the same term in Lean (`Fren.ordinalTerm`). -/
+def DataDecl.ordinal (d : DataDecl) (smt : String) : String :=
+  (List.range (d.ctors.size - 1)).foldr (init := toString (d.ctors.size - 1)) fun k acc =>
+    s!"(ite {d.tester k smt} {k} {acc})"
 
 /-- `(declare-datatype ...)` -/
 def DataDecl.decl (d : DataDecl) : String :=
@@ -1046,6 +1056,16 @@ def lintBools (e : Expr) : M Unit := do
     lintFix r.lint r.ref r.msg
   lintParens e
 
+/-- Whether `t` is an ordered enumeration (`Reqs/Lang/Items#enumerations`). -/
+def isOrdered (t : Ty) : M Bool := do
+  let .enum p := t | return false
+  return ((← get).dataOf? p).any (·.ordered)
+
+/-- The ordered enumeration that `t` is, if it is one. -/
+def orderedData? (t : Ty) : M (Option DataDecl) := do
+  let .enum p := t | return none
+  return ((← get).dataOf? p).filter (·.ordered)
+
 /-- `e` has type `found` where `expected` was required. -/
 def mismatch (e : Expr) (expected found : Ty) (why : Option String := none) : M α :=
   err e.span (Fren.Core.typeMismatchMsg expected found why)
@@ -1132,6 +1152,22 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
       | .min => s!"(ite (<= {recv} {y}) {recv} {y})"
       | .max => s!"(ite (>= {recv} {y}) {recv} {y})"
       | _ => s!"(ite (< {recv} 0) (- {recv}) {recv})", if nat then .nat else .int)
+  if let .enum p := t then
+    let some d := (← get).dataOf? p | internal span s!"unknown enum `{p}`"
+    let some method := (Fren.Core.Method.ofName? m).filter (·.accepts false false (ordered := d.ordered))
+      | if d.ordered then err span (Fren.Core.unknownMethodMsg m t.show false (ordered := true))
+        else if m == "min" || m == "max" then err span (Fren.Core.unorderedMethodMsg m t.show)
+        else err span (Fren.Core.noMethodsMsg m t.show)
+    unless args.size == method.arity do err span (Fren.Core.arityMsg (Name.mkSimple m) method.arity args.size)
+    for (_, ta, sp) in args do
+      unless ta == t do
+        err sp { code? := some "F0304", headline := s!"type mismatch: expected `{t.show}`, found `{ta.show}`"
+                 label? := some s!"expected `{t.show}`, found `{ta.show}`"
+                 notes := #[s!"note: the argument of `{m}` is a `{t.show}`, as its receiver is"] }
+    -- Conditionals on the variants' positions, as for an `Int`.
+    let y := (args.map (·.1))[0]?.getD ""
+    let cmp := if method == .min then "<=" else ">="
+    return (s!"(ite ({cmp} {d.ordinal recv} {d.ordinal y}) {recv} {y})", t)
   unless t == .string do err span (Fren.Core.noMethodsMsg m t.show)
   let some method := (Fren.Core.Method.ofName? m).filter (·.accepts true false)
     | err span (Fren.Core.unknownMethodMsg m t.show)
@@ -1163,6 +1199,8 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
 the method `f`, without arguments. -/
 def readField (span : Span) (smt : String) (t : Ty) (f : Name) : M (String × Ty) := do
   if t matches .string | .set _ | .rel .. | .seq _ | .int | .nat then return ← callMethod span smt t f.toString #[]
+  -- An enumeration's methods, `min` and `max`, which take an argument.
+  if t matches .enum _ && (f == `min || f == `max) then return ← callMethod span smt t f.toString #[]
   let .record p := t | err span (Fren.Core.noFieldMsg f t.show #[])
   let fields : Array (Name × Ty) := ((← get).dataOf? p).map (·.ctors[0]!.2) |>.getD #[]
   let some (_, ft) := fields.find? (·.1 == f) | err span (Fren.Core.noFieldMsg f t.show (fields.map (·.1)))
@@ -1892,19 +1930,22 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     -- the comparisons before an operand guard it. The parser has checked
     -- its operators.
     let (x0, t0) ← elabExpr cx es[0]!
-    -- A `Nat` is widened (`lang::operator_type`).
-    let t0 := t0.widen
-    unless t0 == .string || t0 == .int do mismatch es[0]! .int t0 (opNote ops[0]!.1 .int)
+    -- The first operand gives the operands' type, a `Nat` widened
+    -- (`lang::operator_type`).
+    let t0 ← liftMsg es[0]!.span (Fren.Core.orderingType ops[0]!.1 t0 (← isOrdered t0))
+    -- An ordered enumeration's values compare by their positions.
+    let ordinal ← orderedData? t0
+    let pos (smt : String) := match ordinal with | some d => d.ordinal smt | none => smt
     let mut (x, ca) := (x0, ← isConstant cx es[0]!)
     let mut links := #[]
     for (op, _) in ops, a in es, b in es.extract 1 do
       let (y, tb) ← elabExpr { cx with guards := cx.guards ++ links } b
-      unless tb.widens t0 do mismatch b t0 tb (opNote op t0)
+      liftMsg b.span (Fren.Core.checkType t0 tb (Fren.Core.opNote op t0))
       let cb ← isConstant cx b
       if t0 == .string then
         checkCore cx (a.span.to b.span) .stringCompare true (ca || cb) #[a, b] (ca && cb)
       -- SMT-LIB has only `str.<` and `str.<=`.
-      links := links.push <| if t0 == .int then s!"({op} {x} {y})" else match op with
+      links := links.push <| if t0 != .string then s!"({op} {pos x} {pos y})" else match op with
         | "<" => s!"(str.< {x} {y})"
         | "<=" => s!"(str.<= {x} {y})"
         | ">" => s!"(str.< {y} {x})"
@@ -1971,11 +2012,13 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       return (if op == "=" then s!"(= {x} {y})" else s!"(distinct {x} {y})", .bool)
     | "<" | "<=" | ">" | ">=" =>
       lintLength op a b
+      -- The left operand gives the operands' type (`lang::operator_type`).
       let (x, tx) ← elabExpr cx a
-      unless tx == .string do
-        unless tx == .int || tx == .nat do mismatch a .int tx (opNote op .int)
-        return (s!"({op} {x} {← expect b .int (opNote op .int)})", .bool)
-      let y ← expect b .string (opNote op .string)
+      let t ← liftMsg a.span (Fren.Core.orderingType op tx (← isOrdered tx))
+      let y ← expect b t (Fren.Core.opNote op t)
+      -- An ordered enumeration's values compare by their positions.
+      if let some d ← orderedData? t then return (s!"({op} {d.ordinal x} {d.ordinal y})", .bool)
+      unless t == .string do return (s!"({op} {x} {y})", .bool)
       let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
       checkCore cx span .stringCompare true (ca || cb) #[a, b] (ca && cb)
       -- SMT-LIB has only `str.<` and `str.<=`.
@@ -2961,7 +3004,7 @@ partial def elabItem (item : Item) : M Unit := do
     for p in paths do
       declareUse (pre ++ p) false
         { item := span, removal, path := p[0]!.span.to p.back!.span, pre? := some (pre[0]!.span.to pre.back!.span) }
-  | .enum isPub name variants => do
+  | .enum isPub name variants isOrdered => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "enum" n)
     let module := (← get).module
@@ -3002,11 +3045,17 @@ partial def elabItem (item : Item) : M Unit := do
     if let some msg := Fren.Core.enumVariantNamesMsg? n vs then lint .enumVariantNames name.span msg
     for (v, _) in variants, vn in vs do
       if let some msg := Fren.Core.variantNameMsg? n vn then lint .enumVariantNames v.span msg
+    -- Only an enumeration without payloads may be ordered
+    -- (`lang::ordered_enumeration`); the first payload is reported.
+    let withPayload := variants.filter (·.2.isSome)
+    unless Fren.Core.orderedEnumAccepted isOrdered withPayload.size do
+      let (v, _) := withPayload[0]!
+      err v.span (Fren.Core.orderedPayloadMsg n (Name.mkSimple v.name))
     unless isPub do
       modify fun s => { s with items := s.items.push ({ what := .enumeration, path, level := s.levels.get .deadCode }, name.span) }
     modify fun s => { s with
       table := (s.table.addItem { kind := .enumItem, path, isPub, owner := s.module }).addEnum { path, variants := vs }
-      datatypes := s.datatypes.push { path, isRecord := false, ctors, unbounded : DataDecl }.withPrelude }
+      datatypes := s.datatypes.push { path, isRecord := false, ctors, unbounded, ordered := isOrdered : DataDecl }.withPrelude }
   | .record isPub name fields => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "record" n)

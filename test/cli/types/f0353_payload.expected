@@ -1,0 +1,13 @@
+error[F0353]: the ordered enum `Size` cannot have a variant with a payload
+ --> test/cli/types/f0353_payload.fren:2:28
+  |
+2 | ordered enum Size { Small, Custom(Int) }
+  |                            ^^^^^^ `Custom` has a payload
+  |
+  = note: an ordered enum orders its variants as they are declared, which would not order their payloads
+  = help: remove the payload of `Custom`, or declare `Size` without `ordered`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0353`.
+exit=2

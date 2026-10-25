@@ -11,7 +11,8 @@ Fren has eight kinds of type:
 - `Set(T)`, finite sets of values of `T` (see [Sets](#sets)).
 - Enumerations, declared with `enum` (see [Items](Items.md#enumerations)).
   Each value of an enumeration is one of its variants, together with the
-  values of the variant's payload, if it has one.
+  values of the variant's payload, if it has one. An enumeration declared
+  `ordered` orders its variants as they are declared.
 - Records, declared with `struct` (see [Items](Items.md#records)). Each
   value of a record has a value for each of the record's fields.
 - Abstract types, declared with `type` (see [Items](Items.md#abstract-types)).
@@ -49,10 +50,11 @@ pub enum ValueType { BoolTy, IntTy, NatTy, StringTy, EnumTy, RecordTy, AbstractT
 ```
 
 `lang::Ty` is the types themselves, `lang::kind` gives the kind of
-each, `lang::elem` the element type of a set type, and `lang::left` and
-`lang::right` the types of a relation's pairs. Two enumerations, two
-records, two abstract types, two set types or two relation types may have
-the same kind and still be different types:
+each, `lang::elem` the element type of a set type, `lang::left` and
+`lang::right` the types of a relation's pairs, and `lang::ordered_enum?`
+whether a type is an [ordered enumeration](Items.md#enumerations). Two
+enumerations, two records, two abstract types, two set types or two
+relation types may have the same kind and still be different types:
 
 ```fren
 pub type Ty
@@ -61,6 +63,7 @@ pub fn kind(Ty): ValueType
 pub fn elem(Ty): Ty      -- the element type of a set or a sequence
 pub fn left(Ty): Ty      -- the type of the first element of a relation's pairs
 pub fn right(Ty): Ty     -- the type of the second
+pub fn ordered_enum?(Ty)  -- an enumeration declared `ordered`
 ```
 
 ## Recursive and unbounded types

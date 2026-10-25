@@ -21,7 +21,8 @@ Brute force is not needed, so the generator is wider than `fren_fuzz`'s,
 and aims at the analyses that each front end implements on its own:
 constants, defined outputs, defined and uninterpreted functions, `match`,
 string methods with constant and non-constant arguments and `++`, products
-of every kind of operand, and sets and relations with `card`, so that it
+of every kind of operand, orderings and `min` and `max` of an ordered
+enumeration, and sets and relations with `card`, so that it
 reaches `linear_product`, the decidable core and the lints.
 
 What legitimately differs is normalized away by
@@ -62,6 +63,9 @@ structure WScope where
   body. -/
   fns : Array (String × Array WTy × WTy × Bool) := #[]
   nVariants : Nat := 0
+  /-- The enumeration is ordered, so its values are compared with orderings
+  and have `min` and `max`. -/
+  ordered : Bool := false
   /-- The element type of relations: `E` or `Int`. -/
   relElem : String := "Int"
   /-- Only inputs and constants: an assumption, or an uninterpreted
@@ -167,7 +171,14 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
       let y ← if sc.relElem == "E" then gen sc .enum 0 else sub .int
       return s!"({x}, {y}) in {← sub .rel}"
     | 12 => return s!"{← sub .rel} {← pick #["subset", "="]} {← sub .rel}"
-    | 13 => if hasEnum then return s!"{← sub .enum} {← pick #["=", "!="]} {← sub .enum}" else sub .bool
+    | 13 =>
+      unless hasEnum do return ← sub .bool
+      -- Orderings, and chains of them, mostly of an ordered enumeration; of
+      -- an unordered one, an error that both front ends must report alike.
+      if (sc.ordered || (← chance 10)) && (← chance 50) then
+        if ← chance 50 then return s!"{← sub .enum} {← pick #["<", "<=", ">", ">="]} {← sub .enum}"
+        return s!"{← sub .enum} {← pick #["<", "<="]} {← sub .enum} {← pick #["<", "<="]} {← sub .enum}"
+      return s!"{← sub .enum} {← pick #["=", "!="]} {← sub .enum}"
     | 14 => if hasEnum then matchOn sc .bool d else sub .bool
     | 15 | 16 => return (← app? sc .bool d).getD (← leaf sc .bool)
     | 17 => return s!"(when {← sub .bool}, {← sub .bool})"
@@ -205,9 +216,10 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
     | 3 => return s!"({← sub .rel} {← pick #["union", "inter", "minus"]} {← sub .rel})"
     | _ => leaf sc .rel
   | .enum =>
-    match ← below 3 with
+    match ← below 4 with
     | 0 => if hasEnum then matchOn sc .enum d else leaf sc .enum
     | 1 => return (← app? sc .enum d).getD (← leaf sc .enum)
+    | 2 => if sc.ordered then return s!"({← sub .enum}).{← pick #["min", "max"]}({← sub .enum})" else leaf sc .enum
     | _ => leaf sc .enum
 
 end
@@ -223,13 +235,14 @@ def genWide (avoidKnown : Bool := false) : R String := do
   let useEnum ← chance 60
   let nVariants ← if useEnum then pure ((← below 2) + 2) else pure 0
   let relElem := if useEnum && (← chance 50) then "E" else "Int"
+  let ordered ← chance 50
   let mut out := "mod fz\n"
   if ← chance 40 then
     out := out ++ "set_option fren.lint.membership_chain \"warn\"\nset_option fren.lint.definable_output \"warn\"\n"
   out := out ++ "\n"
   if useEnum then
-    out := out ++ s!"pub enum E \{ {", ".intercalate ((List.range nVariants).map (s!"V{·}"))} }\n"
-  let mut sc : WScope := { nVariants, relElem, avoidKnown }
+    out := out ++ s!"pub {if ordered then "ordered " else ""}enum E \{ {", ".intercalate ((List.range nVariants).map (s!"V{·}"))} }\n"
+  let mut sc : WScope := { nVariants, ordered, relElem, avoidKnown }
   -- Constants, each over the earlier ones.
   for k in [0:← below 4] do
     let t ← pick #[WTy.int, .int, .str, .bool, .set]

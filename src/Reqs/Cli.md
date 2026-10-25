@@ -289,9 +289,9 @@ pub comp exit {
     req not_run: unless ran?, code = 2
     req failed: when ran? and worst = Error, code = 1
     req warned: when ran? and worst = Warning, code = 3
-    req passed: when ran? and (worst = Silent or worst = Info), code = 0
+    req passed: when ran? and worst <= Info, code = 0
 
-    expect zero_means_no_problem: when code = 0, ran? and worst != Error and worst != Warning
+    expect zero_means_no_problem: when code = 0, ran? and worst <= Info
     expect documented_codes: 0 <= code <= 3
 }
 
@@ -312,6 +312,9 @@ pub comp worst_severity {
     req silent: unless Error in present or Warning in present, worst = Silent
 
     expect worst_present: when worst != Silent, worst in present
+    -- The maximum of the levels present, counting `Info` as `Silent`.
+    expect maximum: (when Error in present, worst >= Error) and (when Warning in present, worst >= Warning)
+        and worst != Info
 }
 ```
 

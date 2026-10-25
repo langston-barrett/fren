@@ -27,7 +27,7 @@ comp unapplied { in x: Name pub out y: Int req r: y = arity }
 --~^ error: function `arity` must be applied to arguments
 comp not_fn { in x: Name pub out y: Int req r: y = x(x) }
 --~^ error: expected a function, but `x` is a variable
-comp ordered { in x: Name in z: Name pub out y? req r: y? iff x < z }
+comp abstract_order { in x: Name in z: Name pub out y? req r: y? iff x < z }
 --~^ error: type mismatch: expected `Int`, found `Name`
 comp nonlinear { in x: Int pub out y: Int req r: y = x * rate(1) }
 --~^ error: nonlinear arithmetic is not supported

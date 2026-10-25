@@ -34,7 +34,8 @@ comparison of those operands other than either of them:
 
 The two comparisons may come in either order, and the second may have its
 operands the other way around, as in `b > a`, which is `a < b`; the fix
-keeps the first's order. Orderings compare `Int`s or `String`s, which are
+keeps the first's order. Orderings compare `Int`s, `String`s or values of
+an [ordered enumeration](../../Lang/Items.md#enumerations), which are all
 totally ordered, so whether a comparison holds depends only on whether `a`
 is below, equal to or above `b`, and `lint::double_comparison_meaning`
 checks that the fix holds in exactly the same cases as the two. Two sets

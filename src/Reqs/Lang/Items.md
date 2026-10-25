@@ -66,7 +66,7 @@ into scope in the current module. See [Modules and visibility](Modules.md#use-de
 ## Enumerations
 
 ```
-enumeration := ["pub"] "enum" IDENT "{" variant ("," variant)* [","] "}"
+enumeration := ["pub"] ["ordered"] "enum" IDENT "{" variant ("," variant)* [","] "}"
 variant     := IDENT ["(" type ("," type)* ")"]
 ```
 
@@ -86,6 +86,62 @@ but no names. A payload may have the type of its own enumeration, which
 makes the enumeration [recursive](Types.md#recursive-and-unbounded-types),
 as in `enum List { Nil, Cons(Int, List) }`; this is the one exception to
 an item being declared before it is used.
+
+An enumeration declared with the modifier `ordered`, after `pub` if it
+has both, is *ordered*: its variants are ordered as they are declared, so
+that with `pub ordered enum Severity { Silent, Info, Warning, Error }`,
+`Silent < Info < Warning < Error`. The
+[orderings](Expressions.md#operators) `<`, `<=`, `>` and `>=`, their
+[chains](Expressions.md#chained-comparisons), and the
+[methods](Expressions.md#methods) `min` and `max` apply to its values, as
+they do to `Int`s. Comparing values of an enumeration that is not ordered
+is an error, whose message says to declare it `ordered`: the order in
+which a plain enumeration's variants are listed is not part of its
+meaning. Only an enumeration without payloads may be ordered: an order of
+values with payloads would compare their payloads too, which is harder to
+state and to check. `lang::ordered_enumeration` states which enumerations
+may be ordered, from how many of their variants have a payload:
+
+```fren
+pub mod lang
+
+pub comp ordered_enumeration {
+    in ordered?          -- declared with `ordered`
+    in n_payloads: Int   -- variants with a payload
+    pub det out accepted?
+
+    assume count: n_payloads >= 0
+
+    req rule: accepted? iff (not ordered? or n_payloads = 0)
+
+    expect plain: when not ordered?, accepted?
+    expect no_payloads: when ordered? and n_payloads > 0, not accepted?
+}
+```
+
+`lang::enumeration_order` states the laws of the order, on an example: it
+is the order of declaration, and it is total:
+
+```fren
+pub ordered enum Level { Low, Middle, High }
+
+pub comp enumeration_order {
+    use self::Level::{High, Low, Middle}
+    in a: Level
+    in b: Level
+    in c: Level
+
+    expect declared: when a = Middle, Low < a < High
+    expect bounded: Low <= a <= High
+    expect total: a <= b or b <= a
+    expect asymmetric: not (a < b and b < a)
+    expect transitive: when a < b < c, a < c
+    expect antisymmetric: when a <= b <= a, a = b
+    expect min_below: a.min(b) <= a and a.min(b) <= b and (a.min(b) = a or a.min(b) = b)
+    expect max_above: a.max(b) >= a and a.max(b) >= b and (a.max(b) = a or a.max(b) = b)
+    expect clamped: a.min(Middle) = (if a = High then Middle else a) and a.max(High) = High
+}
+```
 
 ## Records
 

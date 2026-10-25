@@ -152,8 +152,8 @@ inductive Item where
   /-- `use pre::{a, b::c}`: each path is appended to `pre`. -/
   | useGroup (span : Span) (pre : Array Ident) (paths : Array (Array Ident))
   /-- `enum E { A, B(T, U) }`: each variant with its payload's types, if
-  it has a payload. -/
-  | enum (isPub : Bool) (name : Ident) (variants : Array (Ident × Option (Array (Array Ident))))
+  it has a payload; `ordered enum E { A, B }` if `isOrdered`. -/
+  | enum (isPub : Bool) (name : Ident) (variants : Array (Ident × Option (Array (Array Ident)))) (isOrdered : Bool := false)
   /-- `struct R { x: T, y? }`: each field with its type, if written. -/
   | record (isPub : Bool) (name : Ident) (fields : Array (Ident × Option (Array Ident)))
   /-- `type T`, an abstract type. -/
@@ -1000,7 +1000,21 @@ partial def item : P Item := do
         unless isKw (← peek) "(" do fail (← peek) "`(` or `,`"
     return .global name binders (← expr)
   let isPub := (← eatKw "pub").isSome
+  -- `ordered`, which only an enum takes, after `pub`.
+  let ordered? ← eatKw "ordered"
   let t ← peek
+  if let some o := ordered? then
+    unless isKw t "enum" do
+      let fix := { msg := "remove `ordered`", replacement := "", range? := some { start := o.span.start, stop := t.span.start } }
+      if isKw t "pub" then
+        err o.span "F0130" "`ordered` is written after `pub`" (some "before `pub`")
+          #["note: an ordered enum is declared `pub ordered enum E { ... }`"]
+      let what := match t.tok with
+        | .kw "struct" => "records" | .kw "comp" => "components" | .kw "type" => "abstract types"
+        | .kw "fn" => "functions" | .kw "const" => "constants" | .kw "mod" => "modules"
+        | tok => tok.describe
+      err o.span "F0130" s!"`ordered` applies only to enums, not to {what}" (some "`ordered` must be followed by `enum`")
+        #["note: an ordered enum orders its variants as they are declared, and is declared `ordered enum E { ... }`"] #[fix]
   if isKw t "mod" then
     discard bump
     return .mod isPub (← path false).1
@@ -1024,7 +1038,7 @@ partial def item : P Item := do
       if isKw (← peek) "}" then break
       vs := vs.push (← variant)
     discard (expectKw "}")
-    return .enum isPub name vs
+    return .enum isPub name vs ordered?.isSome
   if isKw t "struct" then
     discard bump
     let name ← ident

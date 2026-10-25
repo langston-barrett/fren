@@ -23,7 +23,7 @@ item           := module | use | enumeration | record | abstract-type | function
 
 module         := ["pub"] "mod" path
 use            := "use" path ["::*" | "::{" path ("," path)* [","] "}"]
-enumeration    := ["pub"] "enum" IDENT "{" variant ("," variant)* [","] "}"
+enumeration    := ["pub"] ["ordered"] "enum" IDENT "{" variant ("," variant)* [","] "}"
 variant        := IDENT ["(" type ("," type)* ")"]
 record         := ["pub"] "struct" IDENT "{" field ("," field)* [","] "}"
 field          := IDENT [":" type]

@@ -1,0 +1,50 @@
+-- Ordered enumerations: comparisons, chained comparisons, and `min` and
+-- `max`, in the order of declaration.
+-- Its expectations of constants are deliberate.
+set_option fren.lint.assertions_on_constants "allow"
+
+pub ordered enum Severity { Silent, Info, Warning, Error }
+use Severity::{Error, Info, Silent, Warning}
+
+-- A single variant is its own minimum and maximum.
+ordered enum Only { One }
+
+expect declared: Silent < Info < Warning < Error and Error > Warning >= Warning > Info
+expect methods: (Silent).max(Info) = Info and (Error).min(Warning) = Warning and (Severity::Info).max(Silent) = Info
+expect bare_receiver: Silent.max(Info) = Info
+expect single: (Only::One).max(Only::One) = Only::One
+
+comp exit {
+    in ran?
+    in worst: Severity
+    pub det out code: Int
+
+    req not_run: unless ran?, code = 2
+    req failed: when ran? and worst = Error, code = 1
+    req warned: when ran? and worst = Warning, code = 3
+    req passed: when ran? and worst <= Info, code = 0
+
+    expect zero_means_no_problem: when code = 0, ran? and worst < Warning
+    expect problems: when ran? and Warning <= worst, code != 0
+    expect wrong: when ran?, worst < Error                     --~ error: expectation `exit::wrong` does not hold
+}
+
+comp combined {
+    in a: Severity
+    in b: Severity
+    pub out low: Severity
+    pub out high: Severity
+
+    req l: low = a.min(b)
+    req h: high = a.max(b)
+
+    expect low_below: low <= high
+    expect chained: low <= a <= high and low <= b <= high
+    expect either: high = a or high = b
+    expect bounded: Silent <= low and high <= Error
+    expect clamped: a.max(Warning) >= Warning and a.min(Info) <= Info
+    expect wrong: low < high                                   --~ error: expectation `combined::wrong` does not hold
+}
+
+--@ summary: 27 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

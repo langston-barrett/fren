@@ -64,8 +64,9 @@
 - **Differential fuzzing** (`lake exe fren_fuzz [--count N] [--seed N]
   [--out DIR]`): generates random specs and compares each verdict of `fren
   check` with one computed by brute force from the evaluator. The specs stay
-  in a fragment where brute force is exact: `Bool`s, enumerations, `Int`s
-  that constraints named `range_*` bound to a few values, abstract types,
+  in a fragment where brute force is exact: `Bool`s, enumerations,
+  ordered or not, `Int`s that constraints named `range_*` bound to a few
+  values, abstract types,
   and functions from them to `Bool`s, sets and relations of an enumeration
   or of `Bool`, and sequences of one that `range_*` constraints bound to
   two elements, with instances, `det out`s, cover goals and global
@@ -97,8 +98,8 @@
   reports an error, 3 when it reports a warning, and 0 otherwise. The specs aim at the
   analyses that each front end implements on its own: constants, defined
   outputs, defined and uninterpreted functions, instances, `match`, string
-  methods and `++`, products, and sets and relations with `card`, so as to
-  reach `linear_product`, the [decidable core](../Lang/Decidability.md)
+  methods and `++`, products, orderings and `min` and `max` of an ordered
+  enumeration, and sets and relations with `card`, so as to reach `linear_product`, the [decidable core](../Lang/Decidability.md)
   and the lints. Only what may legitimately differ is not compared:
   - A parse error stops the `fren` command, while Lean recovers at the
     next command: Lean must then report a parse error in the same item, on
