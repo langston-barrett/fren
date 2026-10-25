@@ -206,15 +206,17 @@ that a redundant constraint is counted apart. So the failures that the
 summary counts are exactly the results that are errors:
 
 ```fren
-pub enum Bucket { Passed, Failed, InconclusiveBucket, RedundantBucket }
+-- `Inconclusive` is a verdict's name, which `counted` uses too, so the
+-- bucket's has a suffix.
+pub enum Bucket { Passed, Failed, InconclusiveBucket, Redundant }
 
 pub comp counted {
-    use self::Bucket::{Failed, InconclusiveBucket, Passed, RedundantBucket}
+    use self::Bucket::{Failed, InconclusiveBucket, Passed, Redundant}
     in kind: Kind
     in verdict: Verdict
     pub det out bucket: Bucket
 
-    req redundant: when kind = Redundancy and verdict = Fail, bucket = RedundantBucket
+    req redundant: when kind = Redundancy and verdict = Fail, bucket = Redundant
     req by_verdict: unless kind = Redundancy and verdict = Fail,
         bucket = (if verdict = Pass then Passed else if verdict = Fail then Failed else InconclusiveBucket)
 }

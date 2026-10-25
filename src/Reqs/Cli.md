@@ -250,8 +250,8 @@ could not run, and otherwise 0, 1 or 3, with 0 meaning that there is
 nothing to report. What 1 and 3 mean is each command's own:
 
 - `fren check` and `fren quickcheck`, the table above (`cli::exit`);
-- `fren eval`, a behaviour that does not meet the component, and one
-  that could not be completed (see [Evaluation and
+- `fren eval`, a behaviour that does not meet the component or makes an
+  expectation false, and one that could not be completed (see [Evaluation and
   testing](Eval.md#fren-eval), `eval::eval_exit`);
 - `fren trace`, a component below `--require` or an unclaimed marker
   (`trace::trace_exit`);

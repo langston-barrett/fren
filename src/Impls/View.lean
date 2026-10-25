@@ -33,7 +33,7 @@ def toBucket : Fren.Core.Bucket → view.Bucket
   | .passed => .Passed
   | .failed => .Failed
   | .inconclusive => .InconclusiveBucket
-  | .redundant => .RedundantBucket
+  | .redundant => .Redundant
 
 -- `Fren.Core.summary` counts each result in its `bucketOf`.
 impl counted: view::counted for (k : CheckKind) (v : Verdict) {
