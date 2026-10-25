@@ -75,9 +75,11 @@ end Lang
   let endPos := fileMap.toPosition range.stop
   let fileName ← getFileName
   -- A message about another spec's item already names that spec, and one
-  -- about the Lean file's item is placed in it (`Fren.logAbout`).
+  -- about the Lean file's item is placed in it (`Fren.logAbout`), even
+  -- from a spec that another spec reads.
+  let leanName := (leanFile?.map (·.1)).getD fileName
   let msgs := inner.messages.toList.map fun m =>
-    if m.fileName == fileName then m else
+    if m.fileName == leanName then m else
     let shown := if m.fileName == path.toString then rel else m.fileName
     { m with fileName, pos, endPos, data := m!"{shown}:{m.pos.line}:{m.pos.column}: " ++ m.data }
   -- Info trees refer to the Markdown file's text, so they are dropped.
