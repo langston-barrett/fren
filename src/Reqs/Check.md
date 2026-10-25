@@ -71,6 +71,42 @@ use self::Outcome::{Sat, Unknown, Unsat}
 use self::Verdict::{Fail, Inconclusive, Pass}
 ```
 
+Every check but realizability reaches its verdict from one outcome, in
+one of two ways. A check that asks the solver to *prove* something passes
+when it is proved, and fails on a model, a counterexample; a check that
+asks whether something *can hold* passes on a model, a witness, and fails
+when its negation is proved. Either way, `Unknown` is inconclusive and
+nothing else is. Both kinds ask the solver for a proof; they differ in
+what a proof means. An expectation's proof is of the expectation, so it
+passes; vacuity proves that the trigger cannot hold, and redundancy that
+the constraint follows from the others, so a proof fails them, and a model,
+in which the trigger holds or the constraint fails while the others hold,
+passes them. `check::proved` and `check::satisfiable` state the two,
+and each check below [refines](Lang/Refinement.md) one of them (see
+[Verdict families](#verdict-families)):
+
+```fren
+pub comp proved {
+    in q: Outcome          -- can the goal be proved?
+    pub det out verdict: Verdict
+
+    req proof: verdict = Pass iff q = Unsat
+    req counterexample: verdict = Fail iff q = Sat
+
+    expect conservative: when q = Unknown, verdict = Inconclusive
+}
+
+pub comp satisfiable {
+    in q: Outcome          -- can the negation of the goal be proved?
+    pub det out verdict: Verdict
+
+    req witness: verdict = Pass iff q = Sat
+    req refuted: verdict = Fail iff q = Unsat
+
+    expect conservative: when q = Unknown, verdict = Inconclusive
+}
+```
+
 `check::applies` gives which checks run on an item. A global expectation
 constrains nothing, so there is nothing to realize, determine or find
 redundant, and its binders' inputs have no obligations:
@@ -475,9 +511,12 @@ error (`F0214`) where it would set a check.
 testing. It tests the check with `--tests` tests (default 100) from
 `--seed` (default 0), and reports the result as `fren quickcheck` does
 (`eval::test_verdict`): a counterexample fails the check, and testing that
-reaches no conclusion leaves it inconclusive, with the same warnings. A
-check that testing cannot decide, since it asks whether something can hold
-at all, is not run: vacuity, redundancy and definedness. A test that reaches
+reaches no conclusion leaves it inconclusive, with the same warnings. The
+checks that testing cannot decide are not run: vacuity and redundancy,
+which ask whether something can hold at all, which a failed search does
+not refute, and definedness, since an index out of range has no value
+that the evaluator knows (see [Evaluation](Eval.md#searching-for-behaviours)),
+so testing can neither pass nor fail it. A test that reaches
 an expectation shows that its trigger can hold, which is what its vacuity
 check would show. The summary counts the passes that came from testing:
 
@@ -507,6 +546,21 @@ pub comp by_testing {
 
     expect never_both: when tested?, run != BySolver
 }
+```
+
+## Verdict families
+
+Each check that reaches its verdict from one outcome refines `proved` or
+`satisfiable`: the checks that prove something, and the checks that ask
+whether something can hold.
+
+```fren
+refine expectation_proves: expectation refines proved
+refine instance_assumption_proves: instance_assumption refines proved
+refine definedness_proves: definedness refines proved
+refine determinism_proves: determinism refines proved
+refine vacuity_witnesses: non_vacuity refines satisfiable
+refine redundancy_witnesses: non_redundancy refines satisfiable
 
 #fren_check
 ```

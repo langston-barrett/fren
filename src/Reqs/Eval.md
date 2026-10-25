@@ -148,6 +148,10 @@ pub comp eval_exit {
 
     expect zero_means_met: when code = 0, status = Meets and not expect_false?
 }
+
+use cli::exit_status
+
+refine eval_exit_status: eval_exit refines exit_status
 ```
 
 ## `fren quickcheck`

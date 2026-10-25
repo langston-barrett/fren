@@ -646,14 +646,29 @@ def untriggeredMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : 
 information, whatever the results. -/
 def summarySeverity (_results : Array CheckResult) : Severity := .info
 
+/-- Which count of the summary a result is in (`view::counted`). -/
+inductive Bucket where
+  | passed
+  | failed
+  | inconclusive
+  | redundant
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+def bucketOf (kind : CheckKind) (verdict : Verdict) : Bucket :=
+  if kind == .redundancy && verdict == .fail then .redundant
+  else match verdict with
+    | .pass => .passed
+    | .fail => .failed
+    | .inconclusive => .inconclusive
+
 /-- Whether a result is a redundant constraint, counted apart from other
 failures, which are errors (`view::summary`). -/
-def CheckResult.isRedundant (r : CheckResult) : Bool := r.kind == .redundancy && r.verdict == .fail
+def CheckResult.isRedundant (r : CheckResult) : Bool := bucketOf r.kind r.verdict == .redundant
 
 def summary (results : Array CheckResult) (byTesting : Nat := 0) : String :=
-  let count v := (results.filter fun r => r.verdict == v && !r.isRedundant).size
+  let count (b : Bucket) := (results.filter fun r => bucketOf r.kind r.verdict == b).size
   let tested := if byTesting == 0 then "" else s!" ({byTesting} by testing)"
-  s!"fren: {count .pass} passed{tested}, {count .fail} failed, {count .inconclusive} inconclusive, \
-    {(results.filter (·.isRedundant)).size} redundant"
+  s!"fren: {count .passed} passed{tested}, {count .failed} failed, {count .inconclusive} inconclusive, \
+    {count .redundant} redundant"
 
 end Fren.Core
