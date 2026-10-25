@@ -23,6 +23,8 @@ structure Diagnostic where
   /-- `error`, `warning` or `info`. -/
   severity : String
   text : String
+  /-- The error code, such as `F0105`, where the front end shows it. -/
+  code? : Option String := none
   deriving Inhabited, Repr
 
 structure Expectation where

@@ -77,6 +77,61 @@
   constraints are not compared, since without them brute force is not
   exact. A component with too many behaviours to enumerate is skipped,
   and counted in the summary.
+- **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
+  [--seed N] [--out DIR] [--avoid-known] [--spec-timeout SECONDS]`):
+  generates random specs and checks each with both front ends, the `fren`
+  command's pipeline and the Lean front end (in an environment that
+  imports `Fren`, as the ui tests do), whose reports must agree
+  (`cli::agreement`, `cli::agrees_with_build`): the same errors, warnings
+  and notes on the same lines, the same summary, and the exit status
+  that Lean's messages call for: 2 after a static error, else 1 when Lean
+  reports an error, 3 when it reports a warning, and 0 otherwise. The specs aim at the
+  analyses that each front end implements on its own: constants, defined
+  outputs, defined and uninterpreted functions, instances, `match`, string
+  methods and `++`, products, and sets and relations with `card`, so as to
+  reach `linear_product`, the [decidable core](../Lang/Decidability.md)
+  and the lints. Only what may legitimately differ is not compared:
+  - A parse error stops the `fren` command, while Lean recovers at the
+    next command: Lean must then report a parse error in the same item, on
+    the parse error's line, or on the last line before it that is not blank
+    or a comment, since Lean places a parse error at the end of the token
+    before the offending one, and nothing else is compared. An
+    item is one Lean command, so any other error of Lean's in it means
+    that Lean parsed what the `fren` command rejects. Lean's parse errors
+    are its messages that start with `unexpected`, `unterminated`, or
+    `expected` but do not go on with `, but`, as Fren's own do.
+  - Lean's own parse and type errors stand for the `fren` command's static
+    errors on the same line, but not for a check's result: a check that
+    fails where Lean rejects the constraint is a difference. Any other
+    error of either front end is compared.
+  - Messages are compared by their first line, without the values of a
+    model, which may differ, or the solver's reason for an undecided check.
+    The names of the constraints that a message reports are compared.
+  - Checks by testing, which Lean does not run, are left out, and so are
+    the summary and exit status of a spec that has them.
+  - After a static error, which stops the `fren` command's checks, the
+    checks' results and the summary are not compared; and Lean's lints of an
+    item where the `fren` command reports a static error other than a lint
+    are not compared, since it drops that item's lints. Lean shows no
+    codes, so its lints are its warnings that are not a check's result,
+    and the errors of `undecidable`.
+  - The `fren` command's last line after a static error, which has no
+    location, is not compared; any other message without a location is.
+
+  Each spec where the front ends differ is written to `DIR` (default
+  `.lake/fuzz`) with the differences and both reports in comments, and the
+  differences are summarized by kind; those only in undecided checks,
+  which time limits may explain, are counted apart. Specs run in worker
+  processes, so a crash of the solver is recorded against its spec, and a
+  spec that runs longer than `--spec-timeout` (default 30 s; a spec takes
+  well under a second) is stopped and recorded as a timeout. Crashes and
+  timeouts are findings, like differences: the run then exits nonzero. A
+  worker that dies while checking no spec is blamed on none. Each run's work files are its own, but the
+  findings are named by seed, so runs with overlapping seeds in one `DIR`
+  overwrite each other's. `--avoid-known` steers clear of differences
+  already known, to find others; `--files FILE...` compares the front ends
+  on given files, and `--print SEED` prints a generated spec. The
+  comparison itself is tested in `FrenTest/FrontendsCompare.lean`.
 
 `lake test` runs its tests as jobs, in parallel: each job is a process of
 its own (`fren_test --job NAME ARG...`), and the ui tests run in batches of

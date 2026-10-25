@@ -1,0 +1,12 @@
+-- An undecidable construct near a difference that `fren_fuzz_frontends`
+-- found, on which the front ends agree.
+
+-- A `++` compared with a variable, without parentheses.
+comp concat {
+    in s: String
+    in t: String
+    pub out y?
+    req q: y? iff s = t ++ "b"
+    --~^ error: searching a string, or `++` here, which makes a word equation, may be undecidable
+}
+--@ exit: 2
