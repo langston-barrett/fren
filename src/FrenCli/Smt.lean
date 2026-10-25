@@ -46,6 +46,29 @@ def Prelude.needed (p : Prelude) (syms : Array String) : String := Id.run do
     work := work ++ p.deps[i]!
   return String.join (p.decls.zipIdx.toList.filterMap fun (d, i) => if keep[i]! then some d.text else none)
 
+/-- Whether a script whose quoted symbols are `syms` needs an abstract type
+or an uninterpreted function, directly or through another declaration. -/
+def Prelude.interprets (p : Prelude) (syms : Array String) : Bool := Id.run do
+  let mut seen := Array.replicate p.decls.size false
+  let mut work := syms.filterMap p.owner.get?
+  while h : work.size > 0 do
+    let i := work[work.size - 1]
+    work := work.pop
+    if seen[i]! then continue
+    seen := seen.set! i true
+    let text := p.decls[i]!.text
+    if text.startsWith "(declare-sort" || text.startsWith "(declare-fun" then return true
+    work := work ++ p.deps[i]!
+  return false
+
+/-- Whether `c` uses an abstract type or an uninterpreted function: in its
+variables' types, its constraints, its definitions or its instances, as
+the Lean front end's `CompInfo.uses` says (`Reqs/View#check-results`). -/
+def CComp.interpreted (c : CComp) (p : Prelude) : Bool :=
+  p.interprets (quotedSymbols (String.join (c.vars.toList.map (·.ty.sort ++ " ")
+    ++ c.props.toList.map (·.smt ++ " ") ++ c.defs.toList.map (·.2 ++ " ")
+    ++ c.insts.toList.map fun i => i.bindings ++ " " ++ i.behaviour ++ " ")))
+
 /-- The SMT-LIB script that asserts `hyps` and the negation of `goal`, each
 hypothesis followed by a comment with its name; without `(check-sat)`. It
 declares only what the prelude needs to (`Prelude.needed`). -/

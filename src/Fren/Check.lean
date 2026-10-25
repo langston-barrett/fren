@@ -110,7 +110,9 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
     ({ v with name := Core.primed v.name }, p)
   let varOf? (n : Name) := vars.find? (·.1.name == n)
-  let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr) :=
+  -- The answer, and whether to cache it: not if it leaves out a model that
+  -- lean-smt could not read.
+  let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr × Bool) :=
     withoutModifyingState do
     let hyps ← (facts.map (`nat, ·) ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
     let goal ← unfoldDefined goal
@@ -122,28 +124,30 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       -- sets `ALL`, which the option overrides.
       let projects (e : Expr) := (e.find? fun x => x.isConstOf ``Fren.FinSet.domain || x.isConstOf ``Fren.FinSet.range).isSome
       let logic := if projects goal || hyps.any (projects ·.2) then [("force-logic", "HO_ALL")] else []
-      -- The options of a spec that uses strings and sets, as in the binary (`cli::logic`).
-      match ← Smt.smt { trust := true, model := wantModel, timeout := some timeout
-                        extraSolverOptions := Core.solverOptions true true ++ logic }
-                mv.mvarId! hs with
-      | .sat (some m) =>
-        return .sat <| m.values.filterMap fun (k, v) =>
-          (vars.find? (·.2 == k)).map fun (var, _) => (var.name, v)
-      | .sat none => return .sat #[]
-      | .unsat .. => return .unsat
-      | .unknown r => return .unknown r
+      let solve (model : Bool) : MetaM (Core.Outcome Expr) := do
+        -- The options of a spec that uses strings and sets, as in the binary (`cli::logic`).
+        match ← Smt.smt { trust := true, model, timeout := some timeout
+                          extraSolverOptions := Core.solverOptions true true ++ logic }
+                  mv.mvarId! hs with
+        | .sat (some m) =>
+          return .sat <| m.values.filterMap fun (k, v) =>
+            (vars.find? (·.2 == k)).map fun (var, _) => (var.name, v)
+        | .sat none => return .sat #[]
+        | .unsat .. => return .unsat
+        | .unknown r => return .unknown r
+      -- Only the solver's own failures are an unknown answer.
+      try return (← solve wantModel, true)
+      catch ex =>
+        let failed : Core.Outcome Expr := .unknown (← ex.toMessageData.toString)
+        unless wantModel && modelOptional do return (failed, true)
+        try return (← solve false, false) catch _ => return (failed, true)
   { query := fun hyps goal wantModel => do
       -- The same formulas, in the same local context and with the same
       -- options, are the same query.
       let key := (hyps.map (·.2), goal, wantModel)
       if let some o := (← cache.get)[key]? then return o
-      let o ← try ask hyps goal wantModel
-        catch ex =>
-          let failed : Core.Outcome Expr := .unknown (← ex.toMessageData.toString)
-          if wantModel && modelOptional then
-            return ← (try ask hyps goal false catch _ => pure failed)
-          pure failed
-      cache.modify (·.insert key o)
+      let (o, cacheable) ← ask hyps goal wantModel
+      if cacheable then cache.modify (·.insert key o)
       return o
     falseF := mkConst ``False
     notF := mkNot
@@ -254,7 +258,9 @@ type. A variable that the model leaves out is `default`. -/
 def addCoverWitness (c : CompInfo) (fvs : Array Expr) (g : PropInfo) (model : Array (Name × Expr)) : MetaM Unit := do
   let name := g.decl ++ `met
   if !c.uses.isEmpty || (← getEnv).contains name then return
-  try
+  -- Any failure, including a runtime one such as running out of
+  -- heartbeats in `decide`, only means that there is no theorem.
+  tryCatchRuntimeEx (do
     let vals ← (c.vars.zip fvs).mapM fun (v, _) => do
       match model.find? (·.1 == v.name) with
       | some (_, val) => return fromModel v.type val
@@ -265,8 +271,8 @@ def addCoverWitness (c : CompInfo) (fvs : Array Expr) (g : PropInfo) (model : Ar
     let type ← mkExistsFVars fvs.toList body
     let some value ← proveExists fvs.toList vals.toList body | return
     let value ← instantiateMVars value
-    addDecl (.thmDecl { name, levelParams := [], type, value })
-  catch _ => pure ()
+    addDecl (.thmDecl { name, levelParams := [], type, value }))
+    fun _ => pure ()
 
 /-- All selected checks for one comp, in reporting order. -/
 def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :

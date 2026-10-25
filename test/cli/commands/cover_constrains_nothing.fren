@@ -1,0 +1,14 @@
+--@ args: quickcheck
+-- Testing, like the solver, takes nothing from a cover goal: the
+-- expectation that only the goal could make hold fails, and the goal with
+-- a trigger that never holds has no vacuity result.
+comp sensor {
+    in x: Int
+    pub out hot?
+
+    req r: hot? iff x > 100
+
+    cover warm: x = 50 and not hot?
+    expect only_warm: x = 50
+    cover never: when x > 5 and x < 3, hot?
+}

@@ -70,7 +70,7 @@ def logAbout (path : Name) (ref : Syntax) (text : MessageData) (severity : Messa
     else logAt (← getRef) text severity
 
 def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit := do
-  for msg in Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) r c.decidable do
+  for msg in Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) r c.decidable !c.uses.isEmpty do
     let prop? := msg.item?.bind fun n => c.props.find? (·.name == n)
     let index? := msg.atIndex?.bind fun k => msg.item?.bind fun n => (c.indexes.filter (·.1 == n))[k]?.map (·.2.2.1)
     let ref := if let some r := index? then r else match prop?, msg.item? with

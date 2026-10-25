@@ -105,9 +105,15 @@ witness, the behaviour in which it holds, as a note at the goal's name:
 the inputs and public outputs, shown as a counterexample shows them. The
 note is information, like the notes at the requirements of an
 unrealizable component: the result itself is silent, so the note changes
-neither the summary's counts nor the exit status. In Lean, a witness
-whose values lean-smt cannot read, as with some values of abstract types,
-is reported without them.
+neither the summary's counts nor the exit status. A witness of a
+component that uses [abstract types](Lang/Types.md#abstract-types) or
+[uninterpreted functions](Lang/Items.md#uninterpreted-functions), in its
+variables' types, its constraints, its definitions or its instances, is
+under an interpretation that the note cannot show, so its values are not
+shown either: the note says so instead. This is also the condition under
+which Lean adds no [theorem](Generated.md#cover-goals) for the goal, and
+it keeps both front ends' notes the same, since the Lean front end cannot
+read every such model.
 
 ```text
 note: cover goal `heater::overheat` is met

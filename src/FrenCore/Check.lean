@@ -566,10 +566,13 @@ in the decidable core, the solver ran out of time. -/
 def inconclusiveAdvice (decidable : Bool) : Advice :=
   if decidable then .raiseTimeout else .namesConstructs
 
-/-- The messages for one result. Passing checks produce none. `decidable`
-says whether the component is in the decidable core: whether no construct
-of it opted out. -/
-def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) : Array Message :=
+/-- The messages for one result. Passing checks produce none, but for a
+cover goal's witness. `decidable` says whether the component is in the
+decidable core: whether no construct of it opted out. `interpreted` says
+whether it uses an abstract type or an uninterpreted function, whose
+interpretation a witness depends on: its values are then not shown. -/
+def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) (interpreted : Bool := false) :
+    Array Message :=
   -- A global expectation's `comp` is its module, which may be the root.
   let subject := s!"`{showComp (r.comp ++ (r.prop?.getD .anonymous))}`"
   -- Passes have no severity, and no messages.
@@ -579,12 +582,14 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
     { severity := sev, item?, atTrigger, atIndex? := r.index?, msg := { code? := some code, headline, label?, notes } }
   let priv := if hasPrivateOuts then #["note: private `out`s are not shown"] else #[]
   match r.verdict, r.detail with
-  -- A cover goal's witness is information; the pass itself is silent (`Reqs/View#check-results`).
-  -- A model that the backend could not read gives no values to show.
+  -- A cover goal's witness is information; the pass itself is silent
+  -- (`Reqs/View#check-results`). Its values are shown only where they mean
+  -- the same to both front ends: without an interpretation.
   | .pass, .witness vals =>
     #[{ severity := .info, item? := r.prop?
         msg := { code? := none, headline := s!"cover goal {subject} is met", label? := some "met"
-                 notes := if vals.isEmpty then #[] else #[s!"witness: {showAssignment vals}"] ++ priv } }]
+                 notes := if interpreted then #["note: the witness is not shown, since the component uses abstract types or functions, whose interpretation it depends on"]
+                   else #[s!"witness: {showAssignment vals}"] ++ priv } }]
   | .pass, _ => #[]
   | .inconclusive, d =>
     let why := match d with | .unknown w => s!": {w}" | _ => ""

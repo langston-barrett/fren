@@ -1,0 +1,37 @@
+-- A witness under an interpretation, of a component that uses an abstract
+-- type or an uninterpreted function, shows no values, and both front ends
+-- say so alike (`Reqs/View#check-results`).
+
+type Name
+fn long?(Name)
+
+comp names {
+    in a: Name
+    in b: Name
+    pub out same?
+
+    req r: same? iff a = b
+
+    cover distinct: not same?                      --~ info: the witness is not shown, since the component uses abstract types or functions
+}
+
+comp flags {
+    in n: Name
+    pub out flagged?
+
+    req r: flagged? iff long?(n)
+
+    cover flagged_long: flagged?                   --~ info: the witness is not shown, since the component uses abstract types or functions
+}
+
+-- Without them, the values are shown.
+comp plain {
+    in x: Int
+    pub out big?
+
+    req r: big? iff x > 10
+
+    cover big_one: big?                            --~ info: witness: x =
+}
+
+--@ summary: 9 passed, 0 failed, 0 inconclusive, 0 redundant
