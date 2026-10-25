@@ -56,9 +56,9 @@ component's requirements (see [Components](Components.md#meaning)).
 
 An instance must bind each input of the instantiated component exactly once,
 and must bind nothing else. A binding's expression cannot be a top-level
-`when`, `unless` or `let`, which would run on into the following
-bindings; it must be parenthesized. Nor does a binding take a `where`
-clause (see [Local definitions](Let.md)).
+`when`, `unless`, `let` or [quantifier](Quantifiers.md), whose body would
+run on into the following bindings; it must be parenthesized. Nor does a
+binding take a `where` clause (see [Local definitions](Let.md)).
 
 `inst::binding` states this rule, given what a bound name is in the
 instantiated component and how many times the instance binds it:

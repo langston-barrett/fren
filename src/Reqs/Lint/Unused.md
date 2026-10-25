@@ -56,9 +56,11 @@ suggests removing the `use`.
 ## Unused variables
 
 `unused_variables` reports a variable of a component that nothing in the
-component mentions, a binder of a global expectation that its body
-never mentions, and a parameter of a defined function that its body never
-mentions. An input that nothing mentions does not affect the
+component mentions, a binder of a global expectation over a component's
+behaviours that its body never mentions, and a parameter of a defined
+function that its body never mentions. It does not report a
+[quantifier's](../Lang/Quantifiers.md) bound name, including a binder
+of a global expectation over a type's values. An input that nothing mentions does not affect the
 component, and an output that nothing mentions can take any value.
 
 A variable is mentioned by a path in one of the component's constraints,
@@ -67,7 +69,8 @@ variable's name and that resolves to it: the binding `x` in `inst w: c {
 x }` mentions `x`, but in `match s { Shape::Circle(x!) => x > 0, _ =>
 true }`, the `x` of the arm is the binder that
 [shadows](../Lang/Components.md#shadowing) the variable, so it does not
-mention the variable. A binder `w` is mentioned by a path `w.x`, and a
+mention the variable, and neither does the `x` of the body of `forall
+(x!: Mode), x = Mode::Off`. A binder `w` is mentioned by a path `w.x`, and a
 parameter as a variable is. A path in a definition of a [`let` or
 `where`](../Lang/Let.md) counts, whether or not the name defined is
 mentioned, and the names defined are not reported. Mentions elsewhere, such as

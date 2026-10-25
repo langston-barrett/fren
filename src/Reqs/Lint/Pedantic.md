@@ -192,7 +192,7 @@ guarded by its test and the negations of the tests before it, which, since
 no variant is tested twice, is its test alone: the test of its arm's
 pattern. `z` and the `_` arm are both guarded by the negations of all the
 tests. The scrutinee is evaluated once, where the first test was. A body
-that is a top-level `when` or `unless`, which an arm's body cannot be, is
+that is a top-level `when`, `unless` or quantifier, which an arm's body cannot be, is
 put in parentheses, and so is a scrutinee with a `{`, which after `match`
 would start the arms. `lint::if_chain_match` states when it fires and
 whether the fix has a `_` arm:

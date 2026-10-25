@@ -10,6 +10,7 @@ import FrenCore.Guards
 import FrenCore.Lexical
 import FrenCore.Mentions
 import FrenCore.Patterns
+import FrenCore.Quantifier
 import FrenCore.Regex
 import FrenCore.Syntax
 import FrenCore.Ty
@@ -444,17 +445,19 @@ def placeholderOf (path : Name) : TermElabM AbstractInfo := do
   let some a := (← getState).abstracts.get? path | throwError "internal error: unknown abstract item `{path}`"
   return a
 
-/-- A binder of a `match` pattern in scope, or a name of a `let` or
-`where` (`isDef`). -/
+/-- A binder of a `match` pattern, a quantifier's bound name, or a name of a
+`let` or `where` (`isDef`), in scope. -/
 structure MatchBinder where
   name : Name
-  /-- Its value: the selector applied to the scrutinee, or the local of the
-  `have` that defines the name. -/
+  /-- Its value: the selector applied to the scrutinee, the local of the
+  `have` that defines the name, or for a bound name, a local that each
+  instance replaces with a value. -/
   term : Term
   type : Expr
   /-- Its scrutinee or definition, and the number of binders in scope
-  there: mentioning it counts as mentioning what that mentions. -/
-  scrutinee : Syntax
+  there: mentioning it counts as mentioning what that mentions. A bound
+  name has none, and mentions nothing. -/
+  scrutinee : Option Syntax
   outer : Nat
   isDef : Bool := false
   /-- For a name, the indexes of its definition, each with the term that it
@@ -476,6 +479,9 @@ structure ExprCtx where
   refining? : Option Core.RefineBinding := none
   /-- The binders in scope, innermost last. -/
   binders : Array MatchBinder := #[]
+  /-- The instances of the quantifiers around this expression, multiplied
+  (`lang::quantifier_size`). -/
+  instances : Nat := 1
   /-- In a defined function's body, the function's name. -/
   selfFn : Option Name := none
   /-- In a global expectation, whose instances are its binders. -/
@@ -518,6 +524,10 @@ structure ExprCtx where
   counts for nothing: what it may mention, linear arithmetic and the
   decidable core are not checked in it (`Reqs/Lang/Let#meaning`). -/
   unmentioned : Bool := false
+
+/-- What the binder `b` is, for a declaration that hides it (`Core.bindingLocals`). -/
+def MatchBinder.what (b : MatchBinder) : Name × String :=
+  (b.name, if b.scrutinee.isNone then "the bound name" else if b.isDef then "the definition" else "the binder")
 
 def ExprCtx.binder? (cx : ExprCtx) (n : Name) : Option MatchBinder := cx.binders.reverse.find? (·.name == n)
 
@@ -935,6 +945,10 @@ partial def patternNames (p : Syntax) : Array Syntax :=
 `match` or `is`. -/
 def topNames (top : Syntax) : Array Syntax := (topAlts top).1.flatMap patternNames
 
+/-- The names that the quantifier `e` binds, without the `!` of shadowing. -/
+def quantNames (e : Syntax) : Array Name :=
+  e[1].getArgs.flatMap fun b => b[1].getArgs.map fun x => (declaredIdent x).1.getId
+
 /-- The names of the variables that `e` mentions: its paths of one
 segment, and for `p.x`, `p` too. -/
 partial def pathMentions (e : Syntax) (all : Bool := true) : Array Name :=
@@ -967,6 +981,11 @@ partial def pathMentions (e : Syntax) (all : Bool := true) : Array Name :=
   else if e.isOfKind ``Lang.letExpr then
     let defs := e[1].getSepArgs
     (Core.clauseMentions (defs.map fun d => (declaredIdent d[0]).1.getId) (defs.map fun d => pathMentions d[3]) (pathMentions e[3]) all).1
+  -- In its body, a bound name means the bound name, not what it shadows,
+  -- and its binders' types are not variables.
+  else if e.isOfKind ``Lang.quantExpr then
+    let bound := quantNames e
+    (pathMentions e[3]).filter (!bound.contains ·.getRoot)
   else e.getArgs.foldl (· ++ pathMentions ·) #[]
 
 /-- Which of the definitions `defs` of a `let` or `where` clause its body
@@ -1092,12 +1111,17 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
     let bs ← e[1].getSepArgs.foldlM (init := bs) fun bs d => do
       return bs.push ((declaredIdent d[0]).1.getId, .node .binder [← shapeOf cx d[3] bs])
     return .node .compound [← shapeOf cx e[3] bs]
+  else if e.isOfKind ``Lang.quantExpr then
+    let new := quantNames e |>.map fun n => (n, Core.MentionShape.leaf .bound)
+    return .node .compound [← shapeOf cx e[3] (bs ++ new)]
   else if e.isOfKind ``Lang.fren_path then
     let segs := pathSegs e
     if segs.size != 1 then return .leaf .constant
     let n := segs[0]!.getId
     if let some (_, k) := bs.reverse.find? (·.1 == n.getRoot) then return k
-    if let some b := cx.binder? n.getRoot then return .node .binder [← shapeOf (cx.at b) b.scrutinee]
+    if let some b := cx.binder? n.getRoot then
+      let some sc := b.scrutinee | return .leaf .bound
+      return .node .binder [← shapeOf (cx.at b) sc]
     -- Definitions are acyclic, so this ends.
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
       return .node .definedOutput [← shapeOf { cx with binders := #[] } d]
@@ -1137,7 +1161,8 @@ definition or through a binder. -/
 partial def mentionsInfiniteOutput (cx : ExprCtx) (e : Syntax) : TermElabM Bool := do
   for n in pathMentions e do
     if let some b := cx.binder? n then
-      if ← mentionsInfiniteOutput (cx.at b) b.scrutinee then return true
+      if let some sc := b.scrutinee then
+        if ← mentionsInfiniteOutput (cx.at b) sc then return true
       continue
     let some v := cx.vars.find? (·.name == n) | continue
     for u in defDeps cx.vars v do
@@ -1320,6 +1345,7 @@ partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.
     let recvStop := off (id.getTailPos?.getD base) - m.length - 1
     .mk (.method m) range e (#[.mk .atom { range with stop := recvStop } id #[]] ++ e[2].getSepArgs.map go)
   else if e.isOfKind ``Lang.isExpr then .mk .patternTest range e #[go e[0]]
+  else if e.isOfKind ``Lang.quantExpr then .mk .quant range e #[go e[3]]
   else
   match e.getNumArgs, atom 0, atom 1 with
   | 3, "(", _ => go e[1]
@@ -1497,6 +1523,7 @@ def operandSlot (p e : Syntax) : Option Core.Slot :=
   else if p.isOfKind ``Lang.matchExpr then
     if same p[1] then some Core.receiverSlot else none
   else if p.isOfKind ``Lang.isExpr then at_ .patternTest #[0]
+  else if p.isOfKind ``Lang.quantExpr then at_ .quant #[3]
   -- A chained comparison's operands, not the comparisons within it.
   else if let some (xs, ops) := chainOf? p then (xs.findIdx? same).bind ((Core.BKind.chain (ops.map (·.getAtomVal.trimAscii.toString))).slots[·]?.join)
   else match p.getNumArgs, atom 0, atom 1 with
@@ -1894,12 +1921,12 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let mut new : Array MatchBinder := #[]
     for b in bs do
       let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
-        (cx.binders.map fun b => (b.name, b.isDef)) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
       let y ← declare b.ident cx.modName locals
       let bn := y.getId
       liftMsg y (Core.checkVarName bn (some (b.type.isConstOf ``Bool || b.type.isProp)))
       lintName .binder bn y
-      new := new.push { name := bn, term := b.term, «type» := b.type, scrutinee, outer := cx.binders.size }
+      new := new.push { name := bn, term := b.term, «type» := b.type, scrutinee := some scrutinee, outer := cx.binders.size }
     let others := (arms.eraseIdx! bodies.size).map (·[2])
     let emptyOk := Core.Position.shared.checked cx.emptyOk (anySynthesizes others)
     let acx := { cx with binders := cx.binders ++ new, guards, emptyOk }
@@ -1966,9 +1993,11 @@ partial def chainOperands (op : String) (e : Syntax) : Array Syntax :=
 /-- Whether `e` is `if c then a else b`. -/
 def isIte (e : Syntax) : Bool := e.getNumArgs == 6 && e[0].isAtom && e[0].getAtomVal.trimAscii.toString == "if"
 
-/-- Whether `e` is a `when` or an `unless`. -/
+/-- Whether `e` is a `when`, an `unless` or a quantifier, whose body
+extends as far right as possible. -/
 def isConditional (e : Syntax) : Bool :=
-  e.getNumArgs == 4 && e[0].isAtom && ["when", "unless"].contains e[0].getAtomVal.trimAscii.toString
+  e.isOfKind ``Lang.quantExpr ||
+    (e.getNumArgs == 4 && e[0].isAtom && ["when", "unless"].contains e[0].getAtomVal.trimAscii.toString)
 
 /-- The variant that `v` names, if it is a path to one without a payload:
 its enumeration, its index and its text. -/
@@ -2620,7 +2649,7 @@ partial def withDefinitions (toTerm : ExprCtx → Syntax → TermElabM Term) (cx
     (binds : Array (Ident × Term × Term) := #[]) : TermElabM α := do
   let some d := defs[k]? | body cx binds
   let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
-    (cx.binders.map fun b => (b.name, b.isDef)) cx.selfFn.isSome cx.inGlobal
+    (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
   let x ← declare d[0] cx.modName locals
   let n := x.getId
   -- This name and the later ones that hide nothing are not in scope yet.
@@ -2833,17 +2862,19 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
     let n := id.getId
     -- A binder or variable, then any fields read from it.
     let base? ← if let some b := cx.binder? n.getRoot then do
-        if b.isDef then
-          -- A name stands for its definition: its indexes are guarded
-          -- here, and what it mentions may be mentioned here, which
-          -- translating it again checks, without its lints.
-          if cx.noteIndexes then
-            let goals ← b.obligations.mapM fun (r, g) => return (r, ← guardedGoal cx.guards g)
-            modifyLocal fun l => { l with indexes := l.indexes ++ goals }
-          let saved ← saveState
-          discard (toTerm { cx.at b with noteIndexes := false, pending := #[], emptyOk := true } b.scrutinee)
-          saved.restore
-        else discard (toTerm (cx.at b) b.scrutinee)
+        -- A bound name has no scrutinee: it mentions nothing.
+        if let some sc := b.scrutinee then
+          if b.isDef then
+            -- A name stands for its definition: its indexes are guarded
+            -- here, and what it mentions may be mentioned here, which
+            -- translating it again checks, without its lints.
+            if cx.noteIndexes then
+              let goals ← b.obligations.mapM fun (r, g) => return (r, ← guardedGoal cx.guards g)
+              modifyLocal fun l => { l with indexes := l.indexes ++ goals }
+            let saved ← saveState
+            discard (toTerm { cx.at b with noteIndexes := false, pending := #[], emptyOk := true } sc)
+            saved.restore
+          else discard (toTerm (cx.at b) sc)
         pure (some ((b.term, b.type), n.components.drop 1))
       else
         let ks := (List.range n.components.length).reverse.map (· + 1)
@@ -2995,6 +3026,112 @@ def boolOperand (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   checkTermType a x .bool (Core.opNote op .bool)
   return x
 
+/-- Elaborates a proposition. Errors are not recovered from with `sorry`: an
+item that does not elaborate makes its comp fail, rather than being checked
+as `sorry`. -/
+def elabProp (t : Term) (type : Expr := mkSort .zero) : TermElabM Expr := do
+  -- Equality on an abstract type has no `Decidable` instance but the
+  -- classical one, which `if` may need.
+  let t ← `(open Classical in $t)
+  let e ← withoutErrToSorry <| withSynthesize <| elabTermEnsuringType t type
+  let e ← instantiateMVars e
+  if e.hasMVar || e.hasSorry then throwErrorAt t "could not elaborate this expression"
+  return e
+
+/-- The nonempty `xs` joined by `op`, as a balanced tree, so that a
+quantifier's expansion is as deep as the logarithm of its instances, which
+the solver's preprocessing recurses through. -/
+partial def balanced (op : Expr → Expr → Expr) (xs : Array Expr) : Expr :=
+  if xs.size ≤ 1 then xs[0]!
+  else op (balanced op (xs.extract 0 (xs.size / 2))) (balanced op (xs.extract (xs.size / 2)))
+
+/-- Whether the quantifier `e` is a `forall`, rather than an `exists`. -/
+def isForall (e : Syntax) : Bool :=
+  let kw := if e[0].isAtom then e[0] else e[0][0]
+  kw.getAtomVal.trimAscii.toString == "forall"
+
+/-- The number of values of `ty`, if a quantifier ranges over it
+(`lang::quantified_type`), counted without listing them. An unbounded
+enumeration or record is recursive or has a part that a quantifier does
+not range over, so it is not looked into, and the recursion ends. -/
+partial def valueCount? (ty : Expr) : TermElabM (Option Nat) := do
+  if ty.isConstOf ``Bool then return some 2
+  let s ← getState
+  let some d := ty.constName? | return none
+  let (kind, unbounded, ctors) : Core.QuantifiedKind × Bool × Array (Array Expr) :=
+    if let some e := s.enumOfDecl? d then (.enum, e.unbounded, e.variants.mapIdx fun i _ => e.payloads[i]?.getD #[])
+    else if let some r := s.recordOfDecl? d then (.record, r.unbounded, #[r.fields.map (·.2)])
+    else (.other, false, #[])
+  if unbounded then return none
+  let counts ← ctors.mapM (·.mapM valueCount?)
+  unless Core.quantifiedTypeAccepted kind false (counts.all (·.all Option.isSome)) do return none
+  return some (counts.foldl (fun n cs => n + cs.foldl (fun m c => m * c.getD 0) 1) 0)
+
+/-- The Lean type of a quantifier's binder's type `ty`, which must not be a
+component. -/
+def binderType (modName : Name) (ty : Syntax) : TermElabM Expr := do
+  if let some p := typePath? ty then
+    if let .ok (.item { kind := .compItem, path, .. }) := (← getState).table.resolvePath modName (← segNames (pathSegs p)) #[] then
+      throwErrorAt ty (Core.quantifiedComponentMsg (Core.showPath path)).text
+  elabType modName ty
+
+open Lang in
+/-- `forall (x: T), e`, or `exists` unless `all`, with the binders
+`binders` and the body `body`, expanded (`Reqs/Lang/Quantifiers#meaning`):
+the body is elaborated once, over a local for each bound name, and
+instantiated at every combination of their values, the last name varying
+fastest, and the instances conjoined or disjoined; so are the definedness
+goals of its indexes, which hold in every instance. Each type must be one
+that a quantifier ranges over (`lang::quantified_type`), the names
+distinct, following the Boolean names rule and written with `!` exactly
+when they shadow (`lang::shadowing`), and the combinations at most
+`Core.maxInstances` (`lang::quantifier_size`), as the `fren` command checks
+them. -/
+def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (all : Bool)
+    (binders : Array Syntax) (body : Syntax) : TermElabM Term := withRef e do
+  -- Distinct names (`lang::distinct_names`), by the names they declare.
+  let ids := binders.flatMap (·[1].getArgs)
+  for x in ids do discard (segName x)
+  let declared := ids.map fun x => (declaredIdent x).1.getId
+  if let some k := (Core.repeatsAt declared)[0]? then
+    throwErrorAt ids[k]! (Core.dupBoundMsg declared[k]!).text
+  let mut bound : Array (Name × Expr) := #[]
+  let mut sizes := #[]
+  for b in binders do
+    let ty ← binderType cx.modName b[3]
+    let some n ← valueCount? ty
+      | let collection := ty.isAppOfArity ``Fren.FinSet 1 || ty.isAppOfArity ``Fren.Seq 1
+        throwErrorAt b[3] (Core.quantifiedTypeMsg (← typeName ty) collection).text
+    for x in b[1].getArgs do
+      let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+        (cx.binders.map (·.what) ++ bound.map (·.1, "the bound name")) cx.selfFn.isSome cx.inGlobal
+      let x ← declare x cx.modName locals
+      let bn := x.getId
+      liftMsg x (Core.checkVarName bn (some (ty.isConstOf ``Bool)))
+      lintName .binder bn x
+      bound := bound.push (bn, ty)
+      sizes := sizes.push n
+  let n := cx.instances * Core.instanceCount sizes
+  unless Core.quantifierSizeAccepted n do
+    throwErrorAt (mkNullNode binders) (Core.quantifierSizeMsg n (cx.instances > 1)).text
+  let values ← bound.mapM fun (_, ty) => do
+    let some vs ← valuesOf? ty Core.maxInstances | throwError "internal error: no values of a quantified type"
+    vs.mapM (elabProp · ty)
+  let combos := values.foldl (fun acc vs => acc.flatMap fun pre => vs.map pre.push) #[#[]]
+  withLocalDeclsD (bound.map fun (bn, ty) => (bn, fun _ => pure ty)) fun fvs => do
+    let new ← (bound.zip fvs).mapIdxM fun i ((bn, ty), fv) => do
+      return { name := bn, term := ← exprToSyntax fv, «type» := ty, scrutinee := none, outer := cx.binders.size + i : MatchBinder }
+    let outer := (← getLocal).indexes
+    modifyLocal fun l => { l with indexes := #[] }
+    let t ← toTerm { cx with binders := cx.binders ++ new, natOk := false, instances := cx.instances * combos.size } body
+    checkTermType body t .bool (some s!"note: the body of `{if all then "forall" else "exists"}` is a `Bool`")
+    let b ← elabProp t
+    let inner ← (← getLocal).indexes.mapM fun (ref, g) => return (ref, ← elabProp g)
+    let inst (x : Expr) (vals : Array Expr) : Expr := x.replaceFVars fvs vals
+    let goals ← inner.mapM fun (ref, g) => return (ref, ← exprToSyntax (balanced mkAnd (combos.map (inst g))))
+    modifyLocal fun l => { l with indexes := outer ++ goals }
+    exprToSyntax (balanced (if all then mkAnd else mkOr) (combos.map (inst b)))
+
 /-- `if c then a else b`, where `toTerm` translates its parts, which are
 checked against a type if `emptyOk`, and are `Nat`s if `natOk` is. -/
 def iteTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emptyOk natOk : Bool) (e c' a b : Syntax) :
@@ -3053,6 +3190,7 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
   -- What is expected of the whole, which only the parts named below see.
   let expected? := cx.expected?
   let cx := { cx with expected? := none }
+  if e.isOfKind ``Lang.quantExpr then return ← quantTerm toTerm cx e (isForall e) e[1].getArgs e[3]
   if let some e' := splitDotted? e then return ← toTerm { cx with expected? } e'
   if e.isOfKind ``Lang.fieldExpr then
     lintChain toTerm cx parent? e
@@ -3195,18 +3333,6 @@ def constraint? (m : Syntax) : Option (PropKind × Syntax × Syntax) :=
 /-- A defined output's definition, with its `where` clause. -/
 def definition? (m : Syntax) : Option Syntax :=
   if m[5].isNone then none else some (withWhere m[5][1] m[5][2])
-
-/-- Elaborates a proposition. Errors are not recovered from with `sorry`: an
-item that does not elaborate makes its comp fail, rather than being checked
-as `sorry`. -/
-def elabProp (t : Term) (type : Expr := mkSort .zero) : TermElabM Expr := do
-  -- Equality on an abstract type has no `Decidable` instance but the
-  -- classical one, which `if` may need.
-  let t ← `(open Classical in $t)
-  let e ← withoutErrToSorry <| withSynthesize <| elabTermEnsuringType t type
-  let e ← instantiateMVars e
-  if e.hasMVar || e.hasSorry then throwErrorAt t "could not elaborate this expression"
-  return e
 
 /-- The indexes recorded since the last call, which it forgets, each with its
 goal elaborated, rewritten by `subst`, and closed over `fvs`. -/
@@ -3827,6 +3953,19 @@ open Lang in
     unless isPub do recordItem .constant path nameStx
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
 
+/-- The component that a global expectation's binder of type `ty` ranges
+over the behaviours of, or `none` if it ranges over the values of a type
+(`lang::quantifier_binder`), which a quantifier checks. A path that names
+neither is an error. -/
+def globalBinderComp? (modName : Name) (ty : Syntax) : TermElabM (Option Name) := do
+  let some p := typePath? ty | return none
+  let segs := pathSegs p
+  if segs.size == 1 && [`Bool, `Int, `Nat, `String].contains segs[0]!.getId then return none
+  match ← resolvePath modName segs with
+  | .item { kind := .compItem, path, .. } => return some path
+  | .item { kind := .enumItem, .. } | .item { kind := .recordItem, .. } | .item { kind := .typeItem, .. } => return none
+  | r => throwErrorAt ty (Core.wrongKindMsg "a component or a type" r).text
+
 /-- A binder of a global expectation: its name and comp, and where its
 variables start among the expectation's. -/
 structure Binder where
@@ -3849,9 +3988,10 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   let declared := binderIds.map fun x => (declaredIdent x).1.getId
   if let some k := (Core.repeatsAt declared)[0]? then
     throwErrorAt binderIds[k]! (Core.dupBinderMsg declared[k]!).text
+  -- The binders over values, a quantifier around the body (`lang::quantifier_binder`).
+  let mut valueBinders := #[]
   for b in binderStxs do
-    let r ← resolvePath modName (pathSegs b[3])
-    let .item { kind := .compItem, path, .. } := r | throwErrorAt b[3] (Core.notACompMsg r).text
+    let some path ← globalBinderComp? modName b[3] | valueBinders := valueBinders.push b; continue
     let some c := (← getState).comps.get? path | throwError "internal error: unknown comp `{path}`"
     unless c.decidable do
       modifyLocal fun l => { l with outsideCore := true }
@@ -3870,7 +4010,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
     let cx : ExprCtx := { modName, vars, insts := binders.map (·.name), place := .prop, inGlobal := true }
     discard (takeIndexes fvs)
-    let t ← toTerm cx body
+    let t ← if valueBinders.isEmpty then toTerm cx body else quantTerm toTerm cx body true valueBinders body
     checkDeclared body t (mkConst ``Bool) fun _ => "note: an expectation is a `Bool`"
     let e ← elabProp t
     let indexes := (← takeIndexes fvs).map fun (r, g) => (n, Core.IndexPlace.prop, r, g)
@@ -3892,7 +4032,8 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     let groups := Core.binderGroups (binders.map (·.name)) atoms
     if Core.unrelatedBinders groups.size then
       recordLint .unrelatedBinders nameStx (Core.unrelatedBindersMsg n.toString groups)
-    let trig ← triggerOf cx body
+    -- A quantifier leaves it without a trigger.
+    let trig ← if valueBinders.isEmpty then triggerOf cx body else pure none
     let trigger? ← trig.mapM fun (t, _) => do mkLambdaFVars fvs (← elabProp t)
     let slice (b : Binder) := fvs.extract b.offset (b.offset + b.comp.vars.size)
     let hyps := mkAndN (binders.map fun b => b.comp.meaningDecl (slice b)).toList

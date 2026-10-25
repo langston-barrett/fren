@@ -1,0 +1,3 @@
+-- A name bound twice by one quantifier (F0213).
+enum Mode { Off, Heat }
+comp c { pub out ok? req r: ok? iff (exists (m: Mode) (m: Mode), true) }

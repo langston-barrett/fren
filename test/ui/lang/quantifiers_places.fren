@@ -1,0 +1,44 @@
+-- Quantifiers wherever an expression may be: in a defined output, an
+-- instance's binding, an assumption, a function's body, and around a
+-- `match` on a bound name and an application of a `Nat` function.
+-- fren-covers: lang::quantifier
+
+enum Mode { Off, Heat, Cool }
+
+fn cost(m: Mode): Nat := match m { Mode::Off => 0, Mode::Heat => 2, Mode::Cool => 3 }
+
+-- A function's body.
+fn some_costly?(limit: Nat) := exists (m: Mode), cost(m) > limit
+
+comp sub {
+    in ok?
+    pub out same?
+
+    req r: same? iff ok?
+}
+
+comp places {
+    in mode: Mode
+    in limit: Nat
+    pub out free?
+    pub out costly? := some_costly?(limit)
+    -- A defined output.
+    pub out all_cheap? := forall (m: Mode), cost(m) <= limit
+
+    assume affordable: exists (m: Mode), m = mode and cost(m) <= limit
+    req r: free? iff (forall (m: Mode), when m = mode, cost(m) = 0)
+
+    -- An instance's binding.
+    inst w: sub { ok? := (exists (m: Mode), m = mode) }
+
+    -- A `Nat` function applied to a bound name.
+    expect nonnegative: forall (m: Mode), cost(m) >= 0
+    expect bound: costly? iff limit < 3
+    expect cheap: all_cheap? iff limit >= 3
+    expect some_mode: w.same?
+    -- A `match` on a bound name.
+    expect off_free: forall (m: Mode), match m { Mode::Off => cost(m) = 0, _ => cost(m) > 0 }
+    expect free_off: when free?, mode = Mode::Off
+}
+
+--@ summary: 12 passed, 0 failed, 0 inconclusive, 0 redundant

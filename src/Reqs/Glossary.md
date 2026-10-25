@@ -12,6 +12,9 @@ declared with `type`. See [Types](Lang/Types.md#abstract-types).
 variables, including its instances'. See [Evaluation and
 testing](Eval.md#behaviours).
 
+**Bound name.** A name that a quantifier's binder declares, standing for
+one value of its type in each instance. See [Quantifiers](Lang/Quantifiers.md).
+
 **Cardinality operator.** One of the built-in functions `exactly_one?`
 and `at_most_one?`, which hold when exactly one, or at most one, of their
 `Bool` arguments is `true`. See [Expressions](Lang/Expressions.md#cardinality).
@@ -88,6 +91,10 @@ with `in`.
 **Instance.** A use of one component inside another, declared with `inst`.
 See [Instances](Lang/Instances.md).
 
+**Instance of a quantifier.** The body of a quantifier with each bound
+name standing for one value; a quantifier means the conjunction or
+disjunction of its instances. See [Quantifiers](Lang/Quantifiers.md#meaning).
+
 **Item.** A top-level declaration: a module, `use` declaration,
 enumeration, record, abstract type, function, constant, component, global
 expectation, check or claim. See [Items](Lang/Items.md).
@@ -129,6 +136,10 @@ pattern `P`, as of a `match` arm but binding no names, matches `e`. See
 
 **Payload.** The values that a variant carries, as in `Circle(Int)`. See
 [Items](Lang/Items.md#enumerations).
+
+**Quantifier.** An expression, `forall (x: T), e` or `exists (x: T), e`,
+that says that `e` holds for every value, or for some value, of a finite
+type `T`. See [Quantifiers](Lang/Quantifiers.md).
 
 **Range pattern.** A pattern that matches the integers between its
 bounds, such as `0..=9`, `0..10`, `1..` and `..=-1`. See

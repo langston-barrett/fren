@@ -1,0 +1,17 @@
+error[F0132]: expected `,` after the binders of `exists`, found identifier `m`
+ --> test/cli/syntax/f0132_binder_comma.fren:3:66
+  |
+3 | comp c { in x: Mode pub out ok? req r: ok? iff (exists (m: Mode) m = x) }
+  |                                                                  ^ expected `,`
+  |
+  = note: the binders of `exists` end with a comma, before its body
+help: add a comma
+  |
+3 | comp c { in x: Mode pub out ok? req r: ok? iff (exists (m: Mode), m = x) }
+  |                                                                 +
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0132`.
+exit=2

@@ -7,7 +7,8 @@
 -- names, is not changed, and neither is the `1` of `-1` changed to `0`. Each
 -- operator of a chained comparison is swapped, and its first and last
 -- comparisons are dropped. A cardinality operator is swapped for the
--- other, and loses an argument while at least one remains.
+-- other, and loses an argument while at least one remains. A quantifier is
+-- swapped, and its body mutated once, not at each instance.
 set_option fren.lint.chainable_comparison "allow"
 set_option fren.lint.irrefutable_is "allow"
 mod m
@@ -54,6 +55,7 @@ pub comp c {
         not ok?
     req ranged: ok? or 0 <= x < y <= LIMIT
     req exclusive: at_most_one?(x = 1, x = 2, x = 3) or exactly_one?(x > 3)
+    req all_modes: ok? or (forall (k: Mode), k != m or x > 1)
     inst w: sub { a := x * 2, on? := true }
 
     expect e: when x = 3, ok?

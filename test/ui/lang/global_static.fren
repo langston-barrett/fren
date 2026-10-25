@@ -8,10 +8,12 @@ comp sub {
     req h: hidden = x
 }
 enum E { A }
+const LIMIT: Int := 3
 
 expect hides: forall (a: sub), a.hidden = a.x  --~ error: `a.hidden` is private to instance `a`
 expect no_var: forall (a: sub), a.nope = 0     --~ error: instance `a` has no `in` or `pub out` named `nope`
-expect not_comp: forall (a: E), true           --~ error: expected a component, but `E` is an enum
+expect not_comp: forall (a: LIMIT), true       --~ error: expected a component or a type, but `LIMIT` is a constant
+expect over_values: forall (a: E), a = E::A
 expect twice: forall (a: sub) (a: sub), true   --~ error: `a` is bound multiple times in this expectation
 expect twice2: forall (a a: sub), true         --~ error: `a` is bound multiple times in this expectation
 expect q?: forall (a: sub), true               --~ error: constraint names cannot end in `?`

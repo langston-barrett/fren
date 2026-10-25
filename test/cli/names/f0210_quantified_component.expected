@@ -1,0 +1,13 @@
+error[F0210]: expected a type, but `d` is a component
+ --> test/cli/names/f0210_quantified_component.fren:3:49
+  |
+3 | comp c { pub out ok? req r: ok? iff (exists (w: d), true) }
+  |                                                 ^ not a type
+  |
+  = note: a quantifier in an expression ranges over the values of a type
+  = help: only a global expectation's leading `forall` ranges over the behaviours of a component
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0210`.
+exit=2

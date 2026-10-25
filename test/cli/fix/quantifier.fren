@@ -1,0 +1,25 @@
+--@ args: fix --check
+-- `fren fix` gives a quantifier its precedence, that of `when`: it keeps the
+-- parentheses that a quantifier needs as an operand, and an arm's body
+-- that it writes from a quantifier is in parentheses.
+enum Mode { Heat, Cool, Off }
+
+pub comp c {
+    in m: Mode
+    in p?
+    pub out o?
+    pub out w?
+
+    req r1: o? iff not not (forall (k: Mode), k = m) and p?
+    req r2: w? iff (exists (k: Mode), not not (k = m))
+}
+
+set_option fren.lint.if_chain_match "warn" in
+pub comp arms {
+    in m: Mode
+    in p?
+    in q?
+    pub out u?
+
+    req r: u? iff if m = Mode::Heat then (forall (k: Mode), k = m or p?) else if m = Mode::Cool then p? else q?
+}

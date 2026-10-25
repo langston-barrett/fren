@@ -1,0 +1,4 @@
+-- A global expectation's binder whose type names neither a component nor
+-- a type (F0210).
+const LIMIT: Int := 3
+expect e: forall (a: LIMIT), true

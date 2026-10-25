@@ -11,7 +11,7 @@ Everything is `scoped` to `Fren.Lang`: Fren's keywords (`and`, `or`, `iff`,
 code (including Fren's own implementation, in `Fren`) can keep using them as
 names. Spec files start with `open Fren.Lang`.
 
-Precedence, lowest first: `when`/`unless`/`let`, `iff`, `or`, `and`, `not`,
+Precedence, lowest first: `when`/`unless`/`let` and the quantifiers, `iff`, `or`, `and`, `not`,
 comparisons and `is`, `+ -`, `* div mod`, unary `-`; `if` is an atom whose
 `else` branch extends as far right as possible.
 
@@ -98,6 +98,15 @@ syntax fren_where := " where " sepBy1(fren_def, ", ")
 as possible. Its own `in` ends its definitions even within those of
 another `let`, whose restriction its body keeps. -/
 scoped syntax:10 (name := letExpr) "let " sepBy1(fren_let_def, ", ") withoutForbidden(" in ") fren_expr:10 : fren_expr
+
+/-- `(x y: T)`: a binder of a quantifier, over the values of `T`, or of a
+global expectation's leading `forall`, where it may name a component and
+range over its behaviours (`Reqs/Lang/Quantifiers`). -/
+syntax fren_binder := "(" frenIdent+ " : " fren_type ")"
+
+/-- `forall (x: T), e` and `exists (x: T), e`, quantifiers over a finite
+type, at the precedence of `when`. -/
+scoped syntax:10 (name := quantExpr) ("forall " <|> "exists ") fren_binder+ ", " fren_expr:10 : fren_expr
 scoped syntax:10 &"when " fren_expr:20 ", " fren_expr:10 : fren_expr
 scoped syntax:10 &"unless " fren_expr:20 ", " fren_expr:10 : fren_expr
 scoped syntax:20 fren_expr:21 " iff " fren_expr:21 : fren_expr
@@ -351,8 +360,6 @@ scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent noWs "(" sepBy1(fren_par
 /-- `const N: T := e`. -/
 scoped syntax (name := constCmd) ("pub ")? "const " frenIdent " : " fren_type " := " fren_expr (fren_where)? : command
 
-/-- `(a b: c)`: behaviours `a` and `b` of comp `c`, in a global expectation. -/
-syntax fren_binder := "(" frenIdent+ " : " fren_path ")"
 
 /-- `expect n: forall (a b: c), e`, a global expectation. -/
 scoped syntax (name := globalCmd) "expect " frenIdent " : " ("forall " fren_binder+ ", ")? fren_expr (fren_where)? : command

@@ -1,0 +1,6 @@
+-- The body of a `match` arm cannot be a bare quantifier.
+enum E { A, B }
+comp c { in x: E pub out y? req r: y? iff match x { E::A => forall (e: E), e = x, E::B => true } }
+--~^[cli] error: `forall` must be parenthesized here
+--~^^[hosted] error: unexpected token at this precedence level; consider parenthesizing the term
+--@ exit: 2

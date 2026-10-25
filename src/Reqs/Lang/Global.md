@@ -7,7 +7,7 @@ of different components.
 
 ```
 expectation := "expect" IDENT ":" ["forall" binder+ ","] top
-binder      := "(" DECL+ ":" path ")"
+binder      := "(" DECL+ ":" type ")"
 ```
 
 `expect n: forall (a b: c) (d: e), E` claims that `E` holds for any two
@@ -22,9 +22,21 @@ inputs and public outputs can be mentioned: `inst::mention` applies, with
 `E` may end with a [`where` clause](Let.md), whose definitions may
 mention the binders: `forall (a b: c), a.x <= b.x where ...`.
 
-Without `forall`, the expectation mentions no variables, and is a claim
-about [constants](Items.md#constants), such as `expect sane: MIN_TEMP <
-MAX_TEMP`.
+A binder whose type is a path that names a component ranges over its
+behaviours; any other binder ranges over the values of its type, as a
+[quantifier's](Quantifiers.md#global-expectations) does, and one `forall`
+may have both: `expect n: forall (a: c) (m: Method), E` claims that `E`
+holds for every behaviour `a` of `c` and every value `m` of `Method`. The
+binders over values are a quantifier around `E`, with any `where` clause,
+whatever their order among the others, and follow its rules: their types
+must be finite, they have at most 256 instances, and they are named and
+scoped as a quantifier's bound names. Being a quantifier, they leave the
+expectation without a [trigger](Components.md#triggers). The rest of this
+chapter is about the binders over behaviours.
+
+Without `forall`, or with binders over values alone, the expectation
+mentions no variables, and is a claim about [constants](Items.md#constants),
+such as `expect sane: MIN_TEMP < MAX_TEMP`.
 
 The names a global expectation introduces are distinct from each other, and
 are named like instances. Like an instance's, a binder's name may
@@ -33,7 +45,8 @@ the module, written with `!`, as in `forall (RATE!: c)`: in `E`, `RATE.x`
 is then the binder's variable, not a field of the constant. Its own name
 is an item in the current module, so it is distinct from the module's
 other items, but nothing can refer to it. Each component a binder names
-must be declared, and visible, before the global expectation.
+must be declared, and visible, before the global expectation. A binder's
+path that names neither a component nor a type is an error.
 
 ## Example
 

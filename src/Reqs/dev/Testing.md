@@ -70,8 +70,8 @@
   that they bound so, abstract types,
   and functions from them to `Bool`s, sets and relations of an enumeration
   or of `Bool`, and sequences of one that `range_*` constraints bound to
-  two elements, with instances, `det out`s, cover goals and global
-  expectations. Each
+  two elements, with instances, `det out`s, cover goals, global
+  expectations, and quantifiers over the enumeration and over `Bool`. Each
   index is guarded, before or after it, so that every constraint has a
   value whatever an index out of range is. Its constraints include
   pattern tests and `match`es with literal and range patterns on `Bool`s

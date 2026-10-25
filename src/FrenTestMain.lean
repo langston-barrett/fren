@@ -195,7 +195,7 @@ def errorCodes : IO (Array String) := do
 /-- The Markdown specs of Fren's own requirements, in an order in which
 each module is declared before it is used. -/
 def ownSpecFiles : Array String :=
-  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Let", "Lang/Expressions",
+  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Let", "Lang/Quantifiers", "Lang/Expressions",
     "Lang/Modules", "Lang/Instances", "Check", "View", "Cli", "Lint", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style",
     "Lint/Style/Comparisons", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches",
     "Lint/Suspicious", "Lint/Suspicious/Expressions", "Lint/Suspicious/Methods", "Lint/Suspicious/Literals",
@@ -221,7 +221,8 @@ not formatted, and those that `fren fmt` cannot parse, such as tests of
 syntax errors and of Lean code, and the examples of Markdown specs. -/
 def fmtIgnore : List String :=
   ["test/cli/syntax/*.fren", "test/cli/names/f0216_member_option.fren", "test/cli/fix/*.fren", "test/cli/fmt/check.fren",
-   "test/cli/fmt/chain_error.fren", "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/patterns.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
+   "test/cli/fmt/chain_error.fren", "test/cli/fmt/quantifier.fren", "test/cli/fmt/quantifier_error.fren",
+   "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/patterns.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
    "test/cli/fmt/cover.fren",
    "test/cli/fmt/newtypes.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
@@ -487,6 +488,7 @@ partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e :
     | .chain _ es ops => chainShape go es (ops.map (·.1))
     | .«let» _ defs body w =>
       s!"({if w then "where" else "let"} {defs.toList.map fun (x, _, d) => (x.name, go d)} {go body})"
+    | .quant _ all bs b => s!"({if all then "forall" else "exists"} {bs.toList.map fun x => Mutate.idText (s.text x.span)} {go b})"
     | e => Mutate.idText (s.text e.span)
 
 open FrenCli in
@@ -512,6 +514,10 @@ def intended (s : Mutate.Src) (m : Mutate.Mutant) (e : FrenCli.Expr) : String :=
     | .when sp neg c b =>
       if m.origin == .negateTrigger && sp.start == m.span.start then some s!"({if neg then "when" else "unless"} {plain c} {plain b})"
       else none
+    | .quant sp all bs b =>
+      if m.origin == .swapQuantifier && sp.start == m.span.start then
+        some s!"({if all then "exists" else "forall"} {bs.toList.map fun x => Mutate.idText (s.text x.span)} {plain b})"
+      else none
     | _ => none) e
 
 /-- The expressions of the items of the text `chars` that mutants change. -/
@@ -524,7 +530,7 @@ def sitesOfText (chars : Array Char) : Array (Lean.Name × FrenCli.Expr) :=
 
 /-- Swaps, which a second swap undoes. -/
 def isSwap (m : FrenCli.Mutate.Mutant) : Bool :=
-  [.swapComparison, .swapArithmetic, .negateTrigger, .flipBool, .swapRepetition].contains m.origin
+  [.swapComparison, .swapArithmetic, .negateTrigger, .swapQuantifier, .flipBool, .swapRepetition].contains m.origin
     || (m.origin == .swapAndOr && !m.after.startsWith "(")
 
 /-- Every mutant of the corpus:
@@ -571,7 +577,7 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
       failures := failures.push s!"{m.id}: leaves `^` first in a class, negating it"
     if isSwap m && !again.any (fun b => b.origin == m.origin && b.apply chars' == chars) then
       failures := failures.push s!"{m.id}: no mutant swaps it back"
-    if [.swapComparison, .swapArithmetic, .swapAndOr, .dropConjunct, .negateTrigger].contains m.origin then
+    if [.swapComparison, .swapArithmetic, .swapAndOr, .dropConjunct, .negateTrigger, .swapQuantifier].contains m.origin then
       let src : FrenCli.Mutate.Src := { file := m.file, path, chars, toks := toks[m.file]! }
       let src' : FrenCli.Mutate.Src := { src with chars := chars', toks := (FrenCli.lex chars').toOption.getD #[] }
       let sites := fileSites[m.file]!

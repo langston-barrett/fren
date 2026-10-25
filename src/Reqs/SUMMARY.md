@@ -12,6 +12,7 @@
 - [Expressions](Lang/Expressions.md)
   - [Local definitions](Lang/Let.md)
 - [Patterns](Lang/Patterns.md)
+- [Quantifiers](Lang/Quantifiers.md)
 - [Modules and visibility](Lang/Modules.md)
 - [Instances](Lang/Instances.md)
 - [Global expectations](Lang/Global.md)

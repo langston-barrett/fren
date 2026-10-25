@@ -147,10 +147,12 @@ These declarations may shadow:
 - a [defined function's](Items.md#defined-functions) parameter, those of
   the function's module;
 - a [global expectation's](Global.md) binder, those of its module;
-- a [`match` arm's](Expressions.md#matches) binder, those and also the
+- a [`match` arm's](Expressions.md#matches) binder or a
+  [quantifier's](Quantifiers.md#names) bound name, those and also the
   variables (or, in a function's body, the parameters), instances, global
-  expectation binders, binders of enclosing arms and names of enclosing
-  `let`s and `where` clauses in scope;
+  expectation binders, binders of enclosing arms, bound names of
+  enclosing quantifiers and names of enclosing `let`s and `where` clauses
+  in scope;
 - a [`let` or `where`](Let.md) definition's name, those and also the
   names of enclosing `let`s and `where` clauses and the earlier names of
   its own clause.
@@ -375,9 +377,11 @@ A constraint of the form `when C, D` applies only when `C` holds. `C` is its
 *trigger*. Likewise, the trigger of `unless C, D` is `not C`. Triggers of
 nested constraints are conjoined: the trigger of `when C1, unless C2, D` is
 `C1 and not C2`. A constraint with no top-level `when` or `unless` has no
-trigger. A `let` or `where` at the top of a constraint is read through:
-the trigger of `when C, D where x := e` is `C`, with `x` standing for `e`
-(see [Local definitions](Let.md#meaning)). The [vacuity check](../Check.md#vacuity) confirms that the trigger
-of every requirement and expectation can hold. A cover goal's trigger is
-not checked: the [cover check](../Check.md#cover-goals) confirms the goal
-itself.
+trigger, and neither does one whose top level is a
+[quantifier](Quantifiers.md#names), even around a `when`. A `let` or
+`where` at the top of a constraint is read through: the trigger of `when
+C, D where x := e` is `C`, with `x` standing for `e` (see [Local
+definitions](Let.md#meaning)). The [vacuity check](../Check.md#vacuity)
+confirms that the trigger of every requirement and expectation can hold.
+A cover goal's trigger is not checked: the [cover
+check](../Check.md#cover-goals) confirms the goal itself.

@@ -1,0 +1,13 @@
+error[F0131]: the binders of `forall` must be in parentheses
+ --> test/cli/syntax/f0131_binder_parens.fren:3:56
+  |
+3 | comp c { in x: Mode pub out ok? req r: ok? iff (forall m: Mode, m = x) }
+  |                                                        ^ expected `(`
+  |
+  = note: a binder is written `(x: T)`, or `(x y: T)` for several names of one type
+  = help: write `forall (x: T), e`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0131`.
+exit=2

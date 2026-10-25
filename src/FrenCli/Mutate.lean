@@ -30,6 +30,7 @@ inductive Origin where
   | swapArithmetic
   | dropConjunct
   | negateTrigger
+  | swapQuantifier
   | shiftInteger
   | flipBool
   | removeElement
@@ -41,8 +42,8 @@ inductive Origin where
   deriving BEq, Inhabited, Repr
 
 def Origin.all : Array Origin :=
-  #[.swapComparison, .swapAndOr, .swapArithmetic, .dropConjunct, .negateTrigger, .shiftInteger, .flipBool, .removeElement,
-    .swapRepetition, .narrowClass, .dropAlternative, .swapCardinality, .dropArgument]
+  #[.swapComparison, .swapAndOr, .swapArithmetic, .dropConjunct, .negateTrigger, .swapQuantifier, .shiftInteger, .flipBool,
+    .removeElement, .swapRepetition, .narrowClass, .dropAlternative, .swapCardinality, .dropArgument]
 
 def Origin.name : Origin → String
   | .swapComparison => "swap-comparison"
@@ -50,6 +51,7 @@ def Origin.name : Origin → String
   | .swapArithmetic => "swap-arithmetic"
   | .dropConjunct => "drop-conjunct"
   | .negateTrigger => "negate-trigger"
+  | .swapQuantifier => "swap-quantifier"
   | .shiftInteger => "shift-integer"
   | .flipBool => "flip-bool"
   | .removeElement => "remove-element"
@@ -333,6 +335,10 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
       let kw := if negated then "unless" else "when"
       #[{ origin := .negateTrigger, span := { start := sp.start, stop := sp.start + kw.length }, after := if negated then "when" else "unless",
           context := sp }]
+    -- `forall` and `exists` are both six letters long.
+    | .quant sp all _ _ =>
+      #[{ origin := .swapQuantifier, span := { start := sp.start, stop := sp.start + 6 }, after := if all then "exists" else "forall",
+          context := sp }]
     -- In decimal, whatever the literal's radix.
     -- A divisor is never made `0`.
     | .num sp n => (#[n + 1] ++ (if n > 0 && !(divisor && n == 1) then #[n - 1] else #[])).map fun k =>
@@ -389,6 +395,8 @@ where
     | .update _ r fs => #[edits s r] ++ fs.filterMap fun (_, e?) => e?.map (edits s ·)
     | .match _ sc arms => #[edits s sc] ++ arms.map fun (_, b) => edits s b
     | .is _ sc _ => #[edits s sc]
+    -- The body once, not each instance.
+    | .quant _ _ _ b => #[edits s b]
     | .pair _ a b | .index _ a b => #[edits s a, edits s b]
     | .method _ r _ as => #[edits s r] ++ as.map (edits s ·)
     | .«let» _ defs body _ => defs.map (edits s ·.2.2) |>.push (edits s body)

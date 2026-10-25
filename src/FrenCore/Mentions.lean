@@ -20,6 +20,8 @@ inductive MentionKind where
   | definedOutput
   /-- A binder of a `match` arm, whose part is its scrutinee. -/
   | binder
+  /-- A quantifier's bound name: one value in each instance. -/
+  | bound
   /-- A variant with a payload, a record literal or a record update, whose
   parts are its arguments, its fields, or its updated value and new
   values. -/
@@ -39,7 +41,7 @@ inductive MentionKind where
 uninterpreted function, where `parts` is whether one of its parts does
 (`lang::mentions`). -/
 def kindMentions : MentionKind → Bool → Bool
-  | .literal | .constant => fun _ => false
+  | .literal | .constant | .bound => fun _ => false
   | .variable | .uninterpreted => fun _ => true
   | .definedOutput | .binder | .construction | .method | .defined | .compound => id
 

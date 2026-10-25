@@ -464,6 +464,41 @@ High }`. Remove it from any other item:
 struct Point { x: Int, y: Int }
 ```
 "# },
+  { code := "F0131", explanation := r#"The binders of a quantifier are not in parentheses.
+
+Erroneous code example:
+
+```fren
+enum Mode { Off, Heat }
+comp c { pub out ok? req r: ok? iff (forall m: Mode, m = m) }
+```
+
+A quantifier's binders are written as a global expectation's are: each in
+parentheses, `(x: T)`, or `(x y: T)` for several names of one type, and a
+comma after the last.
+
+```fren
+enum Mode { Off, Heat }
+comp c { in x: Mode pub out ok? req r: ok? iff (forall (m: Mode), m = x) }
+```
+"# },
+  { code := "F0132", explanation := r#"A comma is missing after the binders of a quantifier.
+
+Erroneous code example:
+
+```fren
+enum Mode { Off, Heat }
+comp c { in x: Mode pub out ok? req r: ok? iff (exists (m: Mode) m = x) }
+```
+
+The binders of `forall` and `exists` end with a comma, before the body.
+Add one.
+
+```fren
+enum Mode { Off, Heat }
+comp c { in x: Mode pub out ok? req r: ok? iff (exists (m: Mode), m = x) }
+```
+"# },
   { code := "F0201", explanation := r#"A name that is not in scope.
 
 Erroneous code example:
@@ -1659,6 +1694,49 @@ Declare the enum `ordered` to order its variants as they are declared:
 ordered enum Level { Low, High }
 
 comp c { in a: Level in b: Level pub out m: Level req r: m = a.max(b) }
+```
+"# },
+  { code := "F0355", explanation := r#"A quantifier over a type whose values cannot be listed.
+
+Erroneous code example:
+
+```fren
+comp c { in x: Int pub out ok? req r: ok? iff (exists (n: Int), n = x) }
+```
+
+A quantifier is expanded into one instance for each value of its type, so
+it ranges only over `Bool`, and over enums and records whose payloads and
+fields are such types. `Int`, `Nat`, `String` and abstract types have infinitely
+many values, a recursive enum has values of every size, and a set, relation
+or sequence type is never quantified over, even of a finite element type.
+State the property of a variable instead, which the checks hold for every
+value of, or quantify over a finite type:
+
+```fren
+comp c { in x: Int in n: Int pub out ok? req r: ok? iff n = x }
+```
+
+```fren
+enum Digit { Zero, One, Two }
+comp c { in x: Digit pub out ok? req r: ok? iff (exists (d: Digit), d = x) }
+```
+"# },
+  { code := "F0356", explanation := r#"A quantifier with more than 256 instances.
+
+Erroneous code example:
+
+```fren
+enum Nine { N(Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool) }
+comp c { in x: Nine pub out ok? req r: ok? iff (exists (n: Nine), n = x) }
+```
+
+A quantifier is expanded into one instance for each combination of the
+values of its bound names, which must be at most 256, counting those of
+the quantifiers around it: `Nine` has 2^9 = 512 values. Quantify over a smaller type, or state the property of a variable:
+
+```fren
+enum Nine { N(Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool) }
+comp c { in x: Nine in n: Nine pub out ok? req r: ok? iff n = x }
 ```
 "# },
   { code := "F0330", explanation := r#"A function's parameters are named, but it has no body, or it has a body, but a parameter has no name.

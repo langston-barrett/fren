@@ -1,0 +1,2 @@
+-- A quantifier over a set type, which is never quantified over (F0355).
+comp c { in s: Set(Bool) pub out ok? req r: ok? iff (exists (t: Set(Bool)), t = s) }

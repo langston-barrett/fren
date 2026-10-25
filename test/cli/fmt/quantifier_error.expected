@@ -1,0 +1,13 @@
+error[F0109]: `forall` must be parenthesized here
+ --> test/cli/fmt/quantifier_error.fren:5:61
+  |
+5 | comp c { in x: Mode in p? pub out ok? req r: ok? iff p? and forall (m: Mode), m = x }
+  |                                                             ^^^^^^ needs parentheses
+  |
+  = note: `forall` has the lowest precedence, and its body extends as far right as possible
+  = help: wrap it in parentheses: `(forall (x: T), e)`
+
+error: could not format 1 file
+
+For more information about this error, try `fren --explain F0109`.
+exit=2
