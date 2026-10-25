@@ -506,8 +506,7 @@ def check (args : Args) : IO UInt32 := do
   let mut shown := st.diags.map (·.msg)
   -- Each comp, global expectation and refinement (`Reqs/Lang/Refinement`),
   -- with the checks that run on it.
-  let todo := st.comps.map (·, false, Fren.Core.kindsFor false, false) ++ st.globals.map (·, true, Fren.Core.kindsFor true, false)
-    ++ st.refinements.map (·, false, Fren.Core.CheckKind.all.filter Fren.Core.refinementRuns, true)
+  let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.refinement)
   -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
   let spec? := specOf files
   let mut internal := #[]
@@ -799,7 +798,6 @@ def mutate (args : Args) : IO UInt32 := do
       let (line, col) := Fren.Core.position chars m.span.start
       IO.println s!"{m.id} {path}:{line}:{col} {m.change}"
     return 0
-  let todo := Mutate.todo
   -- The results of testing `c`, kept by `keep`.
   let testing (spec? : Except String Eval.Spec) (c : CComp) (global : Bool) (keep : Fren.Core.CheckResult → Bool) :
       Array Fren.Core.CheckResult :=
@@ -809,44 +807,57 @@ def mutate (args : Args) : IO UInt32 := do
       | none => #[]
     | .error _ => #[]
   -- As `fren check` checks `c`: with the solver, and the checks set to
-  -- testing by testing.
+  -- testing by testing; with the internal errors, each at its place in `c`.
   let solve (s : State) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
-      IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg)) := do
-    let (rs, refuted, _) ← solveComp s spec? t.comp t.global t.kinds args.timeout
+      IO (Array Fren.Core.CheckResult × Array (Span × Msg)) := do
+    let (rs, refuted, missing?) ← solveComp s spec? t.comp t.global t.kinds args.timeout
     let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds t.refinement) else #[]
-    return (rs ++ tested, refuted)
+    let errors := refuted.map fun (r, msg) =>
+      ((r.prop?.bind fun n => t.comp.props.find? (·.name == n)).map (·.span) |>.getD t.comp.span, msg)
+    return (rs ++ tested, missing?.toArray.map (t.comp.span, ·) ++ errors)
   -- As `fren quickcheck` tests `c`.
-  let test (spec? : Except String Eval.Spec) (t : Mutate.Todo) : Array Fren.Core.CheckResult :=
-    testing spec? t.comp t.global fun r => !t.refinement || refinementKeeps t.comp r
+  let test (_ : State) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
+      IO (Array Fren.Core.CheckResult × Array (Span × Msg)) :=
+    pure (testing spec? t.comp t.global fun r => !t.refinement || refinementKeeps t.comp r, #[])
   let spec? := specOf files
+  if let .error e := spec? then
+    printDiag p files { file := 0, span := default, msg := Msg.internal s!"the evaluator cannot read the spec: {e}" }
   -- What each component's checks read in the spec. The spec's own results
   -- are computed only for components that some mutant changes.
   let originals : Std.HashMap String (Mutate.Todo × String) :=
-    (todo st).foldl (init := {}) fun m t => m.insert t.key (t, Mutate.fingerprint st.prelude t.comp)
+    (Mutate.todo st).foldl (init := {}) fun m t => m.insert t.key (t, Mutate.fingerprint st.prelude t.comp)
   let solved : Baseline ← IO.mkRef {}
   let tested : Baseline ← IO.mkRef {}
+  let shown ← IO.mkRef (#[] : Array Msg)
+  let sevs ← IO.mkRef (if spec?.toOption.isNone then #[Fren.Core.Severity.error] else #[])
   -- Whether one way of checking kills the mutant `st'`, and whether some
   -- check was inconclusive on it, checking only the components it changes;
-  -- `run s spec? t` checks `t` of the spec `s`.
+  -- `run s spec? t` checks `t` of the spec `s`. Internal errors about the
+  -- spec are printed as `fren check` prints them, and those about the
+  -- mutant given to `onMutant`.
   let killedBy (base : Baseline) (st' : State) (spec'? : Except String Eval.Spec)
-      (run : State → Except String Eval.Spec → Mutate.Todo → IO (Array Fren.Core.CheckResult)) : IO (Bool × Bool) := do
+      (run : State → Except String Eval.Spec → Mutate.Todo → IO (Array Fren.Core.CheckResult × Array (Span × Msg)))
+      (onMutant : Msg → IO Unit) : IO (Bool × Bool) := do
     let mut inconclusive := false
-    for t in todo st' do
+    for t in Mutate.todo st' do
       let some (t₀, fp) := originals[t.key]? | continue
       if Mutate.fingerprint st'.prelude t.comp == fp then continue
       let rs ← match (← base.get)[t.key]? with
         | some rs => pure rs
         | none =>
-          let rs ← run st spec? t₀
+          let (rs, errors) ← run st spec? t₀
+          for (span, msg) in errors do
+            printDiag p files { file := t₀.comp.file, span, msg }
+            shown.modify (·.push msg)
+            sevs.modify (·.push .error)
           base.modify (·.insert t.key rs)
           pure rs
-      let rs' ← run st' spec'? t
+      let (rs', errors) ← run st' spec'? t
+      for (_, msg) in errors do onMutant msg
       if Mutate.kills rs rs' then return (true, inconclusive)
       inconclusive := inconclusive || Mutate.inconclusive rs rs'
     return (false, inconclusive)
   let mut tallies : Std.HashMap Lean.Name Mutate.Tally := {}
-  let mut shown := #[]
-  let mut sevs := #[]
   for m in selected do
     let files' := files.modify m.file fun (path, chars) => (path, m.apply chars)
     let st' := mutantState files before m
@@ -856,23 +867,22 @@ def mutate (args : Args) : IO UInt32 := do
     let group := m.comp?.getD m.item
     let mut tally := tallies.getD group {}
     let errors := st'.diags.filter (·.severity == .error)
-    if let some e := errors[0]? then
+    if !errors.isEmpty then
       -- A denied lint can reject a mutant; nothing else should.
-      if e.lint?.isNone then report (Msg.internal s!"the mutant `{m.id}` has a static error: {e.msg.headline}") .error
+      if let some e := errors.find? (·.lint?.isNone) then
+        report (Msg.internal s!"the mutant `{m.id}` has a static error: {e.msg.headline}") .error
       tally := tally.add .unviable
     else
       let spec'? := specOf files'
-      let (bySolver, inconclusive₁) ← if args.checker.solves then
-          killedBy solved st' spec'? fun s sp t => do
-            let (rs, refuted) ← solve s sp t
-            for (_, msg) in refuted do report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error
-            return rs
+      let onMutant (msg : Msg) := report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error
+      let (bySolver, inconclusive₁) ← if args.checker.solves then killedBy solved st' spec'? solve onMutant
         else pure (false, false)
-      let (byTesting, inconclusive₂) ← if args.checker.tests then
-          killedBy tested st' spec'? fun _ sp t => pure (test sp t)
+      let (byTesting, inconclusive₂) ← if args.checker.tests then killedBy tested st' spec'? test onMutant
         else pure (false, false)
       let killed := bySolver || byTesting
-      let equivalent? ← if killed then pure (some false) else Mutate.equivalent st st' (min args.timeout Mutate.equivalenceTimeout)
+      -- A timeout of 0 means none for the checks, but these stay short.
+      let eqTimeout := if args.timeout == 0 then Mutate.equivalenceTimeout else min args.timeout Mutate.equivalenceTimeout
+      let equivalent? ← if killed then pure (some false) else Mutate.equivalent st st' eqTimeout
       let outcome := Mutate.outcome true killed (equivalent? == some true)
       tally := tally.add outcome
       if outcome == .survived then report (Mutate.survivedMsg m equivalent?.isNone (inconclusive₁ || inconclusive₂))
@@ -883,9 +893,12 @@ def mutate (args : Args) : IO UInt32 := do
     let (path, chars) := files[m.file]!
     for (msg, severity) in ← reports.get do
       printAt p path chars severity msg { start := m.span.start, stop := m.span.stop }
-      shown := shown.push msg
-      sevs := sevs.push severity
-  let notPassing := ((← solved.get).toArray ++ (← tested.get).toArray).foldl (fun n (_, rs) => n + (rs.filter (·.verdict != .pass)).size) 0
+      shown.modify (·.push msg)
+      sevs.modify (·.push severity)
+  -- Each check once, though both ways of checking ran it.
+  let notPassing := ((← solved.get).toArray ++ (← tested.get).toArray).foldl (init := ({} : Std.HashSet String)) fun acc (k, rs) =>
+    rs.foldl (init := acc) fun acc r => if r.verdict != .pass then acc.insert s!"{k}|{Mutate.resultKey r}" else acc
+  let notPassing := notPassing.size
   if notPassing > 0 then
     IO.eprint (Fren.Core.renderPlain .info
       { code? := none, headline := s!"{Mutate.plural notPassing "check"} of the spec {if notPassing == 1 then "does" else "do"} not pass, \
@@ -896,6 +909,8 @@ def mutate (args : Args) : IO UInt32 := do
   let total : Mutate.Tally := groups.foldl (fun acc (_, t) => acc.merge t) {}
   IO.eprintln s!"fren: {Mutate.plural selected.size "mutant"}: {total.killed} killed, {total.survived} survived, \
     {total.equivalent} equivalent, {total.unviable} unviable{if args.checker == .both then s!", {total.missed} missed by testing" else ""}"
+  let shown ← shown.get
+  let sevs ← sevs.get
   if shown.any (·.code?.isSome) then
     IO.eprintln ""
     printExplainHint shown

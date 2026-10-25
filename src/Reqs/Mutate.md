@@ -64,9 +64,10 @@ the item changed: a constraint, defined output or instance as
 `module::component::name`, or a constant or function as `module::name`,
 with each run of characters other than ASCII letters, digits, `_` and `:`
 made one `_`, and `_` trimmed next to `::`. `HASH` is 12 hexadecimal
-digits, which hash the origin, the file's path, the item, the expression
-changed and the change, with whitespace made single spaces, and how many
-identical mutants come before it in the item. So an identifier stays the
+digits, which hash the origin, the file's path without `.` segments or
+repeated `/`, the item, the expression changed and the change, with
+whitespace and the commas that end a list removed, and how many identical
+mutants come before it in the item. So an identifier stays the
 same when the spec is reformatted, or changed elsewhere, and `--mutant ID`
 names the same mutant across runs.
 
@@ -78,9 +79,10 @@ set to [testing](Check.md#checking-by-testing) and the
 quickcheck` tests it. Only the components, global expectations and
 refinements whose formulas the mutant changes are checked, and the spec's
 own: the others' results cannot change. A check *kills* a mutant if it
-passes on the spec and fails on the mutant. A check that fails on the
-spec itself kills nothing, and the number of such checks is reported once,
-as a note. `mutate::kill` states
+passes on the spec and fails on the mutant. A check that does not pass on
+the spec itself, failing or inconclusive, kills nothing. The number of
+such checks among those run is reported once, as a note, counting a check
+once even if both the solver and testing ran it. `mutate::kill` states
 this:
 
 ```fren
@@ -165,8 +167,10 @@ pub comp missed {
 ## Selecting mutants
 
 `--comp PATH` selects the mutants of the component `PATH`; `--mutant ID`
-selects the mutant `ID`, and may be repeated. `--sample N` then takes `N`
-of the selected mutants, chosen by `--seed` (default 0). Whether a mutant
+selects the mutant `ID`, and may be repeated. Given both, a mutant must
+meet both. `--sample N` then takes `N` of the selected mutants, chosen by
+`--seed` (default 0). The same seed starts testing's search, so with
+`--by testing` or `--by both`, a different seed also tests differently. Whether a mutant
 is taken depends only on its identifier and the seed, so a larger sample
 contains a smaller one. `--list` writes the selected mutants to standard
 output, one per line, with their identifier, position and change, and

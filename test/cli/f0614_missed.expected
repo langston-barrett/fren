@@ -4,7 +4,7 @@ warning[F0613]: no check rejects this change to `c::r`
 7 |     req r: big? iff xs.len > 4
   |                            ^ `>` changed to `>=`
   |
-  = note: the mutant is `swap-comparison-c::r-0d8ac5ec4b61`
+  = note: the mutant is `swap-comparison-c::r-262de829a2fa`
   = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
   |

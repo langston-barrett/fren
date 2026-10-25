@@ -22,7 +22,7 @@ namespace FrenCli.Mutate
 
 open Lean (Name)
 
-/-- What made a mutant (`mutate::Origin`). -/
+/-- What made a mutant (`Reqs/Mutate#mutants`). -/
 inductive Origin where
   | swapComparison
   | swapAndOr
@@ -64,7 +64,7 @@ structure Mutant where
   span : Span
   before : String
   after : String
-  /-- `ORIGIN-ITEM-HASH` (`mutate::identifier`). -/
+  /-- `ORIGIN-ITEM-HASH` (`Reqs/Mutate#identifiers`). -/
   id : String := ""
   deriving Inhabited
 
@@ -121,6 +121,22 @@ def Src.outer (s : Src) (parent child : Span) : Span := Id.run do
 def normalize (s : String) : String :=
   let words := s.toList.splitBy (fun a b => a.isWhitespace == b.isWhitespace) |>.filter (·.any (!·.isWhitespace))
   " ".intercalate (words.map String.ofList)
+
+/-- `s` as an identifier hashes it, so that formatting cannot change it:
+without whitespace, and without the commas that end a list. -/
+def idText (s : String) : String :=
+  let cs := s.toList.filter (!·.isWhitespace)
+  let rec go : List Char → List Char
+    | ',' :: c :: rest => if c == '}' || c == ']' || c == ')' then go (c :: rest) else ',' :: go (c :: rest)
+    | c :: rest => c :: go rest
+    | [] => []
+  String.ofList (go cs)
+
+/-- `path` as an identifier hashes it: without `.` segments and repeated
+`/`, so that `./spec.fren` and `spec.fren` agree. -/
+def idPath (path : String) : String :=
+  let segs := (path.splitOn "/").filter fun g => g != "." && !g.isEmpty
+  (if path.startsWith "/" then "/" else "") ++ "/".intercalate segs
 
 /-! ## Operators -/
 
@@ -300,7 +316,7 @@ def ofFile (s : Src) (items : Array Item) : Array Mutant := Id.run do
   for (item, comp?, e) in sites items do
     for ed in edits s e do
       let before := s.text ed.span
-      let key := "\x00".intercalate [ed.origin.name, s.path, item.toString, normalize (s.text ed.context), before, ed.after]
+      let key := "\x00".intercalate [ed.origin.name, idPath s.path, item.toString, idText (s.text ed.context), idText before, idText ed.after]
       let k := seen.getD key 0
       seen := seen.insert key (k + 1)
       let id := s!"{ed.origin.name}-{itemSlug item}-{hex12 (hash s!"{key}\x00{k}")}"

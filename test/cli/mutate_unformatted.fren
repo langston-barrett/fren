@@ -1,0 +1,11 @@
+--@ args: mutate --list
+-- Unformatted on purpose: `fren fmt` must leave every identifier alone,
+-- including those of changes that span lines or lists with a trailing comma.
+comp   c {
+  in x:Int
+  pub out ok?
+  req r:   ok? iff (x > 0
+      and x < 9 and
+        x in {1, 2,
+              3,})
+}

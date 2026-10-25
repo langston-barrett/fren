@@ -18,7 +18,7 @@ warning[F0613]: no check rejects this change to `c::r`
 7 |     req r: pos? iff (x > 0 and x >= 1)
   |                                  ^^ `>=` changed to `>`
   |
-  = note: the mutant is `swap-comparison-c::r-e2eb0b3852be`
+  = note: the mutant is `swap-comparison-c::r-599d5db464e4`
   = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
   |

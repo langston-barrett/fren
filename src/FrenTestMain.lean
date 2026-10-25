@@ -240,7 +240,7 @@ def specFiles : IO (Array String) := do
 not formatted, and those that `fren fmt` cannot parse, such as tests of
 syntax errors and of Lean code, and the examples of Markdown specs. -/
 def fmtIgnore : List String :=
-  ["test/cli/f01*.fren", "test/cli/f0216_member_option.fren", "test/cli/fix_*.fren", "test/cli/fmt_check.fren", "test/cli/fmt_parse_error.fren", "test/ui/syntax_*.fren",
+  ["test/cli/f01*.fren", "test/cli/f0216_member_option.fren", "test/cli/fix_*.fren", "test/cli/fmt_check.fren", "test/cli/fmt_parse_error.fren", "test/cli/mutate_unformatted.fren", "test/ui/syntax_*.fren",
    "test/ui/impl.fren", "test/ui/lean_*.fren", "test/ui/trace.fren", "src/Reqs/Markdown.md",
    -- `#fren_md` in a block, which only the Lean front end reads.
    "src/FrenTest/LiterateOuter.md"]
@@ -463,7 +463,8 @@ def isSwap (m : FrenCli.Mutate.Mutant) : Bool :=
 /-- Every mutant of the corpus:
 - **well-formed:** changes the text, and elaborates with no static error;
 - **identified:** has an identifier that no other mutant of its group has;
-- **stable:** leaves the identifiers of the mutants of other items alone;
+- **stable:** leaves the identifiers of the mutants of other items alone,
+  and keeps its own when the file is formatted with `fren fmt`;
 - **involutive:** if it is a swap, has a mutant that swaps back.
 
 And a larger sample of mutants contains a smaller one. -/
@@ -489,6 +490,15 @@ def mutation : IO (Array String) := do
           failures := failures.push s!"{m₂.id}: its identifier changes when {m.id} is applied"
       if isSwap m && !again.any (fun b => b.origin == m.origin && b.apply chars' == chars) then
         failures := failures.push s!"{m.id}: no mutant swaps it back"
+    -- Formatting each file keeps the identifiers.
+    for (path, chars) in files, i in [0:files.size] do
+      let src ← IO.FS.readFile path
+      let .ok formatted := FrenCli.Fmt.formatFile path src | failures := failures.push s!"{path}: does not format"
+      let text := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown formatted else formatted
+      let ids := (mutantsOfText i path chars).map (·.id)
+      let ids' := (mutantsOfText i path text.toList.toArray).map (·.id)
+      if ids.qsort (· < ·) != ids'.qsort (· < ·) then
+        failures := failures.push s!"{path}: formatting changes the identifiers of {(ids.filter (!ids'.contains ·)).toList}"
     for n in [0:20] do
       let small := FrenCli.Mutate.select all none #[] (some n) 7 |>.map (·.id)
       let large := FrenCli.Mutate.select all none #[] (some (n + 1)) 7 |>.map (·.id)

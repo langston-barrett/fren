@@ -113,7 +113,7 @@ is equivalent: the answer only refines the report, so it is kept short. -/
 def equivalenceTimeout : Nat := 1
 
 /-- Whether the solver shows that the spec `st'` of a mutant means what the
-original `st` means (`mutate::equivalent`): each defined function, and each
+original `st` means (`Reqs/Mutate#equivalent-mutants`): each defined function, and each
 formula of each component, global expectation and refinement, is equivalent to the
 original's. -/
 def equivalent (st st' : State) (timeout : Nat) : IO (Option Bool) := do
@@ -141,7 +141,7 @@ def equivalent (st st' : State) (timeout : Nat) : IO (Option Bool) := do
     if result == some false then return result
   return result
 
-/-- The mutants to run (`mutate::selected`): those of the component `comp?`,
+/-- The mutants to run (`Reqs/Mutate#selecting-mutants`): those of the component `comp?`,
 if any; those named by `ids`, if any; and of those, `sample?` of them, if
 given, chosen by `seed`. A mutant is sampled by its identifier alone, so a
 larger sample contains a smaller one. -/
@@ -194,7 +194,7 @@ def Tally.merge (a b : Tally) : Tally :=
     unviable := a.unviable + b.unviable, missed := a.missed + b.missed }
 
 /-- The share of the mutants that could be killed that were
-(`mutate::kill_rate`), as a whole percentage, rounded down; `none` if none
+(`Reqs/Mutate#output`), as a whole percentage, rounded down; `none` if none
 could be. -/
 def Tally.rate? (t : Tally) : Option Nat :=
   let n := t.killed + t.survived
