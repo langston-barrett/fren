@@ -31,6 +31,21 @@ comp lengths {
     --~^^^ warning: say whether it is empty with `{}`, not `card`
 }
 
+-- On a literal, `const_is_empty` fires where it can, and the absurd
+-- comparisons that are not tests of emptiness are still reported.
+comp literal_lengths {
+    in a: Int
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+
+    req r1: p1? iff {a}.card >= 0  --~ warning: this comparison is always `true`
+    req r2: p2? iff {a}.card < 0  --~ warning: this comparison is always `false`
+    req r4: p4? iff {Heat, Mode::Cool}.card > -1  --~ warning: this comparison is always `true`
+    req r3: p3? iff "ab".len < 0  --~ warning: this test of a literal is always `false`
+}
+
 comp erasing {
     in x: Int
     in t: Set(Mode)

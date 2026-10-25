@@ -1464,14 +1464,19 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       | none, some d => pure (b, d, false)
       | none, none => return
     let some (recv, card) := lengthOf? n | return
-    -- `const_is_empty` (`lint::const_is_empty`), rather than `length_zero`.
+    -- `const_is_empty` (`lint::const_is_empty`), rather than `length_zero`
+    -- and `card_zero` on a literal, or `absurd_extreme_comparisons` where
+    -- it fires.
+    let literal := recv.literalCount?.isSome
     if let some (set, count) := recv.literalCount? then
       let (fires, value) := Fren.Core.constIsEmpty c d left set count
       -- `[]` and `{}` have no type here, which is an error.
       let untyped := count == 0 && !(recv matches .str ..)
-      if fires && card == set && !untyped then lint .constIsEmpty e.span (Fren.Core.constIsEmptyMsg value)
-      return
-    let (fires, empty) := Fren.Core.lengthZero c d left
+      if fires && card == set && !untyped then
+        lint .constIsEmpty e.span (Fren.Core.constIsEmptyMsg value)
+        return
+    let fires := !literal && (Fren.Core.lengthZero c d left).1
+    let empty := (Fren.Core.lengthZero c d left).2
     let (absurd, value) := Fren.Core.absurdComparison c d left
     unless fires || absurd do return
     -- Only its type: what elaborating it reports is reported where it is.
@@ -1705,10 +1710,14 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     let res ← callMethod m.span r t m.name as
     -- `empty_argument` (`lint::empty_argument`).
     if let (some meth, true) := (Fren.Core.Method.ofName? m.name, cx.noteIndexes) then
-      if let some msg := Fren.Core.emptyArgumentMsg? meth (t matches .seq _) (← srcAt recv.span) (← args.mapM (srcAt ·.span)) then
+      -- The receiver as written, with its parentheses, as in the help
+      -- `(a ++ b).at((a ++ b).len - 1)`.
+      let src := (← get).src
+      let recvText := Fren.Core.textOf src (Fren.Core.withParens src (toRange (recv.writtenSpan src)))
+      if let some msg := Fren.Core.emptyArgumentMsg? meth (t matches .seq _) recvText (← args.mapM (srcAt ·.span)) then
         lint .emptyArgument span msg
       -- `negative_position` (`lint::negative_position`).
-      if let some msg := Fren.Core.negativeArgumentMsg? meth (t matches .seq _) (← srcAt recv.span) (← args.mapM (srcAt ·.span)) then
+      if let some msg := Fren.Core.negativeArgumentMsg? meth (t matches .seq _) recvText (← args.mapM (srcAt ·.span)) then
         lint .negativePosition span msg
     return res
   | .bool _ b => return (toString b, .bool)
@@ -2214,7 +2223,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
 /-- Reports `assertions_on_constants` on the constraint `e`, an `assume`,
 `req` or `expect` as `kind` says (`lint::assertions_on_constants`). -/
 def lintConstant (cx : ExprCtx) (kind : String) (e : Expr) : M Unit := do
-  if Fren.Core.assertionOnConstant (← varsMentioned cx #[] e) then
+  if Fren.Core.assertionOnConstant (← mentionsAny cx e) then
     lint .assertionsOnConstants e.span (Fren.Core.assertionOnConstantMsg kind (match e with | .bool _ b => some b | _ => none))
 
 /-- The conditions of a top-level `when`/`unless` chain, and their span. -/

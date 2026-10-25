@@ -86,3 +86,13 @@ comp conditionals {
     --~^ warning: the condition and the body of `unless` are written the same
     req r3: n? iff (when a?, b?)
 }
+
+-- The help writes the receiver with its parentheses.
+comp positions_parenthesized {
+    in a: String
+    in b: String
+    pub out p?
+
+    req r: p? iff (a ++ b).at(-1) = "."
+    --~^ warning: write `(a ++ b).at((a ++ b).len - 1)`
+}

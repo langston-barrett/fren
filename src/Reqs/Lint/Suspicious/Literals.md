@@ -68,7 +68,12 @@ set literal's elements may be equal, so `{a, b}.card` is `1` or `2`, but it
 is `0` exactly when the literal is `{}`, so only whether it is empty is
 fixed. Where `const_is_empty` fires on a length, [`length_zero` and
 `card_zero`](../Style.md#empty-collections) do not, since writing `"ab" = ""`
-would keep the mistake. `"" = ""` is left to [`eq_op`](Expressions.md#operands-written-the-same),
+would keep the mistake, and neither does
+[`absurd_extreme_comparisons`](Comparisons.md), since the message already
+says what the comparison always is: `"ab".len < 0` gets only
+`const_is_empty`. Where `const_is_empty` does not fire,
+`absurd_extreme_comparisons` still does, as on `{a}.card >= 0`, which is
+not a test of whether the set is empty. `"" = ""` is left to [`eq_op`](Expressions.md#operands-written-the-same),
 and `[].len` and `{}.card` are errors, since `[]` and `{}` have no type
 there. `lint::const_is_empty` states when it fires on a length, and what
 the comparison always is, and `lint::const_empty_equation` the same for an

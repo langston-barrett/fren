@@ -3477,11 +3477,10 @@ def needlessMatchMsg (fixed : String) : Msg :=
     label? := some "each arm gives back the value it matches"
     fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
-/-- Whether `assertions_on_constants` fires on a constraint whose
-expression mentions `nVars` variables, binders and applications of
-uninterpreted functions, as `varsMentioned` counts them
-(`lint::assertions_on_constants`). -/
-def assertionOnConstant (nVars : Nat) : Bool := nVars == 0
+/-- Whether `assertions_on_constants` fires on a constraint, where
+`mentions` is whether its expression mentions a variable or an
+uninterpreted function (`lint::assertions_on_constants`). -/
+def assertionOnConstant (mentions : Bool) : Bool := !mentions
 
 /-- A constraint, an `assume`, `req` or `expect`, that mentions no
 variable, where `literal?` is its value if it is written `true` or

@@ -91,6 +91,11 @@ use view::Severity
 | `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel(A, B)` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
 <!-- keep-sorted end -->
 
+The lints' codes run from `F0701` to `F0770`. Among them, `F0707`, `F0708`
+and `F0709` are errors in [setting levels](#setting-levels), and `F0713`
+is the removed `shadowed_constants`'s. `F0758` is used by nothing, and is
+free for a later lint.
+
 Lints are found while elaborating, like [static
 errors](View.md#static-errors), and never ask the solver anything: the
 results of [checks](Check.md), such as a redundant constraint, are not

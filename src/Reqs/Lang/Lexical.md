@@ -155,7 +155,7 @@ pub comp longest_identifier {
     pub out ends?
 
     inst w: identifier { lexeme }
-    inst one: identifier { lexeme := lexeme ++ remaining.slice(0, 1) }
+    inst one: identifier { lexeme := lexeme ++ remaining.at(0) }
     inst two: identifier { lexeme := lexeme ++ remaining.slice(0, 2) }
 
     req longest: when w.accepted? and remaining != "", ends? iff not (one.accepted? or two.accepted?)
@@ -358,11 +358,11 @@ pub comp escape_start {
     req escapes: accepted? iff (remaining.starts_with?("n") or remaining.starts_with?("r")
         or remaining.starts_with?("t") or remaining.starts_with?("\\") or remaining.starts_with?("\"")
         or remaining.starts_with?("'")
-        or (remaining.starts_with?("x") and remaining.slice(1, 1).matches?(r"[0-9a-fA-F]")
-        and remaining.slice(2, 1).matches?(r"[0-9a-fA-F]"))
-        or (remaining.starts_with?("u") and remaining.slice(1, 1).matches?(r"[0-9a-fA-F]")
-        and remaining.slice(2, 1).matches?(r"[0-9a-fA-F]") and remaining.slice(3, 1).matches?(r"[0-9a-fA-F]")
-        and remaining.slice(4, 1).matches?(r"[0-9a-fA-F]")))
+        or (remaining.starts_with?("x") and remaining.at(1).matches?(r"[0-9a-fA-F]")
+        and remaining.at(2).matches?(r"[0-9a-fA-F]"))
+        or (remaining.starts_with?("u") and remaining.at(1).matches?(r"[0-9a-fA-F]")
+        and remaining.at(2).matches?(r"[0-9a-fA-F]") and remaining.at(3).matches?(r"[0-9a-fA-F]")
+        and remaining.at(4).matches?(r"[0-9a-fA-F]")))
 }
 
 refine escape_sequence_starts: escape_sequence refines escape_start
@@ -417,10 +417,11 @@ pub comp punctuator {
 
     req rule: accepted? iff lexeme in PUNCTUATORS
 
-    -- The punctuators listed above, and the three of other languages.
+    -- The punctuators listed above, the three of other languages, and
+    -- Lean's `<-`.
     expect listed: accepted? iff lexeme in {
         "::", "::*", "::{", ":", ":=", ",", "(", ")", "{", "}", "[", "]", ".", "=>", "|",
-        "=", "!=", "<", "<=", ">", ">=", "+", "++", "-", "*", "==", "&&", "||",
+        "=", "!=", "<", "<=", ">", ">=", "+", "++", "-", "*", "==", "&&", "||", "<-",
     }
 }
 
@@ -460,7 +461,7 @@ pub comp longest_punctuator {
 
     assume a_punctuator: lexeme in PUNCTUATORS
 
-    inst one: punctuator { lexeme := lexeme ++ remaining.slice(0, 1) }
+    inst one: punctuator { lexeme := lexeme ++ remaining.at(0) }
     inst two: punctuator { lexeme := lexeme ++ remaining.slice(0, 2) }
 
     req longest: when remaining != "", ends? iff not (one.accepted? or two.accepted?)

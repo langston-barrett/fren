@@ -905,13 +905,14 @@ impl needless_match: lint::needless_match for (g w s t : Bool) {
   intro g w s t _
   cases g <;> cases w <;> cases s <;> cases t <;> simp [fren_spec, Fren.Core.needlessMatch]
 
--- Both front ends count with `varsMentioned`, as for `constant_output`.
-impl assertions_on_constants: lint::assertions_on_constants for (n : Nat) {
-  n_variables := n,
-  fires? := Fren.Core.assertionOnConstant n,
+-- Both front ends decide what it mentions with `mentionsAny`, as for
+-- `constant_output`.
+impl assertions_on_constants: lint::assertions_on_constants for (m : Bool) {
+  mentions? := m,
+  fires? := Fren.Core.assertionOnConstant m,
 } by
-  intro n _
-  simp [fren_spec, Fren.Core.assertionOnConstant]
+  intro m _
+  cases m <;> simp [fren_spec, Fren.Core.assertionOnConstant]
 
 -- `trivialPattern?` reads the pattern's characters; the spec states the
 -- same with a pattern, which the tests check against it.

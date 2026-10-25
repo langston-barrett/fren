@@ -1120,7 +1120,7 @@ partial def lintParens (fixable : Bool) (str : String) (e : Syntax) (inParens : 
 /-- Records `assertions_on_constants` on the constraint `e`, an `assume`,
 `req` or `expect` as `kind` says (`lint::assertions_on_constants`). -/
 def lintConstant (cx : ExprCtx) (kind : String) (e : Syntax) : TermElabM Unit := do
-  if Core.assertionOnConstant (← varsMentioned cx e) then
+  if Core.assertionOnConstant (← mentionsAny cx e) then
     let literal? := match boolNode "" 0 (unparen e) with | .mk (.lit b) .. => some b | _ => none
     recordLint .assertionsOnConstants e (Core.assertionOnConstantMsg kind literal?)
 
@@ -1588,15 +1588,20 @@ def lintLength (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     | none, some d => pure (b, d, false)
     | none, none => return
   let some (recv, card) ← lengthOf? (unparen n) | return
-  -- `const_is_empty` (`lint::const_is_empty`), rather than `length_zero`.
+  -- `const_is_empty` (`lint::const_is_empty`), rather than `length_zero`
+  -- and `card_zero` on a literal, or `absurd_extreme_comparisons` where it
+  -- fires.
+  let literal := (literalCount? recv).isSome
   if let some (set, count) := literalCount? recv then
     let r := unparen recv
     -- `[]` and `{}` have no type here, which is an error.
     let untyped := count == 0 && (r.isOfKind ``Lang.seqExpr || r.isOfKind ``Lang.setExpr)
     let (fires, value) := Core.constIsEmpty c d left set count
-    if fires && card == set && !untyped then recordLint .constIsEmpty e (Core.constIsEmptyMsg value)
-    return
-  let (fires, empty) := Core.lengthZero c d left
+    if fires && card == set && !untyped then
+      recordLint .constIsEmpty e (Core.constIsEmptyMsg value)
+      return
+  let fires := !literal && (Core.lengthZero c d left).1
+  let empty := (Core.lengthZero c d left).2
   let (absurd, value) := Core.absurdComparison c d left
   unless fires || absurd do return
   -- Only its type: what elaborating it reports is reported where it is.

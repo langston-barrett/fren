@@ -1,5 +1,7 @@
 -- Integer literals in every form that Lean reads, with the same values in
--- both front ends.
+-- both front ends. Each expectation is of constants alone, which
+-- `assertions_on_constants` would report.
+set_option fren.lint.assertions_on_constants "allow"
 
 expect decimal: 120 = 100 + 20 and 0 = 5 - 2 - 3
 expect hexadecimal: 0x1F = 31 and 0X1f = 31

@@ -459,6 +459,11 @@ cases, and its message names the word:
   }`: a path to a variant names its enumeration already, as `Fan::HighFan`
   does. It is reported at the variant.
 
+Since `HTTPStatus` is one word, `enum S { HTTPStatus, FTPStatus }` shares
+no word, and `enum_variant_names` does not fire on it until the renames
+that [`upper_case_acronyms`](#names) suggests, `HttpStatus` and
+`FtpStatus`, are made.
+
 Clippy's `enum_variant_names` fires on enumerations of three or more
 variants by default, and only on a variant that starts or ends with its
 enumeration's name. `lint::enum_variant_names` and
@@ -557,14 +562,12 @@ pub comp disallowed_names {
 
 `assertions_on_constants` fires on an assumption, requirement or
 expectation, of a component or [global](../Lang/Global.md), whose
-expression mentions no variable, binder or instance variable and applies
-no uninterpreted function, such as `req r: true` or `expect e: LIMIT > 0`.
-It counts them as [`constant_output`](Complexity.md#constant-outputs)
-counts those of a definition, as [`lang::linear_product`](../Lang/Expressions.md#linear-arithmetic)
-does: a defined output counts as what its definition mentions, and a
-binder as what its scrutinee does. An application of an uninterpreted
-function counts, since its value depends on the
-[interpretation](../Lang/Components.md#interpretations).
+expression mentions no variable and no uninterpreted function (see
+[Mentions](../Lang/Expressions.md#mentions)), as
+[`constant_output`](Complexity.md#constant-outputs) does on a
+definition, such as `req r: true` or `expect e: LIMIT > 0`. An
+application of an uninterpreted function counts, since its value depends
+on the [interpretation](../Lang/Components.md#interpretations).
 
 Such a constraint is the same in every behaviour. If it is always true,
 it says nothing. If it is always false, a requirement makes its component
@@ -574,15 +577,18 @@ written `true` or `false`, in parentheses or not; otherwise only the
 solver could tell, and a lint never asks it, so the message says that the
 constraint mentions no variable. It has no fix: removing a constraint
 changes the checks, and what traces and claims name.
+[`duplicate_constraint`](Suspicious.md#repeated-constraints) removes one
+too, but only a repeat of an earlier constraint of its kind, written the
+same: the one it repeats stays, with its checks and its name, so all that
+goes is a second copy, which checks nothing more. A constant constraint
+repeats nothing, so removing it would lose its checks and its name.
 `lint::assertions_on_constants` states when it fires:
 
 ```fren
 pub comp assertions_on_constants {
-    in n_variables: Int  -- variables, binders, instance variables and applications the expression mentions
+    in mentions?         -- the expression mentions a variable or an uninterpreted function
     pub det out fires?
 
-    assume counts: n_variables >= 0
-
-    req rule: fires? iff n_variables = 0
+    req rule: fires? iff not mentions?
 }
 ```
