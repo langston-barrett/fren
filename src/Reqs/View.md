@@ -15,11 +15,13 @@ visible, a duplicate name, a type error, nonlinear arithmetic, or a
 violation of a rule such as [Boolean naming](Lang/Types.md#boolean-names).
 Each is an error at the offending source position. A denied
 [lint](Lint.md), such as an unused import, is a
-static error too. With the `fren` command, any static error means that no
-check runs. Lean checks every item that elaborates, except where the lint
-`undecidable` is denied (see [Decidability lints](Lint/Decidability.md)):
-another denied lint is reported as an error, but its item is still
-checked. In Lean, syntax and type errors
+static error too. Any static error means that no check runs, with either
+front end: the `fren` command reports `could not check due to N previous
+errors` instead of the checks' results and summary, and so does Lean's
+`#fren_check`, counting the static errors before it in any file, Lean's
+parse errors included, and the lints so far that are errors. A static
+error that `#guard_msgs` expects does not count, so that a Lean test can
+show an error and then the checks. In Lean, syntax and type errors
 are Lean's own, and are worded differently, except for operators of other
 languages (`==`, `&&`, `||`, `!`), which both front ends report with what to
 write instead.

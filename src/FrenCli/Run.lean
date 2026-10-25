@@ -389,7 +389,7 @@ def elaborate (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintT
 the codes of `diags`. -/
 def printErrorCount (p : Paint) (errors : Nat) (diags : Array Diag) (what := "check") : IO Unit := do
   IO.eprintln (Fren.Core.header .error
-    { code? := none, headline := s!"could not {what} due to {errors} previous error{if errors == 1 then "" else "s"}" } p)
+    { code? := none, headline := Fren.Core.couldNotHeadline errors what } p)
   IO.eprintln ""
   printExplainHint (diags.map (·.msg))
 

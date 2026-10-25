@@ -103,7 +103,7 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
       stx.getArgs.forM fun a => unless a.isIdent do checkParsed a
     else stx.getArgs.forM checkParsed
 
-@[command_elab Lang.modCmd] def elabMod : CommandElab := fun stx => do
+@[command_elab Lang.modCmd] def elabMod : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
   let segs := pathSegs stx[2]
@@ -125,12 +125,12 @@ def declareUse (segs : Array Syntax) (glob : Bool) (ref : Syntax) (scope : Optio
   record (.useDef u)
   recordUse u ref
 
-@[command_elab Lang.useCmd] def elabUse : CommandElab := fun stx => do
+@[command_elab Lang.useCmd] def elabUse : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
   declareUse (pathSegs stx[1]) (!stx[2].isNone) stx[1]
 
-@[command_elab Lang.useGroupCmd] def elabUseGroup : CommandElab := fun stx => do
+@[command_elab Lang.useGroupCmd] def elabUseGroup : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
   for p in stx[3].getSepArgs do
@@ -261,7 +261,7 @@ partial def typeSyntax (t : Expr) : Term :=
   -- Not known yet, as the element type of `[]`: Lean infers it.
   else Unhygienic.run `(_)
 
-@[command_elab Lang.enumCmd] def elabEnum : CommandElab := fun stx => do
+@[command_elab Lang.enumCmd] def elabEnum : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
   let modName := (← getLocal).currentModule
@@ -321,7 +321,7 @@ partial def typeSyntax (t : Expr) : Term :=
   record (.enumInfo { path, decl, variants, payloads, unbounded })
   unless isPub do recordItem .enumeration path nameStx
 
-@[command_elab Lang.structCmd] def elabStruct : CommandElab := fun stx => do
+@[command_elab Lang.structCmd] def elabStruct : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
   let modName := (← getLocal).currentModule
@@ -2290,7 +2290,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
     addInstance inst .global 1000
     record (.abstractInfo { path := inhabitedName path, placeholder := inst, isType := false, deps := #[placeholder] })
 
-@[command_elab Lang.typeCmd] def elabAbstractType : CommandElab := fun stx => do
+@[command_elab Lang.typeCmd] def elabAbstractType : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
   let modName := (← getLocal).currentModule
@@ -2304,7 +2304,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   record (.item { item := { kind := .typeItem, path, isPub, owner := modName }, ref := nameStx })
   unless isPub do recordItem .abstractType path nameStx
 
-@[command_elab Lang.fnCmd] def elabFunction : CommandElab := fun stx => do
+@[command_elab Lang.fnCmd] def elabFunction : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
   let modName := (← getLocal).currentModule
@@ -2506,7 +2506,7 @@ def memberName? (m : Syntax) : Option Syntax :=
     | _ => none
 
 open Lang in
-@[command_elab Lang.compCmd] def elabComp : CommandElab := fun stx => do
+@[command_elab Lang.compCmd] def elabComp : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
   let modName := (← getLocal).currentModule
@@ -2778,7 +2778,7 @@ open Lang in
 
 /-! ## Constants and global expectations -/
 
-@[command_elab Lang.constCmd] def elabConst : CommandElab := fun stx => do
+@[command_elab Lang.constCmd] def elabConst : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
   let modName := (← getLocal).currentModule
@@ -2882,7 +2882,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     return { path := modName, vars, props := #[prop], insts, ref := nameStx, decl, uses
              decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied, indexes }
 
-@[command_elab Lang.globalCmd] def elabGlobal : CommandElab := fun stx => do
+@[command_elab Lang.globalCmd] def elabGlobal : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
   let modName := (← getLocal).currentModule
@@ -2914,7 +2914,7 @@ and definitions as expectations, with `a`'s variables read as their
 bindings or as `c`'s of the same names, and `c`'s outputs from the
 instance. With `by`, the tactics prove the obligation, generated as `r`,
 and the solver is asked nothing. -/
-@[command_elab Lang.refineCmd] def elabRefine : CommandElab := fun stx => do
+@[command_elab Lang.refineCmd] def elabRefine : CommandElab := recordingErrors fun stx => do
   -- Its proof, after `by`, is Lean.
   let spec := stx.getArgs[:7].toArray
   spec.forM checkLexemes

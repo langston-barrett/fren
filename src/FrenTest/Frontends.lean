@@ -26,9 +26,8 @@ fuzzing"). `fren_fuzz_frontends` compares the front ends with it;
   (`conflictInput?`), and its notes at them (`isConflictNote`) are left
   out.
 - Checks whose evidence is testing, which Lean does not run, are left out.
-- A static error, including a denied lint, stops the binary's checks but
-  not Lean's: then the checks' results and the summary are not compared.
-  The binary drops the lints of an item with a static error other than a
+- A static error, including a denied lint, stops both front ends'
+  checks, so neither reports results or a summary. The binary drops the lints of an item with a static error other than a
   lint: then Lean's lints of that item (`isHostedLint`) are not compared.
 - The binary's exit code must follow from Lean's messages
   (`cli::agrees_with_build`): 2 after a static error, else 1 when Lean
@@ -220,10 +219,8 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   let onTested (d : Diagnostic) := (lines[d.line - 1]?.getD "").contains "set_option fren.evidence \"tested\""
   let testing (d : Diagnostic) := anyTested &&
     (d.code?.any (["F0609", "F0610", "F0612", "F0616"].contains ·) || (d.severity == "info" && (headOf d).contains " set to testing are run by `fren check`"))
-  -- A static error, including a denied lint, stops the binary's checks,
-  -- but not Lean's.
   let staticError := cliDiags.any fun d => d.severity == "error" && !isCheckResult d
-  let keep (d : Diagnostic) := !onTested d && !testing d && !(staticError && isCheckResult d)
+  let keep (d : Diagnostic) := !onTested d && !testing d
   -- A realizability failure's requirements, and so its notes, are compared
   -- only for the same input: each front end's input comes from its model,
   -- and its requirements are a minimal set that conflicts on it.
@@ -255,9 +252,8 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   hostedOnly := hostedOnly.filter fun h => !(isHostedLint h && stoppedItems.contains (itemAt h.line))
   let mut out := sameInput ++ cs.map (render "fren") ++ hostedOnly.map (render "Lean")
   let undecided := cs.all isUndecided && hostedOnly.all isUndecided
-  -- The summary, unless a check is tested, or a static error stops the
-  -- binary's checks.
-  let sumDiffers := !anyTested && !staticError && cli.summary? != hosted.summary?
+  -- The summary, unless a check is tested.
+  let sumDiffers := !anyTested && cli.summary? != hosted.summary?
   if sumDiffers then
     out := out.push s!"summary: fren says `{cli.summary?.getD "(none)"}`, Lean says `{hosted.summary?.getD "(none)"}`"
   -- The exit code, from Lean's most severe message (`cli::exit`,

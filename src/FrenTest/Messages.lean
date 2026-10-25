@@ -82,6 +82,10 @@ def hostedDiagnostics (env : Environment) (file : String) (src : String) :
       | .information => "info"
     if sev == "info" && text.startsWith "fren: " then
       summary := some (text.drop 6).toString
+    -- At the `#fren_check` added above: the counterpart of the binary's
+    -- last line after a static error, which has no location.
+    else if sev == "error" && text.startsWith "could not check due to " then
+      continue
     else
       diags := diags.push { line := m.pos.line - 1, severity := sev, text }
   return (diags, summary)

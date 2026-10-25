@@ -408,6 +408,12 @@ structure LocalState where
   /-- The indexes of the constraint being elaborated, each with the term
   that it is in range where it is evaluated (`check::definedness`). -/
   indexes : Array (Syntax × Lean.Term) := #[]
+  /-- The static errors so far, by top-level command: its file, where it
+  starts and how many errors it has logged (`recordingErrors`). They stop
+  `#fren_check` (`Reqs/View#static-errors`). -/
+  staticErrors : Array (String × Nat × Nat) := #[]
+  /-- How many errors `#fren_check` has logged, which are not static. -/
+  checkErrors : Nat := 0
   deriving Inhabited
 
 /-- Records that the item `path` is declared now: in the Markdown spec being
@@ -455,5 +461,27 @@ def getLocal : m LocalState := return localExt.getState (← getEnv)
 
 def modifyLocal (f : LocalState → LocalState) : m Unit :=
   modifyEnv (localExt.modifyState · f)
+
+open Lean Elab Command in
+/-- Runs `k`, then records how many errors its top-level command has
+logged (`LocalState.staticErrors`). An error that `k` throws is logged
+here, as `elabCommand` would, to be counted. -/
+def recordingErrors (k : CommandElab) : CommandElab := fun stx => do
+  try k stx
+  catch ex =>
+    match ex with
+    | .internal id _ => if id == unsupportedSyntaxExceptionId || id == interruptExceptionId then throw ex
+                        else logException ex
+    | _ => logException ex
+  let n := (← get).messages.toList.filter (·.severity == .error) |>.length
+  if n == 0 then return
+  let key := (← getFileName, (← read).cmdPos.byteIdx)
+  modifyLocal fun l =>
+    -- A top-level command can elaborate several, as `set_option ... in`
+    -- does: the count of its last is the command's.
+    match l.staticErrors.back? with
+    | some (f, p, _) => if (f, p) == key then { l with staticErrors := l.staticErrors.pop.push (f, p, n) }
+                        else { l with staticErrors := l.staticErrors.push (key.1, key.2, n) }
+    | none => { l with staticErrors := l.staticErrors.push (key.1, key.2, n) }
 
 end Fren

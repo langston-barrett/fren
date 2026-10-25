@@ -29,15 +29,13 @@ comp chained_paren {
     --~^^ error: the solver does not reliably combine counting with relational operators
 }
 
--- Counting with relational operators, through an instance: Lean does not
--- check `counts_mixed`, where cvc5 aborted (#100), but it checks `mixed`,
--- since only the binary stops at a static error.
+-- Counting with relational operators, through an instance, where cvc5
+-- aborted (#100): neither front end checks anything after a static error,
+-- not even `mixed`, which has none.
 comp mixed {
-    --~^[hosted] error: `mixed` is not realizable
     in n: Int
     in t: Set(Int)
     req q: ((t inter {0, 3}) union t) = (({(0, 0), (1, 2)}).range inter {3, n})
-    --~^[hosted] info: is false when
 }
 
 comp counts_mixed {

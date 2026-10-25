@@ -378,16 +378,21 @@ def lintDeclared (what : Core.Named) (n : Name) (ref : Syntax) : m Unit := do
     if let some a := (ds.extract 0 i).find? (Core.namesSimilar ·.1 ds[i]!.1) then
       recordLint .similarNames ds[i]!.2 (Core.similarNamesMsg a.1 ds[i]!.1 what n)
 
-/-- Reports the lints of the file, or Markdown spec, just elaborated, and
-forgets them. -/
-def reportLints : CommandElabM Unit := do
+/-- The lints of the file, or Markdown spec, elaborated so far, with their
+severities. -/
+def pendingLints : CommandElabM (Array (Core.LintReport Syntax × Core.Severity)) := do
   let l ← getLocal
   -- `fren fix` reads Markdown specs, but not Lean files.
   let fixable := l.inMarkdown
   let (reports, fulfilled) := Core.finishReports
     (l.lintReports ++ Core.importReports l.useRecords l.used fixable ++ Core.deadCodeReports l.items l.usedItems)
   let (unfulfilled, _) := Core.finishReports (Core.expectationReports l.expectations fulfilled fixable)
-  for (r, sev) in reports ++ unfulfilled do
+  return reports ++ unfulfilled
+
+/-- Reports the lints of the file, or Markdown spec, just elaborated, and
+forgets them. -/
+def reportLints : CommandElabM Unit := do
+  for (r, sev) in ← pendingLints do
     match sev with
     | .error => logErrorAt r.ref r.msg.text
     | .warning => logWarningAt r.ref r.msg.text
@@ -398,7 +403,7 @@ def reportLints : CommandElabM Unit := do
 /-- `set_option fren.lint.NAME "LEVEL"`, for a lint (`lint::setting`) or a
 group (`lint::group_setting`), which sets each of its lints. Other options,
 and lints that do not exist, are left to Lean. -/
-@[command_elab Lean.Parser.Command.set_option] def elabLintOption : CommandElab := fun stx => do
+@[command_elab Lean.Parser.Command.set_option] def elabLintOption : CommandElab := recordingErrors fun stx => do
   let name := stx[1].getId.eraseMacroScopes
   let some target := (Core.Lint.all.map Core.LintTarget.lint ++ Core.Group.all.map Core.LintTarget.group).find?
     (·.option == name) | throwUnsupportedSyntax

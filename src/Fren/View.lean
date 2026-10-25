@@ -84,9 +84,55 @@ def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit :=
       | .info => .information
     logAbout path ref msg.text severity
 
+/-- Of the top-level commands of the current file before `stop`, where the
+`#guard_msgs` start, and how many parse errors Lean found, which no
+elaborator sees: the file is parsed again, with the syntax in scope here. -/
+def scanCommands (stop : String.Pos.Raw) : CommandElabM (Array Nat × Nat) := do
+  let inputCtx := Parser.mkInputContext (← getFileMap).source (← getFileName)
+  let (_, ps, msgs) ← Parser.parseHeader inputCtx
+  let pmctx : Parser.ParserModuleContext :=
+    { env := ← getEnv, options := ← getOptions, currNamespace := ← getCurrNamespace, openDecls := ← getOpenDecls }
+  let mut ps := ps
+  let mut msgs := msgs
+  let mut guarded := #[]
+  while ps.pos < stop do
+    let pos := ps.pos
+    let (stx, ps', msgs') := Parser.parseCommand inputCtx pmctx ps msgs
+    if stx.isOfKind ``Lean.guardMsgsCmd then guarded := guarded.push pos.byteIdx
+    if ps'.pos == pos || Parser.isTerminalCommand stx then break
+    ps := ps'
+    msgs := msgs'
+  return (guarded, msgs.toList.filter (·.severity == .error) |>.length)
+
+/-- How many static errors come before this `#fren_check`: those that
+Fren's commands logged in any file, but not those that a `#guard_msgs`
+expects in this one; Lean's parse errors in this file; and the lints so
+far that are errors (`Reqs/View#static-errors`). -/
+def staticErrorsBefore : CommandElabM Nat := do
+  let (guarded, parse) ← scanCommands (← read).cmdPos
+  let file ← getFileName
+  let recorded := (← getLocal).staticErrors.foldl (init := 0) fun n (f, p, k) =>
+    if f == file && guarded.contains p then n else n + k
+  let lints := (← pendingLints).filter (·.2 == .error) |>.size
+  return recorded + parse + lints
+
+/-- The errors logged so far by the current command. -/
+def errorsLogged : CommandElabM Nat :=
+  return (← get).messages.toList.filter (·.severity == .error) |>.length
+
 /-- Checks the comps and global expectations `paths`, and reports the
-results. -/
+results; after a static error, checks none, as the `fren` command does. -/
 def checkAndReport (paths : Array Name) : CommandElabM Unit := do
+  let before ← errorsLogged
+  try checkAndReport' paths
+  finally
+    let logged := (← errorsLogged) - before
+    modifyLocal fun l => { l with checkErrors := l.checkErrors + logged }
+where
+  checkAndReport' (paths : Array Name) : CommandElabM Unit := do
+  let errors ← staticErrorsBefore
+  if errors > 0 then
+    return ← logError (Core.couldNotHeadline errors)
   let s ← getState
   let mut all := #[]
   for p in paths do

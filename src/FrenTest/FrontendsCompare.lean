@@ -79,6 +79,14 @@ def item : String := "comp c {\n    in x: Int\n    pub out y: Int\n    req q: y 
     exit? := some 2 }
   { diags := #[err 4 "nonlinear arithmetic is not supported", err 5 "cannot find `K` in this scope"] }
 
+-- A static error stops both front ends' checks: a result, or a summary,
+-- of Lean's after one is a difference.
+#guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", err 1 "`c` is not realizable: for the input x = 0, no outputs satisfy `r`"] }
+
+#guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported"], summary? := none0 }
+
 /-! ## The binary cannot parse what Lean accepts -/
 
 def parse : String := "comp c {\n    in x: Int\n    req q: x = 1\n}\n\ncomp d {\n    in y: Int\n    req q: y = 1\n}\n"
