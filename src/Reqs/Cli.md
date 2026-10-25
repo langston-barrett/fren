@@ -196,6 +196,23 @@ In Lean, the queries are the same, but lean-smt sets the logic `ALL`.
 is claimed, 1 otherwise, and 2 if the report could not run
 (`trace::trace_exit`).
 
+The commands that report on a spec share one convention, which
+`cli::exit_status` states: 2 exactly when the command could not run, and
+otherwise 0, 1 or 3. `fren check` and `fren quickcheck` (`cli::exit`),
+`fren eval` (`eval::eval_exit`) and `fren trace` (`trace::trace_exit`)
+refine it; `fren fmt` and `fren fix`, which change files rather than
+report on a spec, have their own.
+
+```fren
+pub comp exit_status {
+    in ran?                -- the command could run
+    pub out code: Int
+
+    req not_run: code = 2 iff not ran?
+    req documented: code = 0 or code = 1 or code = 2 or code = 3
+}
+```
+
 `cli::exit` gives the exit status, from whether the checks ran and the
 most severe [level](View.md#severity) of their results and of the
 [lints](Lint.md) reported along the way:
@@ -214,6 +231,8 @@ pub comp exit {
     expect zero_means_no_problem: when code = 0, ran? and worst != Error and worst != Warning
     expect documented_codes: code >= 0 and code <= 3
 }
+
+refine check_exit_status: exit refines exit_status
 ```
 
 `cli::worst_severity` gives the most severe level over all results and
@@ -250,6 +269,27 @@ pub comp run {
     expect warning_exits_3: when ran? and not Error in present and Warning in present, code = 3
     expect clean_exits_0: when ran? and not Error in present and not Warning in present, code = 0
 }
+```
+
+Put together with the [severity of a result](View.md#severity), this says
+what a check's verdict does to the exit status, across the chapters: a
+check that fails, other than as redundant, makes `fren check` exit with 1,
+whatever else is reported, and a run whose only results pass exits with 0:
+
+```fren
+use view::severity
+
+expect failing_check_exits_1: forall (s: severity) (r: run),
+    when r.ran? and s.level in r.present and s.verdict = Verdict::Fail and s.kind != Kind::Redundancy,
+    r.code = 1
+
+expect passing_checks_exit_0: forall (s: severity) (r: run),
+    when r.ran? and r.present = {s.level} and s.verdict = Verdict::Pass,
+    r.code = 0
+
+expect inconclusive_exits_3: forall (s: severity) (r: run),
+    when r.ran? and r.present = {s.level} and s.verdict = Verdict::Inconclusive,
+    r.code = 3
 ```
 
 ## Colour

@@ -189,6 +189,26 @@ pub comp evidence {
 }
 ```
 
+Evidence only adds up: having more of it never lowers a component's
+level. More implementations and claims never lower its own evidence, and
+stronger own evidence, or stronger evidence for its instances, never
+lowers what is reported:
+
+```fren
+expect more_evidence_never_lower: forall (a b: direct) (ra rb: rank),
+    when (not a.proved? or b.proved?) and (not a.solver? or b.solver?)
+    and (not a.tested? or b.tested?) and (not a.trusted? or b.trusted?)
+    and ra.level = a.level and rb.level = b.level,
+    ra.r <= rb.r
+
+expect stronger_parts_never_lower: forall (a b: evidence) (oa ob wa wb ra rb: rank),
+    when a.has_outputs? = b.has_outputs?
+    and oa.level = a.own and ob.level = b.own and oa.r <= ob.r
+    and wa.level = a.weakest and wb.level = b.weakest and wa.r <= wb.r
+    and ra.level = a.level and rb.level = b.level,
+    ra.r <= rb.r
+```
+
 ## The report
 
 The report counts the components at each level and lists those below
@@ -283,6 +303,10 @@ pub comp trace_exit {
 
     expect zero_means_clean: when code = 0, ran? and not below? and not stray?
 }
+
+use cli::exit_status
+
+refine trace_exit_status: trace_exit refines exit_status
 
 #fren_check
 ```

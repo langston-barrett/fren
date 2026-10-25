@@ -97,6 +97,18 @@ impl definedness: check::definedness for (q : Answer) {
   reports_cex? := (expectVerdict q).2,
 }
 
+-- The two families of verdicts: `expectVerdict` for the checks that prove,
+-- `vacuityVerdict` for those that ask whether something can hold.
+impl proved: check::proved for (q : Answer) {
+  q := toOutcome q,
+  verdict := toVerdict (expectVerdict q).1,
+}
+
+impl satisfiable: check::satisfiable for (q : Answer) {
+  q := toOutcome q,
+  verdict := toVerdict (vacuityVerdict q),
+}
+
 instance : Fren.Finite Fren.Core.Symbol :=
   ⟨[.input, .instanceVariable, .output, .function], by intro x; cases x <;> simp⟩
 

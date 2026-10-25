@@ -20,6 +20,14 @@ impl exit_code: cli::exit for (ran : Bool) (s : Option Severity) {
   intro ran s _
   cases ran <;> rcases s with _ | _ | _ | _ <;> decide
 
+-- The binary's exit code follows the convention its commands share.
+impl exit_status_code: cli::exit_status for (ran : Bool) (s : Option Severity) {
+  ran? := ran,
+  code := (FrenCli.exitCode ran s).toNat,
+} by
+  intro ran s _
+  cases ran <;> rcases s with _ | _ | _ | _ <;> decide
+
 def toColorChoice : FrenCli.ColorChoice → cli.ColorChoice
   | .auto => .Auto
   | .always => .Always

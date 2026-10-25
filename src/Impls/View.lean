@@ -33,6 +33,19 @@ impl summary: view::summary for (rs : Array CheckResult) {
   intro rs _
   simp [fren_spec, summarySeverity, toLevel]
 
+def toBucket : Fren.Core.Bucket → view.Bucket
+  | .passed => .Passed
+  | .failed => .Failed
+  | .inconclusive => .InconclusiveBucket
+  | .redundant => .RedundantBucket
+
+-- `Fren.Core.summary` counts each result in its `bucketOf`.
+impl counted: view::counted for (k : CheckKind) (v : Verdict) {
+  kind := toCheckKind k,
+  verdict := toVerdict v,
+  bucket := toBucket (Fren.Core.bucketOf k v),
+}
+
 def toAdvice : Fren.Core.Advice → view.Advice
   | .raiseTimeout => .RaiseTimeout
   | .namesConstructs => .NamesConstructs

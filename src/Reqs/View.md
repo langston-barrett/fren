@@ -200,6 +200,29 @@ pub comp summary {
 
     req always_info: level = Info
 }
+```
+
+`view::counted` says which count a result is in: by its verdict, except
+that a redundant constraint is counted apart. So the failures that the
+summary counts are exactly the results that are errors:
+
+```fren
+pub enum Bucket { Passed, Failed, InconclusiveBucket, RedundantBucket }
+
+pub comp counted {
+    use self::Bucket::{Failed, InconclusiveBucket, Passed, RedundantBucket}
+    in kind: Kind
+    in verdict: Verdict
+    pub det out bucket: Bucket
+
+    req redundant: when kind = Redundancy and verdict = Fail, bucket = RedundantBucket
+    req by_verdict: unless kind = Redundancy and verdict = Fail,
+        bucket = (if verdict = Pass then Passed else if verdict = Fail then Failed else InconclusiveBucket)
+}
+
+expect failures_are_errors: forall (c: counted) (s: severity),
+    when c.kind = s.kind and c.verdict = s.verdict,
+    c.bucket = Bucket::Failed iff s.level = Error
 
 #fren_check
 ```
