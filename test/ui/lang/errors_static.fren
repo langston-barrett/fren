@@ -1,0 +1,71 @@
+-- How many static errors a component reports (`Reqs/View#how-many-are-reported`):
+-- each constraint, definition and instance's bindings its first, and what
+-- only follows from an earlier error is not reported again.
+
+-- Independent errors in several constraints.
+comp several {
+    in x: Int
+    pub out y?
+    req r: y? iff x * x = 1
+    --~^ error: nonlinear arithmetic is not supported
+    req s: y? iff nope = 1
+    --~^ error: cannot find `nope` in this scope
+    req t: y? iff x = 1
+    req u: y? iff x * x * x = 1 and nada = 1
+    --~^ error: nonlinear arithmetic is not supported
+}
+
+-- An error in a definition is not reported again where it is used.
+comp defined {
+    in x: Int
+    out d: Int := x * x
+    --~^ error: nonlinear arithmetic is not supported
+    pub out y?
+    req r: y? iff d = 1
+    req s: y? iff d = nope
+    --~^ error: cannot find `nope` in this scope
+}
+
+comp source {
+    in x: Int
+    pub out y: Int
+    req q: y = x
+}
+
+-- An error in an instance's bindings, and one in a constraint.
+comp bound {
+    in x: Int
+    inst w: source { x := x * x }
+    --~^ error: nonlinear arithmetic is not supported
+    pub out z?
+    req r: z? iff w.y = 1
+    req s: z? iff nope = 1
+    --~^ error: cannot find `nope` in this scope
+}
+
+-- Errors in two variables' declarations: then the component stops, so the
+-- constraints that mention them are not reported.
+comp declared {
+    in a: Nope
+    --~^ error: cannot find `Nope` in this scope
+    in b: Nada
+    --~^ error: cannot find `Nada` in this scope
+    pub out y?
+    req r: y? iff a = b and x * x = 1
+}
+
+-- Errors in two instances: then the component stops.
+comp instances {
+    in x: Int
+    inst v: nope { x }
+    --~^ error: cannot find `nope` in this scope
+    inst w: nada { x }
+    --~^ error: cannot find `nada` in this scope
+    pub out z?
+    req r: z? iff v.y = w.y and x * x = 1
+}
+
+-- A global expectation reports its first error only.
+expect global: nope = 1 and x * x = 1
+--~^ error: cannot find `nope` in this scope
+--@ exit: 2

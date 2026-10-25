@@ -15,13 +15,42 @@ visible, a duplicate name, a type error, nonlinear arithmetic, or a
 violation of a rule such as [Boolean naming](Lang/Types.md#boolean-names).
 Each is an error at the offending source position. A denied
 [lint](Lint.md), such as an unused import, is a
-static error too. An instance whose component cannot be found, or has a
-static error itself, is reported once, at the instance, and not again at
-each use of it. With the `fren` command, any static error means that no
-check runs. In Lean, syntax and type errors
+static error too. With the `fren` command, any static error means that no
+check runs; Lean checks the items without one. In Lean, syntax and type errors
 are Lean's own, and are worded differently, except for operators of other
 languages (`==`, `&&`, `||`, `!`), which both front ends report with what to
 write instead.
+
+### How many are reported
+
+In a component, the parts below are checked on their own, in this order,
+and each reports its first static error; an error in one does not stop the
+others:
+
+1. its name, and that its members' names are distinct: an error here stops
+   the component;
+2. each variable's declaration: its name, then its type (an error in its
+   name, such as in [shadowing](Lang/Components.md#shadowing), still
+   leaves its type to be checked); then one cycle of definitions, if any;
+3. each instance: its name, then its component and the names it binds;
+4. the bindings of each instance, together;
+5. each definition, each after those it mentions;
+6. each assumption, requirement and expectation, in order.
+
+An error that would only follow from an earlier one is not reported. After
+an error in a variable's declaration or in an instance, the component
+stops, since what mentions the variable or the instance would only repeat
+it: so an instance whose component cannot be found, or has a static error
+itself, is reported once, at the instance, and not at each use. A
+definition, or an instance's bindings, with an error still declare their
+variable, with its declared type, so what mentions them is checked as
+usual, and reports only its own errors.
+
+Any other item, including a global expectation and a refinement (whose
+bindings are checked together), reports its first static error only. A
+component or other item with a static error is not checked. With the `fren`
+command, its lints are not reported either, even a denied one; Lean
+reports those of the parts it could elaborate.
 
 ## Error codes
 

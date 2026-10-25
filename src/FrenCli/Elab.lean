@@ -327,6 +327,9 @@ structure State where
   (`Reqs/Lang/Refinement`). -/
   refinements : Array CComp := #[]
   diags : Array Diag := #[]
+  /-- The static errors of the current item so far, of its members that
+  failed on their own (`Reqs/View#static-errors`). -/
+  itemErrors : Array Diag := #[]
   /-- The lint levels from the command line, with which each file starts. -/
   cliLevels : Levels := Levels.defaults
   /-- The lint levels in effect, in the current file. -/
@@ -396,17 +399,33 @@ structure State where
   does not make a `-` (`Reqs/Mutate`). -/
   natSums : Array (Nat × Span) := #[]
 
-/-- Why an item failed, and the items that its paths used before it did
-(`dead_code`), which outlive it. -/
+/-- Why an item failed: its static errors, the last of which stopped it,
+and the items that its paths used before it did (`dead_code`), which
+outlive it. -/
 structure Failure where
-  diag : Diag
+  diags : Array Diag
   usedItems : Array Name
 
 abbrev M := StateT State (Except Failure)
 
 def err (span : Span) (msg : Msg) : M α := do
   let s ← get
-  throw { diag := { file := s.file, span, msg }, usedItems := s.usedItems }
+  throw { diags := s.itemErrors.push { file := s.file, span, msg }, usedItems := s.usedItems }
+
+/-- Runs `x`, a member of an item that is checked on its own: on a static
+error, records it, undoes what `x` did, and gives `none`, so that the
+item's other members are still checked (`Reqs/View#static-errors`). -/
+def attempt (x : M α) : M (Option α) := do
+  let s ← get
+  match x.run s with
+  | .ok (a, s') => set s'; return some a
+  | .error f => set { s with itemErrors := f.diags, usedItems := f.usedItems }; return none
+
+/-- Stops the current item if a member of it had a static error, as when
+what follows would only repeat it (`Reqs/View#static-errors`). -/
+def stopIfErrors : M Unit := do
+  let s ← get
+  unless s.itemErrors.isEmpty do throw { diags := s.itemErrors, usedItems := s.usedItems }
 
 def internal (span : Span) (what : String) : M α := err span (Msg.internal what)
 
@@ -2288,36 +2307,51 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let declared := named.map fun x => Name.mkSimple (declaredIdent x).1.name
   if let some k := (Fren.Core.repeatsAt declared)[0]? then
     err named[k]!.span (Fren.Core.dupMemberMsg declared[k]!)
+  -- Each variable, instance, binding, definition and constraint reports its
+  -- own first static error; after those of the variables, and of the
+  -- instances, the item stops, since what follows would only repeat them
+  -- (`Reqs/View#static-errors`).
   let mut vars := #[]
   for m in members do
     let .var isIn isPub' isDet x ty? defn? := m | continue
-    let x ← declare x
+    -- An error in shadowing leaves the variable's meaning clear.
+    let x := (← attempt (declare x)).getD (declaredIdent x).1
     let xn := Name.mkSimple x.name
     lintName .variable xn x.span
     let role := if isIn then Role.input else .output
-    let ty ← varTy ty? x
-    unless Fren.Core.variableTypeAccepted (role == .output) ((← get).unbounded ty) defn?.isSome do
-      err x.span (Fren.Core.unboundedOutputMsg xn ty.show)
-    vars := vars.push { name := xn, role, isPub := isPub', isDet, ty, span := x.span, defn? }
-  for v in vars do
-    if let some cycle := defCycle? vars v.name then err v.span (Fren.Core.cyclicDefinitionMsg cycle)
+    let some v ← attempt do
+        let ty ← varTy ty? x
+        unless Fren.Core.variableTypeAccepted (role == .output) ((← get).unbounded ty) defn?.isSome do
+          err x.span (Fren.Core.unboundedOutputMsg xn ty.show)
+        return { name := xn, role, isPub := isPub', isDet, ty, span := x.span, defn? : CVar }
+      | continue
+    vars := vars.push v
+  -- One cycle is reported.
+  if let some (v, cycle) := vars.findSome? fun v => (defCycle? vars v.name).map (v, ·) then
+    discard <| attempt (err (α := Unit) v.span (Fren.Core.cyclicDefinitionMsg cycle))
+  stopIfErrors
   -- Instances, whose variables follow the comp's own
   let mut pending := #[]
   for m in members do
     let .inst x p bs := m | continue
-    let x ← declare x
+    let x := (← attempt (declare x)).getD (declaredIdent x).1
     let xn := Name.mkSimple x.name
     lintName .instance xn x.span
-    let (pi, ivars) ← resolveInst x p bs
+    let some (pi, ivars) ← attempt (resolveInst x p bs) | continue
     pending := pending.push pi
     vars := vars ++ ivars
+  stopIfErrors
   let instNames := pending.map (Name.mkSimple ·.name.name)
   let mut insts := #[]
   let mut indexes : Array (Name × Fren.Core.IndexPlace × Span × String) := #[]
   discard takeIndexes
   for pi in pending, k in [0:pending.size] do
-    insts := insts.push (← elabInst { vars, insts := instNames, place := .binding, current := k } pi)
-    indexes := indexes ++ (← takeIndexes).map fun (sp, g) => (Name.mkSimple pi.name.name, .binding k, sp, g)
+    let some (i, idx) ← attempt do
+        let i ← elabInst { vars, insts := instNames, place := .binding, current := k } pi
+        return (i, (← takeIndexes).map fun (sp, g) => (Name.mkSimple pi.name.name, Fren.Core.IndexPlace.binding k, sp, g))
+      | continue
+    insts := insts.push i
+    indexes := indexes ++ idx
   -- Definitions, each after those it mentions.
   let mut defs : Array (Name × String) := #[]
   let mut todo := vars.filter (·.defn?.isSome)
@@ -2326,27 +2360,35 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
       | internal name.span "cyclic definitions"
     todo := todo.filter (·.name != v.name)
     let e := v.defn?.get!
-    -- A definition assigns once and acyclically, so `++` is in the core in it.
-    let (smt, t) ← elabExpr { vars, insts := instNames, place := .prop, expected? := some v.ty, concatOk := true } e
-    unless t.widens v.ty do mismatch e v.ty t (some s!"note: `{v.name}` has type `{v.ty.show}`, so its definition must too")
-    lintBools e
+    let some (smt, idx) ← attempt do
+        -- A definition assigns once and acyclically, so `++` is in the core in it.
+        let (smt, t) ← elabExpr { vars, insts := instNames, place := .prop, expected? := some v.ty, concatOk := true } e
+        unless t.widens v.ty do mismatch e v.ty t (some s!"note: `{v.name}` has type `{v.ty.show}`, so its definition must too")
+        lintBools e
+        return (smt, (← takeIndexes).map fun (sp, g) => (v.name, Fren.Core.IndexPlace.prop, sp, g))
+      | continue
     defs := defs.push (v.name, smt)
-    indexes := indexes ++ (← takeIndexes).map fun (sp, g) => (v.name, .prop, sp, g)
+    indexes := indexes ++ idx
   let mut props := #[]
   for m in members do
     let .prop kind x e := m | continue
     let xn := Name.mkSimple x.name
-    liftMsg x.span (Fren.Core.checkNoBang xn)
-    if x.name.endsWith "?" then err x.span (Fren.Core.propNameMsg xn)
-    lintName .constraint xn x.span
-    let cx : ExprCtx := { vars, insts := instNames, place := if kind == .assume then .assume else .prop }
-    let (smt, t) ← elabExpr cx e
-    unless t == .bool do mismatch e .bool t (some "note: a constraint is a `Bool`")
-    lintBools e
-    let trig ← trigger? cx e
-    props := props.push { kind, name := xn, span := x.span, smt, trigger? := trig.map (·.1), triggerSpan? := trig.map (·.2) }
-    let place := if kind == .assume then .assume else .prop
-    indexes := indexes ++ (← takeIndexes).map fun (sp, g) => (xn, place, sp, g)
+    let some (p, idx) ← attempt do
+        liftMsg x.span (Fren.Core.checkNoBang xn)
+        if x.name.endsWith "?" then err x.span (Fren.Core.propNameMsg xn)
+        lintName .constraint xn x.span
+        let cx : ExprCtx := { vars, insts := instNames, place := if kind == .assume then .assume else .prop }
+        let (smt, t) ← elabExpr cx e
+        unless t == .bool do mismatch e .bool t (some "note: a constraint is a `Bool`")
+        lintBools e
+        let trig ← trigger? cx e
+        let place := if kind == .assume then Fren.Core.IndexPlace.assume else .prop
+        return ({ kind, name := xn, span := x.span, smt, trigger? := trig.map (·.1), triggerSpan? := trig.map (·.2) : CProp },
+          (← takeIndexes).map fun (sp, g) => (xn, place, sp, g))
+      | continue
+    props := props.push p
+    indexes := indexes ++ idx
+  stopIfErrors
   let mentioned := members.foldl (init := #[]) fun acc m => match m with
     | .prop _ _ e | .var _ _ _ _ _ (some e) => acc ++ mentions e
     | .inst _ _ bs => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
@@ -2893,8 +2935,10 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (fixing : Arra
   for item in items do
     let s ← get
     match (elabItem item).run s with
-    | .ok ((), s') => set s'
-    | .error f => set { s with diags := s.diags.push f.diag, usedItems := f.usedItems }
+    | .ok ((), s') =>
+      if s'.itemErrors.isEmpty then set s'
+      else set { s with diags := s.diags ++ s'.itemErrors, usedItems := s'.usedItems }
+    | .error f => set { s with diags := s.diags ++ f.diags, usedItems := f.usedItems }
   finishLints
 
 /-- A declaration of the prelude: its SMT-LIB text, and the names of the
