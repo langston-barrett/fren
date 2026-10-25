@@ -156,7 +156,15 @@ operator](Lang/Expressions.md#cardinality) is the sum of a conditional for
 each argument, compared with 1: `exactly_one?(a?, b?)` is `((if a? = true
 then 1 else 0) + if b? = true then 1 else 0) = 1`, of type `Int`, and
 `at_most_one?` compares with `≤`, with no definition of its own for the
-solver to unfold.
+solver to unfold. A [quantifier](Lang/Quantifiers.md), which ranges over a
+finite type, is its expansion: `forall (m: Method), m != x` is
+`Method.Len ≠ x ∧ Method.Card ≠ x` for `enum Method { Len, Card }`, the body
+at each value in the order of [its instances](Lang/Quantifiers.md#meaning),
+conjoined by `∧`, or by `∨` for `exists`, with nothing left of the
+quantifier: no `∀`, `∃` or `Fintype`. The `∧`s and `∨`s form a balanced
+tree, `(a ∧ b) ∧ (c ∧ d)`, so that an expansion of 256 instances is 8 deep,
+not 256. Within a [`let` or `where`](Lang/Let.md), an expansion that mentions its
+names is a function of them, applied to the locals of their `have`s.
 
 A component *uses* the abstract types and uninterpreted functions that its
 variables' types, its constraints and its bindings mention, those that its

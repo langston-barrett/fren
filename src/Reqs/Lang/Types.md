@@ -311,9 +311,10 @@ A variable's name ends in `?` if and only if its type is `Bool`. So a
 `Bool` variable's type need not be written: `in ready?` and `in ready?:
 Bool` declare the same input. Any other variable must have its type written,
 and its name must not end in `?`. The same goes for a
-[function](Items.md#functions) and its result type. The same goes for a field of a [record](Items.md#records), and for a
+[function](Items.md#functions) and its result type. The same goes for a field of a [record](Items.md#records), for a
 binder of a [`match` pattern](Expressions.md#matches) and the payload it
-names. Names of modules, enumerations, records, variants,
+names, and for a [quantifier's](Quantifiers.md#names) bound name and its
+type. Names of modules, enumerations, records, variants,
 components, constraints and instances never end in `?`, and the names of
 [constants](Items.md#constants) are in uppercase, whatever their type.
 

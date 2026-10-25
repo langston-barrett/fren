@@ -31,6 +31,15 @@ The rest of the language is decidable by three rules:
    [Instances](Instances.md#instance-variables)), so the quantifier never
    reaches under a function.
 
+A [quantifier](Quantifiers.md) in an expression adds no quantifier to a
+query: it ranges over a finite type, and is expanded into a conjunction
+or disjunction of at most 256 instances before anything is asked, so the
+first rule still holds. Its bound names mention nothing, so each instance
+is in the core exactly when the body would be with a constant in place of
+each bound name: `forall (m: Method), s.starts_with?(prefix(m))`, with
+`prefix` a defined function, is in the core, as each
+`s.starts_with?(prefix(Method::Len))` is.
+
 ## Integers
 
 Integer arithmetic is *linear*, which keeps it decidable, with or without
@@ -77,8 +86,9 @@ Here a *constant* is an expression that mentions no variable and no
 uninterpreted function, as [Mentions](Expressions.md#mentions) defines,
 such as `"F0" ++ "1"`, or `pad("F0")` with `pad` a defined function. A
 binder mentions what its scrutinee mentions, so it is a constant if its
-scrutinee is, and a name of a [`let` or `where`](Let.md) is a constant
-if its definition is. A *variable* is a variable of the component, of one of its
+scrutinee is, a name of a [`let` or `where`](Let.md) is a constant if its
+definition is, and a quantifier's bound name mentions nothing, so it is a
+constant. A *variable* is a variable of the component, of one of its
 instances, a field read from one, or a binder whose scrutinee is not a
 constant. A [definition](Components.md#defined-outputs) is an equation
 between the defined output and its definition, and an instance's binding

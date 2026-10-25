@@ -1,0 +1,14 @@
+--- test/cli/fmt/quantifier.fren
++++ test/cli/fmt/quantifier.fren
+@@ -6,5 +6,5 @@
+-  in m: Mode
+-  pub out o?
+-  req r:o? iff(forall(k   j:Mode)  ( n :Mode),k=m or j = n)
+-  req s: o? iff (exists (k: Mode),
+-  k = m)
++    in m: Mode
++    pub out o?
++    req r: o? iff (forall (k j: Mode) (n: Mode), k = m or j = n)
++    req s: o? iff (exists (k: Mode),
++        k = m)
+exit=1

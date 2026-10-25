@@ -1,0 +1,3 @@
+-- The binders of a quantifier, without a comma after them (F0132).
+enum Mode { Off, Heat }
+comp c { in x: Mode pub out ok? req r: ok? iff (exists (m: Mode) m = x) }

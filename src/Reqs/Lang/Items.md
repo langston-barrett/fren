@@ -237,7 +237,8 @@ Id(T)`, nor one whose values are restricted, as in `struct Byte(Int is
 The names of a list of declarations are distinct: the variants of an
 enumeration, the fields of a record, the parameters of a defined function,
 the variables, instances and constraints of a component, which share one
-namespace, and the binders of a global expectation or of a pattern. A
+namespace, and the binders of a global expectation, of a pattern or of a
+[quantifier](Quantifiers.md#names), across all of its binders. A
 pattern's `_` declares no name. A name declared again is an error,
 reported where it is declared again, in the order the declarations are
 written, whatever their kinds. In every list, only the first such name is

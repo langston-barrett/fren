@@ -3,6 +3,7 @@ import FrenCli.Lex
 import FrenCore.Checking
 import FrenCore.Guards
 import FrenCore.Patterns
+import FrenCore.Quantifier
 import FrenCore.Ty
 import FrenCore.Typing
 import Impls.Check
@@ -38,6 +39,7 @@ def toExprKind : Fren.Core.MentionKind → lang.ExprKind
   | .variable => .Variable
   | .definedOutput => .DefinedOutput
   | .binder => .Binder
+  | .bound => .Bound
   | .construction => .Construction
   | .method => .Method
   | .uninterpreted => .Uninterpreted
@@ -642,6 +644,48 @@ impl comparison_chain: lang::comparison_chain for (a d o : Nat) {
 } by
   intro a d o _
   simp [fren_spec, Fren.Core.chainAccepted] <;> omega
+
+/-! ## Quantifiers (`Reqs/Lang/Quantifiers`) -/
+
+def toQuantifiedKind : lang.ValueType → Fren.Core.QuantifiedKind
+  | .BoolTy => .bool
+  | .EnumTy => .enum
+  | .RecordTy => .record
+  | .IntTy | .NatTy | .StringTy | .AbstractTy | .SetTy | .RelTy | .SeqTy => .other
+
+-- For every type, by its kind, which both front ends compute from the type
+-- they quantify over.
+impl quantified_type: lang::quantified_type for (k : lang.ValueType) (r p : Bool) {
+  type_kind := k,
+  recursive? := r,
+  parts? := p,
+  accepted? := Fren.Core.quantifiedTypeAccepted (toQuantifiedKind k) r p,
+} by
+  intro k r p _
+  cases k <;> cases r <;> cases p <;> simp [fren_spec, toQuantifiedKind, Fren.Core.quantifiedTypeAccepted]
+
+-- For every number of instances, which both front ends count.
+impl quantifier_size: lang::quantifier_size for (n : Nat) {
+  n_instances := n,
+  accepted? := Fren.Core.quantifierSizeAccepted n,
+} by
+  intro n _
+  simp [fren_spec, Fren.Core.quantifierSizeAccepted, Fren.Core.maxInstances] <;> omega
+
+def toBinderTarget : lang.BinderTarget → Fren.Core.BinderTarget
+  | .ListedType => .listedType
+  | .OtherType => .otherType
+  | .Component => .component
+
+-- For every binder, by what its type names.
+impl quantifier_binder: lang::quantifier_binder for (t : lang.BinderTarget) (g : Bool) {
+  target := t,
+  global? := g,
+  accepted? := (Fren.Core.quantifierBinder (toBinderTarget t) g).1,
+  behaviours? := (Fren.Core.quantifierBinder (toBinderTarget t) g).2,
+} by
+  intro t g _
+  cases t <;> cases g <;> simp [fren_spec, toBinderTarget, Fren.Core.quantifierBinder]
 
 /-! ## Strings and decidability (`Reqs/Lang/Types#strings`, `Reqs/Lang/Decidability`) -/
 

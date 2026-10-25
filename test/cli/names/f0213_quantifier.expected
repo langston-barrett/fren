@@ -1,0 +1,22 @@
+error[F0213]: `m` is bound multiple times in this quantifier
+ --> test/cli/names/f0213_quantifier.fren:3:56
+  |
+3 | comp c { pub out ok? req r: ok? iff (exists (m: Mode) (m: Mode), true) }
+  |                                                        ^ bound again here
+
+warning[F0711]: enum `Mode` is never used
+ --> test/cli/names/f0213_quantifier.fren:2:6
+  |
+2 | enum Mode { Off, Heat }
+  |      ^^^^ never used
+  |
+  = note: it is private, and nothing in this file uses it
+  = help: remove it, or make it `pub`
+  = note: `dead_code` is `warn` by default
+  = help: to allow it, `set_option fren.lint.dead_code "allow"`
+
+error: could not check due to previous errors
+
+Some errors have detailed explanations: F0213, F0711.
+For more information about an error, try `fren --explain F0213`.
+exit=2

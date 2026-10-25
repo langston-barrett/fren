@@ -3,7 +3,9 @@
 ```
 expr  := ("when" | "unless") iff "," expr
        | "let" definition ("," definition)* "in" expr
+       | ("forall" | "exists") binder+ "," expr
        | iff
+binder := "(" DECL+ ":" type ")"
 iff   := or ["iff" or]
 or    := or "or" and | and
 and   := and "and" not | not
@@ -41,7 +43,8 @@ name, since digits never continue an identifier: `x.0` reads the field
 `0` of `x`, and `x.0.0` reads it twice. The notation is [the
 grammar's](../Grammar.md#notation), where `DECL` is an identifier that
 declares a name, and `DIGITS` decimal digits. Patterns are in [their own
-chapter](Patterns.md).
+chapter](Patterns.md), and so are quantifiers, `forall` and `exists`, in
+[Quantifiers](Quantifiers.md).
 
 ## Operators
 
@@ -53,6 +56,7 @@ equally tightly:
 | 1 | `let x := e in B` | `B`, with `x` standing for `e` | any | the type of `B` | right |
 | 1 | `when C, D` | C implies D | `Bool` | `Bool` | right |
 | 1 | `unless C, D` | not C implies D | `Bool` | `Bool` | right |
+| 1 | `forall (x: T), E`, `exists (x: T), E` | [quantifiers](Quantifiers.md): `E` for every value `x` of `T`, or for some | `Bool` | `Bool` | right |
 | 2 | `A iff B` | A if and only if B | `Bool` | `Bool` | none |
 | 3 | `A or B` | disjunction | `Bool` | `Bool` | left |
 | 4 | `A and B` | conjunction | `Bool` | `Bool` | left |
@@ -76,7 +80,9 @@ equally tightly:
   `D` extends as far right as possible. `D` may itself be a `when` or
   `unless` without parentheses: `when a?, when b?, c?`. A `when` or `unless`
   that is the operand of another operator must be parenthesized, and so
-  must a `let`, whose body also extends as far right as possible.
+  must a `let` or a quantifier, whose body also extends as far right as
+  possible. A quantifier may likewise be `D`, or have a `when` as its
+  body, without them.
 - `iff` and `=` agree on `Bool`, but `iff` binds more loosely:
   `a? iff b? = c?` means `a? iff (b? = c?)`.
 - Prefix operators, `not` and `-`, apply to everything to their right that
@@ -192,7 +198,8 @@ mentions is decided from its parts, as `lang::mentions` states:
 - A [defined output](Components.md#defined-outputs) mentions what its
   definition mentions, a [binder](#matches) what its scrutinee
   mentions, and a name of a [`let` or `where`](Let.md) what its
-  definition mentions.
+  definition mentions. A [quantifier's](Quantifiers.md) bound name
+  mentions nothing: in each instance, it is one value.
 - A [variant](#variants-with-payloads), a [record literal](#records) or
   a [newtype](#newtypes) built from its value mentions what its arguments
   or fields mention: its value is fixed. So does a [record
@@ -205,31 +212,33 @@ mentions is decided from its parts, as `lang::mentions` states:
 - An application of a defined function mentions what its arguments
   mention: its value is fixed by theirs.
 - Every other expression mentions what its parts mention: an operator,
-  `when` and `unless`, a `let`, a conditional, a `match` (its scrutinee and the
-  bodies of its arms), a [pattern test](#pattern-tests) (its scrutinee),
-  a [cardinality operator](#cardinality) (its arguments), indexing
-  `q[i]`, a field read from an expression that is not a name, such as
-  `R { a := x }.a`, and a literal of a set, pair or sequence.
+  `when` and `unless`, a `let`, a quantifier (its body), a conditional, a
+  `match` (its scrutinee and the bodies of its arms), a [pattern
+  test](#pattern-tests) (its scrutinee), a [cardinality
+  operator](#cardinality) (its arguments), indexing `q[i]`, a field read
+  from an expression that is not a name, such as `R { a := x }.a`, and a
+  literal of a set, pair or sequence.
 
 ```fren
 -- The kinds of expression, for what one mentions. `Literal` is a literal;
 -- `Constant` is a constant, a variant without a payload, or a path of more
 -- than one segment; `Variable` is a variable, an instance's variable, or a
 -- field read from one; `Binder` is a binder of a `match` arm or a name of a
--- `let` or `where`; `Construction` is a variant with a payload, a
+-- `let` or `where`; `Bound` is a quantifier's bound name; `Construction` is a variant with a payload, a
 -- record literal, a record update or a newtype built from its value,
 -- `Ms(e)`; `Uninterpreted` and `Defined` are
 -- applications of uninterpreted and defined functions; `Compound` is an
--- operator, `when` or `unless`, a `let`, a conditional, a `match`, a pattern
+-- operator, `when` or `unless`, a `let`, a quantifier, a conditional, a `match`, a pattern
 -- test, a cardinality operator, indexing, a field read from an expression that is
 -- not a name, or a literal of a set, pair or sequence.
 pub enum ExprKind {
-    Literal, Constant, Variable, DefinedOutput, Binder, Construction, Method, Uninterpreted, Defined, Compound,
+    Literal, Constant, Variable, DefinedOutput, Binder, Bound, Construction, Method, Uninterpreted, Defined, Compound,
 }
 
 pub comp mentions {
     use self::ExprKind::{
         Binder,
+        Bound,
         Compound,
         Constant,
         Construction,
@@ -245,13 +254,14 @@ pub comp mentions {
     pub det out mentions?    -- it mentions a variable or an uninterpreted function
 
     req rule: mentions? iff match expr_kind {
-        Literal | Constant => false,
+        Literal | Constant | Bound => false,
         Variable | Uninterpreted => true,
         DefinedOutput | Binder | Construction | Method | Defined | Compound => parts?,
     }
 
     expect fixed_meaning: when expr_kind = Defined or expr_kind = Method or expr_kind = Construction, mentions? iff parts?
     expect unknown: when expr_kind = Variable or expr_kind = Uninterpreted, mentions?
+    expect bound_fixed: when expr_kind = Bound, not mentions?
 }
 ```
 
@@ -625,7 +635,7 @@ function, and is then a variable, which cannot be applied.
 x`, as for an instance's [bindings](Instances.md#bindings). The literal
 must give each field of the record exactly once, in any order, and
 nothing else, and each value must have its field's type. As in a binding,
-a value cannot be a top-level `when`, `unless` or `let`. `lang::field_init`
+a value cannot be a top-level `when`, `unless`, `let` or quantifier. `lang::field_init`
 states this, from what a given name is in the record and how many times
 the literal gives it, as `inst::binding` does for bindings:
 
@@ -905,8 +915,8 @@ in an argument of `f`, which is an error.
 
 The bodies of all arms have the same type, or are `Nat`s and `Int`s, and
 the `match` has that type, or `Int` if they are mixed. As in a binding, a
-body cannot be a top-level `when`, `unless` or `let`, which would run on
-into the next arm.
+body cannot be a top-level `when`, `unless`, `let` or
+[quantifier](Quantifiers.md), which would run on into the next arm.
 
 The bodies are checked in order, each against the type of the arms
 before it, as both front ends do. An arm of another type is reported at
@@ -1081,6 +1091,10 @@ left to right:
 - a definition of a [`let` or `where`](Let.md#meaning) is guarded where its
   name is mentioned, as if written there, and not at all if it is never
   mentioned;
+- in a [quantifier](Quantifiers.md#names), the body is guarded in each
+  instance by what guards the quantifier, and the instances do not guard
+  each other: an index must be in range in every instance where its guard
+  holds;
 - guards nest by conjunction.
 
 So `q != [] and q[0] = x` is defined, and `q[0] = x and q != []` is not,
@@ -1702,7 +1716,8 @@ pub comp operator_type {
 ## Names
 
 A path names a variable of the enclosing component, a binder of an
-enclosing [`match` arm](#matches) or a name of an enclosing [`let` or
+enclosing [`match` arm](#matches), a bound name of an enclosing
+[quantifier](Quantifiers.md) or a name of an enclosing [`let` or
 `where`](Let.md) (the innermost, which may
 [shadow](Components.md#shadowing) the others and the variables), a
 [constant](Items.md#constants), a [function](#function-applications) that

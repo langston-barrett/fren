@@ -183,6 +183,10 @@ inductive Ex where
   /-- `exactly_one?(a, b)` or `at_most_one?(a, b)`
   (`Reqs/Lang/Expressions#cardinality`). -/
   | cardinality (c : Fren.Core.Cardinality) (args : Array Ex)
+  /-- `forall`, or `exists` if not `all`, over the bound names `names`:
+  its body at each of `insts`, the values of the names in each instance
+  (`Reqs/Lang/Quantifiers#meaning`). -/
+  | quant (all : Bool) (names : Array Name) (insts : Array (Array Val)) (body : Ex)
   deriving Inhabited
 
 structure Var where
@@ -241,6 +245,18 @@ structure Spec where
   deriving Inhabited
 
 def Spec.comp? (sp : Spec) (path : Name) : Option Comp := sp.comps.find? (·.path == path)
+
+/-- Every value of `t`, a type that a quantifier ranges over
+(`lang::quantified_type`), in the order of a quantifier's instances
+(`Reqs/Lang/Quantifiers#meaning`). The elaborator has rejected any other
+type, such as a recursive enumeration. -/
+partial def Spec.values (sp : Spec) : VTy → Array Val
+  | .bool => #[.bool true, .bool false]
+  | .data p => match sp.data.find? p with
+    | some d => (d.ctors.mapIdx fun idx c =>
+        (c.fields.foldl (fun acc (_, t) => acc.flatMap fun pre => (sp.values t).map pre.push) #[#[]]).map (.ctor p idx ·)).flatten
+    | none => #[]
+  | _ => #[]
 
 /-- Every variable of `c`: its own, then each instance's, named `w.x`, in
 the order the elaborator gives them. -/
@@ -479,6 +495,12 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
     let v ← e.eval I look locals slots
     let some (new, body) := arms.findSome? fun (p, body) => (p.matchVal v).map (·, body) | none
     body.eval I look (new ++ locals) slots
+  -- The conjunction or disjunction of its instances, decided when one
+  -- instance decides it.
+  | .quant all names insts body =>
+    insts.foldl (init := some (.bool all)) fun acc vals =>
+      let v := body.eval I look ((names.zip vals).toList ++ locals) slots
+      if all then kleeneAnd acc v else kleeneOr acc v
 
 /-- The trigger of a constraint (`Reqs/Lang/Components#triggers`): the
 conditions of its top-level `when`/`unless` chain, conjoined. -/
@@ -518,6 +540,9 @@ partial def Ex.indexGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Ex) 
     let arm (j : Nat) (g : Ex) : Ex :=
       .match s (arms.mapIdx fun j' (p, _) => (p, if j' == j then g else Ex.lit (.bool true)))
     go s ++ (List.range arms.size).toArray.flatMap fun j => go arms[j]!.2 (fun g => wrap (arm j g))
+  -- In every instance, whatever the quantifier: the instances do not guard
+  -- each other.
+  | .quant _ names insts body => go body (fun g => wrap (.quant true names insts g))
 
 /-- A constraint of a comp nested at `pfx`, such as `w.v` for instance `v`
 of instance `w`: `e` over the variables `pfx.x`. -/
@@ -766,6 +791,7 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .field e idx => .field (e.renameBound f) idx
   | .update e fs => .update (e.renameBound f) (fs.map fun (k, x) => (k, x.renameBound f))
   | .match e arms => .match (e.renameBound f) <| arms.map fun (p, b) => (p.rename f, b.renameBound f)
+  | .quant all ns insts b => .quant all (ns.map f) insts (b.renameBound f)
 
 /-- `e` with each variable renamed by `f`. -/
 partial def Ex.renameVars (f : Name → Name) : Ex → Ex
@@ -791,6 +817,7 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .field e idx => .field (e.renameVars f) idx
   | .update e fs => .update (e.renameVars f) (fs.map fun (k, x) => (k, x.renameVars f))
   | .match e arms => .match (e.renameVars f) (arms.map fun (p, b) => (p, b.renameVars f))
+  | .quant all ns insts b => .quant all ns insts (b.renameVars f)
 
 /-- `e` with each variable `n` replaced by `f n`. -/
 partial def Ex.substVars (f : Name → Ex) : Ex → Ex
@@ -816,6 +843,7 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .field e idx => .field (e.substVars f) idx
   | .update e fs => .update (e.substVars f) (fs.map fun (k, x) => (k, x.substVars f))
   | .match e arms => .match (e.substVars f) (arms.map fun (p, b) => (p, b.substVars f))
+  | .quant all ns insts b => .quant all ns insts (b.substVars f)
 
 /-- The comp that checks that `c` refines `a` (`Reqs/Lang/Refinement`): its
 inputs are `c`'s, its assumptions `a`'s, it has an instance `w` of `c` and
@@ -865,6 +893,8 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .update e fs => .update (e.subst σ) (fs.map fun (k, x) => (k, x.subst σ))
   -- An arm's binders shadow those of `σ`.
   | .match e arms => .match (e.subst σ) <| arms.map fun (p, b) => (p, b.subst (σ.filter (!p.binders.contains ·.1)))
+  -- So do a quantifier's bound names.
+  | .quant all ns insts b => .quant all ns insts (b.subst (σ.filter (!ns.contains ·.1)))
 
 /-- The value of a bound of a range pattern. -/
 def boundValue : Bound → L Int
@@ -1077,6 +1107,24 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       let n := declName x
       cx := { cx with lets := (n, e, t) :: cx.lets, binders := cx.binders.filter (·.1 != n) }
     lowerExpr cx body
+  | .quant _ all bs body => do
+    -- Each bound name with its type and a name made unique, as a
+    -- pattern's binder's is.
+    let mut bound := #[]
+    for b in bs do
+      let t ← lowerTy b.ty
+      for x in b.names do
+        let k := (← get).fresh
+        modify fun s => { s with fresh := s.fresh + 1 }
+        bound := bound.push (declName x, t, Name.mkNum (declName x) k)
+    let sp := (← get).spec
+    -- Every combination of the names' values, the last fastest.
+    let insts := bound.foldl (fun acc (_, t, _) => acc.flatMap fun pre => (sp.values t).map pre.push) #[#[]]
+    -- A bound name hides a name of an enclosing `let` or `where`.
+    let names := bound.map (·.1)
+    let (b, _) ← lowerExpr { cx with binders := bound.toList.reverse ++ cx.binders,
+                                     lets := cx.lets.filter (!names.contains ·.1) } body
+    return (.quant all (bound.map (·.2.2)) insts b, .bool)
 end
 
 def varTy (ty? : Option (Array Ident)) : L VTy := do
@@ -1137,16 +1185,20 @@ def resolveComp (segs : Array Ident) : L Name := do
   | .item { kind := .compItem, path, .. } => pure path
   | r => throw s!"`{showPath r.path}` is not a component"
 
-def lowerGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr) : L Unit := do
+def lowerGlobal (name : Ident) (binders : Array Binder) (body : Expr) : L Unit := do
   let mut insts := #[]
-  for (xs, p) in binders do
-    let cpath ← match ← resolve p with
-      | .item { kind := .compItem, path, .. } => pure path
-      | r => throw s!"`{showPath r.path}` is not a component"
-    for x in xs do insts := insts.push { name := declName x, comp := cpath, bindings := #[] }
+  -- The binders over values, a quantifier around the body (`lang::quantifier_binder`).
+  let mut values := #[]
+  for b in binders do
+    let st ← get
+    match st.table.resolvePath st.scope (segNames b.ty) with
+    | .ok (.item { kind := .compItem, path, .. }) =>
+      for x in b.names do insts := insts.push { name := declName x, comp := path, bindings := #[] }
+    | _ => values := values.push b
   let st ← get
   let shell : Comp := { path := st.module, vars := #[], constraints := #[], insts, isGlobal := true }
   let n := Name.mkSimple name.name
+  let body := if values.isEmpty then body else .quant body.span true values body
   let e := (← lowerExpr { vars := st.spec.flatVars shell } body).1
   modify fun s => { s with
     table := s.table.addItem { kind := .expectItem, path := s.module ++ n, isPub := false, owner := s.module }

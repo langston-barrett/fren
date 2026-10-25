@@ -253,7 +253,7 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
       return s!"{← wrapTerm sc} {← pick #["=", "!=", "<", "<=", ">", ">="]} {← wrapTerm sc}"
     | _ => pick #["true", "false"]
   if depth == 0 then return ← atom
-  match ← below 7 with
+  match ← below 8 with
   | 0 => return s!"({← genBool sc (depth - 1)} and {← genBool sc (depth - 1)})"
   | 1 => return s!"({← genBool sc (depth - 1)} or {← genBool sc (depth - 1)})"
   | 2 => return s!"not ({← genBool sc (depth - 1)})"
@@ -264,6 +264,13 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
     let mut args := #[← genBool sc (depth - 1)]
     for _ in [0:← below 3] do args := args.push (← genBool sc (depth - 1))
     return s!"{← pick #["exactly_one?", "at_most_one?"]}({", ".intercalate args.toList})"
+  -- A quantifier over the enumeration, or over `Bool`, whose bound name is
+  -- named after the depth, so that nested ones do not shadow each other.
+  | 6 =>
+    let enum := sc.elem == .enum && (← chance 70)
+    let (x, t) := if enum then (s!"x{depth}", GTy.enum) else (s!"x{depth}?", GTy.bool)
+    let body ← genBool { sc with vars := sc.vars.push (x, t, false) } (depth - 1)
+    return s!"({← pick #["forall", "exists"]} ({x}: {if enum then "E" else "Bool"}), {body})"
   | _ => atom
 
 /-- A constraint, often with a trigger. -/

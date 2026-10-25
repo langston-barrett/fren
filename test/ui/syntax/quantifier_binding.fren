@@ -1,0 +1,11 @@
+-- A binding cannot be a bare quantifier, which would run on into the
+-- bindings after it.
+enum E { A, B }
+comp sub { in a? in b? }
+--~^[hosted] warning: unused variable `a?`
+--~^^[hosted] warning: unused variable `b?`
+comp c { in x: E inst s: sub { a? := exists (e: E), e = x, b? := true } }
+--~^[cli] error: `exists` must be parenthesized here
+--~^^[hosted] error: unexpected token at this precedence level; consider parenthesizing the term
+comp ok { in x: E inst s: sub { a? := (exists (e: E), e = x), b? := true } }
+--@ exit: 2

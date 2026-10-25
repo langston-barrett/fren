@@ -1,0 +1,13 @@
+error[F0355]: a quantifier cannot range over `Set(Bool)`
+ --> test/cli/types/f0355_set.fren:2:65
+  |
+2 | comp c { in s: Set(Bool) pub out ok? req r: ok? iff (exists (t: Set(Bool)), t = s) }
+  |                                                                 ^^^^^^^^ not a type whose values can be listed
+  |
+  = note: a quantifier ranges over `Bool`, or an enum or record whose payloads and fields it ranges over
+  = help: to quantify over the members of a set `s`, quantify over their type: `forall (x: T), when x in s, ...`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0355`.
+exit=2

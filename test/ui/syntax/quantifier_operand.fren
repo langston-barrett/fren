@@ -1,0 +1,7 @@
+-- A quantifier as an operand needs parentheses, as `when` does.
+enum E { A, B }
+comp c { in x: E pub out y? req r: y? iff forall (e: E), e = x }
+--~^[cli] error: `forall` must be parenthesized here
+--~^^[hosted] error: unexpected token at this precedence level; consider parenthesizing the term
+comp ok { in x: E pub out y? req r: y? iff (forall (e: E), e = x) }
+--@ exit: 2

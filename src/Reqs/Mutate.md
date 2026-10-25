@@ -41,6 +41,7 @@ operator keeps its own. The changes are:
 | `swap-arithmetic` | `+` and `-`, and `div` and `mod`, each to the other, except a `+` where a [`Nat`](Lang/Types.md#natural-numbers) is expected, since `-` gives an `Int` |
 | `drop-conjunct` | `a and b` to `a`, and to `b`; a chained comparison to itself without its first comparison, and without its last |
 | `negate-trigger` | `when` and `unless`, each to the other |
+| `swap-quantifier` | `forall` and `exists`, each to the other, in a [quantifier](Lang/Quantifiers.md) of an expression |
 | `shift-integer` | an integer literal `n` to `n + 1`, and to `n - 1` if `n > 0`, written in decimal |
 | `flip-bool` | `true` and `false`, each to the other |
 | `remove-element` | an element of a set or sequence literal of at least two, removed |

@@ -98,8 +98,11 @@ mention of it in its scope is not a mention of what it shadows.
 ## Parentheses
 
 A definition ends at the next top-level `,`, so its expression is not a
-`when`, `unless` or `let`, which would run on into the next definition:
-those are written in parentheses. In a `let`, `in` ends the last
+`when`, `unless`, `let` or [quantifier](Quantifiers.md), whose body would
+run on into the next definition: those are written in parentheses, as in
+`let all_off? := (forall (m: Mode), m = Mode::Off) in ...`. The body of a
+`let`, like a quantifier's, may be any of them without parentheses, so a
+quantifier's body may be a `let`, and a `let`'s body a quantifier. In a `let`, `in` ends the last
 definition, so a membership at the top level of a definition is written
 in parentheses too: `let b? := (x in s) in ...`, just as a
 [`match`](Expressions.md#matches) scrutinee is not a record literal. The
@@ -116,8 +119,8 @@ type, the message says to write the membership in parentheses.
 take at its top level:
 
 ```fren
--- `OpenEnded` is `when`, `unless` or `let`, whose body extends as far right
--- as possible; `Membership` is `a in s` outside brackets; `Plain` is any other.
+-- `OpenEnded` is `when`, `unless`, `let` or a quantifier, whose body extends
+-- as far right as possible; `Membership` is `a in s` outside brackets; `Plain` is any other.
 pub enum DefinitionForm { Plain, Membership, OpenEnded }
 
 pub comp definition_form {

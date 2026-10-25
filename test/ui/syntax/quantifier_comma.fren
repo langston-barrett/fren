@@ -1,0 +1,6 @@
+-- The binders of a quantifier end with a comma.
+enum E { A, B }
+comp c { in x: E pub out y? req r: y? iff (exists (e: E) e = x) }
+--~^[cli] error: expected `,` after the binders of `exists`, found identifier `e`
+--~^^[hosted] error: unexpected identifier; expected
+--@ exit: 2

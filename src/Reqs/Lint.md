@@ -724,11 +724,12 @@ not already in them and either:
   conditional counts as binding more loosely than any operator; or
 - it ends in an *open-ended* form, and something follows it.
 
-An open-ended form is a conditional, a `when`, an `unless` or a
-[`let`](Lang/Let.md) that is not in parentheses, brackets or braces: its last operand extends as far right
-as possible, so it would take in what follows. A `match` ends with its
-`}`, so it is not one, and a quantifier only starts a global expectation,
-so it is never an operand. A left operand is followed by its operator, and
+An open-ended form is a conditional, a `when`, an `unless`, a
+[`let`](Lang/Let.md) or a [quantifier](Lang/Quantifiers.md) that is not in
+parentheses, brackets or braces: its last operand, or its body, extends as
+far right as possible, so it would take in what follows. A `match` ends
+with its `}`, so it is not one. A quantifier binds as loosely as `when`,
+and its body is in the place of a `when`'s. A left operand is followed by its operator, and
 the condition of a `when` or an `unless` by its `,`. A right operand is
 followed by what follows the expression it is an operand of. What is
 written in the file follows the fix where it is an infix operator, or the

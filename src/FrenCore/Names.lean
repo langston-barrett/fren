@@ -694,17 +694,20 @@ def Role.ofInst (inSub : Role) (isPub : Bool) : Role :=
   | .output => if isPub then .instOutput else .instHidden
   | _ => .instHidden
 
-/-- The names in scope that a `match` binder may hide, innermost last, each
-with what it is (`Table.hidden?`): the variables of one segment, which are
+/-- The names in scope that a `match` binder, a quantifier's bound name or
+a definition of a `let` or `where` may hide, innermost last, each with what
+it is (`Table.hidden?`): the variables of one segment, which are
 parameters in a function's body (`inFn`), the instances, which are binders
-in a global expectation (`inGlobal`), and the binders of enclosing arms. -/
-def bindingLocals (vars : Array (Name × Role)) (insts : Array Name) (binders : Array (Name × Bool)) (inFn : Bool)
+in a global expectation (`inGlobal`), and the binders of enclosing arms,
+bound names of enclosing quantifiers and names of enclosing `let`s and
+`where` clauses, each with what it is, such as "the binder". -/
+def bindingLocals (vars : Array (Name × Role)) (insts : Array Name) (binders : Array (Name × String)) (inFn : Bool)
     (inGlobal := false) : Array (Name × String) :=
   let what (r : Role) := if inFn then "the parameter" else if r == .input then "the input" else "the output"
   -- A global expectation's binders are its instances.
   let inst := if inGlobal then "the global expectation's binder" else "the instance"
   (vars.filter (·.1.isAtomic) |>.map fun (n, r) => (n, what r)) ++ insts.map (·, inst)
-    ++ binders.map fun (n, isDef) => (n, if isDef then "the definition" else "the binder")
+    ++ binders
 
 /-! ## Local definitions (`Reqs/Lang/Let`) -/
 

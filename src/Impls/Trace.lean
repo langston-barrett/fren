@@ -37,6 +37,10 @@ tested lang::cardinality_args: "test/ui/lang/cardinality_static.fren", "test/cli
 tested lang::relation_op: "test/ui/lang/relations.fren", "test/ui/lang/relations_static.fren", "test/cli/types/f0328_join.fren"
 tested lang::pair_membership: "test/ui/lang/relations.fren", "test/ui/lang/relations_static.fren", "test/cli/types/f0329_pair.fren"
 tested lang::finite: "test/ui/lang/relations_static.fren", "test/ui/lang/sets.fren"
+tested lang::quantifier: "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_places.fren"
+tested lang::quantified_type: "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_static.fren"
+tested lang::quantifier_size: "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_static.fren"
+tested lang::quantifier_binder: "test/ui/lang/quantifiers_global.fren"
 tested check::minimal: "test/ui/checks/redundancy.fren", "test/ui/checks/self_conflict.fren"
 tested lang::path_shape: "test/ui/lang/scoping.fren"
 tested lang::declared_before: "test/ui/lang/scoping.fren"
@@ -44,7 +48,8 @@ tested lang::definition_order: "test/ui/lang/let.fren", "test/ui/lang/let_static
   "test/cli/types/f0341_defined_later.fren", "test/cli/types/f0341_itself.fren"
 tested lang::definition_type: "test/ui/lang/let.fren", "test/ui/lang/let_static.fren", "test/ui/lang/let_types.fren",
   "test/cli/types/f0342_definition_type.fren"
-tested lang::definition_form: "test/ui/lang/let.fren", "test/ui/syntax/let_operand.fren", "test/ui/syntax/let_definition.fren",
+tested lang::definition_form: "test/ui/lang/let.fren", "test/ui/lang/quantifiers_let.fren", "test/ui/syntax/let_quantifier.fren",
+  "test/ui/syntax/where_quantifier.fren", "test/ui/syntax/let_operand.fren", "test/ui/syntax/let_definition.fren",
   "test/cli/types/f0302_let_membership.fren", "test/cli/syntax/f0109_let.fren"
 tested inst::earlier: "test/ui/lang/instances_static.fren"
 tested lint::history: "test/cli/lints/settings/f0709_forbid.fren", "test/cli/lints/settings/f0709_forbid_in_file.fren"

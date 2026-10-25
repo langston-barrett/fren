@@ -8,9 +8,9 @@ import FrenCore.Names
 # Parser for `.fren` files
 
 The grammar and precedence of `Fren.Lang` (`Reqs/Lang.md`), lowest first:
-`when`/`unless`, `iff`, `or`, `and`, `not`, comparisons and `is`, `+ -`, `*`,
-unary `-`; `if` is an atom whose `else` branch extends as far right as
-possible.
+`when`/`unless` and the quantifiers `forall`/`exists`, `iff`, `or`, `and`,
+`not`, comparisons and `is`, `+ -`, `*`, unary `-`; `if` is an atom whose
+`else` branch extends as far right as possible.
 
 A file may start with Lean header lines (`import ...`, `open Fren.Lang`),
 which are skipped, so pure-spec Lean files can be checked too. Any other Lean
@@ -75,6 +75,15 @@ partial def Pattern.names : Pattern → Array Ident
   | .or _ alts => alts.flatMap Pattern.names
   | _ => #[]
 
+/-- A binder of a quantifier or of a global expectation's leading
+`forall`, `(x y: T)`: its names, its type, and its span, with its
+parentheses. -/
+structure Binder where
+  names : Array Ident
+  ty : Array Ident
+  span : Span
+  deriving Inhabited
+
 inductive Expr where
   | when (span : Span) (negated : Bool) (cond body : Expr)
   | ite (span : Span) (cond thenE elseE : Expr)
@@ -120,12 +129,15 @@ inductive Expr where
   which means the same (`Reqs/Lang/Let`): each definition's name, its
   type if written, and its expression. -/
   | «let» (span : Span) (defs : Array (Ident × Option (Array Ident) × Expr)) (body : Expr) (isWhere : Bool)
+  /-- `forall (x y: T) (z: U), e`, or `exists` if not `all`, with its
+  binders and its body (`Reqs/Lang/Quantifiers`). -/
+  | quant (span : Span) (all : Bool) (binders : Array Binder) (body : Expr)
   deriving Inhabited
 
 def Expr.span : Expr → Span
   | .when s .. | .ite s .. | .bin s .. | .not s .. | .neg s .. | .num s .. | .bool s .. | .path s .. | .app s ..
   | .record s .. | .update s .. | .field s .. | .match s .. | .is s .. | .str s .. | .method s .. | .set s .. | .pair s ..
-  | .seq s .. | .index s .. | .chain s .. | .«let» s .. => s
+  | .seq s .. | .index s .. | .chain s .. | .«let» s .. | .quant s .. => s
 
 inductive PropKind where
   | assume
@@ -175,8 +187,9 @@ of its last token, such as a `)` around the body, which `body` leaves out. -/
   | const (isPub : Bool) (name : Ident) (ty : Array Ident) (value : Expr)
   /-- `comp c { members }`, with the span of its closing `}`. -/
   | comp (isPub : Bool) (name : Ident) (members : Array Member) (close : Span)
-  /-- `expect n: forall (a b: c) ..., e`: each binder's names and comp. -/
-  | global (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr)
+  /-- `expect n: forall (a b: c) ..., e`: each binder names a component or
+  a type. -/
+  | global (name : Ident) (binders : Array Binder) (body : Expr)
   /-- `refine r: c refines a { bindings }` (`Reqs/Lang/Refinement`). -/
   | refine (name : Ident) (concrete abstract : Array Ident) (bindings : Array (Ident × Option Expr))
   /-- `tested c: "file", ...` or `trusted c: "why"`, with each string's span. -/
@@ -570,6 +583,36 @@ def type? : P (Option (Array Ident)) := do
   if (← eatKw ":").isNone then return none
   return some (← typeExpr)
 
+/-- The binders of a quantifier, or of a global expectation's leading
+`forall`, after the keyword `kw`, up to and including the `,` that ends
+them. -/
+def binders (kw : Token) : P (Array Binder) := do
+  let name := if isKw kw "exists" then "exists" else "forall"
+  unless isKw (← peek) "(" do
+    let t ← peek
+    if t.tok matches .ident _ then
+      err t.span "F0131" s!"the binders of `{name}` must be in parentheses" (some "expected `(`")
+        #[s!"note: a binder is written `(x: T)`, or `(x y: T)` for several names of one type",
+          s!"help: write `{name} (x: T), e`"]
+    fail t "`(`"
+  let mut out := #[]
+  repeat
+    let openParen ← expectKw "("
+    let mut names := #[← ident]
+    while (← peek).tok matches .ident _ do names := names.push (← ident)
+    discard (expectKw ":")
+    let ty ← typeExpr
+    discard (expectKw ")")
+    out := out.push { names, ty, span := ← spanFrom openParen.span }
+    if (← eatKw ",").isSome then break
+    let t ← peek
+    unless isKw t "(" do
+      if t.tok matches .kw "==" | .kw "&&" | .kw "||" | .kw "|" | .kw "=>" then fail t "`,`"
+      err t.span "F0132" s!"expected `,` after the binders of `{name}`, found {t.tok.describe}" (some "expected `,`")
+        #[s!"note: the binders of `{name}` end with a comma, before its body"]
+        #[{ msg := "add a comma", replacement := ",", after := true, range? := some (range (← lastSpan)) }]
+  return out
+
 mutual
 partial def expr : P Expr := do
   let t ← peek
@@ -579,6 +622,11 @@ partial def expr : P Expr := do
     discard (expectKw "in")
     let body ← expr
     return .«let» (← spanFrom t.span) defs body false
+  if isKw t "forall" || isKw t "exists" then
+    discard bump
+    let bs ← binders t
+    let body ← expr
+    return .quant (← spanFrom t.span) (isKw t "forall") bs body
   if isWord t "when" || isWord t "unless" then
     discard bump
     let cond ← iff
@@ -735,6 +783,10 @@ partial def atom : P Expr := do
     err t.span "F0109" "`let` must be parenthesized here" (some "needs parentheses")
       #["note: `let` has the lowest precedence, and its body extends as far right as possible",
         "help: wrap it in parentheses: `(let x := e in b)`"]
+  | .kw kw@"forall" | .kw kw@"exists" =>
+    err t.span "F0109" s!"`{kw}` must be parenthesized here" (some "needs parentheses")
+      #[s!"note: `{kw}` has the lowest precedence, and its body extends as far right as possible",
+        s!"help: wrap it in parentheses: `({kw} (x: T), e)`"]
   | .ident s =>
     -- `w.x`, a variable of an instance
     if s.contains '.' then
@@ -1061,19 +1113,10 @@ partial def item : P Item := do
     discard bump
     let name ← ident
     discard (expectKw ":")
-    let mut binders := #[]
-    if (← eatKw "forall").isSome then
-      repeat
-        discard (expectKw "(")
-        let mut names := #[← ident]
-        while (← peek).tok matches .ident _ do names := names.push (← ident)
-        discard (expectKw ":")
-        let (comp, _) ← path false
-        discard (expectKw ")")
-        binders := binders.push (names, comp)
-        if (← eatKw ",").isSome then break
-        unless isKw (← peek) "(" do fail (← peek) "`(` or `,`"
-    return .global name binders (← top)
+    let bs ← match ← eatKw "forall" with
+      | some kw => binders kw
+      | none => pure #[]
+    return .global name bs (← top)
   let isPub := (← eatKw "pub").isSome
   -- `ordered`, which only an enum takes, after `pub`.
   let ordered? ← eatKw "ordered"

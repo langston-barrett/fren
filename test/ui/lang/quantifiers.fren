@@ -1,0 +1,74 @@
+-- Quantifiers over finite types: `forall` is the conjunction of its
+-- instances, and `exists` their disjunction.
+-- fren-covers: lang::quantifier, lang::quantified_type, lang::quantifier_size
+
+enum Method { Len, Card, Rev }
+
+fn loud?(m: Method) := m = Method::Rev
+
+enum Shape { Dot, Line(Bool), Square(Bool, Bool) }
+
+struct Pair { a?, b? }
+
+comp enumerations {
+    in m: Method
+    pub out quiet?
+
+    req rule: quiet? iff (forall (k: Method), when k = m, not loud?(k))
+
+    expect expanded: quiet? iff m != Method::Rev
+    expect some_loud: exists (k: Method), loud?(k)  --~ warning: this expectation mentions no variable
+    expect not_all_loud: not (forall (k: Method), loud?(k))  --~ warning: this expectation mentions no variable
+}
+
+-- `Bool` has two values, a record every combination of its fields', and an
+-- enumeration every variant with every payload: `Shape` has 1 + 2 + 4.
+comp counts {
+    in s: Shape
+    in p: Pair
+    pub out ok?
+
+    req rule: ok? iff (exists (t: Shape), t = s)
+
+    expect always: ok?
+    expect bools: forall (x? y?: Bool), (x? and y?) or not x? or not y?  --~ warning: this expectation mentions no variable
+    expect pairs: exists (q: Pair), q = p
+    expect excluded_middle: forall (b?: Bool), b? or not b?  --~ warning: this expectation mentions no variable
+    expect squares: exists (t: Shape), t = Shape::Square(true, false)  --~ warning: this expectation mentions no variable
+}
+
+-- Nested quantifiers, and a body that is a `when`.
+comp nested {
+    pub out ok?
+
+    req rule: ok? iff (forall (a: Method), exists (b: Method), a = b)
+
+    expect holds: ok?
+    expect same: forall (a b: Method), when a = b, loud?(a) iff loud?(b)  --~ warning: this expectation mentions no variable
+    expect wrong: forall (a: Method), forall (b: Method), a = b  --~ error: expectation `nested::wrong` does not hold
+    --~^ warning: this expectation mentions no variable
+}
+
+-- A bound name mentions nothing, so it may be a factor of a product.
+fn weight(m: Method): Int := match m { Method::Len => 1, Method::Card => 2, Method::Rev => 3 }
+
+comp mentions {
+    in x: Int
+    pub out total: Int
+
+    req rule: total = 6 * x
+
+    expect linear: forall (m: Method), weight(m) * x <= 3 * x or x < 0
+}
+
+-- An index in the body is guarded in each instance by what comes before it
+-- in the body.
+comp guards {
+    in q: Seq(Int)
+    in x: Int
+    pub out ok?
+
+    req rule: ok? iff (forall (b?: Bool), when q != [], q[0] = x or b?)
+    expect unguarded: forall (b?: Bool), b? or q[0] = 0 or not b?  --~ error: an index of `guards::unguarded` may be out of range
+}
+--@ summary: 23 passed, 2 failed, 0 inconclusive, 0 redundant

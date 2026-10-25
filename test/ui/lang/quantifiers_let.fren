@@ -1,0 +1,27 @@
+-- Quantifiers and local definitions: a quantifier in a `let`'s body and a
+-- `let` in a quantifier's body, both without parentheses, a definition
+-- whose value is a quantifier in parentheses, and a `where` clause whose
+-- definitions mention a quantifier's bound name.
+-- fren-covers: lang::definition_form
+
+enum Mode { Off, Heat, Cool }
+
+fn rank(m: Mode): Int := match m { Mode::Off => 0, Mode::Heat => 1, Mode::Cool => 2 }
+
+comp c {
+    in x: Mode
+    in limit: Int
+    pub out highest?
+    pub out none_above?
+    pub out some_above?
+
+    req highest: highest? iff (let r := rank(x) in forall (m: Mode), rank(m) <= r)
+    req none: none_above? iff (forall (m: Mode), let d := rank(m) - limit in d <= 0)
+    req some: some_above? iff not all_below? where all_below? := (forall (m: Mode), rank(m) <= limit)
+
+    expect highest_is_cool: highest? iff x = Mode::Cool
+    expect complementary: none_above? iff not some_above?
+    expect shadowing: forall (k: Mode), let k! := rank(k) in k >= 0  --~ warning: this expectation mentions no variable
+}
+
+--@ summary: 7 passed, 0 failed, 0 inconclusive, 0 redundant

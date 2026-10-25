@@ -20,4 +20,5 @@ open Fren.Lang
 #fren_md "Lang/Decidability.md"
 #fren_md "Lang/Patterns.md"
 #fren_md "Lang/Let.md"
+#fren_md "Lang/Quantifiers.md"
 #fren_md "Lang/Expressions.md"

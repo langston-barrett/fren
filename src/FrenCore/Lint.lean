@@ -785,8 +785,8 @@ def repeatedVariants (ts : Array VariantTest) : Nat :=
 variant is named twice. -/
 def untestedVariants (n : Nat) (ts : Array VariantTest) : Nat := n - (ts.flatMap (·.variants)).size
 
-/-- `e` as the body of a `match` arm, where a top-level `when` or `unless`
-(`conditional`) is in parentheses. -/
+/-- `e` as the body of a `match` arm, where a top-level `when`, `unless` or
+quantifier (`conditional`) is in parentheses. -/
 def armBody (e : String) (conditional : Bool) : String := if conditional then s!"({e})" else e
 
 /-- The scrutinee as written after `match`, where a `{` would start the
@@ -1484,7 +1484,8 @@ such as a function's arguments, which no operator lint relates. A pattern
 test, `e is P`, has its scrutinee as its operand, and binds as a
 comparison. A chained comparison of the operators `ops` binds as a comparison,
 and its operands are each in a comparison's operand slot, but the rules do
-not look inside it. -/
+not look inside it. A quantifier binds as loosely as `when`, with its body
+in the slot of a `when`'s body; the rules do not look inside it either. -/
 inductive BKind where
   | lit (b : Bool)
   | not
@@ -1499,6 +1500,8 @@ inductive BKind where
   /-- A `let`, which binds as loosely as `when`; only its body is looked
   inside. -/
   | «let»
+  /-- `forall` or `exists`, whose operand is its body. -/
+  | quant
   | atom
   deriving Inhabited, BEq, Repr
 
@@ -1508,9 +1511,9 @@ def binaryOps : Array String :=
     "mod", "inter", "join"]
 
 /-- Whether the text of an expression ends in an *open-ended* form: a
-conditional, a `when`, an `unless` or a `let` that is not in parentheses, brackets
-or braces, whose last operand extends as far right as possible
-(`Reqs/Lint#fixing-lints`). Such a form starts at the first of these
+conditional, a `when`, an `unless`, a `let` or a quantifier that is not in
+parentheses, brackets or braces, whose last operand extends as far right
+as possible (`Reqs/Lint#fixing-lints`). Such a form starts at the first of these
 keywords outside them, and ends where the text does. -/
 def endsOpen (t : String) : Bool := Id.run do
   let cs := (withoutComments t).toList.toArray
@@ -1530,7 +1533,7 @@ def endsOpen (t : String) : Bool := Id.run do
       i := i + 1 + (if raw then hashes else 0)
     else if isWordChar c then
       let w := String.ofList ((cs.extract i cs.size).toList.takeWhile isWordChar)
-      if depth == 0 && ["if", "when", "unless", "let"].contains w then return true
+      if depth == 0 && ["if", "when", "unless", "let", "forall", "exists"].contains w then return true
       i := i + w.length
     else
       if "([{".contains c then depth := depth + 1
@@ -1565,7 +1568,7 @@ def startsWithOperator (after : String) : Bool :=
 `lang::operand` uses it. A conditional counts as binding most loosely,
 since its `else` extends as far right as possible. -/
 def BKind.prec : BKind → Nat
-  | .when _ | .ite | .«let» => 0
+  | .when _ | .ite | .«let» | .quant => 0
   | .bin "iff" => 1
   | .bin "or" => 2
   | .bin "and" => 3
@@ -1579,7 +1582,7 @@ def BKind.prec : BKind → Nat
 def BKind.assoc : BKind → Assoc
   | .bin "or" | .bin "and" | .bin "+" | .bin "-" | .bin "++" | .bin "union" | .bin "minus" | .bin "*" | .bin "div"
   | .bin "mod" | .bin "inter" | .bin "join" => .left
-  | .not | .neg | .when _ => .right
+  | .not | .neg | .when _ | .quant => .right
   | _ => .nonAssoc
 
 /-- An expression: its shape, where it is written in the text given to
@@ -1599,6 +1602,7 @@ structure Slot where
 
 def BKind.slots : BKind → Array (Option Slot)
   | .when _ => #[some ⟨0, .nonAssoc, false⟩, some ⟨0, .right, true⟩]
+  | .quant => #[some ⟨0, .right, true⟩]
   | .ite => #[none, none, none]
   | .«let» => #[none]
   | .not => #[some ⟨4, .right, true⟩]
@@ -1661,7 +1665,7 @@ def BNode.toEx : Nat → BNode α → Ex
       | none => .atom 0
     | .when n => .when n (k 0) (k 1)
     | .ite => .ite (k 0) (k 1) (k 2)
-    | .method _ | .patternTest | .chain _ | .«let» | .atom => .atom 0
+    | .method _ | .patternTest | .chain _ | .«let» | .quant | .atom => .atom 0
 
 /-- The text of a rewritten form, from the rewritten texts of the operands
 and of theirs, as `Shape.build` builds the expression. -/
