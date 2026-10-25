@@ -370,7 +370,7 @@ def Table.resolvePath (t : Table) (from_ : Name) (segs : Array Name) (extra : Ar
 
 /-! ## Declarations -/
 
-def builtinTypes : List Name := [`Bool, `Int, `String]
+def builtinTypes : List Name := [`Bool, `Int, `Nat, `String]
 
 /-- The name that `n` declares, and whether it is written with `!`: `x!`
 declares `x`, and `ready?!` declares `ready?` (`Reqs/Lang/Components#shadowing`). -/
@@ -426,7 +426,7 @@ def checkItemName (what : String) (n : Name) : Except Msg Unit := do
     throw (questionNameMsg what n)
   if builtinTypes.contains n then
     throw { code? := some "F0212", headline := s!"`{n}` is a built-in type and cannot be redefined"
-            label? := some "built-in type", notes := #["note: the built-in types are `Bool`, `Int` and `String`"] }
+            label? := some "built-in type", notes := #["note: the built-in types are `Bool`, `Int`, `Nat` and `String`"] }
 
 /-- Checks a constant's name: like other items' but a `Bool`, it cannot end
 in `?`. Its case is a lint (`non_upper_case_constants`). -/
@@ -822,7 +822,7 @@ def notAValueMsg (r : Resolved) : Msg :=
     | _ => none
 
 def notATypeMsg (r : Resolved) : Msg :=
-  wrongKindMsg "a type" r "note: types are `Bool`, `Int`, enums, records and abstract types"
+  wrongKindMsg "a type" r "note: types are `Bool`, `Int`, `Nat`, enums, records and abstract types"
 
 def notAFunctionMsg (r : Resolved) : Msg := wrongKindMsg "a function" r
 
@@ -1214,7 +1214,7 @@ def notAVariantOfMsg (e : Name) (what : String) : Msg :=
 def armTypesMsg (a b : String) : Msg :=
   { code? := some "F0320", headline := s!"the arms of `match` have different types: `{a}` and `{b}`"
     label? := some "arms of different types"
-    notes := #["note: a `match` has the value of one of its arms, so all must have the same type"] }
+    notes := #["note: a `match` has the value of one of its arms, so all must have the same type, or be `Nat`s and `Int`s"] }
 
 def propNameMsg (n : Name) : Msg := questionNameMsg "constraint" n
 

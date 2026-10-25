@@ -21,6 +21,14 @@ requirements, and `I` of its instances, over the inputs `i`, the instances'
 variables `y` and the outputs `o`.
 `D` is the equations `d = e` of the component's [defined
 outputs](Lang/Components.md#defined-outputs), and `o` excludes them.
+`N` is the constraints that [natural
+numbers](Lang/Components.md#natural-numbers) bring: `N(i, y)` that each
+`Nat` input and instance variable, and each application of an
+uninterpreted function whose result is a `Nat`, is at least 0, and `N(o)`
+that each `Nat` output is. Every query has both among its hypotheses,
+though the formulas below leave them implicit, and realizability also
+puts `N(o)` under its `∃`, with the requirements. Like `D`, they are never
+candidates for redundancy, nor reported in a minimal set.
 
 ```fren
 pub mod check
@@ -133,7 +141,8 @@ input, whatever its instances do:
   ∀ i y. A(i) ∧ I(i, y) ⇒ ∃ o. R(i, y, o)
 
 with each defined output replaced by its definition (see
-[Definitions](#definitions)).
+[Definitions](#definitions)), and `N(o)` a conjunct of `R`, so that the
+outputs that `∃` ranges over are `Nat`s where their types say so.
 
 Fren asks two queries:
 

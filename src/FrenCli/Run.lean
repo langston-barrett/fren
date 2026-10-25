@@ -809,7 +809,9 @@ def mutantsOf (files : Array (String × Array Char)) (lints : Array (Fren.Core.L
   for (path, chars) in files, i in [0:files.size] do
     before := before.push st
     st := elabText st i chars
-    if let some (toks, items) := parsed[i]! then all := all ++ Mutate.ofFile { file := i, path, chars, toks } items divisors
+    if let some (toks, items) := parsed[i]! then
+      let natSums := st.natSums.filterMap fun (f, sp) => if f == i then some sp else none
+      all := all ++ Mutate.ofFile { file := i, path, chars, toks, natSums } items divisors
   return (before, all)
 
 /-- The state of the files with the mutant `m` applied, from the states

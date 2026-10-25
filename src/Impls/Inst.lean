@@ -73,7 +73,7 @@ impl bindings: inst::bindings for (vars : Array (Lean.Name × Role)) (bound : Ar
     intro n r hi hr
     by_cases e : r = .input
     · exact e
-    have hn := FinSet.ext_iff.mp h.1 n
+    have hn := FinSet.ext_iff.mp h n
     simp only [FinSet.mem_inter, FinSet.mem_ofArray, FinSet.not_mem_empty, iff_false] at hn
     exact (hn ⟨(hin n).mpr hi, Array.mem_filterMap.mpr ⟨_, hr, by simp [e]⟩⟩).elim
   -- So the first variable named `b` is an input just when `b` is one.

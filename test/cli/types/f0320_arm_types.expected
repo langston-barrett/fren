@@ -4,7 +4,7 @@ error[F0320]: the arms of `match` have different types: `Int` and `Bool`
 3 | comp c { in m: Mode pub out y: Int req r: y = match m { Mode::On => 1, Mode::Off => false } }
   |                                                                                     ^^^^^ arms of different types
   |
-  = note: a `match` has the value of one of its arms, so all must have the same type
+  = note: a `match` has the value of one of its arms, so all must have the same type, or be `Nat`s and `Int`s
 
 error: could not check due to 1 previous error
 

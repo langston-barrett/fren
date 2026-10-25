@@ -149,10 +149,8 @@ use self::Resolution::{Ambiguous, Glob, Local, Unbound}
 
 pub comp resolve {
     in local?
-    in n_glob: Int       -- distinct items of this name opened by `use ...::*`
+    in n_glob: Nat       -- distinct items of this name opened by `use ...::*`
     pub out result: Resolution
-
-    assume counts: n_glob >= 0
 
     req local_wins: when local?, result = Local
     req glob: unless local?, when n_glob = 1, result = Glob
@@ -203,15 +201,13 @@ pub comp member {
 ```fren
 pub comp two_segments {
     in a_local?             -- `a` is declared in, or imported by name into, this module
-    in a_globs: Int         -- distinct variants named `a` opened by `use ...::*`
+    in a_globs: Nat         -- distinct variants named `a` opened by `use ...::*`
     in a_kind: Kind         -- what `a` is, when it is declared or imported by name
     in b_found?             -- `a` has a member named `b`
     in b_pub?               -- that member is `pub`
     in b_owner: ModuleName  -- the module declaring `b`: `a`, if `a` is a module
     in here: ModuleName     -- the module where the path is written
     pub out accepted?
-
-    assume counts: a_globs >= 0
 
     inst first: resolve { local? := a_local?, n_glob := a_globs }
     inst seen: item_visible { is_pub? := b_pub?, owner := b_owner, here, middle := here }

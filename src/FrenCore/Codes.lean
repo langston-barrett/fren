@@ -837,8 +837,10 @@ comp c { in x: Int pub out y? req r: y? iff x }
 
 Each operator takes operands of particular types: `and`, `or`, `iff`, `not`,
 `when` and `unless` take `Bool`s, and arithmetic and `<`, `<=`, `>`, `>=`
-take `Int`s. A constraint, and the condition of `if`, is a `Bool`. Compare
-an `Int` with a number to make a `Bool`.
+take `Int`s or `Nat`s. A constraint, and the condition of `if`, is a
+`Bool`. Compare an `Int` with a number to make a `Bool`. A `Nat` is
+accepted where an `Int` is expected, but an `Int` is never accepted where
+a `Nat` is: `n - 1` is an `Int`, even if `n` is a `Nat`.
 
 ```fren
 comp c { in x: Int pub out y? req r: y? iff x > 0 }
@@ -869,7 +871,8 @@ Erroneous code example:
 comp c { in b? pub out y: Int req r: y = if b? then 1 else true }
 ```
 
-`if c then a else b` is `a` or `b`, so both must have the same type.
+`if c then a else b` is `a` or `b`, so both must have the same type, or
+be a `Nat` and an `Int`, when the `Nat` is widened to an `Int`.
 
 ```fren
 comp c { in b? pub out y: Int req r: y = if b? then 1 else 0 }
@@ -1442,6 +1445,34 @@ fn arity(Name): Int
 fn rank(a: Int): Int := a + 1
 
 comp c { in n: Name pub out r: Int req def: r = rank(arity(n)) }
+```
+"# },
+  { code := "F0338", explanation := r#"`Nat` is the type of a field or payload, or an element type.
+
+Erroneous code example:
+
+```fren
+struct Stock { item: Int, count: Nat }
+```
+
+For now, `Nat` is the type of a variable, a function's parameter or
+result, or a constant, and nothing else: not of a field or a payload, nor
+the element type of a set, relation or sequence. A `Nat` variable brings
+the constraint that it is at least 0, and Fren does not yet carry that
+constraint into the values of other types. Use an `Int`, and say where it
+is used that it is at least 0:
+
+```fren
+struct Stock { item: Int, count: Int }
+
+comp restock {
+    in stock: Stock
+    pub out more?
+
+    assume counted: stock.count >= 0
+
+    req rule: more? iff stock.count < 10
+}
 ```
 "# },
   { code := "F0401", explanation := r#"An assumption mentions a variable that is not an `in`.

@@ -1,0 +1,71 @@
+-- Static rules for natural numbers.
+-- fren-covers: lang::operator_type, lang::nat_place, lang::widening, lang::literal_type
+set_option fren.lint.dead_code "allow"
+
+-- Not a field, a payload or an element type.
+struct Stock { item: Int, count: Nat }   --~ error: `Nat` cannot be the type of a field
+enum Order { Placed(Nat), Cancelled }    --~ error: `Nat` cannot be the type of a payload
+comp sets { in s: Set(Nat) }             --~ error: `Nat` cannot be the element type of a set, relation or sequence
+comp seqs { in q: Seq(Nat) }             --~ error: `Nat` cannot be the element type of a set, relation or sequence
+comp rels { in r: Rel(Int, Nat) }        --~ error: `Nat` cannot be the element type of a set, relation or sequence
+enum Nat { Zero }                        --~ error: `Nat` is a built-in type and cannot be redefined
+
+fn halve(Nat): Nat
+enum Sign { Plus, Minus }
+
+-- An `Int` is never narrowed to a `Nat`.
+comp narrowed { in n: Nat pub out m: Nat := n - 1 }
+--~^ error: type mismatch: expected `Nat`, found `Int`
+comp negated { in n: Nat pub out m: Nat := -n + n }
+--~^ error: type mismatch: expected `Nat`, found `Int`
+comp argument { in x: Int pub out y: Nat req r: y = halve(x) }
+--~^ error: type mismatch: expected `Nat`, found `Int`
+comp branch { in n: Nat pub out m: Nat := if n > 0 then n else -1 }
+--~^ error: type mismatch: expected `Nat`, found `Int`
+const MINUS: Nat := 2 - 1
+--~^ error: type mismatch: expected `Nat`, found `Int`
+comp inner { in n: Nat pub out m: Int req r: m = n }
+comp bound { in x: Int inst w: inner { n := x } }
+--~^ error: type mismatch: expected `Nat`, found `Int`
+
+-- An implicit binding of a refinement widens in the direction values flow:
+-- an input from the abstract component, an output from the concrete one.
+-- A `Nat` input of the concrete component does not serve for an `Int`.
+comp wide { in n: Int pub out m: Int req r: m = n }
+refine nat_input: inner refines wide
+--~^ error: its `n` has another type
+-- Nor does an `Int` output for a `Nat`.
+comp nat_out { pub out m: Nat req r: m = 0 }
+comp int_out { pub out m: Int req r: m = 0 }
+refine int_output: int_out refines nat_out
+--~^ error: its `m` has another type
+
+-- By a negative constant, and `abs`, are `Int`s.
+comp negative_divisor { in n: Nat pub out m: Nat := n div -2 }
+--~^ error: type mismatch: expected `Nat`, found `Int`
+comp absolute { in n: Nat pub out m: Nat := n.abs }
+--~^ error: type mismatch: expected `Nat`, found `Int`
+comp mixed_min { in n: Nat in x: Int pub out m: Nat := n.min(x) }
+--~^ error: type mismatch: expected `Nat`, found `Int`
+
+-- A `Nat` is not an enumeration, so no pattern tests it.
+comp tested_nat { in n: Nat pub out z? req r: z? iff n is Sign::Plus }
+--~^ error: cannot test `Nat` against a pattern
+
+-- A literal is a `Nat` where one is expected, and a `Nat` widens to an `Int`.
+const TWO: Nat := 2
+fn twice(n: Nat): Nat := n + n
+comp accepted {
+    in n: Nat
+    in x: Int
+    in s: Sign
+    pub out m: Nat := (twice(n) + 1) * TWO
+    pub out k: Nat := if n > 0 then halve(3) else match s { Sign::Plus => 1, Sign::Minus => n }
+    pub out j: Int := n + x
+    inst w: inner { n := 3 }
+
+    expect widened: n + x = x + n and n < x + 2 or n >= x + 2
+    expect sums: m >= 2 and j >= x and w.m = 3
+}
+
+--@ exit: 2

@@ -64,7 +64,7 @@ impl reaches_check: eval::reaches for (f h t : Bool) {
 impl test_verdict_of: eval::test_verdict for (k : CheckKind) (refuted : Bool) (n : Nat) {
   kind := toCheckKind k,
   refuted? := refuted,
-  n_tests := (n : Int),
+  n_tests := n,
   verdict := toVerdict (testVerdict k refuted n),
 } by
   intro k refuted n _

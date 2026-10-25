@@ -70,6 +70,7 @@ like the values that constraints mention. -/
 partial def valueOf (sp : Spec) (w : World) (h : UInt64) (depth : Nat := 2) : VTy → Val
   | .bool => .bool (h % 2 == 0)
   | .int => .int ((h % 7).toNat - 3 : Int)
+  | .nat => .int (h % 4).toNat
   | .string => .str (#["", "a", "b"][(h % 3).toNat]!)
   | .set t => if h % 2 == 0 then .set #[] else Val.setOf #[valueOf sp w (mix h 1) depth t]
   | .seq t => if h % 2 == 0 then .seq #[] else .seq #[valueOf sp w (mix h 1) depth t]
@@ -141,6 +142,7 @@ partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array
     VTy → Array Val
   | .bool => #[.bool false, .bool true]
   | .int => ints.map .int
+  | .nat => (ints.filter (0 ≤ ·)).map .int
   -- The strings of the constraints (`stringsOf`) first, so that sets
   -- and sequences of strings, which take the first few, have them; then a
   -- few others. Constraints that equate a variable with a string give the
@@ -220,6 +222,8 @@ def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (env :
         for _ in [0:6] do
           pool := pool.push (.seq (← (Array.range n).mapM fun _ => do return elems[← below elems.size]!))
   pool ← shuffle pool
+  -- A `Nat` is at least 0, whatever a constraint equates it with.
+  let eqs := if ty == .nat then eqs.filter (fun | .int i => 0 ≤ i | _ => false) else eqs
   let eqs := eqs.foldl (fun acc v => if acc.contains v then acc else acc.push v) #[]
   return eqs ++ pool.filter (!eqs.contains ·)
 

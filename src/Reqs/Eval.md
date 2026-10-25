@@ -87,6 +87,7 @@ already be evaluated is false. A variable's candidates are:
   component, its expectations included, and their neighbours, random integers, and the value of
   any expression that a constraint equates the variable with, such as `x
   + 1` in `y = x + 1`;
+- for a `Nat`, those of an `Int` that are at least 0;
 - for an abstract type `T`, `T#0` up to a random bound;
 - for a `String`, `""`, `"a"` and `"b"`; the string literals and constants
   of the component, its expectations included, each also with `"a"` before
@@ -110,7 +111,8 @@ already be evaluated is false. A variable's candidates are:
   something to close.
 
 The interpretation is chosen at random: each function's value at each
-argument is random, but the same wherever it is applied in the behaviour.
+argument is random, but the same wherever it is applied in the behaviour,
+and at least 0 if its result is a `Nat`.
 
 The search may miss a behaviour that exists, since it tries only some
 values, but every behaviour it reports is genuine: it is a behaviour of the
@@ -120,7 +122,9 @@ component, with the status that the evaluator gives it.
 
 `fren eval --comp PATH FILE...` evaluates a behaviour of the component
 `PATH` of the spec in the files. `--set x=VALUE` gives the variable `x` a
-value, as does `--set w.x=VALUE` for a variable of the instance `w`. The
+value, as does `--set w.x=VALUE` for a variable of the instance `w`.
+`VALUE` is typed as a binding of `x` would be: a `Nat` is widened to an
+`Int`, and an `Int`, such as `5 - 3`, is not accepted for a `Nat`. The
 variables that are not set, and the interpretation, are chosen by
 [searching](#searching-for-behaviours) for a behaviour that meets the
 component, starting from `--seed` (default 0). If the search finds none,
@@ -238,10 +242,9 @@ check, from whether some test refuted it and how many tests reached it:
 pub comp test_verdict {
     in kind: Kind
     in refuted?          -- some test is a counterexample, or an input without outputs
-    in n_tests: Int      -- the tests that reached the check (`reaches`)
+    in n_tests: Nat      -- the tests that reached the check (`reaches`)
     pub det out verdict: Verdict
 
-    assume counts: n_tests >= 0
     assume testable: kind != Kind::Vacuity and kind != Kind::Redundancy
 
     req definite: when refuted? and kind != Kind::Realizability, verdict = Fail

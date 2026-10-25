@@ -1,0 +1,3 @@
+-- A payload of type `Nat`.
+-- fren-covers: lang::nat_place
+enum Order { Placed(Nat), Cancelled }

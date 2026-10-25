@@ -257,6 +257,43 @@ output when the spec computes it, and require it when the spec constrains
 it: a definition is not a constraint, so the vacuity, redundancy and
 realizability checks no longer see it.
 
+## Natural numbers
+
+A variable of type [`Nat`](Types.md#natural-numbers) brings the
+constraint that it is at least 0, as though it were written in the spec:
+
+- an input, an assumption;
+- an output, public or private, a requirement;
+- an instance's variable, a constraint of the instance, as its
+  component's own variable does, even one that is a defined output there,
+  where its definition already makes it at least 0;
+- a defined output, none: its definition is a `Nat`, so it is at least 0
+  already.
+
+These constraints have no names. They are never reported in a [minimal
+set](../Check.md#minimal-sets), never checked for redundancy, and need no
+check of their own: a binding or a definition of type `Nat` is at least 0
+by its type. `lang::nat_variable` states what a `Nat` variable brings:
+
+```fren
+pub enum Brought { Nothing, Assumption, Requirement }
+
+pub comp nat_variable {
+    in own_output?       -- an output of the component itself, rather than an input or an instance's variable
+    in defined?          -- a defined output
+    pub det out brought: Brought
+
+    assume only_outputs: when defined?, own_output?
+
+    req rule: brought = (if defined? then Brought::Nothing
+        else if own_output? then Brought::Requirement
+        else Brought::Assumption)
+
+    expect inputs_assumed: unless own_output?, brought = Brought::Assumption
+    expect definitions_typed: when defined?, brought = Brought::Nothing
+}
+```
+
 ## Interpretations
 
 The [abstract types](Types.md#abstract-types) and

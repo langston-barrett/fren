@@ -1,0 +1,3 @@
+-- An `Int` where a `Nat` is expected: `-` gives an `Int`.
+-- fren-covers: lang::operator_type, lang::widening
+comp c { in n: Nat pub out m: Nat := n - 1 }

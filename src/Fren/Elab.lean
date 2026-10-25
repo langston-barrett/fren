@@ -11,6 +11,7 @@ import FrenCore.Lexical
 import FrenCore.Mentions
 import FrenCore.Regex
 import FrenCore.Syntax
+import FrenCore.Ty
 -- keep-sorted end
 
 /-!
@@ -137,16 +138,22 @@ def typePath? (ty : Syntax) : Option Syntax :=
 /-- The Lean type of the Fren type `ty`. -/
 partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFileMap m] (modName : Name) (ty : Syntax) : m Expr := do
   -- `Set(T)`: `"Set" "(" T ")"`; `Rel(A, B)`: `"Rel" "(" A "," B ")"`.
+  -- An element type, which is never a `Nat` (`lang::nat_place`).
+  let elem (e : Syntax) : m Expr := do
+    let t ← elabType modName e
+    if t.isConstOf ``Nat then throwErrorAt e (Core.natPlaceMsg .element).text
+    return t
   let some p := typePath? ty |
     if ty.isOfKind ``Lang.relType then
       return mkApp (Lean.mkConst ``Fren.FinSet [Level.zero])
-        (mkApp2 (Lean.mkConst ``Prod [Level.zero, Level.zero]) (← elabType modName ty[2]) (← elabType modName ty[4]))
-    else if ty.isOfKind ``Lang.seqType then return mkApp (Lean.mkConst ``Fren.Seq [Level.zero]) (← elabType modName ty[2])
-    else return mkApp (Lean.mkConst ``Fren.FinSet [Level.zero]) (← elabType modName ty[2])
+        (mkApp2 (Lean.mkConst ``Prod [Level.zero, Level.zero]) (← elem ty[2]) (← elem ty[4]))
+    else if ty.isOfKind ``Lang.seqType then return mkApp (Lean.mkConst ``Fren.Seq [Level.zero]) (← elem ty[2])
+    else return mkApp (Lean.mkConst ``Fren.FinSet [Level.zero]) (← elem ty[2])
   let ty := p
   let segs := pathSegs ty
   if segs.size == 1 && segs[0]!.getId == `Bool then return Lean.mkConst ``Bool
   if segs.size == 1 && segs[0]!.getId == `Int then return Lean.mkConst ``Int
+  if segs.size == 1 && segs[0]!.getId == `Nat then return Lean.mkConst ``Nat
   if segs.size == 1 && segs[0]!.getId == `String then return Lean.mkConst ``String
   match ← resolvePath modName segs with
   | .item { kind := .enumItem, path, .. } => return Lean.mkConst (← enumDecl path)
@@ -210,6 +217,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
         throwErrorAt ty (Core.recursiveRecordMsg ownName).text
       return Lean.mkConst decl
   let t ← elabType modName ty
+  if t.isConstOf ``Nat then throwErrorAt ty (Core.natPlaceMsg (if payload then .payload else .field)).text
   let st ← getState
   let e := ((elemTypes t).find? fun e => e.isConst && st.placeholders.contains e.constName).getD t
   let abstract := e.isConst && st.placeholders.contains e.constName
@@ -364,6 +372,9 @@ structure ExprCtx where
   concatOk : Bool := false
   /-- Something here gives `{}` its type (`Reqs/Lang/Expressions#sets`). -/
   emptyOk : Bool := false
+  /-- A `Nat` is expected here, so an integer literal is one
+  (`lang::literal_type`). -/
+  natOk : Bool := false
   /-- The conditions under which this expression is evaluated, read from
   left to right: an index's guard (`Reqs/Lang/Expressions#sequences`). -/
   guards : Array Term := #[]
@@ -407,6 +418,7 @@ def definedFn? (cx : ExprCtx) (p : Syntax) : TermElabM (Option DefinedInfo) := d
 partial def typeName (t : Expr) : TermElabM String := do
   if t.isConstOf ``Bool then return "Bool"
   if t.isConstOf ``Int then return "Int"
+  if t.isConstOf ``Nat then return "Nat"
   if t.isConstOf ``String then return "String"
   if t.isAppOfArity ``Fren.Seq 1 then return s!"Seq({← typeName t.appArg!})"
   if t.isAppOfArity ``Fren.FinSet 1 then
@@ -426,6 +438,33 @@ variables in scope. -/
 def typeOf (t : Term) : TermElabM Expr := do
   let e ← withoutErrToSorry <| Term.withSynthesize <| elabTerm (← `(open Classical in $t)) none
   whnfR (← instantiateMVars (← inferType e))
+
+/-- `t`, widened to an `Int` if it is a `Nat` (`lang::widening`): Lean
+inserts `↑`. -/
+def widenTerm (t : Term) : TermElabM Term := do
+  if (← typeOf t).isConstOf ``Nat then `(($t : Int)) else pure t
+
+/-- Checks that `t`, written at `ref` where a `Nat` is expected, is not an
+`Int`, with the message that the `fren` command gives, explained by `why`
+(`lang::widening`). -/
+def checkNat (ref : Syntax) (t : Term) (why : String) : TermElabM Unit := do
+  if (← typeOf t).isConstOf ``Int then throwErrorAt ref (Core.narrowingMsg why).text
+
+/-- `ts`, each widened to an `Int` if one is an `Int` and another a `Nat`:
+the branches of a conditional or the bodies of a `match`'s arms
+(`lang::operator_type`). -/
+def widenMixed (ts : Array Term) : TermElabM (Array Term) := do
+  let tys ← ts.mapM typeOf
+  if tys.any (·.isConstOf ``Int) && tys.any (·.isConstOf ``Nat) then ts.mapM widenTerm else pure ts
+
+/-- Whether each parameter of the function of type `type`, after its first
+`skip`, is a `Nat`. -/
+def natParams (type : Expr) (skip : Nat := 0) : Array Bool :=
+  go type 0 #[]
+where
+  go : Expr → Nat → Array Bool → Array Bool
+    | .forallE _ d b _, k, acc => go b (k + 1) (if k < skip then acc else acc.push (d.isConstOf ``Nat))
+    | _, _, acc => acc
 
 /-- The pattern of `s.matches?(p)`, `p`, as a closed `Fren.Core.Re` term
 (`Reqs/Lang/Expressions#patterns`). -/
@@ -486,10 +525,14 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
     unless args.size == method.arity do throwErrorAt ref (Core.arityMsg (Name.mkSimple m) method.arity args.size).text
     let leanTy : Core.MethodTy → Expr
       | .bool => Lean.mkConst ``Bool | .int => Lean.mkConst ``Int | .elem => elem | _ => ty
+    let mut widened := #[]
     for (a, stx) in args, p in method.params do
+      let a ← if (leanTy p).isConstOf ``Int then widenTerm a else pure a
       let ta ← typeOf a
       unless ← isDefEq ta (leanTy p) do
         throwErrorAt stx s!"type mismatch: expected `{← typeName (leanTy p)}`, found `{← typeName ta}`"
+      widened := widened.push (a, stx)
+    let args := widened
     let a : Term := (args.map (·.1))[0]?.getD t
     let b : Term := (args.map (·.1))[1]?.getD t
     let term ← match method with
@@ -528,32 +571,44 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
         unless ← isDefEq tx (set a) do
           throwErrorAt stx s!"type mismatch: expected `{← typeName (set a)}`, found `{← typeName tx}`"
         return (← `(Fren.FinSet.image $t $x), set b)
-  if ty.isConstOf ``Int then
+  if ty.isConstOf ``Int || ty.isConstOf ``Nat then
     let some method := (Core.Method.ofName? m).filter (·.accepts false false (int := true))
-      | throwErrorAt ref (Core.unknownMethodMsg m "Int" false (int := true)).text
+      | throwErrorAt ref (Core.unknownMethodMsg m (← typeName ty) false (int := true)).text
     unless args.size == method.arity do throwErrorAt ref (Core.arityMsg (Name.mkSimple m) method.arity args.size).text
     for (a, stx) in args do
       let ta ← typeOf a
-      unless ta.isConstOf ``Int do throwErrorAt stx s!"type mismatch: expected `Int`, found `{← typeName ta}`"
+      unless ta.isConstOf ``Int || ta.isConstOf ``Nat do
+        throwErrorAt stx s!"type mismatch: expected `Int`, found `{← typeName ta}`"
+    -- `min` and `max` of `Nat`s are `Nat`s; otherwise both are widened
+    -- (`lang::nat_result`).
+    let op : Core.NatOp := match method with | .min => .min | .max => .max | _ => .abs
+    let argNat ← args.anyM fun (a, _) => return (← typeOf a).isConstOf ``Nat
+    let nat := Core.natResult op (ty.isConstOf ``Nat) argNat false
+    let t ← if nat then pure t else widenTerm t
+    let args ← if nat then pure args else args.mapM fun (a, stx) => return (← widenTerm a, stx)
     -- Conditionals, so that they stay linear.
     let y : Term := (args.map (·.1))[0]?.getD t
     let term ← match method with
       | .min => `(if $t ≤ $y then $t else $y)
       | .max => `(if $t ≥ $y then $t else $y)
       | _ => `(if $t < 0 then -$t else $t)
-    return (term, Lean.mkConst ``Int)
+    return (term, Lean.mkConst (if nat then ``Nat else ``Int))
   unless ty.isConstOf ``String do throwErrorAt ref (Core.noMethodsMsg m (← typeName ty)).text
   let some method := (Core.Method.ofName? m).filter (·.accepts true false)
     | throwErrorAt ref (Core.unknownMethodMsg m "String").text
   unless args.size == method.arity do throwErrorAt ref (Core.arityMsg (Name.mkSimple m) method.arity args.size).text
   let leanTy : Core.MethodTy → Expr
     | .bool => Lean.mkConst ``Bool | .int => Lean.mkConst ``Int | _ => Lean.mkConst ``String
+  let mut widened := #[]
   for (a, stx) in args, p in method.params do
     -- A pattern is a `Fren.Core.Re`, which `patternTerm` checked.
-    if method == .matches then continue
+    if method == .matches then widened := widened.push (a, stx); continue
+    let a ← if (leanTy p).isConstOf ``Int then widenTerm a else pure a
     let ta ← typeOf a
     unless ← isDefEq ta (leanTy p) do
       throwErrorAt stx s!"type mismatch: expected `{← typeName (leanTy p)}`, found `{← typeName ta}`"
+    widened := widened.push (a, stx)
+  let args := widened
   let a : Term := (args.map (·.1))[0]?.getD (← `(""))
   let b : Term := (args.map (·.1))[1]?.getD (← `(""))
   let term ← match method with
@@ -574,7 +629,7 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
 /-- Reads the field `f` of the term `t` of Lean type `ty`; of a `String` or
 a set, calls the method `f`, without arguments. -/
 def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term × Expr) := do
-  if ty.isConstOf ``String || ty.isConstOf ``Int || (relTypes? ty).isSome || ty.isAppOfArity ``Fren.Seq 1 then
+  if ty.isConstOf ``String || ty.isConstOf ``Int || ty.isConstOf ``Nat || (relTypes? ty).isSome || ty.isAppOfArity ``Fren.Seq 1 then
     return ← callMethod ref t ty f.toString #[]
   if ty.isAppOfArity ``Fren.FinSet 1 then
     unless f == `card do throwErrorAt ref (Core.unknownSetMethodMsg f.toString (← typeName ty)).text
@@ -1119,7 +1174,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- The scrutinee synthesizes its type, and each body is checked against the
   -- whole's, or another's (`lang::checked`).
   let scrutinee := e[1]
-  let s ← toTerm { cx with emptyOk := Core.Position.synthesized.checked false false } scrutinee
+  let s ← toTerm { cx with emptyOk := Core.Position.synthesized.checked false false, natOk := false } scrutinee
   let ty ← typeOf s
   let some info := ty.constName?.bind (← getState).enumOfDecl?
     | throwErrorAt scrutinee (Core.scrutineeMsg (← typeName ty)).text
@@ -1186,11 +1241,12 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let others := (arms.eraseIdx! bodies.size).map (·[2])
     let emptyOk := Core.Position.shared.checked cx.emptyOk (anySynthesizes others)
     bodies := bodies.push (← toTerm { cx with binders := cx.binders ++ new, guards, emptyOk } arm[2])
+  let widened ← widenMixed bodies
   -- The first arm that matches; the last arm matches whatever is left.
-  let mut out := bodies.back!
+  let mut out := widened.back!
   for i in (List.range (bodies.size - 1)).reverse do
     if let some t := tests[i]! then
-      out ← `(if $t then $(bodies[i]!) else $out)
+      out ← `(if $t then $(widened[i]!) else $out)
   return out
 
 open Lang in
@@ -1528,15 +1584,18 @@ def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
 /-- `r.m(args)`, a method call on the receiver `recvStx`, whose method's name
 is at `ref` (`Reqs/Lang/Expressions#methods`). -/
 def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e ref recvStx : Syntax) (m : String)
-    (args : Array Syntax) : TermElabM Term := withRef e do
+    (args : Array Syntax) (natOk : Bool := false) : TermElabM Term := withRef e do
   let r ← toTerm { cx with concatOk := true } recvStx
   let rty ← typeOf r
   let pattern := m == "matches?" && rty.isConstOf ``String
   -- A sequence method's arguments are typed by its parameters, so `[]` may be one.
   let seq := rty.isAppOfArity ``Fren.Seq 1
   let position : Core.Position := if seq then .declared else .synthesized
+  -- A `Nat` is expected of `min`'s and `max`'s argument where one is of the
+  -- whole (`lang::nat_result`).
+  let natArg := natOk && rty.isConstOf ``Nat && (m == "min" || m == "max")
   let as ← args.mapM fun a =>
-    return (← if pattern then patternTerm a else toTerm { cx with emptyOk := position.checked false false } a, a)
+    return (← if pattern then patternTerm a else toTerm { cx with emptyOk := position.checked false false, natOk := natArg } a, a)
   if seq then
     let c := (Core.Method.ofName? m).map (·.seqConstruct) |>.getD .seqWord
     checkCore cx e c true true (#[recvStx] ++ args) ((← args.allM (isConstant cx ·)) && (← isConstant cx recvStx))
@@ -1559,7 +1618,8 @@ def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
 the left of `in`. -/
 def pairOrTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := do
   if e.isOfKind ``Lang.pairExpr then
-    let (x, y) := (← toTerm cx e[1], ← toTerm cx e[3])
+    -- A member is never a `Nat` (`lang::nat_place`).
+    let (x, y) := (← widenTerm (← toTerm cx e[1]), ← widenTerm (← toTerm cx e[3]))
     -- Typed, so that a pair of numerals is a pair of `Int`s.
     return ← `((($x, $y) : $(typeSyntax (← typeOf x)) × $(typeSyntax (← typeOf y))))
   toTerm cx e
@@ -1574,8 +1634,9 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   checkCore cx e .setAlgebra true true elems
   if cx.noteIndexes then lintDuplicates e elems
   -- Each element is checked against the literal's element type, or another's (`lang::checked`).
-  let xs ← elems.mapIdxM fun k x =>
-    pairOrTerm toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) } x
+  -- A member is never a `Nat` (`lang::nat_place`).
+  let xs ← elems.mapIdxM fun k x => do
+    widenTerm (← pairOrTerm toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) } x)
   `(($(← finSetLit xs) : Fren.FinSet _))
 
 /-- `x in s`, `s subset t`, `s union t`, `s inter t` and `s minus t`. -/
@@ -1587,7 +1648,7 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       if let #[m] := b[1].getSepArgs then
         unless m.isOfKind ``Lang.pairExpr do recordLint .singletonMembership e (Core.singletonMembershipMsg (srcText a) (srcText m))
     -- The left synthesizes a type, which the right is checked against (`lang::checked`).
-    let (x, s) := (← pairOrTerm toTerm { cx with emptyOk := Core.Position.synthesized.checked false false } a,
+    let (x, s) := (← widenTerm (← pairOrTerm toTerm { cx with emptyOk := Core.Position.synthesized.checked false false } a),
       ← toTerm { cx with emptyOk := Core.Position.compared.checked false (synthesizes a) } b)
     let (tx, ts) := (← typeOf x, ← typeOf s)
     if ts.isAppOfArity ``Fren.Seq 1 && (← isDefEq ts.appArg! tx) then
@@ -1670,8 +1731,9 @@ def seqLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     return ← `((∅ : Fren.Seq _))
   checkCore cx e .seqArray true true elems
   -- Each element is checked against the literal's element type, or another's (`lang::checked`).
-  let xs ← elems.mapIdxM fun k x =>
-    toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) } x
+  -- An element is never a `Nat` (`lang::nat_place`).
+  let xs ← elems.mapIdxM fun k x => do
+    widenTerm (← toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) } x)
   let mut t ← `(Fren.Seq.unit $(xs.back!))
   for x in xs.pop.reverse do t ← `(Fren.Seq.unit $x ++ $t)
   return t
@@ -1682,7 +1744,7 @@ def indexTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let q ← toTerm cx e[0]
   let tq ← typeOf q
   unless tq.isAppOfArity ``Fren.Seq 1 do throwErrorAt e[0] (Core.notIndexableMsg (← typeName tq)).text
-  let i ← toTerm cx e[2]
+  let i ← widenTerm (← toTerm cx e[2])
   let ti ← typeOf i
   unless ti.isConstOf ``Int do throwErrorAt e[2] s!"type mismatch: expected `Int`, found `{← typeName ti}`"
   checkCore cx e .seqArray true true #[e[0], e[2]]
@@ -1783,14 +1845,23 @@ partial def divisorForm (cx : ExprCtx) (k : Syntax) : TermElabM (Core.DivisorFor
 `k` (`lang::divisor`), as the `fren` command does: by a numeral, which
 SMT-LIB's linear logics require, so that `x div -k` is `-(x / k)` and
 `x mod -k` is `x % k` (`Int.ediv_neg`, `Int.emod_neg`). -/
-def divTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (op : String) : TermElabM Term :=
-    withRef e do
-  let x ← toTerm cx e[0]
+def divTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (op : String) (natOk : Bool := false) :
+    TermElabM Term := withRef e do
+  -- A `Nat` is expected of the dividend where one is of the whole
+  -- (`lang::nat_result`).
+  let x ← toTerm { cx with natOk } e[0]
   for (t, stx) in [(x, e[0]), (← toTerm cx e[2], e[2])] do
     let ty ← typeOf t
-    unless ty.isConstOf ``Int do throwErrorAt stx s!"type mismatch: expected `Int`, found `{← typeName ty}`"
+    unless ty.isConstOf ``Int || ty.isConstOf ``Nat do
+      throwErrorAt stx s!"type mismatch: expected `Int`, found `{← typeName ty}`"
   let (form, value, c) ← divisorForm cx e[2]
   liftMsg e[2] (Core.checkDivisor op form value c)
+  -- Of a `Nat` by a positive divisor, Lean's `Nat` division, which agrees
+  -- with `Int`'s there; otherwise the dividend is widened.
+  if Core.natResult (if op == "mod" then .mod else .div) ((← typeOf x).isConstOf ``Nat) false (value > 0) then
+    let k ← `(($(Syntax.mkNumLit (toString value.natAbs)) : Nat))
+    return ← if op == "mod" then `($x % $k) else `($x / $k)
+  let x ← widenTerm x
   let k ← `(($(Syntax.mkNumLit (toString value.natAbs)) : Int))
   if op == "mod" then `($x % $k) else if value < 0 then `(-($x / $k)) else `($x / $k)
 
@@ -1856,7 +1927,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   if let some (recv, m) := methodApp? cx e then
     let recv ← pathExpr p recv
     if m.toString == "matches?" then lintPattern cx parent? e recv args.getElems
-    return ← methodTerm toTerm cx e p recv m.toString args.getElems
+    return ← methodTerm toTerm cx e p recv m.toString args.getElems cx.natOk
   let segs := pathSegs p
   if segs.size == 1 && (cx.vars.any (·.name == segs[0]!.getId) || (cx.binder? segs[0]!.getId).isSome) then
     throwErrorAt p (Core.varNotAFunctionMsg segs[0]!.getId).text
@@ -1871,14 +1942,18 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     let n := (info.payloads[idx]?.map (·.size)).getD 0
     if let some msg := Core.variantMentionMsg? v n true then throwError msg.text
     unless args.getElems.size == n do throwError (Core.arityMsg v n args.getElems.size "value").text
-    let args ← args.getElems.mapM (toTerm { cx with emptyOk := Core.Position.declared.checked false false })
+    let args ← args.getElems.mapM (toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := false })
     return ← `($(mkCIdentFrom p (info.decl ++ en.variants[idx]!)) $args*)
   let .item { kind := .fnItem, path, .. } := r | throwErrorAt p (Core.notAFunctionMsg r).text
   if let some d := (← getState).defined.get? path then
     -- Its definition, applied to the placeholders it uses; its arguments
     -- may mention anything (`lang::argument`).
     unless args.getElems.size == d.nParams do throwError (Core.arityMsg path d.nParams args.getElems.size).text
-    let args ← args.getElems.mapM (toTerm { cx with emptyOk := Core.Position.declared.checked false false })
+    let nats := natParams (← getConstInfo d.decl).type d.uses.size
+    let args ← args.getElems.zipIdx.mapM fun (a, k) => do
+      let t ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := nats[k]?.getD false } a
+      if nats[k]?.getD false then checkNat a t s!"note: argument {k + 1} of `{Core.showPath path}` has type `Nat`"
+      return t
     return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
   if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
   let a ← placeholderOf path
@@ -1887,8 +1962,69 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   -- Outputs may not occur in arguments (`inst::mention`); assumptions and
   -- bindings exclude them already.
   let acx := if cx.place == .prop then { cx with place := .argument } else cx
-  let args ← args.getElems.mapM (toTerm { acx with emptyOk := Core.Position.declared.checked false false })
+  let nats := natParams (← getConstInfo a.placeholder).type
+  let args ← args.getElems.zipIdx.mapM fun (a, k) => do
+    let t ← toTerm { acx with emptyOk := Core.Position.declared.checked false false, natOk := nats[k]?.getD false } a
+    if nats[k]?.getD false then checkNat a t s!"note: argument {k + 1} of `{Core.showPath path}` has type `Nat`"
+    return t
   `($(mkCIdentFrom p a.placeholder) $args*)
+
+/-- `if c then a else b`, where `toTerm` translates its parts, which are
+checked against a type if `emptyOk`, and are `Nat`s if `natOk` is. -/
+def iteTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emptyOk natOk : Bool) (e c' a b : Syntax) :
+    TermElabM Term := do
+  if cx.noteIndexes && !cx.inElse then lintIfChain cx e
+  if cx.noteIndexes then lintSameBranches e a b
+  let c ← toTerm { cx with inElse := false } c'
+  let gx ← Core.GuardedOperand.thenBranch.guard (pure c) `(¬$c)
+  let gy ← Core.GuardedOperand.elseBranch.guard (pure c) `(¬$c)
+  let x ← toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (synthesizes b), natOk, guards := cx.guards.push gx, inElse := false } a
+  let y ← toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (synthesizes a), natOk, guards := cx.guards.push gy, inElse := true } b
+  let #[x, y] ← widenMixed #[x, y] | unreachable!
+  `(if $c then $x else $y)
+
+/-- `a op b`, for `op` one of `+`, `-` and `*`, where `toTerm` translates
+the operands. `+` and `*` of `Nat`s are `Nat`s, as Lean's `binop%` gives,
+and a `Nat` is expected of the operands where one is of the whole
+(`natOk`); `-` is always an `Int`, so that nothing truncates
+(`lang::operator_type`). -/
+def arithTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (natOk : Bool) (op : String) (a b : Syntax) :
+    TermElabM Term := do
+  if op == "-" then return ← `((($(← toTerm cx a) : Int) - ($(← toTerm cx b) : Int)))
+  if op == "*" then
+    unless Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do
+      throwError Core.nonlinearMsg.text
+  let (x, y) := (← toTerm { cx with natOk } a, ← toTerm { cx with natOk } b)
+  if op == "+" then `($x + $y) else `($x * $y)
+
+open Lang in
+/-- The expressions that `toTerm` gives no syntax pattern of its own: fields,
+methods, `mod`, collections, indexes, records, `match` and `is`, where
+`toTerm` translates their parts, `emptyOk` and `natOk` are what is
+expected of the whole, and `parent?` is the expression around it. -/
+def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (parent? : Option Syntax) (emptyOk natOk : Bool)
+    (e : Syntax) : TermElabM Term := do
+  if let some e' := splitDotted? e then return ← toTerm cx e'
+  if e.isOfKind ``Lang.fieldExpr then
+    lintChain toTerm cx parent? e
+    return ← fieldTerm cx e (← toTerm { cx with concatOk := true } e[0])
+  else if e.isOfKind ``Lang.methodExpr then
+    -- `at` is a keyword of Lean's.
+    let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
+    let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
+    if m == "matches?" then lintPattern cx parent? e e[0] e[4].getSepArgs
+    methodTerm toTerm cx e e[2] e[0] m e[4].getSepArgs natOk
+  else if e.isOfKind ``Lang.modExpr then divTerm toTerm cx e "mod" natOk
+  else if e.isOfKind ``Lang.setExpr then setLitTerm toTerm cx emptyOk e
+  else if e.isOfKind ``Lang.memberExpr || e.isOfKind ``Lang.subsetExpr || e.isOfKind ``Lang.unionExpr
+      || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr || e.isOfKind ``Lang.joinExpr then setOpTerm toTerm { cx with emptyOk } e
+  else if e.isOfKind ``Lang.pairExpr then throwError Core.pairPlaceMsg.text
+  else if e.isOfKind ``Lang.seqExpr then seqLitTerm toTerm cx emptyOk e
+  else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
+  else if e.isOfKind ``Lang.recordExpr then recordTerm (toTerm { cx with emptyOk := Core.Position.declared.checked false false }) cx e
+  else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm { cx with emptyOk, natOk } e (parent?.bind (operandSlot · e))
+  else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
+  else throwError "unsupported Fren expression"
 
 open Lang in
 /-- Translates a Fren expression to a Lean term, resolving names with Fren's
@@ -1897,9 +2033,10 @@ become references to the generated constructors. -/
 partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   let concatOk := cx.concatOk
   let emptyOk := cx.emptyOk
+  let natOk := cx.natOk
   -- An operand of `or` or `and` continues its chain only if it is one too.
   let parent? := cx.parent?
-  let cx := { cx with concatOk := false, emptyOk := false, chain := if isBinOp (unparen e) cx.chain then cx.chain else ""
+  let cx := { cx with concatOk := false, emptyOk := false, natOk := false, chain := if isBinOp (unparen e) cx.chain then cx.chain else ""
                       parent? := some e, inElse := cx.inElse && isIte (unparen e) }
   let go := toTerm cx
   -- A chained comparison's comparisons are not operators of their own here.
@@ -1912,61 +2049,29 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $a or $b) => guardedTerm toTerm cx a b .orRight (op := .or)
   | `(fren_expr| $a and $b) => guardedTerm toTerm cx a b .andRight (op := .and)
   | `(fren_expr| not $a) => `(¬$(← go a))
-  | `(fren_expr| if $c' then $a else $b) =>
-    if cx.noteIndexes && !cx.inElse then lintIfChain cx e
-    if cx.noteIndexes then lintSameBranches e a b
-    let c ← toTerm { cx with inElse := false } c'
-    let gx ← Core.GuardedOperand.thenBranch.guard (pure c) `(¬$c)
-    let gy ← Core.GuardedOperand.elseBranch.guard (pure c) `(¬$c)
-    let x ← toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (synthesizes b), guards := cx.guards.push gx, inElse := false } a
-    let y ← toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (synthesizes a), guards := cx.guards.push gy, inElse := true } b
-    `(if $c then $x else $y)
+  | `(fren_expr| if $c' then $a else $b) => iteTerm toTerm cx emptyOk natOk e c' a b
   | `(fren_expr| $_ = $_) | `(fren_expr| $_ != $_) | `(fren_expr| $_ < $_) | `(fren_expr| $_ <= $_)
   | `(fren_expr| $_ > $_) | `(fren_expr| $_ >= $_) => compareTerm toTerm cx e
   | `(fren_expr| $_ ++ $_) => concatTerm toTerm { cx with emptyOk } concatOk e
   | `(fren_expr| $s:str) =>
     liftMsg s (Core.checkStringChars s.getString)
     `(Fren.Str.lit $s)
-  | `(fren_expr| $a + $b) => `($(← go a) + $(← go b))
-  | `(fren_expr| $a - $b) => `($(← go a) - $(← go b))
-  | `(fren_expr| $a * $b) =>
-    unless Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do
-      throwError Core.nonlinearMsg.text
-    `($(← go a) * $(← go b))
-  | `(fren_expr| $_ div $_) => divTerm toTerm cx e "div"
-  | `(fren_expr| -$a) => `(-$(← go a))
+  | `(fren_expr| $a + $b) => arithTerm toTerm cx natOk "+" a b
+  | `(fren_expr| $a - $b) => arithTerm toTerm cx natOk "-" a b
+  | `(fren_expr| $a * $b) => arithTerm toTerm cx natOk "*" a b
+  | `(fren_expr| $_ div $_) => divTerm toTerm cx e "div" natOk
+  | `(fren_expr| -$a) => `((-($(← go a) : Int)))
   | `(fren_expr| $_ == $_) | `(fren_expr| $_ && $_) | `(fren_expr| $_ || $_) | `(fren_expr| $_ | $_) =>
     throwErrorAt e[1] (Core.foreignOpMsg e[1].getAtomVal.trimAscii.toString).text
   | `(fren_expr| !$_) => throwErrorAt e[0] (Core.foreignOpMsg "!").text
   -- Checked against the whole's type, if it is (`lang::checked`).
-  | `(fren_expr| ($a)) => `(($(← toTerm { cx with concatOk, emptyOk := Core.Position.shared.checked emptyOk false } a)))
-  | `(fren_expr| $n:num) => `(($n : Int))
+  | `(fren_expr| ($a)) => `(($(← toTerm { cx with concatOk, natOk, emptyOk := Core.Position.shared.checked emptyOk false } a)))
+  | `(fren_expr| $n:num) => if natOk then `(($n : Nat)) else `(($n : Int))
   | `(fren_expr| true) => `(true)
   | `(fren_expr| false) => `(false)
   | `(fren_expr| $p:fren_path) => pathTerm toTerm cx parent? e p
-  | `(fren_expr| $p:fren_path($args,*)) => appTerm toTerm cx parent? e p args
-  | _ =>
-    if let some e' := splitDotted? e then return ← toTerm cx e'
-    if e.isOfKind ``Lang.fieldExpr then
-      lintChain toTerm cx parent? e
-      return ← fieldTerm cx e (← toTerm { cx with concatOk := true } e[0])
-    else if e.isOfKind ``Lang.methodExpr then
-      -- `at` is a keyword of Lean's.
-      let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
-      let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
-      if m == "matches?" then lintPattern cx parent? e e[0] e[4].getSepArgs
-      methodTerm toTerm cx e e[2] e[0] m e[4].getSepArgs
-    else if e.isOfKind ``Lang.modExpr then divTerm toTerm cx e "mod"
-    else if e.isOfKind ``Lang.setExpr then setLitTerm toTerm cx emptyOk e
-    else if e.isOfKind ``Lang.memberExpr || e.isOfKind ``Lang.subsetExpr || e.isOfKind ``Lang.unionExpr
-        || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr || e.isOfKind ``Lang.joinExpr then setOpTerm toTerm { cx with emptyOk } e
-    else if e.isOfKind ``Lang.pairExpr then throwError Core.pairPlaceMsg.text
-    else if e.isOfKind ``Lang.seqExpr then seqLitTerm toTerm cx emptyOk e
-    else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
-    else if e.isOfKind ``Lang.recordExpr then recordTerm (toTerm { cx with emptyOk := Core.Position.declared.checked false false }) cx e
-    else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm { cx with emptyOk } e (parent?.bind (operandSlot · e))
-    else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
-    else throwError "unsupported Fren expression"
+  | `(fren_expr| $p:fren_path($args,*)) => appTerm toTerm { cx with natOk } parent? e p args
+  | _ => otherTerm toTerm cx parent? emptyOk natOk e
 
 open Lang in
 /-- The conditions of a top-level `when`/`unless` chain, as a term, and a
@@ -2095,8 +2200,9 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
       vars := vars.push { name := x.getId, role := .input, isPub := true, «type» := ty, ref := x }
     let result ← varType modName nameStx (if stx[6].isNone then none else some stx[6][1])
     let lam ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
-      let cx : ExprCtx := { modName, vars, insts := #[], place := .prop, selfFn := some n }
+      let cx : ExprCtx := { modName, vars, insts := #[], place := .prop, selfFn := some n, natOk := result.isConstOf ``Nat }
       let t ← toTerm cx body
+      if result.isConstOf ``Nat then checkNat body t s!"note: `{n}` returns `Nat`"
       -- A `Bool` body is decided, classically if need be: equality on an
       -- abstract type has no other `Decidable` instance.
       let value ← if result.isConstOf ``Bool then do
@@ -2159,11 +2265,14 @@ def elabBindings (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) : TermElab
   let mut eqs := #[]
   for b in pi.bindings do
     let x := b[0]
-    let t ← if b[1].isNone then toTerm cx (← `(fren_expr| $(⟨x⟩):ident)) else toTerm { cx with emptyOk := Core.Position.declared.checked false false } b[1][1]
-    unless b[1].isNone do lintBools b[1][1]
-    lintRedundant b false
     let some idx := cx.vars.findIdx? (·.name == pi.name ++ x.getId)
       | throwError "internal error: no variable for `{x.getId}`"
+    let natOk := cx.vars[idx]!.type.isConstOf ``Nat
+    let t ← if b[1].isNone then toTerm cx (← `(fren_expr| $(⟨x⟩):ident)) else toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk } b[1][1]
+    if natOk then
+      checkNat (if b[1].isNone then x else b[1][1]) t s!"note: `{x.getId}` of `{Core.showPath pi.comp.path}` has type `Nat`"
+    unless b[1].isNone do lintBools b[1][1]
+    lintRedundant b false
     let fv := fvs[idx]!
     eqs := eqs.push (← mkEq fv (← elabProp t (← inferType fv)))
   return mkAndN eqs.toList
@@ -2351,7 +2460,10 @@ open Lang in
           discard (takeIndexes fvs)
           let value ← withRef e do
             -- A definition assigns once and acyclically, so `++` is in the core in it.
-            elabProp (← toTerm { modName := scope, vars, insts := instNames, place := .prop, emptyOk := Core.Position.declared.checked false false, concatOk := true } e) v.type
+            let t ← toTerm { modName := scope, vars, insts := instNames, place := .prop, emptyOk := Core.Position.declared.checked false false, concatOk := true
+                             natOk := v.type.isConstOf ``Nat } e
+            if v.type.isConstOf ``Nat then checkNat e t s!"note: `{v.name}` has type `Nat`, so its definition must too"
+            elabProp t v.type
           indexes := indexes ++ (← takeIndexes fvs).map fun (r, g) => (v.name, .prop, r, g)
           lintBools e
           let value := value.replaceFVars defnFvs (values.map (·.2))
@@ -2515,7 +2627,9 @@ open Lang in
     let abstract := (← getState).placeholders.contains type.constName
     unless Core.constantAccepted abstract false do
       throwErrorAt stx[4] (Core.unknownConstantMsg abstract).text
-    let value ← elabProp (← toTerm { modName, vars := #[], insts := #[], place := .prop, emptyOk := Core.Position.declared.checked false false } stx[6]) type
+    let t ← toTerm { modName, vars := #[], insts := #[], place := .prop, emptyOk := Core.Position.declared.checked false false, natOk := type.isConstOf ``Nat } stx[6]
+    if type.isConstOf ``Nat then checkNat stx[6] t s!"note: `{n}` has type `Nat`"
+    let value ← elabProp t type
     let applies ← applications { modName, vars := #[], insts := #[], place := .prop } stx[6]
     unless Core.constantAccepted abstract !applies.isEmpty do
       throwErrorAt applies[0]! (Core.unknownConstantMsg abstract).text
@@ -2523,7 +2637,7 @@ open Lang in
     addDecl (.defnDecl { name := decl, levelParams := [], type, value, hints := .abbrev, safety := .safe })
     setReducibleAttribute decl
     record (.item { item := { kind := .constItem, path, isPub, owner := modName }, ref := nameStx })
-    let int? ← if type.isConstOf ``Int then intConstValue? { modName, vars := #[], insts := #[], place := .prop } stx[6]
+    let int? ← if type.isConstOf ``Int || type.isConstOf ``Nat then intConstValue? { modName, vars := #[], insts := #[], place := .prop } stx[6]
       else pure none
     record (.constInfo { path, decl, type, value, int? })
     unless isPub do recordItem .constant path nameStx
@@ -2656,12 +2770,16 @@ and the solver is asked nothing. -/
   for v in a.vars.filter fun v => v.name.isAtomic && !bound.contains v.name do
     let cv? := c.vars.find? (·.name == v.name)
     let input := v.role == Core.Role.input
+    -- Widening in the direction values flow: an input's from `a`, an
+    -- output's from `c` (`lang::widening`).
+    let widensTo (s t : Expr) := s == t || (s.isConstOf ``Nat && t.isConstOf ``Int)
+    let widens (cv : Var) := if input then widensTo v.type cv.type else widensTo cv.type v.type
     let ok := Core.interfaceAccepted input cv?.isSome (cv?.any (·.role == Core.Role.input)) (cv?.any (·.isPub))
-      (cv?.any (·.type == v.type))
+      (cv?.any (widensTo v.type ·.type)) (cv?.any (widensTo ·.type v.type))
     unless ok do
       let why := match cv? with
         | none => s!"it has no variable `{v.name}`"
-        | some cv => if cv.type != v.type then s!"its `{v.name}` has another type"
+        | some cv => if !widens cv then s!"its `{v.name}` has another type"
           else if input then s!"its `{v.name}` is not an input"
           else if cv.role == Core.Role.input then s!"its `{v.name}` is an input, not an output"
           else s!"its output `{v.name}` is not public"
@@ -2691,13 +2809,21 @@ and the solver is asked nothing. -/
         let some v := a.vars.find? (·.name == x.getId) | throwError "internal error: no variable for `{x.getId}`"
         let cx : ExprCtx := { modName, vars := own, insts := #[], place := .prop
                               refining? := some { concrete := c.path, abstract := a.path, input := v.role == .input } }
-        let t ← if b[1].isNone then toTerm cx (← pathExpr x x.getId) else toTerm { cx with emptyOk := Core.Position.declared.checked false false } b[1][1]
+        let t ← if b[1].isNone then toTerm cx (← pathExpr x x.getId)
+          else toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := v.type.isConstOf ``Nat } b[1][1]
+        if v.type.isConstOf ``Nat then
+          checkNat (if b[1].isNone then x else b[1][1]) t s!"note: `{x.getId}` of `{Core.showPath a.path}` has type `Nat`"
         unless b[1].isNone do lintBools b[1][1]
         let e ← mkLambdaFVars cfvs (← elabProp t v.type)
         return (v, e, ← takeIndexes cfvs)
     let (relational, counts) ← checkCounts
     let l ← getLocal
-    let inputs := c.vars.filter fun v => v.name.isAtomic && v.role == .input
+    -- An input that `a` reads has `a`'s type, which widens to `c`'s
+    -- (`refinement::interface`).
+    let inputs := (c.vars.filter fun v => v.name.isAtomic && v.role == .input).map fun v =>
+      match a.vars.find? fun u => u.name == v.name && u.role == .input && !bound.contains u.name with
+      | some u => { v with type := u.type }
+      | none => v
     let vars := inputs ++ c.vars.map (fun v =>
         let role := Core.Role.ofInst v.role v.isPub
         { v with name := w ++ v.name, role, isPub := role != .instHidden, isDet := false, defn? := none, ref := nameStx })
@@ -2705,11 +2831,20 @@ and the solver is asked nothing. -/
     withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let fvOf (x : Name) : Expr := fvs[(vars.findIdx? (·.name == x)).getD 0]!
       -- `c`'s variables as a binding reads them, its outputs from the instance.
-      let ownC := own.map fun v => fvOf (if v.role == .input then v.name else w ++ v.name)
+      -- An input of `a`'s type `Nat`, read where `c`'s `Int` is, is widened.
+      let ownC := own.map fun v =>
+        let x := fvOf (if v.role == .input then v.name else w ++ v.name)
+        if v.role == .input && v.type.isConstOf ``Int && (vars.find? (·.name == v.name)).any (·.type.isConstOf ``Nat) then
+          mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) x else x
       -- `a`'s variables: their bindings, or else `c`'s of the same names.
       let argsA := a.vars.map fun v => match bindingsA.find? (·.1.name == v.name) with
         | some (_, e, _) => e.beta ownC
-        | none => fvOf (if v.name.isAtomic && v.role == .output then w ++ v.name else v.name)
+        | none =>
+          let n := if v.name.isAtomic && v.role == .output then w ++ v.name else v.name
+          -- `c`'s `Nat`, read as `a`'s `Int`, is widened (`lang::widening`).
+          if v.type.isConstOf ``Int && (vars.find? (·.name == n)).any (·.type.isConstOf ``Nat) then
+            mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) (fvOf n)
+          else fvOf n
       let sliceC := c.vars.map fun v => fvOf (w ++ v.name)
       let lam (e : Expr) : TermElabM Expr := mkLambdaFVars fvs e
       let reported (p : PropInfo) := { p with ref := nameStx, trigger? := none, triggerRef? := none }
@@ -2719,7 +2854,12 @@ and the solver is asked nothing. -/
         let i := (a.vars.findIdx? (·.name == d)).getD 0
         return { kind := .expect, name := d, ref := nameStx, trigger? := none, triggerRef? := none, decl := decl ++ d
                  body := ← lam (← mkEq argsA[i]! (e.beta argsA)) : PropInfo }
-      let bindings ← inputs.mapM fun v => mkEq (fvOf (w ++ v.name)) (fvOf v.name)
+      -- `a`'s `Nat`, given to `c`'s `Int`, is widened.
+      let bindings ← inputs.mapM fun v => do
+        let x := fvOf v.name
+        let x := if v.type.isConstOf ``Nat && (vars.find? (·.name == w ++ v.name)).any (·.type.isConstOf ``Int) then
+          mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) x else x
+        mkEq (fvOf (w ++ v.name)) x
       let instC : InstInfo := { name := w, comp := c.path, ref := nameStx, decl
                                 bindings := ← lam (mkAndN bindings.toList)
                                 behaviour := ← lam (c.meaning sliceC)

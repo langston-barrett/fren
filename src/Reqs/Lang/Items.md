@@ -23,12 +23,12 @@ pub comp declared_before {
     in items: Seq(ItemName)      -- the items of the file and its imports, in order
     in used: ItemName            -- the item a path names
     in user: ItemName            -- the item the path is written in
-    in k_used: Int               -- the position of `used` in `items`
-    in k_user: Int               -- the position of `user`
+    in k_used: Nat               -- the position of `used` in `items`
+    in k_user: Nat               -- the position of `user`
     pub det out accepted?
 
-    assume positions: 0 <= k_used < items.len and items[k_used] = used
-        and 0 <= k_user < items.len and items[k_user] = user
+    assume positions: k_used < items.len and items[k_used] = used
+        and k_user < items.len and items[k_user] = user
     assume distinct: when used = user, k_used = k_user
 
     req rule: accepted? iff (used = user or k_used < k_user)
@@ -171,9 +171,11 @@ the item.
 
 ## Fields and payloads
 
-A field or a payload may have any type in which no abstract type occurs:
-the values of a record or enumeration are fully described by the spec,
-and `Set(Name)` is as abstract as `Name`. Nor may the item being declared
+A field or a payload may have any type in which no abstract type occurs,
+and that is not and does not contain `Nat` (see [Natural
+numbers](Types.md#natural-numbers)): the values of a record or
+enumeration are fully described by the spec, and `Set(Name)` is as
+abstract as `Name`. Nor may the item being declared
 occur within a set's element type, as in `enum Tree { Node(Set(Tree)) }`:
 a set is a value up to its members' order, and a type cannot be built from
 sets of itself. `lang::field_type` states which types are accepted, from
@@ -274,10 +276,10 @@ those written with a name:
 pub comp function_params {
     in defined?          -- written with `:= e`
     in n_params: Int
-    in n_named: Int      -- parameters written with a name
+    in n_named: Nat      -- parameters written with a name
     pub det out accepted?
 
-    assume counts: n_params >= 1 and 0 <= n_named <= n_params
+    assume counts: n_params >= 1 and n_named <= n_params
 
     req rule: accepted? iff n_named = (if defined? then n_params else 0)
 
@@ -324,7 +326,11 @@ expressions rather than instantiated.
 
 The spec does not say what an uninterpreted function's value is for any
 argument. All that is known of it is that it is a function: applied
-to equal arguments, it gives equal results. So it relates values
+to equal arguments, it gives equal results, of its result type. So an
+application of a function whose result is a `Nat` is at least 0, as a
+`Nat` variable is (see [Components](Components.md#natural-numbers)):
+each application brings that constraint where it is written, and no
+constraint quantifies over the function's arguments. So it relates values
 consistently wherever it is applied, across the constraints of a
 component, its instances, and the behaviours of a [global
 expectation](Global.md). What its values are is given by an

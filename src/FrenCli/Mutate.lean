@@ -84,6 +84,8 @@ structure Src where
   chars : Array Char
   /-- Its tokens, in order. -/
   toks : Array Token
+  /-- Each `+` where a `Nat` is expected, which a `-` would make an `Int`. -/
+  natSums : Array Span := #[]
 
 def Src.text (s : Src) (sp : Span) : String := String.ofList (s.chars.extract sp.start sp.stop).toList
 
@@ -277,7 +279,8 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
         | some t => #[{ origin, span := t.span, after := new, context := sp }]
         | none => #[]
       if let some new := comparisonSwap? op then swap .swapComparison new
-      else if let some new := arithmeticSwap? op then swap .swapArithmetic new
+      -- A `-` is an `Int`, so a `+` where a `Nat` is expected stays.
+      else if let some new := arithmeticSwap? op then if s.natSums.contains sp then #[] else swap .swapArithmetic new
       else if op == "or" then
         -- `a or b or c` is `(a or b) or c`: its left operand needs
         -- parentheses under `and`.

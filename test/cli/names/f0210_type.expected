@@ -4,7 +4,7 @@ error[F0210]: expected a type, but `d` is a component
 3 | comp c { in x: d }
   |                ^ not a type
   |
-  = note: types are `Bool`, `Int`, enums, records and abstract types
+  = note: types are `Bool`, `Int`, `Nat`, enums, records and abstract types
 
 error: could not check due to 1 previous error
 

@@ -107,10 +107,8 @@ something. `lint::duplicate_elements` states when it fires:
 
 ```fren
 pub comp duplicate_elements {
-    in n_repeats: Int    -- elements written the same as an earlier one
+    in n_repeats: Nat    -- elements written the same as an earlier one
     pub det out fires?
-
-    assume counts: n_repeats >= 0
 
     req rule: fires? iff n_repeats > 0
 }
@@ -140,11 +138,9 @@ pub comp empty_argument {
     use lang::Method
     use lang::Method::{Contains, EndsWith, IndexOf, Replace, ReplaceAll, Slice, StartsWith}
     in method: Method
-    in index: Int        -- the position of the argument, from 0
+    in index: Nat        -- the position of the argument, from 0
     in empty?            -- it is written `""` or `[]`, or `0`
     pub det out fires?
-
-    assume position: index >= 0
 
     req rule: fires? iff (empty? and match method {
         StartsWith | EndsWith | Contains | Replace | ReplaceAll | IndexOf => index = 0,

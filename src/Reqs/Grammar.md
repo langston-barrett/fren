@@ -66,7 +66,7 @@ member         := "in" variable
 variable       := DECL [":" type]
 instance       := "inst" DECL ":" path "{" [binding ("," binding)* [","]] "}"
 binding        := IDENT [":=" expr]
-type           := "Bool" | "Int" | "String" | "Set" "(" type ")" | "Seq" "(" type ")" | "Rel" "(" type "," type ")"
+type           := "Bool" | "Int" | "Nat" | "String" | "Set" "(" type ")" | "Seq" "(" type ")" | "Rel" "(" type "," type ")"
                 | path
 path           := IDENT ("::" IDENT)*
 ```

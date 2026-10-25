@@ -36,6 +36,8 @@ open Fren.Core (Table Resolved Role showPath)
 inductive VTy where
   | bool
   | int
+  /-- An `Int` that is at least 0. -/
+  | nat
   | string
   | set (elem : VTy)
   | rel (a b : VTy)
@@ -44,6 +46,11 @@ inductive VTy where
   | data (path : Name)
   | abstract (path : Name)
   deriving Inhabited, BEq, Hashable, Repr
+
+/-- `t`, as an element type: a `Nat` is widened to an `Int`. -/
+def VTy.widen : VTy → VTy
+  | .nat => .int
+  | t => t
 
 inductive Val where
   | bool (b : Bool)
@@ -555,6 +562,7 @@ def dotted (parts : List String) : Name := parts.foldl Name.mkStr .anonymous
 partial def lowerTy (segs : Array Ident) : L VTy := do
   if segs.size == 1 && segs[0]!.name == "Bool" then return .bool
   if segs.size == 1 && segs[0]!.name == "Int" then return .int
+  if segs.size == 1 && segs[0]!.name == "Nat" then return .nat
   if segs.size == 1 && segs[0]!.name == "String" then return .string
   if segs[0]!.name == Parser.setSeg then return .set (← lowerTy (segs.extract 1))
   if segs[0]!.name == Parser.relSeg then
@@ -607,7 +615,7 @@ def readFields (e : Ex) (ty : VTy) (fs : List String) : L (Ex × VTy) := do
       ty := methodTy m ty
       continue
     -- A method of a `String` or an `Int`, without arguments.
-    if ty == .string || ty == .int then
+    if ty == .string || ty == .int || ty == .nat then
       let some m := Fren.Core.Method.ofName? f | throw s!"unknown method `{f}`"
       e := .method m e #[]
       ty := methodTy m ty
@@ -774,12 +782,12 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     -- `{}` is typed by where it is written, which the evaluator does not need.
     let t : VTy := match (es[0]? : Option (Ex × VTy)) with
       | some (_, .rel a b) => .rel a b
-      | some (_, t) => .set t
+      | some (_, t) => .set t.widen
       | none => .set .bool
     return (.setLit (es.map (·.1)), t)
   | .seq _ es => do
     let es ← es.mapM (lowerExpr cx)
-    return (.seqLit (es.map (·.1)), .seq ((es[0]?.map (·.2)).getD .bool))
+    return (.seqLit (es.map (·.1)), .seq ((es[0]?.map (·.2.widen)).getD .bool))
   | .index span q i => do
     let (x, tq) ← lowerExpr cx q
     let (y, _) ← lowerExpr cx i
@@ -1056,11 +1064,23 @@ def lowerFiles (files : Array (Array Item)) : Except String Spec := (·.spec) <$
 def VTy.show : VTy → String
   | .bool => "Bool"
   | .int => "Int"
+  | .nat => "Nat"
   | .string => "String"
   | .set t => s!"Set({t.show})"
   | .rel a b => s!"Rel({a.show}, {b.show})"
   | .seq t => s!"Seq({t.show})"
   | .data p | .abstract p => showPath p
+
+/-- Whether `e` is a `Nat` where one is expected (`lang::literal_type`,
+`lang::operator_type`): a literal, a `Nat` constant, or `+`, `*` or a
+conditional of those. -/
+partial def natTyped (e : Expr) : L Bool := do
+  match e with
+  | .num .. => return true
+  | .bin _ "+" a b | .bin _ "*" a b => return (← natTyped a) && (← natTyped b)
+  | .ite _ _ a b => return (← natTyped a) && (← natTyped b)
+  | .path .. => return (← lowerExpr {} e).2 == .nat
+  | _ => return false
 
 /-- A value written as Fren shows values (`Reqs/Eval#values`), of type
 `ty`, read in module `module`. -/
@@ -1078,7 +1098,10 @@ def parseValue (st : LState) (module : Name) (ty : VTy) (text : String) : Except
     | .ok r => pure r
     | .error e => throw e.msg.headline
   unless ps.toks[ps.pos]?.any (·.tok == .eof) do throw s!"`{text}` is not a value"
-  let ((ex, t), _) ← (lowerExpr {} e).run { st with module }
+  let (((ex, t), nat), _) ← (do return (← lowerExpr {} e, ← natTyped e)).run { st with module }
+  -- Typed as at a binding of the type (`lang::widening`): a `Nat` is read
+  -- as an `Int`, and a literal as a `Nat`.
+  let t := if nat && ty == .nat then .nat else if t == .nat && ty == .int then .int else t
   let a (t : VTy) := if "AEIOU".contains t.show.front then "an" else "a"
   -- `{}` and `[]` have the type they are read at.
   let empty := match ex, ty with

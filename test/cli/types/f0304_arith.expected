@@ -4,7 +4,7 @@ error[F0304]: type mismatch: expected `Int`, found `Bool`
 2 | comp c { in b? pub out y: Int req r: y = 1 + b? }
   |                                              ^^ expected `Int`, found `Bool`
   |
-  = note: the operands of `+` are `Int`s
+  = note: the operands of `+` are `Int`s or `Nat`s
   = help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`
 
 error: could not check due to 1 previous error

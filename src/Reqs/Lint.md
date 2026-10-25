@@ -242,12 +242,10 @@ lint of the group:
 ```fren
 pub comp group_setting {
     in current: Level        -- the lint's level before the setting
-    in n_forbidden: Int      -- lints of the group at `forbid` before it
+    in n_forbidden: Nat      -- lints of the group at `forbid` before it
     in requested: Level
     pub det out accepted?
     pub det out level: Level
-
-    assume counts: n_forbidden >= 0
 
     req forbidden: accepted? iff (n_forbidden = 0 or requested = Level::Forbid)
     req applied: level = if accepted? then requested else current
@@ -420,12 +418,10 @@ when an expectation is fulfilled:
 
 ```fren
 pub comp expectation {
-    in n_fired: Int      -- times the lint fires where this expectation is in effect
+    in n_fired: Nat      -- times the lint fires where this expectation is in effect
     in level: Level      -- of `unfulfilled_lint_expectations`, at the `set_option`
     pub det out fulfilled?
     pub det out reported?
-
-    assume counts: n_fired >= 0
 
     req fulfilled: fulfilled? iff n_fired > 0
     req reported: reported? iff (not fulfilled? and not level in {Allow, Expect})
@@ -568,10 +564,8 @@ pub comp import_fix {
     in glob?             -- `glob_imports` fires at it
     in fix_unused?       -- `unused_imports` is fixed: `--only` and `--skip` allow it
     in fix_glob?         -- `glob_imports` is fixed
-    in n_used: Int       -- distinct variants the file uses through it
+    in n_used: Nat       -- distinct variants the file uses through it
     pub det out fix: ImportFix
-
-    assume counts: n_used >= 0
 
     req rule: fix = if unused? and fix_unused? then ImportFix::Remove
         else if glob? and fix_glob? and not unused? and n_used > 0 then ImportFix::ByName

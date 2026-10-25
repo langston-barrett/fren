@@ -43,6 +43,13 @@ remainder](Expressions.md#division-and-remainder)), and the methods `abs`,
 variables, or a quotient by one, is not outside a core to opt out of: it is
 an error, whatever the lint levels.
 
+A [`Nat`](Types.md#natural-numbers) is an `Int` with the linear
+constraint that it is at least 0, so it is in the core wherever an `Int`
+is. The constraint on an output stays with the requirements under
+realizability's quantifier, and the one on an application of an
+uninterpreted function is about that application, so no query quantifies
+over a function's arguments.
+
 ## Strings
 
 The core of the theory of strings is *regular constraints with length*:

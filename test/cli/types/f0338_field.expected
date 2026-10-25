@@ -1,0 +1,13 @@
+error[F0338]: `Nat` cannot be the type of a field
+ --> test/cli/types/f0338_field.fren:3:34
+  |
+3 | struct Stock { item: Int, count: Nat }
+  |                                  ^^^ a `Nat`
+  |
+  = note: for now, `Nat` is only the type of a variable, a function's parameter or result, or a constant
+  = help: use `Int`, and say where it is used that it is at least 0
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0338`.
+exit=2

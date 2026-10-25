@@ -190,12 +190,12 @@ whether the fix has a `_` arm:
 pub comp if_chain_match {
     in n_tests: Int      -- tests in the chain
     in variant_tests?    -- each is a variant test of the same scrutinee
-    in n_repeated: Int   -- times a test names a variant that it, or an earlier test, names before
-    in n_untested: Int   -- variants of the enumeration that no test names
+    in n_repeated: Nat   -- times a test names a variant that it, or an earlier test, names before
+    in n_untested: Nat   -- variants of the enumeration that no test names
     pub det out fires?
     pub det out wildcard?  -- the fix keeps the final `else`, as the `_` arm
 
-    assume counts: n_tests >= 1 and n_repeated >= 0 and n_untested >= 0
+    assume counts: n_tests >= 1
 
     req rule: fires? iff (variant_tests? and n_tests >= 2 and n_repeated = 0)
     req fix: wildcard? iff n_untested > 0
@@ -217,11 +217,9 @@ name, so merging them changes the structure of the spec, not only its text.
 
 ```fren
 pub comp case_split_reqs {
-    in n_cases: Int      -- requirements `when T, y = e` of one output, whose `T` are variant tests of one scrutinee
-    in n_repeated: Int   -- times a test names a variant that it, or an earlier test, names before
+    in n_cases: Nat      -- requirements `when T, y = e` of one output, whose `T` are variant tests of one scrutinee
+    in n_repeated: Nat   -- times a test names a variant that it, or an earlier test, names before
     pub det out fires?
-
-    assume counts: n_cases >= 0 and n_repeated >= 0
 
     req rule: fires? iff (n_cases >= 2 and n_repeated = 0)
 }
