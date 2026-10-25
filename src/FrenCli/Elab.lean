@@ -2224,14 +2224,15 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       return (s!"({smt} {x} {y})", .bool)
     | "=" | "!=" =>
       lintLength op a b
-      -- `const_is_empty` on a literal and an empty one (`lint::const_empty_equation`).
-      if let (some (_, m), some (_, n), true) := (a.literalCount?, b.literalCount?, cx.noteIndexes) then
-        let (fires, value) := Fren.Core.constEmptyEquation (op == "=") (max m n)
-        if fires && min m n == 0 then lint .constIsEmpty span (Fren.Core.constIsEmptyMsg value)
       -- `++` is in the core against a constant.
       let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
       let ((x, tx), (y, ty)) ← pair { cx with concatOk := cb } { cx with concatOk := ca } a b
       liftMsg span (Fren.Core.checkComparable op tx ty)
+      -- `const_is_empty` on a literal and an empty one (`lint::const_empty_equation`),
+      -- after the sides and their types, as in Lean.
+      if let (some (_, m), some (_, n), true) := (a.literalCount?, b.literalCount?, cx.noteIndexes) then
+        let (fires, value) := Fren.Core.constEmptyEquation (op == "=") (max m n)
+        if fires && min m n == 0 then lint .constIsEmpty span (Fren.Core.constIsEmptyMsg value)
       -- For `bool_equality`, at the end of the expression.
       if tx == .bool && cx.noteIndexes then modify fun s => { s with boolEqs := s.boolEqs.push span }
       -- A side that is a `++` is reported as one; one whose definition
