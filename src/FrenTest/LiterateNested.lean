@@ -10,27 +10,27 @@ comp nested_gate { in a? pub out b? req same: b? iff a? expect never: when a?, n
 
 -- The inner chapter also checks its own item and the outer chapter's, which
 -- the outer chapter declares before reading it: each is named with the
--- chapter that declares it.
+-- chapter that declares it, by its path from this file, once.
 /--
 error: expectation `nested_gate::never` does not hold
 
 counterexample: a? = true, b? = true
 help: strengthen the requirements so that it follows, or correct the expectation
 ---
-error: LiterateOuter.md:16:0: LiterateOuter.md:13:11: expectation `outer::outer_gate::never` does not hold
+error: chapters/LiterateOuter.md:13:11: expectation `outer::outer_gate::never` does not hold
 
 counterexample: a? = true, b? = true
 help: strengthen the requirements so that it follows, or correct the expectation
 ---
-error: LiterateOuter.md:16:0: LiterateInner.md:12:11: expectation `outer::inner_gate::never` does not hold
+error: chapters/LiterateInner.md:12:11: expectation `outer::inner_gate::never` does not hold
 
 counterexample: a? = true, b? = true
 help: strengthen the requirements so that it follows, or correct the expectation
 ---
-info: LiterateOuter.md:16:0: LiterateInner.md:15:0: fren: 9 passed, 3 failed, 0 inconclusive, 0 redundant
+info: chapters/LiterateInner.md:15:0: fren: 9 passed, 3 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in
-#fren_md "LiterateOuter.md"
+#fren_md "chapters/LiterateOuter.md"
 
 -- After both chapters, a check in the Lean file still places the inner
 -- chapter's item by its own text.
@@ -40,12 +40,12 @@ error: expectation `nested_gate::never` does not hold
 counterexample: a? = true, b? = true
 help: strengthen the requirements so that it follows, or correct the expectation
 ---
-error: LiterateOuter.md:13:11: expectation `outer::outer_gate::never` does not hold
+error: chapters/LiterateOuter.md:13:11: expectation `outer::outer_gate::never` does not hold
 
 counterexample: a? = true, b? = true
 help: strengthen the requirements so that it follows, or correct the expectation
 ---
-error: LiterateInner.md:12:11: expectation `outer::inner_gate::never` does not hold
+error: chapters/LiterateInner.md:12:11: expectation `outer::inner_gate::never` does not hold
 
 counterexample: a? = true, b? = true
 help: strengthen the requirements so that it follows, or correct the expectation

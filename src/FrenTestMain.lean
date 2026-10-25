@@ -243,7 +243,7 @@ def fmtIgnore : List String :=
   ["test/cli/f01*.fren", "test/cli/f0216_member_option.fren", "test/cli/fix_*.fren", "test/cli/fmt_check.fren", "test/cli/fmt_parse_error.fren", "test/cli/mutate_unformatted.fren", "test/ui/syntax_*.fren",
    "test/ui/impl.fren", "test/ui/lean_*.fren", "test/ui/trace.fren", "src/Reqs/Markdown.md",
    -- `#fren_md` in a block, which only the Lean front end reads.
-   "src/FrenTest/LiterateOuter.md"]
+   "src/FrenTest/chapters/LiterateOuter.md"]
 
 /-- What formatting keeps (`fmt::safe`): the tokens, but for the trailing
 commas of lists and claims and for `use` items; the paths the `use` items

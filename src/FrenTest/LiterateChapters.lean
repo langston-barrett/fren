@@ -7,7 +7,7 @@ open Fren.Lang
 comp lean_gate { in a? pub out b? req same: b? iff a? expect never: when a?, not b? }
 
 -- A check in one chapter places a message about another chapter's comp,
--- global expectation or item set to testing by that chapter's text: its file
+-- global expectation, refinement or item set to testing by that chapter's text: its file
 -- and line are the first chapter's, not the second's (#17).
 #guard_msgs in
 #fren_md "LiterateFirst.md"
@@ -31,7 +31,12 @@ error: LiterateFirst.md:17:7: expectation `chapters::arithmetic` does not hold
 counterexample: (any values)
 help: strengthen the requirements so that it follows, or correct the expectation
 ---
-info: LiterateSecond.md:6:0: fren: 6 passed, 3 failed, 0 inconclusive, 0 redundant
+error: LiterateFirst.md:45:7: expectation `chapters::fails::below` does not hold
+
+counterexample: x = -1, precise.x = -1, precise.y = 0
+help: strengthen the requirements so that it follows, or correct the expectation
+---
+info: LiterateSecond.md:6:0: fren: 10 passed, 4 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in
 #fren_md "LiterateSecond.md"
@@ -55,7 +60,12 @@ error: LiterateFirst.md:17:7: expectation `chapters::arithmetic` does not hold
 counterexample: (any values)
 help: strengthen the requirements so that it follows, or correct the expectation
 ---
-info: fren: 6 passed, 3 failed, 0 inconclusive, 0 redundant
+error: LiterateFirst.md:45:7: expectation `chapters::fails::below` does not hold
+
+counterexample: x = -1, precise.x = -1, precise.y = 0
+help: strengthen the requirements so that it follows, or correct the expectation
+---
+info: fren: 10 passed, 4 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in
 #fren_check

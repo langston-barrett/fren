@@ -12,8 +12,11 @@ file (`Fren.Core.unwrapMarkdown`), with the path relative to the current
 file, as if they were written in place of the command.
 
 Messages about the blocks are logged at the command, with text starting
-`file.md:line:col:`. They cannot simply carry the Markdown file's name:
-Lake replaces the file name of every message with the module's. An item's
+`file.md:line:col:`, except those about the Lean file's own items, which
+are logged at the items. They cannot simply carry the Markdown file's name:
+Lake replaces the file name of every message with the module's. A spec read
+by another is named relative to the Lean file, and its messages are
+labelled once, by it, and placed at the outermost command. An item's
 syntax has positions in the text of the file that declares it, so each
 spec's item is recorded with that text as it is declared (`mdSources`, from
 `mdSource?`), even in a spec that another spec reads, and the Lean file's
@@ -36,6 +39,16 @@ scoped syntax (name := mdCmd) "#fren_md " str : command
 
 end Lang
 
+/-- The file name of a message that a `#fren_md` read by another has already
+labelled with its spec's name and position: the reading `#fren_md` places it
+without labelling it again. No file has this name. -/
+def labelled : String := "<#fren_md>"
+
+/-- `path` relative to the directory `base`, if it is in it. -/
+def relativeTo (base : System.FilePath) (path : System.FilePath) : String :=
+  let b := base.toString ++ "/"
+  if path.toString.startsWith b then (path.toString.drop b.length).toString else path.toString
+
 @[command_elab Lang.mdCmd] def elabMd : CommandElab := fun stx => do
   let some rel := stx[1].isStrLit? | throwUnsupportedSyntax
   let some dir := (System.FilePath.mk (← getFileName)).parent
@@ -57,9 +70,15 @@ end Lang
   -- keeps the outermost. What this spec declares is recorded with its text
   -- as it is declared (`LocalState.declared`).
   let leanFile? ← if outer.inMarkdown then pure outer.leanFile? else pure (some (← getFileName, ← getFileMap))
+  -- Its name in messages: relative to the Lean file, even when another spec
+  -- reads it.
+  let leanName := (leanFile?.map (·.1)).getD (← getFileName)
+  let name := match (System.FilePath.mk leanName).parent with
+    | some leanDir => if outer.inMarkdown then relativeTo leanDir path else rel
+    | none => rel
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
                                 items := #[], usedItems := #[], inMarkdown := true, leanFile?,
-                                mdSource? := some (rel, inputCtx.fileMap) }
+                                mdSource? := some (name, inputCtx.fileMap) }
   let s ← get
   let st ← IO.processCommands inputCtx {} { s with messages := {} }
   set st.commandState
@@ -72,12 +91,15 @@ end Lang
   let fileName ← getFileName
   -- A message about another spec's item already names that spec, and one
   -- about the Lean file's item is placed in it (`Fren.logAbout`), even
-  -- from a spec that another spec reads.
-  let leanName := (leanFile?.map (·.1)).getD fileName
+  -- from a spec that another spec reads. Each is labelled once, by the
+  -- innermost `#fren_md`, and placed at the outermost.
+  let out := if outer.inMarkdown then labelled else fileName
   let msgs := inner.messages.toList.map fun m =>
-    if m.fileName == leanName then m else
-    let shown := if m.fileName == path.toString then rel else m.fileName
-    { m with fileName, pos, endPos, data := m!"{shown}:{m.pos.line}:{m.pos.column}: " ++ m.data }
+    if m.fileName == leanName then m
+    else if m.fileName == labelled then { m with fileName := out, pos, endPos }
+    else
+      let shown := if m.fileName == path.toString then name else m.fileName
+      { m with fileName := out, pos, endPos, data := m!"{shown}:{m.pos.line}:{m.pos.column}: " ++ m.data }
   -- Info trees refer to the Markdown file's text, so they are dropped.
   set { inner with messages := msgs.foldl (·.add) s.messages, infoState := s.infoState }
   modifyLocal fun l => { l with useRecords := outer.useRecords, used := outer.used,

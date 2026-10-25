@@ -52,9 +52,13 @@ declares it, wherever it is checked:
 This holds through Markdown files that read others: an item is named with
 the file that declares it, whichever file checks it, before or after.
 
-A Markdown file read by another Markdown file is named as the reading
-file's `#fren_md` names it. Lake does not know that a Lean file depends on the
-Markdown files it reads, so it rebuilds a module that uses `#fren_md` after
+A Markdown file read by another Markdown file is named by its path
+relative to the Lean file, as in `chapters/inner.md:12:3:`, and a
+diagnostic starts with one name and position, that of the file that
+declares the item, however deeply it is read.
+
+Lake does not know that a Lean file depends on the Markdown files it reads,
+so it rebuilds a module that uses `#fren_md` after
 the Markdown changes only if the library declares those files with `needs`,
 for example:
 
