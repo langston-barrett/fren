@@ -31,6 +31,9 @@ inductive Ty where
   | record (path : Name)
   /-- An abstract type. -/
   | abstract (path : Name)
+  /-- A newtype, with its underlying type, which is how the solver sees it
+  (`Reqs/Lang/Items#newtypes`). -/
+  | newtype (path : Name) (under : Ty)
   deriving Inhabited, DecidableEq
 
 /-- The abstract type that `t` is, or that is an element type within it. -/
@@ -49,7 +52,7 @@ def Ty.show : Ty → String
   | .set t => s!"Set({t.show})"
   | .rel a b => s!"Rel({a.show}, {b.show})"
   | .seq t => s!"Seq({t.show})"
-  | .enum p | .record p | .abstract p => showPath p
+  | .enum p | .record p | .abstract p | .newtype p _ => showPath p
 
 /-- Whether an expression of type `found` is accepted where `expected` is:
 the same type, or a `Nat` widened to an `Int` (`lang::widening`). -/
@@ -143,5 +146,115 @@ inductive Brought where
 component itself and whether it is defined (`lang::nat_variable`). -/
 def natBrought (ownOutput defined : Bool) : Brought :=
   if defined then .nothing else if ownOutput then .requirement else .assumption
+
+/-! ## Newtypes -/
+
+/-- Whether a newtype is accepted (`lang::newtype`), from how many types its
+parentheses hold and whether its one field's type is accepted as a record's
+field is (`lang::field_type`). -/
+def newtypeAccepted (nFields : Nat) (fieldAccepted : Bool) : Bool := nFields == 1 && fieldAccepted
+
+/-- Whether a newtype is unbounded, from whether its underlying type is
+(`lang::newtype`). -/
+def newtypeUnbounded (underUnbounded : Bool) : Bool := underUnbounded
+
+/-- The operators, as `lang::newtype_operator` groups them. -/
+inductive NewtypeOp where
+  /-- `=` and `!=`. -/
+  | equality
+  /-- `<`, `<=`, `>` and `>=`. -/
+  | order
+  /-- `+`, and `-` between two operands. -/
+  | sum
+  /-- Any other operator, such as `*`, `div`, `mod`, `++` or a prefix `-`. -/
+  | other
+  deriving Inhabited, DecidableEq, Repr
+
+/-- The group of the operator `op`, which is prefix if `pre`. -/
+def NewtypeOp.ofOp (op : String) (pre := false) : NewtypeOp :=
+  match op, pre with
+  | "=", _ | "!=", _ => .equality
+  | "<", _ | "<=", _ | ">", _ | ">=", _ => .order
+  | "+", false | "-", false => .sum
+  | _, _ => .other
+
+/-- Whether a newtype whose underlying type is `under`, an ordered
+enumeration if `ordered`, has the operator `op` (`lang::newtype_operator`). -/
+def newtypeOpAccepted (op : NewtypeOp) (under : Ty) (ordered := false) : Bool :=
+  match op with
+  | .equality => true
+  | .order => under == .int || under == .string || (ordered && under matches .enum _)
+  | .sum => under == .int
+  | .other => false
+
+/-- The newtype among `a` and `b`, with its underlying type: the first. -/
+def newtypeOf? (a b : Ty) : Option (Name × Ty) :=
+  match a, b with
+  | .newtype p u, _ | _, .newtype p u => some (p, u)
+  | _, _ => none
+
+/-- Whether `f` is a field named by digits, as the field `0` of a newtype
+is. -/
+def positionalField (f : Name) : Bool :=
+  match f with
+  | .str .anonymous d => !d.isEmpty && d.all Char.isDigit
+  | _ => false
+
+/-- A newtype that declares `n` fields, not exactly one
+(`lang::newtype`). -/
+def newtypeFieldsMsg (name : Name) (n : Nat) : Msg :=
+  { code? := some "F0361"
+    headline := s!"newtype `{showPath name}` has {n} {if n == 1 then "field" else "fields"}, but a newtype has exactly one"
+    label? := some (if n == 0 then "no field" else s!"{n} fields")
+    notes := #["note: `struct N(T)` declares a newtype, a distinct type with the values of `T`"]
+      ++ if n == 0 then #[s!"help: give it its underlying type, as in `struct {name.getString!}(Int)`"]
+        else #["help: for several fields, declare a record with named fields, as in `struct P { x: Int, y: Int }`"] }
+
+/-- The operator `op`, which `ty`, a newtype whose underlying type is
+`under`, does not have (`lang::newtype_operator`). -/
+def newtypeOpMsg (op : String) (ty : Name) (under : Ty) (ordered := false) : Msg :=
+  let has := if newtypeOpAccepted .sum under then "`=`, `!=`, `<`, `<=`, `>`, `>=`, and `+` and `-` of two of them"
+    else if newtypeOpAccepted .order under ordered then "`=`, `!=`, `<`, `<=`, `>` and `>=`"
+    else "`=` and `!=`"
+  { code? := some "F0362", headline := s!"newtype `{showPath ty}` has no operator `{op}`"
+    label? := some s!"`{op}` of `{showPath ty}`"
+    notes := #[s!"note: a newtype of `{under.show}` has {has}"
+      , s!"help: read its `{under.show}` with `.0`, as in `x.0`"] }
+
+/-- An operator `op` whose operands are of the types `a` and `b`, which
+differ, one of which is the newtype `nt` of `under`. -/
+def newtypeMixMsg (op : String) (a b : Ty) (nt : Name) (under : Ty) : Msg :=
+  let headline := match op with
+    | "+" => s!"cannot add `{b.show}` to `{a.show}`"
+    | "-" => s!"cannot subtract `{b.show}` from `{a.show}`"
+    | _ => s!"cannot compare `{a.show}` with `{b.show}`"
+  let other := if a == .newtype nt under then b else a
+  { code? := some "F0363", headline, label? := some s!"`{a.show}` and `{b.show}`"
+    notes := #[s!"note: `{showPath nt}` is a newtype, a type distinct from every other, even from `{under.show}`"]
+      ++ if other == under || (other == .nat && under == .int) then
+          #[s!"help: build a `{showPath nt}` with `{nt.getString!}(e)`, or read its `{under.show}` with `.0`"]
+        else #[] }
+
+/-- `R(e)` for a record `R` with named fields, or `N { ... }` for a
+newtype `N`: each is built the other way. -/
+def constructionMsg (ty : Name) (newtype : Bool) : Msg :=
+  let n := ty.getString!
+  if newtype then
+    { code? := some "F0364", headline := s!"`{showPath ty}` is a newtype, not a record with named fields"
+      label? := some "a newtype"
+      notes := #[s!"note: a newtype has one unnamed field, its value: build it as `{n}(e)`, and read it as `x.0`"] }
+  else
+    { code? := some "F0364", headline := s!"`{showPath ty}` is a record with named fields, not a newtype"
+      label? := some "a record with named fields"
+      notes := #[s!"note: a record with named fields is built as `{n} \{ x := e, ... }`"] }
+
+/-- A member of a set literal (or, if `seq`, an element of a sequence
+literal) of the type `other`, whose first is of the type `first`, which
+makes the literal one of the type `literal`. -/
+def membersMsg (seq : Bool) (first other literal : String) : Msg :=
+  let (what, member) := if seq then ("elements of a sequence", "element") else ("members of a set", "member")
+  { code? := some "F0326", headline := s!"the {what} have different types: `{first}` and `{other}`"
+    label? := some s!"a `{other}`"
+    notes := #[s!"note: the first {member} is a `{first}`, so the literal is a `{literal}`"] }
 
 end Fren.Core

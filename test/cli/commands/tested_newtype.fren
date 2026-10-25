@@ -1,0 +1,14 @@
+-- Testing shows a newtype's value as Fren builds it, as the solver's
+-- counterexamples do, though its value is its underlying type's.
+pub struct Ms(Int)
+pub struct Job { took: Ms, waits: Set(Ms) }
+
+set_option fren.evidence "tested" in
+pub comp timer {
+    in job: Job
+    in took: Ms
+    pub det out left: Ms := Ms(10) - took
+
+    expect fits: left > Ms(5)
+    expect waited: job.took in job.waits
+}

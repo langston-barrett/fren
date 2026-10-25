@@ -76,6 +76,22 @@ structure RecordInfo where
 which may be a field. -/
 def recordCtor (decl : Name) : Name := decl ++ `«{}»
 
+/-- A newtype and the Lean structure generated for it, with one field,
+`«0»`, and the constructor `mk` (`Reqs/Generated#newtypes`). -/
+structure NewtypeInfo where
+  path : Name
+  decl : Name
+  /-- The Lean type of its underlying type. -/
+  under : Expr
+  unbounded : Bool := false
+  deriving Inhabited
+
+/-- The field of the structure generated for a newtype. -/
+def NewtypeInfo.field (n : NewtypeInfo) : Name := n.decl ++ Name.mkSimple "0"
+
+/-- The constructor of the structure generated for a newtype. -/
+def NewtypeInfo.ctor (n : NewtypeInfo) : Name := n.decl ++ `mk
+
 /-- A constant and the Lean definition generated for it. -/
 structure ConstInfo where
   path : Name
@@ -262,6 +278,7 @@ inductive Entry where
   | item (i : ItemRef)
   | enumInfo (e : EnumInfo)
   | recordInfo (r : RecordInfo)
+  | newtypeInfo (n : NewtypeInfo)
   | useDef (u : UseDef)
   | compInfo (c : CompInfo)
   | constInfo (c : ConstInfo)
@@ -285,6 +302,7 @@ structure State where
   refs : NameMap Syntax := {}
   enums : NameMap EnumInfo := {}
   records : NameMap RecordInfo := {}
+  newtypes : NameMap NewtypeInfo := {}
   comps : NameMap CompInfo := {}
   consts : NameMap ConstInfo := {}
   /-- Abstract types and functions, by path. -/
@@ -315,6 +333,7 @@ def State.add (s : State) : Entry → State
   | .enumInfo e =>
     { s with table := s.table.addEnum { path := e.path, variants := e.variants }, enums := s.enums.insert e.path e }
   | .recordInfo r => { s with records := s.records.insert r.path r }
+  | .newtypeInfo n => { s with newtypes := s.newtypes.insert n.path n }
   | .useDef u => { s with table := s.table.addUse u }
   | .compInfo c => { s with comps := s.comps.insert c.path c }
   | .constInfo c => { s with consts := s.consts.insert c.path c }
@@ -346,10 +365,18 @@ def State.enumOfDecl? (s : State) (decl : Name) : Option EnumInfo :=
 def State.recordOfDecl? (s : State) (decl : Name) : Option RecordInfo :=
   s.records.foldl (init := none) fun acc _ r => acc <|> if r.decl == decl then some r else none
 
+/-- The newtype whose generated structure is `decl`. -/
+def State.newtypeOfDecl? (s : State) (decl : Name) : Option NewtypeInfo :=
+  s.newtypes.foldl (init := none) fun acc _ n => acc <|> if n.decl == decl then some n else none
+
+/-- The newtype whose Lean type is `ty`, if it is one. -/
+def State.newtypeOf? (s : State) (ty : Expr) : Option NewtypeInfo := ty.constName?.bind s.newtypeOfDecl?
+
 /-- Whether the Lean type of a Fren type is unbounded (`Reqs/Lang/Types`). -/
 def State.unbounded (s : State) (ty : Expr) : Bool :=
   ty.isConstOf ``String || ty.isAppOf ``Fren.FinSet || ty.isAppOf ``Fren.Seq || match ty.constName? with
   | some d => (s.enumOfDecl? d).any (·.unbounded) || (s.recordOfDecl? d).any (·.unbounded)
+    || (s.newtypeOfDecl? d).any (·.unbounded)
   | none => false
 
 /-- Per-file state; not visible to importing files. -/

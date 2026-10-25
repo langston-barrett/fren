@@ -213,37 +213,59 @@ partial def setMembers? : Term → Option (Array Term)
     return xs ++ (← setMembers? ts.back!)
   | _ => none
 
+/-- The types of the fields of the constructor `c` of one of `dts`, as the
+solver writes `c`. -/
+def fieldTys (dts : Array DataDecl) (c : String) : Option (Array Fren.Core.Ty) := do
+  let named (d : DataDecl) (v : Lean.Name) := s!"{Fren.Core.showPath d.path}::{v}" == c
+  let d ← dts.find? fun d => if d.isRecord then s!"{Fren.Core.showPath d.path}\{}" == c else d.ctors.any (named d ·.1)
+  let (_, fs) ← if d.isRecord then d.ctors[0]? else d.ctors.find? (named d ·.1)
+  return fs.map (·.2)
+
 /-- A value as Fren builds it (`Reqs/View`), where `dts` are the
 enumerations and records: `(- 3)` ↦ `-3`, `|check::Verdict::Pass|` ↦
 `Verdict::Pass`, `(|Shape::Circle| 2)` ↦ `Shape::Circle(2)` and
-`(|geo::Point\{}| 1 2)` ↦ `Point \{ x := 1, y := 2 }`. -/
-partial def renderTerm (dts : Array DataDecl) : Term → String
+`(|geo::Point\{}| 1 2)` ↦ `Point \{ x := 1, y := 2 }`. A value of type
+`ty?`, if it is known, is shown with its newtypes, which the solver does
+not see: `5` of the newtype `Ms` ↦ `Ms(5)`. -/
+partial def renderTerm (dts : Array DataDecl) (ty? : Option Fren.Core.Ty) (t : Term) : String :=
+  if let some (.newtype p u) := ty? then s!"{p.getString!}({renderTerm dts (some u) t})" else
+  let elemTy? : Option Fren.Core.Ty := match ty? with
+    | some (.set e) | some (.seq e) => some e
+    | _ => none
+  let (fstTy?, sndTy?) : Option Fren.Core.Ty × Option Fren.Core.Ty := match ty? with
+    | some (.rel a b) => (some a, some b)
+    | _ => (none, none)
+  match t with
   -- A string, as a Lean literal, so that it can be pasted into a spec.
   | .atom a => match Fren.Core.parseSmtString? a with
     | some s => s.quote
     | none => lastTwo a
-
   | .list #[.atom "-", .atom n] => "-" ++ n
   -- A pair, a member of a relation.
-  | .list #[.atom "tuple", x, y] => s!"({renderTerm dts x}, {renderTerm dts y})"
+  | .list #[.atom "tuple", x, y] => s!"({renderTerm dts fstTy? x}, {renderTerm dts sndTy? y})"
   -- A sequence, as a literal.
   | .list #[.atom "as", .atom "seq.empty", _] => "[]"
-  | .list #[.atom "seq.unit", x] => s!"[{renderTerm dts x}]"
+  | .list #[.atom "seq.unit", x] => s!"[{renderTerm dts elemTy? x}]"
   | .list ts =>
     -- An abstract value within another value.
     let abs? := match ts with | #[.atom "as", .atom a, _] => renderAbstract? a | _ => none
     if let some r := abs? then r else
     -- A concatenation of sequences, as one literal: each part is one.
     if ts[0]? matches some (Term.atom "seq.++") then
-      let parts := (ts.extract 1).map (renderTerm dts) |>.map fun p => ((p.drop 1).dropEnd 1).toString
+      let parts := (ts.extract 1).map (renderTerm dts ty?) |>.map fun p => ((p.drop 1).dropEnd 1).toString
       "[" ++ ", ".intercalate (parts.toList.filter (!·.isEmpty)) ++ "]"
     else
     -- A set, as a literal, with its members sorted, so that it is stable.
+    -- A relation's members are tuples, which are typed by the relation.
     if let some ms := setMembers? (.list ts) then
-      let shown := ms.map (renderTerm dts) |>.toList.eraseDups.toArray.qsort (· < ·)
+      let memberTy? := if fstTy?.isSome then ty? else elemTy?
+      let shown := ms.map (renderTerm dts memberTy?) |>.toList.eraseDups.toArray.qsort (· < ·)
       "{" ++ ", ".intercalate shown.toList ++ "}"
     else
-    let args := (ts.extract 1 ts.size).map (renderTerm dts)
+    let tys := match ts[0]? with
+      | some (Term.atom c) => (fieldTys dts c).getD #[]
+      | _ => #[]
+    let args := (ts.extract 1 ts.size).mapIdx fun k a => renderTerm dts tys[k]? a
     match ts[0]? with
     | some (Term.atom c) =>
       if c.endsWith "{}" then
@@ -256,11 +278,16 @@ partial def renderTerm (dts : Array DataDecl) : Term → String
       else s!"{lastTwo c}({", ".intercalate args.toList})"
     | _ => s!"({" ".intercalate args.toList})"
 
-def renderValue (dts : Array DataDecl) (v : String) : String :=
-  if let some a := renderAbstract? v then a else
+/-- A value as cvc5 writes it, as Fren builds it, of the type `ty?` if it
+is known. -/
+def renderValue (dts : Array DataDecl) (v : String) (ty? : Option Fren.Core.Ty := none) : String :=
+  let wrap (s : String) : String := match ty? with
+    | some (.newtype p _) => s!"{p.getString!}({s})"
+    | _ => s
+  if let some a := renderAbstract? v then wrap a else
   match (parseTerms v.toList.toArray 0).1 with
-  | #[t] => renderTerm dts t
-  | _ => v.replace "|" ""
+  | #[t] => renderTerm dts ty? t
+  | _ => wrap (v.replace "|" "")
 
 /-- The variables of `c` other than its `in`s, renamed to their second
 copies (`Fren.Core.primed`). -/
@@ -338,7 +365,8 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (timeoutSecs 
   -- A value of an abstract type names a solver-internal constant, such as
   -- `@U_0`, which a fresh query cannot parse.
   pin n v := return if v.contains '@' then none else some s!"(= {quote n.toString} {v})"
-  render _ v := return renderValue dts v
+  -- By the variable's type, for its newtypes.
+  render n v := return renderValue dts v ((c.vars ++ primes c).find? (·.name == n) |>.map (·.ty))
   prime := prime c
   samePrimed n := s!"(= {quote n.toString} {quote (Fren.Core.primed n).toString})"
   -- Each definition sees the earlier ones.

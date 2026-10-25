@@ -204,7 +204,8 @@ counterexample, two values are shown alike exactly when they are equal.
 A value of an enumeration or a record is shown as Fren would build it:
 `Shape::Circle(2)`, `List::Cons(1, List::Nil)` or `Point { x := 1, y := 2 }`,
 with the enumeration's or record's name and not its module, as for a
-variant without a payload.
+variant without a payload. So is a value of a newtype, as in `Ms(5)`, even
+though the solver sees only its underlying type's value.
 
 An inconclusive result is reported at the position of the corresponding
 failure, saying what could not be decided and why. What it advises

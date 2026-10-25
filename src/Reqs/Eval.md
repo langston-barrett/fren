@@ -65,7 +65,7 @@ A value is written as a [counterexample](View.md#check-results) shows it:
 `true` or `false`, an integer such as `-3`, a string literal such as
 `"a\n"`, a variant such as
 `Mode::Heat` or `Shape::Circle(2)`, a record such as `Point { x := 1, y :=
-2 }`, a set such as `{1, 2}`, a relation such as `{(1, "a"), (2, "b")}`, a
+2 }`, a newtype's value such as `Ms(5)`, a set such as `{1, 2}`, a relation such as `{(1, "a"), (2, "b")}`, a
 sequence such as `[1, 2]`, or,
 for an [abstract type](Lang/Types.md#abstract-types), the type's
 name, `#` and a number, such as `Name#0`. Within one behaviour, two values

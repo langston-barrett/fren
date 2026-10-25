@@ -147,6 +147,7 @@ pub comp enumeration_order {
 
 ```
 record := ["pub"] "struct" IDENT "{" field ("," field)* [","] "}"
+        | ["pub"] "struct" IDENT "(" [type ("," type)*] ")"
 field  := IDENT [":" type]
 ```
 
@@ -165,6 +166,71 @@ way to build a value, so each value would contain another without end, and
 the record would have no values. So records are never recursive
 themselves, though a field may have an [unbounded
 type](Types.md#recursive-and-unbounded-types).
+
+A record whose one field has no name, written `struct Ms(Int)`, is a
+[newtype](#newtypes).
+
+## Newtypes
+
+```
+record := ... | ["pub"] "struct" IDENT "(" [type ("," type)*] ")"
+```
+
+`struct Ms(Int)` declares the *newtype* `Ms`: a record with exactly one
+field, which has no name, of the type in parentheses, its *underlying
+type*. A newtype has the values of its underlying type, but is a type
+distinct from every other, its underlying type included, so that values
+that mean different things, such as times and sizes, are not mixed by
+mistake:
+
+```text
+pub struct Ms(Int)
+pub struct Bytes(Int)
+
+comp timer {
+    in elapsed: Ms
+    in size: Bytes
+    expect bad: elapsed < size   -- error: cannot compare `Ms` with `Bytes`
+}
+```
+
+A newtype's name is both a type and its constructor: `Ms(5)` builds a
+value, and `x.0` reads its field (see
+[Newtypes](Expressions.md#newtypes), which also says which operators a
+newtype has). A newtype is a record, so its field follows the rules of
+a record's [fields](#fields-and-payloads): its type has no abstract type
+within it, is not `Nat` and does not have the newtype as an element type,
+and is not the newtype itself. For now, a newtype's underlying type is
+therefore never `Nat`: a count is a newtype of `Int`, and its constraints
+say that it is at least 0. Like any type, a newtype is
+[unbounded](Types.md#recursive-and-unbounded-types) exactly when its
+underlying type is.
+
+`lang::newtype` states which newtypes are accepted, from how many types
+its parentheses hold and whether its one field's type is accepted as a
+record's field's, and when it is unbounded:
+
+```fren
+pub mod lang
+
+pub comp newtype {
+    in n_fields: Nat             -- the types in its parentheses
+    in field_accepted?           -- the first's type is accepted as a record's field's (`field_type`)
+    in underlying_unbounded?     -- its underlying type is unbounded
+    pub det out accepted?
+    pub det out unbounded?
+
+    req rule: accepted? iff (n_fields = 1 and field_accepted?)
+    req bounds: unbounded? iff underlying_unbounded?
+
+    expect one_field: when n_fields != 1, not accepted?
+    expect as_records: when not field_accepted?, not accepted?
+}
+```
+
+Fren does not yet have a newtype over a type parameter, as in `struct
+Id(T)`, nor one whose values are restricted, as in `struct Byte(Int is
+0..=255)`.
 
 ## Distinct names
 
@@ -263,6 +329,15 @@ pub comp field_type {
     expect records_not_recursive: when own? and not payload?, not accepted?
     expect not_through_sets: when own_in_set?, not accepted?
 }
+```
+
+A [newtype](#newtypes)'s field is a record's field, so no abstract type is
+within it either:
+
+```fren
+expect newtype_not_abstract: forall (n: newtype) (f: field_type),
+    when n.n_fields = 1 and (n.field_accepted? iff f.accepted?) and f.abstract_within? and not f.payload?,
+    not n.accepted?
 ```
 
 Every value of a recursive enumeration is built from finitely many

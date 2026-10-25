@@ -1,0 +1,13 @@
+error[F0603]: expectation `shown::small` does not hold
+  --> test/cli/commands/counterexample_newtype.fren:13:12
+   |
+13 |     expect small: next < Ms(4)
+   |            ^^^^^ does not follow from the requirements
+   |
+   = counterexample: t = Ms(3), s = Slot { start := Ms(2), tags := {Ms(10), Ms(9)} }, next = Ms(4)
+   = help: strengthen the requirements so that it follows, or correct the expectation
+
+fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0603`.
+exit=1

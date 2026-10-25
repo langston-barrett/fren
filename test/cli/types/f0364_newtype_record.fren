@@ -1,0 +1,4 @@
+-- A newtype built as a record with named fields.
+pub struct Ms(Int)
+
+comp c { pub out t: Ms req r: t = Ms { value := 5 } }

@@ -37,7 +37,7 @@ def fromModel (ty : Expr) (val : Expr) : Expr :=
   else val
 
 /-- A value of type `ty` as Fren builds it (`Reqs/View`), such as
-`Mode::Heat`, `Shape::Circle(2)` or `Point { x := 1, y := 2 }`. -/
+`Mode::Heat`, `Shape::Circle(2)`, `Point { x := 1, y := 2 }` or `Ms(5)`. -/
 partial def render (ty : Expr) (val : Expr) : MetaM String := do
   -- A value of an abstract type, a local standing for it (`checkComp`).
   if let .fvar id := ty then
@@ -65,6 +65,9 @@ partial def render (ty : Expr) (val : Expr) : MetaM String := do
     let shown ← (members val).mapM (render ty.appArg!)
     return "{" ++ ", ".intercalate (shown.toList.eraseDups.mergeSort (· < ·)) ++ "}"
   let st ← getState
+  -- A newtype, as Fren builds it: `Ms(5)`.
+  if let some n := st.newtypeOf? ty then
+    if val.isAppOfArity n.ctor 1 then return s!"{n.path.getString!}({← render n.under val.appArg!})"
   if let .const c _ := val.getAppFn then
     let args := val.getAppArgs
     if let some e := st.enumOfDecl? c.getPrefix then

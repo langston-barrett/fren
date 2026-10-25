@@ -46,6 +46,9 @@ inductive VTy where
   /-- An enumeration or a record. -/
   | data (path : Name)
   | abstract (path : Name)
+  /-- A newtype, whose values are its underlying type's, `under`
+  (`Reqs/Lang/Items#newtypes`): only how they are shown differs. -/
+  | newtype (path : Name) (under : VTy)
   deriving Inhabited, BEq, Hashable, Repr
 
 /-- `t`, as an element type: a `Nat` is widened to an `Int`. -/
@@ -224,6 +227,8 @@ structure Comp where
 
 structure Spec where
   data : NameMap DataDef := {}
+  /-- The newtypes, each with its underlying type. -/
+  newtypes : NameMap VTy := {}
   /-- The abstract types, in order. -/
   sorts : Array Name := #[]
   funs : NameMap (Array VTy × VTy) := {}
@@ -595,6 +600,30 @@ partial def Val.show (sp : Spec) : Val → String
       else s!"{short}::{c.name}({", ".intercalate (args.toList.map (·.show sp))})"
     | none => s!"{short}::?"
 
+/-- `v`, of type `ty`, shown with its newtypes, which its value does not
+record: `5` of the newtype `Ms` is `Ms(5)`. -/
+partial def Val.showAs (sp : Spec) (ty : VTy) (v : Val) : String :=
+  match ty, v with
+  | .newtype p u, _ => s!"{p.getString!}({v.showAs sp u})"
+  | .set t, .set ms => "{" ++ ", ".intercalate ((ms.map (·.showAs sp t)).toList.mergeSort (· < ·)) ++ "}"
+  | .rel a b, .set ms =>
+    let pair : Val → String
+      | .pair x y => s!"({x.showAs sp a}, {y.showAs sp b})"
+      | m => m.show sp
+    "{" ++ ", ".intercalate ((ms.map pair).toList.mergeSort (· < ·)) ++ "}"
+  | .seq t, .seq es => "[" ++ ", ".intercalate (es.toList.map (·.showAs sp t)) ++ "]"
+  | .data p, .ctor _ idx args =>
+    match (sp.data.find? p).bind (·.ctors[idx]?), sp.data.find? p with
+    | some c, some d =>
+      let shown := (c.fields.zip args).map fun ((_, t), a) => a.showAs sp t
+      if d.isRecord then
+        let fs := (c.fields.zip shown).toList.map fun ((f, _), a) => s!"{f} := {a}"
+        s!"{p.getString!} \{ {", ".intercalate fs} }"
+      else if args.isEmpty then s!"{p.getString!}::{c.name}"
+      else s!"{p.getString!}::{c.name}({", ".intercalate shown.toList})"
+    | _, _ => v.show sp
+  | _, _ => v.show sp
+
 /-! ## Lowering parsed items -/
 
 structure LState where
@@ -637,7 +666,10 @@ partial def lowerTy (segs : Array Ident) : L VTy := do
     return .rel (← lowerTy a) (← lowerTy b)
   if segs[0]!.name == Parser.seqSeg then return .seq (← lowerTy (segs.extract 1))
   match ← resolve segs with
-  | .item { kind := .enumItem, path, .. } | .item { kind := .recordItem, path, .. } => return .data path
+  | .item { kind := .recordItem, path, .. } =>
+    if let some u := (← get).spec.newtypes.find? path then return .newtype path u
+    return .data path
+  | .item { kind := .enumItem, path, .. } => return .data path
   | .item { kind := .typeItem, path, .. } => return .abstract path
   | r => throw s!"`{showPath r.path}` is not a type"
 
@@ -679,6 +711,11 @@ def readFields (e : Ex) (ty : VTy) (fs : List String) : L (Ex × VTy) := do
   let mut e := e
   let mut ty := ty
   for f in fs do
+    -- A newtype's field `0`, its value, which is the newtype's.
+    if let .newtype _ u := ty then
+      unless f == "0" do throw s!"a newtype has no field `{f}`"
+      ty := u
+      continue
     if let .set _ := ty then
       unless f == "card" do throw s!"unknown method `{f}`"
       e := .card e
@@ -891,6 +928,8 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     let (x, ta) ← lowerExpr cx a
     let (y, tb) ← lowerExpr cx b
     let t := match o, ta, tb with
+      -- Of a newtype, the newtype, which `+` and `-` are erased through.
+      | .add, .newtype .., _ | .sub, .newtype .., _ => ta
       | .add, _, _ | .sub, _, _ | .mul, _, _ | .div, _, _ | .mod, _, _ => VTy.int
       | .concat, _, _ => ta
       | .union, _, _ | .inter, _, _ | .minus, _, _ => ta
@@ -983,6 +1022,11 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       let some (_, r) := (← get).spec.funs.find? path | throw s!"unknown function `{showPath path}`"
       return (.app path args, r)
     | .variant en idx => return (.ctor en.path idx args, .data en.path)
+    -- A newtype, erased to its value.
+    | .item { kind := .recordItem, path, .. } => do
+      let some u := (← get).spec.newtypes.find? path | throw s!"`{showPath path}` is not a newtype"
+      let some a := args[0]? | throw s!"`{showPath path}` needs a value"
+      return (a, .newtype path u)
     | r => throw s!"`{showPath r.path}` is not a function or a variant"
   | .record span ty fields => do
     let path ← match ← resolve ty with
@@ -1133,6 +1177,13 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with
       table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
       spec.data := s.spec.data.insert path { path, isRecord := true, ctors := #[{ name := `mk, fields := fs }] } }
+  | .newtype isPub name fields => do
+    let path := (← get).module ++ Name.mkSimple name.name
+    let some ty := fields[0]? | throw s!"`{showPath path}` has no field"
+    let u ← lowerTy ty
+    modify fun s => { s with
+      table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
+      spec.newtypes := s.spec.newtypes.insert path u }
   | .abstractType isPub name => do
     let path := (← get).module ++ Name.mkSimple name.name
     modify fun s => { s with
@@ -1203,7 +1254,7 @@ def VTy.show : VTy → String
   | .set t => s!"Set({t.show})"
   | .rel a b => s!"Rel({a.show}, {b.show})"
   | .seq t => s!"Seq({t.show})"
-  | .data p | .abstract p => showPath p
+  | .data p | .abstract p | .newtype p _ => showPath p
 
 /-- Whether `e` is a `Nat` where one is expected (`lang::literal_type`,
 `lang::operator_type`): a literal, a `Nat` constant, or `+`, `*` or a

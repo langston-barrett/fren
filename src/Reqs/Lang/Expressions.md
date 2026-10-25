@@ -20,6 +20,7 @@ atom  := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | "(" expr 
        | path "(" expr ("," expr)* ")"
        | path "{" field-init ("," field-init)* [","] "}"
        | atom "." IDENT ["(" expr ("," expr)* ")"]
+       | atom "." DIGITS
        | IDENT ("." IDENT)+ "(" expr ("," expr)* ")"
        | "match" atom "{" arm ("," arm)* [","] "}"
        | "{" [expr ("," expr)* [","]] "}"
@@ -34,9 +35,13 @@ a whole constraint does the same for it: see [Local definitions](Let.md).
 
 In `atom "." IDENT`, the atom is one that ends in `)` or `}`, and there
 are no spaces around the `.`: after a name, `.` is part of the
-[identifier](Lexical.md#identifiers), as in `p.x`. The notation is
-[the grammar's](../Grammar.md#notation), where `DECL` is an identifier that
-declares a name. Patterns are in [their own chapter](Patterns.md).
+[identifier](Lexical.md#identifiers), as in `p.x`. In `atom "." DIGITS`,
+which reads the field of a [newtype](#newtypes), the atom may also be a
+name, since digits never continue an identifier: `x.0` reads the field
+`0` of `x`, and `x.0.0` reads it twice. The notation is [the
+grammar's](../Grammar.md#notation), where `DECL` is an identifier that
+declares a name, and `DIGITS` decimal digits. Patterns are in [their own
+chapter](Patterns.md).
 
 ## Operators
 
@@ -53,12 +58,12 @@ equally tightly:
 | 4 | `A and B` | conjunction | `Bool` | `Bool` | left |
 | 5 | `not A` | negation | `Bool` | `Bool` | |
 | 6 | `A = B`, `A != B` | equality, disequality | any, both the same, or `Int` and `Nat` | `Bool` | none |
-| 6 | `A < B`, `A <= B`, `A > B`, `A >= B` | ordering | `Int` or `Nat`, `String`, or an [ordered enumeration](Items.md#enumerations) | `Bool` | [chains](#chained-comparisons) |
+| 6 | `A < B`, `A <= B`, `A > B`, `A >= B` | ordering | `Int` or `Nat`, `String`, an [ordered enumeration](Items.md#enumerations), or one [newtype](#newtypes) of `Int`, `String` or an ordered enumeration | `Bool` | [chains](#chained-comparisons) |
 | 6 | `A in S` | membership | `T` and `Set(T)` or `Seq(T)`, or a pair `(a, b)` and `Rel(A, B)` | `Bool` | none |
 | 6 | `S subset T` | `S` is a subset of `T`, not necessarily strict | `Set(T)`, or `Rel(A, B)` | `Bool` | none |
 | 6 | `A is P` | [pattern test](#pattern-tests): the pattern `P` matches `A` | an enumeration, `Bool`, `Int`, `Nat` or `String`, and a pattern | `Bool` | none |
-| 7 | `A + B` | addition | `Int` or `Nat` | `Nat` if both are, else `Int` | left |
-| 7 | `A - B` | subtraction | `Int` or `Nat` | `Int` | left |
+| 7 | `A + B` | addition | `Int` or `Nat`, or one newtype of `Int` | the newtype if both are one, `Nat` if both are, else `Int` | left |
+| 7 | `A - B` | subtraction | `Int` or `Nat`, or one newtype of `Int` | the newtype if both are one, else `Int` | left |
 | 7 | `A ++ B` | concatenation | `String`, or `Seq(T)` | the same | left |
 | 7 | `S union T`, `S minus T` | union, difference | `Set(T)`, or `Rel(A, B)` | the same | left |
 | 8 | `A * B` | multiplication | `Int` or `Nat` | `Nat` if both are, else `Int` | left |
@@ -188,10 +193,11 @@ mentions is decided from its parts, as `lang::mentions` states:
   definition mentions, a [binder](#matches) what its scrutinee
   mentions, and a name of a [`let` or `where`](Let.md) what its
   definition mentions.
-- A [variant](#variants-with-payloads) or a [record literal](#records)
-  mentions what its arguments or fields mention: its value is fixed. So
-  does a [record update](#record-updates), which mentions what its record
-  and its new values mention.
+- A [variant](#variants-with-payloads), a [record literal](#records) or
+  a [newtype](#newtypes) built from its value mentions what its arguments
+  or fields mention: its value is fixed. So does a [record
+  update](#record-updates), which mentions what its record and its new
+  values mention.
 - A [method](#methods) call mentions what its receiver and arguments
   mention: a method has a fixed meaning.
 - An application of an uninterpreted function mentions the function: its
@@ -211,7 +217,8 @@ mentions is decided from its parts, as `lang::mentions` states:
 -- than one segment; `Variable` is a variable, an instance's variable, or a
 -- field read from one; `Binder` is a binder of a `match` arm or a name of a
 -- `let` or `where`; `Construction` is a variant with a payload, a
--- record literal or a record update; `Uninterpreted` and `Defined` are
+-- record literal, a record update or a newtype built from its value,
+-- `Ms(e)`; `Uninterpreted` and `Defined` are
 -- applications of uninterpreted and defined functions; `Compound` is an
 -- operator, `when` or `unless`, a `let`, a conditional, a `match`, a pattern
 -- test, a cardinality operator, indexing, a field read from an expression that is
@@ -729,6 +736,85 @@ expect fields_left_out: forall (l: record_literal) (u: record_update),
     and u.given subset u.fields and u.given != u.fields and u.n_repeated = 0,
     u.accepted? and not l.accepted?
 ```
+
+## Newtypes
+
+```text
+Ms(5)
+elapsed.0
+budget - elapsed
+```
+
+`Ms(e)` builds the value of the [newtype](Items.md#newtypes) `Ms` whose
+field is `e`, which must have `Ms`'s underlying type, or be a `Nat`
+where it is an `Int` (`F0304`). `e` is [checked](Types.md#checking-and-synthesis)
+against the underlying type, so with `struct Tags(Set(Int))`, `Tags({})`
+is the newtype's empty set. It is written as an application of one
+argument (`F0308`). A newtype is never built as a record literal, `Ms {
+... }`, nor a record with named fields as a newtype, `Point(1, 2)`
+(`F0364`). `x.0` reads the field of `x`, of the underlying type, as in
+`elapsed.0 + 1`. A newtype has no other field (`F0315`) and no methods: a
+method of its value is applied to `x.0`, as in `name.0.len`. Nor is its
+field given new values by a [record update](#record-updates) (`F0339`):
+`Ms(e)` builds another value.
+
+No literal is a newtype's: `5` is an `Int` wherever it is written, so with
+`elapsed: Ms`, `elapsed < 5` is an error, and `elapsed < Ms(5)` is
+written instead.
+
+A newtype has few operators. Two values of one newtype are compared with
+`=` and `!=`. They are ordered with `<`, `<=`, `>` and `>=`, as their
+fields are, when the underlying type is ordered: an `Int`, a `String` or an
+[ordered enumeration](Items.md#enumerations),
+and such comparisons [chain](#chained-comparisons), as in `Ms(0) <=
+elapsed < budget`. `+` and `-` of two values of one newtype of `Int` give
+the newtype, whose field is the sum or difference of theirs: `budget -
+elapsed` is `Ms(budget.0 - elapsed.0)`. No other operator applies to a
+newtype, neither `*`, `div`, `mod`, `++` nor a prefix `-` (`F0362`):
+the field is read and the result built again, as in `Ms(elapsed.0 *
+2)`. An operator whose operands are a newtype and any other type,
+including the underlying type, is an error (`F0363`), and a newtype
+written where another type is expected is a type mismatch (`F0304`).
+`lang::newtype_operator` states which operators a newtype has, from the
+operator, the kind of its underlying type and whether that is an ordered
+enumeration, and `lang::operator_type` types them:
+
+```fren
+-- `Order` is `<`, `<=`, `>` and `>=`; `Sum` is `+`, and `-` between two
+-- operands; `Other` is any other operator but `=` and `!=`, such as `*`,
+-- `div`, `mod`, `++` or a prefix `-`.
+pub enum NewtypeOp { Equality, Order, Sum, Other }
+
+pub comp newtype_operator {
+    use self::NewtypeOp::{Equality, Order, Other, Sum}
+    use self::ValueType::{IntTy, StringTy}
+    in op: NewtypeOp
+    in underlying: ValueType     -- the kind of the newtype's underlying type
+    in ordered?                  -- the underlying type is an ordered enumeration
+    pub det out accepted?
+
+    assume enumerations: when ordered?, underlying = ValueType::EnumTy
+
+    req rule: accepted? iff match op {
+        Equality => true,
+        Order => underlying in {IntTy, StringTy} or ordered?,
+        Sum => underlying = IntTy,
+        Other => false,
+    }
+
+    expect equality_always: when op = Equality, accepted?
+    expect sums_of_integers: when op = Sum and accepted?, underlying = IntTy
+    expect integers_ordered: when underlying = IntTy, op != Other iff accepted?
+    expect ordered_enumerations: when ordered? and op = Order, accepted?
+    expect nothing_else: when op = Other, not accepted?
+}
+```
+
+The solver sees a newtype as its underlying type: `Ms(e)` is `e`, `x.0`
+is `x`, and each operator is its underlying type's, so that a newtype
+costs nothing in the solver (see [Solver queries](../Cli.md#solver-queries)).
+In Lean, a newtype is a structure (see [Generated Lean
+declarations](../Generated.md#newtypes)).
 
 ## Variants with payloads
 
@@ -1491,29 +1577,45 @@ pattern rather than an operand, is typed in its own section.
 
 ```fren
 -- `Logic` is `when`, `unless`, `iff`, `or`, `and` and `not`; `Ordering` is
--- `<`, `<=`, `>` and `>=`; `Arithmetic` is `+` and `*`; `Subtraction` is `-`, infix or
--- prefix; `div` and `mod` are typed as `Subtraction` is, unless `nat_result` makes them
--- `Nat`s; `Concat` is `++`;
+-- `<`, `<=`, `>` and `>=`; `Addition` is `+`; `Multiplication` is `*`; `Subtraction` is
+-- an infix `-`; `Negation` is a prefix `-`, and `div` and `mod` are typed as it is,
+-- unless `nat_result` makes them `Nat`s; `Concat` is `++`;
 -- `SetAlgebra` is `union`, `inter` and `minus`, on sets or relations. For
 -- `Membership`, `a` is the element and `b` the set; a pair's membership,
 -- and `join`, are typed by `pair_membership` and `relation_op`. The arms of a `match` are typed as a
 -- conditional's branches, pairwise.
-pub enum Operator { Logic, Equality, Ordering, Arithmetic, Subtraction, Concat, Membership, SetAlgebra, Subset, Conditional }
+pub enum Operator {
+    Logic, Equality, Ordering, Addition, Multiplication, Subtraction, Negation, Concat, Membership, SetAlgebra, Subset,
+    Conditional,
+}
 
 pub comp operator_type {
     use self::Operator::{
-        Arithmetic,
+        Addition,
         Concat,
         Conditional,
         Equality,
         Logic,
         Membership,
+        Multiplication,
+        Negation,
         Ordering,
         SetAlgebra,
         Subset,
         Subtraction,
     }
-    use self::ValueType::{AbstractTy, BoolTy, EnumTy, IntTy, NatTy, RelTy, SeqTy, SetTy, StringTy}
+    use self::ValueType::{
+        AbstractTy,
+        BoolTy,
+        EnumTy,
+        IntTy,
+        NatTy,
+        RecordTy,
+        RelTy,
+        SeqTy,
+        SetTy,
+        StringTy,
+    }
     in op: Operator
     in a: Ty
     in b: Ty
@@ -1525,20 +1627,26 @@ pub comp operator_type {
     assume primitive_unique: when kind(a) = kind(b) and kind(a) in {BoolTy, IntTy, NatTy, StringTy}, a = b
     assume ordered_enumerations: (when ordered_enum?(a), kind(a) = EnumTy)
         and (when ordered_enum?(b), kind(b) = EnumTy)
+    -- A newtype is a record.
+    assume newtype_record: (when newtype?(a), kind(a) = RecordTy) and (when newtype?(b), kind(b) = RecordTy)
 
     req accepted: accepted? iff match op {
         Logic => kind(a) = BoolTy and kind(b) = BoolTy,
         Equality => a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}),
-        Ordering => (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}) or (a = b and (kind(a) = StringTy or ordered_enum?(a))),
-        Arithmetic | Subtraction => kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy},
+        Ordering => (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}) or (a = b and (kind(a) = StringTy or ordered_enum?(a)))
+            or (a = b and newtype?(a) and (kind(under(a)) in {IntTy, StringTy} or ordered_enum?(under(a)))),
+        Addition | Subtraction => (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy})
+            or (a = b and newtype?(a) and kind(under(a)) = IntTy),
+        Multiplication | Negation => kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy},
         Concat => a = b and kind(a) in {StringTy, SeqTy},
         Membership => kind(b) in {SetTy, SeqTy} and (elem(b) = a or (kind(a) = NatTy and kind(elem(b)) = IntTy)),
         SetAlgebra | Subset => a = b and kind(a) in {SetTy, RelTy},
         Conditional => kind(cond) = BoolTy and (a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy})),
     }
     req results: result = match op {
-        Arithmetic => if kind(a) = NatTy and kind(b) = NatTy then NatTy else IntTy,
-        Subtraction => IntTy,
+        Addition | Multiplication => if newtype?(a) then RecordTy else if kind(a) = NatTy and kind(b) = NatTy then NatTy else IntTy,
+        Subtraction => if newtype?(a) then RecordTy else IntTy,
+        Negation => IntTy,
         Conditional => if a = b then kind(a) else IntTy,
         Concat | SetAlgebra => kind(a),
         _ => BoolTy,
@@ -1547,7 +1655,8 @@ pub comp operator_type {
     -- Only a `Nat` is widened.
     expect no_mixing: when accepted? and op != Membership and kind(a) != NatTy and kind(b) != NatTy, a = b
     expect member_typed: when op = Membership and accepted? and kind(a) != NatTy, elem(b) = a
-    expect bool_valued: unless op in {Arithmetic, Subtraction, Concat, SetAlgebra, Conditional}, result = BoolTy
+    expect bool_valued: unless op in {Addition, Multiplication, Subtraction, Negation, Concat, SetAlgebra, Conditional},
+        result = BoolTy
     expect strings_ordered: when op = Ordering and kind(a) = StringTy and a = b, accepted?
     expect concat_closed: when op = Concat and accepted?, result = kind(a)
     expect sequences_unordered: when op = Ordering and kind(a) = SeqTy, not accepted?
@@ -1569,10 +1678,17 @@ pub comp operator_type {
     expect sets_combine: when op = SetAlgebra and kind(a) = SetTy and a = b, accepted?
     expect relations_subset: when op = Subset and kind(a) = RelTy and a = b, accepted?
     expect boolean_condition: when op = Conditional and kind(cond) != BoolTy, not accepted?
-    expect no_mixed_arithmetic: when op = Arithmetic and kind(a) = IntTy and kind(b) = BoolTy, not accepted?
-    expect nats_add: when op = Arithmetic and kind(a) = NatTy and kind(b) = NatTy, accepted? and result = NatTy
-    expect widened_sums: when op = Arithmetic and kind(a) = NatTy and kind(b) = IntTy, accepted? and result = IntTy
-    expect never_truncates: when op = Subtraction, result = IntTy
+    expect no_mixed_arithmetic: when op = Addition and kind(a) = IntTy and kind(b) = BoolTy, not accepted?
+    expect nats_add: when op = Addition and kind(a) = NatTy and kind(b) = NatTy, accepted? and result = NatTy
+    expect widened_sums: when op = Addition and kind(a) = NatTy and kind(b) = IntTy, accepted? and result = IntTy
+    expect never_truncates: when op in {Subtraction, Negation} and kind(a) in {IntTy, NatTy}, result = IntTy
+
+    -- A newtype has its underlying type's orderings, and an `Int`'s `+` and
+    -- `-`, which give the newtype, but nothing else of it, and never mixes.
+    expect newtypes_ordered: when op = Ordering and a = b and newtype?(a) and kind(under(a)) = IntTy, accepted?
+    expect newtype_sums: when op in {Addition, Subtraction} and newtype?(a) and accepted?, a = b and result = RecordTy
+    expect newtypes_not_multiplied: when op in {Multiplication, Negation} and newtype?(a), not accepted?
+    expect newtypes_apart: when op != Membership and op != Conditional and newtype?(a) and a != b, not accepted?
     expect nat_compared_with_int: when op in {Equality, Ordering} and kind(a) = NatTy and kind(b) = IntTy, accepted?
     -- Sets of different element types are different types.
     expect sets_of_different_types: when op = Equality and kind(a) = SetTy and kind(b) = SetTy and elem(a) != elem(b),

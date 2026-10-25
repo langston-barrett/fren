@@ -31,7 +31,7 @@ def Tally.refute (t : Tally) (d : Fren.Core.Detail) : Tally :=
   if t.refuted?.isSome then t else { t with refuted? := some d }
 
 def Spec.shown (sp : Spec) (vars : Array Var) (env : Env) (keep : Var → Bool) : Assignment :=
-  vars.filterMap fun v => if keep v then env[v.name]?.map (v.name, ·.show sp) else none
+  vars.filterMap fun v => if keep v then env[v.name]?.map (v.name, ·.showAs sp v.ty) else none
 
 /-- The variables of `vars` to choose, in `order`, other than those in `env`. -/
 def remaining (order : Array (Name × VTy)) (env : Env) : Array (Name × VTy) := order.filter (!env.contains ·.1)
@@ -198,7 +198,7 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       if let some env₂ ← ({ vars := remaining (sp.order c) inputs, atoms, ints, strs : Problem }.solve sp w I inputs) then
         let some v₂ := env₂[x.name]? | continue
         let input := sp.shown vars env fun v => v.role == .input && v.isPub
-        detT := detT.modify k (·.refute (.nondeterministic input (v₁.show sp) (v₂.show sp)))
+        detT := detT.modify k (·.refute (.nondeterministic input (v₁.showAs sp x.ty) (v₂.showAs sp x.ty)))
   let result (kind : CheckKind) (prop? : Option Name) (t : Tally) (target? : Option (Name × Name) := none) : CheckResult :=
     let verdict := verdictOf kind t
     { kind, comp := c.path, prop?, target?, verdict

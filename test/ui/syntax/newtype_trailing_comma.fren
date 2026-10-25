@@ -1,0 +1,6 @@
+-- A newtype's parentheses hold types separated by commas, without a
+-- trailing one.
+struct Ms(Int,)
+--~^[cli] error: expected a name, found `)`
+--~^^[hosted] error: unexpected token ')'
+--@ exit: 2

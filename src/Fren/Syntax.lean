@@ -204,9 +204,35 @@ with `{`; `with` after the first expression makes it an update. `with` is
 one of Lean's keywords, so it is never a name. -/
 scoped syntax:max (name := updateExpr) "{ " withoutForbidden(fren_expr:20) " with " withoutForbidden(sepBy1(fren_binding, ", ", ", ", allowTrailingSep)) " }" :
   fren_expr
+open Lean Parser in
+/-- The decimal digits that name a field after `.`, as in `x.0`, read as
+Lean reads a field index (`Lean.Parser.fieldIdxFn`), but from `0`: not as a
+number, which in `x.0.0` would be the scientific literal `0.0`. -/
+def fieldDigitsFn : ParserFn := fun c s =>
+  let iniSz := s.stackSize
+  let iniPos := s.pos
+  if (c.get iniPos).isDigit then
+    let s := takeWhileFn Char.isDigit c s
+    mkNodeToken fieldIdxKind iniPos true c s
+  else s.mkErrorAt "field" iniPos iniSz
+
+open Lean Parser in
+/-- `0` in `x.0`, the field of a newtype (`fieldDigitsFn`). -/
+def fieldDigits : Parser :=
+  withAntiquot (mkAntiquot "fieldIdx" `fieldIdx) { fn := fieldDigitsFn, info := mkAtomicInfo "fieldIdx" }
+
+open Lean PrettyPrinter in
+@[combinator_formatter fieldDigits] def fieldDigits.formatter : Formatter := Formatter.fieldIdx.formatter
+
+open Lean PrettyPrinter in
+@[combinator_parenthesizer fieldDigits] def fieldDigits.parenthesizer : Parenthesizer :=
+  Parenthesizer.fieldIdx.parenthesizer
+
 /-- `e.x`, reading a field of `e`, an atom that ends in `)` or `}`: after a
-name, `.x` is part of the (dotted) identifier. -/
-scoped syntax:max (name := fieldExpr) fren_expr:arg noWs "." noWs frenIdent : fren_expr
+name, `.x` is part of the (dotted) identifier. `x.0`, the field of a
+newtype, follows any atom, a name too, since digits never continue an
+identifier. -/
+scoped syntax:max (name := fieldExpr) fren_expr:arg noWs "." noWs (fieldDigits <|> frenIdent) : fren_expr
 /-- `e.m(a, b)`, a method call on an atom that ends in `)` or `}`; on a name,
 `x.m(a)` is parsed as an application of the dotted name. -/
 scoped syntax:max (name := methodExpr) fren_expr:arg noWs "." noWs (frenIdent <|> "at") noWs "(" withoutForbidden(sepBy1(fren_expr, ", ")) ")" : fren_expr
@@ -302,6 +328,10 @@ syntax fren_field := frenIdent (" : " fren_type)?
 
 /-- `struct R { x: T, ... }`, a record. -/
 scoped syntax (name := structCmd) ("pub ")? "struct " frenIdent " { " sepBy1(fren_field, ", ", ", ", allowTrailingSep) " }" : command
+
+/-- `struct N(T)`, a newtype; its parentheses must hold one type
+(`lang::newtype`), which the elaborator checks. -/
+scoped syntax (name := newtypeCmd) ("pub ")? "struct " frenIdent "(" sepBy(fren_type, ", ") ")" : command
 
 scoped syntax (name := compCmd) ("pub ")? "comp " frenIdent " { " fren_member* " }" : command
 

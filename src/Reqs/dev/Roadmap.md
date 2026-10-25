@@ -11,6 +11,9 @@ Roughly in order, to be specified in Fren as each is started:
 - Bindings that mention the component's own outputs (needs a check that the
   instance's inputs do not depend on its outputs).
 - Time: discrete steps and past-time operators.
+- Newtypes: over a type parameter, `struct Id(T)` (#56); of a pattern
+  type, `struct Byte(Int is 0..=255)` (#110); of a `Nat`, once a field may be
+  one.
 
 ## Open questions
 

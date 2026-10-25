@@ -48,11 +48,13 @@ namespace Wide
 
 inductive WTy where
   | int | bool | str | set | rel | enum
+  /-- The newtype `Ms` of `Int`. -/
+  | ms
   deriving BEq, Inhabited
 
 def WTy.name (relElem : String) : WTy → String
   | .int => "Int" | .bool => "Bool" | .str => "String" | .set => "Set(Int)"
-  | .rel => s!"Rel({relElem}, {relElem})" | .enum => "E"
+  | .rel => s!"Rel({relElem}, {relElem})" | .enum => "E" | .ms => "Ms"
 
 structure WScope where
   /-- A variable's text, type, and whether it is an input (so that an
@@ -73,6 +75,8 @@ structure WScope where
   onlyIns : Bool := false
   /-- Avoid the differences already known (`--avoid-known`). -/
   avoidKnown : Bool := false
+  /-- The spec declares the newtype `Ms` of `Int`. -/
+  hasMs : Bool := false
 
 def WScope.varsOf (sc : WScope) (t : WTy) : Array String :=
   sc.vars.filterMap fun (n, t', isIn) => if t' == t && (isIn || !sc.onlyIns) then some n else none
@@ -100,6 +104,7 @@ partial def leaf (sc : WScope) (t : WTy) : R String := do
   | .set => pick #["{1}", "{1, 2}", "{0, 3}"]
   | .rel => if sc.relElem == "E" then return s!"\{({← enumLit sc}, {← enumLit sc})}" else pick #["{(1, 2)}", "{(0, 0), (1, 2)}"]
   | .enum => enumLit sc
+  | .ms => return s!"Ms({← below 4})"
 
 /-- An application of a function whose result has type `t`, if there is
 one. The arguments of an uninterpreted one mention only inputs. -/
@@ -137,7 +142,7 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
   let hasEnum := sc.nVariants > 0
   match t with
   | .int =>
-    match ← below 14 with
+    match ← below 15 with
     | 0 => return s!"({← sub .int} + {← sub .int})"
     | 1 => return s!"({← sub .int} - {← sub .int})"
     -- Products: mostly with a constant operand, which is linear.
@@ -153,9 +158,10 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
     | 9 | 10 => return (← app? sc .int d).getD (← leaf sc .int)
     | 11 => return s!"{← rsub .str}.index_of({← csub .str}, {← below 2})"
     | 12 => return s!"{← rsub .rel}.card"
+    | 13 => if sc.hasMs then return s!"{← sub .ms}.0" else leaf sc .int
     | _ => leaf sc .int
   | .bool =>
-    match ← below 23 with
+    match ← below 25 with
     | 0 => return s!"({← sub .bool} and {← sub .bool})"
     | 1 => return s!"({← sub .bool} or {← sub .bool})"
     | 2 => return s!"not {← sub .bool}"
@@ -192,6 +198,11 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
       let mut args := #[← arg]
       for _ in [0:← below 3] do args := args.push (← arg)
       return s!"{← pick #["exactly_one?", "at_most_one?"]}({", ".intercalate args.toList})"
+    | 22 | 23 =>
+      unless sc.hasMs do return ← leaf sc .bool
+      -- Seldom, a newtype compared with an `Int`, which both reject.
+      let rhs ← if ← chance 5 then sub .int else sub .ms
+      return s!"{← sub .ms} {← pick #["=", "!=", "<", "<=", ">", ">="]} {rhs}"
     | _ => leaf sc .bool
   | .str =>
     match ← below 7 with
@@ -221,12 +232,21 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
     | 1 => return (← app? sc .enum d).getD (← leaf sc .enum)
     | 2 => if sc.ordered then return s!"({← sub .enum}).{← pick #["min", "max"]}({← sub .enum})" else leaf sc .enum
     | _ => leaf sc .enum
+  | .ms =>
+    match ← below 7 with
+    | 0 => return s!"({← sub .ms} + {← sub .ms})"
+    | 1 => return s!"({← sub .ms} - {← sub .ms})"
+    | 2 => return s!"Ms({← sub .int})"
+    | 3 => return s!"(if {← sub .bool} then {← sub .ms} else {← sub .ms})"
+    | 4 => if hasEnum then matchOn sc .ms d else leaf sc .ms
+    | 5 => return (← app? sc .ms d).getD (← leaf sc .ms)
+    | _ => leaf sc .ms
 
 end
 
 def varName (t : WTy) (isIn : Bool) (k : Nat) : String :=
   let base := match t with
-    | .int => "n" | .bool => "b" | .str => "s" | .set => "st" | .rel => "r" | .enum => "m"
+    | .int => "n" | .bool => "b" | .str => "s" | .set => "st" | .rel => "r" | .enum => "m" | .ms => "d"
   let base := if isIn then base else "o" ++ base
   if t == .bool then s!"{base}{k}?" else s!"{base}{k}"
 
@@ -242,18 +262,21 @@ def genWide (avoidKnown : Bool := false) : R String := do
   out := out ++ "\n"
   if useEnum then
     out := out ++ s!"pub {if ordered then "ordered " else ""}enum E \{ {", ".intercalate ((List.range nVariants).map (s!"V{·}"))} }\n"
-  let mut sc : WScope := { nVariants, ordered, relElem, avoidKnown }
+  let hasMs ← chance 40
+  if hasMs then out := out ++ "pub struct Ms(Int)\n"
+  let ms := if hasMs then #[WTy.ms] else #[]
+  let mut sc : WScope := { nVariants, ordered, relElem, avoidKnown, hasMs }
   -- Constants, each over the earlier ones.
   for k in [0:← below 4] do
-    let t ← pick #[WTy.int, .int, .str, .bool, .set]
+    let t ← pick (#[WTy.int, .int, .str, .bool, .set] ++ ms)
     let e ← gen sc t 2
     let n := s!"K{k}"
     out := out ++ s!"pub const {n}: {t.name relElem} := {e}\n"
     sc := { sc with consts := sc.consts.push (n, t) }
   -- Functions: defined ones over their parameters, and uninterpreted ones.
   for k in [0:← below 3] do
-    let r ← pick #[WTy.int, .bool, .int, .str]
-    let ps ← (List.range ((← below 2) + 1)).toArray.mapM fun _ => pick #[WTy.int, .int, .str, .bool]
+    let r ← pick (#[WTy.int, .bool, .int, .str] ++ ms)
+    let ps ← (List.range ((← below 2) + 1)).toArray.mapM fun _ => pick (#[WTy.int, .int, .str, .bool] ++ ms)
     let name := if r == .bool then s!"f{k}?" else s!"f{k}"
     if ← chance 60 then
       let params := ps.mapIdx fun i t => (if t == .bool then s!"x{i}?" else s!"x{i}", t)
@@ -274,7 +297,7 @@ def genWide (avoidKnown : Bool := false) : R String := do
     let mut vars : Array (String × WTy × Bool) := #[]
     let mut shown : Array (String × WTy) := #[]
     for k in [0:(← below 4) + 1] do
-      let t ← pick (#[WTy.int, .int, .bool, .str, .set, .rel] ++ (if useEnum then #[WTy.enum] else #[]))
+      let t ← pick (#[WTy.int, .int, .bool, .str, .set, .rel] ++ (if useEnum then #[WTy.enum] else #[]) ++ ms)
       let n := varName t true k
       vars := vars.push (n, t, true)
       shown := shown.push (n, t)
@@ -287,7 +310,7 @@ def genWide (avoidKnown : Bool := false) : R String := do
       let bs ← ins.mapM fun (x, t) => do return s!"{x} := {← gen isc t 1}"
       out := out ++ s!"    inst w: {d} \{ {", ".intercalate bs.toList} }\n"
       vars := vars ++ vis.map fun (x, t) => (s!"w.{x}", t, false)
-    let outTys := #[WTy.int, .bool] ++ (if useEnum then #[WTy.enum] else #[])
+    let outTys := #[WTy.int, .bool] ++ (if useEnum then #[WTy.enum] else #[]) ++ ms
     let mut defs : Array (String × WTy) := #[]
     for k in [0:(← below 3) + 1] do
       let isDef ← chance 40

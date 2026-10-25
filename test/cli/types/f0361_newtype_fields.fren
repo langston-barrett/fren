@@ -1,0 +1,2 @@
+-- A newtype with two fields.
+struct Pair(Int, Int)

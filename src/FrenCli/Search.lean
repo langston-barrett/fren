@@ -80,6 +80,7 @@ partial def valueOf (sp : Spec) (w : World) (h : UInt64) (depth : Nat := 2) : VT
   | .seq t => if h % 2 == 0 then .seq #[] else .seq #[valueOf sp w (mix h 1) depth t]
   | .rel a b => if h % 2 == 0 then .set #[] else Val.setOf #[.pair (valueOf sp w (mix h 1) depth a) (valueOf sp w (mix h 2) depth b)]
   | .abstract s => .abs s ((h % (w.size s).toUInt64).toNat)
+  | .newtype _ u => valueOf sp w h depth u
   | .data p => Id.run do
     let some d := sp.data.find? p | return .ctor p 0 #[]
     -- Below the depth, only constructors without the type in their fields.
@@ -186,6 +187,7 @@ partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array
       out := out.push (Val.setOf #[.pair as[0]! as[1]!, .pair as[1]! as[2]!])
     return out
   | .abstract s => (Array.range (w.size s)).map (.abs s)
+  | .newtype _ u => smallValues sp w ints strs cap depth u
   | .data p => Id.run do
     let some d := sp.data.find? p | return #[]
     let mut out := #[]

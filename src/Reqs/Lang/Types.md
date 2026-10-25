@@ -14,7 +14,10 @@ Fren has eight kinds of type:
   values of the variant's payload, if it has one. An enumeration declared
   `ordered` orders its variants as they are declared.
 - Records, declared with `struct` (see [Items](Items.md#records)). Each
-  value of a record has a value for each of the record's fields.
+  value of a record has a value for each of the record's fields. A
+  [newtype](Items.md#newtypes), such as `struct Ms(Int)`, is a record with
+  one field, which has no name: it has the values of that field's type, its
+  underlying type, but is a type of its own.
 - Abstract types, declared with `type` (see [Items](Items.md#abstract-types)).
   Their values are not described by the spec (see [Abstract
   types](#abstract-types)).
@@ -66,13 +69,23 @@ pub fn right(Ty): Ty     -- the type of the second
 pub fn ordered_enum?(Ty)  -- an enumeration declared `ordered`
 ```
 
+`lang::newtype?` says whether a type is a [newtype](Items.md#newtypes),
+whose kind is `RecordTy`, and `lang::under` gives a newtype's underlying
+type:
+
+```fren
+pub fn newtype?(Ty)
+pub fn under(Ty): Ty     -- the underlying type of a newtype
+```
+
 ## Recursive and unbounded types
 
 An enumeration is *recursive* if the payload of one of its variants has
 the enumeration's own type, as in `enum List { Nil, Cons(Int, List) }`.
 A type is *unbounded* if its values can be arbitrarily large: it is
 `String`, a set, relation or sequence type, a recursive enumeration, or an enumeration or
-record with a payload or field of an unbounded type. `Bool`, `Int`, `Nat` and abstract types are
+record with a payload or field of an unbounded type, such as a newtype
+whose underlying type is unbounded. `Bool`, `Int`, `Nat` and abstract types are
 not unbounded: an `Int` is arbitrarily large, but it is one value.
 
 Values of an unbounded type are built from finitely many variants, so
@@ -344,10 +357,11 @@ Where an expression is written decides whether it is checked:
 
 - **Declared.** It is checked against a type that is declared: a binding
   of an instance or of a refinement, a field of a record literal or of a
-  record update, an argument of a function application, a variant's
-  payload, an argument of a sequence's method, a defined output's
-  definition, a constant's value, and a definition of a [`let` or
-  `where`](Let.md) whose type is written.
+  record update, the value of a [newtype](Items.md#newtypes), as in
+  `Ms(e)`, an argument of a function application, a variant's payload,
+  an argument of a sequence's method, a defined output's definition, a
+  constant's value, and a definition of a [`let` or `where`](Let.md)
+  whose type is written.
 - **Shared.** Its type follows from that of the expression it is a part
   of, and from that of the expression's other such parts. It is checked if
   that expression is, or if one of those parts synthesizes its type. These

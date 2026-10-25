@@ -1,0 +1,6 @@
+took = Ms(3)
+left = Ms(7)
+req r: true
+expect fits: true
+status: meets
+exit=0

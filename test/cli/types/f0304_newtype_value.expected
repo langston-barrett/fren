@@ -1,0 +1,13 @@
+error[F0304]: type mismatch: expected `Int`, found `Bool`
+ --> test/cli/types/f0304_newtype_value.fren:5:48
+  |
+5 | comp wrong_value { pub out c: Ms req r: c = Ms(true) }
+  |                                                ^^^^ expected `Int`, found `Bool`
+  |
+  = note: the value of `Ms` has type `Int`
+  = help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0304`.
+exit=2

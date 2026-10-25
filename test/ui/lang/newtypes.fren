@@ -1,0 +1,170 @@
+-- Newtypes, `struct Ms(Int)`, in both front ends: built with `Ms(e)`,
+-- read with `x.0`, compared, added and subtracted.
+-- fren-covers: lang::operator_type
+
+pub struct Ms(Int)
+pub struct Bytes(Int)
+pub struct Name(String)
+pub struct Flag(Bool)
+
+pub enum Mode { Idle, Busy }
+
+pub struct Tagged(Mode)
+pub struct Tags(Set(Int))
+
+comp timer {
+    in elapsed: Ms
+    in budget: Ms
+    in size: Bytes
+    pub det out left: Ms := budget - elapsed
+    pub det out over? := elapsed > budget
+    pub det out total: Ms := elapsed + budget
+
+    assume positive: elapsed >= Ms(0) and budget >= Ms(0)
+
+    expect left_value: left.0 = budget.0 - elapsed.0
+    expect built: left = Ms(budget.0 - elapsed.0)
+    expect round_trip: Ms(elapsed.0) = elapsed
+    expect chained: Ms(0) <= elapsed <= total
+    expect sums: total - budget = elapsed
+    expect bytes: Bytes(size.0) = size
+    expect wrong: left = budget  --~ error: expectation `timer::wrong` does not hold
+}
+
+-- A newtype of `String` is ordered, but has no `+` or `-`.
+comp names {
+    in a: Name
+    in b: Name
+    pub det out early? := a < Name("m")
+
+    expect sorted: early? iff a.0 < "m"
+    expect read: a.0 = b.0 or a != b
+    expect not_empty: a.0 != ""  --~ error: expectation `names::not_empty` does not hold
+}
+
+-- Newtypes of other types have `=` and `!=`, and are read with `.0`.
+comp others {
+    in f: Flag
+    in t: Tagged
+    pub det out on? := f.0
+    pub det out busy? := t = Tagged(Mode::Busy)
+
+    expect flag: on? iff f = Flag(true)
+    expect mode: busy? iff t.0 = Mode::Busy
+}
+
+-- A newtype of an ordered enumeration is ordered as its values are.
+pub ordered enum Level { Low, Mid, High }
+pub struct Grade(Level)
+
+comp grades {
+    in g: Grade
+    pub det out top? := g >= Grade(Level::High)
+
+    expect order: top? iff g = Grade(Level::High)
+    expect chain: Grade(Level::Low) <= g <= Grade(Level::High)
+}
+
+-- In sets, sequences, records, functions and instances.
+pub struct Job { took: Ms, size: Bytes }
+
+fn cost(Ms): Ms
+fn half(m: Ms): Ms := Ms(m.0 div 2)
+
+comp collections {
+    in times: Set(Ms)
+    in queue: Seq(Ms)
+    in job: Job
+    pub det out longest: Ms := job.took
+    pub det out halved: Ms := half(job.took)
+
+    assume some: queue.len = 1 and queue[0] in times
+
+    expect member: Ms(queue[0].0) in times
+    expect record: longest = job.took and Job { took := longest, size := job.size } = job
+    expect same_cost: cost(longest) = cost(job.took)
+    expect halves: halved.0 = job.took.0 div 2
+    expect literal: {Ms(1), longest} = {longest, Ms(1)}
+}
+
+comp waiting {
+    in t: Ms
+    pub det out later: Ms := t + Ms(1)
+}
+
+comp uses {
+    in now: Ms
+    inst w: waiting { t := now }
+
+    expect after: w.later > now
+}
+
+-- A counterexample shows newtypes as Fren builds them, in both front ends.
+pub struct Slot { start: Ms, tags: Set(Ms) }
+
+comp shown {
+    in t: Ms
+    in s: Slot
+    pub det out next: Ms := t + Ms(1)
+
+    assume pinned: t = Ms(3) and s = Slot { start := Ms(2), tags := {Ms(9), Ms(10)} }
+
+    expect small: next < Ms(4)
+    --~^ error: counterexample: t = Ms(3), s = Slot { start := Ms(2), tags := {Ms(10), Ms(9)} }, next = Ms(4)
+}
+
+-- A newtype of a finite type is finite: the domain of a relation into one
+-- is in the decidable core.
+pub struct Bits(Set(Bool))
+pub struct B2(Bits)
+
+comp finite {
+    in r: Rel(Int, Flag)
+    in q: Rel(Int, Bits)
+    in p: Rel(Int, B2)
+    pub det out d: Set(Int) := r.domain
+    pub det out e: Set(Int) := q.domain
+    pub det out f: Set(Int) := p.domain
+
+    expect domain: 1 in d iff ((1, Flag(true)) in r or (1, Flag(false)) in r)
+    expect of_sets: when q = {}, e = {}
+    expect nested: when p = {}, f = {}
+}
+
+-- The value of a newtype is checked against its underlying type, so `{}`
+-- may be one.
+comp empty_value {
+    in s: Set(Int)
+    pub det out t: Tags := if s = {} then Tags({}) else Tags(s)
+
+    expect same: t.0 = s
+}
+
+-- In refinements, with bindings over newtypes.
+comp deadline {
+    in t: Ms
+    pub out d: Ms
+
+    req r: d >= t
+}
+
+comp next_tick {
+    in t: Ms
+    pub out d: Ms
+
+    req r: d = t + Ms(1)
+}
+
+comp seconds {
+    in s: Int
+    pub out d: Int
+
+    req r: d = s + 1
+}
+
+refine ticks: next_tick refines deadline
+refine counted: seconds refines deadline { t := Ms(s), d := Ms(d) }
+refine late: deadline refines next_tick  --~ error: expectation `late::r` does not hold
+
+--@ summary: 62 passed, 4 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

@@ -93,7 +93,8 @@ inductive Expr where
   `none`. -/
   | update (span : Span) (base : Expr) (fields : Array (Ident × Option Expr))
   /-- `e.x`, for `e` other than a name: a name's fields are part of its
-  (dotted) identifier. -/
+  (dotted) identifier. `x.0` reads the field `0` of a newtype, for any
+  `e`: a field named by digits is never part of an identifier. -/
   | field (span : Span) (e : Expr) (field : Ident)
   | «match» (span : Span) (scrutinee : Expr) (arms : Array (Pattern × Expr))
   /-- `e is P`, a pattern test. -/
@@ -160,6 +161,9 @@ inductive Item where
   | enum (isPub : Bool) (name : Ident) (variants : Array (Ident × Option (Array (Array Ident)))) (isOrdered : Bool := false)
   /-- `struct R { x: T, y? }`: each field with its type, if written. -/
   | record (isPub : Bool) (name : Ident) (fields : Array (Ident × Option (Array Ident)))
+  /-- `struct N(T)`: a newtype, with the types in its parentheses, which
+  must be one (`lang::newtype`). -/
+  | newtype (isPub : Bool) (name : Ident) (fields : Array (Array Ident))
   /-- `type T`, an abstract type. -/
   | abstractType (isPub : Bool) (name : Ident)
   /-- `fn f(T, U): R`, or `fn f(x: T, y?): R := e`: each parameter's path,
@@ -358,6 +362,16 @@ def fieldReads (args : P (Array Expr)) (index : P Expr) (e : Expr) (start? : Opt
     let some next := s.toks[s.pos + 1]? | break
     let some prev := s.toks[s.pos - 1]? | break
     unless isKw dot "." && prev.span.stop == dot.span.start && dot.span.stop == next.span.start do break
+    -- `x.0`, a field named by decimal digits: of a newtype, which the
+    -- elaborator checks. It is read as Lean reads a field index, so a
+    -- number of another base, or with `_`, does not parse.
+    if let .num digits _ := next.tok then
+      unless digits.all Char.isDigit do fail next "a field"
+      discard bump
+      discard bump
+      e := .field (first.to next.span) e { name := digits, span := next.span }
+      first := e.span
+      continue
     let .ident name := next.tok | break
     discard bump
     discard bump
@@ -1103,6 +1117,16 @@ partial def item : P Item := do
   if isKw t "struct" then
     discard bump
     let name ← ident
+    if isKw (← peek) "(" then
+      -- A newtype: its types, in parentheses.
+      markCall
+      discard bump
+      let mut ts := #[]
+      unless isKw (← peek) ")" do
+        ts := ts.push (← typeExpr)
+        while (← eatKw ",").isSome do ts := ts.push (← typeExpr)
+      discard (expectKw ")")
+      return .newtype isPub name ts
     markList
     discard (expectKw "{")
     let field : P (Ident × Option (Array Ident)) := do

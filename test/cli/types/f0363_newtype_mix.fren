@@ -1,0 +1,5 @@
+-- Two newtypes compared.
+pub struct Ms(Int)
+pub struct Bytes(Int)
+
+comp c { in t: Ms in n: Bytes pub out late? req r: late? iff t > n }

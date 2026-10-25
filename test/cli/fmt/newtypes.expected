@@ -1,0 +1,9 @@
+--- test/cli/fmt/newtypes.fren
++++ test/cli/fmt/newtypes.fren
+@@ -4 +4 @@
+-pub struct Ms (  Int )
++pub struct Ms(Int)
+@@ -8 +8 @@
+-    req a: d = Ms ( t.0+1 )
++    req a: d = Ms(t.0 + 1)
+exit=1

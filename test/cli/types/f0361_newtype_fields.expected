@@ -1,0 +1,13 @@
+error[F0361]: newtype `Pair` has 2 fields, but a newtype has exactly one
+ --> test/cli/types/f0361_newtype_fields.fren:2:8
+  |
+2 | struct Pair(Int, Int)
+  |        ^^^^ 2 fields
+  |
+  = note: `struct N(T)` declares a newtype, a distinct type with the values of `T`
+  = help: for several fields, declare a record with named fields, as in `struct P { x: Int, y: Int }`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0361`.
+exit=2

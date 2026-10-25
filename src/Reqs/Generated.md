@@ -50,6 +50,20 @@ means. An updated value that is not a name, and that some field is read
 from, is bound once with `let`, so that nested updates grow linearly:
 `{ f(q) with x := 1 }` becomes `let r := f q; Point.«{}» 1 (Point.y r)`.
 
+## Newtypes
+
+A [newtype](Lang/Items.md#newtypes) becomes `structure p`, with one field,
+`p.«0»`, of the Lean type of its underlying type, and the constructor
+`p.mk`, deriving `DecidableEq`, `Repr` and `Inhabited`. For example,
+`struct Ms(Int)` becomes `Ms`, with `Ms.mk : Int → Ms` and `Ms.«0» : Ms →
+Int`, so that `Ms(5)` is `Ms.mk 5` and `x.0` is `x.«0»`. Since `Ms` is a
+structure of its own, Lean too keeps an `Ms` apart from an `Int` and from
+other newtypes. A newtype's operators are those of its field: `a < b` is
+`a.«0» < b.«0»`, and `a + b` is `Ms.mk (a.«0» + b.«0»)`. The solver is
+given the structure as a datatype of one constructor, whose values are
+those of its field, so the checks have the results that they have in the
+`fren` command, where it is its underlying type.
+
 ## Abstract types and uninterpreted functions
 
 An [abstract type](Lang/Types.md#abstract-types) or
@@ -101,8 +115,9 @@ The parameters of every definition are the component's variables, in the
 order of their declarations, followed by the variables of each instance in
 order: those of the instantiated component, including its own instances',
 named `w.x`. A variable of type `Bool`, `Int`, `Nat`, `String`, an
-enumeration `E` or a record `R` has the Lean type `Bool`, `Int`, `Nat`,
-`String`, or the inductive or structure for `E` or `R`, and a `Nat` that
+enumeration `E` or a record `R`, a newtype among them, has the Lean type
+`Bool`, `Int`, `Nat`, `String`, or the inductive or structure for `E` or
+`R`, and a `Nat` that
 is widened to an `Int` is Lean's `↑n`. A variable of type `Set(T)` has the
 Lean type `Fren.FinSet T'`, where `T'` is that of `T`: a list up to having
 the same members, with `∈`, `∪`, `∩`, `\`, `⊆`, `∅`, `{a, b}` and

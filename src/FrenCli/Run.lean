@@ -648,7 +648,7 @@ def evalCmd (args : Args) : IO UInt32 := do
       { code? := none, headline := s!"no behaviour of `{Fren.Core.showComp path}` was found with the values given"
         notes := #["note: the variables not set have no value"] } args.paint)
   for v in vars do
-    IO.println s!"{v.name} = {(env[v.name]?.map (·.show sp)).getD "unknown"}"
+    IO.println s!"{v.name} = {(env[v.name]?.map (·.showAs sp v.ty)).getD "unknown"}"
   let ev := sp.evaluate I c env
   for (what, b) in ev.lines do
     IO.println s!"{what}: {(b.map toString).getD "unknown"}"

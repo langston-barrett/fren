@@ -1,0 +1,7 @@
+-- The field of a newtype is named by decimal digits, read as Lean reads a
+-- field index: not a number of another base.
+pub struct Ms(Int)
+comp c { in t: Ms pub out d: Int req r: d = t.0x0 }
+--~^[cli] error: expected a field, found number `0x0`
+--~^^[hosted] error: unexpected identifier
+--@ exit: 2

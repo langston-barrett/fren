@@ -1,0 +1,11 @@
+--@ args: eval --comp c --set took=Ms(3)
+-- A newtype's value is given and shown as Fren builds it.
+pub struct Ms(Int)
+
+comp c {
+    in took: Ms
+    pub out left: Ms
+
+    req r: left = Ms(10) - took
+    expect fits: left > Ms(5)
+}
