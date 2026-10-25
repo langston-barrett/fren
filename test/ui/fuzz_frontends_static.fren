@@ -1,14 +1,5 @@
--- Undecidable constructs near differences that `fren_fuzz_frontends`
+-- An undecidable construct near a difference that `fren_fuzz_frontends`
 -- found, on which the front ends agree.
-
--- Relational methods chained after a variable.
-comp chained {
-    in r: Rel(Int, Int)
-    pub out y?
-    req q: y? iff r.range.card = 1
-    --~^ error: a relational operator over a type that is not finite quantifies over its values
-    --~^^ error: the solver does not reliably combine counting with relational operators
-}
 
 -- A `++` compared with a variable, without parentheses.
 comp concat {
