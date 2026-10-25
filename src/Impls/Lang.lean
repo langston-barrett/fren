@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Lex
+import FrenCore.Guards
 import FrenCore.Ty
 import Impls.Check
 -- keep-sorted end
@@ -51,6 +52,28 @@ impl mentions: lang::mentions for (k : Fren.Core.MentionKind) (ps : List Fren.Co
 } by
   intro k ps _
   cases k <;> simp [fren_spec, toExprKind, Fren.Core.MentionShape.mentions, Fren.Core.kindMentions]
+
+def toGuardedOperand : Fren.Core.GuardedOperand → lang.GuardedOperand
+  | .whenBody => .WhenBody
+  | .unlessBody => .UnlessBody
+  | .thenBranch => .ThenBranch
+  | .elseBranch => .ElseBranch
+  | .andRight => .AndRight
+  | .orRight => .OrRight
+  | .armBody => .ArmBody
+
+-- For every operand and condition: the guard that both front ends add, by
+-- `GuardedOperand.guard`, here over the condition's truth. That each front
+-- end calls it with the right operand is not proved here, but tested by both
+-- on the same ui tests.
+impl guard: lang::guard for (o : Fren.Core.GuardedOperand) (h : Bool) {
+  operand := toGuardedOperand o,
+  holds? := h,
+  evaluated? := o.guard h (!h),
+} by
+  intro o h _
+  cases o <;> cases h <;>
+    simp [fren_spec, toGuardedOperand, Fren.Core.GuardedOperand.guard, Fren.Core.GuardedOperand.whenHolds]
 
 impl linear_product: lang::linear_product for (a b : Bool) {
   a_mentions? := a,

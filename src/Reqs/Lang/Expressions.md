@@ -501,12 +501,47 @@ left to right:
 - in `when C, D`, `D` is guarded by `C`, and in `unless C, D` by `not C`;
 - in `if c then x else y`, `x` is guarded by `c`, and `y` by `not c`;
 - in `a and b`, `b` is guarded by `a`, and in `a or b` by `not a`;
-- in a `match` arm, the body is guarded by its pattern's test;
+- in a `match` arm, the body is guarded by the arm's being the first that
+  matches: no earlier arm's pattern matches, and its own does;
 - guards nest by conjunction.
 
 So `q != [] and q[0] = x` is defined, and `q[0] = x and q != []` is not,
 though the two mean the same: the order of `and` and `or` changes only
 definedness, never meaning.
+
+`lang::guard` states which operands are guarded, and by what, from the
+operand and whether its *condition* holds. The condition is that of
+`when`, `unless` or the conditional, the left operand of `and` or `or`, or,
+for a `match` arm's body, that the arm is the first whose pattern matches.
+An operand is evaluated exactly when its guard holds, and an operand that
+is not one of these is evaluated whenever the expression it is in is.
+
+```fren
+-- The operands evaluated only under a condition.
+pub enum GuardedOperand { WhenBody, UnlessBody, ThenBranch, ElseBranch, AndRight, OrRight, ArmBody }
+
+pub comp guard {
+    use self::GuardedOperand::{AndRight, ArmBody, ElseBranch, OrRight, ThenBranch, UnlessBody, WhenBody}
+    in operand: GuardedOperand
+    in holds?                -- its condition holds
+    pub det out evaluated?   -- it is evaluated: its guard holds
+
+    req rule: evaluated? iff match operand {
+        WhenBody | ThenBranch | AndRight | ArmBody => holds?,
+        UnlessBody | ElseBranch | OrRight => not holds?,
+    }
+
+    -- `a and b` is false without `b` once `a` is, and `a or b` true once `a` is.
+    expect and_short_circuits: when operand = AndRight and not holds?, not evaluated?
+    expect or_short_circuits: when operand = OrRight and holds?, not evaluated?
+    -- The bodies of `when C` and `unless C` are evaluated under opposite conditions.
+    expect opposite: when operand = WhenBody or operand = UnlessBody, evaluated? iff (holds? iff operand = WhenBody)
+}
+```
+
+The branches of a conditional have opposite guards, as do the bodies of
+`when C, D` and `unless C, D`: of each pair, exactly one is evaluated,
+whatever `C`.
 
 ## Relations
 
