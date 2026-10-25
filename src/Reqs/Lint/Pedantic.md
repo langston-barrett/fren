@@ -366,3 +366,128 @@ pub comp too_many_lines {
     req rule: fires? iff n_lines > 100
 }
 ```
+
+## Ranges of methods
+
+`invalid_upcast_comparisons`, `allow` by default, fires on a comparison of
+a call of a method with an integer literal, on either side, whose value
+is fixed because the method's values have a least one. Fren has no casts,
+whose ranges Clippy's lint of the same name looks at, but these methods
+give an `Int` that is never below a bound:
+
+| Method | Least value | Why |
+|---|---|---|
+| `x.abs` | `0` | it is `x` or `-x`, whichever is not negative |
+| `s.index_of(t, i)`, of a string or a sequence | `-1` | it is a position, which is never negative, or `-1` |
+
+So `x.abs >= 0` is always `true`, `x.abs < 0` always `false`, and so are
+`s.index_of(t, i) >= -1` and `s.index_of(t, i) < -1`, and every
+comparison with a literal below the least value, such as `x.abs > -3` or
+`-2 = s.index_of(t, i)`. A comparison with the least value that a call
+can equal, such as `x.abs > 0` or `s.index_of(t, i) = -1`, is not fixed,
+and neither is a comparison with a bound above it. The message says what
+the comparison always is.
+
+The other methods that give an `Int` are left out. `len` and `card` are
+never negative either, but
+[`absurd_extreme_comparisons`](Suspicious/Comparisons.md) fires on their
+comparisons with a literal, and [`length_zero` and
+`card_zero`](Style.md#empty-collections) on those that say whether the
+collection is empty. `min` and `max` have no least value of their own,
+since `x.min(y)` is `x` or `y`, which may be any `Int`. A `Nat` is never
+negative whatever gives it, so that is its type's range, not a method's:
+no lint reports `n >= 0`, for `n: Nat`, yet. `absurd_extreme_comparisons`,
+which looks at lengths for the same reason, is its natural owner once it
+covers `Nat`s, so `invalid_upcast_comparisons` leaves it alone, and the
+two never fire on one comparison.
+Nor does the lint fire on an `Int` that is not a call, such as an input
+`x` in `x >= 0`. Where it fires, [`manual_method`](Complexity/Methods.md#searches)
+never does, since its comparisons of `index_of` are with `-1` or `0`, by
+operators that the least value does not fix. A search from a negative
+position, as in `s.index_of(t, -1) >= -1`, is also
+[`negative_position`'s](Suspicious/Methods.md), which reports the argument,
+and this lint the comparison. Two comparisons of one call joined by `and` or `or`, as in
+`x.abs >= 0 and -1 > x.abs`, may also be
+[`contradictory_comparisons`'s](Suspicious/Comparisons.md), which reports
+the pair, and this lint each comparison, as `absurd_extreme_comparisons`
+does with that lint on lengths. `abs` is a method of `Int`
+and `Nat` only: on a record, `r.abs` reads a field, and on an instance, a
+variable, so the lint looks at what the elaborator calls `abs`.
+
+There is no fix, as for [`eq_op`](Suspicious/Expressions.md#operands-written-the-same)
+and the other lints whose message gives a comparison's value: the bound
+or the operator is probably not the one meant, and writing the value
+would keep the mistake and hide it. `lint::invalid_upcast_comparisons`
+states when it fires, from the least value of the method:
+
+```fren
+pub comp invalid_upcast_comparisons {
+    in op: Comparison
+    in bound: Int        -- the literal compared with
+    in lowest: Int       -- the least value of the method
+    in left?             -- the call is the left operand, rather than the right
+    pub det out fires?
+    pub det out value?   -- what the comparison always is, where it fires
+
+    req rule: fires? iff (bound < lowest or (bound = lowest and (if left? then op in {Lt, Ge} else op in {Gt, Le})))
+    req fixed: value? iff (if left? then op in {Ne, Gt, Ge} else op in {Ne, Lt, Le})
+}
+```
+
+The value is exact: where the lint fires, the comparison has it for each
+value of the call, from the least on:
+
+```fren
+comp invalid_upcast_exact {
+    in op: Comparison
+    in bound: Int
+    in lowest: Int
+    in left?
+    in n: Int            -- the call's value
+
+    assume range: n >= lowest
+
+    inst p: invalid_upcast_comparisons { op, bound, lowest, left? }
+
+    expect exact: when p.fires?, compares?(op, if left? then n else bound, if left? then bound else n) iff p.value?
+}
+```
+
+The [refinements](../Lang/Refinement.md) below check the value that the
+message gives, and with it the least values of the table, for a call of
+each method: a component that compares the calls as written, one with
+the values instead, and a refinement each way, so that the solver checks
+that the two agree for every value of the inputs. `index_of` is outside
+the [decidable core](../Lang/Decidability.md#strings), so the written form
+opts out, and the values make the inputs unused:
+
+```fren
+set_option fren.lint.invalid_upcast_comparisons "allow" in
+set_option fren.lint.undecidable "allow" in
+pub comp invalid_upcast_written {
+    in x: Int
+    in s: String
+    in t: String
+    in i: Int
+    pub det out nonnegative? := x.abs >= 0
+    pub det out negative? := -1 >= x.abs
+    pub det out found_or_not? := s.index_of(t, i) > -2
+    pub det out below? := s.index_of(t, i) < -1
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.lint.unused_variables "allow" in
+pub comp invalid_upcast_fixed {
+    in x: Int
+    in s: String
+    in t: String
+    in i: Int
+    pub det out nonnegative? := true
+    pub det out negative? := false
+    pub det out found_or_not? := true
+    pub det out below? := false
+}
+
+refine invalid_upcast_sound: invalid_upcast_fixed refines invalid_upcast_written
+refine invalid_upcast_complete: invalid_upcast_written refines invalid_upcast_fixed
+```

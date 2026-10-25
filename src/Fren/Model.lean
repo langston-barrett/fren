@@ -424,6 +424,9 @@ structure LocalState where
   /-- Where the variants without payloads in the expression being
   elaborated are, with their paths, for `contradictory_comparisons`. -/
   variants : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × String) := #[]
+  /-- Where the calls of `abs` in the expression being elaborated end, for
+  `invalid_upcast_comparisons`. -/
+  absEnds : Array (Option String.Pos.Raw) := #[]
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false

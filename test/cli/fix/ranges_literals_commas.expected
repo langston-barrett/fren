@@ -1,0 +1,67 @@
+warning[F0799]: this string literal is not in Unicode NFC
+  --> test/cli/fix/ranges_literals_commas.fren:15:23
+   |
+15 |     pub out a? := s = "café"
+   |                       ^^^^^^^ not in NFC
+   |
+   = note: U+0065 U+0301 is U+00E9 in NFC
+   = note: strings compare by code point, so it never equals text in NFC, which most text is in
+   = help: write it in NFC, `"café"`
+   = note: `fren fix` does not, since that changes the literal's value
+   = note: `unicode_not_nfc` is set to `warn` by its group, `pedantic`
+
+warning[F0799]: this string literal is not in Unicode NFC
+  --> test/cli/fix/ranges_literals_commas.fren:16:23
+   |
+16 |     pub out b? := s = r"café" or s = r#"é"#
+   |                       ^^^^^^^^ not in NFC
+   |
+   = note: U+0065 U+0301 is U+00E9 in NFC
+   = note: strings compare by code point, so it never equals text in NFC, which most text is in
+   = help: write it in NFC, `r"café"`
+   = note: `fren fix` does not, since that changes the literal's value
+
+warning[F0799]: this string literal is not in Unicode NFC
+  --> test/cli/fix/ranges_literals_commas.fren:16:39
+   |
+16 |     pub out b? := s = r"café" or s = r#"é"#
+   |                                       ^^^^^^^ not in NFC
+   |
+   = note: U+0065 U+0301 is U+00E9 in NFC
+   = note: strings compare by code point, so it never equals text in NFC, which most text is in
+   = help: write it in NFC, `r#"é"#`
+   = note: `fren fix` does not, since that changes the literal's value
+
+warning[F0799]: this string literal is not in Unicode NFC
+  --> test/cli/fix/ranges_literals_commas.fren:17:23
+   |
+17 |     pub out d? := s = "\u0065́"
+   |                       ^^^^^^^^^ not in NFC
+   |
+   = note: U+0065 U+0301 is U+00E9 in NFC
+   = note: strings compare by code point, so it never equals text in NFC, which most text is in
+   = help: write it so that its value is in NFC
+   = note: `fren fix` does not, since that changes the literal's value
+
+warning[F0798]: this comparison is always `true`
+  --> test/cli/fix/ranges_literals_commas.fren:24:19
+   |
+24 |     pub out h? := x.abs >= 0
+   |                   ^^^^^^^^^^ `abs` is never below 0
+   |
+   = note: the bound or the operator is probably not the one meant
+   = note: `invalid_upcast_comparisons` is set to `warn` by its group, `pedantic`
+
+--- test/cli/fix/ranges_literals_commas.fren
++++ test/cli/fix/ranges_literals_commas.fren
+@@ -5 +5 @@
+-pub enum Mode { Heat, Cool, }
++pub enum Mode { Heat, Cool }
+@@ -18,2 +18,2 @@
+-    pub out e: Set(Int) := {x, 1,}
+-    pub out f: Seq(Int) := [x, 2, ]
++    pub out e: Set(Int) := {x, 1}
++    pub out f: Seq(Int) := [x, 2 ]
+Some errors have detailed explanations: F0798, F0799.
+For more information about an error, try `fren --explain F0798`.
+exit=1

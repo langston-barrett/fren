@@ -1,0 +1,25 @@
+--@ args: fix --check -W pedantic -A many_single_char_names
+-- `fren fix` removes trailing commas on the line of their `}` or `]`. It
+-- leaves string literals not in NFC as they are, since writing them in NFC
+-- changes their values, and `invalid_upcast_comparisons` has no fix.
+pub enum Mode { Heat, Cool, }
+
+pub enum Fan {
+    Low,
+    High,
+}
+
+pub comp c {
+    in s: String
+    in x: Int
+    pub out a? := s = "café"
+    pub out b? := s = r"café" or s = r#"é"#
+    pub out d? := s = "\u0065́"
+    pub out e: Set(Int) := {x, 1,}
+    pub out f: Seq(Int) := [x, 2, ]
+    pub out g: Seq(Int) := [
+        x,
+        3,
+    ]
+    pub out h? := x.abs >= 0
+}

@@ -1,0 +1,29 @@
+warning[F0798]: this comparison is always `true`
+ --> test/cli/lints/pedantic/f0798_invalid_upcast_comparisons.fren:5:34
+  |
+5 | comp c { in x: Int pub out a? := x.abs >= 0 pub out b? := -1 > x.abs pub out c? := x.abs > 0 }
+  |                                  ^^^^^^^^^^ `abs` is never below 0
+  |
+  = note: the bound or the operator is probably not the one meant
+  = note: `invalid_upcast_comparisons` is set to `warn`
+
+warning[F0798]: this comparison is always `false`
+ --> test/cli/lints/pedantic/f0798_invalid_upcast_comparisons.fren:5:59
+  |
+5 | comp c { in x: Int pub out a? := x.abs >= 0 pub out b? := -1 > x.abs pub out c? := x.abs > 0 }
+  |                                                           ^^^^^^^^^^ `abs` is never below 0
+  |
+  = note: the bound or the operator is probably not the one meant
+
+warning[F0798]: this comparison is always `false`
+ --> test/cli/lints/pedantic/f0798_invalid_upcast_comparisons.fren:8:48
+  |
+8 | comp d { in s: String pub out p? req r: p? iff s.index_of("a", 0) < -1 }
+  |                                                ^^^^^^^^^^^^^^^^^^^^^^^ `index_of` is never below -1
+  |
+  = note: the bound or the operator is probably not the one meant
+
+fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0798`.
+exit=3

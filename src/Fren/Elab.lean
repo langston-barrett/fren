@@ -104,6 +104,27 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
       stx.getArgs.forM fun a => unless a.isIdent do checkParsed a
     else stx.getArgs.forM checkParsed
 
+/-- The tokens of `stx`, in order: its atoms and identifiers. -/
+partial def tokensOf (stx : Syntax) : Array Syntax :=
+  match stx with
+  | .node _ _ args => args.flatMap tokensOf
+  | .missing => #[]
+  | _ => #[stx]
+
+/-- Records `unnecessary_trailing_comma` on the commas of the command `stx`
+that end a list on the line of its `}` or `]`
+(`lint::unnecessary_trailing_comma`). -/
+def lintTrailingCommas (stx : Syntax) : CommandElabM Unit := do
+  let toks := tokensOf stx
+  -- Each token's text, and whether a line ends between it and the one before.
+  let texts := toks.mapIdx fun i t =>
+    let lineBreak := (toks[i - 1]?.bind (·.getTrailing?)).any (·.toString.contains '\n')
+    ((if t.isAtom then t.getAtomVal.trimAscii.toString else ""), i > 0 && lineBreak)
+  let fixable := (← getLocal).inMarkdown
+  for i in Core.trailingCommas texts do
+    let msg := Core.unnecessaryTrailingCommaMsg texts[i + 1]!.1
+    recordLint .unnecessaryTrailingComma toks[i]! (if fixable then msg.note Core.fixHelp else msg)
+
 @[command_elab Lang.modCmd] def elabMod : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
@@ -140,6 +161,7 @@ def declareUse (segs : Array Syntax) (glob : Bool) (ref : Syntax) (scope : Optio
   checkLexemes stx
   checkParsed stx
   lintItem stx
+  lintTrailingCommas stx
   for p in stx[3].getSepArgs do
     declareUse (pathSegs stx[1] ++ pathSegs p) false p
 
@@ -275,6 +297,7 @@ partial def typeSyntax (t : Expr) : Term :=
   checkLexemes stx
   checkParsed stx
   lintItem stx
+  lintTrailingCommas stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let isOrdered := !stx[1].isNone
@@ -346,6 +369,7 @@ partial def typeSyntax (t : Expr) : Term :=
   checkLexemes stx
   checkParsed stx
   lintItem stx
+  lintTrailingCommas stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -759,6 +783,9 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
 /-- Reads the field `f` of the term `t` of Lean type `ty`; of a `String` or
 a set, calls the method `f`, without arguments. -/
 def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term × Expr) := do
+  -- For `invalid_upcast_comparisons`, at the end of the expression.
+  if (ty.isConstOf ``Int || ty.isConstOf ``Nat) && f == `abs then
+    modifyLocal fun l => { l with absEnds := l.absEnds.push ref.getTailPos? }
   if ty.isConstOf ``String || ty.isConstOf ``Int || ty.isConstOf ``Nat || (relTypes? ty).isSome || ty.isAppOfArity ``Fren.Seq 1 then
     return ← callMethod ref t ty f.toString #[]
   -- An enumeration's methods, `min` and `max`, which take an argument.
@@ -1239,14 +1266,14 @@ def lintBools (e : Syntax) : TermElabM Unit := do
   let node := boolNode sub.str sub.startPos e
   for (l, ref, msg) in Core.rewriteReports src node fixable do
     recordLint l ref msg
-  let (boolEqs, variants) := ((← getLocal).boolEqs, (← getLocal).variants)
-  modifyLocal fun l => { l with boolEqs := #[], variants := #[] }
+  let (boolEqs, variants, absEnds) := ((← getLocal).boolEqs, (← getLocal).variants, (← getLocal).absEnds)
+  modifyLocal fun l => { l with boolEqs := #[], variants := #[], absEnds := #[] }
   let variant? (s : Syntax) := (variants.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
-  for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) variant? node do
-    let help := fixable && !r.msg.fixes.isEmpty
-    recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ (if help then #[Core.fixHelp] else #[]) }
+  let help (msg : Core.Msg) := if fixable && !msg.fixes.isEmpty then #[Core.fixHelp] else #[]
+  for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) variant? (absEnds.contains ·.getTailPos?) node do
+    recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ help r.msg }
   for r in Core.arithReports src node do
-    recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ (if fixable then #[Core.fixHelp] else #[]) }
+    recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ help r.msg }
   lintParens fixable sub.str e
 
 /-- The text that `stx` is written with, without what is around it. -/
@@ -2775,6 +2802,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   checkLexemes stx
   checkParsed stx
   lintItem stx
+  lintTrailingCommas stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -2979,6 +3007,7 @@ open Lang in
   checkLexemes stx
   checkParsed stx
   lintItem stx
+  lintTrailingCommas stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -3309,6 +3338,7 @@ open Lang in
   checkLexemes stx
   checkParsed stx
   lintItem stx
+  lintTrailingCommas stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -3439,6 +3469,7 @@ def globalText (stx : Syntax) : String :=
   checkLexemes stx
   checkParsed stx
   lintItem stx
+  lintTrailingCommas stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx
@@ -3482,6 +3513,7 @@ and the solver is asked nothing. -/
   spec.forM checkLexemes
   spec.forM checkParsed
   lintItem stx
+  lintTrailingCommas (mkNullNode spec)
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx

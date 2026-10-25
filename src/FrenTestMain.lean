@@ -178,7 +178,7 @@ def ownSpecFiles : Array String :=
     "Lang/Modules", "Lang/Instances", "Check", "View", "Cli", "Lint", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style", "Lint/Complexity",
     "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches",
     "Lint/Suspicious", "Lint/Suspicious/Expressions", "Lint/Suspicious/Methods", "Lint/Suspicious/Literals",
-    "Lint/Suspicious/Comparisons", "Lint/Pedantic", "Lint/Restriction", "Lint/Decidability", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
+    "Lint/Suspicious/Comparisons", "Lint/Pedantic", "Lint/Pedantic/Text", "Lint/Restriction", "Lint/Decidability", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
 
 def ownSpec : IO (Array String) := do
   let (out, code) ← runCheck ownSpecFiles
@@ -209,7 +209,9 @@ def fmtIgnore : List String :=
    "src/FrenTest/chapters/LiterateOuter.md", "src/FrenTest/chapters/LiterateReader.md",
    "src/FrenTest/chapters/deep/LiterateDeep.md", "src/FrenTest/chapters/LiterateReplacing.md",
    -- Lean code in a block, likewise.
-   "src/FrenTest/chapters/LiterateNoPosition.md"]
+   "src/FrenTest/chapters/LiterateNoPosition.md",
+   -- Trailing commas that `unnecessary_trailing_comma` reports.
+   "test/cli/lints/pedantic/f0801_unnecessary_trailing_comma.fren", "test/ui/lints/ranges_literals_commas.fren"]
 
 /-- What formatting keeps (`fmt::safe`): the tokens, but for the trailing
 commas of lists and claims and for `use` items; the paths the `use` items
