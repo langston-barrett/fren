@@ -362,6 +362,21 @@ structure LocalState where
   usedItems : Array Name := #[]
   /-- Elaborating a Markdown spec (`#fren_md`), which reports its own lints. -/
   inMarkdown : Bool := false
+  /-- For each comp, global expectation and refinement declared in a
+  Markdown spec, the spec's path as `#fren_md` names it and its text's line
+  map. Its syntax has positions in that text, wherever it is checked. -/
+  mdSources : NameMap (String × FileMap) := {}
+  /-- The Markdown spec being read, if any: what `mdSources` records for the
+  items declared now. -/
+  mdSource? : Option (String × FileMap) := none
+  /-- The items that the Lean file declares itself, not in a spec. An item
+  in neither is imported, and its syntax has positions in another module's
+  text. -/
+  leanItems : NameSet := {}
+  /-- While a Markdown spec is elaborated, the Lean file that reads it: its
+  name and its text's line map, which place the messages about the items it
+  declares itself (`leanItems`). -/
+  leanFile? : Option (String × FileMap) := none
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false
@@ -375,6 +390,13 @@ structure LocalState where
   that it is in range where it is evaluated (`check::definedness`). -/
   indexes : Array (Syntax × Lean.Term) := #[]
   deriving Inhabited
+
+/-- Records that the item `path` is declared now: in the Markdown spec being
+read, if any (`mdSources`). -/
+def LocalState.declared (l : LocalState) (path : Name) : LocalState :=
+  match l.mdSource? with
+  | some source => { l with mdSources := l.mdSources.insert path source }
+  | none => { l with leanItems := l.leanItems.insert path }
 
 initialize localExt : EnvExtension LocalState ←
   registerEnvExtension (pure {})

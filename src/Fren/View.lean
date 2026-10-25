@@ -24,7 +24,37 @@ scoped syntax (name := checkCmd) "#fren_check" (ppSpace fren_path)? : command
 
 end Lang
 
-def report (c : CompInfo) (r : CheckResult) : CommandElabM Unit := do
+/-- Logs `text` about the item `path` at `ref`, by the text of the file that
+declares it, wherever it is checked (`Reqs/Markdown#in-lean`). A Markdown
+spec's item is placed at the `#fren_md` that reads it, with the spec's name
+and position (`Fren.elabMd`), or, checked from the Lean file itself, at the
+`#fren_check`, with them in the text. The Lean file's item is placed at its
+own position, even when a spec checks it. An imported item is placed at the
+`#fren_check`, since its text is another module's. -/
+def logAbout (path : Name) (ref : Syntax) (text : MessageData) (severity : MessageSeverity) :
+    CommandElabM Unit := do
+  let l ← getLocal
+  -- Without a position, `logAt` would use the current command's, which
+  -- another file's line map would misplace.
+  if ref.getPos?.isNone then return ← logAt ref text severity
+  match l.mdSources.find? path, l.leanFile? with
+  | some (rel, fileMap), _ =>
+    if l.inMarkdown then
+      withReader (fun ctx => { ctx with fileName := rel, fileMap }) (logAt ref text severity)
+    else
+      let pos := fileMap.toPosition ((ref.getPos?).getD 0)
+      logAt (← getRef) m!"{rel}:{pos.line}:{pos.column}: {text}" severity
+  -- The Lean file's own item, checked by a spec.
+  | none, some (fileName, fileMap) =>
+    if l.leanItems.contains path then withReader (fun ctx => { ctx with fileName, fileMap }) (logAt ref text severity)
+    else logAt (← getRef) text severity
+  | none, none =>
+    if l.leanItems.contains path then logAt ref text severity
+    -- An imported item, whose syntax has positions in another module's text,
+    -- which neither this file nor a spec has: placed at the check.
+    else logAt (← getRef) text severity
+
+def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit := do
   for msg in Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) r c.decidable do
     let prop? := msg.item?.bind fun n => c.props.find? (·.name == n)
     let index? := msg.atIndex?.bind fun k => msg.item?.bind fun n => (c.indexes.filter (·.1 == n))[k]?.map (·.2.2.1)
@@ -33,10 +63,11 @@ def report (c : CompInfo) (r : CheckResult) : CommandElabM Unit := do
       | none, some n => (c.insts.find? (·.name == n)).map (·.ref)
         |>.orElse (fun _ => (c.vars.find? (·.name == n)).map (·.ref)) |>.getD c.ref
       | none, none => c.ref
-    match msg.severity with
-    | .error => logErrorAt ref msg.text
-    | .warning => logWarningAt ref msg.text
-    | .info => logInfoAt ref msg.text
+    let severity := match msg.severity with
+      | .error => MessageSeverity.error
+      | .warning => .warning
+      | .info => .information
+    logAbout path ref msg.text severity
 
 /-- Checks the comps and global expectations `paths`, and reports the
 results. -/
@@ -51,9 +82,9 @@ def checkAndReport (paths : Array Name) : CommandElabM Unit := do
       | none, none, none => continue
     let results ← liftTermElabM <| checkComp c kinds
     for r in results do
-      report c r
+      report p c r
     if c.tested.any then
-      logInfoAt c.ref m!"the checks of `{Core.showComp p}` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)"
+      logAbout p c.ref m!"the checks of `{Core.showComp p}` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)" .information
     all := all ++ results
   match Core.summarySeverity all with
   | .info => logInfo (Core.summary all)
