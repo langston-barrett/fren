@@ -56,6 +56,6 @@ comp parenthesized {
     --~^ warning: membership in a set of one member is equality
     req qc: c? iff s.matches?(("a"))
     --~^ warning: this pattern has no operator but `.*`
-    req qd: d? iff t = ({}) or (x, x) in ({((1, 2))})
+    req qd: d? iff t = ({}) or (x, x) in ({(1, 2)})
 }
 --@ summary: 16 passed, 0 failed, 0 inconclusive, 0 redundant

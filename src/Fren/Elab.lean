@@ -1753,8 +1753,7 @@ def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
 /-- `e`, where a pair `(a, b)` may be written: a member of a set literal, or
 the left of `in`. -/
 def pairOrTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := do
-  if (unparen e).isOfKind ``Lang.pairExpr then
-    let e := unparen e
+  if e.isOfKind ``Lang.pairExpr then
     -- A member is never a `Nat` (`lang::nat_place`).
     let (x, y) := (← widenTerm (← toTerm cx e[1]), ← widenTerm (← toTerm cx e[3]))
     -- Typed, so that a pair of numerals is a pair of `Int`s.
@@ -1783,7 +1782,7 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   if e.isOfKind ``Lang.memberExpr then
     if (unparen b).isOfKind ``Lang.setExpr && cx.noteIndexes then
       if let #[m] := (unparen b)[1].getSepArgs then
-        unless (unparen m).isOfKind ``Lang.pairExpr do recordLint .singletonMembership e (Core.singletonMembershipMsg (srcText a) (srcText m))
+        unless m.isOfKind ``Lang.pairExpr do recordLint .singletonMembership e (Core.singletonMembershipMsg (srcText a) (srcText m))
     -- The left synthesizes a type, which the right is checked against (`lang::checked`).
     let (x, s) := (← widenTerm (← pairOrTerm toTerm { cx with emptyOk := Core.Position.synthesized.checked false false } a),
       ← toTerm { cx with emptyOk := Core.Position.compared.checked false (synthesizes a) } b)
@@ -1794,7 +1793,7 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let ok ← if ts.isAppOfArity ``Fren.FinSet 1 then isDefEq ts.appArg! tx else pure false
     unless ok do
       let set := mkApp (Lean.mkConst ``Fren.FinSet [Level.zero]) tx
-      throwError (Core.membershipTypeMsg (← typeName set) (← typeName ts) ((unparen a).isOfKind ``Lang.pairExpr)).text
+      throwError (Core.membershipTypeMsg (← typeName set) (← typeName ts) (a.isOfKind ``Lang.pairExpr)).text
     return ← `($x ∈ $s)
   -- The operands of `join` synthesize their types, those of `subset` give each
   -- other theirs, and those of `union`, `inter` and `minus` are also checked
