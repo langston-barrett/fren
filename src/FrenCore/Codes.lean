@@ -4057,6 +4057,10 @@ input, or use them:
 ```fren
 comp c { in x: Int pub out y: Int req r: y = x + 1 }
 ```
+
+Assumptions that are reported and linked, by an input or a function, are removed
+together: one may guard an index in another, which is not defined without
+it. Each message names the others.
 "# },
   { code := "F0793", explanation := r#"A global expectation whose binders fall into groups that nothing relates (a warning, `unrelated_binders`).
 

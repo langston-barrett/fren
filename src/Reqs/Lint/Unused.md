@@ -157,14 +157,19 @@ it, and an assumption that applies a used function is used, as is an
 input it mentions. With `assume a: n = 3 and g(n) > 0` and `req r: y =
 g(3)`, `a` says that `g(3) > 0`, so it is used. A constant's value and a
 defined function's body apply no uninterpreted function, so they link
-nothing. With these rules, removing a reported assumption never makes a
-check fail. Its variables `V` and functions are mentioned by nothing else,
-so a check over the component is `forall U V, A(V) and B(U) implies
-C(U)`, with `A` the assumption, which is `(exists V, A(V)) implies (forall
-U, B(U) implies C(U))`, for every interpretation of the functions. Since
-`B` and `C` apply none of `A`'s functions, `exists V, A(V)` can be made
+nothing. With these rules, removing a reported assumption together with
+the reported assumptions it is linked to never makes a check fail. Alone,
+it may: with `assume a: n >= 0 and n < q.len` and `assume b: q[n] > 0`,
+both are reported, but `a` guards the index in `b`, so `b` without `a` is
+not defined (`F0611`). So the message names the reported assumptions
+linked to it. The variables `V` and functions of such a group are
+mentioned by nothing else, so a check over the component is `forall U V,
+A(V) and B(U) implies C(U)`, with `A` the group's assumptions, which is
+`(exists V, A(V)) implies (forall U, B(U) implies C(U))`, for every
+interpretation of the functions. Since `B` and `C` apply none of `A`'s
+functions, `exists V, A(V)` can be made
 to hold by changing only those, unless `A` is unsatisfiable, and then the
-assumptions' satisfiability check already fails (`F0602`). An assumption
+assumptions' satisfiability check already fails (`F0602`). The group
 can also bound the size of an abstract type, as `k1 != k2` does, but that
 is safe too: given a counterexample to a check without it, add a fresh
 value to the type, extend each uninterpreted function to it, and give

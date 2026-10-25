@@ -3921,29 +3921,35 @@ structure AssumptionRecord where
   level : LevelInEffect
   deriving Inhabited, Repr
 
-def unusedAssumptionMsg (name : Name) (inputs : Array Name) : Msg :=
-  let xs := ", ".intercalate (inputs.toList.map (s!"`{·}`"))
+def unusedAssumptionMsg (name : Name) (inputs linked : Array Name) : Msg :=
+  let show_ (ns : Array Name) := ", ".intercalate (ns.toList.map (s!"`{·}`"))
+  let together := if linked.isEmpty then #[] else
+    #[s!"note: it is linked to {show_ linked}, reported too, which may need it: remove them together"]
   { code? := some Lint.unusedAssumption.code
     headline := s!"the assumption `{name}` constrains only inputs that nothing uses"
     label? := some "constrains only unused inputs"
-    notes := #[s!"note: no requirement, expectation, definition or binding mentions {xs}, \
-        nor does another assumption tie them to a used variable",
-      "help: remove the assumption and its inputs, or use them"] }
+    notes := #[s!"note: no requirement, expectation, definition or binding mentions {show_ inputs}, \
+        nor does another assumption tie them to a used variable"] ++ together ++
+      #["help: remove the assumption and its inputs, or use them"] }
 
 /-- The messages of `unused_assumption`, given what the file's global
 expectations read through instances, or apply (`fnLink`), its instances
 bind, and its refinements read of their abstractions: each read's
-component and input or function.
-An assumption is read when it mentions a read input, or one that a read
-assumption of its component mentions. -/
+component and input or function. An assumption is read when it mentions a
+read input, or one that a read assumption of its component mentions. Each
+message names the other reported assumptions linked to it. -/
 def unusedAssumptionReports (rs : Array (AssumptionRecord × α)) (reads : Array (Name × Name)) :
     Array (LintReport α) :=
-  rs.filterMap fun (r, ref) =>
+  let reported := rs.filter fun (r, _) =>
     let same := (rs.filter (·.1.component == r.component)).map (·.1)
     let used := usedAssumptions (same.map (·.links)) ((reads.filter (·.1 == r.component)).map (·.2))
     let read := (same.findIdx? (·.name == r.name)).any (used[·]!)
-    if !unusedAssumption r.inputs.size true false read then none
-    else some { lint := .unusedAssumption, level := r.level, ref, msg := unusedAssumptionMsg r.name r.inputs }
+    unusedAssumption r.inputs.size true false read
+  reported.map fun (r, ref) =>
+    let others := (reported.filter fun (o, _) => o.component == r.component && o.name != r.name).map (·.1)
+    let linked := usedAssumptions (others.map (·.links)) r.links
+    let names := (others.zip linked).filterMap fun (o, l) => if l then some o.name else none
+    { lint := .unusedAssumption, level := r.level, ref, msg := unusedAssumptionMsg r.name r.inputs names }
 
 /-! ## Unrelated binders -/
 

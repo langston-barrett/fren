@@ -199,3 +199,14 @@ comp keyed {
     req r: same? iff i = j
     expect equal: when i = j, same?
 }
+
+-- A pair reported together: `a` guards the index in `b`, so `b` alone is not
+-- defined, and each message names the other.
+comp guarded_pair {
+    in n: Int
+    in q: Seq(Int)
+    pub out y: Int
+    assume a: n >= 0 and n < q.len  --~ warning: it is linked to `b`, reported too, which may need it: remove them together
+    assume b: q[n] > 0  --~ warning: it is linked to `a`, reported too, which may need it: remove them together
+    req r: y = 1
+}
