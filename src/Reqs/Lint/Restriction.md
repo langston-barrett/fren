@@ -203,8 +203,11 @@ to a variant, written in an expression, a pattern or a type, such as
 which it never fires on. It has no fix, and its message suggests the `use`
 of the item, or for a variant of its enumeration, by its path from the root
 module, and how to write the path after it: `use climate::Mode`, then
-`Mode::Heat`. Clippy's default limit is two `::`, as here.
-`lint::absolute_paths` states when it fires:
+`Mode::Heat`. Clippy's default limit is two `::`, as here. A leading
+`self` counts as a segment, unlike in Clippy, which does not count it:
+`self::sensors::Probe` has three. A path is counted once, where it is
+written, even where it is elaborated again, as the condition of a `when`
+is for its [trigger](../Lang/Components.md#triggers). `lint::absolute_paths` states when it fires:
 
 ```fren
 pub comp absolute_paths {

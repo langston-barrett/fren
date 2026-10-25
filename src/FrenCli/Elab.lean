@@ -570,10 +570,12 @@ def lint (lint : Lint) (span : Span) (msg : Msg) : M Unit :=
   modify fun s => { s with lintReports := s.lintReports.push { lint, level := s.levels.get lint, ref := span, msg } }
 
 /-- `resolve` for a path written in an expression, a pattern or a type,
-which also reports `absolute_paths` (`lint::absolute_paths`). -/
-def resolveWritten (segs : Array Ident) (extra : Array Name := #[]) : M Resolved := do
+which also reports `absolute_paths` (`lint::absolute_paths`) if `report`:
+an expression elaborated again, as a trigger is, reports nothing. -/
+def resolveWritten (segs : Array Ident) (extra : Array Name := #[]) (report : Bool := true) : M Resolved := do
   let r ← resolve segs extra
   if let some msg := Fren.Core.absolutePathMsg? (segNames segs) r then
+    unless report do return r
     lint .absolutePaths (segs[0]!.span.to segs.back!.span) msg
   return r
 
@@ -2010,7 +2012,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     if segs.size == 1 then
       if let some c := Fren.Core.builtinFunction? (identName segs[0]!.name) then
         err e.span (Fren.Core.unappliedMsg (.mkSimple c.name))
-    match ← resolveWritten segs cx.shadowing with
+    match ← resolveWritten segs cx.shadowing cx.noteIndexes with
     | .variant en idx =>
       let d := (← get).dataOf? en.path
       let n := (d.bind (·.ctors[idx]?)).map (·.2.size) |>.getD 0
@@ -2045,7 +2047,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let count := if ites.size == 1 then ites[0]! else s!"(+ {" ".intercalate ites.toList})"
         return (s!"({c.smtOp} {count} 1)", .bool)
     -- A variable shadows a function, as it does any other item.
-    let path ← match ← resolveWritten segs cx.shadowing with
+    let path ← match ← resolveWritten segs cx.shadowing cx.noteIndexes with
       | .item { kind := .fnItem, path, .. } => pure path
       | .variant en idx =>
         -- A variant with a payload, built from its values.
@@ -2102,7 +2104,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     readField f.span x t (Name.mkSimple f.name)
   | .record span tySegs fields =>
     let tySpan := tySegs[0]!.span.to tySegs.back!.span
-    let path ← match ← resolveWritten tySegs cx.shadowing with
+    let path ← match ← resolveWritten tySegs cx.shadowing cx.noteIndexes with
       | .item { kind := .recordItem, path, .. } => pure path
       | r => err tySpan (Fren.Core.wrongKindMsg "a record" r)
     let some d := (← get).dataOf? path | internal tySpan s!"unknown record `{path}`"
@@ -2153,7 +2155,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let mut idxs := #[]
       for alt in p.alts do
         let .variant pspan segs binders? := alt | internal alt.span "nested or-pattern"
-        match ← resolveWritten segs cx.shadowing with
+        match ← resolveWritten segs cx.shadowing cx.noteIndexes with
         | .variant en idx =>
           if en.path != ep then err pspan (Fren.Core.notAVariantOfMsg ep s!"a variant of `{showPath en.path}`")
           let v := ep ++ en.variants[idx]!

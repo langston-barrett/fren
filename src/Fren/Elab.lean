@@ -1190,7 +1190,7 @@ def lintRedundant (b : Syntax) (field : Bool) : TermElabM Unit := do
 open Lang in
 /-- Translates a record literal, where `go` translates its values. -/
 def recordTerm (go : Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
-  let r ← resolveWritten cx.modName (pathSegs e[0]) cx.shadowing
+  let r ← resolveWritten cx.modName (pathSegs e[0]) cx.shadowing cx.noteIndexes
   let .item { kind := .recordItem, path, .. } := r | throwErrorAt e[0] (Core.wrongKindMsg "a record" r).text
   let some info := (← getState).records.get? path | throwError "internal error: unknown record `{path}`"
   let given := e[2].getSepArgs
@@ -1385,7 +1385,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     if alts.isEmpty then pats := pats.push none; continue
     let mut idxs := #[]
     for p in alts do
-      match ← resolveWritten cx.modName (pathSegs p[0]) cx.shadowing with
+      match ← resolveWritten cx.modName (pathSegs p[0]) cx.shadowing cx.noteIndexes with
       | .variant en idx =>
         if en.path != info.path then
           throwErrorAt p (Core.notAVariantOfMsg info.path s!"a variant of `{Core.showPath en.path}`").text
@@ -2186,7 +2186,7 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
         readPathField cx id parts (first + j) t ty f).1
     unless n.isAtomic do throwErrorAt segs[0] (Core.dottedNameMsg n cx.insts (cx.vars.filter (·.role != .instHidden) |>.map (·.name))).text
     if let some c := Core.builtinFunction? n then throwError (Core.unappliedMsg (.mkSimple c.name)).text
-  match ← resolveWritten cx.modName segs cx.shadowing with
+  match ← resolveWritten cx.modName segs cx.shadowing cx.noteIndexes with
   | .variant en idx =>
     let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
     let n := (info.payloads[idx]?.map (·.size)).getD 0
@@ -2241,7 +2241,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     throwErrorAt p (Core.recursiveMsg (cx.modName ++ segs[0]!.getId)).text
   if let some c := cardinalityApp? e then return ← cardinalityTerm toTerm cx c args.getElems
   -- A variable shadows a function, as it does any other item.
-  let r ← resolveWritten cx.modName (pathSegs p) cx.shadowing
+  let r ← resolveWritten cx.modName (pathSegs p) cx.shadowing cx.noteIndexes
   if let .variant en idx := r then
     -- A variant with a payload, built from its values.
     let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
