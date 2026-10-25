@@ -19,6 +19,9 @@ comp c {
     pub out t?
     pub out w: Int
     pub out v: Int
+    pub out u: Int
+    pub out other: Cell
+    pub out s: Int
 
     req r1: y = 2 * match m { Mode::Heat => x + 1, _ => x }
     req r2: p? iff ((a? or b?) and a?) or not b?
@@ -29,4 +32,18 @@ comp c {
     -- The `if` of the first fix ends open, and `and` follows it, so it is
     -- put in parentheses; the second moves out an operand that ends open.
     req r7: w = 1 + match m { Mode::Cool => x, _ => row } and v = 3 * (if a? then x + if b? then 1 else 2 else row + if b? then 1 else 2)
+    -- Moving `row + 1` out would make a product of two operands that mention
+    -- variables, so this is not fixed.
+    req r8: u = if a? then 3 * (row + 1) else 2 * (row + 1)
+    -- With a comment between its fields, or in the `match`, neither is
+    -- fixed, as the comment would not stay where it is.
+    req r9: other = Cell {
+        column := x,  -- the second field
+        row,
+    }
+    req r10: s = match m {
+        Mode::Heat => x,
+        -- every other mode
+        _ => row,
+    }
 }

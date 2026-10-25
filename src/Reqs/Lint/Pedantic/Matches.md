@@ -172,7 +172,9 @@ the bodies are `true` and `false`;
 where both arms give back the scrutinee; `match_same_arms`, where the
 bodies are written the same; and
 [`trivial_match`](../Complexity/Matches.md#trivial-matches), which reports
-a `match` of one arm. Its Clippy counterpart, of the same name, is
+a `match` of one arm. Where the `match` has a comment, the lint has no
+fix: the fix writes the `if` from the scrutinee, the pattern and the
+bodies, and would drop it. Its Clippy counterpart, of the same name, is
 `pedantic` too. `lint::single_match_else` states when it fires:
 
 ```fren

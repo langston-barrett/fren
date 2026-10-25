@@ -1430,11 +1430,13 @@ def lintBools (e : Syntax) : TermElabM Unit := do
   let node := boolNode sub.str sub.startPos e
   for (l, ref, msg) in Core.rewriteReports src node fixable do
     recordLint l ref msg
-  let (boolEqs, variants, absEnds) := ((← getLocal).boolEqs, (← getLocal).variants, (← getLocal).absEnds)
-  modifyLocal fun l => { l with boolEqs := #[], variants := #[], absEnds := #[] }
+  let (boolEqs, variants, absEnds, mentioning) :=
+    ((← getLocal).boolEqs, (← getLocal).variants, (← getLocal).absEnds, (← getLocal).mentioning)
+  modifyLocal fun l => { l with boolEqs := #[], variants := #[], absEnds := #[], mentioning := #[] }
   let variant? (s : Syntax) := (variants.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
   let help (msg : Core.Msg) := if fixable && !msg.fixes.isEmpty then #[Core.fixHelp] else #[]
-  for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) variant? (absEnds.contains ·.getTailPos?) node do
+  let mentions (s : Syntax) := mentioning.contains (s.getPos?, s.getTailPos?)
+  for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) variant? (absEnds.contains ·.getTailPos?) mentions node do
     -- A node's position is its first token's, and its tail its last's.
     let ref := match r.last? with | some l => mkNullNode #[r.ref, l] | none => r.ref
     recordLint r.lint ref { r.msg with notes := r.msg.notes ++ help r.msg }
@@ -1481,9 +1483,9 @@ def lintFieldOrder (e : Syntax) (path : Name) (declared : Array Name) (given : A
   let off (p : String.Pos.Raw) := (String.Pos.Raw.extract sub.str sub.startPos p).length
   let range (s : Syntax) : Core.Range :=
     { start := off (s.getPos?.getD sub.startPos), stop := off (s.getTailPos?.getD sub.startPos) }
-  let some fixed := Core.reorderedFields? src ⟨0, src.size⟩ (given.map range) (given.map (·[0].getId)) declared | return
-  let msg := Core.inconsistentStructConstructorMsg (Name.mkSimple path.getString!) declared fixed
-  recordLint .inconsistentStructConstructor e (if (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
+  let some fixed? := Core.reorderedFields? src ⟨0, src.size⟩ (given.map range) (given.map (·[0].getId)) declared | return
+  let msg := Core.inconsistentStructConstructorMsg (Name.mkSimple path.getString!) declared fixed?
+  recordLint .inconsistentStructConstructor e (if (← getLocal).inMarkdown && fixed?.isSome then msg.note Core.fixHelp else msg)
 
 open Lang in
 /-- `unnecessary_struct_initialization` on the record literal `e`, of the
@@ -1643,7 +1645,8 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
     recordLint .matchLikeMembership e (help (Core.membershipMsg (pre ++ scrutinee.text ++ post) test))
   -- `single_match_else` (`lint::single_match_else`).
   if let some fixed := Core.singleMatchElseFix? infos scrutinee slot (membership?.isSome || needless || trivial) (followedStx e) then
-    recordLint .singleMatchElse e (help (Core.singleMatchElseMsg fixed))
+    let msg := Core.singleMatchElseMsg fixed (Core.hasComment (exactText e))
+    recordLint .singleMatchElse e (if msg.fixes.isEmpty then msg else help msg)
   unless flat do return
   let some info := ty.constName?.bind (← getState).enumOfDecl? | return
   let some w := infos.findIdx? (·.wildcard) | return
@@ -3282,6 +3285,8 @@ def iteTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
   let cx := { cx with expected? := none }
   if cx.noteIndexes && !cx.inElse then lintIfChain cx e
   if cx.noteIndexes then lintSameBranches e a b
+  if cx.noteIndexes && (← mentionsAny cx c') then
+    modifyLocal fun l => { l with mentioning := l.mentioning.push ((unparen c').getPos?, (unparen c').getTailPos?) }
   let c ← toTerm { cx with inElse := false } c'
   checkTermType c' c .bool (some "note: the condition of `if` is a `Bool`")
   let gx ← Core.GuardedOperand.thenBranch.guard (pure c) `(¬$c)
@@ -3301,8 +3306,13 @@ and a `Nat` is expected of the operands where one is of the whole
 def arithTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (natOk : Bool) (op : String) (a b : Syntax) :
     TermElabM Term := do
   if op == "*" then
-    unless cx.unmentioned || Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do
+    let (ma, mb) := (← mentionsAny cx a, ← mentionsAny cx b)
+    unless cx.unmentioned || Core.productAccepted ma mb do
       throwError Core.nonlinearMsg.text
+    -- For `branches_sharing_code`, without parentheses, as `boolNode` has them.
+    if cx.noteIndexes then
+      let at_ (s : Syntax) := ((unparen s).getPos?, (unparen s).getTailPos?)
+      modifyLocal fun l => { l with mentioning := l.mentioning ++ ([(ma, a), (mb, b)].filter (·.1) |>.map (at_ ·.2)) }
   let natOk := natOk && op != "-"
   let x ← toTerm { cx with natOk } a
   -- Of a newtype, its underlying type's `+` or `-`, on its field, which is

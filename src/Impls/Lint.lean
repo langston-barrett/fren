@@ -1411,14 +1411,15 @@ impl overly_complex_bool_expr: lint::overly_complex_bool_expr for (c a n s : Boo
   intro c a n s _
   cases c <;> cases a <;> cases n <;> cases s <;> simp [fren_spec, Fren.Core.overlyComplexBool, toBoolRule]
 
-impl branches_sharing_code: lint::branches_sharing_code for (o l r : Bool) {
+impl branches_sharing_code: lint::branches_sharing_code for (o l r n : Bool) {
   same_op? := o,
   shared_left? := l,
   shared_right? := r,
-  fires? := Fren.Core.branchesSharingCode o l r,
+  nonlinear? := n,
+  fires? := Fren.Core.branchesSharingCode o l r n,
 } by
-  intro o l r _
-  cases o <;> cases l <;> cases r <;> simp [fren_spec, Fren.Core.branchesSharingCode]
+  intro o l r n _
+  cases o <;> cases l <;> cases r <;> cases n <;> simp [fren_spec, Fren.Core.branchesSharingCode]
 
 impl needless_raw_string_hashes: lint::needless_raw_string_hashes for (h : Nat) (l : Int) {
   hashes := h,

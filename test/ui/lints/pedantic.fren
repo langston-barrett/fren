@@ -67,6 +67,8 @@ comp drop_operands {
 }
 
 -- `branches_sharing_code`.
+const LIMIT: Int := 3
+
 comp shared {
     in c?
     in x: Int
@@ -75,6 +77,9 @@ comp shared {
     pub out b: Int
     pub out d?
     pub out e: Int
+    pub out f: Int
+    pub out g: Int
+    pub out h: Int
 
     req r1: a = if c? then 2 * x + 1 else x + 1
     --~^ warning: both branches of this `if` end with `+ 1`
@@ -85,6 +90,13 @@ comp shared {
     -- The branches are written the same: `same_branches`.
     req r4: e = if c? then x + 1 else x + 1
     --~^ warning: both branches of `if` are written the same
+    -- `(if c? then 3 else 2) * (y + 1)` would be nonlinear.
+    req r5: f = if c? then 3 * (y + 1) else 2 * (y + 1)
+    -- One side of each product is a constant.
+    req r6: g = if c? then x * LIMIT else y * LIMIT
+    --~^ warning: both branches of this `if` end with `* LIMIT`
+    req r7: h = if LIMIT > 2 then 3 * x else 2 * x
+    --~^ warning: both branches of this `if` end with `* x`
 }
 
 -- `inconsistent_struct_constructor`.

@@ -3,16 +3,17 @@
 ## Record literals
 
 `inconsistent_struct_constructor`, `allow` by default, fires on a record
-literal whose fields are not written in the order that its record
-declares them, as in `Cell { column := 2, row := 1 }` where `struct Cell {
-row: Int, column: Int }`. The fix writes them in that order, each with the
-text it is written with, as `row := 1` or `row` alone, and leaves the text
-between them where it is. A record literal is the value whose fields have
-the values given, whatever their order, and an expression has no effects,
-so the order in which they are written cannot change what it means. No
-field's value is guarded by another's: each is guarded by the literal's
-guard, before the fix and after. `lint::inconsistent_struct_constructor`
-states when it fires:
+literal whose fields are not written in the order that its record declares
+them, as in `Cell { column := 2, row := 1 }` where `struct Cell { row:
+Int, column: Int }`. The fix writes them in that order, each with the text
+it is written with, as `row := 1` or `row` alone, and leaves the text
+between them where it is. Where that text has a comment, the lint has no
+fix, since the comment would no longer be by the field it is about. A
+record literal is the value whose fields have the values given, whatever
+their order, and an expression has no effects, so the order in which they
+are written cannot change what it means. No field's value is guarded by
+another's: each is guarded by the literal's guard, before the fix and
+after. `lint::inconsistent_struct_constructor` states when it fires:
 
 ```fren
 pub mod lint

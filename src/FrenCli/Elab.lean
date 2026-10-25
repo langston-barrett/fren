@@ -448,6 +448,10 @@ structure State where
   /-- Where the comparisons of `Bool`s in the expression being elaborated
   are, for `bool_equality`. -/
   boolEqs : Array Span := #[]
+  /-- Where the conditions of `if`s and the operands of `*` in the
+  expression being elaborated that mention a variable or an uninterpreted
+  function are, for `branches_sharing_code`. -/
+  mentioning : Array Span := #[]
   /-- Where the variants without payloads in the expression being
   elaborated are, with their paths, for `contradictory_comparisons`. -/
   variants : Array (Span × String) := #[]
@@ -1228,10 +1232,10 @@ def lintBools (e : Expr) : M Unit := do
   let root := e.boolNode full w.start
   for (l, ref, msg) in Fren.Core.rewriteReports src root do
     lintFix l ref msg
-  let (boolEqs, variants, absEnds) := ((← get).boolEqs, (← get).variants, (← get).absEnds)
-  modify fun s => { s with boolEqs := #[], variants := #[], absEnds := #[] }
+  let (boolEqs, variants, absEnds, mentioning) := ((← get).boolEqs, (← get).variants, (← get).absEnds, (← get).mentioning)
+  modify fun s => { s with boolEqs := #[], variants := #[], absEnds := #[], mentioning := #[] }
   let variant? (sp : Span) := (variants.find? (·.1 == sp)).map (·.2)
-  for r in Fren.Core.opReports src boolEqs.contains variant? (absEnds.contains ·.stop) root do
+  for r in Fren.Core.opReports src boolEqs.contains variant? (absEnds.contains ·.stop) mentioning.contains root do
     lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) r.msg
   for r in Fren.Core.arithReports src root do
     lintFix r.lint r.ref r.msg
@@ -1653,7 +1657,7 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
       #[({ start := span.start, stop := r.start }, pre), ({ start := r.stop, stop := span.stop }, post)]
   -- `single_match_else` (`lint::single_match_else`).
   if let some fixed := Fren.Core.singleMatchElseFix? infos scr slot (membership?.isSome || needless || trivial) (← followedSpan span) then
-    lintFix .singleMatchElse span (Fren.Core.singleMatchElseMsg fixed)
+    lintFix .singleMatchElse span (Fren.Core.singleMatchElseMsg fixed (Fren.Core.hasComment (← srcAt span)))
   unless flat do return
   let .enum ep := ty | return
   let some d := (← get).dataOf? ep | return
@@ -2144,6 +2148,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let .mk kind .. := a.boolNode
         lintFix .sameBranches span (Fren.Core.sameBranchesMsg ta kind.prec (← srcAt { start := 0, stop := span.start })
           (← srcAt { start := span.stop, stop := (← get).src.size }))
+    if cx.noteIndexes && (← mentionsAny cx c) then modify fun s => { s with mentioning := s.mentioning.push c.span }
     let c ← expect c .bool (some "note: the condition of `if` is a `Bool`")
     let gx := Fren.Core.GuardedOperand.thenBranch.guard c s!"(not {c})"
     let gy := Fren.Core.GuardedOperand.elseBranch.guard c s!"(not {c})"
@@ -2530,7 +2535,11 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         if nat then .nat else .int)
     | _ =>
       if op == "*" then
-        unless cx.unmentioned || Fren.Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do err span Fren.Core.nonlinearMsg
+        let (ma, mb) := (← mentionsAny cx a, ← mentionsAny cx b)
+        unless cx.unmentioned || Fren.Core.productAccepted ma mb do err span Fren.Core.nonlinearMsg
+        -- For `branches_sharing_code`.
+        if cx.noteIndexes then
+          modify fun s => { s with mentioning := s.mentioning ++ ([(ma, a.span), (mb, b.span)].filter (·.1) |>.map (·.2)) }
       -- `+` and `*` of `Nat`s are `Nat`s; `-` is always an `Int`, so that
       -- nothing truncates (`lang::operator_type`).
       let nat := op != "-" && expected? == some .nat
@@ -2747,9 +2756,9 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let src := (← get).src
       let ranges := fields.map fun (f, e?) =>
         ({ start := f.span.start, stop := (e?.map fun e => (Fren.Core.withParens src (toRange e.span)).stop).getD f.span.stop } : Fren.Core.Range)
-      if let some fixed := Fren.Core.reorderedFields? src (toRange span) ranges (fields.map (Name.mkSimple ·.1.name)) (fs.map (·.1)) then
+      if let some fixed? := Fren.Core.reorderedFields? src (toRange span) ranges (fields.map (Name.mkSimple ·.1.name)) (fs.map (·.1)) then
         lintFix .inconsistentStructConstructor span
-          (Fren.Core.inconsistentStructConstructorMsg (Name.mkSimple path.getString!) (fs.map (·.1)) fixed)
+          (Fren.Core.inconsistentStructConstructorMsg (Name.mkSimple path.getString!) (fs.map (·.1)) fixed?)
     let mut smts := #[]
     for (f, t) in fs do
       let some (fi, e?) := fields.find? (Name.mkSimple ·.1.name == f) | internal span s!"no field `{f}`"

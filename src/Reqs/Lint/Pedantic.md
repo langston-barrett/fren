@@ -496,14 +496,25 @@ refine excluded_middle_complete: excluded_middle_written refines excluded_middle
 else B op X`, where `op` is one binary operator in both branches and `X`
 is written the same in both, and on its mirror, `if C then X op A else X
 op B`. The fix moves `X` out of the `if`: `(if C then A else B) op X`, or
-`X op (if C then A else B)`. The `if` is in parentheses, as `lang::operand`
-requires of a conditional operand, and the whole is in parentheses where
-[fixes need them](../Lint.md#parentheses-in-fixes); `A` and `B` keep
-the parentheses they are written with. If both operands of the branches
-are written the same, so are the branches, which
+`X op (if C then A else B)`. The `if` is in parentheses, as
+`lang::operand` requires of a conditional operand, and the whole is in
+parentheses where [fixes need them](../Lint.md#parentheses-in-fixes); `A`
+and `B` keep the parentheses they are written with. If both operands of
+the branches are written the same, so are the branches, which
 [`same_branches`](Suspicious/Expressions.md#branches-written-the-same)
-reports, and this lint does not fire. Its Clippy counterpart, of the same
-name, is in `nursery`.
+reports, and this lint does not fire. Nor does it fire where the fix would
+be outside the arithmetic that Fren accepts. For `*`, that is where `X`
+mentions a variable or an uninterpreted function, and so does the `if` it
+moves out, in `C`, `A` or `B` (see [Linear
+arithmetic](../Lang/Expressions.md#linear-arithmetic)): `if a? then 3 * x
+else 2 * x` would become `(if a? then 3 else 2) * x`, a product of two
+operands that mention variables, but `if a? then x * 2 else y * 2` becomes
+`(if a? then x else y) * 2`. For `div` and `mod`, it is where `X` is on
+the left, since the `if` would be the divisor, which must be a literal or
+a constant (see [Division and remainder](../Lang/Expressions.md#division-and-remainder)): `if a? then
+x div 2 else y div 2` becomes `(if a? then x else y) div 2`, but `if a?
+then x div 2 else x div 3` is left as it is. Its Clippy counterpart,
+of the same name, is in `nursery`.
 
 The fix keeps the meaning: an operator's value depends only on the values
 of its operands, and the `if` picks the value of `A` or of `B` as before.
@@ -521,9 +532,10 @@ pub comp branches_sharing_code {
     in same_op?          -- both branches apply the same binary operator
     in shared_left?      -- their left operands are written the same
     in shared_right?     -- their right operands are written the same
+    in nonlinear?        -- the fix is outside Fren's arithmetic: `*` where the `if` and `X` both mention a variable or an uninterpreted function, or `div` or `mod` by the `if`
     pub det out fires?
 
-    req rule: fires? iff (same_op? and shared_left? != shared_right?)
+    req rule: fires? iff (same_op? and shared_left? != shared_right? and not nonlinear?)
 
     expect same_branches: when shared_left? and shared_right?, not fires?
 }

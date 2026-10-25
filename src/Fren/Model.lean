@@ -461,6 +461,10 @@ structure LocalState where
   /-- Where the comparisons of `Bool`s in the expression being elaborated
   are, for `bool_equality`. -/
   boolEqs : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
+  /-- Where the conditions of `if`s and the operands of `*` in the
+  expression being elaborated that mention a variable or an uninterpreted
+  function are, for `branches_sharing_code`. -/
+  mentioning : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
   /-- Where the variants without payloads in the expression being
   elaborated are, with their paths, for `contradictory_comparisons`. -/
   variants : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × String) := #[]
