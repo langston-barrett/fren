@@ -1,0 +1,13 @@
+error[F0122]: `<` and `>` cannot be chained together
+ --> test/cli/syntax/f0122_chain_direction.fren:2:63
+  |
+2 | comp c { in x: Int in y: Int pub out ok? req r: ok? iff 0 < x > y }
+  |                                                               ^ orders the other way from `<`
+  |
+  = note: a chained comparison orders one way: `<` and `<=` chain together, and `>` and `>=`
+  = help: split the chain with `and`, e.g. `a < b and b > c`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0122`.
+exit=2

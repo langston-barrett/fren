@@ -188,7 +188,7 @@ not formatted, and those that `fren fmt` cannot parse, such as tests of
 syntax errors and of Lean code, and the examples of Markdown specs. -/
 def fmtIgnore : List String :=
   ["test/cli/syntax/*.fren", "test/cli/names/f0216_member_option.fren", "test/cli/fix/*.fren", "test/cli/fmt/check.fren",
-   "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/shadow.fren",
+   "test/cli/fmt/chain_error.fren", "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/shadow.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren", "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
    -- `#fren_md` in a block, which only the Lean front end reads.
    "src/FrenTest/chapters/LiterateOuter.md", "src/FrenTest/chapters/LiterateReader.md",
@@ -413,6 +413,12 @@ def mutantsOfText (file : Nat) (path : String) (chars : Array Char) : Array Fren
     | .error _ => #[]
   | .error _ => #[]
 
+/-- The tree of a chained comparison of `es` with the operators `ops`, as
+`shapeWith` writes it: with one operator, a comparison. -/
+def chainShape (go : FrenCli.Expr → String) (es : Array FrenCli.Expr) (ops : Array String) : String :=
+  if ops.size == 1 then s!"({ops[0]!} {go es[0]!} {go es[1]!})"
+  else s!"(chain {go es[0]!}{String.join ((ops.zip (es.extract 1)).toList.map fun (op, e) => s!" {op} {go e}")})"
+
 open FrenCli in
 /-- The tree of `e`, without spans or parentheses, but where `f` gives a
 node's tree instead: operators with their operands, and leaves as their
@@ -438,6 +444,7 @@ partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e :
     | .seq _ es => s!"(seq {list es})"
     | .index _ a i => s!"(index {go a} {go i})"
     | .method _ r x as => s!"(method {go r} {x.name} {list as})"
+    | .chain _ es ops => chainShape go es (ops.map (·.1))
     | e => Mutate.idText (s.text e.span)
 
 open FrenCli in
@@ -451,6 +458,14 @@ def intended (s : Mutate.Src) (m : Mutate.Mutant) (e : FrenCli.Expr) : String :=
         some (if Mutate.idText m.after == Mutate.idText (s.text (s.outer sp l.span)) then plain l else plain r)
       else if m.origin != .dropConjunct && opAt then some s!"({m.after} {plain l} {plain r})"
       else if m.origin == .swapAndOr && sp == m.span then some s!"({if op == "and" then "or" else "and"} {plain l} {plain r})"
+      else none
+    | .chain sp es ops =>
+      let names := ops.map (·.1)
+      if let some k := ops.findIdx? (·.2 == m.span) then
+        some (chainShape plain es (names.set! k m.after))
+      else if m.origin == .dropConjunct && sp == m.span then
+        let dropFirst := Mutate.idText m.after == Mutate.idText (s.text { start := (s.outer sp es[1]!.span).start, stop := sp.stop })
+        some (if dropFirst then chainShape plain (es.extract 1) (names.extract 1) else chainShape plain es.pop names.pop)
       else none
     | .when sp neg c b =>
       if m.origin == .negateTrigger && sp.start == m.span.start then some s!"({if neg then "when" else "unless"} {plain c} {plain b})"

@@ -1,0 +1,15 @@
+-- The types of each comparison in a chained comparison: each is typed as
+-- if written alone. The chains that do not parse are in `test/ui/syntax`.
+set_option fren.lint.unused_variables "allow"
+
+comp types {
+    in x: Int
+    pub out ok?
+
+    req r: ok? iff 0 <= x
+        < "a"
+    --~^[cli] error: type mismatch: expected `Int`, found `String`
+    --~^^[hosted] error: Type mismatch
+}
+
+--@ exit: 2

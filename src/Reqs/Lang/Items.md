@@ -27,8 +27,8 @@ pub comp declared_before {
     in k_user: Int               -- the position of `user`
     pub det out accepted?
 
-    assume positions: 0 <= k_used and k_used < items.len and items[k_used] = used
-        and 0 <= k_user and k_user < items.len and items[k_user] = user
+    assume positions: 0 <= k_used < items.len and items[k_used] = used
+        and 0 <= k_user < items.len and items[k_user] = user
     assume distinct: when used = user, k_used = k_user
 
     req rule: accepted? iff (used = user or k_used < k_user)
@@ -277,7 +277,7 @@ pub comp function_params {
     in n_named: Int      -- parameters written with a name
     pub det out accepted?
 
-    assume counts: n_params >= 1 and n_named >= 0 and n_named <= n_params
+    assume counts: n_params >= 1 and 0 <= n_named <= n_params
 
     req rule: accepted? iff n_named = (if defined? then n_params else 0)
 

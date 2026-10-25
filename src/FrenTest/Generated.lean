@@ -132,7 +132,35 @@ example : (-7 : Int) / 2 = -4 ∧ (-7 : Int) % 2 = 1 ∧ (7 : Int) / -2 = -3 ∧
 example (x : Int) (k : Nat) : x / -(k : Int) = -(x / k) ∧ x % -(k : Int) = x % k :=
   ⟨Int.ediv_neg x k, Int.emod_neg x k⟩
 
-/-- info: fren: 19 passed, 0 failed, 0 inconclusive, 0 redundant -/
+-- A chained comparison, which Lean does not have, is the conjunction of
+-- its comparisons, with the same term for each operand between two. On
+-- strings, `>` is written as `Fren.Str.lt` with its operands swapped.
+comp ranged {
+  in i: Int
+  in n: Int
+  in s: String
+  pub out inside?
+  pub out lower?
+
+  req inside: inside? iff 0 <= i < n <= 10
+  req lower: lower? iff "z" > s >= "a"
+}
+
+/--
+info: @[reducible] def check.ranged.req.inside : Int → Int → String → Bool → Bool → Prop :=
+fun i n s inside? lower? => inside? = true ↔ (0 ≤ i ∧ i < n) ∧ n ≤ 10
+-/
+#guard_msgs in
+#print check.ranged.req.inside
+
+/--
+info: @[reducible] def check.ranged.req.lower : Int → Int → String → Bool → Bool → Prop :=
+fun i n s inside? lower? => lower? = true ↔ Fren.Str.lt s (Fren.Str.lit "z") ∧ Fren.Str.le (Fren.Str.lit "a") s
+-/
+#guard_msgs in
+#print check.ranged.req.lower
+
+/-- info: fren: 22 passed, 0 failed, 0 inconclusive, 0 redundant -/
 #guard_msgs in
 #fren_check
 

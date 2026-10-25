@@ -302,6 +302,17 @@ impl function_params: lang::function_params for (d : Bool) (p n : Nat) {
   intro d p n _
   cases d <;> simp [fren_spec, Fren.Core.functionParamsAccepted] <;> omega
 
+-- For every chained comparison, by the counts of its operators' kinds that
+-- `Fren.Core.checkChain`, which both front ends call, takes.
+impl comparison_chain: lang::comparison_chain for (a d o : Nat) {
+  n_ascending := a,
+  n_descending := d,
+  n_other := o,
+  accepted? := Fren.Core.chainAccepted a d o,
+} by
+  intro a d o _
+  simp [fren_spec, Fren.Core.chainAccepted] <;> omega
+
 /-! ## Strings and decidability (`Reqs/Lang/Types#strings`, `Reqs/Lang/Decidability`) -/
 
 impl string_char: lang::string_char for (c : Int) {

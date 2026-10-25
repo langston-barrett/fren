@@ -153,8 +153,8 @@ pub comp earlier {
     in k_binder: Int             -- the position of `binder`
     pub det out earlier?
 
-    assume positions: 0 <= k_owner and k_owner < order.len and order[k_owner] = owner
-        and 0 <= k_binder and k_binder < order.len and order[k_binder] = binder
+    assume positions: 0 <= k_owner < order.len and order[k_owner] = owner
+        and 0 <= k_binder < order.len and order[k_binder] = binder
     -- Instance names are distinct.
     assume distinct: when owner = binder, k_owner = k_binder
 

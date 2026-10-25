@@ -404,7 +404,7 @@ pub comp exit {
     req formatted: when all_parsed? and (not check? or all_formatted?), code = 0
 
     expect write_succeeds: when all_parsed? and not check?, code = 0
-    expect documented_codes: code >= 0 and code <= 2
+    expect documented_codes: 0 <= code <= 2
 }
 ```
 

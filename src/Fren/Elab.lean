@@ -872,6 +872,21 @@ partial def hasConcat (cx : ExprCtx) (e : Syntax) : TermElabM Bool := do
   if e.isOfKind ``Lang.isExpr then return ← hasConcat cx e[0]
   e.getArgs.anyM (hasConcat cx)
 
+/-- Whether `e` is a comparison: `=`, `!=`, an ordering, `in`, `subset`,
+or a pattern test, `e is P`, which does not chain but parses as one. -/
+def isComparison (e : Syntax) : Bool :=
+  e.getNumArgs == 3 && e[1].isAtom &&
+    ["=", "!=", "<", "<=", ">", ">=", "in", "subset", "is"].contains e[1].getAtomVal.trimAscii.toString
+
+/-- The operands and operators of `e`, if it is a chained comparison
+(`Reqs/Lang/Expressions#chained-comparisons`): a comparison whose left
+operand is one, without parentheses, as `Fren.Lang` parses `a < b <= c`. -/
+partial def chainOf? (e : Syntax) : Option (Array Syntax × Array Syntax) :=
+  if isComparison e && isComparison e[0] then some (go e) else none
+where
+  go (e : Syntax) : Array Syntax × Array Syntax :=
+    if isComparison e then let (xs, ops) := go e[0]; (xs.push e[2], ops.push e[1]) else (#[e], #[])
+
 /-- The nodes in `e`'s arguments, through lists such as a call's arguments. -/
 partial def subNodes (e : Syntax) : Array Syntax :=
   e.getArgs.flatMap fun a =>
@@ -887,6 +902,7 @@ partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.
   let atom (i : Nat) := if e[i].isAtom then e[i].getAtomVal.trimAscii.toString else ""
   -- `true` and `false` are also paths.
   if e.isOfKind choiceKind then go ((e.getArgs.find? fun a => a.getNumArgs == 1 && a[0].isAtom).getD e[0]) else
+  if let some (xs, ops) := chainOf? e then .mk (.chain ops.size) range e (xs.map go) else
   if e.isOfKind ``Lang.methodExpr then
     let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
     let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
@@ -1026,6 +1042,8 @@ def operandSlot (p e : Syntax) : Option Core.Slot :=
   else if p.isOfKind ``Lang.matchExpr then
     if same p[1] then some Core.receiverSlot else none
   else if p.isOfKind ``Lang.isExpr then at_ .patternTest #[0]
+  -- A chained comparison's operands, not the comparisons within it.
+  else if let some (xs, ops) := chainOf? p then (xs.findIdx? same).bind ((Core.BKind.chain ops.size).slots[·]?.join)
   else match p.getNumArgs, atom 0, atom 1 with
     | 3, "(", _ => none
     | 4, "when", _ => at_ (.when false) #[1, 3]
@@ -1451,6 +1469,39 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   match op with
   | "<" => `(Fren.Str.lt $x $y) | "<=" => `(Fren.Str.le $x $y) | ">" => `(Fren.Str.lt $y $x) | _ => `(Fren.Str.le $y $x)
 
+open Lang in
+/-- `a < b <= c`, the chained comparison `e` of the operands `xs` and the
+operators `ops`, as `a < b ∧ b ≤ c`, with the term for `b` in both
+(`Reqs/Lang/Expressions#chained-comparisons`). Each comparison is checked
+as if written alone, at the syntax from its left operand to its right, and,
+as in that expansion, the comparisons before an operand guard it. -/
+def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (xs ops : Array Syntax) :
+    TermElabM Term := withRef e do
+  let names := ops.map (·.getAtomVal.trimAscii.toString)
+  if let .error (k, msg) := Core.checkChain names then throwErrorAt ops[k]! msg.text
+  let mut x ← toTerm cx xs[0]!
+  let string := (← typeOf x).isConstOf ``String
+  let mut links := #[]
+  for op in names, a in xs, b in xs.extract 1, opStx in ops do
+    let y ← toTerm { cx with guards := cx.guards ++ links } b
+    -- A node's position is its first token's, and its tail its last's, so
+    -- this one spans the comparison, from `a` to `b`, for its messages.
+    let link := mkNullNode #[a, opStx, b]
+    if string then
+      let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
+      checkCore cx link .stringCompare true (ca || cb) #[a, b] (ca && cb)
+    -- On strings, as `compareTerm` writes them.
+    links := links.push (← withRef link <| match op, string with
+      | "<", false => `($x < $y) | "<=", false => `($x ≤ $y)
+      | ">", false => `($x > $y) | ">=", false => `($x ≥ $y)
+      | "<", true => `(Fren.Str.lt $x $y) | "<=", true => `(Fren.Str.le $x $y)
+      | ">", true => `(Fren.Str.lt $y $x) | _, _ => `(Fren.Str.le $y $x))
+    x := y
+  links.extract 1 |>.foldlM (fun acc l => `($acc ∧ $l)) links[0]!
+
+/-- Whether `e` is `[]`, which takes its type from where it is written. -/
+def isEmptySeq (e : Syntax) : Bool := e.isOfKind ``Lang.seqExpr && e[1].getSepArgs.isEmpty
+
 /-- `a ++ b`, where `concatOk` says whether the core allows it here. -/
 def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (concatOk : Bool) (e : Syntax) :
     TermElabM Term := withRef e do
@@ -1851,7 +1902,9 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   let cx := { cx with concatOk := false, emptyOk := false, chain := if isBinOp (unparen e) cx.chain then cx.chain else ""
                       parent? := some e, inElse := cx.inElse && isIte (unparen e) }
   let go := toTerm cx
-  if cx.noteIndexes then lintEqOp e
+  -- A chained comparison's comparisons are not operators of their own here.
+  if cx.noteIndexes && (chainOf? e).isNone then lintEqOp e
+  if let some (xs, ops) := chainOf? e then return ← chainTerm toTerm cx e xs ops
   match e with
   | `(fren_expr| when $c, $d) => guardedTerm toTerm cx c d .whenBody
   | `(fren_expr| unless $c, $d) => guardedTerm toTerm cx c d .unlessBody

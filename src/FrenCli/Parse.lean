@@ -76,11 +76,16 @@ inductive Expr where
   /-- `e.m(a, b)`, a method call with arguments; without them, `e.m` is a
   field read or a path, until its receiver's type is known. -/
   | method (span : Span) (recv : Expr) (name : Ident) (args : Array Expr)
+  /-- `a < b <= c`, a chained comparison: at least two operators, each
+  with its span, between its operands, one more than its operators, which
+  chain (`lang::comparison_chain`), as the parser checks. -/
+  | chain (span : Span) (operands : Array Expr) (ops : Array (String × Span))
   deriving Inhabited
 
 def Expr.span : Expr → Span
   | .when s .. | .ite s .. | .bin s .. | .not s .. | .neg s .. | .num s .. | .bool s .. | .path s .. | .app s ..
-  | .record s .. | .field s .. | .match s .. | .is s .. | .str s .. | .method s .. | .set s .. | .pair s .. | .seq s .. | .index s .. => s
+  | .record s .. | .field s .. | .match s .. | .is s .. | .str s .. | .method s .. | .set s .. | .pair s .. | .seq s .. | .index s ..
+  | .chain s .. => s
 
 inductive PropKind where
   | assume
@@ -392,21 +397,31 @@ partial def cmpOp? : P (Option String) := do
 partial def cmp : P Expr := do
   let start := (← peek).span
   let l ← add
-  if (← eatKw "is").isSome then
+  if let some isTok ← eatKw "is" then
     let p ← pattern (arm := false)
     let e := Expr.is (← spanFrom start) l p
-    if (← cmpOp?).isSome || isKw (← peek) "is" then chained
+    if (← cmpOp?).isSome || isKw (← peek) "is" then chainedIs isTok
     return e
   let some op ← cmpOp? | return l
-  discard bump
+  let t ← bump
   let r ← add
-  if (← cmpOp?).isSome || isKw (← peek) "is" then chained
-  bin start op l r
-/-- A second comparison after one. -/
-partial def chained : P Unit := do
-  err (← peek).span "F0108" "comparisons cannot be chained" (some "second comparison")
-    #["note: `a < b < c` would compare the `Bool` `a < b` with `c`",
-      "help: split it with `and`, e.g. `a < b and b < c`"]
+  if (← cmpOp?).isNone && !isKw (← peek) "is" then return ← bin start op l r
+  -- A chained comparison (`lang::comparison_chain`), checked here, so that
+  -- a chain that the grammar does not have does not parse. An `is` ends
+  -- it, as an operator that does not chain.
+  let mut operands := #[l, r]
+  let mut ops := #[(op, t.span)]
+  repeat
+    if isKw (← peek) "is" then ops := ops.push ("is", (← peek).span); break
+    let some op ← cmpOp? | break
+    ops := ops.push (op, (← bump).span)
+    operands := operands.push (← add)
+  if let .error (k, msg) := Fren.Core.checkChain (ops.map (·.1)) then throw { span := ops[k]!.2, msg }
+  return .chain (← spanFrom start) operands ops
+/-- `is`, at `t`, chained with a comparison or another `is` after it: it
+does not chain (`lang::comparison_chain`). -/
+partial def chainedIs (t : Token) : P Unit :=
+  throw { span := t.span, msg := Fren.Core.chainOtherMsg "is" }
 partial def add : P Expr := do
   let start := (← peek).span
   let mut l ← mul

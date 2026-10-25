@@ -53,3 +53,11 @@ fun s round? boxy? any? => any? = true ↔ true = true
 -/
 #guard_msgs in
 #print pattern_test.kinds.req.any
+
+-- A pattern test and a chained comparison bind as comparisons, which do not
+-- chain with each other, so a fix that writes one where the other's operand
+-- is, in either front end, puts it in parentheses (`Fren.Core.BKind.slots`).
+#guard ({ text := "s is A(_)", prec := Fren.Core.BKind.patternTest.prec } : Fren.Core.BText).inSlot
+  (Fren.Core.BKind.chain 2).slots[1]! == "(s is A(_))"
+#guard ({ text := "0 <= x < 9", prec := (Fren.Core.BKind.chain 2).prec } : Fren.Core.BText).inSlot
+  Fren.Core.BKind.patternTest.slots[0]! == "(0 <= x < 9)"

@@ -757,6 +757,14 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       | .join, .rel a _, .rel _ c => .rel a c
       | _, _, _ => .bool
     return (.bin o x y, t)
+  -- `a < b <= c` is `a < b and b <= c`, with the same `b` in both: an
+  -- index in `b` has its goal first where it is unguarded.
+  | .chain _ es ops => do
+    let xs ← es.mapM fun e => (·.1) <$> lowerExpr cx e
+    let links ← (ops.zip (xs.zip (xs.extract 1))).mapM fun ((op, _), x, y) => do
+      let some o := Op.ofString? op | throw s!"unknown operator `{op}`"
+      return Ex.bin o x y
+    return ((links.extract 1).foldl (.bin .and) links[0]!, .bool)
   | .not _ a => do return (.not (← lowerExpr cx a).1, .bool)
   | .neg _ a => do return (.neg (← lowerExpr cx a).1, .int)
   | .num _ v => return (.lit (.int v), .int)

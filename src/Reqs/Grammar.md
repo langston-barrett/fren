@@ -80,7 +80,9 @@ iff            := or ["iff" or]
 or             := or "or" and | and
 and            := and "and" not | not
 not            := "not" not | cmp
-cmp            := sum [("=" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "subset") sum]
+cmp            := sum [("=" | "!=" | "in" | "subset") sum]
+                | sum (("<" | "<=") sum)+
+                | sum ((">" | ">=") sum)+
                 | pair "in" sum
                 | sum "is" pattern
 sum            := sum ("+" | "-" | "++" | "union" | "minus") prod | prod
@@ -106,5 +108,6 @@ pattern-binder := DECL | "_"
 ```
 
 Where a rule is written with left recursion, the operator is
-left-associative. For precedence and typing, see
+left-associative. A `cmp` with more than one operator is a [chained
+comparison](Lang/Expressions.md#chained-comparisons). For precedence and typing, see
 [Expressions](Lang/Expressions.md).

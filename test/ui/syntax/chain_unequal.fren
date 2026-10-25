@@ -1,0 +1,4 @@
+-- `!=` does not chain, after an ordering either (`lang::comparison_chain`).
+comp unequal { in x: Int pub out ok? req r: ok? iff 0 <= x < 10 != false }
+--~^ error: `!=` cannot be chained
+--@ exit: 2

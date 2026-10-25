@@ -1,0 +1,10 @@
+--- test/cli/fix/chained_comparison.fren
++++ test/cli/fix/chained_comparison.fren
+@@ -14,3 +14,3 @@
+-    req r1: o? iff not ((0 <= x < 10) = p?)
+-    req r2: w? iff not not (0 <= x < 10)
+-    req r3: u? iff x < match m { _ => if p? then 1 else 2 } <= 3
++    req r1: o? iff (0 <= x < 10) != p?
++    req r2: w? iff 0 <= x < 10
++    req r3: u? iff x < (if p? then 1 else 2) <= 3
+exit=1

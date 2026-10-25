@@ -14,6 +14,12 @@ names. Spec files start with `open Fren.Lang`.
 Precedence, lowest first: `when`/`unless`, `iff`, `or`, `and`, `not`,
 comparisons and `is`, `+ -`, `* div mod`, unary `-`; `if` is an atom whose
 `else` branch extends as far right as possible.
+
+A comparison's or `is`'s left operand may itself be a comparison or an
+`is`, so that `a < b <= c` parses as `(a < b) <= c`: the elaborator reads
+that as a chained comparison (`Reqs/Lang/Expressions#chained-comparisons`),
+and rejects the chains that Fren does not have, such as `a = b = c` and
+`a < b is P`, with the `fren` command's message.
 -/
 
 namespace Fren.Lang
@@ -70,19 +76,19 @@ scoped syntax:20 fren_expr:21 " iff " fren_expr:21 : fren_expr
 scoped syntax:30 fren_expr:30 " or " fren_expr:31 : fren_expr
 scoped syntax:35 fren_expr:35 " and " fren_expr:36 : fren_expr
 scoped syntax:40 &"not " fren_expr:40 : fren_expr
-scoped syntax:50 fren_expr:51 " = " fren_expr:51 : fren_expr
-scoped syntax:50 fren_expr:51 " != " fren_expr:51 : fren_expr
-scoped syntax:50 fren_expr:51 " < " fren_expr:51 : fren_expr
-scoped syntax:50 fren_expr:51 " <= " fren_expr:51 : fren_expr
-scoped syntax:50 fren_expr:51 " > " fren_expr:51 : fren_expr
-scoped syntax:50 fren_expr:51 " >= " fren_expr:51 : fren_expr
+scoped syntax:50 fren_expr:50 " = " fren_expr:51 : fren_expr
+scoped syntax:50 fren_expr:50 " != " fren_expr:51 : fren_expr
+scoped syntax:50 fren_expr:50 " < " fren_expr:51 : fren_expr
+scoped syntax:50 fren_expr:50 " <= " fren_expr:51 : fren_expr
+scoped syntax:50 fren_expr:50 " > " fren_expr:51 : fren_expr
+scoped syntax:50 fren_expr:50 " >= " fren_expr:51 : fren_expr
 scoped syntax:65 fren_expr:65 " + " fren_expr:66 : fren_expr
 scoped syntax:65 fren_expr:65 " - " fren_expr:66 : fren_expr
 scoped syntax:65 fren_expr:65 " ++ " fren_expr:66 : fren_expr
 /-! The set operators are reserved words where `Fren.Lang` is open: Lean
 indexes an operator after an operand by its token, so it cannot be an
 identifier. -/
-scoped syntax:50 (name := subsetExpr) fren_expr:51 " subset " fren_expr:51 : fren_expr
+scoped syntax:50 (name := subsetExpr) fren_expr:50 " subset " fren_expr:51 : fren_expr
 scoped syntax:65 (name := unionExpr) fren_expr:65 " union " fren_expr:66 : fren_expr
 scoped syntax:65 (name := minusExpr) fren_expr:65 " minus " fren_expr:66 : fren_expr
 scoped syntax:70 (name := interExpr) fren_expr:70 " inter " fren_expr:71 : fren_expr
@@ -109,7 +115,7 @@ open Lean PrettyPrinter in
 open Lean Parser in
 /-- `x in s`, membership. Its `in` must be on the line where `x` ends, so
 that an `in` starting a line starts an input (`Reqs/Lang/Lexical`). -/
-@[scoped fren_expr_parser] def memberExpr := trailing_parser:50:51 sameLineAsLeft "the `in` of a membership" >> " in " >> categoryParser `fren_expr 51
+@[scoped fren_expr_parser] def memberExpr := trailing_parser:50:50 sameLineAsLeft "the `in` of a membership" >> " in " >> categoryParser `fren_expr 51
 
 /-- `{a, b}`, a set literal; `{}` is the empty set. -/
 scoped syntax:max (name := setExpr) "{" sepBy(fren_expr, ", ", ", ", allowTrailingSep) "}" : fren_expr
@@ -185,7 +191,7 @@ scoped syntax:max (name := matchExpr) "match " fren_expr:max " { " sepBy(fren_ar
 
 /-- `e is P`, a pattern test, at the precedence of the comparisons. `is`
 is a reserved word where `Fren.Lang` is open, as the set operators are. -/
-scoped syntax:50 (name := isExpr) fren_expr:51 " is " fren_pattern : fren_expr
+scoped syntax:50 (name := isExpr) fren_expr:50 " is " fren_pattern : fren_expr
 
 declare_syntax_cat fren_member (behavior := both)
 

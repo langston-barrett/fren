@@ -1,0 +1,138 @@
+-- Chained comparisons: `a < b <= c` is `a < b and b <= c`, with `b` one
+-- expression.
+
+comp bounds {
+    in i: Int
+    in q: Seq(Int)
+    pub out inside?
+
+    req rule: inside? iff 0 <= i < q.len
+
+    expect expanded: inside? iff (0 <= i and i < q.len)
+    expect guards: when 0 <= i < q.len, q[i] - 1 < q[i] < q[i] + 1
+    expect unguarded: when 0 < q[i] < 10, true  --~ error: an index of `bounds::unguarded` may be out of range
+}
+
+comp descending {
+    in a: Int
+    in b: Int
+    in c: Int
+    in d: Int
+    pub out down?
+
+    req rule: down? iff a > b >= c > d
+
+    expect expanded: down? iff (a > b and b >= c and c > d)
+    expect transitive: when down?, a > d
+}
+
+comp strings {
+    in s: String
+    pub out lower?
+
+    req rule: lower? iff "a" <= s < "b"
+
+    expect nonempty: when lower?, s != ""
+}
+
+-- A chain binds as one comparison: more loosely than arithmetic, and more
+-- tightly than `not`.
+comp precedence {
+    in x: Int
+    in p?
+    pub out o?
+
+    req rule: o? iff not 0 <= x + 1 < 2 * x or p?
+
+    expect grouped: o? iff ((not (0 <= (x + 1) and (x + 1) < (2 * x))) or p?)
+}
+
+-- The comparisons before an operand guard it, as in the expansion with
+-- `and`.
+comp later {
+    in i: Int
+    in q: Seq(Int)
+    pub out ok?
+
+    req rule: ok? iff 0 <= i < q.len < q[i]
+
+    expect positive: when ok?, q[i] > 0
+}
+
+-- A chain guards the operands of an `and` after it.
+comp then_index {
+    in i: Int
+    in q: Seq(Int)
+    pub out ok?
+
+    req rule: ok? iff 0 <= i < q.len and q[i] > 0
+
+    expect positive: when ok?, q[i] > 0
+}
+
+-- A chain wherever an expression may be.
+const IN_RANGE: Bool := 0 <= 5 < 10
+
+fn between?(lo: Int, x: Int, hi: Int) := lo <= x < hi
+
+comp gate {
+    in x: Int
+    pub out open?
+
+    req rule: open? iff x > 0
+}
+
+comp places {
+    in x: Int
+    in y: Int
+    pub out d? := 0 <= x < 10
+    pub out level: Int := if 0 <= x < 10 then 1 else 0
+    pub out a?
+
+    inst g: gate { x := y }
+    inst h: gate { x := if 0 < y <= 3 then 1 else 0 }
+
+    req arg: a? iff between?(0, x, 10) = (0 <= x < 10)
+
+    expect constant: IN_RANGE
+    expect defined: d? iff level = 1
+    expect applied: a?
+    expect bound: h.open? iff 0 < y <= 3
+}
+
+-- An operand of a chain is in a comparison's operand slot, so a fix that
+-- replaces it adds the parentheses it needs there.
+enum Mode { Heat, Cool }
+
+comp slots {
+    in m: Mode
+    in p?
+    in x: Int
+    pub out o?
+
+    req rule: o? iff x < match m { _ => if p? then 1 else 2 } <= 3
+    --~^ warning: write `(if p? then 1 else 2)`
+}
+
+-- A comparison in parentheses is an operand, not part of a chain.
+comp parenthesized {
+    in x: Int
+    in y: Int
+    in p?
+    pub out o?
+
+    req rule: o? iff (x < y) = p?
+
+    expect compared: o? iff (x < y iff p?)
+}
+
+comp inclusive {
+    in x: Int
+    pub out ok?
+
+    req rule: ok? iff 0 <= x <= 10
+
+    expect top: when ok?, x < 10  --~ error: expectation `inclusive::top` does not hold
+}
+
+--@ summary: 50 passed, 2 failed, 0 inconclusive, 0 redundant
