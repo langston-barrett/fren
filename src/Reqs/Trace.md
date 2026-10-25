@@ -238,6 +238,11 @@ pub comp required {
     expect opt_in: unless enforced?, severity = Silent
     expect proved_always_enough: when level = Proved, severity = Silent
 }
+
+expect stronger_never_warns: forall (a b: required) (ra rb: rank),
+    when a.threshold = b.threshold and a.enforced? = b.enforced?
+    and ra.level = a.level and rb.level = b.level and ra.r <= rb.r and b.severity = Warning,
+    a.severity = Warning
 ```
 
 ## Claims
