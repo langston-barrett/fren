@@ -547,8 +547,8 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
   -- The tokens and sites of each file, unmutated.
   let toks := files.map fun (_, chars) => (FrenCli.lex chars).toOption.getD #[]
   let fileSites := files.map fun (_, chars) => sitesOfText chars
-  for m in all, k in [0:all.size] do
-    if k % slices != slice then continue
+  for m in all, i in [0:all.size] do
+    if i % slices != slice then continue
     let (path, chars) := files[m.file]!
     let chars' := m.apply chars
     if chars' == chars then failures := failures.push s!"{m.id}: changes nothing"
@@ -636,17 +636,29 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["formatting"] => formatting
   | ["fixing"] => fixing
   | ["mutation", group, slice, slices] => do
-    match (← mutationCorpus)[group.toNat!]?, slice.toNat?, slices.toNat? with
-    | some paths, some k, some n => mutation paths k n
-    | _, _, _ => throw (IO.userError s!"unknown mutation job `{group} {slice} {slices}`")
+    -- A slice out of range would check nothing, and pass.
+    match (group.toNat?.bind ((← mutationCorpus)[·]?)), slice.toNat?, slices.toNat? with
+    | some paths, some k, some n => if k < n then return ← mutation paths k n
+    | _, _, _ => pure ()
+    throw (IO.userError s!"unknown mutation job `{group} {slice} {slices}`")
   | job => throw (IO.userError s!"unknown job `{" ".intercalate job}`")
+
+/-- The name of `job` in its failures: its arguments, and for a mutation
+job, the files of its group. -/
+def jobName (job : List String) : IO String := do
+  let name := " ".intercalate job
+  if let ["mutation", group, _, _] := job then
+    if let some g := group.toNat? then
+      if let some paths := (← mutationCorpus)[g]? then
+        return if g == 0 then s!"{name} (Fren's own requirements)" else s!"{name} ({", ".intercalate paths.toList})"
+  return name
 
 /-- Runs `job` in a process of its own, returning its failures. -/
 def spawnJob (bless : Bool) (job : List String) : IO (Array String) := do
   let args := #["--job"] ++ job.toArray ++ (if bless then #["--bless"] else #[])
   let out ← IO.Process.output { cmd := (← IO.appPath).toString, args }
   let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
-  let name := " ".intercalate job
+  let name ← jobName job
   match Json.parse last >>= fromJson? with
   | .ok failures =>
     if out.exitCode == 0 then
@@ -657,13 +669,15 @@ def spawnJob (bless : Bool) (job : List String) : IO (Array String) := do
   return #[s!"the job `{name}` crashed (exit {out.exitCode}):\n{out.stdout}{out.stderr}"]
 
 /-- At most this many jobs run at once, unless `FREN_TEST_JOBS` says
-otherwise: a job can take about 2 GB of memory, and the solver's time limit
-is in wall-clock time, so too many jobs at once could make checks
-inconclusive. -/
+otherwise. This is a heuristic, not a bound on memory: the solver's time
+limit is in wall-clock time, so too many jobs at once could make checks
+inconclusive, and a job can take about 2.5 GB of memory, so sixteen can
+take 40 GB. A machine with less sets `FREN_TEST_JOBS` lower. -/
 def maxJobs : Nat := 16
 
 /-- How many jobs run at once: `FREN_TEST_JOBS`, or as many as the machine
-has cores, up to `maxJobs`. -/
+has cores, up to `maxJobs`. A `FREN_TEST_JOBS` that is not a positive
+integer, including an empty one and `0`, is an error. -/
 def jobCount : IO Nat := do
   if let some v ← IO.getEnv "FREN_TEST_JOBS" then
     match v.toNat? with
