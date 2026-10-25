@@ -81,8 +81,10 @@ partial def render (ty : Expr) (val : Expr) : MetaM String := do
   return toString (← ppExpr val)
 
 /-- `e` with the definitions of defined functions unfolded, so that the
-solver sees their bodies. -/
+solver sees their bodies, and without `let`s, which a record update binds
+its updated value with and lean-smt does not translate. -/
 def unfoldDefined (e : Expr) : MetaM Expr := do
+  let e ← Meta.zetaReduce e
   let s ← getState
   if s.defined.isEmpty then return e
   let ds := s.defined.foldl (init := ({} : NameSet)) fun acc _ d => acc.insert d.decl

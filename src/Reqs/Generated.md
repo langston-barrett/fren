@@ -39,7 +39,9 @@ is `p.«{}»`, rather than `p.mk`, which could be a field: a record literal
 `Point { x := 1, y := 2 }` becomes `Point.«{}» 1 2`. A [record
 update](Lang/Expressions.md#record-updates) `{ q with x := 1 }` becomes
 `Point.«{}» 1 (Point.y q)`, which is what Lean's own `{ q with x := 1 }`
-means.
+means. An updated value that is not a name, and that some field is read
+from, is bound once with `let`, so that nested updates grow linearly:
+`{ f(q) with x := 1 }` becomes `let r := f q; Point.«{}» 1 (Point.y r)`.
 
 ## Abstract types and uninterpreted functions
 

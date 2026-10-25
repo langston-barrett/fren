@@ -11,4 +11,7 @@ comp c {
     x := 2
     }
     req s: {p}.card = 1
+    req t: q = {
+    p with x := 3 }
+    req u: r = { p with y := 4, }
 }

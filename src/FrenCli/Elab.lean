@@ -1878,15 +1878,18 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       unless te.widens t do mismatch e t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`")
       smts := smts.push x
     return (s!"({recordCtorSym path} {" ".intercalate smts.toList})", .record path)
-  | .update _ base fields =>
-    let (r, tr) ← elabExpr { cx with expected? := none } base
+  | .update span base fields =>
+    let (rv, tr) ← elabExpr { cx with expected? := none } base
     let .record path := tr | err base.span (Fren.Core.updateBaseMsg tr.show)
     let some d := (← get).dataOf? path | internal base.span s!"unknown record `{path}`"
     let fs := d.ctors[0]!.2
     match Fren.Core.checkFieldUpdates path (fs.map (·.1)) (fields.map (Name.mkSimple ·.1.name)) with
     | .ok () => pure ()
     | .error (i, msg) => err fields[i]!.1.span msg
-    -- The record literal whose other fields are read from `r`.
+    -- The record literal whose other fields are read from `r`, bound once,
+    -- so that nested updates grow linearly. No variable's name has `@`.
+    let bind := fs.size > fields.size && rv.contains ' '
+    let r := if bind then quote s!"update@{span.start}" else rv
     let mut smts := #[]
     for (f, t) in fs do
       let some (fi, e?) := fields.find? (Name.mkSimple ·.1.name == f)
@@ -1895,7 +1898,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let (x, te) ← elabExpr { cx with expected? := some t } e
       unless te == t do mismatch e t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`")
       smts := smts.push x
-    return (s!"({recordCtorSym path} {" ".intercalate smts.toList})", .record path)
+    let lit := s!"({recordCtorSym path} {" ".intercalate smts.toList})"
+    return (if bind then s!"(let (({r} {rv})) {lit})" else lit, .record path)
   | .match span scrutinee arms =>
     let (s, ts) ← elabExpr cx scrutinee
     let .enum ep := ts | err scrutinee.span (Fren.Core.scrutineeMsg ts.show)

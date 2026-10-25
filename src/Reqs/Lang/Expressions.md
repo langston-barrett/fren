@@ -558,13 +558,21 @@ pub comp record_update {
 }
 ```
 
-Every literal that is accepted gives fields that an update of a value of
-its record may give:
+An update that names every field of its record is accepted exactly when
+the record literal of the same fields is: naming every field is allowed,
+and then the two rules agree. Where they differ is in fields not named,
+which only an update may leave out:
 
 ```fren
-expect literal_fields: forall (l: record_literal) (u: record_update),
-    when l.accepted? and u.record? and u.fields = l.fields and u.given = l.given and u.n_repeated = l.n_repeated,
-    u.accepted?
+expect every_field: forall (l: record_literal) (u: record_update),
+    when u.record? and u.fields = l.fields and u.given = l.given and u.n_repeated = l.n_repeated
+    and u.given = u.fields,
+    u.accepted? iff l.accepted?
+
+expect fields_left_out: forall (l: record_literal) (u: record_update),
+    when u.record? and u.fields = l.fields and u.given = l.given and u.n_repeated = l.n_repeated
+    and u.given subset u.fields and u.given != u.fields and u.n_repeated = 0,
+    u.accepted? and not l.accepted?
 ```
 
 ## Variants with payloads

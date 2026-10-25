@@ -33,6 +33,25 @@ comp shorthand {
     expect both: u.on? and u.count = count + 1 and u.tags = s.tags
 }
 
+-- The issue's nested form, with a dotted path as the updated value; an
+-- instance's variable as the updated value.
+pub struct Line { start: Point, stop: Point }
+
+comp held { in a: Point pub out b: Point := a }
+
+comp nested {
+    in l: Line
+    in n: Int
+    pub out m: Line := { l with start := { l.start with x := n } }
+    pub out k: Point := { l.stop with y := 0 }
+    inst h: held { a := l.start }
+    pub out j: Point := { h.b with y := n }
+
+    expect moved: m.start.x = n and m.start.y = l.start.y and m.stop = l.stop
+    expect cleared: k = Point { x := l.stop.x, y := 0 }
+    expect through_instance: j = Point { x := l.start.x, y := n }
+}
+
 -- An update is an atom: an operand of `=` and `not` without parentheses.
 comp atoms {
     in s: State
@@ -60,5 +79,5 @@ comp guarded {
     expect every_field: c = Point { x := 1, y := 2 }
 }
 
---@ summary: 29 passed, 3 failed, 0 inconclusive, 0 redundant
+--@ summary: 34 passed, 3 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

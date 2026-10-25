@@ -11,6 +11,8 @@ comp not_record { in i: Int pub out o: Int req r: o = { i with x := 1 } }
 --~^ error: cannot update the fields of `Int`
 comp not_record_set { in s: Set(Bool) pub out o? req r: o? iff { s with x := 1 } = s }
 --~^ error: cannot update the fields of `Set(Bool)`
+comp not_record_bool { in i: Int pub out o? req r: o? iff { i = 1 with x := 1 } }
+--~^ error: cannot update the fields of `Bool`
 comp other_record { in p: P in q: Q pub out o: P req r: o = { q with x := 1 } }
 --~^ error: record `Q` has no field `x`
 comp typed { in p: P pub out o: P req r: o = { p with x := true } }

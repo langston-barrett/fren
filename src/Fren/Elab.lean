@@ -416,7 +416,8 @@ def definedFn? (cx : ExprCtx) (p : Syntax) : TermElabM (Option DefinedInfo) := d
 
 /-- The Fren name of the type whose Lean type is `t`. -/
 partial def typeName (t : Expr) : TermElabM String := do
-  if t.isConstOf ``Bool then return "Bool"
+  -- A comparison or connective is a `Prop` in Lean, and a `Bool` in Fren.
+  if t.isConstOf ``Bool || t.isProp then return "Bool"
   if t.isConstOf ``Int then return "Int"
   if t.isConstOf ``Nat then return "Nat"
   if t.isConstOf ``String then return "String"
@@ -1176,20 +1177,25 @@ open Lang in
 /-- Translates a record update into the record literal whose other fields
 are read from the updated value (`Reqs/Lang/Expressions#record-updates`),
 where `toTerm` translates its parts. -/
-def updateTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
-  let r ← toTerm { cx with emptyOk := false } e[1]
-  let ty ← typeOf r
+def updateTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term :=
+    withRef e <| withFreshMacroScope do
+  let rv ← toTerm { cx with emptyOk := Core.Position.synthesized.checked false false } e[1]
+  let ty ← typeOf rv
   let some info := ty.constName?.bind (← getState).recordOfDecl?
     | throwErrorAt e[1] (Core.updateBaseMsg (← typeName ty)).text
   let given := e[3].getSepArgs
   match Core.checkFieldUpdates info.path (info.fields.map (·.1)) (given.map (·[0].getId)) with
   | .ok () => pure ()
   | .error (i, msg) => throwErrorAt given[i]![0] msg.text
-  let go := toTerm { cx with emptyOk := true }
+  let go := toTerm { cx with emptyOk := Core.Position.declared.checked false false }
+  -- `r` bound once, so that nested updates grow linearly.
+  let bind := info.fields.size > given.size && !rv.raw.isIdent
+  let r ← if bind then `(r) else pure rv
   let args ← info.fields.mapM fun (f, _) => do
     let some b := given.find? (·[0].getId == f) | `($(mkCIdentFrom e[1] (info.decl ++ f)) $r)
     if b[1].isNone then go (← `(fren_expr| $(⟨b[0]⟩):ident)) else go b[1][1]
-  `($(mkCIdentFrom e (recordCtor info.decl)) $args*)
+  let lit ← `($(mkCIdentFrom e (recordCtor info.decl)) $args*)
+  if bind then `(let r := $rv; $lit) else pure lit
 
 open Lang in
 /-- Translates a `match` into a chain of `if`s that compare its scrutinee
