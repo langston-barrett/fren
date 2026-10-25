@@ -1,9 +1,5 @@
 # Testing
 
-`lake test -- --only GROUP` runs only the group named: `ui`, `snapshots`,
-`codes`, `own`, `conformance`, `formatting`, `fixing` or `mutation`; it
-may be repeated.
-
 - **ui tests** (`lake test`): each `test/ui/*.fren` covers one topic and
   states its expected messages as comments:
   `--~ error: TEXT` expects an error on that line whose text contains `TEXT`
