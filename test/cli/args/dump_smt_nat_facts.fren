@@ -1,0 +1,36 @@
+--@ args: check --dump-smt
+-- `--dump-smt`: each query assumes what the applications of functions into
+-- `Nat` that it mentions bring, and nothing of others: of `sized`'s
+-- expectation, only its own query, and none of the queries of `uses_sized`,
+-- which instantiates it, nor of a string literal written like one.
+fn size(Int): Nat
+
+comp sized {
+    in k: Int
+    pub out pos?
+
+    req r: pos? iff k > 0
+
+    expect sized: size(k) >= 0
+}
+
+comp uses_sized {
+    in m: Int
+    pub out ok?
+
+    inst sz: sized { k := m }
+
+    req r: ok? iff sz.pos?
+
+    cover ok_one: ok? and m = 1
+}
+
+comp quoted {
+    in k: Int
+    in s: String
+    pub out same?
+
+    req r: same? iff s = "(|::size| |k|)"
+
+    expect sized: size(k) + 1 > 0
+}

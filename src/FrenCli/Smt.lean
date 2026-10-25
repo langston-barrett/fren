@@ -275,6 +275,29 @@ def prime (c : CComp) (smt : String) : String :=
   let names := (c.vars.filter fun v => (Fren.Core.Symbol.ofRole v.role).copied).map (·.name.toString)
   mapQuoted (fun p => if names.contains p then p ++ "'" else p) smt
 
+/-- Those of `terms` that occur in the SMT-LIB text `f`, outside its string
+literals, in the order in which they start: an enclosing term before the
+terms within it, and otherwise from left to right, as the Lean front end's
+`natApps` walks a term. Each of `terms` is a whole term, an application in
+parentheses, so its text occurs in `f` just where `f` mentions it. -/
+def termsIn (terms : Array String) (f : String) : Array String := Id.run do
+  let cs := f.toList.toArray
+  let pats := terms.map fun t => (t, t.toList.toArray)
+  let mut out := #[]
+  let mut i := 0
+  let mut inString := false
+  while h : i < cs.size do
+    let c := cs[i]
+    -- In a string literal, where `""` is a `"`; a term never starts there.
+    if c == '"' then
+      inString := !inString
+    else if !inString && c == '(' then
+      for (t, p) in pats do
+        let here := i + p.size ≤ cs.size && (List.range p.size).all fun k => cs[i + k]! == p[k]!
+        if here && !out.contains t then out := out.push t
+    i := i + 1
+  return out
+
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
 type that is not finite (`cli::logic`); answering from `cache?`, if any,
@@ -288,11 +311,8 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (timeoutSecs 
   query hyps goal wantModel := do
     let facts := c.natFacts false ++ c.natFacts true
     let facts := facts ++ (facts.map (prime c)).filter (!facts.contains ·)
-    -- An application, of either copy, is a term of its own, so it occurs in
-    -- a formula's text just where the formula mentions it.
     let apps := c.natApps ++ (c.natApps.map (prime c)).filter (!c.natApps.contains ·)
-    let appsOf (f : String) : Array String := apps.filter fun a => (f.splitOn a).length > 1
-    let appFacts ← Fren.Core.natAppFacts (m := Id) appsOf (s!"(>= {·} 0)") hyps goal
+    let appFacts ← Fren.Core.natAppFacts (m := Id) (termsIn apps) (s!"(>= {·} 0)") hyps goal
     runQuery (Fren.Core.logic kind (strings || sets) projection)
       (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n"))
       prelude (c.vars ++ primes c) timeoutSecs dump?

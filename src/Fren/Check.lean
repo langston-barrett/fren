@@ -111,7 +111,8 @@ it cannot some values of abstract types, is left out rather than making the
 answer unknown: a cover goal passes on `sat`, with or without one. Such an
 answer is not cached. -/
 def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (facts : Array Expr := #[])
-    (outFacts : Array Expr := #[]) (natAppsOf : Expr → Array Expr := fun _ => #[]) (modelOptional : Bool := false) :
+    (outFacts : Array Expr := #[]) (natAppsOf : Expr → Array Expr := fun _ => #[])
+    (modelOptional : Bool := false) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -224,9 +225,10 @@ parameters, to all of them, in `e`, that mention no bound variable, each
 once, added to `acc`. None of a check's formulas applies a function under a
 binder: a `match` is a chain of `if`s over selectors, a global
 expectation's binders are locals, defined functions, whose bodies apply no
-uninterpreted function, are unfolded only in the query, and realizability's
-`∃` is built after the facts are, over arguments that mention no output
-(`lang::argument`). -/
+uninterpreted function, are unfolded only after the facts are found, and
+under realizability's `∃`, an application's arguments mention no output
+(`lang::argument`). An application is met before its arguments, and they
+from left to right, as `natAppFacts` orders them. -/
 partial def natApps (fs : Array (Expr × Nat)) (e : Expr) (acc : Array Expr := #[]) : Array Expr :=
   match e with
   | .app .. =>

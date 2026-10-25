@@ -1,6 +1,5 @@
--- What decides whether a cover goal's witness is shown is its own query,
--- and a query's facts about applications of functions into `Nat` are about
--- the applications it mentions, in both front ends alike (`Reqs/Check`).
+-- Whether a cover goal's witness is shown depends on its own query, in both
+-- front ends alike (`Reqs/View#check-results`), with functions into `Nat`.
 
 type Name
 fn size(Int): Nat
@@ -40,9 +39,10 @@ comp through_defined {
     cover big_unnamed: big? and unnamed?({})       --~ info: the witness is not shown, since its query uses abstract types or functions
 }
 
--- A function into `Nat` used only in an instantiated component's
--- expectation brings no fact to the instance's queries, so it does not
--- reach them.
+-- A function used only in an instantiated component's expectation leaves the
+-- witness shown: the expectation is not part of the instance's queries.
+-- That those queries have no fact about it either is a `--dump-smt`
+-- snapshot's (`test/cli/args/dump_smt_nat_facts.fren`).
 comp sized {
     in k: Int
     pub out pos?
