@@ -368,11 +368,12 @@ pub comp longest_punctuator {
     in remaining: String     -- the input after the lexeme
     pub out ends?
 
-    inst p: punctuator { lexeme }
+    assume a_punctuator: lexeme in PUNCTUATORS
+
     inst one: punctuator { lexeme := lexeme ++ remaining.slice(0, 1) }
     inst two: punctuator { lexeme := lexeme ++ remaining.slice(0, 2) }
 
-    req longest: when p.accepted? and remaining != "", ends? iff not (one.accepted? or two.accepted?)
+    req longest: when remaining != "", ends? iff not (one.accepted? or two.accepted?)
     req at_end: when remaining = "", ends?
 }
 
