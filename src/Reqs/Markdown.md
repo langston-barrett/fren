@@ -34,10 +34,18 @@ place of the command. The spec continues the current Lean file: it starts in
 the current module, and its items are visible to the rest of the file,
 including later `#fren_md` commands.
 
-Diagnostics about the Markdown file are reported at the `#fren_md` command,
-with text that starts with the Markdown file's name and position, such as
-`climate.md:12:3:`. A diagnostic about an item is placed by the file that
-declares it, wherever it is checked:
+A Markdown file is named by its path relative to the Lean file, with `.`
+and `..` resolved and `/` between components on every system, so that
+every spelling of the path gives one name, as in `chapters/climate.md`,
+even when another Markdown file reads it. An absolute path that shares no
+root with the Lean file's is kept whole.
+Diagnostics about the Markdown file are reported at the `#fren_md` command
+in the Lean file, even for a file that another reads. Their text starts
+with at most one name, and at most one position, such as
+`chapters/climate.md:12:3:`, as follows. A diagnostic about a Markdown
+file itself, such as a summary, a lint or a parse error, is named with
+that file and its position there. A diagnostic about an item is placed by
+the file that declares it, wherever it is checked:
 
 - An item of a Markdown file is named with that file and its position
   there, even when another file's `#fren_check` reports it, as when one
@@ -45,17 +53,18 @@ declares it, wherever it is checked:
   in the Lean file itself reports it, it is placed at the `#fren_check`,
   and its text starts with the Markdown file's name and position.
 - An item of the Lean file is placed at its own position, even when a
-  Markdown file's `#fren_check` reports it.
+  Markdown file's `#fren_check` reports it, so its text starts with no
+  name.
 - An imported item is placed at the `#fren_check` that reports it, since
-  its position is in another module's text.
+  its position is in another module's text, so it is named with the file
+  that holds that check.
+- A diagnostic about an item that has no position is named with the file
+  that declares it, if that is a Markdown file, without a position, and
+  placed at the check.
 
 This holds through Markdown files that read others: an item is named with
-the file that declares it, whichever file checks it, before or after.
-
-A Markdown file read by another Markdown file is named by its path
-relative to the Lean file, as in `chapters/inner.md:12:3:`, and a
-diagnostic starts with one name and position, that of the file that
-declares the item, however deeply it is read.
+the file that declares it, whichever file checks it, before or after, and
+however deeply either is read.
 
 Lake does not know that a Lean file depends on the Markdown files it reads,
 so it rebuilds a module that uses `#fren_md` after
