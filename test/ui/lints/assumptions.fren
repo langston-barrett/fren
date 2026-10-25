@@ -10,9 +10,43 @@ comp left_over {
     assume pos: n > 0  --~ warning: the assumption `pos` constrains only inputs that nothing uses
     assume small: n < 10  --~ warning: the assumption `small` constrains only inputs that nothing uses
     -- `t` is used, and so `x` too.
-    assume below: n < t
     assume ordered: x < t
     req r: y = x + t
+}
+
+-- Another assumption ties `n` to `m`, which is used: without `a`, `pos`
+-- would not hold.
+comp linked {
+    in n: Int
+    in m: Int
+    pub out y: Int
+    assume a: n > 0
+    assume b: m = 2 * n
+    req r: y = m
+    expect pos: y > 0
+}
+
+-- A chain of three: `k` to `n` to `m`, which is used.
+comp chained {
+    in k: Int
+    in n: Int
+    in m: Int
+    pub out y: Int
+    assume a: k > 0
+    assume b: n = k + 1
+    assume c: m = 2 * n
+    req r: y = m
+    expect pos: y > 2
+}
+
+-- A chain that reaches no used variable is reported link by link.
+comp unlinked {
+    in k: Int
+    in n: Int
+    pub out y: Int
+    assume a: k > 0  --~ warning: the assumption `a` constrains only inputs that nothing uses
+    assume b: n = k + 1  --~ warning: the assumption `b` constrains only inputs that nothing uses
+    req r: y = 1
 }
 
 pub comp sub {
@@ -73,10 +107,11 @@ comp heads {
 
 refine guarded: heads refines first_of { n := q.len, x := q[0], y := s[0] }
 
--- An instance of it elsewhere does not read it.
+-- An instance of it in the file binds its input, and the instance's
+-- assumption check checks the assumption.
 comp instanced {
     in k: Int
-    assume pos: k > 0  --~ warning: the assumption `pos` constrains only inputs that nothing uses
+    assume pos: k > 0
 }
 
 comp uses_instanced {
@@ -84,3 +119,15 @@ comp uses_instanced {
     inst i: instanced { k := 1 }
     req r: y = 1
 }
+
+-- A global expectation's read reaches the other assumptions too.
+comp read_through {
+    in k: Int
+    in z: Int
+    pub out y: Int
+    assume a: k > 0
+    assume b: z = k + 1
+    req r: y = 1
+}
+
+expect h: forall (a: read_through), a.z > 1

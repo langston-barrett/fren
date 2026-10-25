@@ -850,11 +850,10 @@ partial def mentions : Expr → Array Name
   | .is _ s _ => mentions s
   | _ => #[]
 
-/-- The atoms of `e`, a `Bool` expression: its operands through `and`,
-`or`, `not`, `when` and `unless` (`lint::unrelated_binders`). -/
+/-- The atoms of `e`, a `Bool` expression: its operands through `and`
+(`lint::unrelated_binders`). -/
 partial def boolAtoms : Expr → Array Expr
-  | .bin _ "and" a b | .bin _ "or" a b | .when _ _ a b => boolAtoms a ++ boolAtoms b
-  | .not _ a => boolAtoms a
+  | .bin _ "and" a b => boolAtoms a ++ boolAtoms b
   | e => #[e]
 
 /-- The variables that the defined output `v` stands for: those its
@@ -2296,7 +2295,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
           guard (parts.length ≥ 2 && parts.getLast! == f.name)
           let r := ".".intercalate parts.dropLast
           some (Expr.path { sp with stop := sp.start + r.length } #[{ name := r, span := { sp with stop := sp.start + r.length } }], r)
-        | .field _ r g | .method _ r g #[] =>
+        | .field _ r g =>
           guard (g.name == f.name)
           some (r, Fren.Core.textOf src (Fren.Core.withParens src (toRange (r.writtenSpan src))))
         | _ => none
@@ -2677,6 +2676,10 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     let some (pi, ivars) ← attempt (resolveInst x p bs) | continue
     pending := pending.push pi
     vars := vars ++ ivars
+    -- Its bindings give each input of its component a value, and the
+    -- instance's assumption check reads them (`unused_assumption`).
+    let reads := (pi.comp.vars.filter fun v => v.name.isAtomic && v.role == Role.input).map (pi.comp.path, ·.name)
+    modify fun s => { s with globalReads := s.globalReads ++ reads }
   stopIfErrors
   let instNames := pending.map (Name.mkSimple ·.name.name)
   let mut insts := #[]
@@ -2746,18 +2749,21 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let candidates := vars.filter fun v => v.role == .input || (v.role == .output && !(v.isPub && v.defn?.isSome))
   for (x, v) in Fren.Core.unmentioned (candidates.map fun v => (v.name, v)) mentioned do
     lint .unusedVariables v.span (Fren.Core.unusedVariableMsg x false (v.role == .output))
-  -- `unused_assumption` (`lint::unused_assumption`), unless a global
-  -- expectation reads one of the inputs (`finishLints`).
+  -- `unused_assumption` (`lint::unused_assumption`), unless the file reads
+  -- one of the inputs (`finishLints`), or one that another assumption ties to
+  -- a used variable, transitively.
   let others := members.foldl (init := #[]) fun acc m => match m with
     | .prop .assume _ _ => acc
     | .prop _ _ e | .var _ _ _ _ _ (some e) => acc ++ mentions e
     | .inst _ _ bs => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
     | _ => acc
   let inputs := vars.filter (·.role == .input) |>.map (·.name)
-  for m in members do
-    let .prop .assume x e := m | continue
-    let ms := (mentions e).foldl (init := #[]) fun acc n => if vars.any (·.name == n) && !acc.contains n then acc.push n else acc
-    if Fren.Core.unusedAssumption ms.size (ms.all inputs.contains) (ms.any others.contains) false then
+  let assumed := members.filterMap fun | .prop .assume x e => some (x, e) | _ => none
+  let mss := assumed.map fun (_, e) =>
+    (mentions e).foldl (init := #[]) fun acc n => if vars.any (·.name == n) && !acc.contains n then acc.push n else acc
+  let used := Fren.Core.usedAssumptions mss others
+  for (x, _) in assumed, ms in mss, u in used do
+    if Fren.Core.unusedAssumption ms.size (ms.all inputs.contains) u false then
       let r : Fren.Core.AssumptionRecord :=
         { component := (← get).module ++ n, name := Name.mkSimple x.name, inputs := ms, level := (← get).levels.get .unusedAssumption }
       modify fun s => { s with assumptions := s.assumptions.push (r, x.span) }

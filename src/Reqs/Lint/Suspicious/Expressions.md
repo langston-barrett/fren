@@ -81,7 +81,7 @@ in {}` is always `false`; and `{} subset s` is always `true`. It mirrors
 it is there. The message says what the value is. It has no fix: the
 likely mistake is the literal, and writing the value instead would keep
 the mistake and hide it. Where both operands are written the same, as in
-`{} inter {}` or `{} subset {}`, `eq_op` fires instead. It does not fire
+`s = {} inter {}`, `eq_op` fires instead. It does not fire
 on `s subset {}`, which says that `s` is empty, nor on `x in []`, which
 is a type error (`F0324`). `lint::erasing_op`
 states this:

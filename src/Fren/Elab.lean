@@ -2990,6 +2990,10 @@ open Lang in
         let (pi, ivars) ← resolveInst scope x p bs.getElems vars.size
         pending := pending.push pi
         vars := vars ++ ivars
+        -- Its bindings give each input of its component a value, and the
+        -- instance's assumption check reads them (`unused_assumption`).
+        let reads := (pi.comp.vars.filter fun v => v.name.isAtomic && v.role == Core.Role.input).map (pi.comp.path, ·.name)
+        modifyLocal fun l => { l with globalReads := l.globalReads ++ reads }
       catch ex => logException ex; ok := false
     let instNames := pending.map (·.name)
     -- An instance that is not resolved is reported once, not again at each
@@ -3179,8 +3183,9 @@ open Lang in
       let own := vars.filter fun v => v.role == .input || (v.role == .output && !(v.isPub && v.defn?.isSome))
       for (x, v) in Core.unmentioned (own.map fun v => (v.name, v)) mentioned do
         recordLint .unusedVariables v.ref (Core.unusedVariableMsg x false (v.role == .output))
-      -- `unused_assumption` (`lint::unused_assumption`), unless a global
-      -- expectation reads one of the inputs (`reportLints`).
+      -- `unused_assumption` (`lint::unused_assumption`), unless the file
+      -- reads one of the inputs (`reportLints`), or one that another assumption
+      -- ties to a used variable, transitively.
       let mut others := #[]
       for m in members do
         match m with
@@ -3194,11 +3199,13 @@ open Lang in
         if let some d := v.defn? then others := others ++ pathMentions d
       let inputs := vars.filter (·.role == .input) |>.map (·.name)
       let level ← lintLevel .unusedAssumption
-      for m in members do
-        let `(fren_member| assume $x:ident : $e) := m | continue
-        let ms := (pathMentions e).foldl (init := #[]) fun acc n =>
-          if vars.any (·.name == n) && !acc.contains n then acc.push n else acc
-        if Core.unusedAssumption ms.size (ms.all inputs.contains) (ms.any others.contains) false then
+      let assumed := members.filterMap fun
+        | `(fren_member| assume $x:ident : $e) => some (x, e) | _ => none
+      let mss := assumed.map fun (_, e) => (pathMentions e).foldl (init := #[]) fun acc n =>
+        if vars.any (·.name == n) && !acc.contains n then acc.push n else acc
+      let used := Core.usedAssumptions mss others
+      for (x, _) in assumed, ms in mss, u in used do
+        if Core.unusedAssumption ms.size (ms.all inputs.contains) u false then
           let r : Core.AssumptionRecord := { component := path, name := x.getId, inputs := ms, level }
           modifyLocal fun l => { l with assumptions := l.assumptions.push (r, x) }
     generated := insts.map (·.decl) ++ props.map (·.decl) ++ #[declBase ++ `assumes, declBase ++ `reqs]

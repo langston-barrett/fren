@@ -376,10 +376,16 @@ structure LocalState where
   paths in it resolve to (`dead_code`). -/
   items : Array (Core.ItemRecord × Syntax) := #[]
   usedItems : Array Name := #[]
-  /-- The lint settings of this file, or Markdown spec, and those in effect
-  at an item (`unused_lint_setting`). -/
+  /-- The lint settings of this file, or Markdown spec, the identifier of
+  each, and the identifiers of those in effect at an item
+  (`unused_lint_setting`). An identifier is the number of settings before
+  it in the Lean file, those of the specs it reads among them, so that a
+  setting of the file in effect in a spec is told apart from the spec's
+  own. -/
   settings : Array (Core.SettingRecord × Syntax) := #[]
+  settingIds : Array Nat := #[]
   seenSettings : Array Nat := #[]
+  nextSetting : Nat := 0
   /-- Its assumptions that `unused_assumption` may fire on, and what its
   global expectations read through instances, and its refinements of their
   abstractions: each read's component and input. -/

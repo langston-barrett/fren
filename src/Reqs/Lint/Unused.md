@@ -136,33 +136,36 @@ The message is reported at the item's name, at the end of the file.
 ## Unused assumptions
 
 `unused_assumption` reports an assumption of a component that mentions
-only inputs, one or more, that nothing else mentions: no requirement,
-expectation, definition, or binding of one of the component's instances,
-no global expectation in the same file that reads one of them through an
-instance of the component, as `a.x` with the binder `a`, and no
-[refinement](../Lang/Refinement.md) in the same file of which the
-component is the abstraction. Such a refinement reads every input of the
-abstraction, through its binding or by name, and the abstraction's
-assumptions are its hypotheses, so an assumption can guard a binding: with
-`n := q.len` and `assume pos: n > 0`, `x := q[0]` is defined. Other
-assumptions do not count. Such an input does not affect the component, as
-for an [unused variable](#unused-variables), but `unused_variables` does
-not report it, since the assumption mentions it: this is what is left
-after the last requirement that used the input is removed. As for [dead
-code](#dead-code), only the file's global expectations and refinements
-count, and a binding of the input in an instance of the component
-elsewhere does not: it gives the input a value, and the instance's
-assumption check checks the assumption of it, but the component does not
-use it. There is no fix: removing the inputs would change the component's
-interface.
+only inputs, one or more, none of them used. An input is *used* when
+something mentions it: a requirement, expectation, definition, or binding
+of one of the component's instances; a global expectation in the same
+file that reads it through an instance of the component, as `a.x` with
+the binder `a`; an [instance](../Lang/Instances.md) of the component in
+the same file, which binds each of its inputs, and whose assumption check
+checks the assumption; or a [refinement](../Lang/Refinement.md) in the
+same file of which the component is the abstraction. Such a refinement
+reads every input of the abstraction, through its binding or by name, and
+the abstraction's assumptions are its hypotheses, so an assumption can
+guard a binding: with `n := q.len` and `assume pos: n > 0`, `x := q[0]` is
+defined. An input is also used when another assumption mentions it and a
+used input, since the assumption constrains the two together, and so on
+transitively: with `assume a: n > 0`,
+`assume b: m = 2 * n` and `req r: y = m`, `m` is used, so `n` is, and
+without `a`, `y > 0` would not follow. Such an input does not
+affect the component, as for an [unused variable](#unused-variables), but
+`unused_variables` does not report it, since the assumption mentions it:
+this is what is left after the last requirement that used the input is
+removed. As for [dead code](#dead-code), only the file's global
+expectations, instances and refinements count. There is no fix: removing
+the inputs would change the component's interface.
 `lint::unused_assumption` states when it fires:
 
 ```fren
 pub comp unused_assumption {
     in n_mentioned: Int  -- variables the assumption mentions
     in all_inputs?       -- each of them is an input
-    in mentioned?        -- something in the component but an assumption mentions one of them
-    in read?             -- a global expectation of the file reads one of them through an instance, or a refinement of the file reads them
+    in mentioned?        -- one of them is used in the component, through its other assumptions too
+    in read?             -- one of them is read in the file, by a global expectation, an instance or a refinement, through the component's other assumptions too
     pub det out fires?
 
     assume counts: n_mentioned >= 0

@@ -3882,17 +3882,30 @@ def SettingRecord.replace (settings : Array (SettingRecord × α)) (before : Lin
 /-! ## Unused assumptions -/
 
 /-- Whether `unused_assumption` fires on an assumption, from the number of
-variables it mentions, whether all are inputs, whether anything in the
-component but an assumption mentions one of them, and whether a global
-expectation of the file reads one through an instance of the component
+variables it mentions, whether all are inputs, whether one of them is used
+in the component, and whether one is read in the file
 (`lint::unused_assumption`). -/
 def unusedAssumption (nMentioned : Nat) (allInputs mentioned read : Bool) : Bool :=
   nMentioned > 0 && allInputs && !mentioned && !read
 
+/-- Which of the assumptions, given the variables each mentions, are used:
+those that mention a variable of `used`, or one that a used assumption
+mentions, transitively, since they constrain the same variables. -/
+def usedAssumptions (mentions : Array (Array Name)) (used : Array Name) : Array Bool := Id.run do
+  let mut used := used
+  let mut out := mentions.map fun _ => false
+  -- Each round marks one more assumption, or none.
+  for _ in [0:mentions.size] do
+    let some i := (List.range mentions.size).find? fun i => !out[i]! && mentions[i]!.any used.contains
+      | break
+    out := out.set! i true
+    used := used ++ mentions[i]!
+  return out
+
 /-- An assumption that `unused_assumption` may fire on: its component, its
 name, the inputs it mentions, and the level of the lint at the component.
-It fires unless a global expectation of the file reads one of the inputs
-through an instance of the component. -/
+It fires unless the file reads one of the inputs, or one that a used
+assumption of the component mentions. -/
 structure AssumptionRecord where
   component : Name
   name : Name
@@ -3905,16 +3918,22 @@ def unusedAssumptionMsg (name : Name) (inputs : Array Name) : Msg :=
   { code? := some Lint.unusedAssumption.code
     headline := s!"the assumption `{name}` constrains only inputs that nothing uses"
     label? := some "constrains only unused inputs"
-    notes := #[s!"note: no requirement, expectation, definition or binding mentions {xs}",
+    notes := #[s!"note: no requirement, expectation, definition or binding mentions {xs}, \
+        nor does another assumption tie them to a used variable",
       "help: remove the assumption and its inputs, or use them"] }
 
 /-- The messages of `unused_assumption`, given what the file's global
-expectations read through instances, and its refinements of their
-abstractions: each read's component and input. -/
+expectations read through instances, its instances bind, and its
+refinements read of their abstractions: each read's component and input.
+An assumption is read when it mentions a read input, or one that a read
+assumption of its component mentions. -/
 def unusedAssumptionReports (rs : Array (AssumptionRecord × α)) (reads : Array (Name × Name)) :
     Array (LintReport α) :=
   rs.filterMap fun (r, ref) =>
-    if !unusedAssumption r.inputs.size true false (r.inputs.any fun x => reads.contains (r.component, x)) then none
+    let same := (rs.filter (·.1.component == r.component)).map (·.1)
+    let used := usedAssumptions (same.map (·.inputs)) ((reads.filter (·.1 == r.component)).map (·.2))
+    let read := (same.findIdx? (·.name == r.name)).any (used[·]!)
+    if !unusedAssumption r.inputs.size true false read then none
     else some { lint := .unusedAssumption, level := r.level, ref, msg := unusedAssumptionMsg r.name r.inputs }
 
 /-! ## Unrelated binders -/
@@ -3932,11 +3951,11 @@ def binderGroups (binders : Array Name) (atoms : Array (Array Name)) : Array (Ar
     groups := rest.push (binders.filter merged.contains)
   return groups
 
-/-- The atoms of `n`, a `Bool` expression: its operands through `and`,
-`or`, `not`, `when` and `unless` (`lint::unrelated_binders`). -/
+/-- The atoms of `n`, a `Bool` expression: its operands through `and`
+(`lint::unrelated_binders`). -/
 partial def BNode.atoms (n : BNode α) : Array (BNode α) :=
   match n.kind with
-  | .bin "and" | .bin "or" | .when _ | .not => n.kids.flatMap (·.atoms)
+  | .bin "and" => n.kids.flatMap (·.atoms)
   | _ => #[n]
 
 /-- Whether `unrelated_binders` fires on a global expectation, from the

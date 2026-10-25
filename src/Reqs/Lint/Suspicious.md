@@ -88,13 +88,14 @@ pub comp suspicious_unary_op_formatting {
 `unrelated_binders` fires on a [global expectation](../Lang/Global.md)
 whose binders fall into two or more groups that no single atom mentions
 across. The *atoms* of an expression are its operands through `and`,
-`or`, `not`, `when` and `unless`: comparisons, `iff` among them,
-memberships, `Bool` paths, applications, `match` and `if`. Two binders are
-in one group when an atom mentions both, or each is in one group with a
-third; a binder that no atom mentions is left to
-[`unused_variables`](Unused.md#unused-variables). Such an expectation is
-several independent claims run together: in `forall (a b: c), when a.x =
-0 and b.x = 1, a.y = 1 and b.y = 2`, nothing relates `a` to `b`, and a
+which are separate claims. Anything else is one atom, `or`, `not`, `when`,
+`unless`, `iff`, `match` and `if` among them, since a connective relates
+every binder it mentions: in `p.c? or q.c?`, two expectations would make
+the disjunction a conjunction. Two binders are in one group when an atom
+mentions both, or each is in one group with a third; a binder that no atom
+mentions is left to [`unused_variables`](Unused.md#unused-variables). Such
+an expectation is several independent claims run together: in `forall (a
+b: c), a.y = a.x + 1 and b.y = b.x + 1`, nothing relates `a` to `b`, and a
 counterexample to the claim about one names the other too. The message
 names two of the groups. It has no fix: the binders may be meant to be
 related, by an atom left out, or the claims may be meant to be separate

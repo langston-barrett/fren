@@ -11,7 +11,6 @@ pub comp c {
 
 expect g: forall (a: c), when 7 * a.x = 123459, a.big?
 
-set_option fren.lint.unused_assumption "allow" in
 pub comp guarded {
     in y: Int
     assume narrow: when 7 * y = 123459, y > 0

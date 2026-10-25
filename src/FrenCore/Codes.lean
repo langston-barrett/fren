@@ -4047,10 +4047,11 @@ comp c { in x: Int in n: Int pub out y: Int assume pos: n > 0 req r: y = x + 1 }
 ```
 
 `pos` mentions `n`, so `unused_variables` does not report it, but nothing
-else does: no requirement, expectation, definition or binding, no global
-expectation of the file reads it, and no refinement of the file has `c`
-as its abstraction. This is what is left after the
-last requirement about an input is removed. Remove the assumption and the
+else does: no requirement, expectation, definition or binding, no other
+assumption that ties it to a used variable, no global expectation of the
+file that reads it, no instance of `c` in the file, and no refinement of
+the file with `c` as its abstraction. This is what is left after the last
+requirement about an input is removed. Remove the assumption and the
 input, or use them:
 
 ```fren
@@ -4064,12 +4065,14 @@ Example:
 ```fren
 comp c { in x: Int pub out y: Int req r: y = x + 1 }
 
-expect e: forall (a b: c), when a.x = 0 and b.x = 1, a.y = 1 and b.y = 2
+expect e: forall (a b: c), (when a.x = 0, a.y = 1) and (when b.x = 1, b.y = 2)
 ```
 
-No comparison, membership or other atom of `e` mentions both `a` and `b`,
-so `e` is two claims run together, one about each, and a counterexample
-to one names a binder that has nothing to do with it. Relate the binders,
+`e` is a conjunction, and neither of its operands mentions both `a` and
+`b`, so `e` is two claims run together, one about each, and a
+counterexample to one names a binder that has nothing to do with it. An
+`or`, a `not`, a `when` and the other connectives relate every binder they
+mention, so only an `and` at the top separates claims. Relate the binders,
 or write one expectation for each claim:
 
 ```fren
