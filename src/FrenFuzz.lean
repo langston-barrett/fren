@@ -12,7 +12,7 @@ from the evaluator (`FrenCli.Eval`), from the definitions of
 `Reqs/Check`.
 
 The specs stay in a fragment where brute force is exact: `Bool`s,
-enumerations without payloads, `Int`s that constraints named `range_*`
+enumerations without payloads, ordered or not, `Int`s that constraints named `range_*`
 bound to `0..2`, an abstract type and a function from it to `Bool`, with
 instances, `det out`s and global expectations. Every query's hypotheses
 then bound every `Int` that matters, except the comparison sets of the
@@ -88,6 +88,9 @@ function's argument. -/
 structure Scope where
   vars : Array (String × GTy × Bool)
   nVariants : Nat
+  /-- The enumeration is ordered, so its values are compared with orderings
+  and have `min` and `max`. -/
+  ordered : Bool := false
   hasFn : Bool
   elem : GTy := .bool
   /-- No `card`: the spec has a relation, and the solver does not combine
@@ -218,6 +221,12 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
         let alts := if a == b then [a] else [a, b]
         return s!"{← pick es} is {" | ".intercalate (alts.map (s!"E::V{·}"))}"
       let rhs ← if ← chance 60 then pure s!"E::V{← below sc.nVariants}" else pick es
+      if sc.ordered && (← chance 50) then
+        -- An ordering, a chained comparison, or `min` or `max`.
+        match ← below 3 with
+        | 0 => return s!"{← pick es} {← pick #["<", "<=", ">", ">="]} {rhs}"
+        | 1 => return s!"E::V0 {← pick #["<", "<="]} {← pick es} {← pick #["<", "<="]} {rhs}"
+        | _ => return s!"{← pick es}.{← pick #["min", "max"]}({rhs}) = E::V{← below sc.nVariants}"
       return s!"{← pick es} {← pick #["=", "!="]} {rhs}"
     | 4 => let ts := sc.of .abs; return s!"{← pick ts} {← pick #["=", "!="]} {← pick ts}"
     | 5 => return s!"p?({← pick args})"
@@ -255,8 +264,8 @@ def varName (t : GTy) (isIn : Bool) (k : Nat) : String :=
   | .abs, _ => s!"t{k}"
   | .set, _ => s!"s{k}" | .rel, _ => s!"rel{k}" | .seq, _ => s!"q{k}"
 
-def genComp (idx : Nat) (prev : Array GComp) (useEnum useAbs : Bool) (nVariants : Nat) (collections : Array GTy) :
-    R GComp := do
+def genComp (idx : Nat) (prev : Array GComp) (useEnum useAbs : Bool) (nVariants : Nat) (ordered : Bool)
+    (collections : Array GTy) : R GComp := do
   let tys := #[GTy.bool, .bool, .int] ++ (if useEnum then #[GTy.enum] else #[]) ++ (if useAbs then #[GTy.abs] else #[])
     ++ collections
   let outTys := #[GTy.bool, .int] ++ (if useEnum then #[GTy.enum] else #[])
@@ -277,7 +286,7 @@ def genComp (idx : Nat) (prev : Array GComp) (useEnum useAbs : Bool) (nVariants 
     for v in d.vars do
       if v.isIn && v.ty == .abs && !vars.any (fun u => u.isIn && u.ty == .abs) then
         vars := vars.push { name := varName .abs true 9, ty := .abs, isIn := true }
-    let insc : Scope := { vars := vars.filter (·.isIn) |>.map (fun v => (v.name, v.ty, true)), nVariants, hasFn := useAbs
+    let insc : Scope := { vars := vars.filter (·.isIn) |>.map (fun v => (v.name, v.ty, true)), nVariants, ordered, hasFn := useAbs
                           elem := elemTy useEnum, noCard := collections.contains .rel }
     let mut bs := #[]
     for v in d.vars do
@@ -298,8 +307,8 @@ def genComp (idx : Nat) (prev : Array GComp) (useEnum useAbs : Bool) (nVariants 
     | none => #[]
   let elem := elemTy useEnum
   let noCard := collections.contains .rel
-  let inputs : Scope := { vars := own.filter (·.2.2), nVariants, hasFn := useAbs, elem, noCard }
-  let all : Scope := { vars := own ++ instVars, nVariants, hasFn := useAbs, elem, noCard }
+  let inputs : Scope := { vars := own.filter (·.2.2), nVariants, ordered, hasFn := useAbs, elem, noCard }
+  let all : Scope := { vars := own ++ instVars, nVariants, ordered, hasFn := useAbs, elem, noCard }
   let mut assumes := #[]
   let mut reqs := #[]
   for v in vars do
@@ -322,6 +331,7 @@ def genSpec : R GSpec := do
   let useEnum ← chance 60
   let useAbs ← chance 35
   let nVariants := (← below 2) + 2
+  let ordered ← chance 50
   let mut collections := #[]
   for t in #[GTy.set, .rel, .seq] do
     -- A relation over three values has 512 values, too many to evaluate
@@ -330,11 +340,11 @@ def genSpec : R GSpec := do
     if ← chance 40 then collections := collections.push t
   let mut out := "mod fz\n\n"
   if useEnum then
-    out := out ++ s!"pub enum E \{ {", ".intercalate ((List.range nVariants).map (s!"V{·}"))} }\n"
+    out := out ++ s!"pub {if ordered then "ordered " else ""}enum E \{ {", ".intercalate ((List.range nVariants).map (s!"V{·}"))} }\n"
   if useAbs then out := out ++ "pub type T\npub fn p?(T)\n"
   let mut comps : Array GComp := #[]
   for i in [0:(← below 2) + 1] do
-    comps := comps.push (← genComp i comps useEnum useAbs nVariants collections)
+    comps := comps.push (← genComp i comps useEnum useAbs nVariants ordered collections)
   for c in comps do
     out := out ++ s!"\npub comp {c.name} \{\n"
     for v in c.vars do
@@ -354,7 +364,7 @@ def genSpec : R GSpec := do
     let c ← pick comps
     let shown := c.vars.filter (fun v => v.isIn || v.isPub)
     let sc : Scope := { vars := shown.flatMap (fun v => #[(s!"x.{v.name}", v.ty, v.isIn), (s!"y.{v.name}", v.ty, v.isIn)])
-                        nVariants, hasFn := useAbs, elem := elemTy useEnum, noCard := collections.contains .rel }
+                        nVariants, ordered, hasFn := useAbs, elem := elemTy useEnum, noCard := collections.contains .rel }
     let ins := shown.filter (·.isIn)
     let same := " and ".intercalate (ins.toList.map fun v => s!"x.{v.name} = y.{v.name}")
     let body ← if (← chance 50) && !ins.isEmpty then

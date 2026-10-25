@@ -208,8 +208,8 @@ which:
 
 ```fren
 pub const RESERVED: Set(String) := {
-    "mod", "use", "pub", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp",
-    "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
+    "mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl",
+    "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
     "div", "is", "in", "if", "then", "else", "match", "forall", "refine", "with",
 }
 
@@ -223,8 +223,13 @@ pub comp reserved_word {
     expect membership: when lexeme = "in", reserved?
     expect pattern_test: when lexeme = "is", reserved?
     expect record_update: when lexeme = "with", reserved?
+    expect modifier: when lexeme = "ordered", reserved?
 }
 ```
+
+`ordered`, the modifier of an [ordered
+enumeration](Items.md#enumerations), is reserved, as `pub` and `enum`
+are, since an item can start with it.
 
 Lean reserves its other keywords too, such as `for`, `by` and `fun`, so a
 spec read by Lean cannot use them as names. These *contextual keywords*

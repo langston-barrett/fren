@@ -103,6 +103,11 @@ arms whose pattern matches its scrutinee. See
 **Member.** A declaration inside a component: an input, output, constraint
 or instance.
 
+**Ordered enumeration.** An enumeration without payloads, declared with
+`ordered enum`, whose variants are ordered as they are declared, so that
+`<`, `<=`, `>`, `>=`, `min` and `max` apply to its values. See
+[Items](Lang/Items.md#enumerations).
+
 **Output.** A variable of a component chosen by the system, declared with
 `out`. A *public output* is declared with `pub out`; other outputs are
 private.

@@ -1,0 +1,7 @@
+-- `ordered` applies only to enumerations. Lean goes on at `struct`.
+set_option fren.lint.dead_code "allow"
+
+ordered struct Point { x: Int, y: Int }
+--~^[cli] error: `ordered` applies only to enums, not to records
+--~^^[hosted] error: expected 'enum'
+--@ exit: 2

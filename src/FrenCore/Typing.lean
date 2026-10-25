@@ -54,6 +54,19 @@ def checkComparable (op : String) (tx ty : Ty) : Except Msg Unit := do
           label? := some s!"`{tx.show}` and `{ty.show}`"
           notes := #[s!"note: both sides of `{op}` must have the same type"] ++ hint }
 
+/-- The type of the operands of the ordering `op`, from the type `tx` of
+its left operand, which `ordered` says is an ordered enumeration, if it is
+an enumeration: a `String`, that enumeration, or else an `Int`, which a
+`Nat` widens to; an error if `tx` is none of these, or is an enumeration
+that is not ordered (`lang::operator_type`). Both front ends check the left
+operand with this before they elaborate the right, which must then have
+the type given. -/
+def orderingType (op : String) (tx : Ty) (ordered : Bool) : Except Msg Ty :=
+  match tx with
+  | .string => pure .string
+  | .enum _ => if ordered then pure tx else throw (unorderedCompareMsg op tx.show)
+  | _ => do checkType .int tx (opNote op .int); pure .int
+
 /-- Checks the operands of `op`, `union`, `inter`, `minus` or `subset`, of
 types `tx` and `ty`: sets or relations, both of one type. The error is about
 the first operand (`0`) or the second (`1`). -/

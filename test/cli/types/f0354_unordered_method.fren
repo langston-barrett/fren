@@ -1,0 +1,4 @@
+-- `max` of a value of an enum that is not ordered (F0354).
+enum Level { Low, High }
+
+comp c { in a: Level in b: Level pub out m: Level req r: m = a.max(b) }

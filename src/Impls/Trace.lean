@@ -19,7 +19,8 @@ tested cli::agreement: "src/FrenTestMain.lean"
 tested cli::accepts: "test/ui/lean/lean_code.fren", "test/ui/lean/lean_impl.fren"
 tested modules::two_segments: "test/ui/lang/scoping.fren"
 tested lang::operand: "test/ui/lang/precedence.fren", "test/cli/syntax/f0107_iff.fren", "test/cli/syntax/f0109_operand.fren"
-tested lang::operator_type: "test/ui/lang/types.fren", "test/cli/types/f0304_arith.fren", "test/cli/types/f0304_operand.fren",
+tested lang::operator_type: "test/ui/lang/types.fren", "test/ui/lang/ordered_enums_static.fren",
+  "test/cli/types/f0304_arith.fren", "test/cli/types/f0304_operand.fren",
   "test/cli/types/f0305_bool_int.fren", "test/cli/types/f0305_enum_int.fren", "test/cli/types/f0306_branches.fren",
   "test/ui/lang/nat.fren", "test/ui/lang/nat_static.fren", "test/cli/types/f0304_narrowing.fren"
 tested lang::widening: "test/ui/lang/nat.fren", "test/ui/lang/nat_static.fren", "test/cli/types/f0304_narrowing.fren"

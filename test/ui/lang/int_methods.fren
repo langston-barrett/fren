@@ -21,7 +21,7 @@ comp tolerance {
     req l: low = a.min(b)
     req h: high = a.max(b)
 
-    expect ordered: low <= high
+    expect low_below: low <= high
     expect sum: low + high = a + b
     expect close_range: when close?, high - low <= 2
     expect linear: 2 * a.abs >= a + a

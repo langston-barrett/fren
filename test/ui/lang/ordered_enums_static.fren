@@ -1,0 +1,38 @@
+-- Static rules for ordered enumerations: only an enumeration without
+-- payloads may be ordered (`lang::ordered_enumeration`), and only ordered
+-- ones are compared (`lang::operator_type`) or have `min` and `max`
+-- (`lang::method_type`).
+-- fren-covers: lang::operator_type
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.unused_variables "allow"
+
+enum Mode { Off, On }
+ordered enum Level { Low, High }
+ordered enum Size { Small, Large }
+
+ordered enum Shape { Dot, Circle(Int) }    --~ error: the ordered enum `Shape` cannot have a variant with a payload
+
+comp unordered { in m: Mode pub out p? req r: p? iff m < Mode::On }
+--~^ error: `Mode` is not ordered, so its values cannot be compared with `<`
+-- The left operand is checked before the right is elaborated, in both
+-- front ends, so an unknown variant on the right is not reported first.
+comp unordered_first { in m: Mode pub out p? req r: p? iff m < Mode::Onn }
+--~^ error: `Mode` is not ordered, so its values cannot be compared with `<`
+comp unordered_chain { in m: Mode pub out p? req r: p? iff Mode::Off <= m < Mode::On }
+--~^ error: `Mode` is not ordered, so its values cannot be compared with `<=`
+comp unordered_method { in m: Mode pub out n: Mode req r: n = m.max(Mode::On) }
+--~^ error: `Mode` is not ordered, so it has no method `max`
+comp unordered_field { in m: Mode pub out n: Mode req r: n = m.min }
+--~^ error: `Mode` is not ordered, so it has no method `min`
+comp other_enum { in l: Level pub out p? req r: p? iff l < Size::Large }
+--~^ error: type mismatch: expected `Level`, found `Size`
+comp other_chain { in l: Level pub out p? req r: p? iff Level::Low <= l < Size::Large }
+--~^ error: type mismatch: expected `Level`, found `Size`
+comp other_argument { in l: Level pub out n: Level req r: n = l.max(Size::Large) }
+--~^ error: type mismatch: expected `Level`, found `Size`
+comp no_arguments { in l: Level pub out n: Level req r: n = l.max }
+--~^ error: `max` takes 1 argument, but 0 were given
+comp unknown_method { in l: Level pub out n: Int req r: n = l.abs(l) }
+--~^ error: `Level` has no method `abs`
+
+--@ exit: 2

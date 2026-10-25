@@ -229,11 +229,12 @@ In Lean, an error fails `lake build`, and a warning fails `lake build
 --wfail`, so severities do for a Lean build what [exit
 statuses](Cli.md#exit-status) do for the `fren` command.
 
+The severities are ordered from the least severe to the most.
 `view::severity` gives the severity of a result from its check and
 verdict:
 
 ```fren
-pub enum Severity { Silent, Info, Warning, Error }
+pub ordered enum Severity { Silent, Info, Warning, Error }
 
 use check::{Kind, Verdict}
 use check::Kind::Redundancy
@@ -266,7 +267,7 @@ pub comp build {
     pub det out fails_wfail?  -- `lake build --wfail` fails
 
     req errors: fails? iff worst = Error
-    req warnings: fails_wfail? iff (worst = Error or worst = Warning)
+    req warnings: fails_wfail? iff worst >= Warning
 
     expect wfail_is_stricter: when fails?, fails_wfail?
 }

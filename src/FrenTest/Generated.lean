@@ -160,7 +160,53 @@ fun i n s inside? lower? => lower? = true ↔ Fren.Str.lt s (Fren.Str.lit "z") �
 #guard_msgs in
 #print check.ranged.req.lower
 
-/-- info: fren: 22 passed, 0 failed, 0 inconclusive, 0 redundant -/
+-- An ordered enumeration's values compare by their positions, which are
+-- conditionals on its variants, as the `fren` command writes them, and
+-- `min` and `max` are conditionals on the positions.
+pub ordered enum Level { Low, Middle, High }
+
+comp leveled {
+  in a: Level
+  in b: Level
+  pub out above?
+  pub out top: Level
+
+  req above: above? iff Level::Low < a <= b
+  req highest: top = a.max(b)
+}
+
+/--
+info: @[reducible] def check.leveled.req.above : check.Level → check.Level → Bool → check.Level → Prop :=
+fun a b above? top =>
+  above? = true ↔
+    ((if check.Level.Low = check.Level.Low then 0 else if check.Level.Low = check.Level.Middle then 1 else 2) <
+        if a = check.Level.Low then 0 else if a = check.Level.Middle then 1 else 2) ∧
+      (if a = check.Level.Low then 0 else if a = check.Level.Middle then 1 else 2) ≤
+        if b = check.Level.Low then 0 else if b = check.Level.Middle then 1 else 2
+-/
+#guard_msgs in
+#print check.leveled.req.above
+
+/--
+info: @[reducible] def check.leveled.req.highest : check.Level → check.Level → Bool → check.Level → Prop :=
+fun a b above? top =>
+  top =
+    if
+        (if a = check.Level.Low then 0 else if a = check.Level.Middle then 1 else 2) ≥
+          if b = check.Level.Low then 0 else if b = check.Level.Middle then 1 else 2 then
+      a
+    else b
+-/
+#guard_msgs in
+#print check.leveled.req.highest
+
+-- The positions are the constructors' indices, so both front ends order
+-- the variants as they are declared.
+example (l : check.Level) :
+    (if l = .Low then (0 : Int) else if l = .Middle then 1 else 2) = l.ctorIdx := by
+  cases l <;> rfl
+
+/-- info: fren: 25 passed, 0 failed, 0 inconclusive, 0 redundant -/
 #guard_msgs in
 #fren_check
 

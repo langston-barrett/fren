@@ -1,0 +1,2 @@
+-- `ordered` before `pub` (F0130).
+ordered pub enum Level { Low, High }

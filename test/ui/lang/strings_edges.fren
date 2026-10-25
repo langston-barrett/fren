@@ -24,7 +24,7 @@ expect replace_empty: "abc".replace("", "x") = "xabc"
 expect replace_all: "abcb".replace_all("b", "x") = "axcx" and "aaa".replace_all("aa", "b") = "ba"
 expect replace_all_empty: "abc".replace_all("", "x") = "abc"
 expect contains_empty: "".contains?("") and "abc".contains?("")
-expect ordered: "ab" < "b" and "a" < "ab" and "" < "a" and "b" >= "ab"
+expect lexicographic: "ab" < "b" and "a" < "ab" and "" < "a" and "b" >= "ab"
 expect wrong: "abc".at(0) = "b"                                        --~ error: expectation `wrong` does not hold
 --~^ warning: this is a call of `starts_with?`
 

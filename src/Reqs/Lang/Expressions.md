@@ -47,7 +47,7 @@ equally tightly:
 | 4 | `A and B` | conjunction | `Bool` | `Bool` | left |
 | 5 | `not A` | negation | `Bool` | `Bool` | |
 | 6 | `A = B`, `A != B` | equality, disequality | any, both the same, or `Int` and `Nat` | `Bool` | none |
-| 6 | `A < B`, `A <= B`, `A > B`, `A >= B` | ordering | `Int` or `Nat`, or `String` | `Bool` | [chains](#chained-comparisons) |
+| 6 | `A < B`, `A <= B`, `A > B`, `A >= B` | ordering | `Int` or `Nat`, `String`, or an [ordered enumeration](Items.md#enumerations) | `Bool` | [chains](#chained-comparisons) |
 | 6 | `A in S` | membership | `T` and `Set(T)` or `Seq(T)`, or a pair `(a, b)` and `Rel(A, B)` | `Bool` | none |
 | 6 | `S subset T` | `S` is a subset of `T`, not necessarily strict | `Set(T)`, or `Rel(A, B)` | `Bool` | none |
 | 6 | `A is P` | [pattern test](#pattern-tests): the pattern `P` matches `A` | an enumeration, `Bool`, `Int`, `Nat` or `String`, and a pattern | `Bool` | none |
@@ -122,7 +122,9 @@ c > d` means `a > b and b >= c and c > d`. Each operand between two
 operators is one expression, written once, and is an operand of both. An
 expression has no effects, so reading it twice changes nothing. Each
 comparison is typed as if written alone, so `lo <= s < hi` compares
-`String`s if `s` is one. The `fren` command's message about a
+`String`s if `s` is one, and values of an [ordered
+enumeration](Items.md#enumerations) if `s` is one, as in
+`Info <= worst < Error`. The `fren` command's message about a
 comparison's operands names its operator: in `0 <= i < "a"`, `"a"` is not
 an `Int`, as the operands of `<` must be. In Lean, the message is Lean's
 type mismatch, at the same operand.
@@ -1168,6 +1170,19 @@ pub comp nat_result {
 }
 ```
 
+The values of an [ordered enumeration](Items.md#enumerations) have the
+methods `min` and `max` too, where `x` is the receiver and `y` a value of
+the same enumeration: the lesser and the greater of the two, in the order
+of the variants. So with
+`pub ordered enum Severity { Silent, Info, Warning, Error }`,
+`worst.max(Info)` is `Info` if `worst` is `Silent` or `Info`, and `worst`
+otherwise. Like an `Int`'s, each is a conditional: `x.min(y)` is
+`if x <= y then x else y`. A variant is a receiver too, as in
+`Info.max(worst)` or `(Severity::Info).max(worst)`. An enumeration
+that is not ordered has no methods, and its `x.min(y)` is an error that says to declare it
+`ordered`. `lang::enumeration_order` (see [Items](Items.md#enumerations))
+states their laws.
+
 The methods of `String`, where `s` is the receiver:
 
 | Method | Meaning | Result |
@@ -1314,7 +1329,9 @@ pub comp collection_methods {
 
 `lang::method_type` states the table, and checks it against the
 [Boolean names](Types.md#boolean-names) rule. Its result is the kind after
-widening: `nat_result` says when `min` and `max` are `Nat`s instead:
+widening: `nat_result` says when `min` and `max` are `Nat`s instead,
+and `ordered?` that the receiver is an [ordered
+enumeration](Items.md#enumerations), whose `min` and `max` are of its type:
 
 ```fren
 pub enum Method {
@@ -1346,24 +1363,29 @@ pub comp method_type {
         StartsWith,
         Update,
     }
-    use self::ValueType::{BoolTy, IntTy, NatTy, RelTy, SeqTy, SetTy, StringTy}
+    use self::ValueType::{BoolTy, EnumTy, IntTy, NatTy, RelTy, SeqTy, SetTy, StringTy}
     in method: Method
     in receiver: ValueType
+    in ordered?
     pub det out accepted?
     pub det out result: ValueType
     pub det out n_params: Int
+
+    assume enumerations: when ordered?, receiver = EnumTy
 
     req receivers: accepted? iff match method {
         Card => receiver in {SetTy, RelTy},
         Inverse | Closure | Image | Domain | Range => receiver = RelTy,
         Update | Rev => receiver = SeqTy,
         Matches | ReplaceAll => receiver = StringTy,
-        Abs | Min | Max => receiver in {IntTy, NatTy},
+        Abs => receiver in {IntTy, NatTy},
+        Min | Max => receiver in {IntTy, NatTy} or ordered?,
         _ => receiver in {StringTy, SeqTy},
     }
     req results: result = match method {
         StartsWith | EndsWith | Contains | Matches => BoolTy,
-        Len | IndexOf | Card | Abs | Min | Max => IntTy,
+        Len | IndexOf | Card | Abs => IntTy,
+        Min | Max => if ordered? then receiver else IntTy,
         Inverse | Closure => RelTy,
         Image | Domain | Range => SetTy,
         _ => receiver,
@@ -1397,6 +1419,7 @@ pub comp method_type {
         Min => "min",
         Max => "max",
     }).ends_with?("?")
+    expect unordered_enumerations: when receiver = EnumTy and not ordered?, not accepted?
 }
 ```
 
@@ -1447,7 +1470,7 @@ pub comp char_range {
 [operators](#operators) and of conditionals. `a` and `b` are the types of
 the operands, or of a conditional's branches, and `cond` the type of its
 condition. For a prefix operator, `b` is `a`. `result` is the kind of the
-result's type, after [widening](#natural-numbers). `Ty`, `kind` and `ValueType` are declared in
+result's type, after [widening](#natural-numbers). `Ty`, `kind`, `ordered_enum?` and `ValueType` are declared in
 [Types](Types.md). A [pattern test](#pattern-tests), whose right is a
 pattern rather than an operand, is typed in its own section.
 
@@ -1475,7 +1498,7 @@ pub comp operator_type {
         Subset,
         Subtraction,
     }
-    use self::ValueType::{AbstractTy, BoolTy, IntTy, NatTy, RelTy, SeqTy, SetTy, StringTy}
+    use self::ValueType::{AbstractTy, BoolTy, EnumTy, IntTy, NatTy, RelTy, SeqTy, SetTy, StringTy}
     in op: Operator
     in a: Ty
     in b: Ty
@@ -1485,11 +1508,13 @@ pub comp operator_type {
 
     -- There is one `Bool` type, one `Int` type and one `Nat` type.
     assume primitive_unique: when kind(a) = kind(b) and kind(a) in {BoolTy, IntTy, NatTy, StringTy}, a = b
+    assume ordered_enumerations: (when ordered_enum?(a), kind(a) = EnumTy)
+        and (when ordered_enum?(b), kind(b) = EnumTy)
 
     req accepted: accepted? iff match op {
         Logic => kind(a) = BoolTy and kind(b) = BoolTy,
         Equality => a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}),
-        Ordering => (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}) or (a = b and kind(a) = StringTy),
+        Ordering => (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}) or (a = b and (kind(a) = StringTy or ordered_enum?(a))),
         Arithmetic | Subtraction => kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy},
         Concat => a = b and kind(a) in {StringTy, SeqTy},
         Membership => kind(b) in {SetTy, SeqTy} and (elem(b) = a or (kind(a) = NatTy and kind(elem(b)) = IntTy)),
@@ -1511,6 +1536,7 @@ pub comp operator_type {
     expect strings_ordered: when op = Ordering and kind(a) = StringTy and a = b, accepted?
     expect concat_closed: when op = Concat and accepted?, result = kind(a)
     expect sequences_unordered: when op = Ordering and kind(a) = SeqTy, not accepted?
+    expect unordered_enumerations: when op = Ordering and kind(a) = EnumTy and not ordered_enum?(a), not accepted?
     -- A value of an abstract type is only compared, or found in a set.
     expect abstract_equality_only: when accepted? and op != Conditional and kind(a) = AbstractTy,
         op in {Equality, Membership}
@@ -1519,6 +1545,7 @@ pub comp operator_type {
     expect same_types_equal: when op = Equality and a = b, accepted?
     expect bools_equal: when op = Equality and kind(a) = BoolTy and kind(b) = BoolTy, accepted?
     expect ints_ordered: when op = Ordering and kind(a) = IntTy and kind(b) = IntTy, accepted?
+    expect enumerations_ordered: when op = Ordering and ordered_enum?(a) and a = b, accepted?
     expect strings_concatenate: when op = Concat and kind(a) = StringTy and kind(b) = StringTy, accepted?
     expect sequences_concatenate: when op = Concat and kind(a) = SeqTy and a = b, accepted?
     expect set_members: when op = Membership and kind(b) = SetTy and elem(b) = a, accepted?

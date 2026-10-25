@@ -1,0 +1,5 @@
+-- `ordered` is written after `pub`.
+ordered pub enum Level { Low, High }
+--~^[cli] error: `ordered` is written after `pub`
+--~^^[hosted] error: expected 'enum'
+--@ exit: 2

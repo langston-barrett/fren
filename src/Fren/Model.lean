@@ -54,6 +54,8 @@ structure EnumInfo where
   payloads : Array (Array Expr) := #[]
   /-- Its values can be arbitrarily large (`Reqs/Lang/Types`). -/
   unbounded : Bool := false
+  /-- Declared `ordered` (`Reqs/Lang/Items#enumerations`). -/
+  ordered : Bool := false
   deriving Inhabited
 
 /-- The selector of the `k`th value of the payload of the constructor

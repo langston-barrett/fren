@@ -269,18 +269,22 @@ partial def typeSyntax (t : Expr) : Term :=
   else Unhygienic.run `(_)
 
 @[command_elab Lang.enumCmd] def elabEnum : CommandElab := recordingErrors fun stx => do
+  -- What Lean recovered from a parse error that it has reported, as in
+  -- `ordered struct`.
+  if stx.hasMissing then return
   checkLexemes stx
   checkParsed stx
   lintInvisible stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
-  let nameStx := stx[2]
+  let isOrdered := !stx[1].isNone
+  let nameStx := stx[3]
   let n ← checkItemName "enum" nameStx
   checkFresh modName n nameStx
   lintName .enumeration n nameStx
   let path := modName ++ n
   let decl := (← getCurrNamespace) ++ path
-  let variantStxs := stx[4].getSepArgs
+  let variantStxs := stx[5].getSepArgs
   -- Distinct names (`lang::distinct_names`), of names that are single
   -- segments, as the `fren` command parses them.
   for v in variantStxs do discard (segName v[0])
@@ -305,6 +309,11 @@ partial def typeSyntax (t : Expr) : Term :=
   if let some msg := Core.enumVariantNamesMsg? n variants then recordLint .enumVariantNames nameStx msg
   for v in variantStxs, vn in variants do
     if let some msg := Core.variantNameMsg? n vn then recordLint .enumVariantNames v[0] msg
+  -- Only an enumeration without payloads may be ordered
+  -- (`lang::ordered_enumeration`); the first payload is reported.
+  let withPayload := variantStxs.filter (!·[1].isNone)
+  unless Core.orderedEnumAccepted isOrdered withPayload.size do
+    throwErrorAt withPayload[0]![0] (Core.orderedPayloadMsg n withPayload[0]![0].getId).text
   let ctors ← (variants.zip payloads).mapM fun (v, ts) => do
     let bs ← ts.mapIdxM fun k t => do
       let ty := if t.isConstOf decl then mkIdent path else typeSyntax t
@@ -330,7 +339,7 @@ partial def typeSyntax (t : Expr) : Term :=
           `(def $sel:ident (v : $(mkCIdent decl)) : $(typeSyntax t) := match v with | $(mkCIdent ctor) $xs* => $x | _ => default)
       elabCommand cmd
   record (.item { item := { kind := .enumItem, path, isPub, owner := modName }, ref := nameStx })
-  record (.enumInfo { path, decl, variants, payloads, unbounded })
+  record (.enumInfo { path, decl, variants, payloads, unbounded, ordered := isOrdered })
   unless isPub do recordItem .enumeration path nameStx
 
 @[command_elab Lang.structCmd] def elabStruct : CommandElab := recordingErrors fun stx => do
@@ -596,6 +605,16 @@ partial def valuesOf? (ty : Expr) (cap : Nat := 64) : TermElabM (Option (Array T
     if out.size > cap then return none
   return some out
 
+/-- The position of `s`'s variant among the variants of the ordered
+enumeration `info`, an `Int`: its constructor's index, as a conditional on
+each variant but the last, as the `fren` command writes it
+(`FrenCli.DataDecl.ordinal`), so that comparing two values compares their
+positions without quantifiers. -/
+def ordinalTerm (info : EnumInfo) (s : Term) : TermElabM Term := do
+  let last := info.variants.size - 1
+  (List.range last).foldrM (init := ← `(($(Syntax.mkNumLit (toString last)) : Int))) fun k acc =>
+    `(if $s = $(mkCIdent (info.decl ++ info.variants[k]!)) then ($(Syntax.mkNumLit (toString k)) : Int) else $acc)
+
 /-- Calls the method `m` of the term `t` of Lean type `ty`, with the
 arguments `args`, each with its syntax (`lang::method_type`). -/
 def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array (Term × Syntax)) :
@@ -675,6 +694,21 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
       | .max => `(if $t ≥ $y then $t else $y)
       | _ => `(if $t < 0 then -$t else $t)
     return (term, Lean.mkConst (if nat then ``Nat else ``Int))
+  if let some info := ty.constName?.bind (← getState).enumOfDecl? then
+    let name := Core.showPath info.path
+    let some method := (Core.Method.ofName? m).filter (·.accepts false false (ordered := info.ordered))
+      | throwErrorAt ref (if info.ordered then Core.unknownMethodMsg m name false (ordered := true)
+          else if m == "min" || m == "max" then Core.unorderedMethodMsg m name
+          else Core.noMethodsMsg m name).text
+    unless args.size == method.arity do throwErrorAt ref (Core.arityMsg (Name.mkSimple m) method.arity args.size).text
+    for (a, stx) in args do
+      let ta ← typeOf a
+      unless ← isDefEq ta ty do throwErrorAt stx s!"type mismatch: expected `{← typeName ty}`, found `{← typeName ta}`"
+    -- Conditionals on the variants' positions, as for an `Int`.
+    let y : Term := (args.map (·.1))[0]?.getD t
+    let (i, j) := (← ordinalTerm info t, ← ordinalTerm info y)
+    let term ← if method == .min then `(if $i ≤ $j then $t else $y) else `(if $i ≥ $j then $t else $y)
+    return (term, ty)
   unless ty.isConstOf ``String do throwErrorAt ref (Core.noMethodsMsg m (← typeName ty)).text
   let some method := (Core.Method.ofName? m).filter (·.accepts true false)
     | throwErrorAt ref (Core.unknownMethodMsg m "String").text
@@ -712,6 +746,9 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
 a set, calls the method `f`, without arguments. -/
 def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term × Expr) := do
   if ty.isConstOf ``String || ty.isConstOf ``Int || ty.isConstOf ``Nat || (relTypes? ty).isSome || ty.isAppOfArity ``Fren.Seq 1 then
+    return ← callMethod ref t ty f.toString #[]
+  -- An enumeration's methods, `min` and `max`, which take an argument.
+  if (ty.constName?.bind (← getState).enumOfDecl?).isSome && (f == `min || f == `max) then
     return ← callMethod ref t ty f.toString #[]
   if ty.isAppOfArity ``Fren.FinSet 1 then
     unless f == `card do throwErrorAt ref (Core.unknownSetMethodMsg f.toString (← typeName ty)).text
@@ -1959,14 +1996,21 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
     else if !isConcat a && !isConcat b && (← string x) then
       checkCore cx e .stringCompare true (ca || cb || (isVariable cx a && isVariable cx b)) #[] (ca && cb)
     return ← if op == "=" then `($x = $y) else `($x ≠ $y)
-  -- An ordering compares `Int`s, `Nat`s or `String`s, as the `fren` command
+  -- An ordering compares `Int`s, `Nat`s, `String`s or the values of an
+  -- ordered enumeration, which the left operand gives, as the `fren` command
   -- checks (`lang::operator_type`).
   let x ← toTerm cx a
-  let tx? ← frenTypeOf? x
-  let operandTy : Core.Ty := if tx? == some .string then .string else .int
-  if let some tx := tx? then liftMsg a (Core.checkType operandTy tx (Core.opNote op operandTy))
+  let info? := (← typeOf x).constName?.bind (← getState).enumOfDecl?
+  let operandTy : Core.Ty ← match ← frenTypeOf? x with
+    | some tx => liftMsg a (Core.orderingType op tx (info?.any (·.ordered)))
+    | none => pure .int
   let y ← toTerm cx b
   checkTermType b y operandTy (Core.opNote op operandTy)
+  -- An ordered enumeration's values compare by their positions.
+  if let (.enum _, some info) := (operandTy, info?) then
+    let (i, j) := (← ordinalTerm info x, ← ordinalTerm info y)
+    return ← match op with
+      | "<" => `($i < $j) | "<=" => `($i ≤ $j) | ">" => `($i > $j) | _ => `($i ≥ $j)
   unless ← string x do
     return ← match op with
       | "<" => `($x < $y) | "<=" => `($x ≤ $y) | ">" => `($x > $y) | _ => `($x ≥ $y)
@@ -1985,12 +2029,17 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let names := ops.map (·.getAtomVal.trimAscii.toString)
   if let .error (k, msg) := Core.checkChain names then throwErrorAt ops[k]! msg.text
   let mut x ← toTerm cx xs[0]!
-  -- An `Int`, a `Nat`, widened, or a `String`, and every operand the first's
-  -- type, as the `fren` command checks (`lang::operator_type`).
-  let t0? := (← frenTypeOf? x).map (·.widen)
-  if let some t0 := t0? then
-    unless t0 == .string || t0 == .int do liftMsg xs[0]! (Core.checkType .int t0 (Core.opNote names[0]! .int))
+  -- An `Int`, a `Nat`, widened, a `String`, or an ordered enumeration, and
+  -- every operand the first's type, as the `fren` command checks
+  -- (`lang::operator_type`).
+  let info? := (← typeOf x).constName?.bind (← getState).enumOfDecl?
+  let t0? ← match ← frenTypeOf? x with
+    | some tx => some <$> liftMsg xs[0]! (Core.orderingType names[0]! tx (info?.any (·.ordered)))
+    | none => pure none
   let string := (← typeOf x).isConstOf ``String
+  -- An ordered enumeration's values compare by their positions.
+  let ordinal := if t0? matches some (.enum _) then info? else none
+  let pos (t : Term) : TermElabM Term := match ordinal with | some info => ordinalTerm info t | none => pure t
   let mut links := #[]
   for op in names, a in xs, b in xs.extract 1, opStx in ops do
     let y ← toTerm { cx with guards := cx.guards ++ links } b
@@ -2002,9 +2051,10 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
       checkCore cx link .stringCompare true (ca || cb) #[a, b] (ca && cb)
     -- On strings, as `compareTerm` writes them.
+    let (i, j) := (← pos x, ← pos y)
     links := links.push (← withRef link <| match op, string with
-      | "<", false => `($x < $y) | "<=", false => `($x ≤ $y)
-      | ">", false => `($x > $y) | ">=", false => `($x ≥ $y)
+      | "<", false => `($i < $j) | "<=", false => `($i ≤ $j)
+      | ">", false => `($i > $j) | ">=", false => `($i ≥ $j)
       | "<", true => `(Fren.Str.lt $x $y) | "<=", true => `(Fren.Str.le $x $y)
       | ">", true => `(Fren.Str.lt $y $x) | _, _ => `(Fren.Str.le $y $x))
     x := y

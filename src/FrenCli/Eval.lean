@@ -290,10 +290,12 @@ def setOp (f : Array Val → Array Val → Val) : Option Val → Option Val → 
   | some (.set a), some (.set b) => some (f a b)
   | _, _ => none
 
-/-- An ordering, of `Int`s or of `String`s. -/
+/-- An ordering, of `Int`s, of `String`s, or of the variants of an ordered
+enumeration, by their positions. -/
 def ordV (f : Ordering → Bool) : Option Val → Option Val → Option Val
   | some (.int x), some (.int y) => some (.bool (f (compare x y)))
   | some (.str x), some (.str y) => some (.bool (f (compare x.toList y.toList)))
+  | some (.ctor t i _), some (.ctor u j _) => if t == u then some (.bool (f (compare i j))) else none
   | _, _ => none
 
 /-- The pairs `(a, c)` for each `(a, b)` in `r` and `(b, c)` in `q`. -/
@@ -423,6 +425,12 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
         | .abs, _ => some (.int (if x < 0 then -x else x))
         | .min, some (.int y) => some (.int (if x ≤ y then x else y))
         | .max, some (.int y) => some (.int (if x ≥ y then x else y))
+        | _, _ => none
+    -- An ordered enumeration's methods, by the variants' positions.
+    if let .ctor t i _ := r then
+      return ← match m, (args[0]? : Option Val) with
+        | .min, some y@(.ctor u j _) => if t == u then some (if i ≤ j then r else y) else none
+        | .max, some y@(.ctor u j _) => if t == u then some (if i ≥ j then r else y) else none
         | _, _ => none
     let .str s := r | none
     let str (k : Nat) := match args[k]? with | some (Val.str a) => a | _ => ""
@@ -645,6 +653,8 @@ structure Cx where
 def methodTy (m : Fren.Core.Method) (t : VTy) : VTy :=
   match m.result, t with
   | .bool, _ => .bool
+  -- `min` and `max`, the only methods of an ordered enumeration.
+  | _, .data _ => t
   | .int, _ => .int
   | .string, _ => .string
   | .elem, .seq e => e
@@ -1081,7 +1091,7 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with table := new.foldl (·.addItem ·) s.table, module := path, scope := path }
   | .use _ segs glob => declareUse segs glob
   | .useGroup _ pre paths => do for p in paths do declareUse (pre ++ p) false
-  | .enum isPub name variants => do
+  | .enum isPub name variants _ => do
     let st ← get
     let path := st.module ++ Name.mkSimple name.name
     let vs := variants.map (Name.mkSimple ·.1.name)

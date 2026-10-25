@@ -1,0 +1,2 @@
+-- `ordered` on an item other than an enum (F0130).
+ordered struct Point { x: Int, y: Int }

@@ -447,6 +447,23 @@ comp c { in n: Int pub out y: Int req r: y = match n { ..=9 => 0, _ => 1 } }
 
 In Lean, Lean's own parser reports this, as a syntax error.
 "# },
+  { code := "F0130", explanation := r#"`ordered` modifies an item other than an enum, or is written before `pub`.
+
+Erroneous code example:
+
+```fren
+ordered struct Point { x: Int, y: Int }
+```
+
+`ordered` orders the variants of an enum as they are declared, so that
+`<`, `<=`, `>`, `>=`, `min` and `max` apply to its values. It applies only
+to enums, and is written after `pub`, as in `pub ordered enum Level { Low,
+High }`. Remove it from any other item:
+
+```fren
+struct Point { x: Int, y: Int }
+```
+"# },
   { code := "F0201", explanation := r#"A name that is not in scope.
 
 Erroneous code example:
@@ -1239,8 +1256,8 @@ Erroneous code example:
 comp c { in b? pub out p? req r: p? iff (b?).contains?(1) }
 ```
 
-Only `Int`s, `String`s, sets, relations and sequences have methods. Use
-the operators of the type instead:
+Only `Int`s, `String`s, sets, relations, sequences and the values of an
+ordered enum have methods. Use the operators of the type instead:
 
 ```fren
 comp c { in b? pub out p? req r: p? iff not b? }
@@ -1570,6 +1587,61 @@ constant other than `0`:
 
 ```fren
 comp c { in x: Int pub out r: Int := x mod 2 }
+```
+"# },
+  { code := "F0352", explanation := r#"Values of an enum that is not ordered are compared with `<`, `<=`, `>` or `>=`.
+
+Erroneous code example:
+
+```fren
+enum Level { Low, Middle, High }
+
+comp c { in l: Level pub out high? req r: high? iff l > Level::Middle }
+```
+
+The order in which a plain enum's variants are listed is not part of its
+meaning, so its values are not ordered. Declare the enum `ordered` to
+order its variants as they are declared, or compare with `=` or `in`:
+
+```fren
+ordered enum Level { Low, Middle, High }
+
+comp c { in l: Level pub out high? req r: high? iff l > Level::Middle }
+```
+"# },
+  { code := "F0353", explanation := r#"An ordered enum has a variant with a payload.
+
+Erroneous code example:
+
+```fren
+ordered enum Size { Small, Custom(Int) }
+```
+
+An ordered enum orders its variants as they are declared, which says
+nothing of how values with payloads compare, so only an enum without
+payloads may be ordered. Remove the payload, or `ordered`:
+
+```fren
+ordered enum Size { Small, Large }
+```
+"# },
+  { code := "F0354", explanation := r#"`min` or `max` of a value of an enum that is not ordered.
+
+Erroneous code example:
+
+```fren
+enum Level { Low, High }
+
+comp c { in a: Level in b: Level pub out m: Level req r: m = a.max(b) }
+```
+
+Only `Int`s and the values of an ordered enum have `min` and `max`.
+Declare the enum `ordered` to order its variants as they are declared:
+
+```fren
+ordered enum Level { Low, High }
+
+comp c { in a: Level in b: Level pub out m: Level req r: m = a.max(b) }
 ```
 "# },
   { code := "F0330", explanation := r#"A function's parameters are named, but it has no body, or it has a body, but a parameter has no name.

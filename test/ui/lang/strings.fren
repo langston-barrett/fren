@@ -22,7 +22,7 @@ comp handle {
 
     expect short_enough: when accepted?, (PREFIX ++ name).len <= 25
     expect no_spaces: when accepted?, not name.contains?(" ")
-    expect ordered: when accepted?, name >= "a" and name < "b"
+    expect in_range: when accepted?, name >= "a" and name < "b"
     expect wrong: when accepted?, name.ends_with?("z")  --~ error: expectation `handle::wrong` does not hold
 }
 

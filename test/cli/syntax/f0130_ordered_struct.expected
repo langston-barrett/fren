@@ -1,0 +1,17 @@
+error[F0130]: `ordered` applies only to enums, not to records
+ --> test/cli/syntax/f0130_ordered_struct.fren:2:1
+  |
+2 | ordered struct Point { x: Int, y: Int }
+  | ^^^^^^^ `ordered` must be followed by `enum`
+  |
+  = note: an ordered enum orders its variants as they are declared, and is declared `ordered enum E { ... }`
+help: remove `ordered`
+  |
+2 - ordered struct Point { x: Int, y: Int }
+2 + struct Point { x: Int, y: Int }
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0130`.
+exit=2

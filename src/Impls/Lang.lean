@@ -354,6 +354,16 @@ impl well_founded: lang::well_founded for (vs : List Lean.Name) (p : Lean.Name â
   intro vs p _
   simp [fren_spec, Fren.Core.wellFounded, ofList_filter_eq]
 
+-- For every enumeration, whether it is ordered and how many of its variants
+-- have a payload, which both front ends give `Fren.Core.orderedEnumAccepted`.
+impl ordered_enumeration: lang::ordered_enumeration for (o : Bool) (n : Nat) {
+  ordered? := o,
+  n_payloads := n,
+  accepted? := Fren.Core.orderedEnumAccepted o n,
+} by
+  intro o n _
+  cases o <;> simp [fren_spec, Fren.Core.orderedEnumAccepted]
+
 interp lang::FieldName := Lean.Name
 
 -- For every literal, with the check that both front ends use.
@@ -607,18 +617,22 @@ def toMethod : Fren.Core.Method â†’ lang.Method
   | .min => .Min
   | .max => .Max
 
--- The table of methods that both front ends use.
-impl method_type: lang::method_type for (m : Fren.Core.Method) (k : lang.ValueType) {
+-- The table of methods that both front ends use, where `o` says that the
+-- receiver is an ordered enumeration.
+impl method_type: lang::method_type for (m : Fren.Core.Method) (k : lang.ValueType) (o : Bool) {
   method := toMethod m,
   receiver := k,
-  accepted? := m.accepts (k == .StringTy) (k == .SetTy) (k == .RelTy) (k == .SeqTy) (k == .IntTy || k == .NatTy),
-  -- `string` is the receiver's type, and `elem` is never a result.
-  result := match m.result with
+  ordered? := o,
+  accepted? := m.accepts (k == .StringTy) (k == .SetTy) (k == .RelTy) (k == .SeqTy) (k == .IntTy || k == .NatTy) o,
+  -- `string` is the receiver's type, and `elem` is never a result; an
+  -- ordered enumeration's `min` and `max` give the receiver's type, as both
+  -- front ends' `callMethod` does.
+  result := if o && (m matches .min | .max) then k else match m.result with
     | .bool => .BoolTy | .int => .IntTy | .string | .elem => k | .set => .SetTy | .rel => .RelTy,
   n_params := m.arity,
 } by
-  intro m k _
-  cases m <;> cases k <;> simp [fren_spec, toMethod, Fren.Core.Method.accepts, Fren.Core.Method.relational,
+  intro m k o _
+  cases m <;> cases k <;> cases o <;> simp [fren_spec, toMethod, Fren.Core.Method.accepts, Fren.Core.Method.relational,
     Fren.Core.Method.result,
     Fren.Core.Method.arity, Fren.Core.Method.params]
 
