@@ -563,9 +563,15 @@ Every method is total: its value at the edges, such as `"abc".at(5)`, is the
 one the solver's theory of strings gives it, so that Lean and the solver
 agree.
 
-`lang::collection_methods` states laws of the methods of sequences, sets
-and relations, and of the relational operators, which a relation over a
-finite type keeps in the core:
+`lang::collection_methods` states laws of the methods and operators of
+sequences, sets and relations: the methods of `Seq(T)` that it shares
+with `String`, with the same meanings, and those of its own; the set
+operators `union`, `inter`, `minus` and `subset`, and `card`; and the
+relational methods and `join`, which a relation over a finite type keeps
+in the core. `rev`, `++`, `at`, `slice`, `contains?`, `index_of` and
+`replace` on sequences, and `starts_with?` and `ends_with?` with an
+argument that is not a literal, are outside the [decidable
+core](Decidability.md#sequences), so it allows that:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -573,6 +579,7 @@ pub comp collection_methods {
     in p: Seq(Int)
     in q: Seq(Int)
     in i: Int
+    in n: Int
     in x: Int
     in s: Set(Int)
     in t: Set(Int)
@@ -585,6 +592,21 @@ pub comp collection_methods {
     expect update_reads: when 0 <= i and i < q.len, q.update(i, x)[i] = x
     expect update_outside: when i < 0 or i >= q.len, q.update(i, x) = q
     expect at_outside: when i < 0 or i >= q.len, q.at(i) = []
+    expect at_inside: when 0 <= i and i < q.len, q.at(i) = [q[i]]
+    expect at_is_slice: q.at(i) = q.slice(i, 1)
+    expect slice_outside: when i < 0 or i >= q.len or n <= 0, q.slice(i, n) = []
+    expect slice_whole: q.slice(0, q.len) = q
+    expect slice_short: when n >= 0, q.slice(i, n).len <= n
+    expect slice_occurs: q.contains?(q.slice(i, n))
+    expect empty_contained: q.contains?([]) and q.starts_with?([]) and q.ends_with?([])
+    expect prefix_occurs: when q.starts_with?(p), q.contains?(p)
+    expect suffix_occurs: when q.ends_with?(p), q.contains?(p)
+    expect concat_prefix: (p ++ q).starts_with?(p) and (p ++ q).ends_with?(q)
+    expect index_of_empty: when 0 <= i and i <= q.len, q.index_of([], i) = i
+    expect index_of_found: when q.index_of(p, i) >= 0, q.slice(q.index_of(p, i), p.len) = p
+    expect index_of_absent: when not q.contains?(p), q.index_of(p, i) = -1
+    expect replace_empty: q.replace([], p) = p ++ q
+    expect replace_absent: when not q.contains?(p), q.replace(p, [x]) = q
 
     expect union_contains: s subset (s union t) and t subset (s union t)
     expect inter_within: (s inter t) subset s and (s inter t) subset t
