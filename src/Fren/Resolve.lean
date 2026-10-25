@@ -16,12 +16,17 @@ namespace Fren
 
 export Core (Resolved showPath showModule)
 
-/-- A single path segment as a simple name, rejecting Lean-style dotted names. -/
-def segName [Monad m] [MonadError m] (seg : Syntax) : m Name := do
+/-- A single path segment as a simple name, rejecting Lean-style dotted names.
+`afterPath` says that it follows a `::`. -/
+def segName [Monad m] [MonadError m] (seg : Syntax) (afterPath := false) : m Name := do
   let n := seg.getId
   unless n.isAtomic do
-    throwErrorAt seg (Core.dottedNameMsg n #[] (inExpr := false)).text
+    throwErrorAt seg (Core.dottedNameMsg n #[] (inExpr := false) (afterPath := afterPath)).text
   return n
+
+/-- The segments of a path as simple names. -/
+def segNames [Monad m] [MonadError m] (segs : Array Syntax) : m (Array Name) :=
+  segs.mapIdxM fun i s => segName s (afterPath := i > 0)
 
 variable {m : Type → Type} [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m]
 
@@ -35,13 +40,13 @@ def liftMsg (ref : Syntax) : Except Core.Msg α → m α
 
 /-- Resolves a `use` path written in module `from_`. -/
 def resolveUsePath (from_ : Name) (segs : Array Syntax) : m Resolved := do
-  liftResolve segs ((← getState).table.resolveUse from_ (← segs.mapM segName))
+  liftResolve segs ((← getState).table.resolveUse from_ (← segNames segs))
 
 /-- Resolves a path in an expression or type in module `from_`, recording
 the import it resolves through, if any (`unused_imports`), and the item it
 uses (`dead_code`). -/
 def resolvePath (from_ : Name) (segs : Array Syntax) (extra : Array Name := #[]) : m Resolved := do
-  let names ← segs.mapM segName
+  let names ← segNames segs
   let table := (← getState).table
   let r ← liftResolve segs (table.resolvePath from_ names extra)
   if let some u := table.importVia from_ names then recordUsed u

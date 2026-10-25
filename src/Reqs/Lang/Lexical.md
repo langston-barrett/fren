@@ -9,29 +9,38 @@ delimit a block comment, and block comments nest.
 
 ## Identifiers
 
-Identifiers are Lean identifiers: a letter or `_`, then letters, digits, `_`
-and `'`. An identifier may end in `?`, which is significant: see
+Identifiers are ASCII: a letter or `_`, then letters, digits, `_` and
+`'`. An identifier may end in `?`, which is significant: see
 [Types](Types.md#boolean-names). `_` alone is an identifier, the wildcard
 of a [`match` arm](Expressions.md#matches).
 
 As in Lean, `a.b` (with no spaces) is a single token, an identifier with
-the components `a` and `b`, as is `a.b.c`. It refers to the variable `b`
-of the instance `a` (see [Instances](Instances.md#instance-variables)) or
-the field `b` of the record `a` (see [Records](Expressions.md#records)),
-and is never a path. A `?` ends an identifier, so it is never followed by
-`.`. An identifier is a keyword if it is a [reserved word](#keywords).
+the components `a` and `b`, as is `a.b.c`. Where `a` is an instance, it
+refers to the instance's variable `b` (see
+[Instances](Instances.md#instance-variables)). Otherwise `a` is a value, a
+variable or a [constant](Items.md#constants), and `a.b` reads its field
+`b` (see [Records](Expressions.md#records)) or applies the
+[method](Expressions.md#methods) `b` to it. It is never a path. A `?`
+ends an identifier, so it is never followed by `.`. An identifier is a
+keyword if it is a [reserved word](#keywords).
 
-`lang::identifier` states which lexemes are identifiers for the `fren`
-command. Lean's identifiers are a superset, so the two front ends differ:
+`lang::identifier` states which lexemes are identifiers. Lean's
+identifiers are a superset of Fren's: they may have `?` and `!` anywhere
+after the first character, letters other than ASCII, such as `α`, and
+quotes, as in `«a b»`. So that a spec reads alike in both front ends, each
+reports what Lean reads as one identifier but Fren does not: the Lean
+front end checks each identifier of an item, `use`, claim or check against
+this rule (but not of `impl` or `interp`, whose bodies are Lean), and the `fren`
+command reads identifiers by Lean's rule too, and reports any that Fren's
+would read differently, such as `a?b`, `xα`, or `y!` in `y!=1`. Write
+spaces around `!=` after an identifier.
 
-- Lean accepts letters other than ASCII, such as `α`, and quoted
-  identifiers, such as `«a b»`, which only the Lean front end can then
-  check.
-- Lean lets `?` and `!` appear anywhere after the first character, so it
-  reads `a?b` as one identifier where the `fren` command reads `a?` then
-  `b`, and `a!=b` as `a!` then `=`. Some identifiers ending in `!` are
-  Lean tokens too, such as `m!` and `s!`. Write spaces around `!=` after
-  an identifier.
+Two cases differ, where Lean's parser reports the lexeme before the Lean
+front end sees it. Some identifiers that end in `!` are Lean tokens, such
+as `s!` and `m!`, which Lean reads in preference to an identifier, so in
+`s!=1` the Lean front end reports a syntax error. And a `«` that is never
+closed is a syntax error in Lean. In both, the `fren` command reports that
+the lexeme is not an identifier.
 
 ```fren
 pub mod lang
@@ -46,11 +55,6 @@ pub comp identifier {
     expect components: when lexeme = "w.x.y?", accepted?
     expect wildcard: when lexeme = "_", accepted?
     expect question_last: when lexeme = "a?b" or lexeme = "a?.b", not accepted?
-    -- Stronger: the two front ends lex alike, `identifier` holding also of
-    -- the Lean front end. That needs either the `fren` command to lex `?`
-    -- and `!` as Lean does, and to reject them where Fren does not allow
-    -- them, or the Lean front end to check each identifier against this
-    -- rule.
     expect letter_first: when lexeme.matches?(r"[0-9'.?].*"), not accepted?
     expect no_trailing_dot: when lexeme.ends_with?("."), not accepted?
     -- Stronger: no component is empty anywhere, `when
@@ -224,8 +228,10 @@ does.
 Punctuators follow maximal munch too, so `::*` is one punctuator and not
 `::` followed by `*`. A punctuator that extends a shorter one does so one
 character at a time, through punctuators (`:`, `::`, `::*`), so one
-character of lookahead decides whether a punctuator ends. `lang::punctuator_end` states
-this, for a `lexeme` that is a punctuator:
+character of lookahead decides whether a punctuator ends.
+`lang::punctuator_end` states this. The lexer asks only where a
+punctuator that it has read ends, never where some other text would, so
+the rule assumes that `lexeme` is a punctuator:
 
 ```fren
 -- Longest first, as the lexer tries them.
@@ -246,12 +252,13 @@ pub comp punctuator_end {
     in remaining: String     -- the input after the lexeme
     pub det out ends?
 
+    assume a_punctuator: lexeme in PUNCTUATORS
+
     out longer: String := lexeme ++ remaining.slice(0, 1)
     inst one: punctuator { lexeme := longer }
     req maximal_munch: ends? iff (remaining = "" or not one.accepted?)
 
-    inst p: punctuator { lexeme }
     expect path_glob: when lexeme = "::" and remaining.starts_with?("*"), not ends?
-    expect no_triple: when p.accepted? and lexeme.len = 3, ends?
+    expect no_triple: when lexeme.len = 3, ends?
 }
 ```

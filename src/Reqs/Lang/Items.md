@@ -298,7 +298,13 @@ pub comp constant {
 ```
 
 A constant stands for its value wherever it is mentioned: in assumptions,
-requirements, expectations, bindings, and the values of other constants.
+requirements, expectations, bindings, and the values of other constants,
+and as a record whose field is read or the receiver of a
+[method](Expressions.md#methods), as in `LOBBY.floor` or `GREETING.len`.
+There it is named by one identifier, since `a.b` is never a path (see
+[Lexical structure](Lexical.md#identifiers)): a constant of another
+module is first brought into scope with `use`, and `places::LOBBY.floor`
+is an error.
 It is not a variable, so the rules for which variables an expression may
 mention (see [Instances](Instances.md#instance-variables)) do not apply to
 it. Like any other item, a constant is visible according to `pub`, and can

@@ -1,0 +1,8 @@
+-- A constant of another module, named by its path, cannot be a receiver:
+-- `a.b` is never a path, so it is brought into scope with `use` first.
+
+mod places
+pub const GREETING: String := "hello"
+
+mod building
+expect qualified: places::GREETING.len = 5   --~ error: `GREETING.len` is not a single name

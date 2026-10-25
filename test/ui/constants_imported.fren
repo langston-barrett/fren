@@ -1,0 +1,13 @@
+-- A constant imported with `use` and mentioned only through a field read or
+-- a method: the import is used, in both front ends.
+
+mod places
+pub struct Place { name: String, floor: Int }
+pub const LOBBY: Place := Place { name := "lobby", floor := 0 }
+pub const GREETING: String := "hello"
+
+mod building
+use places::{GREETING, LOBBY}
+expect ground: LOBBY.floor = 0 and GREETING.len = 5
+
+--@ summary: 1 passed, 0 failed, 0 inconclusive, 0 redundant

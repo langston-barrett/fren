@@ -163,10 +163,11 @@ The solver decides these reliably and quickly:
 The known weak spot is proving that no string satisfies a pattern with
 repetition (`*`, `+` or `{m,}`) together with another constraint on the
 middle of the same string: `contains?`, or a second pattern with
-repetition. For example, `lang::word::no_empty_segment` in
-[Lexical structure](Lexical.md) states that a word, a pattern with
-repetition, never contains `..`. That is true, but cvc5 does not prove it
-within any time limit tried, and neither does Z3. Raising `--timeout`
+repetition. For example, `lang::identifier` in
+[Lexical structure](Lexical.md#identifiers) would state that an
+identifier, a pattern with repetition, never contains `..`. That is
+true, but cvc5 does not prove it within any time limit tried, and neither
+does Z3, so the chapter leaves it as a comment. Raising `--timeout`
 does not help, and bounding the string's `len` only turns a query that
 never ends into a slow one.
 Such a check stays `Inconclusive`; `fren quickcheck` (see

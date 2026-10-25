@@ -454,9 +454,10 @@ pub comp pair_membership {
 `e.m` and `e.m(a, ...)` call the *method* `m` of the type of `e`, its
 receiver. Methods belong to their type, as fields belong to a record: they
 are not items, so they are never imported, and a spec's own `fn len`
-never clashes with one. In `a.b`, `a` is first an instance, then a
-variable of a record type, whose field `b` it reads, and then a variable
-of a type with methods. A record has no methods.
+never clashes with one. In `a.b`, `a` is first a binder of a `match`
+arm, then an instance, then a variable, and then a
+[constant](Items.md#constants): a record value, whose field `b` it reads,
+or a value of a type with methods. A record has no methods.
 
 A method's arguments are typed as a function's are. As for a function, a
 method whose name ends in `?` returns a `Bool`, and only those do. A
@@ -708,5 +709,6 @@ visibility](Modules.md#resolution)). A constant stands for its value. A variant 
 with its enumeration's name, `Mode::Heat`, or by its bare name once brought
 into scope by `use`. `w.x` names the variable `x` of the instance `w` (see
 [Instances](Instances.md#instance-variables)), or of the binder `w` of a
-[global expectation](Global.md), and otherwise the field `x` of the
-record `w` (see [Records](#records)).
+[global expectation](Global.md), and otherwise reads the field `x` of
+the value `w`, a variable or a [constant](Items.md#constants) (see
+[Records](#records)), or applies its [method](#methods) `x`.

@@ -198,7 +198,7 @@ Only outputs are private by default, so only `out` takes `pub`.
 comp c { in x: Int }
 ```
 "# },
-  { code := "F0111", explanation := r#"A name with a `.` that is not a variable of an instance.
+  { code := "F0111", explanation := r#"A name with a `.` whose first component is not an instance or a value.
 
 Erroneous code example:
 
@@ -207,8 +207,9 @@ enum E { A, B }
 comp c { in e: E pub out y? req r: y? iff e = E.A }
 ```
 
-`a.b` means the variable `b` of the instance `a`. Paths, such as an item of
-a module or a variant of an enum, are separated by `::`.
+`a.b` means the variable `b` of the instance `a`, or the field or method
+`b` of the value `a`, a variable or a constant. Paths, such as an item of a
+module or a variant of an enum, are separated by `::`.
 
 ```fren
 enum E { A, B }
@@ -326,6 +327,29 @@ so `[z-a]` would match nothing:
 ```fren
 comp c { in s: String pub out p? req r: p? iff s.matches?(r"[a-z]+") }
 ```
+"# },
+  { code := "F0119", explanation := r#"A lexeme that Lean reads as one identifier, but that is not one of Fren's.
+
+Erroneous code example:
+
+```fren
+comp c { in y: Int pub out z? req r: z? iff y!=1 }
+```
+
+Fren's identifiers are ASCII letters, digits, `_` and `'`, with `.` between
+components and an optional `?` at the end. Lean's are a superset: they may
+have `?` and `!` anywhere after the first character, letters other than
+ASCII, such as `α`, and quoted components, such as `«a b»`. So that a spec
+reads alike in Lean and in the `fren` command, both report what Lean would
+read differently. Here Lean reads `y!` then `=`, so write spaces around
+`!=`:
+
+```fren
+comp c { in y: Int pub out z? req r: z? iff y != 1 }
+```
+
+An identifier such as `a?b` or `xα` needs another name, such as `a_b` or
+`x_alpha`.
 "# },
   { code := "F0201", explanation := r#"A name that is not in scope.
 

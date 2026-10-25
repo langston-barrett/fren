@@ -577,7 +577,8 @@ def checkMention (place : Place) (role : Role) (earlier : Bool) (n : Name) : Exc
 
 /-- A dotted name that is not a variable of an instance. `vars` are the
 names of the instance's visible variables. -/
-def dottedNameMsg (n : Name) (insts : Array Name) (vars : Array Name := #[]) (inExpr := true) : Msg :=
+def dottedNameMsg (n : Name) (insts : Array Name) (vars : Array Name := #[]) (inExpr := true) (afterPath := false) :
+    Msg :=
   if insts.contains n.getRoot then
     let x := n.replacePrefix n.getRoot .anonymous
     let own := vars.filterMap fun v => if v.getRoot == n.getRoot then some (v.replacePrefix v.getRoot .anonymous) else none
@@ -590,9 +591,13 @@ def dottedNameMsg (n : Name) (insts : Array Name) (vars : Array Name := #[]) (in
   else
     let path := "::".intercalate (n.components.map (·.toString))
     { code? := some "F0111", headline := s!"`{n}` is not a single name"
-      label? := some "`.` is only for the variables of instances"
-      notes := if inExpr then #[s!"note: there is no instance named `{n.getRoot}`"] else #[]
-      fixes := #[{ msg := "separate path segments with `::`", replacement := path }] }
+      label? := some "`.` reads an instance's variable, or a value's field or method"
+      notes := if inExpr then #[s!"note: `{n.getRoot}` is not an instance, a variable or a constant"]
+        -- After a `::`, it may be a constant of another module read with `.`.
+        else if afterPath then #[s!"help: to read a field or method of a constant of another module, bring it into \
+          scope with `use` and write `{n}`"]
+        else #[]
+      fixes := #[{ msg := "if it is a path, separate its segments with `::`", replacement := path }] }
 
 /-- Whether a name may be bound `n` times by an instance, given what it is
 in the instantiated component (`inst::binding`): an `in` exactly once,
