@@ -398,6 +398,16 @@ pub comp exit {
     expect write_succeeds: when all_parsed? and not check?, code = 0
     expect documented_codes: code >= 0 and code <= 2
 }
+```
+
+`fmt::exit` follows the convention of every command,
+[`cli::exit_status`](Cli.md#exit-status), with `fren fmt` able to run
+exactly when every file parses:
+
+```fren
+use cli::exit_status
+
+refine fmt_exit_status: exit refines exit_status { ran? := all_parsed? }
 
 #fren_check
 ```
