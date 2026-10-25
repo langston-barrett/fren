@@ -1,9 +1,13 @@
 -- Quantifiers wherever an expression may be: in a defined output, an
 -- instance's binding, an assumption, a function's body, and around a
--- `match` on a bound name and an application of a `Nat` function.
+-- `match` on a bound name and applications of `Nat` functions, defined and
+-- uninterpreted, whose results the solver is told are at least 0 in each
+-- instance.
 -- fren-covers: lang::quantifier
 
 enum Mode { Off, Heat, Cool }
+
+fn price(Mode): Nat
 
 fn cost(m: Mode): Nat := match m { Mode::Off => 0, Mode::Heat => 2, Mode::Cool => 3 }
 
@@ -33,6 +37,9 @@ comp places {
 
     -- A `Nat` function applied to a bound name.
     expect nonnegative: forall (m: Mode), cost(m) >= 0
+    -- An uninterpreted `Nat` function in a quantifier, and in a nested one.
+    expect priced: forall (m: Mode), price(m) >= 0
+    expect priced_pairs: forall (m: Mode), exists (n: Mode), price(m) + price(n) >= 0
     expect bound: costly? iff limit < 3
     expect cheap: all_cheap? iff limit >= 3
     expect some_mode: w.same?
@@ -41,4 +48,4 @@ comp places {
     expect free_off: when free?, mode = Mode::Off
 }
 
---@ summary: 12 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ summary: 14 passed, 0 failed, 0 inconclusive, 0 redundant

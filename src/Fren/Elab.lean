@@ -3181,8 +3181,9 @@ def arithTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (n
   if op == "-" then `((($x : Int) - ($y : Int))) else if op == "+" then `($x + $y) else `($x * $y)
 
 open Lang in
-/-- The expressions that `toTerm` gives no syntax pattern of its own: fields,
-methods, `mod`, collections, indexes, records, `match` and `is`, where
+/-- The expressions that `toTerm` gives no syntax pattern of its own:
+quantifiers, fields, methods, `mod`, collections, indexes, records, `match`
+and `is`, where
 `toTerm` translates their parts, `emptyOk` and `natOk` are what is
 expected of the whole, and `parent?` is the expression around it. -/
 def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (parent? : Option Syntax) (emptyOk natOk : Bool)
