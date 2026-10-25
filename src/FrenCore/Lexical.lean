@@ -151,6 +151,12 @@ decode, but nothing proves it (#14), so both front ends check this too, as
 a guard. -/
 def integerValue? (s : String) : Option Nat := Lean.Syntax.decodeNatLitVal? s
 
+/-- `s` without its leading `0`s and the `_`s among them, or `0` if no other
+digit is left: `010` is `10`, `00_1` is `1`, and `00` is `0`. -/
+def dropLeadingZeros (s : String) : String :=
+  let rest := s.toList.dropWhile fun c => c == '0' || c == '_'
+  if rest.isEmpty then "0" else String.ofList rest
+
 /-- A number that Lean's lexer reads, but that is not an integer literal. -/
 def malformedIntegerMsg (s : String) : Msg :=
   { code? := some "F0120", headline := s!"`{s}` is not an integer literal", label? := some "malformed number"
@@ -164,12 +170,13 @@ def malformedIntegerMsg (s : String) : Msg :=
             #[s!"help: `0{b}` must be followed by a digit of its base"]
           else #[]
         | _ => #[]
-    -- `0_1` without the `_`s after its `0`, as `01`, which Lean decodes.
+    -- `0_1` without its leading `0`s and `_`s, as `1`, which Lean decodes,
+    -- and which `zero_prefixed_literal` does not fire on.
     fixes := match s.toList with
       | '0' :: '_' :: rest =>
         -- Only with digits left, or the `0` could join what follows, as in `0_xFF`.
         let digits := rest.dropWhile (· == '_')
-        let fixed := String.ofList ('0' :: digits)
+        let fixed := dropLeadingZeros s
         if !digits.isEmpty && integerLiteral fixed then #[{ msg := s!"write `{fixed}`", replacement := fixed }] else #[]
       | _ => #[] }
 

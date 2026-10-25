@@ -1120,6 +1120,25 @@ def Expr.operands : Expr → Array Expr
   | .table _ rows => tableParts rows
   | .num .. | .bool .. | .path .. | .str .. => #[]
 
+/-- The integer literals of a pattern: its own, its bounds' and those of
+its parts. -/
+partial def Pattern.integerSpans : Pattern → Array Span
+  | .num s _ => #[s]
+  | .range _ lo hi _ => (lo.toArray ++ hi.toArray).filterMap fun | .num s _ => some s | _ => none
+  | .variant _ _ (some args) => args.flatMap (·.integerSpans)
+  | .or _ alts => alts.flatMap (·.integerSpans)
+  | _ => #[]
+
+/-- The integer literals of `e` and of its patterns, which
+`zero_prefixed_literal` reads. -/
+partial def Expr.integerSpans (e : Expr) : Array Span :=
+  let own := match e with
+    | .num s _ => #[s]
+    | .match _ _ arms => arms.flatMap (·.1.integerSpans)
+    | .is _ _ p => p.integerSpans
+    | _ => #[]
+  own ++ e.operands.flatMap (·.integerSpans)
+
 /-- The span of `e` as written: a field read, method call or index of a
 receiver in parentheses starts at the `(`, which its span leaves out. -/
 partial def Expr.writtenSpan (src : Array Char) (e : Expr) : Span :=
@@ -1242,6 +1261,9 @@ def lintBools (e : Expr) : M Unit := do
     lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) (shift r.msg)
   for r in Fren.Core.arithReports src root do
     lintFix r.lint r.ref (shift r.msg)
+  for sp in e.integerSpans do
+    if let some (r, msg) := Fren.Core.zeroPrefixedReport? full (toRange sp) then
+      lintFix .zeroPrefixedLiteral { start := r.start, stop := r.stop } msg
   lintParens e
 
 /-- Whether `t` is an ordered enumeration (`Reqs/Lang/Items#enumerations`). -/
@@ -3205,7 +3227,45 @@ def testedOf (all : Bool) (members : Array Member) : M Fren.Core.Tested := do
   if let some (_, span) := pending then err span (Fren.Core.misplacedEvidenceMsg "the end of the component")
   return Fren.Core.Tested.ofSettings all constraints expects insts dets
 
-def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := do
+/-- Reports `arbitrary_source_item_ordering` on a component whose members,
+written at `spans`, are `members`, and whose `{` ends at `openStop`
+(`lint::arbitrary_source_item_ordering`). An evidence setting is part of
+the member after it. -/
+def lintMemberOrder (members : Array Member) (spans : Array Span) (openStop : Nat) : M Unit := do
+  let mut kinds := #[]
+  let mut ranges : Array Fren.Core.Range := #[]
+  let mut names := #[]
+  let mut mentioned := #[]
+  let mut start? : Option Nat := none
+  for m in members, sp in spans do
+    let (kind, name?, ms) : Fren.Core.MemberKind × Option Ident × Array Name := match m with
+      | .evidence .. => (.use, none, #[])
+      | .use .. | .useGroup .. => (.use, none, #[])
+      | .var true _ _ x _ _ => (.input, some x, #[])
+      | .var false _ _ x _ defn? => (.output, some x, ((defn?.map mentions).getD #[]).map (·.getRoot))
+      | .inst x _ bs => (.inst, some x, bs.foldl (init := #[]) fun acc (b, e?) =>
+          acc ++ ((e?.map mentions).getD #[Name.mkSimple (declaredIdent b).1.name]).map (·.getRoot))
+      | .prop .assume x _ => (.assumption, some x, #[])
+      | .prop .req x _ => (.requirement, some x, #[])
+      | .prop .expect x _ => (.expectation, some x, #[])
+      | .prop .cover x _ => (.cover, some x, #[])
+    if m matches .evidence .. then
+      start? := start?.orElse fun _ => some sp.start
+      continue
+    kinds := kinds.push kind
+    ranges := ranges.push { start := start?.getD sp.start, stop := sp.stop }
+    start? := none
+    names := names.push (name?.map fun x => Name.mkSimple (declaredIdent x).1.name)
+    mentioned := mentioned.push ms
+  let some i := Fren.Core.firstOutOfOrder? kinds | return
+  let msg := Fren.Core.memberOrderMsg kinds[i]! kinds[i - 1]!
+  let mentions := mentioned.map (·.filterMap fun n => names.findIdx? (· == some n))
+  let at_ : Span := { start := ranges[i]!.start, stop := ranges[i]!.stop }
+  match Fren.Core.memberOrderFix? (← get).src openStop ranges kinds mentions with
+  | some edit => lintEdits .arbitrarySourceItemOrdering at_ msg #[edit]
+  | none => lint .arbitrarySourceItemOrdering at_ msg
+
+def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Array Span) (openStop : Nat) : M Unit := do
   let n := Name.mkSimple name.name
   modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[], natApps := #[] }
   liftMsg name.span (Fren.Core.checkItemName "component" n)
@@ -3223,6 +3283,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let declared := named.map fun x => Name.mkSimple (declaredIdent x).1.name
   if let some k := (Fren.Core.repeatsAt declared)[0]? then
     err named[k]!.span (Fren.Core.dupMemberMsg declared[k]!)
+  lintMemberOrder members spans openStop
   modify fun s => { s with inCompBody := true }
   -- Each variable, instance, binding, definition and constraint reports its
   -- own first static error; after those of the variables, and of the
@@ -3895,12 +3956,15 @@ partial def elabItem (item : Item) : M Unit := do
       lintDeclared .function n name.span
       lintLines .function n name.span last
     unless isPub do
-      modify fun s => { s with items := s.items.push ({ what := .function, path, level := s.levels.get .deadCode }, name.span) }
+      modify fun s =>
+        let r : Fren.Core.ItemRecord :=
+          { what := .function, path, level := s.levels.get .deadCode, singleCall? := body.map fun _ => s.levels.get .singleCallFn }
+        { s with items := s.items.push (r, name.span) }
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
-  | .comp isPub name members close => do
+  | .comp isPub name members close spans openStop => do
     -- Its `use`s end with it, even when it has an error.
     modify fun s => { s with inCompBody := false }
-    try elabComp isPub name members
+    try elabComp isPub name members spans openStop
     catch e =>
       modify (fun s => { s.keepLints e.state with scope := s.module })
       -- Its declaration and line lints, after an error in its members.
@@ -4067,7 +4131,8 @@ def finishLints : StateM State Unit := do
   let (reports, fulfilled) := Fren.Core.finishReports
     (s.lintReports ++ Fren.Core.importReports s.useRecords s.used true ++ Fren.Core.deadCodeReports s.items s.usedItems
       ++ Fren.Core.unusedAssumptionReports s.assumptions s.globalReads
-      ++ Fren.Core.unusedSettingReports s.settings s.seenSettings atEnd true)
+      ++ Fren.Core.unusedSettingReports s.settings s.seenSettings atEnd true
+      ++ Fren.Core.singleCallReports s.items s.usedItems)
   let (unfulfilled, _) := Fren.Core.finishReports (Fren.Core.expectationReports s.expectations fulfilled true)
   let all := reports ++ unfulfilled
   let (edits, fixed) := s.fixes (all.map fun (r, _) => (r.lint, r.ref))

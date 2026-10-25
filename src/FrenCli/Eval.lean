@@ -1486,7 +1486,7 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with
       table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
       spec.consts := s.spec.consts.insert path (v, t) }
-  | .comp isPub name members _ => lowerComp isPub name members
+  | .comp isPub name members .. => lowerComp isPub name members
   | .global name binders body => lowerGlobal name binders body
   | .refine name concrete abstract bs => do
     let comp (segs : Array Ident) : L Comp := do

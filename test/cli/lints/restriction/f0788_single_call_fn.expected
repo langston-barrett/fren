@@ -1,0 +1,14 @@
+warning[F0788]: function `double` is applied only once
+ --> test/cli/lints/restriction/f0788_single_call_fn.fren:5:4
+  |
+5 | fn double(n: Int): Int := 2 * n
+  |    ^^^^^^ applied once
+  |
+  = note: it is private, and only one path in this file applies it
+  = help: write its body in place of the application, with the arguments in place of the parameters
+  = note: `single_call_fn` is set to `warn`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0788`.
+exit=3

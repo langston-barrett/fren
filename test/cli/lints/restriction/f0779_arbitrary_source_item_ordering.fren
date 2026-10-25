@@ -1,0 +1,9 @@
+-- `arbitrary_source_item_ordering`, which is allowed by default: an input
+-- after an output.
+set_option fren.lint.arbitrary_source_item_ordering "warn"
+
+pub comp c {
+    pub out p?
+    in x: Int
+    req r: p? iff x > 0
+}

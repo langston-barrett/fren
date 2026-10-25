@@ -28,6 +28,9 @@ instance : Fren.Finite Comparison := ⟨Comparison.all.toList, by intro x; cases
 
 instance : Fren.Finite Head := ⟨[.not, .unequal, .ite, .when, .unless, .other], by intro x; cases x <;> simp⟩
 
+instance : Fren.Finite Fren.Core.MemberKind :=
+  ⟨[.use, .input, .output, .assumption, .inst, .requirement, .expectation, .cover], by intro x; cases x <;> simp⟩
+
 def toComparison : Comparison → lint.Comparison
   | .eq => .Eq
   | .ne => .Ne
@@ -75,6 +78,16 @@ def toGroup : Group → lint.Group
   | .pedantic => .Pedantic
   | .restriction => .Restriction
   | .decidability => .Decidability
+
+def toMemberKind : Fren.Core.MemberKind → lint.MemberKind
+  | .use => .Use
+  | .input => .Input
+  | .output => .Output
+  | .assumption => .Assumption
+  | .inst => .Instance
+  | .requirement => .Requirement
+  | .expectation => .Expectation
+  | .cover => .Cover
 
 def toCase : Case → lint.Case
   | .snake => .Snake
@@ -1496,5 +1509,44 @@ trusted lint::single_match_else_written: "a model of an expression, checked agai
 trusted lint::single_match_else_fixed: "a model of an expression, checked against its fix by the refinements in its section"
 trusted lint::inconsistent_struct_constructor_written: "a model of an expression, checked against its fix by the refinements in its section"
 trusted lint::inconsistent_struct_constructor_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+
+/-! ## Literals, the order of members, and functions applied once -/
+
+-- `zeroPrefixed` reads the literal's characters, and `dropLeadingZeros`
+-- writes the fix; the spec states the same with patterns, which the tests
+-- check against them.
+tested lint::zero_prefixed_literal: "test/ui/lints/literals.fren", "test/cli/lints/complexity/f0758_zero_prefixed_literal.fren",
+  "test/cli/fix/literals.fren"
+
+-- Both front ends find the first member out of order with
+-- `firstOutOfOrder?`, which asks `outOfOrder` of each member and the one
+-- before it.
+impl arbitrary_source_item_ordering: lint::arbitrary_source_item_ordering for (a b : Fren.Core.MemberKind) {
+  first := toMemberKind a,
+  second := toMemberKind b,
+  fires? := Fren.Core.outOfOrder a b,
+}
+
+-- `memberOrderFix?` asks `mentionKept` of each mention.
+impl mention_kept: lint::mention_kept for (a b : Fren.Core.MemberKind) (e : Bool) {
+  mentioner := toMemberKind a,
+  mentioned := toMemberKind b,
+  earlier? := e,
+  kept? := Fren.Core.mentionKept a b e,
+}
+
+impl single_call_fn: lint::single_call_fn for (p d : Bool) (n : Nat) {
+  pub? := p,
+  defined? := d,
+  n_uses := n,
+  fires? := Fren.Core.singleCallFn d p n,
+} by
+  intro p d n _
+  cases p <;> cases d <;> rcases n with _ | _ | n <;> simp [fren_spec, Fren.Core.singleCallFn] <;> omega
+
+trusted lint::zero_prefixed_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::zero_prefixed_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::member_order_written: "a model of a component, checked by the refinements in its section"
+trusted lint::member_order_fixed: "a model of a component, checked by the refinements in its section"
 
 end Fren.Impls

@@ -2,8 +2,8 @@
 
 The lints of the `complexity` group find a simpler expression with the
 same meaning, and `fren fix` fixes each of them but `constant_output`.
-This chapter has the lints of `Bool` expressions, of membership and of
-outputs, and its subchapters the others: those of
+This chapter has the lints of `Bool` expressions, of membership, of
+outputs and of literals, and its subchapters the others: those of
 [comparisons](Complexity/Comparisons.md), of [operators](Complexity/Operators.md),
 of [methods](Complexity/Methods.md) and of [matches](Complexity/Matches.md).
 
@@ -262,4 +262,75 @@ pub comp struct_initialization_fixed {
 
 refine struct_initialization_sound: struct_initialization_fixed refines struct_initialization_written
 refine struct_initialization_complete: struct_initialization_written refines struct_initialization_fixed
+```
+
+## Leading zeros
+
+`zero_prefixed_literal` fires on a decimal integer literal that starts
+with `0` and has another digit, such as `010` or `00_1`, in an expression
+or a pattern, but not on `0`, nor on a literal with a base, such as
+`0x10`. Such a literal is decimal
+(see [Lexical structure](../Lang/Lexical.md)), so `010` is 10, but in C and
+the languages that follow it, a leading `0` makes a literal octal, and a
+reader used to them reads 8. Like Clippy's `zero_prefixed_literal`, it is
+in `complexity`, and it is fixable. The message gives the literal's value,
+and the octal literal of the same digits where those are octal and their
+values differ, from 8 on: `` `010` is 10; for octal write `0o10` ``, but
+`` `07` is 7 ``. The fix drops the leading `0`s and the `_`s among them,
+and leaves `0` where no other digit is left: `010` becomes `10`, `00_1`
+becomes `1`, `01_000` becomes `1_000`, and `00` becomes `0`. A literal is
+replaced by a literal, which needs no parentheses and has no guard, so the
+fix keeps every guard. `lint::zero_prefixed_literal` states when it fires,
+and whether `fixed` is what the fix writes, after what it drops, `zeros`.
+A `slice` at a position that is not a constant, and `ends_with?` of a
+string that is not one, are outside the [decidable
+core](../Lang/Decidability.md#strings), so it opts out:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp zero_prefixed_literal {
+    in lexeme: String    -- an integer literal
+    in fixed: String
+    out zeros: String := lexeme.slice(0, lexeme.len - fixed.len)
+    pub det out fires?
+    pub det out is_fix?  -- the fix of `lexeme` writes `fixed`
+
+    assume literal: lexeme.matches?(r"[0-9]([0-9_]*[0-9])?|0[xXbBoO][0-9a-fA-F_]*[0-9a-fA-F]")
+
+    req rule: fires? iff lexeme.matches?(r"0[0-9][0-9_]*")
+    req fix: is_fix? iff (fires? and lexeme.ends_with?(fixed) and zeros.matches?(r"[0_]*")
+        and (fixed = "0" or fixed.matches?(r"[1-9][0-9_]*")))
+
+    expect based: when lexeme = "0x10", not fires?
+    expect zero: when lexeme = "0", not fires?
+    expect separated: when lexeme = "00_1", is_fix? iff fixed = "1"
+}
+```
+
+The [refinements](../Lang/Refinement.md) below check the fix and the
+value the message gives, for each literal above: a component that
+compares an input with the literal as written, one that compares it with
+the fix, and a refinement each way, so that the solver checks that the
+two agree for every value of the input.
+
+```fren
+set_option fren.lint.zero_prefixed_literal "allow" in
+pub comp zero_prefixed_written {
+    in x: Int
+    pub det out ten? := x = 010
+    pub det out one? := x = 00_1
+    pub det out thousand? := x = 01_000
+    pub det out zero? := x = 00
+}
+
+pub comp zero_prefixed_fixed {
+    in x: Int
+    pub det out ten? := x = 10
+    pub det out one? := x = 1
+    pub det out thousand? := x = 1_000
+    pub det out zero? := x = 0
+}
+
+refine zero_prefixed_sound: zero_prefixed_fixed refines zero_prefixed_written
+refine zero_prefixed_complete: zero_prefixed_written refines zero_prefixed_fixed
 ```

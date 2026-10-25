@@ -4792,9 +4792,70 @@ fires too. `fren fix` can fix this:
 ```fren
 comp c { in i: Int in n: Int pub out p? req r: p? iff 0 <= i < n }
 ```
+"# },
+  { code := "F0758", explanation := r#"A decimal integer literal with a leading `0`, such as `010` (a warning, `zero_prefixed_literal`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff x < 010 }
+```
+
+In C and some other languages, a leading `0` makes a literal octal, so a
+reader may take `010` for 8. In Fren it is decimal, and `010` is 10. Write
+it without the leading zeros, or, for octal, with `0o`. `fren fix` can fix
+this:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff x < 10 }
+```
+"# },
+  { code := "F0779", explanation := r#"A member of a component out of order (`arbitrary_source_item_ordering`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.arbitrary_source_item_ordering "warn"
+
+comp c {
+    pub out p?
+    in x: Int
+    req r: p? iff x > 0
+}
+```
+
+The members of a component are written in one order: `use`, `in`, `out`,
+`assume`, `inst`, `req`, `expect`, then `cover`. `fren fix` can fix this,
+unless a definition or a binding would then come before what it mentions:
+
+```fren
+comp c {
+    in x: Int
+    pub out p?
+    req r: p? iff x > 0
+}
+```
+"# },
+  { code := "F0788", explanation := r#"A private defined function applied only once in its file (`single_call_fn`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.single_call_fn "warn"
+
+fn double(n: Int): Int := 2 * n
+
+comp c { in x: Int pub out y: Int req r: y = double(x) }
+```
+
+A function applied once names nothing that is shared. Write its body in
+place of the application, with the arguments in place of the parameters:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = 2 * x }
+```
 "# }
 ]
-
 
 /-- The explanation of `code`. Codes are written `F0101`; lower case is
 accepted, as are `0101` and `101`. -/

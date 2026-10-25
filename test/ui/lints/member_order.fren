@@ -1,0 +1,63 @@
+-- `arbitrary_source_item_ordering` and `single_call_fn`, in both front ends.
+set_option fren.lint.arbitrary_source_item_ordering "warn"
+set_option fren.lint.single_call_fn "warn"
+
+fn double(n: Int): Int := 2 * n   --~ warning: function `double` is applied only once
+fn triple(n: Int): Int := 3 * n
+pub fn half(n: Int): Int := n
+fn never(n: Int): Int := n   --~ warning: function `never` is never used
+fn unknown(Int): Int
+
+enum Shape { Square, Circle }
+
+comp severity_of {
+    in x: Int
+    pub out v: Int
+    req r: v = x
+}
+
+comp in_order {
+    use self::Shape::Square
+    in x: Int
+    in shape: Shape
+    pub out y: Int
+    out z: Int := x + 1
+    assume small: x < 100
+    inst w: severity_of { x }
+    req r: y = double(x) + triple(x) + triple(z) + half(x) + unknown(x) + w.v
+    expect e: shape = Square or shape = Shape::Circle
+}
+
+comp unordered {
+    in x: Int
+    req r: y = x
+    pub out y: Int   --~ warning: an output after a requirement
+    assume small: x < 100
+}
+
+-- With an evidence setting, which is part of the member after it.
+comp evidence {
+    set_option fren.evidence "solver" in
+    expect e: x = y
+    in x: Int   --~ warning: an input after an expectation
+    pub out y: Int
+    req r: y = x
+}
+
+-- Reported, but not fixed: in order, `z` would come before `w`.
+comp mentions {
+    in x: Int
+    inst w: severity_of { x }
+    out z: Int := w.v   --~ warning: an output after an instance
+    pub out y: Int
+    req r: y = z
+}
+
+-- A cover goal comes last.
+comp covered {
+    in x: Int
+    pub out y: Int
+    req r: y = x
+    cover big: x > 10   --~ info: cover goal `covered::big` is met
+    expect e: y >= x   --~ warning: an expectation after a cover goal
+}

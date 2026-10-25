@@ -189,7 +189,7 @@ partial def allExprs (items : Array Item) : Array Expr :=
   let rec sub (e : Expr) : Array Expr := #[e] ++ (exprChildren e).flatMap sub
   let rec ofItem : Item → Array Expr
     | .const _ _ _ v | .global _ _ v | .function _ _ _ _ (some v) _ => #[v]
-    | .comp _ _ members _ => members.flatMap fun
+    | .comp _ _ members .. => members.flatMap fun
       | .prop _ _ e | .var _ _ _ _ _ (some e) => #[e]
       | .inst _ _ bs => bs.filterMap (·.2)
       | _ => #[]
@@ -445,7 +445,7 @@ where
   ofItem (module : Name) : Item → Array (Name × Option Name × Expr)
     | .const _ n _ v => #[(.str module n.name, none, v)]
     | .function _ n _ _ (some body) _ => #[(.str module n.name, none, body)]
-    | .comp _ n members _ =>
+    | .comp _ n members .. =>
       let c := Name.str module n.name
       members.flatMap fun
         -- Expectations and cover goals are what rejects mutants, so they are not mutated.

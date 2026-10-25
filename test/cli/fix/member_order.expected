@@ -1,0 +1,37 @@
+warning[F0779]: an output after an instance
+  --> test/cli/fix/member_order.fren:32:5
+   |
+32 |     out z: Int := w.v
+   |     ^^^^^^^^^^^^^^^^^ out of order
+   |
+   = note: the members of a component are written `use`, `in`, `out`, `assume`, `inst`, `req`, `expect`, then `cover`
+
+warning[F0779]: an input after an output
+  --> test/cli/fix/member_order.fren:38:32
+   |
+38 | comp one_line { pub out y: Int in x: Int req r: y = x }
+   |                                ^^^^^^^^^ out of order
+   |
+   = note: the members of a component are written `use`, `in`, `out`, `assume`, `inst`, `req`, `expect`, then `cover`
+
+--- test/cli/fix/member_order.fren
++++ test/cli/fix/member_order.fren
+@@ -13 +13,3 @@
+-    req first: x >= 0
++    use self::Shape::Square
++    in x: Int
++    in shape: Shape
+@@ -17 +19,4 @@
+-    in x: Int
++    assume small: x < 100
++    set_option fren.evidence "tested" in
++    inst w: helper { x }
++    req first: x >= 0
+@@ -21,5 +25,0 @@
+-    set_option fren.evidence "tested" in
+-    inst w: helper { x }
+-    use self::Shape::Square
+-    assume small: x < 100
+-    in shape: Shape
+For more information about this error, try `fren --explain F0779`.
+exit=1

@@ -1,0 +1,20 @@
+warning[F0758]: `010` is 10; for octal write `0o10`
+ --> test/cli/lints/complexity/f0758_zero_prefixed_literal.fren:3:53
+  |
+3 | pub comp c { in x: Int pub out p? req r: p? iff x < 010 }
+  |                                                     ^^^ leading zero
+  |
+  = note: a leading `0` does not make a literal octal
+  = help: `fren fix` can fix this
+  = note: `zero_prefixed_literal` is `warn` by default
+  = help: to allow it, `set_option fren.lint.zero_prefixed_literal "allow"`
+help: write `10`
+  |
+3 - pub comp c { in x: Int pub out p? req r: p? iff x < 010 }
+3 + pub comp c { in x: Int pub out p? req r: p? iff x < 10 }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0758`.
+exit=3

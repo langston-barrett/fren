@@ -216,10 +216,10 @@ pub comp logic {
     pub det out strings_exp?     -- set cvc5's `strings-exp`, `re-inter-mode` and `re-elim` options
     pub det out sets_exp?        -- set cvc5's `sets-exp` option
 
-    req base: when theories = {},
-        logic = (if kind = Realizability then Quantified else QuantifierFree)
     assume relations_are_sets: when projection?, Sets in theories
 
+    req base: when theories = {},
+        logic = (if kind = Realizability then Quantified else QuantifierFree)
     req all: when theories != {}, logic = (if projection? then HigherOrder else All)
     -- cvc5 decides sequences in its strings solver.
     req options: (strings_exp? iff (Strings in theories or Sequences in theories))

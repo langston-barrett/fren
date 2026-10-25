@@ -251,3 +251,146 @@ pub comp precedence {
         and ((outer = Or and inner = And) or (outer in {Union, Minus} and inner in {Inter, Join})))
 }
 ```
+
+## The order of members
+
+`arbitrary_source_item_ordering` fires on a component whose members are
+not in this order: `use`, `in`, `out`, defined or not, `assume`, `inst`,
+`req`, `expect`, then `cover`. Only kinds are ordered: the members of one kind may
+be in any order. A `set_option fren.evidence ... in` is part of the member
+after it. The components of these chapters, and of the others, write
+their members in this order. When the lint was added, all but two did:
+`cli::logic` had an `assume` between two `req`s, and
+`lang::punctuator_end` a defined output after an `assume`. Both are now
+in order, which changes what neither means. Like Clippy's lint of the
+same name, which orders the items of a module, it is in `restriction`:
+Fren accepts members in any order, and a component can read better with a
+constraint next to the variable it is about. The message is reported once for each
+component, at the first member written after one of a later kind, and
+names both kinds.
+
+Order matters to what a component means in one place only: an instance's
+binding may mention another instance's variable only if that instance is
+declared earlier (see [Instance variables](../Lang/Instances.md#instance-variables)).
+Elsewhere, a member may mention a variable declared after it. The fix
+puts the members in order, and keeps the members of each kind in the order
+they are written in, so it keeps the instances in order, and with them
+what the component means. It rewrites no expression, so it keeps every
+guard. It also never leaves a mention above what it mentions, so that the
+component reads from the top down: it is offered only when, in the new
+order, each variable or instance that a defined output's definition or an
+instance's binding mentions is declared before it. So `inst w` before
+`out y: Int := w.z` is reported, but not fixed, since `out` comes before
+`inst`.
+
+Each member moves with the whole lines it is written on: from the line
+after the previous member, or after the `{`, so with the comments above
+it, to the end of its last line, so with a comment after it there, and
+with the blank lines before it, but for the member that comes first, which
+gives its blank lines to the member written first. The fix is offered only
+when each member starts its line, and only a comment follows it on its
+last one.
+
+`lint::rank` is a kind's place in the order. `lint::arbitrary_source_item_ordering`
+states when it fires, on two members written one after the other, and
+`lint::mention_kept` when the new order keeps a mention after what it
+mentions:
+
+```fren
+pub enum MemberKind { Use, Input, Output, Assumption, Instance, Requirement, Expectation, Cover }
+
+pub fn rank(kind: MemberKind): Int := match kind {
+    MemberKind::Use => 0,
+    MemberKind::Input => 1,
+    MemberKind::Output => 2,
+    MemberKind::Assumption => 3,
+    MemberKind::Instance => 4,
+    MemberKind::Requirement => 5,
+    MemberKind::Expectation => 6,
+    MemberKind::Cover => 7,
+}
+
+pub comp arbitrary_source_item_ordering {
+    in first: MemberKind     -- a member
+    in second: MemberKind    -- the member written after it
+    pub det out fires?
+
+    req rule: fires? iff rank(first) > rank(second)
+
+    expect same_kind: when first = second, not fires?
+}
+
+pub comp mention_kept {
+    in mentioner: MemberKind     -- a defined output or an instance
+    in mentioned: MemberKind     -- what its definition or a binding mentions
+    in earlier?                  -- the mentioned member is written before the other
+    pub det out kept?
+
+    req rule: kept? iff (rank(mentioned) < rank(mentioner) or (rank(mentioned) = rank(mentioner) and earlier?))
+
+    expect instances_in_order: when mentioner = MemberKind::Instance and mentioned = MemberKind::Instance,
+        kept? iff earlier?
+}
+```
+
+The [refinements](../Lang/Refinement.md) below check the fix of a
+component with a member of each kind, an instance among them, in reverse
+order: a component as written, one as fixed, and a refinement each way, so
+that the solver checks that the two meet the same behaviours.
+
+```fren
+set_option fren.lint.arbitrary_source_item_ordering "allow" in
+pub comp member_order_written {
+    expect never_info: shown != Severity::Info
+    req rule: shown = warned.result
+    inst warned: severity { level := Level::Warn }
+    assume known: group != Group::Decidability
+    pub det out shown: Severity
+    in group: Group
+}
+
+pub comp member_order_fixed {
+    in group: Group
+    pub det out shown: Severity
+    assume known: group != Group::Decidability
+    inst warned: severity { level := Level::Warn }
+    req rule: shown = warned.result
+    expect never_info: shown != Severity::Info
+}
+
+refine member_order_sound: member_order_fixed refines member_order_written
+refine member_order_complete: member_order_written refines member_order_fixed
+```
+
+## Functions applied once
+
+`single_call_fn` fires on a private [defined
+function](../Lang/Items.md#defined-functions) that exactly one path in its
+file applies. Uses are counted as for [dead code](Unused.md#dead-code): a
+function is used by applying it, and only uses in the same file count, not
+those in Lean code, nor in later files that enter its module. A function
+applied once names nothing that is shared, and its body could be written
+in place of the application, with the arguments in place of the
+parameters. Like Clippy's lint of the same name, it is in `restriction`: a
+function can name a computation well even where it is applied once. The
+message is reported at the function's name, at the end of the file, and
+suggests writing its body in place. There is no fix: it would have to put
+each argument in place of its parameter, in parentheses where it needs
+them, and remove the function, which later files that enter its module
+may also apply.
+`lint::single_call_fn` states when it fires:
+
+```fren
+pub comp single_call_fn {
+    in pub?
+    in defined?          -- it has a body, `:= e`
+    in n_uses: Int       -- paths in its file that resolve to it
+    pub det out fires?
+
+    assume counts: n_uses >= 0
+
+    req rule: fires? iff (defined? and not pub? and n_uses = 1)
+
+    expect public_never: when pub?, not fires?
+}
+```

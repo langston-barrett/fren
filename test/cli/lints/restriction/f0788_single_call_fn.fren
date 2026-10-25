@@ -1,0 +1,7 @@
+-- `single_call_fn`, which is allowed by default: a private defined function
+-- applied once.
+set_option fren.lint.single_call_fn "warn"
+
+fn double(n: Int): Int := 2 * n
+
+pub comp c { in x: Int pub out y: Int req r: y = double(x) }

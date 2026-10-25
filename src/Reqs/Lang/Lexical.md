@@ -442,10 +442,10 @@ pub comp punctuator_end {
     in lexeme: String
     in remaining: String     -- the input after the lexeme
     pub det out ends?
+    out longer: String := lexeme ++ remaining.at(0)
 
     assume a_punctuator: lexeme in PUNCTUATORS
 
-    out longer: String := lexeme ++ remaining.at(0)
     inst one: punctuator { lexeme := longer }
     req maximal_munch: ends? iff (remaining = "" or not one.accepted?)
 

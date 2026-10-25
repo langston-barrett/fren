@@ -1,0 +1,38 @@
+--@ args: fix --check -W arbitrary_source_item_ordering
+-- `fren fix` puts the members of a component in order, each with its
+-- comments and the blank lines before it, but for the first.
+enum Shape { Square, Circle }
+
+comp helper {
+    in x: Int
+    pub out v: Int
+    req r: v = x
+}
+
+comp c {
+    req first: x >= 0
+
+    -- The result.
+    pub det out y: Int  -- a trailing comment
+    in x: Int
+
+    req r: y = x + w.v
+    expect square: shape = Square or y = x + w.v
+    set_option fren.evidence "tested" in
+    inst w: helper { x }
+    use self::Shape::Square
+    assume small: x < 100
+    in shape: Shape
+}
+
+-- Not fixed: in order, `z` would come before the instance it mentions.
+comp mentions {
+    in x: Int
+    inst w: helper { x }
+    out z: Int := w.v
+    pub out y: Int
+    req r: y = z
+}
+
+-- Not fixed: two members on one line.
+comp one_line { pub out y: Int in x: Int req r: y = x }
