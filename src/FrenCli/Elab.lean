@@ -758,7 +758,7 @@ def Expr.operands : Expr → Array Expr
   | .ite _ c a b => #[c, a, b]
   | .bin _ _ a b | .pair _ a b | .index _ a b => #[a, b]
   | .not _ a | .neg _ a | .field _ a _ => #[a]
-  | .app _ _ args | .set _ args | .seq _ args => args
+  | .app _ _ args | .set _ args | .seq _ args | .chain _ args _ => args
   | .method _ r _ args => #[r] ++ args
   | .record _ _ fs => fs.filterMap (·.2)
   | .match _ s arms => #[s] ++ arms.map (·.2)
@@ -782,7 +782,7 @@ partial def Expr.boolNode : Expr → Fren.Core.BNode Span
   | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode] ++ arms.map (·.2.boolNode))
   | .pair s a b | .index s a b => .mk .atom (toRange s) s #[a.boolNode, b.boolNode]
   | .num s _ | .path s _ | .str s .. => .mk .atom (toRange s) s #[]
-  | .chain s .. => .mk .chain (toRange s) s #[]
+  | .chain s es ops => .mk (.chain ops.size) (toRange s) s (es.map (·.boolNode))
 where toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
 
 /-- The span of `e` as written: a field read, method call or index of a

@@ -62,7 +62,7 @@ comp later {
 -- A chain wherever an expression may be.
 const IN_RANGE: Bool := 0 <= 5 < 10
 
-fn between?(lo: Int, x: Int, hi: Int): Bool := lo <= x < hi
+fn between?(lo: Int, x: Int, hi: Int) := lo <= x < hi
 
 comp gate {
     in x: Int
@@ -74,7 +74,7 @@ comp gate {
 comp places {
     in x: Int
     in y: Int
-    pub out d?: Bool := 0 <= x < 10
+    pub out d? := 0 <= x < 10
     pub out level: Int := if 0 <= x < 10 then 1 else 0
     pub out a?
 
@@ -87,6 +87,20 @@ comp places {
     expect defined: d? iff level = 1
     expect applied: a?
     expect bound: h.open? iff 0 < y <= 3
+}
+
+-- An operand of a chain is in a comparison's operand slot, so a fix that
+-- replaces it adds the parentheses it needs there.
+enum Mode { Heat, Cool }
+
+comp slots {
+    in m: Mode
+    in p?
+    in x: Int
+    pub out o?
+
+    req rule: o? iff x < match m { _ => if p? then 1 else 2 } <= 3
+    --~^ warning: write `(if p? then 1 else 2)`
 }
 
 -- A comparison in parentheses is an operand, not part of a chain.
@@ -110,4 +124,4 @@ comp inclusive {
     expect top: when ok?, x < 10  --~ error: expectation `inclusive::top` does not hold
 }
 
---@ summary: 42 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ summary: 44 passed, 2 failed, 0 inconclusive, 0 redundant

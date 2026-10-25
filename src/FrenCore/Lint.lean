@@ -1074,8 +1074,9 @@ def bareOperand (outer inner : Nat) (assoc : Assoc) (right : Bool) : Bool :=
 receiver and then its arguments; another atom's are the expressions in it,
 such as a function's arguments, which no operator lint relates. A pattern
 test, `e is P`, has its scrutinee as its operand, and binds as a
-comparison. A chained
-comparison is not looked inside, but binds as a comparison. -/
+comparison. A chained comparison of `ops` operators binds as a comparison,
+and its operands are each in a comparison's operand slot, but the rules do
+not look inside it. -/
 inductive BKind where
   | lit (b : Bool)
   | not
@@ -1086,7 +1087,7 @@ inductive BKind where
   | neg
   | method (name : String)
   | patternTest
-  | chain
+  | chain (ops : Nat)
   | atom
   deriving Inhabited, BEq, Repr
 
@@ -1152,7 +1153,7 @@ def BKind.prec : BKind → Nat
   | .not => 4
   | .bin "+" | .bin "-" | .bin "++" | .bin "union" | .bin "minus" => 6
   | .bin "*" | .bin "div" | .bin "mod" | .bin "inter" | .bin "join" => 7
-  | .bin _ | .patternTest | .chain => 5
+  | .bin _ | .patternTest | .chain _ => 5
   | .neg => 8
   | .lit _ | .method _ | .atom => 9
 
@@ -1185,6 +1186,8 @@ def BKind.slots : BKind → Array (Option Slot)
   | k@(.bin _) => #[some ⟨k.prec, k.assoc, false⟩, some ⟨k.prec, k.assoc, true⟩]
   -- Its scrutinee, the left operand of a comparison.
   | k@.patternTest => #[some ⟨k.prec, k.assoc, false⟩]
+  -- Each operand after the first is on the right of a comparison.
+  | k@(.chain ops) => #[some ⟨k.prec, k.assoc, false⟩] ++ Array.replicate ops (some ⟨k.prec, k.assoc, true⟩)
   | _ => #[]
 
 /-- An expression, rewritten: its text and precedence. -/
@@ -1238,7 +1241,7 @@ def BNode.toEx : Nat → BNode α → Ex
       | none => .atom 0
     | .when n => .when n (k 0) (k 1)
     | .ite => .ite (k 0) (k 1) (k 2)
-    | .method _ | .patternTest | .chain | .atom => .atom 0
+    | .method _ | .patternTest | .chain _ | .atom => .atom 0
 
 /-- The text of a rewritten form, from the rewritten texts of the operands
 and of theirs, as `Shape.build` builds the expression. -/

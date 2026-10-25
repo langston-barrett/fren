@@ -901,7 +901,7 @@ partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.
   let atom (i : Nat) := if e[i].isAtom then e[i].getAtomVal.trimAscii.toString else ""
   -- `true` and `false` are also paths.
   if e.isOfKind choiceKind then go ((e.getArgs.find? fun a => a.getNumArgs == 1 && a[0].isAtom).getD e[0]) else
-  if (chainOf? e).isSome then .mk .chain range e #[] else
+  if let some (xs, ops) := chainOf? e then .mk (.chain ops.size) range e (xs.map go) else
   if e.isOfKind ``Lang.methodExpr then
     let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
     let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
@@ -1041,6 +1041,8 @@ def operandSlot (p e : Syntax) : Option Core.Slot :=
   else if p.isOfKind ``Lang.matchExpr then
     if same p[1] then some Core.receiverSlot else none
   else if p.isOfKind ``Lang.isExpr then at_ .patternTest #[0]
+  -- A chained comparison's operands, not the comparisons within it.
+  else if let some (xs, ops) := chainOf? p then (xs.findIdx? same).bind ((Core.BKind.chain ops.size).slots[·]?.join)
   else match p.getNumArgs, atom 0, atom 1 with
     | 3, "(", _ => none
     | 4, "when", _ => at_ (.when false) #[1, 3]
@@ -1899,7 +1901,8 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   let cx := { cx with concatOk := false, emptyOk := false, chain := if isBinOp (unparen e) cx.chain then cx.chain else ""
                       parent? := some e, inElse := cx.inElse && isIte (unparen e) }
   let go := toTerm cx
-  if cx.noteIndexes then lintEqOp e
+  -- A chained comparison's comparisons are not operators of their own here.
+  if cx.noteIndexes && (chainOf? e).isNone then lintEqOp e
   if let some (xs, ops) := chainOf? e then return ← chainTerm toTerm cx e xs ops
   match e with
   | `(fren_expr| when $c, $d) => guardedTerm toTerm cx c d .whenBody

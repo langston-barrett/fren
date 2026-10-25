@@ -1,5 +1,5 @@
 error[F0121]: `<` and `>` cannot be chained together
- --> test/cli/f0121_chain_direction.fren:2:63
+ --> test/cli/syntax/f0121_chain_direction.fren:2:63
   |
 2 | comp c { in x: Int in y: Int pub out ok? req r: ok? iff 0 < x > y }
   |                                                               ^ orders the other way from `<`

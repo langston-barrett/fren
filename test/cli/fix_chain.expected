@@ -1,8 +1,0 @@
---- test/cli/fix_chain.fren
-+++ test/cli/fix_chain.fren
-@@ -10,2 +10,2 @@
--    req r1: o? iff not ((0 <= x < 10) = p?)
--    req r2: w? iff not not (0 <= x < 10)
-+    req r1: o? iff (0 <= x < 10) != p?
-+    req r2: w? iff 0 <= x < 10
-exit=1
