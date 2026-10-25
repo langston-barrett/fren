@@ -923,7 +923,7 @@ or an uninterpreted function (`lang::linear_product`). -/
 def productAccepted (a b : Bool) : Bool := !(a && b)
 
 def nonlinearMsg : Msg :=
-  { code? := some "F0307", headline := "nonlinear arithmetic is not supported", label? := some "both sides mention variables"
+  { code? := some "F0307", headline := "nonlinear arithmetic is not supported", label? := some "both sides mention variables or uninterpreted functions"
     notes := #["note: the solver decides only linear integer arithmetic",
       "help: one side of `*` must mention no variable, such as `2 * x` or `(MAX - MIN) * x`"] }
 

@@ -127,8 +127,11 @@ mentions is decided from its parts, as `lang::mentions` states:
   value is unknown even at fixed arguments.
 - An application of a defined function mentions what its arguments
   mention: its value is fixed by theirs.
-- Every operator, conditional and `match` mentions what its parts
-  mention: for a `match`, its scrutinee and the bodies of its arms.
+- Every other expression mentions what its parts mention: an operator,
+  `when` and `unless`, a conditional, a `match` (its scrutinee and the
+  bodies of its arms), indexing `q[i]`, a field read from an expression
+  that is not a name, such as `R { a := x }.a`, and a literal of a set,
+  pair or sequence.
 
 ```fren
 -- The kinds of expression, for what one mentions. `Literal` is a literal;
@@ -136,8 +139,9 @@ mentions is decided from its parts, as `lang::mentions` states:
 -- than one segment; `Variable` is a variable, an instance's variable, or a
 -- field read from one; `Construction` is a variant with a payload or a
 -- record literal; `Uninterpreted` and `Defined` are applications of
--- uninterpreted and defined functions; `Compound` is an operator, a
--- conditional, a `match`, or a literal of a set, pair or sequence.
+-- uninterpreted and defined functions; `Compound` is an operator, `when`
+-- or `unless`, a conditional, a `match`, indexing, a field read from an
+-- expression that is not a name, or a literal of a set, pair or sequence.
 pub enum ExprKind {
     Literal, Constant, Variable, DefinedOutput, Binder, Construction, Method, Uninterpreted, Defined, Compound,
 }
@@ -199,6 +203,14 @@ pub comp linear_product {
     expect scaling: when not a_mentions?, accepted?
     expect no_variable_products: when a_mentions? and b_mentions?, not accepted?
 }
+```
+
+An operand that mentions less never makes a product nonlinear:
+
+```fren
+expect fewer_mentions: forall (p q: linear_product),
+    when (not q.a_mentions? or p.a_mentions?) and (not q.b_mentions? or p.b_mentions?) and p.accepted?,
+    q.accepted?
 ```
 
 A defined function applied to constants scales a product like a literal,

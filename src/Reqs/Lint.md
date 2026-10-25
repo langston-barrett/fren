@@ -18,7 +18,7 @@ use view::Severity
 | Lint | Code | Default | Reported at |
 |---|---|---|---|
 | `card_zero` | `F0716` | `warn` | a comparison of a set's or relation's `card` with `0`, such as `s.card = 0` (see [Empty collections](#empty-collections)) |
-| `constant_output` | `F0719` | `warn` | a defined output whose definition mentions no variable (see [Outputs](#outputs)) |
+| `constant_output` | `F0719` | `warn` | a defined output whose definition mentions no variable and no uninterpreted function (see [Outputs](#outputs)) |
 | `dead_code` | `F0711` | `warn` | a private enumeration, record, abstract type, function or constant that nothing in its file uses (see [Dead code](#dead-code)) |
 | `definable_output` | `F0720` | `allow` | an output that one requirement equates with an expression of other variables (see [Outputs](#outputs)) |
 | `glob_imports` | `F0702` | `warn` | a `use ...::*` (see [Glob imports](#glob-imports)) |

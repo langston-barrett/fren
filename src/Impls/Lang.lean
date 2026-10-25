@@ -40,8 +40,10 @@ def toExprKind : Fren.Core.MentionKind → lang.ExprKind
   | .defined => .Defined
   | .compound => .Compound
 
--- For every expression's shape, which both front ends build and decide by
--- `MentionShape.mentions`.
+-- For every expression's shape: the decision for each kind, and the walk over
+-- a shape that both front ends decide by. That each front end classifies its
+-- syntax into the right kinds is not proved here, but tested by both on the
+-- same ui tests.
 impl mentions: lang::mentions for (k : Fren.Core.MentionKind) (ps : List Fren.Core.MentionShape) {
   expr_kind := toExprKind k,
   parts? := Fren.Core.MentionShape.anyMentions ps,
