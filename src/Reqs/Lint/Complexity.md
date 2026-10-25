@@ -33,9 +33,10 @@ test](../Lang/Expressions.md#pattern-tests) is not looked inside but for
 its scrutinee, and keeps its parentheses where a comparison would need
 them, so `ok? = if s is A(_) then true else false` becomes `ok? = (s is
 A(_))`. So does a [chained
-comparison](../Lang/Expressions.md#chained-comparisons), which is not
-looked inside but for its operands. `lint::literal_comparison` gives the simpler form of a comparison
-with a literal:
+comparison](../Lang/Expressions.md#chained-comparisons): no rule rewrites
+the chain itself or its comparisons, only the expressions in its operands.
+`lint::literal_comparison` gives the simpler form of a comparison with a
+literal:
 
 ```fren
 pub mod lint

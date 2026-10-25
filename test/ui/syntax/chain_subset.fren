@@ -1,0 +1,4 @@
+-- `subset` does not chain (`lang::comparison_chain`).
+comp subsets { in s: Set(Int) in t: Set(Int) in u: Set(Int) pub out ok? req r: ok? iff s subset t subset u }
+--~^ error: `subset` cannot be chained
+--@ exit: 2

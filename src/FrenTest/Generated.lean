@@ -134,7 +134,7 @@ example (x : Int) (k : Nat) : x / -(k : Int) = -(x / k) ∧ x % -(k : Int) = x %
 
 -- A chained comparison, which Lean does not have, is the conjunction of
 -- its comparisons, with the same term for each operand between two. On
--- strings, `>` is written as `<`.
+-- strings, `>` is written as `Fren.Str.lt` with its operands swapped.
 comp ranged {
   in i: Int
   in n: Int
@@ -155,7 +155,7 @@ fun i n s inside? lower? => inside? = true ↔ (0 ≤ i ∧ i < n) ∧ n ≤ 10
 
 /--
 info: @[reducible] def check.ranged.req.lower : Int → Int → String → Bool → Bool → Prop :=
-fun i n s inside? lower? => lower? = true ↔ s < Fren.Str.lit "z" ∧ Fren.Str.lit "a" ≤ s
+fun i n s inside? lower? => lower? = true ↔ Fren.Str.lt s (Fren.Str.lit "z") ∧ Fren.Str.le (Fren.Str.lit "a") s
 -/
 #guard_msgs in
 #print check.ranged.req.lower

@@ -59,6 +59,17 @@ comp later {
     expect positive: when ok?, q[i] > 0
 }
 
+-- A chain guards the operands of an `and` after it.
+comp then_index {
+    in i: Int
+    in q: Seq(Int)
+    pub out ok?
+
+    req rule: ok? iff 0 <= i < q.len and q[i] > 0
+
+    expect positive: when ok?, q[i] > 0
+}
+
 -- A chain wherever an expression may be.
 const IN_RANGE: Bool := 0 <= 5 < 10
 
@@ -124,4 +135,4 @@ comp inclusive {
     expect top: when ok?, x < 10  --~ error: expectation `inclusive::top` does not hold
 }
 
---@ summary: 44 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ summary: 50 passed, 2 failed, 0 inconclusive, 0 redundant

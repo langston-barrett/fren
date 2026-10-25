@@ -1477,8 +1477,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   | .chain _ es ops =>
     -- `a < b <= c` is `a < b and b <= c`, with `b` elaborated once
     -- (`Reqs/Lang/Expressions#chained-comparisons`). As in that expansion,
-    -- the comparisons before an operand guard it.
-    if let .error (k, msg) := Fren.Core.checkChain (ops.map (·.1)) then err ops[k]!.2 msg
+    -- the comparisons before an operand guard it. The parser has checked
+    -- its operators.
     let (x0, t0) ← elabExpr cx es[0]!
     unless t0 == .string || t0 == .int do mismatch es[0]! .int t0 (opNote ops[0]!.1 .int)
     let mut (x, ca) := (x0, ← isConstant cx es[0]!)

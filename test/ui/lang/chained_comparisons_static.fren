@@ -1,21 +1,15 @@
--- Chained comparisons: which operators chain (`lang::comparison_chain`),
--- and the types of each comparison in a chain.
+-- The types of each comparison in a chained comparison: each is typed as
+-- if written alone. The chains that do not parse are in `test/ui/syntax`.
 set_option fren.lint.unused_variables "allow"
 
-comp mixed { in x: Int in y: Int pub out ok? req r: ok? iff 0 < x > y }
---~^ error: `<` and `>` cannot be chained together
-comp later { in x: Int in y: Int pub out ok? req r: ok? iff y >= x > 0 <= 9 }
---~^ error: `>=` and `<=` cannot be chained together
-comp equal { in a? in b? pub out ok? req r: ok? iff a? = b? = true }
---~^ error: `=` cannot be chained
-comp unequal { in x: Int pub out ok? req r: ok? iff 0 <= x < 10 != false }
---~^ error: `!=` cannot be chained
-comp membership { in x: Int in s: Set(Int) in t: Set(Bool) pub out ok? req r: ok? iff x in s in t }
---~^ error: `in` cannot be chained
-comp subsets { in s: Set(Int) in t: Set(Int) in u: Set(Int) pub out ok? req r: ok? iff s subset t subset u }
---~^ error: `subset` cannot be chained
-comp types { in x: Int pub out ok? req r: ok? iff 0 <= x < "a" }
---~^[cli] error: type mismatch: expected `Int`, found `String`
---~^^[hosted] error: Type mismatch
+comp types {
+    in x: Int
+    pub out ok?
+
+    req r: ok? iff 0 <= x
+        < "a"
+    --~^[cli] error: type mismatch: expected `Int`, found `String`
+    --~^^[hosted] error: Type mismatch
+}
 
 --@ exit: 2

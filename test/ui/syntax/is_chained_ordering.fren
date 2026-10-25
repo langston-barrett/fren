@@ -1,0 +1,5 @@
+-- `is` does not chain, with an ordering after it (`lang::comparison_chain`).
+enum S { A(Int), B }
+comp chained { in s: S pub out z? req r: z? iff s is S::A(_) < 1 }
+--~^ error: `is` cannot be chained
+--@ exit: 2

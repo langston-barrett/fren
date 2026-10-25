@@ -77,8 +77,8 @@ inductive Expr where
   field read or a path, until its receiver's type is known. -/
   | method (span : Span) (recv : Expr) (name : Ident) (args : Array Expr)
   /-- `a < b <= c`, a chained comparison: at least two operators, each
-  with its span, between its operands, one more than its operators. The
-  elaborator checks which operators chain. -/
+  with its span, between its operands, one more than its operators, which
+  chain (`lang::comparison_chain`), as the parser checks. -/
   | chain (span : Span) (operands : Array Expr) (ops : Array (String × Span))
   deriving Inhabited
 
@@ -405,18 +405,21 @@ partial def cmp : P Expr := do
   let some op ← cmpOp? | return l
   let t ← bump
   let r ← add
-  if isKw (← peek) "is" then chainedIs (← peek)
-  if (← cmpOp?).isNone then return ← bin start op l r
+  if (← cmpOp?).isNone && !isKw (← peek) "is" then return ← bin start op l r
+  -- A chained comparison (`lang::comparison_chain`), checked here, so that
+  -- a chain that the grammar does not have does not parse. An `is` ends
+  -- it, as an operator that does not chain.
   let mut operands := #[l, r]
   let mut ops := #[(op, t.span)]
   repeat
+    if isKw (← peek) "is" then ops := ops.push ("is", (← peek).span); break
     let some op ← cmpOp? | break
     ops := ops.push (op, (← bump).span)
     operands := operands.push (← add)
-    if isKw (← peek) "is" then chainedIs (← peek)
+  if let .error (k, msg) := Fren.Core.checkChain (ops.map (·.1)) then throw { span := ops[k]!.2, msg }
   return .chain (← spanFrom start) operands ops
-/-- `is`, at `t`, chained with a comparison or another `is`: it does not
-chain (`lang::comparison_chain`). -/
+/-- `is`, at `t`, chained with a comparison or another `is` after it: it
+does not chain (`lang::comparison_chain`). -/
 partial def chainedIs (t : Token) : P Unit :=
   throw { span := t.span, msg := Fren.Core.chainOtherMsg "is" }
 partial def add : P Expr := do

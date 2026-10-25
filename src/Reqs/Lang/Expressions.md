@@ -121,9 +121,10 @@ c > d` means `a > b and b >= c and c > d`. Each operand between two
 operators is one expression, written once, and is an operand of both. An
 expression has no effects, so reading it twice changes nothing. Each
 comparison is typed as if written alone, so `lo <= s < hi` compares
-`String`s if `s` is one, and a message about a comparison's operands
-names its operator: in `0 <= i < "a"`, `"a"` is not an `Int`, as the
-operands of `<` must be.
+`String`s if `s` is one. The `fren` command's message about a
+comparison's operands names its operator: in `0 <= i < "a"`, `"a"` is not
+an `Int`, as the operands of `<` must be. In Lean, the message is Lean's
+type mismatch, at the same operand.
 
 A chain that mixes directions, such as `a < b > c`, is an error: it reads
 as a mistake more often than as `a < b and c < b`. So is a chain with `=`,

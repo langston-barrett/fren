@@ -41,8 +41,10 @@ are always `true`; `x != x`, `x < x` and `x > x` are always `false`;
 a?`, `s union s` and `s inter s` are the operand. The message says which.
 It has no fix: the likely mistake is a typo in one operand, which no
 rewrite can repair. It does not fire on `+`, `*`, `++` or `join`, where `x
-+ x` and `r join r` mean something, nor on `in`. `lint::eq_op` states
-this:
++ x` and `r join r` mean something, nor on `in`, nor on the comparisons
+of a [chained comparison](../Lang/Expressions.md#chained-comparisons),
+such as `x < x < y`, which it leaves to a later lint on chains.
+`lint::eq_op` states this:
 
 ```fren
 pub enum InfixOp {
