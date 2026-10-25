@@ -81,7 +81,8 @@ partial def exprToRe? (e : Expr) : Option Fren.Core.Re :=
 /-- Fren's string literals and methods (`Fren.Str`), as SMT-LIB's string
 functions. lean-smt translates `++` and `<` on strings, but writes literals
 without escaping them, and `>` as `str.>`, which is not SMT-LIB: so Fren
-wraps literals in `Fren.Str.lit`, and writes `a > b` as `b < a`. -/
+wraps literals in `Fren.Str.lit`, and writes `a > b` as `Fren.Str.lt b a`.
+A comparison with a literal is a match, as in the binary. -/
 @[smt_translate] def translateStr : Translator := fun e => do
   let tr := applyTranslators!
   match_expr e with
@@ -100,10 +101,29 @@ wraps literals in `Fren.Str.lit`, and writes `a > b` as `b < a`. -/
   | Fren.Core.Re.matches r s =>
     let some re := exprToRe? r | return none
     return mkApp2 (symbolT "str.in_re") (← tr s) (literalT re.toSmt)
+  | Fren.Str.lt a b => compare a b false
+  | Fren.Str.le a b => compare a b true
   | LE.le α _ a b =>
     unless α.isConstOf ``String do return none
     return mkApp2 (symbolT "str.<=") (← tr a) (← tr b)
   | _ => return none
+where
+  /-- The value of a literal. -/
+  lit? (e : Expr) : Option String :=
+    match e.consumeMData.getAppFnArgs with
+    | (``Fren.Str.lit, #[s]) => match s.consumeMData with
+      | .lit (.strVal v) => some v
+      | _ => none
+    | _ => none
+  /-- `a < b`, or with `orEqual`, `a <= b`: against a literal, as a match,
+  as the binary writes it (`Fren.Core.strCompareSmt`). -/
+  compare (a b : Expr) (orEqual : Bool) : TranslationM (Option Smt.Term) := do
+    let tr := applyTranslators!
+    match lit? a, lit? b with
+    | none, some c => return mkApp2 (symbolT "str.in_re") (← tr a) (literalT (Fren.Core.belowPattern c orEqual))
+    | some c, none =>
+      return appT (symbolT "not") (mkApp2 (symbolT "str.in_re") (← tr b) (literalT (Fren.Core.belowPattern c !orEqual)))
+    | _, _ => return mkApp2 (symbolT (if orEqual then "str.<=" else "str.<")) (← tr a) (← tr b)
 
 /-- Fren's sets (`Fren.FinSet`), as cvc5's: every set is a unary relation, a
 set of 1-tuples (`Reqs/Cli`). -/

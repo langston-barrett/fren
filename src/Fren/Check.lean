@@ -87,38 +87,51 @@ def unfoldDefined (e : Expr) : MetaM Expr := do
   let ds := s.defined.foldl (init := ({} : NameSet)) fun acc _ d => acc.insert d.decl
   Lean.Core.betaReduce (← Meta.deltaExpand e ds.contains)
 
+/-- The answers to a component's queries so far, by hypotheses, goal and
+whether a model was wanted: some checks of a component ask the same
+query, which is answered once, as in the binary (`Reqs/Cli#solver-queries`). -/
+abbrev QueryCache := IO.Ref (Std.HashMap (Array Expr × Expr × Bool) (Core.Outcome Expr))
+
 /-- The lean-smt backend, for a comp whose variables are the free variables
 `fvs`, and whose variables other than its `in`s have second copies `primes`
-(`Core.primed`). -/
-def leanBackend (c : CompInfo) (fvs primes : Array Expr) : Core.Backend MetaM Expr Expr :=
+(`Core.primed`), answering from `cache` the queries asked before. -/
+def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) : Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
     ({ v with name := Core.primed v.name }, p)
   let varOf? (n : Name) := vars.find? (·.1.name == n)
-  { query := fun hyps goal wantModel =>
-      withoutModifyingState do
-      let hyps ← hyps.mapM fun (n, t) => return (n, ← unfoldDefined t)
-      let goal ← unfoldDefined goal
-      withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do
-        let mv ← mkFreshExprMVar goal
-        let timeout := fren.timeout.get (← getOptions)
-        -- A relation's `domain` or `range` over an infinite type is a
-        -- projection, which needs higher-order logic (`cli::logic`); lean-smt
-        -- sets `ALL`, which the option overrides.
-        let projects (e : Expr) := (e.find? fun x => x.isConstOf ``Fren.FinSet.domain || x.isConstOf ``Fren.FinSet.range).isSome
-        let logic := if projects goal || hyps.any (projects ·.2) then [("force-logic", "HO_ALL")] else []
-        try
-          -- The options of a spec that uses strings and sets, as in the binary (`cli::logic`).
-          match ← Smt.smt { trust := true, model := wantModel, timeout := some timeout
-                            extraSolverOptions := Core.solverOptions true true ++ logic }
-                    mv.mvarId! hs with
-          | .sat (some m) =>
-            return .sat <| m.values.filterMap fun (k, v) =>
-              (vars.find? (·.2 == k)).map fun (var, _) => (var.name, v)
-          | .sat none => return .sat #[]
-          | .unsat .. => return .unsat
-          | .unknown r => return .unknown r
-        catch ex => return .unknown (← ex.toMessageData.toString)
+  let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr) :=
+    withoutModifyingState do
+    let hyps ← hyps.mapM fun (n, t) => return (n, ← unfoldDefined t)
+    let goal ← unfoldDefined goal
+    withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do
+      let mv ← mkFreshExprMVar goal
+      let timeout := fren.timeout.get (← getOptions)
+      -- A relation's `domain` or `range` over an infinite type is a
+      -- projection, which needs higher-order logic (`cli::logic`); lean-smt
+      -- sets `ALL`, which the option overrides.
+      let projects (e : Expr) := (e.find? fun x => x.isConstOf ``Fren.FinSet.domain || x.isConstOf ``Fren.FinSet.range).isSome
+      let logic := if projects goal || hyps.any (projects ·.2) then [("force-logic", "HO_ALL")] else []
+      try
+        -- The options of a spec that uses strings and sets, as in the binary (`cli::logic`).
+        match ← Smt.smt { trust := true, model := wantModel, timeout := some timeout
+                          extraSolverOptions := Core.solverOptions true true ++ logic }
+                  mv.mvarId! hs with
+        | .sat (some m) =>
+          return .sat <| m.values.filterMap fun (k, v) =>
+            (vars.find? (·.2 == k)).map fun (var, _) => (var.name, v)
+        | .sat none => return .sat #[]
+        | .unsat .. => return .unsat
+        | .unknown r => return .unknown r
+      catch ex => return .unknown (← ex.toMessageData.toString)
+  { query := fun hyps goal wantModel => do
+      -- The same formulas, in the same local context and with the same
+      -- options, are the same query.
+      let key := (hyps.map (·.2), goal, wantModel)
+      if let some o := (← cache.get)[key]? then return o
+      let o ← ask hyps goal wantModel
+      cache.modify (·.insert key o)
+      return o
     falseF := mkConst ``False
     notF := mkNot
     conj := fun ps => mkAndN ps.toList
@@ -177,6 +190,7 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
         return some (d, ← mkEq fvs[i]! (beta e), beta e) }
     -- Only the `fren` command runs the checks set to testing (`check::by_testing`).
     let (comp, kinds) := comp.untested c.tested kinds
-    Core.checkComp (fun _ => leanBackend c fvs primes) comp kinds
+    let cache : QueryCache ← IO.mkRef {}
+    Core.checkComp (fun _ => leanBackend c fvs primes cache) comp kinds
 
 end Fren

@@ -105,7 +105,11 @@ def formulas (c : CComp) : Array (String × String) :=
       (s!"indexes {n}", conj (c.indexes.filter (·.1 == n) |>.map (·.2.2.2)))
 
 /-- Everything that `c`'s checks read, with the spec's `prelude`: a mutant
-that leaves it alone leaves their results alone. -/
+that leaves it alone leaves their results alone. It leaves out the logic
+and options, which the whole spec sets (`cli::logic`): a mutant that drops
+the only set literal, say, can narrow them, yet `c`'s queries mean the
+same in either, since a wider logic only admits more of SMT-LIB, so the
+original's results still hold. -/
 def fingerprint (prelude : String) (c : CComp) : String :=
   let vars := c.vars.map fun v => s!"{v.name} {repr v.role} {v.isPub} {v.isDet} {v.ty.show}"
   "\n".intercalate ([prelude] ++ vars.toList ++ (formulas c).toList.map fun (l, f) => s!"{l}: {f}")
@@ -117,14 +121,15 @@ def both (a b : Option Bool) : Option Bool :=
 
 /-- Whether the solver shows that the formulas of each pair are equal for
 all values of `vars` and every interpretation: `some false` if some pair
-can differ, `none` if it cannot tell. -/
-def equal (st : State) (vars : Array CVar) (pairs : Array (String × String)) (timeout : Nat) : IO (Option Bool) := do
+can differ, `none` if it cannot tell. `prelude` is `st`'s, indexed. -/
+def equal (st : State) (prelude : Prelude) (vars : Array CVar) (pairs : Array (String × String)) (timeout : Nat)
+    (cache : QueryCache) : IO (Option Bool) := do
   if pairs.isEmpty then return some true
   let strings := st.usesStrings || st.usesSeqs
   let sets := st.usesSets || st.usesSeqs
   let options := String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n")
   let goal := conj (pairs.map fun (a, b) => s!"(= {a} {b})")
-  match ← runQuery (Fren.Core.logic .expect (strings || sets) st.usesProjection) options (Prelude.ofDecls st.prelude) vars timeout none #[] goal false with
+  match ← runQuery (Fren.Core.logic .expect (strings || sets) st.usesProjection) options prelude vars timeout none #[] goal false cache with
   | .unsat => return some true
   | .sat _ => return some false
   | .unknown _ => return none
@@ -136,8 +141,9 @@ def equivalenceTimeout : Nat := 1
 /-- Whether the solver shows that the spec `st'` of a mutant means what the
 original `st` means (`Reqs/Mutate#equivalent-mutants`): each defined function, and each
 formula of each component, global expectation and refinement, is equivalent to the
-original's. -/
-def equivalent (st st' : State) (timeout : Nat) : IO (Option Bool) := do
+original's. `prelude` is `st`'s, indexed, and `cache` holds the answers to
+the queries asked before. -/
+def equivalent (st : State) (prelude : Prelude) (st' : State) (timeout : Nat) (cache : QueryCache) : IO (Option Bool) := do
   -- Mutants change only expressions, so the declarations are the same.
   if { st with defs := #[] }.prelude != { st' with defs := #[] }.prelude || st.defs.size != st'.defs.size then return none
   let mut result := some true
@@ -147,7 +153,7 @@ def equivalent (st st' : State) (timeout : Nat) : IO (Option Bool) := do
     let vars := ps.map fun (x, t) => { name := x, role := .input, isPub := false, ty := t, span := default : CVar }
     -- The original, applied to the parameters, and the mutant's body.
     let applied := if ps.isEmpty then itemSym name else s!"({itemSym name} {" ".intercalate (ps.toList.map (quote ·.1.toString))})"
-    result := both result (← equal st vars #[(applied, body')] timeout)
+    result := both result (← equal st prelude vars #[(applied, body')] timeout cache)
     if result == some false then return result
   let ts := todo st
   for t' in todo st' do
@@ -158,7 +164,7 @@ def equivalent (st st' : State) (timeout : Nat) : IO (Option Bool) := do
     let fs' := formulas c'
     if fs.map (·.1) != fs'.map (·.1) then return none
     let pairs := (fs.zip fs').filterMap fun ((_, a), (_, b)) => if a == b then none else some (a, b)
-    result := both result (← equal st c.vars pairs timeout)
+    result := both result (← equal st prelude c.vars pairs timeout cache)
     if result == some false then return result
   return result
 

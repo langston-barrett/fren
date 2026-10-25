@@ -478,11 +478,12 @@ def refinementKeeps (c : CComp) (r : Fren.Core.CheckResult) : Bool :=
 each model confirmed by the evaluator's `spec?` (`Reqs/Eval#confirming-models`);
 the results that a refuted model is about, with their internal errors; and
 an internal error if the evaluator has no counterpart of `c`. `prelude` is
-`st`'s, indexed (`Prelude.ofDecls`). -/
+`st`'s, indexed (`Prelude.ofDecls`), and `cache` holds the answers to the
+queries asked before (`QueryCache`). -/
 def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (c : CComp) (global : Bool) (kinds : Array Fren.Core.CheckKind)
-    (timeout : Nat) (dump? : Option (String → IO Unit) := none) :
+    (timeout : Nat) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
-  let bk := backend prelude st.datatypes c timeout dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection
+  let bk := backend prelude st.datatypes c timeout dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache
   let log ← IO.mkRef #[]
   -- The checks set to testing are not asked of the solver (`check::by_testing`).
   let (raw, missing?) ← match spec? with
@@ -518,6 +519,9 @@ def check (args : Args) : IO UInt32 := do
   -- with the checks that run on it.
   let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.refinement)
   let prelude := Prelude.ofDecls st.prelude
+  -- A query asked again, as some checks of a component share one, is
+  -- answered once (`Reqs/Cli#solver-queries`).
+  let cache : QueryCache ← IO.mkRef {}
   -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
   let spec? := specOf files
   let mut internal := #[]
@@ -531,7 +535,7 @@ def check (args : Args) : IO UInt32 := do
         n.modify (· + 1)
         IO.print s!"; {c.path}: query {← n.get}\n{script}(check-sat)\n(reset)\n\n"
       else none
-    let (results, refuted, missing?) ← solveComp st prelude spec? c global kinds args.timeout dump?
+    let (results, refuted, missing?) ← solveComp st prelude spec? c global kinds args.timeout cache dump?
     if let some msg := missing? then
       internal := internal.push msg
       printDiag args.paint files { file := c.file, span := c.span, msg }
@@ -848,17 +852,23 @@ def mutate (args : Args) : IO UInt32 := do
       | some ec => (testReport sp ec c global args.seed args.nTests).results.filter keep
       | none => #[]
     | .error _ => #[]
+  -- The answers to the queries asked so far, shared by the spec and its
+  -- mutants: a query of a mutant that only reads what it leaves alone, such
+  -- as its assumptions' consistency, is often one of the spec's
+  -- (`Reqs/Cli#solver-queries`).
+  let cache : QueryCache ← IO.mkRef {}
+  let prelude := Prelude.ofDecls st.prelude
   -- As `fren check` checks `c`: with the solver, and the checks set to
   -- testing by testing; with the internal errors, each at its place in `c`.
-  let solve (s : State) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
+  let solve (s : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) := do
-    let (rs, refuted, missing?) ← solveComp s (Prelude.ofDecls s.prelude) spec? t.comp t.global t.kinds args.timeout
+    let (rs, refuted, missing?) ← solveComp s prelude spec? t.comp t.global t.kinds args.timeout cache
     let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds t.refinement) else #[]
     let errors := refuted.map fun (r, msg) =>
       ((r.prop?.bind fun n => t.comp.props.find? (·.name == n)).map (·.span) |>.getD t.comp.span, msg)
     return (rs ++ tested, missing?.toArray.map (t.comp.span, ·) ++ errors)
   -- As `fren quickcheck` tests `c`.
-  let test (_ : State) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
+  let test (_ : State) (_ : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) :=
     pure (testing spec? t.comp t.global fun r => !t.refinement || refinementKeeps t.comp r, #[])
   let spec? := specOf files
@@ -874,11 +884,12 @@ def mutate (args : Args) : IO UInt32 := do
   let sevs ← IO.mkRef (if spec?.toOption.isNone then #[Fren.Core.Severity.error] else #[])
   -- Whether one way of checking kills the mutant `st'`, and whether some
   -- check was inconclusive on it, checking only the components it changes;
-  -- `run s spec? t` checks `t` of the spec `s`. Internal errors about the
+  -- `run s prelude spec? t` checks `t` of the spec `s`, whose prelude,
+  -- indexed, is `prelude`. Internal errors about the
   -- spec are printed as `fren check` prints them, and those about the
   -- mutant given to `onMutant`.
-  let killedBy (base : Baseline) (st' : State) (spec'? : Except String Eval.Spec)
-      (run : State → Except String Eval.Spec → Mutate.Todo → IO (Array Fren.Core.CheckResult × Array (Span × Msg)))
+  let killedBy (base : Baseline) (st' : State) (prelude' : Prelude) (spec'? : Except String Eval.Spec)
+      (run : State → Prelude → Except String Eval.Spec → Mutate.Todo → IO (Array Fren.Core.CheckResult × Array (Span × Msg)))
       (onMutant : Msg → IO Unit) : IO (Bool × Bool) := do
     let mut inconclusive := false
     for t in Mutate.todo st' do
@@ -887,14 +898,14 @@ def mutate (args : Args) : IO UInt32 := do
       let rs ← match (← base.get)[t.key]? with
         | some rs => pure rs
         | none =>
-          let (rs, errors) ← run st spec? t₀
+          let (rs, errors) ← run st prelude spec? t₀
           for (span, msg) in errors do
             printDiag p files { file := t₀.comp.file, span, msg }
             shown.modify (·.push msg)
             sevs.modify (·.push .error)
           base.modify (·.insert t.key rs)
           pure rs
-      let (rs', errors) ← run st' spec'? t
+      let (rs', errors) ← run st' prelude' spec'? t
       for (_, msg) in errors do onMutant msg
       let rs := Mutate.keyed rs
       let rs' := Mutate.keyed rs'
@@ -921,13 +932,14 @@ def mutate (args : Args) : IO UInt32 := do
       if let .error e := spec'? then
         report (Msg.internal s!"the evaluator cannot read the mutant `{m.id}`: {e}") .error
       let onMutant (msg : Msg) := report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error
-      let (bySolver, inconclusive₁) ← if args.checker.solves then killedBy solved st' spec'? solve onMutant
+      let prelude' := Prelude.ofDecls st'.prelude
+      let (bySolver, inconclusive₁) ← if args.checker.solves then killedBy solved st' prelude' spec'? solve onMutant
         else pure (false, false)
-      let (byTesting, inconclusive₂) ← if args.checker.tests then killedBy tested st' spec'? test onMutant
+      let (byTesting, inconclusive₂) ← if args.checker.tests then killedBy tested st' prelude' spec'? test onMutant
         else pure (false, false)
       let killed := bySolver || byTesting
       -- Short, whatever `--timeout` is, even 0, which means none.
-      let equivalent? ← if killed then pure (some false) else Mutate.equivalent st st' Mutate.equivalenceTimeout
+      let equivalent? ← if killed then pure (some false) else Mutate.equivalent st prelude st' Mutate.equivalenceTimeout cache
       let outcome := Mutate.outcome true killed (equivalent? == some true)
       tally := tally.add outcome
       if outcome == .survived then report (Mutate.survivedMsg m equivalent?.isNone (inconclusive₁ || inconclusive₂))

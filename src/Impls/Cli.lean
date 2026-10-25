@@ -107,7 +107,8 @@ impl logic: cli::logic for (k : Fren.Core.CheckKind) (strings sets seqs proj : B
   theories := theories strings sets seqs,
   projection? := proj,
   logic := toLogic (Fren.Core.logic k (strings || sets || seqs) proj),
-  strings_exp? := (Fren.Core.solverOptions (strings || seqs) (sets || seqs)).any (·.1 == "strings-exp"),
+  strings_exp? := ["strings-exp", "re-inter-mode", "re-elim"].all fun o =>
+    (Fren.Core.solverOptions (strings || seqs) (sets || seqs)).any (·.1 == o),
   sets_exp? := (Fren.Core.solverOptions (strings || seqs) (sets || seqs)).any (·.1 == "sets-exp"),
 } by
   intro k strings sets seqs proj h
