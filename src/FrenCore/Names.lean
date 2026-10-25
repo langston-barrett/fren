@@ -647,7 +647,6 @@ theorem repeatsAt_go_eq_empty : ∀ {seen l : List Name} {i : Nat},
 theorem repeatsAt_eq_empty {names : Array Name} : repeatsAt names = #[] ↔ names.toList.Nodup := by
   simp [repeatsAt, repeatsAt_go_eq_empty]
 
-
 /-- The names of the inputs among `vars`. -/
 def inputsOf (vars : Array (Name × Role)) : Array Name :=
   vars.filterMap fun (n, r) => if r == .input then some n else none

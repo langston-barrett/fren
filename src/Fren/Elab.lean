@@ -174,7 +174,9 @@ partial def typeSyntax (t : Expr) : Term :=
   let path := modName ++ n
   let decl := (← getCurrNamespace) ++ path
   let variantStxs := stx[4].getSepArgs
-  -- Distinct names (`lang::distinct_names`).
+  -- Distinct names (`lang::distinct_names`), of names that are single
+  -- segments, as the `fren` command parses them.
+  for v in variantStxs do discard (segName v[0])
   if let some k := (Core.repeatsAt (variantStxs.map (·[0].getId)))[0]? then
     throwErrorAt variantStxs[k]![0] (Core.dupVariantMsg variantStxs[k]![0].getId).text
   let mut variants := #[]
@@ -232,6 +234,7 @@ partial def typeSyntax (t : Expr) : Term :=
   let decl := (← getCurrNamespace) ++ path
   let mut fields : Array (Name × Expr) := #[]
   let fieldStxs := stx[4].getSepArgs
+  for f in fieldStxs do discard (segName f[0])
   if let some k := (Core.repeatsAt (fieldStxs.map (·[0].getId)))[0]? then
     throwErrorAt fieldStxs[k]![0] (Core.dupFieldMsg fieldStxs[k]![0].getId).text
   for f in fieldStxs do
@@ -859,6 +862,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       let ctor := info.decl ++ info.variants[idx]!
       -- Distinct names (`lang::distinct_names`); `_` binds nothing.
       let named := (patternBinders arm).filter (·.isIdent)
+      for b in named do discard (segName b)
       if let some k := (Core.repeatsAt (named.map (·.getId)))[0]? then
         throwErrorAt named[k]! (Core.dupPatternBinderMsg named[k]!.getId).text
       for b in patternBinders arm, t in info.payloads[idx]!, k in [0:info.payloads[idx]!.size] do
@@ -1389,6 +1393,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
     let paramIds ← params.mapM fun p => do
       let some q := typePath? p[0] | throwErrorAt p[0] (Core.functionParamsMsg path true).text
       pure (pathSegs q)[0]!
+    for x in paramIds do discard (segName x)
     if let some k := (Core.repeatsAt (paramIds.map (·.getId)))[0]? then
       throwErrorAt paramIds[k]! (Core.dupParamMsg paramIds[k]!.getId).text
     for p in params, x in paramIds do
@@ -1564,6 +1569,7 @@ open Lang in
   -- Distinct names (`lang::distinct_names`): each member that declares a
   -- name again is reported, and then skipped.
   let named := members.filterMap memberName?
+  for x in named do discard (segName x)
   let repeated := (Core.repeatsAt (named.map (·.getId))).map (named[·]!)
   for x in repeated do logErrorAt x (Core.dupMemberMsg x.getId).text
   let isRepeat (x : Syntax) : Bool := repeated.any (·.getPos? == x.getPos?)
@@ -1811,6 +1817,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   modifyLocal fun l => { l with outsideCore := false, relationalUsed := false, countRefs := #[] }
   -- Distinct names (`lang::distinct_names`).
   let binderIds := binderStxs.flatMap (·[1].getArgs)
+  for x in binderIds do discard (segName x)
   if let some k := (Core.repeatsAt (binderIds.map (·.getId)))[0]? then
     throwErrorAt binderIds[k]! (Core.dupBinderMsg binderIds[k]!.getId).text
   for b in binderStxs do

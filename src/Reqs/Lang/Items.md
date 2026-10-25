@@ -110,8 +110,10 @@ type](Types.md#recursive-and-unbounded-types).
 The names of a list of declarations are distinct: the variants of an
 enumeration, the fields of a record, the parameters of a defined function,
 the variables, instances and constraints of a component, which share one
-namespace, and the binders of a global expectation or of a pattern. A name
-declared again is an error, reported where it is declared again.
+namespace, and the binders of a global expectation or of a pattern. A
+pattern's `_` declares no name. A name declared again is an error,
+reported where it is declared again, in the order the declarations are
+written, whatever their kinds.
 `lang::distinct_names` states this, from how many names a list declares
 and the set of them:
 
