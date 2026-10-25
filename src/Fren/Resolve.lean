@@ -36,7 +36,7 @@ def liftResolve (segs : Array Syntax) : Except Core.Error α → m α
     let seg := segs[e.seg]?.getD .missing
     let src := (← getFileMap).source
     let beforeEq := seg.getTailPos?.any fun p => p.get src == '='
-    throwErrorAt seg (Core.withBangEqFix e.msg (Core.nameText seg.getId) beforeEq).text
+    throwErrorAt seg (Core.withBangEqFix e.msg.get (Core.nameText seg.getId) beforeEq).text
 
 def liftMsg (ref : Syntax) : Except Core.Msg α → m α
   | .ok a => pure a

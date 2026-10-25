@@ -374,7 +374,7 @@ def liftResolve (segs : Array Ident) : Except Fren.Core.Error α → M α
     let seg? := segs[e.seg]?
     let src := (← get).src
     let beforeEq := seg?.any fun x => src[x.span.stop]? == some '='
-    err (seg?.map (·.span) |>.getD default) (Fren.Core.withBangEqFix e.msg ((seg?.map (·.name)).getD "") beforeEq)
+    err (seg?.map (·.span) |>.getD default) (Fren.Core.withBangEqFix e.msg.get ((seg?.map (·.name)).getD "") beforeEq)
 
 def liftMsg (span : Span) : Except Msg α → M α
   | .ok a => pure a

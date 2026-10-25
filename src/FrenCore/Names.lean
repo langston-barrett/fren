@@ -122,11 +122,14 @@ def Resolved.path : Resolved → Name
   | .item i => i.path
   | .variant e idx => e.path ++ e.variants[idx]!
 
-/-- A resolution error at segment `seg` of the path being resolved. -/
+/-- A resolution error at segment `seg` of the path being resolved. The
+message is built only when it is read: those that suggest a similar name
+cost an edit distance per name in scope, and many callers only ask whether
+a path resolves. -/
 structure Error where
   seg : Nat
-  msg : Msg
-  deriving Inhabited, Repr
+  msg : Thunk Msg
+  deriving Inhabited
 
 /-- `a::b`. -/
 def showPath (n : Name) : String :=
@@ -265,14 +268,14 @@ def Table.walk (t : Table) (from_ : Name) (cur : Resolved) (segs : Array Name) (
   for i in [start:segs.size] do
     let n := segs[i]!
     -- The member, whether it is visible, and the error if it is not accepted.
-    let (parent, next?, visible, err) : Parent × Option Resolved × Bool × Msg := match cur with
+    let (parent, next?, visible, err) : Parent × Option Resolved × Bool × Thunk Msg := match cur with
       | .item i'@{ kind := .moduleItem, .. } =>
         match t.declared? i'.path n with
         | none => (.module, none, false, cannotFindMsg n (showModule i'.path) (t.membersOf i'.path))
         | some d => (.module, some (.item d), visibleFrom from_ d,
             { code? := some "F0202", headline := s!"`{n}` is private to {showModule d.owner}", label? := some "private"
               notes := #["note: an item is visible only in the module that declares it and that module's submodules",
-                s!"help: declare it `pub` in {showModule d.owner}"] })
+                s!"help: declare it `pub` in {showModule d.owner}"] : Msg })
       | .item i'@{ kind := .enumItem, .. } =>
         match t.enums.get? i'.path >>= fun e => (e.variants.idxOf? n).map (e, ·) with
         | some (e, idx) => (.enum, some (.variant e idx), true, Msg.internal "no error")
@@ -282,11 +285,11 @@ def Table.walk (t : Table) (from_ : Name) (cur : Resolved) (segs : Array Name) (
             code? := some "F0203", headline := s!"no variant `{n}` in enum `{showPath i'.path}`"
             label? := some s!"not a variant of `{showPath i'.path}`"
             notes := #[s!"note: the variants of `{showPath i'.path}` are {showNameList vs}"]
-            fixes := similarFixes "a variant with a similar name exists" n vs })
+            fixes := similarFixes "a variant with a similar name exists" n vs : Msg })
       | r => (.other, none, false, {
           code? := some "F0204", headline := s!"`{showPath r.path}` is {r.describe} and has no members"
           label? := some "nothing can follow this"
-          notes := #["note: only modules (their items) and enums (their variants) have members"] })
+          notes := #["note: only modules (their items) and enums (their variants) have members"] : Msg })
     match next? with
     | some next => if memberAccepted parent true visible then cur := next else throw { seg := i, msg := err }
     | none => if memberAccepted parent false visible then pure () else throw { seg := i, msg := err }
@@ -362,7 +365,7 @@ def Table.resolvePath (t : Table) (from_ : Name) (segs : Array Name) (extra : Ar
         code? := some "F0205", headline := s!"`{n}` is ambiguous: it could be any of {alts}"
         label? := some "ambiguous name"
         notes := #[s!"note: each enum opened with `*` here has a variant `{n}`",
-          s!"help: qualify it with its enum's name, e.g. `{hits[0]!.path.getPrefix.getString!}::{n}`"] } }
+          s!"help: qualify it with its enum's name, e.g. `{hits[0]!.path.getPrefix.getString!}::{n}`"] : Msg } }
   t.walk from_ start segs 1
 
 /-! ## Declarations -/
@@ -458,7 +461,7 @@ def Table.declareModule (t : Table) (segs : Array Name) (isPub : Bool) :
     | some { kind := .moduleItem, .. } => pure ()
     | some prev => throw { seg := i, msg := {
         code? := some "F0208", headline := s!"`{showPath p}` is {Resolved.describe (.item prev)}, not a module"
-        label? := some "not a module", notes := #["note: modules and other items share one namespace"] } }
+        label? := some "not a module", notes := #["note: modules and other items share one namespace"] : Msg } }
     | none =>
       new := new.push { kind := .moduleItem, path := p, isPub := isPub && i + 1 == segs.size, owner := path }
     path := p
@@ -475,7 +478,7 @@ def Table.declareUse (t : Table) (mod : Name) (segs : Array Name) (glob : Bool) 
       | throw { seg := segs.size - 1, msg := {
           code? := some "F0209", headline := s!"only enums can be opened with `*`, but `{showPath r.path}` is {r.describe}"
           label? := some "not an enum"
-          notes := #[s!"help: to import `{r.path.getString!}` itself, remove the `::*`"] } }
+          notes := #[s!"help: to import `{r.path.getString!}` itself, remove the `::*`"] : Msg } }
     return { module := mod, scope, target := path, glob := true }
   match t.checkFresh scope (Name.mkSimple r.path.getString!) with
   | .error msg => throw { seg := segs.size - 1, msg }
