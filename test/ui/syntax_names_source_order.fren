@@ -1,0 +1,10 @@
+-- Names that are not single segments are reported in source order, in both
+-- front ends: a dotted member before a dotted pattern binder.
+
+pub enum S { A(Int), B }
+
+comp c {
+    in s.t: S   --~ error: `s.t` is not a single name
+    pub out z: Int
+    req r: z = match s { S::A(x.y) => 0, _ => 1 }
+}

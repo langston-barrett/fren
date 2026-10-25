@@ -54,18 +54,28 @@ partial def checkLexemes (stx : Syntax) : CommandElabM Unit := do
     else args.forM checkLexemes
   | _ => pure ()
 
-/-- Reports the first pattern binder of `stx` that is not a single name, as
-the `fren` command's parser does, before any other check of its item. -/
-partial def checkPatternBinders (stx : Syntax) : CommandElabM Unit := do
-  if stx.isOfKind ``Lang.altsPattern then
-    for alt in stx[1].getSepArgs do
-      unless alt[1].isNone do
-        for b in alt[1][1].getSepArgs do
-          if b[0].isIdent then discard (segName b[0])
-  stx.getArgs.forM checkPatternBinders
+open Lang in
+/-- Reports the first name of `stx` that is not a single segment, in source
+order, as the `fren` command's parser does, before any other check of its
+item. A name may be dotted only where it is an expression's whole path,
+which reads an instance's variable or a value's field or method, or where
+it follows `.`, or names an option. -/
+partial def checkNames (stx : Syntax) : CommandElabM Unit := do
+  match stx with
+  | `(fren_expr| $p:fren_path) => unless (pathSegs p).size == 1 do discard (segNames (pathSegs p))
+  | `(fren_expr| $p:fren_path($args,*)) =>
+    unless (pathSegs p).size == 1 do discard (segNames (pathSegs p))
+    args.getElems.forM checkNames
+  | _ =>
+    if stx.isIdent then discard (segName stx)
+    else if stx.isOfKind ``Lang.fren_path then discard (segNames (pathSegs stx))
+    else if stx.isOfKind ``Lang.fieldExpr || stx.isOfKind ``Lang.methodExpr || stx.isOfKind ``Lang.evidenceMember then
+      stx.getArgs.forM fun a => unless a.isIdent do checkNames a
+    else stx.getArgs.forM checkNames
 
 @[command_elab Lang.modCmd] def elabMod : CommandElab := fun stx => do
   checkLexemes stx
+  checkNames stx
   let segs := pathSegs stx[2]
   let names ← segNames segs
   let (path, new) ← liftResolve segs ((← getState).table.declareModule names (!stx[0].isNone))
@@ -85,10 +95,12 @@ def declareUse (segs : Array Syntax) (glob : Bool) (ref : Syntax) (scope : Optio
 
 @[command_elab Lang.useCmd] def elabUse : CommandElab := fun stx => do
   checkLexemes stx
+  checkNames stx
   declareUse (pathSegs stx[1]) (!stx[2].isNone) stx[1]
 
 @[command_elab Lang.useGroupCmd] def elabUseGroup : CommandElab := fun stx => do
   checkLexemes stx
+  checkNames stx
   for p in stx[3].getSepArgs do
     declareUse (pathSegs stx[1] ++ pathSegs p) false p
 
@@ -175,6 +187,7 @@ partial def typeSyntax (t : Expr) : Term :=
 
 @[command_elab Lang.enumCmd] def elabEnum : CommandElab := fun stx => do
   checkLexemes stx
+  checkNames stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -234,6 +247,7 @@ partial def typeSyntax (t : Expr) : Term :=
 
 @[command_elab Lang.structCmd] def elabStruct : CommandElab := fun stx => do
   checkLexemes stx
+  checkNames stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1376,6 +1390,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
 
 @[command_elab Lang.typeCmd] def elabAbstractType : CommandElab := fun stx => do
   checkLexemes stx
+  checkNames stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1389,7 +1404,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
 
 @[command_elab Lang.fnCmd] def elabFunction : CommandElab := fun stx => do
   checkLexemes stx
-  checkPatternBinders stx
+  checkNames stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1583,7 +1598,7 @@ def memberName? (m : Syntax) : Option Syntax :=
 open Lang in
 @[command_elab Lang.compCmd] def elabComp : CommandElab := fun stx => do
   checkLexemes stx
-  checkPatternBinders stx
+  checkNames stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1811,7 +1826,7 @@ open Lang in
 
 @[command_elab Lang.constCmd] def elabConst : CommandElab := fun stx => do
   checkLexemes stx
-  checkPatternBinders stx
+  checkNames stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1910,7 +1925,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
 
 @[command_elab Lang.globalCmd] def elabGlobal : CommandElab := fun stx => do
   checkLexemes stx
-  checkPatternBinders stx
+  checkNames stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx
@@ -1939,8 +1954,10 @@ bindings or as `c`'s of the same names, and `c`'s outputs from the
 instance. With `by`, the tactics prove the obligation, generated as `r`,
 and the solver is asked nothing. -/
 @[command_elab Lang.refineCmd] def elabRefine : CommandElab := fun stx => do
-  checkLexemes stx
-  checkPatternBinders stx
+  -- Its proof, after `by`, is Lean.
+  let spec := stx.getArgs[:7].toArray
+  spec.forM checkLexemes
+  spec.forM checkNames
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx

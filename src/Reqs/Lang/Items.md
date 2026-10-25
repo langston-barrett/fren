@@ -116,12 +116,16 @@ the variables, instances and constraints of a component, which share one
 namespace, and the binders of a global expectation or of a pattern. A
 pattern's `_` declares no name. A name declared again is an error,
 reported where it is declared again, in the order the declarations are
-written, whatever their kinds. Only the first such name is reported, and
-the rest of its item is not checked, so a component with two repeated
-names and an unknown type reports the first repeat alone. Each declared
-name must be a single segment, which is checked before the rest of its
-item, as the item is parsed: `A(x.y)` reports `x.y`, even in a pattern
-with the wrong number of binders or in an or-pattern.
+written, whatever their kinds. In every list, only the first such name is
+reported, and the rest of its item is not checked, so a component with two
+repeated names and an unknown type reports the first repeat alone.
+
+Each name in an item must be a single segment, except where an expression
+reads an instance's variable, a value's field or a method with `.`. This
+is checked as the item is parsed, before anything else about it, and the
+first name that is not a single segment, in source order, is reported:
+`A(x.y)` reports `x.y`, even in a pattern with the wrong number of binders
+or in an or-pattern, but `in s.t: S` before it reports `s.t`.
 `lang::distinct_names` states this, from how many names a list declares
 and the set of them:
 
