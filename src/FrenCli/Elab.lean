@@ -1938,8 +1938,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     -- A literal's type may be written nowhere, as in `x in {1}`.
     modify fun s => { s with usesSets := true }
     if elems.isEmpty then
-      let some t := expected? | err span Fren.Core.emptySetTypeMsg
-      unless t matches .set _ | .rel .. do err span Fren.Core.emptySetTypeMsg
+      let t ← liftMsg span (Fren.Core.checkEmptyLiteral false expected?)
       return (s!"(as set.empty {t.sort})", t)
     -- A member, as the fields of its tuple, and the type of the literal
     -- it makes: a pair makes a relation.
@@ -1988,8 +1987,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   | .seq span elems =>
     modify fun s => { s with usesSeqs := true }
     if elems.isEmpty then
-      let some t := expected? | err span Fren.Core.emptySeqTypeMsg
-      unless t matches .seq _ do err span Fren.Core.emptySeqTypeMsg
+      let t ← liftMsg span (Fren.Core.checkEmptyLiteral true expected?)
       return (s!"(as seq.empty {t.sort})", t)
     -- Each element is checked against the literal's element type, or another's
     -- (`lang::checked`): the first that synthesizes one, if the first does not.

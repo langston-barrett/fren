@@ -88,6 +88,28 @@ def checkBranches (tx ty : Ty) : Except Msg Unit := do
           label? := some "branches of different types"
           notes := #["note: `if c then a else b` is `a` or `b`, so both must have the same type, or be a `Nat` and an `Int`"] }
 
+/-- `{}`, or `[]` if `seq`, where a collection of the other kind, `expected`,
+is expected. -/
+def emptyKindMsg (seq : Bool) (expected : Ty) : Msg :=
+  let (lit, kind, other) := if seq then ("[]", "sequence", "{}") else ("{}", "set", "[]")
+  { code? := some "F0304", headline := s!"type mismatch: expected `{expected.show}`, found an empty {kind}"
+    label? := some s!"expected `{expected.show}`, found `{lit}`"
+    notes := #[s!"note: `{lit}` is an empty {kind}"]
+    fixes := #[{ msg := s!"write `{other}` for an empty `{expected.show}`", replacement := other }] }
+
+/-- Checks `{}`, or `[]` if `seq`, against the type `expected?` expected of
+it, which gives it its type (`lang::empty_literal`): a set or relation for
+`{}`, a sequence for `[]`. Without one, or with one that is no collection,
+its type cannot be known (`F0324`); a collection of the other kind is a type
+mismatch. -/
+def checkEmptyLiteral (seq : Bool) (expected? : Option Ty) : Except Msg Ty := do
+  let unknown := if seq then emptySeqTypeMsg else emptySetTypeMsg
+  let some t := expected? | throw unknown
+  match seq, t with
+  | false, .set _ | false, .rel .. | true, .seq _ => return t
+  | false, .seq _ | true, .set _ | true, .rel .. => throw (emptyKindMsg seq t)
+  | _, _ => throw unknown
+
 /-- Checks the body of an arm of a `match`, of type `t`, against the type
 `t0?` of the arms before it, if one has a type: one widens to the other
 (`lang::arm_type`). Returns the type of the arms so far. -/
