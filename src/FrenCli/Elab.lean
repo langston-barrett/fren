@@ -478,6 +478,10 @@ structure State where
   /-- The names of `let` and `where` definitions made so far, which number
   their SMT-LIB symbols. -/
   nLets : Nat := 0
+  /-- Whether the current component's members are being elaborated, past
+  its name and the distinctness of its members' names: after a failure
+  there, its declaration and line lints still run, as in Lean. -/
+  inCompBody : Bool := false
 
 /-- `s`, with what `t` recorded for the lints: what a failed member or item
 recorded before its error outlives it, as in Lean, where an error undoes
@@ -2965,6 +2969,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let declared := named.map fun x => Name.mkSimple (declaredIdent x).1.name
   if let some k := (Fren.Core.repeatsAt declared)[0]? then
     err named[k]!.span (Fren.Core.dupMemberMsg declared[k]!)
+  modify fun s => { s with inCompBody := true }
   -- Each variable, instance, binding, definition and constraint reports its
   -- own first static error; after those of the variables, and of the
   -- instances, the item stops, since what follows would only repeat them
@@ -3041,8 +3046,9 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     let xn := Name.mkSimple x.name
     let some (p, idx) ← attempt do
         liftMsg x.span (Fren.Core.checkNoBang xn)
-        if x.name.endsWith "?" then err x.span (Fren.Core.propNameMsg xn)
+        -- Before the `?` error, as in Lean.
         lintName .constraint xn x.span
+        if x.name.endsWith "?" then err x.span (Fren.Core.propNameMsg xn)
         let cx : ExprCtx := { vars, insts := instNames, place := if kind == .assume then .assume else .prop }
         let (smt, t) ← elabExpr cx e
         liftMsg e.span (Fren.Core.checkType .bool t (some "note: a constraint is a `Bool`"))
@@ -3577,8 +3583,15 @@ partial def elabItem (item : Item) : M Unit := do
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
   | .comp isPub name members close => do
     -- Its `use`s end with it, even when it has an error.
+    modify fun s => { s with inCompBody := false }
     try elabComp isPub name members
-    catch e => modify (fun s => { s with scope := s.module }); throw e
+    catch e =>
+      modify (fun s => { s.keepLints e.state with scope := s.module })
+      -- Its declaration and line lints, after an error in its members.
+      if e.state.inCompBody then
+        lintDeclared .component (Name.mkSimple name.name) name.span
+        lintLines .component (Name.mkSimple name.name) name.span close
+      throw { e with state := ← get }
     lintDeclared .component (Name.mkSimple name.name) name.span
     lintLines .component (Name.mkSimple name.name) name.span close
   | .const isPub name ty value => do

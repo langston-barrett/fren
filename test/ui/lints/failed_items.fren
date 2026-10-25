@@ -49,4 +49,25 @@ comp uses_const {
     pub out y: Int
     req a: y = TWO + nope  --~ error: cannot find `nope` in this scope
 }
+
+-- A badly named constraint that cannot end in `?`.
+comp bad_constraint {
+    in x: Int
+    pub out p?
+    req Bad?: p? iff x > 0
+    --~^ error: constraint names cannot end in `?`
+    --~^^ warning: constraint `Bad?` should have a snake case name
+}
+
+-- Many single-character names, in a component with an error in its
+-- members: the component's own lints still run.
+set_option fren.lint.many_single_char_names "warn" in
+comp single {  --~ warning: component `single` declares 5 single-character names
+    in a: Int
+    in b: Int
+    in c: Int
+    in d: Int
+    pub out e: Int
+    req r: e = a + b + c + d + nope  --~ error: cannot find `nope` in this scope
+}
 --@ exit: 2

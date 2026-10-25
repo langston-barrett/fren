@@ -66,9 +66,17 @@ bindings are checked together), reports its first static error only. A
 component or other item with a static error is not checked.
 
 An item with a static error still reports its [lints](Lint.md), with
-either front end: those found in each part before its error, as if the
-item had none. What it used before the error counts for the lints of the
-file, such as an unused import or dead code.
+either front end: those found in each part before its error. A part checks
+its constructs before their operands, so an error in an operand does not
+hide them: a set literal, `in`, `union`, `inter`, `minus` and `subset`, and
+membership in a set of one member; a method call is checked after it is
+typed, and a constraint's name before its `?` error. A component with an
+error in its members (after step 1 above) still reports
+`constant_output`, `definable_output` and `case_split_reqs`, and its
+declaration and line lints (`many_single_char_names`, `similar_names` and
+`too_many_lines`), but not `unused_variables`, which needs all of it. What
+it used before the error counts for the lints of the file, such as an
+unused import or dead code.
 
 ## Error codes
 
