@@ -1,5 +1,5 @@
---- test/cli/fmt_is.fren
-+++ test/cli/fmt_is.fren
+--- test/cli/fmt/is.fren
++++ test/cli/fmt/is.fren
 @@ -6,6 +6,6 @@
 -in s: Shape
 -  pub out o?

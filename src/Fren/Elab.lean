@@ -1008,6 +1008,7 @@ def operandSlot (p e : Syntax) : Option Core.Slot :=
     if same p[0] then some Core.receiverSlot else none
   else if p.isOfKind ``Lang.matchExpr then
     if same p[1] then some Core.receiverSlot else none
+  else if p.isOfKind ``Lang.isExpr then at_ .patternTest #[0]
   else match p.getNumArgs, atom 0, atom 1 with
     | 3, "(", _ => none
     | 4, "when", _ => at_ (.when false) #[1, 3]

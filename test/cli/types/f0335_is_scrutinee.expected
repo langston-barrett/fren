@@ -1,5 +1,5 @@
 error[F0335]: cannot test `Int` against a pattern
- --> test/cli/f0335_is_scrutinee.fren:3:53
+ --> test/cli/types/f0335_is_scrutinee.fren:3:53
   |
 3 | comp c { in x: Int pub out round? req r: round? iff x is Shape::Circle(_) }
   |                                                     ^ not an enum

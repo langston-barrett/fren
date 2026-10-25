@@ -70,8 +70,8 @@ comp places {
     req size_rule: size = (if s is Shape::Circle(_) then 1 else 2)
     req doubled_rule: doubled = match s { Shape::Rect(w, _) => (if s is Shape::Rect(_, _) then w else 0), _ => 0 }
     req measure_rule: when s is Shape::Rect(_, _) | Shape::Empty,
-        measure = Measure { sides := if s is Shape::Circle(_) then 0 else 4, size := size }
-    req other: unless s is Shape::Rect(_, _) | Shape::Empty, measure = Measure { sides := f.sides, size := size }
+        measure = Measure { sides := if s is Shape::Circle(_) then 0 else 4, size }
+    req other: unless s is Shape::Rect(_, _) | Shape::Empty, measure = Measure { sides := f.sides, size }
     req by_fn_rule: by_fn? iff circle?(s)
 
     expect constant: CIRCLE

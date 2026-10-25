@@ -705,6 +705,7 @@ def Expr.operands : Expr → Array Expr
   | .method _ r _ args => #[r] ++ args
   | .record _ _ fs => fs.filterMap (·.2)
   | .match _ s arms => #[s] ++ arms.map (·.2)
+  | .is _ s _ => #[s]
   | .num .. | .bool .. | .path .. | .str .. => #[]
 
 /-- `e` as the lints that rewrite it (`Fren.Core.ExLint`) and the operator

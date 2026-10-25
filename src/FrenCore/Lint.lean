@@ -1181,6 +1181,8 @@ def BKind.slots : BKind → Array (Option Slot)
   | .not => #[some ⟨4, .right, true⟩]
   | .neg => #[some ⟨8, .right, true⟩]
   | k@(.bin _) => #[some ⟨k.prec, k.assoc, false⟩, some ⟨k.prec, k.assoc, true⟩]
+  -- Its scrutinee, the left operand of a comparison.
+  | k@.patternTest => #[some ⟨k.prec, k.assoc, false⟩]
   | _ => #[]
 
 /-- An expression, rewritten: its text and precedence. -/

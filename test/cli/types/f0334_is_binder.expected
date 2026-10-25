@@ -1,5 +1,5 @@
 error[F0334]: a pattern test cannot bind `n`
- --> test/cli/f0334_is_binder.fren:3:70
+ --> test/cli/types/f0334_is_binder.fren:3:70
   |
 3 | comp c { in s: Shape pub out big? req r: big? iff s is Shape::Circle(n) }
   |                                                                      ^ binds a name
