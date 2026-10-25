@@ -10,8 +10,7 @@ fn unnamed(Int): Int := 1           --~ error: the parameters of defined functio
 fn again(n: Int): Int := again(n)   --~ error: defined function `again` applies itself
 fn wraps(n: Name): Int := arity(n)  --~ error: a defined function's body cannot apply uninterpreted function `arity`
 fn typed(n: Int): Int := n > 0
---~^[cli] error: type mismatch: expected `Int`, found `Bool`
---~^^[hosted] error: Type mismatch
+--~^ error: type mismatch: expected `Int`, found `Bool`
 fn unused(n: Int, m: Int): Int := n  --~ warning: unused parameter `m`
 fn dup(n: Int, n: Int): Int := n    --~ error: parameter `n` is defined multiple times
 fn square(n: Int): Int := n * n     --~ error: nonlinear arithmetic is not supported

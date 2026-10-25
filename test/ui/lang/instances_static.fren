@@ -35,8 +35,7 @@ comp no_field { in y? pub out o: Int inst a: sub { x := 1, y? } req r: o = a.nop
 --~^ error: instance `a` has no `in` or `pub out` named `nope`
 comp not_inst { pub out o: Int req r: o = q.z }            --~ error: `q.z` is not a single name
 comp mistyped { in y? inst a: sub { x := y?, y? } }
---~^[cli] error: type mismatch: expected `Int`, found `Bool`
---~^^[hosted] error: Type mismatch
+--~^ error: type mismatch: expected `Int`, found `Bool`
 
 mod m
 comp secret {}

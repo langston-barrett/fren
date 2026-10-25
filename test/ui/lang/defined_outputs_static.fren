@@ -54,8 +54,7 @@ comp unbounded {
 comp typed {
     in x: Int
     pub out d: Int := x > 0
-    --~^[cli] error: type mismatch: expected `Int`, found `Bool`
-    --~^^[hosted] error: Type mismatch
+    --~^ error: type mismatch: expected `Int`, found `Bool`
 }
 
 comp source {

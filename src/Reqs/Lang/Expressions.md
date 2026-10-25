@@ -805,9 +805,36 @@ arithmetic](#linear-arithmetic). So in `comp c { out s: Shape ... }`,
 `match s { Shape::Circle(r) => f(r), _ => ... }` mentions the output `s`
 in an argument of `f`, which is an error.
 
-The bodies of all arms have the same type, which is the type of the
-`match`. As in a binding, a body cannot be a top-level `when` or `unless`,
-which would run on into the next arm.
+The bodies of all arms have the same type, or are `Nat`s and `Int`s, and
+the `match` has that type, or `Int` if they are mixed. As in a binding, a
+body cannot be a top-level `when` or `unless`, which would run on into the
+next arm.
+
+The bodies are checked in order, each against the type of the arms
+before it, as both front ends do. An arm of another type is reported at
+its body (`F0320`), with that type and its own. `lang::arm_type` states
+this for one arm, from its type and the type of the arms before it: as for
+a [conditional's](#conditionals) branches, one widens to the other
+(`lang::widening`), and the arms so far then have the wider type. A body
+that does not [synthesize](Types.md#checking-and-synthesis) its type, as
+`{}` does, has the type of the arms it is checked against.
+
+```fren
+pub comp arm_type {
+    in before: Ty            -- the type of the arms before it
+    in arm: Ty               -- the type of its body
+    in arm_widens?           -- `arm` widens to `before` (`lang::widening`)
+    in before_widens?        -- `before` widens to `arm`
+    pub det out accepted?
+    pub det out ty: Ty       -- the type of the arms so far: the wider of the two
+
+    req rule: accepted? iff (arm_widens? or before_widens?)
+    req typed: ty = (if before_widens? then arm else before)
+
+    expect same_type: when arm = before, ty = before
+    expect arm_wider: when accepted? and not arm_widens?, ty = arm
+}
+```
 
 A `match` is *exhaustive*, and each of its arms is *reachable*: every
 variant has an arm, unless there is a `_` arm, which comes last and covers

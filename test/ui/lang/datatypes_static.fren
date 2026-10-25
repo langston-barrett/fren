@@ -43,8 +43,7 @@ comp repeated { in s: S pub out z: Int req r: z = match s { S::B => 0, S::B => 1
 comp other_enum { in s: S pub out z: Int req r: z = match s { L::Nil => 0, _ => 1 } }
 --~^ error: expected a variant of `S`, but this is a variant of `L`
 comp arm_types { in s: S pub out z: Int req r: z = match s { S::A(a) => a, _ => false } }
---~^[cli] error: the arms of `match` have different types: `Int` and `Bool`
---~^^[hosted] error: type mismatch
+--~^ error: the arms of `match` have different types: `Int` and `Bool`
 comp binders { in s: S pub out z: Int req r: z = match s { S::A(a, b) => a, _ => 0 } }
 --~^ error: `S::A` takes 1 binder, but 2 were given
 comp no_binders { in s: S pub out z: Int req r: z = match s { S::A => 1, _ => 0 } }

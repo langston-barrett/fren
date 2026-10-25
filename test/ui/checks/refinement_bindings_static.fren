@@ -19,8 +19,7 @@ refine input_out: c refines a { n := y, z := y }
 refine private_out: c refines a { n := x, z := hidden }  --~ error: `hidden` is private to `c`
 refine unbound: c refines a { z := y }        --~ error: `c` cannot refine `a`: it has no variable `n`
 refine mistyped: c refines a { n := b?, z := y }
---~^[cli] error: type mismatch: expected `Int`, found `Bool`
---~^^[hosted] error: Type mismatch
+--~^ error: `n` of `a` has type `Int`
 
 -- `{ k }` alone means `k := k`, so it needs a variable `k` of `c`.
 comp b { in k: Int pub out z: Int req r: z >= k }

@@ -75,4 +75,15 @@ def checkBranches (tx ty : Ty) : Except Msg Unit := do
           label? := some "branches of different types"
           notes := #["note: `if c then a else b` is `a` or `b`, so both must have the same type, or be a `Nat` and an `Int`"] }
 
+/-- Checks the body of an arm of a `match`, of type `t`, against the type
+`t0?` of the arms before it, if one has a type: one widens to the other
+(`lang::arm_type`). Returns the type of the arms so far. -/
+def checkArm (t0? : Option Ty) (t : Ty) : Except Msg Ty := do
+  let some t0 := t0? | return t
+  unless t.widens t0 || t0.widens t do
+    throw { code? := some "F0320", headline := s!"the arms of `match` have different types: `{t0.show}` and `{t.show}`"
+            label? := some "arms of different types"
+            notes := #["note: a `match` has the value of one of its arms, so all must have the same type, or be `Nat`s and `Int`s"] }
+  return t0.join t
+
 end Fren.Core

@@ -163,6 +163,18 @@ theorem join_eq_wider (tx ty : Fren.Core.Ty) : tx.join ty = if tx.widens ty then
   unfold Fren.Core.Ty.join Fren.Core.Ty.widens
   by_cases h : tx = ty <;> by_cases ha : tx = .nat <;> by_cases hb : ty = .int <;> simp_all
 
+theorem checkType_isOk (e f : Fren.Core.Ty) (why : Option String) :
+    (Fren.Core.checkType e f why).isOk = f.widens e := by
+  by_cases h : f.widens e = true <;>
+    simp_all [Fren.Core.checkType, Except.isOk, Except.toBool, pure, Except.pure, throw, throwThe,
+      MonadExceptOf.throw]
+
+theorem checkArm_isOk (b a : Fren.Core.Ty) :
+    (Fren.Core.checkArm (some b) a).isOk = (a.widens b || b.widens a) := by
+  by_cases h : (a.widens b || b.widens a) = true <;>
+    simp_all [Fren.Core.checkArm, Except.isOk, Except.toBool, pure, Except.pure, throw, throwThe,
+      MonadExceptOf.throw, bind, Except.bind]
+
 theorem checkType_bool_isOk (c : Fren.Core.Ty) : (Fren.Core.checkType .bool c).isOk = (c == .bool) := by
   by_cases hc : c = .bool <;>
     simp [Fren.Core.checkType, Fren.Core.Ty.widens, hc, Except.isOk, Except.toBool, pure, Except.pure, throw,
@@ -189,6 +201,20 @@ impl conditional: lang::conditional for (c tx ty : Fren.Core.Ty) {
   intro c tx ty _
   simp [fren_spec, checkType_bool_isOk, checkBranches_isOk, join_eq_wider]
 
+-- For every type of an arm and of the arms before it: the check that both
+-- front ends make (`Core.checkArm`), and the type that it gives the arms so
+-- far (`Ty.join`).
+impl arm_type: lang::arm_type for (b a : Fren.Core.Ty) {
+  before := b,
+  arm := a,
+  arm_widens? := a.widens b,
+  before_widens? := b.widens a,
+  accepted? := (Fren.Core.checkArm (some b) a).isOk,
+  ty := b.join a,
+} by
+  intro b a _
+  simp [fren_spec, checkArm_isOk, join_eq_wider]
+
 -- For every application, over the types that the `fren` command compares.
 impl application: lang::application for (ps as : Array Fren.Core.Ty) (k : Int) {
   params := Fren.Seq.ofList ps.toList,
@@ -214,13 +240,15 @@ def kindOf : Fren.Core.Ty → lang.ValueType
 
 interp lang::kind := kindOf
 
--- For every two types, with the check that the `fren` command uses.
+-- For every two types, with the check that both front ends make wherever a
+-- type is declared (`Core.checkType`).
 impl widening: lang::widening for (f e : Fren.Core.Ty) {
   found := f,
   expected := e,
-  accepted? := f.widens e,
+  accepted? := (Fren.Core.checkType e f).isOk,
 } by
   intro f e _
+  rw [checkType_isOk]
   cases f <;> cases e <;> simp [fren_spec, Fren.Core.Ty.widens, kindOf]
 
 impl literal_type: lang::literal_type for (b : Bool) {

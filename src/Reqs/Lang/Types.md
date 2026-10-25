@@ -108,6 +108,17 @@ pub comp widening {
 }
 ```
 
+This is the rule wherever a type is declared: an argument of a function
+application, a value of a variant's payload, a field of a record literal
+or of a record update, a binding of an instance or of a refinement, a
+defined output's definition, a constant's value, and a defined function's
+body. An assumption, requirement, expectation or cover goal, and a global
+expectation, is declared a `Bool`. An expression that is not accepted is
+reported at the expression (`F0304`), with its type, the declared one, and
+a note that says where the type is declared, as in "`x` of `sub` has type
+`Int`". Both front ends check with the same function, so they report the
+same error at the same expression.
+
 A variable of type `Nat` brings the constraint that it is at least 0 (see
 [Components](Components.md#natural-numbers)), and so does each application
 of an uninterpreted function whose result is a `Nat` (see
