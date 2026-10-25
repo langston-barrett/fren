@@ -1998,6 +1998,35 @@ def arithTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (n
   if op == "+" then `($x + $y) else `($x * $y)
 
 open Lang in
+/-- The expressions that `toTerm` gives no syntax pattern of its own: fields,
+methods, `mod`, collections, indexes, records, `match` and `is`, where
+`toTerm` translates their parts, `emptyOk` and `natOk` are what is
+expected of the whole, and `parent?` is the expression around it. -/
+def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (parent? : Option Syntax) (emptyOk natOk : Bool)
+    (e : Syntax) : TermElabM Term := do
+  if let some e' := splitDotted? e then return ← toTerm cx e'
+  if e.isOfKind ``Lang.fieldExpr then
+    lintChain toTerm cx parent? e
+    return ← fieldTerm cx e (← toTerm { cx with concatOk := true } e[0])
+  else if e.isOfKind ``Lang.methodExpr then
+    -- `at` is a keyword of Lean's.
+    let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
+    let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
+    if m == "matches?" then lintPattern cx parent? e e[0] e[4].getSepArgs
+    methodTerm toTerm cx e e[2] e[0] m e[4].getSepArgs natOk
+  else if e.isOfKind ``Lang.modExpr then divTerm toTerm cx e "mod" natOk
+  else if e.isOfKind ``Lang.setExpr then setLitTerm toTerm cx emptyOk e
+  else if e.isOfKind ``Lang.memberExpr || e.isOfKind ``Lang.subsetExpr || e.isOfKind ``Lang.unionExpr
+      || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr || e.isOfKind ``Lang.joinExpr then setOpTerm toTerm { cx with emptyOk } e
+  else if e.isOfKind ``Lang.pairExpr then throwError Core.pairPlaceMsg.text
+  else if e.isOfKind ``Lang.seqExpr then seqLitTerm toTerm cx emptyOk e
+  else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
+  else if e.isOfKind ``Lang.recordExpr then recordTerm (toTerm { cx with emptyOk := Core.Position.declared.checked false false }) cx e
+  else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm { cx with emptyOk, natOk } e (parent?.bind (operandSlot · e))
+  else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
+  else throwError "unsupported Fren expression"
+
+open Lang in
 /-- Translates a Fren expression to a Lean term, resolving names with Fren's
 rules. Variables become references to locals of the same name; variants
 become references to the generated constructors. -/
@@ -2042,28 +2071,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| false) => `(false)
   | `(fren_expr| $p:fren_path) => pathTerm toTerm cx parent? e p
   | `(fren_expr| $p:fren_path($args,*)) => appTerm toTerm { cx with natOk } parent? e p args
-  | _ =>
-    if let some e' := splitDotted? e then return ← toTerm cx e'
-    if e.isOfKind ``Lang.fieldExpr then
-      lintChain toTerm cx parent? e
-      return ← fieldTerm cx e (← toTerm { cx with concatOk := true } e[0])
-    else if e.isOfKind ``Lang.methodExpr then
-      -- `at` is a keyword of Lean's.
-      let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
-      let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
-      if m == "matches?" then lintPattern cx parent? e e[0] e[4].getSepArgs
-      methodTerm toTerm cx e e[2] e[0] m e[4].getSepArgs natOk
-    else if e.isOfKind ``Lang.modExpr then divTerm toTerm cx e "mod" natOk
-    else if e.isOfKind ``Lang.setExpr then setLitTerm toTerm cx emptyOk e
-    else if e.isOfKind ``Lang.memberExpr || e.isOfKind ``Lang.subsetExpr || e.isOfKind ``Lang.unionExpr
-        || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr || e.isOfKind ``Lang.joinExpr then setOpTerm toTerm { cx with emptyOk } e
-    else if e.isOfKind ``Lang.pairExpr then throwError Core.pairPlaceMsg.text
-    else if e.isOfKind ``Lang.seqExpr then seqLitTerm toTerm cx emptyOk e
-    else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
-    else if e.isOfKind ``Lang.recordExpr then recordTerm (toTerm { cx with emptyOk := Core.Position.declared.checked false false }) cx e
-    else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm { cx with emptyOk, natOk } e (parent?.bind (operandSlot · e))
-    else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
-    else throwError "unsupported Fren expression"
+  | _ => otherTerm toTerm cx parent? emptyOk natOk e
 
 open Lang in
 /-- The conditions of a top-level `when`/`unless` chain, as a term, and a
