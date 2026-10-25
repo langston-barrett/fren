@@ -202,6 +202,34 @@ impl conditional: lang::conditional for (c tx ty : Fren.Core.Ty) {
   intro c tx ty _
   simp [fren_spec, checkType_bool_isOk, checkBranches_isOk, join_eq_wider]
 
+/-- What is expected of an empty literal (`lang::Expected`). -/
+def toExpected : Option Fren.Core.Ty → lang.Expected
+  | none => .NoType
+  | some (.set _) | some (.rel ..) => .SetOrRelation
+  | some (.seq _) => .Sequence
+  | some _ => .NotCollection
+
+/-- The outcome of `Core.checkEmptyLiteral` (`lang::EmptyOutcome`): an error
+whose code is `F0324` is a type that cannot be known. -/
+def toEmptyOutcome : Except Fren.Core.Msg Fren.Core.Ty → lang.EmptyOutcome
+  | .ok _ => .Typed
+  | .error m => if m.code? == some "F0324" then .Unknown else .OtherKind
+
+-- For each empty literal and every type expected of it, or none, by the
+-- check that both front ends make (`Core.checkEmptyLiteral`).
+impl empty_literal: lang::empty_literal for (seq : Bool) (t? : Option Fren.Core.Ty) {
+  seq? := seq,
+  expected := toExpected t?,
+  outcome := toEmptyOutcome (Fren.Core.checkEmptyLiteral seq t?),
+} by
+  intro seq t? _
+  rcases t? with _ | t
+  · cases seq <;> simp [fren_spec, toExpected, toEmptyOutcome, Fren.Core.checkEmptyLiteral, throw, throwThe,
+      MonadExceptOf.throw, Fren.Core.emptySetTypeMsg, Fren.Core.emptySeqTypeMsg]
+  · cases seq <;> cases t <;> simp [fren_spec, toExpected, toEmptyOutcome, Fren.Core.checkEmptyLiteral, throw,
+      throwThe, MonadExceptOf.throw, pure, Except.pure, Fren.Core.emptySetTypeMsg, Fren.Core.emptySeqTypeMsg,
+      Fren.Core.emptyKindMsg]
+
 -- For every type of an arm and of the arms before it: the check that both
 -- front ends make (`Core.checkArm`), and the type that it gives the arms so
 -- far (`Ty.join`).

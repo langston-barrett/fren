@@ -432,3 +432,53 @@ pub comp synthesizes {
     expect pair_needs_both: when shape = Pair and synthesizing < 2, not synthesizes?
 }
 ```
+
+A checked expression is checked against the type expected of it. That is
+its declared type, or, for a shared or compared part, the type of the part
+it shares its type with, if that one synthesizes it, and otherwise the
+whole's. So in `if c? then {} else t`, `{}` takes `t`'s type first, and
+`s = match m { E::W => {}, E::V(t) => t }` checks each arm in order
+against `s`'s. A `match` with no type expected of it checks each arm
+against the arms before it. An arm that does not synthesize its type, before
+any arm has one, waits for a later arm that does, and then has the type it
+is checked against. A member of a set or sequence literal is expected to
+have the literal's element type, or that of the first member that
+synthesizes one. The right of `in` is expected to be a set of the left's
+type, or a sequence of it if it is written as one, or a relation of a
+pair's members' types. A `Nat` is widened to an `Int` in all of these, unless
+a `Nat` is expected of the whole.
+
+`{}` and `[]` have no type but this one. `{}` takes a set or relation type,
+and `[]` a sequence type. With no type expected of it, or one that is not
+a collection, its type cannot be known (`F0324`). A collection of the other
+kind, as in `t = []` where `t` is a set, is a type mismatch (`F0304`).
+`lang::empty_literal` states this, from which literal it is and what is
+expected of it:
+
+```fren
+-- What is expected of an empty literal: no type, one that is no
+-- collection, a set or relation, or a sequence.
+pub enum Expected { NoType, NotCollection, SetOrRelation, Sequence }
+-- Its outcome: it has the expected type, its type cannot be known, or it is
+-- a collection of the other kind.
+pub enum EmptyOutcome { Typed, Unknown, OtherKind }
+
+pub comp empty_literal {
+    use self::EmptyOutcome::{OtherKind, Typed, Unknown}
+    use self::Expected::{NoType, NotCollection, Sequence, SetOrRelation}
+    in seq?                  -- it is `[]`, not `{}`
+    in expected: Expected
+    pub det out outcome: EmptyOutcome
+
+    req rule: outcome = match expected {
+        NoType => Unknown,
+        NotCollection => Unknown,
+        SetOrRelation => if seq? then OtherKind else Typed,
+        Sequence => if seq? then Typed else OtherKind,
+    }
+
+    expect needs_a_type: when expected = NoType, outcome != Typed
+    cover typed_set: not seq? and outcome = Typed
+    cover typed_seq: seq? and outcome = Typed
+}
+```
