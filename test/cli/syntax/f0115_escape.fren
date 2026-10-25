@@ -1,2 +1,2 @@
 const PATH: String := "C:\qux"
--- fren-covers: lang::escape_sequence
+-- fren-covers: lang::escape_sequence, lang::escape_start
