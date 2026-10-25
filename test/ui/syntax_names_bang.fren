@@ -1,0 +1,10 @@
+-- A dotted name with the `!` of shadowing is still not a single name, and
+-- is reported, `!` and all, before the binder after it, in both front ends.
+
+pub enum S { A(Int), B }
+
+comp c {
+    in s.t!: S   --~ error: `s.t!` is not a single name
+    pub out z: Int
+    req r: z = match s { S::A(x.y!) => 0, _ => 1 }
+}
