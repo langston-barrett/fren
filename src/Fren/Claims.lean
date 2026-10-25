@@ -35,6 +35,7 @@ def resolveComp (p : Syntax) : CommandElabM Name := do
 
 @[command_elab Lang.testedCmd] def elabTested : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
+  lintInvisible stx
   let path ← resolveComp stx[1]
   let mut files := #[]
   let mut ok := true
@@ -51,6 +52,7 @@ def resolveComp (p : Syntax) : CommandElabM Name := do
 
 @[command_elab Lang.trustedCmd] def elabTrusted : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
+  lintInvisible stx
   let path ← resolveComp stx[1]
   let some why := stx[3].isStrLit? | throwUnsupportedSyntax
   liftMsg stx[3] (Core.checkTrusted why)

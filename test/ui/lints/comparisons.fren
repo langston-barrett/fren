@@ -1,0 +1,163 @@
+-- The comparison lints, in both front ends: `absurd_extreme_comparisons`,
+-- `erasing_op`, `ifs_same_cond`, `contradictory_comparisons` and
+-- `redundant_comparisons`.
+set_option fren.lint.undecidable "allow"
+
+enum Mode { Heat, Cool, Off }
+
+use self::Mode::Heat
+
+comp lengths {
+    in s: String
+    in q: Seq(Int)
+    in t: Set(Mode)
+    in n: Int
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+    pub out p5?
+
+    req r1: p1? iff s.len < 0  --~ warning: this comparison is always `false`
+    req r2: p2? iff t.card >= 0  --~ warning: this comparison is always `true`
+    req r3: p3? iff (-1 < q.len or q.len = -2)
+    --~^ warning: this comparison is always `true`
+    --~^^ warning: this comparison is always `false`
+    req r4: p4? iff 0 > s.len  --~ warning: this comparison is always `false`
+    -- An `Int` may be negative; the others say whether it is empty, or not.
+    req r5: p5? iff (n >= 0 and s.len > 0 and q.len >= 1 and 0 < t.card)
+    --~^ warning: say whether it is empty with `""`, not `len`
+    --~^^ warning: say whether it is empty with `[]`, not `len`
+    --~^^^ warning: say whether it is empty with `{}`, not `card`
+}
+
+-- On a literal, `const_is_empty` fires where it can, and the absurd
+-- comparisons that are not tests of emptiness are still reported.
+comp literal_lengths {
+    in a: Int
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+
+    req r1: p1? iff {a}.card >= 0  --~ warning: this comparison is always `true`
+    req r2: p2? iff {a}.card < 0  --~ warning: this comparison is always `false`
+    req r4: p4? iff {Heat, Mode::Cool}.card > -1  --~ warning: this comparison is always `true`
+    req r3: p3? iff "ab".len < 0  --~ warning: this test of a literal is always `false`
+}
+
+-- A bound in parentheses, or negated in them, is a literal too.
+comp parenthesized_bounds {
+    in s: String
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+    pub out p5?
+
+    req r1: p1? iff s.len > (-1)  --~ warning: this comparison is always `true`
+    req r2: p2? iff s.len > -(1)  --~ warning: this comparison is always `true`
+    req r3: p3? iff s.len >= (0)  --~ warning: this comparison is always `true`
+    req r4: p4? iff "ab".len = (2)  --~ warning: this test of a literal is always `true`
+    req r5: p5? iff [1, 2].len = (5)  --~ warning: this test of a literal is always `false`
+}
+
+comp erasing {
+    in x: Int
+    in t: Set(Mode)
+    in r: Rel(Mode, Mode)
+    pub out n1: Int
+    pub out p1?
+    pub out p2?
+    pub out p3?
+
+    req r1: n1 = x * 0 + (0 * x)
+    --~^ warning: this `*` is always `0`
+    --~^^ warning: this `*` is always `0`
+    req r2: p1? iff t inter {} = ({} minus t)
+    --~^ warning: this `inter` is always `{}`
+    --~^^ warning: this `minus` is always `{}`
+    req r3: p2? iff r inter {} = r  --~ warning: this `inter` is always `{}`
+    -- `identity_op`'s, and `eq_op`'s.
+    req r4: p3? iff t minus {} = t inter t
+    --~^ warning: this operation has no effect
+    --~^^ warning: both operands of `inter` are written the same
+}
+
+comp chains {
+    in x: Int
+    in a?
+    pub out n: Int
+    pub out m: Int
+    pub out k: Int
+
+    req r1: n = if x > 0 then 1 else if x < 0 then 2 else if (x > 0) then 3 else 4
+    --~^ warning: `x > 0` is already tested earlier in this chain
+    req r2: m = if a? then 1 else (if x = 0 then 2 else if a? then 3 else 4)
+    --~^ warning: `a?` is already tested earlier in this chain
+    -- Not a chain: the inner `if` is in a `then` branch.
+    req r3: k = if a? then (if a? then 1 else 2) else 3
+}
+
+comp contradictory {
+    in x: Int
+    in m: Mode
+    in w: String
+    in b?
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+    pub out p5?
+    pub out p6?
+    pub out p7?
+    pub out n: Int
+
+    req r1: p1? iff (m != Heat or m != Mode::Cool)  --~ warning: one of these two comparisons always holds
+    req r2: p2? iff (x < 3 and 5 < x)  --~ warning: these two comparisons cannot both hold
+    req r3: p3? iff (x > 3 or x < 5)  --~ warning: one of these two comparisons always holds
+    req r4: p4? iff (w = "a" and w = "b")  --~ warning: these two comparisons cannot both hold
+    req r5: p5? iff (x != 3 or x <= 3)  --~ warning: one of these two comparisons always holds
+    -- Inside an expression, which no check sees.
+    req r6: n = if x = 1 and x = 2 then 1 else 0  --~ warning: these two comparisons cannot both hold
+    -- Both may hold, or both fail; `Heat` is `Mode::Heat`.
+    req r7: p6? iff (x > 3 and x < 5 or x < 3 or x > 5 or m = Heat and m = Mode::Heat)
+    req r8: p7? iff (w = "a" or w = "b") and (b? or w != "a" or w != "\x61")
+}
+
+comp redundant {
+    in x: Int
+    in y: Int
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+
+    req r1: p1? iff (x < 3 and x < 5)  --~ warning: these two comparisons are `x < 3`
+    req r2: p2? iff (x < 3 or 5 > x)  --~ warning: these two comparisons are `5 > x`
+    req r3: p3? iff not (x = 3 and x >= 0)  --~ warning: these two comparisons are `x = 3`
+    -- Different operands; and `double_comparison`'s.
+    req r4: p4? iff (x < 3 and y < 5) or (x <= 3 and x != 3)
+    --~^ warning: these two comparisons are `x < 3`
+}
+
+-- A length read through a field of a receiver in parentheses, or of a
+-- record update, as in `(r).s.len`.
+struct Holder { s: String, q: Seq(Int), t: Set(Int), x: Int }
+
+comp field_lengths {
+    in r: Holder
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+    pub out p5?
+    pub out p6?
+
+    req r1: p1? iff (r).s.len < 0  --~ warning: this comparison is always `false`
+    req r2: p2? iff (r).q.len >= 0  --~ warning: this comparison is always `true`
+    req r3: p3? iff (r).s.len = 0  --~ warning: say whether it is empty with `""`, not `len`
+    req r4: p4? iff (r).t.card > 0  --~ warning: say whether it is empty with `{}`, not `card`
+    req r5: p5? iff { r with x := 1 }.s.len < 0  --~ warning: this comparison is always `false`
+    req r6: p6? iff { r with x := 1 }.q.len != 0  --~ warning: say whether it is empty with `[]`, not `len`
+}

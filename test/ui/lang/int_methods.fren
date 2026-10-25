@@ -1,5 +1,7 @@
 -- The methods of `Int`: `abs`, `min` and `max`, which are conditionals,
 -- with negative operands.
+-- Its expectations of constants are deliberate.
+set_option fren.lint.assertions_on_constants "allow"
 
 const LOW: Int := -5
 

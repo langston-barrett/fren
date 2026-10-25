@@ -1,0 +1,14 @@
+warning[F0752]: component `foo` has a placeholder name
+ --> test/cli/lints/style/f0752_disallowed_names.fren:3:10
+  |
+3 | pub comp foo { in x: Int pub out y: Int req r: y = x + 1 }
+  |          ^^^ a placeholder
+  |
+  = help: give it a name that says what it is
+  = note: `disallowed_names` is `warn` by default
+  = help: to allow it, `set_option fren.lint.disallowed_names "allow"`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0752`.
+exit=3

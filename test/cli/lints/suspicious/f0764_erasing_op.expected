@@ -1,0 +1,22 @@
+warning[F0764]: this `*` is always `0`
+ --> test/cli/lints/suspicious/f0764_erasing_op.fren:4:74
+  |
+4 | comp c { in x: Int in r: Rel(E, E) pub out y: Int pub out p? req r1: y = 0 * x + 1 req r2: p? iff r inter {} = r }
+  |                                                                          ^^^^^ ignores its other operand
+  |
+  = note: the literal is probably not the operand meant
+  = note: `erasing_op` is `warn` by default
+  = help: to allow it, `set_option fren.lint.erasing_op "allow"`
+
+warning[F0764]: this `inter` is always `{}`
+ --> test/cli/lints/suspicious/f0764_erasing_op.fren:4:99
+  |
+4 | comp c { in x: Int in r: Rel(E, E) pub out y: Int pub out p? req r1: y = 0 * x + 1 req r2: p? iff r inter {} = r }
+  |                                                                                                   ^^^^^^^^^^ ignores its other operand
+  |
+  = note: the literal is probably not the operand meant
+
+fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0764`.
+exit=3

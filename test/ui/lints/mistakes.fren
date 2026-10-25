@@ -1,0 +1,98 @@
+-- The lints of likely mistakes, in both front ends: `duplicate_constraint`,
+-- `invisible_characters`, `negative_position`, and `eq_op` on `when` and
+-- `unless`.
+set_option fren.lint.undecidable "allow"
+
+comp repeats {
+    in a?
+    in b?
+    in x: Int
+    pub out p?
+    pub out q?
+
+    assume pos: x > 0
+    req r1: p? iff a? or b?
+    req r2: q? iff a? and b?
+    expect e1: p? iff a? or b?
+    --~^ warning: this is written the same as `r1`
+    expect e2: q? iff a? and b?
+    --~^ warning: this is written the same as `r2`
+    expect e3: x > 0
+    --~^ warning: this is written the same as `pos`
+    expect e4: p? iff a? or b?
+    --~^ warning: this is written the same as `r1`
+    -- Not written the same.
+    expect e5: p? iff b? or a?
+    expect e6: q? iff a? and (b?)
+}
+
+expect g1: forall (r: repeats), when r.a? and r.b?, r.q?
+expect g2: forall (r: repeats),
+    when r.a? and r.b?, r.q?
+--~^^ warning: this is written the same as `g1`
+expect g3: forall (s: repeats), when s.a? and s.b?, s.q?
+
+comp characters {
+    in s: String
+    pub out p?
+    pub out o?
+    pub out n?
+
+    req r1: p? iff s = "a​b" or s = "c­d"
+    --~^ warning: this string literal contains an invisible character, `U+200B` (zero width space)
+    --~^^ warning: this string literal contains an invisible character, `U+00AD` (soft hyphen)
+    req r2: o? iff s.matches?(r"x‮y[0-9]") or s = "⁦e⁩﻿"
+    --~^ warning: this string literal contains an invisible character, `U+202E` (right-to-left override)
+    --~^^ warning: this string literal contains invisible characters: `U+2066` (left-to-right isolate), `U+2069` (pop directional isolate), `U+FEFF` (zero width no-break space)
+    -- A bidirectional control ‮ in a comment.
+    --~^ warning: this comment contains an invisible character, `U+202E` (right-to-left override)
+    -- In a comment, an invisible character is not reported: a​b.
+    -- Written as escapes, they are not reported.
+    req r3: n? iff s = "\u200B\u202E"
+}
+
+comp positions {
+    in s: String
+    in q: Seq(Int)
+    in t: Seq(Int)
+    pub out p?
+    pub out o?
+    pub out n?
+
+    req r1: p? iff s.at(-1) = "." or s.slice(-3, 3) = "abc" or s.index_of("a", -2) = 0
+    --~^ warning: a negative position does not count from the end
+    --~^^ warning: a negative position does not count from the end
+    --~^^^ warning: a negative position does not count from the end
+    req r2: o? iff q.update(-1, 0) = t or (q != [] and q[-1] = 0)
+    --~^ warning: a negative position does not count from the end
+    --~^^ warning: a negative index does not count from the end
+    --~^^^ error: an index of `positions::r2` may be out of range
+    -- Not negative literals, or not positions.
+    req r3: n? iff s.at(s.len - 1) = "." or s.slice(-0, 1) = "" or q.update(0, -1) = t
+    --~^ warning: this is a call of `ends_with?`
+    --~^^ warning: this is a call of `at`
+}
+
+comp conditionals {
+    in a?
+    in b?
+    pub out p?
+    pub out o?
+    pub out n?
+
+    req r1: p? iff (when a? or b?, (a? or b?))
+    --~^ warning: the condition and the body of `when` are written the same
+    req r2: o? iff (unless (a?), a?)
+    --~^ warning: the condition and the body of `unless` are written the same
+    req r3: n? iff (when a?, b?)
+}
+
+-- The help writes the receiver with its parentheses.
+comp positions_parenthesized {
+    in a: String
+    in b: String
+    pub out p?
+
+    req r: p? iff (a ++ b).at(-1) = "."
+    --~^ warning: write `(a ++ b).at((a ++ b).len - 1)`
+}

@@ -1,7 +1,9 @@
 # Style
 
 The lints of the `style` group find a clearer way to write the same
-thing, and `fren fix` fixes each of them.
+thing, and `fren fix` fixes each of them but the lints of
+[names](#names), whose fixes would rename, and `assertions_on_constants`,
+which finds a constraint that says nothing about the variables.
 
 ## Glob imports
 
@@ -89,11 +91,15 @@ negative, so `n = 0`, `n <= 0` and `n < 1` each say that it is empty, and
 become `s = ""`, or `q = []`, and `n != 0`, `n > 0` and `n >= 1` each say
 that it is not, and become `s != ""`. So does each with the length on the
 right: `0 < s.len` is `s.len > 0`. `card_zero` is the same for a set's or
-relation's `card`, with `{}`. Both are fixable. Other comparisons with `0`
-or `1`, such as `n >= 0`, which always holds, are left as they are, and so
-is a comparison within a [chained
+relation's `card`, with `{}`. Both are fixable. The fix keeps the
+receiver's text, without the parentheses a receiver may need, and puts it
+in parentheses where [fixes need them](../Lint.md#parentheses-in-fixes), so
+`(a ++ b).len = 0` becomes `a ++ b = ""`. Other comparisons with `0`
+or `1` are left as they are, and so is a comparison within a [chained
 comparison](../Lang/Expressions.md#chained-comparisons), where the fix
-would break the chain.
+would break the chain; those that always hold or never do, such as
+`n >= 0`, are
+[`absurd_extreme_comparisons`'s](Suspicious/Comparisons.md).
 `lint::Comparison` is the comparison operators, and `lint::length_zero`
 states which comparisons they fire on:
 
@@ -166,6 +172,26 @@ pub comp length_zero_keeps_meaning {
 }
 ```
 
+`length_zero` also fires on `s.at(0) = ""` and `q.at(0) = []`, and on
+`!=`, with the literal on either side. The first character, or element, is
+the empty one exactly when there is none: `s.at(0)` is `""` unless `0 <
+s.len`, and otherwise a string of one character, which is not `""`. So
+`s.at(0) = ""` becomes `s = ""`, and `s.at(0) != ""` becomes `s != ""`, and
+likewise for sequences, whose `q.at(0)` is `[]` or `[q[0]]`. The fix keeps
+the receiver's text, and it and the fix are put in parentheses where
+[fixes need them](../Lint.md#parentheses-in-fixes); it evaluates the receiver where `at` did, so it keeps the
+guards. `lint::first_empty` states the value, which its `impl` proves for
+strings:
+
+```fren
+pub comp first_empty {
+    in s: String
+    pub det out empty?   -- `s.at(0) = ""`
+
+    req rule: empty? iff s = ""
+}
+```
+
 ## Trivial patterns
 
 `trivial_pattern` fires on `s.matches?(p)`, where the
@@ -218,6 +244,51 @@ pub comp trivial_pattern {
 
     expect not_everything: when pattern = ".*", not fires?
     expect classes_kept: when pattern = "[a-z]", not fires?
+}
+```
+
+## Classes of characters
+
+`manual_pattern_char_comparison` fires on a [pattern](../Lang/Expressions.md#patterns)
+of `matches?` with an alternation of two or more single characters, such as
+`a|b|c`, either the whole pattern or the whole of a pair of parentheses,
+and is fixable. A single character is one that is not special, or `\c`
+for a special `c`. The fix writes each such alternation as the class of
+its characters, without the parentheses: `s.matches?(r"(a|\.)+")` becomes
+`s.matches?(r"[a.]+")`. An alternation matches what one of its
+alternatives matches, here one of the characters, and so does the class,
+which is an atom, like the parentheses it replaces, so a repetition after
+them repeats it. Only the literal changes, so the fix keeps the guards.
+Each alternation in the literal is fixed, and the message is reported once,
+at the literal.
+
+In a class, `]` ends it, `^` first negates it, `-` between two characters
+makes a range, and `\c` is `c` for any character `c`. So the fix writes
+`\`, `]`, `^` and `-` escaped, and every other character as itself, `.`
+and `|` included, which are not special in a class. The new literal is
+raw, with the delimiters of the old one, if the old one is raw and the
+pattern has no `"`; otherwise it is not raw, with the escapes of
+[`trivial_pattern`](#trivial-patterns)'s fix.
+
+`lint::manual_pattern_char_comparison` states when it fires, and
+`lint::class_char` how the fix writes a character in the class:
+
+```fren
+pub comp manual_pattern_char_comparison {
+    in n_alternatives: Int   -- the alternatives of the alternation
+    in single?               -- each is a single character
+    pub det out fires?
+
+    req rule: fires? iff (n_alternatives >= 2 and single?)
+}
+
+pub comp class_char {
+    in c: String         -- a character
+    pub det out escaped?  -- the fix writes it `\c`, rather than `c`
+
+    assume one: c.len = 1
+
+    req rule: escaped? iff c in {"\\", "]", "^", "-"}
 }
 ```
 
@@ -340,7 +411,7 @@ pub comp neg_multiply {
 ```
 
 Each of these fixes, and that of
-[`int_plus_one`](Complexity.md#off-by-one-comparisons), writes its operands
+[`int_plus_one`](Complexity/Comparisons.md#off-by-one-comparisons), writes its operands
 with the text they are written with, and the operands and the fix itself
 in parentheses where [fixes need them](../Lint.md#parentheses-in-fixes), as for
 [`nonminimal_bool`](Complexity.md#simpler-bool-expressions): `2 * - -(x + y)` becomes `2
@@ -349,3 +420,177 @@ in parentheses where [fixes need them](../Lint.md#parentheses-in-fixes), as for
 space, `- -y`, since `--` starts a comment. No fix adds or removes an
 `and`, `or`, `when`, `unless`, `if` or `match`, and each operand is
 evaluated where it was, so the guards are kept.
+
+## Names
+
+Five lints find a declared name that says less than it could, or says it
+twice. Like the [naming conventions](NonstandardStyle.md#naming-conventions),
+each is reported where the name is declared, at the level in effect there,
+and nowhere else. None is fixable: renaming would rename every path to the
+name, in files that `fren fix` may not read.
+
+`module_inception` fires on a module whose last segment repeats its
+parent's, as in `mod lint::lint`, so that every path to it, or to an item
+in it, repeats the name. It is reported at the segment that declares the
+module. `lint::module_inception` states when it fires:
+
+```fren
+pub comp module_inception {
+    in name: String      -- the module's last segment
+    in parent: String    -- its parent's last segment, or `""` for a top-level module
+    pub det out fires?
+
+    req rule: fires? iff name = parent
+
+    expect top_level: when parent = "" and name != "", not fires?
+}
+```
+
+The *words* of a name are split at `_`, and before an uppercase letter
+that follows a lowercase letter or a digit, so that `HeatMode` is `Heat`
+and `Mode`, and `HTTPStatus` is one word. `enum_variant_names` fires in two
+cases, and its message names the word:
+
+- On an enumeration of two or more variants, each of two or more words,
+  that all start, or all end, with the same word, as in `enum Mode {
+  ModeHeat, ModeCool }` and `enum Climate { HeatMode, CoolMode }`. It is
+  reported at the enumeration's name. A variant of one word is the shared
+  word alone, which could not be removed from it.
+- On a variant whose words contain those of its enumeration's name, one
+  after another, and others, as `HighFan` does in `enum Fan { Low, HighFan
+  }`: a path to a variant names its enumeration already, as `Fan::HighFan`
+  does. It is reported at the variant.
+
+Since `HTTPStatus` is one word, `enum S { HTTPStatus, FTPStatus }` shares
+no word, and `enum_variant_names` does not fire on it until the renames
+that [`upper_case_acronyms`](#names) suggests, `HttpStatus` and
+`FtpStatus`, are made.
+
+Clippy's `enum_variant_names` fires on enumerations of three or more
+variants by default, and only on a variant that starts or ends with its
+enumeration's name. `lint::enum_variant_names` and
+`lint::variant_has_enum_name` state when it fires:
+
+```fren
+pub comp enum_variant_names {
+    in n_variants: Int
+    in shared_first?     -- every variant has two or more words, and all have the same first word
+    in shared_last?      -- every variant has two or more words, and all have the same last word
+    pub det out fires?
+
+    assume counts: n_variants >= 0
+
+    req rule: fires? iff (n_variants >= 2 and (shared_first? or shared_last?))
+}
+
+pub comp variant_has_enum_name {
+    in n_words: Int      -- the words of the variant's name
+    in n_enum_words: Int  -- the words of its enumeration's name
+    in contains?         -- the variant's words have the enumeration's, one after another
+    pub det out fires?
+
+    assume counts: n_words >= 0 and n_enum_words >= 0
+
+    req rule: fires? iff (contains? and n_words > n_enum_words)
+
+    expect same_name: when n_words = n_enum_words, not fires?
+}
+```
+
+`upper_case_acronyms` fires on the name of an enumeration, a variant, a
+record or an abstract type that is in `CamelCase`, and so accepted by
+`non_camel_case_types`, but has three or more uppercase letters in a row,
+such as `HTTPStatus`. Its message suggests the name with each such run in
+lower case but for its first letter, and for its last if a lowercase
+letter follows the run, since that letter starts the next word:
+`HTTPStatus` becomes `HttpStatus`, `HTTP2` becomes `Http2`, and `IOError`
+becomes `IoError`. Two uppercase letters in a row, as in `IO` and `UserID`,
+are left as they are. Clippy, by default, fires only on a name all in
+upper case, such as `HTTP`; Fren fires as Clippy's
+`upper-case-acronyms-aggressive` setting does. `lint::upper_case_acronyms`
+states when it fires. Its pattern is that of `CamelCase` in
+[`lint::in_case`](NonstandardStyle.md#naming-conventions), `[A-Z][^_]*`,
+with three uppercase letters in a row, written as one pattern rather than
+two, whose intersection the solver is slow to decide:
+
+```fren
+pub comp upper_case_acronyms {
+    in what: Named
+    in name: String
+    pub det out fires?
+
+    inst c: naming_case { what }
+
+    req rule: fires? iff (c.case = Camel and name.matches?(r"[A-Z]([^_]*[A-Z])?[A-Z][A-Z][^_]*"))
+
+    expect constants: when what = Named::Constant, not fires?
+}
+```
+
+`just_underscores_and_digits` fires on a name made only of `_` and digits,
+other than the wildcard `_`, before a final `?` if it has one. An
+[identifier](../Lang/Lexical.md#identifiers) starts with a letter or `_`, so
+such a name starts with `_`, as `_1`, `__` and `_2?` do, and both front
+ends accept one wherever a name is declared: for a module, a component, a
+variable, a parameter, a field, a binder, a function, an instance, a
+constraint, a global expectation, an enumeration, a variant, a record, an
+abstract type or a constant. A name in `CamelCase` or `UPPER_CASE` starts
+with a letter, so `non_camel_case_types` or `non_upper_case_constants`
+reports such a name too, where it is in one of those cases.
+
+`disallowed_names` fires on a name that is a placeholder: `foo`, `baz` or
+`quux`, in any case, such as `Foo` or `FOO`, before a final `?` if it has
+one. These are Clippy's default `disallowed-names`. Clippy's list no longer
+has `bar`, which is a word, as in a bar of a chart, and Fren's does not
+either.
+
+```fren
+pub comp just_underscores_and_digits {
+    in name: String
+    pub det out fires?
+
+    req rule: fires? iff (name.matches?(r"[_0-9]+[?]?") and name != "_")
+}
+
+pub comp disallowed_names {
+    in name: String
+    pub det out fires?
+
+    req rule: fires? iff name.matches?(r"([Ff][Oo][Oo]|[Bb][Aa][Zz]|[Qq][Uu][Uu][Xx])[?]?")
+}
+```
+
+## Constant constraints
+
+`assertions_on_constants` fires on an assumption, requirement,
+expectation or cover goal, of a component or [global](../Lang/Global.md), whose
+expression mentions no variable and no uninterpreted function (see
+[Mentions](../Lang/Expressions.md#mentions)), as
+[`constant_output`](Complexity.md#constant-outputs) does on a
+definition, such as `req r: true` or `expect e: LIMIT > 0`. An
+application of an uninterpreted function counts, since its value depends
+on the [interpretation](../Lang/Components.md#interpretations).
+
+Such a constraint is the same in every behaviour. If it is always true,
+it says nothing. If it is always false, a requirement makes its component
+unrealizable, an assumption makes every requirement hold vacuously, and an
+expectation always fails. The message says which where the expression is
+written `true` or `false`, in parentheses or not; otherwise only the
+solver could tell, and a lint never asks it, so the message says that the
+constraint mentions no variable. It has no fix: removing a constraint
+changes the checks, and what traces and claims name.
+[`duplicate_constraint`](Suspicious.md#repeated-constraints) removes one
+too, but only a repeat of an earlier constraint of its kind, written the
+same: the one it repeats stays, with its checks and its name, so all that
+goes is a second copy, which checks nothing more. A constant constraint
+repeats nothing, so removing it would lose its checks and its name.
+`lint::assertions_on_constants` states when it fires:
+
+```fren
+pub comp assertions_on_constants {
+    in mentions?         -- the expression mentions a variable or an uninterpreted function
+    pub det out fires?
+
+    req rule: fires? iff not mentions?
+}
+```

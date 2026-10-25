@@ -1,0 +1,14 @@
+warning[F0763]: this comparison is always `true`
+ --> test/cli/lints/suspicious/f0763_absurd_extreme_comparisons.fren:2:50
+  |
+2 | comp c { in q: Seq(Int) pub out p? req r: p? iff -1 < q.len }
+  |                                                  ^^^^^^^^^^ `len` is never negative
+  |
+  = note: the bound or the operator is probably not the one meant
+  = note: `absurd_extreme_comparisons` is `warn` by default
+  = help: to allow it, `set_option fren.lint.absurd_extreme_comparisons "allow"`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0763`.
+exit=3

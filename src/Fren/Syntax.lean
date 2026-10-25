@@ -135,6 +135,9 @@ scoped syntax:35 fren_expr:35 " && " fren_expr:36 : fren_expr
 scoped syntax:30 fren_expr:30 " || " fren_expr:31 : fren_expr
 scoped syntax:30 fren_expr:30 " | " fren_expr:31 : fren_expr
 scoped syntax:40 "!" fren_expr:40 : fren_expr
+/-- `<-`, a Lean token, parsed only to say that it is not `< -`
+(`Fren.Core.leftArrowMsg`). -/
+scoped syntax:50 fren_expr:51 " <- " fren_expr:51 : fren_expr
 /-- Like Lean's `if`, it can be an operand without parentheses, and the
 `else` branch extends as far right as possible. -/
 scoped syntax:max "if " fren_expr " then " fren_expr " else " fren_expr : fren_expr

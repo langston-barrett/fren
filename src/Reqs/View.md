@@ -285,11 +285,15 @@ pub comp summary {
 
 `view::counted` says which count a result is in: by its verdict, except
 that a redundant constraint is counted apart. So the failures that the
-summary counts are exactly the results that are errors:
+summary counts are exactly the results that are errors. `InconclusiveBucket`
+is named apart from the verdict `Inconclusive`, and `RedundantBucket` like
+it, so `Bucket` allows `enum_variant_names`, which fires on a variant that
+contains its enumeration's name:
 
 ```fren
 -- `Inconclusive` is a verdict's name, which `counted` uses too, so the
 -- bucket's has a suffix.
+set_option fren.lint.enum_variant_names "allow" in
 pub enum Bucket { Passed, Failed, InconclusiveBucket, Redundant }
 
 pub comp counted {

@@ -1,0 +1,34 @@
+warning[F0769]: this string literal contains an invisible character, `U+200B` (zero width space)
+ --> test/cli/lints/suspicious/f0769_invisible_characters.fren:2:52
+  |
+2 | comp c { in s: String pub out p? req r: p? iff s = "a​b" }
+  |                                                    ^^^^^ contains what cannot be seen
+  |
+  = note: it cannot be seen, so it is probably not meant
+  = help: `fren fix` can fix this
+  = note: `invisible_characters` is `warn` by default
+  = help: to allow it, `set_option fren.lint.invisible_characters "allow"`
+help: write it as an escape
+  |
+2 - comp c { in s: String pub out p? req r: p? iff s = "a​b" }
+2 + comp c { in s: String pub out p? req r: p? iff s = "a\u200Bb" }
+  |
+
+warning[F0769]: this comment contains an invisible character, `U+202E` (right-to-left override)
+ --> test/cli/lints/suspicious/f0769_invisible_characters.fren:3:1
+  |
+3 | -- a ‮ comment
+  | ^^^^^^^^^^^^^^ may not read as it is written
+  |
+  = note: a bidirectional control can make the text read differently from what it means
+  = help: `fren fix` can fix this
+help: remove it
+  |
+3 - -- a ‮ comment
+3 + -- a  comment
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0769`.
+exit=3

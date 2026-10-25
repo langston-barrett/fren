@@ -94,7 +94,7 @@ comp places {
 
     req arg: a? iff between?(0, x, 10) = (0 <= x < 10)
 
-    expect constant: IN_RANGE
+    expect constant: IN_RANGE  --~ warning: this expectation mentions no variable
     expect defined: d? iff level = 1
     expect applied: a?
     expect bound: h.open? iff 0 < y <= 3

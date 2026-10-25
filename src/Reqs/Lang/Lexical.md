@@ -155,7 +155,7 @@ pub comp longest_identifier {
     pub out ends?
 
     inst w: identifier { lexeme }
-    inst one: identifier { lexeme := lexeme ++ remaining.slice(0, 1) }
+    inst one: identifier { lexeme := lexeme ++ remaining.at(0) }
     inst two: identifier { lexeme := lexeme ++ remaining.slice(0, 2) }
 
     req longest: when w.accepted? and remaining != "", ends? iff not (one.accepted? or two.accepted?)
@@ -358,11 +358,11 @@ pub comp escape_start {
     req escapes: accepted? iff (remaining.starts_with?("n") or remaining.starts_with?("r")
         or remaining.starts_with?("t") or remaining.starts_with?("\\") or remaining.starts_with?("\"")
         or remaining.starts_with?("'")
-        or (remaining.starts_with?("x") and remaining.slice(1, 1).matches?(r"[0-9a-fA-F]")
-        and remaining.slice(2, 1).matches?(r"[0-9a-fA-F]"))
-        or (remaining.starts_with?("u") and remaining.slice(1, 1).matches?(r"[0-9a-fA-F]")
-        and remaining.slice(2, 1).matches?(r"[0-9a-fA-F]") and remaining.slice(3, 1).matches?(r"[0-9a-fA-F]")
-        and remaining.slice(4, 1).matches?(r"[0-9a-fA-F]")))
+        or (remaining.starts_with?("x") and remaining.at(1).matches?(r"[0-9a-fA-F]")
+        and remaining.at(2).matches?(r"[0-9a-fA-F]"))
+        or (remaining.starts_with?("u") and remaining.at(1).matches?(r"[0-9a-fA-F]")
+        and remaining.at(2).matches?(r"[0-9a-fA-F]") and remaining.at(3).matches?(r"[0-9a-fA-F]")
+        and remaining.at(4).matches?(r"[0-9a-fA-F]")))
 }
 
 refine escape_sequence_starts: escape_sequence refines escape_start
@@ -386,6 +386,14 @@ and `mod`, which [divide by a constant](Expressions.md#division-and-remainder)).
 three are lexed as punctuators, so that the message names them as Lean's
 does.
 
+`<-` is a punctuator too, since it is a Lean token, and Fren is lexed as
+Lean is: `x <- 1` is `x`, `<-` and `1`, not `x < -1`. Fren has no operator
+`<-`, so it is an error (F0121), with the fix `< -`. It is the only Lean
+token made of Fren punctuators that could otherwise be read as Fren: the
+others, such as `->`, `<->`, `|>`, `<|`, `>>`, `..` and `.(`, would be
+punctuators that never follow one another in an expression, so they are
+errors either way.
+
 Punctuators follow maximal munch too, so `::*` is one punctuator and not
 `::` followed by `*`. A punctuator that extends a shorter one does so one
 character at a time, through punctuators (`:`, `::`, `::*`), so one
@@ -399,7 +407,7 @@ the rule assumes that `lexeme` is a punctuator:
 ```fren
 -- Longest first, as the lexer tries them.
 pub const PUNCTUATORS: Set(String) := {
-    "::*", "::{", "::", "==", "=>", "&&", "||", "|", "!=", "<=", ">=", ":=", "{", "}",
+    "::*", "::{", "::", "==", "=>", "&&", "||", "|", "!=", "<=", "<-", ">=", ":=", "{", "}",
     "(", ")", "[", "]", ",", ":", ".", "*", "=", "<", ">", "++", "+", "-",
 }
 
@@ -409,10 +417,11 @@ pub comp punctuator {
 
     req rule: accepted? iff lexeme in PUNCTUATORS
 
-    -- The punctuators listed above, and the three of other languages.
+    -- The punctuators listed above, the three of other languages, and
+    -- Lean's `<-`.
     expect listed: accepted? iff lexeme in {
         "::", "::*", "::{", ":", ":=", ",", "(", ")", "{", "}", "[", "]", ".", "=>", "|",
-        "=", "!=", "<", "<=", ">", ">=", "+", "++", "-", "*", "==", "&&", "||",
+        "=", "!=", "<", "<=", ">", ">=", "+", "++", "-", "*", "==", "&&", "||", "<-",
     }
 }
 
@@ -423,12 +432,13 @@ pub comp punctuator_end {
 
     assume a_punctuator: lexeme in PUNCTUATORS
 
-    out longer: String := lexeme ++ remaining.slice(0, 1)
+    out longer: String := lexeme ++ remaining.at(0)
     inst one: punctuator { lexeme := longer }
     req maximal_munch: ends? iff (remaining = "" or not one.accepted?)
 
     expect path_glob: when lexeme = "::" and remaining.starts_with?("*"), not ends?
     expect no_triple: when lexeme.len = 3, ends?
+    expect lean_arrow: when lexeme = "<" and remaining.starts_with?("-"), not ends?
 }
 ```
 
@@ -451,7 +461,7 @@ pub comp longest_punctuator {
 
     assume a_punctuator: lexeme in PUNCTUATORS
 
-    inst one: punctuator { lexeme := lexeme ++ remaining.slice(0, 1) }
+    inst one: punctuator { lexeme := lexeme ++ remaining.at(0) }
     inst two: punctuator { lexeme := lexeme ++ remaining.slice(0, 2) }
 
     req longest: when remaining != "", ends? iff not (one.accepted? or two.accepted?)

@@ -225,6 +225,8 @@ def Ex.nonminimal : Ex → Option (String × Shape)
   | .ite _ (.lit true) _ => some ("`if` with `then true`", .bin .or (.same (.kid 0)) (.same (.kid 2)))
   | .ite _ (.lit false) _ => some ("`if` with `then false`", .bin .and (.not (.same (.kid 0))) (.same (.kid 2)))
   | .ite _ _ (.lit true) => some ("`if` with `else true`", .bin .or (.not (.same (.kid 0))) (.same (.kid 1)))
+  | .when false (.lit true) _ => some ("`when true`", .same (.kid 1))
+  | .when true (.lit false) _ => some ("`unless false`", .same (.kid 1))
   | _ => none
 
 /-- The outermost operator of an operand, as the lints on conditionals see
@@ -511,6 +513,12 @@ theorem iteV_else_true (c a : Option Val) : iteV c a (some (.bool true)) ⊑ bin
   cases hb
   cases y <;> simp [Val.sameType] at hy; cases x <;> simp [binV, notV]
 
+/-- `when true, d` and `unless false, d` are `d`. -/
+theorem whenV_trivial (n : Bool) (d : Option Val) : whenV n (some (.bool !n)) d ⊑ d := by
+  intro v hv
+  match d, hv with
+  | some (.bool _), hv => cases n <;> simpa [whenV] using hv
+
 theorem Val.sameType_comm (a b : Val) : a.sameType b = b.sameType a := by
   cases a <;> cases b <;> simp only [Val.sameType]
   exact Bool.beq_comm
@@ -597,6 +605,8 @@ theorem nonminimal_sound {e : Ex} {lbl : String} {s : Shape} (h : e.nonminimal =
   · exact iteV_then_true _ _
   · exact iteV_then_false _ _
   · exact iteV_else_true _ _
+  · exact whenV_trivial false _
+  · exact whenV_trivial true _
 
 theorem simplerForm_sound (l : ExLint) {e : Ex} {lbl : String} {s : Shape} (h : e.simplerForm l = some (lbl, s))
     (ρ : Nat → Val) : e.eval ρ ⊑ (s.build e.pick).eval ρ := by

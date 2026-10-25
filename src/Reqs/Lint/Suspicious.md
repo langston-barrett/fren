@@ -1,151 +1,83 @@
 # Suspicious
 
 The lints of the `suspicious` group find what is probably not what the
-writer meant.
+writer meant. This chapter has the lints of names, of constraints and of
+the spacing of negations, and its subchapters the others: those of
+[expressions](Suspicious/Expressions.md), of [methods and
+indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md) and of
+[comparisons](Suspicious/Comparisons.md).
 
-## Indexes
+## Repeated constraints
 
-`index_after_use` fires on `a and b`, where `a` indexes a sequence `q` and
-`b` bounds it: it mentions `q.len`, or compares `q` with `[]`. The index is
-probably meant to be guarded by `b`, but `and` guards its right operand by
-its left (see [Expressions](../Lang/Expressions.md#sequences)), so the
-[definedness check](../Check.md#definedness) fails. The fix swaps the
-operands, which does not change the meaning. The lint looks only at the
-text, never at the solver:
+`duplicate_constraint` fires on a constraint of a component that is
+written the same as an earlier one of the component, whatever their
+kinds, `assume`, `req` or `expect`, and on a global expectation written
+the same as an earlier one of its module in the same file. A cover goal
+is not a constraint, and is not compared. Two
+constraints are written the same if their expressions are (see
+[Written the same](../Lint.md#written-the-same)), and two global
+expectations if all they say after their names is, binders included. It is
+reported at the later one's name, and the message names the first one it
+repeats.
+
+Of two `req`s that say the same, the [redundancy
+check](../Check.md#redundancy) reports each as following from the other,
+which invites removing both; this lint says which to remove. Two
+expectations that say the same are reported by no check. Where the two are
+of one kind, the fix removes the later one, with a `--` comment after it
+on its last line, and for a global expectation any `set_option ... in`
+before it. This keeps the meaning: a constraint
+that repeats one of its kind adds nothing to the component, and an
+expectation that repeats one claims nothing more. An `expect` that repeats
+a `req` or an `assume` is not fixed: it tests nothing, since it follows
+from what it repeats, and was probably meant to say something stronger,
+which the message says. Nor is a `req` that repeats an `assume`, or the
+reverse, since the two mean different things. `lint::duplicate_constraint`
+states this:
 
 ```fren
 pub mod lint
 
-pub comp index_after_use {
-    in indexes_left?     -- `a` indexes a sequence `q`
-    in bounds_right?     -- `b` mentions `q.len`, or compares `q` with `[]`
+pub enum ConstraintKind { Assume, Req, Expect }
+
+pub comp duplicate_constraint {
+    in earlier: ConstraintKind
+    in later: ConstraintKind
+    in same?             -- the later is written the same as the earlier
     pub det out fires?
-
-    req rule: fires? iff (indexes_left? and bounds_right?)
-}
-```
-
-## Suspicious expressions
-
-These lints fire on expressions that are legal but probably not what the
-writer meant. Two operands are compared as [written the
-same](../Lint.md#written-the-same), where the parentheses around an operand
-are not part of it, so the operands of `f(x) = f(x)` are written the same,
-and those of `x = (x)`, but not those of `x + 1 = 1 + x`.
-
-`eq_op` fires on an infix operator whose two operands are written the
-same, where the expression is then always the same value, or the same as
-its operand: `x = x`, `x <= x`, `x >= x`, `a? iff a?` and `s subset s`
-are always `true`; `x != x`, `x < x` and `x > x` are always `false`;
-`x - x` is always `0` and `s minus s` always `{}`; `a? and a?`, `a? or
-a?`, `s union s` and `s inter s` are the operand. The message says which.
-It has no fix: the likely mistake is a typo in one operand, which no
-rewrite can repair. It does not fire on `+`, `*`, `++` or `join`, where `x
-+ x` and `r join r` mean something, nor on `in`, nor on the comparisons
-of a [chained comparison](../Lang/Expressions.md#chained-comparisons),
-such as `x < x < y`, which it leaves to a later lint on chains.
-`lint::eq_op` states this:
-
-```fren
-pub enum InfixOp {
-    Iff, Or, And, Eq, Ne, Lt, Le, Gt, Ge, In, Subset, Add, Sub, Concat, Union, Minus, Mul, Inter, Join,
-}
-
-pub enum EqOpValue { AlwaysTrue, AlwaysFalse, Zero, Empty, Operand }
-
-pub comp eq_op {
-    use self::EqOpValue::{AlwaysFalse, AlwaysTrue, Empty, Operand, Zero}
-    use self::InfixOp::{Add, Concat, Eq, Ge, Gt, Iff, In, Join, Le, Lt, Minus, Mul, Ne, Sub, Subset}
-    in op: InfixOp
-    in same?             -- the operands are written the same
-    pub det out fires?
-    pub out value: EqOpValue  -- what the expression is, where it fires
-
-    req rule: fires? iff (same? and not op in {Add, Mul, Concat, Join, In})
-    req values: when fires?, value = match op {
-        Eq | Le | Ge | Iff | Subset => AlwaysTrue,
-        Ne | Lt | Gt => AlwaysFalse,
-        Sub => Zero,
-        Minus => Empty,
-        _ => Operand,
-    }
-
-    expect needs_same: when fires?, same?
-}
-```
-
-`same_branches` fires on `if c then a else b`, where `a` and `b` are
-written the same: the condition decides nothing. The fix replaces the
-conditional with `a`, in parentheses where
-[fixes need them](../Lint.md#parentheses-in-fixes), from the operator that the conditional is an
-operand of and what follows it, as for
-[`nonminimal_bool`](Complexity.md#simpler-bool-expressions). The value is `a`'s, and
-the [guards](../Lang/Expressions.md#sequences) of what remains get no
-weaker: the copy of `a` guarded by `c` and the one guarded by `not c` are
-both defined exactly when `a` is defined under the guard of the
-conditional, which is `a`'s guard after the fix, and removing `c` only
-removes something that is evaluated. A `match` whose arms are all written
-the same is left to other lints. `lint::same_branches` states when it
-fires:
-
-```fren
-pub comp same_branches {
-    in same?             -- the branches are written the same
-    pub det out fires?
+    pub det out fixed?   -- the fix removes the later
 
     req rule: fires? iff same?
+    req fix: fixed? iff (same? and earlier = later)
+
+    expect weaker_kept: when later = ConstraintKind::Expect and earlier != later, not fixed?
 }
 ```
 
-`duplicate_elements` fires on a set or relation literal with an element
-written the same as an earlier one, as in `{a, b, a}` or `{(a, b), (a,
-b)}`, and is reported once for the literal. A set has no repeats, so the
-fix, which removes each repeat with the `,` before it, keeps the meaning,
-and it keeps the guards, which are the same for every element of the
-literal. It does not fire on a sequence literal, where a repeat means
-something. `lint::duplicate_elements` states when it fires:
+## Negations after operators
+
+`suspicious_unary_op_formatting` fires on a binary operator that is a
+[punctuator](../Lang/Lexical.md#punctuators), directly followed by a
+negation, `-`, that whitespace follows, as in `x >=- 1`, `a =- b` and `a
+*- b`: the reader may take the operator and the `-` for one operator.
+`-` itself is never directly followed by a `-`, which starts a comment,
+and `<` never is, since `<-` is one punctuator, an
+[error](../Lang/Lexical.md#punctuators). The lint looks only at the text,
+in any constraint, binding, definition, constant or global expectation,
+and is fixable. The fix moves the whitespace from after the `-` to before
+it, so `x >=- 1` becomes `x >= -1`, and keeps the rest as it is written;
+before an operand that starts with `-`, it keeps one space after the `-`
+too, as in `x >= - -1`. Only whitespace moves, so the fix changes neither
+the meaning nor the guards. [`fren fmt`](../Fmt.md) writes the negation so
+too. `lint::suspicious_unary_op_formatting` states when it fires:
 
 ```fren
-pub comp duplicate_elements {
-    in n_repeats: Nat    -- elements written the same as an earlier one
+pub comp suspicious_unary_op_formatting {
+    in punctuator?       -- the operator is a punctuator other than `-`
+    in adjacent?         -- the `-` directly follows it
+    in spaced?           -- whitespace directly follows the `-`
     pub det out fires?
 
-    req rule: fires? iff n_repeats > 0
-}
-```
-
-`empty_argument` fires on a method applied to an empty argument, where
-its value at that [edge](../Lang/Expressions.md#methods) does not depend on
-the receiver as it seems to. An argument is empty if it is written `""`
-or `[]`, or, as the length of `slice`, `0`. Where `s` is the receiver, a
-string or a sequence, and `e` the empty argument:
-
-| Written | Value |
-|---|---|
-| `s.starts_with?(e)`, `s.ends_with?(e)`, `s.contains?(e)` | `true` |
-| `s.replace(e, b)` | `b ++ s` |
-| `s.replace_all(e, b)` | `s` |
-| `s.index_of(e, i)` | `i` if `0 <= i <= s.len`, and `-1` otherwise |
-| `s.slice(i, 0)` | `""`, or `[]` |
-
-The message says what the expression is. It has no fix: the likely
-mistake is the argument, and writing the value instead would keep the
-mistake and hide it. `lint::empty_argument` states when it fires, from the
-method and the position of an empty argument:
-
-```fren
-pub comp empty_argument {
-    use lang::Method
-    use lang::Method::{Contains, EndsWith, IndexOf, Replace, ReplaceAll, Slice, StartsWith}
-    in method: Method
-    in index: Nat        -- the position of the argument, from 0
-    in empty?            -- it is written `""` or `[]`, or `0`
-    pub det out fires?
-
-    req rule: fires? iff (empty? and match method {
-        StartsWith | EndsWith | Contains | Replace | ReplaceAll | IndexOf => index = 0,
-        Slice => index = 1,
-        _ => false,
-    })
+    req rule: fires? iff (punctuator? and adjacent? and spaced?)
 }
 ```

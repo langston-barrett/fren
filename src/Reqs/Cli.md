@@ -385,7 +385,8 @@ pub comp color {
 
     -- Piped output, as in tests and logs, is plain unless asked for.
     expect pipes_plain: when not tty? and choice != Always, not colored?
-    expect forced: when choice = Always, colored?
+    -- `always` and `never` decide alone, whatever the environment.
+    expect forced: when choice != Auto, colored? iff choice = Always
 }
 ```
 

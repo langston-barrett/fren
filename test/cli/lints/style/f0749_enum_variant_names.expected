@@ -1,0 +1,41 @@
+warning[F0749]: every variant of `Mode` ends with `Mode`
+ --> test/cli/lints/style/f0749_enum_variant_names.fren:2:10
+  |
+2 | pub enum Mode { HeatMode, CoolMode }
+  |          ^^^^ its variants share a word
+  |
+  = help: remove `Mode` from each variant's name, or put it in the enumeration's
+  = note: `enum_variant_names` is `warn` by default
+  = help: to allow it, `set_option fren.lint.enum_variant_names "allow"`
+
+warning[F0749]: variant `HeatMode` contains the name of its enumeration `Mode`
+ --> test/cli/lints/style/f0749_enum_variant_names.fren:2:17
+  |
+2 | pub enum Mode { HeatMode, CoolMode }
+  |                 ^^^^^^^^ contains `Mode`
+  |
+  = note: a path to it names the enumeration already, as `Mode::HeatMode` does
+  = help: remove `Mode` from its name
+
+warning[F0749]: variant `CoolMode` contains the name of its enumeration `Mode`
+ --> test/cli/lints/style/f0749_enum_variant_names.fren:2:27
+  |
+2 | pub enum Mode { HeatMode, CoolMode }
+  |                           ^^^^^^^^ contains `Mode`
+  |
+  = note: a path to it names the enumeration already, as `Mode::CoolMode` does
+  = help: remove `Mode` from its name
+
+warning[F0749]: variant `HighFan` contains the name of its enumeration `Fan`
+ --> test/cli/lints/style/f0749_enum_variant_names.fren:4:21
+  |
+4 | pub enum Fan { Low, HighFan }
+  |                     ^^^^^^^ contains `Fan`
+  |
+  = note: a path to it names the enumeration already, as `Fan::HighFan` does
+  = help: remove `Fan` from its name
+
+fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0749`.
+exit=3

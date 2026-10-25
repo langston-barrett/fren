@@ -88,6 +88,8 @@ right-associative, with its operand on the right.
 ```fren
 pub mod lang
 
+-- `NonAssoc` contains `Assoc`, as "non-associative" does.
+set_option fren.lint.enum_variant_names "allow" in
 pub enum Assoc { Left, Right, NonAssoc }
 
 pub comp operand {
@@ -1043,13 +1045,15 @@ The methods of `String`, where `s` is the receiver:
 position. Several of them search a string or slice it at a position that
 is not a constant, which is outside the [decidable
 core](Decidability.md#strings), so it allows that. It also allows
-`empty_argument` and `manual_method`, which fire on some of the laws, such
-as `s.contains?("")`, since those laws are what the lints rely on:
+`empty_argument`, `manual_method` and `redundant_slicing`, which fire on
+some of the laws, such as `s.contains?("")`, since those laws are what the
+lints rely on:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
 set_option fren.lint.empty_argument "allow" in
 set_option fren.lint.manual_method "allow" in
+set_option fren.lint.redundant_slicing "allow" in
 pub comp string_methods {
     in s: String
     in t: String
@@ -1111,14 +1115,15 @@ in the core. `rev`, `++`, `at`, `slice`, `contains?`, `index_of` and
 argument that is not a literal, are outside the [decidable
 core](Decidability.md#sequences), so it allows that. As
 `lang::string_methods` does, it also allows the lints that fire on the laws
-they rely on, `empty_argument`, `manual_method` and
-`redundant_method_chain`:
+they rely on, `empty_argument`, `manual_method`,
+`redundant_method_chain` and `redundant_slicing`:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
 set_option fren.lint.empty_argument "allow" in
 set_option fren.lint.manual_method "allow" in
 set_option fren.lint.redundant_method_chain "allow" in
+set_option fren.lint.redundant_slicing "allow" in
 pub comp collection_methods {
     in p: Seq(Int)
     in q: Seq(Int)

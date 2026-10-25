@@ -160,6 +160,7 @@ where
 
 @[command_elab Lang.checkCmd] def elabCheck : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
+  lintInvisible stx
   if stx[1].isNone then
     let l ← getLocal
     checkAndReport (l.comps ++ l.globals ++ l.refinements)

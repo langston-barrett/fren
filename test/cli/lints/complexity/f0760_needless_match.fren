@@ -1,0 +1,10 @@
+-- `needless_match`.
+pub enum Shape { Dot, Circle(Int) }
+pub comp c {
+    in s: Shape
+    pub out t: Shape
+    pub out u: Shape
+
+    req r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) }
+    req q: u = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
+}

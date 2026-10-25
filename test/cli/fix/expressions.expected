@@ -1,0 +1,19 @@
+--- test/cli/fix/expressions.fren
++++ test/cli/fix/expressions.fren
+@@ -19,6 +19,6 @@
+-    req r1: p1? iff if a? then b? else not b?
+-    req r2: p2? = if a? and b? then not (x > 0 or a?) else (x > 0 or a?)
+-    req r3: t = match (s) { Shape::Dot => Shape::Dot, _ => s }
+-    req r4: p3? iff x >- 1 and x >=- - 1
+-    req r5: n = 2 *- (x + 1)
+-    req r6: p4? iff x > 0 and if a? then b? else not b?
++    req r1: p1? iff (a? iff b?)
++    req r2: p2? = ((a? and b?) != (x > 0 or a?))
++    req r3: t = s
++    req r4: p3? iff x >= 1
++    req r5: n = 2 * -(x + 1)
++    req r6: p4? iff x > 0 and (a? iff b?)
+@@ -26 +26 @@
+-    req r7: p5? iff (if a? and if c? then b? else a? then b? else not b?)
++    req r7: p5? iff ((a? and if c? then b? else a?) iff b?)
+exit=1

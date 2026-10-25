@@ -1,6 +1,9 @@
 -- A constant imported with `use` and mentioned only through a field read or
 -- a method: the import is used, in both front ends.
 
+-- Expectations about constants test what the language computes.
+set_option fren.lint.assertions_on_constants "allow"
+
 mod places
 pub struct Place { name: String, floor: Int }
 pub const LOBBY: Place := Place { name := "lobby", floor := 0 }

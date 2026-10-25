@@ -1,0 +1,90 @@
+-- The lints of strings, sequences, methods and patterns, in both front
+-- ends: `manual_method` and `length_zero` on `at` and `slice`,
+-- `redundant_slicing`, `no_effect_replace`, `const_is_empty`,
+-- `manual_pattern_char_comparison` and `almost_complete_range`.
+set_option fren.lint.undecidable "allow"
+
+-- The calls are in functions' bodies, which no check reads.
+pub fn m1?(s: String) := s.at(0) = "a" and "\n" != s.at(s.len - 1)
+--~^ warning: this is a call of `starts_with?`
+--~^^ warning: this is a call of `ends_with?`
+pub fn m2?(q: Seq(Int), x: Int) := q.at(0) = [x] or q.at(q.len - 1) = [1]
+--~^ warning: this is a call of `starts_with?`
+--~^^ warning: this is a call of `ends_with?`
+pub fn m3(s: String, i: Int): String := s.slice(i, 1) ++ (s ++ s).slice(-1, 1)
+--~^ warning: this is a call of `at`
+--~^^ warning: this is a call of `at`
+--~^^^ warning: a negative position does not count from the end
+-- More than one character, another position, or another receiver.
+pub fn m4?(s: String, t: String) := s.at(0) = "ab" or s.at(1) = "a" or s.at(t.len - 1) = "a" or s.at(0) = t
+pub fn m5(s: String): String := s.slice(0, 2) ++ s.slice(1, 2)
+
+pub fn z1?(s: String, q: Seq(Int)) := s.at(0) = "" and q.at(0) != [] and "" = (s ++ s).at(0)
+--~^ warning: say whether it is empty with `""`, not `at`
+--~^^ warning: say whether it is empty with `[]`, not `at`
+--~^^^ warning: say whether it is empty with `""`, not `at`
+pub fn z2?(s: String) := s.at(1) = "" or s.at(0) = " "  --~ warning: this is a call of `starts_with?`
+
+pub fn w1(s: String, q: Seq(Int)): Int := s.slice(0, s.len).len + (q ++ q).slice(0, (q ++ q).len).len
+--~^ warning: this slice is the whole of its receiver
+--~^^ warning: this slice is the whole of its receiver
+pub fn w2(s: String, t: String): String := s.slice(0, t.len) ++ s.slice(1, s.len) ++ (s ++ t).slice(0, s.len)
+
+pub fn r1(s: String, a: String): String := s.replace(a, a) ++ s.replace_all(a ++ "x", (a ++ "x"))
+--~^ warning: this `replace` has no effect
+--~^^ warning: this `replace_all` has no effect
+pub fn r2(q: Seq(Int)): Seq(Int) := q.replace([1], [1])  --~ warning: this `replace` has no effect
+pub fn r3(s: String, a: String): String := s.replace(a, "b") ++ s.replace_all("a", "A")
+
+pub fn c1?(x: Int) := "ab".len = 0 or 0 < [1, 2].len or {x}.card = 0 or {(x, x)}.card >= 1
+--~^ warning: this test of a literal is always `false`
+--~^^ warning: this test of a literal is always `true`
+--~^^^ warning: this test of a literal is always `false`
+--~^^^^ warning: this test of a literal is always `true`
+pub fn c2?(x: Int) := "ab" = "" or [x] != [] or {} = {x}
+--~^ warning: this test of a literal is always `false`
+--~^^ warning: this test of a literal is always `true`
+--~^^^ warning: this test of a literal is always `false`
+-- Not fixed: a set's `card` but for emptiness, and variables.
+pub fn c3?(x: Int, s: String) := {x, 1}.card = 2 or s.len = 0 or s = ""
+--~^ warning: say whether it is empty with `""`, not `len`
+
+pub comp patterns {
+    in s: String
+    pub out p1?
+    pub out p2?
+    pub out p3?
+
+    req t1: p1? iff (s.matches?(r"(a|b)+x") or s.matches?("x|\\.|-") or s.matches?(r#"(\]|\^|")?"#))
+    --~^ warning: this alternation of single characters is a class
+    --~^^ warning: this alternation of single characters is a class
+    --~^^^ warning: this alternation of single characters is a class
+    req t2: p2? iff (s.matches?("[a-y]+") or s.matches?(r"[^B-Z0-8_]") or s.matches?("[A-Y]|[b-z]"))
+    --~^ warning: the range `a-y` is one character short of `a-z`
+    --~^^ warning: these ranges are each one character short of a whole alphabet
+    --~^^^ warning: these ranges are each one character short of a whole alphabet
+    -- Alternatives that are not single characters, and whole ranges.
+    req t3: p3? iff (s.matches?("ab|c") or s.matches?("(a|.)") or s.matches?("[1-9][0-9]*") or s.matches?("[a-z]"))
+}
+
+-- A receiver that ends in a conditional keeps its parentheses where
+-- something follows it.
+pub comp open_receivers {
+    in s: String
+    in t: String
+    in b?
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+
+    req r1: p1? iff "ab" = (s ++ if b? then t else s).slice(0, (s ++ if b? then t else s).len) ++ t
+    --~^ warning: write `(s ++ if b? then t else s)`
+    req r2: p2? iff "ab" = (s ++ if b? then t else s).replace(t, t) ++ t
+    --~^ warning: write `(s ++ if b? then t else s)`
+    req r3: p3? iff (s ++ if b? then t else s).at(0) = ""
+    --~^ warning: say whether it is empty with `""`, not `at`
+    req r4: p4? iff (s ++ t).at(0).len = 0 or (s ++ if b? then t else s).len != 0 or b?
+    --~^ warning: say whether it is empty with `""`, not `len`
+    --~^^ warning: say whether it is empty with `""`, not `len`
+}

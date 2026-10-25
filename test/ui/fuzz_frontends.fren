@@ -3,10 +3,14 @@
 
 -- Methods chained after a literal, where the first takes arguments.
 expect sliced: "ab".slice(0, 1).len = 1 and ("a").len = 1
+--~^ warning: this expectation mentions no variable
+--~^^ warning: this is a call of `at`
+--~^^^ warning: this test of a literal is always `true`
 
 -- `card` of a literal, with no set variable: the solver must still be
 -- told of sets.
 expect counted_literal: {1, 2}.card = 2
+--~^ warning: this expectation mentions no variable
 
 comp counted {
     in x: Int
@@ -31,6 +35,7 @@ comp member {
 -- Methods without arguments chained after a literal or a parenthesized
 -- receiver, whose names Lean lexes as one dotted identifier (#97).
 expect chained_literal: {(1, 2)}.range.card = 1 and {(1, 2)}.inverse.image({2}) = {1}
+--~^ warning: this expectation mentions no variable
 
 enum Dir { Up, Down }
 

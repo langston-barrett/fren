@@ -1,0 +1,10 @@
+--- test/cli/fix/field_lengths.fren
++++ test/cli/fix/field_lengths.fren
+@@ -12,3 +12,3 @@
+-    req r1: p1? iff (r).s.len = 0 or (r).t.card > 0
+-    req r2: p2? iff { r with x := 1 }.q.len != 0
+-    req r3: p3? iff ("ab" ++ (r).s).len = 0
++    req r1: p1? iff (r).s = "" or (r).t != {}
++    req r2: p2? iff { r with x := 1 }.q != []
++    req r3: p3? iff "ab" ++ (r).s = ""
+exit=1

@@ -1,3 +1,13 @@
+warning[F0766]: these two comparisons cannot both hold
+ --> test/cli/results/f0610_untested.fren:5:19
+  |
+5 |     assume never: x > 0 and x < 0
+  |                   ^^^^^^^^^^^^^^^ always `false`
+  |
+  = note: `and` and `or` may be swapped, or a value may not be the one meant
+  = note: `contradictory_comparisons` is `warn` by default
+  = help: to allow it, `set_option fren.lint.contradictory_comparisons "allow"`
+
 warning[F0610]: testing found no admissible behaviour of `c` in 100 tests
  --> test/cli/results/f0610_untested.fren:2:6
   |
@@ -9,5 +19,6 @@ warning[F0610]: testing found no admissible behaviour of `c` in 100 tests
 
 fren: 0 passed, 0 failed, 1 inconclusive, in 100 tests each
 
-For more information about this error, try `fren --explain F0610`.
+Some errors have detailed explanations: F0610, F0766.
+For more information about an error, try `fren --explain F0610`.
 exit=3

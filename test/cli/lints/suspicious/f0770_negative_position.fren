@@ -1,0 +1,2 @@
+-- `negative_position`, which has no fix.
+comp c { in s: String in q: Seq(Int) pub out p? req r: p? iff s.at(-1) = "." and q.update(-1, 0) = q }

@@ -35,6 +35,13 @@ def foreignOpMsg (op : String) (spaceBefore spaceAfter : Bool := true) : Msg :=
   | "=>", _ => { base with notes := #["help: write an implication as `when a, b`"] }
   | _, _ => base
 
+/-- `<-`, which Lean lexes as one token, so that `x <- 1` is not `x < -1`
+(`Reqs/Lang/Lexical#punctuators`). -/
+def leftArrowMsg : Msg :=
+  { code? := some "F0121", headline := "`<-` is not an operator in Fren", label? := some "one token, as in Lean"
+    notes := #["note: Lean lexes `<-` as one token, so Fren does too: `x <- 1` is not `x < -1`"]
+    fixes := #[{ msg := "write `< -` to compare with a negation", replacement := "< -" }] }
+
 /-! ## Chained comparisons -/
 
 /-- The kind of an operator of a comparison, for chaining

@@ -1,0 +1,12 @@
+-- `contradictory_comparisons`, on variants and on integers inside a conditional; it has no fix.
+enum Mode { Heat, Cool, Off }
+
+comp c {
+    in m: Mode
+    in x: Int
+    pub out on?
+    pub out y: Int
+
+    req r1: on? iff (m != Mode::Heat or m != Mode::Cool)
+    req r2: y = if 5 < x and x < 3 then 1 else 0
+}

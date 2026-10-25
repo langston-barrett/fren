@@ -1,0 +1,11 @@
+-- `assertions_on_constants`, with what the message can tell.
+const LIMIT: Int := 10
+pub comp c {
+    in x: Int
+    pub out y: Int
+
+    req r: y = x
+    req s: true
+    expect e: LIMIT > 0
+}
+expect g: (false)

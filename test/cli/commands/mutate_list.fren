@@ -1,4 +1,4 @@
---@ args: mutate --list
+--@ args: mutate --list -A const_is_empty
 -- Every origin, at every kind of site: constraints, defined outputs,
 -- instance bindings, constants and defined functions. Expectations, local
 -- and global, are not mutated. Swapping the first `and` of a chain, or

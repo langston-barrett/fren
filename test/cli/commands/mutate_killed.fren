@@ -1,4 +1,4 @@
---@ args: mutate
+--@ args: mutate -A redundant_comparisons
 -- Every mutant is killed or equivalent, so the exit status is 0. A check
 -- that fails on the spec itself kills nothing.
 comp c {

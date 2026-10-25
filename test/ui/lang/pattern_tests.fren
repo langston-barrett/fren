@@ -74,7 +74,7 @@ comp places {
     req other: unless s is Shape::Rect(_, _) | Shape::Empty, measure = Measure { sides := f.sides, size }
     req by_fn_rule: by_fn? iff circle?(s)
 
-    expect constant: CIRCLE
+    expect constant: CIRCLE  --~ warning: this expectation mentions no variable
     expect same_fn: by_fn? iff round?
     expect sized: size = 1 iff round?
     expect sides: measure.sides = 0 iff round?

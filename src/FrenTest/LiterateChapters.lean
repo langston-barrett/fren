@@ -24,14 +24,14 @@ error: LiterateFirst.md:14:11: expectation `chapters::gate::never` does not hold
 counterexample: a? = true, b? = true
 help: strengthen the requirements so that it follows, or correct the expectation
 ---
-info: LiterateFirst.md:20:9: the checks of `chapters::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: LiterateFirst.md:21:9: the checks of `chapters::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
-error: LiterateFirst.md:17:7: expectation `chapters::arithmetic` does not hold
+error: LiterateFirst.md:18:7: expectation `chapters::arithmetic` does not hold
 
 counterexample: (any values)
 help: strengthen the requirements so that it follows, or correct the expectation
 ---
-error: LiterateFirst.md:45:7: expectation `chapters::fails::below` does not hold
+error: LiterateFirst.md:46:7: expectation `chapters::fails::below` does not hold
 
 counterexample: x = -1, precise.x = -1, precise.y = 0
 help: strengthen the requirements so that it follows, or correct the expectation
@@ -53,14 +53,14 @@ error: LiterateFirst.md:14:11: expectation `chapters::gate::never` does not hold
 counterexample: a? = true, b? = true
 help: strengthen the requirements so that it follows, or correct the expectation
 ---
-info: LiterateFirst.md:20:9: the checks of `chapters::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: LiterateFirst.md:21:9: the checks of `chapters::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
-error: LiterateFirst.md:17:7: expectation `chapters::arithmetic` does not hold
+error: LiterateFirst.md:18:7: expectation `chapters::arithmetic` does not hold
 
 counterexample: (any values)
 help: strengthen the requirements so that it follows, or correct the expectation
 ---
-error: LiterateFirst.md:45:7: expectation `chapters::fails::below` does not hold
+error: LiterateFirst.md:46:7: expectation `chapters::fails::below` does not hold
 
 counterexample: x = -1, precise.x = -1, precise.y = 0
 help: strengthen the requirements so that it follows, or correct the expectation

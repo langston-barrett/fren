@@ -19,7 +19,7 @@ namespace Fren.Core
 inductive Run where
   | bySolver
   | byTesting
-  | notRun
+  | skipped
   deriving Inhabited, BEq, DecidableEq, Repr
 
 /-- How a check of kind `kind` is run, given whether its evidence is
@@ -27,7 +27,7 @@ testing (`check::by_testing`). Vacuity, redundancy and definedness ask
 whether something can hold at all, which testing cannot decide. -/
 def runOf (kind : CheckKind) (tested : Bool) : Run :=
   if !tested then .bySolver
-  else if kind == .vacuity || kind == .redundancy || kind == .definedness then .notRun
+  else if kind == .vacuity || kind == .redundancy || kind == .definedness then .skipped
   else .byTesting
 
 /-- The checks of a comp whose evidence is testing, or that are not run

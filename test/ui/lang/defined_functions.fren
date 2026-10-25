@@ -2,6 +2,9 @@
 -- solver sees.
 -- fren-covers: lang::argument
 
+-- Expectations about constants test what the language computes.
+set_option fren.lint.assertions_on_constants "allow"
+
 enum Mode { Off, Heat, Cool }
 use Mode::Heat
 

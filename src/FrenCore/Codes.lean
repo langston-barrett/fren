@@ -378,6 +378,21 @@ const ONE: Int := 1
 The `fren` command also reports this for other malformed numbers, such as
 `1_`, `0x` or `0b2`. In Lean, Lean's own parser reports those first.
 "# },
+  { code := "F0121", explanation := r#"`<-`, which is one token, as in Lean.
+
+Erroneous code example:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff x <- 1 }
+```
+
+Fren is lexed as Lean is, and Lean has a token `<-`, so `x <- 1` is not
+`x < -1`. To compare with a negation, write a space between `<` and `-`:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff x < -1 }
+```
+"# },
   { code := "F0122", explanation := r#"A chained comparison that orders both ways.
 
 Erroneous code example:
@@ -2547,7 +2562,8 @@ comp c { in a? pub out b? req r: b? iff a? = true }
 
 `a? = true` means `a?`. Likewise, `a? = false` means `not a?`, `not not
 a?` means `a?`, `not (x < y)` means `x >= y`, `if c? then true else false`
-means `c?`, and `if c? then a? else false` means `c? and a?`. Write the
+means `c?`, `if c? then a? else false` means `c? and a?`, and `when true,
+a?` means `a?`. Write the
 simpler form, as `fren fix` does:
 
 ```fren
@@ -2918,6 +2934,9 @@ comp c { in x: Int in y: Int pub out p? req r: p? iff (x < y or y = 0) }
 The lint fires on `=`, `!=`, `<`, `<=`, `>`, `>=`, `iff`, `subset`, `and`,
 `or`, `-`, `minus`, `inter` and `union`, whose value is then fixed or that
 of the operand, but not on `+`, `*` or `++`, where `x + x` means something.
+It also fires on `when c?, c?`, which is always `true`, and `unless c?,
+c?`, which is `c?`: the body is probably a copy of the condition, pasted
+where the consequent was meant.
 "# },
   { code := "F0737", explanation := r#"A conditional whose two branches are written the same (a warning, `same_branches`).
 
@@ -3188,6 +3207,400 @@ fix this:
 comp c { in x: Int pub out y: Int req r: y = 2 * (x + 1) }
 ```
 "# },
+  { code := "F0748", explanation := r#"A module whose name repeats its parent's (a warning, `module_inception`).
+
+Example:
+
+```fren
+pub mod climate::climate
+
+pub comp sensor { in t: Int pub out hot? req r: hot? iff t > 30 }
+```
+
+Every path to the module, or to an item in it, repeats the name, as in
+`climate::climate::sensor`. Declare the items in the parent, or give the
+module a name of its own:
+
+```fren
+pub mod climate::sensors
+
+pub comp sensor { in t: Int pub out hot? req r: hot? iff t > 30 }
+```
+"# },
+  { code := "F0749", explanation := r#"Variants named with a word they all share, or with their enumeration's name (a warning, `enum_variant_names`).
+
+Example:
+
+```fren
+pub enum Mode { HeatMode, CoolMode }
+```
+
+A path to a variant names its enumeration already, as `Mode::HeatMode`
+does, so the shared word says nothing. Remove it:
+
+```fren
+pub enum Mode { Heat, Cool }
+```
+"# },
+  { code := "F0750", explanation := r#"A name in `CamelCase` with an acronym in upper case (a warning, `upper_case_acronyms`).
+
+Example:
+
+```fren
+pub enum HTTPStatus { Ok, NotFound }
+```
+
+Three or more uppercase letters in a row hide where one word ends and the
+next starts. In `CamelCase`, an acronym is a word, with only its first
+letter in upper case:
+
+```fren
+pub enum HttpStatus { Ok, NotFound }
+```
+"# },
+  { code := "F0751", explanation := r#"A name made only of `_` and digits (a warning, `just_underscores_and_digits`).
+
+Example:
+
+```fren
+comp c { in _1: Int pub out y: Int req r: y = _1 + 1 }
+```
+
+Such a name says nothing of what it names. Give it a name that does:
+
+```fren
+comp c { in reading: Int pub out y: Int req r: y = reading + 1 }
+```
+"# },
+  { code := "F0752", explanation := r#"A placeholder name, such as `foo` (a warning, `disallowed_names`).
+
+Example:
+
+```fren
+comp foo { in x: Int pub out y: Int req r: y = x + 1 }
+```
+
+`foo`, `baz` and `quux`, in any case, are placeholders, which say nothing
+of what they name. Give it a name that does:
+
+```fren
+comp successor { in x: Int pub out y: Int req r: y = x + 1 }
+```
+"# },
+  { code := "F0759", explanation := r#"A conditional that gives a `Bool` or its negation (a warning, `needless_bool_assign`).
+
+Example:
+
+```fren
+comp c { in a? in b? pub out p? req r: p? iff if a? then b? else not b? }
+```
+
+`if C then X else not X` holds exactly when `C` and `X` agree, which is
+`C iff X`, and `if C then not X else X` exactly when they differ, which is
+`C != X`. `fren fix` can fix this:
+
+```fren
+comp c { in a? in b? pub out p? req r: p? iff (a? iff b?) }
+```
+"# },
+  { code := "F0760", explanation := r#"A `match` that gives back its scrutinee (a warning, `needless_match`).
+
+Example:
+
+```fren
+enum Shape { Dot, Circle(Int) }
+
+comp c { in s: Shape pub out t: Shape req r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) } }
+```
+
+Each arm builds the variant that it matched, with the values of its
+payload in order, so the `match` is its scrutinee. `fren fix` can fix
+this:
+
+```fren
+enum Shape { Dot, Circle(Int) }
+
+comp c { in s: Shape pub out t: Shape req r: t = s }
+```
+"# },
+  { code := "F0761", explanation := r#"A constraint that mentions no variable (a warning, `assertions_on_constants`).
+
+Example:
+
+```fren
+const LIMIT: Int := 10
+
+comp c { in x: Int pub out y: Int req r: y = x expect e: LIMIT > 0 }
+```
+
+The expectation is the same in every behaviour: it is always true, and
+says nothing about the component, or always false, and always fails. A
+requirement that is always false makes the component unrealizable, and an
+assumption that is always false makes it vacuous. Say something about the
+variables, or remove the constraint:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = x expect e: y = x }
+```
+
+There is no fix, since removing a constraint changes the checks.
+"# },
+  { code := "F0762", explanation := r#"A binary operator directly followed by a negation and then a space (a warning, `suspicious_unary_op_formatting`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff x >=- 1 }
+```
+
+`>=- 1` reads like one operator `>=-`, but it is `>=`, whose right operand
+is `-1`. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff x >= -1 }
+```
+"# },
+  { code := "F0753", explanation := r#"A slice that is the whole of its receiver (a warning, `redundant_slicing`).
+
+Example:
+
+```fren
+set_option fren.lint.undecidable "allow"
+
+comp c { in s: String pub out p? req r: p? iff s.slice(0, s.len) = "x" }
+```
+
+`s.slice(0, s.len)` is `s`, for every string or sequence `s`, `""` and
+`[]` included. `fren fix` can fix this:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s = "x" }
+```
+"# },
+  { code := "F0754", explanation := r#"A replacement with what it replaces (a warning, `no_effect_replace`).
+
+Example:
+
+```fren
+set_option fren.lint.undecidable "allow"
+
+comp c { in s: String in a: String pub out p? req r: p? iff s.replace(a, a) = "x" }
+```
+
+Replacing `a` with `a` leaves `s` as it is, with `replace` or
+`replace_all`, even where `a` is `""`. `fren fix` can fix this:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s = "x" }
+```
+
+If another replacement was meant, write it:
+
+```fren
+set_option fren.lint.undecidable "allow"
+
+comp c { in s: String in a: String pub out p? req r: p? iff s.replace(a, "-") = "x" }
+```
+"# },
+  { code := "F0755", explanation := r#"A test of a literal whose value the literal fixes (a warning, `const_is_empty`).
+
+Example:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s = "x" or "x".len = 0 }
+```
+
+The length of a string or sequence literal is fixed, and so is whether a
+set literal is empty, so the test is always `true` or always `false`. The
+literal is probably not the one meant:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s = "x" or s.len = 0 }
+```
+"# },
+  { code := "F0756", explanation := r#"An alternation of single characters in a pattern (a warning, `manual_pattern_char_comparison`).
+
+Example:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.matches?(r"(a|b|-)+") }
+```
+
+An alternation of single characters matches one of them, as a class does.
+`fren fix` can fix this, escaping `\`, `]`, `^` and `-` in the class:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.matches?(r"[ab\-]+") }
+```
+"# },
+  { code := "F0757", explanation := r#"A range in a pattern one character short of an alphabet (a warning, `almost_complete_range`).
+
+Example:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.matches?(r"[a-y]+") }
+```
+
+A range includes both its ends, so `a-y` leaves out `z`. The lint fires on
+`a-y`, `b-z`, `A-Y`, `B-Z` and `0-8`, but not on `1-9`, which is often
+meant. `fren fix` can fix this:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.matches?(r"[a-z]+") }
+```
+"# },
+  { code := "F0768", explanation := r#"A constraint or global expectation written the same as an earlier one (a warning, `duplicate_constraint`).
+
+Example:
+
+```fren
+comp c { in a? in b? pub out p? req r1: p? iff a? or b? req r2: p? iff a?  or  b? }
+```
+
+`r2` says what `r1` says. The redundancy check would report each as
+following from the other, which invites removing both. Where the two are
+of one kind, `fren fix` removes the later:
+
+```fren
+comp c { in a? in b? pub out p? req r1: p? iff a? or b? }
+```
+
+An `expect` that repeats a `req` or an `assume` is reported too, but not
+fixed: it tests nothing, and was probably meant to say something
+stronger.
+"# },
+  { code := "F0769", explanation := r#"A string literal with an invisible character, or a string literal or comment with a bidirectional control (a warning, `invisible_characters`).
+
+Example:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s = "a​b" }
+```
+
+The literal holds a zero width space, U+200B, between `a` and `b`. It
+cannot be seen, so the literal looks like `"ab"`, which it is not. The
+lint also fires on U+00AD and U+2060 in a literal, and on the
+bidirectional controls, U+202A to U+202E and U+2066 to U+2069, and on
+U+FEFF, in a literal or a comment, which can make text display in an
+order other than the one it is read in. `fren fix` writes each in a
+literal as an escape, so that a deliberate use stays and can be seen, and
+removes it from a comment:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s = "a\u200Bb" }
+```
+"# },
+  { code := "F0770", explanation := r#"A negative integer literal as a position (a warning, `negative_position`).
+
+Example:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.at(-1) = "." }
+```
+
+Fren has no negative indexing: `s.at(-1)` is not the last character, but
+always `""`. Likewise, `s.slice(-3, 3)` is always `""`, `q.update(-1, x)`
+is always `q`, `s.index_of(t, -1)` is always `-1`, and `q[-1]` is
+unspecified. To count from the end, subtract from the length, which is
+outside the decidable core:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+comp c { in s: String pub out p? req r: p? iff s.at(s.len - 1) = "." }
+```
+"# },
+  { code := "F0763", explanation := r#"A comparison of a length that is always the same (a warning, `absurd_extreme_comparisons`).
+
+Example:
+
+```fren
+comp c { in q: Seq(Int) pub out p? req r: p? iff q.len < 0 }
+```
+
+A `len` or `card` is never negative, so `q.len < 0` is always `false`, and
+`q.len >= 0` and `q.len > -1` are always `true`. The bound or the operator
+is probably not the one meant, which no rewrite can know, so there is no
+fix. Write the comparison meant:
+
+```fren
+comp c { in q: Seq(Int) pub out p? req r: p? iff q.len < 3 }
+```
+
+The comparisons that say whether a collection is empty, such as `q.len >
+0`, are `length_zero`'s and `card_zero`'s.
+"# },
+  { code := "F0764", explanation := r#"An operation whose value ignores an operand (a warning, `erasing_op`).
+
+Example:
+
+```fren
+comp c { in x: Int in y: Int pub out z: Int req r: z = x * 0 + y }
+```
+
+`x * 0` is always `0`, whatever `x` is, as `s inter {}` and `{} minus s`
+are always `{}`. The literal is probably not the operand meant,
+so there is no fix. Write the operand meant:
+
+```fren
+comp c { in x: Int in y: Int pub out z: Int req r: z = x * 2 + y }
+```
+"# },
+  { code := "F0765", explanation := r#"A test of a chain of `else if` written the same as an earlier one (a warning, `ifs_same_cond`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = if x > 0 then 1 else if x > 0 then 2 else 3 }
+```
+
+The branch of the second test is never taken: wherever the test holds, the
+earlier branch is taken. One of the tests is probably not the one meant,
+so there is no fix. Write the test meant:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = if x > 0 then 1 else if x < 0 then 2 else 3 }
+```
+"# },
+  { code := "F0766", explanation := r#"Two comparisons that cannot both hold, or of which one always holds (a warning, `contradictory_comparisons`).
+
+Example:
+
+```fren
+enum Mode { Heat, Cool, Off }
+
+comp c { in m: Mode pub out on? req r: on? iff (m != Mode::Heat or m != Mode::Cool) }
+```
+
+`m` is never both `Mode::Heat` and `Mode::Cool`, so one of the two
+comparisons always holds, and the requirement says that `on?` always
+holds. `and` and `or` are probably swapped, or a value is not the one
+meant, so there is no fix. Write the comparisons meant:
+
+```fren
+enum Mode { Heat, Cool, Off }
+
+comp c { in m: Mode pub out on? req r: on? iff (m != Mode::Heat and m != Mode::Cool) }
+```
+
+The lint also fires on comparisons of one operand with integers that no
+integer meets, joined by `and`, as `x < 3 and x > 5`, and that every
+integer meets, joined by `or`, as `x > 3 or x < 5`.
+"# },
+  { code := "F0767", explanation := r#"Two comparisons of one operand with integers, of which one implies the other (a warning, `redundant_comparisons`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff (x < 3 and x < 5) }
+```
+
+Every `x` below `3` is below `5`, so the two comparisons are `x < 3`; with
+`or`, they would be `x < 5`. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff x < 3 }
+```
+"# },
   { code := "F0789", explanation := r#"A relation to a type of one value (`zero_sized_map_values`, allowed by default).
 
 Example:
@@ -3266,6 +3679,7 @@ comp whole { in x: Int pub out y: Int inst p: part { x } req r: y = p.y + 1 }
 ```
 "# }
 ]
+
 
 /-- The explanation of `code`. Codes are written `F0101`; lower case is
 accepted, as are `0101` and `101`. -/

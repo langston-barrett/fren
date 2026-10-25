@@ -1,3 +1,13 @@
+warning[F0766]: these two comparisons cannot both hold
+  --> test/cli/commands/cover_constrains_nothing.fren:13:23
+   |
+13 |     cover never: when x > 5 and x < 3, hot?
+   |                       ^^^^^^^^^^^^^^^ always `false`
+   |
+   = note: `and` and `or` may be swapped, or a value may not be the one meant
+   = note: `contradictory_comparisons` is `warn` by default
+   = help: to allow it, `set_option fren.lint.contradictory_comparisons "allow"`
+
 error[F0603]: expectation `sensor::only_warm` does not hold
   --> test/cli/commands/cover_constrains_nothing.fren:12:12
    |
@@ -25,5 +35,6 @@ note: cover goal `sensor::never` is met
 
 fren: 3 passed, 1 failed, 0 inconclusive, in 100 tests each
 
-For more information about this error, try `fren --explain F0603`.
+Some errors have detailed explanations: F0603, F0766.
+For more information about an error, try `fren --explain F0603`.
 exit=1

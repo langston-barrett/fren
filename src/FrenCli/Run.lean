@@ -352,9 +352,9 @@ def elabText (st : State) (file : Nat) (chars : Array Char) (fixing : Array Fren
   match lex chars with
   | .error e => { st with diags := st.diags.push { file, span := e.span, msg := e.msg } }
   | .ok toks =>
-    match parse toks with
+    match parseItems toks with
     | .error e => { st with diags := st.diags.push { file, span := e.span, msg := e.msg } }
-    | .ok items => (elabFile file chars items fixing |>.run st).2
+    | .ok (items, starts) => (elabFile file chars items starts fixing |>.run st).2
 
 /-- The state before any file, with the lint levels `lints`. -/
 def initialState (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) : State :=

@@ -1,5 +1,8 @@
 -- Global expectations: several behaviours, several components, constants.
 
+-- Expectations about constants test what the language computes.
+set_option fren.lint.assertions_on_constants "allow"
+
 const LOW: Int := 0
 const HIGH: Int := 10
 

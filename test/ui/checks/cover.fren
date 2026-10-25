@@ -44,6 +44,7 @@ comp stuck {                                       --~ error: `stuck` is not rea
     req b: y < x                                   --~ info: conflicts with `a`
 
     cover any: true                                --~ error: cover goal `stuck::any` cannot be met: it is ruled out by `a`, `b`
+    --~^ warning: this cover goal mentions no variable
 }
 
 --@ summary: 11 passed, 5 failed, 0 inconclusive, 0 redundant

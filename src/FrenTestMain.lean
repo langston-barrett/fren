@@ -176,7 +176,9 @@ each module is declared before it is used. -/
 def ownSpecFiles : Array String :=
   #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Expressions",
     "Lang/Modules", "Lang/Instances", "Check", "View", "Cli", "Lint", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style", "Lint/Complexity",
-    "Lint/Suspicious", "Lint/Pedantic", "Lint/Decidability", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
+    "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches",
+    "Lint/Suspicious", "Lint/Suspicious/Expressions", "Lint/Suspicious/Methods", "Lint/Suspicious/Literals",
+    "Lint/Suspicious/Comparisons", "Lint/Pedantic", "Lint/Decidability", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
 
 def ownSpec : IO (Array String) := do
   let (out, code) ← runCheck ownSpecFiles
@@ -200,7 +202,9 @@ def fmtIgnore : List String :=
   ["test/cli/syntax/*.fren", "test/cli/names/f0216_member_option.fren", "test/cli/fix/*.fren", "test/cli/fmt/check.fren",
    "test/cli/fmt/chain_error.fren", "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
    "test/cli/fmt/cover.fren",
-   "test/cli/commands/mutate_unformatted.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren", "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
+   "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
+   "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
+   "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
    -- `#fren_md` in a block, which only the Lean front end reads.
    "src/FrenTest/chapters/LiterateOuter.md", "src/FrenTest/chapters/LiterateReader.md",
    "src/FrenTest/chapters/deep/LiterateDeep.md",

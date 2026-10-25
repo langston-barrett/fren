@@ -1,7 +1,12 @@
 -- Strings: literals, `++`, ordering and methods, in both front ends.
 
+-- The lengths of literals are tested on purpose.
+set_option fren.lint.const_is_empty "allow"
+
 -- `contains?("")` is tested on purpose.
 set_option fren.lint.empty_argument "allow"
+-- Expectations about constants test what the language computes.
+set_option fren.lint.assertions_on_constants "allow"
 
 const PREFIX: String := "user-"
 

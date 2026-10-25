@@ -2,6 +2,12 @@
 -- Identifiers, escape sequences and punctuators, written as tightly as
 -- they lex, which both front ends must read alike.
 
+-- Expectations about constants test what the language computes.
+set_option fren.lint.assertions_on_constants "allow"
+
+-- The lengths of literals are tested on purpose.
+set_option fren.lint.const_is_empty "allow"
+
 expect escapes: "\x41\u0042\t\\\"\'".len = 6 and "\x41\u0042\t\\\"\'".starts_with?("AB")
 expect newlines: "\n\r".len = 2 and "\n" != "n" and "\r" != "r"
 expect raw: r"a\n".len = 3 and r#"say "hi""#.len = 8

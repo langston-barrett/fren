@@ -1,0 +1,2 @@
+-- `redundant_comparisons`, under `or`, where the fix keeps the weaker comparison.
+comp c { in x: Int pub out p? req r: p? iff not (x < 3 or 5 > x) }

@@ -1,0 +1,14 @@
+warning[F0751]: variable `_1` is named only with `_` and digits
+ --> test/cli/lints/style/f0751_just_underscores_and_digits.fren:3:17
+  |
+3 | pub comp c { in _1: Int pub out y: Int req r: y = _1 + 1 }
+  |                 ^^ says nothing of what it is
+  |
+  = help: give it a name that says what it is
+  = note: `just_underscores_and_digits` is `warn` by default
+  = help: to allow it, `set_option fren.lint.just_underscores_and_digits "allow"`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0751`.
+exit=3

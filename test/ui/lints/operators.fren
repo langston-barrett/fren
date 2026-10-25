@@ -55,6 +55,7 @@ comp searches {
     -- From another position, or another bound.
     expect e1: when s.index_of(t, 1) >= 0 or s.index_of(t, 0) > 0, true
     expect e2: when s.slice(1, t.len) = t or s.slice(0, s.len) = t, true
+    --~^ warning: this slice is the whole of its receiver
 }
 
 comp conditionals {
@@ -69,6 +70,7 @@ comp conditionals {
     req r1: n = 2 * if c? then x else y + 1  --~ warning: the `else` branch extends past the operator
     req r2: m = 2 * if c? then x else if c? then y else y + 1
     --~^ warning: the `else` branch extends past the operator
+    --~^^ warning: `c?` is already tested earlier in this chain
     req r3: p? iff c? and if c? then x > 0 else c? or y > 0
     --~^ warning: the `else` branch extends past the operator
     -- The `else` branch binds more tightly, or is in parentheses.
@@ -93,6 +95,8 @@ comp identities {
     req r1: a = (x - y) * 1                  --~ warning: this operation has no effect
     req r2: b = 0 + x                        --~ warning: this operation has no effect
     req r3: c = x + -y                       --~ warning: this negation can be the other operator
-    -- Not identities.
+    -- Not identities: they ignore an operand.
     expect e1: when x - 0 * y >= 1 - x or {} minus u = u, true
+    --~^ warning: this `*` is always `0`
+    --~^^ warning: this `minus` is always `{}`
 }

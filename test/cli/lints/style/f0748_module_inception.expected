@@ -1,0 +1,15 @@
+warning[F0748]: module `climate::climate` has the same name as its parent
+ --> test/cli/lints/style/f0748_module_inception.fren:2:18
+  |
+2 | pub mod climate::climate
+  |                  ^^^^^^^ inside `climate`
+  |
+  = note: every path to it, or to an item in it, repeats the name
+  = help: rename it, or declare its items in `climate`
+  = note: `module_inception` is `warn` by default
+  = help: to allow it, `set_option fren.lint.module_inception "allow"`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0748`.
+exit=3

@@ -1,6 +1,12 @@
 -- Sequences: literals, `[]`, `++`, indexing, methods and definedness, in
 -- both front ends.
 
+-- Expectations about constants test what the language computes.
+set_option fren.lint.assertions_on_constants "allow"
+
+-- The lengths of literals are tested on purpose.
+set_option fren.lint.const_is_empty "allow"
+
 -- `q[i] = q[i]` tests definedness alone.
 set_option fren.lint.eq_op "allow"
 
@@ -63,7 +69,7 @@ comp together {
 
 -- The meaning of each operation, on constants.
 expect concat_lit: [1, 2] ++ [3] = [1, 2, 3] and [1, 2].len = 2 and [] ++ [1] = [1]  --~ warning: this operation has no effect
-expect slice_lit: [1, 2, 3].slice(1, 5) = [2, 3] and [1, 2, 3].slice(3, 1) = []
+expect slice_lit: [1, 2, 3].slice(1, 5) = [2, 3] and [1, 2, 3].slice(3, 1) = []  --~ warning: this is a call of `at`
 expect update_lit: [1].update(3, 9) = [1] and [1, 2].update(1, 9) = [1, 9]
 set_option fren.lint.empty_argument "allow" in
 expect index_of_lit: [1, 2].index_of([], 2) = 2 and [1, 2, 1].index_of([1], 1) = 2 and [1].index_of([2], 0) = -1  --~ warning: this is a call of `contains?`

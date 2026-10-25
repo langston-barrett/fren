@@ -360,6 +360,9 @@ structure LocalState where
   globals : Array Name := #[]
   /-- Refinements declared in this file, in order. -/
   refinements : Array Name := #[]
+  /-- The global expectations of this file, or Markdown spec: each one's
+  module, name and text (`duplicate_constraint`). -/
+  globalTexts : Array (Name × Name × String) := #[]
   /-- What the lints of this file need (`Fren.Lint`): its `use`s, the names
   resolved through imports, its expectations, and its other lints. -/
   useRecords : Array (Core.UseRecord × Syntax) := #[]
@@ -383,6 +386,10 @@ structure LocalState where
   /-- The Markdown spec being read, if any: what `mdSources` records for the
   items declared now. -/
   mdSource? : Option (String × FileMap) := none
+  /-- Where `invisible_characters` has read the comments up to, as a byte
+  offset in the text being elaborated: the end of the last Fren command's
+  trailing whitespace and comments. -/
+  invisibleFrom : Nat := 0
   /-- The items that the Lean file declares itself, not in a spec. An item
   in neither is imported, and its syntax has positions in another module's
   text. -/
@@ -394,6 +401,9 @@ structure LocalState where
   /-- Where the comparisons of `Bool`s in the expression being elaborated
   are, for `bool_equality`. -/
   boolEqs : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
+  /-- Where the variants without payloads in the expression being
+  elaborated are, with their paths, for `contradictory_comparisons`. -/
+  variants : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × String) := #[]
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false
