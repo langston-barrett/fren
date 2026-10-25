@@ -240,7 +240,6 @@ partial def typeSyntax (t : Expr) : Term :=
   for f in fieldStxs do
     let fn := f[0].getId
     liftMsg f[0] (Core.checkNoBang fn)
-    if fields.any (·.1 == fn) then throwErrorAt f[0] (Core.dupFieldMsg fn).text
     lintName .field fn f[0]
     let t ← if f[1].isNone then pure (Lean.mkConst ``Bool) else fieldType modName f[1][1] (some decl) false n
     -- As for a variable (`lang::bool_naming`).
@@ -878,15 +877,16 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       -- Distinct names (`lang::distinct_names`); `_` binds nothing.
       let named := (patternBinders arm).filter (·.isIdent)
       for b in named do discard (segName b)
-      if let some k := (Core.repeatsAt (named.map (·.getId)))[0]? then
-        throwErrorAt named[k]! (Core.dupPatternBinderMsg named[k]!.getId).text
+      -- By the names they declare, without the `!` of shadowing.
+      let declared := named.map fun b => (declaredIdent b).1.getId
+      if let some k := (Core.repeatsAt declared)[0]? then
+        throwErrorAt named[k]! (Core.dupPatternBinderMsg declared[k]!).text
       for b in patternBinders arm, t in info.payloads[idx]!, k in [0:info.payloads[idx]!.size] do
         unless b.isIdent do continue
         let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
           (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
-        let bn := (declaredIdent b).1.getId
-        if new.any (·.name == bn) then throwErrorAt b (Core.dupPatternBinderMsg bn).text
         let b ← declare b cx.modName locals
+        let bn := b.getId
         liftMsg b (Core.checkVarName bn (some (t.isConstOf ``Bool)))
         lintName .binder bn b
         new := new.push { name := bn, term := ← `($(mkCIdent (selectorName ctor k)) $s), «type» := t
@@ -1412,9 +1412,14 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
     let mut vars : Array Var := #[]
     let paramIds ← params.mapM fun p => do
       let some q := typePath? p[0] | throwErrorAt p[0] (Core.functionParamsMsg path true).text
-      let xn := (declaredIdent (pathSegs q)[0]!).1.getId
-      if vars.any (·.name == xn) then throwErrorAt (pathSegs q)[0]! (Core.dupParamMsg xn).text
-      let x ← declare (pathSegs q)[0]! modName
+      pure (pathSegs q)[0]!
+    for x in paramIds do discard (segName x)
+    -- By the names they declare, without the `!` of shadowing.
+    let declared := paramIds.map fun x => (declaredIdent x).1.getId
+    if let some k := (Core.repeatsAt declared)[0]? then
+      throwErrorAt paramIds[k]! (Core.dupParamMsg declared[k]!).text
+    for p in params, x0 in paramIds do
+      let x ← declare x0 modName
       lintName .variable x.getId x
       let ty ← varType modName x (if p[1].isNone then none else some p[1][1])
       vars := vars.push { name := x.getId, role := .input, isPub := true, «type» := ty, ref := x }
@@ -1590,8 +1595,9 @@ open Lang in
   -- name again is reported, and then skipped.
   let named := members.filterMap memberName?
   for x in named do discard (segName x)
-  let repeated := (Core.repeatsAt (named.map (·.getId))).map (named[·]!)
-  for x in repeated do logErrorAt x (Core.dupMemberMsg x.getId).text
+  -- By the names they declare, without the `!` of shadowing.
+  let repeated := (Core.repeatsAt (named.map fun x => (declaredIdent x).1.getId)).map (named[·]!)
+  for x in repeated do logErrorAt x (Core.dupMemberMsg (declaredIdent x).1.getId).text
   let isRepeat (x : Syntax) : Bool := repeated.any (·.getPos? == x.getPos?)
   let (ok, generated) ← liftTermElabM do
     let mut ok := repeated.isEmpty
@@ -1610,10 +1616,8 @@ open Lang in
           pure (.output, !m[0].isNone, !m[1].isNone, m[3], if m[4].isNone then none else some m[4][1],
             if m[5].isNone then none else some m[5][1])
         | _ => continue
+      if isRepeat x then continue
       -- An error in shadowing leaves the variable's meaning clear.
-      -- A duplicate is reported as such, before what it would hide.
-      if names.contains (declaredIdent x).1.getId then
-        logErrorAt x (Core.dupMemberMsg (declaredIdent x).1.getId).text; ok := false; continue
       let x ← try declare x scope
         catch ex => logException ex; ok := false; pure (declaredIdent x).1
       names := names.insert x.getId
@@ -1634,8 +1638,7 @@ open Lang in
     let mut pending : Array PendingInst := #[]
     for m in members do
       let `(fren_member| inst $x:ident : $p:fren_path { $bs,* }) := m | continue
-      if names.contains (declaredIdent x).1.getId then
-        logErrorAt x (Core.dupMemberMsg (declaredIdent x).1.getId).text; ok := false; continue
+      if isRepeat x then continue
       let x ← try declare x scope
         catch ex => logException ex; ok := false; pure (declaredIdent x).1
       names := names.insert x.getId
@@ -1697,10 +1700,9 @@ open Lang in
           | `(fren_member| req $x:ident : $e) => pure (.req, x, e)
           | `(fren_member| expect $x:ident : $e) => pure (.expect, x, e)
           | _ => continue
+        if isRepeat x then continue
         if let .error msg := Core.checkNoBang x.getId then
           logErrorAt x msg.text; good := false; continue
-        if names.contains x.getId then
-          logErrorAt x (Core.dupMemberMsg x.getId).text; good := false; continue
         names := names.insert x.getId
         lintName .constraint x.getId x
         try
@@ -1847,8 +1849,10 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   -- Distinct names (`lang::distinct_names`).
   let binderIds := binderStxs.flatMap (·[1].getArgs)
   for x in binderIds do discard (segName x)
-  if let some k := (Core.repeatsAt (binderIds.map (·.getId)))[0]? then
-    throwErrorAt binderIds[k]! (Core.dupBinderMsg binderIds[k]!.getId).text
+  -- By the names they declare, without the `!` of shadowing.
+  let declared := binderIds.map fun x => (declaredIdent x).1.getId
+  if let some k := (Core.repeatsAt declared)[0]? then
+    throwErrorAt binderIds[k]! (Core.dupBinderMsg declared[k]!).text
   for b in binderStxs do
     let r ← resolvePath modName (pathSegs b[3])
     let .item { kind := .compItem, path, .. } := r | throwErrorAt b[3] (Core.notACompMsg r).text
@@ -1859,7 +1863,6 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     noteCounts c b[3]
     for x in b[1].getArgs do
       let w := (declaredIdent x).1.getId
-      if binders.any (·.name == w) then throwErrorAt x (Core.dupBinderMsg w).text
       let x ← declare x modName
       liftMsg x (Core.checkItemName "instance" w)
       lintName .instance w x

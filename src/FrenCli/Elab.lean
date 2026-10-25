@@ -1327,16 +1327,17 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let (c, fs) := d.ctors[idx]!
         -- Distinct names (`lang::distinct_names`); `_` binds nothing.
         let named := bs.filter (·.name != "_")
-        if let some k := (Fren.Core.repeatsAt (named.map (Name.mkSimple ·.name)))[0]? then
-          err named[k]!.span (Fren.Core.dupPatternBinderMsg (Name.mkSimple named[k]!.name))
+        -- By the names they declare, without the `!` of shadowing.
+        let declared := named.map fun b => Name.mkSimple (declaredIdent b).1.name
+        if let some k := (Fren.Core.repeatsAt declared)[0]? then
+          err named[k]!.span (Fren.Core.dupPatternBinderMsg declared[k]!)
         for b in bs, f in fs, k in [0:bs.size] do
           let t := f.2
           if b.name == "_" then continue
           let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
             (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
-          let bn := Name.mkSimple (declaredIdent b).1.name
-          if new.any (·.name == bn) then err b.span (Fren.Core.dupPatternBinderMsg bn)
           let b ← declare b locals
+          let bn := Name.mkSimple b.name
           liftMsg b.span (Fren.Core.checkVarName bn (some (t == .bool)))
           lintName .binder bn b.span
           new := new.push { name := bn, smt := s!"({d.selSym c k} {s})", ty := t, scrutinee, outer := cx.binders.size }
@@ -1540,16 +1541,15 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let named := members.filterMap fun
     | .var _ _ _ x _ _ | .inst x _ _ | .prop _ x _ => some x
     | _ => none
-  if let some k := (Fren.Core.repeatsAt (named.map (Name.mkSimple ·.name)))[0]? then
-    err named[k]!.span (Fren.Core.dupMemberMsg (Name.mkSimple named[k]!.name))
+  -- By the names they declare, without the `!` of shadowing.
+  let declared := named.map fun x => Name.mkSimple (declaredIdent x).1.name
+  if let some k := (Fren.Core.repeatsAt declared)[0]? then
+    err named[k]!.span (Fren.Core.dupMemberMsg declared[k]!)
   let mut vars := #[]
   for m in members do
     let .var isIn isPub' isDet x ty? defn? := m | continue
-    -- A duplicate is reported as such, before what it would hide.
-    let xn := Name.mkSimple (declaredIdent x).1.name
-    if seen.contains xn then err x.span (Fren.Core.dupMemberMsg xn)
     let x ← declare x
-    seen := seen.push xn
+    let xn := Name.mkSimple x.name
     lintName .variable xn x.span
     let role := if isIn then Role.input else .output
     let ty ← varTy ty? x
@@ -1562,10 +1562,8 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let mut pending := #[]
   for m in members do
     let .inst x p bs := m | continue
-    let xn := Name.mkSimple (declaredIdent x).1.name
-    if seen.contains xn then err x.span (Fren.Core.dupMemberMsg xn)
     let x ← declare x
-    seen := seen.push xn
+    let xn := Name.mkSimple x.name
     lintName .instance xn x.span
     let (pi, ivars) ← resolveInst x p bs
     pending := pending.push pi
@@ -1596,8 +1594,6 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     let .prop kind x e := m | continue
     let xn := Name.mkSimple x.name
     liftMsg x.span (Fren.Core.checkNoBang xn)
-    if seen.contains xn then err x.span (Fren.Core.dupMemberMsg xn)
-    seen := seen.push xn
     if x.name.endsWith "?" then err x.span (Fren.Core.propNameMsg xn)
     lintName .constraint xn x.span
     let cx : ExprCtx := { vars, insts := instNames, place := if kind == .assume then .assume else .prop }
@@ -1768,8 +1764,10 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
   let mut insts : Array CInst := #[]
   -- Distinct names (`lang::distinct_names`).
   let binderIds := binders.flatMap (·.1)
-  if let some k := (Fren.Core.repeatsAt (binderIds.map (Name.mkSimple ·.name)))[0]? then
-    err binderIds[k]!.span (Fren.Core.dupBinderMsg (Name.mkSimple binderIds[k]!.name))
+  -- By the names they declare, without the `!` of shadowing.
+  let declared := binderIds.map fun x => Name.mkSimple (declaredIdent x).1.name
+  if let some k := (Fren.Core.repeatsAt declared)[0]? then
+    err binderIds[k]!.span (Fren.Core.dupBinderMsg declared[k]!)
   for (xs, p) in binders do
     let path ← match ← resolve p with
       | .item { kind := .compItem, path, .. } => pure path
@@ -1780,9 +1778,8 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
       lint .undecidable (p[0]!.span.to p.back!.span) (Fren.Core.undecidableInstMsg path)
     noteCounts c (p[0]!.span.to p.back!.span)
     for x in xs do
-      let w := Name.mkSimple (declaredIdent x).1.name
-      if insts.any (·.name == w) then err x.span (Fren.Core.dupBinderMsg w)
       let x ← declare x
+      let w := Name.mkSimple x.name
       liftMsg x.span (Fren.Core.checkItemName "instance" w)
       lintName .instance w x.span
       -- Like an instance's, but its inputs are shown in counterexamples.
@@ -1880,7 +1877,6 @@ partial def elabItem : Item → M Unit
     for (f, ty?) in fields do
       let fn := Name.mkSimple f.name
       liftMsg f.span (Fren.Core.checkNoBang fn)
-      if fs.any (·.1 == fn) then err f.span (Fren.Core.dupFieldMsg fn)
       lintName .field fn f.span
       if let some segs := ty? then
         let (own, ownInSet) := ownIn segs name
@@ -1933,12 +1929,13 @@ partial def elabItem : Item → M Unit
       -- The parameters, declared like a comp's inputs.
       let mut vars : Array CVar := #[]
       -- Distinct names (`lang::distinct_names`).
-      if let some k := (Fren.Core.repeatsAt (params.map (Name.mkSimple ·.1[0]!.name)))[0]? then
-        err params[k]!.1[0]!.span (Fren.Core.dupParamMsg (Name.mkSimple params[k]!.1[0]!.name))
+      -- By the names they declare, without the `!` of shadowing.
+      let declared := params.map fun p => Name.mkSimple (declaredIdent p.1[0]!).1.name
+      if let some k := (Fren.Core.repeatsAt declared)[0]? then
+        err params[k]!.1[0]!.span (Fren.Core.dupParamMsg declared[k]!)
       for (p, ty?) in params do
-        let xn := Name.mkSimple (declaredIdent p[0]!).1.name
-        if vars.any (·.name == xn) then err p[0]!.span (Fren.Core.dupParamMsg xn)
         let x ← declare p[0]!
+        let xn := Name.mkSimple x.name
         lintName .variable xn x.span
         let t ← varTy ty? x
         vars := vars.push { name := xn, role := .input, isPub := true, ty := t, span := x.span }
