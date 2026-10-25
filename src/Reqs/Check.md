@@ -25,8 +25,11 @@ outputs](Lang/Components.md#defined-outputs), and `o` excludes them.
 `N` is the constraints that [natural
 numbers](Lang/Components.md#natural-numbers) bring: `N(i, y)` that each
 `Nat` input and instance variable, and each application of an
-uninterpreted function whose result is a `Nat`, is at least 0, and `N(o)`
-that each `Nat` output is. Every query has both among its hypotheses,
+uninterpreted function whose result is a `Nat` that the query's own
+hypotheses or goal mention, is at least 0, and `N(o)` that each `Nat`
+output is. So a query's facts about applications depend only on its
+formulas: an instance's query has none about its component's
+expectations, which are not among them. Every query has both among its hypotheses,
 though the formulas below leave them implicit, and realizability also
 puts `N(o)` under its `∃`, with the requirements. Like `D`, they are never
 candidates for redundancy, nor reported in a minimal set.

@@ -283,13 +283,20 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (timeoutSecs 
     (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (kind : Fren.Core.CheckKind) :
     Fren.Core.Backend IO String String where
   -- cvc5 refuses some string operations without `strings-exp`. Every query
-  -- has what the natural numbers bring, of both copies (`Reqs/Check`).
-  query hyps goal wantModel :=
+  -- has what the `Nat` variables bring, of both copies, and what the
+  -- applications that it mentions bring (`Reqs/Check`).
+  query hyps goal wantModel := do
     let facts := c.natFacts false ++ c.natFacts true
+    let facts := facts ++ (facts.map (prime c)).filter (!facts.contains ·)
+    -- An application, of either copy, is a term of its own, so it occurs in
+    -- a formula's text just where the formula mentions it.
+    let apps := c.natApps ++ (c.natApps.map (prime c)).filter (!c.natApps.contains ·)
+    let appsOf (f : String) : Array String := apps.filter fun a => (f.splitOn a).length > 1
+    let appFacts ← Fren.Core.natAppFacts (m := Id) appsOf (s!"(>= {·} 0)") hyps goal
     runQuery (Fren.Core.logic kind (strings || sets) projection)
       (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n"))
       prelude (c.vars ++ primes c) timeoutSecs dump?
-      ((facts ++ (facts.map (prime c)).filter (!facts.contains ·)).map (`nat, ·) ++ hyps) goal wantModel cache?
+      (facts.map (`nat, ·) ++ appFacts ++ hyps) goal wantModel cache?
   falseF := "false"
   notF f := s!"(not {f})"
   conj := conj

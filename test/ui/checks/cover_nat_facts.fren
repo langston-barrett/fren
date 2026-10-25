@@ -1,0 +1,66 @@
+-- What decides whether a cover goal's witness is shown is its own query,
+-- and a query's facts about applications of functions into `Nat` are about
+-- the applications it mentions, in both front ends alike (`Reqs/Check`).
+
+type Name
+fn size(Int): Nat
+
+-- A function used only in the component's own expectation is not in a
+-- cover goal's query.
+comp own_expectation {
+    in x: Int
+    pub out big?
+
+    req r: big? iff x > 10
+
+    expect sized: size(x) >= 0
+    cover big_one: big?                            --~ info: witness: x = 11, big? = true
+}
+
+-- Nor is one used only in another cover goal.
+comp other_goal {
+    in x: Int
+    pub out big?
+
+    req r: big? iff x > 10
+
+    cover sized: big? and size(x) > 3              --~ info: the witness is not shown, since its query uses abstract types or functions
+    cover big_two: big?                            --~ info: witness: x = 11, big? = true
+}
+
+-- An abstract type reached only through a defined function's parameter is.
+fn unnamed?(s: Set(Name)) := s = {}
+
+comp through_defined {
+    in x: Int
+    pub out big?
+
+    req r: big? iff x > 10
+
+    cover big_unnamed: big? and unnamed?({})       --~ info: the witness is not shown, since its query uses abstract types or functions
+}
+
+-- A function into `Nat` used only in an instantiated component's
+-- expectation brings no fact to the instance's queries, so it does not
+-- reach them.
+comp sized {
+    in k: Int
+    pub out pos?
+
+    req r: pos? iff k > 0
+
+    expect sized: size(k) >= 0
+}
+
+comp uses_sized {
+    in m: Int
+    pub out ok?
+
+    inst sz: sized { k := m }
+
+    req r: ok? iff sz.pos?
+
+    cover ok_one: ok? and m = 1                    --~ info: witness: m = 1, ok? = true, sz.pos? = true
+}
+
+--@ summary: 17 passed, 0 failed, 0 inconclusive, 0 redundant
