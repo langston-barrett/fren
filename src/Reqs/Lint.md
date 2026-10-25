@@ -489,7 +489,9 @@ the fixed form on the right. Each component expects its lints, so it also
 checks that each of them fires somewhere in it, though not that it fires
 on every form. `index_after_use` is left out: its fix only swaps the
 operands of `and`, which means the same either way round, and its written
-form has an index that may be out of range.
+form has an index that may be out of range. To keep the meaning, a fix
+puts parentheses where [Parentheses in fixes](#parentheses-in-fixes)
+says.
 
 The other lints have no fix. Renaming a declaration, as the naming lints
 would need, would also have to rename every use
@@ -616,3 +618,27 @@ use cli::exit_status
 
 refine fix_exit_status: fix_exit refines exit_status { ran? := loaded? }
 ```
+
+### Parentheses in fixes
+
+A fix that rewrites an expression keeps the text of each operand it
+writes, and puts an operand, or the fix itself, in parentheses where it is
+not already in them and either:
+
+- [`lang::operand`](Lang/Expressions.md#operators) requires them, where a
+  conditional counts as binding more loosely than any operator; or
+- it ends in an *open-ended* form, and something follows it.
+
+An open-ended form is a conditional, a `when` or an `unless` that is not
+in parentheses, brackets or braces: its last operand extends as far right
+as possible, so it would take in what follows. A `match` ends with its
+`}`, so it is not one, and a quantifier only starts a global expectation,
+so it is never an operand. A left operand is followed by its operator, and
+the condition of a `when` or an `unless` by its `,`. A right operand is
+followed by what follows the expression it is an operand of. What is
+written in the file follows the fix where it is an infix operator, or the
+`.` or `[` after a receiver, after any whitespace and comments. So `(p? or
+if q? then r? else s?) = t?` becomes `(p? or if q? then r? else s?) iff
+t?`, and `z = (x + if p? then 1 else 2) + 0 and q?` becomes `z = (x + if
+p? then 1 else 2) and q?`, but `z = (x + if p? then 1 else 2) + 0` alone
+becomes `z = x + if p? then 1 else 2`, as nothing follows it.

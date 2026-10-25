@@ -108,7 +108,8 @@ group:
 - If one is `_`, the fix removes the others, and `_` then matches their
   variants.
 - If the group is every arm of the `match`, the fix replaces the `match`
-  with the body, in parentheses where `lang::operand` requires them.
+  with the body, in parentheses where [fixes need
+  them](../Lint.md#parentheses-in-fixes).
 
 Neither changes what the `match` means. No variant is named twice, and
 `_` is the last arm, so a variant is matched by the same body after the

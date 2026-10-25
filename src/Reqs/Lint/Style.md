@@ -43,8 +43,7 @@ or `a = b`. [`if_not_else`](Pedantic.md#negated-conditions), in the
   `D` by `not A` and `not B`, which is `not (A or B)`.
 
 `A`, `B` and the other operands keep their text, in parentheses where
-[`lang::operand`](../Lang/Expressions.md#operators) requires them, and only
-there, as for `nonminimal_bool`: `unless a? iff b?, unless c?, d?` becomes
+[fixes need them](../Lint.md#parentheses-in-fixes), as for `nonminimal_bool`: `unless a? iff b?, unless c?, d?` becomes
 `unless (a? iff b?) or c?, d?`. That each rewritten form means what the
 expression means is proved in Lean, over the model of expressions of
 [`nonminimal_bool`](Complexity.md#simpler-bool-expressions), with each lint's rules
@@ -186,9 +185,7 @@ needs: `\\` for `\`, `\"` for `"`, `\n` and `\t`, and `\xHH` for the other
 control characters. So `s.matches?(r"a\.b.*")` becomes
 `s.starts_with?("a.b")`. The receiver keeps the text it is written with; in
 `s = "lit"`, it is written without the parentheses a receiver may need, and
-put in parentheses where it is an operand of `=` that requires them, and so
-is the equation, where it is an operand that requires them
-([`lang::operand`](../Lang/Expressions.md#operators)). The fix evaluates the
+it and the equation are put in parentheses where [fixes need them](../Lint.md#parentheses-in-fixes). The fix evaluates the
 receiver where the pattern did, and nothing else, so it keeps every guard.
 
 Clippy's `trivial_regex` is in its `nursery` group, because of the quirks
@@ -265,7 +262,7 @@ there is no `_` arm and no more variants are `true` than `false`.
 Otherwise it is `not x in {...}`, or `x != E::A`, of the variants that are
 `false`. The variants are written as the patterns write them, so a variant
 brought into scope by `use` stays unqualified, and `x` and the result are
-in parentheses where `lang::operand` requires them. The bodies are
+in parentheses where [fixes need them](../Lint.md#parentheses-in-fixes). The bodies are
 literals, which guard nothing, and `x` is evaluated as before. A `match`
 whose arms are all `true`, or all `false`, is left to
 [`match_same_arms`](Pedantic.md#matches).
@@ -341,9 +338,8 @@ pub comp neg_multiply {
 
 Each of these fixes, and that of
 [`int_plus_one`](Complexity.md#off-by-one-comparisons), writes its operands
-with the text they are written with, in parentheses where [`lang::operand`](../Lang/Expressions.md#operators)
-requires them, and only there, and the fix itself in parentheses where it
-is an operand that requires them and is not already in parentheses, as for
+with the text they are written with, and the operands and the fix itself
+in parentheses where [fixes need them](../Lint.md#parentheses-in-fixes), as for
 [`nonminimal_bool`](Complexity.md#simpler-bool-expressions): `2 * - -(x + y)` becomes `2
 * (x + y)`, `(a + b) * -1` becomes `-(a + b)`, and `(x) >= y + 1` becomes
 `x > y`. A negation of an operand that starts with `-` is written with a

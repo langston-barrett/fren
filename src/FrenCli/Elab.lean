@@ -914,6 +914,9 @@ def takeIndexes : M (Array (Span × String)) := do
 /-- The source text at `span`. -/
 def srcAt (span : Span) : M String := return String.ofList ((← get).src.extract span.start span.stop).toList
 
+/-- Whether an infix operator follows `span` (`Fren.Core.followedAt`). -/
+def followedSpan (span : Span) : M Bool := return Fren.Core.followedAt (← get).src (toRange span)
+
 /-- The receiver of `e`, if it reads `len` or `card` without arguments. -/
 def lengthOf? : Expr → Option (Expr × Bool)
   | .path sp #[seg] =>
@@ -1026,14 +1029,14 @@ def lintMatch (cx : ExprCtx) (e : Expr) (d : DataDecl) (pats : Array (Option (Ar
   -- `trivial_match` (`lint::trivial_match`).
   if let #[info] := infos then
     if Fren.Core.trivialMatch infos.size info.binds then
-      lintFix .trivialMatch span (Fren.Core.trivialMatchMsg (info.body.inSlot slot))
+      lintFix .trivialMatch span (Fren.Core.trivialMatchMsg (info.body.inSlot slot (← followedSpan span)))
   let bodyRanges := arms.map fun (_, b) => Fren.Core.withParens src (toRange b.span)
   let armRanges := arms.zipWith (fun (p, _) (b : Fren.Core.Range) => { start := p.span.start, stop := b.stop }) bodyRanges
-  let edits := Fren.Core.sameArmsEdits (toRange span) infos armRanges (arms.map (toRange ·.1.span)) bodyRanges slot
+  let edits := Fren.Core.sameArmsEdits (toRange span) infos armRanges (arms.map (toRange ·.1.span)) bodyRanges slot (← followedSpan span)
   let groups := Fren.Core.sameArmGroups infos
   let mut firstSame? : Option Span := none
   for g in groups do
-    let (i, msg) := Fren.Core.sameArmsMsg infos g slot
+    let (i, msg) := Fren.Core.sameArmsMsg infos g slot (← followedSpan span)
     let at_ : Span := { start := armRanges[i]!.start, stop := armRanges[i]!.stop }
     lintEdits .matchSameArms at_ msg (if firstSame?.isNone then edits else #[])
     if firstSame?.isNone then firstSame? := some at_
@@ -1192,7 +1195,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let fixed : Fren.Core.BText :=
           if short.isEmpty then { text := Fren.Core.textOf src (toRange recv.span), prec := recv.boolNode.kind.prec }
           else { text := written ++ String.join (short.map (s!".{·.name}")), prec := Fren.Core.BKind.atom.prec }
-        lintFix .redundantMethodChain (e.writtenSpan src) (Fren.Core.methodChainMsg (fixed.inSlot slot))
+        lintFix .redundantMethodChain (e.writtenSpan src) (Fren.Core.methodChainMsg (fixed.inSlot slot (← followedSpan e.span)))
       return
   match e with
   | .when _ neg c d =>
@@ -1210,7 +1213,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let ta ← srcAt a.span
       if Fren.Core.sameBranches (Fren.Core.writtenSame ta (← srcAt b.span)) then
         let .mk kind .. := a.boolNode
-        lintFix .sameBranches span (Fren.Core.sameBranchesMsg ta kind.prec (← srcAt { start := 0, stop := span.start }))
+        lintFix .sameBranches span (Fren.Core.sameBranchesMsg ta kind.prec (← srcAt { start := 0, stop := span.start })
+          (← srcAt { start := span.stop, stop := (← get).src.size }))
     let c ← expect c .bool (some "note: the condition of `if` is a `Bool`")
     let ((x, tx), (y, ty)) ← pair { cx with expected?, guards := cx.guards.push c }
       { cx with expected?, guards := cx.guards.push s!"(not {c})", inElse := true } a b

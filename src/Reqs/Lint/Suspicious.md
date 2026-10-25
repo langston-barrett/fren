@@ -75,9 +75,8 @@ pub comp eq_op {
 `same_branches` fires on `if c then a else b`, where `a` and `b` are
 written the same: the condition decides nothing. The fix replaces the
 conditional with `a`, in parentheses where
-[`lang::operand`](../Lang/Expressions.md#operators) requires them, from the
-operator that the conditional is an operand of, and only there; a
-conditional counts as binding more loosely than any operator, as for
+[fixes need them](../Lint.md#parentheses-in-fixes), from the operator that the conditional is an
+operand of and what follows it, as for
 [`nonminimal_bool`](Complexity.md#simpler-bool-expressions). The value is `a`'s, and
 the [guards](../Lang/Expressions.md#sequences) of what remains get no
 weaker: the copy of `a` guarded by `c` and the one guarded by `not c` are

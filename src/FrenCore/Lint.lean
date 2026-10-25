@@ -442,6 +442,53 @@ def indexAfterUseMsg (a b : String) : Msg :=
 
 def isWordChar (c : Char) : Bool := c.isAlphanum || c == '_' || c == '?'
 
+/-- `s` without the comments outside its string literals: line comments,
+and block comments, which nest. Each comment becomes a space. -/
+def withoutComments (s : String) : String := Id.run do
+  let cs := s.toList.toArray
+  let mut out := ""
+  let mut i := 0
+  -- In a string literal: the number of `#` that end it, if raw.
+  let mut str? : Option (Option Nat) := none
+  while i < cs.size do
+    let c := cs[i]!
+    match str? with
+    | some raw? =>
+      out := out.push c
+      match raw? with
+      | none =>
+        if c == '\\' && i + 1 < cs.size then out := out.push cs[i + 1]!; i := i + 1
+        else if c == '"' then str? := none
+      | some n =>
+        if c == '"' && (List.range n).all (fun k => cs[i + 1 + k]? == some '#') then
+          for _ in [0:n] do out := out.push '#'
+          i := i + n
+          str? := none
+      i := i + 1
+    | none =>
+      if c == '-' && cs[i + 1]? == some '-' then
+        while i < cs.size && cs[i]! != '\n' do i := i + 1
+        out := out.push ' '
+      else if c == '/' && cs[i + 1]? == some '-' then
+        let mut depth := 1
+        i := i + 2
+        while i < cs.size && depth > 0 do
+          if cs[i]! == '/' && cs[i + 1]? == some '-' then depth := depth + 1; i := i + 2
+          else if cs[i]! == '-' && cs[i + 1]? == some '/' then depth := depth - 1; i := i + 2
+          else i := i + 1
+        out := out.push ' '
+      else if c == '"' then
+        -- A raw literal is `r`, some `#`, then `"`.
+        let hashes := ((cs.extract 0 i).toList.reverse.takeWhile (· == '#')).length
+        let raw := i ≥ hashes + 1 && cs[i - hashes - 1]! == 'r'
+        str? := some (if raw then some hashes else none)
+        out := out.push c
+        i := i + 1
+      else
+        out := out.push c
+        i := i + 1
+  return out
+
 /-- The text `s` as the lints compare it, so that two texts are *written the
 same* (`Reqs/Lint#written-the-same`) if these agree: without whitespace,
 but for one space between two characters of names, numbers or keywords,
@@ -1043,6 +1090,52 @@ def binaryOps : Array String :=
   #["iff", "or", "and", "=", "!=", "<", "<=", ">", ">=", "in", "subset", "+", "-", "++", "union", "minus", "*", "inter",
     "join"]
 
+/-- Whether the text of an expression ends in an *open-ended* form: a
+conditional, a `when` or an `unless` that is not in parentheses, brackets
+or braces, whose last operand extends as far right as possible
+(`Reqs/Lint#fixing-lints`). Such a form starts at the first of these
+keywords outside them, and ends where the text does. -/
+def endsOpen (t : String) : Bool := Id.run do
+  let cs := (withoutComments t).toList.toArray
+  let mut depth : Nat := 0
+  let mut i := 0
+  while i < cs.size do
+    let c := cs[i]!
+    if c == '"' then
+      -- A raw literal is `r`, some `#`, then `"`, and has no escapes.
+      let hashes := ((cs.extract 0 i).toList.reverse.takeWhile (· == '#')).length
+      let raw := i ≥ hashes + 1 && cs[i - hashes - 1]! == 'r'
+      let closes (k : Nat) : Bool :=
+        cs[k]! == '"' && (!raw || (List.range hashes).all fun h => cs[k + 1 + h]? == some '#')
+      i := i + 1
+      while i < cs.size && !closes i do
+        i := i + (if !raw && cs[i]! == '\\' then 2 else 1)
+      i := i + 1 + (if raw then hashes else 0)
+    else if isWordChar c then
+      let w := String.ofList ((cs.extract i cs.size).toList.takeWhile isWordChar)
+      if depth == 0 && ["if", "when", "unless"].contains w then return true
+      i := i + w.length
+    else
+      if "([{".contains c then depth := depth + 1
+      else if ")]}".contains c then depth := depth - 1
+      i := i + 1
+  return false
+
+/-- Whether the text `after`, which follows an expression, starts with an
+infix operator, after whitespace and comments, which would take the
+expression as its left operand, or the `.` or `[` that take it as a
+receiver. -/
+def startsWithOperator (after : String) : Bool :=
+  let cs := ((withoutComments after).toList.dropWhile Char.isWhitespace)
+  let lexeme := match cs with
+    | c :: d :: _ =>
+      if isWordChar c then String.ofList (cs.takeWhile isWordChar)
+      else if ["!=", "<=", ">=", "++", "=>", ":="].contains (String.ofList [c, d]) then String.ofList [c, d]
+      else c.toString
+    | [c] => c.toString
+    | [] => ""
+  binaryOps.contains lexeme || lexeme == "." || lexeme == "["
+
 /-- The precedence of an expression's outermost operator, as
 `lang::operand` uses it. A conditional counts as binding most loosely,
 since its `else` extends as far right as possible. -/
@@ -1096,18 +1189,23 @@ structure BText where
   sameKind : Bool := false
   deriving Inhabited
 
-/-- `t` in `slot`, in parentheses if it needs them there. -/
-def BText.inSlot (t : BText) (slot : Option Slot) : String :=
-  match slot with
-  | some s => if bareOperand s.outer t.prec s.assoc s.right then t.text else s!"({t.text})"
-  | none => t.text
+/-- `t` in `slot`, in parentheses if it needs them there: where
+`lang::operand` requires them, and where it ends in an open-ended form
+(`endsOpen`) and something follows it, which it would take into its last
+operand. Something follows a left operand, its operator, and anything
+does where `followed`; a right operand is followed by what follows the
+expression it is in, which the caller decides when it places that. -/
+def BText.inSlot (t : BText) (slot : Option Slot) (followed : Bool := false) : String :=
+  let followed := followed || slot.any (!·.right)
+  let bare := slot.all (fun s => bareOperand s.outer t.prec s.assoc s.right) && !(followed && endsOpen t.text)
+  if bare then t.text else s!"({t.text})"
 
 /-- `t` where the expression it replaces is written, as `inSlot`, but
 without parentheses where that expression is written without them and `t`
 has its outermost operator: a conditional can be written as the right
 operand of an operator, since nothing follows its last operand. -/
-def BText.inPlace (t : BText) (slot : Option Slot) : String :=
-  if t.sameKind then t.text else t.inSlot slot
+def BText.inPlace (t : BText) (slot : Option Slot) (followed : Bool := false) : String :=
+  if t.sameKind then t.text else t.inSlot slot followed
 
 /-- A report of a lint that rewrites an expression (`ExLint`): where, a
 label, and the rewritten form. -/
@@ -1172,6 +1270,15 @@ def enclosed (src : Array Char) (outer r : Range) : Bool := (parensAround? src o
 
 def textOf (src : Array Char) (r : Range) : String := String.ofList (src.extract r.start r.stop).toList
 
+/-- Whether an infix operator follows `r` in `src` (`startsWithOperator`). -/
+def followedAt (src : Array Char) (r : Range) : Bool :=
+  startsWithOperator (textOf src { start := r.stop, stop := src.size })
+
+/-- `src` up to the end of the expression at `root`, so that what follows
+that expression, which is not an operand of it, is not seen as following
+the expressions in it (`followedAt`). -/
+def upTo (src : Array Char) (root : Range) : Array Char := src.extract 0 root.stop
+
 /-- The text of `n` rewritten by the rules of `l`, where `n` is in `slot`
 within `parent`, and of its operands, with the reports of `l` in it, in
 order. -/
@@ -1189,7 +1296,7 @@ partial def simplifyNode (l : ExLint) (src : Array Char) (n : BNode α) (slot : 
   for k in kids, (t, _) in results, s in kind.slots do
     let kr := kidRange k
     let written := textOf src kr
-    let t' := if t.text == written || enclosed src range kr then t.text else t.inPlace s
+    let t' := if t.text == written || enclosed src range kr then t.text else t.inPlace s (followedAt src kr)
     if t' != written then changed := true
     text := text ++ textOf src { start := pos, stop := kr.start } ++ t'
     pos := kr.stop
@@ -1200,7 +1307,7 @@ partial def simplifyNode (l : ExLint) (src : Array Char) (n : BNode α) (slot : 
   match (n.toEx 3).simplerForm l with
   | some (label, s) =>
     let t := { s.text results with sameKind := s.sameKind kind }
-    let replacement := if enclosed src parent range then t.text else t.inPlace slot
+    let replacement := if enclosed src parent range then t.text else t.inPlace slot (followedAt src range)
     modify (·.push { ref, range, label, replacement })
     return (t, kidTexts)
   | none => return (own, kidTexts)
@@ -1212,7 +1319,7 @@ by its own rules alone, so its fix makes no change that another lint
 suggests. -/
 def simplerBools (l : ExLint) (src : Array Char) (root : BNode α) : Array (BoolReport α) :=
   let range := match root with | .mk _ r .. => r
-  let ((), out) := (do discard (simplifyNode l src root none range) : StateM _ Unit).run #[]
+  let ((), out) := (do discard (simplifyNode l (upTo src range) root none range) : StateM _ Unit).run #[]
   out.qsort fun a b => a.range.start < b.range.start || (a.range.start == b.range.start && a.range.stop > b.range.stop)
 
 def ExLint.lint : ExLint → Lint
@@ -1320,8 +1427,9 @@ def groupRemoved (arms : Array ArmInfo) (g : Array Nat) : Array Nat :=
 
 /-- The message of `match_same_arms` for a group, and the arm it is
 reported at, the first that the fix removes. `slot` is where the `match`
-is, for the body that replaces it. -/
-def sameArmsMsg (arms : Array ArmInfo) (g : Array Nat) (slot : Option Slot) : Nat × Msg :=
+is, for the body that replaces it, and `followed` whether an operator
+follows it (`BText.inSlot`). -/
+def sameArmsMsg (arms : Array ArmInfo) (g : Array Nat) (slot : Option Slot) (followed : Bool) : Nat × Msg :=
   let fix := groupFix arms g
   let removed := groupRemoved arms g
   let first := arms[g[0]!]!
@@ -1334,21 +1442,21 @@ def sameArmsMsg (arms : Array ArmInfo) (g : Array Nat) (slot : Option Slot) : Na
   let help := match fix with
     | .merge => s!"help: merge them into one arm, `{" | ".intercalate (g.flatMap (arms[·]!.alts)).toList} => {body}`"
     | .remove => s!"help: remove {if removed.size == 1 then "it" else "them"}, so that `_` covers {if removed.size == 1 then "its" else "their"} variants too"
-    | .replace => s!"help: replace the `match` with its body, `{first.body.inSlot slot}`"
+    | .replace => s!"help: replace the `match` with its body, `{first.body.inSlot slot followed}`"
   let notes := so ++ (if fix == .replace then #["note: every arm of the `match` has this body"] else #[]) ++ #[help]
   (removed[0]!, { code? := some Lint.matchSameArms.code, headline, label? := some "the same body", notes })
 
 /-- The edits that fix `match_same_arms` in a `match` written at `range`,
-where `slot` is, given each arm's range, its pattern's and its body's,
-with the parentheses around it. An arm that the fixes remove is removed
+where `slot` is and `followed` whether an operator follows it, given each
+arm's range, its pattern's and its body's, with the parentheses around it. An arm that the fixes remove is removed
 with the `,` between it and a kept arm. -/
 def sameArmsEdits (range : Range) (arms : Array ArmInfo) (armRanges patRanges bodyRanges : Array Range)
-    (slot : Option Slot) : Array (Range × String) := Id.run do
+    (slot : Option Slot) (followed : Bool) : Array (Range × String) := Id.run do
   let groups := sameArmGroups arms
   if let some g := groups.find? (groupFix arms · == .replace) then
     -- The body of the first arm, without what is around it.
     let b := arms[g[0]!]!.body
-    let bare := match slot with | some s => bareOperand s.outer b.prec s.assoc s.right | none => true
+    let bare := b.inSlot slot followed == b.text
     let r := bodyRanges[g[0]!]!
     return #[({ start := range.start, stop := r.start }, if bare then "" else "("),
              ({ start := r.stop, stop := range.stop }, if bare then "" else ")")]
@@ -1533,53 +1641,6 @@ def exprKeywords : List String :=
     "unless", "when"]
   -- keep-sorted end
 
-/-- `s` without the comments outside its string literals: line comments,
-and block comments, which nest. Each comment becomes a space. -/
-def withoutComments (s : String) : String := Id.run do
-  let cs := s.toList.toArray
-  let mut out := ""
-  let mut i := 0
-  -- In a string literal: the number of `#` that end it, if raw.
-  let mut str? : Option (Option Nat) := none
-  while i < cs.size do
-    let c := cs[i]!
-    match str? with
-    | some raw? =>
-      out := out.push c
-      match raw? with
-      | none =>
-        if c == '\\' && i + 1 < cs.size then out := out.push cs[i + 1]!; i := i + 1
-        else if c == '"' then str? := none
-      | some n =>
-        if c == '"' && (List.range n).all (fun k => cs[i + 1 + k]? == some '#') then
-          for _ in [0:n] do out := out.push '#'
-          i := i + n
-          str? := none
-      i := i + 1
-    | none =>
-      if c == '-' && cs[i + 1]? == some '-' then
-        while i < cs.size && cs[i]! != '\n' do i := i + 1
-        out := out.push ' '
-      else if c == '/' && cs[i + 1]? == some '-' then
-        let mut depth := 1
-        i := i + 2
-        while i < cs.size && depth > 0 do
-          if cs[i]! == '/' && cs[i + 1]? == some '-' then depth := depth + 1; i := i + 2
-          else if cs[i]! == '-' && cs[i + 1]? == some '/' then depth := depth - 1; i := i + 2
-          else i := i + 1
-        out := out.push ' '
-      else if c == '"' then
-        -- A raw literal is `r`, some `#`, then `"`.
-        let hashes := ((cs.extract 0 i).toList.reverse.takeWhile (· == '#')).length
-        let raw := i ≥ hashes + 1 && cs[i - hashes - 1]! == 'r'
-        str? := some (if raw then some hashes else none)
-        out := out.push c
-        i := i + 1
-      else
-        out := out.push c
-        i := i + 1
-  return out
-
 /-- Where an expression that is written after the text `before`, not in
 parentheses, is an operand: of the operator that `before` ends with, on
 its right, or of `when` or `unless`, on its left. An expression not in
@@ -1600,10 +1661,11 @@ def slotAfter (before : String) : Option Slot :=
   | op => if (InfixOp.ofOp? op).isSome then right (.bin op) else none
 
 /-- `if c then a else a`, where `branch` is the text of `a` and `prec` its
-precedence, and `before` the text before the conditional. The fix is the
+precedence, and `before` and `after` the texts before and after the
+conditional. The fix is the
 branch, in parentheses where `lang::operand` requires them. -/
-def sameBranchesMsg (branch : String) (prec : Nat) (before : String) : Msg :=
-  let replacement := BText.inSlot { text := branch, prec } (slotAfter before)
+def sameBranchesMsg (branch : String) (prec : Nat) (before after : String) : Msg :=
+  let replacement := BText.inSlot { text := branch, prec } (slotAfter before) (startsWithOperator after)
   { code? := some "F0737", headline := "both branches of `if` are written the same"
     label? := some s!"`{branch}` whatever the condition"
     fixes := #[{ msg := "remove the condition, which decides nothing", replacement }] }
@@ -1837,7 +1899,7 @@ def binText (op : String) (left right : BText) : BText :=
 /-- The text of `t`, which replaces `n`, in `slot` within `parent`: in
 parentheses if it needs them there and `n` is not already in them. -/
 def placed (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) (t : BText) : String :=
-  if enclosed src parent n.range then t.text else t.inSlot slot
+  if enclosed src parent n.range then t.text else t.inSlot slot (followedAt src n.range)
 
 /-- The comparison `n` is, with its operands' texts as `writtenForm` gives them. -/
 def comparisonOf? (src : Array Char) (n : BNode α) : Option (Comparison × String × String) := do
@@ -1975,7 +2037,7 @@ partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (n : BNode α)
 in `src` (`Reqs/Lint/Complexity#comparisons`), where `boolEq` says whether a comparison
 compares `Bool`s. -/
 def opReports (src : Array Char) (boolEq : α → Bool) (root : BNode α) : Array (OpReport α) :=
-  opReportsIn src boolEq root none root.range
+  opReportsIn (upTo src root.range) boolEq root none root.range
 
 /-! ## Arithmetic and parentheses -/
 
@@ -2052,7 +2114,7 @@ partial def shapeReports (src : Array Char) (n : BNode α) (slot : Option Slot) 
   let isOne (k : BNode α) : Bool := match k with | .mk .atom kr _ _ => textOf src kr == "1" | _ => false
   let isMinusOne (k : BNode α) : Bool := match k with | .mk .neg _ _ #[o] => isOne o | _ => false
   -- The text of the replacement, parenthesized where the expression is.
-  let place (t : BText) : String := if enclosed src parent range then t.text else t.inSlot slot
+  let place (t : BText) : String := if enclosed src parent range then t.text else t.inSlot slot (followedAt src range)
   let report (l : Lint) (msg : String → Msg) (t : BText) : Array (ShapeReport α) :=
     let replacement := place t
     #[{ lint := l, ref, range, msg := msg replacement }]
@@ -2089,7 +2151,7 @@ expression written in `src`, in the order they start, the outer of two
 that start together first. -/
 def arithReports (src : Array Char) (root : BNode α) : Array (ShapeReport α) :=
   let range := match root with | .mk _ r .. => r
-  (shapeReports src root none range).qsort fun a b =>
+  (shapeReports (upTo src range) root none range).qsort fun a b =>
     a.range.start < b.range.start || (a.range.start == b.range.start && a.range.stop > b.range.stop)
 
 /-! ## Methods, patterns, types and matches -/

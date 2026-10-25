@@ -935,6 +935,18 @@ def lintBools (e : Syntax) : TermElabM Unit := do
     recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ (if fixable then #[Core.fixHelp] else #[]) }
   lintParens fixable sub.str e
 
+/-- The text that `stx` is written with, without what is around it. -/
+def exactText (stx : Syntax) : String :=
+  match stx.getSubstring? false false with
+  | some sub => String.Pos.Raw.extract sub.str sub.startPos sub.stopPos
+  | none => ((stx.reprint.getD "").trimAscii).toString
+
+/-- Whether an infix operator follows `stx` (`Core.startsWithOperator`). -/
+def followedStx (stx : Syntax) : Bool :=
+  match stx.getSubstring? false false with
+  | some sub => Core.startsWithOperator (String.Pos.Raw.extract sub.str sub.stopPos ⟨sub.str.utf8ByteSize⟩)
+  | none => false
+
 /-- The text that `stx` is written with. -/
 def srcText (stx : Syntax) : String := ((stx.reprint.getD "").trimAscii).toString
 
@@ -961,12 +973,6 @@ def recordTerm (go : Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : Te
     if cx.noteIndexes then lintRedundant b true
     if b[1].isNone then go (← `(fren_expr| $(⟨b[0]⟩):ident)) else go b[1][1]
   `($(mkCIdentFrom e[0] (recordCtor info.decl)) $args*)
-
-/-- The text that `stx` is written with, without what is around it. -/
-def exactText (stx : Syntax) : String :=
-  match stx.getSubstring? false false with
-  | some sub => String.Pos.Raw.extract sub.str sub.startPos sub.stopPos
-  | none => ((stx.reprint.getD "").trimAscii).toString
 
 open Lang in
 /-- The precedence of `e`'s operator, as `lang::operand` uses it: an
@@ -1011,9 +1017,9 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (info : EnumInfo) (pats : Array (Optio
   let help (m : Core.Msg) := if fixable then m.note Core.fixHelp else m
   -- `trivial_match` (`lint::trivial_match`).
   if let #[i] := infos then
-    if Core.trivialMatch infos.size i.binds then recordLint .trivialMatch e (Core.trivialMatchMsg (i.body.inSlot slot))
+    if Core.trivialMatch infos.size i.binds then recordLint .trivialMatch e (Core.trivialMatchMsg (i.body.inSlot slot (followedStx e)))
   for g in Core.sameArmGroups infos do
-    let (i, msg) := Core.sameArmsMsg infos g slot
+    let (i, msg) := Core.sameArmsMsg infos g slot (followedStx e)
     recordLint .matchSameArms arms[i]! (help msg)
   let scrutinee : Core.BText := { text := exactText e[1], prec := exprPrec e[1] }
   if let some (pre, post) := Core.membershipParts? infos scrutinee slot then
@@ -1249,7 +1255,8 @@ def lintSameBranches (e a b : Syntax) : TermElabM Unit := do
   unless Core.sameBranches (Core.writtenSame (exactText a) (exactText b)) do return
   let some sub := e.getSubstring? false false | return
   let .mk kind .. := boolNode "" 0 a
-  recordLint .sameBranches e (Core.sameBranchesMsg (exactText a) kind.prec (String.Pos.Raw.extract sub.str 0 sub.startPos))
+  recordLint .sameBranches e (Core.sameBranchesMsg (exactText a) kind.prec (String.Pos.Raw.extract sub.str 0 sub.startPos)
+    (String.Pos.Raw.extract sub.str sub.stopPos ⟨sub.str.utf8ByteSize⟩))
 
 /-- `duplicate_elements` on the set literal `e` (`lint::duplicate_elements`). -/
 def lintDuplicates (e : Syntax) (elems : Array Syntax) : TermElabM Unit := do
@@ -1312,7 +1319,7 @@ def lintChain (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
     if short.length < chain.size then
       let fixed : Core.BText := if short.isEmpty then bareText recv
         else { text := srcText recv ++ String.join (short.map (s!".{·.name}")), prec := Core.BKind.atom.prec }
-      recordLint .redundantMethodChain e (Core.methodChainMsg (fixed.inSlot (parent?.bind (operandSlot · e))))
+      recordLint .redundantMethodChain e (Core.methodChainMsg (fixed.inSlot (parent?.bind (operandSlot · e)) (followedStx e)))
     return
 
 /-- Records `trivial_pattern` on `e`, `recv.matches?(args)`, an operand of

@@ -1,0 +1,31 @@
+--- test/cli/fix/open_ended.fren
++++ test/cli/fix/open_ended.fren
+@@ -34,12 +34,12 @@
+-    req collapsible: o1? iff (unless (p? or if q? then r? else s?), unless t?, d?)
+-    req bool_eq: o2? iff ((p? or if q? then r? else s?) = t?)
+-    req identity: o3? iff (if (x + if p? then 1 else 2) + 0 = y then q? else r?)
+-    req identity_right: o4? iff (z = (x + if p? then 1 else 2) + 0 and q?)
+-    req plus_one: o5? iff ((x + if p? then 1 else 2) >= y + 1 or q?)
+-    req double_cmp: o6? iff ((x + if p? then 1 else 2) < y or (x + if p? then 1 else 2) = y) and q?
+-    req pattern: o7? iff ((if p? then w else v).matches?("ab") and q?)
+-    req trivial_match: o8? iff (z = match e { _ => x + if p? then 1 else 2 } and q?)
+-    req same_arms: o9? iff (z = match e { E::A => x + if p? then 1 else 2, E::B => x + if p? then 1 else 2 } and q?)
+-    req last: o10? iff (z = (x + if p? then 1 else 2) + 0)
+-    req chain: o12? iff (([x] ++ if p? then [y] else [z]).rev.rev = [x] and q?)
+-    req comment: o13? iff (z = (x + if p? then 1 else 2) + 0 -- a comment
++    req collapsible: o1? iff (unless (p? or if q? then r? else s?) or t?, d?)
++    req bool_eq: o2? iff ((p? or if q? then r? else s?) iff t?)
++    req identity: o3? iff (if (x + if p? then 1 else 2) = y then q? else r?)
++    req identity_right: o4? iff (z = (x + if p? then 1 else 2) and q?)
++    req plus_one: o5? iff ((x + if p? then 1 else 2) > y or q?)
++    req double_cmp: o6? iff ((x + if p? then 1 else 2) <= y) and q?
++    req pattern: o7? iff ((if p? then w else v) = "ab" and q?)
++    req trivial_match: o8? iff (z = (x + if p? then 1 else 2) and q?)
++    req same_arms: o9? iff (z = (x + if p? then 1 else 2) and q?)
++    req last: o10? iff (z = x + if p? then 1 else 2)
++    req chain: o12? iff (([x] ++ if p? then [y] else [z]) = [x] and q?)
++    req comment: o13? iff (z = (x + if p? then 1 else 2) -- a comment
+@@ -47 +47 @@
+-    req same_branches: o11? iff (z = (if d? then x + if p? then 1 else 2 else x + if p? then 1 else 2) and q?)
++    req same_branches: o11? iff (z = (x + if p? then 1 else 2) and q?)
+exit=1

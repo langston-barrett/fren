@@ -66,14 +66,10 @@ expect complement_involutive: forall (p q: complement), when q.op = p.result, q.
 
 The message is reported at the expression, and suggests the simpler form,
 in which the operands are simplified too: the suggestion for `not not (a? =
-true)` is `a?`. An operand keeps the text it is written with, and is put
-in parentheses where [`lang::operand`](../Lang/Expressions.md#operators)
-requires them, and only there; the simpler form itself is put in
-parentheses where it is an operand that requires them and it is not
-already in parentheses. For this, a conditional counts as binding more
-loosely than any operator, since its `else` extends as far right as
-possible. So `x? and not not (a? or b?)` becomes `x? and (a? or b?)`, and
-`not (x = 1)` becomes `x != 1`.
+true)` is `a?`. An operand keeps the text it is written with, and it and
+the simpler form itself are put in parentheses where
+[fixes need them](../Lint.md#parentheses-in-fixes). So `x? and not not (a? or b?)` becomes `x? and
+(a? or b?)`, and `not (x = 1)` becomes `x != 1`.
 
 The simpler form means what the expression means. Whatever values its
 paths, numbers and function applications have, if the expression has a
@@ -185,8 +181,7 @@ either order gives `r.domain`. The message is reported once, at the whole
 chain. The fix replaces it with its shorter form, in which the receiver
 keeps the text it is written with. When no method is left, the receiver
 alone is written without the parentheses a receiver may need, and put in
-parentheses where it is an operand that requires them
-([`lang::operand`](../Lang/Expressions.md#operators)), so `(a ++ b).rev.rev = c`
+parentheses where [fixes need them](../Lint.md#parentheses-in-fixes), so `(a ++ b).rev.rev = c`
 becomes `a ++ b = c`. A method has no guard of its own, and the fix
 evaluates the receiver where the chain did, so it keeps every guard: it
 only stops evaluating methods, which index nothing.
@@ -228,8 +223,8 @@ with `_` for each of its values, or an or-pattern. A `match` is exhaustive
 value of the scrutinee, and the `match` is the arm's body. Like Clippy's
 `match_single_binding`, it is in `complexity`, and it is fixable. The fix
 replaces the `match` with the body, which keeps the text it is written
-with, and is put in parentheses where it is an operand that requires them
-([`lang::operand`](../Lang/Expressions.md#operators)): `x = 2 * match e { _ =>
+with, and is put in parentheses where [fixes need them](../Lint.md#parentheses-in-fixes):
+`x = 2 * match e { _ =>
 x - 1 }` becomes `x = 2 * (x - 1)`. The body's guard is the guard of the
 `match` and its pattern's test, which every value passes, so it is the
 guard of the `match`, where the fix puts the body. The fix only drops the
@@ -254,11 +249,8 @@ The lints of this section and the next three, and
 [`bool_equality`](Pedantic.md#boolean-equality), look at the operators and
 method calls of an expression, in any constraint, binding, definition,
 constant or global expectation, and are fixable. Like `nonminimal_bool`,
-each fix puts an operand in parentheses where
-[`lang::operand`](../Lang/Expressions.md#operators) requires them, and only
-there, and puts the fix itself in parentheses where it is an operand that
-requires them and is not already in them; for this, a conditional counts
-as binding more loosely than any operator. Operands are compared as
+each fix puts its operands, and itself, in parentheses where
+[fixes need them](../Lint.md#parentheses-in-fixes). Operands are compared as
 [written the same](../Lint.md#written-the-same).
 
 `double_comparison` fires on two comparisons of the same two operands,
