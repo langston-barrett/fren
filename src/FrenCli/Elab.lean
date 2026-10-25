@@ -727,6 +727,15 @@ partial def Expr.boolNode : Expr → Fren.Core.BNode Span
   | .num s _ | .path s _ | .str s .. => .mk .atom (toRange s) s #[]
 where toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
 
+/-- The span of `e` as written: a field read, method call or index of a
+receiver in parentheses starts at the `(`, which its span leaves out. -/
+partial def Expr.writtenSpan (src : Array Char) (e : Expr) : Span :=
+  match e with
+  | .field _ r _ | .method _ r _ _ | .index _ r _ =>
+    let r := Fren.Core.withParens src (toRange (r.writtenSpan src))
+    { e.span with start := r.start }
+  | _ => e.span
+
 /-- The pairs of parentheses directly around `sp` in `src`, from the inside
 out, each from its `(` to its `)`. -/
 def parenLayers (src : Array Char) (sp : Span) : Array Span := Id.run do
@@ -744,10 +753,12 @@ def parenLayers (src : Array Char) (sp : Span) : Array Span := Id.run do
 
 /-- Reports `double_parens` in `e` and within it (`lint::double_parens`),
 where `call` says that `e` is the only argument of an application, whose
-parentheses are not its own. -/
+parentheses are not its own. The parentheses around `e` are those around
+it as written (`writtenSpan`): a receiver's own, as in `({1}).card`, are
+not. -/
 partial def lintParens (e : Expr) (call : Bool := false) : M Unit := do
   let src := (← get).src
-  let layers := parenLayers src e.span
+  let layers := parenLayers src (e.writtenSpan src)
   let layers := if call then layers.pop else layers
   if Fren.Core.doubleParens layers.size then
     lintFix .doubleParens layers.back! (Fren.Core.doubleParensMsg (String.ofList (src.extract layers[0]!.start layers[0]!.stop).toList))
@@ -954,15 +965,6 @@ partial def namesRead (e : Expr) : Array (Expr × String) :=
   match lastName? e with
   | some (r, n) => (namesRead r).push (r, n)
   | none => #[]
-
-/-- The span of `e` as written: a field read, method call or index of a
-receiver in parentheses starts at the `(`, which its span leaves out. -/
-partial def Expr.writtenSpan (src : Array Char) (e : Expr) : Span :=
-  match e with
-  | .field _ r _ | .method _ r _ _ | .index _ r _ =>
-    let r := Fren.Core.withParens src (toRange (r.writtenSpan src))
-    { e.span with start := r.start }
-  | _ => e.span
 
 /-- The operands of a chain of `op`, `or` or `and`. -/
 partial def chainOperands (op : String) (e : Expr) : Array Expr :=
