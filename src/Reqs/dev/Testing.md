@@ -92,10 +92,16 @@
   reach `linear_product`, the [decidable core](../Lang/Decidability.md)
   and the lints. Only what may legitimately differ is not compared:
   - A parse error stops the `fren` command, while Lean recovers at the
-    next command: Lean must then report an error in the same item, on the
-    parse error's line or before it, and nothing else is compared.
-  - Lean's own parse and type errors stand for the `fren` command's errors
-    on the same line. Any other error of either front end is compared.
+    next command: Lean must then report a parse error in the same item, on
+    the parse error's line or before it, and nothing else is compared. An
+    item is one Lean command, so any other error of Lean's in it means
+    that Lean parsed what the `fren` command rejects. Lean's parse errors
+    are its messages that start with `unexpected`, `unterminated`, or
+    `expected` but do not go on with `, but`, as Fren's own do.
+  - Lean's own parse and type errors stand for the `fren` command's static
+    errors on the same line, but not for a check's result: a check that
+    fails where Lean rejects the constraint is a difference. Any other
+    error of either front end is compared.
   - Messages are compared by their first line, without the values of a
     model, which may differ, or the solver's reason for an undecided check.
     The names of the constraints that a message reports are compared.
@@ -115,8 +121,10 @@
   differences are summarized by kind; those only in undecided checks,
   which time limits may explain, are counted apart. Specs run in worker
   processes, so a crash of the solver is recorded against its spec, and a
-  spec that runs longer than `--spec-timeout` (default 120 s) is stopped
-  and recorded as a timeout. Each run's work files are its own, but the
+  spec that runs longer than `--spec-timeout` (default 30 s; a spec takes
+  well under a second) is stopped and recorded as a timeout. Crashes and
+  timeouts are findings, like differences: the run then exits nonzero. A
+  worker that dies while checking no spec is blamed on none. Each run's work files are its own, but the
   findings are named by seed, so runs with overlapping seeds in one `DIR`
   overwrite each other's. `--avoid-known` steers clear of differences
   already known, to find others; `--files FILE...` compares the front ends

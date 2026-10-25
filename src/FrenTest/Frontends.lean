@@ -11,10 +11,12 @@ fuzzing"). `fren_fuzz_frontends` compares the front ends with it;
 `FrenTest.FrontendsCompare` tests it.
 
 - A parse error (`F01xx`) stops the binary, but Lean recovers at the next
-  command: Lean must then report an error in the same item, at or before
-  the parse error's line, and nothing else is compared.
+  command: Lean must then report a parse error (`isLeanParseError`) in the
+  same item, at or before the parse error's line, and nothing else is
+  compared.
 - Lean's own errors (`isLeanOwn`, such as `Type mismatch`) stand for the
-  binary's errors on the same line, as `--~[hosted]` does in the ui tests.
+  binary's static errors on the same line, as `--~[hosted]` does in the ui
+  tests, but not for its checks' results.
   A Lean error with no error of the binary on its line is always reported.
 - Messages are compared by line, severity and first line, with the values
   of a model masked (`normHead`).
@@ -123,6 +125,17 @@ def leanOwn : List String :=
 
 def isLeanOwn (d : Diagnostic) : Bool := d.severity == "error" && leanOwn.any ((headOf d).startsWith ·)
 
+/-- An error of Lean's parser, which Fren's grammar is written in: its
+messages start with `unexpected` (`unexpected token 'x'; expected term`,
+`unexpected identifier; expected '}'`, `unexpected end of input`), with
+`expected` (`expected 'out'`), or with `unterminated`. Fren's own messages
+that start with `expected` (`F0210`, `F0319`) go on with `, but`. -/
+def isLeanParseError (d : Diagnostic) : Bool :=
+  let h := headOf d
+  d.severity == "error"
+  && (h.startsWith "unexpected " || h.startsWith "unterminated "
+      || (h.startsWith "expected " && !h.contains ", but "))
+
 /-- An undecided check, for lack of time rather than a solver error. -/
 def isUndecided (d : Diagnostic) : Bool :=
   (d.code? == some "F0608" || (d.code?.isNone && (headOf d).startsWith "could not decide whether `"))
@@ -163,9 +176,12 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   let cliDiags := cli.diags.filter (!isStoppedTrailer ·)
   -- A parse error stops the binary; Lean recovers at the next command.
   if let some p := cliDiags.find? (·.code?.any (·.startsWith "F01")) then
-    if hosted.diags.any fun h => h.severity == "error" && h.line ≤ p.line && itemAt h.line == itemAt p.line then
+    -- Only a parse error of Lean's can stand for it: an item is one Lean
+    -- command, so any other error of Lean's in the item means that Lean
+    -- parsed the line that the binary rejects.
+    if hosted.diags.any fun h => isLeanParseError h && h.line ≤ p.line && itemAt h.line == itemAt p.line then
       return (#[], false)
-    return (#[render "fren" p ++ " (and Lean reports no error in its item up to that line)"], false)
+    return (#[render "fren" p ++ " (and Lean reports no parse error in its item up to that line)"], false)
   let lines := text.splitOn "\n"
   -- Checks whose evidence is testing, which Lean does not run.
   let anyTested := text.contains "set_option fren.evidence \"tested\""
@@ -185,10 +201,13 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
     | some i => cs := cs.eraseIdx! i
     | none => hostedOnly := hostedOnly.push h
   -- Lean's own errors for the binary's errors on the same line.
-  let cliErrorLines := cs.filter (·.severity == "error") |>.map (·.line)
+  -- Only static errors: a check that fails in the binary is not one that
+  -- Lean rejects.
+  let staticErr (c : Diagnostic) := c.severity == "error" && !isCheckResult c
+  let cliErrorLines := cs.filter staticErr |>.map (·.line)
   let leanLines := hostedOnly.filter isLeanOwn |>.map (·.line)
   hostedOnly := hostedOnly.filter fun h => !(isLeanOwn h && cliErrorLines.contains h.line)
-  cs := cs.filter fun c => !(c.severity == "error" && leanLines.contains c.line)
+  cs := cs.filter fun c => !(staticErr c && leanLines.contains c.line)
   -- Lean's lints of an item where the binary has a static error other than
   -- a lint, since the binary drops that item's lints.
   let stoppedItems := (cliDiags.filter fun d => d.severity == "error" && !isCheckResult d && !isLint d).map (itemAt ·.line)

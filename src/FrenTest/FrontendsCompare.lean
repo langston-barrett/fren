@@ -34,12 +34,26 @@ def agrees (text : String) (cli hosted : Report) : Bool := (compare text cli hos
 -- #97 in a constant, an item without checks.
 def constant : String := "pub const K: Int := {(1, 2)}.range.card\n"
 
-#guard differs constant { diags := #[], summary? := none0, exit? := some 0 }
+-- No exit code, so that only the messages can tell the reports apart.
+#guard differs constant { diags := #[], summary? := none0 }
   { diags := #[err 1 "`Rel(Int, Int)` has no method `range.card`"], summary? := none0 }
 
 -- One of Lean's own errors with no error of the binary on its line.
-#guard differs constant { diags := #[], summary? := none0, exit? := some 0 }
+#guard differs constant { diags := #[], summary? := none0 }
   { diags := #[err 1 "unknown identifier 'K'"], summary? := none0 }
+
+-- ... nor a static error: a check that fails in the binary is not one
+-- that Lean rejects (#97 in an expectation).
+def expectation : String := "expect e: {(1, 2)}.range.card = 2
+"
+
+def expectationDiff : Array String :=
+  (compare expectation { diags := #[err 1 "expectation `e` does not hold" "F0603"], summary? := none0 }
+    { diags := #[err 1 "Type mismatch\n  x\nhas type Bool"], summary? := none0 }).1
+
+-- Both errors are reported, each as only one front end's.
+#guard expectationDiff.any (·.startsWith "line 1: only fren reports error[F0603]")
+#guard expectationDiff.any (·.startsWith "line 1: only Lean reports error: Type mismatch")
 
 -- ... but it stands for an error of the binary on the same line.
 #guard agrees constant { diags := #[err 1 "type mismatch: expected `Int`, found `Bool`" "F0304"], exit? := some 2 }
@@ -62,6 +76,19 @@ def parse : String := "comp c {\n    in x: Int\n    req q: x = 1\n}\n\ncomp d {\
 -- Lean's only error is a failed check in another item.
 #guard differs parse { diags := #[err 3 "expected an expression, found keyword `expect`" "F0104"], exit? := some 2 }
   { diags := #[err 7 "`d` is not realizable: for the input y = 0, no outputs satisfy `q`"] }
+
+-- Lean's other errors in the item, before the binary's parse error: Lean
+-- parsed the whole item, the line that the binary rejects included.
+def parseLate : String := "comp c {\n    in x: Int\n    expect x0: x = 1\n    req q: x =\n}\n"
+
+#guard differs parseLate { diags := #[err 4 "expected an expression, found `}`" "F0104"], exit? := some 2 }
+  { diags := #[err 3 "expectation `c::x0` does not hold"] }
+
+#guard differs parseLate { diags := #[err 4 "expected an expression, found `}`" "F0104"], exit? := some 2 }
+  { diags := #[err 2 "cannot find `Int2` in this scope"] }
+
+#guard !isLeanParseError (err 2 "expected a function, but `f` is a variable")
+#guard isLeanParseError (err 2 "expected 'out'")
 
 -- Lean's own parse error, on the line before the binary's, in its item.
 #guard agrees parse { diags := #[err 3 "expected an expression, found keyword `expect`" "F0104"], exit? := some 2 }

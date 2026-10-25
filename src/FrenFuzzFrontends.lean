@@ -407,6 +407,8 @@ unsafe def worker (count seed : Nat) (run : Run) (avoidKnown : Bool) : IO UInt32
       IO.eprintln s!"seed {s}: front ends differ{if flaky then " (only in inconclusive results)" else ""}, written to {file}"
       for f in found.extract 0 4 do IO.eprintln s!"  {f}"
     record run { seed := s, status, errors := errs.toList.eraseDups.toArray, signatures := found.map signature }
+    -- Between specs, a crash is no spec's.
+    IO.FS.writeFile run.progress ""
   return 0
 
 /-- Counts `x` in a tally. -/
@@ -415,10 +417,19 @@ def tally (xs : Array (String × Nat × Nat)) (x : String) (seed : Nat) : Array 
   | some k => xs.modify k fun (x, n, first) => (x, n + 1, first)
   | none => xs.push (x, 1, seed)
 
+/-- The outcomes recorded so far in a run. -/
+def outcomesOf (run : Run) : IO (Array Outcome) := do
+  return ((← IO.FS.readFile run.results).splitOn "\n").toArray.filterMap fun l =>
+    (Json.parse l >>= fromJson? : Except String Outcome).toOption
+
 /-- Runs workers until every seed is checked. The solver can abort the
 process (a failed assertion in cvc5), so specs run in a worker, and a
 crash is recorded as the outcome of the spec it was checking. A spec that
-takes longer than `limit` seconds is stopped and recorded as a timeout. -/
+takes longer than `limit` seconds is stopped and recorded as a timeout.
+Crashes and timeouts are findings: the run then exits nonzero. A worker
+that dies while checking no spec, before its first or between two, is
+blamed on none: the run resumes after the last spec recorded, or stops if
+the worker recorded none. -/
 unsafe def mainFrontends (count seed : Nat) (dir : String) (avoidKnown : Bool) (limit : Nat) : IO UInt32 := do
   let start ← IO.monoMsNow
   let run : Run := { dir, id := toString (← IO.Process.getPID) }
@@ -446,7 +457,15 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (avoidKnown : Bool) (
         break
       IO.sleep 200
     if code? == some 0 then break
-    let failed := ((← IO.FS.readFile run.progress).trimAscii.toString.toNat?).getD next
+    let some failed := (← IO.FS.readFile run.progress).trimAscii.toString.toNat?
+      | let done := (← outcomesOf run).filter (fun o => next ≤ o.seed && o.seed < seed + count)
+        let last? := done.foldl (fun m o => some (max (m.getD o.seed) o.seed)) none
+        let some last := last?
+          | IO.eprintln s!"fren_fuzz_frontends: the worker for seed {next} exited ({code?.getD 0}) before checking any spec"
+            return 2
+        IO.eprintln s!"seed {last + 1}: the worker exited ({code?.getD 0}) between specs; resuming"
+        next := last + 1
+        continue
     let what := if timedOut then s!"took more than {limit}s" else s!"crashed (exit {code?.getD 0})"
     IO.eprintln s!"seed {failed}: the worker {what}"
     let text : String := Id.run ((Wide.genWide avoidKnown).run' (rngOf failed))
@@ -454,8 +473,7 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (avoidKnown : Bool) (
     IO.FS.writeFile (dir / s!"{kind}-seed{failed}.fren") (s!"-- fren_fuzz_frontends{flags avoidKnown} --seed {failed}: {what}\n" ++ text)
     record run { seed := failed, status := kind }
     next := failed + 1
-  let outcomes : Array Outcome := ((← IO.FS.readFile run.results).splitOn "\n").toArray.filterMap fun l =>
-    (Json.parse l >>= fromJson? : Except String Outcome).toOption
+  let outcomes ← outcomesOf run
   for f in [run.progress, run.spec] do
     try IO.FS.removeFile f catch _ => pure ()
   let mut sigs := #[]
@@ -472,7 +490,7 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (avoidKnown : Bool) (
   IO.eprintln s!"fren_fuzz_frontends: {outcomes.size} specs in {((← IO.monoMsNow) - start) / 1000}s, {n "differ"} where \
     the front ends differ, {n "inconclusive"} more only in inconclusive results, {n "crash"} crashed, \
     {n "timeout"} took more than {limit}s (results in {run.results})"
-  return if n "differ" + n "crash" == 0 then 0 else 1
+  return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
   "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--spec-timeout SECONDS]\n" ++
@@ -483,7 +501,7 @@ structure Opts where
   count : Nat := 100
   seed : Nat := 0
   dir : String := ".lake/fuzz"
-  limit : Nat := 120
+  limit : Nat := 30
   worker? : Option String := none
 
 unsafe def main (args : List String) : IO UInt32 := do
