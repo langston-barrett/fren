@@ -178,6 +178,10 @@ structure Comp where
   isGlobal : Bool := false
   /-- Each defined output, with its definition. -/
   defs : Array (Name × Ex) := #[]
+  /-- A refinement's bindings, each bound variable of the abstract
+  component with the expression it is bound to, which reads the concrete
+  component's variables. The definedness of their indexes is checked. -/
+  bindings : Array (Name × Ex) := #[]
   deriving Inhabited
 
 structure Spec where
@@ -730,7 +734,8 @@ def Comp.refinement (path w : Name) (c a : Comp) (bindings : Array (Name × Ex) 
       ++ (a.constraints.filter (·.kind == .req)).map (fun p => { p with kind := .expect, e := ren p.e })
       ++ a.defs.map fun (d, e) => { kind := .expect, name := d, e := .bin .eq (ren (.var d)) (ren e) }
     insts := #[{ name := w, comp := c.path, bindings := inputs.map fun v => (v.name, .var v.name) }]
-      ++ a.insts.map fun i => { i with bindings := i.bindings.map fun (x, e) => (x, ren e) } }
+      ++ a.insts.map fun i => { i with bindings := i.bindings.map fun (x, e) => (x, ren e) }
+    bindings := bindings.map fun (x, b) => (x, ownC b) }
 
 /-- `e` with the binders of `σ` that are free in it replaced by their
 expressions. -/
