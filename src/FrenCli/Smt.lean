@@ -9,7 +9,8 @@ import cvc5
 
 Runs the shared check algorithms (`FrenCore.Check`) with cvc5, linked into the
 binary. Formulas are SMT-LIB text over the comp's variables; each query is a
-fresh solver.
+fresh solver, and a query asked again is answered from a cache
+(`QueryCache`).
 -/
 
 namespace FrenCli
@@ -56,13 +57,15 @@ def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar)
   s!"(set-logic {logic})\n(set-option :produce-models true)\n\
     (set-option :tlimit-per {timeoutSecs * 1000})\n{options}{prelude.needed (quotedSymbols body)}{body}"
 
-/-- Asserts `hyps` and the negation of `goal` and checks satisfiability,
-first passing the script to `dump?`, if any. -/
-def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (timeoutSecs : Nat)
-    (dump? : Option (String → IO Unit)) (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool) :
-    IO (Outcome String) := do
-  let script := queryScript logic options prelude vars timeoutSecs hyps goal
-  if let some dump := dump? then dump script
+/-- The answers to the queries asked so far, by script, each with whether
+it has a model: a script asked again gets the same answer without the
+solver (`Reqs/Cli#solver-queries`). The script is the whole query, with its
+logic, options and time limit, so the same script means the same question. -/
+abbrev QueryCache := IO.Ref (Std.HashMap String (Outcome String × Bool))
+
+/-- Checks the satisfiability of `script`, a query over `vars`, with values
+of `vars` if `wantModel`. -/
+def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) : IO (Outcome String) := do
   let r ← cvc5.Env.run do
     let tm ← cvc5.TermManager.new
     let solver ← cvc5.Solver.new tm
@@ -91,6 +94,26 @@ def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (t
   | .ok o => return o
   | .error e => return .unknown s!"solver error: {e}"
 
+/-- Asserts `hyps` and the negation of `goal` and checks satisfiability,
+first passing the script to `dump?`, if any, and answering from `cache?`,
+if any, a script asked before. -/
+def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (timeoutSecs : Nat)
+    (dump? : Option (String → IO Unit)) (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool)
+    (cache? : Option QueryCache := none) : IO (Outcome String) := do
+  let script := queryScript logic options prelude vars timeoutSecs hyps goal
+  if let some dump := dump? then dump script
+  let some cache := cache? | solveScript script vars wantModel
+  -- A model's variables are those that the script declares, which are `vars`.
+  match (← cache.get)[script]? with
+  | some (o@(.sat _), hasModel) =>
+    if !wantModel then return .sat #[]
+    if hasModel then return o
+  | some (o, _) => return o
+  | none => pure ()
+  let o ← solveScript script vars wantModel
+  cache.modify (·.insert script (o, wantModel))
+  return o
+
 /-- A value of an abstract type, as cvc5 writes it, such as
 `(as @|::lang::Name|_0 |::lang::Name|)`, as Fren writes it: `Name#0`. -/
 def renderAbstract? (v : String) : Option String := do
@@ -110,6 +133,16 @@ inductive Term where
   | atom (s : String)
   | list (ts : Array Term)
   deriving Inhabited
+
+/-- The first position from `i` of a character of `cs` that satisfies `p`,
+or the end of `cs`: without copying the rest of `cs`, so that reading a
+model is linear in its length. -/
+def findFrom (cs : Array Char) (i : Nat) (p : Char → Bool) : Nat := Id.run do
+  let mut j := i
+  while h : j < cs.size do
+    if p cs[j] then return j
+    j := j + 1
+  return cs.size
 
 /-- The terms of `cs` from `i`, up to an unmatched `)`, and where they end. -/
 partial def parseTerms (cs : Array Char) (i : Nat) : Array Term × Nat := Id.run do
@@ -131,11 +164,11 @@ partial def parseTerms (cs : Array Char) (i : Nat) : Array Term × Nat := Id.run
       out := out.push (.atom (String.ofList (cs.extract i (j + 1)).toList))
       i := j + 1
     else if c == '|' then
-      let j := ((cs.extract (i + 1) cs.size).findIdx? (· == '|')).map (· + i + 1) |>.getD cs.size
+      let j := findFrom cs (i + 1) (· == '|')
       out := out.push (.atom (String.ofList (cs.extract (i + 1) j).toList))
       i := j + 1
     else
-      let j := ((cs.extract i cs.size).findIdx? fun c => c.isWhitespace || c == '(' || c == ')').map (· + i) |>.getD cs.size
+      let j := findFrom cs i fun c => c.isWhitespace || c == '(' || c == ')'
       out := out.push (.atom (String.ofList (cs.extract i j).toList))
       i := j
   return (out, i)
@@ -229,14 +262,15 @@ def prime (c : CComp) (smt : String) : String :=
 
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
-type that is not finite (`cli::logic`). -/
+type that is not finite (`cli::logic`); answering from `cache?`, if any,
+the scripts asked before (`runQuery`). -/
 def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (timeoutSecs : Nat) (dump? : Option (String → IO Unit) := none)
-    (strings sets : Bool := false) (projection : Bool := false) (kind : Fren.Core.CheckKind) :
+    (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (kind : Fren.Core.CheckKind) :
     Fren.Core.Backend IO String String where
   -- cvc5 refuses some string operations without `strings-exp`.
-  query := runQuery (Fren.Core.logic kind (strings || sets) projection)
+  query hyps goal wantModel := runQuery (Fren.Core.logic kind (strings || sets) projection)
     (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n"))
-    prelude (c.vars ++ primes c) timeoutSecs dump?
+    prelude (c.vars ++ primes c) timeoutSecs dump? hyps goal wantModel cache?
   falseF := "false"
   notF f := s!"(not {f})"
   conj := conj

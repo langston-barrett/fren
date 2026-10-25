@@ -1380,8 +1380,9 @@ def lintPattern (cx : ExprCtx) (parent? : Option Syntax) (e recv : Syntax) (args
 
 open Lang in
 /-- `a = b`, `a != b` and the orderings; on strings, checks the decidable
-core, and writes `a > b` as `b < a`, since lean-smt writes `>` on strings
-as `str.>`, which is not SMT-LIB. -/
+core, and writes the orderings with `Fren.Str.lt` and `Fren.Str.le`, and
+`a > b` as `b < a`, since lean-smt writes `>` on strings as `str.>`,
+which is not SMT-LIB. -/
 def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   let (a, b) := (e[0], e[2])
   let op := e[1].getAtomVal.trimAscii.toString
@@ -1409,7 +1410,7 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
       | "<" => `($x < $y) | "<=" => `($x ≤ $y) | ">" => `($x > $y) | _ => `($x ≥ $y)
   checkCore cx e .stringCompare true (ca || cb) #[a, b] (ca && cb)
   match op with
-  | "<" => `($x < $y) | "<=" => `($x ≤ $y) | ">" => `($y < $x) | _ => `($y ≤ $x)
+  | "<" => `(Fren.Str.lt $x $y) | "<=" => `(Fren.Str.le $x $y) | ">" => `(Fren.Str.lt $y $x) | _ => `(Fren.Str.le $y $x)
 
 /-- Whether `e` is `[]`, which takes its type from where it is written. -/
 def isEmptySeq (e : Syntax) : Bool := e.isOfKind ``Lang.seqExpr && e[1].getSepArgs.isEmpty

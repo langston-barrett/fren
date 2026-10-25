@@ -15,3 +15,10 @@ comp single {
     req r: p? iff [x] = [1]
     expect one: when p?, x = 1
 }
+
+comp pair {
+    in x: Int
+    pub out p?
+    req r: p? iff (x, 2) in {(1, 2), (3, 4)}
+    expect one: when p?, x = 1
+}

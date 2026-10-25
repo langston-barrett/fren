@@ -1,0 +1,12 @@
+--@ args: mutate
+-- A comparison with a literal is a match, which the solver decides: the
+-- mutants that drop the bound on the length leave `name` of unbounded
+-- length, and `ordered` is still decided quickly rather than timing out.
+comp handle {
+    in name: String
+    pub out accepted?
+
+    req shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
+
+    expect ordered: when accepted?, name >= "a" and name < "b"
+}

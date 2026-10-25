@@ -70,5 +70,23 @@ comp shown {
 
     expect never: not q?                                  --~ error: expectation `shown::never` does not hold
 }
---@ summary: 29 passed, 3 failed, 0 inconclusive, 0 redundant
+-- A comparison with a literal is a match of the strings below it, which
+-- the solver decides even when the string's length is unbounded.
+comp ordering {
+    in s: String
+
+    expect between: when s.starts_with?("a"), s >= "a" and s < "b"
+    expect least: s >= "" and "" <= s
+    expect below_nul: when s < "\x00", s = ""
+    expect past_prefix: when s.starts_with?("ab") and s != "ab", s > "ab" and "ab" < s and "ab" <= s
+    expect constant: when s.starts_with?("t"), s < PREFIX
+    expect proper_prefix: when s = "a", s < "ab" and "ab" > s
+    expect equal_bound: when s = "ab", s <= "ab"
+    expect equal_bound_left: when s = "ab", "ab" >= s
+    expect private_use: when s.starts_with?("\uD7FF"), s < "\uE000" and s >= "\uD7FF"
+    expect last_char: when s = "\uE000x", s > "\uE000" and s <= "\uE000x" and s < "𯿿"
+    expect wrong: s <= "b"                                 --~ error: expectation `ordering::wrong` does not hold
+}
+
+--@ summary: 49 passed, 4 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

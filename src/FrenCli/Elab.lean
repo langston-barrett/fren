@@ -1420,10 +1420,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       checkCore cx span .stringCompare true (ca || cb) #[a, b] (ca && cb)
       -- SMT-LIB has only `str.<` and `str.<=`.
       return (match op with
-        | "<" => s!"(str.< {x} {y})"
-        | "<=" => s!"(str.<= {x} {y})"
-        | ">" => s!"(str.< {y} {x})"
-        | _ => s!"(str.<= {y} {x})", .bool)
+        | "<" => Fren.Core.strCompareSmt x y false
+        | "<=" => Fren.Core.strCompareSmt x y true
+        | ">" => Fren.Core.strCompareSmt y x false
+        | _ => Fren.Core.strCompareSmt y x true, .bool)
     | "in" =>
       if let .pair _ pa pb := a then
         let (x, tx) ← elabExpr cx pa

@@ -160,7 +160,11 @@ pub comp outcome {
 ### Choosing the checker
 
 `--by solver`, the default, checks mutants with the solver, as `fren
-check` does, with `--timeout` for each query. `--by testing` tests them,
+check` does, with `--timeout` for each query. A query of a mutant that is
+also a query of the spec, or of an earlier mutant, word for word, such as
+the consistency of assumptions that the mutant leaves alone, gets the
+answer that it got first, without the solver
+([Solver queries](Cli.md#solver-queries)). `--by testing` tests them,
 as `fren quickcheck` does, with `--tests` tests per component (default
 100) from `--seed`. `--by both` does both, and a mutant is killed if
 either kills it. A mutant that the solver's checks kill but testing does

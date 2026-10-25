@@ -134,6 +134,17 @@ functions only those that its query mentions, directly or through
 another declaration: the others cannot change its answer, and declaring
 them all is most of the work of a small query.
 
+`fren check` asks the solver each distinct script once: some checks of a
+component ask the same query, such as the assumptions' consistency, and a
+script asked again gets the answer that it got first, model and all. The
+one exception is a script whose first answer was `sat` without a model,
+because no model was wanted: asked again for a model, it is asked of the
+solver again, and the answer with the model is kept. The
+script is the whole query, with its logic, options and time limit, so the
+same script is the same question. `--dump-smt` still writes each query,
+asked again or not. [`fren mutate`](Mutate.md) shares the answers between
+the spec and all its mutants.
+
 Each script sets the [SMT-LIB logic](https://smt-lib.org/logics.shtml) of
 its query, so that the solver rejects a query outside the fragment that
 Fren's rules keep it in, rather than running an incomplete procedure:
@@ -142,17 +153,30 @@ enumerations and records). A `match` arm reads the payload with the
 datatype's selectors, and tests its scrutinee by comparing it with the
 variant built from them. A string literal is written as SMT-LIB writes
 it: `""` for `"`, and `\u{h}` for `\` and for every character outside
-printable ASCII. Only the [realizability](Check.md#realizability) check
-quantifies, over outputs, which never occur in a function's arguments (see
+printable ASCII. A comparison of a string with a literal, such as
+`name < "b"`, is written as a match of a pattern of the strings below
+the literal, which matches `""`, a string whose first character is
+smaller, or one with the same first character whose rest is below the
+rest of the literal: cvc5 decides such a match, but often not `str.<`
+between a literal and a string of unbounded length. `name <= "b"` also
+matches `"b"` itself, and a literal on the left is the negation:
+`"b" < name` is not `name <= "b"`, and `"b" <= name` is not
+`name < "b"`. `>` and `>=` are these with their sides swapped. Other
+comparisons use `str.<` and `str.<=`. A defined function that returns a
+literal is a literal to the Lean-hosted front end, which unfolds it, but
+not to `fren check`, so the two can write such a comparison differently;
+like any difference in how a query is written, it can only change
+whether the solver answers in time. Only the
+[realizability](Check.md#realizability) check quantifies, over outputs, which never occur in a function's arguments (see
 [Instances](Lang/Instances.md#instance-variables)). A spec that uses
 strings needs the theory of strings, which has no smaller standard logic,
 so its queries use `ALL`, and set cvc5's options `strings-exp`, without
 which cvc5 refuses some string operations, `re-inter-mode all`, so
 that it decides intersections of [patterns](Lang/Expressions.md#patterns),
 and `re-elim on`, so that it rewrites a match that needs no automaton,
-such as one of `x[0-9]{2}.*`, as string functions, which it decides
-faster. These rewrites keep the query's meaning, and introduce no
-quantifiers.
+such as one of `x[0-9]{2}.*`, as constraints on the string's prefixes,
+substrings and length, which it decides faster. These rewrites keep the
+query's meaning, and introduce no quantifiers.
 A spec that uses sets uses `ALL` too, and sets `sets-exp`, without which
 cvc5 refuses to count the members of a set of a finite type. A relation's
 `domain` is its join with the set of every value of the second type, and
@@ -162,9 +186,12 @@ are cvc5's projections, which it supports only in higher-order logic, so
 such a spec uses `HO_ALL`. The Lean-hosted front end does the same, for
 each query with a projection, by cvc5's option `force-logic`, since
 lean-smt always sets `ALL`. Its queries are still in the
-[decidable core](Lang/Decidability.md), unless it opts out. `cli::logic`
-gives the logic from the check, where `QuantifierFree` is `QF_UFDTLIA`,
-`Quantified` is `UFDTLIA` and `HigherOrder` is `HO_ALL`:
+[decidable core](Lang/Decidability.md), unless it opts out. A spec uses
+sets if it writes a `Set(…)` or `Rel(…)` type, or a set or relation
+literal such as `{1, 2}`, and sequences if it writes a `Seq(…)` type or a
+sequence literal such as `[x]`, even if no variable has such a type.
+`cli::logic` gives the logic from the check, where `QuantifierFree` is
+`QF_UFDTLIA`, `Quantified` is `UFDTLIA` and `HigherOrder` is `HO_ALL`:
 
 ```fren
 pub enum Logic { QuantifierFree, Quantified, All, HigherOrder }
@@ -197,7 +224,13 @@ pub comp logic {
 }
 ```
 
-In Lean, the queries are the same, but lean-smt sets the logic `ALL`.
+The Lean-hosted front end asks the same checks' queries, of the same
+formulas and with comparisons with literals written as matches, through
+lean-smt, but its scripts differ: lean-smt sets the logic `ALL`, and
+declares what each query's formulas mention; the front end sets every
+option above, whether or not the spec uses strings and sets, which
+changes how cvc5 searches, not what a query means; and it answers a
+query that a component asks again once, as `fren check` does.
 
 ## Exit status
 

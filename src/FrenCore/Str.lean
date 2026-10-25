@@ -15,6 +15,14 @@ namespace Fren.Str
 write the literal itself, escaped as SMT-LIB needs (`Fren.Core.smtStringLit`). -/
 @[reducible] def lit (s : String) : String := s
 
+/-- `a < b` on strings, as the Lean front end writes it, so that the
+solver's translation can see a comparison with a literal
+(`Fren.Core.strCompareSmt`). -/
+abbrev lt (a b : String) : Prop := a < b
+
+/-- `a <= b` on strings, as `lt`. -/
+abbrev le (a b : String) : Prop := a ≤ b
+
 /-- `s.len`: SMT-LIB's `str.len`. -/
 def len (s : String) : Int := s.length
 
@@ -119,5 +127,32 @@ partial def parseSmtString? (lit : String) : Option String := do
       | none => go (a :: b :: c :: d :: rest) (acc ++ "\\u")
     | c :: rest, acc => go rest (acc.push c)
   go ((cs.drop 1).dropLast) ""
+
+/-- The SMT-LIB literal of the one character with code point `n`, which
+may be a surrogate, as SMT-LIB's strings allow. -/
+def smtCharLit (n : Nat) : String := "\"\\u{" ++ String.ofList (Nat.toDigits 16 n) ++ "}\""
+
+/-- The strings below `c` in SMT-LIB's order (`str.<`), or with `orEqual`,
+also `c` itself, as an SMT-LIB pattern. A string is below `c` if it is
+`""` and `c` is not, starts with a smaller character than `c` does, or
+starts with the same one and the rest is below the rest of `c`. cvc5
+decides a match of this pattern, but often not `str.<` between a string
+of unbounded length and a literal (`Reqs/Cli#solver-queries`). -/
+def belowPattern (c : String) (orEqual : Bool) : String :=
+  c.toList.foldr (init := if orEqual then "(str.to_re \"\")" else "re.none") fun ch rest =>
+    let smaller := if ch.toNat == 0 then [] else [s!"(re.++ (re.range {smtCharLit 0} {smtCharLit (ch.toNat - 1)}) re.all)"]
+    let same := if rest == "re.none" then [] else [s!"(re.++ (str.to_re {smtStringLit ch.toString}) {rest})"]
+    match "(str.to_re \"\")" :: smaller ++ same with
+    | [only] => only
+    | alts => s!"(re.union {" ".intercalate alts})"
+
+/-- `x < y`, or with `orEqual`, `x <= y`, between strings written in
+SMT-LIB: against a literal, as a match of `belowPattern`. -/
+def strCompareSmt (x y : String) (orEqual : Bool) : String :=
+  match parseSmtString? x, parseSmtString? y with
+  | none, some c => s!"(str.in_re {x} {belowPattern c orEqual})"
+  -- `c < y` is `not (y <= c)`, and `c <= y` is `not (y < c)`.
+  | some c, none => s!"(not (str.in_re {y} {belowPattern c !orEqual}))"
+  | _, _ => s!"({if orEqual then "str.<=" else "str.<"} {x} {y})"
 
 end Fren.Core
