@@ -433,15 +433,17 @@ def testReport (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global : Bool) (se
 checks that `keep` selects: their results, and those that are not run
 are dropped. Returns the results and the messages printed. -/
 def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spec) (c : CComp) (ec : Eval.Comp)
-    (global : Bool) (keep : Fren.Core.CheckResult → Bool) (byCheck : Bool := false) :
+    (global : Bool) (keep : Fren.Core.CheckResult → Bool) (prelude : Prelude) (byCheck : Bool := false) :
     IO (Array Fren.Core.CheckResult × Array Msg) := do
   let rep := testReport sp ec c global args.seed args.nTests
-  let results := rep.results.filter keep
+  let results := markInterpreted prelude c (rep.results.filter keep)
   let mut shown := #[]
   let subject := s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
   for r in results do
-    -- Inconclusive results are reported below, once for the comp.
-    if r.verdict == .fail then shown := shown ++ (← printResult args.paint files c r)
+    -- Inconclusive results are reported below, once for the comp; a
+    -- cover goal's pass shows its witness.
+    if r.verdict == .fail || (r.kind == .cover && r.verdict == .pass) then
+      shown := shown ++ (← printResult args.paint files c r)
   let warn (msg : Msg) : IO Unit := printDiag args.paint files { file := c.file, span := c.span, severity := .warning, msg }
   if let some input := rep.noOutputs? then
     -- It explains why the checks it selects were not reached, too.
@@ -463,6 +465,13 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
         let p? := c.props.find? (·.name == n)
         (if global then subject else s!"`{Fren.Core.showComp (c.path ++ n)}`", (p?.map fun p => p.triggerSpan?.getD p.span).getD c.span)
     let msg := Fren.Core.untriggeredMsg what args.nTests byCheck
+    printDiag args.paint files { file := c.file, span, severity := .warning, msg }
+    shown := shown.push msg
+  -- At each cover goal for which no test found a witness (`F0616`).
+  for r in rep.unwitnessed.filter keep do
+    let some n := r.prop? | continue
+    let span := ((c.props.find? (·.name == n)).map (·.span)).getD c.span
+    let msg := Fren.Core.unwitnessedMsg s!"`{Fren.Core.showComp (c.path ++ n)}`" args.nTests byCheck
     printDiag args.paint files { file := c.file, span, severity := .warning, msg }
     shown := shown.push msg
   return (results, shown)
@@ -499,7 +508,7 @@ def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec)
       let (core, ks) := (toCore c).untested c.tested kinds
       pure (← Fren.Core.checkComp bk core ks, none)
   let (results, refuted) := applyRefutations raw (← log.get)
-  return (results, refuted, missing?)
+  return (markInterpreted prelude c results, refuted, missing?)
 
 /-- Which results of testing `c` `fren check` keeps, for the checks of
 kinds `kinds` set to testing (`Reqs/Check#checking-by-testing`); for a
@@ -551,7 +560,7 @@ def check (args : Args) : IO UInt32 := do
       match spec? with
       | .ok sp =>
         if let some ec := sp.counterpart? c global then
-          let (tested, msgs) ← testComp args files sp c ec global (testedKeeps c kinds refinement) (byCheck := true)
+          let (tested, msgs) ← testComp args files sp c ec global (testedKeeps c kinds refinement) prelude (byCheck := true)
           shown := shown ++ msgs
           all := all ++ tested
           byTesting := byTesting + (tested.filter (·.verdict == .pass)).size
@@ -577,6 +586,7 @@ def quickcheck (args : Args) : IO UInt32 := do
   let mut all := #[]
   let mut shown := st.diags.map (·.msg)
   let mut sevs := st.diags.map (·.severity)
+  let prelude := Prelude.ofDecls st.prelude
   for (c, global, refinement) in st.comps.map (·, false, false) ++ st.globals.map (·, true, false)
       ++ st.refinements.map (·, false, true) do
     let some ec := sp.counterpart? c global
@@ -584,7 +594,7 @@ def quickcheck (args : Args) : IO UInt32 := do
         printDiag args.paint files { file := c.file, span := c.span, msg }
         sevs := sevs.push .error
     let keep (r : Fren.Core.CheckResult) := !refinement || refinementKeeps c r
-    let (results, msgs) ← testComp args files sp c ec global keep
+    let (results, msgs) ← testComp args files sp c ec global keep prelude
     shown := shown ++ msgs
     all := all ++ results
   let count v := (all.filter (·.verdict == v)).size

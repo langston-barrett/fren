@@ -7,7 +7,7 @@ comp c {
     req e: r = x
     --~^[hosted] error: unexpected token 'mod'; expected '}'
         mod 2
-        --~^[cli] error: expected a member (`in`, `out`, `inst`, `assume`, `req`, `expect` or `use`) or `}`, found keyword `mod`
+        --~^[cli] error: expected a member (`in`, `out`, `inst`, `assume`, `req`, `expect`, `cover` or `use`) or `}`, found keyword `mod`
         --~^^[hosted] error: expected identifier
 }
 --@ exit: 2

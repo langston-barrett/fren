@@ -1,0 +1,30 @@
+-- A cover goal constrains nothing (`Reqs/Lang/Components#cover-goals`):
+-- an expectation that only a goal could make hold still fails, in the
+-- component and where it is instantiated, and a goal with a trigger has
+-- no vacuity result, even when its trigger can never hold: the summary
+-- counts no vacuity check.
+
+comp sensor {
+    in x: Int
+    pub out hot?
+
+    req r: hot? iff x > 100
+
+    cover warm: x = 50 and not hot?                --~ info: cover goal `sensor::warm` is met
+    expect only_warm: x = 50                       --~ error: expectation `sensor::only_warm` does not hold
+    -- Met wherever its trigger is false, which is everywhere.
+    cover never: when x > 5 and x < 3, hot?        --~ info: cover goal `sensor::never` is met
+}
+
+comp reader {
+    in y: Int
+    pub out seen?
+
+    inst s: sensor { x := y }
+
+    req r: seen? iff s.hot?
+
+    expect warm_through: y = 50                    --~ error: expectation `reader::warm_through` does not hold
+}
+
+--@ summary: 6 passed, 2 failed, 0 inconclusive, 0 redundant

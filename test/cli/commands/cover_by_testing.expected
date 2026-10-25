@@ -1,0 +1,10 @@
+note: cover goal `heater::overheat` is met
+ --> test/cli/commands/cover_by_testing.fren:9:11
+  |
+9 |     cover overheat: temp > 100 and alarm?
+  |           ^^^^^^^^ met
+  |
+  = witness: temp = 101, alarm? = true
+
+fren: 3 passed (1 by testing), 0 failed, 0 inconclusive, 0 redundant
+exit=0

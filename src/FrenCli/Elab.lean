@@ -177,7 +177,7 @@ def conj (fs : Array String) : String :=
 and instances. -/
 def CComp.meaning (c : CComp) : String :=
   conj <| c.defs.map (fun (d, e) => s!"(= {quote d.toString} {e})")
-    ++ (c.props.filter (·.kind != .expect)).map (·.smt)
+    ++ (c.props.filter fun p => p.kind == .assume || p.kind == .req).map (·.smt)
     ++ c.insts.map fun i => conj #[i.bindings, i.behaviour]
 
 /-- What the natural numbers of `c` bring (`Reqs/Check`): that each `Nat`
@@ -2252,7 +2252,7 @@ def testedOf (all : Bool) (members : Array Member) : M Fren.Core.Tested := do
       continue
     let set? := pending.map (·.1)
     match m, pending with
-    | .prop .expect x _, _ => expects := expects.push (Name.mkSimple x.name, set?)
+    | .prop .expect x _, _ | .prop .cover x _, _ => expects := expects.push (Name.mkSimple x.name, set?)
     -- By the names they declare, without the `!` of shadowing.
     | .inst x _ _, _ => insts := insts.push (Name.mkSimple (declaredIdent x).1.name, set?)
     | .var false _ true x _ _, _ => dets := dets.push (Name.mkSimple (declaredIdent x).1.name, set?)

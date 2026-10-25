@@ -209,6 +209,8 @@ scoped syntax (name := outMember) ("pub ")? (&"det ")? &"out " frenIdent (" : " 
 scoped syntax &"assume " frenIdent " : " fren_expr : fren_member
 scoped syntax &"req " frenIdent " : " fren_expr : fren_member
 scoped syntax &"expect " frenIdent " : " fren_expr : fren_member
+/-- `cover n: e`, a scenario that the component must allow (`Reqs/Lang/Components#cover-goals`). -/
+scoped syntax &"cover " frenIdent " : " fren_expr : fren_member
 
 /-- `inst w: c { x := e, ... }`: an instance `w` of comp `c`. -/
 scoped syntax &"inst " frenIdent " : " fren_path " { " sepBy(fren_binding, ", ", ", ", allowTrailingSep) " }" : fren_member

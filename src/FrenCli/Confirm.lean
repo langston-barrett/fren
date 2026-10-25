@@ -352,6 +352,7 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
   { path := core.path, vars := core.vars
     defs := core.defs.map fun (d, eq, e) => (d, (eq, defn d), (e, defn d))
     assumes := props core.assumes, reqs := props core.reqs, expects := props core.expects
+    covers := props core.covers
     triggers := core.triggers.map fun (n, s) => (n, (s, trigger n))
     indexes := core.indexes.mapIdx fun j x =>
       -- The expressions the index can be in: the constraint, the definition
@@ -384,7 +385,7 @@ def Refutation.about (x : Refutation) (r : Fren.Core.CheckResult) : Bool :=
       | _, none, _ => true
 
 def kindName : Fren.Core.CheckKind → String
-  | .realizable => "realizability" | .inst => "instance" | .expect => "expectation"
+  | .realizable => "realizability" | .inst => "instance" | .expect => "expectation" | .cover => "cover"
   | .vacuity => "vacuity" | .redundancy => "redundancy" | .determinism => "determinism"
   | .definedness => "definedness"
 

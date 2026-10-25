@@ -1,0 +1,9 @@
+-- A cover goal that the requirements rule out (F0615).
+comp heater {
+    in temp: Int
+    pub out alarm?
+
+    req r: alarm? iff temp > 100
+
+    cover silent_overheat: temp > 100 and not alarm?
+}

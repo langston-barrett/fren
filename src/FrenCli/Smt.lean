@@ -46,6 +46,21 @@ def Prelude.needed (p : Prelude) (syms : Array String) : String := Id.run do
     work := work ++ p.deps[i]!
   return String.join (p.decls.zipIdx.toList.filterMap fun (d, i) => if keep[i]! then some d.text else none)
 
+/-- Whether a script whose quoted symbols are `syms` needs an abstract type
+or an uninterpreted function, directly or through another declaration. -/
+def Prelude.interprets (p : Prelude) (syms : Array String) : Bool := Id.run do
+  let mut seen := Array.replicate p.decls.size false
+  let mut work := syms.filterMap p.owner.get?
+  while h : work.size > 0 do
+    let i := work[work.size - 1]
+    work := work.pop
+    if seen[i]! then continue
+    seen := seen.set! i true
+    let text := p.decls[i]!.text
+    if text.startsWith "(declare-sort" || text.startsWith "(declare-fun" then return true
+    work := work ++ p.deps[i]!
+  return false
+
 /-- The SMT-LIB script that asserts `hyps` and the negation of `goal`, each
 hypothesis followed by a comment with its name; without `(check-sat)`. It
 declares only what the prelude needs to (`Prelude.needed`). -/
@@ -302,12 +317,21 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
     assumes := props .assume
     reqs := props .req
     expects := props .expect
+    covers := props .cover
     insts := c.insts.map fun i =>
       { name := i.name, comp := i.comp, bindings := i.bindings, behaviour := i.behaviour, assumes := i.assumes }
-    triggers := (c.props.filter (·.kind != .assume)).filterMap fun p => p.trigger?.map (p.name, ·)
+    triggers := (c.props.filter fun p => p.kind == .req || p.kind == .expect).filterMap fun p =>
+      p.trigger?.map (p.name, ·)
     defs := c.defs.map fun (d, e) => (d, s!"(= {quote d.toString} {e})", e)
     -- Numbered in order within each item.
     indexes := c.indexes.mapIdx fun j (n, place, _, goal) =>
       { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal } }
+
+/-- `rs`, results of `c`, with each cover goal's marked if its query uses
+an abstract type or an uninterpreted function, as the prelude declarations
+that a formula needs say (`Fren.Core.coverInterpreted`). -/
+def markInterpreted (p : Prelude) (c : CComp) (rs : Array Fren.Core.CheckResult) : Array Fren.Core.CheckResult :=
+  let interprets (f : String) : Bool := p.interprets (quotedSymbols f)
+  Fren.Core.withInterpreted { toCore c with typesInterpreted := c.vars.any (interprets ·.ty.sort) } interprets rs
 
 end FrenCli

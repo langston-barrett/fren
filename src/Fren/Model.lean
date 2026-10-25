@@ -146,14 +146,16 @@ inductive PropKind where
   | assume
   | req
   | expect
+  | cover
   deriving Inhabited, BEq, Repr
 
 def PropKind.keyword : PropKind → String
   | .assume => "assume"
   | .req => "req"
   | .expect => "expect"
+  | .cover => "cover"
 
-/-- An `assume`, `req` or `expect`. Expressions are closed lambdas over all
+/-- An `assume`, `req`, `expect` or `cover`. Expressions are closed lambdas over all
 of the comp's variables (`CompInfo.vars`). -/
 structure PropInfo where
   kind : PropKind
@@ -215,6 +217,7 @@ structure CompInfo where
 def CompInfo.assumes (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .assume)
 def CompInfo.reqs (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .req)
 def CompInfo.expects (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .expect)
+def CompInfo.covers (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .cover)
 
 /-- Everything a comp says about its variables `args`: assumptions,
 requirements and instances. -/

@@ -297,6 +297,9 @@ def genWide (avoidKnown : Bool := false) : R String := do
       let tested := if ← chance 5 then "set_option fren.evidence \"tested\" in " else ""
       let e ← if ← chance 50 then pure s!"when {← gen csc .bool 1}, {← gen csc .bool 2}" else gen csc .bool 3
       out := out ++ s!"    {tested}expect x{k}: {e}\n"
+    for k in [0:← below 2] do
+      let tested := if ← chance 5 then "set_option fren.evidence \"tested\" in " else ""
+      out := out ++ s!"    {tested}cover g{k}: {← gen csc .bool 3}\n"
     out := out ++ "}\n"
     comps := comps.push (s!"c{c}", vars.filterMap (fun (n, t, i) => if i then some (n, t) else none), shown)
   return out

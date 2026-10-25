@@ -5,7 +5,7 @@ warning[F0613]: no check rejects this change to `c::one`
    |                       ^^ `>=` changed to `>`
    |
    = note: the mutant is `swap-comparison-c::one-e094964dbb37`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 12 -     assume one: q.len >= 1
@@ -19,7 +19,7 @@ warning[F0613]: no check rejects this change to `c::one`
    |                          ^ `1` changed to `2`
    |
    = note: the mutant is `shift-integer-c::one-deecd72eb3dc`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 12 -     assume one: q.len >= 1
@@ -33,7 +33,7 @@ warning[F0613]: no check rejects this change to `c::r`
    |                     ^^^^^^^^^^^^^^^^^^^^^ `q[0] = 1 and q[1] = 2` changed to `q[0] = 1`
    |
    = note: the mutant is `drop-conjunct-c::r-41aff7967062`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
@@ -47,7 +47,7 @@ warning[F0613]: no check rejects this change to `c::r`
    |                     ^^^^^^^^^^^^^^^^^^^^^ `q[0] = 1 and q[1] = 2` changed to `q[1] = 2`
    |
    = note: the mutant is `drop-conjunct-c::r-5c2b3903051e`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
@@ -61,7 +61,7 @@ warning[F0613]: no check rejects this change to `c::r`
    |                       ^ `0` changed to `1`
    |
    = note: the mutant is `shift-integer-c::r-87ce3753a57b`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
@@ -75,7 +75,7 @@ warning[F0613]: no check rejects this change to `c::r`
    |                          ^ `=` changed to `!=`
    |
    = note: the mutant is `swap-comparison-c::r-48f021bbfb7c`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
@@ -89,7 +89,7 @@ warning[F0613]: no check rejects this change to `c::r`
    |                            ^ `1` changed to `2`
    |
    = note: the mutant is `shift-integer-c::r-708ff6e4e83e`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
@@ -103,7 +103,7 @@ warning[F0613]: no check rejects this change to `c::r`
    |                            ^ `1` changed to `0`
    |
    = note: the mutant is `shift-integer-c::r-9a8fed152148`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
@@ -117,7 +117,7 @@ warning[F0613]: no check rejects this change to `c::r`
    |                              ^^^ `and` changed to `or`
    |
    = note: the mutant is `swap-and-or-c::r-2dd8f20ad747`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
@@ -131,7 +131,7 @@ warning[F0613]: no check rejects this change to `c::r`
    |                                    ^ `1` changed to `2`
    |
    = note: the mutant is `shift-integer-c::r-718ff6e4e9f1`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
@@ -145,7 +145,7 @@ warning[F0613]: no check rejects this change to `c::r`
    |                                    ^ `1` changed to `0`
    |
    = note: the mutant is `shift-integer-c::r-9b8fed1522fb`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
@@ -159,7 +159,7 @@ warning[F0613]: no check rejects this change to `c::r`
    |                                       ^ `=` changed to `!=`
    |
    = note: the mutant is `swap-comparison-c::r-d40c835a72e4`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
@@ -173,7 +173,7 @@ warning[F0613]: no check rejects this change to `c::r`
    |                                         ^ `2` changed to `3`
    |
    = note: the mutant is `shift-integer-c::r-e93edd3f6981`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
@@ -187,7 +187,7 @@ warning[F0613]: no check rejects this change to `c::r`
    |                                         ^ `2` changed to `1`
    |
    = note: the mutant is `shift-integer-c::r-933ed36ec90b`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
@@ -201,7 +201,7 @@ warning[F0613]: no check rejects this change to `d::one`
    |                       ^^ `>=` changed to `>`
    |
    = note: the mutant is `swap-comparison-d::one-7388d2f975fa`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 20 -     assume one: q.len >= 1
@@ -215,7 +215,7 @@ warning[F0613]: no check rejects this change to `d::one`
    |                          ^ `1` changed to `2`
    |
    = note: the mutant is `shift-integer-d::one-a92663e5eb01`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 20 -     assume one: q.len >= 1
@@ -229,7 +229,7 @@ warning[F0613]: no check rejects this change to `d::r`
    |                         ^ `=` changed to `!=`
    |
    = note: the mutant is `swap-comparison-d::r-e95d57d3b601`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 21 -     req r: ok? iff q[0] = 1
@@ -243,7 +243,7 @@ warning[F0613]: no check rejects this change to `d::r`
    |                           ^ `1` changed to `2`
    |
    = note: the mutant is `shift-integer-d::r-622c7daee153`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 21 -     req r: ok? iff q[0] = 1
@@ -257,7 +257,7 @@ warning[F0613]: no check rejects this change to `d::r`
    |                           ^ `1` changed to `0`
    |
    = note: the mutant is `shift-integer-d::r-382c877ea849`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 21 -     req r: ok? iff q[0] = 1
@@ -271,7 +271,7 @@ warning[F0613]: no check rejects this change to `e::r`
    |                      ^^^^^^^^^^^^^^^^^^^^ `q != [] and q[0] = 1` changed to `q != []`
    |
    = note: the mutant is `drop-conjunct-e::r-e633917f9854`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
@@ -285,7 +285,7 @@ warning[F0613]: no check rejects this change to `e::r`
    |                      ^^^^^^^^^^^^^^^^^^^^ `q != [] and q[0] = 1` changed to `q[0] = 1`
    |
    = note: the mutant is `drop-conjunct-e::r-c2677c248842`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
@@ -299,7 +299,7 @@ warning[F0613]: no check rejects this change to `e::r`
    |                        ^^ `!=` changed to `=`
    |
    = note: the mutant is `swap-comparison-e::r-4c3dc63bf1bc`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
@@ -313,7 +313,7 @@ warning[F0613]: no check rejects this change to `e::r`
    |                              ^^^ `and` changed to `or`
    |
    = note: the mutant is `swap-and-or-e::r-15416934cf39`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
@@ -327,7 +327,7 @@ warning[F0613]: no check rejects this change to `e::r`
    |                                    ^ `0` changed to `1`
    |
    = note: the mutant is `shift-integer-e::r-16e34f532c05`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
@@ -341,7 +341,7 @@ warning[F0613]: no check rejects this change to `e::r`
    |                                       ^ `=` changed to `!=`
    |
    = note: the mutant is `swap-comparison-e::r-d4089938d42a`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
@@ -355,7 +355,7 @@ warning[F0613]: no check rejects this change to `e::r`
    |                                         ^ `1` changed to `2`
    |
    = note: the mutant is `shift-integer-e::r-6392220d45dc`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
@@ -369,7 +369,7 @@ warning[F0613]: no check rejects this change to `e::r`
    |                                         ^ `1` changed to `0`
    |
    = note: the mutant is `shift-integer-e::r-39922bdd0cd2`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
@@ -383,7 +383,7 @@ warning[F0613]: no check rejects this change to `e::r`
    |                                            ^^ `or` changed to `and`
    |
    = note: the mutant is `swap-and-or-e::r-e4723f94b7fd`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
@@ -397,7 +397,7 @@ warning[F0613]: no check rejects this change to `e::r`
    |                                                 ^ `0` changed to `1`
    |
    = note: the mutant is `shift-integer-e::r-15e34f532a52`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
@@ -411,7 +411,7 @@ warning[F0613]: no check rejects this change to `e::r`
    |                                                    ^ `=` changed to `!=`
    |
    = note: the mutant is `swap-comparison-e::r-833f231f1fbf`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
@@ -425,7 +425,7 @@ warning[F0613]: no check rejects this change to `e::r`
    |                                                      ^ `0` changed to `1`
    |
    = note: the mutant is `shift-integer-e::r-14e34f53289f`
-   = help: add an expectation that the change breaks, or say what the spec means more exactly
+   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
 28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)

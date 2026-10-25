@@ -91,6 +91,7 @@ def PropKind.name : PropKind → String
   | .assume => "assume"
   | .req => "req"
   | .expect => "expect"
+  | .cover => "cover"
 
 /-- The formulas of `c` that its checks read, labelled. -/
 def formulas (c : CComp) : Array (String × String) :=
@@ -193,7 +194,7 @@ def survivedMsg (m : Mutant) (mayBeEquivalent inconclusive : Bool) : Msg :=
       ++ (if mayBeEquivalent then #["note: the solver could not tell whether the mutant means what the spec means"] else #[])
       ++ (if m.comp?.isNone then
           #[s!"note: the expectations that read `{Fren.Core.showComp m.item}` change with it, and cannot reject the change alone"] else #[])
-      ++ #["help: add an expectation that the change breaks, or say what the spec means more exactly"]
+      ++ #["help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly"]
     fixes := #[{ msg := "the mutant", replacement := m.after }] }
 
 def missedMsg (m : Mutant) (tests : Nat) : Msg :=

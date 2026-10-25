@@ -1,0 +1,49 @@
+-- Cover goals (`Reqs/Check#cover-goals`): scenarios that a component must
+-- allow, each met by a witness or ruled out by its constraints.
+
+comp heater {
+    in temp: Int
+    pub out alarm?
+    out margin: Int
+
+    assume sane: temp < 1000
+
+    req r: alarm? iff temp > 100
+    req m: margin = temp - 100
+
+    cover overheat: temp > 100 and alarm?          --~ info: cover goal `heater::overheat` is met
+    cover silent: temp > 100 and not alarm?        --~ error: cover goal `heater::silent` cannot be met: it is ruled out by `r`
+    cover boiling: temp > 2000                     --~ error: cover goal `heater::boiling` cannot be met: it is ruled out by `sane`
+    -- A goal may mention a private output, as an expectation may.
+    cover small_margin: margin = 1                 --~ info: cover goal `heater::small_margin` is met
+}
+
+-- A goal is checked only in its own component: an instance of `heater`
+-- does not check `silent` again. A goal over an instance's variables
+-- checks the instance's requirements in context.
+comp panel {
+    in t: Int
+    pub out lit?
+
+    assume sane: t < 1000
+
+    inst h: heater { temp := t }
+
+    req shows: lit? iff h.alarm?
+
+    cover lit_when_hot: lit? and t > 500           --~ info: cover goal `panel::lit_when_hot` is met
+    cover lit_when_cold: lit? and t < 0            --~ error: cover goal `panel::lit_when_cold` cannot be met
+}
+
+-- Contradictory requirements rule out every goal, as they fail realizability.
+comp stuck {                                       --~ error: `stuck` is not realizable
+    in x: Int
+    pub out y: Int
+
+    req a: y > x                                   --~ info: conflicts with `b`
+    req b: y < x                                   --~ info: conflicts with `a`
+
+    cover any: true                                --~ error: cover goal `stuck::any` cannot be met: it is ruled out by `a`, `b`
+}
+
+--@ summary: 11 passed, 5 failed, 0 inconclusive, 0 redundant

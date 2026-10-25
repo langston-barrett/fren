@@ -75,7 +75,7 @@ component's variables:
 
 | Definition | Meaning |
 |---|---|
-| `p.assume.n`, `p.req.n`, `p.expect.n` | the assumption, requirement or expectation `n` |
+| `p.assume.n`, `p.req.n`, `p.expect.n`, `p.cover.n` | the assumption, requirement, expectation or cover goal `n` |
 | `p.inst.w` | the instance `w`: its bindings, and the [meaning](Lang/Components.md#meaning) of the instantiated component |
 | `p.assumes` | the conjunction of the assumptions |
 | `p.reqs` | the conjunction of the requirements |
@@ -152,6 +152,29 @@ comp c { in n: Name pub out q? req r: q? iff ends_in_q?(n) }
 
 For example, `climate.thermostat.reqs` has type `Int → Int → climate.Mode →
 Prop`, for `temp`, `target` and `mode`.
+
+## Cover goals
+
+A [cover goal](Lang/Components.md#cover-goals) `n` of a component claims
+that some behaviour meets the component and satisfies `p.cover.n`. When
+`#fren_check` finds a witness of it, and the component uses no abstract
+types or functions, it adds the theorem
+
+```
+p.cover.n.met : ∃ x₁ … xₖ, M x⃗ ∧ p.cover.n x⃗
+```
+
+where `x⃗` are the parameters of the component's definitions, as above,
+and `M` is what an implementation's obligation assumes and proves of
+them: `p.defs` (if there are defined outputs), `p.assumes`, `p.reqs` and
+`p.inst.w` for each instance `w`. Its proof gives the witness's values
+for `x⃗`, and `decide` proves the rest, in Lean's kernel. A variable
+whose value the model leaves out is given `default`. If a value cannot be
+written as a Lean term, or `decide` does not prove the statement, no
+theorem is added, and the goal still passes, on the solver's word, as the
+other checks do. A component that uses abstract types or functions gets no
+theorem: the check finds a witness under *some* interpretation, which an
+`∃` over the variables alone cannot state.
 
 ## Global expectations
 

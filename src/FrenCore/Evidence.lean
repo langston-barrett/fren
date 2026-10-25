@@ -35,8 +35,8 @@ because of it (`check::by_testing`). -/
 structure Tested where
   realizable : Bool := false
   redundancy : Bool := false
-  /-- Expectations, whose checks are tested, and other constraints and
-  definitions, whose vacuity and definedness are not run. -/
+  /-- Expectations and cover goals, whose checks are tested, and other
+  constraints and definitions, whose vacuity and definedness are not run. -/
   props : Array Name := #[]
   /-- Instances: their assumptions, and the definedness of their bindings. -/
   insts : Array Name := #[]
@@ -50,7 +50,8 @@ def Tested.any (t : Tested) : Bool :=
 /-- The checks set to testing by a comp's setting `all` and its members'
 settings, each `none` if it has none: a member's setting takes precedence
 (`Reqs/Check#checking-by-testing`). `constraints` are the comp's
-assumptions, requirements and definitions. -/
+assumptions, requirements and definitions, and `expects` its expectations
+and cover goals. -/
 def Tested.ofSettings (all : Bool) (constraints : Array Name)
     (expects insts dets : Array (Name × Option Bool)) : Tested :=
   let pick (xs : Array (Name × Option Bool)) := xs.filterMap fun (n, s?) => if s?.getD all then some n else none
@@ -62,7 +63,7 @@ def Tested.covers (t : Tested) (r : CheckResult) : Bool :=
   match r.kind, r.prop? with
   | .realizable, _ => t.realizable
   | .redundancy, _ => t.redundancy
-  | .expect, some n | .vacuity, some n => t.props.contains n
+  | .expect, some n | .cover, some n | .vacuity, some n => t.props.contains n
   | .definedness, some n => t.props.contains n || t.insts.contains n
   | .inst, some n => t.insts.contains n
   | .determinism, some n => t.dets.contains n
@@ -73,6 +74,7 @@ solver. -/
 def Comp.untested (t : Tested) (c : Comp F) (kinds : Array CheckKind) : Comp F × Array CheckKind :=
   ({ c with
       expects := c.expects.filter (!t.props.contains ·.1)
+      covers := c.covers.filter (!t.props.contains ·.1)
       triggers := c.triggers.filter (!t.props.contains ·.1)
       insts := c.insts.map fun i => if t.insts.contains i.name then { i with assumes := #[] } else i
       vars := c.vars.map fun v => if t.dets.contains v.name then { v with isDet := false } else v
@@ -90,7 +92,7 @@ could set. -/
 def misplacedEvidenceMsg (what : String) : Msg :=
   { code? := some "F0215", headline := s!"`fren.evidence` cannot be set for {what}"
     label? := some "has no checks to test"
-    notes := #["note: it can be set before a component, an expectation or global expectation, an instance or a `det out`"] }
+    notes := #["note: it can be set before a component, an expectation or global expectation, a cover goal, an instance or a `det out`"] }
 
 /-- `set_option` before a member, of an option other than `fren.evidence`. -/
 def memberOptionMsg (option : String) : Msg :=

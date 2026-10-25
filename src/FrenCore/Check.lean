@@ -23,13 +23,15 @@ inductive CheckKind where
   | realizable
   | inst
   | expect
+  | cover
   | vacuity
   | redundancy
   | determinism
   | definedness
   deriving Inhabited, BEq, Repr
 
-def CheckKind.all : Array CheckKind := #[.realizable, .inst, .expect, .vacuity, .redundancy, .determinism, .definedness]
+def CheckKind.all : Array CheckKind :=
+  #[.realizable, .inst, .expect, .cover, .vacuity, .redundancy, .determinism, .definedness]
 
 inductive Verdict where
   | pass
@@ -50,7 +52,10 @@ inductive Detail where
   /-- A behaviour satisfying the assumptions and requirements in which the
   expectation is false. -/
   | counterexample (vals : Assignment)
-  /-- The trigger is ruled out by `core`. -/
+  /-- A behaviour satisfying the assumptions and requirements in which the
+  cover goal holds. -/
+  | witness (vals : Assignment)
+  /-- The trigger, or the cover goal, is ruled out by `core`. -/
   | vacuous (core : Array Name)
   /-- The constraint follows from `core`. -/
   | redundant (core : Array Name)
@@ -71,6 +76,9 @@ structure CheckResult where
   index? : Option Nat := none
   verdict : Verdict
   detail : Detail := .none
+  /-- For `cover`: its query depends on an interpretation, so its witness's
+  values are not shown (`coverInterpreted`). -/
+  interpreted : Bool := false
   deriving Inhabited
 
 inductive Outcome (V : Type) where
@@ -125,6 +133,13 @@ def vacuityVerdict : Answer → Verdict
   | .sat => .pass
   | .unsat => .fail
   | .unknown => .inconclusive
+
+/-- `cover` from the answer to its query: the verdict, and whether to report
+a witness or the constraints that rule the goal out (`check::cover_goal`). -/
+def coverVerdict : Answer → Verdict × Bool × Bool
+  | .sat => (.pass, true, false)
+  | .unsat => (.fail, false, true)
+  | .unknown => (.inconclusive, false, false)
 
 /-- Whether `redundancy` is checked for a constraint, from the answer to
 whether its comparison set and itself are contradictory, and whether it
@@ -193,7 +208,7 @@ structure Inst (F : Type) where
 query (`check::definedness`). -/
 inductive IndexPlace where
   | assume
-  /-- A requirement, expectation or definition. -/
+  /-- A requirement, expectation, cover goal or definition. -/
   | prop
   /-- A binding of the instance at this position. -/
   | binding (k : Nat)
@@ -217,6 +232,7 @@ structure Comp (F : Type) where
   assumes : Array (Name × F)
   reqs : Array (Name × F)
   expects : Array (Name × F)
+  covers : Array (Name × F) := #[]
   insts : Array (Inst F) := #[]
   /-- The triggers of the `req`s and `expect`s that have one. -/
   triggers : Array (Name × F)
@@ -224,6 +240,9 @@ structure Comp (F : Type) where
   `e`, each mentioning only earlier ones (`check::definitions`). -/
   defs : Array (Name × F × F) := #[]
   indexes : Array (IndexSite F) := #[]
+  /-- Some variable's type, its own or an instance's, is or contains an
+  abstract type. -/
+  typesInterpreted : Bool := false
 
 variable {m : Type → Type} [Monad m] {F V : Type} (b : Backend m F V)
 
@@ -337,6 +356,23 @@ def checkExpect (c : Comp F) (e : Name × F) : m CheckResult := do
     return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
+
+/-- `cover`: some behaviour satisfying the assumptions, instances and
+requirements satisfies the cover goal, which a model of the negated goal
+witnesses (`check::cover_goal`). -/
+def checkCover (c : Comp F) (g : Name × F) : m CheckResult := do
+  let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
+    { kind := .cover, comp := c.path, prop? := some g.1, verdict, detail }
+  let hyps := c.hyps b ++ c.reqs
+  let goal := b.notF g.2
+  let q ← b.query (c.defEqs .cover ++ hyps) goal true
+  match coverVerdict q.answer, q with
+  | (verdict, true, _), .sat model =>
+    return result verdict (.witness (← renderModel b c.vars model (·.isPub)))
+  -- The core is sought only on `unsat` (`Reqs/Check#cover-goals`).
+  | (verdict, _, true), _ => return result verdict (.vacuous (← minimize b (c.defEqs .cover) hyps goal))
+  | (.inconclusive, _, _), _ => return result .inconclusive (.unknown q.reason)
+  | (verdict, _, _), _ => return result verdict
 
 /-- The hypotheses of an index's place, for `definedness`. -/
 def Comp.siteHyps (c : Comp F) (b : Backend m F V) (site : IndexSite F) : Array (Name × F) :=
@@ -475,12 +511,35 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
   let realizable ← ifSelected (kinds.contains .realizable) ((#[·]) <$> checkRealizable (bk .realizable) c)
   let insts ← ifSelected (kinds.contains .inst) (checkInsts (bk .inst) c)
   let expects ← ifSelected (kinds.contains .expect) (c.expects.mapM (checkExpect (bk .expect) c))
+  let covers ← ifSelected (kinds.contains .cover) (c.covers.mapM (checkCover (bk .cover) c))
   let vacuities ← ifSelected (kinds.contains .vacuity) (c.triggers.mapM (checkVacuity (bk .vacuity) c))
   let redundancies ←
     ifSelected (kinds.contains .redundancy) (checkRedundancies (bk .redundancy) c (vacuousOf vacuities))
   let dets ← ifSelected (kinds.contains .determinism) (checkDets (bk .determinism) c)
   let defined ← ifSelected (kinds.contains .definedness) (c.indexes.mapM (checkDefinedness (bk .definedness) c))
-  return realizable ++ insts ++ expects ++ vacuities ++ redundancies ++ dets ++ defined
+  return realizable ++ insts ++ expects ++ covers ++ vacuities ++ redundancies ++ dets ++ defined
+
+/-- The formulas of the query of the cover goal `g` (`checkCover`): the
+definitions, the assumptions, each instance's bindings and the meaning of
+its component, the requirements, and the goal. No expectation or other
+cover goal is among them. -/
+def Comp.coverFormulas (c : Comp F) (g : F) : Array F :=
+  c.defs.map (·.2.1) ++ c.assumes.map (·.2) ++ c.insts.flatMap (fun i => #[i.bindings, i.behaviour])
+    ++ c.reqs.map (·.2) ++ #[g]
+
+/-- Whether a witness of the cover goal `n` of `c` depends on an
+interpretation, so that its values are not shown (`Reqs/View#check-results`):
+whether some variable's type is abstract, or some formula of its query uses
+an abstract type or an uninterpreted function, as `interprets` says of a
+formula. Both front ends decide it so. -/
+def coverInterpreted (c : Comp F) (interprets : F → Bool) (n : Name) : Bool :=
+  c.typesInterpreted || match c.covers.find? (·.1 == n) with
+    | some (_, g) => (c.coverFormulas g).any interprets
+    | none => false
+
+/-- `rs`, with each cover goal's result marked by `coverInterpreted`. -/
+def withInterpreted (c : Comp F) (interprets : F → Bool) (rs : Array CheckResult) : Array CheckResult :=
+  rs.map fun r => if r.kind == .cover then { r with interpreted := r.prop?.any (coverInterpreted c interprets) } else r
 
 /-! ## Reporting
 
@@ -535,9 +594,11 @@ in the decidable core, the solver ran out of time. -/
 def inconclusiveAdvice (decidable : Bool) : Advice :=
   if decidable then .raiseTimeout else .namesConstructs
 
-/-- The messages for one result. Passing checks produce none. `decidable`
-says whether the component is in the decidable core: whether no construct
-of it opted out. -/
+/-- The messages for one result. Passing checks produce none, but for a
+cover goal's witness. `decidable` says whether the component is in the
+decidable core: whether no construct of it opted out. A witness whose query
+depends on an interpretation (`CheckResult.interpreted`) is shown without
+its values. -/
 def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) : Array Message :=
   -- A global expectation's `comp` is its module, which may be the root.
   let subject := s!"`{showComp (r.comp ++ (r.prop?.getD .anonymous))}`"
@@ -546,7 +607,16 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
   let one (code : String) (headline : String) (label? : Option String) (notes : Array String)
       (atTrigger := false) (item? := r.prop?) : Message :=
     { severity := sev, item?, atTrigger, atIndex? := r.index?, msg := { code? := some code, headline, label?, notes } }
+  let priv := if hasPrivateOuts then #["note: private `out`s are not shown"] else #[]
   match r.verdict, r.detail with
+  -- A cover goal's witness is information; the pass itself is silent
+  -- (`Reqs/View#check-results`). Its values are shown only where they mean
+  -- the same to both front ends: without an interpretation.
+  | .pass, .witness vals =>
+    #[{ severity := .info, item? := r.prop?
+        msg := { code? := none, headline := s!"cover goal {subject} is met", label? := some "met"
+                 notes := if r.interpreted then #["note: the witness is not shown, since its query uses abstract types or functions, whose interpretation it depends on"]
+                   else #[s!"witness: {showAssignment vals}"] ++ priv } }]
   | .pass, _ => #[]
   | .inconclusive, d =>
     let why := match d with | .unknown w => s!": {w}" | _ => ""
@@ -555,6 +625,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       | .inst, some (sub, a) => s!"the assumption `{a}` of `{showComp sub}` holds for instance {subject}"
       | .inst, none => s!"{subject} holds"
       | .expect, _ => s!"{subject} holds"
+      | .cover, _ => s!"{subject} can be met"
       | .vacuity, _ => s!"{subject} is vacuous"
       | .redundancy, _ => s!"{subject} is redundant"
       | .determinism, _ => s!"{subject} is determined by the inputs"
@@ -595,11 +666,16 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         #[s!"counterexample: {showAssignment vals}",
           "help: bind the instance's inputs so that the assumption holds, or add an `assume` that guarantees it"]]
     else
-    let priv := if hasPrivateOuts then #["note: private `out`s are not shown"] else #[]
     #[one "F0603" s!"expectation {subject} does not hold" (some "does not follow from the requirements")
       (#[s!"counterexample: {showAssignment vals}"] ++ priv ++
         #["help: strengthen the requirements so that it follows, or correct the expectation"])]
   | .fail, .vacuous core =>
+    if r.kind == .cover then
+      let why := if core.isEmpty then "no behaviour satisfies it" else s!"it is ruled out by {showNames core}"
+      #[one "F0615" s!"cover goal {subject} cannot be met: {why}" (some "no behaviour that meets the component satisfies this")
+        #["note: a cover goal is a scenario that some behaviour meeting the assumptions and requirements must allow",
+          "help: weaken the constraints that rule it out, or correct the goal"]]
+    else
     let others := core.filter (some · != r.prop?)
     let why := if others.isEmpty then "" else s!", given {showNames others}"
     #[one "F0605" s!"{subject} is vacuous: its condition can never hold{why}" (some "this condition is always false")
@@ -642,6 +718,14 @@ def untriggeredMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : 
     label? := some "never held"
     notes := #["note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it",
       testingHelp byCheck "decide it"] }
+
+/-- Testing found admissible behaviours, but none in which a cover goal
+held (`Reqs/Eval#fren-quickcheck`). -/
+def unwitnessedMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : Msg :=
+  { code? := some "F0616", headline := s!"testing found no behaviour in which cover goal {subject} holds in {tests} tests"
+    label? := some "no witness found"
+    notes := #["note: the search tries only some values, so such a behaviour may still exist",
+      testingHelp byCheck "decide whether it can be met"] }
 
 /-- The severity of the summary of a run (`view::summary`): always
 information, whatever the results. -/

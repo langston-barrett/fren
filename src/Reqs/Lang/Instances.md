@@ -115,8 +115,8 @@ Which variables an expression may mention depends on where it is:
 |---|---|---|---|
 | assumption | yes | no | no |
 | binding of an instance | yes | no | only if `w` is declared earlier |
-| requirement, expectation | yes | yes | yes |
-| argument of a [function application](Expressions.md#function-applications) in a requirement or expectation | yes | no | yes |
+| requirement, expectation, [cover goal](Components.md#cover-goals) | yes | yes | yes |
+| argument of a [function application](Expressions.md#function-applications) in a requirement, expectation or cover goal | yes | no | yes |
 
 A field read `p.x` mentions `p`, a binder of a [`match`
 arm](Expressions.md#matches) mentions what its scrutinee mentions, and a
@@ -171,7 +171,7 @@ elaborator computes anyway. `distinct` states that the names are distinct
 only for the two at hand, which is all the rule needs.
 
 `inst::mention` states this rule. `Place` is where a variable is mentioned
-(`Req` covers both requirements and expectations, and `Argument` an
+(`Req` covers requirements, expectations and cover goals, and `Argument` an
 argument within one of them), and `Role` is what the variable is: one of
 the component's own, or one of an instance's.
 `InstHidden` covers an instance's private outputs and the variables of the

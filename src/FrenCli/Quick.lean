@@ -99,6 +99,9 @@ structure Report where
   /-- The checks with a trigger that no test reached, though some found
   admissible behaviours (`F0612`). -/
   untriggered : Array CheckResult := #[]
+  /-- The cover goals for which no test found a witness, though some found
+  behaviours that meet the comp (`F0616`). -/
+  unwitnessed : Array CheckResult := #[]
 
 def verdictOf (kind : CheckKind) (t : Tally) : Fren.Core.Verdict := testVerdict kind t.refuted?.isSome t.tests
 
@@ -111,11 +114,15 @@ def reaches (I : Interp) (pfx : Name) (trigger? : Option Ex) (env : Env) : Bool 
 def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let vars := sp.flatVars c
   let expects := c.ofKind .expect
+  let covers := c.ofKind .cover
   let dets := c.vars.filter (·.isDet)
   let instAssumes := c.insts.flatMap fun i =>
     ((sp.comp? i.comp).map fun d => (d.ofKind .assume).map fun a => (i.name, d.path, a.name, a.e.trigger?)).getD #[]
   let mut realizable : Tally := {}
   let mut expT : Array Tally := expects.map fun _ => {}
+  -- Each cover goal's first witness: the tests that found one reach it.
+  let mut covT : Array Tally := covers.map fun _ => {}
+  let mut covW : Array (Option Assignment) := covers.map fun _ => none
   let mut detT : Array Tally := dets.map fun _ => {}
   let mut instT : Array Tally := instAssumes.map fun _ => {}
   -- The tests that reached each instance, whether or not the trigger held.
@@ -125,8 +132,8 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   -- The definitions, so that the search computes defined outputs.
   let reqs := c.defAtoms ++ atomsOf .anonymous (c.ofKind .req)
   let all := sp.meaning c
-  -- The literals of the whole component, its expectations too.
-  let lits := all ++ atomsOf .anonymous expects
+  -- The literals of the whole component, its expectations and cover goals too.
+  let lits := all ++ atomsOf .anonymous expects ++ atomsOf .anonymous covers
   let ints := intsOf lits
   let strs ← stringsOf lits
   for _ in [0:tests] do
@@ -170,6 +177,16 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       expT := expT.modify k Tally.reach
       if ({ label := e.name, pfx := .anonymous, e := e.e } : Atom).eval I envE.look == some false then
         expT := expT.modify k (·.refute (.counterexample (sp.shown vars envE (·.isPub))))
+    -- A witness of each cover goal that has none yet: this behaviour, or
+    -- one searched for from a new input (`Reqs/Eval#fren-quickcheck`).
+    for g in covers, k in [0:covers.size] do
+      if (covW[k]?.join).isSome then continue
+      let goal : Atom := { label := g.name, pfx := .anonymous, e := g.e }
+      let env? ← if goal.eval I env.look == some true then pure (some env) else
+        ({ vars := sp.order c, atoms := all.push goal, ints, strs : Problem }.solve sp w I {})
+      let some envG := env? | continue
+      covT := covT.modify k Tally.reach
+      covW := covW.set! k (some (sp.shown vars envG (·.isPub)))
     -- A second behaviour on the same input, differing on the `det out`.
     let inputs : Env := c.vars.foldl (init := {}) fun acc v =>
       if v.role == .input then (env[v.name]?.map (acc.insert v.name ·)).getD acc else acc
@@ -192,6 +209,11 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let results := #[result .realizable none realizable]
     ++ (instAssumes.zip instT).map (fun ((w, d, a, _), t) => result .inst (some w) t (some (d, a)))
     ++ (expects.zip expT).map (fun (e, t) => result .expect (some e.name) t)
+    ++ ((covers.zip covT).zip covW).map (fun ((g, t), w?) =>
+      let r := result .cover (some g.name) t
+      match r.verdict, w? with
+      | .pass, some w => { r with detail := .witness w }
+      | _, _ => r)
     ++ (dets.zip detT).map (fun (x, t) => result .determinism (some x.name) t)
   let untested := behaviours == 0 && noOutputs?.isNone
   -- Admissible behaviours were found, but none in which the trigger held.
@@ -201,7 +223,9 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       if t?.isSome && t.tests == 0 && found > 0 then some (result .inst (some w) t (some (d, a))) else none)
     ++ (expects.zip expT).filterMap fun (e, t) =>
       if e.e.trigger?.isSome && t.tests == 0 && behaviours > 0 then some (result .expect (some e.name) t) else none
-  return { results, noOutputs?, untested, untriggered }
+  let unwitnessed := if untested || behaviours == 0 then #[] else
+    (covers.zip covT).filterMap fun (g, t) => if t.tests == 0 then some (result .cover (some g.name) t) else none
+  return { results, noOutputs?, untested, untriggered, unwitnessed }
 
 /-- Tests the global expectation `g`. -/
 def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
@@ -268,10 +292,11 @@ def Spec.evaluate (sp : Spec) (I : Interp) (c : Comp) (env : Env) : Evaluation :
   let one (k : PropKind) := (c.ofKind k).map fun p =>
     (p, ({ label := p.name, pfx := .anonymous, e := p.e } : Atom).eval I env.look)
   let kw : PropKind → String
-    | .assume => "assume" | .req => "req" | .expect => "expect"
+    | .assume => "assume" | .req => "req" | .expect => "expect" | .cover => "cover"
   let as := one .assume
   let rs := one .req
   let es := one .expect
+  let gs := one .cover
   let is := c.insts.map fun i => (i, allHold I env.look (sp.instAtoms .anonymous i))
   let conj (xs : Array (Option Bool)) : Option Bool :=
     if xs.any (· == some false) then some false else if xs.all (· == some true) then some true else none
@@ -281,7 +306,7 @@ def Spec.evaluate (sp : Spec) (I : Interp) (c : Comp) (env : Env) : Evaluation :
     | some false, _ => some (statusOf false true true)
     | some true, some r => some (statusOf true true r)
     | _, _ => none
-  let lines := (as ++ rs ++ es).map (fun (p, v) => (s!"{kw p.kind} {p.name}", v))
+  let lines := (as ++ rs ++ es ++ gs).map (fun (p, v) => (s!"{kw p.kind} {p.name}", v))
     ++ is.map fun (i, v) => (s!"inst {i.name}", v)
   return { lines, status?, expectFalse := es.any (·.2 == some false) }
 

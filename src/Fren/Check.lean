@@ -100,28 +100,34 @@ abbrev QueryCache := IO.Ref (Std.HashMap (Array Expr × Expr × Bool) (Core.Outc
 (`Core.primed`), answering from `cache` the queries asked before. `facts` are
 what its natural numbers bring, of both copies, which every query assumes,
 and `outFacts` those of its outputs, which realizability's `∃` asserts too
-(`Reqs/Check`). -/
+(`Reqs/Check`). With `modelOptional`, a model that lean-smt cannot read, as
+it cannot some values of abstract types, is left out rather than making the
+answer unknown: a cover goal passes on `sat`, with or without one. Such an
+answer is not cached. -/
 def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (facts : Array Expr := #[])
-    (outFacts : Array Expr := #[]) : Core.Backend MetaM Expr Expr :=
+    (outFacts : Array Expr := #[]) (modelOptional : Bool := false) : Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
     ({ v with name := Core.primed v.name }, p)
   let varOf? (n : Name) := vars.find? (·.1.name == n)
-  let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr) :=
+  -- The answer, and whether to cache it: not if it leaves out a model that
+  -- lean-smt could not read.
+  let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr × Bool) :=
     withoutModifyingState do
     let hyps ← (facts.map (`nat, ·) ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
     let goal ← unfoldDefined goal
     withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do
-      let mv ← mkFreshExprMVar goal
       let timeout := fren.timeout.get (← getOptions)
       -- A relation's `domain` or `range` over an infinite type is a
       -- projection, which needs higher-order logic (`cli::logic`); lean-smt
       -- sets `ALL`, which the option overrides.
       let projects (e : Expr) := (e.find? fun x => x.isConstOf ``Fren.FinSet.domain || x.isConstOf ``Fren.FinSet.range).isSome
       let logic := if projects goal || hyps.any (projects ·.2) then [("force-logic", "HO_ALL")] else []
-      try
+      -- Each attempt on a goal of its own.
+      let solve (model : Bool) : MetaM (Core.Outcome Expr) := do
+        let mv ← mkFreshExprMVar goal
         -- The options of a spec that uses strings and sets, as in the binary (`cli::logic`).
-        match ← Smt.smt { trust := true, model := wantModel, timeout := some timeout
+        match ← Smt.smt { trust := true, model, timeout := some timeout
                           extraSolverOptions := Core.solverOptions true true ++ logic }
                   mv.mvarId! hs with
         | .sat (some m) =>
@@ -130,14 +136,19 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         | .sat none => return .sat #[]
         | .unsat .. => return .unsat
         | .unknown r => return .unknown r
-      catch ex => return .unknown (← ex.toMessageData.toString)
+      -- Only the solver's own failures are an unknown answer.
+      try return (← solve wantModel, true)
+      catch ex =>
+        let failed : Core.Outcome Expr := .unknown (← ex.toMessageData.toString)
+        unless wantModel && modelOptional do return (failed, true)
+        try return (← solve false, false) catch _ => return (failed, true)
   { query := fun hyps goal wantModel => do
       -- The same formulas, in the same local context and with the same
       -- options, are the same query.
       let key := (hyps.map (·.2), goal, wantModel)
       if let some o := (← cache.get)[key]? then return o
-      let o ← ask hyps goal wantModel
-      cache.modify (·.insert key o)
+      let (o, cacheable) ← ask hyps goal wantModel
+      if cacheable then cache.modify (·.insert key o)
       return o
     falseF := mkConst ``False
     notF := mkNot
@@ -219,6 +230,51 @@ partial def natApps (fs : Array (Expr × Nat)) (e : Expr) (acc : Array Expr := #
   | .mdata _ b | .proj _ _ b => natApps fs b acc
   | _ => acc
 
+/-- `∃ xs, body`, over the free variables `xs`, in order. -/
+def mkExistsFVars (xs : List Expr) (body : Expr) : MetaM Expr := do
+  match xs with
+  | [] => return body
+  | x :: rest => mkAppM ``Exists #[← mkLambdaFVars #[x] (← mkExistsFVars rest body)]
+
+/-- A proof of `∃ xs, body` from values `vs` of `xs`, if `decide` proves
+`body` of them. -/
+partial def proveExists (xs vs : List Expr) (body : Expr) : MetaM (Option Expr) := do
+  match xs, vs with
+  | [], [] =>
+    let inst ← synthInstance (mkApp (mkConst ``Decidable) body)
+    let r ← withAtLeastTransparency .default <| whnf (mkApp2 (mkConst ``Decidable.decide) body inst)
+    unless r.isConstOf ``Bool.true do return none
+    return some (mkApp3 (mkConst ``of_decide_eq_true) body inst (mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Bool) r))
+  | x :: xs, v :: vs =>
+    let p ← mkLambdaFVars #[x] (← mkExistsFVars xs body)
+    let some pf ← proveExists xs vs (body.replaceFVar x v) | return none
+    return some (← mkAppOptM ``Exists.intro #[none, some p, some v, some pf])
+  | _, _ => return none
+
+/-- Adds `p.cover.n.met`, that some behaviour of `c` meets the cover goal
+`g`, proved by `decide` from the witness `model` of its query
+(`Reqs/Generated#cover-goals`): only for a comp that uses no abstract types
+or functions, and when every value is a closed term of its variable's
+type. A variable that the model leaves out is `default`. -/
+def addCoverWitness (c : CompInfo) (fvs : Array Expr) (g : PropInfo) (model : Array (Name × Expr)) : MetaM Unit := do
+  let name := g.decl ++ `met
+  if !c.uses.isEmpty || (← getEnv).contains name then return
+  -- Any failure, including a runtime one such as running out of
+  -- heartbeats in `decide`, only means that there is no theorem.
+  tryCatchRuntimeEx (do
+    let vals ← (c.vars.zip fvs).mapM fun (v, _) => do
+      match model.find? (·.1 == v.name) with
+      | some (_, val) => return fromModel v.type val
+      | none => mkAppOptM ``Inhabited.default #[some v.type, none]
+    for (v, val) in c.vars.zip vals do
+      if val.hasFVar || val.hasMVar || !(← isDefEq (← inferType val) v.type) then return
+    let body := mkAnd (c.meaningDecl fvs) (mkAppN (mkConst g.decl) fvs)
+    let type ← mkExistsFVars fvs.toList body
+    let some value ← proveExists fvs.toList vals.toList body | return
+    let value ← instantiateMVars value
+    addDecl (.thmDecl { name, levelParams := [], type, value }))
+    fun _ => pure ()
+
 /-- All selected checks for one comp, in reporting order. -/
 def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     MetaM (Array CheckResult) :=
@@ -239,6 +295,7 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
       assumes := ← named c.assumes
       reqs := ← named c.reqs
       expects := ← named c.expects
+      covers := ← named c.covers
       insts := ← c.insts.mapM fun i => return {
         name := i.name, comp := i.comp, bindings := ← beta i.bindings, behaviour := ← beta i.behaviour
         assumes := ← i.assumes.mapM fun (n, a) => return (n, ← beta a) }
@@ -262,7 +319,7 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
         | .nothing => false
         | .requirement => outputs
         | .assumption => !outputs
-    let formulas := comp.assumes.map (·.2) ++ comp.reqs.map (·.2) ++ comp.expects.map (·.2)
+    let formulas := comp.assumes.map (·.2) ++ comp.reqs.map (·.2) ++ comp.expects.map (·.2) ++ comp.covers.map (·.2)
       ++ comp.insts.flatMap (fun i => #[i.bindings, i.behaviour] ++ i.assumes.map (·.2))
       ++ comp.triggers.map (·.2) ++ comp.indexes.map (·.goal) ++ comp.defs.map (·.2.2)
     let apps := formulas.foldl (fun acc f => natApps nats f acc) #[]
@@ -271,9 +328,29 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     let copiedFvs := (c.vars.zip fvs).filter (fun (v, _) => (Core.Symbol.ofRole v.role).copied) |>.map (·.2)
     let all := facts ++ outFacts
     let facts := all ++ (all.map (·.replaceFVars copiedFvs primes)).filter (!all.contains ·)
+    -- What stands for the abstract types and functions, by which a formula
+    -- uses them (`Core.coverInterpreted`).
+    let useIds := ufs.foldl (fun acc u => (collectFVars acc u)) {} |>.fvarIds
+    let interprets (e : Expr) : Bool := e.hasAnyFVar useIds.contains
+    let full := { comp with typesInterpreted := c.vars.any fun v => interprets v.type }
     -- Only the `fren` command runs the checks set to testing (`check::by_testing`).
     let (comp, kinds) := comp.untested c.tested kinds
     let cache : QueryCache ← IO.mkRef {}
-    Core.checkComp (fun _ => leanBackend c fvs primes cache facts outFacts) comp kinds
+    -- The models of the cover goals' queries, by goal, for their theorems.
+    let models ← IO.mkRef (#[] : Array (Expr × Array (Name × Expr)))
+    let bk (k : CheckKind) :=
+      let b := leanBackend c fvs primes cache facts outFacts (modelOptional := k == .cover)
+      if k != .cover then b else
+      { b with query := fun hyps goal wantModel => do
+          let o ← b.query hyps goal wantModel
+          if let .sat model := o then models.modify (·.push (goal, model))
+          return o }
+    let results := Core.withInterpreted full interprets (← Core.checkComp bk comp kinds)
+    for g in c.covers do
+      let passed := results.any fun r => r.kind == .cover && r.prop? == some g.name && r.verdict == .pass
+      let goal := mkNot (← beta g.body)
+      if let some (_, model) := (← models.get).find? (·.1 == goal) then
+        if passed then addCoverWitness c fvs g model
+    return results
 
 end Fren

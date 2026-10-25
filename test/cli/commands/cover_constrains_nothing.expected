@@ -1,0 +1,29 @@
+error[F0603]: expectation `sensor::only_warm` does not hold
+  --> test/cli/commands/cover_constrains_nothing.fren:12:12
+   |
+12 |     expect only_warm: x = 50
+   |            ^^^^^^^^^ does not follow from the requirements
+   |
+   = counterexample: x = -11, hot? = false
+   = help: strengthen the requirements so that it follows, or correct the expectation
+
+note: cover goal `sensor::warm` is met
+  --> test/cli/commands/cover_constrains_nothing.fren:11:11
+   |
+11 |     cover warm: x = 50 and not hot?
+   |           ^^^^ met
+   |
+   = witness: x = 50, hot? = false
+
+note: cover goal `sensor::never` is met
+  --> test/cli/commands/cover_constrains_nothing.fren:13:11
+   |
+13 |     cover never: when x > 5 and x < 3, hot?
+   |           ^^^^^ met
+   |
+   = witness: x = 2, hot? = false
+
+fren: 3 passed, 1 failed, 0 inconclusive, in 100 tests each
+
+For more information about this error, try `fren --explain F0603`.
+exit=1
