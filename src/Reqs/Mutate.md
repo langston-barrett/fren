@@ -37,7 +37,7 @@ operator keeps its own. The changes are:
 |---|---|
 | `swap-comparison` | `<` and `<=`, `>` and `>=`, `=` and `!=`, each to the other |
 | `swap-and-or` | `and` and `or`, each to the other |
-| `swap-arithmetic` | `+` and `-`, each to the other |
+| `swap-arithmetic` | `+` and `-`, and `div` and `mod`, each to the other |
 | `drop-conjunct` | `a and b` to `a`, and to `b` |
 | `negate-trigger` | `when` and `unless`, each to the other |
 | `shift-integer` | an integer literal `n` to `n + 1`, and to `n - 1` if `n > 0`, written in decimal |
@@ -49,6 +49,12 @@ operator keeps its own. The changes are:
 
 A regular-expression pattern is changed only where its text is its
 value: a raw literal, or a literal without escapes.
+
+A [divisor](Lang/Expressions.md#division-and-remainder) is never made `0`,
+which would be a static error: `shift-integer` does not change a divisor
+`1` to `0`, and a constant that a divisor names is not changed at all, nor
+is a constant that the value of such a constant names. A constant is told
+by its name alone, in any of the files.
 
 Mutants change what a spec asserts: the expressions of `assume`s, `req`s,
 defined outputs, instance bindings, constants and defined functions. The

@@ -113,7 +113,14 @@ indexes a sequence of an abstract type `T` takes one, `[Inhabited T]`,
 after `T`, which an implementation gives from its interpretation of `T`. A
 string method is a definition of
 `Fren.Str`, over `Int` positions, such as `Fren.Str.len : String → Int`,
-whose `@[simp]` lemmas relate it to Lean's `String` functions.
+whose `@[simp]` lemmas relate it to Lean's `String` functions. `a div k`
+and `a mod k` are `a / k` and `a % k` on `Int`, which are Lean's
+Euclidean `Int.ediv` and `Int.emod`, by the divisor's value as a numeral:
+for a negative divisor `-k`, `a div -k` is `-(a / k)` and `a mod -k` is
+`a % k`, which the Euclidean laws make the same, so that the solver always
+divides by a numeral, as its linear logics require. The methods of `Int` are conditionals: `x.abs` is
+`if x < 0 then -x else x`, `x.min(y)` is `if x ≤ y then x else y`, and
+`x.max(y)` is `if x ≥ y then x else y`.
 
 A component *uses* the abstract types and uninterpreted functions that its
 variables' types, its constraints and its bindings mention, those that its

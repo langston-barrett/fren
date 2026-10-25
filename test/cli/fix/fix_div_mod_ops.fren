@@ -1,0 +1,16 @@
+--@ args: fix --check
+-- Fixes that rewrite around `div` and `mod` keep their operands bound as
+-- written: `div` and `mod` bind as tightly as `*`, and are left-associative.
+pub comp c {
+    in x: Int
+    in c?
+    pub out a: Int
+    pub out b: Int
+    pub out d: Int
+    pub out e: Int
+
+    req ra: a = 3 * if c? then x mod 2 else x mod 2
+    req rb: b = x div 2 * 1
+    req rd: d = 1 * (x + 1) mod 3
+    req re: e = (x mod 4 * 1).max(1).min(x div -2) + 0
+}

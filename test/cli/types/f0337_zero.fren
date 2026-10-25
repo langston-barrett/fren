@@ -1,0 +1,4 @@
+-- A divisor of `0` (F0337).
+const NONE: Int := 4 - 2 * 2
+
+comp c { in x: Int pub out r: Int := x mod NONE }

@@ -803,11 +803,13 @@ def mutantsOf (files : Array (String × Array Char)) (lints : Array (Fren.Core.L
   let mut before := #[]
   let mut st := initialState lints
   let mut all := #[]
+  -- The constants that divisors name, in any of the files.
+  let parsed := files.map fun (_, chars) => (lex chars).toOption.bind fun toks => (parse toks).toOption.map (toks, ·)
+  let divisors := Mutate.divisorConstants (parsed.flatMap fun p => (p.map (·.2)).getD #[])
   for (path, chars) in files, i in [0:files.size] do
     before := before.push st
     st := elabText st i chars
-    if let .ok toks := lex chars then
-      if let .ok items := parse toks then all := all ++ Mutate.ofFile { file := i, path, chars, toks } items
+    if let some (toks, items) := parsed[i]! then all := all ++ Mutate.ofFile { file := i, path, chars, toks } items divisors
   return (before, all)
 
 /-- The state of the files with the mutant `m` applied, from the states

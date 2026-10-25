@@ -42,7 +42,8 @@ structure Token where
   tok : Tok
   span : Span
   /-- A line ends between the previous token and this one: a membership's
-  `in` cannot start a line (`Reqs/Lang/Lexical#keywords`). -/
+  `in` and a remainder's `mod` cannot start a line
+  (`Reqs/Lang/Lexical#keywords`). -/
   nlBefore : Bool := false
   deriving Inhabited
 
@@ -50,7 +51,7 @@ structure Token where
 `else`, `match` and `forall`): `lang::reserved_word`. Other Fren keywords
 (`when`, `out`, `req`, ...) are contextual and lexed as identifiers. -/
 def reserved : List String :=
-  ["mod", "use", "pub", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join", "is", "in", "if", "then", "else", "match", "forall", "refine"]
+  ["mod", "use", "pub", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join", "div", "is", "in", "if", "then", "else", "match", "forall", "refine"]
 
 /-- The punctuators (`Reqs/Lang/Lexical#punctuators`), longest first.
 Includes tokens Fren doesn't use but Lean lexes (`==`, `&&`, `||`), so that
@@ -198,7 +199,9 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
             code? := some "F0101", headline := "unexpected characters `//`", label? := some "not a comment in Fren"
             fixes := #[{ msg := "comments start with `--`", replacement := "--" }] } }
         if c == '!' || c == '/' || c == '%' then
-          return .error { span := ⟨i, i + 1⟩, msg := Fren.Core.foreignOpMsg c.toString }
+          let spaceBefore := i == 0 || src[i - 1]!.isWhitespace
+          let spaceAfter := (src[i + 1]?.map Char.isWhitespace).getD true
+          return .error { span := ⟨i, i + 1⟩, msg := Fren.Core.foreignOpMsg c.toString spaceBefore spaceAfter }
         let msg : Fren.Core.Msg :=
           { code? := some "F0101", headline := s!"unexpected character `{c}`", label? := some "not part of Fren's syntax" }
         let msg := match c with

@@ -34,6 +34,10 @@ with `det out` must be determined. See [Checks](Check.md#determinism).
 variants, with the variant's payload, declared with `enum`. See
 [Items](Lang/Items.md#enumerations).
 
+**Divisor.** The right operand of `div` or `mod`: an integer literal or a
+constant, possibly negated or in parentheses, whose value is not `0`. See
+[Expressions](Lang/Expressions.md#division-and-remainder).
+
 **Environment.** Whatever chooses a component's inputs.
 
 **Expectation.** A claim, declared with `expect`, that follows from a
@@ -51,6 +55,12 @@ declared with `expect` outside any component, that the checks confirm. See
 with `impl`. See [Implementations](Impl.md).
 
 **Inconclusive.** The verdict of a check that the solver could not decide.
+
+**Integer constant expression.** An expression whose value Fren computes
+when it reads a spec: integer literals and constants whose values are
+integer constant expressions, combined by `+`, `-`, `*`, `div`, `mod`,
+`abs`, `min` and `max`. A constant divisor's value is one. See
+[Expressions](Lang/Expressions.md#division-and-remainder).
 
 **Interpretation.** A meaning for each abstract type and function. The
 checks consider every interpretation, and in Lean, `interp` fixes one. See

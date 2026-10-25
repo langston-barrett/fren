@@ -1,10 +1,10 @@
-error[F0322]: `Int` has no methods, so it has no method `contains?`
- --> test/cli/types/f0322_no_methods.fren:5:23
+error[F0322]: `Bool` has no methods, so it has no method `contains?`
+ --> test/cli/types/f0322_no_methods.fren:5:24
   |
-5 |     req r: p? iff (x).contains?(1)
-  |                       ^^^^^^^^^ no methods
+5 |     req r: p? iff (b?).contains?(1)
+  |                        ^^^^^^^^^ no methods
   |
-  = note: only `String`s have methods
+  = note: only `Int`s, `String`s, sets, relations and sequences have methods
 
 error: could not check due to 1 previous error
 

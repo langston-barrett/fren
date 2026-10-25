@@ -1,0 +1,13 @@
+error[F0336]: the value of `WIDTH`, the divisor of `mod`, is not known when the spec is read
+ --> test/cli/types/f0336_unknown_constant.fren:4:44
+  |
+4 | comp c { in x: Int pub out r: Int := x mod WIDTH }
+  |                                            ^^^^^ value not known
+  |
+  = note: a constant divisor's value is built from integer literals and such constants by `+`, `-`, `*`, `div`, `mod`, `abs`, `min` and `max`
+  = help: give `WIDTH` such a value, or divide by a literal
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0336`.
+exit=2

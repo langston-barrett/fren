@@ -1090,8 +1090,8 @@ inductive BKind where
 
 /-- The binary operators (`Reqs/Lang/Expressions#operators`). -/
 def binaryOps : Array String :=
-  #["iff", "or", "and", "=", "!=", "<", "<=", ">", ">=", "in", "subset", "+", "-", "++", "union", "minus", "*", "inter",
-    "join"]
+  #["iff", "or", "and", "=", "!=", "<", "<=", ">", ">=", "in", "subset", "+", "-", "++", "union", "minus", "*", "div",
+    "mod", "inter", "join"]
 
 /-- Whether the text of an expression ends in an *open-ended* form: a
 conditional, a `when` or an `unless` that is not in parentheses, brackets
@@ -1149,14 +1149,14 @@ def BKind.prec : BKind → Nat
   | .bin "and" => 3
   | .not => 4
   | .bin "+" | .bin "-" | .bin "++" | .bin "union" | .bin "minus" => 6
-  | .bin "*" | .bin "inter" | .bin "join" => 7
+  | .bin "*" | .bin "div" | .bin "mod" | .bin "inter" | .bin "join" => 7
   | .bin _ | .patternTest => 5
   | .neg => 8
   | .lit _ | .method _ | .atom => 9
 
 def BKind.assoc : BKind → Assoc
-  | .bin "or" | .bin "and" | .bin "+" | .bin "-" | .bin "++" | .bin "union" | .bin "minus" | .bin "*" | .bin "inter"
-  | .bin "join" => .left
+  | .bin "or" | .bin "and" | .bin "+" | .bin "-" | .bin "++" | .bin "union" | .bin "minus" | .bin "*" | .bin "div"
+  | .bin "mod" | .bin "inter" | .bin "join" => .left
   | .not | .neg | .when _ => .right
   | _ => .nonAssoc
 
@@ -1642,8 +1642,8 @@ def lastLexeme (rev : List Char) : String × List Char :=
 /-- The keywords that an expression can follow. -/
 def exprKeywords : List String :=
   -- keep-sorted start
-  ["and", "else", "if", "iff", "in", "inter", "join", "match", "minus", "not", "or", "subset", "then", "union",
-    "unless", "when"]
+  ["and", "div", "else", "if", "iff", "in", "inter", "join", "match", "minus", "mod", "not", "or", "subset", "then",
+    "union", "unless", "when"]
   -- keep-sorted end
 
 /-- Where an expression that is written after the text `before`, not in
@@ -1663,7 +1663,7 @@ def slotAfter (before : String) : Option Slot :=
     let afterOperand := [")", "]", "}", "\""].contains prev ||
       (prev.any isWordChar && !exprKeywords.contains prev)
     right (if afterOperand then .bin "-" else .neg)
-  | op => if (InfixOp.ofOp? op).isSome then right (.bin op) else none
+  | op => if (InfixOp.ofOp? op).isSome || op == "div" || op == "mod" then right (.bin op) else none
 
 /-- `if c then a else a`, where `branch` is the text of `a` and `prec` its
 precedence, and `before` and `after` the texts before and after the

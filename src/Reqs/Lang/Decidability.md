@@ -31,6 +31,18 @@ The rest of the language is decidable by three rules:
    [Instances](Instances.md#instance-variables)), so the quantifier never
    reaches under a function.
 
+## Integers
+
+Integer arithmetic is *linear*, which keeps it decidable, with or without
+realizability's quantifier: it is Presburger arithmetic, which includes
+division by a constant. `+` and `-`, `*` with a constant on one side (see
+[Linear arithmetic](Expressions.md#linear-arithmetic)), `div` and `mod`
+by a constant other than `0` (see [Division and
+remainder](Expressions.md#division-and-remainder)), and the methods `abs`,
+`min` and `max`, which are conditionals, are all linear. A product of two
+variables, or a quotient by one, is not outside a core to opt out of: it is
+an error, whatever the lint levels.
+
 ## Strings
 
 The core of the theory of strings is *regular constraints with length*:

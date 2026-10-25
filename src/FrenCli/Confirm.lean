@@ -191,6 +191,8 @@ partial def Symbols.eval (sy : Symbols) (env : List (String × Val)) : SExp → 
     | "-", #[.int a, .int b] => return .int (a - b)
     | "+", _ => return .int (← args.foldlM (fun acc v => match v with | .int x => some (acc + x) | _ => none) 0)
     | "*", _ => return .int (← args.foldlM (fun acc v => match v with | .int x => some (acc * x) | _ => none) 1)
+    | "div", #[.int a, .int b] => return .int (Int.ediv a b)
+    | "mod", #[.int a, .int b] => return .int (Int.emod a b)
     | "<", #[.int a, .int b] => return .bool (a < b)
     | "<=", #[.int a, .int b] => return .bool (a ≤ b)
     | ">", #[.int a, .int b] => return .bool (a > b)

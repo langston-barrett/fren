@@ -84,7 +84,7 @@ cmp            := sum [("=" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "subset") 
                 | pair "in" sum
                 | sum "is" pattern
 sum            := sum ("+" | "-" | "++" | "union" | "minus") prod | prod
-prod           := prod ("*" | "inter" | "join") neg | neg
+prod           := prod ("*" | "div" | "mod" | "inter" | "join") neg | neg
 neg            := "-" neg | atom
 atom           := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | "(" expr ")"
                 | "if" expr "then" expr "else" expr

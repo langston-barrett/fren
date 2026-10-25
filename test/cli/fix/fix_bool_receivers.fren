@@ -1,0 +1,16 @@
+--@ args: fix --check
+-- A fix that rewrites around a field read, a method call or an index of a
+-- parenthesized receiver keeps the receiver's parentheses.
+pub comp c {
+    in x: Int
+    in y: Int
+    in q: Seq(Int)
+    in i: Int
+    pub out o?
+    pub out p?
+    pub out r?
+
+    req r1: o? iff not ((x - y).abs = 0)
+    req r2: p? iff not ((x - y).min(i) = 0)
+    req r3: when 0 <= i and i < q.len, r? iff not ((q)[i] = 1)
+}

@@ -81,6 +81,9 @@ structure ConstInfo where
   type : Expr
   /-- Closed; used wherever the constant is mentioned. -/
   value : Expr
+  /-- Its value, if it is an integer constant expression
+  (`Reqs/Lang/Expressions#division-and-remainder`). -/
+  int? : Option Int := none
   deriving Inhabited
 
 /-- An abstract type or a function. In the model it is a placeholder: an

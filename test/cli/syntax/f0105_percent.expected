@@ -4,8 +4,11 @@ error[F0105]: `%` is not an operator in Fren
 2 | comp c { in x: Int pub out y: Int req r: y = x % 2 }
   |                                                ^ not a Fren operator
   |
-  = note: Fren has no division: the solver decides only linear integer arithmetic
-  = help: multiply the other side instead, e.g. `2 * y = x` rather than `y = x / 2`
+help: use `mod`, the remainder by a constant
+  |
+2 - comp c { in x: Int pub out y: Int req r: y = x % 2 }
+2 + comp c { in x: Int pub out y: Int req r: y = x mod 2 }
+  |
 
 error: could not check due to 1 previous error
 
