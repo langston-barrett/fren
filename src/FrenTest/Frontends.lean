@@ -19,7 +19,12 @@ fuzzing"). `fren_fuzz_frontends` compares the front ends with it;
   tests, but not for its checks' results.
   A Lean error with no error of the binary on its line is always reported.
 - Messages are compared by line, severity and first line, with the values
-  of a model masked (`normHead`).
+  of a model masked (`normHead`). So are the requirements that a
+  realizability failure names, which are a minimal set that conflicts on
+  its input, which comes from the solver's model (`cli::agreement`): they
+  are compared only when both front ends report the same input
+  (`conflictInput?`), and its notes at them (`isConflictNote`) are left
+  out.
 - Checks whose evidence is testing, which Lean does not run, are left out.
 - A static error, including a denied lint, stops the binary's checks but
   not Lean's: then the checks' results and the summary are not compared.
@@ -53,20 +58,38 @@ def maskBetween (s start : String) (stops : List String) : String :=
 
 /-- The first line of a message, with the values of a model masked:
 counterexample values may differ (`cli::agreement`), and the Lean front end
-may show none. Names, such as those of a conflict's constraints, are kept.
-The solver's reason for an undecided check, its own words, is dropped. -/
+may show none. So are the requirements that a realizability failure names,
+which conflict on its input (`compare` compares them for the same input);
+other names, such as those of a vacuity's constraints, are kept. The
+solver's reason for an undecided check, its own words, is dropped. -/
 def normHead (text : String) : String :=
   let head := (text.splitOn "\n").head!
   let head := if head.startsWith "could not decide whether " then (head.splitOn ": ").head! else head
   -- `… is not realizable: for the input VALUES, no outputs satisfy …` and
   -- `… is not determined by the inputs: for the input VALUES, it can be A or B`.
   let head := maskBetween head ": for the input " [", no outputs satisfy ", ", it can be "]
+  let head := maskBetween head ", no outputs satisfy " []
   let head := maskBetween head ", it can be " []
   -- The notes on a conflict's constraints: `is false when VALUES` and
   -- `conflicts with NAMES when VALUES`.
   if head.startsWith "is false when " then "is false when …"
   else if head.startsWith "conflicts with " then maskBetween head "` when " []
   else head
+
+/-- The input of a realizability failure, on which the requirements it
+names conflict (`cli::agreement`). -/
+def conflictInput? (text : String) : Option String :=
+  let head := (text.splitOn "\n").head!
+  if !head.contains " is not realizable: for the input " then none else
+  match head.splitOn "for the input " with
+  | _ :: rest@(_ :: _) => some ((("for the input ".intercalate rest).splitOn ", no outputs satisfy ").head!)
+  | _ => none
+
+/-- A note at a requirement of a realizability failure, which is at the
+requirements that conflict on its input. -/
+def isConflictNote (d : Diagnostic) : Bool :=
+  d.severity == "info" && d.code?.isNone &&
+    ((headOf d).startsWith "is false when " || (headOf d).startsWith "conflicts with `")
 
 /-- The text after a leading subject in backquotes, as in "`c::q` is
 vacuous: …", or the whole text. -/
@@ -201,6 +224,15 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   -- but not Lean's.
   let staticError := cliDiags.any fun d => d.severity == "error" && !isCheckResult d
   let keep (d : Diagnostic) := !onTested d && !testing d && !(staticError && isCheckResult d)
+  -- A realizability failure's requirements, and so its notes, are compared
+  -- only for the same input: each front end's input comes from its model,
+  -- and its requirements are a minimal set that conflicts on it.
+  let sameInput := (cliDiags.filter keep).filterMap fun c => do
+    let i ← conflictInput? c.text
+    let h ← (hosted.diags.filter keep).find? fun h => h.line == c.line && conflictInput? h.text == some i
+    guard (headOf c != headOf h)
+    return s!"line {c.line}: for the same input, fren says `{headOf c}`, Lean says `{headOf h}`"
+  let keep (d : Diagnostic) := keep d && !isConflictNote d
   let mut cs := cliDiags.filter keep
   let hs := hosted.diags.filter keep
   -- The same message: same line, severity and normalized headline.
@@ -221,7 +253,7 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   -- a lint, since the binary drops that item's lints.
   let stoppedItems := (cliDiags.filter fun d => d.severity == "error" && !isCheckResult d && !isLint d).map (itemAt ·.line)
   hostedOnly := hostedOnly.filter fun h => !(isHostedLint h && stoppedItems.contains (itemAt h.line))
-  let mut out := cs.map (render "fren") ++ hostedOnly.map (render "Lean")
+  let mut out := sameInput ++ cs.map (render "fren") ++ hostedOnly.map (render "Lean")
   let undecided := cs.all isUndecided && hostedOnly.all isUndecided
   -- The summary, unless a check is tested, or a static error stops the
   -- binary's checks.
@@ -240,6 +272,6 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   -- A summary or an exit code that differs is a matter of time only if
   -- some undecided check explains it.
   let explained := undecided && !(cs.isEmpty && hostedOnly.isEmpty)
-  return (out, undecided && (!sumDiffers || explained) && (!exitDiffers || explained) && !out.isEmpty)
+  return (out, undecided && sameInput.isEmpty && (!sumDiffers || explained) && (!exitDiffers || explained) && !out.isEmpty)
 
 end FrenTest.Frontends

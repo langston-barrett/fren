@@ -151,13 +151,41 @@ def stopped : Array Diagnostic :=
 
 /-! ## Normalized headlines -/
 
--- Values are masked; the names of a conflict's constraints are not.
+-- Values are masked, and so are the requirements of a realizability
+-- failure, which conflict on its input.
 #guard normHead "conflicts with `q1` when x = 1" == normHead "conflicts with `q1` when x = 2"
 #guard normHead "conflicts with `q1` when x = 1" != normHead "conflicts with `q2` when x = 1"
 #guard normHead "`c` is not realizable: for the input x = 1, no outputs satisfy `q`"
   == normHead "`c` is not realizable: for the input (any values), no outputs satisfy `q`"
 #guard normHead "`c` is not realizable: for the input x = 1, no outputs satisfy `q`"
-  != normHead "`c` is not realizable: for the input x = 1, no outputs satisfy `r`"
+  == normHead "`c` is not realizable: for the input x = 2, no outputs satisfy `r`"
+
+/-! ## Realizability failures (#99) -/
+
+def conflict : String :=
+  "comp c {\n    in s: String\n    inst w: d { b? := s != \"\" }\n    req q0: w.b?\n    req q1: not w.b?\n}\n"
+
+def note (line : Nat) (text : String) : Diagnostic := { line, severity := "info", text }
+
+-- Different inputs, so different requirements and notes, each minimal for
+-- its input: they agree.
+#guard agrees conflict
+  { diags := #[err 1 "`c` is not realizable: for the input s = \"\", no outputs satisfy `q0`" "F0601",
+      note 4 "is false when s = \"\""], summary? := none0, exit? := some 1 }
+  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q1`",
+      note 5 "is false when s = \"A\""], summary? := none0 }
+
+-- The same input, but different requirements: they differ, even if some
+-- undecided check could explain the rest.
+#guard differs conflict
+  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q0`" "F0601",
+      note 4 "is false when s = \"A\""], summary? := none0, exit? := some 1 }
+  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q1`",
+      note 5 "is false when s = \"A\""], summary? := none0 }
+#guard !(compare conflict
+  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q0`" "F0601"],
+    summary? := none0, exit? := some 1 }
+  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q1`"], summary? := none0 }).2
 -- " when " elsewhere is text, not values.
 #guard normHead "`p` holds when a" != normHead "`p` holds when b"
 
