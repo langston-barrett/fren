@@ -148,7 +148,7 @@ The precedence of a component's imports over its module's scope (see
 resolution, not a declaration, and takes no `!`.
 
 An import that brings in a name that a `!` declaration hides counts as
-used (see [Unused imports](../Lint.md#unused-imports)). A name that two
+used (see [Unused imports](../Lint/Unused.md#unused-imports)). A name that two
 glob imports make ambiguous is not hidden, since a use of it would be an
 error: a variable named like it takes no `!`.
 

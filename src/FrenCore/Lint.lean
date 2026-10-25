@@ -710,7 +710,7 @@ def Table.importVia (t : Table) (from_ : Name) (segs : Array Name) : Option Used
 /-- The import that the declaration `n`, written with `!` if `bang`, hides
 a name through, if any: the declaration depends on it, so it counts as
 used, by `unused_imports` and by a glob that `glob_imports` narrows
-(`Reqs/Lint#unused-imports`). A local of `locals` that it hides instead
+(`Reqs/Lint/Unused#unused-imports`). A local of `locals` that it hides instead
 hides the import too, so the import is not needed. -/
 def Table.shadowedImport? (t : Table) (scope : Name) (locals : Array (Name × String)) (n : Name) (bang : Bool) :
     Option UsedName :=

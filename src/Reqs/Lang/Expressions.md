@@ -105,7 +105,7 @@ Some rules ask whether an expression *mentions* a variable or an
 uninterpreted [function](Items.md#functions): those of [linear
 arithmetic](#linear-arithmetic), of the [decidable
 core](Decidability.md#strings), and of the
-[lint](../Lint.md#outputs) `constant_output`. An expression that mentions
+[lint](../Lint/Complexity.md#constant-outputs) `constant_output`. An expression that mentions
 neither has the same value in every behaviour. What an expression
 mentions is decided from its parts, as `lang::mentions` states:
 

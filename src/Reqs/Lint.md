@@ -139,10 +139,24 @@ Each lint is in exactly one *group*, and its default level is its group's:
 
 The groups follow those of rustc and Clippy, and a lint modelled on one of
 theirs is in the group of the same name: a Clippy lint in `pedantic` is
-allowed here too. `glob_imports` and `trivial_pattern` are exceptions:
-their Clippy counterparts are `pedantic` and `nursery`, but here both are
-in `style` (see [Trivial patterns](Lint/Style.md#trivial-patterns)), so
-both are `warn`.
+allowed here too. These are the exceptions:
+
+<!-- keep-sorted start -->
+- `eq_op`: Clippy's is in `correctness`, which is denied by default. Fren
+  has no `correctness` group, and an operator whose operands are written
+  the same still has a meaning, which the spec's checks see, so it is in
+  `suspicious`, and `warn`.
+- `glob_imports` and `trivial_pattern`: their Clippy counterparts are in
+  `pedantic` and `nursery`, but here both are in `style` (see [Trivial
+  patterns](Lint/Style.md#trivial-patterns)), so both are `warn`.
+- `redundant_bool_type`: its Clippy counterpart, `redundant_type_annotations`,
+  is in `restriction`, which is allowed by default. Fren has no
+  `restriction` group, and the `?` of a name already gives its type, so
+  the `: Bool` only repeats it: it is in `style`, and `warn`.
+- `same_branches`: Clippy's `if_same_then_else` is in `style`. Two
+  branches written the same are more likely a slip in one of them than a
+  matter of style, so it is in `suspicious`. Both are `warn`.
+<!-- keep-sorted end -->
 
 ```fren
 pub enum Group { Unused, NonstandardStyle, Style, Complexity, Suspicious, Pedantic, Decidability }
