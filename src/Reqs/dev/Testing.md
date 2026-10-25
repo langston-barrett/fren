@@ -82,15 +82,20 @@
 its own (`fren_test --job NAME ARG...`), and the ui tests run in batches of
 at most eight files, each importing `Fren` once. The mutants are checked in
 a job per group of the corpus, and those of Fren's own requirements in
-eight jobs, each taking every eighth mutant: each job makes every mutant
-of its group, which the checks of one mutant compare it with, and the
-checks of the whole group run in the first. As many jobs run at once
-as the machine has cores, but at most sixteen, since a job can take about
-2 GB of memory and the solver's time limit is in wall-clock time;
-`FREN_TEST_JOBS=N` runs `N` at once instead. The jobs are independent, but
-for one: with `--bless`, the snapshots job rewrites the snapshots that the
-error codes job reads, so it runs first, alone. A job that crashes is a
-failure, and so is one that writes to stderr, such as with a `panic!`,
-which prints and carries on: what it wrote is reported. The failures are
-reported sorted, so that their order does not depend on which job
-finished first.
+eight jobs, its *slices*, each taking every eighth mutant: each slice makes
+every mutant of its group, which the checks of one mutant compare it with,
+and the checks of the whole group run in the first slice. A mutation job
+whose group or slice is out of range is an error, rather than a job that
+checks nothing, and a crash in one is reported with the files of its group.
+As many jobs run at once as the machine has cores, but at most sixteen.
+This cap is a heuristic: the solver's time limit is in wall-clock time, so
+too many jobs at once could make checks inconclusive, and a job can take
+about 2.5 GB of memory, so a machine with less than 40 GB may need fewer.
+`FREN_TEST_JOBS=N` runs `N` at once instead, for a positive integer `N`;
+any other value, including an empty one and `0`, is an error. The jobs are
+independent, but for one: with `--bless`, the snapshots job rewrites the
+snapshots that the error codes job reads, so it runs first, alone. A job
+that crashes is a failure, and so is one that writes to stderr, such as
+with a `panic!`, which prints and carries on: what it wrote is reported.
+The failures are reported sorted, so that their order does not depend on
+which job finished first.
