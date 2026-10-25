@@ -3108,7 +3108,7 @@ set_option fren.lint.many_single_char_names "warn"
 comp total { in a: Int in b: Int in c: Int in d: Int pub out s: Int req r: s = a + b + c + d }
 ```
 
-Four or more names of one character, not counting a final `?`, are hard
+More than four names of one character, not counting a final `?`, are hard
 to tell apart. Name them for what they stand for:
 
 ```fren

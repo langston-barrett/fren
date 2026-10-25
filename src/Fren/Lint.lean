@@ -362,12 +362,12 @@ def startDeclared : m Unit := modifyLocal fun l => { l with declaredNames := #[]
 
 /-- Records `many_single_char_names` and `similar_names` on the names that
 the `what` named `n`, at `ref`, declares (`lint::many_single_char_names`,
-`lint::similar_names`): each once, in source order. -/
+`lint::similar_names`): each name once, in source order. -/
 def lintDeclared (what : Core.Named) (n : Name) (ref : Syntax) : m Unit := do
   let pos (r : Syntax) := (r.getPos?.map (·.byteIdx)).getD 0
-  let ds := (← getLocal).declaredNames.foldl (init := #[]) fun acc d =>
-    if acc.any fun e => e.1 == d.1 && pos e.2 == pos d.2 then acc else acc.push d
-  let ds := ds.qsort fun a b => pos a.2 < pos b.2
+  -- Each name once, where it is first declared: `x!` declares `x` again.
+  let ds := (← getLocal).declaredNames.qsort fun a b => pos a.2 < pos b.2
+  let ds := ds.foldl (init := #[]) fun acc d => if acc.any (·.1 == d.1) then acc else acc.push d
   modifyLocal fun l => { l with declaredNames := #[] }
   let single := ds.filter (Core.singleChar ·.1)
   if Core.manySingleCharNames single.size then

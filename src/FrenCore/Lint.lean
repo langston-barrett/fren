@@ -2322,8 +2322,9 @@ def andList (xs : Array String) : String :=
 def singleChar (n : Name) : Bool := (baseName (nameText n)).length == 1
 
 /-- Whether `many_single_char_names` fires on an item that declares `n`
-single-character names (`lint::many_single_char_names`). -/
-def manySingleCharNames (n : Nat) : Bool := n ≥ 4
+distinct single-character names (`lint::many_single_char_names`): more
+than 4, as Clippy's threshold is. -/
+def manySingleCharNames (n : Nat) : Bool := n ≥ 5
 
 /-- The `what` named `n` declares the single-character `names`. -/
 def manySingleCharNamesMsg (what : Named) (n : Name) (names : Array Name) : Msg :=
@@ -2351,15 +2352,28 @@ def oneEdit? (a b : List Char) : Option (List Char × Bool) :=
 characters, without a final `?`, one of which is the other with one
 character substituted, inserted or deleted if `oneEdit`, where the
 characters that differ are digits if `digits`, and words of their own if
-`word` (`lint::similar_names`). -/
-def similarNames (lenA lenB : Nat) (oneEdit digits word : Bool) : Bool :=
-  lenA ≥ 3 && lenB ≥ 3 && oneEdit && !digits && !word
+`word`, and the pair is one of `similarAllowed` if `allowed`
+(`lint::similar_names`). -/
+def similarNames (lenA lenB : Nat) (oneEdit digits word allowed : Bool) : Bool :=
+  lenA ≥ 3 && lenB ≥ 3 && oneEdit && !digits && !word && !allowed
+
+/-- The pairs of names that Clippy allows to be similar, of those that
+apply to Fren. -/
+def similarAllowed : List (String × String) := [
+  -- keep-sorted start
+  ("args", "arms"),
+  ("lhs", "rhs"),
+  ("lit", "lint"),
+  ("set", "get"),
+  -- keep-sorted end
+]
 
 /-- `similarNames` of two declared names. -/
 def namesSimilar (a b : Name) : Bool :=
   let (a, b) := (baseName (nameText a), baseName (nameText b))
   let d? := oneEdit? a.toList b.toList
-  similarNames a.length b.length d?.isSome (d?.any (·.1.all Char.isDigit)) (d?.any (·.2))
+  let allowed := similarAllowed.any fun (x, y) => (a == x && b == y) || (a == y && b == x)
+  similarNames a.length b.length d?.isSome (d?.any (·.1.all Char.isDigit)) (d?.any (·.2)) allowed
 
 /-- `b`, declared after `a` in the `what` named `n`. -/
 def similarNamesMsg (a b : Name) (what : Named) (n : Name) : Msg :=

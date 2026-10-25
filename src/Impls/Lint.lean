@@ -732,16 +732,17 @@ impl many_single_char_names: lint::many_single_char_names for (n : Nat) {
   simp [fren_spec, Fren.Core.manySingleCharNames] <;> omega
 
 -- `namesSimilar` reads the names' characters into these.
-impl similar_names: lint::similar_names for (a b : Nat) (o d w : Bool) {
+impl similar_names: lint::similar_names for (a b : Nat) (o d w l : Bool) {
   len_a := a,
   len_b := b,
   one_edit? := o,
   digits? := d,
   word? := w,
-  fires? := Fren.Core.similarNames a b o d w,
+  allowed? := l,
+  fires? := Fren.Core.similarNames a b o d w l,
 } by
-  intro a b o d w _
-  cases o <;> cases d <;> cases w <;> simp [fren_spec, Fren.Core.similarNames] <;> omega
+  intro a b o d w l _
+  cases o <;> cases d <;> cases w <;> cases l <;> simp [fren_spec, Fren.Core.similarNames] <;> omega
 
 -- `codeLines` counts the lines.
 impl too_many_lines: lint::too_many_lines for (n : Nat) {

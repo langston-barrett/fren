@@ -496,11 +496,11 @@ def startDeclared : M Unit := modify fun s => { s with declared := #[] }
 
 /-- Reports `many_single_char_names` and `similar_names` on the names that
 the `what` named `n`, at `span`, declares (`lint::many_single_char_names`,
-`lint::similar_names`): each once, in source order. -/
+`lint::similar_names`): each name once, in source order. -/
 def lintDeclared (what : Named) (n : Name) (span : Span) : M Unit := do
-  let ds := (← get).declared.foldl (init := #[]) fun acc d =>
-    if acc.any fun e => e.1 == d.1 && e.2.start == d.2.start then acc else acc.push d
-  let ds := ds.qsort fun a b => a.2.start < b.2.start
+  -- Each name once, where it is first declared: `x!` declares `x` again.
+  let ds := (← get).declared.qsort fun a b => a.2.start < b.2.start
+  let ds := ds.foldl (init := #[]) fun acc d => if acc.any (·.1 == d.1) then acc else acc.push d
   modify fun s => { s with declared := #[] }
   let single := ds.filter (Fren.Core.singleChar ·.1)
   if Fren.Core.manySingleCharNames single.size then
@@ -2648,7 +2648,7 @@ partial def elabItem : Item → M Unit
     modify fun s => { s with
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       sorts := s.sorts.push path }
-  | .function isPub name params result body => do
+  | .function isPub name params result body last => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkNoBang n)
     let module := (← get).module
@@ -2692,7 +2692,7 @@ partial def elabItem : Item → M Unit
         lint .unusedVariables v.span (Fren.Core.unusedParamMsg x)
       modify fun s => { s with defs := s.defs.push (path, vars.map fun v => (v.name, v.ty), r, smt) }
       lintDeclared .function n name.span
-      lintLines .function n name.span body.span
+      lintLines .function n name.span last
     unless isPub do
       modify fun s => { s with items := s.items.push ({ what := .function, path, level := s.levels.get .deadCode }, name.span) }
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }

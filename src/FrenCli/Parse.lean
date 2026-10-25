@@ -124,9 +124,10 @@ inductive Item where
   | abstractType (isPub : Bool) (name : Ident)
   /-- `fn f(T, U): R`, or `fn f(x: T, y?): R := e`: each parameter's path,
 and its type after `:` if written. The result type is `none` if it is not
-written, and the body if the function is uninterpreted. -/
+written, and the body if the function is uninterpreted. `last` is the span
+of its last token, such as a `)` around the body, which `body` leaves out. -/
   | function (isPub : Bool) (name : Ident) (params : Array (Array Ident × Option (Array Ident)))
-      (result : Option (Array Ident)) (body : Option Expr)
+      (result : Option (Array Ident)) (body : Option Expr) (last : Span)
   | const (isPub : Bool) (name : Ident) (ty : Array Ident) (value : Expr)
   /-- `comp c { members }`, with the span of its closing `}`. -/
   | comp (isPub : Bool) (name : Ident) (members : Array Member) (close : Span)
@@ -897,7 +898,7 @@ partial def item : P Item := do
     discard (expectKw ")")
     let result ← if (← eatKw ":").isSome then some <$> typeExpr else pure none
     let body ← if (← eatKw ":=").isSome then some <$> expr else pure none
-    return .function isPub name params result body
+    return .function isPub name params result body (← lastSpan)
   if isKw t "const" then
     discard bump
     let name ← ident

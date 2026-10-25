@@ -42,7 +42,19 @@ comp relations {
     req q: p? iff (r = MARKED and r in nested and two = {} and boxed = {} and flipped = {} and marked?(r))
 }
 
-comp singles {  --~ warning: component `singles` declares 4 single-character names
+comp singles {  --~ warning: component `singles` declares 5 single-character names
+    in a: Int
+    in b: Int
+    in c?
+    in e: Two
+    in f: Int
+    pub out total: Int
+
+    req r: total = if c? then a + b + f else match e { Two::A => 0, Two::B => 1 }
+}
+
+-- Four is not too many.
+comp four {
     in a: Int
     in b: Int
     in c?
@@ -50,6 +62,18 @@ comp singles {  --~ warning: component `singles` declares 4 single-character nam
     pub out total: Int
 
     req r: total = if c? then a + b else match e { Two::A => 0, Two::B => 1 }
+}
+
+-- A name declared again with `!` is one name: `a`, `b`, `c` and `d`.
+comp shadowed {
+    in a: Int
+    in b: Int
+    in c: Int
+    in d: Int
+    in boxed: Boxed
+    pub out total: Int
+
+    req r: total = a + b + c + d + match boxed { Boxed::Box(a!) => a }
 }
 
 comp three {
@@ -61,18 +85,19 @@ comp three {
 }
 
 -- A `match` binder counts.
-comp with_binder {  --~ warning: component `with_binder` declares 4 single-character names
+comp with_binder {  --~ warning: component `with_binder` declares 5 single-character names
     in a: Int
     in b: Int
+    in c: Int
     in x: Boxed
     pub out total: Int
 
-    req r: total = a + b + match x { Boxed::Box(n) => n }
+    req r: total = a + b + c + match x { Boxed::Box(n) => n }
 }
 
-pub fn sum(a: Int, b: Int, c: Int, d: Int): Int := a + b + c + d  --~ warning: function `sum` declares 4 single-character names
+pub fn sum(a: Int, b: Int, c: Int, d: Int, e: Int): Int := a + b + c + d + e  --~ warning: function `sum` declares 5 single-character names
 
-expect all_small: forall (a b c d: three), a.s + b.s + c.s + d.s = a.a + a.b + b.a + b.b + c.a + c.b + d.a + d.b  --~ warning: global expectation `all_small` declares 4 single-character names
+expect all_small: forall (a b c d e: three), a.s + b.s + c.s + d.s + e.s = a.a + a.b + b.a + b.b + c.a + c.b + d.a + d.b + e.a + e.b  --~ warning: global expectation `all_small` declares 5 single-character names
 
 comp similar {
     in level: Int
@@ -88,7 +113,8 @@ comp similar {
 }
 
 -- Not similar: shorter than 3 characters, differing in a digit, in a
--- character that is a word of its own, or only in a final `?`.
+-- character that is a word of its own, only in a final `?`, or a pair
+-- that Clippy allows.
 comp series {
     in ab: Int
     in ac: Int
@@ -101,171 +127,143 @@ comp series {
     in len_a: Int
     in len_b: Int
     in ready: Int
+    in lhs: Int
+    in rhs: Int
+    in set: Int
+    in get: Int
+    in args: Int
+    in arms: Int
+    in lit: Int
+    in lint: Int
     pub out ready?
 
-    req r: ready? iff ab + ac + x1 + x2 + level1 + level2 + a_len + b_len + len_a + len_b + ready > 0
+    req r: ready? iff ab + ac + x1 + x2 + level1 + level2 + a_len + b_len + len_a + len_b + ready
+        + lhs + rhs + set + get + args + arms + lit + lint > 0
 }
 
+-- 101 lines: blank lines and comments do not count.
 comp long {  --~ warning: component `long` has 101 lines
     in x: Int
+    in w: Int
+    in text: String
 
+    -- A comment alone on its line.
+    pub out ok?  -- a comment after code
+    -- `/-` and `--` in a string start no comment.
+    req st: ok? iff text = "/- -- not a comment"
+    /- a block comment /- nested -/ still in it
+       and on its last line -/ pub out echo: Int
+    req ru: echo = x + w
     pub out y0: Int
-    -- the requirement on `y0`
     req r0: y0 = x + 1
     pub out y1: Int
-    -- the requirement on `y1`
     req r1: y1 = x + 2
     pub out y2: Int
-    -- the requirement on `y2`
     req r2: y2 = x + 3
     pub out y3: Int
-    -- the requirement on `y3`
     req r3: y3 = x + 4
     pub out y4: Int
-    -- the requirement on `y4`
     req r4: y4 = x + 5
     pub out y5: Int
-    -- the requirement on `y5`
     req r5: y5 = x + 6
     pub out y6: Int
-    -- the requirement on `y6`
     req r6: y6 = x + 7
     pub out y7: Int
-    -- the requirement on `y7`
     req r7: y7 = x + 8
     pub out y8: Int
-    -- the requirement on `y8`
     req r8: y8 = x + 9
     pub out y9: Int
-    -- the requirement on `y9`
     req r9: y9 = x + 10
     pub out y10: Int
-    -- the requirement on `y10`
     req r10: y10 = x + 11
     pub out y11: Int
-    -- the requirement on `y11`
     req r11: y11 = x + 12
     pub out y12: Int
-    -- the requirement on `y12`
     req r12: y12 = x + 13
     pub out y13: Int
-    -- the requirement on `y13`
     req r13: y13 = x + 14
     pub out y14: Int
-    -- the requirement on `y14`
     req r14: y14 = x + 15
     pub out y15: Int
-    -- the requirement on `y15`
     req r15: y15 = x + 16
     pub out y16: Int
-    -- the requirement on `y16`
     req r16: y16 = x + 17
     pub out y17: Int
-    -- the requirement on `y17`
     req r17: y17 = x + 18
     pub out y18: Int
-    -- the requirement on `y18`
     req r18: y18 = x + 19
     pub out y19: Int
-    -- the requirement on `y19`
     req r19: y19 = x + 20
     pub out y20: Int
-    -- the requirement on `y20`
     req r20: y20 = x + 21
     pub out y21: Int
-    -- the requirement on `y21`
     req r21: y21 = x + 22
     pub out y22: Int
-    -- the requirement on `y22`
     req r22: y22 = x + 23
     pub out y23: Int
-    -- the requirement on `y23`
     req r23: y23 = x + 24
     pub out y24: Int
-    -- the requirement on `y24`
     req r24: y24 = x + 25
     pub out y25: Int
-    -- the requirement on `y25`
     req r25: y25 = x + 26
     pub out y26: Int
-    -- the requirement on `y26`
     req r26: y26 = x + 27
     pub out y27: Int
-    -- the requirement on `y27`
     req r27: y27 = x + 28
     pub out y28: Int
-    -- the requirement on `y28`
     req r28: y28 = x + 29
     pub out y29: Int
-    -- the requirement on `y29`
     req r29: y29 = x + 30
     pub out y30: Int
-    -- the requirement on `y30`
     req r30: y30 = x + 31
     pub out y31: Int
-    -- the requirement on `y31`
     req r31: y31 = x + 32
     pub out y32: Int
-    -- the requirement on `y32`
     req r32: y32 = x + 33
     pub out y33: Int
-    -- the requirement on `y33`
     req r33: y33 = x + 34
     pub out y34: Int
-    -- the requirement on `y34`
     req r34: y34 = x + 35
     pub out y35: Int
-    -- the requirement on `y35`
     req r35: y35 = x + 36
     pub out y36: Int
-    -- the requirement on `y36`
     req r36: y36 = x + 37
     pub out y37: Int
-    -- the requirement on `y37`
     req r37: y37 = x + 38
     pub out y38: Int
-    -- the requirement on `y38`
     req r38: y38 = x + 39
     pub out y39: Int
-    -- the requirement on `y39`
     req r39: y39 = x + 40
     pub out y40: Int
-    -- the requirement on `y40`
     req r40: y40 = x + 41
     pub out y41: Int
-    -- the requirement on `y41`
     req r41: y41 = x + 42
     pub out y42: Int
-    -- the requirement on `y42`
     req r42: y42 = x + 43
     pub out y43: Int
-    -- the requirement on `y43`
     req r43: y43 = x + 44
     pub out y44: Int
-    -- the requirement on `y44`
     req r44: y44 = x + 45
     pub out y45: Int
-    -- the requirement on `y45`
     req r45: y45 = x + 46
-    pub out y46: Int
-    -- the requirement on `y46`
-    req r46: y46 = x + 47
-    pub out y47: Int
-    -- the requirement on `y47`
-    req r47: y47 = x + 48
-    pub out y48: Int
-    -- the requirement on `y48`
-    req r48: y48 = x + 49
     /- a block comment
        of two lines -/
 }
 
--- 100 lines, which is not too many.
+-- 100 lines, which is not too many: blank lines and comments do not count.
 comp long_enough {
     in x: Int
-    in w: Int
+    in text: String
+
+    -- A comment alone on its line.
+    pub out ok?  -- a comment after code
+    -- `/-` and `--` in a string start no comment.
+    req st: ok? iff text = "/- -- not a comment"
+    /- a block comment /- nested -/ still in it
+       and on its last line -/ pub out echo: Int
+    req ru: echo = x
     pub out y0: Int
-    req r0: y0 = x + w
+    req r0: y0 = x + 1
     pub out y1: Int
     req r1: y1 = x + 2
     pub out y2: Int
@@ -356,13 +354,12 @@ comp long_enough {
     req r44: y44 = x + 45
     pub out y45: Int
     req r45: y45 = x + 46
-    pub out y46: Int
-    req r46: y46 = x + 47
-    pub out y47: Int
-    req r47: y47 = x + 48
+    /- a block comment
+       of two lines -/
 }
 
-pub fn long_sum(x: Int): Int :=  --~ warning: function `long_sum` has 101 lines
+-- 101 lines, to the `)` around the body.
+pub fn long_sum(x: Int): Int := (  --~ warning: function `long_sum` has 101 lines
     x
     + 1
     + 2
@@ -462,4 +459,106 @@ pub fn long_sum(x: Int): Int :=  --~ warning: function `long_sum` has 101 lines
     + 96
     + 97
     + 98
-    + 99
+    )
+
+-- 100 lines, to the `)` around the body.
+pub fn long_enough_sum(x: Int): Int := (
+    x
+    + 1
+    + 2
+    + 3
+    + 4
+    + 5
+    + 6
+    + 7
+    + 8
+    + 9
+    + 10
+    + 11
+    + 12
+    + 13
+    + 14
+    + 15
+    + 16
+    + 17
+    + 18
+    + 19
+    + 20
+    + 21
+    + 22
+    + 23
+    + 24
+    + 25
+    + 26
+    + 27
+    + 28
+    + 29
+    + 30
+    + 31
+    + 32
+    + 33
+    + 34
+    + 35
+    + 36
+    + 37
+    + 38
+    + 39
+    + 40
+    + 41
+    + 42
+    + 43
+    + 44
+    + 45
+    + 46
+    + 47
+    + 48
+    + 49
+    + 50
+    + 51
+    + 52
+    + 53
+    + 54
+    + 55
+    + 56
+    + 57
+    + 58
+    + 59
+    + 60
+    + 61
+    + 62
+    + 63
+    + 64
+    + 65
+    + 66
+    + 67
+    + 68
+    + 69
+    + 70
+    + 71
+    + 72
+    + 73
+    + 74
+    + 75
+    + 76
+    + 77
+    + 78
+    + 79
+    + 80
+    + 81
+    + 82
+    + 83
+    + 84
+    + 85
+    + 86
+    + 87
+    + 88
+    + 89
+    + 90
+    + 91
+    + 92
+    + 93
+    + 94
+    + 95
+    + 96
+    + 97
+    )

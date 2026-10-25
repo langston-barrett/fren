@@ -1004,7 +1004,7 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       spec.sorts := s.spec.sorts.push path }
-  | .function isPub name params result body => do
+  | .function isPub name params result body _ => do
     let path := (← get).module ++ Name.mkSimple name.name
     let r ← varTy result
     match body with
