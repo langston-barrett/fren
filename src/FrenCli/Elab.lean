@@ -10,6 +10,7 @@ import FrenCore.Refine
 import FrenCore.Regex
 import FrenCore.Trace
 import FrenCore.Ty
+import FrenCore.Typing
 -- keep-sorted end
 
 /-!
@@ -890,16 +891,7 @@ def lintBools (e : Expr) : M Unit := do
 
 /-- `e` has type `found` where `expected` was required. -/
 def mismatch (e : Expr) (expected found : Ty) (why : Option String := none) : M α :=
-  let hint := match expected, found with
-    | .bool, .int | .bool, .nat => #["help: compare it to make a `Bool`, e.g. `x > 0` or `x != 0`"]
-    | .int, .bool => #["help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`"]
-    | .nat, .int => #[Fren.Core.narrowingNote]
-    | .bool, .enum p | .int, .enum p => #[s!"help: compare it with a variant to make a `Bool`, e.g. `x = {p.getString!}::Variant`"]
-    | _, _ => #[]
-  err e.span {
-    code? := some "F0304", headline := s!"type mismatch: expected `{expected.show}`, found `{found.show}`"
-    label? := some s!"expected `{expected.show}`, found `{found.show}`"
-    notes := why.toArray ++ hint }
+  err e.span (Fren.Core.typeMismatchMsg expected found why)
 
 /-- Calls the method `m` of the value `recv` of type `t`, with the
 arguments `args`, each with its type and span (`lang::method_type`). -/
@@ -1278,15 +1270,15 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     return (ra, ← elabExpr { cxb with expected? := sibling cxb ra.2 } b)
   let expect (e : Expr) (t : Ty) (why : Option String := none) : M String := do
     let (s, t') ← elabExpr cx e
-    unless t'.widens t do mismatch e t t' why
+    liftMsg e.span (Fren.Core.checkType t t' why)
     return s
   -- An operand of arithmetic, an `Int` or a `Nat`; a `Nat` is expected of it
   -- only if `nat` (`lang::literal_type`).
   let number (e : Expr) (op : String) (nat : Bool) : M (String × Ty) := do
     let (s, t) ← elabExpr { cx with expected? := if nat then some .nat else none } e
-    unless t == .int || t == .nat do mismatch e .int t (some s!"note: the operands of `{op}` are `Int`s or `Nat`s")
+    liftMsg e.span (Fren.Core.checkNumber op t)
     return (s, t)
-  let opNote (op : String) (t : Ty) := some s!"note: the operands of `{op}` are `{t.show}`s"
+  let opNote := Fren.Core.opNote
   -- `length_zero` and `card_zero` on `a op b` (`lint::length_zero`).
   let lintLength (op : String) (a b : Expr) : M Unit := do
     unless cx.noteIndexes do return
@@ -1366,10 +1358,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     let gy := Fren.Core.GuardedOperand.elseBranch.guard c s!"(not {c})"
     let ((x, tx), (y, ty)) ← pair { cx with expected?, guards := cx.guards.push gx }
       { cx with expected?, guards := cx.guards.push gy, inElse := true } a b
-    unless tx.widens ty || ty.widens tx do
-      err span { code? := some "F0306", headline := s!"the branches of `if` have different types: `{tx.show}` and `{ty.show}`"
-                 label? := some "branches of different types"
-                 notes := #["note: `if c then a else b` is `a` or `b`, so both must have the same type, or be a `Nat` and an `Int`"] }
+    liftMsg span (Fren.Core.checkBranches tx ty)
     return (s!"(ite {c} {x} {y})", tx.join ty)
   | .neg _ a => return (s!"(- {(← number a "-" false).1})", .int)
   | .num _ v => return (toString v, Fren.Core.literalTy (expected? == some .nat))
@@ -1580,14 +1569,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       -- `++` is in the core against a constant.
       let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
       let ((x, tx), (y, ty)) ← pair { cx with concatOk := cb } { cx with concatOk := ca } a b
-      unless tx.widens ty || ty.widens tx do
-        let hint := match tx, ty with
-          | .enum p, .int | .int, .enum p => #[s!"note: enums are not numbers", s!"help: compare with a variant, e.g. `{p.getString!}::Variant`"]
-          | .bool, .int | .int, .bool => #["note: `Bool`s are not numbers: `true` and `false` are `Bool`s"]
-          | _, _ => #[]
-        err span { code? := some "F0305", headline := s!"cannot compare `{tx.show}` with `{ty.show}`"
-                   label? := some s!"`{tx.show}` and `{ty.show}`"
-                   notes := #[s!"note: both sides of `{op}` must have the same type"] ++ hint }
+      liftMsg span (Fren.Core.checkComparable op tx ty)
       -- For `bool_equality`, at the end of the expression.
       if tx == .bool && cx.noteIndexes then modify fun s => { s with boolEqs := s.boolEqs.push span }
       -- A side that is a `++` is reported as one; one whose definition
@@ -1647,8 +1629,9 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       -- others are also checked against the whole's (`lang::checked`).
       let expected? := if op == "subset" then none else expected?
       let ((x, tx), (y, ty)) ← pair { cx with expected? } { cx with expected? } a b
-      unless tx matches .set _ | .rel .. do mismatch a (.set tx) tx (some s!"note: the operands of `{op}` are sets or relations")
-      unless tx == ty do mismatch b tx ty (some s!"note: both operands of `{op}` are `{tx.show}`s")
+      match Fren.Core.checkSetOperands op tx ty with
+      | .ok () => pure ()
+      | .error (k, msg) => err (if k == 0 then a else b).span msg
       checkCore cx span .setAlgebra true true #[a, b]
       let smt := match op with
         | "union" => "set.union" | "inter" => "set.inter" | "minus" => "set.minus" | _ => "set.subset"
@@ -1674,7 +1657,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let (x, tx) ← elabExpr { cx with expected?, concatOk := true } a
       if let .seq _ := tx then
         let (y, ty) ← elabExpr { cx with expected? := some tx } b
-        unless ty == tx do mismatch b tx ty (some s!"note: the operands of `++` are `{tx.show}`s")
+        liftMsg b.span (Fren.Core.checkConcatOperands tx ty)
         checkCore cx span .seqWord true true #[a, b] (← isConstant cx e)
         return (s!"(seq.++ {x} {y})", tx)
       -- Where the core allows it, only its operands' outputs matter.

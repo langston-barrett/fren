@@ -8,8 +8,7 @@ comp types {
 
     req r: ok? iff 0 <= x
         < "a"
-    --~^[cli] error: type mismatch: expected `Int`, found `String`
-    --~^^[hosted] error: Type mismatch
+    --~^ error: type mismatch: expected `Int`, found `String`
 }
 
 --@ exit: 2
