@@ -3461,6 +3461,10 @@ comp sub { in x: Int pub out p? ensure r: p? iff x > 0 }
 
 comp c { in x: Int inst s: sub { x } }
 ```
+
+In a record update of `r`, the lint also fires on a field `x := r.x`, which
+gives `x` the value the update reads from `r` without it, and the fix
+removes the field, when the update gives some other field a new value.
 "# },
   { code := "F0736", explanation := r#"An operator whose two operands are written the same (a warning, `eq_op`).
 
@@ -4016,7 +4020,9 @@ comp c { in a? in b? pub out p? ensure r1: p? iff a? or b? }
 
 An `expect` that repeats an `ensure` or an `assume` is reported too, but not
 fixed: it tests nothing, and was probably meant to say something
-stronger.
+stronger. A cover goal written the same as an earlier cover goal is
+reported and removed too, but a cover goal is not compared with a
+constraint.
 "# },
   { code := "F0769", explanation := r#"A string literal with an invisible character, or a string literal or comment with a bidirectional control (a warning, `invisible_characters`).
 
@@ -4964,6 +4970,75 @@ fix this:
 pub ordered enum Level { Low, Mid, High }
 
 comp c { in l: Level pub out m: Level ensure r: m = l }
+```
+"# },
+  { code := "F0818", explanation := r#"A record literal that copies most of its fields from one value (a warning, `manual_record_update`).
+
+Example:
+
+```fren
+struct Point { x: Int, y: Int, z: Int }
+
+comp c { in p: Point pub out q: Point ensure r: q = Point { x := 0, y := p.y, z := p.z } }
+```
+
+The literal gives `x` a new value and reads `y` and `z` from `p`. The
+update `{ p with x := 0 }` means the same, reads every field it does not
+give from `p`, and stays right when a field is added. It fires when more
+fields are copied than are given new values. `fren fix` can
+fix this:
+
+```fren
+struct Point { x: Int, y: Int, z: Int }
+
+comp c { in p: Point pub out q: Point ensure r: q = { p with x := 0 } }
+```
+"# },
+  { code := "F0819", explanation := r#"A record update that gives every field (a warning, `needless_update`).
+
+Example:
+
+```fren
+struct Point { x: Int, y: Int }
+
+comp c { in p: Point pub out q: Point ensure r: q = { p with x := 0, y := 1 } }
+```
+
+The update reads nothing from `p`: it is the record literal of the same
+fields. Write the literal, or leave out the fields that should keep `p`'s
+values:
+
+```fren
+struct Point { x: Int, y: Int }
+
+comp c { in p: Point pub out q: Point ensure r: q = Point { x := 0, y := 1 } }
+```
+"# },
+  { code := "F0820", explanation := r#"A cover goal that some behaviour meets whatever the component says (a warning, `trivial_cover`).
+
+Example:
+
+```fren
+comp c {
+    in x: Int
+    pub out y: Int
+    ensure r: y = x + 1
+    cover big: when x > 10, y > 11
+}
+```
+
+A cover goal with a trigger holds wherever the trigger is false, so a
+behaviour with `x <= 10` meets it. The lint also fires on a goal written
+the same as an assumption or a guarantee, which every behaviour that
+meets the component satisfies. Write the scenario as a conjunction:
+
+```fren
+comp c {
+    in x: Int
+    pub out y: Int
+    ensure r: y = x + 1
+    cover big: x > 10 and y > 11
+}
 ```
 "# }
 ]

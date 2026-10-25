@@ -1,0 +1,14 @@
+warning[F0819]: this update gives every field of `Point`
+ --> test/cli/lints/complexity/f0819_needless_update.fren:3:53
+  |
+3 | comp c { in p: Point pub out q: Point ensure r: q = { p with x := 0, y := 1 } }
+  |                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^ reads nothing from `p`
+  |
+  = help: write a record literal, `Point { ... }`, with the same fields
+  = note: `needless_update` is `warn` by default
+  = help: to allow it, `set_option fren.lint.needless_update "allow"`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0819`.
+exit=3

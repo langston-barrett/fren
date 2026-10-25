@@ -1,11 +1,13 @@
 # Complexity
 
 The lints of the `complexity` group find a simpler expression with the
-same meaning, and `fren fix` fixes each of them but `constant_output`.
+same meaning, and `fren fix` fixes each of them but `constant_output` and
+[`needless_update`](Complexity/Updates.md#needless-updates).
 This chapter has the lints of `Bool` expressions, of membership, of
 outputs, of records and newtypes, and of literals, and its subchapters the others: those of
 [comparisons](Complexity/Comparisons.md), of [operators](Complexity/Operators.md),
-of [methods](Complexity/Methods.md) and of [matches](Complexity/Matches.md).
+of [methods](Complexity/Methods.md), of [matches](Complexity/Matches.md)
+and of [record updates](Complexity/Updates.md).
 
 ## Simpler `Bool` expressions
 

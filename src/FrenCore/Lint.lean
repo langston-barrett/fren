@@ -152,6 +152,9 @@ inductive Lint where
   | manualOrdering
   | redundantNewtypeRoundtrip
   | unnecessaryMinOrMax
+  | manualRecordUpdate
+  | needlessUpdate
+  | trivialCover
   -- `BEq` from `DecidableEq`, which makes it lawful at once; a derived `BEq`
   -- would need a proof over every pair of lints.
   deriving Inhabited, DecidableEq, Repr
@@ -177,7 +180,8 @@ def Lint.all : Array Lint :=
     .singleMatchElse, .inconsistentStructConstructor, .overlyComplexBoolExpr, .structFieldNames, .fnParamsExcessiveBools,
     .structExcessiveBools, .needlessRawStringHashes, .branchesSharingCode, .zeroPrefixedLiteral,
     .arbitrarySourceItemOrdering, .singleCallFn,
-    .manualAtMostOne, .manualOrdering, .redundantNewtypeRoundtrip, .unnecessaryMinOrMax]
+    .manualAtMostOne, .manualOrdering, .redundantNewtypeRoundtrip, .unnecessaryMinOrMax,
+    .manualRecordUpdate, .needlessUpdate, .trivialCover]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -283,6 +287,9 @@ def Lint.name : Lint → String
   | .manualOrdering => "manual_ordering"
   | .redundantNewtypeRoundtrip => "redundant_newtype_roundtrip"
   | .unnecessaryMinOrMax => "unnecessary_min_or_max"
+  | .manualRecordUpdate => "manual_record_update"
+  | .needlessUpdate => "needless_update"
+  | .trivialCover => "trivial_cover"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -390,6 +397,9 @@ def Lint.code : Lint → String
   | .manualOrdering => "F0841"
   | .redundantNewtypeRoundtrip => "F0842"
   | .unnecessaryMinOrMax => "F0843"
+  | .manualRecordUpdate => "F0818"
+  | .needlessUpdate => "F0819"
+  | .trivialCover => "F0820"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -436,15 +446,15 @@ def Lint.group : Lint → Group
   | .globImports | .lengthZero | .cardZero | .unlessNot | .collapsibleWhen | .matchLikeMembership | .redundantBindings
   | .doubleNeg | .negMultiply | .trivialPattern | .redundantBoolType | .moduleInception | .enumVariantNames
   | .upperCaseAcronyms | .justUnderscoresAndDigits | .disallowedNames | .assertionsOnConstants
-  | .manualPatternCharComparison | .isEquality | .chainableComparison => .style
+  | .manualPatternCharComparison | .isEquality | .chainableComparison | .manualRecordUpdate => .style
   | .nonminimalBool | .singletonMembership | .constantOutput | .doubleComparison | .manualMethod | .elseExtends
   | .identityOp | .doubleParens | .intPlusOne | .redundantMethodChain | .trivialMatch | .needlessBoolAssign
   | .needlessMatch | .redundantSlicing | .redundantComparisons | .unnecessaryStructInitialization
-  | .zeroPrefixedLiteral | .manualAtMostOne | .redundantNewtypeRoundtrip | .unnecessaryMinOrMax => .complexity
+  | .zeroPrefixedLiteral | .manualAtMostOne | .redundantNewtypeRoundtrip | .unnecessaryMinOrMax | .needlessUpdate => .complexity
   | .indexAfterUse | .eqOp | .sameBranches | .duplicateElements | .emptyArgument
   | .suspiciousUnaryOpFormatting | .noEffectReplace | .constIsEmpty | .almostCompleteRange | .duplicateConstraint
   | .invisibleCharacters | .negativePosition | .absurdExtremeComparisons | .erasingOp | .ifsSameCond
-  | .contradictoryComparisons | .unrelatedBinders | .literalDotInPattern | .irrefutableIs => .suspicious
+  | .contradictoryComparisons | .unrelatedBinders | .literalDotInPattern | .irrefutableIs | .trivialCover => .suspicious
   | .membershipChain | .definableOutput | .ifNotElse | .matchSameArms | .wildcardSingleVariant | .ifChainMatch
   | .caseSplitGuarantees | .boolEquality | .zeroSizedMapValues | .manySingleCharNames | .similarNames
   | .tooManyLines | .invalidUpcastComparisons | .unicodeNotNfc | .unnecessaryTrailingComma => .pedantic
@@ -913,6 +923,72 @@ def redundantBindingMsg (x : String) (field : Bool) : Msg :=
   { code? := some "F0735", headline := s!"`{x} := {x}` is `{x}`", label? := some s!"`{x}` alone means this"
     notes := #[s!"note: a {if field then "field" else "binding"} `{x}` alone means `{x} := {x}`"]
     fixes := #[{ msg := s!"write `{x}`", replacement := x }] }
+
+/-- Whether the updated value `base`, as written, is a name or a dotted path
+of names, through which `base.f` reads the field `f` (`lint::field_copy`). -/
+def pathText (base : String) : Bool :=
+  !base.isEmpty && base.all fun c => c.isAlphanum || c == '_' || c == '.' || c == ':'
+
+/-- Whether `redundant_bindings` fires on the field `field := value` of an
+update of `base`, as the texts of the three, where `others` says whether
+the update gives some other field a value that is not a copy
+(`lint::field_copy`). -/
+def fieldCopy (field value base : String) (others : Bool) : Bool :=
+  pathText base && value == base ++ "." ++ field && others
+
+def fieldCopyMsg (x base : String) : Msg :=
+  { code? := some "F0735", headline := s!"`{x} := {base}.{x}` gives `{x}` the value it has in `{base}`"
+    label? := some "the update keeps it without this"
+    notes := #[s!"note: an update reads from `{base}` every field it does not give", "help: remove the field"] }
+
+/-- Whether `manual_record_update` fires on a record literal of `nFields`
+fields, `nCopied` of which are copied from one value: more than it gives
+new values, and not all (`lint::manual_record_update`). -/
+def manualRecordUpdate (nFields nCopied : Nat) : Bool :=
+  nCopied < nFields && nFields < 2 * nCopied
+
+/-- `fields` are the texts of the fields the update gives, in the order
+written. -/
+def manualRecordUpdateMsg (base : String) (nCopied : Nat) (fields : Array String) : Msg :=
+  let update := s!"\{ {base} with {", ".intercalate fields.toList} }"
+  { code? := some "F0818"
+    headline := s!"this record literal copies {nCopied} {if nCopied == 1 then "field" else "fields"} from `{base}`"
+    label? := some s!"the same as `{update}`"
+    notes := #["note: an update reads from its updated value every field it does not give, so it stays right when a field is added"]
+    fixes := #[{ msg := s!"write `{update}`", replacement := update }] }
+
+/-- Whether `needless_update` fires on an update that gives `nGiven` of a
+record's `nFields` fields (`lint::needless_update`). -/
+def needlessUpdate (nFields nGiven : Nat) : Bool := nGiven == nFields
+
+def needlessUpdateMsg (record base : String) : Msg :=
+  { code? := some "F0819", headline := s!"this update gives every field of `{record}`"
+    label? := some s!"reads nothing from `{base}`"
+    notes := #[s!"help: write a record literal, `{record} \{ ... }`, with the same fields"] }
+
+/-- Why `trivial_cover` fires on a cover goal (`lint::trivial_cover`). -/
+inductive TrivialCover where
+  /-- It has a trigger. -/
+  | trigger
+  /-- It is written the same as an assumption or a guarantee. -/
+  | restates (kind : String) (name : Name)
+  deriving Inhabited, BEq, Repr
+
+/-- Why `trivial_cover` fires, if it does, from whether the goal has a
+trigger and the first assumption or guarantee written the same, as its
+kind and name (`lint::trivial_cover`). -/
+def trivialCover (trigger : Bool) (same? : Option (String × Name)) : Option TrivialCover :=
+  if trigger then some .trigger else same?.map fun (k, n) => .restates k n
+
+def trivialCoverMsg (goal : Name) : TrivialCover → Msg
+  | .trigger =>
+    { code? := some "F0820", headline := s!"cover goal `{goal}` has a trigger"
+      label? := some "met by any behaviour in which the trigger is false"
+      notes := #["help: write the scenario as a conjunction, such as `c? and d?` for `when c?, d?`"] }
+  | .restates k n =>
+    { code? := some "F0820", headline := s!"cover goal `{goal}` is written the same as the {k} `{n}`"
+      label? := some "holds in every behaviour that meets the component"
+      notes := #["note: it is met unless the component allows no behaviour, which the vacuity check reports"] }
 
 /-! ## Settings -/
 
@@ -2510,17 +2586,20 @@ def eqOpConditionalMsg (negated : Bool) (v : EqOpValue) (c : String) : Msg :=
 
 /-! ## Repeated constraints -/
 
-/-- The kind of a constraint or a global expectation (`lint::ConstraintKind`). -/
+/-- The kind of a constraint, a cover goal or a global expectation
+(`lint::ConstraintKind`). -/
 inductive ConstraintKind where
   | assume
   | ensure
   | expect
+  | cover
   deriving Inhabited, BEq, DecidableEq, Repr
 
 def ConstraintKind.keyword : ConstraintKind → String
   | .assume => "assume"
   | .ensure => "ensure"
   | .expect => "expect"
+  | .cover => "cover"
 
 /-- Whether `duplicate_constraint` fires on a constraint, from whether it is
 written the same as an earlier one, and whether its fix removes it, from

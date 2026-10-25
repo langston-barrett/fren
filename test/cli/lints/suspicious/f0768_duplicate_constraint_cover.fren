@@ -1,0 +1,8 @@
+-- A cover goal written the same as an earlier one (F0768).
+comp c {
+    in x: Int
+    pub out y: Int
+    ensure r: y = x + 1
+    cover low: x < 0 and y < 0
+    cover high: x < 0 and y < 0
+}

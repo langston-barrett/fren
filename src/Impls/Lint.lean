@@ -624,12 +624,13 @@ impl empty_argument: lint::empty_argument for (m : Fren.Core.Method) (i : Nat) (
 
 /-! ## Repeated constraints, invisible characters and negative positions -/
 
-instance : Fren.Finite Fren.Core.ConstraintKind := ⟨[.assume, .ensure, .expect], by intro x; cases x <;> simp⟩
+instance : Fren.Finite Fren.Core.ConstraintKind := ⟨[.assume, .ensure, .expect, .cover], by intro x; cases x <;> simp⟩
 
 def toConstraintKind : Fren.Core.ConstraintKind → lint.ConstraintKind
   | .assume => .Assume
   | .ensure => .Ensure
   | .expect => .Expect
+  | .cover => .Cover
 
 -- Both front ends find the repeats with `repeatedConstraints`, and fix one
 -- where `duplicateConstraint` says.
@@ -1635,5 +1636,52 @@ trusted lint::nonminimal_cardinality_written: "a model of an expression, checked
 trusted lint::roundtrip_fixed: "a model of an expression, checked by the refinements in its section"
 trusted lint::roundtrip_written: "a model of an expression, checked by the refinements in its section"
 -- keep-sorted end
+
+/-! ## Record updates and cover goals -/
+
+-- Both front ends count the copies of the value with the most, of the
+-- literal's own record, as the elaborator types it.
+impl manual_record_update: lint::manual_record_update for (f c : Nat) {
+  n_fields := f,
+  n_copied := c,
+  fires? := Fren.Core.manualRecordUpdate f c,
+} by
+  intro f c _
+  simp [fren_spec, Fren.Core.manualRecordUpdate] <;> omega
+
+impl field_copy: lint::field_copy for (f v b : String) (o : Bool) {
+  path? := Fren.Core.pathText b,
+  copy? := v == b ++ "." ++ f,
+  others? := o,
+  fires? := Fren.Core.fieldCopy f v b o,
+} by
+  intro f v b o _
+  simp [fren_spec, Fren.Core.fieldCopy]
+
+impl needless_update: lint::needless_update for (f g : Nat) {
+  n_fields := f,
+  n_given := g,
+  fires? := Fren.Core.needlessUpdate f g,
+} by
+  intro f g _
+  simp [fren_spec, Fren.Core.needlessUpdate]
+
+-- What a goal restates is passed as the kind and name of the first
+-- assumption or guarantee written the same; only whether there is one
+-- decides whether the lint fires.
+impl trivial_cover: lint::trivial_cover for (t r : Bool) {
+  trigger? := t,
+  restates? := r,
+  fires? := (Fren.Core.trivialCover t (if r then some ("assumption", .anonymous) else none)).isSome,
+} by
+  intro t r _
+  cases t <;> cases r <;> simp [fren_spec, Fren.Core.trivialCover]
+
+trusted lint::field_copy_written: "a model of record updates, checked by the refinements in its section"
+trusted lint::field_copy_fixed: "a model of record updates, checked by the refinements in its section"
+trusted lint::manual_record_update_written: "a model of a record literal, checked by the refinements in its section"
+trusted lint::manual_record_update_fixed: "a model of a record literal, checked by the refinements in its section"
+trusted lint::needless_update_written: "a model of a record update, checked by the refinements in its section"
+trusted lint::needless_update_fixed: "a model of a record update, checked by the refinements in its section"
 
 end Fren.Impls

@@ -539,6 +539,21 @@ register_option fren.lint.unnecessary_min_or_max : String := {
   descr := "the level of the lint `unnecessary_min_or_max`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.manual_record_update : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_record_update`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.needless_update : String := {
+  defValue := "warn"
+  descr := "the level of the lint `needless_update`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.trivial_cover : String := {
+  defValue := "warn"
+  descr := "the level of the lint `trivial_cover`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"

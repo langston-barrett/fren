@@ -2285,6 +2285,61 @@ def lastName? (e : Syntax) : TermElabM (Option (Syntax × String)) := do
   if pre.isAnonymous then return none
   return some (← pathExpr e pre, m)
 
+open Lang in
+/-- `manual_record_update` on the record literal `e` of the record `path`
+(`lint::manual_record_update`). -/
+def lintManualUpdate (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (path : Name) :
+    TermElabM Unit := do
+  unless cx.noteIndexes do return
+  let given := e[2].getSepArgs
+  let some info := (← getState).records.get? path | return
+  -- The fields that read their own field from a value of this record, by the
+  -- value's text.
+  let mut copies : Array (String × Syntax × Array Nat) := #[]
+  for h : i in [0:given.size] do
+    let b := given[i]
+    if b[1].isNone then continue
+    let some (recv, n) ← lastName? b[1][1] | continue
+    unless n == b[0].getId.toString do continue
+    -- Only its type: what elaborating it reports is reported where it is.
+    let saved ← getLocal
+    let t? ← try some <$> typeOf (← toTerm { cx with noteIndexes := false } recv) catch _ => pure none
+    modifyLocal fun _ => saved
+    let some t := t? | continue
+    unless (t.constName?.bind (← getState).recordOfDecl?).any (·.path == path) do continue
+    let w := Core.writtenForm (exactText recv)
+    match copies.findIdx? (·.1 == w) with
+    | some k => copies := copies.modify k fun (w, r, ks) => (w, r, ks.push i)
+    | none => copies := copies.push (w, recv, #[i])
+  -- The value with the most copies, the first of those with as many.
+  let best? := copies.foldl (init := none) fun acc c =>
+    if acc.all (·.2.2.size < c.2.2.size) then some c else acc
+  let some (_, recv, ks) := best? | return
+  unless Core.manualRecordUpdate info.fields.size ks.size do return
+  let kept := ((Array.range given.size).filter (!ks.contains ·)).map (exactText given[·]!)
+  recordLint .manualRecordUpdate e (Core.manualRecordUpdateMsg (exactText recv) ks.size kept)
+
+open Lang in
+/-- `needless_update` and `redundant_bindings` on the record update `e`
+(`lint::needless_update`, `lint::redundant_bindings`, `lint::field_copy`). -/
+def lintUpdate (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
+  unless cx.noteIndexes do return
+  let saved ← getLocal
+  let t? ← try some <$> typeOf (← toTerm { cx with noteIndexes := false } e[1]) catch _ => pure none
+  modifyLocal fun _ => saved
+  let some info := t?.bind (·.constName?) |>.bind (← getState).recordOfDecl? | return
+  let given := e[3].getSepArgs
+  if Core.needlessUpdate info.fields.size given.size then
+    recordLint .needlessUpdate e (Core.needlessUpdateMsg (Core.showPath info.path) (exactText e[1]))
+  let baseText := Core.writtenForm (exactText e[1])
+  let value (b : Syntax) : String := if b[1].isNone then "" else Core.writtenForm (exactText b[1][1])
+  let others := given.any fun b => !Core.fieldCopy b[0].getId.toString (value b) baseText true
+  for b in given do
+    lintRedundant b true
+    unless b[1].isNone do
+      if Core.fieldCopy b[0].getId.toString (value b) baseText others then
+        recordLint .redundantBindings b (Core.fieldCopyMsg b[0].getId.toString (exactText e[1]))
+
 /-- The names that `e` reads one after another, innermost first, each with
 its receiver. -/
 partial def namesRead (e : Syntax) : TermElabM (Array (Syntax × String)) := do
@@ -3452,11 +3507,18 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
   else if e.isOfKind ``Lang.pairExpr then throwError Core.pairPlaceMsg.text
   else if e.isOfKind ``Lang.seqExpr then seqLitTerm toTerm { cx with expected? } emptyOk e
   else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
-  else if e.isOfKind ``Lang.recordExpr then recordTerm (fun x? => toTerm { cx with emptyOk := Core.Position.declared.checked false false, expected? := x? }) cx e
+  else if e.isOfKind ``Lang.recordExpr then do
+    let t ← recordTerm (fun x? => toTerm { cx with emptyOk := Core.Position.declared.checked false false, expected? := x? }) cx e
+    if let .item { kind := .recordItem, path, .. } ← resolvePath cx.modName (pathSegs e[0]) cx.shadowing then
+      lintManualUpdate toTerm cx e path
+    return t
   else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm { cx with emptyOk, natOk, expected? } e (parent?.bind (operandSlot · e))
   else if e.isOfKind ``Lang.tableExpr then tableTerm toTerm { cx with emptyOk, natOk, expected? } e
   else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
-  else if e.isOfKind ``Lang.updateExpr then updateTerm toTerm cx e
+  else if e.isOfKind ``Lang.updateExpr then do
+    let t ← updateTerm toTerm cx e
+    lintUpdate toTerm cx e
+    return t
   else if e.isOfKind ``Lang.noArgsCardinalityExpr then
     -- The operator's name, a non-reserved token, perhaps under the node of
     -- its alternatives.
@@ -4096,13 +4158,16 @@ def lintDuplicateConstraints (members : Array Syntax) : TermElabM Unit := do
     | `(fren_member| assume $x:ident : $e) => some (Core.ConstraintKind.assume, x.raw, e.raw)
     | `(fren_member| ensure $x:ident : $e) => some (.ensure, x.raw, e.raw)
     | `(fren_member| expect $x:ident : $e) => some (.expect, x.raw, e.raw)
+    | `(fren_member| cover $x:ident : $e) => some (.cover, x.raw, e.raw)
     | _ => none
-  for (i, j) in Core.repeatedConstraints (constraints.map fun (_, _, e) => exactText (unparen e)) do
-    let (k, x, _) := constraints[i]!
-    let (k', x', _) := constraints[j]!
-    let msg := Core.duplicateConstraintMsg k' k x'.getId.toString
-    let fixable := (Core.duplicateConstraint k' k true).2 && (← getLocal).inMarkdown
-    recordLint .duplicateConstraint x (if fixable then msg.note Core.fixHelp else msg)
+  -- Cover goals are compared with each other, and constraints with each other.
+  for group in #[constraints.filter (·.1 != .cover), constraints.filter (·.1 == .cover)] do
+    for (i, j) in Core.repeatedConstraints (group.map fun (_, _, e) => exactText (unparen e)) do
+      let (k, x, _) := group[i]!
+      let (k', x', _) := group[j]!
+      let msg := Core.duplicateConstraintMsg k' k x'.getId.toString
+      let fixable := (Core.duplicateConstraint k' k true).2 && (← getLocal).inMarkdown
+      recordLint .duplicateConstraint x (if fixable then msg.note Core.fixHelp else msg)
 
 /-- `constant_output` and `definable_output` (`lint::output_lints`), of a
 comp's outputs. -/
@@ -4127,6 +4192,24 @@ def lintOutputs (lcx : ExprCtx) (members : Array Syntax) (vars : Array Var) : Te
     let (constant, definable) := Core.outputLints v.defn?.isSome mentions about.size equation
     if constant then recordLint .constantOutput v.ref (Core.constantOutputMsg v.name)
     if definable then recordLint .definableOutput v.ref (Core.definableOutputMsg v.name about[0]!.1)
+
+/-- `trivial_cover` (`lint::trivial_cover`), of a comp's cover goals: each
+assumption and guarantee as its kind, its name and its written form. -/
+def lintTrivialCover (lcx : ExprCtx) (members : Array Syntax) : TermElabM Unit := do
+  let facts := members.filterMap fun m => match m with
+    | `(fren_member| assume $x:ident : $e) => some ("assumption", x.getId, Core.writtenForm (exactText (unparen e)))
+    | `(fren_member| ensure $x:ident : $e) => some ("guarantee", x.getId, Core.writtenForm (exactText (unparen e)))
+    | _ => none
+  for m in members do
+    let `(fren_member| cover $x:ident : $e) := m | continue
+    let w := Core.writtenForm (exactText (unparen e))
+    -- Only whether it has one: what elaborating it reports is reported where it is.
+    let saved ← getLocal
+    let trigger ← try Option.isSome <$> triggerOf lcx e catch _ => pure false
+    modifyLocal fun _ => saved
+    let same? := (facts.find? (·.2.2 == w)).map fun (k, n, _) => (k, n)
+    if let some why := Core.trivialCover trigger same? then
+      recordLint .trivialCover x (Core.trivialCoverMsg x.getId why)
 
 /-- `case_split_guarantees` (`lint::case_split_guarantees`), of a comp's
 requirements. -/
@@ -4202,6 +4285,7 @@ def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pen
     lintDuplicateConstraints members
     let lcx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
     lintOutputs lcx members vars
+    lintTrivialCover lcx members
     lintCaseSplitGuarantees lcx members vars
     let uses ← usesOf ((← fvs.mapM fun x => inferType x) ++ defs.map (·.2))
     if good then addCompDefs vars declBase fvs uses props values defs

@@ -1,0 +1,20 @@
+--@ args: fix --check
+-- `fren fix` writes an update for a literal that copies most of its
+-- fields, and removes the fields of an update copied from its updated value.
+struct Point { x: Int, y: Int, z: Int }
+
+pub comp c {
+    in p: Point
+    in n: Int
+    pub out q1: Point
+    pub out q2: Point
+    pub out q3: Point
+    pub out q4: Point
+    pub out q5: Point
+
+    ensure r1: q1 = Point { x := n, y := p.y, z := p.z }
+    ensure r2: q2 = Point { x := p.x, y := n + 1, z := p.z }
+    ensure r3: q3 = { p with x := p.x, y := n }
+    ensure r4: q4 = { p with x := n, y := p.y, z := p.z }
+    ensure r5: q5 = { p with x := p.x, y := p.y, z := n }
+}

@@ -16,6 +16,7 @@ comp sensor {
     -- Met wherever its trigger is false, which is everywhere.
     cover never: when x > 5 and x < 3, hot?        --~ info: cover goal `sensor::never` is met
     --~^ warning: these two comparisons cannot both hold
+    --~^^ warning: cover goal `never` has a trigger
 }
 
 comp reader {

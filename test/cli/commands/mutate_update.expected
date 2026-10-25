@@ -1,3 +1,13 @@
+warning[F0819]: this update gives every field of `m::S`
+  --> test/cli/commands/mutate_update.fren:14:19
+   |
+14 |     ensure r: o = { if x > 0 then s else t with n := x + 1, on? := true }
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ reads nothing from `if x > 0 then s else t`
+   |
+   = help: write a record literal, `m::S { ... }`, with the same fields
+   = note: `needless_update` is `warn` by default
+   = help: to allow it, `set_option fren.lint.needless_update "allow"`
+
 swap-comparison-m::c::r-e8e67b9e6cd1 test/cli/commands/mutate_update.fren:14:17 `=` changed to `!=`
 swap-comparison-m::c::r-6c9e561e0897 test/cli/commands/mutate_update.fren:14:26 `>` changed to `>=`
 shift-integer-m::c::r-23282fc5be59 test/cli/commands/mutate_update.fren:14:28 `0` changed to `1`

@@ -13,8 +13,10 @@ indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md) and of
 `duplicate_constraint` fires on a constraint of a component that is
 written the same as an earlier one of the component, whatever their
 kinds, `assume`, `ensure` or `expect`, and on a global expectation written
-the same as an earlier one of its module in the same file. A cover goal
-is not a constraint, and is not compared. Two
+the same as an earlier one of its module in the same file. It fires too
+on a cover goal written the same as an earlier cover goal of the
+component, but a cover goal is not compared with a constraint, since it
+states a scenario rather than what holds in every behaviour. Two
 constraints are written the same if their expressions are (see
 [Written the same](../Lint.md#written-the-same)), and two global
 expectations if all they say after their names is, binders included. It is
@@ -29,7 +31,8 @@ of one kind, the fix removes the later one, with a `--` comment after it
 on its last line, and for a global expectation any `set_option ... in`
 before it. This keeps the meaning: a constraint
 that repeats one of its kind adds nothing to the component, and an
-expectation that repeats one claims nothing more. An `expect` that repeats
+expectation that repeats one claims nothing more, and a cover goal that
+repeats one is met exactly when that one is, so it checks nothing more. An `expect` that repeats
 an `ensure` or an `assume` is not fixed: it tests nothing, since it follows
 from what it repeats, and was probably meant to say something stronger,
 which the message says. Nor is an `ensure` that repeats an `assume`, or the
@@ -39,7 +42,7 @@ states this:
 ```fren
 pub mod lint
 
-pub enum ConstraintKind { Assume, Ensure, Expect }
+pub enum ConstraintKind { Assume, Ensure, Expect, Cover }
 
 pub comp duplicate_constraint {
     in earlier: ConstraintKind
@@ -47,6 +50,9 @@ pub comp duplicate_constraint {
     in same?             -- the later is written the same as the earlier
     pub det out fires?
     pub det out fixed?   -- the fix removes the later
+
+    -- A cover goal is compared only with cover goals.
+    assume covers_apart: (earlier = ConstraintKind::Cover) iff (later = ConstraintKind::Cover)
 
     ensure rule: fires? iff same?
     ensure fix: fixed? iff (same? and earlier = later)
@@ -164,4 +170,42 @@ pub comp irrefutable_is_value {
 
 refine irrefutable_is_sound: irrefutable_is_value refines irrefutable_is_written
 refine irrefutable_is_complete: irrefutable_is_written refines irrefutable_is_value
+```
+
+## Cover goals
+
+`trivial_cover` fires on a [cover goal](../Lang/Components.md#cover-goals)
+that some behaviour meets whatever scenario it was meant to state. Lints
+never ask the solver, so whether a goal can be met at all is the
+[check's](../Check.md#cover-goals) to say: one that the guarantees rule
+out, such as `not y?` beside `ensure r: y?`, is already an error there
+(`F0615`), and a lint would only report it twice. It fires on two
+mistakes that the check passes:
+
+- a goal with a [trigger](../Lang/Components.md#triggers), `when c, d` or
+  `unless c, d`: it holds wherever the trigger is false, so a behaviour in
+  which the trigger is false meets it. The scenario is meant as a
+  conjunction, such as `c and d`;
+- a goal written the same as an assumption or a guarantee of its
+  component, before it or after it, as [written](../Lint.md#written-the-same):
+  every behaviour that meets the component satisfies it, so it is met
+  unless the component allows no behaviour, which the [vacuity
+  check](../Check.md#vacuity) reports.
+
+A goal that mentions no variable is reported by
+[`assertions_on_constants`](Style.md#constant-constraints), and one
+written the same as an earlier goal by
+[`duplicate_constraint`](#repeated-constraints). The lint has no fix:
+which scenario was meant is not in the text. Clippy has no lint like it,
+since Rust has no cover goals. `lint::trivial_cover` states when it
+fires:
+
+```fren
+pub comp trivial_cover {
+    in trigger?    -- the goal has a trigger
+    in restates?   -- it is written the same as an assumption or a guarantee
+    pub det out fires?
+
+    ensure rule: fires? iff (trigger? or restates?)
+}
 ```
