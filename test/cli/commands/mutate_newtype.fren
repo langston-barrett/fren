@@ -1,0 +1,15 @@
+--@ args: mutate --list
+-- A newtype's `+` and `-` are swapped, as an `Int`'s are, and the
+-- literals in its values shifted: each mutant is still well typed.
+mod m
+
+pub struct Ms(Int)
+
+pub comp c {
+    in t: Ms
+    in u: Ms
+    pub out d: Ms
+
+    req r: d = t + u - Ms(1)
+    req s: d.0 >= 0
+}

@@ -1824,6 +1824,88 @@ or correct the expression:
 comp c { in x: Int pub out y? req r: let n: Int := x + 1 in y? iff n > 0 }
 ```
 "# },
+  { code := "F0361", explanation := r#"A newtype that does not have exactly one field.
+
+Erroneous code example:
+
+```fren
+struct Pair(Int, Int)
+```
+
+`struct N(T)` declares a newtype: a type of its own, with the values of
+`T`, its underlying type. A newtype has exactly one field, which has no
+name. For several fields, declare a record with named fields:
+
+```fren
+struct Pair { first: Int, second: Int }
+```
+"# },
+  { code := "F0362", explanation := r#"An operator that a newtype does not have.
+
+Erroneous code example:
+
+```fren
+struct Ms(Int)
+
+comp c { in t: Ms pub out d: Ms req r: d = t * Ms(2) }
+```
+
+A newtype has `=` and `!=`; the orderings `<`, `<=`, `>` and `>=` when
+its underlying type is an `Int` or a `String`; and `+` and `-` of two of
+its values when it is an `Int`. Any other operator applies to its value,
+read with `.0`, and the result is built again:
+
+```fren
+struct Ms(Int)
+
+comp c { in t: Ms pub out d: Ms req r: d = Ms(t.0 * 2) }
+```
+"# },
+  { code := "F0363", explanation := r#"An operator whose operands are a newtype and another type.
+
+Erroneous code example:
+
+```fren
+struct Ms(Int)
+struct Bytes(Int)
+
+comp c { in t: Ms in n: Bytes pub out late? req r: late? iff t > n }
+```
+
+A newtype is a type distinct from every other, even from its underlying
+type, so that its values are not mixed with others by mistake: an `Ms` is
+not compared with a `Bytes`, nor with an `Int`, and no literal is an
+`Ms`. Compare two values of one newtype, building one with `Ms(e)` if need
+be, or compare their values, read with `.0`, if mixing them is meant:
+
+```fren
+struct Ms(Int)
+struct Bytes(Int)
+
+comp c { in t: Ms in n: Bytes pub out late? req r: late? iff t > Ms(100) }
+```
+"# },
+  { code := "F0364", explanation := r#"A newtype built as a record with named fields, or a record with named fields built as a newtype.
+
+Erroneous code example:
+
+```fren
+struct Ms(Int)
+
+comp c { pub out t: Ms req r: t = Ms { value := 5 } }
+```
+
+A newtype, declared `struct Ms(Int)`, has one field, which has no name: it
+is built as `Ms(e)`, and its field read as `x.0`. A record with named
+fields, declared `struct Point { x: Int, y: Int }`, is built as `Point {
+x := 1, y := 2 }`, not as `Point(1, 2)`:
+
+```fren
+struct Ms(Int)
+
+comp c { pub out t: Ms req r: t = Ms(5) }
+```
+"# },
   { code := "F0401", explanation := r#"An assumption mentions a variable that is not an `in`.
 
 Erroneous code example:

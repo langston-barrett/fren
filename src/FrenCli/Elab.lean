@@ -48,6 +48,8 @@ def _root_.Fren.Core.Ty.sort : Ty → String
   | .seq t => s!"(Seq {t.sort})"
   | .enum p | .record p => quote (showPath p)
   | .abstract p => itemSym p
+  -- Erased to its underlying type (`Reqs/Lang/Items#newtypes`).
+  | .newtype _ u => u.sort
 
 def ctorSym (enumPath : Name) (v : Name) : String := quote s!"{showPath enumPath}::{v}"
 
@@ -360,6 +362,8 @@ structure State where
   defs : Array (Name × Array (Name × Ty) × Ty × String) := #[]
   /-- The enumerations and records, in order. -/
   datatypes : Array DataDecl := #[]
+  /-- The newtypes, each with its underlying type. -/
+  newtypes : NameMap Ty := {}
   /-- The spans of the function applications elaborated so far
   (`lang::constant`). -/
   applied : Array Span := #[]
@@ -516,9 +520,10 @@ def internal (span : Span) (what : String) : M α := err span (Msg.internal what
 
 def State.dataOf? (s : State) (p : Name) : Option DataDecl := s.datatypes.find? (·.path == p)
 
-def State.unbounded (s : State) : Ty → Bool
+partial def State.unbounded (s : State) : Ty → Bool
   | .string | .set _ | .rel .. | .seq _ => true
   | .enum p | .record p => (s.dataOf? p).any (·.unbounded)
+  | .newtype _ u => Fren.Core.newtypeUnbounded (s.unbounded u)
   | _ => false
 
 /-- Whether a type has infinitely many values (`Reqs/Lang/Decidability#outputs`):
@@ -528,6 +533,7 @@ partial def State.infinite (s : State) : Ty → Bool
   | .int | .nat | .string | .abstract _ | .seq _ => true
   | .set t => s.infinite t
   | .rel a b => s.infinite a || s.infinite b
+  | .newtype _ u => s.infinite u
   | .enum p | .record p => match s.dataOf? p with
     | some d => d.unbounded || d.ctors.any fun (_, fs) => fs.any fun (_, t) => s.infinite t
     | none => true
@@ -549,6 +555,8 @@ partial def State.values (s : State) (cap : Nat := 64) : Ty → Option (Array St
       out := out ++ combos.map fun args => if args.isEmpty then d.ctorSym c else s!"({d.ctorSym c} {" ".intercalate args.toList})"
       if out.size > cap then none
     return out
+  -- Erased, as a newtype's values are.
+  | .newtype _ u => s.values cap u
   | _ => none
 
 def segNames (segs : Array Ident) : Array Name := segs.map (Name.mkSimple ·.name)
@@ -790,11 +798,20 @@ partial def divisorForm (cx : ExprCtx) (k : Expr) : M (Fren.Core.DivisorForm × 
       | none => (.unknownConstant, 0, path)
   | _ => return (.other, 0, .anonymous)
 
-/-- Whether `segs`, applied, builds a variant rather than applying a
-function. -/
-def isVariant (cx : ExprCtx) (segs : Array Ident) : M Bool := do
+/-- The newtype that `segs` names, with its underlying type, if it names
+one. -/
+def newtypeNamed? (cx : ExprCtx) (segs : Array Ident) : M (Option (Name × Ty)) := do
   let st ← get
-  return st.table.resolvePath st.scope (segNames segs) cx.shadowing matches .ok (.variant ..)
+  let .ok (.item { kind := .recordItem, path, .. }) := st.table.resolvePath st.scope (segNames segs) cx.shadowing
+    | return none
+  return (st.newtypes.find? path).map (path, ·)
+
+/-- Whether `segs`, applied, builds a variant or a newtype rather than
+applying a function. -/
+def isConstruction (cx : ExprCtx) (segs : Array Ident) : M Bool := do
+  let st ← get
+  if st.table.resolvePath st.scope (segNames segs) cx.shadowing matches .ok (.variant ..) then return true
+  return (← newtypeNamed? cx segs).isSome
 
 /-- Whether `segs`, applied, applies a cardinality operator
 (`Reqs/Lang/Expressions#cardinality`). -/
@@ -865,7 +882,7 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
   | .app _ segs args =>
     -- A cardinality operator has a fixed meaning, as an operator does.
     let k : Fren.Core.MentionKind ← if isCardinality segs then pure .compound
-      else if ← isVariant cx segs then pure .construction
+      else if ← isConstruction cx segs then pure .construction
       else if ← isDefined cx segs then pure .defined else pure .uninterpreted
     parts k args.toList
   | .record _ _ fs => parts .construction (fs.toList.map fun (f, e?) => e?.getD (.path f.span #[f]))
@@ -1294,6 +1311,12 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
 /-- Reads the field `f` of the value `smt` of type `t`; of a `String`, calls
 the method `f`, without arguments. -/
 def readField (span : Span) (smt : String) (t : Ty) (f : Name) : M (String × Ty) := do
+  -- The field `0` of a newtype, which is erased (`Reqs/Lang/Expressions#newtypes`).
+  if let .newtype p u := t then
+    if f == Name.mkSimple "0" then return (smt, u)
+    err span (Fren.Core.noFieldMsg f (showPath p) #[Name.mkSimple "0"])
+  -- A field named by digits is no method's name.
+  if Fren.Core.positionalField f && !(t matches .record _) then err span (Fren.Core.noFieldMsg f t.show #[])
   -- For `invalid_upcast_comparisons`, at the end of the expression.
   if (t == .int || t == .nat) && f == `abs then modify fun s => { s with absEnds := s.absEnds.push span.stop }
   if t matches .string | .set _ | .rel .. | .seq _ | .int | .nat then return ← callMethod span smt t f.toString #[]
@@ -1790,7 +1813,9 @@ partial def elabTy (segs : Array Ident) : M Ty := do
     return .rel ta tb
   match ← resolveWritten segs with
   | .item { kind := .enumItem, path, .. } => return .enum path
-  | .item { kind := .recordItem, path, .. } => return .record path
+  | .item { kind := .recordItem, path, .. } =>
+    if let some u := (← get).newtypes.find? path then return .newtype path u
+    return .record path
   | .item { kind := .typeItem, path, .. } => return .abstract path
   | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.notATypeMsg r)
 
@@ -1817,13 +1842,17 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     let (s, t') ← elabExpr cx e
     liftMsg e.span (Fren.Core.checkType t t' why)
     return s
-  -- An operand of arithmetic, an `Int` or a `Nat`; a `Nat` is expected of it
-  -- only if `nat` (`lang::literal_type`).
-  let number (e : Expr) (op : String) (nat : Bool) : M (String × Ty) := do
-    let (s, t) ← elabExpr { cx with expected? := if nat then some .nat else none } e
-    liftMsg e.span (Fren.Core.checkNumber op t)
-    return (s, t)
+  -- An operand of arithmetic, `e` of type `t`, is an `Int` or a `Nat`.
+  let number (e : Expr) (t : Ty) (op : String) : M Unit := liftMsg e.span (Fren.Core.checkNumber op t)
   let opNote := Fren.Core.opNote
+  -- The operator `op` at `span`, prefix if `pre`, of operands of the types
+  -- `tx` and `ty`: if one is a newtype, it must have `op`, and both must be
+  -- of it (`lang::newtype_operator`).
+  let newtypeOp (op : String) (span : Span) (tx ty : Ty) (pre := false) : M Unit := do
+    let ordered ← match Fren.Core.newtypeOf? tx ty with
+      | some (_, u) => isOrdered u
+      | none => pure false
+    liftMsg span (Fren.Core.checkNewtypeOperator op pre tx ty ordered)
   -- `length_zero`, `card_zero` and `absurd_extreme_comparisons` on `a op b`
   -- (`lint::length_zero`, `lint::absurd_extreme_comparisons`).
   let lintLength (op : String) (a b : Expr) : M Unit := do
@@ -1932,7 +1961,11 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       { cx with expected?, guards := cx.guards.push gy, inElse := true } a b
     liftMsg span (Fren.Core.checkBranches tx ty)
     return (s!"(ite {c} {x} {y})", tx.join ty)
-  | .neg _ a => return (s!"(- {(← number a "-" false).1})", .int)
+  | .neg span a =>
+    let (x, t) ← elabExpr cx a
+    newtypeOp "-" span t t (pre := true)
+    number a t "-"
+    return (s!"(- {x})", .int)
   | .num _ v => return (toString v, Fren.Core.literalTy (expected? == some .nat))
   | .set span elems =>
     -- A literal's type may be written nowhere, as in `x in {1}`.
@@ -1967,9 +2000,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let (x, t) ← member e (some t0)
       unless t == t0 do
         let (mt, mt0) := match t, t0 with | .set u, .set u0 => (u.show, u0.show) | _, _ => (t.show, t0.show)
-        err e.span { code? := some "F0326", headline := s!"the members of a set have different types: `{mt0}` and `{mt}`"
-                     label? := some s!"a `{mt}`"
-                     notes := #[s!"note: the first member is a `{mt0}`, so the literal is a `{t0.show}`"] }
+        err e.span (Fren.Core.membersMsg false mt0 mt t0.show)
       xs := xs.push x
     checkCore cx span .setAlgebra true true elems
     -- `duplicate_elements` (`lint::duplicate_elements`).
@@ -2009,9 +2040,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let (x, t) ← elabExpr { cx with expected? := some t0 } e
       let t := t.widen
       unless t == t0 do
-        err e.span { code? := some "F0326", headline := s!"the elements of a sequence have different types: `{t0.show}` and `{t.show}`"
-                     label? := some s!"a `{t.show}`"
-                     notes := #[s!"note: the first element is a `{t0.show}`, so the literal is a `{(Ty.seq t0).show}`"] }
+        err e.span (Fren.Core.membersMsg true t0.show t.show (Ty.seq t0).show)
       xs := xs.push x
     checkCore cx span .seqArray true true elems
     let us := xs.map (s!"(seq.unit {·})")
@@ -2105,21 +2134,26 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     -- its operators.
     let (x0, t0) ← elabExpr cx es[0]!
     -- The first operand gives the operands' type, a `Nat` widened
-    -- (`lang::operator_type`).
-    let t0 ← liftMsg es[0]!.span (Fren.Core.orderingType ops[0]!.1 t0 (← isOrdered t0))
+    -- (`lang::operator_type`); of a newtype, its underlying type's orderings,
+    -- on the erased values (`lang::newtype_operator`).
+    if let .newtype .. := t0 then newtypeOp ops[0]!.1 (es[0]!.span.to es[1]!.span) t0 t0
+    let under := match t0 with | .newtype _ u => u | t => t
+    let u ← liftMsg es[0]!.span (Fren.Core.orderingType ops[0]!.1 under (← isOrdered under))
+    let t0 := if t0 matches .newtype .. then t0 else u
     -- An ordered enumeration's values compare by their positions.
-    let ordinal ← orderedData? t0
+    let ordinal ← orderedData? u
     let pos (smt : String) := match ordinal with | some d => d.ordinal smt | none => smt
     let mut (x, ca) := (x0, ← isConstant cx es[0]!)
     let mut links := #[]
     for (op, _) in ops, a in es, b in es.extract 1 do
       let (y, tb) ← elabExpr { cx with guards := cx.guards ++ links } b
+      newtypeOp op (a.span.to b.span) t0 tb
       liftMsg b.span (Fren.Core.checkType t0 tb (Fren.Core.opNote op t0))
       let cb ← isConstant cx b
-      if t0 == .string then
+      if u == .string then
         checkCore cx (a.span.to b.span) .stringCompare true (ca || cb) #[a, b] (ca && cb)
       -- SMT-LIB has only `str.<` and `str.<=`.
-      links := links.push <| if t0 != .string then s!"({op} {pos x} {pos y})" else match op with
+      links := links.push <| if u != .string then s!"({op} {pos x} {pos y})" else match op with
         | "<" => s!"(str.< {x} {y})"
         | "<=" => s!"(str.<= {x} {y})"
         | ">" => s!"(str.< {y} {x})"
@@ -2188,8 +2222,20 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       lintLength op a b
       -- The left operand gives the operands' type (`lang::operator_type`).
       let (x, tx) ← elabExpr cx a
-      let t ← liftMsg a.span (Fren.Core.orderingType op tx (← isOrdered tx))
-      let y ← expect b t (Fren.Core.opNote op t)
+      -- Of a newtype, its underlying type's ordering, on the erased values;
+      -- of another type, a newtype on the right is the newtype's error
+      -- (`lang::newtype_operator`).
+      let (y, t) ← match tx with
+        | .newtype _ u => do
+          let (y, ty) ← elabExpr cx b
+          newtypeOp op span tx ty
+          pure (y, u)
+        | _ => do
+          let t ← liftMsg a.span (Fren.Core.orderingType op tx (← isOrdered tx))
+          let (y, ty) ← elabExpr cx b
+          newtypeOp op span tx ty
+          liftMsg b.span (Fren.Core.checkType t ty (Fren.Core.opNote op t))
+          pure (y, t)
       -- An ordered enumeration's values compare by their positions.
       if let some d ← orderedData? t then return (s!"({op} {d.ordinal x} {d.ordinal y})", .bool)
       unless t == .string do return (s!"({op} {x} {y})", .bool)
@@ -2259,6 +2305,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
           pure (some t)
         else pure expected?
       let (x, tx) ← elabExpr { cx with expected?, concatOk := true } a
+      newtypeOp op span tx tx
       if let .seq _ := tx then
         let (y, ty) ← elabExpr { cx with expected? := some tx } b
         liftMsg b.span (Fren.Core.checkConcatOperands tx ty)
@@ -2274,7 +2321,9 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     | "div" | "mod" =>
       -- By the divisor's value (`lang::divisor`). A `Nat` is expected of
       -- the dividend where one is of the whole (`lang::nat_result`).
-      let (x, tx) ← number a op (expected? == some .nat)
+      let (x, tx) ← elabExpr { cx with expected? := if expected? == some .nat then some .nat else none } a
+      newtypeOp op span tx tx
+      number a tx op
       discard (expect b .int (opNote op .int))
       let (form, value, c) ← divisorForm cx b
       liftMsg b.span (Fren.Core.checkDivisor op form value c)
@@ -2291,8 +2340,17 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       -- nothing truncates (`lang::operator_type`).
       let nat := op != "-" && expected? == some .nat
       if nat && op == "+" then modify fun s => { s with natSums := s.natSums.push (s.file, span) }
-      let (x, tx) ← number a op nat
-      let (y, ty) ← number b op nat
+      let (x, tx) ← elabExpr { cx with expected? := if nat then some .nat else none } a
+      -- Of a newtype, its underlying type's `+` or `-`, which it is erased
+      -- to; of a number, a newtype on the right is the newtype's error.
+      if let .newtype .. := tx then
+        let (y, ty) ← elabExpr cx b
+        newtypeOp op span tx ty
+        return (s!"({op} {x} {y})", tx)
+      number a tx op
+      let (y, ty) ← elabExpr { cx with expected? := if nat then some .nat else none } b
+      newtypeOp op span tx ty
+      number b ty op
       return (s!"({op} {x} {y})", if op != "-" && tx == .nat && ty == .nat then .nat else .int)
   | .path _ segs =>
     if segs.size == 1 then
@@ -2424,6 +2482,14 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
           liftMsg a.span (Fren.Core.checkType t ta (some s!"note: value {k + 1} of the payload of `{showPath (en.path ++ v)}` has type `{t.show}`"))
           smts := smts.push x
         return (s!"({ctorSym en.path v} {" ".intercalate smts.toList})", .enum en.path)
+      | .item { kind := .recordItem, path, .. } =>
+        -- A newtype, built from its value, which is erased
+        -- (`Reqs/Lang/Expressions#newtypes`).
+        let some u := (← get).newtypes.find? path | err fnSpan (Fren.Core.constructionMsg path false)
+        unless args.size == 1 do err span (Fren.Core.arityMsg path 1 args.size "value")
+        let (x, ta) ← elabExpr { cx with expected? := some u } args[0]!
+        unless ta.widens u do mismatch args[0]! u ta (some s!"note: the value of `{showPath path}` has type `{u.show}`")
+        return (x, .newtype path u)
       | r => err fnSpan (Fren.Core.notAFunctionMsg r)
     if let some (_, params, result, _) := (← get).defs.find? (·.1 == path) then
       -- Its arguments may mention anything (`lang::argument`).
@@ -2469,6 +2535,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     let path ← match ← resolveWritten tySegs cx.shadowing cx.noteIndexes with
       | .item { kind := .recordItem, path, .. } => pure path
       | r => err tySpan (Fren.Core.wrongKindMsg "a record" r)
+    if (← get).newtypes.contains path then err tySpan (Fren.Core.constructionMsg path true)
     let some d := (← get).dataOf? path | internal tySpan s!"unknown record `{path}`"
     let fs := d.ctors[0]!.2
     match Fren.Core.checkFieldInits path (fs.map (·.1)) (fields.map (Name.mkSimple ·.1.name)) with
@@ -3390,6 +3457,29 @@ partial def elabItem (item : Item) : M Unit := do
     modify fun s => { s with
       table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
       datatypes := s.datatypes.push { path, isRecord := true, ctors := #[(`«{}», fs)], unbounded : DataDecl }.withPrelude }
+  | .newtype isPub name fields => do
+    let n := Name.mkSimple name.name
+    liftMsg name.span (Fren.Core.checkItemName "record" n)
+    let module := (← get).module
+    liftMsg name.span ((← get).table.checkFresh module n)
+    lintName .record n name.span
+    let path := module ++ n
+    -- Exactly one field, whose type is accepted as a record's field's
+    -- (`lang::newtype`).
+    let some segs := fields[0]? | err name.span (Fren.Core.newtypeFieldsMsg path 0)
+    unless Fren.Core.newtypeAccepted fields.size true do err name.span (Fren.Core.newtypeFieldsMsg path fields.size)
+    let span := segs[0]!.span.to segs.back!.span
+    let (own, ownInSet) := ownIn segs name
+    if own then err span (Fren.Core.recursiveRecordMsg n)
+    if ownInSet then err span (Fren.Core.recursiveSetMsg path)
+    let t ← elabTy segs
+    unless t != .nat || Fren.Core.natPlaceAccepted .field do err span (Fren.Core.natPlaceMsg .field)
+    if let some p := t.abstractWithin? then err span (Fren.Core.abstractFieldMsg p false (!(t matches .abstract _)))
+    unless isPub do
+      modify fun s => { s with items := s.items.push ({ what := .record, path, level := s.levels.get .deadCode }, name.span) }
+    modify fun s => { s with
+      table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
+      newtypes := s.newtypes.insert path t }
   | .abstractType isPub name => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "abstract type" n)

@@ -1,0 +1,12 @@
+error[F0364]: `Point` is a record with named fields, not a newtype
+ --> test/cli/types/f0364_record_newtype.fren:4:38
+  |
+4 | comp c { pub out p: Point req r: p = Point(1, 2) }
+  |                                      ^^^^^ a record with named fields
+  |
+  = note: a record with named fields is built as `Point { x := e, ... }`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0364`.
+exit=2

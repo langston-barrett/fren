@@ -1,0 +1,4 @@
+-- A product of a newtype.
+pub struct Ms(Int)
+
+comp c { in t: Ms pub out d: Ms req r: d = t * Ms(2) }

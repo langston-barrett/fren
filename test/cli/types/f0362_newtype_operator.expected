@@ -1,0 +1,13 @@
+error[F0362]: newtype `Ms` has no operator `*`
+ --> test/cli/types/f0362_newtype_operator.fren:4:44
+  |
+4 | comp c { in t: Ms pub out d: Ms req r: d = t * Ms(2) }
+  |                                            ^^^^^^^^^ `*` of `Ms`
+  |
+  = note: a newtype of `Int` has `=`, `!=`, `<`, `<=`, `>`, `>=`, and `+` and `-` of two of them
+  = help: read its `Int` with `.0`, as in `x.0`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0362`.
+exit=2

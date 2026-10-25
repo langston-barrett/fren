@@ -141,7 +141,10 @@ def showModule (n : Name) : String :=
 
 /-- `a`, `b` and `c`. -/
 def showNameList (ns : Array Name) : String :=
-  match ns.toList.map (s!"`{·}`") with
+  -- A name of one component as written, so that a newtype's field `0` is
+  -- not quoted.
+  let text : Name → String | .str .anonymous s => s | n => n.toString
+  match ns.toList.map (s!"`{text ·}`") with
   | [] => "(none)"
   | [a] => a
   | l => ", ".intercalate l.dropLast ++ " and " ++ l.getLast!
@@ -1278,8 +1281,9 @@ def checkFieldUpdates (r : Name) (fields given : Array Name) : Except (Nat × Ms
 /-- A field read of something that is not a record with that field. -/
 def noFieldMsg (field : Name) (ty : String) (fields : Array Name) : Msg :=
   { code? := some "F0315"
-    headline := if fields.isEmpty then s!"`{ty}` is not a record, so it has no field `{field}`"
-      else s!"record `{ty}` has no field `{field}`"
+    -- `nameText`, so that the field `0` of a newtype is not quoted.
+    headline := if fields.isEmpty then s!"`{ty}` is not a record, so it has no field `{nameText field}`"
+      else s!"record `{ty}` has no field `{nameText field}`"
     label? := some "unknown field"
     notes := if fields.isEmpty then #["note: only records have fields"] else #[s!"note: the fields of `{ty}` are {showNameList fields}"]
     fixes := (similar field fields).toArray.map fun f => { msg := s!"a field with a similar name exists: `{f}`", replacement := f.toString } }

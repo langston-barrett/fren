@@ -38,6 +38,8 @@ open Fren.Core (CheckKind Verdict CheckResult)
 
 inductive GTy where
   | bool | int | enum | abs
+  /-- The newtype `W` of `Int`. -/
+  | wrap
   /-- Of the spec's element type. -/
   | set | rel | seq
   deriving BEq, Inhabited
@@ -76,7 +78,7 @@ def elemTy (useEnum : Bool) : GTy := if useEnum then .enum else .bool
 
 def tyName (elem : GTy) (t : GTy) : String :=
   let base : GTy → String
-    | .int => "Int" | .enum => "E" | .abs => "T" | _ => "Bool"
+    | .int => "Int" | .enum => "E" | .abs => "T" | .wrap => "W" | _ => "Bool"
   match t with
   | .set => s!"Set({base elem})"
   | .rel => s!"Rel({base elem}, {base elem})"
@@ -108,6 +110,18 @@ def intTerm (sc : Scope) : R String := do
   | 2 => return s!"2 * {← pick ns}"
   | 3 => return toString (← below 4)
   | _ => pick ns
+
+/-- A value of the newtype `W` of `Int`, of its variables, `W(e)`, or a
+sum or difference of two. -/
+def wrapTerm (sc : Scope) : R String := do
+  let ws := sc.of .wrap
+  if ws.isEmpty then return s!"W({← below 3})"
+  match ← below 5 with
+  | 0 => return s!"({← pick ws} + {← pick ws})"
+  | 1 => return s!"({← pick ws} - W(1))"
+  | 2 => return s!"W({← intTerm sc})"
+  | 3 => return s!"W({← below 3})"
+  | _ => pick ws
 
 /-- A value of the element type. -/
 def elemTerm (sc : Scope) : R String := do
@@ -196,6 +210,7 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
     unless (sc.of .set).isEmpty do kinds := kinds ++ #[6, 6]
     unless (sc.of .rel).isEmpty do kinds := kinds ++ #[7, 7]
     unless (sc.of .seq).isEmpty do kinds := kinds ++ #[8, 8]
+    unless (sc.of .wrap).isEmpty do kinds := kinds ++ #[9, 9]
     match ← pick kinds with
     | 1 =>
       -- A `match` on a `Bool`, with literal patterns.
@@ -233,6 +248,9 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
     | 6 => collectionAtom sc .set
     | 7 => collectionAtom sc .rel
     | 8 => collectionAtom sc .seq
+    | 9 =>
+      if ← chance 30 then return s!"{← pick (sc.of .wrap)}.0 {← pick #["=", "<", ">="]} {← intTerm sc}"
+      return s!"{← wrapTerm sc} {← pick #["=", "!=", "<", "<=", ">", ">="]} {← wrapTerm sc}"
     | _ => pick #["true", "false"]
   if depth == 0 then return ← atom
   match ← below 7 with
@@ -262,13 +280,15 @@ def varName (t : GTy) (isIn : Bool) (k : Nat) : String :=
   | .int, true => s!"n{k}" | .int, false => s!"k{k}"
   | .enum, true => s!"m{k}" | .enum, false => s!"e{k}"
   | .abs, _ => s!"t{k}"
+  | .wrap, true => s!"u{k}" | .wrap, false => s!"v{k}"
   | .set, _ => s!"s{k}" | .rel, _ => s!"rel{k}" | .seq, _ => s!"q{k}"
 
-def genComp (idx : Nat) (prev : Array GComp) (useEnum useAbs : Bool) (nVariants : Nat) (ordered : Bool)
+def genComp (idx : Nat) (prev : Array GComp) (useEnum useAbs useWrap : Bool) (nVariants : Nat) (ordered : Bool)
     (collections : Array GTy) : R GComp := do
+  let wraps := if useWrap then #[GTy.wrap] else #[]
   let tys := #[GTy.bool, .bool, .int] ++ (if useEnum then #[GTy.enum] else #[]) ++ (if useAbs then #[GTy.abs] else #[])
-    ++ collections
-  let outTys := #[GTy.bool, .int] ++ (if useEnum then #[GTy.enum] else #[])
+    ++ wraps ++ collections
+  let outTys := #[GTy.bool, .int] ++ (if useEnum then #[GTy.enum] else #[]) ++ wraps
   let mut vars : Array GVar := #[]
   for k in [0:(← below 3) + 1] do
     let t ← pick tys
@@ -296,6 +316,7 @@ def genComp (idx : Nat) (prev : Array GComp) (useEnum useAbs : Bool) (nVariants 
         | .int => if (insc.of .int).isEmpty || (← chance 30) then (toString <$> below 3) else pick (insc.of .int)
         | .enum => if (insc.of .enum).isEmpty || (← chance 30) then pure s!"E::V{← below nVariants}" else pick (insc.of .enum)
         | .abs => pick (insc.of .abs)
+        | .wrap => if (insc.of .wrap).isEmpty || (← chance 30) then pure s!"W({← below 3})" else pick (insc.of .wrap)
         | .set => setTerm insc
         | .rel => relTerm insc
         | .seq => seqTerm insc
@@ -315,6 +336,9 @@ def genComp (idx : Nat) (prev : Array GComp) (useEnum useAbs : Bool) (nVariants 
     if v.ty == .int then
       if v.isIn then assumes := assumes.push (s!"range_{v.name}", s!"0 <= {v.name} and {v.name} <= 2")
       else reqs := reqs.push (s!"range_{v.name}", s!"0 <= {v.name} and {v.name} <= 2")
+    if v.ty == .wrap then
+      if v.isIn then assumes := assumes.push (s!"range_{v.name}", s!"W(0) <= {v.name} <= W(2)")
+      else reqs := reqs.push (s!"range_{v.name}", s!"W(0) <= {v.name} <= W(2)")
     if v.ty == .seq then assumes := assumes.push (s!"range_{v.name}", s!"{v.name}.len <= 2")
   for k in [0:← below 2] do assumes := assumes.push (s!"as{k}", ← genBool inputs 1)
   for k in [0:(← below 3) + 1] do reqs := reqs.push (s!"r{k}", ← genConstraint all all)
@@ -330,6 +354,7 @@ structure GSpec where
 def genSpec : R GSpec := do
   let useEnum ← chance 60
   let useAbs ← chance 35
+  let useWrap ← chance 35
   let nVariants := (← below 2) + 2
   let ordered ← chance 50
   let mut collections := #[]
@@ -342,9 +367,10 @@ def genSpec : R GSpec := do
   if useEnum then
     out := out ++ s!"pub {if ordered then "ordered " else ""}enum E \{ {", ".intercalate ((List.range nVariants).map (s!"V{·}"))} }\n"
   if useAbs then out := out ++ "pub type T\npub fn p?(T)\n"
+  if useWrap then out := out ++ "pub struct W(Int)\n"
   let mut comps : Array GComp := #[]
   for i in [0:(← below 2) + 1] do
-    comps := comps.push (← genComp i comps useEnum useAbs nVariants ordered collections)
+    comps := comps.push (← genComp i comps useEnum useAbs useWrap nVariants ordered collections)
   for c in comps do
     out := out ++ s!"\npub comp {c.name} \{\n"
     for v in c.vars do
@@ -388,6 +414,8 @@ partial def domain (sp : Spec) (size : Nat) : VTy → Array Val
   | .nat => #[.int 0, .int 1, .int 2]
   -- The generator emits no strings.
   | .string => #[]
+  -- A newtype's values are its underlying type's.
+  | .newtype _ u => domain sp size u
   | .set t => subsets (domain sp size t)
   | .rel a b => subsets ((domain sp size a).flatMap fun x => (domain sp size b).map (.pair x ·))
   -- Up to two elements, as the `range_*` constraints bound them.

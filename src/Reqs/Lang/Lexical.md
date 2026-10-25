@@ -273,7 +273,10 @@ integer: after a base, it runs over that base's digits and `_`s, and
 otherwise over decimal digits and `_`s. So `0b12` is `0b1` then `2`, and
 `1_foo` starts with `1_`, which is not an integer literal. Fren has no
 scientific literals, so in `1.5` and `1e3` the number is `1`, where Lean
-would read on. `lang::integer_literal` states
+would read on. Just after the `.` of a field read, decimal digits are not
+a number but the name of a field, as Lean reads a field index, so `x.0.0`
+reads the field `0` of `x.0` (see [Newtypes](Expressions.md#newtypes)),
+and `x.0x1F` and `x.1_000` do not parse. `lang::integer_literal` states
 which lexemes are integer literals. Lean reads `0_1` as a number but
 cannot give its value, so it is not one.
 

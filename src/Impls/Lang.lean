@@ -266,8 +266,19 @@ def kindOf : Fren.Core.Ty → lang.ValueType
   | .enum _ => .EnumTy
   | .record _ => .RecordTy
   | .abstract _ => .AbstractTy
+  -- A newtype is a record (`Reqs/Lang/Items#newtypes`).
+  | .newtype _ _ => .RecordTy
 
 interp lang::kind := kindOf
+
+interp lang::newtype? := fun (t : Fren.Core.Ty) => t matches .newtype ..
+
+/-- The underlying type of a newtype, and any other type itself. -/
+def underOf : Fren.Core.Ty → Fren.Core.Ty
+  | .newtype _ u => u
+  | t => t
+
+interp lang::under := underOf
 
 -- For every two types, with the check that both front ends make wherever a
 -- type is declared (`Core.checkType`).
@@ -350,6 +361,36 @@ impl field_type: lang::field_type for (k : lang.ValueType) (a own s pay : Bool) 
 } by
   intro k a own s pay _
   cases a <;> cases own <;> cases s <;> cases pay <;> simp [fren_spec, Fren.Core.fieldTypeAccepted]
+
+-- For every newtype, with the check that both front ends use, and how
+-- both decide its boundedness.
+impl newtype: lang::newtype for (n : Nat) (f u : Bool) {
+  n_fields := n,
+  field_accepted? := f,
+  underlying_unbounded? := u,
+  accepted? := Fren.Core.newtypeAccepted n f,
+  unbounded? := Fren.Core.newtypeUnbounded u,
+} by
+  intro n f u _
+  simp [fren_spec, Fren.Core.newtypeAccepted, Fren.Core.newtypeUnbounded]
+  omega
+
+def toNewtypeOp : Fren.Core.NewtypeOp → lang.NewtypeOp
+  | .equality => .Equality
+  | .order => .Order
+  | .sum => .Sum
+  | .other => .Other
+
+-- For every operator and underlying type, with the check that both front
+-- ends use.
+impl newtype_operator: lang::newtype_operator for (op : Fren.Core.NewtypeOp) (u : Fren.Core.Ty) (o : Bool) {
+  op := toNewtypeOp op,
+  underlying := kindOf u,
+  ordered? := o && u matches .enum _,
+  accepted? := Fren.Core.newtypeOpAccepted op u o,
+} by
+  intro op u o _
+  cases op <;> cases u <;> cases o <;> simp [fren_spec, toNewtypeOp, kindOf, Fren.Core.newtypeOpAccepted]
 
 /-- The variants of `vs` for which `p` holds are all of them exactly when
 there are as many. -/

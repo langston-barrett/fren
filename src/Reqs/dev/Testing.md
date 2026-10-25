@@ -66,7 +66,8 @@
   check` with one computed by brute force from the evaluator. The specs stay
   in a fragment where brute force is exact: `Bool`s, enumerations,
   ordered or not, `Int`s that constraints named `range_*` bound to a few
-  values, abstract types,
+  values, and values of a [newtype](../Lang/Items.md#newtypes) of `Int`
+  that they bound so, abstract types,
   and functions from them to `Bool`s, sets and relations of an enumeration
   or of `Bool`, and sequences of one that `range_*` constraints bound to
   two elements, with instances, `det out`s, cover goals and global
@@ -99,7 +100,8 @@
   analyses that each front end implements on its own: constants, defined
   outputs, defined and uninterpreted functions, instances, `match`, string
   methods and `++`, products, orderings and `min` and `max` of an ordered
-  enumeration, and sets and relations with `card`, so as to reach `linear_product`, the [decidable core](../Lang/Decidability.md)
+  enumeration, a newtype of `Int` and its operators, and sets and
+  relations with `card`, so as to reach `linear_product`, the [decidable core](../Lang/Decidability.md)
   and the lints. Only what may legitimately differ is not compared:
   - A parse error stops the `fren` command, while Lean recovers at the
     next command: Lean must then report a parse error in the same item, on

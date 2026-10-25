@@ -42,9 +42,22 @@ def checkNumber (op : String) (found : Ty) : Except Msg Unit :=
   if found == .int || found == .nat then pure ()
   else throw (typeMismatchMsg .int found (some s!"note: the operands of `{op}` are `Int`s or `Nat`s"))
 
+/-- Checks the operator `op`, prefix if `pre`, of operands of the types `tx`
+and `ty`, if one is a newtype, whose underlying type is an ordered
+enumeration if `ordered`: that newtype has `op`, and both are of it
+(`lang::newtype_operator`). Both front ends check an operator's operands
+with this before checking them against the operator's own types, so a
+newtype's error is reported as its own. -/
+def checkNewtypeOperator (op : String) (pre : Bool) (tx ty : Ty) (ordered := false) : Except Msg Unit := do
+  let some (p, u) := newtypeOf? tx ty | return
+  unless newtypeOpAccepted (.ofOp op pre) u ordered do throw (newtypeOpMsg op p u ordered)
+  unless tx == ty do throw (newtypeMixMsg op tx ty p u)
+
 /-- Checks that the two sides of `op`, `=` or `!=`, of types `tx` and `ty`,
-have one type, after widening. -/
+have one type, after widening: of a newtype, as `checkNewtypeOperator`
+does. -/
 def checkComparable (op : String) (tx ty : Ty) : Except Msg Unit := do
+  checkNewtypeOperator op false tx ty
   if tx.widens ty || ty.widens tx then return
   let hint := match tx, ty with
     | .enum p, .int | .int, .enum p => #[s!"note: enums are not numbers", s!"help: compare with a variant, e.g. `{p.getString!}::Variant`"]

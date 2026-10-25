@@ -106,6 +106,10 @@ arms whose pattern matches its scrutinee. See
 **Member.** A declaration inside a component: an input, output, constraint
 or instance.
 
+**Newtype.** A record with exactly one field, which has no name, declared
+as `struct Ms(Int)`: a type distinct from every other, with the values of
+its underlying type. See [Items](Lang/Items.md#newtypes).
+
 **Ordered enumeration.** An enumeration without payloads, declared with
 `ordered enum`, whose variants are ordered as they are declared, so that
 `<`, `<=`, `>`, `>=`, `min` and `max` apply to its values. See
@@ -165,6 +169,9 @@ applies. See [Components](Lang/Components.md#triggers).
 
 **Vacuous.** Of a constraint: holding only because its trigger can never
 hold. See [Checks](Check.md#vacuity).
+
+**Underlying type.** The type of a newtype's field, whose values the
+newtype has. See [Items](Lang/Items.md#newtypes).
 
 **Unbounded type.** A type with arbitrarily large values: a recursive
 enumeration, or one with a field or payload of an unbounded type. See

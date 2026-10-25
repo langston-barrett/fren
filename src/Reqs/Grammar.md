@@ -11,6 +11,7 @@
 | `a*`, `a+` | zero or more, one or more `a` |
 | `( ... )` | grouping |
 | `IDENT`, `INT`, `STRING` | an identifier, an integer literal, a string literal, raw or not (see [Lexical structure](Lang/Lexical.md)) |
+| `DIGITS` | decimal digits, which name a field after `.`, as in `x.0` (see [Newtypes](Lang/Expressions.md#newtypes)) |
 | `DECL` | an identifier that declares a name, which ends in `!` if it shadows another (see [Shadowing](Lang/Components.md#shadowing)); no other `IDENT` ends in `!` |
 | `TERM`, `TACTICS` | a Lean term, a Lean tactic sequence |
 
@@ -26,6 +27,7 @@ use            := "use" path ["::*" | "::{" path ("," path)* [","] "}"]
 enumeration    := ["pub"] ["ordered"] "enum" IDENT "{" variant ("," variant)* [","] "}"
 variant        := IDENT ["(" type ("," type)* ")"]
 record         := ["pub"] "struct" IDENT "{" field ("," field)* [","] "}"
+                | ["pub"] "struct" IDENT "(" [type ("," type)*] ")"
 field          := IDENT [":" type]
 abstract-type  := ["pub"] "type" IDENT
 function       := ["pub"] "fn" IDENT "(" type ("," type)* ")" [":" type]
@@ -97,6 +99,7 @@ atom           := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | 
                 | path "(" expr ("," expr)* ")"
                 | path "{" field-init ("," field-init)* [","] "}"
                 | atom "." IDENT ["(" expr ("," expr)* ")"]
+                | atom "." DIGITS
                 | IDENT ("." IDENT)+ "(" expr ("," expr)* ")"
                 | "match" atom "{" arm ("," arm)* [","] "}"
                 | "{" [element ("," element)* [","]] "}"

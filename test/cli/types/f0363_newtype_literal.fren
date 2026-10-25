@@ -1,0 +1,4 @@
+-- A newtype compared with a literal, which is an `Int`.
+pub struct Ms(Int)
+
+comp c { in t: Ms pub out late? req r: late? iff t > 100 }

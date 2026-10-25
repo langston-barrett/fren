@@ -1,0 +1,101 @@
+-- Static rules for newtypes, `struct Ms(Int)`.
+-- fren-covers: lang::operator_type
+set_option fren.lint.dead_code "allow"
+
+pub struct Ms(Int)
+pub struct Bytes(Int)
+pub struct Name(String)
+pub struct Flag(Bool)
+pub struct Point { x: Int, y: Int }
+type Id
+
+-- Exactly one field, of a type that a record's field may have.
+struct Pair(Int, Int)  --~ error: newtype `Pair` has 2 fields, but a newtype has exactly one
+struct Empty()  --~ error: newtype `Empty` has 0 fields, but a newtype has exactly one
+struct Abstract(Id)  --~ error: a field cannot have the abstract type `Id`
+struct Ids(Set(Id))  --~ error: a field's type cannot have the abstract type `Id` within it
+struct Count(Nat)  --~ error: `Nat` cannot be the type of a field
+struct Loop(Loop)  --~ error: record `Loop` has a field of its own type
+struct Sets(Set(Sets))  --~ error: `Sets` cannot be an element type within itself
+
+-- The operators that each newtype has.
+comp product { in a: Ms in b: Ms pub out c: Ms req r: c = a * Ms(2) }
+--~^ error: newtype `Ms` has no operator `*`
+comp negation { in a: Ms pub out c: Int req r: c = -a }  --~ error: newtype `Ms` has no operator `-`
+comp division { in a: Ms pub out c: Int req r: c = a div 2 }  --~ error: newtype `Ms` has no operator `div`
+comp remainder { in a: Ms pub out c: Int req r: c = a mod 2 }  --~ error: newtype `Ms` has no operator `mod`
+comp string_sum { in a: Name in b: Name pub out c? req r: c? iff a + b = a }
+--~^ error: newtype `Name` has no operator `+`
+comp string_concat { in a: Name in b: Name pub out c? req r: c? iff a ++ b = a }
+--~^ error: newtype `Name` has no operator `++`
+comp bool_order { in a: Flag in b: Flag pub out c? req r: c? iff a < b }
+--~^ error: newtype `Flag` has no operator `<`
+enum Shade { Light, Dark }
+struct Tone(Shade)
+comp enum_order { in a: Tone in b: Tone pub out c? req r: c? iff a < b }
+--~^ error: newtype `Tone` has no operator `<`
+comp bool_chain { in a: Flag in b: Flag pub out c? req r: c? iff a <= b <= a }
+--~^ error: newtype `Flag` has no operator `<=`
+
+-- Two newtypes, or a newtype and its underlying type, never mix.
+comp mixed { in a: Ms in b: Bytes pub out c? req r: c? iff a < b }  --~ error: cannot compare `Ms` with `Bytes`
+comp mixed_equal { in a: Ms in b: Bytes pub out c? req r: c? iff a = b }  --~ error: cannot compare `Ms` with `Bytes`
+comp literal { in a: Ms pub out c? req r: c? iff a < 5 }  --~ error: cannot compare `Ms` with `Int`
+comp literal_left { in a: Ms pub out c? req r: c? iff 5 <= a }  --~ error: cannot compare `Int` with `Ms`
+comp literal_equal { in a: Ms pub out c? req r: c? iff a != 5 }  --~ error: cannot compare `Ms` with `Int`
+comp mixed_sum { in a: Ms in b: Bytes pub out c: Ms req r: c = a + b }  --~ error: cannot add `Bytes` to `Ms`
+comp int_sum { in a: Ms pub out c: Ms req r: c = a - 1 }  --~ error: cannot subtract `Int` from `Ms`
+comp int_left { in a: Ms pub out c: Int req r: c = 1 + a }  --~ error: cannot add `Ms` to `Int`
+comp mixed_chain { in a: Ms in b: Bytes pub out c? req r: c? iff Ms(0) <= a < b }
+--~^ error: cannot compare `Ms` with `Bytes`
+comp names_mixed { in a: Name pub out c? req r: c? iff a < "m" }  --~ error: cannot compare `Name` with `String`
+
+-- Built with `Ms(e)` from a value of the underlying type, and read with `.0`.
+comp wrong_value { pub out c: Ms req r: c = Ms(true) }  --~ error: type mismatch: expected `Int`, found `Bool`
+comp other_newtype { in b: Bytes pub out c: Ms req r: c = Ms(b) }  --~ error: type mismatch: expected `Int`, found `Bytes`
+comp two_values { pub out c: Ms req r: c = Ms(1, 2) }  --~ error: `Ms` takes 1 value, but 2 were given
+comp as_record { pub out c: Ms req r: c = Ms { x := 1 } }  --~ error: `Ms` is a newtype, not a record with named fields
+comp as_newtype { pub out p: Point req r: p = Point(1, 2) }  --~ error: `Point` is a record with named fields, not a newtype
+comp other_field { in a: Ms pub out c: Int req r: c = a.1 }  --~ error: record `Ms` has no field `1`
+comp named_field { in a: Ms pub out c: Int req r: c = a.x }  --~ error: record `Ms` has no field `x`
+comp record_field { in p: Point pub out c: Int req r: c = p.0 }  --~ error: record `Point` has no field `0`
+comp int_field { in i: Int pub out c: Int req r: c = i.0 }  --~ error: `Int` is not a record, so it has no field `0`
+comp methods { in a: Name pub out c: Int req r: c = a.len }  --~ error: record `Name` has no field `len`
+comp update { in a: Ms pub out c: Ms req r: c = { a with x := 1 } }  --~ error: cannot update the fields of `Ms`
+comp unwrapped { in a: Ms pub out c: Int req r: c = a }  --~ error: cannot compare `Int` with `Ms`
+comp bare { pub out c: Ms req r: c = Ms }  --~ error: `Ms` is a record
+
+-- A newtype where another type is declared, in functions, records,
+-- variants, instances, refinements, definitions and constants.
+fn f(Ms): Int
+fn g(m: Ms): Ms := Bytes(m.0)  --~ error: type mismatch: expected `Ms`, found `Bytes`
+enum Event { Took(Ms) }
+const LIMIT: Ms := 5  --~ error: type mismatch: expected `Ms`, found `Int`
+comp argument { in b: Bytes pub out c: Int req r: c = f(b) }  --~ error: type mismatch: expected `Ms`, found `Bytes`
+comp payload { in b: Bytes pub out e: Event req r: e = Event::Took(b) }
+--~^ error: type mismatch: expected `Ms`, found `Bytes`
+struct Job { took: Ms }
+comp field { in b: Bytes pub out j: Job req r: j = Job { took := b } }
+--~^ error: type mismatch: expected `Ms`, found `Bytes`
+comp updated { in j: Job in b: Bytes pub out k: Job req r: k = { j with took := b } }
+--~^ error: type mismatch: expected `Ms`, found `Bytes`
+comp definition { in b: Bytes pub out d: Ms := b }  --~ error: type mismatch: expected `Ms`, found `Bytes`
+comp held { in t: Ms pub out d: Ms := t }
+comp binding { in b: Bytes inst h: held { t := b } }  --~ error: type mismatch: expected `Ms`, found `Bytes`
+comp seconds { in s: Int pub out d: Int req r: d = s }
+refine counted: seconds refines held { t := s, d := Ms(d) }  --~ error: type mismatch: expected `Ms`, found `Int`
+comp branches { in a: Ms in b: Bytes in c? pub out d? req r: d? iff (if c? then a else b) = a }
+--~^ error: the branches of `if` have different types: `Ms` and `Bytes`
+comp members { in a: Ms in b: Bytes pub out d? req r: d? iff {a, b} = {a} }
+--~^ error: the members of a set have different types: `Ms` and `Bytes`
+comp elements { in a: Ms in b: Bytes pub out d? req r: d? iff [a, b] = [a] }
+--~^ error: the elements of a sequence have different types: `Ms` and `Bytes`
+comp member { in a: Ms in s: Set(Bytes) pub out d? req r: d? iff a in s }
+--~^ error: `in` needs a `Set(Ms)` on its right, found `Set(Bytes)`
+
+-- A newtype is unbounded exactly when its underlying type is.
+struct Tags(Set(Int))
+comp unbounded { pub out t: Tags }  --~ error: output `t` has the unbounded type `Tags`
+comp defined { in s: Set(Int) pub out t: Tags := Tags(s) }
+
+--@ exit: 2

@@ -39,6 +39,14 @@ local macro_rules | `(tactic| get_elem_tactic_extensible) => `(tactic| exact Tru
 /-- The identifiers of a `Lang.fren_path`. -/
 def pathSegs (p : Syntax) : Array Syntax := p[0].getSepArgs
 
+/-- The name of the field that `.x` reads, at `s` in a `fieldExpr`: an
+identifier, or digits, as the field `0` of a newtype is. -/
+partial def fieldName (s : Syntax) : Name :=
+  if s.isIdent then s.getId
+  else if s.isOfKind fieldIdxKind then Name.mkSimple s[0].getAtomVal
+  else if s.getNumArgs == 1 then fieldName s[0]
+  else .anonymous
+
 /-- Checks the name of a module, enum, variant or comp. -/
 def checkItemName (what : String) (id : Syntax) : CommandElabM Name := do
   let n ← segName id
@@ -194,6 +202,7 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
   match ← resolveWritten modName segs with
   | .item { kind := .enumItem, path, .. } => return Lean.mkConst (← enumDecl path)
   | .item { kind := .recordItem, path, .. } =>
+    if let some n := (← getState).newtypes.get? path then return Lean.mkConst n.decl
     let some r := (← getState).records.get? path | throwError "internal error: unknown record `{path}`"
     return Lean.mkConst r.decl
   | .item { kind := .typeItem, path, .. } => return Lean.mkConst (placeholderName path)
@@ -402,6 +411,32 @@ partial def typeSyntax (t : Expr) : Term :=
   record (.recordInfo { path, decl, fields, unbounded })
   unless isPub do recordItem .record path nameStx
 
+@[command_elab Lang.newtypeCmd] def elabNewtype : CommandElab := fun stx => do
+  checkLexemes stx
+  checkParsed stx
+  let modName := (← getLocal).currentModule
+  let isPub := !stx[0].isNone
+  let nameStx := stx[2]
+  let n ← checkItemName "record" nameStx
+  checkFresh modName n nameStx
+  lintName .record n nameStx
+  let path := modName ++ n
+  let decl := (← getCurrNamespace) ++ path
+  -- Exactly one field, whose type is accepted as a record's field's
+  -- (`lang::newtype`).
+  let tys := stx[4].getSepArgs
+  let some ty := tys[0]? | throwErrorAt nameStx (Core.newtypeFieldsMsg path 0).text
+  unless Core.newtypeAccepted tys.size true do throwErrorAt nameStx (Core.newtypeFieldsMsg path tys.size).text
+  let under ← fieldType modName ty (some decl) false n
+  let unbounded := Core.newtypeUnbounded ((← getState).unbounded under)
+  -- One field, `«0»`, so that `x.0` in Fren is `x.«0»` in Lean.
+  elabCommand (← `(structure $(mkIdentFrom nameStx path):ident where
+    $(mkIdent `mk):ident :: $(mkIdent (Name.mkSimple "0")):ident : $(typeSyntax under)
+    deriving DecidableEq, Repr, Inhabited))
+  record (.item { item := { kind := .recordItem, path, isPub, owner := modName }, ref := nameStx })
+  record (.newtypeInfo { path, decl, under, unbounded })
+  unless isPub do recordItem .record path nameStx
+
 /-! ## Comps -/
 
 /-- The placeholder of the abstract type or function at `path`. -/
@@ -493,11 +528,15 @@ def ExprCtx.at (cx : ExprCtx) (b : MatchBinder) : ExprCtx := { cx with binders :
 def ExprCtx.shadowing (cx : ExprCtx) : Array Name :=
   (cx.vars.filter (·.name.isAtomic) |>.map (·.name)) ++ cx.binders.map (·.name)
 
-/-- Whether the path `p`, applied, builds a variant rather than applying a
-function. -/
-def isVariant (cx : ExprCtx) (p : Syntax) : TermElabM Bool := do
+/-- Whether the path `p`, applied, builds a variant or a newtype rather
+than applying a function. -/
+def isConstruction (cx : ExprCtx) (p : Syntax) : TermElabM Bool := do
   let names ← segNames (pathSegs p)
-  return (← getState).table.resolvePath cx.modName names cx.shadowing matches .ok (.variant ..)
+  let s ← getState
+  match s.table.resolvePath cx.modName names cx.shadowing with
+  | .ok (.variant ..) => return true
+  | .ok (.item { kind := .recordItem, path, .. }) => return s.newtypes.contains path
+  | _ => return false
 
 /-- The defined function that the path `p`, applied, applies, if any. -/
 def definedFn? (cx : ExprCtx) (p : Syntax) : TermElabM (Option DefinedInfo) := do
@@ -536,6 +575,7 @@ partial def typeName (t : Expr) : TermElabM String := do
   let some d := t.constName? | return toString t
   if let some e := s.enumOfDecl? d then return Core.showPath e.path
   if let some r := s.recordOfDecl? d then return Core.showPath r.path
+  if let some n := s.newtypeOfDecl? d then return Core.showPath n.path
   if let some a := s.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == d then some a else none then
     return Core.showPath a.path
   return toString d
@@ -559,9 +599,21 @@ partial def coreTy? (t : Expr) : TermElabM (Option Core.Ty) := do
   let some d := t.constName? | return none
   if let some e := s.enumOfDecl? d then return some (.enum e.path)
   if let some r := s.recordOfDecl? d then return some (.record r.path)
+  if let some n := s.newtypeOfDecl? d then return (← coreTy? n.under).map (.newtype n.path)
   if let some a := s.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == d then some a else none then
     return some (.abstract a.path)
   return none
+
+/-- The operator `op`, prefix if `pre`, at the current syntax, of operands
+of the Fren types `tx?` and `ty?`, if they have them: if one is a newtype,
+it must have `op`, and both must be of it, as the `fren` command checks
+(`Core.checkNewtypeOperator`). -/
+def checkNewtypeOp (op : String) (tx? ty? : Option Core.Ty) (pre := false) : TermElabM Unit := do
+  let (some tx, some ty) := (tx?, ty?) | return
+  let ordered := match Core.newtypeOf? tx ty with
+    | some (_, .enum p) => ((← getState).enums.get? p).any (·.ordered)
+    | _ => false
+  liftMsg (← getRef) (Core.checkNewtypeOperator op pre tx ty ordered)
 
 /-- The Lean type of the Fren expression `t`, elaborated with the comp's
 variables in scope. -/
@@ -652,6 +704,11 @@ partial def valuesOf? (ty : Expr) (cap : Nat := 64) : TermElabM (Option (Array T
     else if let some r := s.recordOfDecl? d then
       if r.unbounded then return none
       pure #[(recordCtor r.decl, r.fields.map (·.2))]
+    -- A newtype's values are its underlying type's, as the `fren` command
+    -- has them.
+    else if let some n := s.newtypeOfDecl? d then
+      if n.unbounded then return none
+      pure #[(n.ctor, #[n.under])]
     else return none
   let mut out := #[]
   for (c, ts) in ctors do
@@ -804,6 +861,13 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
 /-- Reads the field `f` of the term `t` of Lean type `ty`; of a `String` or
 a set, calls the method `f`, without arguments. -/
 def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term × Expr) := do
+  -- The field `0` of a newtype (`Reqs/Lang/Expressions#newtypes`).
+  if let some n := (← getState).newtypeOf? ty then
+    unless f == Name.mkSimple "0" do throwErrorAt ref (Core.noFieldMsg f (Core.showPath n.path) #[Name.mkSimple "0"]).text
+    return (← `($(mkCIdentFrom ref n.field) $t), n.under)
+  -- A field named by digits is no method's name.
+  if Core.positionalField f && (ty.constName?.bind (← getState).recordOfDecl?).isNone then
+    throwErrorAt ref (Core.noFieldMsg f (← typeName ty) #[]).text
   -- For `invalid_upcast_comparisons`, at the end of the expression.
   if (ty.isConstOf ``Int || ty.isConstOf ``Nat) && f == `abs then
     modifyLocal fun l => { l with absEnds := l.absEnds.push ref.getTailPos? }
@@ -1000,7 +1064,7 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
   -- A cardinality operator has a fixed meaning, as an operator does.
   if (cardinalityApp? e).isSome then return ← parts .compound e[2].getSepArgs
   if e.isOfKind ``Lang.appExpr then
-    let k : Core.MentionKind ← if ← isVariant cx e[0] then pure .construction
+    let k : Core.MentionKind ← if ← isConstruction cx e[0] then pure .construction
       else if (← definedFn? cx e[0]).isSome then pure .defined else pure .uninterpreted
     parts k e[2].getSepArgs
   else if e.isOfKind ``Lang.recordExpr then
@@ -1044,7 +1108,7 @@ def mentionsAny (cx : ExprCtx) (e : Syntax) : TermElabM Bool := return (← shap
 partial def applications (cx : ExprCtx) (e : Syntax) : TermElabM (Array Syntax) := do
   let inner ← e.getArgs.foldlM (init := #[]) fun acc a => return acc ++ (← applications cx a)
   if e.isOfKind ``Lang.appExpr && (methodApp? cx e).isNone && (cardinalityApp? e).isNone then
-    if !(← isVariant cx e[0]) && (← definedFn? cx e[0]).isNone then return #[e] ++ inner
+    if !(← isConstruction cx e[0]) && (← definedFn? cx e[0]).isNone then return #[e] ++ inner
   return inner
 
 /-- Whether the Lean type of a Fren type has infinitely many values
@@ -1058,6 +1122,8 @@ partial def infiniteType (ty : Expr) : TermElabM Bool := do
   let some d := ty.constName? | return true
   if let some e := s.enumOfDecl? d then return e.unbounded || (← e.payloads.anyM (·.anyM infiniteType))
   if let some r := s.recordOfDecl? d then return r.unbounded || (← r.fields.anyM (infiniteType ·.2))
+  -- A newtype has its underlying type's values, as the `fren` command has it.
+  if let some n := s.newtypeOfDecl? d then return n.unbounded || (← infiniteType n.under)
   return true
 
 /-- Whether `e` mentions an output of an infinite type, directly, through a
@@ -1184,11 +1250,12 @@ def splitDotted? (e : Syntax) : Option Syntax := do
 def fieldTerm (cx : ExprCtx) (e : Syntax) (t : Term) : TermElabM Term := do
   let ty ← typeOf t
   if ty.isConstOf ``String then checkCore cx e .stringAtom true true #[e[0]]
-  let r ← readField e[2] t ty e[2].getId
-  if let (true, some m) := (ty.isAppOfArity ``Fren.Seq 1, Core.Method.ofName? e[2].getId.toString) then
+  let f := fieldName e[2]
+  let r ← readField e[2] t ty f
+  if let (true, some m) := (ty.isAppOfArity ``Fren.Seq 1, Core.Method.ofName? f.toString) then
     checkCore cx e m.seqConstruct true true #[e[0]] (← isConstant cx e[0])
-  checkRelational cx e ty e[2].getId.toString #[e[0]]
-  checkRelationalCard cx e ty e[2].getId.toString e[0]
+  checkRelational cx e ty f.toString #[e[0]]
+  checkRelationalCard cx e ty f.toString e[0]
   return r.1
 
 /-- Whether `e` is a `++`, which is reported as one construct. -/
@@ -1385,6 +1452,7 @@ the type each is expected to have. -/
 def recordTerm (go : Option Core.Ty → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   let r ← resolveWritten cx.modName (pathSegs e[0]) cx.shadowing cx.noteIndexes
   let .item { kind := .recordItem, path, .. } := r | throwErrorAt e[0] (Core.wrongKindMsg "a record" r).text
+  if (← getState).newtypes.contains path then throwErrorAt e[0] (Core.constructionMsg path true).text
   let some info := (← getState).records.get? path | throwError "internal error: unknown record `{path}`"
   let given := e[2].getSepArgs
   match Core.checkFieldInits path (info.fields.map (·.1)) (given.map (·[0].getId)) with
@@ -2071,7 +2139,7 @@ def lintDuplicates (e : Syntax) (elems : Array Syntax) : TermElabM Unit := do
 /-- The receiver of `e` and the name it reads, if it reads a field or calls a
 method without arguments. -/
 def lastName? (e : Syntax) : TermElabM (Option (Syntax × String)) := do
-  if e.isOfKind ``Lang.fieldExpr then return some (e[0], e[2].getId.toString)
+  if e.isOfKind ``Lang.fieldExpr then return some (e[0], (fieldName e[2]).toString)
   let p := if e.getNumArgs == 1 then e[0] else e
   unless p.isOfKind ``Lang.fren_path && (pathSegs p).size == 1 do return none
   let .str pre m := (pathSegs p)[0]!.getId | return none
@@ -2173,15 +2241,28 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
       checkCore cx e .stringCompare true (ca || cb || (isVariable cx a && isVariable cx b)) #[] (ca && cb)
     return ← if op == "=" then `($x = $y) else `($x ≠ $y)
   -- An ordering compares `Int`s, `Nat`s, `String`s or the values of an
-  -- ordered enumeration, which the left operand gives, as the `fren` command
-  -- checks (`lang::operator_type`).
+  -- ordered enumeration, which the left operand gives, or two values of one
+  -- newtype of such a type, on its field, as the `fren` command checks
+  -- (`lang::operator_type`, `lang::newtype_operator`).
   let x ← toTerm cx a
-  let info? := (← typeOf x).constName?.bind (← getState).enumOfDecl?
-  let operandTy : Core.Ty ← match ← frenTypeOf? x with
-    | some tx => liftMsg a (Core.orderingType op tx (info?.any (·.ordered)))
-    | none => pure .int
-  let y ← toTerm cx b
-  checkTermType b y operandTy (Core.opNote op operandTy)
+  let x ← toTerm cx a
+  let tx? ← frenTypeOf? x
+  let st ← getState
+  let (x, y, operandTy, info?) ← if let some (.newtype p u) := tx? then do
+      let y ← toTerm cx b
+      checkNewtypeOp op tx? (← frenTypeOf? y)
+      let n := st.newtypes.get! p
+      let (fx, fy) := (← `($(mkCIdent n.field) $x), ← `($(mkCIdent n.field) $y))
+      pure (fx, fy, u, n.under.constName?.bind st.enumOfDecl?)
+    else do
+      let info? := (← typeOf x).constName?.bind st.enumOfDecl?
+      let operandTy : Core.Ty ← match tx? with
+        | some tx => liftMsg a (Core.orderingType op tx (info?.any (·.ordered)))
+        | none => pure .int
+      let y ← toTerm cx b
+      checkNewtypeOp op tx? (← frenTypeOf? y)
+      checkTermType b y operandTy (Core.opNote op operandTy)
+      pure (x, y, operandTy, info?)
   -- An ordered enumeration's values compare by their positions.
   if let (.enum _, some info) := (operandTy, info?) then
     let (i, j) := (← ordinalTerm info x, ← ordinalTerm info y)
@@ -2205,24 +2286,40 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let names := ops.map (·.getAtomVal.trimAscii.toString)
   if let .error (k, msg) := Core.checkChain names then throwErrorAt ops[k]! msg.text
   let mut x ← toTerm cx xs[0]!
-  -- An `Int`, a `Nat`, widened, a `String`, or an ordered enumeration, and
-  -- every operand the first's type, as the `fren` command checks
-  -- (`lang::operator_type`).
-  let info? := (← typeOf x).constName?.bind (← getState).enumOfDecl?
-  let t0? ← match ← frenTypeOf? x with
-    | some tx => some <$> liftMsg xs[0]! (Core.orderingType names[0]! tx (info?.any (·.ordered)))
+  -- An `Int`, a `Nat`, widened, a `String`, or an ordered enumeration, or a
+  -- newtype of one, on its field, and every operand the first's type, as
+  -- the `fren` command checks (`lang::operator_type`, `lang::newtype_operator`).
+  let tx0? ← frenTypeOf? x
+  let st ← getState
+  let nt := match tx0? with
+    | some (.newtype p _) => st.newtypes.get? p
+    | _ => none
+  if nt.isSome then withRef (mkNullNode #[xs[0]!, ops[0]!, xs[1]!]) (checkNewtypeOp names[0]! tx0? tx0?)
+  let underExpr ← match nt with
+    | some n => pure n.under
+    | none => typeOf x
+  let info? := underExpr.constName?.bind st.enumOfDecl?
+  let u? ← match tx0?.map fun | .newtype _ u => u | t => t with
+    | some u => some <$> liftMsg xs[0]! (Core.orderingType names[0]! u (info?.any (·.ordered)))
     | none => pure none
-  let string := (← typeOf x).isConstOf ``String
+  let t0? := if nt.isSome then tx0? else u?
+  let string := underExpr.isConstOf ``String
   -- An ordered enumeration's values compare by their positions.
-  let ordinal := if t0? matches some (.enum _) then info? else none
+  let ordinal := if u? matches some (.enum _) then info? else none
   let pos (t : Term) : TermElabM Term := match ordinal with | some info => ordinalTerm info t | none => pure t
+  let field (t : Term) : TermElabM Term := match nt with
+    | some n => `($(mkCIdent n.field) $t)
+    | none => pure t
+  x ← field x
   let mut links := #[]
   for op in names, a in xs, b in xs.extract 1, opStx in ops do
     let y ← toTerm { cx with guards := cx.guards ++ links } b
-    if let some t0 := t0? then checkTermType b y t0 (Core.opNote op t0)
     -- A node's position is its first token's, and its tail its last's, so
     -- this one spans the comparison, from `a` to `b`, for its messages.
     let link := mkNullNode #[a, opStx, b]
+    withRef link (checkNewtypeOp op t0? (← frenTypeOf? y))
+    if let some t0 := t0? then checkTermType b y t0 (Core.opNote op t0)
+    let y ← field y
     if string then
       let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
       checkCore cx link .stringCompare true (ca || cb) #[a, b] (ca && cb)
@@ -2256,6 +2353,9 @@ def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
       pure t?
     else pure expected?
   let x ← toTerm { cx with concatOk := true, emptyOk := Core.Position.shared.checked cx.emptyOk (synthesizes b), expected? } a
+  unless (← getState).newtypes.isEmpty || !synthesizes a do
+    let tx? ← frenTypeOf? x
+    checkNewtypeOp "++" tx? tx?
   -- Sequences: outside the core, unless constant.
   if (← typeOf x).isAppOfArity ``Fren.Seq 1 then
     let y ← toTerm { cx with emptyOk := Core.Position.shared.checked cx.emptyOk (synthesizes a), expected? := ← frenTypeOf? x } b
@@ -2317,6 +2417,25 @@ def pairOrTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     return ← `((($x, $y) : $(typeSyntax (← typeOf x)) × $(typeSyntax (← typeOf y))))
   toTerm cx e
 
+open Lang in
+/-- Checks that the members `xs` of a set literal (or, if `seq`, the
+elements of a sequence literal), written `elems`, have the first's type, if
+a newtype is one of them, with the `fren` command's message: Lean's reports
+other mismatches. -/
+def checkNewtypeMembers (seq : Bool) (elems : Array Syntax) (xs : Array Term) : TermElabM Unit := do
+  let s ← getState
+  if s.newtypes.isEmpty then return
+  let typed ← (elems.zip xs).filterMapM fun (e, x) => do
+    if !synthesizes e || e.isOfKind ``Lang.pairExpr then return none
+    return some (e, ← typeOf x)
+  let some (_, t0) := typed[0]? | return
+  unless typed.any fun (_, t) => (s.newtypeOf? t).isSome do return
+  for (e, t) in typed do
+    unless ← isDefEq t t0 do
+      let name ← typeName t0
+      let lit := if seq then s!"Seq({name})" else s!"Set({name})"
+      throwErrorAt e (Core.membersMsg seq (← typeName t0) (← typeName t) lit).text
+
 /-- `{a, b}`, or `{}` where `emptyOk` says that something gives it a type. -/
 def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emptyOk : Bool) (e : Syntax) :
     TermElabM Term := withRef e do
@@ -2334,6 +2453,7 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- A member is never a `Nat` (`lang::nat_place`).
   let xs ← elems.mapIdxM fun k x => do
     widenTerm (← pairOrTerm toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) } x)
+  checkNewtypeMembers false elems xs
   `(($(← finSetLit xs) : Fren.FinSet _))
 
 /-- `x in s`, `s subset t`, `s union t`, `s inter t` and `s minus t`. -/
@@ -2546,6 +2666,7 @@ def seqLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- An element is never a `Nat` (`lang::nat_place`).
   let xs ← elems.mapIdxM fun k x => do
     widenTerm (← toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) } x)
+  checkNewtypeMembers true elems xs
   let mut t ← `(Fren.Seq.unit $(xs.back!))
   for x in xs.pop.reverse do t ← `(Fren.Seq.unit $x ++ $t)
   return t
@@ -2595,7 +2716,7 @@ partial def intConstValue? (cx : ExprCtx) (e : Syntax) : TermElabM (Option Int) 
   if e.isOfKind ``Lang.methodExpr then
     let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
     return ← method e[0] (if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString) e[4].getSepArgs
-  if e.isOfKind ``Lang.fieldExpr then return ← method e[0] e[2].getId.toString #[]
+  if e.isOfKind ``Lang.fieldExpr then return ← method e[0] (fieldName e[2]).toString #[]
   match e with
   | `(fren_expr| $n:num) => return some n.getNat
   | `(fren_expr| -$a) => return (← intConstValue? cx a).map (- ·)
@@ -2649,6 +2770,9 @@ def divTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e :
   -- Each operand is checked in order, as the `fren` command checks it
   -- (`lang::operator_type`).
   let x ← toTerm { cx with natOk } e[0]
+  unless (← getState).newtypes.isEmpty do
+    let tx? ← frenTypeOf? x
+    checkNewtypeOp op tx? tx?
   checkNumberTerm e[0] x op
   checkTermType e[2] (← toTerm cx e[2]) .int (Core.opNote op .int)
   let (form, value, c) ← divisorForm cx e[2]
@@ -2772,6 +2896,17 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   if let some c := cardinalityApp? e then return ← cardinalityTerm toTerm cx c args.getElems
   -- A variable shadows a function, as it does any other item.
   let r ← resolveWritten cx.modName (pathSegs p) cx.shadowing cx.noteIndexes
+  if let .item { kind := .recordItem, path, .. } := r then
+    -- A newtype, built from its value (`Reqs/Lang/Expressions#newtypes`).
+    let some n := (← getState).newtypes.get? path | throwErrorAt p (Core.constructionMsg path false).text
+    unless args.getElems.size == 1 do throwError (Core.arityMsg path 1 args.getElems.size "value").text
+    let a := args.getElems[0]!
+    let t ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := false } a
+    -- Its value is checked as the `fren` command checks it (`Core.checkType`).
+    if let (true, some u) := (synthesizes a, ← coreTy? n.under) then
+      if let some found ← frenTypeOf? t then
+        liftMsg a (Core.checkType u found (some s!"note: the value of `{Core.showPath path}` has type `{u.show}`"))
+    return ← `($(mkCIdentFrom p n.ctor) $t)
   if let .variant en idx := r then
     -- A variant with a payload, built from its values.
     let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
@@ -2853,14 +2988,26 @@ and a `Nat` is expected of the operands where one is of the whole
 (`lang::operator_type`). -/
 def arithTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (natOk : Bool) (op : String) (a b : Syntax) :
     TermElabM Term := do
-  -- Each operand is an `Int` or a `Nat`, as the `fren` command checks
-  -- (`lang::operator_type`).
-  if op == "-" then return ← `((($(← numberOperand toTerm cx op false a) : Int) - ($(← numberOperand toTerm cx op false b) : Int)))
   if op == "*" then
     unless cx.unmentioned || Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do
       throwError Core.nonlinearMsg.text
-  let (x, y) := (← numberOperand toTerm cx op natOk a, ← numberOperand toTerm cx op natOk b)
-  if op == "+" then `($x + $y) else `($x * $y)
+  let natOk := natOk && op != "-"
+  let x ← toTerm { cx with natOk } a
+  -- Of a newtype, its underlying type's `+` or `-`, on its field, which is
+  -- the newtype's; of a number, a newtype on the right is the newtype's
+  -- error, as the `fren` command checks (`lang::newtype_operator`).
+  let tx? ← frenTypeOf? x
+  if let some (.newtype p _) := tx? then
+    let y ← toTerm cx b
+    checkNewtypeOp op tx? (← frenTypeOf? y)
+    let n := (← getState).newtypes.get! p
+    let (fx, fy) := (← `($(mkCIdent n.field) $x), ← `($(mkCIdent n.field) $y))
+    return ← if op == "+" then `($(mkCIdent n.ctor) ($fx + $fy)) else `($(mkCIdent n.ctor) ($fx - $fy))
+  checkNumberTerm a x op
+  let y ← toTerm { cx with natOk } b
+  if let some (.newtype ..) ← frenTypeOf? y then checkNewtypeOp op tx? (← frenTypeOf? y)
+  checkNumberTerm b y op
+  if op == "-" then `((($x : Int) - ($y : Int))) else if op == "+" then `($x + $y) else `($x * $y)
 
 open Lang in
 /-- The expressions that `toTerm` gives no syntax pattern of its own: fields,
@@ -2941,7 +3088,13 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $a - $b) => arithTerm toTerm cx natOk "-" a b
   | `(fren_expr| $a * $b) => arithTerm toTerm cx natOk "*" a b
   | `(fren_expr| $_ div $_) => divTerm toTerm cx e "div" natOk
-  | `(fren_expr| -$a) => `((-($(← numberOperand toTerm cx "-" false a) : Int)))
+  | `(fren_expr| -$a) =>
+    let x ← go a
+    unless (← getState).newtypes.isEmpty do
+      let tx? ← frenTypeOf? x
+      checkNewtypeOp "-" tx? tx? (pre := true)
+    checkNumberTerm a x "-"
+    `((-($x : Int)))
   | `(fren_expr| $_ == $_) | `(fren_expr| $_ && $_) | `(fren_expr| $_ || $_) | `(fren_expr| $_ | $_) =>
     throwErrorAt e[1] (Core.foreignOpMsg e[1].getAtomVal.trimAscii.toString).text
   | `(fren_expr| !$_) => throwErrorAt e[0] (Core.foreignOpMsg "!").text

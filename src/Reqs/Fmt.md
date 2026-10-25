@@ -90,7 +90,7 @@ Within a line, two tokens are separated by one space or by none.
 | Kind | Tokens |
 |---|---|
 | `Open` | `(`, except one opening a call, and the `{` of a set literal |
-| `Call` | the `(` after a function's, method's or variant's name, opening its parameters or payload, an application's or method call's arguments, or a variant pattern's patterns |
+| `Call` | the `(` after a function's, method's, variant's or newtype's name, opening its parameters, payload or field, an application's or method call's arguments, a newtype's value, or a variant pattern's patterns |
 | `Close` | `)`, the `}` of a set literal, and `::*`, which ends a path |
 | `Brace` | `{`, except a set literal's |
 | `CloseBrace` | `}`, except one closing a `::{` or a set literal |
