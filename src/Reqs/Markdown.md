@@ -60,7 +60,8 @@ the file that declares it, wherever it is checked:
   that holds that check.
 - A diagnostic about an item that has no position is named with the file
   that declares it, if that is a Markdown file, without a position, and
-  placed at the check.
+  placed at the check. An item of the Lean file, or an imported item, with
+  no position carries no name, even when a Markdown file checks it.
 
 This holds through Markdown files that read others: an item is named with
 the file that declares it, whichever file checks it, before or after, and

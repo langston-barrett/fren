@@ -61,7 +61,8 @@ def pathComponents (path : System.FilePath) : List String :=
 (`pathComponents`), with a `..` for each component of `base` that `path`
 does not share, joined with `/` on every system, as names in messages are.
 A path that shares no root with `base`, such as an absolute path from a
-relative `base`, is kept whole. -/
+relative `base`, is kept whole. `base` itself is `.`, and a bare root is
+`/`. -/
 def relativeTo (base path : System.FilePath) : String :=
   let rec strip : List String → List String → List String
     | b :: bs, p :: ps => if b == p then strip bs ps else (b :: bs).map (fun _ => "..") ++ p :: ps
@@ -69,7 +70,10 @@ def relativeTo (base path : System.FilePath) : String :=
   let b := pathComponents base
   let p := pathComponents path
   let shared := base.isAbsolute == path.isAbsolute && (!path.isAbsolute || b.head? == p.head?)
-  "/".intercalate (if shared then strip b p else p)
+  match if shared then strip b p else p with
+  | [] => "."
+  | [""] => "/"
+  | cs => "/".intercalate cs
 
 @[command_elab Lang.mdCmd] def elabMd : CommandElab := fun stx => do
   let some rel := stx[1].isStrLit? | throwUnsupportedSyntax

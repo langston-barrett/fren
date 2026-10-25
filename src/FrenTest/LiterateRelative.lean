@@ -53,7 +53,9 @@ info: chapters/LiterateSibling.md:5:0: fren: 3 passed, 1 failed, 0 inconclusive,
 
 -- A message about an item with no position is named with the chapter that
 -- declares it, without a position, and placed at the check; one about the
--- Lean file's item carries no name.
+-- Lean file's item, or an imported one, carries no name. From the Lean file
+-- itself, these two only guard the rule: no chapter is being read, so no
+-- name could be given. The chapter below shows it.
 /-- info: chapters/deep/LiterateDeep.md: about an item with no position -/
 #guard_msgs in
 run_cmd Fren.logAbout `deep_gate .missing m!"about an item with no position" .information
@@ -64,11 +66,19 @@ comp lean_gate { in a? pub out b? req same: b? iff a? }
 #guard_msgs in
 run_cmd Fren.logAbout `lean_gate .missing m!"about an item with no position" .information
 
--- From a chapter, the same, and placed at the outermost `#fren_md`.
+/-- info: about an imported item with no position -/
+#guard_msgs in
+run_cmd Fren.logAbout `dep.dep_gate .missing m!"about an imported item with no position" .information
+
+-- From a chapter, the same, and placed at the outermost `#fren_md`: the
+-- Lean file's item and the imported one take neither this chapter's name
+-- nor the reading command's position.
 /--
 info: chapters/deep/LiterateDeep.md: about an item with no position
 ---
 info: about an item with no position
+---
+info: about an imported item with no position
 -/
 #guard_msgs in
 #fren_md "chapters/LiterateNoPosition.md"
@@ -89,3 +99,7 @@ info: about an item with no position
 -- whole; from an absolute base, it is relative.
 #guard Fren.relativeTo "src/T" "/abs/x.md" == "/abs/x.md"
 #guard Fren.relativeTo "/a/b" "/a/b/c.md" == "c.md"
+-- The base itself, and a bare root, are never empty.
+#guard Fren.relativeTo "src/T" "src/T/a/.." == "."
+#guard Fren.relativeTo "src/T" "/" == "/"
+#guard Fren.relativeTo "/a" "/a/../.." == ".."
