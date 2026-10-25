@@ -389,16 +389,21 @@ def stringsOf (atoms : Array Atom) : R (Array String) := do
         for t in [String.ofList cs, String.ofList cs ++ "a"] do out := add out t
   return out
 
-/-- The defined outputs of `c` that the inputs alone give: those whose
-definitions mention only inputs and earlier such outputs. Definitions
-mention only earlier ones, so one pass finds them. -/
+/-- The defined outputs of `c` that the inputs alone give, in an order in
+which each mentions only inputs and earlier such outputs. Members may
+come in any order, so a definition may mention an output defined after
+it: each pass adds those whose definitions mention only what is known,
+until one adds none. -/
 def Comp.earlyDefs (c : Comp) : Array Name := Id.run do
   let mut known := (c.vars.filter (·.role == .input)).map (·.name)
   let mut out := #[]
-  for (d, e) in c.defs do
-    if e.vars.all known.contains then
-      known := known.push d
-      out := out.push d
+  for _ in [0:c.defs.size] do
+    let before := out.size
+    for (d, e) in c.defs do
+      if !out.contains d && e.vars.all known.contains then
+        known := known.push d
+        out := out.push d
+    if out.size == before then break
   return out
 
 /-- The variables of `c` nested at `pfx` in the order the search chooses
