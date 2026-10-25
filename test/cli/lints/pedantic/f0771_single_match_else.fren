@@ -1,0 +1,6 @@
+-- `single_match_else`, in parentheses where the `if` is an operand.
+set_option fren.lint.single_match_else "warn"
+
+enum Mode { Heat, Cool, Off }
+
+comp c { in m: Mode in x: Int pub out y: Int req r: y = 2 * match m { Mode::Heat => x + 1, _ => x } }

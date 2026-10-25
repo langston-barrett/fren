@@ -1,0 +1,56 @@
+--@ args: fix --check -W pedantic -A definable_output -A many_single_char_names
+-- `fren fix` fixes the pedantic lints ported from Clippy, and
+-- `branches_sharing_code`.
+enum Mode { Heat, Cool, Off }
+
+struct Cell { row: Int, column: Int }
+
+fn scale(Int): Int
+
+comp c {
+    in m: Mode
+    in a?
+    in b?
+    in x: Int
+    in row: Int
+    pub out y: Int
+    pub out p?
+    pub out q?
+    pub out cell: Cell
+    pub out z: Int
+    pub out t?
+    pub out w: Int
+    pub out v: Int
+    pub out u: Int
+    pub out other: Cell
+    pub out s: Int
+    pub out d: Int
+    pub out e: Int
+
+    req r1: y = 2 * match m { Mode::Heat => x + 1, _ => x }
+    req r2: p? iff ((a? or b?) and a?) or not b?
+    req r3: q? iff a? or not a?
+    req r4: cell = Cell { column := x, row }
+    req r5: z = if a? then x * 2 else row * 2
+    req r6: t? iff r#"a"# = r##"a"#b"##
+    -- The `if` of the first fix ends open, and `and` follows it, so it is
+    -- put in parentheses; the second moves out an operand that ends open.
+    req r7: w = 1 + match m { Mode::Cool => x, _ => row } and v = 3 * (if a? then x + if b? then 1 else 2 else row + if b? then 1 else 2)
+    -- Moving `row + 1` out would make a product of two operands that mention
+    -- variables, so this is not fixed.
+    req r8: u = if a? then 3 * (row + 1) else 2 * (row + 1)
+    -- With a comment between its fields, or in the `match`, neither is
+    -- fixed, as the comment would not stay where it is.
+    req r9: other = Cell {
+        column := x,  -- the second field
+        row,
+    }
+    -- A shared divisor moves out; a shared dividend does not.
+    req r11: d = if a? then scale(x) div 2 else scale(row) div 2
+    req r12: e = if a? then scale(x) mod 2 else scale(x) mod 3
+    req r10: s = match m {
+        Mode::Heat => x,
+        -- every other mode
+        _ => row,
+    }
+}

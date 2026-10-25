@@ -1,0 +1,6 @@
+-- `fn_params_excessive_bools`, on a defined function and an abstract one.
+set_option fren.lint.fn_params_excessive_bools "warn"
+
+pub fn allowed?(a?, b?, c?, d?) := a? and (b? or c? or d?)
+
+pub fn chosen(Bool, Bool, Int, Bool, Bool): Int

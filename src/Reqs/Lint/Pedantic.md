@@ -1,7 +1,21 @@
 # Pedantic
 
 The lints of the `pedantic` group are matters of judgement, or would fire
-on much that reads well as it is, so they are `allow` by default.
+on much that reads well as it is, so they are `allow` by default. This
+chapter has the lints of expressions and of literals, and its subchapters
+the others: those of [matches](Pedantic/Matches.md) and of [records and
+functions](Pedantic/Records.md).
+
+Where a lint rewrites an expression, its section checks the rewrite with
+[refinement](../Lang/Refinement.md): a component `lint::R_written`
+computes the expression as written, a component `lint::R_fixed` computes
+its fix, and the refinements `R_sound`, that the fixed one refines the
+written one, and `R_complete`, the converse, make the solver check that
+the two agree on every input. Each operand of the rewrite is an input, and
+stands for any expression of its type: expressions are pure, so a rewrite
+that holds for every value of its operands holds for every expression. An
+input is always defined, so these checks are of the values alone; the
+prose says why each fix also keeps the guards.
 
 ## Membership chains
 
@@ -86,153 +100,6 @@ pub comp if_not_else {
     req rule: fires? iff (condition in {Head::Not, Head::Unequal} and else_branch != Head::If)
 
     expect chain: when else_branch = Head::If, not fires?
-}
-```
-
-## Matches
-
-`match_same_arms` and `wildcard_single_variant` look at the arms of a
-[`match`](../Lang/Expressions.md#matches) as written, as
-[`match_like_membership`](Style.md#matches-that-are-memberships) does.
-Both are fixable. Both look only at a `match` whose patterns are all
-*flat*: `_`, binders, `true`, `false`, variants whose payloads' patterns
-are `_` or binders, and or-patterns of these. Two flat patterns either
-match no value in common or one contains the other, so moving an arm
-earlier, removing one, or naming what `_` matches keeps the meaning. With
-a nested, literal or range pattern, an arm can match part of what a later
-one does, as `S::A(0)` does of `S::A(_)`.
-
-`match_same_arms`, `allow` by default, fires on two arms whose bodies are
-[written the same](../Lint.md#written-the-same), and whose patterns bind no names.
-It is reported once for each group of such arms, at the first arm that
-the fix removes, and says which arm it repeats. The fix depends on the
-group:
-
-- If neither arm is `_`, the fix merges the group into one arm, with an
-  or-pattern of their alternatives, `A | B => body`, where the first of
-  them is.
-- If one is `_`, the fix removes the others, and `_` then matches their
-  variants.
-- If the group is every arm of the `match`, the fix replaces the `match`
-  with the body, in parentheses where [fixes need
-  them](../Lint.md#parentheses-in-fixes).
-
-Neither changes what the `match` means. No variant is named twice, and
-`_` is the last arm, so a variant is matched by the same body after the
-fix as before, whatever the order of the arms. A body's guard is the test
-of its arm's pattern, and after the fix it is the disjunction of the
-guards of the arms it replaces, under each of which the body was already
-evaluated. A pattern that binds a name is not merged, since its body
-could mention the name. `lint::match_same_arms` states when it fires on
-two arms, and the fix of their group:
-
-```fren
-pub enum ArmsFix { Merge, Remove, Replace }
-
-pub comp match_same_arms {
-    in same_body?        -- the bodies are written the same
-    in binds?            -- the pattern of either binds a name
-    in wildcard?         -- one of the group is `_`
-    in all?              -- the group is every arm of the `match`
-    pub det out fires?
-    pub det out fix: ArmsFix
-
-    req rule: fires? iff (same_body? and not binds?)
-    req group_fix: fix = if all? then ArmsFix::Replace else if wildcard? then ArmsFix::Remove else ArmsFix::Merge
-}
-```
-
-`wildcard_single_variant`, `allow` by default, fires on a `_` arm that
-matches exactly one variant. The fix names it: `E::V`, or `E::V(_, _)`
-with one `_` per value of its payload, written as another pattern of the
-`match` writes its variant's path, or as `V` or `E::V` if one of those
-names it. If none does, the lint has no fix. A variant added to the
-enumeration later then makes the `match` non-exhaustive, a static error,
-rather than being matched by `_` without notice. The arm matches the same
-variant as before, and its body's guard, that no earlier arm matches, is
-then the test of that variant, which means the same. If `fren fix` also
-removes an arm of the `match` that has the body of the `_` arm
-(`match_same_arms`), `_` then matches more than one variant, so
-`wildcard_single_variant` is not fixed. `lint::wildcard_single_variant`
-states when it fires:
-
-```fren
-pub comp wildcard_single_variant {
-    in n_matched: Int    -- variants that no other arm names
-    pub det out fires?
-
-    assume reachable: n_matched >= 1
-
-    req rule: fires? iff n_matched = 1
-}
-```
-
-## Variant tests
-
-`if_chain_match`, `allow` by default, fires on a chain `if T1 then a else
-if T2 then b ... else z` of two or more tests, each a *variant test*: a test
-of which variant a scrutinee `x` is, `x = E::V`, `x in {E::V, E::W}`, a
-[pattern test](../Lang/Expressions.md#pattern-tests) `x is P` whose
-alternatives are each a variant whose payload's patterns are all `_`,
-such as `x is E::V(_) | E::W`, or an `or` of such tests. For now only
-such flat patterns are variant tests: a literal, a range or a nested
-pattern, as in `x is E::V(0)`, tests more than which variant `x` is. The scrutinee is [written the same](../Lint.md#written-the-same) in
-every test. A variant compared with `=` or `in` has no payload, since `x =
-E::V(a)` compares the payload too; a pattern test may name a variant with
-a payload, whose pattern the arm writes as the test does. The chain starts at an `if` that is not the `else` branch
-of another. Its fix is a [`match`](../Lang/Expressions.md#matches), `match x {
-V => a, W | X => b, ..., _ => z }`, with an arm for each test, whose
-pattern is an or-pattern if the test names several variants. A `match`
-names no variant twice, so the lint does not fire if a variant is tested
-twice. If the tests name every variant, the final `else` is never taken,
-and the fix drops it, since a `_` arm that covers no variant is an error.
-
-The fix keeps the meaning, and the guards. In the chain, a branch is
-guarded by its test and the negations of the tests before it, which, since
-no variant is tested twice, is its test alone: the test of its arm's
-pattern. `z` and the `_` arm are both guarded by the negations of all the
-tests. The scrutinee is evaluated once, where the first test was. A body
-that is a top-level `when`, `unless` or quantifier, which an arm's body cannot be, is
-put in parentheses, and so is a scrutinee with a `{`, which after `match`
-would start the arms. `lint::if_chain_match` states when it fires and
-whether the fix has a `_` arm:
-
-```fren
-pub comp if_chain_match {
-    in n_tests: Int      -- tests in the chain
-    in variant_tests?    -- each is a variant test of the same scrutinee
-    in n_repeated: Nat   -- times a test names a variant that it, or an earlier test, names before
-    in n_untested: Nat   -- variants of the enumeration that no test names
-    pub det out fires?
-    pub det out wildcard?  -- the fix keeps the final `else`, as the `_` arm
-
-    assume counts: n_tests >= 1
-
-    req rule: fires? iff (variant_tests? and n_tests >= 2 and n_repeated = 0)
-    req fix: wildcard? iff n_untested > 0
-}
-```
-
-`case_split_reqs`, `allow` by default, fires on a component with two or
-more requirements `when T, y = e`, or `when T, y? iff e`, of one output
-`y`, whose conditions `T` are variant tests of one scrutinee `x`, naming no
-variant twice. Together they say what one requirement `y = match x { ...
-}` says, with an arm for each, and `_ => y` if some variant is not tested,
-for which they leave `y` unconstrained. Its message is reported at the
-second of them, names them all, and suggests that requirement. A
-requirement `unless T, y = e` is not one of them: it constrains `y` for the
-variants that `T` does not name. As in a `match` arm, `e` is guarded by
-`T`. There is no fix: traces, claims and `impl`s refer to requirements by
-name, so merging them changes the structure of the spec, not only its text.
-`lint::case_split_reqs` states when it fires:
-
-```fren
-pub comp case_split_reqs {
-    in n_cases: Nat      -- requirements `when T, y = e` of one output, whose `T` are variant tests of one scrutinee
-    in n_repeated: Nat   -- times a test names a variant that it, or an earlier test, names before
-    pub det out fires?
-
-    req rule: fires? iff (n_cases >= 2 and n_repeated = 0)
 }
 ```
 
@@ -495,4 +362,274 @@ pub comp invalid_upcast_fixed {
 
 refine invalid_upcast_sound: invalid_upcast_fixed refines invalid_upcast_written
 refine invalid_upcast_complete: invalid_upcast_written refines invalid_upcast_fixed
+```
+
+## Operands that can be dropped
+
+`overly_complex_bool_expr`, `allow` by default, fires on an `and` or an
+`or` with an operand that can be dropped, its operands compared as
+[written the same](../Lint.md#written-the-same), in either order:
+
+| Rule | Written | Fix |
+|---|---|---|
+| absorption | `a or (a and b)`, `a or (b and a)`, `(a and b) or a`, `(b and a) or a` | `a` |
+| absorption | `a and (a or b)`, `a and (b or a)`, `(a or b) and a`, `(b or a) and a` | `a` |
+| contradiction | `a and not a`, `not a and a` | `false` |
+| excluded middle | `a or not a`, `not a or a` | `true` |
+
+The fix is in parentheses where [fixes need
+them](../Lint.md#parentheses-in-fixes). Where the expression is an
+operand in parentheses of its own, the fix replaces them too, so that
+`((a? or b?) and a?) or c?` becomes `a? or c?`, not `(a?) or c?`. The lint looks at the operands of the operator alone: in
+`a or (a and b and c)`, the right operand is `(a and b) and c`, whose
+operands are not `a`. Its Clippy counterpart is in `correctness`.
+
+The fix keeps the guards. It drops operands that the expression as written
+evaluates, which removes evaluations and adds none. What stays, `a`, is
+evaluated in the fix wherever the expression is, under its guard `G`. As
+written, `a` is evaluated under `G` where it is written first, as in `a or
+(a and b)` and `(a and b) or a`. In `(b and a) or a`, it is evaluated under
+`G and b`, and under `G and not (b and a)`, and wherever `G` holds, one of
+these holds, whatever the value of `a`; so does one of `G and not b` and
+`G and (b or a)`, in `(b or a) and a`. So no guard of `a` is weaker.
+
+[`eq_op`](Suspicious/Expressions.md#operands-written-the-same) reports an
+operator whose operands are written the same, and this lint one whose
+operands are not, so no expression is reported by both. It does not fire
+where the negation `not a` has a simpler form that
+[`nonminimal_bool`](Complexity.md#simpler-bool-expressions) reports, as in `x
+= 1 and not x = 1`: its fix, `x = 1 and x != 1`, is
+[`contradictory_comparisons`](Suspicious/Comparisons.md) when the values
+are integers. `lint::overly_complex_bool_expr` states when it fires, and by
+which rule:
+
+```fren
+pub enum BoolRule { Absorption, Contradiction, ExcludedMiddle }
+
+pub comp overly_complex_bool_expr {
+    in conj?             -- the operator is `and`, rather than `or`
+    in absorbs?          -- an operand is `p and q`, in an `or`, or `p or q`, in an `and`, with `p` or `q` written the same as the other operand
+    in negates?          -- an operand is `not p`, with `p` written the same as the other operand
+    in simpler_negation?  -- `nonminimal_bool` rewrites that `not p`
+    pub det out fires?
+    pub det out kind: BoolRule
+
+    req rule: fires? iff (absorbs? or (negates? and not simpler_negation?))
+    req kind_rule: kind = if absorbs? then BoolRule::Absorption
+        else if conj? then BoolRule::Contradiction else BoolRule::ExcludedMiddle
+}
+```
+
+Each case of the table is an output of these components, and each rule a
+pair of them:
+
+```fren
+set_option fren.lint.overly_complex_bool_expr "allow" in
+pub comp absorption_written {
+    in a?
+    in b?
+    pub det out or_first? := a? or (a? and b?)
+    pub det out or_first_swapped? := a? or (b? and a?)
+    pub det out or_last? := (a? and b?) or a?
+    pub det out or_last_swapped? := (b? and a?) or a?
+    pub det out and_first? := a? and (a? or b?)
+    pub det out and_first_swapped? := a? and (b? or a?)
+    pub det out and_last? := (a? or b?) and a?
+    pub det out and_last_swapped? := (b? or a?) and a?
+}
+
+set_option fren.lint.unused_variables "allow" in
+pub comp absorption_fixed {
+    in a?
+    in b?
+    pub det out or_first? := a?
+    pub det out or_first_swapped? := a?
+    pub det out or_last? := a?
+    pub det out or_last_swapped? := a?
+    pub det out and_first? := a?
+    pub det out and_first_swapped? := a?
+    pub det out and_last? := a?
+    pub det out and_last_swapped? := a?
+}
+
+refine absorption_sound: absorption_fixed refines absorption_written
+refine absorption_complete: absorption_written refines absorption_fixed
+
+set_option fren.lint.overly_complex_bool_expr "allow" in
+pub comp contradiction_written {
+    in a?
+    pub det out first? := a? and not a?
+    pub det out last? := not a? and a?
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.lint.unused_variables "allow" in
+pub comp contradiction_fixed {
+    in a?
+    pub det out first? := false
+    pub det out last? := false
+}
+
+refine contradiction_sound: contradiction_fixed refines contradiction_written
+refine contradiction_complete: contradiction_written refines contradiction_fixed
+
+set_option fren.lint.overly_complex_bool_expr "allow" in
+pub comp excluded_middle_written {
+    in a?
+    pub det out first? := a? or not a?
+    pub det out last? := not a? or a?
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.lint.unused_variables "allow" in
+pub comp excluded_middle_fixed {
+    in a?
+    pub det out first? := true
+    pub det out last? := true
+}
+
+refine excluded_middle_sound: excluded_middle_fixed refines excluded_middle_written
+refine excluded_middle_complete: excluded_middle_written refines excluded_middle_fixed
+```
+
+## Branches sharing code
+
+`branches_sharing_code`, `allow` by default, fires on `if C then A op X
+else B op X`, where `op` is one binary operator in both branches and `X`
+is written the same in both, and on its mirror, `if C then X op A else X
+op B`. The fix moves `X` out of the `if`: `(if C then A else B) op X`, or
+`X op (if C then A else B)`. The `if` is in parentheses, as
+`lang::operand` requires of a conditional operand, and the whole is in
+parentheses where [fixes need them](../Lint.md#parentheses-in-fixes); `A`
+and `B` keep the parentheses they are written with. If both operands of
+the branches are written the same, so are the branches, which
+[`same_branches`](Suspicious/Expressions.md#branches-written-the-same)
+reports, and this lint does not fire. Nor does it fire where the fix would
+be outside the arithmetic that Fren accepts. For `*`, that is where `X`
+mentions a variable or an uninterpreted function, and so does the `if` it
+moves out, in `C`, `A` or `B` (see [Linear
+arithmetic](../Lang/Expressions.md#linear-arithmetic)): `if a? then 3 * x
+else 2 * x` would become `(if a? then 3 else 2) * x`, a product of two
+operands that mention variables, but `if a? then x * 2 else y * 2` becomes
+`(if a? then x else y) * 2`. For `div` and `mod`, it is where `X` is on
+the left, since the `if` would be the divisor, which must be a literal or
+a constant (see [Division and remainder](../Lang/Expressions.md#division-and-remainder)): `if a? then
+x div 2 else y div 2` becomes `(if a? then x else y) div 2`, but `if a?
+then x div 2 else x div 3` is left as it is. Its Clippy counterpart,
+of the same name, is in `nursery`.
+
+The fix keeps the meaning: an operator's value depends only on the values
+of its operands, and the `if` picks the value of `A` or of `B` as before.
+It keeps the guards. `X` is guarded by `C` in one branch and by `not C` in
+the other, so it is evaluated wherever the conditional is; in the fix it
+is evaluated there too, and has the same value. Under `and` and `or`, an
+`X` on the right is also guarded by the left operand, `A` under `C` and
+`B` under `not C`, and in the fix by `if C then A else B`, which holds
+exactly where one of those does. `A` and `B` keep their guards, `C` and
+`not C`, and under `and` and `or`, with `X` on the left, `X` as well.
+`lint::branches_sharing_code` states when it fires:
+
+```fren
+pub comp branches_sharing_code {
+    in same_op?          -- both branches apply the same binary operator
+    in shared_left?      -- their left operands are written the same
+    in shared_right?     -- their right operands are written the same
+    in nonlinear?        -- the fix is outside Fren's arithmetic: `*` where the `if` and `X` both mention a variable or an uninterpreted function, or `div` or `mod` by the `if`
+    pub det out fires?
+
+    req rule: fires? iff (same_op? and shared_left? != shared_right? and not nonlinear?)
+
+    expect same_branches: when shared_left? and shared_right?, not fires?
+}
+```
+
+The refinements check both forms, on integers, with `-`, which is not
+commutative, and on `Bool`s, with `and` and `or`, whose operands are
+guarded:
+
+```fren
+set_option fren.lint.branches_sharing_code "allow" in
+pub comp branches_sharing_code_written {
+    in c?
+    in a: Int
+    in b: Int
+    in x: Int
+    in p?
+    in q?
+    in y?
+    pub det out right: Int := if c? then a - x else b - x
+    pub det out left: Int := if c? then x - a else x - b
+    pub det out right_and? := if c? then p? and y? else q? and y?
+    pub det out left_or? := if c? then y? or p? else y? or q?
+}
+
+pub comp branches_sharing_code_fixed {
+    in c?
+    in a: Int
+    in b: Int
+    in x: Int
+    in p?
+    in q?
+    in y?
+    pub det out right: Int := (if c? then a else b) - x
+    pub det out left: Int := x - (if c? then a else b)
+    pub det out right_and? := (if c? then p? else q?) and y?
+    pub det out left_or? := y? or (if c? then p? else q?)
+}
+
+refine branches_sharing_code_sound: branches_sharing_code_fixed refines branches_sharing_code_written
+refine branches_sharing_code_complete: branches_sharing_code_written refines branches_sharing_code_fixed
+```
+
+## Raw string literals
+
+`needless_raw_string_hashes`, `allow` by default, fires on a raw string
+[literal](../Lang/Lexical.md#literals), `r#"..."#`, with more `#`s than it
+needs. A raw literal with `n` `#`s ends at the first `"` followed by `n`
+`#`s, so it needs one `#` more than the longest run of `#` directly after
+a `"` in its body, and none if its body has no `"`. The fix writes that
+many: `r#"a.*"#` becomes `r"a.*"`, and `r##"say "hi""##` becomes `r#"say
+"hi""#`. The body is the same, so the value is, and a literal has no
+guard of its own. Its level is the one in effect at the item the literal
+is in, as for [`invisible_characters`](Suspicious/Literals.md#invisible-characters).
+`lint::needless_raw_string_hashes` states when it fires, and how many `#`s
+the fix writes:
+
+```fren
+pub comp needless_raw_string_hashes {
+    in hashes: Int       -- the `#`s around the literal
+    in longest: Int      -- the longest run of `#` after a `"` in its body, or `-1` if it has no `"`
+    pub det out fires?
+    pub det out fewest: Int  -- the `#`s that the fix writes
+
+    -- The literal ends where its `#`s say: no `"` in its body is followed by as many.
+    assume counts: -1 <= longest < hashes
+
+    req fewest_rule: fewest = longest + 1
+    req rule: fires? iff hashes > fewest
+
+    expect enough: fewest <= hashes
+    expect no_quote: when longest = -1, fewest = 0
+}
+```
+
+The fix is lexical, so the refinements check the examples above, whose
+values are constants:
+
+```fren
+set_option fren.lint.constant_output "allow" in
+set_option fren.lint.needless_raw_string_hashes "allow" in
+pub comp raw_hashes_written {
+    pub det out pattern: String := r#"a.*"#
+    pub det out quote: String := r##"say "hi""##
+}
+
+set_option fren.lint.constant_output "allow" in
+pub comp raw_hashes_fixed {
+    pub det out pattern: String := r"a.*"
+    pub det out quote: String := r#"say "hi""#
+}
+
+refine raw_hashes_sound: raw_hashes_fixed refines raw_hashes_written
+refine raw_hashes_complete: raw_hashes_written refines raw_hashes_fixed
 ```

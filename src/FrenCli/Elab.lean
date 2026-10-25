@@ -319,8 +319,9 @@ def withLineComment (src : Array Char) (stop : Nat) : Nat := Id.run do
 
 /-- The string literals and comments of `src` that `invisible_characters`
 reports (`lint::invisible_character`), and the string literals that
-`needless_raw_strings` and `non_ascii_literal` report, each with its lint
-and message, in order. -/
+`needless_raw_strings` and `non_ascii_literal` report, and the raw string
+literals that `needless_raw_string_hashes` reports, each with its lint and
+message, in order. -/
 def literalLints (src : Array Char) : Array (Lint × Span × Msg) :=
   match lexWithComments src with
   | .error _ => #[]
@@ -331,7 +332,9 @@ def literalLints (src : Array Char) : Array (Lint × Span × Msg) :=
       let text := String.ofList (src.extract sp.start sp.stop).toList
       let invisible := (Fren.Core.invisibleFix? comment text).toArray.map fun (found, fixed) =>
         (Lint.invisibleCharacters, sp, Fren.Core.invisibleMsg comment found fixed)
-      invisible ++ if comment then #[] else (Fren.Core.literalMsgs text).map fun (l, msg) => (l, sp, msg)
+      let hashes := if comment then #[] else (Fren.Core.fewerHashes? text).toArray.map fun fixed =>
+        (Lint.needlessRawStringHashes, sp, Fren.Core.needlessRawHashesMsg fixed)
+      invisible ++ hashes ++ if comment then #[] else (Fren.Core.literalMsgs text).map fun (l, msg) => (l, sp, msg)
 
 /-- The edits that fix a lint's message, which `fren fix` makes where the
 message is reported. -/
@@ -445,6 +448,10 @@ structure State where
   /-- Where the comparisons of `Bool`s in the expression being elaborated
   are, for `bool_equality`. -/
   boolEqs : Array Span := #[]
+  /-- Where the conditions of `if`s and the operands of `*` in the
+  expression being elaborated that mention a variable or an uninterpreted
+  function are, for `branches_sharing_code`. -/
+  mentioning : Array Span := #[]
   /-- Where the variants without payloads in the expression being
   elaborated are, with their paths, for `contradictory_comparisons`. -/
   variants : Array (Span × String) := #[]
@@ -686,11 +693,11 @@ def lintLines (what : Named) (n : Name) (name last : Span) : M Unit := do
   let k := Fren.Core.codeLines text
   if Fren.Core.tooManyLines k then lint .tooManyLines name (Fren.Core.tooManyLinesMsg what n k)
 
-/-- Reports a lint whose message's first fix replaces its text, which
+/-- Reports a lint whose message's first fix replaces its text, or its own range, which
 `fren fix` applies. -/
 def lintFix (l : Lint) (span : Span) (msg : Msg) (unless? : Option (Lint × Span) := none) : M Unit := do
   let some f := msg.fixes[0]? | lint l span msg
-  modify fun s => { s with lintFixes := s.lintFixes.push { lint := l, span, edits := #[(toRange span, f.replacement)], unless? } }
+  modify fun s => { s with lintFixes := s.lintFixes.push { lint := l, span, edits := #[(f.range?.getD (toRange span), f.replacement)], unless? } }
   lint l span { msg with notes := msg.notes.push Fren.Core.fixHelp }
 
 /-- Reports a lint whose fix is `edits`, which `fren fix` makes. -/
@@ -1223,15 +1230,18 @@ def lintBools (e : Expr) : M Unit := do
   let w := e.writtenSpan full
   let src := full.extract w.start w.stop
   let root := e.boolNode full w.start
+  -- A fix's own range is counted in `src`, from `w.start`.
+  let shift (m : Msg) : Msg :=
+    { m with fixes := m.fixes.map fun f => { f with range? := f.range?.map fun r => { start := r.start + w.start, stop := r.stop + w.start } } }
   for (l, ref, msg) in Fren.Core.rewriteReports src root do
-    lintFix l ref msg
-  let (boolEqs, variants, absEnds) := ((← get).boolEqs, (← get).variants, (← get).absEnds)
-  modify fun s => { s with boolEqs := #[], variants := #[], absEnds := #[] }
+    lintFix l ref (shift msg)
+  let (boolEqs, variants, absEnds, mentioning) := ((← get).boolEqs, (← get).variants, (← get).absEnds, (← get).mentioning)
+  modify fun s => { s with boolEqs := #[], variants := #[], absEnds := #[], mentioning := #[] }
   let variant? (sp : Span) := (variants.find? (·.1 == sp)).map (·.2)
-  for r in Fren.Core.opReports src boolEqs.contains variant? (absEnds.contains ·.stop) root do
-    lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) r.msg
+  for r in Fren.Core.opReports src boolEqs.contains variant? (absEnds.contains ·.stop) mentioning.contains root do
+    lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) (shift r.msg)
   for r in Fren.Core.arithReports src root do
-    lintFix r.lint r.ref r.msg
+    lintFix r.lint r.ref (shift r.msg)
   lintParens e
 
 /-- Whether `t` is an ordered enumeration (`Reqs/Lang/Items#enumerations`). -/
@@ -1575,7 +1585,7 @@ def checkRelational (cx : ExprCtx) (span : Span) (tys : Array Ty) (operands : Ar
 
 /-- The match lints of the `match` `e` on a value of type `ty`, whose arms'
 patterns are `pats`, where `slot` is (`Reqs/Lint/Style#matches-that-are-memberships`,
-`Reqs/Lint/Pedantic#matches`). The lints that move or remove arms, or
+`Reqs/Lint/Pedantic/Matches`). The lints that move or remove arms, or
 replace `_` with a variant, look only at a `match` whose patterns are all
 flat (`Fren.Core.Pat.flat`), where no arm overlaps another without
 containing it. -/
@@ -1627,7 +1637,8 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
       unless Fren.Core.givesBack same binders (← args.mapM (srcAt ·.span)) do givenBack := false
     | _, _ => givenBack := false
   let trivial := Fren.Core.trivialMatch infos.size (infos[0]?.any (·.binds))
-  if Fren.Core.needlessMatch givenBack wildcard scrutineeBack trivial then
+  let needless := Fren.Core.needlessMatch givenBack wildcard scrutineeBack trivial
+  if needless then
     let bare : Fren.Core.BText := { text := scr, prec := scrutinee.boolNode.kind.prec }
     lintFix .needlessMatch span (Fren.Core.needlessMatchMsg (bare.inSlot slot (← followedSpan span)))
   let bodyRanges := arms.map fun (_, b) => Fren.Core.withParens src (toRange b.span)
@@ -1642,10 +1653,14 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
       lintEdits .matchSameArms at_ msg (if firstSame?.isNone then edits else #[])
       if firstSame?.isNone then firstSame? := some at_
   let scr := scrutinee.text src
-  if let some (pre, post, test) := Fren.Core.membershipParts? infos scr slot then
+  let membership? := Fren.Core.membershipParts? infos scr slot
+  if let some (pre, post, test) := membership? then
     let r := Fren.Core.withParens src (toRange scrutinee.span)
     lintEdits .matchLikeMembership span (Fren.Core.membershipMsg (pre ++ scr.text ++ post) test)
       #[({ start := span.start, stop := r.start }, pre), ({ start := r.stop, stop := span.stop }, post)]
+  -- `single_match_else` (`lint::single_match_else`).
+  if let some fixed := Fren.Core.singleMatchElseFix? infos scr slot (membership?.isSome || needless || trivial) (← followedSpan span) then
+    lintFix .singleMatchElse span (Fren.Core.singleMatchElseMsg fixed (Fren.Core.hasComment (← srcAt span)))
   unless flat do return
   let .enum ep := ty | return
   let some d := (← get).dataOf? ep | return
@@ -2136,6 +2151,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let .mk kind .. := a.boolNode
         lintFix .sameBranches span (Fren.Core.sameBranchesMsg ta kind.prec (← srcAt { start := 0, stop := span.start })
           (← srcAt { start := span.stop, stop := (← get).src.size }))
+    if cx.noteIndexes && (← mentionsAny cx c) then modify fun s => { s with mentioning := s.mentioning.push c.span }
     let c ← expect c .bool (some "note: the condition of `if` is a `Bool`")
     let gx := Fren.Core.GuardedOperand.thenBranch.guard c s!"(not {c})"
     let gy := Fren.Core.GuardedOperand.elseBranch.guard c s!"(not {c})"
@@ -2522,7 +2538,11 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         if nat then .nat else .int)
     | _ =>
       if op == "*" then
-        unless cx.unmentioned || Fren.Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do err span Fren.Core.nonlinearMsg
+        let (ma, mb) := (← mentionsAny cx a, ← mentionsAny cx b)
+        unless cx.unmentioned || Fren.Core.productAccepted ma mb do err span Fren.Core.nonlinearMsg
+        -- For `branches_sharing_code`.
+        if cx.noteIndexes then
+          modify fun s => { s with mentioning := s.mentioning ++ ([(ma, a.span), (mb, b.span)].filter (·.1) |>.map (·.2)) }
       -- `+` and `*` of `Nat`s are `Nat`s; `-` is always an `Int`, so that
       -- nothing truncates (`lang::operator_type`).
       let nat := op != "-" && expected? == some .nat
@@ -2734,6 +2754,14 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     | .ok () => pure ()
     | .error (some i, msg) => err fields[i]!.1.span msg
     | .error (none, msg) => err span msg
+    -- `inconsistent_struct_constructor` (`lint::inconsistent_struct_constructor`).
+    if cx.noteIndexes then
+      let src := (← get).src
+      let ranges := fields.map fun (f, e?) =>
+        ({ start := f.span.start, stop := (e?.map fun e => (Fren.Core.withParens src (toRange e.span)).stop).getD f.span.stop } : Fren.Core.Range)
+      if let some fixed? := Fren.Core.reorderedFields? src (toRange span) ranges (fields.map (Name.mkSimple ·.1.name)) (fs.map (·.1)) then
+        lintFix .inconsistentStructConstructor span
+          (Fren.Core.inconsistentStructConstructorMsg (Name.mkSimple path.getString!) (fs.map (·.1)) fixed?)
     let mut smts := #[]
     for (f, t) in fs do
       let some (fi, e?) := fields.find? (Name.mkSimple ·.1.name == f) | internal span s!"no field `{f}`"
@@ -3640,6 +3668,12 @@ def noteBody (n : Name) (span : Span) (vars : Array CVar) : M Unit := do
     bodies := s.bodies.push { path := s.module, file := s.file, span, vars, props := #[], decidable := !s.outsideCore
                               tables := tables.map fun (sp, q, g) => (n, .body, sp, q, g), natApps := s.natApps } }
 
+/-- `fn_params_excessive_bools` on the function `n`, declared at `span`,
+whose parameters have the types `params` (`lint::fn_params_excessive_bools`). -/
+def lintFnBools (n : Name) (span : Span) (params : Array Ty) : M Unit := do
+  let nBools := (params.filter (· == .bool)).size
+  if Fren.Core.fnParamsExcessiveBools nBools then lint .fnParamsExcessiveBools span (Fren.Core.fnParamsExcessiveBoolsMsg n nBools)
+
 /-- Reports the lints of the string literals and comments of the current
 item, at its level (`literalLints`). -/
 def lintLiterals : M Unit := do
@@ -3760,6 +3794,13 @@ partial def elabItem (item : Item) : M Unit := do
         err ((ty?.map fun segs => segs[0]!.span.to segs.back!.span).getD f.span)
           (Fren.Core.abstractFieldMsg p false (!(t matches .abstract _)))
       fs := fs.push (fn, t)
+    -- `struct_field_names` (`lint::struct_field_names`, `lint::field_has_record_name`).
+    if let some msg := Fren.Core.structFieldNamesMsg? n (fs.map (·.1)) then lint .structFieldNames name.span msg
+    for (f, _) in fields, (fn, _) in fs do
+      if let some msg := Fren.Core.fieldNameMsg? n fn then lint .structFieldNames f.span msg
+    -- `struct_excessive_bools` (`lint::struct_excessive_bools`).
+    let nBools := (fs.filter (·.2 == .bool)).size
+    if Fren.Core.structExcessiveBools nBools then lint .structExcessiveBools name.span (Fren.Core.structExcessiveBoolsMsg n nBools)
     let st ← get
     let unbounded := fs.any fun (_, t) => st.unbounded t
     unless isPub do
@@ -3821,6 +3862,7 @@ partial def elabItem (item : Item) : M Unit := do
     match body with
     | none =>
       let ps ← params.mapM (elabTy ·.1)
+      lintFnBools n name.span ps
       -- As for a variable, with the result type (`lang::bool_naming`),
       -- after the parameters, in source order.
       let r ← varTy result name
@@ -3839,6 +3881,7 @@ partial def elabItem (item : Item) : M Unit := do
         lintName .variable xn x.span
         let t ← varTy ty? x
         vars := vars.push { name := xn, role := .input, isPub := true, ty := t, span := x.span }
+      lintFnBools n name.span (vars.map (·.ty))
       let r ← varTy result name
       discard takeTables
       modify fun s => { s with outsideCore := false, natApps := #[] }

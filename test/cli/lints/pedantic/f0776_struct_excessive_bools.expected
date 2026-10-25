@@ -1,0 +1,14 @@
+warning[F0776]: record `Door` has 4 `Bool` fields
+ --> test/cli/lints/pedantic/f0776_struct_excessive_bools.fren:4:12
+  |
+4 | pub struct Door { open?, closed?, locked?, jammed?, width: Int }
+  |            ^^^^ more than 3 `Bool` fields
+  |
+  = note: every combination of their values is allowed, though some are probably not meant
+  = help: replace some of them with an enumeration of the combinations that are meant
+  = note: `struct_excessive_bools` is set to `warn`
+
+fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0776`.
+exit=3

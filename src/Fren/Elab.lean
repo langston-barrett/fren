@@ -410,6 +410,13 @@ partial def typeSyntax (t : Expr) : Term :=
     liftMsg f[0] (Core.checkVarName fn (if f[1].isNone then none else some (t.isConstOf ``Bool)))
     unless f[1].isNone do liftTermElabM (lintBoolType fn f[1][1] t)
     fields := fields.push (fn, t)
+  -- `struct_field_names` (`lint::struct_field_names`, `lint::field_has_record_name`).
+  if let some msg := Core.structFieldNamesMsg? n (fields.map (·.1)) then recordLint .structFieldNames nameStx msg
+  for f in stx[4].getSepArgs, (fn, _) in fields do
+    if let some msg := Core.fieldNameMsg? n fn then recordLint .structFieldNames f[0] msg
+  -- `struct_excessive_bools` (`lint::struct_excessive_bools`).
+  let nBools := (fields.filter (·.2.isConstOf ``Bool)).size
+  if Core.structExcessiveBools nBools then recordLint .structExcessiveBools nameStx (Core.structExcessiveBoolsMsg n nBools)
   let st ← getState
   let unbounded := fields.any fun (_, t) => st.unbounded t
   let bs ← fields.mapM fun (f, t) => `(Lean.Parser.Command.structExplicitBinder| ($(mkIdent f):ident : $(typeSyntax t)))
@@ -1423,11 +1430,13 @@ def lintBools (e : Syntax) : TermElabM Unit := do
   let node := boolNode sub.str sub.startPos e
   for (l, ref, msg) in Core.rewriteReports src node fixable do
     recordLint l ref msg
-  let (boolEqs, variants, absEnds) := ((← getLocal).boolEqs, (← getLocal).variants, (← getLocal).absEnds)
-  modifyLocal fun l => { l with boolEqs := #[], variants := #[], absEnds := #[] }
+  let (boolEqs, variants, absEnds, mentioning) :=
+    ((← getLocal).boolEqs, (← getLocal).variants, (← getLocal).absEnds, (← getLocal).mentioning)
+  modifyLocal fun l => { l with boolEqs := #[], variants := #[], absEnds := #[], mentioning := #[] }
   let variant? (s : Syntax) := (variants.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
   let help (msg : Core.Msg) := if fixable && !msg.fixes.isEmpty then #[Core.fixHelp] else #[]
-  for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) variant? (absEnds.contains ·.getTailPos?) node do
+  let mentions (s : Syntax) := mentioning.contains (s.getPos?, s.getTailPos?)
+  for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) variant? (absEnds.contains ·.getTailPos?) mentions node do
     -- A node's position is its first token's, and its tail its last's.
     let ref := match r.last? with | some l => mkNullNode #[r.ref, l] | none => r.ref
     recordLint r.lint ref { r.msg with notes := r.msg.notes ++ help r.msg }
@@ -1464,6 +1473,19 @@ def lintRedundant (b : Syntax) (field : Bool) : TermElabM Unit := do
     let name := exactText b[0]
     if Core.redundantBinding (Core.writtenForm name) (Core.writtenForm (exactText b[1][1])) then
       recordLint .redundantBindings b (Core.redundantBindingMsg name field)
+
+/-- `inconsistent_struct_constructor` on the literal `e` of the record
+`path`, which declares `declared`, whose fields are `given`
+(`lint::inconsistent_struct_constructor`). -/
+def lintFieldOrder (e : Syntax) (path : Name) (declared : Array Name) (given : Array Syntax) : TermElabM Unit := do
+  let some sub := e.getSubstring? false false | return
+  let src := (String.Pos.Raw.extract sub.str sub.startPos sub.stopPos).toList.toArray
+  let off (p : String.Pos.Raw) := (String.Pos.Raw.extract sub.str sub.startPos p).length
+  let range (s : Syntax) : Core.Range :=
+    { start := off (s.getPos?.getD sub.startPos), stop := off (s.getTailPos?.getD sub.startPos) }
+  let some fixed? := Core.reorderedFields? src ⟨0, src.size⟩ (given.map range) (given.map (·[0].getId)) declared | return
+  let msg := Core.inconsistentStructConstructorMsg (Name.mkSimple path.getString!) declared fixed?
+  recordLint .inconsistentStructConstructor e (if (← getLocal).inMarkdown && fixed?.isSome then msg.note Core.fixHelp else msg)
 
 open Lang in
 /-- `unnecessary_struct_initialization` on the record literal `e`, of the
@@ -1510,6 +1532,7 @@ def recordTerm (go : Option Core.Ty → Syntax → TermElabM Term) (cx : ExprCtx
   | .ok () => pure ()
   | .error (some i, msg) => throwErrorAt given[i]![0] msg.text
   | .error (none, msg) => throwError msg.text
+  if cx.noteIndexes then lintFieldOrder e path (info.fields.map (·.1)) given
   let args ← info.fields.mapM fun (f, ty) => do
     let some b := given.find? (·[0].getId == f) | throwError "internal error: no field `{f}`"
     if cx.noteIndexes then lintRedundant b true
@@ -1554,7 +1577,7 @@ def operandSlot (p e : Syntax) : Option Core.Slot :=
 
 /-- The match lints of the `match` `e` on a value of type `ty`, whose arms'
 patterns are `pats`, where `slot` is (`Reqs/Lint/Style#matches-that-are-memberships`,
-`Reqs/Lint/Pedantic#matches`). The lints that move or remove arms, or
+`Reqs/Lint/Pedantic/Matches`). The lints that move or remove arms, or
 replace `_` with a variant, look only at a `match` whose patterns are all
 flat (`Core.Pat.flat`), where no arm overlaps another without containing
 it. -/
@@ -1608,7 +1631,8 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
       unless Core.givesBack same binders (args.map (exactText ∘ unparen)) do givenBack := false
     | _, _, _ => givenBack := false
   let trivial := Core.trivialMatch infos.size (infos[0]?.any (·.binds))
-  if Core.needlessMatch givenBack wildcard scrutineeBack trivial then
+  let needless := Core.needlessMatch givenBack wildcard scrutineeBack trivial
+  if needless then
     let scrutinee : Core.BText := { text := scr, prec := exprPrec (unparen e[1]) }
     recordLint .needlessMatch e (help (Core.needlessMatchMsg (scrutinee.inSlot slot (followedStx e))))
   if flat then
@@ -1616,8 +1640,13 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
       let (i, msg) := Core.sameArmsMsg infos g slot (followedStx e)
       recordLint .matchSameArms arms[i]! (help msg)
   let scrutinee : Core.BText := { text := exactText e[1], prec := exprPrec e[1] }
-  if let some (pre, post, test) := Core.membershipParts? infos scrutinee slot then
+  let membership? := Core.membershipParts? infos scrutinee slot
+  if let some (pre, post, test) := membership? then
     recordLint .matchLikeMembership e (help (Core.membershipMsg (pre ++ scrutinee.text ++ post) test))
+  -- `single_match_else` (`lint::single_match_else`).
+  if let some fixed := Core.singleMatchElseFix? infos scrutinee slot (membership?.isSome || needless || trivial) (followedStx e) then
+    let msg := Core.singleMatchElseMsg fixed (Core.hasComment (exactText e))
+    recordLint .singleMatchElse e (if msg.fixes.isEmpty then msg else help msg)
   unless flat do return
   let some info := ty.constName?.bind (← getState).enumOfDecl? | return
   let some w := infos.findIdx? (·.wildcard) | return
@@ -3256,6 +3285,8 @@ def iteTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
   let cx := { cx with expected? := none }
   if cx.noteIndexes && !cx.inElse then lintIfChain cx e
   if cx.noteIndexes then lintSameBranches e a b
+  if cx.noteIndexes && (← mentionsAny cx c') then
+    modifyLocal fun l => { l with mentioning := l.mentioning.push ((unparen c').getPos?, (unparen c').getTailPos?) }
   let c ← toTerm { cx with inElse := false } c'
   checkTermType c' c .bool (some "note: the condition of `if` is a `Bool`")
   let gx ← Core.GuardedOperand.thenBranch.guard (pure c) `(¬$c)
@@ -3275,8 +3306,13 @@ and a `Nat` is expected of the operands where one is of the whole
 def arithTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (natOk : Bool) (op : String) (a b : Syntax) :
     TermElabM Term := do
   if op == "*" then
-    unless cx.unmentioned || Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do
+    let (ma, mb) := (← mentionsAny cx a, ← mentionsAny cx b)
+    unless cx.unmentioned || Core.productAccepted ma mb do
       throwError Core.nonlinearMsg.text
+    -- For `branches_sharing_code`, without parentheses, as `boolNode` has them.
+    if cx.noteIndexes then
+      let at_ (s : Syntax) := ((unparen s).getPos?, (unparen s).getTailPos?)
+      modifyLocal fun l => { l with mentioning := l.mentioning ++ ([(ma, a), (mb, b)].filter (·.1) |>.map (at_ ·.2)) }
   let natOk := natOk && op != "-"
   let x ← toTerm { cx with natOk } a
   -- Of a newtype, its underlying type's `+` or `-`, on its field, which is
@@ -3520,6 +3556,13 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   record (.item { item := { kind := .typeItem, path, isPub, owner := modName }, ref := nameStx })
   unless isPub do recordItem .abstractType path nameStx
 
+/-- `fn_params_excessive_bools` on the function `n`, declared at `nameStx`,
+whose parameters have the types `params` (`lint::fn_params_excessive_bools`). -/
+def lintFnBools (n : Name) (nameStx : Syntax) (params : Array Expr) : TermElabM Unit := do
+  let nBools := (params.filter (·.isConstOf ``Bool)).size
+  if Core.fnParamsExcessiveBools nBools then
+    recordLint .fnParamsExcessiveBools nameStx (Core.fnParamsExcessiveBoolsMsg n nBools)
+
 @[command_elab Lang.fnCmd] def elabFunction : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
@@ -3548,6 +3591,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   let some body := body? | do
     liftTermElabM do
       let params ← params.mapM fun p => do lintRelTypes modName p[0]; elabType modName p[0]
+      lintFnBools n nameStx params
       -- As for a variable, with the result type (`lang::bool_naming`).
       let result ← varType modName nameStx (if stx[6].isNone then none else some stx[6][1])
       declarePlaceholder path (← mkArrowN params result) false
@@ -3570,6 +3614,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
       lintName .variable x.getId x
       let ty ← varType modName x (if p[1].isNone then none else some p[1][1])
       vars := vars.push { name := x.getId, role := .input, isPub := true, «type» := ty, ref := x }
+    lintFnBools n nameStx (vars.map (·.type))
     let result ← varType modName nameStx (if stx[6].isNone then none else some stx[6][1])
     modifyLocal fun l => { l with outsideCore := false }
     let (lam, tables) ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do

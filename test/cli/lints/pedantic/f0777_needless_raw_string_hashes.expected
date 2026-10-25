@@ -1,0 +1,33 @@
+warning[F0777]: this raw string literal has more `#`s than it needs
+ --> test/cli/lints/pedantic/f0777_needless_raw_string_hashes.fren:8:31
+  |
+8 |     req r1: p? iff s.matches?(r##"a+b"##)
+  |                               ^^^^^^^^^^ fewer `#`s would do
+  |
+  = note: a raw literal needs one `#` more than the longest run of `#` after a `"` in it, and none without a `"`
+  = help: `fren fix` can fix this
+  = note: `needless_raw_string_hashes` is set to `warn`
+help: write `r"a+b"`
+  |
+8 -     req r1: p? iff s.matches?(r##"a+b"##)
+8 +     req r1: p? iff s.matches?(r"a+b")
+  |
+
+warning[F0777]: this raw string literal has more `#`s than it needs
+ --> test/cli/lints/pedantic/f0777_needless_raw_string_hashes.fren:9:24
+  |
+9 |     req r2: q? iff s = r###"say "#hi"#"###
+  |                        ^^^^^^^^^^^^^^^^^^^ fewer `#`s would do
+  |
+  = note: a raw literal needs one `#` more than the longest run of `#` after a `"` in it, and none without a `"`
+  = help: `fren fix` can fix this
+help: write `r##"say "#hi"#"##`
+  |
+9 -     req r2: q? iff s = r###"say "#hi"#"###
+9 +     req r2: q? iff s = r##"say "#hi"#"##
+  |
+
+fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0777`.
+exit=3

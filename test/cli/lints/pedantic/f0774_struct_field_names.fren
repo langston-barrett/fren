@@ -1,0 +1,6 @@
+-- `struct_field_names`: a shared word, and the record's name.
+set_option fren.lint.struct_field_names "warn"
+
+pub struct Valve { inlet_open?, outlet_open? }
+
+pub struct HeatPump { heat_pump_speed: Int, on? }

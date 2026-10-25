@@ -4131,6 +4131,159 @@ Every `x` below `3` is below `5`, so the two comparisons are `x < 3`; with
 comp c { in x: Int pub out p? req r: p? iff x < 3 }
 ```
 "# },
+  { code := "F0771", explanation := r#"A `match` of one variant without a payload and `_` (`single_match_else`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.single_match_else "warn"
+
+enum Mode { Heat, Cool, Off }
+
+comp c { in m: Mode in x: Int pub out y: Int req r: y = match m { Mode::Heat => x + 1, _ => x } }
+```
+
+The `match` tests whether `m` is `Mode::Heat`, which an `if` says
+directly. `fren fix` can fix this:
+
+```fren
+enum Mode { Heat, Cool, Off }
+
+comp c { in m: Mode in x: Int pub out y: Int req r: y = if m = Mode::Heat then x + 1 else x }
+```
+"# },
+  { code := "F0772", explanation := r#"A record literal whose fields are not in the order its record declares them (`inconsistent_struct_constructor`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.inconsistent_struct_constructor "warn"
+
+struct Cell { row: Int, column: Int }
+
+comp c { in x: Int pub out cell: Cell req r: cell = Cell { column := x, row := 0 } }
+```
+
+The order of the fields does not change the value, but the literal reads
+more easily in the order of the declaration. `fren fix` can fix this:
+
+```fren
+struct Cell { row: Int, column: Int }
+
+comp c { in x: Int pub out cell: Cell req r: cell = Cell { row := 0, column := x } }
+```
+"# },
+  { code := "F0773", explanation := r#"An `and` or `or` with an operand that can be dropped (`overly_complex_bool_expr`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.overly_complex_bool_expr "warn"
+
+comp c { in a? in b? pub out p? req r: p? iff (a? or (a? and b?)) }
+```
+
+Wherever `a? and b?` holds, `a?` holds, so the `or` is `a?`. Likewise `a
+and (a or b)` is `a`, `a and not a` is `false`, and `a or not a` is `true`;
+the last two probably have an operand that is not the one meant. `fren
+fix` can fix this:
+
+```fren
+comp c { in a? pub out p? req r: p? iff a? }
+```
+"# },
+  { code := "F0774", explanation := r#"Fields named with a word they all share, or with their record's name (`struct_field_names`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.struct_field_names "warn"
+
+pub struct Pump { pump_on?, pump_speed: Int }
+```
+
+A field is read from a value of its record, as `p.pump_speed` is, so the
+shared word says nothing. Remove it:
+
+```fren
+pub struct Pump { on?, speed: Int }
+```
+"# },
+  { code := "F0775", explanation := r#"A function with more than 3 `Bool` parameters (`fn_params_excessive_bools`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.fn_params_excessive_bools "warn"
+
+pub fn allowed?(a?, b?, c?, d?) := a? and (b? or c? or d?)
+```
+
+A call such as `allowed?(true, false, true, false)` does not say which
+argument is which. Replace some of them with an enumeration, or with a
+record of named `Bool` fields:
+
+```fren
+pub struct Access { admin?, owner?, member?, guest? }
+
+pub fn allowed?(access: Access) := access.admin? and (access.owner? or access.member? or access.guest?)
+```
+"# },
+  { code := "F0776", explanation := r#"A record with more than 3 `Bool` fields (`struct_excessive_bools`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.struct_excessive_bools "warn"
+
+pub struct Door { open?, closed?, locked?, jammed? }
+```
+
+Every combination of the fields is allowed, such as a door both `open?`
+and `closed?`, though few are meant. An enumeration of those that are
+says so:
+
+```fren
+pub enum DoorState { Open, Closed, Locked, Jammed }
+
+pub struct Door { state: DoorState }
+```
+"# },
+  { code := "F0777", explanation := r##"A raw string literal with more `#`s than it needs (`needless_raw_string_hashes`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.needless_raw_string_hashes "warn"
+
+comp c { in s: String pub out p? req r: p? iff s.matches?(r#"a+b"#) }
+```
+
+A raw literal needs one `#` more than the longest run of `#` after a `"`
+in it, and none without a `"`: `r#"..."#` is needed only for a body with a
+`"`. `fren fix` can fix this:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.matches?(r"a+b") }
+```
+"## },
+  { code := "F0778", explanation := r#"An `if` whose branches share an operand (`branches_sharing_code`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.branches_sharing_code "warn"
+
+comp c { in fast? in x: Int pub out y: Int req r: y = if fast? then 2 * x + 1 else x + 1 }
+```
+
+Both branches add `1`, whichever is taken, so the `if` can choose the rest
+alone. `fren fix` can fix this:
+
+```fren
+comp c { in fast? in x: Int pub out y: Int req r: y = (if fast? then 2 * x else x) + 1 }
+```
+"# },
   { code := "F0780", explanation := r#"A `set_option` that sets a lint or a group to `allow` (`allow_attributes`, allowed by default).
 
 Example:

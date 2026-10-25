@@ -136,6 +136,14 @@ inductive Lint where
   | isEquality
   | irrefutableIs
   | chainableComparison
+  | singleMatchElse
+  | inconsistentStructConstructor
+  | overlyComplexBoolExpr
+  | structFieldNames
+  | fnParamsExcessiveBools
+  | structExcessiveBools
+  | needlessRawStringHashes
+  | branchesSharingCode
   -- `BEq` from `DecidableEq`, which makes it lawful at once; a derived `BEq`
   -- would need a proof over every pair of lints.
   deriving Inhabited, DecidableEq, Repr
@@ -157,7 +165,9 @@ def Lint.all : Array Lint :=
     .minIdentChars, .absolutePaths, .precedence, .unnecessaryStructInitialization, .unusedLintSetting,
     .unusedAssumption, .unrelatedBinders, .literalDotInPattern, .invalidUpcastComparisons,
     .unicodeNotNfc, .unnecessaryTrailingComma,
-    .isEquality, .irrefutableIs, .chainableComparison]
+    .isEquality, .irrefutableIs, .chainableComparison,
+    .singleMatchElse, .inconsistentStructConstructor, .overlyComplexBoolExpr, .structFieldNames, .fnParamsExcessiveBools,
+    .structExcessiveBools, .needlessRawStringHashes, .branchesSharingCode]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -248,6 +258,14 @@ def Lint.name : Lint → String
   | .isEquality => "is_equality"
   | .irrefutableIs => "irrefutable_is"
   | .chainableComparison => "chainable_comparison"
+  | .singleMatchElse => "single_match_else"
+  | .inconsistentStructConstructor => "inconsistent_struct_constructor"
+  | .overlyComplexBoolExpr => "overly_complex_bool_expr"
+  | .structFieldNames => "struct_field_names"
+  | .fnParamsExcessiveBools => "fn_params_excessive_bools"
+  | .structExcessiveBools => "struct_excessive_bools"
+  | .needlessRawStringHashes => "needless_raw_string_hashes"
+  | .branchesSharingCode => "branches_sharing_code"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -340,6 +358,14 @@ def Lint.code : Lint → String
   | .isEquality => "F0802"
   | .irrefutableIs => "F0803"
   | .chainableComparison => "F0804"
+  | .singleMatchElse => "F0771"
+  | .inconsistentStructConstructor => "F0772"
+  | .overlyComplexBoolExpr => "F0773"
+  | .structFieldNames => "F0774"
+  | .fnParamsExcessiveBools => "F0775"
+  | .structExcessiveBools => "F0776"
+  | .needlessRawStringHashes => "F0777"
+  | .branchesSharingCode => "F0778"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -399,6 +425,9 @@ def Lint.group : Lint → Group
   | .tooManyLines | .invalidUpcastComparisons | .unicodeNotNfc | .unnecessaryTrailingComma => .pedantic
   | .allowAttributes | .wildcardEnumMatchArm | .needlessRawStrings | .nonAsciiLiteral | .moduleNameRepetitions
   | .minIdentChars | .absolutePaths | .precedence => .restriction
+  | .singleMatchElse | .inconsistentStructConstructor | .overlyComplexBoolExpr
+  | .structFieldNames | .fnParamsExcessiveBools | .structExcessiveBools | .needlessRawStringHashes
+  | .branchesSharingCode => .pedantic
   | .undecidable => .decidability
 
 def Lint.default (l : Lint) : LintLevel := l.group.default
@@ -683,6 +712,9 @@ def withoutCommentsIn (cs : Array Char) (start stop : Nat) (limit? : Option Nat 
 def withoutComments (s : String) : String :=
   let cs := s.toList.toArray
   String.ofList (withoutCommentsIn cs 0 cs.size).toList
+
+/-- Whether `s` has a comment outside its string literals. -/
+def hasComment (s : String) : Bool := withoutComments s != s
 
 /-- The text `s` as the lints compare it, so that two texts are *written the
 same* (`Reqs/Lint#written-the-same`) if these agree: without comments or
@@ -1285,6 +1317,64 @@ def variantNameMsg? (n v : Name) : Option Msg :=
          label? := some s!"contains `{nameText n}`"
          notes := #[s!"note: a path to it names the enumeration already, as `{nameText n}::{nameText v}` does",
            s!"help: remove `{nameText n}` from its name"] }
+
+/-- The words of a field's name, in lower case, without its `?`. -/
+def fieldWords (n : Name) : List String := (words (baseName (nameText n))).map String.toLower
+
+/-- `struct_field_names` for the record `n` of `fields`, if they share a
+first or a last word (`lint::struct_field_names`, decided as for
+`enum_variant_names`). -/
+def structFieldNamesMsg? (n : Name) (fields : Array Name) : Option Msg :=
+  let names := fields.map fun f => Name.mkSimple ("_".intercalate (fieldWords f))
+  let first? := sharedWord? names false
+  let last? := sharedWord? names true
+  if !enumVariantNames fields.size first?.isSome last?.isSome then none else
+  let what := match first?, last? with
+    | some f, some l => s!"starts with `{f}` and ends with `{l}`"
+    | some f, none => s!"starts with `{f}`"
+    | none, some l => s!"ends with `{l}`"
+    | none, none => ""
+  let ws := first?.toList ++ last?.toList
+  some { code? := some Lint.structFieldNames.code, headline := s!"every field of `{nameText n}` {what}"
+         label? := some "its fields share a word"
+         notes := #[s!"help: remove {" and ".intercalate (ws.map (s!"`{·}`"))} from each field's name, or put it in the record's"] }
+
+/-- `struct_field_names` for the field `f` of the record `n`, if it
+contains the record's name, its words compared in lower case
+(`lint::field_has_record_name`, decided as for `enum_variant_names`). -/
+def fieldNameMsg? (n f : Name) : Option Msg :=
+  let ws := fieldWords f
+  let rs := (words (nameText n)).map String.toLower
+  if !variantHasEnumName ws.length rs.length (containsWords ws rs) then none else
+  let recName := "_".intercalate rs
+  some { code? := some Lint.structFieldNames.code
+         headline := s!"field `{nameText f}` contains the name of its record `{nameText n}`"
+         label? := some s!"contains `{recName}`"
+         notes := #["note: a field is read from a value of its record, which says what the field is of",
+           s!"help: remove `{recName}` from its name"] }
+
+/-- Whether `fn_params_excessive_bools` fires on a function with `nBools`
+`Bool` parameters (`lint::fn_params_excessive_bools`): more than 3, as in
+Clippy. -/
+def fnParamsExcessiveBools (nBools : Nat) : Bool := nBools > 3
+
+/-- The function `f`, with `n` `Bool` parameters. -/
+def fnParamsExcessiveBoolsMsg (f : Name) (n : Nat) : Msg :=
+  { code? := some Lint.fnParamsExcessiveBools.code, headline := s!"function `{nameText f}` has {n} `Bool` parameters"
+    label? := some "more than 3 `Bool` parameters"
+    notes := #[s!"note: a call such as `{nameText f}({", ".intercalate (List.replicate n "true")})` does not say which is which",
+      "help: replace some of them with an enumeration, or with a record of named `Bool` fields"] }
+
+/-- Whether `struct_excessive_bools` fires on a record with `nBools`
+`Bool` fields (`lint::struct_excessive_bools`): more than 3, as in Clippy. -/
+def structExcessiveBools (nBools : Nat) : Bool := nBools > 3
+
+/-- The record `r`, with `n` `Bool` fields. -/
+def structExcessiveBoolsMsg (r : Name) (n : Nat) : Msg :=
+  { code? := some Lint.structExcessiveBools.code, headline := s!"record `{nameText r}` has {n} `Bool` fields"
+    label? := some "more than 3 `Bool` fields"
+    notes := #["note: every combination of their values is allowed, though some are probably not meant",
+      "help: replace some of them with an enumeration of the combinations that are meant"] }
 
 /-- Whether the characters have a run of three or more uppercase letters. -/
 def hasUpperRun (cs : List Char) : Bool :=
@@ -2054,6 +2144,36 @@ def isEqualityMsg (scrutinee : BText) (alts : Array String) : Msg :=
     label? := some "names only variants without a payload, or literals"
     fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
+/-- Whether `single_match_else` fires on a `match` of `nArms` arms, from
+whether its first arm's pattern is one variant without a payload, whether
+the second is `_`, and whether `match_like_membership`, `needless_match`,
+`trivial_match` or `match_same_arms` fires on it
+(`lint::single_match_else`). -/
+def singleMatchElse (nArms : Nat) (oneVariant wildcard other : Bool) : Bool :=
+  nArms == 2 && oneVariant && wildcard && !other
+
+/-- The fix of `single_match_else`, if it fires, where `other` says that
+another match lint fires on it: `if x = V then a else b`, from the
+scrutinee `x` as written, with the parentheses around it, in parentheses
+where `slot` requires them, or where it is `followed` (`BText.inSlot`). -/
+def singleMatchElseFix? (arms : Array ArmInfo) (scrutinee : BText) (slot : Option Slot) (other : Bool)
+    (followed : Bool := false) : Option String := do
+  let #[a, b] := arms | none
+  let sameBodies := writtenSame a.body.text b.body.text
+  guard (singleMatchElse arms.size (a.alts.size == 1 && a.noPayload) b.wildcard (other || sameBodies))
+  let scr := scrutinee.inSlot (BKind.bin "=").slots[0]!
+  let t : BText := { text := s!"if {scr} = {a.alts[0]!} then {a.body.text} else {b.body.text}", prec := BKind.ite.prec }
+  return t.inSlot slot followed
+
+/-- `single_match_else` on a `match` whose fix is `replacement`, which it
+does not have where the `match` is `commented`: the fix would drop its
+comments. -/
+def singleMatchElseMsg (replacement : String) (commented : Bool := false) : Msg :=
+  { code? := some Lint.singleMatchElse.code, headline := "this `match` tests for one variant"
+    label? := some "one variant, then `_`"
+    notes := if commented then #["note: the fix would drop the comments in the `match`, so it has none"] else #[]
+    fixes := if commented then #[] else #[{ msg := "write it as an `if`", replacement }] }
+
 /-- Whether `wildcard_single_variant` fires on a `_` arm, from the number
 of variants it covers (`lint::wildcard_single_variant`). -/
 def wildcardSingle (nCovered : Nat) : Bool := nCovered == 1
@@ -2356,6 +2476,46 @@ def duplicateConstraintMsg (earlier later : ConstraintKind) (name : String) : Ms
     else #["note: one of them is probably not the constraint meant"]
   { code? := some Lint.duplicateConstraint.code, headline := s!"this is written the same as `{name}`"
     label? := some s!"the same as `{name}`", notes }
+
+/-! ## Raw string literals -/
+
+/-- The `#`s around the raw string literal written `t`, `r#"..."#`, and its
+body; `none` if `t` is not a raw literal. -/
+def rawParts? (t : String) : Option (Nat × List Char) := do
+  let 'r' :: cs := t.toList | none
+  let hashes := (cs.takeWhile (· == '#')).length
+  let '"' :: rest := cs.drop hashes | none
+  guard (rest.length ≥ hashes + 1)
+  return (hashes, rest.take (rest.length - hashes - 1))
+
+/-- The longest run of `#` directly after a `"` in `body`, or `-1` if it has
+no `"`. -/
+def longestHashRun : List Char → Int
+  | [] => -1
+  | '"' :: rest => max (rest.takeWhile (· == '#')).length (longestHashRun rest)
+  | _ :: rest => longestHashRun rest
+
+/-- Whether `needless_raw_string_hashes` fires on a raw literal with
+`hashes` `#`s, whose body's longest run of `#` after a `"` is `longest`,
+and the fewest `#`s it needs: one more than that run, so that no `"` in
+the body is followed by as many (`lint::needless_raw_string_hashes`). -/
+def needlessRawHashes (hashes : Nat) (longest : Int) : Bool × Int := (hashes > longest + 1, longest + 1)
+
+/-- The raw literal written `t`, with the fewest `#`s it needs, if
+`needless_raw_string_hashes` fires on it. -/
+def fewerHashes? (t : String) : Option String := do
+  let (hashes, body) ← rawParts? t
+  let (fires, fewest) := needlessRawHashes hashes (longestHashRun body)
+  guard fires
+  let hs := String.ofList (List.replicate fewest.toNat '#')
+  return s!"r{hs}\"{String.ofList body}\"{hs}"
+
+/-- A raw literal with more `#`s than it needs, as the text of its fix. -/
+def needlessRawHashesMsg (fixed : String) : Msg :=
+  { code? := some Lint.needlessRawStringHashes.code, headline := "this raw string literal has more `#`s than it needs"
+    label? := some "fewer `#`s would do"
+    notes := #["note: a raw literal needs one `#` more than the longest run of `#` after a `\"` in it, and none without a `\"`"]
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
 /-! ## Invisible characters -/
 
@@ -3101,6 +3261,57 @@ def needlessBoolAssignAt? (src : Array Char) (n : BNode α) (slot : Option Slot)
   let fixed := placed src n slot parent (binText (if unequal then "!=" else "iff") (c.text src) (x.text src))
   return { lint := .needlessBoolAssign, ref := n.ref, msg := needlessBoolAssignMsg (textOf src x.range) fixed unequal }
 
+/-- Whether `branches_sharing_code` fires on `if C then A op X else B op X`,
+or `X op A` and `X op B`, from whether both branches apply the same binary
+operator, whether their left, and their right, operands are written the
+same, both being `same_branches`, and whether the fix would be `nonlinear`
+(`branchesSharingNonlinear`) (`lint::branches_sharing_code`). -/
+def branchesSharingCode (sameOp sharedLeft sharedRight nonlinear : Bool) : Bool :=
+  sameOp && sharedLeft != sharedRight && !nonlinear
+
+/-- Whether the fix of `branches_sharing_code` for the operator `op`, whose
+shared operand is on the left if `left`, is outside the arithmetic that
+Fren accepts: for `*`, both the `if` that the fix moves out and the shared
+operand mention a variable or an uninterpreted function
+(`lang::linear_product`); for `div` and `mod`, the `if` would be the
+divisor, which must be a literal or a constant (`lang::divisor`). -/
+def branchesSharingNonlinear (op : String) (left ifMentions sharedMentions : Bool) : Bool :=
+  if op == "div" || op == "mod" then left else op == "*" && ifMentions && sharedMentions
+
+/-- `if C then A op X else B op X`, or the mirror form if `left`, whose
+shared operand is written `x`, as the text of its fix. -/
+def branchesSharingCodeMsg (op x fixed : String) (left : Bool) : Msg :=
+  { code? := some Lint.branchesSharingCode.code
+    headline := if left then s!"both branches of this `if` start with `{x} {op}`"
+      else s!"both branches of this `if` end with `{op} {x}`"
+    label? := some "the same operand in both branches"
+    notes := #[s!"note: `{x}` is evaluated whichever branch is taken, and has the same value in both"]
+    fixes := #[{ msg := "move it out of the `if`", replacement := fixed }] }
+
+/-- `branches_sharing_code` on `n`, a conditional in `slot` within `parent`,
+where `mentions` says whether an expression mentions a variable or an
+uninterpreted function (`lint::branches_sharing_code`). -/
+def branchesSharingAt? (src : Array Char) (mentions : α → Bool) (n : BNode α) (slot : Option Slot) (parent : Range) :
+    Option (OpReport α) := do
+  let #[c, a, b] := n.kids | none
+  let .bin op := a.kind | none
+  let #[a1, a2] := a.kids | none
+  let #[b1, b2] := b.kids | none
+  let same (x y : BNode α) := writtenSame (textOf src x.range) (textOf src y.range)
+  let left := same a1 b1
+  -- The operands that the fix moves into an `if`, and the shared one.
+  let (ka, kb, kx) := if left then (a2, b2, a1) else (a1, b1, a2)
+  let nonlinear := branchesSharingNonlinear op left (mentions c.ref || mentions ka.ref || mentions kb.ref) (mentions kx.ref)
+  unless branchesSharingCode (b.kind == .bin op) left (same a2 b2) nonlinear do none
+  let k := BKind.bin op
+  -- The branches without the shared operand, with the parentheses they are written with.
+  let (x, ta, tb) := if left then (operandText src a.range a1, operandText src a.range a2, operandText src b.range b2)
+    else (operandText src a.range a2, operandText src a.range a1, operandText src b.range b1)
+  let ite : BText := { text := s!"if {textOf src c.range} then {ta} else {tb}", prec := BKind.ite.prec }
+  let text := if left then s!"{x} {op} {ite.inSlot (k.slots[1]?.join)}" else s!"{ite.inSlot (k.slots[0]?.join)} {op} {x}"
+  let fixed := placed src n slot parent { text, prec := k.prec }
+  return { lint := .branchesSharingCode, ref := n.ref, msg := branchesSharingCodeMsg op x fixed left }
+
 /-- The binary operators that are punctuators, but `-`, which
 `suspicious_unary_op_formatting` looks at: `-` is never directly followed
 by a `-`, which would start a comment, and `<` never is, since `<-` is
@@ -3233,6 +3444,67 @@ def redundantAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent 
   let (true, keepFirst) := redundantComparisons conj c1 a c2 b | none
   let fixed := placed src n slot parent ((if keepFirst then l else r).text src)
   return { lint := .redundantComparisons, ref := n.ref, msg := redundantComparisonsMsg fixed }
+
+/-- Why `overly_complex_bool_expr` drops an operand (`lint::BoolRule`). -/
+inductive BoolRule where
+  /-- `a or (a and b)` is `a`, and `a and (a or b)` is `a`. -/
+  | absorption
+  /-- `a and not a` is `false`. -/
+  | contradiction
+  /-- `a or not a` is `true`. -/
+  | excludedMiddle
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- Whether `overly_complex_bool_expr` fires on an `and`, if `conj`, or an
+`or`, and by which rule, from whether an operand absorbs the other, whether
+one is the other's negation, and whether `nonminimal_bool` rewrites that
+negation (`lint::overly_complex_bool_expr`). -/
+def overlyComplexBool (conj absorbs negates simplerNegation : Bool) : Bool × BoolRule :=
+  (absorbs || (negates && !simplerNegation),
+    if absorbs then .absorption else if conj then .contradiction else .excludedMiddle)
+
+/-- `overly_complex_bool_expr` by `rule`, on an `and`, if `conj`, or an
+`or`, whose fix is `fixed`. -/
+def overlyComplexBoolMsg (conj : Bool) (rule : BoolRule) (fixed : String) (range? : Option Range := none) : Msg :=
+  let op := if conj then "and" else "or"
+  let (headline, label, note) := match rule with
+    | .absorption => (s!"this `{op}` has an operand that does not change its value", "the other operand decides it",
+      "note: `a or (a and b)` is `a`, and `a and (a or b)` is `a`")
+    | .contradiction => ("this `and` is always `false`", "an operand and its negation",
+      "note: one of the operands is probably not the one meant")
+    | .excludedMiddle => ("this `or` is always `true`", "an operand and its negation",
+      "note: one of the operands is probably not the one meant")
+  { code? := some Lint.overlyComplexBoolExpr.code, headline, label? := some label, notes := #[note]
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed, range? }] }
+
+/-- `overly_complex_bool_expr` on `n`, an `and` if `conj`, or an `or`, in
+`slot` within `parent` (`lint::overly_complex_bool_expr`). -/
+def overlyComplexAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) (conj : Bool) :
+    Option (OpReport α) := do
+  let #[l, r] := n.kids | none
+  let same (a b : BNode α) := writtenSame (textOf src a.range) (textOf src b.range)
+  -- `k` is `p or q` in an `and`, or `p and q` in an `or`, where `p` or `q` is `o`.
+  let absorbs (k o : BNode α) := k.kind == .bin (if conj then "or" else "and") && k.kids.any (same · o)
+  let kept? := if absorbs r l then some l else if absorbs l r then some r else none
+  let negates (k o : BNode α) := k.kind == .not && k.kids.any (same · o)
+  let negation? := if negates r l then some r else if negates l r then some l else none
+  let simpler := negation?.any fun k => ((k.toEx 3).simplerForm .nonminimalBool).isSome
+  let (fires, rule) := overlyComplexBool conj kept?.isSome negation?.isSome simpler
+  unless fires do none
+  let t ← match rule, kept? with
+    | .absorption, some k => some (k.text src)
+    | .absorption, none => none
+    | _, _ => some { text := toString (rule == .excludedMiddle), prec := BKind.atom.prec }
+  -- An operand in parentheses: the fix replaces them too, and has the
+  -- parentheses that its slot needs, rather than keeping those of `n`.
+  match slot, parensAround? src parent n.range with
+  | some _, some _ =>
+    let outer := withParensIn src parent n.range
+    let fixed := t.inSlot slot (followedAt src outer)
+    return { lint := .overlyComplexBoolExpr, ref := n.ref, msg := overlyComplexBoolMsg conj rule fixed (some outer) }
+  | _, _ =>
+    let fixed := placed src n slot parent t
+    return { lint := .overlyComplexBoolExpr, ref := n.ref, msg := overlyComplexBoolMsg conj rule fixed }
 
 /-- `erasing_op` on `n`, a binary operator (`lint::erasing_op`). -/
 def erasingOpAt? (src : Array Char) (n : BNode α) : Option (OpReport α) := do
@@ -3390,7 +3662,7 @@ def chainableAt [Inhabited α] (src : Array Char) (n : BNode α) (slot : Option 
 `slot` within `parent`, outermost first, where `inElse` says that `n` is
 the `else` branch of a conditional. -/
 partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (isAbs : α → Bool)
-    (n : BNode α) (slot : Option Slot) (parent : Range) (inElse : Bool := false) : Array (OpReport α) :=
+    (mentions : α → Bool) (n : BNode α) (slot : Option Slot) (parent : Range) (inElse : Bool := false) : Array (OpReport α) :=
   let slots := n.kind.slots
   let own := match n.kind with
     | .bin op =>
@@ -3399,13 +3671,14 @@ partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool)
           (doubleComparisonAt? src n slot parent (op == "and")).toArray
             ++ (contradictoryAt? src variant? n (op == "and")).toArray
             ++ (redundantAt? src n slot parent (op == "and")).toArray
+            ++ (overlyComplexAt? src n slot parent (op == "and")).toArray
         else #[])
         ++ (boolEqualityAt? src boolEq n slot parent).toArray ++ (manualMethodAt? src n slot parent).toArray
         ++ (identityOpAt? src n slot parent).toArray ++ (suspiciousUnaryAt? src n).toArray
         ++ (erasingOpAt? src n).toArray ++ (firstEmptyAt? src n slot parent).toArray
         ++ (invalidUpcastAt? src isAbs n).toArray ++ operands ++ precedenceAt src n
         ++ (if op == "and" then chainableAt src n slot parent else #[])
-    | .ite => (needlessBoolAssignAt? src n slot parent).toArray ++ (if inElse then #[] else ifsSameCondAt src n)
+    | .ite => (needlessBoolAssignAt? src n slot parent).toArray ++ (branchesSharingAt? src mentions n slot parent).toArray ++ (if inElse then #[] else ifsSameCondAt src n)
     | .method _ => (methodCallAt? src n slot parent).toArray
     | .chain ops => (contradictoryChainAt? src n ops).toArray
     | _ => #[]
@@ -3415,15 +3688,17 @@ partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool)
     | .atom, some k => if isReceiverOf src n k then #[some receiverSlot] else slots
     | _, _ => slots
   own ++ (n.kids.mapIdx fun i k =>
-    opReportsIn src boolEq variant? isAbs k (slots[i]?.join) n.range (n.kind == .ite && i == 2)).flatten
+    opReportsIn src boolEq variant? isAbs mentions k (slots[i]?.join) n.range (n.kind == .ite && i == 2)).flatten
 
 /-- The messages of the operator and method lints in an expression written
 in `src` (`Reqs/Lint/Complexity/Comparisons`), where `boolEq` says whether a
 comparison compares `Bool`s, `variant?` which variant without a payload a
-path is, if it is one, and `isAbs` whether an expression is a call of `abs`. -/
+path is, if it is one, `isAbs` whether an expression is a call of `abs`,
+and `mentions` whether an expression mentions a variable or an
+uninterpreted function. -/
 def opReports [Inhabited α] (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (isAbs : α → Bool)
-    (root : BNode α) : Array (OpReport α) :=
-  opReportsIn (upTo src root.range) boolEq variant? isAbs root none root.range
+    (mentions : α → Bool) (root : BNode α) : Array (OpReport α) :=
+  opReportsIn (upTo src root.range) boolEq variant? isAbs mentions root none root.range
 
 /-! ## Arithmetic and parentheses -/
 
@@ -4162,6 +4437,42 @@ def unnecessaryTrailingCommaMsg (closer : String) : Msg :=
     label? := some "trailing comma"
     notes := #[s!"note: a list ends with a comma only where its `{closer}` starts a line, so that an element is added by adding a line"]
     fixes := #[{ msg := "remove the comma", replacement := "" }] }
+
+/-! ## Record literals -/
+
+/-- Whether `inconsistent_struct_constructor` fires on a record literal,
+from whether its fields are written in the order its record declares them
+(`lint::inconsistent_struct_constructor`). -/
+def inconsistentStructConstructor (inOrder : Bool) : Bool := !inOrder
+
+/-- The record literal written at `outer` in `src`, whose fields, named
+`given`, are written at `fields`, with its fields in the order `declared`,
+if `inconsistent_struct_constructor` fires on it: each field keeps its
+text, and the text between fields stays where it is. The fix is `none`
+where that text has a comment, which would no longer be by its field. -/
+def reorderedFields? (src : Array Char) (outer : Range) (fields : Array Range) (given declared : Array Name) :
+    Option (Option String) := do
+  let order := declared.filterMap given.idxOf?
+  guard (order.size == fields.size && fields.size > 0)
+  guard (inconsistentStructConstructor (order == Array.range order.size))
+  let before := textOf src { start := outer.start, stop := fields[0]!.start }
+  let between := (Array.range fields.size).map fun k =>
+    textOf src { start := fields[k]!.stop, stop := if k + 1 < fields.size then fields[k + 1]!.start else outer.stop }
+  if hasComment before || between.any hasComment then return none
+  let mut text := before
+  for k in [0:fields.size] do
+    text := text ++ textOf src fields[order[k]!]! ++ between[k]!
+  return some text
+
+/-- A record literal of the record `r`, whose fields are not in the order
+`declared`, as the text of its fix, if it has one. -/
+def inconsistentStructConstructorMsg (r : Name) (declared : Array Name) (fixed? : Option String) : Msg :=
+  { code? := some Lint.inconsistentStructConstructor.code
+    headline := s!"the fields of this literal are not in the order `{nameText r}` declares them"
+    label? := some "fields out of order"
+    notes := #[s!"note: `{nameText r}` declares {proseList (declared.map nameText)}, in this order"]
+      ++ (if fixed?.isNone then #["note: a comment between the fields would not stay by its field, so this has no fix"] else #[])
+    fixes := fixed?.toArray.map fun replacement => { msg := "write them in that order", replacement } }
 
 /-! ## Expectations -/
 

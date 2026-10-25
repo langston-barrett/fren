@@ -1,0 +1,23 @@
+warning[F0775]: function `allowed?` has 4 `Bool` parameters
+ --> test/cli/lints/pedantic/f0775_fn_params_excessive_bools.fren:4:8
+  |
+4 | pub fn allowed?(a?, b?, c?, d?) := a? and (b? or c? or d?)
+  |        ^^^^^^^^ more than 3 `Bool` parameters
+  |
+  = note: a call such as `allowed?(true, true, true, true)` does not say which is which
+  = help: replace some of them with an enumeration, or with a record of named `Bool` fields
+  = note: `fn_params_excessive_bools` is set to `warn`
+
+warning[F0775]: function `chosen` has 4 `Bool` parameters
+ --> test/cli/lints/pedantic/f0775_fn_params_excessive_bools.fren:6:8
+  |
+6 | pub fn chosen(Bool, Bool, Int, Bool, Bool): Int
+  |        ^^^^^^ more than 3 `Bool` parameters
+  |
+  = note: a call such as `chosen(true, true, true, true)` does not say which is which
+  = help: replace some of them with an enumeration, or with a record of named `Bool` fields
+
+fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0775`.
+exit=3

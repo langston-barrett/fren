@@ -1393,4 +1393,108 @@ trusted lint::membership_test_fixed: "a model of an expression, checked by the r
 trusted lint::membership_test_written: "a model of an expression, checked by the refinements in its section"
 -- keep-sorted end
 
+/-! ## Pedantic lints of expressions, matches, records and literals -/
+
+def toBoolRule : Fren.Core.BoolRule → lint.BoolRule
+  | .absorption => .Absorption
+  | .contradiction => .Contradiction
+  | .excludedMiddle => .ExcludedMiddle
+
+impl overly_complex_bool_expr: lint::overly_complex_bool_expr for (c a n s : Bool) {
+  conj? := c,
+  absorbs? := a,
+  negates? := n,
+  simpler_negation? := s,
+  fires? := (Fren.Core.overlyComplexBool c a n s).1,
+  kind := toBoolRule (Fren.Core.overlyComplexBool c a n s).2,
+} by
+  intro c a n s _
+  cases c <;> cases a <;> cases n <;> cases s <;> simp [fren_spec, Fren.Core.overlyComplexBool, toBoolRule]
+
+impl branches_sharing_code: lint::branches_sharing_code for (o l r n : Bool) {
+  same_op? := o,
+  shared_left? := l,
+  shared_right? := r,
+  nonlinear? := n,
+  fires? := Fren.Core.branchesSharingCode o l r n,
+} by
+  intro o l r n _
+  cases o <;> cases l <;> cases r <;> cases n <;> simp [fren_spec, Fren.Core.branchesSharingCode]
+
+impl needless_raw_string_hashes: lint::needless_raw_string_hashes for (h : Nat) (l : Int) {
+  hashes := h,
+  longest := l,
+  fires? := (Fren.Core.needlessRawHashes h l).1,
+  fewest := (Fren.Core.needlessRawHashes h l).2,
+} by
+  intro h l _
+  simp [fren_spec, Fren.Core.needlessRawHashes]
+
+impl single_match_else: lint::single_match_else for (n : Nat) (v w o : Bool) {
+  n_arms := n,
+  one_variant? := v,
+  wildcard? := w,
+  other? := o,
+  fires? := Fren.Core.singleMatchElse n v w o,
+} by
+  intro n v w o _
+  cases v <;> cases w <;> cases o <;> simp [fren_spec, Fren.Core.singleMatchElse] <;> omega
+
+impl inconsistent_struct_constructor: lint::inconsistent_struct_constructor for (b : Bool) {
+  in_order? := b,
+  fires? := Fren.Core.inconsistentStructConstructor b,
+} by
+  intro b _
+  cases b <;> simp [fren_spec, Fren.Core.inconsistentStructConstructor]
+
+-- Decided by the functions of `enum_variant_names`.
+impl struct_field_names: lint::struct_field_names for (n : Nat) (f l : Bool) {
+  n_fields := n,
+  shared_first? := f,
+  shared_last? := l,
+  fires? := Fren.Core.enumVariantNames n f l,
+} by
+  intro n f l _
+  cases f <;> cases l <;> simp [fren_spec, Fren.Core.enumVariantNames] <;> omega
+
+impl field_has_record_name: lint::field_has_record_name for (n r : Nat) (c : Bool) {
+  n_words := n,
+  n_record_words := r,
+  contains? := c,
+  fires? := Fren.Core.variantHasEnumName n r c,
+} by
+  intro n r c _
+  cases c <;> simp [fren_spec, Fren.Core.variantHasEnumName] <;> omega
+
+impl struct_excessive_bools: lint::struct_excessive_bools for (n : Nat) {
+  n_bools := n,
+  fires? := Fren.Core.structExcessiveBools n,
+} by
+  intro n _
+  simp [fren_spec, Fren.Core.structExcessiveBools]
+  omega
+
+impl fn_params_excessive_bools: lint::fn_params_excessive_bools for (n : Nat) {
+  n_bools := n,
+  fires? := Fren.Core.fnParamsExcessiveBools n,
+} by
+  intro n _
+  simp [fren_spec, Fren.Core.fnParamsExcessiveBools]
+  omega
+
+trusted lint::absorption_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::absorption_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::contradiction_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::contradiction_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::excluded_middle_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::excluded_middle_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::branches_sharing_code_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::branches_sharing_code_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::raw_hashes_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::raw_hashes_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::single_match_else_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::single_match_else_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::inconsistent_struct_constructor_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::inconsistent_struct_constructor_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+
 end Fren.Impls
