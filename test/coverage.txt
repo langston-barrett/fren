@@ -1,0 +1,106 @@
+# The declarations of FrenCore, Fren and FrenCli that `lake test` does not
+# run (`Reqs/dev/Testing#coverage`). One that is never meant to run says why,
+# after ` -- `. `fren_coverage` fails on a counted declaration that does not
+# run and is not listed, and on a listed one that runs or is no longer
+# counted, so this only shrinks.
+Fren.Core.CheckResult.isRedundant
+Fren.Core.Ex.eval
+Fren.Core.Ex.kids
+Fren.Core.Ex.pick
+Fren.Core.Ex.simp
+Fren.Core.Ex.simp.finish
+Fren.Core.Ex.withKids
+Fren.Core.Msg.internal
+Fren.Core.Outcome.reason
+Fren.Core.Pick.get
+Fren.Core.Re.mat
+Fren.Core.Shape.build
+Fren.Core.Val.sameType
+Fren.Core.applicationAccepted
+Fren.Core.argumentAccepted
+Fren.Core.binV
+Fren.Core.bindingOk
+Fren.Core.cmpV
+Fren.Core.doubleNeg
+Fren.Core.effectiveLevel
+Fren.Core.functionBodyAccepted
+Fren.Core.inconclusiveAdvice
+Fren.Core.indexAfterUse
+Fren.Core.iteV
+Fren.Core.negV
+Fren.Core.notAFunctionMsg
+Fren.Core.notV
+Fren.Core.sameBranches
+Fren.Core.trustedAccepted
+Fren.Core.unknownSetMethodMsg
+Fren.Core.whenV
+Fren.FinSet.card
+Fren.FinSet.closure
+Fren.FinSet.closureList
+Fren.FinSet.closureLoop
+Fren.FinSet.domain
+Fren.FinSet.image
+Fren.FinSet.instDecidableEq
+Fren.FinSet.instDecidableMemOfDecidableEq
+Fren.FinSet.instDecidableSubsetOfDecidableEq
+Fren.FinSet.instEmptyCollection
+Fren.FinSet.instHasSubset
+Fren.FinSet.instInhabited
+Fren.FinSet.instInsert
+Fren.FinSet.instInterOfDecidableEq
+Fren.FinSet.instMembership
+Fren.FinSet.instRepr
+Fren.FinSet.instSDiffOfDecidableEq
+Fren.FinSet.instSingleton
+Fren.FinSet.instUnion
+Fren.FinSet.inverse
+Fren.FinSet.join
+Fren.FinSet.joinList
+Fren.FinSet.nub
+Fren.FinSet.ofArray
+Fren.FinSet.ofList
+Fren.FinSet.range
+Fren.FinSet.setoid
+Fren.FinSet.square
+Fren.FinSet.toListUnsafe
+Fren.Lang.decExists
+Fren.Lang.decForall
+Fren.Lang.frenIdent.formatter -- Lean calls it only to print Fren syntax, which no message does
+Fren.Lang.frenIdent.parenthesizer -- Lean calls it only to print Fren syntax, which no message does
+Fren.Lang.sameLineAsLeft.formatter -- Lean calls it only to print Fren syntax, which no message does
+Fren.Lang.sameLineAsLeft.parenthesizer -- Lean calls it only to print Fren syntax, which no message does
+Fren.Seq.at
+Fren.Seq.instAppend
+Fren.Seq.instDecidableEq
+Fren.Seq.instDecidableMemOfDecidableEq
+Fren.Seq.instEmptyCollection
+Fren.Seq.instInhabited
+Fren.Seq.instMembership
+Fren.Seq.instRepr
+Fren.Seq.nth
+Fren.Seq.ofList
+Fren.Seq.rev
+Fren.Seq.toList
+Fren.Seq.unit
+Fren.Str.lit
+Fren.Str.matches
+Fren.Str.replaceAllAux
+Fren.elabInterp
+Fren.elabMd
+Fren.interpAccepted
+Fren.pathComponents
+Fren.relativeTo
+Fren.relativeTo.strip
+Fren.resolveUsePath
+FrenCli.Eval.Spec.insts
+FrenCli.Eval.World.size
+FrenCli.Eval.confirmedVerdict
+FrenCli.Eval.hashVal
+FrenCli.Eval.lowerFiles
+FrenCli.Eval.valueOf
+FrenCli.Fm.subject? -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
+FrenCli.Refutation.about -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
+FrenCli.Refutation.msg -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
+FrenCli.internal
+FrenCli.kindName -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
+main -- the entry point of `fren`, which only calls `FrenCli.run`; the tests call `run` itself
