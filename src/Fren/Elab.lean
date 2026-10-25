@@ -99,6 +99,8 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
   checkLexemes stx
   checkParsed stx
   let segs := pathSegs stx[2]
+  -- A path that did not parse, as in `mod 2`, which Lean has reported.
+  if segs.isEmpty || segs.any (·.getId.isAnonymous) then return
   let names ← segNames segs
   let (path, new) ← liftResolve segs ((← getState).table.declareModule names (!stx[0].isNone))
   for i in new do
@@ -1643,15 +1645,21 @@ def indexTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
 
 /-- `(e).a.b` or `(e).a.m(x)`, whose name after the `.` is dotted, as the
 reads one after another, `((e).a).b` or `((e).a).m(x)`, as the `fren`
-command's parser reads it; `none` for any other expression. -/
+command's parser reads it, each name at its own place in the source, so
+that an error underlines only the name it is about; `none` for any other
+expression. -/
 def splitDotted? (e : Syntax) : Option Syntax := do
   guard (e.isOfKind ``Lang.fieldExpr || e.isOfKind ``Lang.methodExpr)
   guard e[2].isIdent
   let n := e[2].getId
   guard !n.isAtomic
-  let recv := n.components.dropLast.foldl (init := e[0]) fun (r : Syntax) c =>
-    Syntax.node .none ``Lang.fieldExpr #[r, e[1], mkIdentFrom e[2] c]
-  return (e.setArg 0 recv).setArg 2 (mkIdentFrom e[2] (Name.mkSimple n.getString!))
+  let start := (e[2].getPos? (canonicalOnly := false)).getD 0
+  -- Each name, with its place: after the names and dots before it.
+  let (_, ids) := n.components.foldl (init := (start, #[])) fun (p, ids) c =>
+    let stop : String.Pos.Raw := ⟨p.byteIdx + c.toString.utf8ByteSize⟩
+    (⟨stop.byteIdx + 1⟩, ids.push (mkIdentFrom (Syntax.atom (.synthetic p stop) "") c))
+  let recv := ids.pop.foldl (init := e[0]) fun (r : Syntax) id => Syntax.node .none ``Lang.fieldExpr #[r, e[1], id]
+  return (e.setArg 0 recv).setArg 2 ids.back!
 
 /-- The constant that the path of names `names` names, without recording its
 use. -/
@@ -1721,7 +1729,9 @@ partial def divisorForm (cx : ExprCtx) (k : Syntax) : TermElabM (Core.DivisorFor
   | _ => return (.other, 0, .anonymous)
 
 /-- `a div k` or `a mod k` (`op`), which divides by the value of the divisor
-`k` (`lang::divisor`), written as a numeral. -/
+`k` (`lang::divisor`), as the `fren` command does: by a numeral, which
+SMT-LIB's linear logics require, so that `x div -k` is `-(x / k)` and
+`x mod -k` is `x % k` (`Int.ediv_neg`, `Int.emod_neg`). -/
 def divTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (op : String) : TermElabM Term :=
     withRef e do
   let x ← toTerm cx e[0]
@@ -1730,9 +1740,8 @@ def divTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e :
     unless ty.isConstOf ``Int do throwErrorAt stx s!"type mismatch: expected `Int`, found `{← typeName ty}`"
   let (form, value, c) ← divisorForm cx e[2]
   liftMsg e[2] (Core.checkDivisor op form value c)
-  let n := Syntax.mkNumLit (toString value.natAbs)
-  let k ← if value < 0 then `((-$n : Int)) else `(($n : Int))
-  if op == "div" then `($x / $k) else `($x % $k)
+  let k ← `(($(Syntax.mkNumLit (toString value.natAbs)) : Int))
+  if op == "mod" then `($x % $k) else if value < 0 then `(-($x / $k)) else `($x / $k)
 
 open Lang in
 /-- A path in an expression: a binder, a variable or a constant, with the

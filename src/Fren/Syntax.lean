@@ -90,25 +90,26 @@ scoped syntax:70 (name := joinExpr) fren_expr:70 " join " fren_expr:71 : fren_ex
 
 open Lean Parser in
 /-- Succeeds if the next token is on the line where the syntax before it,
-the left operand of a trailing parser, ends. -/
-def sameLineAsLeft : Parser where
+the left operand of a trailing parser, ends; `what` names that token, as
+`the `in` of a membership`, for the error. -/
+def sameLineAsLeft (what : String) : Parser where
   fn := fun c s =>
     match s.stxStack.back.getTailPos? with
     | some p =>
       if (c.fileMap.toPosition p).line == (c.fileMap.toPosition s.pos).line then s
-      else s.mkError "the `in` of a membership on the line of its left operand"
+      else s.mkError s!"{what} on the line of its left operand"
     | none => s
 
 open Lean PrettyPrinter in
-@[combinator_formatter sameLineAsLeft] def sameLineAsLeft.formatter : Formatter := pure ()
+@[combinator_formatter sameLineAsLeft] def sameLineAsLeft.formatter (_ : String) : Formatter := pure ()
 
 open Lean PrettyPrinter in
-@[combinator_parenthesizer sameLineAsLeft] def sameLineAsLeft.parenthesizer : Parenthesizer := pure ()
+@[combinator_parenthesizer sameLineAsLeft] def sameLineAsLeft.parenthesizer (_ : String) : Parenthesizer := pure ()
 
 open Lean Parser in
 /-- `x in s`, membership. Its `in` must be on the line where `x` ends, so
 that an `in` starting a line starts an input (`Reqs/Lang/Lexical`). -/
-@[scoped fren_expr_parser] def memberExpr := trailing_parser:50:51 sameLineAsLeft >> " in " >> categoryParser `fren_expr 51
+@[scoped fren_expr_parser] def memberExpr := trailing_parser:50:51 sameLineAsLeft "the `in` of a membership" >> " in " >> categoryParser `fren_expr 51
 
 /-- `{a, b}`, a set literal; `{}` is the empty set. -/
 scoped syntax:max (name := setExpr) "{" sepBy(fren_expr, ", ", ", ", allowTrailingSep) "}" : fren_expr
@@ -118,7 +119,7 @@ scoped syntax:70 (name := divExpr) fren_expr:70 " div " fren_expr:71 : fren_expr
 open Lean Parser in
 /-- `a mod k`, the remainder. Its `mod` must be on the line where `a` ends,
 so that a `mod` starting a line starts a module (`Reqs/Lang/Lexical`). -/
-@[scoped fren_expr_parser] def modExpr := trailing_parser:70:70 sameLineAsLeft >> " mod " >> categoryParser `fren_expr 71
+@[scoped fren_expr_parser] def modExpr := trailing_parser:70:70 sameLineAsLeft "the `mod` of a remainder" >> " mod " >> categoryParser `fren_expr 71
 
 scoped syntax:75 "-" fren_expr:75 : fren_expr
 /-! Operators of other languages, parsed only to say what to write instead

@@ -199,7 +199,9 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
             code? := some "F0101", headline := "unexpected characters `//`", label? := some "not a comment in Fren"
             fixes := #[{ msg := "comments start with `--`", replacement := "--" }] } }
         if c == '!' || c == '/' || c == '%' then
-          return .error { span := ⟨i, i + 1⟩, msg := Fren.Core.foreignOpMsg c.toString }
+          let spaceBefore := i == 0 || src[i - 1]!.isWhitespace
+          let spaceAfter := (src[i + 1]?.map Char.isWhitespace).getD true
+          return .error { span := ⟨i, i + 1⟩, msg := Fren.Core.foreignOpMsg c.toString spaceBefore spaceAfter }
         let msg : Fren.Core.Msg :=
           { code? := some "F0101", headline := s!"unexpected character `{c}`", label? := some "not part of Fren's syntax" }
         let msg := match c with

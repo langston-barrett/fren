@@ -1,0 +1,13 @@
+-- The `mod` of a remainder is on the line of its left operand: at the
+-- start of a line, `mod` starts a module, so this is not `x mod 2`.
+comp c {
+    in x: Int
+    pub out r: Int
+
+    req e: r = x
+    --~^[hosted] error: unexpected token 'mod'; expected '}'
+        mod 2
+        --~^[cli] error: expected a member (`in`, `out`, `inst`, `assume`, `req`, `expect` or `use`) or `}`, found keyword `mod`
+        --~^^[hosted] error: expected identifier
+}
+--@ exit: 2

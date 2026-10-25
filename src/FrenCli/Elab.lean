@@ -590,9 +590,6 @@ partial def divisorForm (cx : ExprCtx) (k : Expr) : M (Fren.Core.DivisorForm × 
       | none => (.unknownConstant, 0, path)
   | _ => return (.other, 0, .anonymous)
 
-/-- An integer as SMT-LIB. -/
-def intSmt (v : Int) : String := if v < 0 then s!"(- {v.natAbs})" else toString v
-
 /-- Whether `segs`, applied, builds a variant rather than applying a
 function. -/
 def isVariant (cx : ExprCtx) (segs : Array Ident) : M Bool := do
@@ -1625,7 +1622,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       discard (expect b .int (opNote op .int))
       let (form, value, c) ← divisorForm cx b
       liftMsg b.span (Fren.Core.checkDivisor op form value c)
-      return (s!"({op} {x} {intSmt value})", .int)
+      -- By a numeral, which the linear logics require: Euclidean,
+      -- `x div -k` is `-(x div k)` and `x mod -k` is `x mod k`.
+      let k := value.natAbs
+      return (if op == "mod" then s!"(mod {x} {k})" else if value < 0 then s!"(- (div {x} {k}))" else s!"(div {x} {k})", .int)
     | _ => return (s!"({op} {← expect a .int (opNote op .int)} {← expect b .int (opNote op .int)})", .int)
   | .path _ segs =>
     if segs.size == 1 then

@@ -111,7 +111,7 @@ comp arith {
 
 /--
 info: @[reducible] def check.arith.req.quotient : Int → Int → Int → Int → Int → Prop :=
-fun x y q r a => q = x / -4
+fun x y q r a => q = -(x / 4)
 -/
 #guard_msgs in
 #print check.arith.req.quotient
@@ -126,8 +126,11 @@ fun x y q r a =>
 #guard_msgs in
 #print check.arith.req.absolute
 
--- Euclidean, as in SMT-LIB.
+-- Euclidean, as in SMT-LIB, so that a negative divisor is a negated
+-- quotient, or the same remainder, by a numeral.
 example : (-7 : Int) / 2 = -4 ∧ (-7 : Int) % 2 = 1 ∧ (7 : Int) / -2 = -3 ∧ (7 : Int) % -2 = 1 := by decide
+example (x : Int) (k : Nat) : x / -(k : Int) = -(x / k) ∧ x % -(k : Int) = x % k :=
+  ⟨Int.ediv_neg x k, Int.emod_neg x k⟩
 
 /-- info: fren: 19 passed, 0 failed, 0 inconclusive, 0 redundant -/
 #guard_msgs in

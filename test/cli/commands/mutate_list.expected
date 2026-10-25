@@ -1,80 +1,87 @@
-shift-integer-m::LIMIT-2ffd2ce22cf9 test/cli/commands/mutate_list.fren:14:21 `10` changed to `11`
-shift-integer-m::LIMIT-72787c09fdd2 test/cli/commands/mutate_list.fren:14:21 `10` changed to `9`
-swap-arithmetic-m::twice-363913c1041a test/cli/commands/mutate_list.fren:17:28 `+` changed to `-`
-swap-comparison-m::sub::r-f1c2c9c6639f test/cli/commands/mutate_list.fren:24:14 `=` changed to `!=`
-swap-arithmetic-m::sub::r-db4611c658f2 test/cli/commands/mutate_list.fren:24:18 `-` changed to `+`
-shift-integer-m::sub::r-ba2a33fafb20 test/cli/commands/mutate_list.fren:24:20 `1` changed to `2`
-shift-integer-m::sub::r-902a3dcac216 test/cli/commands/mutate_list.fren:24:20 `1` changed to `0`
-swap-and-or-m::sub::r-1433844be7c3 test/cli/commands/mutate_list.fren:24:22 `or` changed to `and`
-swap-arithmetic-m::c::y-7627612d3e58 test/cli/commands/mutate_list.fren:32:32 `+` changed to `-`
-shift-integer-m::c::y-d1b6b12c1386 test/cli/commands/mutate_list.fren:32:34 `1` changed to `2`
-shift-integer-m::c::y-fbb6a75c4c90 test/cli/commands/mutate_list.fren:32:34 `1` changed to `0`
-drop-conjunct-m::c::bounded-2ed241eeee14 test/cli/commands/mutate_list.fren:34:21 `x >= 0 and x <= LIMIT` changed to `x >= 0`
-drop-conjunct-m::c::bounded-decb5fe79381 test/cli/commands/mutate_list.fren:34:21 `x >= 0 and x <= LIMIT` changed to `x <= LIMIT`
-swap-comparison-m::c::bounded-0b1690c266c8 test/cli/commands/mutate_list.fren:34:23 `>=` changed to `>`
-shift-integer-m::c::bounded-dfc2e76ee279 test/cli/commands/mutate_list.fren:34:26 `0` changed to `1`
-swap-and-or-m::c::bounded-ee228067b07a test/cli/commands/mutate_list.fren:34:28 `and` changed to `or`
-swap-comparison-m::c::bounded-3738feccde07 test/cli/commands/mutate_list.fren:34:34 `<=` changed to `<`
-negate-trigger-m::c::r-40a757149c8c test/cli/commands/mutate_list.fren:35:12 `when` changed to `unless`
-drop-conjunct-m::c::r-f793c87bc206 test/cli/commands/mutate_list.fren:35:17 `x > 2 and x < 5` changed to `x > 2`
-drop-conjunct-m::c::r-a8a5965eec91 test/cli/commands/mutate_list.fren:35:17 `x > 2 and x < 5` changed to `x < 5`
-swap-comparison-m::c::r-b0861856cd18 test/cli/commands/mutate_list.fren:35:19 `>` changed to `>=`
-shift-integer-m::c::r-a2befe9c95c8 test/cli/commands/mutate_list.fren:35:21 `2` changed to `3`
-shift-integer-m::c::r-78bf086c5cbe test/cli/commands/mutate_list.fren:35:21 `2` changed to `1`
-swap-and-or-m::c::r-472359016b99 test/cli/commands/mutate_list.fren:35:23 `and` changed to `or`
-swap-comparison-m::c::r-3668b197d871 test/cli/commands/mutate_list.fren:35:29 `<` changed to `<=`
-shift-integer-m::c::r-c39da0bafa77 test/cli/commands/mutate_list.fren:35:31 `5` changed to `6`
-shift-integer-m::c::r-999daa8ac16d test/cli/commands/mutate_list.fren:35:31 `5` changed to `4`
-swap-and-or-m::c::r-e193c7f2882c test/cli/commands/mutate_list.fren:35:33 `or` changed to `and`
-narrow-class-m::c::r-918492cf1bc4 test/cli/commands/mutate_list.fren:35:59 `a-z` removed
-narrow-class-m::c::r-a5f5a1486b73 test/cli/commands/mutate_list.fren:35:62 `_` removed
-swap-repetition-m::c::r-e3c475d54326 test/cli/commands/mutate_list.fren:35:64 `+` changed to `*`
-swap-repetition-m::c::r-5bee02bd252e test/cli/commands/mutate_list.fren:35:66 `*` changed to `+`
-narrow-class-m::c::carets-f78e61bb4514 test/cli/commands/mutate_list.fren:37:32 `^` removed
-narrow-class-m::c::carets-e93fe4a59288 test/cli/commands/mutate_list.fren:37:33 `b` removed
-narrow-class-m::c::carets-f88e61bb46c7 test/cli/commands/mutate_list.fren:37:37 `^` removed
-swap-and-or-m::c::carets-a9dc9fc0fe6f test/cli/commands/mutate_list.fren:37:42 `or` changed to `and`
-swap-and-or-m::c::chained-3b80cb84d617 test/cli/commands/mutate_list.fren:38:18 `ok? or x = 4 or x = 6` changed to `(ok? or x = 4) and x = 6`
-swap-and-or-m::c::chained-769849b2c746 test/cli/commands/mutate_list.fren:38:22 `or` changed to `and`
-swap-comparison-m::c::chained-681d97842ec1 test/cli/commands/mutate_list.fren:38:27 `=` changed to `!=`
-shift-integer-m::c::chained-c094b99fc634 test/cli/commands/mutate_list.fren:38:29 `4` changed to `5`
-shift-integer-m::c::chained-6a94afcf25be test/cli/commands/mutate_list.fren:38:29 `4` changed to `3`
-swap-comparison-m::c::chained-986aa11d5e97 test/cli/commands/mutate_list.fren:38:36 `=` changed to `!=`
-shift-integer-m::c::chained-a2055f8ab0ba test/cli/commands/mutate_list.fren:38:38 `6` changed to `7`
-shift-integer-m::c::chained-cc0555bae9c4 test/cli/commands/mutate_list.fren:38:38 `6` changed to `5`
-swap-arithmetic-m::c::parity-3eb69ffc122a test/cli/commands/mutate_list.fren:39:19 `mod` changed to `div`
-swap-comparison-m::c::parity-382abd64a006 test/cli/commands/mutate_list.fren:39:28 `=` changed to `!=`
-shift-integer-m::c::parity-27c3858516c3 test/cli/commands/mutate_list.fren:39:30 `0` changed to `1`
-swap-and-or-m::c::parity-ae89d7ae2afd test/cli/commands/mutate_list.fren:39:32 `or` changed to `and`
-swap-arithmetic-m::c::parity-6f7be5adf615 test/cli/commands/mutate_list.fren:39:37 `div` changed to `mod`
-shift-integer-m::c::parity-20726bdebe86 test/cli/commands/mutate_list.fren:39:42 `1` changed to `2`
-swap-comparison-m::c::parity-8a854a584148 test/cli/commands/mutate_list.fren:39:44 `>` changed to `>=`
-shift-integer-m::c::parity-09342b700149 test/cli/commands/mutate_list.fren:39:46 `2` changed to `3`
-shift-integer-m::c::parity-333421a03a53 test/cli/commands/mutate_list.fren:39:46 `2` changed to `1`
-negate-trigger-m::c::chain-e54cb774c7c0 test/cli/commands/mutate_list.fren:40:16 `unless` changed to `when`
-swap-comparison-m::c::chain-859b0b5b3158 test/cli/commands/mutate_list.fren:40:25 `=` changed to `!=`
-drop-conjunct-m::c::chain-c40268a00262 test/cli/commands/mutate_list.fren:40:32 `(ok? or x = 1) and m in {Heat, Cool} and [1, 2].len = 2` changed to `(ok? or x = 1) and m in {Heat, Cool}`
-drop-conjunct-m::c::chain-716d2afffb76 test/cli/commands/mutate_list.fren:40:32 `(ok? or x = 1) and m in {Heat, Cool} and [1, 2].len = 2` changed to `[1, 2].len = 2`
-swap-and-or-m::c::chain-32b16d7e6d0a test/cli/commands/mutate_list.fren:40:32 `(ok? or x = 1) and m in {Heat, Cool}` changed to `((ok? or x = 1) or m in {Heat, Cool})`
-drop-conjunct-m::c::chain-9d936b35e68c test/cli/commands/mutate_list.fren:40:32 `(ok? or x = 1) and m in {Heat, Cool}` changed to `(ok? or x = 1)`
-drop-conjunct-m::c::chain-7e6e647ae318 test/cli/commands/mutate_list.fren:40:32 `(ok? or x = 1) and m in {Heat, Cool}` changed to `m in {Heat, Cool}`
-swap-and-or-m::c::chain-a5c1529ccce2 test/cli/commands/mutate_list.fren:40:37 `or` changed to `and`
-swap-comparison-m::c::chain-5fa153e3e4ff test/cli/commands/mutate_list.fren:40:42 `=` changed to `!=`
-shift-integer-m::c::chain-6804ca9f1104 test/cli/commands/mutate_list.fren:40:44 `1` changed to `2`
-shift-integer-m::c::chain-3e04d46ed7fa test/cli/commands/mutate_list.fren:40:44 `1` changed to `0`
-remove-element-m::c::chain-ee470e12e8bd test/cli/commands/mutate_list.fren:40:57 `Heat,` removed
-remove-element-m::c::chain-ac4bc193a5f4 test/cli/commands/mutate_list.fren:40:61 `, Cool` removed
-swap-and-or-m::c::chain-728ed3887b0d test/cli/commands/mutate_list.fren:40:69 `and` changed to `or`
-remove-element-m::c::chain-bbda260f2578 test/cli/commands/mutate_list.fren:40:74 `1,` removed
-shift-integer-m::c::chain-6904ca9f12b7 test/cli/commands/mutate_list.fren:40:74 `1` changed to `2`
-shift-integer-m::c::chain-3f04d46ed9ad test/cli/commands/mutate_list.fren:40:74 `1` changed to `0`
-remove-element-m::c::chain-e401f6b59711 test/cli/commands/mutate_list.fren:40:75 `, 2` removed
-shift-integer-m::c::chain-b493d10d4027 test/cli/commands/mutate_list.fren:40:77 `2` changed to `3`
-shift-integer-m::c::chain-8a93dadd071d test/cli/commands/mutate_list.fren:40:77 `2` changed to `1`
-swap-comparison-m::c::chain-cd5fa749ec24 test/cli/commands/mutate_list.fren:40:84 `=` changed to `!=`
-shift-integer-m::c::chain-b393d10d3e74 test/cli/commands/mutate_list.fren:40:86 `2` changed to `3`
-shift-integer-m::c::chain-8993dadd056a test/cli/commands/mutate_list.fren:40:86 `2` changed to `1`
-shift-integer-m::c::w-be26d32b22b7 test/cli/commands/mutate_list.fren:41:28 `2` changed to `3`
-shift-integer-m::c::w-9426dcfae9ad test/cli/commands/mutate_list.fren:41:28 `2` changed to `1`
-flip-bool-m::c::w-f2aa8885a3ea test/cli/commands/mutate_list.fren:41:38 `true` changed to `false`
+shift-integer-m::LIMIT-2ffd2ce22cf9 test/cli/commands/mutate_list.fren:16:21 `10` changed to `11`
+shift-integer-m::LIMIT-72787c09fdd2 test/cli/commands/mutate_list.fren:16:21 `10` changed to `9`
+swap-arithmetic-m::twice-363913c1041a test/cli/commands/mutate_list.fren:19:28 `+` changed to `-`
+swap-comparison-m::sub::r-f1c2c9c6639f test/cli/commands/mutate_list.fren:26:14 `=` changed to `!=`
+swap-arithmetic-m::sub::r-db4611c658f2 test/cli/commands/mutate_list.fren:26:18 `-` changed to `+`
+shift-integer-m::sub::r-ba2a33fafb20 test/cli/commands/mutate_list.fren:26:20 `1` changed to `2`
+shift-integer-m::sub::r-902a3dcac216 test/cli/commands/mutate_list.fren:26:20 `1` changed to `0`
+swap-and-or-m::sub::r-1433844be7c3 test/cli/commands/mutate_list.fren:26:22 `or` changed to `and`
+swap-arithmetic-m::c::y-7627612d3e58 test/cli/commands/mutate_list.fren:35:32 `+` changed to `-`
+shift-integer-m::c::y-d1b6b12c1386 test/cli/commands/mutate_list.fren:35:34 `1` changed to `2`
+shift-integer-m::c::y-fbb6a75c4c90 test/cli/commands/mutate_list.fren:35:34 `1` changed to `0`
+drop-conjunct-m::c::bounded-2ed241eeee14 test/cli/commands/mutate_list.fren:37:21 `x >= 0 and x <= LIMIT` changed to `x >= 0`
+drop-conjunct-m::c::bounded-decb5fe79381 test/cli/commands/mutate_list.fren:37:21 `x >= 0 and x <= LIMIT` changed to `x <= LIMIT`
+swap-comparison-m::c::bounded-0b1690c266c8 test/cli/commands/mutate_list.fren:37:23 `>=` changed to `>`
+shift-integer-m::c::bounded-dfc2e76ee279 test/cli/commands/mutate_list.fren:37:26 `0` changed to `1`
+swap-and-or-m::c::bounded-ee228067b07a test/cli/commands/mutate_list.fren:37:28 `and` changed to `or`
+swap-comparison-m::c::bounded-3738feccde07 test/cli/commands/mutate_list.fren:37:34 `<=` changed to `<`
+negate-trigger-m::c::r-40a757149c8c test/cli/commands/mutate_list.fren:38:12 `when` changed to `unless`
+drop-conjunct-m::c::r-f793c87bc206 test/cli/commands/mutate_list.fren:38:17 `x > 2 and x < 5` changed to `x > 2`
+drop-conjunct-m::c::r-a8a5965eec91 test/cli/commands/mutate_list.fren:38:17 `x > 2 and x < 5` changed to `x < 5`
+swap-comparison-m::c::r-b0861856cd18 test/cli/commands/mutate_list.fren:38:19 `>` changed to `>=`
+shift-integer-m::c::r-a2befe9c95c8 test/cli/commands/mutate_list.fren:38:21 `2` changed to `3`
+shift-integer-m::c::r-78bf086c5cbe test/cli/commands/mutate_list.fren:38:21 `2` changed to `1`
+swap-and-or-m::c::r-472359016b99 test/cli/commands/mutate_list.fren:38:23 `and` changed to `or`
+swap-comparison-m::c::r-3668b197d871 test/cli/commands/mutate_list.fren:38:29 `<` changed to `<=`
+shift-integer-m::c::r-c39da0bafa77 test/cli/commands/mutate_list.fren:38:31 `5` changed to `6`
+shift-integer-m::c::r-999daa8ac16d test/cli/commands/mutate_list.fren:38:31 `5` changed to `4`
+swap-and-or-m::c::r-e193c7f2882c test/cli/commands/mutate_list.fren:38:33 `or` changed to `and`
+narrow-class-m::c::r-918492cf1bc4 test/cli/commands/mutate_list.fren:38:59 `a-z` removed
+narrow-class-m::c::r-a5f5a1486b73 test/cli/commands/mutate_list.fren:38:62 `_` removed
+swap-repetition-m::c::r-e3c475d54326 test/cli/commands/mutate_list.fren:38:64 `+` changed to `*`
+swap-repetition-m::c::r-5bee02bd252e test/cli/commands/mutate_list.fren:38:66 `*` changed to `+`
+narrow-class-m::c::carets-f78e61bb4514 test/cli/commands/mutate_list.fren:40:32 `^` removed
+narrow-class-m::c::carets-e93fe4a59288 test/cli/commands/mutate_list.fren:40:33 `b` removed
+narrow-class-m::c::carets-f88e61bb46c7 test/cli/commands/mutate_list.fren:40:37 `^` removed
+swap-and-or-m::c::carets-a9dc9fc0fe6f test/cli/commands/mutate_list.fren:40:42 `or` changed to `and`
+swap-and-or-m::c::chained-3b80cb84d617 test/cli/commands/mutate_list.fren:41:18 `ok? or x = 4 or x = 6` changed to `(ok? or x = 4) and x = 6`
+swap-and-or-m::c::chained-769849b2c746 test/cli/commands/mutate_list.fren:41:22 `or` changed to `and`
+swap-comparison-m::c::chained-681d97842ec1 test/cli/commands/mutate_list.fren:41:27 `=` changed to `!=`
+shift-integer-m::c::chained-c094b99fc634 test/cli/commands/mutate_list.fren:41:29 `4` changed to `5`
+shift-integer-m::c::chained-6a94afcf25be test/cli/commands/mutate_list.fren:41:29 `4` changed to `3`
+swap-comparison-m::c::chained-986aa11d5e97 test/cli/commands/mutate_list.fren:41:36 `=` changed to `!=`
+shift-integer-m::c::chained-a2055f8ab0ba test/cli/commands/mutate_list.fren:41:38 `6` changed to `7`
+shift-integer-m::c::chained-cc0555bae9c4 test/cli/commands/mutate_list.fren:41:38 `6` changed to `5`
+swap-arithmetic-m::c::parity-3eb69ffc122a test/cli/commands/mutate_list.fren:42:19 `mod` changed to `div`
+swap-comparison-m::c::parity-382abd64a006 test/cli/commands/mutate_list.fren:42:28 `=` changed to `!=`
+shift-integer-m::c::parity-27c3858516c3 test/cli/commands/mutate_list.fren:42:30 `0` changed to `1`
+swap-and-or-m::c::parity-ae89d7ae2afd test/cli/commands/mutate_list.fren:42:32 `or` changed to `and`
+swap-arithmetic-m::c::parity-6f7be5adf615 test/cli/commands/mutate_list.fren:42:37 `div` changed to `mod`
+shift-integer-m::c::parity-20726bdebe86 test/cli/commands/mutate_list.fren:42:42 `1` changed to `2`
+swap-comparison-m::c::parity-8a854a584148 test/cli/commands/mutate_list.fren:42:44 `>` changed to `>=`
+shift-integer-m::c::parity-09342b700149 test/cli/commands/mutate_list.fren:42:46 `2` changed to `3`
+shift-integer-m::c::parity-333421a03a53 test/cli/commands/mutate_list.fren:42:46 `2` changed to `1`
+negate-trigger-m::c::chain-e54cb774c7c0 test/cli/commands/mutate_list.fren:43:16 `unless` changed to `when`
+swap-comparison-m::c::chain-859b0b5b3158 test/cli/commands/mutate_list.fren:43:25 `=` changed to `!=`
+drop-conjunct-m::c::chain-c40268a00262 test/cli/commands/mutate_list.fren:43:32 `(ok? or x = 1) and m in {Heat, Cool} and [1, 2].len = 2` changed to `(ok? or x = 1) and m in {Heat, Cool}`
+drop-conjunct-m::c::chain-716d2afffb76 test/cli/commands/mutate_list.fren:43:32 `(ok? or x = 1) and m in {Heat, Cool} and [1, 2].len = 2` changed to `[1, 2].len = 2`
+swap-and-or-m::c::chain-32b16d7e6d0a test/cli/commands/mutate_list.fren:43:32 `(ok? or x = 1) and m in {Heat, Cool}` changed to `((ok? or x = 1) or m in {Heat, Cool})`
+drop-conjunct-m::c::chain-9d936b35e68c test/cli/commands/mutate_list.fren:43:32 `(ok? or x = 1) and m in {Heat, Cool}` changed to `(ok? or x = 1)`
+drop-conjunct-m::c::chain-7e6e647ae318 test/cli/commands/mutate_list.fren:43:32 `(ok? or x = 1) and m in {Heat, Cool}` changed to `m in {Heat, Cool}`
+swap-and-or-m::c::chain-a5c1529ccce2 test/cli/commands/mutate_list.fren:43:37 `or` changed to `and`
+swap-comparison-m::c::chain-5fa153e3e4ff test/cli/commands/mutate_list.fren:43:42 `=` changed to `!=`
+shift-integer-m::c::chain-6804ca9f1104 test/cli/commands/mutate_list.fren:43:44 `1` changed to `2`
+shift-integer-m::c::chain-3e04d46ed7fa test/cli/commands/mutate_list.fren:43:44 `1` changed to `0`
+remove-element-m::c::chain-ee470e12e8bd test/cli/commands/mutate_list.fren:43:57 `Heat,` removed
+remove-element-m::c::chain-ac4bc193a5f4 test/cli/commands/mutate_list.fren:43:61 `, Cool` removed
+swap-and-or-m::c::chain-728ed3887b0d test/cli/commands/mutate_list.fren:43:69 `and` changed to `or`
+remove-element-m::c::chain-bbda260f2578 test/cli/commands/mutate_list.fren:43:74 `1,` removed
+shift-integer-m::c::chain-6904ca9f12b7 test/cli/commands/mutate_list.fren:43:74 `1` changed to `2`
+shift-integer-m::c::chain-3f04d46ed9ad test/cli/commands/mutate_list.fren:43:74 `1` changed to `0`
+remove-element-m::c::chain-e401f6b59711 test/cli/commands/mutate_list.fren:43:75 `, 2` removed
+shift-integer-m::c::chain-b493d10d4027 test/cli/commands/mutate_list.fren:43:77 `2` changed to `3`
+shift-integer-m::c::chain-8a93dadd071d test/cli/commands/mutate_list.fren:43:77 `2` changed to `1`
+swap-comparison-m::c::chain-cd5fa749ec24 test/cli/commands/mutate_list.fren:43:84 `=` changed to `!=`
+shift-integer-m::c::chain-b393d10d3e74 test/cli/commands/mutate_list.fren:43:86 `2` changed to `3`
+shift-integer-m::c::chain-8993dadd056a test/cli/commands/mutate_list.fren:43:86 `2` changed to `1`
+swap-and-or-m::c::known-98e0b2eb2274 test/cli/commands/mutate_list.fren:44:20 `or` changed to `and`
+drop-alternative-m::c::known-f4990129a92f test/cli/commands/mutate_list.fren:44:29 `Reading::Value(_) |` removed
+drop-alternative-m::c::known-fc7e50be5c2b test/cli/commands/mutate_list.fren:44:49 `Reading::Stale(_) |` removed
+drop-alternative-m::c::known-e5cca62f7b78 test/cli/commands/mutate_list.fren:44:66 `| Reading::Missing` removed
+negate-trigger-m::c::stale-42d6fcbe8ddf test/cli/commands/mutate_list.fren:46:16 `when` changed to `unless`
+drop-alternative-m::c::stale-70fab5908098 test/cli/commands/mutate_list.fren:47:11 `Reading::Stale(_) |` removed
+drop-alternative-m::c::stale-1ce8b091f09d test/cli/commands/mutate_list.fren:47:28 `| Reading::Missing` removed
+shift-integer-m::c::w-be26d32b22b7 test/cli/commands/mutate_list.fren:50:28 `2` changed to `3`
+shift-integer-m::c::w-9426dcfae9ad test/cli/commands/mutate_list.fren:50:28 `2` changed to `1`
+flip-bool-m::c::w-f2aa8885a3ea test/cli/commands/mutate_list.fren:50:38 `true` changed to `false`
 exit=0

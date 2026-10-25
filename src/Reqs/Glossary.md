@@ -35,7 +35,7 @@ variants, with the variant's payload, declared with `enum`. See
 [Items](Lang/Items.md#enumerations).
 
 **Divisor.** The right operand of `div` or `mod`: an integer literal or a
-constant other than `0`. See
+constant, possibly negated or in parentheses, whose value is not `0`. See
 [Expressions](Lang/Expressions.md#division-and-remainder).
 
 **Environment.** Whatever chooses a component's inputs.

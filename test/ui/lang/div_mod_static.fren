@@ -31,6 +31,8 @@ comp bool_dividend { in p? pub out q: Int := p? div 2 }
 
 comp unknown_method { in x: Int pub out q: Int := x.absolute }
 --~^ error: `Int` has no method `absolute`
+comp chained_unknown { in x: Int pub out q: Int := (x - 1).abs.absolute }
+--~^ error: `Int` has no method `absolute`
 comp min_arity { in x: Int pub out q: Int := x.min(1, 2) }
 --~^ error: `min` takes 1 argument, but 2 were given
 comp max_type { in x: Int in p? pub out q: Int := x.max(p?) }

@@ -240,7 +240,8 @@ by `k`. They are Euclidean, as SMT-LIB's `div` and `mod` and Lean's
 than `k.abs`, and `a = (a div k) * k + a mod k`. So `7 div 2` is `3` and
 `7 mod 2` is `1`, `-7 div 2` is `-4` and `-7 mod 2` is `1`, and
 `7 div -2` is `-3` and `7 mod -2` is `1`. For a positive `k`, `div` rounds
-down; for a negative one, up.
+down; for a negative one, up. So `a div -k` is `-(a div k)`, and
+`a mod -k` is `a mod k`, as `lang::division` states.
 
 The divisor `k` is an integer literal or a [constant](Items.md#constants),
 possibly negated or in parentheses, such as `2`, `-2`, `N` or `-N`, and its
