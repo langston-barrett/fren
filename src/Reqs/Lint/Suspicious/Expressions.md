@@ -76,14 +76,14 @@ and `0 * x` are always `0`; `s inter {}`, `{} inter s`, `{} minus s` and
 `r join {}` are always `{}`, though `{}` in `r join {}` has no type it can
 take, which is an error (see
 [Checking and synthesis](../../Lang/Types.md#checking-and-synthesis)); `x
-in {}` is always `false`; and `{} subset s` is always `true`. It mirrors
+in {}` and `x in []` are always `false`; and `{} subset s` is always
+`true`. It mirrors
 [`identity_op`](../Complexity/Operators.md#identities), and an operand is `0` or `{}` as
 it is there. The message says what the value is. It has no fix: the
 likely mistake is the literal, and writing the value instead would keep
 the mistake and hide it. Where both operands are written the same, as in
 `s = {} inter {}`, `eq_op` fires instead. It does not fire
-on `s subset {}`, which says that `s` is empty, nor on `x in []`, which
-is a type error (`F0324`). `lint::erasing_op`
+on `s subset {}`, which says that `s` is empty. `lint::erasing_op`
 states this:
 
 ```fren

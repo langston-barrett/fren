@@ -787,10 +787,12 @@ partial def appliedPaths : Expr → Array (Array Ident)
   | .when _ _ c d | .bin _ _ c d | .pair _ c d | .index _ c d => appliedPaths c ++ appliedPaths d
   | .not _ a | .neg _ a | .field _ a _ => appliedPaths a
   | .method _ r _ args => args.foldl (· ++ appliedPaths ·) (appliedPaths r)
-  | .set _ es | .seq _ es => es.foldl (· ++ appliedPaths ·) #[]
+  | .set _ es | .seq _ es | .chain _ es _ => es.foldl (· ++ appliedPaths ·) #[]
   | .ite _ c a b => appliedPaths c ++ appliedPaths a ++ appliedPaths b
   | .record _ _ fs => fs.foldl (init := #[]) fun acc (_, e?) => acc ++ (e?.map appliedPaths).getD #[]
+  | .update _ r fs => fs.foldl (init := appliedPaths r) fun acc (_, e?) => acc ++ (e?.map appliedPaths).getD #[]
   | .match _ s arms => arms.foldl (init := appliedPaths s) fun acc (_, body) => acc ++ appliedPaths body
+  | .is _ s _ => appliedPaths s
   | _ => #[]
 
 /-- The uninterpreted functions that `e` applies, as links of

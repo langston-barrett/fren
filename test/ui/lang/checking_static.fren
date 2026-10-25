@@ -18,7 +18,7 @@ pub comp checked {
     pub out operands? := s = {} union {}   --~ warning: both operands of `union` are written the same
     --~^ warning: this operation has no effect
     pub out concat? := q = [] ++ []   --~ warning: this operation has no effect
-    pub out in_sequence? := i in []
+    pub out in_sequence? := i in []   --~ warning: this `in` is always `false`
     pub out pairs: Int := {(1, {}), (2, s)}.card
     pub out left_empty? := [] = q
     pub out then_empty: Int := (if b? then [] else q).len
