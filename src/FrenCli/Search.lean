@@ -33,7 +33,11 @@ abbrev R := StateM Rng
 def rand : R UInt64 := modifyGet Rng.next
 
 /-- Uniform in `[0, n)`, for `n > 0`. -/
-def below (n : Nat) : R Nat := do return (← rand).toNat % max n 1
+def below (n : Nat) : R Nat := do
+  let r ← rand
+  let n := max n 1
+  -- `r.toNat % n`, without a `Nat` as large as `r`.
+  return if n < UInt64.size then (r % n.toUInt64).toNat else r.toNat % n
 
 def shuffle (xs : Array α) : R (Array α) := do
   let mut xs := xs
@@ -108,6 +112,7 @@ partial def Ex.lits : Ex → Array Int
   | .ite c a b => c.lits ++ a.lits ++ b.lits
   | .app _ args | .ctor _ _ args => args.flatMap (·.lits)
   | .method _ r args => r.lits ++ args.flatMap (·.lits)
+  | .matches r _ _ => r.lits
   | .setLit es => es.flatMap (·.lits)
   | .pair a b | .index a b _ => a.lits ++ b.lits
   | .seqLit es => es.flatMap (·.lits)
@@ -124,6 +129,7 @@ partial def Ex.equated (x : Name) : Ex → Array Ex
   | .ite c a b => c.equated x ++ a.equated x ++ b.equated x
   | .app _ args | .ctor _ _ args => args.flatMap (·.equated x)
   | .method _ r args => r.equated x ++ args.flatMap (·.equated x)
+  | .matches r _ _ => r.equated x
   | .setLit es => es.flatMap (·.equated x)
   | .pair a b | .index a b _ => a.equated x ++ b.equated x
   | .seqLit es => es.flatMap (·.equated x)
@@ -171,6 +177,18 @@ partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array
       out := out ++ combos.map (.ctor p idx ·)
     return out.extract 0 cap
 
+/-- The variables of `e`. -/
+partial def Ex.vars : Ex → Array Name
+  | .var n => #[n]
+  | .lit _ | .bound _ => #[]
+  | .not a | .neg a | .field a _ | .card a => a.vars
+  | .bin _ a b | .when _ a b | .pair a b | .index a b _ => a.vars ++ b.vars
+  | .ite c a b => c.vars ++ a.vars ++ b.vars
+  | .app _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.vars)
+  | .method _ r args => r.vars ++ args.flatMap (·.vars)
+  | .matches r _ _ => r.vars
+  | .match e arms => e.vars ++ arms.flatMap (·.2.vars)
+
 structure Problem where
   /-- The variables to choose, in order, with their types. -/
   vars : Array (Name × VTy)
@@ -185,13 +203,12 @@ abbrev Env := Std.HashMap Name Val
 
 def Env.look (env : Env) : Look := fun n => env[n]?
 
-def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (x : Name) (ty : VTy) :
-    R (Array Val) := do
-  -- Values that a constraint equates `x` with, first.
-  let eqs := p.atoms.flatMap fun a =>
-    if a.pfx.isPrefixOf x then
-      (a.e.equated (x.replacePrefix a.pfx .anonymous)).filterMap fun e => e.eval I fun n => env[a.pfx ++ n]?
-    else #[]
+/-- The candidates for a variable of type `ty`, given `equated`, what the
+constraints equate it with, over full names (`Atom.full`). -/
+def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (ty : VTy)
+    (equated : Array Ex) : R (Array Val) := do
+  -- Values that a constraint equates the variable with, first.
+  let eqs := equated.filterMap (·.eval I env.look)
   let mut ints := p.ints
   for _ in [0:2] do ints := ints.push (((← below 41) : Int) - 20)
   let mut pool := smallValues sp w ints p.strs 24 2 ty
@@ -206,33 +223,78 @@ def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (env :
   let eqs := eqs.foldl (fun acc v => if acc.contains v then acc else acc.push v) #[]
   return eqs ++ pool.filter (!eqs.contains ·)
 
-/-- Whether no constraint is already `false`. -/
-def Problem.viable (I : Interp) (p : Problem) (env : Env) : Bool :=
-  !p.atoms.any fun a => a.eval I env.look == some false
+/-- A constraint as the search evaluates it: over the variables' full
+names, `pfx.x` for `x` of a constraint nested at `pfx`. -/
+def Atom.full (a : Atom) : Ex := if a.pfx.isAnonymous then a.e else a.e.renameVars (a.pfx ++ ·)
+
+/-- Whether `e`, a constraint over full names, is `true`, `false` or
+unknown in `env`. -/
+def holds (I : Interp) (env : Env) (e : Ex) : Option Bool :=
+  match e.eval I env.look with
+  | some (.bool b) => some b
+  | _ => none
 
 /-- Values for `p.vars`, extending `env`, that make every constraint
 `true` under `I`, within `budget` steps. `w` gives the candidates of the
-abstract types. -/
+abstract types.
+
+A branch is viable while no constraint is `false`. Extending a viable
+environment with a value for `x` changes only the constraints that
+mention `x` and are not yet known, so only they are evaluated again: the
+same answer as evaluating them all. -/
 partial def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (budget : Nat := 4000) :
     R (Option Env) := do
-  let rec go (i : Nat) (env : Env) (left : Nat) : R (Option Env × Nat) := do
+  let full := p.atoms.map Atom.full
+  -- The constraints that mention each variable, by index.
+  let byVar : Std.HashMap Name (Array Nat) := Id.run do
+    let mut m := {}
+    for e in full, k in [0:full.size] do
+      for x in e.vars do
+        m := m.alter x fun
+          | some ks => if ks.back? == some k then some ks else some (ks.push k)
+          | none => some #[k]
+    return m
+  -- Each constraint's value in `env`. Evaluation is monotone: a value, once
+  -- known, stays known as variables get values, so a constraint that is
+  -- `true` is not evaluated again on that branch.
+  let atRoot := full.map (holds I env ·)
+  let rootViable := !atRoot.any (· == some false)
+  let rootTrue := atRoot.map (· == some true)
+  -- The constraints known to be `true` in `env` extended with `x`, or
+  -- `none` if one is `false`.
+  let viable (env : Env) (x : Name) (known : Array Bool) : Option (Array Bool) := Id.run do
+    if !rootViable then
+      return if full.any (holds I env · == some false) then none else some known
+    let mut known := known
+    for k in byVar.getD x #[] do
+      if known[k]! then continue
+      match holds I env full[k]! with
+      | some false => return none
+      | some true => known := known.set! k true
+      | none => pure ()
+    return some known
+  -- What the constraints equate each variable with, computed when the
+  -- search first reaches it.
+  let equated : Array (Thunk (Array Ex)) := p.vars.map fun (x, _) => Thunk.mk fun _ => full.flatMap (·.equated x)
+  let rec go (i : Nat) (env : Env) (known : Array Bool) (left : Nat) : R (Option Env × Nat) := do
     if left == 0 then return (none, 0)
     if h : i < p.vars.size then
       let (x, ty) := p.vars[i]
-      if env.contains x then return ← go (i + 1) env left
+      if env.contains x then return ← go (i + 1) env known left
       let mut left := left
-      for v in ← p.candidates sp w I env x ty do
+      for v in ← p.candidates sp w I env ty (equated[i]?.map (·.get) |>.getD #[]) do
         if left == 0 then break
         left := left - 1
         let env' := env.insert x v
-        if p.viable I env' then
-          let (r, l) ← go (i + 1) env' left
+        if let some known' := viable env' x known then
+          let (r, l) ← go (i + 1) env' known' left
           left := l
           if r.isSome then return (r, left)
       return (none, left)
     else
-      return (if allHold I env.look p.atoms == some true then some env else none, left)
-  return (← go 0 env budget).1
+      let all := (full.zip known).all fun (e, t) => t || holds I env e == some true
+      return (if all then some env else none, left)
+  return (← go 0 env rootTrue budget).1
 
 /-- The integers that `atoms` mention, their neighbours, and a few small
 ones. -/
@@ -257,7 +319,7 @@ are not literals of strings that it constrains. -/
 partial def Ex.strLits : Ex → Array String × Array String
   | .lit v => (v.strs, #[])
   | .var _ | .bound _ => (#[], #[])
-  | .method .matches r #[.lit (.str p)] => let (ls, ps) := r.strLits; (ls, ps.push p)
+  | .method .matches r #[.lit (.str p)] | .matches r p _ => let (ls, ps) := r.strLits; (ls, ps.push p)
   | .not a | .neg a | .field a _ | .card a => a.strLits
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ => join #[a, b]
   | .ite c a b => join #[c, a, b]
@@ -318,17 +380,6 @@ def stringsOf (atoms : Array Atom) : R (Array String) := do
       if let some cs ← Re.sample 40 r then
         for t in [String.ofList cs, String.ofList cs ++ "a"] do out := add out t
   return out
-
-/-- The variables of `e`. -/
-partial def Ex.vars : Ex → Array Name
-  | .var n => #[n]
-  | .lit _ | .bound _ => #[]
-  | .not a | .neg a | .field a _ | .card a => a.vars
-  | .bin _ a b | .when _ a b | .pair a b | .index a b _ => a.vars ++ b.vars
-  | .ite c a b => c.vars ++ a.vars ++ b.vars
-  | .app _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.vars)
-  | .method _ r args => r.vars ++ args.flatMap (·.vars)
-  | .match e arms => e.vars ++ arms.flatMap (·.2.vars)
 
 /-- The defined outputs of `c` that the inputs alone give: those whose
 definitions mention only inputs and earlier such outputs. Definitions
