@@ -277,7 +277,10 @@ partial def Re.sample (fuel : Nat := 40) : Fren.Core.Re → R (Option (List Char
   | .cls false rs => do
     let some (lo, hi) := rs[← below rs.length]? | return none
     return some [Char.ofNat (lo.toNat + (← below (hi.toNat - lo.toNat + 1)))]
-  | .cls true rs => return (['a', 'A', '0', ' ', '.', '-', '_'].find? (!Fren.Core.inRanges rs ·)).map ([·])
+  | .cls true rs => do
+    -- One of a few characters outside the ranges, at random.
+    let out := ['a', 'A', '0', ' ', '.', '-', '_', '?', '\''].filter (!Fren.Core.inRanges rs ·)
+    return out[← below out.length]?.map ([·])
   | .union a b => do
     let (x, y) := if (← below 2) == 0 then (a, b) else (b, a)
     match ← Re.sample fuel x with

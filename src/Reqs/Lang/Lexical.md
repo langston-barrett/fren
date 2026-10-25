@@ -382,3 +382,21 @@ pub comp longest_punctuator {
 set_option fren.evidence "tested" in
 refine punctuator_end_is_longest: punctuator_end refines longest_punctuator
 ```
+
+## Tokens apart
+
+The kinds of token do not overlap, so that what a lexeme is never
+depends on which rule is tried first: a reserved word has the shape of an
+identifier, which is why it must be reserved, and a punctuator is neither
+an identifier nor a reserved word:
+
+```fren
+expect reserved_are_identifiers: forall (r: reserved_word) (i: identifier),
+    when r.lexeme = i.lexeme and r.reserved?, i.accepted?
+
+expect punctuators_not_identifiers: forall (p: punctuator) (i: identifier),
+    when p.lexeme = i.lexeme and p.accepted?, not i.accepted?
+
+expect punctuators_not_reserved: forall (p: punctuator) (r: reserved_word),
+    when p.lexeme = r.lexeme and p.accepted?, not r.reserved?
+```
