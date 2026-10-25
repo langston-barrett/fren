@@ -6,7 +6,7 @@ error[F0328]: cannot join `Rel(Int, String)` with `Rel(Int, Bool)`
   |
   = note: `r join q` composes `r: Rel(A, B)` with `q: Rel(B, C)`: the second type of `r` is the first of `q`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0328`.
 exit=2

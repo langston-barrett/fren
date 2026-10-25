@@ -7,7 +7,7 @@ error[F0108]: `=` cannot be chained
   = note: only `<` and `<=` chain together, and `>` and `>=`
   = help: split the chain with `and`, e.g. `a = b and b = c`, or put a comparison in parentheses to compare its result
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0108`.
 exit=2

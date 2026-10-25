@@ -6,7 +6,7 @@ error[F0314]: missing field `y` of `Point`
   |
   = note: a record literal gives every field of the record
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0314`.
 exit=2

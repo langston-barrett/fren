@@ -8,7 +8,7 @@ error[F0305]: cannot compare `Mode` with `Int`
   = note: enums are not numbers
   = help: compare with a variant, e.g. `Mode::Variant`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0305`.
 exit=2

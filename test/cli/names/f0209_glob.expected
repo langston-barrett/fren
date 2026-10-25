@@ -6,7 +6,7 @@ error[F0209]: only enums can be opened with `*`, but `m` is a module
   |
   = help: to import `m` itself, remove the `::*`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0209`.
 exit=2

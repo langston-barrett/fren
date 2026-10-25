@@ -7,7 +7,7 @@ error[F0119]: `y!!` is not an identifier in Fren
   = note: an identifier is ASCII letters, digits, `_` and `'`, with `.` between components, an optional `?` at the end, and then an optional `!`
   = help: an identifier ends at its first `!`; to compare, write `a != b`, with spaces
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0119`.
 exit=2

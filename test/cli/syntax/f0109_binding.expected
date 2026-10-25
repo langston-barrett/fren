@@ -7,7 +7,7 @@ error[F0109]: `unless` must be parenthesized here
   = note: `unless` has the lowest precedence, and its body extends as far right as possible
   = help: wrap it in parentheses: `(unless c, e)`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0109`.
 exit=2

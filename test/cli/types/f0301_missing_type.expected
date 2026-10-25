@@ -16,7 +16,7 @@ help: if it is a `Bool`, name it `count?`
 2 + comp c { in count? }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0301`.
 exit=2

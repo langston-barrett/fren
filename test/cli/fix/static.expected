@@ -14,7 +14,7 @@ error[F0701]: unused import `Mode::Cool`
   = help: `fren fix` can fix this
   = note: `unused_imports` is set to `deny`
 
-error: could not fix due to 2 previous errors
+error: could not fix due to previous errors
 
 Some errors have detailed explanations: F0201, F0701.
 For more information about an error, try `fren --explain F0201`.

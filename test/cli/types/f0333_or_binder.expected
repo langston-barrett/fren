@@ -11,7 +11,7 @@ help: ignore the value
 3 + comp c { in s: Shape pub out a: Int req r: a = match s { Shape::Circle(_) | Shape::Square(n) => n, _ => 0 } }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0333`.
 exit=2

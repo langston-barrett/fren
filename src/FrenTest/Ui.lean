@@ -10,6 +10,10 @@ ui tests, checked against the messages of either front end:
 - `--~[hosted] ...` and `--~[cli] ...` apply to one front end only, for
   messages that legitimately differ (mostly parse and type errors, which the
   Lean front end gets from Lean).
+- `--~? ...` (`--~^? ...`, and so on) allows such a message without
+  expecting it, for a message that either front end may give in one of
+  several places, such as a note at whichever requirement of a conflict its
+  solver's model picks (`cli::agreement`).
 - Every message must be expected: unexpected messages fail the test.
 - `--@ summary: N passed, M failed, K inconclusive` expects the checks'
   summary; `--@ exit: N` the binary's exit code; `--@ only: cli` (or
@@ -32,6 +36,8 @@ structure Expectation where
   severity : String
   text : String
   frontEnd? : Option String
+  /-- Written `--~?`: such a message is allowed, not expected. -/
+  optional : Bool := false
   /-- Where the annotation itself is, for error messages. -/
   at_ : Nat
   deriving Inhabited
@@ -58,6 +64,8 @@ def parse (src : String) : Except String Spec := do
     let some ann := (line.splitOn "--~")[1]? | continue
     let carets := (ann.takeWhile (· == '^')).toString.length
     let ann := (ann.drop carets).toString
+    let optional := ann.startsWith "?"
+    let ann := if optional then (ann.drop 1).toString else ann
     let (frontEnd?, ann) :=
       if ann.startsWith "[" then
         match ann.drop 1 |>.toString.splitOn "]" with
@@ -70,7 +78,7 @@ def parse (src : String) : Except String Spec := do
       | throw s!"line {i}: annotation must start with `error: `, `warning: ` or `info: `"
     if carets ≥ i then throw s!"line {i}: `^` points above the first line"
     let e : Expectation :=
-      { line := i - carets, severity := sev, text := text.trimAscii.toString, frontEnd? := frontEnd?, at_ := i }
+      { line := i - carets, severity := sev, text := text.trimAscii.toString, frontEnd? := frontEnd?, optional, at_ := i }
     spec := { spec with expectations := spec.expectations.push e }
   return spec
 
@@ -80,11 +88,13 @@ def check (frontEnd : String) (spec : Spec) (diags : Array Diagnostic)
     (summary? : Option String) (exit? : Option Nat) : Array String := Id.run do
   let mut failures := #[]
   let mut unmatched := diags
-  for e in spec.expectations do
+  -- The expected messages first, then those only allowed.
+  for e in spec.expectations.filter (!·.optional) ++ spec.expectations.filter (·.optional) do
     if e.frontEnd?.any (· != frontEnd) then continue
     match unmatched.findIdx? fun d => d.line == e.line && d.severity == e.severity && (d.text.splitOn e.text).length > 1 with
     | some idx => unmatched := unmatched.eraseIdx! idx
     | none =>
+      if e.optional then continue
       let here := diags.filter (·.line == e.line) |>.map fun d => s!"\n    got {d.severity}: {d.text}"
       failures := failures.push s!"line {e.line}: expected {e.severity}: {e.text} (annotation on line {e.at_}){String.join here.toList}"
   for d in unmatched do

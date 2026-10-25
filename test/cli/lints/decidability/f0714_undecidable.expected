@@ -24,7 +24,7 @@ error[F0714]: this is outside the decidable core: searching a string, or `++` he
   |
   = help: compare a concatenation with a constant, or call a method on it; describe a search with `starts_with?`, `contains?` or a pattern
 
-error: could not check due to 3 previous errors
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0714`.
 exit=2

@@ -6,7 +6,7 @@ error[F0216]: `fren.lint.nonminimal_bool` cannot be set before a member
   |
   = note: before a member, `set_option` sets only `fren.evidence`; other options are set before the component
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0216`.
 exit=2

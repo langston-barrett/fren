@@ -122,9 +122,17 @@ def relativeTo (base path : System.FilePath) : String :=
       { m with fileName := out, pos, endPos, data := m!"{shown}:{m.pos.line}:{m.pos.column}: " ++ m.data }
   -- Info trees refer to the Markdown file's text, so they are dropped.
   set { inner with messages := msgs.foldl (·.add) s.messages, infoState := s.infoState }
+  -- The spec's static errors, its parse errors and lints included, are
+  -- those of this command, for the `#fren_check`s after it: all its errors
+  -- but its checks'.
+  let errors := inner.messages.toList.filter (·.severity == .error) |>.length
+  let static := errors - ((← getLocal).checkErrors - outer.checkErrors)
+  let cmdPos := (← read).cmdPos.byteIdx
+  let staticErrors := if static == 0 then outer.staticErrors
+    else outer.staticErrors.push (fileName, cmdPos, static)
   modifyLocal fun l => { l with useRecords := outer.useRecords, used := outer.used,
                                 expectations := outer.expectations, lintReports := outer.lintReports,
                                 items := outer.items, usedItems := outer.usedItems, inMarkdown := outer.inMarkdown,
-                                leanFile? := outer.leanFile?, mdSource? := outer.mdSource? }
+                                leanFile? := outer.leanFile?, mdSource? := outer.mdSource?, staticErrors }
 
 end Fren

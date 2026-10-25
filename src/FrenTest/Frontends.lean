@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCore.Check
 import FrenTest.Ui
 -- keep-sorted end
 
@@ -19,12 +20,18 @@ fuzzing"). `fren_fuzz_frontends` compares the front ends with it;
   tests, but not for its checks' results.
   A Lean error with no error of the binary on its line is always reported.
 - Messages are compared by line, severity and first line, with the values
-  of a model masked (`normHead`).
+  of a model masked (`normHead`). So are the requirements that a
+  realizability failure names, which are a minimal set that conflicts on
+  its input, which comes from the solver's model (`cli::agreement`): they
+  are compared only when both front ends report the same input
+  (`conflictInput?`), and its notes at them (`isConflictNote`) are left
+  out.
 - Checks whose evidence is testing, which Lean does not run, are left out.
-- A static error, including a denied lint, stops the binary's checks but
-  not Lean's: then the checks' results and the summary are not compared.
-  The binary drops the lints of an item with a static error other than a
+- A static error, including a denied lint, stops both front ends'
+  checks, so neither reports results or a summary. The binary drops the lints of an item with a static error other than a
   lint: then Lean's lints of that item (`isHostedLint`) are not compared.
+- Both front ends say that a static error stopped the checks
+  (`isStoppedTrailer`), or neither does; even after a parse error.
 - The binary's exit code must follow from Lean's messages
   (`cli::agrees_with_build`): 2 after a static error, else 1 when Lean
   reports an error, 3 when it reports a warning, and 0 otherwise; unless a
@@ -53,20 +60,38 @@ def maskBetween (s start : String) (stops : List String) : String :=
 
 /-- The first line of a message, with the values of a model masked:
 counterexample values may differ (`cli::agreement`), and the Lean front end
-may show none. Names, such as those of a conflict's constraints, are kept.
-The solver's reason for an undecided check, its own words, is dropped. -/
+may show none. So are the requirements that a realizability failure names,
+which conflict on its input (`compare` compares them for the same input);
+other names, such as those of a vacuity's constraints, are kept. The
+solver's reason for an undecided check, its own words, is dropped. -/
 def normHead (text : String) : String :=
   let head := (text.splitOn "\n").head!
   let head := if head.startsWith "could not decide whether " then (head.splitOn ": ").head! else head
   -- `… is not realizable: for the input VALUES, no outputs satisfy …` and
   -- `… is not determined by the inputs: for the input VALUES, it can be A or B`.
   let head := maskBetween head ": for the input " [", no outputs satisfy ", ", it can be "]
+  let head := maskBetween head ", no outputs satisfy " []
   let head := maskBetween head ", it can be " []
   -- The notes on a conflict's constraints: `is false when VALUES` and
   -- `conflicts with NAMES when VALUES`.
   if head.startsWith "is false when " then "is false when …"
   else if head.startsWith "conflicts with " then maskBetween head "` when " []
   else head
+
+/-- The input of a realizability failure, on which the requirements it
+names conflict (`cli::agreement`). -/
+def conflictInput? (text : String) : Option String :=
+  let head := (text.splitOn "\n").head!
+  if !head.contains " is not realizable: for the input " then none else
+  match head.splitOn "for the input " with
+  | _ :: rest@(_ :: _) => some ((("for the input ".intercalate rest).splitOn ", no outputs satisfy ").head!)
+  | _ => none
+
+/-- A note at a requirement of a realizability failure, which is at the
+requirements that conflict on its input. -/
+def isConflictNote (d : Diagnostic) : Bool :=
+  d.severity == "info" && d.code?.isNone &&
+    ((headOf d).startsWith "is false when " || (headOf d).startsWith "conflicts with `")
 
 /-- The text after a leading subject in backquotes, as in "`c::q` is
 vacuous: …", or the whole text. -/
@@ -142,9 +167,10 @@ def isUndecided (d : Diagnostic) : Bool :=
   (d.code? == some "F0608" || (d.code?.isNone && (headOf d).startsWith "could not decide whether `"))
   && !d.text.contains "solver error"
 
-/-- The binary's last line when a static error stops it, which has no
-location and no counterpart in Lean. -/
-def isStoppedTrailer (d : Diagnostic) : Bool := d.line == 0 && (headOf d).startsWith "could not check due to "
+/-- The line of either front end when a static error stops its checks,
+which has no location: the binary's last, and Lean's at the
+`#fren_check` that ends the spec. -/
+def isStoppedTrailer (d : Diagnostic) : Bool := d.line == 0 && headOf d == Fren.Core.couldNotHeadline
 
 /-- The 1-based line where the top-level item containing each line of
 `text` starts: an item starts at a line that is neither indented, blank, a
@@ -175,6 +201,12 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   let render (who : String) (d : Diagnostic) :=
     s!"line {d.line}: only {who} reports {d.severity}{if who == "fren" then s!"[{d.code?.getD "-"}]" else ""}: {headOf d}"
   let cliDiags := cli.diags.filter (!isStoppedTrailer ·)
+  -- Both say that a static error stopped the checks, or neither does.
+  let stopped := match cli.diags.any isStoppedTrailer, hosted.diags.any isStoppedTrailer with
+    | true, false => #[s!"only fren says `{Fren.Core.couldNotHeadline}`"]
+    | false, true => #[s!"only Lean says `{Fren.Core.couldNotHeadline}`"]
+    | _, _ => #[]
+  let hosted := { hosted with diags := hosted.diags.filter (!isStoppedTrailer ·) }
   let lines := text.splitOn "\n"
   -- Whether every line strictly between `a` and `b` is blank or a comment.
   let blankBetween (a b : Nat) := (List.range (b - a - 1)).all fun k =>
@@ -190,17 +222,24 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
     -- parsed every line before that.
     if hosted.diags.any fun h => isLeanParseError h && h.line ≤ p.line && blankBetween h.line p.line
         && itemAt h.line == itemAt p.line then
-      return (#[], false)
-    return (#[render "fren" p ++ " (and Lean reports no parse error at or just before that line, in its item)"], false)
+      return (stopped, false)
+    return (stopped.push (render "fren" p ++ " (and Lean reports no parse error at or just before that line, in its item)"), false)
   -- Checks whose evidence is testing, which Lean does not run.
   let anyTested := text.contains "set_option fren.evidence \"tested\""
   let onTested (d : Diagnostic) := (lines[d.line - 1]?.getD "").contains "set_option fren.evidence \"tested\""
   let testing (d : Diagnostic) := anyTested &&
     (d.code?.any (["F0609", "F0610", "F0612", "F0616"].contains ·) || (d.severity == "info" && (headOf d).contains " set to testing are run by `fren check`"))
-  -- A static error, including a denied lint, stops the binary's checks,
-  -- but not Lean's.
   let staticError := cliDiags.any fun d => d.severity == "error" && !isCheckResult d
-  let keep (d : Diagnostic) := !onTested d && !testing d && !(staticError && isCheckResult d)
+  let keep (d : Diagnostic) := !onTested d && !testing d
+  -- A realizability failure's requirements, and so its notes, are compared
+  -- only for the same input: each front end's input comes from its model,
+  -- and its requirements are a minimal set that conflicts on it.
+  let sameInput := (cliDiags.filter keep).filterMap fun c => do
+    let i ← conflictInput? c.text
+    let h ← (hosted.diags.filter keep).find? fun h => h.line == c.line && conflictInput? h.text == some i
+    guard (headOf c != headOf h)
+    return s!"line {c.line}: for the same input, fren says `{headOf c}`, Lean says `{headOf h}`"
+  let keep (d : Diagnostic) := keep d && !isConflictNote d
   let mut cs := cliDiags.filter keep
   let hs := hosted.diags.filter keep
   -- The same message: same line, severity and normalized headline.
@@ -221,11 +260,10 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   -- a lint, since the binary drops that item's lints.
   let stoppedItems := (cliDiags.filter fun d => d.severity == "error" && !isCheckResult d && !isLint d).map (itemAt ·.line)
   hostedOnly := hostedOnly.filter fun h => !(isHostedLint h && stoppedItems.contains (itemAt h.line))
-  let mut out := cs.map (render "fren") ++ hostedOnly.map (render "Lean")
+  let mut out := stopped ++ sameInput ++ cs.map (render "fren") ++ hostedOnly.map (render "Lean")
   let undecided := cs.all isUndecided && hostedOnly.all isUndecided
-  -- The summary, unless a check is tested, or a static error stops the
-  -- binary's checks.
-  let sumDiffers := !anyTested && !staticError && cli.summary? != hosted.summary?
+  -- The summary, unless a check is tested.
+  let sumDiffers := !anyTested && cli.summary? != hosted.summary?
   if sumDiffers then
     out := out.push s!"summary: fren says `{cli.summary?.getD "(none)"}`, Lean says `{hosted.summary?.getD "(none)"}`"
   -- The exit code, from Lean's most severe message (`cli::exit`,
@@ -240,6 +278,6 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   -- A summary or an exit code that differs is a matter of time only if
   -- some undecided check explains it.
   let explained := undecided && !(cs.isEmpty && hostedOnly.isEmpty)
-  return (out, undecided && (!sumDiffers || explained) && (!exitDiffers || explained) && !out.isEmpty)
+  return (out, undecided && sameInput.isEmpty && (!sumDiffers || explained) && (!exitDiffers || explained) && !out.isEmpty)
 
 end FrenTest.Frontends

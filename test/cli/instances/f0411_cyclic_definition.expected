@@ -7,7 +7,7 @@ error[F0411]: the definition of `a` mentions itself: `a` -> `b` -> `a`
   = note: a defined output stands for its definition, so the definitions must not form a cycle
   = help: define one of them in terms of the others' inputs, or constrain it with a `req` instead
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0411`.
 exit=2

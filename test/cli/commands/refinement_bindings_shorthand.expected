@@ -10,7 +10,7 @@ help: a similar name exists: `x`
 5 + refine fits: precise refines rough { z := y, x }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0201`.
 exit=2

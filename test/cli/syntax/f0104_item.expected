@@ -10,7 +10,7 @@ help: a keyword with a similar name exists: `comp`
 2 + comp c {}
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0104`.
 exit=2

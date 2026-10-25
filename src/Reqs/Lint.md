@@ -123,8 +123,8 @@ pub comp severity {
 }
 ```
 
-A denied lint is a static error, so with the `fren` command no check
-runs.
+A denied lint is a static error, so no check runs, with either front end
+(see [Static errors](View.md#static-errors)).
 
 ## Groups
 

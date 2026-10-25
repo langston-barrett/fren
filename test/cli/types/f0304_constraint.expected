@@ -7,7 +7,7 @@ error[F0304]: type mismatch: expected `Bool`, found `Int`
   = note: a constraint is a `Bool`
   = help: compare it to make a `Bool`, e.g. `x > 0` or `x != 0`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0304`.
 exit=2

@@ -11,7 +11,7 @@ help: a variable with a similar name exists: `s.total`
 3 + comp c { in i: Int pub out o: Int inst s: sub { a := i } req r: o = s.total }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0405`.
 exit=2

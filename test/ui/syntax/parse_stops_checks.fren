@@ -1,0 +1,22 @@
+-- A parse error is a static error, so neither front end checks anything:
+-- not `before` nor `after`, each unrealizable, though Lean parses both.
+comp before {
+    in x: Int
+    pub out y: Int
+    req a: y = x
+    req b: y = x + 1
+}
+
+comp broken {
+    in x: Int
+    req q: x =
+    --~^[hosted] error: unexpected token '}'
+}  --~[cli] error: expected an expression, found `}`
+
+comp after {
+    in x: Int
+    pub out y: Int
+    req a: y = x
+    req b: y = x + 1
+}
+--@ exit: 2

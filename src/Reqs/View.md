@@ -14,12 +14,61 @@ A static error is a syntax error, a name that cannot be resolved or is not
 visible, a duplicate name, a type error, nonlinear arithmetic, or a
 violation of a rule such as [Boolean naming](Lang/Types.md#boolean-names).
 Each is an error at the offending source position. A denied
-[lint](Lint.md), such as an unused import, is a
-static error too. With the `fren` command, any static error means that no
-check runs. In Lean, syntax and type errors
-are Lean's own, and are worded differently, except for operators of other
-languages (`==`, `&&`, `||`, `!`), which both front ends report with what to
-write instead.
+[lint](Lint.md), such as an unused import, is a static error too. In
+Lean, syntax and type errors are Lean's own, and are worded differently,
+except for operators of other languages (`==`, `&&`, `||`, `!`), which
+both front ends report with what to write instead.
+
+Any static error means that no check runs, with either front end: instead
+of the checks' results and summary, the `fren` command ends with `could
+not check due to previous errors`, with no location, and Lean's
+`#fren_check` reports the same. The errors are not counted, since the
+`fren` command stops at a parse error, where Lean goes on and may find
+more. In Lean, the static errors are those before the `#fren_check`, in
+any file: those of Fren's items, of `#fren_check`s (but not their
+checks'), and of `set_option`s of lints and evidence claims; Lean's parse
+errors, which it finds by parsing the file again with the syntax in scope
+at the `#fren_check`; and the lints so far that are errors. The errors of
+what only Lean reads, `impl`, `interp` and `#fren_trace`, do not count.
+Nor do the errors inside a `#guard_msgs`, expected or not, so that a Lean
+test can show an error and then the checks: an unexpected one fails the
+`#guard_msgs` itself. An item where `undecidable` is denied is still not
+checked ([Decidability lints](Lint/Decidability.md#undecidable-constructs)).
+
+### How many are reported
+
+In a component, the parts below are checked on their own, in this order,
+and each reports its first static error; an error in one does not stop the
+others:
+
+1. its name, and that its members' names are distinct: an error here stops
+   the component;
+2. each variable's declaration: its name, then its type (an error in its
+   name, such as in [shadowing](Lang/Components.md#shadowing), still
+   leaves its type to be checked); then one cycle of definitions, if any;
+3. each instance: its name, then its component and the names it binds;
+4. the bindings of each instance, together;
+5. each definition, each after those it mentions;
+6. each assumption, requirement and expectation, in order.
+
+An error that would only follow from an earlier one is not reported. After
+an error in a variable's declaration or in an instance, the component
+stops once the parts of the same step are checked, at the end of step 2
+or step 3, since what mentions the variable or the instance would only
+repeat it; a cycle of definitions stops it at the end of step 2 too: so an instance whose component cannot be found, or has a static error
+itself, is reported once, at the instance, and not at each use. A
+definition, or an instance's bindings, with an error still declare their
+variable, with its declared type, so what mentions them is checked as
+usual, and reports only its own errors.
+
+Any other item, including a global expectation and a refinement (whose
+bindings are checked together), reports its first static error only. A
+component or other item with a static error is not checked.
+
+The `fren` command does not yet report the lints of an item with a static
+error, even a denied one, while Lean reports those of the parts it could
+elaborate. That is a known difference between the front ends, to be
+removed ([#129](https://github.com/langston-barrett/fren/issues/129)).
 
 ## Error codes
 

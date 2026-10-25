@@ -6,7 +6,7 @@ error[F0107]: `iff` is not associative
   |
   = help: add parentheses to say which `iff` applies first, e.g. `a iff (b iff c)`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0107`.
 exit=2

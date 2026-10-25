@@ -7,7 +7,7 @@ error[F0112]: Lean code is not supported in .fren files
   = note: only Fren items (`mod`, `use`, `enum`, `struct`, `type`, `fn`, `const`, `comp`, `expect`, `tested`, `trusted`) may appear
   = help: move the `def` to a Lean file that opens `Fren.Lang`, and check it with `lake build`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0112`.
 exit=2

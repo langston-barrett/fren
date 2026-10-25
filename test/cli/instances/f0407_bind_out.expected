@@ -7,7 +7,7 @@ error[F0407]: `b` is an `out` of `sub`
   = note: only `in`s are bound; an instance chooses its own outputs
   = help: to constrain it, add a `req` that mentions `w.b`, where `w` is the instance
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0407`.
 exit=2

@@ -4,7 +4,7 @@ error[F0210]: expected a component, but `E` is an enum
 3 | comp c { inst s: E {} }
   |                  ^ not a component
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0210`.
 exit=2

@@ -6,7 +6,7 @@ error[F0204]: `Mode::Heat` is an enum variant and has no members
   |
   = note: only modules (their items) and enums (their variants) have members
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0204`.
 exit=2

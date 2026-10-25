@@ -29,7 +29,7 @@ help: if it is a `Bool`, name it `x?`
 4 + comp d { in x? }
   |
 
-error: could not check due to 2 previous errors
+error: could not check due to previous errors
 
 Some errors have detailed explanations: F0301, F0303.
 For more information about an error, try `fren --explain F0301`.

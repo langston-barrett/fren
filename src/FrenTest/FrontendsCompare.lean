@@ -69,6 +69,24 @@ def item : String := "comp c {\n    in x: Int\n    pub out y: Int\n    req q: y 
 #guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
   { diags := #[err 4 "nonlinear arithmetic is not supported", err 5 "unknown identifier 'K'"] }
 
+-- Both report a static error per constraint (`Reqs/View#how-many-are-reported`),
+-- so an error of Lean's in another constraint of an item that the binary
+-- rejects is compared like any other.
+#guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", err 5 "cannot find `K` in this scope"] }
+#guard agrees item
+  { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307", err 5 "cannot find `K` in this scope" "F0201"],
+    exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", err 5 "cannot find `K` in this scope"] }
+
+-- A static error stops both front ends' checks: a result, or a summary,
+-- of Lean's after one is a difference.
+#guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", err 1 "`c` is not realizable: for the input x = 0, no outputs satisfy `r`"] }
+
+#guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported"], summary? := none0 }
+
 /-! ## The binary cannot parse what Lean accepts -/
 
 def parse : String := "comp c {\n    in x: Int\n    req q: x = 1\n}\n\ncomp d {\n    in y: Int\n    req q: y = 1\n}\n"
@@ -139,25 +157,64 @@ def checked : String := "comp c {\n    in x: Int\n    pub out y?\n    req q: y? 
 
 #guard (FrenTest.Ui.cliDiagnostics "a.fren" "error: internal error: oops\n").1.isEmpty
 
--- The binary's line when a static error stops it has no counterpart.
+-- Each front end's line when a static error stops it, which has no
+-- location: both must say it, or neither.
 def stopped : Array Diagnostic :=
-  #[err 4 "nonlinear arithmetic is not supported" "F0307", err 0 "could not check due to 1 previous error"]
+  #[err 4 "nonlinear arithmetic is not supported" "F0307", err 0 "could not check due to previous errors"]
 
 #guard agrees item { diags := stopped, exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", err 0 "could not check due to previous errors"] }
+
+#guard differs item { diags := stopped, exit? := some 2 }
   { diags := #[err 4 "nonlinear arithmetic is not supported"] }
+
+#guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", err 0 "could not check due to previous errors"] }
+
+-- ... even after a parse error, where nothing else is compared.
+#guard differs parse { diags := #[err 3 "expected an expression, found keyword `expect`" "F0104", err 0 "could not check due to previous errors"], exit? := some 2 }
+  { diags := #[err 2 "unexpected token 'expect'; expected fren_expr"] }
 
 #guard differs checked { diags := #[err 0 "internal error: oops"], summary? := none0, exit? := some 2 }
   { diags := #[], summary? := none0 }
 
 /-! ## Normalized headlines -/
 
--- Values are masked; the names of a conflict's constraints are not.
+-- Values are masked, and so are the requirements of a realizability
+-- failure, which conflict on its input.
 #guard normHead "conflicts with `q1` when x = 1" == normHead "conflicts with `q1` when x = 2"
 #guard normHead "conflicts with `q1` when x = 1" != normHead "conflicts with `q2` when x = 1"
 #guard normHead "`c` is not realizable: for the input x = 1, no outputs satisfy `q`"
   == normHead "`c` is not realizable: for the input (any values), no outputs satisfy `q`"
 #guard normHead "`c` is not realizable: for the input x = 1, no outputs satisfy `q`"
-  != normHead "`c` is not realizable: for the input x = 1, no outputs satisfy `r`"
+  == normHead "`c` is not realizable: for the input x = 2, no outputs satisfy `r`"
+
+/-! ## Realizability failures (#99) -/
+
+def conflict : String :=
+  "comp c {\n    in s: String\n    inst w: d { b? := s != \"\" }\n    req q0: w.b?\n    req q1: not w.b?\n}\n"
+
+def note (line : Nat) (text : String) : Diagnostic := { line, severity := "info", text }
+
+-- Different inputs, so different requirements and notes, each minimal for
+-- its input: they agree.
+#guard agrees conflict
+  { diags := #[err 1 "`c` is not realizable: for the input s = \"\", no outputs satisfy `q0`" "F0601",
+      note 4 "is false when s = \"\""], summary? := none0, exit? := some 1 }
+  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q1`",
+      note 5 "is false when s = \"A\""], summary? := none0 }
+
+-- The same input, but different requirements: they differ, even if some
+-- undecided check could explain the rest.
+#guard differs conflict
+  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q0`" "F0601",
+      note 4 "is false when s = \"A\""], summary? := none0, exit? := some 1 }
+  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q1`",
+      note 5 "is false when s = \"A\""], summary? := none0 }
+#guard !(compare conflict
+  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q0`" "F0601"],
+    summary? := none0, exit? := some 1 }
+  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q1`"], summary? := none0 }).2
 -- " when " elsewhere is text, not values.
 #guard normHead "`p` holds when a" != normHead "`p` holds when b"
 

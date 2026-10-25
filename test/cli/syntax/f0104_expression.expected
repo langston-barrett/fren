@@ -4,7 +4,7 @@ error[F0104]: expected an expression, found `}`
 2 | comp c { in x: Int req r: x > }
   |                               ^ expected an expression
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0104`.
 exit=2

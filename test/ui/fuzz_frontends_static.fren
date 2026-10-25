@@ -9,4 +9,66 @@ comp concat {
     req q: y? iff s = t ++ "b"
     --~^ error: searching a string, or `++` here, which makes a word equation, may be undecidable
 }
+
+-- The same, with parentheses, which do not make it a comparison of
+-- strings too (#98).
+comp concat_paren {
+    in s: String
+    in t: String
+    pub out y?
+    req q: y? iff s = (t ++ "b")
+    --~^ error: searching a string, or `++` here, which makes a word equation, may be undecidable
+}
+
+-- Methods without arguments chained after a parenthesized receiver (#97).
+comp chained_paren {
+    in r: Rel(Int, Int)
+    pub out y?
+    req q: y? iff (r).range.card = 1
+    --~^ error: a relational operator over a type that is not finite quantifies over its values
+    --~^^ error: the solver does not reliably combine counting with relational operators
+}
+
+-- Counting with relational operators, through an instance, where cvc5
+-- aborted (#100): neither front end checks anything after a static error,
+-- not even `mixed`, which has none.
+comp mixed {
+    in n: Int
+    in t: Set(Int)
+    req q: ((t inter {0, 3}) union t) = (({(0, 0), (1, 2)}).range inter {3, n})
+}
+
+comp counts_mixed {
+    in r: Rel(Int, Int)
+    in t: Set(Int)
+    inst w: mixed { n := r.card, t }
+    --~^ error: the solver does not reliably combine counting with relational operators
+    pub out y?
+    req q: y? iff (w.n + ({(1, 2)}).card) > 1
+}
+
+-- An instance of a component that cannot be found, or that has a static
+-- error, is reported once, not again where it is used.
+comp uses_unknown {
+    in x: Int
+    inst w: nope { x }
+    --~^ error: cannot find `nope` in this scope
+    pub out z?
+    req r: z? iff w.y = 1
+}
+
+comp squared {
+    in x: Int
+    pub out y: Int
+    req q: y = x * x
+    --~^ error: nonlinear arithmetic is not supported
+}
+
+comp uses_squared {
+    in x: Int
+    inst w: squared { x }
+    --~^ error: cannot find `squared` in this scope
+    pub out z?
+    req r: z? iff w.y = 1
+}
 --@ exit: 2

@@ -6,7 +6,7 @@ error[F0103]: unterminated string literal
   |
   = note: a string literal ends with `"` on the same line
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0103`.
 exit=2

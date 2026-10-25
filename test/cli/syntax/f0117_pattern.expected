@@ -7,7 +7,7 @@ error[F0117]: invalid pattern: unknown escape `\d`
   = note: `\` escapes only `\ . [ ] ( ) * + ? { } | ^ -`; there are no classes such as `\d`
   = help: write a class, such as `[0-9]`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0117`.
 exit=2

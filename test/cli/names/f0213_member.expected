@@ -6,7 +6,7 @@ error[F0213]: `x` is defined multiple times in this component
   |
   = note: the variables, instances and constraints of a component share one namespace
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0213`.
 exit=2

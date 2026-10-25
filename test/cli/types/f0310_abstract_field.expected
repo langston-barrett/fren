@@ -7,7 +7,7 @@ error[F0310]: a field cannot have the abstract type `Name`
   = note: the values of records and enums are fully described by the spec
   = help: make the value an input of the components that use it, or a function of the record
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0310`.
 exit=2

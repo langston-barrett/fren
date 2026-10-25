@@ -6,7 +6,7 @@ error[F0329]: a pair can only be a member of a relation literal or the left of `
   |
   = note: there is no type of pairs; a relation is a set of them, as in `{(a, b)}` and `(a, b) in r`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0329`.
 exit=2

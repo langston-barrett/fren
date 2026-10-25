@@ -10,7 +10,7 @@ help: use `mod`, the remainder by a constant
 2 + comp c { in x: Int pub out y: Int req r: y = x mod 2 }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0105`.
 exit=2

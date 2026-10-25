@@ -39,7 +39,8 @@ need `Fren`.
 | `#fren_trace` | reports the evidence for every component (see [Traceability](Trace.md)) |
 
 A component or global expectation is checked only where a `#fren_check`
-follows it, in the same Lean file. The results are reported as Lean messages (see
+follows it, in the same Lean file, and only if no static error comes
+before the `#fren_check` (see [Static errors](View.md#static-errors)). The results are reported as Lean messages (see
 [Diagnostics](View.md)), so a failing check fails `lake build`.
 
 ## Options

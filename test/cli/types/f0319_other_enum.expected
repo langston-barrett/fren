@@ -6,7 +6,7 @@ error[F0319]: expected a variant of `Mode`, but this is a variant of `Fan`
   |
   = note: the scrutinee is a `Mode`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0319`.
 exit=2

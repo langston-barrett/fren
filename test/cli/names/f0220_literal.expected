@@ -7,7 +7,7 @@ error[F0220]: `true` is a literal, so it cannot be declared
   = note: `true` is the `Bool` literal wherever an expression is expected, so nothing could name this declaration
   = help: rename the declaration
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0220`.
 exit=2

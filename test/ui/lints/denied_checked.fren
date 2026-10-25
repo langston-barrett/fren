@@ -1,0 +1,10 @@
+-- A denied lint is a static error, so neither front end checks anything,
+-- though nothing else is wrong (see `Reqs/View`).
+set_option fren.lint.non_snake_case "deny" in
+comp denied {
+    in x: Int
+    pub out BadName: Int  --~ error: variable `BadName` should have a snake case name
+    req a: BadName = x
+    req b: BadName = x + 1
+}
+--@ exit: 2

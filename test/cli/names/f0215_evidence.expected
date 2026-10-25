@@ -6,7 +6,7 @@ error[F0215]: `fren.evidence` cannot be set for a requirement
   |
   = note: it can be set before a component, an expectation or global expectation, a cover goal, an instance or a `det out`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0215`.
 exit=2

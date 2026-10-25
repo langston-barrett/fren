@@ -29,7 +29,7 @@ help: for the name `x`, remove the `!`
 17 +     req r: p? iff x
    |
 
-error: could not fix due to 2 previous errors
+error: could not fix due to previous errors
 
 For more information about this error, try `fren --explain F0201`.
 exit=2

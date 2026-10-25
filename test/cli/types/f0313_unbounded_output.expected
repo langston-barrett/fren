@@ -7,7 +7,7 @@ error[F0313]: output `l` has the unbounded type `List`
   = note: the realizability check asks whether outputs exist, which the solver cannot decide for values of unbounded size
   = help: define it, as `out x: T := e`, make it an input, or describe it by outputs of bounded types
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0313`.
 exit=2

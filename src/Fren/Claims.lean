@@ -33,7 +33,7 @@ def resolveComp (p : Syntax) : CommandElabM Name := do
   let .item { kind := .compItem, path, .. } := r | throwErrorAt p (Core.notACompMsg r).text
   return path
 
-@[command_elab Lang.testedCmd] def elabTested : CommandElab := fun stx => do
+@[command_elab Lang.testedCmd] def elabTested : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   let path ← resolveComp stx[1]
   let mut files := #[]
@@ -49,7 +49,7 @@ def resolveComp (p : Syntax) : CommandElabM Name := do
     files := files.push file
   if ok then record (.claimInfo { comp := path, tested := true, texts := files })
 
-@[command_elab Lang.trustedCmd] def elabTrusted : CommandElab := fun stx => do
+@[command_elab Lang.trustedCmd] def elabTrusted : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   let path ← resolveComp stx[1]
   let some why := stx[3].isStrLit? | throwUnsupportedSyntax

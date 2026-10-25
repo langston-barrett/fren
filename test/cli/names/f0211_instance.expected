@@ -11,7 +11,7 @@ help: rename it to `s`
 3 + comp c { inst s: sub {} }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0211`.
 exit=2

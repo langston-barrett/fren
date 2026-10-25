@@ -7,7 +7,7 @@ error[F0415]: a binding of an input of `rough` may only mention `in` variables o
   = note: the inputs of `rough` are chosen by the environment, before `precise` chooses its outputs
   = help: bind an output of the refined component to it instead
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0415`.
 exit=2

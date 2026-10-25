@@ -10,7 +10,7 @@ help: comments start with `--`
 2 + -- a comment
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0101`.
 exit=2

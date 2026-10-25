@@ -6,7 +6,7 @@ error[F0332]: cannot index a `Set(Int)`
   |
   = note: only a sequence, `Seq(T)`, is indexed, as `q[i]`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0332`.
 exit=2

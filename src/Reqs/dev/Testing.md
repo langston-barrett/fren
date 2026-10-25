@@ -5,9 +5,13 @@
   `--~ error: TEXT` expects an error on that line whose text contains `TEXT`
   (`--~^` for the line above), every message must be expected, and `--@`
   lines expect the summary and exit code. Both front ends run every file and
-  must satisfy the same annotations; `--~[cli]` and `--~[hosted]` mark the
+  must satisfy the same annotations, and both or neither must say that a
+  static error stopped the checks; `--~[cli]` and `--~[hosted]` mark the
   few messages that legitimately differ (parse and type errors, which the Lean
-  front end gets from Lean). This is how `cli::agreement` is tested. See
+  front end gets from Lean), and `--~?` allows a message without expecting
+  it, for one that may be in one of several places, such as a conflict's
+  note at whichever requirement the solver's model picks. This is how
+  `cli::agreement` is tested. See
   `src/FrenTest/Ui.lean` for the format.
 - **Snapshots** (`lake test`): `test/cli/**/X.fren` must make the `fren` command print
   `test/cli/**/X.expected` exactly, for formatting that annotations don't cover.
@@ -108,17 +112,23 @@
     error of either front end is compared.
   - Messages are compared by their first line, without the values of a
     model, which may differ, or the solver's reason for an undecided check.
-    The names of the constraints that a message reports are compared.
+    The names of the constraints that a message reports are compared,
+    except the requirements that a realizability failure names, and its
+    notes at them: they are a minimal set that conflicts on its input, so
+    they are compared only when both report the same input.
   - Checks by testing, which Lean does not run, are left out, and so are
     the summary and exit status of a spec that has them.
-  - After a static error, which stops the `fren` command's checks, the
-    checks' results and the summary are not compared; and Lean's lints of an
-    item where the `fren` command reports a static error other than a lint
-    are not compared, since it drops that item's lints. Lean shows no
-    codes, so its lints are its warnings that are not a check's result,
-    and the errors of `undecidable`.
-  - The `fren` command's last line after a static error, which has no
-    location, is not compared; any other message without a location is.
+  - Lean's lints of an item where the `fren` command reports a static
+    error other than a lint are not compared, since it drops that item's
+    lints ([#129](https://github.com/langston-barrett/fren/issues/129)).
+    Their errors are: both report one per constraint ([How many are
+    reported](../View.md#how-many-are-reported)). Lean shows no codes, so
+    its lints are its warnings that are not a check's result, and the
+    errors of `undecidable`.
+  - Both front ends must say that a static error stopped the checks
+    (`could not check due to previous errors`, which has no location), or
+    neither, even after a parse error. Any other message without a location
+    is compared too.
 
   Each spec where the front ends differ is written to `DIR` (default
   `.lake/fuzz`) with the differences and both reports in comments, and the

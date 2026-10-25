@@ -10,7 +10,7 @@ help: if it is a path, separate its segments with `::`
 3 + comp c { in e: self::E }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0111`.
 exit=2

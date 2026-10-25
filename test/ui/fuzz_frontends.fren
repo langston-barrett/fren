@@ -27,4 +27,35 @@ comp member {
     pub out z?
     req q: z? iff x in {w.y, 0}
 }
---@ summary: 8 passed, 0 failed, 0 inconclusive, 0 redundant
+
+-- Methods without arguments chained after a literal or a parenthesized
+-- receiver, whose names Lean lexes as one dotted identifier (#97).
+expect chained_literal: {(1, 2)}.range.card = 1 and {(1, 2)}.inverse.image({2}) = {1}
+
+enum Dir { Up, Down }
+
+comp chained_paren {
+    in r: Rel(Dir, Dir)
+    pub out y?
+    req q: y? iff Dir::Up in (r).inverse.range
+    --~^ warning: this chain of methods has a shorter form
+}
+
+-- Parentheses never change how an operand is classified (#98).
+comp parenthesized {
+    in s: String
+    in x: Int
+    in t: Set(Int)
+    pub out a?
+    pub out b?
+    pub out c?
+    pub out d?
+    req qa: a? iff (s.len) = (0)
+    --~^ warning: say whether it is empty with `""`, not `len`
+    req qb: b? iff x in ({1})
+    --~^ warning: membership in a set of one member is equality
+    req qc: c? iff s.matches?(("a"))
+    --~^ warning: this pattern has no operator but `.*`
+    req qd: d? iff t = ({}) or (x, x) in ({(1, 2)})
+}
+--@ summary: 16 passed, 0 failed, 0 inconclusive, 0 redundant

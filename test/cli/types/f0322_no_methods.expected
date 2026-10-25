@@ -6,7 +6,7 @@ error[F0322]: `Bool` has no methods, so it has no method `contains?`
   |
   = note: only `Int`s, `String`s, sets, relations and sequences have methods
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0322`.
 exit=2

@@ -11,7 +11,7 @@ help: if it is a path, separate its segments with `::`
 6 + refine fits: outer refines a { z := inner::y }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0111`.
 exit=2

@@ -4,7 +4,7 @@ error[F0308]: `arity` takes 1 argument, but 2 were given
 4 | comp c { in x: Name pub out y: Int req r: y = arity(x, x) }
   |                                               ^^^^^^^^^^^ expected 1 argument
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0308`.
 exit=2
