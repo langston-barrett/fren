@@ -72,3 +72,14 @@ comp spare {
 
 #guard_msgs in
 impl spare_impl: spare for (b : Int) { budget := ⟨b⟩, left := ⟨b + 1⟩ }
+
+-- A newtype's value of another type: the `fren` command's whole message,
+-- with its note and help (`test/cli/types/f0304_newtype_value.fren`).
+/--
+error: type mismatch: expected `Int`, found `Bool`
+
+note: the value of `newtype_test::Ms` has type `Int`
+help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`
+-/
+#guard_msgs in
+comp wrong_value { pub out c: Ms req r: c = Ms(true) }

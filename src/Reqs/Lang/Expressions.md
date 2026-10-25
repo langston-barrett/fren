@@ -747,7 +747,9 @@ budget - elapsed
 
 `Ms(e)` builds the value of the [newtype](Items.md#newtypes) `Ms` whose
 field is `e`, which must have `Ms`'s underlying type, or be a `Nat`
-where it is an `Int` (`F0304`). It is written as an application of one
+where it is an `Int` (`F0304`). `e` is [checked](Types.md#checking-and-synthesis)
+against the underlying type, so with `struct Tags(Set(Int))`, `Tags({})`
+is the newtype's empty set. It is written as an application of one
 argument (`F0308`). A newtype is never built as a record literal, `Ms {
 ... }`, nor a record with named fields as a newtype, `Point(1, 2)`
 (`F0364`). `x.0` reads the field of `x`, of the underlying type, as in

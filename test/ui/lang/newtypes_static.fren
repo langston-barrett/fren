@@ -51,7 +51,8 @@ comp mixed_chain { in a: Ms in b: Bytes pub out c? req r: c? iff Ms(0) <= a < b 
 comp names_mixed { in a: Name pub out c? req r: c? iff a < "m" }  --~ error: cannot compare `Name` with `String`
 
 -- Built with `Ms(e)` from a value of the underlying type, and read with `.0`.
-comp wrong_value { pub out c: Ms req r: c = Ms(true) }  --~ error: type mismatch: expected `Int`, found `Bool`
+comp wrong_value { pub out c: Ms req r: c = Ms(true) }
+--~^ error: help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`
 comp other_newtype { in b: Bytes pub out c: Ms req r: c = Ms(b) }  --~ error: type mismatch: expected `Int`, found `Bytes`
 comp two_values { pub out c: Ms req r: c = Ms(1, 2) }  --~ error: `Ms` takes 1 value, but 2 were given
 comp as_record { pub out c: Ms req r: c = Ms { x := 1 } }  --~ error: `Ms` is a newtype, not a record with named fields

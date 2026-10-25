@@ -10,6 +10,7 @@ pub struct Flag(Bool)
 pub enum Mode { Idle, Busy }
 
 pub struct Tagged(Mode)
+pub struct Tags(Set(Int))
 
 comp timer {
     in elapsed: Ms
@@ -98,6 +99,38 @@ comp uses {
     expect after: w.later > now
 }
 
+-- A counterexample shows newtypes as Fren builds them, in both front ends.
+pub struct Slot { start: Ms, tags: Set(Ms) }
+
+comp shown {
+    in t: Ms
+    in s: Slot
+    pub det out next: Ms := t + Ms(1)
+
+    assume pinned: t = Ms(3) and s = Slot { start := Ms(2), tags := {Ms(1)} }
+
+    expect small: next < Ms(4)
+    --~^ error: counterexample: t = Ms(3), s = Slot { start := Ms(2), tags := {Ms(1)} }, next = Ms(4)
+}
+
+-- A newtype of a finite type is finite: the domain of a relation into one
+-- is in the decidable core.
+comp finite {
+    in r: Rel(Int, Flag)
+    pub det out d: Set(Int) := r.domain
+
+    expect domain: 1 in d iff ((1, Flag(true)) in r or (1, Flag(false)) in r)
+}
+
+-- The value of a newtype is checked against its underlying type, so `{}`
+-- may be one.
+comp empty_value {
+    in s: Set(Int)
+    pub det out t: Tags := if s = {} then Tags({}) else Tags(s)
+
+    expect same: t.0 = s
+}
+
 -- In refinements, with bindings over newtypes.
 comp deadline {
     in t: Ms
@@ -124,5 +157,5 @@ refine ticks: next_tick refines deadline
 refine counted: seconds refines deadline { t := Ms(s), d := Ms(d) }
 refine late: deadline refines next_tick  --~ error: expectation `late::r` does not hold
 
---@ summary: 43 passed, 3 failed, 0 inconclusive, 0 redundant
+--@ summary: 52 passed, 4 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

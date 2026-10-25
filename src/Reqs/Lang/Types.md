@@ -357,10 +357,11 @@ Where an expression is written decides whether it is checked:
 
 - **Declared.** It is checked against a type that is declared: a binding
   of an instance or of a refinement, a field of a record literal or of a
-  record update, an argument of a function application, a variant's
-  payload, an argument of a sequence's method, a defined output's
-  definition, a constant's value, and a definition of a [`let` or
-  `where`](Let.md) whose type is written.
+  record update, the value of a [newtype](Items.md#newtypes), as in
+  `Ms(e)`, an argument of a function application, a variant's payload,
+  an argument of a sequence's method, a defined output's definition, a
+  constant's value, and a definition of a [`let` or `where`](Let.md)
+  whose type is written.
 - **Shared.** Its type follows from that of the expression it is a part
   of, and from that of the expression's other such parts. It is checked if
   that expression is, or if one of those parts synthesizes its type. These
