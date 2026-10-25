@@ -1,0 +1,6 @@
+-- A row's condition cannot be a bare `when`, which would swallow its
+-- value.
+comp bare_when { in a? in b? pub out y: Int req r: y = table { when a?, b? => 1, _ => 0 } }
+--~^[cli] error: `when` must be parenthesized here
+--~^^[hosted] error: unexpected
+--@ exit: 2

@@ -1,0 +1,7 @@
+-- A table that may have no row that holds.
+comp sign {
+    in x: Int
+    pub out s: Int
+
+    req r: s = table { x > 0 => 1, x < 0 => -1 }
+}

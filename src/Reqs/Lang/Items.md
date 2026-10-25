@@ -461,7 +461,11 @@ for every argument, so there is nothing about the function itself to
 check: a defined function is like a component with an input for each
 parameter, and one `det out` that a single requirement makes equal to the
 body, which always meets its checks. Unlike a component, it is applied in
-expressions rather than instantiated.
+expressions rather than instantiated. Only how the body is written is
+checked: the [completeness](../Check.md#completeness) and
+[disjointness](../Check.md#disjointness) of its
+[tables](Expressions.md#tables), for every value of the parameters, as
+for the value of a [constant](#constants).
 
 ### Uninterpreted functions
 

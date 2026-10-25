@@ -134,4 +134,16 @@ def checkArm (t0? : Option Ty) (t : Ty) : Except Msg Ty := do
             notes := #["note: a `match` has the value of one of its arms, so all must have the same type, or be `Nat`s and `Int`s"] }
   return t0.join t
 
+/-- Checks that a row's value, of type `t`, has the type `t0` of the
+values before it, after widening, which is the table's
+(`Reqs/Lang/Expressions#tables`). -/
+def checkRowType (t0 t : Ty) : Except Msg Unit := do
+  if t.widens t0 || t0.widens t then return
+  throw { code? := some "F0358", headline := s!"the rows of a table have values of different types: `{t0.show}` and `{t.show}`"
+          label? := some "rows of different types"
+          notes := #["note: a table has the value of one of its rows, so all must have the same type, or be `Nat`s and `Int`s"] }
+
+/-- Why a row's condition must be a `Bool`. -/
+def rowConditionNote : String := "note: the condition of a row of a table is a `Bool`"
+
 end Fren.Core

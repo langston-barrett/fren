@@ -1,0 +1,184 @@
+-- Condition tables, `table { C => e, ... }`: the first row that holds
+-- gives the value, and complete and disjoint tables pass their checks.
+set_option fren.lint.dead_code "allow"
+
+enum Severity { Silent, Info, Warning, Error }
+
+use Severity::{Error, Info, Silent, Warning}
+
+comp exit {
+    in ran?
+    in worst: Severity
+    pub det out code: Int
+
+    req rule: code = table {
+        | not ran? => 2,
+        | ran? and worst = Error => 1,
+        | ran? and worst = Warning => 3,
+        | ran? and (worst = Silent or worst = Info) => 0,
+    }
+
+    expect documented: 0 <= code <= 3
+    expect failed: when ran? and worst = Error, code = 1
+}
+
+-- A last `_` row holds wherever no earlier row does: the table is
+-- complete, and `_` overlaps no row.
+comp wild {
+    in x: Int
+    pub det out y: Int
+
+    req r: y = table { x > 10 => 2, 0 < x <= 10 => 1, _ => 0 }
+
+    expect zero: when x <= 0, y = 0
+    expect one: when x = 5, y = 1
+}
+
+-- Only `_`.
+comp only_wild {
+    in x: Int
+    pub det out y: Int
+
+    req r: y = table { _ => x }
+
+    expect same: y = x
+}
+
+-- A table is an atom: it can be an operand without parentheses, and its
+-- values can be `Bool`s, sets or sequences, with a `Nat` and an `Int` an `Int`.
+comp operands {
+    in x: Int
+    in n: Nat
+    pub det out y: Int
+    pub det out b?
+    pub out s: Set(Int) := table { x > 0 => {}, _ => {x} }
+    pub out q: Seq(Int) := table { x > 0 => [x], _ => [] }
+
+    req ry: y = 1 + table { x > 0 => n, _ => x }
+    req rb: b? iff not table { x > 0 => true, _ => false }
+
+    expect pos: when x > 0, y = n + 1 and not b? and s = {} and q = [x]
+    expect neg: when x <= 0, y = x + 1 and b? and s = {x} and q = []
+}
+
+-- Under `when`, a table need only be complete and disjoint where it is
+-- evaluated.
+comp guarded {
+    in x: Int
+    pub out y: Int
+
+    req r: when x >= 0, y = table { x = 0 => 0, x > 0 => 1 }
+    req s: when x < 0, y = -1
+
+    expect sign: y >= -1
+}
+
+-- A requirement's own hypotheses make the table complete.
+comp hypotheses {
+    in x: Int
+    pub out y: Int
+
+    assume small: 0 <= x <= 2
+
+    req r: y = table { x = 0 => 10, x = 1 => 11, x = 2 => 12 }
+
+    expect range: 10 <= y <= 12
+}
+
+-- A `Nat` is at least 0, which every check assumes.
+comp naturals {
+    in n: Nat
+    pub det out y: Int
+
+    req r: y = table { n = 0 => 0, n > 0 => 1 }
+
+    expect bit: y = 0 or y = 1
+}
+
+-- An index in a row is guarded by the earlier rows' not holding, and in a
+-- value by its own condition too.
+comp indexes {
+    in q: Seq(Int)
+    pub det out y: Int
+
+    req r: y = table { q = [] => 0, q != [] and q[0] > 0 => q[0], _ => -q[0] }
+
+    expect non_negative: y >= 0
+}
+
+-- Nested tables, each checked under the conditions around it.
+comp nested {
+    in a?
+    in b?
+    pub det out y: Int
+
+    req r: y = table {
+        | a? => table { b? => 3, not b? => 2 },
+        | not a? => table { b? => 1, _ => 0 },
+    }
+
+    expect max: y <= 3
+}
+
+-- Rows whose values are newtypes, with and without a `_` row.
+pub struct Ms(Int)
+
+comp delays {
+    in fast?
+    pub det out wait: Ms := table { fast? => Ms(1), _ => Ms(10) }
+    pub det out pause: Ms := table { fast? => Ms(2), not fast? => Ms(20) }
+
+    expect short: when fast?, wait < pause
+}
+
+-- A table in a quantifier's body, checked at each instance, and a
+-- quantifier in a row's condition.
+enum Level { Low, High }
+
+comp quantified {
+    in x: Int
+    pub det out y: Int
+    pub det out all?
+
+    req r: y = table { (forall (l: Level), l = Level::Low or x > 0) => 1, _ => 0 }
+    req s: all? iff (forall (l: Level), table { l = Level::Low => x >= 0, l = Level::High => x >= 1 })
+
+    expect positive: when x > 0, y = 1 and all?
+}
+
+-- A table in a `let`, or whose rows read its names, is checked where the
+-- names mean their definitions.
+comp lets {
+    in x: Int
+    pub det out y: Int
+    pub det out z: Int
+
+    req r: y = (let k := table { x > 0 => 1, x <= 0 => 0 } in k + k)
+    req s: z = table { a > 0 => a, a <= 0 => 0 } where a := x - 1
+
+    expect even: y = 0 or y = 2
+}
+
+-- In a function's body and a constant's value, a table is checked for
+-- every value of the parameters.
+fn sign(x: Int): Int := table { x > 0 => 1, x < 0 => -1, x = 0 => 0 }
+
+const LIMIT: Int := table { 1 < 2 => 10, _ => 20 }
+
+-- A `Nat` parameter is at least 0, which the checks of a body assume too.
+fn bit(n: Nat): Int := table { n = 0 => 0, n > 0 => 1 }
+
+comp uses {
+    in x: Int
+    pub det out y: Int
+
+    req r: y = sign(x) * LIMIT
+
+    expect positive: when x > 0, y = 10
+}
+
+-- In a global expectation.
+expect exit_codes: forall (e: exit), table { e.ran? => e.code != 2, not e.ran? => e.code = 2 }
+
+--@ summary: 114 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ exit: 0

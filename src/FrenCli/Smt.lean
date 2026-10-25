@@ -388,7 +388,9 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
     defs := c.defs.map fun (d, e) => (d, s!"(= {quote d.toString} {e})", e)
     -- Numbered in order within each item.
     indexes := c.indexes.mapIdx fun j (n, place, _, goal) =>
-      { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal } }
+      { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal }
+    tables := c.tables.mapIdx fun j (n, place, _, q, goal) =>
+      { site := { prop := n, k := (c.tables.extract 0 j).filter (·.1 == n) |>.size, place, goal }, goal := q } }
 
 /-- `rs`, results of `c`, with each cover goal's marked if its query uses
 an abstract type or an uninterpreted function, as the prelude declarations

@@ -304,6 +304,9 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
   let copied := c.vars.filter fun v => (Core.Symbol.ofRole v.role).copied
   withLocalDeclsD (copied.map fun v => (Core.primed v.name, fun _ => pure v.type)) fun primes => do
     let beta (e : Expr) : MetaM Expr := return (← rep e).beta fvs
+    -- The indexes, and the questions about tables.
+    let indexes := c.indexes.filter (·.2.2.2.1.isNone)
+    let tables := c.indexes.filter (·.2.2.2.1.isSome)
     let named (ps : Array PropInfo) := ps.mapM fun p => return (p.name, ← beta p.body)
     let comp : Core.Comp Expr := {
       path := c.path
@@ -318,9 +321,12 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
         assumes := ← i.assumes.mapM fun (n, a) => return (n, ← beta a) }
       triggers := ← (c.reqs ++ c.expects).filterMapM fun p => p.trigger?.mapM fun t => return (p.name, ← beta t)
       -- Numbered in order within each item.
-      indexes := ← c.indexes.mapIdxM fun j (n, place, _, goal) => do
-        let k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size
+      indexes := ← indexes.mapIdxM fun j (n, place, _, _, goal) => do
+        let k := (indexes.extract 0 j).filter (·.1 == n) |>.size
         return { prop := n, k, place, goal := ← beta goal }
+      tables := ← tables.mapIdxM fun j (n, place, _, q, goal) => do
+        let k := (tables.extract 0 j).filter (·.1 == n) |>.size
+        return { site := { prop := n, k, place, goal := ← beta goal }, goal := q.getD .completeness }
       defs := ← c.defs.filterMapM fun (d, e) => do
         let some i := c.vars.findIdx? (·.name == d) | return none
         let e ← beta e

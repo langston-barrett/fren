@@ -31,7 +31,15 @@ variables of its instances, including those that are hidden (see
 binders, all under one interpretation.
 
 In a behaviour, every constraint is `true` or `false`, by the meaning of
-its [expression](Lang/Expressions.md). The evaluator computes it from the
+its [expression](Lang/Expressions.md). The evaluator computes the value of
+each [constant](Lang/Items.md#constants) once, when it reads the spec,
+without an interpretation. A constant whose value then reads an index out
+of range, or a table without a `_` row where no row holds, is kept as its
+expression: in each behaviour, it has the value that the interpretation
+gives the table, and none for the index; its indexes and tables
+are the constant's own, which the checks ask about at the constant, not
+where it is mentioned. A constant whose value cannot be computed for any
+other reason is an internal error. The evaluator computes it from the
 spec itself, not from the formulas given to the solver, so it is an
 independent statement of what a spec means. A name of a
 [`let` or `where`](Lang/Let.md) is read as its definition, so it is not
@@ -114,7 +122,10 @@ already be evaluated is false. A variable's candidates are:
 
 The interpretation is chosen at random: each function's value at each
 argument is random, but the same wherever it is applied in the behaviour,
-and at least 0 if its result is a `Nat`.
+and at least 0 if its result is a `Nat`. So is the value of each type that
+a [table](Lang/Expressions.md#tables) without a `_` row has where no row
+holds, which the interpretation gives, as the solver's does: one value of
+each type, the same for every such table.
 
 The search may miss a behaviour that exists, since it tries only some
 values, but every behaviour it reports is genuine: it is a behaviour of the
@@ -188,7 +199,9 @@ Vacuity and redundancy are not tested: they ask whether something can
 hold at all, which a failed search does not refute. A [cover
 goal](Check.md#cover-goals) asks that too, but a behaviour found shows
 that it can hold, so testing passes a goal for which it finds a witness,
-and never fails one.
+and never fails one. Nor are definedness,
+completeness and disjointness (see [Checking by
+testing](Check.md#checking-by-testing)).
 
 A test *reaches* a check when it finds what the check is about, as in the
 table: a behaviour that meets the component, for an expectation; an
@@ -313,7 +326,12 @@ from the constraint, definition or binding that has the index, by the same
 left-to-right reading, and pairs it with the solver's by the index's
 position in the source. An index out of range in the guard has no value
 that the evaluator knows, so it leaves the goal undecided unless the rest
-decides it. `eval::confirm` gives the result:
+decides it. The goals of [completeness](Check.md#completeness) and
+[disjointness](Check.md#disjointness) are found in the same way, from the
+table's conditions, and paired with the solver's by the place where each
+is reported in the source, and by its question: a table's `table` for its
+completeness, and the later row's condition for the disjointness of two
+rows. In the body of a function, the parameters are the variables. `eval::confirm` gives the result:
 
 ```fren
 pub enum Confirmation { Confirmed, Refuted, Undecided }

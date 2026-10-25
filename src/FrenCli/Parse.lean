@@ -132,12 +132,19 @@ inductive Expr where
   /-- `forall (x y: T) (z: U), e`, or `exists` if not `all`, with its
   binders and its body (`Reqs/Lang/Quantifiers`). -/
   | quant (span : Span) (all : Bool) (binders : Array Binder) (body : Expr)
+  /-- `table { C => e, ... }`, a condition table: each row's start, its
+  condition, `none` for `_`, and its value. -/
+  | table (span : Span) (rows : Array (Span × Option Expr × Expr))
   deriving Inhabited
 
 def Expr.span : Expr → Span
   | .when s .. | .ite s .. | .bin s .. | .not s .. | .neg s .. | .num s .. | .bool s .. | .path s .. | .app s ..
   | .record s .. | .update s .. | .field s .. | .match s .. | .is s .. | .str s .. | .method s .. | .set s .. | .pair s ..
-  | .seq s .. | .index s .. | .chain s .. | .«let» s .. | .quant s .. => s
+  | .seq s .. | .index s .. | .chain s .. | .«let» s .. | .quant s .. | .table s .. => s
+
+/-- The conditions and values of a table's rows, in order. -/
+def tableParts (rows : Array (Span × Option Expr × Expr)) : Array Expr :=
+  rows.flatMap fun (_, c?, v) => c?.toArray.push v
 
 inductive PropKind where
   | assume
@@ -842,6 +849,24 @@ partial def atom : P Expr := do
       if (← eatKw ",").isNone then break
     discard (expectKw "}")
     fieldReads callArgs indexArg (.match (← spanFrom t.span) scrutinee arms)
+  | .kw "table" =>
+    discard bump
+    markList
+    discard (expectKw "{")
+    let mut rows := #[]
+    repeat
+      if isKw (← peek) "}" && !rows.isEmpty then break
+      markStart
+      discard (eatKw "|")
+      let start := (← peek).span
+      -- `_`, which no condition can be, or a condition below `when`, which
+      -- would swallow the row's value.
+      let cond? ← if (← peek).tok == .ident "_" then discard bump; pure none else some <$> withRecords iff
+      discard (expectKw "=>")
+      rows := rows.push (start, cond?, ← withRecords iff)
+      if (← eatKw ",").isNone then break
+    discard (expectKw "}")
+    fieldReads callArgs indexArg (.table (← spanFrom t.span) rows)
   | .kw "{" =>
     -- A set literal, or a record update if `with` follows the first
     -- expression.

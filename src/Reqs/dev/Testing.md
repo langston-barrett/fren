@@ -76,9 +76,11 @@
   and functions from them to `Bool`s, sets and relations of an enumeration
   or of `Bool`, and sequences of one that `range_*` constraints bound to
   two elements, with instances, `det out`s, cover goals, global
-  expectations, and quantifiers over the enumeration and over `Bool`. Each
-  index is guarded, before or after it, so that every constraint has a
-  value whatever an index out of range is. Its constraints include
+  expectations, quantifiers over the enumeration and over `Bool`, and
+  `Bool` tables. Each index is guarded, before or after it, so that every
+  constraint has a value whatever an index out of range is; a table has
+  one even where no row holds, which is the interpretation's unspecified
+  value of its type. Its constraints include
   pattern tests and `match`es with literal and range patterns on `Bool`s
   and `Int`s; the enumerations have no payloads, so nested patterns are
   left to the ui tests. Brute force enumerates every behaviour and interpretation
@@ -103,8 +105,8 @@
   that Lean's messages call for: 2 after a static error, else 1 when Lean
   reports an error, 3 when it reports a warning, and 0 otherwise. The specs aim at the
   analyses that each front end implements on its own: constants, defined
-  outputs, defined and uninterpreted functions, instances, `match`, string
-  methods and `++`, products, orderings and `min` and `max` of an ordered
+  outputs, defined and uninterpreted functions, instances, `match`, tables,
+  string methods and `++`, products, orderings and `min` and `max` of an ordered
   enumeration, a newtype of `Int` and its operators, and sets and
   relations with `card`, so as to reach `linear_product`, the [decidable core](../Lang/Decidability.md)
   and the lints. Only what may legitimately differ is not compared:

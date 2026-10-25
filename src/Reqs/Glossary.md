@@ -23,6 +23,9 @@ and `at_most_one?`, which hold when exactly one, or at most one, of their
 `0 <= i < n`, which means `0 <= i and i < n`. See
 [Expressions](Lang/Expressions.md#chained-comparisons).
 
+**Complete.** Of a table: some row's condition holds wherever the table is
+evaluated. See [Checks](Check.md#completeness).
+
 **Component.** A part of a system, described by its inputs, outputs and
 constraints, declared with `comp`. See [Components](Lang/Components.md).
 
@@ -48,6 +51,10 @@ with `det out` must be determined. See [Checks](Check.md#determinism).
 **Enumeration.** A type whose values are each one of a fixed set of named
 variants, with the variant's payload, declared with `enum`. See
 [Items](Lang/Items.md#enumerations).
+
+**Disjoint.** Of the rows of a table: no two of them, other than `_`, hold
+at once wherever the table is evaluated. See
+[Checks](Check.md#disjointness).
 
 **Divisor.** The right operand of `div` or `mod`: an integer literal or a
 constant, possibly negated or in parentheses, whose value is not `0`. See
@@ -174,6 +181,9 @@ declaration's scope the name means the declaration. It is written with
 [Markdown spec](Markdown.md).
 
 **System.** Whatever chooses a component's outputs.
+
+**Table.** An expression `table { C => e, ... }` that has the value of its
+first row whose condition holds. See [Expressions](Lang/Expressions.md#tables).
 
 **Trigger.** The condition under which a `when` or `unless` constraint
 applies. See [Components](Lang/Components.md#triggers).

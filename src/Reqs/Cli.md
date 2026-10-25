@@ -193,8 +193,10 @@ each query with a projection, by cvc5's option `force-logic`, since
 lean-smt always sets `ALL`. Its queries are still in the
 [decidable core](Lang/Decidability.md), unless it opts out. A spec uses
 sets if it writes a `Set(…)` or `Rel(…)` type, or a set or relation
-literal such as `{1, 2}`, and sequences if it writes a `Seq(…)` type or a
-sequence literal such as `[x]`, even if no variable has such a type.
+literal such as `{1, 2}`, and sequences if it writes a `Seq(…)` type, a
+sequence literal such as `[x]`, or a [table](Lang/Expressions.md#tables)
+without a `_` row, whose value where no row holds is an index out of range
+of the empty sequence, even if no variable has such a type.
 `cli::logic` gives the logic from the check, where `QuantifierFree` is
 `QF_UFDTLIA`, `Quantified` is `UFDTLIA` and `HigherOrder` is `HO_ALL`:
 
@@ -288,10 +290,12 @@ pub comp exit {
     in worst: Severity     -- the most severe level over all results and lints
     pub det out code: Int
 
-    req not_run: unless ran?, code = 2
-    req failed: when ran? and worst = Error, code = 1
-    req warned: when ran? and worst = Warning, code = 3
-    req passed: when ran? and worst <= Info, code = 0
+    req code_rule: code = table {
+        | not ran? => 2,
+        | ran? and worst = Error => 1,
+        | ran? and worst = Warning => 3,
+        | ran? and worst <= Info => 0,
+    }
 
     expect zero_means_no_problem: when code = 0, ran? and worst <= Info
     expect documented_codes: 0 <= code <= 3
@@ -308,10 +312,12 @@ pub comp worst_severity {
     in present: Set(Severity)    -- the levels of the run's results and lints
     pub det out worst: Severity
 
-    req any_error: when Error in present, worst = Error
-    req warning: when not Error in present and Warning in present, worst = Warning
-    -- Includes runs with no checks at all.
-    req silent: unless Error in present or Warning in present, worst = Silent
+    -- The last row includes runs with no checks at all.
+    req rule: worst = table {
+        | Error in present => Error,
+        | not Error in present and Warning in present => Warning,
+        | not (Error in present or Warning in present) => Silent,
+    }
 
     expect worst_present: when worst != Silent, worst in present
     -- The maximum of the levels present, counting `Info` as `Silent`.

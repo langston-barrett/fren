@@ -253,7 +253,7 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
       return s!"{← wrapTerm sc} {← pick #["=", "!=", "<", "<=", ">", ">="]} {← wrapTerm sc}"
     | _ => pick #["true", "false"]
   if depth == 0 then return ← atom
-  match ← below 8 with
+  match ← below 10 with
   | 0 => return s!"({← genBool sc (depth - 1)} and {← genBool sc (depth - 1)})"
   | 1 => return s!"({← genBool sc (depth - 1)} or {← genBool sc (depth - 1)})"
   | 2 => return s!"not ({← genBool sc (depth - 1)})"
@@ -271,6 +271,16 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
     let (x, t) := if enum then (s!"x{depth}", GTy.enum) else (s!"x{depth}?", GTy.bool)
     let body ← genBool { sc with vars := sc.vars.push (x, t, false) } (depth - 1)
     return s!"({← pick #["forall", "exists"]} ({x}: {if enum then "E" else "Bool"}), {body})"
+  -- A table: complete by its last row's being the negation of the first,
+  -- with a `_` row after rows that may overlap, or with rows that may
+  -- leave a case, where its value is the interpretation's, which brute
+  -- force enumerates.
+  | 7 =>
+    let c ← genBool sc (depth - 1)
+    match ← below 3 with
+    | 0 => return s!"table \{ {c} => {← genBool sc (depth - 1)}, not ({c}) => {← genBool sc (depth - 1)} }"
+    | 1 => return s!"table \{ {c} => {← genBool sc (depth - 1)}, {← genBool sc (depth - 1)} => {← genBool sc (depth - 1)}, _ => {← genBool sc (depth - 1)} }"
+    | _ => return s!"table \{ {c} => {← genBool sc (depth - 1)}, {← genBool sc (depth - 1)} => {← genBool sc (depth - 1)} }"
   | _ => atom
 
 /-- A constraint, often with a trigger. -/
@@ -484,6 +494,11 @@ structure Oracle where
 
 def isRange (n : Name) : Bool := n.toString.startsWith "range_"
 
+/-- The key of a question about a table's rows in the item `p`: where it is
+reported, and for disjointness, the earlier row. -/
+def tableKey (p : Name) (pos : Nat) (rows? : Option (Nat × Nat)) : Name :=
+  .num (.num p pos) ((rows?.map (·.1)).getD 0)
+
 def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
   let flat := sp.flatVars c
   let size := max 1 (flat.filter (·.ty matches .abstract _)).size
@@ -506,12 +521,13 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
   let MF := Is.map fun I => (I, models sp size I order full)
   let constraintsWithTrig := (c.constraints.filter fun p => p.kind == .req || p.kind == .expect).filterMap fun p =>
     p.e.trigger?.map (p, ·)
-  -- Definedness, of each index by its position: in every model of `ms`,
-  -- its goal holds.
+  -- Definedness, of each index by its position, and the completeness and
+  -- disjointness of each table, by where it is reported and the earlier
+  -- row (`tableKey`): in every model of `ms`, its goal holds.
   let defined (o : Oracle) (p : Name) (e : Ex) (ms : Array (Interp × Array Env)) : Oracle :=
-    e.indexGoals.foldl (init := o) fun o (pos, g) =>
-      put o .definedness (some (.num p pos)) (pass (ms.all fun (I, ms) =>
-        ms.all (holds I · { label := p, pfx := .anonymous, e := g })))
+    let always (g : Ex) := pass (ms.all fun (I, ms) => ms.all (holds I · { label := p, pfx := .anonymous, e := g }))
+    let o := e.indexGoals.foldl (init := o) fun o (pos, g) => put o .definedness (some (.num p pos)) (always g)
+    e.tableGoals.foldl (init := o) fun o (pos, q, g) => put o q.kind (some (tableKey p pos q.rows?)) (always g)
   if c.isGlobal then
     let MG := Is.map fun I => (I, models sp size I order (sp.insts c))
     for e in es do out := put out .expect (some e.name) (pass (MG.all fun (I, ms) => ms.all (holds I · (atom e))))
@@ -691,11 +707,15 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
     let log ← IO.mkRef #[]
     let bk := backend prelude st.datatypes c timeout none (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs)
       st.usesProjection
-    let results ← Fren.Core.checkComp (fun k => confirming sp ec k log (bk k)) (pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)))
-      (Fren.Core.kindsFor global)
-    -- A definedness result, by its index's position, as brute force keys it.
+    let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
+    let results ← Fren.Core.checkComp (fun k => confirming sp ec k log (bk k)) core (Fren.Core.kindsFor global)
+    -- A definedness result, by its index's position, and a table's, by
+    -- where it is reported and its rows, as brute force keys them.
     let keyOf (r : CheckResult) :=
-      if r.kind != .definedness then keyOf r else
+      if r.kind == .completeness || r.kind == .disjointness then
+        let pos? := r.prop?.bind fun p => (c.tables.filter (·.1 == p))[r.site?.getD 0]?.map (·.2.2.1.start)
+        (r.kind, r.prop?.map fun p => tableKey p (pos?.getD 0) r.rows?, r.target?)
+      else if r.kind != .definedness then keyOf r else
       let pos? := r.prop?.bind fun p => (c.indexes.filter (·.1 == p))[r.index?.getD 0]?.map (·.2.2.1.start)
       (r.kind, r.prop?.map fun p => Name.num p (pos?.getD 0), r.target?)
     for x in ← log.get do

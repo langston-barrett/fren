@@ -287,6 +287,15 @@ syntax fren_arm := fren_top_pattern " => " fren_expr:20
 /-- `match e { pattern => e, ... }`. -/
 scoped syntax:max (name := matchExpr) "match " withoutForbidden(fren_expr:max) " { " withoutForbidden(sepBy(fren_arm, ", ", ", ", allowTrailingSep)) " }" : fren_expr
 
+/-- A row of a table: `C => e`, or `_ => e`, optionally after `|`. Like a
+`match` arm's body, neither the condition nor the value can be a bare
+`when`/`unless`. -/
+syntax fren_row := ("| ")? ("_" <|> fren_expr:20) " => " fren_expr:20
+
+/-- `table { C => e, ... }`, a condition table. `table` is a reserved word
+where `Fren.Lang` is open. -/
+scoped syntax:max (name := tableExpr) "table " "{ " sepBy1(fren_row, ", ", ", ", allowTrailingSep) " }" : fren_expr
+
 /-- `e is P`, a pattern test, at the precedence of the comparisons. `is`
 is a reserved word where `Fren.Lang` is open, as the set operators are. -/
 scoped syntax:50 (name := isExpr) fren_expr:50 " is " fren_top_pattern : fren_expr

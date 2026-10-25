@@ -1,0 +1,14 @@
+error[F0619]: rows 1 and 2 of a table in `grade::r` may both hold
+ --> test/cli/results/f0619_overlap.fren:8:11
+  |
+8 |         | score >= 0 => false,
+  |           ^^^^^^^^^^ overlaps an earlier row
+  |
+  = witness: score = 50, pass? = true
+  = note: where rows overlap, the first of them gives the table's value, so the order of the rows matters
+  = help: make the conditions exclusive, as in `a => x, not a and b => y`
+
+fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0619`.
+exit=1

@@ -126,6 +126,15 @@ partial def matchOn (sc : WScope) (t : WTy) (d : Nat) : R String := do
   if covered < n || (← chance 5) then arms := arms.push s!"_ => {← gen sc t (d - 1)}"
   return s!"match {scrut} \{ {", ".intercalate arms.toList} }"
 
+/-- A table with values of type `t`: one to three rows, sometimes after
+a leading `|`, and sometimes a last `_` row. -/
+partial def tableOf (sc : WScope) (t : WTy) (d : Nat) : R String := do
+  let mut rows := #[]
+  for _ in [0:(← below 3) + 1] do rows := rows.push s!"{← gen sc .bool (d - 1)} => {← gen sc t (d - 1)}"
+  if ← chance 40 then rows := rows.push s!"_ => {← gen sc t (d - 1)}"
+  let bar := if ← chance 30 then "| " else ""
+  return s!"table \{ {", ".intercalate (rows.toList.map (bar ++ ·))} }"
+
 /-- An expression of type `t`, of depth at most `d`. -/
 partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
   if d == 0 || (← chance 25) then return ← leaf sc t
@@ -159,6 +168,7 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
     | 11 => return s!"{← rsub .str}.index_of({← csub .str}, {← below 2})"
     | 12 => return s!"{← rsub .rel}.card"
     | 13 => if sc.hasMs then return s!"{← sub .ms}.0" else leaf sc .int
+    | 14 => tableOf sc .int d
     | _ => leaf sc .int
   | .bool =>
     match ← below 25 with
@@ -203,6 +213,7 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
       -- Seldom, a newtype compared with an `Int`, which both reject.
       let rhs ← if ← chance 5 then sub .int else sub .ms
       return s!"{← sub .ms} {← pick #["=", "!=", "<", "<=", ">", ">="]} {rhs}"
+    | 24 => tableOf sc .bool d
     | _ => leaf sc .bool
   | .str =>
     match ← below 7 with

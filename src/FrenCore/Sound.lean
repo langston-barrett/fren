@@ -30,7 +30,8 @@ instances' behaviours and triggers) faithfully from the source; that an
 instance's behaviour is possible because its component is realizable; a
 solver that sizes a sort's domain per query (`Sound.HasType`); that cores
 are minimal (`minimize`); that a front end's `subst` meets `Sound.DefsOk`;
-and that a definedness goal says its index is in range.
+that a definedness goal says its index is in range; and that a table's
+goals say what its rows are.
 -/
 
 open Lean
@@ -465,24 +466,28 @@ theorem checkInst_fail (k : Nat) (i : Inst F) (a : Name × F) (h : (checkInst b 
 
 /-! ## Definedness -/
 
-/-- What the place of an index says of the environments where it is
-evaluated: for an assumption, the definitions and the other assumptions
+/-- What the place of an index or a table says of the environments where it
+is evaluated: for an assumption, the definitions and the other assumptions
 hold; for a binding of instance `k`, the environment is possible up to
-`k`; otherwise it is a behaviour. -/
+`k`; in a function's body or a constant's value, the definitions hold;
+otherwise it is a behaviour. -/
 def Sound.AtSite (site : IndexSite F) (ρ : Env Val) : Prop :=
   match site.place with
   | .assume => s.Defined ρ ∧ ∀ q ∈ c.assumes, q.1 ≠ site.prop → s.den q.2 ρ
   | .binding k => s.Admits ρ k
   | .prop => s.Behaves ρ
+  | .body => s.Defined ρ
 
-theorem Sound.holds_site (site : IndexSite F) {ρ : Env Val} (ht : s.Typed ρ) :
-    s.Holds (c.defEqs .definedness ++ c.siteHyps b site) ρ ↔ s.AtSite site ρ := by
+theorem Sound.holds_site {kd : CheckKind} (hk : kd.substitutes = false) (site : IndexSite F) {ρ : Env Val}
+    (ht : s.Typed ρ) : s.Holds (c.defEqs kd ++ c.siteHyps b site) ρ ↔ s.AtSite site ρ := by
   obtain ⟨prop, k, place, goal⟩ := site
   cases place <;> simp only [Comp.siteHyps, Sound.AtSite]
-  · rw [s.holds_append, s.holds_defEqs rfl]
+  · rw [s.holds_append, s.holds_defEqs hk]
     exact and_congr .rfl (holds_others s c.assumes (prop, b.falseF) ρ)
-  · exact s.holds_behaves (kd := .definedness) rfl ht
-  · exact s.holds_hyps (kd := .definedness) rfl _ ht
+  · exact s.holds_behaves hk ht
+  · exact s.holds_hyps hk _ ht
+  · rw [s.holds_append, s.holds_defEqs hk]
+    exact ⟨fun h => h.1, fun h => ⟨h, fun _ hg => nomatch hg⟩⟩
 
 /-- A `pass` means the index is in range wherever it is evaluated. -/
 theorem checkDefinedness_pass (site : IndexSite F) (h : (checkDefinedness b c site).run.verdict = .pass) :
@@ -490,7 +495,7 @@ theorem checkDefinedness_pass (site : IndexSite F) (h : (checkDefinedness b c si
   unfold checkDefinedness at h
   cases hq : b.query (c.defEqs .definedness ++ c.siteHyps b site) site.goal true <;>
     simp [hq, expectVerdict, Outcome.answer] at h
-  exact fun ρ ht hρ => s.query_unsat hq ρ ht ((s.holds_site site ht).2 hρ)
+  exact fun ρ ht hρ => s.query_unsat hq ρ ht ((s.holds_site (kd := .definedness) rfl site ht).2 hρ)
 
 /-- A `fail` is an environment where the index is evaluated and out of
 range, which the counterexample shows. -/
@@ -501,7 +506,32 @@ theorem checkDefinedness_fail (site : IndexSite F) (h : (checkDefinedness b c si
   cases hq : b.query (c.defEqs .definedness ++ c.siteHyps b site) site.goal true <;>
     simp [hq, expectVerdict, Outcome.answer] at h ⊢
   obtain ⟨ρ, ht, hρ, hg, hm⟩ := s.query_sat hq
-  exact ⟨ρ, ht, (s.holds_site site ht).1 hρ, hg, _, hm, rfl⟩
+  exact ⟨ρ, ht, (s.holds_site (kd := .definedness) rfl site ht).1 hρ, hg, _, hm, rfl⟩
+
+/-! ## Tables -/
+
+theorem TableGoal.kind_substitutes (g : TableGoal) : g.kind.substitutes = false := by
+  cases g <;> rfl
+
+/-- A `pass` means that what the question about the table's rows asks
+holds wherever the table is evaluated. -/
+theorem checkTable_pass (t : TableSite F) (h : (checkTable b c t).run.verdict = .pass) :
+    ∀ ρ, s.Typed ρ → s.AtSite t.site ρ → s.den t.site.goal ρ := by
+  unfold checkTable at h
+  cases hq : b.query (c.defEqs t.goal.kind ++ c.siteHyps b t.site) t.site.goal true <;>
+    simp [hq, expectVerdict, Outcome.answer] at h
+  exact fun ρ ht hρ => s.query_unsat hq ρ ht ((s.holds_site t.goal.kind_substitutes t.site ht).2 hρ)
+
+/-- A `fail` is an environment where the table is evaluated and what the
+question asks is false, which the counterexample shows. -/
+theorem checkTable_fail (t : TableSite F) (h : (checkTable b c t).run.verdict = .fail) :
+    ∃ ρ model, s.Typed ρ ∧ s.AtSite t.site ρ ∧ ¬s.den t.site.goal ρ ∧ s.Agrees ρ model ∧
+      (checkTable b c t).run.detail = .counterexample (renderModel b c.vars model (·.isPub)).run := by
+  unfold checkTable at h ⊢
+  cases hq : b.query (c.defEqs t.goal.kind ++ c.siteHyps b t.site) t.site.goal true <;>
+    simp [hq, expectVerdict, Outcome.answer] at h ⊢
+  obtain ⟨ρ, ht, hρ, hg, hm⟩ := s.query_sat hq
+  exact ⟨ρ, ht, (s.holds_site t.goal.kind_substitutes t.site ht).1 hρ, hg, _, hm, rfl⟩
 
 /-! ## Realizability -/
 
@@ -848,7 +878,11 @@ theorem checkComp_eq (bk : CheckKind → Backend Id F V) (kinds : Array CheckKin
         (if kinds.contains .vacuity then c.triggers.map (checkVacuity (bk .vacuity) c · |>.run) else #[]))).run
         else #[]) ++
       (if kinds.contains .determinism then (checkDets (bk .determinism) c).run else #[]) ++
-      (if kinds.contains .definedness then c.indexes.map (checkDefinedness (bk .definedness) c · |>.run) else #[]) := by
+      (if kinds.contains .definedness then c.indexes.map (checkDefinedness (bk .definedness) c · |>.run) else #[]) ++
+      (if kinds.contains .completeness then (c.tablesOf .completeness).map (checkTable (bk .completeness) c · |>.run)
+        else #[]) ++
+      (if kinds.contains .disjointness then (c.tablesOf .disjointness).map (checkTable (bk .disjointness) c · |>.run)
+        else #[]) := by
   unfold checkComp
   simp only [bind_eq, run_eq, pure_eq, ifSelected, map_eq, mapM_id']
   split <;> rfl
@@ -869,10 +903,12 @@ theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKi
     (∃ q ∈ c.reqs,
       r = (checkRedundant (bk .redundancy) c (c.hyps (bk .redundancy) ++ c.reqs.filter (·.1 != q.1)) q).run) ∨
     (∃ v ∈ c.vars, v.isDet ∧ r = (checkDeterminism (bk .determinism) c v.name).run) ∨
-    (∃ site ∈ c.indexes, r = (checkDefinedness (bk .definedness) c site).run) := by
+    (∃ site ∈ c.indexes, r = (checkDefinedness (bk .definedness) c site).run) ∨
+    (∃ t ∈ c.tablesOf .completeness, r = (checkTable (bk .completeness) c t).run) ∨
+    (∃ t ∈ c.tablesOf .disjointness, r = (checkTable (bk .disjointness) c t).run) := by
   rw [checkComp_eq] at h
   simp only [Array.mem_append, or_assoc] at h
-  rcases h with h | h | h | h | h | h | h | h
+  rcases h with h | h | h | h | h | h | h | h | h | h
   · left; simpa using (mem_ite h).2
   · exact .inr (.inl (checkInsts_mem.1 (mem_ite h).2))
   · obtain ⟨e, he, rfl⟩ := Array.mem_map.1 (mem_ite h).2
@@ -886,7 +922,11 @@ theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKi
     · exact .inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨q, hq, e⟩))))))
   · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl (checkDets_mem.1 (mem_ite h).2))))))))
   · obtain ⟨site, hs, rfl⟩ := Array.mem_map.1 (mem_ite h).2
-    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ⟨site, hs, rfl⟩)))))))
+    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨site, hs, rfl⟩))))))))
+  · obtain ⟨t, ht, rfl⟩ := Array.mem_map.1 (mem_ite h).2
+    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨t, ht, rfl⟩)))))))))
+  · obtain ⟨t, ht, rfl⟩ := Array.mem_map.1 (mem_ite h).2
+    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ⟨t, ht, rfl⟩)))))))))
 
 /-- Each selected check runs: on the component, on each assumption of each
 instance, each expectation, each cover goal, each trigger, each `det out` and each index; and
@@ -914,31 +954,42 @@ theorem checkComp_runs {bk : CheckKind → Backend Id F V} {kinds : Array CheckK
     (kinds.contains .determinism → ∀ v ∈ c.vars, v.isDet →
       (checkDeterminism (bk .determinism) c v.name).run ∈ (checkComp bk c kinds).run) ∧
     (kinds.contains .definedness → ∀ site ∈ c.indexes,
-      (checkDefinedness (bk .definedness) c site).run ∈ (checkComp bk c kinds).run) := by
+      (checkDefinedness (bk .definedness) c site).run ∈ (checkComp bk c kinds).run) ∧
+    (kinds.contains .completeness → ∀ t ∈ c.tablesOf .completeness,
+      (checkTable (bk .completeness) c t).run ∈ (checkComp bk c kinds).run) ∧
+    (kinds.contains .disjointness → ∀ t ∈ c.tablesOf .disjointness,
+      (checkTable (bk .disjointness) c t).run ∈ (checkComp bk c kinds).run) := by
   simp only [checkComp_eq, Array.mem_append]
   refine ⟨fun hk => ?_, fun hk k hk' a ha => ?_, fun hk e he => ?_, fun hk g hg => ?_, fun hk t ht => ?_,
-    fun hk a ha hq => ?_, fun hk q hq hr => ?_, fun hk v hv hd => ?_, fun hk site hs => ?_⟩
-  · simp [hk]
+    fun hk a ha hq => ?_, fun hk q hq hr => ?_, fun hk v hv hd => ?_, fun hk site hs => ?_, fun hk t ht => ?_,
+    fun hk t ht => ?_⟩
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inl (.inr (checkInsts_mem.2 ⟨k, hk', a, ha, rfl⟩)))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (Array.mem_singleton.2 rfl)))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨e, he, rfl⟩))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (checkInsts_mem.2 ⟨k, hk', a, ha, rfl⟩)))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨g, hg, rfl⟩)))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨e, he, rfl⟩))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨g, hg, rfl⟩)))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inr (checkRedundancies_mem.2 (.inl ⟨a, ha, hq, rfl⟩))))
+    exact .inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inr (checkRedundancies_mem.2 (.inr ⟨q, hq, hr, rfl⟩))))
+    exact .inl (.inl (.inl (.inl (.inr (checkRedundancies_mem.2 (.inl ⟨a, ha, hq, rfl⟩))))))
   · simp only [hk, if_true]
-    exact .inl (.inr (checkDets_mem.2 ⟨v, hv, hd, rfl⟩))
+    exact .inl (.inl (.inl (.inl (.inr (checkRedundancies_mem.2 (.inr ⟨q, hq, hr, rfl⟩))))))
   · simp only [hk, if_true]
-    exact .inr (Array.mem_map.2 ⟨site, hs, rfl⟩)
+    exact .inl (.inl (.inl (.inr (checkDets_mem.2 ⟨v, hv, hd, rfl⟩))))
+  · simp only [hk, if_true]
+    exact .inl (.inl (.inr (Array.mem_map.2 ⟨site, hs, rfl⟩)))
+  · simp only [hk, if_true]
+    exact .inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩))
+  · simp only [hk, if_true]
+    exact .inr (Array.mem_map.2 ⟨t, ht, rfl⟩)
 
 /-- What `fren` runs for a global expectation, and for a component
 (`check::applies`). -/
-theorem kindsFor_spec : kindsFor true = #[.expect, .vacuity, .definedness] ∧ kindsFor false = CheckKind.all :=
+theorem kindsFor_spec :
+    kindsFor true = #[.expect, .vacuity, .definedness, .completeness, .disjointness] ∧ kindsFor false = CheckKind.all :=
   ⟨rfl, rfl⟩
 
 theorem checkRealizable_kind {b : Backend Id F V} : (checkRealizable b c).run.kind = .realizable := by
@@ -984,6 +1035,13 @@ theorem checkDefinedness_kind {b : Backend Id F V} {site} :
   repeat' split
   all_goals rfl
 
+theorem checkTable_kind {b : Backend Id F V} {t : TableSite F} :
+    (checkTable b c t).run.kind = t.goal.kind := by
+  unfold checkTable
+  simp only [bind_eq, run_eq, pure_eq]
+  repeat' split
+  all_goals rfl
+
 /-- Interpretations with the same meaning of formulas and sorts mean the
 same by a component. -/
 private theorem Sound.congr {b b' : Backend Id F V} (s : Sound b c.vars Val) (s' : Sound b' c.vars Val)
@@ -1000,14 +1058,16 @@ private theorem Sound.congr {b b' : Backend Id F V} (s : Sound b c.vars Val) (s'
   · simp [Sound.Defined, hd]
   · exact hA ρ _
   · exact hB ρ
+  · simp [Sound.Defined, hd]
 
 /-- When every check of a component passes, except perhaps `redundancy`,
 whose failures are only warnings: it is realizable, every instance's
 assumptions hold, every expectation holds, every cover goal is met by some
 behaviour, every trigger can hold, every
 `det out`'s check passes, so that `checkDeterminism_pass` applies to it (the
-front ends allow `det` only on `out`s), and every index is in range where it
-is evaluated. This is for backends that agree on what formulas and sorts
+front ends allow `det` only on `out`s), every index is in range where it
+is evaluated, and every question about a table's rows holds where the
+table is evaluated. This is for backends that agree on what formulas and sorts
 mean, as the front ends' do (they differ only in the SMT-LIB logic they
 declare), and whose definitions realizability can substitute
 (`Sound.DefsOk`). And when changing the `out`s keeps an environment
@@ -1029,10 +1089,12 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
     (∀ v ∈ c.vars, v.isDet → (checkDeterminism (bk .determinism) c v.name).run.verdict = .pass) ∧
     (∀ site ∈ c.indexes, ∀ ρ, (s .realizable).Typed ρ → (s .realizable).AtSite site ρ →
       (s .realizable).den site.goal ρ) ∧
+    (∀ t ∈ c.tables, ∀ ρ, (s .realizable).Typed ρ → (s .realizable).AtSite t.site ρ →
+      (s .realizable).den t.site.goal ρ) ∧
     ((∀ ρ ρ', OnlyOuts c.vars ρ ρ' → (s .realizable).Possible ρ → (s .realizable).Possible ρ') →
       (∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Admits ρ) →
       ∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Behaves ρ ∧ ∀ e ∈ c.expects, (s .realizable).den e.2 ρ) := by
-  obtain ⟨hr, hi, he, hcv, hv, -, -, hd, hix⟩ := checkComp_runs (c := c) (bk := bk) (kinds := CheckKind.all)
+  obtain ⟨hr, hi, he, hcv, hv, -, -, hd, hix, hcp, hdj⟩ := checkComp_runs (c := c) (bk := bk) (kinds := CheckKind.all)
   have all : ∀ k, CheckKind.all.contains k := by intro k; cases k <;> simp +decide [CheckKind.all]
   have pass : ∀ r ∈ (checkComp bk c).run, r.kind ≠ .redundancy → r.verdict = .pass := h
   have hR := checkRealizable_pass (s .realizable) hdefs
@@ -1045,7 +1107,7 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
     simpa only [tT, tB, (hsame _).1] using this
   refine ⟨hR, fun k hk a ha ρ => ?_, hE, fun g hg => ?_, fun t ht => ?_,
     fun v hv' hdet => pass _ (hd (all _) v hv' hdet) (by rw [checkDeterminism_kind]; intro h; cases h),
-    fun site hs ρ => ?_, fun hindep ⟨ρ, ht, hρ⟩ => ?_⟩
+    fun site hs ρ => ?_, fun t hs ρ => ?_, fun hindep ⟨ρ, ht, hρ⟩ => ?_⟩
   · have := checkInst_pass (s .inst) k _ a (pass _ (hi (all _) k hk a ha) (by rw [checkInst_kind]; intro h; cases h)) ρ
     obtain ⟨tT, tA, -, -⟩ := Sound.congr (s .inst) (s .realizable) (hsame _)
     simpa only [tT, tA, (hsame _).1] using this
@@ -1059,6 +1121,16 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
   · have := checkDefinedness_pass (s .definedness) site
       (pass _ (hix (all _) site hs) (by rw [checkDefinedness_kind]; intro h; cases h)) ρ
     obtain ⟨tT, -, -, tS⟩ := Sound.congr (s .definedness) (s .realizable) (hsame _)
+    simpa only [tT, tS, (hsame _).1] using this
+  · -- Each question is answered by the check of its kind.
+    have hmem : t ∈ c.tablesOf t.goal.kind := Array.mem_filter.2 ⟨hs, by simp⟩
+    have hrun : (checkTable (bk t.goal.kind) c t).run ∈ (checkComp bk c).run := by
+      cases hg : t.goal <;> rw [hg] at hmem
+      · exact hcp (all _) t hmem
+      · exact hdj (all _) t hmem
+    have := checkTable_pass (s t.goal.kind) t (pass _ hrun (by
+      rw [checkTable_kind]; cases t.goal <;> intro h <;> cases h)) ρ
+    obtain ⟨tT, -, -, tS⟩ := Sound.congr (s t.goal.kind) (s .realizable) (hsame _)
     simpa only [tT, tS, (hsame _).1] using this
   · obtain ⟨ρ', ht', -, hb⟩ := realizable_behaves (s .realizable) hdefs hindep
       (pass _ (hr (all _)) (by rw [checkRealizable_kind]; intro h; cases h)) ρ ht hρ

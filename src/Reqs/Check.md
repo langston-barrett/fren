@@ -12,9 +12,21 @@ Fren checks each component seven ways:
 | [Redundancy](#redundancy) | `redundancy` | no assumption or requirement follows from the others |
 | [Determinism](#determinism) | `determinism` | each `det out` is determined by the inputs |
 
-A [global expectation](Lang/Global.md) is checked two of these ways: the
-[expectation check](#global-expectations) confirms that it holds, and the
-[vacuity check](#vacuity) that its trigger can hold.
+and checks how its constraints are written three more ways, wherever they
+have an index or a [table](Lang/Expressions.md#tables):
+
+| Check | Confirms |
+|---|---|
+| [Definedness](#definedness) | each index is in range where it is evaluated |
+| [Completeness](#completeness) | some row of each table without a `_` row holds where it is evaluated |
+| [Disjointness](#disjointness) | no two rows of a table, other than `_`, hold at once where it is evaluated |
+
+A [global expectation](Lang/Global.md) is checked two of the first six
+ways: the [expectation check](#global-expectations) confirms that it holds,
+and the [vacuity check](#vacuity) that its trigger can hold. The tables in
+the body of a [defined function](Lang/Items.md#defined-functions) or the
+value of a [constant](Lang/Items.md#constants) are checked for
+completeness and disjointness too.
 
 The formulas below use the notation of [Components](Lang/Components.md#meaning):
 `A` is the conjunction of the component's assumptions, `R` of its
@@ -77,7 +89,18 @@ pub enum Outcome { Sat, Unsat, Unknown }
 
 pub enum Verdict { Pass, Fail, Inconclusive }
 
-pub enum Kind { Realizability, Expectation, Cover, InstanceAssumption, Vacuity, Redundancy, Determinism, Definedness }
+pub enum Kind {
+    Realizability,
+    Expectation,
+    Cover,
+    InstanceAssumption,
+    Vacuity,
+    Redundancy,
+    Determinism,
+    Definedness,
+    Completeness,
+    Disjointness,
+}
 
 use self::Outcome::{Sat, Unknown, Unsat}
 use self::Verdict::{Fail, Inconclusive, Pass}
@@ -121,19 +144,35 @@ pub comp satisfiable {
 
 `check::applies` gives which checks run on an item. A global expectation
 constrains nothing, so there is nothing to realize, determine or find
-redundant, and its binders' inputs have no obligations:
+redundant, and its binders' inputs have no obligations. The body of a
+function or the value of a constant is not a constraint either: only its
+tables are checked:
 
 ```fren
+pub enum CheckedItem { Component, GlobalExpectation, Body }
+
 pub comp applies {
-    use self::Kind::{Definedness, Determinism, Expectation, Realizability, Vacuity}
-    in global?             -- a global expectation, rather than a component
+    use self::CheckedItem::{Body, Component, GlobalExpectation}
+    use self::Kind::{
+        Completeness,
+        Definedness,
+        Determinism,
+        Disjointness,
+        Expectation,
+        Realizability,
+        Vacuity,
+    }
+    in item: CheckedItem
     in kind: Kind
     pub det out runs?
 
-    req components: unless global?, runs?
-    req globals: when global?, runs? iff kind in {Expectation, Vacuity, Definedness}
+    req rule: runs? iff match item {
+        Component => true,
+        GlobalExpectation => kind in {Expectation, Vacuity, Definedness, Completeness, Disjointness},
+        Body => kind in {Completeness, Disjointness},
+    }
 
-    expect claims_only: when global? and runs?, not kind in {Realizability, Determinism}
+    expect claims_only: when item != Component and runs?, not kind in {Realizability, Determinism}
 }
 ```
 
@@ -160,7 +199,10 @@ Fren asks two queries:
   reports it, with a minimal set of requirements that conflict on it.
 
 `check::realizability` gives the verdict and what is reported, from the
-outcomes of the two queries (`assume_q` and `cex_q`):
+outcomes of the two queries (`assume_q` and `cex_q`). Its table's rows
+cover the nine pairs of outcomes, each exactly once, which the
+[completeness](#completeness) and [disjointness](#disjointness) checks
+confirm:
 
 ```fren
 pub comp realizability {
@@ -170,11 +212,13 @@ pub comp realizability {
     pub det out reports_cex?   -- report the input and the conflicting requirements
     pub det out reports_vacuous?  -- report that the assumptions are contradictory
 
-    req vacuous: when assume_q = Unsat, verdict = Fail
-    req cex: when assume_q != Unsat and cex_q = Sat, verdict = Fail
-    req pass: when assume_q = Sat and cex_q = Unsat, verdict = Pass
-    req unknown_cex: when assume_q != Unsat and cex_q = Unknown, verdict = Inconclusive
-    req unknown_assume: when assume_q = Unknown and cex_q = Unsat, verdict = Inconclusive
+    req verdict_rule: verdict = table {
+        | assume_q = Unsat => Fail,
+        | assume_q != Unsat and cex_q = Sat => Fail,
+        | assume_q = Sat and cex_q = Unsat => Pass,
+        | assume_q != Unsat and cex_q = Unknown => Inconclusive,
+        | assume_q = Unknown and cex_q = Unsat => Inconclusive,
+    }
     req report_cex: reports_cex? iff (assume_q != Unsat and cex_q = Sat)
     req report_vacuous: reports_vacuous? iff assume_q = Unsat
 
@@ -446,6 +490,81 @@ pub comp definedness {
 }
 ```
 
+## Completeness
+
+A [table](Lang/Expressions.md#tables) without a `_` row has no specified
+value where none of its rows holds, as an index out of range has none: the
+checks hold for every value it could have there, so the constraint then
+says nothing useful. For each table without a `_` row, with the conditions
+`C_1`, ..., `C_n` of its rows and its guard `G`, the conditions under which
+it is evaluated (read as an index's are, see
+[Sequences](Lang/Expressions.md#sequences)), Fren asks whether `C_1 or ...
+or C_n` can be proved from `G` and the hypotheses of where the table is
+written, as for [definedness](#definedness). In the body of a defined
+function or the value of a constant, there are no hypotheses but `G` and
+`N`, over the function's parameters: a function's body is checked for
+every argument, not only those that a component passes it. A table with a `_`
+row is always complete, and has no completeness result.
+`check::completeness` decides each query like an expectation, and a model
+is a counterexample, a value of the variables for which no row holds,
+reported at the table's `table`:
+
+```fren
+pub comp completeness {
+    in q: Outcome          -- can `C_1 or ... or C_n` be proved from the guard and the hypotheses?
+    pub det out verdict: Verdict
+    pub det out reports_cex?
+
+    inst as_expect: expectation { q }
+
+    req like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
+}
+```
+
+## Disjointness
+
+A table's value is its first row's that holds, so where two rows hold at
+once, the order of its rows decides its value, which is easy to misread.
+For each two rows `i < j` of a table, other than a `_` row, with the
+conditions `C_i` and `C_j` and the table's guard `G`, Fren asks whether
+`not (D_i and D_j and C_i and C_j)` can be proved from `G` and the
+hypotheses of where the table is written, as for
+[completeness](#completeness). `D_i` says that the indexes in `C_i` are in
+range where `C_i` evaluates them, under the guards within `C_i` alone (see
+[Sequences](Lang/Expressions.md#sequences)), and is `true` if it has none.
+A row's condition is evaluated only where the earlier rows' fail, so an
+index in it may rest on them: in `table { q = [] => 0, q[0] > 0 => 1, _
+=> 2 }`, `q[0]` is defined wherever it is evaluated, and the two rows do
+not overlap, though `q[0] > 0` could hold of the unknown value of `[][0]`.
+Each pair is its own check, so the message can name both rows. `check::disjointness`
+decides each query like an expectation, and a model is a witness, a value
+of the variables for which both rows hold, reported at the condition of
+the later row:
+
+```fren
+pub comp disjointness {
+    in q: Outcome          -- can `not (D_i and D_j and C_i and C_j)` be proved from the guard and the hypotheses?
+    pub det out verdict: Verdict
+    pub det out reports_witness?
+
+    inst as_expect: expectation { q }
+
+    req like_expect: verdict = as_expect.verdict and (reports_witness? iff as_expect.reports_cex?)
+}
+```
+
+A `_` row holds wherever no earlier row does, so it overlaps none, and is
+in no disjointness check. The checks of a table are on its conditions
+alone: a row's value can be the same as another's, and the rows still
+overlap.
+
+Completeness and disjointness ask one query each, as definedness does, so
+they have no query order of their own. Their hypotheses are those of
+definedness, `N` among them (see the [table above](#definedness)): a
+requirement's own `R` is among its hypotheses, so a table in a
+requirement may be complete only because another requirement rules out
+the cases it leaves out.
+
 ## Minimal sets
 
 Realizability, vacuity and redundancy report a *minimal* set of
@@ -553,12 +672,12 @@ that of the member's checks, which takes precedence:
 
 | Before | Its checks |
 |---|---|
-| an expectation | the expectation, its vacuity and its definedness |
-| a cover goal | the cover goal and its definedness |
-| an instance | the instance's assumptions, and the definedness of its bindings |
+| an expectation | the expectation, its vacuity, and the definedness, completeness and disjointness of what it reads |
+| a cover goal | the cover goal, and the definedness, completeness and disjointness of what it reads |
+| an instance | the instance's assumptions, and the definedness, completeness and disjointness of its bindings |
 | a `det out` | its determinism |
 | a component | all of the component's checks |
-| a global expectation | its expectation, its vacuity and its definedness |
+| a global expectation | its expectation, its vacuity, and the definedness, completeness and disjointness of what it reads |
 | a [refinement](Lang/Refinement.md) | all of the checks of its obligation, including the definedness of the bindings of the abstract component's instances |
 
 As with a [lint setting](Lint.md), `set_option` without `in` sets the
@@ -579,9 +698,14 @@ testing. It tests the check with `--tests` tests (default 100) from
 reaches no conclusion leaves it inconclusive, with the same warnings. The
 checks that testing cannot decide are not run: vacuity and redundancy,
 which ask whether something can hold at all, which a failed search does
-not refute, and definedness, since an index out of range has no value
+not refute; definedness, since an index out of range has no value
 that the evaluator knows (see [Evaluation](Eval.md#searching-for-behaviours)),
-so testing can neither pass nor fail it. A test that reaches
+so testing can neither pass nor fail it; and completeness and
+disjointness, which, like definedness, are about where an expression is
+evaluated: a test only reaches behaviours in which the constraints have
+values, and a table where no row holds has none, so testing could never
+find a counterexample to completeness, and the checks of a table are run
+together. A test that reaches
 an expectation shows that its trigger can hold, which is what its vacuity
 check would show. A cover goal asks whether something can hold too, but
 testing can pass it: a test that finds a behaviour that meets the
@@ -604,15 +728,17 @@ check is not part of the [agreement with Lean](Cli.md#agreement-with-lean).
 pub enum Run { BySolver, ByTesting, Skipped }
 
 pub comp by_testing {
-    use self::Kind::{Definedness, Redundancy, Vacuity}
+    use self::Kind::{Completeness, Definedness, Disjointness, Redundancy, Vacuity}
     use self::Run::{BySolver, ByTesting, Skipped}
     in kind: Kind
     in tested?             -- the check's evidence is testing
     pub det out run: Run
 
-    req solver: unless tested?, run = BySolver
-    req testable: when tested? and not kind in {Vacuity, Redundancy, Definedness}, run = ByTesting
-    req untestable: when tested? and kind in {Vacuity, Redundancy, Definedness}, run = Skipped
+    req rule: run = table {
+        | not tested? => BySolver,
+        | tested? and not kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness} => ByTesting,
+        | tested? and kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness} => Skipped,
+    }
 
     expect never_both: when tested?, run != BySolver
 }
@@ -628,6 +754,8 @@ whether something can hold.
 refine expectation_proves: expectation refines proved
 refine instance_assumption_proves: instance_assumption refines proved
 refine definedness_proves: definedness refines proved
+refine completeness_proves: completeness refines proved
+refine disjointness_proves: disjointness refines proved
 refine determinism_proves: determinism refines proved
 refine vacuity_witnesses: non_vacuity refines satisfiable
 refine cover_witnesses: cover_goal refines satisfiable

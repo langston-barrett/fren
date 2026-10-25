@@ -1,0 +1,14 @@
+error[F0618]: a table in `sign::r` may have no row that holds
+ --> test/cli/results/f0618_incomplete.fren:6:16
+  |
+6 |     req r: s = table { x > 0 => 1, x < 0 => -1 }
+  |                ^^^^^ may have no row that holds
+  |
+  = counterexample: x = 0, s = 0
+  = note: where no row holds, the table is an unknown value, so the constraint says nothing useful there
+  = help: add a row for this case, or end the table with `_ => e`
+
+fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0618`.
+exit=1

@@ -39,11 +39,13 @@ inductive Origin where
   | dropAlternative
   | swapCardinality
   | dropArgument
+  | swapRows
+  | dropRow
   deriving BEq, Inhabited, Repr
 
 def Origin.all : Array Origin :=
   #[.swapComparison, .swapAndOr, .swapArithmetic, .dropConjunct, .negateTrigger, .swapQuantifier, .shiftInteger, .flipBool,
-    .removeElement, .swapRepetition, .narrowClass, .dropAlternative, .swapCardinality, .dropArgument]
+    .removeElement, .swapRepetition, .narrowClass, .dropAlternative, .swapCardinality, .dropArgument, .swapRows, .dropRow]
 
 def Origin.name : Origin → String
   | .swapComparison => "swap-comparison"
@@ -60,6 +62,8 @@ def Origin.name : Origin → String
   | .dropAlternative => "drop-alternative"
   | .swapCardinality => "swap-cardinality"
   | .dropArgument => "drop-argument"
+  | .swapRows => "swap-rows"
+  | .dropRow => "drop-row"
 
 structure Mutant where
   origin : Origin
@@ -176,6 +180,7 @@ def exprChildren : Expr → Array Expr
   | .record _ _ fs => fs.filterMap (·.2)
   | .match _ sc arms => #[sc] ++ arms.map (·.2)
   | .is _ sc _ => #[sc]
+  | .table _ rows => tableParts rows
   | .method _ r _ as => #[r] ++ as
   | _ => #[]
 
@@ -372,6 +377,26 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
         let span := if h : k + 1 < alts.size then { start := alts[k]!.span.start, stop := alts[k + 1].span.start }
           else { start := alts[k - 1]!.span.stop, stop := alts[k]!.span.stop }
         { origin := .dropAlternative, span, after := "", context := sp }
+    -- The values of two rows in a row swapped, and each row dropped, with
+    -- its `|`, if a row is left: before the next row, or after the one
+    -- before.
+    | .table sp rows =>
+      let vals := rows.map fun (_, _, v) => s.outer sp v.span
+      let swaps := (Array.range (rows.size - 1)).filterMap fun k =>
+        let (a, b) := (vals[k]!, vals[k + 1]!)
+        if s.text a == s.text b then none else
+        some { origin := .swapRows, span := { start := a.start, stop := b.stop }
+               after := s.text b ++ s.text { start := a.stop, stop := b.start } ++ s.text a, context := sp }
+      let starts := rows.map fun (st, _, _) =>
+        let i := s.tokAt st.start
+        match s.toks[i - 1]? with
+        | some t => if i > 0 && t.tok == .kw "|" then t.span.start else st.start
+        | none => st.start
+      let drops := if rows.size < 2 then #[] else (Array.range rows.size).map fun k =>
+        let span := if h : k + 1 < starts.size then { start := starts[k]!, stop := starts[k + 1] }
+          else { start := vals[k - 1]!.stop, stop := vals[k]!.stop }
+        { origin := .dropRow, span, after := "", context := sp }
+      swaps ++ drops
     | .method sp _ name #[.str lit _] =>
       if name.name != "matches?" then #[] else
       match s.literalBody? lit with
@@ -394,6 +419,7 @@ where
     | .record _ _ fs => fs.filterMap fun (_, e?) => e?.map (edits s ·)
     | .update _ r fs => #[edits s r] ++ fs.filterMap fun (_, e?) => e?.map (edits s ·)
     | .match _ sc arms => #[edits s sc] ++ arms.map fun (_, b) => edits s b
+    | .table _ rows => (tableParts rows).map (edits s ·)
     | .is _ sc _ => #[edits s sc]
     -- The body once, not each instance.
     | .quant _ _ _ b => #[edits s b]

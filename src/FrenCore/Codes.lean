@@ -1285,6 +1285,36 @@ enum Mode { Off, On }
 comp c { in m: Mode pub out y: Int req r: y = match m { Mode::On => 1, Mode::Off => 0 } }
 ```
 "# },
+  { code := "F0358", explanation := r#"The rows of a table have values of different types.
+
+Erroneous code example:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = table { x > 0 => 1, _ => false } }
+```
+
+A table has the value of one of its rows, so every row's value has the
+same type:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = table { x > 0 => 1, _ => 0 } }
+```
+"# },
+  { code := "F0359", explanation := r#"A row of a table comes after its `_` row.
+
+Erroneous code example:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = table { _ => 0, x > 0 => 1 } }
+```
+
+`_` holds wherever no earlier row does, so a row after it could never be
+reached. `_` is the last row:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = table { x > 0 => 1, _ => 0 } }
+```
+"# },
   { code := "F0321", explanation := r#"A method that a type does not have.
 
 Erroneous code example:
@@ -2614,6 +2644,63 @@ comp first {
     pub out x: Int
 
     req r: when q != [], x = q[0]
+}
+```
+"# },
+  { code := "F0618", explanation := r#"A table may have no row that holds where it is evaluated.
+
+Erroneous code example:
+
+```fren
+comp sign {
+    in x: Int
+    pub out s: Int
+
+    req r: s = table { x > 0 => 1, x < 0 => -1 }
+}
+```
+
+A table without a `_` row has no specified value where none of its rows
+holds, so the checks hold whatever it is there, and the constraint says
+nothing useful: here, `s` is unconstrained when `x` is `0`. Fren asks
+whether some row's condition follows from the conditions under which the
+table is evaluated, its guard, and the hypotheses of where it is written.
+Add a row for the case, or end the table with `_ => e`:
+
+```fren
+comp sign {
+    in x: Int
+    pub out s: Int
+
+    req r: s = table { x > 0 => 1, x < 0 => -1, x = 0 => 0 }
+}
+```
+"# },
+  { code := "F0619", explanation := r#"Two rows of a table may both hold where it is evaluated.
+
+Erroneous code example:
+
+```fren
+comp grade {
+    in score: Int
+    pub out pass?
+
+    req r: pass? iff table { score >= 50 => true, score >= 0 => false, _ => false }
+}
+```
+
+A table has the value of its first row that holds, so where two rows hold
+at once, their order decides the value, which is easy to misread: here,
+both of the first two rows hold when `score` is `50`. Fren asks whether the
+two conditions can hold together, under the table's guard and the
+hypotheses of where it is written. Make the conditions exclusive:
+
+```fren
+comp grade {
+    in score: Int
+    pub out pass?
+
+    req r: pass? iff table { score >= 50 => true, 0 <= score < 50 => false, _ => false }
 }
 ```
 "# },

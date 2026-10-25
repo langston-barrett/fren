@@ -210,7 +210,7 @@ which:
 pub const RESERVED: Set(String) := {
     "mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl",
     "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
-    "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "refine", "with", "let", "where",
+    "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "refine", "with", "let", "where", "table",
 }
 
 pub comp reserved_word {
@@ -225,6 +225,7 @@ pub comp reserved_word {
     expect record_update: when lexeme = "with", reserved?
     expect modifier: when lexeme = "ordered", reserved?
     expect local_definitions: when lexeme = "let" or lexeme = "where", reserved?
+    expect condition_table: when lexeme = "table", reserved?
 }
 ```
 

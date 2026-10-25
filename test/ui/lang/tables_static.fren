@@ -1,0 +1,19 @@
+-- Static rules for tables: conditions are `Bool`s, values share a type,
+-- and only the last row is `_` (`Reqs/Lang/Expressions#tables`).
+set_option fren.lint.dead_code "allow"
+
+comp after_wild { in x: Int pub out y: Int req r: y = table { _ => 0, x > 0 => 1 } }
+--~^ error: a row after `_` can never be reached
+comp two_wild { in x: Int pub out y: Int req r: y = table { x > 0 => 1, _ => 0, _ => 2 } }
+--~^ error: a row after `_` can never be reached
+comp condition { in x: Int pub out y: Int req r: y = table { x => 1, _ => 0 } }
+--~^ error: type mismatch: expected `Bool`, found `Int`
+comp values { in x: Int pub out y: Int req r: y = table { x > 0 => 1, _ => true } }
+--~^ error: the rows of a table have values of different types: `Int` and `Bool`
+comp typed { in x: Int pub out y? req r: y? iff table { x > 0 => 1, _ => 0 } }
+--~^[cli] error: type mismatch: expected `Bool`, found `Int`
+--~^^[hosted] error: type mismatch
+-- A value of `{}` takes its type from another row's.
+comp empty_value { in x: Int pub out s: Set(Int) := table { x > 0 => {}, _ => {x} } }
+comp empty_only { in x: Int pub out n: Int := table { x > 0 => {}, _ => {} }.card }
+--~^ error: the type of `{}` cannot be known here

@@ -1,0 +1,14 @@
+--@ args: fmt --check
+-- `fren fmt` starts a table's rows on their lines, each `|` as it starts
+-- its row, and gives the rows of a vertical one a trailing comma.
+comp c {
+    in x: Int
+    pub out y: Int
+    req a: y = table {x > 0=>1,_=>0}
+    req b: y = table {
+    | x > 0 => 1,
+          | x <= 0 =>
+    0
+    }
+    req d: y = table { x > 0 => 1, _ => 0, }
+}

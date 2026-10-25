@@ -25,11 +25,13 @@ atom  := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | "(" expr 
        | atom "." DIGITS
        | IDENT ("." IDENT)+ "(" expr ("," expr)* ")"
        | "match" atom "{" arm ("," arm)* [","] "}"
+       | "table" "{" row ("," row)* [","] "}"
        | "{" [expr ("," expr)* [","]] "}"
        | "{" expr "with" field-init ("," field-init)* [","] "}"
 field-init := IDENT [":=" expr]
 arm   := pattern "=>" expr
 definition := DECL [":" type] ":=" iff
+row   := ["|"] (iff | "_") "=>" iff
 ```
 
 A `let` names subexpressions within its body, and a `where` clause after
@@ -213,7 +215,8 @@ mentions is decided from its parts, as `lang::mentions` states:
   mention: its value is fixed by theirs.
 - Every other expression mentions what its parts mention: an operator,
   `when` and `unless`, a `let`, a quantifier (its body), a conditional, a
-  `match` (its scrutinee and the bodies of its arms), a [pattern
+  `match` (its scrutinee and the bodies of its arms), a [table](#tables) (its rows' conditions and
+  values), a [pattern
   test](#pattern-tests) (its scrutinee), a [cardinality
   operator](#cardinality) (its arguments), indexing `q[i]`, a field read
   from an expression that is not a name, such as `R { a := x }.a`, and a
@@ -228,7 +231,7 @@ mentions is decided from its parts, as `lang::mentions` states:
 -- record literal, a record update or a newtype built from its value,
 -- `Ms(e)`; `Uninterpreted` and `Defined` are
 -- applications of uninterpreted and defined functions; `Compound` is an
--- operator, `when` or `unless`, a `let`, a quantifier, a conditional, a `match`, a pattern
+-- operator, `when` or `unless`, a `let`, a quantifier, a conditional, a `match`, a table, a pattern
 -- test, a cardinality operator, indexing, a field read from an expression that is
 -- not a name, or a literal of a set, pair or sequence.
 pub enum ExprKind {
@@ -1039,6 +1042,58 @@ pub comp pattern_test {
 }
 ```
 
+## Tables
+
+```text
+table {
+    | not ran? => 2,
+    | worst = Severity::Error => 1,
+    | worst = Severity::Warning => 3,
+    | _ => 0,
+}
+```
+
+A *table* chooses a value by conditions, as the tabular requirements of
+Parnas and of SCR do. Each row has a condition and a value, and the table
+has the value of the first row whose condition holds, as a chain of
+conditionals has. A last row `_ => e` holds wherever no earlier row does.
+The rows are separated by commas, as the arms of a `match` are, and each
+may start with `|`, so that they line up one per line. A table is an
+atom, so it can be an operand without parentheses.
+
+Each row's condition is a `Bool`, and the values of all rows have the
+same type, which is the type of the table, as the bodies of a `match`'s
+arms do, or are `Nat`s and `Int`s, which make an `Int` (see [Natural
+numbers](#natural-numbers)). The values are [checked](Types.md#checking-and-synthesis)
+as the bodies of a `match`'s arms are. As in a `match` arm, neither a
+condition nor a value can be a top-level `when` or `unless`, which would
+run on into the next row. Only the last row can be `_`: a row after it
+could never be reached, which is an error (`F0359`), as an arm after a
+`_` arm is.
+
+Where no row holds, a table without a `_` row is unspecified, as an
+[index out of range](#sequences) is: its value is that of `[][0]` of the
+empty sequence of its type, an unknown value of that type, which the
+checks hold for every interpretation of. It is the same for every such
+table of that type: two incomplete tables of one type coincide where
+neither has a row that holds, so `table { x > 0 => 1 } = table { x > 0 =>
+2 }` holds wherever `x <= 0`, and an expectation that compares such
+values can pass by that coincidence alone. The constraint then says
+nothing useful there, which is almost always a
+mistake: the [completeness check](../Check.md#completeness) reports a table
+where no row may hold, given its [guard](#sequences). Rows whose
+conditions can hold at once make the order of the rows matter, which is
+easy to misread: the [disjointness check](../Check.md#disjointness) reports
+two rows that may both hold. A table with a `_` row is always complete,
+and its `_` row overlaps no other.
+
+A row's condition is evaluated where no earlier row's holds, and its value
+where the row is the first that holds, which guards their indexes (see
+[Sequences](#sequences)). A table in the definition of a [`let` or
+`where`](Let.md#meaning) name is checked where the name is mentioned, as
+the definition's indexes are. Mentioning a table mentions what its conditions
+and values mention (see [Mentions](#mentions)).
+
 ## Sets
 
 `{a, b}` is the set of `a` and `b`, whose types must be the same, and `{}`
@@ -1095,6 +1150,9 @@ left to right:
   instance by what guards the quantifier, and the instances do not guard
   each other: an index must be in range in every instance where its guard
   holds;
+- in a [table](#tables)'s row, the condition is guarded by no earlier
+  row's condition holding, and the value by that and the row's own
+  condition: by the row's being the first that holds;
 - guards nest by conjunction.
 
 So `q != [] and q[0] = x` is defined, and `q[0] = x and q != []` is not,
@@ -1105,6 +1163,8 @@ definedness, never meaning.
 operand and whether its *condition* holds. The condition is that of
 `when`, `unless` or the conditional, the left operand of `and` or `or`, or,
 for a `match` arm's body, that the arm is the first whose pattern matches.
+The rows of a [table](#tables) are guarded as `match` arms are, by the
+earlier rows' conditions instead of their patterns.
 An operand is evaluated exactly when its guard holds, and an operand that
 is not one of these is evaluated whenever the expression it is in is.
 

@@ -1,0 +1,5 @@
+-- A table has at least one row.
+comp empty { in x: Int pub out y: Int req r: y = table {} }
+--~^[cli] error: expected an expression, found `}`
+--~^^[hosted] error: expected
+--@ exit: 2
