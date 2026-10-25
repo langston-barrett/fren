@@ -13,19 +13,21 @@ test` left in the build directory, after a build with `-Kcoverage`, and
 reports which of Fren's declarations no test ran. `GCOV` is the command
 that reads them, such as `llvm-cov gcov`.
 
-Coverage is per declaration: a declaration ran if any of the C functions
-compiled from it ran, its body, its lambdas and join points, its boxed
-and reduced-arity versions, or a specialization of it. Closed terms run
-when a module is initialized, so they do not count. The declarations
+Coverage is per declaration: a declaration ran if one of its entry
+points ran, its own function, its boxed or reduced-arity version, or a
+specialization of it. Lambdas, join points and closed terms count for no
+one, since the compiler shares them among declarations. The declarations
 counted are the definitions of `FrenCore`, `Fren` and `FrenCli` that are
-compiled and written in the source: not theorems, constructors,
-recursors, matchers, projections or instances that `deriving` makes, and
-not `@[inline]` definitions, whose code runs in their callers.
+compiled to a function and written in the source: not theorems,
+constructors, recursors, matchers, projections, instances that `deriving`
+makes, constants, or `@[inline]` definitions, whose code runs in their
+callers.
 
 The declarations that no test runs are listed in `test/coverage.txt`, one
 per line, each followed by ` -- ` and why, if it is never meant to run.
-The run fails if a declaration that is not listed did not run, or if one
-that is listed ran or no longer exists, so that the list only shrinks.
+The run fails on a counted declaration that does not run and is not
+listed, and on a listed one that runs or is no longer counted, so that the
+list only shrinks.
 -/
 
 open Lean
@@ -35,12 +37,6 @@ namespace FrenCoverage
 /-- The libraries whose code is counted. -/
 def counted : List Name := [`FrenCore, `Fren, `FrenCli]
 
-/-- A component that the compiler adds to a declaration's name for code
-that it makes from the declaration. -/
-def compilerPart (s : String) : Bool :=
-  ["_boxed", "_redArg", "_lam", "_lambda", "_elam", "_jp", "_impl", "_closed", "_at_", "_spec"].any fun p =>
-    s == p || s.startsWith (p ++ "_")
-
 /-- `parts` as a name, component by component: `++` refuses names with
 macro scopes. -/
 def ofParts (parts : List Name) : Name :=
@@ -49,24 +45,35 @@ def ofParts (parts : List Name) : Name :=
     | .num _ i => acc.mkNum i
     | .anonymous => acc
 
-/-- The declarations whose code the C function `sym` runs, if it is one of
-the package's, and whether the function is a closed term. A
-specialization, `f._at_.g.spec_N`, is `f`'s code with arguments from `g`,
-whose lambdas it inlines, so it runs both. -/
-def declsOf? (sym : String) : Option (Array Name × Bool) := do
+/-- The declaration that the C function `sym`, one of the package's, is an
+entry point of: the declaration's own function, or its boxed or
+reduced-arity version, which callers call instead. A specialization,
+`f._at_.g.spec_N`, is an entry point of `f`, with arguments from `g`, which
+may itself be one, as in `f._at_.g._at_.h.spec_0.spec_1`.
+Lambdas, join points and closed terms are no one's: the compiler shares
+them among declarations whose code is alike, so that running one would
+seem to run the others. -/
+def declOf? (sym : String) : Option Name := do
   let body ← (sym.dropPrefix? "lp_fren_").map (·.toString)
   let parts := (Name.demangle body).components
-  let isPart (p : String → Bool) : Name → Bool := fun | .str _ s => p s | _ => false
-  let closed := parts.any (isPart (·.startsWith "_closed"))
-  let k := (parts.findIdx? (isPart compilerPart)).getD parts.length
-  let mut decls := #[ofParts (parts.take k)]
-  if let some a := parts.findIdx? (isPart (· == "_at_")) then
-    let rest := parts.drop (a + 1)
-    let stop := (rest.findIdx? (isPart fun s => s.startsWith "spec_" || compilerPart s)).getD rest.length
-    decls := decls.push (ofParts (rest.take stop))
-  let named := decls.filter (!·.isAnonymous)
-  guard !named.isEmpty
-  return (named, closed)
+  let str : Name → Option String := fun | .str _ s => some s | _ => none
+  let entry (s : String) := s == "_boxed" || s == "_redArg"
+  match parts.findIdx? fun p => (str p).any fun s => s.startsWith "_" && (entry s || s == "_at_" || s.startsWith "_lam"
+      || s.startsWith "_elam" || s.startsWith "_jp" || s.startsWith "_closed" || s == "_impl") with
+  | none => return ofParts parts
+  | some k =>
+    let rest := parts.drop k
+    let decl := ofParts (parts.take k)
+    guard !decl.isAnonymous
+    if (rest.head?.bind str) == some "_at_" then
+      -- `_at_`, the declaration it is specialized at, which may itself be a
+      -- specialization, a `spec_N` for each, then entry parts.
+      let isSpec (p : Name) := (str p).any (·.startsWith "spec_")
+      let some last := (List.range rest.length).reverse.find? (fun i => rest[i]?.any isSpec) | none
+      guard ((rest.drop (last + 1)).all fun p => (str p).any entry)
+      return decl
+    guard (rest.all fun p => (str p).any entry)
+    return decl
 
 /-- The functions of one module's report from `gcov -f`, each with whether
 any of its lines ran. -/
@@ -103,13 +110,13 @@ def isCounted (env : Environment) (n : Name) : Bool := Id.run do
 
 /-- The listed declarations: each with why it is never meant to run, if
 it says. -/
-def parseList (src : String) : Array (Name × Option String) :=
+def parseList (src : String) : Array (String × Option String) :=
   (src.splitOn "\n").toArray.filterMap fun line =>
     let line := line.trimAscii.toString
     if line.isEmpty || line.startsWith "#" then none else
     match line.splitOn " -- " with
-    | [n] => some (n.toName, none)
-    | n :: why => some (n.toName, some (" -- ".intercalate why))
+    | [n] => some (n, none)
+    | n :: why => some (n, some (" -- ".intercalate why))
     | [] => none
 
 unsafe def main (args : List String) : IO UInt32 := do
@@ -119,7 +126,7 @@ unsafe def main (args : List String) : IO UInt32 := do
   let some gcov := args.head? | IO.eprintln "usage: fren_coverage [--write] GCOV [ARG...]"; return 2
   enableInitializersExecution
   initSearchPath (← findSysroot)
-  let env ← importModules #[{ module := `Fren }, { module := `FrenCli.Run }] {} (loadExts := true)
+  let env ← importModules #[{ module := `Fren }, { module := `FrenCli.Main }] {} (loadExts := true)
   -- Every module's counters, read by `gcov`.
   let mut ran : Std.HashMap Name Bool := {}
   for m in env.header.moduleNames do
@@ -129,12 +136,12 @@ unsafe def main (args : List String) : IO UInt32 := do
     unless ← gcda.pathExists do continue
     let out ← IO.Process.output { cmd := gcov, args := (args.drop 1).toArray ++ #["-f", "-n", "-o", (gcda.parent.getD ".").toString, gcda.toString] }
     for (f, r) in parseGcov out.stdout do
-      if let some (ds, closed) := declsOf? f then
-        unless closed do
-          for d in ds do ran := ran.insert d (ran.getD d false || r)
+      if let some d := declOf? f then ran := ran.insert d (ran.getD d false || r)
   -- A definition without arguments is a constant, computed when its module
-  -- is initialized, and compiles to no function.
-  let decls := env.constants.toList.map (·.1) |>.filter (fun n => isCounted env n && ran.contains n)
+  -- is initialized, and compiles to no function. One with arguments that
+  -- gcov does not report did not run.
+  let hasParams (n : Name) := (IR.findEnvDecl env n).any (!·.params.isEmpty)
+  let decls := env.constants.toList.map (·.1) |>.filter (fun n => isCounted env n && hasParams n)
     |>.toArray |>.qsort (·.toString < ·.toString)
   -- Instances that `deriving` makes, whose range is in the clause.
   let mut sources : Std.HashMap Name (Array String) := {}
@@ -150,7 +157,7 @@ unsafe def main (args : List String) : IO UInt32 := do
         let ls := ((← IO.FS.readFile path).splitOn "\n").toArray
         sources := sources.insert modName ls
         pure ls
-    if (lines[r.range.pos.line - 1]?.getD "").contains "deriving" then derived := derived.push d
+    if ((lines[r.range.pos.line - 1]?.getD "").splitOn " ").contains "deriving" then derived := derived.push d
   let decls := decls.filter (!derived.contains ·)
   let file : System.FilePath := "test" / "coverage.txt"
   let current ← if ← file.pathExists then IO.FS.readFile file else pure ""
@@ -158,7 +165,7 @@ unsafe def main (args : List String) : IO UInt32 := do
   let uncovered := decls.filter (!ran.getD · false)
   if write then
     let header := (current.splitOn "\n").takeWhile (·.startsWith "#")
-    let lines := uncovered.toList.map fun d => match (listed.find? (·.1 == d)).bind (·.2) with
+    let lines := uncovered.toList.map fun d => match (listed.find? (·.1 == d.toString)).bind (·.2) with
       | some why => s!"{d} -- {why}"
       | none => d.toString
     IO.FS.writeFile file ("\n".intercalate (header ++ lines) ++ "\n")
@@ -166,10 +173,13 @@ unsafe def main (args : List String) : IO UInt32 := do
     return 0
   let mut failures := #[]
   for d in uncovered do
-    unless listed.any (·.1 == d) do failures := failures.push s!"{d}: no test runs it"
+    unless listed.any (·.1 == d.toString) do failures := failures.push s!"{d}: no test runs it"
+  -- By the name as written, which `toString` gives, private names and `«»`
+  -- included.
   for (d, _) in listed do
-    if !decls.contains d then failures := failures.push s!"{d}: listed in test/coverage.txt, but not a counted declaration"
-    else if ran.getD d false then failures := failures.push s!"{d}: listed in test/coverage.txt, but a test runs it"
+    match decls.find? (·.toString == d) with
+    | none => failures := failures.push s!"{d}: listed in test/coverage.txt, but not a counted declaration"
+    | some n => if ran.getD n false then failures := failures.push s!"{d}: listed in test/coverage.txt, but a test runs it"
   let covered := decls.size - uncovered.size
   IO.println s!"fren_coverage: {covered} of {decls.size} declarations run by the tests ({if decls.isEmpty then 100 else 100 * covered / decls.size}%), {(listed.filter (·.2.isSome)).size} never meant to run"
   for f in failures do IO.eprintln s!"FAIL {f}"

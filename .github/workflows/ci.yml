@@ -88,7 +88,11 @@ jobs:
       run: |
         set -euo pipefail
         version=$("$(dirname "$(elan which lean)")/clang" --version | sed -n 's/^clang version \([0-9]*\).*/\1/p')
-        curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+        curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o llvm.asc
+        # The key of apt.llvm.org, by its fingerprint.
+        test "$(gpg --show-keys --with-colons llvm.asc | awk -F: '$1 == "fpr" { print $10; exit }')" \
+          = 6084F3CF814B57C1CF12EFD515CF4D18AF4F7421
+        sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg llvm.asc
         printf 'deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-%s main\n' "$version" \
           | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
@@ -100,4 +104,4 @@ jobs:
     - name: Run the tests
       run: lake -Kcoverage="$COVERAGE_RUNTIME" test
     - name: Report what the tests did not run
-      run: lake env .lake/build/bin/fren_coverage "$LLVM_COV" gcov
+      run: lake exe fren_coverage "$LLVM_COV" gcov

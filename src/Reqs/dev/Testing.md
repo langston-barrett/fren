@@ -107,10 +107,14 @@ never runs. Coverage is measured on the compiled code with gcov, so it is
 per declaration, not per line or per `match` arm:
 
 ```text
+find .lake/build -name '*.gcda' -delete
 lake -R -Kcoverage=RUNTIME build fren fren_test fren_coverage
 lake -Kcoverage=RUNTIME test
 lake exe fren_coverage GCOV...
 ```
+
+The counters add up over runs, so the first line clears those of earlier
+ones.
 
 `-Kcoverage=RUNTIME` compiles `FrenCore`, `Fren` and `FrenCli` with gcov's
 counters, and links the executables that run them with the profiling
@@ -123,18 +127,25 @@ Apple's, such as
 and `GCOV` is `xcrun llvm-cov gcov`. CI installs LLVM's of the version of
 Lean's clang.
 
-`fren_coverage` reads the counters with `GCOV`, and maps each C function to
-the declarations whose code it runs: its body, lambdas and join points,
-its boxed and reduced-arity versions, and, for a specialization
-`f._at_.g.spec_N`, both `f` and `g`, since it is `f`'s code with `g`'s
-lambdas inlined. Closed terms run when their module is initialized, so
-they do not count. The declarations counted are the compiled definitions
+`fren_coverage` reads the counters with `GCOV`. A declaration ran if one of
+its entry points ran: its own function, or its boxed or reduced-arity
+version, which callers may call instead. A specialization
+`f._at_.g.spec_N` is an entry point of `f`, with arguments from `g`, and
+`g` may itself be one. Lambdas, join points and closed terms are no
+declaration's: the compiler shares them among declarations whose code is
+alike, so that running one would seem to run another. Calls made while a
+module is initialized count, as when a closed term applies a function. The declarations counted are the compiled definitions
 of `FrenCore`, `Fren` and `FrenCli` that are written in the source and
 compile to a function: not theorems, constructors, recursors, matchers,
 projections, `@[inline]` definitions, instances that `deriving` makes, or
 definitions without arguments, which are constants computed at
-initialization. The proofs of `impl`s are not code, but the definitions
-they are about are counted.
+initialization. A declaration that compiles to a function that gcov does
+not report did not run. The proofs of `impl`s are not code, but the
+definitions they are about are counted.
+
+Only compiled code is measured. The Lean-hosted front end's elaborators
+run in Lean's interpreter where a test elaborates Fren in Lean, so some of
+them are listed although the ui tests elaborate them.
 
 `test/coverage.txt` lists the counted declarations that no test runs, one
 per line. One that is never meant to run, such as code that runs only when
