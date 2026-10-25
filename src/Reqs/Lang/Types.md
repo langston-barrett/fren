@@ -117,11 +117,7 @@ expectation, is declared a `Bool`. An expression that is not accepted is
 reported at the expression (`F0304`), with its type, the declared one, and
 a note that says where the type is declared, as in "`x` of `sub` has type
 `Int`". Both front ends check with the same function, so they report the
-same error at the same expression. `{}` and `[]` have no type of their
-own (see [Checking and synthesis](#checking-and-synthesis)): `{}` where
-the declared type is not a set or relation, directly or as a part that
-shares its type, such as a branch or an arm, is an error that its type
-cannot be known (`F0324`), and so is `[]` where it is not a sequence.
+same error at the same expression.
 
 A variable of type `Nat` brings the constraint that it is at least 0 (see
 [Components](Components.md#natural-numbers)), and so does each application

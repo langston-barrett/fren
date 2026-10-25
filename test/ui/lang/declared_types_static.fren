@@ -53,18 +53,11 @@ comp arms { in s: S pub out y: Int req r: y = match s { S::A(a) => a, S::B => "b
 comp arms_note { in s: S pub out y: Int req r: y = match s { S::A(a) => a, S::B => true } }
 --~^ error: so all must have the same type, or be `Nat`s and `Int`s
 
--- `{}` and `[]` take a declared type that is a set or a sequence, through
--- parentheses, branches and arms; any other leaves them without one.
-comp empty_argument { pub out y: Int req r: y = twice({}) }
---~^ error: the type of `{}` cannot be known here
-comp empty_binding { inst w: sub { x := ([]) } }
---~^ error: the type of `[]` cannot be known here
-comp empty_branch { in c? pub out y: Int := if c? then 1 else {} }
---~^ error: the type of `{}` cannot be known here
-comp empty_arm { in s: S pub out y: Int req r: y = match s { S::A(a) => a, S::B => {} } }
---~^ error: the type of `{}` cannot be known here
-comp empty_first_arm { in s: S pub out y: Int req r: y = match s { S::B => [], S::A(a) => a } }
---~^ error: the type of `[]` cannot be known here
+-- A branch `{}` takes its type from the other branch.
 comp empty_set { in c? in t: Set(Int) pub out s: Set(Int) := if c? then {} else t }
+comp empty_branch_set { in c? in t: Set(Int) pub out y: Int := if c? then {} else t }
+--~^ error: type mismatch: expected `Int`, found `Set(Int)`
+comp empty_branch_and { in b? in c? in t: Set(Int) pub out p? req r: p? iff b? and (if c? then {} else t) }
+--~^ error: type mismatch: expected `Bool`, found `Set(Int)`
 
 --@ exit: 2

@@ -505,29 +505,10 @@ def frenTypeOf? (t : Term) : TermElabM (Option Core.Ty) := do
   let s ← saveState
   try coreTy? (← typeOf t) catch _ => s.restore; pure none
 
-open Lang in
-/-- The first `{}` or `[]` among `e` and the parts that share its type
-without synthesizing one, through parentheses, a conditional's branches
-and a `match`'s arms, that the type `t` cannot give a type: `{}` where
-`t` is not a set or relation, or `[]` where it is not a sequence. The
-`fren` command checks each of them against `t`
-(`Reqs/Lang/Types#checking-and-synthesis`). -/
-partial def emptyMismatch? (e : Syntax) (t : Core.Ty) : Option (Syntax × Core.Msg) :=
-  if e.isOfKind ``Lang.setExpr && e[1].getSepArgs.isEmpty then
-    if t matches .set _ | .rel .. then none else some (e, Core.emptySetTypeMsg)
-  else if e.isOfKind ``Lang.seqExpr && e[1].getSepArgs.isEmpty then
-    if t matches .seq _ then none else some (e, Core.emptySeqTypeMsg)
-  else if e.isOfKind ``Lang.matchExpr then e[3].getSepArgs.findSome? (emptyMismatch? ·[2] t)
-  else match e with
-    | `(fren_expr| ($a)) => emptyMismatch? a t
-    | `(fren_expr| if $_ then $a else $b) => emptyMismatch? a t <|> emptyMismatch? b t
-    | _ => none
-
 /-- Reports `ref`, translated to `t`, unless it may stand where the type
 `expected` is needed, as the `fren` command does (`Core.checkType`), with
 `why` it is needed. -/
 def checkTermType (ref : Syntax) (t : Term) (expected : Core.Ty) (why : Option String := none) : TermElabM Unit := do
-  if let some (r, msg) := emptyMismatch? ref expected then throwErrorAt r msg.text
   if let some found ← frenTypeOf? t then liftMsg ref (Core.checkType expected found why)
 
 /-- Reports `ref`, translated to `t`, an operand of the arithmetic operator
@@ -1426,8 +1407,6 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let mut earlier : Array Term := #[]
   -- The type of the arms so far, once one has one.
   let mut armsTy? : Option Core.Ty := none
-  -- The bodies, before any arm had a type, that do not synthesize one.
-  let mut waiting : Array Syntax := #[]
   -- An arm's body is guarded by its being the first arm that matches
   -- (`Core.GuardedOperand.armBody`): no earlier test holds, and its own does.
   -- That is built directly: its negation is never needed, so `guard` would
@@ -1458,17 +1437,8 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let emptyOk := Core.Position.shared.checked cx.emptyOk (anySynthesizes others)
     let body ← toTerm { cx with binders := cx.binders ++ new, guards, emptyOk } arm[2]
     -- Each body's type widens to the others', or theirs to it (`lang::arm_type`).
-    -- One that does not synthesize its type, before any other has given
-    -- one, is checked once one has, as the `fren` command does.
-    if let some t := armsTy? then
-      if let some (r, msg) := emptyMismatch? arm[2] t.widen then throwErrorAt r msg.text
-    else if !synthesizes arm[2] then
-      waiting := waiting.push arm[2]
     if let some t ← frenTypeOf? body then armsTy? := some (← liftMsg arm[2] (Core.checkArm armsTy? t))
     bodies := bodies.push body
-  if let some t := armsTy? then
-    for b in waiting do
-      if let some (r, msg) := emptyMismatch? b t.widen then throwErrorAt r msg.text
   let widened ← widenMixed bodies
   -- The first arm that matches; the last arm matches whatever is left.
   let mut out := widened.back!
