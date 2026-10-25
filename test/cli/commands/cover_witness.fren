@@ -1,0 +1,12 @@
+-- A passing cover goal shows its witness: the inputs and public outputs,
+-- not the private ones.
+comp heater {
+    in temp: Int
+    pub out alarm?
+    out margin: Int
+
+    req r: alarm? iff temp > 100
+    req m: margin = temp - 100
+
+    cover overheat: temp > 100 and alarm?
+}

@@ -89,6 +89,7 @@ def isCheckHeadline (h : String) : Bool :=
   || (rest "an index of ").any (· == " may be out of range")
   || (rest "the assumption ").any (·.startsWith " of `")
   || (rest "expectation ").any (· == " does not hold")
+  || (rest "cover goal ").any fun r => r == " is met" || r.startsWith " cannot be met: "
   || r.startsWith " is vacuous: its condition can never hold"
   || r.startsWith " is redundant: "
   || r.startsWith " is not determined by the inputs: for the input "
@@ -195,7 +196,7 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   let anyTested := text.contains "set_option fren.evidence \"tested\""
   let onTested (d : Diagnostic) := (lines[d.line - 1]?.getD "").contains "set_option fren.evidence \"tested\""
   let testing (d : Diagnostic) := anyTested &&
-    (d.code?.any (["F0609", "F0610", "F0612"].contains ·) || (d.severity == "info" && (headOf d).contains " set to testing are run by `fren check`"))
+    (d.code?.any (["F0609", "F0610", "F0612", "F0616"].contains ·) || (d.severity == "info" && (headOf d).contains " set to testing are run by `fren check`"))
   -- A static error, including a denied lint, stops the binary's checks,
   -- but not Lean's.
   let staticError := cliDiags.any fun d => d.severity == "error" && !isCheckResult d

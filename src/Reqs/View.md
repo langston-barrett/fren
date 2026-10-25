@@ -78,12 +78,14 @@ Each check yields one result for each thing it checks:
 |---|---|
 | Realizability | component |
 | Expectations | expectation |
+| Cover goals | cover goal |
 | Instance assumptions | instance and assumption of the instantiated component |
 | Vacuity | requirement or expectation with a trigger |
 | Redundancy | assumption and requirement |
 | Determinism | `det out` |
 
-A passing result is silent. A failing result is an error, except that a
+A passing result is silent, except that a passing cover goal shows its
+witness (see below). A failing result is an error, except that a
 redundant constraint is a warning. An inconclusive result is a warning. A
 failure is reported at:
 
@@ -92,12 +94,32 @@ failure is reported at:
 | Unrealizable | the component's name | the input, a note at each conflicting requirement |
 | Contradictory assumptions | the component's name | the contradictory assumptions |
 | Expectation does not hold | the expectation's name | a counterexample: the inputs and public outputs |
+| Cover goal cannot be met | the goal's name | the assumptions and requirements that rule it out |
 | Instance assumption may not hold | the instance's name | a counterexample: the inputs and earlier instances' public outputs |
 | Vacuous | the constraint's trigger | the assumptions and requirements that rule it out |
 | Redundant | the constraint's name | the constraints it follows from |
 | Not determined | the output's name | an input, and two values of the output for it |
 
-A counterexample in a spec with [functions](Lang/Items.md#functions) also
+A passing [cover goal](Check.md#cover-goals) is reported with its
+witness, the behaviour in which it holds, as a note at the goal's name:
+the inputs and public outputs, shown as a counterexample shows them. The
+note is information, like the notes at the requirements of an
+unrealizable component: the result itself is silent, so the note changes
+neither the summary's counts nor the exit status. In Lean, a witness
+whose values lean-smt cannot read, as with some values of abstract types,
+is reported without them.
+
+```text
+note: cover goal `heater::overheat` is met
+ --> heater.fren:7:11
+  |
+7 |     cover overheat: temp > 100 and alarm?
+  |           ^^^^^^^^ met
+  |
+  = witness: temp = 101, alarm? = true
+```
+
+A counterexample, or a witness, in a spec with [functions](Lang/Items.md#functions) also
 gives the value of each application in the constraints it is about, at the
 counterexample's arguments, such as `ends_in_q?(name) = true`: these are the
 part of the model's [interpretation](Check.md#interpretations) that the

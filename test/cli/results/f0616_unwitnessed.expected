@@ -1,0 +1,13 @@
+warning[F0616]: testing found no behaviour in which cover goal `c::exact` holds in 100 tests
+ --> test/cli/results/f0616_unwitnessed.fren:8:11
+  |
+8 |     cover exact: 7 * x = 123459 and big?
+  |           ^^^^^ no witness found
+  |
+  = note: the search tries only some values, so such a behaviour may still exist
+  = help: run `fren check` to decide whether it can be met, or raise `--tests`
+
+fren: 1 passed, 0 failed, 1 inconclusive, in 100 tests each
+
+For more information about this error, try `fren --explain F0616`.
+exit=3

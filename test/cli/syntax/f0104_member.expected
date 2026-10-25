@@ -1,8 +1,8 @@
-error[F0104]: expected a member (`in`, `out`, `inst`, `assume`, `req`, `expect` or `use`) or `}`, found number `42`
+error[F0104]: expected a member (`in`, `out`, `inst`, `assume`, `req`, `expect`, `cover` or `use`) or `}`, found number `42`
  --> test/cli/syntax/f0104_member.fren:2:20
   |
 2 | comp c { in x: Int 42 }
-  |                    ^^ expected a member (`in`, `out`, `inst`, `assume`, `req`, `expect` or `use`) or `}`
+  |                    ^^ expected a member (`in`, `out`, `inst`, `assume`, `req`, `expect`, `cover` or `use`) or `}`
 
 error: could not check due to 1 previous error
 

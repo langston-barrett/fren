@@ -4,10 +4,10 @@ A spec is a sequence of *items*: modules, `use` declarations,
 enumerations, records, abstract types, functions, constants, components
 and global expectations. Items are
 grouped into [modules](Modules.md). A [component](Components.md) declares
-its inputs and outputs, and constraints on them: assumptions, requirements
-and expectations. Constraints are [expressions](Expressions.md) of type
-`Bool`. A [global expectation](Global.md) relates behaviours of
-components.
+its inputs and outputs, and constraints on them: assumptions,
+requirements, expectations and cover goals. Constraints are
+[expressions](Expressions.md) of type `Bool`. A [global
+expectation](Global.md) relates behaviours of components.
 
 For example, this spec describes a thermostat that chooses a mode from the
 current temperature and a target:

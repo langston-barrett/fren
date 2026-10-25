@@ -440,8 +440,10 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
   let mut shown := #[]
   let subject := s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
   for r in results do
-    -- Inconclusive results are reported below, once for the comp.
-    if r.verdict == .fail then shown := shown ++ (← printResult args.paint files c r)
+    -- Inconclusive results are reported below, once for the comp; a
+    -- cover goal's pass shows its witness.
+    if r.verdict == .fail || (r.kind == .cover && r.verdict == .pass) then
+      shown := shown ++ (← printResult args.paint files c r)
   let warn (msg : Msg) : IO Unit := printDiag args.paint files { file := c.file, span := c.span, severity := .warning, msg }
   if let some input := rep.noOutputs? then
     -- It explains why the checks it selects were not reached, too.
@@ -463,6 +465,13 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
         let p? := c.props.find? (·.name == n)
         (if global then subject else s!"`{Fren.Core.showComp (c.path ++ n)}`", (p?.map fun p => p.triggerSpan?.getD p.span).getD c.span)
     let msg := Fren.Core.untriggeredMsg what args.nTests byCheck
+    printDiag args.paint files { file := c.file, span, severity := .warning, msg }
+    shown := shown.push msg
+  -- At each cover goal for which no test found a witness (`F0616`).
+  for r in rep.unwitnessed.filter keep do
+    let some n := r.prop? | continue
+    let span := ((c.props.find? (·.name == n)).map (·.span)).getD c.span
+    let msg := Fren.Core.unwitnessedMsg s!"`{Fren.Core.showComp (c.path ++ n)}`" args.nTests byCheck
     printDiag args.paint files { file := c.file, span, severity := .warning, msg }
     shown := shown.push msg
   return (results, shown)

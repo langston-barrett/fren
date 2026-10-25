@@ -22,7 +22,11 @@ language. For a system not written in Lean, they are the only evidence.
 
 Only components have evidence. A [global expectation](Lang/Global.md)
 constrains nothing, so there is nothing for the system to satisfy: the
-checks confirm it. Nor do [abstract types](Lang/Types.md#abstract-types) and
+checks confirm it. Nor do a component's expectations and [cover
+goals](Lang/Components.md#cover-goals) add anything for the system to
+satisfy: evidence is about the assumptions and requirements, and a cover
+goal's witness, shown by `fren check`, is evidence that the spec allows a
+scenario, not that the system does. Nor do [abstract types](Lang/Types.md#abstract-types) and
 [functions](Lang/Items.md#functions), which constrain nothing either: their
 meaning is given by an [interpretation](Impl.md#interpretations).
 

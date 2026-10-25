@@ -2382,7 +2382,7 @@ def testedOf (all : Bool) (raw : Array Syntax) : CommandElabM (Array Syntax × C
     let misplaced (what : String) : CommandElabM Unit := do
       if let some (_, ref) := set? then throwErrorAt ref (Core.misplacedEvidenceMsg what).text
     match m with
-    | `(fren_member| expect $x:ident : $_) => expects := expects.push (x.getId, b?)
+    | `(fren_member| expect $x:ident : $_) | `(fren_member| cover $x:ident : $_) => expects := expects.push (x.getId, b?)
     -- By the names they declare, without the `!` of shadowing.
     | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => insts := insts.push ((declaredIdent x).1.getId, b?)
     | `(fren_member| assume $x:ident : $_) => misplaced "an assumption"; constraints := constraints.push x.getId
@@ -2408,6 +2408,7 @@ def memberName? (m : Syntax) : Option Syntax :=
     | `(fren_member| assume $x:ident : $_) => some x
     | `(fren_member| req $x:ident : $_) => some x
     | `(fren_member| expect $x:ident : $_) => some x
+    | `(fren_member| cover $x:ident : $_) => some x
     | _ => none
 
 open Lang in
@@ -2540,6 +2541,7 @@ open Lang in
           | `(fren_member| assume $x:ident : $e) => pure (PropKind.assume, x, e)
           | `(fren_member| req $x:ident : $e) => pure (.req, x, e)
           | `(fren_member| expect $x:ident : $e) => pure (.expect, x, e)
+          | `(fren_member| cover $x:ident : $e) => pure (.cover, x, e)
           | _ => continue
         if let .error msg := Core.checkNoBang x.getId then
           logErrorAt x msg.text; good := false; continue
@@ -2645,7 +2647,8 @@ open Lang in
             let b := b.raw
             mentioned := mentioned ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
         | `(fren_member| assume $_:ident : $e) | `(fren_member| req $_:ident : $e)
-        | `(fren_member| expect $_:ident : $e) => mentioned := mentioned ++ pathMentions e
+        | `(fren_member| expect $_:ident : $e) | `(fren_member| cover $_:ident : $e) =>
+          mentioned := mentioned ++ pathMentions e
         | _ => pure ()
       for v in vars do
         if let some d := v.defn? then mentioned := mentioned ++ pathMentions d

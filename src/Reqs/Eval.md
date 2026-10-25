@@ -176,13 +176,17 @@ positions (see [Check results](View.md#check-results)):
 | Check | Testing reports |
 |---|---|
 | Expectations | a behaviour that meets the component, in which the expectation is false |
+| Cover goals | a behaviour that meets the component, in which the goal holds: a witness, which passes it |
 | Global expectations | behaviours of the binders in which the body is false |
 | Instance assumptions | an admissible input, with behaviours of the earlier instances, on which an assumption of the instance's component is false |
 | Determinism | two behaviours on the same input, with different values of the `det out` |
 | Realizability | an admissible input, with behaviours of the instances, for which the search found no outputs |
 
 Vacuity and redundancy are not tested: they ask whether something can
-hold at all, which a failed search does not refute.
+hold at all, which a failed search does not refute. A [cover
+goal](Check.md#cover-goals) asks that too, but a behaviour found shows
+that it can hold, so testing passes a goal for which it finds a witness,
+and never fails one.
 
 A test *reaches* a check when it finds what the check is about, as in the
 table: a behaviour that meets the component, for an expectation; an
@@ -197,7 +201,11 @@ seldom satisfies a narrow trigger, testing searches for one that does:
   reach it searches again, from a new input, for a behaviour that meets the
   component and in which the trigger holds;
 - a global expectation's test searches for behaviours of the binders in
-  which the body's trigger holds.
+  which the body's trigger holds;
+- for a cover goal without a witness yet, each test searches, from a new
+  input, for a behaviour that meets the component and in which the goal
+  holds. A cover goal is reached by a test that finds a witness: it is
+  `reaches` with the goal as its trigger.
 
 Testing also searches for counterexamples directly: for an expectation or
 a global expectation not yet refuted, each test that finds what the
@@ -235,7 +243,10 @@ gives a warning, `F0609`, and an inconclusive result. A check that no test
 reached, because no admissible behaviour was found, is also inconclusive,
 with the warning `F0610`. A check with a trigger that no test reached,
 though some found what it is about, is inconclusive with the warning
-`F0612`, at the check, unless the component already has `F0610`. `eval::test_verdict` gives the verdict of testing one
+`F0612`, at the check, unless the component already has `F0610`. A
+cover goal for which no test found a witness, though some found a
+behaviour that meets the component, is inconclusive with the warning
+`F0616`, at the goal, likewise. `eval::test_verdict` gives the verdict of testing one
 check, from whether some test refuted it and how many tests reached it:
 
 ```fren
@@ -246,6 +257,8 @@ pub comp test_verdict {
     pub det out verdict: Verdict
 
     assume testable: kind != Kind::Vacuity and kind != Kind::Redundancy
+    -- A cover goal is reached by its witnesses, which refute nothing.
+    assume witnesses: when kind = Kind::Cover, not refuted?
 
     req definite: when refuted? and kind != Kind::Realizability, verdict = Fail
     req not_found: when refuted? and kind = Kind::Realizability, verdict = Inconclusive
@@ -253,6 +266,7 @@ pub comp test_verdict {
     req untested: when not refuted? and n_tests = 0, verdict = Inconclusive
 
     expect realizability_never_fails: when kind = Kind::Realizability, verdict != Fail
+    expect cover_never_fails: when kind = Kind::Cover, verdict != Fail
 }
 ```
 

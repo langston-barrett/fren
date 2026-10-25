@@ -1,0 +1,10 @@
+--@ args: eval --comp heater --set temp=5
+-- `fren eval` shows each cover goal's value too; a false goal is not a failure.
+comp heater {
+    in temp: Int
+    pub out alarm?
+
+    req r: alarm? iff temp > 100
+
+    cover overheat: temp > 100 and alarm?
+}

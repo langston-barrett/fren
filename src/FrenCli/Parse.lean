@@ -94,6 +94,7 @@ inductive PropKind where
   | assume
   | req
   | expect
+  | cover
   deriving Inhabited, BEq
 
 inductive Member where
@@ -748,7 +749,7 @@ def member : P Member := do
     let mod := if isDet then "det" else "pub"
     let what := if isKw t "in" then "an input"
       else if isWord t "inst" then "an instance"
-      else if isWord t "assume" || isWord t "req" || isKw t "expect" then "a constraint"
+      else if isWord t "assume" || isWord t "req" || isKw t "expect" || isWord t "cover" then "a constraint"
       else t.tok.describe
     err m.span "F0113" s!"`{mod}` applies only to outputs, not to {what}" (some s!"`{mod}` must be followed by `out`")
       #[if isKw t "in" then s!"note: inputs are always {if isDet then "determined" else "public"}"
@@ -763,13 +764,14 @@ def member : P Member := do
   let kind? := if isWord t "assume" then some PropKind.assume
     else if isWord t "req" then some .req
     else if isKw t "expect" then some .expect
+    else if isWord t "cover" then some .cover
     else none
   if isKw t "," then
     err t.span "F0104" "expected a member or `}`, found `,`" (some "unexpected `,`")
       #["note: the members of a component are not separated by commas"] #[{ msg := "remove it", replacement := "" }]
   let some kind := kind?
-    | fail t "a member (`in`, `out`, `inst`, `assume`, `req`, `expect` or `use`) or `}`"
-        #["in", "out", "pub", "det", "inst", "assume", "req", "expect", "use"]
+    | fail t "a member (`in`, `out`, `inst`, `assume`, `req`, `expect`, `cover` or `use`) or `}`"
+        #["in", "out", "pub", "det", "inst", "assume", "req", "expect", "cover", "use"]
   discard bump
   let x ← ident
   discard (expectKw ":")

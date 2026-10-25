@@ -14,7 +14,7 @@ required. Each obligation is proved by `decide`.
 
 namespace Fren.Impls
 
-open Fren.Core (Answer Verdict CheckKind realizableVerdict expectVerdict vacuityVerdict
+open Fren.Core (Answer Verdict CheckKind realizableVerdict expectVerdict vacuityVerdict coverVerdict
   determinismVerdict redundancyAsked kindsFor)
 
 instance : Fren.Finite Answer := ⟨[.sat, .unsat, .unknown], by intro x; cases x <;> simp⟩
@@ -31,12 +31,14 @@ def toVerdict : Verdict → check.Verdict
   | .inconclusive => .Inconclusive
 
 instance : Fren.Finite CheckKind :=
-  ⟨[.realizable, .inst, .«expect», .vacuity, .redundancy, .determinism, .definedness], by intro x; cases x <;> simp⟩
+  ⟨[.realizable, .inst, .«expect», .cover, .vacuity, .redundancy, .determinism, .definedness],
+    by intro x; cases x <;> simp⟩
 
 def toCheckKind : CheckKind → check.Kind
   | .realizable => .Realizability
   | .inst => .InstanceAssumption
   | .«expect» => .Expectation
+  | .cover => .Cover
   | .vacuity => .Vacuity
   | .redundancy => .Redundancy
   | .determinism => .Determinism
@@ -60,6 +62,13 @@ impl expectation: check::expectation for (q : Answer) {
   q := toOutcome q,
   verdict := toVerdict (expectVerdict q).1,
   reports_cex? := (expectVerdict q).2,
+}
+
+impl cover_goal: check::cover_goal for (q : Answer) {
+  q := toOutcome q,
+  verdict := toVerdict (coverVerdict q).1,
+  reports_witness? := (coverVerdict q).2.1,
+  reports_core? := (coverVerdict q).2.2,
 }
 
 impl instance_assumption: check::instance_assumption for (q : Answer) {

@@ -64,14 +64,16 @@
   that constraints named `range_*` bound to a few values, abstract types,
   and functions from them to `Bool`s, sets and relations of an enumeration
   or of `Bool`, and sequences of one that `range_*` constraints bound to
-  two elements, with instances, `det out`s and global expectations. Each
+  two elements, with instances, `det out`s, cover goals and global
+  expectations. Each
   index is guarded, before or after it, so that every constraint has a
   value whatever an index out of range is. Brute force enumerates every behaviour and interpretation
   of that fragment, and decides each check from its definition in
   [Checks](../Check.md). It also confirms that each reported set of
   constraints (a conflict, a vacuity or a redundancy) entails what the
   message says and is minimal, and that each counterexample can be
-  completed to a behaviour with the reported values. Each disagreement is
+  completed to a behaviour with the reported values, and each witness of a
+  cover goal to a behaviour in which the goal holds. Each disagreement is
   written to `DIR` (default `.lake/fuzz`) as a `.fren` file, with what
   differed in a comment. The verdicts of redundancy for `range_*`
   constraints are not compared, since without them brute force is not

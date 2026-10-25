@@ -334,6 +334,38 @@ theorem checkVacuity_fail (t : Name × F) (h : (checkVacuity b c t).run.verdict 
   unfold checkVacuity
   simp [hq, vacuityVerdict, Outcome.answer, bind_eq, run_eq, pure_eq, hmin]
 
+/-! ## Cover goals -/
+
+/-- A `pass` is a behaviour in which the cover goal holds, which the
+witness shows. -/
+theorem checkCover_pass (g : Name × F) (h : (checkCover b c g).run.verdict = .pass) :
+    ∃ ρ model, s.Typed ρ ∧ s.Behaves ρ ∧ s.den g.2 ρ ∧ s.Agrees ρ model ∧
+      (checkCover b c g).run.detail = .witness (renderModel b c.vars model (·.isPub)).run := by
+  unfold checkCover at h ⊢
+  cases hq : b.query (c.defEqs .cover ++ (c.hyps b ++ c.reqs)) (b.notF g.2) true <;>
+    simp [hq, coverVerdict, Outcome.answer] at h ⊢
+  obtain ⟨ρ, ht, hρ, hg, hm⟩ := s.query_sat hq
+  exact ⟨ρ, ht, (s.holds_behaves (kd := .cover) rfl ht).1 hρ, by simpa [s.notF ht] using hg, _, hm, rfl⟩
+
+/-- A `fail` means the cover goal holds in no behaviour, and the reported
+constraints rule it out wherever the definitions hold. -/
+theorem checkCover_fail (g : Name × F) (h : (checkCover b c g).run.verdict = .fail) :
+    (∀ ρ, s.Typed ρ → s.Behaves ρ → ¬s.den g.2 ρ) ∧
+    ∃ keep : Array (Name × F), keep.toList.Sublist (c.hyps b ++ c.reqs).toList ∧
+      (checkCover b c g).run.detail = .vacuous (keep.map (·.1)) ∧
+      ∀ ρ, s.Typed ρ → s.Defined ρ → s.Holds keep ρ → ¬s.den g.2 ρ := by
+  obtain ⟨keep, hsub, hmin, hent, -⟩ := minimize_spec s (c.defEqs .cover) (c.hyps b ++ c.reqs) (b.notF g.2)
+  unfold checkCover at h
+  cases hq : b.query (c.defEqs .cover ++ (c.hyps b ++ c.reqs)) (b.notF g.2) true <;>
+    simp [hq, coverVerdict, Outcome.answer] at h
+  have hall := s.query_unsat hq
+  refine ⟨fun ρ ht hρ => (s.notF ht).1 (hall ρ ht ((s.holds_behaves (kd := .cover) rfl ht).2 hρ)), keep, hsub, ?_,
+    fun ρ ht hd hρ => (s.notF ht).1 (hent hall ρ ht
+      ((s.holds_append _ _ ρ).2 ⟨(s.holds_defEqs rfl ρ).2 hd, hρ⟩))⟩
+  simp only [run_eq] at hmin
+  unfold checkCover
+  simp [hq, coverVerdict, Outcome.answer, bind_eq, run_eq, pure_eq, hmin]
+
 /-! ## Redundancy -/
 
 /-- A `pass` is an environment that meets the definitions, in which `others`
@@ -810,6 +842,7 @@ theorem checkComp_eq (bk : CheckKind → Backend Id F V) (kinds : Array CheckKin
       (if kinds.contains .realizable then #[(checkRealizable (bk .realizable) c).run] else #[]) ++
       (if kinds.contains .inst then (checkInsts (bk .inst) c).run else #[]) ++
       (if kinds.contains .expect then c.expects.map (checkExpect (bk .expect) c · |>.run) else #[]) ++
+      (if kinds.contains .cover then c.covers.map (checkCover (bk .cover) c · |>.run) else #[]) ++
       (if kinds.contains .vacuity then c.triggers.map (checkVacuity (bk .vacuity) c · |>.run) else #[]) ++
       (if kinds.contains .redundancy then (checkRedundancies (bk .redundancy) c (vacuousOf
         (if kinds.contains .vacuity then c.triggers.map (checkVacuity (bk .vacuity) c · |>.run) else #[]))).run
@@ -821,8 +854,8 @@ theorem checkComp_eq (bk : CheckKind → Backend Id F V) (kinds : Array CheckKin
   split <;> rfl
 
 /-- Every result of `checkComp` is the result of one of the checks, on an
-item of the component: its instances' own assumptions, its expectations and
-triggers, the comparison sets of `redundancy`, its `det out`s and its
+item of the component: its instances' own assumptions, its expectations,
+cover goals and triggers, the comparison sets of `redundancy`, its `det out`s and its
 indexes. `checkComp_eq` says exactly which, and when. -/
 theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKind} {r : CheckResult}
     (h : r ∈ (checkComp bk c kinds).run) :
@@ -830,6 +863,7 @@ theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKi
     (∃ k, ∃ hk : k < c.insts.size, ∃ a ∈ c.insts[k].assumes,
       r = (checkInst (bk .inst) c k c.insts[k] a).run) ∨
     (∃ e ∈ c.expects, r = (checkExpect (bk .expect) c e).run) ∨
+    (∃ g ∈ c.covers, r = (checkCover (bk .cover) c g).run) ∨
     (∃ t ∈ c.triggers, r = (checkVacuity (bk .vacuity) c t).run) ∨
     (∃ a ∈ c.assumes, r = (checkRedundant (bk .redundancy) c (c.assumes.filter (·.1 != a.1)) a).run) ∨
     (∃ q ∈ c.reqs,
@@ -838,22 +872,24 @@ theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKi
     (∃ site ∈ c.indexes, r = (checkDefinedness (bk .definedness) c site).run) := by
   rw [checkComp_eq] at h
   simp only [Array.mem_append, or_assoc] at h
-  rcases h with h | h | h | h | h | h | h
+  rcases h with h | h | h | h | h | h | h | h
   · left; simpa using (mem_ite h).2
   · exact .inr (.inl (checkInsts_mem.1 (mem_ite h).2))
   · obtain ⟨e, he, rfl⟩ := Array.mem_map.1 (mem_ite h).2
     exact .inr (.inr (.inl ⟨e, he, rfl⟩))
+  · obtain ⟨g, hg, rfl⟩ := Array.mem_map.1 (mem_ite h).2
+    exact .inr (.inr (.inr (.inl ⟨g, hg, rfl⟩)))
   · obtain ⟨t, ht, rfl⟩ := Array.mem_map.1 (mem_ite h).2
-    exact .inr (.inr (.inr (.inl ⟨t, ht, rfl⟩)))
+    exact .inr (.inr (.inr (.inr (.inl ⟨t, ht, rfl⟩))))
   · rcases checkRedundancies_mem.1 (mem_ite h).2 with ⟨a, ha, -, e⟩ | ⟨q, hq, -, e⟩
-    · exact .inr (.inr (.inr (.inr (.inl ⟨a, ha, e⟩))))
-    · exact .inr (.inr (.inr (.inr (.inr (.inl ⟨q, hq, e⟩)))))
-  · exact .inr (.inr (.inr (.inr (.inr (.inr (.inl (checkDets_mem.1 (mem_ite h).2)))))))
+    · exact .inr (.inr (.inr (.inr (.inr (.inl ⟨a, ha, e⟩)))))
+    · exact .inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨q, hq, e⟩))))))
+  · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl (checkDets_mem.1 (mem_ite h).2))))))))
   · obtain ⟨site, hs, rfl⟩ := Array.mem_map.1 (mem_ite h).2
-    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr ⟨site, hs, rfl⟩))))))
+    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ⟨site, hs, rfl⟩)))))))
 
 /-- Each selected check runs: on the component, on each assumption of each
-instance, each expectation, each trigger, each `det out` and each index; and
+instance, each expectation, each cover goal, each trigger, each `det out` and each index; and
 `redundancy` on each assumption and each requirement it is asked about
 (`check::redundancy_asked`): not if they are contradictory, nor for a
 requirement whose `vacuity` check failed. -/
@@ -862,6 +898,7 @@ theorem checkComp_runs {bk : CheckKind → Backend Id F V} {kinds : Array CheckK
     (kinds.contains .inst → ∀ k (hk : k < c.insts.size), ∀ a ∈ c.insts[k].assumes,
       (checkInst (bk .inst) c k c.insts[k] a).run ∈ (checkComp bk c kinds).run) ∧
     (kinds.contains .expect → ∀ e ∈ c.expects, (checkExpect (bk .expect) c e).run ∈ (checkComp bk c kinds).run) ∧
+    (kinds.contains .cover → ∀ g ∈ c.covers, (checkCover (bk .cover) c g).run ∈ (checkComp bk c kinds).run) ∧
     (kinds.contains .vacuity → ∀ t ∈ c.triggers,
       (checkVacuity (bk .vacuity) c t).run ∈ (checkComp bk c kinds).run) ∧
     (kinds.contains .redundancy → ∀ a ∈ c.assumes,
@@ -879,13 +916,15 @@ theorem checkComp_runs {bk : CheckKind → Backend Id F V} {kinds : Array CheckK
     (kinds.contains .definedness → ∀ site ∈ c.indexes,
       (checkDefinedness (bk .definedness) c site).run ∈ (checkComp bk c kinds).run) := by
   simp only [checkComp_eq, Array.mem_append]
-  refine ⟨fun hk => ?_, fun hk k hk' a ha => ?_, fun hk e he => ?_, fun hk t ht => ?_,
+  refine ⟨fun hk => ?_, fun hk k hk' a ha => ?_, fun hk e he => ?_, fun hk g hg => ?_, fun hk t ht => ?_,
     fun hk a ha hq => ?_, fun hk q hq hr => ?_, fun hk v hv hd => ?_, fun hk site hs => ?_⟩
   · simp [hk]
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inr (checkInsts_mem.2 ⟨k, hk', a, ha, rfl⟩))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inr (checkInsts_mem.2 ⟨k, hk', a, ha, rfl⟩)))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨e, he, rfl⟩)))))
+    exact .inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨e, he, rfl⟩))))))
+  · simp only [hk, if_true]
+    exact .inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨g, hg, rfl⟩)))))
   · simp only [hk, if_true]
     exact .inl (.inl (.inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩))))
   · simp only [hk, if_true]
@@ -916,6 +955,12 @@ theorem checkInst_kind {b : Backend Id F V} {k i a} : (checkInst b c k i a).run.
 
 theorem checkExpect_kind {b : Backend Id F V} {e} : (checkExpect b c e).run.kind = .expect := by
   unfold checkExpect
+  simp only [bind_eq, run_eq, pure_eq]
+  repeat' split
+  all_goals rfl
+
+theorem checkCover_kind {b : Backend Id F V} {g} : (checkCover b c g).run.kind = .cover := by
+  unfold checkCover
   simp only [bind_eq, run_eq, pure_eq]
   repeat' split
   all_goals rfl
@@ -958,7 +1003,8 @@ private theorem Sound.congr {b b' : Backend Id F V} (s : Sound b c.vars Val) (s'
 
 /-- When every check of a component passes, except perhaps `redundancy`,
 whose failures are only warnings: it is realizable, every instance's
-assumptions hold, every expectation holds, every trigger can hold, every
+assumptions hold, every expectation holds, every cover goal is met by some
+behaviour, every trigger can hold, every
 `det out`'s check passes, so that `checkDeterminism_pass` applies to it (the
 front ends allow `det` only on `out`s), and every index is in range where it
 is evaluated. This is for backends that agree on what formulas and sorts
@@ -978,6 +1024,7 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
     (∀ k (hk : k < c.insts.size), ∀ a ∈ c.insts[k].assumes, ∀ ρ, (s .realizable).Typed ρ →
       (s .realizable).Admits ρ k → (s .realizable).den c.insts[k].bindings ρ → (s .realizable).den a.2 ρ) ∧
     (∀ e ∈ c.expects, ∀ ρ, (s .realizable).Typed ρ → (s .realizable).Behaves ρ → (s .realizable).den e.2 ρ) ∧
+    (∀ g ∈ c.covers, ∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Behaves ρ ∧ (s .realizable).den g.2 ρ) ∧
     (∀ t ∈ c.triggers, ∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Behaves ρ ∧ (s .realizable).den t.2 ρ) ∧
     (∀ v ∈ c.vars, v.isDet → (checkDeterminism (bk .determinism) c v.name).run.verdict = .pass) ∧
     (∀ site ∈ c.indexes, ∀ ρ, (s .realizable).Typed ρ → (s .realizable).AtSite site ρ →
@@ -985,7 +1032,7 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
     ((∀ ρ ρ', OnlyOuts c.vars ρ ρ' → (s .realizable).Possible ρ → (s .realizable).Possible ρ') →
       (∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Admits ρ) →
       ∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Behaves ρ ∧ ∀ e ∈ c.expects, (s .realizable).den e.2 ρ) := by
-  obtain ⟨hr, hi, he, hv, -, -, hd, hix⟩ := checkComp_runs (c := c) (bk := bk) (kinds := CheckKind.all)
+  obtain ⟨hr, hi, he, hcv, hv, -, -, hd, hix⟩ := checkComp_runs (c := c) (bk := bk) (kinds := CheckKind.all)
   have all : ∀ k, CheckKind.all.contains k := by intro k; cases k <;> simp +decide [CheckKind.all]
   have pass : ∀ r ∈ (checkComp bk c).run, r.kind ≠ .redundancy → r.verdict = .pass := h
   have hR := checkRealizable_pass (s .realizable) hdefs
@@ -996,12 +1043,16 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
     have := checkExpect_pass (s .expect) e (pass _ (he (all _) e he') (by rw [checkExpect_kind]; intro h; cases h)) ρ
     obtain ⟨tT, -, tB, -⟩ := Sound.congr (s .expect) (s .realizable) (hsame _)
     simpa only [tT, tB, (hsame _).1] using this
-  refine ⟨hR, fun k hk a ha ρ => ?_, hE, fun t ht => ?_,
+  refine ⟨hR, fun k hk a ha ρ => ?_, hE, fun g hg => ?_, fun t ht => ?_,
     fun v hv' hdet => pass _ (hd (all _) v hv' hdet) (by rw [checkDeterminism_kind]; intro h; cases h),
     fun site hs ρ => ?_, fun hindep ⟨ρ, ht, hρ⟩ => ?_⟩
   · have := checkInst_pass (s .inst) k _ a (pass _ (hi (all _) k hk a ha) (by rw [checkInst_kind]; intro h; cases h)) ρ
     obtain ⟨tT, tA, -, -⟩ := Sound.congr (s .inst) (s .realizable) (hsame _)
     simpa only [tT, tA, (hsame _).1] using this
+  · obtain ⟨ρ, -, ht, hb, hg, -⟩ := checkCover_pass (s .cover) g
+      (pass _ (hcv (all _) g hg) (by rw [checkCover_kind]; intro h; cases h))
+    obtain ⟨tT, -, tB, -⟩ := Sound.congr (s .cover) (s .realizable) (hsame _)
+    exact ⟨ρ, (tT ρ).1 ht, (tB ρ).1 hb, by simpa only [(hsame _).1] using hg⟩
   · have := checkVacuity_pass (s .vacuity) t (pass _ (hv (all _) t ht) (by rw [checkVacuity_kind]; intro h; cases h))
     obtain ⟨tT, -, tB, -⟩ := Sound.congr (s .vacuity) (s .realizable) (hsame _)
     simpa only [tT, tB, (hsame _).1] using this

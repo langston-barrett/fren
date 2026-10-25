@@ -10,6 +10,7 @@ member     := "in" variable
             | "assume" IDENT ":" expr
             | "req" IDENT ":" expr
             | "expect" IDENT ":" expr
+            | "cover" IDENT ":" expr
             | instance
             | use
 variable   := DECL [":" type]
@@ -41,6 +42,11 @@ A `DECL` is an identifier that declares a name, and ends in `!` if it
   assumptions and requirements. They constrain nothing; the checks confirm
   them. An expectation about several behaviours, or several components, is
   a [global expectation](Global.md) instead.
+- **Cover goals** (`cover n: e`) are scenarios that the component must
+  allow: some behaviour that meets the assumptions and requirements must
+  satisfy `e`. Like expectations, they constrain nothing; the [cover
+  check](../Check.md#cover-goals) confirms them. See [Cover
+  goals](#cover-goals).
 - **Instances** (`inst w: c { ... }`) make another component part of this
   one. See [Instances](Instances.md).
 - **Imports** (`use a::E::*`) bring names into scope for the component's
@@ -70,6 +76,8 @@ pub comp modifiers {
     expect pub_only_outputs: when member != Member::Output and pub?, not accepted?
     expect det_only_outputs: when member != Member::Output and det?, not accepted?
     expect defined_only_outputs: when member != Member::Output and defined?, not accepted?
+
+    cover every_modifier: member = Member::Output and pub? and det? and defined? and accepted?
 }
 ```
 
@@ -93,15 +101,17 @@ pub comp variable_type {
 
     expect inputs_any_type: unless output?, accepted?
     expect defined_any_type: when defined?, accepted?
+
+    cover unbounded_defined: output? and unbounded? and defined? and accepted?
 }
 ```
 
-Assumptions, requirements and expectations are together called
-*constraints*. Each constraint is an [expression](Expressions.md) of type
+Assumptions, requirements, expectations and cover goals are together
+called *constraints*. Each constraint is an [expression](Expressions.md) of type
 `Bool`.
 
-The variables, constraints and instances of a component share one
-namespace, so their names must be distinct. A component's variables and
+The variables, constraints (cover goals among them) and instances of a
+component share one namespace, so their names must be distinct. A component's variables and
 instances may [shadow](#shadowing) the constants, functions and variants of
 its module, explicitly. Members may appear in any order; a variable may be
 mentioned before its declaration. A component may have no members at all.
@@ -191,6 +201,8 @@ pub comp shadowing {
     expect implicit: when hides? and not bang?, not accepted?
     expect needless: when bang? and not hides?, not accepted?
     expect own_function: when own_function?, accepted? iff not bang?
+
+    cover explicit_accepted: hides? and bang? and accepted?
 }
 ```
 
@@ -212,6 +224,37 @@ cope. So instance variables are treated like inputs, constrained by `I(i, y)
 = ⋀ I_w`, and the requirements become `R(i, y, o)`. The instantiated
 component's assumptions become obligations on the bindings, which the
 [instance check](../Check.md#instance-assumptions) confirms.
+
+## Cover goals
+
+Every other constraint says what must hold in *every* behaviour. A cover
+goal says what must hold in *some*: `cover n: e` claims that some
+behaviour that meets the component satisfies `e`. It catches a component
+that is over-constrained in a way that the [vacuity
+check](../Check.md#vacuity) does not see: one that allows some
+behaviours, and whose triggers can each hold, but that rules out a
+particular scenario that should be possible.
+
+```text
+comp heater {
+    in temp: Int
+    pub out alarm?
+
+    req r: alarm? iff temp > 100
+
+    cover overheat: temp > 100 and alarm?
+}
+```
+
+A cover goal may mention what an expectation may (see [Instance
+variables](Instances.md#instance-variables)). It constrains nothing: it
+is not part of the component's [meaning](#meaning), of an instance's
+constraint `I_w`, or of an implementation's obligation. It is checked
+only in its own component, not where the component is instantiated: a
+goal is about the component alone. A cover goal with a
+[trigger](#triggers) holds wherever the trigger is false, so it is met by
+any behaviour in which the trigger is false; write the scenario as a
+conjunction, such as `temp > 100 and alarm?`, instead.
 
 ## Defined outputs
 
@@ -322,4 +365,6 @@ A constraint of the form `when C, D` applies only when `C` holds. `C` is its
 nested constraints are conjoined: the trigger of `when C1, unless C2, D` is
 `C1 and not C2`. A constraint with no top-level `when` or `unless` has no
 trigger. The [vacuity check](../Check.md#vacuity) confirms that the trigger
-of every requirement and expectation can hold.
+of every requirement and expectation can hold. A cover goal's trigger is
+not checked: the [cover check](../Check.md#cover-goals) confirms the goal
+itself.

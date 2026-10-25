@@ -22,10 +22,14 @@ constraints, declared with `comp`. See [Components](Lang/Components.md).
 **Constant.** A name for a fixed value, declared with `const`. See
 [Items](Lang/Items.md#constants).
 
-**Constraint.** An assumption, requirement or expectation.
+**Constraint.** An assumption, requirement, expectation or cover goal.
 
 **Counterexample.** Values of a component's variables that satisfy the
 hypotheses of a check but not its goal. See [Checks](Check.md).
+
+**Cover goal.** A scenario that a component must allow, declared with
+`cover`: some behaviour that meets the component's assumptions and
+requirements must satisfy it. See [Components](Lang/Components.md#cover-goals).
 
 **Defined output.** An output declared with a definition, `out x: T :=
 e`, which stands for `e`. See [Components](Lang/Components.md#defined-outputs).
@@ -142,3 +146,7 @@ or not.
 
 **Widening.** Accepting a `Nat` where an `Int` is expected, the only
 conversion between types. See [Types](Lang/Types.md#natural-numbers).
+
+**Witness.** Values of a component's variables that satisfy the
+hypotheses of a check that asks whether something can hold, and its goal,
+such as a behaviour in which a cover goal holds. See [Checks](Check.md).

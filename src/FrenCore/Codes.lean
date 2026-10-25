@@ -2263,6 +2263,64 @@ testing (`fren.evidence "tested"`) relies on. Raising `--tests` can help
 where the search reaches such behaviours rarely; otherwise rely on `fren
 check` for the component.
 "# },
+  { code := "F0615", explanation := r#"A cover goal cannot be met: no behaviour that meets the component satisfies it.
+
+Erroneous code example:
+
+```fren
+comp heater {
+  in temp: Int
+  pub out alarm?
+  req r: alarm? iff temp > 100
+  cover silent_overheat: temp > 100 and not alarm?
+}
+```
+
+A cover goal states a scenario that the component must allow. Here `r`
+sounds the alarm whenever `temp > 100`, so no behaviour has a high
+temperature and a silent alarm, and the goal fails, naming the
+constraints that rule it out. Either the requirements are too strong,
+and should be weakened so that the scenario is possible, or the goal is
+wrong:
+
+```fren
+comp heater {
+  in temp: Int
+  pub out alarm?
+  req r: alarm? iff temp > 100
+  cover overheat: temp > 100 and alarm?
+}
+```
+"# },
+  { code := "F0616", args := some ["quickcheck"], explanation := r#"Testing found no behaviour in which a cover goal holds (a warning).
+
+Erroneous code example:
+
+```fren
+comp c {
+  in x: Int
+  pub out big?
+  req r: big? iff x > 1000
+  cover exact: 7 * x = 123459 and big?
+}
+```
+
+`fren quickcheck` found behaviours of the component, but in none of them
+did the goal hold: only `x = 17637` satisfies it, and the search does not
+try that value. A behaviour found would be a witness, and pass the goal,
+but none found shows nothing, so its result is inconclusive. Raise
+`--tests`, rely on `fren check`, which asks the solver, or widen the
+goal:
+
+```fren
+comp c {
+  in x: Int
+  pub out big?
+  req r: big? iff x > 1000
+  cover large: x > 2000 and big?
+}
+```
+"# },
   { code := "F0701", explanation := r#"An import that nothing uses (the lint `unused_imports`, a warning by default).
 
 Erroneous code example:

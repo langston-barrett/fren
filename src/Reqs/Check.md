@@ -1,11 +1,12 @@
 # Checks
 
-Fren checks each component six ways:
+Fren checks each component seven ways:
 
 | Check | Reported as | Confirms |
 |---|---|---|
 | [Realizability](#realizability) | `realizable` | some system can meet the requirements, for every admissible input |
 | [Expectations](#expectations) | `expect` | each expectation follows from the assumptions and requirements |
+| [Cover goals](#cover-goals) | `cover` | some behaviour that meets the assumptions and requirements satisfies each cover goal |
 | [Instance assumptions](#instance-assumptions) | `instance` | each instance's bindings satisfy the instantiated component's assumptions |
 | [Vacuity](#vacuity) | `vacuity` | the trigger of each requirement and expectation can hold |
 | [Redundancy](#redundancy) | `redundancy` | no assumption or requirement follows from the others |
@@ -73,7 +74,7 @@ pub enum Outcome { Sat, Unsat, Unknown }
 
 pub enum Verdict { Pass, Fail, Inconclusive }
 
-pub enum Kind { Realizability, Expectation, InstanceAssumption, Vacuity, Redundancy, Determinism, Definedness }
+pub enum Kind { Realizability, Expectation, Cover, InstanceAssumption, Vacuity, Redundancy, Determinism, Definedness }
 
 use self::Outcome::{Sat, Unknown, Unsat}
 use self::Verdict::{Fail, Inconclusive, Pass}
@@ -245,6 +246,55 @@ pub comp expectation {
 }
 ```
 
+## Cover goals
+
+A [cover goal](Lang/Components.md#cover-goals) `cover n: e` claims that
+some behaviour meets the component and satisfies `e`: that
+
+  A ∧ I ∧ R ∧ e
+
+is satisfiable, with `D` among the hypotheses. Fren asks whether `not e`
+can be proved from `A`, `I` and `R`. A model is a *witness*: a behaviour
+that meets the component, in which the goal holds, and the goal passes.
+If `not e` is proved, no behaviour meets the goal, and it fails
+(`F0615`): Fren
+reports a minimal set of assumptions and requirements that rule it out,
+as for [vacuity](#vacuity). If `A ∧ I ∧ R` is unsatisfiable, every cover
+goal fails, with the realizability check.
+
+So a cover goal is the converse of an expectation: an expectation holds if
+its negation is impossible, a cover goal if it is possible. And the
+vacuity check of a requirement or expectation with the trigger `C` is the
+cover goal `C`, with the same query. A cover goal is checked only in its
+own component: an instance of the component does not check it again.
+
+`check::cover_goal` gives the verdict and what is reported, from the outcome
+`q` of the query:
+
+```fren
+pub comp cover_goal {
+    in q: Outcome          -- can `not e` be proved from A, I and R?
+    pub det out verdict: Verdict
+    pub det out reports_witness?  -- report the model, in which the goal holds
+    pub det out reports_core?     -- report the constraints that rule the goal out
+
+    req met: when q = Sat, verdict = Pass
+    req unmet: when q = Unsat, verdict = Fail
+    req unknown: when q = Unknown, verdict = Inconclusive
+    req report_witness: reports_witness? iff q = Sat
+    req report_core: reports_core? iff q = Unsat
+
+    expect pass_shows: when verdict = Pass, reports_witness?
+    expect fail_explains: when verdict = Fail, reports_core?
+}
+```
+
+### Query order
+
+The query asks for a model, so a pass needs only the one query. The
+minimal set is sought, by [deletion](#minimal-sets), only when the query
+returns `Unsat`: its queries ask for no model.
+
 ## Global expectations
 
 For a global expectation with binders `w_1: c_1`, ..., `w_n: c_n` and body
@@ -370,7 +420,7 @@ hypotheses of where it is written:
 | Where | Hypotheses |
 |---|---|
 | an assumption | the other assumptions |
-| a requirement, expectation or definition | `A`, `I` and `R`, as for vacuity |
+| a requirement, expectation, cover goal or definition | `A`, `I` and `R`, as for vacuity |
 | a binding of an instance | `A`, and the instances declared before it |
 | a global expectation | the meanings of its binders' components |
 
@@ -501,6 +551,7 @@ that of the member's checks, which takes precedence:
 | Before | Its checks |
 |---|---|
 | an expectation | the expectation, its vacuity and its definedness |
+| a cover goal | the cover goal and its definedness |
 | an instance | the instance's assumptions, and the definedness of its bindings |
 | a `det out` | its determinism |
 | a component | all of the component's checks |
@@ -529,7 +580,12 @@ not refute, and definedness, since an index out of range has no value
 that the evaluator knows (see [Evaluation](Eval.md#searching-for-behaviours)),
 so testing can neither pass nor fail it. A test that reaches
 an expectation shows that its trigger can hold, which is what its vacuity
-check would show. The summary counts the passes that came from testing:
+check would show. A cover goal asks whether something can hold too, but
+testing can pass it: a test that finds a behaviour that meets the
+component, in which the goal holds, is a witness, and passes it. Testing
+that finds none leaves the goal inconclusive, with a warning (`F0616`),
+since a failed search does not show that no behaviour exists; it never
+fails a goal. The summary counts the passes that came from testing:
 
 ```text
 fren: 30 passed (2 by testing), 0 failed, 0 inconclusive, 0 redundant
@@ -571,6 +627,7 @@ refine instance_assumption_proves: instance_assumption refines proved
 refine definedness_proves: definedness refines proved
 refine determinism_proves: determinism refines proved
 refine vacuity_witnesses: non_vacuity refines satisfiable
+refine cover_witnesses: cover_goal refines satisfiable
 refine redundancy_witnesses: non_redundancy refines satisfiable
 
 #fren_check

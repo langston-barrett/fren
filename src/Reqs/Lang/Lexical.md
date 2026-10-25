@@ -220,7 +220,7 @@ pub comp reserved_word {
 
     req rule: reserved? iff lexeme in RESERVED
 
-    expect contextual: when lexeme = "when" or lexeme = "req" or lexeme = "out", not reserved?
+    expect contextual: when lexeme = "when" or lexeme = "req" or lexeme = "cover" or lexeme = "out", not reserved?
     expect membership: when lexeme = "in", reserved?
     expect pattern_test: when lexeme = "is", reserved?
     expect record_update: when lexeme = "with", reserved?
@@ -233,7 +233,7 @@ have special meaning at the start of a construct, and are otherwise
 ordinary identifiers:
 
 ```
-when  unless  not  true  false  det  out  assume  req  inst
+when  unless  not  true  false  det  out  assume  req  cover  inst
 ```
 
 `true` and `false` are the exception: they are the literals of type

@@ -60,6 +60,7 @@ member         := "in" variable
                 | "assume" IDENT ":" expr
                 | "req" IDENT ":" expr
                 | "expect" IDENT ":" expr
+                | "cover" IDENT ":" expr
                 | instance
                 | use
                 | evidence-setting "in" member

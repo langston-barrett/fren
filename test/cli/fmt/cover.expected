@@ -1,0 +1,6 @@
+--- test/cli/fmt/cover.fren
++++ test/cli/fmt/cover.fren
+@@ -3 +3 @@
+-comp heater { in temp: Int pub out alarm? req r: alarm? iff temp > 100 cover overheat: temp>100 and alarm? }
++comp heater { in temp: Int pub out alarm? req r: alarm? iff temp > 100 cover overheat: temp > 100 and alarm? }
+exit=1

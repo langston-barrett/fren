@@ -689,6 +689,10 @@ pub comp match_arms {
 
     expect exhaustive: when accepted? and not wildcard?, covered = variants
     expect wildcard_reachable: when accepted? and wildcard?, (variants minus covered) != {}
+
+    cover wildcard_accepted: wildcard? and accepted?
+    cover exhaustive_accepted: not wildcard? and accepted?
+    cover repeat_rejected: n_repeated > 0 and not accepted?
 }
 ```
 

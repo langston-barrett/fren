@@ -54,7 +54,7 @@ pub comp bad { in x? pub out y? req r: y? iff x? }
 /--
 error: `fren.evidence` cannot be set for a requirement
 
-note: it can be set before a component, an expectation or global expectation, an instance or a `det out`
+note: it can be set before a component, an expectation or global expectation, a cover goal, an instance or a `det out`
 -/
 #guard_msgs in
 pub comp misplaced {

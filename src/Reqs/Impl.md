@@ -75,7 +75,8 @@ variables, and `d⃗` are `default` values for them, which the assumptions
 never mention. When there are no private outputs or instances, as in the
 example, the obligation is `∀ binders, c.assumes v⃗ → c.reqs v⃗`. So an
 implementation meets the component for every input that the component's
-assumptions allow. Expectations are not part of the obligation.
+assumptions allow. Expectations and [cover
+goals](Lang/Components.md#cover-goals) are not part of the obligation.
 
 `impls::mapping` states which variables must be given terms. `Role` is the
 classification from [Instances](Lang/Instances.md#instance-variables):

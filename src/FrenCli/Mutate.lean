@@ -379,7 +379,8 @@ where
     | .comp _ n members _ =>
       let c := Name.str module n.name
       members.flatMap fun
-        | .prop kind p e => if kind == .expect then #[] else #[(.str c p.name, some c, e)]
+        -- Expectations and cover goals are what rejects mutants, so they are not mutated.
+        | .prop kind p e => if kind == .expect || kind == .cover then #[] else #[(.str c p.name, some c, e)]
         -- By the names they declare, without the `!` of shadowing.
         | .var _ _ _ x _ (some d) => #[(.str c (declared x), some c, d)]
         | .inst i _ bs => bs.filterMap fun (_, e?) => e?.map (.str c (declared i), some c, ·)

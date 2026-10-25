@@ -63,6 +63,7 @@ structure GComp where
   assumes : Array (String × String) := #[]
   reqs : Array (String × String) := #[]
   expects : Array (String × String) := #[]
+  covers : Array (String × String) := #[]
   deriving Inhabited
 
 def pick (xs : Array α) [Inhabited α] : R α := do return xs[← below xs.size]!
@@ -291,7 +292,9 @@ def genComp (idx : Nat) (prev : Array GComp) (useEnum useAbs : Bool) (nVariants 
   for k in [0:(← below 3) + 1] do reqs := reqs.push (s!"r{k}", ← genConstraint all all)
   let mut expects := #[]
   for k in [0:← below 3] do expects := expects.push (s!"x{k}", ← genConstraint all all)
-  return { name := s!"c{idx}", vars, inst?, assumes, reqs, expects }
+  let mut covers := #[]
+  for k in [0:← below 3] do covers := covers.push (s!"g{k}", ← genBool all 1)
+  return { name := s!"c{idx}", vars, inst?, assumes, reqs, expects, covers }
 
 structure GSpec where
   text : String
@@ -325,6 +328,7 @@ def genSpec : R GSpec := do
     for (n, e) in c.assumes do out := out ++ s!"    assume {n}: {e}\n"
     for (n, e) in c.reqs do out := out ++ s!"    req {n}: {e}\n"
     for (n, e) in c.expects do out := out ++ s!"    expect {n}: {e}\n"
+    for (n, e) in c.covers do out := out ++ s!"    cover {n}: {e}\n"
     out := out ++ "}\n"
   -- A global expectation over two behaviours of one comp.
   if ← chance 40 then
@@ -424,6 +428,7 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
   let as := c.ofKind .assume
   let rs := c.ofKind .req
   let es := c.ofKind .expect
+  let gs := c.ofKind .cover
   let A := as.map (atom ·)
   let R := rs.map (atom ·)
   let Iw := sp.insts c
@@ -433,7 +438,8 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
     { o with verdicts := o.verdicts.push ((k, p, t), v) }
   let pass (b : Bool) : Verdict := if b then .pass else .fail
   let MF := Is.map fun I => (I, models sp size I order full)
-  let constraintsWithTrig := (c.constraints.filter (·.kind != .assume)).filterMap fun p => p.e.trigger?.map (p, ·)
+  let constraintsWithTrig := (c.constraints.filter fun p => p.kind == .req || p.kind == .expect).filterMap fun p =>
+    p.e.trigger?.map (p, ·)
   -- Definedness, of each index by its position: in every model of `ms`,
   -- its goal holds.
   let defined (o : Oracle) (p : Name) (e : Ex) (ms : Array (Interp × Array Env)) : Oracle :=
@@ -473,9 +479,12 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
   for a in as, k in [0:as.size] do
     let others := (A.extract 0 k) ++ A.extract (k + 1)
     out := defined out a.name a.e (Is.map fun I => (I, models sp size I ownIns others))
-  for p in rs ++ es do out := defined out p.name p.e MF
+  for p in rs ++ es ++ gs do out := defined out p.name p.e MF
   for e in es do
     out := put out .expect (some e.name) (pass (MF.all fun (I, ms) => ms.all (holds I · (atom e))))
+  -- A cover goal: some behaviour satisfies it (`check::cover_goal`).
+  for g in gs do
+    out := put out .cover (some g.name) (pass (MF.any fun (I, ms) => ms.any (holds I · (atom g))))
   let mut vacuous : Array Name := #[]
   for (p, t) in constraintsWithTrig do
     let ok := MF.any fun (I, ms) => ms.any (holds I · (atom p t))
@@ -507,7 +516,7 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
 /-- The atoms named `names` among the hypotheses of `c`: assumptions,
 requirements and instances. -/
 def named (sp : Spec) (c : Comp) (names : Array Name) : Array Atom :=
-  (c.constraints.filter (fun p => p.kind != .expect && names.contains p.name)).map
+  (c.constraints.filter (fun p => (p.kind == .assume || p.kind == .req) && names.contains p.name)).map
     (fun p => { label := p.name, pfx := .anonymous, e := p.e })
   ++ (c.insts.filter (names.contains ·.name)).flatMap (sp.instAtoms .anonymous)
 
@@ -551,7 +560,8 @@ def checkDetail (st : LState) (c : Comp) (r : CheckResult) : Option String := Id
       return some s!"on the input {input}, outputs satisfy {core}"
   | .vacuous core =>
     let some p := prop? | return none
-    let some t := p.e.trigger? | return none
+    -- A cover goal's core rules out the goal itself.
+    let some t := if r.kind == .cover then some p.e else p.e.trigger? | return none
     if some_ (named sp c core |>.push (atomOf p t)) then return some s!"{core} do not rule out the trigger"
   | .redundant core =>
     let some p := prop? | return none
@@ -563,6 +573,11 @@ def checkDetail (st : LState) (c : Comp) (r : CheckResult) : Option String := Id
       let hyps := if c.isGlobal then sp.insts c else sp.meaning c
       unless some_ (hyps.push (atomOf p (.not p.e))) env do
         return some s!"the counterexample {shown} is not a behaviour in which it is false"
+  | .witness shown =>
+    let some env := pinned st c flat shown | return some s!"cannot read the witness {shown}"
+    let some p := prop? | return none
+    unless some_ (sp.meaning c |>.push (atomOf p)) env do
+      return some s!"the witness {shown} is not a behaviour in which the goal holds"
   | .nondeterministic input v₁ v₂ =>
     let some env := pinned st c flat input | return some s!"cannot read the input {input}"
     let some x := r.prop? | return none
@@ -633,7 +648,8 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
       | none =>
         let ignored := r.kind == .redundancy && (r.prop?.any isRange || o.notAsked.contains (r.prop?.getD .anonymous))
         unless ignored do found := found.push s!"{c.path}: {showKey (keyOf r)}: no such check by brute force"
-      if r.verdict == .fail then
+      -- A failure's details, and a cover goal's witness.
+      if r.verdict == .fail || (r.kind == .cover && r.verdict == .pass) then
         if let some why := checkDetail lst ec r then
           found := found.push s!"{c.path}: {showKey (keyOf r)}: wrong details: {why}"
     for (k, _) in o.verdicts do

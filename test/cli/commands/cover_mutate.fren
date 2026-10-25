@@ -1,0 +1,14 @@
+--@ args: mutate
+-- A cover goal kills the mutants that rule its scenario out, such as
+-- `temp > 100` changed to `temp > 101`, which no expectation notices, and
+-- the expectations kill the others: every mutant is killed.
+comp heater {
+    in temp: Int
+    pub out alarm?
+
+    req r: alarm? iff temp > 100
+
+    expect hot: when temp > 200, alarm?
+    expect cold: when temp <= 100, not alarm?
+    cover edge: temp = 101 and alarm?
+}

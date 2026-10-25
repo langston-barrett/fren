@@ -8,8 +8,9 @@ fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--sample 
 `fren mutate` makes small changes to a spec's constraints and definitions,
 checks each changed spec, a *mutant*, and reports the mutants that no
 check rejects. A surviving mutant points at something that the
-expectations, refinements and instance assumptions do not pin down: either
-the spec says less than intended, or an expectation is missing. This is a
+expectations, cover goals, refinements and instance assumptions do not
+pin down: either the spec says less than intended, or an expectation or a
+cover goal is missing. This is a
 cousin of the [vacuity](Check.md#vacuity) and
 [redundancy](Check.md#redundancy) checks, for whole specs. With
 `--by both`, mutants that the solver's checks reject but that
@@ -58,8 +59,11 @@ by its name alone, in any of the files.
 
 Mutants change what a spec asserts: the expressions of `assume`s, `req`s,
 defined outputs, instance bindings, constants and defined functions. The
-expectations, both of components and [global](Lang/Global.md), are what
-rejects mutants, and their text is not changed. But an expectation that
+expectations, both of components and [global](Lang/Global.md), and the
+[cover goals](Lang/Components.md#cover-goals) are what rejects mutants,
+and their text is not changed. An expectation rejects a mutant that
+weakens what the spec says, and a cover goal one that strengthens it: a
+mutant that rules out a goal's scenario fails the goal, which kills it. But an expectation that
 reads a constant or function reads the mutant's: if a requirement and an
 expectation both say `x <= LIMIT`, changing `LIMIT` moves both, and no
 check rejects it. Such a survivor says that nothing pins the constant down
