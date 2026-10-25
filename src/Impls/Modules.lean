@@ -1,5 +1,6 @@
 -- keep-sorted start
 import Impls.Check
+import Reqs.Modules
 -- keep-sorted end
 open Fren.Lang
 

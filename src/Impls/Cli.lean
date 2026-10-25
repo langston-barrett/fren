@@ -110,12 +110,6 @@ impl logic: cli::logic for (k : Fren.Core.CheckKind) (strings sets seqs proj : B
   strings_exp? := ["strings-exp", "re-inter-mode", "re-elim"].all fun o =>
     (Fren.Core.solverOptions (strings || seqs) (sets || seqs)).any (·.1 == o),
   sets_exp? := (Fren.Core.solverOptions (strings || seqs) (sets || seqs)).any (·.1 == "sets-exp"),
-} by
-  intro k strings sets seqs proj h
-  cases k <;> cases strings <;> cases sets <;> cases seqs <;> cases proj <;>
-    simp [fren_spec, theories, Fren.Core.logic, Fren.Core.solverOptions, toLogic, toCheckKind, Fren.FinSet.ext_iff] at h ⊢
-  all_goals first
-    | exact ⟨.Strings, fun h => absurd rfl h⟩ | exact ⟨.Sets, fun h => absurd rfl h⟩
-    | exact ⟨.Sequences, fun h => absurd rfl h⟩ | skip
+}
 
 end Fren.Impls

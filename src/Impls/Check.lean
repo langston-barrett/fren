@@ -1,20 +1,9 @@
--- `Reqs`'s modules rather than `Reqs`, which imports only them: importing
--- it would wait for its own build too, on the build's critical path.
+-- Only the requirements that it implements: each module of Impls imports
+-- those of its own, so that it waits only for them, not for every module of
+-- Reqs.
 -- keep-sorted start
 import Fren
 import Reqs.Check
-import Reqs.Cli
-import Reqs.Eval
-import Reqs.Fmt
-import Reqs.Impl
-import Reqs.Inst
-import Reqs.Lang
-import Reqs.Lint
-import Reqs.Modules
-import Reqs.Mutate
-import Reqs.Refine
-import Reqs.Trace
-import Reqs.View
 -- keep-sorted end
 open Fren.Lang
 

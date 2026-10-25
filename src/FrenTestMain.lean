@@ -422,6 +422,65 @@ def fixing : IO (Array String) := do
     failures := failures.push s!"`fren fix --check` reports a fixed file (exit {code}):\n{out}"
   return failures
 
+/-! ## Libraries
+
+Some modules copy a list of imports, or are placed in a library by what
+they read, so that the build is faster (`lakefile.lean`); nothing else
+would notice if those drifted. -/
+
+/-- Modules that import a root module's modules rather than the root, which
+would wait for its own build too: each must import exactly the root's. -/
+def rootCopies : List (String × List String) :=
+  [("Fren", ["Reqs.Check", "Reqs.Inst", "Reqs.Lang", "Reqs.Modules"])]
+
+/-- The libraries of Reqs that need only some of its specs, as module and
+the specs, relative to `src/Reqs`, that it may read. -/
+def specsRead : List (List String × (String → Bool)) :=
+  [(["Reqs.Check", "Reqs.Cli", "Reqs.Eval", "Reqs.Fmt", "Reqs.Impl", "Reqs.Mutate", "Reqs.Trace", "Reqs.View"],
+      fun p => !p.contains '/'),
+    (["Reqs.Inst", "Reqs.Lang", "Reqs.Modules", "Reqs.Refine"], (·.startsWith "Lang/")),
+    (["Reqs.Lint"], fun p => p == "Lint.md" || p.startsWith "Lint/")]
+
+/-- The modules of Impls whose library needs the tests. -/
+def testReaders : List String := ["src/Impls.lean", "src/Impls/Lint.lean", "src/Impls/Trace.lean"]
+
+/-- The source file of module `m`. -/
+def sourceOf (m : String) : System.FilePath := "src" / ((m.replace "." "/") ++ ".lean")
+
+/-- The modules that `m` imports. -/
+def importsOf (m : String) : IO (Array String) := do
+  let path := sourceOf m
+  let header ← Lean.parseImports' (← IO.FS.readFile path) path.toString
+  return header.imports.map (·.module.toString)
+
+/-- The files that the `#fren_md` commands of the source `src` read. -/
+def specsOf (src : String) : Array String :=
+  (src.splitOn "\n").toArray.filterMap fun line =>
+    if line.startsWith "#fren_md \"" then (line.drop 10).takeWhile (· != '"') |>.toString else none
+
+/-- Each copy of a root's imports is the root's; each module of Reqs reads
+only the specs that its library needs; and only modules whose library
+needs the tests make `tested` claims. -/
+def libraries : IO (Array String) := do
+  let mut failures := #[]
+  for (root, copies) in rootCopies do
+    let ofRoot (ms : Array String) := (ms.filter (·.startsWith s!"{root}.")).qsort (· < ·)
+    let want := ofRoot (← importsOf root)
+    for m in copies do
+      let got := ofRoot (← importsOf m)
+      if got != want then
+        failures := failures.push s!"{sourceOf m}: imports {got.toList} of `{root}`'s modules, not `{root}`'s {want.toList}"
+  for (mods, ok) in specsRead do
+    for m in mods do
+      for spec in specsOf (← IO.FS.readFile (sourceOf m)) do
+        unless ok spec do
+          failures := failures.push s!"{sourceOf m}: reads `{spec}`, which its library in `lakefile.lean` does not need"
+  for f in (← System.FilePath.walkDir "src/Impls").push "src/Impls.lean" do
+    if f.extension != some "lean" || testReaders.contains f.toString then continue
+    if (← IO.FS.readFile f).splitOn "\n" |>.any (·.startsWith "tested ") then
+      failures := failures.push s!"{f}: makes a `tested` claim, but its library in `lakefile.lean` does not need the tests"
+  return failures
+
 /-! ## Mutants
 
 The properties of `fren mutate`'s mutants (`Reqs/dev/Testing`), over the
@@ -628,7 +687,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"]]
+    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"]]
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
 
 /-- Runs a job in this process. -/
@@ -646,6 +705,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     | none => throw (IO.userError s!"unknown corpus `{name}`")
   | ["formatting"] => formatting
   | ["fixing"] => fixing
+  | ["libraries"] => libraries
   | ["mutation", group, slice, slices] => do
     -- A slice out of range would check nothing, and pass.
     match (group.toNat?.bind ((← mutationCorpus)[·]?)), slice.toNat?, slices.toNat? with
