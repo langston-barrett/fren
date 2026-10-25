@@ -144,7 +144,9 @@ where
   termination_by src.size - j
 
 /-- The value of an integer literal, as Lean decodes it: `none` for what
-Lean cannot decode, which `integerLiteral` should already have rejected. -/
+Lean cannot decode. Every lexeme that `integerLiteral` accepts should
+decode, but nothing proves it (#14), so both front ends check this too, as
+a guard. -/
 def integerValue? (s : String) : Option Nat := Lean.Syntax.decodeNatLitVal? s
 
 /-- A number that Lean's lexer reads, but that is not an integer literal. -/
@@ -159,8 +161,10 @@ def malformedIntegerMsg (s : String) : Msg :=
     -- `0_1` without the `_`s after its `0`, as `01`, which Lean decodes.
     fixes := match s.toList with
       | '0' :: '_' :: rest =>
-        let fixed := String.ofList ('0' :: rest.dropWhile (· == '_'))
-        if integerLiteral fixed then #[{ msg := s!"write `{fixed}`", replacement := fixed }] else #[]
+        -- Only with digits left, or the `0` could join what follows, as in `0_xFF`.
+        let digits := rest.dropWhile (· == '_')
+        let fixed := String.ofList ('0' :: digits)
+        if !digits.isEmpty && integerLiteral fixed then #[{ msg := s!"write `{fixed}`", replacement := fixed }] else #[]
       | _ => #[] }
 
 /-- An identifier that Lean reads, but that is not one of Fren's. -/

@@ -1,0 +1,3 @@
+-- `0_` before what would continue a number, as in `0_xFF`: no fix is
+-- offered, since `0` would join with `xFF` (F0120).
+const MASK: Int := 0_xFF

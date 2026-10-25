@@ -282,12 +282,12 @@ pub comp variant_mention {
 }
 ```
 
-As for a function,
-`lang::application` gives whether the application is accepted, where the
-parameters are the payload's types. Unlike a function's value, a
-variant's value is fixed: building one is not an application for the
-rules of [linear arithmetic](#linear-arithmetic) or of constants, and its
-arguments may mention any variable that its place allows.
+As for a function, `lang::application` gives whether the application is
+accepted, where the parameters are the payload's types. Unlike a
+function's value, a variant's value is fixed: building one is not an
+application for the rules of [linear arithmetic](#linear-arithmetic) or of
+constants, and its arguments may mention any variable that its place
+allows.
 
 ## Matches
 

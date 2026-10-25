@@ -190,7 +190,13 @@ otherwise over decimal digits and `_`s. So `0b12` is `0b1` then `2`, and
 scientific literals, so in `1.5` and `1e3` the number is `1`, where Lean
 would read on. `lang::integer_literal` states
 which lexemes are integer literals. Lean reads `0_1` as a number but
-cannot give its value, so it is not one:
+cannot give its value, so it is not one.
+
+As for identifiers, the two front ends report most malformed numbers
+differently. Lean's own parser rejects `1_`, `0x` and `0b2` before the
+Lean front end sees them, so only `0_1` and its like reach Fren's rule
+there, while the `fren` command reports all of them as not integer
+literals:
 
 ```fren
 pub comp integer_literal {
