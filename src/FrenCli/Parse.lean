@@ -57,6 +57,9 @@ inductive Expr where
   | app (span : Span) (fn : Array Ident) (args : Array Expr)
   /-- `R { x := e, y }`, a record literal; a field without `:= e` is `none`. -/
   | record (span : Span) (ty : Array Ident) (fields : Array (Ident × Option Expr))
+  /-- `{ r with x := e, y }`, a record update; a field without `:= e` is
+  `none`. -/
+  | update (span : Span) (base : Expr) (fields : Array (Ident × Option Expr))
   /-- `e.x`, for `e` other than a name: a name's fields are part of its
   (dotted) identifier. -/
   | field (span : Span) (e : Expr) (field : Ident)
@@ -84,8 +87,8 @@ inductive Expr where
 
 def Expr.span : Expr → Span
   | .when s .. | .ite s .. | .bin s .. | .not s .. | .neg s .. | .num s .. | .bool s .. | .path s .. | .app s ..
-  | .record s .. | .field s .. | .match s .. | .is s .. | .str s .. | .method s .. | .set s .. | .pair s .. | .seq s .. | .index s ..
-  | .chain s .. => s
+  | .record s .. | .update s .. | .field s .. | .match s .. | .is s .. | .str s .. | .method s .. | .set s .. | .pair s ..
+  | .seq s .. | .index s .. | .chain s .. => s
 
 inductive PropKind where
   | assume
@@ -470,6 +473,22 @@ partial def indexArg : P Expr := do
   let i ← withRecords expr
   discard (expectKw "]")
   return i
+/-- The fields of a record literal or update (`what`), up to its `}`: `x
+:= e` or `x`, separated by commas. -/
+partial def fieldInits (what : String) : P (Array (Ident × Option Expr)) := do
+  let mut fs := #[]
+  repeat
+    if isKw (← peek) "}" then break
+    markStart
+    let f ← ident
+    if let some eq ← eatKw "=" then
+      err eq.span "F0104" s!"expected `:=` in {what}, found `=`" (some "expected `:=`")
+        #["note: `=` is equality; a field is given as `x := e`"] #[{ msg := "use `:=`", replacement := ":=" }]
+    -- Below `when`, which would swallow the following fields.
+    let e ← if (← eatKw ":=").isSome then some <$> withRecords iff else pure none
+    fs := fs.push (f, e)
+    if (← eatKw ",").isNone then break
+  return fs
 partial def atom : P Expr := do
   let t ← peek
   match t.tok with
@@ -501,18 +520,7 @@ partial def atom : P Expr := do
     if isKw (← peek) "{" && !(← get).noRecord then
       markList
       discard bump
-      let mut fs := #[]
-      repeat
-        if isKw (← peek) "}" then break
-        markStart
-        let f ← ident
-        if let some eq ← eatKw "=" then
-          err eq.span "F0104" "expected `:=` in a record literal, found `=`" (some "expected `:=`")
-            #["note: `=` is equality; a field is given as `x := e`"] #[{ msg := "use `:=`", replacement := ":=" }]
-        -- Below `when`, which would swallow the following fields.
-        let e ← if (← eatKw ":=").isSome then some <$> withRecords iff else pure none
-        fs := fs.push (f, e)
-        if (← eatKw ",").isNone then break
+      let fs ← fieldInits "a record literal"
       discard (expectKw "}")
       return ← fieldReads callArgs indexArg (.record (← spanFrom start) segs fs)
     unless isKw (← peek) "(" do return ← fieldReads callArgs indexArg (.path (start.to segs.back!.span) segs)
@@ -542,15 +550,26 @@ partial def atom : P Expr := do
     discard (expectKw "}")
     fieldReads callArgs indexArg (.match (← spanFrom t.span) scrutinee arms)
   | .kw "{" =>
-    -- A set literal.
+    -- A set literal, or a record update if `with` follows the first
+    -- expression.
     markList
-    modify fun s => { s with layout.sets := s.layout.sets.push s.pos }
+    let brace := (← get).pos
+    modify fun s => { s with layout.sets := s.layout.sets.push brace }
     discard bump
     let mut es := #[]
     repeat
       if isKw (← peek) "}" then break
       markStart
       es := es.push (← withRecords iff)
+      if es.size == 1 && isKw (← peek) "with" then
+        -- An update's braces are spaced as a record literal's.
+        modify fun s => { s with layout.sets := s.layout.sets.filter (· != brace) }
+        discard bump
+        -- At least one field.
+        if isKw (← peek) "}" then fail (← peek) "a name"
+        let fs ← fieldInits "a record update"
+        discard (expectKw "}")
+        return ← fieldReads callArgs indexArg (.update (← spanFrom t.span) es[0]! fs)
       if (← eatKw ",").isNone then break
     discard (expectKw "}")
     fieldReads callArgs indexArg (.set (← spanFrom t.span) es)

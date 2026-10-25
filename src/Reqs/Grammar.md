@@ -96,6 +96,7 @@ atom           := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | 
                 | IDENT ("." IDENT)+ "(" expr ("," expr)* ")"
                 | "match" expr "{" arm ("," arm)* [","] "}"
                 | "{" [element ("," element)* [","]] "}"
+                | "{" expr "with" field-init ("," field-init)* [","] "}"
                 | "[" [expr ("," expr)* [","]] "]"
                 | atom "[" expr "]"
 element        := expr | pair

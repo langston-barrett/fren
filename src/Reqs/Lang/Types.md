@@ -322,10 +322,10 @@ wherever an expression must synthesize its type.
 Where an expression is written decides whether it is checked:
 
 - **Declared.** It is checked against a type that is declared: a binding
-  of an instance or of a refinement, a field of a record literal, an
-  argument of a function application, a variant's payload, an argument of
-  a sequence's method, a defined output's definition, and a constant's
-  value.
+  of an instance or of a refinement, a field of a record literal or of a
+  record update, an argument of a function application, a variant's
+  payload, an argument of a sequence's method, a defined output's
+  definition, and a constant's value.
 - **Shared.** Its type follows from that of the expression it is a part
   of, and from that of the expression's other such parts. It is checked if
   that expression is, or if one of those parts synthesizes its type. These
@@ -340,8 +340,9 @@ Where an expression is written decides whether it is checked:
   `=`, `!=` and `subset`, and the right of `in`.
 - **Synthesized.** Anywhere else, as the left of `in`, an operand of
   `join`, an argument of a method of anything but a sequence, as in
-  `r.image({})`, a receiver, the scrutinee of a `match` or of `e is P`, and
-  the sequence that is indexed, it synthesizes its type.
+  `r.image({})`, a receiver, the scrutinee of a `match` or of `e is P`,
+  the sequence that is indexed, and the updated value of a record update,
+  it synthesizes its type.
 
 `lang::checked` states this, from where an expression is written, whether
 the expression it is a part of is checked, and whether one of the parts

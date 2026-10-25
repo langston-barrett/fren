@@ -1,0 +1,15 @@
+--- test/cli/fmt/update.fren
++++ test/cli/fmt/update.fren
+@@ -9,3 +9,3 @@
+-    req a: q = {p with x:=1,y}
+-    req b: r = {  p   with
+-    x := 2
++    req a: q = { p with x := 1, y }
++    req b: r = { p with
++        x := 2,
+@@ -15,2 +15,2 @@
+-    p with x := 3 }
+-    req u: r = { p with y := 4, }
++        p with x := 3 }
++    req u: r = { p with y := 4 }
+exit=1

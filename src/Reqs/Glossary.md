@@ -107,6 +107,10 @@ every admissible input. See [Checks](Check.md#realizability).
 **Record.** A type whose values each have a value for each of its named
 fields, declared with `struct`. See [Items](Lang/Items.md#records).
 
+**Record update.** An expression `{ r with x := e }`: the value of `r`'s
+record with `e` for `x` and `r`'s values for its other fields. See
+[Expressions](Lang/Expressions.md#record-updates).
+
 **Redundant.** Of an assumption or requirement: following from the
 component's other constraints. See [Checks](Check.md#redundancy).
 

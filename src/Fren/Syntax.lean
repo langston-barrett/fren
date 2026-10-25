@@ -162,6 +162,11 @@ syntax fren_binding := frenIdent (" := " fren_expr:20)?
 that a `match`'s scrutinee, parsed at `max`, never tries it: `match s {`
 starts the arms. -/
 scoped syntax:arg (name := recordExpr) fren_path " { " sepBy1(fren_binding, ", ", ", ", allowTrailingSep) " }" : fren_expr
+/-- `{ r with x := e, y }`, a record update. Like a set literal, it starts
+with `{`; `with` after the first expression makes it an update. `with` is
+one of Lean's keywords, so it is never a name. -/
+scoped syntax:max (name := updateExpr) "{ " fren_expr:20 " with " sepBy1(fren_binding, ", ", ", ", allowTrailingSep) " }" :
+  fren_expr
 /-- `e.x`, reading a field of `e`, an atom that ends in `)` or `}`: after a
 name, `.x` is part of the (dotted) identifier. -/
 scoped syntax:max (name := fieldExpr) fren_expr:arg noWs "." noWs frenIdent : fren_expr

@@ -20,8 +20,9 @@ inductive MentionKind where
   | definedOutput
   /-- A binder of a `match` arm, whose part is its scrutinee. -/
   | binder
-  /-- A variant with a payload or a record literal, whose parts are its
-  arguments or fields. -/
+  /-- A variant with a payload, a record literal or a record update, whose
+  parts are its arguments, its fields, or its updated value and new
+  values. -/
   | construction
   /-- A method call, whose parts are its receiver and arguments. -/
   | method

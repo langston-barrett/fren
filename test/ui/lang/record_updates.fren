@@ -1,0 +1,111 @@
+-- Record updates, `{ r with x := e }`, in both front ends.
+
+pub struct Point { x: Int, y: Int }
+
+pub struct State { count: Int, on?, tags: Set(Bool) }
+
+comp moves {
+    in p: Point
+    in n: Int
+    pub det out q: Point
+    pub det out y: Int
+
+    req r: q = { p with x := n }
+    req read: y = { p with x := 1 }.y
+
+    expect keeps_y: q.y = p.y
+    expect sets_x: q.x = n
+    expect as_literal: q = Point { x := n, y := p.y }
+    expect every_field: { p with y := 2, x := 1 } = Point { x := 1, y := 2 }
+    expect same: { p with x := p.x } = p
+    expect wrong: q = p  --~ error: expectation `moves::wrong` does not hold
+}
+
+-- A field alone means `x := x`; `{}` takes its field's type; the updated
+-- value may be any record-valued expression.
+comp shorthand {
+    in s: State
+    in count: Int
+    pub out t: State := { s with count, tags := {} }
+    pub out u: State := { { s with on? := true } with count := count + 1 }
+
+    expect counted: t.count = count and t.on? = s.on? and t.tags = {}
+    expect both: u.on? and u.count = count + 1 and u.tags = s.tags
+}
+
+-- The issue's nested form, with a dotted path as the updated value; an
+-- instance's variable as the updated value.
+pub struct Line { start: Point, stop: Point }
+
+comp held { in a: Point pub out b: Point := a }
+
+comp nested {
+    in l: Line
+    in n: Int
+    pub out m: Line := { l with start := { l.start with x := n } }
+    pub out k: Point := { l.stop with y := 0 }
+    inst h: held { a := l.start }
+    pub out j: Point := { h.b with y := n }
+
+    expect moved: m.start.x = n and m.start.y = l.start.y and m.stop = l.stop
+    expect cleared: k = Point { x := l.stop.x, y := 0 }
+    expect through_instance: j = Point { x := l.start.x, y := n }
+}
+
+-- A defined function whose body updates a value that is not a name, which
+-- is bound once.
+fn same_point(p: Point): Point := p
+fn moved(p: Point, n: Int): Point := { same_point(p) with x := n }
+
+comp through_function {
+    in p: Point
+    in n: Int
+    pub det out q: Point
+
+    req r: q = moved(p, n)
+
+    expect keeps_y: q.y = p.y
+    expect sets_x: q.x = n
+}
+
+-- An index in an updated value that is bound once.
+comp guarded_base {
+    in ps: Seq(Point)
+    pub det out a: Point
+    pub det out b: Point
+
+    req ra: a = { ps[0] with x := 1 }  --~ error: an index of `guarded_base::ra` may be out of range
+    req rb: b = if ps != [] then { ps[0] with x := 1 } else Point { x := 1, y := 0 }
+
+    expect sets: when ps != [], b.x = 1 and b.y = ps[0].y
+}
+
+-- An update is an atom: an operand of `=` and `not` without parentheses.
+comp atoms {
+    in s: State
+    pub det out on?
+
+    req r: on? iff not { s with on? := false }.on?
+
+    expect always_on: on?
+}
+
+-- An index within an update is guarded as anywhere else.
+comp guarded {
+    in q: Seq(Int)
+    in ps: Seq(Point)
+    in p: Point
+    pub det out a: Point
+    pub det out b: Point
+    pub det out c: Point
+
+    req ra: a = if q != [] then { p with x := q[0] } else p
+    req rb: b = { p with x := q[0] }  --~ error: an index of `guarded::rb` may be out of range
+    req rc: c = { ps[0] with x := 1, y := 2 }  --~ error: an index of `guarded::rc` may be out of range
+
+    expect sets: when q != [], a.x = q[0]
+    expect every_field: c = Point { x := 1, y := 2 }
+}
+
+--@ summary: 48 passed, 4 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

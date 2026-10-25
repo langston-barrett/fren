@@ -188,7 +188,7 @@ not formatted, and those that `fren fmt` cannot parse, such as tests of
 syntax errors and of Lean code, and the examples of Markdown specs. -/
 def fmtIgnore : List String :=
   ["test/cli/syntax/*.fren", "test/cli/names/f0216_member_option.fren", "test/cli/fix/*.fren", "test/cli/fmt/check.fren",
-   "test/cli/fmt/chain_error.fren", "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/shadow.fren",
+   "test/cli/fmt/chain_error.fren", "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren", "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
    -- `#fren_md` in a block, which only the Lean front end reads.
    "src/FrenTest/chapters/LiterateOuter.md", "src/FrenTest/chapters/LiterateReader.md",
@@ -436,6 +436,7 @@ partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e :
     | .neg _ e => s!"(- {go e})"
     | .app _ fn as => s!"(app {fn.map (·.name)} {list as})"
     | .record _ ty fs => s!"(record {ty.map (·.name)} {fs.toList.map fun (x, e?) => (x.name, e?.map go)})"
+    | .update _ r fs => s!"(update {go r} {fs.toList.map fun (x, e?) => (x.name, e?.map go)})"
     | .field _ e x => s!"(field {go e} {x.name})"
     | .match _ sc arms => s!"(match {go sc} {arms.toList.map fun (p, b) => (Mutate.idText (s.text p.span), go b)})"
     | .is _ sc p => s!"(is {go sc} {Mutate.idText (s.text p.span)})"

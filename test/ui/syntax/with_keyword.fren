@@ -1,0 +1,5 @@
+-- `with` is a reserved word, so it is not a name.
+comp keyword { in x: Int pub out z? req r: z? iff with = x }
+--~^[cli] error: expected an expression, found keyword `with`
+--~^^[hosted] error: unexpected token 'with'
+--@ exit: 2

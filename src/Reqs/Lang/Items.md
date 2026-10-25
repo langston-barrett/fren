@@ -99,8 +99,10 @@ values each have an `Int` for `x` and one for `y`. A record has at least
 one field, and its fields must have distinct names. A field follows the
 [Boolean names](Types.md#boolean-names) rule: `ready?` is a `Bool` field,
 and any other field has its type written. A record is
-[built](Expressions.md#records) as `Point { x := 1, y := 2 }`, and its
-fields are read as `p.x`. Its fields are visible wherever the record is.
+[built](Expressions.md#records) as `Point { x := 1, y := 2 }`, its
+fields are read as `p.x`, and `{ p with x := 1 }` is `p` with `1` for
+`x` (see [Record updates](Expressions.md#record-updates)). Its fields are
+visible wherever the record is.
 
 A record's field cannot have the record's own type: a record has only one
 way to build a value, so each value would contain another without end, and

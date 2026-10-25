@@ -22,6 +22,7 @@ atom  := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | "(" expr 
        | IDENT ("." IDENT)+ "(" expr ("," expr)* ")"
        | "match" expr "{" arm ("," arm)* [","] "}"
        | "{" [expr ("," expr)* [","]] "}"
+       | "{" expr "with" field-init ("," field-init)* [","] "}"
 field-init := IDENT [":=" expr]
 arm   := pattern "=>" expr
 pattern := "_" | ["|"] alternative ("|" alternative)*
@@ -179,7 +180,9 @@ mentions is decided from its parts, as `lang::mentions` states:
   definition mentions, and a [binder](#matches) what its scrutinee
   mentions.
 - A [variant](#variants-with-payloads) or a [record literal](#records)
-  mentions what its arguments or fields mention: its value is fixed.
+  mentions what its arguments or fields mention: its value is fixed. So
+  does a [record update](#record-updates), which mentions what its record
+  and its new values mention.
 - A [method](#methods) call mentions what its receiver and arguments
   mention: a method has a fixed meaning.
 - An application of an uninterpreted function mentions the function: its
@@ -196,12 +199,12 @@ mentions is decided from its parts, as `lang::mentions` states:
 -- The kinds of expression, for what one mentions. `Literal` is a literal;
 -- `Constant` is a constant, a variant without a payload, or a path of more
 -- than one segment; `Variable` is a variable, an instance's variable, or a
--- field read from one; `Construction` is a variant with a payload or a
--- record literal; `Uninterpreted` and `Defined` are applications of
--- uninterpreted and defined functions; `Compound` is an operator, `when`
--- or `unless`, a conditional, a `match`, a pattern test, indexing, a field
--- read from an expression that is not a name, or a literal of a set, pair
--- or sequence.
+-- field read from one; `Construction` is a variant with a payload, a
+-- record literal or a record update; `Uninterpreted` and `Defined` are
+-- applications of uninterpreted and defined functions; `Compound` is an
+-- operator, `when` or `unless`, a conditional, a `match`, a pattern test,
+-- indexing, a field read from an expression that is not a name, or a
+-- literal of a set, pair or sequence.
 pub enum ExprKind {
     Literal, Constant, Variable, DefinedOutput, Binder, Construction, Method, Uninterpreted, Defined, Compound,
 }
@@ -504,6 +507,74 @@ field of any other record value. In `a.b`, `a` is an instance if the
 component has one named `a`, and a variable otherwise. A field read
 mentions the variables that its record mentions: `p.x` mentions `p`.
 
+## Record updates
+
+```text
+{ s with count := s.count + 1 }
+{ s with count := s.count + 1, mode }
+```
+
+A *record update*, `{ r with x := e }`, is the value of `r`'s record that
+has `e` for `x` and the value of `r` for every other field: with `struct
+Point { x: Int, y: Int }`, `{ p with x := 1 }` is `Point { x := 1, y :=
+p.y }`. `r` must have a record type (`F0339`), which is the type of the
+update. The fields given are written as in a [record literal](#records):
+a field `x` alone means `x := x`, each value must have its field's type,
+and a value cannot be a top-level `when` or `unless`. Each field given is
+a field of `r`'s record, given at most once (`F0340`). An update gives at
+least one field, and may give all of them, though it then has the value
+of the record literal of those fields: `r` still counts for what the
+update [mentions](#mentions) and for the [definedness
+check](../Check.md#definedness) of the indexes within it.
+
+Like a [set literal](#sets), an update starts with `{`: after the
+expression that follows the `{`, `with` makes it an update, and `,` or
+`}` a set literal. So `{ r with x := 1 }` is an update and `{r}` a set,
+and an update is written only where a set literal could be: after a
+path, `{` starts a record literal, and after `match e`, the arms. An
+update is an atom, so `{ p with x := 1 }.y` reads a field of it.
+
+`lang::record_update` states which updates are accepted, from whether
+`r` has a record type, the fields of its record and the names the update
+gives, with repeats counted, as for `lang::record_literal`:
+
+```fren
+pub comp record_update {
+    in record?                       -- `r` has a record type
+    in fields: Set(FieldName)        -- the fields of its record
+    in given: Set(FieldName)         -- the names the update gives
+    in n_repeated: Int               -- names given more than once, counting each repeat
+    pub det out accepted?
+
+    assume counts: n_repeated >= 0
+    assume some_given: given != {}
+
+    req rule: accepted? iff (record? and given subset fields and n_repeated = 0)
+
+    expect records_only: when not record?, not accepted?
+    expect unknown_field: when not given subset fields, not accepted?
+    expect repeated_field: when n_repeated > 0, not accepted?
+    expect some_fields: when record? and given subset fields and n_repeated = 0, accepted?
+}
+```
+
+An update that names every field of its record is accepted exactly when
+the record literal of the same fields is: naming every field is allowed,
+and then the two rules agree. Where they differ is in fields not named,
+which only an update may leave out:
+
+```fren
+expect every_field: forall (l: record_literal) (u: record_update),
+    when u.record? and u.fields = l.fields and u.given = l.given and u.n_repeated = l.n_repeated
+    and u.given = u.fields,
+    u.accepted? iff l.accepted?
+
+expect fields_left_out: forall (l: record_literal) (u: record_update),
+    when u.record? and u.fields = l.fields and u.given = l.given and u.n_repeated = l.n_repeated
+    and u.given subset u.fields and u.given != u.fields and u.n_repeated = 0,
+    u.accepted? and not l.accepted?
+```
+
 ## Variants with payloads
 
 `Shape::Circle(2)` builds the value of the enumeration `Shape` that is the
@@ -687,7 +758,8 @@ is an error, and `not x in s` is `not (x in s)`. A membership's `in` must
 be on the line where its left operand ends (see
 [Lexical structure](Lexical.md#keywords)). After a path, `{` starts a
 record literal, and after `match e`, the arms, so a set literal is never
-written there.
+written there. A `{` whose first expression is followed by `with` starts
+a [record update](#record-updates) instead.
 
 `{(a, b), (c, d)}` is a relation, the set of the pairs `(a, b)` and `(c,
 d)`. A pair is written only as a member of a relation literal and as the
