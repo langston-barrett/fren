@@ -2067,9 +2067,10 @@ def cardinalityTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprC
   for a in args, k in [0:args.size] do
     -- A `Bool` gives `{}` no type, so `{}` is reported as one whose type
     -- cannot be known, as the `fren` command reports it.
-    -- `{}` and `[]` are never `Bool`s.
-    if (a.isOfKind ``Lang.setExpr || a.isOfKind ``Lang.seqExpr) && a[1].getSepArgs.isEmpty then
-      throwErrorAt a (Core.cardinalityArgMsg c (k + 1) (if a.isOfKind ``Lang.setExpr then "{}" else "[]")).text
+    -- `{}` and `[]` are never `Bool`s, in parentheses or not.
+    let lit := unparen a
+    if (lit.isOfKind ``Lang.setExpr || lit.isOfKind ``Lang.seqExpr) && lit[1].getSepArgs.isEmpty then
+      throwErrorAt lit (Core.cardinalityArgMsg c (k + 1) (if lit.isOfKind ``Lang.setExpr then "{}" else "[]")).text
     let t ← toTerm { cx with emptyOk := false, natOk := false } a
     let ty ← typeOf t
     unless ty.isConstOf ``Bool || ty.isProp do throwErrorAt a (Core.cardinalityArgMsg c (k + 1) (← typeName ty)).text
@@ -2214,6 +2215,9 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
     let leaf := if e[0].isAtom || e[0].isIdent then e[0] else e[0][0]
     let n := if leaf.isIdent then leaf.getId.toString else leaf.getAtomVal.trimAscii.toString
     let some c := Core.Cardinality.ofName? n | throwError "internal error: no cardinality operator `{n}`"
+    -- A variable that shadows it is reported first, as for any application.
+    if cx.vars.any (·.name == Name.mkSimple n) || (cx.binder? (Name.mkSimple n)).isSome then
+      throwErrorAt e[0] (Core.varNotAFunctionMsg (Name.mkSimple n)).text
     throwError (Core.cardinalityNoArgsMsg c).text
   else throwError "unsupported Fren expression"
 

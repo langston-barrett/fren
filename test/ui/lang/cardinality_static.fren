@@ -20,6 +20,10 @@ comp empty_argument { expect e: exactly_one?({}) }
 --~^ error: type mismatch: expected `Bool`, found `{}`
 comp empty_sequence_argument { in a? expect e: at_most_one?(a?, []) }
 --~^ error: type mismatch: expected `Bool`, found `[]`
+comp parenthesized_empty { expect e: exactly_one?(({})) }
+--~^ error: type mismatch: expected `Bool`, found `{}`
+comp parenthesized_empty_sequence { in a? expect e: at_most_one?(a?, ([])) }
+--~^ error: type mismatch: expected `Bool`, found `[]`
 comp no_arguments { expect e: exactly_one?() }
 --~^ error: `exactly_one?` needs at least one argument
 comp no_arguments_operand { in a? expect e: a? or at_most_one?() }
@@ -40,6 +44,8 @@ fn at_most_one?(Int)
 comp implicit_shadow { in exactly_one? expect e: exactly_one? }
 --~^ error: `exactly_one?` shadows the built-in function `exactly_one?`
 comp variable_applied { in exactly_one?! expect e: exactly_one?(exactly_one?) }
+--~^ error: expected a function, but `exactly_one?` is a variable
+comp variable_no_arguments { in exactly_one?! expect e: exactly_one?() }
 --~^ error: expected a function, but `exactly_one?` is a variable
 
 --@ exit: 2
