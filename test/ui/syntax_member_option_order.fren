@@ -1,0 +1,12 @@
+-- A member's `set_option` of an option other than `fren.evidence` is
+-- reported as it is parsed, before a dotted pattern binder after it, in
+-- both front ends.
+
+pub enum S { A(Int), B }
+
+comp c {
+    in s: S
+    set_option fren.lint.dead_code "allow" in   --~ error: `fren.lint.dead_code` cannot be set before a member
+    pub out z: Int
+    req r: z = match s { S::A(x.y) => 0, _ => 1 }
+}

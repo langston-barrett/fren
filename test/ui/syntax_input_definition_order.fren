@@ -1,0 +1,11 @@
+-- An input's definition is reported as it is parsed, before a dotted
+-- pattern binder after it, in both front ends.
+
+pub enum S { A(Int), B }
+
+comp c {
+    in s: S
+    in a: Int := 3   --~ error: an input cannot have a definition
+    pub out z: Int
+    req r: z = match s { S::A(x.y) => a, _ => 1 }
+}

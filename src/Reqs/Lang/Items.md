@@ -118,9 +118,12 @@ pattern's `_` declares no name. A name declared again is an error,
 reported where it is declared again, in the order the declarations are
 written, whatever their kinds. In every list, only the first such name is
 reported, and the rest of its item is not checked, so a component with two
-repeated names and an unknown type reports the first repeat alone. Names
-are compared without the `!` of [shadowing](Components.md#shadowing), so
-`x` and `x!` are the same name.
+repeated names and an unknown type reports the first repeat alone. The
+names of declarations that may [shadow](Components.md#shadowing), which
+are variables, instances, parameters and binders, are compared without
+their `!`, so `in x: Int` and `in x!: Int` declare the same name.
+Variants, fields and constraints never shadow, and a `!` on one is an error
+of its own.
 `lang::distinct_names` states this, from how many names a list declares
 and the set of them:
 
@@ -145,11 +148,13 @@ pub comp distinct_names {
 
 Each name in an item must be a single segment, except where an expression
 reads an instance's variable, a value's field or a method with `.`. This
-is checked as the item is parsed, before anything else about it, and the
-first name that is not a single segment, in source order, is reported,
-with its `!` if it has one: `A(x.y)` reports `x.y`, even in a pattern with
-the wrong number of binders or in an or-pattern, but `in s.t: S` before it
-reports `s.t`.
+is checked as the item is parsed, together with an input's definition
+(`in x: Int := 3`) and a member's `set_option` of an option other than
+`fren.evidence`. The first of these problems in an item, in source order,
+is reported before anything else about that item, and a name is reported
+with its `!` if it has one. So `A(x.y)` reports `x.y`, even in a pattern
+with the wrong number of binders or in an or-pattern, but `in s.t: S` or
+`in a: Int := 3` before it is reported instead.
 
 ## Fields and payloads
 

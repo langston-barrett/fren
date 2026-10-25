@@ -55,27 +55,38 @@ partial def checkLexemes (stx : Syntax) : CommandElabM Unit := do
   | _ => pure ()
 
 open Lang in
-/-- Reports the first name of `stx` that is not a single segment, in source
-order, as the `fren` command's parser does, before any other check of its
-item. A name may be dotted only where it is an expression's whole path,
-which reads an instance's variable or a value's field or method, or where
-it follows `.`, or names an option. -/
-partial def checkNames (stx : Syntax) : CommandElabM Unit := do
+/-- Reports the first problem of `stx` that the `fren` command's parser
+reports, in source order, before any other check of its item, where Lean's
+grammar accepts it:
+- a name that is not a single segment. A name may be dotted only where it
+  is an expression's whole path, which reads an instance's variable or a
+  value's field or method, or where it follows `.`, or names an option;
+- a member's `set_option` of an option other than `fren.evidence`;
+- an input's definition, `in x := e`, before its expression is read. -/
+partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
   match stx with
   | `(fren_expr| $p:fren_path) => unless (pathSegs p).size == 1 do discard (segNames (pathSegs p))
   | `(fren_expr| $p:fren_path($args,*)) =>
     unless (pathSegs p).size == 1 do discard (segNames (pathSegs p))
-    args.getElems.forM checkNames
+    args.getElems.forM checkParsed
   | _ =>
     if stx.isIdent then discard (segName stx)
     else if stx.isOfKind ``Lang.fren_path then discard (segNames (pathSegs stx))
-    else if stx.isOfKind ``Lang.fieldExpr || stx.isOfKind ``Lang.methodExpr || stx.isOfKind ``Lang.evidenceMember then
-      stx.getArgs.forM fun a => unless a.isIdent do checkNames a
-    else stx.getArgs.forM checkNames
+    else if stx.isOfKind ``Lang.evidenceMember then
+      unless stx[1].getId == `fren.evidence do
+        throwErrorAt stx[1] (Core.memberOptionMsg stx[1].getId.toString).text
+      checkParsed stx[4]
+    else if stx.isOfKind ``Lang.inMember then
+      checkParsed stx[1]
+      checkParsed stx[2]
+      unless stx[3].isNone do throwErrorAt stx[3][0] Core.inputDefinitionMsg.text
+    else if stx.isOfKind ``Lang.fieldExpr || stx.isOfKind ``Lang.methodExpr then
+      stx.getArgs.forM fun a => unless a.isIdent do checkParsed a
+    else stx.getArgs.forM checkParsed
 
 @[command_elab Lang.modCmd] def elabMod : CommandElab := fun stx => do
   checkLexemes stx
-  checkNames stx
+  checkParsed stx
   let segs := pathSegs stx[2]
   let names ← segNames segs
   let (path, new) ← liftResolve segs ((← getState).table.declareModule names (!stx[0].isNone))
@@ -95,12 +106,12 @@ def declareUse (segs : Array Syntax) (glob : Bool) (ref : Syntax) (scope : Optio
 
 @[command_elab Lang.useCmd] def elabUse : CommandElab := fun stx => do
   checkLexemes stx
-  checkNames stx
+  checkParsed stx
   declareUse (pathSegs stx[1]) (!stx[2].isNone) stx[1]
 
 @[command_elab Lang.useGroupCmd] def elabUseGroup : CommandElab := fun stx => do
   checkLexemes stx
-  checkNames stx
+  checkParsed stx
   for p in stx[3].getSepArgs do
     declareUse (pathSegs stx[1] ++ pathSegs p) false p
 
@@ -187,7 +198,7 @@ partial def typeSyntax (t : Expr) : Term :=
 
 @[command_elab Lang.enumCmd] def elabEnum : CommandElab := fun stx => do
   checkLexemes stx
-  checkNames stx
+  checkParsed stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -247,7 +258,7 @@ partial def typeSyntax (t : Expr) : Term :=
 
 @[command_elab Lang.structCmd] def elabStruct : CommandElab := fun stx => do
   checkLexemes stx
-  checkNames stx
+  checkParsed stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1390,7 +1401,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
 
 @[command_elab Lang.typeCmd] def elabAbstractType : CommandElab := fun stx => do
   checkLexemes stx
-  checkNames stx
+  checkParsed stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1404,7 +1415,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
 
 @[command_elab Lang.fnCmd] def elabFunction : CommandElab := fun stx => do
   checkLexemes stx
-  checkNames stx
+  checkParsed stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1545,8 +1556,7 @@ open Lang in
 setting, if it has one: the innermost, if there are several. -/
 partial def unwrapEvidence (m : Syntax) : CommandElabM (Syntax × Option (Bool × Syntax)) := do
   unless m.isOfKind ``Lang.evidenceMember do return (m, none)
-  unless m[1].getId == `fren.evidence do
-    throwErrorAt m[1] (Core.memberOptionMsg m[1].getId.toString).text
+  -- Its option is `fren.evidence` (`checkParsed`).
   let b ← evidenceTested m[2] (m[2].isStrLit?.getD "")
   let (inner, set?) ← unwrapEvidence m[4]
   return (inner, set?.getD (b, m))
@@ -1598,7 +1608,7 @@ def memberName? (m : Syntax) : Option Syntax :=
 open Lang in
 @[command_elab Lang.compCmd] def elabComp : CommandElab := fun stx => do
   checkLexemes stx
-  checkNames stx
+  checkParsed stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1633,10 +1643,8 @@ open Lang in
     let mut vars : Array Var := #[]
     for m in members do
       let (role, isPub, isDet, x, ty?, defn?) ← match m.getKind with
+        -- An input has no definition (`checkParsed`).
         | ``Lang.inMember =>
-          unless m[3].isNone do
-            logErrorAt m[3][0] Core.inputDefinitionMsg.text
-            ok := false
           pure (Core.Role.input, true, false, m[1], if m[2].isNone then none else some m[2][1], none)
         | ``Lang.outMember =>
           pure (.output, !m[0].isNone, !m[1].isNone, m[3], if m[4].isNone then none else some m[4][1],
@@ -1826,7 +1834,7 @@ open Lang in
 
 @[command_elab Lang.constCmd] def elabConst : CommandElab := fun stx => do
   checkLexemes stx
-  checkNames stx
+  checkParsed stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1925,7 +1933,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
 
 @[command_elab Lang.globalCmd] def elabGlobal : CommandElab := fun stx => do
   checkLexemes stx
-  checkNames stx
+  checkParsed stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx
@@ -1957,7 +1965,7 @@ and the solver is asked nothing. -/
   -- Its proof, after `by`, is Lean.
   let spec := stx.getArgs[:7].toArray
   spec.forM checkLexemes
-  spec.forM checkNames
+  spec.forM checkParsed
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx
