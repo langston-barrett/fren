@@ -5,6 +5,7 @@ import Fren.Model
 import Fren.Resolve
 import Fren.SimpSet
 import Fren.Syntax
+import FrenCore.Guards
 import FrenCore.Lexical
 import FrenCore.Mentions
 import FrenCore.Regex
@@ -1089,6 +1090,8 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let mut tests : Array (Option Term) := #[]
   for pat in pats do tests := tests.push (← pat.mapM test)
   let mut earlier : Array Term := #[]
+  -- An arm's body is guarded by its being the first arm that matches
+  -- (`Core.GuardedOperand.armBody`): no earlier test holds, and its own does.
   for arm in arms, pat in pats, t? in tests do
     let guards := cx.guards ++ (← earlier.mapM fun t => `(¬$t)) ++ t?.toArray
     earlier := earlier ++ t?.toArray
@@ -1479,9 +1482,9 @@ inductive Join where
   | and
   | or
 
-/-- `when c, d`, `unless c, d` (`negated`), `c and d` or `c or d`, where `d`
-is guarded by `c`, or by `not c` if `negated` (`Reqs/Lang/Expressions#sequences`). -/
-def guardedTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (c d : Syntax) (negated : Bool)
+/-- `when c, d`, `unless c, d`, `c and d` or `c or d`, where `d` is the
+`operand`, guarded by `c` or by `not c` (`lang::guard`). -/
+def guardedTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (c d : Syntax) (operand : Core.GuardedOperand)
     (op : Join := .implies) : TermElabM Term := do
   let e ← getRef
   let j := match op with | .or => "or" | .and => "and" | .implies => ""
@@ -1499,7 +1502,7 @@ def guardedTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
     if (indexedIn c).any (fun q => boundsSeq d q && !boundsSeq c q) then recordLint .indexAfterUse e (Core.indexAfterUseMsg (srcText c) (srcText d))
   let cx := { cx with chain := j }
   let x ← toTerm cx c
-  let g ← if negated then `(¬$x) else pure x
+  let g ← operand.guard (pure x) `(¬$x)
   let y ← toTerm { cx with guards := cx.guards.push g } d
   match op with
   | .implies => `($g → $y)
@@ -1559,18 +1562,20 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   let go := toTerm cx
   if cx.noteIndexes then lintEqOp e
   match e with
-  | `(fren_expr| when $c, $d) => guardedTerm toTerm cx c d false
-  | `(fren_expr| unless $c, $d) => guardedTerm toTerm cx c d true
+  | `(fren_expr| when $c, $d) => guardedTerm toTerm cx c d .whenBody
+  | `(fren_expr| unless $c, $d) => guardedTerm toTerm cx c d .unlessBody
   | `(fren_expr| $a iff $b) => `($(← go a) ↔ $(← go b))
-  | `(fren_expr| $a or $b) => guardedTerm toTerm cx a b true (op := .or)
-  | `(fren_expr| $a and $b) => guardedTerm toTerm cx a b false (op := .and)
+  | `(fren_expr| $a or $b) => guardedTerm toTerm cx a b .orRight (op := .or)
+  | `(fren_expr| $a and $b) => guardedTerm toTerm cx a b .andRight (op := .and)
   | `(fren_expr| not $a) => `(¬$(← go a))
   | `(fren_expr| if $c' then $a else $b) =>
     if cx.noteIndexes && !cx.inElse then lintIfChain cx e
     if cx.noteIndexes then lintSameBranches e a b
     let c ← toTerm { cx with inElse := false } c'
-    let x ← toTerm { cx with emptyOk := emptyOk || !isEmptySet b, guards := cx.guards.push c, inElse := false } a
-    let y ← toTerm { cx with emptyOk := emptyOk || !isEmptySet a, guards := cx.guards.push (← `(¬$c)), inElse := true } b
+    let gx ← Core.GuardedOperand.thenBranch.guard (pure c) `(¬$c)
+    let gy ← Core.GuardedOperand.elseBranch.guard (pure c) `(¬$c)
+    let x ← toTerm { cx with emptyOk := emptyOk || !isEmptySet b, guards := cx.guards.push gx, inElse := false } a
+    let y ← toTerm { cx with emptyOk := emptyOk || !isEmptySet a, guards := cx.guards.push gy, inElse := true } b
     `(if $c then $x else $y)
   | `(fren_expr| $_ = $_) | `(fren_expr| $_ != $_) | `(fren_expr| $_ < $_) | `(fren_expr| $_ <= $_)
   | `(fren_expr| $_ > $_) | `(fren_expr| $_ >= $_) => compareTerm toTerm cx e

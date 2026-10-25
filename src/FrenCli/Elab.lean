@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCli.Parse
 import FrenCore.Evidence
+import FrenCore.Guards
 import FrenCore.Lint
 import FrenCore.Mentions
 import FrenCore.Names
@@ -1201,7 +1202,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   | .when _ neg c d =>
     let kw := if neg then "unless" else "when"
     let c ← expect c .bool (some s!"note: the condition of `{kw}` is a `Bool`")
-    let g := if neg then s!"(not {c})" else c
+    let g := (if neg then Fren.Core.GuardedOperand.unlessBody else .whenBody).guard c s!"(not {c})"
     let (d, td) ← elabExpr { cx with guards := cx.guards.push g } d
     unless td == .bool do mismatch e .bool td (some s!"note: the body of `{kw}` is a `Bool`")
     return (if neg then s!"(=> (not {c}) {d})" else s!"(=> {c} {d})", .bool)
@@ -1216,8 +1217,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         lintFix .sameBranches span (Fren.Core.sameBranchesMsg ta kind.prec (← srcAt { start := 0, stop := span.start })
           (← srcAt { start := span.stop, stop := (← get).src.size }))
     let c ← expect c .bool (some "note: the condition of `if` is a `Bool`")
-    let ((x, tx), (y, ty)) ← pair { cx with expected?, guards := cx.guards.push c }
-      { cx with expected?, guards := cx.guards.push s!"(not {c})", inElse := true } a b
+    let gx := Fren.Core.GuardedOperand.thenBranch.guard c s!"(not {c})"
+    let gy := Fren.Core.GuardedOperand.elseBranch.guard c s!"(not {c})"
+    let ((x, tx), (y, ty)) ← pair { cx with expected?, guards := cx.guards.push gx }
+      { cx with expected?, guards := cx.guards.push gy, inElse := true } a b
     unless tx == ty do
       err span { code? := some "F0306", headline := s!"the branches of `if` have different types: `{tx.show}` and `{ty.show}`"
                  label? := some "branches of different types"
@@ -1367,7 +1370,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let (x, tx) ← elabExpr { cx with chain := op } a
       unless tx == .bool do mismatch a .bool tx (opNote op .bool)
       -- `b` is evaluated when `a` does not decide the result.
-      let guards := match op with | "and" => cx.guards.push x | "or" => cx.guards.push s!"(not {x})" | _ => cx.guards
+      let guards := match op with
+        | "and" => cx.guards.push (Fren.Core.GuardedOperand.andRight.guard x s!"(not {x})")
+        | "or" => cx.guards.push (Fren.Core.GuardedOperand.orRight.guard x s!"(not {x})")
+        | _ => cx.guards
       let (y, ty) ← elabExpr { cx with guards, chain := op } b
       unless ty == .bool do mismatch b .bool ty (opNote op .bool)
       return (s!"({smt} {x} {y})", .bool)
@@ -1670,6 +1676,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     let mut ty? : Option Ty := none
     -- An arm is evaluated when its pattern matches and no earlier one does.
     let mut earlier : Array String := #[]
+    -- An arm's body is guarded by its being the first arm that matches
+    -- (`Fren.Core.GuardedOperand.armBody`): no earlier test holds, and its own does.
     for (p, body) in arms, pat in pats, test in tests do
       let armGuards := cx.guards ++ earlier.map (s!"(not {·})") ++ test.toArray
       earlier := earlier ++ test.toArray
