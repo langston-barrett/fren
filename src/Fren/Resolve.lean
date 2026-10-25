@@ -43,10 +43,15 @@ def liftMsg (ref : Syntax) : Except Core.Msg α → m α
   | .error msg => throwErrorAt ref msg.text
 
 /-- The identifier that `x` declares, without the `!` that marks it as
-shadowing (`Core.declaredName`), and whether it has one. -/
+shadowing (`Core.declaredName`), and whether it has one. Its range leaves
+out the `!`, as the `fren` command's does, so that a fix that renames it
+keeps the `!`. -/
 def declaredIdent (x : Syntax) : Syntax × Bool :=
   let (n, bang) := Core.declaredName x.getId
-  (if bang then mkIdentFrom x n else x, bang)
+  if !bang then (x, false) else
+  match x.getPos?, x.getTailPos? with
+  | some p, some e => (Syntax.ident (.synthetic p ⟨e.byteIdx - 1⟩ true) n.toString.toRawSubstring n [], true)
+  | _, _ => (mkIdentFrom x n, true)
 
 /-- The declaration `x` in `scope`, without its `!`, checked to be written
 with `!` exactly when it hides something there or among `locals`

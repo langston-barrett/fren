@@ -178,8 +178,9 @@ def codesInSources : IO (Array String) := do
   return out.toList.eraseDups.toArray
 
 /-- Codes that no snapshot can report reliably: a solver that gives up
-depends on the machine. -/
-def unsnapshotted : List String := ["F0608"]
+depends on the machine; and removed codes, which nothing reports, and
+whose explanations say what replaced them. -/
+def unsnapshotted : List String := ["F0608", "F0713"]
 
 /-- Every code is explained and covered by a snapshot; each explanation's
 erroneous example reports its code, and its fixed versions report no static

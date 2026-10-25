@@ -693,10 +693,12 @@ set_option fren.lint.non_snake_case "allow" in
 comp c { in RATE: Int pub out y: Int req r: y = RATE }
 ```
 
-Within `c`, `RATE` is the input, not the constant: a component's variables
-hide the items of its module, a function's parameters hide those of its
-module, and a `match` arm's binders hide variables, parameters, other
-binders and items. Shadowing is allowed, but must be explicit, so that a
+Within `c`, `RATE` is the input, not the constant. A component's
+variables and instances, a function's parameters and a global
+expectation's binders may hide the constants, functions and variants in
+scope, and a `match` arm's binders may hide those and also variables,
+parameters, instances, global expectations' binders and other binders.
+Shadowing is allowed, but must be explicit, so that a
 reader knows which `RATE` a use means: the declaration that hides the name
 is written with `!` directly after it, as `RATE!`, or `ready?!` for a
 `Bool`. Its uses are written without `!`. This error replaces the lint
@@ -2306,6 +2308,14 @@ false` means `c?`. Write the simpler form, as `fren fix` does:
 comp c { in a? pub out b? req r: b? iff a? }
 ```
 "# },
+  { code := "F0713", explanation := r#"A removed code: the lint `shadowed_constants`.
+
+`F0713` was the lint `shadowed_constants`, which warned of a variable named
+like a constant in scope. Shadowing is now explicit: a declaration that
+hides a name in scope without `!` is the error `F0217`, and one written
+with `!` that hides nothing is `F0218`. Nothing reports `F0713`, and the
+code is not reused.
+"#, args := none },
   { code := "F0714", explanation := r#"A construct outside the decidable core (the lint `undecidable`, an error by default).
 
 Erroneous code example:

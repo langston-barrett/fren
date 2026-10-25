@@ -536,9 +536,16 @@ def Table.hidden? (t : Table) (scope : Name) (locals : Array (Name × String)) (
 
 /-- A declaration of `n` hides `hidden`, but has no `!`. -/
 def implicitShadowMsg (n : Name) (hidden : String) : Msg :=
-  { code? := some "F0217", headline := s!"`{n}` shadows {hidden}", label? := some "shadows without `!`"
-    notes := #[s!"note: shadowing is explicit: a declaration that hides a name in scope is written with `!`, as `{n}!`"]
-    fixes := #[{ msg := s!"to shadow {hidden}, write `{n}!`", replacement := s!"{n}!" }] }
+  let msg : Msg := { code? := some "F0217", headline := s!"`{n}` shadows {hidden}", label? := some "shadows without `!`"
+                     notes := #[s!"note: shadowing is explicit: a declaration that hides a name in scope is written with `!`, as `{n}!`"]
+                     fixes := #[{ msg := s!"to shadow {hidden}, write `{n}!`", replacement := s!"{n}!" }] }
+  -- `s!` is a Lean token, which F0219 rejects as a declaration.
+  if leanBangTokens.contains (n.toString ++ "!") then
+    { msg with
+      notes := #[s!"note: shadowing is explicit, but `{n}!` is a Lean token, which cannot be declared (F0219)",
+        "help: rename the declaration"]
+      fixes := #[] }
+  else msg
 
 /-- Checks a declaration of `n`, written with `!` if `bang`, given what it
 hides (`lang::shadowing`). -/

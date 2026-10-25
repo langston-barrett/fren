@@ -1412,8 +1412,9 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
     let mut vars : Array Var := #[]
     let paramIds ← params.mapM fun p => do
       let some q := typePath? p[0] | throwErrorAt p[0] (Core.functionParamsMsg path true).text
+      let xn := (declaredIdent (pathSegs q)[0]!).1.getId
+      if vars.any (·.name == xn) then throwErrorAt (pathSegs q)[0]! (Core.dupParamMsg xn).text
       let x ← declare (pathSegs q)[0]! modName
-      if vars.any (·.name == x.getId) then throwErrorAt x (Core.dupParamMsg x.getId).text
       lintName .variable x.getId x
       let ty ← varType modName x (if p[1].isNone then none else some p[1][1])
       vars := vars.push { name := x.getId, role := .input, isPub := true, «type» := ty, ref := x }
@@ -1610,10 +1611,11 @@ open Lang in
             if m[5].isNone then none else some m[5][1])
         | _ => continue
       -- An error in shadowing leaves the variable's meaning clear.
+      -- A duplicate is reported as such, before what it would hide.
+      if names.contains (declaredIdent x).1.getId then
+        logErrorAt x (Core.dupMemberMsg (declaredIdent x).1.getId).text; ok := false; continue
       let x ← try declare x scope
         catch ex => logException ex; ok := false; pure (declaredIdent x).1
-      if names.contains x.getId then
-        logErrorAt x (Core.dupMemberMsg x.getId).text; ok := false; continue
       names := names.insert x.getId
       lintName .variable x.getId x
       try
@@ -1632,10 +1634,10 @@ open Lang in
     let mut pending : Array PendingInst := #[]
     for m in members do
       let `(fren_member| inst $x:ident : $p:fren_path { $bs,* }) := m | continue
+      if names.contains (declaredIdent x).1.getId then
+        logErrorAt x (Core.dupMemberMsg (declaredIdent x).1.getId).text; ok := false; continue
       let x ← try declare x scope
         catch ex => logException ex; ok := false; pure (declaredIdent x).1
-      if names.contains x.getId then
-        logErrorAt x (Core.dupMemberMsg x.getId).text; ok := false; continue
       names := names.insert x.getId
       lintName .instance x.getId x
       try
@@ -1856,8 +1858,9 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
       recordLint .undecidable b[3] (Core.undecidableInstMsg path)
     noteCounts c b[3]
     for x in b[1].getArgs do
+      let w := (declaredIdent x).1.getId
+      if binders.any (·.name == w) then throwErrorAt x (Core.dupBinderMsg w).text
       let x ← declare x modName
-      let w := x.getId
       liftMsg x (Core.checkItemName "instance" w)
       lintName .instance w x
       binders := binders.push { name := w, ref := x, comp := c, offset := vars.size }

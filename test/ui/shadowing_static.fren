@@ -126,3 +126,34 @@ const panic!: Int := 1                   --~ error: `panic!` is a Lean token, so
 expect token_global: forall (using!: sub), true
 --~^ error: `using!` is a Lean token, so it cannot be declared
 comp token_use { in s: Int pub out y: Int req r: y = s! }  --~ error: cannot find `s!` in this scope
+-- A refinement's name, and a field read, take the tokens as identifiers too.
+refine s!: sub refines sub               --~ error: `s!` is a Lean token, so it cannot be declared
+comp token_field { pub out y: Int req r: y = Point { x := 1, y := 2 }.s! }
+--~^ error: no field `s!`
+-- Where the name with `!` is a Lean token, F0217 says to rename it.
+comp token_hint { in s: Shape pub out p? req r: p? iff match s { Shape::Circle(s) => s > 0, _ => false } }
+--~^ error: `s` shadows the input `s`
+
+-- A duplicate is reported as such, before what it would hide.
+comp dup_bang { in x: Int in x!: Int pub out y: Int req r: y = x }
+--~^ error: `x` is defined multiple times in this component
+enum Two { Pair(Int, Int) }
+comp dup_binder { in t: Two pub out y: Int req r: y = match t { Two::Pair(a, a!) => a } }
+--~^ error: `a` is bound multiple times in this pattern
+
+-- A name that two globs make ambiguous is not hidden: a use of it would be
+-- an error.
+enum Hue { Red }
+enum Tone { Red }
+comp ambiguous { use self::Hue::* use self::Tone::* in Red: Int pub out y: Int req r: y = Red }
+--~^ warning: unused import `Hue::*`
+--~^^ warning: unused import `Tone::*`
+--~^^^ warning: `use Hue::*` imports every variant of `Hue`
+--~^^^^ warning: `use Tone::*` imports every variant of `Tone`
+comp ambiguous_bang { use self::Hue::* use self::Tone::* in Red!: Int pub out y: Int req r: y = Red }
+--~^ error: `Red!` shadows nothing
+--~^^[hosted] warning: unused import `Hue::*`
+--~^^^[hosted] warning: unused import `Tone::*`
+--~^^^^[hosted] warning: `use Hue::*` imports every variant of `Hue`
+--~^^^^^[hosted] warning: `use Tone::*` imports every variant of `Tone`
+-- The `fren` command drops the lints of an item with an error.

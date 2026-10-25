@@ -150,10 +150,10 @@ starts the arms. -/
 scoped syntax:arg (name := recordExpr) fren_path " { " sepBy1(fren_binding, ", ", ", ", allowTrailingSep) " }" : fren_expr
 /-- `e.x`, reading a field of `e`, an atom that ends in `)` or `}`: after a
 name, `.x` is part of the (dotted) identifier. -/
-scoped syntax:max (name := fieldExpr) fren_expr:arg noWs "." noWs ident : fren_expr
+scoped syntax:max (name := fieldExpr) fren_expr:arg noWs "." noWs frenIdent : fren_expr
 /-- `e.m(a, b)`, a method call on an atom that ends in `)` or `}`; on a name,
 `x.m(a)` is parsed as an application of the dotted name. -/
-scoped syntax:max (name := methodExpr) fren_expr:arg noWs "." noWs (ident <|> "at") noWs "(" sepBy1(fren_expr, ", ") ")" : fren_expr
+scoped syntax:max (name := methodExpr) fren_expr:arg noWs "." noWs (frenIdent <|> "at") noWs "(" sepBy1(fren_expr, ", ") ")" : fren_expr
 
 declare_syntax_cat fren_pattern_binder
 syntax frenIdent : fren_pattern_binder
@@ -244,7 +244,7 @@ scoped syntax (name := globalCmd) "expect " frenIdent " : " ("forall " fren_bind
 
 /-- `refine r: c refines a [{ bindings }] [by tactics]`, a refinement
 (`Reqs/Lang/Refinement`). -/
-scoped syntax (name := refineCmd) "refine " ident " : " fren_path ppSpace &"refines " fren_path
+scoped syntax (name := refineCmd) "refine " frenIdent " : " fren_path ppSpace &"refines " fren_path
   (" { " sepBy(fren_binding, ", ", ", ", allowTrailingSep) " }")? (" by " Lean.Parser.Tactic.tacticSeq)? : command
 
 

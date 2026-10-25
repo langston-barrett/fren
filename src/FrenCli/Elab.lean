@@ -1545,8 +1545,11 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let mut vars := #[]
   for m in members do
     let .var isIn isPub' isDet x ty? defn? := m | continue
+    -- A duplicate is reported as such, before what it would hide.
+    let xn := Name.mkSimple (declaredIdent x).1.name
+    if seen.contains xn then err x.span (Fren.Core.dupMemberMsg xn)
     let x ← declare x
-    let xn := Name.mkSimple x.name
+    seen := seen.push xn
     lintName .variable xn x.span
     let role := if isIn then Role.input else .output
     let ty ← varTy ty? x
@@ -1559,8 +1562,10 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let mut pending := #[]
   for m in members do
     let .inst x p bs := m | continue
+    let xn := Name.mkSimple (declaredIdent x).1.name
+    if seen.contains xn then err x.span (Fren.Core.dupMemberMsg xn)
     let x ← declare x
-    let xn := Name.mkSimple x.name
+    seen := seen.push xn
     lintName .instance xn x.span
     let (pi, ivars) ← resolveInst x p bs
     pending := pending.push pi
@@ -1775,8 +1780,9 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
       lint .undecidable (p[0]!.span.to p.back!.span) (Fren.Core.undecidableInstMsg path)
     noteCounts c (p[0]!.span.to p.back!.span)
     for x in xs do
+      let w := Name.mkSimple (declaredIdent x).1.name
+      if insts.any (·.name == w) then err x.span (Fren.Core.dupBinderMsg w)
       let x ← declare x
-      let w := Name.mkSimple x.name
       liftMsg x.span (Fren.Core.checkItemName "instance" w)
       lintName .instance w x.span
       -- Like an instance's, but its inputs are shown in counterexamples.
@@ -1930,8 +1936,9 @@ partial def elabItem : Item → M Unit
       if let some k := (Fren.Core.repeatsAt (params.map (Name.mkSimple ·.1[0]!.name)))[0]? then
         err params[k]!.1[0]!.span (Fren.Core.dupParamMsg (Name.mkSimple params[k]!.1[0]!.name))
       for (p, ty?) in params do
+        let xn := Name.mkSimple (declaredIdent p[0]!).1.name
+        if vars.any (·.name == xn) then err p[0]!.span (Fren.Core.dupParamMsg xn)
         let x ← declare p[0]!
-        let xn := Name.mkSimple x.name
         lintName .variable xn x.span
         let t ← varTy ty? x
         vars := vars.push { name := xn, role := .input, isPub := true, ty := t, span := x.span }
