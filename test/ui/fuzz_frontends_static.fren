@@ -1,0 +1,21 @@
+-- Undecidable constructs near differences that `fren_fuzz_frontends`
+-- found, on which the front ends agree.
+
+-- Relational methods chained after a variable.
+comp chained {
+    in r: Rel(Int, Int)
+    pub out y?
+    req q: y? iff r.range.card = 1
+    --~^ error: a relational operator over a type that is not finite quantifies over its values
+    --~^^ error: the solver does not reliably combine counting with relational operators
+}
+
+-- A `++` compared with a variable, without parentheses.
+comp concat {
+    in s: String
+    in t: String
+    pub out y?
+    req q: y? iff s = t ++ "b"
+    --~^ error: searching a string, or `++` here, which makes a word equation, may be undecidable
+}
+--@ exit: 2

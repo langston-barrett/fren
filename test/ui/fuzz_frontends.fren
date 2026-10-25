@@ -1,0 +1,14 @@
+-- Specs near differences that `fren_fuzz_frontends` found, on which the
+-- front ends agree.
+
+-- Methods chained after a literal, where the first takes arguments.
+expect sliced: "ab".slice(0, 1).len = 1 and ("a").len = 1
+
+-- `card` of a literal, with a set variable in the component.
+comp counted {
+    in x: Int
+    in t: Set(Int)
+    pub out y?
+    req q: y? iff ({x}.card = 1 and not 7 in t)
+}
+--@ summary: 3 passed, 0 failed, 0 inconclusive, 0 redundant

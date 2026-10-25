@@ -106,3 +106,11 @@ lean_exe fren_fuzz where
 lean_exe fren_coverage where
   root := `FrenCoverage
   supportInterpreter := true
+
+-- `lake exe fren_fuzz_frontends`: random specs, checked by both front ends,
+-- whose reports must agree (`Reqs/dev/Testing`). It loads Fren's Lean
+-- environment at runtime, hence the interpreter.
+lean_exe fren_fuzz_frontends where
+  root := `FrenFuzzFrontends
+  supportInterpreter := true
+  moreLinkArgs := coverageLinkArgs

@@ -77,6 +77,31 @@
   constraints are not compared, since without them brute force is not
   exact. A component with too many behaviours to enumerate is skipped,
   and counted in the summary.
+- **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
+  [--seed N] [--out DIR] [--avoid-known]`): generates random specs and
+  checks each with both front ends, the `fren` command's pipeline and the
+  Lean front end (in an environment that imports `Fren`, as the ui
+  tests do), whose reports must agree (`cli::agreement`): the same errors
+  and warnings on the same lines, and the same summary. The specs aim at
+  the analyses that each front end implements on its own: constants,
+  defined outputs, defined and uninterpreted functions, instances,
+  `match`, string methods and `++`, products, and sets and relations with
+  `card`, so as to reach `linear_product`, the
+  [decidable core](../Lang/Decidability.md) and the lints. What may
+  legitimately differ is not compared: Lean's own parse and type errors
+  stand for the `fren` command's errors on the same line; messages are
+  compared by their first line, without the values of a model, which may
+  differ, or the solver's reason for an undecided check; checks by
+  testing, which Lean does not run, are left out, as is the summary of
+  a spec that has them; and after a static error, which stops the `fren`
+  command, so are the checks' results, the summary, and Lean's lints of an
+  item with an error other than a lint. Each spec where the front ends
+  differ is written to `DIR` (default `.lake/fuzz`) with the differences
+  and both reports in comments, and the differences are summarized by
+  kind; those only in undecided checks, which time limits may explain,
+  are counted apart. `--avoid-known` steers clear of differences already
+  known, to find others; `--files FILE...` compares the front ends on
+  given files, and `--print SEED` prints a generated spec.
 
 `lake test` runs its tests as jobs, in parallel: each job is a process of
 its own (`fren_test --job NAME ARG...`), and the ui tests run in batches of
