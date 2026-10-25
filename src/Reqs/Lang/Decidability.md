@@ -5,7 +5,7 @@ Each theory beyond Booleans, integers, datatypes and uninterpreted
 functions has a *decidable core*, which Fren recognizes from the syntax
 alone: from the operators, the types of their operands, and which operands
 are constants. A construct outside the core is reported by the
-[lint](../Lint.md#undecidable-constructs) `undecidable`, which is `deny`
+[lint](../Lint/Decidability.md#undecidable-constructs) `undecidable`, which is `deny`
 by default. A spec opts out where it must, with `set_option
 fren.lint.undecidable "allow" in` before an item.
 

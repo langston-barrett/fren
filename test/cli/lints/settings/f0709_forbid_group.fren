@@ -1,0 +1,4 @@
+-- Changing the level of a group with a forbidden lint (F0709), here
+-- forbidden on the command line.
+--@ args: check -F membership_chain
+set_option fren.lint.pedantic "allow"

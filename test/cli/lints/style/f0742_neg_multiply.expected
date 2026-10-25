@@ -1,0 +1,19 @@
+warning[F0742]: multiplying by `-1` is negation
+ --> test/cli/lints/style/f0742_neg_multiply.fren:2:46
+  |
+2 | comp c { in x: Int pub out y: Int req r: y = (x + 1) * -1 }
+  |                                              ^^^^^^^^^^^^ a product with `-1`
+  |
+  = help: `fren fix` can fix this
+  = note: `neg_multiply` is `warn` by default
+  = help: to allow it, `set_option fren.lint.neg_multiply "allow"`
+help: write `-(x + 1)`
+  |
+2 - comp c { in x: Int pub out y: Int req r: y = (x + 1) * -1 }
+2 + comp c { in x: Int pub out y: Int req r: y = -(x + 1) }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0742`.
+exit=3

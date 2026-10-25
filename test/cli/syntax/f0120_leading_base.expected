@@ -1,0 +1,12 @@
+error[F0120]: `0_` is not an integer literal
+ --> test/cli/syntax/f0120_leading_base.fren:3:20
+  |
+3 | const MASK: Int := 0_xFF
+  |                    ^^ malformed number
+  |
+  = note: an integer literal is decimal digits, or `0x`, `0b` or `0o` and the digits of that base, with `_`s between the digits or after the base, and ends in a digit; a decimal literal does not start with `0_`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0120`.
+exit=2

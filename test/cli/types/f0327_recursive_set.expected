@@ -1,0 +1,13 @@
+error[F0327]: `Tree` cannot be an element type within itself
+ --> test/cli/types/f0327_recursive_set.fren:2:24
+  |
+2 | enum Tree { Leaf, Node(Set(Tree)) }
+  |                        ^^^^^^^^ recursive through a set
+  |
+  = note: a type cannot be built from sets, relations or sequences of itself
+  = help: give the variant a payload of the type itself, or of an enum that lists the cases
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0327`.
+exit=2

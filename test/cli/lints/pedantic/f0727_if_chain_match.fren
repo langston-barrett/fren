@@ -1,0 +1,13 @@
+-- `if_chain_match`, which is allowed by default.
+set_option fren.lint.if_chain_match "warn"
+
+enum Mode { Heat, Cool, Off }
+
+comp c {
+    in m: Mode
+    pub out y: Int
+    pub out z: Int
+
+    req r: y = if m = Mode::Heat then 1 else if m = Mode::Cool or m = Mode::Off then 2 else 0
+    req s: z = if m = Mode::Heat then 1 else 0
+}

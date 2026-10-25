@@ -1,0 +1,29 @@
+--@ args: fix --check -W pedantic -A membership_chain -A definable_output
+-- `fren fix` fixes the match lints.
+enum E { A, B, C, D }
+
+comp c {
+    use self::E::{A, B, C}
+    in e: E
+    in x: Int
+    pub out a: Int
+    pub out b: Int
+    pub out c?
+    pub out d?
+    pub out f: Int
+    pub out g: Int
+
+    -- Written the same, ignoring whitespace.
+    req r1: a = match e { A => x  +  1, B => 2, C => x+1, _ => 3 }
+    -- Removing `C` into `_` makes it cover two variants, so `_` stays.
+    req r2: b = match e { A => 1, B => 2, C => 3, _ => 3 }
+    req r3: c? = (match e { A | B => true, _ => false }) and x > 0
+    req r4: d? = match e {
+        | A
+        | B => false,
+        C => true,
+        _ => true,
+    }
+    req r5: f = 2 * match e { A => x + 1, B => x + 1, _ => x + 1 }
+    req r6: g = match e { A => 1, B => 2, C => 3, _ => 4 }
+}

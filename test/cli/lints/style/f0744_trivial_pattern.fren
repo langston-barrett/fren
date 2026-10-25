@@ -1,0 +1,3 @@
+-- `trivial_pattern`.
+-- fren-covers: lint::trivial_pattern
+pub comp c { in s: String pub out p? req r: p? iff s.matches?(r"F0\.1.*") }

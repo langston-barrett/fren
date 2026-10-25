@@ -1,0 +1,11 @@
+--@ args: fix --check
+-- Strings with different spaces are not written the same, so these are
+-- not rewritten.
+comp c {
+    in s: String
+    pub out p1?
+    pub out p2?
+
+    req r1: p1? iff (s < "a b" or s = "ab")
+    req r2: p2? iff s.slice(0, "a b".len) = "ab"
+}

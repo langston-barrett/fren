@@ -1,0 +1,13 @@
+warning[F0612]: testing never reached `c::e` in 100 tests: its trigger held in none of them
+ --> test/cli/results/f0612_untriggered.fren:8:15
+  |
+8 |     expect e: when 7 * x = 123459, big?
+  |               ^^^^^^^^^^^^^^^^^^^ never held
+  |
+  = note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it
+  = help: run `fren check` to decide it, or raise `--tests`
+
+fren: 1 passed, 0 failed, 1 inconclusive, in 100 tests each
+
+For more information about this error, try `fren --explain F0612`.
+exit=3

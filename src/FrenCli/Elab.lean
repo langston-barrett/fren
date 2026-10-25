@@ -247,6 +247,20 @@ structure CClaim where
   texts : Array (String × Span)
   deriving Inhabited
 
+def toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
+
+/-- The edits that fix a lint's message, which `fren fix` makes where the
+message is reported. -/
+structure LintFix where
+  lint : Lint
+  /-- Where the message is. -/
+  span : Span
+  edits : Array (Fren.Core.Range × String)
+  /-- A message whose fix would undo this one's: if `fren fix` fixes it,
+  this one is not fixed. -/
+  unless? : Option (Lint × Span) := none
+  deriving Inhabited
+
 structure State where
   table : Table := {}
   claims : Array CClaim := #[]
@@ -307,11 +321,12 @@ structure State where
   that paths in it resolve to (`dead_code`). -/
   items : Array (Fren.Core.ItemRecord × Span) := #[]
   usedItems : Array Name := #[]
-  /-- The simpler forms that `nonminimal_bool` suggests, at its messages. -/
-  boolFixes : Array (Span × String) := #[]
-  /-- The edits that fix the lints whose message suggests one replacement of
-  the text it is at: the collection, membership and index lints. -/
-  lintFixes : Array (Lint × Span × String) := #[]
+  /-- The edits that fix the lints whose message suggests a replacement:
+  the collection, membership, index, rewriting and match lints. -/
+  lintFixes : Array LintFix := #[]
+  /-- Where the comparisons of `Bool`s in the expression being elaborated
+  are, for `bool_equality`. -/
+  boolEqs : Array Span := #[]
   /-- Some type or literal is a `String`, so the queries need the theory of
   strings (`cli::logic`). -/
   usesStrings : Bool := false
@@ -445,10 +460,15 @@ def lint (lint : Lint) (span : Span) (msg : Msg) : M Unit :=
 
 /-- Reports a lint whose message's first fix replaces its text, which
 `fren fix` applies. -/
-def lintFix (l : Lint) (span : Span) (msg : Msg) : M Unit := do
+def lintFix (l : Lint) (span : Span) (msg : Msg) (unless? : Option (Lint × Span) := none) : M Unit := do
   let some f := msg.fixes[0]? | lint l span msg
-  modify fun s => { s with lintFixes := s.lintFixes.push (l, span, f.replacement) }
+  modify fun s => { s with lintFixes := s.lintFixes.push { lint := l, span, edits := #[(toRange span, f.replacement)], unless? } }
   lint l span { msg with notes := msg.notes.push Fren.Core.fixHelp }
+
+/-- Reports a lint whose fix is `edits`, which `fren fix` makes. -/
+def lintEdits (l : Lint) (span : Span) (msg : Msg) (edits : Array (Fren.Core.Range × String)) : M Unit := do
+  modify fun s => { s with lintFixes := s.lintFixes.push { lint := l, span, edits } }
+  lint l span (msg.note Fren.Core.fixHelp)
 
 /-! ## Expressions -/
 
@@ -491,9 +511,15 @@ structure ExprCtx where
   check, and report its lints: not when it is elaborated a second time, as
   a trigger. -/
   noteIndexes : Bool := true
-  /-- This expression is an operand of `or`, whose chain `membership_chain`
-  looks at from its top. -/
-  inOr : Bool := false
+  /-- This expression is an operand of `or`, or of `and`, whose chain
+  `membership_chain` looks at from its top: that operator, or `""`. -/
+  chain : String := ""
+  /-- The expression this one is part of, if any: where a `match` is, for
+  the match lints. -/
+  parent? : Option Expr := none
+  /-- This expression is the `else` branch of an `if`, whose chain
+  `if_chain_match` looks at from its top. -/
+  inElse : Bool := false
 
 /-- The binder named `n` in scope, if any. -/
 def ExprCtx.binder? (cx : ExprCtx) (n : Name) : Option CBinder := cx.binders.reverse.find? (·.name == n)
@@ -665,24 +691,98 @@ def checkCore (cx : ExprCtx) (span : Span) (c : Fren.Core.Construct) (constantAr
     modify fun s => { s with outsideCore := true }
     lint .undecidable span (Fren.Core.undecidableMsg c infinite)
 
-/-- `e` as `nonminimal_bool` sees it. -/
+/-- The expressions directly within `e`, in order. -/
+def Expr.operands : Expr → Array Expr
+  | .when _ _ c d => #[c, d]
+  | .ite _ c a b => #[c, a, b]
+  | .bin _ _ a b | .pair _ a b | .index _ a b => #[a, b]
+  | .not _ a | .neg _ a | .field _ a _ => #[a]
+  | .app _ _ args | .set _ args | .seq _ args => args
+  | .method _ r _ args => #[r] ++ args
+  | .record _ _ fs => fs.filterMap (·.2)
+  | .match _ s arms => #[s] ++ arms.map (·.2)
+  | .num .. | .bool .. | .path .. | .str .. => #[]
+
+/-- `e` as the lints that rewrite it (`Fren.Core.ExLint`) and the operator
+lints see it. -/
 partial def Expr.boolNode : Expr → Fren.Core.BNode Span
-  | .when s _ c d => .mk .when (toRange s) s #[c.boolNode, d.boolNode]
+  | .when s n c d => .mk (.when n) (toRange s) s #[c.boolNode, d.boolNode]
   | .ite s c a b => .mk .ite (toRange s) s #[c.boolNode, a.boolNode, b.boolNode]
   | .bin s op a b => .mk (.bin op) (toRange s) s #[a.boolNode, b.boolNode]
   | .not s a => .mk .not (toRange s) s #[a.boolNode]
   | .neg s a => .mk .neg (toRange s) s #[a.boolNode]
   | .bool s b => .mk (.lit b) (toRange s) s #[]
-  | .num s _ | .path s _ | .app s .. | .record s .. | .field s .. | .match s .. | .str s .. | .method s .. | .set s .. | .pair s .. | .seq s .. | .index s .. =>
-    .mk .atom (toRange s) s #[]
+  | .method s r m args => .mk (.method m.name) (toRange s) s (#[r.boolNode] ++ args.map (·.boolNode))
+  | .app s _ args | .set s args | .seq s args => .mk .atom (toRange s) s (args.map (·.boolNode))
+  | .record s _ fields => .mk .atom (toRange s) s (fields.filterMap (·.2.map (·.boolNode)))
+  | .field s a _ => .mk .atom (toRange s) s #[a.boolNode]
+  | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode] ++ arms.map (·.2.boolNode))
+  | .pair s a b | .index s a b => .mk .atom (toRange s) s #[a.boolNode, b.boolNode]
+  | .num s _ | .path s _ | .str s .. => .mk .atom (toRange s) s #[]
 where toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
 
-/-- Reports the `Bool` expressions in `e` that have a simpler form
-(`nonminimal_bool`). -/
+/-- The pairs of parentheses directly around `sp` in `src`, from the inside
+out, each from its `(` to its `)`. -/
+def parenLayers (src : Array Char) (sp : Span) : Array Span := Id.run do
+  let mut out := #[]
+  let mut (i, j) := (sp.start, sp.stop)
+  repeat
+    let mut a := i
+    while a > 0 && src[a - 1]!.isWhitespace do a := a - 1
+    let mut b := j
+    while b < src.size && src[b]!.isWhitespace do b := b + 1
+    unless a > 0 && src[a - 1]! == '(' && b < src.size && src[b]! == ')' do break
+    (i, j) := (a - 1, b + 1)
+    out := out.push { start := i, stop := j }
+  return out
+
+/-- Reports `double_parens` in `e` and within it (`lint::double_parens`),
+where `call` says that `e` is the only argument of an application, whose
+parentheses are not its own. -/
+partial def lintParens (e : Expr) (call : Bool := false) : M Unit := do
+  let src := (← get).src
+  let layers := parenLayers src e.span
+  let layers := if call then layers.pop else layers
+  if Fren.Core.doubleParens layers.size then
+    lintFix .doubleParens layers.back! (Fren.Core.doubleParensMsg (String.ofList (src.extract layers[0]!.start layers[0]!.stop).toList))
+  match e with
+  | .app _ _ #[a] => lintParens a true
+  | .method _ r _ #[a] => lintParens r; lintParens a true
+  | _ => for k in e.operands do lintParens k
+
+/-- Where `e`, an operand of `p`, is, as `lang::operand` sees it; `none`
+where any expression can be written, as in parentheses. -/
+def Expr.operandSlot (src : Array Char) (p e : Expr) : Option Fren.Core.Slot :=
+  if Fren.Core.enclosed src { start := 0, stop := src.size } (toRange e.span) then none else
+  match p with
+  | .field _ x _ | .method _ x _ _ | .index _ x _ | .match _ x _ =>
+    if x.span == e.span then some Fren.Core.receiverSlot else none
+  | _ =>
+    let .mk k _ _ kids := p.boolNode
+    (kids.findIdx? fun | .mk _ r _ _ => r == toRange e.span).bind (k.slots[·]?.join)
+
+/-- `e` as written, with the parentheses around it, and its precedence
+(`lang::operand`). -/
+def Expr.text (src : Array Char) (e : Expr) : Fren.Core.BText :=
+  let r := Fren.Core.withParens src (toRange e.span)
+  let prec := if r != toRange e.span then Fren.Core.BKind.atom.prec else match e.boolNode with | .mk k .. => k.prec
+  { text := Fren.Core.textOf src r, prec }
+
+/-- Reports the expressions in `e` that the lints that rewrite them
+(`Fren.Core.ExLint`) report, such as `Bool` expressions with a simpler form
+(`nonminimal_bool`), the operator and method lints, the arithmetic lints
+and double parentheses in it, once `e` is elaborated. -/
 def lintBools (e : Expr) : M Unit := do
-  for r in Fren.Core.simplerBools (← get).src e.boolNode do
-    lint .nonminimalBool r.ref (Fren.Core.nonminimalMsg r true)
-    modify fun s => { s with boolFixes := s.boolFixes.push (r.ref, r.replacement) }
+  let root := e.boolNode
+  for (l, ref, msg) in Fren.Core.rewriteReports (← get).src root do
+    lintFix l ref msg
+  let boolEqs := (← get).boolEqs
+  modify fun s => { s with boolEqs := #[] }
+  for r in Fren.Core.opReports (← get).src boolEqs.contains root do
+    lintFix r.lint r.ref r.msg
+  for r in Fren.Core.arithReports (← get).src root do
+    lintFix r.lint r.ref r.msg
+  lintParens e
 
 /-- `e` has type `found` where `expected` was required. -/
 def mismatch (e : Expr) (expected found : Ty) (why : Option String := none) : M α :=
@@ -814,6 +914,9 @@ def takeIndexes : M (Array (Span × String)) := do
 /-- The source text at `span`. -/
 def srcAt (span : Span) : M String := return String.ofList ((← get).src.extract span.start span.stop).toList
 
+/-- Whether an infix operator follows `span` (`Fren.Core.followedAt`). -/
+def followedSpan (span : Span) : M Bool := return Fren.Core.followedAt (← get).src (toRange span)
+
 /-- The receiver of `e`, if it reads `len` or `card` without arguments. -/
 def lengthOf? : Expr → Option (Expr × Bool)
   | .path sp #[seg] =>
@@ -827,10 +930,39 @@ def lengthOf? : Expr → Option (Expr × Bool)
     if f.name == "len" then some (r, false) else if f.name == "card" then some (r, true) else none
   | _ => none
 
-/-- The disjuncts of a chain of `or`. -/
-partial def orDisjuncts : Expr → Array Expr
-  | .bin _ "or" l r => orDisjuncts l ++ orDisjuncts r
-  | d => #[d]
+/-- The receiver of `e` and the name it reads, if it reads a field or calls a
+method without arguments. -/
+def lastName? : Expr → Option (Expr × String)
+  | .path sp #[seg] =>
+    let parts := seg.name.splitOn "."
+    if parts.length < 2 then none else
+    let recv := ".".intercalate parts.dropLast
+    let rs : Span := { sp with stop := sp.start + recv.length }
+    some (.path rs #[{ name := recv, span := rs }], parts.getLast!)
+  | .field _ r f | .method _ r f #[] => some (r, f.name)
+  | _ => none
+
+/-- The names that `e` reads one after another, innermost first, each with
+its receiver. -/
+partial def namesRead (e : Expr) : Array (Expr × String) :=
+  match lastName? e with
+  | some (r, n) => (namesRead r).push (r, n)
+  | none => #[]
+
+/-- The span of `e` as written: a field read, method call or index of a
+receiver in parentheses starts at the `(`, which its span leaves out. -/
+partial def Expr.writtenSpan (src : Array Char) (e : Expr) : Span :=
+  match e with
+  | .field _ r _ | .method _ r _ _ | .index _ r _ =>
+    let r := Fren.Core.withParens src (toRange (r.writtenSpan src))
+    { e.span with start := r.start }
+  | _ => e.span
+
+/-- The operands of a chain of `op`, `or` or `and`. -/
+partial def chainOperands (op : String) (e : Expr) : Array Expr :=
+  match e with
+  | .bin _ op' l r => if op' == op then chainOperands op l ++ chainOperands op r else #[e]
+  | _ => #[e]
 
 /-- The sequences that `e` indexes, as their text. -/
 partial def indexedIn : Expr → M (Array String)
@@ -840,6 +972,8 @@ partial def indexedIn : Expr → M (Array String)
   | .ite _ c a b => return (← indexedIn c) ++ (← indexedIn a) ++ (← indexedIn b)
   | .method _ r _ args => return (← indexedIn r) ++ (← args.foldlM (fun acc a => return acc ++ (← indexedIn a)) #[])
   | .app _ _ args | .set _ args | .seq _ args => args.foldlM (fun acc a => return acc ++ (← indexedIn a)) #[]
+  | .record _ _ fs => fs.foldlM (fun acc (_, e?) => return acc ++ (← (e?.map indexedIn).getD (pure #[]))) #[]
+  | .match _ sc arms => return (← indexedIn sc) ++ (← arms.foldlM (fun acc (_, b) => return acc ++ (← indexedIn b)) #[])
   | _ => return #[]
 
 /-- Whether `e` bounds the sequence written `q`: it mentions `q.len`, or
@@ -880,10 +1014,120 @@ def checkRelational (cx : ExprCtx) (span : Span) (tys : Array Ty) (operands : Ar
   modify fun s => { s with relationalUsed := true }
   checkCore cx span .relational true true operands (← operands.allM (isConstant cx)) (finiteRange := tys.all (!st.infinite ·))
 
+/-- The match lints of the `match` `e` on a value of the enumeration `d`,
+whose arms name the variants `pats`, or `_` for `none`, where `slot` is
+(`Reqs/Lint/Style#matches-that-are-memberships`, `Reqs/Lint/Pedantic#matches`). -/
+def lintMatch (cx : ExprCtx) (e : Expr) (d : DataDecl) (pats : Array (Option (Array Nat))) (slot : Option Fren.Core.Slot) :
+    M Unit := do
+  let .match span scrutinee arms := e | return
+  let src := (← get).src
+  let infos : Array Fren.Core.ArmInfo := arms.map fun (p, body) =>
+    let alts := p.alts.map fun a => Fren.Core.textOf src (toRange a.span)
+    let binds := p.alts.any fun | .variant _ _ (some bs) => bs.any (·.name != "_") | _ => false
+    let noPayload := p.alts.all fun | .variant _ _ none => true | _ => false
+    { alts, binds, noPayload, body := body.text src }
+  -- `trivial_match` (`lint::trivial_match`).
+  if let #[info] := infos then
+    if Fren.Core.trivialMatch infos.size info.binds then
+      lintFix .trivialMatch span (Fren.Core.trivialMatchMsg (info.body.inSlot slot (← followedSpan span)))
+  let bodyRanges := arms.map fun (_, b) => Fren.Core.withParens src (toRange b.span)
+  let armRanges := arms.zipWith (fun (p, _) (b : Fren.Core.Range) => { start := p.span.start, stop := b.stop }) bodyRanges
+  let edits := Fren.Core.sameArmsEdits (toRange span) infos armRanges (arms.map (toRange ·.1.span)) bodyRanges slot (← followedSpan span)
+  let groups := Fren.Core.sameArmGroups infos
+  let mut firstSame? : Option Span := none
+  for g in groups do
+    let (i, msg) := Fren.Core.sameArmsMsg infos g slot (← followedSpan span)
+    let at_ : Span := { start := armRanges[i]!.start, stop := armRanges[i]!.stop }
+    lintEdits .matchSameArms at_ msg (if firstSame?.isNone then edits else #[])
+    if firstSame?.isNone then firstSame? := some at_
+  let scr := scrutinee.text src
+  if let some (pre, post) := Fren.Core.membershipParts? infos scr slot then
+    let r := Fren.Core.withParens src (toRange scrutinee.span)
+    lintEdits .matchLikeMembership span (Fren.Core.membershipMsg (pre ++ scr.text ++ post))
+      #[({ start := span.start, stop := r.start }, pre), ({ start := r.stop, stop := span.stop }, post)]
+  let some w := pats.findIdx? (·.isNone) | return
+  let covered := (List.range d.ctors.size).filter fun k => !pats.any (·.any (·.contains k))
+  unless Fren.Core.wildcardSingle covered.length do return
+  let k := covered[0]!
+  let v := d.ctors[k]!.1
+  let siblings := (arms.flatMap (·.1.alts)).filterMap fun | .variant _ segs _ => some (segs.map (Name.mkSimple ·.name)) | _ => none
+  let n := d.ctors[k]!.2.size
+  let st ← get
+  let pat? := (st.table.variantPath? st.scope cx.shadowing d.path v siblings).map fun segs =>
+    "::".intercalate (segs.map toString).toList ++ (if n == 0 then "" else s!"({", ".intercalate (List.replicate n "_")})")
+  -- Removing an arm into `_` makes it cover more than one variant.
+  let unless? := if groups.any (Fren.Core.groupFix infos · == .remove) then firstSame?.map (.matchSameArms, ·) else none
+  lintFix .wildcardSingleVariant arms[w]!.1.span (Fren.Core.wildcardMsg (d.path ++ v) pat?) unless?
+
+/-- The variant that `e` names, if it is a path to one without a payload:
+its enumeration, its index and its text. -/
+def variantOf? (cx : ExprCtx) : Expr → M (Option (Name × Nat × String))
+  | .path span segs => do
+    let st ← get
+    let .ok (.variant en idx) := st.table.resolvePath st.scope (segNames segs) cx.shadowing | return none
+    unless ((st.dataOf? en.path).bind (·.ctors[idx]?)).any (·.2.isEmpty) do return none
+    return some (en.path, idx, ← srcAt span)
+  | _ => return none
+
+/-- `e` as a test of which variant a scrutinee is, if it is one
+(`Fren.Core.VariantTest`). -/
+partial def variantTest? (cx : ExprCtx) : Expr → M (Option Fren.Core.VariantTest)
+  | .bin _ "or" a b => do
+    let some x ← variantTest? cx a | return none
+    let some y ← variantTest? cx b | return none
+    return x.or y
+  | .bin _ "=" l v => do
+    let some (en, i, t) ← variantOf? cx v | return none
+    return some { scrutinee := ← srcAt l.span, enum := en, variants := #[(i, t)] }
+  | .bin _ "in" l (.set _ vs) => do
+    let mut out : Array (Nat × String) := #[]
+    let mut en? : Option Name := none
+    for v in vs do
+      let some (en, i, t) ← variantOf? cx v | return none
+      unless en?.all (· == en) do return none
+      en? := some en
+      out := out.push (i, t)
+    let some en := en? | return none
+    return some { scrutinee := ← srcAt l.span, enum := en, variants := out }
+  | _ => return none
+
+/-- The tests, the branches and the final `else` of a chain of `if`. -/
+partial def ifChain : Expr → Array Expr × Array Expr × Expr
+  | .ite _ c a b => let (cs, as, z) := ifChain b; (#[c] ++ cs, #[a] ++ as, z)
+  | z => (#[], #[], z)
+
+/-- The text of `e` as the body of a `match` arm. -/
+def armBodyOf (e : Expr) : M String := return Fren.Core.armBody (← srcAt e.span) (e matches .when ..)
+
+/-- `if_chain_match` on the chain of `if` that starts at `e`
+(`lint::if_chain_match`). -/
+def lintIfChain (cx : ExprCtx) (e : Expr) : M Unit := do
+  let (cs, as, z) := ifChain e
+  let ts? := Fren.Core.sameScrutinee (← cs.mapM (variantTest? cx))
+  let ts := ts?.getD #[]
+  let enums := (← get).table.enums
+  let n := ((ts[0]?.bind fun t => enums.get? t.enum).map (·.variants.size)).getD 0
+  let (fires, wildcard) := Fren.Core.ifChainMatch cs.size ts?.isSome (Fren.Core.repeatedVariants ts)
+    (Fren.Core.untestedVariants n ts)
+  unless fires do return
+  let final? ← if wildcard then some <$> armBodyOf z else pure none
+  lintFix .ifChainMatch e.span (Fren.Core.ifChainMatchMsg ts (← as.mapM armBodyOf) final?)
+
+/-- `redundant_bindings` on the binding, or field, `b := e`
+(`lint::redundant_bindings`). -/
+def lintRedundant (b : Ident) (e : Expr) (field : Bool) : M Unit := do
+  let after := (Fren.Core.withoutComments (← srcAt { start := b.span.stop, stop := e.span.stop })).trimAscii.toString
+  let value := String.ofList (after.toList.drop 2)
+  if after.startsWith ":=" && Fren.Core.redundantBinding (Fren.Core.writtenForm b.name) (Fren.Core.writtenForm value) then
+    lintFix .redundantBindings (b.span.to e.span) (Fren.Core.redundantBindingMsg b.name field)
+
 partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   let concatOk := cx.concatOk
   let expected? := cx.expected?
-  let cx := { cx with concatOk := false, expected? := none, inOr := false }
+  let chain := cx.chain
+  let parent? := cx.parent?
+  let inElse := cx.inElse
+  let cx := { cx with concatOk := false, expected? := none, chain := "", parent? := some e, inElse := false }
   let isEmptySet : Expr → Bool | .set _ #[] => true | _ => false
   -- Two operands of the same type: `{}` takes the other's.
   let pair (cxa cxb : ExprCtx) (a b : Expr) : M ((String × Ty) × (String × Ty)) := do
@@ -900,9 +1144,15 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   -- `length_zero` and `card_zero` on `a op b` (`lint::length_zero`).
   let lintLength (op : String) (a b : Expr) : M Unit := do
     unless cx.noteIndexes do return
-    let (.num _ d, some (recv, card), some c) := (b, lengthOf? a, Fren.Core.Comparison.ofOp? op) | return
-    let (fires, empty) := Fren.Core.lengthZero c d
+    let some c := Fren.Core.Comparison.ofOp? op | return
+    -- The length, the literal, and whether the length is on the left.
+    let (n, d, left) ← match b, a with
+      | .num _ d, _ => pure (a, d, true)
+      | _, .num _ d => pure (b, d, false)
+      | _, _ => return
+    let (fires, empty) := Fren.Core.lengthZero c d left
     unless fires do return
+    let some (recv, card) := lengthOf? n | return
     -- Only its type: what elaborating it reports is reported where it is.
     let saved ← get
     let t? ← tryCatch (some <$> (·.2) <$> elabExpr { cx with noteIndexes := false, concatOk := true } recv)
@@ -913,7 +1163,40 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     unless card == isSet do return
     let emptyText := match t with | .string => "\"\"" | .seq _ => "[]" | _ => "{}"
     lintFix (if card then .cardZero else .lengthZero) e.span
-      (Fren.Core.lengthZeroMsg card (← srcAt recv.span) emptyText empty)
+      (Fren.Core.lengthZeroMsg card (← srcAt recv.span) emptyText empty d)
+  let src := (← get).src
+  -- Where `e` is, as `lang::operand` sees it.
+  let slot := parent?.bind (Expr.operandSlot src · e)
+  -- `redundant_method_chain`, at the end of a chain (`lint::method_chain`):
+  -- not on the receiver of a field or method read without arguments.
+  let lintChain : M Unit := do
+    let inChain := parent?.any fun
+      | .field _ r _ | .method _ r _ #[] => r.span == e.span
+      | _ => false
+    unless cx.noteIndexes && !inChain do return
+    let steps := namesRead e
+    let ms := steps.map (Fren.Core.Method.ofName? ·.2)
+    let shortens (i : Nat) := match ms[i]?, ms[i + 1]? with
+      | some (some a), some (some b) => Fren.Core.methodChain a b != .keep
+      | _, _ => false
+    unless (List.range steps.size).any shortens do return
+    -- The first receiver that is a relation or a sequence, which has no
+    -- fields: the names after it are its methods.
+    for (recv, _) in steps, i in [0:steps.size] do
+      let saved ← get
+      let rcx := { cx with noteIndexes := false, concatOk := true }
+      let t? : Option Ty ← tryCatch (some <$> (·.2) <$> elabExpr rcx recv) fun _ => pure none
+      set saved
+      unless t? matches some (.rel ..) | some (.seq _) do continue
+      let some chain := (ms.extract i).mapM id | return
+      let short := Fren.Core.shortestChain chain.toList
+      if short.length < chain.size then
+        let written := Fren.Core.textOf src (Fren.Core.withParens src (toRange (recv.writtenSpan src)))
+        let fixed : Fren.Core.BText :=
+          if short.isEmpty then { text := Fren.Core.textOf src (toRange recv.span), prec := recv.boolNode.kind.prec }
+          else { text := written ++ String.join (short.map (s!".{·.name}")), prec := Fren.Core.BKind.atom.prec }
+        lintFix .redundantMethodChain (e.writtenSpan src) (Fren.Core.methodChainMsg (fixed.inSlot slot (← followedSpan e.span)))
+      return
   match e with
   | .when _ neg c d =>
     let kw := if neg then "unless" else "when"
@@ -924,9 +1207,17 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     return (if neg then s!"(=> (not {c}) {d})" else s!"(=> {c} {d})", .bool)
   | .not _ a => return (s!"(not {← expect a .bool (opNote "not" .bool)})", .bool)
   | .ite span c a b =>
+    if cx.noteIndexes && !inElse then lintIfChain cx e
+    -- `same_branches` (`lint::same_branches`).
+    if cx.noteIndexes then
+      let ta ← srcAt a.span
+      if Fren.Core.sameBranches (Fren.Core.writtenSame ta (← srcAt b.span)) then
+        let .mk kind .. := a.boolNode
+        lintFix .sameBranches span (Fren.Core.sameBranchesMsg ta kind.prec (← srcAt { start := 0, stop := span.start })
+          (← srcAt { start := span.stop, stop := (← get).src.size }))
     let c ← expect c .bool (some "note: the condition of `if` is a `Bool`")
     let ((x, tx), (y, ty)) ← pair { cx with expected?, guards := cx.guards.push c }
-      { cx with expected?, guards := cx.guards.push s!"(not {c})" } a b
+      { cx with expected?, guards := cx.guards.push s!"(not {c})", inElse := true } a b
     unless tx == ty do
       err span { code? := some "F0306", headline := s!"the branches of `if` have different types: `{tx.show}` and `{ty.show}`"
                  label? := some "branches of different types"
@@ -962,6 +1253,13 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
                      notes := #[s!"note: the first member is a `{mt0}`, so the literal is a `{t0.show}`"] }
       xs := xs.push x
     checkCore cx span .setAlgebra true true elems
+    -- `duplicate_elements` (`lint::duplicate_elements`).
+    if cx.noteIndexes then
+      let repeats := Fren.Core.repeatedElements (← elems.mapM (srcAt ·.span))
+      if Fren.Core.duplicateElements repeats.size then
+        let range (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
+        lintFix .duplicateElements span
+          (Fren.Core.duplicateElementsMsg (← get).src (range span) (elems.map (range ·.span)) repeats)
     let ts := xs.map (s!"(tuple {·})")
     let smt := if ts.size == 1 then s!"(set.singleton {ts[0]!})"
       else s!"(set.insert {" ".intercalate (ts.pop.toList)} (set.singleton {ts.back!}))"
@@ -998,6 +1296,13 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     modify fun s => { s with usesStrings := true }
     return (Fren.Core.smtStringLit v, .string)
   | .method span recv m args =>
+    if args.isEmpty then lintChain
+    -- `trivial_pattern` (`lint::trivial_pattern`).
+    if let (true, #[.str _ p], true) := (m.name == "matches?", args, cx.noteIndexes) then
+      if let some (fix, lit) := Fren.Core.trivialPattern? p then
+        let bare : Fren.Core.BText := { text := ← srcAt recv.span, prec := recv.boolNode.kind.prec }
+        let fixed := Fren.Core.trivialPatternText bare (recv.text src).text fix lit
+        lintFix .trivialPattern (e.writtenSpan src) (Fren.Core.trivialPatternMsg fix (fixed.inSlot slot))
     let (r, t) ← elabExpr { cx with concatOk := true } recv
     let mut as := #[]
     for a in args do
@@ -1028,30 +1333,42 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         ((← args.allM (isConstant cx)) && (← isConstant cx recv)) (literalOperand := args.any (· matches .seq ..))
     if let some tys := relRange? t m.name then checkRelational cx span tys (#[recv] ++ args)
     checkRelationalCard cx span t m.name recv
-    callMethod m.span r t m.name as
+    let res ← callMethod m.span r t m.name as
+    -- `empty_argument` (`lint::empty_argument`).
+    if let (some meth, true) := (Fren.Core.Method.ofName? m.name, cx.noteIndexes) then
+      if let some msg := Fren.Core.emptyArgumentMsg? meth (t matches .seq _) (← srcAt recv.span) (← args.mapM (srcAt ·.span)) then
+        lint .emptyArgument span msg
+    return res
   | .bool _ b => return (toString b, .bool)
   | .bin span op a b =>
+    -- `eq_op` (`lint::eq_op`).
+    if let (some o, true) := (Fren.Core.InfixOp.ofOp? op, cx.noteIndexes) then
+      let ta ← srcAt a.span
+      if let some v := Fren.Core.eqOp o (Fren.Core.writtenSame ta (← srcAt b.span)) then lint .eqOp span (Fren.Core.eqOpMsg o v ta)
     match op with
     | "iff" | "or" | "and" =>
       let smt := if op == "iff" then "=" else op
-      -- `membership_chain`, at the top of a chain of `or` (`lint::membership_chain`).
-      if op == "or" && !cx.inOr && cx.noteIndexes then
-        let ds := orDisjuncts e
-        let eqs := ds.filterMap fun | .bin _ "=" l r => some (l, r) | _ => none
+      -- `membership_chain`, at the top of a chain of `or` or of `and` (`lint::membership_chain`).
+      if op != "iff" && chain != op && cx.noteIndexes then
+        let ds := chainOperands op e
+        let cmp := if op == "and" then "!=" else "="
+        let eqs := ds.filterMap fun | .bin _ c l r => if c == cmp then some (l, r) else none | _ => none
         let lefts ← eqs.mapM fun (l, _) => srcAt l.span
         let same := eqs.size == ds.size && lefts.all (· == lefts[0]!)
-        if Fren.Core.membershipChainFires ds.size same then
-          lintFix .membershipChain span (Fren.Core.membershipChainMsg lefts[0]! (← eqs.mapM fun (_, r) => srcAt r.span))
+        let laterIndexes ← (eqs.extract 1).anyM fun (_, v) => return !(← indexedIn v).isEmpty
+        if Fren.Core.membershipChainFires ds.size same laterIndexes then
+          lintFix .membershipChain span
+            (Fren.Core.membershipChainMsg lefts[0]! (← eqs.mapM fun (_, r) => srcAt r.span) (op == "and"))
       -- `index_after_use` (`lint::index_after_use`).
       if op == "and" && cx.noteIndexes then
         let qs ← indexedIn a
         if ← qs.anyM fun q => return (← boundsSeq b q) && !(← boundsSeq a q) then
           lintFix .indexAfterUse span (Fren.Core.indexAfterUseMsg (← srcAt a.span) (← srcAt b.span))
-      let (x, tx) ← elabExpr { cx with inOr := op == "or" } a
+      let (x, tx) ← elabExpr { cx with chain := op } a
       unless tx == .bool do mismatch a .bool tx (opNote op .bool)
       -- `b` is evaluated when `a` does not decide the result.
       let guards := match op with | "and" => cx.guards.push x | "or" => cx.guards.push s!"(not {x})" | _ => cx.guards
-      let (y, ty) ← elabExpr { cx with guards, inOr := op == "or" } b
+      let (y, ty) ← elabExpr { cx with guards, chain := op } b
       unless ty == .bool do mismatch b .bool ty (opNote op .bool)
       return (s!"({smt} {x} {y})", .bool)
     | "=" | "!=" =>
@@ -1067,6 +1384,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         err span { code? := some "F0305", headline := s!"cannot compare `{tx.show}` with `{ty.show}`"
                    label? := some s!"`{tx.show}` and `{ty.show}`"
                    notes := #[s!"note: both sides of `{op}` must have the same type"] ++ hint }
+      -- For `bool_equality`, at the end of the expression.
+      if tx == .bool && cx.noteIndexes then modify fun s => { s with boolEqs := s.boolEqs.push span }
       -- A side that is a `++` is reported as one; one whose definition
       -- has a `++` stands for it, and is reported here.
       let named (e : Expr) : M Bool := do
@@ -1154,6 +1473,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     | _ => return (s!"({op} {← expect a .int (opNote op .int)} {← expect b .int (opNote op .int)})", .int)
   | .path _ segs =>
     if segs.size == 1 then
+      lintChain
       let n := identName segs[0]!.name
       let span := segs[0]!.span
       -- A binder or variable, then any fields read from it.
@@ -1283,6 +1603,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       smts := smts.push x
     return (s!"({itemSym path} {" ".intercalate smts.toList})", result)
   | .field span a f =>
+    lintChain
     let (x, t) ← elabExpr { cx with concatOk := true } a
     if t == .string then checkCore cx span .stringAtom true true #[a]
     if let some tys := relRange? t f.name then checkRelational cx span tys #[a]
@@ -1304,6 +1625,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     let mut smts := #[]
     for (f, t) in fs do
       let some (fi, e?) := fields.find? (Name.mkSimple ·.1.name == f) | internal span s!"no field `{f}`"
+      if let (some e, true) := (e?, cx.noteIndexes) then lintRedundant fi e true
       let e := e?.getD (.path fi.span #[fi])
       let (x, te) ← elabExpr { cx with expected? := some t } e
       unless te == t do mismatch e t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`")
@@ -1340,6 +1662,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     | .error (some (i, some j), msg) => err arms[i]!.1.alts[j]!.span msg
     | .error (some (i, none), msg) => err arms[i]!.1.span msg
     | .error (none, msg) => err span msg
+    if cx.noteIndexes then lintMatch cx e d pats (parent?.bind (Expr.operandSlot (← get).src · e))
     -- An arm's test: that one of its alternatives matches.
     let tests := pats.map (·.map fun idxs =>
       if idxs.size == 1 then d.tester idxs[0]! s else s!"(or {" ".intercalate (idxs.map (d.tester · s)).toList})")
@@ -1424,9 +1747,24 @@ def ownIn (segs : Array Ident) (name : Ident) : Bool × Bool :=
   let isName := core.size == 1 && core[0]!.name == name.name
   (isName && core.size == segs.size, core.size < segs.size && core.any (·.name == name.name))
 
+/-- The span of the annotation `: T` of the type at `span`, from the end of
+what precedes it. -/
+def annotationSpan (span : Span) : M Span := do
+  let src := (← get).src
+  let mut i := span.start
+  while i > 0 && src[i - 1]!.isWhitespace do i := i - 1
+  if i > 0 && src[i - 1]! == ':' then i := i - 1
+  while i > 0 && src[i - 1]!.isWhitespace do i := i - 1
+  return { span with start := i }
+
 def varTy (ty? : Option (Array Ident)) (name : Ident) : M Ty := do
   let t ← ty?.mapM elabTy
-  liftMsg name.span (Fren.Core.checkVarName (Name.mkSimple name.name) (t.map (· == .bool)))
+  let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkVarName n (t.map (· == .bool)))
+  -- `redundant_bool_type` (`lint::redundant_bool_type`).
+  if let (some segs, true) := (ty?, Fren.Core.redundantBoolType n (t.map (· == .bool))) then
+    let span ← annotationSpan (segs[0]!.span.to segs.back!.span)
+    lintFix .redundantBoolType span (Fren.Core.redundantBoolTypeMsg n)
   return t.getD .bool
 
 /-- Records what an instance of `c`, written at `span`, brings to the current
@@ -1474,6 +1812,7 @@ def elabInst (cx : ExprCtx) (pi : PendingInst) : M CInst := do
   let mut eqs := #[]
   let c := pi.comp
   for (b, e?) in pi.bindings do
+    if let some e := e? then lintRedundant b e false
     let e := e?.getD (.path b.span #[b])
     let some v := cx.vars.find? (·.name == w ++ Name.mkSimple b.name)
       | internal b.span s!"no variable for `{b.name}`"
@@ -1655,6 +1994,26 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     let (constant, definable) := Fren.Core.outputLints v.defn?.isSome mentions about.size equation
     if constant then lint .constantOutput v.span (Fren.Core.constantOutputMsg v.name)
     if definable then lint .definableOutput v.span (Fren.Core.definableOutputMsg v.name about[0]!.1)
+  -- `case_split_reqs` (`lint::case_split_reqs`): each requirement `when T, y = e`, as its name, where it is
+  -- reported, `y`, the operator, `T` and the text of `e`.
+  let mut cases : Array (Name × Span × String × String × Fren.Core.VariantTest × String) := #[]
+  for m in members do
+    let .prop .req x (.when _ false c (.bin _ op (.path _ #[y]) rhs)) := m | continue
+    unless (op == "=" || op == "iff") && vars.any (fun v => v.role == .output && v.name == Name.mkSimple y.name) do continue
+    let some t ← variantTest? lcx c | continue
+    cases := cases.push (Name.mkSimple x.name, x.span, y.name, op, t, ← armBodyOf rhs)
+  let mut grouped : Array Nat := #[]
+  for i in [0:cases.size] do
+    if grouped.contains i then continue
+    let (_, _, y, op, t, _) := cases[i]!
+    let group := (Array.range cases.size).filter fun j =>
+      j ≥ i && cases[j]!.2.2.1 == y && cases[j]!.2.2.2.2.1.key == t.key && cases[j]!.2.2.2.2.1.enum == t.enum
+    grouped := grouped ++ group
+    let cs := group.map fun j => let (n, _, _, _, t, e) := cases[j]!; (n, t, e)
+    let ts := cs.map (·.2.1)
+    let n := ((st.table.enums.get? t.enum).map (·.variants.size)).getD 0
+    if Fren.Core.caseSplitReqs cs.size (Fren.Core.repeatedVariants ts) then
+      lint .caseSplitReqs cases[group[1]!]!.2.1 (Fren.Core.caseSplitReqsMsg y op cs (Fren.Core.untestedVariants n ts))
   let path := st.module ++ n
   let tested ← testedOf (← evidenceInEffect) members
   let (relational, counts) ← checkCounts
@@ -2031,19 +2390,20 @@ partial def elabItem : Item → M Unit
         modify fun s => { s with evidence? := st.evidence? }
       return
     let some rest := opt.name.dropPrefix? "fren.lint." | internal opt.span "not a lint option"
-    let some lint := Lint.ofName? rest.toString | err opt.span (Fren.Core.unknownLintMsg rest.toString)
+    let some target := Fren.Core.LintTarget.ofName? rest.toString | err opt.span (Fren.Core.unknownLintMsg rest.toString)
     let some requested := LintLevel.ofName? value | err valueSpan (Fren.Core.invalidLevelMsg value)
     let st ← get
-    let cur := st.levels.get lint
-    let (ok, level) := Fren.Core.setLevel cur.level requested
-    unless ok do err stx (Fren.Core.forbiddenMsg lint requested)
+    if let some lint := target.rejectedBy? (st.levels.get · |>.level) requested then
+      err stx (Fren.Core.forbiddenMsg target lint requested)
     let expectation? ← if requested == .expect then do
-        let e : Fren.Core.ExpectationRecord := { lint, level := st.levels.get .unfulfilledExpectations }
+        let e : Fren.Core.ExpectationRecord := { target, level := st.levels.get .unfulfilledExpectations }
         modify fun s => { s with expectations := s.expectations.push (e, stx),
                                  expectationRemovals := s.expectationRemovals.push removal }
         pure (some st.expectations.size)
       else pure none
-    modify fun s => { s with levels := s.levels.set lint { level, isSet := true, expectation? } }
+    let set : LevelInEffect := { level := requested, isSet := true, group? := target.group?, expectation? }
+    for lint in target.members do
+      modify fun s => { s with levels := s.levels.set lint set }
     if let some body := body? then
       modify fun s => { s with settingStart? := some (st.settingStart?.getD stx.start) }
       elabItem body
@@ -2051,8 +2411,6 @@ partial def elabItem : Item → M Unit
 
 /-- The text of the current file at `sp`. -/
 def State.text (s : State) (sp : Span) : String := String.ofList (s.src.extract sp.start sp.stop).toList
-
-def toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
 
 /-- `use pre::a`, or `use pre::{a, b}` for several names. -/
 def useText (pre : String) (names : Array String) : String :=
@@ -2095,15 +2453,11 @@ def State.fixes (s : State) (fired : Array (Lint × Span)) :
       let kept := members.filter (!removed.contains ·)
       edits := edits.push <| if kept.isEmpty then delete s.useLocs[members[0]!]!.removal
         else (toRange item, useText (s.text pre) (kept.map (s.text s.useLocs[·]!.path)))
-  if s.fixing.contains .nonminimalBool then
-    for (sp, text) in s.boolFixes do
-      if fires .nonminimalBool sp then
-        edits := edits.push (toRange sp, text)
-        fixed := fixed.push (.nonminimalBool, sp)
-  for (l, sp, text) in s.lintFixes do
-    if s.fixing.contains l && fires l sp then
-      edits := edits.push (toRange sp, text)
-      fixed := fixed.push (l, sp)
+  let fixes (l : Lint) (sp : Span) := s.fixing.contains l && fires l sp
+  for f in s.lintFixes do
+    if fixes f.lint f.span && !(f.unless?.any fun (l, sp) => fixes l sp) then
+      edits := edits ++ f.edits
+      fixed := fixed.push (f.lint, f.span)
   if s.fixing.contains .unfulfilledExpectations then
     for (_, sp) in s.expectations, removal in s.expectationRemovals do
       if fires .unfulfilledExpectations sp then
@@ -2131,8 +2485,7 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (fixing : Arra
     StateM State Unit := do
   modify fun s => { s with file, src, fixing, module := .anonymous, scope := .anonymous, levels := s.cliLevels, useRecords := #[], evidence? := none,
                            used := #[], expectations := #[], lintReports := #[], useLocs := #[],
-                           expectationRemovals := #[], items := #[], usedItems := #[], boolFixes := #[],
-                           lintFixes := #[] }
+                           expectationRemovals := #[], items := #[], usedItems := #[], lintFixes := #[] }
   for item in items do
     let s ← get
     match (elabItem item).run s with

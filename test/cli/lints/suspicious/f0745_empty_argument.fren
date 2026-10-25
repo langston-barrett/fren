@@ -1,0 +1,2 @@
+-- `empty_argument`, which has no fix.
+comp c { in t: String pub out p? pub out q? req r1: p? iff t.starts_with?("") req r2: q? iff "ab".index_of("", 1) = 1 }

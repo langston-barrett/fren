@@ -1,0 +1,71 @@
+-- Chains of methods, trivial patterns, Boolean types and trivial matches, in
+-- both front ends.
+-- fren-covers: lint::trivial_pattern
+set_option fren.lint.undecidable "allow"
+
+enum E { A, B }
+enum Lone { Only }
+pub struct W { rev: Seq(Int), ok?: Bool }  --~ warning: `ok?` is a `Bool` by its name
+pub struct V { rev: W }
+
+pub fn even?(Int): Bool  --~ warning: `even?` is a `Bool` by its name
+pub fn pos?(n: Int, big?: Bool) := n > 0 and big?  --~ warning: `big?` is a `Bool` by its name
+
+pub comp vars {
+    in ready?: Bool  --~ warning: `ready?` is a `Bool` by its name
+    pub out done?: Bool := ready?  --~ warning: `done?` is a `Bool` by its name
+}
+
+-- The chains are in functions' bodies, which no check reads.
+pub fn c1?(q: Seq(Int)) := q.rev.rev = q  --~ warning: this chain of methods has a shorter form
+pub fn c2?(r: Rel(E, E)) := r.inverse.inverse = r and r.closure.closure = r.closure
+--~^ warning: this chain of methods has a shorter form
+--~^^ warning: this chain of methods has a shorter form
+pub fn c3?(r: Rel(E, E)) := r.inverse.domain = r.range and r.inverse.range = r.domain
+--~^ warning: this chain of methods has a shorter form
+--~^^ warning: this chain of methods has a shorter form
+pub fn c4?(q: Seq(Int), r: Rel(E, E)) := r.inverse.inverse.domain = {} and q.rev.len = 2 and r.inverse.card = 1
+--~^ warning: this chain of methods has a shorter form
+--~^^ warning: this chain of methods has a shorter form
+--~^^^ warning: this chain of methods has a shorter form
+pub fn c5?(r: Rel(E, E)) := r.closure.domain = r.closure.range
+--~^ warning: this chain of methods has a shorter form
+--~^^ warning: this chain of methods has a shorter form
+-- Fields named like methods, and chains with nothing shorter.
+pub fn c6?(q: Seq(Int), v: V) := v.rev.rev = [1] and q.rev.contains?([1]) and q.rev.rev.contains?([1])
+--~^ warning: this chain of methods has a shorter form
+
+pub comp patterns {
+    in s: String
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+
+    req t1: p1? iff s.matches?("abc")  --~ warning: this pattern has no operator but `.*`
+    req t2: p2? iff (s.matches?(r"a\.b.*") or s.matches?(".*x") or s.matches?(r".*y\\z.*"))
+    --~^ warning: this pattern has no operator but `.*`
+    --~^^ warning: this pattern has no operator but `.*`
+    --~^^^ warning: this pattern has no operator but `.*`
+    req t3: p3? iff (not s.matches?("q\"") and s.matches?("a-b"))
+    --~^ warning: this pattern has no operator but `.*`
+    --~^^ warning: this pattern has no operator but `.*`
+    -- Patterns with operators, and `.*` alone.
+    req t4: p4? iff (s.matches?("a|b") or s.matches?("a.") or s.matches?(".*") or s.matches?("[a-z]"))
+}
+
+pub comp arms {
+    in e: E
+    in u: Lone
+    in x: Int
+    pub out y1: Int
+    pub out y2: Int
+    pub out y3: Int
+
+    req m1: y1 = match e { _ => 1 } + match u { Lone::Only => x + 1 } * 2
+    --~^ warning: this `match` has one arm, which binds nothing
+    --~^^ warning: this `match` has one arm, which binds nothing
+    req m2: y2 = match e { E::A | E::B => x }  --~ warning: this `match` has one arm, which binds nothing
+    -- More than one arm.
+    req m3: y3 = match e { E::A => 1, _ => 2 }
+}

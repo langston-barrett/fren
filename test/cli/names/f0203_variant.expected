@@ -1,0 +1,17 @@
+error[F0203]: no variant `Hat` in enum `Mode`
+ --> test/cli/names/f0203_variant.fren:3:58
+  |
+3 | comp c { in m: Mode pub out on? req r: on? iff m = Mode::Hat }
+  |                                                          ^^^ not a variant of `Mode`
+  |
+  = note: the variants of `Mode` are `Off`, `Heat` and `Cool`
+help: a variant with a similar name exists: `Heat`
+  |
+3 - comp c { in m: Mode pub out on? req r: on? iff m = Mode::Hat }
+3 + comp c { in m: Mode pub out on? req r: on? iff m = Mode::Heat }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0203`.
+exit=2

@@ -1,0 +1,17 @@
+error[F0113]: `pub` applies only to outputs, not to an instance
+ --> test/cli/syntax/f0113_pub_inst.fren:3:10
+  |
+3 | comp c { pub inst s: sub {} }
+  |          ^^^ `pub` must be followed by `out`
+  |
+  = note: `pub` is written `pub out x: T`
+help: remove `pub`
+  |
+3 - comp c { pub inst s: sub {} }
+3 + comp c { inst s: sub {} }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0113`.
+exit=2

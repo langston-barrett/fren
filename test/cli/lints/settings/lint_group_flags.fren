@@ -1,0 +1,11 @@
+-- A group's flag sets each of its lints, in its place, so the later flag
+-- for one of them wins, and the note says where each level comes from.
+--@ args: check -W pedantic -A membership_chain
+enum E { A, B, C }
+
+comp c {
+    in e: E
+    pub out p?
+
+    req r: p? iff (e = E::A or e = E::B or e = E::C)
+}

@@ -1,0 +1,13 @@
+error[F0602]: the assumptions of `c` are unsatisfiable: `big`, `small` contradict each other
+ --> test/cli/results/f0602_assumptions.fren:2:6
+  |
+2 | comp c {
+  |      ^ no input satisfies its assumptions
+  |
+  = note: every requirement would hold vacuously
+  = help: weaken or remove one of them
+
+fren: 0 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0602`.
+exit=1

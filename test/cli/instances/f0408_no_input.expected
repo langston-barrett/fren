@@ -1,0 +1,29 @@
+error[F0408]: `sub` has no input `cuont`
+ --> test/cli/instances/f0408_no_input.fren:3:24
+  |
+3 | comp c { inst s: sub { cuont := 1 } }
+  |                        ^^^^^ unknown input
+  |
+  = note: the inputs of `sub` are `count`
+help: an input with a similar name exists: `count`
+  |
+3 - comp c { inst s: sub { cuont := 1 } }
+3 + comp c { inst s: sub { count := 1 } }
+  |
+
+warning[F0710]: unused variable `count`
+ --> test/cli/instances/f0408_no_input.fren:2:15
+  |
+2 | comp sub { in count: Int }
+  |               ^^^^^ never mentioned
+  |
+  = note: nothing in its component depends on it
+  = help: remove it, or mention it in a constraint
+  = note: `unused_variables` is `warn` by default
+  = help: to allow it, `set_option fren.lint.unused_variables "allow"`
+
+error: could not check due to 1 previous error
+
+Some errors have detailed explanations: F0408, F0710.
+For more information about an error, try `fren --explain F0408`.
+exit=2

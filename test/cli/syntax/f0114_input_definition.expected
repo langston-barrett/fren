@@ -1,0 +1,13 @@
+error[F0114]: an input cannot have a definition
+ --> test/cli/syntax/f0114_input_definition.fren:3:15
+  |
+3 |     in x: Int := 3
+  |               ^^ inputs are chosen by the environment
+  |
+  = note: only an output can be defined, as `out x: T := e`
+  = help: make it an output, or state what it equals in an `assume`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0114`.
+exit=2

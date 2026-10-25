@@ -1,0 +1,15 @@
+--- test/cli/fix/bool.fren
++++ test/cli/fix/bool.fren
+@@ -18 +18 @@
+-    inst s: sub { i? := if a? then true else false }
++    inst s: sub { i? := a? }
+@@ -20,4 +20,4 @@
+-    req r1: o? iff a? = true
+-    req r2: when not not (a? or b?), w? or not (x < 3)
+-    req r3: p? = (if b? then false else true) or false = a?
+-    req r4: q? iff b? and not not (a? != true)
++    req r1: o? iff a?
++    req r2: when a? or b?, w? or x >= 3
++    req r3: p? = (not b?) or not a?
++    req r4: q? iff b? and not a?
+exit=1

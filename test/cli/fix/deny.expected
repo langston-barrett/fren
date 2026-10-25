@@ -1,0 +1,5 @@
+--- test/cli/fix/deny.fren
++++ test/cli/fix/deny.fren
+@@ -4 +3,0 @@
+-use Mode::Cool
+exit=1

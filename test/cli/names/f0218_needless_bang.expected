@@ -1,0 +1,43 @@
+error[F0218]: `x!` shadows nothing
+ --> test/cli/names/f0218_needless_bang.fren:3:8
+  |
+3 |     in x!: Int
+  |        ^^ nothing to shadow
+  |
+  = note: `!` marks a declaration that hides a name in scope, but no `x` that a use could mean is in scope here
+help: remove the `!`
+  |
+3 -     in x!: Int
+3 +     in x: Int
+  |
+
+error[F0218]: `ready?!` shadows nothing
+  --> test/cli/names/f0218_needless_bang.fren:10:8
+   |
+10 |     in ready?!
+   |        ^^^^^^^ nothing to shadow
+   |
+   = note: `!` marks a declaration that hides a name in scope, but no `ready?` that a use could mean is in scope here
+help: remove the `!`
+   |
+10 -     in ready?!
+10 +     in ready?
+   |
+
+error[F0218]: `LIMIT!` shadows nothing
+  --> test/cli/names/f0218_needless_bang.fren:16:11
+   |
+16 | pub const LIMIT!: Int := 3
+   |           ^^^^^^ nothing to shadow
+   |
+   = note: `!` marks a declaration that hides a name in scope, but only variables, parameters, instances and binders shadow
+help: remove the `!`
+   |
+16 - pub const LIMIT!: Int := 3
+16 + pub const LIMIT: Int := 3
+   |
+
+error: could not check due to 3 previous errors
+
+For more information about this error, try `fren --explain F0218`.
+exit=2

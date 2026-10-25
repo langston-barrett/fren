@@ -587,7 +587,7 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
     IO (Array String × Nat × Nat × Nat) := do
   let path := dir / "current.fren"
   IO.FS.writeFile path text
-  let lints := Fren.Core.Lint.all.map (·, Fren.Core.LintLevel.allow)
+  let lints := Fren.Core.Lint.all.map (.lint ·, Fren.Core.LintLevel.allow)
   let some (files, st) ← elaborate {} #[path.toString] lints | return (#["cannot read the spec"], 0, 0, 0)
   let errors := st.diags.filter (·.severity == .error)
   unless errors.isEmpty do return (#[s!"generator: static error: {(errors[0]?.map (·.msg.headline)).getD ""}"], 0, 0, 0)

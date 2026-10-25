@@ -1,0 +1,31 @@
+warning[F0710]: unused variable `b?`
+ --> test/cli/results/f0601_instance.fren:2:24
+  |
+2 | comp chooser { pub out b? }
+  |                        ^^ never mentioned
+  |
+  = note: nothing constrains it, so it can take any value
+  = help: remove it, or mention it in a constraint
+  = note: `unused_variables` is `warn` by default
+  = help: to allow it, `set_option fren.lint.unused_variables "allow"`
+
+error[F0601]: `c` is not realizable: for the input pick.b? = false, no outputs satisfy `lucky`
+ --> test/cli/results/f0601_instance.fren:3:6
+  |
+3 | comp c {
+  |      ^ not realizable
+  |
+  = help: weaken one of them
+  = note: instance variables are part of the system: whatever the instances do, the component must cope
+
+note: is false when pick.b? = false
+ --> test/cli/results/f0601_instance.fren:6:9
+  |
+6 |     req lucky: pick.b? and x = 0
+  |         ^^^^^
+
+fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0601, F0710.
+For more information about an error, try `fren --explain F0601`.
+exit=1

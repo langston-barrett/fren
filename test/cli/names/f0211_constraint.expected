@@ -1,0 +1,17 @@
+error[F0211]: constraint names cannot end in `?`
+ --> test/cli/names/f0211_constraint.fren:2:24
+  |
+2 | comp c { in x: Int req r?: x > 0 }
+  |                        ^^ ends in `?`
+  |
+  = note: only `Bool` variables end in `?`
+help: rename it to `r`
+  |
+2 - comp c { in x: Int req r?: x > 0 }
+2 + comp c { in x: Int req r: x > 0 }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0211`.
+exit=2

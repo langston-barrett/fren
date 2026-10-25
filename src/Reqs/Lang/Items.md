@@ -344,7 +344,7 @@ constant := ["pub"] "const" IDENT ":" type ":=" expr
 `const MAX_TEMP: Int := 100` declares the constant `MAX_TEMP`, of type
 `Int`, with the value `100`. A constant's name never ends in `?`, even
 when the constant is a `Bool`, and by convention is in `UPPER_CASE` (see
-[Naming conventions](../Lint.md#naming-conventions)). Its type is always
+[Naming conventions](../Lint/NonstandardStyle.md#naming-conventions)). Its type is always
 written.
 
 The value is an [expression](Expressions.md) of the constant's type. It

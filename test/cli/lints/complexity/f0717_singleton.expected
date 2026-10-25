@@ -1,0 +1,19 @@
+warning[F0717]: membership in a set of one member is equality
+ --> test/cli/lints/complexity/f0717_singleton.fren:2:45
+  |
+2 | comp c { in x: Int pub out p? req r: p? iff x in {1} }
+  |                                             ^^^^^^^^ a set of one
+  |
+  = help: `fren fix` can fix this
+  = note: `singleton_membership` is `warn` by default
+  = help: to allow it, `set_option fren.lint.singleton_membership "allow"`
+help: write it as an equation
+  |
+2 - comp c { in x: Int pub out p? req r: p? iff x in {1} }
+2 + comp c { in x: Int pub out p? req r: p? iff x = 1 }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0717`.
+exit=3

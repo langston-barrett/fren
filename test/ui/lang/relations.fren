@@ -1,0 +1,86 @@
+-- Relations: literals, pairs, `join`, the relational methods, and
+-- counterexamples with relations, in both front ends.
+-- fren-covers: lang::relation_op, lang::pair_membership
+
+-- A literal with a repeat is tested on purpose.
+set_option fren.lint.duplicate_elements "allow"
+
+enum Role { Viewer, Editor, Admin }
+
+use self::Role::{Admin, Viewer}
+
+enum User { Ann, Bob, Cy }
+
+comp grant {
+    in user: User
+    in roles: Rel(User, Role)        -- who holds which role
+    in delegates: Rel(User, User)    -- (a, b): a acts for b
+    in requested: Set(Role)
+    in b: User
+    in c: User
+    pub out granted?
+
+    assume admins_exist: Admin in roles.range
+
+    -- A user holds their own roles and those of everyone they act for, directly or not.
+    req rule: granted? iff requested subset ((delegates.closure union {(user, user)}) join roles).image({user})
+
+    expect own_roles: when requested = {Viewer} and (user, Viewer) in roles, granted?
+    expect delegated: when (user, b) in delegates and (b, c) in delegates and requested = {Admin}
+        and (c, Admin) in roles, granted?
+    expect acting: when (user, b) in delegates, granted?  --~ error: expectation `grant::acting` does not hold
+}
+
+-- Without the closure, acting for someone who acts for an admin is not enough.
+comp direct {
+    in user: User
+    in roles: Rel(User, Role)
+    in delegates: Rel(User, User)
+    in b: User
+    in c: User
+    pub out admin?
+
+    req rule: admin? iff Admin in ((delegates union {(user, user)}) join roles).image({user})
+
+    expect delegated: when (user, b) in delegates and (b, c) in delegates and (c, Admin) in roles, admin?
+    --~^ error: expectation `direct::delegated` does not hold
+}
+
+comp shapes {
+    in r: Rel(User, Role)
+    in u: User
+    pub out held?
+
+    req rule: held? iff u in r.domain
+
+    expect inverse_range: r.inverse.domain = r.range  --~ warning: this chain of methods has a shorter form
+    expect inverse_twice: r.inverse.inverse = r  --~ warning: this chain of methods has a shorter form
+    expect domain_empty: (r = {}) iff (r.domain = {})
+}
+
+-- Over an infinite type, `domain` and `range` are projections, outside
+-- the decidable core, in higher-order logic in both front ends.
+set_option fren.lint.undecidable "allow" in
+comp ids {
+    in r: Rel(Int, Int)
+    pub out p?
+
+    assume one: (1, 2) in r
+    req rule: p? iff 1 in r.domain
+
+    expect has: p?
+    expect two: 2 in r.range
+    expect not_three: 3 in r.domain  --~ error: expectation `ids::not_three` does not hold
+}
+
+-- The meaning of each operator, on constants.
+expect closure_lit: {(1, 2), (2, 3)}.closure = {(1, 2), (2, 3), (1, 3)}
+expect closure_cycle: {(1, 2), (2, 1)}.closure = {(1, 2), (2, 1), (1, 1), (2, 2)}
+expect card_lit: {(1, 2), (1, 2)}.card = 1
+expect image_lit: {(1, 2)}.image({1, 3}) = {2}
+expect inverse_lit: {(1, "a")}.inverse = {("a", 1)}
+expect domain_lit: {(1, "a"), (2, "b")}.domain = {1, 2} and {(1, "a")}.range = {"a"}
+expect join_lit: ({(1, 2)} join {(2, "x"), (3, "y")}) = {(1, "x")}
+expect pair_member: (1, 2) in {(1, 2)} and not (2, 1) in {(1, 2)}
+--@ summary: 29 passed, 3 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

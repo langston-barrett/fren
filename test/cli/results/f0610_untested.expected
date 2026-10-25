@@ -1,0 +1,13 @@
+warning[F0610]: testing found no admissible behaviour of `c` in 100 tests
+ --> test/cli/results/f0610_untested.fren:2:6
+  |
+2 | comp c {
+  |      ^ untested
+  |
+  = note: so none of its checks were tested
+  = help: run `fren check` to decide whether its assumptions and requirements can hold, or raise `--tests`
+
+fren: 0 passed, 0 failed, 1 inconclusive, in 100 tests each
+
+For more information about this error, try `fren --explain F0610`.
+exit=3

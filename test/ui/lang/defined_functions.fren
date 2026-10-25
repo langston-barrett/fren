@@ -1,0 +1,66 @@
+-- Defined functions: an application has the value of the body, which the
+-- solver sees.
+-- fren-covers: lang::argument
+
+enum Mode { Off, Heat, Cool }
+use Mode::Heat
+
+fn double(n: Int): Int := 2 * n
+fn both?(a?, b?) := a? and b?
+fn clamp(x: Int, lo: Int, hi: Int): Int := if x < lo then lo else if x > hi then hi else x
+fn heating?(m: Mode) := match m { Heat => true, _ => false }  --~ warning: this `match` only tests which variant
+-- A defined function may apply earlier ones.
+fn quadruple(n: Int): Int := double(double(n))
+
+const TWICE: Int := double(21)
+
+comp doubler {
+    in x: Int
+    pub det out y: Int
+
+    req r: y = double(x)
+
+    expect even: y = x + x
+    expect constant: TWICE = 42
+    expect nested: quadruple(x) = 2 * y
+}
+
+comp clamped {
+    in x: Int
+    pub out y: Int
+
+    req r: y = clamp(x, 0, 10)
+
+    expect low: y >= 0
+    expect high: y <= 10
+    expect wrong: y < 10            --~ error: expectation `clamped::wrong` does not hold
+}
+
+-- A defined function's arguments may mention outputs.
+comp from_output {
+    in m: Mode
+    out h?
+    pub out on?
+
+    req h: h? iff m = Heat
+    req on: on? iff both?(h?, heating?(m))
+
+    expect same: on? iff m = Heat
+}
+
+-- Over an abstract type, without an interpretation.
+type Name
+fn same?(a: Name, b: Name) := a = b
+
+comp names {
+    in a: Name
+    pub out s?
+
+    req r: s? iff same?(a, a)
+
+    expect refl: s?
+}
+
+expect monotone: forall (p q: doubler), when p.x <= q.x, p.y <= q.y
+
+--@ summary: 19 passed, 1 failed, 0 inconclusive, 0 redundant

@@ -1,0 +1,13 @@
+error[F0603]: expectation `c::e` does not hold
+ --> test/cli/commands/set_counterexample.fren:8:12
+  |
+8 |     expect e: n < 2
+  |            ^ does not follow from the requirements
+  |
+  = counterexample: s = {0, 1}, n = 2
+  = help: strengthen the requirements so that it follows, or correct the expectation
+
+fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0603`.
+exit=1

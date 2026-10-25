@@ -377,6 +377,9 @@ structure LocalState where
   name and its text's line map, which place the messages about the items it
   declares itself (`leanItems`). -/
   leanFile? : Option (String × FileMap) := none
+  /-- Where the comparisons of `Bool`s in the expression being elaborated
+  are, for `bool_equality`. -/
+  boolEqs : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false

@@ -1,0 +1,13 @@
+error[F0605]: `c::never` is vacuous: its condition can never hold, given `r`
+ --> test/cli/results/f0605_vacuous.fren:7:16
+  |
+7 |     req never: when x < 0, y = 0
+  |                ^^^^^^^^^^ this condition is always false
+  |
+  = note: a constraint whose condition never holds says nothing
+  = help: correct the condition, or the constraints that rule it out
+
+fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0605`.
+exit=1

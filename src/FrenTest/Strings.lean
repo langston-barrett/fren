@@ -6,7 +6,7 @@ import FrenCore.Str
 /-!
 # String methods at the edges
 
-The same equations as `test/ui/strings_edges.fren`, which the solver checks,
+The same equations as `test/ui/lang/strings_edges.fren`, which the solver checks,
 here against `Fren.Str`, which the evaluator and implementations use: a
 mismatch between the two meanings fails one of them.
 -/
@@ -27,7 +27,7 @@ open Fren.Str
 #guard replaceAll "abc" "" "x" = "abc"
 #guard contains "" "" && contains "abc" ""
 
--- Patterns, as `test/ui/patterns.fren` checks them with the solver.
+-- Patterns, as `test/ui/lang/patterns.fren` checks them with the solver.
 #guard «matches» "aaa" "a{2,3}" && !«matches» "a" "a{2,3}" && «matches» "ab" "(a|b)+"
 #guard «matches» "a.b" "a\\.b" && !«matches» "axb" "a\\.b" && «matches» "?" "\\?"
 #guard «matches» "-" "[a-]" && «matches» "q" "[^a-p]" && !«matches» "a" "[^a-p]"

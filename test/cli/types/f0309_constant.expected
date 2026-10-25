@@ -1,0 +1,13 @@
+error[F0309]: a constant's value cannot apply an uninterpreted function
+ --> test/cli/types/f0309_constant.fren:3:20
+  |
+3 | const RATE: Int := rate(1)
+  |                    ^^^^^^^ applies an uninterpreted function
+  |
+  = note: an uninterpreted function's value is unknown, so the constant would have no fixed value
+  = help: make it an input of the components that use it
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0309`.
+exit=2

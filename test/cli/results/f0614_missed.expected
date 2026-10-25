@@ -1,0 +1,50 @@
+warning[F0613]: no check rejects this change to `c::r`
+ --> test/cli/results/f0614_missed.fren:7:28
+  |
+7 |     req r: big? iff xs.len > 4
+  |                            ^ `>` changed to `>=`
+  |
+  = note: the mutant is `swap-comparison-c::r-7cdabc6c31bf`
+  = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+  |
+7 -     req r: big? iff xs.len > 4
+7 +     req r: big? iff xs.len >= 4
+  |
+
+warning[F0614]: testing does not reject this change to `c::r`, which the checks do
+ --> test/cli/results/f0614_missed.fren:7:30
+  |
+7 |     req r: big? iff xs.len > 4
+  |                              ^ `4` changed to `5`
+  |
+  = note: the mutant is `shift-integer-c::r-abe601d445f5`
+  = note: none of 100 tests per component found a behaviour that tells it apart
+help: the mutant
+  |
+7 -     req r: big? iff xs.len > 4
+7 +     req r: big? iff xs.len > 5
+  |
+
+warning[F0613]: no check rejects this change to `c::r`
+ --> test/cli/results/f0614_missed.fren:7:30
+  |
+7 |     req r: big? iff xs.len > 4
+  |                              ^ `4` changed to `3`
+  |
+  = note: the mutant is `shift-integer-c::r-a9e5e4641793`
+  = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+  |
+7 -     req r: big? iff xs.len > 4
+7 +     req r: big? iff xs.len > 3
+  |
+
+note: 1 check of the spec does not pass, and so kills no mutant
+  = help: run `fren check` or `fren quickcheck` to see them
+c: 1 of 3 mutants killed (33%), 1 missed by testing
+fren: 3 mutants: 1 killed, 2 survived, 0 equivalent, 0 unviable, 1 missed by testing
+
+Some errors have detailed explanations: F0613, F0614.
+For more information about an error, try `fren --explain F0613`.
+exit=3

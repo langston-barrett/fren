@@ -74,16 +74,15 @@ def usage : String :=
   change to stdout, as a diff. `--ignore GLOB` skips the matching files.\n\
   Exit status: 0 formatted, 1 with `--check`\n\
   some file is not formatted, 2 some file could not be read or parsed.\n\n\
-  `fix` fixes the lints that it can: unused_imports, glob_imports,\n\
-  nonminimal_bool, unfulfilled_lint_expectations, length_zero, card_zero,\n\
-  singleton_membership, membership_chain and index_after_use. `--only LINT` fixes\n\
-  only the lints given, `--skip LINT` all but them. `--fmt` then formats the\n\
-  files. `--check` and `--ignore` are as for `fmt`.\n\
+  `fix` fixes the lints that it can, whose messages say `fren fix` can fix\n\
+  them. `--only LINT` fixes only the lints given, `--skip LINT`\n\
+  all but them; LINT may be a group. `--fmt` then formats the files.\n\
+  `--check` and `--ignore` are as for `fmt`.\n\
   Exit status: 0 fixed, 1 with `--check` some file would change, 2 some\n\
   file could not be read or has a static error other than a denied lint.\n\n\
-  LINT OPTIONS set the level of a lint, such as unused_imports: -A (--allow)\n\
-  LINT allows it, -W (--warn) warns, -D (--deny) denies, and -F (--forbid)\n\
-  forbids.\n\n\
+  LINT OPTIONS set the level of a lint, such as unused_imports, or of each\n\
+  lint of a group, such as pedantic: -A (--allow) LINT allows it, -W\n\
+  (--warn) warns, -D (--deny) denies, and -F (--forbid) forbids.\n\n\
   `eval` evaluates the component PATH on one behaviour, without the\n\
   solver: `--set VAR=VALUE` gives a variable a value, and the others are\n\
   searched for. Exit status: 0 the behaviour meets the component and its\n\
@@ -149,7 +148,7 @@ structure Args where
   tests : Array String := #[]
   require : Option Fren.Core.Level := none
   /-- `-A`, `-W`, `-D` and `-F`, in order. -/
-  lints : Array (Fren.Core.Lint × Fren.Core.LintLevel) := #[]
+  lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel) := #[]
   files : Array String := #[]
   paint : Paint := {}
   /-- `eval --comp` and `mutate --comp`. -/
@@ -178,9 +177,9 @@ def options : Array String :=
 
 def unknownLint (n : String) : Msg :=
   { code? := none, headline := s!"unknown lint `{n}`"
-    notes := Fren.Core.removedLintNotes n ++ #[Fren.Core.lintsNote]
-    fixes := (Fren.Core.similarStr n (Fren.Core.Lint.all.map (·.name))).toArray.map fun s =>
-      { msg := s!"a lint with a similar name exists: `{s}`", replacement := s } }
+    notes := Fren.Core.removedLintNotes n ++ #[Fren.Core.lintsNote, Fren.Core.groupsNote]
+    fixes := (Fren.Core.similarStr n Fren.Core.lintTargetNames).toArray.map fun s =>
+      { msg := Fren.Core.similarLintMsg s, replacement := s } }
 
 def unknownOption (o : String) : Msg :=
   { code? := none, headline := s!"unknown option `{o}`"
@@ -277,13 +276,13 @@ where
       else only "--fmt" "fix"
     | "--only" :: n :: rest, a =>
       if a.command != .fix then only "--only" "fix" else
-      match Fren.Core.Lint.ofName? n with
-      | some l => go rest { a with onlyLints := a.onlyLints.push l }
+      match Fren.Core.LintTarget.ofName? n with
+      | some t => go rest { a with onlyLints := a.onlyLints ++ t.members }
       | none => .error (argError p (unknownLint n))
     | "--skip" :: n :: rest, a =>
       if a.command != .fix then only "--skip" "fix" else
-      match Fren.Core.Lint.ofName? n with
-      | some l => go rest { a with skipLints := a.skipLints.push l }
+      match Fren.Core.LintTarget.ofName? n with
+      | some t => go rest { a with skipLints := a.skipLints ++ t.members }
       | none => .error (argError p (unknownLint n))
     | "--require" :: l :: rest, a =>
       if a.command != .trace then only "--require" "trace"
@@ -308,8 +307,8 @@ where
     if a.command == .fmt then
       .error (argError p { code? := none, headline := s!"`{opt}` is an option of `fren check`, `fren trace` and `fren fix`" })
     else
-    match Fren.Core.Lint.ofName? n with
-    | some l => .ok { a with lints := a.lints.push (l, lv) }
+    match Fren.Core.LintTarget.ofName? n with
+    | some t => .ok { a with lints := a.lints.push (t, lv) }
     | none => .error (argError p (unknownLint n))
 
 /-- `fren --explain CODE`: prints the explanation of `code`, or an error
@@ -358,23 +357,33 @@ def elabText (st : State) (file : Nat) (chars : Array Char) (fixing : Array Fren
     | .ok items => (elabFile file chars items fixing |>.run st).2
 
 /-- The state before any file, with the lint levels `lints`. -/
-def initialState (lints : Array (Fren.Core.Lint × Fren.Core.LintLevel)) : State :=
+def initialState (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) : State :=
   { cliLevels := Fren.Core.Levels.ofFlags lints }
 
-/-- Reads and elaborates the files; `none` if one cannot be read. `fren fix`
+/-- Elaborates the files at `paths`, whose contents are `srcs`. `fren fix`
 fixes the lints `fixing` in the files that `ignored` does not match. -/
-def elaborate (p : Paint) (paths : Array String) (lints : Array (Fren.Core.Lint × Fren.Core.LintLevel))
+def elaborateSources (paths srcs : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
     (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false) :
-    IO (Option (Array (String × Array Char) × State)) := do
+    IO (Array (String × Array Char) × State) := do
   let mut files := #[]
   let mut st := initialState lints
-  for path in paths do
-    let some src ← readSpec p path | return none
+  for path in paths, src in srcs do
     let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
     let chars := src.toList.toArray
     st := elabText st files.size chars (if ignored path then #[] else fixing)
     files := files.push (path, chars)
-  return some (files, ← checkClaims st)
+  return (files, ← checkClaims st)
+
+/-- Reads and elaborates the files; `none` if one cannot be read. `fren fix`
+fixes the lints `fixing` in the files that `ignored` does not match. -/
+def elaborate (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
+    (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false) :
+    IO (Option (Array (String × Array Char) × State)) := do
+  let mut srcs := #[]
+  for path in paths do
+    let some src ← readSpec p path | return none
+    srcs := srcs.push src
+  return some (← elaborateSources paths srcs lints fixing ignored)
 
 /-- Prints the count of static errors, and the pointer to `--explain` for
 the codes of `diags`. -/
@@ -385,7 +394,7 @@ def printErrorCount (p : Paint) (errors : Nat) (diags : Array Diag) (what := "ch
   printExplainHint (diags.map (·.msg))
 
 /-- Reads and elaborates the files, printing any static errors. -/
-def load (p : Paint) (paths : Array String) (lints : Array (Fren.Core.Lint × Fren.Core.LintLevel)) :
+def load (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
     IO (Option (Array (String × Array Char) × State)) := do
   let some (files, st) ← elaborate p paths lints | return none
   for d in st.diags do printDiag p files d
@@ -712,29 +721,61 @@ def applyFileEdits (src : String) (text : Array Char) (edits : Array (Fren.Core.
     starts[n - 1]! + (off - lstart)
   Fren.Core.applyEdits srcChars (edits.map fun (r, t) => ({ start := move r.start, stop := move r.stop }, t))
 
+/-- The most passes `fren fix` makes, in case two fixes undo each other. -/
+def maxFixPasses : Nat := 10
+
 /-- Runs `fren fix`: rewrites the files to fix the lints that it can, or
 with `--check`, prints the diffs to stdout, painted with `out`; prints the
 lints that it does not fix to stderr; returns the exit code
 (`lint::fix_exit`). -/
 def fix (args : Args) (out : Paint) : IO UInt32 := do
   let fixing := Fren.Core.Lint.all.filter (Fren.Core.fixSelected args.onlyLints args.skipLints)
-  let some (files, st) ← elaborate args.paint args.files args.lints fixing (Fmt.ignored args.ignore)
-    | return Fren.Core.fixExit args.diffOnly false false
+  let ignored := Fmt.ignored args.ignore
+  let paths := args.files
+  let mut srcs := #[]
+  for path in paths do
+    let some src ← readSpec args.paint path | return Fren.Core.fixExit args.diffOnly false false
+    srcs := srcs.push src
+  let original := srcs
+  let (files, st) ← elaborateSources paths srcs args.lints fixing ignored
   let errors := st.diags.filter fun d => d.severity == .error && d.lint?.isNone
   if !errors.isEmpty then
     -- Nothing is fixed.
     for d in st.diags do printDiag args.paint files d
     printErrorCount args.paint (st.diags.filter (·.severity == .error)).size st.diags "fix"
     return Fren.Core.fixExit args.diffOnly false false
-  let left := st.diags.filter (!·.fixed)
+  -- One fix can overlap another, or leave something that another lint
+  -- fixes, so the passes go on until no edit is left (`Reqs/Lint#fixing-lints`).
+  let mut pass := (files, st)
+  let mut nFixed := paths.map fun _ => 0
+  -- Whether the first pass's fixes were kept.
+  let mut firstKept := false
+  for k in [0:maxFixPasses] do
+    let (files, st) := pass
+    if st.edits.isEmpty then break
+    let next := (files.zip srcs).mapIdx fun i ((_, text), src) =>
+      applyFileEdits src text (st.edits.filterMap fun (f, e) => if f == i then some e else none)
+    let (files', st') ← elaborateSources paths next args.lints fixing ignored
+    -- A fix that made a static error is not kept, and is a bug.
+    if st'.diags.any fun d => d.severity == .error && d.lint?.isNone then
+      IO.eprint (Fren.Core.renderPlain .warning
+        { code? := none, headline := "some fixes were not made, because they would have caused a static error"
+          notes := #["note: this is a bug in `fren fix`; the lints they fix are reported below"] } args.paint)
+      break
+    if k == 0 then firstKept := true
+    nFixed := nFixed.mapIdx fun i n => n + (st.diags.filter fun d => d.fixed && d.file == i).size
+    srcs := next
+    pass := (files', st')
+  -- What is left, in the files the user has afterwards: as fixed, or with
+  -- `--check`, as given.
+  -- If the first pass's fixes were not kept, nothing is fixed.
+  let (files, left) ← if args.diffOnly then pure (files, st.diags.filter fun d => !(firstKept && d.fixed)) else do
+    let (files, st) ← elaborateSources paths srcs args.lints #[] ignored
+    pure (files, st.diags)
   for d in left do printDiag args.paint files d
   let mut unchanged := true
-  for (path, text) in files, i in [0:files.size] do
-    let edits := st.edits.filterMap fun (f, e) => if f == i then some e else none
-    let format := args.fmtAfter && !Fmt.ignored args.ignore path
-    if edits.isEmpty && !format then continue
-    let some src ← readSpec args.paint path | return Fren.Core.fixExit args.diffOnly false false
-    let fixed := applyFileEdits src text edits
+  for path in paths, src in original, fixed in srcs, n in nFixed do
+    let format := args.fmtAfter && !ignored path
     -- The file parsed, and fixing it keeps it parsing.
     let new := if format then (Fmt.formatFile path fixed).toOption.getD fixed else fixed
     if new == src then continue
@@ -742,7 +783,6 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
     if args.diffOnly then IO.print (Fmt.diff out path src new)
     else
       IO.FS.writeFile path new
-      let n := (st.diags.filter fun d => d.fixed && d.file == i).size
       IO.eprintln (if n == 0 then s!"formatted {path}" else s!"fixed {path} ({n} lint{if n == 1 then "" else "s"})")
   printExplainHint (left.map (·.msg))
   return Fren.Core.fixExit args.diffOnly true unchanged
@@ -754,7 +794,7 @@ abbrev Baseline := IO.Ref (Std.HashMap String (Array Fren.Core.CheckResult))
 
 /-- The mutants of the files, as elaborated, with the lint levels `lints`,
 and the state before each file, from which a mutant of it is elaborated. -/
-def mutantsOf (files : Array (String × Array Char)) (lints : Array (Fren.Core.Lint × Fren.Core.LintLevel)) :
+def mutantsOf (files : Array (String × Array Char)) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
     Array State × Array Mutate.Mutant := Id.run do
   let mut before := #[]
   let mut st := initialState lints

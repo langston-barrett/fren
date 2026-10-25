@@ -1,0 +1,10 @@
+error[F0201]: cannot find `zzz` in this scope
+ --> test/cli/names/f0201_unknown.fren:2:46
+  |
+2 | comp c { in x: Int pub out y: Int req r: y = zzz }
+  |                                              ^^^ not found in this scope
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0201`.
+exit=2

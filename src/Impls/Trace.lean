@@ -16,36 +16,36 @@ namespace Fren.Impls
 /-! ## Claims -/
 
 tested cli::agreement: "src/FrenTestMain.lean"
-tested cli::accepts: "test/ui/lean_code.fren", "test/ui/lean_impl.fren"
-tested modules::two_segments: "test/ui/scoping.fren"
-tested lang::operand: "test/ui/precedence.fren", "test/cli/f0107_iff.fren", "test/cli/f0108_chain.fren",
-  "test/cli/f0109_operand.fren"
-tested lang::operator_type: "test/ui/types.fren", "test/cli/f0304_arith.fren", "test/cli/f0304_operand.fren",
-  "test/cli/f0305_bool_int.fren", "test/cli/f0305_enum_int.fren", "test/cli/f0306_branches.fren"
-tested lang::modifiers: "test/cli/f0110_pub_in.fren", "test/cli/f0114_input_definition.fren", "test/cli/f0113_det_in.fren", "test/cli/f0113_pub_inst.fren"
-tested lang::function_body: "test/ui/defined_functions_static.fren", "test/cli/f0331_recursive.fren"
-tested lang::argument: "test/ui/defined_functions.fren", "test/ui/functions_static.fren"
-tested lang::relation_op: "test/ui/relations.fren", "test/ui/relations_static.fren", "test/cli/f0328_join.fren"
-tested lang::pair_membership: "test/ui/relations.fren", "test/ui/relations_static.fren", "test/cli/f0329_pair.fren"
-tested lang::finite: "test/ui/relations_static.fren", "test/ui/sets.fren"
-tested check::minimal: "test/ui/redundancy.fren", "test/ui/self_conflict.fren"
-tested lang::path_shape: "test/ui/scoping.fren"
-tested lang::declared_before: "test/ui/scoping.fren"
-tested inst::earlier: "test/ui/instances_static.fren"
-tested lint::history: "test/cli/f0709_forbid.fren", "test/cli/f0709_forbid_in_file.fren"
-tested lint::stepwise: "test/cli/f0709_forbid_in_file.fren"
-tested lang::identifier: "test/ui/syntax_lexical.fren", "test/ui/syntax_identifier.fren",
-  "test/ui/syntax_identifier_letters.fren", "test/ui/syntax_identifier_quoted.fren", "test/ui/syntax_identifier_claim.fren",
-  "test/ui/syntax_identifier_token.fren", "test/ui/syntax_identifier_unclosed.fren",
-  "test/ui/syntax_identifier_check.fren", "test/cli/f0119_identifier.fren"
-tested lang::identifier_shape: "test/ui/syntax_lexical.fren"
-tested lang::longest_identifier: "test/ui/syntax_lexical.fren"
-tested lang::escape_sequence: "test/ui/syntax_lexical.fren", "test/cli/f0115_escape.fren"
-tested lang::punctuator_end: "test/ui/syntax_lexical.fren", "test/cli/f0105_eqeq.fren"
-tested lang::escape_text: "test/ui/syntax_lexical.fren"
-tested lang::escape_start: "test/ui/syntax_lexical.fren"
-tested lang::longest_punctuator: "test/ui/syntax_lexical.fren"
-tested lang::unbounded: "test/ui/relations_static.fren", "test/ui/datatypes_static.fren"
+tested cli::accepts: "test/ui/lean/lean_code.fren", "test/ui/lean/lean_impl.fren"
+tested modules::two_segments: "test/ui/lang/scoping.fren"
+tested lang::operand: "test/ui/lang/precedence.fren", "test/cli/syntax/f0107_iff.fren", "test/cli/syntax/f0108_chain.fren",
+  "test/cli/syntax/f0109_operand.fren"
+tested lang::operator_type: "test/ui/lang/types.fren", "test/cli/types/f0304_arith.fren", "test/cli/types/f0304_operand.fren",
+  "test/cli/types/f0305_bool_int.fren", "test/cli/types/f0305_enum_int.fren", "test/cli/types/f0306_branches.fren"
+tested lang::modifiers: "test/cli/syntax/f0110_pub_in.fren", "test/cli/syntax/f0114_input_definition.fren", "test/cli/syntax/f0113_det_in.fren", "test/cli/syntax/f0113_pub_inst.fren"
+tested lang::function_body: "test/ui/lang/defined_functions_static.fren", "test/cli/types/f0331_recursive.fren"
+tested lang::argument: "test/ui/lang/defined_functions.fren", "test/ui/lang/functions_static.fren"
+tested lang::relation_op: "test/ui/lang/relations.fren", "test/ui/lang/relations_static.fren", "test/cli/types/f0328_join.fren"
+tested lang::pair_membership: "test/ui/lang/relations.fren", "test/ui/lang/relations_static.fren", "test/cli/types/f0329_pair.fren"
+tested lang::finite: "test/ui/lang/relations_static.fren", "test/ui/lang/sets.fren"
+tested check::minimal: "test/ui/checks/redundancy.fren", "test/ui/checks/self_conflict.fren"
+tested lang::path_shape: "test/ui/lang/scoping.fren"
+tested lang::declared_before: "test/ui/lang/scoping.fren"
+tested inst::earlier: "test/ui/lang/instances_static.fren"
+tested lint::history: "test/cli/lints/settings/f0709_forbid.fren", "test/cli/lints/settings/f0709_forbid_in_file.fren"
+tested lint::stepwise: "test/cli/lints/settings/f0709_forbid_in_file.fren"
+tested lang::identifier: "test/ui/syntax/lexical.fren", "test/ui/syntax/identifier.fren",
+  "test/ui/syntax/identifier_letters.fren", "test/ui/syntax/identifier_quoted.fren", "test/ui/syntax/identifier_claim.fren",
+  "test/ui/syntax/identifier_token.fren", "test/ui/syntax/identifier_unclosed.fren",
+  "test/ui/syntax/identifier_check.fren", "test/cli/syntax/f0119_identifier.fren"
+tested lang::identifier_shape: "test/ui/syntax/lexical.fren"
+tested lang::longest_identifier: "test/ui/syntax/lexical.fren"
+tested lang::escape_sequence: "test/ui/syntax/lexical.fren", "test/cli/syntax/f0115_escape.fren"
+tested lang::punctuator_end: "test/ui/syntax/lexical.fren", "test/cli/syntax/f0105_eqeq.fren"
+tested lang::escape_text: "test/ui/syntax/lexical.fren"
+tested lang::escape_start: "test/ui/syntax/lexical.fren"
+tested lang::longest_punctuator: "test/ui/syntax/lexical.fren"
+tested lang::unbounded: "test/ui/lang/relations_static.fren", "test/ui/lang/datatypes_static.fren"
 
 trusted view::build: "Lake fails a build whose modules log an error, and with `--wfail` one whose modules log a warning"
 

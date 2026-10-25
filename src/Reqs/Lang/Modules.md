@@ -30,7 +30,7 @@ use := "use" path ["::*" | "::{" path ("," path)* [","] "}"]
   `use climate::Mode::Heat`.
 - `use a::E::*` brings every variant of the enumeration `E` into scope. Only
   enumerations can be opened this way, and it does not bring `E` itself into
-  scope. The [lint](../Lint.md#glob-imports) `glob_imports` warns about it
+  scope. The [lint](../Lint/Style.md#glob-imports) `glob_imports` warns about it
   by default.
 - `use a::{b, c::d}` is a group: it does what `use a::b` and `use a::c::d`
   would. A group names at least one path, may end with a `,`, and cannot
@@ -69,7 +69,7 @@ though its module imports another `BoolTy`, or declares one. The names
 that a component imports by name are distinct, as a module's are. The
 component's imports follow the same rules as a module's: a path starts
 from the root module or from `self`, which stands for the component's
-module, and the [lints](../Lint.md#unused-imports) on imports apply to them.
+module, and the [lints](../Lint/Unused.md#unused-imports) on imports apply to them.
 
 ## Visibility
 

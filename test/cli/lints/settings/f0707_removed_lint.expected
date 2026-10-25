@@ -1,0 +1,14 @@
+error[F0707]: unknown lint `shadowed_constants`
+ --> test/cli/lints/settings/f0707_removed_lint.fren:2:12
+  |
+2 | set_option fren.lint.shadowed_constants "allow"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no such lint
+  |
+  = note: `shadowed_constants` was removed; shadowing without `!` is now an error (F0217)
+  = note: the lints are `bool_equality`, `card_zero`, `case_split_reqs`, `collapsible_when`, `constant_output`, `dead_code`, `definable_output`, `double_comparison`, `double_neg`, `double_parens`, `duplicate_elements`, `else_extends`, `empty_argument`, `eq_op`, `glob_imports`, `identity_op`, `if_chain_match`, `if_not_else`, `index_after_use`, `int_plus_one`, `length_zero`, `manual_method`, `match_like_membership`, `match_same_arms`, `membership_chain`, `neg_multiply`, `non_camel_case_types`, `non_snake_case`, `non_upper_case_constants`, `nonminimal_bool`, `redundant_bindings`, `redundant_bool_type`, `redundant_method_chain`, `same_branches`, `singleton_membership`, `trivial_match`, `trivial_pattern`, `undecidable`, `unfulfilled_lint_expectations`, `unless_not`, `unused_imports`, `unused_variables`, `wildcard_single_variant`
+  = note: the groups of lints are `complexity`, `decidability`, `nonstandard_style`, `pedantic`, `style`, `suspicious`, `unused`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0707`.
+exit=2

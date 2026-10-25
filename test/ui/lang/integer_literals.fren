@@ -1,0 +1,14 @@
+-- Integer literals in every form that Lean reads, with the same values in
+-- both front ends.
+
+expect decimal: 120 = 100 + 20 and 0 = 5 - 2 - 3
+expect hexadecimal: 0x1F = 31 and 0X1f = 31
+expect binary: 0b101 = 5 and 0B11 = 3
+expect octal: 0o17 = 15 and 0O7 = 7
+expect separated: 1_000 = 1000 and 0x_FF = 255 and 1__0 = 10
+-- Near the edge that Lean's decoder sets: a leading `0` then a digit, and
+-- `_`s after a base.
+expect decoded: 00_1 = 1 and 0x__F = 15 and 0b_1 = 1 and 0o_7 = 7
+expect wrong: 0x10 = 15    --~ error: expectation `wrong` does not hold
+
+--@ summary: 6 passed, 1 failed, 0 inconclusive, 0 redundant

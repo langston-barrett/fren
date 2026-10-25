@@ -1,0 +1,19 @@
+warning[F0731]: equality of `Bool`s is `iff`
+ --> test/cli/lints/pedantic/f0731_bool_equality.fren:4:53
+  |
+4 | comp c { in a? in b? in c? pub out p? req r: p? iff a? = b? and c? }
+  |                                                     ^^^^^^^ compares two `Bool`s
+  |
+  = note: on `Bool`s, `=` and `iff` agree, and `iff` says that this is an equivalence
+  = help: `fren fix` can fix this
+  = note: `bool_equality` is set to `warn`
+help: write it with `iff`
+  |
+4 - comp c { in a? in b? in c? pub out p? req r: p? iff a? = b? and c? }
+4 + comp c { in a? in b? in c? pub out p? req r: p? iff (a? iff b?) and c? }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0731`.
+exit=3

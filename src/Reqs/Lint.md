@@ -6,6 +6,9 @@ name and a *level*, which says whether it is reported and how. Each lint
 has a default level, which can be changed on the command line, in Lean
 options, and in the spec itself.
 
+This chapter describes what all lints share, and the chapters after it
+describe the lints of each [group](#groups).
+
 ```fren
 pub mod lint
 
@@ -15,31 +18,74 @@ use view::Severity
 ## The lints
 
 <!-- keep-sorted start skip_lines=2 -->
-| Lint | Code | Default | Reported at |
-|---|---|---|---|
-| `card_zero` | `F0716` | `warn` | a comparison of a set's or relation's `card` with `0`, such as `s.card = 0` (see [Empty collections](#empty-collections)) |
-| `constant_output` | `F0719` | `warn` | a defined output whose definition mentions no variable and no uninterpreted function (see [Outputs](#outputs)) |
-| `dead_code` | `F0711` | `warn` | a private enumeration, record, abstract type, function or constant that nothing in its file uses (see [Dead code](#dead-code)) |
-| `definable_output` | `F0720` | `allow` | an output that one requirement equates with an expression of other variables (see [Outputs](#outputs)) |
-| `glob_imports` | `F0702` | `warn` | a `use ...::*` (see [Glob imports](#glob-imports)) |
-| `index_after_use` | `F0721` | `warn` | an index on the left of an `and` whose right bounds the sequence (see [Indexes](#indexes)) |
-| `length_zero` | `F0715` | `warn` | a comparison of a string's or sequence's `len` with `0`, such as `s.len = 0` (see [Empty collections](#empty-collections)) |
-| `membership_chain` | `F0718` | `allow` | `x = a or x = b or x = c`, three or more (see [Membership](#membership)) |
-| `non_camel_case_types` | `F0704` | `warn` | an enumeration, variant, record or abstract type not named in `CamelCase` |
-| `non_snake_case` | `F0703` | `warn` | a module, component, variable, function, instance, constraint or global expectation not named in `snake_case` (see [Naming conventions](#naming-conventions)) |
-| `non_upper_case_constants` | `F0705` | `warn` | a constant not named in `UPPER_CASE` |
-| `nonminimal_bool` | `F0712` | `warn` | a `Bool` expression with a simpler form, such as `a? = true` (see [Simpler `Bool` expressions](#simpler-bool-expressions)) |
-| `singleton_membership` | `F0717` | `warn` | `x in {a}` (see [Membership](#membership)) |
-| `undecidable` | `F0714` | `deny` | a construct outside the decidable core (see [Undecidable constructs](#undecidable-constructs)) |
-| `unfulfilled_lint_expectations` | `F0706` | `warn` | a `set_option` that expects a lint that never fires (see [Expecting lints](#expecting-lints)) |
-| `unused_imports` | `F0701` | `warn` | a `use` that nothing in its file uses (see [Unused imports](#unused-imports)) |
-| `unused_variables` | `F0710` | `warn` | a variable or binder that nothing mentions (see [Unused variables](#unused-variables)) |
+| Lint | Code | Group | Default | Reported at |
+|---|---|---|---|---|
+| `bool_equality` | `F0731` | `pedantic` | `allow` | `a = b` on `Bool`s (see [Boolean equality](Lint/Pedantic.md#boolean-equality)) |
+| `card_zero` | `F0716` | `style` | `warn` | a comparison of a set's or relation's `card` with `0` or `1` that says whether it is empty, such as `s.card = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
+| `case_split_reqs` | `F0729` | `pedantic` | `allow` | two or more requirements `when T, y = e` of one output, whose tests are of which variant one scrutinee is (see [Variant tests](Lint/Pedantic.md#variant-tests)) |
+| `collapsible_when` | `F0723` | `style` | `warn` | a `when` whose body is a `when`, or an `unless` whose body is an `unless` (see [Conditionals](Lint/Style.md#conditionals)) |
+| `constant_output` | `F0719` | `complexity` | `warn` | a defined output whose definition mentions no variable and no uninterpreted function (see [Constant outputs](Lint/Complexity.md#constant-outputs)) |
+| `dead_code` | `F0711` | `unused` | `warn` | a private enumeration, record, abstract type, function or constant that nothing in its file uses (see [Dead code](Lint/Unused.md#dead-code)) |
+| `definable_output` | `F0720` | `pedantic` | `allow` | an output that one requirement equates with an expression of other variables (see [Definable outputs](Lint/Pedantic.md#definable-outputs)) |
+| `double_comparison` | `F0730` | `complexity` | `warn` | two comparisons of the same operands that are one, such as `a < b or a = b` (see [Comparisons](Lint/Complexity.md#comparisons)) |
+| `double_neg` | `F0740` | `style` | `warn` | a negation of a negation, `- -x` (see [Negations](Lint/Style.md#negations)) |
+| `double_parens` | `F0739` | `complexity` | `warn` | parentheses directly around parentheses, `((e))` (see [Parentheses](Lint/Complexity.md#parentheses)) |
+| `duplicate_elements` | `F0738` | `suspicious` | `warn` | a set or relation literal with an element written the same as an earlier one, such as `{a, b, a}` (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
+| `else_extends` | `F0733` | `complexity` | `warn` | a conditional operand whose `else` branch extends past its operator, as in `2 * if c? then x else y + 1` (see [Conditional operands](Lint/Complexity.md#conditional-operands)) |
+| `empty_argument` | `F0745` | `suspicious` | `warn` | a method applied to `""` or `[]`, or a `slice` of length `0`, such as `s.starts_with?("")` (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
+| `eq_op` | `F0736` | `suspicious` | `warn` | an operator whose operands are written the same, such as `x = x` (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
+| `glob_imports` | `F0702` | `style` | `warn` | a `use ...::*` (see [Glob imports](Lint/Style.md#glob-imports)) |
+| `identity_op` | `F0734` | `complexity` | `warn` | an operation that leaves an operand as it is, such as `x + 0`, or the negation in `x + -y` (see [Identities](Lint/Complexity.md#identities)) |
+| `if_chain_match` | `F0727` | `pedantic` | `allow` | a chain of `if` whose tests are of which variant one scrutinee is (see [Variant tests](Lint/Pedantic.md#variant-tests)) |
+| `if_not_else` | `F0724` | `pedantic` | `allow` | an `if` whose condition is a negation, such as `if not c? then a else b` (see [Negated conditions](Lint/Pedantic.md#negated-conditions)) |
+| `index_after_use` | `F0721` | `suspicious` | `warn` | an index on the left of an `and` whose right bounds the sequence (see [Indexes](Lint/Suspicious.md#indexes)) |
+| `int_plus_one` | `F0741` | `complexity` | `warn` | a non-strict comparison of integers with an operand off by one, such as `x >= y + 1` (see [Off-by-one comparisons](Lint/Complexity.md#off-by-one-comparisons)) |
+| `length_zero` | `F0715` | `style` | `warn` | a comparison of a string's or sequence's `len` with `0` or `1` that says whether it is empty, such as `s.len = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
+| `manual_method` | `F0732` | `complexity` | `warn` | a search written with `index_of` or `slice`, such as `s.index_of(t, 0) >= 0` (see [Searches](Lint/Complexity.md#searches)) |
+| `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false` (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
+| `match_same_arms` | `F0725` | `pedantic` | `allow` | an arm of a `match` with the same body as another (see [Matches](Lint/Pedantic.md#matches)) |
+| `membership_chain` | `F0718` | `pedantic` | `allow` | `x = a or x = b or x = c`, or `x != a and x != b and x != c`, three or more (see [Membership chains](Lint/Pedantic.md#membership-chains)) |
+| `neg_multiply` | `F0742` | `style` | `warn` | a product with `-1`, `x * -1` or `-1 * x` (see [Negations](Lint/Style.md#negations)) |
+| `non_camel_case_types` | `F0704` | `nonstandard_style` | `warn` | an enumeration, variant, record or abstract type not named in `CamelCase` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
+| `non_snake_case` | `F0703` | `nonstandard_style` | `warn` | a module, component, variable, function, instance, constraint or global expectation not named in `snake_case` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
+| `non_upper_case_constants` | `F0705` | `nonstandard_style` | `warn` | a constant not named in `UPPER_CASE` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
+| `nonminimal_bool` | `F0712` | `complexity` | `warn` | a `Bool` expression with a simpler form, such as `a? = true` (see [Simpler `Bool` expressions](Lint/Complexity.md#simpler-bool-expressions)) |
+| `redundant_bindings` | `F0735` | `style` | `warn` | a binding or field `x := x` (see [Bindings](Lint/Style.md#bindings)) |
+| `redundant_bool_type` | `F0746` | `style` | `warn` | a `: Bool` that a name ending in `?` implies, as in `in ready?: Bool` (see [Boolean types](Lint/Style.md#boolean-types)) |
+| `redundant_method_chain` | `F0743` | `complexity` | `warn` | a chain of methods with a shorter form, such as `q.rev.rev` (see [Chains of methods](Lint/Complexity.md#chains-of-methods)) |
+| `same_branches` | `F0737` | `suspicious` | `warn` | `if c then a else a` (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
+| `singleton_membership` | `F0717` | `complexity` | `warn` | `x in {a}` (see [Singleton membership](Lint/Complexity.md#singleton-membership)) |
+| `trivial_match` | `F0747` | `complexity` | `warn` | a `match` of one arm that binds nothing, such as `match x { _ => e }` (see [Trivial matches](Lint/Complexity.md#trivial-matches)) |
+| `trivial_pattern` | `F0744` | `style` | `warn` | `s.matches?(p)`, where `p` is a string, with `.*` or not at either end (see [Trivial patterns](Lint/Style.md#trivial-patterns)) |
+| `undecidable` | `F0714` | `decidability` | `deny` | a construct outside the decidable core (see [Undecidable constructs](Lint/Decidability.md#undecidable-constructs)) |
+| `unfulfilled_lint_expectations` | `F0706` | `unused` | `warn` | a `set_option` that expects a lint that never fires (see [Expecting lints](#expecting-lints)) |
+| `unless_not` | `F0722` | `style` | `warn` | an `unless` whose condition is a negation, such as `unless not c?, d?` (see [Conditionals](Lint/Style.md#conditionals)) |
+| `unused_imports` | `F0701` | `unused` | `warn` | a `use` that nothing in its file uses (see [Unused imports](Lint/Unused.md#unused-imports)) |
+| `unused_variables` | `F0710` | `unused` | `warn` | a variable or binder that nothing mentions (see [Unused variables](Lint/Unused.md#unused-variables)) |
+| `wildcard_single_variant` | `F0728` | `pedantic` | `allow` | a `_` arm that matches only one variant (see [Matches](Lint/Pedantic.md#matches)) |
 <!-- keep-sorted end -->
 
 Lints are found while elaborating, like [static
 errors](View.md#static-errors), and never ask the solver anything: the
 results of [checks](Check.md), such as a redundant constraint, are not
 lints.
+
+No lint is about shadowing. A declaration that hides a name in scope
+without `!`, and one with `!` that hides nothing, are static errors,
+`F0217` and `F0218` (see [Shadowing](Lang/Components.md#shadowing)). They
+replace the lint `shadowed_constants`, which warned of a variable named
+like a constant, and whose code `F0713` is not reused.
+
+## Written the same
+
+Many lints compare expressions by their text. Two expressions are *written
+the same* if their texts agree but for whitespace and comments: a comment
+counts as whitespace, and whitespace that does not separate two names,
+numbers or keywords is ignored, except inside string literals, raw ones
+too, which are compared as they are. So `x+1` and `x + 1` are written the
+same, and so are `f(x)`, `f( x )` and `f(x /- c -/)`, but `"a b"` and
+`"ab"` are not. The lints look only at the text, never at types or the
+solver, so `x + 1` and `1 + x` are not written the same.
 
 ## Levels
 
@@ -76,6 +122,64 @@ pub comp severity {
 A denied lint is a static error, so with the `fren` command no check
 runs.
 
+## Groups
+
+Each lint is in exactly one *group*, and its default level is its group's:
+
+<!-- keep-sorted start skip_lines=2 -->
+| Group | Default | Lints that |
+|---|---|---|
+| [`complexity`](Lint/Complexity.md) | `warn` | find a simpler expression with the same meaning |
+| [`decidability`](Lint/Decidability.md) | `deny` | find a construct outside the decidable core: `undecidable` alone |
+| [`nonstandard_style`](Lint/NonstandardStyle.md) | `warn` | find a name in the wrong case |
+| [`pedantic`](Lint/Pedantic.md) | `allow` | are matters of judgement, or would fire on much that reads well as it is |
+| [`style`](Lint/Style.md) | `warn` | find a clearer way to write the same thing |
+| [`suspicious`](Lint/Suspicious.md) | `warn` | find what is probably not what the writer meant |
+| [`unused`](Lint/Unused.md) | `warn` | find what is declared but never used |
+<!-- keep-sorted end -->
+
+The groups follow those of rustc and Clippy, and a lint modelled on one of
+theirs is in the group of the same name: a Clippy lint in `pedantic` is
+allowed here too. These are the exceptions:
+
+<!-- keep-sorted start -->
+- `eq_op`: Clippy's is in `correctness`, which is denied by default. Fren
+  has no `correctness` group, and an operator whose operands are written
+  the same still has a meaning, which the spec's checks see, so it is in
+  `suspicious`, and `warn`.
+- `glob_imports` and `trivial_pattern`: their Clippy counterparts are in
+  `pedantic` and `nursery`, but here both are in `style` (see [Trivial
+  patterns](Lint/Style.md#trivial-patterns)), so both are `warn`.
+- `redundant_bool_type`: its Clippy counterpart, `redundant_type_annotations`,
+  is in `restriction`, which is allowed by default. Fren has no
+  `restriction` group, and the `?` of a name already gives its type, so
+  the `: Bool` only repeats it: it is in `style`, and `warn`.
+- `same_branches`: Clippy's `if_same_then_else` is in `style`. Two
+  branches written the same are more likely a slip in one of them than a
+  matter of style, so it is in `suspicious`. Both are `warn`.
+<!-- keep-sorted end -->
+
+```fren
+pub enum Group { Unused, NonstandardStyle, Style, Complexity, Suspicious, Pedantic, Decidability }
+
+pub comp group_default {
+    in group: Group
+    pub det out level: Level
+
+    req rule: level = match group {
+        Group::Pedantic => Level::Allow,
+        Group::Decidability => Level::Deny,
+        _ => Level::Warn,
+    }
+
+    expect never_expect: level != Level::Expect and level != Level::Forbid
+}
+```
+
+A group's name is never a lint's, and wherever a lint's level is set, a
+group's can be, which sets the level of each of its lints. Moving a lint to
+another group changes its default level, so it is a breaking change.
+
 ## Setting levels
 
 A lint's level is set:
@@ -100,6 +204,11 @@ A lint's level is set:
   it sets the level for that item only. The string is one of `allow`,
   `expect`, `warn`, `deny` and `forbid`.
 
+A [group](#groups) is set like a lint, as in `-W pedantic` or `set_option
+fren.lint.pedantic "warn"`, and its setting is a setting of each of its
+lints, in its place. So `-W pedantic -A match_same_arms` warns of each
+pedantic lint but `match_same_arms`.
+
 Each file starts with the levels from the command line, or the defaults
 for lints that the command line does not set. On the command line, the last
 flag for a lint wins, except that `-F` always wins. In the spec, each
@@ -120,6 +229,48 @@ pub comp setting {
 
     expect forbid_is_final: when current = Forbid, level = Forbid
     expect forbid_is_always_accepted: when requested = Forbid, accepted?
+}
+```
+
+A group's setting is accepted when each of its lints would accept it, so
+when none is forbidden, or when it sets `forbid`; otherwise it is an error
+(`F0709`), and changes no level. That is for `set_option`: on the command
+line, a group's flag is a flag for each of its lints, in its place, so it
+leaves a forbidden lint as it is, and the others take its level. `lint::group_setting` states it, for one
+lint of the group:
+
+```fren
+pub comp group_setting {
+    in current: Level        -- the lint's level before the setting
+    in n_forbidden: Int      -- lints of the group at `forbid` before it
+    in requested: Level
+    pub det out accepted?
+    pub det out level: Level
+
+    assume counts: n_forbidden >= 0
+
+    req forbidden: accepted? iff (n_forbidden = 0 or requested = Level::Forbid)
+    req applied: level = if accepted? then requested else current
+
+    expect forbid_is_always_accepted: when requested = Level::Forbid, accepted? and level = Level::Forbid
+    expect blocked_keeps_level: when n_forbidden > 0 and requested != Level::Forbid, level = current
+}
+```
+
+In Lean, the options set outside the file have no order, so there a
+lint's own option wins over its group's, whichever is set.
+`lint::outside_options` states it:
+
+```fren
+pub comp outside_options {
+    in default_level: Level
+    in own_set?              -- the lint's own option is set
+    in own: Level
+    in group_set?            -- its group's option is set
+    in group: Level
+    pub det out level: Level
+
+    req rule: level = if own_set? then own else if group_set? then group else default_level
 }
 ```
 
@@ -210,9 +361,9 @@ pub comp effective {
 The level that applies to a lint's message is the one in effect at the
 item it is about: the `use` for the import lints; for the naming lints
 and `unused_variables`, the item that declares the name, which for a
-member is its component and for a variant its enumeration; for `dead_code`, the unused item; and for `nonminimal_bool`,
-the item the expression is in. So `set_option ... in` before an item sets
-the level for that item alone.
+member is its component and for a variant its enumeration; for `dead_code`, the unused item; and for `nonminimal_bool`
+and the other lints of expressions, the item the expression is in. So
+`set_option ... in` before an item sets the level for that item alone.
 
 A `set_option` naming a lint that does not exist is an error (`F0707`),
 and so is a level other than the five (`F0708`). In Lean, an option that
@@ -240,423 +391,9 @@ warning[F0701]: unused import `check::Verdict`
 ```
 
 When the level was set, the note says so instead, such as ``note:
-`unused_imports` is set to `deny` ``, and there is no help line.
-
-## Unused imports
-
-A `use` is *used* if a path in the same file and module resolves through
-it: the path's first segment resolves (see
-[Resolution](Lang/Modules.md#resolution)) to the item it imports by name,
-or to a variant of the enumeration it opens. Paths in expressions, types,
-instances, global expectations, claims and `#fren_check` count. The paths of
-`use` declarations do not, since they are absolute.
-
-A declaration written with `!` that [shadows](Lang/Components.md#shadowing)
-a name the `use` brings in counts as such a path, since the `!` depends on
-the import: without the `use`, the `!` would hide nothing, and be an error.
-So `use self::Shape::Square` with `in Square!: Int` is used, `fren fix`
-keeps it, and a glob that [`glob_imports`](#glob-imports) narrows keeps
-that name. A `!` that hides a variable or binder instead, which hides the
-import too, does not count.
-
-Only uses in the same file count, even though a module's imports are
-visible in later files that enter it (see [Modules and
-visibility](Lang/Modules.md#across-files)): in Lean, each file is
-elaborated without seeing the files that import it. A Markdown spec read
-by `#fren_md` counts as a file of its own, as it does for the `fren`
-command.
-
-Opening the same enumeration twice in a module counts once (see
-[Resolution](Lang/Modules.md#resolution)), so only the first such `use` can
-be used, and the others are unused. `lint::unused_import` decides whether
-a `use` is unused:
-
-```fren
-pub comp unused_import {
-    in glob?             -- it is `use ...::*`
-    in n_paths: Int      -- paths in its file and module whose first segment resolves to a name it brings into scope
-    in first?            -- no earlier `use` in its file and module opens the same enumeration
-    pub det out unused?
-
-    assume counts: n_paths >= 0
-
-    req rule: unused? iff (n_paths = 0 or (glob? and not first?))
-
-    expect named_used: when not glob? and n_paths > 0, not unused?
-    expect repeated_glob: when glob? and not first?, unused?
-}
-```
-
-The message is reported at the `use`'s path at the end of the file, and
-suggests removing the `use`.
-
-## Glob imports
-
-`use E::*` brings every variant of `E` into scope, including variants
-added later, so a reader cannot tell where a name comes from, and adding a
-variant to one enumeration can make a name in another module
-[ambiguous](Lang/Modules.md#resolution). `glob_imports` reports every
-`use ...::*`. Its message suggests importing by name the variants the file
-uses through it, or writing them qualified, as in `Mode::Heat`.
-
-A glob import that is unused is reported by both lints.
-
-## Naming conventions
-
-The case of a name says what it names:
-
-| Case | Names | Lint |
-|---|---|---|
-| `snake_case` | modules, components, variables, fields, functions, instances, constraints, global expectations and their binders, and the binders of `match` patterns | `non_snake_case` |
-| `CamelCase` | enumerations, variants, records and abstract types | `non_camel_case_types` |
-| `UPPER_CASE` | constants | `non_upper_case_constants` |
-
-```fren
-pub enum Case { Snake, Camel, Upper }
-
-use self::Case::{Camel, Snake, Upper}
-
-pub enum Named {
-    Module,
-    Component,
-    Variable,
-    Field,
-    Binder,
-    Function,
-    Instance,
-    Constraint,
-    Global,
-    Enumeration,
-    Variant,
-    Record,
-    AbstractType,
-    Constant,
-}
-
-use self::Named::{AbstractType, Component, Constant, Enumeration, Function, Record, Variant}
-
-pub comp naming_case {
-    in what: Named
-    pub det out case: Case
-
-    req rule: case = match what {
-        Enumeration | Variant | Record | AbstractType => Camel,
-        Constant => Upper,
-        _ => Snake,
-    }
-}
-```
-
-A name is in `snake_case` if it has no uppercase letter, in `CamelCase` if
-it starts with an uppercase letter and has no `_`, and in `UPPER_CASE` if
-it starts with an uppercase letter and has no lowercase letter. Letters
-are ASCII letters, and a variable's final `?` is ignored, which the
-[patterns](Lang/Expressions.md#patterns) below do, since `?` is neither a
-letter nor `_`. `lint::in_case` states the rule, for any name:
-
-```fren
-pub comp in_case {
-    in case: Case
-    in name: String
-    pub det out conventional?
-
-    req snake: when case = Snake, conventional? iff not name.matches?(r".*[A-Z].*")
-    req camel: when case = Camel, conventional? iff name.matches?(r"[A-Z][^_]*")
-    req upper: when case = Upper, conventional? iff name.matches?(r"[A-Z][^a-z]*")
-
-    expect lowercase_is_snake: when not name.matches?(r".*[A-Z].*"), conventional? iff case = Snake
-    expect mixed_not_upper: when case = Upper and name.matches?(r"[A-Z]+[a-z][A-Za-z]*"),
-        not conventional?
-}
-```
-
-`lowercase_is_snake` follows from what the patterns mean: a name that
-starts with an uppercase letter has one.
-
-So a name in `snake_case` is in no other case:
-
-```fren
-expect snake_apart: forall (a b: in_case),
-    when a.name = b.name and a.case = Snake and b.case != Snake and a.conventional?,
-    not b.conventional?
-```
-
-A name in the wrong case is reported where it is declared, with the name
-converted to the right case as a suggested edit. Only declarations are
-reported: a name used in another case is a different name.
-
-## Unused variables
-
-`unused_variables` reports a variable of a component that nothing in the
-component mentions, a binder of a global expectation that its body
-never mentions, and a parameter of a defined function that its body never
-mentions. An input that nothing mentions does not affect the
-component, and an output that nothing mentions can take any value.
-
-A variable is mentioned by a path in one of the component's constraints,
-or in a binding of one of its instances, whose only segment is the
-variable's name and that resolves to it: the binding `x` in `inst w: c {
-x }` mentions `x`, but in `match s { Shape::Circle(x!) => x > 0, _ =>
-true }`, the `x` of the arm is the binder that
-[shadows](Lang/Components.md#shadowing) the variable, so it does not
-mention the variable. A binder `w` is mentioned by a path `w.x`, and a
-parameter as a variable is. Mentions elsewhere, such as
-through an instance of the component in another one, do not count: they
-cannot constrain the variable. The variables of the component's own
-instances are not reported, and neither are the variables of a component,
-or the binders of a global expectation, with a static error.
-
-The message is reported at the variable's declaration, in the order of
-declaration.
-
-## Dead code
-
-`dead_code` reports a private enumeration, record, abstract type, function
-or constant that no path in its file resolves to. A path to a variant uses
-its enumeration, and so does a path through it, such as `Mode::Heat`. A
-function is used by applying it, and a record or abstract type by naming
-it, as the type of a variable, field, payload or function, or, for a
-record, in a record literal. As for [unused
-imports](#unused-imports), paths in `use` declarations do not count, and
-only uses in the same file count, even though a private item is visible
-from its module's descendants, which later files may enter. Uses in Lean
-code do not count either. A use counts even when it is in an item that is
-itself unused.
-
-Components and global expectations are never dead: each is a requirement,
-or a claim about requirements, in its own right, and is checked and
-[traced](Trace.md) whether or not anything uses it. `pub` items may be used
-by other files. `lint::dead_item` states this:
-
-```fren
-pub comp dead_item {
-    in what: Named
-    in pub?
-    in n_uses: Int       -- paths in its file that resolve to it, to one of its variants, or through it
-    pub det out dead?
-
-    assume counts: n_uses >= 0
-
-    req rule: dead? iff (what in {Enumeration, Record, AbstractType, Function, Constant} and not pub? and n_uses = 0)
-
-    expect public_lives: when pub?, not dead?
-    expect components_live: when what = Component, not dead?
-}
-```
-
-The message is reported at the item's name, at the end of the file.
-
-## Simpler `Bool` expressions
-
-`nonminimal_bool` reports a `Bool` expression that has a simpler form with
-the same meaning, in any constraint, binding, constant or global
-expectation:
-
-| Written | Simpler form |
-|---|---|
-| `A = true`, `A != false`, `A iff true` | `A` |
-| `A = false`, `A != true`, `A iff false` | `not A` |
-| `not not A` | `A` |
-| `not (A = B)`, and so on for every comparison | `A != B`, the complement of the comparison, simplified again if it compares with a literal |
-| `if C then true else false` | `C` |
-| `if C then false else true` | `not C` |
-
-A literal may be on either side of `=`, `!=` and `iff`; when both sides are
-literals, the right one is taken as the literal. `lint::literal_comparison`
-gives the simpler form of a comparison with a literal:
-
-```fren
-pub comp literal_comparison {
-    in equal?            -- the operator is `=` or `iff`, rather than `!=`
-    in literal?          -- the literal is `true`
-    pub det out negated?  -- the simpler form is `not A`, rather than `A`
-
-    req rule: negated? iff (equal? != literal?)
-
-    expect equal_true: when equal? and literal?, not negated?
-    expect unequal_true: when not equal? and literal?, negated?
-}
-```
-
-`lint::complement` gives the complement of a comparison, the one that
-holds exactly when it does not:
-
-```fren
-pub enum Comparison { Eq, Ne, Lt, Le, Gt, Ge }
-
-use self::Comparison::{Eq, Ge, Gt, Le, Lt, Ne}
-
-pub comp complement {
-    in op: Comparison
-    pub det out result: Comparison
-
-    req rule: result = match op { Eq => Ne, Ne => Eq, Lt => Ge, Ge => Lt, Gt => Le, Le => Gt }
-
-    expect changes: result != op
-}
-
-expect complement_involutive: forall (p q: complement), when q.op = p.result, q.result = p.op
-```
-
-The message is reported at the expression, and suggests the simpler form,
-in which the operands are simplified too: the suggestion for `not not (a? =
-true)` is `a?`. An operand keeps the text it is written with, and is put
-in parentheses where [`lang::operand`](Lang/Expressions.md#operators)
-requires them, and only there; the simpler form itself is put in
-parentheses where it is an operand that requires them and it is not
-already in parentheses. For this, a conditional counts as binding more
-loosely than any operator, since its `else` extends as far right as
-possible. So `x? and not not (a? or b?)` becomes `x? and (a? or b?)`, and
-`not (x = 1)` becomes `x != 1`.
-
-The simpler form means what the expression means. Whatever values its
-paths, numbers and function applications have, if the expression has a
-value, the simpler form has the same one. This is proved in Lean, over a
-model of expressions that follows the [operators](Lang/Expressions.md#operators):
-the rules above decide what the simpler form is, as an expression rather
-than as text, and the proof covers every expression, every rule, and the
-simplification of the operands. It does not cover the text: that the
-simpler form, written with its parentheses, parses as the expression the
-rules chose.
-
-## Shadowing
-
-No lint is about shadowing. A declaration that hides a name in scope
-without `!`, and one with `!` that hides nothing, are static errors,
-`F0217` and `F0218` (see [Shadowing](Lang/Components.md#shadowing)). They
-replace the lint `shadowed_constants`, which warned of a variable named
-like a constant, and whose code `F0713` is not reused.
-
-## Undecidable constructs
-
-`undecidable` fires once for each construct outside the [decidable
-core](Lang/Decidability.md), at the construct, with the reason and how to
-stay in the core. It is `deny` by default, so a spec opts out explicitly:
-
-```
-set_option fren.lint.undecidable "allow" in
-comp c { ... }
-```
-
-A project that wants every check decidable sets `-F undecidable`. Setting
-it to `expect` says that a component is meant to be undecidable, so that
-[`unfulfilled_lint_expectations`](#expecting-lints) reports the opt-out
-once a change brings it back into the core. `lint::undecidable_fires`
-states when it fires:
-
-```fren
-use lang::{Construct, in_core}
-
-pub comp undecidable_fires {
-    in construct: Construct
-    in constant_args?
-    in comparable?
-    in infinite_output?
-    in ground?
-    in infinite_elems?
-    in finite_range?
-    in literal_operand?
-    pub det out fires?
-
-    inst core: in_core {
-        construct, constant_args?, comparable?, infinite_output?, ground?, infinite_elems?, finite_range?, literal_operand?,
-    }
-
-    req rule: fires? iff not core.decidable?
-}
-```
-
-## Empty collections
-
-`length_zero` fires on a comparison of `len` with `0` that says that a
-string or sequence is empty, or that it is not: `s.len = 0` and `s.len <=
-0` become `s = ""`, or `q = []`, and `s.len > 0` becomes `s != ""`.
-`card_zero` is the same for a set's or relation's `card`, with `{}`. Both
-are fixable. `lint::length_zero` states which comparisons they fire on,
-with the length on the left and the literal on the right:
-
-```fren
-pub comp length_zero {
-    in op: Comparison
-    in bound: Int        -- the literal compared with
-    pub det out fires?
-    pub det out empty?   -- the fix says that it is empty, rather than not
-
-    req rule: fires? iff (bound = 0 and op in {Eq, Le, Gt})
-    req fix: empty? iff op != Gt
-
-    expect not_negative: when op = Lt and bound = 0, not fires?
-}
-```
-
-## Membership
-
-`singleton_membership` fires on `x in {a}`, which is `x = a`, and is
-fixable. `membership_chain`, `allow` by default, fires on a disjunction of
-three or more equations of one expression with others, `x = a or x = b or x
-= c`, and its fix is `x in {a, b, c}`. `lint::membership_chain` states when
-it fires, from the number of disjuncts and whether they all equate the
-same expression, written the same way, on their left:
-
-```fren
-pub comp membership_chain {
-    in n: Int            -- disjuncts in the chain of `or`
-    in same_left?        -- each is an equation with the same left operand
-    pub det out fires?
-
-    assume counts: n >= 2
-
-    req rule: fires? iff (same_left? and n >= 3)
-}
-```
-
-## Outputs
-
-`constant_output` fires on a [defined output](Lang/Components.md#defined-outputs)
-whose definition mentions no variable and no uninterpreted function (see
-[Mentions](Lang/Expressions.md#mentions)): it is the same in every behaviour,
-so it is a constant. `definable_output`, `allow` by default, fires on an
-output, not defined, that exactly one requirement constrains, unconditionally,
-as `x = e` or `x? iff e`, where `e` does not mention `x`: the requirement
-could be its definition. `lint::output_lints` states both:
-
-```fren
-pub comp output_lints {
-    in defined?              -- the output is defined
-    in mentions?             -- its definition mentions a variable or an uninterpreted function, if defined
-    in n_reqs: Int           -- requirements that mention it, if not defined
-    in equation?             -- the only one is `x = e` or `x? iff e`, with `e` not mentioning `x`
-    pub det out constant?    -- `constant_output` fires
-    pub det out definable?   -- `definable_output` fires
-
-    assume counts: n_reqs >= 0
-
-    req constant: constant? iff (defined? and not mentions?)
-    req definable: definable? iff (not defined? and n_reqs = 1 and equation?)
-
-    expect exclusive: not (constant? and definable?)
-}
-```
-
-## Indexes
-
-`index_after_use` fires on `a and b`, where `a` indexes a sequence `q` and
-`b` bounds it: it mentions `q.len`, or compares `q` with `[]`. The index is
-probably meant to be guarded by `b`, but `and` guards its right operand by
-its left (see [Expressions](Lang/Expressions.md#sequences)), so the
-[definedness check](Check.md#definedness) fails. The fix swaps the
-operands, which does not change the meaning. The lint looks only at the
-text, never at the solver:
-
-```fren
-pub comp index_after_use {
-    in indexes_left?     -- `a` indexes a sequence `q`
-    in bounds_right?     -- `b` mentions `q.len`, or compares `q` with `[]`
-    pub det out fires?
-
-    req rule: fires? iff (indexes_left? and bounds_right?)
-}
-```
+`unused_imports` is set to `deny` ``, or, when its group's setting set it,
+``note: `membership_chain` is set to `warn` by its group, `pedantic` ``, and
+there is no help line.
 
 ## Expecting lints
 
@@ -670,6 +407,9 @@ deliberate, and points out the setting once it is no longer needed.
 A lint *fires* where its condition holds and its level is not `allow`. A
 lint that fires is reported with the severity of its level, or, at
 `expect`, fulfils the expectation in effect there.
+
+`set_option fren.lint.GROUP "expect"` is one expectation, for every lint
+of the group, and any of them that fires there fulfils it.
 
 Each `set_option` to `expect` is its own expectation: a lint that fires
 fulfils only the expectation in effect where it fires, so the second of
@@ -707,67 +447,59 @@ what the spec means:
 <!-- keep-sorted start skip_lines=2 -->
 | Lint | Fix |
 |---|---|
+| `bool_equality` | replaces `a = b` with `a iff b` |
 | `card_zero` | compares the set with `{}`, as the message suggests |
+| `collapsible_when` | collapses the two conditionals into one, as the message suggests |
+| `double_comparison` | replaces the two comparisons with the one they are |
+| `double_neg` | replaces `- -x` with `x` |
+| `double_parens` | removes all but the innermost pair of parentheses |
+| `duplicate_elements` | removes each repeated element, with the `,` before it |
+| `else_extends` | puts the `else` branch in parentheses |
 | `glob_imports` | imports by name the variants that the file uses through the glob: `use E::*` becomes `use E::{A, B}`, or `use E::A` for a single variant |
+| `identity_op` | replaces the operation with the operand it leaves as it is, `x + -y` with `x - y`, and `x - -y` with `x + y` |
+| `if_chain_match` | replaces the chain with a `match` |
+| `if_not_else` | removes the negation and swaps the branches, as the message suggests |
 | `index_after_use` | swaps the operands of the `and` |
+| `int_plus_one` | replaces the comparison with the strict one, without the offset |
 | `length_zero` | compares the string with `""`, or the sequence with `[]`, as the message suggests |
-| `membership_chain` | replaces the chain with a membership, `x in {a, b, c}` |
+| `manual_method` | replaces the comparison with a call of `contains?` or `starts_with?`, as the message suggests |
+| `match_like_membership` | replaces the `match` with a membership, `x in {E::A, E::B}`, as the message suggests |
+| `match_same_arms` | merges the arms into one with an or-pattern, removes those with the body of the `_` arm, or replaces the `match` with its body, as the message suggests |
+| `membership_chain` | replaces the chain with a membership, `x in {a, b, c}`, or `not x in {a, b, c}` |
+| `neg_multiply` | replaces `x * -1` or `-1 * x` with `-x` |
 | `nonminimal_bool` | replaces the expression with its simpler form, as the message suggests |
+| `redundant_bindings` | replaces `x := x` with `x` |
+| `redundant_bool_type` | removes the `: Bool` |
+| `redundant_method_chain` | replaces the chain with its shorter form |
+| `same_branches` | replaces the conditional with its `then` branch |
 | `singleton_membership` | replaces `x in {a}` with `x = a` |
+| `trivial_match` | replaces the `match` with its arm's body |
+| `trivial_pattern` | replaces `s.matches?(p)` with an equation or a call of `starts_with?`, `ends_with?` or `contains?` |
 | `unfulfilled_lint_expectations` | removes the `set_option`, or for `set_option ... in item`, removes `set_option ... in` and keeps the item |
+| `unless_not` | removes the negation and writes `when`, as the message suggests |
 | `unused_imports` | removes the `use`, or the name from a grouped `use` |
+| `wildcard_single_variant` | names the variant, `E::V`, or `E::V(_, _)` with one `_` per value of its payload |
 <!-- keep-sorted end -->
 
 Each fix that rewrites an expression keeps what the expression means, for
-every value of what it mentions. `lint::fixes_keep_meaning` states it for
-each such fix, with the written form, which the lint fires on, on the left
-of each `iff`, and the fixed form on the right. It expects the lints, so
-it also checks that each of them fires somewhere in it, though not that
-it fires on every form. `index_after_use` is left out: its fix only swaps
-the operands of `and`, which means the same either way round, and its
-written form has an index that may be out of range.
-
-```fren
-set_option fren.lint.nonminimal_bool "expect" in
-set_option fren.lint.length_zero "expect" in
-set_option fren.lint.card_zero "expect" in
-set_option fren.lint.singleton_membership "expect" in
-set_option fren.lint.membership_chain "expect" in
-pub comp fixes_keep_meaning {
-    in a?
-    in c?
-    in x: Int
-    in y: Int
-    in z: Int
-    in w: Int
-    in s: String
-    in q: Seq(Int)
-    in t: Set(Int)
-    in r: Rel(Bool, Bool)
-
-    expect true_literals: ((a? = true) iff a?) and ((a? != false) iff a?) and ((a? iff true) iff a?)
-    expect false_literals: ((a? = false) iff not a?) and ((a? != true) iff not a?) and ((a? iff false) iff not a?)
-    expect literals_left: ((true = a?) iff a?) and ((true iff a?) iff a?) and ((false = a?) iff not a?)
-    expect double_negation: (not not a?) iff a?
-    expect negated_literal: (not (a? = true)) iff not a?
-    expect complements: ((not (x = y)) iff x != y) and ((not (x != y)) iff x = y)
-        and ((not (x < y)) iff x >= y) and ((not (x <= y)) iff x > y)
-        and ((not (x > y)) iff x <= y) and ((not (x >= y)) iff x < y)
-    expect conditionals: ((if c? then true else false) iff c?) and ((if c? then false else true) iff not c?)
-    expect string_length_zero: ((s.len = 0) iff s = "") and ((s.len <= 0) iff s = "") and ((s.len > 0) iff s != "")
-    expect sequence_length_zero: ((q.len = 0) iff q = []) and ((q.len <= 0) iff q = []) and ((q.len > 0) iff q != [])
-    expect card_zero: ((t.card = 0) iff t = {}) and ((t.card <= 0) iff t = {}) and ((t.card > 0) iff t != {})
-    expect relation_card_zero: ((r.card = 0) iff r = {}) and ((r.card > 0) iff r != {})
-    expect singleton: (x in {y}) iff x = y
-    expect chain: (x = y or x = z or x = w) iff x in {y, z, w}
-}
-```
+every value of what it mentions. For `nonminimal_bool`, `length_zero`,
+`card_zero`, `singleton_membership` and `membership_chain`, a component
+in the lint's section states this as laws, which the solver checks: the
+written form, which the lint fires on, is on the left of each `iff`, and
+the fixed form on the right. Each component expects its lints, so it also
+checks that each of them fires somewhere in it, though not that it fires
+on every form. `index_after_use` is left out: its fix only swaps the
+operands of `and`, which means the same either way round, and its written
+form has an index that may be out of range. To keep the meaning, a fix
+puts parentheses where [Parentheses in fixes](#parentheses-in-fixes)
+says.
 
 The other lints have no fix. Renaming a declaration, as the naming lints
 would need, would also have to rename every use
 of it, including uses in Lean code and in files that are not given, and so
 would removing a dead item. Removing an unused variable would change its
-component's interface. A message of a lint that `fren fix` fixes says so, with the line
+component's interface, and merging the requirements that `case_split_reqs`
+reports would change what traces, claims and `impl`s name. A message of a lint that `fren fix` fixes says so, with the line
 `` help: `fren fix` can fix this ``. In Lean, only the messages in a
 [Markdown spec](Markdown.md) have this line, since `fren fix` does not read
 Lean files.
@@ -787,7 +519,8 @@ Lean files.
 
 `lint::Lint` is the lints. `lint::fix_selected` gives whether a lint that
 fires is fixed, from the sets given to `--only` and `--skip`, each empty
-when the option is not given. A lint given twice is given once:
+when the option is not given. A group given to either gives each of its
+lints. A lint given twice is given once:
 
 ```fren
 pub type Lint
@@ -812,9 +545,15 @@ expect skip_monotone: forall (a b: fix_selected),
 
 The lints that are not fixed are reported as `fren check` reports them. A
 static error other than a denied lint stops `fren fix` before it writes
-anything. The fixes are found from the files as given, in a single pass.
-They do not change the layout of what they leave behind, which may then
-need formatting, as `--fmt` does.
+anything. The fixes are found from the files as given, and then again
+from the files as fixed, until no fix is left: one fix can overlap
+another, of which only the outer is made, or leave something that another
+lint fixes. There
+are at most 10 passes, in case two fixes undo each other, and a pass whose
+fixes would make a static error is not kept. The lints reported are those left
+in the files as fixed, or with `--check`, which writes nothing, those that
+the first pass does not fix, in the files as given. The fixes do not change the layout of what they
+leave behind, which may then need formatting, as `--fmt` does.
 
 `lint::import_fix` gives the fix of one `use` that is not in a group,
 from the lints that fire at it and whether each is fixed. For a glob that
@@ -879,6 +618,28 @@ exactly when every file is loaded:
 use cli::exit_status
 
 refine fix_exit_status: fix_exit refines exit_status { ran? := loaded? }
-
-#fren_check
 ```
+
+### Parentheses in fixes
+
+A fix that rewrites an expression keeps the text of each operand it
+writes, and puts an operand, or the fix itself, in parentheses where it is
+not already in them and either:
+
+- [`lang::operand`](Lang/Expressions.md#operators) requires them, where a
+  conditional counts as binding more loosely than any operator; or
+- it ends in an *open-ended* form, and something follows it.
+
+An open-ended form is a conditional, a `when` or an `unless` that is not
+in parentheses, brackets or braces: its last operand extends as far right
+as possible, so it would take in what follows. A `match` ends with its
+`}`, so it is not one, and a quantifier only starts a global expectation,
+so it is never an operand. A left operand is followed by its operator, and
+the condition of a `when` or an `unless` by its `,`. A right operand is
+followed by what follows the expression it is an operand of. What is
+written in the file follows the fix where it is an infix operator, or the
+`.` or `[` after a receiver, after any whitespace and comments. So `(p? or
+if q? then r? else s?) = t?` becomes `(p? or if q? then r? else s?) iff
+t?`, and `z = (x + if p? then 1 else 2) + 0 and q?` becomes `z = (x + if
+p? then 1 else 2) and q?`, but `z = (x + if p? then 1 else 2) + 0` alone
+becomes `z = x + if p? then 1 else 2`, as nothing follows it.

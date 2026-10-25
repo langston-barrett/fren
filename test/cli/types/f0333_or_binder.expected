@@ -1,0 +1,17 @@
+error[F0333]: an or-pattern cannot bind `n`
+ --> test/cli/types/f0333_or_binder.fren:3:72
+  |
+3 | comp c { in s: Shape pub out a: Int req r: a = match s { Shape::Circle(n) | Shape::Square(n) => n, _ => 0 } }
+  |                                                                        ^ binds a name
+  |
+  = note: when another alternative matches, the name would have no value
+help: ignore the value
+  |
+3 - comp c { in s: Shape pub out a: Int req r: a = match s { Shape::Circle(n) | Shape::Square(n) => n, _ => 0 } }
+3 + comp c { in s: Shape pub out a: Int req r: a = match s { Shape::Circle(_) | Shape::Square(n) => n, _ => 0 } }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0333`.
+exit=2

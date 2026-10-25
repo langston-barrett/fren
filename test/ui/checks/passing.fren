@@ -1,0 +1,62 @@
+-- A spec that passes every check, using modules, imported variants, nesting
+-- and arithmetic.
+
+mod climate
+
+pub enum Mode { Off, Heat, Cool }
+use self::Mode::{Cool, Heat, Off}
+
+pub comp thermostat {
+    in temp: Int
+    in target: Int
+    pub out mode: Mode
+    pub out fan?
+
+    assume sane: -50 <= temp and temp <= 150 and 50 <= target and target <= 90
+
+    req heat: when temp < target - 2, mode = Heat
+    req cool: when temp > target + 2, mode = Cool
+    req idle: unless temp < target - 2 or temp > target + 2, mode = Off
+    req fan: fan? iff mode != Off
+
+    expect fan_when_cold: when temp < 0, fan?
+    expect nested: when fan?, unless mode = Cool, temp < target
+}
+
+mod display
+use climate::Mode
+use climate::Mode::Heat
+
+comp indicator {
+    in mode: Mode
+    pub out red?
+    req red: red? iff mode = Heat
+}
+
+-- `if` is an operand without parentheses, including in a binding; its
+-- `else` branch extends to the end.
+comp brightness {
+    in mode: Mode
+    in dim?
+    pub out level: Int
+
+    req rule: level = if mode = Heat then 3 else if dim? then 1 else 2
+
+    expect bounded: level >= 1 and level <= 3
+}
+
+-- `nonminimal_bool` would write the binding of `dim?` with `or`.
+set_option fren.lint.nonminimal_bool "allow" in
+comp panel {
+    in mode: Mode
+    pub out level: Int
+
+    inst b: brightness { mode, dim? := if mode = Mode::Off then true else mode = Mode::Cool }
+
+    req same: level = b.level
+
+    expect off_is_dim: when mode = Mode::Off, level = 1
+}
+
+--@ summary: 22 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ exit: 0

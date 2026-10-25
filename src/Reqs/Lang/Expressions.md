@@ -9,7 +9,7 @@ and   := and "and" not | not
 not   := "not" not | cmp
 cmp   := sum [("=" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "subset") sum]
 sum   := sum ("+" | "-" | "++" | "union" | "minus") prod | prod
-prod  := prod ("*" | "inter") neg | neg
+prod  := prod ("*" | "inter" | "join") neg | neg
 neg   := "-" neg | atom
 atom  := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | "(" expr ")"
        | "if" expr "then" expr "else" expr
@@ -32,27 +32,28 @@ are no spaces around the `.`: after a name, `.` is part of the
 
 ## Operators
 
-From lowest to highest precedence:
+From lowest to highest precedence, where forms of the same level bind
+equally tightly:
 
-| Form | Meaning | Operand types | Result | Associativity |
-|---|---|---|---|---|
-| `when C, D` | C implies D | `Bool` | `Bool` | right |
-| `unless C, D` | not C implies D | `Bool` | `Bool` | right |
-| `A iff B` | A if and only if B | `Bool` | `Bool` | none |
-| `A or B` | disjunction | `Bool` | `Bool` | left |
-| `A and B` | conjunction | `Bool` | `Bool` | left |
-| `not A` | negation | `Bool` | `Bool` | |
-| `A = B`, `A != B` | equality, disequality | any, both the same | `Bool` | none |
-| `A < B`, `A <= B`, `A > B`, `A >= B` | ordering | `Int`, or `String` | `Bool` | none |
-| `A in S` | membership | `T` and `Set(T)` or `Seq(T)`, or a pair `(a, b)` and `Rel(A, B)` | `Bool` | none |
-| `S subset T` | `S` is a subset of `T`, not necessarily strict | `Set(T)`, or `Rel(A, B)` | `Bool` | none |
-| `A + B`, `A - B` | addition, subtraction | `Int` | `Int` | left |
-| `A ++ B` | concatenation | `String`, or `Seq(T)` | the same | left |
-| `S union T`, `S minus T` | union, difference | `Set(T)`, or `Rel(A, B)` | the same | left |
-| `A * B` | multiplication | `Int` | `Int` | left |
-| `S inter T` | intersection | `Set(T)`, or `Rel(A, B)` | the same | left |
-| `R join Q` | composition | `Rel(A, B)` and `Rel(B, C)` | `Rel(A, C)` | left |
-| `-A` | negation | `Int` | `Int` | |
+| Level | Form | Meaning | Operand types | Result | Associativity |
+|---|---|---|---|---|---|
+| 1 | `when C, D` | C implies D | `Bool` | `Bool` | right |
+| 1 | `unless C, D` | not C implies D | `Bool` | `Bool` | right |
+| 2 | `A iff B` | A if and only if B | `Bool` | `Bool` | none |
+| 3 | `A or B` | disjunction | `Bool` | `Bool` | left |
+| 4 | `A and B` | conjunction | `Bool` | `Bool` | left |
+| 5 | `not A` | negation | `Bool` | `Bool` | |
+| 6 | `A = B`, `A != B` | equality, disequality | any, both the same | `Bool` | none |
+| 6 | `A < B`, `A <= B`, `A > B`, `A >= B` | ordering | `Int`, or `String` | `Bool` | none |
+| 6 | `A in S` | membership | `T` and `Set(T)` or `Seq(T)`, or a pair `(a, b)` and `Rel(A, B)` | `Bool` | none |
+| 6 | `S subset T` | `S` is a subset of `T`, not necessarily strict | `Set(T)`, or `Rel(A, B)` | `Bool` | none |
+| 7 | `A + B`, `A - B` | addition, subtraction | `Int` | `Int` | left |
+| 7 | `A ++ B` | concatenation | `String`, or `Seq(T)` | the same | left |
+| 7 | `S union T`, `S minus T` | union, difference | `Set(T)`, or `Rel(A, B)` | the same | left |
+| 8 | `A * B` | multiplication | `Int` | `Int` | left |
+| 8 | `S inter T` | intersection | `Set(T)`, or `Rel(A, B)` | the same | left |
+| 8 | `R join Q` | composition | `Rel(A, B)` and `Rel(B, C)` | `Rel(A, C)` | left |
+| 9 | `-A` | negation | `Int` | `Int` | |
 
 - In `when C, D` and `unless C, D`, `C` ends at the first top-level `,`, and
   `D` extends as far right as possible. `D` may itself be a `when` or
@@ -66,8 +67,8 @@ From lowest to highest precedence:
 `lang::operand` states when an operand can be written without parentheses,
 from the precedence of its operator (`inner`) and of the operator it is an
 operand of (`outer`), and the associativity of `outer`. A precedence is any
-number that orders the operators as the table does, where `when` and
-`unless` share one, and so do `=`, `!=` and the orderings. An atom binds
+number that orders the operators as the table's levels do, so that the
+operators of one level share one. An atom binds
 more tightly than any operator, and a prefix operator counts as
 right-associative, with its operand on the right.
 
@@ -104,7 +105,7 @@ Some rules ask whether an expression *mentions* a variable or an
 uninterpreted [function](Items.md#functions): those of [linear
 arithmetic](#linear-arithmetic), of the [decidable
 core](Decidability.md#strings), and of the
-[lint](../Lint.md#outputs) `constant_output`. An expression that mentions
+[lint](../Lint/Complexity.md#constant-outputs) `constant_output`. An expression that mentions
 neither has the same value in every behaviour. What an expression
 mentions is decided from its parts, as `lang::mentions` states:
 
@@ -607,10 +608,14 @@ The methods of `String`, where `s` is the receiver:
 `lang::string_methods` states the table as laws, for every string and
 position. Several of them search a string or slice it at a position that
 is not a constant, which is outside the [decidable
-core](Decidability.md#strings), so it allows that:
+core](Decidability.md#strings), so it allows that. It also allows
+`empty_argument` and `manual_method`, which fire on some of the laws, such
+as `s.contains?("")`, since those laws are what the lints rely on:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
+set_option fren.lint.empty_argument "allow" in
+set_option fren.lint.manual_method "allow" in
 pub comp string_methods {
     in s: String
     in t: String
@@ -670,10 +675,16 @@ relational methods and `join`, which a relation over a finite type keeps
 in the core. `rev`, `++`, `at`, `slice`, `contains?`, `index_of` and
 `replace` on sequences, and `starts_with?` and `ends_with?` with an
 argument that is not a literal, are outside the [decidable
-core](Decidability.md#sequences), so it allows that:
+core](Decidability.md#sequences), so it allows that. As
+`lang::string_methods` does, it also allows the lints that fire on the laws
+they rely on, `empty_argument`, `manual_method` and
+`redundant_method_chain`:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
+set_option fren.lint.empty_argument "allow" in
+set_option fren.lint.manual_method "allow" in
+set_option fren.lint.redundant_method_chain "allow" in
 pub comp collection_methods {
     in p: Seq(Int)
     in q: Seq(Int)
@@ -810,7 +821,7 @@ must match it:
 | Pattern | Matches |
 |---|---|
 | `c` | the character `c`, other than `\`, `.`, `[`, `]`, `(`, `)`, `*`, `+`, `?`, `{`, `}`, `\|` and `^` |
-| `\c` | `c`, for `c` one of those |
+| `\c` | `c`, for `c` one of those, or `-`, which is literal outside a class but marks a range in one |
 | `.` | any character |
 | `[a-z_]` | a character in the class: each item is a character or a range `a-z` |
 | `[^...]` | a character not in the class |

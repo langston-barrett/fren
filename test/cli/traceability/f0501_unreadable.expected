@@ -1,0 +1,12 @@
+error[F0501]: cannot read `test/fixtures/no_such_file.txt`
+ --> test/cli/traceability/f0501_unreadable.fren:3:11
+  |
+3 | tested c: "test/fixtures/no_such_file.txt"
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no such file, or unreadable
+  |
+  = note: paths are relative to the directory Fren runs in, usually the project's root
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0501`.
+exit=2

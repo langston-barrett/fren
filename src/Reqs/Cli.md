@@ -42,7 +42,7 @@ installation. It is built by `lake build fren`.
 | `--ignore GLOB` | `fmt`: skip the matching files; `fix`: leave them as they are; may be repeated |
 | `--fmt` | `fix`: then format the files, as `fren fmt` does |
 | `--only LINT`, `--skip LINT` | `fix`: fix only the lints given, or all but them; may be repeated |
-| `-A LINT`, `-W LINT`, `-D LINT`, `-F LINT` | `check`, `trace`, `fix`, `eval`, `quickcheck` and `mutate`: set the level of a [lint](Lint.md) to `allow`, `warn`, `deny` or `forbid`; may be repeated. The long forms are `--allow`, `--warn`, `--deny` and `--forbid` |
+| `-A LINT`, `-W LINT`, `-D LINT`, `-F LINT` | `check`, `trace`, `fix`, `eval`, `quickcheck` and `mutate`: set the level of a [lint](Lint.md), or of each lint of a [group](Lint.md#groups), to `allow`, `warn`, `deny` or `forbid`; may be repeated. The long forms are `--allow`, `--warn`, `--deny` and `--forbid` |
 | `--comp PATH` | `eval`: the component to evaluate; `mutate`: the component whose mutants to check |
 | `--set VAR=VALUE` | `eval`: the value of a variable; may be repeated |
 | `--seed N` | `eval`, `quickcheck`, `mutate`, and `check` for [checks by testing](Check.md#checking-by-testing): where the random search starts (default 0); `mutate`: also which mutants `--sample` takes |

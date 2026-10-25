@@ -1,0 +1,12 @@
+--@ args: fix --check
+-- `fren fix` writes trivial patterns as equations and calls, escaping the
+-- string, with parentheses only where an operand needs them.
+pub comp c {
+    in s: String
+    in t: String
+    pub out p?
+    pub out k?
+
+    req r1: p? iff s.matches?("abc") and s.matches?(r"a\.b\\.*") and s.matches?(".*x") and s.matches?(r#".*"\(.*"#) and s.matches?("a\nb")
+    req r2: k? = (s ++ t).matches?("q") and not (s ++ t).matches?(".*q")
+}

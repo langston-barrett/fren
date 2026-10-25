@@ -1,0 +1,18 @@
+--@ args: fix --check
+-- Fixes around parentheses and comments: a repeated element in parentheses
+-- is removed with them, and a comment between an operator and an `if`
+-- whose branches are the same does not hide the operator, so the branch is
+-- still parenthesized.
+comp c {
+    in a?
+    in x: Int
+    in t: Set(Int)
+    pub out p1?
+    pub out p2?
+    pub out n: Int
+
+    req r1: p1? iff t = {(x), x}
+    req r2: p2? iff t = {x, (x)}
+    req r3: n = 2 * -- a comment
+        if a? then x + 1 else x + 1
+}

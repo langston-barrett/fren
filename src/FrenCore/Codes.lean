@@ -2214,10 +2214,8 @@ Erroneous code example:
 set_option fren.lint.unused_import "allow"
 ```
 
-The lints include `dead_code`, `glob_imports`, `non_camel_case_types`,
-`non_snake_case`, `non_upper_case_constants`, `nonminimal_bool`,
-`unfulfilled_lint_expectations`, `unused_imports` and `unused_variables`;
-the error lists them all.
+A lint option names a lint or a group of lints, such as `pedantic`. The
+message lists them all.
 
 ```fren
 set_option fren.lint.unused_imports "allow"
@@ -2248,7 +2246,8 @@ set_option fren.lint.glob_imports "allow"
 
 Once a lint is `forbid`, by a `set_option` or on the command line with
 `-F`, its level cannot be changed for the rest of the file, so that a
-project can rule a lint out everywhere. Remove the later setting:
+project can rule a lint out everywhere. Neither can the level of its group,
+which would change the lint's. Remove the later setting:
 
 ```fren
 set_option fren.lint.glob_imports "forbid"
@@ -2301,8 +2300,9 @@ comp c { in a? pub out b? req r: b? iff a? = true }
 ```
 
 `a? = true` means `a?`. Likewise, `a? = false` means `not a?`, `not not
-a?` means `a?`, `not (x < y)` means `x >= y`, and `if c? then true else
-false` means `c?`. Write the simpler form, as `fren fix` does:
+a?` means `a?`, `not (x < y)` means `x >= y`, `if c? then true else false`
+means `c?`, and `if c? then a? else false` means `c? and a?`. Write the
+simpler form, as `fren fix` does:
 
 ```fren
 comp c { in a? pub out b? req r: b? iff a? }
@@ -2352,7 +2352,9 @@ comp c { in s: String pub out p? req r: p? iff s.len = 0 }
 ```
 
 That a string or sequence is empty says it more plainly: `s = ""`, or
-`q = []`, and `s != ""` for `s.len > 0`. `fren fix` can fix this:
+`q = []`, for `s.len = 0`, `s.len <= 0` and `s.len < 1`, and `s != ""` for
+`s.len != 0`, `s.len > 0` and `s.len >= 1`, with the length on either side.
+`fren fix` can fix this:
 
 ```fren
 comp c { in s: String pub out p? req r: p? iff s = "" }
@@ -2367,7 +2369,7 @@ comp c { in s: Set(Int) pub out p? req r: p? iff s.card > 0 }
 ```
 
 That a set is empty says it more plainly: `s = {}`, or `s != {}` for
-`s.card > 0`. `fren fix` can fix this:
+`s.card > 0`, and so on, as for `len` (F0715). `fren fix` can fix this:
 
 ```fren
 comp c { in s: Set(Int) pub out p? req r: p? iff s != {} }
@@ -2387,7 +2389,7 @@ comp c { in x: Int pub out p? req r: p? iff x in {1} }
 comp c { in x: Int pub out p? req r: p? iff x = 1 }
 ```
 "# },
-  { code := "F0718", explanation := r#"A chain of `or` that equates one expression with three or more others (`membership_chain`, allowed by default).
+  { code := "F0718", explanation := r#"A chain of `or` that equates one expression with three or more others, or of `and` that disequates it (`membership_chain`, allowed by default).
 
 Example:
 
@@ -2397,7 +2399,8 @@ set_option fren.lint.membership_chain "warn"
 comp c { in x: Int pub out p? req r: p? iff (x = 1 or x = 2 or x = 3) }
 ```
 
-The chain is a membership in a set literal. `fren fix` can fix this:
+The chain is a membership in a set literal, and `x != 1 and x != 2 and x
+!= 3` is `not x in {1, 2, 3}`. `fren fix` can fix this:
 
 ```fren
 comp c { in x: Int pub out p? req r: p? iff x in {1, 2, 3} }
@@ -2451,6 +2454,492 @@ does not change the meaning. `fren fix` can fix this:
 
 ```fren
 comp c { in q: Seq(Int) pub out p? req r: p? iff (q.len > 0 and q[0] = 1) }
+```
+"# },
+  { code := "F0722", explanation := r#"An `unless` whose condition is a negation (a warning, `unless_not`).
+
+Example:
+
+```fren
+comp c { in a? in b? pub out p? req r: unless not a?, p? iff b? }
+```
+
+`unless not A, D` is `when A, D`, and `unless a != b, D` is `when a = b,
+D`. `fren fix` can fix this:
+
+```fren
+comp c { in a? in b? pub out p? req r: when a?, p? iff b? }
+```
+"# },
+  { code := "F0723", explanation := r#"A `when` whose body is a `when`, or an `unless` whose body is an `unless` (a warning, `collapsible_when`).
+
+Example:
+
+```fren
+comp c { in a? in b? pub out p? req r: when a?, when b?, p? }
+```
+
+`when A, when B, D` is `when A and B, D`, and `unless A, unless B, D` is
+`unless A or B, D`. `fren fix` can fix this:
+
+```fren
+comp c { in a? in b? pub out p? req r: when a? and b?, p? }
+```
+
+A nest of `when` and `unless`, such as `unless A, when B, D`, is not
+reported.
+"# },
+  { code := "F0724", explanation := r#"An `if` whose condition is a negation (`if_not_else`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.if_not_else "warn"
+
+comp c { in a? in x: Int pub out y: Int req r: y = if not a? then x else 0 }
+```
+
+`if not C then A else B` is `if C then B else A`, and `if a != b then A
+else B` is `if a = b then B else A`. `fren fix` can fix this:
+
+```fren
+comp c { in a? in x: Int pub out y: Int req r: y = if a? then 0 else x }
+```
+
+An `if` whose `else` branch is an `if` is not reported, since swapping its
+branches would break the chain of `else if`.
+"# },
+  { code := "F0725", explanation := r#"Two arms of a `match` with the same body (`match_same_arms`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.match_same_arms "warn"
+
+enum E { A, B, C }
+
+comp c { in e: E pub out n: Int req r: n = match e { E::A => 1, E::B => 2, E::C => 1 } }
+```
+
+Arms whose patterns bind no names, and whose bodies are written the same,
+are one arm with an or-pattern. An arm with the body of the `_` arm can be
+removed, and a `match` whose arms all have one body is that body. `fren
+fix` can fix this:
+
+```fren
+set_option fren.lint.match_same_arms "warn"
+
+enum E { A, B, C }
+
+comp c { in e: E pub out n: Int req r: n = match e { E::A | E::C => 1, E::B => 2 } }
+```
+"# },
+  { code := "F0726", explanation := r#"A `match` whose arms are all `true` or `false` (a warning, `match_like_membership`).
+
+Example:
+
+```fren
+enum E { A, B, C }
+
+comp c { in e: E pub out p? req r: p? iff match e { E::A => true, E::B => true, E::C => false } }
+```
+
+The `match` says whether its scrutinee is one of the variants whose arms
+are `true`, which a membership says directly. `fren fix` can fix this:
+
+```fren
+enum E { A, B, C }
+
+comp c { in e: E pub out p? req r: p? iff e in {E::A, E::B} }
+```
+
+Where most variants are `true`, or the `_` arm is, the fix is a negated
+membership of those that are `false`, such as `e != E::C`.
+"# },
+  { code := "F0728", explanation := r#"A `_` arm that matches only one variant (`wildcard_single_variant`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.wildcard_single_variant "warn"
+
+enum E { A, B, C }
+
+comp c { in e: E pub out n: Int req r: n = match e { E::A => 1, E::B => 2, _ => 3 } }
+```
+
+A variant added to `E` later would be matched by `_` without notice. Named,
+it makes the `match` non-exhaustive, a static error, so that the new
+variant gets an arm of its own. `fren fix` can fix this:
+
+```fren
+set_option fren.lint.wildcard_single_variant "warn"
+
+enum E { A, B, C }
+
+comp c { in e: E pub out n: Int req r: n = match e { E::A => 1, E::B => 2, E::C => 3 } }
+```
+"# },
+  { code := "F0727", explanation := r#"A chain of `if` whose tests are of which variant one scrutinee is (`if_chain_match`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.if_chain_match "warn"
+
+enum Mode { Heat, Cool, Off }
+
+comp c { in m: Mode pub out y: Int req r: y = if m = Mode::Heat then 1 else if m = Mode::Cool then 2 else 0 }
+```
+
+The chain is a `match` on the scrutinee, with an arm for each test, and
+`_` for the final `else`. If the tests name every variant, the final
+`else` is never taken, and the `match` has no `_` arm. `fren fix` can fix
+this:
+
+```fren
+enum Mode { Heat, Cool, Off }
+
+comp c { in m: Mode pub out y: Int req r: y = match m { Mode::Heat => 1, Mode::Cool => 2, _ => 0 } }
+```
+"# },
+  { code := "F0729", explanation := r#"Requirements that constrain one output case by case on which variant one scrutinee is (`case_split_reqs`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.case_split_reqs "warn"
+
+enum Mode { Heat, Cool }
+
+comp c {
+    in m: Mode
+    pub out y: Int
+    req heat: when m = Mode::Heat, y = 1
+    req cool: when m = Mode::Cool, y = 2
+}
+```
+
+The requirements say what one requirement with a `match` says. `fren fix`
+does not merge them, since traces, claims and `impl`s refer to
+requirements by name:
+
+```fren
+enum Mode { Heat, Cool }
+
+comp c {
+    in m: Mode
+    pub out y: Int
+    req rule: y = match m { Mode::Heat => 1, Mode::Cool => 2 }
+}
+```
+"# },
+  { code := "F0735", explanation := r#"A binding or field `x := x` (a warning, `redundant_bindings`).
+
+Example:
+
+```fren
+comp sub { in x: Int pub out p? req r: p? iff x > 0 }
+
+comp c { in x: Int inst s: sub { x := x } }
+```
+
+A binding of an instance, or a field of a record literal, `x` alone means
+`x := x`. `fren fix` can fix this:
+
+```fren
+comp sub { in x: Int pub out p? req r: p? iff x > 0 }
+
+comp c { in x: Int inst s: sub { x } }
+```
+"# },
+  { code := "F0736", explanation := r#"An operator whose two operands are written the same (a warning, `eq_op`).
+
+Example:
+
+```fren
+comp c { in x: Int in y: Int pub out p? req r: p? iff (x < y or x = x) }
+```
+
+`x = x` is always `true`, so the requirement says nothing. One operand is
+probably a typo for another expression, which no rewrite can know, so
+there is no fix. Write the operand meant:
+
+```fren
+comp c { in x: Int in y: Int pub out p? req r: p? iff (x < y or y = 0) }
+```
+
+The lint fires on `=`, `!=`, `<`, `<=`, `>`, `>=`, `iff`, `subset`, `and`,
+`or`, `-`, `minus`, `inter` and `union`, whose value is then fixed or that
+of the operand, but not on `+`, `*` or `++`, where `x + x` means something.
+"# },
+  { code := "F0737", explanation := r#"A conditional whose two branches are written the same (a warning, `same_branches`).
+
+Example:
+
+```fren
+comp c { in a? in x: Int pub out y: Int req r: y = if a? then x + 1 else x + 1 }
+```
+
+The condition decides nothing. Either one branch is not the one meant, or
+the conditional is the branch. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = x + 1 }
+```
+"# },
+  { code := "F0738", explanation := r#"A set or relation literal with an element written the same as an earlier one (a warning, `duplicate_elements`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff x in {1, 2, 1} }
+```
+
+A set has no repeats, so `{1, 2, 1}` is `{1, 2}`. The repeat is probably a
+typo for another element. A sequence literal, where a repeat means
+something, is not reported. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff x in {1, 2} }
+```
+"# },
+  { code := "F0745", explanation := r#"A method applied to an empty argument, whose value then does not depend on the receiver as expected (a warning, `empty_argument`).
+
+Example:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.starts_with?("") }
+```
+
+Every string starts with `""`, so this is always `true`. The lint fires on
+`starts_with?`, `ends_with?` and `contains?` of `""`, which are always
+`true`; `s.replace("", b)`, which is `b ++ s`; `s.replace_all("", b)`,
+which is `s`; `s.index_of("", i)`, which is `i` or `-1`; and `s.slice(i,
+0)`, which is `""`; and the same for sequences, with `[]`. The argument is
+probably not the one meant:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.starts_with?("/") }
+```
+"# },
+  { code := "F0730", explanation := r#"Two comparisons of the same operands that are one comparison (a warning, `double_comparison`).
+
+Example:
+
+```fren
+comp c { in x: Int in y: Int pub out p? req r: p? iff (x < y or x = y) }
+```
+
+The operands may also be the other way around, as in `y > x`. Joined by
+`or` or `and`, the two comparisons hold exactly when one other comparison
+of the same operands does, as `a subset b and b subset a` is `a = b`.
+`fren fix` can fix this:
+
+```fren
+comp c { in x: Int in y: Int pub out p? req r: p? iff x <= y }
+```
+"# },
+  { code := "F0731", explanation := r#"An equation of two `Bool`s (`bool_equality`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.bool_equality "warn"
+
+comp c { in a? in b? pub out p? req r: p? = (a? and b?) }
+```
+
+On `Bool`s, `=` and `iff` agree, and `iff` says that the two are
+equivalent. It binds more loosely, so the fix adds parentheses where they
+are needed, as in `(a? iff b?) and c?`. `fren fix` can fix this:
+
+```fren
+comp c { in a? in b? pub out p? req r: p? iff (a? and b?) }
+```
+"# },
+  { code := "F0732", explanation := r#"A search written with `index_of` or `slice` (a warning, `manual_method`).
+
+Example:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.slice(0, "ab".len) = "ab" }
+```
+
+`s.index_of(t, 0) >= 0` and `s.index_of(t, 0) != -1` are `s.contains?(t)`,
+`s.index_of(t, 0) = 0` is `s.starts_with?(t)`, and so is `s.slice(0, t.len)
+= t`, on strings and on sequences. `index_of` is outside the decidable
+core, and `contains?` and `starts_with?` on a string are in it when their
+argument is a constant, as is `starts_with?` on a sequence when its
+argument is a literal. `fren fix` can fix this:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.starts_with?("ab") }
+```
+"# },
+  { code := "F0733", explanation := r#"A conditional operand whose `else` branch extends past the operator (a warning, `else_extends`).
+
+Example:
+
+```fren
+comp c { in a? in x: Int in y: Int pub out n: Int req r: n = 2 * if a? then x else y + 1 }
+```
+
+A conditional is an atom, but its `else` branch extends as far right as
+possible, so this is `2 * (if a? then x else (y + 1))`, not `(2 * if a?
+then x else y) + 1`. Putting the branch in parentheses keeps the meaning
+and shows where it ends. `fren fix` can fix this:
+
+```fren
+comp c { in a? in x: Int in y: Int pub out n: Int req r: n = 2 * if a? then x else (y + 1) }
+```
+
+If the other meaning was intended, put the conditional in parentheses
+instead:
+
+```fren
+comp c { in a? in x: Int in y: Int pub out n: Int req r: n = (2 * if a? then x else y) + 1 }
+```
+"# },
+  { code := "F0734", explanation := r#"An operation that leaves its operand as it is (a warning, `identity_op`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out n: Int req r: n = x * 1 }
+```
+
+`x + 0`, `0 + x`, `x - 0`, `x * 1` and `1 * x` are `x`; `s ++ ""` and
+`"" ++ s` are `s`, and so for `[]`; `a union {}`, `{} union a` and `a minus
+{}` are `a`. `x + -y` is `x - y`, and `x - -y` is `x + y`. `fren fix` can
+fix this:
+
+```fren
+comp c { in x: Int pub out n: Int req r: n = x }
+```
+"# },
+  { code := "F0739", explanation := r#"Parentheses directly around parentheses (a warning, `double_parens`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff ((x > 0)) }
+```
+
+One pair groups as well as two. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff (x > 0) }
+```
+"# },
+  { code := "F0740", explanation := r#"A negation of a negation (a warning, `double_neg`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = -(-x) }
+```
+
+`-(-x)` is `x`. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = x }
+```
+"# },
+  { code := "F0741", explanation := r#"A non-strict comparison of integers with an operand off by one (a warning, `int_plus_one`).
+
+Example:
+
+```fren
+comp c { in x: Int in y: Int pub out p? req r: p? iff x >= y + 1 }
+```
+
+Over the integers, `x >= y + 1` is `x > y`, and so are `x - 1 >= y` and
+`y + 1 <= x`. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int in y: Int pub out p? req r: p? iff x > y }
+```
+"# },
+  { code := "F0742", explanation := r#"A product with `-1` (a warning, `neg_multiply`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = x * -1 }
+```
+
+`x * -1` and `-1 * x` are `-x`. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = -x }
+```
+"# },
+  { code := "F0743", explanation := r#"A chain of methods with a shorter form (a warning, `redundant_method_chain`).
+
+Example:
+
+```fren
+enum E { A, B }
+
+comp c { in r: Rel(E, E) pub out p? req d: p? iff r.inverse.inverse.domain = {} }
+```
+
+The inverse of the inverse is the relation itself, and the domain of a
+relation is the range of its inverse. The shorter chain means the same.
+`fren fix` can fix this:
+
+```fren
+enum E { A, B }
+
+comp c { in r: Rel(E, E) pub out p? req d: p? iff r.domain = {} }
+```
+"# },
+  { code := "F0744", explanation := r#"A pattern with no operator but `.*` at its ends (a warning, `trivial_pattern`).
+
+Example:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.matches?(r"F0\.1.*") }
+```
+
+The pattern matches the strings that start with `F0.1`, which
+`starts_with?` says plainly. `fren fix` can fix this:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.starts_with?("F0.1") }
+```
+"# },
+  { code := "F0746", explanation := r#"A `: Bool` that a name ending in `?` implies (a warning, `redundant_bool_type`).
+
+Example:
+
+```fren
+comp c { in ready?: Bool pub out p? req r: p? iff ready? }
+```
+
+A name that ends in `?` is a `Bool`, so the type need not be written.
+`fren fix` can fix this:
+
+```fren
+comp c { in ready? pub out p? req r: p? iff ready? }
+```
+"# },
+  { code := "F0747", explanation := r#"A `match` of one arm that binds nothing (a warning, `trivial_match`).
+
+Example:
+
+```fren
+enum E { A, B }
+
+comp c { in e: E in x: Int pub out y: Int req r: y = 2 * match e { _ => x + 1 } }
+```
+
+The arm matches every value, so the `match` is its body. `fren fix` can
+fix this:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = 2 * (x + 1) }
 ```
 "# }
 ]

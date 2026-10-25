@@ -1,6 +1,6 @@
 [default.extend-words]
 # keep-sorted start
-# Deliberate: `test/cli/args_unknown_command.fren` tests the suggestion.
+# Deliberate: `test/cli/args/unknown_command.fren` tests the suggestion.
 chekc = "chekc"
 # The README's `**r**equirements`, spelling out the name.
 equirements = "equirements"

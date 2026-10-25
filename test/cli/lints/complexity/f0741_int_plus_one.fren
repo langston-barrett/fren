@@ -1,0 +1,2 @@
+-- `int_plus_one`.
+comp c { in x: Int in y: Int pub out p? req r: p? iff x - 1 >= y }

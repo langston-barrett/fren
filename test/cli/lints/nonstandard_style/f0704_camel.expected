@@ -1,0 +1,42 @@
+warning[F0704]: enum `fan_speed` should have a camel case name
+ --> test/cli/lints/nonstandard_style/f0704_camel.fren:2:6
+  |
+2 | enum fan_speed { low, High }
+  |      ^^^^^^^^^ not in CamelCase
+  |
+  = note: `non_camel_case_types` is `warn` by default
+  = help: to allow it, `set_option fren.lint.non_camel_case_types "allow"`
+help: rename it to `FanSpeed`
+  |
+2 - enum fan_speed { low, High }
+2 + enum FanSpeed { low, High }
+  |
+
+warning[F0704]: variant `low` should have a camel case name
+ --> test/cli/lints/nonstandard_style/f0704_camel.fren:2:18
+  |
+2 | enum fan_speed { low, High }
+  |                  ^^^ not in CamelCase
+  |
+help: rename it to `Low`
+  |
+2 - enum fan_speed { low, High }
+2 + enum fan_speed { Low, High }
+  |
+
+warning[F0711]: enum `fan_speed` is never used
+ --> test/cli/lints/nonstandard_style/f0704_camel.fren:2:6
+  |
+2 | enum fan_speed { low, High }
+  |      ^^^^^^^^^ never used
+  |
+  = note: it is private, and nothing in this file uses it
+  = help: remove it, or make it `pub`
+  = note: `dead_code` is `warn` by default
+  = help: to allow it, `set_option fren.lint.dead_code "allow"`
+
+fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0704, F0711.
+For more information about an error, try `fren --explain F0704`.
+exit=3

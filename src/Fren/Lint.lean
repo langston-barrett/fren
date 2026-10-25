@@ -7,10 +7,11 @@ import FrenCore.Lint
 # Lints in Lean
 
 The Lean side of `FrenCore.Lint` (`Reqs/Lint`). A lint's level is the Lean
-option `fren.lint.NAME`. `set_option` for these options is elaborated here,
-before Lean's own elaborator: it rejects levels that do not exist and
-changes to a forbidden lint, and gives each `"expect"` its expectation, as
-the hidden option `fren.lint.NAME.expectation`. Since `set_option ... in`
+option `fren.lint.NAME`, and a group's `fren.lint.GROUP`. `set_option` for
+these options is elaborated here, before Lean's own elaborator: it rejects
+levels that do not exist and changes to a forbidden lint, sets each lint of
+a group, and gives each `"expect"` its expectation, as the hidden option
+`fren.lint.NAME.expectation`. Since `set_option ... in`
 is a `section`, both end with it.
 
 Elaborators record what the lints need in the file's `LocalState`, and
@@ -107,18 +108,197 @@ register_option fren.lint.index_after_use : String := {
   descr := "the level of the lint `index_after_use`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.unless_not : String := {
+  defValue := "warn"
+  descr := "the level of the lint `unless_not`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.collapsible_when : String := {
+  defValue := "warn"
+  descr := "the level of the lint `collapsible_when`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.if_not_else : String := {
+  defValue := "allow"
+  descr := "the level of the lint `if_not_else`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.match_same_arms : String := {
+  defValue := "allow"
+  descr := "the level of the lint `match_same_arms`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.match_like_membership : String := {
+  defValue := "warn"
+  descr := "the level of the lint `match_like_membership`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.wildcard_single_variant : String := {
+  defValue := "allow"
+  descr := "the level of the lint `wildcard_single_variant`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.if_chain_match : String := {
+  defValue := "allow"
+  descr := "the level of the lint `if_chain_match`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.case_split_reqs : String := {
+  defValue := "allow"
+  descr := "the level of the lint `case_split_reqs`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.redundant_bindings : String := {
+  defValue := "warn"
+  descr := "the level of the lint `redundant_bindings`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.eq_op : String := {
+  defValue := "warn"
+  descr := "the level of the lint `eq_op`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.same_branches : String := {
+  defValue := "warn"
+  descr := "the level of the lint `same_branches`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.duplicate_elements : String := {
+  defValue := "warn"
+  descr := "the level of the lint `duplicate_elements`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.empty_argument : String := {
+  defValue := "warn"
+  descr := "the level of the lint `empty_argument`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.double_comparison : String := {
+  defValue := "warn"
+  descr := "the level of the lint `double_comparison`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.bool_equality : String := {
+  defValue := "allow"
+  descr := "the level of the lint `bool_equality`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.manual_method : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_method`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.else_extends : String := {
+  defValue := "warn"
+  descr := "the level of the lint `else_extends`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.identity_op : String := {
+  defValue := "warn"
+  descr := "the level of the lint `identity_op`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.double_parens : String := {
+  defValue := "warn"
+  descr := "the level of the lint `double_parens`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.double_neg : String := {
+  defValue := "warn"
+  descr := "the level of the lint `double_neg`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.int_plus_one : String := {
+  defValue := "warn"
+  descr := "the level of the lint `int_plus_one`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.neg_multiply : String := {
+  defValue := "warn"
+  descr := "the level of the lint `neg_multiply`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.redundant_method_chain : String := {
+  defValue := "warn"
+  descr := "the level of the lint `redundant_method_chain`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.trivial_pattern : String := {
+  defValue := "warn"
+  descr := "the level of the lint `trivial_pattern`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.redundant_bool_type : String := {
+  defValue := "warn"
+  descr := "the level of the lint `redundant_bool_type`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.trivial_match : String := {
+  defValue := "warn"
+  descr := "the level of the lint `trivial_match`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.unused : String := {
+  defValue := "warn"
+  descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.nonstandard_style : String := {
+  defValue := "warn"
+  descr := "the level of each lint of the group `nonstandard_style`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.style : String := {
+  defValue := "warn"
+  descr := "the level of each lint of the group `style`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.complexity : String := {
+  defValue := "warn"
+  descr := "the level of each lint of the group `complexity`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.suspicious : String := {
+  defValue := "warn"
+  descr := "the level of each lint of the group `suspicious`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.pedantic : String := {
+  defValue := "allow"
+  descr := "the level of each lint of the group `pedantic`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.decidability : String := {
+  defValue := "deny"
+  descr := "the level of each lint of the group `decidability`: allow, expect, warn, deny or forbid"
+}
+
 /-- The hidden option holding the expectation of a lint at `expect`. -/
 def expectationOption (l : Core.Lint) : Name := l.option ++ `expectation
 
-/-- A lint's level here, from the options. -/
+/-- The hidden option marking a lint's level as set by its group's
+`set_option` in the file. -/
+def viaGroupOption (l : Core.Lint) : Name := l.option ++ `via_group
+
+def levelOption? (opts : Options) (n : Name) : Option Core.LintLevel :=
+  match opts.find? n with
+  | some (.ofString s) => Core.LintLevel.ofName? s
+  | _ => none
+
+/-- A lint's level here, from the options. In the file, a group's
+`set_option` sets each of its lints' options, in order with theirs; outside
+it, the lint's own option wins over its group's (`lint::outside_options`). -/
 def lintLevel [Monad m] [MonadOptions m] (l : Core.Lint) : m Core.LevelInEffect := do
   let opts ← getOptions
-  let some (.ofString s) := opts.find? l.option | return .ofDefault l
-  let some level := Core.LintLevel.ofName? s | return .ofDefault l
+  let own? := levelOption? opts l.option
+  let group? := levelOption? opts l.group.option
+  if own?.isNone && group?.isNone then return .ofDefault l
+  let level := Core.outsideLevel l.default own? group?
   let expectation? := match opts.find? (expectationOption l) with
     | some (.ofNat n) => some n
     | _ => none
-  return { level, isSet := true, expectation? }
+  let viaGroup := own?.isNone || opts.getBool (viaGroupOption l)
+  return { level, isSet := true, group? := if viaGroup then some l.group else none, expectation? }
 
 variable {m : Type → Type} [Monad m] [MonadEnv m] [MonadOptions m]
 
@@ -172,22 +352,32 @@ def reportLints : CommandElabM Unit := do
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
                                 items := #[], usedItems := #[] }
 
-/-- `set_option fren.lint.NAME "LEVEL"` (`lint::setting`). Other options,
+/-- `set_option fren.lint.NAME "LEVEL"`, for a lint (`lint::setting`) or a
+group (`lint::group_setting`), which sets each of its lints. Other options,
 and lints that do not exist, are left to Lean. -/
 @[command_elab Lean.Parser.Command.set_option] def elabLintOption : CommandElab := fun stx => do
   let name := stx[1].getId.eraseMacroScopes
-  let some lint := Core.Lint.all.find? (·.option == name) | throwUnsupportedSyntax
+  let some target := (Core.Lint.all.map Core.LintTarget.lint ++ Core.Group.all.map Core.LintTarget.group).find?
+    (·.option == name) | throwUnsupportedSyntax
   let some v := stx[3].isStrLit? | throwUnsupportedSyntax
   let some requested := Core.LintLevel.ofName? v | throwErrorAt stx[3] (Core.invalidLevelMsg v).text
-  let (ok, _) := Core.setLevel (← lintLevel lint).level requested
-  unless ok do throwErrorAt stx (Core.forbiddenMsg lint requested).text
+  let levels ← target.members.mapM fun l => return (l, (← lintLevel l).level)
+  let levelOf (l : Core.Lint) := ((levels.find? (·.1 == l)).map (·.2)).getD l.default
+  if let some lint := target.rejectedBy? levelOf requested then
+    throwErrorAt stx (Core.forbiddenMsg target lint requested).text
   let (opts, _) ← Elab.elabSetOption stx[1] stx[3]
-  let opts ← if requested == .expect then do
-      let e : Core.ExpectationRecord := { lint, level := ← lintLevel .unfulfilledExpectations }
+  let expectation? ← if requested == .expect then do
+      let e : Core.ExpectationRecord := { target, level := ← lintLevel .unfulfilledExpectations }
       let n := (← getLocal).expectations.size
       modifyLocal fun l => { l with expectations := l.expectations.push (e, stx) }
-      pure (opts.insert (expectationOption lint) (.ofNat n))
-    else pure (opts.erase (expectationOption lint))
+      pure (some n)
+    else pure none
+  let opts := target.members.foldl (init := opts) fun opts lint =>
+    let opts := opts.insert lint.option (.ofString v)
+    let opts := match expectation? with
+      | some n => opts.insert (expectationOption lint) (.ofNat n)
+      | none => opts.erase (expectationOption lint)
+    if target matches .group _ then opts.insert (viaGroupOption lint) (.ofBool true) else opts.erase (viaGroupOption lint)
   modifyScope fun scope => { scope with opts }
 
 /-- Reports the file's lints at its end. -/

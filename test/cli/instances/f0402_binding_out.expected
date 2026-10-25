@@ -1,0 +1,13 @@
+error[F0402]: bindings may only mention `in` variables and earlier instances, but `o` is an `out`
+ --> test/cli/instances/f0402_binding_out.fren:3:44
+  |
+3 | comp c { pub out o: Int inst s: sub { a := o } req r: o = 0 }
+  |                                            ^ an `out`
+  |
+  = note: an instance's inputs are fixed before the component chooses its outputs
+  = help: to connect an instance to an output, bind it to an `in` and add a `req` relating the two
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0402`.
+exit=2

@@ -1,0 +1,12 @@
+error[F0414]: variable `z` of `rough` is bound multiple times
+ --> test/cli/instances/f0414_refine_twice.fren:4:46
+  |
+4 | refine fits: precise refines rough { z := y, z := y + 1 }
+  |                                              ^ bound again here
+  |
+  = note: a refinement binds each variable of the refined component at most once
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0414`.
+exit=2

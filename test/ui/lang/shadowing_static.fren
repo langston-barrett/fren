@@ -1,0 +1,159 @@
+-- Shadowing is explicit (`lang::shadowing`): a declaration that hides a
+-- name in scope is written with `!`, and one written with `!` hides one.
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.non_snake_case "allow"
+
+const RATE: Int := 2
+fn scale(Int): Int
+enum Shape { Circle(Int), Square }
+struct Point { x: Int, y: Int }
+const ORIGIN: Point := Point { x := 0, y := 0 }
+
+-- A component's variable over a constant, a function and a variant.
+comp var_const { in RATE: Int pub out y: Int req r: y = RATE }
+--~^ error: `RATE` shadows the constant `RATE`
+comp var_const_ok { in RATE!: Int pub out y: Int req r: y = RATE }
+comp var_fn { in scale: Int pub out y: Int req r: y = scale }
+--~^ error: `scale` shadows the function `scale`
+comp var_fn_ok { in scale!: Int pub out y: Int req r: y = scale }
+comp var_variant { use self::Shape::Square in Square: Int pub out y: Int req r: y = Square }
+--~^ error: `Square` shadows the variant `Shape::Square`
+--~^^[hosted] warning: unused import `Shape::Square`
+-- The `fren` command drops the lints of an item with an error.
+-- The `use` is used: `Square!` depends on it (`Reqs/Lint#unused-imports`).
+comp var_variant_ok { use self::Shape::Square in Square!: Int pub out y: Int req r: y = Square }
+-- Items that are not values are never hidden.
+comp var_type { in Shape: Int pub out y: Int req r: y = Shape }
+comp var_type_bang { in Point!: Int pub out y: Int req r: y = Point }
+--~^ error: `Point!` shadows nothing
+
+-- A defined function's parameter over a constant.
+fn param(RATE: Int): Int := RATE + 1
+--~^ error: `RATE` shadows the constant `RATE`
+fn param_ok(RATE!: Int): Int := RATE + 1
+fn param_bang(n!: Int): Int := n + 1     --~ error: `n!` shadows nothing
+-- A function is not in scope in its own body, so a parameter or binder
+-- named like it hides nothing.
+fn own(own: Int): Int := own + 1
+fn own_bang(own_bang!: Int): Int := own_bang + 1  --~ error: `own_bang!` shadows nothing
+fn own_binder(s: Shape): Int := match s { Shape::Circle(own_binder) => own_binder, _ => 0 }
+
+-- A `match` binder over a variable, a constant, a function, another
+-- binder, a parameter and an instance.
+comp bind_var { in x: Int in s: Shape pub out p? req r: p? iff match s { Shape::Circle(x) => x > 0, _ => x > 0 } }
+--~^ error: `x` shadows the input `x`
+comp bind_var_ok { in x: Int in s: Shape pub out p? req r: p? iff match s { Shape::Circle(x!) => x > 0, _ => x > 0 } }
+comp bind_out { in s: Shape pub out n: Int req r: n = match s { Shape::Circle(n) => n, _ => 0 } }
+--~^ error: `n` shadows the output `n`
+comp bind_const { in s: Shape pub out p? req r: p? iff match s { Shape::Circle(RATE) => RATE > 0, _ => false } }
+--~^ error: `RATE` shadows the constant `RATE`
+comp bind_const_ok { in s: Shape pub out p? req r: p? iff match s { Shape::Circle(RATE!) => RATE > 0, _ => false } }
+comp bind_fn { in s: Shape pub out p? req r: p? iff match s { Shape::Circle(scale) => scale > 0, _ => false } }
+--~^ error: `scale` shadows the function `scale`
+comp bind_binder {
+    in s: Shape
+    in t: Shape
+    pub out p?
+    req r: p? iff match s {
+        Shape::Circle(k) => match t { Shape::Circle(k) => k > 0, _ => k > 0 },
+        --~^ error: `k` shadows the binder `k`
+        _ => false,
+    }
+}
+comp bind_binder_ok {
+    in s: Shape
+    in t: Shape
+    pub out p?
+    req r: p? iff match s {
+        Shape::Circle(k) => match t { Shape::Circle(k!) => k > 0, _ => k > 0 },
+        _ => false,
+    }
+}
+fn bind_param?(n: Int, s: Shape) := match s { Shape::Circle(n) => n > 0, _ => n > 0 }
+--~^ error: `n` shadows the parameter `n`
+fn bind_param_ok?(n: Int, s: Shape) := match s { Shape::Circle(n!) => n > 0, _ => n > 0 }
+comp sub { in v: Int pub out w: Int req r: w = v }
+comp bind_inst {
+    in s: Shape
+    inst w: sub { v := 1 }
+    pub out p?
+    req r: p? iff match s { Shape::Circle(w) => w > 0, _ => w.w > 0 }
+    --~^ error: `w` shadows the instance `w`
+}
+comp bind_bang { in s: Shape pub out p? req r: p? iff match s { Shape::Circle(k!) => k > 0, _ => false } }
+--~^ error: `k!` shadows nothing
+
+-- An instance over a constant.
+comp inst_const { inst ORIGIN: sub { v := 1 } pub out y: Int req r: y = ORIGIN.w }
+--~^ error: `ORIGIN` shadows the constant `ORIGIN`
+comp inst_const_ok { inst ORIGIN!: sub { v := 1 } pub out y: Int req r: y = ORIGIN.w }
+comp inst_bang { inst u!: sub { v := 1 } pub out y: Int req r: y = u.w }  --~ error: `u!` shadows nothing
+
+-- The binders of a global expectation over a constant, and a binder of
+-- its body over them.
+expect global_const: forall (ORIGIN: sub), ORIGIN.w = ORIGIN.v
+--~^ error: `ORIGIN` shadows the constant `ORIGIN`
+expect global_const_ok: forall (ORIGIN!: sub), ORIGIN.w = ORIGIN.v
+expect global_bang: forall (a!: sub), a.w = a.v  --~ error: `a!` shadows nothing
+expect global_bind: forall (a: sub), match Shape::Circle(a.v) { Shape::Circle(a) => a = a, _ => true }
+--~^ error: `a` shadows the global expectation's binder `a`
+
+-- `!` on a `Bool` follows its `?`.
+comp bool_bang { in ready?! pub out go? req r: go? iff ready? }  --~ error: `ready?!` shadows nothing
+enum Flag { Set(Bool), Unset }
+comp bool_shadow { in ok? in f: Flag pub out go? req r: go? iff match f { Flag::Set(ok?) => ok?, _ => ok? } }
+--~^ error: `ok?` shadows the input `ok?`
+comp bool_shadow_ok { in ok? in f: Flag pub out go? req r: go? iff match f { Flag::Set(ok?!) => ok?, _ => ok? } }
+
+-- Items, constraints and fields never shadow.
+const LIMIT!: Int := 3                   --~ error: `LIMIT!` shadows nothing
+fn twice!(n: Int): Int := 2 * n          --~ error: `twice!` shadows nothing
+enum Mode! { On, Off }                   --~ error: `Mode!` shadows nothing
+struct Pair { a!: Int, b: Int }          --~ error: `a!` shadows nothing
+comp named! { in x: Int pub out y: Int req r: y = x }  --~ error: `named!` shadows nothing
+comp constraint { in x: Int pub out y: Int req r!: y = x }  --~ error: `r!` shadows nothing
+expect global!: RATE > 0                 --~ error: `global!` shadows nothing
+
+-- `!` marks only the declaration: a use is written without it.
+comp use_bang { in x: Int pub out y: Int req r: y = x! }  --~ error: cannot find `x!` in this scope
+
+-- Names that, with `!`, are Lean tokens cannot be declared with `!`.
+comp token_var { in s!: Int pub out y: Int req r: y = s }  --~ error: `s!` is a Lean token, so it cannot be declared
+comp token_bind { in m: Int in t: Shape pub out p? req r: p? iff match t { Shape::Circle(m!) => m > 0, _ => m > 0 } }
+--~^ error: `m!` is a Lean token, so it cannot be declared
+fn token_param(f!: Int): Int := f + 1    --~ error: `f!` is a Lean token, so it cannot be declared
+const panic!: Int := 1                   --~ error: `panic!` is a Lean token, so it cannot be declared
+expect token_global: forall (using!: sub), true
+--~^ error: `using!` is a Lean token, so it cannot be declared
+comp token_use { in s: Int pub out y: Int req r: y = s! }  --~ error: cannot find `s!` in this scope
+-- A refinement's name, and a field read, take the tokens as identifiers too.
+refine s!: sub refines sub               --~ error: `s!` is a Lean token, so it cannot be declared
+comp token_field { pub out y: Int req r: y = Point { x := 1, y := 2 }.s! }
+--~^ error: no field `s!`
+-- Where the name with `!` is a Lean token, F0217 says to rename it.
+comp token_hint { in s: Shape pub out p? req r: p? iff match s { Shape::Circle(s) => s > 0, _ => false } }
+--~^ error: `s` shadows the input `s`
+
+-- A duplicate is reported as such, before what it would hide.
+comp dup_bang { in x: Int in x!: Int pub out y: Int req r: y = x }
+--~^ error: `x` is defined multiple times in this component
+enum Two { Pair(Int, Int) }
+comp dup_binder { in t: Two pub out y: Int req r: y = match t { Two::Pair(a, a!) => a } }
+--~^ error: `a` is bound multiple times in this pattern
+
+-- A name that two globs make ambiguous is not hidden: a use of it would be
+-- an error.
+enum Hue { Red }
+enum Tone { Red }
+comp ambiguous { use self::Hue::* use self::Tone::* in Red: Int pub out y: Int req r: y = Red }
+--~^ warning: unused import `Hue::*`
+--~^^ warning: unused import `Tone::*`
+--~^^^ warning: `use Hue::*` imports every variant of `Hue`
+--~^^^^ warning: `use Tone::*` imports every variant of `Tone`
+comp ambiguous_bang { use self::Hue::* use self::Tone::* in Red!: Int pub out y: Int req r: y = Red }
+--~^ error: `Red!` shadows nothing
+--~^^[hosted] warning: unused import `Hue::*`
+--~^^^[hosted] warning: unused import `Tone::*`
+--~^^^^[hosted] warning: `use Hue::*` imports every variant of `Hue`
+--~^^^^^[hosted] warning: `use Tone::*` imports every variant of `Tone`
+-- The `fren` command drops the lints of an item with an error.
