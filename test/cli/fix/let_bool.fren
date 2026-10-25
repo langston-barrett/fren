@@ -1,0 +1,14 @@
+--@ args: fix --check
+-- `fren fix` keeps the parentheses that a `let` needs as an operand, and
+-- simplifies within its body.
+pub comp c {
+    in a?
+    in x: Int
+    pub out o?
+    pub out p?
+    pub out q?
+
+    req r1: o? iff not not (let k := 2 in x > k)
+    req r2: p? iff (let b? := a? in b?) = true
+    req r3: q? iff (let k := 2 in not (x < k)) and a?
+}

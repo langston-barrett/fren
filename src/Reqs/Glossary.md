@@ -92,6 +92,9 @@ See [Instances](Lang/Instances.md).
 enumeration, record, abstract type, function, constant, component, global
 expectation, check or claim. See [Items](Lang/Items.md).
 
+**Let.** An expression, `let x := e in b`, that names the value of `e` as
+`x` within `b`. See [Local definitions](Lang/Let.md).
+
 **Lint.** A diagnostic about something allowed but probably not intended,
 such as an unused import, whose level (`allow`, `warn`, `deny` or
 `forbid`) can be set. See [Lints](Lint.md).
@@ -173,6 +176,10 @@ some values match the vector and no row of the matrix. See
 
 **Variant.** One of the alternatives of an enumeration, carrying a payload
 or not.
+
+**Where clause.** Definitions, `where x := e`, after the whole expression
+of a constraint or cover goal, a definition, a function's body or a constant's value,
+that name expressions within it. See [Local definitions](Lang/Let.md).
 
 **Widening.** Accepting a `Nat` where an `Int` is expected, the only
 conversion between types. See [Types](Lang/Types.md#natural-numbers).

@@ -1,0 +1,17 @@
+-- A defined function or a constant written with `let` or `where`, applied
+-- in a constraint: both front ends see through its definitions.
+pub fn shift(n: Int): Int := let k := n + 1 in k + offset where offset := 1
+pub const BASE: Int := b + b where b := 2
+
+comp c {
+    in x: Int
+    pub out y: Int
+
+    req r: y = shift(x) + BASE
+    expect holds: y = x + 6
+    expect fails: y = x + 5
+    --~^ error: `c::fails` does not hold
+}
+
+--@ summary: 3 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

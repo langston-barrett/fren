@@ -6,7 +6,7 @@ as a whole: it can relate several behaviours of one component, or behaviours
 of different components.
 
 ```
-expectation := "expect" IDENT ":" ["forall" binder+ ","] expr
+expectation := "expect" IDENT ":" ["forall" binder+ ","] top
 binder      := "(" DECL+ ":" path ")"
 ```
 
@@ -18,6 +18,9 @@ binds their inputs. Within `E`, `a.x` refers to the variable `x` of `a`, as
 for an [instance](Instances.md#instance-variables), so only the component's
 inputs and public outputs can be mentioned: `inst::mention` applies, with
 `E` as a requirement.
+
+`E` may end with a [`where` clause](Let.md), whose definitions may
+mention the binders: `forall (a b: c), a.x <= b.x where ...`.
 
 Without `forall`, the expectation mentions no variables, and is a claim
 about [constants](Items.md#constants), such as `expect sane: MIN_TEMP <

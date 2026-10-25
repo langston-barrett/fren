@@ -210,7 +210,7 @@ which:
 pub const RESERVED: Set(String) := {
     "mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl",
     "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
-    "div", "is", "in", "if", "then", "else", "match", "forall", "refine", "with",
+    "div", "is", "in", "if", "then", "else", "match", "forall", "refine", "with", "let", "where",
 }
 
 pub comp reserved_word {
@@ -224,6 +224,7 @@ pub comp reserved_word {
     expect pattern_test: when lexeme = "is", reserved?
     expect record_update: when lexeme = "with", reserved?
     expect modifier: when lexeme = "ordered", reserved?
+    expect local_definitions: when lexeme = "let" or lexeme = "where", reserved?
 }
 ```
 
@@ -249,7 +250,9 @@ name, is an error (`F0220`).
 `in` is both the keyword of an input and the [membership
 operator](Expressions.md#sets). The `in` of a membership must be on the
 same line as the end of its left operand: an `in` at the start of a line
-starts an input. Likewise, `mod` is both the keyword of a module and the
+starts an input. It is also the keyword that ends the definitions of a
+[`let`](Let.md), so within them, outside brackets, `in` is never a
+membership. Likewise, `mod` is both the keyword of a module and the
 [remainder](Expressions.md#division-and-remainder) operator, and the `mod`
 of a remainder must be on the line where its left operand ends: a `mod` at
 the start of a line starts a module, so that a constant's value followed by

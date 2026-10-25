@@ -1,0 +1,10 @@
+--- test/cli/fix/let_bool.fren
++++ test/cli/fix/let_bool.fren
+@@ -11,3 +11,3 @@
+-    req r1: o? iff not not (let k := 2 in x > k)
+-    req r2: p? iff (let b? := a? in b?) = true
+-    req r3: q? iff (let k := 2 in not (x < k)) and a?
++    req r1: o? iff (let k := 2 in x > k)
++    req r2: p? iff (let b? := a? in b?)
++    req r3: q? iff (let k := 2 in x >= k) and a?
+exit=1

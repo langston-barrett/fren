@@ -1,0 +1,13 @@
+error[F0302]: `b?` ends in `?` but is not a `Bool`
+ --> test/cli/types/f0302_let_membership.fren:4:57
+  |
+4 | comp c { in x: Int in s: Set(Int) pub out y? req r: let b? := x in s in y? iff b? }
+  |                                                         ^^ ends in `?`
+  |
+  = note: a variable's name ends in `?` if and only if it is a `Bool`
+  = note: `in` ends the last definition of a `let`, so a membership there is written in parentheses, as in `b? := (x in s)`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0302`.
+exit=2

@@ -46,6 +46,14 @@ impl by_proof: double for (n : Int) { n := n, m := dbl n } by
   intro n _; exact ⟨n, by simp [dbl]; omega, rfl⟩
 -- The solver proves it when no definitions are involved; it becomes an axiom.
 impl inlined: double for (n : Int) { n := n, m := n + n }
+
+-- The solver sees through a `where` clause, as it does through a `let`.
+comp shifted {
+  in n: Int
+  pub out m: Int
+  req r: m = k + 1 where k := (let j := n in j)
+}
+impl shifted_by_solver: shifted for (n : Int) { n := n, m := n + 1 }
 -- A wrong written proof is Lean's error.
 impl wrong: double for (n : Int) { n := n, m := n } by
   intro n _; exact ⟨n, rfl, rfl⟩   --~ error: type mismatch
@@ -69,4 +77,4 @@ impl never_on: gated for (b : Bool) { on? := false, lit? := b }   --~ warning: `
 #guard_msgs in
 #print axioms inlined
 
-#fren_trace  --~ info: evidence: 2 proved, 0 solver, 0 tested, 0 trusted, 1 missing
+#fren_trace  --~ info: evidence: 2 proved, 1 solver, 0 tested, 0 trusted, 1 missing

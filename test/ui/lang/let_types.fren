@@ -1,0 +1,19 @@
+-- Definitions of `Nat`s, widened to `Int`s, and of record updates.
+-- fren-covers: lang::nat_place, lang::definition_type
+struct P { x: Int, y: Int }
+
+fn cost(Int): Nat
+
+comp c {
+    in a: Nat
+    in p: P
+    pub out b: Int
+
+    req r: b = k + a + w where k: Nat := a + 1, w: Int := a
+    expect e: b >= 1
+    expect u: let q := { p with x := 1 } in q.x = 1
+    -- An application of a `Nat` function to a name is at least 0.
+    expect n: let v := a in cost(v) >= 0
+}
+
+--@ summary: 5 passed, 0 failed, 0 inconclusive, 0 redundant

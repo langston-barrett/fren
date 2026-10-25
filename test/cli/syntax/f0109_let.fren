@@ -1,0 +1,3 @@
+-- A `let` as an operand, without parentheses (F0109).
+-- fren-covers: lang::definition_form
+comp c { in x: Int pub out y? req r: y? iff x > 0 and let z := 1 in x > z }

@@ -385,16 +385,23 @@ def placeholderOf (path : Name) : TermElabM AbstractInfo := do
   let some a := (← getState).abstracts.get? path | throwError "internal error: unknown abstract item `{path}`"
   return a
 
-/-- A binder of a `match` pattern in scope. -/
+/-- A binder of a `match` pattern in scope, or a name of a `let` or
+`where` (`isDef`). -/
 structure MatchBinder where
   name : Name
-  /-- Its value: the selector applied to the scrutinee. -/
+  /-- Its value: the selector applied to the scrutinee, or the local of the
+  `have` that defines the name. -/
   term : Term
   type : Expr
-  /-- Its scrutinee, and the number of binders in scope there: mentioning
-  it counts as mentioning what the scrutinee mentions. -/
+  /-- Its scrutinee or definition, and the number of binders in scope
+  there: mentioning it counts as mentioning what that mentions. -/
   scrutinee : Syntax
   outer : Nat
+  isDef : Bool := false
+  /-- For a name, the indexes of its definition, each with the term that it
+  is in range, guarded only within the definition: a mention puts them
+  under its own guards (`Reqs/Lang/Let#meaning`). -/
+  obligations : Array (Syntax × Term) := #[]
 
 /-- What expression translation needs to know about the comp. -/
 structure ExprCtx where
@@ -438,6 +445,15 @@ structure ExprCtx where
   /-- This expression is the `else` branch of an `if`, whose chain
   `if_chain_match` looks at from its top. -/
   inElse : Bool := false
+  /-- In a definition of a `let` or `where`, the names of it and of the
+  later definitions of its clause that hide nothing, each with whether it
+  is its own: a mention of one is used before its definition
+  (`lang::definition_order`). -/
+  pending : Array (Name × Bool) := #[]
+  /-- In a definition of a `let` or `where` that nothing mentions, which
+  counts for nothing: what it may mention, linear arithmetic and the
+  decidable core are not checked in it (`Reqs/Lang/Let#meaning`). -/
+  unmentioned : Bool := false
 
 def ExprCtx.binder? (cx : ExprCtx) (n : Name) : Option MatchBinder := cx.binders.reverse.find? (·.name == n)
 
@@ -820,7 +836,8 @@ def topNames (top : Syntax) : Array Syntax := (topAlts top).1.flatMap patternNam
 
 /-- The names of the variables that `e` mentions: its paths of one
 segment, and for `p.x`, `p` too. -/
-partial def pathMentions (e : Syntax) : Array Name :=
+partial def pathMentions (e : Syntax) (all : Bool := true) : Array Name :=
+  let pathMentions (e : Syntax) := pathMentions e all
   if e.isOfKind ``Lang.appExpr then
     -- `x.m(a)` is a method call, which mentions `x`: a function's name has
     -- no dots.
@@ -846,7 +863,17 @@ partial def pathMentions (e : Syntax) : Array Name :=
       acc ++ (pathMentions arm[2]).filter (!bound.contains ·.getRoot)
   -- A pattern's paths name variants.
   else if e.isOfKind ``Lang.isExpr then pathMentions e[0]
+  else if e.isOfKind ``Lang.letExpr then
+    let defs := e[1].getSepArgs
+    (Core.clauseMentions (defs.map fun d => (declaredIdent d[0]).1.getId) (defs.map fun d => pathMentions d[3]) (pathMentions e[3]) all).1
   else e.getArgs.foldl (· ++ pathMentions ·) #[]
+
+/-- Which of the definitions `defs` of a `let` or `where` clause its body
+`body` mentions, directly or through the later ones that it mentions: the
+others count for nothing (`Reqs/Lang/Let#meaning`). -/
+def usedDefinitions (defs : Array Syntax) (body : Syntax) : Array Bool :=
+  (Core.clauseMentions (defs.map fun d => (declaredIdent d[0]).1.getId) (defs.map fun d => pathMentions d[3] false)
+    (pathMentions body false) false).2
 
 /-- The variables that the defined output `v` stands for: those its
 definition mentions, through other definitions, transitively. -/
@@ -876,7 +903,7 @@ mentioned here (`inst::mention`). -/
 def varRef? (cx : ExprCtx) (id : Syntax) (n : Name) : TermElabM (Option Term) := do
   let some v := cx.vars.find? (·.name == n) | return none
   -- A defined output mentions what its definition does.
-  for u in defDeps cx.vars v do
+  for u in if cx.unmentioned then #[] else defDeps cx.vars v do
     let earlier := (cx.insts.findIdx? (· == u.name.getRoot)).any (· < cx.current)
     let ok := match cx.refining? with
       | some rb => rb.checkMention u.role u.isPub u.name
@@ -959,6 +986,11 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
       shapeOf cx arm[2] (bs ++ new)
     return .node .compound (s :: arms)
   else if e.isOfKind ``Lang.isExpr then parts .compound #[e[0]]
+  else if e.isOfKind ``Lang.letExpr then
+    -- Each name stands for its definition, which sees the earlier names.
+    let bs ← e[1].getSepArgs.foldlM (init := bs) fun bs d => do
+      return bs.push ((declaredIdent d[0]).1.getId, .node .binder [← shapeOf cx d[3] bs])
+    return .node .compound [← shapeOf cx e[3] bs]
   else if e.isOfKind ``Lang.fren_path then
     let segs := pathSegs e
     if segs.size != 1 then return .leaf .constant
@@ -1036,6 +1068,7 @@ partial def isVariable (cx : ExprCtx) (e : Syntax) : Bool :=
 def checkCore (cx : ExprCtx) (ref : Syntax) (c : Core.Construct) (constantArgs comparable : Bool)
     (operands : Array Syntax) (ground : Bool := false) (finiteRange : Bool := true) (literalOperand : Bool := false) :
     TermElabM Unit := do
+  if cx.unmentioned then return
   let infinite ← operands.anyM (mentionsInfiniteOutput cx)
   unless Core.inCore c constantArgs comparable infinite ground (finiteRange := finiteRange)
       (literalOperand := literalOperand) do
@@ -1047,6 +1080,7 @@ def checkCore (cx : ExprCtx) (ref : Syntax) (c : Core.Construct) (constantArgs c
 (`Reqs/Lang/Decidability#relations`). -/
 def checkRelational (cx : ExprCtx) (ref : Syntax) (ty : Expr) (m : String) (operands : Array Syntax) :
     TermElabM Unit := do
+  if cx.unmentioned then return
   let some (a, b) := relTypes? ty | return
   let tys ← match Core.Method.ofName? m with
     | some .inverse => pure #[a, b]
@@ -1061,6 +1095,7 @@ def checkRelational (cx : ExprCtx) (ref : Syntax) (ty : Expr) (m : String) (oper
 that applies a relational operator, it is outside the decidable core
 (`Reqs/Lang/Decidability#relations`). -/
 def checkRelationalCard (cx : ExprCtx) (ref : Syntax) (ty : Expr) (m : String) (recv : Syntax) : TermElabM Unit := do
+  if cx.unmentioned then return
   if m == "card" && ty.isAppOfArity ``Fren.FinSet 1 && !(← isConstant cx recv) then
     modifyLocal fun l => { l with countRefs := l.countRefs.push ref }
 
@@ -1185,6 +1220,7 @@ partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.
   | 3, "(", _ => go e[1]
   | 4, "when", _ => .mk (.when false) range e #[go e[1], go e[3]]
   | 4, "unless", _ => .mk (.when true) range e #[go e[1], go e[3]]
+  | 4, "let", _ => .mk .«let» range e #[go e[3]]
   | 6, "if", _ => .mk .ite range e #[go e[1], go e[3], go e[5]]
   | 2, "not", _ => .mk .not range e #[go e[1]]
   | 2, "-", _ => .mk .neg range e #[go e[1]]
@@ -1495,6 +1531,7 @@ partial def typeShape (e : Syntax) : Core.TypeShape :=
   else if e.isOfKind ``Lang.unionExpr || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr then
     .anyPart [typeShape e[0], typeShape e[2]]
   else if e.isOfKind ``Lang.matchExpr then .anyPart (e[3].getSepArgs.toList.map (typeShape ·[2]))
+  else if e.isOfKind ``Lang.letExpr then .anyPart [typeShape e[3]]
   else match e with
     | `(fren_expr| $a ++ $b) => .anyPart [typeShape a, typeShape b]
     | `(fren_expr| ($a)) => .anyPart [typeShape a]
@@ -1703,7 +1740,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let mut new : Array MatchBinder := #[]
     for b in bs do
       let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
-        (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map fun b => (b.name, b.isDef)) cx.selfFn.isSome cx.inGlobal
       let y ← declare b.ident cx.modName locals
       let bn := y.getId
       liftMsg y (Core.checkVarName bn (some (b.type.isConstOf ``Bool || b.type.isProp)))
@@ -2283,13 +2320,97 @@ def guardedTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   | .and => `($x ∧ $y)
   | .or => `($x ∨ $y)
 
+/-- `goal` where `guards` hold. -/
+def guardedGoal (guards : Array Term) (goal : Term) : TermElabM Term :=
+  guards.foldrM (fun g acc => `($g → $acc)) goal
+
 /-- Records the index `q[i]` at `ref`, as the terms `q` and `i`, for the
 definedness check (`check::definedness`): its guard implies its bounds. -/
 def noteIndex (cx : ExprCtx) (ref : Syntax) (q i : Term) : TermElabM Unit := do
   unless cx.noteIndexes do return
   let bounds ← `(0 ≤ $i ∧ $i < Fren.Seq.len $q)
-  let goal ← cx.guards.foldrM (fun g acc => `($g → $acc)) bounds
+  let goal ← guardedGoal cx.guards bounds
   modifyLocal fun l => { l with indexes := l.indexes.push (ref, goal) }
+
+/-- `t` within the `have`s of `binds`, each a local, its type and its
+definition, the first outermost. -/
+def haves (binds : Array (Ident × Term × Term)) (t : Term) : TermElabM Term :=
+  binds.foldrM (fun (x, ty, d) acc => `(have $x : $ty := $d; $acc)) t
+
+open Lang in
+/-- Elaborates the definitions `defs` of a `let` (`inLet`) or `where`
+clause, from the `k`th, each in the scope of the earlier ones, and runs
+`body` in the context of the clause's body, with each name's local, type
+and definition (`Reqs/Lang/Let`). Each name is a local while `body` runs,
+so that the types of terms that mention it are known. -/
+partial def withDefinitions (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (defs : Array Syntax)
+    (inLet : Bool) (used : Array Bool) (body : ExprCtx → Array (Ident × Term × Term) → TermElabM α) (k : Nat := 0)
+    (binds : Array (Ident × Term × Term) := #[]) : TermElabM α := do
+  let some d := defs[k]? | body cx binds
+  let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+    (cx.binders.map fun b => (b.name, b.isDef)) cx.selfFn.isSome cx.inGlobal
+  let x ← declare d[0] cx.modName locals
+  let n := x.getId
+  -- This name and the later ones that hide nothing are not in scope yet.
+  let pending := (defs.extract k defs.size).toList.zipIdx.filterMap fun (z, j) =>
+    let (y, bang) := declaredIdent z[0]
+    if bang then none else some (y.getId, j == 0)
+  let annot? ← if d[1].isNone then pure none else some <$> elabType cx.modName d[1][1]
+  -- Its indexes are guarded where the name is mentioned.
+  let before := (← getLocal).indexes
+  modifyLocal fun l => { l with indexes := #[] }
+  let position := if annot?.isSome then Core.Position.declared else .synthesized
+  let t ← toTerm { cx with guards := #[], pending := pending.toArray, emptyOk := position.checked false false
+                           natOk := annot?.any (·.isConstOf ``Nat), unmentioned := cx.unmentioned || !used[k]! } d[3]
+  let obligations := (← getLocal).indexes
+  modifyLocal fun l => { l with indexes := before }
+  let last := inLet && k + 1 == defs.size
+  -- A condition is a `Prop`, and its name a `Bool`, as a variable is.
+  let ty ← typeOf t
+  let ty := if ty.isProp then Lean.mkConst ``Bool else ty
+  -- A `Nat` widens to an `Int`, as anywhere an `Int` is expected.
+  let widens := annot?.any (·.isConstOf ``Int) && ty.isConstOf ``Nat
+  let ty ← match annot? with
+    | some a =>
+      unless widens || (← isDefEq a ty) do
+        throwErrorAt d[3] (Core.definitionTypeMsg n (← typeName a) (← typeName ty) last).text
+      pure a
+    | none => pure ty
+  let t ← if widens then widenTerm t else pure t
+  liftMsg x ((Core.checkVarName n (some (ty.isConstOf ``Bool))).mapError (Core.membershipNote last))
+  -- Named apart from every local around it, so that putting a definition's
+  -- indexes under the `have`s of its uses captures nothing.
+  let lname := Name.mkSimple s!"{Core.nameText n}@{cx.binders.size}"
+  let tyStx := typeSyntax (← instantiateMVars ty)
+  let b : MatchBinder := { name := n, term := mkIdent lname, «type» := ty, scrutinee := d[3], outer := cx.binders.size,
+                           isDef := true, obligations }
+  let value ← `(($t : $tyStx))
+  withLocalDeclD lname ty fun _ =>
+    withDefinitions toTerm { cx with binders := cx.binders.push b } defs inLet used body (k + 1)
+      (binds.push (mkIdent lname, tyStx, value))
+
+open Lang in
+/-- `let ds in b`, or `b where ds`, which a `where` clause becomes
+(`withWhere`): `b` within a `have` for each definition. -/
+def letTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emptyOk concatOk : Bool) (e : Syntax) :
+    TermElabM Term := withRef e do
+  let defs := e[1].getSepArgs
+  let inLet := defs.all (·.isOfKind ``Lang.fren_let_def)
+  withDefinitions toTerm cx defs inLet (usedDefinitions defs e[3]) fun bcx binds => do
+    let mark := (← getLocal).indexes.size
+    -- A body that is a membership right after the `in` may have been meant
+    -- as part of the last definition, which `in` ended.
+    let b ← tryCatch (toTerm { bcx with emptyOk, concatOk } e[3]) fun ex => do
+      let .error ref msg := ex | throw ex
+      unless inLet && e[3].isOfKind ``Lang.memberExpr do throw ex
+      let text ← msg.toString
+      throw (.error ref m!"{text}{if (text.splitOn "\n\n").length > 1 then "\n" else "\n\n"}{Core.membershipNoteText}")
+    -- The indexes of the body, and of the names it mentions, are within the
+    -- `have`s.
+    let xs := (← getLocal).indexes
+    let wrapped ← (xs.extract mark xs.size).mapM fun (r, g) => return (r, ← haves binds g)
+    modifyLocal fun l => { l with indexes := xs.extract 0 mark ++ wrapped }
+    haves binds b
 
 /-- `[a, b]`, or `[]` where `emptyOk` says that something gives it a type. -/
 def seqLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emptyOk : Bool) (e : Syntax) :
@@ -2432,7 +2553,17 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
     let n := id.getId
     -- A binder or variable, then any fields read from it.
     let base? ← if let some b := cx.binder? n.getRoot then do
-        discard (toTerm (cx.at b) b.scrutinee)
+        if b.isDef then
+          -- A name stands for its definition: its indexes are guarded
+          -- here, and what it mentions may be mentioned here, which
+          -- translating it again checks, without its lints.
+          if cx.noteIndexes then
+            let goals ← b.obligations.mapM fun (r, g) => return (r, ← guardedGoal cx.guards g)
+            modifyLocal fun l => { l with indexes := l.indexes ++ goals }
+          let saved ← saveState
+          discard (toTerm { cx.at b with noteIndexes := false, pending := #[], emptyOk := true } b.scrutinee)
+          saved.restore
+        else discard (toTerm (cx.at b) b.scrutinee)
         pure (some ((b.term, b.type), n.components.drop 1))
       else
         let ks := (List.range n.components.length).reverse.map (· + 1)
@@ -2459,6 +2590,8 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
       let first := parts.length - fields.length
       return (← fields.zipIdx.foldlM (init := base) fun (t, ty) (f, j) =>
         readPathField cx id parts (first + j) t ty f).1
+    if let some (_, own) := cx.pending.find? (·.1 == n.getRoot) then
+      throwErrorAt id (Core.definedLaterMsg n.getRoot own).text
     unless n.isAtomic do throwErrorAt segs[0] (Core.dottedNameMsg n cx.insts (cx.vars.filter (·.role != .instHidden) |>.map (·.name))).text
     if let some c := Core.builtinFunction? n then throwError (Core.unappliedMsg (.mkSimple c.name)).text
   match ← resolveWritten cx.modName segs cx.shadowing cx.noteIndexes with
@@ -2598,7 +2731,7 @@ def arithTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (n
   -- (`lang::operator_type`).
   if op == "-" then return ← `((($(← numberOperand toTerm cx op false a) : Int) - ($(← numberOperand toTerm cx op false b) : Int)))
   if op == "*" then
-    unless Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do
+    unless cx.unmentioned || Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do
       throwError Core.nonlinearMsg.text
   let (x, y) := (← numberOperand toTerm cx op natOk a, ← numberOperand toTerm cx op natOk b)
   if op == "+" then `($x + $y) else `($x * $y)
@@ -2689,12 +2822,24 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| false) => `(false)
   | `(fren_expr| $p:fren_path) => pathTerm toTerm cx parent? e p
   | `(fren_expr| $p:fren_path($args,*)) => appTerm toTerm { cx with natOk } parent? e p args
-  | _ => otherTerm toTerm cx parent? emptyOk natOk e
+  | _ =>
+    if e.isOfKind ``Lang.letExpr then letTerm toTerm { cx with natOk } emptyOk concatOk e
+    else otherTerm toTerm cx parent? emptyOk natOk e
 
 open Lang in
 /-- The conditions of a top-level `when`/`unless` chain, as a term, and a
 syntax node spanning them. -/
 partial def triggerOf (cx : ExprCtx) (e : Syntax) : TermElabM (Option (Term × Syntax)) := do
+  -- Through a `let` or `where`, whose names stand for their definitions.
+  if e.isOfKind ``Lang.letExpr then
+    let defs := e[1].getSepArgs
+    let saved ← saveState
+    let r ← withDefinitions toTerm { cx with noteIndexes := false } defs (defs.all (·.isOfKind ``Lang.fren_let_def))
+        (usedDefinitions defs e[3]) fun bcx binds => do
+        let some (t, ref) ← triggerOf bcx e[3] | return none
+        return some (← haves binds t, ref)
+    saved.restore
+    return r
   let (cond, neg, body) ← match e with
     | `(fren_expr| when $c, $d) => pure (c, false, d)
     | `(fren_expr| unless $c, $d) => pure (c, true, d)
@@ -2705,6 +2850,33 @@ partial def triggerOf (cx : ExprCtx) (e : Syntax) : TermElabM (Option (Term × S
   match ← triggerOf cx body with
   | none => return some (c, mkNullNode #[e[0], cond])
   | some (t, ref) => return some (← `($c ∧ $t), mkNullNode #[e[0], ref])
+
+open Lang in
+/-- The expression `e` with its optional `fren_where` `w?`, as the `let` it
+means (`Reqs/Lang/Let`), whose definitions are `fren_def`s rather than
+`fren_let_def`s. Its `let` has the position of `e`'s first token, so that
+it spans `e` in the source. -/
+def withWhere (e w? : Syntax) : Syntax :=
+  if w?.getNumArgs == 0 then e else
+  let w := w?[0]
+  mkNode ``Lang.letExpr #[Syntax.atom e.getHeadInfo "let", w[1], w[0], e]
+
+/-- An assumption, requirement, expectation or cover goal: its kind, its name, and its
+expression, with its `where` clause. -/
+def constraint? (m : Syntax) : Option (PropKind × Syntax × Syntax) :=
+  -- A member that failed to parse may lack its last parts.
+  if m.getNumArgs < 4 || m.getNumArgs > 5 || !m[0].isAtom then none else
+  let kind? := match m[0].getAtomVal.trimAscii.toString with
+    | "assume" => some PropKind.assume
+    | "req" => some .req
+    | "expect" => some .expect
+    | "cover" => some .cover
+    | _ => none
+  kind?.map (·, m[1], withWhere m[3] m[4])
+
+/-- A defined output's definition, with its `where` clause. -/
+def definition? (m : Syntax) : Option Syntax :=
+  if m[5].isNone then none else some (withWhere m[5][1] m[5][2])
 
 /-- Elaborates a proposition. Errors are not recovered from with `sorry`: an
 item that does not elaborate makes its comp fail, rather than being checked
@@ -2786,7 +2958,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   startDeclared
   let path := modName ++ n
   let params := stx[4].getSepArgs
-  let body? := if stx[7].isNone then none else some stx[7][1]
+  let body? := if stx[7].isNone then none else some (withWhere stx[7][1] stx[7][2])
   -- A parameter is named if it has a type after `:`, or is a `Bool`
   -- written `x?` (`lang::function_params`).
   let named (p : Syntax) := !p[1].isNone ||
@@ -2944,12 +3116,14 @@ def testedOf (all : Bool) (raw : Array Syntax) : CommandElabM (Array Syntax × C
     let b? := set?.map (·.1)
     let misplaced (what : String) : CommandElabM Unit := do
       if let some (_, ref) := set? then throwErrorAt ref (Core.misplacedEvidenceMsg what).text
-    match m with
-    | `(fren_member| expect $x:ident : $_) | `(fren_member| cover $x:ident : $_) => expects := expects.push (x.getId, b?)
+    if let some (kind, x, _) := constraint? m then
+      match kind with
+      | .expect | .cover => expects := expects.push (x.getId, b?)
+      | .assume => misplaced "an assumption"; constraints := constraints.push x.getId
+      | .req => misplaced "a requirement"; constraints := constraints.push x.getId
+    else match m with
     -- By the names they declare, without the `!` of shadowing.
     | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => insts := insts.push ((declaredIdent x).1.getId, b?)
-    | `(fren_member| assume $x:ident : $_) => misplaced "an assumption"; constraints := constraints.push x.getId
-    | `(fren_member| req $x:ident : $_) => misplaced "a requirement"; constraints := constraints.push x.getId
     | _ =>
       if m.isOfKind ``Lang.outMember then
         -- `[pub] [det] out x [: T] [:= e]`
@@ -2966,12 +3140,9 @@ constraint, which share one namespace (`lang::distinct_names`). -/
 def memberName? (m : Syntax) : Option Syntax :=
   if m.isOfKind ``Lang.inMember then some m[1]
   else if m.isOfKind ``Lang.outMember then some m[3]
+  else if let some (_, x, _) := constraint? m then some x
   else match m with
     | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => some x
-    | `(fren_member| assume $x:ident : $_) => some x
-    | `(fren_member| req $x:ident : $_) => some x
-    | `(fren_member| expect $x:ident : $_) => some x
-    | `(fren_member| cover $x:ident : $_) => some x
     | _ => none
 
 open Lang in
@@ -3018,8 +3189,7 @@ open Lang in
         | ``Lang.inMember =>
           pure (Core.Role.input, true, false, m[1], if m[2].isNone then none else some m[2][1], none)
         | ``Lang.outMember =>
-          pure (.output, !m[0].isNone, !m[1].isNone, m[3], if m[4].isNone then none else some m[4][1],
-            if m[5].isNone then none else some m[5][1])
+          pure (.output, !m[0].isNone, !m[1].isNone, m[3], if m[4].isNone then none else some m[4][1], definition? m)
         | _ => continue
       -- An error in shadowing leaves the variable's meaning clear.
       let x ← try declare x scope
@@ -3113,12 +3283,7 @@ open Lang in
       let mut names := varNames
       let mut props : Array PropInfo := #[]
       for m in members do
-        let (kind, x, e) ← match m with
-          | `(fren_member| assume $x:ident : $e) => pure (PropKind.assume, x, e)
-          | `(fren_member| req $x:ident : $e) => pure (.req, x, e)
-          | `(fren_member| expect $x:ident : $e) => pure (.expect, x, e)
-          | `(fren_member| cover $x:ident : $e) => pure (.cover, x, e)
-          | _ => continue
+        let some (kind, x, e) := constraint? m | continue
         if let .error msg := Core.checkNoBang x.getId then
           logErrorAt x msg.text; good := false; continue
         names := names.insert x.getId
@@ -3160,8 +3325,8 @@ open Lang in
         recordLint .duplicateConstraint x (if fixable then msg.note Core.fixHelp else msg)
       -- `constant_output` and `definable_output` (`lint::output_lints`).
       let lcx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
-      let reqs := members.filterMap fun m => match m with
-        | `(fren_member| req $x:ident : $e) => some (x.getId, e.raw)
+      let reqs := members.filterMap fun m => match constraint? m with
+        | some (.req, x, e) => some (x.getId, e)
         | _ => none
       for v in vars.filter (fun v => v.role == .output && v.name.isAtomic) do
         let about := reqs.filter fun (_, e) => (pathMentions e).contains v.name
@@ -3237,10 +3402,7 @@ open Lang in
           for b in bs.getElems do
             let b := b.raw
             mentioned := mentioned ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
-        | `(fren_member| assume $_:ident : $e) | `(fren_member| req $_:ident : $e)
-        | `(fren_member| expect $_:ident : $e) | `(fren_member| cover $_:ident : $e) =>
-          mentioned := mentioned ++ pathMentions e
-        | _ => pure ()
+        | _ => if let some (_, _, e) := constraint? m then mentioned := mentioned ++ pathMentions e
       for v in vars do
         if let some d := v.defn? then mentioned := mentioned ++ pathMentions d
       -- A public definition says what the output is, so it is used.
@@ -3312,6 +3474,7 @@ open Lang in
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
+  let valueStx := withWhere stx[6] stx[7]
   let n ← segName nameStx
   liftMsg nameStx (Core.checkConstName n)
   checkFresh modName n nameStx
@@ -3326,17 +3489,17 @@ open Lang in
     let abstract := (← getState).placeholders.contains type.constName
     unless Core.constantAccepted abstract false do
       throwErrorAt stx[4] (Core.unknownConstantMsg abstract).text
-    let t ← toTerm { modName, vars := #[], insts := #[], place := .prop, emptyOk := Core.Position.declared.checked false false, natOk := type.isConstOf ``Nat } stx[6]
-    checkDeclared stx[6] t type fun ty => s!"note: `{n}` has type `{ty}`"
+    let t ← toTerm { modName, vars := #[], insts := #[], place := .prop, emptyOk := Core.Position.declared.checked false false, natOk := type.isConstOf ``Nat } valueStx
+    checkDeclared valueStx t type fun ty => s!"note: `{n}` has type `{ty}`"
     let value ← elabProp t type
-    let applies ← applications { modName, vars := #[], insts := #[], place := .prop } stx[6]
+    let applies ← applications { modName, vars := #[], insts := #[], place := .prop } valueStx
     unless Core.constantAccepted abstract !applies.isEmpty do
       throwErrorAt applies[0]! (Core.unknownConstantMsg abstract).text
-    lintBools stx[6]
+    lintBools valueStx
     addDecl (.defnDecl { name := decl, levelParams := [], type, value, hints := .abbrev, safety := .safe })
     setReducibleAttribute decl
     record (.item { item := { kind := .constItem, path, isPub, owner := modName }, ref := nameStx })
-    let int? ← if type.isConstOf ``Int || type.isConstOf ``Nat then intConstValue? { modName, vars := #[], insts := #[], place := .prop } stx[6]
+    let int? ← if type.isConstOf ``Int || type.isConstOf ``Nat then intConstValue? { modName, vars := #[], insts := #[], place := .prop } valueStx
       else pure none
     record (.constInfo { path, decl, type, value, int? })
     unless isPub do recordItem .constant path nameStx
@@ -3458,7 +3621,7 @@ def globalText (stx : Syntax) : String :=
   let path := modName ++ n
   let decl := (← getCurrNamespace) ++ path
   let binders := if stx[3].isNone then #[] else stx[3][1].getArgs
-  let info ← liftTermElabM <| elabGlobalInfo modName n nameStx binders stx[4] decl
+  let info ← liftTermElabM <| elabGlobalInfo modName n nameStx binders (withWhere stx[4] stx[5]) decl
   lintDeclared .global n nameStx
   let all ← evidenceTested nameStx (fren.evidence.get (← getOptions))
   let info := { info with tested := Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] }

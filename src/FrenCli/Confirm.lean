@@ -334,7 +334,8 @@ def confirming (sp : Spec) (ec : Comp) (kind : Fren.Core.CheckKind) (log : IO.Re
 
 /-- `core`, the elaborator's comp, with each formula paired with the
 meaning of the constraint of `ec` of the same name. Each index's
-definedness is paired by its position, one of `positions`, in order. -/
+definedness is paired by its position, one of `positions`, in order, the
+`n`th of the item's indexes at a position with the `n`th goal there. -/
 def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions : Array Nat) :
     Fren.Core.Comp (String × Fm) :=
   let atomOf (n : Name) : Fm :=
@@ -362,7 +363,12 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
         ++ (ec.defs.filter (·.1 == x.prop)).map (·.2)
         ++ (ec.insts.filter (·.name == x.prop)).flatMap (·.bindings.map (·.2))
         ++ (ec.bindings.filter (·.1 == x.prop)).map (·.2)
-      let goal? := positions[j]?.bind fun pos => (exs.flatMap (·.indexGoals)).find? (·.1 == pos)
+      -- The `n`th index at a position is the `n`th goal there: a name of a
+      -- `let` or `where` repeats its definition's indexes where it is
+      -- mentioned.
+      let goal? := positions[j]?.bind fun pos =>
+        let n := ((positions.extract 0 j).zip (core.indexes.extract 0 j)).filter (fun (p, y) => p == pos && y.prop == x.prop) |>.size
+        ((exs.flatMap (·.indexGoals)).filter (·.1 == pos))[n]?
       { x with goal := (x.goal, match goal? with
         | some (_, g) => .atoms #[{ label := .num x.prop x.k, pfx := .anonymous, e := g }]
         | none => .unknown) }

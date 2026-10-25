@@ -604,6 +604,8 @@ structure LState where
   lowered, if it has `use`s. -/
   scope : Name := .anonymous
   spec : Spec := {}
+  /-- The binders of `match` arms lowered so far, which number their names. -/
+  fresh : Nat := 0
 
 abbrev L := StateT LState (Except String)
 
@@ -646,8 +648,14 @@ def dataDef (path : Name) : L DataDef := do
 structure Cx where
   /-- Every variable of the comp (`Spec.flatVars`). -/
   vars : Array Var := #[]
-  /-- The binders of the enclosing `match` arms, innermost first. -/
-  binders : List (Name × VTy) := []
+  /-- The binders of the enclosing `match` arms, innermost first, each with
+  its type and the name it is bound by in `Ex`, made unique so that a
+  definition put under another arm is never captured. -/
+  binders : List (Name × VTy × Name) := []
+  /-- The names of the enclosing `let`s and `where` clauses, innermost
+  first, each with its definition, which a mention of it stands for
+  (`Reqs/Lang/Let#meaning`), and its type. A name is never also a binder. -/
+  lets : List (Name × Ex × VTy) := []
 
 /-- The type of the method `m` of a receiver of type `t`. -/
 def methodTy (m : Fren.Core.Method) (t : VTy) : VTy :=
@@ -834,7 +842,7 @@ binders with their types. An identifier of one segment, not applied, is a
 variant if it resolves to one, as the elaborator decides with the
 variables that shadow items: it has accepted the spec, so a variable never
 shadows a variant that a pattern names without `!` (`lang::pattern_name`). -/
-partial def lowerPattern (t : VTy) (p : Pattern) : L (Pat × List (Name × VTy)) := do
+partial def lowerPattern (t : VTy) (p : Pattern) : L (Pat × List (Name × VTy × Name)) := do
   match p with
   | .wild _ => return (.wild, [])
   | .str _ v => return (.str v, [])
@@ -849,7 +857,11 @@ partial def lowerPattern (t : VTy) (p : Pattern) : L (Pat × List (Name × VTy))
       let variant := st.table.resolvePath st.scope #[Name.mkSimple segs[0]!.name] matches .ok (.variant ..)
       match Fren.Core.patternName (n == `true || n == `false) bang variant with
       | .boolLiteral => return (.bool (n == `true), [])
-      | .binder => return (.bind n, [(n, t)])
+      | .binder =>
+        -- Named apart, so that a definition put under it is never captured.
+        let k := (← get).fresh
+        modify fun s => { s with fresh := s.fresh + 1 }
+        return (.bind (Name.mkNum n k), [(n, t, Name.mkNum n k)])
       | .variant => pure ()
     let .variant en idx ← resolve segs | throw "a pattern names no variant"
     let .data path := t | throw "a variant matches a value that is not an enumeration"
@@ -930,8 +942,10 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       let parts := segs[0]!.name.splitOn "."
       -- A binder shadows the comp's variables; otherwise the longest
       -- prefix that is a variable, then fields.
-      if let some (_, ty) := cx.binders.find? (·.1 == Name.mkSimple parts.head!) then
-        return ← readFields (.bound (Name.mkSimple parts.head!)) ty parts.tail
+      if let some (_, ty, x) := cx.binders.find? (·.1 == Name.mkSimple parts.head!) then
+        return ← readFields (.bound x) ty parts.tail
+      if let some (_, d, ty) := cx.lets.find? (·.1 == Name.mkSimple parts.head!) then
+        return ← readFields d ty parts.tail
       for k in (List.range parts.length).reverse do
         let n := dotted (parts.take (k + 1))
         if let some v := cx.vars.find? (·.name == n) then
@@ -1001,7 +1015,8 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     let mut ty := VTy.bool
     for (p, body) in arms do
       let (pat, bound) ← lowerPattern t p
-      let (b, t) ← lowerExpr { cx with binders := bound.reverse ++ cx.binders } body
+      let (b, t) ← lowerExpr { cx with binders := bound.reverse ++ cx.binders
+                                       lets := cx.lets.filter fun (n, _) => !bound.any (·.1 == n) } body
       ty := t
       out := out.push (pat, b)
     return (.match s out, ty)
@@ -1010,6 +1025,14 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     let (s, t) ← lowerExpr cx scrutinee
     let (pat, _) ← lowerPattern t p
     return (.match s #[(pat, .lit (.bool true)), (.wild, .lit (.bool false))], .bool)
+  | .«let» _ defs body _ => do
+    -- Each name stands for its definition, which sees the earlier names.
+    let mut cx := cx
+    for (x, _, d) in defs do
+      let (e, t) ← lowerExpr cx d
+      let n := declName x
+      cx := { cx with lets := (n, e, t) :: cx.lets, binders := cx.binders.filter (·.1 != n) }
+    lowerExpr cx body
 end
 
 def varTy (ty? : Option (Array Ident)) : L VTy := do
@@ -1124,7 +1147,7 @@ partial def lowerItem : Item → L Unit
       modify fun s => { s with spec.funs := s.spec.funs.insert path (ps, r) }
     | some body =>
       let ps ← params.mapM fun (p, ty?) => return (declName p[0]!, ← varTy ty?)
-      let (b, _) ← lowerExpr { binders := ps.toList.reverse } body
+      let (b, _) ← lowerExpr { binders := ps.toList.reverse.map fun (n, t) => (n, t, n) } body
       -- Binders named after the function, so that substituting arguments
       -- never captures a binder of theirs: theirs are a comp's or another
       -- function's.

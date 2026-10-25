@@ -303,7 +303,7 @@ at least one, and whether two of them are equal.
 
 ```
 function := ["pub"] "fn" IDENT "(" type ("," type)* ")" [":" type]
-          | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] ":=" expr
+          | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] ":=" top
 ```
 
 `fn arity(Name): Int` declares the function `arity`, from values of type
@@ -329,7 +329,8 @@ name of a built-in type: `fn exactly_one?(n: Int) := n = 1` is an error.
 `fn double(n: Int): Int := 2 * n` declares the function `double`, whose
 value at any `Int` `n` is `2 * n`. A defined function's parameters are
 declared like a component's variables, `n: Int` or `ready?` for a `Bool`,
-and its *body* `e` is an [expression](Expressions.md) of its result type.
+and its *body* `e` is an [expression](Expressions.md) of its result type,
+optionally followed by a [`where` clause](Let.md).
 An uninterpreted function's parameters have types but no names, and a
 defined function's all have names, so that the body can mention them.
 `lang::function_params` states this, from the number of parameters and of
@@ -354,7 +355,8 @@ The parameters' names must be distinct, and may
 [shadow](Components.md#shadowing) the constants, functions and variants
 of the function's module, written with `!`. The body mentions no
 component's variables: only the parameters, binders of its own [`match`
-arms](Expressions.md#matches), constants, variants, and defined functions
+arms](Expressions.md#matches), names of its own [`let`s and `where`
+clauses](Let.md), constants, variants, and defined functions
 declared before the function.
 So a function is not in scope in its own body, and defined functions are
 never recursive, directly or through each other. Nor does the body apply
@@ -407,7 +409,7 @@ visible according to `pub`, and can be brought into scope with `use` (see
 ## Constants
 
 ```
-constant := ["pub"] "const" IDENT ":" type ":=" expr
+constant := ["pub"] "const" IDENT ":" type ":=" top
 ```
 
 `const MAX_TEMP: Int := 100` declares the constant `MAX_TEMP`, of type
@@ -416,9 +418,10 @@ when the constant is a `Bool`, and by convention is in `UPPER_CASE` (see
 [Naming conventions](../Lint/NonstandardStyle.md#naming-conventions)). Its type is always
 written.
 
-The value is an [expression](Expressions.md) of the constant's type. It
-mentions no variables: only literals, variants, and constants declared
-before it, so constants cannot depend on each other in a cycle. It may
+The value is an [expression](Expressions.md) of the constant's type,
+optionally followed by a [`where` clause](Let.md). It
+mentions no variables: only literals, variants, names of its own `let`s
+and `where` clauses, and constants declared before it, so constants cannot depend on each other in a cycle. It may
 apply [defined functions](#defined-functions) declared before it, but no
 uninterpreted function, since its value is unknown. And the constant's
 type is not an abstract type, which has no literals. `lang::constant`

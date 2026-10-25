@@ -6,18 +6,19 @@ between its inputs and its outputs.
 ```
 component  := ["pub"] "comp" IDENT "{" member* "}"
 member     := "in" variable
-            | ["pub"] ["det"] "out" variable [":=" expr]
-            | "assume" IDENT ":" expr
-            | "req" IDENT ":" expr
-            | "expect" IDENT ":" expr
-            | "cover" IDENT ":" expr
+            | ["pub"] ["det"] "out" variable [":=" top]
+            | "assume" IDENT ":" top
+            | "req" IDENT ":" top
+            | "expect" IDENT ":" top
+            | "cover" IDENT ":" top
             | instance
             | use
 variable   := DECL [":" type]
 ```
 
 A `DECL` is an identifier that declares a name, and ends in `!` if it
-[shadows](#shadowing) another.
+[shadows](#shadowing) another. A `top` is an expression, optionally
+followed by a `where` clause (see [Local definitions](Let.md)).
 
 ## Members
 
@@ -148,7 +149,11 @@ These declarations may shadow:
 - a [global expectation's](Global.md) binder, those of its module;
 - a [`match` arm's](Expressions.md#matches) binder, those and also the
   variables (or, in a function's body, the parameters), instances, global
-  expectation binders and binders of enclosing arms in scope.
+  expectation binders, binders of enclosing arms and names of enclosing
+  `let`s and `where` clauses in scope;
+- a [`let` or `where`](Let.md) definition's name, those and also the
+  names of enclosing `let`s and `where` clauses and the earlier names of
+  its own clause.
 
 The built-in functions, the [cardinality
 operators](Expressions.md#cardinality), are in every scope, so each of
@@ -237,7 +242,8 @@ behaviour that meets the component satisfies `e`. It catches a component
 that is over-constrained in a way that the [vacuity
 check](../Check.md#vacuity) does not see: one that allows some
 behaviours, and whose triggers can each hold, but that rules out a
-particular scenario that should be possible.
+particular scenario that should be possible. Like a constraint, a goal
+may end with a [`where` clause](Let.md).
 
 ```text
 comp heater {
@@ -299,7 +305,8 @@ whichever form keeps their queries decidable.
 - **Not bound.** An instance cannot bind a defined output, since it is an
   output.
 
-A private defined output names a subexpression, like a `let`. Define an
+A private defined output names a subexpression for the whole component,
+as a [`where` clause](Let.md) does for one constraint. Define an
 output when the spec computes it, and require it when the spec constrains
 it: a definition is not a constraint, so the vacuity, redundancy and
 realizability checks no longer see it.
@@ -368,7 +375,9 @@ A constraint of the form `when C, D` applies only when `C` holds. `C` is its
 *trigger*. Likewise, the trigger of `unless C, D` is `not C`. Triggers of
 nested constraints are conjoined: the trigger of `when C1, unless C2, D` is
 `C1 and not C2`. A constraint with no top-level `when` or `unless` has no
-trigger. The [vacuity check](../Check.md#vacuity) confirms that the trigger
+trigger. A `let` or `where` at the top of a constraint is read through:
+the trigger of `when C, D where x := e` is `C`, with `x` standing for `e`
+(see [Local definitions](Let.md#meaning)). The [vacuity check](../Check.md#vacuity) confirms that the trigger
 of every requirement and expectation can hold. A cover goal's trigger is
 not checked: the [cover check](../Check.md#cover-goals) confirms the goal
 itself.

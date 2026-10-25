@@ -2,6 +2,7 @@
 
 ```
 expr  := ("when" | "unless") iff "," expr
+       | "let" definition ("," definition)* "in" expr
        | iff
 iff   := or ["iff" or]
 or    := or "or" and | and
@@ -20,12 +21,16 @@ atom  := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | "(" expr 
        | path "{" field-init ("," field-init)* [","] "}"
        | atom "." IDENT ["(" expr ("," expr)* ")"]
        | IDENT ("." IDENT)+ "(" expr ("," expr)* ")"
-       | "match" expr "{" arm ("," arm)* [","] "}"
+       | "match" atom "{" arm ("," arm)* [","] "}"
        | "{" [expr ("," expr)* [","]] "}"
        | "{" expr "with" field-init ("," field-init)* [","] "}"
 field-init := IDENT [":=" expr]
 arm   := pattern "=>" expr
+definition := DECL [":" type] ":=" iff
 ```
+
+A `let` names subexpressions within its body, and a `where` clause after
+a whole constraint does the same for it: see [Local definitions](Let.md).
 
 In `atom "." IDENT`, the atom is one that ends in `)` or `}`, and there
 are no spaces around the `.`: after a name, `.` is part of the
@@ -40,6 +45,7 @@ equally tightly:
 
 | Level | Form | Meaning | Operand types | Result | Associativity |
 |---|---|---|---|---|---|
+| 1 | `let x := e in B` | `B`, with `x` standing for `e` | any | the type of `B` | right |
 | 1 | `when C, D` | C implies D | `Bool` | `Bool` | right |
 | 1 | `unless C, D` | not C implies D | `Bool` | `Bool` | right |
 | 2 | `A iff B` | A if and only if B | `Bool` | `Bool` | none |
@@ -64,7 +70,8 @@ equally tightly:
 - In `when C, D` and `unless C, D`, `C` ends at the first top-level `,`, and
   `D` extends as far right as possible. `D` may itself be a `when` or
   `unless` without parentheses: `when a?, when b?, c?`. A `when` or `unless`
-  that is the operand of another operator must be parenthesized.
+  that is the operand of another operator must be parenthesized, and so
+  must a `let`, whose body also extends as far right as possible.
 - `iff` and `=` agree on `Bool`, but `iff` binds more loosely:
   `a? iff b? = c?` means `a? iff (b? = c?)`.
 - Prefix operators, `not` and `-`, apply to everything to their right that
@@ -178,8 +185,9 @@ mentions is decided from its parts, as `lang::mentions` states:
   (see [Shadowing](Components.md#shadowing)), so `RATE` is then a
   variable.
 - A [defined output](Components.md#defined-outputs) mentions what its
-  definition mentions, and a [binder](#matches) what its scrutinee
-  mentions.
+  definition mentions, a [binder](#matches) what its scrutinee
+  mentions, and a name of a [`let` or `where`](Let.md) what its
+  definition mentions.
 - A [variant](#variants-with-payloads) or a [record literal](#records)
   mentions what its arguments or fields mention: its value is fixed. So
   does a [record update](#record-updates), which mentions what its record
@@ -191,7 +199,7 @@ mentions is decided from its parts, as `lang::mentions` states:
 - An application of a defined function mentions what its arguments
   mention: its value is fixed by theirs.
 - Every other expression mentions what its parts mention: an operator,
-  `when` and `unless`, a conditional, a `match` (its scrutinee and the
+  `when` and `unless`, a `let`, a conditional, a `match` (its scrutinee and the
   bodies of its arms), a [pattern test](#pattern-tests) (its scrutinee),
   a [cardinality operator](#cardinality) (its arguments), indexing
   `q[i]`, a field read from an expression that is not a name, such as
@@ -201,11 +209,12 @@ mentions is decided from its parts, as `lang::mentions` states:
 -- The kinds of expression, for what one mentions. `Literal` is a literal;
 -- `Constant` is a constant, a variant without a payload, or a path of more
 -- than one segment; `Variable` is a variable, an instance's variable, or a
--- field read from one; `Construction` is a variant with a payload, a
+-- field read from one; `Binder` is a binder of a `match` arm or a name of a
+-- `let` or `where`; `Construction` is a variant with a payload, a
 -- record literal or a record update; `Uninterpreted` and `Defined` are
 -- applications of uninterpreted and defined functions; `Compound` is an
--- operator, `when` or `unless`, a conditional, a `match`, a pattern test, a
--- cardinality operator, indexing, a field read from an expression that is
+-- operator, `when` or `unless`, a `let`, a conditional, a `match`, a pattern
+-- test, a cardinality operator, indexing, a field read from an expression that is
 -- not a name, or a literal of a set, pair or sequence.
 pub enum ExprKind {
     Literal, Constant, Variable, DefinedOutput, Binder, Construction, Method, Uninterpreted, Defined, Compound,
@@ -239,8 +248,10 @@ pub comp mentions {
 }
 ```
 
-The parts of a defined output and of a binder are its definition and its
-scrutinee. So `double(3)`, `"abc".len` and `Shape::Circle(2)` mention
+The parts of a defined output, of a binder and of a name of a `let` or
+`where` are its definition, its scrutinee and its definition. The only
+part of a `let` is its body, so a definition that the body never
+mentions counts for nothing. So `double(3)`, `"abc".len` and `Shape::Circle(2)` mention
 nothing, and `s.len`, `double(x)` and `rate(1)` mention something.
 
 ## Linear arithmetic
@@ -607,7 +618,7 @@ function, and is then a variable, which cannot be applied.
 x`, as for an instance's [bindings](Instances.md#bindings). The literal
 must give each field of the record exactly once, in any order, and
 nothing else, and each value must have its field's type. As in a binding,
-a value cannot be a top-level `when` or `unless`. `lang::field_init`
+a value cannot be a top-level `when`, `unless` or `let`. `lang::field_init`
 states this, from what a given name is in the record and how many times
 the literal gives it, as `inst::binding` does for bindings:
 
@@ -766,8 +777,9 @@ match r {
 
 A `match` reads the value of its *scrutinee*, the expression after
 `match`. The scrutinee is a value of an enumeration, a `Bool`, an `Int`, a
-`Nat` or a `String` (`F0316`), and is not a record literal: in `match s {`, the `{`
-starts the arms. Each arm has a [pattern](Patterns.md) and a body, and the
+`Nat` or a `String` (`F0316`). It is an atom, so an operator in it is
+written in parentheses, and it is not a record literal: in `match s {`,
+the `{` starts the arms. Each arm has a [pattern](Patterns.md) and a body, and the
 `match` has the value of the body of the first arm whose pattern matches
 the scrutinee. A pattern is `_`, a binder, a literal, a range, a variant
 whose payload's values match patterns of their own, nested to any depth, or
@@ -807,8 +819,8 @@ in an argument of `f`, which is an error.
 
 The bodies of all arms have the same type, or are `Nat`s and `Int`s, and
 the `match` has that type, or `Int` if they are mixed. As in a binding, a
-body cannot be a top-level `when` or `unless`, which would run on into the
-next arm.
+body cannot be a top-level `when`, `unless` or `let`, which would run on
+into the next arm.
 
 The bodies are checked in order, each against the type of the arms
 before it, as both front ends do. An arm of another type is reported at
@@ -980,6 +992,9 @@ left to right:
   `0 <= i < q.len < q[i]`, `q[i]` is guarded by `0 <= i and i < q.len`;
 - in a `match` arm, the body is guarded by the arm's being the first that
   matches: no earlier arm's pattern matches, and its own does;
+- a definition of a [`let` or `where`](Let.md#meaning) is guarded where its
+  name is mentioned, as if written there, and not at all if it is never
+  mentioned;
 - guards nest by conjunction.
 
 So `q != [] and q[0] = x` is defined, and `q[0] = x and q != []` is not,
@@ -1571,7 +1586,8 @@ pub comp operator_type {
 ## Names
 
 A path names a variable of the enclosing component, a binder of an
-enclosing [`match` arm](#matches) (the innermost, which may
+enclosing [`match` arm](#matches) or a name of an enclosing [`let` or
+`where`](Let.md) (the innermost, which may
 [shadow](Components.md#shadowing) the others and the variables), a
 [constant](Items.md#constants), a [function](#function-applications) that
 it applies, a record that it builds, or a variant (see [Modules and

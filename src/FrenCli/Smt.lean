@@ -312,7 +312,11 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (timeoutSecs 
     let facts := c.natFacts false ++ c.natFacts true
     let facts := facts ++ (facts.map (prime c)).filter (!facts.contains ·)
     let apps := c.natApps ++ (c.natApps.map (prime c)).filter (!c.natApps.contains ·)
-    let appFacts ← Fren.Core.natAppFacts (m := Id) (termsIn apps) (s!"(>= {·} 0)") hyps goal
+    -- An application within a `let` or `where` is found as it is written
+    -- there, and its fact is within the clause's `let`s.
+    let peeled := apps.map peelLets
+    let appsOf (f : String) := (termsIn peeled f).filterMap fun t => (peeled.idxOf? t).map (apps[·]!)
+    let appFacts ← Fren.Core.natAppFacts (m := Id) appsOf (s!"(>= {·} 0)") hyps goal
     runQuery (Fren.Core.logic kind (strings || sets) projection)
       (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n"))
       prelude (c.vars ++ primes c) timeoutSecs dump?

@@ -695,13 +695,45 @@ def Role.ofInst (inSub : Role) (isPub : Bool) : Role :=
 with what it is (`Table.hidden?`): the variables of one segment, which are
 parameters in a function's body (`inFn`), the instances, which are binders
 in a global expectation (`inGlobal`), and the binders of enclosing arms. -/
-def bindingLocals (vars : Array (Name × Role)) (insts binders : Array Name) (inFn : Bool) (inGlobal := false) :
-    Array (Name × String) :=
+def bindingLocals (vars : Array (Name × Role)) (insts : Array Name) (binders : Array (Name × Bool)) (inFn : Bool)
+    (inGlobal := false) : Array (Name × String) :=
   let what (r : Role) := if inFn then "the parameter" else if r == .input then "the input" else "the output"
   -- A global expectation's binders are its instances.
   let inst := if inGlobal then "the global expectation's binder" else "the instance"
   (vars.filter (·.1.isAtomic) |>.map fun (n, r) => (n, what r)) ++ insts.map (·, inst)
-    ++ binders.map (·, "the binder")
+    ++ binders.map fun (n, isDef) => (n, if isDef then "the definition" else "the binder")
+
+/-! ## Local definitions (`Reqs/Lang/Let`) -/
+
+/-- The note for a `let` whose last definition or body does not type:
+`in` ended the definition, so a membership there was not part of it. -/
+def membershipNoteText : String :=
+  "note: `in` ends the last definition of a `let`, so a membership there is written in parentheses, as in `b? := (x in s)`"
+
+/-- The note for a definition that does not type, if it is the last of a
+`let`: a membership there would have ended at its `in`. -/
+def membershipNote (lastOfLet : Bool) (msg : Msg) : Msg :=
+  -- A rename would not help.
+  if lastOfLet then { msg with notes := msg.notes.push membershipNoteText, fixes := #[] } else msg
+
+/-- The definition of `n` has type `value`, not its annotation `annot`
+(`lang::definition_type`). -/
+def definitionTypeMsg (n : Name) (annot value : String) (lastOfLet : Bool) : Msg :=
+  membershipNote lastOfLet
+    { code? := some "F0342", headline := s!"the definition of `{n}` has type `{value}`, not `{annot}`"
+      label? := some s!"has type `{value}`"
+      notes := #[s!"note: `{n}` is declared with type `{annot}`, so its definition must have it too"] }
+
+/-- `n` is mentioned in its own definition (`own`), or in an earlier one of
+its clause, where nothing else of that name is in scope
+(`lang::definition_order`). -/
+def definedLaterMsg (n : Name) (own : Bool) : Msg :=
+  { code? := some "F0341"
+    headline := if own then s!"the definition of `{n}` mentions itself" else s!"`{n}` is used before its definition"
+    label? := some (if own then "in its own definition" else "defined later in this clause")
+    notes := #["note: the definitions of a `let` or `where` clause are read in order: each may mention only the ones before it",
+      if own then "help: definitions are not recursive; name what the definition needs before it"
+      else s!"help: move the definition of `{n}` before the one that uses it"] }
 
 def outInAssumeMsg (n : Name) : Msg :=
   { code? := some "F0401", headline := s!"assumptions may only mention `in` variables, but `{n}` is an `out`"

@@ -33,7 +33,9 @@ binders, all under one interpretation.
 In a behaviour, every constraint is `true` or `false`, by the meaning of
 its [expression](Lang/Expressions.md). The evaluator computes it from the
 spec itself, not from the formulas given to the solver, so it is an
-independent statement of what a spec means. In the notation of
+independent statement of what a spec means. A name of a
+[`let` or `where`](Lang/Let.md) is read as its definition, so it is not
+part of a behaviour, and counterexamples show variables only. In the notation of
 [Components](Lang/Components.md#meaning), a behaviour is *admissible* if
 `A` and `I` hold in it, and it *meets* the component if `R` holds as well.
 `eval::status` gives the status of a behaviour:

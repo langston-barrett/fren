@@ -27,7 +27,7 @@ tested lang::widening: "test/ui/lang/nat.fren", "test/ui/lang/nat_static.fren", 
 tested lang::literal_type: "test/ui/lang/nat.fren", "test/ui/lang/nat_static.fren"
 tested lang::nat_variable: "test/ui/lang/nat.fren"
 tested lang::nat_place: "test/ui/lang/nat_static.fren", "test/cli/types/f0338_field.fren", "test/cli/types/f0338_payload.fren",
-  "test/cli/types/f0338_element.fren"
+  "test/cli/types/f0338_element.fren", "test/ui/lang/let_types.fren"
 tested lang::modifiers: "test/cli/syntax/f0110_pub_in.fren", "test/cli/syntax/f0114_input_definition.fren", "test/cli/syntax/f0113_det_in.fren", "test/cli/syntax/f0113_pub_inst.fren"
 tested lang::function_body: "test/ui/lang/defined_functions_static.fren", "test/cli/types/f0331_recursive.fren"
 tested lang::argument: "test/ui/lang/defined_functions.fren", "test/ui/lang/functions_static.fren"
@@ -39,6 +39,12 @@ tested lang::finite: "test/ui/lang/relations_static.fren", "test/ui/lang/sets.fr
 tested check::minimal: "test/ui/checks/redundancy.fren", "test/ui/checks/self_conflict.fren"
 tested lang::path_shape: "test/ui/lang/scoping.fren"
 tested lang::declared_before: "test/ui/lang/scoping.fren"
+tested lang::definition_order: "test/ui/lang/let.fren", "test/ui/lang/let_static.fren",
+  "test/cli/types/f0341_defined_later.fren", "test/cli/types/f0341_itself.fren"
+tested lang::definition_type: "test/ui/lang/let.fren", "test/ui/lang/let_static.fren", "test/ui/lang/let_types.fren",
+  "test/cli/types/f0342_definition_type.fren"
+tested lang::definition_form: "test/ui/lang/let.fren", "test/ui/syntax/let_operand.fren", "test/ui/syntax/let_definition.fren",
+  "test/cli/types/f0302_let_membership.fren", "test/cli/syntax/f0109_let.fren"
 tested inst::earlier: "test/ui/lang/instances_static.fren"
 tested lint::history: "test/cli/lints/settings/f0709_forbid.fren", "test/cli/lints/settings/f0709_forbid_in_file.fren"
 tested lint::stepwise: "test/cli/lints/settings/f0709_forbid_in_file.fren"

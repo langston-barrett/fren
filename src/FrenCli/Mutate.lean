@@ -391,6 +391,7 @@ where
     | .is _ sc _ => #[edits s sc]
     | .pair _ a b | .index _ a b => #[edits s a, edits s b]
     | .method _ r _ as => #[edits s r] ++ as.map (edits s ·)
+    | .«let» _ defs body _ => defs.map (edits s ·.2.2) |>.push (edits s body)
     | _ => #[]
 
 /-! ## Sites -/

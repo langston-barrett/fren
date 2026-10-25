@@ -1,0 +1,18 @@
+-- `nonminimal_bool` around and within a `let`, whose simpler forms keep the
+-- parentheses that a `let` needs as an operand.
+comp c {
+    in a?
+    in x: Int
+    pub out o?
+    pub out p?
+    pub out q?
+
+    req r1: o? iff not not (let k := 2 in x > k)
+    --~^ warning: write `(let k := 2 in x > k)`
+    req r2: p? iff (let b? := a? in b?) = true
+    --~^ warning: write `(let b? := a? in b?)`
+    req r3: q? iff (let k := 2 in not (x < k)) and a?
+    --~^ warning: write `x >= k`
+}
+
+--@ summary: 4 passed, 0 failed, 0 inconclusive, 0 redundant

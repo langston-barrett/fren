@@ -173,7 +173,7 @@ comp c { in a? in b? pub out ok? req r: ok? iff a? = b? and b? = true }
 comp c { in x: Int in y: Int in p? pub out ok? req r: ok? iff (x < y) = p? }
 ```
 "# },
-  { code := "F0109", explanation := r#"`when` or `unless` is used as an operand without parentheses.
+  { code := "F0109", explanation := r#"`when`, `unless` or `let` is used as an operand without parentheses.
 
 Erroneous code example:
 
@@ -181,10 +181,10 @@ Erroneous code example:
 comp c { in x: Int pub out y? req r: y? iff x > 0 and when x > 1, x > 2 }
 ```
 
-`when` and `unless` have the lowest precedence, and their body extends as
-far right as possible. Inside another expression, or as the value of an
-instance's binding (where it would swallow the bindings after it), wrap
-them in parentheses.
+`when`, `unless` and `let` have the lowest precedence, and their body
+extends as far right as possible. Inside another expression, or as the
+value of an instance's binding or of a definition (where it would swallow
+the bindings or definitions after it), wrap them in parentheses.
 
 ```fren
 comp c { in x: Int pub out y? req r: y? iff (x > 0 and (when x > 1, x > 2)) }
@@ -865,6 +865,23 @@ called `true` or `false`. Rename the declaration:
 
 ```fren
 comp c { in t: Int pub out y: Int req r: y = t }
+```
+"# },
+  { code := "F0341", explanation := r#"A definition of a `let` or `where` clause mentions itself or a later one.
+
+Erroneous code example:
+
+```fren
+comp c { in x: Int pub out y? req r: y? iff big? where big? := x > limit, limit := 10 }
+```
+
+The definitions of a clause are read in order: each may mention the ones
+before it, and the expression the clause belongs to may mention all of
+them, but no definition mentions itself or a later one, so definitions are
+never recursive. Define what a definition needs before it:
+
+```fren
+comp c { in x: Int pub out y? req r: y? iff big? where limit := 10, big? := x > limit }
 ```
 "# },
   { code := "F0301", explanation := r#"A variable has no type.
@@ -1699,7 +1716,8 @@ struct Stock { item: Int, count: Nat }
 ```
 
 For now, `Nat` is the type of a variable, a function's parameter or
-result, or a constant, and nothing else: not of a field or a payload, nor
+result, a constant, or a definition of a `let` or `where`, and nothing
+else: not of a field or a payload, nor
 the element type of a set, relation or sequence. A `Nat` variable brings
 the constraint that it is at least 0, and Fren does not yet carry that
 constraint into the values of other types. Use an `Int`, and say where it
@@ -1786,6 +1804,24 @@ arguments, so it needs at least one. Give it the `Bool`s to count:
 
 ```fren
 comp c { in a? in b? expect e: at_most_one?(a?, b?) }
+```
+"# },
+  { code := "F0342", explanation := r#"The definition of a `let` or `where` name does not have the type written for it.
+
+Erroneous code example:
+
+```fren
+comp c { in x: Int pub out y? req r: let n: Int := x > 0 in y? iff n > 0 }
+```
+
+A definition `x: T := e` names the value of `e`, so `e` must have type `T`.
+The type may also be left out, `x := e`, and is then the type of `e`. In
+a `let`, `in` ends the last definition, so a membership there is written
+in parentheses, as in `b? := (x in s)`. Write the type of the expression,
+or correct the expression:
+
+```fren
+comp c { in x: Int pub out y? req r: let n: Int := x + 1 in y? iff n > 0 }
 ```
 "# },
   { code := "F0401", explanation := r#"An assumption mentions a variable that is not an `in`.

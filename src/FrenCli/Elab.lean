@@ -463,6 +463,9 @@ structure State where
   /-- Each `+` where a `Nat` is expected, by file, which `fren mutate`
   does not make a `-` (`Reqs/Mutate`). -/
   natSums : Array (Nat × Span) := #[]
+  /-- The names of `let` and `where` definitions made so far, which number
+  their SMT-LIB symbols. -/
+  nLets : Nat := 0
 
 /-- Why an item failed: its static errors, the last of which stopped it,
 and the items that its paths used before it did (`dead_code`), the
@@ -650,16 +653,23 @@ def lintEdits (l : Lint) (span : Span) (msg : Msg) (edits : Array (Fren.Core.Ran
 
 /-! ## Expressions -/
 
-/-- A binder of a `match` pattern in scope. -/
+/-- A binder of a `match` pattern in scope, or a name of a `let` or
+`where` (`isDef`). -/
 structure CBinder where
   name : Name
-  /-- Its value: the selector applied to the scrutinee. -/
+  /-- Its value: the selector applied to the scrutinee, or the symbol of
+  the SMT-LIB `let` that defines the name. -/
   smt : String
   ty : Ty
-  /-- Its scrutinee, and the number of binders in scope there: mentioning
-  it counts as mentioning what the scrutinee mentions. -/
+  /-- Its scrutinee or definition, and the number of binders in scope
+  there: mentioning it counts as mentioning what that mentions. -/
   scrutinee : Expr
   outer : Nat
+  isDef : Bool := false
+  /-- For a name, the indexes of its definition, each with the formula that
+  it is in range, guarded only within the definition: a mention puts them
+  under its own guards (`Reqs/Lang/Let#meaning`). -/
+  obligations : Array (Span × String) := #[]
 
 structure ExprCtx where
   vars : Array CVar
@@ -698,6 +708,15 @@ structure ExprCtx where
   /-- This expression is the `else` branch of an `if`, whose chain
   `if_chain_match` looks at from its top. -/
   inElse : Bool := false
+  /-- In a definition of a `let` or `where`, the names of it and of the
+  later definitions of its clause that hide nothing, each with whether it
+  is its own: a mention of one is used before its definition
+  (`lang::definition_order`). -/
+  pending : Array (Name × Bool) := #[]
+  /-- In a definition of a `let` or `where` that nothing mentions, which
+  counts for nothing: what it may mention, linear arithmetic and the
+  decidable core are not checked in it (`Reqs/Lang/Let#meaning`). -/
+  unmentioned : Bool := false
 
 /-- The binder named `n` in scope, if any. -/
 def ExprCtx.binder? (cx : ExprCtx) (n : Name) : Option CBinder := cx.binders.reverse.find? (·.name == n)
@@ -851,6 +870,11 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
       shapeOf cx (bs ++ new) body
     return .node .compound (s' :: arms)
   | .is _ s _ => parts .compound [s]
+  | .«let» _ defs body _ =>
+    -- Each name stands for its definition, which sees the earlier names.
+    let bs ← defs.foldlM (init := bs) fun bs (x, _, d) => do
+      return bs.push (Name.mkSimple (declaredIdent x).1.name, .node .binder [← shapeOf cx bs d])
+    return .node .compound [← shapeOf cx bs body]
   | .num .. | .bool .. | .str .. => return .leaf .literal
 
 /-- Whether `e` mentions a variable or an uninterpreted function
@@ -859,7 +883,9 @@ def mentionsAny (cx : ExprCtx) (e : Expr) : M Bool := return (← shapeOf cx #[]
 
 /-- The names of the variables that `e` mentions: its paths of one
 segment, and for `p.x`, `p` too. -/
-partial def mentions : Expr → Array Name
+partial def mentions (e : Expr) (all : Bool := true) : Array Name :=
+  let mentions (e : Expr) := mentions e all
+  match e with
   | .path _ segs =>
     if segs.size == 1 then
       let n := identName segs[0]!.name
@@ -881,6 +907,9 @@ partial def mentions : Expr → Array Name
     let bound := p.names.map fun b => Name.mkSimple (declaredIdent b).1.name
     acc ++ (mentions body).filter (!bound.contains ·.getRoot)
   | .is _ s _ => mentions s
+  | .«let» _ defs body _ =>
+    (Fren.Core.clauseMentions (defs.map fun (x, _, _) => Name.mkSimple (declaredIdent x).1.name)
+      (defs.map fun (_, _, d) => mentions d) (mentions body) all).1
   | _ => #[]
 
 /-- The atoms of `e`, a `Bool` expression: its operands through `and`
@@ -888,6 +917,13 @@ partial def mentions : Expr → Array Name
 partial def boolAtoms : Expr → Array Expr
   | .bin _ "and" a b => boolAtoms a ++ boolAtoms b
   | e => #[e]
+
+/-- Which of the definitions `defs` of a `let` or `where` clause its body
+`body` mentions, directly or through the later ones that it mentions: the
+others count for nothing (`Reqs/Lang/Let#meaning`). -/
+def usedDefinitions (defs : Array (Ident × Option (Array Ident) × Expr)) (body : Expr) : Array Bool :=
+  (Fren.Core.clauseMentions (defs.map fun (x, _, _) => Name.mkSimple (declaredIdent x).1.name)
+    (defs.map fun (_, _, d) => mentions d false) (mentions body false) false).2
 
 /-- The variables that the defined output `v` stands for: those its
 definition mentions, through other definitions, transitively. -/
@@ -960,6 +996,7 @@ partial def hasConcat (cx : ExprCtx) (e : Expr) : M Bool := do
     return (← hasConcat cx r) || (← fs.anyM fun (_, e?) => match e? with | some e => hasConcat cx e | none => pure false)
   | .match _ s arms => return (← hasConcat cx s) || (← arms.anyM (hasConcat cx ·.2))
   | .is _ s _ => hasConcat cx s
+  | .«let» _ defs body _ => return (← defs.anyM (hasConcat cx ·.2.2)) || (← hasConcat cx body)
   | _ => return false
 
 /-- Reports `undecidable` if construct `c`, with `operands` other than of
@@ -967,6 +1004,7 @@ partial def hasConcat (cx : ExprCtx) (e : Expr) : M Bool := do
 def checkCore (cx : ExprCtx) (span : Span) (c : Fren.Core.Construct) (constantArgs comparable : Bool)
     (operands : Array Expr) (ground : Bool := false) (infiniteElems : Bool := true) (finiteRange : Bool := true)
     (literalOperand : Bool := false) : M Unit := do
+  if cx.unmentioned then return
   let infinite ← operands.anyM (mentionsInfiniteOutput cx)
   unless Fren.Core.inCore c constantArgs comparable infinite ground infiniteElems finiteRange literalOperand do
     modify fun s => { s with outsideCore := true }
@@ -984,6 +1022,7 @@ def Expr.operands : Expr → Array Expr
   | .update _ r fs => #[r] ++ fs.filterMap (·.2)
   | .match _ s arms => #[s] ++ arms.map (·.2)
   | .is _ s _ => #[s]
+  | .«let» _ defs body _ => defs.map (·.2.2) |>.push body
   | .num .. | .bool .. | .path .. | .str .. => #[]
 
 /-- The span of `e` as written: a field read, method call or index of a
@@ -1019,6 +1058,7 @@ partial def Expr.boolNode (e : Expr) (src : Array Char := #[]) (base : Nat := 0)
   | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode src base] ++ arms.map (·.2.boolNode src base))
   | .pair s a b | .index s a b => .mk .atom (toRange s) s #[a.boolNode src base, b.boolNode src base]
   | .chain s es ops => .mk (.chain ops.size) (toRange s) s (es.map (·.boolNode src base))
+  | .«let» s _ body _ => .mk .«let» (toRange s) s #[body.boolNode src base]
   | .num s _ | .path s _ | .str s .. => .mk .atom (toRange s) s #[]
 -- `base` is at most the start of `e`'s span as written, and every span in
 -- `e` is within it, so the subtractions do not truncate.
@@ -1342,18 +1382,47 @@ def boundsSeq (e : Expr) (q : String) : M Bool := do
   let t := (← srcAt e.span).replace " " ""
   return (t.splitOn s!"{q}.len").length > 1 || (t.splitOn s!"{q}!=[]").length > 1 || (t.splitOn s!"{q}=[]").length > 1
 
+/-- `goal` where `guards` hold. -/
+def guarded (guards : Array String) (goal : String) : String :=
+  if guards.isEmpty then goal else s!"(=> (and true {" ".intercalate guards.toList}) {goal})"
+
+/-- `e` within the SMT-LIB `let`s of `binds`, each a symbol and its
+definition, the first outermost. -/
+def wrapLets (binds : Array (String × String)) (e : String) : String :=
+  binds.foldr (fun (x, d) acc => s!"(let (({x} {d})) {acc})") e
+
+/-- The term within the SMT-LIB `let`s that `wrapLets` puts around it,
+read outside string literals, where `""` is a `"`. -/
+partial def peelLets (t : String) : String := Id.run do
+  unless t.startsWith "(let ((" do return t
+  let cs := t.toList.toArray
+  -- The bindings start at the second `(`, and end where it closes.
+  let mut depth := 0
+  let mut inString := false
+  let mut i := 5
+  while i < cs.size do
+    let c := cs[i]!
+    if c == '"' then inString := !inString
+    else if !inString && c == '(' then depth := depth + 1
+    else if !inString && c == ')' then
+      depth := depth - 1
+      if depth == 0 then break
+    i := i + 1
+  -- `(let BINDINGS TERM)`.
+  return peelLets (String.ofList (cs.extract (i + 2) (cs.size - 1)).toList)
+
 /-- Records the index `q[i]` at `span`, whose sequence and position are the
 SMT-LIB `q` and `i`, for the definedness check (`check::definedness`). -/
 def noteIndex (cx : ExprCtx) (span : Span) (q i : String) : M Unit := do
   unless cx.noteIndexes do return
   let bounds := s!"(and (<= 0 {i}) (< {i} (seq.len {q})))"
-  let goal := if cx.guards.isEmpty then bounds else s!"(=> (and true {" ".intercalate cx.guards.toList}) {bounds})"
-  modify fun s => { s with indexes := s.indexes.push (span, goal) }
+  modify fun s => { s with indexes := s.indexes.push (span, guarded cx.guards bounds) }
 
 /-- Records a `card`, of the receiver `recv` of type `t`: in a comp that
 applies a relational operator, it is outside the decidable core
 (`Reqs/Lang/Decidability#relations`). -/
 def checkRelationalCard (cx : ExprCtx) (span : Span) (t : Ty) (m : String) (recv : Expr) : M Unit := do
+  if cx.unmentioned then return
   if m == "card" && t matches .set _ | .rel .. && !(← isConstant cx recv) then
     modify fun s => { s with countSpans := s.countSpans.push span }
 
@@ -1370,6 +1439,7 @@ def checkCounts : M (Bool × Bool) := do
 /-- Reports `undecidable` if a relational construct that ranges over `tys` is
 outside the decidable core. -/
 def checkRelational (cx : ExprCtx) (span : Span) (tys : Array Ty) (operands : Array Expr) : M Unit := do
+  if cx.unmentioned then return
   let st ← get
   modify fun s => { s with relationalUsed := true }
   checkCore cx span .relational true true operands (← operands.allM (isConstant cx)) (finiteRange := tys.all (!st.infinite ·))
@@ -1656,6 +1726,7 @@ partial def typeShape : Expr → Fren.Core.TypeShape
       .anyPart [typeShape a, typeShape b] else .other
   | .ite _ _ a b => .anyPart [typeShape a, typeShape b]
   | .match _ _ arms => .anyPart (arms.toList.map (typeShape ·.2))
+  | .«let» _ _ body _ => .anyPart [typeShape body]
   | _ => .other
 
 /-- Whether `e` synthesizes a type (`lang::synthesizes`). -/
@@ -1668,8 +1739,52 @@ partial def seqShaped : Expr → Bool
   | .seq .. => true
   | .bin _ "++" a b | .ite _ _ a b => seqShaped a || seqShaped b
   | .match _ _ arms => arms.any (seqShaped ·.2)
+  | .«let» _ _ body _ => seqShaped body
   | _ => false
 
+partial def elabTy (segs : Array Ident) : M Ty := do
+  if segs.size == 1 && segs[0]!.name == "Bool" then return Ty.bool
+  if segs.size == 1 && segs[0]!.name == "Int" then return .int
+  if segs.size == 1 && segs[0]!.name == "Nat" then return .nat
+  if segs.size == 1 && segs[0]!.name == "String" then
+    modify fun s => { s with usesStrings := true }
+    return .string
+  -- An element type, which is never a `Nat` (`lang::nat_place`).
+  let elem (segs : Array Ident) : M Ty := do
+    let t ← elabTy segs
+    if t == .nat then err (segs[0]!.span.to segs.back!.span) (Fren.Core.natPlaceMsg .element)
+    return t
+  if segs[0]!.name == Parser.setSeg then
+    modify fun s => { s with usesSets := true }
+    return .set (← elem (segs.extract 1))
+  if segs[0]!.name == Parser.seqSeg then
+    modify fun s => { s with usesSeqs := true }
+    return .seq (← elem (segs.extract 1))
+  if segs[0]!.name == Parser.relSeg then
+    modify fun s => { s with usesSets := true }
+    let (a, b) := Parser.splitRel (segs.extract 1)
+    let (ta, tb) := (← elem a, ← elem b)
+    -- `zero_sized_map_values` (`lint::zero_sized_map_values`).
+    if let .enum p := tb then
+      if let some d := (← get).dataOf? p then
+        if Fren.Core.zeroSizedMapValues true d.ctors.size (d.ctors.any (!·.2.isEmpty)) then
+          let s ← get
+          let text (xs : Array Ident) (stop : Nat) :=
+            (String.ofList (s.src.extract xs[0]!.span.start stop).toList).trimAscii.toString
+          let sep := segs[a.size + 1]!.span
+          -- To the `)` after `B`.
+          let mut stop := b.back!.span.stop
+          while stop < s.src.size && s.src[stop]! != ')' do stop := stop + 1
+          lint .zeroSizedMapValues { start := segs[0]!.span.start, stop := stop + 1 }
+            (Fren.Core.zeroSizedMapValuesMsg (text a sep.start) (text b b.back!.span.stop) d.ctors[0]!.1.toString)
+    return .rel ta tb
+  match ← resolveWritten segs with
+  | .item { kind := .enumItem, path, .. } => return .enum path
+  | .item { kind := .recordItem, path, .. } => return .record path
+  | .item { kind := .typeItem, path, .. } => return .abstract path
+  | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.notATypeMsg r)
+
+mutual
 partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   let concatOk := cx.concatOk
   let expected? := cx.expected?
@@ -2163,7 +2278,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         if nat then .nat else .int)
     | _ =>
       if op == "*" then
-        unless Fren.Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do err span Fren.Core.nonlinearMsg
+        unless cx.unmentioned || Fren.Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do err span Fren.Core.nonlinearMsg
       -- `+` and `*` of `Nat`s are `Nat`s; `-` is always an `Int`, so that
       -- nothing truncates (`lang::operator_type`).
       let nat := op != "-" && expected? == some .nat
@@ -2178,14 +2293,23 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let span := segs[0]!.span
       -- A binder or variable, then any fields read from it.
       let base? ← if let some b := cx.binder? n.getRoot then do
-          discard (elabExpr (cx.at b) b.scrutinee)
+          if b.isDef then
+            -- A name stands for its definition: its indexes are guarded
+            -- here, and what it mentions may be mentioned here, which
+            -- elaborating it again checks, without its lints.
+            if cx.noteIndexes then
+              modify fun s => { s with indexes := s.indexes ++ b.obligations.map fun (sp, g) => (sp, guarded cx.guards g) }
+            let saved ← get
+            discard (elabExpr { cx.at b with noteIndexes := false, pending := #[], expected? := some b.ty } b.scrutinee)
+            set saved
+          else discard (elabExpr (cx.at b) b.scrutinee)
           pure (some ((b.smt, b.ty), n.components.drop 1))
         else
           let ks := (List.range n.components.length).reverse.map (· + 1)
           match ks.findSome? fun k => (cx.vars.find? (·.name == (n.components.take k).foldl (· ++ ·) .anonymous)).map (·, k) with
           | some (v, k) =>
             -- A defined output mentions what its definition does.
-            for u in defDeps cx.vars v do
+            for u in if cx.unmentioned then #[] else defDeps cx.vars v do
               let earlier := (cx.insts.findIdx? (· == u.name.getRoot)).any (· < cx.current)
               let ok := match cx.refining? with
                 | some rb => rb.checkMention u.role u.isPub u.name
@@ -2235,6 +2359,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
             let r : Expr := .path recvSpan #[{ name := recvName, span := recvSpan }]
             checkCore cx (span.to fspan) m.seqConstruct true true #[r] (← isConstant cx r)
           readField fspan smt t f
+      if let some (_, own) := cx.pending.find? (·.1 == n.getRoot) then
+        err span (Fren.Core.definedLaterMsg n.getRoot own)
       if !n.isAtomic then
         err span (Fren.Core.dottedNameMsg n cx.insts (cx.vars.filter (·.role != .instHidden) |>.map (·.name)))
     if segs.size == 1 then
@@ -2430,7 +2556,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let mut new : Array CBinder := #[]
       for b in bs do
         let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
-          (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
+          (cx.binders.map fun b => (b.name, b.isDef)) cx.selfFn.isSome cx.inGlobal
         let x ← declare b.ident locals
         let bn := Name.mkSimple x.name
         liftMsg x.span (Fren.Core.checkVarName bn (some (b.ty == .bool)))
@@ -2469,6 +2595,68 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     | .error (.alternative j, msg) => err p.alternatives[j]!.span msg
     | .error (.whole, msg) => err p.span msg
     return (test.getD "true", .bool)
+  | .«let» _ defs body isWhere =>
+    let appMark := (← get).natApps.size
+    let (bcx, binds) ← elabDefinitions cx defs (!isWhere) (usedDefinitions defs body)
+    let mark := (← get).indexes.size
+    -- A body that is a membership right after the `in` may have been meant
+    -- as part of the last definition, which `in` ended.
+    let lastStop := (defs.back?.map (·.2.2.span.stop)).getD body.span.start
+    let between := ((Fren.Core.withoutComments (← srcAt { start := lastStop, stop := body.span.start })).toList.filter
+      fun c => !c.isWhitespace && c != ')')
+    let membership := !isWhere && between == "in".toList && body matches .bin _ "in" ..
+    let (b, t) ← tryCatch (elabExpr { bcx with expected?, concatOk } body) fun f =>
+      -- The error just thrown is the last.
+      throw (if membership then { f with diags := f.diags.modify (f.diags.size - 1) fun d =>
+        { d with msg := Fren.Core.membershipNote true d.msg } } else f)
+    -- The indexes of the body, and of the names it mentions, are within the
+    -- `let`s.
+    modify fun s => { s with indexes := s.indexes.extract 0 mark ++
+      (s.indexes.extract mark s.indexes.size).map fun (sp, g) => (sp, wrapLets binds g) }
+    -- So are the applications of `Nat` functions of its definitions and body,
+    -- which are asserted to be at least 0 outside it.
+    modify fun s => { s with natApps := s.natApps.extract 0 appMark ++
+      (s.natApps.extract appMark s.natApps.size).map (wrapLets binds) }
+    return (wrapLets binds b, t)
+
+/-- Elaborates the definitions of a `let` (`inLet`) or `where` clause, in
+order, each in the scope of the earlier ones (`Reqs/Lang/Let`), and those
+that its body does not mention (`used`) without the rules on mentions: the
+context of its body, and each name's SMT-LIB symbol and definition. -/
+partial def elabDefinitions (cx : ExprCtx) (defs : Array (Ident × Option (Array Ident) × Expr)) (inLet : Bool)
+    (used : Array Bool) : M (ExprCtx × Array (String × String)) := do
+  let mut cx := cx
+  let mut binds := #[]
+  for (x, ty?, e) in defs, k in [0:defs.size] do
+    let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+      (cx.binders.map fun b => (b.name, b.isDef)) cx.selfFn.isSome cx.inGlobal
+    let y ← declare x locals
+    let n := Name.mkSimple y.name
+    -- This name and the later ones that hide nothing are not in scope yet.
+    let pending := (defs.extract k defs.size).toList.zipIdx.filterMap fun ((z, _, _), j) =>
+      let (d, bang) := declaredIdent z
+      if bang then none else some (Name.mkSimple d.name, j == 0)
+    let annot? ← ty?.mapM elabTy
+    -- Its indexes are guarded where the name is mentioned.
+    let before := (← get).indexes
+    modify fun s => { s with indexes := #[] }
+    let (smt, t) ← elabExpr { cx with guards := #[], pending := pending.toArray, expected? := annot?
+                                      unmentioned := cx.unmentioned || !used[k]! } e
+    let obligations := (← get).indexes
+    modify fun s => { s with indexes := before }
+    let last := inLet && k + 1 == defs.size
+    -- A `Nat` widens to an `Int`, as anywhere an `Int` is expected.
+    if let some a := annot? then
+      unless a == t || (a == .int && t == .nat) do err e.span (Fren.Core.definitionTypeMsg n a.show t.show last)
+    let t := annot?.getD t
+    liftMsg y.span ((Fren.Core.checkVarName n (some (t == .bool))).mapError (Fren.Core.membershipNote last))
+    let sym := s!"let@{(← get).nLets}"
+    modify fun s => { s with nLets := s.nLets + 1 }
+    binds := binds.push (sym, smt)
+    cx := { cx with binders := cx.binders.push { name := n, smt := sym, ty := t, scrutinee := e, outer := cx.binders.size,
+                                                 isDef := true, obligations } }
+  return (cx, binds)
+end
 
 /-- Reports `assertions_on_constants` on the constraint `e`, an `assume`,
 `req` or `expect` as `kind` says (`lint::assertions_on_constants`). -/
@@ -2485,51 +2673,16 @@ partial def trigger? (cx : ExprCtx) : Expr → M (Option (String × Span))
     match ← trigger? cx d with
     | none => return some (cs, here)
     | some (t, s) => return some (s!"(and {cs} {t})", here.to s)
+  -- Through a `let` or `where`, whose names stand for their definitions.
+  | .«let» _ defs body isWhere => do
+    let saved ← get
+    let (bcx, binds) ← elabDefinitions { cx with noteIndexes := false } defs (!isWhere) (usedDefinitions defs body)
+    let t? ← trigger? bcx body
+    set saved
+    return t?.map fun (t, s) => (wrapLets binds t, s)
   | _ => return none
 
 /-! ## Items -/
-
-partial def elabTy (segs : Array Ident) : M Ty := do
-  if segs.size == 1 && segs[0]!.name == "Bool" then return Ty.bool
-  if segs.size == 1 && segs[0]!.name == "Int" then return .int
-  if segs.size == 1 && segs[0]!.name == "Nat" then return .nat
-  if segs.size == 1 && segs[0]!.name == "String" then
-    modify fun s => { s with usesStrings := true }
-    return .string
-  -- An element type, which is never a `Nat` (`lang::nat_place`).
-  let elem (segs : Array Ident) : M Ty := do
-    let t ← elabTy segs
-    if t == .nat then err (segs[0]!.span.to segs.back!.span) (Fren.Core.natPlaceMsg .element)
-    return t
-  if segs[0]!.name == Parser.setSeg then
-    modify fun s => { s with usesSets := true }
-    return .set (← elem (segs.extract 1))
-  if segs[0]!.name == Parser.seqSeg then
-    modify fun s => { s with usesSeqs := true }
-    return .seq (← elem (segs.extract 1))
-  if segs[0]!.name == Parser.relSeg then
-    modify fun s => { s with usesSets := true }
-    let (a, b) := Parser.splitRel (segs.extract 1)
-    let (ta, tb) := (← elem a, ← elem b)
-    -- `zero_sized_map_values` (`lint::zero_sized_map_values`).
-    if let .enum p := tb then
-      if let some d := (← get).dataOf? p then
-        if Fren.Core.zeroSizedMapValues true d.ctors.size (d.ctors.any (!·.2.isEmpty)) then
-          let s ← get
-          let text (xs : Array Ident) (stop : Nat) :=
-            (String.ofList (s.src.extract xs[0]!.span.start stop).toList).trimAscii.toString
-          let sep := segs[a.size + 1]!.span
-          -- To the `)` after `B`.
-          let mut stop := b.back!.span.stop
-          while stop < s.src.size && s.src[stop]! != ')' do stop := stop + 1
-          lint .zeroSizedMapValues { start := segs[0]!.span.start, stop := stop + 1 }
-            (Fren.Core.zeroSizedMapValuesMsg (text a sep.start) (text b b.back!.span.stop) d.ctors[0]!.1.toString)
-    return .rel ta tb
-  match ← resolveWritten segs with
-  | .item { kind := .enumItem, path, .. } => return .enum path
-  | .item { kind := .recordItem, path, .. } => return .record path
-  | .item { kind := .typeItem, path, .. } => return .abstract path
-  | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.notATypeMsg r)
 
 /-- Whether the type `segs` is the item `name`, and whether it has it as a
 set's element type (`lang::field_type`). -/
