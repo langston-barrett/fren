@@ -646,10 +646,6 @@ def untriggeredMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : 
 information, whatever the results. -/
 def summarySeverity (_results : Array CheckResult) : Severity := .info
 
-/-- Whether a result is a redundant constraint, counted apart from other
-failures, which are errors (`view::summary`). -/
-def CheckResult.isRedundant (r : CheckResult) : Bool := r.kind == .redundancy && r.verdict == .fail
-
 /-- Which count of the summary a result is in (`view::counted`). -/
 inductive Bucket where
   | passed
@@ -664,6 +660,10 @@ def bucketOf (kind : CheckKind) (verdict : Verdict) : Bucket :=
     | .pass => .passed
     | .fail => .failed
     | .inconclusive => .inconclusive
+
+/-- Whether a result is a redundant constraint, counted apart from other
+failures, which are errors (`view::summary`). -/
+def CheckResult.isRedundant (r : CheckResult) : Bool := bucketOf r.kind r.verdict == .redundant
 
 def summary (results : Array CheckResult) (byTesting : Nat := 0) : String :=
   let count (b : Bucket) := (results.filter fun r => bucketOf r.kind r.verdict == b).size

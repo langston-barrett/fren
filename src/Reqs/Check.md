@@ -76,14 +76,19 @@ one of two ways. A check that asks the solver to *prove* something passes
 when it is proved, and fails on a model, a counterexample; a check that
 asks whether something *can hold* passes on a model, a witness, and fails
 when its negation is proved. Either way, `Unknown` is inconclusive and
-nothing else is. `check::proved` and `check::satisfiable` state the two,
+nothing else is. Both kinds ask the solver for a proof; they differ in
+what a proof means. An expectation's proof is of the expectation, so it
+passes; vacuity proves that the trigger cannot hold, and redundancy that
+the constraint follows from the others, so a proof fails them, and a model,
+in which the trigger holds or the constraint fails while the others hold,
+passes them. `check::proved` and `check::satisfiable` state the two,
 and each check below [refines](Lang/Refinement.md) one of them (see
 [Verdict families](#verdict-families)):
 
 ```fren
 pub comp proved {
     in q: Outcome          -- can the goal be proved?
-    pub out verdict: Verdict
+    pub det out verdict: Verdict
 
     req proof: verdict = Pass iff q = Unsat
     req counterexample: verdict = Fail iff q = Sat
@@ -93,7 +98,7 @@ pub comp proved {
 
 pub comp satisfiable {
     in q: Outcome          -- can the negation of the goal be proved?
-    pub out verdict: Verdict
+    pub det out verdict: Verdict
 
     req witness: verdict = Pass iff q = Sat
     req refuted: verdict = Fail iff q = Unsat

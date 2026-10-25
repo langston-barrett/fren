@@ -191,8 +191,11 @@ In Lean, the queries are the same, but lean-smt sets the logic `ALL`.
 | 2 | the checks could not run: an unreadable file, bad arguments, or a static error, including a denied lint |
 | 3 | no result is an error, but some diagnostic is a warning: a check was inconclusive, a constraint is redundant, or a [lint](Lint.md) warned |
 
-`fren quickcheck` exits as `fren check` does. `fren eval`, `fren fmt` and `fren fix` have their own exit statuses (see
-[Evaluation and testing](Eval.md#fren-eval), [Formatting](Fmt.md#exit-status) and [Fixing lints](Lint.md#fixing-lints)). `fren trace` exits with 0 if nothing is below `--require` and every marker
+`fren quickcheck` exits as `fren check` does. `fren eval` follows the
+convention below, with its own meanings for 1 and 3 (see [Evaluation and
+testing](Eval.md#fren-eval)); `fren fmt` and `fren fix` have their own
+exit statuses (see [Formatting](Fmt.md#exit-status) and [Fixing
+lints](Lint.md#fixing-lints)). `fren trace` exits with 0 if nothing is below `--require` and every marker
 is claimed, 1 otherwise, and 2 if the report could not run
 (`trace::trace_exit`).
 
@@ -274,7 +277,8 @@ pub comp run {
 Put together with the [severity of a result](View.md#severity), this says
 what a check's verdict does to the exit status, across the chapters: a
 check that fails, other than as redundant, makes `fren check` exit with 1,
-whatever else is reported, and a run whose only results pass exits with 0:
+whatever else is reported; a run whose only results pass exits with 0;
+and one whose only results are inconclusive exits with 3:
 
 ```fren
 use view::severity
