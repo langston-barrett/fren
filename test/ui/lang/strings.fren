@@ -83,10 +83,11 @@ comp ordering {
     expect proper_prefix: when s = "a", s < "ab" and "ab" > s
     expect equal_bound: when s = "ab", s <= "ab"
     expect equal_bound_left: when s = "ab", "ab" >= s
+    expect equal_bound_ge: when s = "ab", s >= "ab"
     expect private_use: when s.starts_with?("\uD7FF"), s < "\uE000" and s >= "\uD7FF"
     expect last_char: when s = "\uE000x", s > "\uE000" and s <= "\uE000x" and s < "𯿿"
     expect wrong: s <= "b"                                 --~ error: expectation `ordering::wrong` does not hold
 }
 
---@ summary: 49 passed, 4 failed, 0 inconclusive, 0 redundant
+--@ summary: 51 passed, 4 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

@@ -141,7 +141,8 @@ component ask the same query, such as the assumptions' consistency, and a
 script asked again gets the answer that it got first, model and all. The
 one exception is a script whose first answer was `sat` without a model,
 because no model was wanted: asked again for a model, it is asked of the
-solver again, and the answer with the model is kept. The
+solver again, and that answer is kept in place of the first, whatever it
+is, since under a time limit it can be `unknown`. The
 script is the whole query, with its logic, options and time limit, so the
 same script is the same question. `--dump-smt` still writes each query,
 asked again or not. [`fren mutate`](Mutate.md) shares the answers between
@@ -162,8 +163,8 @@ smaller, or one with the same first character whose rest is below the
 rest of the literal: cvc5 decides such a match, but often not `str.<`
 between a literal and a string of unbounded length. `name <= "b"` also
 matches `"b"` itself, and a literal on the left is the negation:
-`"b" < name` is not `name <= "b"`, and `"b" <= name` is not
-`name < "b"`. `>` and `>=` are these with their sides swapped. Other
+`"b" < name` is `not (name <= "b")`, and `"b" <= name` is
+`not (name < "b")`. `>` and `>=` are these with their sides swapped. Other
 comparisons use `str.<` and `str.<=`. A defined function that returns a
 literal is a literal to the Lean-hosted front end, which unfolds it, but
 not to `fren check`, so the two can write such a comparison differently;

@@ -194,11 +194,13 @@ def CComp.natFacts (c : CComp) (outputs : Bool) : Array String :=
 /-- `w.x` as a `Name`. -/
 def identName (s : String) : Name := (s.splitOn ".").foldl Name.mkStr .anonymous
 
-/-- Replaces each quoted symbol of `smt` with `f` of its name. A `|` in a
-string literal, where `""` is a `"`, does not quote. -/
-def substQuoted (f : String → String) (smt : String) : String := Id.run do
+/-- `smt` in pieces, in order: the text between quoted symbols, and the
+name of each quoted symbol. A `|` in a string literal, where `""` is a `"`,
+does not quote. -/
+def quotedPieces (smt : String) : Array (String ⊕ String) := Id.run do
   let cs := smt.toList.toArray
-  let mut out := ""
+  let mut out := #[]
+  let mut text := ""
   let mut i := 0
   while h : i < cs.size do
     let c := cs[i]
@@ -206,41 +208,30 @@ def substQuoted (f : String → String) (smt : String) : String := Id.run do
       let mut j := i + 1
       while j < cs.size && !(cs[j]! == '"' && cs[j + 1]? != some '"') do
         j := if cs[j]! == '"' then j + 2 else j + 1
-      out := out ++ String.ofList (cs.extract i (j + 1)).toList
+      text := text ++ String.ofList (cs.extract i (j + 1)).toList
       i := j + 1
     else if c == '|' then
       let mut j := i + 1
       while j < cs.size && cs[j]! != '|' do j := j + 1
-      out := out ++ f (String.ofList (cs.extract (i + 1) j).toList)
+      out := (out.push (.inl text)).push (.inr (String.ofList (cs.extract (i + 1) j).toList))
+      text := ""
       i := j + 1
     else
-      out := out.push c
+      text := text.push c
       i := i + 1
-  return out
+  return out.push (.inl text)
+
+/-- Replaces each quoted symbol of `smt` with `f` of its name
+(`quotedPieces`). -/
+def substQuoted (f : String → String) (smt : String) : String :=
+  String.join ((quotedPieces smt).toList.map fun | .inl text => text | .inr name => f name)
 
 /-- Applies `f` to the name of each quoted symbol of `smt`. -/
 def mapQuoted (f : String → String) (smt : String) : String := substQuoted (quote ∘ f) smt
 
 /-- The names of the quoted symbols of `smt`, as `mapQuoted` finds them. -/
-def quotedSymbols (smt : String) : Array String := Id.run do
-  let cs := smt.toList.toArray
-  let mut out := #[]
-  let mut i := 0
-  while i < cs.size do
-    let c := cs[i]!
-    if c == '"' then
-      let mut j := i + 1
-      while j < cs.size && !(cs[j]! == '"' && cs[j + 1]? != some '"') do
-        j := if cs[j]! == '"' then j + 2 else j + 1
-      i := j + 1
-    else if c == '|' then
-      let mut j := i + 1
-      while j < cs.size && cs[j]! != '|' do j := j + 1
-      out := out.push (String.ofList (cs.extract (i + 1) j).toList)
-      i := j + 1
-    else
-      i := i + 1
-  return out
+def quotedSymbols (smt : String) : Array String :=
+  (quotedPieces smt).filterMap fun | .inr name => some name | .inl _ => none
 
 /-- Renames the variables `vars` in `smt` to `pfx.x`. Variables are quoted
 symbols, as are enum constructors, which contain `::` and so never clash. -/

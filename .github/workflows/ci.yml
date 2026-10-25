@@ -89,8 +89,11 @@ jobs:
         set -euo pipefail
         version=$("$(dirname "$(elan which lean)")/clang" --version | sed -n 's/^clang version \([0-9]*\).*/\1/p')
         curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o llvm.asc
-        # The key of apt.llvm.org, by its fingerprint.
-        test "$(gpg --show-keys --with-colons llvm.asc | awk -F: '$1 == "fpr" { print $10; exit }')" \
+        # The key of apt.llvm.org, by its fingerprint, and no other: `gpg
+        # --dearmor` trusts every key in the file. Each primary key's `pub`
+        # record is followed by its `fpr`; a subkey's follows its `sub`.
+        test "$(gpg --show-keys --with-colons llvm.asc \
+            | awk -F: '$1 == "pub" { primary = 1 } $1 == "fpr" && primary { print $10; primary = 0 }')" \
           = 6084F3CF814B57C1CF12EFD515CF4D18AF4F7421
         sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg llvm.asc
         printf 'deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-%s main\n' "$version" \
