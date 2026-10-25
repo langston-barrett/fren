@@ -67,7 +67,9 @@ Each mutant has an identifier, `ORIGIN-ITEM-HASH`, such as
 `swap-comparison-cli::exit::failed-0a1b2c3d4e5f`. `ITEM` is the path of
 the item changed: a constraint, defined output or instance as
 `module::component::name`, or a constant or function as `module::name`,
-with each run of characters other than ASCII letters, digits, `_` and `:`
+where `name` is the name declared, without the `!` of a
+[shadowing](Lang/Components.md#shadowing) declaration (so `y!` is named
+`y`), with each run of characters other than ASCII letters, digits, `_` and `:`
 made one `_`, and `_` trimmed next to `::` and at both ends. `HASH` is 12
 hexadecimal digits of the 64-bit FNV-1a hash, the same on every machine
 and build, of the origin, the file's path without `.` segments or
