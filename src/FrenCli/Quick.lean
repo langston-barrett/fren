@@ -136,6 +136,7 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let lits := all ++ atomsOf .anonymous expects ++ atomsOf .anonymous covers
   let ints := intsOf lits
   let strs ← stringsOf lits
+  let sp := sp.withMatchMemo lits strs
   for _ in [0:tests] do
     let w ← World.random sp
     let I := w.interp sp
@@ -243,6 +244,7 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
   let lits := meaning.push { label := body.name, pfx := .anonymous, e := body.e }
   let strs ← stringsOf lits
   let ints := intsOf lits
+  let sp := sp.withMatchMemo lits strs
   let mut t : Tally := {}
   let mut found := false
   for _ in [0:tests] do

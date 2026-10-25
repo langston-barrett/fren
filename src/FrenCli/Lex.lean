@@ -116,6 +116,8 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
   let n := src.size
   let at? (i : Nat) : Option Char := src[i]?
   let startsWith := occursAt src
+  -- `String.ofList (src.extract a b).toList`, without the list.
+  let text (a b : Nat) : String := src.foldl (·.push ·) "" a b
   let mut toks : Array Token := #[]
   let mut comments := #[]
   let mut i := 0
@@ -123,11 +125,12 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
     let c := src[i]!
     if c.isWhitespace then
       i := i + 1
-    else if startsWith i "--" then
+    -- `startsWith i "--"` and `startsWith i "/-"`, from `c`.
+    else if c == '-' && at? (i + 1) == some '-' then
       let start := i
       while i < n && src[i]! != '\n' do i := i + 1
       comments := comments.push ⟨start, i⟩
-    else if startsWith i "/-" then
+    else if c == '/' && at? (i + 1) == some '-' then
       let start := i
       let mut depth := 0
       repeat
@@ -155,7 +158,7 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
         if src[i]! == '\n' then return .error { span := ⟨start, i⟩, msg := unterminatedString }
         i := i + 1
       if i ≥ n then return .error { span := ⟨start, i⟩, msg := unterminatedString }
-      toks := toks.push { tok := .str (String.ofList (src.extract bodyStart i).toList), span := ⟨start, i + close.length⟩ }
+      toks := toks.push { tok := .str (text bodyStart i), span := ⟨start, i + close.length⟩ }
       i := i + close.length
     else if Fren.Core.isLeanIdStart c then
       let start := i
@@ -168,7 +171,7 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
         -- An unclosed `«` runs to the end of the input: mark only its line.
         let stop := ((src.extract start lean).findIdx? (· == '\n')).map (start + ·) |>.getD lean
         return .error { span := ⟨start, stop⟩, msg := Fren.Core.leanIdentifierMsg lexeme (src[lean]? == some '=') }
-      let s := String.ofList (src.extract start i).toList
+      let s := text start i
       toks := toks.push { tok := if reserved.contains s then .kw s else .ident s, span := ⟨start, i⟩ }
     else if c == '"' then
       -- Lean's escapes (`Lang/Lexical.md`).
@@ -192,7 +195,7 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
     else if Fren.Core.isDecimalDigit c then
       let start := i
       i := Fren.Core.integerEnd src i
-      let s := String.ofList (src.extract start i).toList
+      let s := text start i
       -- Both halves of the rule: well formed, and Lean decodes it.
       let some v := if Fren.Core.integerLiteral s then Fren.Core.integerValue? s else none
         | return .error { span := ⟨start, i⟩, msg := Fren.Core.malformedIntegerMsg s }
@@ -220,9 +223,11 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
           | _ => msg
         return .error { span := ⟨i, i + 1⟩, msg }
   toks := toks.push { tok := .eof, span := ⟨n, n⟩ }
+  -- Whether a line ends between a token and the one before it, read in
+  -- place: `src.any` over the range is `contains` of its `extract`.
   let marked := toks.mapIdx fun k t =>
     let prev := if k == 0 then 0 else toks[k - 1]!.span.stop
-    { t with nlBefore := (src.extract prev t.span.start).contains '\n' }
+    { t with nlBefore := src.any (· == '\n') prev t.span.start }
   return .ok (marked, comments)
 
 def lex (src : Array Char) : Except LexError (Array Token) := (·.1) <$> lexWithComments src

@@ -269,6 +269,14 @@ theorem Re.mat_eq_matchD' (r : Re) (cs : List Char) : r.mat cs = r.matchD cs := 
 /-- Whether the whole of `s` matches `r`. -/
 def Re.matches (r : Re) (s : String) : Bool := r.mat s.toList
 
+/-- `Re.matches`, by derivatives, over the characters of `s` without
+making a list of them (`Re.matches_eq_matchesStr`). -/
+def Re.matchesStr (r : Re) (s : String) : Bool := (s.foldl (fun r c => r.deriv c) r).nullable
+
+@[csimp] theorem Re.matches_eq_matchesStr : @Re.matches = @Re.matchesStr := by
+  funext r s
+  simp [Re.matches, Re.matchesStr, Re.mat_eq_matchD', Re.matchD]
+
 /-- `p` repeated `n` times. -/
 def Re.pow (p : Re) : Nat → Re
   | 0 => .str []

@@ -356,34 +356,75 @@ def elabText (st : State) (file : Nat) (chars : Array Char) (fixing : Array Fren
     | .error e => { st with diags := st.diags.push { file, span := e.span, msg := e.msg } }
     | .ok (items, starts) => (elabFile file chars items starts (trailingCommas toks) fixing |>.run st).2
 
+/-- A file's tokens, items, and where each item starts, as `elabText`
+reads them, or the error, at its span, of the lexer or else of the
+parser. -/
+abbrev Parsed := Except (Span × Msg) (Array Token × Array Item × Array Nat)
+
+/-- The file with text `chars`, lexed and parsed. -/
+def parseText (chars : Array Char) : Parsed :=
+  match lex chars with
+  | .error e => .error (e.span, e.msg)
+  | .ok toks => match parseItems toks with
+    | .error e => .error (e.span, e.msg)
+    | .ok (items, starts) => .ok (toks, items, starts)
+
+/-- `elabText st file chars`, where `p` is `parseText chars`: the same
+cases, after the same lexing and parsing, so that a file parsed once can
+be elaborated after several states. -/
+def elabParsed (st : State) (file : Nat) (chars : Array Char) (p : Parsed) : State :=
+  match p with
+  | .error (span, msg) => { st with diags := st.diags.push { file, span, msg } }
+  | .ok (toks, items, starts) => (elabFile file chars items starts (trailingCommas toks) |>.run st).2
+
 /-- The state before any file, with the lint levels `lints`. -/
 def initialState (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) : State :=
   { cliLevels := Fren.Core.Levels.ofFlags lints }
+
+/-- Elaborates the files at `paths`, whose contents are `srcs`, with the
+state before each file and after the last, before the claims are checked,
+from which `fren mutate` elaborates its mutants (`mutantsWith`). `fren fix`
+fixes the lints `fixing` in the files that `ignored` does not match. -/
+def elaborateSourcesBefore (paths srcs : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
+    (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false) :
+    IO (Array (String × Array Char) × Array State × State) := do
+  let mut files := #[]
+  let mut states := #[]
+  let mut st := initialState lints
+  for path in paths, src in srcs do
+    let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
+    let chars := src.toList.toArray
+    states := states.push st
+    st := elabText st files.size chars (if ignored path then #[] else fixing)
+    files := files.push (path, chars)
+  return (files, states.push st, ← checkClaims st)
 
 /-- Elaborates the files at `paths`, whose contents are `srcs`. `fren fix`
 fixes the lints `fixing` in the files that `ignored` does not match. -/
 def elaborateSources (paths srcs : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
     (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false) :
     IO (Array (String × Array Char) × State) := do
-  let mut files := #[]
-  let mut st := initialState lints
-  for path in paths, src in srcs do
-    let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
-    let chars := src.toList.toArray
-    st := elabText st files.size chars (if ignored path then #[] else fixing)
-    files := files.push (path, chars)
-  return (files, ← checkClaims st)
+  let (files, _, st) ← elaborateSourcesBefore paths srcs lints fixing ignored
+  return (files, st)
+
+/-- Reads and elaborates the files, with the states of
+`elaborateSourcesBefore`; `none` if one cannot be read. `fren fix` fixes
+the lints `fixing` in the files that `ignored` does not match. -/
+def elaborateBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
+    (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false) :
+    IO (Option (Array (String × Array Char) × Array State × State)) := do
+  let mut srcs := #[]
+  for path in paths do
+    let some src ← readSpec p path | return none
+    srcs := srcs.push src
+  return some (← elaborateSourcesBefore paths srcs lints fixing ignored)
 
 /-- Reads and elaborates the files; `none` if one cannot be read. `fren fix`
 fixes the lints `fixing` in the files that `ignored` does not match. -/
 def elaborate (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
     (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false) :
     IO (Option (Array (String × Array Char) × State)) := do
-  let mut srcs := #[]
-  for path in paths do
-    let some src ← readSpec p path | return none
-    srcs := srcs.push src
-  return some (← elaborateSources paths srcs lints fixing ignored)
+  return (← elaborateBefore p paths lints fixing ignored).map fun (files, _, st) => (files, st)
 
 /-- Prints that the static errors stopped the command, and the pointer to
 `--explain` for the codes of `diags`. -/
@@ -393,16 +434,22 @@ def printStopped (p : Paint) (diags : Array Diag) (what := "check") : IO Unit :=
   IO.eprintln ""
   printExplainHint (diags.map (·.msg))
 
-/-- Reads and elaborates the files, printing any static errors. -/
-def load (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
-    IO (Option (Array (String × Array Char) × State)) := do
-  let some (files, st) ← elaborate p paths lints | return none
+/-- Reads and elaborates the files, printing any static errors, with the
+states of `elaborateSourcesBefore`. -/
+def loadBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
+    IO (Option (Array (String × Array Char) × Array State × State)) := do
+  let some (files, states, st) ← elaborateBefore p paths lints | return none
   for d in st.diags do printDiag p files d
   let errors := st.diags.filter (·.severity == .error) |>.size
   if errors > 0 then
     printStopped p st.diags
     return none
-  return some (files, st)
+  return some (files, states, st)
+
+/-- Reads and elaborates the files, printing any static errors. -/
+def load (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
+    IO (Option (Array (String × Array Char) × State)) := do
+  return (← loadBefore p paths lints).map fun (files, _, st) => (files, st)
 
 /-- Prints the messages of result `r` of `c`, at the positions of the items
 they are about; returns them. -/
@@ -483,13 +530,22 @@ instances are hypotheses there. -/
 def refinementKeeps (c : CComp) (r : Fren.Core.CheckResult) : Bool :=
   Fren.Core.refinementRuns r.kind && (r.kind != .inst || r.prop? == c.insts[0]?.map (·.name))
 
+/-- The SMT-LIB symbols of the evaluator's spec (`Symbols.of`), for
+confirming models (`solveComp`); none if it has none. -/
+def symbolsOf (spec? : Except String Eval.Spec) : Symbols :=
+  match spec? with
+  | .ok sp => Symbols.of sp
+  | .error _ => {}
+
 /-- The solver's results for `c`, a global expectation if `global`, with
 each model confirmed by the evaluator's `spec?` (`Reqs/Eval#confirming-models`);
 the results that a refuted model is about, with their internal errors; and
-an internal error if the evaluator has no counterpart of `c`. `prelude` is
-`st`'s, indexed (`Prelude.ofDecls`), and `cache` holds the answers to the
-queries asked before (`QueryCache`). -/
-def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (c : CComp) (global : Bool) (kinds : Array Fren.Core.CheckKind)
+an internal error if the evaluator has no counterpart of `c`. `sy` is
+`symbolsOf spec?`, built once for the spec. `prelude` is `st`'s, indexed
+(`Prelude.ofDecls`), and `cache` holds the answers to the queries asked
+before (`QueryCache`). -/
+def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
+    (kinds : Array Fren.Core.CheckKind)
     (timeout : Nat) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
   let bk := backend prelude st.datatypes c timeout dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache
@@ -499,7 +555,7 @@ def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec)
     | .ok sp => match sp.counterpart? c global with
       | some ec =>
         let (core, ks) := (pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start))).untested c.tested kinds
-        pure (← Fren.Core.checkComp (fun k => confirming sp ec k log (bk k)) core ks, none)
+        pure (← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k)) core ks, none)
       | none =>
         let (core, ks) := (toCore c).untested c.tested kinds
         pure (← Fren.Core.checkComp bk core ks,
@@ -533,6 +589,7 @@ def check (args : Args) : IO UInt32 := do
   let cache : QueryCache ← IO.mkRef {}
   -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
   let spec? := specOf files
+  let sy := symbolsOf spec?
   let mut internal := #[]
   let mut byTesting := 0
   if let .error e := spec? then
@@ -544,7 +601,7 @@ def check (args : Args) : IO UInt32 := do
         n.modify (· + 1)
         IO.print s!"; {c.path}: query {← n.get}\n{script}(check-sat)\n(reset)\n\n"
       else none
-    let (results, refuted, missing?) ← solveComp st prelude spec? c global kinds args.timeout cache dump?
+    let (results, refuted, missing?) ← solveComp st prelude spec? sy c global kinds args.timeout cache dump?
     if let some msg := missing? then
       internal := internal.push msg
       printDiag args.paint files { file := c.file, span := c.span, msg }
@@ -808,31 +865,80 @@ global expectations and refinements, by `Mutate.Todo.key`, as far as they
 have been needed. -/
 abbrev Baseline := IO.Ref (Std.HashMap String (Array Fren.Core.CheckResult))
 
+/-- The mutants of the files, whose parses are `parsed` (`parseText`), as
+elaborated in the states `states`: before each file, then after the last
+(`elaborateSourcesBefore`). -/
+def mutantsWith (files : Array (String × Array Char)) (parsed : Array Parsed) (states : Array State) :
+    Array Mutate.Mutant := Id.run do
+  let mut all := #[]
+  let parsed := parsed.map (·.toOption)
+  -- The constants that divisors name, in any of the files.
+  let divisors := Mutate.divisorConstants (parsed.flatMap fun p => (p.map (·.2.1)).getD #[])
+  for (path, chars) in files, i in [0:files.size] do
+    if let some (toks, items, _) := parsed[i]! then
+      -- The state after file `i`.
+      let natSums := ((states[i + 1]?.map (·.natSums)).getD #[]).filterMap fun (f, sp) => if f == i then some sp else none
+      all := all ++ Mutate.ofFile { file := i, path, chars, toks, natSums } items divisors
+  return all
+
 /-- The mutants of the files, as elaborated, with the lint levels `lints`,
 and the state before each file, from which a mutant of it is elaborated. -/
 def mutantsOf (files : Array (String × Array Char)) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
     Array State × Array Mutate.Mutant := Id.run do
-  let mut before := #[]
-  let mut st := initialState lints
-  let mut all := #[]
-  -- The constants that divisors name, in any of the files.
-  let parsed := files.map fun (_, chars) => (lex chars).toOption.bind fun toks => (parse toks).toOption.map (toks, ·)
-  let divisors := Mutate.divisorConstants (parsed.flatMap fun p => (p.map (·.2)).getD #[])
-  for (path, chars) in files, i in [0:files.size] do
-    before := before.push st
-    st := elabText st i chars
-    if let some (toks, items) := parsed[i]! then
-      let natSums := st.natSums.filterMap fun (f, sp) => if f == i then some sp else none
-      all := all ++ Mutate.ofFile { file := i, path, chars, toks, natSums } items divisors
-  return (before, all)
+  let parsed := files.map (parseText ·.2)
+  let mut states := #[initialState lints]
+  for (_, chars) in files, i in [0:files.size] do
+    states := states.push (elabParsed (states.back?.getD {}) i chars parsed[i]!)
+  return (states.pop, mutantsWith files parsed states)
 
 /-- The state of the files with the mutant `m` applied, from the states
-`before` each file. -/
-def mutantState (files : Array (String × Array Char)) (before : Array State) (m : Mutate.Mutant) : State := Id.run do
+`before` each file. `parsed` are the files' parses, and `chars'` and
+`parsed'` the text of `m`'s file with `m` applied and its parse: the
+files after it are elaborated again, from the parses they had, since a
+mutant changes no file but its own. -/
+def mutantState (files : Array (String × Array Char)) (parsed : Array Parsed) (before : Array State)
+    (m : Mutate.Mutant) (chars' : Array Char) (parsed' : Parsed) : State := Id.run do
   let mut st := before[m.file]?.getD {}
   for (_, chars) in files.extract m.file, j in [m.file:files.size] do
-    st := elabText st j (if j == m.file then m.apply chars else chars)
+    st := if j == m.file then elabParsed st j chars' parsed' else elabParsed st j chars parsed[j]!
   return st
+
+/-- The items of each file, as `specStateOf` reads them: the first file
+that does not lex or parse gives the headline of its error. -/
+def itemsOf (parsed : Array Parsed) : Except String (Array (Array Item)) :=
+  parsed.mapM fun
+    | .error (_, msg) => throw msg.headline
+    | .ok (_, items, _) => pure items
+
+/-- The evaluator's state before each file, lowering the files in turn
+(`Eval.lowerFrom`), and after the last; past a file that does not parse,
+an error that no mutant reads (`mutantSpec`). -/
+def lowerPrefixes (parsed : Array Parsed) : Array (Except String Eval.LState) := Id.run do
+  let mut out : Array (Except String Eval.LState) := #[.ok {}]
+  for p in parsed do
+    out := out.push <| match out.back!, p with
+      | .ok st, .ok (_, items, _) => Eval.lowerFrom st #[items]
+      | .error e, _ => .error e
+      | .ok _, .error (_, msg) => .error msg.headline
+  return out
+
+/-- `specOf` of the files, whose parses are `parsed`, from their
+`lowerPrefixes`: an error if some file does not parse, as `specStateOf`
+reads them (`itemsOf`), else the state after the last file. -/
+def specOfParsed (parsed : Array Parsed) (prefixes : Array (Except String Eval.LState)) : Except String Eval.Spec := do
+  let _ ← itemsOf parsed
+  return (← prefixes.back!).spec
+
+/-- `specOf` of the files with the mutant `m` applied, where `parsed'` is
+the parse of `m`'s file with `m` applied: the same reading of the files'
+items (`itemsOf`), and lowering from the state before `m`'s file
+(`lowerPrefixes`), which is that of lowering the files before it, all of
+which parse if every file does (`Eval.lowerAll`). -/
+def mutantSpec (parsed : Array Parsed) (prefixes : Array (Except String Eval.LState)) (m : Mutate.Mutant)
+    (parsed' : Parsed) : Except String Eval.Spec := do
+  let items ← itemsOf (parsed.set! m.file parsed')
+  let st ← prefixes[m.file]!
+  return (← Eval.lowerFrom st (items.extract m.file)).spec
 
 /-- Runs `fren mutate` (`Reqs/Mutate`), printing each surviving mutant and
 the summary to stderr and the kill rates to stdout, or with `--list`, the
@@ -840,8 +946,13 @@ mutants to stdout; returns the exit code. -/
 def mutate (args : Args) : IO UInt32 := do
   let p := args.paint
   let fail (msg : Msg) : IO UInt32 := do IO.eprint (argError p msg); return 2
-  let some (files, st) ← load p args.files args.lints | return exitCode false none
-  let (before, all) := mutantsOf files args.lints
+  let some (files, states, st) ← loadBefore p args.files args.lints | return exitCode false none
+  -- Each file is lexed, parsed and elaborated once here; a mutant's
+  -- files are elaborated from these states, and its spec read from these
+  -- parses, as `mutantsOf`, `specOf` and `elabText` would.
+  let parsed := files.map (parseText ·.2)
+  let before := states.pop
+  let all := mutantsWith files parsed states
   let comp? := args.comp?.map fun t => (t.splitOn "::").foldl Lean.Name.mkStr .anonymous
   if let some c := comp? then
     unless st.comps.any (·.path == c) do
@@ -878,7 +989,8 @@ def mutate (args : Args) : IO UInt32 := do
   -- testing by testing; with the internal errors, each at its place in `c`.
   let solve (s : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) := do
-    let (rs, refuted, missing?) ← solveComp s prelude spec? t.comp t.global t.kinds args.timeout cache
+    -- A component's checks share the symbols of its spec.
+    let (rs, refuted, missing?) ← solveComp s prelude spec? (symbolsOf spec?) t.comp t.global t.kinds args.timeout cache
     let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds t.refinement) else #[]
     let errors := refuted.map fun (r, msg) =>
       ((r.prop?.bind fun n => t.comp.props.find? (·.name == n)).map (·.span) |>.getD t.comp.span, msg)
@@ -887,13 +999,15 @@ def mutate (args : Args) : IO UInt32 := do
   let test (_ : State) (_ : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) :=
     pure (testing spec? t.comp t.global fun r => !t.refinement || refinementKeeps t.comp r, #[])
-  let spec? := specOf files
+  let prefixes := lowerPrefixes parsed
+  let spec? := specOfParsed parsed prefixes
   if let .error e := spec? then
     printDiag p files { file := 0, span := default, msg := Msg.internal s!"the evaluator cannot read the spec: {e}" }
   -- What each component's checks read in the spec. The spec's own results
   -- are computed only for components that some mutant changes.
+  let preludeText := st.preludeText
   let originals : Std.HashMap String (Mutate.Todo × String) :=
-    (Mutate.todo st).foldl (init := {}) fun m t => m.insert t.key (t, Mutate.fingerprint st.preludeText t.comp)
+    (Mutate.todo st).foldl (init := {}) fun m t => m.insert t.key (t, Mutate.fingerprint preludeText t.comp)
   let solved : Baseline ← IO.mkRef {}
   let tested : Baseline ← IO.mkRef {}
   let shown ← IO.mkRef (#[] : Array Msg)
@@ -901,16 +1015,16 @@ def mutate (args : Args) : IO UInt32 := do
   -- Whether one way of checking kills the mutant `st'`, and whether some
   -- check was inconclusive on it, checking only the components it changes;
   -- `run s prelude spec? t` checks `t` of the spec `s`, whose prelude,
-  -- indexed, is `prelude`. Internal errors about the
-  -- spec are printed as `fren check` prints them, and those about the
-  -- mutant given to `onMutant`.
-  let killedBy (base : Baseline) (st' : State) (prelude' : Prelude) (spec'? : Except String Eval.Spec)
+  -- indexed, is `prelude`, and whose prelude's text is `preludeText'`.
+  -- Internal errors about the spec are printed as `fren check` prints
+  -- them, and those about the mutant given to `onMutant`.
+  let killedBy (base : Baseline) (st' : State) (prelude' : Prelude) (preludeText' : String) (spec'? : Except String Eval.Spec)
       (run : State → Prelude → Except String Eval.Spec → Mutate.Todo → IO (Array Fren.Core.CheckResult × Array (Span × Msg)))
       (onMutant : Msg → IO Unit) : IO (Bool × Bool) := do
     let mut inconclusive := false
     for t in Mutate.todo st' do
       let some (t₀, fp) := originals[t.key]? | continue
-      if Mutate.fingerprint st'.preludeText t.comp == fp then continue
+      if Mutate.fingerprint preludeText' t.comp == fp then continue
       let rs ← match (← base.get)[t.key]? with
         | some rs => pure rs
         | none =>
@@ -930,8 +1044,9 @@ def mutate (args : Args) : IO UInt32 := do
     return (false, inconclusive)
   let mut tallies : Std.HashMap Lean.Name Mutate.Tally := {}
   for m in selected do
-    let files' := files.modify m.file fun (path, chars) => (path, m.apply chars)
-    let st' := mutantState files before m
+    let chars' := m.apply files[m.file]!.2
+    let parsed' := parseText chars'
+    let st' := mutantState files parsed before m chars' parsed'
     -- What to report about the mutant, at its span.
     let reports ← IO.mkRef (#[] : Array (Msg × Fren.Core.Severity))
     let report (msg : Msg) (severity := Fren.Core.Severity.warning) : IO Unit := reports.modify (·.push (msg, severity))
@@ -944,14 +1059,15 @@ def mutate (args : Args) : IO UInt32 := do
         report (Msg.internal s!"the mutant `{m.id}` has a static error: {e.msg.headline}") .error
       tally := tally.add .unviable
     else
-      let spec'? := specOf files'
+      let spec'? := mutantSpec parsed prefixes m parsed'
       if let .error e := spec'? then
         report (Msg.internal s!"the evaluator cannot read the mutant `{m.id}`: {e}") .error
       let onMutant (msg : Msg) := report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error
       let prelude' := Prelude.ofDecls st'.prelude
-      let (bySolver, inconclusive₁) ← if args.checker.solves then killedBy solved st' prelude' spec'? solve onMutant
+      let preludeText' := st'.preludeText
+      let (bySolver, inconclusive₁) ← if args.checker.solves then killedBy solved st' prelude' preludeText' spec'? solve onMutant
         else pure (false, false)
-      let (byTesting, inconclusive₂) ← if args.checker.tests then killedBy tested st' prelude' spec'? test onMutant
+      let (byTesting, inconclusive₂) ← if args.checker.tests then killedBy tested st' prelude' preludeText' spec'? test onMutant
         else pure (false, false)
       let killed := bySolver || byTesting
       -- Short, whatever `--timeout` is, even 0, which means none.
