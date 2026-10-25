@@ -30,8 +30,8 @@ tested lang::nat_place: "test/ui/lang/nat_static.fren", "test/cli/types/f0338_fi
 tested lang::modifiers: "test/cli/syntax/f0110_pub_in.fren", "test/cli/syntax/f0114_input_definition.fren", "test/cli/syntax/f0113_det_in.fren", "test/cli/syntax/f0113_pub_inst.fren"
 tested lang::function_body: "test/ui/lang/defined_functions_static.fren", "test/cli/types/f0331_recursive.fren"
 tested lang::argument: "test/ui/lang/defined_functions.fren", "test/ui/lang/functions_static.fren"
-tested lang::cardinality_args: "test/ui/lang/cardinality_static.fren", "test/ui/syntax/cardinality_no_arguments.fren",
-  "test/cli/types/f0304_cardinality.fren"
+tested lang::cardinality_args: "test/ui/lang/cardinality_static.fren", "test/cli/types/f0304_cardinality.fren",
+  "test/cli/types/f0367_no_arguments.fren"
 tested lang::relation_op: "test/ui/lang/relations.fren", "test/ui/lang/relations_static.fren", "test/cli/types/f0328_join.fren"
 tested lang::pair_membership: "test/ui/lang/relations.fren", "test/ui/lang/relations_static.fren", "test/cli/types/f0329_pair.fren"
 tested lang::finite: "test/ui/lang/relations_static.fren", "test/ui/lang/sets.fren"

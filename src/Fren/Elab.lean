@@ -2067,6 +2067,9 @@ def cardinalityTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprC
   for a in args, k in [0:args.size] do
     -- A `Bool` gives `{}` no type, so `{}` is reported as one whose type
     -- cannot be known, as the `fren` command reports it.
+    -- `{}` and `[]` are never `Bool`s.
+    if (a.isOfKind ``Lang.setExpr || a.isOfKind ``Lang.seqExpr) && a[1].getSepArgs.isEmpty then
+      throwErrorAt a (Core.cardinalityArgMsg c (k + 1) (if a.isOfKind ``Lang.setExpr then "{}" else "[]")).text
     let t ← toTerm { cx with emptyOk := false, natOk := false } a
     let ty ← typeOf t
     unless ty.isConstOf ``Bool || ty.isProp do throwErrorAt a (Core.cardinalityArgMsg c (k + 1) (← typeName ty)).text
@@ -2205,6 +2208,13 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
   else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm { cx with emptyOk, natOk } e (parent?.bind (operandSlot · e))
   else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
   else if e.isOfKind ``Lang.updateExpr then updateTerm toTerm cx e
+  else if e.isOfKind ``Lang.noArgsCardinalityExpr then
+    -- The operator's name, a non-reserved token, perhaps under the node of
+    -- its alternatives.
+    let leaf := if e[0].isAtom || e[0].isIdent then e[0] else e[0][0]
+    let n := if leaf.isIdent then leaf.getId.toString else leaf.getAtomVal.trimAscii.toString
+    let some c := Core.Cardinality.ofName? n | throwError "internal error: no cardinality operator `{n}`"
+    throwError (Core.cardinalityNoArgsMsg c).text
   else throwError "unsupported Fren expression"
 
 open Lang in

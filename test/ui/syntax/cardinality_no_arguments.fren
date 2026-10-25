@@ -1,6 +1,0 @@
--- A cardinality operator has at least one argument.
--- fren-covers: lang::cardinality_args
-comp c { in a? expect e: exactly_one?() }
---~^[cli] error: expected an expression, found `)`
---~^^[hosted] error: unexpected token ')'; expected
---@ exit: 2

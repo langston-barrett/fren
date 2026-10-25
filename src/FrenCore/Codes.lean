@@ -1545,6 +1545,22 @@ function another name:
 fn either?(a?, b?) := exactly_one?(a?, b?)
 ```
 "# },
+  { code := "F0367", explanation := r#"A cardinality operator is applied to no arguments.
+
+Erroneous code example:
+
+```fren
+comp c { in a? in b? expect e: exactly_one?() }
+```
+
+`exactly_one?(...)` holds when exactly one of its `Bool` arguments is
+`true`, and `at_most_one?(...)` when at most one is. Each counts its
+arguments, so it needs at least one. Give it the `Bool`s to count:
+
+```fren
+comp c { in a? in b? expect e: at_most_one?(a?, b?) }
+```
+"# },
   { code := "F0401", explanation := r#"An assumption mentions a variable that is not an `in`.
 
 Erroneous code example:

@@ -1,0 +1,12 @@
+error[F0367]: `exactly_one?` needs at least one argument
+ --> test/cli/types/f0367_no_arguments.fren:3:26
+  |
+3 | comp c { in a? expect e: exactly_one?() or a? }
+  |                          ^^^^^^^^^^^^^^ no arguments
+  |
+  = note: `exactly_one?` counts how many of its `Bool` arguments are `true`, as in `exactly_one?(a?, b?)`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0367`.
+exit=2

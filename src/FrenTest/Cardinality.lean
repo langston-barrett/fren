@@ -37,7 +37,10 @@ fun a? b? x one? some? => some? = true ↔ (if a? = true then 1 else 0) ≤ 1
 #guard_msgs in
 #print cardinality_test.modes.req.s
 
--- The sum means what `List.count` of the `true` arguments does.
-example (a b c : Bool) :
-    ((if a then 1 else 0) + (if b then 1 else 0) + (if c then 1 else 0) : Int) = ([a, b, c].count true : Nat) := by
-  cases a <;> cases b <;> cases c <;> decide
+-- The sum means what `List.count` of the `true` arguments does, for any
+-- number of arguments.
+theorem cardinality_sum_eq_count (bs : List Bool) :
+    (bs.map fun b => if b then (1 : Int) else 0).sum = (bs.count true : Nat) := by
+  induction bs with
+  | nil => simp
+  | cons b bs ih => cases b <;> simp [ih] <;> omega

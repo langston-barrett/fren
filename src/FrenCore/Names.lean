@@ -420,6 +420,11 @@ def builtinFnMsg (n : Name) : Msg :=
 def checkFnName (n : Name) : Except Msg Unit := do
   if (builtinFunction? n).isSome then throw (builtinFnMsg n)
 
+/-- The cardinality operator `c` applied to no arguments, as `c()`. -/
+def cardinalityNoArgsMsg (c : Cardinality) : Msg :=
+  { code? := some "F0367", headline := s!"`{c.name}` needs at least one argument", label? := some "no arguments"
+    notes := #[s!"note: `{c.name}` counts how many of its `Bool` arguments are `true`, as in `{c.name}(a?, b?)`"] }
+
 /-- Argument `k`, counted from 1, of the cardinality operator `c` is of
 type `found`, not a `Bool`. -/
 def cardinalityArgMsg (c : Cardinality) (k : Nat) (found : String) : Msg :=

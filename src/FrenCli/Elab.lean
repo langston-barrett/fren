@@ -1849,8 +1849,12 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       if let some c := Fren.Core.builtinFunction? (identName segs[0]!.name) then
         -- The number of its arguments that are `true`, compared with 1: a
         -- linear sum (`lang::cardinality`).
+        if args.isEmpty then err span (Fren.Core.cardinalityNoArgsMsg c)
         let mut ites := #[]
         for a in args, k in [0:args.size] do
+          -- `{}` and `[]` are never `Bool`s.
+          if a matches .set _ #[] | .seq _ #[] then
+            err a.span (Fren.Core.cardinalityArgMsg c (k + 1) (if a matches .set .. then "{}" else "[]"))
           let (x, ta) ← elabExpr { cx with expected? := some .bool } a
           unless ta == .bool do err a.span (Fren.Core.cardinalityArgMsg c (k + 1) ta.show)
           ites := ites.push s!"(ite {x} 1 0)"

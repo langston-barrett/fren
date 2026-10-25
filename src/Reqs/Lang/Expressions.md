@@ -514,12 +514,12 @@ pub enum Cardinality { ExactlyOne, AtMostOne }
 pub comp cardinality {
     use self::Cardinality::{AtMostOne, ExactlyOne}
     in op: Cardinality
-    in n_args: Int           -- how many arguments it has
-    in n_true: Int           -- how many of them are `true`
+    in n_args: Nat           -- how many arguments it has
+    in n_true: Nat           -- how many of them are `true`
     pub det out value?
 
     assume some_argument: n_args >= 1
-    assume counted: 0 <= n_true <= n_args
+    assume counted: n_true <= n_args
 
     req rule: value? iff match op {
         ExactlyOne => n_true = 1,
@@ -563,7 +563,7 @@ states this, from how many arguments it has and how many of them are
 
 ```fren
 pub comp cardinality_args {
-    in n_args: Int           -- how many arguments it has
+    in n_args: Nat           -- how many arguments it has
     in n_bool: Nat           -- how many of them are `Bool`s
     pub det out accepted?
 
@@ -576,8 +576,11 @@ pub comp cardinality_args {
 }
 ```
 
-`exactly_one?()` does not parse, and a message about an argument that is
-not a `Bool` says which argument it is.
+So `exactly_one?()` is an error, which both front ends report alike, and
+so is `exactly_one?(1)`: a message about an argument that is not a `Bool`
+says which argument it is. `{}` and `[]` are never `Bool`s, so as
+arguments they are reported as arguments of the wrong type, not as
+literals whose type cannot be known.
 
 Like a method, a cardinality operator has a fixed meaning, so it mentions
 what its arguments mention (see [Mentions](#mentions)), and it is not an

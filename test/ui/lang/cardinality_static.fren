@@ -17,10 +17,15 @@ comp string_argument { in a? expect e: at_most_one?(a?, a?, "yes") }
 comp sum_argument { in x: Int expect e: exactly_one?(x + 1 > 0, x + 1) }
 --~^ error: type mismatch: expected `Bool`, found `Int`
 comp empty_argument { expect e: exactly_one?({}) }
---~^ error: the type of `{}` cannot be known here
-comp result_typed { in a? out n: Int := exactly_one?(a?) }
---~^[cli] error: type mismatch: expected `Int`, found `Bool`
---~^^[hosted] error: Type mismatch
+--~^ error: type mismatch: expected `Bool`, found `{}`
+comp empty_sequence_argument { in a? expect e: at_most_one?(a?, []) }
+--~^ error: type mismatch: expected `Bool`, found `[]`
+comp no_arguments { expect e: exactly_one?() }
+--~^ error: `exactly_one?` needs at least one argument
+comp no_arguments_operand { in a? expect e: a? or at_most_one?() }
+--~^ error: `at_most_one?` needs at least one argument
+comp result_typed { in a? in n: Int expect e: n.max(exactly_one?(a?)) > 0 }
+--~^ error: type mismatch: expected `Int`, found `Bool`
 comp unapplied { in a? expect e: exactly_one? }
 --~^ error: function `exactly_one?` must be applied to arguments
 comp qualified { in a? expect e: self::at_most_one?(a?) }
