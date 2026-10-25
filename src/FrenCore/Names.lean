@@ -929,7 +929,7 @@ def productAccepted (a b : Bool) : Bool := !(a && b)
 def nonlinearMsg : Msg :=
   { code? := some "F0307", headline := "nonlinear arithmetic is not supported", label? := some "both sides mention variables or uninterpreted functions"
     notes := #["note: the solver decides only linear integer arithmetic",
-      "help: one side of `*` must mention no variable, such as `2 * x` or `(MAX - MIN) * x`"] }
+      "help: one side of `*` must mention no variable and no uninterpreted function, such as `2 * x` or `(MAX - MIN) * x`"] }
 
 def dupMemberMsg (n : Name) : Msg :=
   { code? := some "F0213", headline := s!"`{n}` is defined multiple times in this component", label? := some "defined again here"
