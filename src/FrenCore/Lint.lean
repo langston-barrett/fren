@@ -321,9 +321,11 @@ def LintTarget.rejectedBy? (t : LintTarget) (levelOf : Lint → LintLevel) (requ
     if groupAccepted forbidden.size requested then none else forbidden[0]?
 
 /-- The level of a lint from Lean options set outside the file, where there
-is no order: the lint's own option wins over its group's
-(`lint::outside_options`). -/
+is no order: `forbid` wins, from its default, its own option or its
+group's, as `-F` does on the command line; otherwise the lint's own option
+wins over its group's (`lint::outside_options`). -/
 def outsideLevel (dflt : LintLevel) (own? group? : Option LintLevel) : LintLevel :=
+  if dflt == .forbid || own? == some .forbid || group? == some .forbid then .forbid else
   match own?, group? with
   | some l, _ => l
   | none, some g => g

@@ -259,9 +259,12 @@ pub comp group_setting {
 }
 ```
 
-In Lean, the options set outside the file have no order, so there a
-lint's own option wins over its group's, whichever is set.
-`lint::outside_options` states it:
+In Lean, the options set outside the file have no order. There, as on the
+command line, `forbid` wins, whether the lint's default, its own option or
+its group's sets it, so `fren.lint.pedantic` at `forbid` and
+`match_same_arms` at `warn` leave `match_same_arms` forbidden, as
+`-F pedantic -W match_same_arms` does. Otherwise a lint's own option wins
+over its group's, whichever is set. `lint::outside_options` states it:
 
 ```fren
 pub comp outside_options {
@@ -272,7 +275,13 @@ pub comp outside_options {
     in group: Level
     pub det out level: Level
 
-    req rule: level = if own_set? then own else if group_set? then group else default_level
+    req rule: level = if default_level = Level::Forbid or (own_set? and own = Level::Forbid)
+        or (group_set? and group = Level::Forbid) then Level::Forbid
+        else if own_set? then own else if group_set? then group else default_level
+
+    expect forbid_wins: when group_set? and group = Level::Forbid, level = Level::Forbid
+    expect own_wins: when own_set? and own != Level::Forbid and default_level != Level::Forbid
+        and not (group_set? and group = Level::Forbid), level = own
 }
 ```
 
