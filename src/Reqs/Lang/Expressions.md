@@ -358,13 +358,13 @@ pub comp division {
     in y: Int
 
     expect euclidean: x = (x div 3) * 3 + x mod 3
-    expect remainder_range: 0 <= x mod 3 and x mod 3 < 3
+    expect remainder_range: 0 <= x mod 3 < 3
     expect euclidean_negative: x = (x div NEGATIVE_DIVISOR) * NEGATIVE_DIVISOR + x mod NEGATIVE_DIVISOR
-    expect remainder_range_negative: 0 <= x mod NEGATIVE_DIVISOR and x mod NEGATIVE_DIVISOR < NEGATIVE_DIVISOR.abs
+    expect remainder_range_negative: 0 <= x mod NEGATIVE_DIVISOR < NEGATIVE_DIVISOR.abs
     expect negated_divisor: x div -3 = -(x div 3) and x mod -3 = x mod 3
     expect multiples: (3 * x) div 3 = x and (3 * x) mod 3 = 0
     expect periodic: (x + 3) mod 3 = x mod 3 and (x + 3) div 3 = x div 3 + 1
-    expect rounds_down: (x div 3) * 3 <= x and x < (x div 3) * 3 + 3
+    expect rounds_down: (x div 3) * 3 <= x < (x div 3) * 3 + 3
     expect monotone: when x <= y, x div 3 <= y div 3
     expect by_one: x div 1 = x and x mod 1 = 0
 }
@@ -1140,7 +1140,7 @@ pub comp int_methods {
     expect abs_cases: (x >= 0 and x.abs = x) or (x < 0 and x.abs = -x)
     expect abs_negation: (-x).abs = x.abs
     expect abs_triangle: (x + y).abs <= x.abs + y.abs
-    expect abs_bounds: -x.abs <= x and x <= x.abs
+    expect abs_bounds: -x.abs <= x <= x.abs
     expect min_below: x.min(y) <= x and x.min(y) <= y
     expect min_either: x.min(y) = x or x.min(y) = y
     expect max_above: x.max(y) >= x and x.max(y) >= y

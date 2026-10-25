@@ -8,6 +8,8 @@
 -- operator of a chained comparison is swapped, and its first and last
 -- comparisons are dropped. A cardinality operator is swapped for the
 -- other, and loses an argument while at least one remains.
+set_option fren.lint.chainable_comparison "allow"
+set_option fren.lint.irrefutable_is "allow"
 mod m
 
 pub enum Mode { Off, Heat, Cool }

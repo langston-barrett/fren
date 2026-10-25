@@ -1,4 +1,5 @@
 -- Or-patterns in `match`, and `use` in a component.
+set_option fren.lint.match_like_membership "allow"
 
 pub enum Method { Len, Card, Rev, Slice, Update }
 pub enum Shape { Circle(Int), Square(Int), Empty }

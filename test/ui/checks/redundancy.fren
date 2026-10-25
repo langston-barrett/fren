@@ -1,6 +1,7 @@
 -- Redundant constraints are warnings, and are not checked where the
 -- constraints are contradictory or the requirement is vacuous (`check`).
 -- fren-covers: check::minimal
+set_option fren.lint.chainable_comparison "allow"
 
 comp thermostat {
     in temp: Int

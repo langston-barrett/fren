@@ -40,13 +40,13 @@ comp membership {
     pub out t?
 
     req r1: p? iff match e { A => true, B => false, C => true, D => false }
-    --~^ warning: this `match` only tests which variant its scrutinee is
+    --~^ warning: this `match` only tests which of its patterns its scrutinee matches
     --~^^ warning: this arm has the same body as the arm `A`
     --~^^^ warning: this arm has the same body as the arm `B`
     req r2: q? = match e { A => false, _ => true }
-    --~^ warning: this `match` only tests which variant its scrutinee is
+    --~^ warning: this `match` only tests which of its patterns its scrutinee matches
     req r3: r? iff match e { A | B | C => true, D => false }
-    --~^ warning: this `match` only tests which variant its scrutinee is
+    --~^ warning: this `match` only tests which of its patterns its scrutinee matches
     -- Every arm is `true`: `match_same_arms`, not a membership.
     req r4: t? iff match e { A | B => true, _ => true }
     --~^ warning: this arm has the same body as the arm `A | B`

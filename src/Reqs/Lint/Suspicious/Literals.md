@@ -33,7 +33,7 @@ pub comp invisible_character {
 
     -- U+202A to U+202E, U+2066 to U+2069 and U+FEFF anywhere; U+00AD,
     -- U+200B and U+2060 in a literal.
-    req rule: fires? iff ((8234 <= code and code <= 8238) or (8294 <= code and code <= 8297)
+    req rule: fires? iff (8234 <= code <= 8238 or 8294 <= code <= 8297
         or code = 65279 or (not comment? and code in {173, 8203, 8288}))
 
     expect controls_in_comments: when code = 8238, fires?
@@ -125,7 +125,7 @@ comp const_is_empty_exact {
     in n: Int
     in length: Int       -- the literal's `len` or `card`
 
-    assume lengths: n >= 0 and (if set? then (if n = 0 then length = 0 else 1 <= length and length <= n)
+    assume lengths: n >= 0 and (if set? then (if n = 0 then length = 0 else 1 <= length <= n)
         else length = n)
 
     inst p: const_is_empty { op, bound, left?, set?, n }

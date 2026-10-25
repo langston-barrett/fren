@@ -111,3 +111,57 @@ pub comp unrelated_binders {
     req rule: fires? iff n_groups >= 2
 }
 ```
+
+## Pattern tests
+
+`irrefutable_is` fires on a [pattern
+test](../Lang/Expressions.md#pattern-tests) `e is P` whose pattern matches
+every value of `e`'s type: `P` is `_`, or its alternatives together cover
+the type, as in `s is Shade::Light | Shade::Dark | Shade::Tinted(_)`, `b?
+is true | false`, `n is ..=0 | 1..`, or `x is E::Only` where `E` has one
+variant. It is decided as a `match`'s exhaustiveness is (see
+[Patterns](../Lang/Patterns.md)): the pattern matches every value where
+`_` after it would match none. The test is then always `true`, and the
+message says so. There is no fix, as for
+[`eq_op`](Suspicious/Expressions.md#operands-written-the-same): the
+pattern is probably not the one meant, and writing `true` would keep the
+mistake and hide it. Clippy has no exact analogue; rustc's
+`irrefutable_let_patterns`, which warns by default, is the same lint for
+`if let`. Fren has no `correctness` group, so it is in `suspicious`.
+`lint::irrefutable_is` states when it fires:
+
+```fren
+pub comp irrefutable_is {
+    in matches_every?    -- no value of the scrutinee's type is left for `_` after the pattern
+    pub det out fires?
+
+    req rule: fires? iff matches_every?
+}
+```
+
+The refinements check the value that the message gives, for `_` and for
+a pattern that names every variant of [`Shade`](Style/Comparisons.md#pattern-tests):
+
+```fren
+set_option fren.lint.irrefutable_is "allow" in
+pub comp irrefutable_is_written {
+    in s: Shade
+    in n: Int
+    pub det out wildcard? := s is _
+    pub det out every? := s is Shade::Light | Shade::Dark | Shade::Tinted(_)
+    pub det out ranges? := n is ..=0 | 1..
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.lint.unused_variables "allow" in
+pub comp irrefutable_is_value {
+    in s: Shade
+    in n: Int
+    pub det out wildcard? := true
+    pub det out every? := true
+    pub det out ranges? := true
+}
+
+refine irrefutable_is_sound: irrefutable_is_value refines irrefutable_is_written
+refine irrefutable_is_complete: irrefutable_is_written refines irrefutable_is_value
+```

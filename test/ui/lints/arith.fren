@@ -42,6 +42,7 @@ comp arith {
     --~^^^ warning: over integers, this is a strict comparison
     -- Strict, or not off by one: no lint.
     pub out d3? := x > y - 1 and x + 1 >= y and x >= y - 1 and x <= y + 1 and x * -2 > 0
+    --~^ warning: these comparisons can be chained
     pub out e1? := s.len != 0 and 0 < s.len and 1 <= q.len and t.card >= 1
     --~^ warning: say whether it is empty with `""`, not `len`
     --~^^ warning: say whether it is empty with `""`, not `len`

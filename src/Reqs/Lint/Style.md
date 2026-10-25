@@ -326,39 +326,69 @@ pub comp redundant_bool_type {
 lints](Pedantic.md#matches) of the `pedantic` group do.
 
 `match_like_membership` fires on a `match` on `x` whose bodies are the
-literals `true` and `false`, each at least once, and whose patterns name
-only variants without a payload, or are `_`; a literal, range or binder
-pattern, or a nested one, keeps it from firing. It says whether `x` is one of
-the variants whose arms are `true`. The fix is `x in {E::A, E::B}`, of
-those variants, or `x = E::A` for one, if the `_` arm is `false`, or if
-there is no `_` arm and no more variants are `true` than `false`.
-Otherwise it is `not x in {...}`, or `x != E::A`, of the variants that are
-`false`. The variants are written as the patterns write them, so a variant
-brought into scope by `use` stays unqualified, and `x` and the result are
-in parentheses where [fixes need them](../Lint.md#parentheses-in-fixes). The bodies are
-literals, which guard nothing, and `x` is evaluated as before. A `match`
-whose arms are all `true`, or all `false`, is left to
+literals `true` and `false`, each at least once, and whose patterns bind
+no name. It says whether `x` is one of the values whose arms are `true`.
+If no `_` arm is `true`, and there is a `_` arm or no more alternatives are
+`true` than `false`, the fix tests for the alternatives whose arms are
+`true`; otherwise, for those whose arms are `false`, negated. Where each of
+those alternatives is a variant without a payload or a literal, as
+[`is_equality`](Style/Comparisons.md#pattern-tests) asks, the fix is `x in
+{E::A, E::B}`, or `x = E::A` for one, or `not x in {...}` and `x !=
+E::A`, negated. Otherwise it is a [pattern
+test](../Lang/Expressions.md#pattern-tests) of those alternatives, `x is
+E::A(_) | E::B`, or `not x is ...`, so the two lints never undo each
+other. This is Clippy's `match_like_matches_macro`, also in `style`, and
+its `redundant_pattern_matching`: `match s { Shape::Circle(_) => true, _
+=> false }` becomes `s is Shape::Circle(_)`.
+
+An arm is matched only where no earlier arm matches, so the alternatives
+of one body stand for the values they match only if no arm of the other
+body comes before them and overlaps them. Each pattern that is `_`, a
+variant whose payload's patterns are all `_`, `true`, `false` or a
+literal, or an or-pattern of these, overlaps another only where one
+contains the other, and then the later one is never reached, an error.
+So the lint fires on any order of such arms. Otherwise, with a range or a
+nested pattern, it fires only where the arms it lists all come before the
+arms of the other body: `match n { 0..=9 => true, _ => false }` becomes
+`n is 0..=9`. Without a `_` arm, it then lists those that come first. A
+pattern that binds a name, such as `Shape::Circle(r) => true`, keeps it
+from firing, since a pattern test binds none. The alternatives are written
+as the patterns write them, so a variant brought into scope by `use`
+stays unqualified, and `x` and the result are in parentheses where [fixes
+need them](../Lint.md#parentheses-in-fixes). The bodies are literals,
+which guard nothing, and `x` is evaluated as before. A `match` whose arms
+are all `true`, or all `false`, is left to
 [`match_same_arms`](Pedantic.md#matches).
-`lint::match_like_membership` states when it fires, and when its fix is
-negated:
+`lint::match_like_membership` states when it fires, when its fix is
+negated, and when it is a pattern test:
 
 ```fren
 pub comp match_like_membership {
     in bool_bodies?      -- every body is `true` or `false`, and each is some body
-    in no_payloads?      -- every pattern names variants without a payload, or is `_`
+    in binds?            -- some pattern binds a name
+    in disjoint?         -- each pattern is `_`, a variant whose payload's patterns are `_`, a literal, or an or-pattern of these
+    in true_first?       -- every arm whose body is `true` comes before every arm but `_` whose body is `false`
+    in false_first?      -- and the other way round
+    in equatable_true?   -- each alternative of the arms whose body is `true` is a variant without a payload or a literal
+    in equatable_false?  -- and of those whose body is `false`
     in wildcard?         -- there is a `_` arm
     in wildcard_true?    -- its body is `true`
-    in n_true: Nat       -- variants named by arms whose body is `true`
-    in n_false: Nat      -- and by arms whose body is `false`
+    in n_true: Nat       -- alternatives of arms whose body is `true`
+    in n_false: Nat      -- and of arms whose body is `false`
     pub det out fires?
-    pub det out negated?  -- the fix is a negated membership, of the `false` variants
+    pub det out negated?  -- the fix is negated, of the `false` alternatives
+    pub det out pattern_test?  -- the fix is a pattern test, rather than a comparison
 
-    req rule: fires? iff (bool_bodies? and no_payloads?)
-    req negated: negated? iff (if wildcard? then wildcard_true? else n_true > n_false)
+    req negated: negated? iff (if wildcard? then wildcard_true? else if disjoint? then n_true > n_false else false_first?)
+    req rule: fires? iff (bool_bodies? and not binds? and (disjoint? or (if negated? then false_first? else true_first?)))
+    req test: pattern_test? iff not (if negated? then equatable_false? else equatable_true?)
 
-    expect fewer_listed: when not wildcard? and negated?, n_false < n_true
+    expect fewer_listed: when not wildcard? and disjoint? and negated?, n_false < n_true
 }
 ```
+
+The [refinements](Style/Comparisons.md#pattern-tests) check its fixes to
+a pattern test.
 
 ## Bindings
 

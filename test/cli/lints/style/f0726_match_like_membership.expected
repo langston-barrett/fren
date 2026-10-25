@@ -1,4 +1,4 @@
-warning[F0726]: this `match` only tests which variant its scrutinee is
+warning[F0726]: this `match` only tests which of its patterns its scrutinee matches
  --> test/cli/lints/style/f0726_match_like_membership.fren:8:19
   |
 8 |     req r: p? iff match e { E::A => true, E::B => false, E::C => true }

@@ -1235,7 +1235,7 @@ partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.
   let atom (i : Nat) := if e[i].isAtom then e[i].getAtomVal.trimAscii.toString else ""
   -- `true` and `false` are also paths.
   if e.isOfKind choiceKind then go ((e.getArgs.find? fun a => a.getNumArgs == 1 && a[0].isAtom).getD e[0]) else
-  if let some (xs, ops) := chainOf? e then .mk (.chain ops.size) range e (xs.map go) else
+  if let some (xs, ops) := chainOf? e then .mk (.chain (ops.map (·.getAtomVal.trimAscii.toString))) range e (xs.map go) else
   if e.isOfKind ``Lang.methodExpr then
     let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
     let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
@@ -1312,7 +1312,9 @@ def lintBools (e : Syntax) : TermElabM Unit := do
   let variant? (s : Syntax) := (variants.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
   let help (msg : Core.Msg) := if fixable && !msg.fixes.isEmpty then #[Core.fixHelp] else #[]
   for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) variant? (absEnds.contains ·.getTailPos?) node do
-    recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ help r.msg }
+    -- A node's position is its first token's, and its tail its last's.
+    let ref := match r.last? with | some l => mkNullNode #[r.ref, l] | none => r.ref
+    recordLint r.lint ref { r.msg with notes := r.msg.notes ++ help r.msg }
   for r in Core.arithReports src node do
     recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ help r.msg }
   lintParens fixable sub.str e
@@ -1422,7 +1424,7 @@ def operandSlot (p e : Syntax) : Option Core.Slot :=
     if same p[1] then some Core.receiverSlot else none
   else if p.isOfKind ``Lang.isExpr then at_ .patternTest #[0]
   -- A chained comparison's operands, not the comparisons within it.
-  else if let some (xs, ops) := chainOf? p then (xs.findIdx? same).bind ((Core.BKind.chain ops.size).slots[·]?.join)
+  else if let some (xs, ops) := chainOf? p then (xs.findIdx? same).bind ((Core.BKind.chain (ops.map (·.getAtomVal.trimAscii.toString))).slots[·]?.join)
   else match p.getNumArgs, atom 0, atom 1 with
     | 3, "(", _ => none
     | 4, "when", _ => at_ (.when false) #[1, 3]
@@ -1445,7 +1447,9 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
   for arm in arms, pat in pats do
     let (alts, _) := topAlts arm[0]
     let alts := if alts.size == 1 && arm[0][0].isNone && alts[0]!.isOfKind ``Lang.wildPattern then #[] else alts
-    infos := infos.push { alts := alts.map exactText, binds := !(← topBinders cx arm[0]).isEmpty, noPayload := pat.noPayload
+    let texts := alts.map exactText
+    infos := infos.push { alts := texts, binds := !(← topBinders cx arm[0]).isEmpty, noPayload := pat.noPayload
+                          equatable := Core.equatable pat texts, disjoint := alts.isEmpty || Core.disjointPat pat texts
                           body := { text := exactText arm[2], prec := exprPrec arm[2] } }
   let flat := pats.all (·.flat)
   -- `fren fix` reads Markdown specs, but not Lean files.
@@ -1493,8 +1497,8 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
       let (i, msg) := Core.sameArmsMsg infos g slot (followedStx e)
       recordLint .matchSameArms arms[i]! (help msg)
   let scrutinee : Core.BText := { text := exactText e[1], prec := exprPrec e[1] }
-  if let some (pre, post) := Core.membershipParts? infos scrutinee slot then
-    recordLint .matchLikeMembership e (help (Core.membershipMsg (pre ++ scrutinee.text ++ post)))
+  if let some (pre, post, test) := Core.membershipParts? infos scrutinee slot then
+    recordLint .matchLikeMembership e (help (Core.membershipMsg (pre ++ scrutinee.text ++ post) test))
   unless flat do return
   let some info := ty.constName?.bind (← getState).enumOfDecl? | return
   let some w := infos.findIdx? (·.wildcard) | return
@@ -1863,6 +1867,14 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
   | .error (.binder k, msg) => throwErrorAt bs[k]!.ident msg.text
   | .error (.alternative j, msg) => throwErrorAt (topAlternatives e[2])[j]! msg.text
   | .error (.whole, msg) => throwErrorAt e[2] msg.text
+  if cx.noteIndexes then
+    -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`).
+    let irrefutable := Core.irrefutableIs (Core.matchesEvery (← patSigs) pty q)
+    if irrefutable then recordLint .irrefutableIs e (Core.irrefutableIsMsg (← patTypeName ty) (q matches .wild _))
+    let texts := (topAlts e[2]).1.map exactText
+    if Core.isEquality (Core.equatable q texts) irrefutable then
+      let msg := Core.isEqualityMsg { text := exactText scrutinee, prec := exprPrec scrutinee } texts
+      recordLint .isEquality e (if (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
   match test with
   | some t => return t
   | none => `(true)
@@ -1906,6 +1918,23 @@ partial def variantTest? (cx : ExprCtx) (e : Syntax) : TermElabM (Option Core.Va
   if isBinOp e "=" then
     let some (en, i, t) ← variantOf? cx e[2] | return none
     return some { scrutinee := srcText (unparen e[0]), enum := en, variants := #[(i, t)] }
+  -- `x is P`, of the variants that `P` names, each with only `_` in its
+  -- payload, so that it tests the variant alone.
+  if e.isOfKind ``Lang.isExpr then
+    let st ← getState
+    let mut out : Array (Nat × String) := #[]
+    let mut en? : Option Name := none
+    for p in (topAlts e[2]).1 do
+      unless p.isOfKind ``Lang.variantPattern do return none
+      unless (patternArgs p).all fun a => a[0].getSepArgs.size == 1 && a[0].getSepArgs[0]!.isOfKind ``Lang.wildPattern do
+        return none
+      let .ok (.variant en i) := st.table.resolvePath cx.modName ((pathSegs p[0]).map (·.getId)) cx.shadowing
+        | return none
+      unless en?.all (· == en.path) do return none
+      en? := some en.path
+      out := out.push (i, exactText p)
+    let some en := en? | return none
+    return some { scrutinee := srcText (unparen e[0]), enum := en, variants := out }
   let s := unparen e[2]
   unless e.isOfKind ``Lang.memberExpr && s.isOfKind ``Lang.setExpr do return none
   let mut out : Array (Nat × String) := #[]

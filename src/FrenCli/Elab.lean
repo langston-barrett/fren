@@ -1065,7 +1065,7 @@ partial def Expr.boolNode (e : Expr) (src : Array Char := #[]) (base : Nat := 0)
   | .is s scrutinee _ => .mk .patternTest (toRange s) s #[scrutinee.boolNode src base]
   | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode src base] ++ arms.map (·.2.boolNode src base))
   | .pair s a b | .index s a b => .mk .atom (toRange s) s #[a.boolNode src base, b.boolNode src base]
-  | .chain s es ops => .mk (.chain ops.size) (toRange s) s (es.map (·.boolNode src base))
+  | .chain s es ops => .mk (.chain (ops.map (·.1))) (toRange s) s (es.map (·.boolNode src base))
   | .«let» s _ body _ => .mk .«let» (toRange s) s #[body.boolNode src base]
   | .num s _ | .path s _ | .str s .. => .mk .atom (toRange s) s #[]
 -- `base` is at most the start of `e`'s span as written, and every span in
@@ -1147,7 +1147,7 @@ def lintBools (e : Expr) : M Unit := do
   modify fun s => { s with boolEqs := #[], variants := #[], absEnds := #[] }
   let variant? (sp : Span) := (variants.find? (·.1 == sp)).map (·.2)
   for r in Fren.Core.opReports src boolEqs.contains variant? (absEnds.contains ·.stop) root do
-    lintFix r.lint r.ref r.msg
+    lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) r.msg
   for r in Fren.Core.arithReports src root do
     lintFix r.lint r.ref r.msg
   lintParens e
@@ -1468,7 +1468,8 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
   for (p, body) in arms, pat in pats do
     let alts := if p matches .wild _ then #[] else p.alts.map fun a => Fren.Core.textOf src (toRange a.span)
     let binds := !(← patternBinders cx p).isEmpty
-    infos := infos.push { alts, binds, noPayload := pat.noPayload, body := body.text src }
+    infos := infos.push { alts, binds, noPayload := pat.noPayload, equatable := Fren.Core.equatable pat alts
+                          disjoint := alts.isEmpty || Fren.Core.disjointPat pat alts, body := body.text src }
   let flat := pats.all (·.flat)
   -- `trivial_match` (`lint::trivial_match`).
   if let #[info] := infos then
@@ -1522,9 +1523,9 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
       lintEdits .matchSameArms at_ msg (if firstSame?.isNone then edits else #[])
       if firstSame?.isNone then firstSame? := some at_
   let scr := scrutinee.text src
-  if let some (pre, post) := Fren.Core.membershipParts? infos scr slot then
+  if let some (pre, post, test) := Fren.Core.membershipParts? infos scr slot then
     let r := Fren.Core.withParens src (toRange scrutinee.span)
-    lintEdits .matchLikeMembership span (Fren.Core.membershipMsg (pre ++ scr.text ++ post))
+    lintEdits .matchLikeMembership span (Fren.Core.membershipMsg (pre ++ scr.text ++ post) test)
       #[({ start := span.start, stop := r.start }, pre), ({ start := r.stop, stop := span.stop }, post)]
   unless flat do return
   let .enum ep := ty | return
@@ -1685,6 +1686,21 @@ partial def variantTest? (cx : ExprCtx) : Expr → M (Option Fren.Core.VariantTe
   | .bin _ "=" l v => do
     let some (en, i, t) ← variantOf? cx v | return none
     return some { scrutinee := ← srcAt l.span, enum := en, variants := #[(i, t)] }
+  | .is _ l p => do
+    -- `x is P`, of the variants that `P` names, each with only `_` in its
+    -- payload, so that it tests the variant alone.
+    let st ← get
+    let mut out : Array (Nat × String) := #[]
+    let mut en? : Option Name := none
+    for alt in p.alts do
+      let .variant span segs args := alt | return none
+      unless (args.getD #[]).all (· matches .wild _) do return none
+      let .ok (.variant en i) := st.table.resolvePath st.scope (segNames segs) cx.shadowing | return none
+      unless en?.all (· == en.path) do return none
+      en? := some en.path
+      out := out.push (i, ← srcAt span)
+    let some en := en? | return none
+    return some { scrutinee := ← srcAt l.span, enum := en, variants := out }
   | .bin _ "in" l (.set _ vs) => do
     let mut out : Array (Nat × String) := #[]
     let mut en? : Option Name := none
@@ -2593,7 +2609,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       if let some t := tests[i]! then
         out := s!"(ite {t} {bodies[i]!} {out})"
     return (out, ty?.get!)
-  | .is _ scrutinee p =>
+  | .is span scrutinee p =>
     let (s, ts) ← elabExpr cx scrutinee
     unless ts matches .enum _ | .bool | .int | .nat | .string do err scrutinee.span (Fren.Core.isScrutineeMsg ts.show)
     let (q, bs, test) ← resolvePattern cx ts s false true p
@@ -2602,6 +2618,13 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     | .error (.binder k, msg) => err bs[k]!.ident.span msg
     | .error (.alternative j, msg) => err p.alternatives[j]!.span msg
     | .error (.whole, msg) => err p.span msg
+    if cx.noteIndexes then
+      -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`).
+      let irrefutable := Fren.Core.irrefutableIs (Fren.Core.matchesEvery (← patSigs) ts.patTy q)
+      if irrefutable then lint .irrefutableIs span (Fren.Core.irrefutableIsMsg ts.show (q matches .wild _))
+      let texts ← p.alts.mapM (srcAt ·.span)
+      if Fren.Core.isEquality (Fren.Core.equatable q texts) irrefutable then
+        lintFix .isEquality span (Fren.Core.isEqualityMsg (scrutinee.text (← get).src) texts)
     return (test.getD "true", .bool)
   | .«let» _ defs body isWhere =>
     let appMark := (← get).natApps.size

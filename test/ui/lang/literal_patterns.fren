@@ -1,4 +1,5 @@
 -- Literal patterns, on `Bool`, `Int` and `String`, in `match` and `is`, in both front ends.
+set_option fren.lint.is_equality "allow"
 
 pub enum Reply { Ok(Int), Err(String) }
 

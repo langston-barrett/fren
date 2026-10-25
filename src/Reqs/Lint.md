@@ -28,10 +28,11 @@ use view::Severity
 | `bool_equality` | `F0731` | `pedantic` | `allow` | `a = b` on `Bool`s (see [Boolean equality](Lint/Pedantic.md#boolean-equality)) |
 | `card_zero` | `F0716` | `style` | `warn` | a comparison of a set's or relation's `card` with `0` or `1` that says whether it is empty, such as `s.card = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
 | `case_split_reqs` | `F0729` | `pedantic` | `allow` | two or more requirements `when T, y = e` of one output, whose tests are of which variant one scrutinee is (see [Variant tests](Lint/Pedantic.md#variant-tests)) |
+| `chainable_comparison` | `F0804` | `style` | `warn` | two adjacent conjuncts of an `and` that one chained comparison writes, such as `lo <= x and x < hi` (see [Chained comparisons](Lint/Style/Comparisons.md#chained-comparisons)) |
 | `collapsible_when` | `F0723` | `style` | `warn` | a `when` whose body is a `when`, or an `unless` whose body is an `unless` (see [Conditionals](Lint/Style.md#conditionals)) |
 | `const_is_empty` | `F0755` | `suspicious` | `warn` | a test of a literal whose value the literal fixes, such as `"ab".len = 0` (see [Tests of literals](Lint/Suspicious/Literals.md#tests-of-literals)) |
 | `constant_output` | `F0719` | `complexity` | `warn` | a defined output whose definition mentions no variable and no uninterpreted function (see [Constant outputs](Lint/Complexity.md#constant-outputs)) |
-| `contradictory_comparisons` | `F0766` | `suspicious` | `warn` | two comparisons of one operand that cannot both hold, joined by `and`, or of which one always holds, joined by `or`, such as `x < 3 and x > 5` (see [Comparisons](Lint/Suspicious/Comparisons.md)) |
+| `contradictory_comparisons` | `F0766` | `suspicious` | `warn` | two comparisons of one operand that cannot both hold, joined by `and`, or of which one always holds, joined by `or`, such as `x < 3 and x > 5`, or in a chained comparison, such as `5 < x < 3` (see [Comparisons](Lint/Suspicious/Comparisons.md)) |
 | `dead_code` | `F0711` | `unused` | `warn` | a private enumeration, record, abstract type, function or constant that nothing in its file uses (see [Dead code](Lint/Unused.md#dead-code)) |
 | `definable_output` | `F0720` | `pedantic` | `allow` | an output that one requirement equates with an expression of other variables (see [Definable outputs](Lint/Pedantic.md#definable-outputs)) |
 | `disallowed_names` | `F0752` | `style` | `warn` | a declared name that is a placeholder, such as `foo` (see [Names](Lint/Style.md#names)) |
@@ -54,13 +55,15 @@ use view::Severity
 | `int_plus_one` | `F0741` | `complexity` | `warn` | a non-strict comparison of integers with an operand off by one, such as `x >= y + 1` (see [Off-by-one comparisons](Lint/Complexity/Comparisons.md#off-by-one-comparisons)) |
 | `invalid_upcast_comparisons` | `F0798` | `pedantic` | `allow` | a comparison of a method's call that its least value fixes, such as `x.abs >= 0` or `s.index_of(t, i) < -1` (see [Ranges of methods](Lint/Pedantic.md#ranges-of-methods)) |
 | `invisible_characters` | `F0769` | `suspicious` | `warn` | a string literal with an invisible character, or a string literal or comment with a bidirectional control (see [Invisible characters](Lint/Suspicious/Literals.md#invisible-characters)) |
+| `irrefutable_is` | `F0803` | `suspicious` | `warn` | a pattern test whose pattern matches every value, such as `x is _` (see [Pattern tests](Lint/Suspicious.md#pattern-tests)) |
+| `is_equality` | `F0802` | `style` | `warn` | a pattern test that names only variants without a payload, such as `x is E::A` (see [Pattern tests](Lint/Style/Comparisons.md#pattern-tests)) |
 | `just_underscores_and_digits` | `F0751` | `style` | `warn` | a declared name made only of `_` and digits, such as `_1` (see [Names](Lint/Style.md#names)) |
 | `length_zero` | `F0715` | `style` | `warn` | a comparison of a string's or sequence's `len` with `0` or `1`, or of its `at(0)` with `""` or `[]`, that says whether it is empty, such as `s.len = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
 | `literal_dot_in_pattern` | `F0794` | `suspicious` | `warn` | a `.` between two letters or digits in a pattern, such as `r"v1.2"` (see [Dots in patterns](Lint/Suspicious/Literals.md#dots-in-patterns)) |
 | `manual_method` | `F0732` | `complexity` | `warn` | a search written with `index_of`, `slice` or `at`, such as `s.index_of(t, 0) >= 0` (see [Searches](Lint/Complexity/Methods.md#searches)) |
 | `manual_pattern_char_comparison` | `F0756` | `style` | `warn` | an alternation of single characters in a pattern, such as `a\|b` (see [Classes of characters](Lint/Style.md#classes-of-characters)) |
 | `many_single_char_names` | `F0795` | `pedantic` | `allow` | a component, function or global expectation that declares more than four single-character names (see [Names](Lint/Pedantic.md#names)) |
-| `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false` (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
+| `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false`, and bind no name (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
 | `match_same_arms` | `F0725` | `pedantic` | `allow` | an arm of a `match` with the same body as another (see [Matches](Lint/Pedantic.md#matches)) |
 | `membership_chain` | `F0718` | `pedantic` | `allow` | `x = a or x = b or x = c`, or `x != a and x != b and x != c`, three or more (see [Membership chains](Lint/Pedantic.md#membership-chains)) |
 | `min_ident_chars` | `F0785` | `restriction` | `allow` | a declared name of one character, such as `x` (see [Names](Lint/Restriction.md#names)) |
@@ -200,6 +203,10 @@ theirs is in the group of the same name: a Clippy lint in `pedantic` or
   patterns](Lint/Style.md#trivial-patterns)), so both are `warn`.
 - `precedence`: Clippy's is in `complexity`, but here it is in
   `restriction`, and allowed (see [Precedence](Lint/Restriction.md#precedence)).
+- `is_equality`: its Clippy counterpart, `equatable_if_let`, is in
+  `nursery`, which is about a lint's maturity rather than a judgement of
+  style, so it is in `style` (see [Pattern
+  tests](Lint/Style/Comparisons.md#pattern-tests)), and `warn`.
 - `redundant_bool_type`: its Clippy counterpart, `redundant_type_annotations`,
   is in `restriction`, which is allowed by default. The `?` of a name
   already gives its type, so the `: Bool` only repeats it: it is in
@@ -505,6 +512,7 @@ what the spec means:
 | `almost_complete_range` | replaces the pattern with one that completes each range |
 | `bool_equality` | replaces `a = b` with `a iff b` |
 | `card_zero` | compares the set with `{}`, as the message suggests |
+| `chainable_comparison` | replaces the conjuncts with the chained comparison |
 | `collapsible_when` | collapses the two conditionals into one, as the message suggests |
 | `double_comparison` | replaces the two comparisons with the one they are |
 | `double_neg` | replaces `- -x` with `x` |
@@ -517,13 +525,14 @@ what the spec means:
 | `if_chain_match` | replaces the chain with a `match` |
 | `if_not_else` | removes the negation and swaps the branches, as the message suggests |
 | `index_after_use` | swaps the operands of the `and` |
-| `int_plus_one` | replaces the comparison with the strict one, without the offset |
+| `int_plus_one` | replaces the comparison with the strict one, without the offset, within its chained comparison if it is in one |
 | `invisible_characters` | writes each character as an escape in a literal, and removes it from a comment |
+| `is_equality` | replaces `x is E::A` with `x = E::A`, and `x is E::A \| E::B` with `x in {E::A, E::B}` |
 | `length_zero` | compares the string with `""`, or the sequence with `[]`, as the message suggests |
 | `literal_dot_in_pattern` | writes each `.` that it fires on as `[.]` |
 | `manual_method` | replaces the comparison with a call of `contains?`, `starts_with?` or `ends_with?`, or `s.slice(i, 1)` with `s.at(i)`, as the message suggests |
 | `manual_pattern_char_comparison` | replaces the pattern with one that writes each alternation of single characters as a class |
-| `match_like_membership` | replaces the `match` with a membership, `x in {E::A, E::B}`, as the message suggests |
+| `match_like_membership` | replaces the `match` with a membership, `x in {E::A, E::B}`, or a pattern test, `x is E::A(_) \| E::B`, as the message suggests |
 | `match_same_arms` | merges the arms into one with an or-pattern, removes those with the body of the `_` arm, or replaces the `match` with its body, as the message suggests |
 | `membership_chain` | replaces the chain with a membership, `x in {a, b, c}`, or `not x in {a, b, c}` |
 | `needless_bool_assign` | replaces the conditional with `C iff X`, or `C != X` |

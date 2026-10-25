@@ -1,5 +1,6 @@
 -- Chained comparisons: `a < b <= c` is `a < b and b <= c`, with `b` one
 -- expression.
+set_option fren.lint.chainable_comparison "allow"
 
 comp bounds {
     in i: Int

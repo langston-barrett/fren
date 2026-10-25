@@ -1,4 +1,6 @@
 -- Pattern tests, `e is P`, in both front ends.
+set_option fren.lint.irrefutable_is "allow"
+set_option fren.lint.match_like_membership "allow"
 
 pub enum Shape { Circle(Int), Rect(Int, Int), Empty }
 

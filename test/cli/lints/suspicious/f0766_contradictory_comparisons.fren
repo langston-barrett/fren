@@ -1,4 +1,6 @@
--- `contradictory_comparisons`, on variants and on integers inside a conditional; it has no fix.
+-- `contradictory_comparisons`, on variants, on integers inside a conditional, and in a chained comparison; it has no fix.
+set_option fren.lint.chainable_comparison "allow"
+
 enum Mode { Heat, Cool, Off }
 
 comp c {
@@ -6,7 +8,9 @@ comp c {
     in x: Int
     pub out on?
     pub out y: Int
+    pub out z?
 
     req r1: on? iff (m != Mode::Heat or m != Mode::Cool)
     req r2: y = if 5 < x and x < 3 then 1 else 0
+    req r3: z? iff 3 <= x <= 2
 }

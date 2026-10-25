@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCore.Names
 import FrenCore.Nfc
+import FrenCore.Patterns
 import FrenCore.Regex
 import FrenCore.Simplify
 -- keep-sorted end
@@ -132,6 +133,9 @@ inductive Lint where
   | invalidUpcastComparisons
   | unicodeNotNfc
   | unnecessaryTrailingComma
+  | isEquality
+  | irrefutableIs
+  | chainableComparison
   deriving Inhabited, BEq, DecidableEq, Repr
 
 def Lint.all : Array Lint :=
@@ -150,7 +154,8 @@ def Lint.all : Array Lint :=
     .allowAttributes, .wildcardEnumMatchArm, .needlessRawStrings, .nonAsciiLiteral, .moduleNameRepetitions,
     .minIdentChars, .absolutePaths, .precedence, .unnecessaryStructInitialization, .unusedLintSetting,
     .unusedAssumption, .unrelatedBinders, .literalDotInPattern, .invalidUpcastComparisons,
-    .unicodeNotNfc, .unnecessaryTrailingComma]
+    .unicodeNotNfc, .unnecessaryTrailingComma,
+    .isEquality, .irrefutableIs, .chainableComparison]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -238,6 +243,9 @@ def Lint.name : Lint → String
   | .invalidUpcastComparisons => "invalid_upcast_comparisons"
   | .unicodeNotNfc => "unicode_not_nfc"
   | .unnecessaryTrailingComma => "unnecessary_trailing_comma"
+  | .isEquality => "is_equality"
+  | .irrefutableIs => "irrefutable_is"
+  | .chainableComparison => "chainable_comparison"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -327,6 +335,9 @@ def Lint.code : Lint → String
   | .invalidUpcastComparisons => "F0798"
   | .unicodeNotNfc => "F0799"
   | .unnecessaryTrailingComma => "F0801"
+  | .isEquality => "F0802"
+  | .irrefutableIs => "F0803"
+  | .chainableComparison => "F0804"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -373,14 +384,14 @@ def Lint.group : Lint → Group
   | .globImports | .lengthZero | .cardZero | .unlessNot | .collapsibleWhen | .matchLikeMembership | .redundantBindings
   | .doubleNeg | .negMultiply | .trivialPattern | .redundantBoolType | .moduleInception | .enumVariantNames
   | .upperCaseAcronyms | .justUnderscoresAndDigits | .disallowedNames | .assertionsOnConstants
-  | .manualPatternCharComparison => .style
+  | .manualPatternCharComparison | .isEquality | .chainableComparison => .style
   | .nonminimalBool | .singletonMembership | .constantOutput | .doubleComparison | .manualMethod | .elseExtends
   | .identityOp | .doubleParens | .intPlusOne | .redundantMethodChain | .trivialMatch | .needlessBoolAssign
   | .needlessMatch | .redundantSlicing | .redundantComparisons | .unnecessaryStructInitialization => .complexity
   | .indexAfterUse | .eqOp | .sameBranches | .duplicateElements | .emptyArgument
   | .suspiciousUnaryOpFormatting | .noEffectReplace | .constIsEmpty | .almostCompleteRange | .duplicateConstraint
   | .invisibleCharacters | .negativePosition | .absurdExtremeComparisons | .erasingOp | .ifsSameCond
-  | .contradictoryComparisons | .unrelatedBinders | .literalDotInPattern => .suspicious
+  | .contradictoryComparisons | .unrelatedBinders | .literalDotInPattern | .irrefutableIs => .suspicious
   | .membershipChain | .definableOutput | .ifNotElse | .matchSameArms | .wildcardSingleVariant | .ifChainMatch
   | .caseSplitReqs | .boolEquality | .zeroSizedMapValues | .manySingleCharNames | .similarNames
   | .tooManyLines | .invalidUpcastComparisons | .unicodeNotNfc | .unnecessaryTrailingComma => .pedantic
@@ -1469,7 +1480,7 @@ def bareOperand (outer inner : Nat) (assoc : Assoc) (right : Bool) : Bool :=
 receiver and then its arguments; another atom's are the expressions in it,
 such as a function's arguments, which no operator lint relates. A pattern
 test, `e is P`, has its scrutinee as its operand, and binds as a
-comparison. A chained comparison of `ops` operators binds as a comparison,
+comparison. A chained comparison of the operators `ops` binds as a comparison,
 and its operands are each in a comparison's operand slot, but the rules do
 not look inside it. -/
 inductive BKind where
@@ -1482,7 +1493,7 @@ inductive BKind where
   | neg
   | method (name : String)
   | patternTest
-  | chain (ops : Nat)
+  | chain (ops : Array String)
   /-- A `let`, which binds as loosely as `when`; only its body is looked
   inside. -/
   | «let»
@@ -1594,7 +1605,7 @@ def BKind.slots : BKind → Array (Option Slot)
   -- Its scrutinee, the left operand of a comparison.
   | k@.patternTest => #[some ⟨k.prec, k.assoc, false⟩]
   -- Each operand after the first is on the right of a comparison.
-  | k@(.chain ops) => #[some ⟨k.prec, k.assoc, false⟩] ++ Array.replicate ops (some ⟨k.prec, k.assoc, true⟩)
+  | k@(.chain ops) => #[some ⟨k.prec, k.assoc, false⟩] ++ Array.replicate ops.size (some ⟨k.prec, k.assoc, true⟩)
   | _ => #[]
 
 /-- An expression, rewritten: its text and precedence. -/
@@ -1824,6 +1835,12 @@ structure ArmInfo where
   binds : Bool
   /-- Each alternative is a variant without a payload. -/
   noPayload : Bool
+  /-- Each alternative is a variant without a payload or a literal
+  (`equatable`). -/
+  equatable : Bool := false
+  /-- Its pattern overlaps another only where one contains the other
+  (`disjointPat`); so does `_`. -/
+  disjoint : Bool := false
   /-- Its body, as written, with the parentheses around it. -/
   body : BText
   deriving Inhabited
@@ -1923,36 +1940,111 @@ def sameArmsEdits (range : Range) (arms : Array ArmInfo) (armRanges patRanges bo
     i := j + 1
   return edits
 
-/-- Whether `match_like_membership` fires, and whether its fix is a
-negated membership, of the variants whose arms are `false`
-(`lint::match_like_membership`). -/
-def matchMembership (boolBodies noPayloads wildcard wildcardTrue : Bool) (nTrue nFalse : Nat) : Bool × Bool :=
-  (boolBodies && noPayloads, if wildcard then wildcardTrue else nTrue > nFalse)
+/-- Whether `match_like_membership` fires, whether its fix is negated, of
+the alternatives whose arms are `false`, and whether it is a pattern test
+rather than a comparison (`lint::match_like_membership`). -/
+def matchMembership (boolBodies binds disjoint trueFirst falseFirst equatableTrue equatableFalse wildcard
+    wildcardTrue : Bool) (nTrue nFalse : Nat) : Bool × Bool × Bool :=
+  let negated := if wildcard then wildcardTrue else if disjoint then nTrue > nFalse else falseFirst
+  (boolBodies && !binds && (disjoint || if negated then falseFirst else trueFirst), negated,
+    !(if negated then equatableFalse else equatableTrue))
 
 /-- The fix of `match_like_membership`, if it fires, as the texts before
 and after the scrutinee, which is `scrutinee` as written, with the
-parentheses around it; `slot` is where the `match` is. -/
-def membershipParts? (arms : Array ArmInfo) (scrutinee : BText) (slot : Option Slot) : Option (String × String) := do
+parentheses around it, and whether it is a pattern test; `slot` is where
+the `match` is. -/
+def membershipParts? (arms : Array ArmInfo) (scrutinee : BText) (slot : Option Slot) :
+    Option (String × String × Bool) := do
   let lit (b : Bool) (a : ArmInfo) := a.body.text == toString b
   let boolBodies := arms.all (fun a => lit true a || lit false a) && arms.any (lit true) && arms.any (lit false)
   let wild? := arms.find? (·.wildcard)
   let named (b : Bool) := (arms.filter fun a => !a.wildcard && lit b a).flatMap (·.alts)
-  let (fires, negated) := matchMembership boolBodies (arms.all (·.noPayload)) wild?.isSome (wild?.any (lit true))
-    (named true).size (named false).size
+  -- Whether every arm whose body is `b` comes before every other arm but `_`.
+  let first (b : Bool) := Id.run do
+    let mut other := false
+    for a in arms do
+      if a.wildcard then continue
+      if !lit b a then other := true
+      else if other then return false
+    return true
+  let equatable (b : Bool) := arms.all fun a => a.wildcard || !lit b a || a.equatable
+  let (fires, negated, test) := matchMembership boolBodies (arms.any (·.binds)) (arms.all (·.disjoint)) (first true)
+    (first false) (equatable true) (equatable false) wild?.isSome (wild?.any (lit true)) (named true).size
+    (named false).size
   guard fires
   let vs := named !negated
-  let (op, prec) := if vs.size == 1 then (s!" {if negated then "!=" else "="} {vs[0]!}", 5)
+  let (op, prec) := if test then (s!" is {" | ".intercalate vs.toList}", if negated then 4 else 5)
+    else if vs.size == 1 then (s!" {if negated then "!=" else "="} {vs[0]!}", 5)
     else (s!" in \{{", ".intercalate vs.toList}}", if negated then 4 else 5)
   let bareScrutinee := bareOperand 5 scrutinee.prec .nonAssoc false
-  let pre := (if negated && vs.size > 1 then "not " else "") ++ (if bareScrutinee then "" else "(")
+  let pre := (if negated && (test || vs.size > 1) then "not " else "") ++ (if bareScrutinee then "" else "(")
   let post := (if bareScrutinee then "" else ")") ++ op
   let bare := match slot with | some s => bareOperand s.outer prec s.assoc s.right | none => true
-  return if bare then (pre, post) else ("(" ++ pre, post ++ ")")
+  return if bare then (pre, post, test) else ("(" ++ pre, post ++ ")", test)
 
-def membershipMsg (replacement : String) : Msg :=
-  { code? := some Lint.matchLikeMembership.code, headline := "this `match` only tests which variant its scrutinee is"
+/-- `match_like_membership`'s message, whose fix is `replacement`, a
+pattern test if `test`. -/
+def membershipMsg (replacement : String) (test : Bool) : Msg :=
+  { code? := some Lint.matchLikeMembership.code, headline := "this `match` only tests which of its patterns its scrutinee matches"
     label? := some "each arm is `true` or `false`"
-    fixes := #[{ msg := "write it as a comparison", replacement }] }
+    fixes := #[{ msg := if test then "write it as a pattern test" else "write it as a comparison", replacement }] }
+
+/-! ## Pattern tests -/
+
+/-- Whether the pattern `p` matches every value of `ty`: `_` is not useful
+after it, as for an arm after it (`Reqs/Lang/Patterns`). -/
+def matchesEvery (sigs : Sigs) (ty : PatTy) (p : Pat) : Bool := !useful sigs [ty] #[[p]] [.wild]
+
+/-- Whether `irrefutable_is` fires on `e is P`, from whether `P` matches
+every value of `e`'s type (`lint::irrefutable_is`). -/
+def irrefutableIs (matchesEvery : Bool) : Bool := matchesEvery
+
+/-- `e is P` that is always `true`, where `e` is a `ty`. -/
+def irrefutableIsMsg (ty : String) (wildcard : Bool) : Msg :=
+  { code? := some Lint.irrefutableIs.code, headline := "this pattern test is always `true`"
+    label? := some (if wildcard then "`_` matches every value" else s!"matches every value of `{ty}`") }
+
+/-- The alternatives of `p`'s own or-pattern, or `p` itself. -/
+def Pat.top : Pat → Array Pat
+  | .or alts => alts
+  | p => #[p]
+
+/-- Whether an alternative, written `text`, is one that `=` and `in` can
+write: a variant without a payload, `true`, `false`, a string literal, or
+an integer literal, not a range of one value. -/
+def equatableAlt (p : Pat) (text : String) : Bool :=
+  match p with
+  | .ctor _ args => args.isEmpty
+  | .bool _ | .str _ => true
+  | .int (some a) (some b) => a == b && writtenForm text == toString a
+  | _ => false
+
+/-- Whether each alternative of `p`, written `texts`, is one that `=` and
+`in` can write (`equatableAlt`). -/
+def equatable (p : Pat) (texts : Array String) : Bool :=
+  p.top.size == texts.size && (p.top.zip texts).all fun (a, t) => equatableAlt a t
+
+/-- Whether `p`, written `texts`, overlaps another such pattern only where
+one contains the other: each alternative is a literal, `true`, `false`, or
+a variant whose payload's patterns are `_` (`lint::match_like_membership`). -/
+def disjointPat (p : Pat) (texts : Array String) : Bool :=
+  p.top.size == texts.size && (p.top.zip texts).all fun (a, t) =>
+    equatableAlt a t || match a with | .ctor _ args => args.all (· matches .wild false) | _ => false
+
+/-- Whether `is_equality` fires on `e is P`, from whether each alternative
+of `P` is a variant without a payload or a literal, and whether
+`irrefutable_is` fires on it (`lint::is_equality`). -/
+def isEquality (equatable irrefutable : Bool) : Bool := equatable && !irrefutable
+
+/-- `is_equality`'s message on `e is P`, from `e` as written, with the
+parentheses around it, and the alternatives of `P`. -/
+def isEqualityMsg (scrutinee : BText) (alts : Array String) : Msg :=
+  let x := scrutinee.inSlot (some ⟨5, .nonAssoc, false⟩)
+  let fixed := if let #[a] := alts then s!"{x} = {a}" else s!"{x} in \{{", ".intercalate alts.toList}}"
+  { code? := some Lint.isEquality.code
+    headline := if alts.size == 1 then "this pattern test is an equation" else "this pattern test is a membership"
+    label? := some "names only variants without a payload, or literals"
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
 /-- Whether `wildcard_single_variant` fires on a `_` arm, from the number
 of variants it covers (`lint::wildcard_single_variant`). -/
@@ -2693,11 +2785,12 @@ def ifsSameCondMsg (test : String) : Msg :=
       "note: one of the tests is probably not the one meant"] }
 
 /-- A message of an operator or method lint, whose first fix replaces the
-text at `ref`. -/
+text at `ref`, or from `ref` to `last?`, which ends it. -/
 structure OpReport (α : Type) where
   lint : Lint
   ref : α
   msg : Msg
+  last? : Option α := none
   deriving Inhabited
 
 def BNode.kind : BNode α → BKind | .mk k .. => k
@@ -3100,6 +3193,26 @@ def contradictoryAt? (src : Array Char) (variant? : α → Option String) (n : B
   unless fires do none
   return { lint := .contradictoryComparisons, ref := n.ref, msg := contradictoryMsg conj }
 
+/-- Whether `contradictory_comparisons` fires on `a OP₁ x OP₂ b` within a
+chained comparison, where `a` and `b` are integers: on `x OP₁' a and x OP₂
+b`, with `OP₁'` the mirror of `OP₁` (`lint::contradictory_chain`). -/
+def contradictoryChain (c1 : Comparison) (a : Int) (c2 : Comparison) (b : Int) : Bool :=
+  contradictoryComparisons true c1.mirror a c2 b
+
+/-- `contradictory_comparisons` on `n`, a chained comparison of `ops`: at
+each operand between two integer literals (`lint::contradictory_chain`). -/
+def contradictoryChainAt? (src : Array Char) (n : BNode α) (ops : Array String) : Option (OpReport α) := do
+  guard (n.kids.size == ops.size + 1)
+  let fires := (List.range (ops.size - 1)).any fun i => Id.run do
+    let (some c1, some c2) := (Comparison.ofOp? ops[i]!, Comparison.ofOp? ops[i + 1]!) | return false
+    let (some a, some b) := (n.kids[i]?.bind (intLiteral? src ·), n.kids[i + 2]?.bind (intLiteral? src ·))
+      | return false
+    return contradictoryChain c1 a c2 b
+  guard fires
+  let msg := contradictoryMsg true
+  return { lint := .contradictoryComparisons, ref := n.ref
+           msg := { msg with notes := #["note: a bound may not be the one meant, or the chain may order the wrong way"] } }
+
 /-- `redundant_comparisons` on `n`, an `and` or an `or`, in `slot` within
 `parent` (`lint::redundant_comparisons`). Two comparisons written the same
 are left to `eq_op`. -/
@@ -3165,10 +3278,110 @@ def ifsSameCondAt (src : Array Char) (n : BNode α) : Array (OpReport α) :=
     unless ifsSameCond earlier.isSome do none
     return { lint := .ifsSameCond, ref := t.ref, msg := ifsSameCondMsg (earlier.getD "") }
 
+/-- Whether `chainable_comparison` joins the conjuncts `l and r`, and
+whether its fix writes `l`, and `r`, the other way round
+(`lint::chainable_comparison`): from whether each orders ascending, with
+`<` and `<=`, whether each is one comparison, and which of their first and
+last operands are written the same. -/
+def chainableComparison (lAsc rAsc lSingle rSingle lastFirst firstLast firstFirst lastLast : Bool) :
+    Bool × Bool × Bool :=
+  let keep := lAsc == rAsc && lastFirst && !firstLast
+  let flipLeft := lSingle && lAsc != rAsc && firstFirst && !lastLast
+  let flipRight := rSingle && lAsc != rAsc && lastLast && !firstFirst
+  let flipBoth := lSingle && rSingle && lAsc == rAsc && firstLast && !lastFirst
+  (keep || flipLeft || flipRight || flipBoth, flipLeft || flipBoth, flipRight || flipBoth)
+
+/-- `chainable_comparison`'s message, whose fix is `fixed`, or none but a
+note if a comment between the comparisons would be lost (`commented`). -/
+def chainableComparisonMsg (fixed : String) (commented : Bool) : Msg :=
+  { code? := some Lint.chainableComparison.code, headline := "these comparisons can be chained"
+    label? := some "comparisons that share an operand"
+    notes := if commented then #[s!"help: write `{fixed}`",
+      "note: `fren fix` leaves this, since the chain would lose the comment between the comparisons"] else #[]
+    fixes := if commented then #[] else #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-- A conjunct that `chainable_comparison` can join: a comparison that
+orders, or a chained comparison, as its operands and operators. -/
+structure ChainPart (α : Type) where
+  operands : Array (BNode α)
+  ops : Array String
+
+def ChainPart.ascending (p : ChainPart α) : Bool := p.ops.all (· matches "<" | "<=")
+
+/-- The conjunct, written the other way round: `a < b` as `b > a`. -/
+def ChainPart.flip (p : ChainPart α) : ChainPart α :=
+  { operands := p.operands.reverse
+    ops := p.ops.reverse.map fun op => ((Comparison.ofOp? op).map (·.mirror.op)).getD op }
+
+/-- `n` as a conjunct that `chainable_comparison` can join, if it is one. -/
+def chainPart? (n : BNode α) : Option (ChainPart α) :=
+  match n.kind with
+  | .bin op => if ["<", "<=", ">", ">="].contains op && n.kids.size == 2 then some ⟨n.kids, #[op]⟩ else none
+  | .chain ops => if ops.size + 1 == n.kids.size then some ⟨n.kids, ops⟩ else none
+  | _ => none
+
+/-- The text of the chained comparison of `operands` and `ops`, each
+operand in parentheses where it needs them, where `followed` says whether
+an operator follows it. -/
+def chainText (src : Array Char) (operands : Array (BNode α)) (ops : Array String) (followed : Bool) : BText :=
+  let slots := (BKind.chain ops).slots
+  let texts := operands.mapIdx fun i k => (k.text src).inSlot (slots[i]?.join) (i + 1 < operands.size || followed)
+  let rest := (ops.zip (texts.extract 1)).foldl (fun acc (op, t) => s!"{acc} {op} {t}") (texts[0]?.getD "")
+  { text := rest, prec := (BKind.chain ops).prec }
+
+/-- The conjuncts of the run of `and` that `n` is the top of, in order:
+through each left operand that is an `and` not in parentheses. -/
+partial def conjuncts (src : Array Char) (n : BNode α) : Array (BNode α) :=
+  match n.kind, n.kids with
+  | .bin "and", #[l, r] =>
+    (if l.kind == .bin "and" && !enclosed src n.range l.range then conjuncts src l else #[l]).push r
+  | _, _ => #[n]
+
+/-- `chainable_comparison` on `n`, an `and` in `slot` within `parent`, if
+it is the top of a run of `and` (`lint::chainable_comparison`): one
+report for each run of adjacent conjuncts that chain, from the first to
+the last, which are not in parentheses. -/
+def chainableAt [Inhabited α] (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) : Array (OpReport α) := Id.run do
+  let inRun := slot.any (fun s => s.outer == (BKind.bin "and").prec && !s.right) && !enclosed src parent n.range
+  if n.kind != .bin "and" || inRun then return #[]
+  let cs := conjuncts src n
+  let form (k : BNode α) := writtenForm (textOf src k.range)
+  let bare (k : BNode α) := !enclosed src n.range k.range
+  let mut out := #[]
+  -- The run so far: its first conjunct, the chain, and how many it joins.
+  let mut run : Option (Nat × ChainPart α × Nat) := none
+  for i in [0:cs.size] do
+    let k := cs[i]!
+    let next? := if bare k then chainPart? k else none
+    let joined? := do
+      let (start, l, m) ← run
+      let r ← next?
+      let lSingle := m == 1 && l.ops.size == 1
+      let (fires, fl, fr) := chainableComparison l.ascending r.ascending lSingle (r.ops.size == 1)
+        (form l.operands.back! == form r.operands[0]!) (form l.operands[0]! == form r.operands.back!)
+        (form l.operands[0]! == form r.operands[0]!) (form l.operands.back! == form r.operands.back!)
+      guard fires
+      let l := if fl then l.flip else l
+      let r := if fr then r.flip else r
+      pure (start, ({ operands := l.operands ++ r.operands.extract 1, ops := l.ops ++ r.ops } : ChainPart α), m + 1)
+    match joined? with
+    | some j => run := some j
+    | none =>
+      if let some (start, c, m) := run then if m ≥ 2 then out := out.push (start, i - 1, c)
+      run := next?.map (i, ·, 1)
+  if let some (start, c, m) := run then if m ≥ 2 then out := out.push (start, cs.size - 1, c)
+  return out.map fun (a, b, c) =>
+    let whole := a == 0 && b + 1 == cs.size
+    let range : Range := { start := cs[a]!.range.start, stop := cs[b]!.range.stop }
+    let t := chainText src c.operands c.ops (followedAt src range)
+    let fixed := if whole then placed src n slot parent t else t.text
+    let commented := (withoutComments (textOf src range)).length != (textOf src range).length
+    { lint := .chainableComparison, ref := cs[a]!.ref, last? := some cs[b]!.ref, msg := chainableComparisonMsg fixed commented }
+
 /-- The messages of the operator and method lints in `n`, which is in
 `slot` within `parent`, outermost first, where `inElse` says that `n` is
 the `else` branch of a conditional. -/
-partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (isAbs : α → Bool)
+partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (isAbs : α → Bool)
     (n : BNode α) (slot : Option Slot) (parent : Range) (inElse : Bool := false) : Array (OpReport α) :=
   let slots := n.kind.slots
   let own := match n.kind with
@@ -3183,8 +3396,10 @@ partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (variant? : α
         ++ (identityOpAt? src n slot parent).toArray ++ (suspiciousUnaryAt? src n).toArray
         ++ (erasingOpAt? src n).toArray ++ (firstEmptyAt? src n slot parent).toArray
         ++ (invalidUpcastAt? src isAbs n).toArray ++ operands ++ precedenceAt src n
+        ++ (if op == "and" then chainableAt src n slot parent else #[])
     | .ite => (needlessBoolAssignAt? src n slot parent).toArray ++ (if inElse then #[] else ifsSameCondAt src n)
     | .method _ => (methodCallAt? src n slot parent).toArray
+    | .chain ops => (contradictoryChainAt? src n ops).toArray
     | _ => #[]
   -- A receiver needs parentheses as an operand does.
   let slots := match n.kind, n.kids[0]? with
@@ -3198,7 +3413,7 @@ partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (variant? : α
 in `src` (`Reqs/Lint/Complexity/Comparisons`), where `boolEq` says whether a
 comparison compares `Bool`s, `variant?` which variant without a payload a
 path is, if it is one, and `isAbs` whether an expression is a call of `abs`. -/
-def opReports (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (isAbs : α → Bool)
+def opReports [Inhabited α] (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (isAbs : α → Bool)
     (root : BNode α) : Array (OpReport α) :=
   opReportsIn (upTo src root.range) boolEq variant? isAbs root none root.range
 
@@ -3240,6 +3455,12 @@ def intPlusOne (op : Comparison) (l r : Offset) : Bool × Comparison × Bool :=
   | .le, .plusOne, _ => (true, .lt, true)
   | .le, _, r => (r matches .minusOne, .lt, false)
   | _, _, _ => (false, op, false)
+
+/-- Whether `int_plus_one` fires on the comparison `i` of a chained
+comparison of `n`, where its fix of that comparison alone drops the
+offset of its left operand if `dropLeft`: only if that operand is at an
+end of the chain, in no other comparison (`lint::int_plus_one_in_chain`). -/
+def intPlusOneInChain (dropLeft : Bool) (i n : Nat) : Bool := if dropLeft then i == 0 else i + 1 == n
 
 def intPlusOneMsg (replacement : String) : Msg :=
   { code? := some Lint.intPlusOne.code, headline := "over integers, this is a strict comparison"
@@ -3324,7 +3545,7 @@ def negText (t : String) : String := if t.startsWith "-" then s!"- {t}" else s!"
 operands, in order. An
 atom's operands, such as an application's arguments, are where any
 expression can be written. -/
-partial def shapeReports (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) : Array (ShapeReport α) :=
+partial def shapeReports [Inhabited α] (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) : Array (ShapeReport α) :=
   let .mk kind range ref kids := n
   let text (k : BNode α) : BText := match k with | .mk kk kr .. => { text := textOf src kr, prec := kk.prec }
   let isOne (k : BNode α) : Bool := match k with | .mk .atom kr _ _ => textOf src kr == "1" | _ => false
@@ -3334,6 +3555,11 @@ partial def shapeReports (src : Array Char) (n : BNode α) (slot : Option Slot) 
   let report (l : Lint) (msg : String → Msg) (t : BText) : Array (ShapeReport α) :=
     let replacement := place t
     #[{ lint := l, ref, range, msg := msg replacement }]
+  -- An operand as `int_plus_one` sees it, and its text without the offset.
+  let offset (k : BNode α) : Offset × BText := match k with
+    | .mk (.bin "+") _ _ #[x, y] => if isOne y then (.plusOne, text x) else if isOne x then (.plusOne, text y) else (.zero, text k)
+    | .mk (.bin "-") _ _ #[x, y] => if isOne y then (.minusOne, text x) else (.zero, text k)
+    | _ => (.zero, text k)
   let own := match kind, kids with
     | .neg, #[.mk .neg _ _ #[b]] =>
       if doubleNeg true then report .doubleNeg doubleNegMsg (text b) else #[]
@@ -3344,11 +3570,6 @@ partial def shapeReports (src : Array Char) (n : BNode α) (slot : Option Slot) 
         report .negMultiply negMultiplyMsg { text := negText t, prec := BKind.neg.prec }
       | _ => #[]
     | .bin op, #[a, b] =>
-      -- An operand as `int_plus_one` sees it, and its text without the offset.
-      let offset (k : BNode α) : Offset × BText := match k with
-        | .mk (.bin "+") _ _ #[x, y] => if isOne y then (.plusOne, text x) else if isOne x then (.plusOne, text y) else (.zero, text k)
-        | .mk (.bin "-") _ _ #[x, y] => if isOne y then (.minusOne, text x) else (.zero, text k)
-        | _ => (.zero, text k)
       match Comparison.ofOp? op with
       | some c =>
         let ((oa, ta), (ob, tb)) := (offset a, offset b)
@@ -3365,13 +3586,29 @@ partial def shapeReports (src : Array Char) (n : BNode α) (slot : Option Slot) 
       | some (value, normal, suggested?) =>
         #[{ lint := .unicodeNotNfc, ref, range, msg := unicodeNotNfcMsg value normal suggested? }]
       | none => #[]
+    | .chain ops, _ =>
+      -- In a chained comparison, only an operand at either end, which is
+      -- in one comparison: the first comparison's left, the last's right.
+      let n := ops.size
+      let at_ (i : Nat) : Array (ShapeReport α) := Id.run do
+        let some c := Comparison.ofOp? ops[i]! | return #[]
+        let ((oa, ta), (ob, tb)) := (offset kids[i]!, offset kids[i + 1]!)
+        let (fires, strict, dropLeft) := intPlusOne c oa ob
+        unless fires && intPlusOneInChain dropLeft i n do return #[]
+        let texts := kids.mapIdx fun j k => if dropLeft && j == 0 then ta else if !dropLeft && j == n then tb else text k
+        let slots := kind.slots
+        let ops' := ops.set! i strict.op
+        let ts := texts.mapIdx fun j t => t.inSlot (slots[j]?.join) (j < n)
+        let body := (ops'.zip (ts.extract 1)).foldl (fun acc (op, t) => s!"{acc} {op} {t}") (ts[0]?.getD "")
+        return report .intPlusOne intPlusOneMsg { text := body, prec := kind.prec }
+      if kids.size == n + 1 && n ≥ 1 then at_ 0 ++ (if n ≥ 2 then at_ (n - 1) else #[]) else #[]
     | _, _ => #[]
   (kids.zipIdx.foldl (init := own) fun acc (k, i) => acc ++ shapeReports src k (kind.slots[i]?.join) range)
 
 /-- The reports of `double_neg`, `int_plus_one`, `neg_multiply` and
 `unicode_not_nfc` in an expression written in `src`, in the order they start, the outer of two
 that start together first. -/
-def arithReports (src : Array Char) (root : BNode α) : Array (ShapeReport α) :=
+def arithReports [Inhabited α] (src : Array Char) (root : BNode α) : Array (ShapeReport α) :=
   let range := match root with | .mk _ r .. => r
   (shapeReports (upTo src range) root none range).qsort fun a b =>
     a.range.start < b.range.start || (a.range.start == b.range.start && a.range.stop > b.range.stop)

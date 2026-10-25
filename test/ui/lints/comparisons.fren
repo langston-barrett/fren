@@ -122,6 +122,7 @@ comp contradictory {
 
     req r1: p1? iff (m != Heat or m != Mode::Cool)  --~ warning: one of these two comparisons always holds
     req r2: p2? iff (x < 3 and 5 < x)  --~ warning: these two comparisons cannot both hold
+    --~^ warning: these comparisons can be chained
     req r3: p3? iff (x > 3 or x < 5)  --~ warning: one of these two comparisons always holds
     req r4: p4? iff (w = "a" and w = "b")  --~ warning: these two comparisons cannot both hold
     req r5: p5? iff (x != 3 or x <= 3)  --~ warning: one of these two comparisons always holds
@@ -129,6 +130,7 @@ comp contradictory {
     req r6: n = if x = 1 and x = 2 then 1 else 0  --~ warning: these two comparisons cannot both hold
     -- Both may hold, or both fail; `Heat` is `Mode::Heat`.
     req r7: p6? iff (x > 3 and x < 5 or x < 3 or x > 5 or m = Heat and m = Mode::Heat)
+    --~^ warning: these comparisons can be chained
     req r8: p7? iff (w = "a" or w = "b") and (b? or w != "a" or w != "\x61")
 }
 

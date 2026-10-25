@@ -1,0 +1,4 @@
+-- A pattern test of variants without a payload.
+enum E { A, B, C(Int) }
+
+comp c { in e: E pub out p? req r: p? iff e is E::A | E::B }

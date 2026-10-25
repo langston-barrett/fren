@@ -12,6 +12,7 @@ open Fren.Lang
 #fren_md "Lint/Unused.md"
 #fren_md "Lint/NonstandardStyle.md"
 #fren_md "Lint/Style.md"
+#fren_md "Lint/Style/Comparisons.md"
 #fren_md "Lint/Complexity.md"
 #fren_md "Lint/Complexity/Comparisons.md"
 #fren_md "Lint/Complexity/Operators.md"

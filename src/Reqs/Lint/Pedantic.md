@@ -171,10 +171,15 @@ pub comp wildcard_single_variant {
 
 `if_chain_match`, `allow` by default, fires on a chain `if T1 then a else
 if T2 then b ... else z` of two or more tests, each a *variant test*: a test
-of which variant a scrutinee `x` is, `x = E::V`, `x in {E::V, E::W}`, or an
-`or` of such tests. The scrutinee is [written the
-same](../Lint.md#written-the-same) in every test, and each variant has no payload: `x = E::V(a)` compares
-the payload too. The chain starts at an `if` that is not the `else` branch
+of which variant a scrutinee `x` is, `x = E::V`, `x in {E::V, E::W}`, a
+[pattern test](../Lang/Expressions.md#pattern-tests) `x is P` whose
+alternatives are each a variant whose payload's patterns are all `_`,
+such as `x is E::V(_) | E::W`, or an `or` of such tests. For now only
+such flat patterns are variant tests: a literal, a range or a nested
+pattern, as in `x is E::V(0)`, tests more than which variant `x` is. The scrutinee is [written the same](../Lint.md#written-the-same) in
+every test. A variant compared with `=` or `in` has no payload, since `x =
+E::V(a)` compares the payload too; a pattern test may name a variant with
+a payload, whose pattern the arm writes as the test does. The chain starts at an `if` that is not the `else` branch
 of another. Its fix is a [`match`](../Lang/Expressions.md#matches), `match x {
 V => a, W | X => b, ..., _ => z }`, with an arm for each test, whose
 pattern is an or-pattern if the test names several variants. A `match`

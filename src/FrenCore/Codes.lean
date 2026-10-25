@@ -4328,6 +4328,70 @@ enum Fan {
     High,
 }
 ```
+"# },
+  { code := "F0802", explanation := r#"A pattern test that names only variants without a payload (a warning, `is_equality`).
+
+Example:
+
+```fren
+enum E { A, B, C(Int) }
+
+comp c { in e: E pub out p? req r: p? iff e is E::A | E::B }
+```
+
+`=` and `in` compare with values, and `is` is for the patterns they cannot
+write, those with a payload. `fren fix` can fix this:
+
+```fren
+enum E { A, B, C(Int) }
+
+comp c { in e: E pub out p? req r: p? iff e in {E::A, E::B} }
+```
+
+A test of one variant becomes an equation, `e = E::A`. A pattern with a
+payload stays a test:
+
+```fren
+enum E { A, B, C(Int) }
+
+comp c { in e: E pub out p? req r: p? iff e is E::A | E::C(_) }
+```
+"# },
+  { code := "F0803", explanation := r#"A pattern test that is always `true` (a warning, `irrefutable_is`).
+
+Example:
+
+```fren
+enum E { A, B(Int) }
+
+comp c { in e: E pub out p? req r: p? iff e is E::A | E::B(_) }
+```
+
+The pattern names every variant of `E`, so it matches every value of `e`,
+as `_` does. The pattern is probably not the one meant: name only the
+variants to test for.
+
+```fren
+enum E { A, B(Int) }
+
+comp c { in e: E pub out p? req r: p? iff e is E::B(_) }
+```
+"# },
+  { code := "F0804", explanation := r#"Two comparisons that one chained comparison writes (a warning, `chainable_comparison`).
+
+Example:
+
+```fren
+comp c { in i: Int in n: Int pub out p? req r: p? iff 0 <= i and i < n }
+```
+
+`0 <= i < n` means `0 <= i and i < n`, and puts `i` between its bounds. A
+comparison is written the other way round to chain, so `i >= 0 and i < n`
+fires too. `fren fix` can fix this:
+
+```fren
+comp c { in i: Int in n: Int pub out p? req r: p? iff 0 <= i < n }
+```
 "# }
 ]
 

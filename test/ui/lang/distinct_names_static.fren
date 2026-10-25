@@ -1,5 +1,6 @@
 -- Repeated names are reported where they are declared again, in source
 -- order, whatever kind of member comes first; `_` declares no name.
+set_option fren.lint.match_like_membership "allow"
 
 comp constraint_first {
     req x: true

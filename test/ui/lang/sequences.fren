@@ -1,5 +1,6 @@
 -- Sequences: literals, `[]`, `++`, indexing, methods and definedness, in
 -- both front ends.
+set_option fren.lint.chainable_comparison "allow"
 
 -- Expectations about constants test what the language computes.
 set_option fren.lint.assertions_on_constants "allow"

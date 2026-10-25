@@ -1,5 +1,6 @@
 -- A spec that passes every check, using modules, imported variants, nesting
 -- and arithmetic.
+set_option fren.lint.chainable_comparison "allow"
 
 mod climate
 

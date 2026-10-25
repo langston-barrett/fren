@@ -1,5 +1,6 @@
 -- The cardinality operators `exactly_one?` and `at_most_one?`: their laws,
 -- many arguments, and arguments that are expressions.
+set_option fren.lint.is_equality "allow"
 
 expect constants: exactly_one?(true, false, false) and not exactly_one?(true, true) and at_most_one?(false, false)
     and not at_most_one?(true, false, true) and not exactly_one?(false)
