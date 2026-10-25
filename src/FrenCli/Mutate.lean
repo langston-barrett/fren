@@ -207,7 +207,8 @@ structure Edit where
   context : Span
 
 /-- The edits of expression `e`. `inAndLeft` says that `e` is the left
-operand of an `and`, unparenthesized, where an `or` needs parentheses. -/
+operand of an `and`, unparenthesized, where an `or` needs parentheses; an
+`or` whose left operand is an unparenthesized `or` parenthesizes it. -/
 partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) : Array Edit :=
   let here : Array Edit := match e with
     | .bin sp op l r =>
@@ -217,7 +218,16 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) : Array Edit 
         | none => #[]
       if let some new := comparisonSwap? op then swap .swapComparison new
       else if let some new := arithmeticSwap? op then swap .swapArithmetic new
-      else if op == "or" then swap .swapAndOr "and"
+      else if op == "or" then
+        -- `a or b or c` is `(a or b) or c`: its left operand needs
+        -- parentheses under `and`.
+        match l, opTok? with
+        | .bin _ "or" .., some t =>
+          if s.outer sp l.span == l.span then
+            let text := s!"({s.text l.span}){s.text { start := l.span.stop, stop := t.span.start }}and{s.text { start := t.span.stop, stop := sp.stop }}"
+            #[{ origin := .swapAndOr, span := sp, after := text, context := sp }]
+          else swap .swapAndOr "and"
+        | _, _ => swap .swapAndOr "and"
       else if op == "and" then
         let toOr : Array Edit := match opTok? with
           | some t =>

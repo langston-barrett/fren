@@ -164,6 +164,8 @@ def survivedMsg (m : Mutant) (mayBeEquivalent inconclusive : Bool) : Msg :=
     notes := #[s!"note: the mutant is `{m.id}`"]
       ++ (if inconclusive then #["note: some check that passes on the spec is inconclusive on the mutant"] else #[])
       ++ (if mayBeEquivalent then #["note: the solver could not tell whether the mutant means what the spec means"] else #[])
+      ++ (if m.comp?.isNone then
+          #[s!"note: the expectations that read `{Fren.Core.showComp m.item}` change with it, and cannot reject the change alone"] else #[])
       ++ #["help: add an expectation that the change breaks, or say what the spec means more exactly"]
     fixes := #[{ msg := "the mutant", replacement := m.after }] }
 

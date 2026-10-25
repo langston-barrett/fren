@@ -52,7 +52,12 @@ literal without escapes.
 Mutants change what a spec asserts: the expressions of `assume`s, `req`s,
 defined outputs, instance bindings, constants and defined functions. The
 expectations, both of components and [global](Lang/Global.md), are what
-rejects mutants, and are not changed. Mutating an assumption checks the
+rejects mutants, and their text is not changed. But an expectation that
+reads a constant or function reads the mutant's: if a requirement and an
+expectation both say `x <= LIMIT`, changing `LIMIT` moves both, and no
+check rejects it. Such a survivor says that nothing pins the constant down
+independently, such as an expectation with its value written out; its
+warning says so. Mutating an assumption checks the
 [instance assumption](Check.md#instance-assumptions) checks and
 refinements that rely on it.
 
@@ -98,7 +103,9 @@ pub comp kill {
 }
 ```
 
-A redundancy counts as a failure: a mutant that makes a constraint
+A mutant on which a check that passes on the spec is only inconclusive is
+not killed: if nothing else kills it, it survives, and its warning says
+that some check was inconclusive. A redundancy counts as a failure: a mutant that makes a constraint
 redundant is killed by that check.
 
 A mutant that has a static error, from a lint set to `deny` or `forbid`, is
@@ -148,7 +155,9 @@ as `fren quickcheck` does, with `--tests` tests per component (default
 100) from `--seed`. `--by both` does both, and a mutant is killed if
 either kills it. A mutant that the solver's checks kill but testing does
 not is *missed by testing* (`F0614`): testing's search does not find the
-behaviours that tell it apart from the spec. `mutate::missed` states
+behaviours that tell it apart from the spec. The solver's side includes the
+checks set to testing, as `fren check` runs them, so a component whose
+checks are all set to testing has no mutant missed by testing. `mutate::missed` states
 this:
 
 ```fren
@@ -168,7 +177,9 @@ pub comp missed {
 
 `--comp PATH` selects the mutants of the component `PATH`; `--mutant ID`
 selects the mutant `ID`, and may be repeated. Given both, a mutant must
-meet both. `--sample N` then takes `N` of the selected mutants, chosen by
+meet both. A `--comp` or `--mutant` that the spec does not have is an
+error in the arguments, and `fren mutate` exits with 2. `--sample N` then
+takes `N` of the selected mutants, chosen by
 `--seed` (default 0). The same seed starts testing's search, so with
 `--by testing` or `--by both`, a different seed also tests differently. Whether a mutant
 is taken depends only on its identifier and the seed, so a larger sample

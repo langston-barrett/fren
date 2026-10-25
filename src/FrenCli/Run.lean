@@ -904,7 +904,7 @@ def mutate (args : Args) : IO UInt32 := do
       { code? := none, headline := s!"{Mutate.plural notPassing "check"} of the spec {if notPassing == 1 then "does" else "do"} not pass, \
           and so {if notPassing == 1 then "kills" else "kill"} no mutant"
         notes := #["help: run `fren check` or `fren quickcheck` to see them"] } p)
-  let groups := tallies.toArray.qsort (·.1.toString < ·.1.toString)
+  let groups := tallies.toArray.qsort (Fren.Core.showComp ·.1 < Fren.Core.showComp ·.1)
   for (g, t) in groups do IO.println (t.line (Fren.Core.showComp g) (args.checker == .both))
   let total : Mutate.Tally := groups.foldl (fun acc (_, t) => acc.merge t) {}
   IO.eprintln s!"fren: {Mutate.plural selected.size "mutant"}: {total.killed} killed, {total.survived} survived, \

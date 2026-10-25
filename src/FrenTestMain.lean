@@ -455,6 +455,57 @@ def mutantsOfText (file : Nat) (path : String) (chars : Array Char) : Array Fren
     | .error _ => #[]
   | .error _ => #[]
 
+open FrenCli in
+/-- The tree of `e`, without spans or parentheses, but where `f` gives a
+node's tree instead: operators with their operands, and leaves as their
+text. -/
+partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e : FrenCli.Expr) : String :=
+  let go := shapeWith s f
+  let list (es : Array FrenCli.Expr) := " ".intercalate (es.toList.map go)
+  match f e with
+  | some t => t
+  | none => match e with
+    | .bin _ op l r => s!"({op} {go l} {go r})"
+    | .when _ neg c b => s!"({if neg then "unless" else "when"} {go c} {go b})"
+    | .ite _ c a b => s!"(if {go c} {go a} {go b})"
+    | .not _ e => s!"(not {go e})"
+    | .neg _ e => s!"(- {go e})"
+    | .app _ fn as => s!"(app {fn.map (·.name)} {list as})"
+    | .record _ ty fs => s!"(record {ty.map (·.name)} {fs.toList.map fun (x, e?) => (x.name, e?.map go)})"
+    | .field _ e x => s!"(field {go e} {x.name})"
+    | .match _ sc arms => s!"(match {go sc} {arms.toList.map fun (p, b) => (Mutate.idText (s.text p.span), go b)})"
+    | .set _ es => s!"(set {list es})"
+    | .pair _ a b => s!"(pair {go a} {go b})"
+    | .seq _ es => s!"(seq {list es})"
+    | .index _ a i => s!"(index {go a} {go i})"
+    | .method _ r x as => s!"(method {go r} {x.name} {list as})"
+    | e => Mutate.idText (s.text e.span)
+
+open FrenCli in
+/-- The tree that the operator mutant `m` means to make of `e`. -/
+def intended (s : Mutate.Src) (m : Mutate.Mutant) (e : FrenCli.Expr) : String :=
+  let plain := shapeWith s fun _ => none
+  shapeWith s (fun
+    | .bin sp op l r =>
+      let opAt := (s.wordIn { start := l.span.stop, stop := r.span.start } op).any (·.span == m.span)
+      if m.origin == .dropConjunct && sp == m.span then
+        some (if Mutate.idText m.after == Mutate.idText (s.text (s.outer sp l.span)) then plain l else plain r)
+      else if m.origin != .dropConjunct && opAt then some s!"({m.after} {plain l} {plain r})"
+      else if m.origin == .swapAndOr && sp == m.span then some s!"({if op == "and" then "or" else "and"} {plain l} {plain r})"
+      else none
+    | .when sp neg c b =>
+      if m.origin == .negateTrigger && sp.start == m.span.start then some s!"({if neg then "when" else "unless"} {plain c} {plain b})"
+      else none
+    | _ => none) e
+
+/-- The expressions of the items of the text `chars` that mutants change. -/
+def sitesOfText (chars : Array Char) : Array (Lean.Name × FrenCli.Expr) :=
+  match FrenCli.lex chars with
+  | .ok toks => match FrenCli.parse toks with
+    | .ok items => (FrenCli.Mutate.sites items).map fun (n, _, e) => (n, e)
+    | .error _ => #[]
+  | .error _ => #[]
+
 /-- Swaps, which a second swap undoes. -/
 def isSwap (m : FrenCli.Mutate.Mutant) : Bool :=
   [.swapComparison, .swapArithmetic, .negateTrigger, .flipBool, .swapRepetition].contains m.origin
@@ -465,7 +516,9 @@ def isSwap (m : FrenCli.Mutate.Mutant) : Bool :=
 - **identified:** has an identifier that no other mutant of its group has;
 - **stable:** leaves the identifiers of the mutants of other items alone,
   and keeps its own when the file is formatted with `fren fmt`;
-- **involutive:** if it is a swap, has a mutant that swaps back.
+- **involutive:** if it is a swap, has a mutant that swaps back;
+- **as intended:** if it changes an operator, parses as the tree intended,
+  with each other operator binding as before.
 
 And a larger sample of mutants contains a smaller one. -/
 def mutation : IO (Array String) := do
@@ -490,6 +543,18 @@ def mutation : IO (Array String) := do
           failures := failures.push s!"{m₂.id}: its identifier changes when {m.id} is applied"
       if isSwap m && !again.any (fun b => b.origin == m.origin && b.apply chars' == chars) then
         failures := failures.push s!"{m.id}: no mutant swaps it back"
+      if [.swapComparison, .swapArithmetic, .swapAndOr, .dropConjunct, .negateTrigger].contains m.origin then
+        let src : FrenCli.Mutate.Src := { file := m.file, path, chars, toks := (FrenCli.lex chars).toOption.getD #[] }
+        let src' : FrenCli.Mutate.Src := { src with chars := chars', toks := (FrenCli.lex chars').toOption.getD #[] }
+        let sites := sitesOfText chars
+        let sites' := sitesOfText chars'
+        match (Array.range sites.size).find? fun k =>
+            sites[k]!.1 == m.item && sites[k]!.2.span.start ≤ m.span.start && m.span.stop ≤ sites[k]!.2.span.stop with
+        | some k =>
+          let want := intended src m sites[k]!.2
+          let got := (sites'[k]?.map fun (_, e) => shapeWith src' (fun _ => none) e).getD "(missing)"
+          if want != got then failures := failures.push s!"{m.id}: parses as {got}, not {want}"
+        | none => failures := failures.push s!"{m.id}: is in no site of its item"
     -- Formatting each file keeps the identifiers.
     for (path, chars) in files, i in [0:files.size] do
       let src ← IO.FS.readFile path
