@@ -20,7 +20,7 @@ same results.
 namespace FrenCli.Mutate
 
 open Lean (Name)
-open Fren.Core (CheckResult Msg)
+open Fren.Core (CheckResult Msg Verdict)
 
 /-- How mutants are checked (`--by`). -/
 inductive By where
@@ -56,21 +56,26 @@ def Todo.key (t : Todo) : String :=
   if t.global then s!"expect {t.comp.path}::{(t.comp.props[0]?.map (·.name)).getD .anonymous}"
   else if t.refinement then s!"refine {t.comp.path}" else s!"comp {t.comp.path}"
 
-/-- A definedness check names its index by its position in the
-constraint, which a mutant that drops an earlier index changes. So the
-index is named by its text instead, `chars` being the text of `c`'s file,
-and how many indexes of the same text come before it in the constraint. -/
-def indexKey (chars : Array Char) (c : CComp) (r : CheckResult) : String := Id.run do
-  let some k := r.index? | return ""
-  let some n := r.prop? | return toString k
-  let here := c.indexes.filter (·.1 == n) |>.map fun (_, _, sp, _) => idText (String.ofList (chars.extract sp.start sp.stop).toList)
-  let some t := here[k]? | return toString k
-  return s!"{t}#{((here.extract 0 k).filter (· == t)).size}"
-
-/-- The results of `c`, in the file `chars`, each with the key of its
-check. -/
-def keyed (chars : Array Char) (c : CComp) (rs : Array CheckResult) : Array (String × CheckResult) :=
-  rs.map fun r => (s!"{repr r.kind}|{r.prop?}|{r.target?}|{indexKey chars c r}", r)
+/-- The results of a component, each with the key of its check. The
+definedness checks of a constraint are one check, which passes when every
+index in it is in range: an index is named only by its position, which a
+mutant that adds or drops an index changes. -/
+def keyed (rs : Array CheckResult) : Array (String × CheckResult) := Id.run do
+  let key (r : CheckResult) := s!"{repr r.kind}|{r.prop?}|{r.target?}"
+  let mut out : Array (String × CheckResult) := #[]
+  for r in rs do
+    let k := key r
+    if r.kind != .definedness then out := out.push (k, r) else
+    match out.findIdx? (·.1 == k) with
+    | none => out := out.push (k, { r with index? := none })
+    | some i =>
+      -- A failure decides, then an inconclusive result.
+      let v := match out[i]!.2.verdict, r.verdict with
+        | .fail, _ | _, .fail => Verdict.fail
+        | .inconclusive, _ | _, .inconclusive => .inconclusive
+        | _, _ => .pass
+      out := out.set! i (k, { out[i]!.2 with verdict := v })
+  return out
 
 /-- Whether some check of `after` kills the mutant, against the results
 `before` of the original, both keyed. -/
@@ -94,7 +99,10 @@ def formulas (c : CComp) : Array (String × String) :=
     ++ c.defs.map (fun (d, e) => (s!"def {d}", e))
     ++ c.insts.flatMap (fun i => #[(s!"bindings {i.name}", i.bindings), (s!"behaviour {i.name}", i.behaviour)]
       ++ i.assumes.map fun (n, a) => (s!"assume {i.name} {n}", a))
-    ++ c.indexes.mapIdx (fun k (n, _, _, goal) => (s!"index {k} {n}", goal))
+    -- The indexes of an item together, as the definedness check of the
+    -- item, so that a mutant that adds or drops one still compares.
+    ++ (c.indexes.map (·.1)).toList.eraseDups.toArray.map fun n =>
+      (s!"indexes {n}", conj (c.indexes.filter (·.1 == n) |>.map (·.2.2.2)))
 
 /-- Everything that `c`'s checks read, with the spec's `prelude`: a mutant
 that leaves it alone leaves their results alone. -/

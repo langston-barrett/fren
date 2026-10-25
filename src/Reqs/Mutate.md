@@ -68,13 +68,13 @@ Each mutant has an identifier, `ORIGIN-ITEM-HASH`, such as
 the item changed: a constraint, defined output or instance as
 `module::component::name`, or a constant or function as `module::name`,
 with each run of characters other than ASCII letters, digits, `_` and `:`
-made one `_`, and `_` trimmed next to `::`. `HASH` is 12 hexadecimal
-digits of the 64-bit FNV-1a hash, the same on every machine and build, of
-the origin, the file's path without `.` segments or repeated `/`, the
-item, the expression changed and the change, with whitespace and the
-commas that end a list removed, and how many identical mutants come
-before it in the item. So an identifier stays the
-same when the spec is reformatted, or changed elsewhere, and `--mutant ID`
+made one `_`, and `_` trimmed next to `::` and at both ends. `HASH` is 12
+hexadecimal digits of the 64-bit FNV-1a hash, the same on every machine
+and build, of the origin, the file's path without `.` segments or
+repeated `/`, the item, the expression changed and the change, with
+whitespace and the commas that end a list removed, and how many identical
+mutants come before it in the item. So an identifier stays the same when
+the spec is reformatted, or changed elsewhere, and `--mutant ID`
 names the same mutant across runs.
 
 ## Killing mutants
@@ -106,7 +106,12 @@ pub comp kill {
 
 A mutant on which a check that passes on the spec is only inconclusive is
 not killed: if nothing else kills it, it survives, and its warning says
-that some check was inconclusive. A redundancy counts as a failure: a mutant that makes a constraint
+that some check was inconclusive. The checks of the spec and of a mutant are matched by their kind, and the
+constraint, instance or variable that they are about. The
+[definedness](Check.md#definedness) checks of one constraint are one
+check, which passes when every index in it is in range: an index has no
+name but its position, which a mutant that adds or drops one changes. A
+redundancy counts as a failure: a mutant that makes a constraint
 redundant is killed by that check.
 
 A mutant that has a static error, from a lint set to `deny` or `forbid`, is
@@ -218,7 +223,9 @@ m::c: 9 of 11 mutants killed (81%), 1 equivalent
 The line ends with the numbers of equivalent and unviable mutants, and with
 `--by both` of those missed by testing, each where it is not 0.
 
-`mutate::exit` gives the exit status. It is `fren check`'s
+Lints are reported on the spec as `fren check` reports them, but only
+surviving and missed mutants and internal errors decide the exit status:
+a lint that warns does not. `mutate::exit` gives the exit status. It is `fren check`'s
 (`cli::exit`), where each surviving or missed mutant is a warning and each
 internal error an error, and so it follows the convention of every command
 (`cli::exit_status`):

@@ -835,7 +835,7 @@ def mutate (args : Args) : IO UInt32 := do
   -- `run s spec? t` checks `t` of the spec `s`. Internal errors about the
   -- spec are printed as `fren check` prints them, and those about the
   -- mutant given to `onMutant`.
-  let killedBy (base : Baseline) (files' : Array (String × Array Char)) (st' : State) (spec'? : Except String Eval.Spec)
+  let killedBy (base : Baseline) (st' : State) (spec'? : Except String Eval.Spec)
       (run : State → Except String Eval.Spec → Mutate.Todo → IO (Array Fren.Core.CheckResult × Array (Span × Msg)))
       (onMutant : Msg → IO Unit) : IO (Bool × Bool) := do
     let mut inconclusive := false
@@ -854,8 +854,8 @@ def mutate (args : Args) : IO UInt32 := do
           pure rs
       let (rs', errors) ← run st' spec'? t
       for (_, msg) in errors do onMutant msg
-      let rs := Mutate.keyed (files[t₀.comp.file]?.map (·.2) |>.getD #[]) t₀.comp rs
-      let rs' := Mutate.keyed (files'[t.comp.file]?.map (·.2) |>.getD #[]) t.comp rs'
+      let rs := Mutate.keyed rs
+      let rs' := Mutate.keyed rs'
       if Mutate.kills rs rs' then return (true, inconclusive)
       inconclusive := inconclusive || Mutate.inconclusive rs rs'
     return (false, inconclusive)
@@ -879,9 +879,9 @@ def mutate (args : Args) : IO UInt32 := do
       if let .error e := spec'? then
         report (Msg.internal s!"the evaluator cannot read the mutant `{m.id}`: {e}") .error
       let onMutant (msg : Msg) := report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error
-      let (bySolver, inconclusive₁) ← if args.checker.solves then killedBy solved files' st' spec'? solve onMutant
+      let (bySolver, inconclusive₁) ← if args.checker.solves then killedBy solved st' spec'? solve onMutant
         else pure (false, false)
-      let (byTesting, inconclusive₂) ← if args.checker.tests then killedBy tested files' st' spec'? test onMutant
+      let (byTesting, inconclusive₂) ← if args.checker.tests then killedBy tested st' spec'? test onMutant
         else pure (false, false)
       let killed := bySolver || byTesting
       -- Short, whatever `--timeout` is, even 0, which means none.
@@ -900,8 +900,7 @@ def mutate (args : Args) : IO UInt32 := do
       sevs.modify (·.push severity)
   -- Each check once, though both ways of checking ran it.
   let notPassing := ((← solved.get).toArray ++ (← tested.get).toArray).foldl (init := ({} : Std.HashSet String)) fun acc (k, rs) =>
-    let c := (originals[k]?.map (·.1.comp)).getD default
-    (Mutate.keyed (files[c.file]?.map (·.2) |>.getD #[]) c rs).foldl (init := acc) fun acc (rk, r) =>
+    (Mutate.keyed rs).foldl (init := acc) fun acc (rk, r) =>
       if r.verdict != .pass then acc.insert s!"{k}|{rk}" else acc
   let notPassing := notPassing.size
   if notPassing > 0 then

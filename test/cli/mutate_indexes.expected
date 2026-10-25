@@ -1,205 +1,443 @@
 warning[F0613]: no check rejects this change to `c::one`
- --> test/cli/mutate_indexes.fren:9:23
-  |
-9 |     assume one: q.len >= 1
-  |                       ^^ `>=` changed to `>`
-  |
-  = note: the mutant is `swap-comparison-c::one-6f03cf0d4a52`
-  = help: add an expectation that the change breaks, or say what the spec means more exactly
+  --> test/cli/mutate_indexes.fren:12:23
+   |
+12 |     assume one: q.len >= 1
+   |                       ^^ `>=` changed to `>`
+   |
+   = note: the mutant is `swap-comparison-c::one-6f03cf0d4a52`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
-  |
-9 -     assume one: q.len >= 1
-9 +     assume one: q.len > 1
-  |
+   |
+12 -     assume one: q.len >= 1
+12 +     assume one: q.len > 1
+   |
 
 warning[F0613]: no check rejects this change to `c::one`
- --> test/cli/mutate_indexes.fren:9:26
-  |
-9 |     assume one: q.len >= 1
-  |                          ^ `1` changed to `2`
-  |
-  = note: the mutant is `shift-integer-c::one-0692ea23b099`
-  = help: add an expectation that the change breaks, or say what the spec means more exactly
+  --> test/cli/mutate_indexes.fren:12:26
+   |
+12 |     assume one: q.len >= 1
+   |                          ^ `1` changed to `2`
+   |
+   = note: the mutant is `shift-integer-c::one-0692ea23b099`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
-  |
-9 -     assume one: q.len >= 1
-9 +     assume one: q.len >= 2
-  |
+   |
+12 -     assume one: q.len >= 1
+12 +     assume one: q.len >= 2
+   |
 
 warning[F0613]: no check rejects this change to `c::r`
-  --> test/cli/mutate_indexes.fren:10:21
+  --> test/cli/mutate_indexes.fren:13:21
    |
-10 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
    |                     ^^^^^^^^^^^^^^^^^^^^^ `q[0] = 1 and q[1] = 2` changed to `q[0] = 1`
    |
    = note: the mutant is `drop-conjunct-c::r-f682764dee07`
-   = note: the solver could not tell whether the mutant means what the spec means
    = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-10 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
-10 +     req r: ok? iff (q[0] = 1)
+13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 +     req r: ok? iff (q[0] = 1)
    |
 
 warning[F0613]: no check rejects this change to `c::r`
-  --> test/cli/mutate_indexes.fren:10:21
+  --> test/cli/mutate_indexes.fren:13:21
    |
-10 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
    |                     ^^^^^^^^^^^^^^^^^^^^^ `q[0] = 1 and q[1] = 2` changed to `q[1] = 2`
    |
    = note: the mutant is `drop-conjunct-c::r-5c04c0e203cb`
-   = note: the solver could not tell whether the mutant means what the spec means
    = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-10 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
-10 +     req r: ok? iff (q[1] = 2)
+13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 +     req r: ok? iff (q[1] = 2)
    |
 
 warning[F0613]: no check rejects this change to `c::r`
-  --> test/cli/mutate_indexes.fren:10:23
+  --> test/cli/mutate_indexes.fren:13:23
    |
-10 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
    |                       ^ `0` changed to `1`
    |
    = note: the mutant is `shift-integer-c::r-472a97d2548e`
    = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-10 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
-10 +     req r: ok? iff (q[1] = 1 and q[1] = 2)
+13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 +     req r: ok? iff (q[1] = 1 and q[1] = 2)
    |
 
 warning[F0613]: no check rejects this change to `c::r`
-  --> test/cli/mutate_indexes.fren:10:26
+  --> test/cli/mutate_indexes.fren:13:26
    |
-10 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
    |                          ^ `=` changed to `!=`
    |
    = note: the mutant is `swap-comparison-c::r-650ca1583909`
    = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-10 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
-10 +     req r: ok? iff (q[0] != 1 and q[1] = 2)
+13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 +     req r: ok? iff (q[0] != 1 and q[1] = 2)
    |
 
 warning[F0613]: no check rejects this change to `c::r`
-  --> test/cli/mutate_indexes.fren:10:28
+  --> test/cli/mutate_indexes.fren:13:28
    |
-10 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
    |                            ^ `1` changed to `2`
    |
    = note: the mutant is `shift-integer-c::r-ae7b14786aab`
    = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-10 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
-10 +     req r: ok? iff (q[0] = 2 and q[1] = 2)
+13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 +     req r: ok? iff (q[0] = 2 and q[1] = 2)
    |
 
 warning[F0613]: no check rejects this change to `c::r`
-  --> test/cli/mutate_indexes.fren:10:28
+  --> test/cli/mutate_indexes.fren:13:28
    |
-10 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
    |                            ^ `1` changed to `0`
    |
    = note: the mutant is `shift-integer-c::r-847b1e4831a1`
    = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-10 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
-10 +     req r: ok? iff (q[0] = 0 and q[1] = 2)
+13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 +     req r: ok? iff (q[0] = 0 and q[1] = 2)
    |
 
 warning[F0613]: no check rejects this change to `c::r`
-  --> test/cli/mutate_indexes.fren:10:30
+  --> test/cli/mutate_indexes.fren:13:30
    |
-10 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
    |                              ^^^ `and` changed to `or`
    |
    = note: the mutant is `swap-and-or-c::r-fbbb11bfa244`
    = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-10 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
-10 +     req r: ok? iff (q[0] = 1 or q[1] = 2)
+13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 +     req r: ok? iff (q[0] = 1 or q[1] = 2)
    |
 
 warning[F0613]: no check rejects this change to `c::r`
-  --> test/cli/mutate_indexes.fren:10:36
+  --> test/cli/mutate_indexes.fren:13:36
    |
-10 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
    |                                    ^ `1` changed to `2`
    |
    = note: the mutant is `shift-integer-c::r-ad7b147868f8`
    = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-10 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
-10 +     req r: ok? iff (q[0] = 1 and q[2] = 2)
+13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 +     req r: ok? iff (q[0] = 1 and q[2] = 2)
    |
 
 warning[F0613]: no check rejects this change to `c::r`
-  --> test/cli/mutate_indexes.fren:10:36
+  --> test/cli/mutate_indexes.fren:13:36
    |
-10 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
    |                                    ^ `1` changed to `0`
    |
    = note: the mutant is `shift-integer-c::r-837b1e482fee`
    = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-10 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
-10 +     req r: ok? iff (q[0] = 1 and q[0] = 2)
+13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 +     req r: ok? iff (q[0] = 1 and q[0] = 2)
    |
 
 warning[F0613]: no check rejects this change to `c::r`
-  --> test/cli/mutate_indexes.fren:10:39
+  --> test/cli/mutate_indexes.fren:13:39
    |
-10 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
    |                                       ^ `=` changed to `!=`
    |
    = note: the mutant is `swap-comparison-c::r-1ec815c6227d`
    = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-10 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
-10 +     req r: ok? iff (q[0] = 1 and q[1] != 2)
+13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 +     req r: ok? iff (q[0] = 1 and q[1] != 2)
    |
 
 warning[F0613]: no check rejects this change to `c::r`
-  --> test/cli/mutate_indexes.fren:10:41
+  --> test/cli/mutate_indexes.fren:13:41
    |
-10 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
    |                                         ^ `2` changed to `3`
    |
    = note: the mutant is `shift-integer-c::r-e5b9f1e69088`
    = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-10 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
-10 +     req r: ok? iff (q[0] = 1 and q[1] = 3)
+13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 +     req r: ok? iff (q[0] = 1 and q[1] = 3)
    |
 
 warning[F0613]: no check rejects this change to `c::r`
-  --> test/cli/mutate_indexes.fren:10:41
+  --> test/cli/mutate_indexes.fren:13:41
    |
-10 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 |     req r: ok? iff (q[0] = 1 and q[1] = 2)
    |                                         ^ `2` changed to `1`
    |
    = note: the mutant is `shift-integer-c::r-bbb9fbb6577e`
    = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-10 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
-10 +     req r: ok? iff (q[0] = 1 and q[1] = 1)
+13 -     req r: ok? iff (q[0] = 1 and q[1] = 2)
+13 +     req r: ok? iff (q[0] = 1 and q[1] = 1)
    |
 
-note: 1 check of the spec does not pass, and so kills no mutant
+warning[F0613]: no check rejects this change to `d::one`
+  --> test/cli/mutate_indexes.fren:20:23
+   |
+20 |     assume one: q.len >= 1
+   |                       ^^ `>=` changed to `>`
+   |
+   = note: the mutant is `swap-comparison-d::one-6922809b2eef`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+20 -     assume one: q.len >= 1
+20 +     assume one: q.len > 1
+   |
+
+warning[F0613]: no check rejects this change to `d::one`
+  --> test/cli/mutate_indexes.fren:20:26
+   |
+20 |     assume one: q.len >= 1
+   |                          ^ `1` changed to `2`
+   |
+   = note: the mutant is `shift-integer-d::one-eecf31fd8894`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+20 -     assume one: q.len >= 1
+20 +     assume one: q.len >= 2
+   |
+
+warning[F0613]: no check rejects this change to `d::r`
+  --> test/cli/mutate_indexes.fren:21:25
+   |
+21 |     req r: ok? iff q[0] = 1
+   |                         ^ `=` changed to `!=`
+   |
+   = note: the mutant is `swap-comparison-d::r-553fbc36f4c4`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+21 -     req r: ok? iff q[0] = 1
+21 +     req r: ok? iff q[0] != 1
+   |
+
+warning[F0613]: no check rejects this change to `d::r`
+  --> test/cli/mutate_indexes.fren:21:27
+   |
+21 |     req r: ok? iff q[0] = 1
+   |                           ^ `1` changed to `2`
+   |
+   = note: the mutant is `shift-integer-d::r-271f48eb5b36`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+21 -     req r: ok? iff q[0] = 1
+21 +     req r: ok? iff q[0] = 2
+   |
+
+warning[F0613]: no check rejects this change to `d::r`
+  --> test/cli/mutate_indexes.fren:21:27
+   |
+21 |     req r: ok? iff q[0] = 1
+   |                           ^ `1` changed to `0`
+   |
+   = note: the mutant is `shift-integer-d::r-d11f3f1abac0`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+21 -     req r: ok? iff q[0] = 1
+21 +     req r: ok? iff q[0] = 0
+   |
+
+warning[F0613]: no check rejects this change to `e::r`
+  --> test/cli/mutate_indexes.fren:28:22
+   |
+28 |     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+   |                      ^^^^^^^^^^^^^^^^^^^^ `q != [] and q[0] = 1` changed to `q != []`
+   |
+   = note: the mutant is `drop-conjunct-e::r-63321c3e9c57`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+28 +     req r: ok? iff ((q != []) or q[0] = 0)
+   |
+
+warning[F0613]: no check rejects this change to `e::r`
+  --> test/cli/mutate_indexes.fren:28:22
+   |
+28 |     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+   |                      ^^^^^^^^^^^^^^^^^^^^ `q != [] and q[0] = 1` changed to `q[0] = 1`
+   |
+   = note: the mutant is `drop-conjunct-e::r-d01edf45f98f`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+28 +     req r: ok? iff ((q[0] = 1) or q[0] = 0)
+   |
+
+warning[F0613]: no check rejects this change to `e::r`
+  --> test/cli/mutate_indexes.fren:28:24
+   |
+28 |     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+   |                        ^^ `!=` changed to `=`
+   |
+   = note: the mutant is `swap-comparison-e::r-8b1b8e877aeb`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+28 +     req r: ok? iff ((q = [] and q[0] = 1) or q[0] = 0)
+   |
+
+warning[F0613]: no check rejects this change to `e::r`
+  --> test/cli/mutate_indexes.fren:28:30
+   |
+28 |     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+   |                              ^^^ `and` changed to `or`
+   |
+   = note: the mutant is `swap-and-or-e::r-4deaaf10a44c`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+28 +     req r: ok? iff ((q != [] or q[0] = 1) or q[0] = 0)
+   |
+
+warning[F0613]: no check rejects this change to `e::r`
+  --> test/cli/mutate_indexes.fren:28:36
+   |
+28 |     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+   |                                    ^ `0` changed to `1`
+   |
+   = note: the mutant is `shift-integer-e::r-a7b99bd83d84`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+28 +     req r: ok? iff ((q != [] and q[1] = 1) or q[0] = 0)
+   |
+
+warning[F0613]: no check rejects this change to `e::r`
+  --> test/cli/mutate_indexes.fren:28:39
+   |
+28 |     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+   |                                       ^ `=` changed to `!=`
+   |
+   = note: the mutant is `swap-comparison-e::r-701b0314b843`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+28 +     req r: ok? iff ((q != [] and q[0] != 1) or q[0] = 0)
+   |
+
+warning[F0613]: no check rejects this change to `e::r`
+  --> test/cli/mutate_indexes.fren:28:41
+   |
+28 |     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+   |                                         ^ `1` changed to `2`
+   |
+   = note: the mutant is `shift-integer-e::r-d048d3d3ec8d`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+28 +     req r: ok? iff ((q != [] and q[0] = 2) or q[0] = 0)
+   |
+
+warning[F0613]: no check rejects this change to `e::r`
+  --> test/cli/mutate_indexes.fren:28:41
+   |
+28 |     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+   |                                         ^ `1` changed to `0`
+   |
+   = note: the mutant is `shift-integer-e::r-7a48ca034c17`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+28 +     req r: ok? iff ((q != [] and q[0] = 0) or q[0] = 0)
+   |
+
+warning[F0613]: no check rejects this change to `e::r`
+  --> test/cli/mutate_indexes.fren:28:44
+   |
+28 |     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+   |                                            ^^ `or` changed to `and`
+   |
+   = note: the mutant is `swap-and-or-e::r-1ecfce2dbc78`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+28 +     req r: ok? iff ((q != [] and q[0] = 1) and q[0] = 0)
+   |
+
+warning[F0613]: no check rejects this change to `e::r`
+  --> test/cli/mutate_indexes.fren:28:49
+   |
+28 |     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+   |                                                 ^ `0` changed to `1`
+   |
+   = note: the mutant is `shift-integer-e::r-a8b99bd83f37`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+28 +     req r: ok? iff ((q != [] and q[0] = 1) or q[1] = 0)
+   |
+
+warning[F0613]: no check rejects this change to `e::r`
+  --> test/cli/mutate_indexes.fren:28:52
+   |
+28 |     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+   |                                                    ^ `=` changed to `!=`
+   |
+   = note: the mutant is `swap-comparison-e::r-5c70ff7fd3ee`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+28 +     req r: ok? iff ((q != [] and q[0] = 1) or q[0] != 0)
+   |
+
+warning[F0613]: no check rejects this change to `e::r`
+  --> test/cli/mutate_indexes.fren:28:54
+   |
+28 |     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+   |                                                      ^ `0` changed to `1`
+   |
+   = note: the mutant is `shift-integer-e::r-a9b99bd840ea`
+   = help: add an expectation that the change breaks, or say what the spec means more exactly
+help: the mutant
+   |
+28 -     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+28 +     req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 1)
+   |
+
+note: 2 checks of the spec do not pass, and so kill no mutant
   = help: run `fren check` or `fren quickcheck` to see them
 c: 1 of 15 mutants killed (6%)
-fren: 15 mutants: 1 killed, 14 survived, 0 equivalent, 0 unviable
+d: 2 of 7 mutants killed (28%)
+e: 0 of 12 mutants killed (0%)
+fren: 34 mutants: 3 killed, 31 survived, 0 equivalent, 0 unviable
 
 For more information about this error, try `fren --explain F0613`.
 exit=3
