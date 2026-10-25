@@ -1,0 +1,15 @@
+-- `allow_attributes`, allowed by default.
+set_option fren.lint.allow_attributes "warn"
+set_option fren.lint.glob_imports "allow"
+set_option fren.lint.unfulfilled_lint_expectations "allow"
+
+enum Mode { Heat, Cool }
+
+use self::Mode::*
+
+comp heating {
+    in mode: Mode
+    pub out on?
+
+    req rule: on? iff mode = Heat
+}

@@ -1,0 +1,11 @@
+-- `wildcard_enum_match_arm`, allowed by default.
+set_option fren.lint.wildcard_enum_match_arm "warn"
+
+enum Shape { Circle(Int), Rect(Int, Int), Dot }
+
+comp area {
+    in shape: Shape
+    pub out size: Int
+
+    req rule: size = match shape { Shape::Circle(radius) => radius, _ => 1 }
+}

@@ -72,6 +72,7 @@ def toGroup : Group → lint.Group
   | .complexity => .Complexity
   | .suspicious => .Suspicious
   | .pedantic => .Pedantic
+  | .restriction => .Restriction
   | .decidability => .Decidability
 
 def toCase : Case → lint.Case
@@ -1142,5 +1143,73 @@ impl almost_complete_range: lint::almost_complete_range for (lo hi : Int) {
 } by
   intro lo hi _
   simp [fren_spec, Fren.Core.almostCompleteRange, or_assoc]
+
+/-! ## Restriction -/
+
+-- Both front ends decide a `set_option` with `allowAttributes`.
+impl allow_attributes: lint::allow_attributes for (l : LintLevel) (u : Bool) {
+  requested := toLintLevel l,
+  unfulfilled? := u,
+  fires? := (Fren.Core.allowAttributes l u).1,
+  fixed? := (Fren.Core.allowAttributes l u).2,
+}
+
+-- Both front ends decide a `_` arm with `wildcardEnumMatchArm`.
+impl wildcard_enum_match_arm: lint::wildcard_enum_match_arm for (w : Bool) (n : Nat) {
+  wildcard? := w,
+  n_unnamed := n,
+  fires? := (Fren.Core.wildcardEnumMatchArm w n).1,
+  fixed? := (Fren.Core.wildcardEnumMatchArm w n).2,
+} by
+  intro w n _
+  cases w <;> simp [fren_spec, Fren.Core.wildcardEnumMatchArm]
+
+impl needless_raw_strings: lint::needless_raw_strings for (r b q : Bool) {
+  raw? := r,
+  backslash? := b,
+  quote? := q,
+  fires? := Fren.Core.needlessRawStrings r b q,
+}
+
+impl non_ascii_literal: lint::non_ascii_literal for (n : Nat) {
+  code := n,
+  fires? := (Fren.Core.nonAscii n).1,
+  escapable? := (Fren.Core.nonAscii n).2,
+} by
+  intro n _
+  simp [fren_spec, Fren.Core.nonAscii]
+  omega
+
+impl module_name_repetitions: lint::module_name_repetitions for (n m : Nat) (c : Bool) {
+  n_words := n,
+  n_module_words := m,
+  contains? := c,
+  fires? := Fren.Core.moduleNameRepetitions n m c,
+} by
+  intro n m c _
+  cases c <;> simp [fren_spec, Fren.Core.moduleNameRepetitions] <;> omega
+
+-- Over a `String`: `minIdentChars` takes the name with its final `?`.
+tested lint::min_ident_chars: "test/ui/lints/restriction.fren", "test/cli/lints/restriction/f0785_min_ident_chars.fren"
+
+impl absolute_paths: lint::absolute_paths for (n : Nat) {
+  n_segments := n,
+  fires? := Fren.Core.absolutePath n,
+} by
+  intro n _
+  simp [fren_spec, Fren.Core.absolutePath]
+  omega
+
+-- Both front ends decide an operand with `precedenceFires`, in `opReports`.
+impl precedence: lint::precedence for (o i : Fren.Core.InfixOp) (p : Bool) {
+  outer := toInfixOp o,
+  inner := toInfixOp i,
+  parenthesized? := p,
+  fires? := Fren.Core.precedenceFires o i p,
+} by
+  intro o i p _
+  cases p
+  · cases o <;> cases i <;> simp +decide [fren_spec]
+  · simp [fren_spec, Fren.Core.precedenceFires]
 
 end Fren.Impls

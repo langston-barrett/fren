@@ -116,6 +116,8 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
     let ref := (segs[i.path.components.length - 1]?).getD stx
     lintName .module (Name.mkSimple i.path.getString!) ref
     if let some msg := Core.moduleInceptionMsg? i.path then recordLint .moduleInception ref msg
+    if let some msg := Core.moduleNameMsg? .module i.path.getPrefix (Name.mkSimple i.path.getString!) then
+      recordLint .moduleNameRepetitions ref msg
     record (.item { item := i, ref })
   modifyLocal ({ · with currentModule := path })
 
@@ -166,7 +168,7 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
   if segs.size == 1 && segs[0]!.getId == `Int then return Lean.mkConst ``Int
   if segs.size == 1 && segs[0]!.getId == `Nat then return Lean.mkConst ``Nat
   if segs.size == 1 && segs[0]!.getId == `String then return Lean.mkConst ``String
-  match ← resolvePath modName segs with
+  match ← resolveWritten modName segs with
   | .item { kind := .enumItem, path, .. } => return Lean.mkConst (← enumDecl path)
   | .item { kind := .recordItem, path, .. } =>
     let some r := (← getState).records.get? path | throwError "internal error: unknown record `{path}`"
@@ -1188,7 +1190,7 @@ def lintRedundant (b : Syntax) (field : Bool) : TermElabM Unit := do
 open Lang in
 /-- Translates a record literal, where `go` translates its values. -/
 def recordTerm (go : Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
-  let r ← resolvePath cx.modName (pathSegs e[0]) cx.shadowing
+  let r ← resolveWritten cx.modName (pathSegs e[0]) cx.shadowing cx.noteIndexes
   let .item { kind := .recordItem, path, .. } := r | throwErrorAt e[0] (Core.wrongKindMsg "a record" r).text
   let some info := (← getState).records.get? path | throwError "internal error: unknown record `{path}`"
   let given := e[2].getSepArgs
@@ -1298,16 +1300,20 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (info : EnumInfo) (pats : Array (Optio
   if let some (pre, post) := Core.membershipParts? infos scrutinee slot then
     recordLint .matchLikeMembership e (help (Core.membershipMsg (pre ++ scrutinee.text ++ post)))
   let some w := pats.findIdx? (·.isNone) | return
-  let covered := (List.range info.variants.size).filter fun k => !pats.any (·.any (·.contains k))
-  unless Core.wildcardSingle covered.length do return
-  let k := covered[0]!
-  let v := info.variants[k]!
+  let covered := ((List.range info.variants.size).filter fun k => !pats.any (·.any (·.contains k))).toArray
   let siblings ← (arms.flatMap patternAlts).mapM fun p => (pathSegs p[0]).mapM segName
-  let n := info.payloads[k]!.size
-  let pat? := ((← getState).table.variantPath? cx.modName cx.shadowing info.path v siblings).map fun segs =>
-    "::".intercalate (segs.map toString).toList ++ (if n == 0 then "" else s!"({", ".intercalate (List.replicate n "_")})")
-  let msg := Core.wildcardMsg (info.path ++ v) pat?
-  recordLint .wildcardSingleVariant arms[w]![0] (if pat?.isSome then help msg else msg)
+  let table := (← getState).table
+  -- The pattern that names each variant that `_` matches, if one resolves.
+  let named := covered.map fun k => (table.variantPath? cx.modName cx.shadowing info.path info.variants[k]! siblings).map
+    (Core.variantPattern · info.payloads[k]!.size)
+  -- `wildcard_enum_match_arm` (`lint::wildcard_enum_match_arm`).
+  let (_, fixable) := Core.wildcardEnumMatchArm true (named.filter (·.isNone)).size
+  let pattern? := if fixable then some (" | ".intercalate (named.filterMap id).toList) else none
+  let msg := Core.wildcardEnumMsg (covered.map (info.path ++ info.variants[·]!)) pattern?
+  recordLint .wildcardEnumMatchArm arms[w]![0] (if fixable then help msg else msg)
+  unless Core.wildcardSingle covered.size do return
+  let msg := Core.wildcardMsg (info.path ++ info.variants[covered[0]!]!) named[0]!
+  recordLint .wildcardSingleVariant arms[w]![0] (if named[0]!.isSome then help msg else msg)
 
 open Lang in
 /-- `e`'s shape, for whether it synthesizes a type (`Core.TypeShape`). -/
@@ -1379,7 +1385,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     if alts.isEmpty then pats := pats.push none; continue
     let mut idxs := #[]
     for p in alts do
-      match ← resolvePath cx.modName (pathSegs p[0]) cx.shadowing with
+      match ← resolveWritten cx.modName (pathSegs p[0]) cx.shadowing cx.noteIndexes with
       | .variant en idx =>
         if en.path != info.path then
           throwErrorAt p (Core.notAVariantOfMsg info.path s!"a variant of `{Core.showPath en.path}`").text
@@ -1460,7 +1466,7 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
   let alts := if e[2].isOfKind ``Lang.altsPattern then e[2][1].getSepArgs else #[]
   let mut pats : Array (Nat × Array Syntax) := #[]
   for p in alts do
-    match ← resolvePath cx.modName (pathSegs p[0]) cx.shadowing with
+    match ← resolveWritten cx.modName (pathSegs p[0]) cx.shadowing cx.noteIndexes with
     | .variant en idx =>
       if en.path != info.path then
         throwErrorAt p (Core.notAVariantOfMsg info.path s!"a variant of `{Core.showPath en.path}`").text
@@ -2180,7 +2186,7 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
         readPathField cx id parts (first + j) t ty f).1
     unless n.isAtomic do throwErrorAt segs[0] (Core.dottedNameMsg n cx.insts (cx.vars.filter (·.role != .instHidden) |>.map (·.name))).text
     if let some c := Core.builtinFunction? n then throwError (Core.unappliedMsg (.mkSimple c.name)).text
-  match ← resolvePath cx.modName segs cx.shadowing with
+  match ← resolveWritten cx.modName segs cx.shadowing cx.noteIndexes with
   | .variant en idx =>
     let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
     let n := (info.payloads[idx]?.map (·.size)).getD 0
@@ -2235,7 +2241,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     throwErrorAt p (Core.recursiveMsg (cx.modName ++ segs[0]!.getId)).text
   if let some c := cardinalityApp? e then return ← cardinalityTerm toTerm cx c args.getElems
   -- A variable shadows a function, as it does any other item.
-  let r ← resolvePath cx.modName (pathSegs p) cx.shadowing
+  let r ← resolveWritten cx.modName (pathSegs p) cx.shadowing cx.noteIndexes
   if let .variant en idx := r then
     -- A variant with a payload, built from its values.
     let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"

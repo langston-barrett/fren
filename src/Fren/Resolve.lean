@@ -80,6 +80,15 @@ def resolvePath (from_ : Name) (segs : Array Syntax) (extra : Array Name := #[])
   recordUsedItem r
   return r
 
+/-- `resolvePath` for a path written in an expression, a pattern or a type,
+which also records `absolute_paths` (`lint::absolute_paths`) if `report`:
+an expression translated again, as a trigger is, records nothing. -/
+def resolveWritten (from_ : Name) (segs : Array Syntax) (extra : Array Name := #[]) (report : Bool := true) : m Resolved := do
+  let r ← resolvePath from_ segs extra
+  if report then
+    if let some msg := Core.absolutePathMsg? (← segNames segs) r then recordLint .absolutePaths (mkNullNode segs) msg
+  return r
+
 /-- The generated Lean inductive for an enum. -/
 def enumDecl (path : Name) : m Name := do
   match (← getState).enums.get? path with

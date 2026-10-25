@@ -115,6 +115,14 @@ inductive Lint where
   | ifsSameCond
   | contradictoryComparisons
   | redundantComparisons
+  | allowAttributes
+  | wildcardEnumMatchArm
+  | needlessRawStrings
+  | nonAsciiLiteral
+  | moduleNameRepetitions
+  | minIdentChars
+  | absolutePaths
+  | precedence
   deriving Inhabited, BEq, DecidableEq, Repr
 
 def Lint.all : Array Lint :=
@@ -129,7 +137,9 @@ def Lint.all : Array Lint :=
     .upperCaseAcronyms, .justUnderscoresAndDigits, .disallowedNames, .needlessBoolAssign, .needlessMatch,
     .assertionsOnConstants, .suspiciousUnaryOpFormatting, .redundantSlicing, .noEffectReplace, .constIsEmpty,
     .manualPatternCharComparison, .almostCompleteRange, .duplicateConstraint, .invisibleCharacters, .negativePosition,
-    .absurdExtremeComparisons, .erasingOp, .ifsSameCond, .contradictoryComparisons, .redundantComparisons]
+    .absurdExtremeComparisons, .erasingOp, .ifsSameCond, .contradictoryComparisons, .redundantComparisons,
+    .allowAttributes, .wildcardEnumMatchArm, .needlessRawStrings, .nonAsciiLiteral, .moduleNameRepetitions,
+    .minIdentChars, .absolutePaths, .precedence]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -201,6 +211,14 @@ def Lint.name : Lint → String
   | .ifsSameCond => "ifs_same_cond"
   | .contradictoryComparisons => "contradictory_comparisons"
   | .redundantComparisons => "redundant_comparisons"
+  | .allowAttributes => "allow_attributes"
+  | .wildcardEnumMatchArm => "wildcard_enum_match_arm"
+  | .needlessRawStrings => "needless_raw_strings"
+  | .nonAsciiLiteral => "non_ascii_literal"
+  | .moduleNameRepetitions => "module_name_repetitions"
+  | .minIdentChars => "min_ident_chars"
+  | .absolutePaths => "absolute_paths"
+  | .precedence => "precedence"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -274,6 +292,14 @@ def Lint.code : Lint → String
   | .ifsSameCond => "F0765"
   | .contradictoryComparisons => "F0766"
   | .redundantComparisons => "F0767"
+  | .allowAttributes => "F0780"
+  | .wildcardEnumMatchArm => "F0781"
+  | .needlessRawStrings => "F0782"
+  | .nonAsciiLiteral => "F0783"
+  | .moduleNameRepetitions => "F0784"
+  | .minIdentChars => "F0785"
+  | .absolutePaths => "F0786"
+  | .precedence => "F0787"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -284,10 +310,12 @@ inductive Group where
   | complexity
   | suspicious
   | pedantic
+  | restriction
   | decidability
   deriving Inhabited, BEq, DecidableEq, Repr
 
-def Group.all : Array Group := #[.unused, .nonstandardStyle, .style, .complexity, .suspicious, .pedantic, .decidability]
+def Group.all : Array Group := #[.unused, .nonstandardStyle, .style, .complexity, .suspicious, .pedantic, .restriction,
+  .decidability]
 
 def Group.name : Group → String
   | .unused => "unused"
@@ -296,14 +324,16 @@ def Group.name : Group → String
   | .complexity => "complexity"
   | .suspicious => "suspicious"
   | .pedantic => "pedantic"
+  | .restriction => "restriction"
   | .decidability => "decidability"
 
 /-- The level of a group's lints by default (`lint::group_default`).
 `undecidable`, alone in `decidability`, is denied, so that a spec opts out
 of decidability explicitly (`Reqs/Lang/Decidability`); `pedantic` lints are
-allowed, since they would fire on much that reads well as it is. -/
+allowed, since they would fire on much that reads well as it is, and
+`restriction` lints, since each is a rule that a project chooses. -/
 def Group.default : Group → LintLevel
-  | .pedantic => .allow
+  | .pedantic | .restriction => .allow
   | .decidability => .deny
   | _ => .warn
 
@@ -326,6 +356,8 @@ def Lint.group : Lint → Group
   | .membershipChain | .definableOutput | .ifNotElse | .matchSameArms | .wildcardSingleVariant | .ifChainMatch
   | .caseSplitReqs | .boolEquality | .zeroSizedMapValues | .manySingleCharNames | .similarNames
   | .tooManyLines => .pedantic
+  | .allowAttributes | .wildcardEnumMatchArm | .needlessRawStrings | .nonAsciiLiteral | .moduleNameRepetitions
+  | .minIdentChars | .absolutePaths | .precedence => .restriction
   | .undecidable => .decidability
 
 def Lint.default (l : Lint) : LintLevel := l.group.default
@@ -1274,15 +1306,54 @@ def disallowedNameMsg (what : Named) (s : String) : Msg :=
     label? := some "a placeholder"
     notes := #["help: give it a name that says what it is"] }
 
+/-- Whether `min_ident_chars` fires on the name `s`
+(`lint::min_ident_chars`): without a final `?`, it is one character, other
+than `_`. -/
+def minIdentChars (s : String) : Bool :=
+  let b := baseName s
+  b.length == 1 && b != "_"
+
+def minIdentCharsMsg (what : Named) (s : String) : Msg :=
+  { code? := some Lint.minIdentChars.code, headline := s!"{what.describe} `{s}` has a name of one character"
+    label? := some "too short to say what it is"
+    notes := #["help: give it a name that says what it is"] }
+
 /-- The lints about a declared name alone: its case
-(`lint::naming_case`), and the lints of the `style` group that look only
-at the name. -/
+(`lint::naming_case`), and the lints of the `style` and `restriction`
+groups that look only at the name. -/
 def nameMsgs (what : Named) (n : Name) : Array (Lint × Msg) :=
   let s := nameText n
   (namingMsg? what n).toArray
     ++ (if upperCaseAcronyms what s then #[(.upperCaseAcronyms, upperCaseAcronymsMsg what s)] else #[])
     ++ (if justUnderscoresAndDigits s then #[(.justUnderscoresAndDigits, justUnderscoresAndDigitsMsg what s)] else #[])
     ++ (if disallowedName s then #[(.disallowedNames, disallowedNameMsg what s)] else #[])
+    ++ (if minIdentChars s then #[(.minIdentChars, minIdentCharsMsg what s)] else #[])
+
+/-- Whether a declared name of `what` is an item's, which a path from
+outside its module reaches through the module's name. -/
+def Named.isItem : Named → Bool
+  | .module | .component | .function | .global | .enumeration | .record | .abstractType | .constant => true
+  | _ => false
+
+/-- Whether `module_name_repetitions` fires on an item whose name has
+`nWords` words, which contain the `nModuleWords` words of its module's last
+segment if `contains` (`lint::module_name_repetitions`). -/
+def moduleNameRepetitions (nWords nModuleWords : Nat) (contains : Bool) : Bool := contains && nWords > nModuleWords
+
+/-- `module_name_repetitions` for the item `n` of `what`, declared in the
+module `mod`, if its words contain those of the module's last segment, in
+any case. -/
+def moduleNameMsg? (what : Named) (mod n : Name) : Option Msg := do
+  guard what.isItem
+  let .str _ m := mod | none
+  let ws := (words (nameText n)).map String.toLower
+  let ms := (words m).map String.toLower
+  guard (moduleNameRepetitions ws.length ms.length (containsWords ws ms))
+  some { code? := some Lint.moduleNameRepetitions.code
+         headline := s!"{what.describe} `{nameText n}` contains the name of its module `{showPath mod}`"
+         label? := some s!"contains `{m}`"
+         notes := #[s!"note: a path to it names the module already, as `{m}::{nameText n}` does",
+           s!"help: remove `{m}` from its name"] }
 
 /-! ## Unused variables -/
 
@@ -1864,6 +1935,11 @@ def Table.variantPath? (t : Table) (from_ : Name) (extra : Array Name) (enum v :
     | .ok (.variant en idx) => en.path == enum && en.variants[idx]? == some v
     | _ => false
 
+/-- The pattern of a variant whose path is `segs` and whose payload has `n`
+values: `E::V`, or `E::V(_, _)` with one `_` for each. -/
+def variantPattern (segs : Array Name) (n : Nat) : String :=
+  "::".intercalate (segs.map toString).toList ++ (if n == 0 then "" else s!"({", ".intercalate (List.replicate n "_")})")
+
 /-- A `_` arm that covers only the variant `v`, with the pattern that names
 it, if one resolves. -/
 def wildcardMsg (v : Name) (pattern? : Option String) : Msg :=
@@ -1871,6 +1947,20 @@ def wildcardMsg (v : Name) (pattern? : Option String) : Msg :=
     label? := some "matches one variant"
     notes := #[s!"note: named, a variant added later makes the `match` non-exhaustive, an error, rather than matched by `_`"]
     fixes := pattern?.toArray.map fun p => { msg := "name the variant", replacement := p } }
+
+/-- Whether `wildcard_enum_match_arm` fires on an arm, if it is `_`, and
+whether it has a fix, from the number of variants it matches that no
+pattern names (`lint::wildcard_enum_match_arm`). -/
+def wildcardEnumMatchArm (wildcard : Bool) (nUnnamed : Nat) : Bool × Bool := (wildcard, wildcard && nUnnamed == 0)
+
+/-- A `_` arm that matches the variants `vs`, with the or-pattern that
+names them, if each has a pattern that resolves. -/
+def wildcardEnumMsg (vs : Array Name) (pattern? : Option String) : Msg :=
+  { code? := some Lint.wildcardEnumMatchArm.code, headline := s!"`_` matches {proseList (vs.map showPath)}"
+    label? := some "matches every variant that no other arm names"
+    notes := #["note: a variant added later is matched by `_` too, without notice"]
+    fixes := pattern?.toArray.map fun p =>
+      { msg := if vs.size == 1 then "name the variant" else "name the variants", replacement := p } }
 
 /-! ## Suspicious expressions -/
 
@@ -2167,6 +2257,26 @@ def invisibleName (c : Char) : String :=
 /-- The escape of `c` in a string literal, `\uXXXX`. -/
 def unicodeEscape (c : Char) : String := "\\u" ++ (codePoint c).drop 2
 
+/-- The text between the quotes of the raw string literal written `t`,
+`r"..."` or `r#"..."#`, or `none` if it is not raw. -/
+def rawBody? (t : String) : Option String :=
+  if t.startsWith "r" then
+    -- The body is between the first `"` and the last.
+    some ((t.drop 1).toString.dropWhile (· == '#') |>.toString.drop 1 |>.toString.dropEndWhile (· == '#')
+      |>.toString.dropEnd 1 |>.toString)
+  else none
+
+/-- The string literal written `t`, with each character for which `esc`
+holds written as an escape. A raw literal, which has no escapes, becomes an
+ordinary one, with `\\` and `\"` for its `\` and `"`. -/
+def escapedLiteral (esc : Char → Bool) (t : String) : String :=
+  let escape (c : Char) := if esc c then unicodeEscape c else c.toString
+  match rawBody? t with
+  | some cs =>
+    "\"" ++ String.join (cs.toList.map fun c => if c == '\\' then "\\\\" else if c == '"' then "\\\"" else escape c)
+      ++ "\""
+  | none => String.join (t.toList.map escape)
+
 /-- `invisible_characters` on a comment, if `comment`, or a string literal,
 written `t`: the characters it reports, and `t` with each removed from a
 comment or written as an escape in a literal. A raw literal, which has no
@@ -2175,15 +2285,7 @@ def invisibleFix? (comment : Bool) (t : String) : Option (Array Char × String) 
   let found := t.toList.toArray.filter (invisibleCode comment ·.toNat)
   guard !found.isEmpty
   if comment then return (found, String.ofList (t.toList.filter (!invisibleCode comment ·.toNat)))
-  let escape (c : Char) := if invisibleCode false c.toNat then unicodeEscape c else c.toString
-  if t.startsWith "r" then
-    -- `r#"..."#`: the body is between the first `"` and the last.
-    let cs := (t.drop 1).toString.dropWhile (· == '#') |>.toString.drop 1 |>.toString.dropEndWhile (· == '#')
-      |>.toString.dropEnd 1 |>.toString
-    let body := String.join (cs.toList.map fun c =>
-      if c == '\\' then "\\\\" else if c == '"' then "\\\"" else escape c)
-    return (found, "\"" ++ body ++ "\"")
-  return (found, String.join (t.toList.map escape))
+  return (found, escapedLiteral (invisibleCode false ·.toNat) t)
 
 /-- A comment, if `comment`, or a string literal, with the characters
 `found`, whose fix is `fixed`. -/
@@ -2200,6 +2302,52 @@ def invisibleMsg (comment : Bool) (found : Array Char) (fixed : String) : Msg :=
     else if found.size == 1 then "write it as an escape" else "write them as escapes"
   { code? := some Lint.invisibleCharacters.code, headline, label? := some (if control then "may not read as it is written" else "contains what cannot be seen")
     notes, fixes := #[{ msg, replacement := fixed }] }
+
+/-! ## Restricted literals -/
+
+/-- Whether `needless_raw_strings` fires on a string literal, if it is
+`raw`, from whether its contents have a `\` or a `"`
+(`lint::needless_raw_strings`). -/
+def needlessRawStrings (raw backslash quote : Bool) : Bool := raw && !backslash && !quote
+
+/-- A raw string literal that needs no escapes, whose fix is `fixed`. -/
+def needlessRawMsg (fixed : String) : Msg :=
+  { code? := some Lint.needlessRawStrings.code, headline := "this raw string literal needs no escapes"
+    label? := some "has no `\\` and no `\"`"
+    notes := #["note: an ordinary literal of the same characters has the same value"]
+    fixes := #[{ msg := "write it as an ordinary literal", replacement := fixed }] }
+
+/-- Whether `non_ascii_literal` reports the character whose code point is
+`n`, and whether an escape can write it (`lint::non_ascii_literal`). -/
+def nonAscii (n : Nat) : Bool × Bool := (n ≥ 0x80, n ≤ 0xFFFF)
+
+/-- A string literal with the non-ASCII characters `found`, whose fix, if
+an escape can write each, is `fixed?`. -/
+def nonAsciiMsg (found : Array Char) (fixed? : Option String) : Msg :=
+  let distinct := found.foldl (init := #[]) fun acc c => if acc.contains c then acc else acc.push c
+  let names := distinct.map fun c => s!"`{codePoint c}`"
+  let headline := if distinct.size == 1 then s!"this string literal contains a non-ASCII character, {names[0]!}"
+    else s!"this string literal contains non-ASCII characters: {", ".intercalate names.toList}"
+  let beyond := distinct.filter fun c => !(nonAscii c.toNat).2
+  let notes := if beyond.isEmpty then #[] else
+    #[s!"note: {proseList (beyond.map codePoint)} {if beyond.size == 1 then "is" else "are"} beyond `U+FFFF`, which `\\uHHHH` cannot write, so this has no fix"]
+  let msg := if found.size == 1 then "write it as an escape" else "write them as escapes"
+  { code? := some Lint.nonAsciiLiteral.code, headline, label? := some "not ASCII", notes
+    fixes := fixed?.toArray.map fun replacement => { msg, replacement } }
+
+/-- The lints of the `restriction` group on the string literal written
+`t`: `needless_raw_strings` and `non_ascii_literal`. -/
+def literalMsgs (t : String) : Array (Lint × Msg) :=
+  let raw := match rawBody? t with
+    | some body =>
+      if needlessRawStrings true (body.contains '\\') (body.contains '"') then
+        #[(.needlessRawStrings, needlessRawMsg ("\"" ++ body ++ "\""))]
+      else #[]
+    | none => #[]
+  let reported (c : Char) := (nonAscii c.toNat).1
+  let found := t.toList.toArray.filter reported
+  let fixed? := if found.all fun c => (nonAscii c.toNat).2 then some (escapedLiteral reported t) else none
+  raw ++ if found.isEmpty then #[] else #[(.nonAsciiLiteral, nonAsciiMsg found fixed?)]
 
 /-! ## Negative positions -/
 
@@ -2891,6 +3039,32 @@ def erasingOpAt? (src : Array Char) (n : BNode α) : Option (OpReport α) := do
   unless erasingOp o (identityOperand src a) (identityOperand src b) same do none
   return { lint := .erasingOp, ref := n.ref, msg := erasingOpMsg o (o == .mul) }
 
+/-- Whether `precedence` fires on an operand of `outer` whose outermost
+operator is `inner`, if it is not `parenthesized` (`lint::precedence`). -/
+def precedenceFires (outer inner : InfixOp) (parenthesized : Bool) : Bool :=
+  !parenthesized && ((outer == .or && inner == .and)
+    || ((outer == .union || outer == .minus) && (inner == .inter || inner == .join)))
+
+/-- An operand `t` of `outer`, whose outermost operator is `inner`,
+written without the parentheses that its precedence implies. -/
+def precedenceMsg (outer inner t : String) : Msg :=
+  { code? := some Lint.precedence.code, headline := s!"`{inner}` is an operand of `{outer}` without parentheses"
+    label? := some s!"binds more tightly than `{outer}`"
+    notes := #[s!"note: `{inner}` binds more tightly than `{outer}`, so this is `({t})` already"]
+    fixes := #[{ msg := "add the parentheses, which keep the meaning", replacement := s!"({t})" }] }
+
+/-- `precedence` on the operands of `n`. -/
+def precedenceAt (src : Array Char) (n : BNode α) : Array (OpReport α) :=
+  match n.kind with
+  | .bin op => match InfixOp.ofOp? op with
+    | some o => n.kids.filterMap fun k => do
+      let .bin iop := k.kind | none
+      let i ← InfixOp.ofOp? iop
+      unless precedenceFires o i (enclosed src n.range k.range) do none
+      return { lint := .precedence, ref := k.ref, msg := precedenceMsg op iop (textOf src k.range) }
+    | none => #[]
+  | _ => #[]
+
 /-- The tests of the chain of `else if` that starts at `n`, in order. -/
 partial def ifTests (n : BNode α) : Array (BNode α) :=
   match n.kind, n.kids with
@@ -2925,6 +3099,7 @@ partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (variant? : α
         ++ (boolEqualityAt? src boolEq n slot parent).toArray ++ (manualMethodAt? src n slot parent).toArray
         ++ (identityOpAt? src n slot parent).toArray ++ (suspiciousUnaryAt? src n).toArray
         ++ (erasingOpAt? src n).toArray ++ (firstEmptyAt? src n slot parent).toArray ++ operands
+        ++ precedenceAt src n
     | .ite => (needlessBoolAssignAt? src n slot parent).toArray ++ (if inElse then #[] else ifsSameCondAt src n)
     | .method _ => (methodCallAt? src n slot parent).toArray
     | _ => #[]
@@ -3504,6 +3679,38 @@ def assertionOnConstantMsg (kind : String) (literal? : Option Bool) : Msg :=
       "it is either always true, and says nothing, or always false")
   { code? := some Lint.assertionsOnConstants.code, headline := s!"this {what} mentions no variable"
     label? := some label, notes := #[s!"note: {note}"] }
+
+/-! ## Restricted settings and paths -/
+
+/-- Whether `allow_attributes` fires on a `set_option` of a lint or group
+to `requested`, and whether its fix applies, from whether the setting is
+of `unfulfilled_lint_expectations` itself (`lint::allow_attributes`). -/
+def allowAttributes (requested : LintLevel) (unfulfilled : Bool) : Bool × Bool :=
+  (requested == .allow, requested == .allow && !unfulfilled)
+
+/-- A `set_option` of `t` to `"allow"`, fixed to `"expect"` if `fixable`. -/
+def allowAttributesMsg (t : LintTarget) (fixable : Bool) : Msg :=
+  { code? := some Lint.allowAttributes.code, headline := s!"`{t.name}` is allowed rather than expected"
+    label? := some "`allow`"
+    notes := #[s!"note: `\"expect\"` silences {if t matches .group _ then "its lints" else "it"} too, and `unfulfilled_lint_expectations` reports the setting once nothing needs it"]
+      ++ (if fixable then #[] else #["note: for `unfulfilled_lint_expectations`, `\"expect\"` means `\"allow\"`, so it is never fulfilled"])
+    fixes := if fixable then #[{ msg := "expect it instead", replacement := "\"expect\"" }] else #[] }
+
+/-- Whether `absolute_paths` fires on a path of `nSegments` segments, in an
+expression, pattern or type, to an item or a variant
+(`lint::absolute_paths`). -/
+def absolutePath (nSegments : Nat) : Bool := nSegments ≥ 3
+
+/-- `absolute_paths` for the path `segs` to `r`, if it is long. -/
+def absolutePathMsg? (segs : Array Name) (r : Resolved) : Option Msg := do
+  guard (absolutePath segs.size)
+  let (target, rest) := match r with
+    | .variant en idx => (en.path, s!"{en.path.getString!}::{nameText en.variants[idx]!}")
+    | .item i => (i.path, i.path.getString!)
+  some { code? := some Lint.absolutePaths.code
+         headline := s!"`{"::".intercalate (segs.map nameText).toList}` is a path of {segs.size} segments"
+         label? := some "a long path"
+         notes := #[s!"help: import it with `use {showPath target}`, and write `{rest}`"] }
 
 /-! ## Expectations -/
 

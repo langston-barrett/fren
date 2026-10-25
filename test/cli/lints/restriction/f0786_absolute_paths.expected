@@ -1,0 +1,13 @@
+warning[F0786]: `climate::Mode::Heat` is a path of 3 segments
+  --> test/cli/lints/restriction/f0786_absolute_paths.fren:14:30
+   |
+14 |     req rule: on? iff mode = climate::Mode::Heat
+   |                              ^^^^^^^^^^^^^^^^^^^ a long path
+   |
+   = help: import it with `use house::climate::Mode`, and write `Mode::Heat`
+   = note: `absolute_paths` is set to `warn`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0786`.
+exit=3

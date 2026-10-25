@@ -1,0 +1,15 @@
+-- `absolute_paths`, allowed by default.
+set_option fren.lint.absolute_paths "warn"
+
+mod house::climate
+
+pub enum Mode { Heat, Cool }
+
+mod house
+
+comp heating {
+    in mode: climate::Mode
+    pub out on?
+
+    req rule: on? iff mode = climate::Mode::Heat
+}

@@ -308,16 +308,20 @@ def withLineComment (src : Array Char) (stop : Nat) : Nat := Id.run do
   return i
 
 /-- The string literals and comments of `src` that `invisible_characters`
-reports, each with its message, in order (`lint::invisible_character`). -/
-def invisibleIn (src : Array Char) : Array (Span × Msg) :=
+reports (`lint::invisible_character`), and the string literals that
+`needless_raw_strings` and `non_ascii_literal` report, each with its lint
+and message, in order. -/
+def literalLints (src : Array Char) : Array (Lint × Span × Msg) :=
   match lexWithComments src with
   | .error _ => #[]
   | .ok (toks, comments) =>
     let lits := toks.filterMap fun t => if t.tok matches .str _ then some (t.span, false) else none
     let all := (lits ++ comments.map (·, true)).qsort (·.1.start < ·.1.start)
-    all.filterMap fun (sp, comment) => do
-      let (found, fixed) ← Fren.Core.invisibleFix? comment (String.ofList (src.extract sp.start sp.stop).toList)
-      return (sp, Fren.Core.invisibleMsg comment found fixed)
+    all.flatMap fun (sp, comment) =>
+      let text := String.ofList (src.extract sp.start sp.stop).toList
+      let invisible := (Fren.Core.invisibleFix? comment text).toArray.map fun (found, fixed) =>
+        (Lint.invisibleCharacters, sp, Fren.Core.invisibleMsg comment found fixed)
+      invisible ++ if comment then #[] else (Fren.Core.literalMsgs text).map fun (l, msg) => (l, sp, msg)
 
 /-- The edits that fix a lint's message, which `fren fix` makes where the
 message is reported. -/
@@ -397,9 +401,9 @@ structure State where
   /-- Where the current item starts. -/
   itemStart : Nat := 0
   /-- The string literals and comments of the current item that
-  `invisible_characters` reports, each with its message, until the item
+  `literalLints` reports, each with its lint and message, until the item
   is elaborated at its level. -/
-  invisible : Array (Span × Msg) := #[]
+  literals : Array (Lint × Span × Msg) := #[]
   /-- The global expectations of the current file: each one's module, name
   and text (`duplicate_constraint`). -/
   globalTexts : Array (Name × String × String) := #[]
@@ -565,11 +569,24 @@ def resolve (segs : Array Ident) (extra : Array Name := #[]) : M Resolved := do
 def lint (lint : Lint) (span : Span) (msg : Msg) : M Unit :=
   modify fun s => { s with lintReports := s.lintReports.push { lint, level := s.levels.get lint, ref := span, msg } }
 
+/-- `resolve` for a path written in an expression, a pattern or a type,
+which also reports `absolute_paths` (`lint::absolute_paths`) if `report`:
+an expression elaborated again, as a trigger is, reports nothing. -/
+def resolveWritten (segs : Array Ident) (extra : Array Name := #[]) (report : Bool := true) : M Resolved := do
+  let r ← resolve segs extra
+  if let some msg := Fren.Core.absolutePathMsg? (segNames segs) r then
+    unless report do return r
+    lint .absolutePaths (segs[0]!.span.to segs.back!.span) msg
+  return r
+
 /-- Reports the lints about a declared name alone (`nameMsgs`): its case
-(`lint::naming_case`), and the lints of the `style` group that look only at
-the name, at the level in effect. -/
+(`lint::naming_case`), and the lints of the `style` and `restriction` groups
+that look only at the name, at the level in effect; and, for an item other
+than a module, `module_name_repetitions`. -/
 def lintName (what : Named) (n : Name) (span : Span) : M Unit := do
   for (l, msg) in Fren.Core.nameMsgs what n do lint l span msg
+  unless what matches .module do
+    if let some msg := Fren.Core.moduleNameMsg? what (← get).module n then lint .moduleNameRepetitions span msg
   if what matches .variable | .instance | .binder then
     modify fun s => { s with declared := s.declared.push (n, span) }
 
@@ -1332,18 +1349,21 @@ def lintMatch (cx : ExprCtx) (e : Expr) (d : DataDecl) (pats : Array (Option (Ar
     lintEdits .matchLikeMembership span (Fren.Core.membershipMsg (pre ++ scr.text ++ post))
       #[({ start := span.start, stop := r.start }, pre), ({ start := r.stop, stop := span.stop }, post)]
   let some w := pats.findIdx? (·.isNone) | return
-  let covered := (List.range d.ctors.size).filter fun k => !pats.any (·.any (·.contains k))
-  unless Fren.Core.wildcardSingle covered.length do return
-  let k := covered[0]!
-  let v := d.ctors[k]!.1
+  let covered := ((List.range d.ctors.size).filter fun k => !pats.any (·.any (·.contains k))).toArray
   let siblings := (arms.flatMap (·.1.alts)).filterMap fun | .variant _ segs _ => some (segs.map (Name.mkSimple ·.name)) | _ => none
-  let n := d.ctors[k]!.2.size
   let st ← get
-  let pat? := (st.table.variantPath? st.scope cx.shadowing d.path v siblings).map fun segs =>
-    "::".intercalate (segs.map toString).toList ++ (if n == 0 then "" else s!"({", ".intercalate (List.replicate n "_")})")
-  -- Removing an arm into `_` makes it cover more than one variant.
+  -- The pattern that names each variant that `_` matches, if one resolves.
+  let named := covered.map fun k => (st.table.variantPath? st.scope cx.shadowing d.path d.ctors[k]!.1 siblings).map
+    (Fren.Core.variantPattern · d.ctors[k]!.2.size)
+  -- Removing an arm into `_` makes it cover more variants.
   let unless? := if groups.any (Fren.Core.groupFix infos · == .remove) then firstSame?.map (.matchSameArms, ·) else none
-  lintFix .wildcardSingleVariant arms[w]!.1.span (Fren.Core.wildcardMsg (d.path ++ v) pat?) unless?
+  -- `wildcard_enum_match_arm` (`lint::wildcard_enum_match_arm`).
+  let (_, fixable) := Fren.Core.wildcardEnumMatchArm true (named.filter (·.isNone)).size
+  let pattern? := if fixable then some (" | ".intercalate (named.filterMap id).toList) else none
+  lintFix .wildcardEnumMatchArm arms[w]!.1.span (Fren.Core.wildcardEnumMsg (covered.map (d.path ++ d.ctors[·]!.1)) pattern?)
+    unless?
+  unless Fren.Core.wildcardSingle covered.size do return
+  lintFix .wildcardSingleVariant arms[w]!.1.span (Fren.Core.wildcardMsg (d.path ++ d.ctors[covered[0]!]!.1) named[0]!) unless?
 
 /-- The variant that `e` names, if it is a path to one without a payload:
 its enumeration, its index and its text. -/
@@ -1992,7 +2012,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     if segs.size == 1 then
       if let some c := Fren.Core.builtinFunction? (identName segs[0]!.name) then
         err e.span (Fren.Core.unappliedMsg (.mkSimple c.name))
-    match ← resolve segs cx.shadowing with
+    match ← resolveWritten segs cx.shadowing cx.noteIndexes with
     | .variant en idx =>
       let d := (← get).dataOf? en.path
       let n := (d.bind (·.ctors[idx]?)).map (·.2.size) |>.getD 0
@@ -2027,7 +2047,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let count := if ites.size == 1 then ites[0]! else s!"(+ {" ".intercalate ites.toList})"
         return (s!"({c.smtOp} {count} 1)", .bool)
     -- A variable shadows a function, as it does any other item.
-    let path ← match ← resolve segs cx.shadowing with
+    let path ← match ← resolveWritten segs cx.shadowing cx.noteIndexes with
       | .item { kind := .fnItem, path, .. } => pure path
       | .variant en idx =>
         -- A variant with a payload, built from its values.
@@ -2084,7 +2104,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     readField f.span x t (Name.mkSimple f.name)
   | .record span tySegs fields =>
     let tySpan := tySegs[0]!.span.to tySegs.back!.span
-    let path ← match ← resolve tySegs cx.shadowing with
+    let path ← match ← resolveWritten tySegs cx.shadowing cx.noteIndexes with
       | .item { kind := .recordItem, path, .. } => pure path
       | r => err tySpan (Fren.Core.wrongKindMsg "a record" r)
     let some d := (← get).dataOf? path | internal tySpan s!"unknown record `{path}`"
@@ -2135,7 +2155,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let mut idxs := #[]
       for alt in p.alts do
         let .variant pspan segs binders? := alt | internal alt.span "nested or-pattern"
-        match ← resolve segs cx.shadowing with
+        match ← resolveWritten segs cx.shadowing cx.noteIndexes with
         | .variant en idx =>
           if en.path != ep then err pspan (Fren.Core.notAVariantOfMsg ep s!"a variant of `{showPath en.path}`")
           let v := ep ++ en.variants[idx]!
@@ -2221,7 +2241,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     let mut alts : Array (Nat × Array Ident) := #[]
     for alt in p.alts do
       let .variant pspan segs binders? := alt | internal alt.span "nested or-pattern"
-      match ← resolve segs cx.shadowing with
+      match ← resolveWritten segs cx.shadowing cx.noteIndexes with
       | .variant en idx =>
         if en.path != ep then err pspan (Fren.Core.notAVariantOfMsg ep s!"a variant of `{showPath en.path}`")
         let v := ep ++ en.variants[idx]!
@@ -2297,7 +2317,7 @@ partial def elabTy (segs : Array Ident) : M Ty := do
           lint .zeroSizedMapValues { start := segs[0]!.span.start, stop := stop + 1 }
             (Fren.Core.zeroSizedMapValuesMsg (text a sep.start) (text b b.back!.span.stop) d.ctors[0]!.1.toString)
     return .rel ta tb
-  match ← resolve segs with
+  match ← resolveWritten segs with
   | .item { kind := .enumItem, path, .. } => return .enum path
   | .item { kind := .recordItem, path, .. } => return .record path
   | .item { kind := .typeItem, path, .. } => return .abstract path
@@ -2824,15 +2844,15 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
                                 decidable := !s.outsideCore, natApps := s.natApps
                                 tested := Fren.Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] } }
 
-/-- Reports `invisible_characters` in the current item, at its level
-(`lint::invisible_character`). -/
-def lintInvisible : M Unit := do
-  for (span, msg) in (← get).invisible do lintFix .invisibleCharacters span msg
-  modify fun s => { s with invisible := #[] }
+/-- Reports the lints of the string literals and comments of the current
+item, at its level (`literalLints`). -/
+def lintLiterals : M Unit := do
+  for (l, span, msg) in (← get).literals do lintFix l span msg
+  modify fun s => { s with literals := #[] }
 
 partial def elabItem (item : Item) : M Unit := do
   -- A `set_option` leaves them to the item after it.
-  unless item matches .lintSetting .. do lintInvisible
+  unless item matches .lintSetting .. do lintLiterals
   match item with
   | .mod isPub segs => do
     let (path, new) ← liftResolve segs ((← get).table.declareModule (segNames segs) isPub)
@@ -2840,6 +2860,8 @@ partial def elabItem (item : Item) : M Unit := do
       if let some seg := segs[i.path.components.length - 1]? then
         lintName .module (Name.mkSimple seg.name) seg.span
         if let some msg := Fren.Core.moduleInceptionMsg? i.path then lint .moduleInception seg.span msg
+        if let some msg := Fren.Core.moduleNameMsg? .module i.path.getPrefix (Name.mkSimple seg.name) then
+          lint .moduleNameRepetitions seg.span msg
     modify fun s => { s with table := new.foldl (·.addItem ·) s.table, module := path, scope := path }
   | .use span segs glob => do
     let removal := { span with start := (← get).settingStart?.getD span.start }
@@ -3054,6 +3076,9 @@ partial def elabItem (item : Item) : M Unit := do
     let settingStart? := (← get).settingStart?
     if let some lint := target.rejectedBy? (levels.get · |>.level) requested then
       err stx (Fren.Core.forbiddenMsg target lint requested)
+    -- `allow_attributes` (`lint::allow_attributes`), at the level before the setting.
+    let (allows, fix) := Fren.Core.allowAttributes requested (target == .lint .unfulfilledExpectations)
+    if allows then lintFix .allowAttributes valueSpan (Fren.Core.allowAttributesMsg target fix)
     let expectation? ← if requested == .expect then do
         let e : Fren.Core.ExpectationRecord := { target, level := levels.get .unfulfilledExpectations }
         let k := (← get).expectations.size
@@ -3148,16 +3173,16 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
                            used := #[], expectations := #[], lintReports := #[], useLocs := #[],
                            expectationRemovals := #[], items := #[], usedItems := #[], lintFixes := #[],
                            globalTexts := #[] }
-  let found := invisibleIn src
+  let found := literalLints src
   for item in items, k in [0:items.size] do
     -- An item has the literals and comments up to the next item, and the
     -- first, those before it too, and those that a `set_option` before it
     -- left.
     let start := starts[k]?.getD 0
     let stop := starts[k + 1]?.getD src.size
-    let left ← if k > 0 && items[k - 1]! matches .lintSetting .. then pure (← get).invisible else pure #[]
-    let invisible := left ++ found.filter fun (sp, _) => (k == 0 || start ≤ sp.start) && sp.start < stop
-    modify fun s => { s with itemStart := start, invisible }
+    let left ← if k > 0 && items[k - 1]! matches .lintSetting .. then pure (← get).literals else pure #[]
+    let literals := left ++ found.filter fun (_, sp, _) => (k == 0 || start ≤ sp.start) && sp.start < stop
+    modify fun s => { s with itemStart := start, literals }
     let s ← get
     match (elabItem item).run s with
     | .ok ((), s') =>
