@@ -26,4 +26,8 @@ refine mistyped: c refines a { n := b?, z := y }
 comp b { in k: Int pub out z: Int req r: z >= k }
 refine shorthand: c refines b { z := y, k }  --~ error: cannot find `k` in this scope
 
+-- Only `c`'s own variables are in scope: not those of its instances.
+comp outer { in n: Int pub out z: Int inst inner: c { x := n, b? := true } req r: z = inner.y }
+refine instance_var: outer refines a { z := inner.y }  --~ error: `inner.y` is not a single name
+
 --@ exit: 2

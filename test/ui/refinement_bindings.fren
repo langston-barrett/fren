@@ -62,4 +62,11 @@ refine guarded: seqs refines first_of { n := q.len, x := if q != [] then q[0] el
 refine unguarded: seqs refines first_of { n := 1, x := q[0], y := s[0] }  --~ error: an index of `unguarded::x` may be out of range
 --~^ error: an index of `unguarded::y` may be out of range
 
---@ summary: 23 passed, 3 failed, 0 inconclusive, 0 redundant
+-- Swapped bindings: each input of `a` is read as the other input of `c`.
+comp difference { in x: Int in y: Int pub out d: Int req r: d = x - y }
+comp reversed { in x: Int in y: Int pub out d: Int req r: d = y - x }
+
+refine swapped: reversed refines difference { x := y, y := x }
+refine unswapped: reversed refines difference  --~ error: expectation `unswapped::r` does not hold
+
+--@ summary: 28 passed, 4 failed, 0 inconclusive, 0 redundant

@@ -93,9 +93,11 @@ pub comp binding {
 }
 ```
 
-A binding sees `c` from outside, as `a`'s variable would: it may mention
-`c`'s inputs and public outputs, and no private output, nor the variables
-of `c`'s instances. A binding of an input of `a` may mention `c`'s inputs
+A binding sees `c` from outside, as `a`'s variable would. Only `c`'s own
+variables are in scope in it: the variables of `c`'s instances, such as
+`inner.y`, are not, and neither are its instances' names, so `inner.y`
+is a dotted name whose root is not in scope (`F0111`), as anywhere else. Of `c`'s own variables, a binding may mention the inputs and
+public outputs, and no private output. A binding of an input of `a` may mention `c`'s inputs
 only, since `a`'s inputs are chosen by the environment, before `c` chooses
 its outputs, and `a`'s assumptions, which mention them, constrain the
 environment. A defined output of `c` is an output here, whatever its
@@ -125,9 +127,14 @@ applies a relational operator, in a binding or through `c` or `a`, then a
 so are `c` and `a` if they count.
 
 The indexes of a binding are checked for
-[definedness](../Check.md#definedness) where it is read: an input's
-binding under `a`'s assumptions, which mention it, and an output's under
-the hypotheses of the obligation's second part below.
+[definedness](../Check.md#definedness) where it is read. An input's
+binding is checked under all of `a`'s assumptions, with the bindings
+substituted into them, and nothing else: not `c`'s instance, nor any
+other hypothesis. Since those assumptions mention the binding itself,
+they rarely help, so an input's binding is best guarded within its own
+expression, as in `if q != [] then q[0] else 0`. An output's binding is
+checked under the hypotheses of the obligation's second part below: `a`'s
+assumptions, the instance of `c`, and `a`'s instances.
 
 ## The obligation
 

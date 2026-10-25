@@ -1,0 +1,17 @@
+error[F0111]: `inner.y` is not a single name
+ --> test/cli/refinement_bindings_instance_var.fren:6:37
+  |
+6 | refine fits: outer refines a { z := inner.y }
+  |                                     ^^^^^^^ `.` reads an instance's variable, or a value's field or method
+  |
+  = note: `inner` is not an instance, a variable or a constant
+help: if it is a path, separate its segments with `::`
+  |
+6 - refine fits: outer refines a { z := inner.y }
+6 + refine fits: outer refines a { z := inner::y }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0111`.
+exit=2
