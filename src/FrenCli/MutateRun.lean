@@ -160,10 +160,17 @@ def equivalent (st : State) (prelude : Prelude) (st' : State) (timeout : Nat) (c
     let c' := t'.comp
     let some t := ts.find? (·.key == t'.key) | return none
     let c := t.comp
-    let fs := formulas c
-    let fs' := formulas c'
+    -- An item's indexes are missing where it has none, such as after a
+    -- mutant drops its last one: they are then all in range, `true`.
+    let isIndexes (l : String) := l.startsWith "indexes "
+    let (is, fs) := (formulas c).partition (isIndexes ·.1)
+    let (is', fs') := (formulas c').partition (isIndexes ·.1)
     if fs.map (·.1) != fs'.map (·.1) then return none
-    let pairs := (fs.zip fs').filterMap fun ((_, a), (_, b)) => if a == b then none else some (a, b)
+    let lookup (xs : Array (String × String)) (l : String) := ((xs.find? (·.1 == l)).map (·.2)).getD "true"
+    let labels := ((is ++ is').map (·.1)).toList.eraseDups
+    let pairs := ((fs.zip fs').map fun ((_, a), (_, b)) => (a, b))
+      ++ labels.toArray.map (fun l => (lookup is l, lookup is' l))
+    let pairs := pairs.filter fun (a, b) => a != b
     result := both result (← equal st prelude c.vars pairs timeout cache)
     if result == some false then return result
   return result
