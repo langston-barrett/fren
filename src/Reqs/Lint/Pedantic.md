@@ -94,7 +94,13 @@ pub comp if_not_else {
 `match_same_arms` and `wildcard_single_variant` look at the arms of a
 [`match`](../Lang/Expressions.md#matches) as written, as
 [`match_like_membership`](Style.md#matches-that-are-memberships) does.
-Both are fixable.
+Both are fixable. Both look only at a `match` whose patterns are all
+*flat*: `_`, binders, `true`, `false`, variants whose payloads' patterns
+are `_` or binders, and or-patterns of these. Two flat patterns either
+match no value in common or one contains the other, so moving an arm
+earlier, removing one, or naming what `_` matches keeps the meaning. With
+a nested, literal or range pattern, an arm can match part of what a later
+one does, as `S::A(0)` does of `S::A(_)`.
 
 `match_same_arms`, `allow` by default, fires on two arms whose bodies are
 [written the same](../Lint.md#written-the-same), and whose patterns bind no names.

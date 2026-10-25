@@ -59,6 +59,14 @@ which would be a static error: `shift-integer` does not change a divisor
 is a constant that the value of such a constant names. A constant is told
 by its name alone, in any of the files.
 
+The [patterns](Lang/Patterns.md) of `match` arms are not changed, so that
+every mutant's `match` stays exhaustive and every arm reachable, and only
+the top-level alternatives of a pattern test's pattern are dropped:
+dropping an alternative never makes another unreachable. For the same
+reason, a constant that bounds a range pattern is left alone as a divisor's
+is, since its value decides whether a range is empty and which arms the
+ranges reach.
+
 Mutants change what a spec asserts: the expressions of `assume`s, `req`s,
 defined outputs, instance bindings, constants and defined functions. The
 expectations, both of components and [global](Lang/Global.md), and the

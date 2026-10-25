@@ -181,29 +181,50 @@ scoped syntax:max (name := fieldExpr) fren_expr:arg noWs "." noWs frenIdent : fr
 `x.m(a)` is parsed as an application of the dotted name. -/
 scoped syntax:max (name := methodExpr) fren_expr:arg noWs "." noWs (frenIdent <|> "at") noWs "(" sepBy1(fren_expr, ", ") ")" : fren_expr
 
-declare_syntax_cat fren_pattern_binder
-syntax frenIdent : fren_pattern_binder
-syntax "_" : fren_pattern_binder
+/-! Patterns (`Reqs/Lang/Patterns`). -/
 
-/-- An alternative of a pattern: `E::V` or `E::V(a, _)`. -/
-syntax fren_alternative := fren_path (noWs "(" sepBy1(fren_pattern_binder, ", ") ")")?
+declare_syntax_cat fren_bound
+/-- A bound of a range: an integer, possibly negated. -/
+syntax (name := numBound) ("-")? num : fren_bound
+/-- A bound of a range: a constant. -/
+syntax (name := pathBound) fren_path : fren_bound
 
+/-- An alternative of an or-pattern, or a pattern of a payload. -/
 declare_syntax_cat fren_pattern
+/-- `A | B`, an or-pattern, or one pattern. -/
+syntax fren_or_pattern := sepBy1(fren_pattern, " | ")
 /-- `_`, matching any value. -/
 syntax (name := wildPattern) "_" : fren_pattern
-/-- `A | B`, optionally after a leading `|`. -/
-syntax (name := altsPattern) ("| ")? sepBy1(fren_alternative, " | ") : fren_pattern
+/-- An integer literal, possibly negated. -/
+syntax (name := numPattern) ("-")? num : fren_pattern
+/-- A string literal, raw or not. -/
+syntax (name := strPattern) str : fren_pattern
+/-- `x`, `E::V` or `E::V(p, q)`: a path of one segment, not applied, is a
+binder, `true`, `false` or a variant, once resolved (`lang::pattern_name`). -/
+syntax (name := variantPattern) fren_path (noWs "(" sepBy1(fren_or_pattern, ", ") ")")? : fren_pattern
+/-! The ranges are scoped, so that `..=` is a token only where `Fren.Lang`
+is open, and are written without spaces around `..=` and `..`. -/
+/-- `a..=b` -/
+scoped syntax (name := rangePattern) fren_bound noWs "..=" noWs fren_bound : fren_pattern
+/-- `a..b` and `a..` -/
+scoped syntax (name := fromPattern) fren_bound noWs ".." (noWs fren_bound)? : fren_pattern
+/-- `..=b` -/
+scoped syntax (name := uptoPattern) "..=" noWs fren_bound : fren_pattern
+
+/-- The pattern of a `match` arm or of `is`: an or-pattern, optionally
+after a leading `|`. -/
+syntax fren_top_pattern := ("| ")? sepBy1(fren_pattern, " | ")
 
 /-- `pattern => e`; like a binding's, the expression cannot be a bare
 `when`/`unless`. -/
-syntax fren_arm := fren_pattern " => " fren_expr:20
+syntax fren_arm := fren_top_pattern " => " fren_expr:20
 
 /-- `match e { pattern => e, ... }`. -/
 scoped syntax:max (name := matchExpr) "match " fren_expr:max " { " sepBy(fren_arm, ", ", ", ", allowTrailingSep) " }" : fren_expr
 
 /-- `e is P`, a pattern test, at the precedence of the comparisons. `is`
 is a reserved word where `Fren.Lang` is open, as the set operators are. -/
-scoped syntax:50 (name := isExpr) fren_expr:50 " is " fren_pattern : fren_expr
+scoped syntax:50 (name := isExpr) fren_expr:50 " is " fren_top_pattern : fren_expr
 
 declare_syntax_cat fren_member (behavior := both)
 

@@ -9,6 +9,7 @@ import FrenCore.Checking
 import FrenCore.Guards
 import FrenCore.Lexical
 import FrenCore.Mentions
+import FrenCore.Patterns
 import FrenCore.Regex
 import FrenCore.Syntax
 import FrenCore.Ty
@@ -721,20 +722,50 @@ def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term
     | throwErrorAt ref (Core.noFieldMsg f (Core.showPath r.path) (r.fields.map (·.1))).text
   return (← `($(mkCIdentFrom ref (r.decl ++ f)) $t), ft)
 
-/-- The alternatives of a `match` arm's pattern, none for `_`. -/
-def patternAlts (arm : Syntax) : Array Syntax :=
-  if arm[0].isOfKind ``Lang.altsPattern then arm[0][1].getSepArgs else #[]
+/-! ### Patterns (`Reqs/Lang/Patterns`) -/
 
-/-- The binders of an alternative, `_` included. -/
-def altBinders (alt : Syntax) : Array Syntax :=
-  if alt[1].isNone then #[] else alt[1][1].getSepArgs.map (·[0])
+/-- The alternatives of a pattern of `match` or `is`, a `fren_top_pattern`,
+as written, and whether it is an or-pattern: of more than one, or with a
+leading `|`. -/
+def topAlts (top : Syntax) : Array Syntax × Bool :=
+  let alts := top[1].getSepArgs
+  (alts, alts.size > 1 || !top[0].isNone)
 
-/-- The binders of a `match` arm's pattern, `_` included: those of its only
-alternative, since those of an or-pattern are all `_`. -/
-def patternBinders (arm : Syntax) : Array Syntax :=
-  match patternAlts arm with
-  | #[a] => altBinders a
-  | _ => #[]
+/-- The payload's patterns of a variant pattern, each a `fren_or_pattern`. -/
+def patternArgs (p : Syntax) : Array Syntax :=
+  if p.isOfKind ``Lang.variantPattern && !p[1].isNone then p[1][1].getSepArgs else #[]
+
+mutual
+/-- The alternatives of the or-patterns within the pattern `p`, in preorder
+(`Core.Pat.alternatives`). -/
+partial def innerAlternatives (p : Syntax) : Array Syntax :=
+  (patternArgs p).flatMap fun a => orAlternatives a[0].getSepArgs (a[0].getSepArgs.size > 1)
+
+/-- The alternatives `alts` of an or-pattern (`isOr`), each followed by
+those within it, or those within its only pattern. -/
+partial def orAlternatives (alts : Array Syntax) (isOr : Bool) : Array Syntax :=
+  if isOr then alts.flatMap fun a => #[a] ++ innerAlternatives a else alts.flatMap innerAlternatives
+end
+
+/-- The alternatives of the or-patterns of the pattern `top` of `match` or
+`is`, in preorder. -/
+def topAlternatives (top : Syntax) : Array Syntax := let (alts, isOr) := topAlts top; orAlternatives alts isOr
+
+/-- The identifiers of one segment, not applied, of the pattern `p`, in
+preorder: its binders, once those that name variants, `true` and `false`
+are told apart. -/
+partial def patternNames (p : Syntax) : Array Syntax :=
+  if p.isOfKind ``Lang.variantPattern then
+    if p[1].isNone then
+      match pathSegs p[0] with
+      | #[x] => #[x]
+      | _ => #[]
+    else (patternArgs p).flatMap fun a => a[0].getSepArgs.flatMap patternNames
+  else #[]
+
+/-- The identifiers of one segment, not applied, of the pattern `top` of
+`match` or `is`. -/
+def topNames (top : Syntax) : Array Syntax := (topAlts top).1.flatMap patternNames
 
 /-- The names of the variables that `e` mentions: its paths of one
 segment, and for `p.x`, `p` too. -/
@@ -760,7 +791,7 @@ partial def pathMentions (e : Syntax) : Array Name :=
   else if e.isOfKind ``Lang.matchExpr then
     e[3].getSepArgs.foldl (init := pathMentions e[1]) fun acc arm =>
       -- In its arm, a binder's name means the binder, not what it shadows.
-      let bound := (patternBinders arm).filter (·.isIdent) |>.map fun b => (declaredIdent b).1.getId
+      let bound := (topNames arm[0]).map fun b => (declaredIdent b).1.getId
       acc ++ (pathMentions arm[2]).filter (!bound.contains ·.getRoot)
   -- A pattern's paths name variants.
   else if e.isOfKind ``Lang.isExpr then pathMentions e[0]
@@ -838,6 +869,16 @@ def cardinalityApp? (e : Syntax) : Option Core.Cardinality := do
   guard (segs.size == 1)
   Core.builtinFunction? segs[0]!.getId
 
+/-- What the identifier `x`, the only segment of the path `p`, not applied,
+is in a pattern (`lang::pattern_name`). -/
+def patternName (cx : ExprCtx) (p x : Syntax) : TermElabM Core.PatternName := do
+  let (n, bang) := Core.declaredName x.getId
+  return Core.patternName (n == `true || n == `false) bang (← isVariant cx p)
+
+/-- The binders of the pattern `top` of `match` or `is`, in preorder. -/
+def topBinders (cx : ExprCtx) (top : Syntax) : TermElabM (Array Syntax) :=
+  (topNames top).filterM fun x => return (← patternName cx (mkNode ``Lang.fren_path #[mkNullNode #[x]]) x) == .binder
+
 /-- The shape of `e`, for what it mentions (`lang::mentions`), where `bs`
 are the binders of `e` around the subexpression, each with the shape of its
 scrutinee. -/
@@ -863,7 +904,7 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
   else if e.isOfKind ``Lang.matchExpr then
     let s ← shapeOf cx e[1] bs
     let arms ← e[3].getSepArgs.toList.mapM fun arm => do
-      let new := (patternBinders arm).filter (·.isIdent) |>.map fun b => ((declaredIdent b).1.getId, Core.MentionShape.node .binder [s])
+      let new := (← topBinders cx arm[0]).map fun b => ((declaredIdent b).1.getId, Core.MentionShape.node .binder [s])
       shapeOf cx arm[2] (bs ++ new)
     return .node .compound (s :: arms)
   else if e.isOfKind ``Lang.isExpr then parts .compound #[e[0]]
@@ -1207,15 +1248,6 @@ def recordTerm (go : Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : Te
     return t
   `($(mkCIdentFrom e[0] (recordCtor info.decl)) $args*)
 
-/-- That the term `s` of the enumeration `info` is one of the variants
-`idxs`: equal to the variant built from its own payload. -/
-def variantsTest (info : EnumInfo) (s : Term) (idxs : Array Nat) : TermElabM Term := do
-  let tests ← idxs.mapM fun idx => do
-    let ctor := info.decl ++ info.variants[idx]!
-    let sels ← (Array.range info.payloads[idx]!.size).mapM fun k => `($(mkCIdent (selectorName ctor k)) $s)
-    `($s = $(mkCIdent ctor) $sels*)
-  tests.pop.foldrM (init := tests.back!) fun t acc => `($t ∨ $acc)
-
 open Lang in
 /-- The precedence of `e`'s operator, as `lang::operand` uses it: an
 expression in parentheses, or a field read, is an atom. -/
@@ -1246,39 +1278,48 @@ def operandSlot (p e : Syntax) : Option Core.Slot :=
     | 3, _, op => if op.isEmpty then none else at_ (.bin op) #[0, 2]
     | _, _, _ => none
 
-/-- The match lints of the `match` `e` on a value of the enumeration
-`info`, whose arms name the variants `pats`, or `_` for `none`, where
-`slot` is (`Reqs/Lint/Style#matches-that-are-memberships`,
-`Reqs/Lint/Pedantic#matches`). -/
-def lintMatch (cx : ExprCtx) (e : Syntax) (info : EnumInfo) (pats : Array (Option (Array Nat)))
+/-- The match lints of the `match` `e` on a value of type `ty`, whose arms'
+patterns are `pats`, where `slot` is (`Reqs/Lint/Style#matches-that-are-memberships`,
+`Reqs/Lint/Pedantic#matches`). The lints that move or remove arms, or
+replace `_` with a variant, look only at a `match` whose patterns are all
+flat (`Core.Pat.flat`), where no arm overlaps another without containing
+it. -/
+def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
     (slot : Option Core.Slot) : TermElabM Unit := do
   let arms := e[3].getSepArgs
-  let infos : Array Core.ArmInfo := arms.map fun arm =>
-    let alts := patternAlts arm
-    { alts := alts.map exactText, binds := (patternBinders arm).any (·.isIdent), noPayload := alts.all (·[1].isNone)
-      body := { text := exactText arm[2], prec := exprPrec arm[2] } }
+  let mut infos : Array Core.ArmInfo := #[]
+  for arm in arms, pat in pats do
+    let (alts, _) := topAlts arm[0]
+    let alts := if alts.size == 1 && arm[0][0].isNone && alts[0]!.isOfKind ``Lang.wildPattern then #[] else alts
+    infos := infos.push { alts := alts.map exactText, binds := !(← topBinders cx arm[0]).isEmpty, noPayload := pat.noPayload
+                          body := { text := exactText arm[2], prec := exprPrec arm[2] } }
+  let flat := pats.all (·.flat)
   -- `fren fix` reads Markdown specs, but not Lean files.
   let fixable := (← getLocal).inMarkdown
   let help (m : Core.Msg) := if fixable then m.note Core.fixHelp else m
   -- `trivial_match` (`lint::trivial_match`).
   if let #[i] := infos then
     if Core.trivialMatch infos.size i.binds then recordLint .trivialMatch e (Core.trivialMatchMsg (i.body.inSlot slot (followedStx e)))
-  -- `needless_match` (`lint::needless_match`).
+  -- `needless_match` (`lint::needless_match`): only a `match` whose arms
+  -- are `_` and variants whose payloads' patterns are `_` or binders.
   let scr := exactText (unparen e[1])
+  let enum? := ty.constName?.bind (← getState).enumOfDecl?
   let mut givenBack := true
   let mut wildcard := false
   let mut scrutineeBack := false
   for arm in arms, pat in pats do
     let body := unparen arm[2]
-    match pat with
-    | none =>
+    let (alts, isOr) := topAlts arm[0]
+    match pat, enum?, alts with
+    | .wild false, _, _ =>
       wildcard := true
       scrutineeBack := Core.writtenSame (exactText body) scr
-    | some #[idx] =>
-      let bs := patternBinders arm
-      let binders := bs.map fun b => if b.isIdent then b.getId.toString else "_"
+    | .ctor idx qs, some info, #[alt] =>
+      unless !isOr && qs.all (· matches .wild _) do givenBack := false; continue
+      let bs := (patternArgs alt).map (·[0].getSepArgs[0]!)
+      let binders := bs.map fun b => if b.isOfKind ``Lang.wildPattern then "_" else (pathSegs b[0])[0]!.getId.toString
       -- The arm's binders shadow items in its body.
-      let shadowing := cx.shadowing ++ (bs.filter (·.isIdent)).map (·.getId)
+      let shadowing := cx.shadowing ++ (binders.filter (· != "_")).map Name.mkSimple
       let (p, args) := if body.isOfKind ``Lang.appExpr then (body[0], body[2].getSepArgs)
         else (if body.getNumArgs == 1 then body[0] else body, #[])
       let same ← if p.isOfKind ``Lang.fren_path then do
@@ -1288,20 +1329,28 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (info : EnumInfo) (pats : Array (Optio
             | _ => false)
         else pure false
       unless Core.givesBack same binders (args.map (exactText ∘ unparen)) do givenBack := false
-    | some _ => givenBack := false
+    | _, _, _ => givenBack := false
   let trivial := Core.trivialMatch infos.size (infos[0]?.any (·.binds))
   if Core.needlessMatch givenBack wildcard scrutineeBack trivial then
     let scrutinee : Core.BText := { text := scr, prec := exprPrec (unparen e[1]) }
     recordLint .needlessMatch e (help (Core.needlessMatchMsg (scrutinee.inSlot slot (followedStx e))))
-  for g in Core.sameArmGroups infos do
-    let (i, msg) := Core.sameArmsMsg infos g slot (followedStx e)
-    recordLint .matchSameArms arms[i]! (help msg)
+  if flat then
+    for g in Core.sameArmGroups infos do
+      let (i, msg) := Core.sameArmsMsg infos g slot (followedStx e)
+      recordLint .matchSameArms arms[i]! (help msg)
   let scrutinee : Core.BText := { text := exactText e[1], prec := exprPrec e[1] }
   if let some (pre, post) := Core.membershipParts? infos scrutinee slot then
     recordLint .matchLikeMembership e (help (Core.membershipMsg (pre ++ scrutinee.text ++ post)))
-  let some w := pats.findIdx? (·.isNone) | return
-  let covered := ((List.range info.variants.size).filter fun k => !pats.any (·.any (·.contains k))).toArray
-  let siblings ← (arms.flatMap patternAlts).mapM fun p => (pathSegs p[0]).mapM segName
+  unless flat do return
+  let some info := ty.constName?.bind (← getState).enumOfDecl? | return
+  let some w := infos.findIdx? (·.wildcard) | return
+  let names (p : Core.Pat) : Array Nat := match p with
+    | .ctor k _ => #[k]
+    | .or alts => alts.filterMap fun | .ctor k _ => some k | _ => none
+    | _ => #[]
+  let covered := ((List.range info.variants.size).filter fun k => !pats.any (names · |>.contains k)).toArray
+  let siblings ← (arms.flatMap fun arm => (topAlts arm[0]).1.filter (·.isOfKind ``Lang.variantPattern)).mapM fun p =>
+    (pathSegs p[0]).mapM segName
   let table := (← getState).table
   -- The pattern that names each variant that `_` matches, if one resolves.
   let named := covered.map fun k => (table.variantPath? cx.modName cx.shadowing info.path info.variants[k]! siblings).map
@@ -1314,6 +1363,43 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (info : EnumInfo) (pats : Array (Optio
   unless Core.wildcardSingle covered.size do return
   let msg := Core.wildcardMsg (info.path ++ info.variants[covered[0]!]!) named[0]!
   recordLint .wildcardSingleVariant arms[w]![0] (if named[0]!.isSome then help msg else msg)
+
+/-- A binder of a pattern, with the type of its value, and its value, read
+from the scrutinee with selectors. -/
+structure PatBinder where
+  ident : Syntax
+  type : Expr
+  term : Term
+  deriving Inhabited
+
+/-- The type of a value of the Lean type `t`, as patterns see it. -/
+def patTyOf (st : State) (t : Expr) : Core.PatTy :=
+  if t.isConstOf ``Bool || t.isProp then .bool
+  else if t.isConstOf ``Int then .int
+  else if t.isConstOf ``Nat then .nat
+  else if t.isConstOf ``String then .string
+  else match t.constName?.bind st.enumOfDecl? with
+    | some e => .enum e.path
+    | none => .other
+
+/-- The variants of each enumeration, with their payloads' types, as
+patterns see them. -/
+def patSigs : TermElabM Core.Sigs := do
+  let st ← getState
+  return fun p => ((st.enums.get? p).map fun e => (e.variants.zip e.payloads).map fun (v, ts) => (v, ts.map (patTyOf st))).getD #[]
+
+/-- The name of the type `t`, where a `Bool` may be a `Prop`. -/
+def patTypeName (t : Expr) : TermElabM String := if t.isProp then pure "Bool" else typeName t
+
+/-- The integer `v`, as a term. -/
+def intTerm (v : Int) : TermElabM Term := do
+  let n := Syntax.mkNumLit (toString v.natAbs)
+  if v < 0 then `((-$n : Int)) else `(($n : Int))
+
+/-- The conjunction of `ts`, `none` for none. -/
+def conjTerm (ts : Array Term) : TermElabM (Option Term) := do
+  let some last := ts.back? | return none
+  some <$> ts.pop.foldrM (init := last) fun t acc => `($t ∧ $acc)
 
 open Lang in
 /-- `e`'s shape, for whether it synthesizes a type (`Core.TypeShape`). -/
@@ -1336,6 +1422,128 @@ def synthesizes (e : Syntax) : Bool := (typeShape e).synthesizes
 
 /-- Whether one of `es` synthesizes a type. -/
 def anySynthesizes (es : Array Syntax) : Bool := es.any synthesizes
+
+
+/-- The value of the bound `b` of a range pattern. -/
+def boundValue (cx : ExprCtx) (b : Syntax) : TermElabM Int := do
+  if b.isOfKind ``Lang.numBound then
+    let n := b[1].isNatLit?.getD 0
+    return if b[0].isNone then n else -(n : Int)
+  let p := b[0]
+  let segs := pathSegs p
+  if segs.size == 1 then
+    let n := segs[0]!.getId
+    if cx.vars.any (·.name == n.getRoot) then throwErrorAt b (Core.rangeBoundMsg "a variable").text
+    if (cx.binder? n.getRoot).isSome then throwErrorAt b (Core.rangeBoundMsg "a binder").text
+  match ← resolvePath cx.modName segs cx.shadowing with
+  | .item { kind := .constItem, path, .. } =>
+    let some c := (← getState).consts.find? path | throwErrorAt b s!"internal error: unknown constant `{path}`"
+    unless c.type.isConstOf ``Int || c.type.isConstOf ``Nat do throwErrorAt b (Core.rangeBoundMsg s!"a constant of `{← typeName c.type}`").text
+    let some v := c.int? | throwErrorAt b (Core.rangeConstantMsg path).text
+    return v
+  | r => throwErrorAt b (Core.rangeBoundMsg r.describe).text
+
+mutual
+/-- Resolves the pattern `p` of a value of type `ty`, which is `x`
+(`Reqs/Lang/Patterns`), within an or-pattern if `inOr`: the pattern, its
+binders in preorder, and its test, `none` if it matches every value. In a
+pattern test (`test`), a binder is reported once the pattern is resolved,
+rather than within an or-pattern. As the `fren` command's
+`resolvePattern`, in the same order. -/
+partial def resolvePattern (cx : ExprCtx) (ty : Expr) (x : Term) (inOr test : Bool) (p : Syntax) :
+    TermElabM (Core.Pat × Array PatBinder × Option Term) := withRef p do
+  -- Lean's parser has reported a pattern that it could not read.
+  if p.hasMissing then throwAbortTerm
+  let wrong (what : String) : TermElabM Unit := do throwErrorAt p (Core.patternTypeMsg (← patTypeName ty) what).text
+  let pty := patTyOf (← getState) ty
+  if p.isOfKind ``Lang.wildPattern then return (.wild, #[], none)
+  if p.isOfKind ``Lang.strPattern then
+    unless pty == .string do wrong "a pattern of `String`"
+    let some v := p[0].isStrLit? | throwErrorAt p "internal error: a string pattern"
+    liftMsg p (Core.checkStringChars v)
+    return (.str v, #[], some (← `($x = Fren.Str.lit $(quote v))))
+  -- A `Nat` is compared as an `Int`, as integer literals are.
+  let xi ← if pty == .nat then `(($x : Int)) else pure x
+  if p.isOfKind ``Lang.numPattern then
+    unless pty == .int || pty == .nat do wrong "a pattern of `Int`"
+    let n := p[1].isNatLit?.getD 0
+    let v : Int := if p[0].isNone then n else -(n : Int)
+    return (.int v v, #[], some (← `($xi = $(← intTerm v))))
+  if p.isOfKind ``Lang.rangePattern || p.isOfKind ``Lang.fromPattern || p.isOfKind ``Lang.uptoPattern then
+    unless pty == .int || pty == .nat do wrong "a pattern of `Int`"
+    let (lo?, hi?, inclusive) :=
+      if p.isOfKind ``Lang.rangePattern then (some p[0], some p[2], true)
+      else if p.isOfKind ``Lang.fromPattern then (some p[0], p[2].getOptional?, false)
+      else (none, some p[1], true)
+    let lo ← lo?.mapM (boundValue cx)
+    let hi ← hi?.mapM (boundValue cx)
+    if Core.rangeEmpty lo hi inclusive then throwErrorAt p (Core.emptyRangeMsg (exactText p)).text
+    let (l, h) := Core.rangeInterval lo hi inclusive
+    let parts := (← l.toArray.mapM fun v => do `($(← intTerm v) ≤ $xi)) ++ (← h.toArray.mapM fun v => do `($xi ≤ $(← intTerm v)))
+    return (.int l h, #[], ← conjTerm parts)
+  -- A variant, a binder, `true` or `false`.
+  let segs := pathSegs p[0]
+  if segs.size == 1 && p[1].isNone then
+    match ← patternName cx p[0] segs[0]! with
+    | .boolLiteral =>
+      unless pty == .bool do wrong "a pattern of `Bool`"
+      let b := (Core.declaredName segs[0]!.getId).1 == `true
+      return (.bool b, #[], some (← if b then `(($x : Prop)) else `(¬($x : Prop))))
+    | .binder =>
+      if inOr && !test then throwErrorAt p (Core.orBinderMsg (declaredIdent segs[0]!).1.getId).text
+      return (.wild true, #[{ ident := segs[0]!, type := ty, term := x }], none)
+    | .variant => pure ()
+  let r ← resolveWritten cx.modName segs cx.shadowing cx.noteIndexes
+  let some info := ty.constName?.bind (← getState).enumOfDecl?
+    | throwErrorAt p (Core.patternTypeMsg (← patTypeName ty) (match r with
+        | .variant en _ => s!"a pattern of `{Core.showPath en.path}`"
+        | r => r.describe)).text
+  let .variant en idx := r | throwErrorAt p (Core.notAVariantOfMsg info.path r.describe).text
+  if en.path != info.path then
+    throwErrorAt p (Core.notAVariantOfMsg info.path s!"a variant of `{Core.showPath en.path}`").text
+  let v := info.path ++ en.variants[idx]!
+  let tys := info.payloads[idx]!
+  if let some msg := Core.variantMentionMsg? v tys.size (!p[1].isNone) then throwErrorAt p msg.text
+  let args := patternArgs p
+  unless args.size == tys.size do throwErrorAt p (Core.arityMsg v tys.size args.size "pattern").text
+  let ctor := info.decl ++ info.variants[idx]!
+  let sels ← (Array.range tys.size).mapM fun k => `($(mkCIdent (selectorName ctor k)) $x)
+  let mut pats := #[]
+  let mut bs := #[]
+  let mut tests := #[← `($x = $(mkCIdent ctor) $sels*)]
+  for a in args, t in tys, sel in sels do
+    let (q, qbs, qt) ← resolveOr cx t sel inOr test a[0].getSepArgs false
+    pats := pats.push q
+    bs := bs ++ qbs
+    tests := tests ++ qt.toArray
+  return (.ctor idx pats, bs, ← conjTerm tests)
+
+/-- Resolves the alternatives `alts` of an or-pattern (`isOr`, or of more
+than one), or its only pattern. -/
+partial def resolveOr (cx : ExprCtx) (ty : Expr) (x : Term) (inOr test : Bool) (alts : Array Syntax) (isOr : Bool) :
+    TermElabM (Core.Pat × Array PatBinder × Option Term) := do
+  if alts.size == 1 && !isOr then return ← resolvePattern cx ty x inOr test alts[0]!
+  let mut pats := #[]
+  let mut bs := #[]
+  let mut tests := #[]
+  let mut every := false
+  for a in alts do
+    let (q, qbs, qt) ← resolvePattern cx ty x true test a
+    pats := pats.push q
+    bs := bs ++ qbs
+    match qt with
+    | some t => tests := tests.push t
+    | none => every := true
+  if every then return (.or pats, bs, none)
+  let some last := tests.back? | return (.or pats, bs, none)
+  return (.or pats, bs, some (← tests.pop.foldrM (init := last) fun t acc => `($t ∨ $acc)))
+end
+
+/-- Resolves the pattern `top` of `match` or `is`. -/
+def resolveTop (cx : ExprCtx) (ty : Expr) (x : Term) (test : Bool) (top : Syntax) :
+    TermElabM (Core.Pat × Array PatBinder × Option Term) :=
+  let (alts, isOr) := topAlts top
+  resolveOr cx ty x false test alts isOr
 
 open Lang in
 /-- Translates a record update into the record literal whose other fields
@@ -1365,9 +1573,11 @@ def updateTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   if bind then `(let r := $rv; $lit) else pure lit
 
 open Lang in
-/-- Translates a `match` into a chain of `if`s that compare its scrutinee
-with each arm's variant, built from the scrutinee's own payload, where
-`toTerm` translates its parts. -/
+/-- Translates a `match` into a chain of `if`s that test its scrutinee
+against each arm's pattern, where `toTerm` translates its parts: a variant
+by comparing with the variant built from the value's own payload, a
+literal by equality and a range by comparisons; binders read the payload
+with the selectors. -/
 def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (slot : Option Core.Slot) :
     TermElabM Term := withRef e do
   -- The scrutinee synthesizes its type, and each body is checked against the
@@ -1375,41 +1585,22 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let scrutinee := e[1]
   let s ← toTerm { cx with emptyOk := Core.Position.synthesized.checked false false, natOk := false } scrutinee
   let ty ← typeOf s
-  let some info := ty.constName?.bind (← getState).enumOfDecl?
-    | throwErrorAt scrutinee (Core.scrutineeMsg (← typeName ty)).text
+  let pty := patTyOf (← getState) ty
+  if pty == .other then throwErrorAt scrutinee (Core.scrutineeMsg (← typeName ty)).text
   let arms := e[3].getSepArgs
-  -- Each arm's variants, one for each alternative, or `none` for `_`.
-  let mut pats : Array (Option (Array Nat)) := #[]
-  for arm in arms do
-    let alts := patternAlts arm
-    if alts.isEmpty then pats := pats.push none; continue
-    let mut idxs := #[]
-    for p in alts do
-      match ← resolveWritten cx.modName (pathSegs p[0]) cx.shadowing cx.noteIndexes with
-      | .variant en idx =>
-        if en.path != info.path then
-          throwErrorAt p (Core.notAVariantOfMsg info.path s!"a variant of `{Core.showPath en.path}`").text
-        let v := info.path ++ en.variants[idx]!
-        let n := info.payloads[idx]!.size
-        if let some msg := Core.variantMentionMsg? v n (!p[1].isNone) then throwErrorAt p msg.text
-        unless p[1].isNone do
-          let bs := altBinders p
-          unless bs.size == n do throwErrorAt p (Core.arityMsg v n bs.size "binder").text
-          if alts.size > 1 then
-            if let some b := bs.find? (·.isIdent) then throwErrorAt b (Core.orBinderMsg b.getId).text
-        idxs := idxs.push idx
-      | r => throwErrorAt p (Core.notAVariantOfMsg info.path r.describe).text
-    pats := pats.push (some idxs)
-  match Core.checkArms info.path info.variants (pats.map (·.map (·.map (info.variants[·]!)))) with
+  -- Each arm's pattern, its binders and its test.
+  let mut resolved := #[]
+  for arm in arms do resolved := resolved.push (← resolveTop cx ty s false arm[0])
+  let pats := resolved.map (·.1)
+  match Core.checkMatch (← patSigs) pty pats with
   | .ok () => pure ()
-  | .error (some (i, some j), msg) => throwErrorAt (patternAlts arms[i]!)[j]! msg.text
+  | .error (some (i, some j), msg) => throwErrorAt (topAlternatives arms[i]![0])[j]! msg.text
   | .error (some (i, none), msg) => throwErrorAt arms[i]![0] msg.text
   | .error (none, msg) => throwError msg.text
-  if cx.noteIndexes then lintMatch cx e info pats slot
+  if cx.noteIndexes then lintMatch cx e ty pats slot
   let mut bodies : Array Term := #[]
   -- An arm is evaluated when its pattern matches and no earlier one does.
-  let mut tests : Array (Option Term) := #[]
-  for pat in pats do tests := tests.push (← pat.mapM (variantsTest info s))
+  let tests := resolved.map (·.2.2)
   let mut earlier : Array Term := #[]
   -- The type of the arms so far, once one has one.
   let mut armsTy? : Option Core.Ty := none
@@ -1417,28 +1608,23 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- (`Core.GuardedOperand.armBody`): no earlier test holds, and its own does.
   -- That is built directly: its negation is never needed, so `guard` would
   -- only return it.
-  for arm in arms, pat in pats, t? in tests do
+  for arm in arms, (_, bs, t?) in resolved do
     let guards := cx.guards ++ (← earlier.mapM fun t => `(¬$t)) ++ t?.toArray
     earlier := earlier ++ t?.toArray
+    -- Distinct names (`lang::distinct_names`), by the names they declare,
+    -- without the `!` of shadowing.
+    let declared := bs.map fun b => (declaredIdent b.ident).1.getId
+    if let some k := (Core.repeatsAt declared)[0]? then
+      throwErrorAt bs[k]!.ident (Core.dupPatternBinderMsg declared[k]!).text
     let mut new : Array MatchBinder := #[]
-    if let some #[idx] := pat then
-      let ctor := info.decl ++ info.variants[idx]!
-      -- Distinct names (`lang::distinct_names`); `_` binds nothing.
-      let named := (patternBinders arm).filter (·.isIdent)
-      -- By the names they declare, without the `!` of shadowing.
-      let declared := named.map fun b => (declaredIdent b).1.getId
-      if let some k := (Core.repeatsAt declared)[0]? then
-        throwErrorAt named[k]! (Core.dupPatternBinderMsg declared[k]!).text
-      for b in patternBinders arm, t in info.payloads[idx]!, k in [0:info.payloads[idx]!.size] do
-        unless b.isIdent do continue
-        let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
-          (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
-        let b ← declare b cx.modName locals
-        let bn := b.getId
-        liftMsg b (Core.checkVarName bn (some (t.isConstOf ``Bool)))
-        lintName .binder bn b
-        new := new.push { name := bn, term := ← `($(mkCIdent (selectorName ctor k)) $s), «type» := t
-                          scrutinee, outer := cx.binders.size }
+    for b in bs do
+      let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+        (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
+      let y ← declare b.ident cx.modName locals
+      let bn := y.getId
+      liftMsg y (Core.checkVarName bn (some (b.type.isConstOf ``Bool || b.type.isProp)))
+      lintName .binder bn y
+      new := new.push { name := bn, term := b.term, «type» := b.type, scrutinee, outer := cx.binders.size }
     let others := (arms.eraseIdx! bodies.size).map (·[2])
     let emptyOk := Core.Position.shared.checked cx.emptyOk (anySynthesizes others)
     let body ← toTerm { cx with binders := cx.binders ++ new, guards, emptyOk } arm[2]
@@ -1455,34 +1641,22 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
 
 open Lang in
 /-- Translates `e is P`, which is `match e { P => true, _ => false }`, into
-the test of `P`'s alternatives (`Reqs/Lang/Expressions#pattern-tests`). -/
+the test of `P` (`Reqs/Lang/Expressions#pattern-tests`). -/
 def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   let scrutinee := e[0]
   let s ← toTerm cx scrutinee
   let ty ← typeOf s
-  let some info := ty.constName?.bind (← getState).enumOfDecl?
-    | throwErrorAt scrutinee (Core.isScrutineeMsg (← typeName ty)).text
-  -- Each alternative's variant and binders; `_` has none.
-  let alts := if e[2].isOfKind ``Lang.altsPattern then e[2][1].getSepArgs else #[]
-  let mut pats : Array (Nat × Array Syntax) := #[]
-  for p in alts do
-    match ← resolveWritten cx.modName (pathSegs p[0]) cx.shadowing cx.noteIndexes with
-    | .variant en idx =>
-      if en.path != info.path then
-        throwErrorAt p (Core.notAVariantOfMsg info.path s!"a variant of `{Core.showPath en.path}`").text
-      let v := info.path ++ en.variants[idx]!
-      let n := info.payloads[idx]!.size
-      if let some msg := Core.variantMentionMsg? v n (!p[1].isNone) then throwErrorAt p msg.text
-      let bs := altBinders p
-      unless p[1].isNone || bs.size == n do throwErrorAt p (Core.arityMsg v n bs.size "binder").text
-      pats := pats.push (idx, bs)
-    | r => throwErrorAt p (Core.notAVariantOfMsg info.path r.describe).text
-  let named := pats.map fun (idx, bs) => (info.variants[idx]!, bs.map fun b => if b.isIdent then b.getId else `_)
-  match Core.checkPatternTest info.path named with
+  let pty := patTyOf (← getState) ty
+  if pty == .other then throwErrorAt scrutinee (Core.isScrutineeMsg (← typeName ty)).text
+  let (q, bs, test) ← resolveTop cx ty s true e[2]
+  match Core.checkPatternTest (← patSigs) pty q (bs.map (·.ident.getId)) with
   | .ok () => pure ()
-  | .error ((j, some k), msg) => throwErrorAt pats[j]!.2[k]! msg.text
-  | .error ((j, none), msg) => throwErrorAt alts[j]! msg.text
-  if pats.isEmpty then `(true) else variantsTest info s (pats.map (·.1))
+  | .error (.binder k, msg) => throwErrorAt bs[k]!.ident msg.text
+  | .error (.alternative j, msg) => throwErrorAt (topAlternatives e[2])[j]! msg.text
+  | .error (.whole, msg) => throwErrorAt e[2] msg.text
+  match test with
+  | some t => return t
+  | none => `(true)
 
 /-- Whether `e` is the binary operator `op`. -/
 def isBinOp (e : Syntax) (op : String) : Bool :=

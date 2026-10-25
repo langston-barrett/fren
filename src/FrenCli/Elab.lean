@@ -6,6 +6,7 @@ import FrenCore.Guards
 import FrenCore.Lint
 import FrenCore.Mentions
 import FrenCore.Names
+import FrenCore.Patterns
 import FrenCore.Refine
 import FrenCore.Regex
 import FrenCore.Trace
@@ -751,6 +752,16 @@ def isDefined (cx : ExprCtx) (segs : Array Ident) : M Bool := do
     | return false
   return st.defs.any (·.1 == path)
 
+/-- What the identifier `x` of one segment, not applied, is in a pattern
+(`lang::pattern_name`). -/
+def patternName (cx : ExprCtx) (x : Ident) : M Fren.Core.PatternName := do
+  let (d, bang) := declaredIdent x
+  return Fren.Core.patternName (d.name == "true" || d.name == "false") bang (← isVariant cx #[x])
+
+/-- The binders of the pattern `p`, in preorder. -/
+def patternBinders (cx : ExprCtx) (p : Pattern) : M (Array Ident) :=
+  p.names.filterM fun x => return (← patternName cx x) == .binder
+
 /-- The shape of `e`, for what it mentions (`lang::mentions`), where `bs`
 are the binders of `e` around the subexpression, each with the shape of its
 scrutinee. -/
@@ -783,9 +794,8 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
   | .match _ s arms =>
     let s' ← shapeOf cx bs s
     let arms ← arms.toList.mapM fun (p, body) => do
-      let new := match p with
-        | .variant _ _ (some xs) => xs.map fun x => (Name.mkSimple (declaredIdent x).1.name, Fren.Core.MentionShape.node .binder [s'])
-        | _ => #[]
+      let new := (← patternBinders cx p).map fun x =>
+        (Name.mkSimple (declaredIdent x).1.name, Fren.Core.MentionShape.node .binder [s'])
       shapeOf cx (bs ++ new) body
     return .node .compound (s' :: arms)
   | .is _ s _ => parts .compound [s]
@@ -816,9 +826,7 @@ partial def mentions : Expr → Array Name
   | .update _ r fs => fs.foldl (init := mentions r) fun acc (f, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple f.name]
   | .match _ s arms => arms.foldl (init := mentions s) fun acc (p, body) =>
     -- In its arm, a binder's name means the binder, not what it shadows.
-    let bound := match p with
-      | .variant _ _ (some bs) => bs.map fun b => Name.mkSimple (declaredIdent b).1.name
-      | _ => #[]
+    let bound := p.names.map fun b => Name.mkSimple (declaredIdent b).1.name
     acc ++ (mentions body).filter (!bound.contains ·.getRoot)
   | .is _ s _ => mentions s
   | _ => #[]
@@ -1280,18 +1288,22 @@ def checkRelational (cx : ExprCtx) (span : Span) (tys : Array Ty) (operands : Ar
   modify fun s => { s with relationalUsed := true }
   checkCore cx span .relational true true operands (← operands.allM (isConstant cx)) (finiteRange := tys.all (!st.infinite ·))
 
-/-- The match lints of the `match` `e` on a value of the enumeration `d`,
-whose arms name the variants `pats`, or `_` for `none`, where `slot` is
-(`Reqs/Lint/Style#matches-that-are-memberships`, `Reqs/Lint/Pedantic#matches`). -/
-def lintMatch (cx : ExprCtx) (e : Expr) (d : DataDecl) (pats : Array (Option (Array Nat))) (slot : Option Fren.Core.Slot) :
+/-- The match lints of the `match` `e` on a value of type `ty`, whose arms'
+patterns are `pats`, where `slot` is (`Reqs/Lint/Style#matches-that-are-memberships`,
+`Reqs/Lint/Pedantic#matches`). The lints that move or remove arms, or
+replace `_` with a variant, look only at a `match` whose patterns are all
+flat (`Fren.Core.Pat.flat`), where no arm overlaps another without
+containing it. -/
+def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (slot : Option Fren.Core.Slot) :
     M Unit := do
   let .match span scrutinee arms := e | return
   let src := (← get).src
-  let infos : Array Fren.Core.ArmInfo := arms.map fun (p, body) =>
-    let alts := p.alts.map fun a => Fren.Core.textOf src (toRange a.span)
-    let binds := p.alts.any fun | .variant _ _ (some bs) => bs.any (·.name != "_") | _ => false
-    let noPayload := p.alts.all fun | .variant _ _ none => true | _ => false
-    { alts, binds, noPayload, body := body.text src }
+  let mut infos : Array Fren.Core.ArmInfo := #[]
+  for (p, body) in arms, pat in pats do
+    let alts := if p matches .wild _ then #[] else p.alts.map fun a => Fren.Core.textOf src (toRange a.span)
+    let binds := !(← patternBinders cx p).isEmpty
+    infos := infos.push { alts, binds, noPayload := pat.noPayload, body := body.text src }
+  let flat := pats.all (·.flat)
   -- `trivial_match` (`lint::trivial_match`).
   if let #[info] := infos then
     if Fren.Core.trivialMatch infos.size info.binds then
@@ -1302,13 +1314,21 @@ def lintMatch (cx : ExprCtx) (e : Expr) (d : DataDecl) (pats : Array (Option (Ar
   let mut givenBack := true
   let mut wildcard := false
   let mut scrutineeBack := false
+  -- Only a `match` whose arms are `_` and variants whose payloads'
+  -- patterns are `_` or binders.
+  let ep := match ty with
+    | .enum p => p
+    | _ => .anonymous
   for (p, body) in arms, pat in pats do
     match p, pat with
-    | _, none =>
+    | _, .wild false =>
       wildcard := true
       scrutineeBack := Fren.Core.writtenSame (← srcAt body.span) scr
-    | .variant _ _ bs?, some #[idx] =>
-      let binders := (bs?.getD #[]).map (·.name)
+    | .variant _ _ args?, .ctor idx qs =>
+      unless qs.all (· matches .wild _) do givenBack := false; continue
+      let binders := (args?.getD #[]).map fun
+        | .variant _ #[x] none => x.name
+        | _ => "_"
       -- The arm's binders shadow items in its body.
       let shadowing := cx.shadowing ++ (binders.filter (· != "_")).map Name.mkSimple
       let (segs?, args) := match body with
@@ -1316,7 +1336,7 @@ def lintMatch (cx : ExprCtx) (e : Expr) (d : DataDecl) (pats : Array (Option (Ar
         | .app _ segs args => (some segs, args)
         | _ => (none, #[])
       let same := segs?.any fun segs => match st.table.resolvePath st.scope (segNames segs) shadowing with
-        | .ok (.variant en i) => en.path == d.path && i == idx
+        | .ok (.variant en i) => en.path == ep && i == idx
         | _ => false
       unless Fren.Core.givesBack same binders (← args.mapM (srcAt ·.span)) do givenBack := false
     | _, _ => givenBack := false
@@ -1326,21 +1346,29 @@ def lintMatch (cx : ExprCtx) (e : Expr) (d : DataDecl) (pats : Array (Option (Ar
     lintFix .needlessMatch span (Fren.Core.needlessMatchMsg (bare.inSlot slot (← followedSpan span)))
   let bodyRanges := arms.map fun (_, b) => Fren.Core.withParens src (toRange b.span)
   let armRanges := arms.zipWith (fun (p, _) (b : Fren.Core.Range) => { start := p.span.start, stop := b.stop }) bodyRanges
-  let edits := Fren.Core.sameArmsEdits (toRange span) infos armRanges (arms.map (toRange ·.1.span)) bodyRanges slot (← followedSpan span)
-  let groups := Fren.Core.sameArmGroups infos
+  let groups := if flat then Fren.Core.sameArmGroups infos else #[]
   let mut firstSame? : Option Span := none
-  for g in groups do
-    let (i, msg) := Fren.Core.sameArmsMsg infos g slot (← followedSpan span)
-    let at_ : Span := { start := armRanges[i]!.start, stop := armRanges[i]!.stop }
-    lintEdits .matchSameArms at_ msg (if firstSame?.isNone then edits else #[])
-    if firstSame?.isNone then firstSame? := some at_
+  if flat then
+    let edits := Fren.Core.sameArmsEdits (toRange span) infos armRanges (arms.map (toRange ·.1.span)) bodyRanges slot (← followedSpan span)
+    for g in groups do
+      let (i, msg) := Fren.Core.sameArmsMsg infos g slot (← followedSpan span)
+      let at_ : Span := { start := armRanges[i]!.start, stop := armRanges[i]!.stop }
+      lintEdits .matchSameArms at_ msg (if firstSame?.isNone then edits else #[])
+      if firstSame?.isNone then firstSame? := some at_
   let scr := scrutinee.text src
   if let some (pre, post) := Fren.Core.membershipParts? infos scr slot then
     let r := Fren.Core.withParens src (toRange scrutinee.span)
     lintEdits .matchLikeMembership span (Fren.Core.membershipMsg (pre ++ scr.text ++ post))
       #[({ start := span.start, stop := r.start }, pre), ({ start := r.stop, stop := span.stop }, post)]
-  let some w := pats.findIdx? (·.isNone) | return
-  let covered := ((List.range d.ctors.size).filter fun k => !pats.any (·.any (·.contains k))).toArray
+  unless flat do return
+  let .enum ep := ty | return
+  let some d := (← get).dataOf? ep | return
+  let some w := arms.findIdx? (·.1 matches .wild _) | return
+  let names (p : Fren.Core.Pat) : Array Nat := match p with
+    | .ctor k _ => #[k]
+    | .or alts => alts.filterMap fun | .ctor k _ => some k | _ => none
+    | _ => #[]
+  let covered := ((List.range d.ctors.size).filter fun k => !pats.any (names · |>.contains k)).toArray
   let siblings := (arms.flatMap (·.1.alts)).filterMap fun | .variant _ segs _ => some (segs.map (Name.mkSimple ·.name)) | _ => none
   let st ← get
   -- The pattern that names each variant that `_` matches, if one resolves.
@@ -1355,6 +1383,121 @@ def lintMatch (cx : ExprCtx) (e : Expr) (d : DataDecl) (pats : Array (Option (Ar
     unless?
   unless Fren.Core.wildcardSingle covered.size do return
   lintFix .wildcardSingleVariant arms[w]!.1.span (Fren.Core.wildcardMsg (d.path ++ d.ctors[covered[0]!]!.1) named[0]!) unless?
+
+/-! ## Patterns -/
+
+/-- A binder of a pattern, with the type of its value, and its value, read
+from the scrutinee with selectors. -/
+structure PBinder where
+  ident : Ident
+  ty : Ty
+  smt : String
+  deriving Inhabited
+
+/-- The variants of each enumeration, with their payloads' types, as
+patterns see them. -/
+def patSigs : M Fren.Core.Sigs := do
+  let st ← get
+  return fun p => ((st.dataOf? p).map fun d => d.ctors.map fun (c, fs) => (c, fs.map (·.2.patTy))).getD #[]
+
+/-- The integer `v` in SMT-LIB. -/
+def smtInt (v : Int) : String := if v < 0 then s!"(- {-v})" else toString v
+
+/-- The conjunction of `ts` in SMT-LIB, `none` for none. -/
+def smtConj (ts : Array String) : Option String :=
+  match ts with
+  | #[] => none
+  | #[t] => some t
+  | ts => some s!"(and {" ".intercalate ts.toList})"
+
+/-- The value of the bound `b` of a range pattern. -/
+def boundValue (cx : ExprCtx) (b : Bound) : M Int := do
+  match b with
+  | .num _ v => return v
+  | .path sp segs =>
+    if segs.size == 1 then
+      let n := identName segs[0]!.name
+      if cx.vars.any (·.name == n.getRoot) then err sp (Fren.Core.rangeBoundMsg "a variable")
+      if (cx.binder? n.getRoot).isSome then err sp (Fren.Core.rangeBoundMsg "a binder")
+    match ← resolve segs cx.shadowing with
+    | .item { kind := .constItem, path, .. } =>
+      let some (_, t) := (← get).consts.find? path | internal sp s!"unknown constant `{path}`"
+      unless t matches .int | .nat do err sp (Fren.Core.rangeBoundMsg s!"a constant of `{t.show}`")
+      let some v := (← get).constInts.find? path | err sp (Fren.Core.rangeConstantMsg path)
+      return v
+    | r => err sp (Fren.Core.rangeBoundMsg r.describe)
+
+/-- Resolves the pattern `p` of a value of type `ty`, which is `x` in
+SMT-LIB (`Reqs/Lang/Patterns`), within an or-pattern if `inOr`: the
+pattern, its binders in preorder, and its test, `none` if it matches every
+value. In a pattern test (`test`), a binder is reported once the pattern is
+resolved, rather than within an or-pattern. -/
+partial def resolvePattern (cx : ExprCtx) (ty : Ty) (x : String) (inOr test : Bool) (p : Pattern) :
+    M (Fren.Core.Pat × Array PBinder × Option String) := do
+  let wrong (sp : Span) (what : String) : M Unit := err sp (Fren.Core.patternTypeMsg ty.show what)
+  match p with
+  | .wild _ => return (.wild, #[], none)
+  | .str sp v =>
+    unless ty == .string do wrong sp "a pattern of `String`"
+    liftMsg sp (Fren.Core.checkStringChars v)
+    modify fun s => { s with usesStrings := true }
+    return (.str v, #[], some s!"(= {x} {Fren.Core.smtStringLit v})")
+  | .num sp v =>
+    unless ty matches .int | .nat do wrong sp "a pattern of `Int`"
+    return (.int v v, #[], some s!"(= {x} {smtInt v})")
+  | .range sp lo hi inclusive =>
+    unless ty matches .int | .nat do wrong sp "a pattern of `Int`"
+    let lo' ← lo.mapM (boundValue cx)
+    let hi' ← hi.mapM (boundValue cx)
+    if Fren.Core.rangeEmpty lo' hi' inclusive then err sp (Fren.Core.emptyRangeMsg (← srcAt sp))
+    let (l, h) := Fren.Core.rangeInterval lo' hi' inclusive
+    return (.int l h, #[], smtConj (l.toArray.map (s!"(<= {smtInt ·} {x})") ++ h.toArray.map (s!"(<= {x} {smtInt ·})")))
+  | .variant sp segs args? =>
+    if segs.size == 1 && args?.isNone then
+      match ← patternName cx segs[0]! with
+      | .boolLiteral =>
+        unless ty == .bool do wrong sp "a pattern of `Bool`"
+        let b := segs[0]!.name == "true"
+        return (.bool b, #[], some (if b then x else s!"(not {x})"))
+      | .binder =>
+        if inOr && !test then err sp (Fren.Core.orBinderMsg (Name.mkSimple (declaredIdent segs[0]!).1.name))
+        return (.wild true, #[{ ident := segs[0]!, ty, smt := x }], none)
+      | .variant => pure ()
+    let r ← resolveWritten segs cx.shadowing cx.noteIndexes
+    let .enum ep := ty
+      | err sp (Fren.Core.patternTypeMsg ty.show (match r with
+          | .variant en _ => s!"a pattern of `{showPath en.path}`"
+          | r => r.describe))
+    let .variant en idx := r | err sp (Fren.Core.notAVariantOfMsg ep r.describe)
+    if en.path != ep then err sp (Fren.Core.notAVariantOfMsg ep s!"a variant of `{showPath en.path}`")
+    let some d := (← get).dataOf? ep | internal sp s!"unknown enum `{ep}`"
+    let (c, fs) := d.ctors[idx]!
+    let v := ep ++ en.variants[idx]!
+    if let some msg := Fren.Core.variantMentionMsg? v fs.size args?.isSome then err sp msg
+    let args := args?.getD #[]
+    unless args.size == fs.size do err sp (Fren.Core.arityMsg v fs.size args.size "pattern")
+    let mut pats := #[]
+    let mut bs := #[]
+    let mut tests := #[d.tester idx x]
+    for a in args, (_, t) in fs, k in [0:args.size] do
+      let (q, qbs, qt) ← resolvePattern cx t s!"({d.selSym c k} {x})" inOr test a
+      pats := pats.push q
+      bs := bs ++ qbs
+      tests := tests ++ qt.toArray
+    return (.ctor idx pats, bs, smtConj tests)
+  | .or _ alts =>
+    let mut pats := #[]
+    let mut bs := #[]
+    let mut tests := #[]
+    let mut every := false
+    for a in alts do
+      let (q, qbs, qt) ← resolvePattern cx ty x true test a
+      pats := pats.push q
+      bs := bs ++ qbs
+      match qt with
+      | some t => tests := tests.push t
+      | none => every := true
+    return (.or pats, bs, if every then none else if tests.size == 1 then tests[0]? else some s!"(or {" ".intercalate tests.toList})")
 
 /-- The variant that `e` names, if it is a path to one without a payload:
 its enumeration, its index and its text. -/
@@ -2137,39 +2280,18 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     return (if bind then s!"(let (({r} {rv})) {lit})" else lit, .record path)
   | .match span scrutinee arms =>
     let (s, ts) ← elabExpr cx scrutinee
-    let .enum ep := ts | err scrutinee.span (Fren.Core.scrutineeMsg ts.show)
-    let some d := (← get).dataOf? ep | internal scrutinee.span s!"unknown enum `{ep}`"
-    -- Each arm's variants, one for each alternative, or `none` for `_`.
-    let mut pats : Array (Option (Array Nat)) := #[]
-    for (p, _) in arms do
-      if p matches .wild _ then pats := pats.push none; continue
-      let mut idxs := #[]
-      for alt in p.alts do
-        let .variant pspan segs binders? := alt | internal alt.span "nested or-pattern"
-        match ← resolveWritten segs cx.shadowing cx.noteIndexes with
-        | .variant en idx =>
-          if en.path != ep then err pspan (Fren.Core.notAVariantOfMsg ep s!"a variant of `{showPath en.path}`")
-          let v := ep ++ en.variants[idx]!
-          let n := d.ctors[idx]!.2.size
-          if let some msg := Fren.Core.variantMentionMsg? v n binders?.isSome then err pspan msg
-          match binders? with
-          | none => pure ()
-          | some bs =>
-            unless bs.size == n do err pspan (Fren.Core.arityMsg v n bs.size "binder")
-            if p.alts.size > 1 then
-              if let some b := bs.find? (·.name != "_") then err b.span (Fren.Core.orBinderMsg (Name.mkSimple b.name))
-          idxs := idxs.push idx
-        | r => err pspan (Fren.Core.notAVariantOfMsg ep r.describe)
-      pats := pats.push (some idxs)
-    match Fren.Core.checkArms ep (d.ctors.map (·.1)) (pats.map (·.map (·.map (d.ctors[·]!.1)))) with
+    unless ts matches .enum _ | .bool | .int | .nat | .string do err scrutinee.span (Fren.Core.scrutineeMsg ts.show)
+    -- Each arm's pattern, its binders and its test.
+    let mut resolved := #[]
+    for (p, _) in arms do resolved := resolved.push (← resolvePattern cx ts s false false p)
+    let pats := resolved.map (·.1)
+    match Fren.Core.checkMatch (← patSigs) ts.patTy pats with
     | .ok () => pure ()
-    | .error (some (i, some j), msg) => err arms[i]!.1.alts[j]!.span msg
+    | .error (some (i, some j), msg) => err arms[i]!.1.alternatives[j]!.span msg
     | .error (some (i, none), msg) => err arms[i]!.1.span msg
     | .error (none, msg) => err span msg
-    if cx.noteIndexes then lintMatch cx e d pats (parent?.bind (Expr.operandSlot (← get).src · e))
-    -- An arm's test: that one of its alternatives matches.
-    let tests := pats.map (·.map fun idxs =>
-      if idxs.size == 1 then d.tester idxs[0]! s else s!"(or {" ".intercalate (idxs.map (d.tester · s)).toList})")
+    if cx.noteIndexes then lintMatch cx e ts pats (parent?.bind (Expr.operandSlot (← get).src · e))
+    let tests := resolved.map (·.2.2)
     let mut bodies : Array String := #[]
     let mut ty? : Option Ty := none
     let mut waiting : Array (Nat × ExprCtx × Expr) := #[]
@@ -2179,28 +2301,23 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     -- (`Fren.Core.GuardedOperand.armBody`): no earlier test holds, and its own does.
     -- That is built directly: its negation is never needed, so `guard` would
     -- only return it.
-    for (p, body) in arms, pat in pats, test in tests do
+    for (_, body) in arms, (_, bs, test) in resolved do
       let armGuards := cx.guards ++ earlier.map (s!"(not {·})") ++ test.toArray
       earlier := earlier ++ test.toArray
+      -- Distinct names (`lang::distinct_names`), by the names they declare,
+      -- without the `!` of shadowing.
+      let declared := bs.map fun b => Name.mkSimple (declaredIdent b.ident).1.name
+      if let some k := (Fren.Core.repeatsAt declared)[0]? then
+        err bs[k]!.ident.span (Fren.Core.dupPatternBinderMsg declared[k]!)
       let mut new : Array CBinder := #[]
-      if let (.variant _ _ (some bs), some #[idx]) := (p, pat) then
-        let (c, fs) := d.ctors[idx]!
-        -- Distinct names (`lang::distinct_names`); `_` binds nothing.
-        let named := bs.filter (·.name != "_")
-        -- By the names they declare, without the `!` of shadowing.
-        let declared := named.map fun b => Name.mkSimple (declaredIdent b).1.name
-        if let some k := (Fren.Core.repeatsAt declared)[0]? then
-          err named[k]!.span (Fren.Core.dupPatternBinderMsg declared[k]!)
-        for b in bs, f in fs, k in [0:bs.size] do
-          let t := f.2
-          if b.name == "_" then continue
-          let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
-            (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
-          let b ← declare b locals
-          let bn := Name.mkSimple b.name
-          liftMsg b.span (Fren.Core.checkVarName bn (some (t == .bool)))
-          lintName .binder bn b.span
-          new := new.push { name := bn, smt := s!"({d.selSym c k} {s})", ty := t, scrutinee, outer := cx.binders.size }
+      for b in bs do
+        let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+          (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
+        let x ← declare b.ident locals
+        let bn := Name.mkSimple x.name
+        liftMsg x.span (Fren.Core.checkVarName bn (some (b.ty == .bool)))
+        lintName .binder bn x.span
+        new := new.push { name := bn, smt := b.smt, ty := b.ty, scrutinee, outer := cx.binders.size }
       -- Each body is checked against the whole's type, or another's
       -- (`lang::checked`): one that does not synthesize its own, before any
       -- other has given a type, waits for a later one that does.
@@ -2226,32 +2343,14 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     return (out, ty?.get!)
   | .is _ scrutinee p =>
     let (s, ts) ← elabExpr cx scrutinee
-    let .enum ep := ts | err scrutinee.span (Fren.Core.isScrutineeMsg ts.show)
-    let some d := (← get).dataOf? ep | internal scrutinee.span s!"unknown enum `{ep}`"
-    -- Each alternative's variant and binders; `_` has none.
-    let mut alts : Array (Nat × Array Ident) := #[]
-    for alt in p.alts do
-      let .variant pspan segs binders? := alt | internal alt.span "nested or-pattern"
-      match ← resolveWritten segs cx.shadowing cx.noteIndexes with
-      | .variant en idx =>
-        if en.path != ep then err pspan (Fren.Core.notAVariantOfMsg ep s!"a variant of `{showPath en.path}`")
-        let v := ep ++ en.variants[idx]!
-        let n := d.ctors[idx]!.2.size
-        if let some msg := Fren.Core.variantMentionMsg? v n binders?.isSome then err pspan msg
-        let bs := binders?.getD #[]
-        if binders?.isSome && bs.size != n then err pspan (Fren.Core.arityMsg v n bs.size "binder")
-        alts := alts.push (idx, bs)
-      | r => err pspan (Fren.Core.notAVariantOfMsg ep r.describe)
-    match Fren.Core.checkPatternTest ep (alts.map fun (idx, bs) => (d.ctors[idx]!.1, bs.map (Name.mkSimple ·.name))) with
+    unless ts matches .enum _ | .bool | .int | .nat | .string do err scrutinee.span (Fren.Core.isScrutineeMsg ts.show)
+    let (q, bs, test) ← resolvePattern cx ts s false true p
+    match Fren.Core.checkPatternTest (← patSigs) ts.patTy q (bs.map (Name.mkSimple ·.ident.name)) with
     | .ok () => pure ()
-    | .error ((j, some k), msg) => err alts[j]!.2[k]!.span msg
-    | .error ((j, none), msg) => err p.alts[j]!.span msg
-    -- That one of its alternatives matches.
-    let tests := alts.map (d.tester ·.1 s)
-    return (match tests with
-      | #[] => "true"
-      | #[t] => t
-      | ts => s!"(or {" ".intercalate ts.toList})", .bool)
+    | .error (.binder k, msg) => err bs[k]!.ident.span msg
+    | .error (.alternative j, msg) => err p.alternatives[j]!.span msg
+    | .error (.whole, msg) => err p.span msg
+    return (test.getD "true", .bool)
 
 /-- Reports `assertions_on_constants` on the constraint `e`, an `assume`,
 `req` or `expect` as `kind` says (`lint::assertions_on_constants`). -/

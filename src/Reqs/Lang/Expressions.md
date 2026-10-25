@@ -25,16 +25,13 @@ atom  := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | "(" expr 
        | "{" expr "with" field-init ("," field-init)* [","] "}"
 field-init := IDENT [":=" expr]
 arm   := pattern "=>" expr
-pattern := "_" | ["|"] alternative ("|" alternative)*
-alternative := path ["(" pattern-binder ("," pattern-binder)* ")"]
-pattern-binder := DECL | "_"
 ```
 
 In `atom "." IDENT`, the atom is one that ends in `)` or `}`, and there
 are no spaces around the `.`: after a name, `.` is part of the
 [identifier](Lexical.md#identifiers), as in `p.x`. The notation is
 [the grammar's](../Grammar.md#notation), where `DECL` is an identifier that
-declares a name.
+declares a name. Patterns are in [their own chapter](Patterns.md).
 
 ## Operators
 
@@ -53,7 +50,7 @@ equally tightly:
 | 6 | `A < B`, `A <= B`, `A > B`, `A >= B` | ordering | `Int` or `Nat`, or `String` | `Bool` | [chains](#chained-comparisons) |
 | 6 | `A in S` | membership | `T` and `Set(T)` or `Seq(T)`, or a pair `(a, b)` and `Rel(A, B)` | `Bool` | none |
 | 6 | `S subset T` | `S` is a subset of `T`, not necessarily strict | `Set(T)`, or `Rel(A, B)` | `Bool` | none |
-| 6 | `A is P` | [pattern test](#pattern-tests): the pattern `P` matches `A` | an enumeration, and a pattern | `Bool` | none |
+| 6 | `A is P` | [pattern test](#pattern-tests): the pattern `P` matches `A` | an enumeration, `Bool`, `Int`, `Nat` or `String`, and a pattern | `Bool` | none |
 | 7 | `A + B` | addition | `Int` or `Nat` | `Nat` if both are, else `Int` | left |
 | 7 | `A - B` | subtraction | `Int` or `Nat` | `Int` | left |
 | 7 | `A ++ B` | concatenation | `String`, or `Seq(T)` | the same | left |
@@ -727,15 +724,15 @@ variant `Circle` with the payload `2`, written as a [function
 application](#function-applications) is. A variant with a payload is
 mentioned only by applying it, and a variant without one only by its
 path: `Shape::Circle` and `Shape::Empty()` are errors. The same holds for
-a variant in a [`match` arm](#matches)'s pattern, which binds the payload's
-values. `lang::variant_mention` states this:
+a variant in a [pattern](Patterns.md), whose payload's values patterns
+match. `lang::variant_mention` states this:
 
 ```fren
 pub mod lang
 
 pub comp variant_mention {
     in payload: Nat          -- how many values the variant's payload has
-    in applied?              -- it is written with parentheses, around values or, in a pattern, binders
+    in applied?              -- it is written with parentheses, around values or, in a pattern, patterns
     pub det out accepted?
 
     req rule: accepted? iff (applied? iff payload > 0)
@@ -757,49 +754,50 @@ allows.
 ## Matches
 
 ```text
-match s {
-    Shape::Circle(r) => r > 0,
-    Shape::Rect(w, h) => w > 0 and h > 0,
-    _ => true,
+match r {
+    Reply::Ok(Shape::Circle(radius)) => radius > 0,
+    Reply::Ok(_) => true,
+    Reply::Err(0) => false,
+    Reply::Err(code) => code > 100,
 }
 ```
 
-A `match` reads which variant a value of an enumeration is, and its
-payload. The expression after `match`, the *scrutinee*, must have an
-enumeration type. The scrutinee is not a record literal: in `match s {`,
-the `{` starts the arms. Each arm has a pattern and a body, and the
+A `match` reads the value of its *scrutinee*, the expression after
+`match`. The scrutinee is a value of an enumeration, a `Bool`, an `Int`, a
+`Nat` or a `String` (`F0316`), and is not a record literal: in `match s {`, the `{`
+starts the arms. Each arm has a [pattern](Patterns.md) and a body, and the
 `match` has the value of the body of the first arm whose pattern matches
-the scrutinee:
+the scrutinee. A pattern is `_`, a binder, a literal, a range, a variant
+whose payload's values match patterns of their own, nested to any depth, or
+an or-pattern. An or-pattern may start with `|`, so that its alternatives
+can be written one per line, each starting with `|`:
 
-- `E::V(a, b)` matches the variant `V` of `E`, which must have a payload
-  of as many values as the pattern has binders. Within the arm's body,
-  each binder names the corresponding value of the payload, and `_`
-  ignores it. The binders of a pattern have distinct names, and follow
-  the [Boolean names](Types.md#boolean-names) rule for the payload's
-  types.
-- `E::V`, or `V` once brought into scope by `use`, matches the variant
-  `V`, which has no payload.
-- `A | B`, an *or-pattern*, matches what any of its alternatives `A` and
-  `B` matches. Its alternatives bind no names: each is a variant without a
-  payload, or one whose binders are all `_`, as in `E::V(_, _)`. `_` is
-  not an alternative. An or-pattern may start with `|`, so that its
-  alternatives can be written one per line, each starting with `|`:
+```text
+match method {
+    | Method::Len
+    | Method::Card => 0,
+    _ => 1,
+}
+```
 
-  ```text
-  match method {
-      | Method::Len
-      | Method::Card => 0,
-      _ => 1,
-  }
-  ```
-- `_` matches any value.
+```text
+match n {
+    ..=-1 => Sign::Negative,
+    0 => Sign::Zero,
+    1.. => Sign::Positive,
+}
+```
 
-A binder is not a variable. Within its arm's body, it may shadow a
-variable, a constant or another name in scope, written with `!`, as in
+Within its arm's body, each binder of the arm's pattern, at any depth,
+names the value it matches: the scrutinee, or a value of a payload. The
+binders of a pattern have distinct names, and follow the [Boolean
+names](Types.md#boolean-names) rule for the types of their values. A binder
+is not a variable. Within its arm's body, it may shadow a variable, a
+constant or another name in scope, written with `!`, as in
 `Shape::Circle(r!)` (see [Shadowing](Components.md#shadowing)); a mention
 of it there is not a mention of what it shadows. Mentioning it counts as
-mentioning everything its scrutinee mentions, for the rules of
-[Instances](Instances.md#instance-variables), of [function
+mentioning everything its scrutinee mentions, whatever its depth, for the
+rules of [Instances](Instances.md#instance-variables), of [function
 applications](#function-applications) and of [linear
 arithmetic](#linear-arithmetic). So in `comp c { out s: Shape ... }`,
 `match s { Shape::Circle(r) => f(r), _ => ... }` mentions the output `s`
@@ -836,35 +834,36 @@ pub comp arm_type {
 }
 ```
 
-A `match` is *exhaustive*, and each of its arms is *reachable*: every
-variant has an arm, unless there is a `_` arm, which comes last and covers
-at least one variant; and no variant is named twice, whether by two arms or
-by two alternatives of one or-pattern. `lang::match_arms` states this, from
-the variants of the enumeration, those that have an arm, whether there is
-a `_` arm, and the alternatives that cannot match. A set cannot see a
-repeated alternative, so repeats are counted:
+A `match` is *exhaustive*, and each of its arms and alternatives is
+*reachable*: every value of the scrutinee's type matches some arm's pattern
+(`F0317`), and each arm, and each alternative of its or-patterns, matches
+some value that no arm before it matches (`F0318`). Both are decided by the
+[usefulness](Patterns.md#usefulness) of patterns: an arm is reachable when
+its pattern is useful with respect to those of the arms before it, an
+alternative when some case of its arm that takes it is, and the `match` is
+exhaustive when `_` would not be useful after its last arm. So `true` and
+`false` together cover a `Bool`, ranges and literals cover an `Int` only
+when they match every integer, as `..=-1`, `0` and `1..` do, and a `Nat`
+when they match every integer that is at least 0, as `0` and `1..` do, and
+a `match` on a `String` needs a last arm `_` or a binder. `lang::match_arms` states
+this, from the numbers of arms and alternatives that are not useful, and
+whether the arms are exhaustive:
 
 ```fren
 pub comp match_arms {
-    in variants: Set(VariantName)
-    in covered: Set(VariantName)     -- variants with an arm of their own
-    in wildcard?                     -- there is a `_` arm
-    in n_repeated: Nat               -- alternatives naming a variant that an earlier one names
-    in n_after: Nat                  -- arms after a `_` arm
+    in n_useless_arms: Nat           -- arms not useful with respect to the arms before them
+    in n_useless_alternatives: Nat   -- alternatives of the other arms that no useful case of their arm takes
+    in exhaustive?                   -- `_` is not useful with respect to all the arms
     pub det out accepted?
 
-    assume shapes: variants != {} and covered subset variants
-    assume after_wildcard: unless wildcard?, n_after = 0
+    req rule: accepted? iff (n_useless_arms = 0 and n_useless_alternatives = 0 and exhaustive?)
 
-    req rule: accepted? iff (n_repeated = 0 and n_after = 0
-        and (if wildcard? then covered != variants else covered = variants))
+    expect exhaustive: when accepted?, exhaustive?
+    expect reachable: when accepted?, n_useless_arms = 0 and n_useless_alternatives = 0
 
-    expect exhaustive: when accepted? and not wildcard?, covered = variants
-    expect wildcard_reachable: when accepted? and wildcard?, (variants minus covered) != {}
-
-    cover wildcard_accepted: wildcard? and accepted?
-    cover exhaustive_accepted: not wildcard? and accepted?
-    cover repeat_rejected: n_repeated > 0 and not accepted?
+    cover accepted: accepted?
+    cover useless_rejected: n_useless_arms > 0 and not accepted?
+    cover not_exhaustive_rejected: not exhaustive? and not accepted?
 }
 ```
 
@@ -873,17 +872,22 @@ pub comp match_arms {
 ```text
 s is Shape::Circle(_)
 s is Shape::Rect(_, _) | Shape::Empty
+r is Reply::Ok(Shape::Circle(_))
+n is 0..=9
 ```
 
 A *pattern test*, `e is P`, is `true` exactly when the pattern `P` matches
-`e`: it means `match e { P => true, _ => false }`. `e` must have an
-enumeration type, as a `match`'s scrutinee must (`F0335`), and `P` is a
-pattern as in a [`match` arm](#matches), an or-pattern included, but it
+`e`: it means `match e { P => true, _ => false }`. `e` is a value of an
+enumeration, a `Bool`, an `Int`, a `Nat` or a `String`, as a `match`'s scrutinee is
+(`F0335`), and `P` is a [pattern](Patterns.md) as in a [`match`
+arm](#matches), nested, literal, range and or-patterns included, but it
 binds no names: each of its binders is `_` (`F0334`), since a test has no
 body in which a name could be mentioned. To read a payload, write a
-`match`. No variant is named twice by its alternatives (`F0318`). A
-pattern that matches every value, such as `_`, is allowed, though the
-test is then always `true`.
+`match`. The pattern matches some value, and each alternative of its
+or-patterns is reachable, as in a `match` (`F0318`): so `k is -5..=-1`, on
+a `Nat`, is an error, as an arm with that pattern would be. A pattern that
+matches every value, such as `_`, is allowed, though the test is then
+always `true`.
 
 `is` is a comparison: it binds as `=` does, below `+` and above `not`, and
 is not associative. So `not s is Shape::Circle(_)` means `not (s is
@@ -894,35 +898,34 @@ its alternatives do, so `s is A(_) | B(_) and t?` means `(s is A(_) |
 B(_)) and t?`.
 
 `=` and `in` compare with values, and `is` is for the patterns that `=`
-cannot express, those with a payload. So write `x = E::A` and `x in {E::A,
-E::B}`, not `x is E::A` or `x is E::A | E::B`, and likewise `x != E::A`
-and `not x in {E::A, E::B}`, not `not x is E::A` or `not x is E::A |
-E::B`. Test a `Bool` with `iff` or `not`, never with `is`: for now that is
-an error (`F0335`), since a `Bool` is not an enumeration, until patterns
-of literals are added. A pattern with a payload may still have
-alternatives without one, as in `s is Shape::Rect(_, _) | Shape::Empty`.
+cannot express: those with a payload, and ranges. So write `x = E::A` and
+`x in {E::A, E::B}`, not `x is E::A` or `x is E::A | E::B`, and likewise
+`x != E::A` and `not x in {E::A, E::B}`, not `not x is E::A` or `not x is
+E::A | E::B`. Test a `Bool` with `iff` or `not` rather than `is true`, and
+compare an `Int`, a `Nat` or a `String` with a literal with `=`, but test it against a
+range with `is`, as in `n is 0..=9`. A pattern with a payload may still
+have alternatives without one, as in `s is Shape::Rect(_, _) |
+Shape::Empty`.
 
-`lang::pattern_test` states which patterns are accepted, from the variants
-of the enumeration, those that the alternatives name, whether the pattern
-is `_`, and the binders that are not `_` and the alternatives that cannot
-match, counted as for `lang::match_arms`:
+`lang::pattern_test` states which patterns are accepted, from the numbers
+of their binders that are not `_` and of their alternatives that are not
+reachable, and whether they match some value:
 
 ```fren
 pub comp pattern_test {
-    in variants: Set(VariantName)
-    in named: Set(VariantName)       -- variants that an alternative names
-    in wildcard?                     -- the pattern is `_`
-    in n_bound: Int                  -- binders that are not `_`
-    in n_repeated: Int               -- alternatives naming a variant that an earlier one names
+    in n_bound: Nat                  -- binders that are not `_`
+    in n_useless_alternatives: Nat   -- alternatives that no useful case of the pattern takes
+    in matches_some?                 -- some value matches the pattern
     pub det out accepted?
 
-    assume shapes: variants != {} and named subset variants and n_bound >= 0 and n_repeated >= 0
-    assume wildcard_alone: when wildcard?, named = {} and n_bound = 0 and n_repeated = 0
-
-    req rule: accepted? iff (n_bound = 0 and n_repeated = 0)
+    req rule: accepted? iff (n_bound = 0 and n_useless_alternatives = 0 and matches_some?)
 
     expect binds_nothing: when accepted?, n_bound = 0
-    expect every_value: when n_bound = 0 and n_repeated = 0 and (wildcard? or named = variants), accepted?
+    expect every_alternative: when accepted?, n_useless_alternatives = 0
+    expect matches_something: when accepted?, matches_some?
+
+    cover accepted: accepted?
+    cover empty_rejected: not matches_some? and not accepted?
 }
 ```
 

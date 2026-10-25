@@ -16,9 +16,8 @@ declaration that [shadows](Components.md#shadowing) a name in scope, and
 is not part of the name it declares: `x!` declares `x`, and `ready?!`
 declares `ready?`. A few identifiers ending in `!`, such as `s!` and `m!`,
 are Lean tokens, and so cannot be [declared](Components.md#shadowing).
-`_` alone is an identifier, the wildcard of a [`match`
-arm](Expressions.md#matches) and of a [pattern
-test](Expressions.md#pattern-tests).
+`_` alone is an identifier, the wildcard of a
+[pattern](Patterns.md).
 
 As in Lean, `a.b` (with no spaces) is a single token, an identifier with
 the components `a` and `b`, as is `a.b.c`. Where `a` is an instance, it
@@ -371,8 +370,10 @@ refine escape_sequence_starts: escape_sequence refines escape_start
 ## Punctuators
 
 ```
-::  ::*  ::{  :  :=  ,  (  )  {  }  [  ]  .  =>  |  =  !=  <  <=  >  >=  +  ++  -  *
+::  ::*  ::{  :  :=  ,  (  )  {  }  [  ]  .  ..  ..=  =>  |  =  !=  <  <=  >  >=  +  ++  -  *
 ```
+
+`..` and `..=` are written only in a [range pattern](Patterns.md#kinds-of-pattern).
 
 `_` is an [identifier](#identifiers). `#fren_check` and `#fren_trace` are
 commands, single tokens that start with `#`.
@@ -407,7 +408,7 @@ the rule assumes that `lexeme` is a punctuator:
 ```fren
 -- Longest first, as the lexer tries them.
 pub const PUNCTUATORS: Set(String) := {
-    "::*", "::{", "::", "==", "=>", "&&", "||", "|", "!=", "<=", "<-", ">=", ":=", "{", "}",
+    "::*", "::{", "..=", "::", "..", "==", "=>", "&&", "||", "|", "!=", "<=", "<-", ">=", ":=", "{", "}",
     "(", ")", "[", "]", ",", ":", ".", "*", "=", "<", ">", "++", "+", "-",
 }
 
@@ -420,7 +421,7 @@ pub comp punctuator {
     -- The punctuators listed above, the three of other languages, and
     -- Lean's `<-`.
     expect listed: accepted? iff lexeme in {
-        "::", "::*", "::{", ":", ":=", ",", "(", ")", "{", "}", "[", "]", ".", "=>", "|",
+        "::", "::*", "::{", ":", ":=", ",", "(", ")", "{", "}", "[", "]", ".", "..", "..=", "=>", "|",
         "=", "!=", "<", "<=", ">", ">=", "+", "++", "-", "*", "==", "&&", "||", "<-",
     }
 }

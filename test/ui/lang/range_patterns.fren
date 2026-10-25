@@ -1,0 +1,70 @@
+-- Range patterns, with negative and constant bounds, in `match` and `is`, in both front ends.
+
+pub enum Sign { Negative, Zero, Positive }
+pub enum Reading { Value(Int), Missing }
+
+const LOW: Int := -10
+const HIGH: Int := 2 * LOW + 30          -- 10, from another constant
+const LIMIT: Int := HIGH
+
+comp sign {
+    in n: Int
+    pub det out s: Sign
+
+    -- Ranges that together cover every integer need no `_`.
+    req signs_def: s = match n {
+        ..=-1 => Sign::Negative,
+        0 => Sign::Zero,
+        1.. => Sign::Positive,
+    }
+
+    expect neg_holds: when n = -5, s = Sign::Negative
+    expect zero_holds: when n = 0, s = Sign::Zero
+    expect pos_holds: when n = 7, s = Sign::Positive
+}
+
+comp bands {
+    in n: Int
+    in r: Reading
+    pub det out band: Int
+    pub det out digit?
+    pub det out ok?
+
+    req bands_def: band = match n {
+        LOW..0 => 0,
+        0..=HIGH => 1,
+        -100..=-11 | 11..=100 => 2,
+        _ => 3,
+    }
+    req digit_def: digit? iff n is 0..=9
+    req ok_def: ok? iff r is Reading::Value(..=LIMIT)
+
+    expect low_band_holds: when n = -10, band = 0
+    expect exclusive_holds: when n = 0, band = 1
+    expect high_holds: when n = 10, band = 1
+    expect far_holds: when n = 50, band = 2
+    expect very_far_holds: when n = 101, band = 3
+    expect digits_holds: digit? iff 0 <= n and n <= 9
+    expect ok_holds: when r = Reading::Value(10), ok?
+    expect too_big_holds: when r = Reading::Value(11), not ok?
+}
+
+-- A `Nat` is at least 0, so `0` and `1..` cover it.
+comp naturals {
+    in k: Nat
+    pub det out first?
+
+    req first_def: first? iff match k {
+        0 => true,
+        1.. => false,
+    }
+
+    expect first_holds: first? iff k = 0
+}
+
+-- An upper bound touches the `..`: here the next member follows on the
+-- line of `1..`.
+comp next_member { in n: Int pub out a? pub out b? req ra: a? iff n is 1.. req rb: b? iff n is ..=0 }
+
+--@ summary: 38 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ exit: 0

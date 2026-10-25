@@ -1,0 +1,5 @@
+-- A range is written without spaces around `..=` and `..`.
+comp spaced { in n: Int pub out z: Int req q: z = match n { 0 ..= 9 => 0, _ => 1 } }
+--~^[cli] error: spaces around `..=` in a range pattern
+--~^^[hosted] error: unexpected token
+--@ exit: 2

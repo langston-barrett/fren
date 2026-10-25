@@ -1,0 +1,4 @@
+-- A nested `match` that misses values of a payload.
+enum Shape { Circle(Int), Square(Int), Empty }
+enum Reply { Ok(Shape), Err(Int) }
+comp c { in r: Reply pub out y: Int req q: y = match r { Reply::Ok(Shape::Circle(_)) => 0, Reply::Err(0) => 1 } }

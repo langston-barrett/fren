@@ -1,0 +1,60 @@
+-- Literal patterns, on `Bool`, `Int` and `String`, in `match` and `is`, in both front ends.
+
+pub enum Reply { Ok(Int), Err(String) }
+
+comp bools {
+    in a?
+    in b?
+    pub det out x: Int
+
+    req x_def: x = match (a? and b?) {
+        true => 1,
+        false => 0,
+    }
+
+    expect both_holds: when a? and b?, x = 1
+    expect not_both_holds: when not a?, x = 0
+}
+
+comp ints {
+    in n: Int
+    pub det out name: Int
+    pub det out small?
+
+    req name_def: name = match n {
+        0 => 0,
+        1 | 2 => 1,
+        -1 => -1,
+        k => if k > 0 then 2 else -2,
+    }
+    req small_def: small? iff n is 0 | 1 | 2
+
+    expect zero_holds: when n = 0, name = 0
+    expect two_holds: when n = 2, name = 1 and small?
+    expect minus_one_holds: when n = -1, name = -1
+    expect many_holds: when n = 9, name = 2 and not small?
+    expect negative_holds: when n = -9, name = -2
+}
+
+comp strings {
+    in s: String
+    in r: Reply
+    pub det out code: Int
+    pub det out fatal?
+
+    req code_def: code = match s {
+        "ok" => 0,
+        "warn" | "warning" => 1,
+        _ => 2,
+    }
+    req fatal_def: fatal? iff r is Reply::Err("fatal") | Reply::Ok(-1)
+
+    expect ok_holds: when s = "ok", code = 0
+    expect warning_holds: when s = "warning", code = 1
+    expect other_holds: when s = "error", code = 2
+    expect fatal_holds: when r = Reply::Err("fatal"), fatal?
+    expect not_fatal_holds: when r = Reply::Ok(0), not fatal?
+}
+
+--@ summary: 37 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ exit: 0

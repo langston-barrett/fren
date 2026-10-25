@@ -1,0 +1,11 @@
+-- Or-patterns within nine values of a payload: 512 cases.
+enum B { X, Y }
+enum P { V(B, B, B, B, B, B, B, B, B) }
+comp c {
+    in p: P
+    pub out y: Int
+    req r: y = match p {
+        P::V(B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y) => 0,
+        _ => 1,
+    }
+}

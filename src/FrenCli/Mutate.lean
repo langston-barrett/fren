@@ -173,6 +173,7 @@ def exprChildren : Expr → Array Expr
   | .app _ _ as | .set _ as | .seq _ as => as
   | .record _ _ fs => fs.filterMap (·.2)
   | .match _ sc arms => #[sc] ++ arms.map (·.2)
+  | .is _ sc _ => #[sc]
   | .method _ r _ as => #[r] ++ as
   | _ => #[]
 
@@ -190,9 +191,20 @@ partial def allExprs (items : Array Item) : Array Expr :=
     | _ => #[]
   (items.flatMap ofItem).flatMap sub
 
+/-- The last segments of the paths that bound the range patterns of `p`. -/
+partial def rangeBounds : Pattern → Array String
+  | .range _ lo hi _ => (#[lo, hi].filterMap id).filterMap fun
+    | .path _ segs => some segs.back!.name
+    | .num .. => none
+  | .variant _ _ (some args) => args.flatMap rangeBounds
+  | .or _ alts => alts.flatMap rangeBounds
+  | _ => #[]
+
 /-- The last segment of the name of each constant that a divisor of `items`
-names, and of each constant that the value of such a constant names, which
-changing could make a divisor `0` (`Reqs/Mutate#mutants`). -/
+names, or a bound of a range pattern, and of each constant that the value of
+such a constant names, which changing could make a divisor `0`, a range
+empty, or a `match` not exhaustive or an arm unreachable
+(`Reqs/Mutate#mutants`). -/
 partial def divisorConstants (items : Array Item) : Std.HashSet String := Id.run do
   let rec named : Expr → Option String
     | .neg _ e => named e
@@ -203,6 +215,10 @@ partial def divisorConstants (items : Array Item) : Std.HashSet String := Id.run
     if let .bin _ op _ k := e then
       if op == "div" || op == "mod" then
         if let some n := named k then out := out.insert n
+    if let .match _ _ arms := e then
+      out := out.insertMany (arms.flatMap (rangeBounds ·.1))
+    if let .is _ _ p := e then
+      out := out.insertMany (rangeBounds p)
   -- Through the values of constants, until nothing is new.
   let values := items.filterMap fun | .const _ n _ v => some (n.name, v) | _ => none
   let mut changed := true

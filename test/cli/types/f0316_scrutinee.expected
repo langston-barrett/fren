@@ -1,10 +1,10 @@
-error[F0316]: cannot match on `Int`
- --> test/cli/types/f0316_scrutinee.fren:2:52
+error[F0316]: cannot match on `Set(Int)`
+ --> test/cli/types/f0316_scrutinee.fren:2:57
   |
-2 | comp c { in x: Int pub out y: Int req r: y = match x { _ => 0 } }
-  |                                                    ^ not an enum
+2 | comp c { in s: Set(Int) pub out y: Int req r: y = match s { _ => 0 } }
+  |                                                         ^ no patterns of this type
   |
-  = note: `match` reads which variant a value of an enum is
+  = note: `match` reads a value of an enum, `Bool`, `Int`, `Nat` or `String`
   = help: for other types, use `if ... then ... else`
 
 error: could not check due to previous errors

@@ -410,6 +410,43 @@ mistake than a way to say that `x` is greater than both. Split it with
 comp c { in x: Int in y: Int pub out ok? req r: ok? iff 0 < x and x > y }
 ```
 "# },
+  { code := "F0128", explanation := r#"Spaces around the `..=` or `..` of a range pattern.
+
+Erroneous code example:
+
+```fren
+comp c { in n: Int pub out y: Int req r: y = match n { 0 ..= 9 => 0, _ => 1 } }
+```
+
+A range is written without spaces around its `..=` or `..`, as a field read
+is around its `.`, so that, in `n is 0..`, a bound on the next line is never
+read as part of it:
+
+```fren
+comp c { in n: Int pub out y: Int req r: y = match n { 0..=9 => 0, _ => 1 } }
+```
+
+In Lean, Lean's own parser reports this, as a syntax error.
+"# },
+  { code := "F0129", explanation := r#"A range pattern without a bound that it needs.
+
+Erroneous code example:
+
+```fren
+comp c { in n: Int pub out y: Int req r: y = match n { 0..= => 0, _ => 1 } }
+```
+
+The ranges are `a..=b`, `a..b`, `a..` and `..=b`: an inclusive range has
+an upper bound, and an exclusive one a lower bound. For the integers below
+`b`, write `..=` with the integer before `b`, as in `..=9` for those below
+10:
+
+```fren
+comp c { in n: Int pub out y: Int req r: y = match n { ..=9 => 0, _ => 1 } }
+```
+
+In Lean, Lean's own parser reports this, as a syntax error.
+"# },
   { code := "F0201", explanation := r#"A name that is not in scope.
 
 Erroneous code example:
@@ -1078,22 +1115,22 @@ struct Point { x: Int, y: Int }
 comp c { in p: Point pub out z: Int req r: z = p.x }
 ```
 "# },
-  { code := "F0316", explanation := r#"A `match` on a value that is not of an enum.
+  { code := "F0316", explanation := r#"A `match` on a value of a type that patterns do not match.
 
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y: Int req r: y = match x { _ => 0 } }
+comp c { in s: Set(Int) pub out y: Int req r: y = match s { _ => 0 } }
 ```
 
-`match` reads which variant a value of an enum is. For other types, use
-`if`:
+`match` reads a value of an enum, a `Bool`, an `Int`, a `Nat` or a
+`String`. For other types, use `if`:
 
 ```fren
-comp c { in x: Int pub out y: Int req r: y = if x > 0 then x else 0 }
+comp c { in s: Set(Int) pub out y: Int req r: y = if s = {} then 0 else 1 }
 ```
 "# },
-  { code := "F0317", explanation := r#"A `match` does not cover every variant.
+  { code := "F0317", explanation := r#"A `match` does not cover every value.
 
 Erroneous code example:
 
@@ -1104,7 +1141,11 @@ comp c { in s: Shape pub out a: Int req r: a = match s { Shape::Circle(r) => 3 *
 ```
 
 A `match` has a value for every value of its scrutinee: an arm for each
-variant, or a last arm `_` for the rest:
+variant, or a last arm `_` for the rest. The error names the values that
+no arm matches, as patterns. Nested patterns, literals and ranges cover
+only the values they match, so a `match` on an `Int` covers every value
+only with a last arm `_` or a binder, or ranges that together match every
+integer, and one on a `String` only with a last arm `_` or a binder:
 
 ```fren
 enum Shape { Circle(Int), Square(Int), Empty }
@@ -1122,12 +1163,13 @@ enum Mode { Off, On }
 comp c { in m: Mode pub out y: Int req r: y = match m { _ => 0, Mode::On => 1 } }
 ```
 
-The first arm whose pattern matches is chosen, so an arm after `_`, an arm
-for a variant that an earlier arm covers, and a `_` after arms for every
-variant are never chosen. Likewise, an alternative of an or-pattern, in an
-arm or in a pattern test such as `s is Shape::Circle(_) | Shape::Circle(_)`,
-that names a variant an earlier one names never matches. Remove the arm,
-or reorder the arms:
+The first arm whose pattern matches is chosen, so an arm is never chosen
+when the arms before it match every value its pattern matches: an arm after
+`_`, an arm for a variant or literal that an earlier arm covers, a range
+within earlier ranges, and a `_` after arms for every value. Likewise, an
+alternative of an or-pattern, in an arm or in a pattern test such as
+`s is Shape::Circle(_) | Shape::Circle(_)`, that matches only what earlier
+ones match never matches. Remove the arm, or reorder the arms:
 
 ```fren
 enum Mode { Off, On }
@@ -1347,9 +1389,9 @@ enum Shape { Circle(Int), Square(Int), Empty }
 comp c { in s: Shape pub out a: Int req r: a = match s { Shape::Circle(n) | Shape::Square(n) => n, _ => 0 } }
 ```
 
-An or-pattern matches any of its alternatives, so a name bound by one
-would have no value when another matches. Ignore the payload with `_`, or
-give each variant its own arm:
+An or-pattern matches any of its alternatives, so a name bound by one,
+at any depth, would have no value when another matches. Ignore the
+payload with `_`, or give each variant its own arm:
 
 ```fren
 enum Shape { Circle(Int), Square(Int), Empty }
@@ -1378,21 +1420,119 @@ comp c { in s: Shape pub out round? pub out big? req r: round? iff s is Shape::C
     req b: big? iff match s { Shape::Circle(n) => n > 10, _ => false } }
 ```
 "# },
-  { code := "F0335", explanation := r#"A pattern test on a value that is not of an enum.
+  { code := "F0335", explanation := r#"A pattern test on a value of a type that patterns do not match.
 
 Erroneous code example:
 
 ```fren
-pub enum Shape { Circle(Int), Empty }
-
-comp c { in x: Int pub out round? req r: round? iff x is Shape::Circle(_) }
+comp c { in s: Set(Int) pub out empty? req r: empty? iff s is _ }
 ```
 
-`is` tests which variant a value of an enum is. For other types, compare
-values with `=` or `in`:
+`is` tests a value of an enum, a `Bool`, an `Int`, a `Nat` or a `String`
+against a pattern. For other types, compare values with `=` or `in`:
 
 ```fren
-comp c { in x: Int pub out small? req r: small? iff x in {0, 1} }
+comp c { in s: Set(Int) pub out empty? req r: empty? iff s = {} }
+```
+"# },
+  { code := "F0348", explanation := r#"A pattern of another type than the value it matches.
+
+Erroneous code example:
+
+```fren
+comp c { in n: Int pub out y: Int req r: y = match n { "zero" => 0, _ => 1 } }
+```
+
+A literal matches a value of its own type: an integer an `Int` or a `Nat`,
+a string a `String`, and `true` and `false` a `Bool`. A range matches an
+`Int` or a `Nat`, and a variant a value of its enum. Only `_` and binders match a value of any
+type. Write a pattern of the value's type:
+
+```fren
+comp c { in n: Int pub out y: Int req r: y = match n { 0 => 0, _ => 1 } }
+```
+"# },
+  { code := "F0349", explanation := r#"A range pattern that matches no integer.
+
+Erroneous code example:
+
+```fren
+comp c { in n: Int pub out y: Int req r: y = match n { 9..=0 => 0, _ => 1 } }
+```
+
+`a..=b` matches the integers from `a` to `b`, and `a..b` those from `a` to
+`b - 1`, so a range whose lower bound is above its upper one, or `a..a`,
+matches none. Put the smaller bound first:
+
+```fren
+comp c { in n: Int pub out y: Int req r: y = match n { 0..=9 => 0, _ => 1 } }
+```
+"# },
+  { code := "F0350", explanation := r#"A range pattern's bound that is not an integer or a constant of `Int` or `Nat`.
+
+Erroneous code example:
+
+```fren
+comp c { in n: Int in m: Int pub out y: Int req r: y = match n { 0..=m => 0, _ => 1 } }
+```
+
+The bounds of a range are fixed: an integer literal, possibly negated, or
+a constant of type `Int` or `Nat`. To compare with a variable, use `if`:
+
+```fren
+comp c { in n: Int in m: Int pub out y: Int req r: y = if 0 <= n and n <= m then 0 else 1 }
+```
+"# },
+  { code := "F0351", explanation := r#"A constant as a range pattern's bound, whose value is not known where the range is checked.
+
+Erroneous code example:
+
+```fren
+const MAX: Int := "abcde".len
+
+comp c { in n: Int pub out y: Int req r: y = match n { 0..=MAX => 0, _ => 1 } }
+```
+
+Ranges are checked before the spec is: an empty range is an error, and
+ranges count towards whether a `match` covers every value. So a constant
+used as a bound has an integer constant expression as its value, built
+from integer literals and such constants by `+`, `-`, `*`, `div`, `mod`,
+`abs`, `min`, `max` and parentheses:
+
+```fren
+const MAX: Int := 2 * 5
+
+comp c { in n: Int pub out y: Int req r: y = match n { 0..=MAX => 0, _ => 1 } }
+```
+"# },
+  { code := "F0368", explanation := r#"A pattern that stands for too many cases.
+
+Erroneous code example:
+
+```fren
+enum B { X, Y }
+enum P { V(B, B, B, B, B, B, B, B, B) }
+
+comp c { in p: P pub out y: Int req r: y = match p {
+    P::V(B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y) => 0,
+    _ => 1,
+} }
+```
+
+Whether each arm is reachable is decided for each case of its pattern:
+each choice of one alternative of each of its or-patterns. Or-patterns
+within several values of a payload multiply, so a pattern may stand for at
+most 256 cases. Match fewer values with or-patterns, or match the payload
+in the arm's body:
+
+```fren
+enum B { X, Y }
+enum P { V(B, B, B, B, B, B, B, B, B) }
+
+comp c { in p: P pub out y: Int req r: y = match p {
+    P::V(_, _, _, _, _, _, _, _, B::X) => 0,
+    _ => 1,
+} }
 ```
 "# },
   { code := "F0336", explanation := r#"The divisor of `div` or `mod` is not an integer literal or a constant, or is a constant whose value is not known when the spec is read.

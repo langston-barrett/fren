@@ -1,0 +1,270 @@
+# Patterns
+
+A *pattern* is written in a [`match` arm](Expressions.md#matches) and in a
+[pattern test](Expressions.md#pattern-tests), and matches some values of
+one type: that of the `match`'s scrutinee, or of a value of a variant's
+payload.
+
+```
+pattern      := ["|"] or-pattern
+or-pattern   := primary ("|" primary)*
+primary      := "_" | DECL | literal | range
+              | path ["(" or-pattern ("," or-pattern)* ")"]
+literal      := ["-"] INT | STRING | "true" | "false"
+range        := bound "..=" bound | bound ".." [bound] | "..=" bound
+bound        := ["-"] INT | path
+```
+
+The `..=` and `..` of a range are written without spaces around them, as
+in `0..=9`, `-5..0` and `..=MAX`, as the `.` of a field read is (`F0128`).
+An upper bound is part of a range only when it touches the `..`: in `n is
+0.. and ok?`, the range is `0..`, and so it is in `n is 1.. req r: ...`,
+where the next member follows on the same line.
+
+## Kinds of pattern
+
+- `_` matches any value.
+- A *binder*, an identifier, matches any value, and names it within the
+  arm's body. A binder is not a variable: see
+  [Matches](Expressions.md#matches) for what it may shadow and mention.
+- A *literal* matches the value it denotes: `0`, `-1` and `0x10` match an
+  `Int` or a `Nat`, `"a"` a `String`, and `true` and `false` a `Bool`.
+- A *range* matches the integers between its bounds: `a..=b` those from `a`
+  to `b`, `a..b` those from `a` to `b - 1`, `a..` those from `a`, and `..=b`
+  those up to `b`. It matches an `Int` or a `Nat`. Each bound is an integer
+  literal, possibly negated, or a [constant](Items.md#constants) of type
+  `Int` or `Nat` (`F0350`) whose value is an [integer constant
+  expression](Expressions.md#division-and-remainder) (`F0351`), so that it
+  is known when the spec is read. A range that matches
+  no integer, such as `5..=3` or `3..3`, is an error (`F0349`).
+- `E::V(p, q)` matches the variant `V` of the enumeration `E` whose payload's
+  values `p` and `q` match, so patterns nest to any depth, as in
+  `Reply::Ok(Shape::Circle(_))`. A variant with a payload has a pattern for
+  each of its values, and one without a payload has none, as in
+  `Shape::Empty` (see [Variants with
+  payloads](Expressions.md#variants-with-payloads)).
+- `A | B`, an *or-pattern*, matches what any of its *alternatives* `A` and
+  `B` matches, the first of them first. Its alternatives bind no names
+  (`F0333`), at any depth: when another alternative matches, the name would
+  have no value. Or-patterns nest too, as in `E::V(A | B, _)`.
+
+A pattern of each kind matches values of one type, and a pattern of
+another type than the value it matches is an error (`F0348`), but `_` and
+binders match a value of any type. A variant of another enumeration than
+the value's is `F0319`.
+
+Each part of a pattern is read as a variant, a literal or a binder from what
+it is: a path of more than one segment, or one that is applied, names a
+variant. An identifier of one segment, not applied, is the literal `true`
+or `false`, a variant if it resolves to one in scope, as `V` does after
+`use E::*`, and a binder otherwise. A binder that shadows a name in scope is
+written with `!` (see [Shadowing](Components.md#shadowing)), and an
+identifier with `!` is always a binder, even if, without it, it would name
+a variant; `true!` and `false!` are binders too, which, as declarations of
+`true` and `false`, are errors. So `MAX` in a pattern, where `MAX` is a constant, is an error
+unless written `MAX!`: it would be a binder, not a comparison with the
+constant. `lang::pattern_name` states this:
+
+```fren
+pub mod lang
+
+-- What an identifier of one segment, not applied, is in a pattern.
+pub enum PatternName { BoolLiteral, Variant, Binder }
+
+pub comp pattern_name {
+    in bool_word?            -- it is `true` or `false`
+    in bang?                 -- it ends in `!`
+    in variant?              -- without the `!`, it resolves to a variant in scope
+    pub det out reading: PatternName
+
+    req rule: reading = if bool_word? and not bang? then PatternName::BoolLiteral
+        else if variant? and not bang? then PatternName::Variant else PatternName::Binder
+
+    expect explicit_shadowing: when bang?, reading = PatternName::Binder
+    expect unresolved: when not bool_word? and not variant?, reading = PatternName::Binder
+}
+```
+
+`lang::range_pattern` states which integers a range matches, and when it
+matches none, from its bounds:
+
+```fren
+pub comp range_pattern {
+    in has_lower?            -- it has a lower bound
+    in lower: Int
+    in has_upper?            -- it has an upper bound
+    in upper: Int
+    in inclusive?            -- its upper bound is included: written `..=` rather than `..`
+    in value: Int            -- an integer it is tested against
+    pub det out matches?
+    pub det out empty?       -- it matches no integer
+
+    req matching: matches? iff ((not has_lower? or lower <= value)
+        and (not has_upper? or (if inclusive? then value <= upper else value < upper)))
+    req empty: empty? iff (has_lower? and has_upper? and (if inclusive? then upper < lower else upper <= lower))
+
+    expect empty_matches_nothing: when empty?, not matches?
+    expect literal: when has_lower? and has_upper? and inclusive? and lower = upper, matches? iff value = lower
+    expect exclusive_end: when has_upper? and not inclusive?, not (value = upper and matches?)
+}
+```
+
+## Usefulness
+
+Whether a `match` is exhaustive, and which of its arms and alternatives are
+reachable, is decided by the *usefulness* of patterns, as in Maranget,
+"Warnings for pattern matching" (JFP 2007). The patterns are taken in
+*vectors*, one pattern for each value of a list of values of given types,
+and a *matrix* is a list of vectors of the same types, its *rows*. A vector
+is *useful* with respect to a matrix when some list of values matches the
+vector and no row of the matrix. So an arm is reachable when its pattern,
+as a vector of one pattern, is useful with respect to the patterns of the
+arms before it, and a `match` is exhaustive when `_` is not useful with
+respect to the patterns of all its arms (see
+[Matches](Expressions.md#matches)).
+
+Usefulness is decided one column at a time, from the first pattern of the
+vector, its *head*, and the heads of the rows. The values of a type are
+built by its *constructors*: the variants of an enumeration, whose
+arguments are the values of their payloads, `true` and `false`, each
+integer and each string, which have no arguments. A literal pattern is the
+constructor it denotes, and a range is the or-pattern of the integers it
+matches.
+
+- To *specialize* a matrix by a constructor `c` of arity `n`, each row whose
+  head matches every value that `c` builds is kept, with the head replaced
+  by `n` patterns: its arguments, or `n` wildcards for a wildcard. The other
+  rows are dropped. An or-pattern at the head of a row is first split into
+  one row for each alternative, in order. A vector whose head is `c`'s
+  pattern is specialized the same way. `lang::specialize` states this for
+  one row.
+- The *default matrix* is the rows whose head is a wildcard, `_` or a
+  binder, without it.
+- The constructors at the heads of the rows are *complete* when they are
+  all those of the type, as `lang::signature_complete` states.
+
+Then, as `lang::usefulness` states, a vector of no patterns is useful
+exactly when the matrix has no rows, and otherwise, by its head:
+
+- a constructor `c`: when the vector specialized by `c` is useful with
+  respect to the matrix specialized by `c` (for a range, by one of the
+  integers it matches);
+- a wildcard: when the heads of the rows are complete, if the vector
+  specialized by some constructor of the type is useful with respect to the
+  matrix specialized by it; and otherwise, when the rest of the vector is
+  useful with respect to the default matrix;
+- an or-pattern: when the vector with one of its alternatives as its head
+  is useful.
+
+```fren
+-- The kinds of pattern, at the head of a vector or a row.
+pub enum HeadKind { Constructor, Wildcard, Or }
+
+pub comp usefulness {
+    in columns: Nat          -- the patterns of the vector
+    in rows: Nat             -- the rows of the matrix
+    in head: HeadKind        -- the vector's head, if it has patterns
+    in complete?             -- the heads of the rows are complete for the first column's type
+    in specialized?          -- for a constructor, the vector specialized by it is useful with respect to the matrix specialized by it
+    in some_specialized?     -- the same holds for the vector of wildcards and some constructor of the type
+    in default?              -- the rest of the vector is useful with respect to the default matrix
+    in some_alternative?     -- for an or-pattern, the vector with one of its alternatives as its head is useful
+    pub det out useful?
+
+    req no_columns: when columns = 0, useful? iff rows = 0
+    req constructor: when columns > 0 and head = HeadKind::Constructor, useful? iff specialized?
+    req wildcard: when columns > 0 and head = HeadKind::Wildcard,
+        useful? iff (if complete? then some_specialized? else default?)
+    req alternatives: when columns > 0 and head = HeadKind::Or, useful? iff some_alternative?
+
+    expect first_row: when columns = 0 and rows = 0, useful?
+    expect incomplete_wildcard: when columns > 0 and head = HeadKind::Wildcard and not complete?, useful? iff default?
+}
+```
+
+`lang::specialize` states how specializing by a constructor `c` changes a
+row, from the kind of its head, whether the head is `c` (the same variant
+or literal, or a range that contains `c`), the arity of `c` and the number
+of the head's arguments:
+
+```fren
+pub comp specialize {
+    in head: HeadKind        -- the row's head
+    in same?                 -- the head is the constructor
+    in arity: Nat            -- the arity of the constructor
+    in n_args: Nat           -- the head's arguments, for a variant
+    pub det out kept?        -- the row is in the specialized matrix
+    pub det out added: Nat   -- the patterns that replace the head in it
+
+    req wildcard: when head = HeadKind::Wildcard, kept? and added = arity
+    req constructor: when head = HeadKind::Constructor, (kept? iff same?) and added = (if same? then n_args else 0)
+    -- An or-pattern is split into rows before.
+    req split: when head = HeadKind::Or, not kept? and added = 0
+
+    expect dropped: when not kept?, added = 0
+}
+```
+
+The constructors of an enumeration are its variants, and those of `Bool`
+are `true` and `false`. No set of strings is complete, since there are
+infinitely many, and no pattern but `_` and binders matches a value of a
+record, set, relation, sequence or abstract type. The integers are infinitely
+many too, but ranges can cover them all, as `..=-1`, `0` and `1..` do, so
+the integers at the heads of a column are complete when the heads' literals
+and ranges together match every integer, or for a `Nat`, every integer that
+is at least 0, as `0` and `1..` do. The implementation decides this,
+and specializes by integers, on intervals: it splits the integers at the
+bounds of the column's literals and ranges, so that each literal and range
+is a union of intervals, and specializing by any integer of an interval
+gives the same matrix. `lang::signature_complete` states when the heads of a
+column are complete:
+
+Each variant of `lang::ColumnType` ends in `Type`, which
+[`enum_variant_names`](../Lint/Style.md#names) would remove, since a variant
+cannot be named after a built-in type, as for `lang::ValueType`.
+
+```fren
+-- The kinds of type of a column; `IntType` is `Int` or `Nat`.
+set_option fren.lint.enum_variant_names "allow" in
+pub enum ColumnType { EnumType, BoolType, IntType, StringType, OtherType }
+
+pub comp signature_complete {
+    in column: ColumnType
+    in n_variants: Nat       -- the variants of the enumeration
+    in n_named: Nat          -- those that a head names
+    in has_true?             -- a head is `true`
+    in has_false?            -- a head is `false`
+    in covers_integers?      -- the heads' literals and ranges together match every value: every integer, or every one at least 0 for a `Nat`
+    pub det out complete?
+
+    assume counted: n_variants > 0 and n_named <= n_variants
+
+    req rule: complete? iff match column {
+        ColumnType::EnumType => n_named = n_variants,
+        ColumnType::BoolType => has_true? and has_false?,
+        ColumnType::IntType => covers_integers?,
+        ColumnType::StringType | ColumnType::OtherType => false,
+    }
+
+    expect strings_never: when column = ColumnType::StringType, not complete?
+    expect every_variant: when column = ColumnType::EnumType and complete?, n_named = n_variants
+}
+```
+
+An or-pattern's alternative is reachable when some case of its arm that
+takes it is useful: an arm's pattern stands for the or-free patterns that
+choosing one alternative of each of its or-patterns gives, in order, and
+each is tested for usefulness with respect to the patterns of the arms
+before it and the cases of its own arm before it. An alternative that no
+useful case takes never matches (`F0318`). Since these cases are
+tested one by one, and or-patterns within several values of a payload
+multiply them, as `V(A | B, A | B)` stands for four, a pattern may stand
+for at most 256 cases (`F0368`); split a larger one into several arms, or
+match the payload in the arm's body.
+
+When a `match` is not exhaustive, its error names the values that no arm
+matches, as patterns, such as `Reply::Ok(Shape::Square(_))`, `false`, or
+`1..=4` for the integers from 1 to 4. They are found by the same
+specialization, following each constructor that some arm names, and listing
+the constructors that none names; `_` stands for any value, such as any
+string.

@@ -194,8 +194,22 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
     unless (sc.of .rel).isEmpty do kinds := kinds ++ #[7, 7]
     unless (sc.of .seq).isEmpty do kinds := kinds ++ #[8, 8]
     match ← pick kinds with
-    | 1 => pick (sc.of .bool)
-    | 2 => return s!"{← intTerm sc} {← pick #["=", "!=", "<", "<=", ">", ">="]} {← intTerm sc}"
+    | 1 =>
+      -- A `match` on a `Bool`, with literal patterns.
+      if depth > 0 && (← chance 15) then
+        return s!"(match {← pick (sc.of .bool)} \{ true => {← genBool sc (depth - 1)}, false => {← genBool sc (depth - 1)} })"
+      pick (sc.of .bool)
+    | 2 =>
+      -- A pattern test of a literal or a range, or a `match` on an `Int`.
+      if ← chance 20 then
+        let (a, b) := (← below 4, ← below 4)
+        let (lo, hi) : Int × Int := ((min a b : Nat) - 1, max a b)
+        let p ← pick #[toString lo, s!"{lo}..={hi}", s!"{lo}..{hi + 1}", s!"{lo}..", s!"..={hi}"]
+        return s!"{← pick (sc.of .int)} is {p}"
+      if depth > 0 && (← chance 10) then
+        let k ← below 3
+        return s!"(match {← pick (sc.of .int)} \{ {k} => {← genBool sc (depth - 1)}, {k + 1} | -1 => {← genBool sc (depth - 1)}, _ => {← genBool sc (depth - 1)} })"
+      return s!"{← intTerm sc} {← pick #["=", "!=", "<", "<=", ">", ">="]} {← intTerm sc}"
     | 3 =>
       let es := sc.of .enum
       -- A pattern test, of one or two distinct variants.

@@ -24,24 +24,56 @@ structure Ident where
   span : Span
   deriving Inhabited
 
-/-- The pattern of a `match` arm. -/
+/-- A bound of a range pattern: an integer, possibly negated, or a path to
+a constant. -/
+inductive Bound where
+  | num (span : Span) (value : Int)
+  | path (span : Span) (segs : Array Ident)
+  deriving Inhabited
+
+def Bound.span : Bound → Span
+  | .num s _ | .path s _ => s
+
+/-- A pattern (`Reqs/Lang/Patterns`). -/
 inductive Pattern where
   /-- `_` -/
   | wild (span : Span)
-  /-- `E::V` or `E::V(a, _)`; `_` is a binder named `_`. -/
-  | variant (span : Span) (path : Array Ident) (binders : Option (Array Ident))
-  /-- `A | B`, or `| A`: each alternative a `variant`. -/
+  /-- `x`, `E::V` or `E::V(p, q)`: a path of one segment, not applied, is a
+  binder, `true`, `false`, or a variant, once resolved
+  (`lang::pattern_name`). -/
+  | variant (span : Span) (path : Array Ident) (args : Option (Array Pattern))
+  /-- An integer literal, possibly negated. -/
+  | num (span : Span) (value : Int)
+  | str (span : Span) (value : String)
+  /-- `a..=b`, `a..b`, `a..` or `..=b`. -/
+  | range (span : Span) (lo hi : Option Bound) (inclusive : Bool)
+  /-- `A | B`, or `| A`. -/
   | or (span : Span) (alts : Array Pattern)
   deriving Inhabited
 
 def Pattern.span : Pattern → Span
-  | .wild s | .variant s .. | .or s _ => s
+  | .wild s | .variant s .. | .num s _ | .str s _ | .range s .. | .or s _ => s
 
-/-- The alternatives of a pattern, none for `_`. -/
+/-- The alternatives of a pattern's own or-pattern, or the pattern itself. -/
 def Pattern.alts : Pattern → Array Pattern
-  | .wild _ => #[]
-  | p@(.variant ..) => #[p]
   | .or _ alts => alts
+  | p => #[p]
+
+/-- The alternatives of the or-patterns of a pattern, in preorder
+(`Fren.Core.Pat.alternatives`). -/
+partial def Pattern.alternatives : Pattern → Array Pattern
+  | .or _ alts => alts.flatMap fun a => #[a] ++ a.alternatives
+  | .variant _ _ (some args) => args.flatMap Pattern.alternatives
+  | _ => #[]
+
+/-- The identifiers of one segment, not applied, of a pattern, in
+preorder: its binders, once those that name variants, `true` and `false`
+are told apart. -/
+partial def Pattern.names : Pattern → Array Ident
+  | .variant _ #[x] none => #[x]
+  | .variant _ _ (some args) => args.flatMap Pattern.names
+  | .or _ alts => alts.flatMap Pattern.names
+  | _ => #[]
 
 inductive Expr where
   | when (span : Span) (negated : Bool) (cond body : Expr)
@@ -177,6 +209,10 @@ structure Layout where
   calls : Array Nat := #[]
   /-- The `{` of a set literal, spaced like `(`. -/
   sets : Array Nat := #[]
+  /-- The `..=` and `..` of ranges with a lower bound. -/
+  rangeLower : Array Nat := #[]
+  /-- The `..=` and `..` of ranges with an upper bound. -/
+  rangeUpper : Array Nat := #[]
 
 structure PState where
   toks : Array Token
@@ -323,32 +359,125 @@ def fieldReads (args : P (Array Expr)) (index : P Expr) (e : Expr) (start? : Opt
       first := e.span
   return e
 
-/-- An alternative of a pattern: `E::V` or `E::V(a, _)`. -/
-def alternative : P Pattern := do
-  let (segs, _) ← path false
-  let start := segs[0]!.span
-  unless isKw (← peek) "(" do return .variant (start.to segs.back!.span) segs none
-  markCall
-  discard bump
-  let mut bs := #[← ident]
-  while (← eatKw ",").isSome do bs := bs.push (← ident)
-  discard (expectKw ")")
-  return .variant (← spanFrom start) segs (some bs)
+/-- Records that the next token is a unary `-`. -/
+def markUnary : P Unit := modify fun s => { s with layout.unary := s.layout.unary.push s.pos }
+
+/-- Whether the next token touches the last one consumed. -/
+def touching : P Bool := do
+  let s ← get
+  return match s.toks[s.pos]?, s.toks[s.pos - 1]? with
+    | some t, some prev => prev.span.stop == t.span.start
+    | _, _ => false
+
+/-- Whether `t` can start a bound of a range. -/
+def boundStart (t : Token) : Bool := t.tok matches .num .. | .ident _ | .kw "-"
+
+/-- The bound of a range: `["-"] INT`, or a path. -/
+def bound : P Bound := do
+  let t ← peek
+  match t.tok with
+  | .kw "-" =>
+    markUnary
+    discard bump
+    let n ← peek
+    let .num _ v := n.tok | fail n "an integer"
+    discard bump
+    return .num (t.span.to n.span) (-(v : Int))
+  | .num _ v => discard bump; return .num t.span v
+  | .ident _ =>
+    let (segs, _) ← path false
+    return .path (segs[0]!.span.to segs.back!.span) segs
+  | _ => fail t "a bound of a range"
+
+/-- Spaces around the `..=` or `..` of a range (`F0128`). -/
+def rangeSpaceErr (op : Token) : P α :=
+  err op.span "F0128" s!"spaces around `{if isKw op "..=" then "..=" else ".."}` in a range pattern"
+    (some "spaced") #["note: a range is written without spaces around its `..=` or `..`, as in `0..=9`"]
+
+/-- The rest of a range after its lower bound `lo?`, at its `..=` or
+`..`: its upper bound, if any. `..=` needs one, and `..` with no lower
+bound is not a range (`F0129`). -/
+def rangeRest (start : Span) (lo? : Option Bound) : P Pattern := do
+  let at_ := (← get).pos
+  if lo?.isSome then modify fun s => { s with layout.rangeLower := s.layout.rangeLower.push at_ }
+  let op ← bump
+  let inclusive := isKw op "..="
+  let next ← peek
+  -- An upper bound touches the operator, as Lean's parser reads it: what
+  -- follows a space is not part of the range. After `..=`, a spaced bound
+  -- is reported as such.
+  let upper := boundStart next && (← touching)
+  if inclusive && !upper && boundStart next && !next.nlBefore then rangeSpaceErr op
+  if upper then modify fun s => { s with layout.rangeUpper := s.layout.rangeUpper.push at_ }
+  let hi? ← if upper then some <$> bound else pure none
+  if inclusive && hi?.isNone then
+    err op.span "F0129" "an inclusive range needs an upper bound" (some "no upper bound")
+      #["note: the ranges are `a..=b`, `a..b`, `a..` and `..=b`"]
+  if !inclusive && lo?.isNone then
+    err op.span "F0129" "a range with `..` needs a lower bound" (some "no lower bound")
+      #["note: the ranges are `a..=b`, `a..b`, `a..` and `..=b`", "help: for the integers below `b`, write `..=` and the integer before `b`"]
+  return .range (← spanFrom start) lo? hi? inclusive
+
+/-- After the lower bound `lo` of a pattern, a range if `..=` or `..`
+follows, touching it. -/
+def maybeRange (lo : Bound) (otherwise : Pattern) : P Pattern := do
+  let t ← peek
+  unless isKw t "..=" || isKw t ".." do return otherwise
+  unless ← touching do rangeSpaceErr t
+  rangeRest lo.span (some lo)
+
+mutual
+/-- An alternative of an or-pattern, or a pattern of a payload: `_`, a
+binder or variant, a literal, or a range. -/
+partial def primaryPattern : P Pattern := do
+  let t ← peek
+  match t.tok with
+  | .ident "_" => discard bump; return .wild t.span
+  | .str v => discard bump; return .str t.span v
+  | .num .. | .kw "-" =>
+    let b ← bound
+    let .num sp v := b | fail t "a pattern"
+    maybeRange b (.num sp v)
+  | .kw "..=" => rangeRest t.span none
+  | .kw ".." => rangeRest t.span none
+  | .ident _ =>
+    let (segs, _) ← path false
+    let start := segs[0]!.span
+    let pathSpan := start.to segs.back!.span
+    let next ← peek
+    if isKw next "(" && (← touching) then
+      markCall
+      discard bump
+      let mut args := #[← orPattern]
+      while (← eatKw ",").isSome do args := args.push (← orPattern)
+      discard (expectKw ")")
+      return .variant (← spanFrom start) segs (some args)
+    maybeRange (.path pathSpan segs) (.variant pathSpan segs none)
+  | _ => fail t "a pattern"
+
+/-- `A | B`, an or-pattern, or one pattern. -/
+partial def orPattern : P Pattern := do
+  let first ← primaryPattern
+  let mut alts := #[first]
+  while isKw (← peek) "|" do
+    discard bump
+    alts := alts.push (← primaryPattern)
+  if alts.size == 1 then return first
+  return .or (← spanFrom first.span) alts
+end
 
 /-- A pattern, of a `match` arm or of `is`. In an arm (`arm`), each `|`
 starts its alternative, so that they line up one per line; after `is`, a
 line that starts with `|` continues the expression. -/
 def pattern (arm := true) : P Pattern := do
-  let t ← peek
-  if t.tok == .ident "_" then discard bump; return .wild t.span
   if arm then markStart
   let lead ← eatKw "|"
-  let first ← alternative
+  let first ← primaryPattern
   let mut alts := #[first]
   while isKw (← peek) "|" do
     if arm then markStart
     discard bump
-    alts := alts.push (← alternative)
+    alts := alts.push (← primaryPattern)
   if alts.size == 1 && lead.isNone then return first
   return .or (← spanFrom ((lead.map (·.span)).getD first.span)) alts
 

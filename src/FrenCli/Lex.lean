@@ -59,7 +59,7 @@ Includes tokens Fren doesn't use but Lean lexes (`==`, `&&`, `||`, `<-`), so
 that errors name them as Lean's do. `.` is only the one after `)` or `}` that
 reads a field; after a name, it is part of the name. -/
 def punctuators : List String :=
-  ["::*", "::{", "::", "==", "=>", "&&", "||", "|", "!=", "<=", "<-", ">=", ":=", "{", "}", "(", ")", "[", "]", ",", ":", ".", "*", "=", "<", ">", "++", "+", "-"]
+  ["::*", "::{", "..=", "::", "..", "==", "=>", "&&", "||", "|", "!=", "<=", "<-", ">=", ":=", "{", "}", "(", ")", "[", "]", ",", ":", ".", "*", "=", "<", ">", "++", "+", "-"]
 
 def lexCommands : List String := ["#fren_check", "#fren_trace"]
 

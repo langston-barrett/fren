@@ -21,8 +21,13 @@ becomes a recursive inductive type. The `k`th value of a payload, counted
 from 0, is the constructor's parameter `xk`, and is read by the selector
 `p.V.xk`, such as `Shape.Circle.x0 : Shape → Int`, which gives `default`
 for any other variant. A [`match`](Lang/Expressions.md#matches) becomes
-`if`s that compare the scrutinee with each arm's variant, built from the
-scrutinee's own payload, and reads binders with the selectors.
+`if`s that test the scrutinee against each arm's pattern, rather than
+Lean's own `match`, whose rules for exhaustiveness differ from Fren's: a
+variant by comparing the value with the variant built from its own payload,
+and then its payload's patterns on the values the selectors read; a literal
+by equality; a range by comparisons with its bounds, a constant's by its
+value; an or-pattern by the disjunction of its alternatives' tests. Binders
+read their values with the selectors.
 
 Each enumeration whose variants have no payloads also has an instance
 `p.instFinite` of `Fren.Finite`, a class whose instances list every value

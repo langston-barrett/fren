@@ -55,7 +55,9 @@ pub comp allow_attributes {
 ## Wildcard arms
 
 `wildcard_enum_match_arm` fires on every `_` arm of a
-[`match`](../Lang/Expressions.md#matches), and is fixable. The fix replaces
+[`match`](../Lang/Expressions.md#matches) on an enumeration whose patterns
+are all flat, as [`wildcard_single_variant`](Pedantic.md#matches) does, and
+is fixable. The fix replaces
 `_` with an or-pattern of the variants it matches, in the order of their
 enumeration, each written as
 [`wildcard_single_variant`](Pedantic.md#matches) writes one: `E::V`, or

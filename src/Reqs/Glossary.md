@@ -52,6 +52,9 @@ constant, possibly negated or in parentheses, whose value is not `0`. See
 
 **Environment.** Whatever chooses a component's inputs.
 
+**Exhaustive.** Of a `match`: every value of its scrutinee's type matches
+the pattern of some arm. See [Expressions](Lang/Expressions.md#matches).
+
 **Expectation.** A claim, declared with `expect`, that follows from a
 component's assumptions and requirements, and that the checks confirm.
 
@@ -93,8 +96,9 @@ expectation, check or claim. See [Items](Lang/Items.md).
 such as an unused import, whose level (`allow`, `warn`, `deny` or
 `forbid`) can be set. See [Lints](Lint.md).
 
-**Match.** An expression that reads which variant a value is, and its
-payload. See [Expressions](Lang/Expressions.md#matches).
+**Match.** An expression that has the value of the body of the first of its
+arms whose pattern matches its scrutinee. See
+[Expressions](Lang/Expressions.md#matches).
 
 **Member.** A declaration inside a component: an input, output, constraint
 or instance.
@@ -103,12 +107,24 @@ or instance.
 `out`. A *public output* is declared with `pub out`; other outputs are
 private.
 
+**Pattern.** What a `match` arm or a pattern test matches values against:
+`_`, a binder, a literal, a range, a variant with patterns for its
+payload, or an or-pattern. See [Patterns](Lang/Patterns.md).
+
 **Pattern test.** An expression `e is P`, which is `true` exactly when the
 pattern `P`, as of a `match` arm but binding no names, matches `e`. See
 [Expressions](Lang/Expressions.md#pattern-tests).
 
 **Payload.** The values that a variant carries, as in `Circle(Int)`. See
 [Items](Lang/Items.md#enumerations).
+
+**Range pattern.** A pattern that matches the integers between its
+bounds, such as `0..=9`, `0..10`, `1..` and `..=-1`. See
+[Patterns](Lang/Patterns.md#kinds-of-pattern).
+
+**Reachable.** Of an arm of a `match`, or an alternative of an
+or-pattern: matching some value that no arm or alternative before it
+matches. See [Expressions](Lang/Expressions.md#matches).
 
 **Realizable.** Of a component: some system can meet its requirements for
 every admissible input. See [Checks](Check.md#realizability).
@@ -145,6 +161,10 @@ hold. See [Checks](Check.md#vacuity).
 **Unbounded type.** A type with arbitrarily large values: a recursive
 enumeration, or one with a field or payload of an unbounded type. See
 [Types](Lang/Types.md#recursive-and-unbounded-types).
+
+**Useful.** Of a vector of patterns, with respect to a matrix of them:
+some values match the vector and no row of the matrix. See
+[Patterns](Lang/Patterns.md#usefulness).
 
 **Variant.** One of the alternatives of an enumeration, carrying a payload
 or not.
