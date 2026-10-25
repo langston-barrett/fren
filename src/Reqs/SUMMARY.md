@@ -35,6 +35,7 @@
     - [Literals](Lint/Suspicious/Literals.md)
     - [Comparisons](Lint/Suspicious/Comparisons.md)
   - [Pedantic](Lint/Pedantic.md)
+  - [Restriction](Lint/Restriction.md)
   - [Decidability](Lint/Decidability.md)
 
 # Using Fren

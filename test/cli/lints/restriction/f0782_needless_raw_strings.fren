@@ -1,0 +1,9 @@
+-- `needless_raw_strings`, allowed by default.
+set_option fren.lint.needless_raw_strings "warn"
+
+comp word {
+    in text: String
+    pub out lower?
+
+    req rule: lower? iff text.matches?(r#"[a-z]+"#)
+}

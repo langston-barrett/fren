@@ -1,0 +1,23 @@
+warning[F0784]: enum `ClimateMode` contains the name of its module `climate`
+ --> test/cli/lints/restriction/f0784_module_name_repetitions.fren:6:10
+  |
+6 | pub enum ClimateMode { Heat, Cool }
+  |          ^^^^^^^^^^^ contains `climate`
+  |
+  = note: a path to it names the module already, as `climate::ClimateMode` does
+  = help: remove `climate` from its name
+  = note: `module_name_repetitions` is set to `warn`
+
+warning[F0784]: component `climate_reading` contains the name of its module `climate`
+ --> test/cli/lints/restriction/f0784_module_name_repetitions.fren:8:10
+  |
+8 | pub comp climate_reading {
+  |          ^^^^^^^^^^^^^^^ contains `climate`
+  |
+  = note: a path to it names the module already, as `climate::climate_reading` does
+  = help: remove `climate` from its name
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0784`.
+exit=3

@@ -3635,6 +3635,200 @@ Every `x` below `3` is below `5`, so the two comparisons are `x < 3`; with
 comp c { in x: Int pub out p? req r: p? iff x < 3 }
 ```
 "# },
+  { code := "F0780", explanation := r#"A `set_option` that sets a lint or a group to `allow` (`allow_attributes`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.allow_attributes "warn"
+set_option fren.lint.glob_imports "allow"
+
+enum E { A, B }
+
+use self::E::*
+
+comp c { in e: E pub out p? req r: p? iff e = A }
+```
+
+`"expect"` silences the lint too, and once nothing where it is in effect
+needs it, `unfulfilled_lint_expectations` reports the setting, so that it
+does not outlive its reason. `fren fix` can fix this:
+
+```fren
+set_option fren.lint.allow_attributes "warn"
+set_option fren.lint.glob_imports "expect"
+
+enum E { A, B }
+
+use self::E::*
+
+comp c { in e: E pub out p? req r: p? iff e = A }
+```
+
+Where the lint never fires, the expectation is unfulfilled, a warning that
+`allow` never gave. For `unfulfilled_lint_expectations` itself, `"expect"`
+means `"allow"`, so that setting has no fix.
+"# },
+  { code := "F0781", explanation := r#"A `_` arm of a `match` (`wildcard_enum_match_arm`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.wildcard_enum_match_arm "warn"
+
+enum E { A, B, C }
+
+comp c { in e: E pub out n: Int req r: n = match e { E::A => 1, _ => 2 } }
+```
+
+A variant added to `E` later would be matched by `_` without notice. Named,
+it makes the `match` non-exhaustive, a static error, so that the new
+variant gets an arm of its own. `fren fix` can fix this:
+
+```fren
+set_option fren.lint.wildcard_enum_match_arm "warn"
+
+enum E { A, B, C }
+
+comp c { in e: E pub out n: Int req r: n = match e { E::A => 1, E::B | E::C => 2 } }
+```
+"# },
+  { code := "F0782", explanation := r#"A raw string literal whose contents have no `\` and no `"` (`needless_raw_strings`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.needless_raw_strings "warn"
+
+comp c { in s: String pub out p? req r: p? iff s.matches?(r"[a-z]+") }
+```
+
+A raw literal is for contents that would need escapes in an ordinary one.
+These need none, and the ordinary literal has the same value. `fren fix`
+can fix this:
+
+```fren
+set_option fren.lint.needless_raw_strings "warn"
+
+comp c { in s: String pub out p? req r: p? iff s.matches?("[a-z]+") }
+```
+"# },
+  { code := "F0783", explanation := r#"A string literal with a character beyond ASCII (`non_ascii_literal`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.non_ascii_literal "warn"
+
+comp c { in s: String pub out p? req r: p? iff s = "café" }
+```
+
+A character beyond ASCII may look like another, or not display in every
+font. As an escape, it reads the same everywhere. `fren fix` can fix this:
+
+```fren
+set_option fren.lint.non_ascii_literal "warn"
+
+comp c { in s: String pub out p? req r: p? iff s = "caf\u00E9" }
+```
+
+A character beyond `U+FFFF` has no escape, since `\uHHHH` has four digits,
+so a literal with one has no fix.
+"# },
+  { code := "F0784", explanation := r#"An item whose name contains its module's (`module_name_repetitions`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.module_name_repetitions "warn"
+
+mod climate
+
+pub enum ClimateMode { Heat, Cool }
+```
+
+A path to the item names the module already, so `climate::ClimateMode`
+says `climate` twice. Remove it from the item's name:
+
+```fren
+set_option fren.lint.module_name_repetitions "warn"
+
+mod climate
+
+pub enum Mode { Heat, Cool }
+```
+"# },
+  { code := "F0785", explanation := r#"A declared name of one character (`min_ident_chars`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.min_ident_chars "warn"
+
+comp offset { in t: Int pub out level: Int req raised: level = t + 1 }
+```
+
+A name of one character says little of what it names. Give it a name that
+says more:
+
+```fren
+set_option fren.lint.min_ident_chars "warn"
+
+comp offset { in reading: Int pub out level: Int req raised: level = reading + 1 }
+```
+"# },
+  { code := "F0786", explanation := r#"A path of three or more segments in an expression, pattern or type (`absolute_paths`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.absolute_paths "warn"
+
+mod house::climate
+
+pub enum Mode { Heat, Cool }
+
+mod house
+
+comp c { in m: climate::Mode pub out p? req r: p? iff m = climate::Mode::Heat }
+```
+
+`climate::Mode::Heat` has three segments. Import the enumeration with
+`use`, and write the shorter path:
+
+```fren
+set_option fren.lint.absolute_paths "warn"
+
+mod house::climate
+
+pub enum Mode { Heat, Cool }
+
+mod house
+
+use self::climate::Mode
+
+comp c { in m: Mode pub out p? req r: p? iff m = Mode::Heat }
+```
+"# },
+  { code := "F0787", explanation := r#"An `and` in an `or`, or a `join` or `inter` in a `union` or `minus`, without parentheses (`precedence`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.precedence "warn"
+
+comp c { in a? in b? in d? pub out p? req r: p? iff (a? or b? and d?) }
+```
+
+`and` binds more tightly than `or`, so this is `a? or (b? and d?)`
+already. The parentheses say so to a reader who does not know the
+precedence. `fren fix` can fix this:
+
+```fren
+set_option fren.lint.precedence "warn"
+
+comp c { in a? in b? in d? pub out p? req r: p? iff (a? or (b? and d?)) }
+```
   { code := "F0789", explanation := r#"A relation to a type of one value (`zero_sized_map_values`, allowed by default).
 
 Example:

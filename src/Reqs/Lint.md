@@ -20,9 +20,11 @@ use view::Severity
 <!-- keep-sorted start skip_lines=2 -->
 | Lint | Code | Group | Default | Reported at |
 |---|---|---|---|---|
+| `absolute_paths` | `F0786` | `restriction` | `allow` | a path of three or more segments in an expression, pattern or type, such as `climate::Mode::Heat` (see [Long paths](Lint/Restriction.md#long-paths)) |
+| `absurd_extreme_comparisons` | `F0763` | `suspicious` | `warn` | a comparison of a `len` or `card` that is always the same, since a length is never negative, such as `s.len < 0` (see [Comparisons](Lint/Suspicious/Comparisons.md)) |
+| `allow_attributes` | `F0780` | `restriction` | `allow` | a `set_option` that sets a lint or a group to `allow` (see [Allowed lints](Lint/Restriction.md#allowed-lints)) |
 | `almost_complete_range` | `F0757` | `suspicious` | `warn` | a range in a pattern one character short of an alphabet, such as `a-y` (see [Ranges of characters](Lint/Suspicious/Literals.md#ranges-of-characters)) |
 | `assertions_on_constants` | `F0761` | `style` | `warn` | an `assume`, `req` or `expect` that mentions no variable, such as `req r: true` (see [Constant constraints](Lint/Style.md#constant-constraints)) |
-| `absurd_extreme_comparisons` | `F0763` | `suspicious` | `warn` | a comparison of a `len` or `card` that is always the same, since a length is never negative, such as `s.len < 0` (see [Comparisons](Lint/Suspicious/Comparisons.md)) |
 | `bool_equality` | `F0731` | `pedantic` | `allow` | `a = b` on `Bool`s (see [Boolean equality](Lint/Pedantic.md#boolean-equality)) |
 | `card_zero` | `F0716` | `style` | `warn` | a comparison of a set's or relation's `card` with `0` or `1` that says whether it is empty, such as `s.card = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
 | `case_split_reqs` | `F0729` | `pedantic` | `allow` | two or more requirements `when T, y = e` of one output, whose tests are of which variant one scrutinee is (see [Variant tests](Lint/Pedantic.md#variant-tests)) |
@@ -59,16 +61,21 @@ use view::Severity
 | `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false` (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
 | `match_same_arms` | `F0725` | `pedantic` | `allow` | an arm of a `match` with the same body as another (see [Matches](Lint/Pedantic.md#matches)) |
 | `membership_chain` | `F0718` | `pedantic` | `allow` | `x = a or x = b or x = c`, or `x != a and x != b and x != c`, three or more (see [Membership chains](Lint/Pedantic.md#membership-chains)) |
+| `min_ident_chars` | `F0785` | `restriction` | `allow` | a declared name of one character, such as `x` (see [Names](Lint/Restriction.md#names)) |
 | `module_inception` | `F0748` | `style` | `warn` | a module whose last segment repeats its parent's, as in `mod lint::lint` (see [Names](Lint/Style.md#names)) |
+| `module_name_repetitions` | `F0784` | `restriction` | `allow` | an item whose name contains its module's, such as `climate::ClimateMode` (see [Names](Lint/Restriction.md#names)) |
 | `needless_bool_assign` | `F0759` | `complexity` | `warn` | `if C then X else not X`, or `if C then not X else X` (see [Conditionals of `Bool`s](Lint/Complexity.md#conditionals-of-bools)) |
 | `needless_match` | `F0760` | `complexity` | `warn` | a `match` whose every arm gives back the value it matches, such as `match x { E::A => E::A, _ => x }` (see [Matches that give back the scrutinee](Lint/Complexity/Matches.md#matches-that-give-back-the-scrutinee)) |
+| `needless_raw_strings` | `F0782` | `restriction` | `allow` | a raw string literal with no `\` and no `"` (see [Literals](Lint/Restriction.md#literals)) |
 | `neg_multiply` | `F0742` | `style` | `warn` | a product with `-1`, `x * -1` or `-1 * x` (see [Negations](Lint/Style.md#negations)) |
 | `negative_position` | `F0770` | `suspicious` | `warn` | a negative integer literal as a position, such as `q[-1]` or `s.at(-1)` (see [Indexes](Lint/Suspicious/Methods.md#indexes)) |
 | `no_effect_replace` | `F0754` | `suspicious` | `warn` | `s.replace(a, a)` or `s.replace_all(a, a)` (see [Replacements](Lint/Suspicious/Methods.md#replacements)) |
+| `non_ascii_literal` | `F0783` | `restriction` | `allow` | a string literal with a character beyond ASCII (see [Literals](Lint/Restriction.md#literals)) |
 | `non_camel_case_types` | `F0704` | `nonstandard_style` | `warn` | an enumeration, variant, record or abstract type not named in `CamelCase` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
 | `non_snake_case` | `F0703` | `nonstandard_style` | `warn` | a module, component, variable, function, instance, constraint or global expectation not named in `snake_case` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
 | `non_upper_case_constants` | `F0705` | `nonstandard_style` | `warn` | a constant not named in `UPPER_CASE` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
 | `nonminimal_bool` | `F0712` | `complexity` | `warn` | a `Bool` expression with a simpler form, such as `a? = true` (see [Simpler `Bool` expressions](Lint/Complexity.md#simpler-bool-expressions)) |
+| `precedence` | `F0787` | `restriction` | `allow` | an `and` in an `or`, or a `join` or `inter` in a `union` or `minus`, without parentheses, such as `a? or b? and c?` (see [Precedence](Lint/Restriction.md#precedence)) |
 | `redundant_bindings` | `F0735` | `style` | `warn` | a binding or field `x := x` (see [Bindings](Lint/Style.md#bindings)) |
 | `redundant_bool_type` | `F0746` | `style` | `warn` | a `: Bool` that a name ending in `?` implies, as in `in ready?: Bool` (see [Boolean types](Lint/Style.md#boolean-types)) |
 | `redundant_comparisons` | `F0767` | `complexity` | `warn` | two comparisons of one operand with integers, of which one implies the other, such as `x < 3 and x < 5` (see [Redundant comparisons](Lint/Complexity/Comparisons.md#redundant-comparisons)) |
@@ -87,14 +94,15 @@ use view::Severity
 | `unused_imports` | `F0701` | `unused` | `warn` | a `use` that nothing in its file uses (see [Unused imports](Lint/Unused.md#unused-imports)) |
 | `unused_variables` | `F0710` | `unused` | `warn` | a variable or binder that nothing mentions (see [Unused variables](Lint/Unused.md#unused-variables)) |
 | `upper_case_acronyms` | `F0750` | `style` | `warn` | a name in `CamelCase` with three or more uppercase letters in a row, such as `HTTPStatus` (see [Names](Lint/Style.md#names)) |
+| `wildcard_enum_match_arm` | `F0781` | `restriction` | `allow` | a `_` arm of a `match` (see [Wildcard arms](Lint/Restriction.md#wildcard-arms)) |
 | `wildcard_single_variant` | `F0728` | `pedantic` | `allow` | a `_` arm that matches only one variant (see [Matches](Lint/Pedantic.md#matches)) |
 | `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel(A, B)` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
 <!-- keep-sorted end -->
 
-The lints' codes run from `F0701` to `F0770`. Among them, `F0707`, `F0708`
+The lints' codes run from `F0701` to `F0787`. Among them, `F0707`, `F0708`
 and `F0709` are errors in [setting levels](#setting-levels), and `F0713`
-is the removed `shadowed_constants`'s. `F0758` is used by nothing, and is
-free for a later lint.
+is the removed `shadowed_constants`'s. `F0758`, and `F0771` to `F0779`, are
+used by nothing, and are free for later lints.
 
 Lints are found while elaborating, like [static
 errors](View.md#static-errors), and never ask the solver anything: the
@@ -164,14 +172,15 @@ Each lint is in exactly one *group*, and its default level is its group's:
 | [`decidability`](Lint/Decidability.md) | `deny` | find a construct outside the decidable core: `undecidable` alone |
 | [`nonstandard_style`](Lint/NonstandardStyle.md) | `warn` | find a name in the wrong case |
 | [`pedantic`](Lint/Pedantic.md) | `allow` | are matters of judgement, or would fire on much that reads well as it is |
+| [`restriction`](Lint/Restriction.md) | `allow` | forbid what is fine in general, but a project may rule out |
 | [`style`](Lint/Style.md) | `warn` | find a clearer way to write the same thing |
 | [`suspicious`](Lint/Suspicious.md) | `warn` | find what is probably not what the writer meant |
 | [`unused`](Lint/Unused.md) | `warn` | find what is declared but never used |
 <!-- keep-sorted end -->
 
 The groups follow those of rustc and Clippy, and a lint modelled on one of
-theirs is in the group of the same name: a Clippy lint in `pedantic` is
-allowed here too. These are the exceptions:
+theirs is in the group of the same name: a Clippy lint in `pedantic` or
+`restriction` is allowed here too. These are the exceptions:
 
 <!-- keep-sorted start -->
 - `eq_op`: Clippy's is in `correctness`, which is denied by default. Fren
@@ -181,24 +190,26 @@ allowed here too. These are the exceptions:
 - `glob_imports` and `trivial_pattern`: their Clippy counterparts are in
   `pedantic` and `nursery`, but here both are in `style` (see [Trivial
   patterns](Lint/Style.md#trivial-patterns)), so both are `warn`.
+- `precedence`: Clippy's is in `complexity`, but here it is in
+  `restriction`, and allowed (see [Precedence](Lint/Restriction.md#precedence)).
 - `redundant_bool_type`: its Clippy counterpart, `redundant_type_annotations`,
-  is in `restriction`, which is allowed by default. Fren has no
-  `restriction` group, and the `?` of a name already gives its type, so
-  the `: Bool` only repeats it: it is in `style`, and `warn`.
+  is in `restriction`, which is allowed by default. The `?` of a name
+  already gives its type, so the `: Bool` only repeats it: it is in
+  `style`, and `warn`.
 - `same_branches`: Clippy's `if_same_then_else` is in `style`. Two
   branches written the same are more likely a slip in one of them than a
   matter of style, so it is in `suspicious`. Both are `warn`.
 <!-- keep-sorted end -->
 
 ```fren
-pub enum Group { Unused, NonstandardStyle, Style, Complexity, Suspicious, Pedantic, Decidability }
+pub enum Group { Unused, NonstandardStyle, Style, Complexity, Suspicious, Pedantic, Restriction, Decidability }
 
 pub comp group_default {
     in group: Group
     pub det out level: Level
 
     req rule: level = match group {
-        Group::Pedantic => Level::Allow,
+        Group::Pedantic | Group::Restriction => Level::Allow,
         Group::Decidability => Level::Deny,
         _ => Level::Warn,
     }
@@ -480,6 +491,7 @@ what the spec means:
 <!-- keep-sorted start skip_lines=2 -->
 | Lint | Fix |
 |---|---|
+| `allow_attributes` | sets the lint to `expect` |
 | `almost_complete_range` | replaces the pattern with one that completes each range |
 | `bool_equality` | replaces `a = b` with `a iff b` |
 | `card_zero` | compares the set with `{}`, as the message suggests |
@@ -505,9 +517,12 @@ what the spec means:
 | `membership_chain` | replaces the chain with a membership, `x in {a, b, c}`, or `not x in {a, b, c}` |
 | `needless_bool_assign` | replaces the conditional with `C iff X`, or `C != X` |
 | `needless_match` | replaces the `match` with its scrutinee |
+| `needless_raw_strings` | writes the literal as an ordinary one |
 | `neg_multiply` | replaces `x * -1` or `-1 * x` with `-x` |
 | `no_effect_replace` | replaces the call with its receiver |
+| `non_ascii_literal` | writes each character beyond ASCII as an escape, where each is up to U+FFFF |
 | `nonminimal_bool` | replaces the expression with its simpler form, as the message suggests |
+| `precedence` | puts the operand in parentheses |
 | `redundant_bindings` | replaces `x := x` with `x` |
 | `redundant_bool_type` | removes the `: Bool` |
 | `redundant_comparisons` | replaces the two comparisons with the one that implies the other, under `and`, or the one that the other implies, under `or` |
@@ -521,6 +536,7 @@ what the spec means:
 | `unfulfilled_lint_expectations` | removes the `set_option`, or for `set_option ... in item`, removes `set_option ... in` and keeps the item |
 | `unless_not` | removes the negation and writes `when`, as the message suggests |
 | `unused_imports` | removes the `use`, or the name from a grouped `use` |
+| `wildcard_enum_match_arm` | names the variants that `_` matches, `E::A \| E::B`, written as for `wildcard_single_variant` |
 | `wildcard_single_variant` | names the variant, `E::V`, or `E::V(_, _)` with one `_` per value of its payload |
 <!-- keep-sorted end -->
 

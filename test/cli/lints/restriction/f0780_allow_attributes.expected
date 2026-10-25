@@ -1,0 +1,28 @@
+warning[F0780]: `glob_imports` is allowed rather than expected
+ --> test/cli/lints/restriction/f0780_allow_attributes.fren:3:35
+  |
+3 | set_option fren.lint.glob_imports "allow"
+  |                                   ^^^^^^^ `allow`
+  |
+  = note: `"expect"` silences it too, and `unfulfilled_lint_expectations` reports the setting once nothing needs it
+  = help: `fren fix` can fix this
+  = note: `allow_attributes` is set to `warn`
+help: expect it instead
+  |
+3 - set_option fren.lint.glob_imports "allow"
+3 + set_option fren.lint.glob_imports "expect"
+  |
+
+warning[F0780]: `unfulfilled_lint_expectations` is allowed rather than expected
+ --> test/cli/lints/restriction/f0780_allow_attributes.fren:4:52
+  |
+4 | set_option fren.lint.unfulfilled_lint_expectations "allow"
+  |                                                    ^^^^^^^ `allow`
+  |
+  = note: `"expect"` silences it too, and `unfulfilled_lint_expectations` reports the setting once nothing needs it
+  = note: for `unfulfilled_lint_expectations`, `"expect"` means `"allow"`, so it is never fulfilled
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0780`.
+exit=3

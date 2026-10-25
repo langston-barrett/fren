@@ -1,0 +1,15 @@
+-- `precedence`, allowed by default.
+set_option fren.lint.precedence "warn"
+
+comp alarm {
+    in armed?
+    in open?
+    in moving?
+    in zones: Set(Int)
+    in quiet: Set(Int)
+    in tripped: Set(Int)
+    pub out ringing?
+    pub out loud: Set(Int) := zones minus quiet inter tripped
+
+    req ringing_rule: ringing? iff (moving? or armed? and open?)
+}

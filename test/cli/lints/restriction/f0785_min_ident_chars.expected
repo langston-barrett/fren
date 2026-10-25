@@ -1,0 +1,29 @@
+warning[F0785]: variable `s` has a name of one character
+ --> test/cli/lints/restriction/f0785_min_ident_chars.fren:8:8
+  |
+8 |     in s: Shape
+  |        ^ too short to say what it is
+  |
+  = help: give it a name that says what it is
+  = note: `min_ident_chars` is set to `warn`
+
+warning[F0785]: variable `n` has a name of one character
+ --> test/cli/lints/restriction/f0785_min_ident_chars.fren:9:13
+  |
+9 |     pub out n: Int
+  |             ^ too short to say what it is
+  |
+  = help: give it a name that says what it is
+
+warning[F0785]: binder `r` has a name of one character
+  --> test/cli/lints/restriction/f0785_min_ident_chars.fren:11:43
+   |
+11 |     req rule: n = match s { Shape::Circle(r) => r, Shape::Dot => 0 }
+   |                                           ^ too short to say what it is
+   |
+   = help: give it a name that says what it is
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0785`.
+exit=3

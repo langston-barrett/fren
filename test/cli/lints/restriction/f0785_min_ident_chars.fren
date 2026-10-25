@@ -1,0 +1,12 @@
+-- `min_ident_chars`, allowed by default.
+-- fren-covers: lint::min_ident_chars
+set_option fren.lint.min_ident_chars "warn"
+
+enum Shape { Circle(Int), Dot }
+
+comp area {
+    in s: Shape
+    pub out n: Int
+
+    req rule: n = match s { Shape::Circle(r) => r, Shape::Dot => 0 }
+}

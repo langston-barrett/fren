@@ -368,6 +368,46 @@ register_option fren.lint.redundant_comparisons : String := {
   descr := "the level of the lint `redundant_comparisons`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.allow_attributes : String := {
+  defValue := "allow"
+  descr := "the level of the lint `allow_attributes`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.wildcard_enum_match_arm : String := {
+  defValue := "allow"
+  descr := "the level of the lint `wildcard_enum_match_arm`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.needless_raw_strings : String := {
+  defValue := "allow"
+  descr := "the level of the lint `needless_raw_strings`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.non_ascii_literal : String := {
+  defValue := "allow"
+  descr := "the level of the lint `non_ascii_literal`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.module_name_repetitions : String := {
+  defValue := "allow"
+  descr := "the level of the lint `module_name_repetitions`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.min_ident_chars : String := {
+  defValue := "allow"
+  descr := "the level of the lint `min_ident_chars`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.absolute_paths : String := {
+  defValue := "allow"
+  descr := "the level of the lint `absolute_paths`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.precedence : String := {
+  defValue := "allow"
+  descr := "the level of the lint `precedence`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"
@@ -396,6 +436,11 @@ register_option fren.lint.suspicious : String := {
 register_option fren.lint.pedantic : String := {
   defValue := "allow"
   descr := "the level of each lint of the group `pedantic`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.restriction : String := {
+  defValue := "allow"
+  descr := "the level of each lint of the group `restriction`: allow, expect, warn, deny or forbid"
 }
 
 register_option fren.lint.decidability : String := {
@@ -506,13 +551,16 @@ def triviaComments (t : String) : Array (Nat × Nat) := Id.run do
 /-- Records `invisible_characters` in the command `stx`: in its string
 literals, in the comments around its tokens, and in the comments before it
 that no Fren command has read, after a `set_option` or at the start of the
-text (`lint::invisible_character`). -/
+text (`lint::invisible_character`); and `needless_raw_strings` and
+`non_ascii_literal` in its string literals. -/
 partial def lintInvisible (stx : Syntax) : m Unit := do
   let fixable := (← getLocal).inMarkdown
+  let help (msg : Core.Msg) := if fixable && !msg.fixes.isEmpty then msg.note Core.fixHelp else msg
   let report (ref : Syntax) (comment : Bool) (text : String) : m Unit := do
     if let some (found, fixed) := Core.invisibleFix? comment text then
-      let msg := Core.invisibleMsg comment found fixed
-      recordLint .invisibleCharacters ref (if fixable then msg.note Core.fixHelp else msg)
+      recordLint .invisibleCharacters ref (help (Core.invisibleMsg comment found fixed))
+    unless comment do
+      for (lint, msg) in Core.literalMsgs text do recordLint lint ref (help msg)
   let trivia (sub : Substring.Raw) : m Unit := do
     let t := sub.toString
     for (a, b) in triviaComments t do
@@ -546,8 +594,9 @@ def recordItem (what : Core.Named) (path : Name) (ref : Syntax) : m Unit := do
   modifyLocal fun l => { l with items := l.items.push (r, ref) }
 
 /-- Records the lints about a declared name alone (`Core.nameMsgs`): its
-case (`lint::naming_case`), and the lints of the `style` group that look only
-at the name, at the level here. -/
+case (`lint::naming_case`), and the lints of the `style` and `restriction`
+groups that look only at the name, at the level here; and, for an item
+other than a module, `module_name_repetitions`. -/
 def lintName (what : Core.Named) (n : Name) (ref : Syntax) : m Unit := do
   for (lint, msg) in Core.nameMsgs what n do
     recordLint lint ref msg
@@ -572,6 +621,9 @@ def lintDeclared (what : Core.Named) (n : Name) (ref : Syntax) : m Unit := do
   for i in [0:ds.size] do
     if let some a := (ds.extract 0 i).find? (Core.namesSimilar ·.1 ds[i]!.1) then
       recordLint .similarNames ds[i]!.2 (Core.similarNamesMsg a.1 ds[i]!.1 what n)
+  unless what matches .module do
+    if let some msg := Core.moduleNameMsg? what (← getLocal).currentModule n then
+      recordLint .moduleNameRepetitions ref msg
 
 /-- The lints of the file, or Markdown spec, elaborated so far, with their
 severities. -/
@@ -608,6 +660,11 @@ and lints that do not exist, are left to Lean. -/
   let levelOf (l : Core.Lint) := ((levels.find? (·.1 == l)).map (·.2)).getD l.default
   if let some lint := target.rejectedBy? levelOf requested then
     throwErrorAt stx (Core.forbiddenMsg target lint requested).text
+  -- `allow_attributes` (`lint::allow_attributes`), at the level before the setting.
+  let (allows, fix) := Core.allowAttributes requested (target == .lint .unfulfilledExpectations)
+  if allows then
+    let msg := Core.allowAttributesMsg target fix
+    recordLint .allowAttributes stx[3] (if fix && (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
   let (opts, _) ← Elab.elabSetOption stx[1] stx[3]
   let expectation? ← if requested == .expect then do
       let e : Core.ExpectationRecord := { target, level := ← lintLevel .unfulfilledExpectations }

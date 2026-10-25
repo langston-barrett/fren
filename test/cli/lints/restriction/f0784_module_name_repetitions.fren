@@ -1,0 +1,13 @@
+-- `module_name_repetitions`, allowed by default.
+set_option fren.lint.module_name_repetitions "warn"
+
+mod climate
+
+pub enum ClimateMode { Heat, Cool }
+
+pub comp climate_reading {
+    in mode: ClimateMode
+    pub out heating?
+
+    req rule: heating? iff mode = ClimateMode::Heat
+}
