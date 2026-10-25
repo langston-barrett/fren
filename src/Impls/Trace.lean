@@ -32,8 +32,8 @@ tested check::minimal: "test/ui/redundancy.fren", "test/ui/self_conflict.fren"
 tested lang::path_shape: "test/ui/scoping.fren"
 tested lang::declared_before: "test/ui/scoping.fren"
 tested inst::earlier: "test/ui/instances_static.fren"
-tested lint::history: "test/cli/f0709_forbid.fren"
-tested lint::stepwise: "test/cli/f0709_forbid.fren"
+tested lint::history: "test/cli/f0709_forbid.fren", "test/cli/f0709_forbid_in_file.fren"
+tested lint::stepwise: "test/cli/f0709_forbid_in_file.fren"
 tested lang::identifier: "test/ui/syntax_lexical.fren", "test/ui/syntax_identifier.fren",
   "test/ui/syntax_identifier_letters.fren", "test/ui/syntax_identifier_quoted.fren", "test/ui/syntax_identifier_claim.fren",
   "test/ui/syntax_identifier_token.fren", "test/ui/syntax_identifier_unclosed.fren",

@@ -61,9 +61,9 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
   -- The defined outputs that the inputs give, which bindings may read
   -- (`Reqs/Eval#searching-for-behaviours`).
   let early := c.earlyDefs
-  let some env ← ({ vars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
-                    atoms := c.defAtoms.filter (early.contains ·.label), ints, strs : Problem }.solve sp w I env)
-    | return none
+  -- If they have no value, the outputs' search reports it, as before.
+  let env := (← ({ vars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
+                   atoms := c.defAtoms.filter (early.contains ·.label), ints, strs : Problem }.solve sp w I env)).getD env
   let vars := sp.flatVars c
   let mut env := env
   let mut out : Admitted := { env }

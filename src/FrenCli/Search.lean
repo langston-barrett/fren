@@ -194,7 +194,7 @@ def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (env :
     else #[]
   let mut ints := p.ints
   for _ in [0:2] do ints := ints.push (((← below 41) : Int) - 20)
-  let mut pool ← shuffle (smallValues sp w ints p.strs 24 2 ty)
+  let mut pool := smallValues sp w ints p.strs 24 2 ty
   -- Longer sequences, of the lengths that the constraints mention.
   if let .seq t := ty then
     let elems := smallValues sp w ints p.strs 24 2 t
@@ -202,6 +202,7 @@ def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (env :
       for n in (ints.filterMap fun i => if 3 ≤ i && i ≤ 4 then some i.toNat else none).toList.eraseDups do
         for _ in [0:6] do
           pool := pool.push (.seq (← (Array.range n).mapM fun _ => do return elems[← below elems.size]!))
+  pool ← shuffle pool
   let eqs := eqs.foldl (fun acc v => if acc.contains v then acc else acc.push v) #[]
   return eqs ++ pool.filter (!eqs.contains ·)
 
@@ -295,8 +296,9 @@ partial def Re.sample (fuel : Nat := 40) : Fren.Core.Re → R (Option (List Char
     return some out
 
 /-- The strings that `atoms` mention, each also with `"a"` before and after
-it, and, if it is short, its proper suffixes, and a few random strings that match each of their patterns, each also
-followed by `"a"` (`Reqs/Eval#searching-for-behaviours`). -/
+it, and, if it is short, its proper suffixes; and a few random strings that
+match each of their patterns, each also followed by `"a"`
+(`Reqs/Eval#searching-for-behaviours`). -/
 def stringsOf (atoms : Array Atom) : R (Array String) := do
   let (lits, pats) := atoms.foldl (fun (ls, ps) a => let (l, p) := a.e.strLits; (ls ++ l, ps ++ p)) (#[], #[])
   let mut out : Array String := #[]

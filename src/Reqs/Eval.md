@@ -94,8 +94,8 @@ already be evaluated is false. A variable's candidates are:
   each of their first characters, such as the `:*` of `::*`, so that
   `s.contains?("..")` and `s.starts_with?("x")` have strings that satisfy
   them; a few random strings that match each pattern of a `matches?` in
-  the component, each also followed by `"a"`; and the value of any expression that a constraint equates
-  the variable with;
+  the component, each also followed by `"a"`; and the value of any
+  expression that a constraint equates the variable with;
 - for a `Set(T)`, the empty set and singletons of the candidates of `T`,
   and the value of any expression that a constraint equates the variable
   with;
@@ -192,17 +192,18 @@ seldom satisfies a narrow trigger, testing searches for one that does:
   which the body's trigger holds.
 
 Testing also searches for counterexamples directly: for an expectation or
-a global expectation not yet refuted, each test searches for a behaviour
-that meets the component, or behaviours of the binders, in which it is
-false. Backtracking then tries combinations of candidates that random
+a global expectation not yet refuted, each test that finds what the
+expectation is about (a behaviour that meets the component, or behaviours
+of the binders) also searches for one in which it is false. Backtracking then tries combinations of candidates that random
 behaviours seldom reach, such as a lexeme and the input after it that
 together refute a rule about both. A behaviour found is a counterexample;
 none found says nothing.
 
 So a trigger that no search satisfies costs one more search in each test,
-for each expectation that has it, and an expectation not refuted one more
-again. An instance assumption's trigger gets no
-such search: it is about an instance's inputs, which its bindings give.
+for each expectation that has it, and each expectation not yet refuted
+costs one more, the direct search for a counterexample. An instance
+assumption's trigger gets no such search: it is about an instance's
+inputs, which its bindings give.
 
 `eval::reaches` states when a test reaches a check:
 

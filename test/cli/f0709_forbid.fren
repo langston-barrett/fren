@@ -1,5 +1,5 @@
 -- Changing the level of a forbidden lint (F0709), here forbidden on the
 -- command line.
 --@ args: check -F glob_imports
--- fren-covers: lint::history, lint::stepwise
+-- fren-covers: lint::history
 set_option fren.lint.glob_imports "allow"

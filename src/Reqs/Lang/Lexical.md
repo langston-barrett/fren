@@ -62,7 +62,7 @@ pub comp identifier {
 
 `lang::identifier_shape` states the shape of an identifier without a
 pattern: no component is empty, it starts with neither a digit nor `'`,
-`.` or `?`, and `?` comes only last. `identifier` refines it. That no
+`.` or `?`, it does not end with `.`, and a `?` comes only last, once. `identifier` refines it. That no
 component is empty is the emptiness of an intersection of two regular
 languages, in the decidable core, but cvc5 does not decide it within any
 time limit tried (see [Decidability](Decidability.md#in-practice)), so the
@@ -77,6 +77,7 @@ pub comp identifier_shape {
     req letter_first: when lexeme.matches?(r"[0-9'.?].*"), not accepted?
     req no_trailing_dot: when lexeme.ends_with?("."), not accepted?
     req question_last: when lexeme.contains?("?") and not lexeme.ends_with?("?"), not accepted?
+    req one_question: when lexeme.contains?("??"), not accepted?
 }
 
 set_option fren.evidence "tested" in

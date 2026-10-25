@@ -1,0 +1,7 @@
+-- A file's own settings of one lint: `warn`, then `forbid`, then `allow`,
+-- which changes a forbidden lint (F0709), as `lint::stepwise` states for
+-- three settings.
+-- fren-covers: lint::history, lint::stepwise
+set_option fren.lint.glob_imports "warn"
+set_option fren.lint.glob_imports "forbid"
+set_option fren.lint.glob_imports "allow"
