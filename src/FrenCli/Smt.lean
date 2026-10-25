@@ -16,20 +16,52 @@ namespace FrenCli
 
 open Fren.Core (Outcome)
 
+/-- The prelude (`State.prelude`), with the declarations that each one
+mentions. -/
+structure Prelude where
+  decls : Array PreludeDecl
+  /-- The declaration of each symbol. -/
+  owner : Std.HashMap String Nat
+  /-- The declarations that each declaration mentions. -/
+  deps : Array (Array Nat)
+  deriving Inhabited
+
+def Prelude.ofDecls (decls : Array PreludeDecl) : Prelude :=
+  let owner := decls.zipIdx.foldl (init := {}) fun m (d, i) => d.syms.foldl (·.insert · i) m
+  { decls, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get? }
+
+/-- The declarations that a script whose quoted symbols are `syms` needs:
+those of its symbols, and of theirs in turn, in the order of the prelude.
+The others cannot change its answer, and declaring them is most of the
+work of a small query. -/
+def Prelude.needed (p : Prelude) (syms : Array String) : String := Id.run do
+  let mut keep := Array.replicate p.decls.size false
+  let mut work := syms.filterMap p.owner.get?
+  while h : work.size > 0 do
+    let i := work[work.size - 1]
+    work := work.pop
+    if keep[i]! then continue
+    keep := keep.set! i true
+    work := work ++ p.deps[i]!
+  return String.join (p.decls.zipIdx.toList.filterMap fun (d, i) => if keep[i]! then some d.text else none)
+
 /-- The SMT-LIB script that asserts `hyps` and the negation of `goal`, each
-hypothesis followed by a comment with its name; without `(check-sat)`. -/
-def queryScript (logic prelude : String) (vars : Array CVar) (timeoutSecs : Nat)
+hypothesis followed by a comment with its name; without `(check-sat)`. It
+declares only what the prelude needs to (`Prelude.needed`). -/
+def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar) (timeoutSecs : Nat)
     (hyps : Array (Lean.Name × String)) (goal : String) : String :=
   let decls := String.join (vars.toList.map fun v => s!"(declare-const {quote v.name.toString} {v.ty.sort})\n")
   let asserts := String.join (hyps.toList.map fun (n, h) => s!"(assert {h}) ; {n}\n")
+  let body := s!"{decls}{asserts}(assert (not {goal}))\n"
   s!"(set-logic {logic})\n(set-option :produce-models true)\n\
-    (set-option :tlimit-per {timeoutSecs * 1000})\n{prelude}{decls}{asserts}(assert (not {goal}))\n"
+    (set-option :tlimit-per {timeoutSecs * 1000})\n{options}{prelude.needed (quotedSymbols body)}{body}"
 
 /-- Asserts `hyps` and the negation of `goal` and checks satisfiability,
 first passing the script to `dump?`, if any. -/
-def runQuery (logic prelude : String) (vars : Array CVar) (timeoutSecs : Nat) (dump? : Option (String → IO Unit))
-    (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool) : IO (Outcome String) := do
-  let script := queryScript logic prelude vars timeoutSecs hyps goal
+def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (timeoutSecs : Nat)
+    (dump? : Option (String → IO Unit)) (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool) :
+    IO (Outcome String) := do
+  let script := queryScript logic options prelude vars timeoutSecs hyps goal
   if let some dump := dump? then dump script
   let r ← cvc5.Env.run do
     let tm ← cvc5.TermManager.new
@@ -198,13 +230,13 @@ def prime (c : CComp) (smt : String) : String :=
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
 type that is not finite (`cli::logic`). -/
-def backend (prelude : String) (dts : Array DataDecl) (c : CComp) (timeoutSecs : Nat) (dump? : Option (String → IO Unit) := none)
+def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (timeoutSecs : Nat) (dump? : Option (String → IO Unit) := none)
     (strings sets : Bool := false) (projection : Bool := false) (kind : Fren.Core.CheckKind) :
     Fren.Core.Backend IO String String where
   -- cvc5 refuses some string operations without `strings-exp`.
   query := runQuery (Fren.Core.logic kind (strings || sets) projection)
-    (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n") ++ prelude)
-    (c.vars ++ primes c) timeoutSecs dump?
+    (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n"))
+    prelude (c.vars ++ primes c) timeoutSecs dump?
   falseF := "false"
   notF f := s!"(not {f})"
   conj := conj

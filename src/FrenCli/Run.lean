@@ -468,11 +468,12 @@ def refinementKeeps (c : CComp) (r : Fren.Core.CheckResult) : Bool :=
 /-- The solver's results for `c`, a global expectation if `global`, with
 each model confirmed by the evaluator's `spec?` (`Reqs/Eval#confirming-models`);
 the results that a refuted model is about, with their internal errors; and
-an internal error if the evaluator has no counterpart of `c`. -/
-def solveComp (st : State) (spec? : Except String Eval.Spec) (c : CComp) (global : Bool) (kinds : Array Fren.Core.CheckKind)
+an internal error if the evaluator has no counterpart of `c`. `prelude` is
+`st`'s, indexed (`Prelude.ofDecls`). -/
+def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (c : CComp) (global : Bool) (kinds : Array Fren.Core.CheckKind)
     (timeout : Nat) (dump? : Option (String → IO Unit) := none) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
-  let bk := backend st.prelude st.datatypes c timeout dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection
+  let bk := backend prelude st.datatypes c timeout dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection
   let log ← IO.mkRef #[]
   -- The checks set to testing are not asked of the solver (`check::by_testing`).
   let (raw, missing?) ← match spec? with
@@ -507,6 +508,7 @@ def check (args : Args) : IO UInt32 := do
   -- Each comp, global expectation and refinement (`Reqs/Lang/Refinement`),
   -- with the checks that run on it.
   let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.refinement)
+  let prelude := Prelude.ofDecls st.prelude
   -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
   let spec? := specOf files
   let mut internal := #[]
@@ -520,7 +522,7 @@ def check (args : Args) : IO UInt32 := do
         n.modify (· + 1)
         IO.print s!"; {c.path}: query {← n.get}\n{script}(check-sat)\n(reset)\n\n"
       else none
-    let (results, refuted, missing?) ← solveComp st spec? c global kinds args.timeout dump?
+    let (results, refuted, missing?) ← solveComp st prelude spec? c global kinds args.timeout dump?
     if let some msg := missing? then
       internal := internal.push msg
       printDiag args.paint files { file := c.file, span := c.span, msg }
@@ -810,7 +812,7 @@ def mutate (args : Args) : IO UInt32 := do
   -- testing by testing; with the internal errors, each at its place in `c`.
   let solve (s : State) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) := do
-    let (rs, refuted, missing?) ← solveComp s spec? t.comp t.global t.kinds args.timeout
+    let (rs, refuted, missing?) ← solveComp s (Prelude.ofDecls s.prelude) spec? t.comp t.global t.kinds args.timeout
     let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds t.refinement) else #[]
     let errors := refuted.map fun (r, msg) =>
       ((r.prop?.bind fun n => t.comp.props.find? (·.name == n)).map (·.span) |>.getD t.comp.span, msg)
@@ -825,7 +827,7 @@ def mutate (args : Args) : IO UInt32 := do
   -- What each component's checks read in the spec. The spec's own results
   -- are computed only for components that some mutant changes.
   let originals : Std.HashMap String (Mutate.Todo × String) :=
-    (Mutate.todo st).foldl (init := {}) fun m t => m.insert t.key (t, Mutate.fingerprint st.prelude t.comp)
+    (Mutate.todo st).foldl (init := {}) fun m t => m.insert t.key (t, Mutate.fingerprint st.preludeText t.comp)
   let solved : Baseline ← IO.mkRef {}
   let tested : Baseline ← IO.mkRef {}
   let shown ← IO.mkRef (#[] : Array Msg)
@@ -841,7 +843,7 @@ def mutate (args : Args) : IO UInt32 := do
     let mut inconclusive := false
     for t in Mutate.todo st' do
       let some (t₀, fp) := originals[t.key]? | continue
-      if Mutate.fingerprint st'.prelude t.comp == fp then continue
+      if Mutate.fingerprint st'.preludeText t.comp == fp then continue
       let rs ← match (← base.get)[t.key]? with
         | some rs => pure rs
         | none =>

@@ -108,9 +108,9 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) : Core.Backend MetaM Ex
         let projects (e : Expr) := (e.find? fun x => x.isConstOf ``Fren.FinSet.domain || x.isConstOf ``Fren.FinSet.range).isSome
         let logic := if projects goal || hyps.any (projects ·.2) then [("force-logic", "HO_ALL")] else []
         try
-          -- cvc5 refuses some string operations without `strings-exp` (`cli::logic`).
+          -- The options of a spec that uses strings and sets, as in the binary (`cli::logic`).
           match ← Smt.smt { trust := true, model := wantModel, timeout := some timeout
-                            extraSolverOptions := [("strings-exp", "true"), ("re-inter-mode", "all"), ("sets-exp", "true")] ++ logic }
+                            extraSolverOptions := Core.solverOptions true true ++ logic }
                     mv.mvarId! hs with
           | .sat (some m) =>
             return .sat <| m.values.filterMap fun (k, v) =>
