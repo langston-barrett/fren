@@ -28,8 +28,12 @@ order of the table, so `if C then true else false` is `C`, not `C and
 true`. The rules for `if` keep the guards (see
 [Expressions](../Lang/Expressions.md#sequences)): in `if C then A else B`, `A`
 is guarded by `C` and `B` by `not C`, as they are in `C and A`, `C or B`,
-`not C and B` and `not C or A`. `lint::literal_comparison`
-gives the simpler form of a comparison with a literal:
+`not C and B` and `not C or A`. A [pattern
+test](../Lang/Expressions.md#pattern-tests) is not looked inside but for
+its scrutinee, and keeps its parentheses where a comparison would need
+them, so `ok? = if s is A(_) then true else false` becomes `ok? = (s is
+A(_))`. `lint::literal_comparison` gives the simpler form of a comparison
+with a literal:
 
 ```fren
 pub mod lint

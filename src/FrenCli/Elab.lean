@@ -720,7 +720,7 @@ partial def Expr.boolNode : Expr → Fren.Core.BNode Span
   | .app s _ args | .set s args | .seq s args => .mk .atom (toRange s) s (args.map (·.boolNode))
   | .record s _ fields => .mk .atom (toRange s) s (fields.filterMap (·.2.map (·.boolNode)))
   | .field s a _ => .mk .atom (toRange s) s #[a.boolNode]
-  | .is s scrutinee _ => .mk .atom (toRange s) s #[scrutinee.boolNode]
+  | .is s scrutinee _ => .mk .patternTest (toRange s) s #[scrutinee.boolNode]
   | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode] ++ arms.map (·.2.boolNode))
   | .pair s a b | .index s a b => .mk .atom (toRange s) s #[a.boolNode, b.boolNode]
   | .num s _ | .path s _ | .str s .. => .mk .atom (toRange s) s #[]

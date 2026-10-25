@@ -39,6 +39,11 @@ pub comp c {
     req chained: ok? or x = 4 or x = 6
     req chain: unless m = Off, (ok? or x = 1) and m in {Heat, Cool} and [1, 2].len = 2
     req known: ok? or rd is Reading::Value(_) | Reading::Stale(_) | Reading::Missing
+    -- One alternative per line, after a leading `|`.
+    req stale: when rd is
+        | Reading::Stale(_)
+        | Reading::Missing,
+        not ok?
     inst w: sub { a := x * 2, on? := true }
 
     expect e: when x = 3, ok?

@@ -24,12 +24,14 @@ field-init := IDENT [":=" expr]
 arm   := pattern "=>" expr
 pattern := "_" | ["|"] alternative ("|" alternative)*
 alternative := path ["(" pattern-binder ("," pattern-binder)* ")"]
-pattern-binder := IDENT | "_"
+pattern-binder := DECL | "_"
 ```
 
 In `atom "." IDENT`, the atom is one that ends in `)` or `}`, and there
 are no spaces around the `.`: after a name, `.` is part of the
-[identifier](Lexical.md#identifiers), as in `p.x`.
+[identifier](Lexical.md#identifiers), as in `p.x`. The notation is
+[the grammar's](../Grammar.md#notation), where `DECL` is an identifier that
+declares a name.
 
 ## Operators
 
@@ -488,8 +490,11 @@ B(_)) and t?`.
 
 `=` and `in` compare with values, and `is` is for the patterns that `=`
 cannot express, those with a payload. So write `x = E::A` and `x in {E::A,
-E::B}`, not `x is E::A` or `x is E::A | E::B`, and test a `Bool` with
-`iff` or `not`, never with `is`. A pattern with a payload may still have
+E::B}`, not `x is E::A` or `x is E::A | E::B`, and likewise `x != E::A`
+and `not x in {E::A, E::B}`, not `not x is E::A` or `not x is E::A |
+E::B`. Test a `Bool` with `iff` or `not`, never with `is`: for now that is
+an error (`F0335`), since a `Bool` is not an enumeration, until patterns
+of literals are added. A pattern with a payload may still have
 alternatives without one, as in `s is Shape::Rect(_, _) | Shape::Empty`.
 
 `lang::pattern_test` states which patterns are accepted, from the variants
@@ -951,7 +956,8 @@ pub comp char_range {
 the operands, or of a conditional's branches, and `cond` the type of its
 condition. For a prefix operator, `b` is `a`. `result` is the kind of the
 result's type. `Ty`, `kind` and `ValueType` are declared in
-[Types](Types.md).
+[Types](Types.md). A [pattern test](#pattern-tests), whose right is a
+pattern rather than an operand, is typed in its own section.
 
 ```fren
 -- `Logic` is `when`, `unless`, `iff`, `or`, `and` and `not`; `Ordering` is

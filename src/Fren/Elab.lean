@@ -880,7 +880,7 @@ partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.
     let m := id.getId.getString!
     let recvStop := off (id.getTailPos?.getD base) - m.length - 1
     .mk (.method m) range e (#[.mk .atom { range with stop := recvStop } id #[]] ++ e[2].getSepArgs.map go)
-  else if e.isOfKind ``Lang.isExpr then .mk .atom range e #[go e[0]]
+  else if e.isOfKind ``Lang.isExpr then .mk .patternTest range e #[go e[0]]
   else
   match e.getNumArgs, atom 0, atom 1 with
   | 3, "(", _ => go e[1]

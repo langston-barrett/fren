@@ -197,6 +197,11 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
     | 2 => return s!"{← intTerm sc} {← pick #["=", "!=", "<", "<=", ">", ">="]} {← intTerm sc}"
     | 3 =>
       let es := sc.of .enum
+      -- A pattern test, of one or two distinct variants.
+      if ← chance 25 then
+        let (a, b) := (← below sc.nVariants, ← below sc.nVariants)
+        let alts := if a == b then [a] else [a, b]
+        return s!"{← pick es} is {" | ".intercalate (alts.map (s!"E::V{·}"))}"
       let rhs ← if ← chance 60 then pure s!"E::V{← below sc.nVariants}" else pick es
       return s!"{← pick es} {← pick #["=", "!="]} {rhs}"
     | 4 => let ts := sc.of .abs; return s!"{← pick ts} {← pick #["=", "!="]} {← pick ts}"
