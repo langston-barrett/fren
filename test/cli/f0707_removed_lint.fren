@@ -1,0 +1,2 @@
+-- A lint that Fren removed says what replaced it.
+set_option fren.lint.shadowed_constants "allow"

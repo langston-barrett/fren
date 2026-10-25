@@ -125,8 +125,10 @@ impl variable_type: lang::variable_type for (o u d : Bool) {
 
 -- For every declaration: its name `n`, what it hides if anything (`w`, when
 -- `h`), and whether it has `!`, through the check that both front ends call.
--- Whether it is a parameter named like its function (`o`) matters only
--- through `h`: the function is not yet in the table.
+-- This proves the rule, given `hides?`, not that `hides?` is computed
+-- correctly: `Table.hidden?`, `bindingLocals`, and a function's absence from
+-- the table while its parameters are declared, which `o` stands for, are
+-- tested (`test/ui/shadowing_static.fren`), not proved.
 impl shadowing: lang::shadowing for (n : Lean.Name) (w : String) (h b o : Bool) {
   hides? := h,
   bang? := b,

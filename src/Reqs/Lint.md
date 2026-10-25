@@ -251,6 +251,14 @@ or to a variant of the enumeration it opens. Paths in expressions, types,
 instances, global expectations, claims and `#fren_check` count. The paths of
 `use` declarations do not, since they are absolute.
 
+A declaration written with `!` that [shadows](Lang/Components.md#shadowing)
+a name the `use` brings in counts as such a path, since the `!` depends on
+the import: without the `use`, the `!` would hide nothing, and be an error.
+So `use self::Shape::Square` with `in Square!: Int` is used, `fren fix`
+keeps it, and a glob that [`glob_imports`](#glob-imports) narrows keeps
+that name. A `!` that hides a variable or binder instead, which hides the
+import too, does not count.
+
 Only uses in the same file count, even though a module's imports are
 visible in later files that enter it (see [Modules and
 visibility](Lang/Modules.md#across-files)): in Lean, each file is

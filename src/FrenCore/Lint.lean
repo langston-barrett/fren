@@ -241,9 +241,15 @@ def indexAfterUseMsg (a b : String) : Msg :=
 def lintsNote : String :=
   s!"note: the lints are {", ".intercalate (((Lint.all.map (·.name)).qsort (· < ·)).map (s!"`{·}`")).toList}"
 
+/-- The note for a lint that Fren had but removed, if `n` is one. -/
+def removedLintNotes (n : String) : Array String :=
+  if n == "shadowed_constants" then
+    #["note: `shadowed_constants` was removed; shadowing without `!` is now an error (F0217)"]
+  else #[]
+
 def unknownLintMsg (n : String) : Msg :=
   { code? := some "F0707", headline := s!"unknown lint `{n}`", label? := some "no such lint"
-    notes := #[lintsNote]
+    notes := removedLintNotes n ++ #[lintsNote]
     fixes := (similarStr n (Lint.all.map (·.name))).toArray.map fun s =>
       { msg := s!"a lint with a similar name exists: `{s}`", replacement := s!"fren.lint.{s}" } }
 
@@ -335,6 +341,15 @@ def Table.importVia (t : Table) (from_ : Name) (segs : Array Name) : Option Used
   match enums with
   | #[(e, scope)] => return { module := scope, target := e, glob := true, name := n }
   | _ => none
+
+/-- The import that the declaration `n`, written with `!` if `bang`, hides
+a name through, if any: the declaration depends on it, so it counts as
+used, by `unused_imports` and by a glob that `glob_imports` narrows
+(`Reqs/Lint#unused-imports`). A local of `locals` that it hides instead
+hides the import too, so the import is not needed. -/
+def Table.shadowedImport? (t : Table) (scope : Name) (locals : Array (Name × String)) (n : Name) (bang : Bool) :
+    Option UsedName :=
+  if bang && !locals.any (·.1 == n) && (t.hidden? scope #[] n).isSome then t.importVia scope #[n] else none
 
 /-- Whether a `use` is unused (`lint::unused_import`). -/
 def unusedImport (glob : Bool) (nPaths : Nat) (first : Bool) : Bool :=

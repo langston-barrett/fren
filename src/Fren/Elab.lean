@@ -884,8 +884,9 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
         unless b.isIdent do continue
         let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
           (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
-        let b ← declare b ((← getState).table.hidden? cx.modName locals)
-        let bn := b.getId
+        let bn := (declaredIdent b).1.getId
+        if new.any (·.name == bn) then throwErrorAt b (Core.dupPatternBinderMsg bn).text
+        let b ← declare b cx.modName locals
         liftMsg b (Core.checkVarName bn (some (t.isConstOf ``Bool)))
         lintName .binder bn b
         new := new.push { name := bn, term := ← `($(mkCIdent (selectorName ctor k)) $s), «type» := t
@@ -1411,7 +1412,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
     let mut vars : Array Var := #[]
     let paramIds ← params.mapM fun p => do
       let some q := typePath? p[0] | throwErrorAt p[0] (Core.functionParamsMsg path true).text
-      let x ← declare (pathSegs q)[0]! ((← getState).table.hidden? modName #[])
+      let x ← declare (pathSegs q)[0]! modName
       if vars.any (·.name == x.getId) then throwErrorAt x (Core.dupParamMsg x.getId).text
       lintName .variable x.getId x
       let ty ← varType modName x (if p[1].isNone then none else some p[1][1])
@@ -1609,7 +1610,7 @@ open Lang in
             if m[5].isNone then none else some m[5][1])
         | _ => continue
       -- An error in shadowing leaves the variable's meaning clear.
-      let x ← try declare x ((← getState).table.hidden? scope #[])
+      let x ← try declare x scope
         catch ex => logException ex; ok := false; pure (declaredIdent x).1
       if names.contains x.getId then
         logErrorAt x (Core.dupMemberMsg x.getId).text; ok := false; continue
@@ -1631,7 +1632,7 @@ open Lang in
     let mut pending : Array PendingInst := #[]
     for m in members do
       let `(fren_member| inst $x:ident : $p:fren_path { $bs,* }) := m | continue
-      let x ← try declare x ((← getState).table.hidden? scope #[])
+      let x ← try declare x scope
         catch ex => logException ex; ok := false; pure (declaredIdent x).1
       if names.contains x.getId then
         logErrorAt x (Core.dupMemberMsg x.getId).text; ok := false; continue
@@ -1855,7 +1856,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
       recordLint .undecidable b[3] (Core.undecidableInstMsg path)
     noteCounts c b[3]
     for x in b[1].getArgs do
-      let x ← declare x ((← getState).table.hidden? modName #[])
+      let x ← declare x modName
       let w := x.getId
       liftMsg x (Core.checkItemName "instance" w)
       lintName .instance w x

@@ -387,13 +387,17 @@ def declaredIdent (x : Ident) : Ident × Bool :=
   ({ name := Fren.Core.nameText n, span := if bang then { x.span with stop := x.span.stop - 1 } else x.span }, bang)
 
 /-- The declaration `x`, without its `!`, checked to be written with `!`
-exactly when it hides something: `hidden n` is what a declaration of `n`
-hides, if anything (`lang::shadowing`). -/
-def declare (x : Ident) (hidden : Name → Option String) : M Ident := do
+exactly when it hides something in the current scope or among `locals`
+(`lang::shadowing`). An import that brings in what it hides counts as
+used. -/
+def declare (x : Ident) (locals : Array (Name × String) := #[]) : M Ident := do
   let (y, bang) := declaredIdent x
   let n := Name.mkSimple y.name
+  let st ← get
   liftMsg x.span (Fren.Core.checkLeanToken n bang)
-  liftMsg x.span (Fren.Core.checkShadowing n (hidden n) bang)
+  liftMsg x.span (Fren.Core.checkShadowing n (st.table.hidden? st.scope locals n) bang)
+  if let some u := st.table.shadowedImport? st.scope locals n bang then
+    modify fun s => { s with used := s.used.push u }
   return y
 
 /-- Resolves a path in an expression or type in the current module,
@@ -1328,11 +1332,11 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         for b in bs, f in fs, k in [0:bs.size] do
           let t := f.2
           if b.name == "_" then continue
-          let st ← get
           let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
             (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
-          let b ← declare b (st.table.hidden? st.scope locals)
-          let bn := Name.mkSimple b.name
+          let bn := Name.mkSimple (declaredIdent b).1.name
+          if new.any (·.name == bn) then err b.span (Fren.Core.dupPatternBinderMsg bn)
+          let b ← declare b locals
           liftMsg b.span (Fren.Core.checkVarName bn (some (t == .bool)))
           lintName .binder bn b.span
           new := new.push { name := bn, smt := s!"({d.selSym c k} {s})", ty := t, scrutinee, outer := cx.binders.size }
@@ -1541,8 +1545,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let mut vars := #[]
   for m in members do
     let .var isIn isPub' isDet x ty? defn? := m | continue
-    let st ← get
-    let x ← declare x (st.table.hidden? st.scope #[])
+    let x ← declare x
     let xn := Name.mkSimple x.name
     lintName .variable xn x.span
     let role := if isIn then Role.input else .output
@@ -1556,8 +1559,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let mut pending := #[]
   for m in members do
     let .inst x p bs := m | continue
-    let st ← get
-    let x ← declare x (st.table.hidden? st.scope #[])
+    let x ← declare x
     let xn := Name.mkSimple x.name
     lintName .instance xn x.span
     let (pi, ivars) ← resolveInst x p bs
@@ -1773,7 +1775,7 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
       lint .undecidable (p[0]!.span.to p.back!.span) (Fren.Core.undecidableInstMsg path)
     noteCounts c (p[0]!.span.to p.back!.span)
     for x in xs do
-      let x ← declare x (st.table.hidden? st.scope #[])
+      let x ← declare x
       let w := Name.mkSimple x.name
       liftMsg x.span (Fren.Core.checkItemName "instance" w)
       lintName .instance w x.span
@@ -1928,7 +1930,7 @@ partial def elabItem : Item → M Unit
       if let some k := (Fren.Core.repeatsAt (params.map (Name.mkSimple ·.1[0]!.name)))[0]? then
         err params[k]!.1[0]!.span (Fren.Core.dupParamMsg (Name.mkSimple params[k]!.1[0]!.name))
       for (p, ty?) in params do
-        let x ← declare p[0]! (st.table.hidden? st.scope #[])
+        let x ← declare p[0]!
         let xn := Name.mkSimple x.name
         lintName .variable xn x.span
         let t ← varTy ty? x

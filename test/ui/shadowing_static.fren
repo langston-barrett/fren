@@ -20,8 +20,8 @@ comp var_variant { use self::Shape::Square in Square: Int pub out y: Int req r: 
 --~^ error: `Square` shadows the variant `Shape::Square`
 --~^^[hosted] warning: unused import `Shape::Square`
 -- The `fren` command drops the lints of an item with an error.
+-- The `use` is used: `Square!` depends on it (`Reqs/Lint#unused-imports`).
 comp var_variant_ok { use self::Shape::Square in Square!: Int pub out y: Int req r: y = Square }
---~^ warning: unused import `Shape::Square`
 -- Items that are not values are never hidden.
 comp var_type { in Shape: Int pub out y: Int req r: y = Shape }
 comp var_type_bang { in Point!: Int pub out y: Int req r: y = Point }

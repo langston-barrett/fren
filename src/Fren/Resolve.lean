@@ -48,13 +48,16 @@ def declaredIdent (x : Syntax) : Syntax × Bool :=
   let (n, bang) := Core.declaredName x.getId
   (if bang then mkIdentFrom x n else x, bang)
 
-/-- The declaration `x`, without its `!`, checked to be written with `!`
-exactly when it hides something: `hidden n` is what a declaration of `n`
-hides, if anything (`lang::shadowing`). -/
-def declare (x : Syntax) (hidden : Name → Option String) : m Syntax := do
+/-- The declaration `x` in `scope`, without its `!`, checked to be written
+with `!` exactly when it hides something there or among `locals`
+(`lang::shadowing`). An import that brings in what it hides counts as
+used. -/
+def declare (x : Syntax) (scope : Name) (locals : Array (Name × String) := #[]) : m Syntax := do
   let (y, bang) := declaredIdent x
+  let table := (← getState).table
   liftMsg x (Core.checkLeanToken y.getId bang)
-  liftMsg x (Core.checkShadowing y.getId (hidden y.getId) bang)
+  liftMsg x (Core.checkShadowing y.getId (table.hidden? scope locals y.getId) bang)
+  if let some u := table.shadowedImport? scope locals y.getId bang then recordUsed u
   return y
 
 /-- Resolves a `use` path written in module `from_`. -/

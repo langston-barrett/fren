@@ -4,7 +4,7 @@ error[F0218]: `x!` shadows nothing
 3 |     in x!: Int
   |        ^^ nothing to shadow
   |
-  = note: `!` marks a declaration that hides a name in scope, but no `x` is in scope here
+  = note: `!` marks a declaration that hides a name in scope, but no `x` that a use could mean is in scope here
 help: remove the `!`
   |
 3 -     in x!: Int
@@ -17,7 +17,7 @@ error[F0218]: `ready?!` shadows nothing
 10 |     in ready?!
    |        ^^^^^^^ nothing to shadow
    |
-   = note: `!` marks a declaration that hides a name in scope, but no `ready?` is in scope here
+   = note: `!` marks a declaration that hides a name in scope, but no `ready?` that a use could mean is in scope here
 help: remove the `!`
    |
 10 -     in ready?!

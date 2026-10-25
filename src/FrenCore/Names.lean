@@ -378,7 +378,7 @@ def declaredName (n : Name) : Name × Bool :=
 
 /-- A declaration of `n` is written `n!`, but hides nothing; `why` says why
 it cannot. -/
-def needlessBangMsg (n : Name) (why : String := s!"no `{n}` is in scope here") : Msg :=
+def needlessBangMsg (n : Name) (why : String := s!"no `{n}` that a use could mean is in scope here") : Msg :=
   { code? := some "F0218", headline := s!"`{n}!` shadows nothing", label? := some "nothing to shadow"
     notes := #[s!"note: `!` marks a declaration that hides a name in scope, but {why}"]
     fixes := #[{ msg := "remove the `!`", replacement := n.toString }] }
