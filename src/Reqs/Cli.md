@@ -305,7 +305,7 @@ expect failing_check_exits_1: forall (s: severity) (r: run),
     r.code = 1
 
 expect passing_checks_exit_0: forall (s: severity) (r: run),
-    when r.ran? and s.verdict = Verdict::Pass and r.present subset {Info},
+    when r.ran? and s.verdict = Verdict::Pass and r.present subset {s.level, Info},
     s.level = Silent and r.code = 0
 
 expect inconclusive_exits_3: forall (s: severity) (r: run),
