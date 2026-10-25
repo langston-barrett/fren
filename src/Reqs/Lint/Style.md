@@ -295,13 +295,17 @@ pub comp match_like_membership {
 record literal, written `x := x`, and is fixable. The fix is `x`, which
 means `x := x` by definition, for [bindings](../Lang/Instances.md)
 and [fields](../Lang/Expressions.md#records) alike, so it keeps the meaning
-and the guards. `lint::redundant_bindings` states when it fires, from the
-texts of the name and of the expression after `:=`:
+and the guards. The name and the expression after `:=` are compared as
+[written the same](../Lint.md#written-the-same), so a comment next to
+either is not part of it: `x := /- c -/ x` and `x := x -- c` fire too,
+and the fix removes a comment between the name and the expression.
+`lint::redundant_bindings` states when it fires, from the texts of the
+name and of the expression, each in the form that comparison uses:
 
 ```fren
 pub comp redundant_bindings {
     in name: String      -- the name bound, or the field given
-    in value: String     -- the expression after `:=`, as written
+    in value: String     -- the expression after `:=`
     pub det out fires?
 
     req rule: fires? iff value = name

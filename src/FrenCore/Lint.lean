@@ -490,11 +490,11 @@ def withoutComments (s : String) : String := Id.run do
   return out
 
 /-- The text `s` as the lints compare it, so that two texts are *written the
-same* (`Reqs/Lint#written-the-same`) if these agree: without whitespace,
-but for one space between two characters of names, numbers or keywords,
-and with string literals, raw ones too, as they are. -/
+same* (`Reqs/Lint#written-the-same`) if these agree: without comments or
+whitespace, but for one space between two characters of names, numbers or
+keywords, and with string literals, raw ones too, as they are. -/
 def writtenForm (s : String) : String := Id.run do
-  let cs := s.toList.toArray
+  let cs := (withoutComments s).toList.toArray
   let mut out : Array Char := #[]
   let mut i := 0
   let mut space := false

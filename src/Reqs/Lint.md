@@ -79,11 +79,12 @@ like a constant, and whose code `F0713` is not reused.
 ## Written the same
 
 Many lints compare expressions by their text. Two expressions are *written
-the same* if their texts agree but for whitespace: whitespace that does not
-separate two names, numbers or keywords is ignored, except inside string
-literals, raw ones too, which are compared as they are. So `x+1` and
-`x + 1` are written the same, and so are `f(x)` and `f( x )`, but `"a b"`
-and `"ab"` are not. The lints look only at the text, never at types or the
+the same* if their texts agree but for whitespace and comments: a comment
+counts as whitespace, and whitespace that does not separate two names,
+numbers or keywords is ignored, except inside string literals, raw ones
+too, which are compared as they are. So `x+1` and `x + 1` are written the
+same, and so are `f(x)`, `f( x )` and `f(x /- c -/)`, but `"a b"` and
+`"ab"` are not. The lints look only at the text, never at types or the
 solver, so `x + 1` and `1 + x` are not written the same.
 
 ## Levels

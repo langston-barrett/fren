@@ -954,8 +954,9 @@ def srcText (stx : Syntax) : String := ((stx.reprint.getD "").trimAscii).toStrin
 (`lint::redundant_bindings`). -/
 def lintRedundant (b : Syntax) (field : Bool) : TermElabM Unit := do
   unless b[1].isNone do
-    if Core.redundantBinding (srcText b[0]) (srcText b[1][1]) then
-      recordLint .redundantBindings b (Core.redundantBindingMsg (srcText b[0]) field)
+    let name := exactText b[0]
+    if Core.redundantBinding (Core.writtenForm name) (Core.writtenForm (exactText b[1][1])) then
+      recordLint .redundantBindings b (Core.redundantBindingMsg name field)
 
 open Lang in
 /-- Translates a record literal, where `go` translates its values. -/
@@ -1223,7 +1224,7 @@ def lintLength (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   unless cx.noteIndexes do return
   let (a, b) := (e[0], e[2])
   let some c := Core.Comparison.ofOp? e[1].getAtomVal.trimAscii.toString | return
-  let lit? (x : Syntax) := (if x.getNumArgs == 1 then x[0] else x).isNatLit?
+  let lit? (x : Syntax) := let x := unparen x; (if x.getNumArgs == 1 then x[0] else x).isNatLit?
   -- The length, the literal, and whether the length is on the left.
   let (n, d, left) ← match lit? b, lit? a with
     | some d, _ => pure (a, d, true)
@@ -1231,7 +1232,7 @@ def lintLength (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     | none, none => return
   let (fires, empty) := Core.lengthZero c d left
   unless fires do return
-  let some (recv, card) ← lengthOf? n | return
+  let some (recv, card) ← lengthOf? (unparen n) | return
   -- Only its type: what elaborating it reports is reported where it is.
   let saved ← getLocal
   let some t ← try some <$> typeOf (← toTerm { cx with noteIndexes := false, concatOk := true } recv) catch _ => pure none
@@ -1260,7 +1261,7 @@ def lintSameBranches (e a b : Syntax) : TermElabM Unit := do
 
 /-- `duplicate_elements` on the set literal `e` (`lint::duplicate_elements`). -/
 def lintDuplicates (e : Syntax) (elems : Array Syntax) : TermElabM Unit := do
-  let repeats := Core.repeatedElements (elems.map exactText)
+  let repeats := Core.repeatedElements (elems.map (exactText <| unparen ·))
   unless Core.duplicateElements repeats.size do return
   let some sub := e.getSubstring? false false | return
   let src := (String.Pos.Raw.extract sub.str sub.startPos sub.stopPos).toList.toArray

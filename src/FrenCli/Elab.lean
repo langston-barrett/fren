@@ -1116,9 +1116,9 @@ def lintIfChain (cx : ExprCtx) (e : Expr) : M Unit := do
 /-- `redundant_bindings` on the binding, or field, `b := e`
 (`lint::redundant_bindings`). -/
 def lintRedundant (b : Ident) (e : Expr) (field : Bool) : M Unit := do
-  let after := (← srcAt { start := b.span.stop, stop := e.span.stop }).trimAscii.toString
-  let value := (String.ofList (after.toList.drop 2)).trimAscii.toString
-  if after.startsWith ":=" && Fren.Core.redundantBinding b.name value then
+  let after := (Fren.Core.withoutComments (← srcAt { start := b.span.stop, stop := e.span.stop })).trimAscii.toString
+  let value := String.ofList (after.toList.drop 2)
+  if after.startsWith ":=" && Fren.Core.redundantBinding (Fren.Core.writtenForm b.name) (Fren.Core.writtenForm value) then
     lintFix .redundantBindings (b.span.to e.span) (Fren.Core.redundantBindingMsg b.name field)
 
 partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
