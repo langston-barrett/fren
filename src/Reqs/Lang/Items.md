@@ -34,6 +34,9 @@ pub comp declared_before {
     req rule: accepted? iff (used = user or k_used < k_user)
 
     expect self_reference: when used = user, accepted?
+    -- The first item can be used by the second, and not the other way.
+    expect first_used: when used != user and k_used = 0 and k_user = 1, accepted?
+    expect second_unused: when used != user and k_used = 1 and k_user = 0, not accepted?
 }
 ```
 
@@ -269,6 +272,8 @@ pub comp function_body {
     req rule: accepted? iff (typed? and not applies_self? and not applies_uninterpreted?)
 
     expect not_recursive: when applies_self?, not accepted?
+    expect well_typed: when not typed?, not accepted?
+    expect interpreted_only: when applies_uninterpreted?, not accepted?
 }
 ```
 

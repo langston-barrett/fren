@@ -43,6 +43,7 @@ tested lang::longest_identifier: "test/ui/syntax_lexical.fren"
 tested lang::escape_sequence: "test/ui/syntax_lexical.fren", "test/cli/f0115_escape.fren"
 tested lang::punctuator_end: "test/ui/syntax_lexical.fren", "test/cli/f0105_eqeq.fren"
 tested lang::escape_text: "test/ui/syntax_lexical.fren"
+tested lang::escape_start: "test/ui/syntax_lexical.fren"
 tested lang::longest_punctuator: "test/ui/syntax_lexical.fren"
 tested lang::unbounded: "test/ui/relations_static.fren", "test/ui/datatypes_static.fren"
 

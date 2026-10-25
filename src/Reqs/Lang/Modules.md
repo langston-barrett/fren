@@ -222,6 +222,7 @@ pub comp two_segments {
         not accepted?
     expect variants_visible: when a_local? and a_kind = Enum and b_found?, accepted?
     expect owner_sees_members: when a_local? and a_kind = Module and b_found? and here = b_owner, accepted?
+    expect no_globs_needed: when a_local? and a_globs = 0 and a_kind = Enum and b_found?, accepted?
 }
 
 #fren_check

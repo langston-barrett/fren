@@ -413,6 +413,8 @@ pub comp minimal {
 
     expect within: when minimal?, core subset candidates
     expect entails: when minimal?, refutes?(core)
+    -- A core that still refutes without one of its constraints is not minimal.
+    expect smaller_refutes: when dropped in core and refutes?(core minus {dropped}), not minimal?
 }
 ```
 

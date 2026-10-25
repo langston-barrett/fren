@@ -460,6 +460,12 @@ pub comp relation_op {
 
     expect closure_endo: when op = Closure and accepted?, left(r) = right(r)
     expect only_relations: when accepted?, kind(r) = RelTy
+    expect composable: when op = Join and kind(r) = RelTy and kind(s) = RelTy and right(r) = left(s), accepted?
+    expect not_composable: when op = Join and kind(s) = RelTy and right(r) != left(s), not accepted?
+    expect join_relations_only: when op = Join and kind(s) != RelTy, not accepted?
+    expect image_of_domain: when op = Image and kind(r) = RelTy and kind(s) = SetTy and elem(s) = left(r), accepted?
+    expect image_of_other: when op = Image and kind(s) = SetTy and elem(s) != left(r), not accepted?
+    expect image_of_sets_only: when op = Image and kind(s) != SetTy, not accepted?
 }
 
 pub comp pair_membership {
@@ -469,6 +475,11 @@ pub comp pair_membership {
     pub det out accepted?
 
     req rule: accepted? iff (kind(r) = ValueType::RelTy and left(r) = x and right(r) = y)
+
+    expect pair_of_relation: when kind(r) = ValueType::RelTy and left(r) = x and right(r) = y, accepted?
+    expect wrong_first: when left(r) != x, not accepted?
+    expect wrong_second: when right(r) != y, not accepted?
+    expect relations_only: when kind(r) != ValueType::RelTy, not accepted?
 }
 ```
 
@@ -808,6 +819,23 @@ pub comp operator_type {
     -- A value of an abstract type is only compared, or found in a set.
     expect abstract_equality_only: when accepted? and op != Conditional and kind(a) = AbstractTy,
         op in {Equality, Membership}
+
+    -- The rows of the table of operators, one operand type at a time.
+    expect same_types_equal: when op = Equality and a = b, accepted?
+    expect bools_equal: when op = Equality and kind(a) = BoolTy and kind(b) = BoolTy, accepted?
+    expect ints_ordered: when op = Ordering and kind(a) = IntTy and kind(b) = IntTy, accepted?
+    expect strings_concatenate: when op = Concat and kind(a) = StringTy and kind(b) = StringTy, accepted?
+    expect sequences_concatenate: when op = Concat and kind(a) = SeqTy and a = b, accepted?
+    expect set_members: when op = Membership and kind(b) = SetTy and elem(b) = a, accepted?
+    expect sequence_members: when op = Membership and kind(b) = SeqTy and elem(b) = a, accepted?
+    expect members_of_collections: when op = Membership and not kind(b) in {SetTy, SeqTy}, not accepted?
+    expect sets_combine: when op = SetAlgebra and kind(a) = SetTy and a = b, accepted?
+    expect relations_combine: when op = Subset and kind(a) = RelTy and a = b, accepted?
+    expect boolean_condition: when op = Conditional and kind(cond) != BoolTy, not accepted?
+    expect no_mixed_arithmetic: when op = Arithmetic and kind(a) = IntTy and kind(b) = BoolTy, not accepted?
+    -- Sets of different element types are different types.
+    expect sets_of_different_types: when op = Equality and kind(a) = SetTy and kind(b) = SetTy and elem(a) != elem(b),
+        not accepted?
 }
 
 -- The checks for every chapter under Lang/ that shares the module `lang`.

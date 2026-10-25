@@ -54,6 +54,7 @@ pub comp identifier {
     expect primed: when lexeme = "x'", accepted?
     expect components: when lexeme = "w.x.y?", accepted?
     expect wildcard: when lexeme = "_", accepted?
+    expect capitals: when lexeme = "Heat" or lexeme = "x.Y", accepted?
     expect question_last: when lexeme = "a?b" or lexeme = "a?.b", not accepted?
     expect letter_first: when lexeme.matches?(r"[0-9'.?].*"), not accepted?
     expect no_trailing_dot: when lexeme.ends_with?("."), not accepted?
@@ -78,6 +79,8 @@ pub comp identifier_shape {
     req no_trailing_dot: when lexeme.ends_with?("."), not accepted?
     req question_last: when lexeme.contains?("?") and not lexeme.ends_with?("?"), not accepted?
     req one_question: when lexeme.contains?("??"), not accepted?
+
+    expect first_characters: when lexeme in {"1", "1x", "'x", ".x", "?", "?x"}, not accepted?
 }
 
 set_option fren.evidence "tested" in
@@ -134,6 +137,8 @@ pub comp longest_identifier {
     req at_end: when remaining = "", ends?
 
     expect dotted: when lexeme = "w" and remaining = ".x", not ends?
+    -- Two characters decide, though the third ends the identifier.
+    expect dotted_then_space: when lexeme = "w" and remaining = ".x y", not ends?
 }
 
 set_option fren.evidence "tested" in
@@ -301,6 +306,30 @@ set_option fren.evidence "tested" in
 refine escape_sequence_is_exact: escape_sequence refines escape_text
 ```
 
+`lang::escape_start` says which input starts an escape sequence again,
+character by character rather than by a pattern, so that each statement
+checks the other: a character that one accepts and the other does not
+breaks the refinement. `escape_sequence` refines it, and the solver
+decides it:
+
+```fren
+pub comp escape_start {
+    in remaining: String     -- the input after a `\` in a literal
+    pub out accepted?
+
+    req escapes: accepted? iff (remaining.starts_with?("n") or remaining.starts_with?("r")
+        or remaining.starts_with?("t") or remaining.starts_with?("\\") or remaining.starts_with?("\"")
+        or remaining.starts_with?("'")
+        or (remaining.starts_with?("x") and remaining.slice(1, 1).matches?(r"[0-9a-fA-F]")
+        and remaining.slice(2, 1).matches?(r"[0-9a-fA-F]"))
+        or (remaining.starts_with?("u") and remaining.slice(1, 1).matches?(r"[0-9a-fA-F]")
+        and remaining.slice(2, 1).matches?(r"[0-9a-fA-F]") and remaining.slice(3, 1).matches?(r"[0-9a-fA-F]")
+        and remaining.slice(4, 1).matches?(r"[0-9a-fA-F]")))
+}
+
+refine escape_sequence_starts: escape_sequence refines escape_start
+```
+
 ## Punctuators
 
 ```
@@ -337,6 +366,12 @@ pub comp punctuator {
     pub det out accepted?
 
     req rule: accepted? iff lexeme in PUNCTUATORS
+
+    -- The punctuators listed above, and the three of other languages.
+    expect listed: accepted? iff lexeme in {
+        "::", "::*", "::{", ":", ":=", ",", "(", ")", "{", "}", "[", "]", ".", "=>", "|",
+        "=", "!=", "<", "<=", ">", ">=", "+", "++", "-", "*", "==", "&&", "||",
+    }
 }
 
 pub comp punctuator_end {
