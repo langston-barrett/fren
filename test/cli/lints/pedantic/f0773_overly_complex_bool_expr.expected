@@ -10,7 +10,7 @@ warning[F0773]: this `or` has an operand that does not change its value
 help: write `a?`
   |
 9 -     req r1: p? iff (b? and a? or a?)
-9 +     req r1: p? iff (a?)
+9 +     req r1: p? iff a?
   |
 
 warning[F0773]: this `and` is always `false`

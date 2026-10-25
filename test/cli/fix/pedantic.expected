@@ -1,38 +1,41 @@
 warning[F0772]: the fields of this literal are not in the order `Cell` declares them
-  --> test/cli/fix/pedantic.fren:40:21
+  --> test/cli/fix/pedantic.fren:44:21
    |
-40 |     req r9: other = Cell {
+44 |     req r9: other = Cell {
    |                     ^^^^^^ fields out of order
    |
    = note: `Cell` declares `row` and `column`, in this order
    = note: a comment between the fields would not stay by its field, so this has no fix
 
 warning[F0771]: this `match` tests for one variant
-  --> test/cli/fix/pedantic.fren:44:18
+  --> test/cli/fix/pedantic.fren:51:18
    |
-44 |     req r10: s = match m {
+51 |     req r10: s = match m {
    |                  ^^^^^^^^^ one variant, then `_`
    |
    = note: the fix would drop the comments in the `match`, so it has none
 
 --- test/cli/fix/pedantic.fren
 +++ test/cli/fix/pedantic.fren
-@@ -26,6 +26,6 @@
+@@ -30,6 +30,6 @@
 -    req r1: y = 2 * match m { Mode::Heat => x + 1, _ => x }
 -    req r2: p? iff ((a? or b?) and a?) or not b?
 -    req r3: q? iff a? or not a?
 -    req r4: cell = Cell { column := x, row }
 -    req r5: z = if a? then x * 2 else row * 2
 -    req r6: t? iff r#"a"# = r##"a"#b"##
-+    req r1: y = 2 * (if m = Mode::Heat then x + 1 else x)
-+    req r2: p? iff (a?) or not b?
++    req r1: y = 2 * (if m is Mode::Heat then x + 1 else x)
++    req r2: p? iff a? or not b?
 +    req r3: q?
 +    req r4: cell = Cell { row, column := x }
 +    req r5: z = (if a? then x else row) * 2
 +    req r6: t? iff r"a" = r##"a"#b"##
-@@ -34 +34 @@
+@@ -38 +38 @@
 -    req r7: w = 1 + match m { Mode::Cool => x, _ => row } and v = 3 * (if a? then x + if b? then 1 else 2 else row + if b? then 1 else 2)
-+    req r7: w = 1 + (if m = Mode::Cool then x else row) and v = 3 * ((if a? then x else row) + if b? then 1 else 2)
++    req r7: w = 1 + (if m is Mode::Cool then x else row) and v = 3 * ((if a? then x else row) + if b? then 1 else 2)
+@@ -49 +49 @@
+-    req r11: d = if a? then scale(x) div 2 else scale(row) div 2
++    req r11: d = (if a? then scale(x) else scale(row)) div 2
 Some errors have detailed explanations: F0771, F0772.
 For more information about an error, try `fren --explain F0771`.
 exit=1

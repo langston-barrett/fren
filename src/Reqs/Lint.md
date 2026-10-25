@@ -570,7 +570,7 @@ what the spec means:
 | `redundant_method_chain` | replaces the chain with its shorter form |
 | `redundant_slicing` | replaces the slice with its receiver |
 | `same_branches` | replaces the conditional with its `then` branch |
-| `single_match_else` | replaces the `match` with `if x = E::A then a else b` |
+| `single_match_else` | replaces the `match` with `if x is E::A then a else b` |
 | `singleton_membership` | replaces `x in {a}` with `x = a` |
 | `suspicious_unary_op_formatting` | moves the whitespace after the `-` to before it: `x >=- 1` becomes `x >= -1` |
 | `trivial_match` | replaces the `match` with its arm's body |

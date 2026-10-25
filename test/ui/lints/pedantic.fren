@@ -3,6 +3,8 @@
 set_option fren.lint.pedantic "warn"
 set_option fren.lint.definable_output "allow"
 set_option fren.lint.membership_chain "allow"
+-- The tests name their variables in single characters.
+set_option fren.lint.many_single_char_names "allow"
 
 enum Mode { Heat, Cool, Off }
 
@@ -68,6 +70,7 @@ comp drop_operands {
 
 -- `branches_sharing_code`.
 const LIMIT: Int := 3
+fn scale(Int): Int
 
 comp shared {
     in c?
@@ -80,6 +83,11 @@ comp shared {
     pub out f: Int
     pub out g: Int
     pub out h: Int
+    pub out i: Int
+    pub out j: Int
+    pub out k: Int
+    pub out m: Int
+    pub out n: Int
 
     req r1: a = if c? then 2 * x + 1 else x + 1
     --~^ warning: both branches of this `if` end with `+ 1`
@@ -97,6 +105,16 @@ comp shared {
     --~^ warning: both branches of this `if` end with `* LIMIT`
     req r7: h = if LIMIT > 2 then 3 * x else 2 * x
     --~^ warning: both branches of this `if` end with `* x`
+    -- An uninterpreted function counts as a variable does.
+    req r8: i = if c? then 3 * scale(x) else 2 * scale(x)
+    -- `div` and `mod` move out a shared divisor, but not a shared dividend,
+    -- which would leave the `if` as the divisor.
+    req r9: j = if c? then scale(x) div 2 else scale(y) div 2
+    --~^ warning: both branches of this `if` end with `div 2`
+    req r10: k = if c? then scale(x) div 2 else scale(x) div 3
+    req r11: m = if c? then scale(x) mod 2 else scale(y) mod 2
+    --~^ warning: both branches of this `if` end with `mod 2`
+    req r12: n = if c? then scale(x) mod 2 else scale(x) mod 3
 }
 
 -- `inconsistent_struct_constructor`.

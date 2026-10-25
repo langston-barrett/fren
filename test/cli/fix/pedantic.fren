@@ -1,9 +1,11 @@
---@ args: fix --check -W pedantic -A definable_output
+--@ args: fix --check -W pedantic -A definable_output -A many_single_char_names
 -- `fren fix` fixes the pedantic lints ported from Clippy, and
 -- `branches_sharing_code`.
 enum Mode { Heat, Cool, Off }
 
 struct Cell { row: Int, column: Int }
+
+fn scale(Int): Int
 
 comp c {
     in m: Mode
@@ -22,6 +24,8 @@ comp c {
     pub out u: Int
     pub out other: Cell
     pub out s: Int
+    pub out d: Int
+    pub out e: Int
 
     req r1: y = 2 * match m { Mode::Heat => x + 1, _ => x }
     req r2: p? iff ((a? or b?) and a?) or not b?
@@ -41,6 +45,9 @@ comp c {
         column := x,  -- the second field
         row,
     }
+    -- A shared divisor moves out; a shared dividend does not.
+    req r11: d = if a? then scale(x) div 2 else scale(row) div 2
+    req r12: e = if a? then scale(x) mod 2 else scale(x) mod 3
     req r10: s = match m {
         Mode::Heat => x,
         -- every other mode

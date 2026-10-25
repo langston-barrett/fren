@@ -378,7 +378,9 @@ refine invalid_upcast_complete: invalid_upcast_written refines invalid_upcast_fi
 | excluded middle | `a or not a`, `not a or a` | `true` |
 
 The fix is in parentheses where [fixes need
-them](../Lint.md#parentheses-in-fixes). The lint looks at the operands of the operator alone: in
+them](../Lint.md#parentheses-in-fixes). Where the expression is an
+operand in parentheses of its own, the fix replaces them too, so that
+`((a? or b?) and a?) or c?` becomes `a? or c?`, not `(a?) or c?`. The lint looks at the operands of the operator alone: in
 `a or (a and b and c)`, the right operand is `(a and b) and c`, whose
 operands are not `a`. Its Clippy counterpart is in `correctness`.
 

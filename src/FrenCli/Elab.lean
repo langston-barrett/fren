@@ -693,11 +693,11 @@ def lintLines (what : Named) (n : Name) (name last : Span) : M Unit := do
   let k := Fren.Core.codeLines text
   if Fren.Core.tooManyLines k then lint .tooManyLines name (Fren.Core.tooManyLinesMsg what n k)
 
-/-- Reports a lint whose message's first fix replaces its text, which
+/-- Reports a lint whose message's first fix replaces its text, or its own range, which
 `fren fix` applies. -/
 def lintFix (l : Lint) (span : Span) (msg : Msg) (unless? : Option (Lint × Span) := none) : M Unit := do
   let some f := msg.fixes[0]? | lint l span msg
-  modify fun s => { s with lintFixes := s.lintFixes.push { lint := l, span, edits := #[(toRange span, f.replacement)], unless? } }
+  modify fun s => { s with lintFixes := s.lintFixes.push { lint := l, span, edits := #[(f.range?.getD (toRange span), f.replacement)], unless? } }
   lint l span { msg with notes := msg.notes.push Fren.Core.fixHelp }
 
 /-- Reports a lint whose fix is `edits`, which `fren fix` makes. -/

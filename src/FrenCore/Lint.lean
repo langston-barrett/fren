@@ -2155,7 +2155,7 @@ def singleMatchElse (nArms : Nat) (oneVariant wildcard other : Bool) : Bool :=
   nArms == 2 && oneVariant && wildcard && !other
 
 /-- The fix of `single_match_else`, if it fires, where `other` says that
-another match lint fires on it: `if x = V then a else b`, from the
+another match lint fires on it: `if x is V then a else b`, from the
 scrutinee `x` as written, with the parentheses around it, in parentheses
 where `slot` requires them, or where it is `followed` (`BText.inSlot`). -/
 def singleMatchElseFix? (arms : Array ArmInfo) (scrutinee : BText) (slot : Option Slot) (other : Bool)
@@ -2163,8 +2163,8 @@ def singleMatchElseFix? (arms : Array ArmInfo) (scrutinee : BText) (slot : Optio
   let #[a, b] := arms | none
   let sameBodies := writtenSame a.body.text b.body.text
   guard (singleMatchElse arms.size (a.alts.size == 1 && a.noPayload) b.wildcard (other || sameBodies))
-  let scr := scrutinee.inSlot (BKind.bin "=").slots[0]!
-  let t : BText := { text := s!"if {scr} = {a.alts[0]!} then {a.body.text} else {b.body.text}", prec := BKind.ite.prec }
+  let scr := scrutinee.inSlot BKind.patternTest.slots[0]!
+  let t : BText := { text := s!"if {scr} is {a.alts[0]!} then {a.body.text} else {b.body.text}", prec := BKind.ite.prec }
   return t.inSlot slot followed
 
 /-- `single_match_else` on a `match` whose fix is `replacement`, which it
@@ -3467,7 +3467,7 @@ def overlyComplexBool (conj absorbs negates simplerNegation : Bool) : Bool × Bo
 
 /-- `overly_complex_bool_expr` by `rule`, on an `and`, if `conj`, or an
 `or`, whose fix is `fixed`. -/
-def overlyComplexBoolMsg (conj : Bool) (rule : BoolRule) (fixed : String) : Msg :=
+def overlyComplexBoolMsg (conj : Bool) (rule : BoolRule) (fixed : String) (range? : Option Range := none) : Msg :=
   let op := if conj then "and" else "or"
   let (headline, label, note) := match rule with
     | .absorption => (s!"this `{op}` has an operand that does not change its value", "the other operand decides it",
@@ -3477,7 +3477,7 @@ def overlyComplexBoolMsg (conj : Bool) (rule : BoolRule) (fixed : String) : Msg 
     | .excludedMiddle => ("this `or` is always `true`", "an operand and its negation",
       "note: one of the operands is probably not the one meant")
   { code? := some Lint.overlyComplexBoolExpr.code, headline, label? := some label, notes := #[note]
-    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed, range? }] }
 
 /-- `overly_complex_bool_expr` on `n`, an `and` if `conj`, or an `or`, in
 `slot` within `parent` (`lint::overly_complex_bool_expr`). -/
@@ -3497,8 +3497,16 @@ def overlyComplexAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (par
     | .absorption, some k => some (k.text src)
     | .absorption, none => none
     | _, _ => some { text := toString (rule == .excludedMiddle), prec := BKind.atom.prec }
-  let fixed := placed src n slot parent t
-  return { lint := .overlyComplexBoolExpr, ref := n.ref, msg := overlyComplexBoolMsg conj rule fixed }
+  -- An operand in parentheses: the fix replaces them too, and has the
+  -- parentheses that its slot needs, rather than keeping those of `n`.
+  match slot, parensAround? src parent n.range with
+  | some _, some _ =>
+    let outer := withParensIn src parent n.range
+    let fixed := t.inSlot slot (followedAt src outer)
+    return { lint := .overlyComplexBoolExpr, ref := n.ref, msg := overlyComplexBoolMsg conj rule fixed (some outer) }
+  | _, _ =>
+    let fixed := placed src n slot parent t
+    return { lint := .overlyComplexBoolExpr, ref := n.ref, msg := overlyComplexBoolMsg conj rule fixed }
 
 /-- `erasing_op` on `n`, a binary operator (`lint::erasing_op`). -/
 def erasingOpAt? (src : Array Char) (n : BNode α) : Option (OpReport α) := do
