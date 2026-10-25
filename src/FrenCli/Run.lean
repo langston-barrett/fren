@@ -756,8 +756,12 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
     let next := (files.zip srcs).mapIdx fun i ((_, text), src) =>
       applyFileEdits src text (st.edits.filterMap fun (f, e) => if f == i then some e else none)
     let (files', st') ← elaborateSources paths next args.lints fixing ignored
-    -- A fix that made a static error is not kept.
-    if st'.diags.any fun d => d.severity == .error && d.lint?.isNone then break
+    -- A fix that made a static error is not kept, and is a bug.
+    if st'.diags.any fun d => d.severity == .error && d.lint?.isNone then
+      IO.eprint (Fren.Core.renderPlain .warning
+        { code? := none, headline := "some fixes were not made, because they would have caused a static error"
+          notes := #["note: this is a bug in `fren fix`; the lints they fix are reported below"] } args.paint)
+      break
     if k == 0 then firstKept := true
     nFixed := nFixed.mapIdx fun i n => n + (st.diags.filter fun d => d.fixed && d.file == i).size
     srcs := next

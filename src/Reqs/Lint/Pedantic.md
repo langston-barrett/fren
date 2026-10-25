@@ -97,7 +97,7 @@ pub comp if_not_else {
 Both are fixable.
 
 `match_same_arms`, `allow` by default, fires on two arms whose bodies are
-written the same, ignoring whitespace, and whose patterns bind no names.
+[written the same](../Lint.md#written-the-same), and whose patterns bind no names.
 It is reported once for each group of such arms, at the first arm that
 the fix removes, and says which arm it repeats. The fix depends on the
 group:
@@ -123,7 +123,7 @@ two arms, and the fix of their group:
 pub enum ArmsFix { Merge, Remove, Replace }
 
 pub comp match_same_arms {
-    in same_body?        -- the bodies are written the same, ignoring whitespace
+    in same_body?        -- the bodies are written the same
     in binds?            -- the pattern of either binds a name
     in wildcard?         -- one of the group is `_`
     in all?              -- the group is every arm of the `match`
@@ -165,8 +165,8 @@ pub comp wildcard_single_variant {
 `if_chain_match`, `allow` by default, fires on a chain `if T1 then a else
 if T2 then b ... else z` of two or more tests, each a *variant test*: a test
 of which variant a scrutinee `x` is, `x = E::V`, `x in {E::V, E::W}`, or an
-`or` of such tests. The scrutinee is written the same in every test,
-ignoring whitespace, and each variant has no payload: `x = E::V(a)` compares
+`or` of such tests. The scrutinee is [written the
+same](../Lint.md#written-the-same) in every test, and each variant has no payload: `x = E::V(a)` compares
 the payload too. The chain starts at an `if` that is not the `else` branch
 of another. Its fix is a [`match`](../Lang/Expressions.md#matches), `match x {
 V => a, W | X => b, ..., _ => z }`, with an arm for each test, whose

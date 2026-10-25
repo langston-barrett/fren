@@ -28,12 +28,10 @@ pub comp index_after_use {
 ## Suspicious expressions
 
 These lints fire on expressions that are legal but probably not what the
-writer meant. Two expressions are *written the same* if their texts agree
-but for whitespace: outside string literals, whitespace that does not
-separate two names, numbers or keywords is ignored, and the parentheses
-around an operand are not part of it. The lints look only at the text,
-never at types or the solver, so `f(x) = f(x)` is written the same, and
-`x = (x)`, but `x + 1 = 1 + x` is not.
+writer meant. Two operands are compared as [written the
+same](../Lint.md#written-the-same), where the parentheses around an operand
+are not part of it, so the operands of `f(x) = f(x)` are written the same,
+and those of `x = (x)`, but not those of `x + 1 = 1 + x`.
 
 `eq_op` fires on an infix operator whose two operands are written the
 same, where the expression is then always the same value, or the same as

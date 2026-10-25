@@ -258,8 +258,8 @@ each fix puts an operand in parentheses where
 [`lang::operand`](../Lang/Expressions.md#operators) requires them, and only
 there, and puts the fix itself in parentheses where it is an operand that
 requires them and is not already in them; for this, a conditional counts
-as binding more loosely than any operator. Two expressions are *written the
-same* when their texts are the same, ignoring whitespace.
+as binding more loosely than any operator. Operands are compared as
+[written the same](../Lint.md#written-the-same).
 
 `double_comparison` fires on two comparisons of the same two operands,
 written the same, joined by `and` or `or`, that together are one

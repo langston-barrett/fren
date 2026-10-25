@@ -811,7 +811,7 @@ must match it:
 | Pattern | Matches |
 |---|---|
 | `c` | the character `c`, other than `\`, `.`, `[`, `]`, `(`, `)`, `*`, `+`, `?`, `{`, `}`, `\|` and `^` |
-| `\c` | `c`, for `c` one of those |
+| `\c` | `c`, for `c` one of those, or `-`, which is literal outside a class but marks a range in one |
 | `.` | any character |
 | `[a-z_]` | a character in the class: each item is a character or a range `a-z` |
 | `[^...]` | a character not in the class |

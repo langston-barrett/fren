@@ -358,11 +358,12 @@ def Levels.set (ls : Levels) (l : Lint) (v : LevelInEffect) : Levels :=
 
 /-- The levels set by command-line flags, in order: the last flag for a
 lint wins, except that `forbid` always wins. A flag for a group is a flag
-for each of its lints, in its place. -/
+for each of its lints, in its place, and leaves a forbidden one as it is. -/
 def Levels.ofFlags (flags : Array (LintTarget × LintLevel)) : Levels :=
   flags.foldl (init := Levels.defaults) fun ls (t, v) =>
     t.members.foldl (init := ls) fun ls l =>
-      ls.set l { level := (setLevel (ls.get l).level v).2, isSet := true, group? := t.group? }
+      let (ok, level) := setLevel (ls.get l).level v
+      if ok then ls.set l { level, isSet := true, group? := t.group? } else ls
 
 /-! ## Collections, outputs and indexes -/
 
@@ -437,6 +438,48 @@ def indexAfterUseMsg (a b : String) : Msg :=
     notes := #["note: in `a and b`, `b` is guarded by `a`, not the other way around, so the index may be out of range"]
     fixes := #[{ msg := "put the bound first, which does not change the meaning", replacement := s!"{b} and {a}" }] }
 
+/-! ## Texts -/
+
+def isWordChar (c : Char) : Bool := c.isAlphanum || c == '_' || c == '?'
+
+/-- The text `s` as the lints compare it, so that two texts are *written the
+same* (`Reqs/Lint#written-the-same`) if these agree: without whitespace,
+but for one space between two characters of names, numbers or keywords,
+and with string literals, raw ones too, as they are. -/
+def writtenForm (s : String) : String := Id.run do
+  let cs := s.toList.toArray
+  let mut out : Array Char := #[]
+  let mut i := 0
+  let mut space := false
+  while i < cs.size do
+    let c := cs[i]!
+    if c.isWhitespace then
+      space := true
+      i := i + 1
+      continue
+    if space && out.back?.any isWordChar && isWordChar c then out := out.push ' '
+    space := false
+    out := out.push c
+    i := i + 1
+    if c == '"' then
+      -- A raw literal is `r`, some `#`, then `"`, and has no escapes.
+      let hashes := (out.pop.toList.reverse.takeWhile (· == '#')).length
+      let raw := out.size ≥ hashes + 2 && out[out.size - hashes - 2]! == 'r'
+      let closes (k : Nat) : Bool :=
+        cs[k]! == '"' && (!raw || (List.range hashes).all fun h => cs[k + 1 + h]? == some '#')
+      while i < cs.size && !closes i do
+        if !raw && cs[i]! == '\\' && i + 1 < cs.size then
+          out := out.push cs[i]!
+          i := i + 1
+        out := out.push cs[i]!
+        i := i + 1
+      let stop := min cs.size (i + 1 + (if raw then hashes else 0))
+      out := out ++ cs.extract i stop
+      i := stop
+  return String.ofList out.toList
+
+def writtenSame (a b : String) : Bool := writtenForm a == writtenForm b
+
 /-! ## Tests of variants -/
 
 /-- A test of which variant a scrutinee is, as `if_chain_match` and
@@ -452,7 +495,7 @@ structure VariantTest where
 
 /-- The scrutinee's text without whitespace: two tests are of the same
 scrutinee if it is the same. -/
-def VariantTest.key (t : VariantTest) : String := String.ofList (t.scrutinee.toList.filter (!·.isWhitespace))
+def VariantTest.key (t : VariantTest) : String := writtenForm t.scrutinee
 
 /-- `a or b`, if both test the same scrutinee. -/
 def VariantTest.or (a b : VariantTest) : Option VariantTest :=
@@ -1220,29 +1263,6 @@ def proseList (ts : Array String) : String :=
   | none => ""
   | some last => if qs.size == 1 then last else s!"{", ".intercalate qs.pop.toList} and {last}"
 
-/-- `s` with each run of whitespace outside string literals dropped, or
-made one space between two characters of identifiers, so that two texts
-are the same if their lexemes are. -/
-def bodyKey (s : String) : String := Id.run do
-  let word (c : Char) := c.isAlphanum || c == '_' || c == '?'
-  let mut out := ""
-  let mut inStr := false
-  let mut escaped := false
-  let mut gap := false
-  for c in s.toList do
-    if inStr then
-      out := out.push c
-      if escaped then escaped := false
-      else if c == '\\' then escaped := true
-      else if c == '"' then inStr := false
-    else if c.isWhitespace then gap := true
-    else
-      if gap && word c && (out.back?.any word) then out := out.push ' '
-      gap := false
-      out := out.push c
-      if c == '"' then inStr := true
-  return out
-
 /-- An arm of a `match`, as the match lints see it. -/
 structure ArmInfo where
   /-- The texts of its pattern's alternatives, as written; none for `_`. -/
@@ -1284,7 +1304,7 @@ def sameArmGroups (arms : Array ArmInfo) : Array (Array Nat) := Id.run do
   for a in arms, i in [0:arms.size] do
     let fires (g : Array Nat) :=
       let b := arms[g[0]!]!
-      sameArmsFires (bodyKey b.body.text == bodyKey a.body.text) (b.binds || a.binds)
+      sameArmsFires (writtenForm b.body.text == writtenForm a.body.text) (b.binds || a.binds)
     match groups.findIdx? fires with
     | some j => groups := groups.modify j (·.push i)
     | none => if !a.binds then groups := groups.push #[i]
@@ -1404,40 +1424,6 @@ def wildcardMsg (v : Name) (pattern? : Option String) : Msg :=
 
 /-! ## Suspicious expressions -/
 
-def isWordChar (c : Char) : Bool := c.isAlphanum || c == '_' || c == '?'
-
-/-- The text `s` as the suspicious lints compare it, so that two texts are
-*written the same* if these agree: without whitespace, but for one space
-between two characters of names, numbers or keywords, and with string
-literals as they are. -/
-def writtenForm (s : String) : String := Id.run do
-  let cs := s.toList.toArray
-  let mut out : Array Char := #[]
-  let mut i := 0
-  let mut space := false
-  while i < cs.size do
-    let c := cs[i]!
-    if c.isWhitespace then
-      space := true
-      i := i + 1
-      continue
-    if space && out.back?.any isWordChar && isWordChar c then out := out.push ' '
-    space := false
-    out := out.push c
-    i := i + 1
-    if c == '"' then
-      while i < cs.size && cs[i]! != '"' do
-        if cs[i]! == '\\' && i + 1 < cs.size then
-          out := out.push cs[i]!
-          i := i + 1
-        out := out.push cs[i]!
-        i := i + 1
-      if i < cs.size then
-        out := out.push cs[i]!
-        i := i + 1
-  return String.ofList out.toList
-
-def writtenSame (a b : String) : Bool := writtenForm a == writtenForm b
 
 /-- An infix operator (`lint::InfixOp`). -/
 inductive InfixOp where
@@ -1828,10 +1814,6 @@ def BNode.range : BNode α → Range | .mk _ r .. => r
 def BNode.ref : BNode α → α | .mk _ _ a _ => a
 def BNode.kids : BNode α → Array (BNode α) | .mk _ _ _ ks => ks
 
-/-- `s` without whitespace: two expressions are written the same if this
-is the same for both. -/
-def squash (s : String) : String := String.ofList (s.toList.filter (!·.isWhitespace))
-
 /-- `r` with the parentheses around it within `outer`, however many. -/
 partial def withParensIn (src : Array Char) (outer r : Range) : Range :=
   match parensAround? src outer r with
@@ -1857,12 +1839,12 @@ parentheses if it needs them there and `n` is not already in them. -/
 def placed (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) (t : BText) : String :=
   if enclosed src parent n.range then t.text else t.inSlot slot
 
-/-- The comparison `n` is, with its operands' texts squashed. -/
+/-- The comparison `n` is, with its operands' texts as `writtenForm` gives them. -/
 def comparisonOf? (src : Array Char) (n : BNode α) : Option (Comparison × String × String) := do
   let .bin op := n.kind | none
   let #[a, b] := n.kids | none
   let c ← Comparison.ofOp? op
-  return (c, squash (textOf src a.range), squash (textOf src b.range))
+  return (c, writtenForm (textOf src a.range), writtenForm (textOf src b.range))
 
 /-- `double_comparison` on `n`, an `and` or an `or`, in `slot` within
 `parent` (`lint::double_comparison`). -/
@@ -1875,8 +1857,8 @@ def doubleComparisonAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (
   let op ← if lop == "subset" && rop == "subset" then do
       let #[c, d] := r.kids | none
       -- `a subset b and b subset a`.
-      unless conj && squash (textOf src c.range) == squash (textOf src b.range)
-        && squash (textOf src d.range) == squash (textOf src a.range) do none
+      unless conj && writtenForm (textOf src c.range) == writtenForm (textOf src b.range)
+        && writtenForm (textOf src d.range) == writtenForm (textOf src a.range) do none
       pure "="
     else do
       let (c1, a1, b1) ← comparisonOf? src l
@@ -1900,7 +1882,7 @@ def boolEqualityAt? (src : Array Char) (boolEq : α → Bool) (n : BNode α) (sl
 /-- The integer that `n` is written as, if it is a literal or a negated one. -/
 def intLiteral? (src : Array Char) (n : BNode α) : Option Int :=
   match n.kind with
-  | .atom | .neg => (squash (textOf src n.range)).toInt?
+  | .atom | .neg => (writtenForm (textOf src n.range)).toInt?
   | _ => none
 
 /-- `manual_method` on `n`, a comparison in `slot` within `parent`
@@ -1918,7 +1900,7 @@ def manualMethodAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (pare
     let fixed := placed src n slot parent { text := fixed, prec }
     { lint := .manualMethod, ref := n.ref, msg := manualMethodMsg method fixed slice }
   if m == "index_of" then
-    unless squash (textOf src y.range) == "0" do none
+    unless writtenForm (textOf src y.range) == "0" do none
     let t := textOf src x.range
     match indexTest c (← intLiteral? src other) with
     | .found => return report "contains?" s!"{r}.contains?({t})" (BKind.method "").prec false
@@ -1926,9 +1908,9 @@ def manualMethodAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (pare
     | .atStart => return report "starts_with?" s!"{r}.starts_with?({t})" (BKind.method "").prec false
     | .other => none
   -- `s.slice(0, t.len) = t`.
-  unless m == "slice" && c == .eq && squash (textOf src x.range) == "0" do none
-  let o := squash (textOf src other.range)
-  let len := squash (textOf src y.range)
+  unless m == "slice" && c == .eq && writtenForm (textOf src x.range) == "0" do none
+  let o := writtenForm (textOf src other.range)
+  let len := writtenForm (textOf src y.range)
   unless len == o ++ ".len" || len == s!"({o}).len" do none
   return report "starts_with?" s!"{r}.starts_with?({textOf src other.range})" (BKind.method "").prec true
 
@@ -1952,7 +1934,7 @@ def elseExtendsAt? (src : Array Char) (n k : BNode α) (slot : Slot) : Option (O
 
 /-- How `identity_op` sees the operand `k`. -/
 def identityOperand (src : Array Char) (k : BNode α) : IdentityOperand :=
-  match k.kind, squash (textOf src k.range) with
+  match k.kind, writtenForm (textOf src k.range) with
   | .neg, _ => .negation
   | .atom, "0" => .zero
   | .atom, "1" => .one

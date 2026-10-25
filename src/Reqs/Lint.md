@@ -76,6 +76,16 @@ without `!`, and one with `!` that hides nothing, are static errors,
 replace the lint `shadowed_constants`, which warned of a variable named
 like a constant, and whose code `F0713` is not reused.
 
+## Written the same
+
+Many lints compare expressions by their text. Two expressions are *written
+the same* if their texts agree but for whitespace: whitespace that does not
+separate two names, numbers or keywords is ignored, except inside string
+literals, raw ones too, which are compared as they are. So `x+1` and
+`x + 1` are written the same, and so are `f(x)` and `f( x )`, but `"a b"`
+and `"ab"` are not. The lints look only at the text, never at types or the
+solver, so `x + 1` and `1 + x` are not written the same.
+
 ## Levels
 
 | Level | Effect |
@@ -209,7 +219,9 @@ pub comp setting {
 
 A group's setting is accepted when each of its lints would accept it, so
 when none is forbidden, or when it sets `forbid`; otherwise it is an error
-(`F0709`), and changes no level. `lint::group_setting` states it, for one
+(`F0709`), and changes no level. That is for `set_option`: on the command
+line, a group's flag is a flag for each of its lints, in its place, so it
+leaves a forbidden lint as it is, and the others take its level. `lint::group_setting` states it, for one
 lint of the group:
 
 ```fren
