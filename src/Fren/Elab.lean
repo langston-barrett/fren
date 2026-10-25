@@ -1735,13 +1735,15 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   lintLength toTerm cx e
   let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
   if op == "=" || op == "!=" then
-    lintEmptyEquation cx e
     -- `++` is in the core against a constant.
     let (x, y) := (← toTerm { cx with concatOk := cb, emptyOk := Core.Position.compared.checked false (synthesizes b) } a,
       ← toTerm { cx with concatOk := ca, emptyOk := Core.Position.compared.checked false (synthesizes a) } b)
     -- Both sides have one type, after widening, as the `fren` command checks
     -- (`lang::operator_type`).
     if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then liftMsg e (Core.checkComparable op tx ty)
+    -- After the sides and their types, as in the binary: not where either
+    -- is an error.
+    lintEmptyEquation cx e
     -- For `bool_equality`, at the end of the expression.
     let tx ← typeOf x
     if cx.noteIndexes && (tx.isConstOf ``Bool || tx.isProp) then

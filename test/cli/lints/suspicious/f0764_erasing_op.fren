@@ -1,4 +1,4 @@
 -- `erasing_op`, which has no fix.
 enum E { A, B }
 
-comp c { in x: Int in r: Rel(E, E) pub out y: Int pub out p? req r1: y = 0 * x + 1 req r2: p? iff r join {} = r }
+comp c { in x: Int in r: Rel(E, E) pub out y: Int pub out p? req r1: y = 0 * x + 1 req r2: p? iff r inter {} = r }

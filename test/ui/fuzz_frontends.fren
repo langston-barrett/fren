@@ -3,10 +3,14 @@
 
 -- Methods chained after a literal, where the first takes arguments.
 expect sliced: "ab".slice(0, 1).len = 1 and ("a").len = 1
+--~^ warning: this expectation mentions no variable
+--~^^ warning: this is a call of `at`
+--~^^^ warning: this test of a literal is always `true`
 
 -- `card` of a literal, with no set variable: the solver must still be
 -- told of sets.
 expect counted_literal: {1, 2}.card = 2
+--~^ warning: this expectation mentions no variable
 
 comp counted {
     in x: Int

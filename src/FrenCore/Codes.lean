@@ -3537,8 +3537,8 @@ Example:
 comp c { in x: Int in y: Int pub out z: Int req r: z = x * 0 + y }
 ```
 
-`x * 0` is always `0`, whatever `x` is, as `s inter {}`, `{} minus s` and
-`r join {}` are always `{}`. The literal is probably not the operand meant,
+`x * 0` is always `0`, whatever `x` is, as `s inter {}` and `{} minus s`
+are always `{}`. The literal is probably not the operand meant,
 so there is no fix. Write the operand meant:
 
 ```fren

@@ -73,7 +73,9 @@ pub comp eq_op_conditional {
 
 `erasing_op` fires on an operation whose value ignores an operand: `x * 0`
 and `0 * x` are always `0`, and `s inter {}`, `{} inter s`, `{} minus s`
-and `r join {}` are always `{}`. It mirrors
+and `r join {}` are always `{}`, though `{}` in `r join {}` has no type
+it can take, which is an error (see
+[Checking and synthesis](../../Lang/Types.md#checking-and-synthesis)). It mirrors
 [`identity_op`](../Complexity/Operators.md#identities), and an operand is `0` or `{}` as
 it is there. The message says what the value is. It has no fix: the
 likely mistake is the literal, and writing the value instead would keep
