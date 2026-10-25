@@ -14,7 +14,30 @@ enum E { A }
 enum E { B }                      --~ error: the name `E` is already defined in the root module (as an enum)
 --~^^ warning: enum `E` is never used
 
+-- `true` and `false` are literals, so nothing could mention a declaration
+-- of either (`Reqs/Lang/Lexical#keywords`).
+comp lit_var { in true: Int pub out y: Int req r: y = 1 }  --~ error: `true` is a literal, so it cannot be declared
+comp lit_req { in x: Int req false: x > 0 }  --~ error: `false` is a literal, so it cannot be declared
+fn lit_param(true: Int): Int := 1  --~ error: `true` is a literal, so it cannot be declared
+enum LitVariant { false, B }      --~ error: `false` is a literal, so it cannot be declared
+const true: Int := 1              --~ error: `true` is a literal, so it cannot be declared
+comp lit_bang { in true!: Int pub out y: Int req r: y = 1 }  --~ error: `true` is a literal, so it cannot be declared
+comp true { in x: Int pub out y: Int req r: y = x }  --~ error: `true` is a literal, so it cannot be declared
+const false: Int := 1             --~ error: `false` is a literal, so it cannot be declared
+enum LitE { true }                --~ error: `true` is a literal, so it cannot be declared
+struct LitS { false: Int }        --~ error: `false` is a literal, so it cannot be declared
+comp lit_req_true { in x: Int req true: x > 0 }  --~ error: `true` is a literal, so it cannot be declared
+pub enum LitShape { Circle(Int), Square }
+comp lit_match { in s: LitShape pub out p? req r: p? iff match s { LitShape::Circle(true) => p?, _ => false } }
+--~^ error: `true` is a literal, so it cannot be declared
+pub comp lit_sub { in x: Int pub out y: Int req r: y = x }
+expect lit_global: forall (false: lit_sub), false.y = 1  --~ error: `false` is a literal, so it cannot be declared
+comp lit_inst { in a: Int inst true: lit_sub { x := a } }  --~ error: `true` is a literal, so it cannot be declared
+comp true_q { in true? pub out y? req r: y? iff true? }
+
 -- Untyped `?` names are `Bool`s.
 comp fine { in ok? pub out done? req r: done? iff ok? }
+
+mod true                          --~ error: `true` is a literal, so it cannot be declared
 
 --@ exit: 2

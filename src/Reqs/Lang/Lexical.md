@@ -238,7 +238,9 @@ when  unless  not  true  false  det  out  assume  req  cover  inst
 
 `true` and `false` are the exception: they are the literals of type
 `Bool` wherever an expression is expected, at the start of one or not, so
-in `x = true` the `true` is a literal.
+in `x = true` the `true` is a literal. Nothing could then mention a
+declaration named `true` or `false`, so declaring either, as any kind of
+name, is an error (`F0220`).
 
 `in` is both the keyword of an input and the [membership
 operator](Expressions.md#sets). The `in` of a membership must be on the
