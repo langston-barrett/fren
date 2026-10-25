@@ -710,6 +710,46 @@ what the spec means:
 | `unused_imports` | removes the `use`, or the name from a grouped `use` |
 <!-- keep-sorted end -->
 
+Each of these rewrites keeps what the expression means, for every value
+of what it mentions. `lint::fixes_keep_meaning` states it for each fix
+that rewrites an expression, the written form on the left of each `iff`,
+which the lint fires on, and the fixed form on the right. It expects the
+lints, so it also checks that each fires on its form. `index_after_use`
+only swaps the operands of `and`, which `and` allows, and is left out:
+its written form is the one with an index that may be out of range.
+
+```fren
+set_option fren.lint.nonminimal_bool "expect" in
+set_option fren.lint.length_zero "expect" in
+set_option fren.lint.card_zero "expect" in
+set_option fren.lint.singleton_membership "expect" in
+set_option fren.lint.membership_chain "expect" in
+pub comp fixes_keep_meaning {
+    in a?
+    in c?
+    in x: Int
+    in y: Int
+    in z: Int
+    in w: Int
+    in s: String
+    in q: Seq(Int)
+    in t: Set(Int)
+
+    expect true_literals: ((a? = true) iff a?) and ((a? != false) iff a?) and ((a? iff true) iff a?)
+    expect false_literals: ((a? = false) iff not a?) and ((a? != true) iff not a?) and ((a? iff false) iff not a?)
+    expect double_negation: (not not a?) iff a?
+    expect complements: ((not (x = y)) iff x != y) and ((not (x != y)) iff x = y)
+        and ((not (x < y)) iff x >= y) and ((not (x <= y)) iff x > y)
+        and ((not (x > y)) iff x <= y) and ((not (x >= y)) iff x < y)
+    expect conditionals: ((if c? then true else false) iff c?) and ((if c? then false else true) iff not c?)
+    expect string_length_zero: ((s.len = 0) iff s = "") and ((s.len <= 0) iff s = "") and ((s.len > 0) iff s != "")
+    expect sequence_length_zero: ((q.len = 0) iff q = []) and ((q.len <= 0) iff q = []) and ((q.len > 0) iff q != [])
+    expect card_zero: ((t.card = 0) iff t = {}) and ((t.card <= 0) iff t = {}) and ((t.card > 0) iff t != {})
+    expect singleton: (x in {y}) iff x = y
+    expect chain: (x = y or x = z or x = w) iff x in {y, z, w}
+}
+```
+
 The other lints have no fix. Renaming a declaration, as the naming lints
 and `shadowed_constants` would need, would also have to rename every use
 of it, including uses in Lean code and in files that are not given, and so
