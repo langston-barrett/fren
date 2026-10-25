@@ -782,7 +782,7 @@ partial def Expr.boolNode : Expr → Fren.Core.BNode Span
   | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode] ++ arms.map (·.2.boolNode))
   | .pair s a b | .index s a b => .mk .atom (toRange s) s #[a.boolNode, b.boolNode]
   | .num s _ | .path s _ | .str s .. => .mk .atom (toRange s) s #[]
-  | .chain s .. => .mk .atom (toRange s) s #[]
+  | .chain s .. => .mk .chain (toRange s) s #[]
 where toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
 
 /-- The span of `e` as written: a field read, method call or index of a
@@ -1476,14 +1476,16 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   | .bool _ b => return (toString b, .bool)
   | .chain _ es ops =>
     -- `a < b <= c` is `a < b and b <= c`, with `b` elaborated once
-    -- (`Reqs/Lang/Expressions#chained-comparisons`).
+    -- (`Reqs/Lang/Expressions#chained-comparisons`). As in that expansion,
+    -- the comparisons before an operand guard it.
     if let .error (k, msg) := Fren.Core.checkChain (ops.map (·.1)) then err ops[k]!.2 msg
     let (x0, t0) ← elabExpr cx es[0]!
     unless t0 == .string || t0 == .int do mismatch es[0]! .int t0 (opNote ops[0]!.1 .int)
     let mut (x, ca) := (x0, ← isConstant cx es[0]!)
     let mut links := #[]
     for (op, _) in ops, a in es, b in es.extract 1 do
-      let y ← expect b t0 (opNote op t0)
+      let (y, tb) ← elabExpr { cx with guards := cx.guards ++ links } b
+      unless tb == t0 do mismatch b t0 tb (opNote op t0)
       let cb ← isConstant cx b
       if t0 == .string then
         checkCore cx (a.span.to b.span) .stringCompare true (ca || cb) #[a, b] (ca && cb)

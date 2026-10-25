@@ -1,0 +1,12 @@
+--@ args: fix --check
+-- `fren fix` keeps the parentheses that a chained comparison needs as an
+-- operand of a comparison.
+pub comp c {
+    in x: Int
+    in p?
+    pub out o?
+    pub out w?
+
+    req r1: o? iff not ((0 <= x < 10) = p?)
+    req r2: w? iff not not (0 <= x < 10)
+}

@@ -689,6 +689,9 @@ left to right:
 - in `when C, D`, `D` is guarded by `C`, and in `unless C, D` by `not C`;
 - in `if c then x else y`, `x` is guarded by `c`, and `y` by `not c`;
 - in `a and b`, `b` is guarded by `a`, and in `a or b` by `not a`;
+- in a [chained comparison](#chained-comparisons), as in its expansion
+  with `and`, an operand is guarded by the comparisons before it: in
+  `0 <= i < q.len < q[i]`, `q[i]` is guarded by `0 <= i and i < q.len`;
 - in a `match` arm, the body is guarded by the arm's being the first that
   matches: no earlier arm's pattern matches, and its own does;
 - guards nest by conjunction.

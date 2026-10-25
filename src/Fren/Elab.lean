@@ -901,7 +901,7 @@ partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.
   let atom (i : Nat) := if e[i].isAtom then e[i].getAtomVal.trimAscii.toString else ""
   -- `true` and `false` are also paths.
   if e.isOfKind choiceKind then go ((e.getArgs.find? fun a => a.getNumArgs == 1 && a[0].isAtom).getD e[0]) else
-  if (chainOf? e).isSome then .mk .atom range e #[] else
+  if (chainOf? e).isSome then .mk .chain range e #[] else
   if e.isOfKind ``Lang.methodExpr then
     let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
     let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
@@ -1470,15 +1470,19 @@ open Lang in
 /-- `a < b <= c`, the chained comparison `e` of the operands `xs` and the
 operators `ops`, as `a < b ∧ b ≤ c`, with the term for `b` in both
 (`Reqs/Lang/Expressions#chained-comparisons`). Each comparison is checked
-as if written alone, at the syntax from its left operand to its right. -/
+as if written alone, at the syntax from its left operand to its right, and,
+as in that expansion, the comparisons before an operand guard it. -/
 def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (xs ops : Array Syntax) :
     TermElabM Term := withRef e do
   let names := ops.map (·.getAtomVal.trimAscii.toString)
   if let .error (k, msg) := Core.checkChain names then throwErrorAt ops[k]! msg.text
-  let ts ← xs.mapM (toTerm cx)
-  let string := (← typeOf ts[0]!).isConstOf ``String
+  let mut x ← toTerm cx xs[0]!
+  let string := (← typeOf x).isConstOf ``String
   let mut links := #[]
-  for op in names, a in xs, b in xs.extract 1, x in ts, y in ts.extract 1, opStx in ops do
+  for op in names, a in xs, b in xs.extract 1, opStx in ops do
+    let y ← toTerm { cx with guards := cx.guards ++ links } b
+    -- A node's position is its first token's, and its tail its last's, so
+    -- this one spans the comparison, from `a` to `b`, for its messages.
     let link := mkNullNode #[a, opStx, b]
     if string then
       let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
@@ -1489,6 +1493,7 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       | ">", false => `($x > $y) | ">=", false => `($x ≥ $y)
       | "<", true => `(Fren.Str.lt $x $y) | "<=", true => `(Fren.Str.le $x $y)
       | ">", true => `(Fren.Str.lt $y $x) | _, _ => `(Fren.Str.le $y $x))
+    x := y
   links.extract 1 |>.foldlM (fun acc l => `($acc ∧ $l)) links[0]!
 
 /-- Whether `e` is `[]`, which takes its type from where it is written. -/

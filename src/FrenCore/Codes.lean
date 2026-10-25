@@ -162,15 +162,15 @@ comp c { in a? in b? pub out ok? req r: ok? iff a? = b? = true }
 Only orderings chain: `0 <= x < 10` means `0 <= x and x < 10`. `=`,
 `!=`, `in` and `subset` do not, since a chain of them has no single
 obvious meaning: `a? = b? = true` could be `a? = b? and b? = true`, or
-`(a? = b?) = true`, which differ. Split the chain with `and`, or put the
-comparison whose result is compared in parentheses.
+`(a? = b?) = true`, which differ. Split the chain with `and`, or put a
+comparison in parentheses to compare its result, as in `(x < y) = p?`.
 
 ```fren
 comp c { in a? in b? pub out ok? req r: ok? iff a? = b? and b? = true }
 ```
 
 ```fren
-comp c { in a? in b? pub out ok? req r: ok? iff (a? = b?) = true }
+comp c { in x: Int in y: Int in p? pub out ok? req r: ok? iff (x < y) = p? }
 ```
 "# },
   { code := "F0109", explanation := r#"`when` or `unless` is used as an operand without parentheses.
