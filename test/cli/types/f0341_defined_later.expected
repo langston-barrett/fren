@@ -1,0 +1,13 @@
+error[F0341]: `limit` is used before its definition
+ --> test/cli/types/f0341_defined_later.fren:3:68
+  |
+3 | comp c { in x: Int pub out y? req r: y? iff big? where big? := x > limit, limit := 10 }
+  |                                                                    ^^^^^ defined later in this clause
+  |
+  = note: the definitions of a `let` or `where` clause are read in order: each may mention only the ones before it
+  = help: move the definition of `limit` before the one that uses it
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0341`.
+exit=2

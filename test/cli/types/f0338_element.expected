@@ -4,7 +4,7 @@ error[F0338]: `Nat` cannot be the element type of a set, relation or sequence
 3 | comp c { in s: Set(Nat) }
   |                    ^^^ a `Nat`
   |
-  = note: for now, `Nat` is only the type of a variable, a function's parameter or result, or a constant
+  = note: for now, `Nat` is only the type of a variable, a function's parameter or result, a constant, or a definition of a `let` or `where`
   = help: use `Int`, and say where it is used that it is at least 0
 
 error: could not check due to previous errors

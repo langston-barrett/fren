@@ -56,8 +56,9 @@ component's requirements (see [Components](Components.md#meaning)).
 
 An instance must bind each input of the instantiated component exactly once,
 and must bind nothing else. A binding's expression cannot be a top-level
-`when` or `unless`, which would run on into the following bindings; it must
-be parenthesized.
+`when`, `unless` or `let`, which would run on into the following
+bindings; it must be parenthesized. Nor does a binding take a `where`
+clause (see [Local definitions](Let.md)).
 
 `inst::binding` states this rule, given what a bound name is in the
 instantiated component and how many times the instance binds it:
@@ -119,7 +120,8 @@ Which variables an expression may mention depends on where it is:
 | argument of a [function application](Expressions.md#function-applications) in a requirement, expectation or cover goal | yes | no | yes |
 
 A field read `p.x` mentions `p`, a binder of a [`match`
-arm](Expressions.md#matches) mentions what its scrutinee mentions, and a
+arm](Expressions.md#matches) mentions what its scrutinee mentions, a name
+of a [`let` or `where`](Let.md) what its definition mentions, and a
 [defined output](Components.md#defined-outputs) mentions what its
 definition mentions. So a defined output whose definition mentions only
 inputs may occur in an assumption, and an instance cannot bind a defined

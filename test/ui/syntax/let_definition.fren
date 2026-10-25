@@ -1,0 +1,7 @@
+-- A definition cannot be a bare `when`, which would run on into the next definition.
+-- fren-covers: lang::definition_form
+comp c { in x: Int pub out y? req r: let a? := when x > 0, x > 1, b? := a? in y? iff b? }
+--~^[cli] error: `when` must be parenthesized here
+--~^^[hosted] error: unexpected identifier; expected 'in'
+comp ok { in x: Int pub out y? req r: let a? := (when x > 0, x > 1), b? := a? in y? iff b? }
+--@ exit: 2

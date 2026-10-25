@@ -99,6 +99,9 @@ inductive TypePlace where
   | parameter
   | result
   | constant
+  /-- The written type of a definition of a `let` or `where`, which stands
+  for its definition, so the `Nat` is never inside another value. -/
+  | definition
   | field
   | payload
   | element
@@ -126,7 +129,7 @@ def natPlaceMsg (place : TypePlace) : Msg :=
     | .payload => "the type of a payload"
     | _ => "the element type of a set, relation or sequence"
   { code? := some "F0338", headline := s!"`Nat` cannot be {what}", label? := some "a `Nat`"
-    notes := #["note: for now, `Nat` is only the type of a variable, a function's parameter or result, or a constant",
+    notes := #["note: for now, `Nat` is only the type of a variable, a function's parameter or result, a constant, or a definition of a `let` or `where`",
       "help: use `Int`, and say where it is used that it is at least 0"] }
 
 /-- What a `Nat` variable brings (`lang::nat_variable`). -/

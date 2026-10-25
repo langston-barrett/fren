@@ -68,7 +68,9 @@ x }` mentions `x`, but in `match s { Shape::Circle(x!) => x > 0, _ =>
 true }`, the `x` of the arm is the binder that
 [shadows](../Lang/Components.md#shadowing) the variable, so it does not
 mention the variable. A binder `w` is mentioned by a path `w.x`, and a
-parameter as a variable is. Mentions elsewhere, such as
+parameter as a variable is. A path in a definition of a [`let` or
+`where`](../Lang/Let.md) counts, whether or not the name defined is
+mentioned, and the names defined are not reported. Mentions elsewhere, such as
 through an instance of the component in another one, do not count: they
 cannot constrain the variable. The variables of the component's own
 instances are not reported, and neither are the variables of a component,

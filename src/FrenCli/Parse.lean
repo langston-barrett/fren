@@ -115,12 +115,16 @@ inductive Expr where
   with its span, between its operands, one more than its operators, which
   chain (`lang::comparison_chain`), as the parser checks. -/
   | chain (span : Span) (operands : Array Expr) (ops : Array (String × Span))
+  /-- `let x := e, y: T := f in body`, or `body where x := e` (`isWhere`),
+  which means the same (`Reqs/Lang/Let`): each definition's name, its
+  type if written, and its expression. -/
+  | «let» (span : Span) (defs : Array (Ident × Option (Array Ident) × Expr)) (body : Expr) (isWhere : Bool)
   deriving Inhabited
 
 def Expr.span : Expr → Span
   | .when s .. | .ite s .. | .bin s .. | .not s .. | .neg s .. | .num s .. | .bool s .. | .path s .. | .app s ..
   | .record s .. | .update s .. | .field s .. | .match s .. | .is s .. | .str s .. | .method s .. | .set s .. | .pair s ..
-  | .seq s .. | .index s .. | .chain s .. => s
+  | .seq s .. | .index s .. | .chain s .. | .«let» s .. => s
 
 inductive PropKind where
   | assume
@@ -223,6 +227,9 @@ structure PState where
   noRecord : Bool := false
   /-- Where each item starts, in the source. -/
   itemStarts : Array Nat := #[]
+  /-- In a definition of a `let`, outside brackets, where `in` ends the
+  definitions rather than starting a membership (`Reqs/Lang/Let#parentheses`). -/
+  noIn : Bool := false
 
 abbrev P := StateT PState (Except ParseError)
 
@@ -264,7 +271,10 @@ def fail (t : Token) (expected : String) (keywords : Array String := #[]) : P α
   let fixes := match t.tok with
     | .ident w => (Fren.Core.similarStr w keywords).toArray.map fun k => { msg := s!"a keyword with a similar name exists: `{k}`", replacement := k }
     | _ => #[]
-  err span "F0104" s!"expected {expected}, found {t.tok.describe}" (some s!"expected {expected}") (fixes := fixes)
+  let notes := if t.tok == .kw "where" then
+      #["note: a `where` clause follows the whole expression of a constraint, a cover goal, a definition, a function's body or a constant's value, not a part of one"]
+    else #[]
+  err span "F0104" s!"expected {expected}, found {t.tok.describe}" (some s!"expected {expected}") notes fixes
 
 def isKw (t : Token) (s : String) : Bool := t.tok == .kw s
 def isWord (t : Token) (s : String) : Bool := t.tok == .ident s
@@ -308,13 +318,23 @@ def spanFrom (start : Span) : P Span := return start.to (← lastSpan)
 `(` around `l`. -/
 def bin (start : Span) (op : String) (l r : Expr) : P Expr := return .bin (← spanFrom start) op l r
 
-/-- Runs `x` where a record literal may appear: within brackets, even in a
-`match`'s scrutinee. -/
+/-- Runs `x` within brackets: a record literal may appear, even in a
+`match`'s scrutinee, and `in` is a membership, even in a definition of a
+`let`. -/
 def withRecords (x : P α) : P α := do
-  let saved := (← get).noRecord
-  modify fun s => { s with noRecord := false }
+  let s0 ← get
+  modify fun s => { s with noRecord := false, noIn := false }
   let r ← x
-  modify fun s => { s with noRecord := saved }
+  modify fun s => { s with noRecord := s0.noRecord, noIn := s0.noIn }
+  return r
+
+/-- Runs `x` where `in` is a membership, even in a definition of a `let`:
+in a delimited part of an `if` or a `match`. -/
+def withIn (x : P α) : P α := do
+  let saved := (← get).noIn
+  modify fun s => { s with noIn := false }
+  let r ← x
+  modify fun s => { s with noIn := saved }
   return r
 
 /-- `.x` reading a field of `e`, an atom that ends in `)` or `}`; the `.`
@@ -481,9 +501,70 @@ def pattern (arm := true) : P Pattern := do
   if alts.size == 1 && lead.isNone then return first
   return .or (← spanFrom ((lead.map (·.span)).getD first.span)) alts
 
+/-- The segment that starts `Set(T)` in a type, which no identifier can
+be: a type is a path, `Set(` followed by its element type, or `Rel(`
+followed by its two element types, separated by `relSep`. -/
+def setSeg : String := "Set("
+
+def relSeg : String := "Rel("
+
+def relSep : String := ","
+
+/-- The two element types of the segments of `Rel(A, B)` after `Rel(`: each
+`Rel(` within `A` is matched by a separator of its own. -/
+def splitRel (segs : Array Ident) : Array Ident × Array Ident := Id.run do
+  let mut depth := 0
+  for s in segs, i in [0:segs.size] do
+    if s.name == relSeg then depth := depth + 1
+    else if s.name == relSep then
+      if depth == 0 then return (segs.extract 0 i, segs.extract (i + 1))
+      depth := depth - 1
+  return (segs, #[])
+
+def seqSeg : String := "Seq("
+
+/-- A type: a path, `Set(T)`, `Seq(T)` or `Rel(A, B)`. -/
+partial def typeExpr : P (Array Ident) := do
+  let t ← peek
+  let s ← get
+  if t.tok == .ident "Set" && (s.toks[s.pos + 1]?).any (isKw · "(") then
+    discard bump
+    markCall
+    discard bump
+    let inner ← typeExpr
+    discard (expectKw ")")
+    return #[{ name := setSeg, span := t.span }] ++ inner
+  if t.tok == .ident "Seq" && (s.toks[s.pos + 1]?).any (isKw · "(") then
+    discard bump
+    markCall
+    discard bump
+    let inner ← typeExpr
+    discard (expectKw ")")
+    return #[{ name := seqSeg, span := t.span }] ++ inner
+  if t.tok == .ident "Rel" && (s.toks[s.pos + 1]?).any (isKw · "(") then
+    discard bump
+    markCall
+    discard bump
+    let a ← typeExpr
+    let c ← expectKw ","
+    let b ← typeExpr
+    discard (expectKw ")")
+    return #[{ name := relSeg, span := t.span }] ++ a ++ #[{ name := relSep, span := c.span }] ++ b
+  return (← path false).1
+
+def type? : P (Option (Array Ident)) := do
+  if (← eatKw ":").isNone then return none
+  return some (← typeExpr)
+
 mutual
 partial def expr : P Expr := do
   let t ← peek
+  if isKw t "let" then
+    discard bump
+    let defs ← definitions true
+    discard (expectKw "in")
+    let body ← expr
+    return .«let» (← spanFrom t.span) defs body false
   if isWord t "when" || isWord t "unless" then
     discard bump
     let cond ← iff
@@ -528,8 +609,9 @@ partial def not : P Expr := do
 partial def cmpOp? : P (Option String) := do
   let t ← peek
   -- A membership's `in` is on the line of its left operand; at the start
-  -- of a line, it starts an input.
-  if isKw t "in" && !t.nlBefore then return some "in"
+  -- of a line, it starts an input. In a definition of a `let`, it ends
+  -- the definitions.
+  if isKw t "in" && !t.nlBefore && !(← get).noIn then return some "in"
   if isKw t "subset" then return some "subset"
   return ["=", "!=", "<", "<=", ">", ">="].find? (isKw t ·)
 partial def cmp : P Expr := do
@@ -635,6 +717,10 @@ partial def atom : P Expr := do
     err t.span "F0109" s!"`{kw}` must be parenthesized here" (some "needs parentheses")
       #[s!"note: `{kw}` has the lowest precedence, and its body extends as far right as possible",
         s!"help: wrap it in parentheses: `({kw} c, e)`"]
+  | .kw "let" =>
+    err t.span "F0109" "`let` must be parenthesized here" (some "needs parentheses")
+      #["note: `let` has the lowest precedence, and its body extends as far right as possible",
+        "help: wrap it in parentheses: `(let x := e in b)`"]
   | .ident s =>
     -- `w.x`, a variable of an instance
     if s.contains '.' then
@@ -674,7 +760,8 @@ partial def atom : P Expr := do
     discard bump
     let saved := (← get).noRecord
     modify fun s => { s with noRecord := true }
-    let scrutinee ← expr
+    -- An atom, as Lean reads it.
+    let scrutinee ← withIn atom
     modify fun s => { s with noRecord := saved }
     markList
     discard (expectKw "{")
@@ -727,9 +814,11 @@ partial def atom : P Expr := do
     fieldReads callArgs indexArg (.seq (← spanFrom t.span) es)
   | .kw "if" =>
     discard bump
-    let c ← expr
+    -- The condition and `then` branch are delimited, so `in` is a
+    -- membership there even in a definition of a `let`.
+    let c ← withIn expr
     discard (expectKw "then")
-    let a ← expr
+    let a ← withIn expr
     discard (expectKw "else")
     let b ← expr
     return .ite (← spanFrom t.span) c a b
@@ -745,62 +834,34 @@ partial def atom : P Expr := do
     -- A field read, method call or index of it starts at its `(`.
     fieldReads callArgs indexArg e (some (t.span.to close.span))
   | _ => fail t "an expression"
+/-- `x := e, y: T := f`, the definitions of a `let` (`inLet`), where `in`
+outside brackets ends the last, or of a `where` clause. Each is below
+`when`, which would swallow the following definitions. -/
+partial def definitions (inLet : Bool) : P (Array (Ident × Option (Array Ident) × Expr)) := do
+  let mut defs := #[]
+  repeat
+    let x ← ident
+    let ty ← type?
+    if let some eq ← eatKw "=" then
+      err eq.span "F0104" "expected `:=` in a definition, found `=`" (some "expected `:=`")
+        #["note: `=` is equality; a definition is written `x := e`"] #[{ msg := "use `:=`", replacement := ":=" }]
+    discard (expectKw ":=")
+    let saved := (← get).noIn
+    modify fun s => { s with noIn := inLet }
+    let e ← iff
+    modify fun s => { s with noIn := saved }
+    defs := defs.push (x, ty, e)
+    if (← eatKw ",").isNone then break
+  return defs
+/-- An expression with an optional `where` clause: that of a constraint, a
+defined output, a function's body, a constant or a global expectation. -/
+partial def top : P Expr := do
+  let start := (← peek).span
+  let e ← expr
+  if (← eatKw "where").isNone then return e
+  let defs ← definitions false
+  return .«let» (← spanFrom start) defs e true
 end
-
-/-- The segment that starts `Set(T)` in a type, which no identifier can
-be: a type is a path, `Set(` followed by its element type, or `Rel(`
-followed by its two element types, separated by `relSep`. -/
-def setSeg : String := "Set("
-
-def relSeg : String := "Rel("
-
-def relSep : String := ","
-
-/-- The two element types of the segments of `Rel(A, B)` after `Rel(`: each
-`Rel(` within `A` is matched by a separator of its own. -/
-def splitRel (segs : Array Ident) : Array Ident × Array Ident := Id.run do
-  let mut depth := 0
-  for s in segs, i in [0:segs.size] do
-    if s.name == relSeg then depth := depth + 1
-    else if s.name == relSep then
-      if depth == 0 then return (segs.extract 0 i, segs.extract (i + 1))
-      depth := depth - 1
-  return (segs, #[])
-
-def seqSeg : String := "Seq("
-
-/-- A type: a path, `Set(T)`, `Seq(T)` or `Rel(A, B)`. -/
-partial def typeExpr : P (Array Ident) := do
-  let t ← peek
-  let s ← get
-  if t.tok == .ident "Set" && (s.toks[s.pos + 1]?).any (isKw · "(") then
-    discard bump
-    markCall
-    discard bump
-    let inner ← typeExpr
-    discard (expectKw ")")
-    return #[{ name := setSeg, span := t.span }] ++ inner
-  if t.tok == .ident "Seq" && (s.toks[s.pos + 1]?).any (isKw · "(") then
-    discard bump
-    markCall
-    discard bump
-    let inner ← typeExpr
-    discard (expectKw ")")
-    return #[{ name := seqSeg, span := t.span }] ++ inner
-  if t.tok == .ident "Rel" && (s.toks[s.pos + 1]?).any (isKw · "(") then
-    discard bump
-    markCall
-    discard bump
-    let a ← typeExpr
-    let c ← expectKw ","
-    let b ← typeExpr
-    discard (expectKw ")")
-    return #[{ name := relSeg, span := t.span }] ++ a ++ #[{ name := relSep, span := c.span }] ++ b
-  return (← path false).1
-
-def type? : P (Option (Array Ident)) := do
-  if (← eatKw ":").isNone then return none
-  return some (← typeExpr)
 
 /-- The rest of a `use` whose keyword `t`, at token `first`, was just
 read: the path, whether it ends in `::*`, and a group's paths. -/
@@ -880,7 +941,7 @@ def member : P Member := do
     discard bump
     let x ← ident
     let ty ← type?
-    let defn ← if (← eatKw ":=").isSome then some <$> expr else pure none
+    let defn ← if (← eatKw ":=").isSome then some <$> top else pure none
     return .var false isPub isDet x ty defn
   if let some m := det? <|> pub? then
     let mod := if isDet then "det" else "pub"
@@ -912,7 +973,7 @@ def member : P Member := do
   discard bump
   let x ← ident
   discard (expectKw ":")
-  return .prop kind x (← expr)
+  return .prop kind x (← top)
 
 partial def item : P Item := do
   markStart
@@ -998,7 +1059,7 @@ partial def item : P Item := do
         binders := binders.push (names, comp)
         if (← eatKw ",").isSome then break
         unless isKw (← peek) "(" do fail (← peek) "`(` or `,`"
-    return .global name binders (← expr)
+    return .global name binders (← top)
   let isPub := (← eatKw "pub").isSome
   -- `ordered`, which only an enum takes, after `pub`.
   let ordered? ← eatKw "ordered"
@@ -1069,7 +1130,7 @@ partial def item : P Item := do
     while (← eatKw ",").isSome do params := params.push (← param)
     discard (expectKw ")")
     let result ← if (← eatKw ":").isSome then some <$> typeExpr else pure none
-    let body ← if (← eatKw ":=").isSome then some <$> expr else pure none
+    let body ← if (← eatKw ":=").isSome then some <$> top else pure none
     return .function isPub name params result body (← lastSpan)
   if isKw t "const" then
     discard bump
@@ -1077,7 +1138,7 @@ partial def item : P Item := do
     discard (expectKw ":")
     let ty ← typeExpr
     discard (expectKw ":=")
-    return .const isPub name ty (← expr)
+    return .const isPub name ty (← top)
   if isKw t "comp" then
     discard bump
     let name ← ident

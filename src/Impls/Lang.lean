@@ -281,6 +281,7 @@ def toTypePlace : Fren.Core.TypePlace → lang.TypePlace
   | .parameter => .Parameter
   | .result => .Result
   | .constant => .Constant
+  | .definition => .Definition
   | .field => .Field
   | .payload => .Payload
   | .element => .Element

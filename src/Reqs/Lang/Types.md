@@ -129,7 +129,8 @@ of an uninterpreted function whose result is a `Nat` (see
 `Nat`, and widening is Lean's coercion `↑` to `Int`.
 
 For now, `Nat` is the type of a variable, a function's parameter or
-result, or a constant, and nothing else: it is not the type of a field or
+result, a constant, or a [`let` or `where`](Let.md) definition, which is
+substituted, and nothing else: it is not the type of a field or
 a payload, nor the element type of a set, relation or sequence, where an
 `Int` and a constraint serve instead. So a `Nat` is never inside another
 value, and the constraints that it brings are always on a variable or an
@@ -137,7 +138,7 @@ application. `Nat` written anywhere else is an error (`F0338`).
 `lang::nat_place` states where `Nat` may be written:
 
 ```fren
-pub enum TypePlace { Variable, Parameter, Result, Constant, Field, Payload, Element }
+pub enum TypePlace { Variable, Parameter, Result, Constant, Definition, Field, Payload, Element }
 
 pub comp nat_place {
     use self::TypePlace::{Element, Field, Payload}
@@ -147,6 +148,7 @@ pub comp nat_place {
     req rule: accepted? iff not place in {Field, Payload, Element}
 
     expect variables: when place = TypePlace::Variable, accepted?
+    expect definitions: when place = TypePlace::Definition, accepted?
     expect not_in_collections: when place = Element, not accepted?
 }
 ```
@@ -344,14 +346,15 @@ Where an expression is written decides whether it is checked:
   of an instance or of a refinement, a field of a record literal or of a
   record update, an argument of a function application, a variant's
   payload, an argument of a sequence's method, a defined output's
-  definition, and a constant's value.
+  definition, a constant's value, and a definition of a [`let` or
+  `where`](Let.md) whose type is written.
 - **Shared.** Its type follows from that of the expression it is a part
   of, and from that of the expression's other such parts. It is checked if
   that expression is, or if one of those parts synthesizes its type. These
   are the operands of `union`, `inter`, `minus` and `++`, the branches of a
   conditional, the bodies of a `match`'s arms, the elements of a set or
-  sequence literal, and an expression in parentheses, which is the only
-  such part. The members of a pair are also shared, but give each other
+  sequence literal, an expression in parentheses, and the body of a
+  `let`, each of which is the only such part. The members of a pair are also shared, but give each other
   nothing: each is checked if the pair is, as in `{(1, {}), (2, s)}`.
 - **Compared.** Its type follows from the other operand's: it is the same,
   or, for the right of `in`, a set or sequence of it, as it is written. It
@@ -360,8 +363,9 @@ Where an expression is written decides whether it is checked:
 - **Synthesized.** Anywhere else, as the left of `in`, an operand of
   `join`, an argument of a method of anything but a sequence, as in
   `r.image({})`, a receiver, the scrutinee of a `match` or of `e is P`,
-  the sequence that is indexed, and the updated value of a record update,
-  it synthesizes its type.
+  the sequence that is indexed, the updated value of a record update, and
+  a definition of a `let` or `where` whose type is not written, it
+  synthesizes its type.
 
 `lang::checked` states this, from where an expression is written, whether
 the expression it is a part of is checked, and whether one of the parts

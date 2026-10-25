@@ -1,0 +1,14 @@
+-- A cover goal may end with a `where` clause, as any other constraint.
+comp heater {
+    in temp: Int
+    pub out alarm?
+
+    req r: alarm? iff hot? where limit := 100, hot? := temp > limit
+
+    cover overheat: hot? and alarm? where hot? := temp > 100
+    --~^ info: witness: temp = 101, alarm? = true
+    cover silent: hot? and not alarm? where hot? := temp > 100
+    --~^ error: cover goal `heater::silent` cannot be met: it is ruled out by `r`
+}
+
+--@ summary: 3 passed, 1 failed, 0 inconclusive, 0 redundant

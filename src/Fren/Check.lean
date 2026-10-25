@@ -81,8 +81,9 @@ partial def render (ty : Expr) (val : Expr) : MetaM String := do
   return toString (← ppExpr val)
 
 /-- `e` with the definitions of defined functions unfolded, so that the
-solver sees their bodies, and without `let`s, which a record update binds
-its updated value with and lean-smt does not translate: last, since a
+solver sees their bodies, and without `let`s and `have`s, which a record
+update binds its updated value with, and `let` and `where` become
+(`Reqs/Lang/Let#meaning`), and lean-smt does not translate: last, since a
 defined function's body may have one. -/
 def unfoldDefined (e : Expr) : MetaM Expr := do
   let s ← getState
@@ -122,7 +123,10 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
   -- lean-smt could not read.
   let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr × Bool) :=
     withoutModifyingState do
-    let appFacts ← Core.natAppFacts natAppsOf atLeast0 hyps goal
+    -- With the `have`s of `let`s and `where` clauses substituted, so that an
+    -- application to a name mentions no bound variable.
+    let appFacts ← Core.natAppFacts natAppsOf atLeast0 (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
+      (← zetaReduce goal)
     let hyps ← (facts.map (`nat, ·) ++ appFacts ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
     let goal ← unfoldDefined goal
     withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do

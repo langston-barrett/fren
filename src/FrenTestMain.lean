@@ -174,7 +174,7 @@ def errorCodes : IO (Array String) := do
 /-- The Markdown specs of Fren's own requirements, in an order in which
 each module is declared before it is used. -/
 def ownSpecFiles : Array String :=
-  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Expressions",
+  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Let", "Lang/Expressions",
     "Lang/Modules", "Lang/Instances", "Check", "View", "Cli", "Lint", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style", "Lint/Complexity",
     "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches",
     "Lint/Suspicious", "Lint/Suspicious/Expressions", "Lint/Suspicious/Methods", "Lint/Suspicious/Literals",
@@ -463,6 +463,8 @@ partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e :
     | .index _ a i => s!"(index {go a} {go i})"
     | .method _ r x as => s!"(method {go r} {x.name} {list as})"
     | .chain _ es ops => chainShape go es (ops.map (·.1))
+    | .«let» _ defs body w =>
+      s!"({if w then "where" else "let"} {defs.toList.map fun (x, _, d) => (x.name, go d)} {go body})"
     | e => Mutate.idText (s.text e.span)
 
 open FrenCli in

@@ -1,0 +1,16 @@
+shift-integer-c::r-c34afdd5e355 test/cli/commands/mutate_let.fren:8:39 `10` changed to `11`
+shift-integer-c::r-6097db0a8d46 test/cli/commands/mutate_let.fren:8:39 `10` changed to `9`
+drop-conjunct-c::r-497ef7b228af test/cli/commands/mutate_let.fren:8:51 `x > limit and x < 2 * limit` changed to `x > limit`
+drop-conjunct-c::r-855e869b21ad test/cli/commands/mutate_let.fren:8:51 `x > limit and x < 2 * limit` changed to `x < 2 * limit`
+swap-comparison-c::r-805c685be22d test/cli/commands/mutate_let.fren:8:53 `>` changed to `>=`
+swap-and-or-c::r-6b700f3c1200 test/cli/commands/mutate_let.fren:8:61 `and` changed to `or`
+swap-comparison-c::r-c9e3649154bb test/cli/commands/mutate_let.fren:8:67 `<` changed to `<=`
+shift-integer-c::r-95235101ca06 test/cli/commands/mutate_let.fren:8:69 `2` changed to `3`
+shift-integer-c::r-bf2347320310 test/cli/commands/mutate_let.fren:8:69 `2` changed to `1`
+swap-arithmetic-c::s-505b5aedfb93 test/cli/commands/mutate_let.fren:9:23 `+` changed to `-`
+shift-integer-c::s-5b95802606a6 test/cli/commands/mutate_let.fren:9:25 `1` changed to `2`
+shift-integer-c::s-859576563fb0 test/cli/commands/mutate_let.fren:9:25 `1` changed to `0`
+negate-trigger-c::s-e73b05ef7019 test/cli/commands/mutate_let.fren:9:30 `when` changed to `unless`
+swap-comparison-c::s-cff79c4de306 test/cli/commands/mutate_let.fren:9:37 `>` changed to `>=`
+shift-integer-c::s-62e699cc5ee3 test/cli/commands/mutate_let.fren:9:39 `0` changed to `1`
+exit=0

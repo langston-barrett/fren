@@ -1,0 +1,3 @@
+-- A definition that mentions itself (F0341).
+-- fren-covers: lang::definition_order
+comp c { in x: Int pub out y? req r: let n := n + x in y? iff n > 0 }

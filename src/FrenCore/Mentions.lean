@@ -62,6 +62,27 @@ def MentionShape.anyMentions : List MentionShape → Bool
   | p :: ps => p.mentions || MentionShape.anyMentions ps
 end
 
+/-- The names that a `let` or `where` clause mentions, from those of its
+definitions `names`, what each definition mentions (`defs`, as paths whose
+first component is the name) and what its body mentions (`body`), with
+which definitions are used: mentioned by the body, or by a used later
+definition (`Reqs/Lang/Let#meaning`). With `all`, every definition counts,
+used or not, as for unused variables and the cycles of defined outputs;
+otherwise only the used ones do. A name's mentions in the clause's scope
+are its definition's, not mentions of what it shadows. -/
+def clauseMentions (names : Array Lean.Name) (defs : Array (Array Lean.Name)) (body : Array Lean.Name) (all : Bool) :
+    Array Lean.Name × Array Bool := Id.run do
+  let mut acc := body
+  let mut used := Array.replicate names.size false
+  for k in (List.range names.size).reverse do
+    let n := names[k]!
+    let mentioned := acc.any (·.getRoot == n)
+    if mentioned then used := used.set! k true
+    -- Earlier mentions of `n` are of an earlier declaration.
+    acc := acc.filter (·.getRoot != n)
+    if all || mentioned then acc := acc ++ (defs[k]?.getD #[])
+  return (acc, used)
+
 /-- An expression with no parts. -/
 def MentionShape.leaf (k : MentionKind) : MentionShape := .node k []
 

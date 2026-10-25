@@ -1483,6 +1483,9 @@ inductive BKind where
   | method (name : String)
   | patternTest
   | chain (ops : Nat)
+  /-- A `let`, which binds as loosely as `when`; only its body is looked
+  inside. -/
+  | «let»
   | atom
   deriving Inhabited, BEq, Repr
 
@@ -1492,7 +1495,7 @@ def binaryOps : Array String :=
     "mod", "inter", "join"]
 
 /-- Whether the text of an expression ends in an *open-ended* form: a
-conditional, a `when` or an `unless` that is not in parentheses, brackets
+conditional, a `when`, an `unless` or a `let` that is not in parentheses, brackets
 or braces, whose last operand extends as far right as possible
 (`Reqs/Lint#fixing-lints`). Such a form starts at the first of these
 keywords outside them, and ends where the text does. -/
@@ -1514,7 +1517,7 @@ def endsOpen (t : String) : Bool := Id.run do
       i := i + 1 + (if raw then hashes else 0)
     else if isWordChar c then
       let w := String.ofList ((cs.extract i cs.size).toList.takeWhile isWordChar)
-      if depth == 0 && ["if", "when", "unless"].contains w then return true
+      if depth == 0 && ["if", "when", "unless", "let"].contains w then return true
       i := i + w.length
     else
       if "([{".contains c then depth := depth + 1
@@ -1549,7 +1552,7 @@ def startsWithOperator (after : String) : Bool :=
 `lang::operand` uses it. A conditional counts as binding most loosely,
 since its `else` extends as far right as possible. -/
 def BKind.prec : BKind → Nat
-  | .when _ | .ite => 0
+  | .when _ | .ite | .«let» => 0
   | .bin "iff" => 1
   | .bin "or" => 2
   | .bin "and" => 3
@@ -1584,6 +1587,7 @@ structure Slot where
 def BKind.slots : BKind → Array (Option Slot)
   | .when _ => #[some ⟨0, .nonAssoc, false⟩, some ⟨0, .right, true⟩]
   | .ite => #[none, none, none]
+  | .«let» => #[none]
   | .not => #[some ⟨4, .right, true⟩]
   | .neg => #[some ⟨8, .right, true⟩]
   | k@(.bin _) => #[some ⟨k.prec, k.assoc, false⟩, some ⟨k.prec, k.assoc, true⟩]
@@ -1644,7 +1648,7 @@ def BNode.toEx : Nat → BNode α → Ex
       | none => .atom 0
     | .when n => .when n (k 0) (k 1)
     | .ite => .ite (k 0) (k 1) (k 2)
-    | .method _ | .patternTest | .chain _ | .atom => .atom 0
+    | .method _ | .patternTest | .chain _ | .«let» | .atom => .atom 0
 
 /-- The text of a rewritten form, from the rewritten texts of the operands
 and of theirs, as `Shape.build` builds the expression. -/

@@ -68,7 +68,9 @@ is, since its value decides whether a range is empty and which arms the
 ranges reach.
 
 Mutants change what a spec asserts: the expressions of `assume`s, `req`s,
-defined outputs, instance bindings, constants and defined functions. The
+defined outputs, instance bindings, constants and defined functions,
+including the definitions of their [`let`s and `where`
+clauses](Lang/Let.md), which are changed like any other expression. The
 expectations, both of components and [global](Lang/Global.md), and the
 [cover goals](Lang/Components.md#cover-goals) are what rejects mutants,
 and their text is not changed. An expectation rejects a mutant that

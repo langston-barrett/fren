@@ -1,0 +1,79 @@
+-- The static rules of `let` and `where` (`Reqs/Lang/Let`).
+-- fren-covers: lang::definition_order, lang::definition_type
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.dead_code "allow"
+
+fn f(Int): Int
+fn g(n: Int): Int := n
+const LIMIT: Int := 3
+
+-- Definitions are read in order: none mentions itself or a later one.
+comp later { in x: Int pub out y? req r: y? iff a? where a? := b?, b? := x > 0 }
+--~^ error: `b?` is used before its definition
+comp itself { in x: Int pub out y? req r: y? iff a? where a? := not a? }
+--~^ error: the definition of `a?` mentions itself
+-- A name that hides another means it in its own definition.
+comp shadow_outer { in x: Int pub out y? req r: y? iff x > 0 where x! := x + 1 }
+
+-- A definition's type, written or not, and its name.
+comp annotated { in x: Int pub out y? req r: let n: Int := x > 0 in y? iff n > 0 }
+--~^ error: the definition of `n` has type `Bool`, not `Int`
+comp bool_name { in x: Int pub out y? req r: let big := x > 0 in y? iff big }
+--~^ error: `Bool` variable `big` must end in `?`
+-- A `Nat` is not narrowed from an `Int`.
+comp narrowed { in a: Nat pub out b: Int req r: b = k where k: Nat := a - 1 }
+--~^ error: the definition of `k` has type `Int`, not `Nat`
+-- Without its type written, a definition synthesizes its type.
+comp empty { pub out y? req r: let s := {} in y? iff s = s }
+--~^ error: the type of `{}` cannot be known here
+comp empty_typed { in t: Set(Int) pub out y? req r: let s: Set(Int) := {} in y? iff s = t }
+-- `in` ends the last definition, so the membership must be in parentheses.
+comp membership { in x: Int in s: Set(Int) pub out y? req r: let b? := x in s in y? iff b? }
+--~^ error: `in` ends the last definition of a `let`
+
+-- A membership right after the `in` of a body that does not type: the
+-- same note.
+comp body_membership { in x? in s: Set(Int) in t: Set(Int) pub out y? req r: y? iff (let b? := x? in s in t) }
+--~^ error: `in` ends the last definition of a `let`
+
+-- A comment after the `in` does not change that.
+comp body_comment { in x? in s: Set(Int) in t: Set(Int) pub out y? req r: y? iff (let b? := x? in /- s -/ s in t) }
+--~^ error: `in` ends the last definition of a `let`
+
+-- Shadowing is explicit, as for any other declaration.
+comp implicit { in x: Int pub out y? req r: let x := 1 in y? iff x > 0 }
+--~^ error: `x` shadows the input `x`
+comp same_clause { pub out y? req r: let a := 1, a := 2 in y? iff a > 0 }
+--~^ error: `a` shadows the definition `a`
+comp needless { pub out y? req r: let z! := 1 in y? iff z > 0 }
+--~^ error: `z!` shadows nothing
+
+-- Constants and functions are shadowed explicitly too.
+comp constant_clash { in x: Int pub out y? req r: let LIMIT := 4 in y? iff x > LIMIT }
+--~^ error: `LIMIT` shadows the constant `LIMIT`
+comp function_clash { in x: Int pub out y? req r: let g := 4 in y? iff x > g }
+--~^ error: `g` shadows the function `g`
+comp clash_ok { in x: Int pub out y? req r: let g! := 4, LIMIT! := 5 in y? iff x > g + LIMIT }
+
+-- A name mentions what its definition mentions.
+comp assumed { in x: Int pub out o: Int assume a: let v := o in v > x }
+--~^ error: assumptions may only mention `in` variables, but `o` is an `out`
+comp argument { in x: Int pub out o: Int req r: let v := o in f(v) = x }
+--~^ error: the arguments of a function may not mention an `out`
+comp nonlinear { in x: Int pub out o: Int req r: let k := x in o = k * x }
+--~^ error: nonlinear arithmetic is not supported
+comp linear { in x: Int pub out o: Int req r: let k := 3 in o = k * x }
+
+-- A definition that nothing mentions counts for nothing: what it mentions
+-- is not checked, directly or through another unused definition.
+comp unused_assumed { in x: Int pub out o: Int assume a: let v := o in x > 0 req r: o = x }
+comp unused_chain { in x: Int pub out o: Int assume a: let v := o, w := v in x > 0 req r: o = x }
+comp used_chain { in x: Int pub out o: Int assume a: let v := o, w := v in w > x req r: o = x }
+--~^ error: assumptions may only mention `in` variables, but `o` is an `out`
+comp unused_nested { in x: Int pub out o: Int assume a: let v := o in (let w := v in x > 0) req r: o = x }
+comp operator_type { in x: Int pub out y? req r: y? iff (let a := x in a and y?) }
+--~^ error: type mismatch: expected `Bool`, found `Int`
+comp unused_argument { in x: Int pub out o: Int req r: f(let v := o in x) = o }
+comp unused_nonlinear { in x: Int pub out o: Int req r: o = x where k := x * x }
+
+--@ exit: 2

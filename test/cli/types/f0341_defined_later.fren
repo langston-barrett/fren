@@ -1,0 +1,3 @@
+-- A definition that mentions a later one (F0341).
+-- fren-covers: lang::definition_order
+comp c { in x: Int pub out y? req r: y? iff big? where big? := x > limit, limit := 10 }

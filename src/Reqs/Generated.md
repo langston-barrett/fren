@@ -27,7 +27,9 @@ variant by comparing the value with the variant built from its own payload,
 and then its payload's patterns on the values the selectors read; a literal
 by equality; a range by comparisons with its bounds, a constant's by its
 value; an or-pattern by the disjunction of its alternatives' tests. Binders
-read their values with the selectors.
+read their values with the selectors. A [`let`](Lang/Let.md) becomes
+Lean's `have`, one for each definition, and so does a `where` clause,
+around the expression it follows.
 
 Each enumeration whose variants have no payloads also has an instance
 `p.instFinite` of `Fren.Finite`, a class whose instances list every value

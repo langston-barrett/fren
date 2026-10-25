@@ -696,7 +696,9 @@ refine fix_exit_status: fix_exit refines exit_status { ran? := loaded? }
 
 ### Parentheses in fixes
 
-A fix that rewrites an expression keeps the text of each operand it
+The lints that rewrite an expression look within the body of a
+[`let` or `where`](Lang/Let.md), but not within its definitions. A fix
+that rewrites an expression keeps the text of each operand it
 writes, and puts an operand, or the fix itself, in parentheses where it is
 not already in them and either:
 
@@ -704,8 +706,8 @@ not already in them and either:
   conditional counts as binding more loosely than any operator; or
 - it ends in an *open-ended* form, and something follows it.
 
-An open-ended form is a conditional, a `when` or an `unless` that is not
-in parentheses, brackets or braces: its last operand extends as far right
+An open-ended form is a conditional, a `when`, an `unless` or a
+[`let`](Lang/Let.md) that is not in parentheses, brackets or braces: its last operand extends as far right
 as possible, so it would take in what follows. A `match` ends with its
 `}`, so it is not one, and a quantifier only starts a global expectation,
 so it is never an operand. A left operand is followed by its operator, and

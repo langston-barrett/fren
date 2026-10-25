@@ -77,7 +77,8 @@ Here a *constant* is an expression that mentions no variable and no
 uninterpreted function, as [Mentions](Expressions.md#mentions) defines,
 such as `"F0" ++ "1"`, or `pad("F0")` with `pad` a defined function. A
 binder mentions what its scrutinee mentions, so it is a constant if its
-scrutinee is. A *variable* is a variable of the component, of one of its
+scrutinee is, and a name of a [`let` or `where`](Let.md) is a constant
+if its definition is. A *variable* is a variable of the component, of one of its
 instances, a field read from one, or a binder whose scrutinee is not a
 constant. A [definition](Components.md#defined-outputs) is an equation
 between the defined output and its definition, and an instance's binding

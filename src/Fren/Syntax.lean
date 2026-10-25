@@ -11,7 +11,7 @@ Everything is `scoped` to `Fren.Lang`: Fren's keywords (`and`, `or`, `iff`,
 code (including Fren's own implementation, in `Fren`) can keep using them as
 names. Spec files start with `open Fren.Lang`.
 
-Precedence, lowest first: `when`/`unless`, `iff`, `or`, `and`, `not`,
+Precedence, lowest first: `when`/`unless`/`let`, `iff`, `or`, `and`, `not`,
 comparisons and `is`, `+ -`, `* div mod`, unary `-`; `if` is an atom whose
 `else` branch extends as far right as possible.
 
@@ -70,6 +70,34 @@ syntax (name := seqType) &"Seq" noWs "(" fren_type ")" : fren_type
 /-- `Rel(A, B)`. -/
 syntax (name := relType) &"Rel" noWs "(" fren_type ", " fren_type ")" : fren_type
 
+open Lean Parser in
+/-- The expression of a definition of a `let`: below `when`, which would
+run on into the next definition, and ended by `in` outside brackets, so
+that a membership there is written in parentheses (`Reqs/Lang/Let`). -/
+def letValue : Parser := withForbidden "in" (categoryParser `fren_expr 20)
+
+open Lean PrettyPrinter in
+@[combinator_formatter letValue] def letValue.formatter : Formatter := Formatter.categoryParser.formatter `fren_expr
+
+open Lean PrettyPrinter in
+@[combinator_parenthesizer letValue] def letValue.parenthesizer : Parenthesizer :=
+  Parenthesizer.categoryParser.parenthesizer `fren_expr 20
+
+/-- `x := e` or `x: T := e`, a definition of a `let`. -/
+syntax fren_let_def := frenIdent (" : " fren_type)? " := " letValue
+
+/-- `x := e` or `x: T := e`, a definition of a `where` clause; like a
+binding's, the expression cannot be a bare `when`, `unless` or `let`. -/
+syntax fren_def := frenIdent (" : " fren_type)? " := " fren_expr:20
+
+/-- `where x := e, ...`, after the whole expression of a constraint, a
+definition, a function's body or a constant's value. -/
+syntax fren_where := " where " sepBy1(fren_def, ", ")
+
+/-- `let x := e, y := f in b`; like `when`, its body extends as far right
+as possible. Its own `in` ends its definitions even within those of
+another `let`, whose restriction its body keeps. -/
+scoped syntax:10 (name := letExpr) "let " sepBy1(fren_let_def, ", ") withoutForbidden(" in ") fren_expr:10 : fren_expr
 scoped syntax:10 &"when " fren_expr:20 ", " fren_expr:10 : fren_expr
 scoped syntax:10 &"unless " fren_expr:20 ", " fren_expr:10 : fren_expr
 scoped syntax:20 fren_expr:21 " iff " fren_expr:21 : fren_expr
@@ -118,7 +146,7 @@ that an `in` starting a line starts an input (`Reqs/Lang/Lexical`). -/
 @[scoped fren_expr_parser] def memberExpr := trailing_parser:50:50 sameLineAsLeft "the `in` of a membership" >> " in " >> categoryParser `fren_expr 51
 
 /-- `{a, b}`, a set literal; `{}` is the empty set. -/
-scoped syntax:max (name := setExpr) "{" sepBy(fren_expr, ", ", ", ", allowTrailingSep) "}" : fren_expr
+scoped syntax:max (name := setExpr) "{" withoutForbidden(sepBy(fren_expr, ", ", ", ", allowTrailingSep)) "}" : fren_expr
 scoped syntax:70 fren_expr:70 " * " fren_expr:71 : fren_expr
 scoped syntax:70 (name := divExpr) fren_expr:70 " div " fren_expr:71 : fren_expr
 
@@ -139,8 +167,10 @@ scoped syntax:40 "!" fren_expr:40 : fren_expr
 (`Fren.Core.leftArrowMsg`). -/
 scoped syntax:50 fren_expr:51 " <- " fren_expr:51 : fren_expr
 /-- Like Lean's `if`, it can be an operand without parentheses, and the
-`else` branch extends as far right as possible. -/
-scoped syntax:max "if " fren_expr " then " fren_expr " else " fren_expr : fren_expr
+`else` branch extends as far right as possible. Its condition and `then`
+branch are delimited, so `in` is a membership there even in a definition
+of a `let`, as in `match`'s scrutinee. -/
+scoped syntax:max "if " withoutForbidden(fren_expr) " then " withoutForbidden(fren_expr) " else " fren_expr : fren_expr
 scoped syntax:max num : fren_expr
 /-- A string literal, raw or not. -/
 scoped syntax:max str : fren_expr
@@ -148,18 +178,18 @@ scoped syntax:max &"true" : fren_expr
 scoped syntax:max &"false" : fren_expr
 scoped syntax:max fren_path : fren_expr
 /-- `f(a, b)`, a function application. -/
-scoped syntax:max (name := appExpr) fren_path noWs "(" sepBy1(fren_expr, ", ") ")" : fren_expr
+scoped syntax:max (name := appExpr) fren_path noWs "(" withoutForbidden(sepBy1(fren_expr, ", ")) ")" : fren_expr
 /-- `exactly_one?()` or `at_most_one?()`, a cardinality operator without
 arguments, which parses so that the elaborator reports it, as the `fren`
 command does. -/
 scoped syntax:max (name := noArgsCardinalityExpr) (&"exactly_one?" <|> &"at_most_one?") noWs "(" ")" : fren_expr
-scoped syntax:max "(" fren_expr ")" : fren_expr
+scoped syntax:max "(" withoutForbidden(fren_expr) ")" : fren_expr
 /-- `[a, b]`, a sequence literal; `[]` is the empty sequence. -/
-scoped syntax:max (name := seqExpr) "[" sepBy(fren_expr, ", ", ", ", allowTrailingSep) "]" : fren_expr
+scoped syntax:max (name := seqExpr) "[" withoutForbidden(sepBy(fren_expr, ", ", ", ", allowTrailingSep)) "]" : fren_expr
 /-- `q[i]`, indexing, with no space before `[`. -/
-scoped syntax:max (name := indexExpr) fren_expr:max noWs "[" fren_expr "]" : fren_expr
+scoped syntax:max (name := indexExpr) fren_expr:max noWs "[" withoutForbidden(fren_expr) "]" : fren_expr
 /-- `(a, b)`, a pair: a member of a relation literal, or the left of `in`. -/
-scoped syntax:max (name := pairExpr) "(" fren_expr ", " fren_expr ")" : fren_expr
+scoped syntax:max (name := pairExpr) "(" withoutForbidden(fren_expr) ", " withoutForbidden(fren_expr) ")" : fren_expr
 
 /-- `x := e`, or `x` for `x := x`. The expression cannot be a bare
 `when`/`unless`, which would swallow the following bindings. -/
@@ -168,18 +198,18 @@ syntax fren_binding := frenIdent (" := " fren_expr:20)?
 /-- `R { x := e, y }`, a record literal. Its precedence is below `max`, so
 that a `match`'s scrutinee, parsed at `max`, never tries it: `match s {`
 starts the arms. -/
-scoped syntax:arg (name := recordExpr) fren_path " { " sepBy1(fren_binding, ", ", ", ", allowTrailingSep) " }" : fren_expr
+scoped syntax:arg (name := recordExpr) fren_path " { " withoutForbidden(sepBy1(fren_binding, ", ", ", ", allowTrailingSep)) " }" : fren_expr
 /-- `{ r with x := e, y }`, a record update. Like a set literal, it starts
 with `{`; `with` after the first expression makes it an update. `with` is
 one of Lean's keywords, so it is never a name. -/
-scoped syntax:max (name := updateExpr) "{ " fren_expr:20 " with " sepBy1(fren_binding, ", ", ", ", allowTrailingSep) " }" :
+scoped syntax:max (name := updateExpr) "{ " withoutForbidden(fren_expr:20) " with " withoutForbidden(sepBy1(fren_binding, ", ", ", ", allowTrailingSep)) " }" :
   fren_expr
 /-- `e.x`, reading a field of `e`, an atom that ends in `)` or `}`: after a
 name, `.x` is part of the (dotted) identifier. -/
 scoped syntax:max (name := fieldExpr) fren_expr:arg noWs "." noWs frenIdent : fren_expr
 /-- `e.m(a, b)`, a method call on an atom that ends in `)` or `}`; on a name,
 `x.m(a)` is parsed as an application of the dotted name. -/
-scoped syntax:max (name := methodExpr) fren_expr:arg noWs "." noWs (frenIdent <|> "at") noWs "(" sepBy1(fren_expr, ", ") ")" : fren_expr
+scoped syntax:max (name := methodExpr) fren_expr:arg noWs "." noWs (frenIdent <|> "at") noWs "(" withoutForbidden(sepBy1(fren_expr, ", ")) ")" : fren_expr
 
 /-! Patterns (`Reqs/Lang/Patterns`). -/
 
@@ -220,7 +250,7 @@ syntax fren_top_pattern := ("| ")? sepBy1(fren_pattern, " | ")
 syntax fren_arm := fren_top_pattern " => " fren_expr:20
 
 /-- `match e { pattern => e, ... }`. -/
-scoped syntax:max (name := matchExpr) "match " fren_expr:max " { " sepBy(fren_arm, ", ", ", ", allowTrailingSep) " }" : fren_expr
+scoped syntax:max (name := matchExpr) "match " withoutForbidden(fren_expr:max) " { " withoutForbidden(sepBy(fren_arm, ", ", ", ", allowTrailingSep)) " }" : fren_expr
 
 /-- `e is P`, a pattern test, at the precedence of the comparisons. `is`
 is a reserved word where `Fren.Lang` is open, as the set operators are. -/
@@ -233,12 +263,12 @@ cannot have one. -/
 scoped syntax (name := inMember) "in " frenIdent (" : " fren_type)? (" := " fren_expr)? : fren_member
 /-- `[pub] [det] out x: T [:= e]`: `det` asks for the determinism check, and
 `:= e` makes it a defined output. -/
-scoped syntax (name := outMember) ("pub ")? (&"det ")? &"out " frenIdent (" : " fren_type)? (" := " fren_expr)? : fren_member
-scoped syntax &"assume " frenIdent " : " fren_expr : fren_member
-scoped syntax &"req " frenIdent " : " fren_expr : fren_member
-scoped syntax &"expect " frenIdent " : " fren_expr : fren_member
+scoped syntax (name := outMember) ("pub ")? (&"det ")? &"out " frenIdent (" : " fren_type)? (" := " fren_expr (fren_where)?)? : fren_member
+scoped syntax &"assume " frenIdent " : " fren_expr (fren_where)? : fren_member
+scoped syntax &"req " frenIdent " : " fren_expr (fren_where)? : fren_member
+scoped syntax &"expect " frenIdent " : " fren_expr (fren_where)? : fren_member
 /-- `cover n: e`, a scenario that the component must allow (`Reqs/Lang/Components#cover-goals`). -/
-scoped syntax &"cover " frenIdent " : " fren_expr : fren_member
+scoped syntax &"cover " frenIdent " : " fren_expr (fren_where)? : fren_member
 
 /-- `inst w: c { x := e, ... }`: an instance `w` of comp `c`. -/
 scoped syntax &"inst " frenIdent " : " fren_path " { " sepBy(fren_binding, ", ", ", ", allowTrailingSep) " }" : fren_member
@@ -286,16 +316,16 @@ syntax fren_param := fren_type (" : " fren_type)?
 /-- `fn f(T, U): R`, an uninterpreted function, or `fn f(x: T): R := e`, a
 defined one. -/
 scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent noWs "(" sepBy1(fren_param, ", ") ")" (" : " fren_type)?
-  (" := " fren_expr)? : command
+  (" := " fren_expr (fren_where)?)? : command
 
 /-- `const N: T := e`. -/
-scoped syntax (name := constCmd) ("pub ")? "const " frenIdent " : " fren_type " := " fren_expr : command
+scoped syntax (name := constCmd) ("pub ")? "const " frenIdent " : " fren_type " := " fren_expr (fren_where)? : command
 
 /-- `(a b: c)`: behaviours `a` and `b` of comp `c`, in a global expectation. -/
 syntax fren_binder := "(" frenIdent+ " : " fren_path ")"
 
 /-- `expect n: forall (a b: c), e`, a global expectation. -/
-scoped syntax (name := globalCmd) "expect " frenIdent " : " ("forall " fren_binder+ ", ")? fren_expr : command
+scoped syntax (name := globalCmd) "expect " frenIdent " : " ("forall " fren_binder+ ", ")? fren_expr (fren_where)? : command
 
 /-- `refine r: c refines a [{ bindings }] [by tactics]`, a refinement
 (`Reqs/Lang/Refinement`). -/

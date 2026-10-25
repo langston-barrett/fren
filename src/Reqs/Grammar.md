@@ -29,10 +29,10 @@ record         := ["pub"] "struct" IDENT "{" field ("," field)* [","] "}"
 field          := IDENT [":" type]
 abstract-type  := ["pub"] "type" IDENT
 function       := ["pub"] "fn" IDENT "(" type ("," type)* ")" [":" type]
-                | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] ":=" expr
-constant       := ["pub"] "const" IDENT ":" type ":=" expr
+                | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] ":=" top
+constant       := ["pub"] "const" IDENT ":" type ":=" top
 component      := ["pub"] "comp" IDENT "{" member* "}"
-expectation    := "expect" IDENT ":" ["forall" forall-binder+ ","] expr
+expectation    := "expect" IDENT ":" ["forall" forall-binder+ ","] top
 forall-binder  := "(" DECL+ ":" path ")"
 refinement     := "refine" IDENT ":" path "refines" path ["{" [binding ("," binding)* [","]] "}"] ["by" TACTICS]
 check          := "#fren_check" [path] | "#fren_trace"
@@ -56,11 +56,11 @@ interpretation := "interp" path ":=" TERM
 
 ```
 member         := "in" variable
-                | ["pub"] ["det"] "out" variable [":=" expr]
-                | "assume" IDENT ":" expr
-                | "req" IDENT ":" expr
-                | "expect" IDENT ":" expr
-                | "cover" IDENT ":" expr
+                | ["pub"] ["det"] "out" variable [":=" top]
+                | "assume" IDENT ":" top
+                | "req" IDENT ":" top
+                | "expect" IDENT ":" top
+                | "cover" IDENT ":" top
                 | instance
                 | use
                 | evidence-setting "in" member
@@ -75,8 +75,11 @@ path           := IDENT ("::" IDENT)*
 ## Expressions
 
 ```
+top            := expr ["where" definition ("," definition)*]
 expr           := ("when" | "unless") iff "," expr
+                | "let" definition ("," definition)* "in" expr
                 | iff
+definition     := DECL [":" type] ":=" iff
 iff            := or ["iff" or]
 or             := or "or" and | and
 and            := and "and" not | not
@@ -95,7 +98,7 @@ atom           := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | 
                 | path "{" field-init ("," field-init)* [","] "}"
                 | atom "." IDENT ["(" expr ("," expr)* ")"]
                 | IDENT ("." IDENT)+ "(" expr ("," expr)* ")"
-                | "match" expr "{" arm ("," arm)* [","] "}"
+                | "match" atom "{" arm ("," arm)* [","] "}"
                 | "{" [element ("," element)* [","]] "}"
                 | "{" expr "with" field-init ("," field-init)* [","] "}"
                 | "[" [expr ("," expr)* [","]] "]"
@@ -119,4 +122,8 @@ In a range, there are no spaces around `..=` and `..` (see
 Where a rule is written with left recursion, the operator is
 left-associative. A `cmp` with more than one operator is a [chained
 comparison](Lang/Expressions.md#chained-comparisons). For precedence and typing, see
-[Expressions](Lang/Expressions.md).
+[Expressions](Lang/Expressions.md). In the definitions of a `let`, an
+`in` outside brackets, the condition and `then` branch of an `if` and a
+`match`'s scrutinee ends the last definition rather than starting a
+membership (an `else` branch keeps that restriction), and a nested `let` ends its own definitions with its own `in`
+(see [Local definitions](Lang/Let.md#parentheses)).
