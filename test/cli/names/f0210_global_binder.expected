@@ -4,7 +4,7 @@ error[F0210]: expected a component or a type, but `LIMIT` is a constant
 4 | expect e: forall (a: LIMIT), true
   |                      ^^^^^ not a component or a type
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0210`.
 exit=2

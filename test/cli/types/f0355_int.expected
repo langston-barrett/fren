@@ -7,7 +7,7 @@ error[F0355]: a quantifier cannot range over `Int`
   = note: a quantifier ranges over `Bool`, or an enum or record whose payloads and fields it ranges over
   = help: state it of a variable of that type instead, which the checks hold for every value of
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0355`.
 exit=2

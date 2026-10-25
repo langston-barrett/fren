@@ -7,7 +7,7 @@ error[F0356]: this quantifier has 65536 instances, more than 256
   = note: a quantifier is expanded into one instance for each combination of the values of its bound names, at most 256
   = help: quantify over a smaller type, or state it of a variable of that type instead
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0356`.
 exit=2

@@ -17,8 +17,8 @@ comp enumerations {
     req rule: quiet? iff (forall (k: Method), when k = m, not loud?(k))
 
     expect expanded: quiet? iff m != Method::Rev
-    expect some_loud: exists (k: Method), loud?(k)
-    expect not_all_loud: not (forall (k: Method), loud?(k))
+    expect some_loud: exists (k: Method), loud?(k)  --~ warning: this expectation mentions no variable
+    expect not_all_loud: not (forall (k: Method), loud?(k))  --~ warning: this expectation mentions no variable
 }
 
 -- `Bool` has two values, a record every combination of its fields', and an
@@ -31,10 +31,10 @@ comp counts {
     req rule: ok? iff (exists (t: Shape), t = s)
 
     expect always: ok?
-    expect bools: forall (x? y?: Bool), (x? and y?) or not x? or not y?
+    expect bools: forall (x? y?: Bool), (x? and y?) or not x? or not y?  --~ warning: this expectation mentions no variable
     expect pairs: exists (q: Pair), q = p
-    expect excluded_middle: forall (b?: Bool), b? or not b?
-    expect squares: exists (t: Shape), t = Shape::Square(true, false)
+    expect excluded_middle: forall (b?: Bool), b? or not b?  --~ warning: this expectation mentions no variable
+    expect squares: exists (t: Shape), t = Shape::Square(true, false)  --~ warning: this expectation mentions no variable
 }
 
 -- Nested quantifiers, and a body that is a `when`.
@@ -44,8 +44,9 @@ comp nested {
     req rule: ok? iff (forall (a: Method), exists (b: Method), a = b)
 
     expect holds: ok?
-    expect same: forall (a b: Method), when a = b, loud?(a) iff loud?(b)
+    expect same: forall (a b: Method), when a = b, loud?(a) iff loud?(b)  --~ warning: this expectation mentions no variable
     expect wrong: forall (a: Method), forall (b: Method), a = b  --~ error: expectation `nested::wrong` does not hold
+    --~^ warning: this expectation mentions no variable
 }
 
 -- A bound name mentions nothing, so it may be a factor of a product.

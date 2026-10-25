@@ -36,7 +36,7 @@ comp places {
     inst w: sub { ok? := (exists (m: Mode), m = mode) }
 
     -- A `Nat` function applied to a bound name.
-    expect nonnegative: forall (m: Mode), cost(m) >= 0
+    expect nonnegative: forall (m: Mode), cost(m) >= 0  --~ warning: this expectation mentions no variable
     -- An uninterpreted `Nat` function in a quantifier, and in a nested one.
     expect priced: forall (m: Mode), price(m) >= 0
     expect priced_pairs: forall (m: Mode), exists (n: Mode), price(m) + price(n) >= 0
@@ -44,7 +44,7 @@ comp places {
     expect cheap: all_cheap? iff limit >= 3
     expect some_mode: w.same?
     -- A `match` on a bound name.
-    expect off_free: forall (m: Mode), match m { Mode::Off => cost(m) = 0, _ => cost(m) > 0 }
+    expect off_free: forall (m: Mode), match m { Mode::Off => cost(m) = 0, _ => cost(m) > 0 }  --~ warning: this expectation mentions no variable
     expect free_off: when free?, mode = Mode::Off
 }
 

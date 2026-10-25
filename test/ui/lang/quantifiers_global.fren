@@ -16,7 +16,7 @@ comp thermostat {
 expect only_heat: forall (t: thermostat) (m: Mode),
     when t.mode = m and t.heating?, m = Mode::Heat
 expect values_first: forall (m: Mode) (t: thermostat), when t.mode = m, (t.heating? iff (m = Mode::Heat and t.cold?))
-expect values_only: forall (a? b?: Bool), (a? and b?) iff not (not a? or not b?)
+expect values_only: forall (a? b?: Bool), (a? and b?) iff not (not a? or not b?)  --~ warning: this expectation mentions no variable
 expect wrong: forall (t: thermostat) (m: Mode), t.mode = m  --~ error: expectation `wrong` does not hold
 
 --@ summary: 5 passed, 1 failed, 0 inconclusive, 0 redundant
