@@ -69,9 +69,9 @@ comp bind_binder_ok {
         _ => false,
     }
 }
-fn bind_param?(n: Int, s: Shape): Bool := match s { Shape::Circle(n) => n > 0, _ => n > 0 }
+fn bind_param?(n: Int, s: Shape) := match s { Shape::Circle(n) => n > 0, _ => n > 0 }
 --~^ error: `n` shadows the parameter `n`
-fn bind_param_ok?(n: Int, s: Shape): Bool := match s { Shape::Circle(n!) => n > 0, _ => n > 0 }
+fn bind_param_ok?(n: Int, s: Shape) := match s { Shape::Circle(n!) => n > 0, _ => n > 0 }
 comp sub { in v: Int pub out w: Int req r: w = v }
 comp bind_inst {
     in s: Shape

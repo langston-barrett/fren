@@ -1,7 +1,7 @@
 -- Integer literals in every form that Lean reads, with the same values in
 -- both front ends.
 
-expect decimal: 120 = 100 + 20 and 0 = 0
+expect decimal: 120 = 100 + 20 and 0 = 5 - 2 - 3
 expect hexadecimal: 0x1F = 31 and 0X1f = 31
 expect binary: 0b101 = 5 and 0B11 = 3
 expect octal: 0o17 = 15 and 0O7 = 7

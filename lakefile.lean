@@ -60,8 +60,9 @@ extern_lib glibc_c23 pkg := do
   buildStaticLib (pkg.staticLibDir / nameToStaticLib "glibc_c23") #[← glibc_c23.o.fetch]
 
 -- The standalone binary for `.fren` files: a native executable with cvc5
--- linked in, needing no .olean files at runtime.
-lean_lib FrenCli
+-- linked in, needing no .olean files at runtime. There is no module `FrenCli`,
+-- so the library is its modules.
+lean_lib FrenCli where globs := #[.submodules `FrenCli]
 
 @[default_target] lean_exe fren where root := `FrenCli.Main
 
