@@ -149,13 +149,25 @@ pub comp distinct_names {
 
 Each name in an item must be a single segment, except where an expression
 reads an instance's variable, a value's field or a method with `.`. This
-is checked as the item is parsed, together with an input's definition
-(`in x: Int := 3`) and a member's `set_option` of an option other than
-`fren.evidence`. The first of these problems in an item, in source order,
-is reported before anything else about that item, and a name is reported
-with its `!` if it has one. So `A(x.y)` reports `x.y`, even in a pattern
-with the wrong number of binders or in an or-pattern, but `in s.t: S` or
-`in a: Int := 3` before it is reported instead.
+is checked as the item is parsed, and a name is reported with its `!` if
+it has one.
+
+An item's problems are reported in this order, and only the first is
+reported:
+
+1. Its [lexical](Lexical.md) problems, wherever they are in the item: an
+   identifier or integer literal that is not Fren's, such as `xα`, or a
+   prefix `!`.
+2. Its problems found as it is parsed, in source order: a name that is not
+   a single segment, an input's definition (`in x: Int := 3`), a member's
+   `set_option` of an option other than `fren.evidence`, and an operator
+   of another language, `==`, `&&`, `||` or `|`.
+3. Everything else about it.
+
+So `A(x.y)` reports `x.y`, even in a pattern with the wrong number of
+binders or in an or-pattern, but `in s.t: S`, `in a: Int := 3` or
+`req q: x == 1` before it is reported instead, and so is `!x?` anywhere in
+the item.
 
 ## Fields and payloads
 
