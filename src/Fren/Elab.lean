@@ -5,6 +5,7 @@ import Fren.Model
 import Fren.Resolve
 import Fren.SimpSet
 import Fren.Syntax
+import FrenCore.Checking
 import FrenCore.Guards
 import FrenCore.Lexical
 import FrenCore.Mentions
@@ -1054,14 +1055,37 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (info : EnumInfo) (pats : Array (Optio
   recordLint .wildcardSingleVariant arms[w]![0] (if pat?.isSome then help msg else msg)
 
 open Lang in
+/-- `e`'s shape, for whether it synthesizes a type (`Core.TypeShape`). -/
+partial def typeShape (e : Syntax) : Core.TypeShape :=
+  if e.isOfKind ``Lang.setExpr || e.isOfKind ``Lang.seqExpr then
+    let elems := e[1].getSepArgs
+    if elems.isEmpty then .emptyLiteral else .anyPart (elems.toList.map typeShape)
+  else if e.isOfKind ``Lang.pairExpr then .pair (typeShape e[1]) (typeShape e[3])
+  else if e.isOfKind ``Lang.unionExpr || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr then
+    .anyPart [typeShape e[0], typeShape e[2]]
+  else if e.isOfKind ``Lang.matchExpr then .anyPart (e[3].getSepArgs.toList.map (typeShape ·[2]))
+  else match e with
+    | `(fren_expr| $a ++ $b) => .anyPart [typeShape a, typeShape b]
+    | `(fren_expr| ($a)) => .anyPart [typeShape a]
+    | `(fren_expr| if $_ then $a else $b) => .anyPart [typeShape a, typeShape b]
+    | _ => .other
+
+/-- Whether `e` synthesizes a type (`lang::synthesizes`). -/
+def synthesizes (e : Syntax) : Bool := (typeShape e).synthesizes
+
+/-- Whether one of `es` synthesizes a type. -/
+def anySynthesizes (es : Array Syntax) : Bool := es.any synthesizes
+
+open Lang in
 /-- Translates a `match` into a chain of `if`s that compare its scrutinee
 with each arm's variant, built from the scrutinee's own payload, where
 `toTerm` translates its parts. -/
 def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (slot : Option Core.Slot) :
     TermElabM Term := withRef e do
-  let go := toTerm cx
+  -- The scrutinee synthesizes its type, and each body is checked against the
+  -- whole's, or another's (`lang::checked`).
   let scrutinee := e[1]
-  let s ← go scrutinee
+  let s ← toTerm { cx with emptyOk := Core.Position.synthesized.checked false false } scrutinee
   let ty ← typeOf s
   let some info := ty.constName?.bind (← getState).enumOfDecl?
     | throwErrorAt scrutinee (Core.scrutineeMsg (← typeName ty)).text
@@ -1125,7 +1149,9 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
         lintName .binder bn b
         new := new.push { name := bn, term := ← `($(mkCIdent (selectorName ctor k)) $s), «type» := t
                           scrutinee, outer := cx.binders.size }
-    bodies := bodies.push (← toTerm { cx with binders := cx.binders ++ new, guards } arm[2])
+    let others := (arms.eraseIdx! bodies.size).map (·[2])
+    let emptyOk := Core.Position.shared.checked cx.emptyOk (anySynthesizes others)
+    bodies := bodies.push (← toTerm { cx with binders := cx.binders ++ new, guards, emptyOk } arm[2])
   -- The first arm that matches; the last arm matches whatever is left.
   let mut out := bodies.back!
   for i in (List.range (bodies.size - 1)).reverse do
@@ -1163,9 +1189,6 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
   | .error ((j, some k), msg) => throwErrorAt pats[j]!.2[k]! msg.text
   | .error ((j, none), msg) => throwErrorAt alts[j]! msg.text
   if pats.isEmpty then `(true) else variantsTest info s (pats.map (·.1))
-
-/-- Whether `e` is `{}`, which takes its type from where it is written. -/
-def isEmptySet (e : Syntax) : Bool := e.isOfKind ``Lang.setExpr && e[1].getSepArgs.isEmpty
 
 /-- Strips parentheses from `e`. -/
 partial def unparen (e : Syntax) : Syntax :=
@@ -1390,8 +1413,8 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
   if op == "=" || op == "!=" then
     -- `++` is in the core against a constant.
-    let (x, y) := (← toTerm { cx with concatOk := cb, emptyOk := !isEmptySet b } a,
-      ← toTerm { cx with concatOk := ca, emptyOk := !isEmptySet a } b)
+    let (x, y) := (← toTerm { cx with concatOk := cb, emptyOk := Core.Position.compared.checked false (synthesizes b) } a,
+      ← toTerm { cx with concatOk := ca, emptyOk := Core.Position.compared.checked false (synthesizes a) } b)
     -- For `bool_equality`, at the end of the expression.
     let tx ← typeOf x
     if cx.noteIndexes && (tx.isConstOf ``Bool || tx.isProp) then
@@ -1411,17 +1434,15 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   match op with
   | "<" => `($x < $y) | "<=" => `($x ≤ $y) | ">" => `($y < $x) | _ => `($y ≤ $x)
 
-/-- Whether `e` is `[]`, which takes its type from where it is written. -/
-def isEmptySeq (e : Syntax) : Bool := e.isOfKind ``Lang.seqExpr && e[1].getSepArgs.isEmpty
-
 /-- `a ++ b`, where `concatOk` says whether the core allows it here. -/
 def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (concatOk : Bool) (e : Syntax) :
     TermElabM Term := withRef e do
   let (a, b) := (e[0], e[2])
+  -- Each operand is checked against the whole's type, or the other's (`lang::checked`).
+  let x ← toTerm { cx with concatOk := true, emptyOk := Core.Position.shared.checked cx.emptyOk (synthesizes b) } a
   -- Sequences: outside the core, unless constant.
-  let x ← toTerm { cx with concatOk := true, emptyOk := !isEmptySeq b } a
   if (← typeOf x).isAppOfArity ``Fren.Seq 1 then
-    let y ← toTerm { cx with emptyOk := true } b
+    let y ← toTerm { cx with emptyOk := Core.Position.shared.checked cx.emptyOk (synthesizes a) } b
     unless ← isDefEq (← typeOf y) (← typeOf x) do
       throwErrorAt b s!"type mismatch: expected `{← typeName (← typeOf x)}`, found `{← typeName (← typeOf y)}`"
     checkCore cx e .seqWord true true #[a, b] (← isConstant cx e)
@@ -1429,7 +1450,7 @@ def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- Where the core allows it, only its operands' outputs matter.
   if concatOk then checkCore cx e .stringAtom true true #[a, b]
   else checkCore cx e .stringSearch true true #[a, b] (← isConstant cx e)
-  let y ← toTerm { cx with concatOk := true } b
+  let y ← toTerm { cx with concatOk := true, emptyOk := false } b
   for (t, stx) in [(x, a), (y, b)] do
     let ty ← typeOf t
     unless ty.isConstOf ``String do
@@ -1482,7 +1503,9 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     return ← `((∅ : Fren.FinSet _))
   checkCore cx e .setAlgebra true true elems
   if cx.noteIndexes then lintDuplicates e elems
-  let xs ← elems.mapM (pairOrTerm toTerm { cx with emptyOk := true })
+  -- Each element is checked against the literal's element type, or another's (`lang::checked`).
+  let xs ← elems.mapIdxM fun k x =>
+    pairOrTerm toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) } x
   `(($(← finSetLit xs) : Fren.FinSet _))
 
 /-- `x in s`, `s subset t`, `s union t`, `s inter t` and `s minus t`. -/
@@ -1493,7 +1516,9 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     if b.isOfKind ``Lang.setExpr && cx.noteIndexes then
       if let #[m] := b[1].getSepArgs then
         unless m.isOfKind ``Lang.pairExpr do recordLint .singletonMembership e (Core.singletonMembershipMsg (srcText a) (srcText m))
-    let (x, s) := (← pairOrTerm toTerm cx a, ← toTerm { cx with emptyOk := true } b)
+    -- The left synthesizes a type, which the right is checked against (`lang::checked`).
+    let (x, s) := (← pairOrTerm toTerm { cx with emptyOk := Core.Position.synthesized.checked false false } a,
+      ← toTerm { cx with emptyOk := Core.Position.compared.checked false (synthesizes a) } b)
     let (tx, ts) := (← typeOf x, ← typeOf s)
     if ts.isAppOfArity ``Fren.Seq 1 && (← isDefEq ts.appArg! tx) then
       checkCore cx e .seqWord true true #[a, b] (← isConstant cx e) (literalOperand := b.isOfKind ``Lang.seqExpr)
@@ -1503,8 +1528,15 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       let set := mkApp (Lean.mkConst ``Fren.FinSet [Level.zero]) tx
       throwError (Core.membershipTypeMsg (← typeName set) (← typeName ts) (a.isOfKind ``Lang.pairExpr)).text
     return ← `($x ∈ $s)
-  let x ← toTerm { cx with emptyOk := !isEmptySet b } a
-  let y ← toTerm { cx with emptyOk := !isEmptySet a } b
+  -- The operands of `join` synthesize their types, those of `subset` give each
+  -- other theirs, and those of `union`, `inter` and `minus` are also checked
+  -- against the whole's (`lang::checked`).
+  let position : Core.Position :=
+    if e.isOfKind ``Lang.joinExpr then .synthesized
+    else if e.isOfKind ``Lang.subsetExpr then .compared
+    else .shared
+  let x ← toTerm { cx with emptyOk := position.checked cx.emptyOk (synthesizes b) } a
+  let y ← toTerm { cx with emptyOk := position.checked cx.emptyOk (synthesizes a) } b
   if e.isOfKind ``Lang.joinExpr then
     let (tx, ty) := (← typeOf x, ← typeOf y)
     let some (_, mid) := relTypes? tx | throwErrorAt a (Core.joinTypeMsg (← typeName tx) none).text
@@ -1567,7 +1599,9 @@ def seqLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     unless emptyOk do throwErrorAt e Core.emptySeqTypeMsg.text
     return ← `((∅ : Fren.Seq _))
   checkCore cx e .seqArray true true elems
-  let xs ← elems.mapM (toTerm { cx with emptyOk := true })
+  -- Each element is checked against the literal's element type, or another's (`lang::checked`).
+  let xs ← elems.mapIdxM fun k x =>
+    toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) } x
   let mut t ← `(Fren.Seq.unit $(xs.back!))
   for x in xs.pop.reverse do t ← `(Fren.Seq.unit $x ++ $t)
   return t
@@ -1712,12 +1746,12 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
     let c ← toTerm { cx with inElse := false } c'
     let gx ← Core.GuardedOperand.thenBranch.guard (pure c) `(¬$c)
     let gy ← Core.GuardedOperand.elseBranch.guard (pure c) `(¬$c)
-    let x ← toTerm { cx with emptyOk := emptyOk || !isEmptySet b, guards := cx.guards.push gx, inElse := false } a
-    let y ← toTerm { cx with emptyOk := emptyOk || !isEmptySet a, guards := cx.guards.push gy, inElse := true } b
+    let x ← toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (synthesizes b), guards := cx.guards.push gx, inElse := false } a
+    let y ← toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (synthesizes a), guards := cx.guards.push gy, inElse := true } b
     `(if $c then $x else $y)
   | `(fren_expr| $_ = $_) | `(fren_expr| $_ != $_) | `(fren_expr| $_ < $_) | `(fren_expr| $_ <= $_)
   | `(fren_expr| $_ > $_) | `(fren_expr| $_ >= $_) => compareTerm toTerm cx e
-  | `(fren_expr| $_ ++ $_) => concatTerm toTerm cx concatOk e
+  | `(fren_expr| $_ ++ $_) => concatTerm toTerm { cx with emptyOk } concatOk e
   | `(fren_expr| $s:str) =>
     liftMsg s (Core.checkStringChars s.getString)
     `(Fren.Str.lit $s)
@@ -1731,7 +1765,8 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $_ == $_) | `(fren_expr| $_ && $_) | `(fren_expr| $_ || $_) | `(fren_expr| $_ | $_) =>
     throwErrorAt e[1] (Core.foreignOpMsg e[1].getAtomVal.trimAscii.toString).text
   | `(fren_expr| !$_) => throwErrorAt e[0] (Core.foreignOpMsg "!").text
-  | `(fren_expr| ($a)) => `(($(← toTerm { cx with concatOk } a)))
+  -- Checked against the whole's type, if it is (`lang::checked`).
+  | `(fren_expr| ($a)) => `(($(← toTerm { cx with concatOk, emptyOk := Core.Position.shared.checked emptyOk false } a)))
   | `(fren_expr| $n:num) => `(($n : Int))
   | `(fren_expr| true) => `(true)
   | `(fren_expr| false) => `(false)
@@ -1749,12 +1784,12 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
       methodTerm toTerm cx e e[2] e[0] m e[4].getSepArgs
     else if e.isOfKind ``Lang.setExpr then setLitTerm toTerm cx emptyOk e
     else if e.isOfKind ``Lang.memberExpr || e.isOfKind ``Lang.subsetExpr || e.isOfKind ``Lang.unionExpr
-        || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr || e.isOfKind ``Lang.joinExpr then setOpTerm toTerm cx e
+        || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr || e.isOfKind ``Lang.joinExpr then setOpTerm toTerm { cx with emptyOk } e
     else if e.isOfKind ``Lang.pairExpr then throwError Core.pairPlaceMsg.text
     else if e.isOfKind ``Lang.seqExpr then seqLitTerm toTerm cx emptyOk e
     else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
     else if e.isOfKind ``Lang.recordExpr then recordTerm (toTerm { cx with emptyOk := true }) cx e
-    else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm cx e (parent?.bind (operandSlot · e))
+    else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm { cx with emptyOk } e (parent?.bind (operandSlot · e))
     else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
     else throwError "unsupported Fren expression"
 

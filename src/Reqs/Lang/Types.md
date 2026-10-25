@@ -249,3 +249,95 @@ pub comp bool_naming {
     expect not_only_q: name != "?"
 }
 ```
+
+## Checking and synthesis
+
+Every expression has a type. Most *synthesize* theirs from their parts,
+as `x + 1` is an `Int` because `x` is. Some, where they are written, are
+*checked* against a type that is given to them instead. `{}` and `[]` have
+no part to give them a type, so they can only be checked, and are an error
+wherever an expression must synthesize its type.
+
+Where an expression is written decides whether it is checked:
+
+- **Declared.** It is checked against a type that is declared: a binding
+  of an instance, a field of a record literal, an argument of a function
+  application, a variant's payload or a method, a defined output's
+  definition, and a constant's value.
+- **Shared.** Its type is that of the expression it is a part of, and of
+  that expression's other such parts. It is checked if that expression is,
+  or if one of those parts synthesizes its type. These are the operands of
+  `union`, `inter`, `minus` and `++`, the branches of a conditional, the
+  bodies of a `match`'s arms, the elements of a set or sequence literal,
+  and an expression in parentheses, which is the only such part.
+- **Compared.** Its type is the other operand's, and it is checked if the
+  other synthesizes its type. These are the operands of `=`, `!=` and
+  `subset`, and the right of `in`.
+- **Synthesized.** Anywhere else, as the left of `in`, an operand of
+  `join`, a receiver, a scrutinee and the sequence that is indexed, it
+  synthesizes its type.
+
+`lang::checked` states this, from where an expression is written, whether
+the expression it is a part of is checked, and whether one of the parts
+that share its type synthesizes one. So `s = {} union {}`,
+`s = (if c? then {} else {})`, `{{}, s}`, `[[], q]` and a `match` with an
+arm `E::W => {}` beside an arm of a known type are all accepted, and
+`{} = {}`, `({} inter {}).card`, `{} in z`, `r join {}` and `{{}}.card`
+are not.
+
+```fren
+pub enum Position { Declared, Shared, Compared, Synthesized }
+
+pub comp checked {
+    use self::Position::{Compared, Declared, Shared, Synthesized}
+    in position: Position
+    in expected?        -- the expression it is a part of is checked against a type
+    in sibling?         -- another part that shares its type synthesizes one
+    pub det out checked?
+
+    req rule: checked? iff match position {
+        Declared => true,
+        Shared => expected? or sibling?,
+        Compared => sibling?,
+        Synthesized => false,
+    }
+
+    expect declared_always: when position = Declared, checked?
+    expect synthesized_never: when position = Synthesized, not checked?
+    expect sibling_suffices: when (position = Shared or position = Compared) and sibling?, checked?
+}
+```
+
+An expression synthesizes its type unless it is `{}` or `[]`, or it is
+made of shared parts none of which synthesizes one, as `{{}}`,
+`if c? then {} else []` and `({})` are, or it is a pair, `(a, b)`, one of
+whose members does not. `lang::synthesizes` states this, from the
+expression's shape and how many of its shared parts, or of a pair's two
+members, synthesize their types.
+
+```fren
+-- `EmptyLiteral` is `{}` or `[]`; `SharedParts` is an expression whose type
+-- is that of its shared parts; `Pair` is a pair; `Other` is any other.
+pub enum Shape { EmptyLiteral, SharedParts, Pair, Other }
+
+pub comp synthesizes {
+    use self::Shape::{EmptyLiteral, Other, Pair, SharedParts}
+    in shape: Shape
+    in parts: Int            -- how many shared parts it has, or members, for a pair
+    in synthesizing: Int     -- how many of them synthesize their types
+    pub det out synthesizes?
+
+    assume counted: 0 <= synthesizing and synthesizing <= parts
+    assume pair: when shape = Pair, parts = 2
+
+    req rule: synthesizes? iff match shape {
+        EmptyLiteral => false,
+        SharedParts => synthesizing > 0,
+        Pair => synthesizing = parts,
+        Other => true,
+    }
+
+    expect one_part_suffices: when shape = SharedParts and synthesizing > 0, synthesizes?
+    expect pair_needs_both: when shape = Pair and synthesizing < 2, not synthesizes?
+}
+```

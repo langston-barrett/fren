@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Parse
+import FrenCore.Checking
 import FrenCore.Evidence
 import FrenCore.Guards
 import FrenCore.Lint
@@ -1129,6 +1130,20 @@ def lintRedundant (b : Ident) (e : Expr) (field : Bool) : M Unit := do
   if after.startsWith ":=" && Fren.Core.redundantBinding (Fren.Core.writtenForm b.name) (Fren.Core.writtenForm value) then
     lintFix .redundantBindings (b.span.to e.span) (Fren.Core.redundantBindingMsg b.name field)
 
+/-- `e`'s shape, for whether it synthesizes a type (`Fren.Core.TypeShape`). -/
+partial def typeShape : Expr → Fren.Core.TypeShape
+  | .set _ #[] | .seq _ #[] => .emptyLiteral
+  | .set _ es | .seq _ es => .anyPart (es.toList.map typeShape)
+  | .pair _ a b => .pair (typeShape a) (typeShape b)
+  | .bin _ op a b => if op == "union" || op == "inter" || op == "minus" || op == "++" then
+      .anyPart [typeShape a, typeShape b] else .other
+  | .ite _ _ a b => .anyPart [typeShape a, typeShape b]
+  | .match _ _ arms => .anyPart (arms.toList.map (typeShape ·.2))
+  | _ => .other
+
+/-- Whether `e` synthesizes a type (`lang::synthesizes`). -/
+def synthesizes (e : Expr) : Bool := (typeShape e).synthesizes
+
 partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   let concatOk := cx.concatOk
   let expected? := cx.expected?
@@ -1136,10 +1151,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   let parent? := cx.parent?
   let inElse := cx.inElse
   let cx := { cx with concatOk := false, expected? := none, chain := "", parent? := some e, inElse := false }
-  let isEmptySet : Expr → Bool | .set _ #[] => true | _ => false
-  -- Two operands of the same type: `{}` takes the other's.
+  -- Two operands of the same type, each checked against the other's, when it
+  -- does not synthesize its own (`lang::checked`).
   let pair (cxa cxb : ExprCtx) (a b : Expr) : M ((String × Ty) × (String × Ty)) := do
-    if isEmptySet a && !isEmptySet b then
+    if !synthesizes a && synthesizes b then
       let rb ← elabExpr cxb b
       return (← elabExpr { cxa with expected? := some rb.2 } a, rb)
     let ra ← elabExpr cxa a
@@ -1252,6 +1267,17 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         return (s!"{x} {y}", .rel tx ty)
       let (x, t) ← elabExpr { cx with expected? := expected?.bind fun | .set t => some t | _ => none } e
       return (x, .set t)
+    -- Each member is checked against the literal's type, or another's
+    -- (`lang::checked`): the first that synthesizes one, if the first does not.
+    let expected? ← if expected?.isNone && !synthesizes elems[0]! then
+        match elems.find? synthesizes with
+        | some m => do
+          let saved ← get
+          let t ← (·.2) <$> member m none
+          set saved
+          pure (some t)
+        | none => pure none
+      else pure expected?
     let (x0, t0) ← member elems[0]! expected?
     let mut xs := #[x0]
     for e in elems.extract 1 do
@@ -1281,7 +1307,18 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let some t := expected? | err span Fren.Core.emptySeqTypeMsg
       unless t matches .seq _ do err span Fren.Core.emptySeqTypeMsg
       return (s!"(as seq.empty {t.sort})", t)
-    let elemExpected := expected?.bind fun | .seq t => some t | _ => none
+    -- Each element is checked against the literal's element type, or another's
+    -- (`lang::checked`): the first that synthesizes one, if the first does not.
+    let elemExpected ← match expected?.bind fun | .seq t => some t | _ => none with
+      | some t => pure (some t)
+      | none => if synthesizes elems[0]! then pure none else
+          match elems.find? synthesizes with
+          | some m => do
+            let saved ← get
+            let t ← (·.2) <$> elabExpr { cx with noteIndexes := false } m
+            set saved
+            pure (some t)
+          | none => pure none
     let (x0, t0) ← elabExpr { cx with expected? := elemExpected } elems[0]!
     let mut xs := #[x0]
     for e in elems.extract 1 do
@@ -1447,6 +1484,9 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       checkCore cx span .setAlgebra true true #[a, b]
       return (s!"(set.member (tuple {x}) {y})", .bool)
     | "union" | "inter" | "minus" | "subset" =>
+      -- The operands of `subset` give each other their type, and those of the
+      -- others are also checked against the whole's (`lang::checked`).
+      let expected? := if op == "subset" then none else expected?
       let ((x, tx), (y, ty)) ← pair { cx with expected? } { cx with expected? } a b
       unless tx matches .set _ | .rel .. do mismatch a (.set tx) tx (some s!"note: the operands of `{op}` are sets or relations")
       unless tx == ty do mismatch b tx ty (some s!"note: both operands of `{op}` are `{tx.show}`s")
@@ -1457,14 +1497,16 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     | "join" =>
       let (x, tx) ← elabExpr cx a
       let .rel ta tb := tx | err a.span (Fren.Core.joinTypeMsg tx.show none)
-      let (y, ty) ← elabExpr { cx with expected? := some (.rel tb tb) } b
+      -- Both operands synthesize their types (`lang::checked`).
+      let (y, ty) ← elabExpr cx b
       let .rel tb' tc := ty | err b.span (Fren.Core.joinTypeMsg ty.show none)
       unless tb == tb' do err span (Fren.Core.joinTypeMsg tx.show (some ty.show))
       checkRelational cx span #[tb] #[a, b]
       return (s!"(rel.join {x} {y})", .rel ta tc)
     | "++" =>
-      -- `[] ++ q` takes its type from `q`.
-      let expected? ← if a matches .seq _ #[] && !(b matches .seq _ #[]) then
+      -- Each operand is checked against the whole's type, or the other's
+      -- (`lang::checked`): `[] ++ q` takes its type from `q`.
+      let expected? ← if expected?.isNone && !synthesizes a && synthesizes b then
           pure (some (← elabExpr { cx with noteIndexes := false } b).2)
         else pure expected?
       let (x, tx) ← elabExpr { cx with expected?, concatOk := true } a
@@ -1680,6 +1722,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       if idxs.size == 1 then d.tester idxs[0]! s else s!"(or {" ".intercalate (idxs.map (d.tester · s)).toList})")
     let mut bodies : Array String := #[]
     let mut ty? : Option Ty := none
+    let mut waiting : Array (Nat × ExprCtx × Expr) := #[]
     -- An arm is evaluated when its pattern matches and no earlier one does.
     let mut earlier : Array String := #[]
     -- An arm's body is guarded by its being the first arm that matches
@@ -1708,11 +1751,25 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
           liftMsg b.span (Fren.Core.checkVarName bn (some (t == .bool)))
           lintName .binder bn b.span
           new := new.push { name := bn, smt := s!"({d.selSym c k} {s})", ty := t, scrutinee, outer := cx.binders.size }
-      let (x, t) ← elabExpr { cx with binders := cx.binders ++ new, guards := armGuards } body
+      -- Each body is checked against the whole's type, or another's
+      -- (`lang::checked`): one that does not synthesize its own, before any
+      -- other has given a type, waits for a later one that does.
+      let bcx := { cx with binders := cx.binders ++ new, guards := armGuards }
+      let shared? := expected?.orElse fun _ => ty?
+      if shared?.isNone && !synthesizes body && arms.any (synthesizes ·.2) then
+        waiting := waiting.push (bodies.size, bcx, body)
+        bodies := bodies.push ""
+        continue
+      let (x, t) ← elabExpr { bcx with expected? := shared? } body
       if let some t0 := ty? then
         unless t == t0 do err body.span (Fren.Core.armTypesMsg t0.show t.show)
       ty? := some t
       bodies := bodies.push x
+    for (k, bcx, body) in waiting do
+      let (x, t) ← elabExpr { bcx with expected? := ty? } body
+      if let some t0 := ty? then
+        unless t == t0 do err body.span (Fren.Core.armTypesMsg t0.show t.show)
+      bodies := bodies.set! k x
     -- The first arm that matches; the last arm matches whatever is left.
     let mut out := bodies.back!
     for i in (List.range (bodies.size - 1)).reverse do
