@@ -70,7 +70,7 @@ def chainOtherMsg (op : String) : Msg :=
 /-- `second`, which orders the other way from `first`, in a chained
 comparison. -/
 def chainDirectionMsg (first second : String) : Msg :=
-  { code? := some "F0121", headline := s!"`{first}` and `{second}` cannot be chained together"
+  { code? := some "F0122", headline := s!"`{first}` and `{second}` cannot be chained together"
     label? := some s!"orders the other way from `{first}`"
     notes := #["note: a chained comparison orders one way: `<` and `<=` chain together, and `>` and `>=`",
       "help: split the chain with `and`, e.g. `a < b and b > c`"] }

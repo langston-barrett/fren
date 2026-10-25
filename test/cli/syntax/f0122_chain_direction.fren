@@ -1,2 +1,2 @@
--- A chained comparison that orders both ways (F0121).
+-- A chained comparison that orders both ways (F0122).
 comp c { in x: Int in y: Int pub out ok? req r: ok? iff 0 < x > y }

@@ -378,7 +378,7 @@ const ONE: Int := 1
 The `fren` command also reports this for other malformed numbers, such as
 `1_`, `0x` or `0b2`. In Lean, Lean's own parser reports those first.
 "# },
-  { code := "F0121", explanation := r#"A chained comparison that orders both ways.
+  { code := "F0122", explanation := r#"A chained comparison that orders both ways.
 
 Erroneous code example:
 
