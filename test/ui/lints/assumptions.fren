@@ -10,7 +10,7 @@ comp left_over {
     assume pos: n > 0  --~ warning: the assumption `pos` constrains only inputs that nothing uses
     assume small: n < 10  --~ warning: the assumption `small` constrains only inputs that nothing uses
     -- `t` is used, and so `x` too.
-    assume ordered: x < t
+    assume below: x < t
     req r: y = x + t
 }
 
