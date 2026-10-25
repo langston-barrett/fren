@@ -69,6 +69,16 @@ def item : String := "comp c {\n    in x: Int\n    pub out y: Int\n    req q: y 
 #guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
   { diags := #[err 4 "nonlinear arithmetic is not supported", err 5 "unknown identifier 'K'"] }
 
+-- Both report a static error per constraint (`Reqs/View#how-many-are-reported`),
+-- so an error of Lean's in another constraint of an item that the binary
+-- rejects is compared like any other.
+#guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", err 5 "cannot find `K` in this scope"] }
+#guard agrees item
+  { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307", err 5 "cannot find `K` in this scope" "F0201"],
+    exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", err 5 "cannot find `K` in this scope"] }
+
 /-! ## The binary cannot parse what Lean accepts -/
 
 def parse : String := "comp c {\n    in x: Int\n    req q: x = 1\n}\n\ncomp d {\n    in y: Int\n    req q: y = 1\n}\n"

@@ -120,7 +120,9 @@
   - After a static error, which stops the `fren` command's checks (and
     Lean's of an item where `undecidable` is denied), the checks' results and the summary are not compared; and Lean's lints of an
     item where the `fren` command reports a static error other than a lint
-    are not compared, since it drops that item's lints. Lean shows no
+    are not compared, since it drops that item's lints. Their errors are:
+    both report one per constraint ([How many are
+    reported](../View.md#how-many-are-reported)). Lean shows no
     codes, so its lints are its warnings that are not a check's result,
     and the errors of `undecidable`.
   - The `fren` command's last line after a static error, which has no
