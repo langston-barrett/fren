@@ -153,10 +153,15 @@ def malformedIntegerMsg (s : String) : Msg :=
     notes := #["note: an integer literal is decimal digits, or `0x`, `0b` or `0o` and the digits of that base, \
       with `_`s between the digits or after the base, and ends in a digit; a decimal literal does not start \
       with `0_`"]
-      ++ (if s.startsWith "0_" then #["help: drop the leading `0`"] else #[])
       ++ match s.toList with
         | ['0', b] => if (baseDigit? b).isSome then #[s!"help: `{s}` must be followed by a digit of its base"] else #[]
-        | _ => #[] }
+        | _ => #[]
+    -- `0_1` without the `_`s after its `0`, as `01`, which Lean decodes.
+    fixes := match s.toList with
+      | '0' :: '_' :: rest =>
+        let fixed := String.ofList ('0' :: rest.dropWhile (· == '_'))
+        if integerLiteral fixed then #[{ msg := s!"write `{fixed}`", replacement := fixed }] else #[]
+      | _ => #[] }
 
 /-- An identifier that Lean reads, but that is not one of Fren's. -/
 def leanIdentifierMsg (s : String) (beforeEq := false) : Msg :=

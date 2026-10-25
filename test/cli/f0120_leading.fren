@@ -1,0 +1,3 @@
+-- `0_1`, which Lean reads as a number but cannot decode (F0120), with the
+-- fix `01`, which it can.
+const ONE: Int := 0_1

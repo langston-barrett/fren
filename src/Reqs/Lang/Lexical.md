@@ -185,10 +185,10 @@ have type `Int`. A negative number is written with unary minus, `-1` (see
 
 Like an identifier, a number is as long as it can be, as Lean reads an
 integer: after a base, it runs over that base's digits and `_`s, and
-otherwise over decimal digits and `_`s. Fren has no scientific literals,
-so in `1.5` and `1e3` the number is `1`, where Lean would read on. So
-`0b12` is `0b1` then `2`, and `1_foo` starts
-with `1_`, which is not an integer literal. `lang::integer_literal` states
+otherwise over decimal digits and `_`s. So `0b12` is `0b1` then `2`, and
+`1_foo` starts with `1_`, which is not an integer literal. Fren has no
+scientific literals, so in `1.5` and `1e3` the number is `1`, where Lean
+would read on. `lang::integer_literal` states
 which lexemes are integer literals. Lean reads `0_1` as a number but
 cannot give its value, so it is not one:
 
