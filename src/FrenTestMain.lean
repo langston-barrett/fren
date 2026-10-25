@@ -137,12 +137,33 @@ depends on the machine; and removed codes, which nothing reports, and
 whose explanations say what replaced them. -/
 def unsnapshotted : List String := ["F0608", "F0713"]
 
+/-- The rows of the table of lints in `Reqs/Lint.md` that disagree with
+the code: each lint's row gives its name, code, group and default level,
+and each row is a lint's. keep-sorted keeps the rows in order of name. -/
+def lintTable : IO (Array String) := do
+  let md ← IO.FS.readFile ("src" / "Reqs" / "Lint.md")
+  let cell (c : String) := ((c.trimAscii.toString.dropPrefix "`").dropSuffix "`").toString
+  let rows := (md.splitOn "\n").filterMap fun line =>
+    match line.splitOn "|" with
+    | _ :: name :: code :: group :: dflt :: _ =>
+      if (code.trimAscii.toString.startsWith "`F0") then some (cell name, cell code, cell group, cell dflt) else none
+    | _ => none
+  let want := Fren.Core.Lint.all.map fun l => (l.name, l.code, l.group.name, l.default.name)
+  let mut failures := #[]
+  for w in want do
+    unless rows.contains w do
+      failures := failures.push s!"{w.1}: no row `| `{w.1}` | `{w.2.1}` | `{w.2.2.1}` | `{w.2.2.2}` |` in the table of src/Reqs/Lint.md"
+  for r in rows do
+    unless want.contains r do failures := failures.push s!"{r.1}: a row of the table of src/Reqs/Lint.md that is no lint as written"
+  return failures
+
 /-- Every code is explained and covered by a snapshot; each explanation's
 erroneous example reports its code, and its fixed versions report no static
 errors and not the code. -/
 def errorCodes : IO (Array String) := do
   let mut failures := #[]
   let codes := Fren.Core.errorCodes.map (·.code)
+  failures := failures ++ (← lintTable)
   if codes.toList.eraseDups.length != codes.size then failures := failures.push "error codes: duplicate codes"
   -- fren-covers: view::code_group
   for c in codes ++ Fren.Core.Lint.all.map (·.code) do
