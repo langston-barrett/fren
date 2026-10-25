@@ -14,3 +14,12 @@ comp wildcards {
 
     req r: paired? iff match s { Shape::Pair(_, _) => true, Shape::Empty => false }
 }
+
+-- A component reports only its first repeat, before any other problem of
+-- its members, in both front ends.
+comp first_only {
+    in x: Int
+    in x: Int     --~ error: `x` is defined multiple times in this component
+    in y: Nope
+    in y: Int
+}

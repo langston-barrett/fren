@@ -1,0 +1,12 @@
+-- An operator of another language is reported as it is parsed, before a
+-- dotted pattern binder after it, in both front ends.
+
+pub enum S { A(Int), B }
+
+comp c {
+    in s: S
+    in x: Int
+    pub out z: Int
+    req q: x == 1   --~ error: `==` is not an operator in Fren
+    req r: z = match s { S::A(a.b) => 0, _ => 1 }
+}

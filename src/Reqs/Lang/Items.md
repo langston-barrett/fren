@@ -116,7 +116,15 @@ the variables, instances and constraints of a component, which share one
 namespace, and the binders of a global expectation or of a pattern. A
 pattern's `_` declares no name. A name declared again is an error,
 reported where it is declared again, in the order the declarations are
-written, whatever their kinds.
+written, whatever their kinds. In every list, only the first such name is
+reported, and the rest of its item is not checked, so a component with two
+repeated names and an unknown type reports the first repeat alone. The
+names of a component's members, of a function's parameters and of binders
+are compared without their `!` of [shadowing](Components.md#shadowing), so
+`in x: Int` and `in x!: Int` declare the same name, and so do `in x: Int`
+and `req x!: true`, even though a constraint never shadows. The names of
+variants and fields are compared as written: neither ever shadows, and a
+`!` on one is an error of its own.
 `lang::distinct_names` states this, from how many names a list declares
 and the set of them:
 
@@ -138,6 +146,28 @@ pub comp distinct_names {
     expect empty: when count = 0, accepted?
 }
 ```
+
+Each name in an item must be a single segment, except where an expression
+reads an instance's variable, a value's field or a method with `.`. This
+is checked as the item is parsed, and a name is reported with its `!` if
+it has one.
+
+An item's problems are reported in this order, and only the first is
+reported:
+
+1. Its [lexical](Lexical.md) problems, wherever they are in the item: an
+   identifier or integer literal that is not Fren's, such as `xα`, or a
+   prefix `!`.
+2. Its problems found as it is parsed, in source order: a name that is not
+   a single segment, an input's definition (`in x: Int := 3`), a member's
+   `set_option` of an option other than `fren.evidence`, and an operator
+   of another language, `==`, `&&`, `||` or `|`.
+3. Everything else about it.
+
+So `A(x.y)` reports `x.y`, even in a pattern with the wrong number of
+binders or in an or-pattern, but `in s.t: S`, `in a: Int := 3` or
+`req q: x == 1` before it is reported instead, and so is `!x?` anywhere in
+the item.
 
 ## Fields and payloads
 
@@ -222,7 +252,9 @@ its parameters and result may have any type, including records and
 enumerations with payloads. As for a variable, the result
 type of a function whose name ends in `?` is `Bool`, and need not be
 written, and any other function must have its result type written (see
-[Boolean names](Types.md#boolean-names)).
+[Boolean names](Types.md#boolean-names)). The types are checked in the
+order they are written, so the parameters come before the result:
+`fn f(Nope): Gone` reports `Nope`.
 
 A function written with `:= e` is *defined*, and any other is
 *uninterpreted*.

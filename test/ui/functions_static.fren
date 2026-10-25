@@ -37,3 +37,8 @@ comp nonlinear { in x: Int pub out y: Int req r: y = x * rate(1) }
 -- Inputs and instances' outputs may be arguments.
 comp inner { in a: Name pub out b: Name req r: b = a }
 comp fine { in x: Name pub out y? inst w: inner { a := x } req r: y? iff ok?(w.b) and ok?(x) }
+
+-- A function's parameters are checked before its result type, in source
+-- order, in both front ends.
+fn params_first(Nope): Gone   --~ error: cannot find `Nope`
+fn defined_params_first(x: Nope): Gone := x   --~ error: cannot find `Nope`

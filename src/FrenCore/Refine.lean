@@ -33,12 +33,13 @@ the index of its binding. -/
 def checkRefineBindings (abstract : Name) (vars bound : Array Name) : Except (Nat × Msg) Unit := do
   if refineBindingsAccepted vars bound then return
   let a := showComp abstract
+  let again := repeatsAt bound
   for b in bound, i in [0:bound.size] do
     unless vars.contains b do
       throw (i, { code? := some "F0413", headline := s!"`{a}` has no variable `{b}`", label? := some "unknown variable"
                   notes := #[s!"note: a refinement binds variables of the refined component; those of `{a}` are {showNameList vars}"]
                   fixes := similarFixes "a variable with a similar name exists" b vars })
-    if bound[:i].toArray.contains b then
+    if again.contains i then
       throw (i, { code? := some "F0414", headline := s!"variable `{b}` of `{a}` is bound multiple times"
                   label? := some "bound again here"
                   notes := #["note: a refinement binds each variable of the refined component at most once"] })

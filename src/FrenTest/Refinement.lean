@@ -32,8 +32,9 @@ refine fails: precise refines wrong
 set_option fren.evidence "tested" in
 refine by_testing: precise refines rough
 
+-- The proof is Lean, so its names need not be Fren identifiers.
 refine by_proof: precise refines rough by
-  intro x px py _
+  intro x₁ px py _
   refine ⟨trivial, fun ⟨_, _⟩ => ?_⟩
   omega
 
