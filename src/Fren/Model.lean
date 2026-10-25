@@ -28,7 +28,7 @@ namespace Fren
 
 register_option fren.evidence : String := {
   defValue := "solver"
-  descr := "the evidence of the checks of the next component or global expectation: \"tested\" to have the `fren` command test them, or \"solver\""
+  descr := "the evidence of the checks of the next component, global expectation or refinement: \"tested\" to have the `fren` command test them, or \"solver\""
 }
 
 export Core (ItemKind Item EnumDef UseDef)

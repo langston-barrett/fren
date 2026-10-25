@@ -38,7 +38,9 @@ output `c`'s, for what a `Nat` brings. A private output of `a` must be a public 
 requirements may mention it, and the refinement can read it only from
 `c`'s public outputs, since a private output says nothing about how `c`
 computes it. `c` may have more inputs and outputs than `a`; an input of
-`c` that `a` does not have is unconstrained by `a`'s assumptions. `a`'s instances
+`c` that `a` does not have is unconstrained by `a`'s assumptions, so an
+assumption of `c` about such an input makes the refinement fail, unless
+it holds whatever that input is (see [The obligation](#the-obligation)). `a`'s instances
 are `a`'s own, and stay hidden. A variable of `a` that `c` does not have
 with the right role and type is an error (`F0412`). `refinement::interface`
 states the rule for one variable of `a` that the refinement does not bind

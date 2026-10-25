@@ -626,8 +626,10 @@ def evalCmd (args : Args) : IO UInt32 := do
   let (w, rng) := (Eval.World.random sp).run ⟨args.seed.toUInt64⟩
   let I := w.interp sp
   let atoms := sp.meaning c
-  let (strs, rng) := (Eval.stringsOf atoms).run rng
-  let p : Eval.Problem := { vars := Eval.remaining (sp.order c) given, atoms, ints := Eval.intsOf atoms, strs }
+  -- The literals of the expectations too, as when testing (`Reqs/Eval#searching-for-behaviours`).
+  let lits := atoms ++ Eval.atomsOf .anonymous (c.ofKind .expect)
+  let (strs, rng) := (Eval.stringsOf lits).run rng
+  let p : Eval.Problem := { vars := Eval.remaining (sp.order c) given, atoms, ints := Eval.intsOf lits, strs }
   let found := (p.solve sp w I given 100000).run' rng
   let env := found.getD given
   -- `env` is now fixed.
