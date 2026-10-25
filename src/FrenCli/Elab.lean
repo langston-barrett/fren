@@ -441,9 +441,9 @@ def declare (x : Ident) (locals : Array (Name × String) := #[]) : M Ident := do
 recording the import it resolves through, if any (`unused_imports`), and
 the item it uses (`dead_code`). -/
 def resolve (segs : Array Ident) (extra : Array Name := #[]) : M Resolved := do
-  let st ← get
-  let r ← liftResolve segs (st.table.resolvePath st.scope (segNames segs) extra)
-  if let some u := st.table.importVia st.scope (segNames segs) then
+  let (table, scope) := ((← get).table, (← get).scope)
+  let r ← liftResolve segs (table.resolvePath scope (segNames segs) extra)
+  if let some u := table.importVia scope (segNames segs) then
     modify fun s => { s with used := s.used.push u }
   modify fun s => { s with usedItems := s.usedItems.push r.usedItem }
   return r
@@ -1537,15 +1537,14 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
           readField fspan smt t f
       if !n.isAtomic then
         err span (Fren.Core.dottedNameMsg n cx.insts (cx.vars.filter (·.role != .instHidden) |>.map (·.name)))
-    let st ← get
     match ← resolve segs cx.shadowing with
     | .variant en idx =>
-      let d := st.dataOf? en.path
+      let d := (← get).dataOf? en.path
       let n := (d.bind (·.ctors[idx]?)).map (·.2.size) |>.getD 0
       if let some msg := Fren.Core.variantMentionMsg? (en.path ++ en.variants[idx]!) n false then err e.span msg
       return (ctorSym en.path en.variants[idx]!, .enum en.path)
     | .item { kind := .constItem, path, .. } =>
-      let some c := st.consts.find? path | internal e.span s!"unknown constant `{path}`"
+      let some c := (← get).consts.find? path | internal e.span s!"unknown constant `{path}`"
       return c
     | .item { kind := .fnItem, path, .. } => err e.span (Fren.Core.unappliedMsg path)
     | r => err e.span (Fren.Core.notAValueMsg r)
@@ -1899,10 +1898,10 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let n := Name.mkSimple name.name
   modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[] }
   liftMsg name.span (Fren.Core.checkItemName "component" n)
-  let st ← get
-  liftMsg name.span (st.table.checkFresh st.module n)
+  let module := (← get).module
+  liftMsg name.span ((← get).table.checkFresh module n)
   lintName .component n name.span
-  declareMemberUses (st.module ++ n) members
+  declareMemberUses (module ++ n) members
   -- Distinct names (`lang::distinct_names`): variables, instances and
   -- constraints share one namespace.
   let named := members.filterMap fun
@@ -2011,10 +2010,10 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     grouped := grouped ++ group
     let cs := group.map fun j => let (n, _, _, _, t, e) := cases[j]!; (n, t, e)
     let ts := cs.map (·.2.1)
-    let n := ((st.table.enums.get? t.enum).map (·.variants.size)).getD 0
+    let n := (((← get).table.enums.get? t.enum).map (·.variants.size)).getD 0
     if Fren.Core.caseSplitReqs cs.size (Fren.Core.repeatedVariants ts) then
       lint .caseSplitReqs cases[group[1]!]!.2.1 (Fren.Core.caseSplitReqsMsg y op cs (Fren.Core.untestedVariants n ts))
-  let path := st.module ++ n
+  let path := module ++ n
   let tested ← testedOf (← evidenceInEffect) members
   let (relational, counts) ← checkCounts
   modify fun s => { s with
@@ -2034,8 +2033,8 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
     M Unit := do
   let n := Name.mkSimple name.name
   liftMsg name.span (Fren.Core.checkItemName "refinement" n)
-  let st ← get
-  liftMsg name.span (st.table.checkFresh st.module n)
+  let module := (← get).module
+  liftMsg name.span ((← get).table.checkFresh module n)
   let comp (segs : Array Ident) : M CComp := do
     let sp := segs[0]!.span.to segs.back!.span
     let path ← match ← resolve segs with
@@ -2132,8 +2131,8 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
     -- `a`'s instances too, for the definedness of their bindings.
     (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
   modify fun s => { s with
-    table := s.table.addItem { kind := .expectItem, path := st.module ++ n, isPub := false, owner := s.module }
-    refinements := s.refinements.push { path := st.module ++ n, file := s.file, span := name.span, vars, props, insts
+    table := s.table.addItem { kind := .expectItem, path := module ++ n, isPub := false, owner := s.module }
+    refinements := s.refinements.push { path := module ++ n, file := s.file, span := name.span, vars, props, insts
                                         indexes, decidable := c.decidable && a.decidable && !afterBindings.outsideCore
                                         relational, counts, tested } }
 
@@ -2144,8 +2143,8 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
   let all ← evidenceInEffect
   if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
   modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[] }
-  let st ← get
-  liftMsg name.span (st.table.checkFresh st.module n)
+  let module := (← get).module
+  liftMsg name.span ((← get).table.checkFresh module n)
   lintName .global n name.span
   let mut vars : Array CVar := #[]
   let mut insts : Array CInst := #[]
@@ -2159,7 +2158,7 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
     let path ← match ← resolve p with
       | .item { kind := .compItem, path, .. } => pure path
       | r => err (p[0]!.span.to p.back!.span) (Fren.Core.notACompMsg r)
-    let some c := st.comps.find? (·.path == path) | internal p[0]!.span s!"unknown comp `{path}`"
+    let some c := (← get).comps.find? (·.path == path) | internal p[0]!.span s!"unknown comp `{path}`"
     unless c.decidable do
       modify fun s => { s with outsideCore := true }
       lint .undecidable (p[0]!.span.to p.back!.span) (Fren.Core.undecidableInstMsg path)
@@ -2190,7 +2189,7 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
                         trigger? := trig.map (·.1), triggerSpan? := trig.map (·.2) }
   discard checkCounts
   modify fun s => { s with
-    table := s.table.addItem { kind := .expectItem, path := st.module ++ n, isPub := false, owner := s.module }
+    table := s.table.addItem { kind := .expectItem, path := module ++ n, isPub := false, owner := s.module }
     globals := s.globals.push { path := s.module, file := s.file, span := name.span, vars, props := #[prop], insts, indexes
                                 decidable := !s.outsideCore
                                 tested := Fren.Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] } }
@@ -2212,10 +2211,10 @@ partial def elabItem : Item → M Unit
   | .enum isPub name variants => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "enum" n)
-    let st ← get
-    liftMsg name.span (st.table.checkFresh st.module n)
+    let module := (← get).module
+    liftMsg name.span ((← get).table.checkFresh module n)
     lintName .enumeration n name.span
-    let path := st.module ++ n
+    let path := module ++ n
     let mut vs := #[]
     let mut ctors := #[]
     let mut nRecursive := 0
@@ -2253,10 +2252,10 @@ partial def elabItem : Item → M Unit
   | .record isPub name fields => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "record" n)
-    let st ← get
-    liftMsg name.span (st.table.checkFresh st.module n)
+    let module := (← get).module
+    liftMsg name.span ((← get).table.checkFresh module n)
     lintName .record n name.span
-    let path := st.module ++ n
+    let path := module ++ n
     let mut fs : Array (Name × Ty) := #[]
     -- Distinct names (`lang::distinct_names`).
     if let some k := (Fren.Core.repeatsAt (fields.map (Name.mkSimple ·.1.name)))[0]? then
@@ -2274,6 +2273,7 @@ partial def elabItem : Item → M Unit
         err ((ty?.map fun segs => segs[0]!.span.to segs.back!.span).getD f.span)
           (Fren.Core.abstractFieldMsg p false (!(t matches .abstract _)))
       fs := fs.push (fn, t)
+    let st ← get
     let unbounded := fs.any fun (_, t) => st.unbounded t
     unless isPub do
       modify fun s => { s with items := s.items.push ({ what := .record, path, level := s.levels.get .deadCode }, name.span) }
@@ -2283,10 +2283,10 @@ partial def elabItem : Item → M Unit
   | .abstractType isPub name => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "abstract type" n)
-    let st ← get
-    liftMsg name.span (st.table.checkFresh st.module n)
+    let module := (← get).module
+    liftMsg name.span ((← get).table.checkFresh module n)
     lintName .abstractType n name.span
-    let path := st.module ++ n
+    let path := module ++ n
     unless isPub do
       modify fun s => { s with items := s.items.push ({ what := .abstractType, path, level := s.levels.get .deadCode }, name.span) }
     modify fun s => { s with
@@ -2295,10 +2295,10 @@ partial def elabItem : Item → M Unit
   | .function isPub name params result body => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkNoBang n)
-    let st ← get
-    liftMsg name.span (st.table.checkFresh st.module n)
+    let module := (← get).module
+    liftMsg name.span ((← get).table.checkFresh module n)
     lintName .function n name.span
-    let path := st.module ++ n
+    let path := module ++ n
     -- A parameter is named if it has a type after `:`, or is a `Bool`
     -- written `x?` (`lang::function_params`).
     let named (p : Array Ident × Option (Array Ident)) :=
@@ -2344,8 +2344,8 @@ partial def elabItem : Item → M Unit
   | .const isPub name ty value => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkConstName n)
-    let st ← get
-    liftMsg name.span (st.table.checkFresh st.module n)
+    let module := (← get).module
+    liftMsg name.span ((← get).table.checkFresh module n)
     lintName .constant n name.span
     let t ← elabTy ty
     -- Its value must be known (`lang::constant`): first its type, then,
@@ -2360,7 +2360,7 @@ partial def elabItem : Item → M Unit
       err applies[0]! (Fren.Core.unknownConstantMsg abstract)
     unless t == t' do mismatch value t t' (some s!"note: `{n}` has type `{t.show}`")
     lintBools value
-    let path := st.module ++ n
+    let path := module ++ n
     unless isPub do
       modify fun s => { s with items := s.items.push ({ what := .constant, path, level := s.levels.get .deadCode }, name.span) }
     modify fun s => { s with
@@ -2383,31 +2383,35 @@ partial def elabItem : Item → M Unit
   | .lintSetting stx opt value valueSpan removal body? => do
     if opt.name == "fren.evidence" then
       -- Like a lint setting: for the item after `in`, or the rest of the file.
-      let st ← get
+      let prev := (← get).evidence?
       modify fun s => { s with evidence? := some (value, valueSpan) }
       if let some body := body? then
         elabItem body
-        modify fun s => { s with evidence? := st.evidence? }
+        modify fun s => { s with evidence? := prev }
       return
     let some rest := opt.name.dropPrefix? "fren.lint." | internal opt.span "not a lint option"
     let some target := Fren.Core.LintTarget.ofName? rest.toString | err opt.span (Fren.Core.unknownLintMsg rest.toString)
     let some requested := LintLevel.ofName? value | err valueSpan (Fren.Core.invalidLevelMsg value)
-    let st ← get
-    if let some lint := target.rejectedBy? (st.levels.get · |>.level) requested then
+    -- What the body restores; not the whole state, which would make each
+    -- change to it while the body is elaborated a copy.
+    let levels := (← get).levels
+    let settingStart? := (← get).settingStart?
+    if let some lint := target.rejectedBy? (levels.get · |>.level) requested then
       err stx (Fren.Core.forbiddenMsg target lint requested)
     let expectation? ← if requested == .expect then do
-        let e : Fren.Core.ExpectationRecord := { target, level := st.levels.get .unfulfilledExpectations }
+        let e : Fren.Core.ExpectationRecord := { target, level := levels.get .unfulfilledExpectations }
+        let k := (← get).expectations.size
         modify fun s => { s with expectations := s.expectations.push (e, stx),
                                  expectationRemovals := s.expectationRemovals.push removal }
-        pure (some st.expectations.size)
+        pure (some k)
       else pure none
     let set : LevelInEffect := { level := requested, isSet := true, group? := target.group?, expectation? }
     for lint in target.members do
       modify fun s => { s with levels := s.levels.set lint set }
     if let some body := body? then
-      modify fun s => { s with settingStart? := some (st.settingStart?.getD stx.start) }
+      modify fun s => { s with settingStart? := some (settingStart?.getD stx.start) }
       elabItem body
-      modify fun s => { s with levels := st.levels, settingStart? := st.settingStart? }
+      modify fun s => { s with levels, settingStart? }
 
 /-- The text of the current file at `sp`. -/
 def State.text (s : State) (sp : Span) : String := String.ofList (s.src.extract sp.start sp.stop).toList

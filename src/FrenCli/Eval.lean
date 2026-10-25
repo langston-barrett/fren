@@ -19,6 +19,12 @@ Evaluation is three-valued: a variable without a value, or a function
 application that the interpretation does not give, is unknown (`none`),
 and `and`, `or` and `when` are decided when one operand decides them, as
 the search for behaviours (`FrenCli.Search`) needs.
+
+Evaluation is monotone, which the search relies on: giving more variables
+values never changes a value that is already known. Every case keeps it:
+an operator is known only when the operands it needs are, an `if` whose
+condition is unknown is known only when both branches agree, and the
+interpretation is fixed.
 -/
 
 open Lean
@@ -111,6 +117,9 @@ inductive Ex where
   | «match» (e : Ex) (arms : Array (Pat × Ex))
   /-- A method of a `String` (`Reqs/Lang/Expressions#methods`). -/
   | method (m : Fren.Core.Method) (recv : Ex) (args : Array Ex)
+  /-- `recv.matches?(p)` for a literal `p`, with its pattern `re`, parsed
+  once rather than at each evaluation. -/
+  | «matches» (recv : Ex) (p : String) (re : Fren.Core.Re)
   /-- `{a, b}`. -/
   | setLit (elems : Array Ex)
   /-- `(a, b)`, in a relation literal or on the left of `in`. -/
@@ -218,9 +227,11 @@ def intOp (f : Int → Int → Val) : Option Val → Option Val → Option Val
   | _, _ => none
 
 /-- A set of `vs`: sorted by how they print, so that equal sets are equal
-values. -/
+values. Each member is printed once, not at each comparison. -/
 def Val.setOf (vs : Array Val) : Val :=
-  .set ((vs.toList.eraseDups.toArray.qsort fun a b => reprStr a < reprStr b))
+  let ms := vs.toList.eraseDups.toArray
+  if ms.size ≤ 1 then .set ms else
+    .set ((ms.map fun v => (reprStr v, v)).qsort (·.1 < ·.1) |>.map (·.2))
 
 def setOp (f : Array Val → Array Val → Val) : Option Val → Option Val → Option Val
   | some (.set a), some (.set b) => some (f a b)
@@ -281,6 +292,11 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
   | .neg a => match a.eval I look locals with
     | some (.int x) => some (.int (-x))
     | _ => none
+  -- Membership in a set literal, without building the set, which does
+  -- not change which values are members.
+  | .bin .member a (.setLit es) => do
+    let x ← a.eval I look locals
+    return .bool ((← es.mapM (·.eval I look locals)).contains x)
   | .bin op a b => binV op (a.eval I look locals) (b.eval I look locals)
   | .when negated c d =>
     let c := c.eval I look locals
@@ -346,6 +362,9 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
       | .replace => .str (Fren.Str.replace s (str 0) (str 1))
       | .replaceAll => .str (Fren.Str.replaceAll s (str 0) (str 1))
       | _ => .int 0
+  | .matches recv _ re => do
+    let .str s ← recv.eval I look locals | none
+    return .bool (re.matches s)
   | .pair a b => do return .pair (← a.eval I look locals) (← b.eval I look locals)
   | .seqLit es => do return .seq (← es.mapM (·.eval I look locals))
   -- Out of range, an index is part of the interpretation, which is unknown.
@@ -401,6 +420,7 @@ partial def Ex.indexGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Ex) 
   | .bin _ a b | .pair a b => go a ++ go b
   | .app _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (go ·)
   | .method _ r args => go r ++ args.flatMap (go ·)
+  | .matches r _ _ => go r
   | .index q i pos =>
     let bounds := Ex.bin .and (.bin .le (.lit (.int 0)) i) (.bin .lt i (.method .len q #[]))
     go q ++ go i ++ #[(pos, wrap bounds)]
@@ -603,6 +623,7 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .ite c a b => .ite (c.renameBound f) (a.renameBound f) (b.renameBound f)
   | .app g args => .app g (args.map (·.renameBound f))
   | .method m r args => .method m (r.renameBound f) (args.map (·.renameBound f))
+  | .matches r p re => .matches (r.renameBound f) p re
   | .setLit es => .setLit (es.map (·.renameBound f))
   | .pair a b => .pair (a.renameBound f) (b.renameBound f)
   | .seqLit es => .seqLit (es.map (·.renameBound f))
@@ -627,6 +648,7 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .ite c a b => .ite (c.renameVars f) (a.renameVars f) (b.renameVars f)
   | .app g args => .app g (args.map (·.renameVars f))
   | .method m r args => .method m (r.renameVars f) (args.map (·.renameVars f))
+  | .matches r p re => .matches (r.renameVars f) p re
   | .setLit es => .setLit (es.map (·.renameVars f))
   | .pair a b => .pair (a.renameVars f) (b.renameVars f)
   | .seqLit es => .seqLit (es.map (·.renameVars f))
@@ -648,6 +670,7 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .ite c a b => .ite (c.substVars f) (a.substVars f) (b.substVars f)
   | .app g args => .app g (args.map (·.substVars f))
   | .method m r args => .method m (r.substVars f) (args.map (·.substVars f))
+  | .matches r p re => .matches (r.substVars f) p re
   | .setLit es => .setLit (es.map (·.substVars f))
   | .pair a b => .pair (a.substVars f) (b.substVars f)
   | .seqLit es => .seqLit (es.map (·.substVars f))
@@ -691,6 +714,7 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .ite c a b => .ite (c.subst σ) (a.subst σ) (b.subst σ)
   | .app g args => .app g (args.map (·.subst σ))
   | .method m r args => .method m (r.subst σ) (args.map (·.subst σ))
+  | .matches r p re => .matches (r.subst σ) p re
   | .setLit es => .setLit (es.map (·.subst σ))
   | .pair a b => .pair (a.subst σ) (b.subst σ)
   | .seqLit es => .seqLit (es.map (·.subst σ))
@@ -750,6 +774,8 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     let (r, t) ← lowerExpr cx recv
     let some method := Fren.Core.Method.ofName? m.name | throw s!"unknown method `{m.name}`"
     let args ← args.mapM fun a => (·.1) <$> lowerExpr cx a
+    if let (.matches, #[Ex.lit (.str p)]) := (method, args) then
+      if let .ok re := Fren.Core.parseRe p then return (.matches r p re, methodTy method t)
     return (.method method r args, methodTy method t)
   | .bool _ b => return (.lit (.bool b), .bool)
   | .path _ segs => do

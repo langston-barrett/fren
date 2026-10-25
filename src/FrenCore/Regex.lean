@@ -28,7 +28,7 @@ inductive Re where
   | union (a b : Re)
   | cat (a b : Re)
   | star (a : Re)
-  deriving Inhabited, BEq, Repr, Lean.ToExpr
+  deriving Inhabited, DecidableEq, Hashable, Repr, Lean.ToExpr
 
 /-- Whether `c` is in one of `ranges`. -/
 def inRanges (ranges : List (Char × Char)) (c : Char) : Bool := ranges.any fun (lo, hi) => lo ≤ c && c ≤ hi
@@ -53,9 +53,6 @@ decreasing_by
   all_goals
     try simp only [List.length_take, List.length_drop, List.length_cons]
     omega
-
-/-- Whether the whole of `s` matches `r`. -/
-def Re.matches (r : Re) (s : String) : Bool := r.mat s.toList
 
 /-! ### What patterns mean -/
 
@@ -141,6 +138,136 @@ theorem Re.mat_cat_star_any (r : Re) (cs : List Char) :
     (Re.cat (.star .any) r).mat cs = (List.range (cs.length + 1)).any fun i => r.mat (cs.drop i) := by
   rw [Re.mat_cat]
   simp [Re.mat_star_any]
+
+/-! ### Matching by derivatives
+
+`Re.mat` tries every split of the string, which takes time exponential in
+the pattern's nesting. Compiled code matches by Brzozowski derivatives
+instead, one character at a time (`Re.mat_eq_matchD`). -/
+
+/-- Whether `r` matches the empty string. -/
+def Re.nullable : Re → Bool
+  | .none | .cls .. | .any => false
+  | .str s => s.isEmpty
+  | .union a b => a.nullable || b.nullable
+  | .cat a b => a.nullable && b.nullable
+  | .star _ => true
+
+/-- `.cat a b`, or `.none` if either matches nothing. -/
+def Re.cat' : Re → Re → Re
+  | .none, _ | _, .none => .none
+  | a, b => .cat a b
+
+/-- The operands of the unions at the top of `r`, without those that match
+nothing. -/
+def Re.branches : Re → List Re
+  | .none => []
+  | .union a b => a.branches ++ b.branches
+  | r => [r]
+
+/-- The union of `rs`, right-nested; `.none` if there are none. -/
+def Re.ofBranches : List Re → Re
+  | [] => .none
+  | [r] => r
+  | r :: rs => .union r (Re.ofBranches rs)
+
+/-- `.union a b`, with its operands flattened, without repeats or operands
+that match nothing, in a canonical order: so that the derivatives of a
+pattern stay few, as Brzozowski's similarity rules make them, rather than
+doubling at each character, as for `(a*)*`. -/
+def Re.union' (a b : Re) : Re :=
+  .ofBranches ((a.branches ++ b.branches).eraseDups.mergeSort fun x y => hash x ≤ hash y)
+
+/-- What `r` matches after the character `c`. -/
+def Re.deriv (c : Char) : Re → Re
+  | .none | .str [] => .none
+  | .str (d :: s) => if c == d then .str s else .none
+  | .cls neg rs => if inRanges rs c != neg then .str [] else .none
+  | .any => .str []
+  | .union a b => .union' (a.deriv c) (b.deriv c)
+  | .cat a b => if a.nullable then .union' (.cat' (a.deriv c) b) (b.deriv c) else .cat' (a.deriv c) b
+  | .star a => .cat' (a.deriv c) (.star a)
+
+/-- Whether the whole of `cs` matches `r`, by derivatives. -/
+def Re.matchD (r : Re) (cs : List Char) : Bool := (cs.foldl (fun r c => r.deriv c) r).nullable
+
+theorem Re.mat_none (cs : List Char) : Re.none.mat cs = false := by rw [Re.mat]
+
+theorem Re.mat_str (s cs : List Char) : (Re.str s).mat cs = (cs == s) := by rw [Re.mat]
+
+theorem Re.mat_union (a b : Re) (cs : List Char) : (Re.union a b).mat cs = (a.mat cs || b.mat cs) := by
+  rw [Re.mat]
+
+theorem Re.mat_cat' (a b : Re) (cs : List Char) : (Re.cat' a b).mat cs = (Re.cat a b).mat cs := by
+  unfold Re.cat'
+  split <;> simp [Re.mat_cat, Re.mat_none]
+
+theorem Re.mat_ofBranches (rs : List Re) (cs : List Char) :
+    (Re.ofBranches rs).mat cs = rs.any (·.mat cs) := by
+  induction rs with
+  | nil => simp [Re.ofBranches, Re.mat_none]
+  | cons r rs ih =>
+    cases rs with
+    | nil => simp [Re.ofBranches]
+    | cons r' rs' => simp only [Re.ofBranches, Re.mat_union, ih, List.any_cons]
+
+theorem Re.any_branches (r : Re) (cs : List Char) : r.branches.any (·.mat cs) = r.mat cs := by
+  induction r with
+  | none => simp [Re.branches, Re.mat_none]
+  | union a b iha ihb => simp [Re.branches, Re.mat_union, List.any_append, iha, ihb]
+  | _ => simp [Re.branches]
+
+theorem Re.mat_union' (a b : Re) (cs : List Char) : (Re.union' a b).mat cs = (a.mat cs || b.mat cs) := by
+  rw [Re.union', Re.mat_ofBranches, ← Re.any_branches a, ← Re.any_branches b, ← List.any_append]
+  apply Bool.eq_iff_iff.mpr
+  simp only [List.any_eq_true, (List.mergeSort_perm _ _).mem_iff, List.mem_eraseDups]
+
+theorem Re.nullable_eq (r : Re) : r.nullable = r.mat [] := by
+  induction r with
+  | none => simp [Re.nullable, Re.mat_none]
+  | str s => cases s <;> simp [Re.nullable, Re.mat_str]
+  | cls n rs => simp [Re.nullable, Re.mat_cls]
+  | any => simp [Re.nullable, Re.mat_any]
+  | union a b iha ihb => simp [Re.nullable, Re.mat_union, iha, ihb]
+  | cat a b iha ihb => simp [Re.nullable, Re.mat_cat, iha, ihb]
+  | star a => simp [Re.nullable, Re.mat_star_nil]
+
+/-- A derivative matches what follows its character. -/
+theorem Re.mat_deriv (c : Char) (r : Re) (cs : List Char) : (r.deriv c).mat cs = r.mat (c :: cs) := by
+  induction r generalizing cs with
+  | none => simp [Re.deriv, Re.mat_none]
+  | str s =>
+    cases s with
+    | nil => simp [Re.deriv, Re.mat_none, Re.mat_str]
+    | cons d s =>
+      simp only [Re.deriv, Re.mat_str, List.cons_beq_cons]
+      split <;> simp_all [Re.mat_none, Re.mat_str]
+  | cls n rs =>
+    simp only [Re.deriv, Re.mat_cls]
+    split <;> cases cs <;> simp_all [Re.mat_none, Re.mat_str]
+  | any => cases cs <;> simp [Re.deriv, Re.mat_any, Re.mat_str]
+  | union a b iha ihb => simp [Re.deriv, Re.mat_union', Re.mat_union, iha, ihb]
+  | cat a b iha ihb =>
+    have split : (Re.cat a b).mat (c :: cs) = ((a.mat [] && b.mat (c :: cs)) ||
+        (List.range (cs.length + 1)).any fun j => a.mat (c :: cs.take j) && b.mat (cs.drop j)) := by
+      rw [Re.mat_cat, List.length_cons, List.range_succ_eq_map, List.any_cons, List.any_map]
+      simp [Function.comp_def]
+    rw [split, ← Re.nullable_eq, ← ihb]
+    simp only [Re.deriv, ← iha]
+    cases a.nullable <;> simp [Re.mat_union', Re.mat_cat', Re.mat_cat, Bool.or_comm]
+  | star a ih => simp [Re.deriv, Re.mat_cat', Re.mat_cat, Re.mat_star_cons, ih]
+
+theorem Re.mat_eq_matchD' (r : Re) (cs : List Char) : r.mat cs = r.matchD cs := by
+  induction cs generalizing r with
+  | nil => simp [Re.matchD, Re.nullable_eq]
+  | cons c cs ih => rw [← Re.mat_deriv, ih]; rfl
+
+@[csimp] theorem Re.mat_eq_matchD : @Re.mat = @Re.matchD := by
+  funext r cs
+  exact Re.mat_eq_matchD' r cs
+
+/-- Whether the whole of `s` matches `r`. -/
+def Re.matches (r : Re) (s : String) : Bool := r.mat s.toList
 
 /-- `p` repeated `n` times. -/
 def Re.pow (p : Re) : Nat → Re

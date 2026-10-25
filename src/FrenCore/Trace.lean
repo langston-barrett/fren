@@ -132,19 +132,26 @@ structure TraceComp where
   deriving Inhabited
 
 /-- The evidence for every component. Instances refer to components
-declared earlier, so each pass settles those whose instances are settled. -/
+declared earlier, so each pass settles those whose instances are settled,
+until a pass settles nothing. -/
 def levels (comps : Array TraceComp) (claims : Claims) : NameMap Level := Id.run do
   let mut out : NameMap Level := {}
+  let mut pending := comps
   for _ in [0:comps.size + 1] do
-    for c in comps do
+    let mut later := #[]
+    for c in pending do
       if out.contains c.path then continue
       let insts := c.insts.map (out.get? ·)
-      if insts.any (·.isNone) then continue
+      if insts.any (·.isNone) then
+        later := later.push c
+        continue
       let own := directLevel c.proved c.solver (claims.tested.contains c.path) (claims.trusted.contains c.path)
       let weakest := insts.foldl (init := Level.proved) fun w l? =>
         let l := l?.getD .missing
         if l.rank < w.rank then l else w
       out := out.insert c.path (evidenceLevel own c.hasOutputs weakest)
+    if later.size == pending.size then break
+    pending := later
   return out
 
 /-- A marker in a scanned file that no claim matches (`trace::covers_line`). -/
