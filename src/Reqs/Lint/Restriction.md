@@ -84,11 +84,9 @@ states when it fires, and when it has a fix:
 ```fren
 pub comp wildcard_enum_match_arm {
     in wildcard?         -- the arm is `_`
-    in n_unnamed: Int    -- variants it matches that no pattern names, written as the other arms write theirs, `V` or `E::V`
+    in n_unnamed: Nat    -- variants it matches that no pattern names, written as the other arms write theirs, `V` or `E::V`
     pub det out fires?
     pub det out fixed?   -- it has a fix
-
-    assume counts: n_unnamed >= 0
 
     ensure rule: fires? iff wildcard?
     ensure fix: fixed? iff (wildcard? and n_unnamed = 0)
@@ -134,11 +132,9 @@ reports, and which an escape can write, by code point:
 
 ```fren
 pub comp non_ascii_literal {
-    in code: Int         -- the code point of a character of the literal
+    in code: Nat         -- the code point of a character of the literal
     pub det out fires?
     pub det out escapable?  -- `\uHHHH` can write it
-
-    assume code_point: code >= 0
 
     ensure rule: fires? iff code >= 128
     ensure escape: escapable? iff code <= 65535
@@ -172,12 +168,10 @@ when it fires:
 
 ```fren
 pub comp module_name_repetitions {
-    in n_words: Int      -- the words of the item's name
-    in n_module_words: Int  -- the words of its module's last segment
+    in n_words: Nat      -- the words of the item's name
+    in n_module_words: Nat  -- the words of its module's last segment
     in contains?         -- the item's words have the module's, one after another, in any case
     pub det out fires?
-
-    assume counts: n_words >= 0 and n_module_words >= 0
 
     ensure rule: fires? iff (contains? and n_words > n_module_words)
 }
@@ -386,10 +380,8 @@ may also apply.
 pub comp single_call_fn {
     in pub?
     in defined?          -- it has a body, `:= e`
-    in n_uses: Int       -- paths in its file that resolve to it
+    in n_uses: Nat       -- paths in its file that resolve to it
     pub det out fires?
-
-    assume counts: n_uses >= 0
 
     ensure rule: fires? iff (defined? and not pub? and n_uses = 1)
 

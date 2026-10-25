@@ -141,11 +141,9 @@ expressions that build and read the relation would change too.
 ```fren
 pub comp zero_sized_map_values {
     in enum?             -- `B` is an enumeration
-    in n_variants: Int   -- its variants
+    in n_variants: Nat   -- its variants
     in payload?          -- one of them has a payload
     pub det out fires?
-
-    assume counts: n_variants >= 0
 
     ensure rule: fires? iff (enum? and n_variants = 1 and not payload?)
 }
@@ -170,10 +168,8 @@ fires:
 
 ```fren
 pub comp many_single_char_names {
-    in n: Int            -- names of one character that the item declares
+    in n: Nat            -- names of one character that the item declares
     pub det out fires?
-
-    assume counts: n >= 0
 
     ensure rule: fires? iff n > 4
 }
@@ -193,15 +189,13 @@ allows and that apply to Fren: `lhs` and `rhs`, `set` and `get`, `args` and
 
 ```fren
 pub comp similar_names {
-    in len_a: Int        -- characters of each name, without a final `?`
-    in len_b: Int
+    in len_a: Nat        -- characters of each name, without a final `?`
+    in len_b: Nat
     in one_edit?         -- one is the other with one character substituted, inserted or deleted
     in digits?           -- the characters that differ are digits
     in word?             -- a character is substituted for another, each a word of its name
     in allowed?          -- the pair is one that Clippy allows, such as `lhs` and `rhs`
     pub det out fires?
-
-    assume counts: len_a >= 0 and len_b >= 0
 
     ensure rule: fires? iff (len_a >= 3 and len_b >= 3 and one_edit? and not digits? and not word? and not allowed?)
 
@@ -231,10 +225,8 @@ item into smaller ones, as instances or functions, is the writer's choice.
 
 ```fren
 pub comp too_many_lines {
-    in n_lines: Int      -- lines of the item with code
+    in n_lines: Nat      -- lines of the item with code
     pub det out fires?
-
-    assume counts: n_lines >= 0
 
     ensure rule: fires? iff n_lines > 100
 }

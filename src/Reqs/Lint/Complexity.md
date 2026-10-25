@@ -6,8 +6,8 @@ same meaning, and `fren fix` fixes each of them but `constant_output` and
 This chapter has the lints of `Bool` expressions, of membership, of
 outputs, of records and newtypes, and of literals, and its subchapters the others: those of
 [comparisons](Complexity/Comparisons.md), of [operators](Complexity/Operators.md),
-of [methods](Complexity/Methods.md), of [matches](Complexity/Matches.md)
-and of [record updates](Complexity/Updates.md).
+of [methods](Complexity/Methods.md), of [matches](Complexity/Matches.md),
+of [integers](Complexity/Integers.md) and of [record updates](Complexity/Updates.md).
 
 ## Simpler `Bool` expressions
 
@@ -287,14 +287,12 @@ wherever its receiver is, and `r` takes the literal's place.
 
 ```fren
 pub comp unnecessary_struct_initialization {
-    in n_fields: Int     -- the fields of the literal
+    in n_fields: Nat     -- the fields of the literal
     in reads_own?        -- each field's value reads that field of some `r`, as `r.x` for `x`
     in same?             -- `r` is written the same in each
     in value?            -- `r` is a value, rather than an instance
     in same_type?        -- `r`'s type is the record
     pub det out fires?
-
-    assume counts: n_fields >= 0
 
     ensure rule: fires? iff (n_fields > 0 and reads_own? and same? and value? and same_type?)
 }

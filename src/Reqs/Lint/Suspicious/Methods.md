@@ -43,11 +43,9 @@ pub comp negative_position {
     use lang::Method::{At, IndexOf, Slice, Update}
     in index?            -- the position is the index of `q[i]`, not an argument
     in method: Method    -- the method, for an argument
-    in arg: Int          -- the position of the argument, from 0
+    in arg: Nat          -- the position of the argument, from 0
     in negative?         -- it is written `-k`, for an integer literal `k` other than `0`
     pub det out fires?
-
-    assume position: arg >= 0
 
     ensure rule: fires? iff (negative? and (index? or match method {
         At | Slice | Update => arg = 0,

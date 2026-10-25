@@ -107,10 +107,8 @@ pub mod lang
 
 pub comp ordered_enumeration {
     in ordered?          -- declared with `ordered`
-    in n_payloads: Int   -- variants with a payload
+    in n_payloads: Nat   -- variants with a payload
     pub det out accepted?
-
-    assume count: n_payloads >= 0
 
     ensure rule: accepted? iff (not ordered? or n_payloads = 0)
 

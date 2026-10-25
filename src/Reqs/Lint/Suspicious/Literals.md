@@ -25,11 +25,9 @@ point:
 pub mod lint
 
 pub comp invisible_character {
-    in code: Int         -- the character's code point
+    in code: Nat         -- the character's code point
     in comment?          -- it is in a comment, rather than a string literal
     pub det out fires?
-
-    assume code_point: code >= 0
 
     -- U+202A to U+202E, U+2066 to U+2069 and U+FEFF anywhere; U+00AD,
     -- U+200B and U+2060 in a literal.
@@ -86,11 +84,9 @@ pub comp const_is_empty {
     in bound: Int        -- the integer literal compared with
     in left?             -- the length is the left operand, rather than the right
     in set?              -- the literal is a set's or relation's
-    in n: Int            -- its characters, or the elements it is written with
+    in n: Nat            -- its characters, or the elements it is written with
     pub det out fires?
     pub det out value?   -- what the comparison always is, where it fires
-
-    assume counts: n >= 0
 
     inst p: length_zero { op, bound, left? }
 
@@ -101,11 +97,9 @@ pub comp const_is_empty {
 
 pub comp const_empty_equation {
     in equal?            -- the operator is `=`, rather than `!=`
-    in n: Int            -- the characters or elements of the literal that is not `E`
+    in n: Nat            -- the characters or elements of the literal that is not `E`
     pub det out fires?
     pub det out value?
-
-    assume counts: n >= 0
 
     ensure rule: fires? iff n > 0
     ensure value: value? iff (equal? iff n = 0)
@@ -122,10 +116,10 @@ comp const_is_empty_exact {
     in bound: Int
     in left?
     in set?
-    in n: Int
+    in n: Nat
     in length: Int       -- the literal's `len` or `card`
 
-    assume lengths: n >= 0 and (if set? then (if n = 0 then length = 0 else 1 <= length <= n)
+    assume lengths: (if set? then (if n = 0 then length = 0 else 1 <= length <= n)
         else length = n)
 
     inst p: const_is_empty { op, bound, left?, set?, n }

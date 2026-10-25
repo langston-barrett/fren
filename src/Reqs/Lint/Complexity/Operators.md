@@ -38,7 +38,7 @@ its fix is that operand:
 
 | Written | Fix |
 |---|---|
-| `x + 0`, `0 + x`, `x - 0`, `x * 1`, `1 * x` | `x` |
+| `x + 0`, `0 + x`, `x - 0`, `x * 1`, `1 * x`, `x div 1` | `x` |
 | `s ++ ""`, `"" ++ s`, `q ++ []`, `[] ++ q` | `s`, `q` |
 | `a union {}`, `{} union a`, `a minus {}` | `a` |
 
@@ -46,14 +46,15 @@ It also fires on `x + -y`, whose fix is `x - y`, and on `x - -y`, whose fix
 is `x + y`. The fix has the operation's value and its type: the operands
 of `+`, `-`, `*`, `++`, `union` and `minus` have the same type as the
 result, and `""`, `[]` and `{}` are their identities, as `0` is of `+` and
-`-` and `1` of `*`; `[]` and `{}` take their type from the other operand,
+`-` and `1` of `*` and `div`; `x div 1` is a `Nat` exactly where `x` is,
+since `1` is positive; `[]` and `{}` take their type from the other operand,
 which keeps it. The operand removed is a literal, or a negation whose
 operand the fix evaluates where it was, so the fix keeps the guards.
 `lint::identity_op` states what the fix is, from the operator and what
 each operand is:
 
 ```fren
-pub enum IdentityOperator { Add, Sub, Mul, Concat, Union, Minus }
+pub enum IdentityOperator { Add, Sub, Mul, Concat, Union, Minus, Div }
 
 -- An operand as written: `Empty` is `""`, `[]` or `{}`, and `Negation` is `-y`.
 pub enum IdentityOperand { Zero, One, Empty, Negation, Other }
@@ -62,7 +63,7 @@ pub enum Rewrite { KeepLeft, KeepRight, Flip, Unchanged }
 
 pub comp identity_op {
     use self::IdentityOperand::{Empty, Negation, One, Zero}
-    use self::IdentityOperator::{Add, Concat, Minus, Mul, Sub, Union}
+    use self::IdentityOperator::{Add, Concat, Div, Minus, Mul, Sub, Union}
     use self::Rewrite::{Flip, KeepLeft, KeepRight, Unchanged}
     in op: IdentityOperator
     in left: IdentityOperand
@@ -75,6 +76,7 @@ pub comp identity_op {
         Add | Sub if right = Negation => Flip,
         Mul if right = One => KeepLeft,
         Mul if left = One => KeepRight,
+        Div if right = One => KeepLeft,
         Concat | Union | Minus if right = Empty => KeepLeft,
         Concat | Union if left = Empty => KeepRight,
         _ => Unchanged,

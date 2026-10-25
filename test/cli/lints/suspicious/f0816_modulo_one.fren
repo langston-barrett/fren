@@ -1,0 +1,2 @@
+-- `modulo_one`.
+comp c { in x: Int pub out even? ensure r: even? iff x mod 1 = 0 }

@@ -672,7 +672,7 @@ impl negative_position: lint::negative_position for (x : Bool) (m : Fren.Core.Me
 instance : Fren.Finite Ordering := ⟨[.lt, .eq, .gt], by intro x; cases x <;> simp⟩
 
 instance : Fren.Finite Fren.Core.IdentityOperator :=
-  ⟨[.add, .sub, .mul, .concat, .union, .minus], by intro x; cases x <;> simp⟩
+  ⟨[.add, .sub, .mul, .concat, .union, .minus, .div], by intro x; cases x <;> simp⟩
 
 instance : Fren.Finite Fren.Core.IdentityOperand := ⟨[.zero, .one, .empty, .negation, .other], by intro x; cases x <;> simp⟩
 
@@ -699,6 +699,7 @@ def toIdentityOperator : Fren.Core.IdentityOperator → lint.IdentityOperator
   | .concat => .Concat
   | .union => .Union
   | .minus => .Minus
+  | .div => .Div
 
 def toIdentityOperand : Fren.Core.IdentityOperand → lint.IdentityOperand
   | .zero => .Zero
@@ -1862,5 +1863,116 @@ trusted lint::manual_record_update_written: "a model of a record literal, checke
 trusted lint::manual_record_update_fixed: "a model of a record literal, checked by the refinements in its section"
 trusted lint::needless_update_written: "a model of a record update, checked by the refinements in its section"
 trusted lint::needless_update_fixed: "a model of a record update, checked by the refinements in its section"
+
+/-! ## Integers and natural numbers -/
+
+instance : Fren.Finite Fren.Core.MinMax := ⟨[.min, .max], by intro x; cases x <;> simp⟩
+
+def toMinMax : Fren.Core.MinMax → lint.MinMax
+  | .min => .Min
+  | .max => .Max
+
+-- Both front ends find each variable's bound with `manualNatBounds`, which
+-- asks `manualNat`.
+impl manual_nat: lint::manual_nat for (i d n a b : Bool) {
+  input? := i,
+  defined? := d,
+  int? := n,
+  assumption? := a,
+  bound? := b,
+  fires? := Fren.Core.manualNat i d n a b,
+}
+
+-- Both front ends ask `refinementKeepsInt` at each variable that a
+-- refinement reads by name.
+impl nat_kept: lint::nat_kept for (i a c : Bool) {
+  input? := i,
+  abstract_int? := a,
+  concrete_int? := c,
+  kept? := (Fren.Core.refinementKeepsInt i a c).isSome,
+  concrete? := (Fren.Core.refinementKeepsInt i a c).getD i,
+}
+
+-- The rest are decided in `opReports`, in both front ends.
+impl manual_abs: lint::manual_abs for (c : Comparison) (t : Bool) {
+  op := toComparison c,
+  negated_then? := t,
+  fires? := Fren.Core.manualAbs c t,
+}
+
+impl manual_abs_diff: lint::manual_abs_diff for (c : Comparison) (t : Bool) {
+  op := toComparison c,
+  then_left_first? := t,
+  fires? := Fren.Core.manualAbsDiff c t,
+}
+
+impl manual_min_max: lint::manual_min_max for (c : Comparison) (t : Bool) {
+  op := toComparison c,
+  then_left? := t,
+  fires? := (Fren.Core.manualMinMax c t).isSome,
+  method := toMinMax ((Fren.Core.manualMinMax c t).getD .min),
+}
+
+impl manual_clamp: lint::manual_clamp for (f s : Comparison) (a b : Int) {
+  first_op := toComparison f,
+  second_op := toComparison s,
+  first := a,
+  second := b,
+  fires? := Fren.Core.manualClamp f s a b,
+  low_first? := f.below,
+} by
+  intro f s a b _
+  cases f <;> cases s <;> simp [fren_spec, toComparison, Fren.Core.manualClamp, Comparison.below, Comparison.above]
+
+impl manual_rem_euclid: lint::manual_rem_euclid for (d a : Bool) {
+  same_divisor? := d,
+  same_addend? := a,
+  fires? := Fren.Core.manualRemEuclid d a,
+}
+
+impl modulo_one: lint::modulo_one for (k : Int) {
+  divisor := k,
+  fires? := Fren.Core.moduloOne k,
+} by
+  intro k _
+  simp [fren_spec, Fren.Core.moduloOne]
+
+impl min_max: lint::min_max for (i o : Fren.Core.MinMax) (a b : Int) {
+  inner := toMinMax i,
+  outer := toMinMax o,
+  a := a,
+  b := b,
+  fires? := Fren.Core.minMax i o a b,
+} by
+  intro i o a b _
+  cases i <;> cases o <;> simp [fren_spec, toMinMax, Fren.Core.minMax]
+
+-- `erasingOpAt?` asks `erasingDivision` at each `div` and `mod`.
+impl erasing_division: lint::erasing_division for (z : Bool) {
+  zero_dividend? := z,
+  fires? := Fren.Core.erasingDivision z,
+}
+
+impl eq_op_method: lint::eq_op_method for (s : Bool) {
+  same? := s,
+  fires? := Fren.Core.eqOpMethod s,
+}
+
+trusted lint::manual_nat_input_written: "a model of a component, checked by the refinements in its section"
+trusted lint::manual_nat_input_fixed: "a model of a component, checked by the refinements in its section"
+trusted lint::manual_nat_output_written: "a model of a component, checked by the refinement in its section"
+trusted lint::manual_nat_output_fixed: "a model of a component, checked by the refinement in its section"
+trusted lint::manual_abs_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_abs_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_min_max_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_min_max_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_rem_euclid_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_rem_euclid_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::eq_op_method_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::eq_op_method_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::integer_values_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::integer_values_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::erasing_division_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::erasing_division_fixed: "a model of an expression, checked by the refinements in its section"
 
 end Fren.Impls
