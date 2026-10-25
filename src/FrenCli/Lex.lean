@@ -154,7 +154,9 @@ def lexWithComments (src : Array Char) : Except LexError (Array Token × Array S
       let lean := Fren.Core.leanIdentEnd src start
       if lean > i then
         let lexeme := String.ofList (src.extract start lean).toList
-        return .error { span := ⟨start, lean⟩, msg := Fren.Core.leanIdentifierMsg lexeme (src[lean]? == some '=') }
+        -- An unclosed `«` runs to the end of the input: mark only its line.
+        let stop := ((src.extract start lean).findIdx? (· == '\n')).map (start + ·) |>.getD lean
+        return .error { span := ⟨start, stop⟩, msg := Fren.Core.leanIdentifierMsg lexeme (src[lean]? == some '=') }
       let s := String.ofList (src.extract start i).toList
       toks := toks.push { tok := if reserved.contains s then .kw s else .ident s, span := ⟨start, i⟩ }
     else if c == '"' then

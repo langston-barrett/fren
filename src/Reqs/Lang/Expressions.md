@@ -709,5 +709,6 @@ visibility](Modules.md#resolution)). A constant stands for its value. A variant 
 with its enumeration's name, `Mode::Heat`, or by its bare name once brought
 into scope by `use`. `w.x` names the variable `x` of the instance `w` (see
 [Instances](Instances.md#instance-variables)), or of the binder `w` of a
-[global expectation](Global.md), and otherwise the field `x` of the
-record `w` (see [Records](#records)).
+[global expectation](Global.md), and otherwise reads the field `x` of
+the value `w`, a variable or a [constant](Items.md#constants) (see
+[Records](#records)), or applies its [method](#methods) `x`.
