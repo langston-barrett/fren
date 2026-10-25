@@ -1522,12 +1522,14 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     -- the comparisons before an operand guard it. The parser has checked
     -- its operators.
     let (x0, t0) ← elabExpr cx es[0]!
+    -- A `Nat` is widened (`lang::operator_type`).
+    let t0 := t0.widen
     unless t0 == .string || t0 == .int do mismatch es[0]! .int t0 (opNote ops[0]!.1 .int)
     let mut (x, ca) := (x0, ← isConstant cx es[0]!)
     let mut links := #[]
     for (op, _) in ops, a in es, b in es.extract 1 do
       let (y, tb) ← elabExpr { cx with guards := cx.guards ++ links } b
-      unless tb == t0 do mismatch b t0 tb (opNote op t0)
+      unless tb.widens t0 do mismatch b t0 tb (opNote op t0)
       let cb ← isConstant cx b
       if t0 == .string then
         checkCore cx (a.span.to b.span) .stringCompare true (ca || cb) #[a, b] (ca && cb)

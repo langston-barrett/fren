@@ -153,6 +153,17 @@ comp divided {
     expect sized: size <= n + n
 }
 
+-- A chained comparison widens a `Nat`.
+comp chained_nat {
+    in n: Nat
+    in q: Seq(Int)
+    pub out inside?
+
+    req r: inside? iff 0 <= n < q.len
+
+    expect nonempty: when inside?, q != []
+}
+
 -- `{}` takes its type from the other branch, as without `Nat`s.
 comp empty_branch {
     in c?
@@ -163,5 +174,5 @@ comp empty_branch {
     expect member: when not c? and n in s, n in t
 }
 
---@ summary: 58 passed, 4 failed, 0 inconclusive, 1 redundant
+--@ summary: 62 passed, 4 failed, 0 inconclusive, 1 redundant
 --@ exit: 1
