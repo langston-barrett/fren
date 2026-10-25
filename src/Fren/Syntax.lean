@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCore.Names
 import Lean
 -- keep-sorted end
 
@@ -19,8 +20,39 @@ namespace Fren.Lang
 
 declare_syntax_cat fren_expr (behavior := both)
 
+open Lean Parser in
+/-- One of Lean's tokens that are an identifier followed by `!`
+(`Fren.Core.leanBangTokens`), read as that identifier, so that a
+declaration of it reaches the elaborator, which rejects it as the `fren`
+command does. -/
+def bangTokenFn : ParserFn := fun c s =>
+  let iniSz := s.stackSize
+  let iniPos := s.pos
+  let s := tokenFn [] c s
+  if s.hasError then s.restore iniSz iniPos |>.mkErrorAt "identifier" iniPos
+  else match s.stxStack.back with
+    | .atom info val =>
+      if Fren.Core.leanBangTokens.contains val then
+        s.popSyntax.pushSyntax (.ident info val.toRawSubstring (.mkSimple val) [])
+      else s.restore iniSz iniPos |>.mkErrorAt "identifier" iniPos
+    | _ => s.restore iniSz iniPos |>.mkErrorAt "identifier" iniPos
+
+open Lean Parser in
+/-- An identifier of Fren: one of Lean's, or one of the tokens of
+`bangTokenFn`. -/
+def frenIdent : Parser :=
+  withAntiquot (mkAntiquot "ident" identKind) (identNoAntiquot <|>
+    { fn := bangTokenFn, info := { firstTokens := .tokens Fren.Core.leanBangTokens } })
+
+open Lean PrettyPrinter in
+@[combinator_formatter frenIdent] def frenIdent.formatter : Formatter := Formatter.identNoAntiquot.formatter
+
+open Lean PrettyPrinter in
+@[combinator_parenthesizer frenIdent] def frenIdent.parenthesizer : Parenthesizer :=
+  Parenthesizer.identNoAntiquot.parenthesizer
+
 /-- A `::`-separated path, e.g. `check::Verdict::Pass` or `self::Outcome`. -/
-syntax fren_path := sepBy1(ident, "::")
+syntax fren_path := sepBy1(frenIdent, "::")
 
 declare_syntax_cat fren_type (behavior := both)
 /-- A type named by a path: `Bool`, `Int`, `String`, or an item. -/
@@ -110,7 +142,7 @@ scoped syntax:max (name := pairExpr) "(" fren_expr ", " fren_expr ")" : fren_exp
 
 /-- `x := e`, or `x` for `x := x`. The expression cannot be a bare
 `when`/`unless`, which would swallow the following bindings. -/
-syntax fren_binding := ident (" := " fren_expr:20)?
+syntax fren_binding := frenIdent (" := " fren_expr:20)?
 
 /-- `R { x := e, y }`, a record literal. Its precedence is below `max`, so
 that a `match`'s scrutinee, parsed at `max`, never tries it: `match s {`
@@ -118,13 +150,13 @@ starts the arms. -/
 scoped syntax:arg (name := recordExpr) fren_path " { " sepBy1(fren_binding, ", ", ", ", allowTrailingSep) " }" : fren_expr
 /-- `e.x`, reading a field of `e`, an atom that ends in `)` or `}`: after a
 name, `.x` is part of the (dotted) identifier. -/
-scoped syntax:max (name := fieldExpr) fren_expr:arg noWs "." noWs ident : fren_expr
+scoped syntax:max (name := fieldExpr) fren_expr:arg noWs "." noWs frenIdent : fren_expr
 /-- `e.m(a, b)`, a method call on an atom that ends in `)` or `}`; on a name,
 `x.m(a)` is parsed as an application of the dotted name. -/
-scoped syntax:max (name := methodExpr) fren_expr:arg noWs "." noWs (ident <|> "at") noWs "(" sepBy1(fren_expr, ", ") ")" : fren_expr
+scoped syntax:max (name := methodExpr) fren_expr:arg noWs "." noWs (frenIdent <|> "at") noWs "(" sepBy1(fren_expr, ", ") ")" : fren_expr
 
 declare_syntax_cat fren_pattern_binder
-syntax ident : fren_pattern_binder
+syntax frenIdent : fren_pattern_binder
 syntax "_" : fren_pattern_binder
 
 /-- An alternative of a pattern: `E::V` or `E::V(a, _)`. -/
@@ -147,16 +179,16 @@ declare_syntax_cat fren_member (behavior := both)
 
 /-- `in x: T`; a definition, `:= e`, is parsed only to report that inputs
 cannot have one. -/
-scoped syntax (name := inMember) "in " ident (" : " fren_type)? (" := " fren_expr)? : fren_member
+scoped syntax (name := inMember) "in " frenIdent (" : " fren_type)? (" := " fren_expr)? : fren_member
 /-- `[pub] [det] out x: T [:= e]`: `det` asks for the determinism check, and
 `:= e` makes it a defined output. -/
-scoped syntax (name := outMember) ("pub ")? (&"det ")? &"out " ident (" : " fren_type)? (" := " fren_expr)? : fren_member
-scoped syntax &"assume " ident " : " fren_expr : fren_member
-scoped syntax &"req " ident " : " fren_expr : fren_member
-scoped syntax &"expect " ident " : " fren_expr : fren_member
+scoped syntax (name := outMember) ("pub ")? (&"det ")? &"out " frenIdent (" : " fren_type)? (" := " fren_expr)? : fren_member
+scoped syntax &"assume " frenIdent " : " fren_expr : fren_member
+scoped syntax &"req " frenIdent " : " fren_expr : fren_member
+scoped syntax &"expect " frenIdent " : " fren_expr : fren_member
 
 /-- `inst w: c { x := e, ... }`: an instance `w` of comp `c`. -/
-scoped syntax &"inst " ident " : " fren_path " { " sepBy(fren_binding, ", ", ", ", allowTrailingSep) " }" : fren_member
+scoped syntax &"inst " frenIdent " : " fren_path " { " sepBy(fren_binding, ", ", ", ", allowTrailingSep) " }" : fren_member
 /-- `use`, as a member: its names are in scope in the component only. -/
 scoped syntax (name := useMember) "use " fren_path ("::*")? : fren_member
 scoped syntax (name := useGroupMember) "use " fren_path "::{" sepBy1(fren_path, ", ", ", ", allowTrailingSep) "}" : fren_member
@@ -176,20 +208,20 @@ one token. -/
 scoped syntax (name := useGroupCmd) "use " fren_path "::{" sepBy1(fren_path, ", ", ", ", allowTrailingSep) "}" : command
 
 /-- `V` or `V(T, U)`, a variant with a payload. -/
-syntax fren_variant := ident (noWs "(" sepBy1(fren_type, ", ") ")")?
+syntax fren_variant := frenIdent (noWs "(" sepBy1(fren_type, ", ") ")")?
 
-scoped syntax (name := enumCmd) ("pub ")? "enum " ident " { " sepBy1(fren_variant, ", ", ", ", allowTrailingSep) " }" : command
+scoped syntax (name := enumCmd) ("pub ")? "enum " frenIdent " { " sepBy1(fren_variant, ", ", ", ", allowTrailingSep) " }" : command
 
 /-- `x: T`, or `x?` for a `Bool`. -/
-syntax fren_field := ident (" : " fren_type)?
+syntax fren_field := frenIdent (" : " fren_type)?
 
 /-- `struct R { x: T, ... }`, a record. -/
-scoped syntax (name := structCmd) ("pub ")? "struct " ident " { " sepBy1(fren_field, ", ", ", ", allowTrailingSep) " }" : command
+scoped syntax (name := structCmd) ("pub ")? "struct " frenIdent " { " sepBy1(fren_field, ", ", ", ", allowTrailingSep) " }" : command
 
-scoped syntax (name := compCmd) ("pub ")? "comp " ident " { " fren_member* " }" : command
+scoped syntax (name := compCmd) ("pub ")? "comp " frenIdent " { " fren_member* " }" : command
 
 /-- `type T`, an abstract type. -/
-scoped syntax (name := typeCmd) ("pub ")? "type " ident : command
+scoped syntax (name := typeCmd) ("pub ")? "type " frenIdent : command
 
 /-- A function's parameter: `T` of an uninterpreted function, `x: T` or
 `x?` of a defined one. Which it is depends on whether the function has a
@@ -198,21 +230,21 @@ syntax fren_param := fren_type (" : " fren_type)?
 
 /-- `fn f(T, U): R`, an uninterpreted function, or `fn f(x: T): R := e`, a
 defined one. -/
-scoped syntax (name := fnCmd) ("pub ")? "fn " ident noWs "(" sepBy1(fren_param, ", ") ")" (" : " fren_type)?
+scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent noWs "(" sepBy1(fren_param, ", ") ")" (" : " fren_type)?
   (" := " fren_expr)? : command
 
 /-- `const N: T := e`. -/
-scoped syntax (name := constCmd) ("pub ")? "const " ident " : " fren_type " := " fren_expr : command
+scoped syntax (name := constCmd) ("pub ")? "const " frenIdent " : " fren_type " := " fren_expr : command
 
 /-- `(a b: c)`: behaviours `a` and `b` of comp `c`, in a global expectation. -/
-syntax fren_binder := "(" ident+ " : " fren_path ")"
+syntax fren_binder := "(" frenIdent+ " : " fren_path ")"
 
 /-- `expect n: forall (a b: c), e`, a global expectation. -/
-scoped syntax (name := globalCmd) "expect " ident " : " ("forall " fren_binder+ ", ")? fren_expr : command
+scoped syntax (name := globalCmd) "expect " frenIdent " : " ("forall " fren_binder+ ", ")? fren_expr : command
 
 /-- `refine r: c refines a [{ bindings }] [by tactics]`, a refinement
 (`Reqs/Lang/Refinement`). -/
-scoped syntax (name := refineCmd) "refine " ident " : " fren_path ppSpace &"refines " fren_path
+scoped syntax (name := refineCmd) "refine " frenIdent " : " fren_path ppSpace &"refines " fren_path
   (" { " sepBy(fren_binding, ", ", ", ", allowTrailingSep) " }")? (" by " Lean.Parser.Tactic.tacticSeq)? : command
 
 

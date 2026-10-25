@@ -59,7 +59,9 @@ comp methods {
 }
 ```
 
-A component's imports shadow its module's scope. The first segment of a
+A component's imports shadow its module's scope. This is a rule of
+resolution, between two scopes, and takes no `!`, unlike a declaration that
+[shadows](Components.md#shadowing) a name. The first segment of a
 path in the component is resolved as in [Resolution](#resolution), first
 among the component's imports alone, and only if it is unbound there,
 in its module's scope. So a component can import `ValueType::BoolTy` even

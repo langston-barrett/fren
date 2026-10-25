@@ -191,8 +191,28 @@ def similarFixes (msg : String) (n : Name) (cands : Array Name) : Array Fix :=
 
 /-- `n` is not found in `where_`, where the names `cands` are. -/
 def cannotFindMsg (n : Name) (where_ : String) (cands : Array Name) : Msg :=
-  { code? := some "F0201", headline := s!"cannot find `{n}` in {where_}", label? := some s!"not found in {where_}"
-    fixes := similarFixes "a similar name exists" n cands }
+  let msg : Msg := { code? := some "F0201", headline := s!"cannot find `{n}` in {where_}", label? := some s!"not found in {where_}"
+                     fixes := similarFixes "a similar name exists" n cands }
+  -- `x!` declares `x`, and its uses are written `x`.
+  match n with
+  | .str .anonymous s =>
+    if s.endsWith "!" && s.length > 1 then
+      let base := (s.dropEnd 1).toString
+      { msg with
+        notes := #["note: `!` is written only where a name is declared, to shadow another"]
+        fixes := #[{ msg := s!"for the name `{base}`, remove the `!`", replacement := base }] }
+    else msg
+  | _ => msg
+
+/-- `msg`, about the path segment `seg`, with the fix for `!=` first if it
+cannot find a name `x!` that `=` directly follows: `x!=1` reads `x!` then
+`=`, so `!=` is the likelier meaning, and removing the `!` alone would make
+the comparison its opposite. -/
+def withBangEqFix (msg : Msg) (seg : String) (beforeEq : Bool) : Msg :=
+  if beforeEq && msg.code? == some "F0201" && seg.endsWith "!" && seg.length > 1 then
+    { msg with fixes := #[{ msg := "for `!=`, write a space before the `!`", replacement := s!"{(seg.dropEnd 1).toString} !" }]
+                          ++ msg.fixes }
+  else msg
 
 def rootItem : Item := { kind := .moduleItem, path := .anonymous, isPub := true, owner := .anonymous }
 
@@ -349,6 +369,46 @@ def Table.resolvePath (t : Table) (from_ : Name) (segs : Array Name) (extra : Ar
 
 def builtinTypes : List Name := [`Bool, `Int, `String]
 
+/-- The name that `n` declares, and whether it is written with `!`: `x!`
+declares `x`, and `ready?!` declares `ready?` (`Reqs/Lang/Components#shadowing`). -/
+def declaredName (n : Name) : Name × Bool :=
+  match n with
+  | .str p s => if s.endsWith "!" then (.str p (s.dropEnd 1).toString, true) else (n, false)
+  | _ => (n, false)
+
+/-- A declaration of `n` is written `n!`, but hides nothing; `why` says why
+it cannot. -/
+def needlessBangMsg (n : Name) (why : String := s!"no `{n}` that a use could mean is in scope here") : Msg :=
+  { code? := some "F0218", headline := s!"`{n}!` shadows nothing", label? := some "nothing to shadow"
+    notes := #[s!"note: `!` marks a declaration that hides a name in scope, but {why}"]
+    fixes := #[{ msg := "remove the `!`", replacement := n.toString }] }
+
+/-- Lean's tokens, with `Fren` imported and `Fren.Lang` open, that are an
+identifier followed by `!` (`Reqs/Lang/Lexical#identifiers`). Lean reads
+each as a token of its own, so the Lean front end could not declare its
+name with `!`; both front ends reject it. -/
+def leanBangTokens : List String :=
+  ["assert!", "debug_assert!", "f!", "m!", "panic!", "println!", "reportDbgIssue!", "reportEMatchIssue!",
+   "reportIssue!", "s!", "unreachable!", "using!"]
+
+/-- Fails if the declaration of `n`, written with `!` if `bang`, is one of
+Lean's tokens. -/
+def checkLeanToken (n : Name) (bang : Bool) : Except Msg Unit := do
+  let text := n.toString ++ "!"
+  if bang && leanBangTokens.contains text then
+    throw { code? := some "F0219", headline := s!"`{text}` is a Lean token, so it cannot be declared"
+            label? := some "a Lean token"
+            notes := #[s!"note: Lean reads `{text}` as a token of its own, not as `{n}` followed by `!`",
+              "help: rename the declaration"] }
+
+/-- Fails if `n`, the name of a declaration that never shadows, such as an
+item's or a constraint's, is written with `!`. -/
+def checkNoBang (n : Name) : Except Msg Unit := do
+  let (base, bang) := declaredName n
+  checkLeanToken base bang
+  if bang then
+    throw (needlessBangMsg base "only variables, parameters, instances and binders shadow")
+
 /-- A name other than a variable's ends in `?`; `what` is, e.g., `enum`. -/
 def questionNameMsg (what : String) (n : Name) : Msg :=
   let base := (n.toString.dropEndWhile (· == '?')).toString
@@ -358,6 +418,7 @@ def questionNameMsg (what : String) (n : Name) : Msg :=
 
 /-- Checks the name of a module, enum, variant, comp or instance. -/
 def checkItemName (what : String) (n : Name) : Except Msg Unit := do
+  checkNoBang n
   if n.toString.endsWith "?" then
     throw (questionNameMsg what n)
   if builtinTypes.contains n then
@@ -367,6 +428,7 @@ def checkItemName (what : String) (n : Name) : Except Msg Unit := do
 /-- Checks a constant's name: like other items' but a `Bool`, it cannot end
 in `?`. Its case is a lint (`non_upper_case_constants`). -/
 def checkConstName (n : Name) : Except Msg Unit := do
+  checkNoBang n
   if n.toString.endsWith "?" then throw (questionNameMsg "constant" n)
 
 /-- Fails if `n` is already declared or imported by name in the module
@@ -451,6 +513,48 @@ def nameText : Name → String
 def checkVarName (n : Name) (isBool? : Option Bool) : Except Msg Unit :=
   checkVarKind n (Fren.Str.endsWith (nameText n) "?") isBool?
 
+/-! ## Shadowing (`Reqs/Lang/Components#shadowing`) -/
+
+/-- Whether a declaration is accepted (`lang::shadowing`), from whether its
+name hides a name in scope and whether it is written with `!`. -/
+def shadowingAccepted (hides bang : Bool) : Bool := hides == bang
+
+/-- What a declaration of `n` in the scope `scope` hides, if anything: the
+innermost of `locals`, each with what it is (such as "the input"), or
+else the value that the path `n` resolves to, a constant, a function or a
+variant. Other items are never read where a variable can be, so nothing
+hides them. -/
+def Table.hidden? (t : Table) (scope : Name) (locals : Array (Name × String)) (n : Name) : Option String :=
+  match locals.reverse.find? (·.1 == n) with
+  | some (_, what) => some s!"{what} `{n}`"
+  | none =>
+    match t.resolvePath scope #[n] with
+    | .ok (.item { kind := .constItem, path, .. }) => some s!"the constant `{showPath path}`"
+    | .ok (.item { kind := .fnItem, path, .. }) => some s!"the function `{showPath path}`"
+    | .ok r@(.variant ..) => some s!"the variant `{showPath r.path}`"
+    | _ => none
+
+/-- A declaration of `n` hides `hidden`, but has no `!`. -/
+def implicitShadowMsg (n : Name) (hidden : String) : Msg :=
+  let msg : Msg := { code? := some "F0217", headline := s!"`{n}` shadows {hidden}", label? := some "shadows without `!`"
+                     notes := #[s!"note: shadowing is explicit: a declaration that hides a name in scope is written with `!`, as `{n}!`"]
+                     fixes := #[{ msg := s!"to shadow {hidden}, write `{n}!`", replacement := s!"{n}!" }] }
+  -- `s!` is a Lean token, which F0219 rejects as a declaration.
+  if leanBangTokens.contains (n.toString ++ "!") then
+    { msg with
+      notes := #[s!"note: shadowing is explicit, but `{n}!` is a Lean token, which cannot be declared (F0219)",
+        "help: rename the declaration"]
+      fixes := #[] }
+  else msg
+
+/-- Checks a declaration of `n`, written with `!` if `bang`, given what it
+hides (`lang::shadowing`). -/
+def checkShadowing (n : Name) (hidden? : Option String) (bang : Bool) : Except Msg Unit :=
+  if shadowingAccepted hidden?.isSome bang then pure ()
+  else match hidden? with
+    | some h => throw (implicitShadowMsg n h)
+    | none => throw (needlessBangMsg n)
+
 /-! ## Instances (`Reqs/Inst`) -/
 
 /-- What a comp variable is. Instance variables are named `w.x`. -/
@@ -509,6 +613,18 @@ def Role.ofInst (inSub : Role) (isPub : Bool) : Role :=
   | .input => .instInput
   | .output => if isPub then .instOutput else .instHidden
   | _ => .instHidden
+
+/-- The names in scope that a `match` binder may hide, innermost last, each
+with what it is (`Table.hidden?`): the variables of one segment, which are
+parameters in a function's body (`inFn`), the instances, which are binders
+in a global expectation (`inGlobal`), and the binders of enclosing arms. -/
+def bindingLocals (vars : Array (Name × Role)) (insts binders : Array Name) (inFn : Bool) (inGlobal := false) :
+    Array (Name × String) :=
+  let what (r : Role) := if inFn then "the parameter" else if r == .input then "the input" else "the output"
+  -- A global expectation's binders are its instances.
+  let inst := if inGlobal then "the global expectation's binder" else "the instance"
+  (vars.filter (·.1.isAtomic) |>.map fun (n, r) => (n, what r)) ++ insts.map (·, inst)
+    ++ binders.map (·, "the binder")
 
 def outInAssumeMsg (n : Name) : Msg :=
   { code? := some "F0401", headline := s!"assumptions may only mention `in` variables, but `{n}` is an `out`"

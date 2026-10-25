@@ -30,5 +30,18 @@ comp outer {
     expect wrong: c.y = a                                                  --~ error: expectation `outer::wrong` does not hold
 }
 
---@ summary: 13 passed, 1 failed, 0 inconclusive, 0 redundant
+-- `!` ends an identifier, after its `?` if it has one.
+enum Flag { Set(Bool), Unset }
+
+comp tight {
+    in ready?
+    in f: Flag
+    pub det out go?
+
+    req rule: go? iff match f { Flag::Set(ready?!)=>ready?, _=>ready? }
+
+    expect payload: when f=Flag::Set(true), go?
+}
+
+--@ summary: 18 passed, 1 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

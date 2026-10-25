@@ -178,8 +178,9 @@ def codesInSources : IO (Array String) := do
   return out.toList.eraseDups.toArray
 
 /-- Codes that no snapshot can report reliably: a solver that gives up
-depends on the machine. -/
-def unsnapshotted : List String := ["F0608"]
+depends on the machine; and removed codes, which nothing reports, and
+whose explanations say what replaced them. -/
+def unsnapshotted : List String := ["F0608", "F0713"]
 
 /-- Every code is explained and covered by a snapshot; each explanation's
 erroneous example reports its code, and its fixed versions report no static
@@ -240,7 +241,8 @@ def specFiles : IO (Array String) := do
 not formatted, and those that `fren fmt` cannot parse, such as tests of
 syntax errors and of Lean code, and the examples of Markdown specs. -/
 def fmtIgnore : List String :=
-  ["test/cli/f01*.fren", "test/cli/f0216_member_option.fren", "test/cli/fix_*.fren", "test/cli/fmt_check.fren", "test/cli/fmt_parse_error.fren", "test/cli/mutate_unformatted.fren", "test/ui/syntax_*.fren",
+  ["test/cli/f01*.fren", "test/cli/f0216_member_option.fren", "test/cli/fix_*.fren", "test/cli/fmt_check.fren",
+   "test/cli/fmt_parse_error.fren", "test/cli/fmt_shadow.fren", "test/cli/mutate_unformatted.fren", "test/ui/syntax_*.fren",
    "test/ui/impl.fren", "test/ui/lean_*.fren", "test/ui/trace.fren", "src/Reqs/Markdown.md",
    -- `#fren_md` in a block, which only the Lean front end reads.
    "src/FrenTest/chapters/LiterateOuter.md"]

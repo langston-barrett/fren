@@ -23,12 +23,14 @@ def isIdRest (c : Char) : Bool :=
 
 /-- How many characters at `i` continue an identifier whose last character
 is `last`, or `0` where it ends (`lang::identifier_end`): a character of an
-identifier, a final `?`, or a `.` and the start of another component. -/
+identifier, a final `?`, a final `!` (after any `?`), or a `.` and the start
+of another component. -/
 def identExtends (src : Array Char) (last : Char) (i : Nat) : Nat :=
-  if last == '?' then 0 else
+  if last == '!' then 0 else
+  if last == '?' then (if src[i]? == some '!' then 1 else 0) else
   match src[i]? with
   | some c =>
-    if isIdRest c || c == '?' then 1
+    if isIdRest c || c == '?' || c == '!' then 1
     else if c == '.' && (src[i + 1]?).any isIdStart then 2
     else 0
   | none => 0
@@ -179,8 +181,8 @@ def leanIdentifierMsg (s : String) (beforeEq := false) : Msg :=
     | line :: rest => if rest.all (·.all Char.isWhitespace) then line else line ++ "…"
     | [] => s
   { code? := some "F0119", headline := s!"`{shown}` is not an identifier in Fren", label? := some "not a Fren identifier"
-    notes := #["note: an identifier is ASCII letters, digits, `_` and `'`, with `.` between components and an optional `?` at the end"]
-      ++ (if beforeEq && s.endsWith "!" then #["help: `!` is not part of an identifier; to compare, write `a != b`, with spaces"] else #[])
+    notes := #["note: an identifier is ASCII letters, digits, `_` and `'`, with `.` between components, an optional `?` at the end, and then an optional `!`"]
+      ++ (if beforeEq && s.endsWith "!" then #["help: an identifier ends at its first `!`; to compare, write `a != b`, with spaces"] else #[])
       -- A `«` after the last `»` is not closed, as in `«a».«b`.
       ++ if ((s.splitOn "»").getLast?.getD s).contains '«' then #["note: the `«` is not closed"] else #[] }
 

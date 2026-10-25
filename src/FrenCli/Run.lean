@@ -178,7 +178,7 @@ def options : Array String :=
 
 def unknownLint (n : String) : Msg :=
   { code? := none, headline := s!"unknown lint `{n}`"
-    notes := #[Fren.Core.lintsNote]
+    notes := Fren.Core.removedLintNotes n ++ #[Fren.Core.lintsNote]
     fixes := (Fren.Core.similarStr n (Fren.Core.Lint.all.map (·.name))).toArray.map fun s =>
       { msg := s!"a lint with a similar name exists: `{s}`", replacement := s } }
 

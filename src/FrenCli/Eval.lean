@@ -511,6 +511,9 @@ def liftE (x : Except Fren.Core.Error α) : L α :=
 
 def segNames (segs : Array Ident) : Array Name := segs.map (Name.mkSimple ·.name)
 
+/-- The name that `x` declares: `x!` declares `x`. -/
+def declName (x : Ident) : Name := (Fren.Core.declaredName (Name.mkSimple x.name)).1
+
 def resolve (segs : Array Ident) : L Resolved := do
   let st ← get
   liftE (st.table.resolvePath st.scope (segNames segs))
@@ -816,7 +819,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
         | .variant _ segs binders? => do
           let .variant en idx ← resolve segs | throw "a pattern names no variant"
           unless en.path == path do throw s!"the pattern's variant is not of `{showPath path}`"
-          let bs := (binders?.getD #[]).map (Name.mkSimple ·.name)
+          let bs := (binders?.getD #[]).map declName
           let tys := d.ctors[idx]!.fields.map (·.2)
           pure (Pat.ctor idx bs, (bs.zip tys).toList.filter (·.1 != `_))
         | .or _ alts => do
@@ -855,14 +858,14 @@ def lowerComp (isPub : Bool) (name : Ident) (members : Array Member) : L Unit :=
   let mut vars := #[]
   for m in members do
     let .var isIn isPub isDet x ty? _ := m | continue
-    vars := vars.push { name := Name.mkSimple x.name, ty := ← varTy ty?, role := if isIn then .input else .output, isPub, isDet }
+    vars := vars.push { name := declName x, ty := ← varTy ty?, role := if isIn then .input else .output, isPub, isDet }
   let mut pending := #[]
   for m in members do
     let .inst x p bs := m | continue
     let cpath ← match ← resolve p with
       | .item { kind := .compItem, path, .. } => pure path
       | r => throw s!"`{showPath r.path}` is not a component"
-    pending := pending.push (Name.mkSimple x.name, cpath, bs)
+    pending := pending.push (declName x, cpath, bs)
   let shell : Comp := { path, vars, constraints := #[], insts := pending.map fun (w, c, _) => { name := w, comp := c, bindings := #[] } }
   let cx : Cx := { vars := st.spec.flatVars shell }
   let mut insts := #[]
@@ -878,7 +881,7 @@ def lowerComp (isPub : Bool) (name : Ident) (members : Array Member) : L Unit :=
   let mut defs := #[]
   for m in members do
     let .var _ _ _ x _ (some e) := m | continue
-    defs := defs.push (Name.mkSimple x.name, (← lowerExpr cx e).1)
+    defs := defs.push (declName x, (← lowerExpr cx e).1)
   let c : Comp := { path, vars, constraints, insts, defs }
   modify fun s => { s with
     table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
@@ -897,7 +900,7 @@ def lowerGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (b
     let cpath ← match ← resolve p with
       | .item { kind := .compItem, path, .. } => pure path
       | r => throw s!"`{showPath r.path}` is not a component"
-    for x in xs do insts := insts.push { name := Name.mkSimple x.name, comp := cpath, bindings := #[] }
+    for x in xs do insts := insts.push { name := declName x, comp := cpath, bindings := #[] }
   let st ← get
   let shell : Comp := { path := st.module, vars := #[], constraints := #[], insts, isGlobal := true }
   let n := Name.mkSimple name.name
@@ -944,7 +947,7 @@ partial def lowerItem : Item → L Unit
       let ps ← params.mapM (lowerTy ·.1)
       modify fun s => { s with spec.funs := s.spec.funs.insert path (ps, r) }
     | some body =>
-      let ps ← params.mapM fun (p, ty?) => return (Name.mkSimple p[0]!.name, ← varTy ty?)
+      let ps ← params.mapM fun (p, ty?) => return (declName p[0]!, ← varTy ty?)
       let (b, _) ← lowerExpr { binders := ps.toList.reverse } body
       -- Binders named after the function, so that substituting arguments
       -- never captures a binder of theirs: theirs are a comp's or another

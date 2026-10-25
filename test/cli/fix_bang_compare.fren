@@ -1,0 +1,18 @@
+--@ args: fix --check
+-- `x!=1` reads `x!` then `=`: the first suggestion makes it the comparison,
+-- and the second, for a name written with `!`, removes the `!`. Neither is
+-- applied, since the error is static.
+pub comp c {
+    in x: Int
+    pub out p?
+
+    req r: p? iff x!=1
+}
+
+-- Where no `=` follows, only the second applies: `x !` would not parse.
+pub comp d {
+    in x: Int
+    pub out p?
+
+    req r: p? iff x!
+}

@@ -12,8 +12,11 @@ member     := "in" variable
             | "expect" IDENT ":" expr
             | instance
             | use
-variable   := IDENT [":" type]
+variable   := DECL [":" type]
 ```
+
+A `DECL` is an identifier that declares a name, and ends in `!` if it
+[shadows](#shadowing) another.
 
 ## Members
 
@@ -98,9 +101,98 @@ Assumptions, requirements and expectations are together called
 `Bool`.
 
 The variables, constraints and instances of a component share one
-namespace, so their names must be distinct. A component's variables shadow
-names from its module. Members may appear in any order; a variable may be
+namespace, so their names must be distinct. A component's variables and
+instances may [shadow](#shadowing) the constants, functions and variants of
+its module, explicitly. Members may appear in any order; a variable may be
 mentioned before its declaration. A component may have no members at all.
+
+## Shadowing
+
+A declaration *shadows* a name in scope when, within the declaration's
+scope, a path of that one name means the declaration rather than what it
+otherwise would. Shadowing is allowed, but explicit: a declaration that
+shadows is written with `!` directly after its name, as in `x!`, or
+`ready?!` for a `Bool`, whose `!` follows its `?`. The `!` is not part of
+the name, and its uses are written without it.
+
+```text
+comp c {
+    in x: Int
+    in s: Shape
+    pub out p?
+    -- `x!` declares a binder that shadows the input `x`; in the arm, `x` is the payload.
+    req r: p? iff match s {
+        Shape::Circle(x!) => x > 0,
+        _ => x > 0,   -- the input
+    }
+}
+```
+
+These declarations may shadow:
+
+- a component's [variable](#members) or [instance](Instances.md), the
+  constants, functions and variants in the component's scope (see
+  [Modules and visibility](Modules.md#use-in-a-component));
+- a [defined function's](Items.md#defined-functions) parameter, those of
+  the function's module;
+- a [global expectation's](Global.md) binder, those of its module;
+- a [`match` arm's](Expressions.md#matches) binder, those and also the
+  variables (or, in a function's body, the parameters), instances, global
+  expectation binders and binders of enclosing arms in scope.
+
+Other items, such as components, enumerations and modules, are never named
+where a variable can be, so nothing shadows them. Nor do items,
+constraints, fields and variants shadow, so their names never take `!`.
+The precedence of a component's imports over its module's scope (see
+[Modules and visibility](Modules.md#use-in-a-component)) is a rule of
+resolution, not a declaration, and takes no `!`.
+
+An import that brings in a name that a `!` declaration hides counts as
+used (see [Unused imports](../Lint.md#unused-imports)). A name that two
+glob imports make ambiguous is not hidden, since a use of it would be an
+error: a variable named like it takes no `!`.
+
+A function is not in scope in its own body (see [Defined
+functions](Items.md#defined-functions)), so a parameter named like its
+function, as in `fn f(f: Int): Int := f + 1`, hides nothing, and is
+written without `!`: `fn f(f!: Int)` is an error, since nothing is
+shadowed.
+
+Some names followed by `!` are tokens of Lean's, with `Fren` imported:
+`assert!`, `debug_assert!`, `f!`, `m!`, `panic!`, `println!`,
+`reportDbgIssue!`, `reportEMatchIssue!`, `reportIssue!`, `s!`,
+`unreachable!` and `using!`. Lean reads each as one token, not as a name
+and `!`, so neither front end accepts a declaration written so, such as
+`in s!: Int`: it is an error that says to rename the declaration. The
+Lean front end reads these tokens as identifiers where Fren expects one,
+so that it reports the same error as the `fren` command, and, at a use,
+the same unknown name.
+
+`lang::shadowing` states when a declaration is accepted, from whether its
+name hides a name in scope and whether it is written with `!`. Shadowing
+without `!` is an error, and so is `!` where nothing is shadowed. This
+replaces the lint `shadowed_constants`, which warned of a variable named
+like a constant, and whose code `F0713` is not reused.
+
+```fren
+pub mod lang
+
+pub comp shadowing {
+    in hides?            -- the declared name hides a name in scope
+    in bang?             -- the declaration is written with `!`
+    in own_function?     -- it is a parameter named like its own function
+    pub det out accepted?
+
+    assume not_in_own_body: when own_function?, not hides?
+
+    req rule: accepted? iff (hides? iff bang?)
+
+    expect explicit: when hides? and bang?, accepted?
+    expect implicit: when hides? and not bang?, not accepted?
+    expect needless: when bang? and not hides?, not accepted?
+    expect own_function: when own_function?, accepted? iff not bang?
+}
+```
 
 ## Meaning
 

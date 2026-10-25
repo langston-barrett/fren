@@ -369,11 +369,36 @@ def segNames (segs : Array Ident) : Array Name := segs.map (Name.mkSimple ·.nam
 
 def liftResolve (segs : Array Ident) : Except Fren.Core.Error α → M α
   | .ok a => pure a
-  | .error e => err (segs[e.seg]?.map (·.span) |>.getD default) e.msg
+  | .error e => do
+    let seg? := segs[e.seg]?
+    let src := (← get).src
+    let beforeEq := seg?.any fun x => src[x.span.stop]? == some '='
+    err (seg?.map (·.span) |>.getD default) (Fren.Core.withBangEqFix e.msg ((seg?.map (·.name)).getD "") beforeEq)
 
 def liftMsg (span : Span) : Except Msg α → M α
   | .ok a => pure a
   | .error msg => err span msg
+
+/-- The identifier that `x` declares, without the `!` that marks it as
+shadowing (`Fren.Core.declaredName`), and whether it has one. Its span
+leaves out the `!`, so that a fix that renames it keeps the `!`. -/
+def declaredIdent (x : Ident) : Ident × Bool :=
+  let (n, bang) := Fren.Core.declaredName (Name.mkSimple x.name)
+  ({ name := Fren.Core.nameText n, span := if bang then { x.span with stop := x.span.stop - 1 } else x.span }, bang)
+
+/-- The declaration `x`, without its `!`, checked to be written with `!`
+exactly when it hides something in the current scope or among `locals`
+(`lang::shadowing`). An import that brings in what it hides counts as
+used. -/
+def declare (x : Ident) (locals : Array (Name × String) := #[]) : M Ident := do
+  let (y, bang) := declaredIdent x
+  let n := Name.mkSimple y.name
+  let st ← get
+  liftMsg x.span (Fren.Core.checkLeanToken n bang)
+  liftMsg x.span (Fren.Core.checkShadowing n (st.table.hidden? st.scope locals n) bang)
+  if let some u := st.table.shadowedImport? st.scope locals n bang then
+    modify fun s => { s with used := s.used.push u }
+  return y
 
 /-- Resolves a path in an expression or type in the current module,
 recording the import it resolves through, if any (`unused_imports`), and
@@ -430,6 +455,8 @@ structure ExprCtx where
   binders : Array CBinder := #[]
   /-- In a defined function's body, the function's name. -/
   selfFn : Option Name := none
+  /-- In a global expectation, whose instances are its binders. -/
+  inGlobal : Bool := false
   /-- `++` here is in the decidable core: the receiver of a method, or a
   side of `=` or `!=` whose other side is a constant. -/
   concatOk : Bool := false
@@ -502,7 +529,7 @@ partial def varsMentioned (cx : ExprCtx) (bs : Array (Name × Nat) := #[]) : Exp
     let k ← varsMentioned cx bs s
     arms.foldlM (init := k) fun n (p, body) => do
       let new := match p with
-        | .variant _ _ (some xs) => xs.map fun x => (Name.mkSimple x.name, k)
+        | .variant _ _ (some xs) => xs.map fun x => (Name.mkSimple (declaredIdent x).1.name, k)
         | _ => #[]
       return n + (← varsMentioned cx (bs ++ new) body)
   | _ => return 0
@@ -525,7 +552,12 @@ partial def mentions : Expr → Array Name
   | .bin _ _ a b => mentions a ++ mentions b
   | .app _ _ args => args.foldl (· ++ mentions ·) #[]
   | .record _ _ fs => fs.foldl (init := #[]) fun acc (f, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple f.name]
-  | .match _ s arms => arms.foldl (· ++ mentions ·.2) (mentions s)
+  | .match _ s arms => arms.foldl (init := mentions s) fun acc (p, body) =>
+    -- In its arm, a binder's name means the binder, not what it shadows.
+    let bound := match p with
+      | .variant _ _ (some bs) => bs.map fun b => Name.mkSimple (declaredIdent b).1.name
+      | _ => #[]
+    acc ++ (mentions body).filter (!bound.contains ·.getRoot)
   | _ => #[]
 
 /-- The variables that the defined output `v` stands for: those its
@@ -1295,11 +1327,16 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let (c, fs) := d.ctors[idx]!
         -- Distinct names (`lang::distinct_names`); `_` binds nothing.
         let named := bs.filter (·.name != "_")
-        if let some k := (Fren.Core.repeatsAt (named.map (Name.mkSimple ·.name)))[0]? then
-          err named[k]!.span (Fren.Core.dupPatternBinderMsg (Name.mkSimple named[k]!.name))
+        -- By the names they declare, without the `!` of shadowing.
+        let declared := named.map fun b => Name.mkSimple (declaredIdent b).1.name
+        if let some k := (Fren.Core.repeatsAt declared)[0]? then
+          err named[k]!.span (Fren.Core.dupPatternBinderMsg declared[k]!)
         for b in bs, f in fs, k in [0:bs.size] do
           let t := f.2
           if b.name == "_" then continue
+          let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+            (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
+          let b ← declare b locals
           let bn := Name.mkSimple b.name
           liftMsg b.span (Fren.Core.checkVarName bn (some (t == .bool)))
           lintName .binder bn b.span
@@ -1474,8 +1511,9 @@ def testedOf (all : Bool) (members : Array Member) : M Fren.Core.Tested := do
     let set? := pending.map (·.1)
     match m, pending with
     | .prop .expect x _, _ => expects := expects.push (Name.mkSimple x.name, set?)
-    | .inst x _ _, _ => insts := insts.push (Name.mkSimple x.name, set?)
-    | .var false _ true x _ _, _ => dets := dets.push (Name.mkSimple x.name, set?)
+    -- By the names they declare, without the `!` of shadowing.
+    | .inst x _ _, _ => insts := insts.push (Name.mkSimple (declaredIdent x).1.name, set?)
+    | .var false _ true x _ _, _ => dets := dets.push (Name.mkSimple (declaredIdent x).1.name, set?)
     | _, some (_, span) =>
       let what := match m with
         | .prop .assume .. => "an assumption" | .prop .req .. => "a requirement"
@@ -1484,7 +1522,7 @@ def testedOf (all : Bool) (members : Array Member) : M Fren.Core.Tested := do
     | _, none => pure ()
     match m with
     | .prop .assume x _ | .prop .req x _ => constraints := constraints.push (Name.mkSimple x.name)
-    | .var false _ _ x _ (some _) => constraints := constraints.push (Name.mkSimple x.name)
+    | .var false _ _ x _ (some _) => constraints := constraints.push (Name.mkSimple (declaredIdent x).1.name)
     | _ => pure ()
     pending := none
   if let some (_, span) := pending then err span (Fren.Core.misplacedEvidenceMsg "the end of the component")
@@ -1503,15 +1541,16 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let named := members.filterMap fun
     | .var _ _ _ x _ _ | .inst x _ _ | .prop _ x _ => some x
     | _ => none
-  if let some k := (Fren.Core.repeatsAt (named.map (Name.mkSimple ·.name)))[0]? then
-    err named[k]!.span (Fren.Core.dupMemberMsg (Name.mkSimple named[k]!.name))
+  -- By the names they declare, without the `!` of shadowing.
+  let declared := named.map fun x => Name.mkSimple (declaredIdent x).1.name
+  if let some k := (Fren.Core.repeatsAt declared)[0]? then
+    err named[k]!.span (Fren.Core.dupMemberMsg declared[k]!)
   let mut vars := #[]
   for m in members do
     let .var isIn isPub' isDet x ty? defn? := m | continue
+    let x ← declare x
     let xn := Name.mkSimple x.name
     lintName .variable xn x.span
-    if let some c := (← get).table.shadowedConstant? (← get).scope xn then
-      lint .shadowedConstants x.span (Fren.Core.shadowedMsg xn c)
     let role := if isIn then Role.input else .output
     let ty ← varTy ty? x
     unless Fren.Core.variableTypeAccepted (role == .output) ((← get).unbounded ty) defn?.isSome do
@@ -1523,6 +1562,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let mut pending := #[]
   for m in members do
     let .inst x p bs := m | continue
+    let x ← declare x
     let xn := Name.mkSimple x.name
     lintName .instance xn x.span
     let (pi, ivars) ← resolveInst x p bs
@@ -1553,6 +1593,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   for m in members do
     let .prop kind x e := m | continue
     let xn := Name.mkSimple x.name
+    liftMsg x.span (Fren.Core.checkNoBang xn)
     if x.name.endsWith "?" then err x.span (Fren.Core.propNameMsg xn)
     lintName .constraint xn x.span
     let cx : ExprCtx := { vars, insts := instNames, place := if kind == .assume then .assume else .prop }
@@ -1712,6 +1753,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr) : M Unit := do
   let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkNoBang n)
   let all ← evidenceInEffect
   if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
   modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[] }
@@ -1722,8 +1764,10 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
   let mut insts : Array CInst := #[]
   -- Distinct names (`lang::distinct_names`).
   let binderIds := binders.flatMap (·.1)
-  if let some k := (Fren.Core.repeatsAt (binderIds.map (Name.mkSimple ·.name)))[0]? then
-    err binderIds[k]!.span (Fren.Core.dupBinderMsg (Name.mkSimple binderIds[k]!.name))
+  -- By the names they declare, without the `!` of shadowing.
+  let declared := binderIds.map fun x => Name.mkSimple (declaredIdent x).1.name
+  if let some k := (Fren.Core.repeatsAt declared)[0]? then
+    err binderIds[k]!.span (Fren.Core.dupBinderMsg declared[k]!)
   for (xs, p) in binders do
     let path ← match ← resolve p with
       | .item { kind := .compItem, path, .. } => pure path
@@ -1734,6 +1778,7 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
       lint .undecidable (p[0]!.span.to p.back!.span) (Fren.Core.undecidableInstMsg path)
     noteCounts c (p[0]!.span.to p.back!.span)
     for x in xs do
+      let x ← declare x
       let w := Name.mkSimple x.name
       liftMsg x.span (Fren.Core.checkItemName "instance" w)
       lintName .instance w x.span
@@ -1744,7 +1789,7 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
       -- Its assumptions are hypotheses, not obligations.
       insts := insts.push { name := w, comp := path, span := x.span, bindings := "true",
                             behaviour := rename w c.vars c.meaning, assumes := #[] }
-  let cx : ExprCtx := { vars, insts := insts.map (·.name), place := .prop }
+  let cx : ExprCtx := { vars, insts := insts.map (·.name), place := .prop, inGlobal := true }
   discard takeIndexes
   let (smt, t) ← elabExpr cx body
   let indexes := (← takeIndexes).map fun (sp, g) => (n, Fren.Core.IndexPlace.prop, sp, g)
@@ -1831,6 +1876,7 @@ partial def elabItem : Item → M Unit
       err fields[k]!.1.span (Fren.Core.dupFieldMsg (Name.mkSimple fields[k]!.1.name))
     for (f, ty?) in fields do
       let fn := Name.mkSimple f.name
+      liftMsg f.span (Fren.Core.checkNoBang fn)
       lintName .field fn f.span
       if let some segs := ty? then
         let (own, ownInSet) := ownIn segs name
@@ -1861,13 +1907,15 @@ partial def elabItem : Item → M Unit
       sorts := s.sorts.push path }
   | .function isPub name params result body => do
     let n := Name.mkSimple name.name
+    liftMsg name.span (Fren.Core.checkNoBang n)
     let st ← get
     liftMsg name.span (st.table.checkFresh st.module n)
     lintName .function n name.span
     let path := st.module ++ n
     -- A parameter is named if it has a type after `:`, or is a `Bool`
     -- written `x?` (`lang::function_params`).
-    let named (p : Array Ident × Option (Array Ident)) := p.2.isSome || (p.1.size == 1 && p.1[0]!.name.endsWith "?")
+    let named (p : Array Ident × Option (Array Ident)) :=
+      p.2.isSome || (p.1.size == 1 && (declaredIdent p.1[0]!).1.name.endsWith "?")
     unless Fren.Core.functionParamsAccepted body.isSome params.size (params.filter named).size do
       let bad := (params.find? (named · != body.isSome)).map (·.1[0]!.span) |>.getD name.span
       err bad (Fren.Core.functionParamsMsg path body.isSome)
@@ -1881,10 +1929,12 @@ partial def elabItem : Item → M Unit
       -- The parameters, declared like a comp's inputs.
       let mut vars : Array CVar := #[]
       -- Distinct names (`lang::distinct_names`).
-      if let some k := (Fren.Core.repeatsAt (params.map (Name.mkSimple ·.1[0]!.name)))[0]? then
-        err params[k]!.1[0]!.span (Fren.Core.dupParamMsg (Name.mkSimple params[k]!.1[0]!.name))
+      -- By the names they declare, without the `!` of shadowing.
+      let declared := params.map fun p => Name.mkSimple (declaredIdent p.1[0]!).1.name
+      if let some k := (Fren.Core.repeatsAt declared)[0]? then
+        err params[k]!.1[0]!.span (Fren.Core.dupParamMsg declared[k]!)
       for (p, ty?) in params do
-        let x := p[0]!
+        let x ← declare p[0]!
         let xn := Name.mkSimple x.name
         lintName .variable xn x.span
         let t ← varTy ty? x

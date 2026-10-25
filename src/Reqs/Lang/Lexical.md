@@ -11,8 +11,13 @@ delimit a block comment, and block comments nest.
 
 Identifiers are ASCII: a letter or `_`, then letters, digits, `_` and
 `'`. An identifier may end in `?`, which is significant: see
-[Types](Types.md#boolean-names). `_` alone is an identifier, the wildcard
-of a [`match` arm](Expressions.md#matches).
+[Types](Types.md#boolean-names). It may then end in `!`, which marks a
+declaration that [shadows](Components.md#shadowing) a name in scope, and
+is not part of the name it declares: `x!` declares `x`, and `ready?!`
+declares `ready?`. A few identifiers ending in `!`, such as `s!` and `m!`,
+are Lean tokens, and so cannot be [declared](Components.md#shadowing).
+`_` alone is an identifier, the wildcard of a [`match`
+arm](Expressions.md#matches).
 
 As in Lean, `a.b` (with no spaces) is a single token, an identifier with
 the components `a` and `b`, as is `a.b.c`. Where `a` is an instance, it
@@ -20,9 +25,10 @@ refers to the instance's variable `b` (see
 [Instances](Instances.md#instance-variables)). Otherwise `a` is a value, a
 variable or a [constant](Items.md#constants), and `a.b` reads its field
 `b` (see [Records](Expressions.md#records)) or applies the
-[method](Expressions.md#methods) `b` to it. It is never a path. A `?`
-ends an identifier, so it is never followed by `.`. An identifier is a
-keyword if it is a [reserved word](#keywords).
+[method](Expressions.md#methods) `b` to it. It is never a path. A `!`
+ends an identifier, and so does a `?` that no `!` follows, so neither is
+followed by `.`. An identifier is a keyword if it is a [reserved
+word](#keywords).
 
 `lang::identifier` states which lexemes are identifiers. Lean's
 identifiers are a superset of Fren's: they may have `?` and `!` anywhere
@@ -32,15 +38,18 @@ reports what Lean reads as one identifier but Fren does not: the Lean
 front end checks each identifier of an item, `use`, claim or check against
 this rule (but not of `impl` or `interp`, whose bodies are Lean), and the `fren`
 command reads identifiers by Lean's rule too, and reports any that Fren's
-would read differently, such as `a?b`, `xα`, or `y!` in `y!=1`. Write
-spaces around `!=` after an identifier.
+would read differently, such as `a?b`, `xα`, or `y!!`. Both read `a!=b`
+as `a!` then `=`, so write spaces around `!=` after an identifier.
 
-Two cases differ, where Lean's parser reports the lexeme before the Lean
-front end sees it. Some identifiers that end in `!` are Lean tokens, such
-as `s!` and `m!`, which Lean reads in preference to an identifier, so in
-`s!=1` the Lean front end reports a syntax error. And a `«` that is never
-closed is a syntax error in Lean. In both, the `fren` command reports that
-the lexeme is not an identifier.
+Some identifiers that end in `!` are Lean tokens, such as `s!` and `m!`,
+which Lean reads in preference to an identifier. Where Fren's syntax
+expects an identifier, the Lean front end reads these tokens as
+identifiers, so both front ends report a declaration of one (see
+[Shadowing](Components.md#shadowing)), and the use of an unknown name in
+`s!=1`. One case differs, where Lean's parser reports the lexeme before
+the Lean front end sees it: a `«` that is never closed is a syntax error
+in Lean, while the `fren` command reports that the lexeme is not an
+identifier.
 
 ```fren
 pub mod lang
@@ -49,24 +58,27 @@ pub comp identifier {
     in lexeme: String
     pub det out accepted?
 
-    req rule: accepted? iff lexeme.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?")
+    req rule: accepted? iff lexeme.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?[!]?")
 
     expect primed: when lexeme = "x'", accepted?
     expect components: when lexeme = "w.x.y?", accepted?
     expect wildcard: when lexeme = "_", accepted?
     expect capitals: when lexeme = "Heat" or lexeme = "x.Y", accepted?
     expect question_last: when lexeme = "a?b" or lexeme = "a?.b", not accepted?
-    expect letter_first: when lexeme.matches?(r"[0-9'.?].*"), not accepted?
+    expect bang: when lexeme = "x!" or lexeme = "ready?!", accepted?
+    expect bang_last: when lexeme = "a!?" or lexeme = "a!b" or lexeme = "a!!", not accepted?
+    expect letter_first: when lexeme.matches?(r"[0-9'.?!].*"), not accepted?
     expect no_trailing_dot: when lexeme.ends_with?("."), not accepted?
 }
 ```
 
 `lang::identifier_shape` states the shape of an identifier without a
 pattern: no component is empty, it starts with neither a digit nor `'`,
-`.` or `?`, it does not end with `.`, and a `?` comes only last, once. `identifier` refines it. That no
-component is empty is the emptiness of an intersection of two regular
-languages, in the decidable core, but cvc5 does not decide it within any
-time limit tried (see [Decidability](Decidability.md#in-practice)), so the
+`.`, `?` or `!`, it does not end with `.`, a `!` comes only last, once,
+and a `?` only last, once, or just before that `!`. `identifier` refines
+it. That no component is empty is the emptiness of an intersection of
+two regular languages, in the decidable core, but cvc5 does not decide it
+within any time limit tried (see [Decidability](Decidability.md#in-practice)), so the
 refinement is checked by testing:
 
 ```fren
@@ -75,12 +87,15 @@ pub comp identifier_shape {
     pub out accepted?
 
     req no_empty_component: when lexeme.contains?(".."), not accepted?
-    req letter_first: when lexeme.matches?(r"[0-9'.?].*"), not accepted?
+    req letter_first: when lexeme.matches?(r"[0-9'.?!].*"), not accepted?
     req no_trailing_dot: when lexeme.ends_with?("."), not accepted?
-    req question_last: when lexeme.contains?("?") and not lexeme.ends_with?("?"), not accepted?
+    req question_last: when lexeme.contains?("?") and not (lexeme.ends_with?("?") or lexeme.ends_with?("?!")),
+        not accepted?
     req one_question: when lexeme.contains?("??"), not accepted?
+    req bang_last: when lexeme.contains?("!") and not lexeme.ends_with?("!"), not accepted?
+    req one_bang: when lexeme.contains?("!!"), not accepted?
 
-    expect first_characters: when lexeme in {"1", "1x", "'x", ".x", "?", "?x"}, not accepted?
+    expect first_characters: when lexeme in {"1", "1x", "'x", ".x", "?", "?x", "!", "!x"}, not accepted?
 }
 
 set_option fren.evidence "tested" in
@@ -91,9 +106,9 @@ Identifiers follow the rule of *maximal munch*: an identifier is the
 longest prefix of the remaining input that is one. A `.` continues it
 only before a letter or `_`, so `w.x` is one identifier, while in
 `f(x).y` the `.` follows `)` and reads the field `y` (see
-[Records](Expressions.md#records)). Nothing continues an identifier after
-its `?`. `lang::identifier_end` states where an identifier ends, from the
-input that remains after it:
+[Records](Expressions.md#records)). Only a `!` continues an identifier
+after its `?`, and nothing after its `!`. `lang::identifier_end` states
+where an identifier ends, from the input that remains after it:
 
 ```fren
 pub comp identifier_end {
@@ -101,13 +116,16 @@ pub comp identifier_end {
     in remaining: String     -- the input after the lexeme
     pub det out ends?
 
-    req maximal_munch: ends? iff (lexeme.ends_with?("?")
-        or not (remaining.matches?(r"[A-Za-z0-9_'?].*") or remaining.matches?(r"[.][A-Za-z_].*")))
+    req maximal_munch: ends? iff (lexeme.ends_with?("!")
+        or (lexeme.ends_with?("?") and not remaining.starts_with?("!"))
+        or not (remaining.matches?(r"[A-Za-z0-9_'?!].*") or remaining.matches?(r"[.][A-Za-z_].*")))
 
     expect space_ends: when remaining.starts_with?(" "), ends?
     expect component: when lexeme = "w" and remaining = ".x", not ends?
     expect field_of_call: when lexeme = "w" and remaining = ".(", ends?
     expect after_question: when lexeme = "a?" and remaining = "b", ends?
+    expect bang_after_question: when lexeme = "a?" and remaining = "!", not ends?
+    expect after_bang: when lexeme = "a!" and remaining = "=b", ends?
 }
 ```
 
@@ -341,7 +359,8 @@ commands, single tokens that start with `#`.
 
 Operators of other languages are errors, with a message that says what to
 write instead: `==` (write `=`), `&&` (write `and`), `||` (write `or`), `!`
-(write `not`) and, outside a [`match` arm](Expressions.md#matches), `=>`
+(write `not`; a `!` directly after an identifier is part of it) and,
+outside a [`match` arm](Expressions.md#matches), `=>`
 (write `when a, b`) and `|` (write `or`). There is no division. The first
 three are lexed as punctuators, so that the message names them as Lean's
 does.

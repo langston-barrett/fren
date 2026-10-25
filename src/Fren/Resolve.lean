@@ -28,15 +28,42 @@ def segName [Monad m] [MonadError m] (seg : Syntax) (afterPath := false) : m Nam
 def segNames [Monad m] [MonadError m] (segs : Array Syntax) : m (Array Name) :=
   segs.mapIdxM fun i s => segName s (afterPath := i > 0)
 
-variable {m : Type → Type} [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m]
+variable {m : Type → Type} [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFileMap m]
 
 def liftResolve (segs : Array Syntax) : Except Core.Error α → m α
   | .ok a => pure a
-  | .error e => throwErrorAt (segs[e.seg]?.getD .missing) e.msg.text
+  | .error e => do
+    let seg := segs[e.seg]?.getD .missing
+    let src := (← getFileMap).source
+    let beforeEq := seg.getTailPos?.any fun p => p.get src == '='
+    throwErrorAt seg (Core.withBangEqFix e.msg (Core.nameText seg.getId) beforeEq).text
 
 def liftMsg (ref : Syntax) : Except Core.Msg α → m α
   | .ok a => pure a
   | .error msg => throwErrorAt ref msg.text
+
+/-- The identifier that `x` declares, without the `!` that marks it as
+shadowing (`Core.declaredName`), and whether it has one. Its range leaves
+out the `!`, as the `fren` command's does, so that a fix that renames it
+keeps the `!`. -/
+def declaredIdent (x : Syntax) : Syntax × Bool :=
+  let (n, bang) := Core.declaredName x.getId
+  if !bang then (x, false) else
+  match x.getPos?, x.getTailPos? with
+  | some p, some e => (Syntax.ident (.synthetic p ⟨e.byteIdx - 1⟩ true) n.toString.toRawSubstring n [], true)
+  | _, _ => (mkIdentFrom x n, true)
+
+/-- The declaration `x` in `scope`, without its `!`, checked to be written
+with `!` exactly when it hides something there or among `locals`
+(`lang::shadowing`). An import that brings in what it hides counts as
+used. -/
+def declare (x : Syntax) (scope : Name) (locals : Array (Name × String) := #[]) : m Syntax := do
+  let (y, bang) := declaredIdent x
+  let table := (← getState).table
+  liftMsg x (Core.checkLeanToken y.getId bang)
+  liftMsg x (Core.checkShadowing y.getId (table.hidden? scope locals y.getId) bang)
+  if let some u := table.shadowedImport? scope locals y.getId bang then recordUsed u
+  return y
 
 /-- Resolves a `use` path written in module `from_`. -/
 def resolveUsePath (from_ : Name) (segs : Array Syntax) : m Resolved := do

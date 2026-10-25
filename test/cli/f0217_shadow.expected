@@ -1,0 +1,42 @@
+error[F0217]: `RATE` shadows the constant `rates::RATE`
+  --> test/cli/f0217_shadow.fren:12:8
+   |
+12 |     in RATE: Int
+   |        ^^^^ shadows without `!`
+   |
+   = note: shadowing is explicit: a declaration that hides a name in scope is written with `!`, as `RATE!`
+help: to shadow the constant `rates::RATE`, write `RATE!`
+   |
+12 -     in RATE: Int
+12 +     in RATE!: Int
+   |
+
+error[F0217]: `x` shadows the input `x`
+  --> test/cli/f0217_shadow.fren:24:23
+   |
+24 |         Shape::Circle(x) => x > 0,
+   |                       ^ shadows without `!`
+   |
+   = note: shadowing is explicit: a declaration that hides a name in scope is written with `!`, as `x!`
+help: to shadow the input `x`, write `x!`
+   |
+24 -         Shape::Circle(x) => x > 0,
+24 +         Shape::Circle(x!) => x > 0,
+   |
+
+warning[F0701]: unused import `rates::RATE`
+ --> test/cli/f0217_shadow.fren:6:5
+  |
+6 | use rates::RATE
+  |     ^^^^^^^^^^^ unused
+  |
+  = help: remove this `use`
+  = help: `fren fix` can fix this
+  = note: `unused_imports` is `warn` by default
+  = help: to allow it, `set_option fren.lint.unused_imports "allow"`
+
+error: could not check due to 2 previous errors
+
+Some errors have detailed explanations: F0217, F0701.
+For more information about an error, try `fren --explain F0217`.
+exit=2

@@ -89,7 +89,7 @@ def typePath? (ty : Syntax) : Option Syntax :=
   else some ty[0]
 
 /-- The Lean type of the Fren type `ty`. -/
-partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] (modName : Name) (ty : Syntax) : m Expr := do
+partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFileMap m] (modName : Name) (ty : Syntax) : m Expr := do
   -- `Set(T)`: `"Set" "(" T ")"`; `Rel(A, B)`: `"Rel" "(" A "," B ")"`.
   let some p := typePath? ty |
     if ty.isOfKind ``Lang.relType then
@@ -239,6 +239,7 @@ partial def typeSyntax (t : Expr) : Term :=
     throwErrorAt fieldStxs[k]![0] (Core.dupFieldMsg fieldStxs[k]![0].getId).text
   for f in fieldStxs do
     let fn := f[0].getId
+    liftMsg f[0] (Core.checkNoBang fn)
     lintName .field fn f[0]
     let t ← if f[1].isNone then pure (Lean.mkConst ``Bool) else fieldType modName f[1][1] (some decl) false n
     -- As for a variable (`lang::bool_naming`).
@@ -288,6 +289,8 @@ structure ExprCtx where
   binders : Array MatchBinder := #[]
   /-- In a defined function's body, the function's name. -/
   selfFn : Option Name := none
+  /-- In a global expectation, whose instances are its binders. -/
+  inGlobal : Bool := false
   /-- `++` here is in the decidable core: the receiver of a method, or a
   side of `=` or `!=` whose other side is a constant. -/
   concatOk : Bool := false
@@ -494,6 +497,21 @@ def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term
     | throwErrorAt ref (Core.noFieldMsg f (Core.showPath r.path) (r.fields.map (·.1))).text
   return (← `($(mkCIdentFrom ref (r.decl ++ f)) $t), ft)
 
+/-- The alternatives of a `match` arm's pattern, none for `_`. -/
+def patternAlts (arm : Syntax) : Array Syntax :=
+  if arm[0].isOfKind ``Lang.altsPattern then arm[0][1].getSepArgs else #[]
+
+/-- The binders of an alternative, `_` included. -/
+def altBinders (alt : Syntax) : Array Syntax :=
+  if alt[1].isNone then #[] else alt[1][1].getSepArgs.map (·[0])
+
+/-- The binders of a `match` arm's pattern, `_` included: those of its only
+alternative, since those of an or-pattern are all `_`. -/
+def patternBinders (arm : Syntax) : Array Syntax :=
+  match patternAlts arm with
+  | #[a] => altBinders a
+  | _ => #[]
+
 /-- The names of the variables that `e` mentions: its paths of one
 segment, and for `p.x`, `p` too. -/
 partial def pathMentions (e : Syntax) : Array Name :=
@@ -512,6 +530,11 @@ partial def pathMentions (e : Syntax) : Array Name :=
     else #[]
   else if e.isOfKind ``Lang.recordExpr then
     e[2].getSepArgs.foldl (init := #[]) fun acc b => acc ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
+  else if e.isOfKind ``Lang.matchExpr then
+    e[3].getSepArgs.foldl (init := pathMentions e[1]) fun acc arm =>
+      -- In its arm, a binder's name means the binder, not what it shadows.
+      let bound := (patternBinders arm).filter (·.isIdent) |>.map fun b => (declaredIdent b).1.getId
+      acc ++ (pathMentions arm[2]).filter (!bound.contains ·.getRoot)
   else e.getArgs.foldl (· ++ pathMentions ·) #[]
 
 /-- The variables that the defined output `v` stands for: those its
@@ -551,21 +574,6 @@ def varRef? (cx : ExprCtx) (id : Syntax) (n : Name) : TermElabM (Option Term) :=
     | .ok () => pure ()
     | .error msg => throwErrorAt id (if u.name == n then msg else Core.throughDefinition n msg).text
   return some (mkIdentFrom id n)
-
-/-- The alternatives of a `match` arm's pattern, none for `_`. -/
-def patternAlts (arm : Syntax) : Array Syntax :=
-  if arm[0].isOfKind ``Lang.altsPattern then arm[0][1].getSepArgs else #[]
-
-/-- The binders of an alternative, `_` included. -/
-def altBinders (alt : Syntax) : Array Syntax :=
-  if alt[1].isNone then #[] else alt[1][1].getSepArgs.map (·[0])
-
-/-- The binders of a `match` arm's pattern, `_` included: those of its only
-alternative, since those of an or-pattern are all `_`. -/
-def patternBinders (arm : Syntax) : Array Syntax :=
-  match patternAlts arm with
-  | #[a] => altBinders a
-  | _ => #[]
 
 open Lang in
 /-- The expression that is the name `n`, a path of one segment. -/
@@ -609,7 +617,7 @@ partial def varsMentioned (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Nat) 
   else if e.isOfKind ``Lang.matchExpr then
     let k ← varsMentioned cx e[1] bs
     e[3].getSepArgs.foldlM (init := k) fun n arm => do
-      let new := (patternBinders arm).filter (·.isIdent) |>.map (·.getId, k)
+      let new := (patternBinders arm).filter (·.isIdent) |>.map fun b => ((declaredIdent b).1.getId, k)
       return n + (← varsMentioned cx arm[2] (bs ++ new))
   else if e.isOfKind ``Lang.fren_path then
     let segs := pathSegs e
@@ -869,10 +877,15 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       -- Distinct names (`lang::distinct_names`); `_` binds nothing.
       let named := (patternBinders arm).filter (·.isIdent)
       for b in named do discard (segName b)
-      if let some k := (Core.repeatsAt (named.map (·.getId)))[0]? then
-        throwErrorAt named[k]! (Core.dupPatternBinderMsg named[k]!.getId).text
+      -- By the names they declare, without the `!` of shadowing.
+      let declared := named.map fun b => (declaredIdent b).1.getId
+      if let some k := (Core.repeatsAt declared)[0]? then
+        throwErrorAt named[k]! (Core.dupPatternBinderMsg declared[k]!).text
       for b in patternBinders arm, t in info.payloads[idx]!, k in [0:info.payloads[idx]!.size] do
         unless b.isIdent do continue
+        let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+          (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
+        let b ← declare b cx.modName locals
         let bn := b.getId
         liftMsg b (Core.checkVarName bn (some (t.isConstOf ``Bool)))
         lintName .binder bn b
@@ -1371,6 +1384,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
   let n ← segName nameStx
+  liftMsg nameStx (Core.checkNoBang n)
   checkFresh modName n nameStx
   lintName .function n nameStx
   let path := modName ++ n
@@ -1379,7 +1393,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   -- A parameter is named if it has a type after `:`, or is a `Bool`
   -- written `x?` (`lang::function_params`).
   let named (p : Syntax) := !p[1].isNone ||
-    (typePath? p[0]).any fun q => (pathSegs q).size == 1 && (pathSegs q)[0]!.getId.toString.endsWith "?"
+    (typePath? p[0]).any fun q => (pathSegs q).size == 1 && (declaredIdent (pathSegs q)[0]!).1.getId.toString.endsWith "?"
   let nNamed := (params.filter named).size
   unless Core.functionParamsAccepted body?.isSome params.size nNamed do
     let bad := params.find? (named · != body?.isSome) |>.getD nameStx
@@ -1400,9 +1414,12 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
       let some q := typePath? p[0] | throwErrorAt p[0] (Core.functionParamsMsg path true).text
       pure (pathSegs q)[0]!
     for x in paramIds do discard (segName x)
-    if let some k := (Core.repeatsAt (paramIds.map (·.getId)))[0]? then
-      throwErrorAt paramIds[k]! (Core.dupParamMsg paramIds[k]!.getId).text
-    for p in params, x in paramIds do
+    -- By the names they declare, without the `!` of shadowing.
+    let declared := paramIds.map fun x => (declaredIdent x).1.getId
+    if let some k := (Core.repeatsAt declared)[0]? then
+      throwErrorAt paramIds[k]! (Core.dupParamMsg declared[k]!).text
+    for p in params, x0 in paramIds do
+      let x ← declare x0 modName
       lintName .variable x.getId x
       let ty ← varType modName x (if p[1].isNone then none else some p[1][1])
       vars := vars.push { name := x.getId, role := .input, isPub := true, «type» := ty, ref := x }
@@ -1526,15 +1543,17 @@ def testedOf (all : Bool) (raw : Array Syntax) : CommandElabM (Array Syntax × C
       if let some (_, ref) := set? then throwErrorAt ref (Core.misplacedEvidenceMsg what).text
     match m with
     | `(fren_member| expect $x:ident : $_) => expects := expects.push (x.getId, b?)
-    | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => insts := insts.push (x.getId, b?)
+    -- By the names they declare, without the `!` of shadowing.
+    | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => insts := insts.push ((declaredIdent x).1.getId, b?)
     | `(fren_member| assume $x:ident : $_) => misplaced "an assumption"; constraints := constraints.push x.getId
     | `(fren_member| req $x:ident : $_) => misplaced "a requirement"; constraints := constraints.push x.getId
     | _ =>
       if m.isOfKind ``Lang.outMember then
         -- `[pub] [det] out x [: T] [:= e]`
-        if !m[1].isNone then dets := dets.push (m[3].getId, b?)
+        let y := (declaredIdent m[3]).1.getId
+        if !m[1].isNone then dets := dets.push (y, b?)
         else misplaced "an output that is not `det`"
-        if !m[5].isNone then constraints := constraints.push m[3].getId
+        if !m[5].isNone then constraints := constraints.push y
       else misplaced (if m.isOfKind ``Lang.inMember then "an input" else "a `use`")
   return (members, Core.Tested.ofSettings all constraints expects insts dets)
 
@@ -1576,8 +1595,9 @@ open Lang in
   -- name again is reported, and then skipped.
   let named := members.filterMap memberName?
   for x in named do discard (segName x)
-  let repeated := (Core.repeatsAt (named.map (·.getId))).map (named[·]!)
-  for x in repeated do logErrorAt x (Core.dupMemberMsg x.getId).text
+  -- By the names they declare, without the `!` of shadowing.
+  let repeated := (Core.repeatsAt (named.map fun x => (declaredIdent x).1.getId)).map (named[·]!)
+  for x in repeated do logErrorAt x (Core.dupMemberMsg (declaredIdent x).1.getId).text
   let isRepeat (x : Syntax) : Bool := repeated.any (·.getPos? == x.getPos?)
   let (ok, generated) ← liftTermElabM do
     let mut ok := repeated.isEmpty
@@ -1597,10 +1617,11 @@ open Lang in
             if m[5].isNone then none else some m[5][1])
         | _ => continue
       if isRepeat x then continue
+      -- An error in shadowing leaves the variable's meaning clear.
+      let x ← try declare x scope
+        catch ex => logException ex; ok := false; pure (declaredIdent x).1
       names := names.insert x.getId
       lintName .variable x.getId x
-      if let some c := (← getState).table.shadowedConstant? scope x.getId then
-        recordLint .shadowedConstants x (Core.shadowedMsg x.getId c)
       try
         let ty ← varType scope x ty?
         let st ← getState
@@ -1618,6 +1639,8 @@ open Lang in
     for m in members do
       let `(fren_member| inst $x:ident : $p:fren_path { $bs,* }) := m | continue
       if isRepeat x then continue
+      let x ← try declare x scope
+        catch ex => logException ex; ok := false; pure (declaredIdent x).1
       names := names.insert x.getId
       lintName .instance x.getId x
       try
@@ -1678,6 +1701,8 @@ open Lang in
           | `(fren_member| expect $x:ident : $e) => pure (.expect, x, e)
           | _ => continue
         if isRepeat x then continue
+        if let .error msg := Core.checkNoBang x.getId then
+          logErrorAt x msg.text; good := false; continue
         names := names.insert x.getId
         lintName .constraint x.getId x
         try
@@ -1824,8 +1849,10 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   -- Distinct names (`lang::distinct_names`).
   let binderIds := binderStxs.flatMap (·[1].getArgs)
   for x in binderIds do discard (segName x)
-  if let some k := (Core.repeatsAt (binderIds.map (·.getId)))[0]? then
-    throwErrorAt binderIds[k]! (Core.dupBinderMsg binderIds[k]!.getId).text
+  -- By the names they declare, without the `!` of shadowing.
+  let declared := binderIds.map fun x => (declaredIdent x).1.getId
+  if let some k := (Core.repeatsAt declared)[0]? then
+    throwErrorAt binderIds[k]! (Core.dupBinderMsg declared[k]!).text
   for b in binderStxs do
     let r ← resolvePath modName (pathSegs b[3])
     let .item { kind := .compItem, path, .. } := r | throwErrorAt b[3] (Core.notACompMsg r).text
@@ -1835,7 +1862,8 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
       recordLint .undecidable b[3] (Core.undecidableInstMsg path)
     noteCounts c b[3]
     for x in b[1].getArgs do
-      let w := x.getId
+      let w := (declaredIdent x).1.getId
+      let x ← declare x modName
       liftMsg x (Core.checkItemName "instance" w)
       lintName .instance w x
       binders := binders.push { name := w, ref := x, comp := c, offset := vars.size }
@@ -1844,7 +1872,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
         let role := Core.Role.ofInst v.role v.isPub
         { name := w ++ v.name, role, isPub := role != .instHidden, type := v.type, ref := x : Var }
   withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
-    let cx : ExprCtx := { modName, vars, insts := binders.map (·.name), place := .prop }
+    let cx : ExprCtx := { modName, vars, insts := binders.map (·.name), place := .prop, inGlobal := true }
     discard (takeIndexes fvs)
     let e ← elabProp (← toTerm cx body)
     let indexes := (← takeIndexes fvs).map fun (r, g) => (n, Core.IndexPlace.prop, r, g)
@@ -1876,6 +1904,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx
+  liftMsg nameStx (Core.checkNoBang n)
   if n.toString.endsWith "?" then throwErrorAt nameStx (Core.propNameMsg n).text
   checkFresh modName n nameStx
   lintName .global n nameStx
