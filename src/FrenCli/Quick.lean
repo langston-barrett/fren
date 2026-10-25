@@ -58,6 +58,12 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
   let inputs := c.vars.filter (·.role == .input) |>.map fun v => (v.name, v.ty)
   let some env ← ({ vars := inputs, atoms := assumes, ints, strs : Problem }.solve sp w I {})
     | return none
+  -- The defined outputs that the inputs give, which bindings may read
+  -- (`Reqs/Eval#searching-for-behaviours`).
+  let early := c.earlyDefs
+  -- If they have no value, the outputs' search reports it, as before.
+  let env := (← ({ vars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
+                   atoms := c.defAtoms.filter (early.contains ·.label), ints, strs : Problem }.solve sp w I env)).getD env
   let vars := sp.flatVars c
   let mut env := env
   let mut out : Admitted := { env }
@@ -143,6 +149,12 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
         continue
     behaviours := behaviours + 1
     for e in expects, k in [0:expects.size] do
+      -- A counterexample, searched for directly (`Reqs/Eval#fren-quickcheck`).
+      if (expT[k]?.bind (·.refuted?)).isNone then
+        let atoms := all.push { label := e.name, pfx := .anonymous, e := .not e.e }
+        if let some cex ← ({ vars := sp.order c, atoms, ints, strs : Problem }.solve sp w I {}) then
+          expT := expT.modify k fun t => (t.reach).refute (.counterexample (sp.shown vars cex (·.isPub)))
+          continue
       let trigger? := e.e.trigger?
       -- A behaviour in which the trigger holds, searched for from a new
       -- input if this one's does not. It need only meet the component,
@@ -225,6 +237,12 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
           found := (← ({ vars := order, atoms := meaning, ints, strs : Problem }.solve sp w I {} budget)).isSome
         continue
     found := true
+    -- A counterexample, searched for directly (`Reqs/Eval#fren-quickcheck`).
+    if t.refuted?.isNone then
+      let negated := meaning.push { label := body.name, pfx := .anonymous, e := .not body.e }
+      if let some cex ← ({ vars := order, atoms := negated, ints, strs : Problem }.solve sp w I {} budget) then
+        t := (t.reach).refute (.counterexample (sp.shown vars cex (·.isPub)))
+        continue
     unless reaches I .anonymous trigger env do continue
     t := t.reach
     if ({ label := body.name, pfx := .anonymous, e := body.e } : Atom).eval I env.look == some false then

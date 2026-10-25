@@ -4,7 +4,7 @@ error[F0603]: expectation `lex::word::wrong` does not hold
 16 |     expect wrong: when text.contains?("x"), not accepted?
    |            ^^^^^ does not follow from the requirements
    |
-   = counterexample: text = "ax", accepted? = true
+   = counterexample: text = "x", accepted? = true
    = help: strengthen the requirements so that it follows, or correct the expectation
 
 error[F0604]: the assumption `pos` of `lex::positive` may not hold for instance `lex::caller::p`

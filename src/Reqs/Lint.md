@@ -149,9 +149,35 @@ pub comp history {
 ```
 
 If `forbid` is not among the settings, `rest` is what the definition gives,
-but `rule` does not look at it then. That a history is accepted exactly when
-every step that `lint::setting` takes along it is cannot be stated without
-a fold, so it is a tested claim.
+but `rule` does not look at it then.
+
+That a history is accepted exactly when every step that `lint::setting`
+takes along it is accepted cannot be stated for every length without a
+fold. For a fixed length it can, by a chain of `lint::setting`s, and
+`lint::stepwise` does so for three settings, the first made over any level
+but `forbid`: `lint::setting` accepts every first setting then, whatever
+that level is. `history` refines it. `history` is outside the decidable
+core, so the refinement is checked by testing:
+
+```fren
+pub comp stepwise {
+    in settings: Seq(Level)
+    pub out accepted?
+
+    assume three: settings.len = 3
+
+    inst first: setting { current := Warn, requested := settings[0] }
+    inst second: setting { current := first.level, requested := settings[1] }
+    inst third: setting { current := second.level, requested := settings[2] }
+
+    req rule: accepted? iff (first.accepted? and second.accepted? and third.accepted?)
+
+    expect unforbid_last: when settings = [Warn, Forbid, Allow], not accepted?
+}
+
+set_option fren.evidence "tested" in
+refine history_is_stepwise: history refines stepwise
+```
 
 `lint::effective` puts the sources together, for one lint at one place in
 a file: its default, then the command line, then the last `set_option`

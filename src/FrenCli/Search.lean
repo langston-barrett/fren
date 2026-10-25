@@ -194,7 +194,15 @@ def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (env :
     else #[]
   let mut ints := p.ints
   for _ in [0:2] do ints := ints.push (((← below 41) : Int) - 20)
-  let pool ← shuffle (smallValues sp w ints p.strs 24 2 ty)
+  let mut pool := smallValues sp w ints p.strs 24 2 ty
+  -- Longer sequences, of the lengths that the constraints mention.
+  if let .seq t := ty then
+    let elems := smallValues sp w ints p.strs 24 2 t
+    unless elems.isEmpty do
+      for n in (ints.filterMap fun i => if 3 ≤ i && i ≤ 4 then some i.toNat else none).toList.eraseDups do
+        for _ in [0:6] do
+          pool := pool.push (.seq (← (Array.range n).mapM fun _ => do return elems[← below elems.size]!))
+  pool ← shuffle pool
   let eqs := eqs.foldl (fun acc v => if acc.contains v then acc else acc.push v) #[]
   return eqs ++ pool.filter (!eqs.contains ·)
 
@@ -288,7 +296,8 @@ partial def Re.sample (fuel : Nat := 40) : Fren.Core.Re → R (Option (List Char
     return some out
 
 /-- The strings that `atoms` mention, each also with `"a"` before and after
-it, and a few random strings that match each of their patterns
+it, and, if it is short, its proper suffixes; and a few random strings that
+match each of their patterns, each also followed by `"a"`
 (`Reqs/Eval#searching-for-behaviours`). -/
 def stringsOf (atoms : Array Atom) : R (Array String) := do
   let (lits, pats) := atoms.foldl (fun (ls, ps) a => let (l, p) := a.e.strLits; (ls ++ l, ps ++ p)) (#[], #[])
@@ -296,19 +305,51 @@ def stringsOf (atoms : Array Atom) : R (Array String) := do
   let add (out : Array String) (s : String) := if out.contains s then out else out.push s
   for s in lits do
     for t in [s, "a" ++ s, s ++ "a"] do out := add out t
+    -- What remains after a short literal's first characters, such as the
+    -- `:*` of `::*`.
+    if s.length ≤ 6 then
+      for k in [1:s.length] do out := add out (s.drop k).toString
   for p in pats do
     let .ok r := Fren.Core.parseRe p | continue
-    for _ in [0:3] do
-      if let some cs ← Re.sample 40 r then out := add out (String.ofList cs)
+    for _ in [0:8] do
+      if let some cs ← Re.sample 40 r then
+        for t in [String.ofList cs, String.ofList cs ++ "a"] do out := add out t
+  return out
+
+/-- The variables of `e`. -/
+partial def Ex.vars : Ex → Array Name
+  | .var n => #[n]
+  | .lit _ | .bound _ => #[]
+  | .not a | .neg a | .field a _ | .card a => a.vars
+  | .bin _ a b | .when _ a b | .pair a b | .index a b _ => a.vars ++ b.vars
+  | .ite c a b => c.vars ++ a.vars ++ b.vars
+  | .app _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.vars)
+  | .method _ r args => r.vars ++ args.flatMap (·.vars)
+  | .match e arms => e.vars ++ arms.flatMap (·.2.vars)
+
+/-- The defined outputs of `c` that the inputs alone give: those whose
+definitions mention only inputs and earlier such outputs. Definitions
+mention only earlier ones, so one pass finds them. -/
+def Comp.earlyDefs (c : Comp) : Array Name := Id.run do
+  let mut known := (c.vars.filter (·.role == .input)).map (·.name)
+  let mut out := #[]
+  for (d, e) in c.defs do
+    if e.vars.all known.contains then
+      known := known.push d
+      out := out.push d
   return out
 
 /-- The variables of `c` nested at `pfx` in the order the search chooses
-them (`Reqs/Eval#searching-for-behaviours`): its inputs, each instance's
-variables, then its outputs. -/
+them (`Reqs/Eval#searching-for-behaviours`): its inputs, the defined
+outputs that they give, each instance's variables, then its other
+outputs. -/
 partial def Spec.order (sp : Spec) (c : Comp) (pfx : Name := .anonymous) : Array (Name × VTy) :=
-  let own (r : Fren.Core.Role) := c.vars.filter (·.role == r) |>.map fun v => (pfx ++ v.name, v.ty)
-  own .input ++ c.insts.flatMap (fun i => match sp.comp? i.comp with
-    | some d => sp.order d (pfx ++ i.name)
-    | none => #[]) ++ own .output
+  let early := c.earlyDefs
+  let own (keep : Var → Bool) := c.vars.filter keep |>.map fun v => (pfx ++ v.name, v.ty)
+  own (·.role == .input) ++ own (fun v => early.contains v.name)
+    ++ c.insts.flatMap (fun i => match sp.comp? i.comp with
+      | some d => sp.order d (pfx ++ i.name)
+      | none => #[])
+    ++ own fun v => v.role == .output && !early.contains v.name
 
 end FrenCli.Eval

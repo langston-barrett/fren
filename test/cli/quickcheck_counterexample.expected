@@ -4,7 +4,7 @@ error[F0603]: expectation `climate::thermostat::wrong` does not hold
 22 |     expect wrong: when temp < 60, mode = Heat
    |            ^^^^^ does not follow from the requirements
    |
-   = counterexample: temp = 59, target = 59, mode = Mode::Off
+   = counterexample: temp = 49, target = 51, mode = Mode::Off
    = help: strengthen the requirements so that it follows, or correct the expectation
 
 error[F0607]: `climate::loose::b?` is not determined by the inputs: for the input a? = false, it can be false or true
@@ -22,7 +22,7 @@ error[F0603]: expectation `climate::same` does not hold
 32 | expect same: forall (x y: loose), when x.a? = y.a?, x.b? = y.b?
    |        ^^^^ does not follow from the requirements
    |
-   = counterexample: x.a? = false, x.b? = false, y.a? = false, y.b? = true
+   = counterexample: x.a? = false, x.b? = true, y.a? = false, y.b? = false
    = help: strengthen the requirements so that it follows, or correct the expectation
 
 fren: 3 passed, 3 failed, 0 inconclusive, in 100 tests each
