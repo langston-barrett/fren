@@ -48,4 +48,29 @@ comp counts_mixed {
     pub out y?
     req q: y? iff (w.n + ({(1, 2)}).card) > 1
 }
+
+-- An instance of a component that cannot be found, or that has a static
+-- error, is reported once, not again where it is used.
+comp uses_unknown {
+    in x: Int
+    inst w: nope { x }
+    --~^ error: cannot find `nope` in this scope
+    pub out z?
+    req r: z? iff w.y = 1
+}
+
+comp squared {
+    in x: Int
+    pub out y: Int
+    req q: y = x * x
+    --~^ error: nonlinear arithmetic is not supported
+}
+
+comp uses_squared {
+    in x: Int
+    inst w: squared { x }
+    --~^ error: cannot find `squared` in this scope
+    pub out z?
+    req r: z? iff w.y = 1
+}
 --@ exit: 2

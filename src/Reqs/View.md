@@ -15,7 +15,9 @@ visible, a duplicate name, a type error, nonlinear arithmetic, or a
 violation of a rule such as [Boolean naming](Lang/Types.md#boolean-names).
 Each is an error at the offending source position. A denied
 [lint](Lint.md), such as an unused import, is a
-static error too. With the `fren` command, any static error means that no
+static error too. An instance whose component cannot be found, or has a
+static error itself, is reported once, at the instance, and not again at
+each use of it. With the `fren` command, any static error means that no
 check runs. In Lean, syntax and type errors
 are Lean's own, and are worded differently, except for operators of other
 languages (`==`, `&&`, `||`, `!`), which both front ends report with what to

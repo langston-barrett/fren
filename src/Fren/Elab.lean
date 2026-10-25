@@ -1608,7 +1608,7 @@ def lintChain (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
 def lintPattern (cx : ExprCtx) (parent? : Option Syntax) (e recv : Syntax) (args : Array Syntax) : TermElabM Unit := do
   unless cx.noteIndexes do return
   let #[p] := args | return
-  let some lit := (if p.getNumArgs == 1 then p[0] else p).isStrLit? | return
+  let some lit := (let p := unparen p; if p.getNumArgs == 1 then p[0] else p).isStrLit? | return
   let some (fix, s) := Core.trivialPattern? lit | return
   let fixed := (Core.trivialPatternText (bareText recv) (srcText recv) fix s).inSlot (parent?.bind (operandSlot · e))
   recordLint .trivialPattern e (Core.trivialPatternMsg fix fixed)
@@ -2587,6 +2587,10 @@ open Lang in
         vars := vars ++ ivars
       catch ex => logException ex; ok := false
     let instNames := pending.map (·.name)
+    -- An instance that is not resolved is reported once, not again at each
+    -- use of it, as by the `fren` command (`Reqs/View#static-errors`).
+    let instsOk := ok
+    unless instsOk do return (false, #[])
     -- Bindings; assumptions, requirements and expectations
     let decls := vars.map fun v => (v.name, fun _ => pure v.type)
     let varsOk := ok
