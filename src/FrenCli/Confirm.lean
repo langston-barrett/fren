@@ -356,10 +356,12 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
     triggers := core.triggers.map fun (n, s) => (n, (s, trigger n))
     indexes := core.indexes.mapIdx fun j x =>
       -- The expressions the index can be in: the constraint, the definition
-      -- or the instance's bindings that it names.
+      -- or the instance's bindings that it names, or, in a refinement, the
+      -- binding of the variable that it names.
       let exs := (ec.constraints.filter (·.name == x.prop)).map (·.e)
         ++ (ec.defs.filter (·.1 == x.prop)).map (·.2)
         ++ (ec.insts.filter (·.name == x.prop)).flatMap (·.bindings.map (·.2))
+        ++ (ec.bindings.filter (·.1 == x.prop)).map (·.2)
       let goal? := positions[j]?.bind fun pos => (exs.flatMap (·.indexGoals)).find? (·.1 == pos)
       { x with goal := (x.goal, match goal? with
         | some (_, g) => .atoms #[{ label := .num x.prop x.k, pfx := .anonymous, e := g }]
