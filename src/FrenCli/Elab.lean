@@ -1144,6 +1144,15 @@ partial def typeShape : Expr → Fren.Core.TypeShape
 /-- Whether `e` synthesizes a type (`lang::synthesizes`). -/
 def synthesizes (e : Expr) : Bool := (typeShape e).synthesizes
 
+/-- Whether `e` is written as a sequence: a sequence literal, or a `++`, a
+conditional or a `match` with one among its shared parts, so that the
+right of `in` is checked against a sequence. -/
+partial def seqShaped : Expr → Bool
+  | .seq .. => true
+  | .bin _ "++" a b | .ite _ _ a b => seqShaped a || seqShaped b
+  | .match _ _ arms => arms.any (seqShaped ·.2)
+  | _ => false
+
 partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   let concatOk := cx.concatOk
   let expected? := cx.expected?
@@ -1471,7 +1480,9 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         checkCore cx span .setAlgebra true true #[pa, pb, b]
         return (s!"(set.member (tuple {x} {y}) {r})", .bool)
       let (x, tx) ← elabExpr cx a
-      let (y, ty) ← elabExpr { cx with expected? := some (.set tx) } b
+      -- The right is checked against a set or sequence of the left's type, as
+      -- it is written (`lang::checked`).
+      let (y, ty) ← elabExpr { cx with expected? := some (if seqShaped b then .seq tx else .set tx) } b
       if let (.set _ #[m], true) := (b, cx.noteIndexes) then
         unless m matches .pair .. do lintFix .singletonMembership span (Fren.Core.singletonMembershipMsg (← srcAt a.span) (← srcAt m.span))
       if ty == .seq tx then
@@ -1506,8 +1517,11 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     | "++" =>
       -- Each operand is checked against the whole's type, or the other's
       -- (`lang::checked`): `[] ++ q` takes its type from `q`.
-      let expected? ← if expected?.isNone && !synthesizes a && synthesizes b then
-          pure (some (← elabExpr { cx with noteIndexes := false } b).2)
+      let expected? ← if expected?.isNone && !synthesizes a && synthesizes b then do
+          let saved ← get
+          let t ← (·.2) <$> elabExpr { cx with noteIndexes := false } b
+          set saved
+          pure (some t)
         else pure expected?
       let (x, tx) ← elabExpr { cx with expected?, concatOk := true } a
       if let .seq _ := tx then

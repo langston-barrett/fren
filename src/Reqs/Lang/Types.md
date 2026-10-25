@@ -261,29 +261,35 @@ wherever an expression must synthesize its type.
 Where an expression is written decides whether it is checked:
 
 - **Declared.** It is checked against a type that is declared: a binding
-  of an instance, a field of a record literal, an argument of a function
-  application, a variant's payload or a method, a defined output's
-  definition, and a constant's value.
-- **Shared.** Its type is that of the expression it is a part of, and of
-  that expression's other such parts. It is checked if that expression is,
-  or if one of those parts synthesizes its type. These are the operands of
-  `union`, `inter`, `minus` and `++`, the branches of a conditional, the
-  bodies of a `match`'s arms, the elements of a set or sequence literal,
-  and an expression in parentheses, which is the only such part.
-- **Compared.** Its type is the other operand's, and it is checked if the
-  other synthesizes its type. These are the operands of `=`, `!=` and
-  `subset`, and the right of `in`.
+  of an instance or of a refinement, a field of a record literal, an
+  argument of a function application, a variant's payload, an argument of
+  a sequence's method, a defined output's definition, and a constant's
+  value.
+- **Shared.** Its type follows from that of the expression it is a part
+  of, and from that of the expression's other such parts. It is checked if
+  that expression is, or if one of those parts synthesizes its type. These
+  are the operands of `union`, `inter`, `minus` and `++`, the branches of a
+  conditional, the bodies of a `match`'s arms, the elements of a set or
+  sequence literal, and an expression in parentheses, which is the only
+  such part. The members of a pair are also shared, but give each other
+  nothing: each is checked if the pair is, as in `{(1, {}), (2, s)}`.
+- **Compared.** Its type follows from the other operand's: it is the same,
+  or, for the right of `in`, a set or sequence of it, as it is written. It
+  is checked if the other synthesizes its type. These are the operands of
+  `=`, `!=` and `subset`, and the right of `in`.
 - **Synthesized.** Anywhere else, as the left of `in`, an operand of
-  `join`, a receiver, a scrutinee and the sequence that is indexed, it
-  synthesizes its type.
+  `join`, an argument of a method of anything but a sequence, as in
+  `r.image({})`, a receiver, a scrutinee and the sequence that is indexed,
+  it synthesizes its type.
 
 `lang::checked` states this, from where an expression is written, whether
 the expression it is a part of is checked, and whether one of the parts
 that share its type synthesizes one. So `s = {} union {}`,
-`s = (if c? then {} else {})`, `{{}, s}`, `[[], q]` and a `match` with an
-arm `E::W => {}` beside an arm of a known type are all accepted, and
-`{} = {}`, `({} inter {}).card`, `{} in z`, `r join {}` and `{{}}.card`
-are not.
+`s = (if c? then {} else {})`, `x in []`, `{{}, s}`, `[[], q]`,
+`{(1, {}), (2, s)}` and a `match` with an arm `E::W => {}` beside an arm
+of a known type are all accepted, and `{} = {}`, `({} inter {}).card`,
+`{} in z`, `r join {}`, `r.image({})`, `{{}}.card` and `s = [{}][0]` are
+not.
 
 ```fren
 pub enum Position { Declared, Shared, Compared, Synthesized }

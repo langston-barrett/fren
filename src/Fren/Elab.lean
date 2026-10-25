@@ -1450,7 +1450,7 @@ def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- Where the core allows it, only its operands' outputs matter.
   if concatOk then checkCore cx e .stringAtom true true #[a, b]
   else checkCore cx e .stringSearch true true #[a, b] (← isConstant cx e)
-  let y ← toTerm { cx with concatOk := true, emptyOk := false } b
+  let y ← toTerm { cx with concatOk := true, emptyOk := Core.Position.synthesized.checked false false } b
   for (t, stx) in [(x, a), (y, b)] do
     let ty ← typeOf t
     unless ty.isConstOf ``String do
@@ -1466,7 +1466,9 @@ def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   let pattern := m == "matches?" && rty.isConstOf ``String
   -- A sequence method's arguments are typed by its parameters, so `[]` may be one.
   let seq := rty.isAppOfArity ``Fren.Seq 1
-  let as ← args.mapM fun a => return (← if pattern then patternTerm a else toTerm { cx with emptyOk := seq } a, a)
+  let position : Core.Position := if seq then .declared else .synthesized
+  let as ← args.mapM fun a =>
+    return (← if pattern then patternTerm a else toTerm { cx with emptyOk := position.checked false false } a, a)
   if seq then
     let c := (Core.Method.ofName? m).map (·.seqConstruct) |>.getD .seqWord
     checkCore cx e c true true (#[recvStx] ++ args) ((← args.allM (isConstant cx ·)) && (← isConstant cx recvStx))
@@ -1701,14 +1703,14 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     let n := (info.payloads[idx]?.map (·.size)).getD 0
     if let some msg := Core.variantMentionMsg? v n true then throwError msg.text
     unless args.getElems.size == n do throwError (Core.arityMsg v n args.getElems.size "value").text
-    let args ← args.getElems.mapM (toTerm { cx with emptyOk := true })
+    let args ← args.getElems.mapM (toTerm { cx with emptyOk := Core.Position.declared.checked false false })
     return ← `($(mkCIdentFrom p (info.decl ++ en.variants[idx]!)) $args*)
   let .item { kind := .fnItem, path, .. } := r | throwErrorAt p (Core.notAFunctionMsg r).text
   if let some d := (← getState).defined.get? path then
     -- Its definition, applied to the placeholders it uses; its arguments
     -- may mention anything (`lang::argument`).
     unless args.getElems.size == d.nParams do throwError (Core.arityMsg path d.nParams args.getElems.size).text
-    let args ← args.getElems.mapM (toTerm { cx with emptyOk := true })
+    let args ← args.getElems.mapM (toTerm { cx with emptyOk := Core.Position.declared.checked false false })
     return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
   if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
   let a ← placeholderOf path
@@ -1717,7 +1719,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   -- Outputs may not occur in arguments (`inst::mention`); assumptions and
   -- bindings exclude them already.
   let acx := if cx.place == .prop then { cx with place := .argument } else cx
-  let args ← args.getElems.mapM (toTerm { acx with emptyOk := true })
+  let args ← args.getElems.mapM (toTerm { acx with emptyOk := Core.Position.declared.checked false false })
   `($(mkCIdentFrom p a.placeholder) $args*)
 
 open Lang in
@@ -1788,7 +1790,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
     else if e.isOfKind ``Lang.pairExpr then throwError Core.pairPlaceMsg.text
     else if e.isOfKind ``Lang.seqExpr then seqLitTerm toTerm cx emptyOk e
     else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
-    else if e.isOfKind ``Lang.recordExpr then recordTerm (toTerm { cx with emptyOk := true }) cx e
+    else if e.isOfKind ``Lang.recordExpr then recordTerm (toTerm { cx with emptyOk := Core.Position.declared.checked false false }) cx e
     else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm { cx with emptyOk } e (parent?.bind (operandSlot · e))
     else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
     else throwError "unsupported Fren expression"
@@ -1984,7 +1986,7 @@ def elabBindings (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) : TermElab
   let mut eqs := #[]
   for b in pi.bindings do
     let x := b[0]
-    let t ← if b[1].isNone then toTerm cx (← `(fren_expr| $(⟨x⟩):ident)) else toTerm { cx with emptyOk := true } b[1][1]
+    let t ← if b[1].isNone then toTerm cx (← `(fren_expr| $(⟨x⟩):ident)) else toTerm { cx with emptyOk := Core.Position.declared.checked false false } b[1][1]
     unless b[1].isNone do lintBools b[1][1]
     lintRedundant b false
     let some idx := cx.vars.findIdx? (·.name == pi.name ++ x.getId)
@@ -2176,7 +2178,7 @@ open Lang in
           discard (takeIndexes fvs)
           let value ← withRef e do
             -- A definition assigns once and acyclically, so `++` is in the core in it.
-            elabProp (← toTerm { modName := scope, vars, insts := instNames, place := .prop, emptyOk := true, concatOk := true } e) v.type
+            elabProp (← toTerm { modName := scope, vars, insts := instNames, place := .prop, emptyOk := Core.Position.declared.checked false false, concatOk := true } e) v.type
           indexes := indexes ++ (← takeIndexes fvs).map fun (r, g) => (v.name, .prop, r, g)
           lintBools e
           let value := value.replaceFVars defnFvs (values.map (·.2))
@@ -2340,7 +2342,7 @@ open Lang in
     let abstract := (← getState).placeholders.contains type.constName
     unless Core.constantAccepted abstract false do
       throwErrorAt stx[4] (Core.unknownConstantMsg abstract).text
-    let value ← elabProp (← toTerm { modName, vars := #[], insts := #[], place := .prop, emptyOk := true } stx[6]) type
+    let value ← elabProp (← toTerm { modName, vars := #[], insts := #[], place := .prop, emptyOk := Core.Position.declared.checked false false } stx[6]) type
     let applies ← applications { modName, vars := #[], insts := #[], place := .prop } stx[6]
     unless Core.constantAccepted abstract !applies.isEmpty do
       throwErrorAt applies[0]! (Core.unknownConstantMsg abstract).text
@@ -2514,7 +2516,7 @@ and the solver is asked nothing. -/
         let some v := a.vars.find? (·.name == x.getId) | throwError "internal error: no variable for `{x.getId}`"
         let cx : ExprCtx := { modName, vars := own, insts := #[], place := .prop
                               refining? := some { concrete := c.path, abstract := a.path, input := v.role == .input } }
-        let t ← if b[1].isNone then toTerm cx (← pathExpr x x.getId) else toTerm { cx with emptyOk := true } b[1][1]
+        let t ← if b[1].isNone then toTerm cx (← pathExpr x x.getId) else toTerm { cx with emptyOk := Core.Position.declared.checked false false } b[1][1]
         unless b[1].isNone do lintBools b[1][1]
         let e ← mkLambdaFVars cfvs (← elabProp t v.type)
         return (v, e, ← takeIndexes cfvs)

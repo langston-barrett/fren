@@ -1169,10 +1169,12 @@ Erroneous code example:
 comp c { pub out n: Int req r: n = {}.card }
 ```
 
-`{}` has no member to give its set a type, so it takes its type from where
-it is written: the other operand of `=`, `!=`, `union`, `inter`, `minus`
-or `subset`, the right of `in`, a binding, a field, a definition, an
-argument or a constant. Write it where its type is known:
+`{}` and `[]` have no member to give them a type, so they take their type
+from where they are written: they can only be checked against a type that
+is given to them, as the other side of `=`, a binding, a field or an
+argument gives one (`Reqs/Lang/Types#checking-and-synthesis`). Where an
+expression must synthesize its own type, as a receiver must, they are an
+error. Write them where their type is known:
 
 ```fren
 comp c { in s: Set(Int) pub out e? req r: e? iff s = {} }
