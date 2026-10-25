@@ -22,7 +22,7 @@ structure Rng where
   s : UInt64
   deriving Inhabited
 
-def Rng.next (g : Rng) : UInt64 × Rng :=
+@[inline] def Rng.next (g : Rng) : UInt64 × Rng :=
   let s := g.s + 0x9E3779B97F4A7C15
   let z := (s ^^^ (s >>> 30)) * 0xBF58476D1CE4E5B9
   let z := (z ^^^ (z >>> 27)) * 0x94D049BB133111EB
@@ -40,15 +40,20 @@ def below (n : Nat) : R Nat := do
   return if n < UInt64.size then (r % n.toUInt64).toNat else r.toNat % n
 
 /-- Fisher–Yates: each `i` from the last index down to `0` swaps with a
-random `j ≤ i`. -/
-def shuffle (xs : Array α) : R (Array α) := do
-  let mut xs := xs
-  let mut i := xs.size
-  while i > 0 do
-    i := i - 1
-    let j ← below (i + 1)
-    xs := xs.swapIfInBounds i j
-  return xs
+random `j ≤ i`, drawn as `below (i + 1)` draws it. The generator is
+threaded through a loop rather than the state monad, so that a draw
+allocates nothing; it draws the same values in the same order. -/
+def shuffle (xs : Array α) : R (Array α) := modifyGet fun g => loop xs xs.size g
+where
+  loop (xs : Array α) (i : Nat) (g : Rng) : Array α × Rng :=
+    match i with
+    | 0 => (xs, g)
+    | i + 1 =>
+      let (r, g) := g.next
+      -- `below (i + 1)`; `i + 1` is at least 1, so its `max` is itself.
+      let n := i + 1
+      let j := if n < UInt64.size then (r % n.toUInt64).toNat else r.toNat % n
+      loop (xs.swapIfInBounds i j) i g
 
 def mix (h : UInt64) (x : UInt64) : UInt64 := (Rng.next ⟨h ^^^ (x * 0x2545F4914F6CDD1D)⟩).1
 
@@ -107,6 +112,7 @@ def World.interp (sp : Spec) (w : World) : Interp where
     let (_, r) ← sp.funs.find? f
     let h := args.foldl (fun h a => mix h (hashVal a)) (mix w.seed (hash f))
     return valueOf sp w h 2 r
+  matchMemo p s := do return (← (← sp.matchMemo[p]?)[s]?).get
 
 /-! ## Candidates -/
 
@@ -202,6 +208,24 @@ partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array
       out := out ++ combos.map (.ctor p idx ·)
     return out.extract 0 cap
 
+/-- Whether `smallValues` reads its integers for `ty`: whether an `Int` or
+a `Nat` can be reached from it, through elements and fields. Otherwise it
+returns the same values whatever the integers are, since it reads them
+only at those types. A datatype already being looked at, in `seen`, adds
+no type that it does not add the first time. -/
+partial def VTy.readsInts (sp : Spec) (seen : List Name := []) : VTy → Bool
+  | .int | .nat => true
+  | .bool | .string | .abstract _ => false
+  | .set t | .seq t => t.readsInts sp seen
+  | .rel a b => a.readsInts sp seen || b.readsInts sp seen
+  -- A newtype's values are its underlying type's (`smallValues`).
+  | .newtype _ u => u.readsInts sp seen
+  | .data p =>
+    if seen.contains p then false else
+      match sp.data.find? p with
+      | some d => d.ctors.any (·.fields.any (·.2.readsInts sp (p :: seen)))
+      | none => false
+
 /-- The variables of `e`. -/
 partial def Ex.vars : Ex → Array Name
   | .var n => #[n]
@@ -234,15 +258,26 @@ def Env.look (env : Env) : Look := fun n => env[n]?
 they are known. -/
 abbrev Slots := Array (Option Val)
 
+/-- The values of type `ty` that `Problem.candidates` starts from, if they
+do not depend on its random integers: `ty` is not a sequence, whose longer
+candidates have the lengths of those integers, and `smallValues` does not
+read them (`VTy.readsInts`). Then they are the same at every call of a
+search, which computes them once. -/
+def Problem.fixedPool? (sp : Spec) (w : World) (p : Problem) (ty : VTy) : Option (Array Val) :=
+  match ty with
+  | .seq _ => none
+  | _ => if ty.readsInts sp then none else some (smallValues sp w p.ints p.strs 24 2 ty)
+
 /-- The candidates for a variable of type `ty`, given `equated`, what the
-constraints equate it with, over the search's environment `slots`. -/
+constraints equate it with, over the search's environment `slots`.
+`fixed?` is `Problem.fixedPool? sp w p ty`, computed once per search. -/
 def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (slots : Slots) (ty : VTy)
-    (equated : Array Ex) : R (Array Val) := do
+    (equated : Array Ex) (fixed? : Option (Array Val)) : R (Array Val) := do
   -- Values that a constraint equates the variable with, first.
   let eqs := equated.filterMap (·.eval I (fun _ => none) [] slots)
   let mut ints := p.ints
   for _ in [0:2] do ints := ints.push (((← below 41) : Int) - 20)
-  let mut pool := smallValues sp w ints p.strs 24 2 ty
+  let mut pool := fixed?.getD (smallValues sp w ints p.strs 24 2 ty)
   -- Longer sequences, of the lengths that the constraints mention.
   if let .seq t := ty then
     let elems := smallValues sp w ints p.strs 24 2 t
@@ -335,6 +370,9 @@ partial def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (en
   -- What the constraints equate each variable with, computed when the
   -- search first reaches it.
   let equated : Array (Thunk (Array Ex)) := varSlot.map fun x => Thunk.mk fun _ => full.flatMap (·.equated x)
+  -- The values that each variable's candidates start from, where they do
+  -- not depend on the random integers, likewise.
+  let fixed : Array (Thunk (Option (Array Val))) := p.vars.map fun (_, ty) => Thunk.mk fun _ => p.fixedPool? sp w ty
   -- Returns whether it found values, with `slots` and `known` as they were
   -- given if it did not, and with the values found if it did.
   let rec go (i : Nat) (slots : Slots) (known : Array Bool) (left : Nat) : R (Bool × Slots × Array Bool × Nat) := do
@@ -346,7 +384,7 @@ partial def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (en
       let mut left := left
       let mut slots := slots
       let mut known := known
-      for v in ← p.candidates sp w I slots ty (equated[i]?.map (·.get) |>.getD #[]) do
+      for v in ← p.candidates sp w I slots ty (equated[i]?.map (·.get) |>.getD #[]) (fixed[i]?.bind (·.get)) do
         if left == 0 then break
         left := left - 1
         slots := slots.set! x (some v)
@@ -459,6 +497,22 @@ def stringsOf (atoms : Array Atom) : R (Array String) := do
       if let some cs ← Re.sample 40 r then
         for t in [String.ofList cs, String.ofList cs ++ "a"] do out := add out t
   return out
+
+/-- `sp`, remembering whether each of `strs`, and each string that a
+string's candidates add (`smallValues`), matches each pattern of
+`atoms` that parses (`Spec.matchMemo`). Each answer is a thunk of
+`Fren.Core.Re.matches` of the pattern's parse, which is the pattern that
+`Ex.matches` holds (`lowerExpr`), so it is the answer that matching
+gives, computed at most once. -/
+def Spec.withMatchMemo (sp : Spec) (atoms : Array Atom) (strs : Array String) : Spec := Id.run do
+  let pats := atoms.foldl (fun ps a => ps ++ a.e.strLits.2) #[]
+  let strs := strs ++ #["", "a", "b"]
+  let mut memo := sp.matchMemo
+  for p in pats do
+    if memo.contains p then continue
+    let .ok re := Fren.Core.parseRe p | continue
+    memo := memo.insert p (strs.foldl (init := {}) fun m s => m.insert s (Thunk.mk fun _ => re.matches s))
+  return { sp with matchMemo := memo }
 
 /-- The defined outputs of `c` that the inputs alone give, in an order in
 which each mentions only inputs and earlier such outputs. Members may

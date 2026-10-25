@@ -298,13 +298,13 @@ structure Refutation where
   deriving Inhabited
 
 /-- `b`, with each formula paired with its meaning, and each model
-evaluated; refuted models are recorded in `log`. -/
-def confirming (sp : Spec) (ec : Comp) (kind : Fren.Core.CheckKind) (log : IO.Ref (Array Refutation))
+evaluated; refuted models are recorded in `log`. `sy` is `Symbols.of sp`,
+which the caller builds once for the spec. -/
+def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKind) (log : IO.Ref (Array Refutation))
     (b : Fren.Core.Backend IO String String) : Fren.Core.Backend IO (String × Fm) String :=
   let vars := sp.flatVars ec
   let outs := vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
   let copied := vars.filter (fun v => (Fren.Core.Symbol.ofRole v.role).copied) |>.map (·.name)
-  let sy := Symbols.of sp
   let tys (n : Name) := (vars.find? (·.name == n)).map (·.ty)
   { query := fun hyps goal wantModel => do
       let o ← b.query (hyps.map fun (n, f) => (n, f.1)) goal.1 true

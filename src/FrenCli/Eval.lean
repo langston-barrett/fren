@@ -242,6 +242,10 @@ structure Spec where
   consts : NameMap (Val × VTy) := {}
   comps : Array Comp := #[]
   globals : Array Comp := #[]
+  /-- For each pattern `p` and string `s`, whether `s` matches `p`, as a
+  thunk, so that it is matched once however often a search asks
+  (`Spec.withMatchMemo`). -/
+  matchMemo : Std.HashMap String (Std.HashMap String (Thunk Bool)) := {}
   deriving Inhabited
 
 def Spec.comp? (sp : Spec) (path : Name) : Option Comp := sp.comps.find? (·.path == path)
@@ -276,11 +280,19 @@ partial def Spec.flatVars (sp : Spec) (c : Comp) : Array Var := Id.run do
 /-- What the abstract types and functions mean, as far as it is known. -/
 structure Interp where
   fn : Name → Array Val → Option Val := fun _ _ => none
+  /-- Whether the string `s` matches the pattern `p`, if it is known
+  without matching it: `Fren.Core.Re.matches` of `p`'s parse, remembered
+  (`Spec.withMatchMemo`). It is not part of the meaning. -/
+  matchMemo : String → String → Option Bool := fun _ _ => none
 
 instance : Inhabited Interp := ⟨{}⟩
 
 /-- The value of each variable, as far as it is known. -/
 abbrev Look := Name → Option Val
+
+/-- `some (.bool b)`, without allocating it: each of the two values is a
+closed term, which the compiler allocates once. -/
+@[inline] def boolV (b : Bool) : Option Val := if b then some (.bool true) else some (.bool false)
 
 def kleeneAnd : Option Val → Option Val → Option Val
   | some (.bool false), _ | _, some (.bool false) => some (.bool false)
@@ -293,30 +305,83 @@ def kleeneOr : Option Val → Option Val → Option Val
   | _, _ => none
 
 def notV : Option Val → Option Val
-  | some (.bool b) => some (.bool !b)
+  | some (.bool b) => boolV !b
   | _ => none
 
-def intOp (f : Int → Int → Val) : Option Val → Option Val → Option Val
+@[inline] def intOp (f : Int → Int → Val) : Option Val → Option Val → Option Val
   | some (.int x), some (.int y) => some (f x y)
   | _, _ => none
 
-/-- A set of `vs`: sorted by how they print, so that equal sets are equal
-values. Each member is printed once, not at each comparison. -/
+/-- Whether `n` has a numeric component. -/
+def nameHasNum : Name → Bool
+  | .anonymous => false
+  | .num .. => true
+  | .str p _ => nameHasNum p
+
+/-- `n` as `reprArg n` prints it. A string component after only string
+components prints as a backquote and `Name.toString n`, which escapes
+exactly as `Name.reprPrec` does (both are `toStringWithToken n true
+(fun _ => false)`); any other name is printed by `Name.reprPrec` itself,
+whose output has no line breaks. -/
+def nameReprArg (n : Name) : String :=
+  match n with
+  | .str p _ => if nameHasNum p then (reprArg n).pretty else "`" ++ n.toString
+  | _ => (reprArg n).pretty
+
+/-- `v` printed as its derived `Repr` prints it, appended to `out`, in
+argument position if `arg`, but on one line: with each of the
+pretty-printer's line breaks as a space. Each constructor of `Val` has
+arguments, so in argument position it is parenthesized. -/
+partial def Val.reprFlat (out : String) (arg : Bool) (v : Val) : String :=
+  let out := if arg then out.push '(' else out
+  let out := match v with
+    | .bool b => out ++ "FrenCli.Eval.Val.bool " ++ (if b then "true" else "false")
+    | .int i => out ++ "FrenCli.Eval.Val.int " ++ (if i < 0 then "(" ++ i.repr ++ ")" else i.repr)
+    | .str s => out ++ "FrenCli.Eval.Val.str " ++ s.quote
+    | .set ms => elems (out ++ "FrenCli.Eval.Val.set ") ms
+    | .pair a b => (b.reprFlat ((a.reprFlat (out ++ "FrenCli.Eval.Val.pair ") true).push ' ') true)
+    | .seq es => elems (out ++ "FrenCli.Eval.Val.seq ") es
+    | .ctor ty idx args =>
+      elems (out ++ "FrenCli.Eval.Val.ctor " ++ nameReprArg ty ++ " " ++ idx.repr ++ " ") args
+    | .abs sort k => out ++ "FrenCli.Eval.Val.abs " ++ nameReprArg sort ++ " " ++ k.repr
+  if arg then out.push ')' else out
+where
+  /-- An array, as `Array.repr` prints it on one line. -/
+  elems (out : String) (vs : Array Val) : String :=
+    if vs.isEmpty then out ++ "#[]" else
+      (vs.foldl (init := (out ++ "#[", true)) fun (out, first) v =>
+        (Val.reprFlat (if first then out else out ++ ", ") false v, false)).1.push ']'
+
+/-- `reprStr v`, the key by which `Val.setOf` orders a set's members,
+computed without the pretty-printer when it can be. `reprStr` lays out
+`repr v` in 120 columns, and its line breaks are only those of groups and
+fills that do not fit. When the whole text fits on one line, every group
+fits, so `reprStr v` is that line, which is `Val.reprFlat`. Its length in
+bytes bounds its length in characters, so a text of at most 100 bytes
+fits. A longer one is printed by `reprStr` itself. Either way the key is
+`reprStr v`, so the order of members is unchanged. -/
+def Val.setKey (v : Val) : String :=
+  let flat := v.reprFlat "" false
+  if flat.utf8ByteSize ≤ 100 then flat else reprStr v
+
+/-- A set of `vs`: sorted by how they print (`Val.setKey`), so that equal
+sets are equal values. Each member is printed once, not at each
+comparison. -/
 def Val.setOf (vs : Array Val) : Val :=
   let ms := vs.toList.eraseDups.toArray
   if ms.size ≤ 1 then .set ms else
-    .set ((ms.map fun v => (reprStr v, v)).qsort (·.1 < ·.1) |>.map (·.2))
+    .set ((ms.map fun v => (v.setKey, v)).qsort (·.1 < ·.1) |>.map (·.2))
 
-def setOp (f : Array Val → Array Val → Val) : Option Val → Option Val → Option Val
+@[inline] def setOp (f : Array Val → Array Val → Val) : Option Val → Option Val → Option Val
   | some (.set a), some (.set b) => some (f a b)
   | _, _ => none
 
 /-- An ordering, of `Int`s, of `String`s, or of the variants of an ordered
 enumeration, by their positions. -/
-def ordV (f : Ordering → Bool) : Option Val → Option Val → Option Val
-  | some (.int x), some (.int y) => some (.bool (f (compare x y)))
-  | some (.str x), some (.str y) => some (.bool (f (compare x.toList y.toList)))
-  | some (.ctor t i _), some (.ctor u j _) => if t == u then some (.bool (f (compare i j))) else none
+@[inline] def ordV (f : Ordering → Bool) : Option Val → Option Val → Option Val
+  | some (.int x), some (.int y) => boolV (f (compare x y))
+  | some (.str x), some (.str y) => boolV (f (compare x.toList y.toList))
+  | some (.ctor t i _), some (.ctor u j _) => if t == u then boolV (f (compare i j)) else none
   | _, _ => none
 
 /-- The pairs `(a, c)` for each `(a, b)` in `r` and `(b, c)` in `q`. -/
@@ -334,34 +399,42 @@ def closurePairs (r : Array Val) : Array Val := Id.run do
     s := next
   return s
 
-def binV : Op → Option Val → Option Val → Option Val
-  | .and => kleeneAnd
-  | .or => kleeneOr
-  | .iff | .eq => fun x y => do return .bool ((← x) == (← y))
-  | .ne => fun x y => do return .bool ((← x) != (← y))
-  | .lt => ordV (· == .lt)
-  | .le => ordV (· != .gt)
-  | .gt => ordV (· == .gt)
-  | .ge => ordV (· != .lt)
-  | .concat => fun
+/-- The value of `op` on `x` and `y`. It takes both operands, rather than
+returning a function of them, so that evaluating an operator calls no
+closure. -/
+def binV (op : Op) (x y : Option Val) : Option Val :=
+  match op with
+  | .and => kleeneAnd x y
+  | .or => kleeneOr x y
+  | .iff | .eq => match x, y with
+    | some x, some y => boolV (x == y)
+    | _, _ => none
+  | .ne => match x, y with
+    | some x, some y => boolV (x != y)
+    | _, _ => none
+  | .lt => ordV (· == .lt) x y
+  | .le => ordV (· != .gt) x y
+  | .gt => ordV (· == .gt) x y
+  | .ge => ordV (· != .lt) x y
+  | .concat => match x, y with
     | some (.str x), some (.str y) => some (.str (x ++ y))
     | some (.seq x), some (.seq y) => some (.seq (x ++ y))
     | _, _ => none
-  | .member => fun
-    | some x, some (.set s) => some (.bool (s.contains x))
-    | some x, some (.seq q) => some (.bool (q.contains x))
+  | .member => match x, y with
+    | some x, some (.set s) => boolV (s.contains x)
+    | some x, some (.seq q) => boolV (q.contains x)
     | _, _ => none
-  | .union => setOp fun a b => Val.setOf (a ++ b)
-  | .inter => setOp fun a b => Val.setOf (a.filter b.contains)
-  | .minus => setOp fun a b => Val.setOf (a.filter (!b.contains ·))
-  | .subset => setOp fun a b => .bool (a.all b.contains)
-  | .join => setOp fun a b => Val.setOf (joinPairs a b)
-  | .add => intOp fun x y => .int (x + y)
-  | .sub => intOp fun x y => .int (x - y)
-  | .mul => intOp fun x y => .int (x * y)
+  | .union => setOp (fun a b => Val.setOf (a ++ b)) x y
+  | .inter => setOp (fun a b => Val.setOf (a.filter b.contains)) x y
+  | .minus => setOp (fun a b => Val.setOf (a.filter (!b.contains ·))) x y
+  | .subset => setOp (fun a b => .bool (a.all b.contains)) x y
+  | .join => setOp (fun a b => Val.setOf (joinPairs a b)) x y
+  | .add => intOp (fun x y => .int (x + y)) x y
+  | .sub => intOp (fun x y => .int (x - y)) x y
+  | .mul => intOp (fun x y => .int (x * y)) x y
   -- Euclidean, as SMT-LIB's; the divisor is never `0`.
-  | .div => intOp fun x y => .int (Int.ediv x y)
-  | .mod => intOp fun x y => .int (Int.emod x y)
+  | .div => intOp (fun x y => .int (Int.ediv x y)) x y
+  | .mod => intOp (fun x y => .int (Int.emod x y)) x y
 
 /-- The value of an expression, as far as it is known: each variable as
 `look` gives it, each binder of a `match` arm as `locals` does, and each
@@ -370,7 +443,7 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
     Ex → Option Val
   | .lit v => some v
   | .var n => look n
-  | .slot k => slots[k]?.join
+  | .slot k => if h : k < slots.size then slots[k] else none
   | .bound n => locals.lookup n
   | .not a => notV (a.eval I look locals slots)
   | .neg a => match a.eval I look locals slots with
@@ -380,11 +453,23 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
   -- not change which values are members.
   | .bin .member a (.setLit es) => do
     let x ← a.eval I look locals slots
-    return .bool ((← es.mapM (·.eval I look locals slots)).contains x)
+    boolV ((← es.mapM (·.eval I look locals slots)).contains x)
+  -- `and`, `or` and `when` evaluate their second operand only when the
+  -- first does not decide them, which gives the same value: `kleeneAnd`
+  -- is `false` whatever its second operand when its first is `false`, and
+  -- `kleeneOr` likewise `true`. Evaluation has no other effect.
+  | .bin .and a b => match a.eval I look locals slots with
+    | some (.bool false) => some (.bool false)
+    | x => kleeneAnd x (b.eval I look locals slots)
+  | .bin .or a b => match a.eval I look locals slots with
+    | some (.bool true) => some (.bool true)
+    | x => kleeneOr x (b.eval I look locals slots)
   | .bin op a b => binV op (a.eval I look locals slots) (b.eval I look locals slots)
   | .when negated c d =>
     let c := c.eval I look locals slots
-    kleeneOr (notV (if negated then notV c else c)) (d.eval I look locals slots)
+    match notV (if negated then notV c else c) with
+    | some (.bool true) => some (.bool true)
+    | x => kleeneOr x (d.eval I look locals slots)
   | .ite c a b => match c.eval I look locals slots with
     | some (.bool true) => a.eval I look locals slots
     | some (.bool false) => b.eval I look locals slots
@@ -420,6 +505,9 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
     -- A sequence's methods, by `Fren.Seq`, over the elements' numbers in
     -- a table of the distinct values involved, which have decidable equality.
     if let .seq es := r then
+      -- A length needs no table: it is the number of elements, which the
+      -- numbering keeps.
+      if let .len := m then return .int es.size
       let table := (es ++ args.flatMap fun | .seq a => a | v => #[v]).toList.eraseDups.toArray
       let num (v : Val) : Nat := (table.findIdx? (· == v)).getD 0
       let q := Fren.Seq.ofList (es.toList.map num)
@@ -468,9 +556,12 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
       | .replace => .str (Fren.Str.replace s (str 0) (str 1))
       | .replaceAll => .str (Fren.Str.replaceAll s (str 0) (str 1))
       | _ => .int 0
-  | .matches recv _ re => do
+  | .matches recv p re => do
     let .str s ← recv.eval I look locals slots | none
-    return .bool (re.matches s)
+    -- `re` is `p`'s parse, so a remembered answer is `re`'s.
+    match I.matchMemo p s with
+    | some b => boolV b
+    | none => boolV (re.matches s)
   | .pair a b => do return .pair (← a.eval I look locals slots) (← b.eval I look locals slots)
   | .seqLit es => do return .seq (← es.mapM (·.eval I look locals slots))
   -- Out of range, an index is part of the interpretation, which is unknown.
@@ -1286,15 +1377,21 @@ partial def lowerItem : Item → L Unit
 where
   declareUse (segs : Array Ident) (glob : Bool) : L Unit := declareUseIn segs glob none
 
-/-- The spec of the files' items, which the elaborator accepted, with the
-names it declares. -/
-def lowerAll (files : Array (Array Item)) : Except String LState := do
-  let mut st : LState := {}
+/-- The state after the files' items, from the state `st` of the files
+before them. Each file starts at the root module. -/
+def lowerFrom (st : LState) (files : Array (Array Item)) : Except String LState := do
+  let mut st := st
   for items in files do
     st := { st with module := .anonymous, scope := .anonymous }
     for item in items do
       st := (← (lowerItem item).run st).2
   return st
+
+/-- The spec of the files' items, which the elaborator accepted, with the
+names it declares. Lowering files one after another is lowering them
+together: `lowerFrom st (a ++ b)` is `lowerFrom st a >>= (lowerFrom · b)`,
+which `fren mutate` relies on to lower only the files from a mutant's. -/
+def lowerAll (files : Array (Array Item)) : Except String LState := lowerFrom {} files
 
 def lowerFiles (files : Array (Array Item)) : Except String Spec := (·.spec) <$> lowerAll files
 

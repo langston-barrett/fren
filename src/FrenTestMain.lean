@@ -504,13 +504,16 @@ def readGroup (paths : Array String) : IO (Array (String × Array Char)) :=
 each taking every `n`th mutant; every other group is one job. -/
 def mutationSlices : Nat := 8
 
+/-- The mutants of the text `chars` of file `file`, whose parse is
+`parsed` (`FrenCli.parseText`), as `fren` makes them. -/
+def mutantsOfParsed (file : Nat) (path : String) (chars : Array Char) (parsed : FrenCli.Parsed) : Array FrenCli.Mutate.Mutant :=
+  match parsed with
+  | .ok (toks, items, _) => FrenCli.Mutate.ofFile { file, path, chars, toks } items
+  | .error _ => #[]
+
 /-- The mutants of the text `chars` of file `file`, as `fren` makes them. -/
 def mutantsOfText (file : Nat) (path : String) (chars : Array Char) : Array FrenCli.Mutate.Mutant :=
-  match FrenCli.lex chars with
-  | .ok toks => match FrenCli.parse toks with
-    | .ok items => FrenCli.Mutate.ofFile { file, path, chars, toks } items
-    | .error _ => #[]
-  | .error _ => #[]
+  mutantsOfParsed file path chars (FrenCli.parseText chars)
 
 /-- The tree of a chained comparison of `es` with the operators `ops`, as
 `shapeWith` writes it: with one operator, a comparison. -/
@@ -580,12 +583,12 @@ def intended (s : Mutate.Src) (m : Mutate.Mutant) (e : FrenCli.Expr) : String :=
     | _ => none) e
 
 /-- The expressions of the items of the text `chars` that mutants change. -/
-def sitesOfText (chars : Array Char) : Array (Lean.Name × FrenCli.Expr) :=
-  match FrenCli.lex chars with
-  | .ok toks => match FrenCli.parse toks with
-    | .ok items => (FrenCli.Mutate.sites items).map fun (n, _, e) => (n, e)
-    | .error _ => #[]
+def sitesOfParsed (parsed : FrenCli.Parsed) : Array (Lean.Name × FrenCli.Expr) :=
+  match parsed with
+  | .ok (_, items, _) => (FrenCli.Mutate.sites items).map fun (n, _, e) => (n, e)
   | .error _ => #[]
+
+def sitesOfText (chars : Array Char) : Array (Lean.Name × FrenCli.Expr) := sitesOfParsed (FrenCli.parseText chars)
 
 /-- Swaps, which a second swap undoes. -/
 def isSwap (m : FrenCli.Mutate.Mutant) : Bool :=
@@ -622,12 +625,14 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
     let (path, chars) := files[m.file]!
     let chars' := m.apply chars
     if chars' == chars then failures := failures.push s!"{m.id}: changes nothing"
+    -- Lexed and parsed once, for each of the reads below.
+    let parsed' := FrenCli.parseText chars'
     -- Only the mutated file: mutants change no declaration, so the files
     -- after it elaborate as before.
-    let st := FrenCli.elabText (before[m.file]?.getD {}) m.file chars'
+    let st := FrenCli.elabParsed (before[m.file]?.getD {}) m.file chars' parsed'
     if let some d := (st.diags.filter fun d => d.severity == .error && d.file == m.file)[0]? then
       failures := failures.push s!"{m.id}: has a static error: {d.msg.headline}"
-    let again := mutantsOfText m.file path chars'
+    let again := mutantsOfParsed m.file path chars' parsed'
     let againIds : Std.HashSet String := .ofArray (again.map (·.id))
     for m₂ in all do
       if m₂.file == m.file && m₂.item != m.item && !againIds.contains m₂.id then
@@ -640,7 +645,7 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
       let src : FrenCli.Mutate.Src := { file := m.file, path, chars, toks := toks[m.file]! }
       let src' : FrenCli.Mutate.Src := { src with chars := chars', toks := (FrenCli.lex chars').toOption.getD #[] }
       let sites := fileSites[m.file]!
-      let sites' := sitesOfText chars'
+      let sites' := sitesOfParsed parsed'
       match (Array.range sites.size).find? fun k =>
           sites[k]!.1 == m.item && sites[k]!.2.span.start ≤ m.span.start && m.span.stop ≤ sites[k]!.2.span.stop with
       | some k =>
