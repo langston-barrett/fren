@@ -193,8 +193,8 @@ def errorCodes : IO (Array String) := do
   -- fren-covers: view::code_group
   for c in codes ++ Fren.Core.Lint.all.map (·.code) do
     let ok := c.length == 5 && c.startsWith "F0" && (c.toList.drop 2).all Char.isDigit
-      && ['1', '2', '3', '4', '5', '6', '7'].contains (c.toList[2]!)
-    unless ok do failures := failures.push s!"{c}: not of the form `F0` followed by a group from 1 to 7 and two digits"
+      && ['1', '2', '3', '4', '5', '6', '7', '8'].contains (c.toList[2]!)
+    unless ok do failures := failures.push s!"{c}: not of the form `F0` followed by a group from 1 to 8 and two digits"
   let snapshots ← (← sortedFiles ("test" / "cli") "expected").mapM IO.FS.readFile
   for c in ← codesInSources do
     unless codes.contains c do failures := failures.push s!"{c}: used in the sources but not explained in `FrenCore/Codes.lean`"

@@ -36,6 +36,7 @@ with an erroneous example and its fix. The codes are grouped:
 | `F05xx` | traceability |
 | `F06xx` | the results of checks |
 | `F07xx` | lints, and setting their levels |
+| `F08xx` | more lints, once `F07xx` is full |
 
 `view::code_group` states the grouping, for any well-formed code:
 
@@ -49,7 +50,7 @@ pub comp code_group {
 
     assume well_formed: code.len = 5 and (code.starts_with?("F01") or code.starts_with?("F02")
         or code.starts_with?("F03") or code.starts_with?("F04") or code.starts_with?("F05")
-        or code.starts_with?("F06") or code.starts_with?("F07"))
+        or code.starts_with?("F06") or code.starts_with?("F07") or code.starts_with?("F08"))
 
     req syntax_codes: when code.starts_with?("F01"), group = Syntax
     req names: when code.starts_with?("F02"), group = Names
@@ -57,10 +58,11 @@ pub comp code_group {
     req instances: when code.starts_with?("F04"), group = Instances
     req traceability: when code.starts_with?("F05"), group = Traceability
     req results: when code.starts_with?("F06"), group = Results
-    req lints: when code.starts_with?("F07"), group = Lints
+    req lints: when code.starts_with?("F07") or code.starts_with?("F08"), group = Lints
 
     expect syntax_example: when code = "F0105", group = Syntax
     expect lints_example: when code = "F0721", group = Lints
+    expect more_lints: when code = "F0801", group = Lints
 }
 ```
 
