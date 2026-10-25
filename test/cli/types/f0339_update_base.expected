@@ -6,7 +6,7 @@ error[F0339]: cannot update the fields of `Int`
   |
   = note: `{ r with x := e }` gives new values to fields of the record `r`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0339`.
 exit=2

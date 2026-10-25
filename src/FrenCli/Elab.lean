@@ -2178,7 +2178,6 @@ variables, checking the names it binds (`inst::binding`). -/
 def resolveInst (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)) :
     M (PendingInst × Array CVar) := do
   let w := Name.mkSimple x.name
-  liftMsg x.span (Fren.Core.checkItemName "instance" w)
   let path ← match ← resolve p with
     | .item { kind := .compItem, path, .. } => pure path
     | r => err (p[0]!.span.to p.back!.span) (Fren.Core.notACompMsg r)
@@ -2334,7 +2333,11 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let mut pending := #[]
   for m in members do
     let .inst x p bs := m | continue
-    let x := (← attempt (declare x)).getD (declaredIdent x).1
+    -- Its name is checked once, whether or not it shadows.
+    let x := (← attempt do
+        let x ← declare x
+        liftMsg x.span (Fren.Core.checkItemName "instance" (Name.mkSimple x.name))
+        return x).getD (declaredIdent x).1
     let xn := Name.mkSimple x.name
     lintName .instance xn x.span
     let some (pi, ivars) ← attempt (resolveInst x p bs) | continue

@@ -141,6 +141,12 @@ where
       | none, some g, _ => pure (g, Core.kindsFor true)
       | none, none, some r => pure (r, Core.CheckKind.all.filter Core.refinementRuns)
       | none, none, none => continue
+    -- Not where `undecidable` is denied, though the error does not stop
+    -- `#fren_check` where `#guard_msgs` catches it: the solver is not asked
+    -- about constructs outside the decidable core that the spec has not
+    -- opted into, on which it may abort
+    -- (`Reqs/Lint/Decidability#undecidable-constructs`).
+    if c.undecidableDenied then continue
     let results ← liftTermElabM <| checkComp c kinds
     for r in results do
       report p c r

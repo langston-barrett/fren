@@ -32,7 +32,8 @@ at the `#fren_check`; and the lints so far that are errors. The errors of
 what only Lean reads, `impl`, `interp` and `#fren_trace`, do not count.
 Nor do the errors inside a `#guard_msgs`, expected or not, so that a Lean
 test can show an error and then the checks: an unexpected one fails the
-`#guard_msgs` itself.
+`#guard_msgs` itself. An item where `undecidable` is denied is still not
+checked ([Decidability lints](Lint/Decidability.md#undecidable-constructs)).
 
 ### How many are reported
 
