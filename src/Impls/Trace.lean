@@ -48,7 +48,8 @@ tested lang::definition_order: "test/ui/lang/let.fren", "test/ui/lang/let_static
   "test/cli/types/f0341_defined_later.fren", "test/cli/types/f0341_itself.fren"
 tested lang::definition_type: "test/ui/lang/let.fren", "test/ui/lang/let_static.fren", "test/ui/lang/let_types.fren",
   "test/cli/types/f0342_definition_type.fren"
-tested lang::definition_form: "test/ui/lang/let.fren", "test/ui/syntax/let_operand.fren", "test/ui/syntax/let_definition.fren",
+tested lang::definition_form: "test/ui/lang/let.fren", "test/ui/lang/quantifiers_let.fren", "test/ui/syntax/let_quantifier.fren",
+  "test/ui/syntax/where_quantifier.fren", "test/ui/syntax/let_operand.fren", "test/ui/syntax/let_definition.fren",
   "test/cli/types/f0302_let_membership.fren", "test/cli/syntax/f0109_let.fren"
 tested inst::earlier: "test/ui/lang/instances_static.fren"
 tested lint::history: "test/cli/lints/settings/f0709_forbid.fren", "test/cli/lints/settings/f0709_forbid_in_file.fren"
