@@ -15,10 +15,11 @@ Precedence, lowest first: `when`/`unless`, `iff`, `or`, `and`, `not`,
 comparisons and `is`, `+ -`, `* div mod`, unary `-`; `if` is an atom whose
 `else` branch extends as far right as possible.
 
-A comparison's left operand may itself be a comparison, so that `a < b <= c`
-parses as `(a < b) <= c`: the elaborator reads that as a chained comparison
-(`Reqs/Lang/Expressions#chained-comparisons`), and rejects the chains that
-Fren does not have, such as `a = b = c`, with the `fren` command's message.
+A comparison's or `is`'s left operand may itself be a comparison or an
+`is`, so that `a < b <= c` parses as `(a < b) <= c`: the elaborator reads
+that as a chained comparison (`Reqs/Lang/Expressions#chained-comparisons`),
+and rejects the chains that Fren does not have, such as `a = b = c` and
+`a < b is P`, with the `fren` command's message.
 -/
 
 namespace Fren.Lang
@@ -190,7 +191,7 @@ scoped syntax:max (name := matchExpr) "match " fren_expr:max " { " sepBy(fren_ar
 
 /-- `e is P`, a pattern test, at the precedence of the comparisons. `is`
 is a reserved word where `Fren.Lang` is open, as the set operators are. -/
-scoped syntax:50 (name := isExpr) fren_expr:51 " is " fren_pattern : fren_expr
+scoped syntax:50 (name := isExpr) fren_expr:50 " is " fren_pattern : fren_expr
 
 declare_syntax_cat fren_member (behavior := both)
 

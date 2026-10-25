@@ -44,7 +44,7 @@ inductive ChainKind where
   | ascending
   /-- `>` and `>=`. -/
   | descending
-  /-- `=`, `!=`, `in` and `subset`. -/
+  /-- `=`, `!=`, `in`, `subset` and `is`. -/
   | other
   deriving Inhabited, BEq, DecidableEq, Repr
 
@@ -62,8 +62,9 @@ def chainAccepted (ascending descending other : Nat) : Bool :=
 def chainOtherMsg (op : String) : Msg :=
   { code? := some "F0108", headline := s!"`{op}` cannot be chained", label? := some "cannot be chained"
     notes := #["note: only `<` and `<=` chain together, and `>` and `>=`",
-      -- `a in b and b in c` would compare `b` with a member and a set.
-      if op == "in" then "help: split the chain with `and`, or put a comparison in parentheses to compare its result"
+      -- `a in b and b in c` would compare `b` with a member and a set, and
+      -- `is` has a pattern on its right.
+      if op == "in" || op == "is" then "help: split the chain with `and`, or put a comparison in parentheses to compare its result"
       else s!"help: split the chain with `and`, e.g. `a {op} b and b {op} c`, or put a comparison in parentheses to compare its result"] }
 
 /-- `second`, which orders the other way from `first`, in a chained

@@ -872,10 +872,11 @@ partial def hasConcat (cx : ExprCtx) (e : Syntax) : TermElabM Bool := do
   if e.isOfKind ``Lang.isExpr then return ← hasConcat cx e[0]
   e.getArgs.anyM (hasConcat cx)
 
-/-- Whether `e` is a comparison: `=`, `!=`, an ordering, `in` or `subset`. -/
+/-- Whether `e` is a comparison: `=`, `!=`, an ordering, `in`, `subset`,
+or a pattern test, `e is P`, which does not chain but parses as one. -/
 def isComparison (e : Syntax) : Bool :=
   e.getNumArgs == 3 && e[1].isAtom &&
-    ["=", "!=", "<", "<=", ">", ">=", "in", "subset"].contains e[1].getAtomVal.trimAscii.toString
+    ["=", "!=", "<", "<=", ">", ">=", "in", "subset", "is"].contains e[1].getAtomVal.trimAscii.toString
 
 /-- The operands and operators of `e`, if it is a chained comparison
 (`Reqs/Lang/Expressions#chained-comparisons`): a comparison whose left

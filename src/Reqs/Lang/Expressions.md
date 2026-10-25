@@ -127,7 +127,7 @@ operands of `<` must be.
 
 A chain that mixes directions, such as `a < b > c`, is an error: it reads
 as a mistake more often than as `a < b and c < b`. So is a chain with `=`,
-`!=`, `in` or `subset`, which do not chain: `a? = b? = c?` would read as
+`!=`, `in`, `subset` or `is`, which do not chain: `a? = b? = c?` would read as
 either `a? = b? and b? = c?` or `(a? = b?) = c?`, and those differ. The
 message points at the first operator that does not chain, or else at the
 first that orders the other way from the first. A comparison in
@@ -140,7 +140,7 @@ comparison, not a chain:
 pub comp comparison_chain {
     in n_ascending: Int     -- operators `<` and `<=`
     in n_descending: Int    -- operators `>` and `>=`
-    in n_other: Int         -- operators `=`, `!=`, `in` and `subset`
+    in n_other: Int         -- operators `=`, `!=`, `in`, `subset` and `is`
     pub det out accepted?
 
     assume counts: n_ascending >= 0 and n_descending >= 0 and n_other >= 0
@@ -609,7 +609,8 @@ test is then always `true`.
 `is` is a comparison: it binds as `=` does, below `+` and above `not`, and
 is not associative. So `not s is Shape::Circle(_)` means `not (s is
 Shape::Circle(_))`, `a is A(_) and b is B(_)` tests both, and `s is
-Shape::Circle(_) = true` is an error. Its pattern extends as far right as
+Shape::Circle(_) = true` and `x < y is A(_)` are errors (`F0108`), since
+`is` does not [chain](#chained-comparisons). Its pattern extends as far right as
 its alternatives do, so `s is A(_) | B(_) and t?` means `(s is A(_) |
 B(_)) and t?`.
 

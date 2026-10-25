@@ -397,15 +397,15 @@ partial def cmpOp? : P (Option String) := do
 partial def cmp : P Expr := do
   let start := (← peek).span
   let l ← add
-  if (← eatKw "is").isSome then
+  if let some isTok ← eatKw "is" then
     let p ← pattern (arm := false)
     let e := Expr.is (← spanFrom start) l p
-    if (← cmpOp?).isSome || isKw (← peek) "is" then chained
+    if (← cmpOp?).isSome || isKw (← peek) "is" then chainedIs isTok
     return e
   let some op ← cmpOp? | return l
   let t ← bump
   let r ← add
-  if isKw (← peek) "is" then chained
+  if isKw (← peek) "is" then chainedIs (← peek)
   if (← cmpOp?).isNone then return ← bin start op l r
   let mut operands := #[l, r]
   let mut ops := #[(op, t.span)]
@@ -413,12 +413,12 @@ partial def cmp : P Expr := do
     let some op ← cmpOp? | break
     ops := ops.push (op, (← bump).span)
     operands := operands.push (← add)
+    if isKw (← peek) "is" then chainedIs (← peek)
   return .chain (← spanFrom start) operands ops
-/-- A second comparison after one. -/
-partial def chained : P Unit := do
-  err (← peek).span "F0108" "comparisons cannot be chained" (some "second comparison")
-    #["note: `a < b < c` would compare the `Bool` `a < b` with `c`",
-      "help: split it with `and`, e.g. `a < b and b < c`"]
+/-- `is`, at `t`, chained with a comparison or another `is`: it does not
+chain (`lang::comparison_chain`). -/
+partial def chainedIs (t : Token) : P Unit :=
+  throw { span := t.span, msg := Fren.Core.chainOtherMsg "is" }
 partial def add : P Expr := do
   let start := (← peek).span
   let mut l ← mul
