@@ -281,6 +281,9 @@ structure ExprCtx where
   place : Core.Place
   /-- For a binding, the index of its instance. -/
   current : Nat := 0
+  /-- In a refinement's binding, over the concrete comp's variables, which
+  binding it is: its mentions follow `refinement::mention` instead. -/
+  refining? : Option Core.RefineBinding := none
   /-- The binders in scope, innermost last. -/
   binders : Array MatchBinder := #[]
   /-- In a defined function's body, the function's name. -/
@@ -541,7 +544,10 @@ def varRef? (cx : ExprCtx) (id : Syntax) (n : Name) : TermElabM (Option Term) :=
   -- A defined output mentions what its definition does.
   for u in defDeps cx.vars v do
     let earlier := (cx.insts.findIdx? (· == u.name.getRoot)).any (· < cx.current)
-    match Core.checkMention cx.place u.role earlier u.name with
+    let ok := match cx.refining? with
+      | some rb => rb.checkMention u.role u.isPub u.name
+      | none => Core.checkMention cx.place u.role earlier u.name
+    match ok with
     | .ok () => pure ()
     | .error msg => throwErrorAt id (if u.name == n then msg else Core.throughDefinition n msg).text
   return some (mkIdentFrom id n)
@@ -1886,12 +1892,13 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
 
 /-! ## Refinements -/
 
-/-- Elaborates `refine r: c refines a` into the comp that checks it
-(`Reqs/Lang/Refinement`): `c`'s inputs, `a`'s assumptions, an instance of
-`c` named as it is, `a`'s instances, and `a`'s requirements and
-definitions as expectations, over the instance's outputs. With `by`, the
-tactics prove the obligation, generated as `r`, and the solver is asked
-nothing. -/
+/-- Elaborates `refine r: c refines a { bindings }` into the comp that
+checks it (`Reqs/Lang/Refinement`): `c`'s inputs, `a`'s assumptions, an
+instance of `c` named as it is, `a`'s instances, and `a`'s requirements
+and definitions as expectations, with `a`'s variables read as their
+bindings or as `c`'s of the same names, and `c`'s outputs from the
+instance. With `by`, the tactics prove the obligation, generated as `r`,
+and the solver is asked nothing. -/
 @[command_elab Lang.refineCmd] def elabRefine : CommandElab := fun stx => do
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
@@ -1907,8 +1914,14 @@ nothing. -/
     return c
   let c ← compOf stx[3]
   let a ← compOf stx[5]
-  -- The interface (`refinement::interface`).
-  for v in a.vars.filter (·.name.isAtomic) do
+  let bs := if stx[6].isNone then #[] else stx[6][1].getSepArgs
+  let bound := bs.map (·[0].getId)
+  -- The bindings (`refinement::binding`).
+  match Core.checkRefineBindings a.path ((a.vars.filter (·.name.isAtomic)).map (·.name)) bound with
+  | .ok () => pure ()
+  | .error (i, msg) => throwErrorAt bs[i]![0] msg.text
+  -- The interface (`refinement::interface`), for the variables not bound.
+  for v in a.vars.filter fun v => v.name.isAtomic && !bound.contains v.name do
     let cv? := c.vars.find? (·.name == v.name)
     let input := v.role == Core.Role.input
     let ok := Core.interfaceAccepted input cv?.isSome (cv?.any (·.role == Core.Role.input)) (cv?.any (·.isPub))
@@ -1924,11 +1937,34 @@ nothing. -/
   let w := Name.mkSimple c.path.getString!
   if a.insts.any (·.name == w) then throwErrorAt stx[5] (Core.dupMemberMsg w).text
   let tested := Core.Tested.ofSettings (← evidenceTested nameStx (fren.evidence.get (← getOptions)))
-    (a.assumes.map (·.name)) ((a.reqs.map (·.name) ++ a.defs.map (·.1)).map (·, none))
+    -- The bindings too, for the definedness of their indexes.
+    (a.assumes.map (·.name) ++ bound) ((a.reqs.map (·.name) ++ a.defs.map (·.1)).map (·, none))
     -- `a`'s instances too, for the definedness of their bindings.
     (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
-  let proof? := if stx[6].isNone then none else some stx[6][1]
+  let proof? := if stx[7].isNone then none else some stx[7][1]
   let info ← liftTermElabM do
+    -- The bindings, over `c`'s own variables, seen from outside, as the
+    -- instance's: a defined output is an output (`refinement::mention`).
+    let own := (c.vars.filter (·.name.isAtomic)).map fun v =>
+      { v with role := if v.role == .input then .input else Core.Role.ofInst v.role v.isPub, defn? := none }
+    -- The mix of relational operators and counting, as in a component
+    -- (`Reqs/Lang/Decidability#relations`): `c`'s, `a`'s and the bindings'.
+    modifyLocal fun l => { l with outsideCore := false, relationalUsed := false, countRefs := #[] }
+    noteCounts c stx[3]
+    noteCounts a stx[5]
+    let bindingsA ← withLocalDeclsD (own.map fun v => (v.name, fun _ => pure v.type)) fun cfvs => do
+      discard (takeIndexes cfvs)
+      bs.mapM fun b => do
+        let x := b[0]
+        let some v := a.vars.find? (·.name == x.getId) | throwError "internal error: no variable for `{x.getId}`"
+        let cx : ExprCtx := { modName, vars := own, insts := #[], place := .prop
+                              refining? := some { concrete := c.path, abstract := a.path, input := v.role == .input } }
+        let t ← if b[1].isNone then toTerm cx (← pathExpr x x.getId) else toTerm { cx with emptyOk := true } b[1][1]
+        unless b[1].isNone do lintBools b[1][1]
+        let e ← mkLambdaFVars cfvs (← elabProp t v.type)
+        return (v, e, ← takeIndexes cfvs)
+    let (relational, counts) ← checkCounts
+    let l ← getLocal
     let inputs := c.vars.filter fun v => v.name.isAtomic && v.role == .input
     let vars := inputs ++ c.vars.map (fun v =>
         let role := Core.Role.ofInst v.role v.isPub
@@ -1936,8 +1972,12 @@ nothing. -/
       ++ a.vars.filter (!·.name.isAtomic)
     withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let fvOf (x : Name) : Expr := fvs[(vars.findIdx? (·.name == x)).getD 0]!
-      -- `a`'s variables, its outputs read from the instance of `c`.
-      let argsA := a.vars.map fun v => fvOf (if v.name.isAtomic && v.role == .output then w ++ v.name else v.name)
+      -- `c`'s variables as a binding reads them, its outputs from the instance.
+      let ownC := own.map fun v => fvOf (if v.role == .input then v.name else w ++ v.name)
+      -- `a`'s variables: their bindings, or else `c`'s of the same names.
+      let argsA := a.vars.map fun v => match bindingsA.find? (·.1.name == v.name) with
+        | some (_, e, _) => e.beta ownC
+        | none => fvOf (if v.name.isAtomic && v.role == .output then w ++ v.name else v.name)
       let sliceC := c.vars.map fun v => fvOf (w ++ v.name)
       let lam (e : Expr) : TermElabM Expr := mkLambdaFVars fvs e
       let reported (p : PropInfo) := { p with ref := nameStx, trigger? := none, triggerRef? := none }
@@ -1960,6 +2000,10 @@ nothing. -/
       let indexes ← a.indexes.mapM fun (x, place, _, goal) => do
         let place := match place with | .binding k => .binding (k + 1) | p => p
         return (x, place, nameStx, ← lam (goal.beta argsA))
+      -- A binding's, where it is read (`Reqs/Lang/Refinement#bindings`):
+      -- an input's under the assumptions, an output's as a requirement.
+      let indexes := indexes ++ (← bindingsA.flatMapM fun (v, _, idx) => idx.mapM fun (r, goal) => do
+        return (v.name, if v.role == .input then .binding 0 else .prop, r, ← lam (goal.beta ownC)))
       -- The obligation: `A_a → A_c ∧ (I_c ∧ R_c ∧ D_c ∧ I_a → R_a ∧ D_a)`.
       let hypsA := mkAndN (assumes.map (·.body.beta fvs)).toList
       let goal := mkAnd (mkAndN (instC.assumes.map (·.2.beta fvs)).toList)
@@ -1969,8 +2013,8 @@ nothing. -/
       let uses ← usesOf #[value]
       addUsesDef uses decl value
       return { path, vars, props := assumes ++ reqs ++ defs, insts := #[instC] ++ instsA, ref := nameStx, decl, uses
-               decidable := c.decidable && a.decidable, relational := c.relational || a.relational
-               counts := c.counts || a.counts, indexes, tested : CompInfo }
+               decidable := c.decidable && a.decidable && !l.outsideCore
+               relational, counts, indexes, tested : CompInfo }
   record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
   match proof? with

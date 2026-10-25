@@ -1,0 +1,44 @@
+-- A refinement without bindings is checked as a component, so the mix of
+-- relational operators and counting is a component's
+-- (`Reqs/Lang/Decidability#relations`): a counting `c` with a relational
+-- `a`, or the reverse, is outside the decidable core.
+
+enum E { A, B }
+
+comp counting {
+    in r: Rel(E, E)
+    in s: Set(E)
+    pub out n: Int
+    pub out has_aa?
+    req c: n = s.card
+    req h: has_aa? iff (E::A, E::A) in r
+}
+
+comp relating {
+    in r: Rel(E, E)
+    in s: Set(E)
+    pub out n: Int
+    req j: when (r join r) = r, n >= 0
+    req k: when E::A in s, n >= 0
+}
+
+refine counts_relates: counting refines relating
+--~^ error: the solver does not reliably combine counting with relational operators
+
+comp bounded { in s: Set(E) pub out n: Int req c: n <= s.card }
+
+comp joined {
+    in r: Rel(E, E)
+    in s: Set(E)
+    pub out n: Int
+    pub out closed?
+    pub out has_a?
+    req z: n < 1 and n > -1
+    req j: closed? iff (r join r) = r
+    req h: has_a? iff E::A in s
+}
+
+refine relates_counts: joined refines bounded
+--~^ error: the solver does not reliably combine counting with relational operators
+
+--@ exit: 2

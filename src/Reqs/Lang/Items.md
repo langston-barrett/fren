@@ -364,11 +364,12 @@ component being monotone. See [Global expectations](Global.md).
 ## Refinements
 
 ```
-refinement := "refine" IDENT ":" path "refines" path ["by" TACTICS]
+refinement := "refine" IDENT ":" path "refines" path ["{" [binding ("," binding)* [","]] "}"] ["by" TACTICS]
 ```
 
 `refine r: c refines a` states that component `c` refines component `a`,
-and has Fren check it. See [Refinement](Refinement.md).
+and has Fren check it. Its bindings, written as an instance's, give
+variables of `a` as expressions over `c`'s. See [Refinement](Refinement.md).
 
 ## Checks
 

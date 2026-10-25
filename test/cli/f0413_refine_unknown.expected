@@ -1,0 +1,17 @@
+error[F0413]: `rough` has no variable `w`
+ --> test/cli/f0413_refine_unknown.fren:4:38
+  |
+4 | refine fits: precise refines rough { w := y }
+  |                                      ^ unknown variable
+  |
+  = note: a refinement binds variables of the refined component; those of `rough` are `x` and `z`
+help: a variable with a similar name exists: `x`
+  |
+4 - refine fits: precise refines rough { w := y }
+4 + refine fits: precise refines rough { x := y }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0413`.
+exit=2

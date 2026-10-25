@@ -217,9 +217,10 @@ nothing to report. What 1 and 3 mean is each command's own:
   lints](Lint.md#fixing-lints)).
 
 `cli::exit`, `eval::eval_exit`, `trace::trace_exit` and `mutate::exit`
-refine `exit_status`. `fmt::exit` and `lint::fix_exit` say whether the command
-could run in terms of what it read, `all_parsed?` and `loaded?`, rather
-than `ran?`, so they are not refinements of it.
+refine `exit_status`. So do `fmt::exit` and `lint::fix_exit`, which say
+whether the command could run in terms of what it read, `all_parsed?` and
+`loaded?`: their refinements bind `ran?` to it (see
+[Bindings](Lang/Refinement.md#bindings)).
 
 ```fren
 pub comp exit_status {

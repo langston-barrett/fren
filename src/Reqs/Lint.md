@@ -816,6 +816,16 @@ pub comp fix_exit {
 
     expect documented_codes: code >= 0 and code <= 2
 }
+```
+
+`lint::fix_exit` follows the convention of every command,
+[`cli::exit_status`](Cli.md#exit-status), with `fren fix` able to run
+exactly when every file is loaded:
+
+```fren
+use cli::exit_status
+
+refine fix_exit_status: fix_exit refines exit_status { ran? := loaded? }
 
 #fren_check
 ```

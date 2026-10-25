@@ -219,7 +219,7 @@ def errorCodes : IO (Array String) := do
 each module is declared before it is used. -/
 def ownSpecFiles : Array String :=
   #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Expressions",
-    "Lang/Modules", "Lang/Instances", "Check", "View", "Lint", "Cli", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
+    "Lang/Modules", "Lang/Instances", "Check", "View", "Cli", "Lint", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
 
 def ownSpec : IO (Array String) := do
   let (out, code) ← runCheck ownSpecFiles

@@ -1,0 +1,55 @@
+-- Refinement with bindings (`Reqs/Lang/Refinement#bindings`): `fmt_exit`
+-- refines `exit_status` only through the binding of `ran?` to
+-- `all_parsed?`; `bad_exit` does not, with a counterexample; and `stops`
+-- refines `forbidding` through an abstraction function, an expression
+-- binding.
+mod exits
+
+pub comp exit_status {
+    in ran?
+    pub out code: Int
+    req not_run: code = 2 iff not ran?
+    req documented: code = 0 or code = 1 or code = 2 or code = 3
+}
+
+pub comp fmt_exit {
+    in all_parsed?
+    in changed?
+    pub out code: Int
+    req r: code = (if not all_parsed? then 2 else if changed? then 1 else 0)
+}
+
+refine fmt_exit_status: fmt_exit refines exit_status { ran? := all_parsed? }
+
+-- False: `bad_exit` exits with 4 when everything parsed.
+pub comp bad_exit {
+    in all_parsed?
+    pub out code: Int
+    req r: code = (if not all_parsed? then 2 else 4)
+}
+
+refine bad_exit_status: bad_exit refines exit_status { ran? := all_parsed? }
+
+pub enum Level { Allow, Warn, Forbid }
+
+use self::Level::Forbid
+
+-- The abstract view: a flag, rather than a level.
+pub comp forbidding {
+    in forbidden?
+    in count: Int
+    pub out stops?
+    assume some: count > 0
+    req r: stops? iff forbidden?
+}
+
+pub comp stops {
+    in level: Level
+    in count: Int
+    pub out halted?
+    pub det out failures: Int
+    req r: halted? iff level = Forbid
+    req f: failures = (if level = Forbid then count else 0)
+}
+
+refine abstraction: stops refines forbidding { forbidden? := level = Forbid, stops? := failures > 0 }

@@ -1,0 +1,13 @@
+error[F0415]: `hidden` is private to `precise`
+ --> test/cli/f0415_refine_private.fren:5:43
+  |
+5 | refine fits: precise refines rough { z := hidden }
+  |                                           ^^^^^^ private
+  |
+  = note: a refinement's bindings see only the `in`s and `pub out`s of `precise`
+  = help: to mention it, declare it `pub out` in `precise`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0415`.
+exit=2

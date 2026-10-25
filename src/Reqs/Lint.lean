@@ -1,5 +1,6 @@
 -- keep-sorted start
 import Fren.Literate
+import Reqs.Cli
 import Reqs.Lang
 import Reqs.View
 -- keep-sorted end

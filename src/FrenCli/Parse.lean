@@ -123,8 +123,8 @@ written, and the body if the function is uninterpreted. -/
   | comp (isPub : Bool) (name : Ident) (members : Array Member)
   /-- `expect n: forall (a b: c) ..., e`: each binder's names and comp. -/
   | global (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr)
-  /-- `refine r: c refines a` (`Reqs/Lang/Refinement`). -/
-  | refine (name : Ident) (concrete abstract : Array Ident)
+  /-- `refine r: c refines a { bindings }` (`Reqs/Lang/Refinement`). -/
+  | refine (name : Ident) (concrete abstract : Array Ident) (bindings : Array (Ident × Option Expr))
   /-- `tested c: "file", ...` or `trusted c: "why"`, with each string's span. -/
   | claim (tested : Bool) (comp : Array Ident) (texts : Array (String × Span))
   /-- `#fren_check [path]` or `#fren_trace`. -/
@@ -624,6 +624,25 @@ def useRest (t : Token) (first : Nat) : P (Span × Array Ident × Bool × Option
   used
   return (t.span.to (← lastSpan), segs, false, some paths)
 
+/-- `{ x := e, y, ... }`: the bindings of an instance or a refinement. -/
+def bindings : P (Array (Ident × Option Expr)) := do
+  markList
+  discard (expectKw "{")
+  let mut bs := #[]
+  repeat
+    if isKw (← peek) "}" then break
+    markStart
+    let b ← ident
+    if let some eq ← eatKw "=" then
+      err eq.span "F0104" "expected `:=` in a binding, found `=`" (some "expected `:=`")
+        #["note: `=` is equality; a binding is written `x := e`"] #[{ msg := "use `:=`", replacement := ":=" }]
+    -- Below `when`, which would swallow the following bindings.
+    let e ← if (← eatKw ":=").isSome then some <$> iff else pure none
+    bs := bs.push (b, e)
+    if (← eatKw ",").isNone then break
+  discard (expectKw "}")
+  return bs
+
 def member : P Member := do
   markStart
   let first := (← get).pos
@@ -682,22 +701,7 @@ def member : P Member := do
     let x ← ident
     discard (expectKw ":")
     let (comp, _) ← path false
-    markList
-    discard (expectKw "{")
-    let mut bs := #[]
-    repeat
-      if isKw (← peek) "}" then break
-      markStart
-      let b ← ident
-      if let some eq ← eatKw "=" then
-        err eq.span "F0104" "expected `:=` in a binding, found `=`" (some "expected `:=`")
-          #["note: `=` is equality; a binding is written `x := e`"] #[{ msg := "use `:=`", replacement := ":=" }]
-      -- Below `when`, which would swallow the following bindings.
-      let e ← if (← eatKw ":=").isSome then some <$> iff else pure none
-      bs := bs.push (b, e)
-      if (← eatKw ",").isNone then break
-    discard (expectKw "}")
-    return .inst x comp bs
+    return .inst x comp (← bindings)
   let kind? := if isWord t "assume" then some PropKind.assume
     else if isWord t "req" then some .req
     else if isKw t "expect" then some .expect
@@ -751,12 +755,13 @@ partial def item : P Item := do
     unless isWord r "refines" do fail r "`refines`"
     discard bump
     let (abstract, _) ← path false
+    let bs ← if isKw (← peek) "{" then bindings else pure #[]
     let b ← peek
     if isWord b "by" then
       err b.span "F0112" "Lean code is not supported in .fren files" (some "a proof needs Lean")
         #["note: a refinement is proved with `by` only in Lean; the `fren` command checks it with the solver, or by testing",
           "help: move it to a Lean file that opens `Fren.Lang`, and check it with `lake build`"]
-    return .refine name concrete abstract
+    return .refine name concrete abstract bs
   if isKw t "tested" || isKw t "trusted" then
     discard bump
     let (comp, _) ← path false

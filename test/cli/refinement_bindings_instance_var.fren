@@ -1,0 +1,6 @@
+-- A binding sees only the concrete component's own variables: the
+-- variables of its instances, such as `inner.y`, are not in scope.
+comp sub { in v: Int pub out y: Int req r: y = v }
+comp outer { in x: Int pub out z: Int inst inner: sub { v := x } req r: z = inner.y }
+comp a { in x: Int pub out z: Int req r: z = x }
+refine fits: outer refines a { z := inner.y }
