@@ -191,22 +191,25 @@ In Lean, the queries are the same, but lean-smt sets the logic `ALL`.
 | 2 | the checks could not run: an unreadable file, bad arguments, or a static error, including a denied lint |
 | 3 | no result is an error, but some diagnostic is a warning: a check was inconclusive, a constraint is redundant, or a [lint](Lint.md) warned |
 
-`fren quickcheck` exits as `fren check` does. `fren eval` follows the
-convention below, with its own meanings for 1 and 3 (see [Evaluation and
-testing](Eval.md#fren-eval)); `fren fmt` and `fren fix` have their own
-exit statuses (see [Formatting](Fmt.md#exit-status) and [Fixing
-lints](Lint.md#fixing-lints)). `fren trace` exits with 0 if nothing is below `--require` and every marker
-is claimed, 1 otherwise, and 2 if the report could not run
-(`trace::trace_exit`).
+`fren quickcheck` exits as `fren check` does. Every command follows one
+convention, which `cli::exit_status` states: 2 exactly when the command
+could not run, and otherwise 0, 1 or 3, with 0 meaning that there is
+nothing to report. What 1 and 3 mean is each command's own:
 
-The commands that report on a spec share one convention, which
-`cli::exit_status` states: 2 exactly when the command could not run, and
-otherwise 0, 1 or 3. `fren check` and `fren quickcheck` (`cli::exit`),
-`fren eval` (`eval::eval_exit`) and `fren trace` (`trace::trace_exit`)
-refine it. `fren fmt` and `fren fix` follow the same convention, but
-`fmt::exit` and `lint::fix_exit` say whether they could run in terms of
-what they read, `all_parsed?` and `loaded?`, rather than `ran?`, so they
-are not refinements of it.
+- `fren check` and `fren quickcheck`, the table above (`cli::exit`);
+- `fren eval`, a behaviour that does not meet the component, and one
+  that could not be completed (see [Evaluation and
+  testing](Eval.md#fren-eval), `eval::eval_exit`);
+- `fren trace`, a component below `--require` or an unclaimed marker
+  (`trace::trace_exit`);
+- `fren fmt` and `fren fix`, with `--check`, a file that would change (see
+  [Formatting](Fmt.md#exit-status) and [Fixing
+  lints](Lint.md#fixing-lints)).
+
+`cli::exit`, `eval::eval_exit` and `trace::trace_exit` refine
+`exit_status`. `fmt::exit` and `lint::fix_exit` say whether the command
+could run in terms of what it read, `all_parsed?` and `loaded?`, rather
+than `ran?`, so they are not refinements of it.
 
 ```fren
 pub comp exit_status {
@@ -279,8 +282,9 @@ pub comp run {
 Put together with the [severity of a result](View.md#severity), this says
 what a check's verdict does to the exit status, across the chapters: a
 check that fails, other than as redundant, makes `fren check` exit with 1,
-whatever else is reported; a run whose only results pass exits with 0;
-and one whose only results are inconclusive exits with 3:
+whatever else is reported. A check that passes is silent, so a run whose
+checks all pass reports at most information and exits with 0, and one in
+which a check is inconclusive and nothing worse is reported exits with 3:
 
 ```fren
 use view::severity
@@ -290,11 +294,12 @@ expect failing_check_exits_1: forall (s: severity) (r: run),
     r.code = 1
 
 expect passing_checks_exit_0: forall (s: severity) (r: run),
-    when r.ran? and r.present = {s.level} and s.verdict = Verdict::Pass,
-    r.code = 0
+    when r.ran? and s.verdict = Verdict::Pass and r.present subset {Info},
+    s.level = Silent and r.code = 0
 
 expect inconclusive_exits_3: forall (s: severity) (r: run),
-    when r.ran? and r.present = {s.level} and s.verdict = Verdict::Inconclusive,
+    when r.ran? and s.verdict = Verdict::Inconclusive and s.level in r.present
+    and r.present subset {s.level, Info},
     r.code = 3
 ```
 

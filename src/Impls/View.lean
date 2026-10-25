@@ -24,10 +24,11 @@ impl severity: view::severity for (k : CheckKind) (v : Verdict) {
 }
 
 impl summary: view::summary for (rs : Array CheckResult) {
-  n_pass := rs.countP (·.verdict == .pass),
-  n_fail := rs.countP fun r => r.verdict == .fail && !r.isRedundant,
-  n_redundant := rs.countP (·.isRedundant),
-  n_inconclusive := rs.countP (·.verdict == .inconclusive),
+  -- As `Fren.Core.summary` counts them (`view::counted`).
+  n_pass := rs.countP fun r => Fren.Core.bucketOf r.kind r.verdict == .passed,
+  n_fail := rs.countP fun r => Fren.Core.bucketOf r.kind r.verdict == .failed,
+  n_redundant := rs.countP fun r => Fren.Core.bucketOf r.kind r.verdict == .redundant,
+  n_inconclusive := rs.countP fun r => Fren.Core.bucketOf r.kind r.verdict == .inconclusive,
   level := toLevel (some (summarySeverity rs)),
 } by
   intro rs _
