@@ -2,6 +2,7 @@
 -- mentions (`Reqs/View#check-results`): `b` and `s` are in no formula.
 
 set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
 
 comp unmentioned {
     in a: Int
