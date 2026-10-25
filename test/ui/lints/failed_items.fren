@@ -1,0 +1,52 @@
+-- An item with a static error still reports its lints, with both front
+-- ends (see `Reqs/View`).
+
+-- A lint that needs the whole component, such as an unused variable, is
+-- not found where it stops.
+comp unused_input {
+    in x: Int
+    in z: Int
+    pub out y: Int
+    req q: y = z * z  --~ error: nonlinear arithmetic is not supported
+}
+
+-- A lint in a part before its error, and one in another part.
+comp in_part {
+    in s: String
+    in n: Int
+    pub out p?
+    req a: p? iff (s.len = 0 or n * n = 1)
+    --~^ warning: say whether it is empty with `""`, not `len`
+    --~^^ error: nonlinear arithmetic is not supported
+    req b: p? iff s.len = 0  --~ warning: say whether it is empty with `""`, not `len`
+}
+
+-- A denied `undecidable`, as by default, and an error elsewhere.
+comp mixed {
+    in r: Rel(Int, Int)
+    in n: Int
+    pub out p?
+    req a: p? iff r.range.card = 1
+    --~^ error: a relational operator over a type that is not finite quantifies over its values
+    req b: p? iff n * n = 1  --~ error: nonlinear arithmetic is not supported
+}
+
+-- A badly named variable whose type cannot be found.
+comp bad_type {
+    in BadName: Nope
+    --~^ error: cannot find `Nope` in this scope
+    --~^^ warning: variable `BadName` should have a snake case name
+    pub out p?
+    req a: p? iff true
+}
+
+-- A private constant that only an item with a static error uses, which is
+-- still a use (`dead_code`), and one that nothing uses.
+const TWO: Int := 2
+const THREE: Int := 3  --~ warning: constant `THREE` is never used
+comp uses_const {
+    in x: Int
+    pub out y: Int
+    req a: y = TWO + nope  --~ error: cannot find `nope` in this scope
+}
+--@ exit: 2

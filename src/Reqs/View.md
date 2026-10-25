@@ -65,10 +65,10 @@ Any other item, including a global expectation and a refinement (whose
 bindings are checked together), reports its first static error only. A
 component or other item with a static error is not checked.
 
-The `fren` command does not yet report the lints of an item with a static
-error, even a denied one, while Lean reports those of the parts it could
-elaborate. That is a known difference between the front ends, to be
-removed ([#129](https://github.com/langston-barrett/fren/issues/129)).
+An item with a static error still reports its [lints](Lint.md), with
+either front end: those found in each part before its error, as if the
+item had none. What it used before the error counts for the lints of the
+file, such as an unused import or dead code.
 
 ## Error codes
 
