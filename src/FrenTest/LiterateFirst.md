@@ -24,3 +24,23 @@ pub comp by_testing {
     req same: b? iff a?
 }
 ```
+
+A refinement that fails, which the second chapter checks too:
+
+```fren
+pub comp precise {
+    in x: Int
+    pub out y: Int
+
+    req r: y = x + 1
+}
+
+pub comp lower {
+    in x: Int
+    pub out y: Int
+
+    req below: y < x
+}
+
+refine fails: precise refines lower
+```
