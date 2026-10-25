@@ -28,11 +28,15 @@ def segName [Monad m] [MonadError m] (seg : Syntax) (afterPath := false) : m Nam
 def segNames [Monad m] [MonadError m] (segs : Array Syntax) : m (Array Name) :=
   segs.mapIdxM fun i s => segName s (afterPath := i > 0)
 
-variable {m : Type → Type} [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m]
+variable {m : Type → Type} [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFileMap m]
 
 def liftResolve (segs : Array Syntax) : Except Core.Error α → m α
   | .ok a => pure a
-  | .error e => throwErrorAt (segs[e.seg]?.getD .missing) e.msg.text
+  | .error e => do
+    let seg := segs[e.seg]?.getD .missing
+    let src := (← getFileMap).source
+    let beforeEq := seg.getTailPos?.any fun p => p.get src == '='
+    throwErrorAt seg (Core.withBangEqFix e.msg (Core.nameText seg.getId) beforeEq).text
 
 def liftMsg (ref : Syntax) : Except Core.Msg α → m α
   | .ok a => pure a

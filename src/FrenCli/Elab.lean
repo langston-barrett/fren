@@ -369,7 +369,11 @@ def segNames (segs : Array Ident) : Array Name := segs.map (Name.mkSimple ·.nam
 
 def liftResolve (segs : Array Ident) : Except Fren.Core.Error α → M α
   | .ok a => pure a
-  | .error e => err (segs[e.seg]?.map (·.span) |>.getD default) e.msg
+  | .error e => do
+    let seg? := segs[e.seg]?
+    let src := (← get).src
+    let beforeEq := seg?.any fun x => src[x.span.stop]? == some '='
+    err (seg?.map (·.span) |>.getD default) (Fren.Core.withBangEqFix e.msg ((seg?.map (·.name)).getD "") beforeEq)
 
 def liftMsg (span : Span) : Except Msg α → M α
   | .ok a => pure a
@@ -447,6 +451,8 @@ structure ExprCtx where
   binders : Array CBinder := #[]
   /-- In a defined function's body, the function's name. -/
   selfFn : Option Name := none
+  /-- In a global expectation, whose instances are its binders. -/
+  inGlobal : Bool := false
   /-- `++` here is in the decidable core: the receiver of a method, or a
   side of `=` or `!=` whose other side is a constant. -/
   concatOk : Bool := false
@@ -1324,7 +1330,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
           if b.name == "_" then continue
           let st ← get
           let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
-            (cx.binders.map (·.name)) cx.selfFn.isSome
+            (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
           let b ← declare b (st.table.hidden? st.scope locals)
           let bn := Name.mkSimple b.name
           liftMsg b.span (Fren.Core.checkVarName bn (some (t == .bool)))
@@ -1778,7 +1784,7 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
       -- Its assumptions are hypotheses, not obligations.
       insts := insts.push { name := w, comp := path, span := x.span, bindings := "true",
                             behaviour := rename w c.vars c.meaning, assumes := #[] }
-  let cx : ExprCtx := { vars, insts := insts.map (·.name), place := .prop }
+  let cx : ExprCtx := { vars, insts := insts.map (·.name), place := .prop, inGlobal := true }
   discard takeIndexes
   let (smt, t) ← elabExpr cx body
   let indexes := (← takeIndexes).map fun (sp, g) => (n, Fren.Core.IndexPlace.prop, sp, g)

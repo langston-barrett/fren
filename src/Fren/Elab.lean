@@ -89,7 +89,7 @@ def typePath? (ty : Syntax) : Option Syntax :=
   else some ty[0]
 
 /-- The Lean type of the Fren type `ty`. -/
-partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] (modName : Name) (ty : Syntax) : m Expr := do
+partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFileMap m] (modName : Name) (ty : Syntax) : m Expr := do
   -- `Set(T)`: `"Set" "(" T ")"`; `Rel(A, B)`: `"Rel" "(" A "," B ")"`.
   let some p := typePath? ty |
     if ty.isOfKind ``Lang.relType then
@@ -290,6 +290,8 @@ structure ExprCtx where
   binders : Array MatchBinder := #[]
   /-- In a defined function's body, the function's name. -/
   selfFn : Option Name := none
+  /-- In a global expectation, whose instances are its binders. -/
+  inGlobal : Bool := false
   /-- `++` here is in the decidable core: the receiver of a method, or a
   side of `=` or `!=` whose other side is a constant. -/
   concatOk : Bool := false
@@ -881,7 +883,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       for b in patternBinders arm, t in info.payloads[idx]!, k in [0:info.payloads[idx]!.size] do
         unless b.isIdent do continue
         let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
-          (cx.binders.map (·.name)) cx.selfFn.isSome
+          (cx.binders.map (·.name)) cx.selfFn.isSome cx.inGlobal
         let b ← declare b ((← getState).table.hidden? cx.modName locals)
         let bn := b.getId
         liftMsg b (Core.checkVarName bn (some (t.isConstOf ``Bool)))
@@ -1863,7 +1865,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
         let role := Core.Role.ofInst v.role v.isPub
         { name := w ++ v.name, role, isPub := role != .instHidden, type := v.type, ref := x : Var }
   withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
-    let cx : ExprCtx := { modName, vars, insts := binders.map (·.name), place := .prop }
+    let cx : ExprCtx := { modName, vars, insts := binders.map (·.name), place := .prop, inGlobal := true }
     discard (takeIndexes fvs)
     let e ← elabProp (← toTerm cx body)
     let indexes := (← takeIndexes fvs).map fun (r, g) => (n, Core.IndexPlace.prop, r, g)

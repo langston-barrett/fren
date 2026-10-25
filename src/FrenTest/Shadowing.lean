@@ -57,3 +57,23 @@ note: Lean reads `s!` as a token of its own, not as `s` followed by `!`
 help: rename the declaration -/
 #guard_msgs in
 comp token { in s!: Int pub out y: Int req r: y = s }
+
+-- The fix for `!=` is offered only where `=` directly follows the `!`.
+/--
+error: cannot find `x!` in this scope
+
+note: `!` is written only where a name is declared, to shadow another
+help: for `!=`, write a space before the `!`
+help: for the name `x`, remove the `!`
+-/
+#guard_msgs in
+comp compare { in x: Int pub out p? req r: p? iff x!=1 }
+
+/--
+error: cannot find `x!` in this scope
+
+note: `!` is written only where a name is declared, to shadow another
+help: for the name `x`, remove the `!`
+-/
+#guard_msgs in
+comp bare { in x: Int pub out p? req r: p? iff x! }

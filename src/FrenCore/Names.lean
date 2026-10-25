@@ -197,15 +197,22 @@ def cannotFindMsg (n : Name) (where_ : String) (cands : Array Name) : Msg :=
   match n with
   | .str .anonymous s =>
     if s.endsWith "!" && s.length > 1 then
-      -- `x!=1` reads `x!` then `=`, so `!=` is the likelier meaning, and
-      -- removing the `!` would make the comparison its opposite.
       let base := (s.dropEnd 1).toString
       { msg with
         notes := #["note: `!` is written only where a name is declared, to shadow another"]
-        fixes := #[{ msg := "for `!=`, write a space before the `!`", replacement := s!"{base} !" },
-          { msg := s!"for the name `{base}`, remove the `!`", replacement := base }] }
+        fixes := #[{ msg := s!"for the name `{base}`, remove the `!`", replacement := base }] }
     else msg
   | _ => msg
+
+/-- `msg`, about the path segment `seg`, with the fix for `!=` first if it
+cannot find a name `x!` that `=` directly follows: `x!=1` reads `x!` then
+`=`, so `!=` is the likelier meaning, and removing the `!` alone would make
+the comparison its opposite. -/
+def withBangEqFix (msg : Msg) (seg : String) (beforeEq : Bool) : Msg :=
+  if beforeEq && msg.code? == some "F0201" && seg.endsWith "!" && seg.length > 1 then
+    { msg with fixes := #[{ msg := "for `!=`, write a space before the `!`", replacement := s!"{(seg.dropEnd 1).toString} !" }]
+                          ++ msg.fixes }
+  else msg
 
 def rootItem : Item := { kind := .moduleItem, path := .anonymous, isPub := true, owner := .anonymous }
 
@@ -602,12 +609,14 @@ def Role.ofInst (inSub : Role) (isPub : Bool) : Role :=
 
 /-- The names in scope that a `match` binder may hide, innermost last, each
 with what it is (`Table.hidden?`): the variables of one segment, which are
-parameters in a function's body (`inFn`), the instances, and the binders of
-enclosing arms. -/
-def bindingLocals (vars : Array (Name × Role)) (insts binders : Array Name) (inFn : Bool) :
+parameters in a function's body (`inFn`), the instances, which are binders
+in a global expectation (`inGlobal`), and the binders of enclosing arms. -/
+def bindingLocals (vars : Array (Name × Role)) (insts binders : Array Name) (inFn : Bool) (inGlobal := false) :
     Array (Name × String) :=
   let what (r : Role) := if inFn then "the parameter" else if r == .input then "the input" else "the output"
-  (vars.filter (·.1.isAtomic) |>.map fun (n, r) => (n, what r)) ++ insts.map (·, "the instance")
+  -- A global expectation's binders are its instances.
+  let inst := if inGlobal then "the global expectation's binder" else "the instance"
+  (vars.filter (·.1.isAtomic) |>.map fun (n, r) => (n, what r)) ++ insts.map (·, inst)
     ++ binders.map (·, "the binder")
 
 def outInAssumeMsg (n : Name) : Msg :=

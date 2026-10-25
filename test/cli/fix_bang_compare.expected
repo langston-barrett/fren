@@ -16,7 +16,20 @@ help: for the name `x`, remove the `!`
 9 +     req r: p? iff x=1
   |
 
-error: could not fix due to 1 previous error
+error[F0201]: cannot find `x!` in this scope
+  --> test/cli/fix_bang_compare.fren:17:19
+   |
+17 |     req r: p? iff x!
+   |                   ^^ not found in this scope
+   |
+   = note: `!` is written only where a name is declared, to shadow another
+help: for the name `x`, remove the `!`
+   |
+17 -     req r: p? iff x!
+17 +     req r: p? iff x
+   |
+
+error: could not fix due to 2 previous errors
 
 For more information about this error, try `fren --explain F0201`.
 exit=2

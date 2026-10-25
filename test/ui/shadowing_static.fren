@@ -91,7 +91,7 @@ expect global_const: forall (ORIGIN: sub), ORIGIN.w = ORIGIN.v
 expect global_const_ok: forall (ORIGIN!: sub), ORIGIN.w = ORIGIN.v
 expect global_bang: forall (a!: sub), a.w = a.v  --~ error: `a!` shadows nothing
 expect global_bind: forall (a: sub), match Shape::Circle(a.v) { Shape::Circle(a) => a = a, _ => true }
---~^ error: `a` shadows the instance `a`
+--~^ error: `a` shadows the global expectation's binder `a`
 
 -- `!` on a `Bool` follows its `?`.
 comp bool_bang { in ready?! pub out go? req r: go? iff ready? }  --~ error: `ready?!` shadows nothing
