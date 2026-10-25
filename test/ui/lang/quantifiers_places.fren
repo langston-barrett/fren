@@ -9,6 +9,8 @@ enum Mode { Off, Heat, Cool }
 
 fn price(Mode): Nat
 
+enum Reading { Value(Mode), Missing }
+
 fn cost(m: Mode): Nat := match m { Mode::Off => 0, Mode::Heat => 2, Mode::Cool => 3 }
 
 -- A function's body.
@@ -46,6 +48,12 @@ comp places {
     -- A `match` on a bound name.
     expect off_free: forall (m: Mode), match m { Mode::Off => cost(m) = 0, _ => cost(m) > 0 }  --~ warning: this expectation mentions no variable
     expect free_off: when free?, mode = Mode::Off
+    -- A `match` with nested patterns on a bound name.
+    expect readings: forall (r: Reading), match r {
+        Reading::Value(Mode::Off) => cost(Mode::Off) = 0,
+        Reading::Value(m) => cost(m) > 0 or m = mode,
+        Reading::Missing => true,
+    }
 }
 
---@ summary: 14 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ summary: 15 passed, 0 failed, 0 inconclusive, 0 redundant
