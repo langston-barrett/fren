@@ -9,6 +9,8 @@ mod defined_test
 
 type Key
 fn double(n: Int): Int := 2 * n
+-- Only `#check`ed, below.
+set_option fren.lint.dead_code "allow" in
 fn same?(a: Key, b: Key) := a = b
 
 comp doubler {

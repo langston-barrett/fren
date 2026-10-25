@@ -80,7 +80,7 @@ impl run: cli::run for (ran : Bool) (ss : Array Severity) {
   present := levels ss,
   code := (FrenCli.exitCode ran (worst ss)).toNat,
 } by
-  intro ran ss h
+  intro ran ss _
   exact ⟨_, toLevel (worst ss), ran, _, _, rfl,
     ⟨rfl, trivial, worst_of ss trivial⟩, ⟨⟨rfl, rfl⟩, trivial, exit_code ran (worst ss) trivial⟩⟩
 

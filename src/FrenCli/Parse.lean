@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Lex
+import FrenCore.Evidence
 import FrenCore.Names
 -- keep-sorted end
 
@@ -94,6 +95,10 @@ inductive Member where
   | use (span : Span) (path : Array Ident) (glob : Bool)
   /-- `use pre::{a, b::c}`: each path is appended to `pre`. -/
   | useGroup (span : Span) (pre : Array Ident) (paths : Array (Array Ident))
+  /-- `set_option fren.evidence "VALUE" in`, which sets the evidence of the
+  next member's checks (`Reqs/Check#checking-by-testing`), with the span of
+  `set_option` to the value, and the value's span. -/
+  | evidence (span : Span) (value : String) (valueSpan : Span)
   deriving Inhabited
 
 inductive Item where
@@ -118,6 +123,8 @@ written, and the body if the function is uninterpreted. -/
   | comp (isPub : Bool) (name : Ident) (members : Array Member)
   /-- `expect n: forall (a b: c) ..., e`: each binder's names and comp. -/
   | global (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr)
+  /-- `refine r: c refines a` (`Reqs/Lang/Refinement`). -/
+  | refine (name : Ident) (concrete abstract : Array Ident)
   /-- `tested c: "file", ...` or `trusted c: "why"`, with each string's span. -/
   | claim (tested : Bool) (comp : Array Ident) (texts : Array (String × Span))
   /-- `#fren_check [path]` or `#fren_trace`. -/
@@ -620,6 +627,17 @@ def useRest (t : Token) (first : Nat) : P (Span × Array Ident × Bool × Option
 def member : P Member := do
   markStart
   let first := (← get).pos
+  if isWord (← peek) "set_option" then
+    let t ← bump
+    let o ← peek
+    let .ident name := o.tok | fail o "an option name"
+    unless name == "fren.evidence" do throw { span := o.span, msg := Fren.Core.memberOptionMsg name }
+    discard bump
+    let v ← peek
+    let .str value := v.tok | fail v "a string literal"
+    discard bump
+    discard (expectKw "in")
+    return .evidence (t.span.to v.span) value v.span
   if isKw (← peek) "use" then
     let t ← bump
     return match ← useRest t first with
@@ -711,9 +729,9 @@ partial def item : P Item := do
     discard bump
     let o ← peek
     let .ident name := o.tok | fail o "an option name"
-    unless name.startsWith "fren.lint." do
+    unless name.startsWith "fren.lint." || name == "fren.evidence" do
       err o.span "F0112" "Lean code is not supported in .fren files" (some "not a lint option")
-        #["note: the `fren` command accepts `set_option` only for lints, `fren.lint.NAME`",
+        #["note: the `fren` command accepts `set_option` only for lints, `fren.lint.NAME`, and `fren.evidence`",
           "help: move it to a Lean file that opens `Fren.Lang`, and check it with `lake build`"]
     discard bump
     let v ← peek
@@ -724,6 +742,21 @@ partial def item : P Item := do
       let removal := { span with stop := (← peek).span.start }
       return .lintSetting span { name, span := o.span } value v.span removal (some (← item))
     return .lintSetting span { name, span := o.span } value v.span span none
+  if isKw t "refine" then
+    discard bump
+    let name ← ident
+    discard (expectKw ":")
+    let (concrete, _) ← path false
+    let r ← peek
+    unless isWord r "refines" do fail r "`refines`"
+    discard bump
+    let (abstract, _) ← path false
+    let b ← peek
+    if isWord b "by" then
+      err b.span "F0112" "Lean code is not supported in .fren files" (some "a proof needs Lean")
+        #["note: a refinement is proved with `by` only in Lean; the `fren` command checks it with the solver, or by testing",
+          "help: move it to a Lean file that opens `Fren.Lang`, and check it with `lake build`"]
+    return .refine name concrete abstract
   if isKw t "tested" || isKw t "trusted" then
     discard bump
     let (comp, _) ← path false

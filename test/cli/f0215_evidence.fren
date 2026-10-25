@@ -1,0 +1,7 @@
+-- `fren.evidence` before a requirement, which has no checks of its own.
+comp c {
+    in x?
+    pub out y?
+    set_option fren.evidence "tested" in
+    req r: y? iff x?
+}

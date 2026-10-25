@@ -1,0 +1,26 @@
+-- A refinement set to testing asks the solver nothing, not even the
+-- definedness of the bindings of the abstract component's instances: its
+-- only results are the two passes by testing in the summary.
+pub comp helper {
+    in v: Int
+    pub out w: Int
+    req r: w = v
+}
+
+pub comp first {
+    in q: Seq(Int)
+    pub out y: Int
+    assume nonempty: q != []
+    inst h: helper { v := q[0] }
+    req r: y = h.w
+}
+
+pub comp exact {
+    in q: Seq(Int)
+    pub out y: Int
+    assume nonempty: q != []
+    req r: y = q[0]
+}
+
+set_option fren.evidence "tested" in
+refine same: exact refines first

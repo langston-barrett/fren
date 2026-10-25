@@ -116,4 +116,17 @@ impl copied: check::copied for (s : Fren.Core.Symbol) {
   copied? := s.copied,
 }
 
+def toRun : Fren.Core.Run → check.Run
+  | .bySolver => .BySolver
+  | .byTesting => .ByTesting
+  | .notRun => .NotRun
+
+impl run_of: check::by_testing for (k : CheckKind) (t : Bool) {
+  kind := toCheckKind k,
+  tested? := t,
+  run := toRun (Fren.Core.runOf k t),
+} by
+  intro k t _
+  cases k <;> cases t <;> decide
+
 end Fren.Impls

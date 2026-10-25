@@ -81,12 +81,17 @@ already be evaluated is false. A variable's candidates are:
 - both `Bool`s, and each variant of an enumeration, with a payload built
   from the candidates of its types, to a bounded depth;
 - for an `Int`, small integers, the integer literals and constants of the
-  component and their neighbours, random integers, and the value of
+  component, its expectations included, and their neighbours, random integers, and the value of
   any expression that a constraint equates the variable with, such as `x
   + 1` in `y = x + 1`;
 - for an abstract type `T`, `T#0` up to a random bound;
-- for a `String`, `""`, `"a"` and `"b"`, and the value of any expression
-  that a constraint equates the variable with.
+- for a `String`, `""`, `"a"` and `"b"`; the string literals and constants
+  of the component, its expectations included, each also with `"a"` before
+  and after it, so that
+  `s.contains?("..")` and `s.starts_with?("x")` have strings that satisfy
+  them; a few random strings that match each pattern of a `matches?` in
+  the component; and the value of any expression that a constraint equates
+  the variable with;
 - for a `Set(T)`, the empty set and singletons of the candidates of `T`,
   and the value of any expression that a constraint equates the variable
   with;
@@ -141,8 +146,9 @@ pub comp eval_exit {
 
 ## `fren quickcheck`
 
-`fren quickcheck FILE...` tests every component and global expectation of
-the spec on random behaviours. For each, it runs `--tests` tests (default
+`fren quickcheck FILE...` tests every component, global expectation and
+[refinement](Lang/Refinement.md) of the spec on random behaviours: a
+refinement as the component that checks it, for the checks that run on it. For each, it runs `--tests` tests (default
 100), starting from `--seed` (default 0), so a run can be repeated. Each
 test chooses a random interpretation and searches for an admissible input.
 For each instance in turn, it confirms the instance's assumptions on the
@@ -164,19 +170,55 @@ positions (see [Check results](View.md#check-results)):
 Vacuity and redundancy are not tested: they ask whether something can
 hold at all, which a failed search does not refute.
 
+A test *reaches* a check when it finds what the check is about, as in the
+table: a behaviour that meets the component, for an expectation; an
+admissible input with behaviours of the earlier instances, for an
+instance assumption; and so on. For an expectation, a global expectation
+or an instance assumption with a [trigger](Lang/Components.md#triggers),
+the trigger must also hold: where it is false, the constraint holds by its
+trigger alone, so the test says nothing about it. Since a random behaviour
+seldom satisfies a narrow trigger, testing searches for one that does:
+
+- for an expectation with a trigger, each test whose behaviour does not
+  reach it searches again, from a new input, for a behaviour that meets the
+  component and in which the trigger holds;
+- a global expectation's test searches for behaviours of the binders in
+  which the body's trigger holds.
+
+So a trigger that no search satisfies costs one more search in each test,
+for each expectation that has it. An instance assumption's trigger gets no
+such search: it is about an instance's inputs, which its bindings give.
+
+`eval::reaches` states when a test reaches a check:
+
+```fren
+pub comp reaches {
+    in found?            -- the test found what the check is about
+    in has_trigger?
+    in trigger?          -- the trigger holds in what the test found
+    pub det out reached?
+
+    req rule: reached? iff (found? and (not has_trigger? or trigger?))
+
+    expect false_trigger_never: when has_trigger? and not trigger?, not reached?
+}
+```
+
 A counterexample from testing is genuine, so it fails the check. But
 the search can miss outputs, so an input for which none were found
 suggests that the component is not realizable, without showing it. That
 gives a warning, `F0609`, and an inconclusive result. A check that no test
 reached, because no admissible behaviour was found, is also inconclusive,
-with the warning `F0610`. `eval::test_verdict` gives the verdict of testing one
+with the warning `F0610`. A check with a trigger that no test reached,
+though some found what it is about, is inconclusive with the warning
+`F0612`, at the check, unless the component already has `F0610`. `eval::test_verdict` gives the verdict of testing one
 check, from whether some test refuted it and how many tests reached it:
 
 ```fren
 pub comp test_verdict {
     in kind: Kind
     in refuted?          -- some test is a counterexample, or an input without outputs
-    in n_tests: Int      -- the tests that reached the check
+    in n_tests: Int      -- the tests that reached the check (`reaches`)
     pub det out verdict: Verdict
 
     assume counts: n_tests >= 0

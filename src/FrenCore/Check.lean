@@ -614,19 +614,33 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         "help: add requirements that pin it down, or remove `det`"]]
   | .fail, _ => #[{ severity := sev, item? := r.prop?, msg := Msg.internal s!"{subject} failed without details" }]
 
+/-- The help of a warning from testing: from `fren check`, testing a check
+set to testing, running `fren check` would not help (`Reqs/Check#checking-by-testing`). -/
+def testingHelp (byCheck : Bool) (decide : String) : String :=
+  if byCheck then "help: raise `--tests`; the checks set to testing are not asked of the solver"
+  else s!"help: run `fren check` to {decide}, or raise `--tests`"
+
 /-- Testing found no outputs for an admissible input (`eval::test_verdict`). -/
-def noOutputsMsg (subject : String) (input : Assignment) : Msg :=
+def noOutputsMsg (subject : String) (input : Assignment) (byCheck : Bool := false) : Msg :=
   { code? := some "F0609", headline := s!"testing found no outputs of {subject} for the input {showAssignment input}"
     label? := some "possibly not realizable"
     notes := #["note: the search tries only some values, so outputs may still exist",
-      "help: run `fren check` to decide whether it is realizable"] }
+      if byCheck then testingHelp true "" else "help: run `fren check` to decide whether it is realizable"] }
 
 /-- No test reached a component's checks (`eval::test_verdict`). -/
-def untestedMsg (subject : String) (tests : Nat) : Msg :=
+def untestedMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : Msg :=
   { code? := some "F0610", headline := s!"testing found no admissible behaviour of {subject} in {tests} tests"
     label? := some "untested"
     notes := #["note: so none of its checks were tested",
-      "help: run `fren check` to decide whether its assumptions and requirements can hold, or raise `--tests`"] }
+      testingHelp byCheck "decide whether its assumptions and requirements can hold"] }
+
+/-- Testing found admissible behaviours, but none in which a check's
+trigger held (`eval::reaches`). -/
+def untriggeredMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : Msg :=
+  { code? := some "F0612", headline := s!"testing never reached {subject} in {tests} tests: its trigger held in none of them"
+    label? := some "never held"
+    notes := #["note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it",
+      testingHelp byCheck "decide it"] }
 
 /-- The severity of the summary of a run (`view::summary`): always
 information, whatever the results. -/
@@ -636,9 +650,10 @@ def summarySeverity (_results : Array CheckResult) : Severity := .info
 failures, which are errors (`view::summary`). -/
 def CheckResult.isRedundant (r : CheckResult) : Bool := r.kind == .redundancy && r.verdict == .fail
 
-def summary (results : Array CheckResult) : String :=
+def summary (results : Array CheckResult) (byTesting : Nat := 0) : String :=
   let count v := (results.filter fun r => r.verdict == v && !r.isRedundant).size
-  s!"fren: {count .pass} passed, {count .fail} failed, {count .inconclusive} inconclusive, \
+  let tested := if byTesting == 0 then "" else s!" ({byTesting} by testing)"
+  s!"fren: {count .pass} passed{tested}, {count .fail} failed, {count .inconclusive} inconclusive, \
     {(results.filter (·.isRedundant)).size} redundant"
 
 end Fren.Core

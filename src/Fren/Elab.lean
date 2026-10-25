@@ -1466,6 +1466,52 @@ def elabInst (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) (decl : Name) 
     behaviour := ← mkLambdaFVars fvs behaviour
     assumes := ← pi.comp.assumes.mapM fun a => return (a.name, ← mkLambdaFVars fvs (a.body.beta slice)) }
 
+/-- Whether the evidence `value`, written at `ref`, is testing
+(`Reqs/Check#checking-by-testing`). -/
+def evidenceTested (ref : Syntax) (value : String) : CommandElabM Bool := do
+  let some b := Core.evidenceTested? value | throwErrorAt ref (Core.invalidEvidenceMsg value).text
+  return b
+
+open Lang in
+/-- A member without its `set_option fren.evidence ... in`, and the
+setting, if it has one: the innermost, if there are several. -/
+partial def unwrapEvidence (m : Syntax) : CommandElabM (Syntax × Option (Bool × Syntax)) := do
+  unless m.isOfKind ``Lang.evidenceMember do return (m, none)
+  unless m[1].getId == `fren.evidence do
+    throwErrorAt m[1] (Core.memberOptionMsg m[1].getId.toString).text
+  let b ← evidenceTested m[2] (m[2].isStrLit?.getD "")
+  let (inner, set?) ← unwrapEvidence m[4]
+  return (inner, set?.getD (b, m))
+
+open Lang in
+/-- The members of a comp without their evidence settings, and the checks
+that those and the comp's setting `all` set to testing. -/
+def testedOf (all : Bool) (raw : Array Syntax) : CommandElabM (Array Syntax × Core.Tested) := do
+  let mut members := #[]
+  let mut expects := #[]
+  let mut insts := #[]
+  let mut dets := #[]
+  let mut constraints := #[]
+  for m0 in raw do
+    let (m, set?) ← unwrapEvidence m0
+    members := members.push m
+    let b? := set?.map (·.1)
+    let misplaced (what : String) : CommandElabM Unit := do
+      if let some (_, ref) := set? then throwErrorAt ref (Core.misplacedEvidenceMsg what).text
+    match m with
+    | `(fren_member| expect $x:ident : $_) => expects := expects.push (x.getId, b?)
+    | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => insts := insts.push (x.getId, b?)
+    | `(fren_member| assume $x:ident : $_) => misplaced "an assumption"; constraints := constraints.push x.getId
+    | `(fren_member| req $x:ident : $_) => misplaced "a requirement"; constraints := constraints.push x.getId
+    | _ =>
+      if m.isOfKind ``Lang.outMember then
+        -- `[pub] [det] out x [: T] [:= e]`
+        if !m[1].isNone then dets := dets.push (m[3].getId, b?)
+        else misplaced "an output that is not `det`"
+        if !m[5].isNone then constraints := constraints.push m[3].getId
+      else misplaced (if m.isOfKind ``Lang.inMember then "an input" else "a `use`")
+  return (members, Core.Tested.ofSettings all constraints expects insts dets)
+
 open Lang in
 @[command_elab Lang.compCmd] def elabComp : CommandElab := fun stx => do
   checkIdentifiers stx
@@ -1477,7 +1523,8 @@ open Lang in
   lintName .component n nameStx
   let path := modName ++ n
   let declBase := (← getCurrNamespace) ++ path
-  let members := stx[4].getArgs
+  -- The evidence settings, apart from the members they set.
+  let (members, tested) ← testedOf (← evidenceTested nameStx (fren.evidence.get (← getOptions))) stx[4].getArgs
   -- Its `use`s, and the scope that its paths resolve in.
   for m in members do
     if m.isOfKind ``Lang.useMember then declareUse (pathSegs m[1]) (!m[2].isNone) m[1] (some path)
@@ -1677,7 +1724,7 @@ open Lang in
       record (.item { item := { kind := .compItem, path, isPub, owner := modName }, ref := nameStx })
       let (relational, counts) ← checkCounts
       record (.compInfo { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
-                          decidable := !(← getLocal).outsideCore, relational, counts, indexes })
+                          decidable := !(← getLocal).outsideCore, relational, counts, indexes, tested })
     return (ok, generated)
   if ok = true then
     for d in generated do
@@ -1789,9 +1836,113 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   let decl := (← getCurrNamespace) ++ path
   let binders := if stx[3].isNone then #[] else stx[3][1].getArgs
   let info ← liftTermElabM <| elabGlobalInfo modName n nameStx binders stx[4] decl
+  let all ← evidenceTested nameStx (fren.evidence.get (← getOptions))
+  let info := { info with tested := Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] }
   record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })
   record (.globalInfo path info)
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
   modifyLocal fun l => { l with globals := l.globals.push path }
+
+/-! ## Refinements -/
+
+/-- Elaborates `refine r: c refines a` into the comp that checks it
+(`Reqs/Lang/Refinement`): `c`'s inputs, `a`'s assumptions, an instance of
+`c` named as it is, `a`'s instances, and `a`'s requirements and
+definitions as expectations, over the instance's outputs. With `by`, the
+tactics prove the obligation, generated as `r`, and the solver is asked
+nothing. -/
+@[command_elab Lang.refineCmd] def elabRefine : CommandElab := fun stx => do
+  let modName := (← getLocal).currentModule
+  let nameStx := stx[1]
+  let n ← segName nameStx
+  liftMsg nameStx (Core.checkItemName "refinement" n)
+  checkFresh modName n nameStx
+  let path := modName ++ n
+  let decl := (← getCurrNamespace) ++ path
+  let compOf (p : Syntax) : CommandElabM CompInfo := do
+    let r ← resolvePath modName (pathSegs p)
+    let .item { kind := .compItem, path := cp, .. } := r | throwErrorAt p (Core.notACompMsg r).text
+    let some c := (← getState).comps.get? cp | throwError "internal error: unknown comp `{cp}`"
+    return c
+  let c ← compOf stx[3]
+  let a ← compOf stx[5]
+  -- The interface (`refinement::interface`).
+  for v in a.vars.filter (·.name.isAtomic) do
+    let cv? := c.vars.find? (·.name == v.name)
+    let input := v.role == Core.Role.input
+    let ok := Core.interfaceAccepted input cv?.isSome (cv?.any (·.role == Core.Role.input)) (cv?.any (·.isPub))
+      (cv?.any (·.type == v.type))
+    unless ok do
+      let why := match cv? with
+        | none => s!"it has no variable `{v.name}`"
+        | some cv => if cv.type != v.type then s!"its `{v.name}` has another type"
+          else if input then s!"its `{v.name}` is not an input"
+          else if cv.role == Core.Role.input then s!"its `{v.name}` is an input, not an output"
+          else s!"its output `{v.name}` is not public"
+      throwErrorAt stx[5] (Core.interfaceMsg c.path a.path v.name why).text
+  let w := Name.mkSimple c.path.getString!
+  if a.insts.any (·.name == w) then throwErrorAt stx[5] (Core.dupMemberMsg w).text
+  let tested := Core.Tested.ofSettings (← evidenceTested nameStx (fren.evidence.get (← getOptions)))
+    (a.assumes.map (·.name)) ((a.reqs.map (·.name) ++ a.defs.map (·.1)).map (·, none))
+    -- `a`'s instances too, for the definedness of their bindings.
+    (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
+  let proof? := if stx[6].isNone then none else some stx[6][1]
+  let info ← liftTermElabM do
+    let inputs := c.vars.filter fun v => v.name.isAtomic && v.role == .input
+    let vars := inputs ++ c.vars.map (fun v =>
+        let role := Core.Role.ofInst v.role v.isPub
+        { v with name := w ++ v.name, role, isPub := role != .instHidden, isDet := false, defn? := none, ref := nameStx })
+      ++ a.vars.filter (!·.name.isAtomic)
+    withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+      let fvOf (x : Name) : Expr := fvs[(vars.findIdx? (·.name == x)).getD 0]!
+      -- `a`'s variables, its outputs read from the instance of `c`.
+      let argsA := a.vars.map fun v => fvOf (if v.name.isAtomic && v.role == .output then w ++ v.name else v.name)
+      let sliceC := c.vars.map fun v => fvOf (w ++ v.name)
+      let lam (e : Expr) : TermElabM Expr := mkLambdaFVars fvs e
+      let reported (p : PropInfo) := { p with ref := nameStx, trigger? := none, triggerRef? := none }
+      let assumes ← a.assumes.mapM fun p => return { reported p with body := ← lam (p.body.beta argsA) }
+      let reqs ← a.reqs.mapM fun p => return { reported p with kind := .expect, body := ← lam (p.body.beta argsA) }
+      let defs ← a.defs.mapM fun (d, e) => do
+        let i := (a.vars.findIdx? (·.name == d)).getD 0
+        return { kind := .expect, name := d, ref := nameStx, trigger? := none, triggerRef? := none, decl := decl ++ d
+                 body := ← lam (← mkEq argsA[i]! (e.beta argsA)) : PropInfo }
+      let bindings ← inputs.mapM fun v => mkEq (fvOf (w ++ v.name)) (fvOf v.name)
+      let instC : InstInfo := { name := w, comp := c.path, ref := nameStx, decl
+                                bindings := ← lam (mkAndN bindings.toList)
+                                behaviour := ← lam (c.meaning sliceC)
+                                assumes := ← c.assumes.mapM fun p => return (p.name, ← lam (p.body.beta sliceC)) }
+      -- `a`'s instances are hypotheses: their assumptions are `a`'s own
+      -- obligations, checked in `a` (`Reqs/Lang/Refinement#the-obligation`).
+      let instsA ← a.insts.mapM fun i => return { i with
+        bindings := ← lam (i.bindings.beta argsA), behaviour := ← lam (i.behaviour.beta argsA), assumes := #[] }
+      -- Reported at the refinement, as its other checks are.
+      let indexes ← a.indexes.mapM fun (x, place, _, goal) => do
+        let place := match place with | .binding k => .binding (k + 1) | p => p
+        return (x, place, nameStx, ← lam (goal.beta argsA))
+      -- The obligation: `A_a → A_c ∧ (I_c ∧ R_c ∧ D_c ∧ I_a → R_a ∧ D_a)`.
+      let hypsA := mkAndN (assumes.map (·.body.beta fvs)).toList
+      let goal := mkAnd (mkAndN (instC.assumes.map (·.2.beta fvs)).toList)
+        (← mkArrow (mkAndN ((#[instC] ++ instsA).map fun i => mkAnd (i.bindings.beta fvs) (i.behaviour.beta fvs)).toList)
+          (mkAndN ((reqs ++ defs).map (·.body.beta fvs)).toList))
+      let value ← mkForallFVars fvs (← mkArrow hypsA goal)
+      let uses ← usesOf #[value]
+      addUsesDef uses decl value
+      return { path, vars, props := assumes ++ reqs ++ defs, insts := #[instC] ++ instsA, ref := nameStx, decl, uses
+               decidable := c.decidable && a.decidable, relational := c.relational || a.relational
+               counts := c.counts || a.counts, indexes, tested : CompInfo }
+  record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })
+  elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
+  match proof? with
+  | none =>
+    record (.refinementInfo info)
+    modifyLocal fun l => { l with refinements := l.refinements.push path }
+  -- A proof: no check of the refinement is asked of the solver
+  -- (`Reqs/Lang/Refinement#evidence`).
+  | some tac => liftTermElabM do
+    let type ← withUses info.uses fun xs => mkForallFVars xs (mkAppN (mkConst decl) xs)
+    let tacs : TSyntax ``Lean.Parser.Tactic.tacticSeq := ⟨tac⟩
+    let pf ← Term.elabTermEnsuringType (← `(by $tacs)) type
+    Term.synthesizeSyntheticMVarsNoPostponing
+    addDecl (.thmDecl { name := decl ++ `proof, levelParams := [], type, value := ← instantiateMVars pf })
 
 end Fren

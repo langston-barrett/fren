@@ -210,7 +210,7 @@ def errorCodes : IO (Array String) := do
   return failures
 
 def ownSpec : IO (Array String) := do
-  let files := #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Expressions", "Lang/Modules", "Lang/Instances", "Check", "View", "Lint", "Cli", "Eval", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
+  let files := #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Expressions", "Lang/Modules", "Lang/Instances", "Check", "View", "Lint", "Cli", "Eval", "Lang/Refinement", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
   let (out, code) ← runCheck files
   return if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"]
 
@@ -229,7 +229,7 @@ def specFiles : IO (Array String) := do
 not formatted, and those that `fren fmt` cannot parse, such as tests of
 syntax errors and of Lean code, and the examples of Markdown specs. -/
 def fmtIgnore : List String :=
-  ["test/cli/f01*.fren", "test/cli/fix_*.fren", "test/cli/fmt_check.fren", "test/cli/fmt_parse_error.fren", "test/ui/syntax_*.fren",
+  ["test/cli/f01*.fren", "test/cli/f0216_member_option.fren", "test/cli/fix_*.fren", "test/cli/fmt_check.fren", "test/cli/fmt_parse_error.fren", "test/ui/syntax_*.fren",
    "test/ui/impl.fren", "test/ui/lean_*.fren", "test/ui/trace.fren", "src/Reqs/Markdown.md"]
 
 /-- What formatting keeps (`fmt::safe`): the tokens, but for the trailing

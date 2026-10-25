@@ -132,6 +132,10 @@ are counted apart from the other failures:
 fren: 6 passed, 0 failed, 0 inconclusive, 0 redundant
 ```
 
+If some passes came from [checks by testing](Check.md#checking-by-testing),
+the summary says how many, after the passes: `fren: 6 passed (2 by
+testing), ...`.
+
 ## Severity
 
 In Lean, an error fails `lake build`, and a warning fails `lake build

@@ -3,12 +3,14 @@
 -- keep-sorted start
 import Impls.Check
 import Impls.Cli
+import Impls.Eval
 import Impls.Fmt
 import Impls.Impl
 import Impls.Inst
 import Impls.Lang
 import Impls.Lint
 import Impls.Modules
+import Impls.Refine
 import Impls.Trace
 import Impls.View
 -- keep-sorted end

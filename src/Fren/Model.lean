@@ -2,8 +2,10 @@
 import Fren.FinSet
 import Fren.Seq
 import FrenCore.Check
+import FrenCore.Evidence
 import FrenCore.Lint
 import FrenCore.Names
+import FrenCore.Refine
 import Lean
 -- keep-sorted end
 
@@ -23,6 +25,11 @@ Module paths are `Name`s (`check`, `a.b`); the root module is
 open Lean
 
 namespace Fren
+
+register_option fren.evidence : String := {
+  defValue := "solver"
+  descr := "the evidence of the checks of the next component or global expectation: \"tested\" to have the `fren` command test them, or \"solver\""
+}
 
 export Core (ItemKind Item EnumDef UseDef)
 
@@ -197,6 +204,9 @@ structure CompInfo where
   /-- Each index of its constraints and definitions: the item it is in,
   where that is, the index, and the closed formula that it is in range. -/
   indexes : Array (Name × Core.IndexPlace × Syntax × Expr) := #[]
+  /-- The checks that only the `fren` command runs, by testing
+  (`Reqs/Check#checking-by-testing`). -/
+  tested : Core.Tested := {}
   deriving Inhabited
 
 def CompInfo.assumes (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .assume)
@@ -250,6 +260,8 @@ inductive Entry where
   /-- A global expectation, as a `CompInfo` whose path is its module, with
   an instance per binder and the expectation as its only constraint. -/
   | globalInfo (path : Name) (c : CompInfo)
+  /-- A refinement, as the comp that checks it (`Reqs/Lang/Refinement`). -/
+  | refinementInfo (c : CompInfo)
   | implInfo (i : ImplInfo)
   | claimInfo (c : ClaimInfo)
   deriving Inhabited
@@ -274,6 +286,8 @@ structure State where
   interps : NameMap Name := {}
   /-- Global expectations, by full path. -/
   globals : NameMap CompInfo := {}
+  /-- Refinements, as the comps that check them, by path. -/
+  refinements : NameMap CompInfo := {}
   /-- The `impl`s of each comp. -/
   impls : NameMap (Array Name) := {}
   /-- The `impl`s proved by the solver, which are axioms. -/
@@ -298,6 +312,7 @@ def State.add (s : State) : Entry → State
   | .definedInfo d => { s with defined := s.defined.insert d.path d }
   | .interpInfo p d => { s with interps := s.interps.insert p d }
   | .globalInfo p c => { s with globals := s.globals.insert p c }
+  | .refinementInfo c => { s with refinements := s.refinements.insert c.path c }
   | .implInfo i =>
     { s with impls := s.impls.insert i.comp ((s.impls.getD i.comp #[]).push i.decl)
              axiomImpls := if i.isAxiom then s.axiomImpls.insert i.decl else s.axiomImpls }
@@ -333,6 +348,8 @@ structure LocalState where
   comps : Array Name := #[]
   /-- Global expectations declared in this file, in order. -/
   globals : Array Name := #[]
+  /-- Refinements declared in this file, in order. -/
+  refinements : Array Name := #[]
   /-- What the lints of this file need (`Fren.Lint`): its `use`s, the names
   resolved through imports, its expectations, and its other lints. -/
   useRecords : Array (Core.UseRecord × Syntax) := #[]

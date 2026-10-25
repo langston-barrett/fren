@@ -1,0 +1,13 @@
+--@ args: quickcheck
+-- A global expectation's own literals are candidates, so its false
+-- expectation is refuted rather than left untested.
+mod words
+
+pub comp word {
+    in text: String
+    pub det out accepted?
+
+    req rule: accepted? iff text.matches?(r"[a-z]+")
+}
+
+expect no_zz: forall (a: word), when a.text.contains?("zz"), not a.accepted?

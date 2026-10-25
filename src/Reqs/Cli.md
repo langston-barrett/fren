@@ -1,7 +1,7 @@
 # The `fren` command
 
 ```
-fren check [--timeout SECONDS] [--dump-smt] [-A|-W|-D|-F LINT]... FILE...
+fren check [--timeout SECONDS] [--dump-smt] [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
@@ -41,8 +41,8 @@ installation. It is built by `lake build fren`.
 | `-A LINT`, `-W LINT`, `-D LINT`, `-F LINT` | `check`, `trace`, `fix`, `eval` and `quickcheck`: set the level of a [lint](Lint.md) to `allow`, `warn`, `deny` or `forbid`; may be repeated. The long forms are `--allow`, `--warn`, `--deny` and `--forbid` |
 | `--comp PATH` | `eval`: the component to evaluate |
 | `--set VAR=VALUE` | `eval`: the value of a variable; may be repeated |
-| `--seed N` | `eval` and `quickcheck`: where the random search starts (default 0) |
-| `--tests N` | `quickcheck`: tests per component and global expectation (default 100) |
+| `--seed N` | `eval`, `quickcheck`, and `check` for [checks by testing](Check.md#checking-by-testing): where the random search starts (default 0) |
+| `--tests N` | `quickcheck`: tests per component and global expectation; `check`: tests per component or global expectation with [checks by testing](Check.md#checking-by-testing) (default 100) |
 | `--color WHEN` | colour the output: `auto` (the default), `always` or `never` |
 
 ## Input files
@@ -323,7 +323,8 @@ pub comp accepts {
 ```
 
 On a spec that both accept, Lean and the `fren` command give every check
-the same verdict, and for failures name the same conflicting or ruling-out
+the same verdict, except a [check by testing](Check.md#checking-by-testing),
+which only the `fren` command runs, and for failures name the same conflicting or ruling-out
 constraints. Counterexample values may differ. `cli::agreement` states
 this:
 

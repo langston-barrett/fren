@@ -593,6 +593,76 @@ binds. Rename one of them.
 comp c { in x: Int pub out y: Int req r: y = x }
 ```
 "# },
+  { code := "F0214", explanation := r#"A `set_option fren.evidence` value that does not exist.
+
+Erroneous code example:
+
+```fren
+set_option fren.evidence "testing" in
+comp c { in x? pub det out y? req r: y? iff x? }
+```
+
+The evidence of a check is `"tested"`, to have it tested instead of asked of
+the solver, or `"solver"`, the default (see `Reqs/Check`, "Checking by
+testing").
+
+```fren
+set_option fren.evidence "tested" in
+comp c { in x? pub det out y? req r: y? iff x? }
+```
+"# },
+  { code := "F0215", explanation := r#"A `set_option fren.evidence` before something that has no checks to test.
+
+Erroneous code example:
+
+```fren
+comp c {
+  in x?
+  pub out y?
+  set_option fren.evidence "tested" in
+  req r: y? iff x?
+}
+```
+
+A requirement is not itself checked: the checks of a component are about
+its expectations, instances, `det out`s and the component as a whole, so
+the setting goes before one of those, or before the component.
+
+```fren
+set_option fren.evidence "tested" in
+comp c {
+  in x?
+  pub out y?
+  req r: y? iff x?
+}
+```
+"# },
+  { code := "F0216", explanation := r#"A `set_option` before a member, of an option other than `fren.evidence`.
+
+Erroneous code example:
+
+```fren
+comp c {
+  in x?
+  pub out y?
+  set_option fren.lint.nonminimal_bool "allow" in
+  req r: y? iff x?
+}
+```
+
+Within a component, only the evidence of a member's checks can be set
+(see `Reqs/Check`, "Checking by testing"). Set other options, such as a
+lint's level, before the component:
+
+```fren
+set_option fren.lint.nonminimal_bool "allow" in
+comp c {
+  in x?
+  pub out y?
+  req r: y? iff x?
+}
+```
+"# },
   { code := "F0301", explanation := r#"A variable has no type.
 
 Erroneous code example:
@@ -1369,6 +1439,27 @@ from the inputs, or constrain it with a requirement instead:
 comp c { in x: Int out a: Int := b + x out b: Int := x pub out y: Int req r: y = a }
 ```
 "# },
+  { code := "F0412", explanation := r#"A refinement whose components do not share the abstract one's interface.
+
+Erroneous code example:
+
+```fren
+comp precise { in x: Int pub out y: Int req r: y = x }
+comp rough { in x: Int pub out z: Int req r: z >= x }
+refine fits: precise refines rough
+```
+
+`refine r: c refines a` relates `c` and `a` through `a`'s variables: each
+input of `a` must be an input of `c`, and each output of `a` a public
+output of `c`, with the same name and type (see `Reqs/Lang/Refinement`).
+`precise` has no output `z`. Name the outputs alike:
+
+```fren
+comp precise { in x: Int pub out y: Int req r: y = x }
+comp rough { in x: Int pub out y: Int req r: y >= x }
+refine fits: precise refines rough
+```
+"# },
   { code := "F0501", explanation := r#"A `tested` claim names a file that cannot be read.
 
 Erroneous code example:
@@ -1750,6 +1841,38 @@ comp c {
   pub out pos?
   assume small: x > -10 and x < 10
   req r: pos? iff x > 0
+}
+```
+"# },
+  { code := "F0612", args := some ["quickcheck"], explanation := r#"Testing never reached a check: its trigger held in no test (a warning).
+
+Erroneous code example:
+
+```fren
+comp c {
+  in x: Int
+  pub out big?
+  req r: big? iff x > 1000
+  expect e: when 7 * x = 123459, big?
+}
+```
+
+`fren quickcheck` found behaviours of the component, but in none of them
+did the trigger of `e`, `7 * x = 123459`, hold: only `x = 17637` satisfies
+it, and the search does not try that value. Where a trigger is false, the
+constraint holds by its trigger alone, so those tests say nothing about
+it, and its result is inconclusive. Testing searches for behaviours in
+which the trigger holds, but tries only some values, and can miss them.
+An instance assumption with a trigger gets no such search, since its
+instance's inputs come from the bindings, so it reports this more often.
+Raise `--tests`, rely on `fren check`, or widen the trigger:
+
+```fren
+comp c {
+  in x: Int
+  pub out big?
+  req r: big? iff x > 1000
+  expect e: when x > 2000, big?
 }
 ```
 "# },

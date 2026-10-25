@@ -1,0 +1,108 @@
+-- keep-sorted start
+import FrenCore.Check
+-- keep-sorted end
+
+/-!
+# Checking by testing (`Reqs/Check#checking-by-testing`)
+
+Which checks a spec has tested rather than asked of the solver, as set by
+`set_option fren.evidence "tested" in`, shared by both front ends. Each
+front end drops these checks from the comp before `checkComp`, so that the
+solver is asked nothing about them; the `fren` command then tests them.
+-/
+
+open Lean
+
+namespace Fren.Core
+
+/-- How a check is run (`check::Run`). -/
+inductive Run where
+  | bySolver
+  | byTesting
+  | notRun
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- How a check of kind `kind` is run, given whether its evidence is
+testing (`check::by_testing`). Vacuity, redundancy and definedness ask
+whether something can hold at all, which testing cannot decide. -/
+def runOf (kind : CheckKind) (tested : Bool) : Run :=
+  if !tested then .bySolver
+  else if kind == .vacuity || kind == .redundancy || kind == .definedness then .notRun
+  else .byTesting
+
+/-- The checks of a comp whose evidence is testing, or that are not run
+because of it (`check::by_testing`). -/
+structure Tested where
+  realizable : Bool := false
+  redundancy : Bool := false
+  /-- Expectations, whose checks are tested, and other constraints and
+  definitions, whose vacuity and definedness are not run. -/
+  props : Array Name := #[]
+  /-- Instances: their assumptions, and the definedness of their bindings. -/
+  insts : Array Name := #[]
+  /-- `det out`s: their determinism. -/
+  dets : Array Name := #[]
+  deriving Inhabited
+
+def Tested.any (t : Tested) : Bool :=
+  t.realizable || t.redundancy || !t.props.isEmpty || !t.insts.isEmpty || !t.dets.isEmpty
+
+/-- The checks set to testing by a comp's setting `all` and its members'
+settings, each `none` if it has none: a member's setting takes precedence
+(`Reqs/Check#checking-by-testing`). `constraints` are the comp's
+assumptions, requirements and definitions. -/
+def Tested.ofSettings (all : Bool) (constraints : Array Name)
+    (expects insts dets : Array (Name × Option Bool)) : Tested :=
+  let pick (xs : Array (Name × Option Bool)) := xs.filterMap fun (n, s?) => if s?.getD all then some n else none
+  { realizable := all, redundancy := all, props := (if all then constraints else #[]) ++ pick expects
+    insts := pick insts, dets := pick dets }
+
+/-- Whether the check `r` is one of `t`'s. -/
+def Tested.covers (t : Tested) (r : CheckResult) : Bool :=
+  match r.kind, r.prop? with
+  | .realizable, _ => t.realizable
+  | .redundancy, _ => t.redundancy
+  | .expect, some n | .vacuity, some n => t.props.contains n
+  | .definedness, some n => t.props.contains n || t.insts.contains n
+  | .inst, some n => t.insts.contains n
+  | .determinism, some n => t.dets.contains n
+  | _, _ => false
+
+/-- `c` without the checks of `t`, and the kinds of check left to ask the
+solver. -/
+def Comp.untested (t : Tested) (c : Comp F) (kinds : Array CheckKind) : Comp F × Array CheckKind :=
+  ({ c with
+      expects := c.expects.filter (!t.props.contains ·.1)
+      triggers := c.triggers.filter (!t.props.contains ·.1)
+      insts := c.insts.map fun i => if t.insts.contains i.name then { i with assumes := #[] } else i
+      vars := c.vars.map fun v => if t.dets.contains v.name then { v with isDet := false } else v
+      indexes := c.indexes.filter fun s => !t.props.contains s.prop && !t.insts.contains s.prop },
+    kinds.filter fun k => !(k == .realizable && t.realizable) && !(k == .redundancy && t.redundancy))
+
+/-- `set_option fren.evidence` with a value other than `"tested"` or
+`"solver"`. -/
+def invalidEvidenceMsg (v : String) : Msg :=
+  { code? := some "F0214", headline := s!"invalid evidence `{v}`", label? := some "not `\"tested\"` or `\"solver\"`"
+    notes := #["note: `\"tested\"` has the checks tested instead of asked of the solver, and `\"solver\"` is the default"] }
+
+/-- `set_option fren.evidence` before something that has no checks it
+could set. -/
+def misplacedEvidenceMsg (what : String) : Msg :=
+  { code? := some "F0215", headline := s!"`fren.evidence` cannot be set for {what}"
+    label? := some "has no checks to test"
+    notes := #["note: it can be set before a component, an expectation or global expectation, an instance or a `det out`"] }
+
+/-- `set_option` before a member, of an option other than `fren.evidence`. -/
+def memberOptionMsg (option : String) : Msg :=
+  { code? := some "F0216", headline := s!"`{option}` cannot be set before a member"
+    label? := some "not `fren.evidence`"
+    notes := #["note: before a member, `set_option` sets only `fren.evidence`; other options are set before the component"] }
+
+/-- The value of `set_option fren.evidence`: whether it is testing, or
+`none` if the value is invalid. -/
+def evidenceTested? : String → Option Bool
+  | "tested" => some true
+  | "solver" => some false
+  | _ => none
+
+end Fren.Core

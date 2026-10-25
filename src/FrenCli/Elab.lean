@@ -1,7 +1,9 @@
 -- keep-sorted start
 import FrenCli.Parse
+import FrenCore.Evidence
 import FrenCore.Lint
 import FrenCore.Names
+import FrenCore.Refine
 import FrenCore.Regex
 import FrenCore.Trace
 import FrenCore.Ty
@@ -140,6 +142,9 @@ structure CComp where
   relational : Bool := false
   /-- It, or one of its instances, uses `card`. -/
   counts : Bool := false
+  /-- The checks that are tested rather than asked of the solver
+  (`Reqs/Check#checking-by-testing`). -/
+  tested : Fren.Core.Tested := {}
   deriving Inhabited
 
 def conj (fs : Array String) : String :=
@@ -243,6 +248,9 @@ structure State where
   /-- Global expectations, each a `CComp` whose path is its module, with an
   instance per binder and the expectation as its only constraint. -/
   globals : Array CComp := #[]
+  /-- Refinements, each a `CComp` whose path is the refinement's
+  (`Reqs/Lang/Refinement`). -/
+  refinements : Array CComp := #[]
   diags : Array Diag := #[]
   /-- The lint levels from the command line, with which each file starts. -/
   cliLevels : Levels := Levels.defaults
@@ -264,6 +272,10 @@ structure State where
   src : Array Char := #[]
   /-- Where the outermost `set_option ... in` around the current item starts. -/
   settingStart? : Option Nat := none
+  /-- `set_option fren.evidence` in effect for the current item: its value,
+  checked where it applies (`Reqs/Check#checking-by-testing`), and the
+  value's span. -/
+  evidence? : Option (String × Span) := none
   /-- The edits of `fren fix`, by file. -/
   edits : Array (Nat × Fren.Core.Range × String) := #[]
   /-- The current file's private enumerations and constants, and the items
@@ -1424,6 +1436,48 @@ def declareMemberUses (path : Name) (members : Array Member) : M Unit := do
       modify fun s => { s with scope := path }
     | _ => pure ()
 
+/-- Whether the `set_option fren.evidence` in effect sets checks to testing
+(`F0214` if its value is invalid). -/
+def evidenceInEffect : M Bool := do
+  match (← get).evidence? with
+  | none => return false
+  | some (value, sp) =>
+    let some b := Fren.Core.evidenceTested? value | err sp (Fren.Core.invalidEvidenceMsg value)
+    return b
+
+/-- The checks of a comp with `members` that are tested
+(`Reqs/Check#checking-by-testing`): `all` if the comp is set to testing,
+then each member's own setting. -/
+def testedOf (all : Bool) (members : Array Member) : M Fren.Core.Tested := do
+  let mut pending : Option (Bool × Span) := none
+  let mut expects := #[]
+  let mut insts := #[]
+  let mut dets := #[]
+  let mut constraints := #[]
+  for m in members do
+    if let .evidence span value valueSpan := m then
+      let some b := Fren.Core.evidenceTested? value | err valueSpan (Fren.Core.invalidEvidenceMsg value)
+      pending := some (b, span)
+      continue
+    let set? := pending.map (·.1)
+    match m, pending with
+    | .prop .expect x _, _ => expects := expects.push (Name.mkSimple x.name, set?)
+    | .inst x _ _, _ => insts := insts.push (Name.mkSimple x.name, set?)
+    | .var false _ true x _ _, _ => dets := dets.push (Name.mkSimple x.name, set?)
+    | _, some (_, span) =>
+      let what := match m with
+        | .prop .assume .. => "an assumption" | .prop .req .. => "a requirement"
+        | .var true .. => "an input" | .var .. => "an output that is not `det`" | _ => "a `use`"
+      err span (Fren.Core.misplacedEvidenceMsg what)
+    | _, none => pure ()
+    match m with
+    | .prop .assume x _ | .prop .req x _ => constraints := constraints.push (Name.mkSimple x.name)
+    | .var false _ _ x _ (some _) => constraints := constraints.push (Name.mkSimple x.name)
+    | _ => pure ()
+    pending := none
+  if let some (_, span) := pending then err span (Fren.Core.misplacedEvidenceMsg "the end of the component")
+  return Fren.Core.Tested.ofSettings all constraints expects insts dets
+
 def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := do
   let n := Name.mkSimple name.name
   modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[] }
@@ -1521,16 +1575,91 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     if constant then lint .constantOutput v.span (Fren.Core.constantOutputMsg v.name)
     if definable then lint .definableOutput v.span (Fren.Core.definableOutputMsg v.name about[0]!.1)
   let path := st.module ++ n
+  let tested ← testedOf (← evidenceInEffect) members
   let (relational, counts) ← checkCounts
   modify fun s => { s with
     table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
     scope := s.module
     comps := s.comps.push { path, file := s.file, span := name.span, vars, props, insts, defs, indexes, decidable := !s.outsideCore
-                            relational, counts } }
+                            relational, counts, tested } }
+
+/-- Elaborates `refine name: concrete refines abstract` into the comp that
+checks it (`Reqs/Lang/Refinement`): `concrete`'s inputs, `abstract`'s
+assumptions, an instance of `concrete` named as it is, `abstract`'s
+instances, and `abstract`'s requirements and definitions as expectations,
+over the instance's outputs. -/
+def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) : M Unit := do
+  let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkItemName "refinement" n)
+  let st ← get
+  liftMsg name.span (st.table.checkFresh st.module n)
+  let comp (segs : Array Ident) : M CComp := do
+    let sp := segs[0]!.span.to segs.back!.span
+    let path ← match ← resolve segs with
+      | .item { kind := .compItem, path, .. } => pure path
+      | r => err sp (Fren.Core.notACompMsg r)
+    let some c := (← get).comps.find? (·.path == path) | internal sp s!"unknown comp `{path}`"
+    return c
+  let c ← comp concreteSegs
+  let a ← comp abstractSegs
+  let aSpan := abstractSegs[0]!.span.to abstractSegs.back!.span
+  -- The interface (`refinement::interface`).
+  for v in a.vars.filter (·.name.isAtomic) do
+    let cv? := c.vars.find? (·.name == v.name)
+    let input := v.role == Role.input
+    let ok := Fren.Core.interfaceAccepted input cv?.isSome (cv?.any (·.role == Role.input))
+      (cv?.any (·.isPub)) (cv?.any (·.ty == v.ty))
+    unless ok do
+      let why := match cv? with
+        | none => s!"it has no variable `{v.name}`"
+        | some cv => if cv.ty != v.ty then s!"its `{v.name}` has another type"
+          else if input then s!"its `{v.name}` is not an input"
+          else if cv.role == Role.input then s!"its `{v.name}` is an input, not an output"
+          else s!"its output `{v.name}` is not public"
+      err aSpan (Fren.Core.interfaceMsg c.path a.path v.name why)
+  -- The instance of `concrete`, named as it is.
+  let w := Name.mkSimple (c.path.getString!)
+  if a.insts.any (·.name == w) then err aSpan (Fren.Core.dupMemberMsg w)
+  let outs := a.vars.filter fun v => v.name.isAtomic && v.role == .output
+  let ren (smt : String) := rename w outs smt
+  let inputs := c.vars.filter fun v => v.name.isAtomic && v.role == .input
+  let vars := inputs ++ c.vars.map (fun v =>
+      let role := Role.ofInst v.role v.isPub
+      { v with name := w ++ v.name, role, isPub := role != .instHidden, isDet := false, defn? := none })
+    ++ a.vars.filter (!·.name.isAtomic)
+  let instC : CInst := { name := w, comp := c.path, span := name.span
+                         bindings := conj (inputs.map fun v => s!"(= {quote (w ++ v.name).toString} {quote v.name.toString})")
+                         behaviour := rename w c.vars c.meaning
+                         assumes := (c.props.filter (·.kind == .assume)).map fun p => (p.name, rename w c.vars p.smt) }
+  -- `a`'s instances are hypotheses: their assumptions are `a`'s own
+  -- obligations, checked in `a` (`Reqs/Lang/Refinement#the-obligation`).
+  let insts := #[instC] ++ a.insts.map fun i =>
+    { i with bindings := ren i.bindings, behaviour := ren i.behaviour, assumes := #[] }
+  -- Reported at the refinement (`Reqs/Lang/Refinement#the-obligation`).
+  let props := (a.props.filter (·.kind == .assume)).map ({ · with span := name.span, triggerSpan? := none })
+    ++ (a.props.filter (·.kind == .req)).map (fun p =>
+      -- No triggers, as in Lean: vacuity does not run on a refinement.
+      { p with kind := .expect, smt := ren p.smt, trigger? := none, span := name.span, triggerSpan? := none })
+    ++ a.defs.map fun (d, e) =>
+      { kind := .expect, name := d, span := name.span
+        smt := s!"(= {quote (w ++ d).toString} {ren e})", trigger? := none, triggerSpan? := none : CProp }
+  -- Reported at the refinement, as its other checks are.
+  let indexes := a.indexes.map fun (x, place, _, goal) =>
+    (x, (match place with | .binding k => .binding (k + 1) | p => p), name.span, ren goal)
+  let tested := Fren.Core.Tested.ofSettings (← evidenceInEffect)
+    ((a.props.filter (·.kind == .assume)).map (·.name)) (props.filter (·.kind == .expect) |>.map (·.name, none))
+    -- `a`'s instances too, for the definedness of their bindings.
+    (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
+  modify fun s => { s with
+    table := s.table.addItem { kind := .expectItem, path := st.module ++ n, isPub := false, owner := s.module }
+    refinements := s.refinements.push { path := st.module ++ n, file := s.file, span := name.span, vars, props, insts
+                                        indexes, decidable := c.decidable && a.decidable
+                                        relational := c.relational || a.relational, counts := c.counts || a.counts, tested } }
 
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr) : M Unit := do
   let n := Name.mkSimple name.name
+  let all ← evidenceInEffect
   if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
   modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[] }
   let st ← get
@@ -1575,7 +1704,8 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
   modify fun s => { s with
     table := s.table.addItem { kind := .expectItem, path := st.module ++ n, isPub := false, owner := s.module }
     globals := s.globals.push { path := s.module, file := s.file, span := name.span, vars, props := #[prop], insts, indexes
-                                decidable := !s.outsideCore } }
+                                decidable := !s.outsideCore
+                                tested := Fren.Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] } }
 
 partial def elabItem : Item → M Unit
   | .mod isPub segs => do
@@ -1736,6 +1866,7 @@ partial def elabItem : Item → M Unit
       table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
       consts := s.consts.insert path (smt, t) }
   | .global name binders body => elabGlobal name binders body
+  | .refine name c a => elabRefine name c a
   | .claim tested segs texts => do
     let path ← match ← resolve segs with
       | .item { kind := .compItem, path, .. } => pure path
@@ -1749,6 +1880,14 @@ partial def elabItem : Item → M Unit
     | .item { kind := .compItem, .. } | .item { kind := .expectItem, .. } => pure ()
     | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a component or a global expectation" r)
   | .lintSetting stx opt value valueSpan removal body? => do
+    if opt.name == "fren.evidence" then
+      -- Like a lint setting: for the item after `in`, or the rest of the file.
+      let st ← get
+      modify fun s => { s with evidence? := some (value, valueSpan) }
+      if let some body := body? then
+        elabItem body
+        modify fun s => { s with evidence? := st.evidence? }
+      return
     let some rest := opt.name.dropPrefix? "fren.lint." | internal opt.span "not a lint option"
     let some lint := Lint.ofName? rest.toString | err opt.span (Fren.Core.unknownLintMsg rest.toString)
     let some requested := LintLevel.ofName? value | err valueSpan (Fren.Core.invalidLevelMsg value)
@@ -1848,7 +1987,7 @@ def finishLints : StateM State Unit := do
 error per failed item. `fren fix` fixes the lints `fixing` in it. -/
 def elabFile (file : Nat) (src : Array Char) (items : Array Item) (fixing : Array Lint := #[]) :
     StateM State Unit := do
-  modify fun s => { s with file, src, fixing, module := .anonymous, scope := .anonymous, levels := s.cliLevels, useRecords := #[],
+  modify fun s => { s with file, src, fixing, module := .anonymous, scope := .anonymous, levels := s.cliLevels, useRecords := #[], evidence? := none,
                            used := #[], expectations := #[], lintReports := #[], useLocs := #[],
                            expectationRemovals := #[], items := #[], usedItems := #[], boolFixes := #[],
                            lintFixes := #[] }

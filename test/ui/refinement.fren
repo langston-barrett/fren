@@ -1,0 +1,35 @@
+-- Refinement (`Reqs/Lang/Refinement`): both front ends check the
+-- obligation the same way.
+
+comp precise {
+    in x: Int
+    pub out y: Int
+    req r: y = x + 1
+}
+
+comp rough {
+    in x: Int
+    pub out y: Int
+    assume small: x < 100
+    req above: y > x
+}
+
+comp picky {
+    in x: Int
+    pub out y: Int
+    assume positive: x > 0
+    req r: y = x + 1
+}
+
+comp wrong {
+    in x: Int
+    pub out y: Int
+    req below: y < x
+}
+
+refine holds: precise refines rough
+refine fails: precise refines wrong        --~ error: expectation `fails::below` does not hold
+-- `picky` assumes more than `rough`, so it does not accept all of its inputs.
+refine narrower: picky refines rough       --~ error: the assumption `positive`
+
+--@ summary: 12 passed, 2 failed, 0 inconclusive, 0 redundant

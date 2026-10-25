@@ -430,6 +430,83 @@ pub comp determinism {
 
     req like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 }
+```
+
+## Checking by testing
+
+Some checks are beyond what the solver decides in practice (see
+[Decidability](Lang/Decidability.md#in-practice)). A spec may say so where
+it applies, and have such a check tested instead, as `fren quickcheck`
+tests it (see [Evaluation](Eval.md#fren-quickcheck)):
+
+```
+item   := evidence-setting ["in" item] | ...
+member := evidence-setting "in" member | ...
+evidence-setting := "set_option" "fren.evidence" STRING
+```
+
+`set_option fren.evidence "tested" in` before a component, an expectation
+or global expectation, an instance or a `det out` sets the evidence of its
+checks to *testing*; `"solver"`, the default, sets it back. Before a
+component, it sets that of all the component's checks, and before a member,
+that of the member's checks, which takes precedence:
+
+| Before | Its checks |
+|---|---|
+| an expectation | the expectation, its vacuity and its definedness |
+| an instance | the instance's assumptions, and the definedness of its bindings |
+| a `det out` | its determinism |
+| a component | all of the component's checks |
+| a global expectation | its expectation, its vacuity and its definedness |
+| a [refinement](Lang/Refinement.md) | all of the checks of its obligation, including the definedness of the bindings of the abstract component's instances |
+
+As with a [lint setting](Lint.md), `set_option` without `in` sets the
+evidence of every later component, global expectation and
+[refinement](Lang/Refinement.md) in the file, and
+before any other item it sets nothing. Within a component, the setting must
+be followed by `in` and by a member whose checks it sets: before anything
+else, such as a requirement, it is an error (`F0215`), and so is a
+`set_option` of any other option before a member (`F0216`). The setting is a
+statement that the solver cannot be relied on there, so it is never
+reported as unneeded. A value other than `"tested"` or `"solver"` is an
+error (`F0214`) where it would set a check.
+
+`fren check` asks the solver nothing about a check whose evidence is
+testing. It tests the check with `--tests` tests (default 100) from
+`--seed` (default 0), and reports the result as `fren quickcheck` does
+(`eval::test_verdict`): a counterexample fails the check, and testing that
+reaches no conclusion leaves it inconclusive, with the same warnings. A
+check that testing cannot decide, since it asks whether something can hold
+at all, is not run: vacuity, redundancy and definedness. A test that reaches
+an expectation shows that its trigger can hold, which is what its vacuity
+check would show. The summary counts the passes that came from testing:
+
+```text
+fren: 30 passed (2 by testing), 0 failed, 0 inconclusive, 0 redundant
+```
+
+Lean has no evaluator, so `#fren_check` does not run a check whose evidence
+is testing: it reports, as information, that `fren check` tests it. Such a
+check is not part of the [agreement with Lean](Cli.md#agreement-with-lean).
+
+`check::by_testing` gives how a check is run:
+
+```fren
+pub enum Run { BySolver, ByTesting, NotRun }
+
+pub comp by_testing {
+    use self::Kind::{Definedness, Redundancy, Vacuity}
+    use self::Run::{BySolver, ByTesting, NotRun}
+    in kind: Kind
+    in tested?             -- the check's evidence is testing
+    pub det out run: Run
+
+    req solver: unless tested?, run = BySolver
+    req testable: when tested? and not kind in {Vacuity, Redundancy, Definedness}, run = ByTesting
+    req untestable: when tested? and kind in {Vacuity, Redundancy, Definedness}, run = NotRun
+
+    expect never_both: when tested?, run != BySolver
+}
 
 #fren_check
 ```

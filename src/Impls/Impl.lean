@@ -86,6 +86,6 @@ impl interpreted: impls::interpreted for (u i : Array Lean.Name) {
 } by
   intro u i _
   simp only [fren_spec, interpretedAccepted, Fren.FinSet.subset_def, Fren.FinSet.mem_ofArray, Array.all_eq_true',
-    Array.contains_iff_mem, decide_eq_true_eq]
+    Array.contains_iff_mem]
 
 end Fren.Impls

@@ -612,6 +612,43 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
     | (.alts is, b) => (.alts is, b.renameBound f)
     | (.ctor i bs, b) => (.ctor i (bs.map fun x => if x == `_ then x else f x), b.renameBound f)
 
+/-- `e` with each variable renamed by `f`. -/
+partial def Ex.renameVars (f : Name → Name) : Ex → Ex
+  | .lit v => .lit v
+  | .var n => .var (f n)
+  | .bound n => .bound n
+  | .not a => .not (a.renameVars f)
+  | .neg a => .neg (a.renameVars f)
+  | .bin op a b => .bin op (a.renameVars f) (b.renameVars f)
+  | .when negated c d => .when negated (c.renameVars f) (d.renameVars f)
+  | .ite c a b => .ite (c.renameVars f) (a.renameVars f) (b.renameVars f)
+  | .app g args => .app g (args.map (·.renameVars f))
+  | .method m r args => .method m (r.renameVars f) (args.map (·.renameVars f))
+  | .setLit es => .setLit (es.map (·.renameVars f))
+  | .pair a b => .pair (a.renameVars f) (b.renameVars f)
+  | .seqLit es => .seqLit (es.map (·.renameVars f))
+  | .index q i pos => .index (q.renameVars f) (i.renameVars f) pos
+  | .card e => .card (e.renameVars f)
+  | .ctor ty idx args => .ctor ty idx (args.map (·.renameVars f))
+  | .field e idx => .field (e.renameVars f) idx
+  | .match e arms => .match (e.renameVars f) (arms.map fun (p, b) => (p, b.renameVars f))
+
+/-- The comp that checks that `c` refines `a` (`Reqs/Lang/Refinement`): its
+inputs are `c`'s, its assumptions `a`'s, it has an instance `w` of `c` and
+`a`'s instances, and its expectations are `a`'s requirements and
+definitions, with `a`'s outputs read from `w`'s. -/
+def Comp.refinement (path w : Name) (c a : Comp) : Comp :=
+  let outs := (a.vars.filter (·.role == .output)).map (·.name)
+  let ren (e : Ex) := e.renameVars fun n => if outs.contains n then w ++ n else n
+  let inputs := c.vars.filter (·.role == .input)
+  { path
+    vars := inputs
+    constraints := a.constraints.filter (·.kind == .assume)
+      ++ (a.constraints.filter (·.kind == .req)).map (fun p => { p with kind := .expect, e := ren p.e })
+      ++ a.defs.map fun (d, e) => { kind := .expect, name := d, e := .bin .eq (.var (w ++ d)) (ren e) }
+    insts := #[{ name := w, comp := c.path, bindings := inputs.map fun v => (v.name, .var v.name) }]
+      ++ a.insts.map fun i => { i with bindings := i.bindings.map fun (x, e) => (x, ren e) } }
+
 /-- `e` with the binders of `σ` that are free in it replaced by their
 expressions. -/
 partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
@@ -822,6 +859,12 @@ def lowerComp (isPub : Bool) (name : Ident) (members : Array Member) : L Unit :=
     scope := s.module
     spec.comps := s.spec.comps.push c }
 
+/-- The path of the component that `segs` names. -/
+def resolveComp (segs : Array Ident) : L Name := do
+  match ← resolve segs with
+  | .item { kind := .compItem, path, .. } => pure path
+  | r => throw s!"`{showPath r.path}` is not a component"
+
 def lowerGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr) : L Unit := do
   let mut insts := #[]
   for (xs, p) in binders do
@@ -893,6 +936,17 @@ partial def lowerItem : Item → L Unit
       spec.consts := s.spec.consts.insert path (v, t) }
   | .comp isPub name members => lowerComp isPub name members
   | .global name binders body => lowerGlobal name binders body
+  | .refine name concrete abstract => do
+    let comp (segs : Array Ident) : L Comp := do
+      let some c := (← get).spec.comp? (← resolveComp segs) | throw s!"unknown component `{segNames segs}`"
+      return c
+    let c ← comp concrete
+    let a ← comp abstract
+    let path := (← get).module ++ Name.mkSimple name.name
+    -- As the elaborator builds it (`Reqs/Lang/Refinement`).
+    modify fun s => { s with
+      table := s.table.addItem { kind := .expectItem, path, isPub := false, owner := s.module }
+      spec.comps := s.spec.comps.push (Comp.refinement path (Name.mkSimple c.path.getString!) c a) }
   | .claim .. | .check _ => pure ()
   | .lintSetting _ _ _ _ _ body? => do if let some b := body? then lowerItem b
 where
