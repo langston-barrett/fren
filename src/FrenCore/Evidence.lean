@@ -22,12 +22,18 @@ inductive Run where
   | skipped
   deriving Inhabited, BEq, DecidableEq, Repr
 
+/-- The checks that testing cannot decide (`check::by_testing`). -/
+def CheckKind.untestable (kind : CheckKind) : Bool :=
+  kind == .vacuity || kind == .redundancy || kind == .definedness || kind == .completeness || kind == .disjointness
+
 /-- How a check of kind `kind` is run, given whether its evidence is
-testing (`check::by_testing`). Vacuity, redundancy and definedness ask
-whether something can hold at all, which testing cannot decide. -/
+testing (`check::by_testing`). Vacuity and redundancy ask whether
+something can hold at all, which testing cannot decide; nor can it decide
+definedness, completeness or disjointness, which are about where an
+expression is evaluated, where its value may be unknown. -/
 def runOf (kind : CheckKind) (tested : Bool) : Run :=
   if !tested then .bySolver
-  else if kind == .vacuity || kind == .redundancy || kind == .definedness then .skipped
+  else if kind.untestable then .skipped
   else .byTesting
 
 /-- The checks of a comp whose evidence is testing, or that are not run
@@ -64,7 +70,7 @@ def Tested.covers (t : Tested) (r : CheckResult) : Bool :=
   | .realizable, _ => t.realizable
   | .redundancy, _ => t.redundancy
   | .expect, some n | .cover, some n | .vacuity, some n => t.props.contains n
-  | .definedness, some n => t.props.contains n || t.insts.contains n
+  | .definedness, some n | .completeness, some n | .disjointness, some n => t.props.contains n || t.insts.contains n
   | .inst, some n => t.insts.contains n
   | .determinism, some n => t.dets.contains n
   | _, _ => false
@@ -78,7 +84,8 @@ def Comp.untested (t : Tested) (c : Comp F) (kinds : Array CheckKind) : Comp F Ã
       triggers := c.triggers.filter (!t.props.contains Â·.1)
       insts := c.insts.map fun i => if t.insts.contains i.name then { i with assumes := #[] } else i
       vars := c.vars.map fun v => if t.dets.contains v.name then { v with isDet := false } else v
-      indexes := c.indexes.filter fun s => !t.props.contains s.prop && !t.insts.contains s.prop },
+      indexes := c.indexes.filter fun s => !t.props.contains s.prop && !t.insts.contains s.prop
+      tables := c.tables.filter fun s => !t.props.contains s.site.prop && !t.insts.contains s.site.prop },
     kinds.filter fun k => !(k == .realizable && t.realizable) && !(k == .redundancy && t.redundancy))
 
 /-- `set_option fren.evidence` with a value other than `"tested"` or

@@ -83,3 +83,10 @@ comp record_shorthand { in a: Int pub out k: R := R { a } }
 comp update_constant { pub out k: R := { R { a := 1 } with a := 2 } }
 --~^ warning: defined output `k` is the same in every behaviour
 comp update_variable { in p: R pub out k: R := { p with a := 2 } }
+
+-- A table mentions what its conditions and values mention.
+comp table_constant { in x: Int pub out y: Int req r: y = table { RATE > 0 => 1, _ => 2 } * x }
+comp table_condition { in c? in x: Int pub out y: Int req r: y = table { c? => 1, _ => 2 } * x }
+--~^ error: nonlinear arithmetic is not supported
+comp table_value { in z: Int in x: Int pub out y: Int req r: y = table { RATE > 0 => z, _ => 2 } * x }
+--~^ error: nonlinear arithmetic is not supported

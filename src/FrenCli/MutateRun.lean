@@ -38,36 +38,45 @@ def By.ofName? : String → Option By
 def By.solves (b : By) : Bool := b != .testing
 def By.tests (b : By) : Bool := b != .solver
 
-/-- A component, global expectation or refinement, with the checks that
-`fren check` runs on it. -/
+/-- A component, global expectation, refinement, or body of a function or
+value of a constant with tables, with the checks that `fren check` runs on
+it. -/
 structure Todo where
   comp : CComp
   global : Bool
   kinds : Array Fren.Core.CheckKind
   refinement : Bool
+  body : Bool := false
 
 /-- What `fren check` checks in the spec `st`, in order. -/
 def todo (st : State) : Array Todo :=
-  st.comps.map (⟨·, false, Fren.Core.kindsFor false, false⟩) ++ st.globals.map (⟨·, true, Fren.Core.kindsFor true, false⟩)
-    ++ st.refinements.map (⟨·, false, Fren.Core.CheckKind.all.filter Fren.Core.refinementRuns, true⟩)
+  st.comps.map (⟨·, false, Fren.Core.CheckedItem.component.kinds, false, false⟩)
+    ++ st.globals.map (⟨·, true, Fren.Core.CheckedItem.global.kinds, false, false⟩)
+    ++ st.refinements.map (⟨·, false, Fren.Core.CheckKind.all.filter Fren.Core.refinementRuns, true, false⟩)
+    ++ st.bodies.map (⟨·, false, Fren.Core.CheckedItem.body.kinds, false, true⟩)
 
 /-- The key of its results. -/
 def Todo.key (t : Todo) : String :=
-  if t.global then s!"expect {t.comp.path}::{(t.comp.props[0]?.map (·.name)).getD .anonymous}"
+  if t.body then s!"body {t.comp.path}::{(t.comp.tables[0]?.map (·.1)).getD .anonymous}"
+  else if t.global then s!"expect {t.comp.path}::{(t.comp.props[0]?.map (·.name)).getD .anonymous}"
   else if t.refinement then s!"refine {t.comp.path}" else s!"comp {t.comp.path}"
 
 /-- The results of a component, each with the key of its check. The
 definedness checks of a constraint are one check, which passes when every
 index in it is in range: an index is named only by its position, which a
-mutant that adds or drops an index changes. -/
+mutant that adds or drops an index changes. So are its completeness
+checks, and its disjointness checks, which a mutant that drops a row
+renumbers. -/
 def keyed (rs : Array CheckResult) : Array (String × CheckResult) := Id.run do
   let key (r : CheckResult) := s!"{repr r.kind}|{r.prop?}|{r.target?}"
   let mut out : Array (String × CheckResult) := #[]
   for r in rs do
     let k := key r
-    if r.kind != .definedness then out := out.push (k, r) else
+    unless r.kind == .definedness || r.kind == .completeness || r.kind == .disjointness do
+      out := out.push (k, r)
+      continue
     match out.findIdx? (·.1 == k) with
-    | none => out := out.push (k, { r with index? := none })
+    | none => out := out.push (k, { r with index? := none, site? := none, rows? := none })
     | some i =>
       -- A failure decides, then an inconclusive result.
       let v := match out[i]!.2.verdict, r.verdict with
@@ -102,8 +111,11 @@ def formulas (c : CComp) : Array (String × String) :=
       ++ i.assumes.map fun (n, a) => (s!"assume {i.name} {n}", a))
     -- The indexes of an item together, as the definedness check of the
     -- item, so that a mutant that adds or drops one still compares.
-    ++ (c.indexes.map (·.1)).toList.eraseDups.toArray.map fun n =>
-      (s!"indexes {n}", conj (c.indexes.filter (·.1 == n) |>.map (·.2.2.2)))
+    ++ (c.indexes.map (·.1)).toList.eraseDups.toArray.map (fun n =>
+      (s!"indexes {n}", conj (c.indexes.filter (·.1 == n) |>.map (·.2.2.2))))
+    -- And the questions about its tables.
+    ++ (c.tables.map (·.1)).toList.eraseDups.toArray.map fun n =>
+      (s!"tables {n}", conj (c.tables.filter (·.1 == n) |>.map (·.2.2.2.2)))
 
 /-- Everything that `c`'s checks read, with the spec's `prelude`: a mutant
 that leaves it alone leaves their results alone. It leaves out the logic

@@ -1,0 +1,13 @@
+error[F0359]: a row after `_` can never be reached
+ --> test/cli/types/f0359_row_after_wild.fren:2:62
+  |
+2 | comp c { in x: Int pub out y: Int req r: y = table { _ => 0, x > 0 => 1 } }
+  |                                                              ^ unreachable row
+  |
+  = note: `_` holds wherever no earlier row does, so it is the last row
+  = help: remove this row, or move it before `_`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0359`.
+exit=2

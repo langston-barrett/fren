@@ -52,7 +52,7 @@ structure Token where
 `else`, `match`, `forall`, `exists`, `with`, `let` and `where`): `lang::reserved_word`. Other Fren keywords
 (`when`, `out`, `req`, ...) are contextual and lexed as identifiers. -/
 def reserved : List String :=
-  ["mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join", "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "refine", "with", "let", "where"]
+  ["mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join", "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "refine", "with", "let", "where", "table"]
 
 /-- The punctuators (`Reqs/Lang/Lexical#punctuators`), longest first.
 Includes tokens Fren doesn't use but Lean lexes (`==`, `&&`, `||`, `<-`), so

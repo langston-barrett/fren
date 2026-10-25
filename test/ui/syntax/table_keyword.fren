@@ -1,0 +1,5 @@
+-- `table` is a reserved word, so it is not a name.
+comp keyword { in x: Int pub out z? req r: z? iff table = x }
+--~^[cli] error: expected `{`, found `=`
+--~^^[hosted] error: expected
+--@ exit: 2

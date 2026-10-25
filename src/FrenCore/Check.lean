@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCore.Diagnostic
 import FrenCore.Names
+import FrenCore.Table
 import Lean.Data.Name
 -- keep-sorted end
 
@@ -28,10 +29,12 @@ inductive CheckKind where
   | redundancy
   | determinism
   | definedness
-  deriving Inhabited, BEq, Repr
+  | completeness
+  | disjointness
+  deriving Inhabited, DecidableEq, Repr
 
 def CheckKind.all : Array CheckKind :=
-  #[.realizable, .inst, .expect, .cover, .vacuity, .redundancy, .determinism, .definedness]
+  #[.realizable, .inst, .expect, .cover, .vacuity, .redundancy, .determinism, .definedness, .completeness, .disjointness]
 
 inductive Verdict where
   | pass
@@ -74,6 +77,11 @@ structure CheckResult where
   target? : Option (Name × Name) := none
   /-- For `definedness`: which index of the constraint, in order. -/
   index? : Option Nat := none
+  /-- For `completeness` and `disjointness`: which of the constraint's
+  questions about its tables, in order. -/
+  site? : Option Nat := none
+  /-- For `disjointness`: the rows, counted from 0. -/
+  rows? : Option (Nat × Nat) := none
   verdict : Verdict
   detail : Detail := .none
   /-- For `cover`: its query depends on an interpretation, so its witness's
@@ -204,14 +212,18 @@ structure Inst (F : Type) where
   /-- The instantiated comp's assumptions, each an obligation. -/
   assumes : Array (Name × F)
 
-/-- Where an index is written, which gives the hypotheses of its definedness
-query (`check::definedness`). -/
+/-- Where an index or a table is written, which gives the hypotheses of its
+definedness query (`check::definedness`), and of the questions about its
+rows (`check::completeness`, `check::disjointness`). -/
 inductive IndexPlace where
   | assume
   /-- A requirement, expectation, cover goal or definition. -/
   | prop
   /-- A binding of the instance at this position. -/
   | binding (k : Nat)
+  /-- The body of a defined function, or the value of a constant: only the
+  conditions around it, which its goal already has. -/
+  | body
   deriving Inhabited, BEq, Repr
 
 /-- An index `q[i]` of a constraint, with the formula that it is in range
@@ -224,6 +236,25 @@ structure IndexSite (F : Type) where
   place : IndexPlace
   goal : F
   deriving Inhabited
+
+/-- A question about the rows of a table (`TableGoal`), where its table is
+written: its site's goal is the question, under the guard of the table. -/
+structure TableSite (F : Type) where
+  /-- Its place, the item it is in, and which of the item's questions
+  about its tables it is, in order. -/
+  site : IndexSite F
+  goal : TableGoal
+  deriving Inhabited
+
+/-- The check that answers a question about a table's rows. -/
+def TableGoal.kind : TableGoal → CheckKind
+  | .completeness => .completeness
+  | .disjointness .. => .disjointness
+
+/-- The rows that a question is about, for `disjointness`. -/
+def TableGoal.rows? : TableGoal → Option (Nat × Nat)
+  | .completeness => none
+  | .disjointness i j => some (i, j)
 
 /-- A comp, with its items as backend formulas over its variables. -/
 structure Comp (F : Type) where
@@ -243,6 +274,8 @@ structure Comp (F : Type) where
   /-- Some variable's type, its own or an instance's, is or contains an
   abstract type. -/
   typesInterpreted : Bool := false
+  /-- The questions about the rows of its tables. -/
+  tables : Array (TableSite F) := #[]
 
 variable {m : Type → Type} [Monad m] {F V : Type} (b : Backend m F V)
 
@@ -380,6 +413,7 @@ def Comp.siteHyps (c : Comp F) (b : Backend m F V) (site : IndexSite F) : Array 
   | .assume => c.assumes.filter (·.1 != site.prop)
   | .binding k => c.hyps b k
   | .prop => c.hyps b ++ c.reqs
+  | .body => #[]
 
 /-- `definedness`: the index is in range wherever it is evaluated, given the
 hypotheses of its place (`check::definedness`): for an assumption, the
@@ -389,6 +423,25 @@ def checkDefinedness (c : Comp F) (site : IndexSite F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .definedness, comp := c.path, prop? := some site.prop, index? := some site.k, verdict, detail }
   let q ← b.query (c.defEqs .definedness ++ c.siteHyps b site) site.goal true
+  match expectVerdict q.answer, q with
+  | (verdict, true), .sat model =>
+    return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
+  | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
+  | (verdict, _), _ => return result verdict
+
+/-- The questions about the rows of `c`'s tables that the checks of kind
+`k` answer. -/
+def Comp.tablesOf (c : Comp F) (k : CheckKind) : Array (TableSite F) := c.tables.filter (·.goal.kind == k)
+
+/-- `completeness` or `disjointness`: what the question about the rows of
+a table asks holds wherever the table is evaluated, given the hypotheses of
+its place, as for `definedness` (`check::completeness`,
+`check::disjointness`). -/
+def checkTable (c : Comp F) (t : TableSite F) : m CheckResult := do
+  let kind := t.goal.kind
+  let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
+    { kind, comp := c.path, prop? := some t.site.prop, site? := some t.site.k, rows? := t.goal.rows?, verdict, detail }
+  let q ← b.query (c.defEqs kind ++ c.siteHyps b t.site) t.site.goal true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
     return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
@@ -440,12 +493,31 @@ def checkDeterminism (c : Comp F) (x : Name) : m CheckResult := do
 /-- The checks of a global expectation (`Reqs/Lang/Global`), as a `Comp`
 whose path is the expectation's module, with one instance per binder (no
 bindings, and no assumptions as obligations) and the expectation itself. -/
-def globalKinds : Array CheckKind := #[.expect, .vacuity, .definedness]
+def globalKinds : Array CheckKind := #[.expect, .vacuity, .definedness, .completeness, .disjointness]
+
+/-- The checks of the tables in the body of a defined function or the value
+of a constant (`check::applies`), as a `Comp` whose path is its module,
+with its parameters as inputs. -/
+def bodyKinds : Array CheckKind := #[.completeness, .disjointness]
 
 /-- The checks run on a global expectation if `global`, else on a component
 (`check::applies`). -/
 def kindsFor (global : Bool) : Array CheckKind :=
   if global then globalKinds else CheckKind.all
+
+/-- What the checks run on (`check::CheckedItem`). -/
+inductive CheckedItem where
+  | component
+  | global
+  /-- The body of a defined function, or the value of a constant. -/
+  | body
+  deriving Inhabited, DecidableEq, Repr
+
+/-- The checks run on an item (`check::applies`). -/
+def CheckedItem.kinds : CheckedItem → Array CheckKind
+  | .component => kindsFor false
+  | .global => kindsFor true
+  | .body => bodyKinds
 
 /-- The SMT-LIB logic of a check's queries (`cli::logic`): only
 realizability quantifies, over outputs; a spec that uses strings or sets
@@ -517,7 +589,9 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
     ifSelected (kinds.contains .redundancy) (checkRedundancies (bk .redundancy) c (vacuousOf vacuities))
   let dets ← ifSelected (kinds.contains .determinism) (checkDets (bk .determinism) c)
   let defined ← ifSelected (kinds.contains .definedness) (c.indexes.mapM (checkDefinedness (bk .definedness) c))
-  return realizable ++ insts ++ expects ++ covers ++ vacuities ++ redundancies ++ dets ++ defined
+  let complete ← ifSelected (kinds.contains .completeness) ((c.tablesOf .completeness).mapM (checkTable (bk .completeness) c))
+  let disjoint ← ifSelected (kinds.contains .disjointness) ((c.tablesOf .disjointness).mapM (checkTable (bk .disjointness) c))
+  return realizable ++ insts ++ expects ++ covers ++ vacuities ++ redundancies ++ dets ++ defined ++ complete ++ disjoint
 
 /-- What the applications of functions into `Nat` in a query bring
 (`Reqs/Check`): that each application that `appsOf` finds in the query's
@@ -588,6 +662,9 @@ structure Message where
   atTrigger : Bool := false
   /-- Point at the item's index with this number, in order, rather than its name. -/
   atIndex? : Option Nat := none
+  /-- Point at the place of the item's question about its tables with this
+  number, in order, rather than its name. -/
+  atSite? : Option Nat := none
   msg : Msg
   deriving Inhabited
 
@@ -598,6 +675,11 @@ def showNames (ns : Array Name) : String :=
 
 def showAssignment (a : Assignment) : String :=
   if a.isEmpty then "(any values)" else ", ".intercalate (a.toList.map fun (n, v) => s!"{n} = {v}")
+
+/-- Rows `i` and `j`, counted from 0, as a message names them, from 1. -/
+def rowsText : Option (Nat × Nat) → String
+  | some (i, j) => s!"rows {i + 1} and {j + 1}"
+  | none => "two rows"
 
 def showComp (path : Name) : String :=
   "::".intercalate (path.components.map (·.toString))
@@ -624,7 +706,8 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
   let sev := r.severity?.getD .info
   let one (code : String) (headline : String) (label? : Option String) (notes : Array String)
       (atTrigger := false) (item? := r.prop?) : Message :=
-    { severity := sev, item?, atTrigger, atIndex? := r.index?, msg := { code? := some code, headline, label?, notes } }
+    { severity := sev, item?, atTrigger, atIndex? := r.index?, atSite? := r.site?
+      msg := { code? := some code, headline, label?, notes } }
   let priv := if hasPrivateOuts then #["note: private `out`s are not shown"] else #[]
   match r.verdict, r.detail with
   -- A cover goal's witness is information; the pass itself is silent
@@ -648,6 +731,8 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       | .redundancy, _ => s!"{subject} is redundant"
       | .determinism, _ => s!"{subject} is determined by the inputs"
       | .definedness, _ => s!"an index of {subject} is in range"
+      | .completeness, _ => s!"some row of a table in {subject} holds"
+      | .disjointness, _ => s!"{rowsText r.rows?} of a table in {subject} are disjoint"
     let advice := match inconclusiveAdvice decidable with
       | .raiseTimeout => #["note: the solver gave up, so this check neither passed nor failed",
         "help: raise the time limit with `--timeout`, or simplify the constraints involved"]
@@ -677,6 +762,18 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         #[s!"counterexample: {showAssignment vals}",
           "note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there",
           "help: guard it with a bound, as in `i < q.len and q[i] = x`, before it in an `and`, or in a `when`"]]
+    else
+    if r.kind == .completeness then
+      #[one "F0618" s!"a table in {subject} may have no row that holds" (some "may have no row that holds")
+        #[s!"counterexample: {showAssignment vals}",
+          "note: where no row holds, the table is an unknown value, so the constraint says nothing useful there",
+          "help: add a row for this case, or end the table with `_ => e`"]]
+    else
+    if r.kind == .disjointness then
+      #[one "F0619" s!"{rowsText r.rows?} of a table in {subject} may both hold" (some "overlaps an earlier row")
+        #[s!"witness: {showAssignment vals}",
+          "note: where rows overlap, the first of them gives the table's value, so the order of the rows matters",
+          "help: make the conditions exclusive, as in `a => x, not a and b => y`"]]
     else
     if let (.inst, some (sub, a)) := (r.kind, r.target?) then
       #[one "F0604" s!"the assumption `{a}` of `{showComp sub}` may not hold for instance {subject}"

@@ -228,9 +228,11 @@ structure CompInfo where
   relational : Bool := false
   /-- It, or one of its instances, uses `card`. -/
   counts : Bool := false
-  /-- Each index of its constraints and definitions: the item it is in,
-  where that is, the index, and the closed formula that it is in range. -/
-  indexes : Array (Name × Core.IndexPlace × Syntax × Expr) := #[]
+  /-- Each index and table of its constraints and definitions: the item it
+  is in, where that is, the index, or where the question about the table's
+  rows is reported, the question (`none` for an index), and the closed
+  formula that the index is in range, or that the question holds. -/
+  indexes : Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr) := #[]
   /-- The checks that only the `fren` command runs, by testing
   (`Reqs/Check#checking-by-testing`). -/
   tested : Core.Tested := {}
@@ -291,6 +293,10 @@ inductive Entry where
   | globalInfo (path : Name) (c : CompInfo)
   /-- A refinement, as the comp that checks it (`Reqs/Lang/Refinement`). -/
   | refinementInfo (c : CompInfo)
+  /-- The body of the defined function, or the value of the constant, at
+  `path`, which has tables, as a comp whose path is its module, with the
+  function's parameters as inputs, for the checks of its tables. -/
+  | bodyInfo (path : Name) (c : CompInfo)
   | implInfo (i : ImplInfo)
   | claimInfo (c : ClaimInfo)
   deriving Inhabited
@@ -318,6 +324,9 @@ structure State where
   globals : NameMap CompInfo := {}
   /-- Refinements, as the comps that check them, by path. -/
   refinements : NameMap CompInfo := {}
+  /-- The bodies of functions and values of constants that have tables, by
+  the function's or constant's path (`Entry.bodyInfo`). -/
+  bodies : NameMap CompInfo := {}
   /-- The `impl`s of each comp. -/
   impls : NameMap (Array Name) := {}
   /-- The `impl`s proved by the solver, which are axioms. -/
@@ -344,6 +353,7 @@ def State.add (s : State) : Entry → State
   | .interpInfo p d => { s with interps := s.interps.insert p d }
   | .globalInfo p c => { s with globals := s.globals.insert p c }
   | .refinementInfo c => { s with refinements := s.refinements.insert c.path c }
+  | .bodyInfo p c => { s with bodies := s.bodies.insert p c }
   | .implInfo i =>
     { s with impls := s.impls.insert i.comp ((s.impls.getD i.comp #[]).push i.decl)
              axiomImpls := if i.isAxiom then s.axiomImpls.insert i.decl else s.axiomImpls }
@@ -392,6 +402,9 @@ structure LocalState where
   /-- The global expectations of this file, or Markdown spec: each one's
   module, name and text (`duplicate_constraint`). -/
   globalTexts : Array (Name × Name × String) := #[]
+  /-- Functions and constants declared in this file whose bodies or values
+  have tables, in order. -/
+  bodies : Array Name := #[]
   /-- What the lints of this file need (`Fren.Lint`): its `use`s, the names
   resolved through imports, its expectations, and its other lints. -/
   useRecords : Array (Core.UseRecord × Syntax) := #[]
@@ -469,6 +482,10 @@ structure LocalState where
   /-- The indexes of the constraint being elaborated, each with the term
   that it is in range where it is evaluated (`check::definedness`). -/
   indexes : Array (Syntax × Lean.Term) := #[]
+  /-- The questions about the rows of its tables, each where it is
+  reported, with the term that it holds where the table is evaluated
+  (`check::completeness`, `check::disjointness`). -/
+  tables : Array (Syntax × Core.TableGoal × Lean.Term) := #[]
   /-- The static errors so far, by top-level command: its file, where it
   starts and how many errors it has logged (`recordingErrors`). They stop
   `#fren_check` (`Reqs/View#static-errors`). -/

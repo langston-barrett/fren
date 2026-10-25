@@ -88,14 +88,22 @@ grammar accepts it:
 - a member's `set_option` of an option other than `fren.evidence`;
 - an input's definition, `in x := e`, before its expression is read;
 - an operator of another language, `==`, `&&`, `||` or `|`, after its
-  left operand. -/
+  left operand;
+- `table` as a name: it is a reserved word, which Lean reads as a name
+  where an expression starts, as it reads `when`. -/
 partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
+  let reserved (p : Syntax) : CommandElabM Unit := do
+    let id := (pathSegs p)[0]!
+    if id.getId.getRoot == Name.mkSimple "table" then throwErrorAt id Core.tableNameMsg
   match stx with
   | `(fren_expr| $a == $_) | `(fren_expr| $a && $_) | `(fren_expr| $a || $_) | `(fren_expr| $a | $_) =>
     checkParsed a
     throwErrorAt stx[1] (Core.foreignOpMsg stx[1].getAtomVal.trimAscii.toString).text
-  | `(fren_expr| $p:fren_path) => unless (pathSegs p).size == 1 do discard (segNames (pathSegs p))
+  | `(fren_expr| $p:fren_path) =>
+    reserved p
+    unless (pathSegs p).size == 1 do discard (segNames (pathSegs p))
   | `(fren_expr| $p:fren_path($args,*)) =>
+    reserved p
     unless (pathSegs p).size == 1 do discard (segNames (pathSegs p))
     args.getElems.forM checkParsed
   | _ =>
@@ -464,6 +472,8 @@ structure MatchBinder where
   is in range, guarded only within the definition: a mention puts them
   under its own guards (`Reqs/Lang/Let#meaning`). -/
   obligations : Array (Syntax × Term) := #[]
+  /-- Likewise, the questions about the rows of its definition's tables. -/
+  tableObligations : Array (Syntax × Core.TableGoal × Term) := #[]
 
 /-- What expression translation needs to know about the comp. -/
 structure ExprCtx where
@@ -502,8 +512,8 @@ structure ExprCtx where
   /-- The conditions under which this expression is evaluated, read from
   left to right: an index's guard (`Reqs/Lang/Expressions#sequences`). -/
   guards : Array Term := #[]
-  /-- Whether to record the indexes of this expression for the definedness
-  check, and report its lints: not when it is elaborated a second time, as
+  /-- Whether to record the indexes and tables of this expression for their
+  checks, and report its lints: not when it is elaborated a second time, as
   a trigger. -/
   noteIndexes : Bool := true
   /-- This expression is an operand of `or`, or of `and`, whose chain
@@ -1318,6 +1328,9 @@ where
   go (e : Syntax) : Array Syntax × Array Syntax :=
     if isComparison e then let (xs, ops) := go e[0]; (xs.push e[2], ops.push e[1]) else (#[e], #[])
 
+/-- Whether the row `r` of a table is `_`, which is a token node. -/
+def isWildRow (r : Syntax) : Bool := r[1].getNumArgs == 1 && r[1][0].isAtom && r[1][0].getAtomVal == "_"
+
 /-- The nodes in `e`'s arguments, through lists such as a call's arguments. -/
 partial def subNodes (e : Syntax) : Array Syntax :=
   e.getArgs.flatMap fun a =>
@@ -1346,6 +1359,10 @@ partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.
     .mk (.method m) range e (#[.mk .atom { range with stop := recvStop } id #[]] ++ e[2].getSepArgs.map go)
   else if e.isOfKind ``Lang.isExpr then .mk .patternTest range e #[go e[0]]
   else if e.isOfKind ``Lang.quantExpr then .mk .quant range e #[go e[3]]
+  -- A table, with its rows' conditions and values, as the `fren` command
+  -- sees it.
+  else if e.isOfKind ``Lang.tableExpr then
+    .mk .atom range e (e[2].getSepArgs.flatMap fun r => (if isWildRow r then #[] else #[go r[1]]).push (go r[3]))
   else
   match e.getNumArgs, atom 0, atom 1 with
   | 3, "(", _ => go e[1]
@@ -1671,6 +1688,7 @@ partial def typeShape (e : Syntax) : Core.TypeShape :=
     .anyPart [typeShape e[0], typeShape e[2]]
   else if e.isOfKind ``Lang.matchExpr then .anyPart (e[3].getSepArgs.toList.map (typeShape ·[2]))
   else if e.isOfKind ``Lang.letExpr then .anyPart [typeShape e[3]]
+  else if e.isOfKind ``Lang.tableExpr then .anyPart (e[2].getSepArgs.toList.map (typeShape ·[3]))
   else match e with
     | `(fren_expr| $a ++ $b) => .anyPart [typeShape a, typeShape b]
     | `(fren_expr| ($a)) => .anyPart [typeShape a]
@@ -2633,6 +2651,82 @@ def noteIndex (cx : ExprCtx) (ref : Syntax) (q i : Term) : TermElabM Unit := do
   let goal ← guardedGoal cx.guards bounds
   modifyLocal fun l => { l with indexes := l.indexes.push (ref, goal) }
 
+/-- Records the questions about the rows of the table `e`, whose rows other
+than `_` have the conditions `conds`, written at `refs`, whose indexes are
+in range where `defined` says, for its
+completeness and disjointness checks (`check::completeness`,
+`check::disjointness`): completeness is reported at `table`, and the
+disjointness of two rows at the later one's condition. -/
+def noteTable (cx : ExprCtx) (e : Syntax) (refs : Array Syntax) (conds : Array Term) (defined : Array (Option Term))
+    (wild : Bool) : TermElabM Unit := do
+  unless cx.noteIndexes do return
+  let orF (cs : Array Term) : Term := cs.pop.foldr (fun c acc => Unhygienic.run `($c ∨ $acc)) cs.back!
+  let andF (a b : Term) : Term := Unhygienic.run `($a ∧ $b)
+  let notF (c : Term) : Term := Unhygienic.run `(¬$c)
+  for (g, f) in Core.tableGoals orF andF notF conds defined wild do
+    let ref := match g with
+      | .completeness => e[0]
+      | .disjointness _ j => refs[j]!
+    let goal ← guardedGoal cx.guards f
+    modifyLocal fun l => { l with tables := l.tables.push (ref, g, goal) }
+
+open Lang in
+/-- Translates a table into a chain of `if`s over its rows' conditions,
+where `toTerm` translates its parts. Where no row holds, a table without a
+`_` row is an index out of range of the empty sequence, `Fren.Seq.nth ∅
+0`, as the solver sees it: one unspecified value of each type
+(`Reqs/Lang/Expressions#tables`). -/
+def tableTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
+  let rows := e[2].getSepArgs
+  -- Only the last row may be `_` (`Reqs/Lang/Expressions#tables`).
+  if let some k := Core.rowAfterWild? (rows.map isWildRow) then throwErrorAt rows[k]![1] Core.rowAfterWildMsg.text
+  let wild := isWildRow rows.back!
+  let mut conds : Array Term := #[]
+  let mut refs : Array Syntax := #[]
+  let mut defined : Array (Option Term) := #[]
+  -- The negations of the earlier rows' conditions, which guard a row
+  -- (`Core.earlierFail`).
+  let mut negs : Array Term := #[]
+  let mut values : Array Term := #[]
+  for r in rows, k in [0:rows.size] do
+    let before := cx.guards ++ negs
+    let mut own := #[]
+    unless isWildRow r do
+      -- Translated under its own guards alone, so that its indexes say where
+      -- it defines them; then they, and the questions about its tables, are
+      -- put under the guards around it.
+      let (k, kt) := ((← getLocal).indexes.size, (← getLocal).tables.size)
+      let c ← toTerm { cx with guards := #[], natOk := false, emptyOk := false, expected? := none } r[1]
+      checkTermType r[1] c .bool (some Core.rowConditionNote)
+      let l ← getLocal
+      let inCond := l.indexes.extract k
+      let idx ← inCond.mapM fun (r, g) => return (r, ← guardedGoal before g)
+      let tbl ← (l.tables.extract kt).mapM fun (r, q, g) => return (r, q, ← guardedGoal before g)
+      modifyLocal fun l => { l with indexes := l.indexes.extract 0 k ++ idx, tables := l.tables.extract 0 kt ++ tbl }
+      conds := conds.push c
+      defined := defined.push (Core.allOf? (fun a b => Unhygienic.run `($a ∧ $b)) (inCond.map (·.2)))
+      refs := refs.push r[1]
+      negs := negs.push (← `(¬$c))
+      own := #[c]
+    -- Each value is checked against the whole's type, or another's (`lang::checked`).
+    let others := (rows.eraseIdx! k).map (·[3])
+    let emptyOk := Core.Position.shared.checked cx.emptyOk (anySynthesizes others)
+    values := values.push (← toTerm { cx with guards := before ++ own, emptyOk } r[3])
+  -- Each value has the type of those before it (`Core.checkRowType`).
+  let mut t0? : Option Core.Ty := none
+  for r in rows, v in values do
+    let some t ← frenTypeOf? v | continue
+    if let some t0 := t0? then liftMsg r[3] (Core.checkRowType t0 t)
+    t0? := some ((t0?.map (·.join t)).getD t)
+  noteTable cx e refs conds defined wild
+  let widened ← widenMixed values
+  -- The first row whose condition holds.
+  let mut out ← if wild then pure widened.back! else
+    `(if $(conds.back!) then $(widened.back!) else Fren.Seq.nth (∅ : Fren.Seq _) 0)
+  for i in (List.range (widened.size - 1)).reverse do
+    out ← `(if $(conds[i]!) then $(widened[i]!) else $out)
+  return out
+
 /-- `t` within the `have`s of `binds`, each a local, its type and its
 definition, the first outermost. -/
 def haves (binds : Array (Ident × Term × Term)) (t : Term) : TermElabM Term :=
@@ -2659,12 +2753,14 @@ partial def withDefinitions (toTerm : ExprCtx → Syntax → TermElabM Term) (cx
   let annot? ← if d[1].isNone then pure none else some <$> elabType cx.modName d[1][1]
   -- Its indexes are guarded where the name is mentioned.
   let before := (← getLocal).indexes
-  modifyLocal fun l => { l with indexes := #[] }
+  let beforeTables := (← getLocal).tables
+  modifyLocal fun l => { l with indexes := #[], tables := #[] }
   let position := if annot?.isSome then Core.Position.declared else .synthesized
   let t ← toTerm { cx with guards := #[], pending := pending.toArray, emptyOk := position.checked false false
                            natOk := annot?.any (·.isConstOf ``Nat), unmentioned := cx.unmentioned || !used[k]! } d[3]
   let obligations := (← getLocal).indexes
-  modifyLocal fun l => { l with indexes := before }
+  let tableObligations := (← getLocal).tables
+  modifyLocal fun l => { l with indexes := before, tables := beforeTables }
   let last := inLet && k + 1 == defs.size
   -- A condition is a `Prop`, and its name a `Bool`, as a variable is.
   let ty ← typeOf t
@@ -2684,7 +2780,7 @@ partial def withDefinitions (toTerm : ExprCtx → Syntax → TermElabM Term) (cx
   let lname := Name.mkSimple s!"{Core.nameText n}@{cx.binders.size}"
   let tyStx := typeSyntax (← instantiateMVars ty)
   let b : MatchBinder := { name := n, term := mkIdent lname, «type» := ty, scrutinee := d[3], outer := cx.binders.size,
-                           isDef := true, obligations }
+                           isDef := true, obligations, tableObligations }
   let value ← `(($t : $tyStx))
   withLocalDeclD lname ty fun _ =>
     withDefinitions toTerm { cx with binders := cx.binders.push b } defs inLet used body (k + 1)
@@ -2699,6 +2795,7 @@ def letTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
   let inLet := defs.all (·.isOfKind ``Lang.fren_let_def)
   withDefinitions toTerm cx defs inLet (usedDefinitions defs e[3]) fun bcx binds => do
     let mark := (← getLocal).indexes.size
+    let tableMark := (← getLocal).tables.size
     -- A body that is a membership right after the `in` may have been meant
     -- as part of the last definition, which `in` ended.
     let b ← tryCatch (toTerm { bcx with emptyOk, concatOk } e[3]) fun ex => do
@@ -2710,7 +2807,9 @@ def letTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
     -- `have`s.
     let xs := (← getLocal).indexes
     let wrapped ← (xs.extract mark xs.size).mapM fun (r, g) => return (r, ← haves binds g)
-    modifyLocal fun l => { l with indexes := xs.extract 0 mark ++ wrapped }
+    let ts := (← getLocal).tables
+    let wrappedTables ← (ts.extract tableMark ts.size).mapM fun (r, q, g) => return (r, q, ← haves binds g)
+    modifyLocal fun l => { l with indexes := xs.extract 0 mark ++ wrapped, tables := ts.extract 0 tableMark ++ wrappedTables }
     haves binds b
 
 /-- `[a, b]`, or `[]` where `emptyOk` says that something gives it a type. -/
@@ -2870,7 +2969,8 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
             -- translating it again checks, without its lints.
             if cx.noteIndexes then
               let goals ← b.obligations.mapM fun (r, g) => return (r, ← guardedGoal cx.guards g)
-              modifyLocal fun l => { l with indexes := l.indexes ++ goals }
+              let tables ← b.tableObligations.mapM fun (r, q, g) => return (r, q, ← guardedGoal cx.guards g)
+              modifyLocal fun l => { l with indexes := l.indexes ++ goals, tables := l.tables ++ tables }
             let saved ← saveState
             discard (toTerm { cx.at b with noteIndexes := false, pending := #[], emptyOk := true } sc)
             saved.restore
@@ -3122,11 +3222,13 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let new ← (bound.zip fvs).mapIdxM fun i ((bn, ty), fv) => do
       return { name := bn, term := ← exprToSyntax fv, «type» := ty, scrutinee := none, outer := cx.binders.size + i : MatchBinder }
     let outer := (← getLocal).indexes
-    modifyLocal fun l => { l with indexes := #[] }
+    let outerTables := (← getLocal).tables
+    modifyLocal fun l => { l with indexes := #[], tables := #[] }
     let t ← toTerm { cx with binders := cx.binders ++ new, natOk := false, instances := cx.instances * combos.size } body
     checkTermType body t .bool (some s!"note: the body of `{if all then "forall" else "exists"}` is a `Bool`")
     let b ← elabProp t
     let inner ← (← getLocal).indexes.mapM fun (ref, g) => return (ref, ← elabProp g)
+    let innerTables ← (← getLocal).tables.mapM fun (ref, q, g) => return (ref, q, ← elabProp g)
     let inst (x : Expr) (vals : Array Expr) : Expr := x.replaceFVars fvs vals
     -- The names of enclosing `let`s and `where`s are locals here, which the
     -- `have`s that define them bind again: what mentions them is closed
@@ -3140,7 +3242,8 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       let f ← exprToSyntax (← mkLambdaFVars (used.map (·.2)) x)
       `($f $(used.map (·.1))*)
     let goals ← inner.mapM fun (ref, g) => return (ref, ← close (balanced mkAnd (combos.map (inst g))))
-    modifyLocal fun l => { l with indexes := outer ++ goals }
+    let tableGoals ← innerTables.mapM fun (ref, q, g) => return (ref, q, ← close (balanced mkAnd (combos.map (inst g))))
+    modifyLocal fun l => { l with indexes := outer ++ goals, tables := outerTables ++ tableGoals }
     close (balanced (if all then mkAnd else mkOr) (combos.map (inst b)))
 
 /-- `if c then a else b`, where `toTerm` translates its parts, which are
@@ -3222,6 +3325,7 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
   else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
   else if e.isOfKind ``Lang.recordExpr then recordTerm (fun x? => toTerm { cx with emptyOk := Core.Position.declared.checked false false, expected? := x? }) cx e
   else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm { cx with emptyOk, natOk, expected? } e (parent?.bind (operandSlot · e))
+  else if e.isOfKind ``Lang.tableExpr then tableTerm toTerm { cx with emptyOk, natOk, expected? } e
   else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
   else if e.isOfKind ``Lang.updateExpr then updateTerm toTerm cx e
   else if e.isOfKind ``Lang.noArgsCardinalityExpr then
@@ -3346,12 +3450,15 @@ def constraint? (m : Syntax) : Option (PropKind × Syntax × Syntax) :=
 def definition? (m : Syntax) : Option Syntax :=
   if m[5].isNone then none else some (withWhere m[5][1] m[5][2])
 
-/-- The indexes recorded since the last call, which it forgets, each with its
-goal elaborated, rewritten by `subst`, and closed over `fvs`. -/
-def takeIndexes (fvs : Array Expr) (subst : Expr → Expr := id) : TermElabM (Array (Syntax × Expr)) := do
+/-- The indexes and tables recorded since the last call, which it forgets,
+each with its goal elaborated, rewritten by `subst`, and closed over `fvs`. -/
+def takeIndexes (fvs : Array Expr) (subst : Expr → Expr := id) :
+    TermElabM (Array (Syntax × Option Core.TableGoal × Expr)) := do
   let xs := (← getLocal).indexes
-  modifyLocal fun l => { l with indexes := #[] }
-  xs.mapM fun (ref, g) => return (ref, ← mkLambdaFVars fvs (subst (← elabProp g)))
+  let ts := (← getLocal).tables
+  modifyLocal fun l => { l with indexes := #[], tables := #[] }
+  return (← xs.mapM fun (ref, g) => return (ref, none, ← mkLambdaFVars fvs (subst (← elabProp g))))
+    ++ (← ts.mapM fun (ref, q, g) => return (ref, some q, ← mkLambdaFVars fvs (subst (← elabProp g))))
 
 /-- Adds the definition `name` of the closed `value`, generalized over the
 placeholders `uses` (`Reqs/Generated#components`). -/
@@ -3365,6 +3472,19 @@ def addUsesDef (uses : Array Name) (name : Name) (value : Expr) : TermElabM Unit
   setReducibleAttribute name
 
 /-! ## Abstract types and functions -/
+
+/-- Records the tables of the body of the function at `path`, named `n`,
+whose parameters are `vars`, or of the value of the constant at `path`, as
+a comp for their checks (`Entry.bodyInfo`), if it has any. -/
+def recordBody (path n : Name) (ref : Syntax) (decl : Name) (vars : Array Var)
+    (tables : Array (Syntax × Option Core.TableGoal × Expr)) : TermElabM Unit := do
+  if tables.isEmpty then return
+  let uses ← usesOf (tables.map (·.2.2))
+  let info : CompInfo := { path := path.getPrefix, vars, props := #[], ref, decl, uses
+                           decidable := !(← getLocal).outsideCore
+                           indexes := tables.map fun (r, q, g) => (n, .body, r, q, g) }
+  record (.bodyInfo path info)
+  modifyLocal fun l => { l with bodies := l.bodies.push path }.declared path
 
 /-- Declares the placeholder for the abstract type or function at `path`
 (`AbstractInfo`). -/
@@ -3450,10 +3570,14 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
       let ty ← varType modName x (if p[1].isNone then none else some p[1][1])
       vars := vars.push { name := x.getId, role := .input, isPub := true, «type» := ty, ref := x }
     let result ← varType modName nameStx (if stx[6].isNone then none else some stx[6][1])
-    let lam ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+    modifyLocal fun l => { l with outsideCore := false }
+    let (lam, tables) ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let cx : ExprCtx := { modName, vars, insts := #[], place := .prop, selfFn := some n, natOk := result.isConstOf ``Nat
                             expected? := if result.isConstOf ``Nat then some .nat else none }
+      discard (takeIndexes fvs)
       let t ← toTerm cx body
+      -- Its tables, for their checks; its indexes are not checked.
+      let tables := (← takeIndexes fvs).filter (·.2.1.isSome)
       checkDeclared body t result fun ty => s!"note: `{n}` returns `{ty}`"
       -- A `Bool` body is decided, classically if need be: equality on an
       -- abstract type has no other `Decidable` instance.
@@ -3464,13 +3588,14 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
             | _ => pure (mkApp (mkConst ``Classical.propDecidable) p)
           pure (mkApp2 (mkConst ``Decidable.decide) p inst)
         else elabProp t result
-      mkLambdaFVars fvs value
+      return (← mkLambdaFVars fvs value, tables)
     lintBools body
     for (x, v) in Core.unmentioned (vars.map fun v => (v.name, v)) ((pathMentions body).map (·.getRoot)) do
       recordLint .unusedVariables v.ref (Core.unusedParamMsg x)
     let uses ← usesOf #[lam]
     addUsesDef uses decl lam
     record (.definedInfo { path, decl, uses, nParams := vars.size })
+    recordBody path n nameStx decl vars tables
   lintDeclared .function n nameStx
   lintLines .function n nameStx stx
   record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
@@ -3700,7 +3825,7 @@ open Lang in
     let (props, insts, uses, values, indexes, propsOk) ← withLocalDeclsD decls fun fvs => do
       let mut good := varsOk
       let mut insts : Array InstInfo := #[]
-      let mut indexes : Array (Name × Core.IndexPlace × Syntax × Expr) := #[]
+      let mut indexes : Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr) := #[]
       discard (takeIndexes fvs)
       -- The generated definitions, over `fvs`, added once the placeholders
       -- that they use are known.
@@ -3711,7 +3836,7 @@ open Lang in
           let (i, body) ← elabInst cx fvs pi (declBase ++ `inst ++ pi.name)
           insts := insts.push i
           defs := defs.push (i.decl, body)
-          indexes := indexes ++ (← takeIndexes fvs).map fun (r, g) => (pi.name, .binding k, r, g)
+          indexes := indexes ++ (← takeIndexes fvs).map fun (r, q, g) => (pi.name, .binding k, r, q, g)
         catch ex => logException ex; good := false
       -- Definitions, each after those it mentions, with the earlier ones
       -- substituted, so that each value mentions no defined output.
@@ -3732,7 +3857,7 @@ open Lang in
                              natOk := v.type.isConstOf ``Nat, expected? := ← coreTy? v.type } e
             checkDeclared e t v.type fun ty => s!"note: `{v.name}` has type `{ty}`, so its definition must too"
             elabProp t v.type
-          indexes := indexes ++ (← takeIndexes fvs).map fun (r, g) => (v.name, .prop, r, g)
+          indexes := indexes ++ (← takeIndexes fvs).map fun (r, q, g) => (v.name, .prop, r, q, g)
           lintBools e
           let value := value.replaceFVars defnFvs (values.map (·.2))
           defs := defs.push (declBase ++ `def ++ v.name, ← mkEq fvs[idx]! value)
@@ -3759,7 +3884,7 @@ open Lang in
           let subst (b : Expr) := if kind == .assume then b.replaceFVars defnFvs (values.map (·.2)) else b
           let body := subst body
           let place : Core.IndexPlace := if kind == .assume then .assume else .prop
-          indexes := indexes ++ (← takeIndexes fvs subst).map fun (r, g) => (x.getId, place, r, g)
+          indexes := indexes ++ (← takeIndexes fvs subst).map fun (r, q, g) => (x.getId, place, r, q, g)
           lintBools e
           lintConstant cx kind.keyword e
           let trig ← triggerOf cx e
@@ -3949,7 +4074,10 @@ open Lang in
     let abstract := (← getState).placeholders.contains type.constName
     unless Core.constantAccepted abstract false do
       throwErrorAt stx[4] (Core.unknownConstantMsg abstract).text
+    modifyLocal fun l => { l with outsideCore := false }
+    discard (takeIndexes #[])
     let t ← toTerm { modName, vars := #[], insts := #[], place := .prop, emptyOk := Core.Position.declared.checked false false, natOk := type.isConstOf ``Nat, expected? := ← coreTy? type } valueStx
+    let tables := (← takeIndexes #[]).filter (·.2.1.isSome)
     checkDeclared valueStx t type fun ty => s!"note: `{n}` has type `{ty}`"
     let value ← elabProp t type
     let applies ← applications { modName, vars := #[], insts := #[], place := .prop } valueStx
@@ -3962,6 +4090,7 @@ open Lang in
     let int? ← if type.isConstOf ``Int || type.isConstOf ``Nat then intConstValue? { modName, vars := #[], insts := #[], place := .prop } valueStx
       else pure none
     record (.constInfo { path, decl, type, value, int? })
+    recordBody path n nameStx decl #[] tables
     unless isPub do recordItem .constant path nameStx
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
 
@@ -4025,7 +4154,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     let t ← if valueBinders.isEmpty then toTerm cx body else quantTerm toTerm cx body true valueBinders body
     checkDeclared body t (mkConst ``Bool) fun _ => "note: an expectation is a `Bool`"
     let e ← elabProp t
-    let indexes := (← takeIndexes fvs).map fun (r, g) => (n, Core.IndexPlace.prop, r, g)
+    let indexes := (← takeIndexes fvs).map fun (r, q, g) => (n, Core.IndexPlace.prop, r, q, g)
     lintBools body
     lintConstant cx "expect" body
     for (w, ref) in Core.unmentioned (binders.map fun b => (b.name, b.ref)) ((pathMentions body).map (·.getRoot)) do
@@ -4249,13 +4378,13 @@ and the solver is asked nothing. -/
       let instsA ← a.insts.mapM fun i => return { i with
         bindings := ← lam (i.bindings.beta argsA), behaviour := ← lam (i.behaviour.beta argsA), assumes := #[] }
       -- Reported at the refinement, as its other checks are.
-      let indexes ← a.indexes.mapM fun (x, place, _, goal) => do
+      let indexes ← a.indexes.mapM fun (x, place, _, q, goal) => do
         let place := match place with | .binding k => .binding (k + 1) | p => p
-        return (x, place, nameStx, ← lam (goal.beta argsA))
+        return (x, place, nameStx, q, ← lam (goal.beta argsA))
       -- A binding's, where it is read (`Reqs/Lang/Refinement#bindings`):
       -- an input's under the assumptions, an output's as a requirement.
-      let indexes := indexes ++ (← bindingsA.flatMapM fun (v, _, idx) => idx.mapM fun (r, goal) => do
-        return (v.name, if v.role == .input then .binding 0 else .prop, r, ← lam (goal.beta ownC)))
+      let indexes := indexes ++ (← bindingsA.flatMapM fun (v, _, idx) => idx.mapM fun (r, q, goal) => do
+        return (v.name, if v.role == .input then .binding 0 else .prop, r, q, ← lam (goal.beta ownC)))
       -- The obligation: `A_a → A_c ∧ (I_c ∧ R_c ∧ D_c ∧ I_a → R_a ∧ D_a)`.
       let hypsA := mkAndN (assumes.map (·.body.beta fvs)).toList
       let goal := mkAnd (mkAndN (instC.assumes.map (·.2.beta fvs)).toList)

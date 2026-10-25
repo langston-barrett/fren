@@ -50,9 +50,15 @@ operator keeps its own. The changes are:
 | `drop-alternative` | an alternative of the pattern of a [pattern test](Lang/Expressions.md#pattern-tests) of at least two, removed, with its `\|` |
 | `swap-cardinality` | `exactly_one?` and `at_most_one?`, the [cardinality operators](Lang/Expressions.md#cardinality), each to the other |
 | `drop-argument` | an argument of a cardinality operator of at least two, removed, with its `,` |
+| `swap-rows` | the values of two consecutive rows of a [table](Lang/Expressions.md#tables), each to the other's, unless they are written the same |
+| `drop-row` | a row of a table of at least two, removed, with its `\|` |
 
 A regular-expression pattern is changed only where its text is its
-value: a raw literal, or a literal without escapes.
+value: a raw literal, or a literal without escapes. A table's values all
+have its type, so swapping two keeps it well typed, and dropping a row
+never leaves one after `_`. Dropping a row that some case needs makes the
+table incomplete, which the [completeness check](Check.md#completeness)
+reports, so it kills the mutant even when no expectation does.
 
 A [divisor](Lang/Expressions.md#division-and-remainder) is never made `0`,
 which would be a static error: `shift-integer` does not change a divisor
@@ -88,7 +94,7 @@ refinements that rely on it.
 ## Identifiers
 
 Each mutant has an identifier, `ORIGIN-ITEM-HASH`, such as
-`swap-comparison-cli::exit::failed-0a1b2c3d4e5f`. `ITEM` is the path of
+`swap-comparison-cli::exit::code_rule-0a1b2c3d4e5f`. `ITEM` is the path of
 the item changed: a constraint, defined output or instance as
 `module::component::name`, or a constant or function as `module::name`,
 where `name` is the name declared, without the `!` of a
@@ -138,7 +144,10 @@ that some check was inconclusive. The checks of the spec and of a mutant are mat
 constraint, instance or variable that they are about. The
 [definedness](Check.md#definedness) checks of one constraint are one
 check, which passes when every index in it is in range: an index has no
-name but its position, which a mutant that adds or drops one changes. A
+name but its position, which a mutant that adds or drops one changes.
+Likewise, its [completeness](Check.md#completeness) checks are one check,
+and so are its [disjointness](Check.md#disjointness) checks, since a
+mutant that drops a row renumbers the rows. A
 redundancy counts as a failure: a mutant that makes a constraint
 redundant is killed by that check.
 

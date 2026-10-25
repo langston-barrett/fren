@@ -225,6 +225,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/patterns.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
    "test/cli/fmt/cover.fren",
    "test/cli/fmt/newtypes.fren",
+   "test/cli/fmt/table.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
    "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
    "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
@@ -551,6 +552,7 @@ partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e :
     | .«let» _ defs body w =>
       s!"({if w then "where" else "let"} {defs.toList.map fun (x, _, d) => (x.name, go d)} {go body})"
     | .quant _ all bs b => s!"({if all then "forall" else "exists"} {bs.toList.map fun x => Mutate.idText (s.text x.span)} {go b})"
+    | .table _ rows => s!"(table {rows.toList.map fun (_, c?, v) => (c?.map go, go v)})"
     | e => Mutate.idText (s.text e.span)
 
 open FrenCli in
@@ -592,7 +594,7 @@ def sitesOfText (chars : Array Char) : Array (Lean.Name × FrenCli.Expr) := site
 
 /-- Swaps, which a second swap undoes. -/
 def isSwap (m : FrenCli.Mutate.Mutant) : Bool :=
-  [.swapComparison, .swapArithmetic, .negateTrigger, .swapQuantifier, .flipBool, .swapRepetition].contains m.origin
+  [.swapComparison, .swapArithmetic, .negateTrigger, .swapQuantifier, .flipBool, .swapRepetition, .swapRows].contains m.origin
     || (m.origin == .swapAndOr && !m.after.startsWith "(")
 
 /-- Every mutant of the corpus:

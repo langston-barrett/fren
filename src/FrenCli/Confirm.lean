@@ -335,9 +335,20 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
 /-- `core`, the elaborator's comp, with each formula paired with the
 meaning of the constraint of `ec` of the same name. Each index's
 definedness is paired by its position, one of `positions`, in order, the
-`n`th of the item's indexes at a position with the `n`th goal there. -/
-def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions : Array Nat) :
-    Fren.Core.Comp (String × Fm) :=
+`n`th of the item's indexes at a position with the `n`th goal there, and
+each question about a table's rows likewise by where it is reported, one
+of `tablePositions`, and the question. -/
+def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions : Array Nat)
+    (tablePositions : Array Nat := #[]) : Fren.Core.Comp (String × Fm) :=
+  -- The expressions an index or a table can be in: the constraint, the
+  -- definition, the instance's bindings or the body that it names, or, in
+  -- a refinement, the binding of the variable that it names.
+  let exsOf (n : Name) : Array Ex :=
+    (ec.constraints.filter (·.name == n)).map (·.e)
+      ++ (ec.defs.filter (·.1 == n)).map (·.2)
+      ++ (ec.insts.filter (·.name == n)).flatMap (·.bindings.map (·.2))
+      ++ (ec.bindings.filter (·.1 == n)).map (·.2)
+      ++ (ec.body?.filter (·.1 == n)).toArray.map (·.2)
   let atomOf (n : Name) : Fm :=
     match ec.constraints.find? (·.name == n) with
     | some p => .atoms #[{ label := n, pfx := .anonymous, e := p.e }]
@@ -356,22 +367,24 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
     covers := props core.covers
     triggers := core.triggers.map fun (n, s) => (n, (s, trigger n))
     indexes := core.indexes.mapIdx fun j x =>
-      -- The expressions the index can be in: the constraint, the definition
-      -- or the instance's bindings that it names, or, in a refinement, the
-      -- binding of the variable that it names.
-      let exs := (ec.constraints.filter (·.name == x.prop)).map (·.e)
-        ++ (ec.defs.filter (·.1 == x.prop)).map (·.2)
-        ++ (ec.insts.filter (·.name == x.prop)).flatMap (·.bindings.map (·.2))
-        ++ (ec.bindings.filter (·.1 == x.prop)).map (·.2)
       -- The `n`th index at a position is the `n`th goal there: a name of a
       -- `let` or `where` repeats its definition's indexes where it is
       -- mentioned.
       let goal? := positions[j]?.bind fun pos =>
         let n := ((positions.extract 0 j).zip (core.indexes.extract 0 j)).filter (fun (p, y) => p == pos && y.prop == x.prop) |>.size
-        ((exs.flatMap (·.indexGoals)).filter (·.1 == pos))[n]?
+        (((exsOf x.prop).flatMap (·.indexGoals)).filter (·.1 == pos))[n]?
       { x with goal := (x.goal, match goal? with
         | some (_, g) => .atoms #[{ label := .num x.prop x.k, pfx := .anonymous, e := g }]
         | none => .unknown) }
+    tables := core.tables.mapIdx fun j t =>
+      -- Likewise the `n`th question at a position.
+      let goal? := tablePositions[j]?.bind fun pos =>
+        let n := ((tablePositions.extract 0 j).zip (core.tables.extract 0 j)).filter (fun (p, y) =>
+          p == pos && y.site.prop == t.site.prop && y.goal == t.goal) |>.size
+        (((exsOf t.site.prop).flatMap (·.tableGoals)).filter fun (p, q, _) => p == pos && q == t.goal)[n]?
+      { t with site := { t.site with goal := (t.site.goal, match goal? with
+        | some (_, _, g) => .atoms #[{ label := .num t.site.prop t.site.k, pfx := .anonymous, e := g }]
+        | none => .unknown) } }
     insts := core.insts.map fun i =>
       let ei? := ec.insts.find? (·.name == i.name)
       let d? := ei?.bind (sp.comp? ·.comp)
@@ -389,13 +402,14 @@ def Refutation.about (x : Refutation) (r : Fren.Core.CheckResult) : Bool :=
     | some s => match r.kind, r.prop?, r.target? with
       | .inst, some w, some (_, a) => s == w ++ a
       | .definedness, some p, _ => s == .num p (r.index?.getD 0)
+      | .completeness, some p, _ | .disjointness, some p, _ => s == .num p (r.site?.getD 0)
       | _, some p, _ => s == p
       | _, none, _ => true
 
 def kindName : Fren.Core.CheckKind → String
   | .realizable => "realizability" | .inst => "instance" | .expect => "expectation" | .cover => "cover"
   | .vacuity => "vacuity" | .redundancy => "redundancy" | .determinism => "determinism"
-  | .definedness => "definedness"
+  | .definedness => "definedness" | .completeness => "completeness" | .disjointness => "disjointness"
 
 def Refutation.msg (x : Refutation) (r : Fren.Core.CheckResult) : Fren.Core.Msg :=
   let subject := Fren.Core.showComp (r.comp ++ (r.prop?.getD .anonymous))
@@ -434,10 +448,12 @@ def specStateOf (files : Array (String × Array Char)) : Except String LState :=
 
 def specOf (files : Array (String × Array Char)) : Except String Spec := (·.spec) <$> specStateOf files
 
-/-- The evaluator's comp for the elaborator's, matched by path, or for a
-global expectation by its module and name. -/
-def Eval.Spec.counterpart? (sp : Spec) (c : CComp) (global : Bool) : Option Comp :=
-  if global then sp.globals.find? fun g => g.path == c.path && g.constraints.map (·.name) == c.props.map (·.name)
+/-- The evaluator's comp for the elaborator's, matched by path, for a
+global expectation by its module and name, or for the body of a function
+or the value of a constant (`body`) by its module and the item. -/
+def Eval.Spec.counterpart? (sp : Spec) (c : CComp) (global : Bool) (body : Bool := false) : Option Comp :=
+  if body then sp.bodies.find? fun b => b.path == c.path && (b.body?.map (·.1)) == c.tables[0]?.map (·.1)
+  else if global then sp.globals.find? fun g => g.path == c.path && g.constraints.map (·.name) == c.props.map (·.name)
   else sp.comp? c.path
 
 end FrenCli

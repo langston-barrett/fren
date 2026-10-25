@@ -34,8 +34,8 @@ def toVerdict : Verdict → check.Verdict
   | .inconclusive => .Inconclusive
 
 instance : Fren.Finite CheckKind :=
-  ⟨[.realizable, .inst, .«expect», .cover, .vacuity, .redundancy, .determinism, .definedness],
-    by intro x; cases x <;> simp⟩
+  ⟨[.realizable, .inst, .«expect», .cover, .vacuity, .redundancy, .determinism, .definedness, .completeness,
+    .disjointness], by intro x; cases x <;> simp⟩
 
 def toCheckKind : CheckKind → check.Kind
   | .realizable => .Realizability
@@ -46,11 +46,20 @@ def toCheckKind : CheckKind → check.Kind
   | .redundancy => .Redundancy
   | .determinism => .Determinism
   | .definedness => .Definedness
+  | .completeness => .Completeness
+  | .disjointness => .Disjointness
 
-impl applies: check::applies for (g : Bool) (k : CheckKind) {
-  global? := g,
+instance : Fren.Finite Fren.Core.CheckedItem := ⟨[.component, .global, .body], by intro x; cases x <;> simp⟩
+
+def toCheckedItem : Fren.Core.CheckedItem → check.CheckedItem
+  | .component => .Component
+  | .global => .GlobalExpectation
+  | .body => .Body
+
+impl applies: check::applies for (i : Fren.Core.CheckedItem) (k : CheckKind) {
+  item := toCheckedItem i,
   kind := toCheckKind k,
-  runs? := (kindsFor g).contains k,
+  runs? := i.kinds.contains k,
 }
 
 impl realizable: check::realizability for (a c : Answer) {
@@ -107,6 +116,19 @@ impl definedness: check::definedness for (q : Answer) {
   q := toOutcome q,
   verdict := toVerdict (expectVerdict q).1,
   reports_cex? := (expectVerdict q).2,
+}
+
+-- `checkTable` decides with `expectVerdict`, as `checkDefinedness` does.
+impl completeness: check::completeness for (q : Answer) {
+  q := toOutcome q,
+  verdict := toVerdict (expectVerdict q).1,
+  reports_cex? := (expectVerdict q).2,
+}
+
+impl disjointness: check::disjointness for (q : Answer) {
+  q := toOutcome q,
+  verdict := toVerdict (expectVerdict q).1,
+  reports_witness? := (expectVerdict q).2,
 }
 
 -- The two families of verdicts: `expectVerdict` for the checks that prove,

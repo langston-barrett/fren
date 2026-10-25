@@ -140,6 +140,9 @@ Each check yields one result for each thing it checks:
 | Vacuity | requirement or expectation with a trigger |
 | Redundancy | assumption and requirement |
 | Determinism | `det out` |
+| Definedness | index |
+| Completeness | table without a `_` row |
+| Disjointness | two rows of a table, other than `_` |
 
 A passing result is silent, except that a passing cover goal shows its
 witness (see below). A failing result is an error, except that a
@@ -156,6 +159,9 @@ failure is reported at:
 | Vacuous | the constraint's trigger | the assumptions and requirements that rule it out |
 | Redundant | the constraint's name | the constraints it follows from |
 | Not determined | the output's name | an input, and two values of the output for it |
+| Index may be out of range | the index's `[` | a counterexample: the public variables |
+| Table may have no row that holds | the table's `table` | a counterexample: the public variables, for which no row holds |
+| Rows may both hold | the later row's condition | the two rows, by their numbers from 1, and a witness: the public variables, for which both hold |
 
 A passing [cover goal](Check.md#cover-goals) is reported with its
 witness, the behaviour in which it holds, as a note at the goal's name:

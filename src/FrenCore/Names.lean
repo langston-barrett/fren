@@ -1300,6 +1300,24 @@ def notAVariantOfMsg (e : Name) (what : String) : Msg :=
 
 def propNameMsg (n : Name) : Msg := questionNameMsg "constraint" n
 
+/-! ## Tables (`Reqs/Lang/Expressions#tables`) -/
+
+/-- The first row of a table after a `_` row, which can never be reached,
+if any: only the last row may be `_` (`Reqs/Lang/Expressions#tables`). -/
+def rowAfterWild? (wild : Array Bool) : Option Nat :=
+  (wild.findIdx? id).bind fun k => if k + 1 < wild.size then some (k + 1) else none
+
+/-- A row of a table after its `_` row. -/
+def rowAfterWildMsg : Msg :=
+  { code? := some "F0359", headline := "a row after `_` can never be reached", label? := some "unreachable row"
+    notes := #["note: `_` holds wherever no earlier row does, so it is the last row",
+      "help: remove this row, or move it before `_`"] }
+
+/-- `table` written as a name, where Lean's grammar reads it as one
+(`Reqs/Lang/Lexical#keywords`): the `fren` command's parser expects the
+`{` of a table after it. -/
+def tableNameMsg : String := "expected `{` after `table`, which is a reserved word"
+
 /-! ## Strings and methods (`Reqs/Lang/Expressions#methods`) -/
 
 /-- A character beyond `U+2FFFF` in a literal (`lang::string_char`). -/

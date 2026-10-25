@@ -459,7 +459,8 @@ def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (
   for m in Fren.Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) r c.decidable do
     let prop? := m.item?.bind fun n => c.props.find? (·.name == n)
     let index? := m.atIndex?.bind fun k => m.item?.bind fun n => (c.indexes.filter (·.1 == n))[k]?.map (·.2.2.1)
-    let span := if let some sp := index? then sp else match prop?, m.item? with
+    let site? := m.atSite?.bind fun k => m.item?.bind fun n => (c.tables.filter (·.1 == n))[k]?.map (·.2.2.1)
+    let span := if let some sp := index?.orElse fun _ => site? then sp else match prop?, m.item? with
       | some p, _ => if m.atTrigger then p.triggerSpan?.getD p.span else p.span
       | none, some n => (c.insts.find? (·.name == n)).map (·.span)
         |>.orElse (fun _ => (c.vars.find? (·.name == n)).map (·.span)) |>.getD c.span
@@ -546,15 +547,16 @@ an internal error if the evaluator has no counterpart of `c`. `sy` is
 before (`QueryCache`). -/
 def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
-    (timeout : Nat) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) :
+    (timeout : Nat) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
   let bk := backend prelude st.datatypes c timeout dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache
   let log ← IO.mkRef #[]
   -- The checks set to testing are not asked of the solver (`check::by_testing`).
   let (raw, missing?) ← match spec? with
-    | .ok sp => match sp.counterpart? c global with
+    | .ok sp => match sp.counterpart? c global body with
       | some ec =>
-        let (core, ks) := (pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start))).untested c.tested kinds
+        let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
+        let (core, ks) := core.untested c.tested kinds
         pure (← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k)) core ks, none)
       | none =>
         let (core, ks) := (toCore c).untested c.tested kinds
@@ -582,7 +584,7 @@ def check (args : Args) : IO UInt32 := do
   let mut shown := st.diags.map (·.msg)
   -- Each comp, global expectation and refinement (`Reqs/Lang/Refinement`),
   -- with the checks that run on it.
-  let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.refinement)
+  let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.refinement, t.body)
   let prelude := Prelude.ofDecls st.prelude
   -- A query asked again, as some checks of a component share one, is
   -- answered once (`Reqs/Cli#solver-queries`).
@@ -595,13 +597,13 @@ def check (args : Args) : IO UInt32 := do
   if let .error e := spec? then
     internal := internal.push (Msg.internal s!"the evaluator cannot read the spec: {e}")
     printDiag args.paint files { file := 0, span := default, msg := internal.back! }
-  for (c, global, kinds, refinement) in todo do
+  for (c, global, kinds, refinement, body) in todo do
     let n ← IO.mkRef 0
     let dump? := if args.dumpSmt then some fun script => do
         n.modify (· + 1)
         IO.print s!"; {c.path}: query {← n.get}\n{script}(check-sat)\n(reset)\n\n"
       else none
-    let (results, refuted, missing?) ← solveComp st prelude spec? sy c global kinds args.timeout cache dump?
+    let (results, refuted, missing?) ← solveComp st prelude spec? sy c global kinds args.timeout cache dump? body
     if let some msg := missing? then
       internal := internal.push msg
       printDiag args.paint files { file := c.file, span := c.span, msg }
@@ -990,7 +992,7 @@ def mutate (args : Args) : IO UInt32 := do
   let solve (s : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) := do
     -- A component's checks share the symbols of its spec.
-    let (rs, refuted, missing?) ← solveComp s prelude spec? (symbolsOf spec?) t.comp t.global t.kinds args.timeout cache
+    let (rs, refuted, missing?) ← solveComp s prelude spec? (symbolsOf spec?) t.comp t.global t.kinds args.timeout cache (body := t.body)
     let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds t.refinement) else #[]
     let errors := refuted.map fun (r, msg) =>
       ((r.prop?.bind fun n => t.comp.props.find? (·.name == n)).map (·.span) |>.getD t.comp.span, msg)
@@ -998,7 +1000,8 @@ def mutate (args : Args) : IO UInt32 := do
   -- As `fren quickcheck` tests `c`.
   let test (_ : State) (_ : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) :=
-    pure (testing spec? t.comp t.global fun r => !t.refinement || refinementKeeps t.comp r, #[])
+    -- A body has no checks that testing runs.
+    pure (if t.body then #[] else testing spec? t.comp t.global fun r => !t.refinement || refinementKeeps t.comp r, #[])
   let prefixes := lowerPrefixes parsed
   let spec? := specOfParsed parsed prefixes
   if let .error e := spec? then

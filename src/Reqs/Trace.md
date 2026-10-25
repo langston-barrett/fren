@@ -28,7 +28,10 @@ satisfy: evidence is about the assumptions and requirements, and a cover
 goal's witness, shown by `fren check`, is evidence that the spec allows a
 scenario, not that the system does. Nor do [abstract types](Lang/Types.md#abstract-types) and
 [functions](Lang/Items.md#functions), which constrain nothing either: their
-meaning is given by an [interpretation](Impl.md#interpretations).
+meaning is given by an [interpretation](Impl.md#interpretations). The
+checks of the [tables](Lang/Expressions.md#tables) in a defined function's
+body or a constant's value confirm how they are written, which is no
+evidence about a system either.
 
 `fren trace` reports the evidence for every component of the spec in the
 given files; in Lean, `#fren_trace` does the same. For example, with this

@@ -17,6 +17,7 @@ import FrenCore.Regex
 import FrenCore.Sound
 import FrenCore.Str
 import FrenCore.Syntax
+import FrenCore.Table
 import FrenCore.Trace
 import FrenCore.Ty
 -- keep-sorted end

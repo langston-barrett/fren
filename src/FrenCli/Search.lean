@@ -144,6 +144,8 @@ partial def Ex.lits : Ex → Array Int
   | .match e arms => e.lits ++ arms.flatMap fun (p, b) => p.lits ++ b.lits
   | .update e fs => e.lits ++ fs.flatMap (·.2.lits)
   | .quant _ _ _ b => b.lits
+  | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.lits)).getD #[] ++ v.lits
+  | .const _ e => e.lits
 
 /-- The expressions that `e`, a constraint over the search's environment
 (`Ex.slot`), equates the variable at index `x` with. -/
@@ -164,6 +166,8 @@ partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .match e arms => e.equated x ++ arms.flatMap (·.2.equated x)
   | .update e fs => e.equated x ++ fs.flatMap (·.2.equated x)
   | .quant _ _ _ b => b.equated x
+  | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.equated x)).getD #[] ++ v.equated x
+  | .const .. => #[]
 
 /-- Every value of `ty` up to `depth`, at most `cap` of them. -/
 partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array String) (cap : Nat) (depth : Nat) :
@@ -239,6 +243,8 @@ partial def Ex.vars : Ex → Array Name
   | .match e arms => e.vars ++ arms.flatMap (·.2.vars)
   | .update e fs => e.vars ++ fs.flatMap (·.2.vars)
   | .quant _ _ _ b => b.vars
+  | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.vars)).getD #[] ++ v.vars
+  | .const .. => #[]
 
 structure Problem where
   /-- The variables to choose, in order, with their types. -/
@@ -443,6 +449,8 @@ partial def Ex.strLits : Ex → Array String × Array String
     (ls ++ arms.flatMap (·.1.strLits), ps)
   | .update e fs => join (#[e] ++ fs.map (·.2))
   | .quant _ _ _ b => b.strLits
+  | .table _ rows _ => join (rows.flatMap fun (_, c?, v) => c?.toArray.push v)
+  | .const _ e => e.strLits
 where
   join (es : Array Ex) : Array String × Array String :=
     es.foldl (fun (ls, ps) e => let (l, p) := e.strLits; (ls ++ l, ps ++ p)) (#[], #[])

@@ -367,7 +367,8 @@ Where an expression is written decides whether it is checked:
   of, and from that of the expression's other such parts. It is checked if
   that expression is, or if one of those parts synthesizes its type. These
   are the operands of `union`, `inter`, `minus` and `++`, the branches of a
-  conditional, the bodies of a `match`'s arms, the elements of a set or
+  conditional, the bodies of a `match`'s arms, the values of a
+  [table](Expressions.md#tables)'s rows, the elements of a set or
   sequence literal, an expression in parentheses, and the body of a
   `let`, each of which is the only such part. The members of a pair are also shared, but give each other
   nothing: each is checked if the pair is, as in `{(1, {}), (2, s)}`.
@@ -378,7 +379,7 @@ Where an expression is written decides whether it is checked:
 - **Synthesized.** Anywhere else, as the left of `in`, an operand of
   `join`, an argument of a method of anything but a sequence, as in
   `r.image({})`, a receiver, the scrutinee of a `match` or of `e is P`,
-  the sequence that is indexed, the updated value of a record update, and
+  the condition of a table's row, the sequence that is indexed, the updated value of a record update, and
   a definition of a `let` or `where` whose type is not written, it
   synthesizes its type.
 

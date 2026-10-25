@@ -1,0 +1,15 @@
+--@ args: mutate --list
+-- The values of two rows in a row are swapped, each row is dropped, and
+-- the rows' conditions and values are mutated.
+mod m
+
+pub comp c {
+    in x: Int
+    pub out y: Int
+
+    req r: y = table {
+        | x > 0 => 1,
+        | x < 0 => 2,
+        | _ => 2,
+    }
+}

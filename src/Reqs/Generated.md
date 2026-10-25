@@ -29,7 +29,20 @@ by equality; a range by comparisons with its bounds, a constant's by its
 value; an or-pattern by the disjunction of its alternatives' tests. Binders
 read their values with the selectors. A [`let`](Lang/Let.md) becomes
 Lean's `have`, one for each definition, and so does a `where` clause,
-around the expression it follows.
+around the expression it follows. A [table](Lang/Expressions.md#tables) becomes `if`s over its rows'
+conditions, in order: `table { a => x, b => y, _ => z }` is `if a then x
+else if b then y else z`. Without a `_` row, where no row holds, the table
+is the index out of range that the solver sees, `Fren.Seq.nth ∅ 0` of the
+empty sequence of its type, which is `default`: `table { a => x, b => y }`
+is `if a then x else if b then y else Fren.Seq.nth ∅ 0`. That is one
+interpretation of the solver's unspecified value of the type, the same for
+every such table, as `default` is of an index out of range, so every check
+that passes, and every `impl` that the solver proves, holds of the
+generated definitions. The checks of a table generate nothing: a table's
+completeness is the theorem that the disjunction of its conditions follows
+from its guard, and the disjointness of two rows that the conjunction of
+their conditions, where they are defined, is false under it, which a proof
+about the generated definitions can state.
 
 Each enumeration whose variants have no payloads also has an instance
 `p.instFinite` of `Fren.Finite`, a class whose instances list every value

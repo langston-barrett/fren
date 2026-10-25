@@ -72,8 +72,11 @@ def logAbout (path : Name) (ref : Syntax) (text : MessageData) (severity : Messa
 def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit := do
   for msg in Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) r c.decidable do
     let prop? := msg.item?.bind fun n => c.props.find? (·.name == n)
-    let index? := msg.atIndex?.bind fun k => msg.item?.bind fun n => (c.indexes.filter (·.1 == n))[k]?.map (·.2.2.1)
-    let ref := if let some r := index? then r else match prop?, msg.item? with
+    -- The `k`th index, or question about a table, of the item.
+    let site? (k : Nat) (table : Bool) := msg.item?.bind fun n =>
+      (c.indexes.filter fun x => x.1 == n && x.2.2.2.1.isSome == table)[k]?.map (·.2.2.1)
+    let at? := (msg.atIndex?.bind (site? · false)).orElse fun _ => msg.atSite?.bind (site? · true)
+    let ref := if let some r := at? then r else match prop?, msg.item? with
       | some p, _ => if msg.atTrigger then p.triggerRef?.getD p.ref else p.ref
       | none, some n => (c.insts.find? (·.name == n)).map (·.ref)
         |>.orElse (fun _ => (c.vars.find? (·.name == n)).map (·.ref)) |>.getD c.ref
@@ -137,10 +140,12 @@ where
   let mut all := #[]
   for p in paths do
     let (c, kinds) ← match s.comps.get? p, s.globals.get? p, s.refinements.get? p with
-      | some c, _, _ => pure (c, Core.kindsFor false)
-      | none, some g, _ => pure (g, Core.kindsFor true)
+      | some c, _, _ => pure (c, Core.CheckedItem.component.kinds)
+      | none, some g, _ => pure (g, Core.CheckedItem.global.kinds)
       | none, none, some r => pure (r, Core.CheckKind.all.filter Core.refinementRuns)
-      | none, none, none => continue
+      | none, none, none => match s.bodies.get? p with
+        | some b => pure (b, Core.CheckedItem.body.kinds)
+        | none => continue
     -- Not where `undecidable` is denied, though the error does not stop
     -- `#fren_check` where `#guard_msgs` catches it: the solver is not asked
     -- about constructs outside the decidable core that the spec has not
@@ -163,7 +168,7 @@ where
   lintInvisible stx
   if stx[1].isNone then
     let l ← getLocal
-    checkAndReport (l.comps ++ l.globals ++ l.refinements)
+    checkAndReport (l.comps ++ l.globals ++ l.refinements ++ l.bodies)
   else
     let r ← resolvePath (← getLocal).currentModule (pathSegs stx[1][0])
     match r with

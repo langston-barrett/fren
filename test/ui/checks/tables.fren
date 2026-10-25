@@ -1,0 +1,123 @@
+-- The completeness and disjointness of tables (`check::completeness`,
+-- `check::disjointness`): where they fail, with a counterexample or a
+-- witness, at the table or at the later row.
+set_option fren.lint.dead_code "allow"
+
+comp incomplete {
+    in x: Int
+    pub out y: Int
+
+    req r: y = table { x > 0 => 1, x < 0 => -1 }   --~ error: a table in `incomplete::r` may have no row that holds
+}
+
+comp overlapping {
+    in x: Int
+    pub out y: Int
+
+    req r: y = table {
+        | x >= 0 => 1,
+        | x <= 0 => -1,   --~ error: rows 1 and 2 of a table in `overlapping::r` may both hold
+        | _ => 0,
+    }
+}
+
+-- Each pair of rows is its own check; rows with the same value still
+-- overlap.
+comp pairs {
+    in x: Int
+    pub out y: Int
+
+    req r: y = table { x > 0 => 1, x > 1 => 1, x > 2 => 2, _ => 0 }
+    --~^ error: rows 1 and 2 of a table in `pairs::r` may both hold
+    --~^^ error: rows 1 and 3 of a table in `pairs::r` may both hold
+    --~^^^ error: rows 2 and 3 of a table in `pairs::r` may both hold
+}
+
+-- Rows overlap only where both conditions have values: `q[0] > 0` is
+-- evaluated only where `q != []`, so it does not overlap the first row.
+comp guarded_rows {
+    in q: Seq(Int)
+    pub out y: Int
+
+    req r: y = table { q = [] => 0, q[0] > 0 => 1, _ => 2 }
+}
+
+-- The guard of a table is that of an index: here, only `x > 0`.
+comp guarded {
+    in x: Int
+    pub out y: Int
+
+    req r: when x > 0, y = table { x > 5 => 2, x < 3 => 1 }   --~ error: a table in `guarded::r` may have no row that holds
+}
+
+-- An assumption's table is checked under the other assumptions only.
+comp assumed {
+    in x: Int
+    in y: Int
+    pub out o: Int
+
+    assume nonneg: y >= 0
+    assume r: table { y = 0 => x < 0, y > 0 => x >= 0 }
+    assume s: table { x > 5 => y > 5 }   --~ error: a table in `assumed::s` may have no row that holds
+
+    req uses: o = x + y
+}
+
+-- In a quantifier's body, a table is checked at each instance.
+enum Side { Left, Right }
+
+comp sides {
+    in x: Int
+    pub out y?
+
+    req r: y? iff (forall (s: Side), table { s = Side::Left => x > 0 })   --~ error: a table in `sides::r` may have no row that holds
+}
+
+-- In a function's body, a table is checked for every argument.
+fn half(x: Int): Int := table { x > 0 => x div 2 }   --~ error: a table in `half` may have no row that holds
+
+const K: Int := table { 1 < 2 => 1, 2 < 3 => 2 }   --~ error: rows 1 and 2 of a table in `K` may both hold
+
+-- A constant whose value reads a table where no row holds, or an index
+-- out of range, has the interpretation's value: the evaluator still reads
+-- the spec, and confirms the models of the components that mention it.
+const B: Bool := table { 1 > 2 => true }   --~ error: a table in `B` may have no row that holds
+const OUT: Int := [1, 2][5]
+
+comp mentions_unknown {
+    in x: Int
+    pub out y?
+    pub out z: Int
+
+    req r: y? iff (B or x > 0)
+    req s: z = OUT + x
+}
+
+-- A table of an abstract type, whose value where no row holds is its
+-- `[][0]`, in Lean too.
+type Name
+
+fn same?(Name, Name)
+
+comp pick {
+    in a: Name
+    in b: Name
+    pub out w: Name := table { same?(a, b) => a }   --~ error: a table in `pick::w` may have no row that holds
+}
+
+-- In a global expectation, under the meanings of its binders.
+comp counter {
+    in n: Int
+    pub out m: Int
+
+    req r: m = n + 1
+}
+
+-- Where no row holds, the table's value is unknown, so the expectation
+-- does not follow either.
+expect positive: forall (c: counter), table { c.m > 0 => true, c.n < -1 => true }
+--~^ error: a table in `positive` may have no row that holds
+--~^^ error: expectation `positive` does not hold
+
+--@ summary: 32 passed, 14 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

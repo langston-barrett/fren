@@ -4,6 +4,7 @@ import FrenCli.Parse
 import FrenCore.Names
 import FrenCore.Patterns
 import FrenCore.Regex
+import FrenCore.Table
 -- keep-sorted end
 
 /-!
@@ -187,6 +188,16 @@ inductive Ex where
   its body at each of `insts`, the values of the names in each instance
   (`Reqs/Lang/Quantifiers#meaning`). -/
   | quant (all : Bool) (names : Array Name) (insts : Array (Array Val)) (body : Ex)
+  /-- A table, whose `table` is at the source position `pos`: each row's
+  position, its condition, `none` for `_`, and its value. The positions
+  pair it with the checks of its rows (`Ex.tableGoals`). Without a `_` row,
+  where no row holds, its value is the interpretation's of the function
+  `unspec?` without parameters (`unspecifiedFn`). -/
+  | table (pos : Nat) (rows : Array (Nat × Option Ex × Ex)) (unspec? : Option Name)
+  /-- The constant `path`, whose value is unknown, as its expression `e`,
+  which is the constant's own: what the checks ask of its indexes and
+  tables is asked of the constant, not of where it is mentioned. -/
+  | const (path : Name) (e : Ex)
   deriving Inhabited
 
 structure Var where
@@ -227,6 +238,10 @@ structure Comp where
   component with the expression it is bound to, which reads the concrete
   component's variables. The definedness of their indexes is checked. -/
   bindings : Array (Name × Ex) := #[]
+  /-- For the body of a defined function or the value of a constant, as a
+  comp for the checks of its tables, the function or constant, and its body
+  or value, over the parameters as its inputs. -/
+  body? : Option (Name × Ex) := none
   deriving Inhabited
 
 structure Spec where
@@ -239,13 +254,18 @@ structure Spec where
   /-- Each defined function's parameters, as binders of its body, the
   body, and its result type. -/
   defs : NameMap (Array Name × Ex × VTy) := {}
-  consts : NameMap (Val × VTy) := {}
+  /-- Each constant's value, as a literal, or as its expression where the
+  value is unknown: an index out of range, or a table where no row holds. -/
+  consts : NameMap (Ex × VTy) := {}
   comps : Array Comp := #[]
   globals : Array Comp := #[]
   /-- For each pattern `p` and string `s`, whether `s` matches `p`, as a
   thunk, so that it is matched once however often a search asks
   (`Spec.withMatchMemo`). -/
   matchMemo : Std.HashMap String (Std.HashMap String (Thunk Bool)) := {}
+  /-- The bodies of defined functions and values of constants that have
+  tables, each as a comp (`Comp.body?`). -/
+  bodies : Array Comp := #[]
   deriving Inhabited
 
 def Spec.comp? (sp : Spec) (path : Name) : Option Comp := sp.comps.find? (·.path == path)
@@ -582,6 +602,18 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
     let mut vs := vs
     for (k, x) in fs do vs := vs.set! k (← x.eval I look locals)
     return .ctor ty idx vs
+  -- The first row whose condition holds; where none does, the
+  -- interpretation's unspecified value of its type.
+  | .table _ rows unspec? => do
+    for (_, c?, v) in rows do
+      match c? with
+      | none => return ← v.eval I look locals slots
+      | some c =>
+        let .bool b ← c.eval I look locals slots | none
+        if b then return ← v.eval I look locals slots
+    I.fn (← unspec?) #[]
+  -- A closed expression, which neither variables nor binders reach.
+  | .const _ e => e.eval I (fun _ => none)
   | .match e arms => do
     let v ← e.eval I look locals slots
     let some (new, body) := arms.findSome? fun (p, body) => (p.matchVal v).map (·, body) | none
@@ -603,13 +635,18 @@ def Ex.trigger? : Ex → Option Ex
     | some t => some (.bin .and c t)
   | _ => none
 
-/-- The indexes in `e`, each with its position and its definedness: that
-its position is in range wherever the conditions before it hold
-(`check::definedness`). The conditions are read left to right, as the
-elaborator reads them, through `when`, `unless`, `if`, `and`, `or` and the
-arms of `match`; `wrap` puts a definedness under those around `e`. -/
-partial def Ex.indexGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Ex) :=
-  let go (e : Ex) (w : Ex → Ex := wrap) := e.indexGoals w
+/-- The indexes and tables in `e`, as the questions that the checks ask
+of them, each with its position, the question about a table's rows
+(`none` for an index's definedness), and its formula: that it holds
+wherever the conditions before it hold (`check::definedness`,
+`check::completeness`, `check::disjointness`). An index's position is its
+own, and a table's question is at its `table` for completeness and at the
+later row for disjointness. The conditions are read left to right, as the
+elaborator reads them, through `when`, `unless`, `if`, `and`, `or`, the
+arms of `match` and the rows of tables; `wrap` puts a formula under those
+around `e`. -/
+partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Option Fren.Core.TableGoal × Ex) :=
+  let go (e : Ex) (w : Ex → Ex := wrap) := e.siteGoals w
   match e with
   | .lit _ | .var _ | .slot _ | .bound _ => #[]
   | .not a | .neg a | .field a _ | .card a => go a
@@ -624,7 +661,7 @@ partial def Ex.indexGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Ex) 
   | .matches r _ _ => go r
   | .index q i pos =>
     let bounds := Ex.bin .and (.bin .le (.lit (.int 0)) i) (.bin .lt i (.method .len q #[]))
-    go q ++ go i ++ #[(pos, wrap bounds)]
+    go q ++ go i ++ #[(pos, none, wrap bounds)]
   -- An arm's indexes are guarded by its pattern and the earlier ones not
   -- matching: the same `match`, true in every other arm.
   | .match s arms =>
@@ -634,6 +671,39 @@ partial def Ex.indexGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Ex) 
   -- In every instance, whatever the quantifier: the instances do not guard
   -- each other.
   | .quant _ names insts body => go body (fun g => wrap (.quant true names insts g))
+  -- A row's condition is guarded by the earlier rows' not holding, and its
+  -- value by its own holding too; then the table's own questions.
+  -- A constant's indexes and tables are the constant's.
+  | .const .. => #[]
+  | .table pos rows _ =>
+    let unlessAll (cs : Array Ex) (g : Ex) : Ex := cs.foldr (fun c g => .when true c g) g
+    let (inRows, _) := rows.foldl (init := ((#[] : Array (Nat × Option Fren.Core.TableGoal × Ex)), (#[] : Array Ex)))
+      fun (acc, before) (_, c?, v) =>
+        let inC := match c? with
+          | some c => go c (fun g => wrap (unlessAll before g))
+          | none => #[]
+        let inV := go v (fun g => wrap (unlessAll before (match c? with | some c => .when false c g | none => g)))
+        (acc ++ inC ++ inV, before ++ c?.toArray)
+    let conds := rows.filterMap (·.2.1)
+    let starts := rows.filterMap fun (p, c?, _) => c?.map fun _ => p
+    let orF (cs : Array Ex) : Ex := if cs.isEmpty then .lit (.bool false) else cs.pop.foldr (fun c acc => .bin .or c acc) cs.back!
+    let wild := (rows.back?.map (·.2.1.isNone)).getD false
+    -- That a condition's indexes are in range where it evaluates them.
+    let defined := conds.map fun c =>
+      Fren.Core.allOf? (.bin .and) (c.siteGoals.filterMap fun (_, g?, f) => if g?.isNone then some f else none)
+    inRows ++ (Fren.Core.tableGoals orF (.bin .and) .not conds defined wild).map fun (g, f) =>
+      ((match g with | .completeness => pos | .disjointness _ j => starts[j]!), some g, wrap f)
+
+/-- The indexes in `e`, each with its position and its definedness: that
+its position is in range wherever the conditions before it hold
+(`check::definedness`), read as `Ex.siteGoals` reads them. -/
+def Ex.indexGoals (e : Ex) : Array (Nat × Ex) :=
+  e.siteGoals.filterMap fun (pos, g?, f) => if g?.isNone then some (pos, f) else none
+
+/-- The questions about the rows of the tables in `e`, each with where it
+is reported and its formula, read as `Ex.siteGoals` reads them. -/
+def Ex.tableGoals (e : Ex) : Array (Nat × Fren.Core.TableGoal × Ex) :=
+  e.siteGoals.filterMap fun (pos, g?, f) => g?.map (pos, ·, f)
 
 /-- A constraint of a comp nested at `pfx`, such as `w.v` for instance `v`
 of instance `w`: `e` over the variables `pfx.x`. -/
@@ -881,6 +951,8 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .ctor ty idx args => .ctor ty idx (args.map (·.renameBound f))
   | .field e idx => .field (e.renameBound f) idx
   | .update e fs => .update (e.renameBound f) (fs.map fun (k, x) => (k, x.renameBound f))
+  | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.renameBound f), v.renameBound f)) u
+  | .const p e => .const p e
   | .match e arms => .match (e.renameBound f) <| arms.map fun (p, b) => (p.rename f, b.renameBound f)
   | .quant all ns insts b => .quant all (ns.map f) insts (b.renameBound f)
 
@@ -909,6 +981,8 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .update e fs => .update (e.renameVars f) (fs.map fun (k, x) => (k, x.renameVars f))
   | .match e arms => .match (e.renameVars f) (arms.map fun (p, b) => (p, b.renameVars f))
   | .quant all ns insts b => .quant all ns insts (b.renameVars f)
+  | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.renameVars f), v.renameVars f)) u
+  | .const p e => .const p e
 
 /-- `e` with each variable `n` replaced by `f n`. -/
 partial def Ex.substVars (f : Name → Ex) : Ex → Ex
@@ -935,6 +1009,8 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .update e fs => .update (e.substVars f) (fs.map fun (k, x) => (k, x.substVars f))
   | .match e arms => .match (e.substVars f) (arms.map fun (p, b) => (p, b.substVars f))
   | .quant all ns insts b => .quant all ns insts (b.substVars f)
+  | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.substVars f), v.substVars f)) u
+  | .const p e => .const p e
 
 /-- The comp that checks that `c` refines `a` (`Reqs/Lang/Refinement`): its
 inputs are `c`'s, its assumptions `a`'s, it has an instance `w` of `c` and
@@ -982,6 +1058,8 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .ctor ty idx args => .ctor ty idx (args.map (·.subst σ))
   | .field e idx => .field (e.subst σ) idx
   | .update e fs => .update (e.subst σ) (fs.map fun (k, x) => (k, x.subst σ))
+  | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.subst σ), v.subst σ)) u
+  | .const p e => .const p e
   -- An arm's binders shadow those of `σ`.
   | .match e arms => .match (e.subst σ) <| arms.map fun (p, b) => (p, b.subst (σ.filter (!p.binders.contains ·.1)))
   -- So do a quantifier's bound names.
@@ -992,7 +1070,7 @@ def boundValue : Bound → L Int
   | .num _ v => return v
   | .path _ segs => do
     let .item { kind := .constItem, path, .. } ← resolve segs | throw "a range's bound is not a constant"
-    let some (.int v, _) := (← get).spec.consts.find? path | throw s!"`{showPath path}` is not an integer"
+    let some (.lit (.int v), _) := (← get).spec.consts.find? path | throw s!"`{showPath path}` is not an integer"
     return v
 
 /-- Lowers the pattern `p` of a value of type `t`: the pattern, and its
@@ -1036,6 +1114,25 @@ partial def lowerPattern (t : VTy) (p : Pattern) : L (Pat × List (Name × VTy �
   | .or _ alts => do
     let ps ← alts.mapM fun a => return (← lowerPattern t a).1
     return (.alts ps, [])
+
+/-- The function without parameters that an interpretation gives the
+unspecified value of the type `t` by, where no row of a table holds: not a
+Fren name, so it is no item's. -/
+def unspecifiedFn (t : VTy) : Name := .str .anonymous s!"[][0] : {reprStr t}"
+
+/-- Whether `e` reads an index or a table without a `_` row, whose value
+may be unknown without an interpretation. -/
+partial def Ex.readsUnspecified : Ex → Bool
+  | .index .. | .table _ _ (some _) | .const .. => true
+  | .table _ rows none => rows.any fun (_, c?, v) => c?.any (·.readsUnspecified) || v.readsUnspecified
+  | .lit _ | .var _ | .slot _ | .bound _ => false
+  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .quant _ _ _ a => a.readsUnspecified
+  | .bin _ a b | .when _ a b | .pair a b => a.readsUnspecified || b.readsUnspecified
+  | .ite c a b => c.readsUnspecified || a.readsUnspecified || b.readsUnspecified
+  | .app _ args | .ctor _ _ args | .setLit args | .seqLit args | .cardinality _ args => args.any (·.readsUnspecified)
+  | .method _ r args => r.readsUnspecified || args.any (·.readsUnspecified)
+  | .update e fs => e.readsUnspecified || fs.any (·.2.readsUnspecified)
+  | .match e arms => e.readsUnspecified || arms.any (·.2.readsUnspecified)
 
 mutual
 partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
@@ -1118,7 +1215,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
         let .ok (.item { kind := .constItem, path, .. }) := st.table.resolvePath st.scope #[Name.mkSimple parts.head!]
           | throw s!"`{segs[0]!.name}` names no variable"
         let some (v, t) := st.spec.consts.find? path | throw s!"unknown constant `{showPath path}`"
-        return ← readFields (.lit v) t parts.tail
+        return ← readFields v t parts.tail
     match ← resolve segs with
     | .variant en idx => do
       let d ← dataDef en.path
@@ -1126,7 +1223,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       return (.lit (.ctor en.path idx #[]), .data en.path)
     | .item { kind := .constItem, path, .. } =>
       let some (v, t) := (← get).spec.consts.find? path | throw s!"unknown constant `{showPath path}`"
-      return (.lit v, t)
+      return (v, t)
     | r => throw s!"`{showPath r.path}` is not a value"
   | .app _ segs args => do
     let args ← args.mapM fun a => (·.1) <$> lowerExpr cx a
@@ -1185,6 +1282,20 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       ty := t
       out := out.push (pat, b)
     return (.match s out, ty)
+  | .table span rows => do
+    let mut out := #[]
+    let mut ty := VTy.bool
+    for (start, c?, v) in rows do
+      let (x, t) ← lowerExpr cx v
+      ty := t
+      -- Where the row's question is reported: its condition.
+      out := out.push (((c?.map (·.span.start)).getD start.start), ← c?.mapM fun c => return (← lowerExpr cx c).1, x)
+    let wild := rows.back?.any (·.2.1.isNone)
+    if wild then return (.table span.start out none, ty)
+    -- The function of the interpretation for its type's unspecified value.
+    let u := unspecifiedFn ty
+    modify fun s => { s with spec.funs := s.spec.funs.insert u (#[], ty) }
+    return (.table span.start out (some u), ty)
   -- `e is P` is `match e { P => true, _ => false }`.
   | .is _ scrutinee p => do
     let (s, t) ← lowerExpr cx scrutinee
@@ -1270,6 +1381,14 @@ def lowerComp (isPub : Bool) (name : Ident) (members : Array Member) : L Unit :=
     scope := s.module
     spec.comps := s.spec.comps.push c }
 
+/-- Records the body or value `e` of the function or constant `n`, over the
+inputs `vars`, as a comp for the checks of its tables, if it has any
+(`Spec.bodies`). -/
+def noteBody (n : Name) (vars : Array Var) (e : Ex) : L Unit := do
+  if e.tableGoals.isEmpty then return
+  modify fun s => { s with
+    spec.bodies := s.spec.bodies.push { path := s.module, vars, constraints := #[], insts := #[], body? := some (n, e) } }
+
 /-- The path of the component that `segs` names. -/
 def resolveComp (segs : Array Ident) : L Name := do
   match ← resolve segs with
@@ -1347,12 +1466,23 @@ partial def lowerItem : Item → L Unit
       -- function's.
       let b := b.renameBound (path ++ ·)
       modify fun s => { s with spec.defs := s.spec.defs.insert path (ps.map (path ++ ·.1), b, r) }
+      -- Over the parameters as inputs, for the checks of its tables.
+      let vars := ps.map fun (x, t) => ({ name := x, ty := t, role := .input, isPub := true } : Var)
+      noteBody (Name.mkSimple name.name) vars (← lowerExpr { vars } body).1
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
   | .const isPub name ty value => do
     let path := (← get).module ++ Name.mkSimple name.name
     let t ← lowerTy ty
     let (e, _) ← lowerExpr {} value
-    let some v := evalClosed e | throw s!"the value of `{showPath path}` cannot be evaluated"
+    noteBody (Name.mkSimple name.name) #[] e
+    -- Unknown where it reads an index out of range or a table where no
+    -- row holds, which only an interpretation gives a value: then it is
+    -- the constant, kept as its expression, wherever it is mentioned.
+    let v ← match evalClosed e with
+      | some v => pure (Ex.lit v)
+      | none =>
+        unless e.readsUnspecified do throw s!"the value of `{showPath path}` cannot be evaluated"
+        pure (.const path e)
     modify fun s => { s with
       table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
       spec.consts := s.spec.consts.insert path (v, t) }

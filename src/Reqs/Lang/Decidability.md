@@ -40,6 +40,13 @@ each bound name: `forall (m: Method), s.starts_with?(prefix(m))`, with
 `prefix` a defined function, is in the core, as each
 `s.starts_with?(prefix(Method::Len))` is.
 
+A [table](Expressions.md#tables) is in the core when its rows' conditions
+and values are: it is a chain of conditionals, and where no row of one
+without a `_` row holds, its value is an index of the empty sequence,
+`[][0]`, which is in the core (see [Sequences](#sequences)). Its
+completeness and disjointness checks ask quantifier-free questions of its
+conditions.
+
 ## Integers
 
 Integer arithmetic is *linear*, which keeps it decidable, with or without

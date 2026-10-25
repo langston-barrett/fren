@@ -223,5 +223,9 @@ def note (line : Nat) (text : String) : Diagnostic := { line, severity := "info"
 
 #guard isCheckResult (err 3 "expectation `c::x` does not hold")
 #guard !isCheckResult (err 3 "expectation `c::x` does not hold here, but is a lint")
+#guard isCheckResult (err 3 "a table in `c::r` may have no row that holds")
+#guard isCheckResult (err 3 "rows 1 and 2 of a table in `c::r` may both hold")
+#guard isCheckResult (err 3 "could not decide whether rows 1 and 2 of a table in `c::r` are disjoint: timeout")
+#guard !isCheckResult (err 3 "rows 1 and 2 of a table in `c::r` may both hold, but is a lint")
 
 end FrenTest.FrontendsCompare

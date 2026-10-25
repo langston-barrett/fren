@@ -108,10 +108,12 @@ def isCheckHeadline (h : String) : Bool :=
   -- What follows the subject in backquotes after `pre`.
   let rest (pre : String) : Option String := (h.dropPrefix? (pre ++ "`")).map fun r => afterSubject ("`" ++ r.toString)
   let r := afterSubject h
-  h.startsWith "could not decide whether `"
+  h.startsWith "could not decide whether "
   || (rest "the assumptions of ").any (·.startsWith " are unsatisfiable: ")
   || r.startsWith " is not realizable: for the input "
   || (rest "an index of ").any (· == " may be out of range")
+  || (rest "a table in ").any (· == " may have no row that holds")
+  || (h.startsWith "rows " && (h.splitOn " of a table in `").length > 1 && h.endsWith "` may both hold")
   || (rest "the assumption ").any (·.startsWith " of `")
   || (rest "expectation ").any (· == " does not hold")
   || (rest "cover goal ").any fun r => r == " is met" || r.startsWith " cannot be met: "

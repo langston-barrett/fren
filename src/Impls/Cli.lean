@@ -75,11 +75,11 @@ impl worst_of: cli::worst_severity for (ss : Array Severity) {
   have ae (s : Severity) : (ss.any fun x => x == s) = true ↔ s ∈ ss := by simp [Array.mem_iff_getElem]
   have an (s : Severity) (h : s ∉ ss) : (ss.any fun x => x == s) = false := by
     simpa using mt (ae s).mp h
-  refine ⟨fun h => ?_, fun h => ?_, fun h => ?_⟩
-  · simp [worst, (ae _).mpr (he.mp h), toLevel]
-  · simp [worst, an _ (mt he.mpr h.1), (ae _).mpr (hw.mp h.2), toLevel]
-  · simp only [not_or] at h
-    simp [worst, an _ (mt he.mpr h.1), an _ (mt hw.mpr h.2), toLevel]
+  by_cases e : view.Severity.Error ∈ levels ss
+  · simp [fren_spec, e, worst, (ae _).mpr (he.mp e), toLevel]
+  · by_cases w : view.Severity.Warning ∈ levels ss
+    · simp [fren_spec, e, w, worst, an _ (mt he.mpr e), (ae _).mpr (hw.mp w), toLevel]
+    · simp [fren_spec, e, w, worst, an _ (mt he.mpr e), an _ (mt hw.mpr w), toLevel]
 
 -- A whole run, from the impls of its instances: the instances' variables
 -- are given by the code, and their obligations by the theorems above.

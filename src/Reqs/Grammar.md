@@ -103,6 +103,7 @@ atom           := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | 
                 | atom "." DIGITS
                 | IDENT ("." IDENT)+ "(" expr ("," expr)* ")"
                 | "match" atom "{" arm ("," arm)* [","] "}"
+                | "table" "{" row ("," row)* [","] "}"
                 | "{" [element ("," element)* [","]] "}"
                 | "{" expr "with" field-init ("," field-init)* [","] "}"
                 | "[" [expr ("," expr)* [","]] "]"
@@ -111,6 +112,7 @@ element        := expr | pair
 pair           := "(" expr "," expr ")"
 field-init     := IDENT [":=" expr]
 arm            := pattern "=>" expr
+row            := ["|"] (iff | "_") "=>" iff
 pattern        := ["|"] or-pattern
 or-pattern     := primary ("|" primary)*
 primary        := "_" | DECL | literal | range
