@@ -12,6 +12,7 @@ import FrenCore.Mentions
 import FrenCore.Regex
 import FrenCore.Syntax
 import FrenCore.Ty
+import FrenCore.Typing
 -- keep-sorted end
 
 /-!
@@ -452,11 +453,48 @@ partial def typeName (t : Expr) : TermElabM String := do
     return Core.showPath a.path
   return toString d
 
+/-- The Lean type `t` as the Fren type it stands for, as the `fren` command
+has it (`Core.Ty`), if it is one: a condition's `Prop` is a `Bool`. -/
+partial def coreTy? (t : Expr) : TermElabM (Option Core.Ty) := do
+  let t ← instantiateMVars t
+  if t.isProp || t.isConstOf ``Bool then return some .bool
+  if t.isConstOf ``Int then return some .int
+  if t.isConstOf ``Nat then return some .nat
+  if t.isConstOf ``String then return some .string
+  if t.isAppOfArity ``Fren.Seq 1 then return (← coreTy? t.appArg!).map .seq
+  if t.isAppOfArity ``Fren.FinSet 1 then
+    let e := t.appArg!
+    if e.isAppOfArity ``Prod 2 then
+      let (some a, some b) := (← coreTy? e.appFn!.appArg!, ← coreTy? e.appArg!) | return none
+      return some (.rel a b)
+    return (← coreTy? e).map .set
+  let s ← getState
+  let some d := t.constName? | return none
+  if let some e := s.enumOfDecl? d then return some (.enum e.path)
+  if let some r := s.recordOfDecl? d then return some (.record r.path)
+  if let some a := s.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == d then some a else none then
+    return some (.abstract a.path)
+  return none
+
 /-- The Lean type of the Fren expression `t`, elaborated with the comp's
 variables in scope. -/
 def typeOf (t : Term) : TermElabM Expr := do
   let e ← withoutErrToSorry <| Term.withSynthesize <| elabTerm (← `(open Classical in $t)) none
   whnfR (← instantiateMVars (← inferType e))
+
+/-- The Fren type of the term `t` (`coreTy?`), if it has one. -/
+def frenTypeOf? (t : Term) : TermElabM (Option Core.Ty) := do coreTy? (← typeOf t)
+
+/-- Reports `ref`, translated to `t`, unless it may stand where the type
+`expected` is needed, as the `fren` command does (`Core.checkType`), with
+`why` it is needed. -/
+def checkTermType (ref : Syntax) (t : Term) (expected : Core.Ty) (why : Option String := none) : TermElabM Unit := do
+  if let some found ← frenTypeOf? t then liftMsg ref (Core.checkType expected found why)
+
+/-- Reports `ref`, translated to `t`, an operand of the arithmetic operator
+`op`, unless it is an `Int` or a `Nat` (`Core.checkNumber`). -/
+def checkNumberTerm (ref : Syntax) (t : Term) (op : String) : TermElabM Unit := do
+  if let some found ← frenTypeOf? t then liftMsg ref (Core.checkNumber op found)
 
 /-- `t`, widened to an `Int` if it is a `Nat` (`lang::widening`): Lean
 inserts `↑`. -/
@@ -1563,6 +1601,9 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
     -- `++` is in the core against a constant.
     let (x, y) := (← toTerm { cx with concatOk := cb, emptyOk := Core.Position.compared.checked false (synthesizes b) } a,
       ← toTerm { cx with concatOk := ca, emptyOk := Core.Position.compared.checked false (synthesizes a) } b)
+    -- Both sides have one type, after widening, as the `fren` command checks
+    -- (`lang::operator_type`).
+    if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then liftMsg e (Core.checkComparable op tx ty)
     -- For `bool_equality`, at the end of the expression.
     let tx ← typeOf x
     if cx.noteIndexes && (tx.isConstOf ``Bool || tx.isProp) then
@@ -1574,7 +1615,14 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
     else if !isConcat a && !isConcat b && (← string x) then
       checkCore cx e .stringCompare true (ca || cb || (isVariable cx a && isVariable cx b)) #[] (ca && cb)
     return ← if op == "=" then `($x = $y) else `($x ≠ $y)
-  let (x, y) := (← toTerm cx a, ← toTerm cx b)
+  -- An ordering compares `Int`s, `Nat`s or `String`s, as the `fren` command
+  -- checks (`lang::operator_type`).
+  let x ← toTerm cx a
+  let tx? ← frenTypeOf? x
+  let operandTy : Core.Ty := if tx? == some .string then .string else .int
+  if let some tx := tx? then liftMsg a (Core.checkType operandTy tx (Core.opNote op operandTy))
+  let y ← toTerm cx b
+  checkTermType b y operandTy (Core.opNote op operandTy)
   unless ← string x do
     return ← match op with
       | "<" => `($x < $y) | "<=" => `($x ≤ $y) | ">" => `($x > $y) | _ => `($x ≥ $y)
@@ -1593,10 +1641,16 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let names := ops.map (·.getAtomVal.trimAscii.toString)
   if let .error (k, msg) := Core.checkChain names then throwErrorAt ops[k]! msg.text
   let mut x ← toTerm cx xs[0]!
+  -- An `Int`, a `Nat`, widened, or a `String`, and every operand the first's
+  -- type, as the `fren` command checks (`lang::operator_type`).
+  let t0? := (← frenTypeOf? x).map (·.widen)
+  if let some t0 := t0? then
+    unless t0 == .string || t0 == .int do liftMsg xs[0]! (Core.checkType .int t0 (Core.opNote names[0]! .int))
   let string := (← typeOf x).isConstOf ``String
   let mut links := #[]
   for op in names, a in xs, b in xs.extract 1, opStx in ops do
     let y ← toTerm { cx with guards := cx.guards ++ links } b
+    if let some t0 := t0? then checkTermType b y t0 (Core.opNote op t0)
     -- A node's position is its first token's, and its tail its last's, so
     -- this one spans the comparison, from `a` to `b`, for its messages.
     let link := mkNullNode #[a, opStx, b]
@@ -1624,18 +1678,16 @@ def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- Sequences: outside the core, unless constant.
   if (← typeOf x).isAppOfArity ``Fren.Seq 1 then
     let y ← toTerm { cx with emptyOk := Core.Position.shared.checked cx.emptyOk (synthesizes a) } b
-    unless ← isDefEq (← typeOf y) (← typeOf x) do
-      throwErrorAt b s!"type mismatch: expected `{← typeName (← typeOf x)}`, found `{← typeName (← typeOf y)}`"
+    if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then liftMsg b (Core.checkConcatOperands tx ty)
     checkCore cx e .seqWord true true #[a, b] (← isConstant cx e)
     return ← `(($x ++ $y : $(typeSyntax (← typeOf x))))
   -- Where the core allows it, only its operands' outputs matter.
   if concatOk then checkCore cx e .stringAtom true true #[a, b]
   else checkCore cx e .stringSearch true true #[a, b] (← isConstant cx e)
+  -- Each operand is a `String`, as the `fren` command checks (`lang::operator_type`).
+  checkTermType a x .string (Core.opNote "++" .string)
   let y ← toTerm { cx with concatOk := true, emptyOk := Core.Position.synthesized.checked false false } b
-  for (t, stx) in [(x, a), (y, b)] do
-    let ty ← typeOf t
-    unless ty.isConstOf ``String do
-      throwErrorAt stx s!"type mismatch: expected `String`, found `{← typeName ty}`"
+  checkTermType b y .string (Core.opNote "++" .string)
   `(($x ++ $y : String))
 
 /-- `r.m(args)`, a method call on the receiver `recvStx`, whose method's name
@@ -1725,6 +1777,12 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     else .shared
   let x ← toTerm { cx with emptyOk := position.checked cx.emptyOk (synthesizes b) } a
   let y ← toTerm { cx with emptyOk := position.checked cx.emptyOk (synthesizes a) } b
+  -- Their types, as the `fren` command checks them (`lang::operator_type`).
+  unless e.isOfKind ``Lang.joinExpr do
+    if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then
+      match Core.checkSetOperands e[1].getAtomVal.trimAscii.toString tx ty with
+      | .ok () => pure ()
+      | .error (k, msg) => throwErrorAt (if k == 0 then a else b) msg.text
   if e.isOfKind ``Lang.joinExpr then
     let (tx, ty) := (← typeOf x, ← typeOf y)
     let some (_, mid) := relTypes? tx | throwErrorAt a (Core.joinTypeMsg (← typeName tx) none).text
@@ -1763,9 +1821,15 @@ def guardedTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   if op matches .and && cx.noteIndexes then
     if (indexedIn c).any (fun q => boundsSeq d q && !boundsSeq c q) then recordLint .indexAfterUse e (Core.indexAfterUseMsg (srcText c) (srcText d))
   let cx := { cx with chain := j }
+  -- Each operand's type is checked as the `fren` command checks it
+  -- (`lang::operator_type`).
+  let kw := if operand matches .unlessBody then "unless" else "when"
   let x ← toTerm cx c
+  checkTermType c x .bool (if j.isEmpty then some s!"note: the condition of `{kw}` is a `Bool`" else Core.opNote j .bool)
   let g ← operand.guard (pure x) `(¬$x)
   let y ← toTerm { cx with guards := cx.guards.push g } d
+  if j.isEmpty then checkTermType e y .bool (some s!"note: the body of `{kw}` is a `Bool`")
+  else checkTermType d y .bool (Core.opNote j .bool)
   match op with
   | .implies => `($g → $y)
   | .and => `($x ∧ $y)
@@ -1906,11 +1970,11 @@ def divTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e :
     TermElabM Term := withRef e do
   -- A `Nat` is expected of the dividend where one is of the whole
   -- (`lang::nat_result`).
+  -- Each operand is checked in order, as the `fren` command checks it
+  -- (`lang::operator_type`).
   let x ← toTerm { cx with natOk } e[0]
-  for (t, stx) in [(x, e[0]), (← toTerm cx e[2], e[2])] do
-    let ty ← typeOf t
-    unless ty.isConstOf ``Int || ty.isConstOf ``Nat do
-      throwErrorAt stx s!"type mismatch: expected `Int`, found `{← typeName ty}`"
+  checkNumberTerm e[0] x op
+  checkTermType e[2] (← toTerm cx e[2]) .int (Core.opNote op .int)
   let (form, value, c) ← divisorForm cx e[2]
   liftMsg e[2] (Core.checkDivisor op form value c)
   -- Of a `Nat` by a positive divisor, Lean's `Nat` division, which agrees
@@ -2026,6 +2090,23 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     return t
   `($(mkCIdentFrom p a.placeholder) $args*)
 
+/-- The operand `a` of the arithmetic operator `op`, an `Int` or a `Nat`, of
+which a `Nat` is expected if `natOk`, as the `fren` command checks it
+(`lang::operator_type`). -/
+def numberOperand (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (op : String) (natOk : Bool)
+    (a : Syntax) : TermElabM Term := do
+  let x ← toTerm { cx with natOk } a
+  checkNumberTerm a x op
+  return x
+
+/-- The operand `a` of the logical operator `op`, a `Bool`, as the `fren`
+command checks it (`lang::operator_type`). -/
+def boolOperand (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (op : String) (a : Syntax) :
+    TermElabM Term := do
+  let x ← toTerm cx a
+  checkTermType a x .bool (Core.opNote op .bool)
+  return x
+
 /-- `if c then a else b`, where `toTerm` translates its parts, which are
 checked against a type if `emptyOk`, and are `Nat`s if `natOk` is. -/
 def iteTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emptyOk natOk : Bool) (e c' a b : Syntax) :
@@ -2033,10 +2114,12 @@ def iteTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
   if cx.noteIndexes && !cx.inElse then lintIfChain cx e
   if cx.noteIndexes then lintSameBranches e a b
   let c ← toTerm { cx with inElse := false } c'
+  checkTermType c' c .bool (some "note: the condition of `if` is a `Bool`")
   let gx ← Core.GuardedOperand.thenBranch.guard (pure c) `(¬$c)
   let gy ← Core.GuardedOperand.elseBranch.guard (pure c) `(¬$c)
   let x ← toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (synthesizes b), natOk, guards := cx.guards.push gx, inElse := false } a
   let y ← toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (synthesizes a), natOk, guards := cx.guards.push gy, inElse := true } b
+  if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then liftMsg e (Core.checkBranches tx ty)
   let #[x, y] ← widenMixed #[x, y] | unreachable!
   `(if $c then $x else $y)
 
@@ -2047,11 +2130,13 @@ and a `Nat` is expected of the operands where one is of the whole
 (`lang::operator_type`). -/
 def arithTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (natOk : Bool) (op : String) (a b : Syntax) :
     TermElabM Term := do
-  if op == "-" then return ← `((($(← toTerm cx a) : Int) - ($(← toTerm cx b) : Int)))
+  -- Each operand is an `Int` or a `Nat`, as the `fren` command checks
+  -- (`lang::operator_type`).
+  if op == "-" then return ← `((($(← numberOperand toTerm cx op false a) : Int) - ($(← numberOperand toTerm cx op false b) : Int)))
   if op == "*" then
     unless Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do
       throwError Core.nonlinearMsg.text
-  let (x, y) := (← toTerm { cx with natOk } a, ← toTerm { cx with natOk } b)
+  let (x, y) := (← numberOperand toTerm cx op natOk a, ← numberOperand toTerm cx op natOk b)
   if op == "+" then `($x + $y) else `($x * $y)
 
 open Lang in
@@ -2103,10 +2188,10 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   match e with
   | `(fren_expr| when $c, $d) => guardedTerm toTerm cx c d .whenBody
   | `(fren_expr| unless $c, $d) => guardedTerm toTerm cx c d .unlessBody
-  | `(fren_expr| $a iff $b) => `($(← go a) ↔ $(← go b))
+  | `(fren_expr| $a iff $b) => `($(← boolOperand toTerm cx "iff" a) ↔ $(← boolOperand toTerm cx "iff" b))
   | `(fren_expr| $a or $b) => guardedTerm toTerm cx a b .orRight (op := .or)
   | `(fren_expr| $a and $b) => guardedTerm toTerm cx a b .andRight (op := .and)
-  | `(fren_expr| not $a) => `(¬$(← go a))
+  | `(fren_expr| not $a) => `(¬$(← boolOperand toTerm cx "not" a))
   | `(fren_expr| if $c' then $a else $b) => iteTerm toTerm cx emptyOk natOk e c' a b
   | `(fren_expr| $_ = $_) | `(fren_expr| $_ != $_) | `(fren_expr| $_ < $_) | `(fren_expr| $_ <= $_)
   | `(fren_expr| $_ > $_) | `(fren_expr| $_ >= $_) => compareTerm toTerm cx e
@@ -2118,7 +2203,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $a - $b) => arithTerm toTerm cx natOk "-" a b
   | `(fren_expr| $a * $b) => arithTerm toTerm cx natOk "*" a b
   | `(fren_expr| $_ div $_) => divTerm toTerm cx e "div" natOk
-  | `(fren_expr| -$a) => `((-($(← go a) : Int)))
+  | `(fren_expr| -$a) => `((-($(← numberOperand toTerm cx "-" false a) : Int)))
   | `(fren_expr| $_ == $_) | `(fren_expr| $_ && $_) | `(fren_expr| $_ || $_) | `(fren_expr| $_ | $_) =>
     throwErrorAt e[1] (Core.foreignOpMsg e[1].getAtomVal.trimAscii.toString).text
   | `(fren_expr| !$_) => throwErrorAt e[0] (Core.foreignOpMsg "!").text

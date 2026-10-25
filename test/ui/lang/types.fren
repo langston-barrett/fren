@@ -8,16 +8,44 @@ comp linear { in x: Int pub out y: Int req r: y = 2 * x - x * (-3) }
 comp on_out { in x: Int pub out y: Int assume a: y > 0 }       --~ error: assumptions may only mention `in` variables, but `y` is an `out`
 
 comp mismatch { in x: Int req r: x + true = 1 }
---~^[cli] error: type mismatch: expected `Int`, found `Bool`
---~^^[hosted] error: failed to synthesize instance of type class
+--~^ error: type mismatch: expected `Int`, found `Bool`
 comp compare { in e: E req r: e = 1 }
---~^[cli] error: cannot compare `E` with `Int`
---~^^[hosted] error: Type mismatch
+--~^ error: cannot compare `E` with `Int`
 comp branches { in c? pub out y: Int req r: y = if c? then 1 else true }
---~^[cli] error: the branches of `if` have different types: `Int` and `Bool`
---~^^[hosted] error: type mismatch
+--~^ error: the branches of `if` have different types: `Int` and `Bool`
 comp condition { in x: Int pub out y: Int req r: y = if x then 1 else 2 }
---~^[cli] error: type mismatch: expected `Bool`, found `Int`
---~^^[hosted] error: type mismatch
+--~^ error: type mismatch: expected `Bool`, found `Int`
+
+-- Each operator's operands, as both front ends check them, at the operand
+-- (`lang::operator_type`, `lang::conditional`).
+comp and_int { in x: Int pub out p? req r: p? iff x and true }
+--~^ error: type mismatch: expected `Bool`, found `Int`
+comp not_int { in x: Int pub out p? req r: p? iff not x }
+--~^ error: type mismatch: expected `Bool`, found `Int`
+comp when_int { in x: Int pub out p? req r: p? iff (when x, true) }
+--~^ error: type mismatch: expected `Bool`, found `Int`
+comp neg_bool { in b? pub out y: Int req r: y = -b? }
+--~^ error: type mismatch: expected `Int`, found `Bool`
+comp lt_bool { in b? pub out p? req r: p? iff b? < 1 }
+--~^ error: type mismatch: expected `Int`, found `Bool`
+comp set_branches { in c? in s: Set(Int) in t: Set(String) pub out y: Int req r: y = (if c? then s else t).card }
+--~^ error: the branches of `if` have different types: `Set(Int)` and `Set(String)`
+comp union_int { in x: Int in s: Set(Int) pub out p? req r: p? iff s = x union s }
+--~^ error: type mismatch: expected `Set(Int)`, found `Int`
+comp subset_types { in s: Set(Int) in t: Set(String) pub out p? req r: p? iff s subset t }
+--~^ error: type mismatch: expected `Set(Int)`, found `Set(String)`
+comp concat_types { in q: Seq(Int) in u: Seq(String) pub out y: Int req r: y = (q ++ u).len }
+--~^ error: type mismatch: expected `Seq(Int)`, found `Seq(String)`
+comp chain_bool { in b? pub out p? req r: p? iff 0 <= b? < 3 }
+--~^ error: type mismatch: expected `Int`, found `Bool`
+comp div_bool { in b? pub out y: Int req r: y = b? div 2 }
+--~^ error: type mismatch: expected `Int`, found `Bool`
+-- A comparison is a `Bool` in both front ends, never a `Prop`.
+comp div_comparison { in x: Int pub out y: Int req r: y = (x > 0) div 2 }
+--~^ error: type mismatch: expected `Int`, found `Bool`
+comp and_note { in x: Int pub out p? req r: p? iff x and true }
+--~^ error: the operands of `and` are `Bool`s
+comp branches_note { in c? pub out y: Int req r: y = if c? then 1 else true }
+--~^ error: so both must have the same type
 
 --@ exit: 2

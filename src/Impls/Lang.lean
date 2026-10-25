@@ -3,6 +3,7 @@ import FrenCli.Lex
 import FrenCore.Checking
 import FrenCore.Guards
 import FrenCore.Ty
+import FrenCore.Typing
 import Impls.Check
 -- keep-sorted end
 open Fren.Lang
@@ -157,6 +158,36 @@ impl divisor: lang::divisor for (f : Fren.Core.DivisorForm) (v : Int) {
   cases f <;> simp [fren_spec, toDivisorForm, Fren.Core.divisorAccepted]
 
 interp lang::Ty := Fren.Core.Ty
+
+theorem join_eq_wider (tx ty : Fren.Core.Ty) : tx.join ty = if tx.widens ty then ty else tx := by
+  unfold Fren.Core.Ty.join Fren.Core.Ty.widens
+  by_cases h : tx = ty <;> by_cases ha : tx = .nat <;> by_cases hb : ty = .int <;> simp_all
+
+theorem checkType_bool_isOk (c : Fren.Core.Ty) : (Fren.Core.checkType .bool c).isOk = (c == .bool) := by
+  by_cases hc : c = .bool <;>
+    simp [Fren.Core.checkType, Fren.Core.Ty.widens, hc, Except.isOk, Except.toBool, pure, Except.pure, throw,
+      throwThe, MonadExceptOf.throw]
+
+theorem checkBranches_isOk (tx ty : Fren.Core.Ty) :
+    (Fren.Core.checkBranches tx ty).isOk = (tx.widens ty || ty.widens tx) := by
+  by_cases h : (tx.widens ty || ty.widens tx) = true <;>
+    simp_all [Fren.Core.checkBranches, Except.isOk, Except.toBool, pure, Except.pure, throw, throwThe,
+      MonadExceptOf.throw]
+
+-- For every type of the condition and the branches: the checks that both
+-- front ends make (`Core.checkType` and `Core.checkBranches`), and the type
+-- that the `fren` command gives the conditional (`Ty.join`).
+impl conditional: lang::conditional for (c tx ty : Fren.Core.Ty) {
+  condition_bool? := c == .bool,
+  then_ty := tx,
+  else_ty := ty,
+  then_widens? := tx.widens ty,
+  else_widens? := ty.widens tx,
+  accepted? := (Fren.Core.checkType .bool c).isOk && (Fren.Core.checkBranches tx ty).isOk,
+  ty := tx.join ty,
+} by
+  intro c tx ty _
+  simp [fren_spec, checkType_bool_isOk, checkBranches_isOk, join_eq_wider]
 
 -- For every application, over the types that the `fren` command compares.
 impl application: lang::application for (ps as : Array Fren.Core.Ty) (k : Int) {

@@ -8,13 +8,11 @@ comp no_methods { in b? pub out p? req r: p? iff (b?).contains?(1) }
 comp arity { in s: String pub out p? req r: p? iff s.starts_with?("a", "b") }
 --~^ error: `starts_with?` takes 1 argument, but 2 were given
 comp arg_type { in s: String pub out t: String := s.at("1") }
---~^[cli] error: type mismatch: expected `Int`, found `String`
---~^^[hosted] error: type mismatch: expected `Int`, found `String`
+--~^ error: type mismatch: expected `Int`, found `String`
 comp unbounded { in s: String out t: String req r: t = s }
 --~^ error: output `t` has the unbounded type `String`
 comp concat_type { in s: String pub out n: Int := (s ++ 1).len }
---~^[cli] error: type mismatch: expected `String`, found `Int`
---~^^[hosted] error: type mismatch: expected `String`, found `Int`
+--~^ error: type mismatch: expected `String`, found `Int`
 
 -- Outside the decidable core.
 comp search { in s: String pub out i: Int req r: i = s.index_of("x", 0) }

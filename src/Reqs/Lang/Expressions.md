@@ -399,6 +399,37 @@ type of the conditional. A conditional is an atom, so it can be an operand
 without parentheses, but `B` extends as far right as possible:
 `2 * if c? then x else y + 1` means `2 * (if c? then x else (y + 1))`.
 
+`lang::conditional` states when a conditional is accepted and what its
+type is, from the types of its condition and branches: they are one type,
+or a `Nat` and an `Int`, and then the conditional is an `Int`. A condition that is
+not a `Bool` is reported at the condition, and branches of different types
+at the conditional, with both types. It is
+[`lang::operator_type`](#types-of-operators)'s rule for a conditional,
+stated over the types themselves, which both front ends compare; the
+conditions of `when` and `unless` follow that component's rule for logical
+operators. The branches' types are those they have after being checked
+against the conditional's, where it is
+[checked](Types.md#checking-and-synthesis), so `if c? then {} else s` has
+`s`'s type.
+
+```fren
+pub comp conditional {
+    in condition_bool?       -- the condition is a `Bool`
+    in then_ty: Ty           -- the type of `A`
+    in else_ty: Ty           -- the type of `B`
+    in then_widens?          -- `A`'s type widens to `B`'s (`lang::widening`)
+    in else_widens?          -- `B`'s type widens to `A`'s
+    pub det out accepted?
+    pub det out ty: Ty       -- the conditional's type: the wider of the two
+
+    req rule: accepted? iff condition_bool? and (then_widens? or else_widens?)
+    req typed: ty = (if then_widens? then else_ty else then_ty)
+
+    expect needs_bool: when not condition_bool?, not accepted?
+    expect else_wider: when accepted? and not then_widens?, ty = then_ty
+}
+```
+
 ## Function applications
 
 `f(e1, ..., en)` applies the [function](Items.md#functions) `f` to the
