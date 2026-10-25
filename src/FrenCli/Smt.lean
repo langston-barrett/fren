@@ -308,15 +308,19 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (timeoutSecs 
   -- cvc5 refuses some string operations without `strings-exp`. Every query
   -- has what the `Nat` variables bring, of both copies, and what the
   -- applications that it mentions bring (`Reqs/Check`).
+  -- The query declares only the variables that its formulas mention, a
+  -- `Nat`'s fact among them, so a model, and so a counterexample, has only
+  -- those, as in Lean (`Reqs/View#check-results`).
   query hyps goal wantModel := do
     let facts := c.natFacts false ++ c.natFacts true
     let facts := facts ++ (facts.map (prime c)).filter (!facts.contains ·)
+    let mentioned := (facts ++ hyps.map (·.2) |>.push goal).flatMap quotedSymbols
+    let vars := (c.vars ++ primes c).filter (mentioned.contains ·.name.toString)
     let apps := c.natApps ++ (c.natApps.map (prime c)).filter (!c.natApps.contains ·)
     let appFacts ← Fren.Core.natAppFacts (m := Id) (termsIn apps) (s!"(>= {·} 0)") hyps goal
     runQuery (Fren.Core.logic kind (strings || sets) projection)
       (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n"))
-      prelude (c.vars ++ primes c) timeoutSecs dump?
-      (facts.map (`nat, ·) ++ appFacts ++ hyps) goal wantModel cache?
+      prelude vars timeoutSecs dump? (facts.map (`nat, ·) ++ appFacts ++ hyps) goal wantModel cache?
   falseF := "false"
   notF f := s!"(not {f})"
   conj := conj

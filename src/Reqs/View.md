@@ -179,6 +179,20 @@ note: cover goal `heater::overheat` is met
   = witness: temp = 101, alarm? = true
 ```
 
+A counterexample, or a witness, gives the values of the variables that
+the check's [query](Check.md) mentions, those that occur in one of its
+formulas, and of no others: a variable that none mentions could have any
+value, so showing one would say nothing. That a `Nat` variable is at least
+0 is one of the formulas (see [Natural numbers](Lang/Types.md#natural-numbers)),
+so a `Nat` is shown even when nothing else mentions it. In
+
+```text
+comp c { in a: Int in b: Int pub out p? req r: p? iff a > 0 expect e: p? }
+```
+
+the counterexample of `e` is `a = 0, p? = false`, without `b`. Both front
+ends show the same variables.
+
 A counterexample, or a witness, in a spec with [functions](Lang/Items.md#functions) also
 gives the value of each application in the constraints it is about, at the
 counterexample's arguments, such as `ends_in_q?(name) = true`: these are the
