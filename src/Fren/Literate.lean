@@ -41,24 +41,35 @@ scoped syntax (name := mdCmd) "#fren_md " str : command
 
 end Lang
 
-/-- The components of `path`, without `.`, and with each `..` cancelling the
-component before it, so that two spellings of one path agree. -/
+/-- The components of `path`, so that two spellings of one path agree: an
+absolute path's root first (`""`, or a drive such as `C:`), then the rest
+without `.` or empty components, and with each `..` cancelling the
+component before it. At the root, `..` stays at the root. -/
 def pathComponents (path : System.FilePath) : List String :=
-  (path.components.foldl (init := []) fun acc c =>
-    if c == "." || (c == "" && !acc.isEmpty) then acc
+  let (root, rest) := match path.components with
+    | r :: cs => if path.isAbsolute then ([r], cs) else ([], r :: cs)
+    | [] => ([], [])
+  let parts := rest.foldl (init := []) fun acc c =>
+    if c == "." || c == "" then acc
     else if c == ".." then match acc with
-      | p :: rest => if p == ".." || p == "" then c :: acc else rest
-      | [] => [c]
-    else c :: acc).reverse
+      | p :: ps => if p == ".." then c :: acc else ps
+      | [] => if root.isEmpty then [c] else []
+    else c :: acc
+  root ++ parts.reverse
 
 /-- `path` relative to the directory `base`, both normalized
 (`pathComponents`), with a `..` for each component of `base` that `path`
-does not share. -/
-def relativeTo (base path : System.FilePath) : System.FilePath :=
+does not share, joined with `/` on every system, as names in messages are.
+A path that shares no root with `base`, such as an absolute path from a
+relative `base`, is kept whole. -/
+def relativeTo (base path : System.FilePath) : String :=
   let rec strip : List String → List String → List String
     | b :: bs, p :: ps => if b == p then strip bs ps else (b :: bs).map (fun _ => "..") ++ p :: ps
     | bs, ps => bs.map (fun _ => "..") ++ ps
-  System.mkFilePath (strip (pathComponents base) (pathComponents path))
+  let b := pathComponents base
+  let p := pathComponents path
+  let shared := base.isAbsolute == path.isAbsolute && (!path.isAbsolute || b.head? == p.head?)
+  "/".intercalate (if shared then strip b p else p)
 
 @[command_elab Lang.mdCmd] def elabMd : CommandElab := fun stx => do
   let some rel := stx[1].isStrLit? | throwUnsupportedSyntax
@@ -84,7 +95,7 @@ def relativeTo (base path : System.FilePath) : System.FilePath :=
   -- Its name in messages: its path relative to the Lean file, normalized,
   -- even when another spec reads it, so that every spelling of it agrees.
   let leanName := (leanFile?.map (·.1)).getD (← getFileName)
-  let name := (relativeTo ((System.FilePath.mk leanName).parent.getD ".") path).toString
+  let name := relativeTo ((System.FilePath.mk leanName).parent.getD ".") path
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
                                 items := #[], usedItems := #[], inMarkdown := true, leanFile?,
                                 mdSource? := some (name, inputCtx.fileMap) }

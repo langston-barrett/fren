@@ -35,14 +35,17 @@ the current module, and its items are visible to the rest of the file,
 including later `#fren_md` commands.
 
 A Markdown file is named by its path relative to the Lean file, with `.`
-and `..` resolved, so that every spelling of the path gives one name, as in
-`chapters/climate.md`, even when another Markdown file reads it.
+and `..` resolved and `/` between components on every system, so that
+every spelling of the path gives one name, as in `chapters/climate.md`,
+even when another Markdown file reads it. An absolute path that shares no
+root with the Lean file's is kept whole.
 Diagnostics about the Markdown file are reported at the `#fren_md` command
-in the Lean file, even for a file that another reads, with text that
-starts with one name and position, such as `chapters/climate.md:12:3:`. A
-diagnostic about a Markdown file itself, such as a summary, a lint or a
-parse error, is named with that file. A diagnostic about an item is placed
-by the file that declares it, wherever it is checked:
+in the Lean file, even for a file that another reads. Their text starts
+with at most one name, and at most one position, such as
+`chapters/climate.md:12:3:`, as follows. A diagnostic about a Markdown
+file itself, such as a summary, a lint or a parse error, is named with
+that file and its position there. A diagnostic about an item is placed by
+the file that declares it, wherever it is checked:
 
 - An item of a Markdown file is named with that file and its position
   there, even when another file's `#fren_check` reports it, as when one

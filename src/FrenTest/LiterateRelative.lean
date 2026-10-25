@@ -51,9 +51,41 @@ info: chapters/LiterateSibling.md:5:0: fren: 3 passed, 1 failed, 0 inconclusive,
 #guard_msgs in
 #fren_md "chapters/LiterateSibling.md"
 
--- `.` and `..` are resolved, and the result is built from components, with
--- the system's separator.
-#guard Fren.relativeTo "src/T" "src/T/a/../b.md" == System.mkFilePath ["b.md"]
-#guard Fren.relativeTo "src/T" "src/T/./a/b.md" == System.mkFilePath ["a", "b.md"]
-#guard Fren.relativeTo "src/T" "src/U/x.md" == System.mkFilePath ["..", "U", "x.md"]
-#guard Fren.relativeTo "src/T" "src/T/../T/a.md" == System.mkFilePath ["a.md"]
+-- A message about an item with no position is named with the chapter that
+-- declares it, without a position, and placed at the check; one about the
+-- Lean file's item carries no name.
+/-- info: chapters/deep/LiterateDeep.md: about an item with no position -/
+#guard_msgs in
+run_cmd Fren.logAbout `deep_gate .missing m!"about an item with no position" .information
+
+comp lean_gate { in a? pub out b? req same: b? iff a? }
+
+/-- info: about an item with no position -/
+#guard_msgs in
+run_cmd Fren.logAbout `lean_gate .missing m!"about an item with no position" .information
+
+-- From a chapter, the same, and placed at the outermost `#fren_md`.
+/--
+info: chapters/deep/LiterateDeep.md: about an item with no position
+---
+info: about an item with no position
+-/
+#guard_msgs in
+#fren_md "chapters/LiterateNoPosition.md"
+
+-- `.`, `..` and repeated separators are resolved, and the components are
+-- joined with `/` on every system.
+#guard Fren.relativeTo "src/T" "src/T/a/../b.md" == "b.md"
+#guard Fren.relativeTo "src/T" "src/T/./a/b.md" == "a/b.md"
+#guard Fren.relativeTo "src/T" "src/U/x.md" == "../U/x.md"
+#guard Fren.relativeTo "src/T" "src/T/../T/a.md" == "a.md"
+#guard Fren.relativeTo "src//T" "src/T//a.md" == "a.md"
+#guard Fren.relativeTo "." "./a/../b.md" == "b.md"
+-- A `..` that leaves the base, and one at the root, which stays there.
+#guard Fren.relativeTo "src/T" "src/T/../../x.md" == "../../x.md"
+#guard Fren.relativeTo "/r" "/r/../../x.md" == "../x.md"
+#guard Fren.pathComponents "/../x.md" == ["", "x.md"]
+-- An absolute path from a relative base shares no root with it, and is kept
+-- whole; from an absolute base, it is relative.
+#guard Fren.relativeTo "src/T" "/abs/x.md" == "/abs/x.md"
+#guard Fren.relativeTo "/a/b" "/a/b/c.md" == "c.md"
