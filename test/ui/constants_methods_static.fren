@@ -1,6 +1,11 @@
--- A method called on a constant that does not exist or lacks it: both front
--- ends report the same error.
+-- A method called on a constant that does not exist or lacks it, or on
+-- something that is not a value: both front ends report the same error.
 
 const GREETING: String := "hello"
 expect unknown_method: GREETING.foo(1) = 1               --~ error: `String` has no method `foo`
 expect misspelled_root: GRETING.starts_with?("h")       --~ error: cannot find `GRETING` in this scope
+
+-- `.` written for `::` before a variant with a payload is a method call on
+-- the enumeration, which is not a value.
+enum Shape { Circle(Int), Empty }
+expect variant_typo: Shape.Circle(1) = Shape::Empty     --~ error: expected a value, but `Shape` is an enum
