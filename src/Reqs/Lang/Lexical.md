@@ -385,15 +385,19 @@ refine punctuator_end_is_longest: punctuator_end refines longest_punctuator
 
 ## Tokens apart
 
-Identifiers, reserved words and punctuators are told apart without
-depending on which rule is tried first. Reserved words are the one
-overlap: each has the shape of an identifier, which is why it must be
-reserved, and reserving it settles which it is. A punctuator is neither an
-identifier nor a reserved word; the second follows from the first and
-`reserved_are_identifiers`, and is stated for the reader. A literal starts
-with a digit or a quote, or, for a raw string, with `r` and then a quote
-or `#`, which no identifier or punctuator starts with, so the first two
-characters tell a literal apart:
+Identifiers, reserved words, punctuators and literals are told apart
+without depending on which rule is tried first. Two kinds overlap with
+identifiers in shape, and each overlap is settled: a reserved word has the
+shape of an identifier, which is why it must be reserved, and reserving it
+settles which it is; and the literals `true` and `false` are
+[contextual keywords](#keywords), not reserved, so that, as for the
+other contextual keywords, the context settles whether one is a literal
+or an identifier. A punctuator is
+neither an identifier nor a reserved word; the second follows from the
+first and `reserved_are_identifiers`, and is stated for the reader. Any
+other literal starts with a digit or a double quote, or, for a raw string,
+with `r` and then a double quote or `#`, which no identifier or punctuator
+starts with, so its first two characters tell it apart:
 
 ```fren
 expect reserved_are_identifiers: forall (r: reserved_word) (i: identifier),
