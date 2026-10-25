@@ -1108,18 +1108,23 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       cx := { cx with lets := (n, e, t) :: cx.lets, binders := cx.binders.filter (·.1 != n) }
     lowerExpr cx body
   | .quant _ all bs body => do
+    -- Each bound name with its type and a name made unique, as a
+    -- pattern's binder's is.
     let mut bound := #[]
     for b in bs do
       let t ← lowerTy b.ty
-      for x in b.names do bound := bound.push (declName x, t)
+      for x in b.names do
+        let k := (← get).fresh
+        modify fun s => { s with fresh := s.fresh + 1 }
+        bound := bound.push (declName x, t, Name.mkNum (declName x) k)
     let sp := (← get).spec
     -- Every combination of the names' values, the last fastest.
-    let insts := bound.foldl (fun acc (_, t) => acc.flatMap fun pre => (sp.values t).map pre.push) #[#[]]
+    let insts := bound.foldl (fun acc (_, t, _) => acc.flatMap fun pre => (sp.values t).map pre.push) #[#[]]
     -- A bound name hides a name of an enclosing `let` or `where`.
     let names := bound.map (·.1)
     let (b, _) ← lowerExpr { cx with binders := bound.toList.reverse ++ cx.binders,
                                      lets := cx.lets.filter (!names.contains ·.1) } body
-    return (.quant all (bound.map (·.1)) insts b, .bool)
+    return (.quant all (bound.map (·.2.2)) insts b, .bool)
 end
 
 def varTy (ty? : Option (Array Ident)) : L VTy := do

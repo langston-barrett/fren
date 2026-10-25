@@ -3128,9 +3128,20 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let b ← elabProp t
     let inner ← (← getLocal).indexes.mapM fun (ref, g) => return (ref, ← elabProp g)
     let inst (x : Expr) (vals : Array Expr) : Expr := x.replaceFVars fvs vals
-    let goals ← inner.mapM fun (ref, g) => return (ref, ← exprToSyntax (balanced mkAnd (combos.map (inst g))))
+    -- The names of enclosing `let`s and `where`s are locals here, which the
+    -- `have`s that define them bind again: what mentions them is closed
+    -- over them, and applied to their names.
+    let lctx ← getLCtx
+    let defs := cx.binders.filterMap fun d =>
+      if d.isDef then (lctx.findFromUserName? d.term.raw.getId).map (d.term, ·.toExpr) else none
+    let close (x : Expr) : TermElabM Term := do
+      let used := defs.filter fun (_, fv) => x.containsFVar fv.fvarId!
+      if used.isEmpty then return ← exprToSyntax x
+      let f ← exprToSyntax (← mkLambdaFVars (used.map (·.2)) x)
+      `($f $(used.map (·.1))*)
+    let goals ← inner.mapM fun (ref, g) => return (ref, ← close (balanced mkAnd (combos.map (inst g))))
     modifyLocal fun l => { l with indexes := outer ++ goals }
-    exprToSyntax (balanced (if all then mkAnd else mkOr) (combos.map (inst b)))
+    close (balanced (if all then mkAnd else mkOr) (combos.map (inst b)))
 
 /-- `if c then a else b`, where `toTerm` translates its parts, which are
 checked against a type if `emptyOk`, and are `Nat`s if `natOk` is. -/

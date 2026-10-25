@@ -163,7 +163,8 @@ at each value in the order of [its instances](Lang/Quantifiers.md#meaning),
 conjoined by `∧`, or by `∨` for `exists`, with nothing left of the
 quantifier: no `∀`, `∃` or `Fintype`. The `∧`s and `∨`s form a balanced
 tree, `(a ∧ b) ∧ (c ∧ d)`, so that an expansion of 256 instances is 8 deep,
-not 256.
+not 256. Within a [`let` or `where`](Lang/Let.md), an expansion that mentions its
+names is a function of them, applied to the locals of their `have`s.
 
 A component *uses* the abstract types and uninterpreted functions that its
 variables' types, its constraints and its bindings mention, those that its
