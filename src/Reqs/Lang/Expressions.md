@@ -505,6 +505,40 @@ The methods of `String`, where `s` is the receiver:
 | `s.replace(a, b)` | `s` with the first occurrence of `a` replaced by `b`; `b ++ s` if `a` is `""` | `String` |
 | `s.replace_all(a, b)` | `s` with each occurrence of `a`, from the left and not overlapping, replaced by `b`; `s` if `a` is `""` | `String` |
 
+`lang::string_methods` states the table as laws, for every string and
+position. Several of them search a string or slice it at a position that
+is not a constant, which is outside the [decidable
+core](Decidability.md#strings), so it allows that:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp string_methods {
+    in s: String
+    in t: String
+    in i: Int
+    in n: Int
+
+    expect empty_everywhere: s.contains?("") and s.starts_with?("") and s.ends_with?("")
+    expect prefix_occurs: when s.starts_with?(t), s.contains?(t)
+    expect suffix_occurs: when s.ends_with?(t), s.contains?(t)
+    expect concat_length: (s ++ t).len = s.len + t.len
+    expect concat_prefix: (s ++ t).starts_with?(s) and (s ++ t).ends_with?(t)
+    expect at_is_slice: s.at(i) = s.slice(i, 1)
+    expect at_outside: when i < 0 or i >= s.len, s.at(i) = ""
+    expect slice_outside: when i < 0 or i >= s.len or n <= 0, s.slice(i, n) = ""
+    expect slice_short: when n >= 0, s.slice(i, n).len <= n
+    expect slice_whole: s.slice(0, s.len) = s
+    expect slice_occurs: s.contains?(s.slice(i, n))
+    expect index_of_empty: when 0 <= i and i <= s.len, s.index_of("", i) = i
+    expect index_of_found: when s.index_of(t, i) >= 0, s.slice(s.index_of(t, i), t.len) = t
+    expect index_of_absent: when not s.contains?(t), s.index_of(t, i) = -1
+    expect replace_empty: s.replace("", t) = t ++ s
+    expect replace_absent: when not s.contains?(t), s.replace(t, "x") = s
+    expect replace_all_empty: s.replace_all("", t) = s
+    expect replace_all_absent: when not s.contains?(t), s.replace_all(t, "x") = s
+}
+```
+
 The methods of `Set(T)`:
 
 | Method | Meaning | Result |
@@ -528,6 +562,42 @@ only:
 Every method is total: its value at the edges, such as `"abc".at(5)`, is the
 one the solver's theory of strings gives it, so that Lean and the solver
 agree.
+
+`lang::collection_methods` states laws of the methods of sequences, sets
+and relations, and of the relational operators, which a relation over a
+finite type keeps in the core:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp collection_methods {
+    in p: Seq(Int)
+    in q: Seq(Int)
+    in i: Int
+    in x: Int
+    in s: Set(Int)
+    in t: Set(Int)
+    in r: Rel(Bool, Bool)
+
+    expect rev_twice: q.rev.rev = q
+    expect rev_length: q.rev.len = q.len
+    expect concat_length: (p ++ q).len = p.len + q.len
+    expect update_length: q.update(i, x).len = q.len
+    expect update_reads: when 0 <= i and i < q.len, q.update(i, x)[i] = x
+    expect update_outside: when i < 0 or i >= q.len, q.update(i, x) = q
+    expect at_outside: when i < 0 or i >= q.len, q.at(i) = []
+
+    expect union_contains: s subset (s union t) and t subset (s union t)
+    expect inter_within: (s inter t) subset s and (s inter t) subset t
+    expect minus_disjoint: ((s minus t) inter t) = {}
+    expect union_card: (s union t).card <= s.card + t.card
+
+    expect inverse_twice: r.inverse.inverse = r
+    expect inverse_swaps: r.inverse.domain = r.range and r.inverse.range = r.domain
+    expect closure_contains: r subset r.closure
+    expect closure_transitive: r.closure join r.closure subset r.closure
+    expect image_of_domain: r.image(r.domain) = r.range
+}
+```
 
 `lang::method_type` states the table, and checks it against the
 [Boolean names](Types.md#boolean-names) rule:
