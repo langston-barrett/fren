@@ -2935,9 +2935,9 @@ partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (variant? : α
     opReportsIn src boolEq variant? k (slots[i]?.join) n.range (n.kind == .ite && i == 2)).flatten
 
 /-- The messages of the operator and method lints in an expression written
-in `src` (`Reqs/Lint/Complexity#comparisons`), where `boolEq` says whether a comparison
-compares `Bool`s, and `variant?` which variant without a payload a path
-is, if it is one. -/
+in `src` (`Reqs/Lint/Complexity/Comparisons`), where `boolEq` says whether a
+comparison compares `Bool`s, and `variant?` which variant without a payload a
+path is, if it is one. -/
 def opReports (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (root : BNode α) :
     Array (OpReport α) :=
   opReportsIn (upTo src root.range) boolEq variant? root none root.range

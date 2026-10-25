@@ -228,7 +228,7 @@ pub comp case_split_reqs {
 ## Boolean equality
 
 `bool_equality`, `allow` by default, follows the rules of the [lints on
-operators](Complexity.md#comparisons) for its fix, and fires on `a = b`
+operators](Complexity/Comparisons.md) for its fix, and fires on `a = b`
 where both operands
 are `Bool`s, and its fix is `a iff b`, which means the same and says that
 the two are equivalent. `iff` binds more loosely than `=`, so the fix may

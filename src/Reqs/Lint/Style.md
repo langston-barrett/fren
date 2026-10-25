@@ -96,7 +96,7 @@ or `1` are left as they are, and so is a comparison within a [chained
 comparison](../Lang/Expressions.md#chained-comparisons), where the fix
 would break the chain; those that always hold or never do, such as
 `n >= 0`, are
-[`absurd_extreme_comparisons`'s](Suspicious.md#comparisons).
+[`absurd_extreme_comparisons`'s](Suspicious/Comparisons.md).
 `lint::Comparison` is the comparison operators, and `lint::length_zero`
 states which comparisons they fire on:
 
@@ -409,7 +409,7 @@ pub comp neg_multiply {
 ```
 
 Each of these fixes, and that of
-[`int_plus_one`](Complexity.md#off-by-one-comparisons), writes its operands
+[`int_plus_one`](Complexity/Comparisons.md#off-by-one-comparisons), writes its operands
 with the text they are written with, and the operands and the fix itself
 in parentheses where [fixes need them](../Lint.md#parentheses-in-fixes), as for
 [`nonminimal_bool`](Complexity.md#simpler-bool-expressions): `2 * - -(x + y)` becomes `2
