@@ -1,0 +1,3 @@
+-- A base followed only by `_`s, which is not an integer literal (F0120),
+-- with the help that a digit of the base must follow.
+const MASK: Int := 0b_

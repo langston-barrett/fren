@@ -247,6 +247,7 @@ pub comp integer_literal {
     expect separated: when lexeme = "1_000" or lexeme = "0x_FF", accepted?
     expect digit_last: when lexeme.ends_with?("_"), not accepted?
     expect base_needs_digits: when lexeme = "0x" or lexeme = "0b", not accepted?
+    expect leading_zero_separator: when lexeme = "0_1", not accepted?
 }
 ```
 
