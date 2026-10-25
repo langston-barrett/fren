@@ -203,7 +203,7 @@ structure CompInfo where
   (`view::inconclusive_advice`). -/
   decidable : Bool := true
   /-- `undecidable` is reported as an error in it, so it is not checked
-  (`Reqs/Lint#undecidable-constructs`). -/
+  (`Reqs/Lint/Decidability#undecidable-constructs`). -/
   undecidableDenied : Bool := false
   /-- It, or one of its instances, applies a relational operator. -/
   relational : Bool := false
@@ -397,7 +397,7 @@ structure LocalState where
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false
   /-- `undecidable` is reported as an error in the current item, which is
-  then not checked (`Reqs/Lint#undecidable-constructs`). -/
+  then not checked (`Reqs/Lint/Decidability#undecidable-constructs`). -/
   undecidableDenied : Bool := false
   /-- Whether the current comp, or an instance of it, applies a relational
   operator; with `card`, it is outside the decidable core. -/

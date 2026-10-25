@@ -97,7 +97,7 @@ def checkAndReport (paths : Array Name) : CommandElabM Unit := do
       | none, none, none => continue
     -- Not where `undecidable` is denied: the solver is not asked about
     -- constructs outside the decidable core that the spec has not opted
-    -- into, on which it may abort (`Reqs/Lint#undecidable-constructs`).
+    -- into, on which it may abort (`Reqs/Lint/Decidability#undecidable-constructs`).
     if c.undecidableDenied then continue
     let results ← liftTermElabM <| checkComp c kinds
     for r in results do

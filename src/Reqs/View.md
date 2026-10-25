@@ -16,7 +16,10 @@ violation of a rule such as [Boolean naming](Lang/Types.md#boolean-names).
 Each is an error at the offending source position. A denied
 [lint](Lint.md), such as an unused import, is a
 static error too. With the `fren` command, any static error means that no
-check runs; Lean checks the items without one. In Lean, syntax and type errors
+check runs. Lean checks every item that elaborates, except where the lint
+`undecidable` is denied (see [Decidability lints](Lint/Decidability.md)):
+another denied lint is reported as an error, but its item is still
+checked. In Lean, syntax and type errors
 are Lean's own, and are worded differently, except for operators of other
 languages (`==`, `&&`, `||`, `!`), which both front ends report with what to
 write instead.
@@ -39,8 +42,9 @@ others:
 
 An error that would only follow from an earlier one is not reported. After
 an error in a variable's declaration or in an instance, the component
-stops, since what mentions the variable or the instance would only repeat
-it: so an instance whose component cannot be found, or has a static error
+stops once the parts of the same step are checked, at the end of step 2
+or step 3, since what mentions the variable or the instance would only
+repeat it; a cycle of definitions stops it at the end of step 2 too: so an instance whose component cannot be found, or has a static error
 itself, is reported once, at the instance, and not at each use. A
 definition, or an instance's bindings, with an error still declare their
 variable, with its declared type, so what mentions them is checked as
@@ -48,9 +52,12 @@ usual, and reports only its own errors.
 
 Any other item, including a global expectation and a refinement (whose
 bindings are checked together), reports its first static error only. A
-component or other item with a static error is not checked. With the `fren`
-command, its lints are not reported either, even a denied one; Lean
-reports those of the parts it could elaborate.
+component or other item with a static error is not checked.
+
+The `fren` command does not yet report the lints of an item with a static
+error, even a denied one, while Lean reports those of the parts it could
+elaborate. That is a known difference between the front ends, to be
+removed ([#129](https://github.com/langston-barrett/fren/issues/129)).
 
 ## Error codes
 
