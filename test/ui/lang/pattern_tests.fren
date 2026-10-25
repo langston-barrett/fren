@@ -1,0 +1,98 @@
+-- Pattern tests, `e is P`, in both front ends.
+
+pub enum Shape { Circle(Int), Rect(Int, Int), Empty }
+
+comp kinds {
+    in s: Shape
+    pub det out round?
+    pub det out boxy?
+
+    req round: round? iff s is Shape::Circle(_)
+    req boxy: boxy? iff s is Shape::Rect(_, _) | Shape::Empty
+
+    expect circle: when s = Shape::Circle(3), round? and not boxy?
+    expect one_of: round? iff not boxy?
+    expect as_match: round? iff match s { Shape::Circle(_) => true, _ => false }
+    expect wrong: not boxy?  --~ error: expectation `kinds::wrong` does not hold
+}
+
+-- At the precedence of the comparisons, below `not`, `and` and `or`.
+comp precedence {
+    in s: Shape
+    in t: Shape
+    pub det out n?
+    pub det out both?
+
+    req n: n? iff not s is Shape::Circle(_)
+    req both: both? iff s is Shape::Circle(_) and t is | Shape::Rect(_, _) | Shape::Empty
+
+    expect not_outside: n? iff not (s is Shape::Circle(_))
+    expect and_outside: both? iff ((s is Shape::Circle(_)) and (t is Shape::Rect(_, _) | Shape::Empty))
+}
+
+-- Variants brought into scope by `use`, and patterns that match every value.
+comp imported {
+    use self::Shape::{Circle, Empty, Rect}
+    in s: Shape
+    pub det out sized?
+
+    req r: sized? iff s is Circle(_) | Rect(_, _)
+
+    expect sized: sized? iff s != Empty
+    expect every: s is Circle(_) | Rect(_, _) | Empty
+    expect wildcard: s is _
+}
+
+-- Wherever a `Bool` may be written.
+const CIRCLE: Bool := Shape::Circle(1) is Shape::Circle(_)
+
+fn circle?(s: Shape) := s is Shape::Circle(_)
+
+struct Measure { sides: Int, size: Int }
+
+comp flagged {
+    in round?
+    pub det out sides: Int
+
+    req r: sides = (if round? then 0 else 4)
+}
+
+comp places {
+    in s: Shape
+    pub det out size: Int
+    pub det out doubled: Int
+    pub det out round? := s is Shape::Circle(_)
+    pub det out measure: Measure
+    pub det out by_fn?
+
+    inst f: flagged { round? := s is Shape::Circle(_) }
+
+    req size_rule: size = (if s is Shape::Circle(_) then 1 else 2)
+    req doubled_rule: doubled = match s { Shape::Rect(w, _) => (if s is Shape::Rect(_, _) then w else 0), _ => 0 }
+    req measure_rule: when s is Shape::Rect(_, _) | Shape::Empty,
+        measure = Measure { sides := if s is Shape::Circle(_) then 0 else 4, size }
+    req other: unless s is Shape::Rect(_, _) | Shape::Empty, measure = Measure { sides := f.sides, size }
+    req by_fn_rule: by_fn? iff circle?(s)
+
+    expect constant: CIRCLE
+    expect same_fn: by_fn? iff round?
+    expect sized: size = 1 iff round?
+    expect sides: measure.sides = 0 iff round?
+}
+
+expect boxy: forall (p: places), p.s is Shape::Rect(_, _) | Shape::Empty iff not p.round?
+
+-- `nonminimal_bool` keeps the parentheses that a pattern test needs, since
+-- it binds as a comparison.
+comp simpler {
+    in s: Shape
+    in b?
+    pub det out ok?
+    pub det out z?
+
+    req r: ok? = if s is Shape::Circle(_) then true else false  --~ warning: write `(s is Shape::Circle(_))`
+    req q: z? iff not ((s is Shape::Circle(_)) = b?)  --~ warning: write `(s is Shape::Circle(_)) != b?`
+}
+
+--@ summary: 48 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

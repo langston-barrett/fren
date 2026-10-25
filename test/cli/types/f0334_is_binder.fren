@@ -1,0 +1,3 @@
+-- A pattern test binds a name.
+enum Shape { Circle(Int), Empty }
+comp c { in s: Shape pub out big? req r: big? iff s is Shape::Circle(n) }

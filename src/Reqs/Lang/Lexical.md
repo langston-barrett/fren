@@ -17,7 +17,8 @@ is not part of the name it declares: `x!` declares `x`, and `ready?!`
 declares `ready?`. A few identifiers ending in `!`, such as `s!` and `m!`,
 are Lean tokens, and so cannot be [declared](Components.md#shadowing).
 `_` alone is an identifier, the wildcard of a [`match`
-arm](Expressions.md#matches).
+arm](Expressions.md#matches) and of a [pattern
+test](Expressions.md#pattern-tests).
 
 As in Lean, `a.b` (with no spaces) is a single token, an identifier with
 the components `a` and `b`, as is `a.b.c`. Where `a` is an instance, it
@@ -209,7 +210,7 @@ which:
 pub const RESERVED: Set(String) := {
     "mod", "use", "pub", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp",
     "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
-    "in", "if", "then", "else", "match", "forall", "refine",
+    "is", "in", "if", "then", "else", "match", "forall", "refine",
 }
 
 pub comp reserved_word {
@@ -220,6 +221,7 @@ pub comp reserved_word {
 
     expect contextual: when lexeme = "when" or lexeme = "req" or lexeme = "out", not reserved?
     expect membership: when lexeme = "in", reserved?
+    expect pattern_test: when lexeme = "is", reserved?
 }
 ```
 

@@ -166,8 +166,10 @@ comp c {
 }
 ```
 
-A line that starts with a `|` of a pattern starts its alternative, so
-the alternatives of an or-pattern written one per line line up:
+A line that starts with a `|` of a `match` arm's pattern starts its
+alternative, so the alternatives of an or-pattern written one per line
+line up. In a [pattern test](Lang/Expressions.md#pattern-tests), such a
+line continues its member, as any other line within an expression does:
 
 ```text
 match method {
@@ -175,6 +177,9 @@ match method {
     | Method::Card => 0,
     _ => 1,
 }
+req sized: sized? iff s is
+    | Shape::Circle(_)
+    | Shape::Rect(_, _)
 ```
 
 A line that starts with a closing brace is indented as the line that

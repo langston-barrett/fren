@@ -43,11 +43,12 @@ operator keeps its own. The changes are:
 | `shift-integer` | an integer literal `n` to `n + 1`, and to `n - 1` if `n > 0`, written in decimal |
 | `flip-bool` | `true` and `false`, each to the other |
 | `remove-element` | an element of a set or sequence literal of at least two, removed |
-| `swap-repetition` | in a [pattern](Lang/Expressions.md#patterns), `*` and `+`, each to the other |
-| `narrow-class` | in a pattern, an item of a class of at least two, removed, unless that leaves a `^` first, which would negate the class |
+| `swap-repetition` | in a [regular-expression pattern](Lang/Expressions.md#patterns), `*` and `+`, each to the other |
+| `narrow-class` | in a regular-expression pattern, an item of a class of at least two, removed, unless that leaves a `^` first, which would negate the class |
+| `drop-alternative` | an alternative of the pattern of a [pattern test](Lang/Expressions.md#pattern-tests) of at least two, removed, with its `\|` |
 
-A pattern is changed only where its text is its value: a raw literal, or a
-literal without escapes.
+A regular-expression pattern is changed only where its text is its
+value: a raw literal, or a literal without escapes.
 
 Mutants change what a spec asserts: the expressions of `assume`s, `req`s,
 defined outputs, instance bindings, constants and defined functions. The

@@ -1055,6 +1055,12 @@ def scrutineeMsg (ty : String) : Msg :=
     notes := #["note: `match` reads which variant a value of an enum is",
       "help: for other types, use `if ... then ... else`"] }
 
+/-- An arm, or an alternative of a pattern (`alternative`), that never
+matches, and `why`. -/
+def unreachableMsg (alternative : Bool) (why : String) : Msg :=
+  { code? := some "F0318", headline := s!"unreachable {if alternative then "pattern" else "arm"}"
+    label? := some "never matches", notes := #[why, "help: remove it"] }
+
 /-- Whether a `match`'s arms are accepted, from the number of variants of
 its enumeration, the number with an arm, whether there is a `_` arm, the
 arms for an already covered variant, and the arms after `_`
@@ -1079,8 +1085,7 @@ def checkArms (e : Name) (variants : Array Name) (arms : Array (Option (Array Na
   let after := (Array.range arms.size).filter fun i => firstWild.any (· < i)
   if matchArmsAccepted variants.size covered.size wildcard repeated.size after.size then return
   let unreachable (at_ : Nat × Option Nat) (why : String) : Except (Option (Nat × Option Nat) × Msg) Unit :=
-    throw (some at_, { code? := some "F0318", headline := s!"unreachable {if at_.2.isSome then "pattern" else "arm"}"
-                       label? := some "never matches", notes := #[why, "help: remove it"] })
+    throw (some at_, unreachableMsg at_.2.isSome why)
   -- The first problem, by arm and then by alternative.
   let firstRepeat := (repeated[0]?.map fun k => alts[k]!).filter fun (i, _) => after[0]?.all (i < ·)
   if let some (i, j, v) := firstRepeat then
@@ -1095,6 +1100,41 @@ def checkArms (e : Name) (variants : Array Name) (arms : Array (Option (Array Na
   throw (none, { code? := some "F0317", headline := s!"non-exhaustive match: {names} not covered"
                  label? := some s!"{names} not covered"
                  notes := #["note: a `match` has an arm for every variant, or a last arm `_`"] })
+
+/-- `e is P`, where `e` is not of an enumeration
+(`Reqs/Lang/Expressions#pattern-tests`). -/
+def isScrutineeMsg (ty : String) : Msg :=
+  { code? := some "F0335", headline := s!"cannot test `{ty}` against a pattern", label? := some "not an enum"
+    notes := #["note: `is` tests which variant a value of an enum is",
+      "help: for other types, compare with `=` or `in`"] }
+
+/-- A binder of the pattern of `e is P` that names its value. -/
+def isBinderMsg (n : Name) : Msg :=
+  { code? := some "F0334", headline := s!"a pattern test cannot bind `{n}`", label? := some "binds a name"
+    notes := #["note: a pattern test has no body in which to mention the name",
+      "help: to read the payload, write a `match`"]
+    fixes := #[{ msg := "ignore the value", replacement := "_" }] }
+
+/-- Whether the pattern of `e is P` is accepted, from the number of its
+binders that are not `_` and of its alternatives naming a variant that an
+earlier one names (`lang::pattern_test`). -/
+def patternTestAccepted (nBound nRepeated : Nat) : Bool := nBound == 0 && nRepeated == 0
+
+/-- Checks the pattern of `e is P` on the enumeration `e`, where each
+alternative is its variant and the names of its binders, `_` included,
+explaining the first problem: at an alternative and, for a binder, its
+position. `_`, which has no alternatives, is accepted, and so is a pattern
+that matches every value. -/
+def checkPatternTest (e : Name) (alts : Array (Name × Array Name)) : Except ((Nat × Option Nat) × Msg) Unit := do
+  let bound := alts.flatMap fun (_, bs) => bs.filter (· != `_)
+  let repeated := (Array.range alts.size).filter fun k => alts[:k].toArray.any (·.1 == alts[k]!.1)
+  if patternTestAccepted bound.size repeated.size then return
+  -- The first problem, by alternative.
+  for (v, bs) in alts, j in [0:alts.size] do
+    if let some k := bs.findIdx? (· != `_) then throw ((j, some k), isBinderMsg bs[k]!)
+    if repeated.contains j then
+      throw ((j, none), unreachableMsg true s!"note: an earlier pattern matches `{showPath (e ++ v)}`")
+  throw ((0, none), Msg.internal "a pattern test is rejected, but no alternative explains why")
 
 /-- A pattern that names something other than a variant of the
 scrutinee's enumeration. -/

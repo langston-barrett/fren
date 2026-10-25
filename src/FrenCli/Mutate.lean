@@ -35,11 +35,12 @@ inductive Origin where
   | removeElement
   | swapRepetition
   | narrowClass
+  | dropAlternative
   deriving BEq, Inhabited, Repr
 
 def Origin.all : Array Origin :=
   #[.swapComparison, .swapAndOr, .swapArithmetic, .dropConjunct, .negateTrigger, .shiftInteger, .flipBool, .removeElement,
-    .swapRepetition, .narrowClass]
+    .swapRepetition, .narrowClass, .dropAlternative]
 
 def Origin.name : Origin → String
   | .swapComparison => "swap-comparison"
@@ -52,6 +53,7 @@ def Origin.name : Origin → String
   | .removeElement => "remove-element"
   | .swapRepetition => "swap-repetition"
   | .narrowClass => "narrow-class"
+  | .dropAlternative => "drop-alternative"
 
 structure Mutant where
   origin : Origin
@@ -258,6 +260,13 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) : Array Edit 
         let span := if h : k + 1 < outs.size then { start := outs[k]!.start, stop := outs[k + 1].start }
           else { start := outs[k - 1]!.stop, stop := outs[k]!.stop }
         { origin := .removeElement, span, after := "", context := sp }
+    -- With its `|`: before the next alternative, or after the one before.
+    | .is sp _ (.or _ alts) =>
+      if alts.size < 2 then #[] else
+      (Array.range alts.size).map fun k =>
+        let span := if h : k + 1 < alts.size then { start := alts[k]!.span.start, stop := alts[k + 1].span.start }
+          else { start := alts[k - 1]!.span.stop, stop := alts[k]!.span.stop }
+        { origin := .dropAlternative, span, after := "", context := sp }
     | .method sp _ name #[.str lit _] =>
       if name.name != "matches?" then #[] else
       match s.literalBody? lit with
@@ -278,6 +287,7 @@ where
     | .app _ _ as | .set _ as | .seq _ as => as.map (edits s ·)
     | .record _ _ fs => fs.filterMap fun (_, e?) => e?.map (edits s ·)
     | .match _ sc arms => #[edits s sc] ++ arms.map fun (_, b) => edits s b
+    | .is _ sc _ => #[edits s sc]
     | .pair _ a b | .index _ a b => #[edits s a, edits s b]
     | .method _ r _ as => #[edits s r] ++ as.map (edits s ·)
     | _ => #[]

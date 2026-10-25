@@ -1,0 +1,14 @@
+--@ args: fix --check
+-- The simpler forms of `nonminimal_bool` keep the parentheses that a
+-- pattern test needs as an operand, since it binds as a comparison.
+pub enum Shape { Circle(Int), Empty }
+
+pub comp c {
+    in s: Shape
+    in b?
+    pub out ok?
+    pub out z?
+
+    req r: ok? = if s is Shape::Circle(_) then true else false
+    req q: z? iff not ((s is Shape::Circle(_)) = b?)
+}

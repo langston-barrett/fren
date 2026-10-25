@@ -1072,7 +1072,9 @@ def bareOperand (outer inner : Nat) (assoc : Assoc) (right : Bool) : Bool :=
 /-- The shape of an expression, as the lints that rewrite it see it
 (`ExLint`), and the operator lints. A method call's operands are its
 receiver and then its arguments; another atom's are the expressions in it,
-such as a function's arguments, which no operator lint relates. -/
+such as a function's arguments, which no operator lint relates. A pattern
+test, `e is P`, has its scrutinee as its operand, and binds as a
+comparison. -/
 inductive BKind where
   | lit (b : Bool)
   | not
@@ -1082,6 +1084,7 @@ inductive BKind where
   | ite
   | neg
   | method (name : String)
+  | patternTest
   | atom
   deriving Inhabited, BEq, Repr
 
@@ -1147,7 +1150,7 @@ def BKind.prec : BKind → Nat
   | .not => 4
   | .bin "+" | .bin "-" | .bin "++" | .bin "union" | .bin "minus" => 6
   | .bin "*" | .bin "inter" | .bin "join" => 7
-  | .bin _ => 5
+  | .bin _ | .patternTest => 5
   | .neg => 8
   | .lit _ | .method _ | .atom => 9
 
@@ -1178,6 +1181,8 @@ def BKind.slots : BKind → Array (Option Slot)
   | .not => #[some ⟨4, .right, true⟩]
   | .neg => #[some ⟨8, .right, true⟩]
   | k@(.bin _) => #[some ⟨k.prec, k.assoc, false⟩, some ⟨k.prec, k.assoc, true⟩]
+  -- Its scrutinee, the left operand of a comparison.
+  | k@.patternTest => #[some ⟨k.prec, k.assoc, false⟩]
   | _ => #[]
 
 /-- An expression, rewritten: its text and precedence. -/
@@ -1231,7 +1236,7 @@ def BNode.toEx : Nat → BNode α → Ex
       | none => .atom 0
     | .when n => .when n (k 0) (k 1)
     | .ite => .ite (k 0) (k 1) (k 2)
-    | .method _ | .atom => .atom 0
+    | .method _ | .patternTest | .atom => .atom 0
 
 /-- The text of a rewritten form, from the rewritten texts of the operands
 and of theirs, as `Shape.build` builds the expression. -/

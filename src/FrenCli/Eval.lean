@@ -860,6 +860,18 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       ty := t
       out := out.push (pat, b)
     return (.match s out, ty)
+  -- `e is P` is `match e { P => true, _ => false }`.
+  | .is _ scrutinee p => do
+    let (s, t) ← lowerExpr cx scrutinee
+    let .data path := t | throw "the scrutinee of `is` is not an enumeration"
+    let idxs ← p.alts.mapM fun
+      | .variant _ segs _ => do
+        let .variant en idx ← resolve segs | throw "a pattern names no variant"
+        unless en.path == path do throw s!"the pattern's variant is not of `{showPath path}`"
+        pure idx
+      | _ => throw "a nested or-pattern"
+    let pat := if p matches .wild _ then Pat.wild else Pat.alts idxs
+    return (.match s #[(pat, .lit (.bool true)), (.wild, .lit (.bool false))], .bool)
 end
 
 def varTy (ty? : Option (Array Ident)) : L VTy := do

@@ -207,6 +207,19 @@ impl match_arms: lang::match_arms for (vs : List Lean.Name) (p : Lean.Name → B
   have _hle := List.length_filter_le p vs
   cases w <;> simp [fren_spec, Fren.Core.matchArmsAccepted, ofList_filter_eq] <;> omega
 
+-- For every pattern test, the variants `vs`, those its alternatives name,
+-- `p`, and the counts, with the count that both front ends compare.
+impl pattern_test: lang::pattern_test for (vs : List Lean.Name) (p : Lean.Name → Bool) (w : Bool) (b r : Nat) {
+  variants := Fren.FinSet.ofList vs,
+  named := Fren.FinSet.ofList (vs.filter p),
+  wildcard? := w,
+  n_bound := b,
+  n_repeated := r,
+  accepted? := Fren.Core.patternTestAccepted b r,
+} by
+  intro vs p w b r _
+  simp [fren_spec, Fren.Core.patternTestAccepted]
+
 impl function_params: lang::function_params for (d : Bool) (p n : Nat) {
   defined? := d,
   n_params := p,
