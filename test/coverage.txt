@@ -13,6 +13,7 @@ Fren.Core.Ex.withKids
 Fren.Core.Msg.internal
 Fren.Core.Outcome.reason
 Fren.Core.Pick.get
+Fren.Core.Re.mat
 Fren.Core.Shape.build
 Fren.Core.Val.sameType
 Fren.Core.applicationAccepted
@@ -82,11 +83,14 @@ Fren.Seq.rev
 Fren.Seq.toList
 Fren.Seq.unit
 Fren.Str.lit
+Fren.Str.matches
 Fren.Str.replaceAllAux
 Fren.elabInterp
 Fren.elabMd
 Fren.interpAccepted
+Fren.pathComponents
 Fren.relativeTo
+Fren.relativeTo.strip
 Fren.resolveUsePath
 FrenCli.Eval.Spec.insts
 FrenCli.Eval.World.size
