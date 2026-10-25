@@ -24,9 +24,10 @@
 - **Fren's own requirements**: checked by `lake build` (`#fren_md`) and by
   the `fren` command under `lake test`.
 - **Conformance corpus** (`lake test`): random components whose
-  constraints are all in the [decidable core](../Lang/Decidability.md) of
-  strings, from a fixed seed, must be checked with no inconclusive result:
-  the core promises that the solver decides them.
+  constraints are all in the [decidable core](../Lang/Decidability.md),
+  one corpus each for strings, sets, relations and sequences, from a fixed
+  seed, must be checked with no inconclusive result: the core promises
+  that the solver decides them.
 - **Formatting** (`lake test`): every `.fren` and Markdown spec in the
   repository must be formatted, as `fren fmt --check` says, except those
   listed as `--ignore` globs in `fmtIgnore` in `src/FrenTestMain.lean`:
@@ -60,11 +61,15 @@
   exact. A component with too many behaviours to enumerate is skipped,
   and counted in the summary.
 
-`lake test` runs its tests as jobs, in parallel, at most as many at once
-as the machine has cores: each job is a process of its own (`fren_test
---job NAME`), and the ui tests run in batches of at most eight files, each
-importing `Fren` once. The jobs are independent, but for one: with
-`--bless`, the snapshots job rewrites the snapshots that the error codes
-job reads, so it runs first, alone. A job that crashes is a failure. The
-failures are reported sorted, so that their order does not depend on which
-job finished first.
+`lake test` runs its tests as jobs, in parallel: each job is a process of
+its own (`fren_test --job NAME ARG...`), and the ui tests run in batches of
+at most eight files, each importing `Fren` once. As many jobs run at once
+as the machine has cores, but at most sixteen, since a job can take about
+2 GB of memory and the solver's time limit is in wall-clock time;
+`FREN_TEST_JOBS=N` runs `N` at once instead. The jobs are independent, but
+for one: with `--bless`, the snapshots job rewrites the snapshots that the
+error codes job reads, so it runs first, alone. A job that crashes is a
+failure, and so is one that writes to stderr, such as with a `panic!`,
+which prints and carries on: what it wrote is reported. The failures are
+reported sorted, so that their order does not depend on which job
+finished first.
