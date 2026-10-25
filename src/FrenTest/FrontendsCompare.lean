@@ -87,6 +87,19 @@ def parseLate : String := "comp c {\n    in x: Int\n    expect x0: x = 1\n    re
 #guard differs parseLate { diags := #[err 4 "expected an expression, found `}`" "F0104"], exit? := some 2 }
   { diags := #[err 2 "cannot find `Int2` in this scope"] }
 
+-- Lean's parse error two lines before the binary's: the binary parsed
+-- that line, so this is a difference of its own.
+def parseEarly : String := "comp c {\n    in x: Int\n    expect e: {(1, 2)}.range.card = 1\n    req q: x =\n}\n"
+
+#guard differs parseEarly { diags := #[err 5 "expected an expression, found `}`" "F0104"], exit? := some 2 }
+  { diags := #[err 3 "unexpected token '.'; expected fren_expr"] }
+
+-- The same, across a blank line and a comment, which the binary skips.
+def parseGap : String := "comp c {\n    req q: x =\n\n    -- a comment\n    expect e: x = 1\n}\n"
+
+#guard agrees parseGap { diags := #[err 5 "expected an expression, found keyword `expect`" "F0104"], exit? := some 2 }
+  { diags := #[err 2 "unexpected token 'expect'; expected fren_expr"] }
+
 #guard !isLeanParseError (err 2 "expected a function, but `f` is a variable")
 #guard isLeanParseError (err 2 "expected 'out'")
 

@@ -93,7 +93,9 @@
   and the lints. Only what may legitimately differ is not compared:
   - A parse error stops the `fren` command, while Lean recovers at the
     next command: Lean must then report a parse error in the same item, on
-    the parse error's line or before it, and nothing else is compared. An
+    the parse error's line, or on the last line before it that is not blank
+    or a comment, since Lean places a parse error at the end of the token
+    before the offending one, and nothing else is compared. An
     item is one Lean command, so any other error of Lean's in it means
     that Lean parsed what the `fren` command rejects. Lean's parse errors
     are its messages that start with `unexpected`, `unterminated`, or

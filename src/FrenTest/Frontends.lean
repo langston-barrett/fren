@@ -174,15 +174,23 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   let render (who : String) (d : Diagnostic) :=
     s!"line {d.line}: only {who} reports {d.severity}{if who == "fren" then s!"[{d.code?.getD "-"}]" else ""}: {headOf d}"
   let cliDiags := cli.diags.filter (!isStoppedTrailer ·)
+  let lines := text.splitOn "\n"
+  -- Whether every line strictly between `a` and `b` is blank or a comment.
+  let blankBetween (a b : Nat) := (List.range (b - a - 1)).all fun k =>
+    let l := (lines[a + k]?.getD "").trimAscii.toString
+    l.isEmpty || l.startsWith "--"
   -- A parse error stops the binary; Lean recovers at the next command.
   if let some p := cliDiags.find? (·.code?.any (·.startsWith "F01")) then
     -- Only a parse error of Lean's can stand for it: an item is one Lean
     -- command, so any other error of Lean's in the item means that Lean
-    -- parsed the line that the binary rejects.
-    if hosted.diags.any fun h => isLeanParseError h && h.line ≤ p.line && itemAt h.line == itemAt p.line then
+    -- parsed the line that the binary rejects. Lean places a parse error
+    -- at the end of the token before the offending one, so on the
+    -- binary's line or the last line before it with code; the binary
+    -- parsed every line before that.
+    if hosted.diags.any fun h => isLeanParseError h && h.line ≤ p.line && blankBetween h.line p.line
+        && itemAt h.line == itemAt p.line then
       return (#[], false)
-    return (#[render "fren" p ++ " (and Lean reports no parse error in its item up to that line)"], false)
-  let lines := text.splitOn "\n"
+    return (#[render "fren" p ++ " (and Lean reports no parse error at or just before that line, in its item)"], false)
   -- Checks whose evidence is testing, which Lean does not run.
   let anyTested := text.contains "set_option fren.evidence \"tested\""
   let onTested (d : Diagnostic) := (lines[d.line - 1]?.getD "").contains "set_option fren.evidence \"tested\""
