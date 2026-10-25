@@ -306,16 +306,16 @@ impl membership_chain: lint::membership_chain for (n : Nat) (same : Bool) {
   intro n same _
   cases same <;> simp [fren_spec, Fren.Core.membershipChainFires] <;> omega
 
-impl output_lints: lint::output_lints for (d : Bool) (v r : Nat) (eq : Bool) {
+impl output_lints: lint::output_lints for (d v : Bool) (r : Nat) (eq : Bool) {
   defined? := d,
-  n_variables := v,
+  mentions? := v,
   n_reqs := r,
   equation? := eq,
   constant? := (Fren.Core.outputLints d v r eq).1,
   definable? := (Fren.Core.outputLints d v r eq).2,
 } by
   intro d v r eq _
-  cases d <;> cases eq <;> simp [fren_spec, Fren.Core.outputLints] <;> omega
+  cases d <;> cases v <;> cases eq <;> simp [fren_spec, Fren.Core.outputLints] <;> omega
 
 impl index_after_use: lint::index_after_use for (l r : Bool) {
   indexes_left? := l,

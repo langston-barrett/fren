@@ -213,8 +213,8 @@ def membershipChainMsg (x : String) (vals : Array String) : Msg :=
 
 /-- Whether `constant_output` and `definable_output` fire on an output
 (`lint::output_lints`). -/
-def outputLints (defined : Bool) (nVariables nReqs : Nat) (equation : Bool) : Bool × Bool :=
-  (defined && nVariables == 0, !defined && nReqs == 1 && equation)
+def outputLints (defined mentions : Bool) (nReqs : Nat) (equation : Bool) : Bool × Bool :=
+  (defined && !mentions, !defined && nReqs == 1 && equation)
 
 def constantOutputMsg (x : Name) : Msg :=
   { code? := some "F0719", headline := s!"defined output `{x}` is the same in every behaviour"

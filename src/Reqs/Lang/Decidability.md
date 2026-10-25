@@ -50,12 +50,15 @@ variables, and lengths are used in linear arithmetic.
 | `s < t`, `s <= t`, `s > t`, `s >= t`, on strings | one side is a constant |
 | `a ++ b` | it is the receiver of a method, a side of `=` or `!=` whose other side is a constant, a [definition](Components.md#defined-outputs) or part of one, or itself a constant |
 
-Here a *constant* is an expression that mentions no variable, binder or
-function, such as `"F0" ++ "1"`, and a *variable* is a variable of the
-component, of one of its instances, a field read from one, or a binder. A
-[definition](Components.md#defined-outputs) is an equation between the
-defined output and its definition, and an instance's binding an equation
-between the instance's input and its expression.
+Here a *constant* is an expression that mentions no variable and no
+uninterpreted function, as [Mentions](Expressions.md#mentions) defines,
+such as `"F0" ++ "1"`, or `pad("F0")` with `pad` a defined function. A
+binder mentions what its scrutinee mentions, so it is a constant if its
+scrutinee is. A *variable* is a variable of the component, of one of its
+instances, a field read from one, or a binder whose scrutinee is not a
+constant. A [definition](Components.md#defined-outputs) is an equation
+between the defined output and its definition, and an instance's binding
+an equation between the instance's input and its expression.
 
 A definition assigns its output once, and definitions are acyclic, so a
 `++` in one is a *straight-line* equation, which is decidable with regular

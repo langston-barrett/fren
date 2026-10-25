@@ -2,6 +2,7 @@
 import FrenCli.Parse
 import FrenCore.Evidence
 import FrenCore.Lint
+import FrenCore.Mentions
 import FrenCore.Names
 import FrenCore.Refine
 import FrenCore.Regex
@@ -497,42 +498,45 @@ def isDefined (cx : ExprCtx) (segs : Array Ident) : M Bool := do
     | return false
   return st.defs.any (·.1 == path)
 
-/-- How many variables `e` mentions, counted with repetition, where `bs`
-are the binders of `e` around the subexpression, each with the count of
-its scrutinee. A name that is not a variable, such as a constant, is not
-counted (`lang::linear_product`). -/
-partial def varsMentioned (cx : ExprCtx) (bs : Array (Name × Nat) := #[]) : Expr → M Nat
-  | .path _ segs => do
-    if segs.size != 1 then return 0
+/-- The shape of `e`, for what it mentions (`lang::mentions`), where `bs`
+are the binders of `e` around the subexpression, each with the shape of its
+scrutinee. -/
+partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) := #[]) (e : Expr) : M Fren.Core.MentionShape := do
+  let parts (k : Fren.Core.MentionKind) (es : List Expr) : M Fren.Core.MentionShape :=
+    return .node k (← es.mapM (shapeOf cx bs))
+  match e with
+  | .path _ segs =>
+    if segs.size != 1 then return .leaf .constant
     let n := identName segs[0]!.name
     if let some (_, k) := bs.reverse.find? (·.1 == n.getRoot) then return k
-    if let some b := cx.binder? n.getRoot then return ← varsMentioned (cx.at b) #[] b.scrutinee
-    -- A defined output counts as its definition (acyclic, so this ends).
+    if let some b := cx.binder? n.getRoot then return .node .binder [← shapeOf (cx.at b) #[] b.scrutinee]
+    -- Definitions are acyclic, so this ends.
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
-      return ← varsMentioned { cx with binders := #[] } #[] d
-    return if cx.vars.any (·.name.isPrefixOf n) then 1 else 0
-  | .when _ _ c d | .bin _ _ c d => return (← varsMentioned cx bs c) + (← varsMentioned cx bs d)
-  | .not _ a | .neg _ a | .field _ a _ => varsMentioned cx bs a
-  -- A method has a fixed meaning, like a variant.
-  | .method _ r _ args => (#[r] ++ args).foldlM (fun n a => return n + (← varsMentioned cx bs a)) 0
-  | .set _ es => es.foldlM (fun n a => return n + (← varsMentioned cx bs a)) 0
-  | .pair _ a b | .index _ a b => return (← varsMentioned cx bs a) + (← varsMentioned cx bs b)
-  | .seq _ es => es.foldlM (fun n a => return n + (← varsMentioned cx bs a)) 0
-  | .ite _ c a b => return (← varsMentioned cx bs c) + (← varsMentioned cx bs a) + (← varsMentioned cx bs b)
-  | .app _ segs args => do
-    let n ← args.foldlM (fun n a => return n + (← varsMentioned cx bs a)) 0
-    -- A function's value is unknown, like a variable's; a variant's is
-    -- not, and a defined function's is linear in its arguments'.
-    return if (← isVariant cx segs) || (← isDefined cx segs) then n else n + 1
-  | .record _ _ fs => fs.foldlM (init := 0) fun n (f, e?) => return n + (← varsMentioned cx bs (e?.getD (.path f.span #[f])))
-  | .match _ s arms => do
-    let k ← varsMentioned cx bs s
-    arms.foldlM (init := k) fun n (p, body) => do
+      return .node .definedOutput [← shapeOf { cx with binders := #[] } #[] d]
+    return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable else .constant)
+  | .when _ _ c d | .bin _ _ c d | .pair _ c d | .index _ c d => parts .compound [c, d]
+  | .not _ a | .neg _ a | .field _ a _ => parts .compound [a]
+  | .method _ r _ args => parts .method (r :: args.toList)
+  | .set _ es | .seq _ es => parts .compound es.toList
+  | .ite _ c a b => parts .compound [c, a, b]
+  | .app _ segs args =>
+    let k : Fren.Core.MentionKind ← if ← isVariant cx segs then pure .construction
+      else if ← isDefined cx segs then pure .defined else pure .uninterpreted
+    parts k args.toList
+  | .record _ _ fs => parts .construction (fs.toList.map fun (f, e?) => e?.getD (.path f.span #[f]))
+  | .match _ s arms =>
+    let s' ← shapeOf cx bs s
+    let arms ← arms.toList.mapM fun (p, body) => do
       let new := match p with
-        | .variant _ _ (some xs) => xs.map fun x => (Name.mkSimple (declaredIdent x).1.name, k)
+        | .variant _ _ (some xs) => xs.map fun x => (Name.mkSimple (declaredIdent x).1.name, Fren.Core.MentionShape.node .binder [s'])
         | _ => #[]
-      return n + (← varsMentioned cx (bs ++ new) body)
-  | _ => return 0
+      shapeOf cx (bs ++ new) body
+    return .node .compound (s' :: arms)
+  | .num .. | .bool .. | .str .. => return .leaf .literal
+
+/-- Whether `e` mentions a variable or an uninterpreted function
+(`lang::mentions`). -/
+def mentionsAny (cx : ExprCtx) (e : Expr) : M Bool := return (← shapeOf cx #[] e).mentions
 
 /-- The names of the variables that `e` mentions: its paths of one
 segment, and for `p.x`, `p` too. -/
@@ -595,9 +599,9 @@ partial def mentionsInfiniteOutput (cx : ExprCtx) (e : Expr) : M Bool := do
     if (defDeps cx.vars v).any fun u => u.role == .output && st.infinite u.ty then return true
   return false
 
-/-- Whether `e` is a constant: it mentions no variable, binder or
-uninterpreted function. -/
-def isConstant (cx : ExprCtx) (e : Expr) : M Bool := return (← varsMentioned cx #[] e) == 0
+/-- Whether `e` is a constant: it mentions no variable or uninterpreted
+function (`lang::mentions`). -/
+def isConstant (cx : ExprCtx) (e : Expr) : M Bool := return !(← mentionsAny cx e)
 
 /-- Whether `e` is a variable, a field read from one, or an application of
 an uninterpreted function, which is as unknown as a variable. -/
@@ -1121,7 +1125,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       unless ty == .string do mismatch b .string ty (opNote op .string)
       return (s!"(str.++ {x} {y})", .string)
     | "*" =>
-      unless Fren.Core.productAccepted (← varsMentioned cx #[] a) (← varsMentioned cx #[] b) do err span Fren.Core.nonlinearMsg
+      unless Fren.Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do err span Fren.Core.nonlinearMsg
       return (s!"(* {← expect a .int (opNote op .int)} {← expect b .int (opNote op .int)})", .int)
     | _ => return (s!"({op} {← expect a .int (opNote op .int)} {← expect b .int (opNote op .int)})", .int)
   | .path _ segs =>
@@ -1623,8 +1627,8 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
       | #[(_, .bin _ op l r)] => (op == "=" || op == "iff") &&
           ((isX l && !(mentions r).contains v.name) || (isX r && !(mentions l).contains v.name))
       | _ => false
-    let nVars ← match v.defn? with | some d => varsMentioned lcx #[] d | none => pure 1
-    let (constant, definable) := Fren.Core.outputLints v.defn?.isSome nVars about.size equation
+    let mentions ← match v.defn? with | some d => mentionsAny lcx d | none => pure true
+    let (constant, definable) := Fren.Core.outputLints v.defn?.isSome mentions about.size equation
     if constant then lint .constantOutput v.span (Fren.Core.constantOutputMsg v.name)
     if definable then lint .definableOutput v.span (Fren.Core.definableOutputMsg v.name about[0]!.1)
   let path := st.module ++ n

@@ -18,7 +18,7 @@ use view::Severity
 | Lint | Code | Default | Reported at |
 |---|---|---|---|
 | `card_zero` | `F0716` | `warn` | a comparison of a set's or relation's `card` with `0`, such as `s.card = 0` (see [Empty collections](#empty-collections)) |
-| `constant_output` | `F0719` | `warn` | a defined output whose definition mentions no variable (see [Outputs](#outputs)) |
+| `constant_output` | `F0719` | `warn` | a defined output whose definition mentions no variable and no uninterpreted function (see [Outputs](#outputs)) |
 | `dead_code` | `F0711` | `warn` | a private enumeration, record, abstract type, function or constant that nothing in its file uses (see [Dead code](#dead-code)) |
 | `definable_output` | `F0720` | `allow` | an output that one requirement equates with an expression of other variables (see [Outputs](#outputs)) |
 | `glob_imports` | `F0702` | `warn` | a `use ...::*` (see [Glob imports](#glob-imports)) |
@@ -613,7 +613,8 @@ pub comp membership_chain {
 ## Outputs
 
 `constant_output` fires on a [defined output](Lang/Components.md#defined-outputs)
-whose definition mentions no variable: it is the same in every behaviour,
+whose definition mentions no variable and no uninterpreted function (see
+[Mentions](Lang/Expressions.md#mentions)): it is the same in every behaviour,
 so it is a constant. `definable_output`, `allow` by default, fires on an
 output, not defined, that exactly one requirement constrains, unconditionally,
 as `x = e` or `x? iff e`, where `e` does not mention `x`: the requirement
@@ -622,15 +623,15 @@ could be its definition. `lint::output_lints` states both:
 ```fren
 pub comp output_lints {
     in defined?              -- the output is defined
-    in n_variables: Int      -- variables its definition mentions, if defined
+    in mentions?             -- its definition mentions a variable or an uninterpreted function, if defined
     in n_reqs: Int           -- requirements that mention it, if not defined
     in equation?             -- the only one is `x = e` or `x? iff e`, with `e` not mentioning `x`
     pub det out constant?    -- `constant_output` fires
     pub det out definable?   -- `definable_output` fires
 
-    assume counts: n_variables >= 0 and n_reqs >= 0
+    assume counts: n_reqs >= 0
 
-    req constant: constant? iff (defined? and n_variables = 0)
+    req constant: constant? iff (defined? and not mentions?)
     req definable: definable? iff (not defined? and n_reqs = 1 and equation?)
 
     expect exclusive: not (constant? and definable?)

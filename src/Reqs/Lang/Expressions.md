@@ -98,41 +98,127 @@ pub comp operand {
 So `a? iff b? iff c?` and `x < y < z` are errors, and so is `a? and when
 b?, c?`, since `when` binds more loosely than `and`.
 
-## Linear arithmetic
+## Mentions
 
-One operand of `*` must mention no variable and apply no
-[function](Items.md#functions): it is built from literals and
-[constants](Items.md#constants), such as `2`, `-RATE`, `2 * 3`
-or `(MAX - MIN)`. Its value is then fixed, so the product is linear in the
-other operand, which the solver decides. `x * y` is an error, and so is `x *
-RATE` within a component that declares a variable `RATE!`, which shadows
-the constant (see [Shadowing](Components.md#shadowing)). So is `x *
-rate(1)`: a function's value is unknown even at a fixed argument.
-`lang::linear_product` states this, from how many variables each operand
-mentions, counting each mention, the variables of instances, and each
-function application as one mention. A [binder](#matches) counts as mentioning what its
-scrutinee mentions:
+Some rules ask whether an expression *mentions* a variable or an
+uninterpreted [function](Items.md#functions): those of [linear
+arithmetic](#linear-arithmetic), of the [decidable
+core](Decidability.md#strings), and of the
+[lint](../Lint.md#outputs) `constant_output`. An expression that mentions
+neither has the same value in every behaviour. What an expression
+mentions is decided from its parts, as `lang::mentions` states:
+
+- A literal mentions nothing, and neither does a
+  [constant](Items.md#constants), a variant without a payload, or any
+  other path of more than one segment, such as `m::RATE`.
+- A variable mentions itself, and so does a variable of an
+  [instance](Instances.md#instance-variables) or a field read from a
+  variable. A variable declared as `RATE!` shadows the constant `RATE`
+  (see [Shadowing](Components.md#shadowing)), so `RATE` is then a
+  variable.
+- A [defined output](Components.md#defined-outputs) mentions what its
+  definition mentions, and a [binder](#matches) what its scrutinee
+  mentions.
+- A [variant](#variants-with-payloads) or a [record literal](#records)
+  mentions what its arguments or fields mention: its value is fixed.
+- A [method](#methods) call mentions what its receiver and arguments
+  mention: a method has a fixed meaning.
+- An application of an uninterpreted function mentions the function: its
+  value is unknown even at fixed arguments.
+- An application of a defined function mentions what its arguments
+  mention: its value is fixed by theirs.
+- Every other expression mentions what its parts mention: an operator,
+  `when` and `unless`, a conditional, a `match` (its scrutinee and the
+  bodies of its arms), indexing `q[i]`, a field read from an expression
+  that is not a name, such as `R { a := x }.a`, and a literal of a set,
+  pair or sequence.
 
 ```fren
-pub comp linear_product {
-    in a_vars: Int       -- mentions of variables and applications in the left operand
-    in b_vars: Int       -- mentions of variables and applications in the right operand
-    pub det out accepted?
+-- The kinds of expression, for what one mentions. `Literal` is a literal;
+-- `Constant` is a constant, a variant without a payload, or a path of more
+-- than one segment; `Variable` is a variable, an instance's variable, or a
+-- field read from one; `Construction` is a variant with a payload or a
+-- record literal; `Uninterpreted` and `Defined` are applications of
+-- uninterpreted and defined functions; `Compound` is an operator, `when`
+-- or `unless`, a conditional, a `match`, indexing, a field read from an
+-- expression that is not a name, or a literal of a set, pair or sequence.
+pub enum ExprKind {
+    Literal, Constant, Variable, DefinedOutput, Binder, Construction, Method, Uninterpreted, Defined, Compound,
+}
 
-    assume counts: a_vars >= 0 and b_vars >= 0
+pub comp mentions {
+    use self::ExprKind::{
+        Binder,
+        Compound,
+        Constant,
+        Construction,
+        Defined,
+        DefinedOutput,
+        Literal,
+        Method,
+        Uninterpreted,
+        Variable,
+    }
+    in expr_kind: ExprKind
+    in parts?                -- one of its parts mentions a variable or an uninterpreted function
+    pub det out mentions?    -- it mentions a variable or an uninterpreted function
 
-    req rule: accepted? iff (a_vars = 0 or b_vars = 0)
+    req rule: mentions? iff match expr_kind {
+        Literal | Constant => false,
+        Variable | Uninterpreted => true,
+        DefinedOutput | Binder | Construction | Method | Defined | Compound => parts?,
+    }
 
-    expect scaling: when a_vars = 0, accepted?
-    expect no_variable_products: when a_vars > 0 and b_vars > 0, not accepted?
+    expect fixed_meaning: when expr_kind = Defined or expr_kind = Method or expr_kind = Construction, mentions? iff parts?
+    expect unknown: when expr_kind = Variable or expr_kind = Uninterpreted, mentions?
 }
 ```
 
-Dropping variables from an operand never makes a product nonlinear:
+The parts of a defined output and of a binder are its definition and its
+scrutinee. So `double(3)`, `"abc".len` and `Shape::Circle(2)` mention
+nothing, and `s.len`, `double(x)` and `rate(1)` mention something.
+
+## Linear arithmetic
+
+One operand of `*` must mention no variable and no uninterpreted function
+(see [Mentions](#mentions)): it is built from literals,
+[constants](Items.md#constants), and defined functions and methods applied
+to those, such as `2`, `-RATE`, `2 * 3`, `(MAX - MIN)` or `double(3)`. Its
+value is then fixed, so the product is linear in the other operand, which
+the solver decides. `x * y` is an error, and so is `x * RATE` within a
+component that declares a variable `RATE!`, which shadows the constant
+(see [Shadowing](Components.md#shadowing)). So is `x * rate(1)`,
+with `rate` uninterpreted: its value is unknown even at a fixed argument.
+`lang::linear_product` states this, from whether each operand mentions a
+variable or an uninterpreted function:
 
 ```fren
-expect fewer_variables: forall (p q: linear_product),
-    when q.a_vars <= p.a_vars and q.b_vars <= p.b_vars and p.accepted?, q.accepted?
+pub comp linear_product {
+    in a_mentions?    -- the left operand mentions a variable or an uninterpreted function
+    in b_mentions?    -- the right operand mentions a variable or an uninterpreted function
+    pub det out accepted?
+
+    req rule: accepted? iff not (a_mentions? and b_mentions?)
+
+    expect scaling: when not a_mentions?, accepted?
+    expect no_variable_products: when a_mentions? and b_mentions?, not accepted?
+}
+```
+
+An operand that mentions less never makes a product nonlinear:
+
+```fren
+expect fewer_mentions: forall (p q: linear_product),
+    when (not q.a_mentions? or p.a_mentions?) and (not q.b_mentions? or p.b_mentions?) and p.accepted?,
+    q.accepted?
+```
+
+A defined function applied to constants scales a product like a literal,
+whatever the other operand:
+
+```fren
+expect defined_scales: forall (m: mentions) (p: linear_product),
+    when m.expr_kind = ExprKind::Defined and not m.parts? and (p.a_mentions? iff m.mentions?), p.accepted?
 ```
 
 ## Conditionals
