@@ -363,8 +363,9 @@ structure LocalState where
   /-- Elaborating a Markdown spec (`#fren_md`), which reports its own lints. -/
   inMarkdown : Bool := false
   /-- For each comp, global expectation and refinement declared in a
-  Markdown spec, the spec's path as `#fren_md` names it and its text's line
-  map. Its syntax has positions in that text, wherever it is checked. -/
+  Markdown spec, the spec's name in messages, its path relative to the Lean
+  file (`Fren.elabMd`), and its text's line map. Its syntax has positions
+  in that text, wherever it is checked. -/
   mdSources : NameMap (String × FileMap) := {}
   /-- The Markdown spec being read, if any: what `mdSources` records for the
   items declared now. -/

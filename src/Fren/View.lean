@@ -24,19 +24,34 @@ scoped syntax (name := checkCmd) "#fren_check" (ppSpace fren_path)? : command
 
 end Lang
 
+/-- The file name of a message logged while a Markdown spec is read that
+already starts with the name of the file it is about, if any: the
+`#fren_md`s that read the spec place it without labelling it again
+(`Fren.elabMd`). No file has this name. -/
+def mdLabelled : String := "<#fren_md>"
+
 /-- Logs `text` about the item `path` at `ref`, by the text of the file that
 declares it, wherever it is checked (`Reqs/Markdown#in-lean`). A Markdown
-spec's item is placed at the `#fren_md` that reads it, with the spec's name
-and position (`Fren.elabMd`), or, checked from the Lean file itself, at the
-`#fren_check`, with them in the text. The Lean file's item is placed at its
-own position, even when a spec checks it. An imported item is placed at the
-`#fren_check`, since its text is another module's. -/
+spec's item is placed at the outermost `#fren_md`, the one in the Lean
+file, with the spec's name and position (`Fren.elabMd`), or, checked from
+the Lean file itself, at the `#fren_check`, with them in the text. The Lean
+file's item is placed at its own position, even when a spec checks it. An
+imported item is placed at the `#fren_check`, since its text is another
+module's. -/
 def logAbout (path : Name) (ref : Syntax) (text : MessageData) (severity : MessageSeverity) :
     CommandElabM Unit := do
   let l ← getLocal
   -- Without a position, `logAt` would use the current command's, which
-  -- another file's line map would misplace.
-  if ref.getPos?.isNone then return ← logAt ref text severity
+  -- another file's line map would misplace: the message is named by the
+  -- file that declares the item, if it is a spec, with no position, and
+  -- placed at the check.
+  if ref.getPos?.isNone then
+    let text := match l.mdSources.find? path with
+      | some (rel, _) => m!"{rel}: {text}"
+      | none => text
+    if l.inMarkdown then
+      return ← withReader (fun ctx => { ctx with fileName := mdLabelled }) (logAt ref text severity)
+    return ← logAt ref text severity
   match l.mdSources.find? path, l.leanFile? with
   | some (rel, fileMap), _ =>
     if l.inMarkdown then

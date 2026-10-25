@@ -14,10 +14,12 @@ file, as if they were written in place of the command.
 Messages about the blocks are logged at the command, with text starting
 `file.md:line:col:`, except those about the Lean file's own items, which
 are logged at the items. They cannot simply carry the Markdown file's name:
-Lake replaces the file name of every message with the module's. A spec read
-by another is named relative to the Lean file, and its messages are
-labelled once, by it, and placed at the outermost command. An item's
-syntax has positions in the text of the file that declares it, so each
+Lake replaces the file name of every message with the module's. A spec is
+named by its path relative to the Lean file, with `.` and `..` resolved,
+even when another spec reads it. The messages of a spec that another reads
+are labelled once, by it, and placed at the outermost command
+(`Fren.mdLabelled`). An item's syntax has positions in the text of the file
+that declares it, so each
 spec's item is recorded with that text as it is declared (`mdSources`, from
 `mdSource?`), even in a spec that another spec reads, and the Lean file's
 text is kept while a spec is read (`leanFile?`). `Fren.logAbout` places each
@@ -39,15 +41,24 @@ scoped syntax (name := mdCmd) "#fren_md " str : command
 
 end Lang
 
-/-- The file name of a message that a `#fren_md` read by another has already
-labelled with its spec's name and position: the reading `#fren_md` places it
-without labelling it again. No file has this name. -/
-def labelled : String := "<#fren_md>"
+/-- The components of `path`, without `.`, and with each `..` cancelling the
+component before it, so that two spellings of one path agree. -/
+def pathComponents (path : System.FilePath) : List String :=
+  (path.components.foldl (init := []) fun acc c =>
+    if c == "." || (c == "" && !acc.isEmpty) then acc
+    else if c == ".." then match acc with
+      | p :: rest => if p == ".." || p == "" then c :: acc else rest
+      | [] => [c]
+    else c :: acc).reverse
 
-/-- `path` relative to the directory `base`, if it is in it. -/
-def relativeTo (base : System.FilePath) (path : System.FilePath) : String :=
-  let b := base.toString ++ "/"
-  if path.toString.startsWith b then (path.toString.drop b.length).toString else path.toString
+/-- `path` relative to the directory `base`, both normalized
+(`pathComponents`), with a `..` for each component of `base` that `path`
+does not share. -/
+def relativeTo (base path : System.FilePath) : System.FilePath :=
+  let rec strip : List String → List String → List String
+    | b :: bs, p :: ps => if b == p then strip bs ps else (b :: bs).map (fun _ => "..") ++ p :: ps
+    | bs, ps => bs.map (fun _ => "..") ++ ps
+  System.mkFilePath (strip (pathComponents base) (pathComponents path))
 
 @[command_elab Lang.mdCmd] def elabMd : CommandElab := fun stx => do
   let some rel := stx[1].isStrLit? | throwUnsupportedSyntax
@@ -70,12 +81,10 @@ def relativeTo (base : System.FilePath) (path : System.FilePath) : String :=
   -- keeps the outermost. What this spec declares is recorded with its text
   -- as it is declared (`LocalState.declared`).
   let leanFile? ← if outer.inMarkdown then pure outer.leanFile? else pure (some (← getFileName, ← getFileMap))
-  -- Its name in messages: relative to the Lean file, even when another spec
-  -- reads it.
+  -- Its name in messages: its path relative to the Lean file, normalized,
+  -- even when another spec reads it, so that every spelling of it agrees.
   let leanName := (leanFile?.map (·.1)).getD (← getFileName)
-  let name := match (System.FilePath.mk leanName).parent with
-    | some leanDir => if outer.inMarkdown then relativeTo leanDir path else rel
-    | none => rel
+  let name := (relativeTo ((System.FilePath.mk leanName).parent.getD ".") path).toString
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
                                 items := #[], usedItems := #[], inMarkdown := true, leanFile?,
                                 mdSource? := some (name, inputCtx.fileMap) }
@@ -93,10 +102,10 @@ def relativeTo (base : System.FilePath) (path : System.FilePath) : String :=
   -- about the Lean file's item is placed in it (`Fren.logAbout`), even
   -- from a spec that another spec reads. Each is labelled once, by the
   -- innermost `#fren_md`, and placed at the outermost.
-  let out := if outer.inMarkdown then labelled else fileName
+  let out := if outer.inMarkdown then mdLabelled else fileName
   let msgs := inner.messages.toList.map fun m =>
     if m.fileName == leanName then m
-    else if m.fileName == labelled then { m with fileName := out, pos, endPos }
+    else if m.fileName == mdLabelled then { m with fileName := out, pos, endPos }
     else
       let shown := if m.fileName == path.toString then name else m.fileName
       { m with fileName := out, pos, endPos, data := m!"{shown}:{m.pos.line}:{m.pos.column}: " ++ m.data }
