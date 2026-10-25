@@ -1735,7 +1735,7 @@ open Lang in
   if ok = true then
     for d in generated do
       elabCommand (← `(attribute [fren_spec] $(mkCIdent d)))
-    modifyLocal fun l => { l with comps := l.comps.push path }
+    modifyLocal fun l => { l with comps := l.comps.push path }.declared path
 
 /-! ## Constants and global expectations -/
 
@@ -1847,7 +1847,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })
   record (.globalInfo path info)
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
-  modifyLocal fun l => { l with globals := l.globals.push path }
+  modifyLocal fun l => { l with globals := l.globals.push path }.declared path
 
 /-! ## Refinements -/
 
@@ -1941,7 +1941,7 @@ nothing. -/
   match proof? with
   | none =>
     record (.refinementInfo info)
-    modifyLocal fun l => { l with refinements := l.refinements.push path }
+    modifyLocal fun l => { l with refinements := l.refinements.push path }.declared path
   -- A proof: no check of the refinement is asked of the solver
   -- (`Reqs/Lang/Refinement#evidence`).
   | some tac => liftTermElabM do

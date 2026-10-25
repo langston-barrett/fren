@@ -15,7 +15,8 @@ Messages about the blocks are logged at the command, with text starting
 `file.md:line:col:`. They cannot simply carry the Markdown file's name:
 Lake replaces the file name of every message with the module's. An item's
 syntax has positions in the text of the file that declares it, so each
-spec's items are recorded with that text (`mdSources`), and the Lean file's
+spec's item is recorded with that text as it is declared (`mdSources`, from
+`mdSource?`), even in a spec that another spec reads, and the Lean file's
 text is kept while a spec is read (`leanFile?`). `Fren.logAbout` places each
 message about an item by its own file's text, wherever it is checked: a
 spec's item at this command, with the spec's name and the position in its
@@ -53,20 +54,15 @@ end Lang
   -- relocation below.
   let outer ← getLocal
   -- The Lean file's text, for its own items' messages; a spec read by a spec
-  -- keeps the outermost.
-  let ownItems := (outer.comps ++ outer.globals ++ outer.refinements).filter (!outer.mdSources.contains ·)
-  let leanFile? ← if outer.inMarkdown then pure outer.leanFile? else
-    pure (some (← getFileName, ← getFileMap, ownItems.foldl (·.insert ·) {}))
+  -- keeps the outermost. What this spec declares is recorded with its text
+  -- as it is declared (`LocalState.declared`).
+  let leanFile? ← if outer.inMarkdown then pure outer.leanFile? else pure (some (← getFileName, ← getFileMap))
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
-                                items := #[], usedItems := #[], inMarkdown := true, leanFile? }
+                                items := #[], usedItems := #[], inMarkdown := true, leanFile?,
+                                mdSource? := some (rel, inputCtx.fileMap) }
   let s ← get
   let st ← IO.processCommands inputCtx {} { s with messages := {} }
   set st.commandState
-  -- What it declared is checked against its own text, even from another spec.
-  let l ← getLocal
-  let declared := (l.comps.extract outer.comps.size) ++ (l.globals.extract outer.globals.size)
-    ++ (l.refinements.extract outer.refinements.size)
-  modifyLocal fun l => { l with mdSources := declared.foldl (·.insert · (rel, inputCtx.fileMap)) l.mdSources }
   withReader (fun ctx => { ctx with fileName := path.toString, fileMap := inputCtx.fileMap }) reportLints
   let inner ← get
   let some range := (← getRef).getRange? | throwError "`#fren_md` has no position"
@@ -87,6 +83,6 @@ end Lang
   modifyLocal fun l => { l with useRecords := outer.useRecords, used := outer.used,
                                 expectations := outer.expectations, lintReports := outer.lintReports,
                                 items := outer.items, usedItems := outer.usedItems, inMarkdown := outer.inMarkdown,
-                                leanFile? := outer.leanFile? }
+                                leanFile? := outer.leanFile?, mdSource? := outer.mdSource? }
 
 end Fren

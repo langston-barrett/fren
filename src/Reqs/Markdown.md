@@ -47,6 +47,9 @@ declares it, wherever it is checked:
 - An item of the Lean file is placed at its own position, even when a
   Markdown file's `#fren_check` reports it.
 
+This holds through Markdown files that read others: an item is named with
+the file that declares it, whichever file checks it, before or after.
+
 A Markdown file read by another Markdown file is named as the reading
 file's `#fren_md` names it. Lake does not know that a Lean file depends on the
 Markdown files it reads, so it rebuilds a module that uses `#fren_md` after

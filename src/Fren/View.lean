@@ -38,12 +38,14 @@ def logAbout (path : Name) (ref : Syntax) (text : MessageData) (severity : Messa
     if l.inMarkdown then
       withReader (fun ctx => { ctx with fileName := rel, fileMap }) (logAt ref text severity)
     else
-      let pos := fileMap.toPosition ((ref.getPos?).getD 0)
-      logAt (← getRef) m!"{rel}:{pos.line}:{pos.column}: {text}" severity
-  | none, some (fileName, fileMap, items) =>
-    if items.contains path then withReader (fun ctx => { ctx with fileName, fileMap }) (logAt ref text severity)
-    -- Declared in the spec being read, whose text this is.
-    else logAt ref text severity
+      -- Without a position, name only the spec.
+      let place := match ref.getPos? with
+        | some p => let pos := fileMap.toPosition p; s!"{rel}:{pos.line}:{pos.column}"
+        | none => rel
+      logAt (← getRef) m!"{place}: {text}" severity
+  -- Not declared in a spec, so the Lean file's, checked by a spec.
+  | none, some (fileName, fileMap) =>
+    withReader (fun ctx => { ctx with fileName, fileMap }) (logAt ref text severity)
   | none, none => logAt ref text severity
 
 def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit := do
