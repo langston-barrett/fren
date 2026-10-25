@@ -138,9 +138,9 @@
   spec that runs longer than `--spec-timeout` (default 30 s; a spec takes
   well under a second) is stopped and recorded as a timeout. Crashes and
   timeouts are findings, like differences: the run then exits nonzero. A
-  worker that dies while checking no spec is blamed on none. Each run's work files are its own, but the
-  findings are named by seed, so runs with overlapping seeds in one `DIR`
-  overwrite each other's. `--avoid-known` steers clear of differences
+  worker that dies while checking no spec is blamed on none. Each run's
+  work files are its own, but the findings are named by seed, so runs with
+  overlapping seeds in one `DIR` overwrite each other's. `--avoid-known` steers clear of differences
   already known, to find others; `--files FILE...` compares the front ends
   on given files, and `--print SEED` prints a generated spec. The
   comparison itself is tested in `FrenTest/FrontendsCompare.lean`.
@@ -196,7 +196,8 @@ Lean's clang.
 
 `fren_coverage` reads the counters with `GCOV`. A declaration ran if one of
 its entry points ran: its own function, or its boxed or reduced-arity
-version, which callers may call instead. A specialization
+version, which callers may call instead. An executable's `main` is emitted
+as `_lean_main`, and is `main`'s. A specialization
 `f._at_.g.spec_N` is an entry point of `f`, with arguments from `g`, and
 `g` may itself be one. Lambdas, join points and closed terms are no
 declaration's: the compiler shares them among declarations whose code is
@@ -206,7 +207,9 @@ of `FrenCore`, `Fren` and `FrenCli` that are written in the source and
 compile to a function: not theorems, constructors, recursors, matchers,
 projections, `@[inline]` definitions, instances that `deriving` makes, or
 definitions without arguments, which are constants computed at
-initialization. A declaration that compiles to a function that gcov does
+initialization. A definition of a function type written without
+parameters, as `def f : Nat → Nat := g`, compiles with its parameters, so
+it is counted. A declaration that compiles to a function that gcov does
 not report did not run. The proofs of `impl`s are not code, but the
 definitions they are about are counted.
 

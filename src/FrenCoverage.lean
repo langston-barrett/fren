@@ -47,13 +47,17 @@ def ofParts (parts : List Name) : Name :=
 
 /-- The declaration that the C function `sym`, one of the package's, is an
 entry point of: the declaration's own function, or its boxed or
-reduced-arity version, which callers call instead. A specialization,
+reduced-arity version, which callers call instead, or `main`, which is emitted as `_lean_main`.
+A specialization,
 `f._at_.g.spec_N`, is an entry point of `f`, with arguments from `g`, which
 may itself be one, as in `f._at_.g._at_.h.spec_0.spec_1`.
 Lambdas, join points and closed terms are no one's: the compiler shares
 them among declarations whose code is alike, so that running one would
 seem to run the others. -/
 def declOf? (sym : String) : Option Name := do
+  -- An executable's `main` is emitted as `_lean_main`, without the
+  -- package's prefix.
+  if sym == "_lean_main" then return `main
   let body ← (sym.dropPrefix? "lp_fren_").map (·.toString)
   let parts := (Name.demangle body).components
   let str : Name → Option String := fun | .str _ s => some s | _ => none
@@ -74,6 +78,11 @@ def declOf? (sym : String) : Option Name := do
       return decl
     guard (rest.all fun p => (str p).any entry)
     return decl
+
+#guard declOf? "_lean_main" == some `main
+#guard declOf? "lp_fren_FrenCli_run" == some `FrenCli.run
+#guard declOf? "lp_fren_FrenCli_run___boxed" == some `FrenCli.run
+#guard declOf? "lean_main" == none
 
 /-- The functions of one module's report from `gcov -f`, each with whether
 any of its lines ran. -/

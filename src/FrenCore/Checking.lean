@@ -5,7 +5,13 @@ Whether an expression is checked against a type that where it is written
 gives it, or must synthesize its own: `{}` and `[]` can only be checked.
 Both front ends decide it with `Position.checked`, from whether the
 expression's parts synthesize (`TypeShape.synthesizes`), over a shape that
-each builds from its own syntax.
+each builds from its own syntax. Not every site asks: in the Lean-hosted
+front end, `toTerm` clears the flag before it elaborates an expression's
+parts, so a part that always synthesizes, such as `e is P`'s scrutinee,
+an indexed sequence, its index, or a receiver, is passed the flag that
+`Position.synthesized` gives without calling it, and a pair's members,
+which share the pair's type and give each other nothing, are passed the
+pair's own flag, as `Position.shared` gives with no sibling.
 -/
 
 namespace Fren.Core
