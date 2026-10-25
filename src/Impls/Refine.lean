@@ -19,7 +19,7 @@ impl interface_rule: refinement::interface for (i c ci p t : Bool) {
   in_concrete? := c,
   concrete_input? := ci,
   concrete_pub? := p,
-  same_type? := t,
+  typed? := t,
   accepted? := interfaceAccepted i c ci p t,
 } by
   intro i c ci p t _

@@ -71,8 +71,8 @@ it is (`lang::literal_type`). -/
 def literalTy (natExpected : Bool) : Ty := if natExpected then .nat else .int
 
 /-- Whether an application is accepted, from its parameters' types and its
-arguments' (`lang::application`), each argument of type `Nat` whose
-parameter is an `Int` counted as an `Int`. -/
+arguments' (`lang::application`): the arguments' types after widening, as
+`lang::application` takes them, so they must equal the parameters'. -/
 def applicationAccepted (params args : Array Ty) : Bool := args == params
 
 /-- Where the type `Nat` is written (`lang::nat_place`). -/
@@ -96,13 +96,18 @@ found. -/
 def narrowingNote : String :=
   "note: an `Int` is never narrowed to a `Nat`, and `a - b` and `-a` are `Int`s, even of `Nat`s"
 
+/-- An `Int` where a `Nat` is expected, which `why` explains. -/
+def narrowingMsg (why : String) : Msg :=
+  { code? := some "F0304", headline := "type mismatch: expected `Nat`, found `Int`"
+    label? := some "expected `Nat`, found `Int`", notes := #[why, narrowingNote] }
+
 /-- `Nat` written at `place`, where it may not be (`lang::nat_place`). -/
 def natPlaceMsg (place : TypePlace) : Msg :=
   let what := match place with
     | .field => "the type of a field"
     | .payload => "the type of a payload"
     | _ => "the element type of a set, relation or sequence"
-  { code? := some "F0334", headline := s!"`Nat` cannot be {what}", label? := some "a `Nat`"
+  { code? := some "F0338", headline := s!"`Nat` cannot be {what}", label? := some "a `Nat`"
     notes := #["note: for now, `Nat` is only the type of a variable, a function's parameter or result, or a constant",
       "help: use `Int`, and say where it is used that it is at least 0"] }
 

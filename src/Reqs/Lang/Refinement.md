@@ -27,7 +27,8 @@ pub mod refinement
 `a` and `c` are related through `a`'s variables. By default, each is
 read as the variable of `c` of the same name: each input of `a` must be
 an input of `c`, and each output of `a` a public output of `c`, of the same
-type. A private output of `a` must be a public output of `c` too: `a`'s
+type, or a `Nat` where `a` has an `Int`, which is
+[widened](Types.md#natural-numbers), as in an explicit binding. A private output of `a` must be a public output of `c` too: `a`'s
 requirements may mention it, and the refinement can read it only from
 `c`'s public outputs, since a private output says nothing about how `c`
 computes it. `c` may have more inputs and outputs than `a`; an input of
@@ -43,10 +44,10 @@ pub comp interface {
     in in_concrete?      -- `c` has a variable of the same name
     in concrete_input?   -- that variable is an input of `c`
     in concrete_pub?     -- that variable is public in `c`
-    in same_type?        -- it has the same type as in `a`
+    in typed?            -- its type widens to its type in `a` (`lang::widening`)
     pub det out accepted?
 
-    req rule: accepted? iff (in_concrete? and same_type?
+    req rule: accepted? iff (in_concrete? and typed?
         and (if input? then concrete_input? else not concrete_input? and concrete_pub?))
 
     expect hidden_outputs: when not input? and not concrete_pub?, not accepted?

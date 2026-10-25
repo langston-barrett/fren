@@ -11,32 +11,38 @@ comp rels { in r: Rel(Int, Nat) }        --~ error: `Nat` cannot be the element 
 enum Nat { Zero }                        --~ error: `Nat` is a built-in type and cannot be redefined
 
 fn halve(Nat): Nat
+enum Sign { Plus, Minus }
 
 -- An `Int` is never narrowed to a `Nat`.
 comp narrowed { in n: Nat pub out m: Nat := n - 1 }
---~^[cli] error: type mismatch: expected `Nat`, found `Int`
---~^^[hosted] error: Type mismatch
+--~^ error: type mismatch: expected `Nat`, found `Int`
 comp negated { in n: Nat pub out m: Nat := -n + n }
---~^[cli] error: type mismatch: expected `Nat`, found `Int`
---~^^[hosted] error: Type mismatch
+--~^ error: type mismatch: expected `Nat`, found `Int`
 comp argument { in x: Int pub out y: Nat req r: y = halve(x) }
---~^[cli] error: type mismatch: expected `Nat`, found `Int`
---~^^[hosted] error: Application type mismatch
+--~^ error: type mismatch: expected `Nat`, found `Int`
 comp branch { in n: Nat pub out m: Nat := if n > 0 then n else -1 }
---~^[cli] error: type mismatch: expected `Nat`, found `Int`
---~^^[hosted] error: Application type mismatch
+--~^ error: type mismatch: expected `Nat`, found `Int`
 const MINUS: Nat := 2 - 1
---~^[cli] error: type mismatch: expected `Nat`, found `Int`
---~^^[hosted] error: Type mismatch
+--~^ error: type mismatch: expected `Nat`, found `Int`
 comp inner { in n: Nat pub out m: Int req r: m = n }
 comp bound { in x: Int inst w: inner { n := x } }
---~^[cli] error: type mismatch: expected `Nat`, found `Int`
---~^^[hosted] error: Type mismatch
+--~^ error: type mismatch: expected `Nat`, found `Int`
+
+-- An implicit binding of a refinement widens too, but never narrows.
+comp wide { in n: Int pub out m: Int req r: m = n }
+refine narrow_ok: inner refines wide
+comp nat_abstract { in n: Nat pub out m: Int req r: m = n }
+comp int_concrete { in n: Int pub out m: Int req r: m = n }
+refine narrowed_refinement: int_concrete refines nat_abstract
+--~^ error: its `n` has another type
+
+-- A `Nat` is not an enumeration, so no pattern tests it.
+comp tested_nat { in n: Nat pub out z? req r: z? iff n is Sign::Plus }
+--~^ error: cannot test `Nat` against a pattern
 
 -- A literal is a `Nat` where one is expected, and a `Nat` widens to an `Int`.
 const TWO: Nat := 2
 fn twice(n: Nat): Nat := n + n
-enum Sign { Plus, Minus }
 comp accepted {
     in n: Nat
     in x: Int
@@ -46,7 +52,7 @@ comp accepted {
     pub out j: Int := n + x
     inst w: inner { n := 3 }
 
-    expect widened: n + x = x + n and n < x + 1 or n >= x + 1
+    expect widened: n + x = x + n and n < x + 2 or n >= x + 2
     expect sums: m >= 2 and j >= x and w.m = 3
 }
 

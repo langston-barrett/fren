@@ -17,9 +17,9 @@ namespace Fren.Core
 
 /-- Whether `c` has the variable of `a` in the interface
 (`refinement::interface`): an input as an input, an output as a public
-output, of the same type. -/
-def interfaceAccepted (input inConcrete concreteInput concretePub sameType : Bool) : Bool :=
-  inConcrete && sameType && (if input then concreteInput else !concreteInput && concretePub)
+output, whose type widens to the one in `a` (`typed`). -/
+def interfaceAccepted (input inConcrete concreteInput concretePub typed : Bool) : Bool :=
+  inConcrete && typed && (if input then concreteInput else !concreteInput && concretePub)
 
 /-- Whether the names `bound` of a refinement's bindings are accepted, where
 `vars` are the abstract comp's variables (`refinement::binding`): each is
@@ -85,7 +85,7 @@ def interfaceMsg (concrete abstract x : Name) (why : String) : Msg :=
   { code? := some "F0412"
     headline := s!"`{showComp concrete}` cannot refine `{showComp abstract}`: {why}"
     label? := some s!"`{x}` does not match"
-    notes := #[s!"note: each input of `{showComp abstract}` must be an input of `{showComp concrete}`, and each output a public output, of the same type",
+    notes := #[s!"note: each input of `{showComp abstract}` must be an input of `{showComp concrete}`, and each output a public output, of the same type, or a `Nat` where it has an `Int`",
       s!"help: or bind it to an expression over the variables of `{showComp concrete}`, as in `\{ {x} := ... }`"] }
 
 end Fren.Core

@@ -4,7 +4,7 @@ error[F0306]: the branches of `if` have different types: `Int` and `Bool`
 2 | comp c { in b? pub out y: Int req r: y = if b? then 1 else true }
   |                                          ^^^^^^^^^^^^^^^^^^^^^^ branches of different types
   |
-  = note: `if c then a else b` is `a` or `b`, so both must have the same type
+  = note: `if c then a else b` is `a` or `b`, so both must have the same type, or be a `Nat` and an `Int`
 
 error: could not check due to 1 previous error
 

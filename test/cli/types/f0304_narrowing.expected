@@ -1,0 +1,13 @@
+error[F0304]: type mismatch: expected `Nat`, found `Int`
+ --> test/cli/types/f0304_narrowing.fren:3:38
+  |
+3 | comp c { in n: Nat pub out m: Nat := n - 1 }
+  |                                      ^^^^^ expected `Nat`, found `Int`
+  |
+  = note: `m` has type `Nat`, so its definition must too
+  = note: an `Int` is never narrowed to a `Nat`, and `a - b` and `-a` are `Int`s, even of `Nat`s
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0304`.
+exit=2

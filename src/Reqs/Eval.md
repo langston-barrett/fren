@@ -122,7 +122,9 @@ component, with the status that the evaluator gives it.
 
 `fren eval --comp PATH FILE...` evaluates a behaviour of the component
 `PATH` of the spec in the files. `--set x=VALUE` gives the variable `x` a
-value, as does `--set w.x=VALUE` for a variable of the instance `w`. The
+value, as does `--set w.x=VALUE` for a variable of the instance `w`.
+`VALUE` is typed as a binding of `x` would be: a `Nat` is widened to an
+`Int`, and an `Int`, such as `5 - 3`, is not accepted for a `Nat`. The
 variables that are not set, and the interpretation, are chosen by
 [searching](#searching-for-behaviours) for a behaviour that meets the
 component, starting from `--seed` (default 0). If the search finds none,

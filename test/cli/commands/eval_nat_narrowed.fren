@@ -1,0 +1,8 @@
+--@ args: eval --comp c --set n=5-3 --set y=1
+-- An `Int` given for a `Nat`: `-` gives an `Int`.
+comp c {
+    in n: Nat
+    pub out y: Int
+
+    req r: y = n + 1
+}

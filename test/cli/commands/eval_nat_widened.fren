@@ -1,0 +1,10 @@
+--@ args: eval --comp c --set n=TWO --set y=3
+-- A `Nat` constant given for an `Int`, which widens.
+pub const TWO: Nat := 2
+
+comp c {
+    in n: Int
+    pub out y: Int
+
+    req r: y = n + 1
+}

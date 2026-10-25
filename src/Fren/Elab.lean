@@ -444,6 +444,12 @@ inserts `↑`. -/
 def widenTerm (t : Term) : TermElabM Term := do
   if (← typeOf t).isConstOf ``Nat then `(($t : Int)) else pure t
 
+/-- Checks that `t`, written at `ref` where a `Nat` is expected, is not an
+`Int`, with the message that the `fren` command gives, explained by `why`
+(`lang::widening`). -/
+def checkNat (ref : Syntax) (t : Term) (why : String) : TermElabM Unit := do
+  if (← typeOf t).isConstOf ``Int then throwErrorAt ref (Core.narrowingMsg why).text
+
 /-- `ts`, each widened to an `Int` if one is an `Int` and another a `Nat`:
 the branches of a conditional or the bodies of a `match`'s arms
 (`lang::operator_type`). -/
@@ -1924,7 +1930,10 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     -- may mention anything (`lang::argument`).
     unless args.getElems.size == d.nParams do throwError (Core.arityMsg path d.nParams args.getElems.size).text
     let nats := natParams (← getConstInfo d.decl).type d.uses.size
-    let args ← args.getElems.zipIdx.mapM fun (a, k) => toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := nats[k]?.getD false } a
+    let args ← args.getElems.zipIdx.mapM fun (a, k) => do
+      let t ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := nats[k]?.getD false } a
+      if nats[k]?.getD false then checkNat a t s!"note: argument {k + 1} of `{Core.showPath path}` has type `Nat`"
+      return t
     return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
   if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
   let a ← placeholderOf path
@@ -1934,7 +1943,10 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   -- bindings exclude them already.
   let acx := if cx.place == .prop then { cx with place := .argument } else cx
   let nats := natParams (← getConstInfo a.placeholder).type
-  let args ← args.getElems.zipIdx.mapM fun (a, k) => toTerm { acx with emptyOk := Core.Position.declared.checked false false, natOk := nats[k]?.getD false } a
+  let args ← args.getElems.zipIdx.mapM fun (a, k) => do
+    let t ← toTerm { acx with emptyOk := Core.Position.declared.checked false false, natOk := nats[k]?.getD false } a
+    if nats[k]?.getD false then checkNat a t s!"note: argument {k + 1} of `{Core.showPath path}` has type `Nat`"
+    return t
   `($(mkCIdentFrom p a.placeholder) $args*)
 
 /-- `if c then a else b`, where `toTerm` translates its parts, which are
@@ -2162,6 +2174,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
     let lam ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let cx : ExprCtx := { modName, vars, insts := #[], place := .prop, selfFn := some n, natOk := result.isConstOf ``Nat }
       let t ← toTerm cx body
+      if result.isConstOf ``Nat then checkNat body t s!"note: `{n}` returns `Nat`"
       -- A `Bool` body is decided, classically if need be: equality on an
       -- abstract type has no other `Decidable` instance.
       let value ← if result.isConstOf ``Bool then do
@@ -2228,6 +2241,8 @@ def elabBindings (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) : TermElab
       | throwError "internal error: no variable for `{x.getId}`"
     let natOk := cx.vars[idx]!.type.isConstOf ``Nat
     let t ← if b[1].isNone then toTerm cx (← `(fren_expr| $(⟨x⟩):ident)) else toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk } b[1][1]
+    if natOk then
+      checkNat (if b[1].isNone then x else b[1][1]) t s!"note: `{x.getId}` of `{Core.showPath pi.comp.path}` has type `Nat`"
     unless b[1].isNone do lintBools b[1][1]
     lintRedundant b false
     let fv := fvs[idx]!
@@ -2417,8 +2432,10 @@ open Lang in
           discard (takeIndexes fvs)
           let value ← withRef e do
             -- A definition assigns once and acyclically, so `++` is in the core in it.
-            elabProp (← toTerm { modName := scope, vars, insts := instNames, place := .prop, emptyOk := Core.Position.declared.checked false false, concatOk := true
-                                 natOk := v.type.isConstOf ``Nat } e) v.type
+            let t ← toTerm { modName := scope, vars, insts := instNames, place := .prop, emptyOk := Core.Position.declared.checked false false, concatOk := true
+                             natOk := v.type.isConstOf ``Nat } e
+            if v.type.isConstOf ``Nat then checkNat e t s!"note: `{v.name}` has type `Nat`, so its definition must too"
+            elabProp t v.type
           indexes := indexes ++ (← takeIndexes fvs).map fun (r, g) => (v.name, .prop, r, g)
           lintBools e
           let value := value.replaceFVars defnFvs (values.map (·.2))
@@ -2582,8 +2599,9 @@ open Lang in
     let abstract := (← getState).placeholders.contains type.constName
     unless Core.constantAccepted abstract false do
       throwErrorAt stx[4] (Core.unknownConstantMsg abstract).text
-    let value ← elabProp (← toTerm { modName, vars := #[], insts := #[], place := .prop, emptyOk := Core.Position.declared.checked false false
-                                     natOk := type.isConstOf ``Nat } stx[6]) type
+    let t ← toTerm { modName, vars := #[], insts := #[], place := .prop, emptyOk := Core.Position.declared.checked false false, natOk := type.isConstOf ``Nat } stx[6]
+    if type.isConstOf ``Nat then checkNat stx[6] t s!"note: `{n}` has type `Nat`"
+    let value ← elabProp t type
     let applies ← applications { modName, vars := #[], insts := #[], place := .prop } stx[6]
     unless Core.constantAccepted abstract !applies.isEmpty do
       throwErrorAt applies[0]! (Core.unknownConstantMsg abstract).text
@@ -2724,12 +2742,14 @@ and the solver is asked nothing. -/
   for v in a.vars.filter fun v => v.name.isAtomic && !bound.contains v.name do
     let cv? := c.vars.find? (·.name == v.name)
     let input := v.role == Core.Role.input
+    -- A `Nat` of `c` widens to an `Int` of `a` (`lang::widening`).
+    let widens (cv : Var) := cv.type == v.type || (cv.type.isConstOf ``Nat && v.type.isConstOf ``Int)
     let ok := Core.interfaceAccepted input cv?.isSome (cv?.any (·.role == Core.Role.input)) (cv?.any (·.isPub))
-      (cv?.any (·.type == v.type))
+      (cv?.any widens)
     unless ok do
       let why := match cv? with
         | none => s!"it has no variable `{v.name}`"
-        | some cv => if cv.type != v.type then s!"its `{v.name}` has another type"
+        | some cv => if !widens cv then s!"its `{v.name}` has another type"
           else if input then s!"its `{v.name}` is not an input"
           else if cv.role == Core.Role.input then s!"its `{v.name}` is an input, not an output"
           else s!"its output `{v.name}` is not public"
@@ -2761,6 +2781,8 @@ and the solver is asked nothing. -/
                               refining? := some { concrete := c.path, abstract := a.path, input := v.role == .input } }
         let t ← if b[1].isNone then toTerm cx (← pathExpr x x.getId)
           else toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := v.type.isConstOf ``Nat } b[1][1]
+        if v.type.isConstOf ``Nat then
+          checkNat (if b[1].isNone then x else b[1][1]) t s!"note: `{x.getId}` of `{Core.showPath a.path}` has type `Nat`"
         unless b[1].isNone do lintBools b[1][1]
         let e ← mkLambdaFVars cfvs (← elabProp t v.type)
         return (v, e, ← takeIndexes cfvs)
@@ -2778,7 +2800,12 @@ and the solver is asked nothing. -/
       -- `a`'s variables: their bindings, or else `c`'s of the same names.
       let argsA := a.vars.map fun v => match bindingsA.find? (·.1.name == v.name) with
         | some (_, e, _) => e.beta ownC
-        | none => fvOf (if v.name.isAtomic && v.role == .output then w ++ v.name else v.name)
+        | none =>
+          let n := if v.name.isAtomic && v.role == .output then w ++ v.name else v.name
+          -- `c`'s `Nat`, read as `a`'s `Int`, is widened (`lang::widening`).
+          if v.type.isConstOf ``Int && (vars.find? (·.name == n)).any (·.type.isConstOf ``Nat) then
+            mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) (fvOf n)
+          else fvOf n
       let sliceC := c.vars.map fun v => fvOf (w ++ v.name)
       let lam (e : Expr) : TermElabM Expr := mkLambdaFVars fvs e
       let reported (p : PropInfo) := { p with ref := nameStx, trigger? := none, triggerRef? := none }

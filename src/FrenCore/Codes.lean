@@ -871,7 +871,8 @@ Erroneous code example:
 comp c { in b? pub out y: Int req r: y = if b? then 1 else true }
 ```
 
-`if c then a else b` is `a` or `b`, so both must have the same type.
+`if c then a else b` is `a` or `b`, so both must have the same type, or
+be a `Nat` and an `Int`, when the `Nat` is widened to an `Int`.
 
 ```fren
 comp c { in b? pub out y: Int req r: y = if b? then 1 else 0 }
@@ -1446,7 +1447,7 @@ fn rank(a: Int): Int := a + 1
 comp c { in n: Name pub out r: Int req def: r = rank(arity(n)) }
 ```
 "# },
-  { code := "F0334", explanation := r#"`Nat` is the type of a field or payload, or an element type.
+  { code := "F0338", explanation := r#"`Nat` is the type of a field or payload, or an element type.
 
 Erroneous code example:
 

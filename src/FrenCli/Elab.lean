@@ -1366,7 +1366,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     unless tx.widens ty || ty.widens tx do
       err span { code? := some "F0306", headline := s!"the branches of `if` have different types: `{tx.show}` and `{ty.show}`"
                  label? := some "branches of different types"
-                 notes := #["note: `if c then a else b` is `a` or `b`, so both must have the same type"] }
+                 notes := #["note: `if c then a else b` is `a` or `b`, so both must have the same type, or be a `Nat` and an `Int`"] }
     return (s!"(ite {c} {x} {y})", tx.join ty)
   | .neg _ a => return (s!"(- {(← number a "-" false).1})", .int)
   | .num _ v => return (toString v, Fren.Core.literalTy (expected? == some .nat))
@@ -2339,11 +2339,11 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
     let cv? := c.vars.find? (·.name == v.name)
     let input := v.role == Role.input
     let ok := Fren.Core.interfaceAccepted input cv?.isSome (cv?.any (·.role == Role.input))
-      (cv?.any (·.isPub)) (cv?.any (·.ty == v.ty))
+      (cv?.any (·.isPub)) (cv?.any (·.ty.widens v.ty))
     unless ok do
       let why := match cv? with
         | none => s!"it has no variable `{v.name}`"
-        | some cv => if cv.ty != v.ty then s!"its `{v.name}` has another type"
+        | some cv => if !cv.ty.widens v.ty then s!"its `{v.name}` has another type"
           else if input then s!"its `{v.name}` is not an input"
           else if cv.role == Role.input then s!"its `{v.name}` is an input, not an output"
           else s!"its output `{v.name}` is not public"

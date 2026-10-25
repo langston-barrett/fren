@@ -25,9 +25,9 @@ outputs](Lang/Components.md#defined-outputs), and `o` excludes them.
 numbers](Lang/Components.md#natural-numbers) bring: `N(i, y)` that each
 `Nat` input and instance variable, and each application of an
 uninterpreted function whose result is a `Nat`, is at least 0, and `N(o)`
-that each `Nat` output is. Every query has `N(i, y)` among its
-hypotheses, and every query but realizability's has `N(o)` too, though
-the formulas below leave them implicit. Like `D`, they are never
+that each `Nat` output is. Every query has both among its hypotheses,
+though the formulas below leave them implicit, and realizability also
+puts `N(o)` under its `∃`, with the requirements. Like `D`, they are never
 candidates for redundancy, nor reported in a minimal set.
 
 ```fren

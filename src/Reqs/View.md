@@ -191,19 +191,13 @@ pub comp build {
 ```
 
 `view::summary` states that the summary is information, whatever the
-counts:
+counts, so it has none as inputs:
 
 ```fren
 pub comp summary {
-    in n_pass: Nat
-    in n_fail: Nat
-    in n_inconclusive: Nat
-    in n_redundant: Nat    -- redundant constraints, not counted as failed
     pub det out level: Severity
 
     req always_info: level = Info
-
-    expect whatever_the_counts: when n_pass + n_fail + n_inconclusive + n_redundant > 0, level = Info
 }
 ```
 
