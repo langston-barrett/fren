@@ -1,0 +1,12 @@
+error[F0349]: the range `9..=0` matches no integer
+ --> test/cli/types/f0349_empty_range.fren:2:56
+  |
+2 | comp c { in n: Int pub out y: Int req r: y = match n { 9..=0 => 0, _ => 1 } }
+  |                                                        ^^^^^ empty range
+  |
+  = note: `a..=b` matches the integers from `a` to `b`, and `a..b` those from `a` to `b - 1`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0349`.
+exit=2

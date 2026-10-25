@@ -1,3 +1,2 @@
--- A pattern test on an `Int`.
-pub enum Shape { Circle(Int), Empty }
-comp c { in x: Int pub out round? req r: round? iff x is Shape::Circle(_) }
+-- A pattern test on a set.
+comp c { in s: Set(Int) pub out empty? req r: empty? iff s is _ }

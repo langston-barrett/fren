@@ -1,0 +1,97 @@
+-- Nested patterns in `match` and `is`, in both front ends.
+
+pub enum Shape { Circle(Int), Square(Int), Empty }
+pub enum Reply { Ok(Shape), Err(Int) }
+pub enum Pair { Both(Shape, Shape) }
+
+comp nested {
+    in r: Reply
+    pub det out size: Int
+    pub det out round?
+
+    req sized_def: size = match r {
+        Reply::Ok(Shape::Circle(radius)) => 3 * radius,
+        Reply::Ok(Shape::Square(side)) => side,
+        Reply::Ok(Shape::Empty) => 0,
+        Reply::Err(_) => -1,
+    }
+    req round_def: round? iff r is Reply::Ok(Shape::Circle(_))
+
+    expect circle_holds: when r = Reply::Ok(Shape::Circle(2)), size = 6 and round?
+    expect err_holds: when r = Reply::Err(5), size = -1 and not round?
+    expect as_match_holds: round? iff match r { Reply::Ok(Shape::Circle(_)) => true, _ => false }
+    expect wrong: size >= 0  --~ error: expectation `nested::wrong` does not hold
+}
+
+-- Or-patterns within a payload, and arms that overlap earlier ones only in part.
+comp inner_or {
+    in r: Reply
+    pub det out kind: Int
+
+    req kinds_def: kind = match r {
+        Reply::Ok(Shape::Circle(_) | Shape::Square(_)) => 1,
+        Reply::Ok(_) => 2,
+        Reply::Err(_) => 3,
+    }
+
+    expect empty_holds: when r = Reply::Ok(Shape::Empty), kind = 2
+    expect square_holds: when r = Reply::Ok(Shape::Square(1)), kind = 1
+}
+
+-- Two payloads, each matched: the arms cover every pair together.
+comp pairs {
+    in p: Pair
+    pub det out same?
+
+    req same_def: same? iff match p {
+        Pair::Both(Shape::Empty, Shape::Empty) => true,
+        Pair::Both(Shape::Circle(a), Shape::Circle(b)) => a = b,
+        Pair::Both(Shape::Square(a), Shape::Square(b)) => a = b,
+        Pair::Both(_, _) => false,
+    }
+
+    expect diagonal_holds: when p = Pair::Both(Shape::Circle(1), Shape::Circle(1)), same?
+    expect mixed_holds: when p = Pair::Both(Shape::Circle(1), Shape::Empty), not same?
+}
+
+-- A binder at any depth, and one for the whole scrutinee, shadowing with `!`.
+comp binders {
+    in r: Reply
+    in radius: Int
+    pub det out x: Int
+
+    req xs_def: x = match r {
+        Reply::Ok(Shape::Circle(radius!)) => radius,
+        Reply::Ok(other) => match other { Shape::Square(s) => s, _ => radius },
+        whole => match whole { Reply::Err(code) => code, _ => 0 },
+    }
+
+    expect inner_holds: when r = Reply::Ok(Shape::Circle(4)), x = 4
+    expect outer_holds: when r = Reply::Ok(Shape::Empty), x = radius
+    expect code_holds: when r = Reply::Err(7), x = 7
+}
+
+-- An index in an arm's body is guarded by the arm's pattern, at any depth,
+-- and the earlier arms' not matching.
+pub enum Size { Fixed(Int), Any }
+pub enum Request { Read(Size), Stop }
+
+comp guarded {
+    in r: Request
+    in q: Seq(Int)
+    pub det out first: Int
+
+    assume long: match r { Request::Read(Size::Fixed(n)) => q.len > n and n >= 0, _ => q != [] }
+
+    req first_def: first = match r {
+        Request::Read(Size::Fixed(n)) => q[n],
+        Request::Read(_) => q[0],
+        Request::Stop => 0,
+    }
+
+    expect unguarded: match r { Request::Read(Size::Fixed(n)) => (when q[n + 1] > 0, true), _ => true }
+    --~^ error: an index of `guarded::unguarded` may be out of range
+}
+
+--@ summary: 40 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

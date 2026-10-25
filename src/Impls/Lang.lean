@@ -2,6 +2,7 @@
 import FrenCli.Lex
 import FrenCore.Checking
 import FrenCore.Guards
+import FrenCore.Patterns
 import FrenCore.Ty
 import FrenCore.Typing
 import Impls.Check
@@ -416,32 +417,114 @@ impl field_init: lang::field_init for (f : Bool) (n : Nat) {
   intro f n _
   cases f <;> simp [fren_spec, Fren.Core.fieldInitOk] <;> omega
 
--- For every `match`, the variants `vs`, those with an arm, `p`, and the
--- counts, with the count that both front ends compare.
-impl match_arms: lang::match_arms for (vs : List Lean.Name) (p : Lean.Name → Bool) (w : Bool) (r a : Nat) {
-  variants := Fren.FinSet.ofList vs,
-  covered := Fren.FinSet.ofList (vs.filter p),
-  wildcard? := w,
-  n_repeated := r,
-  n_after := a,
-  accepted? := Fren.Core.matchArmsAccepted vs.length (vs.filter p).length w r a,
+-- For every `match`: the counts of the arms and alternatives that are not
+-- useful, and whether it is exhaustive, which `checkMatch` decides by.
+impl match_arms: lang::match_arms for (a b : Nat) (e : Bool) {
+  n_useless_arms := a,
+  n_useless_alternatives := b,
+  exhaustive? := e,
+  accepted? := Fren.Core.matchArmsAccepted (a + b) e,
 } by
-  intro vs p w r a _
-  have _hle := List.length_filter_le p vs
-  cases w <;> simp [fren_spec, Fren.Core.matchArmsAccepted, ofList_filter_eq] <;> omega
+  intro a b e _
+  cases e <;> simp [fren_spec, Fren.Core.matchArmsAccepted] <;> omega
 
--- For every pattern test, the variants `vs`, those its alternatives name,
--- `p`, and the counts, with the count that both front ends compare.
-impl pattern_test: lang::pattern_test for (vs : List Lean.Name) (p : Lean.Name → Bool) (w : Bool) (b r : Nat) {
-  variants := Fren.FinSet.ofList vs,
-  named := Fren.FinSet.ofList (vs.filter p),
-  wildcard? := w,
+-- For every pattern test: the counts that `checkPatternTest` decides by.
+impl pattern_test: lang::pattern_test for (b u : Nat) (m : Bool) {
   n_bound := b,
-  n_repeated := r,
-  accepted? := Fren.Core.patternTestAccepted b r,
+  n_useless_alternatives := u,
+  matches_some? := m,
+  accepted? := Fren.Core.patternTestAccepted b u m,
 } by
-  intro vs p w b r _
-  simp [fren_spec, Fren.Core.patternTestAccepted]
+  intro b u m _
+  cases m <;> simp [fren_spec, Fren.Core.patternTestAccepted]
+
+/-! ## Patterns (`Reqs/Lang/Patterns`) -/
+
+def toPatternName : Fren.Core.PatternName → lang.PatternName
+  | .boolLiteral => .BoolLiteral
+  | .variant => .Variant
+  | .binder => .Binder
+
+-- For every identifier of one segment, not applied, in a pattern: both
+-- front ends and the evaluator read it with `patternName`.
+impl pattern_name: lang::pattern_name for (w b v : Bool) {
+  bool_word? := w,
+  bang? := b,
+  variant? := v,
+  reading := toPatternName (Fren.Core.patternName w b v),
+} by
+  intro w b v _
+  cases w <;> cases b <;> cases v <;> simp [fren_spec, toPatternName, Fren.Core.patternName]
+
+-- For every range and integer: the bounds as `Option`s, as both front ends
+-- and the evaluator read them.
+impl range_pattern: lang::range_pattern for (hl : Bool) (l : Int) (hu : Bool) (u : Int) (inc : Bool) (v : Int) {
+  has_lower? := hl,
+  lower := l,
+  has_upper? := hu,
+  upper := u,
+  inclusive? := inc,
+  value := v,
+  matches? := Fren.Core.rangeMatches (if hl then some l else none) (if hu then some u else none) inc v,
+  empty? := Fren.Core.rangeEmpty (if hl then some l else none) (if hu then some u else none) inc,
+} by
+  intro hl l hu u inc v _
+  cases hl <;> cases hu <;> cases inc <;> simp [fren_spec, Fren.Core.rangeMatches, Fren.Core.rangeEmpty]
+
+def toHeadKind : Fren.Core.HeadKind → lang.HeadKind
+  | .constructor => .Constructor
+  | .wildcard => .Wildcard
+  | .or => .Or
+
+-- For every step of `useful`, which calls `usefulStep` with the smaller
+-- problems as functions.
+impl usefulness: lang::usefulness for (c r : Nat) (h : Fren.Core.HeadKind) (k sp ss d sa : Bool) {
+  columns := c,
+  rows := r,
+  head := toHeadKind h,
+  complete? := k,
+  specialized? := sp,
+  some_specialized? := ss,
+  default? := d,
+  some_alternative? := sa,
+  useful? := Fren.Core.usefulStep c r h k (fun _ => sp) (fun _ => ss) (fun _ => d) (fun _ => sa),
+} by
+  intro c r h k sp ss d sa _
+  cases h <;> cases k <;> by_cases hc : c = 0 <;>
+    simp [fren_spec, toHeadKind, Fren.Core.usefulStep, hc] <;> omega
+
+-- For every row's head and constructor, by the head's kind.
+impl specialize: lang::specialize for (p : Fren.Core.Pat) (c : Fren.Core.Ctor) (a : Nat) {
+  head := toHeadKind p.headKind,
+  same? := p.sameCtor c,
+  arity := a,
+  n_args := p.args.length,
+  kept? := (Fren.Core.specializeHead c a p).isSome,
+  added := ((Fren.Core.specializeHead c a p).map (·.length)).getD 0,
+} by
+  intro p c a _
+  simp only [Fren.Core.specializeHead]
+  cases p.headKind <;> cases p.sameCtor c <;> simp [fren_spec, toHeadKind]
+
+def toColumnType : Fren.Core.ColumnKind → lang.ColumnType
+  | .enumeration => .EnumType
+  | .boolean => .BoolType
+  | .integer => .IntType
+  | .string => .StringType
+  | .other => .OtherType
+
+-- For every column, as `columnCtors` decides it.
+impl signature_complete: lang::signature_complete for (k : Fren.Core.ColumnKind) (n m : Nat) (t f i : Bool) {
+  column := toColumnType k,
+  n_variants := n,
+  n_named := m,
+  has_true? := t,
+  has_false? := f,
+  covers_integers? := i,
+  complete? := Fren.Core.signatureComplete k n m t f i,
+} by
+  intro k n m t f i _
+  cases k <;> simp [fren_spec, toColumnType, Fren.Core.signatureComplete] <;> omega
 
 impl function_params: lang::function_params for (d : Bool) (p n : Nat) {
   defined? := d,

@@ -1,0 +1,12 @@
+error[F0129]: an inclusive range needs an upper bound
+ --> test/cli/syntax/f0129_range_bound.fren:2:57
+  |
+2 | comp c { in n: Int pub out y: Int req r: y = match n { 0..= => 0, _ => 1 } }
+  |                                                         ^^^ no upper bound
+  |
+  = note: the ranges are `a..=b`, `a..b`, `a..` and `..=b`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0129`.
+exit=2

@@ -31,9 +31,9 @@ const K5: Int := match K4 { S::A(a) => a, _ => 0 }
 
 comp no_field { in p: P pub out z: Int req r: z = p.w }        --~ error: record `P` has no field `w`
 comp not_record { in i: Int pub out z: Int req r: z = i.w }    --~ error: `Int` has no method `w`
-comp not_enum { in x: Int pub out z: Int req r: z = match x { _ => 0 } }   --~ error: cannot match on `Int`
+comp not_enum { in x: Set(Int) pub out z: Int req r: z = match x { _ => 0 } }   --~ error: cannot match on `Set(Int)`
 comp missing_arm { in s: S pub out z: Int req r: z = match s { S::A(a) => a, S::B => 0 } }
---~^ error: non-exhaustive match: `S::C` not covered
+--~^ error: non-exhaustive match: `S::C(_, _)` not covered
 comp after_wild { in s: S pub out z: Int req r: z = match s { _ => 0, S::B => 1 } }
 --~^ error: unreachable arm
 comp useless_wild { in s: S pub out z: Int req r: z = match s { S::A(a) => a, S::B => 0, S::C(b?, n) => n, _ => 0 } }
@@ -45,7 +45,7 @@ comp other_enum { in s: S pub out z: Int req r: z = match s { L::Nil => 0, _ => 
 comp arm_types { in s: S pub out z: Int req r: z = match s { S::A(a) => a, _ => false } }
 --~^ error: the arms of `match` have different types: `Int` and `Bool`
 comp binders { in s: S pub out z: Int req r: z = match s { S::A(a, b) => a, _ => 0 } }
---~^ error: `S::A` takes 1 binder, but 2 were given
+--~^ error: `S::A` takes 1 pattern, but 2 were given
 comp no_binders { in s: S pub out z: Int req r: z = match s { S::A => 1, _ => 0 } }
 --~^ error: variant `S::A` must be applied to its payload
 comp unapplied { pub out s: S req r: s = S::A }                 --~ error: variant `S::A` must be applied to its payload

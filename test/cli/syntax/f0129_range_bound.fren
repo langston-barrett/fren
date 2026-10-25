@@ -1,0 +1,2 @@
+-- An inclusive range without an upper bound.
+comp c { in n: Int pub out y: Int req r: y = match n { 0..= => 0, _ => 1 } }

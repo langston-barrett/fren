@@ -1,2 +1,2 @@
--- A `match` on an `Int`.
-comp c { in x: Int pub out y: Int req r: y = match x { _ => 0 } }
+-- A `match` on a set.
+comp c { in s: Set(Int) pub out y: Int req r: y = match s { _ => 0 } }

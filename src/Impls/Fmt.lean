@@ -18,7 +18,7 @@ tested fmt::safe: "src/FrenTestMain.lean"
 /-! ## Implementations -/
 
 instance : Fren.Finite Kind :=
-  ⟨[.paren, .call, .closeParen, .brace, .closeBrace, .group, .closeGroup, .path, .comma, .colon, .negation, .comment, .other],
+  ⟨[.paren, .call, .closeParen, .brace, .closeBrace, .group, .closeGroup, .path, .comma, .colon, .negation, .rangeLeading, .rangeTrailing, .comment, .other],
     by intro x; cases x <;> simp⟩
 
 instance : Fren.Finite LineStart := ⟨[.closing, .starting, .continuing], by intro x; cases x <;> simp⟩
@@ -35,6 +35,8 @@ def toFmtKind : Kind → fmt.Kind
   | .comma => .Comma
   | .colon => .Colon
   | .negation => .Negation
+  | .rangeLeading => .RangeLeading
+  | .rangeTrailing => .RangeTrailing
   | .comment => .Comment
   | .other => .Other
 
@@ -47,7 +49,9 @@ impl space: fmt::space for (b a : Kind) {
   before := toFmtKind b,
   after := toFmtKind a,
   space? := FrenCli.Fmt.space b a,
-}
+} by
+  intro b a _
+  cases b <;> cases a <;> simp [fren_spec, toFmtKind, FrenCli.Fmt.space] <;> decide
 
 -- Over `Nat`, so `decide` does not apply: proofs by cases.
 impl indent: fmt::indent for (d : Nat) (s : LineStart) (c : Bool) {

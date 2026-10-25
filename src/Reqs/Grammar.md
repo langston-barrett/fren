@@ -104,10 +104,17 @@ element        := expr | pair
 pair           := "(" expr "," expr ")"
 field-init     := IDENT [":=" expr]
 arm            := pattern "=>" expr
-pattern        := "_" | ["|"] alternative ("|" alternative)*
-alternative    := path ["(" pattern-binder ("," pattern-binder)* ")"]
-pattern-binder := DECL | "_"
+pattern        := ["|"] or-pattern
+or-pattern     := primary ("|" primary)*
+primary        := "_" | DECL | literal | range
+                | path ["(" or-pattern ("," or-pattern)* ")"]
+literal        := ["-"] INT | STRING | "true" | "false"
+range          := bound "..=" bound | bound ".." [bound] | "..=" bound
+bound          := ["-"] INT | path
 ```
+
+In a range, there are no spaces around `..=` and `..` (see
+[Patterns](Lang/Patterns.md)).
 
 Where a rule is written with left recursion, the operator is
 left-associative. A `cmp` with more than one operator is a [chained

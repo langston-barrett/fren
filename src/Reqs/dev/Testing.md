@@ -71,7 +71,10 @@
   two elements, with instances, `det out`s, cover goals and global
   expectations. Each
   index is guarded, before or after it, so that every constraint has a
-  value whatever an index out of range is. Brute force enumerates every behaviour and interpretation
+  value whatever an index out of range is. Its constraints include
+  pattern tests and `match`es with literal and range patterns on `Bool`s
+  and `Int`s; the enumerations have no payloads, so nested patterns are
+  left to the ui tests. Brute force enumerates every behaviour and interpretation
   of that fragment, and decides each check from its definition in
   [Checks](../Check.md). It also confirms that each reported set of
   constraints (a conflict, a vacuity or a redundancy) entails what the

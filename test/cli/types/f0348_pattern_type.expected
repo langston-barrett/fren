@@ -1,0 +1,12 @@
+error[F0348]: expected a pattern of `Int`, but this is a pattern of `String`
+ --> test/cli/types/f0348_pattern_type.fren:2:56
+  |
+2 | comp c { in n: Int pub out y: Int req r: y = match n { "zero" => 0, _ => 1 } }
+  |                                                        ^^^^^^ not a pattern of `Int`
+  |
+  = note: the value matched here has type `Int`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0348`.
+exit=2

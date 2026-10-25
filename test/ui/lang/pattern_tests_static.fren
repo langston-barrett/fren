@@ -13,18 +13,20 @@ comp shadow { in n: Int in s: S pub out z? req r: z? iff s is S::A(n!) }
 comp repeated { in s: S pub out z? req r: z? iff s is S::A(_) | S::A(_) }
 --~^ error: unreachable pattern
 comp not_enum { in i: Int pub out z? req r: z? iff i is S::A(_) }
---~^ error: cannot test `Int` against a pattern
+--~^ error: expected a pattern of `Int`, but this is a pattern of `S`
 comp not_enum_bool { in b? pub out z? req r: z? iff b? is S::A(_) }
---~^ error: cannot test `Bool` against a pattern
+--~^ error: expected a pattern of `Bool`, but this is a pattern of `S`
 comp other { in s: S pub out z? req r: z? iff s is S::A(_) | T::X }
 --~^ error: expected a variant of `S`, but this is a variant of `T`
 comp unapplied { in s: S pub out z? req r: z? iff s is S::A }
 --~^ error: variant `S::A` must be applied to its payload
 comp arity { in s: S pub out z? req r: z? iff s is S::C(_) }
---~^ error: `S::C` takes 2 binders, but 1 was given
+--~^ error: `S::C` takes 2 patterns, but 1 was given
 comp unknown { in s: S pub out z? req r: z? iff s is S::D(_) }
 --~^ error: no variant `D` in enum `S`
 comp not_variant { in s: S in i: Int pub out z? req r: z? iff s is i }
---~^ error: cannot find `i` in this scope
+--~^ error: a pattern test cannot bind `i`
+comp not_matched { in s: Set(Int) pub out z? req r: z? iff s is _ }
+--~^ error: cannot test `Set(Int)` against a pattern
 
 --@ exit: 2

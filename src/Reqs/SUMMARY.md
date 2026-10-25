@@ -10,6 +10,7 @@
 - [Items](Lang/Items.md)
 - [Components](Lang/Components.md)
 - [Expressions](Lang/Expressions.md)
+- [Patterns](Lang/Patterns.md)
 - [Modules and visibility](Lang/Modules.md)
 - [Instances](Lang/Instances.md)
 - [Global expectations](Lang/Global.md)

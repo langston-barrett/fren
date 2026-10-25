@@ -48,9 +48,9 @@ comp absolute { in n: Nat pub out m: Nat := n.abs }
 comp mixed_min { in n: Nat in x: Int pub out m: Nat := n.min(x) }
 --~^ error: type mismatch: expected `Nat`, found `Int`
 
--- A `Nat` is not an enumeration, so no pattern tests it.
+-- A `Nat` is not an enumeration, so no variant pattern tests it.
 comp tested_nat { in n: Nat pub out z? req r: z? iff n is Sign::Plus }
---~^ error: cannot test `Nat` against a pattern
+--~^ error: expected a pattern of `Nat`, but this is a pattern of `Sign`
 
 -- A literal is a `Nat` where one is expected, and a `Nat` widens to an `Int`.
 const TWO: Nat := 2

@@ -327,7 +327,8 @@ lints](Pedantic.md#matches) of the `pedantic` group do.
 
 `match_like_membership` fires on a `match` on `x` whose bodies are the
 literals `true` and `false`, each at least once, and whose patterns name
-only variants without a payload, or are `_`. It says whether `x` is one of
+only variants without a payload, or are `_`; a literal, range or binder
+pattern, or a nested one, keeps it from firing. It says whether `x` is one of
 the variants whose arms are `true`. The fix is `x in {E::A, E::B}`, of
 those variants, or `x = E::A` for one, if the `_` arm is `false`, or if
 there is no `_` arm and no more variants are `true` than `false`.

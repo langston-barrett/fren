@@ -109,6 +109,18 @@ def World.interp (sp : Spec) (w : World) : Interp where
 
 /-! ## Candidates -/
 
+/-- The integers that bound the literal and range patterns of `p`. -/
+partial def Pat.lits : Pat → Array Int
+  | .int lo hi => lo.toArray ++ hi.toArray
+  | .ctor _ ps | .alts ps => ps.flatMap Pat.lits
+  | _ => #[]
+
+/-- The string literals of the patterns of `p`. -/
+partial def Pat.strLits : Pat → Array String
+  | .str s => #[s]
+  | .ctor _ ps | .alts ps => ps.flatMap Pat.strLits
+  | _ => #[]
+
 partial def Ex.lits : Ex → Array Int
   | .lit (.int i) => #[i]
   | .lit _ | .var _ | .slot _ | .bound _ => #[]
@@ -122,7 +134,7 @@ partial def Ex.lits : Ex → Array Int
   | .pair a b | .index a b _ => a.lits ++ b.lits
   | .seqLit es => es.flatMap (·.lits)
   | .card e => e.lits
-  | .match e arms => e.lits ++ arms.flatMap (·.2.lits)
+  | .match e arms => e.lits ++ arms.flatMap fun (p, b) => p.lits ++ b.lits
   | .update e fs => e.lits ++ fs.flatMap (·.2.lits)
 
 /-- The expressions that `e`, a constraint over the search's environment
@@ -383,7 +395,9 @@ partial def Ex.strLits : Ex → Array String × Array String
   | .ite c a b => join #[c, a, b]
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => join args
   | .method _ r args => join (#[r] ++ args)
-  | .match e arms => join (#[e] ++ arms.map (·.2))
+  | .match e arms =>
+    let (ls, ps) := join (#[e] ++ arms.map (·.2))
+    (ls ++ arms.flatMap (·.1.strLits), ps)
   | .update e fs => join (#[e] ++ fs.map (·.2))
 where
   join (es : Array Ex) : Array String × Array String :=

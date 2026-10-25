@@ -38,6 +38,11 @@ inductive Kind where
   | comma
   | colon
   | negation
+  /-- A range's `..=` or `..` with a bound after it but none before, as
+  in `..=9`. -/
+  | rangeLeading
+  /-- A range's `..` with a bound before it but none after, as in `1..`. -/
+  | rangeTrailing
   | comment
   | other
   deriving BEq, DecidableEq, Repr
@@ -48,8 +53,8 @@ def space (before after : Kind) : Bool :=
   else if before == .brace && after == .closeBrace then false
   -- `--` starts a comment.
   else if before == .negation && after == .negation then true
-  else !(before matches .paren | .call | .group | .path | .negation) &&
-    !(after matches .closeParen | .closeGroup | .path | .comma | .colon | .group | .call)
+  else !(before matches .paren | .call | .group | .path | .negation | .rangeLeading) &&
+    !(after matches .closeParen | .closeGroup | .path | .comma | .colon | .group | .call | .rangeTrailing)
 
 /-- What a line's first token does (`fmt::indent`). -/
 inductive LineStart where
@@ -328,6 +333,13 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
           else if stack.back?.any (lay.sets.contains ·.tok) then .closeParen
           else .closeBrace
         | .kw "::" | .kw "." => .path
+        -- A range's operator touches its bounds.
+        | .kw ".." | .kw "..=" =>
+          match lay.rangeLower.contains k, lay.rangeUpper.contains k with
+          | true, true => .path
+          | false, true => .rangeLeading
+          | true, false => .rangeTrailing
+          | false, false => .other
         -- Ends a path, so a space follows it, as one follows `)`.
         | .kw "::*" => .closeParen
         | .kw "," => .comma

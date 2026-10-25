@@ -13,7 +13,7 @@ comp earlier { in s: S pub out z: Int req r: z = match s { S::B => 0, S::A(_) | 
 comp all_covered { in s: S pub out z: Int req r: z = match s { S::A(_) | S::B | S::C(_, _) => 0, _ => 1 } }
 --~^ error: unreachable arm
 comp missing { in s: S pub out z: Int req r: z = match s { S::A(_) | S::B => 0 } }
---~^ error: non-exhaustive match: `S::C` not covered
+--~^ error: non-exhaustive match: `S::C(_, _)` not covered
 comp other { in s: S pub out z: Int req r: z = match s { S::B | T::X => 0, _ => 1 } }
 --~^ error: expected a variant of `S`, but this is a variant of `T`
 

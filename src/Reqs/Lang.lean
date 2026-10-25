@@ -18,4 +18,5 @@ open Fren.Lang
 #fren_md "Lang/Items.md"
 #fren_md "Lang/Components.md"
 #fren_md "Lang/Decidability.md"
+#fren_md "Lang/Patterns.md"
 #fren_md "Lang/Expressions.md"

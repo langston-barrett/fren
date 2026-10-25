@@ -10,6 +10,7 @@ import FrenCore.Lint
 import FrenCore.Literate
 import FrenCore.Mentions
 import FrenCore.Names
+import FrenCore.Patterns
 import FrenCore.Refine
 import FrenCore.Regex
 import FrenCore.Sound

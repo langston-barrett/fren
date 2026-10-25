@@ -90,13 +90,15 @@ Within a line, two tokens are separated by one space or by none.
 | Kind | Tokens |
 |---|---|
 | `Open` | `(`, except one opening a call, and the `{` of a set literal |
-| `Call` | the `(` after a function's, method's or variant's name, opening its parameters or payload, an application's or method call's arguments, or a pattern's binders |
+| `Call` | the `(` after a function's, method's or variant's name, opening its parameters or payload, an application's or method call's arguments, or a variant pattern's patterns |
 | `Close` | `)`, the `}` of a set literal, and `::*`, which ends a path |
 | `Brace` | `{`, except a set literal's |
 | `CloseBrace` | `}`, except one closing a `::{` or a set literal |
 | `Group` | `::{` |
 | `CloseGroup` | the `}` closing a `::{` |
-| `Path` | `::`, and `.` reading a field |
+| `Path` | `::`, `.` reading a field, and the `..=` or `..` of a range pattern with both bounds, as in `0..=9` |
+| `RangeLeading` | the `..=` of a range pattern without a lower bound, as in `..=9` |
+| `RangeTrailing` | the `..` of a range pattern without an upper bound, as in `1..` |
 | `Comma` | `,` |
 | `Colon` | `:` |
 | `Negation` | `-` as a unary operator, as in `-1` |
@@ -104,14 +106,18 @@ Within a line, two tokens are separated by one space or by none.
 | `Other` | any other token: names, literals, keywords and operators, including `-` as a binary operator |
 
 There is no space after an opening bracket or a unary `-`, and none before a
-closing bracket, a separator, a `:` or the `(` of a call. So `x: Int`,
-`a::b`, `use a::{b, c}`, `(a or b)`, `f(x, y)`, `f(p).x` and `-1`, but `{ a, b }`, as braces other than
+closing bracket, a separator, a `:` or the `(` of a call, nor between a
+range's `..=` or `..` and its bounds. So `x: Int`,
+`a::b`, `use a::{b, c}`, `(a or b)`, `f(x, y)`, `f(p).x`, `-1` and `-5..=MAX`, but `{ a, b }`, as braces other than
 `::{` have spaces inside. Empty braces are written `{}`. A comment always
 has a space on both sides, unless it starts or ends the line, and so does a
 unary `-` before another, `- -1`, since `--` starts a comment.
 
 ```fren
-pub enum Kind { Open, Call, Close, Brace, CloseBrace, Group, CloseGroup, Path, Comma, Colon, Negation, Comment, Other }
+pub enum Kind {
+    Open, Call, Close, Brace, CloseBrace, Group, CloseGroup, Path, Comma, Colon, Negation, RangeLeading, RangeTrailing, Comment,
+    Other,
+}
 
 use self::Kind::{
     Brace,
@@ -126,6 +132,8 @@ use self::Kind::{
     Negation,
     Open,
     Path,
+    RangeLeading,
+    RangeTrailing,
 }
 
 pub comp space {
@@ -139,8 +147,8 @@ pub comp space {
     req tight: unless before = Comment or after = Comment or (before = Brace and after = CloseBrace)
         or (before = Negation and after = Negation),
         space? iff not (before = Open or before = Call or before = Group or before = Path or before = Negation
-        or after = Close or after = CloseGroup or after = Path or after = Comma or after = Colon
-        or after = Group or after = Call)
+        or before = RangeLeading or after = Close or after = CloseGroup or after = Path or after = Comma
+        or after = Colon or after = Group or after = Call or after = RangeTrailing)
 
     expect binary_operators: when before = Kind::Other and after = Kind::Other, space?
     expect braces_spaced: when before = Brace and after = Kind::Other, space?

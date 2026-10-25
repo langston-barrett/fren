@@ -2,6 +2,7 @@
 import Fren.Seq
 import FrenCli.Parse
 import FrenCore.Names
+import FrenCore.Patterns
 import FrenCore.Regex
 -- keep-sorted end
 
@@ -97,14 +98,45 @@ def Op.ofString? : String → Option Op
   | "subset" => some .subset | "join" => some .join
   | _ => none
 
-/-- A `match` arm's pattern: `_`, a variant with a name for each value
-of its payload (`_` for one that is ignored), or the variants of an
-or-pattern, which binds nothing. -/
+/-- A pattern (`Reqs/Lang/Patterns`), resolved: `_`, a binder, a literal,
+the integers from `lo` to `hi` (`none` unbounded; a literal or a range), a
+variant with a pattern for each value of its payload, or an or-pattern. -/
 inductive Pat where
   | wild
-  | ctor (idx : Nat) (binders : Array Name)
-  | alts (idxs : Array Nat)
+  | bind (n : Name)
+  | bool (b : Bool)
+  | int (lo hi : Option Int)
+  | str (s : String)
+  | ctor (idx : Nat) (args : Array Pat)
+  | alts (ps : Array Pat)
   deriving Inhabited
+
+/-- The values that `p` binds when it matches `v`, or `none` if it does not
+match. -/
+partial def Pat.matchVal : Pat → Val → Option (List (Name × Val))
+  | .wild, _ => some []
+  | .bind n, v => some [(n, v)]
+  | .bool b, .bool b' => if b == b' then some [] else none
+  | .int lo hi, .int i => if lo.all (· ≤ i) && hi.all (i ≤ ·) then some [] else none
+  | .str s, .str s' => if s == s' then some [] else none
+  | .ctor idx ps, .ctor _ idx' vs =>
+    if idx != idx' || ps.size != vs.size then none
+    else (ps.zip vs).foldlM (init := []) fun acc (p, v) => return acc ++ (← p.matchVal v)
+  | .alts ps, v => ps.findSome? (·.matchVal v)
+  | _, _ => none
+
+/-- The names that `p` binds. -/
+partial def Pat.binders : Pat → Array Name
+  | .bind n => #[n]
+  | .ctor _ ps | .alts ps => ps.flatMap Pat.binders
+  | _ => #[]
+
+/-- `p` with each binder renamed by `f`. -/
+partial def Pat.rename (f : Name → Name) : Pat → Pat
+  | .bind n => .bind (f n)
+  | .ctor idx ps => .ctor idx (ps.map (·.rename f))
+  | .alts ps => .alts (ps.map (·.rename f))
+  | p => p
 
 /-- A resolved expression. -/
 inductive Ex where
@@ -431,17 +463,9 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
     for (k, x) in fs do vs := vs.set! k (← x.eval I look locals)
     return .ctor ty idx vs
   | .match e arms => do
-    let .ctor _ idx vs ← e.eval I look locals slots | none
-    let some (p, body) := arms.find? fun
-        | (.wild, _) => true
-        | (.ctor i _, _) => i == idx
-        | (.alts is, _) => is.contains idx
-      | none
-    match p with
-    | .wild | .alts _ => body.eval I look locals slots
-    | .ctor _ bs =>
-      let new := (bs.zip vs).toList.filter (·.1 != `_)
-      body.eval I look (new ++ locals) slots
+    let v ← e.eval I look locals slots
+    let some (new, body) := arms.findSome? fun (p, body) => (p.matchVal v).map (·, body) | none
+    body.eval I look (new ++ locals) slots
 
 /-- The trigger of a constraint (`Reqs/Lang/Components#triggers`): the
 conditions of its top-level `when`/`unless` chain, conjoined. -/
@@ -686,10 +710,7 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .ctor ty idx args => .ctor ty idx (args.map (·.renameBound f))
   | .field e idx => .field (e.renameBound f) idx
   | .update e fs => .update (e.renameBound f) (fs.map fun (k, x) => (k, x.renameBound f))
-  | .match e arms => .match (e.renameBound f) <| arms.map fun
-    | (.wild, b) => (.wild, b.renameBound f)
-    | (.alts is, b) => (.alts is, b.renameBound f)
-    | (.ctor i bs, b) => (.ctor i (bs.map fun x => if x == `_ then x else f x), b.renameBound f)
+  | .match e arms => .match (e.renameBound f) <| arms.map fun (p, b) => (p.rename f, b.renameBound f)
 
 /-- `e` with each variable renamed by `f`. -/
 partial def Ex.renameVars (f : Name → Name) : Ex → Ex
@@ -787,11 +808,54 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .ctor ty idx args => .ctor ty idx (args.map (·.subst σ))
   | .field e idx => .field (e.subst σ) idx
   | .update e fs => .update (e.subst σ) (fs.map fun (k, x) => (k, x.subst σ))
-  | .match e arms => .match (e.subst σ) <| arms.map fun
-    | (.wild, b) => (.wild, b.subst σ)
-    | (.alts is, b) => (.alts is, b.subst σ)
-    -- An arm's binders shadow those of `σ`.
-    | (.ctor i bs, b) => (.ctor i bs, b.subst (σ.filter (!bs.contains ·.1)))
+  -- An arm's binders shadow those of `σ`.
+  | .match e arms => .match (e.subst σ) <| arms.map fun (p, b) => (p, b.subst (σ.filter (!p.binders.contains ·.1)))
+
+/-- The value of a bound of a range pattern. -/
+def boundValue : Bound → L Int
+  | .num _ v => return v
+  | .path _ segs => do
+    let .item { kind := .constItem, path, .. } ← resolve segs | throw "a range's bound is not a constant"
+    let some (.int v, _) := (← get).spec.consts.find? path | throw s!"`{showPath path}` is not an integer"
+    return v
+
+/-- Lowers the pattern `p` of a value of type `t`: the pattern, and its
+binders with their types. An identifier of one segment, not applied, is a
+variant if it resolves to one, as the elaborator decides with the
+variables that shadow items: it has accepted the spec, so a variable never
+shadows a variant that a pattern names without `!` (`lang::pattern_name`). -/
+partial def lowerPattern (t : VTy) (p : Pattern) : L (Pat × List (Name × VTy)) := do
+  match p with
+  | .wild _ => return (.wild, [])
+  | .str _ v => return (.str v, [])
+  | .num _ v => return (.int v v, [])
+  | .range _ lo hi inclusive =>
+    let (l, h) := Fren.Core.rangeInterval (← lo.mapM boundValue) (← hi.mapM boundValue) inclusive
+    return (.int l h, [])
+  | .variant _ segs args? =>
+    if segs.size == 1 && args?.isNone then
+      let (n, bang) := Fren.Core.declaredName (Name.mkSimple segs[0]!.name)
+      let st ← get
+      let variant := st.table.resolvePath st.scope #[Name.mkSimple segs[0]!.name] matches .ok (.variant ..)
+      match Fren.Core.patternName (n == `true || n == `false) bang variant with
+      | .boolLiteral => return (.bool (n == `true), [])
+      | .binder => return (.bind n, [(n, t)])
+      | .variant => pure ()
+    let .variant en idx ← resolve segs | throw "a pattern names no variant"
+    let .data path := t | throw "a variant matches a value that is not an enumeration"
+    unless en.path == path do throw s!"the pattern's variant is not of `{showPath path}`"
+    let d ← dataDef path
+    let tys := d.ctors[idx]!.fields.map (·.2)
+    let mut ps := #[]
+    let mut bound := []
+    for a in args?.getD #[], ta in tys do
+      let (q, qb) ← lowerPattern ta a
+      ps := ps.push q
+      bound := bound ++ qb
+    return (.ctor idx ps, bound)
+  | .or _ alts => do
+    let ps ← alts.mapM fun a => return (← lowerPattern t a).1
+    return (.alts ps, [])
 
 mutual
 partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
@@ -923,27 +987,10 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     readFields x t [f.name]
   | .match _ scrutinee arms => do
     let (s, t) ← lowerExpr cx scrutinee
-    let .data path := t | throw "the scrutinee of `match` is not an enumeration"
-    let d ← dataDef path
     let mut out := #[]
     let mut ty := VTy.bool
     for (p, body) in arms do
-      let (pat, bound) ← match p with
-        | .wild _ => pure (Pat.wild, [])
-        | .variant _ segs binders? => do
-          let .variant en idx ← resolve segs | throw "a pattern names no variant"
-          unless en.path == path do throw s!"the pattern's variant is not of `{showPath path}`"
-          let bs := (binders?.getD #[]).map declName
-          let tys := d.ctors[idx]!.fields.map (·.2)
-          pure (Pat.ctor idx bs, (bs.zip tys).toList.filter (·.1 != `_))
-        | .or _ alts => do
-          let idxs ← alts.mapM fun
-            | .variant _ segs _ => do
-              let .variant en idx ← resolve segs | throw "a pattern names no variant"
-              unless en.path == path do throw s!"the pattern's variant is not of `{showPath path}`"
-              pure idx
-            | _ => throw "a nested or-pattern"
-          pure (Pat.alts idxs, [])
+      let (pat, bound) ← lowerPattern t p
       let (b, t) ← lowerExpr { cx with binders := bound.reverse ++ cx.binders } body
       ty := t
       out := out.push (pat, b)
@@ -951,14 +998,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
   -- `e is P` is `match e { P => true, _ => false }`.
   | .is _ scrutinee p => do
     let (s, t) ← lowerExpr cx scrutinee
-    let .data path := t | throw "the scrutinee of `is` is not an enumeration"
-    let idxs ← p.alts.mapM fun
-      | .variant _ segs _ => do
-        let .variant en idx ← resolve segs | throw "a pattern names no variant"
-        unless en.path == path do throw s!"the pattern's variant is not of `{showPath path}`"
-        pure idx
-      | _ => throw "a nested or-pattern"
-    let pat := if p matches .wild _ then Pat.wild else Pat.alts idxs
+    let (pat, _) ← lowerPattern t p
     return (.match s #[(pat, .lit (.bool true)), (.wild, .lit (.bool false))], .bool)
 end
 
