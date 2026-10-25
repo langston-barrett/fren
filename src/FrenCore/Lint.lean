@@ -3882,15 +3882,21 @@ def SettingRecord.replace (settings : Array (SettingRecord × α)) (before : Lin
 /-! ## Unused assumptions -/
 
 /-- Whether `unused_assumption` fires on an assumption, from the number of
-variables it mentions, whether all are inputs, whether one of them is used
-in the component, and whether one is read in the file
-(`lint::unused_assumption`). -/
+variables it mentions, whether all are inputs, whether one of them, or an
+uninterpreted function it applies, is used in the component, and whether
+one is read in the file (`lint::unused_assumption`). -/
 def unusedAssumption (nMentioned : Nat) (allInputs mentioned read : Bool) : Bool :=
   nMentioned > 0 && allInputs && !mentioned && !read
 
-/-- Which of the assumptions, given the variables each mentions, are used:
-those that mention a variable of `used`, or one that a used assumption
-mentions, transitively, since they constrain the same variables. -/
+/-- An uninterpreted function, as what links assumptions for
+`unused_assumption`, beside variables: its path after a number, which no
+variable's name has. -/
+def fnLink (path : Name) : Name := Name.mkNum .anonymous 0 ++ path
+
+/-- Which of the assumptions, given the variables each mentions and the
+uninterpreted functions each applies (`fnLink`), are used: those that
+mention one of `used`, or one that a used assumption mentions,
+transitively, since they constrain the same values. -/
 def usedAssumptions (mentions : Array (Array Name)) (used : Array Name) : Array Bool := Id.run do
   let mut used := used
   let mut out := mentions.map fun _ => false
@@ -3903,13 +3909,15 @@ def usedAssumptions (mentions : Array (Array Name)) (used : Array Name) : Array 
   return out
 
 /-- An assumption that `unused_assumption` may fire on: its component, its
-name, the inputs it mentions, and the level of the lint at the component.
-It fires unless the file reads one of the inputs, or one that a used
-assumption of the component mentions. -/
+name, the inputs it mentions, those and the uninterpreted functions it
+applies (`fnLink`), and the level of the lint at the component. It fires
+unless the file reads one of its links, or one that a used assumption of
+the component mentions. -/
 structure AssumptionRecord where
   component : Name
   name : Name
   inputs : Array Name
+  links : Array Name
   level : LevelInEffect
   deriving Inhabited, Repr
 
@@ -3923,15 +3931,16 @@ def unusedAssumptionMsg (name : Name) (inputs : Array Name) : Msg :=
       "help: remove the assumption and its inputs, or use them"] }
 
 /-- The messages of `unused_assumption`, given what the file's global
-expectations read through instances, its instances bind, and its
-refinements read of their abstractions: each read's component and input.
+expectations read through instances, or apply (`fnLink`), its instances
+bind, and its refinements read of their abstractions: each read's
+component and input or function.
 An assumption is read when it mentions a read input, or one that a read
 assumption of its component mentions. -/
 def unusedAssumptionReports (rs : Array (AssumptionRecord × α)) (reads : Array (Name × Name)) :
     Array (LintReport α) :=
   rs.filterMap fun (r, ref) =>
     let same := (rs.filter (·.1.component == r.component)).map (·.1)
-    let used := usedAssumptions (same.map (·.inputs)) ((reads.filter (·.1 == r.component)).map (·.2))
+    let used := usedAssumptions (same.map (·.links)) ((reads.filter (·.1 == r.component)).map (·.2))
     let read := (same.findIdx? (·.name == r.name)).any (used[·]!)
     if !unusedAssumption r.inputs.size true false read then none
     else some { lint := .unusedAssumption, level := r.level, ref, msg := unusedAssumptionMsg r.name r.inputs }

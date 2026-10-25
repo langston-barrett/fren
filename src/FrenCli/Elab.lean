@@ -781,6 +781,27 @@ def patternName (cx : ExprCtx) (x : Ident) : M Fren.Core.PatternName := do
 def patternBinders (cx : ExprCtx) (p : Pattern) : M (Array Ident) :=
   p.names.filterM fun x => return (← patternName cx x) == .binder
 
+/-- The paths of the functions that `e` applies (`unused_assumption`). -/
+partial def appliedPaths : Expr → Array (Array Ident)
+  | .app _ segs args => args.foldl (· ++ appliedPaths ·) #[segs]
+  | .when _ _ c d | .bin _ _ c d | .pair _ c d | .index _ c d => appliedPaths c ++ appliedPaths d
+  | .not _ a | .neg _ a | .field _ a _ => appliedPaths a
+  | .method _ r _ args => args.foldl (· ++ appliedPaths ·) (appliedPaths r)
+  | .set _ es | .seq _ es => es.foldl (· ++ appliedPaths ·) #[]
+  | .ite _ c a b => appliedPaths c ++ appliedPaths a ++ appliedPaths b
+  | .record _ _ fs => fs.foldl (init := #[]) fun acc (_, e?) => acc ++ (e?.map appliedPaths).getD #[]
+  | .match _ s arms => arms.foldl (init := appliedPaths s) fun acc (_, body) => acc ++ appliedPaths body
+  | _ => #[]
+
+/-- The uninterpreted functions that `e` applies, as links of
+`unused_assumption` (`Fren.Core.fnLink`). -/
+def appliedFns (cx : ExprCtx) (e : Expr) : M (Array Name) := do
+  let st ← get
+  return (appliedPaths e).filterMap fun segs =>
+    match st.table.resolvePath st.scope (segNames segs) cx.shadowing with
+    | .ok (.item { kind := .fnItem, path, .. }) => if st.defs.any (·.1 == path) then none else some (Fren.Core.fnLink path)
+    | _ => none
+
 /-- The shape of `e`, for what it mentions (`lang::mentions`), where `bs`
 are the binders of `e` around the subexpression, each with the shape of its
 scrutinee. -/
@@ -2757,15 +2778,26 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     | .prop _ _ e | .var _ _ _ _ _ (some e) => acc ++ mentions e
     | .inst _ _ bs => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
     | _ => acc
+  -- The uninterpreted functions that they apply link too.
+  let acx : ExprCtx := { vars, insts := instNames, place := .prop }
+  let others ← members.foldlM (init := others) fun acc m => match m with
+    | .prop .assume _ _ => pure acc
+    | .prop _ _ e | .var _ _ _ _ _ (some e) => return acc ++ (← appliedFns acx e)
+    | .inst _ _ bs => bs.foldlM (init := acc) fun acc (_, e?) => match e? with
+      | some e => return acc ++ (← appliedFns acx e)
+      | none => pure acc
+    | _ => pure acc
   let inputs := vars.filter (·.role == .input) |>.map (·.name)
   let assumed := members.filterMap fun | .prop .assume x e => some (x, e) | _ => none
   let mss := assumed.map fun (_, e) =>
     (mentions e).foldl (init := #[]) fun acc n => if vars.any (·.name == n) && !acc.contains n then acc.push n else acc
-  let used := Fren.Core.usedAssumptions mss others
-  for (x, _) in assumed, ms in mss, u in used do
+  let links ← assumed.mapIdxM fun i (_, e) => return mss[i]! ++ (← appliedFns acx e)
+  let used := Fren.Core.usedAssumptions links others
+  for (x, _) in assumed, ms in mss, ls in links, u in used do
     if Fren.Core.unusedAssumption ms.size (ms.all inputs.contains) u false then
       let r : Fren.Core.AssumptionRecord :=
-        { component := (← get).module ++ n, name := Name.mkSimple x.name, inputs := ms, level := (← get).levels.get .unusedAssumption }
+        { component := (← get).module ++ n, name := Name.mkSimple x.name, inputs := ms, links := ls
+          level := (← get).levels.get .unusedAssumption }
       modify fun s => { s with assumptions := s.assumptions.push (r, x.span) }
   -- `constant_output` and `definable_output` (`lint::output_lints`).
   let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
@@ -3005,6 +3037,10 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
   let reads := (mentions body).filterMap fun m => match m.components with
     | [w, x] => (insts.find? (·.name == w)).map fun i => (i.comp, x)
     | _ => none
+  -- And the uninterpreted functions it applies, which its binders'
+  -- assumptions may constrain.
+  let fns ← appliedFns cx body
+  let reads := reads ++ insts.flatMap fun i => fns.map (i.comp, ·)
   modify fun s => { s with globalReads := s.globalReads ++ reads }
   -- `unrelated_binders` (`lint::unrelated_binders`).
   let groups := Fren.Core.binderGroups (insts.map (·.name)) ((boolAtoms body).map fun a => (mentions a).map (·.getRoot))

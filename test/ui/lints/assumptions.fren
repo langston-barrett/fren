@@ -131,3 +131,56 @@ comp read_through {
 }
 
 expect h: forall (a: read_through), a.z > 1
+
+-- A function ties the assumption to the requirement: `a` says that
+-- `gain(3) > 0`.
+pub fn gain(Int): Int
+
+comp pinned {
+    in n: Int
+    pub out y: Int
+    assume a: n = 3 and gain(n) > 0
+    req r: y = gain(3)
+    expect pos: y > 0
+}
+
+-- So does a function over a finite domain, with no constant.
+pub enum Color { Red, Green }
+pub fn f(Color): Int
+
+comp rooted {
+    in n: Color
+    pub out y: Int
+    assume a: f(n) = 0
+    req r: y = 1
+    expect root: f(Color::Red) = 0 or f(Color::Green) = 0
+}
+
+-- A constant's value is known, so it links nothing.
+const THREE: Int := 3
+
+comp constant {
+    in n: Int
+    pub out y: Int
+    assume a: n = THREE  --~ warning: the assumption `a` constrains only inputs that nothing uses
+    req r: y = THREE
+}
+
+-- A function that the assumption applies, and nothing else does, links
+-- nothing.
+pub fn loss(Int): Int
+
+comp own_function {
+    in n: Int
+    pub out y: Int
+    assume a: loss(n) > 0  --~ warning: the assumption `a` constrains only inputs that nothing uses
+    req r: y = gain(1)
+}
+
+-- A variant is a value, not a function or a constant.
+comp variant {
+    in n: Color
+    pub out y: Int
+    assume a: n = Color::Red  --~ warning: the assumption `a` constrains only inputs that nothing uses
+    req r: y = 1
+}

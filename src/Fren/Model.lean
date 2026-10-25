@@ -386,6 +386,9 @@ structure LocalState where
   settingIds : Array Nat := #[]
   seenSettings : Array Nat := #[]
   nextSetting : Nat := 0
+  /-- The settings of the Lean file, or of a spec that reads this one, that
+  this spec's replace: each one's identifier, and what replaces it. -/
+  outerReplaced : Array (Nat × Core.LintTarget × Core.LintLevel) := #[]
   /-- Its assumptions that `unused_assumption` may fire on, and what its
   global expectations read through instances, and its refinements of their
   abstractions: each read's component and input. -/

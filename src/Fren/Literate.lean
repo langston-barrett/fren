@@ -104,13 +104,19 @@ def relativeTo (base path : System.FilePath) : String :=
                                 items := #[], usedItems := #[], inMarkdown := true, leanFile?,
                                 mdSource? := some (name, inputCtx.fileMap), globalTexts := #[],
                                 invisibleFrom := 0, settings := #[], settingIds := #[], seenSettings := #[],
-                                assumptions := #[], globalReads := #[] }
+                                outerReplaced := #[], assumptions := #[], globalReads := #[] }
   let s ← get
   let st ← IO.processCommands inputCtx {} { s with messages := {} }
   set st.commandState
   -- The Lean file's settings in effect at the spec's items, which are its
   -- items too.
   let seen := (← getLocal).seenSettings
+  -- The Lean file's settings that the spec's replace, which name them.
+  let replaced := (← getLocal).outerReplaced
+  let (settings, further) := replaced.foldl (init := (outer.settings, outer.outerReplaced))
+    fun (ss, rest) (i, target, requested) => match outer.settingIds.idxOf? i with
+      | some k => (ss.modify k fun (r, ref) => ({ r with replacedBy? := some (target, requested) }, ref), rest)
+      | none => (ss, rest.push (i, target, requested))
   withReader (fun ctx => { ctx with fileName := path.toString, fileMap := inputCtx.fileMap }) reportLints
   let inner ← get
   let some range := (← getRef).getRange? | throwError "`#fren_md` has no position"
@@ -143,7 +149,8 @@ def relativeTo (base path : System.FilePath) : String :=
                                 expectations := outer.expectations, lintReports := outer.lintReports,
                                 items := outer.items, usedItems := outer.usedItems, inMarkdown := outer.inMarkdown,
                                 leanFile? := outer.leanFile?, mdSource? := outer.mdSource?, globalTexts := outer.globalTexts,
-                                invisibleFrom := outer.invisibleFrom, staticErrors, settings := outer.settings,
+                                invisibleFrom := outer.invisibleFrom, staticErrors, settings,
+                                outerReplaced := further,
                                 settingIds := outer.settingIds, seenSettings := outer.seenSettings ++ seen,
                                 assumptions := outer.assumptions,
                                 globalReads := outer.globalReads }

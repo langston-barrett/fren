@@ -207,7 +207,7 @@ def fmtIgnore : List String :=
    "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
    -- `#fren_md` in a block, which only the Lean front end reads.
    "src/FrenTest/chapters/LiterateOuter.md", "src/FrenTest/chapters/LiterateReader.md",
-   "src/FrenTest/chapters/deep/LiterateDeep.md",
+   "src/FrenTest/chapters/deep/LiterateDeep.md", "src/FrenTest/chapters/LiterateReplacing.md",
    -- Lean code in a block, likewise.
    "src/FrenTest/chapters/LiterateNoPosition.md"]
 

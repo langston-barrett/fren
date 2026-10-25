@@ -452,6 +452,20 @@ def definedFn? (cx : ExprCtx) (p : Syntax) : TermElabM (Option DefinedInfo) := d
   let .ok (.item { kind := .fnItem, path, .. }) := s.table.resolvePath cx.modName names cx.shadowing | return none
   return s.defined.get? path
 
+/-- The paths of the functions that `e` applies (`unused_assumption`). -/
+partial def appliedPaths (e : Syntax) : Array Syntax :=
+  if e.isOfKind ``Lang.appExpr then e[2].getSepArgs.foldl (· ++ appliedPaths ·) #[e[0]]
+  else e.getArgs.foldl (· ++ appliedPaths ·) #[]
+
+/-- The uninterpreted functions that `e` applies, as links of
+`unused_assumption` (`Core.fnLink`). -/
+def appliedFns (cx : ExprCtx) (e : Syntax) : TermElabM (Array Name) := do
+  let s ← getState
+  (appliedPaths e).filterMapM fun p => do
+    let some names ← try some <$> segNames (pathSegs p) catch _ => pure none | return none
+    let .ok (.item { kind := .fnItem, path, .. }) := s.table.resolvePath cx.modName names cx.shadowing | return none
+    return if s.defined.contains path then none else some (Core.fnLink path)
+
 /-- The Fren name of the type whose Lean type is `t`. -/
 partial def typeName (t : Expr) : TermElabM String := do
   -- A comparison or connective is a `Prop` in Lean, and a `Bool` in Fren.
@@ -3203,10 +3217,23 @@ open Lang in
         | `(fren_member| assume $x:ident : $e) => some (x, e) | _ => none
       let mss := assumed.map fun (_, e) => (pathMentions e).foldl (init := #[]) fun acc n =>
         if vars.any (·.name == n) && !acc.contains n then acc.push n else acc
-      let used := Core.usedAssumptions mss others
-      for (x, _) in assumed, ms in mss, u in used do
+      -- The uninterpreted functions that they apply link too.
+      let acx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
+      for m in members do
+        match m with
+        | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
+          for b in bs.getElems do
+            if !b.raw[1].isNone then others := others ++ (← appliedFns acx b.raw[1][1])
+        | `(fren_member| req $_:ident : $e) | `(fren_member| expect $_:ident : $e) =>
+          others := others ++ (← appliedFns acx e)
+        | _ => pure ()
+      for v in vars do
+        if let some d := v.defn? then others := others ++ (← appliedFns acx d)
+      let links ← assumed.mapIdxM fun i (_, e) => return mss[i]! ++ (← appliedFns acx e)
+      let used := Core.usedAssumptions links others
+      for (x, _) in assumed, ms in mss, ls in links, u in used do
         if Core.unusedAssumption ms.size (ms.all inputs.contains) u false then
-          let r : Core.AssumptionRecord := { component := path, name := x.getId, inputs := ms, level }
+          let r : Core.AssumptionRecord := { component := path, name := x.getId, inputs := ms, links := ls, level }
           modifyLocal fun l => { l with assumptions := l.assumptions.push (r, x) }
     generated := insts.map (·.decl) ++ props.map (·.decl) ++ #[declBase ++ `assumes, declBase ++ `reqs]
       ++ values.map (declBase ++ `def ++ ·.1) ++ (if values.isEmpty then #[] else #[declBase ++ `defs])
@@ -3320,6 +3347,10 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     let reads := (pathMentions body).filterMap fun m => match m.components with
       | [w, x] => (binders.find? (·.name == w)).map fun b => (b.comp.path, x)
       | _ => none
+    -- And the uninterpreted functions it applies, which its binders'
+    -- assumptions may constrain.
+    let fns ← appliedFns cx body
+    let reads := reads ++ binders.flatMap fun b => fns.map (b.comp.path, ·)
     modifyLocal fun l => { l with globalReads := l.globalReads ++ reads }
     -- `unrelated_binders` (`lint::unrelated_binders`).
     let atoms := (boolNode "" 0 (unparen body)).atoms.map fun a => (pathMentions a.ref).map (·.getRoot)

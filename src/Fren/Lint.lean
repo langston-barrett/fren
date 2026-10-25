@@ -739,11 +739,14 @@ and lints that do not exist, are left to Lean. -/
   let n := (← getLocal).nextSetting
   modifyLocal fun l =>
     -- The settings it replaces, as indices in `l.settings`: one of the Lean
-    -- file's, in effect in a spec, is not there.
+    -- file's, in effect in a spec, is not there, and is recorded apart.
+    let outer := (target.members.filterMap fun lint => (Core.Levels.get before lint).setting?).filter
+      (!l.settingIds.contains ·)
     let before (lint : Core.Lint) := let e := Core.Levels.get before lint
       { e with setting? := e.setting?.bind l.settingIds.idxOf? }
     { l with settings := (Core.SettingRecord.replace l.settings before target requested).push (r, stx)
-             settingIds := l.settingIds.push n, nextSetting := n + 1 }
+             settingIds := l.settingIds.push n, nextSetting := n + 1
+             outerReplaced := l.outerReplaced ++ outer.map (·, target, requested) }
   let opts := target.members.foldl (init := opts) fun opts lint =>
     let opts := opts.insert lint.option (.ofString v)
     let opts := opts.insert (settingOption lint) (.ofNat n)

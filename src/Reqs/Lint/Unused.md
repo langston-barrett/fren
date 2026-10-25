@@ -148,11 +148,24 @@ reads every input of the abstraction, through its binding or by name, and
 the abstraction's assumptions are its hypotheses, so an assumption can
 guard a binding: with `n := q.len` and `assume pos: n > 0`, `x := q[0]` is
 defined. An input is also used when another assumption mentions it and a
-used input, since the assumption constrains the two together, and so on
-transitively: with `assume a: n > 0`,
-`assume b: m = 2 * n` and `req r: y = m`, `m` is used, so `n` is, and
-without `a`, `y > 0` would not follow. Such an input does not
-affect the component, as for an [unused variable](#unused-variables), but
+used variable, since the assumption constrains the two together, and so
+on transitively: with `assume a: n > 0`, `assume b: m = 2 * n` and `req r:
+y = m`, `m` is used, so `n` is, and without `a`, `y > 0` would not follow.
+An uninterpreted function links assumptions in the same way as a
+variable, through its values: it is *used* when one of the above applies
+it, and an assumption that applies a used function is used, as is an
+input it mentions. With `assume a: n = 3 and g(n) > 0` and `req r: y =
+g(3)`, `a` says that `g(3) > 0`, so it is used. A constant's value and a
+defined function's body apply no uninterpreted function, so they link
+nothing. With these rules, removing a reported assumption never makes a
+check fail. Its variables `V` and functions are mentioned by nothing else,
+so a check over the component is `forall U V, A(V) and B(U) implies
+C(U)`, with `A` the assumption, which is `(exists V, A(V)) implies (forall
+U, B(U) implies C(U))`, for every interpretation of the functions. Since
+`B` and `C` apply none of `A`'s functions, `exists V, A(V)` can be made
+to hold by changing only those, unless `A` is unsatisfiable, and then the
+assumptions' satisfiability check already fails (`F0602`). An unused
+input does not affect the component, as for an [unused variable](#unused-variables), but
 `unused_variables` does not report it, since the assumption mentions it:
 this is what is left after the last requirement that used the input is
 removed. As for [dead code](#dead-code), only the file's global
@@ -164,8 +177,8 @@ the inputs would change the component's interface.
 pub comp unused_assumption {
     in n_mentioned: Int  -- variables the assumption mentions
     in all_inputs?       -- each of them is an input
-    in mentioned?        -- one of them is used in the component, through its other assumptions too
-    in read?             -- one of them is read in the file, by a global expectation, an instance or a refinement, through the component's other assumptions too
+    in mentioned?        -- one of them, or a function it applies, is used in the component, through its other assumptions too
+    in read?             -- one of them, or a function it applies, is read in the file, by a global expectation, an instance or a refinement, through the component's other assumptions too
     pub det out fires?
 
     assume counts: n_mentioned >= 0
