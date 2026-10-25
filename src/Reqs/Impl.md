@@ -92,10 +92,8 @@ use inst::Role::{Input, Output}
 pub comp mapping {
     in role: Role
     in is_pub?
-    in n: Int            -- terms given for this variable
+    in n: Nat            -- terms given for this variable
     pub out accepted?
-
-    assume counts: n >= 0
 
     req rule: accepted? iff n = (if role = Input or (role = Output and is_pub?) then 1 else 0)
 
@@ -173,12 +171,10 @@ pub enum Interpreted { AbstractType, Function, Other }
 
 pub comp interpretation {
     in what: Interpreted       -- what the path names; a defined function is `Other`
-    in earlier: Int            -- interpretations of it in the file and its imports
+    in earlier: Nat            -- interpretations of it in the file and its imports
     in typed?                  -- the term has the required type, and an `Inhabited` instance for a type
     in types_interpreted?      -- for a function: each abstract type in its signature is interpreted
     pub det out accepted?
-
-    assume counts: earlier >= 0
 
     req rule: accepted? iff (what != Interpreted::Other and earlier = 0 and typed?
         and (what != Interpreted::Function or types_interpreted?))

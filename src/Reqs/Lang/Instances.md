@@ -69,10 +69,8 @@ use self::Target::{CompInput, CompOutput}
 
 pub comp binding {
     in target: Target
-    in n: Int            -- bindings of this name in the instance
+    in n: Nat            -- bindings of this name in the instance
     pub out accepted?
-
-    assume counts: n >= 0
 
     req rule: accepted? iff ((target = CompInput and n = 1) or (target != CompInput and n = 0))
 
@@ -92,11 +90,10 @@ pub comp bindings {
     in inputs: Set(VarName)          -- the instantiated component's inputs
     in outputs: Set(VarName)         -- its other variables: its outputs
     in bound: Set(VarName)           -- the names the instance binds
-    in n_repeated: Int               -- bindings of a name bound earlier in the instance
+    in n_repeated: Nat               -- bindings of a name bound earlier in the instance
     pub det out accepted?
 
     assume disjoint: (inputs inter outputs) = {}
-    assume counts: n_repeated >= 0
 
     req rule: accepted? iff (bound = inputs and n_repeated = 0)
 
@@ -149,12 +146,12 @@ pub comp earlier {
     in order: Seq(InstName)      -- the component's instances, in declaration order
     in owner: InstName           -- the instance whose variable is mentioned
     in binder: InstName          -- the instance whose binding mentions it
-    in k_owner: Int              -- the position of `owner` in `order`
-    in k_binder: Int             -- the position of `binder`
+    in k_owner: Nat              -- the position of `owner` in `order`
+    in k_binder: Nat             -- the position of `binder`
     pub det out earlier?
 
-    assume positions: 0 <= k_owner < order.len and order[k_owner] = owner
-        and 0 <= k_binder < order.len and order[k_binder] = binder
+    assume positions: k_owner < order.len and order[k_owner] = owner
+        and k_binder < order.len and order[k_binder] = binder
     -- Instance names are distinct.
     assume distinct: when owner = binder, k_owner = k_binder
 

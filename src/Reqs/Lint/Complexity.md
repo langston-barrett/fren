@@ -146,12 +146,10 @@ that is not defined but could be. `lint::output_lints` states both:
 pub comp output_lints {
     in defined?              -- the output is defined
     in mentions?             -- its definition mentions a variable or an uninterpreted function, if defined
-    in n_reqs: Int           -- requirements that mention it, if not defined
+    in n_reqs: Nat           -- requirements that mention it, if not defined
     in equation?             -- the only one is `x = e` or `x? iff e`, with `e` not mentioning `x`
     pub det out constant?    -- `constant_output` fires
     pub det out definable?   -- `definable_output` fires
-
-    assume counts: n_reqs >= 0
 
     req constant: constant? iff (defined? and not mentions?)
     req definable: definable? iff (not defined? and n_reqs = 1 and equation?)

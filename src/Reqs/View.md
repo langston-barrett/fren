@@ -195,15 +195,15 @@ counts:
 
 ```fren
 pub comp summary {
-    in n_pass: Int
-    in n_fail: Int
-    in n_inconclusive: Int
-    in n_redundant: Int    -- redundant constraints, not counted as failed
+    in n_pass: Nat
+    in n_fail: Nat
+    in n_inconclusive: Nat
+    in n_redundant: Nat    -- redundant constraints, not counted as failed
     pub det out level: Severity
 
-    assume counts: n_pass >= 0 and n_fail >= 0 and n_inconclusive >= 0 and n_redundant >= 0
-
     req always_info: level = Info
+
+    expect whatever_the_counts: when n_pass + n_fail + n_inconclusive + n_redundant > 0, level = Info
 }
 ```
 

@@ -135,3 +135,6 @@ enumeration, or one with a field or payload of an unbounded type. See
 
 **Variant.** One of the alternatives of an enumeration, carrying a payload
 or not.
+
+**Widening.** Accepting a `Nat` where an `Int` is expected, the only
+conversion between types. See [Types](Lang/Types.md#natural-numbers).

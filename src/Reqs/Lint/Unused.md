@@ -39,11 +39,9 @@ pub mod lint
 
 pub comp unused_import {
     in glob?             -- it is `use ...::*`
-    in n_paths: Int      -- paths in its file and module whose first segment resolves to a name it brings into scope
+    in n_paths: Nat      -- paths in its file and module whose first segment resolves to a name it brings into scope
     in first?            -- no earlier `use` in its file and module opens the same enumeration
     pub det out unused?
-
-    assume counts: n_paths >= 0
 
     req rule: unused? iff (n_paths = 0 or (glob? and not first?))
 
@@ -123,10 +121,8 @@ use self::Named::{AbstractType, Component, Constant, Enumeration, Function, Reco
 pub comp dead_item {
     in what: Named
     in pub?
-    in n_uses: Int       -- paths in its file that resolve to it, to one of its variants, or through it
+    in n_uses: Nat       -- paths in its file that resolve to it, to one of its variants, or through it
     pub det out dead?
-
-    assume counts: n_uses >= 0
 
     req rule: dead? iff (what in {Enumeration, Record, AbstractType, Function, Constant} and not pub? and n_uses = 0)
 

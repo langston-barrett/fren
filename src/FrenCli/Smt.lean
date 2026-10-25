@@ -267,10 +267,14 @@ the scripts asked before (`runQuery`). -/
 def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (timeoutSecs : Nat) (dump? : Option (String → IO Unit) := none)
     (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (kind : Fren.Core.CheckKind) :
     Fren.Core.Backend IO String String where
-  -- cvc5 refuses some string operations without `strings-exp`.
-  query hyps goal wantModel := runQuery (Fren.Core.logic kind (strings || sets) projection)
-    (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n"))
-    prelude (c.vars ++ primes c) timeoutSecs dump? hyps goal wantModel cache?
+  -- cvc5 refuses some string operations without `strings-exp`. Every query
+  -- has what the natural numbers bring, of both copies (`Reqs/Check`).
+  query hyps goal wantModel :=
+    let facts := c.natFacts false ++ c.natFacts true
+    runQuery (Fren.Core.logic kind (strings || sets) projection)
+      (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n"))
+      prelude (c.vars ++ primes c) timeoutSecs dump?
+      ((facts ++ (facts.map (prime c)).filter (!facts.contains ·)).map (`nat, ·) ++ hyps) goal wantModel cache?
   falseF := "false"
   notF f := s!"(not {f})"
   conj := conj
@@ -279,7 +283,8 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (timeoutSecs 
     let outs := c.vars.filter fun v => v.role == .output && v.defn?.isNone
     if outs.isEmpty then return f
     let binders := " ".intercalate (outs.toList.map fun v => s!"({quote v.name.toString} {v.ty.sort})")
-    return s!"(exists ({binders}) {f})"
+    -- The outputs' `Nat`s are at least 0, with the requirements.
+    return s!"(exists ({binders}) {conj (c.natFacts true ++ #[f])})"
   -- A value of an abstract type names a solver-internal constant, such as
   -- `@U_0`, which a fresh query cannot parse.
   pin n v := return if v.contains '@' then none else some s!"(= {quote n.toString} {v})"

@@ -48,19 +48,20 @@ equally tightly:
 | 3 | `A or B` | disjunction | `Bool` | `Bool` | left |
 | 4 | `A and B` | conjunction | `Bool` | `Bool` | left |
 | 5 | `not A` | negation | `Bool` | `Bool` | |
-| 6 | `A = B`, `A != B` | equality, disequality | any, both the same | `Bool` | none |
-| 6 | `A < B`, `A <= B`, `A > B`, `A >= B` | ordering | `Int`, or `String` | `Bool` | [chains](#chained-comparisons) |
+| 6 | `A = B`, `A != B` | equality, disequality | any, both the same, or `Int` and `Nat` | `Bool` | none |
+| 6 | `A < B`, `A <= B`, `A > B`, `A >= B` | ordering | `Int` or `Nat`, or `String` | `Bool` | [chains](#chained-comparisons) |
 | 6 | `A in S` | membership | `T` and `Set(T)` or `Seq(T)`, or a pair `(a, b)` and `Rel(A, B)` | `Bool` | none |
 | 6 | `S subset T` | `S` is a subset of `T`, not necessarily strict | `Set(T)`, or `Rel(A, B)` | `Bool` | none |
 | 6 | `A is P` | [pattern test](#pattern-tests): the pattern `P` matches `A` | an enumeration, and a pattern | `Bool` | none |
-| 7 | `A + B`, `A - B` | addition, subtraction | `Int` | `Int` | left |
+| 7 | `A + B` | addition | `Int` or `Nat` | `Nat` if both are, else `Int` | left |
+| 7 | `A - B` | subtraction | `Int` or `Nat` | `Int` | left |
 | 7 | `A ++ B` | concatenation | `String`, or `Seq(T)` | the same | left |
 | 7 | `S union T`, `S minus T` | union, difference | `Set(T)`, or `Rel(A, B)` | the same | left |
-| 8 | `A * B` | multiplication | `Int` | `Int` | left |
-| 8 | `A div K`, `A mod K` | [division and remainder](#division-and-remainder) by a constant | `Int` | `Int` | left |
+| 8 | `A * B` | multiplication | `Int` or `Nat` | `Nat` if both are, else `Int` | left |
+| 8 | `A div K`, `A mod K` | [division and remainder](#division-and-remainder) by a constant | `Int` or `Nat` | `Int` | left |
 | 8 | `S inter T` | intersection | `Set(T)`, or `Rel(A, B)` | the same | left |
 | 8 | `R join Q` | composition | `Rel(A, B)` and `Rel(B, C)` | `Rel(A, C)` | left |
-| 9 | `-A` | negation | `Int` | `Int` | |
+| 9 | `-A` | negation | `Int` or `Nat` | `Int` | |
 
 - In `when C, D` and `unless C, D`, `C` ends at the first top-level `,`, and
   `D` extends as far right as possible. `D` may itself be a `when` or
@@ -353,6 +354,39 @@ pub comp division {
 }
 ```
 
+## Natural numbers
+
+`+` and `*` of two `Nat`s are `Nat`s. Of a `Nat` and an `Int`, the `Nat`
+is [widened](Types.md#natural-numbers) to an `Int`, as Lean's `binop%`
+elaboration inserts `↑`, and the result is an `Int`. `a - b` and `-a` are
+always `Int`s, even of `Nat`s, so that Fren never truncates: Lean's
+subtraction on `Nat` gives `0` for `3 - 5`, and it never appears in a Fren
+spec. Likewise the operands of a comparison or an equality, the branches
+of a conditional and the bodies of a `match`'s arms may be a `Nat` and an
+`Int`, and the `Nat` is widened: `n = -1` compares two `Int`s, and `if c?
+then n else -1` is an `Int`.
+
+An integer literal is a `Nat` where a `Nat` is expected, and an `Int`
+elsewhere. A `Nat` is expected for the definition of a defined output,
+the value of a constant, a binding, an argument, or the body of a defined
+function, whose type is `Nat`; and, where the whole is expected to be a
+`Nat`, for the operands of `+` and `*`, the branches of a conditional,
+the bodies of a `match`'s arms, and what is in parentheses. So in `out m:
+Nat := n + 1`, `1` is a `Nat`, but in `n + 1 > 0` it is an `Int`, and `n`
+is widened. The operand of `-` is never expected to be a `Nat`, so `-1`
+is an `Int`. `lang::literal_type` states the type of a literal:
+
+```fren
+pub comp literal_type {
+    in nat_expected?         -- a `Nat` is expected where the literal is
+    pub det out result: ValueType
+
+    req rule: result = (if nat_expected? then ValueType::NatTy else ValueType::IntTy)
+
+    expect a_number: result in {ValueType::IntTy, ValueType::NatTy}
+}
+```
+
 ## Conditionals
 
 `if C then A else B` has the value of `A` if `C` holds, and of `B` otherwise.
@@ -374,9 +408,11 @@ path to a function on its own is an error, as is an application of
 anything other than a function.
 
 An application must give as many arguments as the function has
-parameters, and each argument must have the type of its parameter.
-`lang::application` states this, from the types of the parameters and of
-the arguments, in order:
+parameters, and each argument must have the type of its parameter, or be a
+`Nat` where the parameter is an `Int` (see [Natural
+numbers](#natural-numbers)). `lang::application` states this, from the
+types of the parameters and of the arguments, in order, where an argument
+of type `Nat` whose parameter is an `Int` counts as an `Int`:
 
 ```fren
 pub comp application {
@@ -430,10 +466,8 @@ the literal gives it, as `inst::binding` does for bindings:
 ```fren
 pub comp field_init {
     in field?            -- the name is a field of the record
-    in n: Int            -- times the literal gives the name
+    in n: Nat            -- times the literal gives the name
     pub det out accepted?
-
-    assume counts: n >= 0
 
     req rule: accepted? iff ((field? and n = 1) or (not field? and n = 0))
 
@@ -451,10 +485,8 @@ pub type FieldName
 pub comp record_literal {
     in fields: Set(FieldName)        -- the record's fields
     in given: Set(FieldName)         -- the names the literal gives
-    in n_repeated: Int               -- names given more than once, counting each repeat
+    in n_repeated: Nat               -- names given more than once, counting each repeat
     pub det out accepted?
-
-    assume counts: n_repeated >= 0
 
     req rule: accepted? iff (given = fields and n_repeated = 0)
 
@@ -485,11 +517,9 @@ values. `lang::variant_mention` states this:
 pub mod lang
 
 pub comp variant_mention {
-    in payload: Int          -- how many values the variant's payload has
+    in payload: Nat          -- how many values the variant's payload has
     in applied?              -- it is written with parentheses, around values or, in a pattern, binders
     pub det out accepted?
-
-    assume counted: payload >= 0
 
     req rule: accepted? iff (applied? iff payload > 0)
 
@@ -575,11 +605,11 @@ pub comp match_arms {
     in variants: Set(VariantName)
     in covered: Set(VariantName)     -- variants with an arm of their own
     in wildcard?                     -- there is a `_` arm
-    in n_repeated: Int               -- alternatives naming a variant that an earlier one names
-    in n_after: Int                  -- arms after a `_` arm
+    in n_repeated: Nat               -- alternatives naming a variant that an earlier one names
+    in n_after: Nat                  -- arms after a `_` arm
     pub det out accepted?
 
-    assume shapes: variants != {} and covered subset variants and n_repeated >= 0 and n_after >= 0
+    assume shapes: variants != {} and covered subset variants
     assume after_wildcard: unless wildcard?, n_after = 0
 
     req rule: accepted? iff (n_repeated = 0 and n_after = 0
@@ -1128,18 +1158,19 @@ pub comp char_range {
 [operators](#operators) and of conditionals. `a` and `b` are the types of
 the operands, or of a conditional's branches, and `cond` the type of its
 condition. For a prefix operator, `b` is `a`. `result` is the kind of the
-result's type. `Ty`, `kind` and `ValueType` are declared in
+result's type, after [widening](#natural-numbers). `Ty`, `kind` and `ValueType` are declared in
 [Types](Types.md). A [pattern test](#pattern-tests), whose right is a
 pattern rather than an operand, is typed in its own section.
 
 ```fren
 -- `Logic` is `when`, `unless`, `iff`, `or`, `and` and `not`; `Ordering` is
--- `<`, `<=`, `>` and `>=`; `Arithmetic` is `+`, `-`, `*`, `div` and `mod`; `Concat` is `++`;
+-- `<`, `<=`, `>` and `>=`; `Arithmetic` is `+` and `*`; `Subtraction` is `-`, infix or
+-- prefix, and `div` and `mod`, whose results are `Int`s too; `Concat` is `++`;
 -- `SetAlgebra` is `union`, `inter` and `minus`, on sets or relations. For
 -- `Membership`, `a` is the element and `b` the set; a pair's membership,
 -- and `join`, are typed by `pair_membership` and `relation_op`. The arms of a `match` are typed as a
 -- conditional's branches, pairwise.
-pub enum Operator { Logic, Equality, Ordering, Arithmetic, Concat, Membership, SetAlgebra, Subset, Conditional }
+pub enum Operator { Logic, Equality, Ordering, Arithmetic, Subtraction, Concat, Membership, SetAlgebra, Subset, Conditional }
 
 pub comp operator_type {
     use self::Operator::{
@@ -1152,8 +1183,9 @@ pub comp operator_type {
         Ordering,
         SetAlgebra,
         Subset,
+        Subtraction,
     }
-    use self::ValueType::{AbstractTy, BoolTy, IntTy, RelTy, SeqTy, SetTy, StringTy}
+    use self::ValueType::{AbstractTy, BoolTy, IntTy, NatTy, RelTy, SeqTy, SetTy, StringTy}
     in op: Operator
     in a: Ty
     in b: Ty
@@ -1161,28 +1193,31 @@ pub comp operator_type {
     pub out accepted?
     pub out result: ValueType
 
-    -- There is one `Bool` type and one `Int` type.
-    assume primitive_unique: when kind(a) = kind(b) and kind(a) in {BoolTy, IntTy, StringTy}, a = b
+    -- There is one `Bool` type, one `Int` type and one `Nat` type.
+    assume primitive_unique: when kind(a) = kind(b) and kind(a) in {BoolTy, IntTy, NatTy, StringTy}, a = b
 
     req accepted: accepted? iff match op {
         Logic => kind(a) = BoolTy and kind(b) = BoolTy,
-        Equality => a = b,
-        Ordering => a = b and kind(a) in {IntTy, StringTy},
-        Arithmetic => kind(a) = IntTy and kind(b) = IntTy,
+        Equality => a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}),
+        Ordering => (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}) or (a = b and kind(a) = StringTy),
+        Arithmetic | Subtraction => kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy},
         Concat => a = b and kind(a) in {StringTy, SeqTy},
-        Membership => kind(b) in {SetTy, SeqTy} and elem(b) = a,
+        Membership => kind(b) in {SetTy, SeqTy} and (elem(b) = a or (kind(a) = NatTy and kind(elem(b)) = IntTy)),
         SetAlgebra | Subset => a = b and kind(a) in {SetTy, RelTy},
-        Conditional => kind(cond) = BoolTy and a = b,
+        Conditional => kind(cond) = BoolTy and (a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy})),
     }
     req results: result = match op {
-        Arithmetic => IntTy,
-        Concat | SetAlgebra | Conditional => kind(a),
+        Arithmetic => if kind(a) = NatTy and kind(b) = NatTy then NatTy else IntTy,
+        Subtraction => IntTy,
+        Conditional => if a = b then kind(a) else IntTy,
+        Concat | SetAlgebra => kind(a),
         _ => BoolTy,
     }
 
-    expect no_mixing: when accepted? and op != Membership, a = b
-    expect member_typed: when op = Membership and accepted?, elem(b) = a
-    expect bool_valued: unless op in {Arithmetic, Concat, SetAlgebra, Conditional}, result = BoolTy
+    -- Only a `Nat` is widened.
+    expect no_mixing: when accepted? and op != Membership and kind(a) != NatTy and kind(b) != NatTy, a = b
+    expect member_typed: when op = Membership and accepted? and kind(a) != NatTy, elem(b) = a
+    expect bool_valued: unless op in {Arithmetic, Subtraction, Concat, SetAlgebra, Conditional}, result = BoolTy
     expect strings_ordered: when op = Ordering and kind(a) = StringTy and a = b, accepted?
     expect concat_closed: when op = Concat and accepted?, result = kind(a)
     expect sequences_unordered: when op = Ordering and kind(a) = SeqTy, not accepted?
@@ -1203,6 +1238,10 @@ pub comp operator_type {
     expect relations_subset: when op = Subset and kind(a) = RelTy and a = b, accepted?
     expect boolean_condition: when op = Conditional and kind(cond) != BoolTy, not accepted?
     expect no_mixed_arithmetic: when op = Arithmetic and kind(a) = IntTy and kind(b) = BoolTy, not accepted?
+    expect nats_add: when op = Arithmetic and kind(a) = NatTy and kind(b) = NatTy, accepted? and result = NatTy
+    expect widened_sums: when op = Arithmetic and kind(a) = NatTy and kind(b) = IntTy, accepted? and result = IntTy
+    expect never_truncates: when op = Subtraction, result = IntTy
+    expect nat_compared_with_int: when op in {Equality, Ordering} and kind(a) = NatTy and kind(b) = IntTy, accepted?
     -- Sets of different element types are different types.
     expect sets_of_different_types: when op = Equality and kind(a) = SetTy and kind(b) = SetTy and elem(a) != elem(b),
         not accepted?

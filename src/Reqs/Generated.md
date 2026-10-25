@@ -88,9 +88,10 @@ can use as the term for `double`.
 The parameters of every definition are the component's variables, in the
 order of their declarations, followed by the variables of each instance in
 order: those of the instantiated component, including its own instances',
-named `w.x`. A variable of type `Bool`, `Int`, `String`, an enumeration
-`E` or a record `R` has the Lean type `Bool`, `Int`, `String`, or the
-inductive or structure for `E` or `R`. A variable of type `Set(T)` has the
+named `w.x`. A variable of type `Bool`, `Int`, `Nat`, `String`, an
+enumeration `E` or a record `R` has the Lean type `Bool`, `Int`, `Nat`,
+`String`, or the inductive or structure for `E` or `R`, and a `Nat` that
+is widened to an `Int` is Lean's `↑n`. A variable of type `Set(T)` has the
 Lean type `Fren.FinSet T'`, where `T'` is that of `T`: a list up to having
 the same members, with `∈`, `∪`, `∩`, `\`, `⊆`, `∅`, `{a, b}` and
 `Fren.FinSet.card`, each with a `simp` lemma stating it by membership. A

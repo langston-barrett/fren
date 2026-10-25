@@ -16,7 +16,7 @@ namespace Fren.Impls
 def isBool? : lang.Annot → Option Bool
   | .Missing => none
   | .BoolTy => some true
-  | .IntTy | .StringTy | .NamedTy => some false
+  | .IntTy | .NatTy | .StringTy | .NamedTy => some false
 
 -- For every name: `checkVarName` reads the suffix from the name itself, with
 -- the meaning of `ends_with?` that Fren fixes.
@@ -168,6 +168,66 @@ impl application: lang::application for (ps as : Array Fren.Core.Ty) (k : Int) {
   intro ps as k _
   simp [fren_spec, Fren.Core.applicationAccepted, Fren.Seq.ext_iff]
 
+/-- The kind of a type (`lang::kind`). -/
+def kindOf : Fren.Core.Ty → lang.ValueType
+  | .bool => .BoolTy
+  | .int => .IntTy
+  | .nat => .NatTy
+  | .string => .StringTy
+  | .set _ => .SetTy
+  | .rel .. => .RelTy
+  | .seq _ => .SeqTy
+  | .enum _ => .EnumTy
+  | .record _ => .RecordTy
+  | .abstract _ => .AbstractTy
+
+interp lang::kind := kindOf
+
+-- For every two types, with the check that the `fren` command uses.
+impl widening: lang::widening for (f e : Fren.Core.Ty) {
+  found := f,
+  expected := e,
+  accepted? := f.widens e,
+} by
+  intro f e _
+  cases f <;> cases e <;> simp [fren_spec, Fren.Core.Ty.widens, kindOf]
+
+impl literal_type: lang::literal_type for (b : Bool) {
+  nat_expected? := b,
+  result := kindOf (Fren.Core.literalTy b),
+} by
+  intro b _
+  cases b <;> simp [fren_spec, Fren.Core.literalTy, kindOf]
+
+def toTypePlace : Fren.Core.TypePlace → lang.TypePlace
+  | .variable => .Variable
+  | .parameter => .Parameter
+  | .result => .Result
+  | .constant => .Constant
+  | .field => .Field
+  | .payload => .Payload
+  | .element => .Element
+
+impl nat_place: lang::nat_place for (p : Fren.Core.TypePlace) {
+  place := toTypePlace p,
+  accepted? := Fren.Core.natPlaceAccepted p,
+} by
+  intro p _
+  cases p <;> simp [fren_spec, toTypePlace, Fren.Core.natPlaceAccepted]
+
+def toBrought : Fren.Core.Brought → lang.Brought
+  | .nothing => .Nothing
+  | .assumption => .Assumption
+  | .requirement => .Requirement
+
+impl nat_variable: lang::nat_variable for (o d : Bool) {
+  own_output? := o,
+  defined? := d,
+  brought := toBrought (Fren.Core.natBrought o d),
+} by
+  intro o d _
+  cases o <;> cases d <;> simp [fren_spec, toBrought, Fren.Core.natBrought]
+
 impl constant: lang::constant for (t : lang.ValueType) (a : Bool) {
   ty := t,
   applies? := a,
@@ -315,7 +375,7 @@ impl comparison_chain: lang::comparison_chain for (a d o : Nat) {
 
 /-! ## Strings and decidability (`Reqs/Lang/Types#strings`, `Reqs/Lang/Decidability`) -/
 
-impl string_char: lang::string_char for (c : Int) {
+impl string_char: lang::string_char for (c : Nat) {
   code := c,
   accepted? := Fren.Core.stringCharAccepted c,
 } by

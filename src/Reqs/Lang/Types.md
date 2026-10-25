@@ -1,10 +1,12 @@
 # Types
 
-Fren has seven kinds of type:
+Fren has eight kinds of type:
 
 - `Bool`, with the values `true` and `false`.
 - `Int`, the mathematical integers. Values are unbounded and arithmetic
   never overflows.
+- `Nat`, the natural numbers: the integers that are at least 0 (see
+  [Natural numbers](#natural-numbers)).
 - `String`, finite sequences of characters (see [Strings](#strings)).
 - `Set(T)`, finite sets of values of `T` (see [Sets](#sets)).
 - Enumerations, declared with `enum` (see [Items](Items.md#enumerations)).
@@ -17,16 +19,18 @@ Fren has seven kinds of type:
   types](#abstract-types)).
 
 ```
-type := "Bool" | "Int" | "String" | "Set" "(" type ")" | path
+type := "Bool" | "Int" | "Nat" | "String" | "Set" "(" type ")" | "Seq" "(" type ")"
+      | "Rel" "(" type "," type ")" | path
 ```
 
 A type written as a path must name an enumeration, a record or an abstract
-type. `Bool`, `Int`, `String` and `Set` are built in and cannot be
+type. `Bool`, `Int`, `Nat`, `String` and `Set` are built in and cannot be
 redeclared.
 
-Every expression has exactly one type, and there are no conversions between
-types. Comparing values of different types, such as an `Int` with an
-enumeration, is an error. Which operators apply to which types is given in
+Every expression has exactly one type, and the only conversion between
+types is *widening*: a `Nat` is accepted where an `Int` is expected (see
+[Natural numbers](#natural-numbers)). Comparing values of other different
+types, such as an `Int` with an enumeration, is an error. Which operators apply to which types is given in
 [Expressions](Expressions.md). Two values of an enumeration or a record
 are equal if they are built alike: the same variant with equal payloads,
 or equal values for every field.
@@ -36,7 +40,7 @@ or equal values for every field.
 ```fren
 pub mod lang
 
-pub enum ValueType { BoolTy, IntTy, StringTy, EnumTy, RecordTy, AbstractTy, SetTy, RelTy, SeqTy }
+pub enum ValueType { BoolTy, IntTy, NatTy, StringTy, EnumTy, RecordTy, AbstractTy, SetTy, RelTy, SeqTy }
 ```
 
 `lang::Ty` is the types themselves, `lang::kind` gives the kind of
@@ -60,7 +64,7 @@ An enumeration is *recursive* if the payload of one of its variants has
 the enumeration's own type, as in `enum List { Nil, Cons(Int, List) }`.
 A type is *unbounded* if its values can be arbitrarily large: it is
 `String`, a set, relation or sequence type, a recursive enumeration, or an enumeration or
-record with a payload or field of an unbounded type. `Bool`, `Int` and abstract types are
+record with a payload or field of an unbounded type. `Bool`, `Int`, `Nat` and abstract types are
 not unbounded: an `Int` is arbitrarily large, but it is one value.
 
 Values of an unbounded type are built from finitely many variants, so
@@ -69,6 +73,63 @@ own type (see [Items](Items.md#enumerations)). An output may not have an
 unbounded type (see [Components](Components.md#members)), so that the
 [realizability check](../Check.md#realizability), the only check that asks
 whether outputs exist, never asks for an unbounded value.
+
+## Natural numbers
+
+A `Nat` is a natural number: an integer that is at least 0. Every `Nat`
+is an `Int`, so a `Nat` is accepted wherever an `Int` is expected, as an
+argument, a binding, a definition or an operand: it is *widened* to an
+`Int`. An `Int` is never accepted where a `Nat` is expected, even where it
+happens to be at least 0: there is no conversion that narrows. So with `in
+n: Nat`, `n + 1` is a `Nat`, but `n - 1` is an `Int`, and `out m: Nat := n
+- 1` is an error (see [Natural numbers](Expressions.md#natural-numbers)
+for the types of the operators and literals). Arithmetic never truncates.
+
+`lang::widening` states when an expression is accepted where a type is
+expected, from the expression's type and the expected type:
+
+```fren
+pub comp widening {
+    use self::ValueType::{IntTy, NatTy}
+    in found: Ty         -- the expression's type
+    in expected: Ty      -- the type its place expects
+    pub det out accepted?
+
+    req rule: accepted? iff (found = expected or (kind(found) = NatTy and kind(expected) = IntTy))
+
+    expect same_type: when found = expected, accepted?
+    expect never_narrows: when kind(found) = IntTy and kind(expected) = NatTy, not accepted?
+    expect only_numbers: when accepted? and found != expected, kind(found) = NatTy
+}
+```
+
+A variable of type `Nat` brings the constraint that it is at least 0 (see
+[Components](Components.md#natural-numbers)), and so does each application
+of an uninterpreted function whose result is a `Nat` (see
+[Items](Items.md#uninterpreted-functions)). In Lean, a `Nat` is Lean's
+`Nat`, and widening is Lean's coercion `↑` to `Int`.
+
+For now, `Nat` is the type of a variable, a function's parameter or
+result, or a constant, and nothing else: it is not the type of a field or
+a payload, nor the element type of a set, relation or sequence, where an
+`Int` and a constraint serve instead. So a `Nat` is never inside another
+value, and the constraints that it brings are always on a variable or an
+application. `lang::nat_place` states where `Nat` may be written:
+
+```fren
+pub enum TypePlace { Variable, Parameter, Result, Constant, Field, Payload, Element }
+
+pub comp nat_place {
+    use self::TypePlace::{Element, Field, Payload}
+    in place: TypePlace      -- where the type `Nat` is written
+    pub det out accepted?
+
+    req rule: accepted? iff not place in {Field, Payload, Element}
+
+    expect variables: when place = TypePlace::Variable, accepted?
+    expect not_in_collections: when place = Element, not accepted?
+}
+```
 
 ## Strings
 
@@ -92,10 +153,8 @@ a literal may contain:
 pub const MAX_CHAR: Int := 196607
 
 pub comp string_char {
-    in code: Int         -- the code point of a character of a literal
+    in code: Nat         -- the code point of a character of a literal
     pub det out accepted?
-
-    assume scalar: code >= 0
 
     req rule: accepted? iff code <= MAX_CHAR
 
@@ -152,7 +211,7 @@ enumeration may not contain itself within a sequence.
 A type is *finite* if it has finitely many values: `Bool`, an
 enumeration that is not recursive and whose payloads have finite types, a
 record whose fields have finite types, and a set or relation type whose
-element types are finite. `Int`, `String` and abstract types are not
+element types are finite. `Int`, `Nat`, `String` and abstract types are not
 finite, and neither is any sequence type. Where a type is built from others, its *parts* are the types of
 its fields, payloads and elements, and a type is built from everything
 that the closure of the parts relation reaches from it. `lang::finite`
@@ -163,7 +222,7 @@ set_option fren.lint.undecidable "allow" in
 pub comp finite {
     in ty: Ty
     in parts: Rel(Ty, Ty)    -- (t, u): t has a field, payload or element of type u
-    in infinite: Set(Ty)     -- `Int`, `String`, every sequence type and every abstract type
+    in infinite: Set(Ty)     -- `Int`, `Nat`, `String`, every sequence type and every abstract type
     in recursive: Set(Ty)    -- the recursive enumerations
     in part: Ty              -- any type, for `finite_parts`
     pub det out finite?
@@ -230,9 +289,9 @@ declaration whose annotation is the type of its payload, so never
 `Missing`:
 
 ```fren
-pub enum Annot { Missing, BoolTy, IntTy, StringTy, NamedTy }
+pub enum Annot { Missing, BoolTy, IntTy, NatTy, StringTy, NamedTy }
 
-use self::Annot::{BoolTy, IntTy, Missing, NamedTy, StringTy}
+use self::Annot::{BoolTy, IntTy, Missing, NamedTy, NatTy, StringTy}
 
 pub comp bool_naming {
     in name: String      -- the declared name
@@ -242,7 +301,8 @@ pub comp bool_naming {
     assume identifier: name.matches?(r"[A-Za-z_][A-Za-z0-9_']*\??")
 
     req q_is_bool: when name.ends_with?("?"), accepted? iff (annot = Missing or annot = BoolTy)
-    req bool_is_q: unless name.ends_with?("?"), accepted? iff (annot = IntTy or annot = StringTy or annot = NamedTy)
+    req bool_is_q: unless name.ends_with?("?"),
+        accepted? iff (annot = IntTy or annot = NatTy or annot = StringTy or annot = NamedTy)
 
     expect bool_needs_q: when annot = BoolTy and accepted?, name.ends_with?("?")
     expect untyped_needs_q: when annot = Missing and accepted?, name.ends_with?("?")

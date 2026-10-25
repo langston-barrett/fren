@@ -3,6 +3,7 @@ import Fren.Model
 import Fren.Resolve
 import Fren.SmtTranslate
 import FrenCore.Check
+import FrenCore.Ty
 import Smt
 -- keep-sorted end
 
@@ -94,15 +95,19 @@ abbrev QueryCache := IO.Ref (Std.HashMap (Array Expr × Expr × Bool) (Core.Outc
 
 /-- The lean-smt backend, for a comp whose variables are the free variables
 `fvs`, and whose variables other than its `in`s have second copies `primes`
-(`Core.primed`), answering from `cache` the queries asked before. -/
-def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) : Core.Backend MetaM Expr Expr :=
+(`Core.primed`), answering from `cache` the queries asked before. `facts` are
+what its natural numbers bring, of both copies, which every query assumes,
+and `outFacts` those of its outputs, which realizability's `∃` asserts too
+(`Reqs/Check`). -/
+def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (facts : Array Expr := #[])
+    (outFacts : Array Expr := #[]) : Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
     ({ v with name := Core.primed v.name }, p)
   let varOf? (n : Name) := vars.find? (·.1.name == n)
   let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr) :=
     withoutModifyingState do
-    let hyps ← hyps.mapM fun (n, t) => return (n, ← unfoldDefined t)
+    let hyps ← (facts.map (`nat, ·) ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
     let goal ← unfoldDefined goal
     withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do
       let mv ← mkFreshExprMVar goal
@@ -138,12 +143,17 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) : 
     existsOutputs := fun body =>
       -- The comp's own outputs, not their second copies.
       -- Defined outputs are substituted, never searched for.
-      ((c.vars.zip fvs).filter fun (v, _) => v.role == .output && v.defn?.isNone).foldrM (init := body) fun (_, x) b => do
-        mkAppM ``Exists #[← mkLambdaFVars #[x] b]
+      -- The outputs' `Nat`s are at least 0, with the requirements.
+      ((c.vars.zip fvs).filter fun (v, _) => v.role == .output && v.defn?.isNone).foldrM (init := mkAndN (outFacts.toList ++ [body]))
+        fun (_, x) b => do mkAppM ``Exists #[← mkLambdaFVars #[x] b]
     pin := fun n val => do
       let some (v, fv) := varOf? n | return none
       let val := fromModel v.type val
       if ← isDefEq (← inferType val) v.type then return some (← mkEq fv val)
+      -- A `Nat`, which the solver gives as an `Int`.
+      if v.type.isConstOf ``Nat then
+        if let some i := val.int? then
+          if 0 ≤ i then return some (← mkEq fv (mkNatLit i.toNat))
       return none
     render := fun n val => do
       let some (v, _) := varOf? n | return toString (← ppExpr val)
@@ -158,39 +168,105 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) : 
       let ds := ds.filterMap fun (n, e) => (varOf? n).map (·.2, e)
       f.replaceFVars (ds.map (·.1)) (ds.map (·.2)) }
 
+/-- The result type of the function type `t`, after its parameters. -/
+def resultType : Expr → Expr
+  | .forallE _ _ b _ => resultType b
+  | t => t
+
+/-- `t`, a function type, with its result type `Nat` made `Int`. -/
+def intResult : Expr → Expr
+  | .forallE n d b bi => .forallE n d (intResult b) bi
+  | _ => mkConst ``Int
+
+/-- Like `withUses`, but a function whose result is a `Nat` becomes a local
+`f` whose result is an `Int`, and its placeholder stands for
+`fun xs => Fren.natResult (f xs)`: lean-smt would assert of a function
+into `Nat` a quantified axiom, which each application's hypothesis replaces
+(`natApps`). Gives what each placeholder stands for, and the functions
+whose results are `Nat`s, each with its number of parameters. -/
+def withNatUses {α : Type} (uses : Array Name) (k : Array Expr → Array (Expr × Nat) → MetaM α) : MetaM α :=
+  go 0 #[] #[]
+where
+  go (i : Nat) (reps : Array Expr) (nats : Array (Expr × Nat)) : MetaM α := do
+    if h : i < uses.size then
+      let ty := replaceUses uses reps (← getConstInfo uses[i]).type
+      let bi := if isInhabitedName uses[i] then .instImplicit else .default
+      let nat := ty.isForall && (resultType ty).isConstOf ``Nat
+      Meta.withLocalDecl (Name.mkSimple uses[i].getString!) bi (if nat then intResult ty else ty) fun x => do
+        if !nat then return ← go (i + 1) (reps.push x) nats
+        let r ← Meta.forallTelescope ty fun xs _ => do mkLambdaFVars xs (mkApp (mkConst ``Fren.natResult) (mkAppN x xs))
+        go (i + 1) (reps.push r) (nats.push (x, ty.getForallArity))
+    else k reps nats
+
+/-- The applications of the functions `fs`, each with its number of
+parameters, to all of them, in `e`, that mention no bound variable, each
+once, added to `acc`. -/
+partial def natApps (fs : Array (Expr × Nat)) (e : Expr) (acc : Array Expr := #[]) : Array Expr :=
+  match e with
+  | .app .. =>
+    let full := fs.contains (e.getAppFn, e.getAppNumArgs)
+    let acc := if full && !e.hasLooseBVars && !acc.contains e then acc.push e else acc
+    e.getAppArgs.foldl (fun acc a => natApps fs a acc) acc
+  | .lam _ d b _ | .forallE _ d b _ => natApps fs b (natApps fs d acc)
+  | .letE _ t v b _ => natApps fs b (natApps fs v (natApps fs t acc))
+  | .mdata _ b | .proj _ _ b => natApps fs b acc
+  | _ => acc
+
 /-- All selected checks for one comp, in reporting order. -/
 def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     MetaM (Array CheckResult) :=
   -- The abstract types and functions become locals, which lean-smt
   -- declares as sorts and uninterpreted functions (`check::Interpretations`).
-  withUses c.uses fun ufs => do
-  let rep := replaceUses c.uses ufs
-  let c := { c with vars := c.vars.map fun v => { v with type := rep v.type } }
+  withNatUses c.uses fun ufs nats => do
+  let rep (e : Expr) : MetaM Expr := Lean.Core.betaReduce (replaceUses c.uses ufs e)
+  let c := { c with vars := ← c.vars.mapM fun v => return { v with type := ← rep v.type } }
   withLocalDeclsD (c.vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
   let copied := c.vars.filter fun v => (Core.Symbol.ofRole v.role).copied
   withLocalDeclsD (copied.map fun v => (Core.primed v.name, fun _ => pure v.type)) fun primes => do
-    let beta (e : Expr) := (rep e).beta fvs
-    let named (ps : Array PropInfo) := ps.map fun p => (p.name, beta p.body)
+    let beta (e : Expr) : MetaM Expr := return (← rep e).beta fvs
+    let named (ps : Array PropInfo) := ps.mapM fun p => return (p.name, ← beta p.body)
     let comp : Core.Comp Expr := {
       path := c.path
       vars := c.vars.map fun v =>
         { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
-      assumes := named c.assumes
-      reqs := named c.reqs
-      expects := named c.expects
-      insts := c.insts.map fun i => {
-        name := i.name, comp := i.comp, bindings := beta i.bindings, behaviour := beta i.behaviour
-        assumes := i.assumes.map fun (n, a) => (n, beta a) }
-      triggers := (c.reqs ++ c.expects).filterMap fun p => p.trigger?.map (p.name, beta ·)
+      assumes := ← named c.assumes
+      reqs := ← named c.reqs
+      expects := ← named c.expects
+      insts := ← c.insts.mapM fun i => return {
+        name := i.name, comp := i.comp, bindings := ← beta i.bindings, behaviour := ← beta i.behaviour
+        assumes := ← i.assumes.mapM fun (n, a) => return (n, ← beta a) }
+      triggers := ← (c.reqs ++ c.expects).filterMapM fun p => p.trigger?.mapM fun t => return (p.name, ← beta t)
       -- Numbered in order within each item.
-      indexes := c.indexes.mapIdx fun j (n, place, _, goal) =>
-        { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal := beta goal }
+      indexes := ← c.indexes.mapIdxM fun j (n, place, _, goal) => do
+        let k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size
+        return { prop := n, k, place, goal := ← beta goal }
       defs := ← c.defs.filterMapM fun (d, e) => do
         let some i := c.vars.findIdx? (·.name == d) | return none
-        return some (d, ← mkEq fvs[i]! (beta e), beta e) }
+        let e ← beta e
+        return some (d, ← mkEq fvs[i]! e, e) }
+    -- What the natural numbers bring (`lang::nat_variable`): each `Nat`
+    -- variable, of both copies, and each application of a function into
+    -- `Nat`, is at least 0.
+    let atLeast0 (x : Expr) : MetaM Expr := do
+      if (← inferType x).isConstOf ``Nat then mkAppM ``LE.le #[mkNatLit 0, x]
+      else mkAppM ``LE.le #[← mkNumeral (mkConst ``Int) 0, x]
+    let natVars (outputs : Bool) := (c.vars.zip fvs).filter fun (v, _) =>
+      v.type.isConstOf ``Nat && match Core.natBrought (v.role == .output) v.defn?.isSome with
+        | .nothing => false
+        | .requirement => outputs
+        | .assumption => !outputs
+    let formulas := comp.assumes.map (·.2) ++ comp.reqs.map (·.2) ++ comp.expects.map (·.2)
+      ++ comp.insts.flatMap (fun i => #[i.bindings, i.behaviour] ++ i.assumes.map (·.2))
+      ++ comp.triggers.map (·.2) ++ comp.indexes.map (·.goal) ++ comp.defs.map (·.2.2)
+    let apps := formulas.foldl (fun acc f => natApps nats f acc) #[]
+    let outFacts ← (natVars true).mapM (atLeast0 ·.2)
+    let facts ← ((natVars false).map (·.2) ++ apps).mapM atLeast0
+    let copiedFvs := (c.vars.zip fvs).filter (fun (v, _) => (Core.Symbol.ofRole v.role).copied) |>.map (·.2)
+    let all := facts ++ outFacts
+    let facts := all ++ (all.map (·.replaceFVars copiedFvs primes)).filter (!all.contains ·)
     -- Only the `fren` command runs the checks set to testing (`check::by_testing`).
     let (comp, kinds) := comp.untested c.tested kinds
     let cache : QueryCache ← IO.mkRef {}
-    Core.checkComp (fun _ => leanBackend c fvs primes cache) comp kinds
+    Core.checkComp (fun _ => leanBackend c fvs primes cache facts outFacts) comp kinds
 
 end Fren

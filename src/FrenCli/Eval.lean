@@ -36,6 +36,8 @@ open Fren.Core (Table Resolved Role showPath)
 inductive VTy where
   | bool
   | int
+  /-- An `Int` that is at least 0. -/
+  | nat
   | string
   | set (elem : VTy)
   | rel (a b : VTy)
@@ -44,6 +46,11 @@ inductive VTy where
   | data (path : Name)
   | abstract (path : Name)
   deriving Inhabited, BEq, Hashable, Repr
+
+/-- `t`, as an element type: a `Nat` is widened to an `Int`. -/
+def VTy.widen : VTy → VTy
+  | .nat => .int
+  | t => t
 
 inductive Val where
   | bool (b : Bool)
@@ -555,6 +562,7 @@ def dotted (parts : List String) : Name := parts.foldl Name.mkStr .anonymous
 partial def lowerTy (segs : Array Ident) : L VTy := do
   if segs.size == 1 && segs[0]!.name == "Bool" then return .bool
   if segs.size == 1 && segs[0]!.name == "Int" then return .int
+  if segs.size == 1 && segs[0]!.name == "Nat" then return .nat
   if segs.size == 1 && segs[0]!.name == "String" then return .string
   if segs[0]!.name == Parser.setSeg then return .set (← lowerTy (segs.extract 1))
   if segs[0]!.name == Parser.relSeg then
@@ -774,12 +782,12 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     -- `{}` is typed by where it is written, which the evaluator does not need.
     let t : VTy := match (es[0]? : Option (Ex × VTy)) with
       | some (_, .rel a b) => .rel a b
-      | some (_, t) => .set t
+      | some (_, t) => .set t.widen
       | none => .set .bool
     return (.setLit (es.map (·.1)), t)
   | .seq _ es => do
     let es ← es.mapM (lowerExpr cx)
-    return (.seqLit (es.map (·.1)), .seq ((es[0]?.map (·.2)).getD .bool))
+    return (.seqLit (es.map (·.1)), .seq ((es[0]?.map (·.2.widen)).getD .bool))
   | .index span q i => do
     let (x, tq) ← lowerExpr cx q
     let (y, _) ← lowerExpr cx i
@@ -1056,6 +1064,7 @@ def lowerFiles (files : Array (Array Item)) : Except String Spec := (·.spec) <$
 def VTy.show : VTy → String
   | .bool => "Bool"
   | .int => "Int"
+  | .nat => "Nat"
   | .string => "String"
   | .set t => s!"Set({t.show})"
   | .rel a b => s!"Rel({a.show}, {b.show})"
@@ -1084,7 +1093,9 @@ def parseValue (st : LState) (module : Name) (ty : VTy) (text : String) : Except
   let empty := match ex, ty with
     | .setLit #[], .set _ | .setLit #[], .rel .. | .seqLit #[], .seq _ => true
     | _, _ => false
-  unless t == ty || empty do throw s!"`{text}` is {a t} `{t.show}`, not {a ty} `{ty.show}`"
+  -- An `Int` that is at least 0 is a `Nat`.
+  let nat := ty == .nat && t == .int && (evalClosed ex).any fun | .int i => i ≥ 0 | _ => false
+  unless t == ty || empty || nat do throw s!"`{text}` is {a t} `{t.show}`, not {a ty} `{ty.show}`"
   let some v := evalClosed ex | throw s!"`{text}` is not a value"
   return v
 

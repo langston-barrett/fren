@@ -49,6 +49,25 @@ def selectorApp (ctor : Name) (field : Name) (arg : Expr) : TranslationM (Option
     selectorApp f.getPrefix (Name.mkSimple f.getString!) arg
   | _ => return none
 
+/-- The result of an uninterpreted function whose result is a `Nat`, in a
+check: the function is given to the solver with an `Int` result, and each
+application is at least 0 by a hypothesis of every query, rather than by
+the quantified axiom that lean-smt asserts of a function into `Nat`
+(`Reqs/Lang/Decidability`). -/
+def natResult (i : Int) : Nat := i.toNat
+
+/-- A `Nat` as an `Int`: `↑n`, which Lean inserts to widen a `Nat`, and
+`Fren.natResult`, are the identity, since every `Nat` the solver sees is at
+least 0. -/
+@[smt_translate] def translateNatCast : Translator := fun e => do
+  match_expr e with
+  | Nat.cast α _ n => if α.isConstOf ``Int then return some (← applyTranslators! n) else return none
+  | Int.ofNat n =>
+    if let .lit (.natVal k) := n.consumeMData then return some (literalT (toString k))
+    return some (← applyTranslators! n)
+  | Fren.natResult i => return some (← applyTranslators! i)
+  | _ => return none
+
 /-- The character that `e`, as `Lean.ToExpr` writes one, stands for. -/
 def charOf? (e : Expr) : Option Char :=
   match e.consumeMData with

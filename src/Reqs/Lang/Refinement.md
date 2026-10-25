@@ -82,10 +82,8 @@ refinement binds it:
 ```fren
 pub comp binding {
     in variable?         -- the name is a variable of `a`
-    in n: Int            -- bindings of this name in the refinement
+    in n: Nat            -- bindings of this name in the refinement
     pub det out accepted?
-
-    assume counts: n >= 0
 
     req rule: accepted? iff (n = 0 or (variable? and n = 1))
 

@@ -1,0 +1,53 @@
+-- Static rules for natural numbers.
+-- fren-covers: lang::operator_type, lang::nat_place, lang::widening, lang::literal_type
+set_option fren.lint.dead_code "allow"
+
+-- Not a field, a payload or an element type.
+struct Stock { item: Int, count: Nat }   --~ error: `Nat` cannot be the type of a field
+enum Order { Placed(Nat), Cancelled }    --~ error: `Nat` cannot be the type of a payload
+comp sets { in s: Set(Nat) }             --~ error: `Nat` cannot be the element type of a set, relation or sequence
+comp seqs { in q: Seq(Nat) }             --~ error: `Nat` cannot be the element type of a set, relation or sequence
+comp rels { in r: Rel(Int, Nat) }        --~ error: `Nat` cannot be the element type of a set, relation or sequence
+enum Nat { Zero }                        --~ error: `Nat` is a built-in type and cannot be redefined
+
+fn halve(Nat): Nat
+
+-- An `Int` is never narrowed to a `Nat`.
+comp narrowed { in n: Nat pub out m: Nat := n - 1 }
+--~^[cli] error: type mismatch: expected `Nat`, found `Int`
+--~^^[hosted] error: Type mismatch
+comp negated { in n: Nat pub out m: Nat := -n + n }
+--~^[cli] error: type mismatch: expected `Nat`, found `Int`
+--~^^[hosted] error: Type mismatch
+comp argument { in x: Int pub out y: Nat req r: y = halve(x) }
+--~^[cli] error: type mismatch: expected `Nat`, found `Int`
+--~^^[hosted] error: Application type mismatch
+comp branch { in n: Nat pub out m: Nat := if n > 0 then n else -1 }
+--~^[cli] error: type mismatch: expected `Nat`, found `Int`
+--~^^[hosted] error: Application type mismatch
+const MINUS: Nat := 2 - 1
+--~^[cli] error: type mismatch: expected `Nat`, found `Int`
+--~^^[hosted] error: Type mismatch
+comp inner { in n: Nat pub out m: Int req r: m = n }
+comp bound { in x: Int inst w: inner { n := x } }
+--~^[cli] error: type mismatch: expected `Nat`, found `Int`
+--~^^[hosted] error: Type mismatch
+
+-- A literal is a `Nat` where one is expected, and a `Nat` widens to an `Int`.
+const TWO: Nat := 2
+fn twice(n: Nat): Nat := n + n
+enum Sign { Plus, Minus }
+comp accepted {
+    in n: Nat
+    in x: Int
+    in s: Sign
+    pub out m: Nat := (twice(n) + 1) * TWO
+    pub out k: Nat := if n > 0 then halve(3) else match s { Sign::Plus => 1, Sign::Minus => n }
+    pub out j: Int := n + x
+    inst w: inner { n := 3 }
+
+    expect widened: n + x = x + n and n < x + 1 or n >= x + 1
+    expect sums: m >= 2 and j >= x and w.m = 3
+}
+
+--@ exit: 2

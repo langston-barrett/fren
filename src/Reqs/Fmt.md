@@ -193,12 +193,11 @@ pub enum LineStart { Closing, Starting, Continuing }
 use self::LineStart::{Closing, Continuing, Starting}
 
 pub comp indent {
-    in depth: Int            -- braces open at the start of the line
+    in depth: Nat            -- braces open at the start of the line
     in start: LineStart      -- what the line's first token does, or for a comment, the next line's
     in comment?              -- the line is a comment
     pub det out columns: Int
 
-    assume depth_counts: depth >= 0
     assume closes_open: when start = Closing, depth >= 1
 
     req closing: when start = Closing, columns = 4 * (if comment? then depth else depth - 1)
@@ -220,11 +219,9 @@ column of the comment's `--`, counted from 0:
 
 ```fren
 pub comp comment_column {
-    in width: Int            -- the width of the line's code, with its indentation, after formatting
-    in original: Int         -- the column of the comment before formatting
+    in width: Nat            -- the width of the line's code, with its indentation, after formatting
+    in original: Nat         -- the column of the comment before formatting
     pub det out column: Int
-
-    assume widths: width >= 0 and original >= 0
 
     req kept: when original >= width + 2, column = original
     req moved: when original < width + 2, column = width + 2
@@ -243,13 +240,11 @@ gives the number of blank lines kept before a line:
 
 ```fren
 pub comp blank_lines {
-    in blank: Int            -- blank lines before the line in the input
+    in blank: Nat            -- blank lines before the line in the input
     in first?                -- the line is the first of its file or block
     in after_open?           -- the line before it ends with `{` or `::{`
     in before_close?         -- the line starts with `}`
     pub det out kept: Int
-
-    assume counts: blank >= 0
 
     req kept_rule: kept = if first? or after_open? or before_close? or blank = 0 then 0 else 1
 
