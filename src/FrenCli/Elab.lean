@@ -282,10 +282,13 @@ structure CClaim where
 
 def toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
 
-def PropKind.core : PropKind → Fren.Core.ConstraintKind
-  | .assume => .assume
-  | .req => .req
-  | .expect => .expect
+/-- The kind of a constraint that `duplicate_constraint` compares, if it
+compares it: not a cover goal, which states a scenario, not a constraint. -/
+def PropKind.core? : PropKind → Option Fren.Core.ConstraintKind
+  | .assume => some .assume
+  | .req => some .req
+  | .expect => some .expect
+  | .cover => none
 
 /-- Where the word that ends before `pos`, but for whitespace, starts: the
 keyword of a member, before its name. -/
@@ -2534,7 +2537,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
         let (smt, t) ← elabExpr cx e
         unless t == .bool do mismatch e .bool t (some "note: a constraint is a `Bool`")
         lintBools e
-        lintConstant cx (match kind with | .assume => "assume" | .req => "req" | .expect => "expect") e
+        lintConstant cx (match kind with | .assume => "assume" | .req => "req" | .expect => "expect" | .cover => "cover") e
         let trig ← trigger? cx e
         let place := if kind == .assume then Fren.Core.IndexPlace.assume else .prop
         return ({ kind, name := xn, span := x.span, smt, trigger? := trig.map (·.1), triggerSpan? := trig.map (·.2) : CProp },
@@ -2544,7 +2547,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     indexes := indexes ++ idx
   -- `duplicate_constraint` (`lint::duplicate_constraint`).
   let src := (← get).src
-  let constraints := members.filterMap fun | .prop k x e => some (k.core, x, e) | _ => none
+  let constraints := members.filterMap fun | .prop k x e => k.core?.map (·, x, e) | _ => none
   for (i, j) in Fren.Core.repeatedConstraints (← constraints.mapM fun (_, _, e) => srcAt (e.writtenSpan src)) do
     let (k, x, e) := constraints[i]!
     let (k', x', _) := constraints[j]!

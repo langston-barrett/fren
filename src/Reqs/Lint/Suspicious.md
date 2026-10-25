@@ -12,7 +12,8 @@ indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md) and of
 `duplicate_constraint` fires on a constraint of a component that is
 written the same as an earlier one of the component, whatever their
 kinds, `assume`, `req` or `expect`, and on a global expectation written
-the same as an earlier one of its module in the same file. Two
+the same as an earlier one of its module in the same file. A cover goal
+is not a constraint, and is not compared. Two
 constraints are written the same if their expressions are (see
 [Written the same](../Lint.md#written-the-same)), and two global
 expectations if all they say after their names is, binders included. It is

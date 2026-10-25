@@ -14,6 +14,7 @@ comp sensor {
     expect only_warm: x = 50                       --~ error: expectation `sensor::only_warm` does not hold
     -- Met wherever its trigger is false, which is everywhere.
     cover never: when x > 5 and x < 3, hot?        --~ info: cover goal `sensor::never` is met
+    --~^ warning: these two comparisons cannot both hold
 }
 
 comp reader {

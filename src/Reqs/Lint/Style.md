@@ -562,8 +562,8 @@ pub comp disallowed_names {
 
 ## Constant constraints
 
-`assertions_on_constants` fires on an assumption, requirement or
-expectation, of a component or [global](../Lang/Global.md), whose
+`assertions_on_constants` fires on an assumption, requirement,
+expectation or cover goal, of a component or [global](../Lang/Global.md), whose
 expression mentions no variable and no uninterpreted function (see
 [Mentions](../Lang/Expressions.md#mentions)), as
 [`constant_output`](Complexity.md#constant-outputs) does on a

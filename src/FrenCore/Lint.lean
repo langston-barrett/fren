@@ -3484,13 +3484,14 @@ def needlessMatchMsg (fixed : String) : Msg :=
 uninterpreted function (`lint::assertions_on_constants`). -/
 def assertionOnConstant (mentions : Bool) : Bool := !mentions
 
-/-- A constraint, an `assume`, `req` or `expect`, that mentions no
+/-- A constraint, an `assume`, `req` or `expect`, or a cover goal, that mentions no
 variable, where `literal?` is its value if it is written `true` or
 `false`. -/
 def assertionOnConstantMsg (kind : String) (literal? : Option Bool) : Msg :=
   let what := match kind with
     | "assume" => "assumption"
     | "req" => "requirement"
+    | "cover" => "cover goal"
     | _ => "expectation"
   let (label, note) := match literal?, kind with
     | some true, "assume" => ("always `true`", "it rules out no input")
