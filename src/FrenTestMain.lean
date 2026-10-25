@@ -467,12 +467,33 @@ def spawnJob (bless : Bool) (job : List String) : IO (Array String) := do
   let args := #["--job"] ++ job.toArray ++ (if bless then #["--bless"] else #[])
   let out ← IO.Process.output { cmd := (← IO.appPath).toString, args }
   let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
+  let name := " ".intercalate job
   match Json.parse last >>= fromJson? with
-  | .ok failures => if out.exitCode == 0 then return failures
+  | .ok failures =>
+    if out.exitCode == 0 then
+      -- Such as a `panic!`, which prints and carries on.
+      if out.stderr.isEmpty then return failures
+      return failures.push s!"the job `{name}` wrote to stderr:\n{out.stderr}"
   | .error _ => pure ()
-  return #[s!"the job `{" ".intercalate job}` crashed (exit {out.exitCode}):\n{out.stdout}{out.stderr}"]
+  return #[s!"the job `{name}` crashed (exit {out.exitCode}):\n{out.stdout}{out.stderr}"]
 
-/-- Runs `jobs`, at most as many at once as the machine has cores. -/
+/-- At most this many jobs run at once, unless `FREN_TEST_JOBS` says
+otherwise: a job can take about 2 GB of memory, and the solver's time limit
+is in wall-clock time, so too many jobs at once could make checks
+inconclusive. -/
+def maxJobs : Nat := 16
+
+/-- How many jobs run at once: `FREN_TEST_JOBS`, or as many as the machine
+has cores, up to `maxJobs`. -/
+def jobCount : IO Nat := do
+  if let some v ← IO.getEnv "FREN_TEST_JOBS" then
+    match v.toNat? with
+    | some n => if n > 0 then return n
+    | none => pure ()
+    throw (IO.userError s!"FREN_TEST_JOBS must be a positive integer, not `{v}`")
+  return max 1 (min maxJobs (System.Platform.Internal.getHardwareConcurrency ()).toNat)
+
+/-- Runs `jobs`, at most `jobCount` at once. -/
 def runJobs (bless : Bool) (jobs : Array (List String)) : IO (Array String) := do
   let next ← IO.mkRef 0
   let worker : IO (Array String) := do
@@ -482,8 +503,7 @@ def runJobs (bless : Bool) (jobs : Array (List String)) : IO (Array String) := d
       let some job := jobs[k]? | break
       failures := failures ++ (← spawnJob bless job)
     return failures
-  let cores := (System.Platform.Internal.getHardwareConcurrency ()).toNat
-  let tasks ← (List.range (max cores 1)).mapM fun _ => IO.asTask worker .dedicated
+  let tasks ← (List.range (← jobCount)).mapM fun _ => IO.asTask worker .dedicated
   tasks.foldlM (init := #[]) fun acc t => return acc ++ (← IO.ofExcept t.get)
 
 unsafe def main (args : List String) : IO UInt32 := do
