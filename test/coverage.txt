@@ -1,0 +1,95 @@
+# The declarations of FrenCore, Fren and FrenCli that `lake test` does not
+# run (`Reqs/dev/Testing#coverage`). One that is never meant to run says why,
+# after ` -- `. `fren_coverage` fails on a declaration that is not listed and
+# does not run, and on one that is listed and runs, so this only shrinks.
+Fren.Core.CheckResult.isRedundant
+Fren.Core.Ex.eval
+Fren.Core.Ex.kids
+Fren.Core.Ex.simp
+Fren.Core.Ex.simp.finish
+Fren.Core.Ex.withKids
+Fren.Core.Msg.note
+Fren.Core.Pick.get
+Fren.Core.Shape.build
+Fren.Core.Val.sameType
+Fren.Core.applicationAccepted
+Fren.Core.argumentAccepted
+Fren.Core.binV
+Fren.Core.cmpV
+Fren.Core.effectiveLevel
+Fren.Core.functionBodyAccepted
+Fren.Core.indexAfterUse
+Fren.Core.iteV
+Fren.Core.negV
+Fren.Core.notAFunctionMsg
+Fren.Core.notV
+Fren.Core.trustedAccepted
+Fren.Core.whenV
+Fren.FinSet.card
+Fren.FinSet.closure
+Fren.FinSet.closureList
+Fren.FinSet.closureLoop
+Fren.FinSet.domain
+Fren.FinSet.image
+Fren.FinSet.instDecidableEq
+Fren.FinSet.instDecidableMemOfDecidableEq
+Fren.FinSet.instDecidableSubsetOfDecidableEq
+Fren.FinSet.instEmptyCollection
+Fren.FinSet.instHasSubset
+Fren.FinSet.instInhabited
+Fren.FinSet.instInsert
+Fren.FinSet.instInterOfDecidableEq
+Fren.FinSet.instMembership
+Fren.FinSet.instRepr
+Fren.FinSet.instSDiffOfDecidableEq
+Fren.FinSet.instSingleton
+Fren.FinSet.instUnion
+Fren.FinSet.inverse
+Fren.FinSet.join
+Fren.FinSet.joinList
+Fren.FinSet.nub
+Fren.FinSet.ofArray
+Fren.FinSet.ofList
+Fren.FinSet.range
+Fren.FinSet.setoid
+Fren.FinSet.square
+Fren.FinSet.toListUnsafe
+Fren.Lang.decExists
+Fren.Lang.decForall
+Fren.Lang.sameLineAsLeft.formatter -- Lean calls it only to print Fren syntax, which no message does
+Fren.Lang.sameLineAsLeft.parenthesizer -- Lean calls it only to print Fren syntax, which no message does
+Fren.Seq.at
+Fren.Seq.instAppend
+Fren.Seq.instDecidableEq
+Fren.Seq.instDecidableMemOfDecidableEq
+Fren.Seq.instEmptyCollection
+Fren.Seq.instInhabited
+Fren.Seq.instMembership
+Fren.Seq.instRepr
+Fren.Seq.nth
+Fren.Seq.ofList
+Fren.Seq.replace
+Fren.Seq.rev
+Fren.Seq.toList
+Fren.Seq.unit
+Fren.Str.lit
+Fren.Str.replace
+Fren.Str.replaceAll
+Fren.Str.replaceAllAux
+Fren.elabInterp
+Fren.elabMd
+Fren.interpAccepted
+Fren.relativeTo
+Fren.resolveUsePath
+FrenCli.Eval.Spec.insts
+FrenCli.Eval.World.size
+FrenCli.Eval.confirmedVerdict
+FrenCli.Eval.hashVal
+FrenCli.Eval.instInhabitedInterp -- only for `default`, which an index the code checks never needs
+FrenCli.Eval.lowerFiles
+FrenCli.Eval.valueOf
+FrenCli.Fm.subject? -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
+FrenCli.Refutation.about -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
+FrenCli.Refutation.msg -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
+FrenCli.internal
+FrenCli.kindName -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5

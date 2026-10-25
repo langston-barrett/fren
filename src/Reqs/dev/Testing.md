@@ -99,3 +99,48 @@ that crashes is a failure, and so is one that writes to stderr, such as
 with a `panic!`, which prints and carries on: what it wrote is reported.
 The failures are reported sorted, so that their order does not depend on
 which job finished first.
+
+## Coverage
+
+Every declaration of Fren's code must be run by `lake test`, or say why it
+never runs. Coverage is measured on the compiled code with gcov, so it is
+per declaration, not per line or per `match` arm:
+
+```text
+lake -R -Kcoverage=RUNTIME build fren fren_test fren_coverage
+lake -Kcoverage=RUNTIME test
+lake exe fren_coverage GCOV...
+```
+
+`-Kcoverage=RUNTIME` compiles `FrenCore`, `Fren` and `FrenCli` with gcov's
+counters, and links the executables that run them with the profiling
+runtime at the path `RUNTIME`, which Lean's toolchain lacks. It also turns
+off the inlining of small functions, whose code would otherwise run in
+their callers and seem never to run. `-R` is needed to change it, since
+Lake keeps the configuration of the last build. On macOS, the runtime is
+Apple's, such as
+`/Library/Developer/CommandLineTools/usr/lib/clang/21/lib/darwin/libclang_rt.profile_osx.a`,
+and `GCOV` is `xcrun llvm-cov gcov`. CI installs LLVM's of the version of
+Lean's clang.
+
+`fren_coverage` reads the counters with `GCOV`, and maps each C function to
+the declarations whose code it runs: its body, lambdas and join points,
+its boxed and reduced-arity versions, and, for a specialization
+`f._at_.g.spec_N`, both `f` and `g`, since it is `f`'s code with `g`'s
+lambdas inlined. Closed terms run when their module is initialized, so
+they do not count. The declarations counted are the compiled definitions
+of `FrenCore`, `Fren` and `FrenCli` that are written in the source and
+compile to a function: not theorems, constructors, recursors, matchers,
+projections, `@[inline]` definitions, instances that `deriving` makes, or
+definitions without arguments, which are constants computed at
+initialization. The proofs of `impl`s are not code, but the definitions
+they are about are counted.
+
+`test/coverage.txt` lists the counted declarations that no test runs, one
+per line. One that is never meant to run, such as code that runs only when
+the evaluator refutes the solver, says why after ` -- `. `fren_coverage`
+fails on a counted declaration that does not run and is not listed, and on
+a listed one that runs or is no longer counted, so the list can only
+shrink; `fren_coverage --write` rewrites it as the run found it, keeping
+the reasons. The aim is a list of reasons alone. CI runs it on `main`,
+with Lean CI.

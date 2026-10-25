@@ -240,12 +240,6 @@ def sizesOf (env : Env) : NameMap Nat :=
     | .abs s k => m.insert s (max (k + 1) ((m.find? s).getD 1))
     | _ => m
 
-/-- The second copy of `n`, if `n` is one. -/
-def unprimed? (n : Name) : Option Name :=
-  match n with
-  | .str p s => if s.endsWith "'" then some (.str p (s.dropEnd 1).toString) else none
-  | _ => none
-
 partial def Fm.eval (sp : Spec) (sy : Symbols) (I : Interp) (env : Env) (tys : Name → Option VTy) : Fm → Option Bool
   | .atoms as => allHold I env.look as
   | .falsity => some false
