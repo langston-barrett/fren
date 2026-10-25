@@ -1,4 +1,4 @@
---@ args: mutate
+--@ args: mutate -A length_zero
 -- The definedness checks of a constraint are one check, which passes when
 -- every index in it is in range.
 -- In `c`, `q[1]` is out of range on the spec, so dropping `q[0] = 1`

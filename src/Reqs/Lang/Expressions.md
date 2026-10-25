@@ -608,10 +608,14 @@ The methods of `String`, where `s` is the receiver:
 `lang::string_methods` states the table as laws, for every string and
 position. Several of them search a string or slice it at a position that
 is not a constant, which is outside the [decidable
-core](Decidability.md#strings), so it allows that:
+core](Decidability.md#strings), so it allows that. It also allows
+`empty_argument` and `manual_method`, which fire on some of the laws, such
+as `s.contains?("")`, since those laws are what the lints rely on:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
+set_option fren.lint.empty_argument "allow" in
+set_option fren.lint.manual_method "allow" in
 pub comp string_methods {
     in s: String
     in t: String
@@ -671,10 +675,16 @@ relational methods and `join`, which a relation over a finite type keeps
 in the core. `rev`, `++`, `at`, `slice`, `contains?`, `index_of` and
 `replace` on sequences, and `starts_with?` and `ends_with?` with an
 argument that is not a literal, are outside the [decidable
-core](Decidability.md#sequences), so it allows that:
+core](Decidability.md#sequences), so it allows that. As
+`lang::string_methods` does, it also allows the lints that fire on the laws
+they rely on, `empty_argument`, `manual_method` and
+`redundant_method_chain`:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
+set_option fren.lint.empty_argument "allow" in
+set_option fren.lint.manual_method "allow" in
+set_option fren.lint.redundant_method_chain "allow" in
 pub comp collection_methods {
     in p: Seq(Int)
     in q: Seq(Int)

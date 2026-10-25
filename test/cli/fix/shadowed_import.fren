@@ -4,6 +4,7 @@
 -- removes the import that nothing uses. Otherwise `Square!` and `Red!`
 -- would hide nothing, and fail with F0218.
 set_option fren.lint.non_snake_case "allow"
+set_option fren.lint.eq_op "allow"
 
 pub enum Shape { Circle(Int), Square }
 pub enum Color { Red, Green, Blue }

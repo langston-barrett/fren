@@ -1,4 +1,4 @@
-swap-arithmetic-c::y-ac11e45561b1 test/cli/commands/mutate_shadow.fren:7:26 `+` changed to `-`
-shift-integer-c::y-6db88eb00174 test/cli/commands/mutate_shadow.fren:7:28 `1` changed to `2`
-shift-integer-c::y-43b8987fc86a test/cli/commands/mutate_shadow.fren:7:28 `1` changed to `0`
+swap-arithmetic-c::y-18a3239a1db8 test/cli/commands/mutate_shadow.fren:7:26 `+` changed to `-`
+shift-integer-c::y-708292f48bbf test/cli/commands/mutate_shadow.fren:7:28 `1` changed to `2`
+shift-integer-c::y-c6829cc52c35 test/cli/commands/mutate_shadow.fren:7:28 `1` changed to `0`
 exit=0
