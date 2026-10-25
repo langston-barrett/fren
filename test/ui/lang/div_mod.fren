@@ -1,5 +1,7 @@
 -- Division and remainder by a constant, which are Euclidean in both front
 -- ends, as in SMT-LIB: the remainder is never negative.
+-- Its expectations of constants are deliberate.
+set_option fren.lint.assertions_on_constants "allow"
 
 const EIGHT: Int := 2 * 4
 const NEGATIVE: Int := -3
