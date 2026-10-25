@@ -282,7 +282,8 @@ def solverAnswer (stmt : Expr) (interps := false) : MetaM Core.Answer := do
   if interps then
     for (_, d) in (← getState).interps do gen := gen.insert d
   let stmt ← Meta.deltaExpand stmt gen.contains
-  let stmt ← Core.betaReduce stmt
+  -- Without the `let`s of record updates, which lean-smt does not translate.
+  let stmt ← Meta.zetaReduce (← Core.betaReduce stmt)
   let mv ← mkFreshExprMVar stmt
   try
     match ← Smt.smt { trust := true, timeout := some (fren.timeout.get (← getOptions)) } mv.mvarId! #[] with

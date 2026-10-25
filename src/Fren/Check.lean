@@ -82,13 +82,13 @@ partial def render (ty : Expr) (val : Expr) : MetaM String := do
 
 /-- `e` with the definitions of defined functions unfolded, so that the
 solver sees their bodies, and without `let`s, which a record update binds
-its updated value with and lean-smt does not translate. -/
+its updated value with and lean-smt does not translate: last, since a
+defined function's body may have one. -/
 def unfoldDefined (e : Expr) : MetaM Expr := do
-  let e ← Meta.zetaReduce e
   let s ← getState
-  if s.defined.isEmpty then return e
+  if s.defined.isEmpty then return ← Meta.zetaReduce e
   let ds := s.defined.foldl (init := ({} : NameSet)) fun acc _ d => acc.insert d.decl
-  Lean.Core.betaReduce (← Meta.deltaExpand e ds.contains)
+  Meta.zetaReduce (← Lean.Core.betaReduce (← Meta.deltaExpand e ds.contains))
 
 /-- The answers to a component's queries so far, by hypotheses, goal and
 whether a model was wanted: some checks of a component ask the same

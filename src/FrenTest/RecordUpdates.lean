@@ -43,3 +43,15 @@ fun p n q =>
 -/
 #guard_msgs in
 #print record_update_test.moves.req.s
+
+-- The solver proves an `impl` of a component with a bound update: the
+-- `let` is reduced away before lean-smt, which does not translate it.
+comp resets {
+  in p: Point
+  pub out q: Point
+
+  req r: q = { { p with y := 0 } with x := 1 }
+}
+
+#guard_msgs in
+impl reset_impl: resets for (p : record_update_test.Point) { p := p, q := ⟨1, 0⟩ }
