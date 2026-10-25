@@ -20,6 +20,8 @@ pub comp checked {
     pub out concat? := q = [] ++ []   --~ warning: this operation has no effect
     pub out in_sequence? := i in []
     pub out pairs: Int := {(1, {}), (2, s)}.card
+    pub out left_empty? := [] = q
+    pub out then_empty: Int := (if b? then [] else q).len
     pub out arm_by_whole? := s = match m { E::V(t) => t, E::W => {} }
     pub out arm_by_sibling: Int := (match m { E::W => {}, E::V(t) => t }).card
     pub out first_element: Int := {{}, s}.card
@@ -43,3 +45,4 @@ pub comp pair_left { in r: Rel(Int, Set(Int)) pub out p? req q: p? iff (1, {}) i
 pub comp image_argument { in r: Rel(Int, Int) pub out n: Int req q: n = r.image({}).card }   --~ error: the type of `{}` cannot be known here
 pub comp no_part_synthesizes { pub out n: Int req r: n = ({} inter {{}}).card }   --~ error: the type of `{}` cannot be known here
 pub comp indexed_literal { in s: Set(Int) pub out p? req r: p? iff s = [{}][0] }   --~ error: the type of `{}` cannot be known here
+pub comp at_literal { in s: Set(Int) pub out p? req r: p? iff s = [{}].at(0) }   --~ error: the type of `{}` cannot be known here

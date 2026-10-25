@@ -279,8 +279,8 @@ Where an expression is written decides whether it is checked:
   `=`, `!=` and `subset`, and the right of `in`.
 - **Synthesized.** Anywhere else, as the left of `in`, an operand of
   `join`, an argument of a method of anything but a sequence, as in
-  `r.image({})`, a receiver, a scrutinee and the sequence that is indexed,
-  it synthesizes its type.
+  `r.image({})`, a receiver, the scrutinee of a `match` or of `e is P`, and
+  the sequence that is indexed, it synthesizes its type.
 
 `lang::checked` states this, from where an expression is written, whether
 the expression it is a part of is checked, and whether one of the parts
