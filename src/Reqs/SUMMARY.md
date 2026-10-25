@@ -26,6 +26,7 @@
   - [Unused](Lint/Unused.md)
   - [Nonstandard style](Lint/NonstandardStyle.md)
   - [Style](Lint/Style.md)
+    - [Pattern tests and chained comparisons](Lint/Style/Comparisons.md)
   - [Complexity](Lint/Complexity.md)
     - [Comparisons](Lint/Complexity/Comparisons.md)
     - [Operators](Lint/Complexity/Operators.md)

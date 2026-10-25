@@ -437,18 +437,26 @@ impl match_same_arms: lint::match_same_arms for (s b w a : Bool) {
   intro s b w a _
   cases s <;> cases b <;> cases w <;> cases a <;> simp [fren_spec, Fren.Core.sameArmsFires, Fren.Core.sameArmsFix, toArmsFix]
 
-impl match_like_membership: lint::match_like_membership for (bb np w wt : Bool) (t f : Nat) {
+impl match_like_membership: lint::match_like_membership
+    for (bb bs d tf ff et ef w wt : Bool) (t f : Nat) {
   bool_bodies? := bb,
-  no_payloads? := np,
+  binds? := bs,
+  disjoint? := d,
+  true_first? := tf,
+  false_first? := ff,
+  equatable_true? := et,
+  equatable_false? := ef,
   wildcard? := w,
   wildcard_true? := wt,
   n_true := t,
   n_false := f,
-  fires? := (Fren.Core.matchMembership bb np w wt t f).1,
-  negated? := (Fren.Core.matchMembership bb np w wt t f).2,
+  fires? := (Fren.Core.matchMembership bb bs d tf ff et ef w wt t f).1,
+  negated? := (Fren.Core.matchMembership bb bs d tf ff et ef w wt t f).2.1,
+  pattern_test? := (Fren.Core.matchMembership bb bs d tf ff et ef w wt t f).2.2,
 } by
-  intro bb np w wt t f _
-  cases bb <;> cases np <;> cases w <;> cases wt <;> simp [fren_spec, Fren.Core.matchMembership] <;> omega
+  intro bb bs d tf ff et ef w wt t f _
+  cases bb <;> cases bs <;> cases d <;> cases tf <;> cases ff <;> cases et <;> cases ef <;> cases w <;> cases wt <;>
+    simp [fren_spec, Fren.Core.matchMembership] <;> omega
 
 impl wildcard_single_variant: lint::wildcard_single_variant for (n : Nat) {
   n_matched := n,
@@ -457,6 +465,42 @@ impl wildcard_single_variant: lint::wildcard_single_variant for (n : Nat) {
   intro n _
   simp [fren_spec, Fren.Core.wildcardSingle]
   omega
+
+-- Both front ends decide `is_equality` and `irrefutable_is` with
+-- `isEquality` and `irrefutableIs`, where they elaborate the test.
+impl is_equality: lint::is_equality for (e i : Bool) {
+  equatable? := e,
+  irrefutable? := i,
+  fires? := Fren.Core.isEquality e i,
+} by
+  intro e i _
+  cases e <;> cases i <;> simp [fren_spec, Fren.Core.isEquality]
+
+impl irrefutable_is: lint::irrefutable_is for (m : Bool) {
+  matches_every? := m,
+  fires? := Fren.Core.irrefutableIs m,
+} by
+  intro m _
+  cases m <;> simp [fren_spec, Fren.Core.irrefutableIs]
+
+-- Both front ends decide `chainable_comparison` with `chainableAt`, which
+-- reads each pair of conjuncts with `chainableComparison`.
+impl chainable_comparison: lint::chainable_comparison for (la ra ls rs lf fl ff ll : Bool) {
+  left_ascending? := la,
+  right_ascending? := ra,
+  left_single? := ls,
+  right_single? := rs,
+  last_first? := lf,
+  first_last? := fl,
+  first_first? := ff,
+  last_last? := ll,
+  fires? := (Fren.Core.chainableComparison la ra ls rs lf fl ff ll).1,
+  flip_left? := (Fren.Core.chainableComparison la ra ls rs lf fl ff ll).2.1,
+  flip_right? := (Fren.Core.chainableComparison la ra ls rs lf fl ff ll).2.2,
+} by
+  intro la ra ls rs lf fl ff ll _
+  cases la <;> cases ra <;> cases ls <;> cases rs <;> cases lf <;> cases fl <;> cases ff <;> cases ll <;>
+    simp [fren_spec, Fren.Core.chainableComparison]
 
 /-! ## Matches and bindings -/
 
@@ -676,6 +720,19 @@ impl double_comparison: lint::double_comparison for (conj : Bool) (l r : Compari
 
 -- Both front ends decide `contradictory_comparisons` with these, in
 -- `opReports`.
+impl contradictory_chain: lint::contradictory_chain for (c1 : Comparison) (a : Int) (c2 : Comparison) (b : Int) {
+  first := toComparison c1,
+  first_bound := a,
+  second := toComparison c2,
+  second_bound := b,
+  fires? := Fren.Core.contradictoryChain c1 a c2 b,
+} by
+  intro c1 a c2 b _
+  cases c1 <;> cases c2 <;>
+    simp [fren_spec, toComparison, Fren.Core.contradictoryChain, Fren.Core.contradictoryComparisons,
+      Fren.Core.disjointBounds, Fren.Core.Comparison.mirror, Fren.Core.Comparison.boundsBelow,
+      Fren.Core.Comparison.boundsAbove, Fren.Core.Comparison.least, Fren.Core.Comparison.greatest] <;> omega
+
 impl contradictory_comparisons: lint::contradictory_comparisons for (conj : Bool) (c1 : Comparison) (a : Int)
     (c2 : Comparison) (b : Int) {
   conjunction? := conj,
@@ -792,6 +849,15 @@ impl int_plus_one: lint::int_plus_one for (c : Comparison) (l r : Fren.Core.Offs
 } by
   intro c l r _
   cases c <;> cases l <;> cases r <;> simp [fren_spec, toComparison, toOffset, Fren.Core.intPlusOne]
+
+impl int_plus_one_in_chain: lint::int_plus_one_in_chain for (d : Bool) (i n : Nat) {
+  comparison := i,
+  n_comparisons := n,
+  drop_left? := d,
+  fires? := Fren.Core.intPlusOneInChain d i n,
+} by
+  intro d i n _
+  cases d <;> simp [fren_spec, Fren.Core.intPlusOneInChain] <;> omega
 
 impl double_parens: lint::double_parens for (d : Nat) {
   depth := d,
@@ -1315,5 +1381,23 @@ trusted lint::nfc_written: "a model of a string literal, checked by the refineme
 trusted lint::nfc_fixed: "a model of a string literal, checked by the refinements in its section"
 trusted lint::trailing_comma_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::trailing_comma_fixed: "a model of an expression, checked by the refinements in its section"
+
+-- The models of the expressions that the refinements of `match_like_membership`,
+-- `is_equality`, `irrefutable_is`, `chainable_comparison`, and of `int_plus_one`
+-- and `contradictory_comparisons` in chains, compare.
+-- keep-sorted start
+trusted lint::chainable_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::chainable_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::contradictory_chain_value: "a model of an expression, checked by the refinements in its section"
+trusted lint::contradictory_chain_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::int_plus_one_chain_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::int_plus_one_chain_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::irrefutable_is_value: "a model of an expression, checked by the refinements in its section"
+trusted lint::irrefutable_is_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::is_equality_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::is_equality_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::membership_test_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::membership_test_written: "a model of an expression, checked by the refinements in its section"
+-- keep-sorted end
 
 end Fren.Impls

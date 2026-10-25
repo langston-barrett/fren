@@ -251,3 +251,47 @@ comp int_plus_one_exact {
 Its fix writes its operands, and is put in parentheses itself, as the
 fixes of [`double_neg` and `neg_multiply`](../Style.md#negations) are, and
 keeps the guards for the same reasons.
+
+In a [chained comparison](../../Lang/Expressions.md#chained-comparisons), it
+fires on a comparison whose fix drops the offset of an operand at an end
+of the chain, which is in that comparison only: `0 <= i <= n - 1` becomes
+`0 <= i < n`, and `n - 1 >= i >= 0` becomes `n > i >= 0`. The fix rewrites
+the chain with that comparison strict and that operand without its offset.
+It does not fire where the operand is between two operators, as in `0 <=
+i + 1 <= n`, whose other comparison would change. `lint::int_plus_one_in_chain`
+states this, and the refinements check the fixes:
+
+```fren
+pub comp int_plus_one_in_chain {
+    in comparison: Nat     -- its position in the chain, from 0
+    in n_comparisons: Nat
+    in drop_left?          -- `int_plus_one`'s fix of it alone drops its left operand's offset
+    pub det out fires?
+
+    assume position: comparison < n_comparisons
+
+    req rule: fires? iff (if drop_left? then comparison = 0 else comparison + 1 = n_comparisons)
+}
+
+set_option fren.lint.int_plus_one "allow" in
+pub comp int_plus_one_chain_written {
+    in i: Int
+    in n: Int
+    in m: Int
+    pub det out last? := 0 <= i <= n - 1
+    pub det out first? := n - 1 >= i >= 0
+    pub det out offset? := i + 1 <= n <= m
+}
+
+pub comp int_plus_one_chain_fixed {
+    in i: Int
+    in n: Int
+    in m: Int
+    pub det out last? := 0 <= i < n
+    pub det out first? := n > i >= 0
+    pub det out offset? := i < n <= m
+}
+
+refine int_plus_one_chain_sound: int_plus_one_chain_fixed refines int_plus_one_chain_written
+refine int_plus_one_chain_complete: int_plus_one_chain_written refines int_plus_one_chain_fixed
+```

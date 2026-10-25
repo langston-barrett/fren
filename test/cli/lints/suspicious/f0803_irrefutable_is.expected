@@ -1,0 +1,13 @@
+warning[F0803]: this pattern test is always `true`
+ --> test/cli/lints/suspicious/f0803_irrefutable_is.fren:4:43
+  |
+4 | comp c { in e: E pub out p? req r: p? iff e is E::A | E::B(_) }
+  |                                           ^^^^^^^^^^^^^^^^^^^ matches every value of `E`
+  |
+  = note: `irrefutable_is` is `warn` by default
+  = help: to allow it, `set_option fren.lint.irrefutable_is "allow"`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0803`.
+exit=3

@@ -1,3 +1,18 @@
+warning[F0804]: these comparisons can be chained
+ --> test/cli/lints/unused/f0792_linked_assumptions.fren:7:15
+  |
+7 |     assume a: n >= 0 and n < q.len
+  |               ^^^^^^^^^^^^^^^^^^^^ comparisons that share an operand
+  |
+  = help: `fren fix` can fix this
+  = note: `chainable_comparison` is `warn` by default
+  = help: to allow it, `set_option fren.lint.chainable_comparison "allow"`
+help: write `0 <= n < q.len`
+  |
+7 -     assume a: n >= 0 and n < q.len
+7 +     assume a: 0 <= n < q.len
+  |
+
 warning[F0792]: the assumption `a` constrains only inputs that nothing uses
  --> test/cli/lints/unused/f0792_linked_assumptions.fren:7:12
   |
@@ -22,5 +37,6 @@ warning[F0792]: the assumption `b` constrains only inputs that nothing uses
 
 fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
 
-For more information about this error, try `fren --explain F0792`.
+Some errors have detailed explanations: F0792, F0804.
+For more information about an error, try `fren --explain F0792`.
 exit=3

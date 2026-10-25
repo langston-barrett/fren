@@ -2,6 +2,7 @@
 -- ends, as in SMT-LIB: the remainder is never negative.
 -- Its expectations of constants are deliberate.
 set_option fren.lint.assertions_on_constants "allow"
+set_option fren.lint.chainable_comparison "allow"
 
 const EIGHT: Int := 2 * 4
 const NEGATIVE: Int := -3

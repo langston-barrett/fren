@@ -1,4 +1,5 @@
 -- `det out` and the determinism check (`check::determinism`).
+set_option fren.lint.chainable_comparison "allow"
 
 enum Mode { Off, Heat, Cool }
 

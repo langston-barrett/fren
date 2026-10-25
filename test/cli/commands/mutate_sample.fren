@@ -1,5 +1,6 @@
 --@ args: mutate --list --sample 3 --seed 1 --comp m::c
 -- Three of `m::c`'s mutants, chosen by the seed; `m::d`'s are not listed.
+set_option fren.lint.chainable_comparison "allow"
 mod m
 
 pub comp c {

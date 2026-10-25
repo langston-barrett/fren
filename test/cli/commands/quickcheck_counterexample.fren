@@ -1,6 +1,7 @@
 --@ args: quickcheck
 -- Testing refutes an expectation, a `det out` and a global expectation,
 -- each with a genuine behaviour, and passes the rest.
+set_option fren.lint.chainable_comparison "allow"
 mod climate
 
 pub enum Mode { Off, Heat, Cool }

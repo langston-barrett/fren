@@ -1,6 +1,7 @@
 --@ args: mutate --list
 -- Unformatted on purpose: `fren fmt` must leave every identifier alone,
 -- including those of changes that span lines or lists with a trailing comma.
+set_option fren.lint.chainable_comparison "allow"
 comp   c {
   in x:Int
   pub out ok?

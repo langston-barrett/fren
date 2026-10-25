@@ -1,21 +1,21 @@
-drop-conjunct-c::r-b75a9704792c test/cli/commands/mutate_unformatted.fren:7:21 `x > 0 and x < 9 and x in {1, 2, 3,}` changed to `x > 0 and x < 9`
-drop-conjunct-c::r-a113f40647bd test/cli/commands/mutate_unformatted.fren:7:21 `x > 0 and x < 9 and x in {1, 2, 3,}` changed to `x in {1, 2, 3,}`
-swap-and-or-c::r-75c3ab4057ac test/cli/commands/mutate_unformatted.fren:7:21 `x > 0 and x < 9` changed to `(x > 0 or x < 9)`
-drop-conjunct-c::r-a5d8ccf0b1b4 test/cli/commands/mutate_unformatted.fren:7:21 `x > 0 and x < 9` changed to `x > 0`
-drop-conjunct-c::r-50ea42835119 test/cli/commands/mutate_unformatted.fren:7:21 `x > 0 and x < 9` changed to `x < 9`
-swap-comparison-c::r-8e01863aea6c test/cli/commands/mutate_unformatted.fren:7:23 `>` changed to `>=`
-shift-integer-c::r-38939464efe4 test/cli/commands/mutate_unformatted.fren:7:25 `0` changed to `1`
-swap-comparison-c::r-f81443098a2f test/cli/commands/mutate_unformatted.fren:8:13 `<` changed to `<=`
-shift-integer-c::r-06df796bf294 test/cli/commands/mutate_unformatted.fren:8:15 `9` changed to `10`
-shift-integer-c::r-eae59df821af test/cli/commands/mutate_unformatted.fren:8:15 `9` changed to `8`
-swap-and-or-c::r-6fa4275f7ef5 test/cli/commands/mutate_unformatted.fren:8:17 `and` changed to `or`
-remove-element-c::r-cddb76fdafda test/cli/commands/mutate_unformatted.fren:9:15 `1,` removed
-shift-integer-c::r-cbe424ab6d6d test/cli/commands/mutate_unformatted.fren:9:15 `1` changed to `2`
-shift-integer-c::r-f5e41adba677 test/cli/commands/mutate_unformatted.fren:9:15 `1` changed to `0`
-remove-element-c::r-2af3ab5bf39f test/cli/commands/mutate_unformatted.fren:9:18 `2,` removed
-shift-integer-c::r-9a043a50b3ea test/cli/commands/mutate_unformatted.fren:9:18 `2` changed to `3`
-shift-integer-c::r-c4043080ecf4 test/cli/commands/mutate_unformatted.fren:9:18 `2` changed to `1`
-remove-element-c::r-061809b6e3ae test/cli/commands/mutate_unformatted.fren:9:19 `, 3` removed
-shift-integer-c::r-5554a3573c1b test/cli/commands/mutate_unformatted.fren:10:15 `3` changed to `4`
-shift-integer-c::r-d754c0c690fd test/cli/commands/mutate_unformatted.fren:10:15 `3` changed to `2`
+drop-conjunct-c::r-b75a9704792c test/cli/commands/mutate_unformatted.fren:8:21 `x > 0 and x < 9 and x in {1, 2, 3,}` changed to `x > 0 and x < 9`
+drop-conjunct-c::r-a113f40647bd test/cli/commands/mutate_unformatted.fren:8:21 `x > 0 and x < 9 and x in {1, 2, 3,}` changed to `x in {1, 2, 3,}`
+swap-and-or-c::r-75c3ab4057ac test/cli/commands/mutate_unformatted.fren:8:21 `x > 0 and x < 9` changed to `(x > 0 or x < 9)`
+drop-conjunct-c::r-a5d8ccf0b1b4 test/cli/commands/mutate_unformatted.fren:8:21 `x > 0 and x < 9` changed to `x > 0`
+drop-conjunct-c::r-50ea42835119 test/cli/commands/mutate_unformatted.fren:8:21 `x > 0 and x < 9` changed to `x < 9`
+swap-comparison-c::r-8e01863aea6c test/cli/commands/mutate_unformatted.fren:8:23 `>` changed to `>=`
+shift-integer-c::r-38939464efe4 test/cli/commands/mutate_unformatted.fren:8:25 `0` changed to `1`
+swap-comparison-c::r-f81443098a2f test/cli/commands/mutate_unformatted.fren:9:13 `<` changed to `<=`
+shift-integer-c::r-06df796bf294 test/cli/commands/mutate_unformatted.fren:9:15 `9` changed to `10`
+shift-integer-c::r-eae59df821af test/cli/commands/mutate_unformatted.fren:9:15 `9` changed to `8`
+swap-and-or-c::r-6fa4275f7ef5 test/cli/commands/mutate_unformatted.fren:9:17 `and` changed to `or`
+remove-element-c::r-cddb76fdafda test/cli/commands/mutate_unformatted.fren:10:15 `1,` removed
+shift-integer-c::r-cbe424ab6d6d test/cli/commands/mutate_unformatted.fren:10:15 `1` changed to `2`
+shift-integer-c::r-f5e41adba677 test/cli/commands/mutate_unformatted.fren:10:15 `1` changed to `0`
+remove-element-c::r-2af3ab5bf39f test/cli/commands/mutate_unformatted.fren:10:18 `2,` removed
+shift-integer-c::r-9a043a50b3ea test/cli/commands/mutate_unformatted.fren:10:18 `2` changed to `3`
+shift-integer-c::r-c4043080ecf4 test/cli/commands/mutate_unformatted.fren:10:18 `2` changed to `1`
+remove-element-c::r-061809b6e3ae test/cli/commands/mutate_unformatted.fren:10:19 `, 3` removed
+shift-integer-c::r-5554a3573c1b test/cli/commands/mutate_unformatted.fren:11:15 `3` changed to `4`
+shift-integer-c::r-d754c0c690fd test/cli/commands/mutate_unformatted.fren:11:15 `3` changed to `2`
 exit=0

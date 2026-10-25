@@ -448,6 +448,21 @@ register_option fren.lint.unnecessary_trailing_comma : String := {
   descr := "the level of the lint `unnecessary_trailing_comma`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.is_equality : String := {
+  defValue := "warn"
+  descr := "the level of the lint `is_equality`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.irrefutable_is : String := {
+  defValue := "warn"
+  descr := "the level of the lint `irrefutable_is`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.chainable_comparison : String := {
+  defValue := "warn"
+  descr := "the level of the lint `chainable_comparison`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"

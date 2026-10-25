@@ -73,7 +73,7 @@ pub comp definition_order {
     in k_use: Int        -- the position of the definition the name is in, or `n` in the body
     pub det out means?   -- the name means the definition
 
-    assume positions: 0 <= k_def and k_def < n and 0 <= k_use and k_use <= n
+    assume positions: 0 <= k_def < n and 0 <= k_use <= n
 
     req rule: means? iff k_def < k_use
 

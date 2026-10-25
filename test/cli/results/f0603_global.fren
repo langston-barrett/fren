@@ -1,5 +1,6 @@
 -- A global expectation that does not hold (F0603), and one that is vacuous
 -- (F0605).
+set_option fren.lint.chainable_comparison "allow"
 const HIGH: Int := 10
 
 comp band {

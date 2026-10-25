@@ -1,0 +1,31 @@
+--@ args: fix --check
+-- The fixes of `is_equality`, `match_like_membership` to a pattern test,
+-- `chainable_comparison`, and `int_plus_one` within a chain.
+enum Shade { Light, Dark, Tinted(Int) }
+
+pub comp c {
+    in s: Shade
+    in i: Int
+    in n: Int
+    in m: Int
+    in p?
+    pub out a?
+    pub out b?
+    pub out d?
+    pub out e?
+    pub out f?
+    pub out g?
+    pub out h?
+    pub out j?
+    pub out k?
+
+    req r1: a? iff s is Shade::Light
+    req r2: b? iff not (s) is Shade::Light | Shade::Dark
+    req r3: d? iff match s { Shade::Light => false, Shade::Dark | Shade::Tinted(_) => true }
+    req r4: e? = match s { Shade::Tinted(_) => true, _ => false }
+    req r5: f? iff p? and 0 <= i and i < n and m > 0
+    req r6: g? iff i < n and i > 0
+    req r7: h? iff 0 < i and i < n and n < m
+    req r8: j? iff 0 <= i and i <= n - 1
+    req r9: k? iff n - 1 >= i and i >= 0
+}

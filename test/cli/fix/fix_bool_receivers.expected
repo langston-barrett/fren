@@ -6,5 +6,5 @@
 -    req r3: when 0 <= i and i < q.len, r? iff not ((q)[i] = 1)
 +    req r1: o? iff (x - y).abs != 0
 +    req r2: p? iff (x - y).min(i) != 0
-+    req r3: when 0 <= i and i < q.len, r? iff (q)[i] != 1
++    req r3: when 0 <= i < q.len, r? iff (q)[i] != 1
 exit=1

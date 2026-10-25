@@ -2,6 +2,7 @@
 -- relational operators and counting is a component's
 -- (`Reqs/Lang/Decidability#relations`): a counting `c` with a relational
 -- `a`, or the reverse, is outside the decidable core.
+set_option fren.lint.chainable_comparison "allow"
 
 enum E { A, B }
 

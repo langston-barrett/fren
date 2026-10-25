@@ -2,6 +2,7 @@
 -- A comparison with a literal is a match, which the solver decides: the
 -- mutants that drop the bound on the length leave `name` of unbounded
 -- length, and `in_range` is still decided quickly rather than timing out.
+set_option fren.lint.chainable_comparison "allow"
 comp handle {
     in name: String
     pub out accepted?

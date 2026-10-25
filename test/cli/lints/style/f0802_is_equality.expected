@@ -1,0 +1,19 @@
+warning[F0802]: this pattern test is a membership
+ --> test/cli/lints/style/f0802_is_equality.fren:4:43
+  |
+4 | comp c { in e: E pub out p? req r: p? iff e is E::A | E::B }
+  |                                           ^^^^^^^^^^^^^^^^ names only variants without a payload, or literals
+  |
+  = help: `fren fix` can fix this
+  = note: `is_equality` is `warn` by default
+  = help: to allow it, `set_option fren.lint.is_equality "allow"`
+help: write `e in {E::A, E::B}`
+  |
+4 - comp c { in e: E pub out p? req r: p? iff e is E::A | E::B }
+4 + comp c { in e: E pub out p? req r: p? iff e in {E::A, E::B} }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0802`.
+exit=3

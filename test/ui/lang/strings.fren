@@ -1,4 +1,5 @@
 -- Strings: literals, `++`, ordering and methods, in both front ends.
+set_option fren.lint.chainable_comparison "allow"
 
 -- The lengths of literals are tested on purpose.
 set_option fren.lint.const_is_empty "allow"

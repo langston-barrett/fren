@@ -121,6 +121,47 @@ pub comp contradictory_equalities {
 }
 ```
 
+In a [chained comparison](../../Lang/Expressions.md#chained-comparisons),
+it fires on each operand between two integer literals, `a OP₁ x OP₂ b`,
+which is `x OP₁' a and x OP₂ b`, with `OP₁'` the mirror of `OP₁`, where
+those cannot both hold: `5 < x < 3` and `3 <= x <= 2` are always `false`.
+The message is reported at the chain. `lint::contradictory_chain` states
+this, and the refinements check the value:
+
+```fren
+fn mirror_of(op: Comparison): Comparison := match op { Eq => Eq, Ne => Ne, Lt => Gt, Gt => Lt, Le => Ge, Ge => Le }
+
+pub comp contradictory_chain {
+    in first: Comparison  -- `a OP₁ x`, with `x` on the right
+    in first_bound: Int
+    in second: Comparison  -- `x OP₂ b`
+    in second_bound: Int
+    pub det out fires?
+
+    req rule: fires? iff disjoint?(mirror_of(first), first_bound, second, second_bound)
+}
+
+set_option fren.lint.contradictory_comparisons "allow" in
+pub comp contradictory_chain_written {
+    in x: Int
+    pub det out strict? := 5 < x < 3
+    pub det out loose? := 3 <= x <= 2
+    pub det out descending? := 1 > x >= 1
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.lint.unused_variables "allow" in
+pub comp contradictory_chain_value {
+    in x: Int
+    pub det out strict? := false
+    pub det out loose? := false
+    pub det out descending? := false
+}
+
+refine contradictory_chain_sound: contradictory_chain_value refines contradictory_chain_written
+refine contradictory_chain_complete: contradictory_chain_written refines contradictory_chain_value
+```
+
 Where one of two comparisons of an operand with integer literals implies
 the other, [`redundant_comparisons`](../Complexity/Comparisons.md#redundant-comparisons) fires
 instead: that is never where this lint does, since a single comparison of

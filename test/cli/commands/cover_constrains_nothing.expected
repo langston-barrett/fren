@@ -1,7 +1,7 @@
 warning[F0766]: these two comparisons cannot both hold
-  --> test/cli/commands/cover_constrains_nothing.fren:13:23
+  --> test/cli/commands/cover_constrains_nothing.fren:14:23
    |
-13 |     cover never: when x > 5 and x < 3, hot?
+14 |     cover never: when x > 5 and x < 3, hot?
    |                       ^^^^^^^^^^^^^^^ always `false`
    |
    = note: `and` and `or` may be swapped, or a value may not be the one meant
@@ -9,26 +9,26 @@ warning[F0766]: these two comparisons cannot both hold
    = help: to allow it, `set_option fren.lint.contradictory_comparisons "allow"`
 
 error[F0603]: expectation `sensor::only_warm` does not hold
-  --> test/cli/commands/cover_constrains_nothing.fren:12:12
+  --> test/cli/commands/cover_constrains_nothing.fren:13:12
    |
-12 |     expect only_warm: x = 50
+13 |     expect only_warm: x = 50
    |            ^^^^^^^^^ does not follow from the requirements
    |
    = counterexample: x = -11, hot? = false
    = help: strengthen the requirements so that it follows, or correct the expectation
 
 note: cover goal `sensor::warm` is met
-  --> test/cli/commands/cover_constrains_nothing.fren:11:11
+  --> test/cli/commands/cover_constrains_nothing.fren:12:11
    |
-11 |     cover warm: x = 50 and not hot?
+12 |     cover warm: x = 50 and not hot?
    |           ^^^^ met
    |
    = witness: x = 50, hot? = false
 
 note: cover goal `sensor::never` is met
-  --> test/cli/commands/cover_constrains_nothing.fren:13:11
+  --> test/cli/commands/cover_constrains_nothing.fren:14:11
    |
-13 |     cover never: when x > 5 and x < 3, hot?
+14 |     cover never: when x > 5 and x < 3, hot?
    |           ^^^^^ met
    |
    = witness: x = 2, hot? = false

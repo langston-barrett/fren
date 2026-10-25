@@ -2,6 +2,7 @@
 -- Testing, like the solver, takes nothing from a cover goal: the
 -- expectation that only the goal could make hold fails, and the goal with
 -- a trigger that never holds has no vacuity result.
+set_option fren.lint.chainable_comparison "allow"
 comp sensor {
     in x: Int
     pub out hot?
