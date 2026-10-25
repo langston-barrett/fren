@@ -40,10 +40,9 @@ comp chain_bool { in b? pub out p? req r: p? iff 0 <= b? < 3 }
 --~^ error: type mismatch: expected `Int`, found `Bool`
 comp div_bool { in b? pub out y: Int req r: y = b? div 2 }
 --~^ error: type mismatch: expected `Int`, found `Bool`
--- A comparison is a `Bool` in both front ends, and each states why `Int` is
--- needed.
+-- A comparison is a `Bool` in both front ends, never a `Prop`.
 comp div_comparison { in x: Int pub out y: Int req r: y = (x > 0) div 2 }
---~^ error: the operands of `div` are `Int`s
+--~^ error: type mismatch: expected `Int`, found `Bool`
 comp and_note { in x: Int pub out p? req r: p? iff x and true }
 --~^ error: the operands of `and` are `Bool`s
 comp branches_note { in c? pub out y: Int req r: y = if c? then 1 else true }
