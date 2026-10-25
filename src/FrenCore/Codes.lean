@@ -3113,6 +3113,83 @@ fix this:
 ```fren
 comp c { in x: Int pub out y: Int req r: y = 2 * (x + 1) }
 ```
+"# },
+  { code := "F0789", explanation := r#"A relation to a type of one value (`zero_sized_map_values`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.zero_sized_map_values "warn"
+
+enum Mark { Marked }
+
+comp c { in r: Rel(Int, Mark) pub out p? req q: p? iff (1, Mark::Marked) in r }
+```
+
+`Mark` has one value, so `r` pairs each `Int` it relates with
+`Mark::Marked`, and says only which `Int`s it relates. A set says the
+same:
+
+```fren
+comp c { in s: Set(Int) pub out p? req q: p? iff 1 in s }
+```
+"# },
+  { code := "F0795", explanation := r#"An item that declares many single-character names (`many_single_char_names`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.many_single_char_names "warn"
+
+comp total { in a: Int in b: Int in c: Int in d: Int pub out s: Int req r: s = a + b + c + d }
+```
+
+More than four names of one character, not counting a final `?`, are hard
+to tell apart. Name them for what they stand for:
+
+```fren
+comp total { in apples: Int in pears: Int pub out fruit: Int req r: fruit = apples + pears }
+```
+"# },
+  { code := "F0796", explanation := r#"Two names that differ by one character (`similar_names`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.similar_names "warn"
+
+comp c { in count: Int in counts: Int pub out p? req r: p? iff count < counts }
+```
+
+One is easily written, or read, for the other. Names that differ only in
+a digit, such as `x1` and `x2`, or in a character that is a word of its
+own, such as `a_len` and `b_len`, are a series on purpose, and are not
+reported. Rename one:
+
+```fren
+comp c { in count: Int in limit: Int pub out p? req r: p? iff count < limit }
+```
+"# },
+  { code := "F0797", explanation := r#"A component or defined function of more than 100 lines (`too_many_lines`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.too_many_lines "warn"
+
+comp c {
+    in x: Int
+"# ++ String.join ((List.range 50).map fun i => s!"    pub out y{i}: Int\n    req r{i}: y{i} = x + {i}\n") ++ r#"}
+```
+
+Its lines are counted from its name to its end, but not those that are
+blank or only comments. Split it into smaller components, as instances:
+
+```fren
+comp part { in x: Int pub out y: Int req r: y = x + 1 }
+
+comp whole { in x: Int pub out y: Int inst p: part { x } req r: y = p.y + 1 }
+```
 "# }
 ]
 

@@ -89,6 +89,10 @@ inductive Lint where
   | trivialPattern
   | redundantBoolType
   | trivialMatch
+  | zeroSizedMapValues
+  | manySingleCharNames
+  | similarNames
+  | tooManyLines
   deriving Inhabited, BEq, DecidableEq, Repr
 
 def Lint.all : Array Lint :=
@@ -98,7 +102,8 @@ def Lint.all : Array Lint :=
     .collapsibleWhen, .ifNotElse, .matchSameArms, .matchLikeMembership, .wildcardSingleVariant, .ifChainMatch,
     .caseSplitReqs, .redundantBindings, .eqOp, .sameBranches, .duplicateElements, .emptyArgument, .doubleComparison,
     .boolEquality, .manualMethod, .elseExtends, .identityOp, .doubleParens, .doubleNeg, .intPlusOne, .negMultiply,
-    .redundantMethodChain, .trivialPattern, .redundantBoolType, .trivialMatch]
+    .redundantMethodChain, .trivialPattern, .redundantBoolType, .trivialMatch,
+    .zeroSizedMapValues, .manySingleCharNames, .similarNames, .tooManyLines]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -144,6 +149,10 @@ def Lint.name : Lint → String
   | .trivialPattern => "trivial_pattern"
   | .redundantBoolType => "redundant_bool_type"
   | .trivialMatch => "trivial_match"
+  | .zeroSizedMapValues => "zero_sized_map_values"
+  | .manySingleCharNames => "many_single_char_names"
+  | .similarNames => "similar_names"
+  | .tooManyLines => "too_many_lines"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -191,6 +200,10 @@ def Lint.code : Lint → String
   | .trivialPattern => "F0744"
   | .redundantBoolType => "F0746"
   | .trivialMatch => "F0747"
+  | .zeroSizedMapValues => "F0789"
+  | .manySingleCharNames => "F0795"
+  | .similarNames => "F0796"
+  | .tooManyLines => "F0797"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -235,7 +248,8 @@ def Lint.group : Lint → Group
   | .identityOp | .doubleParens | .intPlusOne | .redundantMethodChain | .trivialMatch => .complexity
   | .indexAfterUse | .eqOp | .sameBranches | .duplicateElements | .emptyArgument => .suspicious
   | .membershipChain | .definableOutput | .ifNotElse | .matchSameArms | .wildcardSingleVariant | .ifChainMatch
-  | .caseSplitReqs | .boolEquality => .pedantic
+  | .caseSplitReqs | .boolEquality | .zeroSizedMapValues | .manySingleCharNames | .similarNames
+  | .tooManyLines => .pedantic
   | .undecidable => .decidability
 
 def Lint.default (l : Lint) : LintLevel := l.group.default
@@ -2282,6 +2296,139 @@ def trivialMatchMsg (fixed : String) : Msg :=
     label? := some "always its only arm"
     notes := #["note: its value is the arm's body, whatever the scrutinee is"]
     fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-! ## Names and sizes -/
+
+/-- Whether `zero_sized_map_values` fires on `Rel(A, B)`, where `B` is an
+enumeration of `nVariants` if `enum`, of which some has a payload if
+`payload` (`lint::zero_sized_map_values`). -/
+def zeroSizedMapValues (enum : Bool) (nVariants : Nat) (payload : Bool) : Bool :=
+  enum && nVariants == 1 && !payload
+
+/-- `Rel(a, b)`, where `v` is the one variant of `b`. -/
+def zeroSizedMapValuesMsg (a b v : String) : Msg :=
+  { code? := some "F0789", headline := s!"`Rel({a}, {b})` relates to `{b}`, which has one value"
+    label? := some s!"`{b}` has only `{b}::{v}`"
+    notes := #[s!"note: such a relation says only which `{a}`s it relates, as a set does",
+      s!"help: write `Set({a})`"] }
+
+/-- `a`, `b` and `c`. -/
+def andList (xs : Array String) : String :=
+  match xs.toList.reverse with
+  | last :: rest@(_ :: _) => s!"{", ".intercalate rest.reverse} and {last}"
+  | _ => ", ".intercalate xs.toList
+
+/-- Whether a declared name has one character, not counting a final `?`. -/
+def singleChar (n : Name) : Bool := (baseName (nameText n)).length == 1
+
+/-- Whether `many_single_char_names` fires on an item that declares `n`
+distinct single-character names (`lint::many_single_char_names`): more
+than 4, as Clippy's threshold is. -/
+def manySingleCharNames (n : Nat) : Bool := n ≥ 5
+
+/-- The `what` named `n` declares the single-character `names`. -/
+def manySingleCharNamesMsg (what : Named) (n : Name) (names : Array Name) : Msg :=
+  { code? := some "F0795", headline := s!"{what.describe} `{nameText n}` declares {names.size} single-character names"
+    label? := some "too many to tell apart"
+    notes := #[s!"note: they are {andList (names.map (s!"`{nameText ·}`"))}",
+      "help: name them for what they stand for"] }
+
+/-- If one of `a` and `b` is the other with one character substituted,
+inserted or deleted, the characters that differ, and whether one character
+is substituted for another that are each a word of their names, between
+`_`s or the name's ends. They differ in what is left of each once their
+longest common prefix and then their longest common suffix are removed,
+if neither has more than one character left, and they are not equal. -/
+def oneEdit? (a b : List Char) : Option (List Char × Bool) :=
+  let p := ((a.zip b).takeWhile fun (x, y) => x == y).length
+  let (a', b') := (a.drop p, b.drop p)
+  let s := ((a'.reverse.zip b'.reverse).takeWhile fun (x, y) => x == y).length
+  let (ra, rb) := (a'.take (a'.length - s), b'.take (b'.length - s))
+  let word := ra.length == 1 && rb.length == 1 && (p == 0 || a[p - 1]? == some '_')
+    && (p + 1 == a.length || a[p + 1]? == some '_')
+  if ra.length ≤ 1 && rb.length ≤ 1 && !(ra.isEmpty && rb.isEmpty) then some (ra ++ rb, word) else none
+
+/-- Whether `similar_names` fires on two names of `lenA` and `lenB`
+characters, without a final `?`, one of which is the other with one
+character substituted, inserted or deleted if `oneEdit`, where the
+characters that differ are digits if `digits`, and words of their own if
+`word`, and the pair is one of `similarAllowed` if `allowed`
+(`lint::similar_names`). -/
+def similarNames (lenA lenB : Nat) (oneEdit digits word allowed : Bool) : Bool :=
+  lenA ≥ 3 && lenB ≥ 3 && oneEdit && !digits && !word && !allowed
+
+/-- The pairs of names that Clippy allows to be similar, of those that
+apply to Fren. -/
+def similarAllowed : List (String × String) := [
+  -- keep-sorted start
+  ("args", "arms"),
+  ("lhs", "rhs"),
+  ("lit", "lint"),
+  ("set", "get"),
+  -- keep-sorted end
+]
+
+/-- `similarNames` of two declared names. -/
+def namesSimilar (a b : Name) : Bool :=
+  let (a, b) := (baseName (nameText a), baseName (nameText b))
+  let d? := oneEdit? a.toList b.toList
+  let allowed := similarAllowed.any fun (x, y) => (a == x && b == y) || (a == y && b == x)
+  similarNames a.length b.length d?.isSome (d?.any (·.1.all Char.isDigit)) (d?.any (·.2)) allowed
+
+/-- `b`, declared after `a` in the `what` named `n`. -/
+def similarNamesMsg (a b : Name) (what : Named) (n : Name) : Msg :=
+  { code? := some "F0796", headline := s!"`{nameText b}` differs from `{nameText a}` by one character"
+    label? := some "easily mistaken for the other"
+    notes := #[s!"note: both are declared in {what.describe} `{nameText n}`",
+      "help: rename one, so that they differ at a glance"] }
+
+/-- The lines of `text` that have something other than whitespace and
+comments: `--` to the end of the line, and `/-` to `-/`, which nest. A
+`--` in a string literal starts no comment. -/
+def codeLines (text : String) : Nat := Id.run do
+  let cs := text.toList.toArray
+  let mut n := 0
+  let mut code := false
+  let mut depth := 0
+  let mut inString := false
+  let mut i := 0
+  while i < cs.size do
+    let c := cs[i]!
+    let next := cs[i + 1]?
+    if c == '\n' then
+      if code then n := n + 1
+      code := false
+      inString := false
+      i := i + 1
+    else if depth > 0 then
+      if c == '-' && next == some '/' then depth := depth - 1; i := i + 2
+      else if c == '/' && next == some '-' then depth := depth + 1; i := i + 2
+      else i := i + 1
+    else if inString then
+      if c == '\\' then i := i + 2
+      else
+        if c == '"' then inString := false
+        i := i + 1
+    else if c == '-' && next == some '-' then
+      while i < cs.size && cs[i]! != '\n' do i := i + 1
+    else if c == '/' && next == some '-' then depth := 1; i := i + 2
+    else
+      if c == '"' then inString := true
+      unless c.isWhitespace do code := true
+      i := i + 1
+  return if code then n + 1 else n
+
+/-- Whether `too_many_lines` fires on an item of `n` lines of code
+(`lint::too_many_lines`). -/
+def tooManyLines (n : Nat) : Bool := n > 100
+
+/-- The `what` named `n`, of `lines` lines of code. -/
+def tooManyLinesMsg (what : Named) (n : Name) (lines : Nat) : Msg :=
+  { code? := some "F0797", headline := s!"{what.describe} `{nameText n}` has {lines} lines"
+    label? := some "longer than 100 lines"
+    notes := #["note: blank lines and comments are not counted",
+      if what == .function then "help: move parts of it into smaller functions, and apply them"
+      else "help: move parts of it into smaller components, and make them its instances"] }
 
 /-! ## Expectations -/
 

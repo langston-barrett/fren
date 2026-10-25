@@ -323,6 +323,9 @@ structure State where
   used : Array Fren.Core.UsedName := #[]
   expectations : Array (Fren.Core.ExpectationRecord × Span) := #[]
   lintReports : Array (Fren.Core.LintReport Span) := #[]
+  /-- The variables, parameters, instances and binders that the item being
+  elaborated declares (`many_single_char_names`, `similar_names`). -/
+  declared : Array (Name × Span) := #[]
   /-- For `fren fix`: where each of `useRecords` is written, and what
   removing each of `expectations` removes. -/
   useLocs : Array UseLoc := #[]
@@ -481,10 +484,37 @@ at the level in effect. -/
 def lintName (what : Named) (n : Name) (span : Span) : M Unit := do
   if let some (lint, msg) := Fren.Core.namingMsg? what n then
     modify fun s => { s with lintReports := s.lintReports.push { lint, level := s.levels.get lint, ref := span, msg } }
+  if what matches .variable | .instance | .binder then
+    modify fun s => { s with declared := s.declared.push (n, span) }
 
 /-- Reports a lint at the level in effect. -/
 def lint (lint : Lint) (span : Span) (msg : Msg) : M Unit :=
   modify fun s => { s with lintReports := s.lintReports.push { lint, level := s.levels.get lint, ref := span, msg } }
+
+/-- Starts an item whose declared names `lintDeclared` checks. -/
+def startDeclared : M Unit := modify fun s => { s with declared := #[] }
+
+/-- Reports `many_single_char_names` and `similar_names` on the names that
+the `what` named `n`, at `span`, declares (`lint::many_single_char_names`,
+`lint::similar_names`): each name once, in source order. -/
+def lintDeclared (what : Named) (n : Name) (span : Span) : M Unit := do
+  -- Each name once, where it is first declared: `x!` declares `x` again.
+  let ds := (← get).declared.qsort fun a b => a.2.start < b.2.start
+  let ds := ds.foldl (init := #[]) fun acc d => if acc.any (·.1 == d.1) then acc else acc.push d
+  modify fun s => { s with declared := #[] }
+  let single := ds.filter (Fren.Core.singleChar ·.1)
+  if Fren.Core.manySingleCharNames single.size then
+    lint .manySingleCharNames span (Fren.Core.manySingleCharNamesMsg what n (single.map (·.1)))
+  for i in [0:ds.size] do
+    if let some a := (ds.extract 0 i).find? (Fren.Core.namesSimilar ·.1 ds[i]!.1) then
+      lint .similarNames ds[i]!.2 (Fren.Core.similarNamesMsg a.1 ds[i]!.1 what n)
+
+/-- Reports `too_many_lines` on the `what` named `n`, at `name`, whose text
+runs from its name to the end of `last` (`lint::too_many_lines`). -/
+def lintLines (what : Named) (n : Name) (name last : Span) : M Unit := do
+  let text := String.ofList ((← get).src.extract name.start last.stop).toList
+  let k := Fren.Core.codeLines text
+  if Fren.Core.tooManyLines k then lint .tooManyLines name (Fren.Core.tooManyLinesMsg what n k)
 
 /-- Reports a lint whose message's first fix replaces its text, which
 `fren fix` applies. -/
@@ -2056,7 +2086,21 @@ partial def elabTy (segs : Array Ident) : M Ty := do
   if segs[0]!.name == Parser.relSeg then
     modify fun s => { s with usesSets := true }
     let (a, b) := Parser.splitRel (segs.extract 1)
-    return .rel (← elem a) (← elem b)
+    let (ta, tb) := (← elem a, ← elem b)
+    -- `zero_sized_map_values` (`lint::zero_sized_map_values`).
+    if let .enum p := tb then
+      if let some d := (← get).dataOf? p then
+        if Fren.Core.zeroSizedMapValues true d.ctors.size (d.ctors.any (!·.2.isEmpty)) then
+          let s ← get
+          let text (xs : Array Ident) (stop : Nat) :=
+            (String.ofList (s.src.extract xs[0]!.span.start stop).toList).trimAscii.toString
+          let sep := segs[a.size + 1]!.span
+          -- To the `)` after `B`.
+          let mut stop := b.back!.span.stop
+          while stop < s.src.size && s.src[stop]! != ')' do stop := stop + 1
+          lint .zeroSizedMapValues { start := segs[0]!.span.start, stop := stop + 1 }
+            (Fren.Core.zeroSizedMapValuesMsg (text a sep.start) (text b b.back!.span.stop) d.ctors[0]!.1.toString)
+    return .rel ta tb
   match ← resolve segs with
   | .item { kind := .enumItem, path, .. } => return .enum path
   | .item { kind := .recordItem, path, .. } => return .record path
@@ -2227,6 +2271,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let module := (← get).module
   liftMsg name.span ((← get).table.checkFresh module n)
   lintName .component n name.span
+  startDeclared
   declareMemberUses (module ++ n) members
   -- Distinct names (`lang::distinct_names`): variables, instances and
   -- constraints share one namespace.
@@ -2482,6 +2527,7 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
   let module := (← get).module
   liftMsg name.span ((← get).table.checkFresh module n)
   lintName .global n name.span
+  startDeclared
   let mut vars : Array CVar := #[]
   let mut insts : Array CInst := #[]
   -- Distinct names (`lang::distinct_names`).
@@ -2522,6 +2568,7 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
   for (w, sp) in Fren.Core.unmentioned binders ((mentions body).map (·.getRoot)) do
     lint .unusedVariables sp (Fren.Core.unusedVariableMsg w true false)
   let trig ← trigger? cx body
+  lintDeclared .global n name.span
   let prop : CProp := { kind := .expect, name := n, span := name.span, smt
                         trigger? := trig.map (·.1), triggerSpan? := trig.map (·.2) }
   discard checkCounts
@@ -2632,12 +2679,13 @@ partial def elabItem : Item → M Unit
     modify fun s => { s with
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       sorts := s.sorts.push path }
-  | .function isPub name params result body => do
+  | .function isPub name params result body last => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkNoBang n)
     let module := (← get).module
     liftMsg name.span ((← get).table.checkFresh module n)
     lintName .function n name.span
+    startDeclared
     let path := module ++ n
     -- A parameter is named if it has a type after `:`, or is a `Bool`
     -- written `x?` (`lang::function_params`).
@@ -2674,13 +2722,17 @@ partial def elabItem : Item → M Unit
       for (x, v) in Fren.Core.unmentioned (vars.map fun v => (v.name, v)) ((mentions body).map (·.getRoot)) do
         lint .unusedVariables v.span (Fren.Core.unusedParamMsg x)
       modify fun s => { s with defs := s.defs.push (path, vars.map fun v => (v.name, v.ty), r, smt) }
+      lintDeclared .function n name.span
+      lintLines .function n name.span last
     unless isPub do
       modify fun s => { s with items := s.items.push ({ what := .function, path, level := s.levels.get .deadCode }, name.span) }
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
-  | .comp isPub name members => do
+  | .comp isPub name members close => do
     -- Its `use`s end with it, even when it has an error.
     try elabComp isPub name members
     catch e => modify (fun s => { s with scope := s.module }); throw e
+    lintDeclared .component (Name.mkSimple name.name) name.span
+    lintLines .component (Name.mkSimple name.name) name.span close
   | .const isPub name ty value => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkConstName n)

@@ -1,0 +1,14 @@
+warning[F0797]: component `c` has 101 lines
+ --> test/cli/lints/pedantic/f0797_too_many_lines.fren:4:6
+  |
+4 | comp c {
+  |      ^ longer than 100 lines
+  |
+  = note: blank lines and comments are not counted
+  = help: move parts of it into smaller components, and make them its instances
+  = note: `too_many_lines` is set to `warn`
+
+fren: 50 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0797`.
+exit=3

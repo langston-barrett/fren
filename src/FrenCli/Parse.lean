@@ -127,11 +127,13 @@ inductive Item where
   | abstractType (isPub : Bool) (name : Ident)
   /-- `fn f(T, U): R`, or `fn f(x: T, y?): R := e`: each parameter's path,
 and its type after `:` if written. The result type is `none` if it is not
-written, and the body if the function is uninterpreted. -/
+written, and the body if the function is uninterpreted. `last` is the span
+of its last token, such as a `)` around the body, which `body` leaves out. -/
   | function (isPub : Bool) (name : Ident) (params : Array (Array Ident × Option (Array Ident)))
-      (result : Option (Array Ident)) (body : Option Expr)
+      (result : Option (Array Ident)) (body : Option Expr) (last : Span)
   | const (isPub : Bool) (name : Ident) (ty : Array Ident) (value : Expr)
-  | comp (isPub : Bool) (name : Ident) (members : Array Member)
+  /-- `comp c { members }`, with the span of its closing `}`. -/
+  | comp (isPub : Bool) (name : Ident) (members : Array Member) (close : Span)
   /-- `expect n: forall (a b: c) ..., e`: each binder's names and comp. -/
   | global (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr)
   /-- `refine r: c refines a { bindings }` (`Reqs/Lang/Refinement`). -/
@@ -915,7 +917,7 @@ partial def item : P Item := do
     discard (expectKw ")")
     let result ← if (← eatKw ":").isSome then some <$> typeExpr else pure none
     let body ← if (← eatKw ":=").isSome then some <$> expr else pure none
-    return .function isPub name params result body
+    return .function isPub name params result body (← lastSpan)
   if isKw t "const" then
     discard bump
     let name ← ident
@@ -933,8 +935,8 @@ partial def item : P Item := do
       if isKw t "}" then break
       if t.tok == .eof then fail t "`}`"
       ms := ms.push (← member)
-    discard bump
-    return .comp isPub name ms
+    let close ← bump
+    return .comp isPub name ms close.span
   match t.tok with
   | .ident w | .kw w =>
     if leanCommands.contains w then

@@ -1,0 +1,154 @@
+-- `too_many_lines`: a component of 101 lines, not counting blank lines and comments.
+set_option fren.lint.too_many_lines "warn"
+
+comp c {
+    in x: Int
+
+    -- `y0`
+    pub out y0: Int
+    req r0: y0 = x + 1
+    -- `y1`
+    pub out y1: Int
+    req r1: y1 = x + 2
+    -- `y2`
+    pub out y2: Int
+    req r2: y2 = x + 3
+    -- `y3`
+    pub out y3: Int
+    req r3: y3 = x + 4
+    -- `y4`
+    pub out y4: Int
+    req r4: y4 = x + 5
+    -- `y5`
+    pub out y5: Int
+    req r5: y5 = x + 6
+    -- `y6`
+    pub out y6: Int
+    req r6: y6 = x + 7
+    -- `y7`
+    pub out y7: Int
+    req r7: y7 = x + 8
+    -- `y8`
+    pub out y8: Int
+    req r8: y8 = x + 9
+    -- `y9`
+    pub out y9: Int
+    req r9: y9 = x + 10
+    -- `y10`
+    pub out y10: Int
+    req r10: y10 = x + 11
+    -- `y11`
+    pub out y11: Int
+    req r11: y11 = x + 12
+    -- `y12`
+    pub out y12: Int
+    req r12: y12 = x + 13
+    -- `y13`
+    pub out y13: Int
+    req r13: y13 = x + 14
+    -- `y14`
+    pub out y14: Int
+    req r14: y14 = x + 15
+    -- `y15`
+    pub out y15: Int
+    req r15: y15 = x + 16
+    -- `y16`
+    pub out y16: Int
+    req r16: y16 = x + 17
+    -- `y17`
+    pub out y17: Int
+    req r17: y17 = x + 18
+    -- `y18`
+    pub out y18: Int
+    req r18: y18 = x + 19
+    -- `y19`
+    pub out y19: Int
+    req r19: y19 = x + 20
+    -- `y20`
+    pub out y20: Int
+    req r20: y20 = x + 21
+    -- `y21`
+    pub out y21: Int
+    req r21: y21 = x + 22
+    -- `y22`
+    pub out y22: Int
+    req r22: y22 = x + 23
+    -- `y23`
+    pub out y23: Int
+    req r23: y23 = x + 24
+    -- `y24`
+    pub out y24: Int
+    req r24: y24 = x + 25
+    -- `y25`
+    pub out y25: Int
+    req r25: y25 = x + 26
+    -- `y26`
+    pub out y26: Int
+    req r26: y26 = x + 27
+    -- `y27`
+    pub out y27: Int
+    req r27: y27 = x + 28
+    -- `y28`
+    pub out y28: Int
+    req r28: y28 = x + 29
+    -- `y29`
+    pub out y29: Int
+    req r29: y29 = x + 30
+    -- `y30`
+    pub out y30: Int
+    req r30: y30 = x + 31
+    -- `y31`
+    pub out y31: Int
+    req r31: y31 = x + 32
+    -- `y32`
+    pub out y32: Int
+    req r32: y32 = x + 33
+    -- `y33`
+    pub out y33: Int
+    req r33: y33 = x + 34
+    -- `y34`
+    pub out y34: Int
+    req r34: y34 = x + 35
+    -- `y35`
+    pub out y35: Int
+    req r35: y35 = x + 36
+    -- `y36`
+    pub out y36: Int
+    req r36: y36 = x + 37
+    -- `y37`
+    pub out y37: Int
+    req r37: y37 = x + 38
+    -- `y38`
+    pub out y38: Int
+    req r38: y38 = x + 39
+    -- `y39`
+    pub out y39: Int
+    req r39: y39 = x + 40
+    -- `y40`
+    pub out y40: Int
+    req r40: y40 = x + 41
+    -- `y41`
+    pub out y41: Int
+    req r41: y41 = x + 42
+    -- `y42`
+    pub out y42: Int
+    req r42: y42 = x + 43
+    -- `y43`
+    pub out y43: Int
+    req r43: y43 = x + 44
+    -- `y44`
+    pub out y44: Int
+    req r44: y44 = x + 45
+    -- `y45`
+    pub out y45: Int
+    req r45: y45 = x + 46
+    -- `y46`
+    pub out y46: Int
+    req r46: y46 = x + 47
+    -- `y47`
+    pub out y47: Int
+    req r47: y47 = x + 48
+    -- `y48`
+    pub out y48: Int
+    req r48: y48 = x + 49
+}

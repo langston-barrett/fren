@@ -163,6 +163,22 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
   | .item { kind := .typeItem, path, .. } => return Lean.mkConst (placeholderName path)
   | r => throwErrorAt ty (Core.notATypeMsg r).text
 
+/-- The `Rel(A, B)`s within the type `ty`. -/
+partial def relTypes (ty : Syntax) : Array Syntax :=
+  (if ty.isOfKind ``Lang.relType then #[ty] else #[]) ++ ty.getArgs.flatMap relTypes
+
+/-- Records `zero_sized_map_values` on each `Rel(A, B)` within the type
+`ty` whose `B` is an enumeration of one variant without a payload
+(`lint::zero_sized_map_values`). -/
+def lintRelTypes [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFileMap m] (modName : Name)
+    (ty : Syntax) : m Unit := do
+  for r in relTypes ty do
+    let b ← elabType modName r[4]
+    let some e := b.constName?.bind (← getState).enumOfDecl? | continue
+    if Core.zeroSizedMapValues true e.variants.size (e.payloads.any (!·.isEmpty)) then
+      let text (t : Syntax) := ((t.reprint.getD "").trimAscii).toString
+      recordLint .zeroSizedMapValues r (Core.zeroSizedMapValuesMsg (text r[2]) (text r[4]) e.variants[0]!.toString)
+
 /-- Where the annotation `: T` of the type `ty` is, from the end of what
 precedes it. -/
 def annotationRef (ty : Syntax) : Syntax := Id.run do
@@ -184,6 +200,7 @@ def lintBoolType (n : Name) (ty : Syntax) (t : Expr) : TermElabM Unit := do
 def varType (modName : Name) (name : Syntax) (ty? : Option Syntax) : TermElabM Expr := do
   let n := name.getId
   let t ← ty?.mapM (elabType modName)
+  if let some ty := ty? then lintRelTypes modName ty
   liftMsg name (Core.checkVarName n (t.map (·.isConstOf ``Bool)))
   if let (some ty, some t) := (ty?, t) then lintBoolType n ty t
   return t.getD (Lean.mkConst ``Bool)
@@ -218,6 +235,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
       return Lean.mkConst decl
   let t ← elabType modName ty
   if t.isConstOf ``Nat then throwErrorAt ty (Core.natPlaceMsg (if payload then .payload else .field)).text
+  lintRelTypes modName ty
   let st ← getState
   let e := ((elemTypes t).find? fun e => e.isConst && st.placeholders.contains e.constName).getD t
   let abstract := e.isConst && st.placeholders.contains e.constName
@@ -1051,6 +1069,13 @@ def followedStx (stx : Syntax) : Bool :=
 
 /-- The text that `stx` is written with. -/
 def srcText (stx : Syntax) : String := ((stx.reprint.getD "").trimAscii).toString
+
+/-- Records `too_many_lines` on the `what` named `n`, the item `stx`,
+counting its lines from its name, `nameStx` (`lint::too_many_lines`). -/
+def lintLines (what : Core.Named) (n : Name) (nameStx stx : Syntax) : CommandElabM Unit := do
+  let (some sub, some start) := (stx.getSubstring? false false, nameStx.getPos?) | return
+  let k := Core.codeLines (String.Pos.Raw.extract sub.str start sub.stopPos)
+  if Core.tooManyLines k then recordLint .tooManyLines nameStx (Core.tooManyLinesMsg what n k)
 
 /-- `redundant_bindings` on the binding, or field, `b`, a `fren_binding`
 (`lint::redundant_bindings`). -/
@@ -2195,6 +2220,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   liftMsg nameStx (Core.checkNoBang n)
   checkFresh modName n nameStx
   lintName .function n nameStx
+  startDeclared
   let path := modName ++ n
   let params := stx[4].getSepArgs
   let body? := if stx[7].isNone then none else some stx[7][1]
@@ -2208,7 +2234,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
     throwErrorAt bad (Core.functionParamsMsg path body?.isSome).text
   let some body := body? | do
     liftTermElabM do
-      let params ← params.mapM fun p => elabType modName p[0]
+      let params ← params.mapM fun p => do lintRelTypes modName p[0]; elabType modName p[0]
       -- As for a variable, with the result type (`lang::bool_naming`).
       let result ← varType modName nameStx (if stx[6].isNone then none else some stx[6][1])
       declarePlaceholder path (← mkArrowN params result) false
@@ -2252,6 +2278,8 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
     let uses ← usesOf #[lam]
     addUsesDef uses decl lam
     record (.definedInfo { path, decl, uses, nParams := vars.size })
+  lintDeclared .function n nameStx
+  lintLines .function n nameStx stx
   record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
   unless isPub do recordItem .function path nameStx
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
@@ -2392,6 +2420,7 @@ open Lang in
   let n ← checkItemName "component" nameStx
   checkFresh modName n nameStx
   lintName .component n nameStx
+  startDeclared
   let path := modName ++ n
   let declBase := (← getCurrNamespace) ++ path
   -- The evidence settings, apart from the members they set.
@@ -2634,6 +2663,8 @@ open Lang in
       record (.compInfo { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
                           decidable := !(← getLocal).outsideCore, relational, counts, indexes, tested })
     return (ok, generated)
+  lintDeclared .component n nameStx
+  lintLines .component n nameStx stx
   if ok = true then
     for d in generated do
       elabCommand (← `(attribute [fren_spec] $(mkCIdent d)))
@@ -2655,6 +2686,7 @@ open Lang in
   let decl := (← getCurrNamespace) ++ path
   liftTermElabM do
     let type ← elabType modName stx[4]
+    lintRelTypes modName stx[4]
     -- Its value must be known (`lang::constant`): first its type, then,
     -- once the functions it applies count as used, its value.
     let abstract := (← getState).placeholders.contains type.constName
@@ -2754,10 +2786,12 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   if n.toString.endsWith "?" then throwErrorAt nameStx (Core.propNameMsg n).text
   checkFresh modName n nameStx
   lintName .global n nameStx
+  startDeclared
   let path := modName ++ n
   let decl := (← getCurrNamespace) ++ path
   let binders := if stx[3].isNone then #[] else stx[3][1].getArgs
   let info ← liftTermElabM <| elabGlobalInfo modName n nameStx binders stx[4] decl
+  lintDeclared .global n nameStx
   let all ← evidenceTested nameStx (fren.evidence.get (← getOptions))
   let info := { info with tested := Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] }
   record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })

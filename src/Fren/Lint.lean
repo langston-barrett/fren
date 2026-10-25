@@ -238,6 +238,26 @@ register_option fren.lint.trivial_match : String := {
   descr := "the level of the lint `trivial_match`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.zero_sized_map_values : String := {
+  defValue := "allow"
+  descr := "the level of the lint `zero_sized_map_values`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.many_single_char_names : String := {
+  defValue := "allow"
+  descr := "the level of the lint `many_single_char_names`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.similar_names : String := {
+  defValue := "allow"
+  descr := "the level of the lint `similar_names`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.too_many_lines : String := {
+  defValue := "allow"
+  descr := "the level of the lint `too_many_lines`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"
@@ -334,6 +354,27 @@ def lintName (what : Core.Named) (n : Name) (ref : Syntax) : m Unit := do
   if let some (lint, msg) := Core.namingMsg? what n then
     let level ← lintLevel lint
     modifyLocal fun l => { l with lintReports := l.lintReports.push { lint, level, ref, msg } }
+  if what matches .variable | .instance | .binder then
+    modifyLocal fun l => { l with declaredNames := l.declaredNames.push (n, ref) }
+
+/-- Starts an item whose declared names `lintDeclared` checks. -/
+def startDeclared : m Unit := modifyLocal fun l => { l with declaredNames := #[] }
+
+/-- Records `many_single_char_names` and `similar_names` on the names that
+the `what` named `n`, at `ref`, declares (`lint::many_single_char_names`,
+`lint::similar_names`): each name once, in source order. -/
+def lintDeclared (what : Core.Named) (n : Name) (ref : Syntax) : m Unit := do
+  let pos (r : Syntax) := (r.getPos?.map (·.byteIdx)).getD 0
+  -- Each name once, where it is first declared: `x!` declares `x` again.
+  let ds := (← getLocal).declaredNames.qsort fun a b => pos a.2 < pos b.2
+  let ds := ds.foldl (init := #[]) fun acc d => if acc.any (·.1 == d.1) then acc else acc.push d
+  modifyLocal fun l => { l with declaredNames := #[] }
+  let single := ds.filter (Core.singleChar ·.1)
+  if Core.manySingleCharNames single.size then
+    recordLint .manySingleCharNames ref (Core.manySingleCharNamesMsg what n (single.map (·.1)))
+  for i in [0:ds.size] do
+    if let some a := (ds.extract 0 i).find? (Core.namesSimilar ·.1 ds[i]!.1) then
+      recordLint .similarNames ds[i]!.2 (Core.similarNamesMsg a.1 ds[i]!.1 what n)
 
 /-- Reports the lints of the file, or Markdown spec, just elaborated, and
 forgets them. -/
