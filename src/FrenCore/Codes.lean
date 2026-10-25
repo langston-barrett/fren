@@ -861,8 +861,8 @@ comp c { in x: Int pub out y: Int req r: y = x * x }
 
 Fren's checks are decided by an SMT solver over linear integer arithmetic,
 where nonlinear constraints are undecidable. One side of `*` must mention no
-variable: it is built from literals and constants, such as `2`, `2 * 3` or
-`(MAX - MIN)`.
+variable and no uninterpreted function: it is built from literals and
+constants, such as `2`, `2 * 3` or `(MAX - MIN)`.
 
 ```fren
 comp c { in x: Int pub out y: Int req r: y = 2 * x }
