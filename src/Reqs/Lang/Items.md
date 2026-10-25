@@ -119,11 +119,12 @@ reported where it is declared again, in the order the declarations are
 written, whatever their kinds. In every list, only the first such name is
 reported, and the rest of its item is not checked, so a component with two
 repeated names and an unknown type reports the first repeat alone. The
-names of declarations that may [shadow](Components.md#shadowing), which
-are variables, instances, parameters and binders, are compared without
-their `!`, so `in x: Int` and `in x!: Int` declare the same name.
-Variants, fields and constraints never shadow, and a `!` on one is an error
-of its own.
+names of a component's members, of a function's parameters and of binders
+are compared without their `!` of [shadowing](Components.md#shadowing), so
+`in x: Int` and `in x!: Int` declare the same name, and so do `in x: Int`
+and `req x!: true`, even though a constraint never shadows. The names of
+variants and fields are compared as written: neither ever shadows, and a
+`!` on one is an error of its own.
 `lang::distinct_names` states this, from how many names a list declares
 and the set of them:
 

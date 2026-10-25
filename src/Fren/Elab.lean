@@ -37,10 +37,13 @@ def checkItemName (what : String) (id : Syntax) : CommandElabM Name := do
 def checkFresh (modName n : Name) (ref : Syntax) : CommandElabM Unit := do
   liftMsg ref ((← getState).table.checkFresh modName n)
 
+open Lang in
 /-- Reports the first identifier or integer literal of `stx` that Lean read
 but that is not one of Fren's (`lang::identifier`,
-`lang::integer_literal`), as the `fren` command's lexer does. -/
+`lang::integer_literal`), or prefix `!`, as the `fren` command's lexer
+does. -/
 partial def checkLexemes (stx : Syntax) : CommandElabM Unit := do
+  if let `(fren_expr| !$_) := stx then throwErrorAt stx[0] (Core.foreignOpMsg "!").text
   match stx with
   | .ident _ raw _ _ =>
     let s := raw.toString
@@ -62,9 +65,14 @@ grammar accepts it:
   is an expression's whole path, which reads an instance's variable or a
   value's field or method, or where it follows `.`, or names an option;
 - a member's `set_option` of an option other than `fren.evidence`;
-- an input's definition, `in x := e`, before its expression is read. -/
+- an input's definition, `in x := e`, before its expression is read;
+- an operator of another language, `==`, `&&`, `||` or `|`, after its
+  left operand. -/
 partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
   match stx with
+  | `(fren_expr| $a == $_) | `(fren_expr| $a && $_) | `(fren_expr| $a || $_) | `(fren_expr| $a | $_) =>
+    checkParsed a
+    throwErrorAt stx[1] (Core.foreignOpMsg stx[1].getAtomVal.trimAscii.toString).text
   | `(fren_expr| $p:fren_path) => unless (pathSegs p).size == 1 do discard (segNames (pathSegs p))
   | `(fren_expr| $p:fren_path($args,*)) =>
     unless (pathSegs p).size == 1 do discard (segNames (pathSegs p))
