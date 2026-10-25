@@ -453,8 +453,8 @@ impl function_params: lang::function_params for (d : Bool) (p n : Nat) {
   cases d <;> simp [fren_spec, Fren.Core.functionParamsAccepted] <;> omega
 
 def toCardinality : Fren.Core.Cardinality → lang.Cardinality
-  | .exactlyOne => .ExactlyOne
-  | .atMostOne => .AtMostOne
+  | .exactlyOne => .Exactly
+  | .atMostOne => .AtMost
 
 -- For every operator and number of arguments that are `true`: the value that
 -- the evaluator gives it. That both front ends' translations, a sum compared
