@@ -61,14 +61,6 @@ def Prelude.interprets (p : Prelude) (syms : Array String) : Bool := Id.run do
     work := work ++ p.deps[i]!
   return false
 
-/-- Whether `c` uses an abstract type or an uninterpreted function: in its
-variables' types, its constraints, its definitions or its instances, as
-the Lean front end's `CompInfo.uses` says (`Reqs/View#check-results`). -/
-def CComp.interpreted (c : CComp) (p : Prelude) : Bool :=
-  p.interprets (quotedSymbols (String.join (c.vars.toList.map (·.ty.sort ++ " ")
-    ++ c.props.toList.map (·.smt ++ " ") ++ c.defs.toList.map (·.2 ++ " ")
-    ++ c.insts.toList.map fun i => i.bindings ++ " " ++ i.behaviour ++ " ")))
-
 /-- The SMT-LIB script that asserts `hyps` and the negation of `goal`, each
 hypothesis followed by a comment with its name; without `(check-sat)`. It
 declares only what the prelude needs to (`Prelude.needed`). -/
@@ -334,5 +326,12 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
     -- Numbered in order within each item.
     indexes := c.indexes.mapIdx fun j (n, place, _, goal) =>
       { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal } }
+
+/-- `rs`, results of `c`, with each cover goal's marked if its query uses
+an abstract type or an uninterpreted function, as the prelude declarations
+that a formula needs say (`Fren.Core.coverInterpreted`). -/
+def markInterpreted (p : Prelude) (c : CComp) (rs : Array Fren.Core.CheckResult) : Array Fren.Core.CheckResult :=
+  let interprets (f : String) : Bool := p.interprets (quotedSymbols f)
+  Fren.Core.withInterpreted { toCore c with typesInterpreted := c.vars.any (interprets ·.ty.sort) } interprets rs
 
 end FrenCli

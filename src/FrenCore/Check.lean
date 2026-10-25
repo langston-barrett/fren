@@ -76,6 +76,9 @@ structure CheckResult where
   index? : Option Nat := none
   verdict : Verdict
   detail : Detail := .none
+  /-- For `cover`: its query depends on an interpretation, so its witness's
+  values are not shown (`coverInterpreted`). -/
+  interpreted : Bool := false
   deriving Inhabited
 
 inductive Outcome (V : Type) where
@@ -237,6 +240,9 @@ structure Comp (F : Type) where
   `e`, each mentioning only earlier ones (`check::definitions`). -/
   defs : Array (Name × F × F) := #[]
   indexes : Array (IndexSite F) := #[]
+  /-- Some variable's type, its own or an instance's, is or contains an
+  abstract type. -/
+  typesInterpreted : Bool := false
 
 variable {m : Type → Type} [Monad m] {F V : Type} (b : Backend m F V)
 
@@ -513,6 +519,28 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
   let defined ← ifSelected (kinds.contains .definedness) (c.indexes.mapM (checkDefinedness (bk .definedness) c))
   return realizable ++ insts ++ expects ++ covers ++ vacuities ++ redundancies ++ dets ++ defined
 
+/-- The formulas of the query of the cover goal `g` (`checkCover`): the
+definitions, the assumptions, each instance's bindings and the meaning of
+its component, the requirements, and the goal. No expectation or other
+cover goal is among them. -/
+def Comp.coverFormulas (c : Comp F) (g : F) : Array F :=
+  c.defs.map (·.2.1) ++ c.assumes.map (·.2) ++ c.insts.flatMap (fun i => #[i.bindings, i.behaviour])
+    ++ c.reqs.map (·.2) ++ #[g]
+
+/-- Whether a witness of the cover goal `n` of `c` depends on an
+interpretation, so that its values are not shown (`Reqs/View#check-results`):
+whether some variable's type is abstract, or some formula of its query uses
+an abstract type or an uninterpreted function, as `interprets` says of a
+formula. Both front ends decide it so. -/
+def coverInterpreted (c : Comp F) (interprets : F → Bool) (n : Name) : Bool :=
+  c.typesInterpreted || match c.covers.find? (·.1 == n) with
+    | some (_, g) => (c.coverFormulas g).any interprets
+    | none => false
+
+/-- `rs`, with each cover goal's result marked by `coverInterpreted`. -/
+def withInterpreted (c : Comp F) (interprets : F → Bool) (rs : Array CheckResult) : Array CheckResult :=
+  rs.map fun r => if r.kind == .cover then { r with interpreted := r.prop?.any (coverInterpreted c interprets) } else r
+
 /-! ## Reporting
 
 Message text shared by both front ends (`view`). -/
@@ -568,11 +596,10 @@ def inconclusiveAdvice (decidable : Bool) : Advice :=
 
 /-- The messages for one result. Passing checks produce none, but for a
 cover goal's witness. `decidable` says whether the component is in the
-decidable core: whether no construct of it opted out. `interpreted` says
-whether it uses an abstract type or an uninterpreted function, whose
-interpretation a witness depends on: its values are then not shown. -/
-def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) (interpreted : Bool := false) :
-    Array Message :=
+decidable core: whether no construct of it opted out. A witness whose query
+depends on an interpretation (`CheckResult.interpreted`) is shown without
+its values. -/
+def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) : Array Message :=
   -- A global expectation's `comp` is its module, which may be the root.
   let subject := s!"`{showComp (r.comp ++ (r.prop?.getD .anonymous))}`"
   -- Passes have no severity, and no messages.
@@ -588,7 +615,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
   | .pass, .witness vals =>
     #[{ severity := .info, item? := r.prop?
         msg := { code? := none, headline := s!"cover goal {subject} is met", label? := some "met"
-                 notes := if interpreted then #["note: the witness is not shown, since the component uses abstract types or functions, whose interpretation it depends on"]
+                 notes := if r.interpreted then #["note: the witness is not shown, since its query uses abstract types or functions, whose interpretation it depends on"]
                    else #[s!"witness: {showAssignment vals}"] ++ priv } }]
   | .pass, _ => #[]
   | .inconclusive, d =>

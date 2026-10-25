@@ -117,14 +117,15 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     let hyps ← (facts.map (`nat, ·) ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
     let goal ← unfoldDefined goal
     withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do
-      let mv ← mkFreshExprMVar goal
       let timeout := fren.timeout.get (← getOptions)
       -- A relation's `domain` or `range` over an infinite type is a
       -- projection, which needs higher-order logic (`cli::logic`); lean-smt
       -- sets `ALL`, which the option overrides.
       let projects (e : Expr) := (e.find? fun x => x.isConstOf ``Fren.FinSet.domain || x.isConstOf ``Fren.FinSet.range).isSome
       let logic := if projects goal || hyps.any (projects ·.2) then [("force-logic", "HO_ALL")] else []
+      -- Each attempt on a goal of its own.
       let solve (model : Bool) : MetaM (Core.Outcome Expr) := do
+        let mv ← mkFreshExprMVar goal
         -- The options of a spec that uses strings and sets, as in the binary (`cli::logic`).
         match ← Smt.smt { trust := true, model, timeout := some timeout
                           extraSolverOptions := Core.solverOptions true true ++ logic }
@@ -327,6 +328,11 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     let copiedFvs := (c.vars.zip fvs).filter (fun (v, _) => (Core.Symbol.ofRole v.role).copied) |>.map (·.2)
     let all := facts ++ outFacts
     let facts := all ++ (all.map (·.replaceFVars copiedFvs primes)).filter (!all.contains ·)
+    -- What stands for the abstract types and functions, by which a formula
+    -- uses them (`Core.coverInterpreted`).
+    let useIds := ufs.foldl (fun acc u => (collectFVars acc u)) {} |>.fvarIds
+    let interprets (e : Expr) : Bool := e.hasAnyFVar useIds.contains
+    let full := { comp with typesInterpreted := c.vars.any fun v => interprets v.type }
     -- Only the `fren` command runs the checks set to testing (`check::by_testing`).
     let (comp, kinds) := comp.untested c.tested kinds
     let cache : QueryCache ← IO.mkRef {}
@@ -339,7 +345,7 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
           let o ← b.query hyps goal wantModel
           if let .sat model := o then models.modify (·.push (goal, model))
           return o }
-    let results ← Core.checkComp bk comp kinds
+    let results := Core.withInterpreted full interprets (← Core.checkComp bk comp kinds)
     for g in c.covers do
       let passed := results.any fun r => r.kind == .cover && r.prop? == some g.name && r.verdict == .pass
       let goal := mkNot (← beta g.body)

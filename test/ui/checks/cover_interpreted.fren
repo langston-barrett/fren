@@ -1,6 +1,7 @@
 -- A witness under an interpretation, of a component that uses an abstract
 -- type or an uninterpreted function, shows no values, and both front ends
--- say so alike (`Reqs/View#check-results`).
+-- say so alike (`Reqs/View#check-results`): what counts is what the
+-- goal's query contains.
 
 type Name
 fn long?(Name)
@@ -12,7 +13,7 @@ comp names {
 
     req r: same? iff a = b
 
-    cover distinct: not same?                      --~ info: the witness is not shown, since the component uses abstract types or functions
+    cover distinct: not same?                      --~ info: the witness is not shown, since its query uses abstract types or functions
 }
 
 comp flags {
@@ -21,7 +22,51 @@ comp flags {
 
     req r: flagged? iff long?(n)
 
-    cover flagged_long: flagged?                   --~ info: the witness is not shown, since the component uses abstract types or functions
+    cover flagged_long: flagged?                   --~ info: the witness is not shown, since its query uses abstract types or functions
+}
+
+-- An instantiated component's expectation is not part of the query: a
+-- function used only there leaves the witness shown.
+fn odd?(Int)
+
+comp checker {
+    in k: Int
+    pub out pos?
+
+    req r: pos? iff k > 0
+
+    expect odd_pos: when odd?(k) and k > 0, pos?
+}
+
+comp uses_checker {
+    in m: Int
+    pub out ok?
+
+    inst ch: checker { k := m }
+
+    req r: ok? iff ch.pos?
+
+    cover ok_one: ok? and m = 1                    --~ info: witness: m = 1
+}
+
+-- An instantiated component's requirement is: a function used there
+-- hides the witness.
+comp odd_checker {
+    in k: Int
+    pub out is_odd?
+
+    req r: is_odd? iff odd?(k)
+}
+
+comp uses_odd {
+    in m: Int
+    pub out ok?
+
+    inst ch: odd_checker { k := m }
+
+    req r: ok? iff ch.is_odd?
+
+    cover ok_odd: ok?                              --~ info: the witness is not shown, since its query uses abstract types or functions
 }
 
 -- Without them, the values are shown.
@@ -34,4 +79,4 @@ comp plain {
     cover big_one: big?                            --~ info: witness: x =
 }
 
---@ summary: 9 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ summary: 21 passed, 0 failed, 0 inconclusive, 0 redundant

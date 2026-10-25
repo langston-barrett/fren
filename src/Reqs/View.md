@@ -105,15 +105,20 @@ witness, the behaviour in which it holds, as a note at the goal's name:
 the inputs and public outputs, shown as a counterexample shows them. The
 note is information, like the notes at the requirements of an
 unrealizable component: the result itself is silent, so the note changes
-neither the summary's counts nor the exit status. A witness of a
-component that uses [abstract types](Lang/Types.md#abstract-types) or
-[uninterpreted functions](Lang/Items.md#uninterpreted-functions), in its
-variables' types, its constraints, its definitions or its instances, is
-under an interpretation that the note cannot show, so its values are not
-shown either: the note says so instead. This is also the condition under
-which Lean adds no [theorem](Generated.md#cover-goals) for the goal, and
-it keeps both front ends' notes the same, since the Lean front end cannot
-read every such model.
+neither the summary's counts nor the exit status. A witness's values
+are not shown, and the note says so instead, when they depend on an
+[interpretation](Lang/Components.md#interpretations), which the note
+cannot show: when some variable of the component, its own or an
+instance's, has a type that is or contains an [abstract
+type](Lang/Types.md#abstract-types), or when a formula of the goal's
+[query](Check.md#cover-goals) uses an abstract type or an [uninterpreted
+function](Lang/Items.md#uninterpreted-functions), directly or through a
+defined function. Those formulas are the component's definitions,
+assumptions and requirements, each instance's bindings and the meaning of
+its component (its assumptions, requirements, definitions and instances,
+recursively), and the goal; no expectation or other cover goal is among
+them. Both front ends decide this by the same rule, and the Lean front
+end cannot read every such model.
 
 ```text
 note: cover goal `heater::overheat` is met
