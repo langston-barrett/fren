@@ -6,10 +6,12 @@
 Fren.Core.CheckResult.isRedundant
 Fren.Core.Ex.eval
 Fren.Core.Ex.kids
+Fren.Core.Ex.pick
 Fren.Core.Ex.simp
 Fren.Core.Ex.simp.finish
 Fren.Core.Ex.withKids
-Fren.Core.Msg.note
+Fren.Core.Msg.internal
+Fren.Core.Outcome.reason
 Fren.Core.Pick.get
 Fren.Core.Shape.build
 Fren.Core.Val.sameType
@@ -18,13 +20,16 @@ Fren.Core.argumentAccepted
 Fren.Core.binV
 Fren.Core.bindingOk
 Fren.Core.cmpV
+Fren.Core.doubleNeg
 Fren.Core.effectiveLevel
 Fren.Core.functionBodyAccepted
+Fren.Core.inconclusiveAdvice
 Fren.Core.indexAfterUse
 Fren.Core.iteV
 Fren.Core.negV
 Fren.Core.notAFunctionMsg
 Fren.Core.notV
+Fren.Core.sameBranches
 Fren.Core.trustedAccepted
 Fren.Core.unknownSetMethodMsg
 Fren.Core.whenV
@@ -59,6 +64,8 @@ Fren.FinSet.square
 Fren.FinSet.toListUnsafe
 Fren.Lang.decExists
 Fren.Lang.decForall
+Fren.Lang.frenIdent.formatter -- Lean calls it only to print Fren syntax, which no message does
+Fren.Lang.frenIdent.parenthesizer -- Lean calls it only to print Fren syntax, which no message does
 Fren.Lang.sameLineAsLeft.formatter -- Lean calls it only to print Fren syntax, which no message does
 Fren.Lang.sameLineAsLeft.parenthesizer -- Lean calls it only to print Fren syntax, which no message does
 Fren.Seq.at
@@ -71,13 +78,10 @@ Fren.Seq.instMembership
 Fren.Seq.instRepr
 Fren.Seq.nth
 Fren.Seq.ofList
-Fren.Seq.replace
 Fren.Seq.rev
 Fren.Seq.toList
 Fren.Seq.unit
 Fren.Str.lit
-Fren.Str.replace
-Fren.Str.replaceAll
 Fren.Str.replaceAllAux
 Fren.elabInterp
 Fren.elabMd
