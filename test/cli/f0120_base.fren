@@ -1,0 +1,3 @@
+-- A base with no digits of that base, which the fren command reports as a
+-- malformed number (F0120); Lean's own parser reports it in Lean.
+const MASK: Int := 0b2

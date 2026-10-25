@@ -37,19 +37,25 @@ def checkItemName (what : String) (id : Syntax) : CommandElabM Name := do
 def checkFresh (modName n : Name) (ref : Syntax) : CommandElabM Unit := do
   liftMsg ref ((← getState).table.checkFresh modName n)
 
-/-- Reports the first identifier of `stx` that Lean read but that is not one
-of Fren's (`lang::identifier`), as the `fren` command's lexer does. -/
-partial def checkIdentifiers (stx : Syntax) : CommandElabM Unit := do
+/-- Reports the first identifier or integer literal of `stx` that Lean read
+but that is not one of Fren's (`lang::identifier`,
+`lang::integer_literal`), as the `fren` command's lexer does. -/
+partial def checkLexemes (stx : Syntax) : CommandElabM Unit := do
   match stx with
   | .ident _ raw _ _ =>
     let s := raw.toString
     let beforeEq := String.Pos.Raw.get raw.str raw.stopPos == '='
     unless Core.identifierAccepted s do throwErrorAt stx (Core.leanIdentifierMsg s beforeEq).text
-  | .node _ _ args => args.forM checkIdentifiers
+  | .node _ k args =>
+    if k == numLitKind then
+      if let some s := stx.isLit? numLitKind then
+        unless Core.integerLiteral s && (Core.integerValue? s).isSome do
+          throwErrorAt stx (Core.malformedIntegerMsg s).text
+    else args.forM checkLexemes
   | _ => pure ()
 
 @[command_elab Lang.modCmd] def elabMod : CommandElab := fun stx => do
-  checkIdentifiers stx
+  checkLexemes stx
   let segs := pathSegs stx[2]
   let names ← segNames segs
   let (path, new) ← liftResolve segs ((← getState).table.declareModule names (!stx[0].isNone))
@@ -68,11 +74,11 @@ def declareUse (segs : Array Syntax) (glob : Bool) (ref : Syntax) (scope : Optio
   recordUse u ref
 
 @[command_elab Lang.useCmd] def elabUse : CommandElab := fun stx => do
-  checkIdentifiers stx
+  checkLexemes stx
   declareUse (pathSegs stx[1]) (!stx[2].isNone) stx[1]
 
 @[command_elab Lang.useGroupCmd] def elabUseGroup : CommandElab := fun stx => do
-  checkIdentifiers stx
+  checkLexemes stx
   for p in stx[3].getSepArgs do
     declareUse (pathSegs stx[1] ++ pathSegs p) false p
 
@@ -158,7 +164,7 @@ partial def typeSyntax (t : Expr) : Term :=
   else Unhygienic.run `(_)
 
 @[command_elab Lang.enumCmd] def elabEnum : CommandElab := fun stx => do
-  checkIdentifiers stx
+  checkLexemes stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -213,7 +219,7 @@ partial def typeSyntax (t : Expr) : Term :=
   unless isPub do recordItem .enumeration path nameStx
 
 @[command_elab Lang.structCmd] def elabStruct : CommandElab := fun stx => do
-  checkIdentifiers stx
+  checkLexemes stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -557,11 +563,13 @@ def pathExpr (ref : Syntax) (n : Name) : TermElabM Syntax := do
 /-- For `x.m(a)`, an application of a dotted name, the receiver `x` and the
 method `m`. Paths are written with `::`, so an applied dotted name is a
 method call, as the `fren` command parses it: of a value, or of a variable
-read from an instance, as in `w.x.len()`. Only a root that is an instance
-without variables, and not a binder, which shadows it, is not a receiver. This does not resolve the root or the
-method: elaborating the receiver reports a root that is not a value, such
-as a misspelled name or an enumeration, and elaborating the call a method
-that its type does not have. -/
+read from an instance, as in `w.x.len()`. The only root that is not a
+receiver is an instance without variables (unless a binder shadows it).
+
+This does not resolve the root or the method. Elaborating the receiver
+reports a root that is not a value, such as a misspelled name or an
+enumeration, and elaborating the call reports a method that its type does
+not have. -/
 def methodApp? (cx : ExprCtx) (e : Syntax) : Option (Name × Name) := do
   guard (e.isOfKind ``Lang.appExpr)
   let segs := pathSegs e[0]
@@ -814,11 +822,9 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
           throwErrorAt p (Core.notAVariantOfMsg info.path s!"a variant of `{Core.showPath en.path}`").text
         let v := info.path ++ en.variants[idx]!
         let n := info.payloads[idx]!.size
-        if p[1].isNone then
-          if n > 0 then throwErrorAt p (Core.unappliedVariantMsg v n).text
-        else
+        if let some msg := Core.variantMentionMsg? v n (!p[1].isNone) then throwErrorAt p msg.text
+        unless p[1].isNone do
           let bs := altBinders p
-          if n == 0 then throwErrorAt p (Core.noPayloadMsg v).text
           unless bs.size == n do throwErrorAt p (Core.arityMsg v n bs.size "binder").text
           if alts.size > 1 then
             if let some b := bs.find? (·.isIdent) then throwErrorAt b (Core.orBinderMsg b.getId).text
@@ -1203,7 +1209,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
     | .variant en idx =>
       let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
       let n := (info.payloads[idx]?.map (·.size)).getD 0
-      if n > 0 then throwError (Core.unappliedVariantMsg (en.path ++ en.variants[idx]!) n).text
+      if let some msg := Core.variantMentionMsg? (en.path ++ en.variants[idx]!) n false then throwError msg.text
       return mkCIdentFrom e (info.decl ++ en.variants[idx]!)
     | .item { kind := .constItem, path, .. } =>
       let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
@@ -1226,7 +1232,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
       let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
       let v := en.path ++ en.variants[idx]!
       let n := (info.payloads[idx]?.map (·.size)).getD 0
-      if n == 0 then throwError (Core.noPayloadMsg v).text
+      if let some msg := Core.variantMentionMsg? v n true then throwError msg.text
       unless args.getElems.size == n do throwError (Core.arityMsg v n args.getElems.size "value").text
       let args ← args.getElems.mapM (toTerm { cx with emptyOk := true })
       return ← `($(mkCIdentFrom p (info.decl ++ en.variants[idx]!)) $args*)
@@ -1330,7 +1336,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
     record (.abstractInfo { path := inhabitedName path, placeholder := inst, isType := false, deps := #[placeholder] })
 
 @[command_elab Lang.typeCmd] def elabAbstractType : CommandElab := fun stx => do
-  checkIdentifiers stx
+  checkLexemes stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1343,7 +1349,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   unless isPub do recordItem .abstractType path nameStx
 
 @[command_elab Lang.fnCmd] def elabFunction : CommandElab := fun stx => do
-  checkIdentifiers stx
+  checkLexemes stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1514,7 +1520,7 @@ def testedOf (all : Bool) (raw : Array Syntax) : CommandElabM (Array Syntax × C
 
 open Lang in
 @[command_elab Lang.compCmd] def elabComp : CommandElab := fun stx => do
-  checkIdentifiers stx
+  checkLexemes stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1734,7 +1740,7 @@ open Lang in
 /-! ## Constants and global expectations -/
 
 @[command_elab Lang.constCmd] def elabConst : CommandElab := fun stx => do
-  checkIdentifiers stx
+  checkLexemes stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1825,7 +1831,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
              decidable := !(← getLocal).outsideCore, indexes }
 
 @[command_elab Lang.globalCmd] def elabGlobal : CommandElab := fun stx => do
-  checkIdentifiers stx
+  checkLexemes stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx

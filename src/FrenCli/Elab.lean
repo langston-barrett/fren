@@ -838,7 +838,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   let lintLength (op : String) (a b : Expr) : M Unit := do
     unless cx.noteIndexes do return
     let (.num _ d, some (recv, card), some c) := (b, lengthOf? a, Fren.Core.Comparison.ofOp? op) | return
-    let (fires, empty) := Fren.Core.lengthZero c d.toNat!
+    let (fires, empty) := Fren.Core.lengthZero c d
     unless fires do return
     -- Only its type: what elaborating it reports is reported where it is.
     let saved ← get
@@ -870,7 +870,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
                  notes := #["note: `if c then a else b` is `a` or `b`, so both must have the same type"] }
     return (s!"(ite {c} {x} {y})", tx)
   | .neg _ a => return (s!"(- {← expect a .int (opNote "-" .int)})", .int)
-  | .num _ d => return (d, .int)
+  | .num _ v => return (toString v, .int)
   | .set span elems =>
     if elems.isEmpty then
       let some t := expected? | err span Fren.Core.emptySetTypeMsg
@@ -1153,7 +1153,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     | .variant en idx =>
       let d := st.dataOf? en.path
       let n := (d.bind (·.ctors[idx]?)).map (·.2.size) |>.getD 0
-      if n > 0 then err e.span (Fren.Core.unappliedVariantMsg (en.path ++ en.variants[idx]!) n)
+      if let some msg := Fren.Core.variantMentionMsg? (en.path ++ en.variants[idx]!) n false then err e.span msg
       return (ctorSym en.path en.variants[idx]!, .enum en.path)
     | .item { kind := .constItem, path, .. } =>
       let some c := st.consts.find? path | internal e.span s!"unknown constant `{path}`"
@@ -1174,7 +1174,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let v := en.variants[idx]!
         let some d := (← get).dataOf? en.path | internal fnSpan s!"unknown enum `{en.path}`"
         let tys := d.ctors[idx]!.2.map (·.2)
-        if tys.isEmpty then err span (Fren.Core.noPayloadMsg (en.path ++ v))
+        if let some msg := Fren.Core.variantMentionMsg? (en.path ++ v) tys.size true then err span msg
         unless args.size == tys.size do err span (Fren.Core.arityMsg (en.path ++ v) tys.size args.size "value")
         let mut smts := #[]
         for a in args, t in tys, k in [0:args.size] do
@@ -1256,10 +1256,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
           if en.path != ep then err pspan (Fren.Core.notAVariantOfMsg ep s!"a variant of `{showPath en.path}`")
           let v := ep ++ en.variants[idx]!
           let n := d.ctors[idx]!.2.size
+          if let some msg := Fren.Core.variantMentionMsg? v n binders?.isSome then err pspan msg
           match binders? with
-          | none => if n > 0 then err pspan (Fren.Core.unappliedVariantMsg v n)
+          | none => pure ()
           | some bs =>
-            if n == 0 then err pspan (Fren.Core.noPayloadMsg v)
             unless bs.size == n do err pspan (Fren.Core.arityMsg v n bs.size "binder")
             if p.alts.size > 1 then
               if let some b := bs.find? (·.name != "_") then err b.span (Fren.Core.orBinderMsg (Name.mkSimple b.name))

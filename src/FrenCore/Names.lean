@@ -707,6 +707,17 @@ def noPayloadMsg (n : Name) : Msg :=
   { code? := some "F0308", headline := s!"variant `{showPath n}` has no payload", label? := some "no payload"
     notes := #[s!"help: write it without parentheses: `{showPath n}`"] }
 
+/-- Whether a variant whose payload has `payload` values is mentioned
+rightly: applied to values exactly when it has a payload
+(`lang::variant_mention`). -/
+def variantMentionAccepted (payload : Nat) (applied : Bool) : Bool := applied == decide (payload > 0)
+
+/-- What is wrong with mentioning the variant `v`, whose payload has
+`payload` values, `applied` or not, if anything. -/
+def variantMentionMsg? (v : Name) (payload : Nat) (applied : Bool) : Option Msg :=
+  if variantMentionAccepted payload applied then none
+  else if applied then some (noPayloadMsg v) else some (unappliedVariantMsg v payload)
+
 /-- Whether a constant is accepted, from whether its type is abstract and
 whether its value applies an uninterpreted function (`lang::constant`). -/
 def constantAccepted (abstract applies : Bool) : Bool := !abstract && !applies

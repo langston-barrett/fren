@@ -84,6 +84,89 @@ where
     else j
   termination_by src.size - j
 
+/-! ## Integer literals -/
+
+/-- `[0-9]`. -/
+def isDecimalDigit (c : Char) : Bool := '0' ≤ c && c ≤ '9'
+
+/-- `[0-9a-fA-F]`. -/
+def isHexDigit (c : Char) : Bool := isDecimalDigit c || ('a' ≤ c && c ≤ 'f') || ('A' ≤ c && c ≤ 'F')
+
+/-- `[01]`. -/
+def isBinaryDigit (c : Char) : Bool := '0' ≤ c && c ≤ '1'
+
+/-- `[0-7]`. -/
+def isOctalDigit (c : Char) : Bool := '0' ≤ c && c ≤ '7'
+
+/-- The digits of the base that the character after a leading `0` gives,
+as in `0x1F`, `0b101` or `0o17`, if it gives one. -/
+def baseDigit? : Char → Option (Char → Bool)
+  | 'x' | 'X' => some isHexDigit
+  | 'b' | 'B' => some isBinaryDigit
+  | 'o' | 'O' => some isOctalDigit
+  | _ => none
+
+/-- Digits, which `_`s may separate or lead, ending in a digit: what follows
+the first digit of a decimal literal, or the base of another. -/
+def digitsEndingInDigit (digit : Char → Bool) (cs : List Char) : Bool :=
+  match cs.getLast? with
+  | some c => digit c && cs.dropLast.all fun d => digit d || d == '_'
+  | none => false
+
+/-- Whether `s` is an integer literal, as Lean reads and decodes one: decimal
+digits, or `0x`, `0b` or `0o` and the digits of that base, with `_`s between
+the digits (`lang::integer_literal`). Lean reads `0_1` but cannot decode it,
+so it is not one. -/
+def integerLiteral (s : String) : Bool :=
+  match s.toList with
+  | c :: t =>
+    (isDecimalDigit c && (t.isEmpty || digitsEndingInDigit isDecimalDigit t) && !(c == '0' && t.head? == some '_'))
+      || (c == '0' && match t with
+        | b :: ds =>
+          ((b == 'x' || b == 'X') && digitsEndingInDigit isHexDigit ds)
+            || ((b == 'b' || b == 'B') && digitsEndingInDigit isBinaryDigit ds)
+            || ((b == 'o' || b == 'O') && digitsEndingInDigit isOctalDigit ds)
+        | [] => false)
+  | [] => false
+
+/-- Where Lean's lexer ends the integer literal that starts at `i`, a digit:
+after a base, the digits of that base and `_`s, and otherwise decimal digits
+and `_`s. What it reads may not be well formed, as `0x` or `1_` are not. -/
+def integerEnd (src : Array Char) (i : Nat) : Nat :=
+  let based? := if src[i]? == some '0' then (src[i + 1]?).bind baseDigit? else none
+  match based? with
+  | some digit => run digit (i + 2)
+  | none => run isDecimalDigit i
+where
+  /-- The end of the run of `digit`s and `_`s from `j`. -/
+  run (digit : Char → Bool) (j : Nat) : Nat :=
+    if h : j < src.size then if digit src[j] || src[j] == '_' then run digit (j + 1) else j else j
+  termination_by src.size - j
+
+/-- The value of an integer literal, as Lean decodes it: `none` for what
+Lean cannot decode. Every lexeme that `integerLiteral` accepts should
+decode, but nothing proves it (#14), so both front ends check this too, as
+a guard. -/
+def integerValue? (s : String) : Option Nat := Lean.Syntax.decodeNatLitVal? s
+
+/-- A number that Lean's lexer reads, but that is not an integer literal. -/
+def malformedIntegerMsg (s : String) : Msg :=
+  { code? := some "F0120", headline := s!"`{s}` is not an integer literal", label? := some "malformed number"
+    notes := #["note: an integer literal is decimal digits, or `0x`, `0b` or `0o` and the digits of that base, \
+      with `_`s between the digits or after the base, and ends in a digit; a decimal literal does not start \
+      with `0_`"]
+      ++ match s.toList with
+        | ['0', b] => if (baseDigit? b).isSome then #[s!"help: `{s}` must be followed by a digit of its base"] else #[]
+        | _ => #[]
+    -- `0_1` without the `_`s after its `0`, as `01`, which Lean decodes.
+    fixes := match s.toList with
+      | '0' :: '_' :: rest =>
+        -- Only with digits left, or the `0` could join what follows, as in `0_xFF`.
+        let digits := rest.dropWhile (· == '_')
+        let fixed := String.ofList ('0' :: digits)
+        if !digits.isEmpty && integerLiteral fixed then #[{ msg := s!"write `{fixed}`", replacement := fixed }] else #[]
+      | _ => #[] }
+
 /-- An identifier that Lean reads, but that is not one of Fren's. -/
 def leanIdentifierMsg (s : String) (beforeEq := false) : Msg :=
   -- An unclosed `«` runs to the end of the input: name only its first line.

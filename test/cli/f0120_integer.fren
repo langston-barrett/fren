@@ -1,0 +1,2 @@
+-- A number that ends in `_`, which is not an integer literal (F0120).
+const BIG: Int := 1_

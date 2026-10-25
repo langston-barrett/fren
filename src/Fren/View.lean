@@ -61,7 +61,7 @@ def checkAndReport (paths : Array Name) : CommandElabM Unit := do
   | .error => logError (Core.summary all)
 
 @[command_elab Lang.checkCmd] def elabCheck : CommandElab := fun stx => do
-  checkIdentifiers stx
+  checkLexemes stx
   if stx[1].isNone then
     let l ← getLocal
     checkAndReport (l.comps ++ l.globals ++ l.refinements)
