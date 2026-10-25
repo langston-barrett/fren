@@ -150,6 +150,10 @@ These declarations may shadow:
   variables (or, in a function's body, the parameters), instances, global
   expectation binders and binders of enclosing arms in scope.
 
+The built-in functions, the [cardinality
+operators](Expressions.md#cardinality), are in every scope, so each of
+these may shadow them.
+
 Other items, such as components, enumerations and modules, are never named
 where a variable can be, so nothing shadows them. Nor do items,
 constraints, fields and variants shadow, so their names never take `!`.

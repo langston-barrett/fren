@@ -194,8 +194,9 @@ mentions is decided from its parts, as `lang::mentions` states:
 - Every other expression mentions what its parts mention: an operator,
   `when` and `unless`, a conditional, a `match` (its scrutinee and the
   bodies of its arms), a [pattern test](#pattern-tests) (its scrutinee),
-  indexing `q[i]`, a field read from an expression that is not a name,
-  such as `R { a := x }.a`, and a literal of a set, pair or sequence.
+  a [cardinality operator](#cardinality) (its arguments), indexing
+  `q[i]`, a field read from an expression that is not a name, such as
+  `R { a := x }.a`, and a literal of a set, pair or sequence.
 
 ```fren
 -- The kinds of expression, for what one mentions. `Literal` is a literal;
@@ -204,9 +205,9 @@ mentions is decided from its parts, as `lang::mentions` states:
 -- field read from one; `Construction` is a variant with a payload, a
 -- record literal or a record update; `Uninterpreted` and `Defined` are
 -- applications of uninterpreted and defined functions; `Compound` is an
--- operator, `when` or `unless`, a conditional, a `match`, a pattern test,
--- indexing, a field read from an expression that is not a name, or a
--- literal of a set, pair or sequence.
+-- operator, `when` or `unless`, a conditional, a `match`, a pattern test, a
+-- cardinality operator, indexing, a field read from an expression that is
+-- not a name, or a literal of a set, pair or sequence.
 pub enum ExprKind {
     Literal, Constant, Variable, DefinedOutput, Binder, Construction, Method, Uninterpreted, Defined, Compound,
 }
@@ -488,6 +489,117 @@ pub comp argument {
     expect defined_any: when defined?, accepted?
 }
 ```
+
+## Cardinality
+
+`exactly_one?(e1, ..., en)` holds when exactly one of its arguments is
+`true`, and `at_most_one?(e1, ..., en)` when at most one is. These are the
+*cardinality operators*: built-in functions of one or more `Bool`
+arguments, whose result is a `Bool`. "Exactly one mode is active" is
+`exactly_one?(heating?, cooling?, idle?)`, where writing out
+`at_most_one?` would take a conjunct for each pair of arguments, which is
+quadratic and easy to get wrong by missing a pair. "At least one" is `or`.
+An argument is any `Bool` expression, such as `x > 0` or another
+cardinality operator, and may be written more than once:
+`at_most_one?(a?, a?)` is `not a?`.
+
+Each counts its arguments that are `true`, as the sum of `if e then 1 else
+0` over them, and compares the count with 1: `exactly_one?` is the sum
+`= 1`, and `at_most_one?` the sum `<= 1`. Both front ends translate them
+so, which is linear integer arithmetic and keeps them in the [decidable
+core](Decidability.md#integers). `lang::cardinality` states their value,
+from how many of their arguments are `true`:
+
+```fren
+pub enum Cardinality { ExactlyOne, AtMostOne }
+
+pub comp cardinality {
+    use self::Cardinality::{AtMostOne, ExactlyOne}
+    in op: Cardinality
+    in n_args: Nat           -- how many arguments it has
+    in n_true: Nat           -- how many of them are `true`
+    pub det out value?
+
+    assume some_argument: n_args >= 1
+    assume counted: n_true <= n_args
+
+    req rule: value? iff match op {
+        ExactlyOne => n_true = 1,
+        AtMostOne => n_true <= 1,
+    }
+
+    expect exactly_is_at_most: when op = ExactlyOne and value?, n_true <= 1
+    expect one_argument: when n_args = 1 and op = AtMostOne, value?
+    expect none_true: when n_true = 0, value? iff op = AtMostOne
+}
+```
+
+`lang::cardinality_laws` states their laws, over `Bool`s: of one
+argument, `at_most_one?` is `true` and `exactly_one?` is the argument; of
+two, `exactly_one?` is `!=`; `exactly_one?` implies `at_most_one?`; and
+`at_most_one?` is the conjunction over each pair:
+
+```fren
+pub comp cardinality_laws {
+    in a?
+    in b?
+    in c?
+
+    expect at_most_one_single: at_most_one?(a?)
+    expect exactly_one_single: exactly_one?(a?) = a?
+    expect exactly_one_pair: exactly_one?(a?, b?) = (a? != b?)
+    expect at_most_one_pair: at_most_one?(a?, b?) iff not (a? and b?)
+    expect exactly_implies_at_most: when exactly_one?(a?, b?, c?), at_most_one?(a?, b?, c?)
+    expect exactly_is_some: exactly_one?(a?, b?, c?) iff ((a? or b? or c?) and at_most_one?(a?, b?, c?))
+    expect pairwise: at_most_one?(a?, b?, c?) iff (not (a? and b?) and not (a? and c?) and not (b? and c?))
+    expect unordered: exactly_one?(a?, b?, c?) = exactly_one?(c?, a?, b?)
+    expect repeated: at_most_one?(a?, a?) iff not a?
+}
+```
+
+A cardinality operator has at least one argument, as any application
+does, and each argument must be a `Bool`: the arguments are typed as a
+function's whose parameters are all `Bool`s. `lang::cardinality_args`
+states this, from how many arguments it has and how many of them are
+`Bool`s:
+
+```fren
+pub comp cardinality_args {
+    in n_args: Nat           -- how many arguments it has
+    in n_bool: Nat           -- how many of them are `Bool`s
+    pub det out accepted?
+
+    assume counted: n_bool <= n_args
+
+    req rule: accepted? iff (n_args >= 1 and n_bool = n_args)
+
+    expect needs_one: when n_args = 0, not accepted?
+    expect only_bools: when n_bool < n_args, not accepted?
+}
+```
+
+So `exactly_one?()` is an error, which both front ends report alike, and
+so is `exactly_one?(1)`: a message about an argument that is not a `Bool`
+says which argument it is. `{}` and `[]` are never `Bool`s, so as
+arguments they are reported as arguments of the wrong type, not as
+literals whose type cannot be known.
+
+Like a method, a cardinality operator has a fixed meaning, so it mentions
+what its arguments mention (see [Mentions](#mentions)), and it is not an
+application of an uninterpreted function for the rules of constants and of
+defined functions: `const ONE_ACTIVE: Bool := exactly_one?(true, false)` is
+a constant, and a defined function's body may apply one. Nor does the rule
+that an uninterpreted function's arguments mention no output apply to its
+arguments. Its arguments are all evaluated, as a function's are: unlike
+the operands of `and` and `or`, none of them [guards](#sequences) another.
+
+Their names are reserved: they are not items, so they are never imported,
+and no [function](Items.md#functions) may be declared with either name.
+`exactly_one?` alone, without arguments, is an error, as a function that
+is not applied is, and so is a path such as `self::exactly_one?`, which
+names no item. A variable, parameter or binder may
+[shadow](Components.md#shadowing) them, written with `!` as for any other
+function, and is then a variable, which cannot be applied.
 
 ## Records
 

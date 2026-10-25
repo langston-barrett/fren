@@ -149,6 +149,10 @@ scoped syntax:max &"false" : fren_expr
 scoped syntax:max fren_path : fren_expr
 /-- `f(a, b)`, a function application. -/
 scoped syntax:max (name := appExpr) fren_path noWs "(" sepBy1(fren_expr, ", ") ")" : fren_expr
+/-- `exactly_one?()` or `at_most_one?()`, a cardinality operator without
+arguments, which parses so that the elaborator reports it, as the `fren`
+command does. -/
+scoped syntax:max (name := noArgsCardinalityExpr) (&"exactly_one?" <|> &"at_most_one?") noWs "(" ")" : fren_expr
 scoped syntax:max "(" fren_expr ")" : fren_expr
 /-- `[a, b]`, a sequence literal; `[]` is the empty sequence. -/
 scoped syntax:max (name := seqExpr) "[" sepBy(fren_expr, ", ", ", ", allowTrailingSep) "]" : fren_expr

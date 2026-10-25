@@ -825,6 +825,15 @@ def methodApp? (cx : ExprCtx) (e : Syntax) : Option (Name × Name) := do
     || cx.vars.any (·.name.getRoot == n.getRoot)))
   return (n.getPrefix, Name.mkSimple n.getString!)
 
+/-- For `c(a, b)`, an application of a cardinality operator
+(`Reqs/Lang/Expressions#cardinality`), the operator. A variable named like
+it shadows it, which applying the variable reports. -/
+def cardinalityApp? (e : Syntax) : Option Core.Cardinality := do
+  guard (e.isOfKind ``Lang.appExpr)
+  let segs := pathSegs e[0]
+  guard (segs.size == 1)
+  Core.builtinFunction? segs[0]!.getId
+
 /-- The shape of `e`, for what it mentions (`lang::mentions`), where `bs`
 are the binders of `e` around the subexpression, each with the shape of its
 scrutinee. -/
@@ -833,6 +842,8 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
     return .node k (← es.toList.mapM (shapeOf cx · bs))
   if let some (recv, _) := methodApp? cx e then
     return ← parts .method (#[(← pathExpr e recv)[0]] ++ e[2].getSepArgs)
+  -- A cardinality operator has a fixed meaning, as an operator does.
+  if (cardinalityApp? e).isSome then return ← parts .compound e[2].getSepArgs
   if e.isOfKind ``Lang.appExpr then
     let k : Core.MentionKind ← if ← isVariant cx e[0] then pure .construction
       else if (← definedFn? cx e[0]).isSome then pure .defined else pure .uninterpreted
@@ -872,7 +883,7 @@ def mentionsAny (cx : ExprCtx) (e : Syntax) : TermElabM Bool := return (← shap
 /-- The applications of uninterpreted functions in `e`. -/
 partial def applications (cx : ExprCtx) (e : Syntax) : TermElabM (Array Syntax) := do
   let inner ← e.getArgs.foldlM (init := #[]) fun acc a => return acc ++ (← applications cx a)
-  if e.isOfKind ``Lang.appExpr && (methodApp? cx e).isNone then
+  if e.isOfKind ``Lang.appExpr && (methodApp? cx e).isNone && (cardinalityApp? e).isNone then
     if !(← isVariant cx e[0]) && (← definedFn? cx e[0]).isNone then return #[e] ++ inner
   return inner
 
@@ -2155,6 +2166,7 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
       return (← fields.zipIdx.foldlM (init := base) fun (t, ty) (f, j) =>
         readPathField cx id parts (first + j) t ty f).1
     unless n.isAtomic do throwErrorAt segs[0] (Core.dottedNameMsg n cx.insts (cx.vars.filter (·.role != .instHidden) |>.map (·.name))).text
+    if let some c := Core.builtinFunction? n then throwError (Core.unappliedMsg (.mkSimple c.name)).text
   match ← resolvePath cx.modName segs cx.shadowing with
   | .variant en idx =>
     let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
@@ -2171,6 +2183,29 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
   | .item { kind := .fnItem, path, .. } => throwError (Core.unappliedMsg path).text
   | r => throwError (Core.notAValueMsg r).text
 
+/-- `c(args)`, a cardinality operator applied, where `toTerm` translates
+the arguments: the number of them that are `true`, compared with 1, as a
+linear sum (`lang::cardinality`). -/
+def cardinalityTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (c : Core.Cardinality)
+    (args : Array Syntax) : TermElabM Term := do
+  let mut ites : Array Term := #[]
+  for a in args, k in [0:args.size] do
+    -- A `Bool` gives `{}` no type, so `{}` is reported as one whose type
+    -- cannot be known, as the `fren` command reports it.
+    -- `{}` and `[]` are never `Bool`s, in parentheses or not.
+    let lit := unparen a
+    if (lit.isOfKind ``Lang.setExpr || lit.isOfKind ``Lang.seqExpr) && lit[1].getSepArgs.isEmpty then
+      throwErrorAt lit (Core.cardinalityArgMsg c (k + 1) (if lit.isOfKind ``Lang.setExpr then "{}" else "[]")).text
+    let t ← toTerm { cx with emptyOk := false, natOk := false } a
+    let ty ← typeOf t
+    unless ty.isConstOf ``Bool || ty.isProp do throwErrorAt a (Core.cardinalityArgMsg c (k + 1) (← typeName ty)).text
+    ites := ites.push (← `(if $t then (1 : Int) else 0))
+  let mut sum := ites[0]!
+  for i in ites.extract 1 ites.size do sum ← `($sum + $i)
+  match c with
+  | .exactlyOne => `($sum = 1)
+  | .atMostOne => `($sum ≤ 1)
+
 open Lang in
 /-- `p(args)`: a method, a variant with a payload, or a function applied.
 `toTerm` translates its parts, and `parent?` is the expression around it. -/
@@ -2185,6 +2220,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     throwErrorAt p (Core.varNotAFunctionMsg segs[0]!.getId).text
   if segs.size == 1 && cx.selfFn == some segs[0]!.getId then
     throwErrorAt p (Core.recursiveMsg (cx.modName ++ segs[0]!.getId)).text
+  if let some c := cardinalityApp? e then return ← cardinalityTerm toTerm cx c args.getElems
   -- A variable shadows a function, as it does any other item.
   let r ← resolvePath cx.modName (pathSegs p) cx.shadowing
   if let .variant en idx := r then
@@ -2298,6 +2334,16 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
   else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm { cx with emptyOk, natOk } e (parent?.bind (operandSlot · e))
   else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
   else if e.isOfKind ``Lang.updateExpr then updateTerm toTerm cx e
+  else if e.isOfKind ``Lang.noArgsCardinalityExpr then
+    -- The operator's name, a non-reserved token, perhaps under the node of
+    -- its alternatives.
+    let leaf := if e[0].isAtom || e[0].isIdent then e[0] else e[0][0]
+    let n := if leaf.isIdent then leaf.getId.toString else leaf.getAtomVal.trimAscii.toString
+    let some c := Core.Cardinality.ofName? n | throwError "internal error: no cardinality operator `{n}`"
+    -- A variable that shadows it is reported first, as for any application.
+    if cx.vars.any (·.name == Name.mkSimple n) || (cx.binder? (Name.mkSimple n)).isSome then
+      throwErrorAt e[0] (Core.varNotAFunctionMsg (Name.mkSimple n)).text
+    throwError (Core.cardinalityNoArgsMsg c).text
   else throwError "unsupported Fren expression"
 
 open Lang in
@@ -2437,6 +2483,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   let nameStx := stx[2]
   let n ← segName nameStx
   liftMsg nameStx (Core.checkNoBang n)
+  liftMsg nameStx (Core.checkFnName n)
   checkFresh modName n nameStx
   lintName .function n nameStx
   startDeclared

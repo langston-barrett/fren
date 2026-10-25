@@ -424,6 +424,23 @@ impl function_params: lang::function_params for (d : Bool) (p n : Nat) {
   intro d p n _
   cases d <;> simp [fren_spec, Fren.Core.functionParamsAccepted] <;> omega
 
+def toCardinality : Fren.Core.Cardinality → lang.Cardinality
+  | .exactlyOne => .ExactlyOne
+  | .atMostOne => .AtMostOne
+
+-- For every operator and number of arguments that are `true`: the value that
+-- the evaluator gives it. That both front ends' translations, a sum compared
+-- with 1, agree with it is not proved here, but confirmed on the solver's
+-- models and tested by both on the same ui tests.
+impl cardinality: lang::cardinality for (c : Fren.Core.Cardinality) (n k : Nat) {
+  op := toCardinality c,
+  n_args := n,
+  n_true := k,
+  value? := c.holds k,
+} by
+  intro c n k _
+  cases c <;> simp [fren_spec, toCardinality, Fren.Core.Cardinality.holds] <;> omega
+
 -- For every chained comparison, by the counts of its operators' kinds that
 -- `Fren.Core.checkChain`, which both front ends call, takes.
 impl comparison_chain: lang::comparison_chain for (a d o : Nat) {

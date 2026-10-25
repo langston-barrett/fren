@@ -263,6 +263,11 @@ order they are written, so the parameters come before the result:
 A function written with `:= e` is *defined*, and any other is
 *uninterpreted*.
 
+`exactly_one?` and `at_most_one?` are built-in functions, the
+[cardinality operators](Expressions.md#cardinality), and no function may
+be declared with either name, just as no type may be declared with the
+name of a built-in type: `fn exactly_one?(n: Int) := n = 1` is an error.
+
 ### Defined functions
 
 `fn double(n: Int): Int := 2 * n` declares the function `double`, whose

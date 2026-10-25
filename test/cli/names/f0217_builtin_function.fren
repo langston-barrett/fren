@@ -1,0 +1,2 @@
+-- A variable that shadows a built-in function without `!`.
+comp c { in exactly_one? pub out o? := exactly_one? }

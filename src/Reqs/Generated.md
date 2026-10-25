@@ -129,7 +129,12 @@ divides by a numeral, as its linear logics require. The methods of `Int` are con
 `x.max(y)` is `if x ≥ y then x else y`. A
 [chained comparison](Lang/Expressions.md#chained-comparisons), which Lean
 does not have, is the conjunction of its comparisons: `a < b <= c` is
-`a < b ∧ b ≤ c`, with the same term for `b` in both.
+`a < b ∧ b ≤ c`, with the same term for `b` in both. A [cardinality
+operator](Lang/Expressions.md#cardinality) is the sum of a conditional for
+each argument, compared with 1: `exactly_one?(a?, b?)` is `((if a? = true
+then 1 else 0) + if b? = true then 1 else 0) = 1`, of type `Int`, and
+`at_most_one?` compares with `≤`, with no definition of its own for the
+solver to unfold.
 
 A component *uses* the abstract types and uninterpreted functions that its
 variables' types, its constraints and its bindings mention, those that its

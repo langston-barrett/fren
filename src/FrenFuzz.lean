@@ -218,6 +218,11 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
   | 2 => return s!"not ({← genBool sc (depth - 1)})"
   | 3 => return s!"({← genBool sc (depth - 1)} iff {← genBool sc (depth - 1)})"
   | 4 => return s!"(if {← genBool sc (depth - 1)} then {← genBool sc (depth - 1)} else {← genBool sc (depth - 1)})"
+  | 5 =>
+    -- A cardinality operator, of one to three arguments.
+    let mut args := #[← genBool sc (depth - 1)]
+    for _ in [0:← below 3] do args := args.push (← genBool sc (depth - 1))
+    return s!"{← pick #["exactly_one?", "at_most_one?"]}({", ".intercalate args.toList})"
   | _ => atom
 
 /-- A constraint, often with a trigger. -/
@@ -355,6 +360,8 @@ def subsets (xs : Array Val) : Array Val :=
 partial def domain (sp : Spec) (size : Nat) : VTy → Array Val
   | .bool => #[.bool false, .bool true]
   | .int => #[.int 0, .int 1, .int 2]
+  -- The generator emits no `Nat`s, but a `Nat` is an `Int` of at least 0.
+  | .nat => #[.int 0, .int 1, .int 2]
   -- The generator emits no strings.
   | .string => #[]
   | .set t => subsets (domain sp size t)

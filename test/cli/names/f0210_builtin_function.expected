@@ -1,0 +1,12 @@
+error[F0210]: function `at_most_one?` must be applied to arguments
+ --> test/cli/names/f0210_builtin_function.fren:2:26
+  |
+2 | comp c { in a? expect e: at_most_one? }
+  |                          ^^^^^^^^^^^^ not applied
+  |
+  = note: a function is mentioned only by applying it, as in `f(x)`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0210`.
+exit=2

@@ -1,0 +1,2 @@
+-- A function named like a built-in one (F0365).
+fn at_most_one?(Int)

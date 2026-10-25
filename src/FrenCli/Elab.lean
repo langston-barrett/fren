@@ -731,6 +731,11 @@ def isVariant (cx : ExprCtx) (segs : Array Ident) : M Bool := do
   let st ← get
   return st.table.resolvePath st.scope (segNames segs) cx.shadowing matches .ok (.variant ..)
 
+/-- Whether `segs`, applied, applies a cardinality operator
+(`Reqs/Lang/Expressions#cardinality`). -/
+def isCardinality (segs : Array Ident) : Bool :=
+  segs.size == 1 && (Fren.Core.builtinFunction? (identName segs[0]!.name)).isSome
+
 /-- Whether `segs`, applied, applies a defined function. -/
 def isDefined (cx : ExprCtx) (segs : Array Ident) : M Bool := do
   let st ← get
@@ -760,7 +765,9 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
   | .set _ es | .seq _ es | .chain _ es _ => parts .compound es.toList
   | .ite _ c a b => parts .compound [c, a, b]
   | .app _ segs args =>
-    let k : Fren.Core.MentionKind ← if ← isVariant cx segs then pure .construction
+    -- A cardinality operator has a fixed meaning, as an operator does.
+    let k : Fren.Core.MentionKind ← if isCardinality segs then pure .compound
+      else if ← isVariant cx segs then pure .construction
       else if ← isDefined cx segs then pure .defined else pure .uninterpreted
     parts k args.toList
   | .record _ _ fs => parts .construction (fs.toList.map fun (f, e?) => e?.getD (.path f.span #[f]))
@@ -1982,6 +1989,9 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
           readField fspan smt t f
       if !n.isAtomic then
         err span (Fren.Core.dottedNameMsg n cx.insts (cx.vars.filter (·.role != .instHidden) |>.map (·.name)))
+    if segs.size == 1 then
+      if let some c := Fren.Core.builtinFunction? (identName segs[0]!.name) then
+        err e.span (Fren.Core.unappliedMsg (.mkSimple c.name))
     match ← resolve segs cx.shadowing with
     | .variant en idx =>
       let d := (← get).dataOf? en.path
@@ -2001,6 +2011,21 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       err fnSpan (Fren.Core.varNotAFunctionMsg (identName segs[0]!.name))
     if segs.size == 1 && cx.selfFn == some (Name.mkSimple segs[0]!.name) then
       err fnSpan (Fren.Core.recursiveMsg ((← get).module ++ Name.mkSimple segs[0]!.name))
+    if segs.size == 1 then
+      if let some c := Fren.Core.builtinFunction? (identName segs[0]!.name) then
+        -- The number of its arguments that are `true`, compared with 1: a
+        -- linear sum (`lang::cardinality`).
+        if args.isEmpty then err span (Fren.Core.cardinalityNoArgsMsg c)
+        let mut ites := #[]
+        for a in args, k in [0:args.size] do
+          -- `{}` and `[]` are never `Bool`s.
+          if a matches .set _ #[] | .seq _ #[] then
+            err a.span (Fren.Core.cardinalityArgMsg c (k + 1) (if a matches .set .. then "{}" else "[]"))
+          let (x, ta) ← elabExpr { cx with expected? := some .bool } a
+          unless ta == .bool do err a.span (Fren.Core.cardinalityArgMsg c (k + 1) ta.show)
+          ites := ites.push s!"(ite {x} 1 0)"
+        let count := if ites.size == 1 then ites[0]! else s!"(+ {" ".intercalate ites.toList})"
+        return (s!"({c.smtOp} {count} 1)", .bool)
     -- A variable shadows a function, as it does any other item.
     let path ← match ← resolve segs cx.shadowing with
       | .item { kind := .fnItem, path, .. } => pure path
@@ -2925,6 +2950,7 @@ partial def elabItem (item : Item) : M Unit := do
   | .function isPub name params result body last => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkNoBang n)
+    liftMsg name.span (Fren.Core.checkFnName n)
     let module := (← get).module
     liftMsg name.span ((← get).table.checkFresh module n)
     lintName .function n name.span

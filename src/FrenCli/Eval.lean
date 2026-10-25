@@ -145,6 +145,9 @@ inductive Ex where
   | index (q i : Ex) (pos : Nat)
   /-- `s.card`. -/
   | card (s : Ex)
+  /-- `exactly_one?(a, b)` or `at_most_one?(a, b)`
+  (`Reqs/Lang/Expressions#cardinality`). -/
+  | cardinality (c : Fren.Core.Cardinality) (args : Array Ex)
   deriving Inhabited
 
 structure Var where
@@ -334,6 +337,15 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
       let x := a.eval I look locals slots
       if x.isSome && x == b.eval I look locals slots then x else none
   | .app f args => do I.fn f (← args.mapM (·.eval I look locals slots))
+  -- Known once the unknown arguments cannot change it: with two `true`,
+  -- whatever the rest are.
+  | .cardinality c args =>
+    let vs := args.map (·.eval I look locals slots)
+    let trues := (vs.filter (· == some (.bool true))).size
+    let unknown := (vs.filter fun v => !(v matches some (.bool _))).size
+    if unknown == 0 || trues ≥ 2 then some (.bool (c.holds trues))
+    else if c == .atMostOne && trues + unknown ≤ 1 then some (.bool true)
+    else none
   | .method m recv args => do
     let r ← recv.eval I look locals slots
     let args ← args.mapM (·.eval I look locals slots)
@@ -457,7 +469,7 @@ partial def Ex.indexGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Ex) 
   | .bin .and a b => go a ++ go b (fun g => wrap (.when false a g))
   | .bin .or a b => go a ++ go b (fun g => wrap (.when true a g))
   | .bin _ a b | .pair a b => go a ++ go b
-  | .app _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (go ·)
+  | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (go ·)
   | .method _ r args => go r ++ args.flatMap (go ·)
   | .matches r _ _ => go r
   | .index q i pos =>
@@ -663,6 +675,7 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .when negated c d => .when negated (c.renameBound f) (d.renameBound f)
   | .ite c a b => .ite (c.renameBound f) (a.renameBound f) (b.renameBound f)
   | .app g args => .app g (args.map (·.renameBound f))
+  | .cardinality c args => .cardinality c (args.map (·.renameBound f))
   | .method m r args => .method m (r.renameBound f) (args.map (·.renameBound f))
   | .matches r p re => .matches (r.renameBound f) p re
   | .setLit es => .setLit (es.map (·.renameBound f))
@@ -690,6 +703,7 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .when negated c d => .when negated (c.renameVars f) (d.renameVars f)
   | .ite c a b => .ite (c.renameVars f) (a.renameVars f) (b.renameVars f)
   | .app g args => .app g (args.map (·.renameVars f))
+  | .cardinality c args => .cardinality c (args.map (·.renameVars f))
   | .method m r args => .method m (r.renameVars f) (args.map (·.renameVars f))
   | .matches r p re => .matches (r.renameVars f) p re
   | .setLit es => .setLit (es.map (·.renameVars f))
@@ -714,6 +728,7 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .when negated c d => .when negated (c.substVars f) (d.substVars f)
   | .ite c a b => .ite (c.substVars f) (a.substVars f) (b.substVars f)
   | .app g args => .app g (args.map (·.substVars f))
+  | .cardinality c args => .cardinality c (args.map (·.substVars f))
   | .method m r args => .method m (r.substVars f) (args.map (·.substVars f))
   | .matches r p re => .matches (r.substVars f) p re
   | .setLit es => .setLit (es.map (·.substVars f))
@@ -761,6 +776,7 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .when negated c d => .when negated (c.subst σ) (d.subst σ)
   | .ite c a b => .ite (c.subst σ) (a.subst σ) (b.subst σ)
   | .app g args => .app g (args.map (·.subst σ))
+  | .cardinality c args => .cardinality c (args.map (·.subst σ))
   | .method m r args => .method m (r.subst σ) (args.map (·.subst σ))
   | .matches r p re => .matches (r.subst σ) p re
   | .setLit es => .setLit (es.map (·.subst σ))
@@ -866,6 +882,10 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     | r => throw s!"`{showPath r.path}` is not a value"
   | .app _ segs args => do
     let args ← args.mapM fun a => (·.1) <$> lowerExpr cx a
+    -- The spec has been checked, so no variable shadows a built-in
+    -- function here.
+    if let some c := (if segs.size == 1 then Fren.Core.builtinFunction? (.mkSimple segs[0]!.name) else none) then
+      return (.cardinality c args, .bool)
     match ← resolve segs with
     | .item { kind := .fnItem, path, .. } =>
       -- A defined function's body, with its parameters standing for the

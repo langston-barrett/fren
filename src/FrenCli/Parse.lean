@@ -532,6 +532,11 @@ partial def atom : P Expr := do
     unless isKw (← peek) "(" do return ← fieldReads callArgs indexArg (.path (start.to segs.back!.span) segs)
     markCall
     discard bump
+    -- A cardinality operator without arguments parses, so that the
+    -- elaborator reports it (`lang::cardinality_args`).
+    if segs.size == 1 && (Fren.Core.Cardinality.ofName? segs[0]!.name).isSome && isKw (← peek) ")" then
+      discard bump
+      return ← fieldReads callArgs indexArg (.app (← spanFrom start) segs #[])
     let mut args := #[← withRecords expr]
     while (← eatKw ",").isSome do args := args.push (← withRecords expr)
     discard (expectKw ")")
