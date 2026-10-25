@@ -200,7 +200,9 @@ def fmtIgnore : List String :=
   ["test/cli/syntax/*.fren", "test/cli/names/f0216_member_option.fren", "test/cli/fix/*.fren", "test/cli/fmt/check.fren",
    "test/cli/fmt/chain_error.fren", "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
    "test/cli/fmt/cover.fren",
-   "test/cli/commands/mutate_unformatted.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren", "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
+   "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
+   "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
+   "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
    -- `#fren_md` in a block, which only the Lean front end reads.
    "src/FrenTest/chapters/LiterateOuter.md", "src/FrenTest/chapters/LiterateReader.md",
    "src/FrenTest/chapters/deep/LiterateDeep.md",

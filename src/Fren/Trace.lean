@@ -33,7 +33,8 @@ register_option fren.testGlobs : String := {
   descr := "space-separated globs of test files that `#fren_trace` scans for `fren-covers:` markers"
 }
 
-@[command_elab Lang.traceCmd] def elabTrace : CommandElab := fun _ => do
+@[command_elab Lang.traceCmd] def elabTrace : CommandElab := fun stx => do
+  lintInvisible stx
   let s ← getState
   let opt := fren.requireEvidence.get (← getOptions)
   let threshold ← if opt.isEmpty then pure Core.Level.missing else

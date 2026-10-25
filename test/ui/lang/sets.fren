@@ -2,6 +2,9 @@
 -- front ends.
 -- fren-covers: lang::finite
 
+-- Expectations about constants test what the language computes.
+set_option fren.lint.assertions_on_constants "allow"
+
 -- A literal with a repeat is tested on purpose.
 set_option fren.lint.duplicate_elements "allow"
 

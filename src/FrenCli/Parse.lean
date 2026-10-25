@@ -185,6 +185,8 @@ structure PState where
   /-- In a `match`'s scrutinee, where `R {` starts the arms rather than a
   record literal. -/
   noRecord : Bool := false
+  /-- Where each item starts, in the source. -/
+  itemStarts : Array Nat := #[]
 
 abbrev P := StateT PState (Except ParseError)
 
@@ -215,6 +217,7 @@ write instead. -/
 def fail (t : Token) (expected : String) (keywords : Array String := #[]) : P α := do
   match t.tok with
   | .kw op@"==" | .kw op@"&&" | .kw op@"||" | .kw op@"|" | .kw op@"=>" => throw { span := t.span, msg := Fren.Core.foreignOpMsg op }
+  | .kw "<-" => throw { span := t.span, msg := Fren.Core.leftArrowMsg }
   | _ => pure ()
   -- At the end of the file, point just after the last token, as rustc does.
   let s ← get
@@ -357,7 +360,7 @@ partial def expr : P Expr := do
     let cond ← iff
     let comma ← peek
     unless isKw comma "," do
-      if comma.tok matches .kw "==" | .kw "&&" | .kw "||" | .kw "|" | .kw "=>" then fail comma "`,`"
+      if comma.tok matches .kw "==" | .kw "&&" | .kw "||" | .kw "|" | .kw "=>" | .kw "<-" then fail comma "`,`"
       let kw := if isWord t "when" then "when" else "unless"
       err comma.span "F0106" s!"expected `,` after the condition of `{kw}`, found {comma.tok.describe}"
         (some "expected `,`") #[s!"note: the condition of `{kw}` ends with a comma"]
@@ -967,6 +970,8 @@ def file : P (Array Item) := do
   let mut items := #[]
   repeat
     if (← peek).tok == .eof then break
+    let start := (← peek).span.start
+    modify fun s => { s with itemStarts := s.itemStarts.push start }
     items := items.push (← item)
   return items
 
@@ -974,6 +979,10 @@ end Parser
 
 def parse (toks : Array Token) : Except ParseError (Array Item) :=
   (Parser.file).run' { toks }
+
+/-- The items of a file, with where each starts in the source. -/
+def parseItems (toks : Array Token) : Except ParseError (Array Item × Array Nat) :=
+  (fun (items, s) => (items, s.itemStarts)) <$> (Parser.file).run { toks }
 
 /-- The layout of a file that parses. -/
 def parseLayout (toks : Array Token) : Except ParseError Layout :=

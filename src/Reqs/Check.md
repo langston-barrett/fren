@@ -598,18 +598,18 @@ check is not part of the [agreement with Lean](Cli.md#agreement-with-lean).
 `check::by_testing` gives how a check is run:
 
 ```fren
-pub enum Run { BySolver, ByTesting, NotRun }
+pub enum Run { BySolver, ByTesting, Skipped }
 
 pub comp by_testing {
     use self::Kind::{Definedness, Redundancy, Vacuity}
-    use self::Run::{BySolver, ByTesting, NotRun}
+    use self::Run::{BySolver, ByTesting, Skipped}
     in kind: Kind
     in tested?             -- the check's evidence is testing
     pub det out run: Run
 
     req solver: unless tested?, run = BySolver
     req testable: when tested? and not kind in {Vacuity, Redundancy, Definedness}, run = ByTesting
-    req untestable: when tested? and kind in {Vacuity, Redundancy, Definedness}, run = NotRun
+    req untestable: when tested? and kind in {Vacuity, Redundancy, Definedness}, run = Skipped
 
     expect never_both: when tested?, run != BySolver
 }

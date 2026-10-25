@@ -1,0 +1,23 @@
+--@ args: fix --check
+-- `fren fix` fixes the expression lints.
+enum Shape { Dot, Circle(Int) }
+
+comp c {
+    in a?
+    in b?
+    in x: Int
+    in s: Shape
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+    pub out t: Shape
+    pub out n: Int
+
+    req r1: p1? iff if a? then b? else not b?
+    req r2: p2? = if a? and b? then not (x > 0 or a?) else (x > 0 or a?)
+    req r3: t = match (s) { Shape::Dot => Shape::Dot, _ => s }
+    req r4: p3? iff x >- 1 and x >=- - 1
+    req r5: n = 2 *- (x + 1)
+    req r6: p4? iff x > 0 and if a? then b? else not b?
+}

@@ -9,6 +9,7 @@ comp bool_no_q { in flag: Bool }  --~ error: `Bool` variable `flag` must end in 
 comp q_not_bool { in n?: Int }    --~ error: `n?` ends in `?` but is not a `Bool`
 comp req_q { in x: Int req r?: x > 0 }  --~ error: constraint names cannot end in `?`
 comp dup { req d: true req d: false }   --~ error: `d` is defined multiple times in this comp
+--~^[hosted] warning: this requirement mentions no variable
 
 enum E { A }
 enum E { B }                      --~ error: the name `E` is already defined in the root module (as an enum)

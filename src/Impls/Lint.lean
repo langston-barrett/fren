@@ -356,6 +356,17 @@ impl length_zero: lint::length_zero for (c : Comparison) (b : Int) (l : Bool) {
   intro c b l _
   cases c <;> cases l <;> simp [fren_spec, toComparison, Fren.Core.lengthZero, Fren.Core.Comparison.mirror]
 
+-- Both front ends decide `absurd_extreme_comparisons` with `absurdComparison`.
+impl absurd_extreme_comparisons: lint::absurd_extreme_comparisons for (c : Comparison) (b : Int) (l : Bool) {
+  op := toComparison c,
+  bound := b,
+  left? := l,
+  fires? := (Fren.Core.absurdComparison c b l).1,
+  value? := (Fren.Core.absurdComparison c b l).2,
+} by
+  intro c b l _
+  cases c <;> cases l <;> simp [fren_spec, toComparison, Fren.Core.absurdComparison, Fren.Core.Comparison.mirror] <;> omega
+
 impl membership_chain: lint::membership_chain for (n : Nat) (same later : Bool) {
   n := n,
   same_left? := same,
@@ -521,6 +532,22 @@ impl eq_op: lint::eq_op for (op : Fren.Core.InfixOp) (same : Bool) {
   intro op same _
   cases op <;> cases same <;> simp [fren_spec, toInfixOp, toEqOpValue, Fren.Core.eqOp]
 
+-- Both front ends decide `eq_op` on `when` and `unless` with
+-- `eqOpConditional`.
+impl eq_op_conditional: lint::eq_op_conditional for (n same : Bool) {
+  unless? := n,
+  same? := same,
+  fires? := (Fren.Core.eqOpConditional n same).isSome,
+  value := toEqOpValue ((Fren.Core.eqOpConditional n same).getD .operand),
+} by
+  intro n same _
+  cases n <;> cases same <;> simp [fren_spec, toEqOpValue, Fren.Core.eqOpConditional]
+
+impl ifs_same_cond: lint::ifs_same_cond for (earlier : Bool) {
+  earlier? := earlier,
+  fires? := Fren.Core.ifsSameCond earlier,
+}
+
 impl same_branches: lint::same_branches for (same : Bool) {
   same? := same,
   fires? := Fren.Core.sameBranches same,
@@ -541,6 +568,49 @@ impl empty_argument: lint::empty_argument for (m : Fren.Core.Method) (i : Nat) (
 } by
   intro m i e _
   cases m <;> cases e <;> simp [fren_spec, toMethod, Fren.Core.emptyArgument] <;> omega
+
+/-! ## Repeated constraints, invisible characters and negative positions -/
+
+instance : Fren.Finite Fren.Core.ConstraintKind := ⟨[.assume, .req, .expect], by intro x; cases x <;> simp⟩
+
+def toConstraintKind : Fren.Core.ConstraintKind → lint.ConstraintKind
+  | .assume => .Assume
+  | .req => .Req
+  | .expect => .Expect
+
+-- Both front ends find the repeats with `repeatedConstraints`, and fix one
+-- where `duplicateConstraint` says.
+impl duplicate_constraint: lint::duplicate_constraint for (e l : Fren.Core.ConstraintKind) (same : Bool) {
+  earlier := toConstraintKind e,
+  later := toConstraintKind l,
+  same? := same,
+  fires? := (Fren.Core.duplicateConstraint e l same).1,
+  fixed? := (Fren.Core.duplicateConstraint e l same).2,
+} by
+  intro e l same _
+  cases e <;> cases l <;> cases same <;> simp [fren_spec, toConstraintKind, Fren.Core.duplicateConstraint] <;> decide
+
+-- Both front ends find the characters with `invisibleFix?`, which reports
+-- those that `invisibleCode` says.
+impl invisible_character: lint::invisible_character for (n : Nat) (c : Bool) {
+  code := n,
+  comment? := c,
+  fires? := Fren.Core.invisibleCode c n,
+} by
+  intro n c _
+  cases c <;> simp [fren_spec, Fren.Core.invisibleCode] <;> omega
+
+-- Both front ends decide an argument with `negativePosition`, and an index
+-- with `negativeLiteral?` alone, as `negativePosition` does for an index.
+impl negative_position: lint::negative_position for (x : Bool) (m : Fren.Core.Method) (i : Nat) (neg : Bool) {
+  index? := x,
+  method := toMethod m,
+  arg := i,
+  negative? := neg,
+  fires? := Fren.Core.negativePosition x m i neg,
+} by
+  intro x m i neg _
+  cases x <;> cases m <;> cases neg <;> simp [fren_spec, toMethod, Fren.Core.negativePosition] <;> omega
 
 /-! ## Operators and methods -/
 
@@ -603,6 +673,48 @@ impl double_comparison: lint::double_comparison for (conj : Bool) (l r : Compari
   result := toComparison ((Fren.Core.doubleComparison conj l r).getD l),
 }
 
+-- Both front ends decide `contradictory_comparisons` with these, in
+-- `opReports`.
+impl contradictory_comparisons: lint::contradictory_comparisons for (conj : Bool) (c1 : Comparison) (a : Int)
+    (c2 : Comparison) (b : Int) {
+  conjunction? := conj,
+  first := toComparison c1,
+  first_bound := a,
+  second := toComparison c2,
+  second_bound := b,
+  fires? := Fren.Core.contradictoryComparisons conj c1 a c2 b,
+} by
+  intro conj c1 a c2 b _
+  cases conj <;> cases c1 <;> cases c2 <;>
+    simp [fren_spec, toComparison, Fren.Core.contradictoryComparisons, Fren.Core.disjointBounds,
+      Fren.Core.Comparison.complement, Fren.Core.Comparison.boundsBelow, Fren.Core.Comparison.boundsAbove,
+      Fren.Core.Comparison.least, Fren.Core.Comparison.greatest] <;> omega
+
+impl contradictory_equalities: lint::contradictory_equalities for (conj : Bool) (c1 c2 : Comparison) (d : Bool) {
+  conjunction? := conj,
+  first := toComparison c1,
+  second := toComparison c2,
+  distinct? := d,
+  fires? := Fren.Core.contradictoryEqualities conj c1 c2 d,
+}
+
+-- Both front ends decide `redundant_comparisons` with `redundantComparisons`.
+impl redundant_comparisons: lint::redundant_comparisons for (conj : Bool) (c1 : Comparison) (a : Int)
+    (c2 : Comparison) (b : Int) {
+  conjunction? := conj,
+  first := toComparison c1,
+  first_bound := a,
+  second := toComparison c2,
+  second_bound := b,
+  fires? := (Fren.Core.redundantComparisons conj c1 a c2 b).1,
+  keep_first? := (Fren.Core.redundantComparisons conj c1 a c2 b).2,
+} by
+  intro conj c1 a c2 b _
+  cases conj <;> cases c1 <;> cases c2 <;>
+    simp [fren_spec, toComparison, Fren.Core.redundantComparisons, Fren.Core.disjointBounds,
+      Fren.Core.Comparison.complement, Fren.Core.Comparison.boundsBelow, Fren.Core.Comparison.boundsAbove,
+      Fren.Core.Comparison.least, Fren.Core.Comparison.greatest] <;> omega
+
 impl bool_equality: lint::bool_equality for (c : Comparison) (b l : Bool) {
   op := toComparison c,
   bools? := b,
@@ -640,6 +752,17 @@ impl identity_op: lint::identity_op for (o : Fren.Core.IdentityOperator) (l r : 
   rewrite := toRewrite (Fren.Core.identityRewrite o l r),
 }
 
+-- Both front ends decide `erasing_op` with `erasingOp`, in `opReports`.
+impl erasing_op: lint::erasing_op for (op : Fren.Core.InfixOp) (l r : Fren.Core.IdentityOperand) (same : Bool) {
+  op := toInfixOp op,
+  left := toIdentityOperand l,
+  right := toIdentityOperand r,
+  same? := same,
+  fires? := Fren.Core.erasingOp op l r same,
+} by
+  intro op l r same _
+  cases op <;> cases l <;> cases r <;> cases same <;> simp [fren_spec, toInfixOp, toIdentityOperand, Fren.Core.erasingOp]
+
 /-! ## Arithmetic and parentheses -/
 
 -- Both front ends decide these with `arithReports`, which asks the pure
@@ -676,6 +799,24 @@ impl double_parens: lint::double_parens for (d : Nat) {
   intro d _
   simp [fren_spec, Fren.Core.doubleParens]
   omega
+
+-- Both front ends decide these with `opReports`, which asks the pure
+-- functions below.
+impl needless_bool_assign: lint::needless_bool_assign for (e t : Bool) {
+  else_negates? := e,
+  then_negates? := t,
+  fires? := (Fren.Core.needlessBoolAssign e t).1,
+  unequal? := (Fren.Core.needlessBoolAssign e t).2,
+} by
+  intro e t _
+  cases e <;> cases t <;> simp [fren_spec, Fren.Core.needlessBoolAssign]
+
+impl suspicious_unary_op_formatting: lint::suspicious_unary_op_formatting for (p a s : Bool) {
+  punctuator? := p,
+  adjacent? := a,
+  spaced? := s,
+  fires? := Fren.Core.suspiciousUnaryOp p a s,
+}
 
 /-! ## Methods, patterns, types and matches -/
 
@@ -752,8 +893,253 @@ impl too_many_lines: lint::too_many_lines for (n : Nat) {
   intro n _
   simp [fren_spec, Fren.Core.tooManyLines] <;> omega
 
+-- Both front ends decide with `needlessMatch`, from what `givesBack` says
+-- of each arm.
+impl needless_match: lint::needless_match for (g w s t : Bool) {
+  given_back? := g,
+  wildcard? := w,
+  scrutinee_back? := s,
+  trivial? := t,
+  fires? := Fren.Core.needlessMatch g w s t,
+} by
+  intro g w s t _
+  cases g <;> cases w <;> cases s <;> cases t <;> simp [fren_spec, Fren.Core.needlessMatch]
+
+-- Both front ends count with `varsMentioned`, as for `constant_output`.
+impl assertions_on_constants: lint::assertions_on_constants for (n : Nat) {
+  n_variables := n,
+  fires? := Fren.Core.assertionOnConstant n,
+} by
+  intro n _
+  simp [fren_spec, Fren.Core.assertionOnConstant]
+
 -- `trivialPattern?` reads the pattern's characters; the spec states the
 -- same with a pattern, which the tests check against it.
 tested lint::trivial_pattern: "test/ui/lints/methods.fren", "test/cli/lints/style/f0744_trivial_pattern.fren"
+
+impl module_inception: lint::module_inception for (n p : String) {
+  name := n,
+  parent := p,
+  fires? := Fren.Core.moduleInception n p,
+} by
+  intro n p _
+  simp [fren_spec, Fren.Core.moduleInception]
+
+impl enum_variant_names: lint::enum_variant_names for (n : Nat) (f l : Bool) {
+  n_variants := n,
+  shared_first? := f,
+  shared_last? := l,
+  fires? := Fren.Core.enumVariantNames n f l,
+} by
+  intro n f l _
+  cases f <;> cases l <;> simp [fren_spec, Fren.Core.enumVariantNames] <;> omega
+
+impl variant_has_enum_name: lint::variant_has_enum_name for (n e : Nat) (c : Bool) {
+  n_words := n,
+  n_enum_words := e,
+  contains? := c,
+  fires? := Fren.Core.variantHasEnumName n e c,
+} by
+  intro n e c _
+  cases c <;> simp [fren_spec, Fren.Core.variantHasEnumName] <;> omega
+
+-- Over strings, as for `trivial_pattern`: the patterns of the rules against
+-- `upperCaseAcronyms`, `justUnderscoresAndDigits` and `disallowedName`.
+tested lint::upper_case_acronyms: "test/ui/lints/names.fren", "test/cli/lints/style/f0750_upper_case_acronyms.fren"
+tested lint::just_underscores_and_digits: "test/ui/lints/names.fren",
+  "test/cli/lints/style/f0751_just_underscores_and_digits.fren"
+tested lint::disallowed_names: "test/ui/lints/names.fren", "test/cli/lints/style/f0752_disallowed_names.fren"
+
+/-! ## Strings, sequences and patterns -/
+
+/-! The meaning of the methods, from `Fren.Str`, at the values that the
+lints of strings rewrite. -/
+
+namespace Str
+open Fren.Str
+
+theorem one_char (t : String) (h : t.length = 1) : ∃ c, t.toList = [c] := by
+  rw [← String.length_toList] at h
+  exact List.length_eq_one_iff.mp h
+
+theorem at_zero (s t : String) (h : len t = 1) : Fren.Str.at s 0 = t ↔ startsWith s t = true := by
+  rw [Fren.Str.startsWith_iff]
+  obtain ⟨c, hc⟩ := one_char t (by simp [len] at h; omega)
+  simp only [Fren.Str.at, slice, String.ext_iff, hc]
+  rcases hs : s.toList with _ | ⟨d, rest⟩
+  · simp [← String.length_toList, hs, eq_comm]
+  · simp [← String.length_toList, hs, eq_comm]
+
+theorem at_last (s t : String) (h : len t = 1) : Fren.Str.at s (len s - 1) = t ↔ endsWith s t = true := by
+  rw [Fren.Str.endsWith_iff]
+  obtain ⟨c, hc⟩ := one_char t (by simp [len] at h; omega)
+  simp only [Fren.Str.at, slice, len, String.ext_iff, hc]
+  rcases List.eq_nil_or_concat s.toList with hs | ⟨l, d, hs⟩
+  · simp [← String.length_toList, hs, eq_comm]
+  · simp [← String.length_toList, hs, eq_comm]
+    rw [if_pos (by omega)]; simp
+
+theorem slice_whole (s : String) : slice s 0 (len s) = s := by
+  simp only [slice, len, String.ext_iff]
+  rcases hs : s.toList with _ | ⟨d, rest⟩
+  · simp [← String.length_toList, hs]
+  · simp [← String.length_toList, hs]
+
+theorem replaceAllAux_self (fuel : Nat) (cs a : List Char) : replaceAllAux fuel cs a a = cs := by
+  induction fuel generalizing cs with
+  | zero => simp [replaceAllAux]
+  | succ fuel ih =>
+    cases cs with
+    | nil => simp [replaceAllAux]
+    | cons c rest =>
+      simp only [replaceAllAux]
+      split
+      · rename_i h
+        rw [ih]
+        obtain ⟨t, ht⟩ := List.isPrefixOf_iff_prefix.mp h
+        rw [← ht]; simp
+      · rw [ih]
+
+theorem replaceAll_self (s a : String) : replaceAll s a a = s := by
+  simp only [replaceAll]
+  split
+  · rfl
+  · rw [replaceAllAux_self]; exact String.ofList_toList
+
+theorem replace_self (s a : String) : replace s a a = s := by
+  simp only [replace]
+  split
+  · rename_i h
+    have : a = "" := by simpa using h
+    subst this; simp
+  · simp only [indexOf]
+    split
+    · split
+      · rename_i k hk
+        have hp := List.find?_some hk
+        simp only [Int.toNat_zero, Nat.zero_add] at hp
+        obtain ⟨t, ht⟩ := List.isPrefixOf_iff_prefix.mp hp
+        rw [if_neg (by omega), String.ext_iff, String.toList_ofList]
+        have hd : s.toList.drop k = a.toList ++ t := ht.symm
+        have : s.toList.drop (k + a.length) = t := by
+          rw [← List.drop_drop, hd, ← String.length_toList]; simp
+        simp only [Int.zero_add, Int.toNat_natCast, this, List.append_assoc, ← hd, List.take_append_drop]
+      · simp
+    · simp
+
+theorem at_zero_empty (s : String) : Fren.Str.at s 0 = "" ↔ s = "" := by
+  simp only [Fren.Str.at, slice, String.ext_iff]
+  rcases hs : s.toList with _ | ⟨d, rest⟩
+  · simp [← String.length_toList, hs]
+  · simp [← String.length_toList, hs]
+
+end Str
+
+impl one_character: lint::one_character for (s t : String) (i : Int) (u : String) {
+  s := s,
+  t := t,
+  i := i,
+  u := u,
+  first? := Fren.Str.at s 0 == t,
+  last? := Fren.Str.at s (Fren.Str.len s - 1) == t,
+  slice? := Fren.Str.slice s i 1 == u,
+} by
+  intro s t i u h
+  simp only [fren_spec] at h
+  simp only [fren_spec, beq_iff_eq]
+  exact ⟨Str.at_zero s t h, Str.at_last s t h, Iff.rfl⟩
+
+impl first_empty: lint::first_empty for (s : String) {
+  s := s,
+  empty? := Fren.Str.at s 0 == "",
+} by
+  intro s _
+  simp [fren_spec, Str.at_zero_empty]
+
+impl redundant_slicing: lint::redundant_slicing for (w : Bool) (s : String) (i n : Int) (u : String) {
+  whole? := w,
+  s := s,
+  i := i,
+  n := n,
+  u := u,
+  fires? := Fren.Core.redundantSlicing w,
+  slice? := Fren.Str.slice s i n == u,
+} by
+  intro w s i n u h
+  simp only [fren_spec] at h
+  cases w <;> simp_all [fren_spec, Fren.Core.redundantSlicing, Str.slice_whole]
+
+impl no_effect_replace: lint::no_effect_replace for (same : Bool) (s a b u : String) {
+  same? := same,
+  s := s,
+  a := a,
+  b := b,
+  u := u,
+  fires? := Fren.Core.noEffectReplace same,
+  replaced? := Fren.Str.replace s a b == u,
+  replaced_all? := Fren.Str.replaceAll s a b == u,
+} by
+  intro same s a b u h
+  simp only [fren_spec] at h
+  cases same <;> simp_all [fren_spec, Fren.Core.noEffectReplace, Str.replace_self, Str.replaceAll_self]
+
+impl const_is_empty: lint::const_is_empty for (c : Comparison) (b : Int) (l set : Bool) (n : Nat) {
+  op := toComparison c,
+  bound := b,
+  left? := l,
+  set? := set,
+  n := n,
+  fires? := (Fren.Core.constIsEmpty c b l set n).1,
+  value? := (Fren.Core.constIsEmpty c b l set n).2,
+} by
+  intro c b l set n _
+  refine ⟨toComparison c, b, l, (Fren.Core.lengthZero c b l).1, (Fren.Core.lengthZero c b l).2, ?_, ?_⟩
+  all_goals cases c <;> cases l <;> cases set <;>
+    simp [fren_spec, toComparison, Fren.Core.constIsEmpty, Fren.Core.lengthZero, Fren.Core.Comparison.mirror,
+      Fren.Core.Comparison.compares]
+  all_goals done
+
+impl const_empty_equation: lint::const_empty_equation for (e : Bool) (n : Nat) {
+  equal? := e,
+  n := n,
+  fires? := (Fren.Core.constEmptyEquation e n).1,
+  value? := (Fren.Core.constEmptyEquation e n).2,
+} by
+  intro e n _
+  cases e <;> simp [fren_spec, Fren.Core.constEmptyEquation] <;> omega
+
+impl manual_pattern_char_comparison: lint::manual_pattern_char_comparison for (n : Nat) (single : Bool) {
+  n_alternatives := n,
+  single? := single,
+  fires? := Fren.Core.manualPatternCharComparison n single,
+} by
+  intro n single _
+  cases single <;> simp [fren_spec, Fren.Core.manualPatternCharComparison] <;> omega
+
+-- For every character, written as a string of one.
+impl class_char: lint::class_char for (c : Char) {
+  c := c.toString,
+  escaped? := Fren.Core.classCharText c != c.toString,
+} by
+  intro c _
+  have inj (d : Char) : String.singleton c = String.singleton d ↔ c = d :=
+    ⟨fun h => by simpa using congrArg String.toList h, fun h => h ▸ rfl⟩
+  have ne : "\\".push c ≠ String.singleton c := fun h => by simpa using congrArg String.length h
+  simp only [fren_spec, Fren.Core.classCharText]
+  have lits : (String.singleton c = "\\" ↔ c = '\\') ∧ (String.singleton c = "]" ↔ c = ']') ∧
+      (String.singleton c = "^" ↔ c = '^') ∧ (String.singleton c = "-" ↔ c = '-') :=
+    ⟨inj '\\', inj ']', inj '^', inj '-'⟩
+  by_cases h : c = '\\' ∨ c = ']' ∨ c = '^' ∨ c = '-' <;>
+    simp_all [Fren.Str.lit, lits.1, lits.2.1, lits.2.2.1, lits.2.2.2]
+
+impl almost_complete_range: lint::almost_complete_range for (lo hi : Int) {
+  low := lo,
+  high := hi,
+  fires? := (Fren.Core.almostCompleteRange lo hi).1,
+  whole_low := (Fren.Core.almostCompleteRange lo hi).2.1,
+  whole_high := (Fren.Core.almostCompleteRange lo hi).2.2,
+} by
+  intro lo hi _
+  simp [fren_spec, Fren.Core.almostCompleteRange, or_assoc]
 
 end Fren.Impls

@@ -1,0 +1,4 @@
+-- `enum_variant_names`.
+pub enum Mode { HeatMode, CoolMode }
+
+pub enum Fan { Low, HighFan }

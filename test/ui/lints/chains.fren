@@ -36,6 +36,7 @@ comp chains {
     --~^ warning: this chain of `if` tests which variant `e` is
     -- Not chains of variant tests.
     expect r4: (if e = E::A then 1 else if e = E::A then 2 else 3) > 0
+    --~^ warning: `e = E::A` is already tested earlier in this chain
     expect r5: (if e = E::A then 1 else 3) > 0
     expect r6: (if e = E::A then 1 else if x > 0 then 2 else 3) > 0
     expect r7: (if s = S::Dot then 1 else if s = S::Line(1) then 2 else 3) > 0

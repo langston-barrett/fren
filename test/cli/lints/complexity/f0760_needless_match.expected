@@ -1,0 +1,32 @@
+warning[F0760]: this `match` gives back its scrutinee
+ --> test/cli/lints/complexity/f0760_needless_match.fren:8:16
+  |
+8 |     req r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) }
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ each arm gives back the value it matches
+  |
+  = help: `fren fix` can fix this
+  = note: `needless_match` is `warn` by default
+  = help: to allow it, `set_option fren.lint.needless_match "allow"`
+help: write `s`
+  |
+8 -     req r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) }
+8 +     req r: t = s
+  |
+
+warning[F0760]: this `match` gives back its scrutinee
+ --> test/cli/lints/complexity/f0760_needless_match.fren:9:16
+  |
+9 |     req q: u = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ each arm gives back the value it matches
+  |
+  = help: `fren fix` can fix this
+help: write `s`
+  |
+9 -     req q: u = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
+9 +     req q: u = s
+  |
+
+fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0760`.
+exit=3

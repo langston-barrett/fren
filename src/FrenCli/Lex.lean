@@ -55,11 +55,11 @@ def reserved : List String :=
   ["mod", "use", "pub", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join", "div", "is", "in", "if", "then", "else", "match", "forall", "refine", "with"]
 
 /-- The punctuators (`Reqs/Lang/Lexical#punctuators`), longest first.
-Includes tokens Fren doesn't use but Lean lexes (`==`, `&&`, `||`), so that
-errors name them as Lean's do. `.` is only the one after `)` or `}` that
+Includes tokens Fren doesn't use but Lean lexes (`==`, `&&`, `||`, `<-`), so
+that errors name them as Lean's do. `.` is only the one after `)` or `}` that
 reads a field; after a name, it is part of the name. -/
 def punctuators : List String :=
-  ["::*", "::{", "::", "==", "=>", "&&", "||", "|", "!=", "<=", ">=", ":=", "{", "}", "(", ")", "[", "]", ",", ":", ".", "*", "=", "<", ">", "++", "+", "-"]
+  ["::*", "::{", "::", "==", "=>", "&&", "||", "|", "!=", "<=", "<-", ">=", ":=", "{", "}", "(", ")", "[", "]", ",", ":", ".", "*", "=", "<", ">", "++", "+", "-"]
 
 def lexCommands : List String := ["#fren_check", "#fren_trace"]
 

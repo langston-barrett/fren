@@ -88,6 +88,8 @@ right-associative, with its operand on the right.
 ```fren
 pub mod lang
 
+-- `NonAssoc` contains `Assoc`, as "non-associative" does.
+set_option fren.lint.enum_variant_names "allow" in
 pub enum Assoc { Left, Right, NonAssoc }
 
 pub comp operand {

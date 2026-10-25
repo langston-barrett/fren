@@ -93,6 +93,28 @@ inductive Lint where
   | manySingleCharNames
   | similarNames
   | tooManyLines
+  | moduleInception
+  | enumVariantNames
+  | upperCaseAcronyms
+  | justUnderscoresAndDigits
+  | disallowedNames
+  | needlessBoolAssign
+  | needlessMatch
+  | assertionsOnConstants
+  | suspiciousUnaryOpFormatting
+  | redundantSlicing
+  | noEffectReplace
+  | constIsEmpty
+  | manualPatternCharComparison
+  | almostCompleteRange
+  | duplicateConstraint
+  | invisibleCharacters
+  | negativePosition
+  | absurdExtremeComparisons
+  | erasingOp
+  | ifsSameCond
+  | contradictoryComparisons
+  | redundantComparisons
   deriving Inhabited, BEq, DecidableEq, Repr
 
 def Lint.all : Array Lint :=
@@ -103,7 +125,11 @@ def Lint.all : Array Lint :=
     .caseSplitReqs, .redundantBindings, .eqOp, .sameBranches, .duplicateElements, .emptyArgument, .doubleComparison,
     .boolEquality, .manualMethod, .elseExtends, .identityOp, .doubleParens, .doubleNeg, .intPlusOne, .negMultiply,
     .redundantMethodChain, .trivialPattern, .redundantBoolType, .trivialMatch,
-    .zeroSizedMapValues, .manySingleCharNames, .similarNames, .tooManyLines]
+    .zeroSizedMapValues, .manySingleCharNames, .similarNames, .tooManyLines, .moduleInception, .enumVariantNames,
+    .upperCaseAcronyms, .justUnderscoresAndDigits, .disallowedNames, .needlessBoolAssign, .needlessMatch,
+    .assertionsOnConstants, .suspiciousUnaryOpFormatting, .redundantSlicing, .noEffectReplace, .constIsEmpty,
+    .manualPatternCharComparison, .almostCompleteRange, .duplicateConstraint, .invisibleCharacters, .negativePosition,
+    .absurdExtremeComparisons, .erasingOp, .ifsSameCond, .contradictoryComparisons, .redundantComparisons]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -153,6 +179,28 @@ def Lint.name : Lint → String
   | .manySingleCharNames => "many_single_char_names"
   | .similarNames => "similar_names"
   | .tooManyLines => "too_many_lines"
+  | .moduleInception => "module_inception"
+  | .enumVariantNames => "enum_variant_names"
+  | .upperCaseAcronyms => "upper_case_acronyms"
+  | .justUnderscoresAndDigits => "just_underscores_and_digits"
+  | .disallowedNames => "disallowed_names"
+  | .needlessBoolAssign => "needless_bool_assign"
+  | .needlessMatch => "needless_match"
+  | .assertionsOnConstants => "assertions_on_constants"
+  | .suspiciousUnaryOpFormatting => "suspicious_unary_op_formatting"
+  | .redundantSlicing => "redundant_slicing"
+  | .noEffectReplace => "no_effect_replace"
+  | .constIsEmpty => "const_is_empty"
+  | .manualPatternCharComparison => "manual_pattern_char_comparison"
+  | .almostCompleteRange => "almost_complete_range"
+  | .duplicateConstraint => "duplicate_constraint"
+  | .invisibleCharacters => "invisible_characters"
+  | .negativePosition => "negative_position"
+  | .absurdExtremeComparisons => "absurd_extreme_comparisons"
+  | .erasingOp => "erasing_op"
+  | .ifsSameCond => "ifs_same_cond"
+  | .contradictoryComparisons => "contradictory_comparisons"
+  | .redundantComparisons => "redundant_comparisons"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -204,6 +252,28 @@ def Lint.code : Lint → String
   | .manySingleCharNames => "F0795"
   | .similarNames => "F0796"
   | .tooManyLines => "F0797"
+  | .moduleInception => "F0748"
+  | .enumVariantNames => "F0749"
+  | .upperCaseAcronyms => "F0750"
+  | .justUnderscoresAndDigits => "F0751"
+  | .disallowedNames => "F0752"
+  | .needlessBoolAssign => "F0759"
+  | .needlessMatch => "F0760"
+  | .assertionsOnConstants => "F0761"
+  | .suspiciousUnaryOpFormatting => "F0762"
+  | .redundantSlicing => "F0753"
+  | .noEffectReplace => "F0754"
+  | .constIsEmpty => "F0755"
+  | .manualPatternCharComparison => "F0756"
+  | .almostCompleteRange => "F0757"
+  | .duplicateConstraint => "F0768"
+  | .invisibleCharacters => "F0769"
+  | .negativePosition => "F0770"
+  | .absurdExtremeComparisons => "F0763"
+  | .erasingOp => "F0764"
+  | .ifsSameCond => "F0765"
+  | .contradictoryComparisons => "F0766"
+  | .redundantComparisons => "F0767"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -243,10 +313,16 @@ def Lint.group : Lint → Group
   | .unusedImports | .unusedVariables | .deadCode | .unfulfilledExpectations => .unused
   | .nonSnakeCase | .nonCamelCaseTypes | .nonUpperCaseConstants => .nonstandardStyle
   | .globImports | .lengthZero | .cardZero | .unlessNot | .collapsibleWhen | .matchLikeMembership | .redundantBindings
-  | .doubleNeg | .negMultiply | .trivialPattern | .redundantBoolType => .style
+  | .doubleNeg | .negMultiply | .trivialPattern | .redundantBoolType | .moduleInception | .enumVariantNames
+  | .upperCaseAcronyms | .justUnderscoresAndDigits | .disallowedNames | .assertionsOnConstants
+  | .manualPatternCharComparison => .style
   | .nonminimalBool | .singletonMembership | .constantOutput | .doubleComparison | .manualMethod | .elseExtends
-  | .identityOp | .doubleParens | .intPlusOne | .redundantMethodChain | .trivialMatch => .complexity
-  | .indexAfterUse | .eqOp | .sameBranches | .duplicateElements | .emptyArgument => .suspicious
+  | .identityOp | .doubleParens | .intPlusOne | .redundantMethodChain | .trivialMatch | .needlessBoolAssign
+  | .needlessMatch | .redundantSlicing | .redundantComparisons => .complexity
+  | .indexAfterUse | .eqOp | .sameBranches | .duplicateElements | .emptyArgument
+  | .suspiciousUnaryOpFormatting | .noEffectReplace | .constIsEmpty | .almostCompleteRange | .duplicateConstraint
+  | .invisibleCharacters | .negativePosition | .absurdExtremeComparisons | .erasingOp | .ifsSameCond
+  | .contradictoryComparisons => .suspicious
   | .membershipChain | .definableOutput | .ifNotElse | .matchSameArms | .wildcardSingleVariant | .ifChainMatch
   | .caseSplitReqs | .boolEquality | .zeroSizedMapValues | .manySingleCharNames | .similarNames
   | .tooManyLines => .pedantic
@@ -407,6 +483,23 @@ def lengthZeroMsg (card : Bool) (recv empty : String) (isEmpty : Bool) (bound : 
   { code? := some (if card then "F0716" else "F0715"), headline := s!"say whether it is empty with `{empty}`, not `{m}`"
     label? := some s!"compares a length with {bound}"
     fixes := #[{ msg := s!"compare with `{empty}`", replacement := fixed }] }
+
+/-- Whether `absurd_extreme_comparisons` fires on a comparison of a length
+`n` with `bound`, `n OP bound` if `lengthLeft` and `bound OP n` otherwise,
+and what it always is (`lint::absurd_extreme_comparisons`): `n` is never
+negative, so it is above `bound`, or, for `0`, the same or above. -/
+def absurdComparison (op : Comparison) (bound : Int) (lengthLeft : Bool) : Bool × Bool :=
+  match if lengthLeft then op else op.mirror with
+  | .lt => (bound ≤ 0, false)
+  | .ge => (bound ≤ 0, true)
+  | .eq | .le => (bound < 0, false)
+  | .ne | .gt => (bound < 0, true)
+
+/-- A comparison of a `len`, or a `card` if `card`, that is always `value`. -/
+def absurdComparisonMsg (card value : Bool) : Msg :=
+  { code? := some Lint.absurdExtremeComparisons.code, headline := s!"this comparison is always `{value}`"
+    label? := some s!"`{if card then "card" else "len"}` is never negative"
+    notes := #["note: the bound or the operator is probably not the one meant"] }
 
 /-- `x in {a}`, as the texts of `x` and `a`. -/
 def singletonMembershipMsg (x a : String) : Msg :=
@@ -1048,6 +1141,157 @@ def namingMsg? (what : Named) (n : Name) : Option (Lint × Msg) :=
     code? := some c.lint.code, headline := s!"{what.describe} `{s}` should have {c.describe} name"
     label? := some s!"not in {match c with | .snake => "snake_case" | .camel => "CamelCase" | .upper => "UPPER_CASE"}"
     fixes })
+
+/-! ## Names -/
+
+/-- Whether `module_inception` fires on a module named `name` whose parent
+is named `parent`, `""` for a top-level module (`lint::module_inception`). -/
+def moduleInception (name parent : String) : Bool := name == parent
+
+/-- `module_inception` for the module at `path`, if its last segment repeats
+its parent's. -/
+def moduleInceptionMsg? (path : Name) : Option Msg :=
+  match path.components.reverse with
+  | n :: p :: _ =>
+    if moduleInception (nameText n) (nameText p) then
+      some { code? := some Lint.moduleInception.code
+             headline := s!"module `{showPath path}` has the same name as its parent"
+             label? := some s!"inside `{nameText p}`"
+             notes := #["note: every path to it, or to an item in it, repeats the name",
+               s!"help: rename it, or declare its items in `{showPath path.getPrefix}`"] }
+    else none
+  | _ => none
+
+/-- Whether `enum_variant_names` fires on an enumeration of `nVariants`
+variants, each of two or more words, all of which start, or end, with the
+same word (`lint::enum_variant_names`). -/
+def enumVariantNames (nVariants : Nat) (sharedFirst sharedLast : Bool) : Bool :=
+  nVariants ≥ 2 && (sharedFirst || sharedLast)
+
+/-- The word that each of the variants has first, or last, if each has two
+or more words. -/
+def sharedWord? (variants : Array Name) (last : Bool) : Option String :=
+  let ws := variants.map (words ∘ nameText)
+  let pick := fun (w : List String) => if last then w.getLast? else w.head?
+  match ws[0]? with
+  | some w0 => if ws.any (·.length < 2) then none else
+    match pick w0 with
+    | some w => if ws.all (pick · == some w) then some w else none
+    | none => none
+  | none => none
+
+/-- `enum_variant_names` for the enumeration `n` of `variants`, if they share
+a first or a last word. -/
+def enumVariantNamesMsg? (n : Name) (variants : Array Name) : Option Msg :=
+  let first? := sharedWord? variants false
+  let last? := sharedWord? variants true
+  if !enumVariantNames variants.size first?.isSome last?.isSome then none else
+  let what := match first?, last? with
+    | some f, some l => s!"starts with `{f}` and ends with `{l}`"
+    | some f, none => s!"starts with `{f}`"
+    | none, some l => s!"ends with `{l}`"
+    | none, none => ""
+  let ws := first?.toList ++ last?.toList
+  some { code? := some Lint.enumVariantNames.code, headline := s!"every variant of `{nameText n}` {what}"
+         label? := some "its variants share a word"
+         notes := #[s!"help: remove {" and ".intercalate (ws.map (s!"`{·}`"))} from each variant's name, or put it in the enumeration's"] }
+
+/-- Whether the words `sub` are consecutive words of `ws`. -/
+def containsWords (ws sub : List String) : Bool :=
+  (List.range (ws.length + 1)).any fun i => (ws.drop i).take sub.length == sub
+
+/-- Whether `enum_variant_names` fires on a variant of `nWords` words, whose
+words contain the `nEnumWords` words of its enumeration's name if
+`contains` (`lint::variant_has_enum_name`). -/
+def variantHasEnumName (nWords nEnumWords : Nat) (contains : Bool) : Bool := contains && nWords > nEnumWords
+
+/-- `enum_variant_names` for the variant `v` of the enumeration `n`, if it
+contains the enumeration's name. -/
+def variantNameMsg? (n v : Name) : Option Msg :=
+  let ws := words (nameText v)
+  let es := words (nameText n)
+  if !variantHasEnumName ws.length es.length (containsWords ws es) then none else
+  some { code? := some Lint.enumVariantNames.code
+         headline := s!"variant `{nameText v}` contains the name of its enumeration `{nameText n}`"
+         label? := some s!"contains `{nameText n}`"
+         notes := #[s!"note: a path to it names the enumeration already, as `{nameText n}::{nameText v}` does",
+           s!"help: remove `{nameText n}` from its name"] }
+
+/-- Whether the characters have a run of three or more uppercase letters. -/
+def hasUpperRun (cs : List Char) : Bool :=
+  (cs.foldl (fun (run, found) c => if isUpperAscii c then (run + 1, found || run + 1 ≥ 3) else (0, found))
+    ((0 : Nat), false)).2
+
+/-- Whether `upper_case_acronyms` fires on a name of `what`
+(`lint::upper_case_acronyms`): it is in `CamelCase`, as its case requires,
+with a run of three or more uppercase letters. -/
+def upperCaseAcronyms (what : Named) (s : String) : Bool :=
+  what.case == .camel && nameInCase s .camel && hasUpperRun s.toList
+
+/-- `cs` with each run of three or more uppercase letters in lowercase but
+for its first letter, and for its last if a lowercase letter follows it,
+which starts the next word: `HTTPStatus` becomes `HttpStatus`. -/
+def lowerUpperRuns (cs : List Char) : List Char :=
+  let rec go : List Char → List Char → List Char
+    | run, [] => flush run false
+    | run, c :: rest =>
+      if isUpperAscii c then go (run ++ [c]) rest
+      else flush run (isLowerAscii c) ++ c :: go [] rest
+  termination_by _ cs => cs.length
+  go [] cs
+where
+  /-- A run of uppercase letters, followed by a lowercase letter if `lower`. -/
+  flush (run : List Char) (lower : Bool) : List Char :=
+    if run.length < 3 then run else
+    match run with
+    | [] => []
+    | c :: rest =>
+      if lower then c :: (rest.dropLast.map Char.toLower ++ rest.getLast?.toList)
+      else c :: rest.map Char.toLower
+
+def upperCaseAcronymsMsg (what : Named) (s : String) : Msg :=
+  let fixed := String.ofList (lowerUpperRuns s.toList)
+  { code? := some Lint.upperCaseAcronyms.code, headline := s!"{what.describe} `{s}` has an acronym in upper case"
+    label? := some "three or more uppercase letters in a row"
+    notes := #["note: in `CamelCase`, an acronym is a word, with only its first letter in upper case"]
+    fixes := #[{ msg := s!"rename it to `{fixed}`", replacement := fixed }] }
+
+/-- Whether `just_underscores_and_digits` fires on the name `s`
+(`lint::just_underscores_and_digits`): without a final `?`, it is made of
+`_` and digits, and is not the wildcard `_`. -/
+def justUnderscoresAndDigits (s : String) : Bool :=
+  let b := baseName s
+  s != "_" && !b.isEmpty && b.all fun c => c == '_' || c.isDigit
+
+def justUnderscoresAndDigitsMsg (what : Named) (s : String) : Msg :=
+  { code? := some Lint.justUnderscoresAndDigits.code
+    headline := s!"{what.describe} `{s}` is named only with `_` and digits"
+    label? := some "says nothing of what it is"
+    notes := #["help: give it a name that says what it is"] }
+
+/-- The names that are placeholders (`lint::disallowed_names`), in lower
+case. -/
+def disallowedNames : List String := ["foo", "baz", "quux"]
+
+/-- Whether `disallowed_names` fires on the name `s`
+(`lint::disallowed_names`): without a final `?`, it is a placeholder, in
+any case. -/
+def disallowedName (s : String) : Bool := disallowedNames.contains (baseName s).toLower
+
+def disallowedNameMsg (what : Named) (s : String) : Msg :=
+  { code? := some Lint.disallowedNames.code, headline := s!"{what.describe} `{s}` has a placeholder name"
+    label? := some "a placeholder"
+    notes := #["help: give it a name that says what it is"] }
+
+/-- The lints about a declared name alone: its case
+(`lint::naming_case`), and the lints of the `style` group that look only
+at the name. -/
+def nameMsgs (what : Named) (n : Name) : Array (Lint × Msg) :=
+  let s := nameText n
+  (namingMsg? what n).toArray
+    ++ (if upperCaseAcronyms what s then #[(.upperCaseAcronyms, upperCaseAcronymsMsg what s)] else #[])
+    ++ (if justUnderscoresAndDigits s then #[(.justUnderscoresAndDigits, justUnderscoresAndDigitsMsg what s)] else #[])
+    ++ (if disallowedName s then #[(.disallowedNames, disallowedNameMsg what s)] else #[])
 
 /-! ## Unused variables -/
 
@@ -1844,6 +2088,170 @@ def emptyArgumentMsg? (m : Method) (seq : Bool) (recv : String) (args : Array St
   return { code? := some Lint.emptyArgument.code, headline, label? := some label
            notes := #["note: the argument is probably not the one meant"] }
 
+/-- What `when c, d` is, or `unless c, d` if `negated`, when `c` and `d`
+are written the same, if `eq_op` fires (`lint::eq_op_conditional`). -/
+def eqOpConditional (negated same : Bool) : Option EqOpValue :=
+  if !same then none else if negated then some .operand else some .alwaysTrue
+
+/-- `when c, c`, or `unless c, c` if `negated`, where `c` is the text of
+the condition. -/
+def eqOpConditionalMsg (negated : Bool) (v : EqOpValue) (c : String) : Msg :=
+  let label := match v with
+    | .alwaysTrue => "always `true`"
+    | _ => s!"the same as `{c}`"
+  { code? := some Lint.eqOp.code
+    headline := s!"the condition and the body of `{if negated then "unless" else "when"}` are written the same"
+    label? := some label, notes := #["note: the body is probably not the one meant"] }
+
+/-! ## Repeated constraints -/
+
+/-- The kind of a constraint or a global expectation (`lint::ConstraintKind`). -/
+inductive ConstraintKind where
+  | assume
+  | req
+  | expect
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+def ConstraintKind.keyword : ConstraintKind → String
+  | .assume => "assume"
+  | .req => "req"
+  | .expect => "expect"
+
+/-- Whether `duplicate_constraint` fires on a constraint, from whether it is
+written the same as an earlier one, and whether its fix removes it, from
+their kinds (`lint::duplicate_constraint`). -/
+def duplicateConstraint (earlier later : ConstraintKind) (same : Bool) : Bool × Bool :=
+  (same, same && earlier == later)
+
+/-- For each constraint written the same as an earlier one, from their
+texts in order, its position and that of the first such
+(`lint::duplicate_constraint`). -/
+def repeatedConstraints (texts : Array String) : Array (Nat × Nat) :=
+  let forms := texts.map writtenForm
+  (Array.range forms.size).filterMap fun i => ((Array.range i).find? (forms[·]! == forms[i]!)).map (i, ·)
+
+/-- A constraint of kind `later`, written the same as the earlier `name`, of
+kind `earlier`. When the two are of one kind, the fix removes the later. -/
+def duplicateConstraintMsg (earlier later : ConstraintKind) (name : String) : Msg :=
+  let notes := if earlier == later then #["help: remove it"]
+    else if later == .expect then
+      #[s!"note: an `expect` that repeats a `{earlier.keyword}` tests nothing",
+        "help: the expectation was probably meant to say something stronger"]
+    else #["note: one of them is probably not the constraint meant"]
+  { code? := some Lint.duplicateConstraint.code, headline := s!"this is written the same as `{name}`"
+    label? := some s!"the same as `{name}`", notes }
+
+/-! ## Invisible characters -/
+
+/-- Whether `invisible_characters` reports the character whose code point is
+`n`, in a comment if `comment`, or else in a string literal: a
+bidirectional control or U+FEFF anywhere, and a zero-width or invisible
+character in a literal (`lint::invisible_character`). -/
+def invisibleCode (comment : Bool) (n : Nat) : Bool :=
+  (0x202A ≤ n && n ≤ 0x202E) || (0x2066 ≤ n && n ≤ 0x2069) || n == 0xFEFF
+    || (!comment && (n == 0x00AD || n == 0x200B || n == 0x2060))
+
+/-- `U+XXXX`, the code point of `c`. -/
+def codePoint (c : Char) : String :=
+  let h := (String.ofList (Nat.toDigits 16 c.toNat)).toUpper
+  "U+" ++ String.ofList (List.replicate (4 - min 4 h.length) '0') ++ h
+
+/-- The name of a character that `invisible_characters` reports. -/
+def invisibleName (c : Char) : String :=
+  match c.toNat with
+  | 0x00AD => "soft hyphen"
+  | 0x200B => "zero width space"
+  | 0x2060 => "word joiner"
+  | 0x202A => "left-to-right embedding"
+  | 0x202B => "right-to-left embedding"
+  | 0x202C => "pop directional formatting"
+  | 0x202D => "left-to-right override"
+  | 0x202E => "right-to-left override"
+  | 0x2066 => "left-to-right isolate"
+  | 0x2067 => "right-to-left isolate"
+  | 0x2068 => "first strong isolate"
+  | 0x2069 => "pop directional isolate"
+  | _ => "zero width no-break space"
+
+/-- The escape of `c` in a string literal, `\uXXXX`. -/
+def unicodeEscape (c : Char) : String := "\\u" ++ (codePoint c).drop 2
+
+/-- `invisible_characters` on a comment, if `comment`, or a string literal,
+written `t`: the characters it reports, and `t` with each removed from a
+comment or written as an escape in a literal. A raw literal, which has no
+escapes, becomes an ordinary one. `none` if it reports none. -/
+def invisibleFix? (comment : Bool) (t : String) : Option (Array Char × String) := do
+  let found := t.toList.toArray.filter (invisibleCode comment ·.toNat)
+  guard !found.isEmpty
+  if comment then return (found, String.ofList (t.toList.filter (!invisibleCode comment ·.toNat)))
+  let escape (c : Char) := if invisibleCode false c.toNat then unicodeEscape c else c.toString
+  if t.startsWith "r" then
+    -- `r#"..."#`: the body is between the first `"` and the last.
+    let cs := (t.drop 1).toString.dropWhile (· == '#') |>.toString.drop 1 |>.toString.dropEndWhile (· == '#')
+      |>.toString.dropEnd 1 |>.toString
+    let body := String.join (cs.toList.map fun c =>
+      if c == '\\' then "\\\\" else if c == '"' then "\\\"" else escape c)
+    return (found, "\"" ++ body ++ "\"")
+  return (found, String.join (t.toList.map escape))
+
+/-- A comment, if `comment`, or a string literal, with the characters
+`found`, whose fix is `fixed`. -/
+def invisibleMsg (comment : Bool) (found : Array Char) (fixed : String) : Msg :=
+  let distinct := found.foldl (init := #[]) fun acc c => if acc.contains c then acc else acc.push c
+  let names := distinct.map fun c => s!"`{codePoint c}` ({invisibleName c})"
+  let what := if comment then "comment" else "string literal"
+  let headline := if distinct.size == 1 then s!"this {what} contains an invisible character, {names[0]!}"
+    else s!"this {what} contains invisible characters: {", ".intercalate names.toList}"
+  let control := distinct.any (invisibleCode true ·.toNat)
+  let notes := if control then #["note: a bidirectional control can make the text read differently from what it means"]
+    else #["note: it cannot be seen, so it is probably not meant"]
+  let msg := if comment then (if found.size == 1 then "remove it" else "remove them")
+    else if found.size == 1 then "write it as an escape" else "write them as escapes"
+  { code? := some Lint.invisibleCharacters.code, headline, label? := some (if control then "may not read as it is written" else "contains what cannot be seen")
+    notes, fixes := #[{ msg, replacement := fixed }] }
+
+/-! ## Negative positions -/
+
+/-- Whether `negative_position` fires on a position written as a negative
+integer literal, if `negative`: the index of `q[i]` if `index`, or else
+argument `arg` of `m`, from 0 (`lint::negative_position`). -/
+def negativePosition (index : Bool) (m : Method) (arg : Nat) (negative : Bool) : Bool :=
+  negative && (index || match m with
+    | .at | .slice | .update => arg == 0
+    | .indexOf => arg == 1
+    | _ => false)
+
+/-- The digits of `t`, if it is written as a negative integer literal, `-k`
+for `k` other than `0`. -/
+def negativeLiteral? (t : String) : Option String :=
+  let f := writtenForm t
+  let k := (f.drop 1).toString
+  if f.startsWith "-" && !k.isEmpty && k.all Char.isDigit && k.any (· != '0') then some k else none
+
+/-- `q[-k]`, as the texts of `q` and `k`. -/
+def negativeIndexMsg (q k : String) : Msg :=
+  { code? := some Lint.negativePosition.code, headline := "a negative index does not count from the end"
+    label? := some "a negative index"
+    notes := #["note: Fren has no negative indexing: `q[i]` is unspecified unless `0 <= i < q.len`",
+      s!"help: to count from the end, write `{q}[{q}.len - {k}]`"] }
+
+/-- `recv.m(args)`, as their texts, of a sequence if `seq`, rather than a
+string, if `negative_position` fires on an argument. -/
+def negativeArgumentMsg? (m : Method) (seq : Bool) (recv : String) (args : Array String) : Option Msg := do
+  let i ← (Array.range args.size).find? fun i => negativePosition false m i (negativeLiteral? args[i]!).isSome
+  let k ← negativeLiteral? args[i]!
+  let empty := if seq then "[]" else "\"\""
+  let label ← match m with
+    | .at | .slice => some s!"always `{empty}`"
+    | .update => some s!"always `{recv}`"
+    | .indexOf => some "always `-1`"
+    | _ => none
+  let call (as : Array String) := s!"{recv}.{m.name}({", ".intercalate as.toList})"
+  let help := if m == .indexOf then s!"help: to search from the start, write `{call (args.set! i "0")}`"
+    else s!"help: to count from the end, write `{call (args.set! i s!"{recv}.len - {k}")}`"
+  return { code? := some Lint.negativePosition.code, headline := "a negative position does not count from the end"
+           label? := some label, notes := #["note: Fren has no negative indexing", help] }
+
 /-! ## Operators and methods -/
 
 /-- Whether `a OP b` holds, from how `a` compares with `b`
@@ -1867,6 +2275,60 @@ def doubleComparisonMsg (fixed : String) : Msg :=
   { code? := some Lint.doubleComparison.code, headline := s!"these two comparisons are `{fixed}`"
     label? := some "compares the same operands twice"
     fixes := #[{ msg := "write it as one comparison", replacement := fixed }] }
+
+/-- Whether `x OP k` bounds `x` from below (`lint::disjoint`). -/
+def Comparison.boundsBelow (c : Comparison) : Bool := c matches .eq | .gt | .ge
+
+/-- Whether `x OP k` bounds `x` from above (`lint::disjoint`). -/
+def Comparison.boundsAbove (c : Comparison) : Bool := c matches .eq | .lt | .le
+
+/-- The least integer `x` with `x OP k`, if `OP` bounds it from below. -/
+def Comparison.least (c : Comparison) (k : Int) : Int := if c matches .gt then k + 1 else k
+
+/-- The greatest integer `x` with `x OP k`, if `OP` bounds it from above. -/
+def Comparison.greatest (c : Comparison) (k : Int) : Int := if c matches .lt then k - 1 else k
+
+/-- Whether no integer `x` has both `x OP₁ a` and `x OP₂ b`
+(`lint::disjoint`). -/
+def disjointBounds (c1 : Comparison) (a : Int) (c2 : Comparison) (b : Int) : Bool :=
+  (c1.boundsBelow && c2.boundsAbove && c1.least a > c2.greatest b)
+    || (c2.boundsBelow && c1.boundsAbove && c2.least b > c1.greatest a)
+    || (a == b && ((c1, c2) matches (.eq, .ne) | (.ne, .eq)))
+
+/-- Whether `contradictory_comparisons` fires on `x OP₁ a and x OP₂ b`, or
+`or` if not `conj`, of integers (`lint::contradictory_comparisons`): under
+`and`, no `x` has both; under `or`, none has neither. -/
+def contradictoryComparisons (conj : Bool) (c1 : Comparison) (a : Int) (c2 : Comparison) (b : Int) : Bool :=
+  if conj then disjointBounds c1 a c2 b else disjointBounds c1.complement a c2.complement b
+
+/-- Whether `contradictory_comparisons` fires on `x OP₁ a and x OP₂ b`, or
+`or` if not `conj`, where `a` and `b` are not integers, from whether they
+are distinct (`lint::contradictory_equalities`). -/
+def contradictoryEqualities (conj : Bool) (c1 c2 : Comparison) (distinct : Bool) : Bool :=
+  distinct && if conj then (c1, c2) matches (.eq, .eq) else (c1, c2) matches (.ne, .ne)
+
+/-- `x OP₁ a and x OP₂ b`, or `or` if not `conj`, that is always `false`,
+or `true`. -/
+def contradictoryMsg (conj : Bool) : Msg :=
+  { code? := some Lint.contradictoryComparisons.code
+    headline := if conj then "these two comparisons cannot both hold" else "one of these two comparisons always holds"
+    label? := some s!"always `{!conj}`"
+    notes := #["note: `and` and `or` may be swapped, or a value may not be the one meant"] }
+
+/-- Whether `redundant_comparisons` fires on `x OP₁ a and x OP₂ b`, or `or`
+if not `conj`, of integers, and whether the fix keeps the first comparison,
+rather than the second (`lint::redundant_comparisons`): under `and` the one
+that implies the other, under `or` the one that the other implies. -/
+def redundantComparisons (conj : Bool) (c1 : Comparison) (a : Int) (c2 : Comparison) (b : Int) : Bool × Bool :=
+  let firstImplies := disjointBounds c1 a c2.complement b
+  let secondImplies := disjointBounds c2 b c1.complement a
+  (firstImplies || secondImplies, if conj then firstImplies else secondImplies)
+
+/-- `x OP₁ a and x OP₂ b`, or `or`, as the text of the comparison kept. -/
+def redundantComparisonsMsg (fixed : String) : Msg :=
+  { code? := some Lint.redundantComparisons.code, headline := s!"these two comparisons are `{fixed}`"
+    label? := some "one comparison implies the other"
+    fixes := #[{ msg := "remove the comparison that adds nothing", replacement := fixed }] }
 
 /-- Whether `bool_equality` fires on `a OP b` (`lint::bool_equality`). -/
 def boolEquality (op : Comparison) (bools literal : Bool) : Bool := op == .eq && bools && !literal
@@ -1896,12 +2358,61 @@ def indexTest (op : Comparison) (bound : Int) : IndexTest :=
   | .le => if bound == -1 then .absent else .other
   | .eq => if bound == -1 then .absent else if bound == 0 then .atStart else .other
 
-/-- A search written with `index_of` or `slice`, as the text of the call of
-`method` that it is. -/
-def manualMethodMsg (method fixed : String) (slice : Bool) : Msg :=
-  { code? := some Lint.manualMethod.code, headline := s!"this is a call of `{method}`"
-    label? := some (if slice then "compares a prefix" else "compares a position")
+/-- A search written with `index_of`, `slice` or `at`, as the text of the
+call of `method` that it is. -/
+def manualMethodMsg (method fixed label : String) : Msg :=
+  { code? := some Lint.manualMethod.code, headline := s!"this is a call of `{method}`", label? := some label
     fixes := #[{ msg := s!"call `{method}`", replacement := fixed }] }
+
+/-- `s.at(0) = ""`, or `!=`, as the text of the collection compared with
+`empty`, `""` or `[]` (`lint::first_empty`). -/
+def firstEmptyMsg (fixed empty : String) : Msg :=
+  { code? := some Lint.lengthZero.code, headline := s!"say whether it is empty with `{empty}`, not `at`"
+    label? := some s!"compares the first {if empty == "[]" then "element" else "character"} with `{empty}`"
+    fixes := #[{ msg := s!"compare with `{empty}`", replacement := fixed }] }
+
+/-- `s.slice(0, s.len)`, as the text of `s`. -/
+def redundantSlicingMsg (fixed : String) : Msg :=
+  { code? := some Lint.redundantSlicing.code, headline := "this slice is the whole of its receiver"
+    label? := some "from the start, as long as the receiver"
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-- `s.replace(a, a)`, or `replace_all`, as the text of `s`. -/
+def noEffectReplaceMsg (method fixed : String) : Msg :=
+  { code? := some Lint.noEffectReplace.code, headline := s!"this `{method}` has no effect"
+    label? := some "replaces with what it replaces"
+    notes := #["note: the two arguments are written the same"]
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-- `a OP b` on integers. -/
+def Comparison.compares : Comparison → Int → Int → Bool
+  | .eq, a, b => a == b
+  | .ne, a, b => a != b
+  | .lt, a, b => a < b
+  | .le, a, b => a ≤ b
+  | .gt, a, b => a > b
+  | .ge, a, b => a ≥ b
+
+/-- Whether `const_is_empty` fires on a comparison of the length of a
+literal of `n` characters or elements with `bound`, `n OP bound` if
+`lengthLeft` and `bound OP n` otherwise, where `set` says that it is a set's
+or relation's, whose `card` may be fewer; and what the comparison always is
+(`lint::const_is_empty`). -/
+def constIsEmpty (op : Comparison) (bound : Int) (lengthLeft set : Bool) (n : Nat) : Bool × Bool :=
+  let (emptiness, empty) := lengthZero op bound lengthLeft
+  (!set || emptiness,
+    if set then empty == (n == 0) else if lengthLeft then op.compares n bound else op.compares bound n)
+
+/-- Whether `const_is_empty` fires on `a = E` or `a != E`, where `E` is
+empty and `a` a literal of `n` characters or elements, and what it always
+is (`lint::const_empty_equation`). -/
+def constEmptyEquation (equal : Bool) (n : Nat) : Bool × Bool := (n > 0, equal == (n == 0))
+
+/-- A test of a literal that is always `value`. -/
+def constIsEmptyMsg (value : Bool) : Msg :=
+  { code? := some Lint.constIsEmpty.code, headline := s!"this test of a literal is always `{value}`"
+    label? := some "the literal's length is fixed"
+    notes := #["note: the literal is probably not the one meant"] }
 
 /-- Whether `else_extends` fires on a conditional that is an operand of an
 operator of precedence `outer`, from the precedence `inner` of its `else`
@@ -1969,6 +2480,36 @@ def identityOpMsg (fixed : String) (flip : Bool) : Msg :=
     headline := if flip then "this negation can be the other operator" else "this operation has no effect"
     label? := some (if flip then "an operand that is a negation" else "leaves its other operand as it is")
     fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-- Whether `erasing_op` fires on `a OP b`, where `same` says that `a` and
+`b` are written the same, which `eq_op` reports for `inter` and `minus`
+(`lint::erasing_op`). -/
+def erasingOp (op : InfixOp) (left right : IdentityOperand) (same : Bool) : Bool :=
+  match op, same with
+  | .inter, true | .minus, true => false
+  | .mul, _ => (left matches .zero) || (right matches .zero)
+  | .inter, _ | .join, _ => (left matches .empty) || (right matches .empty)
+  | .minus, _ => (left matches .empty)
+  | _, _ => false
+
+/-- `a OP b`, which is always `0` if `zero`, and `{}` otherwise. -/
+def erasingOpMsg (op : InfixOp) (zero : Bool) : Msg :=
+  { code? := some Lint.erasingOp.code, headline := s!"this `{op.op}` is always `{if zero then "0" else "{}"}`"
+    label? := some "ignores its other operand"
+    notes := #["note: the literal is probably not the operand meant"] }
+
+/-- Whether `ifs_same_cond` fires on a test of a chain of `else if`, from
+whether an earlier test of the chain is written the same
+(`lint::ifs_same_cond`). -/
+def ifsSameCond (earlier : Bool) : Bool := earlier
+
+/-- A test of a chain of `else if`, written the same as the earlier
+`test`. -/
+def ifsSameCondMsg (test : String) : Msg :=
+  { code? := some Lint.ifsSameCond.code, headline := s!"`{test}` is already tested earlier in this chain"
+    label? := some "the same as an earlier test"
+    notes := #[s!"note: this branch is never taken: wherever `{test}` holds, the earlier branch is taken",
+      "note: one of the tests is probably not the one meant"] }
 
 /-- A message of an operator or method lint, whose first fix replaces the
 text at `ref`. -/
@@ -2054,8 +2595,21 @@ def intLiteral? (src : Array Char) (n : BNode α) : Option Int :=
   | .atom | .neg => (writtenForm (textOf src n.range)).toInt?
   | _ => none
 
+/-- Whether `k` is written `e.len` or `(e).len`, where `o` is the text of
+`e` without whitespace. -/
+def isLenOf (src : Array Char) (o : String) (k : BNode α) : Bool :=
+  let t := writtenForm (textOf src k.range)
+  t == o ++ ".len" || t == s!"({o}).len"
+
+/-- Whether `k` is a literal of one character, or a sequence literal of one
+element. -/
+def oneElement (src : Array Char) (k : BNode α) : Bool :=
+  let t := textOf src k.range
+  ((Lean.Syntax.decodeStrLit t).any (·.length == 1)) ||
+    (k.kind == .atom && t.startsWith "[" && t.endsWith "]" && k.kids.size == 1)
+
 /-- `manual_method` on `n`, a comparison in `slot` within `parent`
-(`lint::index_test`, `lint::manual_method`). -/
+(`lint::index_test`, `lint::one_character`). -/
 def manualMethodAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) : Option (OpReport α) := do
   let .bin op := n.kind | none
   let c ← Comparison.ofOp? op
@@ -2063,25 +2617,82 @@ def manualMethodAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (pare
   -- The call, the other operand, and the comparison with the call on the left.
   let (call, other, c) := if a.kind matches .method _ then (a, b, c) else (b, a, c.mirror)
   let .method m := call.kind | none
-  let #[recv, x, y] := call.kids | none
+  let recv ← call.kids[0]?
   let r := operandText src call.range recv
-  let report (method fixed : String) (prec : Nat) (slice : Bool) : OpReport α :=
+  let report (method fixed : String) (prec : Nat) (label : String) : OpReport α :=
     let fixed := placed src n slot parent { text := fixed, prec }
-    { lint := .manualMethod, ref := n.ref, msg := manualMethodMsg method fixed slice }
+    { lint := .manualMethod, ref := n.ref, msg := manualMethodMsg method fixed label }
+  -- `s.at(0) = t` and `s.at(s.len - 1) = t`, where `t` has one character.
+  if m == "at" then
+    let #[_, i] := call.kids | none
+    unless (c == .eq || c == .ne) && oneElement src other do none
+    let o := writtenForm (textOf src recv.range)
+    let last := match i.kind, i.kids with
+      | .bin "-", #[l, one] => writtenForm (textOf src one.range) == "1" && isLenOf src o l
+      | _, _ => false
+    let method ← if writtenForm (textOf src i.range) == "0" then some "starts_with?" else if last then some "ends_with?" else none
+    let call := s!"{r}.{method}({textOf src other.range})"
+    let label := if last then "compares the last element" else "compares the first element"
+    return if c == .eq then report method call (BKind.method "").prec label
+      else report method s!"not {call}" BKind.not.prec label
+  let #[_, x, y] := call.kids | none
   if m == "index_of" then
     unless writtenForm (textOf src y.range) == "0" do none
     let t := textOf src x.range
     match indexTest c (← intLiteral? src other) with
-    | .found => return report "contains?" s!"{r}.contains?({t})" (BKind.method "").prec false
-    | .absent => return report "contains?" s!"not {r}.contains?({t})" BKind.not.prec false
-    | .atStart => return report "starts_with?" s!"{r}.starts_with?({t})" (BKind.method "").prec false
+    | .found => return report "contains?" s!"{r}.contains?({t})" (BKind.method "").prec "compares a position"
+    | .absent => return report "contains?" s!"not {r}.contains?({t})" BKind.not.prec "compares a position"
+    | .atStart => return report "starts_with?" s!"{r}.starts_with?({t})" (BKind.method "").prec "compares a position"
     | .other => none
   -- `s.slice(0, t.len) = t`.
   unless m == "slice" && c == .eq && writtenForm (textOf src x.range) == "0" do none
-  let o := writtenForm (textOf src other.range)
-  let len := writtenForm (textOf src y.range)
-  unless len == o ++ ".len" || len == s!"({o}).len" do none
-  return report "starts_with?" s!"{r}.starts_with?({textOf src other.range})" (BKind.method "").prec true
+  unless isLenOf src (writtenForm (textOf src other.range)) y do none
+  return report "starts_with?" s!"{r}.starts_with?({textOf src other.range})" (BKind.method "").prec "compares a prefix"
+
+/-- `length_zero` on `n`, `s.at(0) = ""` or `q.at(0) = []`, or `!=`, in
+`slot` within `parent` (`lint::first_empty`). -/
+def firstEmptyAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) : Option (OpReport α) := do
+  let .bin op := n.kind | none
+  unless op == "=" || op == "!=" do none
+  let #[a, b] := n.kids | none
+  let (call, other) := if a.kind matches .method _ then (a, b) else (b, a)
+  let .method m := call.kind | none
+  let #[recv, i] := call.kids | none
+  let empty := writtenForm (textOf src other.range)
+  unless m == "at" && writtenForm (textOf src i.range) == "0" && (empty == "\"\"" || empty == "[]") do none
+  let fixed := placed src n slot parent (binText op (recv.text src) { text := empty, prec := BKind.atom.prec })
+  return { lint := .lengthZero, ref := n.ref, msg := firstEmptyMsg fixed empty }
+
+/-- Whether `redundant_slicing` fires on `s.slice(i, n)`, from whether it is
+written `s.slice(0, s.len)`, the receivers written the same
+(`lint::redundant_slicing`). -/
+def redundantSlicing (whole : Bool) : Bool := whole
+
+/-- Whether `no_effect_replace` fires on `s.replace(a, b)` or
+`s.replace_all(a, b)`, from whether `a` and `b` are written the same
+(`lint::no_effect_replace`). -/
+def noEffectReplace (same : Bool) : Bool := same
+
+/-- `manual_method` on `s.slice(i, 1)`, `redundant_slicing` on `s.slice(0,
+s.len)`, and `no_effect_replace` on `s.replace(a, a)` and
+`s.replace_all(a, a)`, where `n` is the call, in `slot` within `parent`
+(`lint::one_character`, `lint::redundant_slicing`,
+`lint::no_effect_replace`). -/
+def methodCallAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) : Option (OpReport α) := do
+  let .method m := n.kind | none
+  let recv ← n.kids[0]?
+  let receiver := placed src n slot parent (recv.text src)
+  match m, n.kids with
+  | "slice", #[_, i, k] =>
+    if writtenForm (textOf src k.range) == "1" then
+      let fixed := s!"{operandText src n.range recv}.at({textOf src i.range})"
+      return { lint := .manualMethod, ref := n.ref, msg := manualMethodMsg "at" fixed "a slice of length 1" }
+    unless redundantSlicing (writtenForm (textOf src i.range) == "0" && isLenOf src (writtenForm (textOf src recv.range)) k) do none
+    return { lint := .redundantSlicing, ref := n.ref, msg := redundantSlicingMsg receiver }
+  | "replace", #[_, a, b] | "replace_all", #[_, a, b] =>
+    unless noEffectReplace (writtenSame (textOf src a.range) (textOf src b.range)) do none
+    return { lint := .noEffectReplace, ref := n.ref, msg := noEffectReplaceMsg m receiver }
+  | _, _ => none
 
 /-- The `else` branch that ends a conditional: of the last conditional in a
 chain of `else if`s written without parentheses. -/
@@ -2126,25 +2737,210 @@ def identityOpAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent
   let fixed := placed src n slot parent t
   return { lint := .identityOp, ref := n.ref, msg := identityOpMsg fixed flip }
 
+/-- Whether `needless_bool_assign` fires on `if C then A else B`, and
+whether its fix is `C != X`, rather than `C iff X`, where `elseNegates`
+says that `B` is `not X`, for an `X` written the same as `A`, and
+`thenNegates` that `A` is `not X`, for an `X` written the same as `B`
+(`lint::needless_bool_assign`). -/
+def needlessBoolAssign (elseNegates thenNegates : Bool) : Bool × Bool := (elseNegates || thenNegates, !elseNegates)
+
+/-- `if C then X else not X`, or `if C then not X else X` if `unequal`,
+where `x` is the text of `X`, as the text of its fix. -/
+def needlessBoolAssignMsg (x fixed : String) (unequal : Bool) : Msg :=
+  { code? := some Lint.needlessBoolAssign.code, headline := "this `if` gives a `Bool` or its negation"
+    label? := some (if unequal then s!"the negation of `{x}` if the condition holds, and `{x}` otherwise"
+      else s!"`{x}` if the condition holds, and its negation otherwise")
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-- `needless_bool_assign` on `n`, a conditional in `slot` within `parent`
+(`lint::needless_bool_assign`). -/
+def needlessBoolAssignAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) :
+    Option (OpReport α) := do
+  let #[c, a, b] := n.kids | none
+  -- Whether `k` is `not X`, for an `X` written the same as `x`.
+  let negates (k x : BNode α) : Bool := match k.kind, k.kids with
+    | .not, #[y] => writtenSame (textOf src y.range) (textOf src x.range)
+    | _, _ => false
+  let (fires, unequal) := needlessBoolAssign (negates b a) (negates a b)
+  unless fires do none
+  let x := if unequal then b else a
+  let fixed := placed src n slot parent (binText (if unequal then "!=" else "iff") (c.text src) (x.text src))
+  return { lint := .needlessBoolAssign, ref := n.ref, msg := needlessBoolAssignMsg (textOf src x.range) fixed unequal }
+
+/-- The binary operators that are punctuators, but `-`, which
+`suspicious_unary_op_formatting` looks at: `-` is never directly followed
+by a `-`, which would start a comment, and `<` never is, since `<-` is
+one punctuator. -/
+def punctuatorOps : Array String := #["=", "!=", "<=", ">", ">=", "+", "++", "*"]
+
+/-- Whether `suspicious_unary_op_formatting` fires on `a OP -b`, from
+whether `OP` is a punctuator other than `-`, the `-` follows it directly,
+and whitespace follows the `-` (`lint::suspicious_unary_op_formatting`). -/
+def suspiciousUnaryOp (punctuator adjacent spaced : Bool) : Bool := punctuator && adjacent && spaced
+
+def suspiciousUnaryOpMsg (op fixed : String) : Msg :=
+  { code? := some Lint.suspiciousUnaryOpFormatting.code, headline := s!"`{op}-` looks like one operator"
+    label? := some s!"`{op}`, then a negation"
+    notes := #[s!"note: there is no operator `{op}-`: this is `{op}`, whose right operand is negated"]
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-- `suspicious_unary_op_formatting` on `n`, a binary operator
+(`lint::suspicious_unary_op_formatting`). The fix moves the whitespace
+after the `-` to before it, but keeps a space after it before a `-`,
+which would start a comment. -/
+def suspiciousUnaryAt? (src : Array Char) (n : BNode α) : Option (OpReport α) := do
+  let .bin op := n.kind | none
+  let #[_, b] := n.kids | none
+  let .neg := b.kind | none
+  let #[y] := b.kids | none
+  let m := b.range.start
+  let adjacent := m ≥ op.length && textOf src { start := m - op.length, stop := m } == op
+  let spaced := src[m + 1]?.any Char.isWhitespace
+  unless suspiciousUnaryOp (punctuatorOps.contains op) adjacent spaced do none
+  let operand := textOf src { start := (withParensIn src b.range y.range).start, stop := n.range.stop }
+  let neg := if operand.startsWith "-" then s!"- {operand}" else s!"-{operand}"
+  let fixed := textOf src { start := n.range.start, stop := m } ++ " " ++ neg
+  return { lint := .suspiciousUnaryOpFormatting, ref := n.ref, msg := suspiciousUnaryOpMsg op fixed }
+
+/-- Whether `k`, the first operand of `n`, an atom, is its receiver: `n`
+reads a field of it, or indexes it. -/
+def isReceiverOf (src : Array Char) (n k : BNode α) : Bool := Id.run do
+  let r := withParensIn src n.range k.range
+  let mut i := r.stop
+  while i < n.range.stop && src[i]!.isWhitespace do i := i + 1
+  return r.start == n.range.start && (src[i]? == some '.' || src[i]? == some '[')
+
+/-- A value that `contradictory_comparisons` compares with: an integer, a
+string or a `Bool` literal, or a variant without a payload, by its path. -/
+inductive ConstOperand where
+  | int (k : Int)
+  | str (s : String)
+  | bool (b : Bool)
+  | variant (v : String)
+  deriving Inhabited, BEq
+
+/-- Whether `a` and `b`, neither an integer, are distinct values: two string
+literals written differently, without escape sequences, two `Bool`
+literals, or two variants. -/
+def ConstOperand.distinct : ConstOperand → ConstOperand → Bool
+  | .str s, .str t => s != t && !s.contains '\\' && !t.contains '\\'
+  | .bool b, .bool c => b != c
+  | .variant v, .variant w => v != w
+  | _, _ => false
+
+/-- The value that `n` is written as, if it is a literal or, by `variant?`,
+a variant without a payload. -/
+def constOperand? (src : Array Char) (variant? : α → Option String) (n : BNode α) : Option ConstOperand :=
+  let t := textOf src n.range
+  match n.kind, intLiteral? src n with
+  | .lit b, _ => some (.bool b)
+  | _, some k => some (.int k)
+  | .atom, none =>
+    if t.length ≥ 2 && t.startsWith "\"" && t.endsWith "\"" && t.toList.count '"' == 2 then some (.str t)
+    else (variant? n.ref).map .variant
+  | _, none => none
+
+/-- The comparison `n` is, if one operand is a value that `constOperand?`
+sees, the right one if both are: the other operand's text, the comparison
+with that operand on the left, and the value. -/
+def constComparison? (src : Array Char) (variant? : α → Option String) (n : BNode α) :
+    Option (String × Comparison × ConstOperand) := do
+  let .bin op := n.kind | none
+  let c ← Comparison.ofOp? op
+  let #[a, b] := n.kids | none
+  match constOperand? src variant? b with
+  | some k => return (textOf src a.range, c, k)
+  | none => return (textOf src b.range, c.mirror, ← constOperand? src variant? a)
+
+/-- `contradictory_comparisons` on `n`, an `and` or an `or`
+(`lint::contradictory_comparisons`, `lint::contradictory_equalities`). -/
+def contradictoryAt? (src : Array Char) (variant? : α → Option String) (n : BNode α) (conj : Bool) :
+    Option (OpReport α) := do
+  let #[l, r] := n.kids | none
+  let (x1, c1, k1) ← constComparison? src variant? l
+  let (x2, c2, k2) ← constComparison? src variant? r
+  unless writtenSame x1 x2 do none
+  let fires := match k1, k2 with
+    | .int a, .int b => contradictoryComparisons conj c1 a c2 b
+    | .int _, _ | _, .int _ => false
+    | _, _ => contradictoryEqualities conj c1 c2 (k1.distinct k2)
+  unless fires do none
+  return { lint := .contradictoryComparisons, ref := n.ref, msg := contradictoryMsg conj }
+
+/-- `redundant_comparisons` on `n`, an `and` or an `or`, in `slot` within
+`parent` (`lint::redundant_comparisons`). Two comparisons written the same
+are left to `eq_op`. -/
+def redundantAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) (conj : Bool) :
+    Option (OpReport α) := do
+  let #[l, r] := n.kids | none
+  let (x1, c1, .int a) ← constComparison? src (fun _ => none) l | none
+  let (x2, c2, .int b) ← constComparison? src (fun _ => none) r | none
+  unless writtenForm x1 == writtenForm x2 && !writtenSame (textOf src l.range) (textOf src r.range) do none
+  let (true, keepFirst) := redundantComparisons conj c1 a c2 b | none
+  let fixed := placed src n slot parent ((if keepFirst then l else r).text src)
+  return { lint := .redundantComparisons, ref := n.ref, msg := redundantComparisonsMsg fixed }
+
+/-- `erasing_op` on `n`, a binary operator (`lint::erasing_op`). -/
+def erasingOpAt? (src : Array Char) (n : BNode α) : Option (OpReport α) := do
+  let .bin op := n.kind | none
+  let o ← InfixOp.ofOp? op
+  let #[a, b] := n.kids | none
+  let same := writtenSame (textOf src a.range) (textOf src b.range)
+  unless erasingOp o (identityOperand src a) (identityOperand src b) same do none
+  return { lint := .erasingOp, ref := n.ref, msg := erasingOpMsg o (o == .mul) }
+
+/-- The tests of the chain of `else if` that starts at `n`, in order. -/
+partial def ifTests (n : BNode α) : Array (BNode α) :=
+  match n.kind, n.kids with
+  | .ite, #[c, _, e] => #[c] ++ ifTests e
+  | _, _ => #[]
+
+/-- `ifs_same_cond` on the chain of `else if` that starts at `n`
+(`lint::ifs_same_cond`): at each test written the same as an earlier
+one, naming the first. -/
+def ifsSameCondAt (src : Array Char) (n : BNode α) : Array (OpReport α) :=
+  let tests := ifTests n
+  let texts := tests.map fun t => textOf src t.range
+  tests.zipIdx.filterMap fun (t, i) => do
+    let earlier := (texts.extract 0 i).find? (writtenSame · texts[i]!)
+    unless ifsSameCond earlier.isSome do none
+    return { lint := .ifsSameCond, ref := t.ref, msg := ifsSameCondMsg (earlier.getD "") }
+
 /-- The messages of the operator and method lints in `n`, which is in
-`slot` within `parent`, outermost first. -/
-partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (n : BNode α) (slot : Option Slot) (parent : Range) :
-    Array (OpReport α) :=
+`slot` within `parent`, outermost first, where `inElse` says that `n` is
+the `else` branch of a conditional. -/
+partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (n : BNode α)
+    (slot : Option Slot) (parent : Range) (inElse : Bool := false) : Array (OpReport α) :=
   let slots := n.kind.slots
   let own := match n.kind with
     | .bin op =>
       let operands := (n.kids.zip slots).filterMap fun (k, s) => s.bind (elseExtendsAt? src n k ·)
-      (if op == "and" || op == "or" then (doubleComparisonAt? src n slot parent (op == "and")).toArray else #[])
+      (if op == "and" || op == "or" then
+          (doubleComparisonAt? src n slot parent (op == "and")).toArray
+            ++ (contradictoryAt? src variant? n (op == "and")).toArray
+            ++ (redundantAt? src n slot parent (op == "and")).toArray
+        else #[])
         ++ (boolEqualityAt? src boolEq n slot parent).toArray ++ (manualMethodAt? src n slot parent).toArray
-        ++ (identityOpAt? src n slot parent).toArray ++ operands
+        ++ (identityOpAt? src n slot parent).toArray ++ (suspiciousUnaryAt? src n).toArray
+        ++ (erasingOpAt? src n).toArray ++ (firstEmptyAt? src n slot parent).toArray ++ operands
+    | .ite => (needlessBoolAssignAt? src n slot parent).toArray ++ (if inElse then #[] else ifsSameCondAt src n)
+    | .method _ => (methodCallAt? src n slot parent).toArray
     | _ => #[]
-  own ++ (n.kids.mapIdx fun i k => opReportsIn src boolEq k (slots[i]?.join) n.range).flatten
+  -- A receiver needs parentheses as an operand does.
+  let slots := match n.kind, n.kids[0]? with
+    | .method _, _ => #[some receiverSlot]
+    | .atom, some k => if isReceiverOf src n k then #[some receiverSlot] else slots
+    | _, _ => slots
+  own ++ (n.kids.mapIdx fun i k =>
+    opReportsIn src boolEq variant? k (slots[i]?.join) n.range (n.kind == .ite && i == 2)).flatten
 
 /-- The messages of the operator and method lints in an expression written
 in `src` (`Reqs/Lint/Complexity#comparisons`), where `boolEq` says whether a comparison
-compares `Bool`s. -/
-def opReports (src : Array Char) (boolEq : α → Bool) (root : BNode α) : Array (OpReport α) :=
-  opReportsIn (upTo src root.range) boolEq root none root.range
+compares `Bool`s, and `variant?` which variant without a payload a path
+is, if it is one. -/
+def opReports (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (root : BNode α) :
+    Array (OpReport α) :=
+  opReportsIn (upTo src root.range) boolEq variant? root none root.range
 
 /-! ## Arithmetic and parentheses -/
 
@@ -2358,6 +3154,152 @@ def trivialPatternMsg (fix : PatternFix) (fixed : String) : Msg :=
   { code? := some "F0744", headline := "this pattern has no operator but `.*`", label? := some label
     fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
+/-- A literal of the pattern `p` that replaces `orig`: raw, with the same
+delimiters, if `orig` is raw and `p` has no `"`, and otherwise with the
+escapes that a literal needs. -/
+def patternLiteral (orig p : String) : String :=
+  if orig.startsWith "r" && !p.toList.contains '"' then
+    let pre := orig.toList.takeWhile (· != '"')
+    String.ofList pre ++ "\"" ++ p ++ "\"" ++ String.ofList (pre.drop 1)
+  else p.quote
+
+/-- The character that `cs`, an alternative of a pattern, matches, if it is
+one character that is not special, or `\` and a special one. -/
+def patternChar? : List Char → Option Char
+  | ['\\', c] => if reSpecials.contains c then some c else none
+  | [c] => if reSpecials.contains c && c != '-' then none else some c
+  | _ => none
+
+/-- Whether `manual_pattern_char_comparison` fires on an alternation of `n`
+alternatives, from whether each is one character
+(`lint::manual_pattern_char_comparison`). -/
+def manualPatternCharComparison (n : Nat) (single : Bool) : Bool := n ≥ 2 && single
+
+/-- `c` as an item of a class: `\`, `]`, `^` and `-` escaped
+(`lint::class_char`). -/
+def classCharText (c : Char) : String := if ['\\', ']', '^', '-'].contains c then "\\" ++ c.toString else c.toString
+
+/-- The position after the class whose `[` is at `i` in `cs`, a pattern
+that parses. -/
+partial def classEnd (cs : Array Char) (i : Nat) : Nat :=
+  let rec go (j : Nat) : Nat :=
+    match cs[j]? with
+    | none => j
+    | some ']' => j + 1
+    | some '\\' => go (j + 2)
+    | some _ => go (j + 1)
+  go (if cs[i + 1]? == some '^' then i + 2 else i + 1)
+
+mutual
+/-- The alternative of `cs` from `i` up to `|`, `)` or the end, with each
+alternation of single characters in it written as a class: its text, its
+text as written, and the position after it. -/
+partial def charClassSeq (cs : Array Char) (i : Nat) (out : String := "") (raw : List Char := []) :
+    String × List Char × Nat :=
+  match cs[i]? with
+  | none | some '|' | some ')' => (out, raw, i)
+  | some '\\' =>
+    let t := (cs.extract i (i + 2)).toList
+    charClassSeq cs (i + 2) (out ++ String.ofList t) (raw ++ t)
+  | some '[' =>
+    let j := classEnd cs i
+    let t := (cs.extract i j).toList
+    charClassSeq cs j (out ++ String.ofList t) (raw ++ t)
+  | some '(' =>
+    let (t, j, cls) := charClassAlt cs (i + 1)
+    let t := if cls then t else "(" ++ t ++ ")"
+    charClassSeq cs (j + 1) (out ++ t) (raw ++ (cs.extract i (j + 1)).toList)
+  | some c => charClassSeq cs (i + 1) (out.push c) (raw ++ [c])
+
+/-- The alternation of `cs` from `i` up to `)` or the end, rewritten: its
+text, the position after it, and whether it is a class. -/
+partial def charClassAlt (cs : Array Char) (i : Nat) (parts : Array (String × List Char) := #[]) :
+    String × Nat × Bool :=
+  let (t, raw, j) := charClassSeq cs i
+  let parts := parts.push (t, raw)
+  if cs[j]? == some '|' then charClassAlt cs (j + 1) parts else
+  let chars := parts.filterMap (patternChar? ·.2)
+  if manualPatternCharComparison parts.size (chars.size == parts.size) then
+    ("[" ++ String.join (chars.toList.map classCharText) ++ "]", j, true)
+  else ("|".intercalate (parts.toList.map (·.1)), j, false)
+end
+
+/-- The pattern `p`, which parses, with each alternation of single
+characters written as a class, if it has one
+(`lint::manual_pattern_char_comparison`). -/
+def charClassPattern? (p : String) : Option String :=
+  let (t, _, _) := charClassAlt p.toList.toArray 0
+  if t == p then none else some t
+
+def manualPatternCharComparisonMsg (fixed : String) : Msg :=
+  { code? := some Lint.manualPatternCharComparison.code, headline := "this alternation of single characters is a class"
+    label? := some "matches one of several characters"
+    notes := #["note: a class, such as `[abc]`, matches one character of those in it"]
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-- Whether `almost_complete_range` fires on the range `low-high`, from the
+code points of its ends, and the range of the fix
+(`lint::almost_complete_range`). -/
+def almostCompleteRange (low high : Int) : Bool × Int × Int :=
+  let fires := ([97, 98, 65, 66].contains low && high == low + 24) || (low == 48 && high == 56)
+  (fires, if fires && (low == 98 || low == 66) then low - 1 else low,
+    if fires && (high == 121 || high == 89 || high == 56) then high + 1 else high)
+
+/-- The character of a class at `i` in `cs`, which `\` may escape: the
+character, its text, and the position after it. -/
+def classCharAt (cs : Array Char) (i : Nat) : Char × String × Nat :=
+  if cs[i]? == some '\\' then (cs[i + 1]?.getD ' ', String.ofList (cs.extract i (i + 2)).toList, i + 2)
+  else (cs[i]?.getD ' ', (cs[i]?.getD ' ').toString, i + 1)
+
+/-- The items of the class from `i` in `cs`, a pattern that parses, after
+its `[` and `^`, with each range that `almost_complete_range` fires on
+completed: their text, the ranges completed, and the position after the
+class. -/
+partial def completeClass (cs : Array Char) (i : Nat) (out : String) (found : Array (String × String)) :
+    String × Array (String × String) × Nat :=
+  match cs[i]? with
+  | none => (out, found, i)
+  | some ']' => (out.push ']', found, i + 1)
+  | _ =>
+    let (lo, loText, j) := classCharAt cs i
+    if cs[j]? == some '-' && cs[j + 1]? != some ']' && (cs[j + 1]?).isSome then
+      let (hi, hiText, k) := classCharAt cs (j + 1)
+      let (fires, wlo, whi) := almostCompleteRange lo.toNat hi.toNat
+      if fires then
+        let whole := s!"{Char.ofNat wlo.toNat}-{Char.ofNat whi.toNat}"
+        completeClass cs k (out ++ whole) (found.push (s!"{loText}-{hiText}", whole))
+      else completeClass cs k (out ++ loText ++ "-" ++ hiText) found
+    else completeClass cs j (out ++ loText) found
+
+/-- The pattern `p` from `i`, with each range that `almost_complete_range`
+fires on completed, and those ranges, as written and completed. -/
+partial def completeRanges (cs : Array Char) (i : Nat) (out : String := "") (found : Array (String × String) := #[]) :
+    String × Array (String × String) :=
+  match cs[i]? with
+  | none => (out, found)
+  | some '\\' => completeRanges cs (i + 2) (out ++ String.ofList (cs.extract i (i + 2)).toList) found
+  | some '[' =>
+    let neg := cs[i + 1]? == some '^'
+    let (t, found, j) := completeClass cs (if neg then i + 2 else i + 1) (if neg then "[^" else "[") found
+    completeRanges cs j (out ++ t) found
+  | some c => completeRanges cs (i + 1) (out.push c) found
+
+/-- The pattern `p`, which parses, with each range that
+`almost_complete_range` fires on completed, and those ranges, as written
+and completed, if there is one. -/
+def completeRangesPattern? (p : String) : Option (String × Array (String × String)) :=
+  let (t, found) := completeRanges p.toList.toArray 0
+  if found.isEmpty then none else some (t, found)
+
+def almostCompleteRangeMsg (found : Array (String × String)) (fixed : String) : Msg :=
+  let (r, whole) := found[0]!
+  { code? := some Lint.almostCompleteRange.code
+    headline := if found.size == 1 then s!"the range `{r}` is one character short of `{whole}`"
+      else "these ranges are each one character short of a whole alphabet"
+    label? := some (if found.size == 1 then s!"`{r}` leaves out one character" else "ranges that leave out one character")
+    notes := #["note: a range is from its first character to its last, both included"]
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
 /-- Whether `redundant_bool_type` fires on a declaration of `n`, where
 `isBool?` is whether its type, if written, is `Bool`
 (`lint::redundant_bool_type`). -/
@@ -2512,6 +3454,54 @@ def tooManyLinesMsg (what : Named) (n : Name) (lines : Nat) : Msg :=
     notes := #["note: blank lines and comments are not counted",
       if what == .function then "help: move parts of it into smaller functions, and apply them"
       else "help: move parts of it into smaller components, and make them its instances"] }
+
+/-- Whether an arm that matches one variant gives it back, where
+`sameVariant` says that its body builds that variant, `binders` are the
+texts of the pattern's binders, `_` included, and `args` those of the
+body's arguments: the binders, in order, none of them `_`
+(`lint::needless_match`). -/
+def givesBack (sameVariant : Bool) (binders args : Array String) : Bool :=
+  sameVariant && binders.size == args.size && (binders.zip args).all fun (b, a) => b != "_" && writtenSame b a
+
+/-- Whether `needless_match` fires on a `match`, from whether each arm but
+`_` gives back the variant it matches, there is a `_` arm, its body is
+written the same as the scrutinee, and `trivial_match` fires on it
+(`lint::needless_match`). -/
+def needlessMatch (givenBack wildcard scrutineeBack trivial : Bool) : Bool :=
+  givenBack && (!wildcard || scrutineeBack) && !trivial
+
+/-- A `match` that gives back its scrutinee, whose text, as the fix writes
+it, is `fixed`. -/
+def needlessMatchMsg (fixed : String) : Msg :=
+  { code? := some Lint.needlessMatch.code, headline := "this `match` gives back its scrutinee"
+    label? := some "each arm gives back the value it matches"
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-- Whether `assertions_on_constants` fires on a constraint whose
+expression mentions `nVars` variables, binders and applications of
+uninterpreted functions, as `varsMentioned` counts them
+(`lint::assertions_on_constants`). -/
+def assertionOnConstant (nVars : Nat) : Bool := nVars == 0
+
+/-- A constraint, an `assume`, `req` or `expect`, that mentions no
+variable, where `literal?` is its value if it is written `true` or
+`false`. -/
+def assertionOnConstantMsg (kind : String) (literal? : Option Bool) : Msg :=
+  let what := match kind with
+    | "assume" => "assumption"
+    | "req" => "requirement"
+    | _ => "expectation"
+  let (label, note) := match literal?, kind with
+    | some true, "assume" => ("always `true`", "it rules out no input")
+    | some true, "req" => ("always `true`", "it constrains nothing")
+    | some true, _ => ("always `true`", "it claims nothing")
+    | some false, "assume" => ("always `false`", "no input meets it, so every requirement holds vacuously")
+    | some false, "req" => ("always `false`", "no behaviour meets it, so the component is not realizable")
+    | some false, _ => ("always `false`", "it always fails")
+    | none, _ => ("the same in every behaviour",
+      "it is either always true, and says nothing, or always false")
+  { code? := some Lint.assertionsOnConstants.code, headline := s!"this {what} mentions no variable"
+    label? := some label, notes := #[s!"note: {note}"] }
 
 /-! ## Expectations -/
 

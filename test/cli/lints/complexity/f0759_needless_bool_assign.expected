@@ -1,0 +1,32 @@
+warning[F0759]: this `if` gives a `Bool` or its negation
+ --> test/cli/lints/complexity/f0759_needless_bool_assign.fren:8:19
+  |
+8 |     req r: p? iff if a? then b? else not b?
+  |                   ^^^^^^^^^^^^^^^^^^^^^^^^^ `b?` if the condition holds, and its negation otherwise
+  |
+  = help: `fren fix` can fix this
+  = note: `needless_bool_assign` is `warn` by default
+  = help: to allow it, `set_option fren.lint.needless_bool_assign "allow"`
+help: write `(a? iff b?)`
+  |
+8 -     req r: p? iff if a? then b? else not b?
+8 +     req r: p? iff (a? iff b?)
+  |
+
+warning[F0759]: this `if` gives a `Bool` or its negation
+ --> test/cli/lints/complexity/f0759_needless_bool_assign.fren:9:19
+  |
+9 |     req s: q? iff if a? then not b? else b?
+  |                   ^^^^^^^^^^^^^^^^^^^^^^^^^ the negation of `b?` if the condition holds, and `b?` otherwise
+  |
+  = help: `fren fix` can fix this
+help: write `a? != b?`
+  |
+9 -     req s: q? iff if a? then not b? else b?
+9 +     req s: q? iff a? != b?
+  |
+
+fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0759`.
+exit=3

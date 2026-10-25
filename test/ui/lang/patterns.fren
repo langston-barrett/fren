@@ -1,5 +1,11 @@
 -- Patterns: `matches?`, in both front ends.
 
+-- Expectations about constants test what the language computes.
+set_option fren.lint.assertions_on_constants "allow"
+
+-- `(a|b)+` tests alternation on purpose.
+set_option fren.lint.manual_pattern_char_comparison "allow"
+
 enum Case { Snake, Camel, Upper }
 
 comp in_case {

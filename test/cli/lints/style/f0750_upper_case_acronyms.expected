@@ -1,0 +1,19 @@
+warning[F0750]: enum `HTTPStatus` has an acronym in upper case
+ --> test/cli/lints/style/f0750_upper_case_acronyms.fren:3:10
+  |
+3 | pub enum HTTPStatus { Ok, NotFound }
+  |          ^^^^^^^^^^ three or more uppercase letters in a row
+  |
+  = note: in `CamelCase`, an acronym is a word, with only its first letter in upper case
+  = note: `upper_case_acronyms` is `warn` by default
+  = help: to allow it, `set_option fren.lint.upper_case_acronyms "allow"`
+help: rename it to `HttpStatus`
+  |
+3 - pub enum HTTPStatus { Ok, NotFound }
+3 + pub enum HttpStatus { Ok, NotFound }
+  |
+
+fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0750`.
+exit=3

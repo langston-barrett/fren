@@ -6,4 +6,5 @@ comp c { in x? inst s: sub { a? := when x?, x?, b? := x? } }
 --~^[cli] error: `when` must be parenthesized here
 --~^^[hosted] error: unexpected identifier; expected
 comp ok { in x? inst s: sub { a? := (when x?, x?), b? := x? } }
+--~^[hosted] warning: the condition and the body of `when` are written the same
 --@ exit: 2

@@ -1,0 +1,64 @@
+-- The lints of names, in both front ends: `module_inception`,
+-- `enum_variant_names`, `upper_case_acronyms`,
+-- `just_underscores_and_digits` and `disallowed_names`.
+-- fren-covers: lint::upper_case_acronyms, lint::just_underscores_and_digits, lint::disallowed_names
+
+mod climate::climate  --~ warning: module `climate::climate` has the same name as its parent
+mod climate::sensors::sensors  --~ warning: module `climate::sensors::sensors` has the same name as its parent
+mod climate::sensors::climate
+mod display
+
+pub enum Mode { ModeHeat, ModeCool }  --~ warning: every variant of `Mode` starts with `Mode`
+--~^ warning: variant `ModeHeat` contains the name of its enumeration `Mode`
+--~^^ warning: variant `ModeCool` contains the name of its enumeration `Mode`
+pub enum Climate { HeatMode, CoolMode }  --~ warning: every variant of `Climate` ends with `Mode`
+pub enum Edge { RisingSlowEdge, RisingFastEdge }  --~ warning: starts with `Rising` and ends with `Edge`
+--~^ warning: variant `RisingSlowEdge` contains the name of its enumeration `Edge`
+--~^^ warning: variant `RisingFastEdge` contains the name of its enumeration `Edge`
+pub enum Fan { Low, HighFan, Fan }  --~ warning: variant `HighFan` contains the name of its enumeration `Fan`
+pub enum FanSpeed { Low, MaxFanSpeedHigh }  --~ warning: variant `MaxFanSpeedHigh` contains the name
+pub enum Heat { Heat, HeatPump }  --~ warning: variant `HeatPump` contains the name of its enumeration `Heat`
+pub enum One { HeatMode }
+pub enum Dial { Model, Mode }
+pub enum Words { Heat_Mode, Cool_Mode }  --~ warning: every variant of `Words` ends with `Mode`
+--~^ warning: variant `Heat_Mode` should have a camel case name
+--~^^ warning: variant `Cool_Mode` should have a camel case name
+
+pub enum HTTPStatus { OKResponse, NotFound, IO }  --~ warning: enum `HTTPStatus` has an acronym in upper case
+--~^ warning: variant `OKResponse` has an acronym in upper case
+pub struct XMLRecord { HTTPField: Int }  --~ warning: record `XMLRecord` has an acronym in upper case
+--~^ warning: field `HTTPField` should have a snake case name
+pub type ABCType  --~ warning: abstract type `ABCType` has an acronym in upper case
+pub const ABC_MAX: Int := 3
+pub enum UserID { ID }
+pub enum HTTP_STATUS { A }  --~ warning: enum `HTTP_STATUS` should have a camel case name
+
+pub fn _1(_2: Int): Int := _2  --~ warning: function `_1` is named only with `_` and digits
+--~^ warning: variable `_2` is named only with `_` and digits
+pub enum Digits { _3 }  --~ warning: variant `_3` is named only with `_` and digits
+--~^ warning: variant `_3` should have a camel case name
+
+pub comp foo {  --~ warning: component `foo` has a placeholder name
+    in Baz?  --~ warning: variable `Baz?` has a placeholder name
+    --~^ warning: variable `Baz?` should have a snake case name
+    in __: Int  --~ warning: variable `__` is named only with `_` and digits
+    in _x: Int
+    in bar?
+    in foobar?
+    pub out quux?  --~ warning: variable `quux?` has a placeholder name
+
+    req _4: quux? iff (Baz? and bar? and foobar? and __ > _x)  --~ warning: constraint `_4` is named only with `_` and digits
+}
+
+pub comp user {
+    in v: Int
+    inst _5: foo { Baz? := true, __ := v, _x := v, bar? := true, foobar? := true }  --~ warning: instance `_5` is named only with `_` and digits
+    pub out w?
+
+    req r: w? iff _5.quux?
+}
+
+set_option fren.lint.style "allow" in
+pub enum QUUX { FOO }
+
+--@ exit: 3

@@ -90,5 +90,6 @@ comp methods {
     --~^^ warning: replacing `[]` puts the replacement before the sequence
     -- Not empty, or not where it decides the value.
     req r5: o? iff s.index_of("a", 0) = 0 and s.slice(0, 1) = "a" and q.starts_with?([0])
-    --~^ warning: this is a call of `starts_with?`
+    --~^ warning: this is a call of `at`
+    --~^^ warning: this is a call of `starts_with?`
 }

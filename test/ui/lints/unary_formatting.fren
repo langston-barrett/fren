@@ -1,0 +1,18 @@
+-- `suspicious_unary_op_formatting`, in both front ends. Not formatted,
+-- since `fren fmt` writes `x >=- 1` as `x >= -1`.
+
+comp unary {
+    in x: Int
+    pub out p1?
+    pub out p2?
+    pub out n1: Int
+    pub out n2: Int
+
+    req r1: p1? iff x >=- 1  --~ warning: `>=-` looks like one operator
+    req r2: p2? iff x != - 1 and x =- 2
+    --~^ warning: `=-` looks like one operator
+    --~^^ warning: these two comparisons are `x =- 2`
+    req r3: n1 = 2 *- x  --~ warning: `*-` looks like one operator
+    -- Written as meant.
+    req r4: n2 = x * -2
+}

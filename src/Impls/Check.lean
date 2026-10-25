@@ -154,7 +154,7 @@ impl copied: check::copied for (s : Fren.Core.Symbol) {
 def toRun : Fren.Core.Run → check.Run
   | .bySolver => .BySolver
   | .byTesting => .ByTesting
-  | .notRun => .NotRun
+  | .skipped => .Skipped
 
 impl run_of: check::by_testing for (k : CheckKind) (t : Bool) {
   kind := toCheckKind k,

@@ -1,5 +1,8 @@
 -- Constants: values, types, scope, and use in every kind of expression.
 
+-- Expectations about constants test what the language computes.
+set_option fren.lint.assertions_on_constants "allow"
+
 mod climate
 pub enum Mode { Off, Heat }
 pub const MIN_T: Int := 50
@@ -46,7 +49,7 @@ comp shadow {
     --~^ warning: variable `MAX_T` should have a snake case name
     pub out y: Int
     req r: y = MAX_T
-    expect same: y = MAX_T
+    expect same: y = MAX_T  --~ warning: this is written the same as `r`
 }
 
 -- A method applied to a constant reads its value.

@@ -51,7 +51,7 @@ pub comp patterns {
     --~^ warning: this pattern has no operator but `.*`
     --~^^ warning: this pattern has no operator but `.*`
     -- Patterns with operators, and `.*` alone.
-    req t4: p4? iff (s.matches?("a|b") or s.matches?("a.") or s.matches?(".*") or s.matches?("[a-z]"))
+    req t4: p4? iff (s.matches?("ab|c") or s.matches?("a.") or s.matches?(".*") or s.matches?("[a-z]"))
 }
 
 pub comp arms {

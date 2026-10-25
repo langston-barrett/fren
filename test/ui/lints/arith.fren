@@ -47,13 +47,16 @@ comp arith {
     --~^^ warning: say whether it is empty with `""`, not `len`
     --~^^^ warning: say whether it is empty with `[]`, not `len`
     --~^^^^ warning: say whether it is empty with `{}`, not `card`
+    --~^^^^^ warning: these two comparisons are `0 < s.len`
     pub out e2? := q.len < 1 or 0 = s.len or 0 >= t.card or 1 > q.len
     --~^ warning: say whether it is empty with `[]`, not `len`
     --~^^ warning: say whether it is empty with `""`, not `len`
     --~^^^ warning: say whether it is empty with `{}`, not `card`
     --~^^^^ warning: say whether it is empty with `[]`, not `len`
-    -- Always true, or not about emptiness: no lint.
+    -- Not about emptiness: no lint, but always `true` is `absurd_extreme_comparisons`.
     pub out e3? := s.len >= 0 and 0 <= q.len and t.card != 2 and q.len <= 1
+    --~^ warning: this comparison is always `true`
+    --~^^ warning: this comparison is always `true`
     pub out m1? := x != 1 and x != 2 and x != 3 and x != 4  --~ warning: this is `x` not in a set of 4
     pub out m2? := x = 1 or x = 2 or x = 3 or x = 4         --~ warning: this is `x` in a set of 4
     -- A later value indexes a sequence: no lint.

@@ -258,6 +258,116 @@ register_option fren.lint.too_many_lines : String := {
   descr := "the level of the lint `too_many_lines`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.module_inception : String := {
+  defValue := "warn"
+  descr := "the level of the lint `module_inception`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.enum_variant_names : String := {
+  defValue := "warn"
+  descr := "the level of the lint `enum_variant_names`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.upper_case_acronyms : String := {
+  defValue := "warn"
+  descr := "the level of the lint `upper_case_acronyms`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.just_underscores_and_digits : String := {
+  defValue := "warn"
+  descr := "the level of the lint `just_underscores_and_digits`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.disallowed_names : String := {
+  defValue := "warn"
+  descr := "the level of the lint `disallowed_names`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.needless_bool_assign : String := {
+  defValue := "warn"
+  descr := "the level of the lint `needless_bool_assign`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.needless_match : String := {
+  defValue := "warn"
+  descr := "the level of the lint `needless_match`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.assertions_on_constants : String := {
+  defValue := "warn"
+  descr := "the level of the lint `assertions_on_constants`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.suspicious_unary_op_formatting : String := {
+  defValue := "warn"
+  descr := "the level of the lint `suspicious_unary_op_formatting`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.redundant_slicing : String := {
+  defValue := "warn"
+  descr := "the level of the lint `redundant_slicing`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.no_effect_replace : String := {
+  defValue := "warn"
+  descr := "the level of the lint `no_effect_replace`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.const_is_empty : String := {
+  defValue := "warn"
+  descr := "the level of the lint `const_is_empty`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.manual_pattern_char_comparison : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_pattern_char_comparison`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.almost_complete_range : String := {
+  defValue := "warn"
+  descr := "the level of the lint `almost_complete_range`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.duplicate_constraint : String := {
+  defValue := "warn"
+  descr := "the level of the lint `duplicate_constraint`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.invisible_characters : String := {
+  defValue := "warn"
+  descr := "the level of the lint `invisible_characters`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.negative_position : String := {
+  defValue := "warn"
+  descr := "the level of the lint `negative_position`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.absurd_extreme_comparisons : String := {
+  defValue := "warn"
+  descr := "the level of the lint `absurd_extreme_comparisons`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.erasing_op : String := {
+  defValue := "warn"
+  descr := "the level of the lint `erasing_op`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.ifs_same_cond : String := {
+  defValue := "warn"
+  descr := "the level of the lint `ifs_same_cond`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.contradictory_comparisons : String := {
+  defValue := "warn"
+  descr := "the level of the lint `contradictory_comparisons`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.redundant_comparisons : String := {
+  defValue := "warn"
+  descr := "the level of the lint `redundant_comparisons`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"
@@ -340,6 +450,69 @@ def recordLint (lint : Core.Lint) (ref : Syntax) (msg : Core.Msg) : m Unit := do
   if lint == .undecidable && level.level.severity? == some .error then
     modifyLocal fun l => { l with undecidableDenied := true }
 
+/-- The comments in the trivia `t`, the whitespace and comments around a
+token, as byte offsets in it. -/
+def triviaComments (t : String) : Array (Nat × Nat) := Id.run do
+  let cs := t.toList.toArray
+  let mut out := #[]
+  let mut i := 0
+  -- The byte offset of `cs[i]`.
+  let mut b := 0
+  while i < cs.size do
+    if cs[i]! == '-' && cs[i + 1]? == some '-' then
+      let start := b
+      while i < cs.size && cs[i]! != '\n' do
+        b := b + cs[i]!.utf8Size
+        i := i + 1
+      out := out.push (start, b)
+    else if cs[i]! == '/' && cs[i + 1]? == some '-' then
+      let start := b
+      let mut depth := 0
+      while i < cs.size do
+        if cs[i]! == '/' && cs[i + 1]? == some '-' then
+          depth := depth + 1
+          b := b + 2
+          i := i + 2
+        else if cs[i]! == '-' && cs[i + 1]? == some '/' then
+          depth := depth - 1
+          b := b + 2
+          i := i + 2
+          if depth == 0 then break
+        else
+          b := b + cs[i]!.utf8Size
+          i := i + 1
+      out := out.push (start, b)
+    else
+      b := b + cs[i]!.utf8Size
+      i := i + 1
+  return out
+
+/-- Records `invisible_characters` in the command `stx`: in its string
+literals, and in the comments around its tokens
+(`lint::invisible_character`). -/
+partial def lintInvisible (stx : Syntax) : m Unit := do
+  let fixable := (← getLocal).inMarkdown
+  let report (ref : Syntax) (comment : Bool) (text : String) : m Unit := do
+    if let some (found, fixed) := Core.invisibleFix? comment text then
+      let msg := Core.invisibleMsg comment found fixed
+      recordLint .invisibleCharacters ref (if fixable then msg.note Core.fixHelp else msg)
+  let trivia (sub : Substring.Raw) : m Unit := do
+    let t := sub.toString
+    for (a, b) in triviaComments t do
+      let pos (k : Nat) : String.Pos.Raw := ⟨sub.startPos.byteIdx + k⟩
+      report (.atom (.synthetic (pos a) (pos b)) "") true (String.Pos.Raw.extract t ⟨a⟩ ⟨b⟩)
+  let rec go (stx : Syntax) : m Unit := do
+    match stx with
+    | .node _ k args =>
+      if k == strLitKind then
+        if let some a := args[0]? then report stx false a.getAtomVal
+      for a in args do go a
+    | .atom (.original leading _ trailing _) _ | .ident (.original leading _ trailing _) .. =>
+      trivia leading
+      trivia trailing
+    | _ => pure ()
+  go stx
+
 /-- Records the item that a resolved path uses (`dead_code`). -/
 def recordUsedItem (r : Core.Resolved) : m Unit :=
   modifyLocal fun l => { l with usedItems := l.usedItems.push r.usedItem }
@@ -350,12 +523,12 @@ def recordItem (what : Core.Named) (path : Name) (ref : Syntax) : m Unit := do
   let r : Core.ItemRecord := { what, path, level := ← lintLevel .deadCode }
   modifyLocal fun l => { l with items := l.items.push (r, ref) }
 
-/-- Records the naming lint for a declared name that is not in its case
-(`lint::naming_case`), at the level here. -/
+/-- Records the lints about a declared name alone (`Core.nameMsgs`): its
+case (`lint::naming_case`), and the lints of the `style` group that look only
+at the name, at the level here. -/
 def lintName (what : Core.Named) (n : Name) (ref : Syntax) : m Unit := do
-  if let some (lint, msg) := Core.namingMsg? what n then
-    let level ← lintLevel lint
-    modifyLocal fun l => { l with lintReports := l.lintReports.push { lint, level, ref, msg } }
+  for (lint, msg) in Core.nameMsgs what n do
+    recordLint lint ref msg
   if what matches .variable | .instance | .binder then
     modifyLocal fun l => { l with declaredNames := l.declaredNames.push (n, ref) }
 

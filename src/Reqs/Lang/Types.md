@@ -35,11 +35,15 @@ types, such as an `Int` with an enumeration, is an error. Which operators apply 
 are equal if they are built alike: the same variant with equal payloads,
 or equal values for every field.
 
-`lang::ValueType` classifies types, for the rules of this chapter:
+`lang::ValueType` classifies types, for the rules of this chapter. Each
+variant ends in `Ty`, which [`enum_variant_names`](../Lint/Style.md#names)
+would remove, since a variant cannot be named after a built-in type such as
+`Bool`:
 
 ```fren
 pub mod lang
 
+set_option fren.lint.enum_variant_names "allow" in
 pub enum ValueType { BoolTy, IntTy, NatTy, StringTy, EnumTy, RecordTy, AbstractTy, SetTy, RelTy, SeqTy }
 ```
 

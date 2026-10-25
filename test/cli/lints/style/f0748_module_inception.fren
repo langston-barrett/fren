@@ -1,0 +1,4 @@
+-- `module_inception`.
+pub mod climate::climate
+
+pub comp sensor { in t: Int pub out hot? req r: hot? iff t > 30 }

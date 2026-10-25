@@ -20,43 +20,64 @@ use view::Severity
 <!-- keep-sorted start skip_lines=2 -->
 | Lint | Code | Group | Default | Reported at |
 |---|---|---|---|---|
+| `almost_complete_range` | `F0757` | `suspicious` | `warn` | a range in a pattern one character short of an alphabet, such as `a-y` (see [Ranges of characters](Lint/Suspicious.md#ranges-of-characters)) |
+| `assertions_on_constants` | `F0761` | `style` | `warn` | an `assume`, `req` or `expect` that mentions no variable, such as `req r: true` (see [Constant constraints](Lint/Style.md#constant-constraints)) |
+| `absurd_extreme_comparisons` | `F0763` | `suspicious` | `warn` | a comparison of a `len` or `card` that is always the same, since a length is never negative, such as `s.len < 0` (see [Comparisons](Lint/Suspicious.md#comparisons)) |
 | `bool_equality` | `F0731` | `pedantic` | `allow` | `a = b` on `Bool`s (see [Boolean equality](Lint/Pedantic.md#boolean-equality)) |
 | `card_zero` | `F0716` | `style` | `warn` | a comparison of a set's or relation's `card` with `0` or `1` that says whether it is empty, such as `s.card = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
 | `case_split_reqs` | `F0729` | `pedantic` | `allow` | two or more requirements `when T, y = e` of one output, whose tests are of which variant one scrutinee is (see [Variant tests](Lint/Pedantic.md#variant-tests)) |
 | `collapsible_when` | `F0723` | `style` | `warn` | a `when` whose body is a `when`, or an `unless` whose body is an `unless` (see [Conditionals](Lint/Style.md#conditionals)) |
+| `const_is_empty` | `F0755` | `suspicious` | `warn` | a test of a literal whose value the literal fixes, such as `"ab".len = 0` (see [Tests of literals](Lint/Suspicious.md#tests-of-literals)) |
 | `constant_output` | `F0719` | `complexity` | `warn` | a defined output whose definition mentions no variable and no uninterpreted function (see [Constant outputs](Lint/Complexity.md#constant-outputs)) |
+| `contradictory_comparisons` | `F0766` | `suspicious` | `warn` | two comparisons of one operand that cannot both hold, joined by `and`, or of which one always holds, joined by `or`, such as `x < 3 and x > 5` (see [Comparisons](Lint/Suspicious.md#comparisons)) |
 | `dead_code` | `F0711` | `unused` | `warn` | a private enumeration, record, abstract type, function or constant that nothing in its file uses (see [Dead code](Lint/Unused.md#dead-code)) |
 | `definable_output` | `F0720` | `pedantic` | `allow` | an output that one requirement equates with an expression of other variables (see [Definable outputs](Lint/Pedantic.md#definable-outputs)) |
+| `disallowed_names` | `F0752` | `style` | `warn` | a declared name that is a placeholder, such as `foo` (see [Names](Lint/Style.md#names)) |
 | `double_comparison` | `F0730` | `complexity` | `warn` | two comparisons of the same operands that are one, such as `a < b or a = b` (see [Comparisons](Lint/Complexity.md#comparisons)) |
 | `double_neg` | `F0740` | `style` | `warn` | a negation of a negation, `- -x` (see [Negations](Lint/Style.md#negations)) |
 | `double_parens` | `F0739` | `complexity` | `warn` | parentheses directly around parentheses, `((e))` (see [Parentheses](Lint/Complexity.md#parentheses)) |
+| `duplicate_constraint` | `F0768` | `suspicious` | `warn` | a constraint or global expectation written the same as an earlier one (see [Repeated constraints](Lint/Suspicious.md#repeated-constraints)) |
 | `duplicate_elements` | `F0738` | `suspicious` | `warn` | a set or relation literal with an element written the same as an earlier one, such as `{a, b, a}` (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
 | `else_extends` | `F0733` | `complexity` | `warn` | a conditional operand whose `else` branch extends past its operator, as in `2 * if c? then x else y + 1` (see [Conditional operands](Lint/Complexity.md#conditional-operands)) |
 | `empty_argument` | `F0745` | `suspicious` | `warn` | a method applied to `""` or `[]`, or a `slice` of length `0`, such as `s.starts_with?("")` (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
-| `eq_op` | `F0736` | `suspicious` | `warn` | an operator whose operands are written the same, such as `x = x` (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
+| `enum_variant_names` | `F0749` | `style` | `warn` | an enumeration whose variants all start, or all end, with the same word, or a variant that contains its enumeration's name (see [Names](Lint/Style.md#names)) |
+| `eq_op` | `F0736` | `suspicious` | `warn` | an operator whose operands are written the same, such as `x = x`, or `when C, C` (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
+| `erasing_op` | `F0764` | `suspicious` | `warn` | an operation whose value ignores an operand, such as `x * 0` (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
 | `glob_imports` | `F0702` | `style` | `warn` | a `use ...::*` (see [Glob imports](Lint/Style.md#glob-imports)) |
 | `identity_op` | `F0734` | `complexity` | `warn` | an operation that leaves an operand as it is, such as `x + 0`, or the negation in `x + -y` (see [Identities](Lint/Complexity.md#identities)) |
 | `if_chain_match` | `F0727` | `pedantic` | `allow` | a chain of `if` whose tests are of which variant one scrutinee is (see [Variant tests](Lint/Pedantic.md#variant-tests)) |
 | `if_not_else` | `F0724` | `pedantic` | `allow` | an `if` whose condition is a negation, such as `if not c? then a else b` (see [Negated conditions](Lint/Pedantic.md#negated-conditions)) |
+| `ifs_same_cond` | `F0765` | `suspicious` | `warn` | a test of a chain of `else if` written the same as an earlier one (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
 | `index_after_use` | `F0721` | `suspicious` | `warn` | an index on the left of an `and` whose right bounds the sequence (see [Indexes](Lint/Suspicious.md#indexes)) |
 | `int_plus_one` | `F0741` | `complexity` | `warn` | a non-strict comparison of integers with an operand off by one, such as `x >= y + 1` (see [Off-by-one comparisons](Lint/Complexity.md#off-by-one-comparisons)) |
-| `length_zero` | `F0715` | `style` | `warn` | a comparison of a string's or sequence's `len` with `0` or `1` that says whether it is empty, such as `s.len = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
-| `manual_method` | `F0732` | `complexity` | `warn` | a search written with `index_of` or `slice`, such as `s.index_of(t, 0) >= 0` (see [Searches](Lint/Complexity.md#searches)) |
+| `invisible_characters` | `F0769` | `suspicious` | `warn` | a string literal with an invisible character, or a string literal or comment with a bidirectional control (see [Invisible characters](Lint/Suspicious.md#invisible-characters)) |
+| `just_underscores_and_digits` | `F0751` | `style` | `warn` | a declared name made only of `_` and digits, such as `_1` (see [Names](Lint/Style.md#names)) |
+| `length_zero` | `F0715` | `style` | `warn` | a comparison of a string's or sequence's `len` with `0` or `1`, or of its `at(0)` with `""` or `[]`, that says whether it is empty, such as `s.len = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
+| `manual_method` | `F0732` | `complexity` | `warn` | a search written with `index_of`, `slice` or `at`, such as `s.index_of(t, 0) >= 0` (see [Searches](Lint/Complexity.md#searches)) |
+| `manual_pattern_char_comparison` | `F0756` | `style` | `warn` | an alternation of single characters in a pattern, such as `a\|b` (see [Classes of characters](Lint/Style.md#classes-of-characters)) |
 | `many_single_char_names` | `F0795` | `pedantic` | `allow` | a component, function or global expectation that declares more than four single-character names (see [Names](Lint/Pedantic.md#names)) |
 | `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false` (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
 | `match_same_arms` | `F0725` | `pedantic` | `allow` | an arm of a `match` with the same body as another (see [Matches](Lint/Pedantic.md#matches)) |
 | `membership_chain` | `F0718` | `pedantic` | `allow` | `x = a or x = b or x = c`, or `x != a and x != b and x != c`, three or more (see [Membership chains](Lint/Pedantic.md#membership-chains)) |
+| `module_inception` | `F0748` | `style` | `warn` | a module whose last segment repeats its parent's, as in `mod lint::lint` (see [Names](Lint/Style.md#names)) |
+| `needless_bool_assign` | `F0759` | `complexity` | `warn` | `if C then X else not X`, or `if C then not X else X` (see [Conditionals of `Bool`s](Lint/Complexity.md#conditionals-of-bools)) |
+| `needless_match` | `F0760` | `complexity` | `warn` | a `match` whose every arm gives back the value it matches, such as `match x { E::A => E::A, _ => x }` (see [Matches that give back the scrutinee](Lint/Complexity.md#matches-that-give-back-the-scrutinee)) |
 | `neg_multiply` | `F0742` | `style` | `warn` | a product with `-1`, `x * -1` or `-1 * x` (see [Negations](Lint/Style.md#negations)) |
+| `negative_position` | `F0770` | `suspicious` | `warn` | a negative integer literal as a position, such as `q[-1]` or `s.at(-1)` (see [Indexes](Lint/Suspicious.md#indexes)) |
+| `no_effect_replace` | `F0754` | `suspicious` | `warn` | `s.replace(a, a)` or `s.replace_all(a, a)` (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
 | `non_camel_case_types` | `F0704` | `nonstandard_style` | `warn` | an enumeration, variant, record or abstract type not named in `CamelCase` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
 | `non_snake_case` | `F0703` | `nonstandard_style` | `warn` | a module, component, variable, function, instance, constraint or global expectation not named in `snake_case` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
 | `non_upper_case_constants` | `F0705` | `nonstandard_style` | `warn` | a constant not named in `UPPER_CASE` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
 | `nonminimal_bool` | `F0712` | `complexity` | `warn` | a `Bool` expression with a simpler form, such as `a? = true` (see [Simpler `Bool` expressions](Lint/Complexity.md#simpler-bool-expressions)) |
 | `redundant_bindings` | `F0735` | `style` | `warn` | a binding or field `x := x` (see [Bindings](Lint/Style.md#bindings)) |
 | `redundant_bool_type` | `F0746` | `style` | `warn` | a `: Bool` that a name ending in `?` implies, as in `in ready?: Bool` (see [Boolean types](Lint/Style.md#boolean-types)) |
+| `redundant_comparisons` | `F0767` | `complexity` | `warn` | two comparisons of one operand with integers, of which one implies the other, such as `x < 3 and x < 5` (see [Comparisons](Lint/Complexity.md#comparisons)) |
 | `redundant_method_chain` | `F0743` | `complexity` | `warn` | a chain of methods with a shorter form, such as `q.rev.rev` (see [Chains of methods](Lint/Complexity.md#chains-of-methods)) |
+| `redundant_slicing` | `F0753` | `complexity` | `warn` | `s.slice(0, s.len)` (see [Whole slices](Lint/Complexity.md#whole-slices)) |
 | `same_branches` | `F0737` | `suspicious` | `warn` | `if c then a else a` (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
 | `similar_names` | `F0796` | `pedantic` | `allow` | a name declared in the same item as another that differs from it by one character, such as `level` and `levels` (see [Names](Lint/Pedantic.md#names)) |
 | `singleton_membership` | `F0717` | `complexity` | `warn` | `x in {a}` (see [Singleton membership](Lint/Complexity.md#singleton-membership)) |
+| `suspicious_unary_op_formatting` | `F0762` | `suspicious` | `warn` | a binary operator directly followed by a negation and then whitespace, such as `x >=- 1` (see [Negations after operators](Lint/Suspicious.md#negations-after-operators)) |
 | `too_many_lines` | `F0797` | `pedantic` | `allow` | a component or defined function of more than 100 lines (see [Long items](Lint/Pedantic.md#long-items)) |
 | `trivial_match` | `F0747` | `complexity` | `warn` | a `match` of one arm that binds nothing, such as `match x { _ => e }` (see [Trivial matches](Lint/Complexity.md#trivial-matches)) |
 | `trivial_pattern` | `F0744` | `style` | `warn` | `s.matches?(p)`, where `p` is a string, with `.*` or not at either end (see [Trivial patterns](Lint/Style.md#trivial-patterns)) |
@@ -65,6 +86,7 @@ use view::Severity
 | `unless_not` | `F0722` | `style` | `warn` | an `unless` whose condition is a negation, such as `unless not c?, d?` (see [Conditionals](Lint/Style.md#conditionals)) |
 | `unused_imports` | `F0701` | `unused` | `warn` | a `use` that nothing in its file uses (see [Unused imports](Lint/Unused.md#unused-imports)) |
 | `unused_variables` | `F0710` | `unused` | `warn` | a variable or binder that nothing mentions (see [Unused variables](Lint/Unused.md#unused-variables)) |
+| `upper_case_acronyms` | `F0750` | `style` | `warn` | a name in `CamelCase` with three or more uppercase letters in a row, such as `HTTPStatus` (see [Names](Lint/Style.md#names)) |
 | `wildcard_single_variant` | `F0728` | `pedantic` | `allow` | a `_` arm that matches only one variant (see [Matches](Lint/Pedantic.md#matches)) |
 | `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel(A, B)` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
 <!-- keep-sorted end -->
@@ -366,8 +388,11 @@ pub comp effective {
 The level that applies to a lint's message is the one in effect at the
 item it is about: the `use` for the import lints; for the naming lints
 and `unused_variables`, the item that declares the name, which for a
-member is its component and for a variant its enumeration; for `dead_code`, the unused item; and for `nonminimal_bool`
-and the other lints of expressions, the item the expression is in. So
+member is its component and for a variant its enumeration; for `dead_code`, the unused item; for
+`invisible_characters`, the item the literal or comment is in (see
+[Invisible characters](Lint/Suspicious.md#invisible-characters)); and
+for `nonminimal_bool` and the other lints of expressions, the item the
+expression is in. So
 `set_option ... in` before an item sets the level for that item alone.
 
 A `set_option` naming a lint that does not exist is an error (`F0707`),
@@ -450,12 +475,14 @@ what the spec means:
 <!-- keep-sorted start skip_lines=2 -->
 | Lint | Fix |
 |---|---|
+| `almost_complete_range` | replaces the pattern with one that completes each range |
 | `bool_equality` | replaces `a = b` with `a iff b` |
 | `card_zero` | compares the set with `{}`, as the message suggests |
 | `collapsible_when` | collapses the two conditionals into one, as the message suggests |
 | `double_comparison` | replaces the two comparisons with the one they are |
 | `double_neg` | replaces `- -x` with `x` |
 | `double_parens` | removes all but the innermost pair of parentheses |
+| `duplicate_constraint` | removes the later constraint, where the two are of one kind |
 | `duplicate_elements` | removes each repeated element, with the `,` before it |
 | `else_extends` | puts the `else` branch in parentheses |
 | `glob_imports` | imports by name the variants that the file uses through the glob: `use E::*` becomes `use E::{A, B}`, or `use E::A` for a single variant |
@@ -464,18 +491,26 @@ what the spec means:
 | `if_not_else` | removes the negation and swaps the branches, as the message suggests |
 | `index_after_use` | swaps the operands of the `and` |
 | `int_plus_one` | replaces the comparison with the strict one, without the offset |
+| `invisible_characters` | writes each character as an escape in a literal, and removes it from a comment |
 | `length_zero` | compares the string with `""`, or the sequence with `[]`, as the message suggests |
-| `manual_method` | replaces the comparison with a call of `contains?` or `starts_with?`, as the message suggests |
+| `manual_method` | replaces the comparison with a call of `contains?`, `starts_with?` or `ends_with?`, or `s.slice(i, 1)` with `s.at(i)`, as the message suggests |
+| `manual_pattern_char_comparison` | replaces the pattern with one that writes each alternation of single characters as a class |
 | `match_like_membership` | replaces the `match` with a membership, `x in {E::A, E::B}`, as the message suggests |
 | `match_same_arms` | merges the arms into one with an or-pattern, removes those with the body of the `_` arm, or replaces the `match` with its body, as the message suggests |
 | `membership_chain` | replaces the chain with a membership, `x in {a, b, c}`, or `not x in {a, b, c}` |
+| `needless_bool_assign` | replaces the conditional with `C iff X`, or `C != X` |
+| `needless_match` | replaces the `match` with its scrutinee |
 | `neg_multiply` | replaces `x * -1` or `-1 * x` with `-x` |
+| `no_effect_replace` | replaces the call with its receiver |
 | `nonminimal_bool` | replaces the expression with its simpler form, as the message suggests |
 | `redundant_bindings` | replaces `x := x` with `x` |
 | `redundant_bool_type` | removes the `: Bool` |
+| `redundant_comparisons` | replaces the two comparisons with the one that implies the other, under `and`, or the one that the other implies, under `or` |
 | `redundant_method_chain` | replaces the chain with its shorter form |
+| `redundant_slicing` | replaces the slice with its receiver |
 | `same_branches` | replaces the conditional with its `then` branch |
 | `singleton_membership` | replaces `x in {a}` with `x = a` |
+| `suspicious_unary_op_formatting` | moves the whitespace after the `-` to before it: `x >=- 1` becomes `x >= -1` |
 | `trivial_match` | replaces the `match` with its arm's body |
 | `trivial_pattern` | replaces `s.matches?(p)` with an equation or a call of `starts_with?`, `ends_with?` or `contains?` |
 | `unfulfilled_lint_expectations` | removes the `set_option`, or for `set_option ... in item`, removes `set_option ... in` and keeps the item |
@@ -502,7 +537,8 @@ would need, would also have to rename every use
 of it, including uses in Lean code and in files that are not given, and so
 would removing a dead item. Removing an unused variable would change its
 component's interface, and merging the requirements that `case_split_reqs`
-reports would change what traces, claims and `impl`s name. A message of a lint that `fren fix` fixes says so, with the line
+reports would change what traces, claims and `impl`s name, and so would
+removing a constraint that `assertions_on_constants` reports. A message of a lint that `fren fix` fixes says so, with the line
 `` help: `fren fix` can fix this ``. In Lean, only the messages in a
 [Markdown spec](Markdown.md) have this line, since `fren fix` does not read
 Lean files.

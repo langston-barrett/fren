@@ -1,0 +1,9 @@
+-- `suspicious_unary_op_formatting`.
+pub comp c {
+    in x: Int
+    pub out p?
+    pub out q?
+
+    req r: p? iff x >- 1
+    req s: q? iff x <=- 1
+}

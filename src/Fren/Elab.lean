@@ -106,6 +106,7 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
 @[command_elab Lang.modCmd] def elabMod : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
+  lintInvisible stx
   let segs := pathSegs stx[2]
   -- A path that did not parse, as in `mod 2`, which Lean has reported.
   if segs.isEmpty || segs.any (·.getId.isAnonymous) then return
@@ -114,6 +115,7 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
   for i in new do
     let ref := (segs[i.path.components.length - 1]?).getD stx
     lintName .module (Name.mkSimple i.path.getString!) ref
+    if let some msg := Core.moduleInceptionMsg? i.path then recordLint .moduleInception ref msg
     record (.item { item := i, ref })
   modifyLocal ({ · with currentModule := path })
 
@@ -128,11 +130,13 @@ def declareUse (segs : Array Syntax) (glob : Bool) (ref : Syntax) (scope : Optio
 @[command_elab Lang.useCmd] def elabUse : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
+  lintInvisible stx
   declareUse (pathSegs stx[1]) (!stx[2].isNone) stx[1]
 
 @[command_elab Lang.useGroupCmd] def elabUseGroup : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
+  lintInvisible stx
   for p in stx[3].getSepArgs do
     declareUse (pathSegs stx[1] ++ pathSegs p) false p
 
@@ -264,6 +268,7 @@ partial def typeSyntax (t : Expr) : Term :=
 @[command_elab Lang.enumCmd] def elabEnum : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
+  lintInvisible stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -293,6 +298,10 @@ partial def typeSyntax (t : Expr) : Term :=
     unbounded := unbounded || ts.any fun t => t.isConstOf decl || st.unbounded t
     payloads := payloads.push ts
   unless Core.wellFounded variants.size nRecursive do throwErrorAt nameStx (Core.illFoundedMsg n).text
+  -- `enum_variant_names` (`lint::enum_variant_names`, `lint::variant_has_enum_name`).
+  if let some msg := Core.enumVariantNamesMsg? n variants then recordLint .enumVariantNames nameStx msg
+  for v in variantStxs, vn in variants do
+    if let some msg := Core.variantNameMsg? n vn then recordLint .enumVariantNames v[0] msg
   let ctors ← (variants.zip payloads).mapM fun (v, ts) => do
     let bs ← ts.mapIdxM fun k t => do
       let ty := if t.isConstOf decl then mkIdent path else typeSyntax t
@@ -324,6 +333,7 @@ partial def typeSyntax (t : Expr) : Term :=
 @[command_elab Lang.structCmd] def elabStruct : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
+  lintInvisible stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1041,6 +1051,10 @@ partial def subNodes (e : Syntax) : Array Syntax :=
   e.getArgs.flatMap fun a =>
     if a.isAtom || a.isIdent || a.isMissing then #[] else if a.isOfKind nullKind then subNodes a else #[a]
 
+/-- Strips parentheses from `e`. -/
+partial def unparen (e : Syntax) : Syntax :=
+  if e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(" then unparen e[1] else e
+
 /-- `e` as the lints that rewrite it (`Core.ExLint`) and the operator lints
 see it, with ranges in characters from `base` in `str`. Parentheses are
 dropped, as by the `fren` command's parser. -/
@@ -1103,6 +1117,13 @@ partial def lintParens (fixable : Bool) (str : String) (e : Syntax) (inParens : 
       recordLint .doubleParens e { msg with notes := if fixable then msg.notes.push Core.fixHelp else msg.notes }
   for a in e.getArgs, i in [0:e.getNumArgs] do lintParens fixable str a (i == 1 && isDoubleParen str e)
 
+/-- Records `assertions_on_constants` on the constraint `e`, an `assume`,
+`req` or `expect` as `kind` says (`lint::assertions_on_constants`). -/
+def lintConstant (cx : ExprCtx) (kind : String) (e : Syntax) : TermElabM Unit := do
+  if Core.assertionOnConstant (← varsMentioned cx e) then
+    let literal? := match boolNode "" 0 (unparen e) with | .mk (.lit b) .. => some b | _ => none
+    recordLint .assertionsOnConstants e (Core.assertionOnConstantMsg kind literal?)
+
 /-- Records the expressions in `e` that the lints that rewrite them
 (`Core.ExLint`) report, such as `Bool` expressions with a simpler form
 (`nonminimal_bool`), the operator and method lints, the arithmetic lints
@@ -1115,10 +1136,12 @@ def lintBools (e : Syntax) : TermElabM Unit := do
   let node := boolNode sub.str sub.startPos e
   for (l, ref, msg) in Core.rewriteReports src node fixable do
     recordLint l ref msg
-  let boolEqs := (← getLocal).boolEqs
-  modifyLocal fun l => { l with boolEqs := #[] }
-  for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) node do
-    recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ (if fixable then #[Core.fixHelp] else #[]) }
+  let (boolEqs, variants) := ((← getLocal).boolEqs, (← getLocal).variants)
+  modifyLocal fun l => { l with boolEqs := #[], variants := #[] }
+  let variant? (s : Syntax) := (variants.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
+  for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) variant? node do
+    let help := fixable && !r.msg.fixes.isEmpty
+    recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ (if help then #[Core.fixHelp] else #[]) }
   for r in Core.arithReports src node do
     recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ (if fixable then #[Core.fixHelp] else #[]) }
   lintParens fixable sub.str e
@@ -1226,6 +1249,36 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (info : EnumInfo) (pats : Array (Optio
   -- `trivial_match` (`lint::trivial_match`).
   if let #[i] := infos then
     if Core.trivialMatch infos.size i.binds then recordLint .trivialMatch e (Core.trivialMatchMsg (i.body.inSlot slot (followedStx e)))
+  -- `needless_match` (`lint::needless_match`).
+  let scr := exactText (unparen e[1])
+  let mut givenBack := true
+  let mut wildcard := false
+  let mut scrutineeBack := false
+  for arm in arms, pat in pats do
+    let body := unparen arm[2]
+    match pat with
+    | none =>
+      wildcard := true
+      scrutineeBack := Core.writtenSame (exactText body) scr
+    | some #[idx] =>
+      let bs := patternBinders arm
+      let binders := bs.map fun b => if b.isIdent then b.getId.toString else "_"
+      -- The arm's binders shadow items in its body.
+      let shadowing := cx.shadowing ++ (bs.filter (·.isIdent)).map (·.getId)
+      let (p, args) := if body.isOfKind ``Lang.appExpr then (body[0], body[2].getSepArgs)
+        else (if body.getNumArgs == 1 then body[0] else body, #[])
+      let same ← if p.isOfKind ``Lang.fren_path then do
+          let names ← (pathSegs p).mapM segName
+          pure (match (← getState).table.resolvePath cx.modName names shadowing with
+            | .ok (.variant en i) => en.path == info.path && i == idx
+            | _ => false)
+        else pure false
+      unless Core.givesBack same binders (args.map (exactText ∘ unparen)) do givenBack := false
+    | some _ => givenBack := false
+  let trivial := Core.trivialMatch infos.size (infos[0]?.any (·.binds))
+  if Core.needlessMatch givenBack wildcard scrutineeBack trivial then
+    let scrutinee : Core.BText := { text := scr, prec := exprPrec (unparen e[1]) }
+    recordLint .needlessMatch e (help (Core.needlessMatchMsg (scrutinee.inSlot slot (followedStx e)))))
   for g in Core.sameArmGroups infos do
     let (i, msg) := Core.sameArmsMsg infos g slot (followedStx e)
     recordLint .matchSameArms arms[i]! (help msg)
@@ -1499,31 +1552,75 @@ def lengthOf? (a : Syntax) : TermElabM (Option (Syntax × Bool)) := do
   if pre.isAnonymous || !(m == "len" || m == "card") then return none
   return some (← pathExpr a pre, m == "card")
 
-/-- `length_zero` and `card_zero` on the comparison `e` (`lint::length_zero`). -/
+/-- Whether `e` is a set or relation literal, rather than a string or
+sequence literal, and its characters or elements, if it is one of those. -/
+def literalCount? (e : Syntax) : Option (Bool × Nat) :=
+  let e := unparen e
+  let e := if e.getNumArgs == 1 then e[0] else e
+  if let some v := e.isStrLit? then some (false, v.length)
+  else if e.isOfKind ``Lang.seqExpr then some (false, e[1].getSepArgs.size)
+  else if e.isOfKind ``Lang.setExpr then some (true, e[1].getSepArgs.size)
+  else none
+
+/-- `const_is_empty` on `e`, `a = b` or `a != b`, where one operand is an
+empty literal and the other a literal (`lint::const_empty_equation`). -/
+def lintEmptyEquation (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
+  unless cx.noteIndexes do return
+  let op := e[1].getAtomVal.trimAscii.toString
+  let (some (_, m), some (_, n)) := (literalCount? e[0], literalCount? e[2]) | return
+  let (fires, value) := Core.constEmptyEquation (op == "=") (max m n)
+  if fires && min m n == 0 then recordLint .constIsEmpty e (Core.constIsEmptyMsg value)
+
+/-- `length_zero`, `card_zero` and `absurd_extreme_comparisons` on the
+comparison `e` (`lint::length_zero`, `lint::absurd_extreme_comparisons`). -/
 def lintLength (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
   unless cx.noteIndexes do return
   let (a, b) := (unparen e[0], unparen e[2])
   let some c := Core.Comparison.ofOp? e[1].getAtomVal.trimAscii.toString | return
-  let lit? (x : Syntax) := let x := unparen x; (if x.getNumArgs == 1 then x[0] else x).isNatLit?
+  let nat? (x : Syntax) := let x := unparen x; (if x.getNumArgs == 1 then x[0] else x).isNatLit?
+  let lit? (x : Syntax) : Option Int :=
+    let x := unparen x
+    if x.getNumArgs == 2 && x[0].isAtom && x[0].getAtomVal.trimAscii.toString == "-" then (nat? x[1]).map (-·)
+    else (nat? x).map (·)
   -- The length, the literal, and whether the length is on the left.
   let (n, d, left) ← match lit? b, lit? a with
     | some d, _ => pure (a, d, true)
     | none, some d => pure (b, d, false)
     | none, none => return
-  let (fires, empty) := Core.lengthZero c d left
-  unless fires do return
   let some (recv, card) ← lengthOf? (unparen n) | return
+  -- `const_is_empty` (`lint::const_is_empty`), rather than `length_zero`.
+  if let some (set, count) := literalCount? recv then
+    let r := unparen recv
+    -- `[]` and `{}` have no type here, which is an error.
+    let untyped := count == 0 && (r.isOfKind ``Lang.seqExpr || r.isOfKind ``Lang.setExpr)
+    let (fires, value) := Core.constIsEmpty c d left set count
+    if fires && card == set && !untyped then recordLint .constIsEmpty e (Core.constIsEmptyMsg value)
+    return
+  let (fires, empty) := Core.lengthZero c d left
+  let (absurd, value) := Core.absurdComparison c d left
+  unless fires || absurd do return
   -- Only its type: what elaborating it reports is reported where it is.
   let saved ← getLocal
   let some t ← try some <$> typeOf (← toTerm { cx with noteIndexes := false, concatOk := true } recv) catch _ => pure none
     | modifyLocal fun _ => saved
   modifyLocal fun _ => saved
   unless card == t.isAppOfArity ``Fren.FinSet 1 do return
+  if absurd then
+    if card || t.isConstOf ``String || t.isAppOfArity ``Fren.Seq 1 then
+      recordLint .absurdExtremeComparisons e (Core.absurdComparisonMsg card value)
+    return
   let emptyText := if t.isConstOf ``String then "\"\"" else if t.isAppOfArity ``Fren.Seq 1 then "[]" else "{}"
   recordLint (if card then .cardZero else .lengthZero) e (Core.lengthZeroMsg card (srcText recv) emptyText empty d)
 
-/-- `eq_op` on `e`, if it is an infix operator (`lint::eq_op`). -/
+/-- `eq_op` on `e`, if it is an infix operator (`lint::eq_op`), or `when` or
+`unless` (`lint::eq_op_conditional`). -/
 def lintEqOp (e : Syntax) : TermElabM Unit := do
+  if isConditional e then
+    let negated := e[0].getAtomVal.trimAscii.toString == "unless"
+    let c := exactText (unparen e[1])
+    if let some v := Core.eqOpConditional negated (Core.writtenSame c (exactText (unparen e[3]))) then
+      recordLint .eqOp e (Core.eqOpConditionalMsg negated v c)
+    return
   unless e.getNumArgs == 3 && e[1].isAtom do return
   let some op := Core.InfixOp.ofOp? e[1].getAtomVal.trimAscii.toString | return
   let a := exactText (unparen e[0])
@@ -1608,7 +1705,15 @@ def lintChain (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
 def lintPattern (cx : ExprCtx) (parent? : Option Syntax) (e recv : Syntax) (args : Array Syntax) : TermElabM Unit := do
   unless cx.noteIndexes do return
   let #[p] := args | return
-  let some lit := (let p := unparen p; if p.getNumArgs == 1 then p[0] else p).isStrLit? | return
+  let p := let p := unparen p; if p.getNumArgs == 1 then p[0] else p
+  let some lit := p.isStrLit? | return
+  unless (Core.parseRe lit) matches .ok _ do return
+  -- `manual_pattern_char_comparison` and `almost_complete_range`
+  -- (`lint::manual_pattern_char_comparison`, `lint::almost_complete_range`).
+  if let some fixed := Core.charClassPattern? lit then
+    recordLint .manualPatternCharComparison p (Core.manualPatternCharComparisonMsg (Core.patternLiteral (srcText p) fixed))
+  if let some (fixed, found) := Core.completeRangesPattern? lit then
+    recordLint .almostCompleteRange p (Core.almostCompleteRangeMsg found (Core.patternLiteral (srcText p) fixed))
   let some (fix, s) := Core.trivialPattern? lit | return
   let fixed := (Core.trivialPatternText (bareText recv) (srcText recv) fix s).inSlot (parent?.bind (operandSlot · e))
   recordLint .trivialPattern e (Core.trivialPatternMsg fix fixed)
@@ -1625,6 +1730,7 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   lintLength toTerm cx e
   let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
   if op == "=" || op == "!=" then
+    lintEmptyEquation cx e
     -- `++` is in the core against a constant.
     let (x, y) := (← toTerm { cx with concatOk := cb, emptyOk := Core.Position.compared.checked false (synthesizes b) } a,
       ← toTerm { cx with concatOk := ca, emptyOk := Core.Position.compared.checked false (synthesizes a) } b)
@@ -1746,6 +1852,9 @@ def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     let recv := if ref.isOfKind ``Lang.fren_path then ((exactText ref).dropEnd (m.length + 1)).toString else exactText recvStx
     if let some msg := Core.emptyArgumentMsg? meth seq recv (args.map (exactText <| unparen ·)) then
       recordLint .emptyArgument e msg
+    -- `negative_position` (`lint::negative_position`).
+    if let some msg := Core.negativeArgumentMsg? meth seq recv (args.map (exactText <| unparen ·)) then
+      recordLint .negativePosition e msg
   checkRelational cx e rty m (#[recvStx] ++ args)
   checkRelationalCard cx e rty m recvStx
   return t
@@ -1896,6 +2005,9 @@ def indexTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let ti ← typeOf i
   unless ti.isConstOf ``Int do throwErrorAt e[2] s!"type mismatch: expected `Int`, found `{← typeName ti}`"
   checkCore cx e .seqArray true true #[e[0], e[2]]
+  -- `negative_position` (`lint::negative_position`).
+  if let (true, some k) := (cx.noteIndexes, Core.negativeLiteral? (exactText (unparen e[2]))) then
+    recordLint .negativePosition e (Core.negativeIndexMsg (exactText e[0]) k)
   -- `Fren.Seq.nth` is `default` out of range, which an abstract type's
   -- placeholder does not have.
   let elem := (← instantiateMVars tq).appArg!
@@ -2041,6 +2153,9 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
     let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
     let n := (info.payloads[idx]?.map (·.size)).getD 0
     if let some msg := Core.variantMentionMsg? (en.path ++ en.variants[idx]!) n false then throwError msg.text
+    if cx.noteIndexes then
+      let v := ((e.getPos?, e.getTailPos?), (en.path ++ en.variants[idx]!).toString)
+      modifyLocal fun l => { l with variants := l.variants.push v }
     return mkCIdentFrom e (info.decl ++ en.variants[idx]!)
   | .item { kind := .constItem, path, .. } =>
     let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
@@ -2216,6 +2331,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $_ == $_) | `(fren_expr| $_ && $_) | `(fren_expr| $_ || $_) | `(fren_expr| $_ | $_) =>
     throwErrorAt e[1] (Core.foreignOpMsg e[1].getAtomVal.trimAscii.toString).text
   | `(fren_expr| !$_) => throwErrorAt e[0] (Core.foreignOpMsg "!").text
+  | `(fren_expr| $_ <- $_) => throwErrorAt e[1] Core.leftArrowMsg.text
   -- Checked against the whole's type, if it is (`lang::checked`).
   | `(fren_expr| ($a)) => `(($(← toTerm { cx with concatOk, natOk, emptyOk := Core.Position.shared.checked emptyOk false } a)))
   | `(fren_expr| $n:num) => if natOk then `(($n : Nat)) else `(($n : Int))
@@ -2293,6 +2409,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
 @[command_elab Lang.typeCmd] def elabAbstractType : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
+  lintInvisible stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -2307,6 +2424,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
 @[command_elab Lang.fnCmd] def elabFunction : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
+  lintInvisible stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -2509,6 +2627,7 @@ open Lang in
 @[command_elab Lang.compCmd] def elabComp : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
+  lintInvisible stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -2661,6 +2780,7 @@ open Lang in
           let place : Core.IndexPlace := if kind == .assume then .assume else .prop
           indexes := indexes ++ (← takeIndexes fvs subst).map fun (r, g) => (x.getId, place, r, g)
           lintBools e
+          lintConstant cx kind.keyword e
           let trig ← triggerOf cx e
           let trigger? ← trig.mapM fun (t, _) => do mkLambdaFVars fvs (← elabProp t)
           let decl := declBase ++ Name.mkSimple kind.keyword ++ x.getId
@@ -2669,6 +2789,18 @@ open Lang in
             kind, name := x.getId, ref := x, body := ← mkLambdaFVars fvs body,
             trigger?, triggerRef? := trig.map (·.2), decl }
         catch ex => logException ex; good := false
+      -- `duplicate_constraint` (`lint::duplicate_constraint`).
+      let constraints := members.filterMap fun m => match m with
+        | `(fren_member| assume $x:ident : $e) => some (Core.ConstraintKind.assume, x.raw, e.raw)
+        | `(fren_member| req $x:ident : $e) => some (.req, x.raw, e.raw)
+        | `(fren_member| expect $x:ident : $e) => some (.expect, x.raw, e.raw)
+        | _ => none
+      for (i, j) in Core.repeatedConstraints (constraints.map fun (_, _, e) => exactText (unparen e)) do
+        let (k, x, _) := constraints[i]!
+        let (k', x', _) := constraints[j]!
+        let msg := Core.duplicateConstraintMsg k' k x'.getId.toString
+        let fixable := (Core.duplicateConstraint k' k true).2 && (← getLocal).inMarkdown
+        recordLint .duplicateConstraint x (if fixable then msg.note Core.fixHelp else msg)
       -- `constant_output` and `definable_output` (`lint::output_lints`).
       let lcx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
       let reqs := members.filterMap fun m => match m with
@@ -2781,6 +2913,7 @@ open Lang in
 @[command_elab Lang.constCmd] def elabConst : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
+  lintInvisible stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -2860,6 +2993,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     let e ← elabProp (← toTerm cx body)
     let indexes := (← takeIndexes fvs).map fun (r, g) => (n, Core.IndexPlace.prop, r, g)
     lintBools body
+    lintConstant cx "expect" body
     for (w, ref) in Core.unmentioned (binders.map fun b => (b.name, b.ref)) ((pathMentions body).map (·.getRoot)) do
       recordLint .unusedVariables ref (Core.unusedVariableMsg w true false)
     let trig ← triggerOf cx body
@@ -2882,9 +3016,18 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     return { path := modName, vars, props := #[prop], insts, ref := nameStx, decl, uses
              decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied, indexes }
 
+/-- The text of the global expectation `stx` that `duplicate_constraint`
+compares: after its name, without the parentheses around its body. -/
+def globalText (stx : Syntax) : String :=
+  let body := unparen stx[4]
+  match stx[1].getTailPos?, body.getPos?, stx.getSubstring? false false with
+  | some a, some b, some sub => String.Pos.Raw.extract sub.str a b ++ exactText body
+  | _, _, _ => exactText body
+
 @[command_elab Lang.globalCmd] def elabGlobal : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
+  lintInvisible stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx
@@ -2893,6 +3036,14 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   checkFresh modName n nameStx
   lintName .global n nameStx
   startDeclared
+  -- `duplicate_constraint` (`lint::duplicate_constraint`), against the
+  -- earlier ones of its module.
+  let text := globalText stx
+  let l ← getLocal
+  if let some (_, earlier, _) := l.globalTexts.find? fun (m, _, t) => m == modName && Core.writtenSame t text then
+    let msg := Core.duplicateConstraintMsg .expect .expect earlier.toString
+    recordLint .duplicateConstraint nameStx (if l.inMarkdown then msg.note Core.fixHelp else msg)
+  modifyLocal fun l => { l with globalTexts := l.globalTexts.push (modName, n, text) }
   let path := modName ++ n
   let decl := (← getCurrNamespace) ++ path
   let binders := if stx[3].isNone then #[] else stx[3][1].getArgs
@@ -2919,6 +3070,7 @@ and the solver is asked nothing. -/
   let spec := stx.getArgs[:7].toArray
   spec.forM checkLexemes
   spec.forM checkParsed
+  lintInvisible stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx

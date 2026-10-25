@@ -2,14 +2,20 @@
 -- give as the solver's theory of strings does. Constants only, so every
 -- expression is in the decidable core.
 
+-- Expectations about constants test what the language computes.
+set_option fren.lint.assertions_on_constants "allow"
+
 -- The edges include those of empty arguments.
 set_option fren.lint.empty_argument "allow"
+-- And those of negative positions.
+set_option fren.lint.negative_position "allow"
 
 expect at_inside: "abc".at(1) = "b"
 expect at_outside: "abc".at(3) = "" and "abc".at(-1) = ""
 expect slice_inside: "abcd".slice(1, 2) = "bc"
 expect slice_end: "abc".slice(2, 5) = "c"
 expect slice_outside: "abc".slice(3, 1) = "" and "abc".slice(-1, 2) = "" and "abc".slice(0, 0) = ""
+--~^ warning: this is a call of `at`
 expect index_found: "abcabc".index_of("c", 3) = 5 and "abc".index_of("bc", 0) = 1
 expect index_missing: "abc".index_of("d", 0) = -1 and "abc".index_of("b", -1) = -1  --~ warning: this is a call of `contains?`
 expect index_empty: "abc".index_of("", 3) = 3 and "abc".index_of("", 4) = -1
@@ -20,6 +26,7 @@ expect replace_all_empty: "abc".replace_all("", "x") = "abc"
 expect contains_empty: "".contains?("") and "abc".contains?("")
 expect ordered: "ab" < "b" and "a" < "ab" and "" < "a" and "b" >= "ab"
 expect wrong: "abc".at(0) = "b"                                        --~ error: expectation `wrong` does not hold
+--~^ warning: this is a call of `starts_with?`
 
 --@ summary: 14 passed, 1 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

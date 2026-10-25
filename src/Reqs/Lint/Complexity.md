@@ -21,6 +21,7 @@ expectation:
 | `if C then true else B` | `C or B` |
 | `if C then false else B` | `not C and B` |
 | `if C then A else true` | `not C or A` |
+| `when true, D`, `unless false, D` | `D` |
 
 A literal may be on either side of `=`, `!=` and `iff`; when both sides are
 literals, the right one is taken as the literal. The rules are tried in the
@@ -28,11 +29,14 @@ order of the table, so `if C then true else false` is `C`, not `C and
 true`. The rules for `if` keep the guards (see
 [Expressions](../Lang/Expressions.md#sequences)): in `if C then A else B`, `A`
 is guarded by `C` and `B` by `not C`, as they are in `C and A`, `C or B`,
-`not C and B` and `not C or A`. A [pattern
-test](../Lang/Expressions.md#pattern-tests) is not looked inside but for
-its scrutinee, and keeps its parentheses where a comparison would need
-them, so `ok? = if s is A(_) then true else false` becomes `ok? = (s is
-A(_))`. So does a [chained
+`not C and B` and `not C or A`. So do the rules for `when` and `unless`,
+since `D` is guarded by `true` in both. `when false, D` and `unless true,
+D` are always `true`, but the [vacuity](../Check.md#vacuity) and
+[redundancy](../Check.md#redundancy) checks report them, so they are not
+rewritten. A [pattern test](../Lang/Expressions.md#pattern-tests) is not
+looked inside but for its scrutinee, and keeps its parentheses where a
+comparison would need them, so `ok? = if s is A(_) then true else false`
+becomes `ok? = (s is A(_))`. So does a [chained
 comparison](../Lang/Expressions.md#chained-comparisons): no rule rewrites
 the chain itself or its comparisons, only the expressions in its operands.
 `lint::literal_comparison` gives the simpler form of a comparison with a
@@ -114,6 +118,46 @@ pub comp nonminimal_bool_keeps_meaning {
         and ((if c? then true else a?) iff (c? or a?))
         and ((if c? then false else a?) iff (not c? and a?))
         and ((if c? then a? else true) iff (not c? or a?))
+}
+```
+
+## Conditionals of `Bool`s
+
+`needless_bool_assign` fires on `if C then X else not X` and on `if C
+then not X else X`, where the two `X` are [written the
+same](Suspicious.md#suspicious-expressions), in any constraint, binding,
+definition, constant or global expectation, and is fixable. The first
+holds exactly when `C` and `X` agree, which is `C iff X`, and the second
+exactly when they differ, which is `C != X`, the exclusive or of two
+`Bool`s, rather than `not (C iff X)`, whose two operators always need
+parentheses. The fix puts `C`, `X` and itself in parentheses as for the
+[comparisons](#comparisons): `p? iff if a? then b? else not b?` becomes
+`p? iff (a? iff b?)`. It keeps the guards (see
+[Expressions](../Lang/Expressions.md#sequences)): `X` is guarded by `C` in
+one branch and by `not C` in the other, so it is defined wherever the
+conditional is, whichever `C` is, and `iff` and `!=` guard neither
+operand, which both front ends evaluate under the guard of the operator.
+`lint::needless_bool_assign` states when the lint fires, and
+`lint::needless_bool_assign_meaning` checks both fixes:
+
+```fren
+pub comp needless_bool_assign {
+    in else_negates?     -- the `else` branch is `not X`, for an `X` written the same as the `then` branch
+    in then_negates?     -- the `then` branch is `not X`, for an `X` written the same as the `else` branch
+    pub det out fires?
+    pub det out unequal?  -- the fix is `C != X`, rather than `C iff X`
+
+    req rule: fires? iff (else_negates? or then_negates?)
+    req fix: unequal? iff not else_negates?
+}
+
+set_option fren.lint.needless_bool_assign "allow" in
+comp needless_bool_assign_meaning {
+    in c?
+    in x?
+
+    expect agree: (if c? then x? else not x?) iff (c? iff x?)
+    expect differ: (if c? then not x? else x?) iff c? != x?
 }
 ```
 
@@ -248,6 +292,44 @@ pub comp trivial_match {
 }
 ```
 
+## Matches that give back the scrutinee
+
+`needless_match` fires on a `match` each of whose arms gives back the
+value it matches: `E::V => E::V`, for a variant without a payload, or
+`E::V(a, b) => E::V(a, b)`, whose body builds the variant that its
+pattern names, with the pattern's binders, in order and none of them `_`,
+written the same as its arguments. The variants are compared as they
+resolve, so `V`, brought into scope by `use`, is `E::V`. An arm with an
+or-pattern gives back nothing, and a `_` arm gives back its value only if
+its body is written the same as the scrutinee. It does not fire where
+[`trivial_match`](#trivial-matches) does, whose fix is the body. It is
+fixable: the fix replaces the `match` with its scrutinee, which keeps the
+text it is written with, but for parentheses around it, and is put in
+parentheses where it is an operand that requires them
+([`lang::operand`](../Lang/Expressions.md#operators)): `t = match (s) {
+...}` becomes `t = s`.
+
+The `match` has the value of the body of the first arm that matches.
+`E::V(a, b)` matches only a scrutinee that is `V` with the payload `a` and
+`b`, so the body `E::V(a, b)` is the scrutinee, as is the body of a `_`
+arm written the same as it. The `match` and its scrutinee have the same
+type, since each arm builds a value of the scrutinee's enumeration. The
+fix evaluates the scrutinee where the `match` did, under its guard, and
+only drops the bodies, which index nothing, so no guard is weaker.
+`lint::needless_match` states when it fires:
+
+```fren
+pub comp needless_match {
+    in given_back?       -- each arm but `_` gives back the variant it matches, with its binders in order
+    in wildcard?         -- there is a `_` arm
+    in scrutinee_back?   -- the `_` arm's body is written the same as the scrutinee
+    in trivial?          -- `trivial_match` fires on the `match`
+    pub det out fires?
+
+    req rule: fires? iff (given_back? and (not wildcard? or scrutinee_back?) and not trivial?)
+}
+```
+
 ## Comparisons
 
 The lints of this section and the next three, and
@@ -325,11 +407,111 @@ expect double_comparison_meaning: forall (d: double_comparison) (x y z: comparis
     z.holds? iff (if d.conjunction? then x.holds? and y.holds? else x.holds? or y.holds?)
 ```
 
+`redundant_comparisons` fires on two comparisons of one operand, written
+the same, with integer literals, joined by `and` or `or`, where one
+implies the other. Under `and`, the fix keeps the one that implies the
+other, and under `or`, the one that the other implies:
+
+| Written | Fix |
+|---|---|
+| `x < 3 and x < 5`, `x < 3 and x != 4`, `x = 3 and x >= 0` | `x < 3`, `x < 3`, `x = 3` |
+| `x < 3 or x < 5`, `x < 3 or x != 4`, `x = 3 or x >= 0` | `x < 5`, `x != 4`, `x >= 0` |
+| `x > 2 and x >= 3` | `x > 2`, which means the same as `x >= 3` |
+
+Each comparison may have its operands the other way around, as in `5 >
+x`, and the fix keeps the comparison as written; where each implies the
+other, it keeps the first. Two comparisons written the same are left to
+[`eq_op`](Suspicious.md#suspicious-expressions). Where `double_comparison`
+fires, with the same literal, neither comparison implies the other, so the
+two never fire together. The fix keeps the guards: the comparison it keeps
+compares the same operand as the one it drops, with a literal, so it is
+defined wherever the dropped one is, which is evaluated wherever the kept
+one is.
+
+Over the integers, `x OP k` with `OP` one of `=`, `>` and `>=` bounds `x`
+from below, by `least(OP, k)`, and with `OP` one of `=`, `<` and `<=`
+bounds it from above, by `greatest(OP, k)`. `disjoint?` says that no
+integer meets two comparisons, each with `x` on the left: one bounds `x`
+from below above where the other bounds it from above, or they are `x = k`
+and `x != k`. `lint::disjoint` checks that this is exact. `x OP₁ a`
+implies `x OP₂ b` exactly when it is disjoint from the complement of `x
+OP₂ b`, `complement_of`, which is `lint::complement`'s, and
+`lint::redundant_comparisons` states when the lint fires from this:
+
+```fren
+fn least(op: Comparison, k: Int): Int := if op = Gt then k + 1 else k
+
+fn greatest(op: Comparison, k: Int): Int := if op = Lt then k - 1 else k
+
+fn disjoint?(op1: Comparison, a: Int, op2: Comparison, b: Int) :=
+    (op1 in {Eq, Gt, Ge} and op2 in {Eq, Lt, Le} and least(op1, a) > greatest(op2, b))
+    or (op2 in {Eq, Gt, Ge} and op1 in {Eq, Lt, Le} and least(op2, b) > greatest(op1, a))
+    or (a = b and ((op1 = Eq and op2 = Ne) or (op1 = Ne and op2 = Eq)))
+
+fn both?(op1: Comparison, a: Int, op2: Comparison, b: Int, x: Int) := compares?(op1, x, a) and compares?(op2, x, b)
+
+fn complement_of(op: Comparison): Comparison := match op { Eq => Ne, Ne => Eq, Lt => Ge, Ge => Lt, Gt => Le, Le => Gt }
+
+expect complement_of_agrees: forall (c: complement), c.result = complement_of(c.op)
+
+comp disjoint {
+    in op1: Comparison
+    in a: Int
+    in op2: Comparison
+    in b: Int
+    in x: Int
+
+    expect sound: when disjoint?(op1, a, op2, b), not both?(op1, a, op2, b, x)
+    -- Each comparison is the same between its literal and the next integer,
+    -- so if any integer meets both, one next to `a` or `b` does.
+    expect complete: when not disjoint?(op1, a, op2, b),
+        both?(op1, a, op2, b, a - 1) or both?(op1, a, op2, b, a) or both?(op1, a, op2, b, a + 1)
+        or both?(op1, a, op2, b, b - 1) or both?(op1, a, op2, b, b) or both?(op1, a, op2, b, b + 1)
+}
+
+pub comp redundant_comparisons {
+    in conjunction?      -- the comparisons are joined by `and`, rather than `or`
+    in first: Comparison  -- `x OP k`, with `x` on the left
+    in first_bound: Int
+    in second: Comparison
+    in second_bound: Int
+    pub det out fires?
+    pub det out keep_first?  -- the fix keeps the first comparison, rather than the second
+
+    req fires: fires? iff (disjoint?(first, first_bound, complement_of(second), second_bound)
+        or disjoint?(second, second_bound, complement_of(first), first_bound))
+    req fix: keep_first? iff (if conjunction?
+        then disjoint?(first, first_bound, complement_of(second), second_bound)
+        else disjoint?(second, second_bound, complement_of(first), first_bound))
+}
+
+comp redundant_comparisons_exact {
+    in conjunction?
+    in first: Comparison
+    in first_bound: Int
+    in second: Comparison
+    in second_bound: Int
+    in x: Int
+
+    inst p: redundant_comparisons { conjunction?, first, first_bound, second, second_bound }
+
+    expect exact: when p.fires?,
+        (if conjunction? then both?(first, first_bound, second, second_bound, x)
+        else compares?(first, x, first_bound) or compares?(second, x, second_bound))
+        iff (if p.keep_first? then compares?(first, x, first_bound) else compares?(second, x, second_bound))
+}
+
+expect redundant_not_double: forall (r: redundant_comparisons) (d: double_comparison),
+    when r.first_bound = r.second_bound and r.conjunction? = d.conjunction?
+    and r.first = d.first and r.second = d.second,
+    not (r.fires? and d.fires?)
+```
+
 ## Searches
 
-`manual_method` fires on a search written with `index_of` or `slice` that
-a [method](../Lang/Expressions.md#methods) says directly, on a string or a
-sequence, whose methods have the same values:
+`manual_method` fires on a search written with `index_of`, `slice` or `at`
+that a [method](../Lang/Expressions.md#methods) says directly, on a string
+or a sequence, whose methods have the same values:
 
 | Written | Fix |
 |---|---|
@@ -337,10 +519,16 @@ sequence, whose methods have the same values:
 | `s.index_of(t, 0) < 0`, `s.index_of(t, 0) <= -1`, `s.index_of(t, 0) = -1` | `not s.contains?(t)` |
 | `s.index_of(t, 0) = 0` | `s.starts_with?(t)` |
 | `s.slice(0, t.len) = t` | `s.starts_with?(t)` |
+| `s.at(0) = t`, `s.at(0) != t` | `s.starts_with?(t)`, `not s.starts_with?(t)` |
+| `s.at(s.len - 1) = t`, `s.at(s.len - 1) != t` | `s.ends_with?(t)`, `not s.ends_with?(t)` |
+| `s.slice(i, 1)` | `s.at(i)` |
 
-The bound, or the `t` that the slice is compared with, may be on the left.
-For the slice, the receiver of `len` is written the same as the other
-operand, or is it in parentheses.
+The bound, or the `t` that the slice or `at` is compared with, may be on
+the left. For the slice, the receiver of `len` is written the same as the
+other operand, or is it in parentheses, and for `at`, as the receiver of
+`at`. For `at`, `t` is a string literal of one character, such as `"a"` or
+`"\n"`, or a sequence literal of one element, such as `[x]`. The last row
+is not a comparison: it fires on any `slice` whose length is written `1`.
 
 `s.index_of(t, 0)` is the first position at which `t` occurs in `s`, which
 is at least `0`, or `-1` if there is none. If `t` is `""`, it is `0`, since
@@ -354,6 +542,41 @@ fails) or `s` is (`0 < s.len` fails). It is `t` exactly when `t` is a
 prefix of `s`: if `t` is `""`, both are `""`, and if `s` is shorter than
 `t`, so is the slice. Every method is total, and the fix evaluates `s` and
 `t` where the comparison did, so it keeps the guards.
+
+`s.slice(i, 1)` is `""` unless `0 <= i < s.len`, since `n > 0` holds, and
+then the one character at `i`, since a slice is cut short only at the end
+of `s`. That is `s.at(i)` for every `i`, negative ones and those past the
+end included. So `s.at(0)` is `""` if `s` is, and its first character
+otherwise; it is never `t`, of one character, if `s` is `""`, and `t` is
+then not a prefix of `s`; otherwise it is `t` exactly when `t` is a prefix
+of `s`. `s.at(s.len - 1)` is `s.at(-1)`, which is `""`, if `s` is `""`, and
+its last character otherwise, so likewise it is `t` exactly when `t` is a
+suffix of `s`. For a sequence, `q.at(i)` is `[q[i]]` or `[]` and `t` is
+`[x]`, and the same argument holds element by element. `t` must have one
+character: `s.at(0)` is never `"ab"`, though `"ab"` may be a prefix of `s`,
+and `s.at(0) = ""` says that `s` is empty, which is
+[`length_zero`](Style.md#empty-collections)'s. `lint::one_character` states
+these values, comparing the slice with any string `u`, which its `impl`
+proves for strings from the meaning of the methods in Lean:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp one_character {
+    in s: String
+    in t: String         -- a string of one character
+    in i: Int
+    in u: String         -- any string
+    pub det out first?   -- `s.at(0) = t`
+    pub det out last?    -- `s.at(s.len - 1) = t`
+    pub det out slice?   -- `s.slice(i, 1) = u`
+
+    assume one: t.len = 1
+
+    req first: first? iff s.starts_with?(t)
+    req last: last? iff s.ends_with?(t)
+    req sliced: slice? iff s.at(i) = u
+}
+```
 
 `lint::index_test` states which comparisons of `index_of` fire, from the
 operator and the bound, with the call on the left, and checks each against
@@ -395,7 +618,46 @@ brings the comparison into the core, and the fix of `slice` changes
 nothing, since `s.slice(0, t.len) = t` is already in the core when `t` is a
 constant. On sequences, the fixes to `starts_with?` with a literal `t` do,
 and those to `contains?` do not, since `contains?` of a sequence is outside
-the core too.
+the core too. On strings, the fix of `s.at(s.len - 1) = t`, whose position
+is not a constant, brings it into the core, that of `s.at(0) = t` changes
+nothing, and so does that of `slice`, since `at` and `slice` are in the
+core together.
+
+## Whole slices
+
+`redundant_slicing` fires on `s.slice(0, s.len)`, of a string or a
+sequence, where the receiver of `len` is written the same as that of
+`slice`, or is it in parentheses, and is fixable. Its fix is the receiver,
+which keeps the text it is written with, and is put in parentheses where it
+is an operand that requires them ([`lang::operand`](../Lang/Expressions.md#operators)),
+or a receiver: `(a ++ b).slice(0, (a ++ b).len).len` becomes `(a ++
+b).len`. If `s` is `""`, the slice is `""`, which is `s`, since `0 <
+s.len` fails; otherwise it is the `s.len` characters from position `0`,
+which are all of `s`. So the fix has the slice's value for every `s`. It
+evaluates the receiver where the slice did, and nothing else, so it keeps
+the guards, and it brings the expression into the [decidable
+core](../Lang/Decidability.md#strings), where a slice whose length is not
+a constant is not. `lint::redundant_slicing` states when it fires, and the
+value of the slice, compared with any string `u`, which its `impl` proves
+for strings:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp redundant_slicing {
+    in whole?            -- it is written `s.slice(0, s.len)`, the receivers written the same
+    in s: String
+    in i: Int            -- the position
+    in n: Int            -- the length
+    in u: String         -- any string
+    pub det out fires?
+    pub out slice?       -- `s.slice(i, n) = u`
+
+    assume written: when whole?, i = 0 and n = s.len
+
+    req rule: fires? iff whole?
+    req value: when fires?, slice? iff s = u
+}
+```
 
 ## Conditional operands
 

@@ -386,6 +386,14 @@ and `mod`, which [divide by a constant](Expressions.md#division-and-remainder)).
 three are lexed as punctuators, so that the message names them as Lean's
 does.
 
+`<-` is a punctuator too, since it is a Lean token, and Fren is lexed as
+Lean is: `x <- 1` is `x`, `<-` and `1`, not `x < -1`. Fren has no operator
+`<-`, so it is an error (F0121), with the fix `< -`. It is the only Lean
+token made of Fren punctuators that could otherwise be read as Fren: the
+others, such as `->`, `<->`, `|>`, `<|`, `>>`, `..` and `.(`, would be
+punctuators that never follow one another in an expression, so they are
+errors either way.
+
 Punctuators follow maximal munch too, so `::*` is one punctuator and not
 `::` followed by `*`. A punctuator that extends a shorter one does so one
 character at a time, through punctuators (`:`, `::`, `::*`), so one
@@ -399,7 +407,7 @@ the rule assumes that `lexeme` is a punctuator:
 ```fren
 -- Longest first, as the lexer tries them.
 pub const PUNCTUATORS: Set(String) := {
-    "::*", "::{", "::", "==", "=>", "&&", "||", "|", "!=", "<=", ">=", ":=", "{", "}",
+    "::*", "::{", "::", "==", "=>", "&&", "||", "|", "!=", "<=", "<-", ">=", ":=", "{", "}",
     "(", ")", "[", "]", ",", ":", ".", "*", "=", "<", ">", "++", "+", "-",
 }
 
@@ -423,12 +431,13 @@ pub comp punctuator_end {
 
     assume a_punctuator: lexeme in PUNCTUATORS
 
-    out longer: String := lexeme ++ remaining.slice(0, 1)
+    out longer: String := lexeme ++ remaining.at(0)
     inst one: punctuator { lexeme := longer }
     req maximal_munch: ends? iff (remaining = "" or not one.accepted?)
 
     expect path_glob: when lexeme = "::" and remaining.starts_with?("*"), not ends?
     expect no_triple: when lexeme.len = 3, ends?
+    expect lean_arrow: when lexeme = "<" and remaining.starts_with?("-"), not ends?
 }
 ```
 

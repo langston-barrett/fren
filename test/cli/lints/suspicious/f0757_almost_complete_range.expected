@@ -1,0 +1,20 @@
+warning[F0757]: these ranges are each one character short of a whole alphabet
+ --> test/cli/lints/suspicious/f0757_almost_complete_range.fren:2:59
+  |
+2 | comp c { in s: String pub out p? req r: p? iff s.matches?("[a-y_][0-8]*") }
+  |                                                           ^^^^^^^^^^^^^^ ranges that leave out one character
+  |
+  = note: a range is from its first character to its last, both included
+  = help: `fren fix` can fix this
+  = note: `almost_complete_range` is `warn` by default
+  = help: to allow it, `set_option fren.lint.almost_complete_range "allow"`
+help: write `"[a-z_][0-9]*"`
+  |
+2 - comp c { in s: String pub out p? req r: p? iff s.matches?("[a-y_][0-8]*") }
+2 + comp c { in s: String pub out p? req r: p? iff s.matches?("[a-z_][0-9]*") }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0757`.
+exit=3
