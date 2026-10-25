@@ -306,9 +306,12 @@ but `rule` does not look at it then.
 That a history is accepted exactly when every step that `lint::setting`
 takes along it is accepted cannot be stated for every length without a
 fold. For a fixed length it can, by a chain of `lint::setting`s, and
-`lint::stepwise` does so for three settings, the first made over any level
-but `forbid`: `lint::setting` accepts every first setting then, whatever
-that level is. `history` refines it. `history` is outside the decidable
+`lint::stepwise` does so for three settings. It starts them from `warn`,
+though the level before the first setting may be any level: whatever it
+is, `lint::setting` accepts every first setting, unless the level is
+`forbid`. That happens only when the command line forbids the lint with
+`-F`, where `history` and `fren` differ: `lint::effective` puts the
+command line and the settings together. `history` refines it. `history` is outside the decidable
 core, so the refinement is checked by testing:
 
 ```fren

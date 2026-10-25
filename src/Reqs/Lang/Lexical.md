@@ -389,7 +389,9 @@ does.
 Punctuators follow maximal munch too, so `::*` is one punctuator and not
 `::` followed by `*`. A punctuator that extends a shorter one does so one
 character at a time, through punctuators (`:`, `::`, `::*`), so one
-character of lookahead decides whether a punctuator ends.
+character of lookahead decides whether a punctuator ends. Two punctuators
+extend none: `!=` and `&&` start with `!` and `&`, which are not
+punctuators.
 `lang::punctuator_end` states this. The lexer asks only where a
 punctuator that it has read ends, never where some other text would, so
 the rule assumes that `lexeme` is a punctuator:
@@ -433,7 +435,9 @@ pub comp punctuator_end {
 That one character decides is a property of `PUNCTUATORS`, which
 `lang::longest_punctuator` states: a punctuator ends exactly when neither
 one nor two more characters make a longer one. `punctuator_end` refines
-it, so no punctuator is reached only through a string that is not one.
+it, so no punctuator that extends another is reached only through a
+string that is not one. Both rules are about extending a punctuator, and
+say nothing of `!=` and `&&`, which extend none.
 The instances' bindings concatenate, outside the core for a binding, so
 the refinement is tested:
 

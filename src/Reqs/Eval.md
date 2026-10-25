@@ -210,7 +210,8 @@ seldom satisfies a narrow trigger, testing searches for one that does:
 Testing also searches for counterexamples directly: for an expectation or
 a global expectation not yet refuted, each test that finds what the
 expectation is about (a behaviour that meets the component, or behaviours
-of the binders) also searches for one in which it is false. Backtracking then tries combinations of candidates that random
+of the binders in which the body's trigger holds, if it has one) also
+searches for one in which it is false. Backtracking then tries combinations of candidates that random
 behaviours seldom reach, such as a lexeme and the input after it that
 together refute a rule about both. A behaviour found is a counterexample;
 none found says nothing.
