@@ -94,7 +94,7 @@ def escapeAt (src : Array Char) (i : Nat) : Option (Char × Nat) :=
 
 /-- Whether `s` is in `src` at `i`. -/
 def occursAt (src : Array Char) (i : Nat) (s : String) : Bool :=
-  s.toList.zipIdx.all fun (c, k) => src[i + k]? == some c
+  (s.foldl (fun (ok, k) c => (ok && src[k]? == some c, k + 1)) (true, i)).1
 
 /-- The punctuator at `i`: the longest, by maximal munch, since
 `punctuators` is longest first (`lang::punctuator_end`). -/
