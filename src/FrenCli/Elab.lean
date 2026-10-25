@@ -2039,8 +2039,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let mut smts := #[]
         for a in args, t in tys, k in [0:args.size] do
           let (x, ta) ← elabExpr { cx with expected? := some t } a
-          unless ta.widens t do
-            mismatch a t ta (some s!"note: value {k + 1} of the payload of `{showPath (en.path ++ v)}` has type `{t.show}`")
+          liftMsg a.span (Fren.Core.checkType t ta (some s!"note: value {k + 1} of the payload of `{showPath (en.path ++ v)}` has type `{t.show}`"))
           smts := smts.push x
         return (s!"({ctorSym en.path v} {" ".intercalate smts.toList})", .enum en.path)
       | r => err fnSpan (Fren.Core.notAFunctionMsg r)
@@ -2050,8 +2049,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let mut smts := #[]
       for a in args, (_, t) in params, k in [0:args.size] do
         let (x, ta) ← elabExpr { cx with expected? := some t } a
-        unless ta.widens t do
-          mismatch a t ta (some s!"note: argument {k + 1} of `{showPath path}` has type `{t.show}`")
+        liftMsg a.span (Fren.Core.checkType t ta (some s!"note: argument {k + 1} of `{showPath path}` has type `{t.show}`"))
         smts := smts.push x
       return (s!"({itemSym path} {" ".intercalate smts.toList})", result)
     if cx.selfFn.isSome then err fnSpan (Fren.Core.appliesUninterpretedMsg path)
@@ -2069,8 +2067,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     let mut smts := #[]
     for a in args, t in params, k in [0:args.size] do
       let (x, ta) ← elabExpr { acx with expected? := some t } a
-      unless ta.widens t do
-        mismatch a t ta (some s!"note: argument {k + 1} of `{showPath path}` has type `{t.show}`")
+      liftMsg a.span (Fren.Core.checkType t ta (some s!"note: argument {k + 1} of `{showPath path}` has type `{t.show}`"))
       smts := smts.push x
     let app := s!"({itemSym path} {" ".intercalate smts.toList})"
     -- At least 0, if a `Nat` (`Reqs/Lang/Items#uninterpreted-functions`).
@@ -2102,7 +2099,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       if let (some e, true) := (e?, cx.noteIndexes) then lintRedundant fi e true
       let e := e?.getD (.path fi.span #[fi])
       let (x, te) ← elabExpr { cx with expected? := some t } e
-      unless te.widens t do mismatch e t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`")
+      liftMsg e.span (Fren.Core.checkType t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`"))
       smts := smts.push x
     return (s!"({recordCtorSym path} {" ".intercalate smts.toList})", .record path)
   | .update span base fields =>
@@ -2123,7 +2120,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         | smts := smts.push s!"({fieldSym path f} {r})"; continue
       let e := e?.getD (.path fi.span #[fi])
       let (x, te) ← elabExpr { cx with expected? := some t } e
-      unless te.widens t do mismatch e t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`")
+      liftMsg e.span (Fren.Core.checkType t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`"))
       smts := smts.push x
     let lit := s!"({recordCtorSym path} {" ".intercalate smts.toList})"
     return (if bind then s!"(let (({r} {rv})) {lit})" else lit, .record path)
@@ -2383,7 +2380,7 @@ def elabInst (cx : ExprCtx) (pi : PendingInst) : M CInst := do
     let some v := cx.vars.find? (·.name == w ++ Name.mkSimple b.name)
       | internal b.span s!"no variable for `{b.name}`"
     let (smt, t) ← elabExpr { cx with expected? := some v.ty } e
-    unless t.widens v.ty do mismatch e v.ty t (some s!"note: `{b.name}` of `{showPath c.path}` has type `{v.ty.show}`")
+    liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{b.name}` of `{showPath c.path}` has type `{v.ty.show}`"))
     lintBools e
     eqs := eqs.push s!"(= {quote v.name.toString} {smt})"
   modify fun s => { s with natApps := s.natApps ++ c.natApps.map (rename w c.vars) }
@@ -2540,7 +2537,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     let some (smt, idx) ← attempt do
         -- A definition assigns once and acyclically, so `++` is in the core in it.
         let (smt, t) ← elabExpr { vars, insts := instNames, place := .prop, expected? := some v.ty, concatOk := true } e
-        unless t.widens v.ty do mismatch e v.ty t (some s!"note: `{v.name}` has type `{v.ty.show}`, so its definition must too")
+        liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{v.name}` has type `{v.ty.show}`, so its definition must too"))
         lintBools e
         return (smt, (← takeIndexes).map fun (sp, g) => (v.name, Fren.Core.IndexPlace.prop, sp, g))
       | continue
@@ -2556,7 +2553,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
         lintName .constraint xn x.span
         let cx : ExprCtx := { vars, insts := instNames, place := if kind == .assume then .assume else .prop }
         let (smt, t) ← elabExpr cx e
-        unless t == .bool do mismatch e .bool t (some "note: a constraint is a `Bool`")
+        liftMsg e.span (Fren.Core.checkType .bool t (some "note: a constraint is a `Bool`"))
         lintBools e
         lintConstant cx (match kind with | .assume => "assume" | .req => "req" | .expect => "expect" | .cover => "cover") e
         let trig ← trigger? cx e
@@ -2696,7 +2693,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
     let cx : ExprCtx := { vars := own, place := .prop, expected? := some v.ty
                           refining? := some { concrete := c.path, abstract := a.path, input := v.role == .input } }
     let (smt, t) ← elabExpr cx e
-    unless t.widens v.ty do mismatch e v.ty t (some s!"note: `{b.name}` of `{showPath a.path}` has type `{v.ty.show}`")
+    liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{b.name}` of `{showPath a.path}` has type `{v.ty.show}`"))
     lintBools e
     bindings := bindings.push (v, smt, ← takeIndexes)
   let (relational, counts) ← checkCounts
@@ -2810,7 +2807,7 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
   discard takeIndexes
   let (smt, t) ← elabExpr cx body
   let indexes := (← takeIndexes).map fun (sp, g) => (n, Fren.Core.IndexPlace.prop, sp, g)
-  unless t == .bool do mismatch body .bool t (some "note: an expectation is a `Bool`")
+  liftMsg body.span (Fren.Core.checkType .bool t (some "note: an expectation is a `Bool`"))
   lintBools body
   lintConstant cx "expect" body
   let binders := insts.map fun i => (i.name, i.span)
@@ -2982,7 +2979,7 @@ partial def elabItem (item : Item) : M Unit := do
         vars := vars.push { name := xn, role := .input, isPub := true, ty := t, span := x.span }
       let r ← varTy result name
       let (smt, t) ← elabExpr { vars, place := .prop, selfFn := some n, expected? := if r == .nat then some .nat else none } body
-      unless t.widens r do mismatch body r t (some s!"note: `{n}` returns `{r.show}`")
+      liftMsg body.span (Fren.Core.checkType r t (some s!"note: `{n}` returns `{r.show}`"))
       lintBools body
       for (x, v) in Fren.Core.unmentioned (vars.map fun v => (v.name, v)) ((mentions body).map (·.getRoot)) do
         lint .unusedVariables v.span (Fren.Core.unusedParamMsg x)
@@ -3015,7 +3012,7 @@ partial def elabItem (item : Item) : M Unit := do
     let applies := (← get).applied.extract before
     unless Fren.Core.constantAccepted abstract applies.isEmpty.not do
       err applies[0]! (Fren.Core.unknownConstantMsg abstract)
-    unless t'.widens t do mismatch value t t' (some s!"note: `{n}` has type `{t.show}`")
+    liftMsg value.span (Fren.Core.checkType t t' (some s!"note: `{n}` has type `{t.show}`"))
     lintBools value
     let path := module ++ n
     unless isPub do

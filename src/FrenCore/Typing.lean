@@ -77,7 +77,7 @@ def checkBranches (tx ty : Ty) : Except Msg Unit := do
 
 /-- Checks the body of an arm of a `match`, of type `t`, against the type
 `t0?` of the arms before it, if one has a type: one widens to the other
-(`lang::match_arms`). Returns the type of the arms so far. -/
+(`lang::arm_type`). Returns the type of the arms so far. -/
 def checkArm (t0? : Option Ty) (t : Ty) : Except Msg Ty := do
   let some t0 := t0? | return t
   unless t.widens t0 || t0.widens t do

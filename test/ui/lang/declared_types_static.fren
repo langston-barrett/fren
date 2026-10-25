@@ -27,6 +27,12 @@ comp definition { in b? pub out d: Int := b? }
 --~^ error: `d` has type `Int`, so its definition must too
 comp constraint { in x: Int req r: x + 1 }
 --~^ error: a constraint is a `Bool`
+comp assumption { in x: Int assume a: x }
+--~^ error: a constraint is a `Bool`
+comp expectation { in x: Int expect e: x - 1 }
+--~^ error: a constraint is a `Bool`
+comp goal { in x: Int cover g: x }
+--~^ error: a constraint is a `Bool`
 const K: Int := true
 --~^ error: `K` has type `Int`
 fn result?(n: Int) := n
@@ -46,5 +52,19 @@ comp arms { in s: S pub out y: Int req r: y = match s { S::A(a) => a, S::B => "b
 --~^ error: the arms of `match` have different types: `Int` and `String`
 comp arms_note { in s: S pub out y: Int req r: y = match s { S::A(a) => a, S::B => true } }
 --~^ error: so all must have the same type, or be `Nat`s and `Int`s
+
+-- `{}` and `[]` take a declared type that is a set or a sequence, through
+-- parentheses, branches and arms; any other leaves them without one.
+comp empty_argument { pub out y: Int req r: y = twice({}) }
+--~^ error: the type of `{}` cannot be known here
+comp empty_binding { inst w: sub { x := ([]) } }
+--~^ error: the type of `[]` cannot be known here
+comp empty_branch { in c? pub out y: Int := if c? then 1 else {} }
+--~^ error: the type of `{}` cannot be known here
+comp empty_arm { in s: S pub out y: Int req r: y = match s { S::A(a) => a, S::B => {} } }
+--~^ error: the type of `{}` cannot be known here
+comp empty_first_arm { in s: S pub out y: Int req r: y = match s { S::B => [], S::A(a) => a } }
+--~^ error: the type of `[]` cannot be known here
+comp empty_set { in c? in t: Set(Int) pub out s: Set(Int) := if c? then {} else t }
 
 --@ exit: 2

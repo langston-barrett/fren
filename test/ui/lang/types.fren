@@ -24,6 +24,8 @@ comp not_int { in x: Int pub out p? req r: p? iff not x }
 --~^ error: type mismatch: expected `Bool`, found `Int`
 comp when_int { in x: Int pub out p? req r: p? iff (when x, true) }
 --~^ error: type mismatch: expected `Bool`, found `Int`
+comp plus_bool { in b? pub out y: Int req r: y = b? + 1 }
+--~^ error: type mismatch: expected `Int`, found `Bool`
 comp neg_bool { in b? pub out y: Int req r: y = -b? }
 --~^ error: type mismatch: expected `Int`, found `Bool`
 comp lt_bool { in b? pub out p? req r: p? iff b? < 1 }
