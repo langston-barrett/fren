@@ -434,6 +434,14 @@ structure State where
   /-- Where the variants without payloads in the expression being
   elaborated are, with their paths, for `contradictory_comparisons`. -/
   variants : Array (Span × String) := #[]
+  /-- Where the calls of `abs` in the expression being elaborated end, for
+  `invalid_upcast_comparisons`. -/
+  absEnds : Array Nat := #[]
+  /-- The current file's trailing commas that `unnecessary_trailing_comma`
+  reports, each with the `}` or `]` after it. -/
+  trailingCommas : Array (Span × String) := #[]
+  /-- The span of the item being elaborated, up to where the next starts. -/
+  itemSpan : Span := ⟨0, 0⟩
   /-- Some type or literal is a `String`, so the queries need the theory of
   strings (`cli::logic`). -/
   usesStrings : Bool := false
@@ -1095,10 +1103,10 @@ def lintBools (e : Expr) : M Unit := do
   let root := e.boolNode full w.start
   for (l, ref, msg) in Fren.Core.rewriteReports src root do
     lintFix l ref msg
-  let (boolEqs, variants) := ((← get).boolEqs, (← get).variants)
-  modify fun s => { s with boolEqs := #[], variants := #[] }
+  let (boolEqs, variants, absEnds) := ((← get).boolEqs, (← get).variants, (← get).absEnds)
+  modify fun s => { s with boolEqs := #[], variants := #[], absEnds := #[] }
   let variant? (sp : Span) := (variants.find? (·.1 == sp)).map (·.2)
-  for r in Fren.Core.opReports src boolEqs.contains variant? root do
+  for r in Fren.Core.opReports src boolEqs.contains variant? (absEnds.contains ·.stop) root do
     lintFix r.lint r.ref r.msg
   for r in Fren.Core.arithReports src root do
     lintFix r.lint r.ref r.msg
@@ -1246,6 +1254,8 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
 /-- Reads the field `f` of the value `smt` of type `t`; of a `String`, calls
 the method `f`, without arguments. -/
 def readField (span : Span) (smt : String) (t : Ty) (f : Name) : M (String × Ty) := do
+  -- For `invalid_upcast_comparisons`, at the end of the expression.
+  if (t == .int || t == .nat) && f == `abs then modify fun s => { s with absEnds := s.absEnds.push span.stop }
   if t matches .string | .set _ | .rel .. | .seq _ | .int | .nat then return ← callMethod span smt t f.toString #[]
   -- An enumeration's methods, `min` and `max`, which take an argument.
   if t matches .enum _ && (f == `min || f == `max) then return ← callMethod span smt t f.toString #[]
@@ -3118,7 +3128,12 @@ def noteSettingsSeen (lints : Array Lint := Lint.all) : M Unit :=
 
 partial def elabItem (item : Item) : M Unit := do
   -- A `set_option` leaves them to the item after it.
-  unless item matches .lintSetting .. do lintLiterals
+  unless item matches .lintSetting .. do
+    lintLiterals
+    let sp := (← get).itemSpan
+    for (comma, closer) in (← get).trailingCommas do
+      if sp.start ≤ comma.start && comma.start < sp.stop then
+        lintFix .unnecessaryTrailingComma comma (Fren.Core.unnecessaryTrailingCommaMsg closer)
   -- A check, such as `#fren_check`, is not about any lint.
   unless item matches .lintSetting .. | .check _ do noteSettingsSeen
   match item with
@@ -3454,16 +3469,24 @@ def finishLints : StateM State Unit := do
       fixed := fixed.contains (r.lint, r.ref) : Diag }
   set { s with diags := s.diags ++ diags, edits := s.edits ++ edits.map (s.file, ·) }
 
+/-- The trailing commas among `toks` that `unnecessary_trailing_comma`
+reports, each with the `}` or `]` after it
+(`lint::unnecessary_trailing_comma`). -/
+def trailingCommas (toks : Array Token) : Array (Span × String) :=
+  let texts := toks.map fun t => ((match t.tok with | .kw k => k | _ => ""), t.nlBefore)
+  (Fren.Core.trailingCommas texts).map fun i => (toks[i]!.span, texts[i + 1]!.1)
+
 /-- Elaborates the items of one file, whose text is `src`, and which start
-at `starts`, collecting an error per failed item. `fren fix` fixes the
-lints `fixing` in it. -/
-def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Array Nat) (fixing : Array Lint := #[]) :
-    StateM State Unit := do
+at `starts`, collecting an error per failed item, where `trailingCommas`
+are the commas that `unnecessary_trailing_comma` reports. `fren fix` fixes
+the lints `fixing` in it. -/
+def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Array Nat)
+    (trailingCommas : Array (Span × String)) (fixing : Array Lint := #[]) : StateM State Unit := do
   modify fun s => { s with file, src, fixing, module := .anonymous, scope := .anonymous, levels := s.cliLevels, useRecords := #[], evidence? := none,
                            used := #[], expectations := #[], lintReports := #[], useLocs := #[],
                            expectationRemovals := #[], items := #[], usedItems := #[], lintFixes := #[],
                            globalTexts := #[], settings := #[], settingRemovals := #[], seenSettings := #[],
-                           assumptions := #[], globalReads := #[] }
+                           assumptions := #[], globalReads := #[], trailingCommas }
   let found := literalLints src
   for item in items, k in [0:items.size] do
     -- An item has the literals and comments up to the next item, and the
@@ -3473,7 +3496,7 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
     let stop := starts[k + 1]?.getD src.size
     let left ← if k > 0 && items[k - 1]! matches .lintSetting .. then pure (← get).literals else pure #[]
     let literals := left ++ found.filter fun (_, sp, _) => (k == 0 || start ≤ sp.start) && sp.start < stop
-    modify fun s => { s with itemStart := start, literals }
+    modify fun s => { s with itemStart := start, literals, itemSpan := { start, stop } }
     let s ← get
     match (elabItem item).run s with
     | .ok ((), s') =>

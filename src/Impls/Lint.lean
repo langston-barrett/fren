@@ -1278,4 +1278,42 @@ impl literal_dot_in_pattern: lint::literal_dot_in_pattern for (b a : Bool) {
   intro b a _
   cases b <;> cases a <;> simp [fren_spec, Fren.Core.literalDotInPattern]
 
+/-! ## Ranges of methods, Unicode normalization and trailing commas -/
+
+-- Both front ends decide `invalid_upcast_comparisons` with `invalidUpcast`,
+-- from the least value that `leastValue?` gives the method.
+impl invalid_upcast_comparisons: lint::invalid_upcast_comparisons for (c : Comparison) (b m : Int) (l : Bool) {
+  op := toComparison c,
+  bound := b,
+  lowest := m,
+  left? := l,
+  fires? := (Fren.Core.invalidUpcast c b m l).1,
+  value? := (Fren.Core.invalidUpcast c b m l).2,
+} by
+  intro c b m l _
+  cases c <;> cases l <;> simp [fren_spec, toComparison, Fren.Core.invalidUpcast, Fren.Core.Comparison.mirror] <;> omega
+
+-- `unicodeNotNfc?` asks `Nfc.nfc?` for the literal's value in NFC, which is
+-- `none` where Unicode 15.0 does not assign a code point of it.
+impl unicode_not_nfc: lint::unicode_not_nfc for (n a e : Bool) {
+  nfc? := n,
+  assigned? := a,
+  escapes? := e,
+  fires? := (Fren.Core.unicodeNotNfc n a e).1,
+  suggested? := (Fren.Core.unicodeNotNfc n a e).2,
+}
+
+-- Both front ends find the commas with `trailingCommas`, from the tokens.
+impl unnecessary_trailing_comma: lint::unnecessary_trailing_comma for (b : Bool) {
+  line_break? := b,
+  fires? := Fren.Core.unnecessaryTrailingComma b,
+}
+
+trusted lint::invalid_upcast_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::invalid_upcast_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::nfc_written: "a model of a string literal, checked by the refinements in its section"
+trusted lint::nfc_fixed: "a model of a string literal, checked by the refinements in its section"
+trusted lint::trailing_comma_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::trailing_comma_fixed: "a model of an expression, checked by the refinements in its section"
+
 end Fren.Impls

@@ -433,6 +433,21 @@ register_option fren.lint.literal_dot_in_pattern : String := {
   descr := "the level of the lint `literal_dot_in_pattern`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.invalid_upcast_comparisons : String := {
+  defValue := "allow"
+  descr := "the level of the lint `invalid_upcast_comparisons`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.unicode_not_nfc : String := {
+  defValue := "allow"
+  descr := "the level of the lint `unicode_not_nfc`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.unnecessary_trailing_comma : String := {
+  defValue := "allow"
+  descr := "the level of the lint `unnecessary_trailing_comma`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"

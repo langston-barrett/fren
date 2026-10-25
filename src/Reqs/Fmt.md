@@ -299,6 +299,27 @@ pub comp trailing_comma {
 }
 ```
 
+The formatter removes each trailing comma that
+[`unnecessary_trailing_comma`](Lint/Pedantic/Text.md#trailing-commas)
+reports in braces: there, the `}` follows the comma on its line, so it
+does not start one, and the list is not vertical.
+`fmt::trailing_comma_lint` states it:
+
+```fren
+pub comp trailing_comma_lint {
+    use lint::unnecessary_trailing_comma
+    in line_break?           -- a line ends between the last element's comma and the `}`
+    in vertical?
+
+    assume closing: unless line_break?, not vertical?
+
+    inst reported: unnecessary_trailing_comma { line_break? }
+    inst format: trailing_comma { empty? := false, vertical? }
+
+    expect removed: when reported.fires?, not format.comma?
+}
+```
+
 ## Imports
 
 A *block* of imports is a run of `use` items on consecutive lines. Each

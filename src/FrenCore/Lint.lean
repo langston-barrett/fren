@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Names
+import FrenCore.Nfc
 import FrenCore.Regex
 import FrenCore.Simplify
 -- keep-sorted end
@@ -128,6 +129,9 @@ inductive Lint where
   | unusedAssumption
   | unrelatedBinders
   | literalDotInPattern
+  | invalidUpcastComparisons
+  | unicodeNotNfc
+  | unnecessaryTrailingComma
   deriving Inhabited, BEq, DecidableEq, Repr
 
 def Lint.all : Array Lint :=
@@ -145,7 +149,8 @@ def Lint.all : Array Lint :=
     .absurdExtremeComparisons, .erasingOp, .ifsSameCond, .contradictoryComparisons, .redundantComparisons,
     .allowAttributes, .wildcardEnumMatchArm, .needlessRawStrings, .nonAsciiLiteral, .moduleNameRepetitions,
     .minIdentChars, .absolutePaths, .precedence, .unnecessaryStructInitialization, .unusedLintSetting,
-    .unusedAssumption, .unrelatedBinders, .literalDotInPattern]
+    .unusedAssumption, .unrelatedBinders, .literalDotInPattern, .invalidUpcastComparisons,
+    .unicodeNotNfc, .unnecessaryTrailingComma]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -230,6 +235,9 @@ def Lint.name : Lint → String
   | .unusedAssumption => "unused_assumption"
   | .unrelatedBinders => "unrelated_binders"
   | .literalDotInPattern => "literal_dot_in_pattern"
+  | .invalidUpcastComparisons => "invalid_upcast_comparisons"
+  | .unicodeNotNfc => "unicode_not_nfc"
+  | .unnecessaryTrailingComma => "unnecessary_trailing_comma"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -316,6 +324,9 @@ def Lint.code : Lint → String
   | .unusedAssumption => "F0792"
   | .unrelatedBinders => "F0793"
   | .literalDotInPattern => "F0794"
+  | .invalidUpcastComparisons => "F0798"
+  | .unicodeNotNfc => "F0799"
+  | .unnecessaryTrailingComma => "F0801"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -372,7 +383,7 @@ def Lint.group : Lint → Group
   | .contradictoryComparisons | .unrelatedBinders | .literalDotInPattern => .suspicious
   | .membershipChain | .definableOutput | .ifNotElse | .matchSameArms | .wildcardSingleVariant | .ifChainMatch
   | .caseSplitReqs | .boolEquality | .zeroSizedMapValues | .manySingleCharNames | .similarNames
-  | .tooManyLines => .pedantic
+  | .tooManyLines | .invalidUpcastComparisons | .unicodeNotNfc | .unnecessaryTrailingComma => .pedantic
   | .allowAttributes | .wildcardEnumMatchArm | .needlessRawStrings | .nonAsciiLiteral | .moduleNameRepetitions
   | .minIdentChars | .absolutePaths | .precedence => .restriction
   | .undecidable => .decidability
@@ -2871,6 +2882,47 @@ def methodCallAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent
     return { lint := .noEffectReplace, ref := n.ref, msg := noEffectReplaceMsg m receiver }
   | _, _ => none
 
+/-- The least value of `n`, a call of a method whose values have a least
+one, and the method (`Reqs/Lint/Pedantic#ranges-of-methods`): `index_of`,
+which is never below `-1`, and `abs`, never below `0`, which `isAbs` says
+`n` is, since `x.abs` is written as a field read is. -/
+def leastValue? (isAbs : α → Bool) (n : BNode α) : Option (String × Int) :=
+  match n.kind, n.kids.size with
+  | .method "index_of", 3 => some ("index_of", -1)
+  | .atom, _ | .method "abs", 1 => if isAbs n.ref then some ("abs", 0) else none
+  | _, _ => none
+
+/-- Whether `invalid_upcast_comparisons` fires on a comparison of a call
+that is never below `least` with `bound`, `call OP bound` if `callLeft` and
+`bound OP call` otherwise, and what it always is where it fires
+(`lint::invalid_upcast_comparisons`): the call is above `bound`, or, for
+`least`, the same or above. -/
+def invalidUpcast (op : Comparison) (bound least : Int) (callLeft : Bool) : Bool × Bool :=
+  match if callLeft then op else op.mirror with
+  | .lt => (bound ≤ least, false)
+  | .ge => (bound ≤ least, true)
+  | .eq | .le => (bound < least, false)
+  | .ne | .gt => (bound < least, true)
+
+/-- A comparison of a call of `method`, never below `least`, that is always
+`value`. -/
+def invalidUpcastMsg (method : String) (least : Int) (value : Bool) : Msg :=
+  { code? := some Lint.invalidUpcastComparisons.code, headline := s!"this comparison is always `{value}`"
+    label? := some s!"`{method}` is never below {least}"
+    notes := #["note: the bound or the operator is probably not the one meant"] }
+
+/-- `invalid_upcast_comparisons` on `n`, a comparison, where `isAbs` says
+which expressions are calls of `abs` (`lint::invalid_upcast_comparisons`). -/
+def invalidUpcastAt? (src : Array Char) (isAbs : α → Bool) (n : BNode α) : Option (OpReport α) := do
+  let .bin op := n.kind | none
+  let c ← Comparison.ofOp? op
+  let #[a, b] := n.kids | none
+  let (call, other, left) := if (leastValue? isAbs a).isSome then (a, b, true) else (b, a, false)
+  let (method, least) ← leastValue? isAbs call
+  let (fires, value) := invalidUpcast c (← intLiteral? src other) least left
+  unless fires do none
+  return { lint := .invalidUpcastComparisons, ref := n.ref, msg := invalidUpcastMsg method least value }
+
 /-- The `else` branch that ends a conditional: of the last conditional in a
 chain of `else if`s written without parentheses. -/
 partial def lastElse (src : Array Char) (n : BNode α) : Option (BNode α) := do
@@ -3112,8 +3164,8 @@ def ifsSameCondAt (src : Array Char) (n : BNode α) : Array (OpReport α) :=
 /-- The messages of the operator and method lints in `n`, which is in
 `slot` within `parent`, outermost first, where `inElse` says that `n` is
 the `else` branch of a conditional. -/
-partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (n : BNode α)
-    (slot : Option Slot) (parent : Range) (inElse : Bool := false) : Array (OpReport α) :=
+partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (isAbs : α → Bool)
+    (n : BNode α) (slot : Option Slot) (parent : Range) (inElse : Bool := false) : Array (OpReport α) :=
   let slots := n.kind.slots
   let own := match n.kind with
     | .bin op =>
@@ -3125,8 +3177,8 @@ partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (variant? : α
         else #[])
         ++ (boolEqualityAt? src boolEq n slot parent).toArray ++ (manualMethodAt? src n slot parent).toArray
         ++ (identityOpAt? src n slot parent).toArray ++ (suspiciousUnaryAt? src n).toArray
-        ++ (erasingOpAt? src n).toArray ++ (firstEmptyAt? src n slot parent).toArray ++ operands
-        ++ precedenceAt src n
+        ++ (erasingOpAt? src n).toArray ++ (firstEmptyAt? src n slot parent).toArray
+        ++ (invalidUpcastAt? src isAbs n).toArray ++ operands ++ precedenceAt src n
     | .ite => (needlessBoolAssignAt? src n slot parent).toArray ++ (if inElse then #[] else ifsSameCondAt src n)
     | .method _ => (methodCallAt? src n slot parent).toArray
     | _ => #[]
@@ -3136,15 +3188,15 @@ partial def opReportsIn (src : Array Char) (boolEq : α → Bool) (variant? : α
     | .atom, some k => if isReceiverOf src n k then #[some receiverSlot] else slots
     | _, _ => slots
   own ++ (n.kids.mapIdx fun i k =>
-    opReportsIn src boolEq variant? k (slots[i]?.join) n.range (n.kind == .ite && i == 2)).flatten
+    opReportsIn src boolEq variant? isAbs k (slots[i]?.join) n.range (n.kind == .ite && i == 2)).flatten
 
 /-- The messages of the operator and method lints in an expression written
 in `src` (`Reqs/Lint/Complexity/Comparisons`), where `boolEq` says whether a
-comparison compares `Bool`s, and `variant?` which variant without a payload a
-path is, if it is one. -/
-def opReports (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (root : BNode α) :
-    Array (OpReport α) :=
-  opReportsIn (upTo src root.range) boolEq variant? root none root.range
+comparison compares `Bool`s, `variant?` which variant without a payload a
+path is, if it is one, and `isAbs` whether an expression is a call of `abs`. -/
+def opReports (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (isAbs : α → Bool)
+    (root : BNode α) : Array (OpReport α) :=
+  opReportsIn (upTo src root.range) boolEq variant? isAbs root none root.range
 
 /-! ## Arithmetic and parentheses -/
 
@@ -3199,8 +3251,60 @@ def negMultiplyMsg (replacement : String) : Msg :=
   { code? := some Lint.negMultiply.code, headline := "multiplying by `-1` is negation", label? := some "a product with `-1`"
     fixes := #[{ msg := s!"write `{replacement}`", replacement }] }
 
-/-- A report of `double_neg`, `int_plus_one` or `neg_multiply`: the lint,
-where, and the fix, which replaces the range. -/
+/-- Whether `unicode_not_nfc` fires on a string literal, and whether its
+message suggests the literal in NFC (`lint::unicode_not_nfc`): if its value
+is not in NFC, and this version of Unicode assigns each of its code points,
+and a suggestion if it has no escape sequence. -/
+def unicodeNotNfc (nfc assigned escapes : Bool) : Bool × Bool :=
+  let fires := assigned && !nfc
+  (fires, fires && !escapes)
+
+/-- What `unicode_not_nfc` says of the string literal written `t`: `none`
+if it does not fire, and else its value, the value in NFC, and the literal
+it suggests, if any: `t` with its value in NFC. A raw literal, or one
+without a `\`, has no escape sequence, so its value is the text between its
+delimiters, and the suggestion keeps them. -/
+def unicodeNotNfc? (t : String) : Option (String × String × Option String) := do
+  let value ← Lean.Syntax.decodeStrLit t
+  let raw := t.startsWith "r"
+  let normal? := Nfc.nfc? value
+  let (fires, suggested) := unicodeNotNfc (normal? == some value) normal?.isSome (!raw && t.contains '\\')
+  guard fires
+  let some normal := normal? | none
+  -- `r#"`: the `r`, its `#`s and the `"`.
+  let hashes := ((t.toList.drop 1).takeWhile (· == '#')).length
+  let (pre, post) := if raw then ((t.take (hashes + 2)).toString, "\"" ++ String.ofList (List.replicate hashes '#'))
+    else ("\"", "\"")
+  return (value, normal, if suggested then some (pre ++ normal ++ post) else none)
+
+/-- The code points `cs`, as `U+0065 U+0301`. -/
+def codePoints (cs : List Char) : String :=
+  " ".intercalate (cs.map fun c =>
+    let h := (String.ofList (Nat.toDigits 16 c.toNat)).toUpper
+    "U+" ++ String.ofList (List.replicate (4 - min 4 h.length) '0') ++ h)
+
+/-- A string literal whose value, `value`, is not in NFC, where it is
+`normal`, and the literal in NFC that it suggests, `suggested?`. The note
+names the code points that differ, between the longest prefix and suffix
+that the two share. There is no fix, which would change the value. -/
+def unicodeNotNfcMsg (value normal : String) (suggested? : Option String) : Msg :=
+  let (a, b) := (value.toList, normal.toList)
+  let pre := ((a.zip b).takeWhile fun (x, y) => x == y).length
+  let (a, b) := (a.drop pre, b.drop pre)
+  let post := ((a.reverse.zip b.reverse).takeWhile fun (x, y) => x == y).length
+  let (a, b) := (a.take (a.length - post), b.take (b.length - post))
+  { code? := some Lint.unicodeNotNfc.code, headline := "this string literal is not in Unicode NFC"
+    label? := some "not in NFC"
+    notes := #[s!"note: {codePoints a} is {codePoints b} in NFC",
+      "note: strings compare by code point, so it never equals text in NFC, which most text is in"]
+      ++ #[match suggested? with
+        | some t => s!"help: write it in NFC, `{t}`"
+        | none => "help: write it so that its value is in NFC",
+        "note: `fren fix` does not, since that changes the literal's value"] }
+
+/-- A report of `double_neg`, `int_plus_one`, `neg_multiply` or
+`unicode_not_nfc`: the lint, where, and the fix, if any, which replaces the
+range. -/
 structure ShapeReport (α : Type) where
   lint : Lint
   ref : α
@@ -3211,8 +3315,9 @@ structure ShapeReport (α : Type) where
 /-- `-t`, with a space if `t` starts with `-`, which would start a comment. -/
 def negText (t : String) : String := if t.startsWith "-" then s!"- {t}" else s!"-{t}"
 
-/-- The reports of `double_neg`, `int_plus_one` and `neg_multiply` in `n`,
-which is in `slot` within `parent`, and in its operands, in order. An
+/-- The reports of `double_neg`, `int_plus_one`, `neg_multiply` and
+`unicode_not_nfc` in `n`, which is in `slot` within `parent`, and in its
+operands, in order. An
 atom's operands, such as an application's arguments, are where any
 expression can be written. -/
 partial def shapeReports (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) : Array (ShapeReport α) :=
@@ -3250,11 +3355,17 @@ partial def shapeReports (src : Array Char) (n : BNode α) (slot : Option Slot) 
           report .intPlusOne intPlusOneMsg { text := s!"{l.inSlot (slot false)} {strict.op} {r.inSlot (slot true)}", prec := kind.prec }
         | _ => #[]
       | none => #[]
+    -- A literal is an atom, which needs no parentheses.
+    | .atom, #[] =>
+      match unicodeNotNfc? (textOf src range) with
+      | some (value, normal, suggested?) =>
+        #[{ lint := .unicodeNotNfc, ref, range, msg := unicodeNotNfcMsg value normal suggested? }]
+      | none => #[]
     | _, _ => #[]
   (kids.zipIdx.foldl (init := own) fun acc (k, i) => acc ++ shapeReports src k (kind.slots[i]?.join) range)
 
-/-- The reports of `double_neg`, `int_plus_one` and `neg_multiply` in an
-expression written in `src`, in the order they start, the outer of two
+/-- The reports of `double_neg`, `int_plus_one`, `neg_multiply` and
+`unicode_not_nfc` in an expression written in `src`, in the order they start, the outer of two
 that start together first. -/
 def arithReports (src : Array Char) (root : BNode α) : Array (ShapeReport α) :=
   let range := match root with | .mk _ r .. => r
@@ -3779,6 +3890,29 @@ def absolutePathMsg? (segs : Array Name) (r : Resolved) : Option Msg := do
          headline := s!"`{"::".intercalate (segs.map nameText).toList}` is a path of {segs.size} segments"
          label? := some "a long path"
          notes := #[s!"help: import it with `use {showPath target}`, and write `{rest}`"] }
+
+/-! ## Trailing commas -/
+
+/-- Whether `unnecessary_trailing_comma` fires on a comma after the last
+element of a list, from whether a line ends between it and the `}` or `]` that
+closes the list (`lint::unnecessary_trailing_comma`). -/
+def unnecessaryTrailingComma (lineBreak : Bool) : Bool := !lineBreak
+
+/-- The commas among `toks` that `unnecessary_trailing_comma` reports, by
+index: each followed by a `}` or `]`, which only a trailing comma is: a
+list in parentheses has none.
+Each token is its text, and whether a line ends before it. -/
+def trailingCommas (toks : Array (String × Bool)) : Array Nat :=
+  (Array.range toks.size).filter fun i =>
+    toks[i]!.1 == "," && toks[i + 1]?.any fun (t, lineBreak) =>
+      (t == "}" || t == "]") && unnecessaryTrailingComma lineBreak
+
+/-- A trailing comma on the line of the `closer` of its list. -/
+def unnecessaryTrailingCommaMsg (closer : String) : Msg :=
+  { code? := some Lint.unnecessaryTrailingComma.code, headline := s!"unnecessary trailing comma before `{closer}`"
+    label? := some "trailing comma"
+    notes := #[s!"note: a list ends with a comma only where its `{closer}` starts a line, so that an element is added by adding a line"]
+    fixes := #[{ msg := "remove the comma", replacement := "" }] }
 
 /-! ## Expectations -/
 

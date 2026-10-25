@@ -1,0 +1,38 @@
+warning[F0799]: this string literal is not in Unicode NFC
+ --> test/cli/lints/pedantic/f0799_unicode_not_nfc.fren:9:24
+  |
+9 |     req r: p? iff (s = "café" or s = r#"é"# or s = "\u0065́" or s = "café")
+  |                        ^^^^^^^ not in NFC
+  |
+  = note: U+0065 U+0301 is U+00E9 in NFC
+  = note: strings compare by code point, so it never equals text in NFC, which most text is in
+  = help: write it in NFC, `"café"`
+  = note: `fren fix` does not, since that changes the literal's value
+  = note: `unicode_not_nfc` is set to `warn`
+
+warning[F0799]: this string literal is not in Unicode NFC
+ --> test/cli/lints/pedantic/f0799_unicode_not_nfc.fren:9:39
+  |
+9 |     req r: p? iff (s = "café" or s = r#"é"# or s = "\u0065́" or s = "café")
+  |                                       ^^^^^^^ not in NFC
+  |
+  = note: U+0065 U+0301 is U+00E9 in NFC
+  = note: strings compare by code point, so it never equals text in NFC, which most text is in
+  = help: write it in NFC, `r#"é"#`
+  = note: `fren fix` does not, since that changes the literal's value
+
+warning[F0799]: this string literal is not in Unicode NFC
+ --> test/cli/lints/pedantic/f0799_unicode_not_nfc.fren:9:54
+  |
+9 |     req r: p? iff (s = "café" or s = r#"é"# or s = "\u0065́" or s = "café")
+  |                                                      ^^^^^^^^^ not in NFC
+  |
+  = note: U+0065 U+0301 is U+00E9 in NFC
+  = note: strings compare by code point, so it never equals text in NFC, which most text is in
+  = help: write it so that its value is in NFC
+  = note: `fren fix` does not, since that changes the literal's value
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0799`.
+exit=3

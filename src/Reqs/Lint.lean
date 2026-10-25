@@ -23,5 +23,6 @@ open Fren.Lang
 #fren_md "Lint/Suspicious/Literals.md"
 #fren_md "Lint/Suspicious/Comparisons.md"
 #fren_md "Lint/Pedantic.md"
+#fren_md "Lint/Pedantic/Text.md"
 #fren_md "Lint/Restriction.md"
 #fren_md "Lint/Decidability.md"

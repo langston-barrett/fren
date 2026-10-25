@@ -1,0 +1,12 @@
+-- `unnecessary_trailing_comma`: before a `}` or `]` on the comma's line, but
+-- not where the `}` or `]` starts a line.
+set_option fren.lint.unnecessary_trailing_comma "warn"
+
+pub enum Mode { Heat, Cool, }
+
+pub enum Fan {
+    Low,
+    High,
+}
+
+comp c { in x: Int pub out q: Seq(Int) := [x, 1, ] }

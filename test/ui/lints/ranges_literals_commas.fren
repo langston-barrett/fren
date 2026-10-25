@@ -1,0 +1,113 @@
+-- Pedantic lints on comparisons, string literals and lists, in both front
+-- ends: `invalid_upcast_comparisons`, `unicode_not_nfc` and
+-- `unnecessary_trailing_comma`. All are allowed by default.
+
+comp quiet {
+    in x: Int
+    in s: String
+    pub out p?
+    pub out m: Set(Int) := {x, 1,}
+
+    req r: p? iff (x.abs >= 0 or s = "café")
+}
+
+set_option fren.lint.pedantic "warn"
+set_option fren.lint.definable_output "allow"
+set_option fren.lint.many_single_char_names "allow"
+
+pub enum Mode { Heat, Cool, }  --~ warning: unnecessary trailing comma before `}`
+
+pub enum Fan {
+    Low,
+    High,
+}
+
+pub enum Vent {
+    Open, Shut,}  --~ warning: unnecessary trailing comma before `}`
+
+pub struct Reading { value: Int, mode: Mode, }  --~ warning: unnecessary trailing comma before `}`
+
+use self::Mode::{Heat, Cool,}  --~ warning: unnecessary trailing comma before `}`
+
+comp ranges {
+    in x: Int
+    in y: Int
+    in n: Nat
+    pub out a? := x.abs >= 0                 --~ warning: this comparison is always `true`
+    pub out b? := (x - y).abs < 0            --~ warning: this comparison is always `false`
+    pub out c? := x.abs > -1                 --~ warning: this comparison is always `true`
+    pub out d? := -2 = (x + y).abs           --~ warning: this comparison is always `false`
+    pub out e? := 0 <= n.abs                 --~ warning: this comparison is always `true`
+    pub out f? := x.abs != -5                --~ warning: this comparison is always `true`
+    pub out g? := 0 > y.abs                  --~ warning: this comparison is always `false`
+    -- Not fixed: `abs` can be 0, or any value above.
+    pub out h? := x.abs > 0
+    pub out i? := x.abs <= 0
+    pub out j? := x.abs = 0
+    pub out k? := 0 < x.abs
+    pub out l? := x.abs >= 1
+    -- An `Int` that is not a call may be negative, and `min` and `max` have
+    -- no least value.
+    pub out o? := x >= 0
+    pub out q? := x.min(y) >= -1
+    pub out t? := x.max(0) >= 0
+}
+
+set_option fren.lint.undecidable "allow" in
+comp searches {
+    in s: String
+    in t: String
+    in i: Int
+    in u: Seq(Int)
+    pub out a? := s.index_of(t, i) >= -1     --~ warning: this comparison is always `true`
+    pub out b? := s.index_of(t, i) < -1      --~ warning: this comparison is always `false`
+    pub out c? := -3 > u.index_of([1], i)    --~ warning: this comparison is always `false`
+    pub out d? := s.index_of(t, i) != -2     --~ warning: this comparison is always `true`
+    -- Not fixed: the index can be -1, or any value above.
+    pub out e? := s.index_of(t, i) = -1
+    pub out f? := s.index_of(t, i) > -1
+    pub out g? := s.index_of(t, i) <= -1
+}
+
+comp literals {
+    in s: String
+    pub out a? := s = "café"               --~ warning: this string literal is not in Unicode NFC
+    pub out b? := s = r"café"              --~ warning: this string literal is not in Unicode NFC
+    pub out c? := s = r#"say "é""#         --~ warning: this string literal is not in Unicode NFC
+    -- With an escape sequence, it suggests no literal, but its value is not in NFC.
+    pub out d? := s = "\u0065́"          --~ warning: this string literal is not in Unicode NFC
+    pub out e? := s = "\u0065\u0301"          --~ warning: this string literal is not in Unicode NFC
+    pub out f? := s.starts_with?("Å")  --~ warning: this string literal is not in Unicode NFC
+    -- In NFC: precomposed, a mark with no precomposed form, or ASCII.
+    pub out g? := s = "café"
+    pub out h? := s = "q́"
+    pub out i? := s = "\u00e9"
+    pub out j? := s = "plain"
+    -- Hangul, composed and not.
+    pub out k? := s = "가"         --~ warning: this string literal is not in Unicode NFC
+    pub out l? := s = "가"
+    -- A code point that Unicode 15.0 does not assign is not looked at.
+    pub out m? := s = "é͸"
+}
+
+comp lists {
+    in x: Int
+    in mode: Mode
+    pub out a: Set(Int) := {x, 1,}          --~ warning: unnecessary trailing comma before `}`
+    pub out b: Seq(Int) := [x, 2, ]         --~ warning: unnecessary trailing comma before `]`
+    pub out c: Seq(Int) := [
+        x,
+        3,
+    ]
+    pub out d: Int := match mode { Heat => 1, Cool => 2, }  --~ warning: unnecessary trailing comma before `}`
+    pub out e: Reading := Reading { value := x, mode := Mode::Heat, }  --~ warning: unnecessary trailing comma before `}`
+    -- A comment after the comma: a line ends before the `]`.
+    pub out f: Seq(Int) := [x, 4, -- four
+    ]
+    pub out g: Seq(Int) := [x, 5]
+
+    inst w: quiet { x, s := "a", }         --~ warning: unnecessary trailing comma before `}`
+    in fan: Fan
+    in vent: Vent
+    expect used: fan != Fan::Low or vent != Vent::Open or mode in {Heat, Cool}
+}

@@ -52,6 +52,7 @@ use view::Severity
 | `ifs_same_cond` | `F0765` | `suspicious` | `warn` | a test of a chain of `else if` written the same as an earlier one (see [Branches written the same](Lint/Suspicious/Expressions.md#branches-written-the-same)) |
 | `index_after_use` | `F0721` | `suspicious` | `warn` | an index on the left of an `and` whose right bounds the sequence (see [Indexes](Lint/Suspicious/Methods.md#indexes)) |
 | `int_plus_one` | `F0741` | `complexity` | `warn` | a non-strict comparison of integers with an operand off by one, such as `x >= y + 1` (see [Off-by-one comparisons](Lint/Complexity/Comparisons.md#off-by-one-comparisons)) |
+| `invalid_upcast_comparisons` | `F0798` | `pedantic` | `allow` | a comparison of a method's call that its least value fixes, such as `x.abs >= 0` or `s.index_of(t, i) < -1` (see [Ranges of methods](Lint/Pedantic.md#ranges-of-methods)) |
 | `invisible_characters` | `F0769` | `suspicious` | `warn` | a string literal with an invisible character, or a string literal or comment with a bidirectional control (see [Invisible characters](Lint/Suspicious/Literals.md#invisible-characters)) |
 | `just_underscores_and_digits` | `F0751` | `style` | `warn` | a declared name made only of `_` and digits, such as `_1` (see [Names](Lint/Style.md#names)) |
 | `length_zero` | `F0715` | `style` | `warn` | a comparison of a string's or sequence's `len` with `0` or `1`, or of its `at(0)` with `""` or `[]`, that says whether it is empty, such as `s.len = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
@@ -91,8 +92,10 @@ use view::Severity
 | `trivial_pattern` | `F0744` | `style` | `warn` | `s.matches?(p)`, where `p` is a string, with `.*` or not at either end (see [Trivial patterns](Lint/Style.md#trivial-patterns)) |
 | `undecidable` | `F0714` | `decidability` | `deny` | a construct outside the decidable core (see [Undecidable constructs](Lint/Decidability.md#undecidable-constructs)) |
 | `unfulfilled_lint_expectations` | `F0706` | `unused` | `warn` | a `set_option` that expects a lint that never fires (see [Expecting lints](#expecting-lints)) |
+| `unicode_not_nfc` | `F0799` | `pedantic` | `allow` | a string literal whose value is not in Unicode NFC (see [Unicode normalization](Lint/Pedantic/Text.md#unicode-normalization)) |
 | `unless_not` | `F0722` | `style` | `warn` | an `unless` whose condition is a negation, such as `unless not c?, d?` (see [Conditionals](Lint/Style.md#conditionals)) |
 | `unnecessary_struct_initialization` | `F0790` | `complexity` | `warn` | a record literal that copies each field of a value of its record, such as `Point { x := p.x, y := p.y }` (see [Copied records](Lint/Complexity.md#copied-records)) |
+| `unnecessary_trailing_comma` | `F0801` | `pedantic` | `allow` | a trailing comma on the line of the `}` or `]` that closes its list, as in `{a, b,}` (see [Trailing commas](Lint/Pedantic/Text.md#trailing-commas)) |
 | `unrelated_binders` | `F0793` | `suspicious` | `warn` | a global expectation whose binders fall into two or more groups that no atom relates (see [Unrelated binders](Lint/Suspicious.md#unrelated-binders)) |
 | `unused_assumption` | `F0792` | `unused` | `warn` | an assumption that mentions only inputs that nothing uses, even through other assumptions (see [Unused assumptions](Lint/Unused.md#unused-assumptions)) |
 | `unused_imports` | `F0701` | `unused` | `warn` | a `use` that nothing in its file uses (see [Unused imports](Lint/Unused.md#unused-imports)) |
@@ -412,7 +415,8 @@ and `unused_variables`, the item that declares the name, which for a
 member is its component and for a variant its enumeration; for `dead_code`, the unused item; for
 `unused_assumption`, its component; for `unused_lint_setting`, the setting, before it; for
 `invisible_characters`, the item the literal or comment is in (see
-[Invisible characters](Lint/Suspicious/Literals.md#invisible-characters)); and
+[Invisible characters](Lint/Suspicious/Literals.md#invisible-characters)); for
+`unnecessary_trailing_comma`, the item the comma is in; and
 for `nonminimal_bool` and the other lints of expressions, the item the
 expression is in. So
 `set_option ... in` before an item sets the level for that item alone.
@@ -543,6 +547,7 @@ what the spec means:
 | `unfulfilled_lint_expectations` | removes the `set_option`, or for `set_option ... in item`, removes `set_option ... in` and keeps the item |
 | `unless_not` | removes the negation and writes `when`, as the message suggests |
 | `unnecessary_struct_initialization` | replaces the literal with the value it copies |
+| `unnecessary_trailing_comma` | removes the comma |
 | `unused_imports` | removes the `use`, or the name from a grouped `use` |
 | `unused_lint_setting` | removes the `set_option`, or for `set_option ... in item`, removes `set_option ... in` and keeps the item |
 | `wildcard_enum_match_arm` | names the variants that `_` matches, `E::A \| E::B`, written as for `wildcard_single_variant` |
@@ -568,7 +573,9 @@ of it, including uses in Lean code and in files that are not given, and so
 would removing a dead item. Removing an unused variable, or the inputs of an
 unused assumption, would change its component's interface, and merging the requirements that `case_split_reqs`
 reports would change what traces, claims and `impl`s name, and so would
-removing a constraint that `assertions_on_constants` reports. A message of a lint that `fren fix` fixes says so, with the line
+removing a constraint that `assertions_on_constants` reports. Writing a
+string literal in NFC, as `unicode_not_nfc` suggests, would change its
+value. A message of a lint that `fren fix` fixes says so, with the line
 `` help: `fren fix` can fix this ``. In Lean, only the messages in a
 [Markdown spec](Markdown.md) have this line, since `fren fix` does not read
 Lean files.

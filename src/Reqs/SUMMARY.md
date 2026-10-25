@@ -36,6 +36,7 @@
     - [Literals](Lint/Suspicious/Literals.md)
     - [Comparisons](Lint/Suspicious/Comparisons.md)
   - [Pedantic](Lint/Pedantic.md)
+    - [Source text](Lint/Pedantic/Text.md)
   - [Restriction](Lint/Restriction.md)
   - [Decidability](Lint/Decidability.md)
 

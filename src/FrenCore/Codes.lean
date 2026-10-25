@@ -4231,6 +4231,67 @@ comp part { in x: Int pub out y: Int req r: y = x + 1 }
 
 comp whole { in x: Int pub out y: Int inst p: part { x } req r: y = p.y + 1 }
 ```
+"# },
+  { code := "F0798", explanation := r#"A comparison of a method's call that is always the same (`invalid_upcast_comparisons`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.invalid_upcast_comparisons "warn"
+
+comp c { in x: Int pub out p? req r: p? iff x.abs >= 0 }
+```
+
+`x.abs` is never below 0, and `s.index_of(t, i)` never below -1, so a
+comparison of either with a bound below that is always `true` or always
+`false`, and so are `x.abs >= 0` and `x.abs < 0`. The bound or the
+operator is probably not the one meant, such as `>=` for `>`:
+
+```fren
+comp c { in x: Int pub out p? req r: p? iff x.abs > 0 }
+```
+"# },
+  { code := "F0799", explanation := r#"A string literal that is not in Unicode NFC (`unicode_not_nfc`, allowed by default).
+
+Example, where the `e` is followed by U+0301, a combining acute accent:
+
+```fren
+set_option fren.lint.unicode_not_nfc "warn"
+
+comp c { in s: String pub out p? req r: p? iff s = "cafe"# ++ "\u0301" ++ r#"" }
+```
+
+Strings compare by code point, and text is usually in NFC, where `é` is
+the one code point U+00E9, so the literal never equals it. Write it in
+NFC, as the message suggests. `fren fix` does not, since that changes the
+literal's value:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s = "café" }
+```
+"# },
+  { code := "F0801", explanation := r#"A trailing comma on the line of the `}` or `]` that closes its list (`unnecessary_trailing_comma`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.unnecessary_trailing_comma "warn"
+
+enum Mode { Heat, Cool, }
+```
+
+A list ends with a comma only where its `}` or `]` starts a line, as
+`fren fmt` writes it, so that an element is added by adding a line. `fren
+fix` can fix this, by removing the comma:
+
+```fren
+enum Mode { Heat, Cool }
+
+enum Fan {
+    Low,
+    High,
+}
+```
 "# }
 ]
 
