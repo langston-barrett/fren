@@ -88,6 +88,8 @@ Fren.Str.replaceAllAux
 Fren.elabInterp
 Fren.elabMd
 Fren.interpAccepted
+Fren.isEmptySeq
+Fren.natResult
 Fren.pathComponents
 Fren.relativeTo
 Fren.relativeTo.strip
