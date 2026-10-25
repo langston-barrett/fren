@@ -1540,12 +1540,16 @@ def boundsSeq (e : Syntax) (q : String) : Bool :=
   (t.splitOn s!"{q}.len").length > 1 || (t.splitOn s!"{q}!=[]").length > 1 || (t.splitOn s!"{q}=[]").length > 1
 
 /-- The receiver of `a`, if it reads `len` or `card` without arguments, and
-whether it reads `card`. -/
+whether it reads `card`. A field read of a dotted name, as in `(r).s.len`,
+reads each of its components in turn, so its receiver is the read of all
+but the last, `(r).s`. -/
 def lengthOf? (a : Syntax) : TermElabM (Option (Syntax × Bool)) := do
   let a := (splitDotted? a).getD a
   if a.isOfKind ``Lang.fieldExpr then
-    let f := a[2].getId
-    return if f == `len || f == `card then some (a[0], f == `card) else none
+    let .str pre m := a[2].getId | return none
+    unless m == "len" || m == "card" do return none
+    let recv := if pre.isAnonymous then a[0] else a.setArg 2 (mkIdentFrom a[2] pre)
+    return some (recv, m == "card")
   let p := if a.getNumArgs == 1 then a[0] else a
   unless p.isOfKind ``Lang.fren_path && (pathSegs p).size == 1 do return none
   let .str pre m := (pathSegs p)[0]!.getId | return none

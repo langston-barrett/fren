@@ -140,3 +140,24 @@ comp redundant {
     req r4: p4? iff (x < 3 and y < 5) or (x <= 3 and x != 3)
     --~^ warning: these two comparisons are `x < 3`
 }
+
+-- A length read through a field of a receiver in parentheses, or of a
+-- record update, as in `(r).s.len`.
+struct Holder { s: String, q: Seq(Int), t: Set(Int), x: Int }
+
+comp field_lengths {
+    in r: Holder
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+    pub out p5?
+    pub out p6?
+
+    req r1: p1? iff (r).s.len < 0  --~ warning: this comparison is always `false`
+    req r2: p2? iff (r).q.len >= 0  --~ warning: this comparison is always `true`
+    req r3: p3? iff (r).s.len = 0  --~ warning: say whether it is empty with `""`, not `len`
+    req r4: p4? iff (r).t.card > 0  --~ warning: say whether it is empty with `{}`, not `card`
+    req r5: p5? iff { r with x := 1 }.s.len < 0  --~ warning: this comparison is always `false`
+    req r6: p6? iff { r with x := 1 }.q.len != 0  --~ warning: say whether it is empty with `[]`, not `len`
+}
