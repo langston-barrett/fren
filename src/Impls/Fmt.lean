@@ -11,12 +11,6 @@ namespace Fren.Impls
 
 open FrenCli.Fmt (Kind LineStart)
 
-/-! ## Claims -/
-
-tested fmt::safe: "src/FrenTestMain.lean"
-
-/-! ## Implementations -/
-
 instance : Fren.Finite Kind :=
   ⟨[.paren, .call, .closeParen, .brace, .closeBrace, .group, .closeGroup, .path, .comma, .colon, .negation, .rangeLeading, .rangeTrailing, .comment, .other],
     by intro x; cases x <;> simp⟩

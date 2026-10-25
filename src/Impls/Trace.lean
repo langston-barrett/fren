@@ -1,6 +1,10 @@
 -- keep-sorted start
 import Impls.Impl
 import Impls.View
+import Reqs.Fmt
+import Reqs.Lint
+import Reqs.Modules
+import Reqs.Trace
 -- keep-sorted end
 open Fren.Lang
 
@@ -13,7 +17,11 @@ links for the traceability rules themselves.
 
 namespace Fren.Impls
 
-/-! ## Claims -/
+/-! ## Claims
+
+A `tested` claim reads the tests, so Lake must rebuild its module when a
+test changes: such claims are only here and in `Impls.Lint`, the modules of
+Impls whose library says so, with `Impls` (`lakefile.lean`). -/
 
 tested cli::agreement: "src/FrenTestMain.lean"
 tested cli::accepts: "test/ui/lean/lean_code.fren", "test/ui/lean/lean_impl.fren"
@@ -61,6 +69,9 @@ tested lang::escape_text: "test/ui/syntax/lexical.fren"
 tested lang::escape_start: "test/ui/syntax/lexical.fren", "test/cli/syntax/f0115_escape.fren"
 tested lang::longest_punctuator: "test/ui/syntax/lexical.fren"
 tested lang::unbounded: "test/ui/lang/relations_static.fren", "test/ui/lang/datatypes_static.fren"
+tested fmt::safe: "src/FrenTestMain.lean"
+-- `lake test` checks that every code is well formed and in its group.
+tested view::code_group: "src/FrenTestMain.lean"
 
 trusted view::build: "Lake fails a build whose modules log an error, and with `--wfail` one whose modules log a warning"
 

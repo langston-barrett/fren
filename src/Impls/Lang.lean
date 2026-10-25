@@ -6,6 +6,7 @@ import FrenCore.Patterns
 import FrenCore.Ty
 import FrenCore.Typing
 import Impls.Check
+import Reqs.Lang
 -- keep-sorted end
 open Fren.Lang
 

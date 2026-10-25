@@ -136,7 +136,9 @@ inductive Lint where
   | isEquality
   | irrefutableIs
   | chainableComparison
-  deriving Inhabited, BEq, DecidableEq, Repr
+  -- `BEq` from `DecidableEq`, which makes it lawful at once; a derived `BEq`
+  -- would need a proof over every pair of lints.
+  deriving Inhabited, DecidableEq, Repr
 
 def Lint.all : Array Lint :=
   #[.unusedImports, .globImports, .nonSnakeCase, .nonCamelCaseTypes, .nonUpperCaseConstants, .unfulfilledExpectations,

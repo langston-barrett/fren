@@ -18,36 +18,37 @@ def coverageLeanArgs : Array String := if (get_config? coverage).isSome then #["
 def coverageLinkArgs : Array String := match get_config? coverage with
   | some runtime => #[runtime]
   | none => #[]
--- Precompiled modules, but not when measuring coverage: their shared
--- libraries, which Lean loads while building `Reqs`, would then hold gcov's
--- counters without the runtime that they call, and the builds' runs would
--- count as runs of the code.
-def precompile : Bool := (get_config? coverage).isNone
 
 -- Mathlib-free fork of lean-smt (the fork Veil uses).
 require smt from git "https://github.com/verse-lab/lean-smt.git"@"v4.32.0-veil-no-mathlib"
 
 -- Shared by the Lean library and the binary; depends only on Lean core.
--- Precompiled, as is `Fren`, so that the hosted front end's elaborators,
--- which run on every build of `Reqs`, run as native code rather than in
--- Lean's interpreter. `Fren` loads `FrenCore` as one shared library, built
--- from the modules that `globs` gives, so they must be all of them, not only
--- those that the module `FrenCore` imports.
+-- All of its modules, not only those that the module `FrenCore` imports.
+--
+-- Neither it nor `Fren` is precompiled (`precompileModules`), although the
+-- hosted front end's elaborators, which run on every build of `Reqs`, would
+-- then run as native code rather than in Lean's interpreter: a module that
+-- imports a precompiled one waits for its C code to be compiled and linked,
+-- which put `Fren.Elab`'s, some 13 s, on the build's critical path, for a
+-- second or so less in each of the slowest modules of `Reqs`.
 @[default_target] lean_lib FrenCore where
   globs := #[.andSubmodules `FrenCore]
-  precompileModules := precompile
   moreLeancArgs := coverageArgs
   moreLeanArgs := coverageLeanArgs
 
 -- The Lean-hosted front end (uses lean-smt).
 @[default_target] lean_lib Fren where
-  precompileModules := precompile
   moreLeancArgs := coverageArgs
   moreLeanArgs := coverageLeanArgs
 
 -- Fren's own requirements, written in Fren and checked on every build. They
 -- are Markdown specs (`src/Reqs/*.md`) read by `#fren_md`, which Lake can't
--- see, hence `needs`.
+-- see, hence `needs`. The libraries after `Reqs` hold its modules by the
+-- specs that they read, so that editing a spec rebuilds only the modules
+-- that read it, and those that import them; a module that none of them
+-- lists is in `Reqs`, which needs every spec. (Lake places a module in the
+-- last library that has it.) `lake test`'s `libraries` job checks that each
+-- module reads only the specs of its library.
 @[default_target] lean_lib Reqs where needs := #[`@/reqs_md]
 
 input_dir reqs_md where
@@ -55,9 +56,44 @@ input_dir reqs_md where
   text := true
   filter := .extension #["md"]
 
+lean_lib ReqsChapters where
+  globs := #[`Reqs.Check, `Reqs.Cli, `Reqs.Eval, `Reqs.Fmt, `Reqs.Impl, `Reqs.Mutate, `Reqs.Trace, `Reqs.View]
+  needs := #[`@/reqs_chapters_md]
+
+-- The specs in `src/Reqs` itself, not in its subdirectories.
+input_dir reqs_chapters_md where
+  path := "src/Reqs"
+  text := true
+  filter := .ofFn fun p => p.extension == some "md" && (p.parent.bind (·.fileName)) == some "Reqs"
+
+lean_lib ReqsLang where
+  globs := #[`Reqs.Inst, `Reqs.Lang, `Reqs.Modules, `Reqs.Refine]
+  needs := #[`@/reqs_lang_md]
+
+input_dir reqs_lang_md where
+  path := "src/Reqs/Lang"
+  text := true
+  filter := .extension #["md"]
+
+lean_lib ReqsLint where
+  globs := #[`Reqs.Lint]
+  needs := #[`@/reqs_lint_md, `@/reqs_lint_chapter_md]
+
+input_dir reqs_lint_md where
+  path := "src/Reqs/Lint"
+  text := true
+  filter := .extension #["md"]
+
+input_file reqs_lint_chapter_md where
+  path := "src/Reqs/Lint.md"
+  text := true
+
 -- Fren's own code linked to its requirements with `impl`. It imports both
 -- the requirements and the code, so that neither depends on the other. Its
--- `tested` claims read the tests, hence `needs`.
+-- `tested` claims read the tests, hence `needs`. Only `Impls`, `Impls.Lint`
+-- and `Impls.Trace` make such claims (checked by `lake test`'s `libraries`
+-- job), so the other modules are in `ImplsProofs`, which needs no tests,
+-- and editing a test rebuilds only those three.
 @[default_target] lean_lib Impls where needs := #[`@/tests, `@/test_lean, `@/test_main]
 
 input_dir tests where
@@ -73,6 +109,10 @@ input_dir test_lean where
 input_file test_main where
   path := "src/FrenTestMain.lean"
   text := true
+
+lean_lib ImplsProofs where
+  globs := #[`Impls.Check, `Impls.Cli, `Impls.Eval, `Impls.Fmt, `Impls.Impl, `Impls.Inst, `Impls.Lang, `Impls.Modules,
+    `Impls.Mutate, `Impls.Refine, `Impls.View]
 
 -- Regression tests: each file checks its own messages with `#guard_msgs`.
 @[default_target] lean_lib FrenTest where globs := #[`FrenTest.+]

@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Impls.Lang
 import Impls.View
+import Reqs.Lint
 -- keep-sorted end
 open Fren.Lang
 
@@ -289,10 +290,6 @@ impl lint_fix_exit: lint::fix_exit for (c l f : Bool) {
 
 -- A list of lints is the lints given, in order, with repeats.
 interp lint::Lint := Fren.Core.Lint
-
-instance : LawfulBEq Fren.Core.Lint where
-  eq_of_beq {a b} h := by cases a <;> cases b <;> first | rfl | exact absurd h (by decide)
-  rfl {a} := by cases a <;> decide
 
 -- For every lint and lists given, with `fixSelected`, which `fren fix` uses:
 -- the spec sees each list's set of lints, so a repeated lint is harmless.
@@ -817,9 +814,7 @@ impl erasing_op: lint::erasing_op for (op : Fren.Core.InfixOp) (l r : Fren.Core.
   right := toIdentityOperand r,
   same? := same,
   fires? := Fren.Core.erasingOp op l r same,
-} by
-  intro op l r same _
-  cases op <;> cases l <;> cases r <;> cases same <;> simp [fren_spec, toInfixOp, toIdentityOperand, Fren.Core.erasingOp]
+}
 
 /-! ## Arithmetic and parentheses -/
 
@@ -901,9 +896,7 @@ impl method_chain: lint::method_chain for (i o : Fren.Core.Method) {
   single := match Fren.Core.methodChain i o with
     | .single m => toMethod m
     | _ => toMethod o,
-} by
-  intro i o _
-  cases i <;> cases o <;> simp [fren_spec, toMethod, toChainFix, Fren.Core.methodChain]
+}
 
 -- For every name, as `checkVarName` reads its suffix.
 impl redundant_bool_type: lint::redundant_bool_type for (s : String) (a : lang.Annot) {

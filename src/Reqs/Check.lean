@@ -1,5 +1,6 @@
 -- `Fren`'s modules rather than `Fren`, which imports only them: importing
 -- it would wait for its own build too, on the build's critical path.
+-- `lake test` checks that the list is `Fren`'s.
 -- keep-sorted start
 import Fren.Check
 import Fren.Impl

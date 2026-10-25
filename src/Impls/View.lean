@@ -1,5 +1,6 @@
 -- keep-sorted start
 import Impls.Check
+import Reqs.View
 -- keep-sorted end
 open Fren.Lang
 
@@ -50,8 +51,5 @@ impl inconclusive_advice: view::inconclusive_advice for (d : Bool) {
   decidable? := d,
   advice := toAdvice (Fren.Core.inconclusiveAdvice d),
 }
-
--- `lake test` checks that every code is well formed and in its group.
-tested view::code_group: "src/FrenTestMain.lean"
 
 end Fren.Impls
