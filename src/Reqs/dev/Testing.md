@@ -73,7 +73,11 @@
 
 `lake test` runs its tests as jobs, in parallel: each job is a process of
 its own (`fren_test --job NAME ARG...`), and the ui tests run in batches of
-at most eight files, each importing `Fren` once. As many jobs run at once
+at most eight files, each importing `Fren` once. The mutants are checked in
+a job per group of the corpus, and those of Fren's own requirements in
+eight jobs, each taking every eighth mutant: each job makes every mutant
+of its group, which the checks of one mutant compare it with, and the
+checks of the whole group run in the first. As many jobs run at once
 as the machine has cores, but at most sixteen, since a job can take about
 2 GB of memory and the solver's time limit is in wall-clock time;
 `FREN_TEST_JOBS=N` runs `N` at once instead. The jobs are independent, but
