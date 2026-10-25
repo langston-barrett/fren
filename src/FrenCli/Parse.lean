@@ -8,8 +8,9 @@ import FrenCore.Names
 # Parser for `.fren` files
 
 The grammar and precedence of `Fren.Lang` (`Reqs/Lang.md`), lowest first:
-`when`/`unless`, `iff`, `or`, `and`, `not`, comparisons, `+ -`, `*`, unary `-`;
-`if` is an atom whose `else` branch extends as far right as possible.
+`when`/`unless`, `iff`, `or`, `and`, `not`, comparisons and `is`, `+ -`, `*`,
+unary `-`; `if` is an atom whose `else` branch extends as far right as
+possible.
 
 A file may start with Lean header lines (`import ...`, `open Fren.Lang`),
 which are skipped, so pure-spec Lean files can be checked too. Any other Lean
@@ -60,6 +61,8 @@ inductive Expr where
   (dotted) identifier. -/
   | field (span : Span) (e : Expr) (field : Ident)
   | «match» (span : Span) (scrutinee : Expr) (arms : Array (Pattern × Expr))
+  /-- `e is P`, a pattern test. -/
+  | is (span : Span) (scrutinee : Expr) (pattern : Pattern)
   /-- A string literal, with its value. -/
   | str (span : Span) (value : String)
   /-- `{a, b}`, a set literal. -/
@@ -77,7 +80,7 @@ inductive Expr where
 
 def Expr.span : Expr → Span
   | .when s .. | .ite s .. | .bin s .. | .not s .. | .neg s .. | .num s .. | .bool s .. | .path s .. | .app s ..
-  | .record s .. | .field s .. | .match s .. | .str s .. | .method s .. | .set s .. | .pair s .. | .seq s .. | .index s .. => s
+  | .record s .. | .field s .. | .match s .. | .is s .. | .str s .. | .method s .. | .set s .. | .pair s .. | .seq s .. | .index s .. => s
 
 inductive PropKind where
   | assume
@@ -312,17 +315,18 @@ def alternative : P Pattern := do
   discard (expectKw ")")
   return .variant (← spanFrom start) segs (some bs)
 
-/-- A `match` arm's pattern. -/
-def pattern : P Pattern := do
+/-- A pattern, of a `match` arm or of `is`. In an arm (`arm`), each `|`
+starts its alternative, so that they line up one per line; after `is`, a
+line that starts with `|` continues the expression. -/
+def pattern (arm := true) : P Pattern := do
   let t ← peek
   if t.tok == .ident "_" then discard bump; return .wild t.span
-  -- Each `|` starts its alternative, so that they line up one per line.
-  markStart
+  if arm then markStart
   let lead ← eatKw "|"
   let first ← alternative
   let mut alts := #[first]
   while isKw (← peek) "|" do
-    markStart
+    if arm then markStart
     discard bump
     alts := alts.push (← alternative)
   if alts.size == 1 && lead.isNone then return first
@@ -382,14 +386,21 @@ partial def cmpOp? : P (Option String) := do
 partial def cmp : P Expr := do
   let start := (← peek).span
   let l ← add
+  if (← eatKw "is").isSome then
+    let p ← pattern (arm := false)
+    let e := Expr.is (← spanFrom start) l p
+    if (← cmpOp?).isSome || isKw (← peek) "is" then chained
+    return e
   let some op ← cmpOp? | return l
   discard bump
   let r ← add
-  if (← cmpOp?).isSome then
-    err (← peek).span "F0108" "comparisons cannot be chained" (some "second comparison")
-      #["note: `a < b < c` would compare the `Bool` `a < b` with `c`",
-        "help: split it with `and`, e.g. `a < b and b < c`"]
+  if (← cmpOp?).isSome || isKw (← peek) "is" then chained
   bin start op l r
+/-- A second comparison after one. -/
+partial def chained : P Unit := do
+  err (← peek).span "F0108" "comparisons cannot be chained" (some "second comparison")
+    #["note: `a < b < c` would compare the `Bool` `a < b` with `c`",
+      "help: split it with `and`, e.g. `a < b and b < c`"]
 partial def add : P Expr := do
   let start := (← peek).span
   let mut l ← mul

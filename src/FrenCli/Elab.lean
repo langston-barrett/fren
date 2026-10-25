@@ -580,6 +580,7 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
         | _ => #[]
       shapeOf cx (bs ++ new) body
     return .node .compound (s' :: arms)
+  | .is _ s _ => parts .compound [s]
   | .num .. | .bool .. | .str .. => return .leaf .literal
 
 /-- Whether `e` mentions a variable or an uninterpreted function
@@ -610,6 +611,7 @@ partial def mentions : Expr → Array Name
       | .variant _ _ (some bs) => bs.map fun b => Name.mkSimple (declaredIdent b).1.name
       | _ => #[]
     acc ++ (mentions body).filter (!bound.contains ·.getRoot)
+  | .is _ s _ => mentions s
   | _ => #[]
 
 /-- The variables that the defined output `v` stands for: those its
@@ -680,6 +682,7 @@ partial def hasConcat (cx : ExprCtx) (e : Expr) : M Bool := do
   | .ite _ c a b => return (← hasConcat cx c) || (← hasConcat cx a) || (← hasConcat cx b)
   | .record _ _ fs => fs.anyM fun (_, e?) => match e? with | some e => hasConcat cx e | none => pure false
   | .match _ s arms => return (← hasConcat cx s) || (← arms.anyM (hasConcat cx ·.2))
+  | .is _ s _ => hasConcat cx s
   | _ => return false
 
 /-- Reports `undecidable` if construct `c`, with `operands` other than of
@@ -717,6 +720,7 @@ partial def Expr.boolNode : Expr → Fren.Core.BNode Span
   | .app s _ args | .set s args | .seq s args => .mk .atom (toRange s) s (args.map (·.boolNode))
   | .record s _ fields => .mk .atom (toRange s) s (fields.filterMap (·.2.map (·.boolNode)))
   | .field s a _ => .mk .atom (toRange s) s #[a.boolNode]
+  | .is s scrutinee _ => .mk .atom (toRange s) s #[scrutinee.boolNode]
   | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode] ++ arms.map (·.2.boolNode))
   | .pair s a b | .index s a b => .mk .atom (toRange s) s #[a.boolNode, b.boolNode]
   | .num s _ | .path s _ | .str s .. => .mk .atom (toRange s) s #[]
@@ -969,7 +973,7 @@ partial def chainOperands (op : String) (e : Expr) : Array Expr :=
 partial def indexedIn : Expr → M (Array String)
   | .index _ q i => return #[← srcAt q.span] ++ (← indexedIn q) ++ (← indexedIn i)
   | .bin _ _ a b | .when _ _ a b | .pair _ a b => return (← indexedIn a) ++ (← indexedIn b)
-  | .not _ a | .neg _ a | .field _ a _ => indexedIn a
+  | .not _ a | .neg _ a | .field _ a _ | .is _ a _ => indexedIn a
   | .ite _ c a b => return (← indexedIn c) ++ (← indexedIn a) ++ (← indexedIn b)
   | .method _ r _ args => return (← indexedIn r) ++ (← args.foldlM (fun acc a => return acc ++ (← indexedIn a)) #[])
   | .app _ _ args | .set _ args | .seq _ args => args.foldlM (fun acc a => return acc ++ (← indexedIn a)) #[]
@@ -1712,6 +1716,34 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       if let some t := tests[i]! then
         out := s!"(ite {t} {bodies[i]!} {out})"
     return (out, ty?.get!)
+  | .is _ scrutinee p =>
+    let (s, ts) ← elabExpr cx scrutinee
+    let .enum ep := ts | err scrutinee.span (Fren.Core.isScrutineeMsg ts.show)
+    let some d := (← get).dataOf? ep | internal scrutinee.span s!"unknown enum `{ep}`"
+    -- Each alternative's variant and binders; `_` has none.
+    let mut alts : Array (Nat × Array Ident) := #[]
+    for alt in p.alts do
+      let .variant pspan segs binders? := alt | internal alt.span "nested or-pattern"
+      match ← resolve segs cx.shadowing with
+      | .variant en idx =>
+        if en.path != ep then err pspan (Fren.Core.notAVariantOfMsg ep s!"a variant of `{showPath en.path}`")
+        let v := ep ++ en.variants[idx]!
+        let n := d.ctors[idx]!.2.size
+        if let some msg := Fren.Core.variantMentionMsg? v n binders?.isSome then err pspan msg
+        let bs := binders?.getD #[]
+        if binders?.isSome && bs.size != n then err pspan (Fren.Core.arityMsg v n bs.size "binder")
+        alts := alts.push (idx, bs)
+      | r => err pspan (Fren.Core.notAVariantOfMsg ep r.describe)
+    match Fren.Core.checkPatternTest ep (alts.map fun (idx, bs) => (d.ctors[idx]!.1, bs.map (Name.mkSimple ·.name))) with
+    | .ok () => pure ()
+    | .error ((j, some k), msg) => err alts[j]!.2[k]!.span msg
+    | .error ((j, none), msg) => err p.alts[j]!.span msg
+    -- That one of its alternatives matches.
+    let tests := alts.map (d.tester ·.1 s)
+    return (match tests with
+      | #[] => "true"
+      | #[t] => t
+      | ts => s!"(or {" ".intercalate ts.toList})", .bool)
 
 /-- The conditions of a top-level `when`/`unless` chain, and their span. -/
 partial def trigger? (cx : ExprCtx) : Expr → M (Option (String × Span))

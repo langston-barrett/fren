@@ -1,0 +1,13 @@
+error[F0335]: cannot test `Int` against a pattern
+ --> test/cli/f0335_is_scrutinee.fren:3:53
+  |
+3 | comp c { in x: Int pub out round? req r: round? iff x is Shape::Circle(_) }
+  |                                                     ^ not an enum
+  |
+  = note: `is` tests which variant a value of an enum is
+  = help: for other types, compare with `=` or `in`
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0335`.
+exit=2

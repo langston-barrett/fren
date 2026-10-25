@@ -1066,7 +1066,10 @@ comp c { in m: Mode pub out y: Int req r: y = match m { _ => 0, Mode::On => 1 } 
 
 The first arm whose pattern matches is chosen, so an arm after `_`, an arm
 for a variant that an earlier arm covers, and a `_` after arms for every
-variant are never chosen. Remove the arm, or reorder the arms:
+variant are never chosen. Likewise, an alternative of an or-pattern, in an
+arm or in a pattern test such as `s is Shape::Circle(_) | Shape::Circle(_)`,
+that names a variant an earlier one names never matches. Remove the arm,
+or reorder the arms:
 
 ```fren
 enum Mode { Off, On }
@@ -1291,6 +1294,44 @@ give each variant its own arm:
 enum Shape { Circle(Int), Square(Int), Empty }
 
 comp c { in s: Shape pub out a: Int req r: a = match s { Shape::Circle(n) => n, Shape::Square(n) => n, _ => 0 } }
+```
+"# },
+  { code := "F0334", explanation := r#"A pattern test binds a name.
+
+Erroneous code example:
+
+```fren
+enum Shape { Circle(Int), Empty }
+
+comp c { in s: Shape pub out big? req r: big? iff s is Shape::Circle(n) }
+```
+
+A pattern test, `e is P`, is `true` or `false`, and has no body in which
+to mention a name that its pattern binds, so every binder is `_`. To test
+the variant, ignore the payload; to read it, write a `match`:
+
+```fren
+enum Shape { Circle(Int), Empty }
+
+comp c { in s: Shape pub out round? pub out big? req r: round? iff s is Shape::Circle(_)
+    req b: big? iff match s { Shape::Circle(n) => n > 10, _ => false } }
+```
+"# },
+  { code := "F0335", explanation := r#"A pattern test on a value that is not of an enum.
+
+Erroneous code example:
+
+```fren
+pub enum Shape { Circle(Int), Empty }
+
+comp c { in x: Int pub out round? req r: round? iff x is Shape::Circle(_) }
+```
+
+`is` tests which variant a value of an enum is. For other types, compare
+values with `=` or `in`:
+
+```fren
+comp c { in x: Int pub out small? req r: small? iff x in {0, 1} }
 ```
 "# },
   { code := "F0330", explanation := r#"A function's parameters are named, but it has no body, or it has a body, but a parameter has no name.

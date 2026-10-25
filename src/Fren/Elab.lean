@@ -606,6 +606,8 @@ partial def pathMentions (e : Syntax) : Array Name :=
       -- In its arm, a binder's name means the binder, not what it shadows.
       let bound := (patternBinders arm).filter (·.isIdent) |>.map fun b => (declaredIdent b).1.getId
       acc ++ (pathMentions arm[2]).filter (!bound.contains ·.getRoot)
+  -- A pattern's paths name variants.
+  else if e.isOfKind ``Lang.isExpr then pathMentions e[0]
   else e.getArgs.foldl (· ++ pathMentions ·) #[]
 
 /-- The variables that the defined output `v` stands for: those its
@@ -693,6 +695,7 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
       let new := (patternBinders arm).filter (·.isIdent) |>.map fun b => ((declaredIdent b).1.getId, Core.MentionShape.node .binder [s])
       shapeOf cx arm[2] (bs ++ new)
     return .node .compound (s :: arms)
+  else if e.isOfKind ``Lang.isExpr then parts .compound #[e[0]]
   else if e.isOfKind ``Lang.fren_path then
     let segs := pathSegs e
     if segs.size != 1 then return .leaf .constant
@@ -849,6 +852,7 @@ partial def hasConcat (cx : ExprCtx) (e : Syntax) : TermElabM Bool := do
   if isConcat e && !(← isConstant cx e) then return true
   if e.isOfKind ``Lang.fren_path then
     return ← match definitionOf? cx e with | some d => hasConcat cx d | none => pure false
+  if e.isOfKind ``Lang.isExpr then return ← hasConcat cx e[0]
   e.getArgs.anyM (hasConcat cx)
 
 /-- The nodes in `e`'s arguments, through lists such as a call's arguments. -/
@@ -876,6 +880,7 @@ partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.
     let m := id.getId.getString!
     let recvStop := off (id.getTailPos?.getD base) - m.length - 1
     .mk (.method m) range e (#[.mk .atom { range with stop := recvStop } id #[]] ++ e[2].getSepArgs.map go)
+  else if e.isOfKind ``Lang.isExpr then .mk .atom range e #[go e[0]]
   else
   match e.getNumArgs, atom 0, atom 1 with
   | 3, "(", _ => go e[1]
@@ -975,6 +980,15 @@ def recordTerm (go : Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : Te
     if cx.noteIndexes then lintRedundant b true
     if b[1].isNone then go (← `(fren_expr| $(⟨b[0]⟩):ident)) else go b[1][1]
   `($(mkCIdentFrom e[0] (recordCtor info.decl)) $args*)
+
+/-- That the term `s` of the enumeration `info` is one of the variants
+`idxs`: equal to the variant built from its own payload. -/
+def variantsTest (info : EnumInfo) (s : Term) (idxs : Array Nat) : TermElabM Term := do
+  let tests ← idxs.mapM fun idx => do
+    let ctor := info.decl ++ info.variants[idx]!
+    let sels ← (Array.range info.payloads[idx]!.size).mapM fun k => `($(mkCIdent (selectorName ctor k)) $s)
+    `($s = $(mkCIdent ctor) $sels*)
+  tests.pop.foldrM (init := tests.back!) fun t acc => `($t ∨ $acc)
 
 open Lang in
 /-- The precedence of `e`'s operator, as `lang::operand` uses it: an
@@ -1081,14 +1095,8 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   if cx.noteIndexes then lintMatch cx e info pats slot
   let mut bodies : Array Term := #[]
   -- An arm is evaluated when its pattern matches and no earlier one does.
-  let test (idxs : Array Nat) : TermElabM Term := do
-    let tests ← idxs.mapM fun idx => do
-      let ctor := info.decl ++ info.variants[idx]!
-      let sels ← (Array.range info.payloads[idx]!.size).mapM fun k => `($(mkCIdent (selectorName ctor k)) $s)
-      `($s = $(mkCIdent ctor) $sels*)
-    tests.pop.foldrM (init := tests.back!) fun t acc => `($t ∨ $acc)
   let mut tests : Array (Option Term) := #[]
-  for pat in pats do tests := tests.push (← pat.mapM test)
+  for pat in pats do tests := tests.push (← pat.mapM (variantsTest info s))
   let mut earlier : Array Term := #[]
   -- An arm's body is guarded by its being the first arm that matches
   -- (`Core.GuardedOperand.armBody`): no earlier test holds, and its own does.
@@ -1123,6 +1131,37 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     if let some t := tests[i]! then
       out ← `(if $t then $(bodies[i]!) else $out)
   return out
+
+open Lang in
+/-- Translates `e is P`, which is `match e { P => true, _ => false }`, into
+the test of `P`'s alternatives (`Reqs/Lang/Expressions#pattern-tests`). -/
+def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
+  let scrutinee := e[0]
+  let s ← toTerm cx scrutinee
+  let ty ← typeOf s
+  let some info := ty.constName?.bind (← getState).enumOfDecl?
+    | throwErrorAt scrutinee (Core.isScrutineeMsg (← typeName ty)).text
+  -- Each alternative's variant and binders; `_` has none.
+  let alts := if e[2].isOfKind ``Lang.altsPattern then e[2][1].getSepArgs else #[]
+  let mut pats : Array (Nat × Array Syntax) := #[]
+  for p in alts do
+    match ← resolvePath cx.modName (pathSegs p[0]) cx.shadowing with
+    | .variant en idx =>
+      if en.path != info.path then
+        throwErrorAt p (Core.notAVariantOfMsg info.path s!"a variant of `{Core.showPath en.path}`").text
+      let v := info.path ++ en.variants[idx]!
+      let n := info.payloads[idx]!.size
+      if let some msg := Core.variantMentionMsg? v n (!p[1].isNone) then throwErrorAt p msg.text
+      let bs := altBinders p
+      unless p[1].isNone || bs.size == n do throwErrorAt p (Core.arityMsg v n bs.size "binder").text
+      pats := pats.push (idx, bs)
+    | r => throwErrorAt p (Core.notAVariantOfMsg info.path r.describe).text
+  let named := pats.map fun (idx, bs) => (info.variants[idx]!, bs.map fun b => if b.isIdent then b.getId else `_)
+  match Core.checkPatternTest info.path named with
+  | .ok () => pure ()
+  | .error ((j, some k), msg) => throwErrorAt pats[j]!.2[k]! msg.text
+  | .error ((j, none), msg) => throwErrorAt alts[j]! msg.text
+  if pats.isEmpty then `(true) else variantsTest info s (pats.map (·.1))
 
 /-- Whether `e` is `{}`, which takes its type from where it is written. -/
 def isEmptySet (e : Syntax) : Bool := e.isOfKind ``Lang.setExpr && e[1].getSepArgs.isEmpty
@@ -1715,6 +1754,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
     else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
     else if e.isOfKind ``Lang.recordExpr then recordTerm (toTerm { cx with emptyOk := true }) cx e
     else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm cx e (parent?.bind (operandSlot · e))
+    else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
     else throwError "unsupported Fren expression"
 
 open Lang in

@@ -82,6 +82,7 @@ and            := and "and" not | not
 not            := "not" not | cmp
 cmp            := sum [("=" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "subset") sum]
                 | pair "in" sum
+                | sum "is" pattern
 sum            := sum ("+" | "-" | "++" | "union" | "minus") prod | prod
 prod           := prod ("*" | "inter" | "join") neg | neg
 neg            := "-" neg | atom

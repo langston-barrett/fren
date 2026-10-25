@@ -1,0 +1,6 @@
+-- `is` is not associative, like the comparisons.
+enum S { A(Int), B }
+comp chained { in s: S pub out z? req r: z? iff s is S::A(_) = true }
+--~^[cli] error: comparisons cannot be chained
+--~^^[hosted] error: unexpected token '='
+--@ exit: 2

@@ -12,8 +12,8 @@ code (including Fren's own implementation, in `Fren`) can keep using them as
 names. Spec files start with `open Fren.Lang`.
 
 Precedence, lowest first: `when`/`unless`, `iff`, `or`, `and`, `not`,
-comparisons, `+ -`, `*`, unary `-`; `if` is an atom whose `else` branch
-extends as far right as possible.
+comparisons and `is`, `+ -`, `*`, unary `-`; `if` is an atom whose `else`
+branch extends as far right as possible.
 -/
 
 namespace Fren.Lang
@@ -174,6 +174,10 @@ syntax fren_arm := fren_pattern " => " fren_expr:20
 
 /-- `match e { pattern => e, ... }`. -/
 scoped syntax:max (name := matchExpr) "match " fren_expr:max " { " sepBy(fren_arm, ", ", ", ", allowTrailingSep) " }" : fren_expr
+
+/-- `e is P`, a pattern test, at the precedence of the comparisons. `is`
+is a reserved word where `Fren.Lang` is open, as the set operators are. -/
+scoped syntax:50 (name := isExpr) fren_expr:51 " is " fren_pattern : fren_expr
 
 declare_syntax_cat fren_member (behavior := both)
 

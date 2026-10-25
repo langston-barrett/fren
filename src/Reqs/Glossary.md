@@ -80,6 +80,10 @@ or instance.
 `out`. A *public output* is declared with `pub out`; other outputs are
 private.
 
+**Pattern test.** An expression `e is P`, which is `true` exactly when the
+pattern `P`, as of a `match` arm but binding no names, matches `e`. See
+[Expressions](Lang/Expressions.md#pattern-tests).
+
 **Payload.** The values that a variant carries, as in `Circle(Int)`. See
 [Items](Lang/Items.md#enumerations).
 

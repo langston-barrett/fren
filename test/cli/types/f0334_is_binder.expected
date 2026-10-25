@@ -1,0 +1,18 @@
+error[F0334]: a pattern test cannot bind `n`
+ --> test/cli/f0334_is_binder.fren:3:70
+  |
+3 | comp c { in s: Shape pub out big? req r: big? iff s is Shape::Circle(n) }
+  |                                                                      ^ binds a name
+  |
+  = note: a pattern test has no body in which to mention the name
+  = help: to read the payload, write a `match`
+help: ignore the value
+  |
+3 - comp c { in s: Shape pub out big? req r: big? iff s is Shape::Circle(n) }
+3 + comp c { in s: Shape pub out big? req r: big? iff s is Shape::Circle(_) }
+  |
+
+error: could not check due to 1 previous error
+
+For more information about this error, try `fren --explain F0334`.
+exit=2

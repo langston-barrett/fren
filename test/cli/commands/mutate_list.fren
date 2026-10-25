@@ -8,6 +8,8 @@ mod m
 
 pub enum Mode { Off, Heat, Cool }
 
+pub enum Reading { Value(Int), Missing, Stale(Int) }
+
 use self::Mode::{Cool, Heat, Off}
 
 const LIMIT: Int := 10
@@ -26,6 +28,7 @@ pub comp c {
     in x: Int
     in s: String
     in m: Mode
+    in rd: Reading
     pub out ok?
     pub out y: Int := twice(x) + 1
 
@@ -35,6 +38,7 @@ pub comp c {
     req carets: s.matches?(r"[a^b][a^]") or ok?
     req chained: ok? or x = 4 or x = 6
     req chain: unless m = Off, (ok? or x = 1) and m in {Heat, Cool} and [1, 2].len = 2
+    req known: ok? or rd is Reading::Value(_) | Reading::Stale(_) | Reading::Missing
     inst w: sub { a := x * 2, on? := true }
 
     expect e: when x = 3, ok?

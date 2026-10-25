@@ -1,0 +1,47 @@
+-- Pattern tests, `e is P`, in both front ends.
+
+pub enum Shape { Circle(Int), Rect(Int, Int), Empty }
+
+comp kinds {
+    in s: Shape
+    pub det out round?
+    pub det out boxy?
+
+    req round: round? iff s is Shape::Circle(_)
+    req boxy: boxy? iff s is Shape::Rect(_, _) | Shape::Empty
+
+    expect circle: when s = Shape::Circle(3), round? and not boxy?
+    expect one_of: round? iff not boxy?
+    expect as_match: round? iff match s { Shape::Circle(_) => true, _ => false }
+    expect wrong: not boxy?  --~ error: expectation `kinds::wrong` does not hold
+}
+
+-- At the precedence of the comparisons, below `not`, `and` and `or`.
+comp precedence {
+    in s: Shape
+    in t: Shape
+    pub det out n?
+    pub det out both?
+
+    req n: n? iff not s is Shape::Circle(_)
+    req both: both? iff s is Shape::Circle(_) and t is | Shape::Rect(_, _) | Shape::Empty
+
+    expect not_outside: n? iff not (s is Shape::Circle(_))
+    expect and_outside: both? iff ((s is Shape::Circle(_)) and (t is Shape::Rect(_, _) | Shape::Empty))
+}
+
+-- Variants brought into scope by `use`, and patterns that match every value.
+comp imported {
+    use self::Shape::{Circle, Empty, Rect}
+    in s: Shape
+    pub det out sized?
+
+    req r: sized? iff s is Circle(_) | Rect(_, _)
+
+    expect sized: sized? iff s != Empty
+    expect every: s is Circle(_) | Rect(_, _) | Empty
+    expect wildcard: s is _
+}
+
+--@ summary: 22 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ exit: 1
