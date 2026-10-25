@@ -511,9 +511,12 @@ error (`F0214`) where it would set a check.
 testing. It tests the check with `--tests` tests (default 100) from
 `--seed` (default 0), and reports the result as `fren quickcheck` does
 (`eval::test_verdict`): a counterexample fails the check, and testing that
-reaches no conclusion leaves it inconclusive, with the same warnings. A
-check that testing cannot decide, since it asks whether something can hold
-at all, is not run: vacuity, redundancy and definedness. A test that reaches
+reaches no conclusion leaves it inconclusive, with the same warnings. The
+checks that testing cannot decide are not run: vacuity and redundancy,
+which ask whether something can hold at all, which a failed search does
+not refute, and definedness, since an index out of range has no value
+that the evaluator knows (see [Evaluation](Eval.md#searching-for-behaviours)),
+so testing can neither pass nor fail it. A test that reaches
 an expectation shows that its trigger can hold, which is what its vacuity
 check would show. The summary counts the passes that came from testing:
 

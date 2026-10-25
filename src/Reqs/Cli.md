@@ -203,8 +203,10 @@ The commands that report on a spec share one convention, which
 `cli::exit_status` states: 2 exactly when the command could not run, and
 otherwise 0, 1 or 3. `fren check` and `fren quickcheck` (`cli::exit`),
 `fren eval` (`eval::eval_exit`) and `fren trace` (`trace::trace_exit`)
-refine it; `fren fmt` and `fren fix`, which change files rather than
-report on a spec, have their own.
+refine it. `fren fmt` and `fren fix` follow the same convention, but
+`fmt::exit` and `lint::fix_exit` say whether they could run in terms of
+what they read, `all_parsed?` and `loaded?`, rather than `ran?`, so they
+are not refinements of it.
 
 ```fren
 pub comp exit_status {
