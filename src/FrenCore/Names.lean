@@ -1314,11 +1314,6 @@ def notAVariantOfMsg (e : Name) (what : String) : Msg :=
     label? := some s!"not a variant of `{showPath e}`"
     notes := #[s!"note: the scrutinee is a `{showPath e}`"] }
 
-def armTypesMsg (a b : String) : Msg :=
-  { code? := some "F0320", headline := s!"the arms of `match` have different types: `{a}` and `{b}`"
-    label? := some "arms of different types"
-    notes := #["note: a `match` has the value of one of its arms, so all must have the same type, or be `Nat`s and `Int`s"] }
-
 def propNameMsg (n : Name) : Msg := questionNameMsg "constraint" n
 
 /-! ## Strings and methods (`Reqs/Lang/Expressions#methods`) -/

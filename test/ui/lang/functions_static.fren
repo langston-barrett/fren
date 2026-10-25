@@ -12,8 +12,7 @@ fn Arity2(Name): Int                --~ warning: function `Arity2` should have a
 type Name                           --~ error: the name `Name` is already defined in the root module
 
 const K: Int := arity(1)
---~^[cli] error: type mismatch: expected `Name`, found `Int`
---~^^[hosted] error: Application type mismatch
+--~^ error: type mismatch: expected `Name`, found `Int`
 const N: Name := 1                  --~ error: a constant cannot have an abstract type
 fn rate(Int): Int
 const R: Int := rate(1)             --~ error: a constant's value cannot apply an uninterpreted function

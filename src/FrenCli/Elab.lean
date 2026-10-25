@@ -2123,7 +2123,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         | smts := smts.push s!"({fieldSym path f} {r})"; continue
       let e := e?.getD (.path fi.span #[fi])
       let (x, te) ← elabExpr { cx with expected? := some t } e
-      unless te == t do mismatch e t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`")
+      unless te.widens t do mismatch e t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`")
       smts := smts.push x
     let lit := s!"({recordCtorSym path} {" ".intercalate smts.toList})"
     return (if bind then s!"(let (({r} {rv})) {lit})" else lit, .record path)
@@ -2204,15 +2204,11 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         bodies := bodies.push ""
         continue
       let (x, t) ← elabExpr { bcx with expected? := shared? } body
-      if let some t0 := ty? then
-        unless t.widens t0 || t0.widens t do err body.span (Fren.Core.armTypesMsg t0.show t.show)
-      ty? := some ((ty?.map (·.join t)).getD t)
+      ty? := some (← liftMsg body.span (Fren.Core.checkArm ty? t))
       bodies := bodies.push x
     for (k, bcx, body) in waiting do
       let (x, t) ← elabExpr { bcx with expected? := ty?.map (·.widen) } body
-      if let some t0 := ty? then
-        unless t.widens t0 || t0.widens t do err body.span (Fren.Core.armTypesMsg t0.show t.show)
-      ty? := ty?.map (·.join t)
+      if ty?.isSome then ty? := some (← liftMsg body.span (Fren.Core.checkArm ty? t))
       bodies := bodies.set! k x
     -- The first arm that matches; the last arm matches whatever is left.
     let mut out := bodies.back!

@@ -10,8 +10,7 @@ const ONE: Int := 2                   --~ error: the name `ONE` is already defin
 const LATER: Int := AFTER             --~ error: cannot find `AFTER` in this scope
 const AFTER: Int := 3
 const WRONG: Bool := 1
---~^[cli] error: type mismatch: expected `Bool`, found `Int`
---~^^[hosted] error: Type mismatch
+--~^ error: type mismatch: expected `Bool`, found `Int`
 const BAD_TYPE: comp_x := 1           --~ error: cannot find `comp_x` in this scope
 const NOT_TYPE: ONE := 1              --~ error: expected a type, but `ONE` is a constant
 comp c { in x: Int pub out y: Int req r: y = x * ONE + -ONE * x }  -- linear

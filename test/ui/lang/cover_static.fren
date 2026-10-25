@@ -8,6 +8,5 @@ comp named {
 
 comp typed {
     in x: Int
-    cover big: x + 1   --~[cli] error: expected `Bool`, found `Int`
-    --~^[hosted] error: Type mismatch
+    cover big: x + 1   --~ error: expected `Bool`, found `Int`
 }

@@ -18,8 +18,7 @@ expect q?: forall (a: sub), true               --~ error: constraint names canno
 expect q_binder: forall (a?: sub), true        --~ error: instance names cannot end in `?`
 expect no_binder: x = 0                        --~ error: cannot find `x` in this scope
 expect not_bool: forall (a: sub), a.z
---~^[cli] error: type mismatch: expected `Bool`, found `Int`
---~^^[hosted] error: Type mismatch
+--~^ error: type mismatch: expected `Bool`, found `Int`
 expect sub: true                               --~ error: the name `sub` is already defined in the root module
 expect ok: forall (a: sub), a.z = a.x
 expect ok: true                                --~ error: the name `ok` is already defined in the root module
