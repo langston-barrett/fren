@@ -1,4 +1,4 @@
---@ args: fix --check -W pedantic -A membership_chain -A definable_output
+--@ args: fix --check -W pedantic -A membership_chain -A definable_output -A many_single_char_names
 -- `fren fix` fixes the match lints.
 enum E { A, B, C, D }
 

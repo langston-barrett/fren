@@ -42,6 +42,7 @@ use view::Severity
 | `int_plus_one` | `F0741` | `complexity` | `warn` | a non-strict comparison of integers with an operand off by one, such as `x >= y + 1` (see [Off-by-one comparisons](Lint/Complexity.md#off-by-one-comparisons)) |
 | `length_zero` | `F0715` | `style` | `warn` | a comparison of a string's or sequence's `len` with `0` or `1` that says whether it is empty, such as `s.len = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
 | `manual_method` | `F0732` | `complexity` | `warn` | a search written with `index_of` or `slice`, such as `s.index_of(t, 0) >= 0` (see [Searches](Lint/Complexity.md#searches)) |
+| `many_single_char_names` | `F0795` | `pedantic` | `allow` | a component, function or global expectation that declares four or more single-character names (see [Names](Lint/Pedantic.md#names)) |
 | `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false` (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
 | `match_same_arms` | `F0725` | `pedantic` | `allow` | an arm of a `match` with the same body as another (see [Matches](Lint/Pedantic.md#matches)) |
 | `membership_chain` | `F0718` | `pedantic` | `allow` | `x = a or x = b or x = c`, or `x != a and x != b and x != c`, three or more (see [Membership chains](Lint/Pedantic.md#membership-chains)) |
@@ -54,7 +55,9 @@ use view::Severity
 | `redundant_bool_type` | `F0746` | `style` | `warn` | a `: Bool` that a name ending in `?` implies, as in `in ready?: Bool` (see [Boolean types](Lint/Style.md#boolean-types)) |
 | `redundant_method_chain` | `F0743` | `complexity` | `warn` | a chain of methods with a shorter form, such as `q.rev.rev` (see [Chains of methods](Lint/Complexity.md#chains-of-methods)) |
 | `same_branches` | `F0737` | `suspicious` | `warn` | `if c then a else a` (see [Suspicious expressions](Lint/Suspicious.md#suspicious-expressions)) |
+| `similar_names` | `F0796` | `pedantic` | `allow` | a name declared in the same item as another that differs from it by one character, such as `level` and `levels` (see [Names](Lint/Pedantic.md#names)) |
 | `singleton_membership` | `F0717` | `complexity` | `warn` | `x in {a}` (see [Singleton membership](Lint/Complexity.md#singleton-membership)) |
+| `too_many_lines` | `F0797` | `pedantic` | `allow` | a component or defined function of more than 100 lines (see [Long items](Lint/Pedantic.md#long-items)) |
 | `trivial_match` | `F0747` | `complexity` | `warn` | a `match` of one arm that binds nothing, such as `match x { _ => e }` (see [Trivial matches](Lint/Complexity.md#trivial-matches)) |
 | `trivial_pattern` | `F0744` | `style` | `warn` | `s.matches?(p)`, where `p` is a string, with `.*` or not at either end (see [Trivial patterns](Lint/Style.md#trivial-patterns)) |
 | `undecidable` | `F0714` | `decidability` | `deny` | a construct outside the decidable core (see [Undecidable constructs](Lint/Decidability.md#undecidable-constructs)) |
@@ -63,6 +66,7 @@ use view::Severity
 | `unused_imports` | `F0701` | `unused` | `warn` | a `use` that nothing in its file uses (see [Unused imports](Lint/Unused.md#unused-imports)) |
 | `unused_variables` | `F0710` | `unused` | `warn` | a variable or binder that nothing mentions (see [Unused variables](Lint/Unused.md#unused-variables)) |
 | `wildcard_single_variant` | `F0728` | `pedantic` | `allow` | a `_` arm that matches only one variant (see [Matches](Lint/Pedantic.md#matches)) |
+| `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel(A, B)` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
 <!-- keep-sorted end -->
 
 Lints are found while elaborating, like [static

@@ -1,6 +1,7 @@
 -- The lints of variant tests and bindings, in both front ends.
 set_option fren.lint.pedantic "warn"
 set_option fren.lint.definable_output "allow"
+set_option fren.lint.many_single_char_names "allow"
 
 enum E { A, B, C, D }
 enum S { Dot, Line(Int) }

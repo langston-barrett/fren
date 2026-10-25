@@ -359,6 +359,9 @@ structure LocalState where
   used : Array Core.UsedName := #[]
   expectations : Array (Core.ExpectationRecord × Syntax) := #[]
   lintReports : Array (Core.LintReport Syntax) := #[]
+  /-- The variables, parameters, instances and binders that the item being
+  elaborated declares (`many_single_char_names`, `similar_names`). -/
+  declaredNames : Array (Name × Syntax) := #[]
   /-- The file's private enumerations and constants, and the items that
   paths in it resolve to (`dead_code`). -/
   items : Array (Core.ItemRecord × Syntax) := #[]

@@ -1,0 +1,14 @@
+warning[F0796]: `counts` differs from `count` by one character
+ --> test/cli/lints/pedantic/f0796_similar_names.fren:4:27
+  |
+4 | comp c { in count: Int in counts: Int pub out p? req r: p? iff count < counts }
+  |                           ^^^^^^ easily mistaken for the other
+  |
+  = note: both are declared in component `c`
+  = help: rename one, so that they differ at a glance
+  = note: `similar_names` is set to `warn`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0796`.
+exit=3

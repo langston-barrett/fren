@@ -248,3 +248,100 @@ pub comp bool_equality {
     req rule: fires? iff (op = Eq and bools? and not literal?)
 }
 ```
+
+## Relations to one value
+
+`zero_sized_map_values`, `allow` by default, fires on a relation type
+`Rel(A, B)`, wherever a type is written, whose `B` has exactly one value:
+an enumeration of one variant without a payload. Such a relation pairs
+each `A` it relates with that one value, so it says only which `A`s it
+relates, as `Set(A)` does, which the message suggests. It has no fix: the
+expressions that build and read the relation would change too.
+`lint::zero_sized_map_values` states when it fires:
+
+```fren
+pub comp zero_sized_map_values {
+    in enum?             -- `B` is an enumeration
+    in n_variants: Int   -- its variants
+    in payload?          -- one of them has a payload
+    pub det out fires?
+
+    assume counts: n_variants >= 0
+
+    req rule: fires? iff (enum? and n_variants = 1 and not payload?)
+}
+```
+
+## Names
+
+`many_single_char_names` and `similar_names` look at the names that an
+item declares: the variables and instances of a component, the
+parameters of a defined function, the binders of a global expectation, and
+the binders of the `match` arms in each of them. A final `?` is not
+counted. Neither lint has a fix: only the writer knows what a name stands
+for.
+
+`many_single_char_names`, `allow` by default, fires on a component,
+function or global expectation that declares four or more names of one
+character, as Clippy's does by default. Its message is reported at the
+item's name, and lists them. `lint::many_single_char_names` states when it
+fires:
+
+```fren
+pub comp many_single_char_names {
+    in n: Int            -- names of one character that the item declares
+    pub det out fires?
+
+    assume counts: n >= 0
+
+    req rule: fires? iff n >= 4
+}
+```
+
+`similar_names`, `allow` by default, fires on two names that one item
+declares, each of three or more characters, one of which is the other
+with one character substituted, inserted or deleted, such as `level` and
+`levels`, or `user` and `used`. Its message is reported at the later of
+the two, once for each name, and names the earlier. Following Clippy, it
+does not fire on names that differ only in a digit, such as `x1` and
+`x2`, or in a substituted character that is a word of its own in both,
+between `_`s or the name's ends, such as `a_mentions?` and `b_mentions?`:
+both name a series on purpose. `lint::similar_names` states when it fires:
+
+```fren
+pub comp similar_names {
+    in len_a: Int        -- characters of each name, without a final `?`
+    in len_b: Int
+    in one_edit?         -- one is the other with one character substituted, inserted or deleted
+    in digits?           -- the characters that differ are digits
+    in word?             -- a character is substituted for another, each a word of its name
+    pub det out fires?
+
+    assume counts: len_a >= 0 and len_b >= 0
+
+    req rule: fires? iff (len_a >= 3 and len_b >= 3 and one_edit? and not digits? and not word?)
+
+    expect series: when digits?, not fires?
+}
+```
+
+## Long items
+
+`too_many_lines`, `allow` by default, fires on a component or defined
+function of more than 100 lines, as Clippy's does by default, counting
+from the line of its name to its end, and only the lines that have
+something other than whitespace and [comments](../Lang/Lexical.md#comments). Its
+message is reported at the item's name. It has no fix: how to split an
+item into smaller ones, as instances or functions, is the writer's choice.
+`lint::too_many_lines` states when it fires:
+
+```fren
+pub comp too_many_lines {
+    in n_lines: Int      -- lines of the item with code
+    pub det out fires?
+
+    assume counts: n_lines >= 0
+
+    req rule: fires? iff n_lines > 100
+}
+```

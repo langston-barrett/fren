@@ -1,0 +1,4 @@
+-- `many_single_char_names`: four names of one character, one with a `?`.
+set_option fren.lint.many_single_char_names "warn"
+
+comp total { in a: Int in b: Int in c? pub out s: Int req r: s = if c? then a else b }

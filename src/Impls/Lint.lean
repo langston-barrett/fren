@@ -715,6 +715,42 @@ impl trivial_match: lint::trivial_match for (n : Nat) (b : Bool) {
   intro n b _
   cases b <;> simp [fren_spec, Fren.Core.trivialMatch] <;> omega
 
+impl zero_sized_map_values: lint::zero_sized_map_values for (e : Bool) (n : Nat) (p : Bool) {
+  enum? := e,
+  n_variants := n,
+  payload? := p,
+  fires? := Fren.Core.zeroSizedMapValues e n p,
+} by
+  intro e n p _
+  cases e <;> cases p <;> simp [fren_spec, Fren.Core.zeroSizedMapValues] <;> omega
+
+impl many_single_char_names: lint::many_single_char_names for (n : Nat) {
+  n := n,
+  fires? := Fren.Core.manySingleCharNames n,
+} by
+  intro n _
+  simp [fren_spec, Fren.Core.manySingleCharNames] <;> omega
+
+-- `namesSimilar` reads the names' characters into these.
+impl similar_names: lint::similar_names for (a b : Nat) (o d w : Bool) {
+  len_a := a,
+  len_b := b,
+  one_edit? := o,
+  digits? := d,
+  word? := w,
+  fires? := Fren.Core.similarNames a b o d w,
+} by
+  intro a b o d w _
+  cases o <;> cases d <;> cases w <;> simp [fren_spec, Fren.Core.similarNames] <;> omega
+
+-- `codeLines` counts the lines.
+impl too_many_lines: lint::too_many_lines for (n : Nat) {
+  n_lines := n,
+  fires? := Fren.Core.tooManyLines n,
+} by
+  intro n _
+  simp [fren_spec, Fren.Core.tooManyLines] <;> omega
+
 -- `trivialPattern?` reads the pattern's characters; the spec states the
 -- same with a pattern, which the tests check against it.
 tested lint::trivial_pattern: "test/ui/lints/methods.fren", "test/cli/lints/style/f0744_trivial_pattern.fren"

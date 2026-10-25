@@ -375,7 +375,7 @@ where
   ofItem (module : Name) : Item → Array (Name × Option Name × Expr)
     | .const _ n _ v => #[(.str module n.name, none, v)]
     | .function _ n _ _ (some body) => #[(.str module n.name, none, body)]
-    | .comp _ n members =>
+    | .comp _ n members _ =>
       let c := Name.str module n.name
       members.flatMap fun
         | .prop kind p e => if kind == .expect then #[] else #[(.str c p.name, some c, e)]
