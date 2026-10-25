@@ -331,9 +331,9 @@ refine escape_sequence_is_exact: escape_sequence refines escape_text
 
 `lang::escape_start` says which input starts an escape sequence again,
 character by character rather than by one pattern for the whole sequence,
-so that each statement checks the other: a character that one accepts and the other does not
-breaks the refinement. `escape_sequence` refines it, and the solver
-decides it:
+so that each statement checks the other: a character that one accepts and
+the other does not breaks the refinement. `escape_sequence` refines it,
+and the solver decides it:
 
 ```fren
 pub comp escape_start {
