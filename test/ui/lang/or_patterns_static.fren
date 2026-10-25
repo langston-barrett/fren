@@ -28,6 +28,6 @@ enum U { Y, Z }
 comp shadows { use self::U::Y in u: U pub out y? req r: y? iff u = Y }
 comp twice { use self::T::X use self::T::X in t: T pub out y? req r: y? iff t = X }
 --~^ error: the name `X` is already imported into component `twice`
---~^^[hosted] warning: unused import `T::X`
+--~^^ warning: unused import `T::X`
 
 --@ exit: 2

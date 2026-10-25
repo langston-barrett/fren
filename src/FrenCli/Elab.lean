@@ -479,43 +479,45 @@ structure State where
   /-- The names of `let` and `where` definitions made so far, which number
   their SMT-LIB symbols. -/
   nLets : Nat := 0
+  /-- Whether the current component's members are being elaborated, past
+  its name and the distinctness of its members' names: after a failure
+  there, its declaration and line lints still run, as in Lean. -/
+  inCompBody : Bool := false
+
+/-- `s`, with what `t` recorded for the lints: what a failed member or item
+recorded before its error outlives it, as in Lean, where an error undoes
+nothing (`Reqs/View#static-errors`). -/
+def State.keepLints (s t : State) : State :=
+  { s with lintReports := t.lintReports, lintFixes := t.lintFixes, used := t.used, usedItems := t.usedItems
+           useRecords := t.useRecords, useLocs := t.useLocs, items := t.items, declared := t.declared
+           seenSettings := t.seenSettings, globalReads := t.globalReads }
 
 /-- Why an item failed: its static errors, the last of which stopped it,
-and the items that its paths used before it did (`dead_code`), the
-settings in effect at it (`unused_lint_setting`), and what it read of
-components (`unused_assumption`), which outlive it. -/
+and the state when it did, whose lints outlive it (`State.keepLints`). -/
 structure Failure where
   diags : Array Diag
-  usedItems : Array Name
-  seenSettings : Array Nat
-  globalReads : Array (Name × Name)
+  state : State
 
 abbrev M := StateT State (Except Failure)
 
 def err (span : Span) (msg : Msg) : M α := do
   let s ← get
-  throw { diags := s.itemErrors.push { file := s.file, span, msg }, usedItems := s.usedItems
-          seenSettings := s.seenSettings, globalReads := s.globalReads }
+  throw { diags := s.itemErrors.push { file := s.file, span, msg }, state := s }
 
 /-- Runs `x`, a member of an item that is checked on its own: on a static
-error, records it, undoes what `x` did, and gives `none`, so that the
-item's other members are still checked (`Reqs/View#static-errors`). -/
+error, records it, undoes what `x` did but its lints, and gives `none`, so
+that the item's other members are still checked (`Reqs/View#static-errors`). -/
 def attempt (x : M α) : M (Option α) := do
   let s ← get
   match x.run s with
   | .ok (a, s') => set s'; return some a
-  | .error f =>
-    set { s with itemErrors := f.diags, usedItems := f.usedItems, seenSettings := f.seenSettings
-                 globalReads := f.globalReads }
-    return none
+  | .error f => set { s.keepLints f.state with itemErrors := f.diags }; return none
 
 /-- Stops the current item if a member of it had a static error, as when
 what follows would only repeat it (`Reqs/View#static-errors`). -/
 def stopIfErrors : M Unit := do
   let s ← get
-  unless s.itemErrors.isEmpty do
-    throw { diags := s.itemErrors, usedItems := s.usedItems, seenSettings := s.seenSettings
-            globalReads := s.globalReads }
+  unless s.itemErrors.isEmpty do throw { diags := s.itemErrors, state := s }
 
 def internal (span : Span) (what : String) : M α := err span (Msg.internal what)
 
@@ -2097,6 +2099,15 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     if elems.isEmpty then
       let t ← liftMsg span (Fren.Core.checkEmptyLiteral false expected?)
       return (s!"(as set.empty {t.sort})", t)
+    -- Before its members, whose errors would hide them, as in Lean.
+    checkCore cx span .setAlgebra true true elems
+    -- `duplicate_elements` (`lint::duplicate_elements`).
+    if cx.noteIndexes then
+      let repeats := Fren.Core.repeatedElements (← elems.mapM (srcAt ·.span))
+      if Fren.Core.duplicateElements repeats.size then
+        let range (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
+        lintFix .duplicateElements span
+          (Fren.Core.duplicateElementsMsg (← get).src (range span) (elems.map (range ·.span)) repeats)
     -- A member, as the fields of its tuple, and the type of the literal
     -- it makes: a pair makes a relation.
     let member (e : Expr) (expected? : Option Ty) : M (String × Ty) := do
@@ -2126,14 +2137,6 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let (mt, mt0) := match t, t0 with | .set u, .set u0 => (u.show, u0.show) | _, _ => (t.show, t0.show)
         err e.span (Fren.Core.membersMsg false mt0 mt t0.show)
       xs := xs.push x
-    checkCore cx span .setAlgebra true true elems
-    -- `duplicate_elements` (`lint::duplicate_elements`).
-    if cx.noteIndexes then
-      let repeats := Fren.Core.repeatedElements (← elems.mapM (srcAt ·.span))
-      if Fren.Core.duplicateElements repeats.size then
-        let range (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
-        lintFix .duplicateElements span
-          (Fren.Core.duplicateElementsMsg (← get).src (range span) (elems.map (range ·.span)) repeats)
     let ts := xs.map (s!"(tuple {·})")
     let smt := if ts.size == 1 then s!"(set.singleton {ts[0]!})"
       else s!"(set.insert {" ".intercalate (ts.pop.toList)} (set.singleton {ts.back!}))"
@@ -2229,6 +2232,9 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         | _, _ => none
       let (x, ta) ← elabExpr { cx with expected? } a
       as := as.push (x, ta, a.span)
+    -- Typed before it is linted, as in Lean, so that a call with a type
+    -- error reports no lint of its own (`Reqs/View#static-errors`).
+    let res ← callMethod m.span r t m.name as
     if let (.string, some method) := (t, Fren.Core.Method.ofName? m.name) then
       let constantArgs ← args.allM (isConstant cx)
       checkCore cx span method.construct constantArgs true (#[recv] ++ args) (constantArgs && (← isConstant cx recv))
@@ -2237,7 +2243,6 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         ((← args.allM (isConstant cx)) && (← isConstant cx recv)) (literalOperand := args.any (· matches .seq ..))
     if let some tys := relRange? t m.name then checkRelational cx span tys (#[recv] ++ args)
     checkRelationalCard cx span t m.name recv
-    let res ← callMethod m.span r t m.name as
     -- `empty_argument` (`lint::empty_argument`).
     if let (some meth, true) := (Fren.Core.Method.ofName? m.name, cx.noteIndexes) then
       -- The receiver as written, with its parentheses, as in the help
@@ -2322,14 +2327,15 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       return (s!"({smt} {x} {y})", .bool)
     | "=" | "!=" =>
       lintLength op a b
-      -- `const_is_empty` on a literal and an empty one (`lint::const_empty_equation`).
-      if let (some (_, m), some (_, n), true) := (a.literalCount?, b.literalCount?, cx.noteIndexes) then
-        let (fires, value) := Fren.Core.constEmptyEquation (op == "=") (max m n)
-        if fires && min m n == 0 then lint .constIsEmpty span (Fren.Core.constIsEmptyMsg value)
       -- `++` is in the core against a constant.
       let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
       let ((x, tx), (y, ty)) ← pair { cx with concatOk := cb } { cx with concatOk := ca } a b
       liftMsg span (Fren.Core.checkComparable op tx ty)
+      -- `const_is_empty` on a literal and an empty one (`lint::const_empty_equation`),
+      -- after the sides and their types, as in Lean.
+      if let (some (_, m), some (_, n), true) := (a.literalCount?, b.literalCount?, cx.noteIndexes) then
+        let (fires, value) := Fren.Core.constEmptyEquation (op == "=") (max m n)
+        if fires && min m n == 0 then lint .constIsEmpty span (Fren.Core.constIsEmptyMsg value)
       -- For `bool_equality`, at the end of the expression.
       if tx == .bool && cx.noteIndexes then modify fun s => { s with boolEqs := s.boolEqs.push span }
       -- A side that is a `++` is reported as one; one whose definition
@@ -2372,6 +2378,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         | ">" => Fren.Core.strCompareSmt y x false
         | _ => Fren.Core.strCompareSmt y x true, .bool)
     | "in" =>
+      -- Before its operands, whose errors would hide it, as in Lean.
+      checkCore cx span .setAlgebra true true #[a, b]
+      if let (.set _ #[m], true) := (b, cx.noteIndexes) then
+        unless m matches .pair .. do lintFix .singletonMembership span (Fren.Core.singletonMembershipMsg (← srcAt a.span) (← srcAt m.span))
       if let some (pa, pb) := a.pair? (← get).src then
         let (x, tx) ← elabExpr cx pa
         let (y, ty) ← elabExpr cx pb
@@ -2379,7 +2389,6 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let (r, tr) ← elabExpr { cx with expected? := some (.rel tx ty) } b
         unless tr == .rel tx ty do
           err span (Fren.Core.membershipTypeMsg (Ty.rel tx ty).show tr.show true)
-        checkCore cx span .setAlgebra true true #[pa, pb, b]
         return (s!"(set.member (tuple {x} {y}) {r})", .bool)
       let (x, tx) ← elabExpr cx a
       -- A member is never a `Nat`: one is widened (`lang::nat_place`).
@@ -2387,8 +2396,6 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       -- The right is checked against a set or sequence of the left's type, as
       -- it is written (`lang::checked`).
       let (y, ty) ← elabExpr { cx with expected? := some (if seqShaped b then .seq tx else .set tx) } b
-      if let (.set _ #[m], true) := (b, cx.noteIndexes) then
-        unless m matches .pair .. do lintFix .singletonMembership span (Fren.Core.singletonMembershipMsg (← srcAt a.span) (← srcAt m.span))
       if ty == .seq tx then
         checkCore cx span .seqWord true true #[a, b] (← isConstant cx e) (literalOperand := b matches .seq ..)
         return (s!"(seq.contains {y} (seq.unit {x}))", .bool)
@@ -2396,9 +2403,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         err span { code? := some "F0325", headline := s!"`in` needs a `Set({tx.show})` on its right, found `{ty.show}`"
                    label? := some s!"`{tx.show}` and `{ty.show}`"
                    notes := #["note: `x in s` is membership: `s` is a set of values of `x`'s type"] }
-      checkCore cx span .setAlgebra true true #[a, b]
       return (s!"(set.member (tuple {x}) {y})", .bool)
     | "union" | "inter" | "minus" | "subset" =>
+      -- Before its operands, whose errors would hide it, as in Lean.
+      checkCore cx span .setAlgebra true true #[a, b]
       -- The operands of `subset` give each other their type, and those of the
       -- others are also checked against the whole's (`lang::checked`).
       let expected? := if op == "subset" then none else expected?
@@ -2406,7 +2414,6 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       match Fren.Core.checkSetOperands op tx ty with
       | .ok () => pure ()
       | .error (k, msg) => err (if k == 0 then a else b).span msg
-      checkCore cx span .setAlgebra true true #[a, b]
       let smt := match op with
         | "union" => "set.union" | "inter" => "set.inter" | "minus" => "set.minus" | _ => "set.subset"
       return (s!"({smt} {x} {y})", if op == "subset" then .bool else tx)
@@ -2536,6 +2543,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let first := parts.length - fields.length
         return ← (fields.zipIdx).foldlM (init := base) fun (smt, t) (f, j) => do
           let fspan : Span := { start := starts[first + j]!, stop := starts[first + j + 1]! - 1 }
+          -- Typed before it is linted, as a call is.
+          let res ← readField fspan smt t f
           if t == .string then
             let recvName := ".".intercalate (parts.take (first + j))
             let recvSpan : Span := { start := span.start, stop := fspan.start - 1 }
@@ -2550,7 +2559,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
           if let (.seq _, some m) := (t, Fren.Core.Method.ofName? f.toString) then
             let r : Expr := .path recvSpan #[{ name := recvName, span := recvSpan }]
             checkCore cx (span.to fspan) m.seqConstruct true true #[r] (← isConstant cx r)
-          readField fspan smt t f
+          return res
       if let some (_, own) := cx.pending.find? (·.1 == n.getRoot) then
         err span (Fren.Core.definedLaterMsg n.getRoot own)
       if !n.isAtomic then
@@ -3066,6 +3075,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let declared := named.map fun x => Name.mkSimple (declaredIdent x).1.name
   if let some k := (Fren.Core.repeatsAt declared)[0]? then
     err named[k]!.span (Fren.Core.dupMemberMsg declared[k]!)
+  modify fun s => { s with inCompBody := true }
   -- Each variable, instance, binding, definition and constraint reports its
   -- own first static error; after those of the variables, and of the
   -- instances, the item stops, since what follows would only repeat them
@@ -3142,8 +3152,9 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     let xn := Name.mkSimple x.name
     let some (p, idx) ← attempt do
         liftMsg x.span (Fren.Core.checkNoBang xn)
-        if x.name.endsWith "?" then err x.span (Fren.Core.propNameMsg xn)
+        -- Before the `?` error, as in Lean.
         lintName .constraint xn x.span
+        if x.name.endsWith "?" then err x.span (Fren.Core.propNameMsg xn)
         let cx : ExprCtx := { vars, insts := instNames, place := if kind == .assume then .assume else .prop }
         let (smt, t) ← elabExpr cx e
         liftMsg e.span (Fren.Core.checkType .bool t (some "note: a constraint is a `Bool`"))
@@ -3167,6 +3178,43 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
       let stop := withLineComment src (Fren.Core.withParens src (toRange (e.writtenSpan src))).stop
       lintEdits .duplicateConstraint x.span msg #[(Fren.Core.deletionRange src { start := wordStart src x.span.start, stop }, "")]
     else lint .duplicateConstraint x.span msg
+  -- `constant_output` and `definable_output` (`lint::output_lints`).
+  let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
+  let reqs := members.filterMap fun | .prop .req x e => some (Name.mkSimple x.name, e) | _ => none
+  for v in vars.filter (fun v => v.role == .output && v.name.isAtomic) do
+    let isX : Expr → Bool | .path _ #[seg] => Name.mkSimple seg.name == v.name | _ => false
+    let about := reqs.filter fun (_, e) => (mentions e).contains v.name
+    -- The only requirement that mentions it, as `x = e` or `x? iff e`, with `e` other variables'.
+    let equation := match about with
+      | #[(_, .bin _ op l r)] => (op == "=" || op == "iff") &&
+          ((isX l && !(mentions r).contains v.name) || (isX r && !(mentions l).contains v.name))
+      | _ => false
+    let mentions ← match v.defn? with | some d => mentionsAny lcx d | none => pure true
+    let (constant, definable) := Fren.Core.outputLints v.defn?.isSome mentions about.size equation
+    if constant then lint .constantOutput v.span (Fren.Core.constantOutputMsg v.name)
+    if definable then lint .definableOutput v.span (Fren.Core.definableOutputMsg v.name about[0]!.1)
+  -- `case_split_reqs` (`lint::case_split_reqs`): each requirement `when T, y = e`, as its name, where it is
+  -- reported, `y`, the operator, `T` and the text of `e`.
+  let mut cases : Array (Name × Span × String × String × Fren.Core.VariantTest × String) := #[]
+  for m in members do
+    let .prop .req x (.when _ false c (.bin _ op (.path _ #[y]) rhs)) := m | continue
+    unless (op == "=" || op == "iff") && vars.any (fun v => v.role == .output && v.name == Name.mkSimple y.name) do continue
+    let some t ← variantTest? lcx c | continue
+    cases := cases.push (Name.mkSimple x.name, x.span, y.name, op, t, ← armBodyOf rhs)
+  let mut grouped : Array Nat := #[]
+  for i in [0:cases.size] do
+    if grouped.contains i then continue
+    let (_, _, y, op, t, _) := cases[i]!
+    let group := (Array.range cases.size).filter fun j =>
+      j ≥ i && cases[j]!.2.2.1 == y && cases[j]!.2.2.2.2.1.key == t.key && cases[j]!.2.2.2.2.1.enum == t.enum
+    grouped := grouped ++ group
+    let cs := group.map fun j => let (n, _, _, _, t, e) := cases[j]!; (n, t, e)
+    let ts := cs.map (·.2.1)
+    let n := (((← get).table.enums.get? t.enum).map (·.variants.size)).getD 0
+    if Fren.Core.caseSplitReqs cs.size (Fren.Core.repeatedVariants ts) then
+      lint .caseSplitReqs cases[group[1]!]!.2.1 (Fren.Core.caseSplitReqsMsg y op cs (Fren.Core.untestedVariants n ts))
+  -- The lints above are found despite a constraint's static error, as in
+  -- Lean; `unused_variables`, and the rest, only without one.
   stopIfErrors
   let mentioned := members.foldl (init := #[]) fun acc m => match m with
     | .prop _ _ e | .var _ _ _ _ _ (some e) => acc ++ mentions e
@@ -3205,41 +3253,6 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
         { component := (← get).module ++ n, name := Name.mkSimple x.name, inputs := ms, links := ls
           level := (← get).levels.get .unusedAssumption }
       modify fun s => { s with assumptions := s.assumptions.push (r, x.span) }
-  -- `constant_output` and `definable_output` (`lint::output_lints`).
-  let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
-  let reqs := members.filterMap fun | .prop .req x e => some (Name.mkSimple x.name, e) | _ => none
-  for v in vars.filter (fun v => v.role == .output && v.name.isAtomic) do
-    let isX : Expr → Bool | .path _ #[seg] => Name.mkSimple seg.name == v.name | _ => false
-    let about := reqs.filter fun (_, e) => (mentions e).contains v.name
-    -- The only requirement that mentions it, as `x = e` or `x? iff e`, with `e` other variables'.
-    let equation := match about with
-      | #[(_, .bin _ op l r)] => (op == "=" || op == "iff") &&
-          ((isX l && !(mentions r).contains v.name) || (isX r && !(mentions l).contains v.name))
-      | _ => false
-    let mentions ← match v.defn? with | some d => mentionsAny lcx d | none => pure true
-    let (constant, definable) := Fren.Core.outputLints v.defn?.isSome mentions about.size equation
-    if constant then lint .constantOutput v.span (Fren.Core.constantOutputMsg v.name)
-    if definable then lint .definableOutput v.span (Fren.Core.definableOutputMsg v.name about[0]!.1)
-  -- `case_split_reqs` (`lint::case_split_reqs`): each requirement `when T, y = e`, as its name, where it is
-  -- reported, `y`, the operator, `T` and the text of `e`.
-  let mut cases : Array (Name × Span × String × String × Fren.Core.VariantTest × String) := #[]
-  for m in members do
-    let .prop .req x (.when _ false c (.bin _ op (.path _ #[y]) rhs)) := m | continue
-    unless (op == "=" || op == "iff") && vars.any (fun v => v.role == .output && v.name == Name.mkSimple y.name) do continue
-    let some t ← variantTest? lcx c | continue
-    cases := cases.push (Name.mkSimple x.name, x.span, y.name, op, t, ← armBodyOf rhs)
-  let mut grouped : Array Nat := #[]
-  for i in [0:cases.size] do
-    if grouped.contains i then continue
-    let (_, _, y, op, t, _) := cases[i]!
-    let group := (Array.range cases.size).filter fun j =>
-      j ≥ i && cases[j]!.2.2.1 == y && cases[j]!.2.2.2.2.1.key == t.key && cases[j]!.2.2.2.2.1.enum == t.enum
-    grouped := grouped ++ group
-    let cs := group.map fun j => let (n, _, _, _, t, e) := cases[j]!; (n, t, e)
-    let ts := cs.map (·.2.1)
-    let n := (((← get).table.enums.get? t.enum).map (·.variants.size)).getD 0
-    if Fren.Core.caseSplitReqs cs.size (Fren.Core.repeatedVariants ts) then
-      lint .caseSplitReqs cases[group[1]!]!.2.1 (Fren.Core.caseSplitReqsMsg y op cs (Fren.Core.untestedVariants n ts))
   let path := module ++ n
   let tested ← testedOf (← evidenceInEffect) members
   let (relational, counts) ← checkCounts
@@ -3695,8 +3708,15 @@ partial def elabItem (item : Item) : M Unit := do
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
   | .comp isPub name members close => do
     -- Its `use`s end with it, even when it has an error.
+    modify fun s => { s with inCompBody := false }
     try elabComp isPub name members
-    catch e => modify (fun s => { s with scope := s.module }); throw e
+    catch e =>
+      modify (fun s => { s.keepLints e.state with scope := s.module })
+      -- Its declaration and line lints, after an error in its members.
+      if e.state.inCompBody then
+        lintDeclared .component (Name.mkSimple name.name) name.span
+        lintLines .component (Name.mkSimple name.name) name.span close
+      throw { e with state := ← get }
     lintDeclared .component (Name.mkSimple name.name) name.span
     lintLines .component (Name.mkSimple name.name) name.span close
   | .const isPub name ty value => do
@@ -3894,10 +3914,8 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
     match (elabItem item).run s with
     | .ok ((), s') =>
       if s'.itemErrors.isEmpty then set s'
-      else set { s with diags := s.diags ++ s'.itemErrors, usedItems := s'.usedItems
-                        seenSettings := s'.seenSettings, globalReads := s'.globalReads }
-    | .error f => set { s with diags := s.diags ++ f.diags, usedItems := f.usedItems, seenSettings := f.seenSettings
-                               globalReads := f.globalReads }
+      else set { s.keepLints s' with diags := s.diags ++ s'.itemErrors }
+    | .error f => set { s.keepLints f.state with diags := s.diags ++ f.diags }
   finishLints
 
 /-- A declaration of the prelude: its SMT-LIB text, and the names of the

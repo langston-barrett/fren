@@ -18,8 +18,7 @@ comp var_fn { in scale: Int pub out y: Int req r: y = scale }
 comp var_fn_ok { in scale!: Int pub out y: Int req r: y = scale }
 comp var_variant { use self::Shape::Square in Square: Int pub out y: Int req r: y = Square }
 --~^ error: `Square` shadows the variant `Shape::Square`
---~^^[hosted] warning: unused import `Shape::Square`
--- The `fren` command drops the lints of an item with an error.
+--~^^ warning: unused import `Shape::Square`
 -- The `use` is used: `Square!` depends on it (`Reqs/Lint#unused-imports`).
 comp var_variant_ok { use self::Shape::Square in Square!: Int pub out y: Int req r: y = Square }
 -- Items that are not values are never hidden.
@@ -152,8 +151,7 @@ comp ambiguous { use self::Hue::* use self::Tone::* in Red: Int pub out y: Int r
 --~^^^^ warning: `use Tone::*` imports every variant of `Tone`
 comp ambiguous_bang { use self::Hue::* use self::Tone::* in Red!: Int pub out y: Int req r: y = Red }
 --~^ error: `Red!` shadows nothing
---~^^[hosted] warning: unused import `Hue::*`
---~^^^[hosted] warning: unused import `Tone::*`
---~^^^^[hosted] warning: `use Hue::*` imports every variant of `Hue`
---~^^^^^[hosted] warning: `use Tone::*` imports every variant of `Tone`
--- The `fren` command drops the lints of an item with an error.
+--~^^ warning: unused import `Hue::*`
+--~^^^ warning: unused import `Tone::*`
+--~^^^^ warning: `use Hue::*` imports every variant of `Hue`
+--~^^^^^ warning: `use Tone::*` imports every variant of `Tone`

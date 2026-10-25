@@ -6,7 +6,19 @@ error[F0207]: the name `Shown` is already imported into module `b`
   |
   = note: a `use` and an item, or two `use`s, of the same name would make `Shown` ambiguous
 
+warning[F0701]: unused import `a::Shown`
+ --> test/cli/names/f0207_imported.fren:6:9
+  |
+6 | use a::{Shown, Shown}
+  |         ^^^^^ unused
+  |
+  = help: remove this `use`
+  = help: `fren fix` can fix this
+  = note: `unused_imports` is `warn` by default
+  = help: to allow it, `set_option fren.lint.unused_imports "allow"`
+
 error: could not check due to previous errors
 
-For more information about this error, try `fren --explain F0207`.
+Some errors have detailed explanations: F0207, F0701.
+For more information about an error, try `fren --explain F0207`.
 exit=2

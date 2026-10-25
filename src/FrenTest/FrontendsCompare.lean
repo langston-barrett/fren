@@ -59,11 +59,14 @@ def expectationDiff : Array String :=
 #guard agrees constant { diags := #[err 1 "type mismatch: expected `Int`, found `Bool`" "F0304"], exit? := some 2 }
   { diags := #[err 1 "Type mismatch\n  x\nhas type Bool"] }
 
--- A static error of the binary hides Lean's lints of its item, but not
--- Lean's errors on other lines of it.
+-- Both report the lints of an item with a static error (`Reqs/View`), and
+-- each of Lean's errors on other lines of it is compared.
 def item : String := "comp c {\n    in x: Int\n    pub out y: Int\n    req q: y = x * x\n    req r: y = K\n}\n"
 
-#guard agrees item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
+#guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", warn 2 "unused variable `x`"] }
+
+#guard agrees item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307", warn 2 "unused variable `x`" "F0710"], exit? := some 2 }
   { diags := #[err 4 "nonlinear arithmetic is not supported", warn 2 "unused variable `x`"] }
 
 #guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }

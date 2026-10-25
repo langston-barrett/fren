@@ -28,8 +28,8 @@ fuzzing"). `fren_fuzz_frontends` compares the front ends with it;
   out.
 - Checks whose evidence is testing, which Lean does not run, are left out.
 - A static error, including a denied lint, stops both front ends'
-  checks, so neither reports results or a summary. The binary drops the lints of an item with a static error other than a
-  lint: then Lean's lints of that item (`isHostedLint`) are not compared.
+  checks, so neither reports results or a summary. Both report the lints
+  of an item with a static error.
 - Both front ends say that a static error stopped the checks
   (`isStoppedTrailer`), or neither does; even after a parse error.
 - The binary's exit code must follow from Lean's messages
@@ -128,17 +128,6 @@ def isCheckResult (d : Diagnostic) : Bool :=
   match d.code? with
   | some c => c.startsWith "F06"
   | none => isCheckHeadline (headOf d)
-
-/-- A lint of the binary. -/
-def isLint (d : Diagnostic) : Bool := d.code?.any (·.startsWith "F07")
-
-/-- A lint of the Lean front end, which shows no codes: a warning other
-than a check's result, or an error of `undecidable`, the only lint that is
-denied by default (the specs set no lint to `deny`). -/
-def isHostedLint (d : Diagnostic) : Bool :=
-  (d.severity == "warning" && !isCheckResult d)
-  || (d.severity == "error" && ((headOf d).startsWith "this is outside the decidable core: "
-      || (afterSubject (headOf d)).startsWith " is outside the decidable core, and so is what instantiates it"))
 
 /-- Lean's own errors, which the Lean front end reports for parse and type
 errors that the binary reports with a Fren code (as `--~[hosted]` does in
@@ -256,10 +245,6 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   let leanLines := hostedOnly.filter isLeanOwn |>.map (·.line)
   hostedOnly := hostedOnly.filter fun h => !(isLeanOwn h && cliErrorLines.contains h.line)
   cs := cs.filter fun c => !(staticErr c && leanLines.contains c.line)
-  -- Lean's lints of an item where the binary has a static error other than
-  -- a lint, since the binary drops that item's lints.
-  let stoppedItems := (cliDiags.filter fun d => d.severity == "error" && !isCheckResult d && !isLint d).map (itemAt ·.line)
-  hostedOnly := hostedOnly.filter fun h => !(isHostedLint h && stoppedItems.contains (itemAt h.line))
   let mut out := stopped ++ sameInput ++ cs.map (render "fren") ++ hostedOnly.map (render "Lean")
   let undecided := cs.all isUndecided && hostedOnly.all isUndecided
   -- The summary, unless a check is tested.
