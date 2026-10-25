@@ -1581,8 +1581,9 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
       let shadowing := cx.shadowing ++ (binders.filter (· != "_")).map Name.mkSimple
       let (p, args) := if body.isOfKind ``Lang.appExpr then (body[0], body[2].getSepArgs)
         else (if body.getNumArgs == 1 then body[0] else body, #[])
-      let same ← if p.isOfKind ``Lang.fren_path then do
-          let names ← (pathSegs p).mapM segName
+      -- A dotted name, as `K.len` or `w.x`, is a value, not a variant.
+      let same ← if p.isOfKind ``Lang.fren_path && (pathSegs p).all (·.getId.isAtomic) then do
+          let names := (pathSegs p).map (·.getId)
           pure (match (← getState).table.resolvePath cx.modName names shadowing with
             | .ok (.variant en i) => en.path == info.path && i == idx
             | _ => false)
