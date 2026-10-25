@@ -603,7 +603,7 @@ pub comp needless_raw_string_hashes {
     pub det out fewest: Int  -- the `#`s that the fix writes
 
     -- The literal ends where its `#`s say: no `"` in its body is followed by as many.
-    assume counts: longest >= -1 and hashes > longest
+    assume counts: -1 <= longest < hashes
 
     req fewest_rule: fewest = longest + 1
     req rule: fires? iff hashes > fewest

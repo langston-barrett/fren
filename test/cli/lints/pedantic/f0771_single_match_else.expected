@@ -9,7 +9,7 @@ warning[F0771]: this `match` tests for one variant
 help: write it as an `if`
   |
 6 - comp c { in m: Mode in x: Int pub out y: Int req r: y = 2 * match m { Mode::Heat => x + 1, _ => x } }
-6 + comp c { in m: Mode in x: Int pub out y: Int req r: y = 2 * (if m is Mode::Heat then x + 1 else x) }
+6 + comp c { in m: Mode in x: Int pub out y: Int req r: y = 2 * (if m = Mode::Heat then x + 1 else x) }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

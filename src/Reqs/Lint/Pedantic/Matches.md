@@ -154,16 +154,18 @@ pub comp case_split_reqs {
 `single_match_else`, `allow` by default, fires on a `match` of two arms,
 of which the first names one variant without a payload, and so binds
 nothing, and the second is `_`: `match x { E::V => a, _ => b }`. Its fix
-is `if x is E::V then a else b`, with the [pattern
-test](../../Lang/Expressions.md#pattern-tests) written as the pattern is,
-and the bodies and the scrutinee as they are written. The `if` is in
-parentheses where [fixes need them](../../Lint.md#parentheses-in-fixes),
-since it ends in its `else` branch, and so is the scrutinee, where `is`
-requires it. `x is E::V` is `match x { E::V => true, _ => false }`, so it
-holds exactly where the pattern matches, and the `if` takes the branch
-that the `match` takes. The fix keeps the guards: `a` is guarded by the
-test of the pattern, which is `x is E::V`, and `b` by its negation, as the
-branches of the `if` are. The scrutinee is evaluated where it was.
+is `if x = E::V then a else b`, with the variant written as the pattern
+writes it, and the bodies and the scrutinee as they are written: an
+equality, not the [pattern test](../../Lang/Expressions.md#pattern-tests)
+`x is E::V`, which [`is_equality`](../Style/Comparisons.md#pattern-tests)
+would report. The `if` is in parentheses where [fixes need
+them](../../Lint.md#parentheses-in-fixes), since it ends in its `else`
+branch, and so is the scrutinee, as the left operand of `=`. A variant
+without a payload equals itself alone, so `x = E::V` holds exactly where
+the pattern matches, and the `if` takes the branch that the `match` takes.
+The fix keeps the guards: `a` is guarded by the test of the pattern, which
+is `x = E::V`, and `b` by its negation, as the branches of the `if` are.
+The scrutinee is evaluated where it was.
 
 It does not fire where another lint reports the `match`:
 [`match_like_membership`](../Style.md#matches-that-are-memberships), where
@@ -204,7 +206,7 @@ pub comp single_match_else_fixed {
     in light: Light
     in a: Int
     in b: Int
-    pub det out v: Int := if light is Light::Red then a else b
+    pub det out v: Int := if light = Light::Red then a else b
 }
 
 refine single_match_else_sound: single_match_else_fixed refines single_match_else_written

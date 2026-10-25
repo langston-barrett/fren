@@ -2153,7 +2153,7 @@ def singleMatchElse (nArms : Nat) (oneVariant wildcard other : Bool) : Bool :=
   nArms == 2 && oneVariant && wildcard && !other
 
 /-- The fix of `single_match_else`, if it fires, where `other` says that
-another match lint fires on it: `if x is V then a else b`, from the
+another match lint fires on it: `if x = V then a else b`, from the
 scrutinee `x` as written, with the parentheses around it, in parentheses
 where `slot` requires them, or where it is `followed` (`BText.inSlot`). -/
 def singleMatchElseFix? (arms : Array ArmInfo) (scrutinee : BText) (slot : Option Slot) (other : Bool)
@@ -2161,8 +2161,8 @@ def singleMatchElseFix? (arms : Array ArmInfo) (scrutinee : BText) (slot : Optio
   let #[a, b] := arms | none
   let sameBodies := writtenSame a.body.text b.body.text
   guard (singleMatchElse arms.size (a.alts.size == 1 && a.noPayload) b.wildcard (other || sameBodies))
-  let scr := scrutinee.inSlot BKind.patternTest.slots[0]!
-  let t : BText := { text := s!"if {scr} is {a.alts[0]!} then {a.body.text} else {b.body.text}", prec := BKind.ite.prec }
+  let scr := scrutinee.inSlot (BKind.bin "=").slots[0]!
+  let t : BText := { text := s!"if {scr} = {a.alts[0]!} then {a.body.text} else {b.body.text}", prec := BKind.ite.prec }
   return t.inSlot slot followed
 
 /-- `single_match_else` on a `match` whose fix is `replacement`, which it

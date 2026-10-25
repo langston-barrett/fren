@@ -24,7 +24,7 @@ warning[F0771]: this `match` tests for one variant
 -    req r4: cell = Cell { column := x, row }
 -    req r5: z = if a? then x * 2 else row * 2
 -    req r6: t? iff r#"a"# = r##"a"#b"##
-+    req r1: y = 2 * (if m is Mode::Heat then x + 1 else x)
++    req r1: y = 2 * (if m = Mode::Heat then x + 1 else x)
 +    req r2: p? iff a? or not b?
 +    req r3: q?
 +    req r4: cell = Cell { row, column := x }
@@ -32,7 +32,7 @@ warning[F0771]: this `match` tests for one variant
 +    req r6: t? iff r"a" = r##"a"#b"##
 @@ -38 +38 @@
 -    req r7: w = 1 + match m { Mode::Cool => x, _ => row } and v = 3 * (if a? then x + if b? then 1 else 2 else row + if b? then 1 else 2)
-+    req r7: w = 1 + (if m is Mode::Cool then x else row) and v = 3 * ((if a? then x else row) + if b? then 1 else 2)
++    req r7: w = 1 + (if m = Mode::Cool then x else row) and v = 3 * ((if a? then x else row) + if b? then 1 else 2)
 @@ -49 +49 @@
 -    req r11: d = if a? then scale(x) div 2 else scale(row) div 2
 +    req r11: d = (if a? then scale(x) else scale(row)) div 2

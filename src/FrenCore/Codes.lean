@@ -4149,7 +4149,7 @@ directly. `fren fix` can fix this:
 ```fren
 enum Mode { Heat, Cool, Off }
 
-comp c { in m: Mode in x: Int pub out y: Int req r: y = if m is Mode::Heat then x + 1 else x }
+comp c { in m: Mode in x: Int pub out y: Int req r: y = if m = Mode::Heat then x + 1 else x }
 ```
 "# },
   { code := "F0772", explanation := r#"A record literal whose fields are not in the order its record declares them (`inconsistent_struct_constructor`, allowed by default).

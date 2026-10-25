@@ -3674,7 +3674,6 @@ def lintFnBools (n : Name) (span : Span) (params : Array Ty) : M Unit := do
   let nBools := (params.filter (· == .bool)).size
   if Fren.Core.fnParamsExcessiveBools nBools then lint .fnParamsExcessiveBools span (Fren.Core.fnParamsExcessiveBoolsMsg n nBools)
 
-
 /-- Reports the lints of the string literals and comments of the current
 item, at its level (`literalLints`). -/
 def lintLiterals : M Unit := do

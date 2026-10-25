@@ -5,6 +5,7 @@ set_option fren.lint.definable_output "allow"
 set_option fren.lint.membership_chain "allow"
 -- The tests name their variables in single characters.
 set_option fren.lint.many_single_char_names "allow"
+set_option fren.lint.chainable_comparison "allow"
 
 enum Mode { Heat, Cool, Off }
 
@@ -25,7 +26,7 @@ comp one_variant {
     --~^ warning: this `match` tests for one variant
     -- `match_like_membership`, not `single_match_else`.
     req r3: c? iff match m { Mode::Heat => true, _ => false }
-    --~^ warning: this `match` only tests which variant its scrutinee is
+    --~^ warning: this `match` only tests which of its patterns its scrutinee matches
     -- `match_same_arms`.
     req r4: d = match m { Mode::Off => x, _ => x }
     --~^ warning: replace the `match` with its body
