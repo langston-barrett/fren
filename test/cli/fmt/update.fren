@@ -1,0 +1,14 @@
+--@ args: fmt --check
+-- `fren fmt` spaces a record update's braces as a record literal's, and
+-- gives the fields of a vertical one a trailing comma.
+struct P { x: Int, y: Int }
+comp c {
+    in p: P
+    pub out q: P
+    pub out r: P
+    req a: q = {p with x:=1,y}
+    req b: r = {  p   with
+    x := 2
+    }
+    req s: {p}.card = 1
+}

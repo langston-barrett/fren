@@ -1,0 +1,15 @@
+--@ args: mutate --list
+-- The values of a record update are mutated, as a record literal's are,
+-- and so is its updated value.
+mod m
+
+pub struct S { on?, n: Int }
+
+pub comp c {
+    in s: S
+    in t: S
+    in x: Int
+    pub out o: S
+
+    req r: o = { if x > 0 then s else t with n := x + 1, on? := true }
+}

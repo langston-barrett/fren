@@ -1109,6 +1109,35 @@ def checkFieldInits (r : Name) (fields given : Array Name) : Except (Option Nat 
                    notes := #["note: a record literal gives every field of the record"] })
   throw (none, Msg.internal s!"a literal of `{rs}` is rejected, but no field explains why")
 
+/-- Whether a record update is accepted (`lang::record_update`), from
+whether the updated value is of a record (`record`), the record's fields
+`fields`, and the names `given`: each is a field, given once. -/
+def recordUpdateAccepted (record : Bool) (fields given : Array Name) : Bool :=
+  record && given.all fields.contains && repeatsOf given == 0
+
+/-- `{ r with ... }`, where `r` has the type `ty`, which is not a record
+(`Reqs/Lang/Expressions#record-updates`). -/
+def updateBaseMsg (ty : String) : Msg :=
+  { code? := some "F0339", headline := s!"cannot update the fields of `{ty}`", label? := some "not a record"
+    notes := #["note: `{ r with x := e }` gives new values to fields of the record `r`"] }
+
+/-- Checks the fields `given` by an update of a value of the record `r`
+with the fields `fields`, explaining the first problem, at the index of a
+given field. -/
+def checkFieldUpdates (r : Name) (fields given : Array Name) : Except (Nat × Msg) Unit := do
+  if recordUpdateAccepted true fields given then return
+  let rs := showPath r
+  let again := repeatsAt given
+  for g in given, i in [0:given.size] do
+    unless fields.contains g do
+      throw (i, { code? := some "F0340", headline := s!"record `{rs}` has no field `{g}`", label? := some "unknown field"
+                  notes := #[s!"note: the fields of `{rs}` are {showNameList fields}"]
+                  fixes := similarFixes "a field with a similar name exists" g fields })
+    if again.contains i then
+      throw (i, { code? := some "F0340", headline := s!"field `{g}` is given multiple times", label? := some "given again here"
+                  notes := #["note: a record update gives each field at most once"] })
+  throw (0, Msg.internal s!"an update of `{rs}` is rejected, but no field explains why")
+
 /-- A field read of something that is not a record with that field. -/
 def noFieldMsg (field : Name) (ty : String) (fields : Array Name) : Msg :=
   { code? := some "F0315"

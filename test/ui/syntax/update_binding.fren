@@ -1,0 +1,6 @@
+-- A field of a record update is given with `:=`.
+struct Q { on?, n: Int }
+comp eq { in q: Q pub out o: Q req r: o = { q with n = 1 } }
+--~^[cli] error: expected `:=` in a record update, found `=`
+--~^^[hosted] error: unexpected token '='
+--@ exit: 2

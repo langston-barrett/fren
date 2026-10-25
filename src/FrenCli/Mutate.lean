@@ -352,6 +352,7 @@ where
     | .not _ e | .field _ e _ => #[edits s e]
     | .app _ _ as | .set _ as | .seq _ as | .chain _ as _ => as.map (edits s ·)
     | .record _ _ fs => fs.filterMap fun (_, e?) => e?.map (edits s ·)
+    | .update _ r fs => #[edits s r] ++ fs.filterMap fun (_, e?) => e?.map (edits s ·)
     | .match _ sc arms => #[edits s sc] ++ arms.map fun (_, b) => edits s b
     | .is _ sc _ => #[edits s sc]
     | .pair _ a b | .index _ a b => #[edits s a, edits s b]

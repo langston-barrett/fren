@@ -36,7 +36,10 @@ For example, `struct Point { x: Int, y: Int }` becomes `Point`, with
 fields `Point.x : Point → Int` and `Point.y`, so that `p.x` in Lean is
 `p.x` in Fren. A field whose name ends in `?` keeps it. The constructor
 is `p.«{}»`, rather than `p.mk`, which could be a field: a record literal
-`Point { x := 1, y := 2 }` becomes `Point.«{}» 1 2`.
+`Point { x := 1, y := 2 }` becomes `Point.«{}» 1 2`. A [record
+update](Lang/Expressions.md#record-updates) `{ q with x := 1 }` becomes
+`Point.«{}» 1 (Point.y q)`, which is what Lean's own `{ q with x := 1 }`
+means.
 
 ## Abstract types and uninterpreted functions
 

@@ -258,10 +258,11 @@ pub comp blank_lines {
 A list is *vertical* if its closing brace starts a line, or, for the files
 of a `tested` claim, which have no brace, if the last file is on a later
 line than `tested`. The elements of a vertical list, the bindings of an
-instance, the variants of an enumeration, the fields of a record or of a
-record literal, the arms of a `match`, the paths of a `use ...::{}` and
-the files of a `tested` claim, each end with a comma, including the last;
-other lists have no comma after their last element:
+instance, the variants of an enumeration, the fields of a record, of a
+record literal or of a record update, the arms of a `match`, the paths
+of a `use ...::{}` and the files of a `tested` claim, each end with a
+comma, including the last; other lists have no comma after their last
+element:
 
 ```text
 inst h: heater { cold?, on? := true }

@@ -652,6 +652,7 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
       else if ← isDefined cx segs then pure .defined else pure .uninterpreted
     parts k args.toList
   | .record _ _ fs => parts .construction (fs.toList.map fun (f, e?) => e?.getD (.path f.span #[f]))
+  | .update _ r fs => parts .construction (r :: fs.toList.map fun (f, e?) => e?.getD (.path f.span #[f]))
   | .match _ s arms =>
     let s' ← shapeOf cx bs s
     let arms ← arms.toList.mapM fun (p, body) => do
@@ -685,6 +686,7 @@ partial def mentions : Expr → Array Name
   | .bin _ _ a b => mentions a ++ mentions b
   | .app _ _ args => args.foldl (· ++ mentions ·) #[]
   | .record _ _ fs => fs.foldl (init := #[]) fun acc (f, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple f.name]
+  | .update _ r fs => fs.foldl (init := mentions r) fun acc (f, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple f.name]
   | .match _ s arms => arms.foldl (init := mentions s) fun acc (p, body) =>
     -- In its arm, a binder's name means the binder, not what it shadows.
     let bound := match p with
@@ -761,6 +763,8 @@ partial def hasConcat (cx : ExprCtx) (e : Expr) : M Bool := do
   | .seq _ es | .chain _ es _ => es.anyM (hasConcat cx)
   | .ite _ c a b => return (← hasConcat cx c) || (← hasConcat cx a) || (← hasConcat cx b)
   | .record _ _ fs => fs.anyM fun (_, e?) => match e? with | some e => hasConcat cx e | none => pure false
+  | .update _ r fs =>
+    return (← hasConcat cx r) || (← fs.anyM fun (_, e?) => match e? with | some e => hasConcat cx e | none => pure false)
   | .match _ s arms => return (← hasConcat cx s) || (← arms.anyM (hasConcat cx ·.2))
   | .is _ s _ => hasConcat cx s
   | _ => return false
@@ -784,6 +788,7 @@ def Expr.operands : Expr → Array Expr
   | .app _ _ args | .set _ args | .seq _ args | .chain _ args _ => args
   | .method _ r _ args => #[r] ++ args
   | .record _ _ fs => fs.filterMap (·.2)
+  | .update _ r fs => #[r] ++ fs.filterMap (·.2)
   | .match _ s arms => #[s] ++ arms.map (·.2)
   | .is _ s _ => #[s]
   | .num .. | .bool .. | .path .. | .str .. => #[]
@@ -800,6 +805,7 @@ partial def Expr.boolNode : Expr → Fren.Core.BNode Span
   | .method s r m args => .mk (.method m.name) (toRange s) s (#[r.boolNode] ++ args.map (·.boolNode))
   | .app s _ args | .set s args | .seq s args => .mk .atom (toRange s) s (args.map (·.boolNode))
   | .record s _ fields => .mk .atom (toRange s) s (fields.filterMap (·.2.map (·.boolNode)))
+  | .update s r fields => .mk .atom (toRange s) s (#[r.boolNode] ++ fields.filterMap (·.2.map (·.boolNode)))
   | .field s a _ => .mk .atom (toRange s) s #[a.boolNode]
   | .is s scrutinee _ => .mk .patternTest (toRange s) s #[scrutinee.boolNode]
   | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode] ++ arms.map (·.2.boolNode))
@@ -1088,6 +1094,9 @@ partial def indexedIn : Expr → M (Array String)
   | .app _ _ args | .set _ args | .seq _ args | .chain _ args _ => args.foldlM (fun acc a => return acc ++ (← indexedIn a)) #[]
   | .record _ _ fs => fs.foldlM (fun acc (_, e?) => return acc ++ (← (e?.map indexedIn).getD (pure #[]))) #[]
   | .match _ sc arms => return (← indexedIn sc) ++ (← arms.foldlM (fun acc (_, b) => return acc ++ (← indexedIn b)) #[])
+  -- As the Lean front end reads it: the record, and the new values.
+  | .update _ r fs => do
+    fs.foldlM (init := ← indexedIn r) fun acc (_, e?) => return acc ++ (← (e?.map indexedIn).getD (pure #[]))
   | _ => return #[]
 
 /-- Whether `e` bounds the sequence written `q`: it mentions `q.len`, or
@@ -1867,6 +1876,24 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let e := e?.getD (.path fi.span #[fi])
       let (x, te) ← elabExpr { cx with expected? := some t } e
       unless te.widens t do mismatch e t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`")
+      smts := smts.push x
+    return (s!"({recordCtorSym path} {" ".intercalate smts.toList})", .record path)
+  | .update _ base fields =>
+    let (r, tr) ← elabExpr { cx with expected? := none } base
+    let .record path := tr | err base.span (Fren.Core.updateBaseMsg tr.show)
+    let some d := (← get).dataOf? path | internal base.span s!"unknown record `{path}`"
+    let fs := d.ctors[0]!.2
+    match Fren.Core.checkFieldUpdates path (fs.map (·.1)) (fields.map (Name.mkSimple ·.1.name)) with
+    | .ok () => pure ()
+    | .error (i, msg) => err fields[i]!.1.span msg
+    -- The record literal whose other fields are read from `r`.
+    let mut smts := #[]
+    for (f, t) in fs do
+      let some (fi, e?) := fields.find? (Name.mkSimple ·.1.name == f)
+        | smts := smts.push s!"({fieldSym path f} {r})"; continue
+      let e := e?.getD (.path fi.span #[fi])
+      let (x, te) ← elabExpr { cx with expected? := some t } e
+      unless te == t do mismatch e t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`")
       smts := smts.push x
     return (s!"({recordCtorSym path} {" ".intercalate smts.toList})", .record path)
   | .match span scrutinee arms =>

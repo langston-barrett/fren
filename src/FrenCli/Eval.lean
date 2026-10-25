@@ -122,6 +122,9 @@ inductive Ex where
   | ctor (ty : Name) (idx : Nat) (args : Array Ex)
   /-- Field `idx` of a record. -/
   | field (e : Ex) (idx : Nat)
+  /-- `e`, a record, with each field `idx` of `fields` given a new value: a
+  record update. -/
+  | update (e : Ex) (fields : Array (Nat × Ex))
   | «match» (e : Ex) (arms : Array (Pat × Ex))
   /-- A method of a `String` (`Reqs/Lang/Expressions#methods`). -/
   | method (m : Fren.Core.Method) (recv : Ex) (args : Array Ex)
@@ -398,6 +401,11 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
   | .field e idx => match e.eval I look locals with
     | some (.ctor _ _ vs) => vs[idx]?
     | _ => none
+  | .update e fs => do
+    let .ctor ty idx vs ← e.eval I look locals | none
+    let mut vs := vs
+    for (k, x) in fs do vs := vs.set! k (← x.eval I look locals)
+    return .ctor ty idx vs
   | .match e arms => do
     let .ctor _ idx vs ← e.eval I look locals | none
     let some (p, body) := arms.find? fun
@@ -431,6 +439,7 @@ partial def Ex.indexGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Ex) 
   match e with
   | .lit _ | .var _ | .bound _ => #[]
   | .not a | .neg a | .field a _ | .card a => go a
+  | .update a fs => go a ++ fs.flatMap (go ·.2)
   | .when negated c d => go c ++ go d (fun g => wrap (.when negated c g))
   | .ite c a b => go c ++ go a (fun g => wrap (.when false c g)) ++ go b (fun g => wrap (.when true c g))
   | .bin .and a b => go a ++ go b (fun g => wrap (.when false a g))
@@ -650,6 +659,7 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .card e => .card (e.renameBound f)
   | .ctor ty idx args => .ctor ty idx (args.map (·.renameBound f))
   | .field e idx => .field (e.renameBound f) idx
+  | .update e fs => .update (e.renameBound f) (fs.map fun (k, x) => (k, x.renameBound f))
   | .match e arms => .match (e.renameBound f) <| arms.map fun
     | (.wild, b) => (.wild, b.renameBound f)
     | (.alts is, b) => (.alts is, b.renameBound f)
@@ -675,6 +685,7 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .card e => .card (e.renameVars f)
   | .ctor ty idx args => .ctor ty idx (args.map (·.renameVars f))
   | .field e idx => .field (e.renameVars f) idx
+  | .update e fs => .update (e.renameVars f) (fs.map fun (k, x) => (k, x.renameVars f))
   | .match e arms => .match (e.renameVars f) (arms.map fun (p, b) => (p, b.renameVars f))
 
 /-- `e` with each variable `n` replaced by `f n`. -/
@@ -697,6 +708,7 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .card e => .card (e.substVars f)
   | .ctor ty idx args => .ctor ty idx (args.map (·.substVars f))
   | .field e idx => .field (e.substVars f) idx
+  | .update e fs => .update (e.substVars f) (fs.map fun (k, x) => (k, x.substVars f))
   | .match e arms => .match (e.substVars f) (arms.map fun (p, b) => (p, b.substVars f))
 
 /-- The comp that checks that `c` refines `a` (`Reqs/Lang/Refinement`): its
@@ -741,6 +753,7 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .card e => .card (e.subst σ)
   | .ctor ty idx args => .ctor ty idx (args.map (·.subst σ))
   | .field e idx => .field (e.subst σ) idx
+  | .update e fs => .update (e.subst σ) (fs.map fun (k, x) => (k, x.subst σ))
   | .match e arms => .match (e.subst σ) <| arms.map fun
     | (.wild, b) => (.wild, b.subst σ)
     | (.alts is, b) => (.alts is, b.subst σ)
@@ -857,6 +870,17 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       let some (x, e?) := fields.find? (fun (x, _) => Name.mkSimple x.name == f) | throw s!"no value for field `{f}`"
       vals := vals.push (← lowerExpr cx (e?.getD (.path span #[x]))).1
     return (.ctor path 0 vals, .data path)
+  | .update _ base fields => do
+    let (r, t) ← lowerExpr cx base
+    let .data path := t | throw "an updated value is not a record"
+    let d ← dataDef path
+    let some c := d.ctors[0]? | throw s!"`{showPath path}` has no constructor"
+    -- In the order of the record's fields, as the elaborator reads them.
+    let mut vals := #[]
+    for (f, _) in c.fields, k in [0:c.fields.size] do
+      let some (x, e?) := fields.find? (fun (x, _) => Name.mkSimple x.name == f) | continue
+      vals := vals.push (k, (← lowerExpr cx (e?.getD (.path x.span #[x]))).1)
+    return (.update r vals, .data path)
   | .field _ e f => do
     let (x, t) ← lowerExpr cx e
     readFields x t [f.name]

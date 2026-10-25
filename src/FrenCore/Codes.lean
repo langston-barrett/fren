@@ -1475,6 +1475,42 @@ comp restock {
 }
 ```
 "# },
+  { code := "F0339", explanation := r#"A record update of a value that is not a record.
+
+Erroneous code example:
+
+```fren
+comp c { in n: Int pub out m: Int req r: m = { n with x := 1 } }
+```
+
+`{ r with x := e }` is `r` with a new value for its field `x`, so `r` must
+be a record. A value of another type has no fields to update; write the
+new value instead:
+
+```fren
+comp c { in n: Int pub out m: Int req r: m = 1 }
+```
+"# },
+  { code := "F0340", explanation := r#"A record update gives a field that its record does not have, or gives a field more than once.
+
+Erroneous code example:
+
+```fren
+struct Point { x: Int, y: Int }
+
+comp c { in p: Point pub out q: Point req r: q = { p with z := 1, x := 1, x := 2 } }
+```
+
+An update gives new values to some of the fields of its record, each at
+most once, and the other fields keep their values from `r`. Give each
+field once, and only the record's fields:
+
+```fren
+struct Point { x: Int, y: Int }
+
+comp c { in p: Point pub out q: Point req r: q = { p with x := 2 } }
+```
+"# },
   { code := "F0401", explanation := r#"An assumption mentions a variable that is not an `in`.
 
 Erroneous code example:

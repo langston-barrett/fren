@@ -673,6 +673,9 @@ partial def pathMentions (e : Syntax) : Array Name :=
     else #[]
   else if e.isOfKind ``Lang.recordExpr then
     e[2].getSepArgs.foldl (init := #[]) fun acc b => acc ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
+  else if e.isOfKind ``Lang.updateExpr then
+    e[3].getSepArgs.foldl (init := pathMentions e[1]) fun acc b =>
+      acc ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
   else if e.isOfKind ``Lang.matchExpr then
     e[3].getSepArgs.foldl (init := pathMentions e[1]) fun acc arm =>
       -- In its arm, a binder's name means the binder, not what it shadows.
@@ -761,6 +764,10 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
     -- A field without `:= e` is `x := x`.
     parts .construction (← e[2].getSepArgs.mapM fun b =>
       if b[1].isNone then return (← pathExpr b[0] b[0].getId)[0] else pure b[1][1])
+  else if e.isOfKind ``Lang.updateExpr then
+    -- The updated value, and the new values.
+    parts .construction (#[e[1]] ++ (← e[3].getSepArgs.mapM fun b =>
+      if b[1].isNone then return (← pathExpr b[0] b[0].getId)[0] else pure b[1][1]))
   else if e.isOfKind ``Lang.matchExpr then
     let s ← shapeOf cx e[1] bs
     let arms ← e[3].getSepArgs.toList.mapM fun arm => do
@@ -1164,6 +1171,25 @@ def synthesizes (e : Syntax) : Bool := (typeShape e).synthesizes
 
 /-- Whether one of `es` synthesizes a type. -/
 def anySynthesizes (es : Array Syntax) : Bool := es.any synthesizes
+
+open Lang in
+/-- Translates a record update into the record literal whose other fields
+are read from the updated value (`Reqs/Lang/Expressions#record-updates`),
+where `toTerm` translates its parts. -/
+def updateTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
+  let r ← toTerm { cx with emptyOk := false } e[1]
+  let ty ← typeOf r
+  let some info := ty.constName?.bind (← getState).recordOfDecl?
+    | throwErrorAt e[1] (Core.updateBaseMsg (← typeName ty)).text
+  let given := e[3].getSepArgs
+  match Core.checkFieldUpdates info.path (info.fields.map (·.1)) (given.map (·[0].getId)) with
+  | .ok () => pure ()
+  | .error (i, msg) => throwErrorAt given[i]![0] msg.text
+  let go := toTerm { cx with emptyOk := true }
+  let args ← info.fields.mapM fun (f, _) => do
+    let some b := given.find? (·[0].getId == f) | `($(mkCIdentFrom e[1] (info.decl ++ f)) $r)
+    if b[1].isNone then go (← `(fren_expr| $(⟨b[0]⟩):ident)) else go b[1][1]
+  `($(mkCIdentFrom e (recordCtor info.decl)) $args*)
 
 open Lang in
 /-- Translates a `match` into a chain of `if`s that compare its scrutinee
@@ -2024,6 +2050,7 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
   else if e.isOfKind ``Lang.recordExpr then recordTerm (toTerm { cx with emptyOk := Core.Position.declared.checked false false }) cx e
   else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm { cx with emptyOk, natOk } e (parent?.bind (operandSlot · e))
   else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
+  else if e.isOfKind ``Lang.updateExpr then updateTerm toTerm cx e
   else throwError "unsupported Fren expression"
 
 open Lang in

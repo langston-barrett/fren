@@ -1,0 +1,16 @@
+--@ args: fix --check
+-- `fren fix` simplifies `Bool` expressions around a record update, which
+-- is an atom: its fixes need no parentheses around it.
+struct S { on?, n: Int }
+
+pub comp c {
+    in a?
+    in s: S
+    pub out o?
+    pub out p?
+    pub out q?
+
+    req r1: o? iff not not { s with on? := a? }.on?
+    req r2: p? iff not ({ s with n := 1 } = s)
+    req r3: q? iff { s with on? := a? }.on? = true
+}

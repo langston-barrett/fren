@@ -16,6 +16,7 @@ comp constant { in x: Int pub out y: Int req r: y = x * RATE }
 comp defined { in x: Int pub out y: Int req r: y = 2 * double(3) + double(3) * x }
 comp variant { in x: Int pub out y: Int req r: y = match E::V(2) { E::V(k) => k, _ => 0 } * x }
 comp record_literal { in x: Int pub out y: Int req r: y = R { a := 2 }.a * x }
+comp record_update { in x: Int pub out y: Int req r: y = { R { a := 2 } with a := 3 }.a * x }
 comp method { in x: Int pub out y: Int req r: y = "abc".len * x }
 
 -- Variables, and what mentions them.
@@ -28,6 +29,12 @@ comp defined_arg { in x: Int in z: Int pub out y: Int req r: y = x * double(z) }
 comp uninterpreted { in x: Int pub out y: Int req r: y = x * rate(1) }
 --~^ error: nonlinear arithmetic is not supported
 comp record_field { in a: Int in x: Int pub out y: Int req r: y = R { a }.a * x }
+--~^ error: nonlinear arithmetic is not supported
+-- An update mentions what its updated value mentions, even with every
+-- field given, and what its new values mention.
+comp update_base { in p: R in x: Int pub out y: Int req r: y = { p with a := 2 }.a * x }
+--~^ error: nonlinear arithmetic is not supported
+comp update_field { in a: Int in x: Int pub out y: Int req r: y = { R { a := 2 } with a }.a * x }
 --~^ error: nonlinear arithmetic is not supported
 comp variable_method { in s: String in x: Int pub out y: Int req r: y = s.len * x }
 --~^ error: nonlinear arithmetic is not supported
@@ -74,3 +81,6 @@ comp when_variable { in c? pub out k? := (when c?, true) }
 comp record_constant { pub out k: R := R { a := 2 } }
 --~^ warning: defined output `k` is the same in every behaviour
 comp record_shorthand { in a: Int pub out k: R := R { a } }
+comp update_constant { pub out k: R := { R { a := 1 } with a := 2 } }
+--~^ warning: defined output `k` is the same in every behaviour
+comp update_variable { in p: R pub out k: R := { p with a := 2 } }

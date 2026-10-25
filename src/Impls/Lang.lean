@@ -312,6 +312,20 @@ impl record_literal: lang::record_literal for (fields given : Array Lean.Name) {
     Array.contains_iff_mem, beq_iff_eq]
   simp
 
+-- For every update, whether the updated value is of a record, `r`, with
+-- the check that both front ends use.
+impl record_update: lang::record_update for (r : Bool) (fields given : Array Lean.Name) {
+  record? := r,
+  fields := Fren.FinSet.ofArray fields,
+  given := Fren.FinSet.ofArray given,
+  n_repeated := Fren.Core.repeatsOf given,
+  accepted? := Fren.Core.recordUpdateAccepted r fields given,
+} by
+  intro r fields given _
+  simp only [fren_spec, Fren.Core.recordUpdateAccepted, Fren.FinSet.subset_def, Fren.FinSet.mem_ofArray,
+    Bool.and_eq_true, Array.all_eq_true', Array.contains_iff_mem, beq_iff_eq]
+  simp
+
 impl variable_type: lang::variable_type for (o u d : Bool) {
   output? := o,
   unbounded? := u,
