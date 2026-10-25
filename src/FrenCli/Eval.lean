@@ -507,7 +507,7 @@ abbrev L := StateT LState (Except String)
 def liftE (x : Except Fren.Core.Error α) : L α :=
   match x with
   | .ok a => pure a
-  | .error e => throw e.msg.headline
+  | .error e => throw e.msg.get.headline
 
 def segNames (segs : Array Ident) : Array Name := segs.map (Name.mkSimple ·.name)
 
