@@ -73,7 +73,9 @@ the cases exactly those that
 [`disjoint?`](../Complexity/Comparisons.md#redundant-comparisons) gives: under `and`, the two are
 disjoint, and under `or`, their complements are, so that no integer
 fails both. The message says which value the two always have. It fires
-inside any expression, such as the condition of an `if`.
+inside any expression, such as the condition of an `if`. A [pattern
+test](../../Lang/Expressions.md#pattern-tests) is not a comparison, so
+`s is A and s is B` is left as it is.
 `lint::contradictory_comparisons` states when it fires on integers, and
 `lint::contradictory_equalities` on other values:
 

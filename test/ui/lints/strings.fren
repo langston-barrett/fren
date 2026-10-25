@@ -76,6 +76,7 @@ pub comp open_receivers {
     pub out p1?
     pub out p2?
     pub out p3?
+    pub out p4?
 
     req r1: p1? iff "ab" = (s ++ if b? then t else s).slice(0, (s ++ if b? then t else s).len) ++ t
     --~^ warning: write `(s ++ if b? then t else s)`
@@ -83,4 +84,7 @@ pub comp open_receivers {
     --~^ warning: write `(s ++ if b? then t else s)`
     req r3: p3? iff (s ++ if b? then t else s).at(0) = ""
     --~^ warning: say whether it is empty with `""`, not `at`
+    req r4: p4? iff (s ++ t).at(0).len = 0 or (s ++ if b? then t else s).len != 0 or b?
+    --~^ warning: say whether it is empty with `""`, not `len`
+    --~^^ warning: say whether it is empty with `""`, not `len`
 }

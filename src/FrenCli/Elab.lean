@@ -1492,7 +1492,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       return
     let emptyText := match t with | .string => "\"\"" | .seq _ => "[]" | _ => "{}"
     lintFix (if card then .cardZero else .lengthZero) e.span
-      (Fren.Core.lengthZeroMsg card (← srcAt recv.span) emptyText empty d)
+      (Fren.Core.lengthZeroMsg card { text := ← srcAt (recv.writtenSpan (← get).src), prec := recv.boolNode.kind.prec }
+        emptyText empty d)
   let src := (← get).src
   -- Where `e` is, as `lang::operand` sees it.
   let slot := parent?.bind (Expr.operandSlot src · e)

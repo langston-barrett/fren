@@ -91,7 +91,10 @@ negative, so `n = 0`, `n <= 0` and `n < 1` each say that it is empty, and
 become `s = ""`, or `q = []`, and `n != 0`, `n > 0` and `n >= 1` each say
 that it is not, and become `s != ""`. So does each with the length on the
 right: `0 < s.len` is `s.len > 0`. `card_zero` is the same for a set's or
-relation's `card`, with `{}`. Both are fixable. Other comparisons with `0`
+relation's `card`, with `{}`. Both are fixable. The fix keeps the
+receiver's text, without the parentheses a receiver may need, and puts it
+in parentheses where [fixes need them](../Lint.md#parentheses-in-fixes), so
+`(a ++ b).len = 0` becomes `a ++ b = ""`. Other comparisons with `0`
 or `1` are left as they are, and so is a comparison within a [chained
 comparison](../Lang/Expressions.md#chained-comparisons), where the fix
 would break the chain; those that always hold or never do, such as

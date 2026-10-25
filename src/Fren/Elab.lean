@@ -1571,6 +1571,9 @@ def lintEmptyEquation (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
   let (fires, value) := Core.constEmptyEquation (op == "=") (max m n)
   if fires && min m n == 0 then recordLint .constIsEmpty e (Core.constIsEmptyMsg value)
 
+/-- `e` without parentheses, as an operand: its text and precedence. -/
+def bareText (e : Syntax) : Core.BText := { text := srcText (unparen e), prec := exprPrec (unparen e) }
+
 /-- `length_zero`, `card_zero` and `absurd_extreme_comparisons` on the
 comparison `e` (`lint::length_zero`, `lint::absurd_extreme_comparisons`). -/
 def lintLength (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
@@ -1615,7 +1618,7 @@ def lintLength (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
       recordLint .absurdExtremeComparisons e (Core.absurdComparisonMsg card value)
     return
   let emptyText := if t.isConstOf ``String then "\"\"" else if t.isAppOfArity ``Fren.Seq 1 then "[]" else "{}"
-  recordLint (if card then .cardZero else .lengthZero) e (Core.lengthZeroMsg card (srcText recv) emptyText empty d)
+  recordLint (if card then .cardZero else .lengthZero) e (Core.lengthZeroMsg card (bareText recv) emptyText empty d)
 
 /-- `eq_op` on `e`, if it is an infix operator (`lint::eq_op`), or `when` or
 `unless` (`lint::eq_op_conditional`). -/
@@ -1668,9 +1671,6 @@ partial def namesRead (e : Syntax) : TermElabM (Array (Syntax × String)) := do
   match ← lastName? e with
   | some (r, n) => return (← namesRead (unparen r)).push (r, n)
   | none => return #[]
-
-/-- `e` without parentheses, as an operand: its text and precedence. -/
-def bareText (e : Syntax) : Core.BText := { text := srcText (unparen e), prec := exprPrec (unparen e) }
 
 /-- Records `redundant_method_chain` on `e`, the end of a chain of names
 (`lint::method_chain`), an operand of `parent?`: not on the receiver of a

@@ -13,6 +13,7 @@ pub comp c {
     pub out o1?
     pub out o2?
     pub out o3?
+    pub out o4?
 
     req r1: p? iff s.at(0) = "a" and "b" != (s ++ t).at((s ++ t).len - 1) and q.at(0) != [1]
     req r2: k? iff s.at(0) = "" or not q.at(0) != [] or (s ++ t).at(0) = ""
@@ -23,5 +24,7 @@ pub comp c {
     req r5: o1? iff "ab" = (s ++ if b? then t else s).slice(0, (s ++ if b? then t else s).len) ++ t
     req r6: o2? iff "ab" = (s ++ if b? then t else s).replace(t, t) ++ t
     req r7: o3? iff (s ++ if b? then t else s).at(0) = ""
+    -- A receiver in parentheses, of `len` and of the method before it.
+    req r8: o4? iff (s ++ t).at(i).len = 0 or (s ++ if b? then t else s).len != 0 or b?
     expect e1: s.matches?(r"(a|b)+") or s.matches?("(\\]|\\^|c)[a-y]") or s.matches?(r#"x|""#)
 }

@@ -28,6 +28,26 @@ comp bools {
 
 enum Shape { Dot, Circle(Int), Rect(Int, Int) }
 
+-- A pattern test is an opaque test: the lints look inside it only at its
+-- scrutinee.
+comp pattern_tests {
+    use self::Shape::{Circle, Dot}
+    in s: Shape
+    in b?
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out n: Int
+
+    req r1: p1? iff if s is Circle(_) then b? else not b?
+    --~^ warning: write `(s is Circle(_) iff b?)`
+    req r2: n = if s is Dot then 1 else if s is Dot then 2 else 3
+    --~^ warning: `s is Dot` is already tested earlier in this chain
+    -- Not compared as values: a test of two variants is left as it is.
+    req r3: p2? iff (s is Dot and s is Circle(_))
+    req r4: p3? iff (if b? then s else s) is Dot  --~ warning: both branches of `if` are written the same
+}
+
 comp rebuilt {
     use self::Shape::{Circle, Dot, Rect}
     in s: Shape

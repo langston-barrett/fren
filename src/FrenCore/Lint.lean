@@ -475,15 +475,6 @@ def lengthZero (op : Comparison) (bound : Int) (lengthLeft : Bool) : Bool × Boo
   | .lt => (bound == 1, true)
   | .ge => (bound == 1, false)
 
-/-- A comparison of a length with `bound`, where `recv` is the text of the
-collection and `empty` that of an empty one, such as `""`, `[]` or `{}`. -/
-def lengthZeroMsg (card : Bool) (recv empty : String) (isEmpty : Bool) (bound : Int) : Msg :=
-  let m := if card then "card" else "len"
-  let fixed := s!"{recv} {if isEmpty then "=" else "!="} {empty}"
-  { code? := some (if card then "F0716" else "F0715"), headline := s!"say whether it is empty with `{empty}`, not `{m}`"
-    label? := some s!"compares a length with {bound}"
-    fixes := #[{ msg := s!"compare with `{empty}`", replacement := fixed }] }
-
 /-- Whether `absurd_extreme_comparisons` fires on a comparison of a length
 `n` with `bound`, `n OP bound` if `lengthLeft` and `bound OP n` otherwise,
 and what it always is (`lint::absurd_extreme_comparisons`): `n` is never
@@ -2543,6 +2534,17 @@ def binText (op : String) (left right : BText) : BText :=
   let k := BKind.bin op
   { text := s!"{left.inSlot (some ⟨k.prec, k.assoc, false⟩)} {op} {right.inSlot (some ⟨k.prec, k.assoc, true⟩)}"
     prec := k.prec }
+
+/-- A comparison of a length with `bound`, where `recv` is the collection,
+without the parentheses around it, and `empty` the text of an empty one,
+such as `""`, `[]` or `{}`. The fix puts `recv` in parentheses where it
+needs them, as the left operand of `=` or `!=`. -/
+def lengthZeroMsg (card : Bool) (recv : BText) (empty : String) (isEmpty : Bool) (bound : Int) : Msg :=
+  let m := if card then "card" else "len"
+  let fixed := (binText (if isEmpty then "=" else "!=") recv { text := empty, prec := BKind.atom.prec }).text
+  { code? := some (if card then "F0716" else "F0715"), headline := s!"say whether it is empty with `{empty}`, not `{m}`"
+    label? := some s!"compares a length with {bound}"
+    fixes := #[{ msg := s!"compare with `{empty}`", replacement := fixed }] }
 
 /-- The text of `t`, which replaces `n`, in `slot` within `parent`: in
 parentheses if it needs them there and `n` is not already in them. -/

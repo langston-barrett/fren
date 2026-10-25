@@ -10,7 +10,11 @@ constant or global expectation, and are fixable. Like
 [`nonminimal_bool`](../Complexity.md#simpler-bool-expressions), each fix
 puts its operands, and itself, in parentheses where
 [fixes need them](../../Lint.md#parentheses-in-fixes). Operands are compared
-as [written the same](../../Lint.md#written-the-same).
+as [written the same](../../Lint.md#written-the-same). A [pattern
+test](../../Lang/Expressions.md#pattern-tests) is an opaque test to these
+lints, and to the other lints of operators and method calls: they look
+inside it only at its scrutinee, and place it as they place a
+comparison, which binds as tightly.
 
 ## Double comparisons
 
