@@ -1,9 +1,11 @@
 name: lean ci
+# Not on pull requests, to save Actions minutes: before a PR is merged, its
+# author runs `lake build --wfail` and `lake test` locally, and anyone can
+# still run this on a PR's branch by hand (workflow_dispatch).
 on:
   push:
     branches:
     - main
-  pull_request:
   workflow_dispatch:
 
 permissions:
