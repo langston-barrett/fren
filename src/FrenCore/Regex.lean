@@ -28,7 +28,7 @@ inductive Re where
   | union (a b : Re)
   | cat (a b : Re)
   | star (a : Re)
-  deriving Inhabited, BEq, Repr, Lean.ToExpr
+  deriving Inhabited, DecidableEq, Hashable, Repr, Lean.ToExpr
 
 /-- Whether `c` is in one of `ranges`. -/
 def inRanges (ranges : List (Char × Char)) (c : Char) : Bool := ranges.any fun (lo, hi) => lo ≤ c && c ≤ hi
@@ -158,11 +158,25 @@ def Re.cat' : Re → Re → Re
   | .none, _ | _, .none => .none
   | a, b => .cat a b
 
-/-- `.union a b`, without an operand that matches nothing. -/
-def Re.union' : Re → Re → Re
-  | .none, b => b
-  | a, .none => a
-  | a, b => .union a b
+/-- The operands of the unions at the top of `r`, without those that match
+nothing. -/
+def Re.branches : Re → List Re
+  | .none => []
+  | .union a b => a.branches ++ b.branches
+  | r => [r]
+
+/-- The union of `rs`, right-nested; `.none` if there are none. -/
+def Re.ofBranches : List Re → Re
+  | [] => .none
+  | [r] => r
+  | r :: rs => .union r (Re.ofBranches rs)
+
+/-- `.union a b`, with its operands flattened, without repeats or operands
+that match nothing, in a canonical order: so that the derivatives of a
+pattern stay few, as Brzozowski's similarity rules make them, rather than
+doubling at each character, as for `(a*)*`. -/
+def Re.union' (a b : Re) : Re :=
+  .ofBranches ((a.branches ++ b.branches).eraseDups.mergeSort fun x y => hash x ≤ hash y)
 
 /-- What `r` matches after the character `c`. -/
 def Re.deriv (c : Char) : Re → Re
@@ -188,9 +202,25 @@ theorem Re.mat_cat' (a b : Re) (cs : List Char) : (Re.cat' a b).mat cs = (Re.cat
   unfold Re.cat'
   split <;> simp [Re.mat_cat, Re.mat_none]
 
+theorem Re.mat_ofBranches (rs : List Re) (cs : List Char) :
+    (Re.ofBranches rs).mat cs = rs.any (·.mat cs) := by
+  induction rs with
+  | nil => simp [Re.ofBranches, Re.mat_none]
+  | cons r rs ih =>
+    cases rs with
+    | nil => simp [Re.ofBranches]
+    | cons r' rs' => simp only [Re.ofBranches, Re.mat_union, ih, List.any_cons]
+
+theorem Re.any_branches (r : Re) (cs : List Char) : r.branches.any (·.mat cs) = r.mat cs := by
+  induction r with
+  | none => simp [Re.branches, Re.mat_none]
+  | union a b iha ihb => simp [Re.branches, Re.mat_union, List.any_append, iha, ihb]
+  | _ => simp [Re.branches]
+
 theorem Re.mat_union' (a b : Re) (cs : List Char) : (Re.union' a b).mat cs = (a.mat cs || b.mat cs) := by
-  unfold Re.union'
-  split <;> simp [Re.mat_union, Re.mat_none]
+  rw [Re.union', Re.mat_ofBranches, ← Re.any_branches a, ← Re.any_branches b, ← List.any_append]
+  apply Bool.eq_iff_iff.mpr
+  simp only [List.any_eq_true, (List.mergeSort_perm _ _).mem_iff, List.mem_eraseDups]
 
 theorem Re.nullable_eq (r : Re) : r.nullable = r.mat [] := by
   induction r with

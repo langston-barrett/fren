@@ -239,9 +239,10 @@ def holds (I : Interp) (env : Env) (e : Ex) : Option Bool :=
 abstract types.
 
 A branch is viable while no constraint is `false`. Extending a viable
-environment with a value for `x` changes only the constraints that
-mention `x` and are not yet known, so only they are evaluated again: the
-same answer as evaluating them all. -/
+environment with a value for `x` can change only the constraints that
+mention `x` and are not yet known to be true, so only they are evaluated
+again, which gives the same answer as evaluating them all, since evaluation
+is monotone (`FrenCli.Eval`). -/
 partial def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (budget : Nat := 4000) :
     R (Option Env) := do
   let full := p.atoms.map Atom.full
@@ -254,9 +255,8 @@ partial def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (en
           | some ks => if ks.back? == some k then some ks else some (ks.push k)
           | none => some #[k]
     return m
-  -- Each constraint's value in `env`. Evaluation is monotone: a value, once
-  -- known, stays known as variables get values, so a constraint that is
-  -- `true` is not evaluated again on that branch.
+  -- Each constraint's value in `env`. A constraint that is `true` stays
+  -- so on that branch (evaluation is monotone), and is not evaluated again.
   let atRoot := full.map (holds I env ·)
   let rootViable := !atRoot.any (· == some false)
   let rootTrue := atRoot.map (· == some true)

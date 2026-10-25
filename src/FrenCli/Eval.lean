@@ -19,6 +19,12 @@ Evaluation is three-valued: a variable without a value, or a function
 application that the interpretation does not give, is unknown (`none`),
 and `and`, `or` and `when` are decided when one operand decides them, as
 the search for behaviours (`FrenCli.Search`) needs.
+
+Evaluation is monotone, which the search relies on: giving more variables
+values never changes a value that is already known. Every case keeps it:
+an operator is known only when the operands it needs are, an `if` whose
+condition is unknown is known only when both branches agree, and the
+interpretation is fixed.
 -/
 
 open Lean
