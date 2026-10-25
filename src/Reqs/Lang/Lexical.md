@@ -162,7 +162,8 @@ pub comp longest_identifier {
     req at_end: when remaining = "", ends?
 
     expect dotted: when lexeme = "w" and remaining = ".x", not ends?
-    -- Two characters decide, though the third ends the identifier.
+    -- `w.x` is an identifier, so `w` does not end before the `.`; the space
+    -- ends `w.x`, not `w`.
     expect dotted_then_space: when lexeme = "w" and remaining = ".x y", not ends?
 }
 
@@ -233,6 +234,10 @@ ordinary identifiers:
 ```
 when  unless  not  true  false  det  out  assume  req  inst
 ```
+
+`true` and `false` are the exception: they are the literals of type
+`Bool` wherever an expression is expected, at the start of one or not, so
+in `x = true` the `true` is a literal.
 
 `in` is both the keyword of an input and the [membership
 operator](Expressions.md#sets). The `in` of a membership must be on the
@@ -333,10 +338,10 @@ refine escape_sequence_is_exact: escape_sequence refines escape_text
 ```
 
 `lang::escape_start` says which input starts an escape sequence again,
-character by character rather than by a pattern, so that each statement
-checks the other: a character that one accepts and the other does not
-breaks the refinement. `escape_sequence` refines it, and the solver
-decides it:
+character by character rather than by one pattern for the whole sequence,
+so that each statement checks the other: a character that one accepts and
+the other does not breaks the refinement. `escape_sequence` refines it,
+and the solver decides it:
 
 ```fren
 pub comp escape_start {

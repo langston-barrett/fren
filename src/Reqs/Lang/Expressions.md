@@ -1018,7 +1018,7 @@ pub comp operator_type {
     expect abstract_equality_only: when accepted? and op != Conditional and kind(a) = AbstractTy,
         op in {Equality, Membership}
 
-    -- The rows of the table of operators, one operand type at a time.
+    -- Rows of the table of operators.
     expect same_types_equal: when op = Equality and a = b, accepted?
     expect bools_equal: when op = Equality and kind(a) = BoolTy and kind(b) = BoolTy, accepted?
     expect ints_ordered: when op = Ordering and kind(a) = IntTy and kind(b) = IntTy, accepted?
@@ -1028,7 +1028,7 @@ pub comp operator_type {
     expect sequence_members: when op = Membership and kind(b) = SeqTy and elem(b) = a, accepted?
     expect members_of_collections: when op = Membership and not kind(b) in {SetTy, SeqTy}, not accepted?
     expect sets_combine: when op = SetAlgebra and kind(a) = SetTy and a = b, accepted?
-    expect relations_combine: when op = Subset and kind(a) = RelTy and a = b, accepted?
+    expect relations_subset: when op = Subset and kind(a) = RelTy and a = b, accepted?
     expect boolean_condition: when op = Conditional and kind(cond) != BoolTy, not accepted?
     expect no_mixed_arithmetic: when op = Arithmetic and kind(a) = IntTy and kind(b) = BoolTy, not accepted?
     -- Sets of different element types are different types.
