@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Parse
+import FrenCore.Names
 -- keep-sorted end
 
 /-!
@@ -294,6 +295,7 @@ partial def sites (items : Array Item) : Array (Name × Option Name × Expr) := 
     | _ => out := out ++ (ofItem module item)
   return out
 where
+  declared (x : Ident) : String := Fren.Core.nameText (Fren.Core.declaredName (.mkSimple x.name)).1
   ofItem (module : Name) : Item → Array (Name × Option Name × Expr)
     | .const _ n _ v => #[(.str module n.name, none, v)]
     | .function _ n _ _ (some body) => #[(.str module n.name, none, body)]
@@ -301,8 +303,9 @@ where
       let c := Name.str module n.name
       members.flatMap fun
         | .prop kind p e => if kind == .expect then #[] else #[(.str c p.name, some c, e)]
-        | .var _ _ _ x _ (some d) => #[(.str c x.name, some c, d)]
-        | .inst i _ bs => bs.filterMap fun (_, e?) => e?.map (.str c i.name, some c, ·)
+        -- By the names they declare, without the `!` of shadowing.
+        | .var _ _ _ x _ (some d) => #[(.str c (declared x), some c, d)]
+        | .inst i _ bs => bs.filterMap fun (_, e?) => e?.map (.str c (declared i), some c, ·)
         | _ => #[]
     | .lintSetting _ _ _ _ _ (some body) => ofItem module body
     | _ => #[]

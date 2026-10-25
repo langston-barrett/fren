@@ -1,0 +1,10 @@
+--@ args: mutate --list
+-- A mutant of a definition declared with `!` is named by the name declared.
+pub fn y(Int): Int
+
+pub comp c {
+    in x: Int
+    pub out y!: Int := x + 1
+
+    expect e: y > x
+}
