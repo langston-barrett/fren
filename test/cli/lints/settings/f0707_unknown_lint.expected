@@ -12,7 +12,7 @@ help: a lint with a similar name exists: `unused_imports`
 2 + set_option fren.lint.unused_imports "allow"
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0707`.
 exit=2

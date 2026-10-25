@@ -7,7 +7,7 @@ error[F0330]: the parameters of uninterpreted function `rate` have no names
   = note: only a defined function's body mentions its parameters
   = help: write only the parameter's type, or give the function a body with `:= ...`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0330`.
 exit=2

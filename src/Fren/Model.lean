@@ -202,9 +202,6 @@ structure CompInfo where
   /-- No construct of it is outside the decidable core
   (`view::inconclusive_advice`). -/
   decidable : Bool := true
-  /-- `undecidable` is reported as an error in it, so it is not checked
-  (`Reqs/Lint/Decidability#undecidable-constructs`). -/
-  undecidableDenied : Bool := false
   /-- It, or one of its instances, applies a relational operator. -/
   relational : Bool := false
   /-- It, or one of its instances, uses `card`. -/
@@ -396,9 +393,6 @@ structure LocalState where
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false
-  /-- `undecidable` is reported as an error in the current item, which is
-  then not checked (`Reqs/Lint/Decidability#undecidable-constructs`). -/
-  undecidableDenied : Bool := false
   /-- Whether the current comp, or an instance of it, applies a relational
   operator; with `card`, it is outside the decidable core. -/
   relationalUsed : Bool := false
@@ -464,9 +458,11 @@ def modifyLocal (f : LocalState → LocalState) : m Unit :=
 
 open Lean Elab Command in
 /-- Runs `k`, then records how many errors its top-level command has
-logged (`LocalState.staticErrors`). An error that `k` throws is logged
-here, as `elabCommand` would, to be counted. -/
+logged (`LocalState.staticErrors`), but those of checks
+(`LocalState.checkErrors`). An error that `k` throws is logged here, as
+`elabCommand` would, to be counted. -/
 def recordingErrors (k : CommandElab) : CommandElab := fun stx => do
+  let checks := (← getLocal).checkErrors
   try k stx
   catch ex =>
     match ex with
@@ -474,6 +470,7 @@ def recordingErrors (k : CommandElab) : CommandElab := fun stx => do
                         else logException ex
     | _ => logException ex
   let n := (← get).messages.toList.filter (·.severity == .error) |>.length
+  let n := n - ((← getLocal).checkErrors - checks)
   if n == 0 then return
   let key := (← getFileName, (← read).cmdPos.byteIdx)
   modifyLocal fun l =>

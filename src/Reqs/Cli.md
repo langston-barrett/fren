@@ -98,7 +98,7 @@ help: use `=` to test for equality
 
 Information, such as the requirements that conflict in an unrealizable
 component, is printed as a `note`. After the diagnostics come the summary
-of the checks, or, if there were static errors, their count, and then a
+of the checks, or, if there were static errors, that they stopped them, and then a
 pointer to `fren --explain` for the codes reported.
 
 ```fren

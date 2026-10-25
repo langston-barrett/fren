@@ -6,7 +6,7 @@ error[F0116]: the character U+F0000 is beyond U+2FFFF, the last character of a `
   |
   = note: the solver's strings have the characters from 0 to U+2FFFF
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0116`.
 exit=2

@@ -7,7 +7,7 @@ error[F0336]: the divisor of `div` must be an integer literal or a constant
   = note: the solver decides only linear integer arithmetic, which divides only by constants
   = help: divide by a literal or a constant, such as `x div 2`, or declare a constant for the divisor
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0336`.
 exit=2

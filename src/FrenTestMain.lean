@@ -77,7 +77,9 @@ def snapshots (bless : Bool) : IO (Array String) := do
 /-- The ui tests of `files`. -/
 def uiTests (env : Environment) (files : Array FilePath) : IO (Array String) := do
   let mut failures := #[]
+  let isStopped (d : Diagnostic) := d.line == 0 && d.text == Fren.Core.couldNotHeadline
   for f in files do
+    let mut cliStopped := none
     let src ← IO.FS.readFile f
     let spec ← match parse src with
       | .ok s => pure s
@@ -87,10 +89,18 @@ def uiTests (env : Environment) (files : Array FilePath) : IO (Array String) := 
       let (diags, summary) := cliDiagnostics f.toString out
       for e in check "cli" spec diags summary (some code.toNat) do
         failures := failures.push s!"{f} (binary): {e}"
+      cliStopped := some (out.contains s!"error: {Fren.Core.couldNotHeadline}")
     if spec.only? != some "cli" then
       let (diags, summary) ← hostedDiagnostics env f.toString src
-      for e in check "hosted" spec diags summary none do
+      let stopped := diags.any isStopped
+      for e in check "hosted" spec (diags.filter (!isStopped ·)) summary none do
         failures := failures.push s!"{f} (Lean): {e}"
+      -- Both front ends say that a static error stopped the checks, or
+      -- neither does (`cli::agreement`).
+      if let some c := cliStopped then
+        if c != stopped then
+          failures := failures.push
+            s!"{f}: {if c then "only the binary" else "only Lean"} says `{Fren.Core.couldNotHeadline}`"
   return failures
 
 /-! ## Fren's own requirements -/

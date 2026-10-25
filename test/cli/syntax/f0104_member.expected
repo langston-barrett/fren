@@ -4,7 +4,7 @@ error[F0104]: expected a member (`in`, `out`, `inst`, `assume`, `req`, `expect`,
 2 | comp c { in x: Int 42 }
   |                    ^^ expected a member (`in`, `out`, `inst`, `assume`, `req`, `expect`, `cover` or `use`) or `}`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0104`.
 exit=2

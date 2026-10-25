@@ -11,7 +11,7 @@ help: write `01`
 3 + const ONE: Int := 01
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0120`.
 exit=2

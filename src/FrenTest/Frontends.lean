@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCore.Check
 import FrenTest.Ui
 -- keep-sorted end
 
@@ -29,6 +30,8 @@ fuzzing"). `fren_fuzz_frontends` compares the front ends with it;
 - A static error, including a denied lint, stops both front ends'
   checks, so neither reports results or a summary. The binary drops the lints of an item with a static error other than a
   lint: then Lean's lints of that item (`isHostedLint`) are not compared.
+- Both front ends say that a static error stopped the checks
+  (`isStoppedTrailer`), or neither does; even after a parse error.
 - The binary's exit code must follow from Lean's messages
   (`cli::agrees_with_build`): 2 after a static error, else 1 when Lean
   reports an error, 3 when it reports a warning, and 0 otherwise; unless a
@@ -164,9 +167,10 @@ def isUndecided (d : Diagnostic) : Bool :=
   (d.code? == some "F0608" || (d.code?.isNone && (headOf d).startsWith "could not decide whether `"))
   && !d.text.contains "solver error"
 
-/-- The binary's last line when a static error stops it, which has no
-location and no counterpart in Lean. -/
-def isStoppedTrailer (d : Diagnostic) : Bool := d.line == 0 && (headOf d).startsWith "could not check due to "
+/-- The line of either front end when a static error stops its checks,
+which has no location: the binary's last, and Lean's at the
+`#fren_check` that ends the spec. -/
+def isStoppedTrailer (d : Diagnostic) : Bool := d.line == 0 && headOf d == Fren.Core.couldNotHeadline
 
 /-- The 1-based line where the top-level item containing each line of
 `text` starts: an item starts at a line that is neither indented, blank, a
@@ -197,6 +201,12 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   let render (who : String) (d : Diagnostic) :=
     s!"line {d.line}: only {who} reports {d.severity}{if who == "fren" then s!"[{d.code?.getD "-"}]" else ""}: {headOf d}"
   let cliDiags := cli.diags.filter (!isStoppedTrailer ·)
+  -- Both say that a static error stopped the checks, or neither does.
+  let stopped := match cli.diags.any isStoppedTrailer, hosted.diags.any isStoppedTrailer with
+    | true, false => #[s!"only fren says `{Fren.Core.couldNotHeadline}`"]
+    | false, true => #[s!"only Lean says `{Fren.Core.couldNotHeadline}`"]
+    | _, _ => #[]
+  let hosted := { hosted with diags := hosted.diags.filter (!isStoppedTrailer ·) }
   let lines := text.splitOn "\n"
   -- Whether every line strictly between `a` and `b` is blank or a comment.
   let blankBetween (a b : Nat) := (List.range (b - a - 1)).all fun k =>
@@ -212,8 +222,8 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
     -- parsed every line before that.
     if hosted.diags.any fun h => isLeanParseError h && h.line ≤ p.line && blankBetween h.line p.line
         && itemAt h.line == itemAt p.line then
-      return (#[], false)
-    return (#[render "fren" p ++ " (and Lean reports no parse error at or just before that line, in its item)"], false)
+      return (stopped, false)
+    return (stopped.push (render "fren" p ++ " (and Lean reports no parse error at or just before that line, in its item)"), false)
   -- Checks whose evidence is testing, which Lean does not run.
   let anyTested := text.contains "set_option fren.evidence \"tested\""
   let onTested (d : Diagnostic) := (lines[d.line - 1]?.getD "").contains "set_option fren.evidence \"tested\""
@@ -250,7 +260,7 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   -- a lint, since the binary drops that item's lints.
   let stoppedItems := (cliDiags.filter fun d => d.severity == "error" && !isCheckResult d && !isLint d).map (itemAt ·.line)
   hostedOnly := hostedOnly.filter fun h => !(isHostedLint h && stoppedItems.contains (itemAt h.line))
-  let mut out := sameInput ++ cs.map (render "fren") ++ hostedOnly.map (render "Lean")
+  let mut out := stopped ++ sameInput ++ cs.map (render "fren") ++ hostedOnly.map (render "Lean")
   let undecided := cs.all isUndecided && hostedOnly.all isUndecided
   -- The summary, unless a check is tested.
   let sumDiffers := !anyTested && cli.summary? != hosted.summary?

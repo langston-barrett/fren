@@ -1,0 +1,24 @@
+-- Several static errors in each of two items: neither front end checks
+-- anything, not even `clean`, which has none and is unrealizable, and both
+-- say so without counting the errors (see `Reqs/View`).
+comp first {
+    in x: Int
+    pub out y: Int
+    req a: y = x * x  --~ error: nonlinear arithmetic is not supported
+    req b: y = nope  --~ error: cannot find `nope` in this scope
+}
+
+comp second {
+    in x: Int
+    pub out y: Int
+    req a: y = x * x  --~ error: nonlinear arithmetic is not supported
+    req b: y = x * y  --~ error: nonlinear arithmetic is not supported
+}
+
+comp clean {
+    in x: Int
+    pub out y: Int
+    req a: y = x
+    req b: y = x + 1
+}
+--@ exit: 2

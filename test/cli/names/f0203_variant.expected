@@ -11,7 +11,7 @@ help: a variant with a similar name exists: `Heat`
 3 + comp c { in m: Mode pub out on? req r: on? iff m = Mode::Heat }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0203`.
 exit=2

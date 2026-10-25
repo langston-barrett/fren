@@ -11,7 +11,7 @@ help: rename it to `r`
 2 + comp c { in x: Int req r: x > 0 }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0211`.
 exit=2

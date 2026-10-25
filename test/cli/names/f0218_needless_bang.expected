@@ -37,7 +37,7 @@ help: remove the `!`
 16 + pub const LIMIT: Int := 3
    |
 
-error: could not check due to 3 previous errors
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0218`.
 exit=2

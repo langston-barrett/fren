@@ -157,12 +157,23 @@ def checked : String := "comp c {\n    in x: Int\n    pub out y?\n    req q: y? 
 
 #guard (FrenTest.Ui.cliDiagnostics "a.fren" "error: internal error: oops\n").1.isEmpty
 
--- The binary's line when a static error stops it has no counterpart.
+-- Each front end's line when a static error stops it, which has no
+-- location: both must say it, or neither.
 def stopped : Array Diagnostic :=
-  #[err 4 "nonlinear arithmetic is not supported" "F0307", err 0 "could not check due to 1 previous error"]
+  #[err 4 "nonlinear arithmetic is not supported" "F0307", err 0 "could not check due to previous errors"]
 
 #guard agrees item { diags := stopped, exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", err 0 "could not check due to previous errors"] }
+
+#guard differs item { diags := stopped, exit? := some 2 }
   { diags := #[err 4 "nonlinear arithmetic is not supported"] }
+
+#guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", err 0 "could not check due to previous errors"] }
+
+-- ... even after a parse error, where nothing else is compared.
+#guard differs parse { diags := #[err 3 "expected an expression, found keyword `expect`" "F0104", err 0 "could not check due to previous errors"], exit? := some 2 }
+  { diags := #[err 2 "unexpected token 'expect'; expected fren_expr"] }
 
 #guard differs checked { diags := #[err 0 "internal error: oops"], summary? := none0, exit? := some 2 }
   { diags := #[], summary? := none0 }

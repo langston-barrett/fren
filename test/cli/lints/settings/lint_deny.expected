@@ -8,7 +8,7 @@ error[F0701]: unused import `Mode::Heat`
   = help: `fren fix` can fix this
   = note: `unused_imports` is set to `deny`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0701`.
 exit=2

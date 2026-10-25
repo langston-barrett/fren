@@ -6,7 +6,7 @@ error[F0212]: `Int` is a built-in type and cannot be redefined
   |
   = note: the built-in types are `Bool`, `Int`, `Nat` and `String`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0212`.
 exit=2

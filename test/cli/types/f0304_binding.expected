@@ -18,7 +18,7 @@ warning[F0710]: unused variable `a`
   = note: `unused_variables` is `warn` by default
   = help: to allow it, `set_option fren.lint.unused_variables "allow"`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 Some errors have detailed explanations: F0304, F0710.
 For more information about an error, try `fren --explain F0304`.

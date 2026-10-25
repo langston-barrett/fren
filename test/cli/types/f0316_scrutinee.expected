@@ -7,7 +7,7 @@ error[F0316]: cannot match on `Int`
   = note: `match` reads which variant a value of an enum is
   = help: for other types, use `if ... then ... else`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0316`.
 exit=2

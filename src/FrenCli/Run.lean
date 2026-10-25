@@ -385,11 +385,11 @@ def elaborate (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintT
     srcs := srcs.push src
   return some (← elaborateSources paths srcs lints fixing ignored)
 
-/-- Prints the count of static errors, and the pointer to `--explain` for
-the codes of `diags`. -/
-def printErrorCount (p : Paint) (errors : Nat) (diags : Array Diag) (what := "check") : IO Unit := do
+/-- Prints that the static errors stopped the command, and the pointer to
+`--explain` for the codes of `diags`. -/
+def printStopped (p : Paint) (diags : Array Diag) (what := "check") : IO Unit := do
   IO.eprintln (Fren.Core.header .error
-    { code? := none, headline := Fren.Core.couldNotHeadline errors what } p)
+    { code? := none, headline := Fren.Core.couldNotHeadline what } p)
   IO.eprintln ""
   printExplainHint (diags.map (·.msg))
 
@@ -400,7 +400,7 @@ def load (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget
   for d in st.diags do printDiag p files d
   let errors := st.diags.filter (·.severity == .error) |>.size
   if errors > 0 then
-    printErrorCount p errors st.diags
+    printStopped p st.diags
     return none
   return some (files, st)
 
@@ -756,7 +756,7 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
   if !errors.isEmpty then
     -- Nothing is fixed.
     for d in st.diags do printDiag args.paint files d
-    printErrorCount args.paint (st.diags.filter (·.severity == .error)).size st.diags "fix"
+    printStopped args.paint st.diags "fix"
     return Fren.Core.fixExit args.diffOnly false false
   -- One fix can overlap another, or leave something that another lint
   -- fixes, so the passes go on until no edit is left (`Reqs/Lint#fixing-lints`).

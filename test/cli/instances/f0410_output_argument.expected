@@ -7,7 +7,7 @@ error[F0410]: the arguments of a function may not mention an `out`, but `y` is o
   = note: a function is applied only to values the system does not choose, so that the checks stay decidable
   = help: apply the function to the inputs the output depends on, and relate the output to the result in a `req`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0410`.
 exit=2

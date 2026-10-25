@@ -6,7 +6,7 @@ error[F0214]: invalid evidence `testing`
   |
   = note: `"tested"` has the checks tested instead of asked of the solver, and `"solver"` is the default
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0214`.
 exit=2

@@ -35,7 +35,7 @@ warning[F0701]: unused import `rates::RATE`
   = note: `unused_imports` is `warn` by default
   = help: to allow it, `set_option fren.lint.unused_imports "allow"`
 
-error: could not check due to 2 previous errors
+error: could not check due to previous errors
 
 Some errors have detailed explanations: F0217, F0701.
 For more information about an error, try `fren --explain F0217`.

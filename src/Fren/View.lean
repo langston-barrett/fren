@@ -132,7 +132,7 @@ where
   checkAndReport' (paths : Array Name) : CommandElabM Unit := do
   let errors ← staticErrorsBefore
   if errors > 0 then
-    return ← logError (Core.couldNotHeadline errors)
+    return ← logError Core.couldNotHeadline
   let s ← getState
   let mut all := #[]
   for p in paths do
@@ -141,10 +141,6 @@ where
       | none, some g, _ => pure (g, Core.kindsFor true)
       | none, none, some r => pure (r, Core.CheckKind.all.filter Core.refinementRuns)
       | none, none, none => continue
-    -- Not where `undecidable` is denied: the solver is not asked about
-    -- constructs outside the decidable core that the spec has not opted
-    -- into, on which it may abort (`Reqs/Lint/Decidability#undecidable-constructs`).
-    if c.undecidableDenied then continue
     let results ← liftTermElabM <| checkComp c kinds
     for r in results do
       report p c r
@@ -156,7 +152,7 @@ where
   | .warning => logWarning (Core.summary all)
   | .error => logError (Core.summary all)
 
-@[command_elab Lang.checkCmd] def elabCheck : CommandElab := fun stx => do
+@[command_elab Lang.checkCmd] def elabCheck : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   if stx[1].isNone then
     let l ← getLocal

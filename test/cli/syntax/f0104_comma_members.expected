@@ -11,7 +11,7 @@ help: remove it
 2 + comp c { in x: Int in y: Int }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0104`.
 exit=2

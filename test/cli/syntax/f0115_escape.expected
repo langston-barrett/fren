@@ -7,7 +7,7 @@ error[F0115]: unknown escape in a string literal
   = note: the escapes are `\\`, `\"`, `\'`, `\n`, `\t`, `\r`, `\xHH` and `\uHHHH`
   = help: for a literal `\`, write `\\`, or use a raw literal, `r"..."`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0115`.
 exit=2

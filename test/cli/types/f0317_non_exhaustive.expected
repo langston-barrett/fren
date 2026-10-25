@@ -6,7 +6,7 @@ error[F0317]: non-exhaustive match: `Shape::Empty` not covered
   |
   = note: a `match` has an arm for every variant, or a last arm `_`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0317`.
 exit=2

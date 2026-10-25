@@ -750,10 +750,11 @@ def bucketOf (kind : CheckKind) (verdict : Verdict) : Bucket :=
 failures, which are errors (`view::summary`). -/
 def CheckResult.isRedundant (r : CheckResult) : Bool := bucketOf r.kind r.verdict == .redundant
 
-/-- What both front ends say instead of checking, after `errors` static
-errors (`Reqs/View#static-errors`). -/
-def couldNotHeadline (errors : Nat) (what := "check") : String :=
-  s!"could not {what} due to {errors} previous error{if errors == 1 then "" else "s"}"
+/-- What both front ends say instead of checking, after a static error
+(`Reqs/View#static-errors`). It does not count them: the `fren` command
+stops at a parse error, where Lean goes on and may find more. -/
+def couldNotHeadline (what := "check") : String :=
+  s!"could not {what} due to previous errors"
 
 def summary (results : Array CheckResult) (byTesting : Nat := 0) : String :=
   let count (b : Bucket) := (results.filter fun r => bucketOf r.kind r.verdict == b).size

@@ -7,7 +7,7 @@ error[F0318]: unreachable arm
   = note: an earlier `_` arm matches every value
   = help: remove it
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0318`.
 exit=2

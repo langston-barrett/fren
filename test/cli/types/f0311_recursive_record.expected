@@ -7,7 +7,7 @@ error[F0311]: record `Chain` has a field of its own type
   = note: each value would contain another without end, so the record would have no values
   = help: use an enum with a variant whose payload does not contain it, e.g. `enum List { Nil, Cons(Int, List) }`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0311`.
 exit=2

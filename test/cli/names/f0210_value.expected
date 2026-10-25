@@ -6,7 +6,7 @@ error[F0210]: expected a value, but `E` is an enum
   |
   = help: to mean one of its variants, write `E::Variant`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0210`.
 exit=2

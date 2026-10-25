@@ -2527,7 +2527,7 @@ open Lang in
       for p in m[3].getSepArgs do declareUse (pathSegs m[1] ++ pathSegs p) false p (some path)
   let scope := if members.any (fun m => m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember) then path
     else modName
-  modifyLocal fun l => { l with outsideCore := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
+  modifyLocal fun l => { l with outsideCore := false, relationalUsed := false, countRefs := #[] }
   -- Distinct names (`lang::distinct_names`): variables, instances and
   -- constraints share one namespace.
   let named := members.filterMap memberName?
@@ -2766,7 +2766,7 @@ open Lang in
       record (.item { item := { kind := .compItem, path, isPub, owner := modName }, ref := nameStx })
       let (relational, counts) ← checkCounts
       record (.compInfo { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
-                          decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
+                          decidable := !(← getLocal).outsideCore
                           relational, counts, indexes, tested })
     return (ok, generated)
   lintDeclared .component n nameStx
@@ -2828,7 +2828,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     (decl : Name) : TermElabM CompInfo := do
   let mut vars : Array Var := #[]
   let mut binders : Array Binder := #[]
-  modifyLocal fun l => { l with outsideCore := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
+  modifyLocal fun l => { l with outsideCore := false, relationalUsed := false, countRefs := #[] }
   -- Distinct names (`lang::distinct_names`).
   let binderIds := binderStxs.flatMap (·[1].getArgs)
   for x in binderIds do discard (segName x)
@@ -2880,7 +2880,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
       trigger?, triggerRef? := trig.map (·.2), decl }
     discard checkCounts
     return { path := modName, vars, props := #[prop], insts, ref := nameStx, decl, uses
-             decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied, indexes }
+             decidable := !(← getLocal).outsideCore, indexes }
 
 @[command_elab Lang.globalCmd] def elabGlobal : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
@@ -2972,7 +2972,7 @@ and the solver is asked nothing. -/
       { v with role := if v.role == .input then .input else Core.Role.ofInst v.role v.isPub, defn? := none }
     -- The mix of relational operators and counting, as in a component
     -- (`Reqs/Lang/Decidability#relations`): `c`'s, `a`'s and the bindings'.
-    modifyLocal fun l => { l with outsideCore := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
+    modifyLocal fun l => { l with outsideCore := false, relationalUsed := false, countRefs := #[] }
     noteCounts c stx[3]
     noteCounts a stx[5]
     let bindingsA ← withLocalDeclsD (own.map fun v => (v.name, fun _ => pure v.type)) fun cfvs => do
@@ -3059,7 +3059,6 @@ and the solver is asked nothing. -/
       addUsesDef uses decl value
       return { path, vars, props := assumes ++ reqs ++ defs, insts := #[instC] ++ instsA, ref := nameStx, decl, uses
                decidable := c.decidable && a.decidable && !l.outsideCore
-               undecidableDenied := c.undecidableDenied || a.undecidableDenied || l.undecidableDenied
                relational, counts, indexes, tested : CompInfo }
   record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))

@@ -7,7 +7,7 @@ error[F0307]: nonlinear arithmetic is not supported
   = note: the solver decides only linear integer arithmetic
   = help: one side of `*` must mention no variable and no uninterpreted function, such as `2 * x` or `(MAX - MIN) * x`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0307`.
 exit=2

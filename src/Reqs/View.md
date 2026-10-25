@@ -14,17 +14,25 @@ A static error is a syntax error, a name that cannot be resolved or is not
 visible, a duplicate name, a type error, nonlinear arithmetic, or a
 violation of a rule such as [Boolean naming](Lang/Types.md#boolean-names).
 Each is an error at the offending source position. A denied
-[lint](Lint.md), such as an unused import, is a
-static error too. Any static error means that no check runs, with either
-front end: the `fren` command reports `could not check due to N previous
-errors` instead of the checks' results and summary, and so does Lean's
-`#fren_check`, counting the static errors before it in any file, Lean's
-parse errors included, and the lints so far that are errors. A static
-error that `#guard_msgs` expects does not count, so that a Lean test can
-show an error and then the checks. In Lean, syntax and type errors
-are Lean's own, and are worded differently, except for operators of other
-languages (`==`, `&&`, `||`, `!`), which both front ends report with what to
-write instead.
+[lint](Lint.md), such as an unused import, is a static error too. In
+Lean, syntax and type errors are Lean's own, and are worded differently,
+except for operators of other languages (`==`, `&&`, `||`, `!`), which
+both front ends report with what to write instead.
+
+Any static error means that no check runs, with either front end: instead
+of the checks' results and summary, the `fren` command ends with `could
+not check due to previous errors`, with no location, and Lean's
+`#fren_check` reports the same. The errors are not counted, since the
+`fren` command stops at a parse error, where Lean goes on and may find
+more. In Lean, the static errors are those before the `#fren_check`, in
+any file: those of Fren's items, of `#fren_check`s (but not their
+checks'), and of `set_option`s of lints and evidence claims; Lean's parse
+errors, which it finds by parsing the file again with the syntax in scope
+at the `#fren_check`; and the lints so far that are errors. The errors of
+what only Lean reads, `impl`, `interp` and `#fren_trace`, do not count.
+Nor do the errors inside a `#guard_msgs`, expected or not, so that a Lean
+test can show an error and then the checks: an unexpected one fails the
+`#guard_msgs` itself.
 
 ### How many are reported
 

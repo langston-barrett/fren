@@ -6,7 +6,7 @@ error[F0102]: unterminated block comment
   |
   = note: block comments nest, so each `/-` needs its own `-/`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0102`.
 exit=2

@@ -6,7 +6,7 @@ error[F0118]: the range `z-a` in a pattern is reversed
   |
   = note: a range is written from the lower character to the higher, as in `a-z`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0118`.
 exit=2

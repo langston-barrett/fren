@@ -11,7 +11,7 @@ help: a field with a similar name exists: `x`
 3 + comp c { in p: Point pub out z: Int req r: z = p.x }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0315`.
 exit=2

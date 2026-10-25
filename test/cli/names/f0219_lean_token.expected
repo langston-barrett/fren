@@ -16,7 +16,7 @@ error[F0219]: `m!` is a Lean token, so it cannot be declared
    = note: Lean reads `m!` as a token of its own, not as `m` followed by `!`
    = help: rename the declaration
 
-error: could not check due to 2 previous errors
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0219`.
 exit=2

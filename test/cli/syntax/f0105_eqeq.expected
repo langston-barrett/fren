@@ -10,7 +10,7 @@ help: use `=` to test for equality
 2 + comp c { in x: Int pub out y? req r: y? iff x = 1 }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0105`.
 exit=2

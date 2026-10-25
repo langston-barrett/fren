@@ -5,7 +5,8 @@
   `--~ error: TEXT` expects an error on that line whose text contains `TEXT`
   (`--~^` for the line above), every message must be expected, and `--@`
   lines expect the summary and exit code. Both front ends run every file and
-  must satisfy the same annotations; `--~[cli]` and `--~[hosted]` mark the
+  must satisfy the same annotations, and both or neither must say that a
+  static error stopped the checks; `--~[cli]` and `--~[hosted]` mark the
   few messages that legitimately differ (parse and type errors, which the Lean
   front end gets from Lean), and `--~?` allows a message without expecting
   it, for one that may be in one of several places, such as a conflict's
@@ -124,9 +125,10 @@
     reported](../View.md#how-many-are-reported)). Lean shows no codes, so
     its lints are its warnings that are not a check's result, and the
     errors of `undecidable`.
-  - The `fren` command's last line after a static error, which has no
-    location, is not compared, nor Lean's at the `#fren_check` that ends
-    the spec; any other message without a location is.
+  - Both front ends must say that a static error stopped the checks
+    (`could not check due to previous errors`, which has no location), or
+    neither, even after a parse error. Any other message without a location
+    is compared too.
 
   Each spec where the front ends differ is written to `DIR` (default
   `.lake/fuzz`) with the differences and both reports in comments, and the

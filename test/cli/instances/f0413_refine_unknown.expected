@@ -11,7 +11,7 @@ help: a variable with a similar name exists: `x`
 4 + refine fits: precise refines rough { x := y }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0413`.
 exit=2

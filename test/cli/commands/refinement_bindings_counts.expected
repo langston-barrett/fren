@@ -8,7 +8,7 @@ error[F0714]: this is outside the decidable core: the solver does not reliably c
    = note: `undecidable` is `deny` by default
    = help: to allow it, `set_option fren.lint.undecidable "allow"`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0714`.
 exit=2

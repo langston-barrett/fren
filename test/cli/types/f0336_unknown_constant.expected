@@ -7,7 +7,7 @@ error[F0336]: the value of `WIDTH`, the divisor of `mod`, is not known when the 
   = note: a constant divisor's value is built from integer literals and such constants by `+`, `-`, `*`, `div`, `mod`, `abs`, `min` and `max`
   = help: give `WIDTH` such a value, or divide by a literal
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0336`.
 exit=2

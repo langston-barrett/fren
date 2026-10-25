@@ -11,7 +11,7 @@ help: add a comma
   |                                                    +
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0106`.
 exit=2

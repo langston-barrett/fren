@@ -6,7 +6,7 @@ error[F0325]: `in` needs a `Set(Int)` on its right, found `Set(String)`
   |
   = note: `x in s` is membership: `s` is a set of values of `x`'s type
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0325`.
 exit=2
