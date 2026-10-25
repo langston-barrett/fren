@@ -29,24 +29,30 @@ declares it, wherever it is checked (`Reqs/Markdown#in-lean`). A Markdown
 spec's item is placed at the `#fren_md` that reads it, with the spec's name
 and position (`Fren.elabMd`), or, checked from the Lean file itself, at the
 `#fren_check`, with them in the text. The Lean file's item is placed at its
-own position, even when a spec checks it. -/
+own position, even when a spec checks it. An imported item is placed at the
+`#fren_check`, since its text is another module's. -/
 def logAbout (path : Name) (ref : Syntax) (text : MessageData) (severity : MessageSeverity) :
     CommandElabM Unit := do
   let l ← getLocal
+  -- Without a position, `logAt` would use the current command's, which
+  -- another file's line map would misplace.
+  if ref.getPos?.isNone then return ← logAt ref text severity
   match l.mdSources.find? path, l.leanFile? with
   | some (rel, fileMap), _ =>
     if l.inMarkdown then
       withReader (fun ctx => { ctx with fileName := rel, fileMap }) (logAt ref text severity)
     else
-      -- Without a position, name only the spec.
-      let place := match ref.getPos? with
-        | some p => let pos := fileMap.toPosition p; s!"{rel}:{pos.line}:{pos.column}"
-        | none => rel
-      logAt (← getRef) m!"{place}: {text}" severity
-  -- Not declared in a spec, so the Lean file's, checked by a spec.
+      let pos := fileMap.toPosition ((ref.getPos?).getD 0)
+      logAt (← getRef) m!"{rel}:{pos.line}:{pos.column}: {text}" severity
+  -- The Lean file's own item, checked by a spec.
   | none, some (fileName, fileMap) =>
-    withReader (fun ctx => { ctx with fileName, fileMap }) (logAt ref text severity)
-  | none, none => logAt ref text severity
+    if l.leanItems.contains path then withReader (fun ctx => { ctx with fileName, fileMap }) (logAt ref text severity)
+    else logAt (← getRef) text severity
+  | none, none =>
+    if l.leanItems.contains path then logAt ref text severity
+    -- An imported item, whose syntax has positions in another module's text,
+    -- which neither this file nor a spec has: placed at the check.
+    else logAt (← getRef) text severity
 
 def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit := do
   for msg in Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) r c.decidable do

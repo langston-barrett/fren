@@ -369,9 +369,13 @@ structure LocalState where
   /-- The Markdown spec being read, if any: what `mdSources` records for the
   items declared now. -/
   mdSource? : Option (String × FileMap) := none
+  /-- The items that the Lean file declares itself, not in a spec. An item
+  in neither is imported, and its syntax has positions in another module's
+  text. -/
+  leanItems : NameSet := {}
   /-- While a Markdown spec is elaborated, the Lean file that reads it: its
   name and its text's line map, which place the messages about the items it
-  declares itself, the ones not in `mdSources`. -/
+  declares itself (`leanItems`). -/
   leanFile? : Option (String × FileMap) := none
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
@@ -392,7 +396,7 @@ read, if any (`mdSources`). -/
 def LocalState.declared (l : LocalState) (path : Name) : LocalState :=
   match l.mdSource? with
   | some source => { l with mdSources := l.mdSources.insert path source }
-  | none => l
+  | none => { l with leanItems := l.leanItems.insert path }
 
 initialize localExt : EnvExtension LocalState ←
   registerEnvExtension (pure {})

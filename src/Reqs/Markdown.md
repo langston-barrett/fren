@@ -46,6 +46,8 @@ declares it, wherever it is checked:
   and its text starts with the Markdown file's name and position.
 - An item of the Lean file is placed at its own position, even when a
   Markdown file's `#fren_check` reports it.
+- An imported item is placed at the `#fren_check` that reports it, since
+  its position is in another module's text.
 
 This holds through Markdown files that read others: an item is named with
 the file that declares it, whichever file checks it, before or after.
