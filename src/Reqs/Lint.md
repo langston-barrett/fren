@@ -44,7 +44,7 @@ use view::Severity
 | `empty_argument` | `F0745` | `suspicious` | `warn` | a method applied to `""` or `[]`, or a `slice` of length `0`, such as `s.starts_with?("")` (see [Empty arguments](Lint/Suspicious/Methods.md#empty-arguments)) |
 | `enum_variant_names` | `F0749` | `style` | `warn` | an enumeration whose variants all start, or all end, with the same word, or a variant that contains its enumeration's name (see [Names](Lint/Style.md#names)) |
 | `eq_op` | `F0736` | `suspicious` | `warn` | an operator whose operands are written the same, such as `x = x`, or `when C, C` (see [Operands written the same](Lint/Suspicious/Expressions.md#operands-written-the-same)) |
-| `erasing_op` | `F0764` | `suspicious` | `warn` | an operation whose value ignores an operand, such as `x * 0` (see [Erasing operations](Lint/Suspicious/Expressions.md#erasing-operations)) |
+| `erasing_op` | `F0764` | `suspicious` | `warn` | an operation whose value ignores an operand, such as `x * 0` or `x in {}` (see [Erasing operations](Lint/Suspicious/Expressions.md#erasing-operations)) |
 | `glob_imports` | `F0702` | `style` | `warn` | a `use ...::*` (see [Glob imports](Lint/Style.md#glob-imports)) |
 | `identity_op` | `F0734` | `complexity` | `warn` | an operation that leaves an operand as it is, such as `x + 0`, or the negation in `x + -y` (see [Identities](Lint/Complexity/Operators.md#identities)) |
 | `if_chain_match` | `F0727` | `pedantic` | `allow` | a chain of `if` whose tests are of which variant one scrutinee is (see [Variant tests](Lint/Pedantic.md#variant-tests)) |
@@ -55,6 +55,7 @@ use view::Severity
 | `invisible_characters` | `F0769` | `suspicious` | `warn` | a string literal with an invisible character, or a string literal or comment with a bidirectional control (see [Invisible characters](Lint/Suspicious/Literals.md#invisible-characters)) |
 | `just_underscores_and_digits` | `F0751` | `style` | `warn` | a declared name made only of `_` and digits, such as `_1` (see [Names](Lint/Style.md#names)) |
 | `length_zero` | `F0715` | `style` | `warn` | a comparison of a string's or sequence's `len` with `0` or `1`, or of its `at(0)` with `""` or `[]`, that says whether it is empty, such as `s.len = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
+| `literal_dot_in_pattern` | `F0794` | `suspicious` | `warn` | a `.` between two letters or digits in a pattern, such as `r"v1.2"` (see [Dots in patterns](Lint/Suspicious/Literals.md#dots-in-patterns)) |
 | `manual_method` | `F0732` | `complexity` | `warn` | a search written with `index_of`, `slice` or `at`, such as `s.index_of(t, 0) >= 0` (see [Searches](Lint/Complexity/Methods.md#searches)) |
 | `manual_pattern_char_comparison` | `F0756` | `style` | `warn` | an alternation of single characters in a pattern, such as `a\|b` (see [Classes of characters](Lint/Style.md#classes-of-characters)) |
 | `many_single_char_names` | `F0795` | `pedantic` | `allow` | a component, function or global expectation that declares more than four single-character names (see [Names](Lint/Pedantic.md#names)) |
@@ -91,7 +92,11 @@ use view::Severity
 | `undecidable` | `F0714` | `decidability` | `deny` | a construct outside the decidable core (see [Undecidable constructs](Lint/Decidability.md#undecidable-constructs)) |
 | `unfulfilled_lint_expectations` | `F0706` | `unused` | `warn` | a `set_option` that expects a lint that never fires (see [Expecting lints](#expecting-lints)) |
 | `unless_not` | `F0722` | `style` | `warn` | an `unless` whose condition is a negation, such as `unless not c?, d?` (see [Conditionals](Lint/Style.md#conditionals)) |
+| `unnecessary_struct_initialization` | `F0790` | `complexity` | `warn` | a record literal that copies each field of a value of its record, such as `Point { x := p.x, y := p.y }` (see [Copied records](Lint/Complexity.md#copied-records)) |
+| `unrelated_binders` | `F0793` | `suspicious` | `warn` | a global expectation whose binders fall into two or more groups that no atom relates (see [Unrelated binders](Lint/Suspicious.md#unrelated-binders)) |
+| `unused_assumption` | `F0792` | `unused` | `warn` | an assumption that mentions only inputs that nothing else mentions (see [Unused assumptions](Lint/Unused.md#unused-assumptions)) |
 | `unused_imports` | `F0701` | `unused` | `warn` | a `use` that nothing in its file uses (see [Unused imports](Lint/Unused.md#unused-imports)) |
+| `unused_lint_setting` | `F0791` | `unused` | `warn` | a lint setting that is in effect at no item (see [Unused lint settings](Lint/Unused.md#unused-lint-settings)) |
 | `unused_variables` | `F0710` | `unused` | `warn` | a variable or binder that nothing mentions (see [Unused variables](Lint/Unused.md#unused-variables)) |
 | `upper_case_acronyms` | `F0750` | `style` | `warn` | a name in `CamelCase` with three or more uppercase letters in a row, such as `HTTPStatus` (see [Names](Lint/Style.md#names)) |
 | `wildcard_enum_match_arm` | `F0781` | `restriction` | `allow` | a `_` arm of a `match` (see [Wildcard arms](Lint/Restriction.md#wildcard-arms)) |
@@ -99,10 +104,10 @@ use view::Severity
 | `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel(A, B)` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
 <!-- keep-sorted end -->
 
-The lints' codes run from `F0701` to `F0787`. Among them, `F0707`, `F0708`
+The lints' codes run from `F0701` to `F0797`. Among them, `F0707`, `F0708`
 and `F0709` are errors in [setting levels](#setting-levels), and `F0713`
-is the removed `shadowed_constants`'s. `F0758`, and `F0771` to `F0779`, are
-used by nothing, and are free for later lints.
+is the removed `shadowed_constants`'s. `F0758`, `F0771` to `F0779`, and
+`F0788`, are used by nothing, and are free for later lints.
 
 Lints are found while elaborating, like [static
 errors](View.md#static-errors), and never ask the solver anything: the
@@ -405,6 +410,7 @@ The level that applies to a lint's message is the one in effect at the
 item it is about: the `use` for the import lints; for the naming lints
 and `unused_variables`, the item that declares the name, which for a
 member is its component and for a variant its enumeration; for `dead_code`, the unused item; for
+`unused_assumption`, its component; for `unused_lint_setting`, the setting, before it; for
 `invisible_characters`, the item the literal or comment is in (see
 [Invisible characters](Lint/Suspicious/Literals.md#invisible-characters)); and
 for `nonminimal_bool` and the other lints of expressions, the item the
@@ -510,6 +516,7 @@ what the spec means:
 | `int_plus_one` | replaces the comparison with the strict one, without the offset |
 | `invisible_characters` | writes each character as an escape in a literal, and removes it from a comment |
 | `length_zero` | compares the string with `""`, or the sequence with `[]`, as the message suggests |
+| `literal_dot_in_pattern` | writes each `.` that it fires on as `[.]` |
 | `manual_method` | replaces the comparison with a call of `contains?`, `starts_with?` or `ends_with?`, or `s.slice(i, 1)` with `s.at(i)`, as the message suggests |
 | `manual_pattern_char_comparison` | replaces the pattern with one that writes each alternation of single characters as a class |
 | `match_like_membership` | replaces the `match` with a membership, `x in {E::A, E::B}`, as the message suggests |
@@ -535,7 +542,9 @@ what the spec means:
 | `trivial_pattern` | replaces `s.matches?(p)` with an equation or a call of `starts_with?`, `ends_with?` or `contains?` |
 | `unfulfilled_lint_expectations` | removes the `set_option`, or for `set_option ... in item`, removes `set_option ... in` and keeps the item |
 | `unless_not` | removes the negation and writes `when`, as the message suggests |
+| `unnecessary_struct_initialization` | replaces the literal with the value it copies |
 | `unused_imports` | removes the `use`, or the name from a grouped `use` |
+| `unused_lint_setting` | removes the `set_option`, or for `set_option ... in item`, removes `set_option ... in` and keeps the item |
 | `wildcard_enum_match_arm` | names the variants that `_` matches, `E::A \| E::B`, written as for `wildcard_single_variant` |
 | `wildcard_single_variant` | names the variant, `E::V`, or `E::V(_, _)` with one `_` per value of its payload |
 <!-- keep-sorted end -->
@@ -556,8 +565,8 @@ says.
 The other lints have no fix. Renaming a declaration, as the naming lints
 would need, would also have to rename every use
 of it, including uses in Lean code and in files that are not given, and so
-would removing a dead item. Removing an unused variable would change its
-component's interface, and merging the requirements that `case_split_reqs`
+would removing a dead item. Removing an unused variable, or the inputs of an
+unused assumption, would change its component's interface, and merging the requirements that `case_split_reqs`
 reports would change what traces, claims and `impl`s name, and so would
 removing a constraint that `assertions_on_constants` reports. A message of a lint that `fren fix` fixes says so, with the line
 `` help: `fren fix` can fix this ``. In Lean, only the messages in a

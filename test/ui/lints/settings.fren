@@ -1,0 +1,37 @@
+-- `unused_lint_setting`, in both front ends: a setting that is in effect
+-- at no item.
+set_option fren.lint.disallowed_names "deny"  --~ warning: this lint setting is replaced before any item
+set_option fren.lint.style "allow"
+
+-- A lint's setting after its group's sets that lint alone.
+set_option fren.lint.pedantic "warn"
+set_option fren.lint.match_same_arms "allow"
+
+-- The inner setting wins.
+set_option fren.lint.non_snake_case "allow" in  --~ warning: this lint setting is replaced before any item
+set_option fren.lint.non_snake_case "warn" in
+comp Inner {}  --~ warning: component `Inner` should have a snake case name
+
+-- A lint's setting, then its group's.
+set_option fren.lint.non_snake_case "allow" in  --~ warning: this lint setting is replaced before any item
+set_option fren.lint.nonstandard_style "warn" in
+comp Grouped {}  --~ warning: component `Grouped` should have a snake case name
+
+-- An expectation is reported only if nothing fulfils it.
+set_option fren.lint.non_snake_case "expect" in
+set_option fren.lint.non_snake_case "allow" in
+comp Expected {}
+--~^^^ warning: this lint expectation is unfulfilled
+
+-- A file-level setting stays in effect after a setting of its item.
+set_option fren.lint.non_camel_case_types "allow"
+set_option fren.lint.non_camel_case_types "warn" in
+pub enum mode_a { On, Off }  --~ warning: enum `mode_a` should have a camel case name
+pub enum mode_b { On, Off }
+
+-- A forbidden lint's setting decides whether a later one is accepted.
+set_option fren.lint.dead_code "forbid"
+set_option fren.lint.dead_code "forbid"
+pub const LIMIT: Int := 1
+
+set_option fren.lint.non_snake_case "allow"  --~ warning: this lint setting is in effect at no item

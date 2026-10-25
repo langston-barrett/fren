@@ -107,7 +107,7 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
 @[command_elab Lang.modCmd] def elabMod : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
-  lintInvisible stx
+  lintItem stx
   let segs := pathSegs stx[2]
   -- A path that did not parse, as in `mod 2`, which Lean has reported.
   if segs.isEmpty || segs.any (·.getId.isAnonymous) then return
@@ -133,13 +133,13 @@ def declareUse (segs : Array Syntax) (glob : Bool) (ref : Syntax) (scope : Optio
 @[command_elab Lang.useCmd] def elabUse : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
-  lintInvisible stx
+  lintItem stx
   declareUse (pathSegs stx[1]) (!stx[2].isNone) stx[1]
 
 @[command_elab Lang.useGroupCmd] def elabUseGroup : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
-  lintInvisible stx
+  lintItem stx
   for p in stx[3].getSepArgs do
     declareUse (pathSegs stx[1] ++ pathSegs p) false p
 
@@ -271,7 +271,7 @@ partial def typeSyntax (t : Expr) : Term :=
 @[command_elab Lang.enumCmd] def elabEnum : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
-  lintInvisible stx
+  lintItem stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -336,7 +336,7 @@ partial def typeSyntax (t : Expr) : Term :=
 @[command_elab Lang.structCmd] def elabStruct : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
-  lintInvisible stx
+  lintItem stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -1229,6 +1229,38 @@ def lintRedundant (b : Syntax) (field : Bool) : TermElabM Unit := do
       recordLint .redundantBindings b (Core.redundantBindingMsg name field)
 
 open Lang in
+/-- `unnecessary_struct_initialization` on the record literal `e`, of the
+record whose structure is `decl`, with the fields `given`, where `go`
+translates expressions (`lint::unnecessary_struct_initialization`). -/
+def lintStructInit (go : Syntax → TermElabM Term) (decl : Name) (e : Syntax) (given : Array Syntax) :
+    TermElabM Unit := do
+  -- Each field's value as `r.f`, its own field `f` of `r`, with `r`'s text.
+  let mut reads := #[]
+  for b in given do
+    if b[1].isNone then return
+    let v := unparen b[1][1]
+    let v := if v.getNumArgs == 1 then v[0] else v
+    let f := b[0].getId
+    if v.isOfKind ``Lang.fieldExpr && v[2].getId == f then
+      reads := reads.push (v[0], srcText v[0])
+    else if v.isOfKind ``Lang.fren_path && (pathSegs v).size == 1 then
+      let id := (pathSegs v)[0]!
+      unless !id.getId.isAtomic && id.getId.getString! == f.toString do return
+      let t := srcText id
+      let t := String.ofList (t.toList.take (t.length - f.toString.length - 1))
+      reads := reads.push (← `(fren_expr| $(mkIdentFrom id id.getId.getPrefix):ident), t)
+    else return
+  let some (r, t) := reads[0]? | return
+  let same := reads.all (Core.writtenSame ·.2 t)
+  -- A value has a type; an instance is not one.
+  let saved ← saveState
+  let ty? ← try some <$> typeOf (← go r) catch _ => pure none
+  saved.restore
+  if Core.unnecessaryStructInit given.size true same ty?.isSome (ty?.bind (·.constName?) == some decl) then
+    let msg := Core.unnecessaryStructInitMsg t
+    recordLint .unnecessaryStructInitialization e (if (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
+
+open Lang in
 /-- Translates a record literal, where `go` translates its values. -/
 def recordTerm (go : Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   let r ← resolveWritten cx.modName (pathSegs e[0]) cx.shadowing cx.noteIndexes
@@ -1246,6 +1278,7 @@ def recordTerm (go : Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : Te
     let t ← if b[1].isNone then go (← `(fren_expr| $(⟨b[0]⟩):ident)) else go b[1][1]
     checkDeclared v t ty fun tn => s!"note: `{f}` of `{Core.showPath path}` has type `{tn}`"
     return t
+  if cx.noteIndexes then lintStructInit go info.decl e given
   `($(mkCIdentFrom e[0] (recordCtor info.decl)) $args*)
 
 open Lang in
@@ -1923,6 +1956,10 @@ def lintPattern (cx : ExprCtx) (parent? : Option Syntax) (e recv : Syntax) (args
     recordLint .manualPatternCharComparison p (Core.manualPatternCharComparisonMsg (Core.patternLiteral (srcText p) fixed))
   if let some (fixed, found) := Core.completeRangesPattern? lit then
     recordLint .almostCompleteRange p (Core.almostCompleteRangeMsg found (Core.patternLiteral (srcText p) fixed))
+  -- `literal_dot_in_pattern` (`lint::literal_dot_in_pattern`).
+  if let some (fixed, found) := Core.literalDotsPattern? lit then
+    let msg := Core.literalDotMsg found (Core.patternLiteral (srcText p) fixed)
+    recordLint .literalDotInPattern p (if (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
   let some (fix, s) := Core.trivialPattern? lit | return
   let fixed := (Core.trivialPatternText (bareText recv) (srcText recv) fix s).inSlot (parent?.bind (operandSlot · e))
   recordLint .trivialPattern e (Core.trivialPatternMsg fix fixed)
@@ -2658,7 +2695,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
 @[command_elab Lang.typeCmd] def elabAbstractType : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
-  lintInvisible stx
+  lintItem stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -2673,7 +2710,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
 @[command_elab Lang.fnCmd] def elabFunction : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
-  lintInvisible stx
+  lintItem stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -2877,7 +2914,7 @@ open Lang in
 @[command_elab Lang.compCmd] def elabComp : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
-  lintInvisible stx
+  lintItem stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -3142,6 +3179,28 @@ open Lang in
       let own := vars.filter fun v => v.role == .input || (v.role == .output && !(v.isPub && v.defn?.isSome))
       for (x, v) in Core.unmentioned (own.map fun v => (v.name, v)) mentioned do
         recordLint .unusedVariables v.ref (Core.unusedVariableMsg x false (v.role == .output))
+      -- `unused_assumption` (`lint::unused_assumption`), unless a global
+      -- expectation reads one of the inputs (`reportLints`).
+      let mut others := #[]
+      for m in members do
+        match m with
+        | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
+          for b in bs.getElems do
+            let b := b.raw
+            others := others ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
+        | `(fren_member| req $_:ident : $e) | `(fren_member| expect $_:ident : $e) => others := others ++ pathMentions e
+        | _ => pure ()
+      for v in vars do
+        if let some d := v.defn? then others := others ++ pathMentions d
+      let inputs := vars.filter (·.role == .input) |>.map (·.name)
+      let level ← lintLevel .unusedAssumption
+      for m in members do
+        let `(fren_member| assume $x:ident : $e) := m | continue
+        let ms := (pathMentions e).foldl (init := #[]) fun acc n =>
+          if vars.any (·.name == n) && !acc.contains n then acc.push n else acc
+        if Core.unusedAssumption ms.size (ms.all inputs.contains) (ms.any others.contains) false then
+          let r : Core.AssumptionRecord := { component := path, name := x.getId, inputs := ms, level }
+          modifyLocal fun l => { l with assumptions := l.assumptions.push (r, x) }
     generated := insts.map (·.decl) ++ props.map (·.decl) ++ #[declBase ++ `assumes, declBase ++ `reqs]
       ++ values.map (declBase ++ `def ++ ·.1) ++ (if values.isEmpty then #[] else #[declBase ++ `defs])
     let env ← getEnv
@@ -3165,7 +3224,7 @@ open Lang in
 @[command_elab Lang.constCmd] def elabConst : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
-  lintInvisible stx
+  lintItem stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -3250,6 +3309,16 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     lintConstant cx "expect" body
     for (w, ref) in Core.unmentioned (binders.map fun b => (b.name, b.ref)) ((pathMentions body).map (·.getRoot)) do
       recordLint .unusedVariables ref (Core.unusedVariableMsg w true false)
+    -- What it reads through instances (`unused_assumption`).
+    let reads := (pathMentions body).filterMap fun m => match m.components with
+      | [w, x] => (binders.find? (·.name == w)).map fun b => (b.comp.path, x)
+      | _ => none
+    modifyLocal fun l => { l with globalReads := l.globalReads ++ reads }
+    -- `unrelated_binders` (`lint::unrelated_binders`).
+    let atoms := (boolNode "" 0 (unparen body)).atoms.map fun a => (pathMentions a.ref).map (·.getRoot)
+    let groups := Core.binderGroups (binders.map (·.name)) atoms
+    if Core.unrelatedBinders groups.size then
+      recordLint .unrelatedBinders nameStx (Core.unrelatedBindersMsg n.toString groups)
     let trig ← triggerOf cx body
     let trigger? ← trig.mapM fun (t, _) => do mkLambdaFVars fvs (← elabProp t)
     let slice (b : Binder) := fvs.extract b.offset (b.offset + b.comp.vars.size)
@@ -3281,7 +3350,7 @@ def globalText (stx : Syntax) : String :=
 @[command_elab Lang.globalCmd] def elabGlobal : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
-  lintInvisible stx
+  lintItem stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx
@@ -3324,7 +3393,7 @@ and the solver is asked nothing. -/
   let spec := stx.getArgs[:7].toArray
   spec.forM checkLexemes
   spec.forM checkParsed
-  lintInvisible stx
+  lintItem stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx
@@ -3365,6 +3434,10 @@ and the solver is asked nothing. -/
       throwErrorAt stx[5] (Core.interfaceMsg c.path a.path v.name why).text
   let w := Name.mkSimple c.path.getString!
   if a.insts.any (·.name == w) then throwErrorAt stx[5] (Core.dupMemberMsg w).text
+  -- `a`'s assumptions are hypotheses here, so it reads each input of `a`,
+  -- through its binding or by name (`unused_assumption`).
+  let reads := (a.vars.filter fun v => v.name.isAtomic && v.role == Core.Role.input).map (a.path, ·.name)
+  modifyLocal fun l => { l with globalReads := l.globalReads ++ reads }
   let tested := Core.Tested.ofSettings (← evidenceTested nameStx (fren.evidence.get (← getOptions)))
     -- The bindings too, for the definedness of their indexes.
     (a.assumes.map (·.name) ++ bound) ((a.reqs.map (·.name) ++ a.defs.map (·.1)).map (·, none))

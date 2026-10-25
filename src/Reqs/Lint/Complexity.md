@@ -205,3 +205,61 @@ pub comp output_lints {
     expect exclusive: not (constant? and definable?)
 }
 ```
+
+## Copied records
+
+`unnecessary_struct_initialization` fires on a record literal `S { x :=
+r.x, y := r.y }` whose every field reads that field of one `r`, written
+the same each time, where `r` is a value whose type is `S` itself: the
+literal is then `r`. It does not fire where `r` is of another record with
+the same fields, as `Pair { x := p.x, y := p.y }` for a `Point` `p`,
+which converts one to the other, nor where `r` is an instance, as `Point
+{ x := w.x, y := w.y }`, since an instance is not a value. A field without
+`:=`, as `x` in `S { x, y := r.y }`, reads the variable `x`. The fix
+replaces the literal with `r` as written: `r` is the receiver of a field
+read, so it needs no parentheses wherever the literal could be. A record is
+its fields, so the value is the same, and so are the
+[guards](../Lang/Expressions.md#sequences): a field read is defined
+wherever its receiver is, and `r` takes the literal's place.
+`lint::unnecessary_struct_initialization` states when it fires:
+
+```fren
+pub comp unnecessary_struct_initialization {
+    in n_fields: Int     -- the fields of the literal
+    in reads_own?        -- each field's value reads that field of some `r`, as `r.x` for `x`
+    in same?             -- `r` is written the same in each
+    in value?            -- `r` is a value, rather than an instance
+    in same_type?        -- `r`'s type is the record
+    pub det out fires?
+
+    assume counts: n_fields >= 0
+
+    req rule: fires? iff (n_fields > 0 and reads_own? and same? and value? and same_type?)
+}
+```
+
+The refinements below check the fix: a component that computes the
+literal as written, one that computes the fix, and a
+[refinement](../Lang/Refinement.md) each way, so that the solver checks
+that they agree on every input. An operand of the rewrite is a variable,
+standing for any expression of its type: Fren's expressions are pure, so a
+rewrite that holds for every value of its operands holds for every
+expression.
+
+```fren
+struct Point { x: Int, y: Int }
+
+set_option fren.lint.unnecessary_struct_initialization "allow" in
+pub comp struct_initialization_written {
+    in p: Point
+    pub det out v: Point := Point { x := p.x, y := p.y }
+}
+
+pub comp struct_initialization_fixed {
+    in p: Point
+    pub det out v: Point := p
+}
+
+refine struct_initialization_sound: struct_initialization_fixed refines struct_initialization_written
+refine struct_initialization_complete: struct_initialization_written refines struct_initialization_fixed
+```

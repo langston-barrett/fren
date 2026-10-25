@@ -132,3 +132,89 @@ pub comp dead_item {
 ```
 
 The message is reported at the item's name, at the end of the file.
+
+## Unused assumptions
+
+`unused_assumption` reports an assumption of a component that mentions
+only inputs, one or more, that nothing else mentions: no requirement,
+expectation, definition, or binding of one of the component's instances,
+no global expectation in the same file that reads one of them through an
+instance of the component, as `a.x` with the binder `a`, and no
+[refinement](../Lang/Refinement.md) in the same file of which the
+component is the abstraction. Such a refinement reads every input of the
+abstraction, through its binding or by name, and the abstraction's
+assumptions are its hypotheses, so an assumption can guard a binding: with
+`n := q.len` and `assume pos: n > 0`, `x := q[0]` is defined. Other
+assumptions do not count. Such an input does not affect the component, as
+for an [unused variable](#unused-variables), but `unused_variables` does
+not report it, since the assumption mentions it: this is what is left
+after the last requirement that used the input is removed. As for [dead
+code](#dead-code), only the file's global expectations and refinements
+count, and a binding of the input in an instance of the component
+elsewhere does not: it gives the input a value, and the instance's
+assumption check checks the assumption of it, but the component does not
+use it. There is no fix: removing the inputs would change the component's
+interface.
+`lint::unused_assumption` states when it fires:
+
+```fren
+pub comp unused_assumption {
+    in n_mentioned: Int  -- variables the assumption mentions
+    in all_inputs?       -- each of them is an input
+    in mentioned?        -- something in the component but an assumption mentions one of them
+    in read?             -- a global expectation of the file reads one of them through an instance, or a refinement of the file reads them
+    pub det out fires?
+
+    assume counts: n_mentioned >= 0
+
+    req rule: fires? iff (n_mentioned > 0 and all_inputs? and not mentioned? and not read?)
+}
+```
+
+The message is reported at the assumption's name, at the end of the
+file.
+
+## Unused lint settings
+
+`unused_lint_setting` reports a [lint setting](../Lint.md#setting-levels),
+a `set_option` of a lint or a group, that is in effect at no item for any
+of the lints it sets. A setting is in effect from where it is to the end
+of the file, or with `in`, in its item, except where a later setting
+replaces it for a lint. So a setting has no effect when, before any item:
+
+- a later setting of the same lint or group replaces it, as in `set_option
+  L "allow" in set_option L "warn" in item`, where the inner one wins, or
+  in two settings at the top level with no item between them;
+- a setting of its group replaces it, since that sets each of its lints;
+- the file ends, as for a setting after the last item.
+
+A setting of a lint after one of its group, as `set_option
+fren.lint.pedantic "warn"` and then `set_option fren.lint.match_same_arms
+"allow"`, is not reported: the group's is still in effect for its other
+lints. A check, such as `#fren_check`, is not an item here, since no lint
+is about it. A setting of `unfulfilled_lint_expectations` or
+`unused_lint_setting` is also in effect at a later setting, whose messages
+take their level from it, and so is a `forbid`, which decides whether a
+later setting is accepted. A setting to `expect` is not reported: if
+nothing fulfils it, `unfulfilled_lint_expectations` reports it.
+
+A replaced `deny` is the most dangerous case, since the lint it denies is
+then not an error after all: the message says which setting undoes it.
+The message is reported at the setting, at the end of the file. The fix
+removes it, as the [fix](../Lint.md#fixing-lints) of
+`unfulfilled_lint_expectations` does: since it is in effect at no item,
+every item keeps its levels, and since it is in effect at no setting
+either, every setting keeps its messages and is accepted or not as
+before. `lint::unused_lint_setting` states when it fires:
+
+```fren
+pub comp unused_lint_setting {
+    in n_places: Int     -- items and later settings where it is in effect for a lint it sets
+    in expect?           -- it is to `expect`
+    pub det out fires?
+
+    assume counts: n_places >= 0
+
+    req rule: fires? iff (n_places = 0 and not expect?)
+}
+```

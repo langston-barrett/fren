@@ -1,0 +1,23 @@
+-- `unrelated_binders`, in both front ends: a global expectation whose
+-- binders fall into groups that no atom relates.
+
+pub comp c {
+    in x: Int
+    pub out y: Int
+    req r: y = x + 1
+}
+
+expect apart: forall (a b: c), when a.x = 0 and b.x = 1, a.y = 1 and b.y = 2  --~ warning: the binders of `apart` fall into 2 groups that nothing relates
+
+-- One comparison relates them.
+expect related: forall (a b: c), when a.x = b.x, a.y = b.y
+
+-- `a` and `b` through `d`'s comparisons; `e` alone.
+expect chained: forall (a b d e: c), when a.x = d.x and d.x = b.x, a.y = b.y and e.y = e.x + 1
+--~^ warning: the binders of `chained` fall into 2 groups that nothing relates
+
+-- An `iff` and an `if` are atoms.
+expect atoms: forall (a b: c), (a.x = 0 iff b.x = 0) or (if a.x = 0 then b.y != 1 else a.y != 1)
+
+-- `b` is mentioned nowhere: `unused_variables`'.
+expect unused: forall (a b: c), a.y = a.x + 1  --~ warning: unused binder `b`

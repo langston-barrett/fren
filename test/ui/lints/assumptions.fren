@@ -1,0 +1,86 @@
+-- `unused_assumption`, in both front ends: an assumption that mentions only
+-- inputs that nothing else mentions.
+
+comp left_over {
+    in x: Int
+    in n: Int
+    in t: Int
+    pub out y: Int
+
+    assume pos: n > 0  --~ warning: the assumption `pos` constrains only inputs that nothing uses
+    assume small: n < 10  --~ warning: the assumption `small` constrains only inputs that nothing uses
+    -- `t` is used, and so `x` too.
+    assume below: n < t
+    assume ordered: x < t
+    req r: y = x + t
+}
+
+pub comp sub {
+    in x: Int
+    pub out y: Int
+    assume pos: x > 0
+    req r: y = x
+}
+
+-- The assumption feeds an instance's binding.
+comp bound {
+    in x: Int
+    pub out y: Int
+    inst w: sub { x }
+    assume pos: x > 0
+
+    req r: y = w.y
+}
+
+-- A definition is something else.
+comp defined {
+    in x: Int
+    in k: Int
+    det out d: Int := k + 1
+    pub out y: Int
+    assume pos: k > 0
+    req r: y = x + d
+}
+
+-- A global expectation in the file reads it.
+comp read_globally {
+    in z: Int
+    pub out y: Int
+    assume pos: z > 0
+    req r: y = 1
+}
+
+expect g: forall (a: read_globally), a.z > 0
+
+-- A refinement of it in the file reads its inputs, bound or by name, under
+-- its assumptions, which here guard the binding of `x`.
+comp first_of {
+    in n: Int
+    in x: Int
+    in m: Int
+    pub out y: Int
+    assume pos: n > 0
+    assume named: m > 0
+    req r: y = x
+}
+
+comp heads {
+    in q: Seq(Int)
+    in m: Int
+    pub out s: Seq(Int) := q
+    pub out t: Int := m
+}
+
+refine guarded: heads refines first_of { n := q.len, x := q[0], y := s[0] }
+
+-- An instance of it elsewhere does not read it.
+comp instanced {
+    in k: Int
+    assume pos: k > 0  --~ warning: the assumption `pos` constrains only inputs that nothing uses
+}
+
+comp uses_instanced {
+    pub out y: Int
+    inst i: instanced { k := 1 }
+    req r: y = 1
+}

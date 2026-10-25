@@ -1,7 +1,7 @@
 warning[F0612]: testing never reached the assumption `m::guarded::narrow` of instance `u` in 100 tests: its trigger held in none of them
-  --> test/cli/results/f0612_global_instance.fren:21:10
+  --> test/cli/results/f0612_global_instance.fren:22:10
    |
-21 |     inst u: guarded { y := z }
+22 |     inst u: guarded { y := z }
    |          ^ never held
    |
    = note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it

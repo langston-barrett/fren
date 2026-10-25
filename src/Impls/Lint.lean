@@ -1212,4 +1212,70 @@ impl precedence: lint::precedence for (o i : Fren.Core.InfixOp) (p : Bool) {
   · cases o <;> cases i <;> simp +decide [fren_spec]
   · simp [fren_spec, Fren.Core.precedenceFires]
 
+/-! ## Copied records, settings, assumptions, binders and dots -/
+
+-- Both front ends decide it with `unnecessaryStructInit`, on each record
+-- literal, typing its receiver apart.
+impl unnecessary_struct_initialization: lint::unnecessary_struct_initialization
+    for (n : Nat) (o s v t : Bool) {
+  n_fields := n,
+  reads_own? := o,
+  same? := s,
+  value? := v,
+  same_type? := t,
+  fires? := Fren.Core.unnecessaryStructInit n o s v t,
+} by
+  intro n o s v t _
+  cases o <;> cases s <;> cases v <;> cases t <;> simp [fren_spec, Fren.Core.unnecessaryStructInit]
+
+trusted lint::struct_initialization_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::struct_initialization_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::empty_membership_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::empty_membership_value: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::empty_subset_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::empty_subset_value: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::literal_dot_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::literal_dot_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::literal_dot_value: "a model of an expression, checked against its fix by the refinements in its section"
+
+-- Both front ends decide it with `unusedSettingReports`, from the settings
+-- each item reads: a setting that one reads is in effect at an item.
+impl unused_lint_setting: lint::unused_lint_setting for (seen e : Bool) {
+  n_places := if seen then 1 else 0,
+  expect? := e,
+  fires? := Fren.Core.unusedLintSetting seen e,
+} by
+  intro seen e _
+  cases seen <;> cases e <;> simp [fren_spec, Fren.Core.unusedLintSetting]
+
+-- Both front ends decide it with `unusedAssumption`, at the component and
+-- again at the end of the file, with the global expectations' reads.
+impl unused_assumption: lint::unused_assumption for (n : Nat) (a m r : Bool) {
+  n_mentioned := n,
+  all_inputs? := a,
+  mentioned? := m,
+  read? := r,
+  fires? := Fren.Core.unusedAssumption n a m r,
+} by
+  intro n a m r _
+  cases a <;> cases m <;> cases r <;> simp [fren_spec, Fren.Core.unusedAssumption]
+
+-- Both front ends count the groups with `binderGroups`.
+impl unrelated_binders: lint::unrelated_binders for (n : Nat) {
+  n_groups := n,
+  fires? := Fren.Core.unrelatedBinders n,
+} by
+  intro n _
+  simp only [fren_spec, Fren.Core.unrelatedBinders, decide_eq_true_eq]
+  omega
+
+-- Both front ends find the dots with `literalDotsPattern?`.
+impl literal_dot_in_pattern: lint::literal_dot_in_pattern for (b a : Bool) {
+  before? := b,
+  after? := a,
+  fires? := Fren.Core.literalDotInPattern b a,
+} by
+  intro b a _
+  cases b <;> cases a <;> simp [fren_spec, Fren.Core.literalDotInPattern]
+
 end Fren.Impls

@@ -376,6 +376,15 @@ structure LocalState where
   paths in it resolve to (`dead_code`). -/
   items : Array (Core.ItemRecord × Syntax) := #[]
   usedItems : Array Name := #[]
+  /-- The lint settings of this file, or Markdown spec, and those in effect
+  at an item (`unused_lint_setting`). -/
+  settings : Array (Core.SettingRecord × Syntax) := #[]
+  seenSettings : Array Nat := #[]
+  /-- Its assumptions that `unused_assumption` may fire on, and what its
+  global expectations read through instances, and its refinements of their
+  abstractions: each read's component and input. -/
+  assumptions : Array (Core.AssumptionRecord × Syntax) := #[]
+  globalReads : Array (Name × Name) := #[]
   /-- Elaborating a Markdown spec (`#fren_md`), which reports its own lints. -/
   inMarkdown : Bool := false
   /-- For each comp, global expectation and refinement declared in a

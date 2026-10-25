@@ -169,3 +169,62 @@ pub comp almost_complete_range {
     expect whole: when fires?, whole_high - whole_low = 25 or (whole_low = 48 and whole_high = 57)
 }
 ```
+
+## Dots in patterns
+
+`literal_dot_in_pattern` fires on a `.` in a
+[pattern](../../Lang/Expressions.md#patterns) between two letters or digits,
+as in `r"v1.2"` or `r".*file.txt"`, and is fixable. A `.` matches any one
+character, so `r"v1.2"` matches `"v1x2"` too, but between two letters or
+digits it is probably meant as a dot. The `.` must be neither escaped nor
+in a class, where it is a dot already, and so must the letters or digits:
+in `r"[0-9]{3}.[0-9]{4}"`, the `.` is between a `}` and a `[`, and in
+`r"\..x"`, after an escape, so neither fires. A `.` followed by a letter
+or digit is not followed by a quantifier, as the `.` of `.*` is. The fix
+writes each such `.` as `[.]`, and the message is reported once for the
+literal, whose fix writes the literal as
+[`manual_pattern_char_comparison`](../Style.md#classes-of-characters)'s fix
+does. It writes `[.]` rather than `\.`, since `\.` is not an
+[escape](../../Lang/Lexical.md#literals) in a string literal that is
+not raw. Fren's own patterns write a dot as `[.]` or `\.`. The fix changes
+what the pattern matches, to what it probably meant, and only the literal
+changes, so it keeps the guards. `lint::literal_dot_in_pattern` states
+when it fires:
+
+```fren
+pub comp literal_dot_in_pattern {
+    in before?           -- a letter or digit, neither escaped nor in a class, is directly before the `.`
+    in after?            -- one is directly after it
+    pub det out fires?
+
+    req rule: fires? iff (before? and after?)
+}
+```
+
+`lint::literal_dot_fixed` and `lint::literal_dot_value` check, with a
+[refinement](../../Lang/Refinement.md) each way, that the fix of `r"v1.2"`
+matches exactly the string `"v1.2"`, and `lint::literal_dot_written` that
+the pattern as written matches `"v1x2"` too:
+
+```fren
+set_option fren.lint.literal_dot_in_pattern "allow" in
+pub comp literal_dot_written {
+    in s: String
+    pub det out v? := s.matches?(r"v1.2")
+
+    expect any_character: when s = "v1x2", v?
+}
+
+pub comp literal_dot_fixed {
+    in s: String
+    pub det out v? := s.matches?(r"v1[.]2")
+}
+
+pub comp literal_dot_value {
+    in s: String
+    pub det out v? := s = "v1.2"
+}
+
+refine literal_dot_sound: literal_dot_value refines literal_dot_fixed
+refine literal_dot_complete: literal_dot_fixed refines literal_dot_value
+```

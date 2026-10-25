@@ -7,6 +7,10 @@ pub fn y(Int): Int
 pub fn p(Int): Int
 pub fn d(Int): Int
 
+-- Its assumption is checked at the instance below, but nothing in
+-- `positive` depends on `k`, and an instance's binding is not a use, so
+-- `unused_assumption` rightly reports it.
+set_option fren.lint.unused_assumption "allow" in
 pub comp positive {
     in k: Int
     assume pos: k > 0

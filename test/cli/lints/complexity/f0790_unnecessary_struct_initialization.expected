@@ -1,0 +1,19 @@
+warning[F0790]: this record literal is `p`
+ --> test/cli/lints/complexity/f0790_unnecessary_struct_initialization.fren:4:50
+  |
+4 | comp c { in p: Point pub out q: Point req r: q = Point { x := p.x, y := p.y } }
+  |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ copies each field of `p`
+  |
+  = help: `fren fix` can fix this
+  = note: `unnecessary_struct_initialization` is `warn` by default
+  = help: to allow it, `set_option fren.lint.unnecessary_struct_initialization "allow"`
+help: write `p`
+  |
+4 - comp c { in p: Point pub out q: Point req r: q = Point { x := p.x, y := p.y } }
+4 + comp c { in p: Point pub out q: Point req r: q = p }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0790`.
+exit=3

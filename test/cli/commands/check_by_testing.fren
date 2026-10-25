@@ -27,6 +27,7 @@ pub comp parity {
 }
 
 -- An instance set to testing: its assumption is tested, and false.
+set_option fren.lint.unused_assumption "allow" in
 pub comp positive {
     in k: Int
     assume pos: k > 0

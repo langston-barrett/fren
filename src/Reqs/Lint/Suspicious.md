@@ -1,8 +1,9 @@
 # Suspicious
 
 The lints of the `suspicious` group find what is probably not what the
-writer meant. This chapter has the lints of names, of constraints and of
-the spacing of negations, and its subchapters the others: those of
+writer meant. This chapter has the lints of names, of constraints, of
+the spacing of negations and of the binders of global expectations, and
+its subchapters the others: those of
 [expressions](Suspicious/Expressions.md), of [methods and
 indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md) and of
 [comparisons](Suspicious/Comparisons.md).
@@ -79,5 +80,33 @@ pub comp suspicious_unary_op_formatting {
     pub det out fires?
 
     req rule: fires? iff (punctuator? and adjacent? and spaced?)
+}
+```
+
+## Unrelated binders
+
+`unrelated_binders` fires on a [global expectation](../Lang/Global.md)
+whose binders fall into two or more groups that no single atom mentions
+across. The *atoms* of an expression are its operands through `and`,
+`or`, `not`, `when` and `unless`: comparisons, `iff` among them,
+memberships, `Bool` paths, applications, `match` and `if`. Two binders are
+in one group when an atom mentions both, or each is in one group with a
+third; a binder that no atom mentions is left to
+[`unused_variables`](Unused.md#unused-variables). Such an expectation is
+several independent claims run together: in `forall (a b: c), when a.x =
+0 and b.x = 1, a.y = 1 and b.y = 2`, nothing relates `a` to `b`, and a
+counterexample to the claim about one names the other too. The message
+names two of the groups. It has no fix: the binders may be meant to be
+related, by an atom left out, or the claims may be meant to be separate
+expectations. `lint::unrelated_binders` states when it fires:
+
+```fren
+pub comp unrelated_binders {
+    in n_groups: Int     -- groups of the binders that atoms mention
+    pub det out fires?
+
+    assume counts: n_groups >= 0
+
+    req rule: fires? iff n_groups >= 2
 }
 ```

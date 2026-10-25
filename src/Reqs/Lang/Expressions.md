@@ -268,9 +268,12 @@ pub comp linear_product {
 }
 ```
 
-An operand that mentions less never makes a product nonlinear:
+An operand that mentions less never makes a product nonlinear. No atom
+mentions both products, which are related only by being instances of one
+component, so the expectation expects `unrelated_binders`:
 
 ```fren
+set_option fren.lint.unrelated_binders "expect" in
 expect fewer_mentions: forall (p q: linear_product),
     when (not q.a_mentions? or p.a_mentions?) and (not q.b_mentions? or p.b_mentions?) and p.accepted?,
     q.accepted?
