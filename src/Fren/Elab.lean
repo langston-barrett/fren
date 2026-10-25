@@ -1546,6 +1546,102 @@ def indexTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   `(Fren.Seq.nth $q $i)
 
 open Lang in
+/-- A path in an expression: a binder, a variable or a constant, with the
+fields read from it, or a variant. `toTerm` translates its parts, and
+`parent?` is the expression around it. -/
+def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (parent? : Option Syntax) (e : Syntax)
+    (p : TSyntax ``fren_path) : TermElabM Term := do
+  let segs := pathSegs p
+  if h : segs.size = 1 then
+    lintChain toTerm cx parent? e
+    let id := segs[0]
+    let n := id.getId
+    -- A binder or variable, then any fields read from it.
+    let base? ← if let some b := cx.binder? n.getRoot then do
+        discard (toTerm (cx.at b) b.scrutinee)
+        pure (some ((b.term, b.type), n.components.drop 1))
+      else
+        let ks := (List.range n.components.length).reverse.map (· + 1)
+        match ks.findSome? fun k => (cx.vars.find? (·.name == (n.components.take k).foldl (· ++ ·) .anonymous)).map (·, k) with
+        | some (v, k) =>
+          let some t ← varRef? cx id v.name | throwError "internal error: no variable `{v.name}`"
+          pure (some ((t, v.type), n.components.drop k))
+        | none =>
+          -- A constant, then the fields read from its value, or the
+          -- methods without arguments applied to it.
+          let root := n.getRoot
+          if n.isAtomic || cx.insts.contains root then pure none else
+          match (← getState).table.resolvePath cx.modName #[root] cx.shadowing with
+          | .ok (.item { kind := .constItem, .. }) =>
+            -- Resolved again, to record its use and any import it uses.
+            let .item { kind := .constItem, path, .. } ← resolvePath cx.modName #[mkIdentFrom id root] cx.shadowing
+              | pure none
+            let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
+            let t ← `(($(← exprToSyntax c.value) : $(← exprToSyntax c.type)))
+            pure (some ((t, c.type), n.components.drop 1))
+          | _ => pure none
+    if let some (base, fields) := base? then
+      let parts := n.components
+      let first := parts.length - fields.length
+      return (← fields.zipIdx.foldlM (init := base) fun (t, ty) (f, j) =>
+        readPathField cx id parts (first + j) t ty f).1
+    unless n.isAtomic do throwErrorAt segs[0] (Core.dottedNameMsg n cx.insts (cx.vars.filter (·.role != .instHidden) |>.map (·.name))).text
+  match ← resolvePath cx.modName segs cx.shadowing with
+  | .variant en idx =>
+    let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
+    let n := (info.payloads[idx]?.map (·.size)).getD 0
+    if let some msg := Core.variantMentionMsg? (en.path ++ en.variants[idx]!) n false then throwError msg.text
+    return mkCIdentFrom e (info.decl ++ en.variants[idx]!)
+  | .item { kind := .constItem, path, .. } =>
+    let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
+    -- Its value, not its generated definition (see `Fren.Model`).
+    `(($(← exprToSyntax c.value) : $(← exprToSyntax c.type)))
+  | .item { kind := .fnItem, path, .. } => throwError (Core.unappliedMsg path).text
+  | r => throwError (Core.notAValueMsg r).text
+
+open Lang in
+/-- `p(args)`: a method, a variant with a payload, or a function applied.
+`toTerm` translates its parts, and `parent?` is the expression around it. -/
+def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (parent? : Option Syntax) (e : Syntax)
+    (p : TSyntax ``fren_path) (args : Syntax.TSepArray `fren_expr ",") : TermElabM Term := do
+  if let some (recv, m) := methodApp? cx e then
+    let recv ← pathExpr p recv
+    if m.toString == "matches?" then lintPattern cx parent? e recv args.getElems
+    return ← methodTerm toTerm cx e p recv m.toString args.getElems
+  let segs := pathSegs p
+  if segs.size == 1 && (cx.vars.any (·.name == segs[0]!.getId) || (cx.binder? segs[0]!.getId).isSome) then
+    throwErrorAt p (Core.varNotAFunctionMsg segs[0]!.getId).text
+  if segs.size == 1 && cx.selfFn == some segs[0]!.getId then
+    throwErrorAt p (Core.recursiveMsg (cx.modName ++ segs[0]!.getId)).text
+  -- A variable shadows a function, as it does any other item.
+  let r ← resolvePath cx.modName (pathSegs p) cx.shadowing
+  if let .variant en idx := r then
+    -- A variant with a payload, built from its values.
+    let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
+    let v := en.path ++ en.variants[idx]!
+    let n := (info.payloads[idx]?.map (·.size)).getD 0
+    if let some msg := Core.variantMentionMsg? v n true then throwError msg.text
+    unless args.getElems.size == n do throwError (Core.arityMsg v n args.getElems.size "value").text
+    let args ← args.getElems.mapM (toTerm { cx with emptyOk := true })
+    return ← `($(mkCIdentFrom p (info.decl ++ en.variants[idx]!)) $args*)
+  let .item { kind := .fnItem, path, .. } := r | throwErrorAt p (Core.notAFunctionMsg r).text
+  if let some d := (← getState).defined.get? path then
+    -- Its definition, applied to the placeholders it uses; its arguments
+    -- may mention anything (`lang::argument`).
+    unless args.getElems.size == d.nParams do throwError (Core.arityMsg path d.nParams args.getElems.size).text
+    let args ← args.getElems.mapM (toTerm { cx with emptyOk := true })
+    return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
+  if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
+  let a ← placeholderOf path
+  let nParams := (← getConstInfo a.placeholder).type.getForallArity
+  unless args.getElems.size == nParams do throwError (Core.arityMsg path nParams args.getElems.size).text
+  -- Outputs may not occur in arguments (`inst::mention`); assumptions and
+  -- bindings exclude them already.
+  let acx := if cx.place == .prop then { cx with place := .argument } else cx
+  let args ← args.getElems.mapM (toTerm { acx with emptyOk := true })
+  `($(mkCIdentFrom p a.placeholder) $args*)
+
+open Lang in
 /-- Translates a Fren expression to a Lean term, resolving names with Fren's
 rules. Variables become references to locals of the same name; variants
 become references to the generated constructors. -/
@@ -1592,91 +1688,8 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $n:num) => `(($n : Int))
   | `(fren_expr| true) => `(true)
   | `(fren_expr| false) => `(false)
-  | `(fren_expr| $p:fren_path) =>
-    let segs := pathSegs p
-    if h : segs.size = 1 then
-      lintChain toTerm cx parent? e
-      let id := segs[0]
-      let n := id.getId
-      -- A binder or variable, then any fields read from it.
-      let base? ← if let some b := cx.binder? n.getRoot then do
-          discard (toTerm (cx.at b) b.scrutinee)
-          pure (some ((b.term, b.type), n.components.drop 1))
-        else
-          let ks := (List.range n.components.length).reverse.map (· + 1)
-          match ks.findSome? fun k => (cx.vars.find? (·.name == (n.components.take k).foldl (· ++ ·) .anonymous)).map (·, k) with
-          | some (v, k) =>
-            let some t ← varRef? cx id v.name | throwError "internal error: no variable `{v.name}`"
-            pure (some ((t, v.type), n.components.drop k))
-          | none =>
-            -- A constant, then the fields read from its value, or the
-            -- methods without arguments applied to it.
-            let root := n.getRoot
-            if n.isAtomic || cx.insts.contains root then pure none else
-            match (← getState).table.resolvePath cx.modName #[root] cx.shadowing with
-            | .ok (.item { kind := .constItem, .. }) =>
-              -- Resolved again, to record its use and any import it uses.
-              let .item { kind := .constItem, path, .. } ← resolvePath cx.modName #[mkIdentFrom id root] cx.shadowing
-                | pure none
-              let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
-              let t ← `(($(← exprToSyntax c.value) : $(← exprToSyntax c.type)))
-              pure (some ((t, c.type), n.components.drop 1))
-            | _ => pure none
-      if let some (base, fields) := base? then
-        let parts := n.components
-        let first := parts.length - fields.length
-        return (← fields.zipIdx.foldlM (init := base) fun (t, ty) (f, j) =>
-          readPathField cx id parts (first + j) t ty f).1
-      unless n.isAtomic do throwErrorAt segs[0] (Core.dottedNameMsg n cx.insts (cx.vars.filter (·.role != .instHidden) |>.map (·.name))).text
-    match ← resolvePath cx.modName segs cx.shadowing with
-    | .variant en idx =>
-      let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
-      let n := (info.payloads[idx]?.map (·.size)).getD 0
-      if let some msg := Core.variantMentionMsg? (en.path ++ en.variants[idx]!) n false then throwError msg.text
-      return mkCIdentFrom e (info.decl ++ en.variants[idx]!)
-    | .item { kind := .constItem, path, .. } =>
-      let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
-      -- Its value, not its generated definition (see `Fren.Model`).
-      `(($(← exprToSyntax c.value) : $(← exprToSyntax c.type)))
-    | .item { kind := .fnItem, path, .. } => throwError (Core.unappliedMsg path).text
-    | r => throwError (Core.notAValueMsg r).text
-  | `(fren_expr| $p:fren_path($args,*)) =>
-    if let some (recv, m) := methodApp? cx e then
-      let recv ← pathExpr p recv
-      if m.toString == "matches?" then lintPattern cx parent? e recv args.getElems
-      return ← methodTerm toTerm cx e p recv m.toString args.getElems
-    let segs := pathSegs p
-    if segs.size == 1 && (cx.vars.any (·.name == segs[0]!.getId) || (cx.binder? segs[0]!.getId).isSome) then
-      throwErrorAt p (Core.varNotAFunctionMsg segs[0]!.getId).text
-    if segs.size == 1 && cx.selfFn == some segs[0]!.getId then
-      throwErrorAt p (Core.recursiveMsg (cx.modName ++ segs[0]!.getId)).text
-    -- A variable shadows a function, as it does any other item.
-    let r ← resolvePath cx.modName (pathSegs p) cx.shadowing
-    if let .variant en idx := r then
-      -- A variant with a payload, built from its values.
-      let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
-      let v := en.path ++ en.variants[idx]!
-      let n := (info.payloads[idx]?.map (·.size)).getD 0
-      if let some msg := Core.variantMentionMsg? v n true then throwError msg.text
-      unless args.getElems.size == n do throwError (Core.arityMsg v n args.getElems.size "value").text
-      let args ← args.getElems.mapM (toTerm { cx with emptyOk := true })
-      return ← `($(mkCIdentFrom p (info.decl ++ en.variants[idx]!)) $args*)
-    let .item { kind := .fnItem, path, .. } := r | throwErrorAt p (Core.notAFunctionMsg r).text
-    if let some d := (← getState).defined.get? path then
-      -- Its definition, applied to the placeholders it uses; its arguments
-      -- may mention anything (`lang::argument`).
-      unless args.getElems.size == d.nParams do throwError (Core.arityMsg path d.nParams args.getElems.size).text
-      let args ← args.getElems.mapM (toTerm { cx with emptyOk := true })
-      return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
-    if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
-    let a ← placeholderOf path
-    let nParams := (← getConstInfo a.placeholder).type.getForallArity
-    unless args.getElems.size == nParams do throwError (Core.arityMsg path nParams args.getElems.size).text
-    -- Outputs may not occur in arguments (`inst::mention`); assumptions and
-    -- bindings exclude them already.
-    let acx := if cx.place == .prop then { cx with place := .argument } else cx
-    let args ← args.getElems.mapM (toTerm { acx with emptyOk := true })
-    `($(mkCIdentFrom p a.placeholder) $args*)
+  | `(fren_expr| $p:fren_path) => pathTerm toTerm cx parent? e p
+  | `(fren_expr| $p:fren_path($args,*)) => appTerm toTerm cx parent? e p args
   | _ =>
     if e.isOfKind ``Lang.fieldExpr then
       lintChain toTerm cx parent? e
