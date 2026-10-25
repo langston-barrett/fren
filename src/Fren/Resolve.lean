@@ -60,7 +60,7 @@ used. -/
 def declare (x : Syntax) (scope : Name) (locals : Array (Name × String) := #[]) : m Syntax := do
   let (y, bang) := declaredIdent x
   let table := (← getState).table
-  liftMsg x (Core.checkLeanToken y.getId bang)
+  liftMsg x (Core.checkDeclaredName y.getId bang)
   liftMsg x (Core.checkShadowing y.getId (table.hidden? scope locals y.getId) bang)
   if let some u := table.shadowedImport? scope locals y.getId bang then recordUsed u
   return y

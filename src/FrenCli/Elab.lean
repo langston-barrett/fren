@@ -459,7 +459,7 @@ def declare (x : Ident) (locals : Array (Name × String) := #[]) : M Ident := do
   let (y, bang) := declaredIdent x
   let n := Name.mkSimple y.name
   let st ← get
-  liftMsg x.span (Fren.Core.checkLeanToken n bang)
+  liftMsg x.span (Fren.Core.checkDeclaredName n bang)
   liftMsg x.span (Fren.Core.checkShadowing n (st.table.hidden? st.scope locals n) bang)
   if let some u := st.table.shadowedImport? st.scope locals n bang then
     modify fun s => { s with used := s.used.push u }

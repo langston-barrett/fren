@@ -394,9 +394,21 @@ def leanBangTokens : List String :=
   ["assert!", "debug_assert!", "f!", "m!", "panic!", "println!", "reportDbgIssue!", "reportEMatchIssue!",
    "reportIssue!", "s!", "unreachable!", "using!"]
 
-/-- Fails if the declaration of `n`, written with `!` if `bang`, is one of
-Lean's tokens. -/
-def checkLeanToken (n : Name) (bang : Bool) : Except Msg Unit := do
+/-- Fails if `n`, a name being declared, is `true` or `false`: these are
+literals wherever an expression is expected, so nothing could mention the
+declaration (`Reqs/Lang/Lexical#keywords`). -/
+def checkNotLiteral (n : Name) : Except Msg Unit := do
+  if n == `true || n == `false then
+    throw { code? := some "F0220", headline := s!"`{n}` is a literal, so it cannot be declared"
+            label? := some "a literal"
+            notes := #[s!"note: `{n}` is the `Bool` literal wherever an expression is expected, so nothing could name this declaration",
+              "help: rename the declaration"] }
+
+/-- Fails if the declaration of `n`, written with `!` if `bang`, is a
+literal (`checkNotLiteral`) or one of Lean's tokens. Every declaration's
+name is checked by this. -/
+def checkDeclaredName (n : Name) (bang : Bool) : Except Msg Unit := do
+  checkNotLiteral n
   let text := n.toString ++ "!"
   if bang && leanBangTokens.contains text then
     throw { code? := some "F0219", headline := s!"`{text}` is a Lean token, so it cannot be declared"
@@ -408,7 +420,7 @@ def checkLeanToken (n : Name) (bang : Bool) : Except Msg Unit := do
 item's or a constraint's, is written with `!`. -/
 def checkNoBang (n : Name) : Except Msg Unit := do
   let (base, bang) := declaredName n
-  checkLeanToken base bang
+  checkDeclaredName base bang
   if bang then
     throw (needlessBangMsg base "only variables, parameters, instances and binders shadow")
 

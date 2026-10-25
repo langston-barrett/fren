@@ -2448,6 +2448,10 @@ open Lang in
     let mut pending : Array PendingInst := #[]
     for m in members do
       let `(fren_member| inst $x:ident : $p:fren_path { $bs,* }) := m | continue
+      -- An instance named by a literal is not resolved, which would report
+      -- its name again; the `fren` command stops at the first report too.
+      if let .error msg := Core.checkNotLiteral (declaredIdent x).1.getId then
+        logErrorAt x msg.text; ok := false; continue
       let x ← try declare x scope
         catch ex => logException ex; ok := false; pure (declaredIdent x).1
       names := names.insert x.getId

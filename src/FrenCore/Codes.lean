@@ -782,6 +782,22 @@ pub enum Shape { Circle(Int), Square }
 comp c { in s: Shape pub out p? req r: p? iff match s { Shape::Circle(r) => r > 0, _ => false } }
 ```
 "# },
+  { code := "F0220", explanation := r#"A declaration is named `true` or `false`.
+
+Erroneous code example:
+
+```fren
+comp c { in true: Int pub out y: Int req r: y = 1 }
+```
+
+`true` and `false` are the literals of type `Bool` wherever an expression
+is expected, so nothing could name a variable, item or other declaration
+called `true` or `false`. Rename the declaration:
+
+```fren
+comp c { in t: Int pub out y: Int req r: y = t }
+```
+"# },
   { code := "F0301", explanation := r#"A variable has no type.
 
 Erroneous code example:
