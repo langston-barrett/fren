@@ -184,3 +184,18 @@ comp variant {
     assume a: n = Color::Red  --~ warning: the assumption `a` constrains only inputs that nothing uses
     req r: y = 1
 }
+
+-- An assumption that only bounds the size of an abstract type is unused:
+-- a counterexample without it extends to one with it.
+type Key
+
+comp keyed {
+    in k1: Key
+    in k2: Key
+    in i: Key
+    in j: Key
+    pub out same?
+    assume distinct: k1 != k2  --~ warning: the assumption `distinct` constrains only inputs that nothing uses
+    req r: same? iff i = j
+    expect equal: when i = j, same?
+}

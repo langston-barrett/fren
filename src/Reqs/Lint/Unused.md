@@ -164,7 +164,12 @@ C(U)`, with `A` the assumption, which is `(exists V, A(V)) implies (forall
 U, B(U) implies C(U))`, for every interpretation of the functions. Since
 `B` and `C` apply none of `A`'s functions, `exists V, A(V)` can be made
 to hold by changing only those, unless `A` is unsatisfiable, and then the
-assumptions' satisfiability check already fails (`F0602`). An unused
+assumptions' satisfiability check already fails (`F0602`). An assumption
+can also bound the size of an abstract type, as `k1 != k2` does, but that
+is safe too: given a counterexample to a check without it, add a fresh
+value to the type, extend each uninterpreted function to it, and give
+`k1` an old value and `k2` the new one. Nothing else mentions them, so
+the counterexample still fails, and the assumption now holds. An unused
 input does not affect the component, as for an [unused variable](#unused-variables), but
 `unused_variables` does not report it, since the assumption mentions it:
 this is what is left after the last requirement that used the input is
