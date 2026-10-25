@@ -528,6 +528,11 @@ def ExprCtx.at (cx : ExprCtx) (b : MatchBinder) : ExprCtx := { cx with binders :
 def ExprCtx.shadowing (cx : ExprCtx) : Array Name :=
   (cx.vars.filter (·.name.isAtomic) |>.map (·.name)) ++ cx.binders.map (·.name)
 
+/-- Whether the path `p` names a variant. -/
+def isVariant (cx : ExprCtx) (p : Syntax) : TermElabM Bool := do
+  let names ← segNames (pathSegs p)
+  return (← getState).table.resolvePath cx.modName names cx.shadowing matches .ok (.variant ..)
+
 /-- Whether the path `p`, applied, builds a variant or a newtype rather
 than applying a function. -/
 def isConstruction (cx : ExprCtx) (p : Syntax) : TermElabM Bool := do
@@ -610,8 +615,9 @@ it must have `op`, and both must be of it, as the `fren` command checks
 (`Core.checkNewtypeOperator`). -/
 def checkNewtypeOp (op : String) (tx? ty? : Option Core.Ty) (pre := false) : TermElabM Unit := do
   let (some tx, some ty) := (tx?, ty?) | return
+  let st ← getState
   let ordered := match Core.newtypeOf? tx ty with
-    | some (_, .enum p) => ((← getState).enums.get? p).any (·.ordered)
+    | some (_, .enum p) => (st.enums.get? p).any (·.ordered)
     | _ => false
   liftMsg (← getRef) (Core.checkNewtypeOperator op pre tx ty ordered)
 
@@ -707,7 +713,6 @@ partial def valuesOf? (ty : Expr) (cap : Nat := 64) : TermElabM (Option (Array T
     -- A newtype's values are its underlying type's, as the `fren` command
     -- has them.
     else if let some n := s.newtypeOfDecl? d then
-      if n.unbounded then return none
       pure #[(n.ctor, #[n.under])]
     else return none
   let mut out := #[]
@@ -1122,8 +1127,9 @@ partial def infiniteType (ty : Expr) : TermElabM Bool := do
   let some d := ty.constName? | return true
   if let some e := s.enumOfDecl? d then return e.unbounded || (← e.payloads.anyM (·.anyM infiniteType))
   if let some r := s.recordOfDecl? d then return r.unbounded || (← r.fields.anyM (infiniteType ·.2))
-  -- A newtype has its underlying type's values, as the `fren` command has it.
-  if let some n := s.newtypeOfDecl? d then return n.unbounded || (← infiniteType n.under)
+  -- A newtype has its underlying type's values, as the `fren` command has
+  -- it: a newtype of a set of a finite type is finite, though unbounded.
+  if let some n := s.newtypeOfDecl? d then return ← infiniteType n.under
   return true
 
 /-- Whether `e` mentions an output of an infinite type, directly, through a
@@ -2245,7 +2251,6 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   -- newtype of such a type, on its field, as the `fren` command checks
   -- (`lang::operator_type`, `lang::newtype_operator`).
   let x ← toTerm cx a
-  let x ← toTerm cx a
   let tx? ← frenTypeOf? x
   let st ← getState
   let (x, y, operandTy, info?) ← if let some (.newtype p u) := tx? then do
@@ -2303,7 +2308,7 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     | some u => some <$> liftMsg xs[0]! (Core.orderingType names[0]! u (info?.any (·.ordered)))
     | none => pure none
   let t0? := if nt.isSome then tx0? else u?
-  let string := underExpr.isConstOf ``String
+  let string ← pure (underExpr.isConstOf ``String)
   -- An ordered enumeration's values compare by their positions.
   let ordinal := if u? matches some (.enum _) then info? else none
   let pos (t : Term) : TermElabM Term := match ordinal with | some info => ordinalTerm info t | none => pure t

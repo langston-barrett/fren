@@ -6,7 +6,7 @@ error[F0364]: `Point` is a record with named fields, not a newtype
   |
   = note: a record with named fields is built as `Point { x := e, ... }`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0364`.
 exit=2

@@ -6,7 +6,7 @@ error[F0363]: cannot compare `Ms` with `Bytes`
   |
   = note: `Ms` is a newtype, a type distinct from every other, even from `Int`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0363`.
 exit=2

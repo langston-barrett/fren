@@ -83,3 +83,28 @@ help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`
 -/
 #guard_msgs in
 comp wrong_value { pub out c: Ms req r: c = Ms(true) }
+
+-- A counterexample shows newtypes as Fren builds them, as the `fren`
+-- command does (`test/cli/commands/counterexample_newtype.fren`).
+pub struct Slot { start: Ms, tags: Set(Ms) }
+
+comp shown {
+    in t: Ms
+    in s: Slot
+    pub det out next: Ms := t + Ms(1)
+
+    assume pinned: t = Ms(3) and s = Slot { start := Ms(2), tags := {Ms(9), Ms(10)} }
+
+    expect small: next < Ms(4)
+}
+
+/--
+error: expectation `newtype_test::shown::small` does not hold
+
+counterexample: t = Ms(3), s = Slot { start := Ms(2), tags := {Ms(10), Ms(9)} }, next = Ms(4)
+help: strengthen the requirements so that it follows, or correct the expectation
+---
+info: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
+-/
+#guard_msgs in
+#fren_check shown

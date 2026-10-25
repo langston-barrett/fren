@@ -7,7 +7,7 @@ error[F0304]: type mismatch: expected `Int`, found `Bool`
   = note: the value of `Ms` has type `Int`
   = help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0304`.
 exit=2

@@ -806,6 +806,11 @@ def newtypeNamed? (cx : ExprCtx) (segs : Array Ident) : M (Option (Name × Ty)) 
     | return none
   return (st.newtypes.find? path).map (path, ·)
 
+/-- Whether `segs` names a variant. -/
+def isVariant (cx : ExprCtx) (segs : Array Ident) : M Bool := do
+  let st ← get
+  return st.table.resolvePath st.scope (segNames segs) cx.shadowing matches .ok (.variant ..)
+
 /-- Whether `segs`, applied, builds a variant or a newtype rather than
 applying a function. -/
 def isConstruction (cx : ExprCtx) (segs : Array Ident) : M Bool := do

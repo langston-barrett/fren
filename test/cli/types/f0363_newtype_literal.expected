@@ -7,7 +7,7 @@ error[F0363]: cannot compare `Ms` with `Int`
   = note: `Ms` is a newtype, a type distinct from every other, even from `Int`
   = help: build a `Ms` with `Ms(e)`, or read its `Int` with `.0`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0363`.
 exit=2

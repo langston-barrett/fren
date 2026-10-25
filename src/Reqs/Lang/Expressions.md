@@ -1604,7 +1604,18 @@ pub comp operator_type {
         Subset,
         Subtraction,
     }
-    use self::ValueType::{AbstractTy, BoolTy, EnumTy, IntTy, NatTy, RecordTy, RelTy, SeqTy, SetTy, StringTy}
+    use self::ValueType::{
+        AbstractTy,
+        BoolTy,
+        EnumTy,
+        IntTy,
+        NatTy,
+        RecordTy,
+        RelTy,
+        SeqTy,
+        SetTy,
+        StringTy,
+    }
     in op: Operator
     in a: Ty
     in b: Ty

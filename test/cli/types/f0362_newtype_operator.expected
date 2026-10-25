@@ -7,7 +7,7 @@ error[F0362]: newtype `Ms` has no operator `*`
   = note: a newtype of `Int` has `=`, `!=`, `<`, `<=`, `>`, `>=`, and `+` and `-` of two of them
   = help: read its `Int` with `.0`, as in `x.0`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0362`.
 exit=2

@@ -37,7 +37,7 @@ comp names {
     in b: Name
     pub det out early? := a < Name("m")
 
-    expect ordered: early? iff a.0 < "m"
+    expect sorted: early? iff a.0 < "m"
     expect read: a.0 = b.0 or a != b
     expect not_empty: a.0 != ""  --~ error: expectation `names::not_empty` does not hold
 }
@@ -84,7 +84,7 @@ comp collections {
     expect record: longest = job.took and Job { took := longest, size := job.size } = job
     expect same_cost: cost(longest) = cost(job.took)
     expect halves: halved.0 = job.took.0 div 2
-    expect literal: {Ms(1), Ms(2)} = {Ms(2), Ms(1)}
+    expect literal: {Ms(1), longest} = {longest, Ms(1)}
 }
 
 comp waiting {
@@ -107,19 +107,28 @@ comp shown {
     in s: Slot
     pub det out next: Ms := t + Ms(1)
 
-    assume pinned: t = Ms(3) and s = Slot { start := Ms(2), tags := {Ms(1)} }
+    assume pinned: t = Ms(3) and s = Slot { start := Ms(2), tags := {Ms(9), Ms(10)} }
 
     expect small: next < Ms(4)
-    --~^ error: counterexample: t = Ms(3), s = Slot { start := Ms(2), tags := {Ms(1)} }, next = Ms(4)
+    --~^ error: counterexample: t = Ms(3), s = Slot { start := Ms(2), tags := {Ms(10), Ms(9)} }, next = Ms(4)
 }
 
 -- A newtype of a finite type is finite: the domain of a relation into one
 -- is in the decidable core.
+pub struct Bits(Set(Bool))
+pub struct B2(Bits)
+
 comp finite {
     in r: Rel(Int, Flag)
+    in q: Rel(Int, Bits)
+    in p: Rel(Int, B2)
     pub det out d: Set(Int) := r.domain
+    pub det out e: Set(Int) := q.domain
+    pub det out f: Set(Int) := p.domain
 
     expect domain: 1 in d iff ((1, Flag(true)) in r or (1, Flag(false)) in r)
+    expect of_sets: when q = {}, e = {}
+    expect nested: when p = {}, f = {}
 }
 
 -- The value of a newtype is checked against its underlying type, so `{}`
@@ -157,5 +166,5 @@ refine ticks: next_tick refines deadline
 refine counted: seconds refines deadline { t := Ms(s), d := Ms(d) }
 refine late: deadline refines next_tick  --~ error: expectation `late::r` does not hold
 
---@ summary: 52 passed, 4 failed, 0 inconclusive, 0 redundant
+--@ summary: 62 passed, 4 failed, 0 inconclusive, 0 redundant
 --@ exit: 1
