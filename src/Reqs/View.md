@@ -58,6 +58,9 @@ pub comp code_group {
     req traceability: when code.starts_with?("F05"), group = Traceability
     req results: when code.starts_with?("F06"), group = Results
     req lints: when code.starts_with?("F07"), group = Lints
+
+    expect syntax_example: when code = "F0105", group = Syntax
+    expect lints_example: when code = "F0721", group = Lints
 }
 ```
 

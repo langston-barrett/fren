@@ -159,6 +159,10 @@ pub comp earlier {
     req rule: earlier? iff k_owner < k_binder
 
     expect not_itself: when owner = binder, not earlier?
+    -- The first instance's variables can be bound in the second's, and not
+    -- the other way.
+    expect first_earlier: when owner != binder and k_owner = 0 and k_binder = 1, earlier?
+    expect second_later: when owner != binder and k_owner = 1 and k_binder = 0, not earlier?
 }
 ```
 

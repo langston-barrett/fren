@@ -63,6 +63,10 @@ pub comp modifiers {
     req rule: accepted? iff (member = Member::Output or not (pub? or det? or defined?))
 
     expect plain_members: unless pub? or det? or defined?, accepted?
+    expect outputs_take_all: when member = Member::Output, accepted?
+    expect pub_only_outputs: when member != Member::Output and pub?, not accepted?
+    expect det_only_outputs: when member != Member::Output and det?, not accepted?
+    expect defined_only_outputs: when member != Member::Output and defined?, not accepted?
 }
 ```
 
