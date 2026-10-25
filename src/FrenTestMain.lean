@@ -22,6 +22,8 @@ import Lean.Elab.Frontend
   formatted, keeps its tokens, imports and comments when formatted, and
   formatting it again changes nothing (`fmt::safe`); `fren fmt` rewrites a
   file in place.
+- **Mutants:** every mutant of the corpus is well-formed, identified,
+  stable and, for a swap, involutive (`mutation`).
 
 The tests run as jobs, in parallel (see "Jobs" below), and the failures are
 reported sorted.
@@ -213,9 +215,14 @@ def errorCodes : IO (Array String) := do
         failures := failures.push s!"{c.code}: a fixed example still fails:\n{good}\n{out}"
   return failures
 
+/-- The Markdown specs of Fren's own requirements, in an order in which
+each module is declared before it is used. -/
+def ownSpecFiles : Array String :=
+  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Expressions",
+    "Lang/Modules", "Lang/Instances", "Check", "View", "Lint", "Cli", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
+
 def ownSpec : IO (Array String) := do
-  let files := #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Expressions", "Lang/Modules", "Lang/Instances", "Check", "View", "Lint", "Cli", "Eval", "Lang/Refinement", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
-  let (out, code) ← runCheck files
+  let (out, code) ← runCheck ownSpecFiles
   return if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"]
 
 /-! ## Formatting -/
@@ -424,6 +431,71 @@ def fixing : IO (Array String) := do
     failures := failures.push s!"`fren fix --check` reports a fixed file (exit {code}):\n{out}"
   return failures
 
+/-! ## Mutants
+
+The properties of `fren mutate`'s mutants (`Reqs/dev/Testing`), over the
+*corpus*: Fren's own requirements, and each snapshot of `fren mutate`. -/
+
+/-- The corpus, as groups of files read as `fren` reads them. -/
+def mutationCorpus : IO (Array (Array (String × Array Char))) := do
+  let read (path : String) : IO (String × Array Char) := do
+    let src ← IO.FS.readFile path
+    let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
+    return (path, src.toList.toArray)
+  let snaps := (← sortedFiles ("test" / "cli") "fren").filter fun f =>
+    let n := f.fileName.getD ""
+    n.startsWith "mutate_" || n.startsWith "f0613" || n.startsWith "f0614"
+  return #[← ownSpecFiles.mapM read] ++ (← snaps.mapM fun f => return #[← read f.toString])
+
+/-- The mutants of the text `chars` of file `file`, as `fren` makes them. -/
+def mutantsOfText (file : Nat) (path : String) (chars : Array Char) : Array FrenCli.Mutate.Mutant :=
+  match FrenCli.lex chars with
+  | .ok toks => match FrenCli.parse toks with
+    | .ok items => FrenCli.Mutate.ofFile { file, path, chars, toks } items
+    | .error _ => #[]
+  | .error _ => #[]
+
+/-- Swaps, which a second swap undoes. -/
+def isSwap (m : FrenCli.Mutate.Mutant) : Bool :=
+  [.swapComparison, .swapArithmetic, .negateTrigger, .flipBool, .swapRepetition].contains m.origin
+    || (m.origin == .swapAndOr && !m.after.startsWith "(")
+
+/-- Every mutant of the corpus:
+- **well-formed:** changes the text, and elaborates with no static error;
+- **identified:** has an identifier that no other mutant of its group has;
+- **stable:** leaves the identifiers of the mutants of other items alone;
+- **involutive:** if it is a swap, has a mutant that swaps back.
+
+And a larger sample of mutants contains a smaller one. -/
+def mutation : IO (Array String) := do
+  let mut failures := #[]
+  for files in ← mutationCorpus do
+    let (before, all) := FrenCli.mutantsOf files #[]
+    let ids := all.map (·.id)
+    if ids.toList.eraseDups.length != ids.size then
+      failures := failures.push s!"mutants of {files.map (·.1)}: duplicate identifiers"
+    for m in all do
+      let (path, chars) := files[m.file]!
+      let chars' := m.apply chars
+      if chars' == chars then failures := failures.push s!"{m.id}: changes nothing"
+      -- Only the mutated file: mutants change no declaration, so the files
+      -- after it elaborate as before.
+      let st := FrenCli.elabText (before[m.file]?.getD {}) m.file chars'
+      if let some d := (st.diags.filter fun d => d.severity == .error && d.file == m.file)[0]? then
+        failures := failures.push s!"{m.id}: has a static error: {d.msg.headline}"
+      let again := mutantsOfText m.file path chars'
+      for m₂ in all do
+        if m₂.file == m.file && m₂.item != m.item && !again.any (·.id == m₂.id) then
+          failures := failures.push s!"{m₂.id}: its identifier changes when {m.id} is applied"
+      if isSwap m && !again.any (fun b => b.origin == m.origin && b.apply chars' == chars) then
+        failures := failures.push s!"{m.id}: no mutant swaps it back"
+    for n in [0:20] do
+      let small := FrenCli.Mutate.select all none #[] (some n) 7 |>.map (·.id)
+      let large := FrenCli.Mutate.select all none #[] (some (n + 1)) 7 |>.map (·.id)
+      unless small.all large.contains && small.size == min n all.size do
+        failures := failures.push s!"mutants of {files.map (·.1)}: a sample of {n + 1} does not contain the sample of {n}"
+  return failures
+
 /-! ## Jobs
 
 The tests are independent, so `main` runs them as jobs, in parallel, each
@@ -445,7 +517,7 @@ def jobs : IO (Array (List String)) := do
   let batches := (List.range n).toArray.map fun k =>
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"]]
+    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["mutation"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -462,6 +534,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     | none => throw (IO.userError s!"unknown corpus `{name}`")
   | ["formatting"] => formatting
   | ["fixing"] => fixing
+  | ["mutation"] => mutation
   | job => throw (IO.userError s!"unknown job `{" ".intercalate job}`")
 
 /-- Runs `job` in a process of its own, returning its failures. -/

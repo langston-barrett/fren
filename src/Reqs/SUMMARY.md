@@ -31,6 +31,7 @@
 - [The `fren` command](Cli.md)
   - [Formatting](Fmt.md)
   - [Evaluation and testing](Eval.md)
+  - [Mutation testing](Mutate.md)
 - [Traceability](Trace.md)
 
 # Appendices

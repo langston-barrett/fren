@@ -10,6 +10,7 @@ import Impls.Inst
 import Impls.Lang
 import Impls.Lint
 import Impls.Modules
+import Impls.Mutate
 import Impls.Refine
 import Impls.Trace
 import Impls.View

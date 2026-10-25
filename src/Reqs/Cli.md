@@ -7,6 +7,8 @@ fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
 fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
+fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--sample N] [--seed N] [--list]
+    [--timeout SECONDS] [--tests N] [-A|-W|-D|-F LINT]... FILE...
 fren --explain CODE
 fren --help
 fren --version
@@ -22,7 +24,9 @@ the checks. `fren fmt` [formats](Fmt.md) the files, and `fren fix`
 [fixes](Lint.md#fixing-lints) the lints that it can. `fren eval`
 evaluates a component on one behaviour, and `fren quickcheck` tests the
 spec on random behaviours, both without the solver (see [Evaluation and
-testing](Eval.md)). `fren --explain CODE` explains an [error
+testing](Eval.md)). `fren mutate` checks small changes to the spec, and
+reports those that no check rejects (see [Mutation
+testing](Mutate.md)). `fren --explain CODE` explains an [error
 code](View.md#error-codes), such as `F0105`. `fren --help`
 (or `-h`) prints a usage summary, and `fren --version` (or `-V`) prints the
 version. `fren` is a self-contained executable: it needs no Lean
@@ -30,7 +34,7 @@ installation. It is built by `lake build fren`.
 
 | Option | Meaning |
 |---|---|
-| `--timeout SECONDS` | `check`: time limit for each solver query (default 10) |
+| `--timeout SECONDS` | `check` and `mutate`: time limit for each solver query (default 10) |
 | `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
 | `--tests GLOB` | `trace`: scan the matching files for markers; may be repeated |
 | `--require LEVEL` | `trace`: warn about, and fail on, components with weaker evidence than `trusted`, `tested`, `solver` or `proved` |
@@ -38,11 +42,15 @@ installation. It is built by `lake build fren`.
 | `--ignore GLOB` | `fmt`: skip the matching files; `fix`: leave them as they are; may be repeated |
 | `--fmt` | `fix`: then format the files, as `fren fmt` does |
 | `--only LINT`, `--skip LINT` | `fix`: fix only the lints given, or all but them; may be repeated |
-| `-A LINT`, `-W LINT`, `-D LINT`, `-F LINT` | `check`, `trace`, `fix`, `eval` and `quickcheck`: set the level of a [lint](Lint.md) to `allow`, `warn`, `deny` or `forbid`; may be repeated. The long forms are `--allow`, `--warn`, `--deny` and `--forbid` |
-| `--comp PATH` | `eval`: the component to evaluate |
+| `-A LINT`, `-W LINT`, `-D LINT`, `-F LINT` | `check`, `trace`, `fix`, `eval`, `quickcheck` and `mutate`: set the level of a [lint](Lint.md) to `allow`, `warn`, `deny` or `forbid`; may be repeated. The long forms are `--allow`, `--warn`, `--deny` and `--forbid` |
+| `--comp PATH` | `eval`: the component to evaluate; `mutate`: the component whose mutants to check |
 | `--set VAR=VALUE` | `eval`: the value of a variable; may be repeated |
-| `--seed N` | `eval`, `quickcheck`, and `check` for [checks by testing](Check.md#checking-by-testing): where the random search starts (default 0) |
-| `--tests N` | `quickcheck`: tests per component and global expectation; `check`: tests per component or global expectation with [checks by testing](Check.md#checking-by-testing) (default 100) |
+| `--seed N` | `eval`, `quickcheck`, `mutate`, and `check` for [checks by testing](Check.md#checking-by-testing): where the random search starts (default 0); `mutate`: also which mutants `--sample` takes |
+| `--tests N` | `quickcheck` and `mutate`: tests per component and global expectation; `check`: tests per component or global expectation with [checks by testing](Check.md#checking-by-testing) (default 100) |
+| `--by WHAT` | `mutate`: check mutants with the `solver` (the default), by `testing`, or `both` |
+| `--mutant ID` | `mutate`: check the mutant `ID`; may be repeated |
+| `--sample N` | `mutate`: check `N` of the mutants |
+| `--list` | `mutate`: list the mutants, and check none |
 | `--color WHEN` | colour the output: `auto` (the default), `always` or `never` |
 
 ## Input files
@@ -65,7 +73,8 @@ installation. It is built by `lake build fren`.
 
 Diagnostics, and the summary of the checks, go to standard error. Standard
 output holds only what was asked for: the evidence report of `fren trace`,
-the evaluated behaviour of `fren eval`, the diffs of `fren fmt --check` and `fren fix --check`, the [solver queries](#solver-queries) of `fren check --dump-smt`, and the
+the evaluated behaviour of `fren eval`, the kill rates and the list of
+mutants of `fren mutate`, the diffs of `fren fmt --check` and `fren fix --check`, the [solver queries](#solver-queries) of `fren check --dump-smt`, and the
 text of `--explain`, `--help` and `--version`.
 
 Each [diagnostic](View.md) is printed with a header
@@ -191,7 +200,8 @@ In Lean, the queries are the same, but lean-smt sets the logic `ALL`.
 | 2 | the checks could not run: an unreadable file, bad arguments, or a static error, including a denied lint |
 | 3 | no result is an error, but some diagnostic is a warning: a check was inconclusive, a constraint is redundant, or a [lint](Lint.md) warned |
 
-`fren quickcheck` exits as `fren check` does. Every command follows one
+`fren quickcheck` exits as `fren check` does, and so does `fren mutate`,
+with each surviving mutant a warning (`mutate::exit`). Every command follows one
 convention, which `cli::exit_status` states: 2 exactly when the command
 could not run, and otherwise 0, 1 or 3, with 0 meaning that there is
 nothing to report. What 1 and 3 mean is each command's own:
@@ -206,8 +216,8 @@ nothing to report. What 1 and 3 mean is each command's own:
   [Formatting](Fmt.md#exit-status) and [Fixing
   lints](Lint.md#fixing-lints)).
 
-`cli::exit`, `eval::eval_exit` and `trace::trace_exit` refine
-`exit_status`. `fmt::exit` and `lint::fix_exit` say whether the command
+`cli::exit`, `eval::eval_exit`, `trace::trace_exit` and `mutate::exit`
+refine `exit_status`. `fmt::exit` and `lint::fix_exit` say whether the command
 could run in terms of what it read, `all_parsed?` and `loaded?`, rather
 than `ran?`, so they are not refinements of it.
 

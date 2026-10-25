@@ -1896,6 +1896,64 @@ comp c {
 }
 ```
 "# },
+  { code := "F0613", args := some ["mutate"], explanation := r#"No check rejects a mutant (a warning).
+
+Erroneous code example:
+
+```fren
+comp c {
+  in x: Int
+  pub out pos?
+  req r: pos? iff x > 0
+  expect e: when x > 1, pos?
+}
+```
+
+`fren mutate` changed the spec a little, here `x > 0` to `x >= 0`, and
+every check that passes on the spec still passes. So nothing that the
+spec expects depends on the change: either the spec says less than
+intended, or an expectation is missing. Here the expectation says nothing
+about `x = 0` or `x = 1`, where `x > 0` and its mutants differ. Add
+expectations that pin the boundary down:
+
+```fren
+comp c {
+  in x: Int
+  pub out pos?
+  req r: pos? iff x > 0
+  expect e: when x > 1, pos?
+  expect zero: when x = 0, not pos?
+  expect one: when x = 1, pos?
+}
+```
+
+A mutant that means what the spec means, such as `x >= 1`, cannot be
+rejected. When the solver shows that a mutant is equivalent, it is not
+reported; when it cannot tell, the warning says so.
+"# },
+  { code := "F0614", args := some ["mutate", "--by", "both"], explanation := r#"Testing does not reject a mutant that the checks reject (a warning).
+
+Erroneous code example:
+
+```fren
+comp c {
+  in xs: Seq(Int)
+  pub out big?
+  req r: big? iff xs.len > 4
+  expect e: when xs.len = 5, big?
+}
+```
+
+With `--by both`, `fren mutate` checks each mutant with the solver and by
+testing, as `fren quickcheck` does. Here the checks reject the mutant
+`xs.len > 5`: the solver finds a sequence of five elements, which breaks
+the expectation. But none of testing's random behaviours has such a
+sequence, so testing passes the mutant. The spec itself may be fine: the
+warning is about testing's search, which a component whose evidence is
+testing (`fren.evidence "tested"`) relies on. Raising `--tests` can help
+where the search reaches such behaviours rarely; otherwise rely on `fren
+check` for the component.
+"# },
   { code := "F0701", explanation := r#"An import that nothing uses (the lint `unused_imports`, a warning by default).
 
 Erroneous code example:
