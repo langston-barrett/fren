@@ -101,7 +101,9 @@ own: the others' results cannot change. A check *kills* a mutant if it
 passes on the spec and fails on the mutant. A check that does not pass on
 the spec itself, failing or inconclusive, kills nothing. The number of
 such checks among those run is reported once, as a note, counting a check
-once even if both the solver and testing ran it. `mutate::kill` states
+once even if both the solver and testing ran it, and the definedness
+checks of a constraint as one (see below), so it can be smaller than the
+number of failures that `fren check` reports. `mutate::kill` states
 this:
 
 ```fren
@@ -140,9 +142,11 @@ Some mutants mean what the spec means, such as `x > 0` changed to
 solver is asked whether each formula that the mutant changes, in each
 component and global expectation, and each defined function that it
 changes, equals the spec's for all values of the variables and every
-[interpretation](Lang/Components.md#interpretations). If so, the mutant
-is *equivalent*, and is not reported. If the solver cannot tell within a
-second, which can happen outside the [decidable
+[interpretation](Lang/Components.md#interpretations). The formula of an
+item's indexes says that each is in range, and is `true` for an item
+with none, such as after a mutant drops its last index. If each is equal,
+the mutant is *equivalent*, and is not reported. If the solver cannot
+tell within a second, which can happen outside the [decidable
 core](Lang/Decidability.md), the mutant is reported, with a note that it
 may be equivalent. `mutate::outcome` gives what becomes of a mutant:
 
