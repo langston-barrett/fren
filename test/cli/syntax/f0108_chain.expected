@@ -1,11 +1,11 @@
-error[F0108]: comparisons cannot be chained
- --> test/cli/syntax/f0108_chain.fren:2:54
+error[F0108]: `=` cannot be chained
+ --> test/cli/syntax/f0108_chain.fren:2:52
   |
-2 | comp c { in x: Int pub out ok? req r: ok? iff 0 <= x <= 10 }
-  |                                                      ^^ second comparison
+2 | comp c { in a? in b? pub out ok? req r: ok? iff a? = b? = true }
+  |                                                    ^ cannot be chained
   |
-  = note: `a < b < c` would compare the `Bool` `a < b` with `c`
-  = help: split it with `and`, e.g. `a < b and b < c`
+  = note: only `<` and `<=` chain together, and `>` and `>=`
+  = help: split the chain with `and`, e.g. `a = b and b = c`, or put a comparison in parentheses to compare its result
 
 error: could not check due to 1 previous error
 

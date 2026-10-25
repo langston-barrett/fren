@@ -12,6 +12,10 @@ declared with `type`. See [Types](Lang/Types.md#abstract-types).
 variables, including its instances'. See [Evaluation and
 testing](Eval.md#behaviours).
 
+**Chained comparison.** Orderings written one after another, as in
+`0 <= i < n`, which means `0 <= i and i < n`. See
+[Expressions](Lang/Expressions.md#chained-comparisons).
+
 **Component.** A part of a system, described by its inputs, outputs and
 constraints, declared with `comp`. See [Components](Lang/Components.md).
 

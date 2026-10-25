@@ -289,7 +289,7 @@ pub comp exit {
     req passed: when ran? and (worst = Silent or worst = Info), code = 0
 
     expect zero_means_no_problem: when code = 0, ran? and worst != Error and worst != Warning
-    expect documented_codes: code >= 0 and code <= 3
+    expect documented_codes: 0 <= code <= 3
 }
 
 refine check_exit_status: exit refines exit_status

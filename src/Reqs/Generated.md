@@ -120,7 +120,10 @@ for a negative divisor `-k`, `a div -k` is `-(a / k)` and `a mod -k` is
 `a % k`, which the Euclidean laws make the same, so that the solver always
 divides by a numeral, as its linear logics require. The methods of `Int` are conditionals: `x.abs` is
 `if x < 0 then -x else x`, `x.min(y)` is `if x ≤ y then x else y`, and
-`x.max(y)` is `if x ≥ y then x else y`.
+`x.max(y)` is `if x ≥ y then x else y`. A
+[chained comparison](Lang/Expressions.md#chained-comparisons), which Lean
+does not have, is the conjunction of its comparisons: `a < b <= c` is
+`a < b ∧ b ≤ c`, with the same term for `b` in both.
 
 A component *uses* the abstract types and uninterpreted functions that its
 variables' types, its constraints and its bindings mention, those that its

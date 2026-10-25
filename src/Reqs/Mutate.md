@@ -35,10 +35,10 @@ operator keeps its own. The changes are:
 
 | Origin | Change |
 |---|---|
-| `swap-comparison` | `<` and `<=`, `>` and `>=`, `=` and `!=`, each to the other |
+| `swap-comparison` | `<` and `<=`, `>` and `>=`, `=` and `!=`, each to the other, including each operator of a [chained comparison](Lang/Expressions.md#chained-comparisons) |
 | `swap-and-or` | `and` and `or`, each to the other |
 | `swap-arithmetic` | `+` and `-`, and `div` and `mod`, each to the other |
-| `drop-conjunct` | `a and b` to `a`, and to `b` |
+| `drop-conjunct` | `a and b` to `a`, and to `b`; a chained comparison to itself without its first comparison, and without its last |
 | `negate-trigger` | `when` and `unless`, each to the other |
 | `shift-integer` | an integer literal `n` to `n + 1`, and to `n - 1` if `n > 0`, written in decimal |
 | `flip-bool` | `true` and `false`, each to the other |

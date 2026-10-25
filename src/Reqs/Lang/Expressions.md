@@ -7,7 +7,9 @@ iff   := or ["iff" or]
 or    := or "or" and | and
 and   := and "and" not | not
 not   := "not" not | cmp
-cmp   := sum [("=" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "subset") sum]
+cmp   := sum [("=" | "!=" | "in" | "subset") sum]
+       | sum (("<" | "<=") sum)+
+       | sum ((">" | ">=") sum)+
        | sum "is" pattern
 sum   := sum ("+" | "-" | "++" | "union" | "minus") prod | prod
 prod  := prod ("*" | "div" | "mod" | "inter" | "join") neg | neg
@@ -47,7 +49,7 @@ equally tightly:
 | 4 | `A and B` | conjunction | `Bool` | `Bool` | left |
 | 5 | `not A` | negation | `Bool` | `Bool` | |
 | 6 | `A = B`, `A != B` | equality, disequality | any, both the same | `Bool` | none |
-| 6 | `A < B`, `A <= B`, `A > B`, `A >= B` | ordering | `Int`, or `String` | `Bool` | none |
+| 6 | `A < B`, `A <= B`, `A > B`, `A >= B` | ordering | `Int`, or `String` | `Bool` | [chains](#chained-comparisons) |
 | 6 | `A in S` | membership | `T` and `Set(T)` or `Seq(T)`, or a pair `(a, b)` and `Rel(A, B)` | `Bool` | none |
 | 6 | `S subset T` | `S` is a subset of `T`, not necessarily strict | `Set(T)`, or `Rel(A, B)` | `Bool` | none |
 | 6 | `A is P` | [pattern test](#pattern-tests): the pattern `P` matches `A` | an enumeration, and a pattern | `Bool` | none |
@@ -105,8 +107,53 @@ pub comp operand {
 }
 ```
 
-So `a? iff b? iff c?` and `x < y < z` are errors, and so is `a? and when
-b?, c?`, since `when` binds more loosely than `and`.
+So `a? iff b? iff c?` and `x = y = z` are errors, and so is `a? and when
+b?, c?`, since `when` binds more loosely than `and`. `x < y < z` is not an
+ordering with an ordering as its operand, but one [chained
+comparison](#chained-comparisons); `(x < y) = z?` compares the `Bool`
+`x < y` with `z?`.
+
+## Chained comparisons
+
+`<` and `<=` chain with each other, and `>` and `>=` with each other, to
+any length: `0 <= i < q.len` means `0 <= i and i < q.len`, and `a > b >=
+c > d` means `a > b and b >= c and c > d`. Each operand between two
+operators is one expression, written once, and is an operand of both. An
+expression has no effects, so reading it twice changes nothing. Each
+comparison is typed as if written alone, so `lo <= s < hi` compares
+`String`s if `s` is one, and a message about a comparison's operands
+names its operator: in `0 <= i < "a"`, `"a"` is not an `Int`, as the
+operands of `<` must be.
+
+A chain that mixes directions, such as `a < b > c`, is an error: it reads
+as a mistake more often than as `a < b and c < b`. So is a chain with `=`,
+`!=`, `in` or `subset`, which do not chain: `a? = b? = c?` would read as
+either `a? = b? and b? = c?` or `(a? = b?) = c?`, and those differ. The
+message points at the first operator that does not chain, or else at the
+first that orders the other way from the first. A comparison in
+parentheses is an operand like any other, as in `(a < b) =
+c?`. `lang::comparison_chain` states which chains are accepted, from how
+many of their operators are of each kind; one operator alone is a
+comparison, not a chain:
+
+```fren
+pub comp comparison_chain {
+    in n_ascending: Int     -- operators `<` and `<=`
+    in n_descending: Int    -- operators `>` and `>=`
+    in n_other: Int         -- operators `=`, `!=`, `in` and `subset`
+    pub det out accepted?
+
+    assume counts: n_ascending >= 0 and n_descending >= 0 and n_other >= 0
+    assume compares: n_ascending + n_descending + n_other >= 1
+
+    req rule: accepted? iff (n_ascending + n_descending + n_other = 1
+        or (n_other = 0 and (n_ascending = 0 or n_descending = 0)))
+
+    expect single: when n_ascending + n_descending + n_other = 1, accepted?
+    expect one_direction: when accepted?, n_ascending = 0 or n_descending = 0
+    expect orderings_only: when accepted? and n_ascending + n_descending + n_other > 1, n_other = 0
+}
+```
 
 ## Mentions
 
@@ -342,7 +389,7 @@ pub comp application {
     req rule: accepted? iff args = params
 
     expect arity: when args.len != params.len, not accepted?
-    expect typed: when 0 <= k and k < args.len and k < params.len and args[k] != params[k], not accepted?
+    expect typed: when 0 <= k < args.len and k < params.len and args[k] != params[k], not accepted?
 }
 ```
 
@@ -844,7 +891,7 @@ pub comp string_methods {
     expect slice_short: when n >= 0, s.slice(i, n).len <= n
     expect slice_whole: s.slice(0, s.len) = s
     expect slice_occurs: s.contains?(s.slice(i, n))
-    expect index_of_empty: when 0 <= i and i <= s.len, s.index_of("", i) = i
+    expect index_of_empty: when 0 <= i <= s.len, s.index_of("", i) = i
     expect index_of_found: when s.index_of(t, i) >= 0, s.slice(s.index_of(t, i), t.len) = t
     expect index_of_absent: when not s.contains?(t), s.index_of(t, i) = -1
     expect replace_empty: s.replace("", t) = t ++ s
@@ -910,10 +957,10 @@ pub comp collection_methods {
     expect rev_length: q.rev.len = q.len
     expect concat_length: (p ++ q).len = p.len + q.len
     expect update_length: q.update(i, x).len = q.len
-    expect update_reads: when 0 <= i and i < q.len, q.update(i, x)[i] = x
+    expect update_reads: when 0 <= i < q.len, q.update(i, x)[i] = x
     expect update_outside: when i < 0 or i >= q.len, q.update(i, x) = q
     expect at_outside: when i < 0 or i >= q.len, q.at(i) = []
-    expect at_inside: when 0 <= i and i < q.len, q.at(i) = [q[i]]
+    expect at_inside: when 0 <= i < q.len, q.at(i) = [q[i]]
     expect at_is_slice: q.at(i) = q.slice(i, 1)
     expect slice_outside: when i < 0 or i >= q.len or n <= 0, q.slice(i, n) = []
     expect slice_whole: q.slice(0, q.len) = q
@@ -923,7 +970,7 @@ pub comp collection_methods {
     expect prefix_occurs: when q.starts_with?(p), q.contains?(p)
     expect suffix_occurs: when q.ends_with?(p), q.contains?(p)
     expect concat_prefix: (p ++ q).starts_with?(p) and (p ++ q).ends_with?(q)
-    expect index_of_empty: when 0 <= i and i <= q.len, q.index_of([], i) = i
+    expect index_of_empty: when 0 <= i <= q.len, q.index_of([], i) = i
     expect index_of_found: when q.index_of(p, i) >= 0, q.slice(q.index_of(p, i), p.len) = p
     expect index_of_absent: when not q.contains?(p), q.index_of(p, i) = -1
     expect replace_empty: q.replace([], p) = p ++ q
@@ -1062,7 +1109,7 @@ pub comp char_range {
     in high: Int         -- the code point of the character after it
     pub det out accepted?
 
-    assume characters: 0 <= low and low <= MAX_CHAR and 0 <= high and high <= MAX_CHAR
+    assume characters: 0 <= low <= MAX_CHAR and 0 <= high <= MAX_CHAR
 
     req rule: accepted? iff low <= high
 

@@ -298,6 +298,14 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
           | none => #[]
         toOr ++ #[l, r].map fun k => { origin := .dropConjunct, span := sp, after := s.text (s.outer sp k.span), context := sp }
       else #[]
+    | .chain sp es ops =>
+      let outs := es.map (s.outer sp ·.span)
+      let swaps := (ops.zip (outs.zip (outs.extract 1))).filterMap fun ((op, opSpan), l, r) =>
+        (comparisonSwap? op).map fun new =>
+          { origin := .swapComparison, span := opSpan, after := new, context := { start := l.start, stop := r.stop } }
+      -- Without its first comparison, and without its last.
+      swaps ++ #[{ start := outs[1]!.start, stop := sp.stop }, { start := sp.start, stop := outs[outs.size - 2]!.stop }].map fun k =>
+        { origin := .dropConjunct, span := sp, after := s.text k, context := sp }
     | .when sp negated _ _ =>
       let kw := if negated then "unless" else "when"
       #[{ origin := .negateTrigger, span := { start := sp.start, stop := sp.start + kw.length }, after := if negated then "when" else "unless",
@@ -339,7 +347,7 @@ where
       #[edits s l (op == "and" && s.outer sp l.span == l.span), edits s r (divisor := op == "div" || op == "mod")]
     | .neg _ e => #[edits s e (divisor := divisor)]
     | .not _ e | .field _ e _ => #[edits s e]
-    | .app _ _ as | .set _ as | .seq _ as => as.map (edits s ·)
+    | .app _ _ as | .set _ as | .seq _ as | .chain _ as _ => as.map (edits s ·)
     | .record _ _ fs => fs.filterMap fun (_, e?) => e?.map (edits s ·)
     | .match _ sc arms => #[edits s sc] ++ arms.map fun (_, b) => edits s b
     | .is _ sc _ => #[edits s sc]

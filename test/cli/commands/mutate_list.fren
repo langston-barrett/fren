@@ -4,7 +4,9 @@
 -- and global, are not mutated. Swapping the first `and` of a chain, or
 -- the last `or`, adds parentheses, and an operand that replaces its
 -- operator keeps its own. A divisor is never made `0`: `STEP`, which one
--- names, is not changed, and neither is the `1` of `-1` changed to `0`.
+-- names, is not changed, and neither is the `1` of `-1` changed to `0`. Each
+-- operator of a chained comparison is swapped, and its first and last
+-- comparisons are dropped.
 mod m
 
 pub enum Mode { Off, Heat, Cool }
@@ -47,6 +49,7 @@ pub comp c {
         | Reading::Stale(_)
         | Reading::Missing,
         not ok?
+    req ranged: ok? or 0 <= x < y <= LIMIT
     inst w: sub { a := x * 2, on? := true }
 
     expect e: when x = 3, ok?

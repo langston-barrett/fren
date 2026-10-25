@@ -35,4 +35,55 @@ def foreignOpMsg (op : String) (spaceBefore spaceAfter : Bool := true) : Msg :=
   | "=>", _ => { base with notes := #["help: write an implication as `when a, b`"] }
   | _, _ => base
 
+/-! ## Chained comparisons -/
+
+/-- The kind of an operator of a comparison, for chaining
+(`lang::comparison_chain`). -/
+inductive ChainKind where
+  /-- `<` and `<=`. -/
+  | ascending
+  /-- `>` and `>=`. -/
+  | descending
+  /-- `=`, `!=`, `in` and `subset`. -/
+  | other
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+def ChainKind.ofOp : String → ChainKind
+  | "<" | "<=" => .ascending
+  | ">" | ">=" => .descending
+  | _ => .other
+
+/-- Whether a comparison with these numbers of operators of each kind is
+accepted (`lang::comparison_chain`). -/
+def chainAccepted (ascending descending other : Nat) : Bool :=
+  ascending + descending + other == 1 || (other == 0 && (ascending == 0 || descending == 0))
+
+/-- `op`, which does not chain, in a chained comparison. -/
+def chainOtherMsg (op : String) : Msg :=
+  { code? := some "F0108", headline := s!"`{op}` cannot be chained", label? := some "cannot be chained"
+    notes := #["note: only `<` and `<=` chain together, and `>` and `>=`",
+      s!"help: split the chain with `and`, e.g. `a {op} b and b {op} c`, or put a comparison in parentheses to compare its result"] }
+
+/-- `second`, which orders the other way from `first`, in a chained
+comparison. -/
+def chainDirectionMsg (first second : String) : Msg :=
+  { code? := some "F0121", headline := s!"`{first}` and `{second}` cannot be chained together"
+    label? := some s!"orders the other way from `{first}`"
+    notes := #["note: a chained comparison orders one way: `<` and `<=` chain together, and `>` and `>=`",
+      "help: split the chain with `and`, e.g. `a < b and b > c`"] }
+
+/-- Checks the operators of a chained comparison
+(`lang::comparison_chain`): if it is rejected, the index of the operator
+to report and the message. That is the first that does not chain, else
+the first that orders the other way from the first. -/
+def checkChain (ops : Array String) : Except (Nat × Msg) Unit :=
+  let kinds := ops.map ChainKind.ofOp
+  let count (k : ChainKind) := (kinds.filter (· == k)).size
+  if chainAccepted (count .ascending) (count .descending) (count .other) then .ok () else
+  match kinds.findIdx? (· == .other) with
+  | some i => .error (i, chainOtherMsg ops[i]!)
+  | none =>
+    let i := (kinds.findIdx? (· != kinds[0]!)).getD 0
+    .error (i, chainDirectionMsg ops[0]! ops[i]!)
+
 end Fren.Core

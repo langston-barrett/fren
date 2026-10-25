@@ -151,19 +151,26 @@ Add parentheses to say which you mean.
 comp c { in a? in b? pub out d? req r: d? iff (a? iff b?) }
 ```
 "# },
-  { code := "F0108", explanation := r#"A chain of comparisons.
+  { code := "F0108", explanation := r#"A chained comparison with an operator that does not chain.
 
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out ok? req r: ok? iff 0 <= x <= 10 }
+comp c { in a? in b? pub out ok? req r: ok? iff a? = b? = true }
 ```
 
-Comparisons do not chain as in mathematics: `0 <= x <= 10` would compare a
-`Bool` with `10`. Split the chain with `and`.
+Only orderings chain: `0 <= x < 10` means `0 <= x and x < 10`. `=`,
+`!=`, `in` and `subset` do not, since a chain of them has no single
+obvious meaning: `a? = b? = true` could be `a? = b? and b? = true`, or
+`(a? = b?) = true`, which differ. Split the chain with `and`, or put the
+comparison whose result is compared in parentheses.
 
 ```fren
-comp c { in x: Int pub out ok? req r: ok? iff 0 <= x and x <= 10 }
+comp c { in a? in b? pub out ok? req r: ok? iff a? = b? and b? = true }
+```
+
+```fren
+comp c { in a? in b? pub out ok? req r: ok? iff (a? = b?) = true }
 ```
 "# },
   { code := "F0109", explanation := r#"`when` or `unless` is used as an operand without parentheses.
@@ -370,6 +377,23 @@ const ONE: Int := 1
 
 The `fren` command also reports this for other malformed numbers, such as
 `1_`, `0x` or `0b2`. In Lean, Lean's own parser reports those first.
+"# },
+  { code := "F0121", explanation := r#"A chained comparison that orders both ways.
+
+Erroneous code example:
+
+```fren
+comp c { in x: Int in y: Int pub out ok? req r: ok? iff 0 < x > y }
+```
+
+`<` and `<=` chain together, as in `0 <= x < 10`, and so do `>` and `>=`,
+but a chain cannot mix the two directions: `0 < x > y` is more often a
+mistake than a way to say that `x` is greater than both. Split it with
+`and`.
+
+```fren
+comp c { in x: Int in y: Int pub out ok? req r: ok? iff 0 < x and x > y }
+```
 "# },
   { code := "F0201", explanation := r#"A name that is not in scope.
 

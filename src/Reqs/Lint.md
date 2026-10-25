@@ -606,7 +606,7 @@ pub comp fix_exit {
     req pending: when loaded? and check? and not unchanged?, code = 1
     req fixed: when loaded? and (not check? or unchanged?), code = 0
 
-    expect documented_codes: code >= 0 and code <= 2
+    expect documented_codes: 0 <= code <= 2
 }
 ```
 

@@ -622,7 +622,7 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
   | .when _ _ c d | .bin _ _ c d | .pair _ c d | .index _ c d => parts .compound [c, d]
   | .not _ a | .neg _ a | .field _ a _ => parts .compound [a]
   | .method _ r _ args => parts .method (r :: args.toList)
-  | .set _ es | .seq _ es => parts .compound es.toList
+  | .set _ es | .seq _ es | .chain _ es _ => parts .compound es.toList
   | .ite _ c a b => parts .compound [c, a, b]
   | .app _ segs args =>
     let k : Fren.Core.MentionKind ← if ← isVariant cx segs then pure .construction
@@ -657,7 +657,7 @@ partial def mentions : Expr → Array Name
   | .method _ r _ args => args.foldl (· ++ mentions ·) (mentions r)
   | .set _ es => es.foldl (· ++ mentions ·) #[]
   | .pair _ a b | .index _ a b => mentions a ++ mentions b
-  | .seq _ es => es.foldl (· ++ mentions ·) #[]
+  | .seq _ es | .chain _ es _ => es.foldl (· ++ mentions ·) #[]
   | .ite _ c a b => mentions c ++ mentions a ++ mentions b
   | .bin _ _ a b => mentions a ++ mentions b
   | .app _ _ args => args.foldl (· ++ mentions ·) #[]
@@ -735,7 +735,7 @@ partial def hasConcat (cx : ExprCtx) (e : Expr) : M Bool := do
   | .method _ r _ args => (#[r] ++ args).anyM (hasConcat cx)
   | .set _ es | .app _ _ es => es.anyM (hasConcat cx)
   | .pair _ a b | .index _ a b => return (← hasConcat cx a) || (← hasConcat cx b)
-  | .seq _ es => es.anyM (hasConcat cx)
+  | .seq _ es | .chain _ es _ => es.anyM (hasConcat cx)
   | .ite _ c a b => return (← hasConcat cx c) || (← hasConcat cx a) || (← hasConcat cx b)
   | .record _ _ fs => fs.anyM fun (_, e?) => match e? with | some e => hasConcat cx e | none => pure false
   | .match _ s arms => return (← hasConcat cx s) || (← arms.anyM (hasConcat cx ·.2))
@@ -782,6 +782,7 @@ partial def Expr.boolNode : Expr → Fren.Core.BNode Span
   | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode] ++ arms.map (·.2.boolNode))
   | .pair s a b | .index s a b => .mk .atom (toRange s) s #[a.boolNode, b.boolNode]
   | .num s _ | .path s _ | .str s .. => .mk .atom (toRange s) s #[]
+  | .chain s .. => .mk .atom (toRange s) s #[]
 where toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
 
 /-- The span of `e` as written: a field read, method call or index of a
@@ -1057,7 +1058,7 @@ partial def indexedIn : Expr → M (Array String)
   | .not _ a | .neg _ a | .field _ a _ | .is _ a _ => indexedIn a
   | .ite _ c a b => return (← indexedIn c) ++ (← indexedIn a) ++ (← indexedIn b)
   | .method _ r _ args => return (← indexedIn r) ++ (← args.foldlM (fun acc a => return acc ++ (← indexedIn a)) #[])
-  | .app _ _ args | .set _ args | .seq _ args => args.foldlM (fun acc a => return acc ++ (← indexedIn a)) #[]
+  | .app _ _ args | .set _ args | .seq _ args | .chain _ args _ => args.foldlM (fun acc a => return acc ++ (← indexedIn a)) #[]
   | .record _ _ fs => fs.foldlM (fun acc (_, e?) => return acc ++ (← (e?.map indexedIn).getD (pure #[]))) #[]
   | .match _ sc arms => return (← indexedIn sc) ++ (← arms.foldlM (fun acc (_, b) => return acc ++ (← indexedIn b)) #[])
   | _ => return #[]
@@ -1473,6 +1474,27 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         lint .emptyArgument span msg
     return res
   | .bool _ b => return (toString b, .bool)
+  | .chain _ es ops =>
+    -- `a < b <= c` is `a < b and b <= c`, with `b` elaborated once
+    -- (`Reqs/Lang/Expressions#chained-comparisons`).
+    if let .error (k, msg) := Fren.Core.checkChain (ops.map (·.1)) then err ops[k]!.2 msg
+    let (x0, t0) ← elabExpr cx es[0]!
+    unless t0 == .string || t0 == .int do mismatch es[0]! .int t0 (opNote ops[0]!.1 .int)
+    let mut (x, ca) := (x0, ← isConstant cx es[0]!)
+    let mut links := #[]
+    for (op, _) in ops, a in es, b in es.extract 1 do
+      let y ← expect b t0 (opNote op t0)
+      let cb ← isConstant cx b
+      if t0 == .string then
+        checkCore cx (a.span.to b.span) .stringCompare true (ca || cb) #[a, b] (ca && cb)
+      -- SMT-LIB has only `str.<` and `str.<=`.
+      links := links.push <| if t0 == .int then s!"({op} {x} {y})" else match op with
+        | "<" => s!"(str.< {x} {y})"
+        | "<=" => s!"(str.<= {x} {y})"
+        | ">" => s!"(str.< {y} {x})"
+        | _ => s!"(str.<= {y} {x})"
+      (x, ca) := (y, cb)
+    return (s!"(and {" ".intercalate links.toList})", .bool)
   | .bin span op a b =>
     -- `eq_op` (`lint::eq_op`).
     if let (some o, true) := (Fren.Core.InfixOp.ofOp? op, cx.noteIndexes) then

@@ -355,7 +355,7 @@ An index `q[i]` is unspecified unless `0 <= i < q.len` (see
 value it could have, so an out-of-range index is sound, but the constraint
 then says nothing useful there, which is almost always a mistake. For each
 index in a constraint, a definition or a binding, with its guard `G`, Fren
-asks whether `0 <= i and i < q.len` can be proved from `G` and the
+asks whether `0 <= i < q.len` can be proved from `G` and the
 hypotheses of where it is written:
 
 | Where | Hypotheses |

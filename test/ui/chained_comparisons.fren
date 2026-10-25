@@ -1,0 +1,71 @@
+-- Chained comparisons: `a < b <= c` is `a < b and b <= c`, with `b` one
+-- expression.
+
+comp bounds {
+    in i: Int
+    in q: Seq(Int)
+    pub out inside?
+
+    req rule: inside? iff 0 <= i < q.len
+
+    expect expanded: inside? iff (0 <= i and i < q.len)
+    expect guards: when 0 <= i < q.len, q[i] - 1 < q[i] < q[i] + 1
+    expect unguarded: when 0 < q[i] < 10, true  --~ error: an index of `bounds::unguarded` may be out of range
+}
+
+comp descending {
+    in a: Int
+    in b: Int
+    in c: Int
+    in d: Int
+    pub out down?
+
+    req rule: down? iff a > b >= c > d
+
+    expect expanded: down? iff (a > b and b >= c and c > d)
+    expect transitive: when down?, a > d
+}
+
+comp strings {
+    in s: String
+    pub out lower?
+
+    req rule: lower? iff "a" <= s < "b"
+
+    expect nonempty: when lower?, s != ""
+}
+
+-- A chain binds as one comparison: more loosely than arithmetic, and more
+-- tightly than `not`.
+comp precedence {
+    in x: Int
+    in p?
+    pub out o?
+
+    req rule: o? iff not 0 <= x + 1 < 2 * x or p?
+
+    expect grouped: o? iff ((not (0 <= (x + 1) and (x + 1) < (2 * x))) or p?)
+}
+
+-- A comparison in parentheses is an operand, not part of a chain.
+comp parenthesized {
+    in x: Int
+    in y: Int
+    in p?
+    pub out o?
+
+    req rule: o? iff (x < y) = p?
+
+    expect compared: o? iff (x < y iff p?)
+}
+
+comp inclusive {
+    in x: Int
+    pub out ok?
+
+    req rule: ok? iff 0 <= x <= 10
+
+    expect top: when ok?, x < 10  --~ error: expectation `inclusive::top` does not hold
+}
+
+--@ summary: 28 passed, 2 failed, 0 inconclusive, 0 redundant
