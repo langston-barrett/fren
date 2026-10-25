@@ -1,0 +1,4 @@
+-- `struct_excessive_bools`.
+set_option fren.lint.struct_excessive_bools "warn"
+
+pub struct Door { open?, closed?, locked?, jammed?, width: Int }

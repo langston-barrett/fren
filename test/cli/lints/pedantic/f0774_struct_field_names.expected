@@ -1,0 +1,22 @@
+warning[F0774]: every field of `Valve` ends with `open`
+ --> test/cli/lints/pedantic/f0774_struct_field_names.fren:4:12
+  |
+4 | pub struct Valve { inlet_open?, outlet_open? }
+  |            ^^^^^ its fields share a word
+  |
+  = help: remove `open` from each field's name, or put it in the record's
+  = note: `struct_field_names` is set to `warn`
+
+warning[F0774]: field `heat_pump_speed` contains the name of its record `HeatPump`
+ --> test/cli/lints/pedantic/f0774_struct_field_names.fren:6:23
+  |
+6 | pub struct HeatPump { heat_pump_speed: Int, on? }
+  |                       ^^^^^^^^^^^^^^^ contains `heat_pump`
+  |
+  = note: a field is read from a value of its record, which says what the field is of
+  = help: remove `heat_pump` from its name
+
+fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0774`.
+exit=3

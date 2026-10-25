@@ -463,6 +463,46 @@ register_option fren.lint.chainable_comparison : String := {
   descr := "the level of the lint `chainable_comparison`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.single_match_else : String := {
+  defValue := "allow"
+  descr := "the level of the lint `single_match_else`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.inconsistent_struct_constructor : String := {
+  defValue := "allow"
+  descr := "the level of the lint `inconsistent_struct_constructor`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.overly_complex_bool_expr : String := {
+  defValue := "allow"
+  descr := "the level of the lint `overly_complex_bool_expr`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.struct_field_names : String := {
+  defValue := "allow"
+  descr := "the level of the lint `struct_field_names`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.fn_params_excessive_bools : String := {
+  defValue := "allow"
+  descr := "the level of the lint `fn_params_excessive_bools`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.struct_excessive_bools : String := {
+  defValue := "allow"
+  descr := "the level of the lint `struct_excessive_bools`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.needless_raw_string_hashes : String := {
+  defValue := "allow"
+  descr := "the level of the lint `needless_raw_string_hashes`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.branches_sharing_code : String := {
+  defValue := "allow"
+  descr := "the level of the lint `branches_sharing_code`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"
@@ -615,7 +655,8 @@ def triviaComments (t : String) : Array (Nat × Nat) := Id.run do
 literals, in the comments around its tokens, and in the comments before it
 that no Fren command has read, after a `set_option` or at the start of the
 text (`lint::invisible_character`); and `needless_raw_strings` and
-`non_ascii_literal` in its string literals. -/
+`non_ascii_literal` in its string literals, and `needless_raw_string_hashes`
+in its raw string literals (`lint::needless_raw_string_hashes`). -/
 partial def lintInvisible (stx : Syntax) : m Unit := do
   let fixable := (← getLocal).inMarkdown
   let help (msg : Core.Msg) := if fixable && !msg.fixes.isEmpty then msg.note Core.fixHelp else msg
@@ -633,7 +674,11 @@ partial def lintInvisible (stx : Syntax) : m Unit := do
     match stx with
     | .node _ k args =>
       if k == strLitKind then
-        if let some a := args[0]? then report stx false a.getAtomVal
+        if let some a := args[0]? then
+          report stx false a.getAtomVal
+          if let some fixed := Core.fewerHashes? a.getAtomVal then
+            let msg := Core.needlessRawHashesMsg fixed
+            recordLint .needlessRawStringHashes stx (if fixable then msg.note Core.fixHelp else msg)
       for a in args do go a
     | .atom (.original leading _ trailing _) _ | .ident (.original leading _ trailing _) .. =>
       trivia leading

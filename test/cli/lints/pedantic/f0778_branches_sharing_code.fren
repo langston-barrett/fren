@@ -1,0 +1,11 @@
+-- `branches_sharing_code`, on either side of the operator.
+set_option fren.lint.branches_sharing_code "warn"
+
+comp c {
+    in c?
+    in x: Int
+    pub out y: Int
+    pub out z: Int
+    req r1: y = if c? then 2 * x + 1 else x + 1
+    req r2: z = if c? then x - 1 else x - 2
+}

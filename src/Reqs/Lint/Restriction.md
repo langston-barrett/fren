@@ -56,11 +56,11 @@ pub comp allow_attributes {
 
 `wildcard_enum_match_arm` fires on every `_` arm of a
 [`match`](../Lang/Expressions.md#matches) on an enumeration whose patterns
-are all flat, as [`wildcard_single_variant`](Pedantic.md#matches) does, and
+are all flat, as [`wildcard_single_variant`](Pedantic/Matches.md#arms) does, and
 is fixable. The fix replaces
 `_` with an or-pattern of the variants it matches, in the order of their
 enumeration, each written as
-[`wildcard_single_variant`](Pedantic.md#matches) writes one: `E::V`, or
+[`wildcard_single_variant`](Pedantic/Matches.md#arms) writes one: `E::V`, or
 `E::V(_, _)` with one `_` for each value of its payload, written as another
 pattern of the `match` writes its variant's path, or as `V` or `E::V` if one
 of those names it. If one of them has no such path, the lint has no fix. A

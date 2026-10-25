@@ -323,7 +323,7 @@ pub comp redundant_bool_type {
 
 `match_like_membership` looks at the arms of a
 [`match`](../Lang/Expressions.md#matches) as written, as the [match
-lints](Pedantic.md#matches) of the `pedantic` group do.
+lints](Pedantic/Matches.md#arms) of the `pedantic` group do.
 
 `match_like_membership` fires on a `match` on `x` whose bodies are the
 literals `true` and `false`, each at least once, and whose patterns bind
@@ -358,7 +358,7 @@ stays unqualified, and `x` and the result are in parentheses where [fixes
 need them](../Lint.md#parentheses-in-fixes). The bodies are literals,
 which guard nothing, and `x` is evaluated as before. A `match` whose arms
 are all `true`, or all `false`, is left to
-[`match_same_arms`](Pedantic.md#matches).
+[`match_same_arms`](Pedantic/Matches.md#arms).
 `lint::match_like_membership` states when it fires, when its fix is
 negated, and when it is a pattern test:
 

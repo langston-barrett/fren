@@ -1,0 +1,33 @@
+warning[F0778]: both branches of this `if` end with `+ 1`
+ --> test/cli/lints/pedantic/f0778_branches_sharing_code.fren:9:17
+  |
+9 |     req r1: y = if c? then 2 * x + 1 else x + 1
+  |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same operand in both branches
+  |
+  = note: `1` is evaluated whichever branch is taken, and has the same value in both
+  = help: `fren fix` can fix this
+  = note: `branches_sharing_code` is set to `warn`
+help: move it out of the `if`
+  |
+9 -     req r1: y = if c? then 2 * x + 1 else x + 1
+9 +     req r1: y = (if c? then 2 * x else x) + 1
+  |
+
+warning[F0778]: both branches of this `if` start with `x -`
+  --> test/cli/lints/pedantic/f0778_branches_sharing_code.fren:10:17
+   |
+10 |     req r2: z = if c? then x - 1 else x - 2
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same operand in both branches
+   |
+   = note: `x` is evaluated whichever branch is taken, and has the same value in both
+   = help: `fren fix` can fix this
+help: move it out of the `if`
+   |
+10 -     req r2: z = if c? then x - 1 else x - 2
+10 +     req r2: z = x - (if c? then 1 else 2)
+   |
+
+fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0778`.
+exit=3

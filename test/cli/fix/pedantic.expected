@@ -1,0 +1,19 @@
+--- test/cli/fix/pedantic.fren
++++ test/cli/fix/pedantic.fren
+@@ -23,6 +23,6 @@
+-    req r1: y = 2 * match m { Mode::Heat => x + 1, _ => x }
+-    req r2: p? iff ((a? or b?) and a?) or not b?
+-    req r3: q? iff a? or not a?
+-    req r4: cell = Cell { column := x, row }
+-    req r5: z = if a? then x * 2 else row * 2
+-    req r6: t? iff r#"a"# = r##"a"#b"##
++    req r1: y = 2 * (if m = Mode::Heat then x + 1 else x)
++    req r2: p? iff (a?) or not b?
++    req r3: q?
++    req r4: cell = Cell { row, column := x }
++    req r5: z = (if a? then x else row) * 2
++    req r6: t? iff r"a" = r##"a"#b"##
+@@ -31 +31 @@
+-    req r7: w = 1 + match m { Mode::Cool => x, _ => row } and v = 3 * (if a? then x + if b? then 1 else 2 else row + if b? then 1 else 2)
++    req r7: w = 1 + (if m = Mode::Cool then x else row) and v = 3 * ((if a? then x else row) + if b? then 1 else 2)
+exit=1
