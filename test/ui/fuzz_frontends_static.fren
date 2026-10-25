@@ -9,4 +9,43 @@ comp concat {
     req q: y? iff s = t ++ "b"
     --~^ error: searching a string, or `++` here, which makes a word equation, may be undecidable
 }
+
+-- The same, with parentheses, which do not make it a comparison of
+-- strings too (#98).
+comp concat_paren {
+    in s: String
+    in t: String
+    pub out y?
+    req q: y? iff s = (t ++ "b")
+    --~^ error: searching a string, or `++` here, which makes a word equation, may be undecidable
+}
+
+-- Methods without arguments chained after a parenthesized receiver (#97).
+comp chained_paren {
+    in r: Rel(Int, Int)
+    pub out y?
+    req q: y? iff (r).range.card = 1
+    --~^ error: a relational operator over a type that is not finite quantifies over its values
+    --~^^ error: the solver does not reliably combine counting with relational operators
+}
+
+-- Counting with relational operators, through an instance: Lean does not
+-- check `counts_mixed`, where cvc5 aborted (#100), but it checks `mixed`,
+-- since only the binary stops at a static error.
+comp mixed {
+    --~^[hosted] error: `mixed` is not realizable
+    in n: Int
+    in t: Set(Int)
+    req q: ((t inter {0, 3}) union t) = (({(0, 0), (1, 2)}).range inter {3, n})
+    --~^[hosted] info: is false when
+}
+
+comp counts_mixed {
+    in r: Rel(Int, Int)
+    in t: Set(Int)
+    inst w: mixed { n := r.card, t }
+    --~^ error: the solver does not reliably combine counting with relational operators
+    pub out y?
+    req q: y? iff (w.n + ({(1, 2)}).card) > 1
+}
 --@ exit: 2

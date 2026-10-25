@@ -124,7 +124,9 @@ pub comp severity {
 ```
 
 A denied lint is a static error, so with the `fren` command no check
-runs.
+runs. Lean goes on to check the other items, but not an item where
+`undecidable` is denied (see [Undecidable
+constructs](Lint/Decidability.md#undecidable-constructs)).
 
 ## Groups
 

@@ -15,6 +15,15 @@ set_option fren.lint.undecidable "allow" in
 comp c { ... }
 ```
 
+Where `undecidable` is denied or forbidden, the item is not checked, in
+Lean as with the `fren` command, which runs no check after a static error:
+nothing outside the decidable core reaches the solver unless the spec opts
+in, since the solver may not only fail to decide such a query but abort,
+which would end a `lake build`. Lean reports the lint, which fails the
+build, and checks the file's other items. The same holds for a global
+expectation, and for a refinement where it is denied, or in either of
+its components.
+
 A project that wants every check decidable sets `-F undecidable`. Setting
 it to `expect` says that a component is meant to be undecidable, so that
 [`unfulfilled_lint_expectations`](../Lint.md#expecting-lints) reports the opt-out

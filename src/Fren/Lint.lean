@@ -337,6 +337,8 @@ def recordUse (u : Core.UseDef) (ref : Syntax) : m Unit := do
 def recordLint (lint : Core.Lint) (ref : Syntax) (msg : Core.Msg) : m Unit := do
   let level ← lintLevel lint
   modifyLocal fun l => { l with lintReports := l.lintReports.push { lint, level, ref, msg } }
+  if lint == .undecidable && level.level.severity? == some .error then
+    modifyLocal fun l => { l with undecidableDenied := true }
 
 /-- Records the item that a resolved path uses (`dead_code`). -/
 def recordUsedItem (r : Core.Resolved) : m Unit :=
