@@ -1,5 +1,4 @@
 error: no mutant `swap-comparison-c::r-000000000000`
   = note: `fren mutate --list` lists the mutants
-  = help: a mutant with a similar identifier exists: `swap-comparison-c::r-9259ff0382e1`
   = help: run `fren --help` for usage
 exit=2

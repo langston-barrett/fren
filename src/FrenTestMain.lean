@@ -541,6 +541,8 @@ def mutation : IO (Array String) := do
       for m₂ in all do
         if m₂.file == m.file && m₂.item != m.item && !again.any (·.id == m₂.id) then
           failures := failures.push s!"{m₂.id}: its identifier changes when {m.id} is applied"
+      if m.origin == .narrowClass && chars[m.span.start - 1]? == some '[' && chars[m.span.stop]? == some '^' then
+        failures := failures.push s!"{m.id}: leaves `^` first in a class, negating it"
       if isSwap m && !again.any (fun b => b.origin == m.origin && b.apply chars' == chars) then
         failures := failures.push s!"{m.id}: no mutant swaps it back"
       if [.swapComparison, .swapArithmetic, .swapAndOr, .dropConjunct, .negateTrigger].contains m.origin then

@@ -31,6 +31,8 @@ pub comp c {
 
     assume bounded: x >= 0 and x <= LIMIT
     req r: when x > 2 and x < 5 or not ok?, s.matches?(r"[a-z_]+x*")
+    -- `a` is not removed from `[a^b]` or `[a^]`, which would negate them.
+    req carets: s.matches?(r"[a^b][a^]") or ok?
     req chained: ok? or x = 4 or x = 6
     req chain: unless m = Off, (ok? or x = 1) and m in {Heat, Cool} and [1, 2].len = 2
     inst w: sub { a := x * 2, on? := true }

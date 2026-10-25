@@ -1,0 +1,11 @@
+--@ args: mutate
+-- `q[1]` is out of range on the spec too, so dropping `q[0] = 1`, which
+-- makes `q[1]` the first index, kills nothing: indexes are matched by
+-- their text, not by their position.
+comp c {
+    in q: Seq(Int)
+    pub out ok?
+
+    assume one: q.len >= 1
+    req r: ok? iff (q[0] = 1 and q[1] = 2)
+}

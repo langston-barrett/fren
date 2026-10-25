@@ -44,7 +44,7 @@ operator keeps its own. The changes are:
 | `flip-bool` | `true` and `false`, each to the other |
 | `remove-element` | an element of a set or sequence literal of at least two, removed |
 | `swap-repetition` | in a [pattern](Lang/Expressions.md#patterns), `*` and `+`, each to the other |
-| `narrow-class` | in a pattern, an item of a class of at least two, removed |
+| `narrow-class` | in a pattern, an item of a class of at least two, removed, unless that leaves a `^` first, which would negate the class |
 
 A pattern is changed only where its text is its value: a raw literal, or a
 literal without escapes.
@@ -69,10 +69,11 @@ the item changed: a constraint, defined output or instance as
 `module::component::name`, or a constant or function as `module::name`,
 with each run of characters other than ASCII letters, digits, `_` and `:`
 made one `_`, and `_` trimmed next to `::`. `HASH` is 12 hexadecimal
-digits, which hash the origin, the file's path without `.` segments or
-repeated `/`, the item, the expression changed and the change, with
-whitespace and the commas that end a list removed, and how many identical
-mutants come before it in the item. So an identifier stays the
+digits of the 64-bit FNV-1a hash, the same on every machine and build, of
+the origin, the file's path without `.` segments or repeated `/`, the
+item, the expression changed and the change, with whitespace and the
+commas that end a list removed, and how many identical mutants come
+before it in the item. So an identifier stays the
 same when the spec is reformatted, or changed elsewhere, and `--mutant ID`
 names the same mutant across runs.
 
@@ -111,7 +112,8 @@ redundant is killed by that check.
 A mutant that has a static error, from a lint set to `deny` or `forbid`, is
 *unviable*: it is not checked, and is left out of the kill rate. Any other
 static error in a mutant is an internal error, since mutants are made so
-as to have none.
+as to have none; such a mutant is counted as unviable too. An evaluator
+that cannot read a mutant is an internal error as well.
 
 ### Equivalent mutants
 
@@ -201,6 +203,9 @@ standard error:
 fren: 12 mutants: 9 killed, 2 survived, 1 equivalent, 0 unviable
 ```
 
+With `--by both`, it ends with the number missed by testing, as
+`, 1 missed by testing`.
+
 Standard output holds the kill rate of each component, and of each
 constant and function, sorted by path: the share of its mutants that were
 killed, out of those killed or surviving, rounded down to a whole
@@ -209,6 +214,9 @@ percentage.
 ```text
 m::c: 9 of 11 mutants killed (81%), 1 equivalent
 ```
+
+The line ends with the numbers of equivalent and unviable mutants, and with
+`--by both` of those missed by testing, each where it is not 0.
 
 `mutate::exit` gives the exit status. It is `fren check`'s
 (`cli::exit`), where each surviving or missed mutant is a warning and each

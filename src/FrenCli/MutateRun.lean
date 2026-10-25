@@ -56,18 +56,31 @@ def Todo.key (t : Todo) : String :=
   if t.global then s!"expect {t.comp.path}::{(t.comp.props[0]?.map (·.name)).getD .anonymous}"
   else if t.refinement then s!"refine {t.comp.path}" else s!"comp {t.comp.path}"
 
-/-- A check, as the key of its result within its component's. -/
-def resultKey (r : CheckResult) : String := s!"{repr r.kind}|{r.prop?}|{r.target?}|{r.index?}"
+/-- A definedness check names its index by its position in the
+constraint, which a mutant that drops an earlier index changes. So the
+index is named by its text instead, `chars` being the text of `c`'s file,
+and how many indexes of the same text come before it in the constraint. -/
+def indexKey (chars : Array Char) (c : CComp) (r : CheckResult) : String := Id.run do
+  let some k := r.index? | return ""
+  let some n := r.prop? | return toString k
+  let here := c.indexes.filter (·.1 == n) |>.map fun (_, _, sp, _) => idText (String.ofList (chars.extract sp.start sp.stop).toList)
+  let some t := here[k]? | return toString k
+  return s!"{t}#{((here.extract 0 k).filter (· == t)).size}"
+
+/-- The results of `c`, in the file `chars`, each with the key of its
+check. -/
+def keyed (chars : Array Char) (c : CComp) (rs : Array CheckResult) : Array (String × CheckResult) :=
+  rs.map fun r => (s!"{repr r.kind}|{r.prop?}|{r.target?}|{indexKey chars c r}", r)
 
 /-- Whether some check of `after` kills the mutant, against the results
-`before` of the original. -/
-def kills (before after : Array CheckResult) : Bool :=
-  after.any fun r => before.any fun b => resultKey b == resultKey r && killsCheck b.verdict r.verdict
+`before` of the original, both keyed. -/
+def kills (before after : Array (String × CheckResult)) : Bool :=
+  after.any fun (k, r) => before.any fun (k', b) => k == k' && killsCheck b.verdict r.verdict
 
 /-- Whether some check that passes on the original is inconclusive in
 `after`. -/
-def inconclusive (before after : Array CheckResult) : Bool :=
-  after.any fun r => r.verdict == .inconclusive && before.any fun b => resultKey b == resultKey r && b.verdict == .pass
+def inconclusive (before after : Array (String × CheckResult)) : Bool :=
+  after.any fun (k, r) => r.verdict == .inconclusive && before.any fun (k', b) => k == k' && b.verdict == .pass
 
 def PropKind.name : PropKind → String
   | .assume => "assume"
@@ -150,7 +163,7 @@ def select (all : Array Mutant) (comp? : Option Name) (ids : Array String) (samp
   match sample? with
   | none => ms
   | some n =>
-    let rank (m : Mutant) := hash s!"{seed}\x00{m.id}"
+    let rank (m : Mutant) := fnv1a s!"{seed}\x00{m.id}"
     let chosen := (ms.qsort fun a b => rank a < rank b).extract 0 n |>.map (·.id)
     ms.filter (chosen.contains ·.id)
 

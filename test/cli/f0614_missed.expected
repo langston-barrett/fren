@@ -4,7 +4,7 @@ warning[F0613]: no check rejects this change to `c::r`
 7 |     req r: big? iff xs.len > 4
   |                            ^ `>` changed to `>=`
   |
-  = note: the mutant is `swap-comparison-c::r-262de829a2fa`
+  = note: the mutant is `swap-comparison-c::r-dabc5e2b0f4e`
   = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
   |
@@ -18,7 +18,7 @@ warning[F0614]: testing does not reject this change to `c::r`, which the checks 
 7 |     req r: big? iff xs.len > 4
   |                              ^ `4` changed to `5`
   |
-  = note: the mutant is `shift-integer-c::r-556cb451bd9f`
+  = note: the mutant is `shift-integer-c::r-72bfbb8497e0`
   = note: none of 100 tests per component found a behaviour that tells it apart
 help: the mutant
   |
@@ -32,7 +32,7 @@ warning[F0613]: no check rejects this change to `c::r`
 7 |     req r: big? iff xs.len > 4
   |                              ^ `4` changed to `3`
   |
-  = note: the mutant is `shift-integer-c::r-df3c5d204d94`
+  = note: the mutant is `shift-integer-c::r-74bfd8f4c642`
   = help: add an expectation that the change breaks, or say what the spec means more exactly
 help: the mutant
   |

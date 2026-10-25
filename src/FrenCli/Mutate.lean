@@ -170,7 +170,7 @@ def classItems (p : Array Char) (i : Nat) : Array (Nat × Nat) × Nat := Id.run 
 
 /-- The edits of pattern `p` (`Reqs/Lang/Expressions#patterns`), as spans
 of `p` and their replacements: `*` and `+` swapped, and each item of a
-class of at least two removed. -/
+class of at least two removed, unless that leaves a `^` first. -/
 def patternEdits (p : Array Char) : Array (Origin × Span × String) := Id.run do
   let mut out := #[]
   let mut i := 0
@@ -180,7 +180,11 @@ def patternEdits (p : Array Char) : Array (Origin × Span × String) := Id.run d
     else if c == '[' then
       let (items, close) := classItems p (i + 1)
       if items.size ≥ 2 then
-        for (a, b) in items do out := out.push (.narrowClass, { start := a, stop := b }, "")
+        let negated := p[i + 1]? == some '^'
+        for (a, b) in items, k in [0:items.size] do
+          -- A `^` that would come first would negate the class.
+          if k == 0 && !negated && items[1]?.any (p[·.1]? == some '^') then continue
+          out := out.push (.narrowClass, { start := a, stop := b }, "")
       i := close + 1
     else
       if c == '*' then out := out.push (.swapRepetition, { start := i, stop := i + 1 }, "+")
@@ -313,6 +317,11 @@ def itemSlug (n : Name) : String :=
   let trim (p : List Char) := ((p.dropWhile (· == '_')).reverse.dropWhile (· == '_')).reverse
   "::".intercalate ((s.splitOn "::").map fun p => String.ofList (trim p.toList))
 
+/-- The 64-bit FNV-1a hash of the UTF-8 bytes of `s`: fixed, unlike
+`hash`, which may change with Lean. -/
+def fnv1a (s : String) : UInt64 :=
+  s.toUTF8.foldl (init := 0xcbf29ce484222325) fun h b => (h ^^^ b.toUInt64) * 0x100000001b3
+
 /-- Twelve hexadecimal digits of `h`. -/
 def hex12 (h : UInt64) : String :=
   let digits := String.ofList (Nat.toDigits 16 (h.toNat % 2 ^ 48))
@@ -329,7 +338,7 @@ def ofFile (s : Src) (items : Array Item) : Array Mutant := Id.run do
       let key := "\x00".intercalate [ed.origin.name, idPath s.path, item.toString, idText (s.text ed.context), idText before, idText ed.after]
       let k := seen.getD key 0
       seen := seen.insert key (k + 1)
-      let id := s!"{ed.origin.name}-{itemSlug item}-{hex12 (hash s!"{key}\x00{k}")}"
+      let id := s!"{ed.origin.name}-{itemSlug item}-{hex12 (fnv1a s!"{key}\x00{k}")}"
       out := out.push { origin := ed.origin, file := s.file, item, comp?, span := ed.span, before, after := ed.after, id }
   -- In order of position, and otherwise as made.
   let order := (out.mapIdx fun k m => (k, m)).qsort fun (i, a) (j, b) => a.span.start < b.span.start || (a.span.start == b.span.start && i < j)

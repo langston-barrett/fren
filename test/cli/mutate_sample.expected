@@ -1,4 +1,4 @@
-swap-comparison-m::c::r-ff908990a030 test/cli/mutate_sample.fren:9:32 `<` changed to `<=`
-shift-integer-m::c::r-a468895f6130 test/cli/mutate_sample.fren:9:34 `9` changed to `10`
-shift-integer-m::c::r-4b1ee0df7059 test/cli/mutate_sample.fren:9:34 `9` changed to `8`
+drop-conjunct-m::c::r-aa9824d80462 test/cli/mutate_sample.fren:9:20 `x > 1 and x < 9 and x != 5` changed to `x > 1 and x < 9`
+shift-integer-m::c::r-1740349813c9 test/cli/mutate_sample.fren:9:34 `9` changed to `10`
+swap-and-or-m::c::r-071cc49a3977 test/cli/mutate_sample.fren:9:36 `and` changed to `or`
 exit=0
