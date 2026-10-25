@@ -585,6 +585,8 @@ that look only at the name, at the level in effect; and, for an item other
 than a module, `module_name_repetitions`. -/
 def lintName (what : Named) (n : Name) (span : Span) : M Unit := do
   for (l, msg) in Fren.Core.nameMsgs what n do lint l span msg
+  unless what matches .module do
+    if let some msg := Fren.Core.moduleNameMsg? what (← get).module n then lint .moduleNameRepetitions span msg
   if what matches .variable | .instance | .binder then
     modify fun s => { s with declared := s.declared.push (n, span) }
 
@@ -612,8 +614,6 @@ def lintLines (what : Named) (n : Name) (name last : Span) : M Unit := do
   let text := String.ofList ((← get).src.extract name.start last.stop).toList
   let k := Fren.Core.codeLines text
   if Fren.Core.tooManyLines k then lint .tooManyLines name (Fren.Core.tooManyLinesMsg what n k)
-  unless what matches .module do
-    if let some msg := Fren.Core.moduleNameMsg? what (← get).module n then lint .moduleNameRepetitions span msg
 
 /-- Reports a lint whose message's first fix replaces its text, which
 `fren fix` applies. -/

@@ -57,10 +57,12 @@ comp more_paths {
     pub out near: Reading
     pub out written: sensors::Reading
     pub out inside?
+    pub out tested?
 
     req near_rule: near = Reading { value := 1 }
     req written_rule: written = self::sensors::Reading { value := 2 }  --~ warning: `self::sensors::Reading` is a path of 3 segments
     req far_rule: when far = sensors::Probe::Inside, inside?  --~ warning: `sensors::Probe::Inside` is a path of 3 segments
+    req tested_rule: tested? iff far is sensors::Probe::Outside  --~ warning: `sensors::Probe::Outside` is a path of 3 segments
 }
 
 comp climate_check {  --~ warning: component `climate_check` contains the name of its module `climate`

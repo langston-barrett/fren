@@ -600,6 +600,9 @@ other than a module, `module_name_repetitions`. -/
 def lintName (what : Core.Named) (n : Name) (ref : Syntax) : m Unit := do
   for (lint, msg) in Core.nameMsgs what n do
     recordLint lint ref msg
+  unless what matches .module do
+    if let some msg := Core.moduleNameMsg? what (← getLocal).currentModule n then
+      recordLint .moduleNameRepetitions ref msg
   if what matches .variable | .instance | .binder then
     modifyLocal fun l => { l with declaredNames := l.declaredNames.push (n, ref) }
 
@@ -621,9 +624,6 @@ def lintDeclared (what : Core.Named) (n : Name) (ref : Syntax) : m Unit := do
   for i in [0:ds.size] do
     if let some a := (ds.extract 0 i).find? (Core.namesSimilar ·.1 ds[i]!.1) then
       recordLint .similarNames ds[i]!.2 (Core.similarNamesMsg a.1 ds[i]!.1 what n)
-  unless what matches .module do
-    if let some msg := Core.moduleNameMsg? what (← getLocal).currentModule n then
-      recordLint .moduleNameRepetitions ref msg
 
 /-- The lints of the file, or Markdown spec, elaborated so far, with their
 severities. -/

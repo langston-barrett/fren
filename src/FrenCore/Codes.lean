@@ -3829,6 +3829,7 @@ set_option fren.lint.precedence "warn"
 
 comp c { in a? in b? in d? pub out p? req r: p? iff (a? or (b? and d?)) }
 ```
+"# },
   { code := "F0789", explanation := r#"A relation to a type of one value (`zero_sized_map_values`, allowed by default).
 
 Example:
