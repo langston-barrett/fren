@@ -13,26 +13,7 @@ help: write it as an equation
 2 + comp c { in x: Int pub out p? req r: p? iff x = 1 }
   |
 
-warning[F0608]: could not decide whether `c` is realizable: solver error: cvc5.Error.error "Symbol 'set.singleton' not declared as a variable"
- --> test/cli/f0717_singleton.fren:2:6
-  |
-2 | comp c { in x: Int pub out p? req r: p? iff x in {1} }
-  |      ^ undecided
-  |
-  = note: the solver gave up, so this check neither passed nor failed
-  = help: raise the time limit with `--timeout`, or simplify the constraints involved
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
 
-warning[F0608]: could not decide whether `c::r` is redundant: solver error: cvc5.Error.error "Symbol 'set.singleton' not declared as a variable"
- --> test/cli/f0717_singleton.fren:2:35
-  |
-2 | comp c { in x: Int pub out p? req r: p? iff x in {1} }
-  |                                   ^ undecided
-  |
-  = note: the solver gave up, so this check neither passed nor failed
-  = help: raise the time limit with `--timeout`, or simplify the constraints involved
-
-fren: 0 passed, 0 failed, 2 inconclusive, 0 redundant
-
-Some errors have detailed explanations: F0608, F0717.
-For more information about an error, try `fren --explain F0608`.
+For more information about this error, try `fren --explain F0717`.
 exit=3

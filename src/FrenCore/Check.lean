@@ -422,10 +422,11 @@ def logic (kind : CheckKind) (extended : Bool := false) (projection : Bool := fa
 
 /-- The cvc5 options for a spec that uses strings and sets (`cli::logic`):
 `strings-exp` for the extended string functions, `re-inter-mode` to
-decide intersections of patterns, and `sets-exp` to count the members of a
-set of a finite type. -/
+decide intersections of patterns, `re-elim` to rewrite a match that needs
+no automaton, such as `x[0-9]{2}.*`, as string functions, and `sets-exp`
+to count the members of a set of a finite type. -/
 def solverOptions (strings sets : Bool) : List (String × String) :=
-  (if strings then [("strings-exp", "true"), ("re-inter-mode", "all")] else [])
+  (if strings then [("strings-exp", "true"), ("re-inter-mode", "all"), ("re-elim", "on")] else [])
     ++ (if sets then [("sets-exp", "true")] else [])
 
 /-- `inst` for each assumption of each instance, in order. -/

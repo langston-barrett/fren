@@ -188,6 +188,27 @@ def substQuoted (f : String → String) (smt : String) : String := Id.run do
 /-- Applies `f` to the name of each quoted symbol of `smt`. -/
 def mapQuoted (f : String → String) (smt : String) : String := substQuoted (quote ∘ f) smt
 
+/-- The names of the quoted symbols of `smt`, as `mapQuoted` finds them. -/
+def quotedSymbols (smt : String) : Array String := Id.run do
+  let cs := smt.toList.toArray
+  let mut out := #[]
+  let mut i := 0
+  while i < cs.size do
+    let c := cs[i]!
+    if c == '"' then
+      let mut j := i + 1
+      while j < cs.size && !(cs[j]! == '"' && cs[j + 1]? != some '"') do
+        j := if cs[j]! == '"' then j + 2 else j + 1
+      i := j + 1
+    else if c == '|' then
+      let mut j := i + 1
+      while j < cs.size && cs[j]! != '|' do j := j + 1
+      out := out.push (String.ofList (cs.extract (i + 1) j).toList)
+      i := j + 1
+    else
+      i := i + 1
+  return out
+
 /-- Renames the variables `vars` in `smt` to `pfx.x`. Variables are quoted
 symbols, as are enum constructors, which contain `::` and so never clash. -/
 def rename (pfx : Name) (vars : Array CVar) (smt : String) : String :=
@@ -914,6 +935,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   | .neg _ a => return (s!"(- {← expect a .int (opNote "-" .int)})", .int)
   | .num _ v => return (toString v, .int)
   | .set span elems =>
+    -- A literal's type may be written nowhere, as in `x in {1}`.
+    modify fun s => { s with usesSets := true }
     if elems.isEmpty then
       let some t := expected? | err span Fren.Core.emptySetTypeMsg
       unless t matches .set _ | .rel .. do err span Fren.Core.emptySetTypeMsg
@@ -945,6 +968,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     return (smt, t0)
   | .pair span .. => err span Fren.Core.pairPlaceMsg
   | .seq span elems =>
+    modify fun s => { s with usesSeqs := true }
     if elems.isEmpty then
       let some t := expected? | err span Fren.Core.emptySeqTypeMsg
       unless t matches .seq _ do err span Fren.Core.emptySeqTypeMsg
@@ -2116,19 +2140,33 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (fixing : Arra
     | .error f => set { s with diags := s.diags.push f.diag, usedItems := f.usedItems }
   finishLints
 
+/-- A declaration of the prelude: its SMT-LIB text, and the names of the
+quoted symbols that it declares. -/
+structure PreludeDecl where
+  text : String
+  syms : Array String
+  deriving Inhabited, BEq
+
 /-- `(declare-sort ...)` for every abstract type, `(declare-datatype ...)`
 for every enum and record, in order, since each may contain those before
 it, `(declare-fun ...)` for every uninterpreted function, and
 `(define-fun ...)` for every defined function, in order, since each may
 apply those before it. -/
-def State.prelude (s : State) : String :=
-  let sorts := String.join (s.sorts.toList.map fun p => s!"(declare-sort {itemSym p} 0)\n")
-  let enums := String.join (s.datatypes.toList.map (·.decl))
-  let funs := String.join (s.funs.toList.map fun (p, ps, r) =>
-    s!"(declare-fun {itemSym p} ({" ".intercalate (ps.toList.map (·.sort))}) {r.sort})\n")
-  let defs := String.join (s.defs.toList.map fun (p, ps, r, body) =>
+def State.prelude (s : State) : Array PreludeDecl :=
+  let unquote (sym : String) : String := ((sym.drop 1).dropEnd 1).toString
+  let sorts := s.sorts.map fun p => { text := s!"(declare-sort {itemSym p} 0)\n", syms := #[unquote (itemSym p)] }
+  -- A datatype declares its constructors and selectors too.
+  let enums := s.datatypes.map fun d =>
+    let ctors := d.ctors.flatMap fun (c, fs) => #[d.ctorSym c] ++ (List.range fs.size).toArray.map (d.selSym c)
+    { text := d.decl, syms := (#[quote (showPath d.path)] ++ ctors).map unquote }
+  let funs := s.funs.map fun (p, ps, r) =>
+    { text := s!"(declare-fun {itemSym p} ({" ".intercalate (ps.toList.map (·.sort))}) {r.sort})\n", syms := #[unquote (itemSym p)] }
+  let defs := s.defs.map fun (p, ps, r, body) =>
     let ps := " ".intercalate (ps.toList.map fun (x, t) => s!"({quote x.toString} {t.sort})")
-    s!"(define-fun {itemSym p} ({ps}) {r.sort} {body})\n")
+    { text := s!"(define-fun {itemSym p} ({ps}) {r.sort} {body})\n", syms := #[unquote (itemSym p)] }
   sorts ++ enums ++ funs ++ defs
+
+/-- The whole prelude, as one script. -/
+def State.preludeText (s : State) : String := String.join (s.prelude.toList.map (·.text))
 
 end FrenCli

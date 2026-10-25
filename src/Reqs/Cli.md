@@ -128,7 +128,11 @@ abstract types as sorts and functions as uninterpreted functions, named by
 their paths after `::`, such as `|::lang::Name|`, which no variable can be
 named. A second
 copy of a variable, as used by the [determinism](Check.md#determinism)
-check, is primed: `|y'|`.
+check, is primed: `|y'|`. A script declares every variable of its
+component, but of the spec's abstract types, enumerations, records and
+functions only those that its query mentions, directly or through
+another declaration: the others cannot change its answer, and declaring
+them all is most of the work of a small query.
 
 Each script sets the [SMT-LIB logic](https://smt-lib.org/logics.shtml) of
 its query, so that the solver rejects a query outside the fragment that
@@ -143,8 +147,12 @@ quantifies, over outputs, which never occur in a function's arguments (see
 [Instances](Lang/Instances.md#instance-variables)). A spec that uses
 strings needs the theory of strings, which has no smaller standard logic,
 so its queries use `ALL`, and set cvc5's options `strings-exp`, without
-which cvc5 refuses some string operations, and `re-inter-mode all`, so
-that it decides intersections of [patterns](Lang/Expressions.md#patterns).
+which cvc5 refuses some string operations, `re-inter-mode all`, so
+that it decides intersections of [patterns](Lang/Expressions.md#patterns),
+and `re-elim on`, so that it rewrites a match that needs no automaton,
+such as one of `x[0-9]{2}.*`, as string functions, which it decides
+faster. These rewrites keep the query's meaning, and introduce no
+quantifiers.
 A spec that uses sets uses `ALL` too, and sets `sets-exp`, without which
 cvc5 refuses to count the members of a set of a finite type. A relation's
 `domain` is its join with the set of every value of the second type, and
@@ -171,7 +179,7 @@ pub comp logic {
     in theories: Set(Theory)     -- beyond uninterpreted functions, datatypes and linear integer arithmetic
     in projection?               -- the spec takes the domain or range of a relation over a type that is not finite
     pub det out logic: Logic
-    pub det out strings_exp?     -- set cvc5's `strings-exp` and `re-inter-mode` options
+    pub det out strings_exp?     -- set cvc5's `strings-exp`, `re-inter-mode` and `re-elim` options
     pub det out sets_exp?        -- set cvc5's `sets-exp` option
 
     req base: when theories = {},

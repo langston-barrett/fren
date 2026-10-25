@@ -124,7 +124,7 @@ def equal (st : State) (vars : Array CVar) (pairs : Array (String × String)) (t
   let sets := st.usesSets || st.usesSeqs
   let options := String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n")
   let goal := conj (pairs.map fun (a, b) => s!"(= {a} {b})")
-  match ← runQuery (Fren.Core.logic .expect (strings || sets) st.usesProjection) (options ++ st.prelude) vars timeout none #[] goal false with
+  match ← runQuery (Fren.Core.logic .expect (strings || sets) st.usesProjection) options (Prelude.ofDecls st.prelude) vars timeout none #[] goal false with
   | .unsat => return some true
   | .sat _ => return some false
   | .unknown _ => return none

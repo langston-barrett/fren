@@ -599,10 +599,11 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
   let mut compared := 0
   let mut inconclusive := 0
   let mut skipped := 0
+  let prelude := Prelude.ofDecls st.prelude
   for (c, global) in st.comps.map (·, false) ++ st.globals.map (·, true) do
     let some ec := sp.counterpart? c global | found := found.push s!"no counterpart of {c.path}"; continue
     let log ← IO.mkRef #[]
-    let bk := backend st.prelude st.datatypes c timeout none (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs)
+    let bk := backend prelude st.datatypes c timeout none (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs)
       st.usesProjection
     let results ← Fren.Core.checkComp (fun k => confirming sp ec k log (bk k)) (pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)))
       (Fren.Core.kindsFor global)
