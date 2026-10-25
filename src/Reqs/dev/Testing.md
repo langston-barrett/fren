@@ -59,3 +59,10 @@
   constraints are not compared, since without them brute force is not
   exact. A component with too many behaviours to enumerate is skipped,
   and counted in the summary.
+
+`lake test` runs its tests as independent jobs, in parallel, at most as
+many at once as the machine has cores: each job is a process of its own
+(`fren_test --job NAME`), and the ui tests run in batches of eight files,
+each importing `Fren` once. A job that crashes is a failure. The failures
+are reported sorted, so that their order does not depend on which job
+finished first.
