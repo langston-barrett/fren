@@ -33,7 +33,7 @@ constant       := ["pub"] "const" IDENT ":" type ":=" expr
 component      := ["pub"] "comp" IDENT "{" member* "}"
 expectation    := "expect" IDENT ":" ["forall" forall-binder+ ","] expr
 forall-binder  := "(" IDENT+ ":" path ")"
-refinement     := "refine" IDENT ":" path "refines" path ["by" TACTICS]
+refinement     := "refine" IDENT ":" path "refines" path ["{" [binding ("," binding)* [","]] "}"] ["by" TACTICS]
 check          := "#fren_check" [path] | "#fren_trace"
 claim          := "tested" path ":" STRING ("," STRING)* [","]
                 | "trusted" path ":" STRING

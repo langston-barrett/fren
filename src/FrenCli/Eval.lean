@@ -633,19 +633,45 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .field e idx => .field (e.renameVars f) idx
   | .match e arms => .match (e.renameVars f) (arms.map fun (p, b) => (p, b.renameVars f))
 
+/-- `e` with each variable `n` replaced by `f n`. -/
+partial def Ex.substVars (f : Name → Ex) : Ex → Ex
+  | .lit v => .lit v
+  | .var n => f n
+  | .bound n => .bound n
+  | .not a => .not (a.substVars f)
+  | .neg a => .neg (a.substVars f)
+  | .bin op a b => .bin op (a.substVars f) (b.substVars f)
+  | .when negated c d => .when negated (c.substVars f) (d.substVars f)
+  | .ite c a b => .ite (c.substVars f) (a.substVars f) (b.substVars f)
+  | .app g args => .app g (args.map (·.substVars f))
+  | .method m r args => .method m (r.substVars f) (args.map (·.substVars f))
+  | .setLit es => .setLit (es.map (·.substVars f))
+  | .pair a b => .pair (a.substVars f) (b.substVars f)
+  | .seqLit es => .seqLit (es.map (·.substVars f))
+  | .index q i pos => .index (q.substVars f) (i.substVars f) pos
+  | .card e => .card (e.substVars f)
+  | .ctor ty idx args => .ctor ty idx (args.map (·.substVars f))
+  | .field e idx => .field (e.substVars f) idx
+  | .match e arms => .match (e.substVars f) (arms.map fun (p, b) => (p, b.substVars f))
+
 /-- The comp that checks that `c` refines `a` (`Reqs/Lang/Refinement`): its
 inputs are `c`'s, its assumptions `a`'s, it has an instance `w` of `c` and
 `a`'s instances, and its expectations are `a`'s requirements and
-definitions, with `a`'s outputs read from `w`'s. -/
-def Comp.refinement (path w : Name) (c a : Comp) : Comp :=
+definitions, with each variable of `a` read as its binding in `bindings`,
+over `c`'s variables, or else as `c`'s of the same name, and `c`'s outputs
+read from `w`'s. -/
+def Comp.refinement (path w : Name) (c a : Comp) (bindings : Array (Name × Ex) := #[]) : Comp :=
   let outs := (a.vars.filter (·.role == .output)).map (·.name)
-  let ren (e : Ex) := e.renameVars fun n => if outs.contains n then w ++ n else n
+  let ownC (e : Ex) := e.renameVars fun n => if c.vars.any (fun v => v.name == n && v.role != .input) then w ++ n else n
+  let ren (e : Ex) := e.substVars fun n => match bindings.find? (·.1 == n) with
+    | some (_, b) => ownC b
+    | none => .var (if outs.contains n then w ++ n else n)
   let inputs := c.vars.filter (·.role == .input)
   { path
     vars := inputs
-    constraints := a.constraints.filter (·.kind == .assume)
+    constraints := (a.constraints.filter (·.kind == .assume)).map (fun p => { p with e := ren p.e })
       ++ (a.constraints.filter (·.kind == .req)).map (fun p => { p with kind := .expect, e := ren p.e })
-      ++ a.defs.map fun (d, e) => { kind := .expect, name := d, e := .bin .eq (.var (w ++ d)) (ren e) }
+      ++ a.defs.map fun (d, e) => { kind := .expect, name := d, e := .bin .eq (ren (.var d)) (ren e) }
     insts := #[{ name := w, comp := c.path, bindings := inputs.map fun v => (v.name, .var v.name) }]
       ++ a.insts.map fun i => { i with bindings := i.bindings.map fun (x, e) => (x, ren e) } }
 
@@ -936,17 +962,20 @@ partial def lowerItem : Item → L Unit
       spec.consts := s.spec.consts.insert path (v, t) }
   | .comp isPub name members => lowerComp isPub name members
   | .global name binders body => lowerGlobal name binders body
-  | .refine name concrete abstract => do
+  | .refine name concrete abstract bs => do
     let comp (segs : Array Ident) : L Comp := do
       let some c := (← get).spec.comp? (← resolveComp segs) | throw s!"unknown component `{segNames segs}`"
       return c
     let c ← comp concrete
     let a ← comp abstract
     let path := (← get).module ++ Name.mkSimple name.name
+    -- The bindings, over `c`'s own variables.
+    let bindings ← bs.mapM fun (b, e?) => do
+      return (Name.mkSimple b.name, (← lowerExpr { vars := c.vars } (e?.getD (.path b.span #[b]))).1)
     -- As the elaborator builds it (`Reqs/Lang/Refinement`).
     modify fun s => { s with
       table := s.table.addItem { kind := .expectItem, path, isPub := false, owner := s.module }
-      spec.comps := s.spec.comps.push (Comp.refinement path (Name.mkSimple c.path.getString!) c a) }
+      spec.comps := s.spec.comps.push (Comp.refinement path (Name.mkSimple c.path.getString!) c a bindings) }
   | .claim .. | .check _ => pure ()
   | .lintSetting _ _ _ _ _ body? => do if let some b := body? then lowerItem b
 where

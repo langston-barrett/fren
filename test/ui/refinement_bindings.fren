@@ -1,0 +1,65 @@
+-- Refinement with bindings (`Reqs/Lang/Refinement#bindings`): both front
+-- ends read the abstract component's variables through the bindings the
+-- same way.
+
+comp exit_status {
+    in ran?
+    pub out code: Int
+    req not_run: code = 2 iff not ran?
+    req documented: code = 0 or code = 1 or code = 2 or code = 3
+}
+
+comp fmt_exit {
+    in all_parsed?
+    in changed?
+    pub out code: Int
+    req r: code = (if not all_parsed? then 2 else if changed? then 1 else 0)
+}
+
+comp bad_exit {
+    in all_parsed?
+    pub out code: Int
+    req r: code = (if not all_parsed? then 2 else 4)
+}
+
+-- Holds only through the binding: `fmt_exit` has no `ran?`.
+refine holds: fmt_exit refines exit_status { ran? := all_parsed? }
+refine fails: bad_exit refines exit_status { ran? := all_parsed? }  --~ error: expectation `fails::documented` does not hold
+
+enum Level { Allow, Warn, Forbid }
+
+-- An abstraction function, and an output read through an expression.
+comp forbidding {
+    in forbidden?
+    pub out stops?
+    req r: stops? iff forbidden?
+}
+
+comp stops {
+    in level: Level
+    pub out failures: Int
+    req f: failures = (if level = Level::Forbid then 1 else 0)
+}
+
+refine abstraction: stops refines forbidding { forbidden? := level = Level::Forbid, stops? := failures > 0 }
+
+-- The indexes of a binding are checked where it is read: an input's under
+-- the assumptions, an output's under the assumptions and the instances.
+comp first_of {
+    in n: Int
+    in x: Int
+    pub out y: Int
+    assume pos: n > 0
+    req r: y = x
+}
+
+comp seqs {
+    in q: Seq(Int)
+    pub out s: Seq(Int) := q
+}
+
+refine guarded: seqs refines first_of { n := q.len, x := if q != [] then q[0] else 0, y := s[0] }
+refine unguarded: seqs refines first_of { n := 1, x := q[0], y := s[0] }  --~ error: an index of `unguarded::x` may be out of range
+--~^ error: an index of `unguarded::y` may be out of range
+
+--@ summary: 23 passed, 3 failed, 0 inconclusive, 0 redundant

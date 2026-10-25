@@ -5,6 +5,7 @@ error[F0412]: `precise` cannot refine `rough`: it has no variable `z`
   |                              ^^^^^ `z` does not match
   |
   = note: each input of `rough` must be an input of `precise`, and each output a public output, of the same type
+  = help: or bind it to an expression over the variables of `precise`, as in `{ z := ... }`
 
 error: could not check due to 1 previous error
 

@@ -160,9 +160,9 @@ def CComp.meaning (c : CComp) : String :=
 /-- `w.x` as a `Name`. -/
 def identName (s : String) : Name := (s.splitOn ".").foldl Name.mkStr .anonymous
 
-/-- Applies `f` to the name of each quoted symbol of `smt`. A `|` in a
+/-- Replaces each quoted symbol of `smt` with `f` of its name. A `|` in a
 string literal, where `""` is a `"`, does not quote. -/
-def mapQuoted (f : String → String) (smt : String) : String := Id.run do
+def substQuoted (f : String → String) (smt : String) : String := Id.run do
   let cs := smt.toList.toArray
   let mut out := ""
   let mut i := 0
@@ -177,12 +177,15 @@ def mapQuoted (f : String → String) (smt : String) : String := Id.run do
     else if c == '|' then
       let mut j := i + 1
       while j < cs.size && cs[j]! != '|' do j := j + 1
-      out := out ++ quote (f (String.ofList (cs.extract (i + 1) j).toList))
+      out := out ++ f (String.ofList (cs.extract (i + 1) j).toList)
       i := j + 1
     else
       out := out.push c
       i := i + 1
   return out
+
+/-- Applies `f` to the name of each quoted symbol of `smt`. -/
+def mapQuoted (f : String → String) (smt : String) : String := substQuoted (quote ∘ f) smt
 
 /-- Renames the variables `vars` in `smt` to `pfx.x`. Variables are quoted
 symbols, as are enum constructors, which contain `::` and so never clash. -/
@@ -420,6 +423,9 @@ structure ExprCtx where
   place : Place
   /-- For a binding, the index of its instance. -/
   current : Nat := 0
+  /-- In a refinement's binding, over the concrete comp's variables, which
+  binding it is: its mentions follow `refinement::mention` instead. -/
+  refining? : Option Fren.Core.RefineBinding := none
   /-- The binders in scope, innermost last. -/
   binders : Array CBinder := #[]
   /-- In a defined function's body, the function's name. -/
@@ -1101,7 +1107,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
             -- A defined output mentions what its definition does.
             for u in defDeps cx.vars v do
               let earlier := (cx.insts.findIdx? (· == u.name.getRoot)).any (· < cx.current)
-              match Fren.Core.checkMention cx.place u.role earlier u.name with
+              let ok := match cx.refining? with
+                | some rb => rb.checkMention u.role u.isPub u.name
+                | none => Fren.Core.checkMention cx.place u.role earlier u.name
+              match ok with
               | .ok () => pure ()
               | .error msg => err span (if u.name == v.name then msg else Fren.Core.throughDefinition v.name msg)
             pure (some ((quote v.name.toString, v.ty), n.components.drop k))
@@ -1586,12 +1595,15 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     comps := s.comps.push { path, file := s.file, span := name.span, vars, props, insts, defs, indexes, decidable := !s.outsideCore
                             relational, counts, tested } }
 
-/-- Elaborates `refine name: concrete refines abstract` into the comp that
-checks it (`Reqs/Lang/Refinement`): `concrete`'s inputs, `abstract`'s
-assumptions, an instance of `concrete` named as it is, `abstract`'s
-instances, and `abstract`'s requirements and definitions as expectations,
-over the instance's outputs. -/
-def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) : M Unit := do
+/-- Elaborates `refine name: concrete refines abstract { bindings }` into
+the comp that checks it (`Reqs/Lang/Refinement`): `concrete`'s inputs,
+`abstract`'s assumptions, an instance of `concrete` named as it is,
+`abstract`'s instances, and `abstract`'s requirements and definitions as
+expectations, with `abstract`'s variables read as their bindings or as
+`concrete`'s of the same names, and `concrete`'s outputs from the
+instance. -/
+def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Array (Ident × Option Expr)) :
+    M Unit := do
   let n := Name.mkSimple name.name
   liftMsg name.span (Fren.Core.checkItemName "refinement" n)
   let st ← get
@@ -1606,8 +1618,13 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) : M Unit
   let c ← comp concreteSegs
   let a ← comp abstractSegs
   let aSpan := abstractSegs[0]!.span.to abstractSegs.back!.span
-  -- The interface (`refinement::interface`).
-  for v in a.vars.filter (·.name.isAtomic) do
+  let bound := bs.map (Name.mkSimple ·.1.name)
+  -- The bindings (`refinement::binding`).
+  match Fren.Core.checkRefineBindings a.path ((a.vars.filter (·.name.isAtomic)).map (·.name)) bound with
+  | .ok () => pure ()
+  | .error (i, msg) => err bs[i]!.1.span msg
+  -- The interface (`refinement::interface`), for the variables not bound.
+  for v in a.vars.filter fun v => v.name.isAtomic && !bound.contains v.name do
     let cv? := c.vars.find? (·.name == v.name)
     let input := v.role == Role.input
     let ok := Fren.Core.interfaceAccepted input cv?.isSome (cv?.any (·.role == Role.input))
@@ -1623,8 +1640,30 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) : M Unit
   -- The instance of `concrete`, named as it is.
   let w := Name.mkSimple (c.path.getString!)
   if a.insts.any (·.name == w) then err aSpan (Fren.Core.dupMemberMsg w)
+  -- The bindings, over `concrete`'s own variables, seen from outside, as
+  -- the instance's: a defined output is an output (`refinement::mention`).
+  let own := (c.vars.filter (·.name.isAtomic)).map fun v =>
+    { v with role := if v.role == .input then .input else Role.ofInst v.role v.isPub, defn? := none }
+  modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[] }
+  discard takeIndexes
+  let mut bindings := #[]
+  for (b, e?) in bs do
+    let e := e?.getD (.path b.span #[b])
+    let some v := a.vars.find? (·.name == Name.mkSimple b.name) | internal b.span s!"no variable for `{b.name}`"
+    let cx : ExprCtx := { vars := own, place := .prop, expected? := some v.ty
+                          refining? := some { concrete := c.path, abstract := a.path, input := v.role == .input } }
+    let (smt, t) ← elabExpr cx e
+    unless t == v.ty do mismatch e v.ty t (some s!"note: `{b.name}` of `{showPath a.path}` has type `{v.ty.show}`")
+    lintBools e
+    bindings := bindings.push (v, smt, ← takeIndexes)
+  let afterBindings ← get
+  -- `concrete`'s variables as a binding reads them, its outputs from the instance.
+  let ownC (smt : String) := rename w (own.filter (·.role != .input)) smt
+  -- `abstract`'s variables: their bindings, or else `concrete`'s of the same names.
   let outs := a.vars.filter fun v => v.name.isAtomic && v.role == .output
-  let ren (smt : String) := rename w outs smt
+  let ren (smt : String) := substQuoted (fun p => match bindings.find? (·.1.name.toString == p) with
+    | some (_, b, _) => ownC b
+    | none => if outs.any (·.name.toString == p) then quote (w ++ identName p).toString else quote p) smt
   let inputs := c.vars.filter fun v => v.name.isAtomic && v.role == .input
   let vars := inputs ++ c.vars.map (fun v =>
       let role := Role.ofInst v.role v.isPub
@@ -1639,25 +1678,31 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) : M Unit
   let insts := #[instC] ++ a.insts.map fun i =>
     { i with bindings := ren i.bindings, behaviour := ren i.behaviour, assumes := #[] }
   -- Reported at the refinement (`Reqs/Lang/Refinement#the-obligation`).
-  let props := (a.props.filter (·.kind == .assume)).map ({ · with span := name.span, triggerSpan? := none })
+  let props := (a.props.filter (·.kind == .assume)).map (fun p => { p with smt := ren p.smt, span := name.span, triggerSpan? := none })
     ++ (a.props.filter (·.kind == .req)).map (fun p =>
       -- No triggers, as in Lean: vacuity does not run on a refinement.
       { p with kind := .expect, smt := ren p.smt, trigger? := none, span := name.span, triggerSpan? := none })
     ++ a.defs.map fun (d, e) =>
       { kind := .expect, name := d, span := name.span
-        smt := s!"(= {quote (w ++ d).toString} {ren e})", trigger? := none, triggerSpan? := none : CProp }
+        smt := s!"(= {ren (quote d.toString)} {ren e})", trigger? := none, triggerSpan? := none : CProp }
   -- Reported at the refinement, as its other checks are.
   let indexes := a.indexes.map fun (x, place, _, goal) =>
     (x, (match place with | .binding k => .binding (k + 1) | p => p), name.span, ren goal)
+  -- A binding's, where it is read (`Reqs/Lang/Refinement#bindings`): an
+  -- input's under the assumptions, an output's as a requirement.
+  let indexes := indexes ++ bindings.flatMap fun (v, _, idx) => idx.map fun (sp, g) =>
+    (v.name, if v.role == .input then .binding 0 else .prop, sp, ownC g)
   let tested := Fren.Core.Tested.ofSettings (← evidenceInEffect)
-    ((a.props.filter (·.kind == .assume)).map (·.name)) (props.filter (·.kind == .expect) |>.map (·.name, none))
+    -- The bindings too, for the definedness of their indexes.
+    ((a.props.filter (·.kind == .assume)).map (·.name) ++ bound) (props.filter (·.kind == .expect) |>.map (·.name, none))
     -- `a`'s instances too, for the definedness of their bindings.
     (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
   modify fun s => { s with
     table := s.table.addItem { kind := .expectItem, path := st.module ++ n, isPub := false, owner := s.module }
     refinements := s.refinements.push { path := st.module ++ n, file := s.file, span := name.span, vars, props, insts
-                                        indexes, decidable := c.decidable && a.decidable
-                                        relational := c.relational || a.relational, counts := c.counts || a.counts, tested } }
+                                        indexes, decidable := c.decidable && a.decidable && !afterBindings.outsideCore
+                                        relational := c.relational || a.relational || afterBindings.relationalUsed
+                                        counts := c.counts || a.counts || !afterBindings.countSpans.isEmpty, tested } }
 
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr) : M Unit := do
@@ -1878,7 +1923,7 @@ partial def elabItem : Item → M Unit
       table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
       consts := s.consts.insert path (smt, t) }
   | .global name binders body => elabGlobal name binders body
-  | .refine name c a => elabRefine name c a
+  | .refine name c a bs => elabRefine name c a bs
   | .claim tested segs texts => do
     let path ← match ← resolve segs with
       | .item { kind := .compItem, path, .. } => pure path

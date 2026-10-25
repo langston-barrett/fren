@@ -1480,6 +1480,68 @@ comp rough { in x: Int pub out y: Int req r: y >= x }
 refine fits: precise refines rough
 ```
 "# },
+  { code := "F0413", explanation := r#"A refinement binds a name that is not a variable of the refined component.
+
+Erroneous code example:
+
+```fren
+comp precise { in x: Int pub out y: Int req r: y = x }
+comp rough { in x: Int pub out z: Int req r: z >= x }
+refine fits: precise refines rough { w := y }
+```
+
+A refinement's bindings give variables of the refined component, the one
+after `refines`, as expressions over the refining one's (see
+`Reqs/Lang/Refinement`). `rough` has no variable `w`. The message lists
+its variables; correct the name:
+
+```fren
+comp precise { in x: Int pub out y: Int req r: y = x }
+comp rough { in x: Int pub out z: Int req r: z >= x }
+refine fits: precise refines rough { z := y }
+```
+"# },
+  { code := "F0414", explanation := r#"A refinement binds a variable of the refined component more than once.
+
+Erroneous code example:
+
+```fren
+comp precise { in x: Int pub out y: Int req r: y = x }
+comp rough { in x: Int pub out z: Int req r: z >= x }
+refine fits: precise refines rough { z := y, z := y + 1 }
+```
+
+Each variable of the refined component is read as one expression, so a
+refinement binds it at most once. Keep one binding:
+
+```fren
+comp precise { in x: Int pub out y: Int req r: y = x }
+comp rough { in x: Int pub out z: Int req r: z >= x }
+refine fits: precise refines rough { z := y }
+```
+"# },
+  { code := "F0415", explanation := r#"A refinement's binding mentions a variable of the refining component that it cannot see.
+
+Erroneous code example:
+
+```fren
+comp precise { in x: Int pub out y: Int req r: y = x }
+comp rough { in n: Int pub out y: Int req r: y >= n }
+refine fits: precise refines rough { n := y }
+```
+
+A binding sees the refining component from outside: its inputs and public
+outputs, and no private output. A binding of an input of the refined
+component sees only inputs, since the environment chooses the inputs
+before the component chooses its outputs (see `Reqs/Lang/Refinement`).
+Bind the input to an input:
+
+```fren
+comp precise { in x: Int pub out y: Int req r: y = x }
+comp rough { in n: Int pub out y: Int req r: y >= n }
+refine fits: precise refines rough { n := x }
+```
+"# },
   { code := "F0501", explanation := r#"A `tested` claim names a file that cannot be read.
 
 Erroneous code example:
