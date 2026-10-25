@@ -192,8 +192,9 @@ of its last token, such as a `)` around the body, which `body` leaves out. -/
   | function (isPub : Bool) (name : Ident) (params : Array (Array Ident × Option (Array Ident)))
       (result : Option (Array Ident)) (body : Option Expr) (last : Span)
   | const (isPub : Bool) (name : Ident) (ty : Array Ident) (value : Expr)
-  /-- `comp c { members }`, with the span of its closing `}`. -/
-  | comp (isPub : Bool) (name : Ident) (members : Array Member) (close : Span)
+  /-- `comp c { members }`, with the span of its closing `}`, the span of each
+  member, and where its `{` ends. -/
+  | comp (isPub : Bool) (name : Ident) (members : Array Member) (close : Span) (spans : Array Span) (openStop : Nat)
   /-- `expect n: forall (a b: c) ..., e`: each binder names a component or
   a type. -/
   | global (name : Ident) (binders : Array Binder) (body : Expr)
@@ -1234,15 +1235,17 @@ partial def item : P Item := do
   if isKw t "comp" then
     discard bump
     let name ← ident
-    discard (expectKw "{")
+    let openStop := (← expectKw "{").span.stop
     let mut ms := #[]
+    let mut spans := #[]
     repeat
       let t ← peek
       if isKw t "}" then break
       if t.tok == .eof then fail t "`}`"
       ms := ms.push (← member)
+      spans := spans.push { t.span with stop := (← lastSpan).stop }
     let close ← bump
-    return .comp isPub name ms close.span
+    return .comp isPub name ms close.span spans openStop
   match t.tok with
   | .ident w | .kw w =>
     if leanCommands.contains w then

@@ -308,14 +308,14 @@ scoped syntax (name := inMember) "in " frenIdent (" : " fren_type)? (" := " fren
 /-- `[pub] [det] out x: T [:= e]`: `det` asks for the determinism check, and
 `:= e` makes it a defined output. -/
 scoped syntax (name := outMember) ("pub ")? (&"det ")? &"out " frenIdent (" : " fren_type)? (" := " fren_expr (fren_where)?)? : fren_member
-scoped syntax &"assume " frenIdent " : " fren_expr (fren_where)? : fren_member
-scoped syntax &"req " frenIdent " : " fren_expr (fren_where)? : fren_member
-scoped syntax &"expect " frenIdent " : " fren_expr (fren_where)? : fren_member
+scoped syntax (name := assumeMember) &"assume " frenIdent " : " fren_expr (fren_where)? : fren_member
+scoped syntax (name := reqMember) &"req " frenIdent " : " fren_expr (fren_where)? : fren_member
+scoped syntax (name := expectMember) &"expect " frenIdent " : " fren_expr (fren_where)? : fren_member
 /-- `cover n: e`, a scenario that the component must allow (`Reqs/Lang/Components#cover-goals`). -/
-scoped syntax &"cover " frenIdent " : " fren_expr (fren_where)? : fren_member
+scoped syntax (name := coverMember) &"cover " frenIdent " : " fren_expr (fren_where)? : fren_member
 
 /-- `inst w: c { x := e, ... }`: an instance `w` of comp `c`. -/
-scoped syntax &"inst " frenIdent " : " fren_path " { " sepBy(fren_binding, ", ", ", ", allowTrailingSep) " }" : fren_member
+scoped syntax (name := instMember) &"inst " frenIdent " : " fren_path " { " sepBy(fren_binding, ", ", ", ", allowTrailingSep) " }" : fren_member
 /-- `use`, as a member: its names are in scope in the component only. -/
 scoped syntax (name := useMember) "use " fren_path ("::*")? : fren_member
 scoped syntax (name := useGroupMember) "use " fren_path "::{" sepBy1(fren_path, ", ", ", ", allowTrailingSep) "}" : fren_member

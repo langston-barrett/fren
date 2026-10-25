@@ -503,6 +503,21 @@ register_option fren.lint.branches_sharing_code : String := {
   descr := "the level of the lint `branches_sharing_code`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.zero_prefixed_literal : String := {
+  defValue := "warn"
+  descr := "the level of the lint `zero_prefixed_literal`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.arbitrary_source_item_ordering : String := {
+  defValue := "allow"
+  descr := "the level of the lint `arbitrary_source_item_ordering`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.single_call_fn : String := {
+  defValue := "allow"
+  descr := "the level of the lint `single_call_fn`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"
@@ -716,9 +731,10 @@ def recordUsedItem (r : Core.Resolved) : m Unit :=
   modifyLocal fun l => { l with usedItems := l.usedItems.push r.usedItem }
 
 /-- Records a private enumeration or constant declared here, with the level
-of `dead_code` here. -/
-def recordItem (what : Core.Named) (path : Name) (ref : Syntax) : m Unit := do
-  let r : Core.ItemRecord := { what, path, level := ← lintLevel .deadCode }
+of `dead_code` here, and for a defined function, of `single_call_fn`. -/
+def recordItem (what : Core.Named) (path : Name) (ref : Syntax) (defined : Bool := false) : m Unit := do
+  let singleCall? ← if defined then some <$> lintLevel .singleCallFn else pure none
+  let r : Core.ItemRecord := { what, path, level := ← lintLevel .deadCode, singleCall? }
   modifyLocal fun l => { l with items := l.items.push (r, ref) }
 
 /-- Records the lints about a declared name alone (`Core.nameMsgs`): its
@@ -765,7 +781,8 @@ def pendingLints : CommandElabM (Array (Core.LintReport Syntax × Core.Severity)
   let (reports, fulfilled) := Core.finishReports
     (l.lintReports ++ Core.importReports l.useRecords l.used fixable ++ Core.deadCodeReports l.items l.usedItems
       ++ Core.unusedAssumptionReports l.assumptions l.globalReads
-      ++ Core.unusedSettingReports l.settings seen atEnd fixable)
+      ++ Core.unusedSettingReports l.settings seen atEnd fixable
+      ++ Core.singleCallReports l.items l.usedItems)
   let (unfulfilled, _) := Core.finishReports (Core.expectationReports l.expectations fulfilled fixable)
   return reports ++ unfulfilled
 

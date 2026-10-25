@@ -24,6 +24,7 @@ use view::Severity
 | `absurd_extreme_comparisons` | `F0763` | `suspicious` | `warn` | a comparison of a `len` or `card` that is always the same, since a length is never negative, such as `s.len < 0` (see [Comparisons](Lint/Suspicious/Comparisons.md)) |
 | `allow_attributes` | `F0780` | `restriction` | `allow` | a `set_option` that sets a lint or a group to `allow` (see [Allowed lints](Lint/Restriction.md#allowed-lints)) |
 | `almost_complete_range` | `F0757` | `suspicious` | `warn` | a range in a pattern one character short of an alphabet, such as `a-y` (see [Ranges of characters](Lint/Suspicious/Literals.md#ranges-of-characters)) |
+| `arbitrary_source_item_ordering` | `F0779` | `restriction` | `allow` | a component whose members are out of order, such as an `in` after a `req` (see [The order of members](Lint/Restriction.md#the-order-of-members)) |
 | `assertions_on_constants` | `F0761` | `style` | `warn` | an `assume`, `req` or `expect` that mentions no variable, such as `req r: true` (see [Constant constraints](Lint/Style.md#constant-constraints)) |
 | `bool_equality` | `F0731` | `pedantic` | `allow` | `a = b` on `Bool`s (see [Boolean equality](Lint/Pedantic.md#boolean-equality)) |
 | `branches_sharing_code` | `F0778` | `pedantic` | `allow` | `if c then a op x else b op x`, whose branches share an operand (see [Branches sharing code](Lint/Pedantic.md#branches-sharing-code)) |
@@ -93,6 +94,7 @@ use view::Severity
 | `redundant_slicing` | `F0753` | `complexity` | `warn` | `s.slice(0, s.len)` (see [Whole slices](Lint/Complexity/Methods.md#whole-slices)) |
 | `same_branches` | `F0737` | `suspicious` | `warn` | `if c then a else a` (see [Branches written the same](Lint/Suspicious/Expressions.md#branches-written-the-same)) |
 | `similar_names` | `F0796` | `pedantic` | `allow` | a name declared in the same item as another that differs from it by one character, such as `level` and `levels` (see [Names](Lint/Pedantic.md#names)) |
+| `single_call_fn` | `F0788` | `restriction` | `allow` | a private defined function that one path in its file applies (see [Functions applied once](Lint/Restriction.md#functions-applied-once)) |
 | `single_match_else` | `F0771` | `pedantic` | `allow` | a `match` of one variant without a payload and `_`, such as `match x { E::A => a, _ => b }` (see [One variant and `_`](Lint/Pedantic/Matches.md#one-variant-and-_)) |
 | `singleton_membership` | `F0717` | `complexity` | `warn` | `x in {a}` (see [Singleton membership](Lint/Complexity.md#singleton-membership)) |
 | `struct_excessive_bools` | `F0776` | `pedantic` | `allow` | a record with more than 3 `Bool` fields (see [Many `Bool`s](Lint/Pedantic/Records.md#many-bools)) |
@@ -115,13 +117,13 @@ use view::Severity
 | `upper_case_acronyms` | `F0750` | `style` | `warn` | a name in `CamelCase` with three or more uppercase letters in a row, such as `HTTPStatus` (see [Names](Lint/Style.md#names)) |
 | `wildcard_enum_match_arm` | `F0781` | `restriction` | `allow` | a `_` arm of a `match` (see [Wildcard arms](Lint/Restriction.md#wildcard-arms)) |
 | `wildcard_single_variant` | `F0728` | `pedantic` | `allow` | a `_` arm that matches only one variant (see [Arms](Lint/Pedantic/Matches.md#arms)) |
+| `zero_prefixed_literal` | `F0758` | `complexity` | `warn` | a decimal integer literal with a leading `0`, such as `010` (see [Leading zeros](Lint/Complexity.md#leading-zeros)) |
 | `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel(A, B)` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
 <!-- keep-sorted end -->
 
-The lints' codes run from `F0701` to `F0797`. Among them, `F0707`, `F0708`
-and `F0709` are errors in [setting levels](#setting-levels), and `F0713`
-is the removed `shadowed_constants`'s. `F0758`, `F0779` and `F0788` are used
-by nothing, and are free for later lints.
+The lints' codes run from `F0701` to `F0804`, and each group's codes start
+at `01`. Among them, `F0707`, `F0708` and `F0709` are errors in [setting
+levels](#setting-levels), and `F0713` is the removed `shadowed_constants`'s.
 
 Lints are found while elaborating, like [static
 errors](View.md#static-errors), and never ask the solver anything: the
@@ -436,7 +438,9 @@ pub comp effective {
 The level that applies to a lint's message is the one in effect at the
 item it is about: the `use` for the import lints; for the naming lints
 and `unused_variables`, the item that declares the name, which for a
-member is its component and for a variant its enumeration; for `dead_code`, the unused item; for
+member is its component and for a variant its enumeration; for `dead_code`
+and `single_call_fn`, the item it is about; for
+`arbitrary_source_item_ordering`, the component; for
 `unused_assumption`, its component; for `unused_lint_setting`, the setting, before it; for
 `invisible_characters`, the item the literal or comment is in (see
 [Invisible characters](Lint/Suspicious/Literals.md#invisible-characters)); for
@@ -527,6 +531,7 @@ what the spec means:
 |---|---|
 | `allow_attributes` | sets the lint to `expect` |
 | `almost_complete_range` | replaces the pattern with one that completes each range |
+| `arbitrary_source_item_ordering` | puts the members in order, unless a definition or a binding would then come before what it mentions |
 | `bool_equality` | replaces `a = b` with `a iff b` |
 | `branches_sharing_code` | moves the shared operand out of the `if`, `(if c then a else b) op x` |
 | `card_zero` | compares the set with `{}`, as the message suggests |
@@ -583,6 +588,7 @@ what the spec means:
 | `unused_lint_setting` | removes the `set_option`, or for `set_option ... in item`, removes `set_option ... in` and keeps the item |
 | `wildcard_enum_match_arm` | names the variants that `_` matches, `E::A \| E::B`, written as for `wildcard_single_variant` |
 | `wildcard_single_variant` | names the variant, `E::V`, or `E::V(_, _)` with one `_` per value of its payload |
+| `zero_prefixed_literal` | drops the leading `0`s |
 <!-- keep-sorted end -->
 
 Each fix that rewrites an expression keeps what the expression means, for
@@ -601,7 +607,8 @@ says.
 The other lints have no fix. Renaming a declaration, as the naming lints
 and `struct_field_names` would need, would also have to rename every use
 of it, including uses in Lean code and in files that are not given, and so
-would removing a dead item. Removing an unused variable, or the inputs of an
+would removing a dead item, or a function applied once, which
+`single_call_fn` reports. Removing an unused variable, or the inputs of an
 unused assumption, would change its component's interface, and merging the requirements that `case_split_reqs`
 reports would change what traces, claims and `impl`s name, and so would
 removing a constraint that `assertions_on_constants` reports. Writing a

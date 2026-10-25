@@ -1418,6 +1418,10 @@ def lintConstant (cx : ExprCtx) (kind : String) (e : Syntax) : TermElabM Unit :=
     let literal? := match boolNode "" 0 (unparen e) with | .mk (.lit b) .. => some b | _ => none
     recordLint .assertionsOnConstants e (Core.assertionOnConstantMsg kind literal?)
 
+/-- The integer literals in `e`, its patterns' among them. -/
+partial def numLits (e : Syntax) : Array Syntax :=
+  if e.isOfKind numLitKind then #[e] else e.getArgs.flatMap numLits
+
 /-- Records the expressions in `e` that the lints that rewrite them
 (`Core.ExLint`) report, such as `Bool` expressions with a simpler form
 (`nonminimal_bool`), the operator and method lints, the arithmetic lints
@@ -1442,6 +1446,11 @@ def lintBools (e : Syntax) : TermElabM Unit := do
     recordLint r.lint ref { r.msg with notes := r.msg.notes ++ help r.msg }
   for r in Core.arithReports src node do
     recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ help r.msg }
+  -- `zero_prefixed_literal`, in expressions and patterns alike.
+  let off (p : Option String.Pos.Raw) := (String.Pos.Raw.extract sub.str sub.startPos (p.getD sub.startPos)).length
+  for n in numLits e do
+    if let some (_, msg) := Core.zeroPrefixedReport? src { start := off n.getPos?, stop := off n.getTailPos? } then
+      recordLint .zeroPrefixedLiteral n (if fixable then msg.note Core.fixHelp else msg)
   lintParens fixable sub.str e
 
 /-- The text that `stx` is written with, without what is around it. -/
@@ -3645,7 +3654,7 @@ def lintFnBools (n : Name) (nameStx : Syntax) (params : Array Expr) : TermElabM 
   lintDeclared .function n nameStx
   lintLines .function n nameStx stx
   record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
-  unless isPub do recordItem .function path nameStx
+  unless isPub do recordItem .function path nameStx (defined := true)
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
 
 /-- An instance whose comp has been resolved, before its bindings are
@@ -3775,6 +3784,45 @@ def memberName? (m : Syntax) : Option Syntax :=
     | _ => none
 
 open Lang in
+/-- The kind of a member without its evidence setting, for
+`arbitrary_source_item_ordering`, by its syntax kind; `none` for what is
+not one, which a component's members never are. -/
+def memberKind? (m : Syntax) : Option Core.MemberKind :=
+  [(``Lang.useMember, .use), (``Lang.useGroupMember, .use), (``Lang.inMember, .input), (``Lang.outMember, .output),
+    (``Lang.assumeMember, .assumption), (``Lang.instMember, .inst), (``Lang.reqMember, .requirement),
+    (``Lang.expectMember, .expectation), (``Lang.coverMember, .cover)].lookup m.getKind
+
+open Lang in
+/-- The names that a defined output's definition, or an instance's
+bindings, mention: a binding `x` without `:= e` mentions `x`. -/
+def memberMentions (m : Syntax) : Array Name :=
+  if m.isOfKind ``Lang.outMember then
+    if m[5].isNone then #[] else (pathMentions m[5][1]).map (·.getRoot)
+  else if m.isOfKind ``Lang.instMember then
+    -- `inst w: c { b, ... }`
+    m[5].getSepArgs.foldl (init := #[]) fun acc b =>
+      acc ++ if b[1].isNone then #[(declaredIdent b[0]).1.getId] else (pathMentions b[1][1]).map (·.getRoot)
+  else #[]
+
+/-- Records `arbitrary_source_item_ordering` on the component `stx`, whose
+members, with their evidence settings, are `raw`, and `members` without
+them (`lint::arbitrary_source_item_ordering`). -/
+def lintMemberOrder (stx : Syntax) (raw members : Array Syntax) : CommandElabM Unit := do
+  let some kinds := members.mapM memberKind? | return
+  let some i := Core.firstOutOfOrder? kinds | return
+  let msg := Core.memberOrderMsg kinds[i]! kinds[i - 1]!
+  let some sub := stx.getSubstring? false false | return
+  let off (p : Option String.Pos.Raw) := (String.Pos.Raw.extract sub.str sub.startPos (p.getD sub.startPos)).length
+  let src := (String.Pos.Raw.extract sub.str sub.startPos sub.stopPos).toList.toArray
+  let names := members.map fun m => (memberName? m).map fun x => (declaredIdent x).1.getId
+  let mentions := members.map fun m => (memberMentions m).filterMap fun n => names.findIdx? (· == some n)
+  let ranges := raw.map fun m => ({ start := off m.getPos?, stop := off m.getTailPos? } : Core.Range)
+  let fix? := Core.memberOrderFix? src (off stx[3].getTailPos?) ranges kinds mentions
+  -- `fren fix` reads Markdown specs, but not Lean files.
+  let fixable := (← getLocal).inMarkdown && fix?.isSome
+  recordLint .arbitrarySourceItemOrdering raw[i]! (if fixable then msg.note Core.fixHelp else msg)
+
+open Lang in
 @[command_elab Lang.compCmd] def elabComp : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
@@ -3807,6 +3855,7 @@ open Lang in
   let declared := named.map fun x => (declaredIdent x).1.getId
   if let some k := (Core.repeatsAt declared)[0]? then
     throwErrorAt named[k]! (Core.dupMemberMsg declared[k]!).text
+  lintMemberOrder stx stx[4].getArgs members
   let (ok, generated) ← liftTermElabM do
     let mut ok := true
     let mut generated : Array Name := #[]

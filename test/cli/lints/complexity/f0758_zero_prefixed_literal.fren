@@ -1,0 +1,3 @@
+-- `zero_prefixed_literal`: a decimal literal with a leading `0`.
+-- fren-covers: lint::zero_prefixed_literal
+pub comp c { in x: Int pub out p? req r: p? iff x < 010 }

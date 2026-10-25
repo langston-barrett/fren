@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCore.Lexical
 import FrenCore.Names
 import FrenCore.Nfc
 import FrenCore.Patterns
@@ -144,6 +145,9 @@ inductive Lint where
   | structExcessiveBools
   | needlessRawStringHashes
   | branchesSharingCode
+  | zeroPrefixedLiteral
+  | arbitrarySourceItemOrdering
+  | singleCallFn
   -- `BEq` from `DecidableEq`, which makes it lawful at once; a derived `BEq`
   -- would need a proof over every pair of lints.
   deriving Inhabited, DecidableEq, Repr
@@ -167,7 +171,8 @@ def Lint.all : Array Lint :=
     .unicodeNotNfc, .unnecessaryTrailingComma,
     .isEquality, .irrefutableIs, .chainableComparison,
     .singleMatchElse, .inconsistentStructConstructor, .overlyComplexBoolExpr, .structFieldNames, .fnParamsExcessiveBools,
-    .structExcessiveBools, .needlessRawStringHashes, .branchesSharingCode]
+    .structExcessiveBools, .needlessRawStringHashes, .branchesSharingCode, .zeroPrefixedLiteral,
+    .arbitrarySourceItemOrdering, .singleCallFn]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -266,6 +271,9 @@ def Lint.name : Lint → String
   | .structExcessiveBools => "struct_excessive_bools"
   | .needlessRawStringHashes => "needless_raw_string_hashes"
   | .branchesSharingCode => "branches_sharing_code"
+  | .zeroPrefixedLiteral => "zero_prefixed_literal"
+  | .arbitrarySourceItemOrdering => "arbitrary_source_item_ordering"
+  | .singleCallFn => "single_call_fn"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -366,6 +374,9 @@ def Lint.code : Lint → String
   | .structExcessiveBools => "F0776"
   | .needlessRawStringHashes => "F0777"
   | .branchesSharingCode => "F0778"
+  | .zeroPrefixedLiteral => "F0758"
+  | .arbitrarySourceItemOrdering => "F0779"
+  | .singleCallFn => "F0788"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -415,7 +426,8 @@ def Lint.group : Lint → Group
   | .manualPatternCharComparison | .isEquality | .chainableComparison => .style
   | .nonminimalBool | .singletonMembership | .constantOutput | .doubleComparison | .manualMethod | .elseExtends
   | .identityOp | .doubleParens | .intPlusOne | .redundantMethodChain | .trivialMatch | .needlessBoolAssign
-  | .needlessMatch | .redundantSlicing | .redundantComparisons | .unnecessaryStructInitialization => .complexity
+  | .needlessMatch | .redundantSlicing | .redundantComparisons | .unnecessaryStructInitialization
+  | .zeroPrefixedLiteral => .complexity
   | .indexAfterUse | .eqOp | .sameBranches | .duplicateElements | .emptyArgument
   | .suspiciousUnaryOpFormatting | .noEffectReplace | .constIsEmpty | .almostCompleteRange | .duplicateConstraint
   | .invisibleCharacters | .negativePosition | .absurdExtremeComparisons | .erasingOp | .ifsSameCond
@@ -424,7 +436,8 @@ def Lint.group : Lint → Group
   | .caseSplitReqs | .boolEquality | .zeroSizedMapValues | .manySingleCharNames | .similarNames
   | .tooManyLines | .invalidUpcastComparisons | .unicodeNotNfc | .unnecessaryTrailingComma => .pedantic
   | .allowAttributes | .wildcardEnumMatchArm | .needlessRawStrings | .nonAsciiLiteral | .moduleNameRepetitions
-  | .minIdentChars | .absolutePaths | .precedence => .restriction
+  | .minIdentChars | .absolutePaths | .precedence | .arbitrarySourceItemOrdering
+  | .singleCallFn => .restriction
   | .singleMatchElse | .inconsistentStructConstructor | .overlyComplexBoolExpr
   | .structFieldNames | .fnParamsExcessiveBools | .structExcessiveBools | .needlessRawStringHashes
   | .branchesSharingCode => .pedantic
@@ -1527,6 +1540,8 @@ structure ItemRecord where
   what : Named
   path : Name
   level : LevelInEffect
+  /-- For a defined function, the level of `single_call_fn` there. -/
+  singleCall? : Option LevelInEffect := none
   deriving Inhabited, Repr
 
 /-- The item that a resolved path uses: an enumeration for its variants. -/
@@ -1545,6 +1560,24 @@ def deadCodeReports (items : Array (ItemRecord × α)) (used : Array Name) : Arr
   items.filterMap fun (i, ref) =>
     if deadItem i.what false (used.count i.path) then
       some { lint := .deadCode, level := i.level, ref, msg := deadCodeMsg i.what i.path }
+    else none
+
+/-- Whether `single_call_fn` fires on a function, `defined` if it has a
+body, applied `nUses` times in its file (`lint::single_call_fn`). -/
+def singleCallFn (defined isPub : Bool) (nUses : Nat) : Bool := defined && !isPub && nUses == 1
+
+def singleCallFnMsg (n : Name) : Msg :=
+  { code? := some Lint.singleCallFn.code, headline := s!"function `{n.getString!}` is applied only once"
+    label? := some "applied once"
+    notes := #["note: it is private, and only one path in this file applies it",
+      "help: write its body in place of the application, with the arguments in place of the parameters"] }
+
+/-- The `single_call_fn` messages of a file's defined functions, counting
+uses as `deadCodeReports` does. -/
+def singleCallReports (items : Array (ItemRecord × α)) (used : Array Name) : Array (LintReport α) :=
+  items.filterMap fun (i, ref) => i.singleCall?.bind fun level =>
+    if singleCallFn true false (used.count i.path) then
+      some { lint := .singleCallFn, level, ref, msg := singleCallFnMsg i.path }
     else none
 
 /-! ## Simpler `Bool` expressions -/
@@ -3810,6 +3843,36 @@ def unicodeNotNfcMsg (value normal : String) (suggested? : Option String) : Msg 
         | none => "help: write it so that its value is in NFC",
         "note: `fren fix` does not, since that changes the literal's value"] }
 
+/-- Whether `zero_prefixed_literal` fires on the integer literal `s`: a
+decimal one, a `0` and then another digit (`lint::zero_prefixed_literal`). -/
+def zeroPrefixed (s : String) : Bool :=
+  match s.toList with
+  | '0' :: c :: _ => isDecimalDigit c
+  | _ => false
+
+/-- The message of `zero_prefixed_literal` on `s`. It names the octal
+literal only where its digits are octal and it would mean something else,
+from `8` on. -/
+def zeroPrefixedMsg (s : String) : Msg :=
+  let fixed := dropLeadingZeros s
+  let value := (integerValue? s).getD 0
+  let octal := s.toList.all (fun c => isOctalDigit c || c == '_') && value ≥ 8
+  { code? := some Lint.zeroPrefixedLiteral.code
+    headline := s!"`{s}` is {value}" ++ (if octal then s!"; for octal write `0o{fixed}`" else "")
+    label? := some "leading zero"
+    notes := #["note: a leading `0` does not make a literal octal"]
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-- `zero_prefixed_literal` on an integer literal written at `r` in `src`,
+in an expression or a pattern, after a `-` if it is negated: the literal's
+range, and the message. A literal needs no parentheses. -/
+def zeroPrefixedReport? (src : Array Char) (r : Range) : Option (Range × Msg) := do
+  let neg := if src[r.start]? == some '-' then 1 else 0
+  let start := ((List.range' (r.start + neg) (r.stop - min r.stop (r.start + neg))).find? (!src[·]!.isWhitespace)).getD r.stop
+  let t := textOf src { start, stop := r.stop }
+  guard (integerLiteral t && zeroPrefixed t)
+  return ({ start, stop := r.stop }, zeroPrefixedMsg t)
+
 /-- A report of `double_neg`, `int_plus_one`, `neg_multiply` or
 `unicode_not_nfc`: the lint, where, and the fix, if any, which replaces the
 range. -/
@@ -4473,6 +4536,127 @@ def inconsistentStructConstructorMsg (r : Name) (declared : Array Name) (fixed? 
     notes := #[s!"note: `{nameText r}` declares {proseList (declared.map nameText)}, in this order"]
       ++ (if fixed?.isNone then #["note: a comment between the fields would not stay by its field, so this has no fix"] else #[])
     fixes := fixed?.toArray.map fun replacement => { msg := "write them in that order", replacement } }
+
+/-! ## The order of members -/
+
+/-- A member of a component, by its place in the order that
+`arbitrary_source_item_ordering` asks for (`lint::MemberKind`). A
+`set_option fren.evidence ... in` is part of the member after it. -/
+inductive MemberKind where
+  | use
+  | input
+  | output
+  | assumption
+  | inst
+  | requirement
+  | expectation
+  | cover
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- Its place in the order (`lint::member_rank`). -/
+def MemberKind.rank : MemberKind → Nat
+  | .use => 0
+  | .input => 1
+  | .output => 2
+  | .assumption => 3
+  | .inst => 4
+  | .requirement => 5
+  | .expectation => 6
+  | .cover => 7
+
+def MemberKind.describe : MemberKind → String
+  | .use => "a `use`"
+  | .input => "an input"
+  | .output => "an output"
+  | .assumption => "an assumption"
+  | .inst => "an instance"
+  | .requirement => "a requirement"
+  | .expectation => "an expectation"
+  | .cover => "a cover goal"
+
+/-- Whether `arbitrary_source_item_ordering` fires on a member of kind
+`second` written right after one of kind `first`
+(`lint::arbitrary_source_item_ordering`). -/
+def outOfOrder (first second : MemberKind) : Bool := first.rank > second.rank
+
+/-- The first member that `arbitrary_source_item_ordering` fires on, if
+any: the members before it are in order, so the one just before it is of
+the latest kind among them. -/
+def firstOutOfOrder? (kinds : Array MemberKind) : Option Nat :=
+  (List.range kinds.size).find? fun i => i > 0 && outOfOrder kinds[i - 1]! kinds[i]!
+
+/-- Whether the order keeps a member's mention of another after the
+other's declaration, where `earlier` says the other is written before it:
+the kinds are put in order, and the members of one kind stay in the order
+they are written in (`lint::mention_kept`). -/
+def mentionKept (mentioner mentioned : MemberKind) (earlier : Bool) : Bool :=
+  mentioned.rank < mentioner.rank || (mentioned.rank == mentioner.rank && earlier)
+
+/-- The members of a component in order, as indices: by kind, and as written
+within a kind. -/
+def canonicalOrder (kinds : Array MemberKind) : Array Nat :=
+  let rank (i : Nat) := (kinds[i]?.map (·.rank)).getD 0
+  ((List.range kinds.size).mergeSort fun i j => rank i < rank j || (rank i == rank j && i ≤ j)).toArray
+
+/-- Just after the end of the line that `i` is on in `src`, if only
+whitespace and a line comment follow `i` on it. -/
+def lineRestEnd? (src : Array Char) (i : Nat) : Option Nat := do
+  let nl ← (List.range' i (src.size - i)).find? (src[·]! == '\n')
+  let rest := (textOf src { start := i, stop := nl }).trimAscii.toString
+  if rest.isEmpty || rest.startsWith "--" then some (nl + 1) else none
+
+/-- The whole lines that each member is written on, from the line after the
+`{` of its component, or after the previous member's last line, to the end
+of its own last line: the comments above it are its own. `none` unless
+each member starts its line, and only a comment follows it on its last
+one. `openStop` is just after the `{`. -/
+def memberLines? (src : Array Char) (openStop : Nat) (members : Array Range) : Option (Array Range) := do
+  let mut start ← lineRestEnd? src openStop
+  let mut out := #[]
+  for m in members do
+    let before := (textOf src { start, stop := m.start }).splitOn "\n"
+    unless (before.getLast?.getD "").all (fun c => c == ' ' || c == '\t') do failure
+    let stop ← lineRestEnd? src m.stop
+    out := out.push { start, stop }
+    start := stop
+  return out
+
+/-- The blank lines that `text`, whole lines, starts with, and the rest. -/
+def splitBlankLines (text : String) : String × String :=
+  let lines := text.splitOn "\n"
+  let blank := lines.takeWhile (·.all (·.isWhitespace))
+  -- The last piece is what follows the last newline, which is empty.
+  let n := min blank.length (lines.length - 1)
+  ("".intercalate (lines.take n |>.map (· ++ "\n")), "\n".intercalate (lines.drop n))
+
+/-- The fix of `arbitrary_source_item_ordering`: the lines of the members,
+in order, in place of the lines they are written on. Each member moves with
+the blank lines before it, but the first keeps none: the blank lines of the
+member that comes first go to the member written first. `mentions[i]` are
+the members that member `i`'s definition or bindings mention. `none` unless the order keeps each mention after its
+declaration (`mentionKept`), and the members are a line apart
+(`memberLines?`). -/
+def memberOrderFix? (src : Array Char) (openStop : Nat) (members : Array Range) (kinds : Array MemberKind)
+    (mentions : Array (Array Nat)) : Option (Range × String) := do
+  guard <| mentions.zipIdx.all fun (ms, i) => ms.all fun j =>
+    j == i || match kinds[i]?, kinds[j]? with
+      | some a, some b => mentionKept a b (j < i)
+      | _, _ => false
+  let lines ← memberLines? src openStop members
+  let first ← lines[0]?
+  let last ← lines.back?
+  let parts := lines.map fun r => splitBlankLines (textOf src r)
+  let order := canonicalOrder kinds
+  let head := order[0]?.getD 0
+  let blankOf (k : Nat) := (parts[if k == head then 0 else if k == 0 then head else k]!).1
+  let text := String.join (order.toList.map fun k => blankOf k ++ parts[k]!.2)
+  return ({ start := first.start, stop := last.stop }, text)
+
+/-- A member of kind `member` written after one of kind `before`. -/
+def memberOrderMsg (member before : MemberKind) : Msg :=
+  { code? := some Lint.arbitrarySourceItemOrdering.code, headline := s!"{member.describe} after {before.describe}"
+    label? := some "out of order"
+    notes := #["note: the members of a component are written `use`, `in`, `out`, `assume`, `inst`, `req`, `expect`, then `cover`"] }
 
 /-! ## Expectations -/
 
