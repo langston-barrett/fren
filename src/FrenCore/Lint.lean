@@ -428,8 +428,6 @@ def Lint.group : Lint → Group
   | .singleMatchElse | .inconsistentStructConstructor | .overlyComplexBoolExpr
   | .structFieldNames | .fnParamsExcessiveBools | .structExcessiveBools | .needlessRawStringHashes
   | .branchesSharingCode => .pedantic
-  | .allowAttributes | .wildcardEnumMatchArm | .needlessRawStrings | .nonAsciiLiteral | .moduleNameRepetitions
-  | .minIdentChars | .absolutePaths | .precedence => .restriction
   | .undecidable => .decidability
 
 def Lint.default (l : Lint) : LintLevel := l.group.default

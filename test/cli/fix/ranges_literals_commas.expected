@@ -57,6 +57,9 @@ warning[F0798]: this comparison is always `true`
 @@ -5 +5 @@
 -pub enum Mode { Heat, Cool, }
 +pub enum Mode { Heat, Cool }
+@@ -16 +16 @@
+-    pub out b? := s = r"café" or s = r#"é"#
++    pub out b? := s = r"café" or s = r"é"
 @@ -18,2 +18,2 @@
 -    pub out e: Set(Int) := {x, 1,}
 -    pub out f: Seq(Int) := [x, 2, ]
