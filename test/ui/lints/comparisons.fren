@@ -46,6 +46,22 @@ comp literal_lengths {
     req r3: p3? iff "ab".len < 0  --~ warning: this test of a literal is always `false`
 }
 
+-- A bound in parentheses, or negated in them, is a literal too.
+comp parenthesized_bounds {
+    in s: String
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+    pub out p5?
+
+    req r1: p1? iff s.len > (-1)  --~ warning: this comparison is always `true`
+    req r2: p2? iff s.len > -(1)  --~ warning: this comparison is always `true`
+    req r3: p3? iff s.len >= (0)  --~ warning: this comparison is always `true`
+    req r4: p4? iff "ab".len = (2)  --~ warning: this test of a literal is always `true`
+    req r5: p5? iff [1, 2].len = (5)  --~ warning: this test of a literal is always `false`
+}
+
 comp erasing {
     in x: Int
     in t: Set(Mode)

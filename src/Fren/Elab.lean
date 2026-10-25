@@ -1278,7 +1278,7 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (info : EnumInfo) (pats : Array (Optio
   let trivial := Core.trivialMatch infos.size (infos[0]?.any (·.binds))
   if Core.needlessMatch givenBack wildcard scrutineeBack trivial then
     let scrutinee : Core.BText := { text := scr, prec := exprPrec (unparen e[1]) }
-    recordLint .needlessMatch e (help (Core.needlessMatchMsg (scrutinee.inSlot slot (followedStx e)))))
+    recordLint .needlessMatch e (help (Core.needlessMatchMsg (scrutinee.inSlot slot (followedStx e))))
   for g in Core.sameArmGroups infos do
     let (i, msg) := Core.sameArmsMsg infos g slot (followedStx e)
     recordLint .matchSameArms arms[i]! (help msg)

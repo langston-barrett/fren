@@ -1,14 +1,21 @@
 --- test/cli/fix/strings.fren
 +++ test/cli/fix/strings.fren
-@@ -13,5 +13,5 @@
+@@ -17,4 +17,4 @@
 -    req r1: p? iff s.at(0) = "a" and "b" != (s ++ t).at((s ++ t).len - 1) and q.at(0) != [1]
 -    req r2: k? iff s.at(0) = "" or not q.at(0) != [] or (s ++ t).at(0) = ""
 -    req r3: n = (q ++ q).slice(0, (q ++ q).len).len + s.slice(0, s.len).len
 -    req r4: s.slice(i, 1) ++ s.replace(t, t) ++ (s ++ t).replace_all("x", "x") ++ s.slice(0, 1) = "abc"
--    expect e1: s.matches?(r"(a|b)+") or s.matches?("(\\]|\\^|c)[a-y]") or s.matches?(r#"x|""#)
 +    req r1: p? iff s.starts_with?("a") and not (s ++ t).ends_with?("b") and not q.starts_with?([1])
 +    req r2: k? iff s = "" or q = [] or s ++ t = ""
 +    req r3: n = (q ++ q).len + s.len
 +    req r4: s.at(i) ++ s ++ (s ++ t) ++ s.at(0) = "abc"
+@@ -23,4 +23,4 @@
+-    req r5: o1? iff "ab" = (s ++ if b? then t else s).slice(0, (s ++ if b? then t else s).len) ++ t
+-    req r6: o2? iff "ab" = (s ++ if b? then t else s).replace(t, t) ++ t
+-    req r7: o3? iff (s ++ if b? then t else s).at(0) = ""
+-    expect e1: s.matches?(r"(a|b)+") or s.matches?("(\\]|\\^|c)[a-y]") or s.matches?(r#"x|""#)
++    req r5: o1? iff "ab" = (s ++ if b? then t else s) ++ t
++    req r6: o2? iff "ab" = (s ++ if b? then t else s) ++ t
++    req r7: o3? iff (s ++ if b? then t else s) = ""
 +    expect e1: s.matches?(r"[ab]+") or s.matches?("[\\]\\^c][a-z]") or s.matches?("[x\"]")
 exit=1

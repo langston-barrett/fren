@@ -104,9 +104,8 @@ occurrence of `a` with `a` leaves `s` as it was. At the
 "")` is `"" ++ s` and `s.replace_all("", "")` is `s`, which are both `s`,
 so the fix is `s` for every `s` and `a`, of a string or, for `replace`, a
 sequence; [`empty_argument`](#empty-arguments) fires there too. The
-fix keeps the receiver's text, and puts it in parentheses where it is an
-operand or a receiver that requires them
-([`lang::operand`](../../Lang/Expressions.md#operators)). It only stops
+fix keeps the receiver's text, and puts it in parentheses where
+[fixes need them](../../Lint.md#parentheses-in-fixes), or where it is a receiver. It only stops
 evaluating `a` and `b`, so no guard is weaker, and it brings the expression
 into the [decidable core](../../Lang/Decidability.md#strings), which `replace`
 and `replace_all` are outside of. `lint::no_effect_replace` states when it

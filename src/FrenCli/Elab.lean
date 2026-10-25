@@ -2742,6 +2742,7 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
   startDeclared
   -- `duplicate_constraint` (`lint::duplicate_constraint`): its text after
   -- its name, against the earlier ones of its module.
+  let st ← get
   let src := st.src
   let written := body.writtenSpan src
   let text := String.ofList (src.extract name.span.stop written.start).toList ++ (← srcAt written)
@@ -2808,7 +2809,8 @@ def lintInvisible : M Unit := do
   modify fun s => { s with invisible := #[] }
 
 partial def elabItem (item : Item) : M Unit := do
-  unless item matches .lintSetting _ _ _ _ _ (some _) do lintInvisible
+  -- A `set_option` leaves them to the item after it.
+  unless item matches .lintSetting .. do lintInvisible
   match item with
   | .mod isPub segs => do
     let (path, new) ← liftResolve segs ((← get).table.declareModule (segNames segs) isPub)
@@ -3126,10 +3128,12 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
   let found := invisibleIn src
   for item in items, k in [0:items.size] do
     -- An item has the literals and comments up to the next item, and the
-    -- first, those before it too.
+    -- first, those before it too, and those that a `set_option` before it
+    -- left.
     let start := starts[k]?.getD 0
     let stop := starts[k + 1]?.getD src.size
-    let invisible := found.filter fun (sp, _) => (k == 0 || start ≤ sp.start) && sp.start < stop
+    let left ← if k > 0 && items[k - 1]! matches .lintSetting .. then pure (← get).invisible else pure #[]
+    let invisible := left ++ found.filter fun (sp, _) => (k == 0 || start ≤ sp.start) && sp.start < stop
     modify fun s => { s with itemStart := start, invisible }
     let s ← get
     match (elabItem item).run s with

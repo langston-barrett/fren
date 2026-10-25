@@ -98,7 +98,8 @@ def relativeTo (base path : System.FilePath) : String :=
   let name := relativeTo ((System.FilePath.mk leanName).parent.getD ".") path
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
                                 items := #[], usedItems := #[], inMarkdown := true, leanFile?,
-                                mdSource? := some (name, inputCtx.fileMap), globalTexts := #[] }
+                                mdSource? := some (name, inputCtx.fileMap), globalTexts := #[],
+                                invisibleFrom := 0 }
   let s ← get
   let st ← IO.processCommands inputCtx {} { s with messages := {} }
   set st.commandState
@@ -134,6 +135,6 @@ def relativeTo (base path : System.FilePath) : String :=
                                 expectations := outer.expectations, lintReports := outer.lintReports,
                                 items := outer.items, usedItems := outer.usedItems, inMarkdown := outer.inMarkdown,
                                 leanFile? := outer.leanFile?, mdSource? := outer.mdSource?, globalTexts := outer.globalTexts,
-                                staticErrors }
+                                invisibleFrom := outer.invisibleFrom, staticErrors }
 
 end Fren

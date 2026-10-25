@@ -5,12 +5,14 @@ enum Shape { Dot, Circle(Int) }
 comp c {
     in a?
     in b?
+    in c?
     in x: Int
     in s: Shape
     pub out p1?
     pub out p2?
     pub out p3?
     pub out p4?
+    pub out p5?
     pub out t: Shape
     pub out n: Int
 
@@ -20,4 +22,6 @@ comp c {
     req r4: p3? iff x >- 1 and x >=- - 1
     req r5: n = 2 *- (x + 1)
     req r6: p4? iff x > 0 and if a? then b? else not b?
+    -- A condition that ends in a conditional is put in parentheses.
+    req r7: p5? iff (if a? and if c? then b? else a? then b? else not b?)
 }

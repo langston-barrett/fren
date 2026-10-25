@@ -43,8 +43,9 @@ pub comp invisible_character {
 
 The level that applies to it is the one in effect at the item that the
 literal or comment is in. A comment between two items is in the one
-before it, and a comment before the first item is in the first. In Lean,
-only the comments within and after Fren items are read.
+before it, and a comment before the first item is in the first, but for
+a `set_option`, which leaves its comments to the item after it, so that
+the level it sets applies to them.
 
 ## Tests of literals
 

@@ -1,0 +1,14 @@
+-- invisible_characters on comments that no item has: before the first item,
+-- and after a `set_option`, which leaves them to the next item, at the
+-- level it sets. A bidirectional control ‮ here.
+--~^ warning: this comment contains an invisible character, `U+202E` (right-to-left override)
+set_option fren.lint.undecidable "allow"
+-- After a `set_option` ‮.
+--~^ warning: this comment contains an invisible character, `U+202E` (right-to-left override)
+
+pub const C: Int := 1
+
+set_option fren.lint.invisible_characters "allow"
+-- Allowed by the `set_option` before it ‮.
+
+pub const D: Int := 2

@@ -450,8 +450,9 @@ def recordLint (lint : Core.Lint) (ref : Syntax) (msg : Core.Msg) : m Unit := do
   if lint == .undecidable && level.level.severity? == some .error then
     modifyLocal fun l => { l with undecidableDenied := true }
 
-/-- The comments in the trivia `t`, the whitespace and comments around a
-token, as byte offsets in it. -/
+/-- The comments in `t`, as byte offsets in it: in the trivia around a
+token, its whitespace and comments, or in the text between two commands,
+whose string literals hold no comments. -/
 def triviaComments (t : String) : Array (Nat × Nat) := Id.run do
   let cs := t.toList.toArray
   let mut out := #[]
@@ -482,14 +483,30 @@ def triviaComments (t : String) : Array (Nat × Nat) := Id.run do
           b := b + cs[i]!.utf8Size
           i := i + 1
       out := out.push (start, b)
+    else if cs[i]! == '"' then
+      -- A raw literal is `r`, some `#`, then `"`, and has no escapes.
+      let hashes := ((cs.extract 0 i).toList.reverse.takeWhile (· == '#')).length
+      let raw := i ≥ hashes + 1 && cs[i - hashes - 1]! == 'r'
+      let closes (k : Nat) : Bool :=
+        cs[k]! == '"' && (!raw || (List.range hashes).all fun h => cs[k + 1 + h]? == some '#')
+      b := b + 1
+      i := i + 1
+      while i < cs.size && !closes i do
+        let n := if !raw && cs[i]! == '\\' then 2 else 1
+        for c in cs.extract i (i + n) do b := b + c.utf8Size
+        i := i + n
+      let n := if raw then hashes + 1 else 1
+      for c in cs.extract i (i + n) do b := b + c.utf8Size
+      i := i + n
     else
       b := b + cs[i]!.utf8Size
       i := i + 1
   return out
 
 /-- Records `invisible_characters` in the command `stx`: in its string
-literals, and in the comments around its tokens
-(`lint::invisible_character`). -/
+literals, in the comments around its tokens, and in the comments before it
+that no Fren command has read, after a `set_option` or at the start of the
+text (`lint::invisible_character`). -/
 partial def lintInvisible (stx : Syntax) : m Unit := do
   let fixable := (← getLocal).inMarkdown
   let report (ref : Syntax) (comment : Bool) (text : String) : m Unit := do
@@ -511,7 +528,12 @@ partial def lintInvisible (stx : Syntax) : m Unit := do
       trivia leading
       trivia trailing
     | _ => pure ()
+  if let .original leading .. := stx.getHeadInfo then
+    let from_ := (← getLocal).invisibleFrom
+    if from_ < leading.startPos.byteIdx then trivia { leading with startPos := ⟨from_⟩, stopPos := leading.startPos }
   go stx
+  if let .original _ _ trailing _ := stx.getTailInfo then
+    modifyLocal fun l => { l with invisibleFrom := trailing.stopPos.byteIdx }
 
 /-- Records the item that a resolved path uses (`dead_code`). -/
 def recordUsedItem (r : Core.Resolved) : m Unit :=

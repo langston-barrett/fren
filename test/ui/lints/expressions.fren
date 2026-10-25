@@ -4,12 +4,14 @@
 comp bools {
     in a?
     in b?
+    in c?
     in x: Int
     pub out p1?
     pub out p2?
     pub out p3?
     pub out p4?
     pub out p5?
+    pub out p6?
 
     req r1: p1? iff if a? then b? else not b?  --~ warning: this `if` gives a `Bool` or its negation
     req r2: p2? iff if a? and b? then not (x > 0) else x > 0
@@ -19,6 +21,9 @@ comp bools {
     -- Not written the same, or not negated.
     req r4: p4? iff if a? then b? else not a?
     req r5: p5? iff if a? then not b? else not b?  --~ warning: both branches of `if` are written the same
+    -- A condition that ends in a conditional is put in parentheses.
+    req r6: p6? iff (if a? and if c? then b? else a? then b? else not b?)
+    --~^ warning: write `(a? and if c? then b? else a?) iff b?`
 }
 
 enum Shape { Dot, Circle(Int), Rect(Int, Int) }

@@ -386,6 +386,10 @@ structure LocalState where
   /-- The Markdown spec being read, if any: what `mdSources` records for the
   items declared now. -/
   mdSource? : Option (String × FileMap) := none
+  /-- Where `invisible_characters` has read the comments up to, as a byte
+  offset in the text being elaborated: the end of the last Fren command's
+  trailing whitespace and comments. -/
+  invisibleFrom : Nat := 0
   /-- The items that the Lean file declares itself, not in a spec. An item
   in neither is imported, and its syntax has positions in another module's
   text. -/

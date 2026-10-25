@@ -185,9 +185,8 @@ core together.
 `redundant_slicing` fires on `s.slice(0, s.len)`, of a string or a
 sequence, where the receiver of `len` is written the same as that of
 `slice`, or is it in parentheses, and is fixable. Its fix is the receiver,
-which keeps the text it is written with, and is put in parentheses where it
-is an operand that requires them ([`lang::operand`](../../Lang/Expressions.md#operators)),
-or a receiver: `(a ++ b).slice(0, (a ++ b).len).len` becomes `(a ++
+which keeps the text it is written with, and is put in parentheses where
+[fixes need them](../../Lint.md#parentheses-in-fixes), or where it is a receiver: `(a ++ b).slice(0, (a ++ b).len).len` becomes `(a ++
 b).len`. If `s` is `""`, the slice is `""`, which is `s`, since `0 <
 s.len` fails; otherwise it is the `s.len` characters from position `0`,
 which are all of `s`. So the fix has the slice's value for every `s`. It

@@ -175,9 +175,8 @@ the empty one exactly when there is none: `s.at(0)` is `""` unless `0 <
 s.len`, and otherwise a string of one character, which is not `""`. So
 `s.at(0) = ""` becomes `s = ""`, and `s.at(0) != ""` becomes `s != ""`, and
 likewise for sequences, whose `q.at(0)` is `[]` or `[q[0]]`. The fix keeps
-the receiver's text, in parentheses where it is an operand of `=` that
-requires them, and is put in parentheses itself where it is an operand that
-requires them; it evaluates the receiver where `at` did, so it keeps the
+the receiver's text, and it and the fix are put in parentheses where
+[fixes need them](../Lint.md#parentheses-in-fixes); it evaluates the receiver where `at` did, so it keeps the
 guards. `lint::first_empty` states the value, which its `impl` proves for
 strings:
 

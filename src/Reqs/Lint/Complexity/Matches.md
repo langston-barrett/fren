@@ -44,8 +44,7 @@ its body is written the same as the scrutinee. It does not fire where
 [`trivial_match`](#trivial-matches) does, whose fix is the body. It is
 fixable: the fix replaces the `match` with its scrutinee, which keeps the
 text it is written with, but for parentheses around it, and is put in
-parentheses where it is an operand that requires them
-([`lang::operand`](../../Lang/Expressions.md#operators)): `t = match (s) {
+parentheses where [fixes need them](../../Lint.md#parentheses-in-fixes): `t = match (s) {
 ...}` becomes `t = s`.
 
 The `match` has the value of the body of the first arm that matches.
