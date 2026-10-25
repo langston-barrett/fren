@@ -538,17 +538,16 @@ Parentheses make an expression, which a pair is not, so a pair in
 parentheses is neither, as in `((a, b)) in r` and `{((a, b))}`.
 
 `{}` has no member to give it a type, so it takes its type from where it
-is written: an operand of `=`, `!=`, `union`, `inter`, `minus` or `subset`
-whose other operand has a type, the right of `in`, a binding, a field, a
-defined output's definition, a constant's value, or a branch of a
-conditional whose other branch has a type. Elsewhere, as in `{}.card`,
-it is an error.
+is written: it can only be [checked](Types.md#checking-and-synthesis)
+against a type, as in `s = {}` or `s union {}`. Where it would have to
+synthesize its own, as in `{}.card` or `{} = {}`, it is an error.
 
 ## Sequences
 
 `[a, b]` is the sequence of `a` and then `b`, whose types must be the
 same, and `[]` is the empty sequence, which takes its type from where it
-is written, as `{}` does. `q[i]` is the element of `q` at the position `i`,
+is written, as `{}` does ([Checking and
+synthesis](Types.md#checking-and-synthesis)). `q[i]` is the element of `q` at the position `i`,
 counted from `0`. It is written without a space before `[`, as an
 application is written without one before `(`, so `q[i][j]` indexes twice.
 `x in q` says that `x` is an element of `q`; that a sequence occurs within

@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Lex
+import FrenCore.Checking
 import FrenCore.Guards
 import FrenCore.Ty
 import Impls.Check
@@ -74,6 +75,62 @@ impl guard: lang::guard for (o : Fren.Core.GuardedOperand) (h : Bool) {
   intro o h _
   cases o <;> cases h <;>
     simp [fren_spec, toGuardedOperand, Fren.Core.GuardedOperand.guard, Fren.Core.GuardedOperand.whenHolds]
+
+def toPosition : Fren.Core.Position → lang.Position
+  | .declared => .Declared
+  | .shared => .Shared
+  | .compared => .Compared
+  | .synthesized => .Synthesized
+
+-- For every position: the decision that both front ends make for each part
+-- of an expression. That each classifies its syntax into the right positions
+-- and shapes is not proved here, but tested by both on the same ui tests.
+impl checked: lang::checked for (p : Fren.Core.Position) (e s : Bool) {
+  position := toPosition p,
+  expected? := e,
+  sibling? := s,
+  checked? := p.checked e s,
+} by
+  intro p e s _
+  cases p <;> cases e <;> cases s <;> simp [fren_spec, toPosition, Fren.Core.Position.checked]
+
+def toShape : Fren.Core.TypeShape → lang.Shape
+  | .emptyLiteral => .EmptyLiteral
+  | .anyPart _ => .SharedParts
+  | .pair .. => .Pair
+  | .other => .Other
+
+/-- The shared parts of an expression of shape `s`, or a pair's members. -/
+def shapeParts : Fren.Core.TypeShape → List Fren.Core.TypeShape
+  | .anyPart ps => ps
+  | .pair a b => [a, b]
+  | .emptyLiteral | .other => []
+
+theorem anySynthesizes_eq_any (ps : List Fren.Core.TypeShape) :
+    Fren.Core.TypeShape.anySynthesizes ps = ps.any Fren.Core.TypeShape.synthesizes := by
+  induction ps with
+  | nil => simp [Fren.Core.TypeShape.anySynthesizes]
+  | cons p ps ih => simp [Fren.Core.TypeShape.anySynthesizes, ih]
+
+-- For every shape, with its parts' own decisions: the walk that both front
+-- ends decide by.
+impl synthesizes: lang::synthesizes for (s : Fren.Core.TypeShape) {
+  shape := toShape s,
+  parts := ((shapeParts s).length : Int),
+  synthesizing := (((shapeParts s).filter Fren.Core.TypeShape.synthesizes).length : Int),
+  synthesizes? := s.synthesizes,
+} by
+  intro s _
+  cases s with
+  | emptyLiteral => simp [fren_spec, toShape, Fren.Core.TypeShape.synthesizes]
+  | other => simp [fren_spec, toShape, Fren.Core.TypeShape.synthesizes]
+  | pair a b =>
+    cases ha : a.synthesizes <;> cases hb : b.synthesizes <;>
+      simp [fren_spec, toShape, shapeParts, Fren.Core.TypeShape.synthesizes, ha, hb, List.filter]
+  | anyPart ps =>
+    simp only [fren_spec, toShape, shapeParts, Fren.Core.TypeShape.synthesizes, anySynthesizes_eq_any]
+    cases h : ps.any Fren.Core.TypeShape.synthesizes <;>
+      simp_all [List.any_eq_false, List.any_eq_true, List.filter_eq_nil_iff, List.length_pos_iff]
 
 impl linear_product: lang::linear_product for (a b : Bool) {
   a_mentions? := a,

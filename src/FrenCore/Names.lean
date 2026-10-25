@@ -1163,10 +1163,11 @@ def checkStringChars (s : String) : Except Msg Unit := do
   for c in s.toList do
     unless stringCharAccepted c.toNat do throw (stringCharMsg c)
 
-/-- `{}` where nothing gives it a type (`Reqs/Lang/Expressions#sets`). -/
+/-- `{}` where nothing gives it a type (`Reqs/Lang/Types#checking-and-synthesis`). -/
 def emptySetTypeMsg : Msg :=
   { code? := some "F0324", headline := "the type of `{}` cannot be known here", label? := some "a set of what?"
-    notes := #["note: `{}` takes its type from where it is written: the other operand of `=`, `!=`, `union`, `inter`, `minus` or `subset`, the right of `in`, a binding, a field, a definition or a constant"] }
+    notes := #["note: `{}` takes its type from where it is written, as the other side of `=` or a binding gives it one; here, nothing does",
+      "help: write it where its type is known, as in `s = {}`, or write a member"] }
 
 /-- `s.m`, where `s` is a set, which has only `card`. -/
 def unknownSetMethodMsg (m : String) (ty : String) : Msg :=
@@ -1201,11 +1202,11 @@ def membershipTypeMsg (expected found : String) (pair : Bool) : Msg :=
     notes := #[if pair then "note: `(x, y) in r` is membership: `r` is a relation between values of `x`'s and `y`'s types"
       else "note: `x in s` is membership: `s` is a set of values of `x`'s type"] }
 
-/-- `[]` where nothing gives it a type. -/
+/-- `[]` where nothing gives it a type (`Reqs/Lang/Types#checking-and-synthesis`). -/
 def emptySeqTypeMsg : Msg :=
   { code? := some "F0324", headline := "the type of `[]` cannot be known here", label? := some "a sequence of what?"
-    notes := #["note: `[]` takes its type from where it is written: the other side of `=`, `!=` or `++`, a binding, an argument or a definition",
-      "help: compare it with a typed sequence, or write a member"] }
+    notes := #["note: `[]` takes its type from where it is written, as the other side of `=` or a binding gives it one; here, nothing does",
+      "help: write it where its type is known, as in `q = []`, or write a member"] }
 
 /-- `q[i]`, where `q`, of type `ty`, is not a sequence. -/
 def notIndexableMsg (ty : String) : Msg :=

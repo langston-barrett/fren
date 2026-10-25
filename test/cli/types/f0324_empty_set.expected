@@ -4,7 +4,8 @@ error[F0324]: the type of `{}` cannot be known here
 4 |     req r: n = {}.card
   |                ^^ a set of what?
   |
-  = note: `{}` takes its type from where it is written: the other operand of `=`, `!=`, `union`, `inter`, `minus` or `subset`, the right of `in`, a binding, a field, a definition or a constant
+  = note: `{}` takes its type from where it is written, as the other side of `=` or a binding gives it one; here, nothing does
+  = help: write it where its type is known, as in `s = {}`, or write a member
 
 error: could not check due to 1 previous error
 

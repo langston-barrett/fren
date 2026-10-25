@@ -1,0 +1,45 @@
+-- Where `{}` and `[]` are checked against a type, and where they would have
+-- to synthesize one (`lang::checked`, `lang::synthesizes`), in both front
+-- ends.
+
+pub enum E { V(Set(Int)), W }
+
+-- Checked: by the other side of `=`, by the expression it is a part of, or
+-- by another part that shares its type.
+pub comp checked {
+    in b?
+    in m: E
+    in s: Set(Int)
+    in q: Seq(Int)
+    in z: Set(Set(Int))
+    in i: Int
+    pub out parens? := s = ({})
+    pub out branches? := s = (if b? then {} else {})   --~ warning: both branches of `if` are written the same
+    pub out operands? := s = {} union {}   --~ warning: both operands of `union` are written the same
+    --~^ warning: this operation has no effect
+    pub out concat? := q = [] ++ []   --~ warning: this operation has no effect
+    pub out in_sequence? := i in []
+    pub out pairs: Int := {(1, {}), (2, s)}.card
+    pub out arm_by_whole? := s = match m { E::V(t) => t, E::W => {} }
+    pub out arm_by_sibling: Int := (match m { E::W => {}, E::V(t) => t }).card
+    pub out first_element: Int := {{}, s}.card
+    pub out first_seq_element: Int := [[], q].len
+    pub out nested? := z = {{}, s}
+}
+
+-- Synthesized: nothing gives a type.
+pub comp receiver { pub out n: Int req r: n = {}.card }   --~ error: the type of `{}` cannot be known here
+pub comp in_left { in z: Set(Set(Int)) pub out p? req r: p? iff {} in z }   --~ error: the type of `{}` cannot be known here
+pub comp join_left { in r: Rel(Int, Int) pub out p? req q: p? iff r = {} join r }   --~ error: the type of `{}` cannot be known here
+pub comp join_right { in r: Rel(Int, Int) pub out p? req q: p? iff r = r join {} }   --~ error: the type of `{}` cannot be known here
+pub comp only_empty_parts { pub out n: Int req r: n = {{}}.card }   --~ error: the type of `{}` cannot be known here
+pub comp only_empty_elements { pub out n: Int req r: n = [[]].len }   --~ error: the type of `[]` cannot be known here
+pub comp neither_side { pub out p? req r: p? iff {} = {{}} }   --~ error: the type of `{}` cannot be known here
+pub comp empty_branches { in b? pub out n: Int req r: n = (if b? then {} else {{}}).card }
+--~^ error: the type of `{}` cannot be known here
+pub comp empty_arms { in m: E pub out n: Int req r: n = (match m { E::W => {}, E::V(_) => {{}} }).card }
+--~^ error: the type of `{}` cannot be known here
+pub comp pair_left { in r: Rel(Int, Set(Int)) pub out p? req q: p? iff (1, {}) in r }   --~ error: the type of `{}` cannot be known here
+pub comp image_argument { in r: Rel(Int, Int) pub out n: Int req q: n = r.image({}).card }   --~ error: the type of `{}` cannot be known here
+pub comp no_part_synthesizes { pub out n: Int req r: n = ({} inter {{}}).card }   --~ error: the type of `{}` cannot be known here
+pub comp indexed_literal { in s: Set(Int) pub out p? req r: p? iff s = [{}][0] }   --~ error: the type of `{}` cannot be known here
