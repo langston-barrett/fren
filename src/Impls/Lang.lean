@@ -125,12 +125,15 @@ impl variable_type: lang::variable_type for (o u d : Bool) {
 
 -- For every declaration: its name `n`, what it hides if anything (`w`, when
 -- `h`), and whether it has `!`, through the check that both front ends call.
-impl shadowing: lang::shadowing for (n : Lean.Name) (w : String) (h b : Bool) {
+-- Whether it is a parameter named like its function (`o`) matters only
+-- through `h`: the function is not yet in the table.
+impl shadowing: lang::shadowing for (n : Lean.Name) (w : String) (h b o : Bool) {
   hides? := h,
   bang? := b,
+  own_function? := o,
   accepted? := (Fren.Core.checkShadowing n (if h then some w else none) b).isOk,
 } by
-  intro n w h b _
+  intro n w h b o _
   cases h <;> cases b <;>
     simp [fren_spec, Fren.Core.checkShadowing, Fren.Core.shadowingAccepted, Except.isOk, Except.toBool] <;> rfl
 

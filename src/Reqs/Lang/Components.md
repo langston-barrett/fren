@@ -147,6 +147,12 @@ The precedence of a component's imports over its module's scope (see
 [Modules and visibility](Modules.md#use-in-a-component)) is a rule of
 resolution, not a declaration, and takes no `!`.
 
+A function is not in scope in its own body (see [Defined
+functions](Items.md#defined-functions)), so a parameter named like its
+function, as in `fn f(f: Int): Int := f + 1`, hides nothing, and is
+written without `!`: `fn f(f!: Int)` is an error, since nothing is
+shadowed.
+
 Some names followed by `!` are tokens of Lean's, with `Fren` imported:
 `assert!`, `debug_assert!`, `f!`, `m!`, `panic!`, `println!`,
 `reportDbgIssue!`, `reportEMatchIssue!`, `reportIssue!`, `s!`,
@@ -169,13 +175,17 @@ pub mod lang
 pub comp shadowing {
     in hides?            -- the declared name hides a name in scope
     in bang?             -- the declaration is written with `!`
+    in own_function?     -- it is a parameter named like its own function
     pub det out accepted?
+
+    assume not_in_own_body: when own_function?, not hides?
 
     req rule: accepted? iff (hides? iff bang?)
 
     expect explicit: when hides? and bang?, accepted?
     expect implicit: when hides? and not bang?, not accepted?
     expect needless: when bang? and not hides?, not accepted?
+    expect own_function: when own_function?, accepted? iff not bang?
 }
 ```
 

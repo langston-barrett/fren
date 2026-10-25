@@ -32,6 +32,11 @@ fn param(RATE: Int): Int := RATE + 1
 --~^ error: `RATE` shadows the constant `RATE`
 fn param_ok(RATE!: Int): Int := RATE + 1
 fn param_bang(n!: Int): Int := n + 1     --~ error: `n!` shadows nothing
+-- A function is not in scope in its own body, so a parameter or binder
+-- named like it hides nothing.
+fn own(own: Int): Int := own + 1
+fn own_bang(own_bang!: Int): Int := own_bang + 1  --~ error: `own_bang!` shadows nothing
+fn own_binder(s: Shape): Int := match s { Shape::Circle(own_binder) => own_binder, _ => 0 }
 
 -- A `match` binder over a variable, a constant, a function, another
 -- binder, a parameter and an instance.
