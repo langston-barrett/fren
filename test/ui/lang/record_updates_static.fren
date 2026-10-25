@@ -21,8 +21,7 @@ comp typed { in p: P pub out o: P req r: o = { p with x := true } }
 --~^[cli] error: type mismatch: expected `Int`, found `Bool`
 --~^^[hosted] error: type mismatch
 comp result_typed { in p: P in q: Q pub out o: P req r: o = { q with n := 1 } }
---~^[cli] error: cannot compare `P` with `Q`
---~^^[hosted] error: Type mismatch
+--~^ error: cannot compare `P` with `Q`
 comp unknown_short { in p: P pub out o: P req r: o = { p with w } }  --~ error: record `P` has no field `w`
 comp unbound_short { in p: P pub out o: P req r: o = { p with x } }  --~ error: cannot find `x` in this scope
 comp empty_base { pub out o: P req r: o = { {} with x := 1 } }
