@@ -6,7 +6,7 @@ error[F0367]: `exactly_one?` needs at least one argument
   |
   = note: `exactly_one?` counts how many of its `Bool` arguments are `true`, as in `exactly_one?(a?, b?)`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0367`.
 exit=2

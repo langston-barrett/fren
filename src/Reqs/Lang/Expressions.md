@@ -511,10 +511,10 @@ core](Decidability.md#integers). `lang::cardinality` states their value,
 from how many of their arguments are `true`:
 
 ```fren
-pub enum Cardinality { ExactlyOne, AtMostOne }
+pub enum Cardinality { Exactly, AtMost }
 
 pub comp cardinality {
-    use self::Cardinality::{AtMostOne, ExactlyOne}
+    use self::Cardinality::{AtMost, Exactly}
     in op: Cardinality
     in n_args: Nat           -- how many arguments it has
     in n_true: Nat           -- how many of them are `true`
@@ -524,13 +524,13 @@ pub comp cardinality {
     assume counted: n_true <= n_args
 
     req rule: value? iff match op {
-        ExactlyOne => n_true = 1,
-        AtMostOne => n_true <= 1,
+        Exactly => n_true = 1,
+        AtMost => n_true <= 1,
     }
 
-    expect exactly_is_at_most: when op = ExactlyOne and value?, n_true <= 1
-    expect one_argument: when n_args = 1 and op = AtMostOne, value?
-    expect none_true: when n_true = 0, value? iff op = AtMostOne
+    expect exactly_is_at_most: when op = Exactly and value?, n_true <= 1
+    expect one_argument: when n_args = 1 and op = AtMost, value?
+    expect none_true: when n_true = 0, value? iff op = AtMost
 }
 ```
 

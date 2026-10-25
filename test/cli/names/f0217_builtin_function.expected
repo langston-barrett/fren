@@ -11,7 +11,7 @@ help: to shadow the built-in function `exactly_one?`, write `exactly_one?!`
 2 + comp c { in exactly_one?! pub out o? := exactly_one? }
   |
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0217`.
 exit=2

@@ -6,7 +6,7 @@ error[F0210]: function `at_most_one?` must be applied to arguments
   |
   = note: a function is mentioned only by applying it, as in `f(x)`
 
-error: could not check due to 1 previous error
+error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0210`.
 exit=2

@@ -3,6 +3,7 @@
 
 expect constants: exactly_one?(true, false, false) and not exactly_one?(true, true) and at_most_one?(false, false)
     and not at_most_one?(true, false, true) and not exactly_one?(false)
+--~^^ warning: this expectation mentions no variable
 
 const ONE_ACTIVE: Bool := exactly_one?(true, false)
 
@@ -21,6 +22,7 @@ comp laws {
     expect order: exactly_one?(a?, b?, c?) = exactly_one?(c?, a?, b?)
     expect repeated: at_most_one?(a?, a?) iff not a?
     expect constant: ONE_ACTIVE
+    --~^ warning: this expectation mentions no variable
     expect wrong: exactly_one?(a?, b?)               --~ error: expectation `laws::wrong` does not hold
 }
 
