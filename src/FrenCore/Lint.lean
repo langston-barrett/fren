@@ -1547,13 +1547,60 @@ def exprKeywords : List String :=
     "unless", "when"]
   -- keep-sorted end
 
+/-- `s` without the comments outside its string literals: line comments,
+and block comments, which nest. Each comment becomes a space. -/
+def withoutComments (s : String) : String := Id.run do
+  let cs := s.toList.toArray
+  let mut out := ""
+  let mut i := 0
+  -- In a string literal: the number of `#` that end it, if raw.
+  let mut str? : Option (Option Nat) := none
+  while i < cs.size do
+    let c := cs[i]!
+    match str? with
+    | some raw? =>
+      out := out.push c
+      match raw? with
+      | none =>
+        if c == '\\' && i + 1 < cs.size then out := out.push cs[i + 1]!; i := i + 1
+        else if c == '"' then str? := none
+      | some n =>
+        if c == '"' && (List.range n).all (fun k => cs[i + 1 + k]? == some '#') then
+          for _ in [0:n] do out := out.push '#'
+          i := i + n
+          str? := none
+      i := i + 1
+    | none =>
+      if c == '-' && cs[i + 1]? == some '-' then
+        while i < cs.size && cs[i]! != '\n' do i := i + 1
+        out := out.push ' '
+      else if c == '/' && cs[i + 1]? == some '-' then
+        let mut depth := 1
+        i := i + 2
+        while i < cs.size && depth > 0 do
+          if cs[i]! == '/' && cs[i + 1]? == some '-' then depth := depth + 1; i := i + 2
+          else if cs[i]! == '-' && cs[i + 1]? == some '/' then depth := depth - 1; i := i + 2
+          else i := i + 1
+        out := out.push ' '
+      else if c == '"' then
+        -- A raw literal is `r`, some `#`, then `"`.
+        let hashes := ((cs.extract 0 i).toList.reverse.takeWhile (· == '#')).length
+        let raw := i ≥ hashes + 1 && cs[i - hashes - 1]! == 'r'
+        str? := some (if raw then some hashes else none)
+        out := out.push c
+        i := i + 1
+      else
+        out := out.push c
+        i := i + 1
+  return out
+
 /-- Where an expression that is written after the text `before`, not in
 parentheses, is an operand: of the operator that `before` ends with, on
 its right, or of `when` or `unless`, on its left. An expression not in
 parentheses is never a left operand otherwise, as it is a conditional,
 whose `else` extends as far right as possible. -/
 def slotAfter (before : String) : Option Slot :=
-  let (lx, rest) := lastLexeme before.toList.reverse
+  let (lx, rest) := lastLexeme (withoutComments before).toList.reverse
   let right (k : BKind) : Option Slot := some ⟨k.prec, k.assoc, true⟩
   match lx with
   | "when" | "unless" => some ⟨0, .nonAssoc, false⟩
@@ -1588,6 +1635,15 @@ def duplicateElements (nRepeats : Nat) : Bool := nRepeats > 0
 `elems`, repeat at `repeats` (`repeatedElements`). The fix removes each
 repeat, with the separator before it. -/
 def duplicateElementsMsg (src : Array Char) (lit : Range) (elems : Array Range) (repeats : Array Nat) : Msg := Id.run do
+  -- An element as written, with the parentheses around it.
+  let widen (r : Range) : Range := Id.run do
+    let mut r := r
+    for _ in [0:src.size] do
+      match parensAround? src lit r with
+      | some r' => r := r'
+      | none => break
+    return r
+  let elems := elems.map widen
   let mut text := ""
   let mut pos := lit.start
   for i in repeats do

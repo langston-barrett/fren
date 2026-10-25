@@ -748,7 +748,9 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
   -- fixes, so the passes go on until no edit is left (`Reqs/Lint#fixing-lints`).
   let mut pass := (files, st)
   let mut nFixed := paths.map fun _ => 0
-  for _ in [0:maxFixPasses] do
+  -- Whether the first pass's fixes were kept.
+  let mut firstKept := false
+  for k in [0:maxFixPasses] do
     let (files, st) := pass
     if st.edits.isEmpty then break
     let next := (files.zip srcs).mapIdx fun i ((_, text), src) =>
@@ -756,12 +758,14 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
     let (files', st') ← elaborateSources paths next args.lints fixing ignored
     -- A fix that made a static error is not kept.
     if st'.diags.any fun d => d.severity == .error && d.lint?.isNone then break
+    if k == 0 then firstKept := true
     nFixed := nFixed.mapIdx fun i n => n + (st.diags.filter fun d => d.fixed && d.file == i).size
     srcs := next
     pass := (files', st')
   -- What is left, in the files the user has afterwards: as fixed, or with
   -- `--check`, as given.
-  let (files, left) ← if args.diffOnly then pure (files, st.diags.filter (!·.fixed)) else do
+  -- If the first pass's fixes were not kept, nothing is fixed.
+  let (files, left) ← if args.diffOnly then pure (files, st.diags.filter fun d => !(firstKept && d.fixed)) else do
     let (files, st) ← elaborateSources paths srcs args.lints #[] ignored
     pure (files, st.diags)
   for d in left do printDiag args.paint files d
