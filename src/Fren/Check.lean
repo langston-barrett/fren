@@ -95,17 +95,25 @@ whether a model was wanted: some checks of a component ask the same
 query, which is answered once, as in the binary (`Reqs/Cli#solver-queries`). -/
 abbrev QueryCache := IO.Ref (Std.HashMap (Array Expr × Expr × Bool) (Core.Outcome Expr))
 
+/-- That `x`, a `Nat` or an `Int`, is at least 0. -/
+def atLeast0 (x : Expr) : MetaM Expr := do
+  if (← inferType x).isConstOf ``Nat then mkAppM ``LE.le #[mkNatLit 0, x]
+  else mkAppM ``LE.le #[← mkNumeral (mkConst ``Int) 0, x]
+
 /-- The lean-smt backend, for a comp whose variables are the free variables
 `fvs`, and whose variables other than its `in`s have second copies `primes`
 (`Core.primed`), answering from `cache` the queries asked before. `facts` are
-what its natural numbers bring, of both copies, which every query assumes,
-and `outFacts` those of its outputs, which realizability's `∃` asserts too
-(`Reqs/Check`). With `modelOptional`, a model that lean-smt cannot read, as
+what its `Nat` variables bring, of both copies, which every query assumes,
+and `outFacts` those of its outputs, which realizability's `∃` asserts too;
+`natAppsOf` finds the applications of functions into `Nat` in a formula,
+whose facts each query assumes of its own (`Reqs/Check`). With `modelOptional`, a model that lean-smt cannot read, as
 it cannot some values of abstract types, is left out rather than making the
 answer unknown: a cover goal passes on `sat`, with or without one. Such an
 answer is not cached. -/
 def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (facts : Array Expr := #[])
-    (outFacts : Array Expr := #[]) (modelOptional : Bool := false) : Core.Backend MetaM Expr Expr :=
+    (outFacts : Array Expr := #[]) (natAppsOf : Expr → Array Expr := fun _ => #[])
+    (modelOptional : Bool := false) :
+    Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
     ({ v with name := Core.primed v.name }, p)
@@ -114,7 +122,8 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
   -- lean-smt could not read.
   let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr × Bool) :=
     withoutModifyingState do
-    let hyps ← (facts.map (`nat, ·) ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
+    let appFacts ← Core.natAppFacts natAppsOf atLeast0 hyps goal
+    let hyps ← (facts.map (`nat, ·) ++ appFacts ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
     let goal ← unfoldDefined goal
     withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do
       let timeout := fren.timeout.get (← getOptions)
@@ -216,9 +225,10 @@ parameters, to all of them, in `e`, that mention no bound variable, each
 once, added to `acc`. None of a check's formulas applies a function under a
 binder: a `match` is a chain of `if`s over selectors, a global
 expectation's binders are locals, defined functions, whose bodies apply no
-uninterpreted function, are unfolded only in the query, and realizability's
-`∃` is built after the facts are, over arguments that mention no output
-(`lang::argument`). -/
+uninterpreted function, are unfolded only after the facts are found, and
+under realizability's `∃`, an application's arguments mention no output
+(`lang::argument`). An application is met before its arguments, and they
+from left to right, as `natAppFacts` orders them. -/
 partial def natApps (fs : Array (Expr × Nat)) (e : Expr) (acc : Array Expr := #[]) : Array Expr :=
   match e with
   | .app .. =>
@@ -308,23 +318,16 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
         let some i := c.vars.findIdx? (·.name == d) | return none
         let e ← beta e
         return some (d, ← mkEq fvs[i]! e, e) }
-    -- What the natural numbers bring (`lang::nat_variable`): each `Nat`
-    -- variable, of both copies, and each application of a function into
-    -- `Nat`, is at least 0.
-    let atLeast0 (x : Expr) : MetaM Expr := do
-      if (← inferType x).isConstOf ``Nat then mkAppM ``LE.le #[mkNatLit 0, x]
-      else mkAppM ``LE.le #[← mkNumeral (mkConst ``Int) 0, x]
+    -- What the `Nat` variables bring (`lang::nat_variable`): each, of both
+    -- copies, is at least 0. Each query's applications bring their own
+    -- (`Core.natAppFacts`).
     let natVars (outputs : Bool) := (c.vars.zip fvs).filter fun (v, _) =>
       v.type.isConstOf ``Nat && match Core.natBrought (v.role == .output) v.defn?.isSome with
         | .nothing => false
         | .requirement => outputs
         | .assumption => !outputs
-    let formulas := comp.assumes.map (·.2) ++ comp.reqs.map (·.2) ++ comp.expects.map (·.2) ++ comp.covers.map (·.2)
-      ++ comp.insts.flatMap (fun i => #[i.bindings, i.behaviour] ++ i.assumes.map (·.2))
-      ++ comp.triggers.map (·.2) ++ comp.indexes.map (·.goal) ++ comp.defs.map (·.2.2)
-    let apps := formulas.foldl (fun acc f => natApps nats f acc) #[]
     let outFacts ← (natVars true).mapM (atLeast0 ·.2)
-    let facts ← ((natVars false).map (·.2) ++ apps).mapM atLeast0
+    let facts ← (natVars false).mapM (atLeast0 ·.2)
     let copiedFvs := (c.vars.zip fvs).filter (fun (v, _) => (Core.Symbol.ofRole v.role).copied) |>.map (·.2)
     let all := facts ++ outFacts
     let facts := all ++ (all.map (·.replaceFVars copiedFvs primes)).filter (!all.contains ·)
@@ -339,7 +342,7 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     -- The models of the cover goals' queries, by goal, for their theorems.
     let models ← IO.mkRef (#[] : Array (Expr × Array (Name × Expr)))
     let bk (k : CheckKind) :=
-      let b := leanBackend c fvs primes cache facts outFacts (modelOptional := k == .cover)
+      let b := leanBackend c fvs primes cache facts outFacts (natApps nats ·) (modelOptional := k == .cover)
       if k != .cover then b else
       { b with query := fun hyps goal wantModel => do
           let o ← b.query hyps goal wantModel

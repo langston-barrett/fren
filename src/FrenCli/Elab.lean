@@ -180,16 +180,16 @@ def CComp.meaning (c : CComp) : String :=
     ++ (c.props.filter fun p => p.kind == .assume || p.kind == .req).map (·.smt)
     ++ c.insts.map fun i => conj #[i.bindings, i.behaviour]
 
-/-- What the natural numbers of `c` bring (`Reqs/Check`): that each `Nat`
-variable that is not defined, and each application in `natApps`, is at
-least 0 (`lang::nat_variable`). `outputs` gives those of its own outputs,
-and otherwise those of the rest. -/
+/-- What the `Nat` variables of `c` bring (`Reqs/Check`): that each that is
+not defined is at least 0 (`lang::nat_variable`). `outputs` gives those of
+its own outputs, and otherwise those of the rest. Its applications' facts
+are each query's own (`Fren.Core.natAppFacts`). -/
 def CComp.natFacts (c : CComp) (outputs : Bool) : Array String :=
   let vars := c.vars.filter fun v => v.ty == .nat && match Fren.Core.natBrought (v.role == .output) v.defn?.isSome with
     | .nothing => false
     | .requirement => outputs
     | .assumption => !outputs
-  vars.map (s!"(>= {quote ·.name.toString} 0)") ++ (if outputs then #[] else c.natApps.map (s!"(>= {·} 0)"))
+  vars.map (s!"(>= {quote ·.name.toString} 0)")
 
 /-- `w.x` as a `Name`. -/
 def identName (s : String) : Name := (s.splitOn ".").foldl Name.mkStr .anonymous

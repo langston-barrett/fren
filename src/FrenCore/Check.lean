@@ -519,6 +519,24 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
   let defined ← ifSelected (kinds.contains .definedness) (c.indexes.mapM (checkDefinedness (bk .definedness) c))
   return realizable ++ insts ++ expects ++ covers ++ vacuities ++ redundancies ++ dets ++ defined
 
+/-- What the applications of functions into `Nat` in a query bring
+(`Reqs/Check`): that each application that `appsOf` finds in the query's
+own hypotheses and goal is at least 0, each once, as hypotheses named
+`nat`, by `atLeast0`. They are in one order in both front ends: the
+hypotheses' in order and then the goal's, and within a formula in the
+order that `appsOf` gives, which is that of a walk of the formula that
+meets an application before its arguments and the arguments from left to
+right. Both front ends give a query these and no others, so
+that they depend only on its formulas: a query never has a fact about an
+application that it does not mention, as of an instantiated component's
+expectation, and the formulas that `coverInterpreted` reads are all it
+uses. -/
+def natAppFacts [Monad m] [BEq F] (appsOf : F → Array F) (atLeast0 : F → m F) (hyps : Array (Name × F))
+    (goal : F) : m (Array (Name × F)) := do
+  let apps := (hyps.map (·.2) ++ #[goal]).foldl (init := #[]) fun acc f =>
+    (appsOf f).foldl (init := acc) fun acc a => if acc.contains a then acc else acc.push a
+  apps.mapM fun a => return (`nat, ← atLeast0 a)
+
 /-- The formulas of the query of the cover goal `g` (`checkCover`): the
 definitions, the assumptions, each instance's bindings and the meaning of
 its component, the requirements, and the goal. No expectation or other
