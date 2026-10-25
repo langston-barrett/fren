@@ -22,6 +22,9 @@ import Lean.Elab.Frontend
   formatted, keeps its tokens, imports and comments when formatted, and
   formatting it again changes nothing (`fmt::safe`); `fren fmt` rewrites a
   file in place.
+
+The tests run as jobs, in parallel (see "Jobs" below), and the failures are
+reported sorted.
 -/
 
 -- fren-covers: cli::agreement, fmt::safe
@@ -124,9 +127,10 @@ def hostedDiagnostics (env : Environment) (file : String) (src : String) :
       diags := diags.push { line := m.pos.line - 1, severity := sev, text }
   return (diags, summary)
 
-def uiTests (env : Environment) : IO (Array String) := do
+/-- The ui tests of `files`. -/
+def uiTests (env : Environment) (files : Array FilePath) : IO (Array String) := do
   let mut failures := #[]
-  for f in ← sortedFiles ("test" / "ui") "fren" do
+  for f in files do
     let src ← IO.FS.readFile f
     let spec ← match parse src with
       | .ok s => pure s
@@ -352,18 +356,20 @@ def sequenceCorpus (n : Nat) : String := Id.run do
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
-/-- The solver decides every query of the corpus: nothing is inconclusive. -/
-def conformance : IO (Array String) := do
+/-- The corpora, by name. -/
+def corpora : List (String × (Nat → String)) :=
+  [("strings", stringCorpus), ("sets", setCorpus), ("relations", relationCorpus), ("sequences", sequenceCorpus)]
+
+/-- The solver decides every query of the corpus `name`: nothing is
+inconclusive. -/
+def conformance (name : String) (corpus : Nat → String) : IO (Array String) := do
   IO.FS.createDirAll (".lake" / "corpus")
-  let mut failures := #[]
-  for (name, src) in [("strings", stringCorpus 40), ("sets", setCorpus 40), ("relations", relationCorpus 40),
-      ("sequences", sequenceCorpus 40)] do
-    let file := s!".lake/corpus/{name}.fren"
-    IO.FS.writeFile file src
-    let (out, _) ← runFren ["check", file]
-    if out.contains "could not check".toSlice || !out.contains " 0 inconclusive".toSlice then
-      failures := failures.push s!"the {name} corpus ({file}) is not decided:\n{out}"
-  return failures
+  let file := s!".lake/corpus/{name}.fren"
+  IO.FS.writeFile file (corpus 40)
+  let (out, _) ← runFren ["check", file]
+  if out.contains "could not check".toSlice || !out.contains " 0 inconclusive".toSlice then
+    return #[s!"the {name} corpus ({file}) is not decided:\n{out}"]
+  return #[]
 
 /-- `fmt::safe` over every spec in the repository, and every spec that
 parses is formatted. -/
@@ -416,12 +422,77 @@ def fixing : IO (Array String) := do
     failures := failures.push s!"`fren fix --check` reports a fixed file (exit {code}):\n{out}"
   return failures
 
+/-! ## Jobs
+
+The tests are independent, so `main` runs them as jobs, in parallel, each
+in a process of its own (`fren_test --job NAME ARG...`): the binary's
+output is captured by redirecting the process's streams, which threads
+cannot share. A job prints its failures, as JSON, on its last line. When
+blessing, `snapshots` rewrites the snapshots that `errorCodes` reads, so it
+runs first, alone. -/
+
+/-- The ui tests run in batches of at most this many files, each in a
+process that imports `Fren` once. -/
+def uiBatch : Nat := 8
+
+/-- The jobs, as the arguments of `--job`, the slowest first. -/
+def jobs : IO (Array (List String)) := do
+  let ui ← sortedFiles ("test" / "ui") "fren"
+  let n := (ui.size + uiBatch - 1) / uiBatch
+  -- Every `n`th file, so that the slow ones spread over the batches.
+  let batches := (List.range n).toArray.map fun k =>
+    "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
+  return #[["ownSpec"]] ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
+    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"]]
+
+/-- Runs a job in this process. -/
+unsafe def runJob (bless : Bool) : List String → IO (Array String)
+  | "ui" :: files => do
+    enableInitializersExecution
+    initSearchPath (← findSysroot)
+    let env ← importModules #[{ module := `Fren }] {} (loadExts := true)
+    uiTests env (files.toArray.map FilePath.mk)
+  | ["snapshots"] => snapshots bless
+  | ["errorCodes"] => errorCodes
+  | ["ownSpec"] => ownSpec
+  | ["conformance", name] => match corpora.lookup name with
+    | some corpus => conformance name corpus
+    | none => throw (IO.userError s!"unknown corpus `{name}`")
+  | ["formatting"] => formatting
+  | ["fixing"] => fixing
+  | job => throw (IO.userError s!"unknown job `{" ".intercalate job}`")
+
+/-- Runs `job` in a process of its own, returning its failures. -/
+def spawnJob (bless : Bool) (job : List String) : IO (Array String) := do
+  let args := #["--job"] ++ job.toArray ++ (if bless then #["--bless"] else #[])
+  let out ← IO.Process.output { cmd := (← IO.appPath).toString, args }
+  let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
+  match Json.parse last >>= fromJson? with
+  | .ok failures => if out.exitCode == 0 then return failures
+  | .error _ => pure ()
+  return #[s!"the job `{" ".intercalate job}` crashed (exit {out.exitCode}):\n{out.stdout}{out.stderr}"]
+
+/-- Runs `jobs`, at most as many at once as the machine has cores. -/
+def runJobs (bless : Bool) (jobs : Array (List String)) : IO (Array String) := do
+  let next ← IO.mkRef 0
+  let worker : IO (Array String) := do
+    let mut failures := #[]
+    repeat
+      let k ← next.modifyGet fun k => (k, k + 1)
+      let some job := jobs[k]? | break
+      failures := failures ++ (← spawnJob bless job)
+    return failures
+  let cores := (System.Platform.Internal.getHardwareConcurrency ()).toNat
+  let tasks ← (List.range (max cores 1)).mapM fun _ => IO.asTask worker .dedicated
+  tasks.foldlM (init := #[]) fun acc t => return acc ++ (← IO.ofExcept t.get)
+
 unsafe def main (args : List String) : IO UInt32 := do
   let bless := args.contains "--bless" || (← IO.getEnv "FREN_BLESS").isSome
-  enableInitializersExecution
-  initSearchPath (← findSysroot)
-  let env ← importModules #[{ module := `Fren }] {} (loadExts := true)
-  let failures := (← uiTests env) ++ (← snapshots bless) ++ (← errorCodes) ++ (← ownSpec) ++ (← conformance) ++ (← formatting) ++ (← fixing)
+  if let "--job" :: job := args then
+    IO.println (toJson (← runJob bless (job.filter (· != "--bless")))).compress
+    return 0
+  let (first, rest) := (← jobs).partition (bless && · == ["snapshots"])
+  let failures := ((← runJobs bless first) ++ (← runJobs bless rest)).qsort (· < ·)
   for f in failures do IO.eprintln s!"FAIL {f}"
   if failures.isEmpty then
     IO.println "fren_test: all passed"
