@@ -41,7 +41,7 @@ comp head {
     expect two: when l = IntList::Cons(1, IntList::Cons(2, IntList::Nil)), h = 1
 }
 
--- Binders shadow variables, and a field of a call or literal can be read.
+-- Binders shadow variables explicitly, and a field of a call or literal can be read.
 fn origin(Int): Point
 
 comp reads {
@@ -49,7 +49,7 @@ comp reads {
     in s: Shape
     pub out z: Int
 
-    req a: z = match s { Shape::Circle(r) => r, _ => r } + origin(r).x
+    req a: z = match s { Shape::Circle(r!) => r, _ => r } + origin(r).x
     expect literal_field: Point { x := r, y := 0 }.x = r
 }
 

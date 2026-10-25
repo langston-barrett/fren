@@ -105,8 +105,8 @@ One operand of `*` must mention no variable and apply no
 [constants](Items.md#constants), such as `2`, `-RATE`, `2 * 3`
 or `(MAX - MIN)`. Its value is then fixed, so the product is linear in the
 other operand, which the solver decides. `x * y` is an error, and so is `x *
-RATE` within a component that has a variable named `RATE`, since variables
-shadow constants (see [Components](Components.md#members)). So is `x *
+RATE` within a component that declares a variable `RATE!`, which shadows
+the constant (see [Shadowing](Components.md#shadowing)). So is `x *
 rate(1)`: a function's value is unknown even at a fixed argument.
 `lang::linear_product` states this, from how many variables each operand
 mentions, counting each mention, the variables of instances, and each
@@ -329,9 +329,11 @@ the scrutinee:
   ```
 - `_` matches any value.
 
-A binder is not a variable: it shadows variables and constants of the
-same name within its arm's body, and mentioning it counts as mentioning
-everything its scrutinee mentions, for the rules of
+A binder is not a variable. Within its arm's body, it may shadow a
+variable, a constant or another name in scope, written with `!`, as in
+`Shape::Circle(r!)` (see [Shadowing](Components.md#shadowing)); a mention
+of it there is not a mention of what it shadows. Mentioning it counts as
+mentioning everything its scrutinee mentions, for the rules of
 [Instances](Instances.md#instance-variables), of [function
 applications](#function-applications) and of [linear
 arithmetic](#linear-arithmetic). So in `comp c { out s: Shape ... }`,
@@ -845,7 +847,8 @@ pub comp operator_type {
 ## Names
 
 A path names a variable of the enclosing component, a binder of an
-enclosing [`match` arm](#matches), a
+enclosing [`match` arm](#matches) (the innermost, which may
+[shadow](Components.md#shadowing) the others and the variables), a
 [constant](Items.md#constants), a [function](#function-applications) that
 it applies, a record that it builds, or a variant (see [Modules and
 visibility](Modules.md#resolution)). A constant stands for its value. A variant can be written

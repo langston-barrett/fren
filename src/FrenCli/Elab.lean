@@ -375,6 +375,23 @@ def liftMsg (span : Span) : Except Msg α → M α
   | .ok a => pure a
   | .error msg => err span msg
 
+/-- The identifier that `x` declares, without the `!` that marks it as
+shadowing (`Fren.Core.declaredName`), and whether it has one. Its span
+leaves out the `!`, so that a fix that renames it keeps the `!`. -/
+def declaredIdent (x : Ident) : Ident × Bool :=
+  let (n, bang) := Fren.Core.declaredName (Name.mkSimple x.name)
+  ({ name := Fren.Core.nameText n, span := if bang then { x.span with stop := x.span.stop - 1 } else x.span }, bang)
+
+/-- The declaration `x`, without its `!`, checked to be written with `!`
+exactly when it hides something: `hidden n` is what a declaration of `n`
+hides, if anything (`lang::shadowing`). -/
+def declare (x : Ident) (hidden : Name → Option String) : M Ident := do
+  let (y, bang) := declaredIdent x
+  let n := Name.mkSimple y.name
+  liftMsg x.span (Fren.Core.checkLeanToken n bang)
+  liftMsg x.span (Fren.Core.checkShadowing n (hidden n) bang)
+  return y
+
 /-- Resolves a path in an expression or type in the current module,
 recording the import it resolves through, if any (`unused_imports`), and
 the item it uses (`dead_code`). -/
@@ -502,7 +519,7 @@ partial def varsMentioned (cx : ExprCtx) (bs : Array (Name × Nat) := #[]) : Exp
     let k ← varsMentioned cx bs s
     arms.foldlM (init := k) fun n (p, body) => do
       let new := match p with
-        | .variant _ _ (some xs) => xs.map fun x => (Name.mkSimple x.name, k)
+        | .variant _ _ (some xs) => xs.map fun x => (Name.mkSimple (declaredIdent x).1.name, k)
         | _ => #[]
       return n + (← varsMentioned cx (bs ++ new) body)
   | _ => return 0
@@ -525,7 +542,12 @@ partial def mentions : Expr → Array Name
   | .bin _ _ a b => mentions a ++ mentions b
   | .app _ _ args => args.foldl (· ++ mentions ·) #[]
   | .record _ _ fs => fs.foldl (init := #[]) fun acc (f, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple f.name]
-  | .match _ s arms => arms.foldl (· ++ mentions ·.2) (mentions s)
+  | .match _ s arms => arms.foldl (init := mentions s) fun acc (p, body) =>
+    -- In its arm, a binder's name means the binder, not what it shadows.
+    let bound := match p with
+      | .variant _ _ (some bs) => bs.map fun b => Name.mkSimple (declaredIdent b).1.name
+      | _ => #[]
+    acc ++ (mentions body).filter (!bound.contains ·.getRoot)
   | _ => #[]
 
 /-- The variables that the defined output `v` stands for: those its
@@ -1300,6 +1322,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         for b in bs, f in fs, k in [0:bs.size] do
           let t := f.2
           if b.name == "_" then continue
+          let st ← get
+          let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+            (cx.binders.map (·.name)) cx.selfFn.isSome
+          let b ← declare b (st.table.hidden? st.scope locals)
           let bn := Name.mkSimple b.name
           liftMsg b.span (Fren.Core.checkVarName bn (some (t == .bool)))
           lintName .binder bn b.span
@@ -1508,10 +1534,10 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let mut vars := #[]
   for m in members do
     let .var isIn isPub' isDet x ty? defn? := m | continue
+    let st ← get
+    let x ← declare x (st.table.hidden? st.scope #[])
     let xn := Name.mkSimple x.name
     lintName .variable xn x.span
-    if let some c := (← get).table.shadowedConstant? (← get).scope xn then
-      lint .shadowedConstants x.span (Fren.Core.shadowedMsg xn c)
     let role := if isIn then Role.input else .output
     let ty ← varTy ty? x
     unless Fren.Core.variableTypeAccepted (role == .output) ((← get).unbounded ty) defn?.isSome do
@@ -1523,6 +1549,8 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let mut pending := #[]
   for m in members do
     let .inst x p bs := m | continue
+    let st ← get
+    let x ← declare x (st.table.hidden? st.scope #[])
     let xn := Name.mkSimple x.name
     lintName .instance xn x.span
     let (pi, ivars) ← resolveInst x p bs
@@ -1553,6 +1581,9 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   for m in members do
     let .prop kind x e := m | continue
     let xn := Name.mkSimple x.name
+    liftMsg x.span (Fren.Core.checkNoBang xn)
+    if seen.contains xn then err x.span (Fren.Core.dupMemberMsg xn)
+    seen := seen.push xn
     if x.name.endsWith "?" then err x.span (Fren.Core.propNameMsg xn)
     lintName .constraint xn x.span
     let cx : ExprCtx := { vars, insts := instNames, place := if kind == .assume then .assume else .prop }
@@ -1712,6 +1743,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (body : Expr) : M Unit := do
   let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkNoBang n)
   let all ← evidenceInEffect
   if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
   modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[] }
@@ -1734,6 +1766,7 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
       lint .undecidable (p[0]!.span.to p.back!.span) (Fren.Core.undecidableInstMsg path)
     noteCounts c (p[0]!.span.to p.back!.span)
     for x in xs do
+      let x ← declare x (st.table.hidden? st.scope #[])
       let w := Name.mkSimple x.name
       liftMsg x.span (Fren.Core.checkItemName "instance" w)
       lintName .instance w x.span
@@ -1831,6 +1864,8 @@ partial def elabItem : Item → M Unit
       err fields[k]!.1.span (Fren.Core.dupFieldMsg (Name.mkSimple fields[k]!.1.name))
     for (f, ty?) in fields do
       let fn := Name.mkSimple f.name
+      liftMsg f.span (Fren.Core.checkNoBang fn)
+      if fs.any (·.1 == fn) then err f.span (Fren.Core.dupFieldMsg fn)
       lintName .field fn f.span
       if let some segs := ty? then
         let (own, ownInSet) := ownIn segs name
@@ -1861,13 +1896,15 @@ partial def elabItem : Item → M Unit
       sorts := s.sorts.push path }
   | .function isPub name params result body => do
     let n := Name.mkSimple name.name
+    liftMsg name.span (Fren.Core.checkNoBang n)
     let st ← get
     liftMsg name.span (st.table.checkFresh st.module n)
     lintName .function n name.span
     let path := st.module ++ n
     -- A parameter is named if it has a type after `:`, or is a `Bool`
     -- written `x?` (`lang::function_params`).
-    let named (p : Array Ident × Option (Array Ident)) := p.2.isSome || (p.1.size == 1 && p.1[0]!.name.endsWith "?")
+    let named (p : Array Ident × Option (Array Ident)) :=
+      p.2.isSome || (p.1.size == 1 && (declaredIdent p.1[0]!).1.name.endsWith "?")
     unless Fren.Core.functionParamsAccepted body.isSome params.size (params.filter named).size do
       let bad := (params.find? (named · != body.isSome)).map (·.1[0]!.span) |>.getD name.span
       err bad (Fren.Core.functionParamsMsg path body.isSome)
@@ -1884,7 +1921,7 @@ partial def elabItem : Item → M Unit
       if let some k := (Fren.Core.repeatsAt (params.map (Name.mkSimple ·.1[0]!.name)))[0]? then
         err params[k]!.1[0]!.span (Fren.Core.dupParamMsg (Name.mkSimple params[k]!.1[0]!.name))
       for (p, ty?) in params do
-        let x := p[0]!
+        let x ← declare p[0]! (st.table.hidden? st.scope #[])
         let xn := Name.mkSimple x.name
         lintName .variable xn x.span
         let t ← varTy ty? x

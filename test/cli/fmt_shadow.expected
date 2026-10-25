@@ -1,0 +1,19 @@
+--- test/cli/fmt_shadow.fren
++++ test/cli/fmt_shadow.fren
+@@ -6,6 +6,6 @@
+-fn bump(RATE!:Int):Int := RATE+1
+-comp   c{
+-in RATE! :Int
+-in ready?!
+-  pub out p?
+-  req r :p? iff match s {Shape::Circle(x!)=>x>RATE , _ => ready?}
++fn bump(RATE!: Int): Int := RATE + 1
++comp c {
++    in RATE!: Int
++    in ready?!
++    pub out p?
++    req r: p? iff match s { Shape::Circle(x!) => x > RATE, _ => ready? }
+@@ -13 +13 @@
+-expect e: forall (RATE! : c), RATE.p?
++expect e: forall (RATE!: c), RATE.p?
+exit=1

@@ -333,16 +333,16 @@ comp c { in s: String pub out p? req r: p? iff s.matches?(r"[a-z]+") }
 Erroneous code example:
 
 ```fren
-comp c { in y: Int pub out z? req r: z? iff y!=1 }
+comp c { in y: Int pub out z? req r: z? iff y!!=1 }
 ```
 
 Fren's identifiers are ASCII letters, digits, `_` and `'`, with `.` between
-components and an optional `?` at the end. Lean's are a superset: they may
-have `?` and `!` anywhere after the first character, letters other than
-ASCII, such as `α`, and quoted components, such as `«a b»`. So that a spec
-reads alike in Lean and in the `fren` command, both report what Lean would
-read differently. Here Lean reads `y!` then `=`, so write spaces around
-`!=`:
+components, an optional `?` at the end, and then an optional `!`, which
+marks a declaration that shadows. Lean's are a superset: they may have `?`
+and `!` anywhere after the first character, letters other than ASCII, such
+as `α`, and quoted components, such as `«a b»`. So that a spec reads alike
+in Lean and in the `fren` command, both report what Lean would read
+differently. Here Lean reads `y!!` then `=`, so write spaces around `!=`:
 
 ```fren
 comp c { in y: Int pub out z? req r: z? iff y != 1 }
@@ -681,6 +681,79 @@ comp c {
   pub out y?
   req r: y? iff x?
 }
+```
+"# },
+  { code := "F0217", explanation := r#"A declaration hides a name in scope, but is not written with `!`.
+
+Erroneous code example:
+
+```fren
+pub const RATE: Int := 2
+set_option fren.lint.non_snake_case "allow" in
+comp c { in RATE: Int pub out y: Int req r: y = RATE }
+```
+
+Within `c`, `RATE` is the input, not the constant: a component's variables
+hide the items of its module, a function's parameters hide those of its
+module, and a `match` arm's binders hide variables, parameters, other
+binders and items. Shadowing is allowed, but must be explicit, so that a
+reader knows which `RATE` a use means: the declaration that hides the name
+is written with `!` directly after it, as `RATE!`, or `ready?!` for a
+`Bool`. Its uses are written without `!`. This error replaces the lint
+`shadowed_constants`, which was `F0713`.
+
+Write the `!`:
+
+```fren
+pub const RATE: Int := 2
+set_option fren.lint.non_snake_case "allow" in
+comp c { in RATE!: Int pub out y: Int req r: y = RATE }
+```
+
+Or rename the variable:
+
+```fren
+pub const RATE: Int := 2
+comp c { in rate: Int pub out y: Int req r: y = rate * RATE }
+```
+"# },
+  { code := "F0218", explanation := r#"A declaration is written with `!`, but hides nothing.
+
+Erroneous code example:
+
+```fren
+comp c { in x!: Int pub out y: Int req r: y = x }
+```
+
+`!` after a declared name says that it shadows a name in scope (see
+`F0217`). No `x` is in scope where this `x` is declared, so there is
+nothing to shadow; and items, constraints, fields and variants never
+shadow. Remove the `!`:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = x }
+```
+"# },
+  { code := "F0219", explanation := r#"A declaration's name, with its `!`, is one of Lean's tokens.
+
+Erroneous code example:
+
+```fren
+pub enum Shape { Circle(Int), Square }
+comp c { in s: Shape pub out p? req r: p? iff match s { Shape::Circle(s!) => s > 0, _ => false } }
+```
+
+Fren is lexed as Lean is, and Lean reads `s!` as a token of its own, not
+as the name `s` followed by the `!` of shadowing (see `F0217`). It
+reads `assert!`, `debug_assert!`, `f!`, `m!`, `panic!`, `println!`,
+`reportDbgIssue!`, `reportEMatchIssue!`, `reportIssue!`, `unreachable!`
+and `using!` alike. None of these names can be declared with
+`!`, so that a spec means the same in Lean and to the `fren` command.
+Rename the declaration:
+
+```fren
+pub enum Shape { Circle(Int), Square }
+comp c { in s: Shape pub out p? req r: p? iff match s { Shape::Circle(r) => r > 0, _ => false } }
 ```
 "# },
   { code := "F0301", explanation := r#"A variable has no type.
@@ -2139,10 +2212,10 @@ Erroneous code example:
 set_option fren.lint.unused_import "allow"
 ```
 
-The lints are `dead_code`, `glob_imports`, `non_camel_case_types`,
+The lints include `dead_code`, `glob_imports`, `non_camel_case_types`,
 `non_snake_case`, `non_upper_case_constants`, `nonminimal_bool`,
-`shadowed_constants`, `unfulfilled_lint_expectations`, `unused_imports`
-and `unused_variables`.
+`unfulfilled_lint_expectations`, `unused_imports` and `unused_variables`;
+the error lists them all.
 
 ```fren
 set_option fren.lint.unused_imports "allow"
@@ -2231,24 +2304,6 @@ false` means `c?`. Write the simpler form, as `fren fix` does:
 
 ```fren
 comp c { in a? pub out b? req r: b? iff a? }
-```
-"# },
-  { code := "F0713", explanation := r#"A variable named like a constant in scope (the lint `shadowed_constants`, a warning by default).
-
-Erroneous code example:
-
-```fren
-pub const RATE: Int := 2
-set_option fren.lint.non_snake_case "allow" in
-comp c { in RATE: Int pub out y: Int req r: y = RATE }
-```
-
-A component's variables shadow names from its module, so within `c`,
-`RATE` is the input, not the constant. Rename the variable:
-
-```fren
-pub const RATE: Int := 2
-comp c { in rate: Int pub out y: Int req r: y = rate * RATE }
 ```
 "# },
   { code := "F0714", explanation := r#"A construct outside the decidable core (the lint `undecidable`, an error by default).

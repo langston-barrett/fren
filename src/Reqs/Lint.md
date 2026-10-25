@@ -29,7 +29,6 @@ use view::Severity
 | `non_snake_case` | `F0703` | `warn` | a module, component, variable, function, instance, constraint or global expectation not named in `snake_case` (see [Naming conventions](#naming-conventions)) |
 | `non_upper_case_constants` | `F0705` | `warn` | a constant not named in `UPPER_CASE` |
 | `nonminimal_bool` | `F0712` | `warn` | a `Bool` expression with a simpler form, such as `a? = true` (see [Simpler `Bool` expressions](#simpler-bool-expressions)) |
-| `shadowed_constants` | `F0713` | `warn` | a variable named like a constant in scope (see [Shadowed constants](#shadowed-constants)) |
 | `singleton_membership` | `F0717` | `warn` | `x in {a}` (see [Membership](#membership)) |
 | `undecidable` | `F0714` | `deny` | a construct outside the decidable core (see [Undecidable constructs](#undecidable-constructs)) |
 | `unfulfilled_lint_expectations` | `F0706` | `warn` | a `set_option` that expects a lint that never fires (see [Expecting lints](#expecting-lints)) |
@@ -210,7 +209,7 @@ pub comp effective {
 
 The level that applies to a lint's message is the one in effect at the
 item it is about: the `use` for the import lints; for the naming lints,
-`unused_variables` and `shadowed_constants`, the item that declares the
+and `unused_variables`, the item that declares the
 name, which for a member is its component and for a variant its
 enumeration; for `dead_code`, the unused item; and for `nonminimal_bool`,
 the item the expression is in. So `set_option ... in` before an item sets
@@ -389,8 +388,12 @@ component, and an output that nothing mentions can take any value.
 
 A variable is mentioned by a path in one of the component's constraints,
 or in a binding of one of its instances, whose only segment is the
-variable's name: the binding `x` in `inst w: c { x }` mentions `x`. A
-binder `w` is mentioned by a path `w.x`. Mentions elsewhere, such as
+variable's name and that resolves to it: the binding `x` in `inst w: c {
+x }` mentions `x`, but in `match s { Shape::Circle(x!) => x > 0, _ =>
+true }`, the `x` of the arm is the binder that
+[shadows](Lang/Components.md#shadowing) the variable, so it does not
+mention the variable. A binder `w` is mentioned by a path `w.x`, and a
+parameter as a variable is. Mentions elsewhere, such as
 through an instance of the component in another one, do not count: they
 cannot constrain the variable. The variables of the component's own
 instances are not reported, and neither are the variables of a component,
@@ -509,16 +512,13 @@ simplification of the operands. It does not cover the text: that the
 simpler form, written with its parentheses, parses as the expression the
 rules chose.
 
-## Shadowed constants
+## Shadowing
 
-A component's variables shadow names from its module (see
-[Components](Lang/Components.md#members)), so a variable named like a
-constant hides it, and `x * RATE` multiplies by the variable `RATE`.
-`shadowed_constants` reports a variable of a component whose name resolves,
-in the component's module, to a constant: one declared there or imported by
-name. It is reported at the variable's declaration. Since constants are
-named in `UPPER_CASE` and variables in `snake_case`, it only fires where a
-[naming lint](#naming-conventions) would fire too, or is allowed.
+No lint is about shadowing. A declaration that hides a name in scope
+without `!`, and one with `!` that hides nothing, are static errors,
+`F0217` and `F0218` (see [Shadowing](Lang/Components.md#shadowing)). They
+replace the lint `shadowed_constants`, which warned of a variable named
+like a constant, and whose code `F0713` is not reused.
 
 ## Undecidable constructs
 
@@ -711,7 +711,7 @@ what the spec means:
 <!-- keep-sorted end -->
 
 The other lints have no fix. Renaming a declaration, as the naming lints
-and `shadowed_constants` would need, would also have to rename every use
+would need, would also have to rename every use
 of it, including uses in Lean code and in files that are not given, and so
 would removing a dead item. Removing an unused variable would change its
 component's interface. A message of a lint that `fren fix` fixes says so, with the line

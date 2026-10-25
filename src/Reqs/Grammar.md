@@ -11,6 +11,7 @@
 | `a*`, `a+` | zero or more, one or more `a` |
 | `( ... )` | grouping |
 | `IDENT`, `INT`, `STRING` | an identifier, an integer literal, a string literal, raw or not (see [Lexical structure](Lang/Lexical.md)) |
+| `DECL` | an identifier that declares a name, which ends in `!` if it shadows another (see [Shadowing](Lang/Components.md#shadowing)); no other `IDENT` ends in `!` |
 | `TERM`, `TACTICS` | a Lean term, a Lean tactic sequence |
 
 ## Items
@@ -32,7 +33,7 @@ function       := ["pub"] "fn" IDENT "(" type ("," type)* ")" [":" type]
 constant       := ["pub"] "const" IDENT ":" type ":=" expr
 component      := ["pub"] "comp" IDENT "{" member* "}"
 expectation    := "expect" IDENT ":" ["forall" forall-binder+ ","] expr
-forall-binder  := "(" IDENT+ ":" path ")"
+forall-binder  := "(" DECL+ ":" path ")"
 refinement     := "refine" IDENT ":" path "refines" path ["{" [binding ("," binding)* [","]] "}"] ["by" TACTICS]
 check          := "#fren_check" [path] | "#fren_trace"
 claim          := "tested" path ":" STRING ("," STRING)* [","]
@@ -62,8 +63,8 @@ member         := "in" variable
                 | instance
                 | use
                 | evidence-setting "in" member
-variable       := IDENT [":" type]
-instance       := "inst" IDENT ":" path "{" [binding ("," binding)* [","]] "}"
+variable       := DECL [":" type]
+instance       := "inst" DECL ":" path "{" [binding ("," binding)* [","]] "}"
 binding        := IDENT [":=" expr]
 type           := "Bool" | "Int" | "String" | "Set" "(" type ")" | "Seq" "(" type ")" | "Rel" "(" type "," type ")"
                 | path
@@ -100,7 +101,7 @@ field-init     := IDENT [":=" expr]
 arm            := pattern "=>" expr
 pattern        := "_" | ["|"] alternative ("|" alternative)*
 alternative    := path ["(" pattern-binder ("," pattern-binder)* ")"]
-pattern-binder := IDENT | "_"
+pattern-binder := DECL | "_"
 ```
 
 Where a rule is written with left recursion, the operator is

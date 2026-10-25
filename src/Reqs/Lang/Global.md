@@ -7,7 +7,7 @@ of different components.
 
 ```
 expectation := "expect" IDENT ":" ["forall" binder+ ","] expr
-binder      := "(" IDENT+ ":" path ")"
+binder      := "(" DECL+ ":" path ")"
 ```
 
 `expect n: forall (a b: c) (d: e), E` claims that `E` holds for any two
@@ -24,7 +24,10 @@ about [constants](Items.md#constants), such as `expect sane: MIN_TEMP <
 MAX_TEMP`.
 
 The names a global expectation introduces are distinct from each other, and
-are named like instances. Its own name is an item in the current module, so
+are named like instances. Like an instance's, a binder's name may
+[shadow](Components.md#shadowing) a constant, a function or a variant of
+the module, written with `!`, as in `forall (RATE!: c)`: in `E`, `RATE.x`
+is then the binder's variable, not a field of the constant. Its own name is an item in the current module, so
 it is distinct from the module's other items, but nothing can refer to it.
 Each component a binder names must be declared, and visible, before the
 global expectation.

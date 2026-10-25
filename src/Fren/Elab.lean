@@ -239,6 +239,8 @@ partial def typeSyntax (t : Expr) : Term :=
     throwErrorAt fieldStxs[k]![0] (Core.dupFieldMsg fieldStxs[k]![0].getId).text
   for f in fieldStxs do
     let fn := f[0].getId
+    liftMsg f[0] (Core.checkNoBang fn)
+    if fields.any (·.1 == fn) then throwErrorAt f[0] (Core.dupFieldMsg fn).text
     lintName .field fn f[0]
     let t ← if f[1].isNone then pure (Lean.mkConst ``Bool) else fieldType modName f[1][1] (some decl) false n
     -- As for a variable (`lang::bool_naming`).
@@ -494,6 +496,21 @@ def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term
     | throwErrorAt ref (Core.noFieldMsg f (Core.showPath r.path) (r.fields.map (·.1))).text
   return (← `($(mkCIdentFrom ref (r.decl ++ f)) $t), ft)
 
+/-- The alternatives of a `match` arm's pattern, none for `_`. -/
+def patternAlts (arm : Syntax) : Array Syntax :=
+  if arm[0].isOfKind ``Lang.altsPattern then arm[0][1].getSepArgs else #[]
+
+/-- The binders of an alternative, `_` included. -/
+def altBinders (alt : Syntax) : Array Syntax :=
+  if alt[1].isNone then #[] else alt[1][1].getSepArgs.map (·[0])
+
+/-- The binders of a `match` arm's pattern, `_` included: those of its only
+alternative, since those of an or-pattern are all `_`. -/
+def patternBinders (arm : Syntax) : Array Syntax :=
+  match patternAlts arm with
+  | #[a] => altBinders a
+  | _ => #[]
+
 /-- The names of the variables that `e` mentions: its paths of one
 segment, and for `p.x`, `p` too. -/
 partial def pathMentions (e : Syntax) : Array Name :=
@@ -512,6 +529,11 @@ partial def pathMentions (e : Syntax) : Array Name :=
     else #[]
   else if e.isOfKind ``Lang.recordExpr then
     e[2].getSepArgs.foldl (init := #[]) fun acc b => acc ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
+  else if e.isOfKind ``Lang.matchExpr then
+    e[3].getSepArgs.foldl (init := pathMentions e[1]) fun acc arm =>
+      -- In its arm, a binder's name means the binder, not what it shadows.
+      let bound := (patternBinders arm).filter (·.isIdent) |>.map fun b => (declaredIdent b).1.getId
+      acc ++ (pathMentions arm[2]).filter (!bound.contains ·.getRoot)
   else e.getArgs.foldl (· ++ pathMentions ·) #[]
 
 /-- The variables that the defined output `v` stands for: those its
@@ -551,21 +573,6 @@ def varRef? (cx : ExprCtx) (id : Syntax) (n : Name) : TermElabM (Option Term) :=
     | .ok () => pure ()
     | .error msg => throwErrorAt id (if u.name == n then msg else Core.throughDefinition n msg).text
   return some (mkIdentFrom id n)
-
-/-- The alternatives of a `match` arm's pattern, none for `_`. -/
-def patternAlts (arm : Syntax) : Array Syntax :=
-  if arm[0].isOfKind ``Lang.altsPattern then arm[0][1].getSepArgs else #[]
-
-/-- The binders of an alternative, `_` included. -/
-def altBinders (alt : Syntax) : Array Syntax :=
-  if alt[1].isNone then #[] else alt[1][1].getSepArgs.map (·[0])
-
-/-- The binders of a `match` arm's pattern, `_` included: those of its only
-alternative, since those of an or-pattern are all `_`. -/
-def patternBinders (arm : Syntax) : Array Syntax :=
-  match patternAlts arm with
-  | #[a] => altBinders a
-  | _ => #[]
 
 open Lang in
 /-- The expression that is the name `n`, a path of one segment. -/
@@ -609,7 +616,7 @@ partial def varsMentioned (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Nat) 
   else if e.isOfKind ``Lang.matchExpr then
     let k ← varsMentioned cx e[1] bs
     e[3].getSepArgs.foldlM (init := k) fun n arm => do
-      let new := (patternBinders arm).filter (·.isIdent) |>.map (·.getId, k)
+      let new := (patternBinders arm).filter (·.isIdent) |>.map fun b => ((declaredIdent b).1.getId, k)
       return n + (← varsMentioned cx arm[2] (bs ++ new))
   else if e.isOfKind ``Lang.fren_path then
     let segs := pathSegs e
@@ -873,6 +880,9 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
         throwErrorAt named[k]! (Core.dupPatternBinderMsg named[k]!.getId).text
       for b in patternBinders arm, t in info.payloads[idx]!, k in [0:info.payloads[idx]!.size] do
         unless b.isIdent do continue
+        let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+          (cx.binders.map (·.name)) cx.selfFn.isSome
+        let b ← declare b ((← getState).table.hidden? cx.modName locals)
         let bn := b.getId
         liftMsg b (Core.checkVarName bn (some (t.isConstOf ``Bool)))
         lintName .binder bn b
@@ -1371,6 +1381,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
   let n ← segName nameStx
+  liftMsg nameStx (Core.checkNoBang n)
   checkFresh modName n nameStx
   lintName .function n nameStx
   let path := modName ++ n
@@ -1379,7 +1390,7 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
   -- A parameter is named if it has a type after `:`, or is a `Bool`
   -- written `x?` (`lang::function_params`).
   let named (p : Syntax) := !p[1].isNone ||
-    (typePath? p[0]).any fun q => (pathSegs q).size == 1 && (pathSegs q)[0]!.getId.toString.endsWith "?"
+    (typePath? p[0]).any fun q => (pathSegs q).size == 1 && (declaredIdent (pathSegs q)[0]!).1.getId.toString.endsWith "?"
   let nNamed := (params.filter named).size
   unless Core.functionParamsAccepted body?.isSome params.size nNamed do
     let bad := params.find? (named · != body?.isSome) |>.getD nameStx
@@ -1398,11 +1409,8 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) : TermElabM U
     let mut vars : Array Var := #[]
     let paramIds ← params.mapM fun p => do
       let some q := typePath? p[0] | throwErrorAt p[0] (Core.functionParamsMsg path true).text
-      pure (pathSegs q)[0]!
-    for x in paramIds do discard (segName x)
-    if let some k := (Core.repeatsAt (paramIds.map (·.getId)))[0]? then
-      throwErrorAt paramIds[k]! (Core.dupParamMsg paramIds[k]!.getId).text
-    for p in params, x in paramIds do
+      let x ← declare (pathSegs q)[0]! ((← getState).table.hidden? modName #[])
+      if vars.any (·.name == x.getId) then throwErrorAt x (Core.dupParamMsg x.getId).text
       lintName .variable x.getId x
       let ty ← varType modName x (if p[1].isNone then none else some p[1][1])
       vars := vars.push { name := x.getId, role := .input, isPub := true, «type» := ty, ref := x }
@@ -1596,11 +1604,13 @@ open Lang in
           pure (.output, !m[0].isNone, !m[1].isNone, m[3], if m[4].isNone then none else some m[4][1],
             if m[5].isNone then none else some m[5][1])
         | _ => continue
-      if isRepeat x then continue
+      -- An error in shadowing leaves the variable's meaning clear.
+      let x ← try declare x ((← getState).table.hidden? scope #[])
+        catch ex => logException ex; ok := false; pure (declaredIdent x).1
+      if names.contains x.getId then
+        logErrorAt x (Core.dupMemberMsg x.getId).text; ok := false; continue
       names := names.insert x.getId
       lintName .variable x.getId x
-      if let some c := (← getState).table.shadowedConstant? scope x.getId then
-        recordLint .shadowedConstants x (Core.shadowedMsg x.getId c)
       try
         let ty ← varType scope x ty?
         let st ← getState
@@ -1617,7 +1627,10 @@ open Lang in
     let mut pending : Array PendingInst := #[]
     for m in members do
       let `(fren_member| inst $x:ident : $p:fren_path { $bs,* }) := m | continue
-      if isRepeat x then continue
+      let x ← try declare x ((← getState).table.hidden? scope #[])
+        catch ex => logException ex; ok := false; pure (declaredIdent x).1
+      if names.contains x.getId then
+        logErrorAt x (Core.dupMemberMsg x.getId).text; ok := false; continue
       names := names.insert x.getId
       lintName .instance x.getId x
       try
@@ -1677,7 +1690,10 @@ open Lang in
           | `(fren_member| req $x:ident : $e) => pure (.req, x, e)
           | `(fren_member| expect $x:ident : $e) => pure (.expect, x, e)
           | _ => continue
-        if isRepeat x then continue
+        if let .error msg := Core.checkNoBang x.getId then
+          logErrorAt x msg.text; good := false; continue
+        if names.contains x.getId then
+          logErrorAt x (Core.dupMemberMsg x.getId).text; good := false; continue
         names := names.insert x.getId
         lintName .constraint x.getId x
         try
@@ -1835,6 +1851,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
       recordLint .undecidable b[3] (Core.undecidableInstMsg path)
     noteCounts c b[3]
     for x in b[1].getArgs do
+      let x ← declare x ((← getState).table.hidden? modName #[])
       let w := x.getId
       liftMsg x (Core.checkItemName "instance" w)
       lintName .instance w x
@@ -1876,6 +1893,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
   let n ← segName nameStx
+  liftMsg nameStx (Core.checkNoBang n)
   if n.toString.endsWith "?" then throwErrorAt nameStx (Core.propNameMsg n).text
   checkFresh modName n nameStx
   lintName .global n nameStx

@@ -8,10 +8,10 @@ import FrenCore.Simplify
 
 Lints (`Reqs/Lint`) as pure functions, shared by both front ends: their
 levels, how settings combine, the import and naming lints, unused
-variables, dead code, simpler `Bool` expressions, shadowed constants, and
-expectations. Each front end records what happened while elaborating a
-file (`UseRecord`, `UsedName`, `ExpectationRecord`) and calls
-`importReports` and `expectationReports` at its end.
+variables, dead code, simpler `Bool` expressions, and expectations. Each
+front end records what happened while elaborating a file (`UseRecord`,
+`UsedName`, `ExpectationRecord`) and calls `importReports` and
+`expectationReports` at its end.
 -/
 
 open Lean
@@ -54,7 +54,6 @@ inductive Lint where
   | unusedVariables
   | deadCode
   | nonminimalBool
-  | shadowedConstants
   | undecidable
   | lengthZero
   | cardZero
@@ -67,7 +66,7 @@ inductive Lint where
 
 def Lint.all : Array Lint :=
   #[.unusedImports, .globImports, .nonSnakeCase, .nonCamelCaseTypes, .nonUpperCaseConstants, .unfulfilledExpectations,
-    .unusedVariables, .deadCode, .nonminimalBool, .shadowedConstants, .undecidable, .lengthZero, .cardZero,
+    .unusedVariables, .deadCode, .nonminimalBool, .undecidable, .lengthZero, .cardZero,
     .singletonMembership, .membershipChain, .constantOutput, .definableOutput, .indexAfterUse]
 
 def Lint.name : Lint → String
@@ -80,7 +79,6 @@ def Lint.name : Lint → String
   | .unusedVariables => "unused_variables"
   | .deadCode => "dead_code"
   | .nonminimalBool => "nonminimal_bool"
-  | .shadowedConstants => "shadowed_constants"
   | .undecidable => "undecidable"
   | .lengthZero => "length_zero"
   | .cardZero => "card_zero"
@@ -100,7 +98,8 @@ def Lint.code : Lint → String
   | .unusedVariables => "F0710"
   | .deadCode => "F0711"
   | .nonminimalBool => "F0712"
-  | .shadowedConstants => "F0713"
+  -- `F0713` was `shadowed_constants`, which explicit shadowing replaced
+  -- (`F0217`); it is not reused.
   | .undecidable => "F0714"
   | .lengthZero => "F0715"
   | .cardZero => "F0716"
@@ -620,20 +619,6 @@ def deadCodeReports (items : Array (ItemRecord × α)) (used : Array Name) : Arr
     if deadItem i.what false (used.count i.path) then
       some { lint := .deadCode, level := i.level, ref, msg := deadCodeMsg i.what i.path }
     else none
-
-/-! ## Shadowed constants -/
-
-/-- The constant that a variable named `n`, in a component in module
-`mod`, shadows, if any. -/
-def Table.shadowedConstant? (t : Table) (mod n : Name) : Option Name :=
-  match t.resolvePath mod #[n] with
-  | .ok (.item { kind := .constItem, path, .. }) => some path
-  | _ => none
-
-def shadowedMsg (n const : Name) : Msg :=
-  { code? := some Lint.shadowedConstants.code, headline := s!"variable `{n}` shadows the constant `{showPath const}`"
-    label? := some "shadows a constant"
-    notes := #[s!"note: in its component, `{n}` names this variable, not the constant", "help: rename the variable"] }
 
 /-! ## Simpler `Bool` expressions -/
 

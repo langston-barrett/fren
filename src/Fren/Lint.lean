@@ -67,11 +67,6 @@ register_option fren.lint.nonminimal_bool : String := {
   descr := "the level of the lint `nonminimal_bool`: allow, expect, warn, deny or forbid"
 }
 
-register_option fren.lint.shadowed_constants : String := {
-  defValue := "warn"
-  descr := "the level of the lint `shadowed_constants`: allow, expect, warn, deny or forbid"
-}
-
 register_option fren.lint.undecidable : String := {
   defValue := "deny"
   descr := "the level of the lint `undecidable`: allow, expect, warn, deny or forbid"

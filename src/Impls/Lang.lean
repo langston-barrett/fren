@@ -123,6 +123,17 @@ impl variable_type: lang::variable_type for (o u d : Bool) {
   accepted? := Fren.Core.variableTypeAccepted o u d,
 }
 
+-- For every declaration: its name `n`, what it hides if anything (`w`, when
+-- `h`), and whether it has `!`, through the check that both front ends call.
+impl shadowing: lang::shadowing for (n : Lean.Name) (w : String) (h b : Bool) {
+  hides? := h,
+  bang? := b,
+  accepted? := (Fren.Core.checkShadowing n (if h then some w else none) b).isOk,
+} by
+  intro n w h b _
+  cases h <;> cases b <;>
+    simp [fren_spec, Fren.Core.checkShadowing, Fren.Core.shadowingAccepted, Except.isOk, Except.toBool] <;> rfl
+
 impl field_init: lang::field_init for (f : Bool) (n : Nat) {
   field? := f,
   n := n,
@@ -271,9 +282,10 @@ theorem le_le_self (d c : Char) : (decide (d ≤ c) && decide (c ≤ d)) = (c ==
 theorem start_class (c : Char) : inRanges [('A', 'Z'), ('a', 'z'), ('_', '_')] c = isIdStart c := by
   simp [inRanges, isIdStart, le_le_self, Bool.or_assoc]
 
-/-- `[A-Za-z0-9_'?]` is what continues an identifier. -/
+/-- `[A-Za-z0-9_'?!]` is what continues an identifier. -/
 theorem continue_class (c : Char) :
-    inRanges [('A', 'Z'), ('a', 'z'), ('0', '9'), ('_', '_'), ('\'', '\''), ('?', '?')] c = (isIdRest c || c == '?') := by
+    inRanges [('A', 'Z'), ('a', 'z'), ('0', '9'), ('_', '_'), ('\'', '\''), ('?', '?'), ('!', '!')] c =
+      (isIdRest c || c == '?' || c == '!') := by
   simp [inRanges, isIdRest, le_le_self, Bool.or_assoc]
 
 theorem dot_class (c : Char) : inRanges [('.', '.')] c = (c == '.') := by
@@ -373,6 +385,26 @@ theorem octal_sep_class (c : Char) :
 theorem pair_class (a b c : Char) : inRanges [(a, a), (b, b)] c = (c == a || c == b) := by
   simp [inRanges, le_le_self]
 
+/-- `ends_with?("!")` is about the last character. -/
+theorem endsWith_bang (cs : List Char) :
+    Fren.Str.endsWith (String.ofList cs) (Fren.Str.lit "!") = (cs.getLast? == some '!') := by
+  rcases List.eq_nil_or_concat cs with h | ⟨l, x, rfl⟩
+  · subst h; rfl
+  · simp [Fren.Str.endsWith, Fren.Str.lit, List.isSuffixOf, List.isPrefixOf]
+    rw [Bool.eq_iff_iff]
+    simp only [beq_iff_eq]
+    exact eq_comm
+
+/-- `starts_with?("!")` is about the first character. -/
+theorem startsWith_bang (cs : List Char) :
+    Fren.Str.startsWith (String.ofList cs) (Fren.Str.lit "!") = (cs.head? == some '!') := by
+  rcases cs with _ | ⟨c, t⟩
+  · rfl
+  · simp [Fren.Str.startsWith, Fren.Str.lit, List.isPrefixOf]
+    rw [Bool.eq_iff_iff]
+    simp only [beq_iff_eq]
+    exact eq_comm
+
 end Lexical
 
 -- For every lexeme and the input after it: whether the lexer continues it.
@@ -385,19 +417,26 @@ impl identifier_end: lang::identifier_end for (cs rest : List Char) {
   ends? := Fren.Core.identExtends rest.toArray (cs.getLast?.getD ' ') 0 == 0,
 } by
   rintro cs rest -
-  simp only [fren_spec, Lexical.endsWith_question, Fren.Core.Re.matches, String.toList_ofList,
-    Fren.Core.Re.mat_cat_cls, Fren.Core.Re.mat_star_any]
+  simp only [fren_spec, Lexical.endsWith_question, Lexical.endsWith_bang, Lexical.startsWith_bang,
+    Fren.Core.Re.matches, String.toList_ofList, Fren.Core.Re.mat_cat_cls, Fren.Core.Re.mat_star_any]
   cases h : cs.getLast? with
   | some l =>
+    by_cases hb : l = '!'
+    · subst hb; simp [Fren.Core.identExtends]
     by_cases hl : l = '?'
-    · subst hl; simp [Fren.Core.identExtends]
+    · subst hl
+      rcases rest with _ | ⟨c, t⟩
+      · simp [Fren.Core.identExtends]
+      · by_cases hc : c = '!'
+        · subst hc; simp [Fren.Core.identExtends, Lexical.continue_class]
+        · simp [Fren.Core.identExtends, hc]
     · rcases rest with _ | ⟨c, _ | ⟨d, t⟩⟩ <;>
-        simp [Fren.Core.identExtends, hl, Lexical.continue_class, Lexical.dot_class, Lexical.start_class] <;>
-        split <;> (try split) <;> (try simp_all) <;> (rename_i hc; rcases hc with hc | hc <;> simp_all)
+        simp [Fren.Core.identExtends, hl, hb, Lexical.continue_class, Lexical.dot_class, Lexical.start_class] <;>
+        split <;> (try split) <;> (try simp_all) <;> (rename_i hc; rcases hc with (hc | hc) | hc <;> simp_all)
   | none =>
     rcases rest with _ | ⟨c, _ | ⟨d, t⟩⟩ <;>
       simp [Fren.Core.identExtends, Lexical.continue_class, Lexical.dot_class, Lexical.start_class] <;>
-      split <;> (try split) <;> (try simp_all) <;> (rename_i hc; rcases hc with hc | hc <;> simp_all)
+      split <;> (try split) <;> (try simp_all) <;> (rename_i hc; rcases hc with (hc | hc) | hc <;> simp_all)
 
 namespace Lexical
 

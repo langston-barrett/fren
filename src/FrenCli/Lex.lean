@@ -7,7 +7,7 @@ import FrenCore.Syntax
 # Lexer for `.fren` files
 
 Mirrors Lean's lexing of Fren specs: `--` and nested `/- -/` comments,
-identifiers that may end in `?`, and the tokens of `Fren.Lang`.
+identifiers that may end in `?`, then `!`, and the tokens of `Fren.Lang`.
 -/
 
 namespace FrenCli

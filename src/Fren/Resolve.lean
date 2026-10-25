@@ -38,6 +38,21 @@ def liftMsg (ref : Syntax) : Except Core.Msg α → m α
   | .ok a => pure a
   | .error msg => throwErrorAt ref msg.text
 
+/-- The identifier that `x` declares, without the `!` that marks it as
+shadowing (`Core.declaredName`), and whether it has one. -/
+def declaredIdent (x : Syntax) : Syntax × Bool :=
+  let (n, bang) := Core.declaredName x.getId
+  (if bang then mkIdentFrom x n else x, bang)
+
+/-- The declaration `x`, without its `!`, checked to be written with `!`
+exactly when it hides something: `hidden n` is what a declaration of `n`
+hides, if anything (`lang::shadowing`). -/
+def declare (x : Syntax) (hidden : Name → Option String) : m Syntax := do
+  let (y, bang) := declaredIdent x
+  liftMsg x (Core.checkLeanToken y.getId bang)
+  liftMsg x (Core.checkShadowing y.getId (hidden y.getId) bang)
+  return y
+
 /-- Resolves a `use` path written in module `from_`. -/
 def resolveUsePath (from_ : Name) (segs : Array Syntax) : m Resolved := do
   liftResolve segs ((← getState).table.resolveUse from_ (← segNames segs))

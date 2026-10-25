@@ -42,9 +42,8 @@ comp user {
 }
 
 comp shadow {
-    in MAX_T: Int                            -- a variable shadows the constant
+    in MAX_T!: Int                            -- a variable shadows the constant, with `!`
     --~^ warning: variable `MAX_T` should have a snake case name
-    --~^^ warning: variable `MAX_T` shadows the constant `climate::MAX_T`
     pub out y: Int
     req r: y = MAX_T
     expect same: y = MAX_T

@@ -1,0 +1,67 @@
+-- What explicit shadowing means: within its scope, a name declared with
+-- `!` is the declaration, not the name it hides.
+set_option fren.lint.non_snake_case "allow"
+
+const RATE: Int := 2
+fn scale(Int): Int
+enum Shape { Circle(Int), Square }
+
+-- A binder over an input: in its arm, `x` is the payload.
+comp payload {
+    in x: Int
+    in s: Shape
+    pub out p?
+
+    req r: p? iff match s {
+        Shape::Circle(x!) => x > 0,
+        _ => x > 0,
+    }
+
+    expect circle: when s = Shape::Circle(1) and x = -1, p?
+    expect square: when s = Shape::Square and x = -1, not p?
+    expect wrong: when s = Shape::Circle(1) and x = -1, not p?  --~ error: expectation `payload::wrong` does not hold
+}
+
+-- A mention of the binder is not one of the input it shadows.
+comp unused_input {
+    in x: Int                       --~ warning: unused variable `x`
+    in s: Shape
+    pub out p?
+
+    req r: p? iff match s { Shape::Circle(x!) => x > 0, _ => true }
+}
+
+-- A variable over a constant and over a function, and a parameter over a
+-- constant.
+comp var_over_items {
+    in RATE!: Int
+    in scale!: Int
+    pub out y: Int
+
+    req r: y = RATE + scale
+
+    expect own: when RATE = 5 and scale = 1, y = 6
+}
+
+fn bump(RATE!: Int): Int := RATE + 1
+
+comp param_over_const {
+    pub out y: Int
+
+    req r: y = bump(10)
+
+    expect own: y = 11
+    expect constant: y = RATE + 1   --~ error: expectation `param_over_const::constant` does not hold
+}
+
+-- A binder of a global expectation over a constant.
+comp sub {
+    in v: Int
+    pub out w: Int
+
+    req r: w = v + scale(v)
+}
+
+expect binder: forall (RATE!: sub), RATE.w = RATE.v + scale(RATE.v)
+
+--@ summary: 19 passed, 2 failed, 0 inconclusive, 0 redundant

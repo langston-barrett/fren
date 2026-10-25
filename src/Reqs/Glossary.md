@@ -95,6 +95,11 @@ component's other constraints. See [Checks](Check.md#redundancy).
 **Requirement.** A constraint on what the system must do, declared with
 `req`.
 
+**Shadowing.** A declaration hiding a name in scope, so that within the
+declaration's scope the name means the declaration. It is written with
+`!` after the declared name, as in `x!`. See
+[Shadowing](Lang/Components.md#shadowing).
+
 **Spec.** A sequence of items, in a Lean file, a `.fren` file or a
 [Markdown spec](Markdown.md).
 

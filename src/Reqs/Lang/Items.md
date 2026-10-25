@@ -155,7 +155,7 @@ record's field:
 pub mod lang
 
 pub comp field_type {
-    in kind: ValueType   -- the kind of the field's or payload's type
+    in kind!: ValueType   -- the kind of the field's or payload's type
     in abstract_within?  -- an abstract type is the type, or a set's element type within it
     in own?              -- the type is the item being declared
     in own_in_set?       -- the item being declared is a set's element type within the type
@@ -253,8 +253,9 @@ pub comp function_params {
 }
 ```
 
-The parameters' names must be distinct, and shadow names from the
-function's module. The body mentions no component's variables: only the
+The parameters' names must be distinct, and may
+[shadow](Components.md#shadowing) the constants, functions and variants
+of the function's module, written with `!`. The body mentions no component's variables: only the
 parameters, binders of its own [`match` arms](Expressions.md#matches),
 constants, variants, and defined functions declared before the function.
 So a function is not in scope in its own body, and defined functions are
@@ -359,7 +360,7 @@ See [Components](Components.md).
 
 ```
 expectation := "expect" IDENT ":" ["forall" binder+ ","] expr
-binder      := "(" IDENT+ ":" path ")"
+binder      := "(" DECL+ ":" path ")"
 ```
 
 A global expectation is an expectation about components as a whole rather

@@ -3,7 +3,7 @@
 An instance makes one component part of another.
 
 ```
-instance := "inst" IDENT ":" path "{" [binding ("," binding)* [","]] "}"
+instance := "inst" DECL ":" path "{" [binding ("," binding)* [","]] "}"
 binding  := IDENT [":=" expr]
 ```
 
@@ -11,6 +11,8 @@ binding  := IDENT [":=" expr]
 binding each input `x` of `c` to the expression `e`. A binding `x` alone
 means `x := x`. `c` must be declared, and visible, before the component that
 instantiates it; in particular, a component cannot instantiate itself.
+The name `w` may [shadow](Components.md#shadowing) a constant, a function
+or a variant in scope, written `inst w!: c { ... }`.
 
 ```fren
 pub mod inst
