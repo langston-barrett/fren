@@ -571,20 +571,28 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
         unless ← isDefEq tx (set a) do
           throwErrorAt stx s!"type mismatch: expected `{← typeName (set a)}`, found `{← typeName tx}`"
         return (← `(Fren.FinSet.image $t $x), set b)
-  if ty.isConstOf ``Int then
+  if ty.isConstOf ``Int || ty.isConstOf ``Nat then
     let some method := (Core.Method.ofName? m).filter (·.accepts false false (int := true))
-      | throwErrorAt ref (Core.unknownMethodMsg m "Int" false (int := true)).text
+      | throwErrorAt ref (Core.unknownMethodMsg m (← typeName ty) false (int := true)).text
     unless args.size == method.arity do throwErrorAt ref (Core.arityMsg (Name.mkSimple m) method.arity args.size).text
     for (a, stx) in args do
       let ta ← typeOf a
-      unless ta.isConstOf ``Int do throwErrorAt stx s!"type mismatch: expected `Int`, found `{← typeName ta}`"
+      unless ta.isConstOf ``Int || ta.isConstOf ``Nat do
+        throwErrorAt stx s!"type mismatch: expected `Int`, found `{← typeName ta}`"
+    -- `min` and `max` of `Nat`s are `Nat`s; otherwise both are widened
+    -- (`lang::nat_result`).
+    let op : Core.NatOp := match method with | .min => .min | .max => .max | _ => .abs
+    let argNat ← args.anyM fun (a, _) => return (← typeOf a).isConstOf ``Nat
+    let nat := Core.natResult op (ty.isConstOf ``Nat) argNat false
+    let t ← if nat then pure t else widenTerm t
+    let args ← if nat then pure args else args.mapM fun (a, stx) => return (← widenTerm a, stx)
     -- Conditionals, so that they stay linear.
     let y : Term := (args.map (·.1))[0]?.getD t
     let term ← match method with
       | .min => `(if $t ≤ $y then $t else $y)
       | .max => `(if $t ≥ $y then $t else $y)
       | _ => `(if $t < 0 then -$t else $t)
-    return (term, Lean.mkConst ``Int)
+    return (term, Lean.mkConst (if nat then ``Nat else ``Int))
   unless ty.isConstOf ``String do throwErrorAt ref (Core.noMethodsMsg m (← typeName ty)).text
   let some method := (Core.Method.ofName? m).filter (·.accepts true false)
     | throwErrorAt ref (Core.unknownMethodMsg m "String").text
@@ -621,7 +629,7 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
 /-- Reads the field `f` of the term `t` of Lean type `ty`; of a `String` or
 a set, calls the method `f`, without arguments. -/
 def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term × Expr) := do
-  if ty.isConstOf ``String || ty.isConstOf ``Int || (relTypes? ty).isSome || ty.isAppOfArity ``Fren.Seq 1 then
+  if ty.isConstOf ``String || ty.isConstOf ``Int || ty.isConstOf ``Nat || (relTypes? ty).isSome || ty.isAppOfArity ``Fren.Seq 1 then
     return ← callMethod ref t ty f.toString #[]
   if ty.isAppOfArity ``Fren.FinSet 1 then
     unless f == `card do throwErrorAt ref (Core.unknownSetMethodMsg f.toString (← typeName ty)).text
@@ -1576,15 +1584,18 @@ def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
 /-- `r.m(args)`, a method call on the receiver `recvStx`, whose method's name
 is at `ref` (`Reqs/Lang/Expressions#methods`). -/
 def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e ref recvStx : Syntax) (m : String)
-    (args : Array Syntax) : TermElabM Term := withRef e do
+    (args : Array Syntax) (natOk : Bool := false) : TermElabM Term := withRef e do
   let r ← toTerm { cx with concatOk := true } recvStx
   let rty ← typeOf r
   let pattern := m == "matches?" && rty.isConstOf ``String
   -- A sequence method's arguments are typed by its parameters, so `[]` may be one.
   let seq := rty.isAppOfArity ``Fren.Seq 1
   let position : Core.Position := if seq then .declared else .synthesized
+  -- A `Nat` is expected of `min`'s and `max`'s argument where one is of the
+  -- whole (`lang::nat_result`).
+  let natArg := natOk && rty.isConstOf ``Nat && (m == "min" || m == "max")
   let as ← args.mapM fun a =>
-    return (← if pattern then patternTerm a else toTerm { cx with emptyOk := position.checked false false } a, a)
+    return (← if pattern then patternTerm a else toTerm { cx with emptyOk := position.checked false false, natOk := natArg } a, a)
   if seq then
     let c := (Core.Method.ofName? m).map (·.seqConstruct) |>.getD .seqWord
     checkCore cx e c true true (#[recvStx] ++ args) ((← args.allM (isConstant cx ·)) && (← isConstant cx recvStx))
@@ -1834,14 +1845,23 @@ partial def divisorForm (cx : ExprCtx) (k : Syntax) : TermElabM (Core.DivisorFor
 `k` (`lang::divisor`), as the `fren` command does: by a numeral, which
 SMT-LIB's linear logics require, so that `x div -k` is `-(x / k)` and
 `x mod -k` is `x % k` (`Int.ediv_neg`, `Int.emod_neg`). -/
-def divTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (op : String) : TermElabM Term :=
-    withRef e do
-  let x ← toTerm cx e[0]
+def divTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (op : String) (natOk : Bool := false) :
+    TermElabM Term := withRef e do
+  -- A `Nat` is expected of the dividend where one is of the whole
+  -- (`lang::nat_result`).
+  let x ← toTerm { cx with natOk } e[0]
   for (t, stx) in [(x, e[0]), (← toTerm cx e[2], e[2])] do
     let ty ← typeOf t
-    unless ty.isConstOf ``Int do throwErrorAt stx s!"type mismatch: expected `Int`, found `{← typeName ty}`"
+    unless ty.isConstOf ``Int || ty.isConstOf ``Nat do
+      throwErrorAt stx s!"type mismatch: expected `Int`, found `{← typeName ty}`"
   let (form, value, c) ← divisorForm cx e[2]
   liftMsg e[2] (Core.checkDivisor op form value c)
+  -- Of a `Nat` by a positive divisor, Lean's `Nat` division, which agrees
+  -- with `Int`'s there; otherwise the dividend is widened.
+  if Core.natResult (if op == "mod" then .mod else .div) ((← typeOf x).isConstOf ``Nat) false (value > 0) then
+    let k ← `(($(Syntax.mkNumLit (toString value.natAbs)) : Nat))
+    return ← if op == "mod" then `($x % $k) else `($x / $k)
+  let x ← widenTerm x
   let k ← `(($(Syntax.mkNumLit (toString value.natAbs)) : Int))
   if op == "mod" then `($x % $k) else if value < 0 then `(-($x / $k)) else `($x / $k)
 
@@ -1907,7 +1927,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   if let some (recv, m) := methodApp? cx e then
     let recv ← pathExpr p recv
     if m.toString == "matches?" then lintPattern cx parent? e recv args.getElems
-    return ← methodTerm toTerm cx e p recv m.toString args.getElems
+    return ← methodTerm toTerm cx e p recv m.toString args.getElems cx.natOk
   let segs := pathSegs p
   if segs.size == 1 && (cx.vars.any (·.name == segs[0]!.getId) || (cx.binder? segs[0]!.getId).isSome) then
     throwErrorAt p (Core.varNotAFunctionMsg segs[0]!.getId).text
@@ -1922,7 +1942,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     let n := (info.payloads[idx]?.map (·.size)).getD 0
     if let some msg := Core.variantMentionMsg? v n true then throwError msg.text
     unless args.getElems.size == n do throwError (Core.arityMsg v n args.getElems.size "value").text
-    let args ← args.getElems.mapM (toTerm { cx with emptyOk := Core.Position.declared.checked false false })
+    let args ← args.getElems.mapM (toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := false })
     return ← `($(mkCIdentFrom p (info.decl ++ en.variants[idx]!)) $args*)
   let .item { kind := .fnItem, path, .. } := r | throwErrorAt p (Core.notAFunctionMsg r).text
   if let some d := (← getState).defined.get? path then
@@ -2010,7 +2030,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $a + $b) => arithTerm toTerm cx natOk "+" a b
   | `(fren_expr| $a - $b) => arithTerm toTerm cx natOk "-" a b
   | `(fren_expr| $a * $b) => arithTerm toTerm cx natOk "*" a b
-  | `(fren_expr| $_ div $_) => divTerm toTerm cx e "div"
+  | `(fren_expr| $_ div $_) => divTerm toTerm cx e "div" natOk
   | `(fren_expr| -$a) => `((-($(← go a) : Int)))
   | `(fren_expr| $_ == $_) | `(fren_expr| $_ && $_) | `(fren_expr| $_ || $_) | `(fren_expr| $_ | $_) =>
     throwErrorAt e[1] (Core.foreignOpMsg e[1].getAtomVal.trimAscii.toString).text
@@ -2021,7 +2041,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| true) => `(true)
   | `(fren_expr| false) => `(false)
   | `(fren_expr| $p:fren_path) => pathTerm toTerm cx parent? e p
-  | `(fren_expr| $p:fren_path($args,*)) => appTerm toTerm cx parent? e p args
+  | `(fren_expr| $p:fren_path($args,*)) => appTerm toTerm { cx with natOk } parent? e p args
   | _ =>
     if let some e' := splitDotted? e then return ← toTerm cx e'
     if e.isOfKind ``Lang.fieldExpr then
@@ -2032,8 +2052,8 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
       let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
       let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
       if m == "matches?" then lintPattern cx parent? e e[0] e[4].getSepArgs
-      methodTerm toTerm cx e e[2] e[0] m e[4].getSepArgs
-    else if e.isOfKind ``Lang.modExpr then divTerm toTerm cx e "mod"
+      methodTerm toTerm cx e e[2] e[0] m e[4].getSepArgs natOk
+    else if e.isOfKind ``Lang.modExpr then divTerm toTerm cx e "mod" natOk
     else if e.isOfKind ``Lang.setExpr then setLitTerm toTerm cx emptyOk e
     else if e.isOfKind ``Lang.memberExpr || e.isOfKind ``Lang.subsetExpr || e.isOfKind ``Lang.unionExpr
         || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr || e.isOfKind ``Lang.joinExpr then setOpTerm toTerm { cx with emptyOk } e
@@ -2609,7 +2629,7 @@ open Lang in
     addDecl (.defnDecl { name := decl, levelParams := [], type, value, hints := .abbrev, safety := .safe })
     setReducibleAttribute decl
     record (.item { item := { kind := .constItem, path, isPub, owner := modName }, ref := nameStx })
-    let int? ← if type.isConstOf ``Int then intConstValue? { modName, vars := #[], insts := #[], place := .prop } stx[6]
+    let int? ← if type.isConstOf ``Int || type.isConstOf ``Nat then intConstValue? { modName, vars := #[], insts := #[], place := .prop } stx[6]
       else pure none
     record (.constInfo { path, decl, type, value, int? })
     unless isPub do recordItem .constant path nameStx

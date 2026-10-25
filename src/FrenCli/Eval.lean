@@ -615,7 +615,7 @@ def readFields (e : Ex) (ty : VTy) (fs : List String) : L (Ex × VTy) := do
       ty := methodTy m ty
       continue
     -- A method of a `String` or an `Int`, without arguments.
-    if ty == .string || ty == .int then
+    if ty == .string || ty == .int || ty == .nat then
       let some m := Fren.Core.Method.ofName? f | throw s!"unknown method `{f}`"
       e := .method m e #[]
       ty := methodTy m ty

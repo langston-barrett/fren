@@ -134,6 +134,25 @@ comp sized {
     expect positive: when big?, n >= 1
 }
 
+-- `div` and `mod` of a `Nat` by a positive constant are `Nat`s, as are `min`
+-- and `max` of `Nat`s; by a negative constant, and `abs`, they are `Int`s.
+const HALF: Nat := 2
+comp divided {
+    in n: Nat
+    in m: Nat
+    in x: Int
+    pub out halved_n: Nat := n div HALF
+    pub out rest: Nat := n mod 3
+    pub out low: Nat := n.min(m)
+    pub out high: Nat := n.max(7)
+    pub out neg: Int := n div -2
+    pub out size: Int := n.abs + x.min(n)
+
+    expect bounded: rest < 3 and low <= m and high >= 7 and neg <= 0
+    expect halved: halved_n + halved_n <= n
+    expect sized: size <= n + n
+}
+
 -- `{}` takes its type from the other branch, as without `Nat`s.
 comp empty_branch {
     in c?
@@ -144,5 +163,5 @@ comp empty_branch {
     expect member: when not c? and n in s, n in t
 }
 
---@ summary: 54 passed, 4 failed, 0 inconclusive, 1 redundant
+--@ summary: 58 passed, 4 failed, 0 inconclusive, 1 redundant
 --@ exit: 1

@@ -199,6 +199,23 @@ impl literal_type: lang::literal_type for (b : Bool) {
   intro b _
   cases b <;> simp [fren_spec, Fren.Core.literalTy, kindOf]
 
+def toNatOp : Fren.Core.NatOp → lang.NatOp
+  | .div => .Div
+  | .mod => .Mod
+  | .min => .Min
+  | .max => .Max
+  | .abs => .Abs
+
+impl nat_result: lang::nat_result for (op : Fren.Core.NatOp) (a b p : Bool) {
+  op := toNatOp op,
+  a_nat? := a,
+  b_nat? := b,
+  positive? := p,
+  nat? := Fren.Core.natResult op a b p,
+} by
+  intro op a b p _
+  cases op <;> cases a <;> cases b <;> cases p <;> simp [fren_spec, toNatOp, Fren.Core.natResult]
+
 def toTypePlace : Fren.Core.TypePlace → lang.TypePlace
   | .variable => .Variable
   | .parameter => .Parameter
@@ -421,7 +438,7 @@ def toMethod : Fren.Core.Method → lang.Method
 impl method_type: lang::method_type for (m : Fren.Core.Method) (k : lang.ValueType) {
   method := toMethod m,
   receiver := k,
-  accepted? := m.accepts (k == .StringTy) (k == .SetTy) (k == .RelTy) (k == .SeqTy) (k == .IntTy),
+  accepted? := m.accepts (k == .StringTy) (k == .SetTy) (k == .RelTy) (k == .SeqTy) (k == .IntTy || k == .NatTy),
   -- `string` is the receiver's type, and `elem` is never a result.
   result := match m.result with
     | .bool => .BoolTy | .int => .IntTy | .string | .elem => k | .set => .SetTy | .rel => .RelTy,

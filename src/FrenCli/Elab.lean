@@ -965,21 +965,24 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
       | .update => s!"(seq.update {recv} {a} (seq.unit {b}))"
       | _ => s!"(seq.rev {recv})"
     return (smt, tyOf method.result)
-  if t == .int then
+  if t == .int || t == .nat then
     let some method := (Fren.Core.Method.ofName? m).filter (·.accepts false false (int := true))
       | err span (Fren.Core.unknownMethodMsg m t.show false (int := true))
     unless args.size == method.arity do err span (Fren.Core.arityMsg (Name.mkSimple m) method.arity args.size)
     for (_, ta, sp) in args, k in [0:args.size] do
-      unless ta == .int do
+      unless ta.widens .int do
         err sp { code? := some "F0304", headline := s!"type mismatch: expected `Int`, found `{ta.show}`"
                  label? := some s!"expected `Int`, found `{ta.show}`"
                  notes := #[s!"note: argument {k + 1} of `{m}` is an `Int`"] }
     -- Conditionals, so that they stay linear.
     let y := (args.map (·.1))[0]?.getD ""
+    -- `min` and `max` of `Nat`s are `Nat`s (`lang::nat_result`).
+    let op : Fren.Core.NatOp := match method with | .min => .min | .max => .max | _ => .abs
+    let nat := Fren.Core.natResult op (t == .nat) (args.any (·.2.1 == .nat)) false
     return (match method with
       | .min => s!"(ite (<= {recv} {y}) {recv} {y})"
       | .max => s!"(ite (>= {recv} {y}) {recv} {y})"
-      | _ => s!"(ite (< {recv} 0) (- {recv}) {recv})", .int)
+      | _ => s!"(ite (< {recv} 0) (- {recv}) {recv})", if nat then .nat else .int)
   unless t == .string do err span (Fren.Core.noMethodsMsg m t.show)
   let some method := (Fren.Core.Method.ofName? m).filter (·.accepts true false)
     | err span (Fren.Core.unknownMethodMsg m t.show)
@@ -1010,7 +1013,7 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
 /-- Reads the field `f` of the value `smt` of type `t`; of a `String`, calls
 the method `f`, without arguments. -/
 def readField (span : Span) (smt : String) (t : Ty) (f : Name) : M (String × Ty) := do
-  if t matches .string | .set _ | .rel .. | .seq _ | .int then return ← callMethod span smt t f.toString #[]
+  if t matches .string | .set _ | .rel .. | .seq _ | .int | .nat then return ← callMethod span smt t f.toString #[]
   let .record p := t | err span (Fren.Core.noFieldMsg f t.show #[])
   let fields : Array (Name × Ty) := ((← get).dataOf? p).map (·.ctors[0]!.2) |>.getD #[]
   let some (_, ft) := fields.find? (·.1 == f) | err span (Fren.Core.noFieldMsg f t.show (fields.map (·.1)))
@@ -1492,6 +1495,9 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let expected? := match t, Fren.Core.Method.ofName? m.name with
         | .seq elem, some method => match method.params[as.size]? with
           | some .string => some t | some .elem => some elem | some .int => some .int | _ => none
+        -- A `Nat` is expected of `min`'s and `max`'s argument where one is of
+        -- the whole (`lang::nat_result`).
+        | .nat, some .min | .nat, some .max => expected?.filter (· == .nat)
         | _, _ => none
       let (x, ta) ← elabExpr { cx with expected? } a
       as := as.push (x, ta, a.span)
@@ -1677,15 +1683,18 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       unless ty == .string do mismatch b .string ty (opNote op .string)
       return (s!"(str.++ {x} {y})", .string)
     | "div" | "mod" =>
-      -- By the divisor's value (`lang::divisor`).
-      let x ← expect a .int (opNote op .int)
+      -- By the divisor's value (`lang::divisor`). A `Nat` is expected of
+      -- the dividend where one is of the whole (`lang::nat_result`).
+      let (x, tx) ← number a op (expected? == some .nat)
       discard (expect b .int (opNote op .int))
       let (form, value, c) ← divisorForm cx b
       liftMsg b.span (Fren.Core.checkDivisor op form value c)
       -- By a numeral, which the linear logics require: Euclidean,
       -- `x div -k` is `-(x div k)` and `x mod -k` is `x mod k`.
       let k := value.natAbs
-      return (if op == "mod" then s!"(mod {x} {k})" else if value < 0 then s!"(- (div {x} {k}))" else s!"(div {x} {k})", .int)
+      let nat := Fren.Core.natResult (if op == "mod" then .mod else .div) (tx == .nat) false (value > 0)
+      return (if op == "mod" then s!"(mod {x} {k})" else if value < 0 then s!"(- (div {x} {k}))" else s!"(div {x} {k})",
+        if nat then .nat else .int)
     | _ =>
       if op == "*" then
         unless Fren.Core.productAccepted (← mentionsAny cx a) (← mentionsAny cx b) do err span Fren.Core.nonlinearMsg
@@ -2661,7 +2670,7 @@ partial def elabItem : Item → M Unit
     let path := module ++ n
     unless isPub do
       modify fun s => { s with items := s.items.push ({ what := .constant, path, level := s.levels.get .deadCode }, name.span) }
-    let int? ← if t == .int then intConstValue? { vars := #[], place := .prop } value else pure none
+    let int? ← if t == .int || t == .nat then intConstValue? { vars := #[], place := .prop } value else pure none
     modify fun s => { s with
       table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
       consts := s.consts.insert path (smt, t)

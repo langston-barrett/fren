@@ -58,7 +58,7 @@ equally tightly:
 | 7 | `A ++ B` | concatenation | `String`, or `Seq(T)` | the same | left |
 | 7 | `S union T`, `S minus T` | union, difference | `Set(T)`, or `Rel(A, B)` | the same | left |
 | 8 | `A * B` | multiplication | `Int` or `Nat` | `Nat` if both are, else `Int` | left |
-| 8 | `A div K`, `A mod K` | [division and remainder](#division-and-remainder) by a constant | `Int` or `Nat` | `Int` | left |
+| 8 | `A div K`, `A mod K` | [division and remainder](#division-and-remainder) by a constant | `Int` or `Nat` | `Nat` if `A` is one and `K` is positive, else `Int` | left |
 | 8 | `S inter T` | intersection | `Set(T)`, or `Rel(A, B)` | the same | left |
 | 8 | `R join Q` | composition | `Rel(A, B)` and `Rel(B, C)` | `Rel(A, C)` | left |
 | 9 | `-A` | negation | `Int` or `Nat` | `Int` | |
@@ -304,9 +304,9 @@ too: declare a constant for it.
 
 A constant divisor's value must be known when the spec is read, without
 evaluating it: the constant's value is an *integer constant expression*,
-built from integer literals and constants whose values are integer
-constant expressions by `+`, `-`, `*`, `div`, `mod`, `abs`, `min` and
-`max`, and parentheses. So with `const N: Int := 2 * 4`, `x mod N` is
+built from integer literals and constants, of type `Int` or `Nat`, whose
+values are integer constant expressions by `+`, `-`, `*`, `div`, `mod`,
+`abs`, `min` and `max`, and parentheses. So with `const N: Int := 2 * 4`, `x mod N` is
 accepted, but with `const N: Int := "abcd".len`, it is an error.
 `lang::divisor` states the rule, from the form of the divisor without its
 `-` and parentheses, and its value:
@@ -370,7 +370,8 @@ An integer literal is a `Nat` where a `Nat` is expected, and an `Int`
 elsewhere. A `Nat` is expected for the definition of a defined output,
 the value of a constant, a binding, an argument, or the body of a defined
 function, whose type is `Nat`; and, where the whole is expected to be a
-`Nat`, for the operands of `+` and `*`, the branches of a conditional,
+`Nat`, for the operands of `+` and `*`, the dividend of `div` and `mod`,
+the argument of `min` and `max` on a `Nat`, the branches of a conditional,
 the bodies of a `match`'s arms, and what is in parentheses. So in `out m:
 Nat := n + 1`, `1` is a `Nat`, but in `n + 1 > 0` it is an `Int`, and `n`
 is widened. The operand of `-` is never expected to be a `Nat`, so `-1`
@@ -848,13 +849,13 @@ read does, and it is not a function application for the rules of
 a method has a fixed meaning. So `2 * s.len` is linear, and
 `const N: Int := "abc".len` is a constant.
 
-The methods of `Int`, where `x` is the receiver:
+The methods of `Int`, and of `Nat`, where `x` is the receiver:
 
 | Method | Meaning | Result |
 |---|---|---|
 | `x.abs` | the absolute value: `x` if `x >= 0`, else `-x` | `Int` |
-| `x.min(y)` | the lesser of `x` and `y` | `Int` |
-| `x.max(y)` | the greater of `x` and `y` | `Int` |
+| `x.min(y)` | the lesser of `x` and `y` | `Nat` if both are, else `Int` |
+| `x.max(y)` | the greater of `x` and `y` | `Nat` if both are, else `Int` |
 
 Each is a conditional, such as `if x < 0 then -x else x`, so each stays
 within linear arithmetic: `(a - b).abs <= TOLERANCE` and `2 * x.min(y)`
@@ -880,6 +881,39 @@ pub comp int_methods {
     expect commutative: x.min(y) = y.min(x) and x.max(y) = y.max(x)
     expect abs_is_max: x.abs = x.max(-x)
     expect idempotent: x.min(x) = x and x.max(x) = x
+}
+```
+
+`div` and `mod` of a [`Nat`](#natural-numbers) by a positive constant are
+`Nat`s, as Lean's division and remainder on `Nat` are, which agree with
+the Euclidean ones there. By a negative constant, they are `Int`s: `n div
+-2` is at most 0, and though `n mod -2` is never negative, Lean has no
+`Nat` remainder by a negative number, so it stays an `Int` rather than
+needing a conversion. `min` and `max` of two `Nat`s are `Nat`s, and of a
+`Nat` and an `Int`, the `Nat` is widened. `abs` is always an `Int`, even of
+a `Nat`, where it is the `Nat` itself, widened: Lean's `Int.natAbs` would
+be a `Nat`, but a `Nat`'s `abs` is better written as the `Nat`.
+`lang::nat_result` states when these are `Nat`s:
+
+```fren
+pub enum NatOp { Div, Mod, Min, Max, Abs }
+
+pub comp nat_result {
+    use self::NatOp::{Abs, Div, Max, Min, Mod}
+    in op: NatOp
+    in a_nat?                -- the dividend, or the receiver, is a `Nat`
+    in b_nat?                -- the argument of `min` or `max` is a `Nat`
+    in positive?             -- the divisor of `div` or `mod` is positive
+    pub det out nat?
+
+    req rule: nat? iff match op {
+        Div | Mod => a_nat? and positive?,
+        Min | Max => a_nat? and b_nat?,
+        Abs => false,
+    }
+
+    expect only_of_nats: when nat?, a_nat?
+    expect abs_widens: when op = Abs, not nat?
 }
 ```
 
@@ -1025,7 +1059,8 @@ pub comp collection_methods {
 ```
 
 `lang::method_type` states the table, and checks it against the
-[Boolean names](Types.md#boolean-names) rule:
+[Boolean names](Types.md#boolean-names) rule. Its result is the kind after
+widening: `nat_result` says when `min` and `max` are `Nat`s instead:
 
 ```fren
 pub enum Method {
@@ -1057,7 +1092,7 @@ pub comp method_type {
         StartsWith,
         Update,
     }
-    use self::ValueType::{BoolTy, IntTy, RelTy, SeqTy, SetTy, StringTy}
+    use self::ValueType::{BoolTy, IntTy, NatTy, RelTy, SeqTy, SetTy, StringTy}
     in method: Method
     in receiver: ValueType
     pub det out accepted?
@@ -1069,7 +1104,7 @@ pub comp method_type {
         Inverse | Closure | Image | Domain | Range => receiver = RelTy,
         Update | Rev => receiver = SeqTy,
         Matches | ReplaceAll => receiver = StringTy,
-        Abs | Min | Max => receiver = IntTy,
+        Abs | Min | Max => receiver in {IntTy, NatTy},
         _ => receiver in {StringTy, SeqTy},
     }
     req results: result = match method {
@@ -1165,7 +1200,8 @@ pattern rather than an operand, is typed in its own section.
 ```fren
 -- `Logic` is `when`, `unless`, `iff`, `or`, `and` and `not`; `Ordering` is
 -- `<`, `<=`, `>` and `>=`; `Arithmetic` is `+` and `*`; `Subtraction` is `-`, infix or
--- prefix, and `div` and `mod`, whose results are `Int`s too; `Concat` is `++`;
+-- prefix; `div` and `mod` are typed as `Subtraction` is, unless `nat_result` makes them
+-- `Nat`s; `Concat` is `++`;
 -- `SetAlgebra` is `union`, `inter` and `minus`, on sets or relations. For
 -- `Membership`, `a` is the element and `b` the set; a pair's membership,
 -- and `join`, are typed by `pair_membership` and `relation_op`. The arms of a `match` are typed as a

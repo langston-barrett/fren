@@ -75,6 +75,24 @@ arguments' (`lang::application`): the arguments' types after widening, as
 `lang::application` takes them, so they must equal the parameters'. -/
 def applicationAccepted (params args : Array Ty) : Bool := args == params
 
+/-- The operations on integers whose result may be a `Nat`
+(`lang::nat_result`). -/
+inductive NatOp where
+  | div
+  | mod
+  | min
+  | max
+  | abs
+  deriving Inhabited, DecidableEq, Repr
+
+/-- Whether `op` gives a `Nat`, from whether its dividend or receiver is a
+`Nat`, whether the argument of `min` or `max` is, and whether the divisor of
+`div` or `mod` is positive (`lang::nat_result`). -/
+def natResult : NatOp → (aNat bNat positive : Bool) → Bool
+  | .div, a, _, p | .mod, a, _, p => a && p
+  | .min, a, b, _ | .max, a, b, _ => a && b
+  | .abs, _, _, _ => false
+
 /-- Where the type `Nat` is written (`lang::nat_place`). -/
 inductive TypePlace where
   | variable

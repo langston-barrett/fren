@@ -40,6 +40,14 @@ comp int_out { pub out m: Int req r: m = 0 }
 refine int_output: int_out refines nat_out
 --~^ error: its `m` has another type
 
+-- By a negative constant, and `abs`, are `Int`s.
+comp negative_divisor { in n: Nat pub out m: Nat := n div -2 }
+--~^ error: type mismatch: expected `Nat`, found `Int`
+comp absolute { in n: Nat pub out m: Nat := n.abs }
+--~^ error: type mismatch: expected `Nat`, found `Int`
+comp mixed_min { in n: Nat in x: Int pub out m: Nat := n.min(x) }
+--~^ error: type mismatch: expected `Nat`, found `Int`
+
 -- A `Nat` is not an enumeration, so no pattern tests it.
 comp tested_nat { in n: Nat pub out z? req r: z? iff n is Sign::Plus }
 --~^ error: cannot test `Nat` against a pattern
