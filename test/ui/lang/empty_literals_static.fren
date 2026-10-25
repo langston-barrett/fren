@@ -59,11 +59,10 @@ comp arm_seq { in s: S in t: Set(Int) pub out u: Set(Int) := match s { S::A(a) =
 
 -- Accepted: the type that is expected of them is theirs.
 comp accepted {
-    in c? in s: S in t: Set(Int) in q: Seq(Int) in x: Int
+    in c? in s: S in t: Set(Int) in q: Seq(Int)
     pub out a: Set(Int) := if c? then {} else t
     pub out b: Seq(Int) := if c? then [] else q
     pub out d: Set(Int) := match s { S::B => {}, S::A(n) => t, S::C => t }
-    pub out e? := x in []
     pub out f: Int := {(1, {}), (2, t)}.card
 }
 
