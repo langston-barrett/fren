@@ -372,6 +372,62 @@ def Table.resolvePath (t : Table) (from_ : Name) (segs : Array Name) (extra : Ar
 
 def builtinTypes : List Name := [`Bool, `Int, `Nat, `String]
 
+/-! ## Cardinality (`Reqs/Lang/Expressions#cardinality`) -/
+
+/-- A cardinality operator: a built-in function of one or more `Bool`s. -/
+inductive Cardinality where
+  | exactlyOne
+  | atMostOne
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+def Cardinality.all : Array Cardinality := #[.exactlyOne, .atMostOne]
+
+def Cardinality.name : Cardinality → String
+  | .exactlyOne => "exactly_one?"
+  | .atMostOne => "at_most_one?"
+
+def Cardinality.ofName? (s : String) : Option Cardinality := Cardinality.all.find? (·.name == s)
+
+/-- The other one, which `fren mutate` swaps it with. -/
+def Cardinality.swap : Cardinality → Cardinality
+  | .exactlyOne => .atMostOne
+  | .atMostOne => .exactlyOne
+
+/-- Its value, from how many of its arguments are `true`
+(`lang::cardinality`). -/
+def Cardinality.holds : Cardinality → Nat → Bool
+  | .exactlyOne, n => n == 1
+  | .atMostOne, n => n ≤ 1
+
+/-- How it compares the number of its arguments that are `true` with 1,
+in SMT-LIB. -/
+def Cardinality.smtOp : Cardinality → String
+  | .exactlyOne => "="
+  | .atMostOne => "<="
+
+/-- The built-in function that the path of one segment `n` names, if any. -/
+def builtinFunction? : Name → Option Cardinality
+  | .str .anonymous s => Cardinality.ofName? s
+  | _ => none
+
+/-- A function declared with the name of a built-in one. -/
+def builtinFnMsg (n : Name) : Msg :=
+  { code? := some "F0365", headline := s!"`{n}` is a built-in function and cannot be redefined"
+    label? := some "built-in function"
+    notes := #["note: the built-in functions are `exactly_one?` and `at_most_one?`"] }
+
+/-- Checks a function's name: it is not that of a built-in function. -/
+def checkFnName (n : Name) : Except Msg Unit := do
+  if (builtinFunction? n).isSome then throw (builtinFnMsg n)
+
+/-- Argument `k`, counted from 1, of the cardinality operator `c` is of
+type `found`, not a `Bool`. -/
+def cardinalityArgMsg (c : Cardinality) (k : Nat) (found : String) : Msg :=
+  { code? := some "F0304", headline := s!"type mismatch: expected `Bool`, found `{found}`"
+    label? := some s!"expected `Bool`, found `{found}`"
+    notes := #[s!"note: argument {k} of `{c.name}` must be a `Bool`"] ++
+      (if found == "Int" || found == "Nat" then #["help: compare it to make a `Bool`, e.g. `x > 0` or `x != 0`"] else #[]) }
+
 /-- The name that `n` declares, and whether it is written with `!`: `x!`
 declares `x`, and `ready?!` declares `ready?` (`Reqs/Lang/Components#shadowing`). -/
 def declaredName (n : Name) : Name × Bool :=
@@ -536,13 +592,14 @@ def shadowingAccepted (hides bang : Bool) : Bool := hides == bang
 
 /-- What a declaration of `n` in the scope `scope` hides, if anything: the
 innermost of `locals`, each with what it is (such as "the input"), or
-else the value that the path `n` resolves to, a constant, a function or a
-variant. Other items are never read where a variable can be, so nothing
-hides them. -/
+else the value that the path `n` resolves to, a built-in function, a
+constant, a function or a variant. Other items are never read where a
+variable can be, so nothing hides them. -/
 def Table.hidden? (t : Table) (scope : Name) (locals : Array (Name × String)) (n : Name) : Option String :=
   match locals.reverse.find? (·.1 == n) with
   | some (_, what) => some s!"{what} `{n}`"
   | none =>
+    if let some c := builtinFunction? n then some s!"the built-in function `{c.name}`" else
     match t.resolvePath scope #[n] with
     | .ok (.item { kind := .constItem, path, .. }) => some s!"the constant `{showPath path}`"
     | .ok (.item { kind := .fnItem, path, .. }) => some s!"the function `{showPath path}`"

@@ -38,8 +38,12 @@ realizability's quantifier: it is Presburger arithmetic, which includes
 division by a constant. `+` and `-`, `*` with a constant on one side (see
 [Linear arithmetic](Expressions.md#linear-arithmetic)), `div` and `mod`
 by a constant other than `0` (see [Division and
-remainder](Expressions.md#division-and-remainder)), and the methods `abs`,
-`min` and `max`, which are conditionals, are all linear. A product of two
+remainder](Expressions.md#division-and-remainder)), the methods `abs`,
+`min` and `max`, which are conditionals, and the [cardinality
+operators](Expressions.md#cardinality), which compare a sum of
+conditionals with 1, are all linear. A cardinality operator counts its
+`Bool` arguments, not the members of a set, so it is not `card` for the
+rule on [relations](#relations). A product of two
 variables, or a quotient by one, is not outside a core to opt out of: it is
 an error, whatever the lint levels.
 

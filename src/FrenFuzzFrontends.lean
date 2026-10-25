@@ -151,7 +151,7 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
     | 12 => return s!"{← rsub .rel}.card"
     | _ => leaf sc .int
   | .bool =>
-    match ← below 22 with
+    match ← below 23 with
     | 0 => return s!"({← sub .bool} and {← sub .bool})"
     | 1 => return s!"({← sub .bool} or {← sub .bool})"
     | 2 => return s!"not {← sub .bool}"
@@ -174,6 +174,13 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
     | 18 => return s!"({← sub .bool} iff {← sub .bool})"
     | 19 => return s!"{← rsub .set}.card {← pick #["=", ">", "<=", ">="]} {← below 3}"
     | 20 => return s!"{← sub .int} = {← sub .int} or {← sub .int} = {← sub .int} or {← sub .int} = {← sub .int}"
+    | 21 =>
+      -- A cardinality operator, of one to three arguments, rarely one that
+      -- is not a `Bool`.
+      let arg : R String := do if ← chance 5 then sub .int else sub .bool
+      let mut args := #[← arg]
+      for _ in [0:← below 3] do args := args.push (← arg)
+      return s!"{← pick #["exactly_one?", "at_most_one?"]}({", ".intercalate args.toList})"
     | _ => leaf sc .bool
   | .str =>
     match ← below 7 with

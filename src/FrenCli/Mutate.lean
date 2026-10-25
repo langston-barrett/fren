@@ -36,11 +36,13 @@ inductive Origin where
   | swapRepetition
   | narrowClass
   | dropAlternative
+  | swapCardinality
+  | dropArgument
   deriving BEq, Inhabited, Repr
 
 def Origin.all : Array Origin :=
   #[.swapComparison, .swapAndOr, .swapArithmetic, .dropConjunct, .negateTrigger, .shiftInteger, .flipBool, .removeElement,
-    .swapRepetition, .narrowClass, .dropAlternative]
+    .swapRepetition, .narrowClass, .dropAlternative, .swapCardinality, .dropArgument]
 
 def Origin.name : Origin → String
   | .swapComparison => "swap-comparison"
@@ -54,6 +56,8 @@ def Origin.name : Origin → String
   | .swapRepetition => "swap-repetition"
   | .narrowClass => "narrow-class"
   | .dropAlternative => "drop-alternative"
+  | .swapCardinality => "swap-cardinality"
+  | .dropArgument => "drop-argument"
 
 structure Mutant where
   origin : Origin
@@ -318,6 +322,20 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
     | .num sp n => (#[n + 1] ++ (if n > 0 && !(divisor && n == 1) then #[n - 1] else #[])).map fun k =>
         { origin := .shiftInteger, span := sp, after := toString k, context := sp }
     | .bool sp b => #[{ origin := .flipBool, span := sp, after := if b then "false" else "true", context := sp }]
+    -- A well-formed spec applies no variable, so this is the built-in
+    -- function.
+    | .app sp #[f] args =>
+      match Fren.Core.Cardinality.ofName? f.name with
+      | none => #[]
+      | some c =>
+        let swap : Edit := { origin := .swapCardinality, span := f.span, after := c.swap.name, context := sp }
+        if args.size < 2 then #[swap] else
+        -- With its `,`, as an element of a set literal.
+        let outs := args.map fun k => s.outer sp k.span
+        #[swap] ++ (Array.range args.size).map fun k =>
+          let span := if h : k + 1 < outs.size then { start := outs[k]!.start, stop := outs[k + 1].start }
+            else { start := outs[k - 1]!.stop, stop := outs[k]!.stop }
+          { origin := .dropArgument, span, after := "", context := sp }
     | .set sp es | .seq sp es =>
       if es.size < 2 then #[] else
       let outs := es.map fun k => s.outer sp k.span

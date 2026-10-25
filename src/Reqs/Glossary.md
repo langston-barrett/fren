@@ -12,6 +12,10 @@ declared with `type`. See [Types](Lang/Types.md#abstract-types).
 variables, including its instances'. See [Evaluation and
 testing](Eval.md#behaviours).
 
+**Cardinality operator.** One of the built-in functions `exactly_one?`
+and `at_most_one?`, which hold when exactly one, or at most one, of their
+`Bool` arguments is `true`. See [Expressions](Lang/Expressions.md#cardinality).
+
 **Chained comparison.** Orderings written one after another, as in
 `0 <= i < n`, which means `0 <= i and i < n`. See
 [Expressions](Lang/Expressions.md#chained-comparisons).
@@ -53,7 +57,8 @@ component's assumptions and requirements, and that the checks confirm.
 
 **Function.** Declared with `fn`. A defined function, written with `:=
 e`, has the value of its body `e`. Of an uninterpreted function, the spec
-says only its type. See [Items](Lang/Items.md#functions).
+says only its type. The cardinality operators are built-in functions. See
+[Items](Lang/Items.md#functions).
 
 **Global expectation.** A claim about one or more components as a whole,
 declared with `expect` outside any component, that the checks confirm. See

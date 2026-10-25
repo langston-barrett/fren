@@ -115,7 +115,7 @@ partial def Ex.lits : Ex → Array Int
   | .not a | .neg a | .field a _ => a.lits
   | .bin _ a b | .when _ a b => a.lits ++ b.lits
   | .ite c a b => c.lits ++ a.lits ++ b.lits
-  | .app _ args | .ctor _ _ args => args.flatMap (·.lits)
+  | .app _ args | .cardinality _ args | .ctor _ _ args => args.flatMap (·.lits)
   | .method _ r args => r.lits ++ args.flatMap (·.lits)
   | .matches r _ _ => r.lits
   | .setLit es => es.flatMap (·.lits)
@@ -134,7 +134,7 @@ partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .not a | .neg a | .field a _ => a.equated x
   | .bin _ a b | .when _ a b => a.equated x ++ b.equated x
   | .ite c a b => c.equated x ++ a.equated x ++ b.equated x
-  | .app _ args | .ctor _ _ args => args.flatMap (·.equated x)
+  | .app _ args | .cardinality _ args | .ctor _ _ args => args.flatMap (·.equated x)
   | .method _ r args => r.equated x ++ args.flatMap (·.equated x)
   | .matches r _ _ => r.equated x
   | .setLit es => es.flatMap (·.equated x)
@@ -193,7 +193,7 @@ partial def Ex.vars : Ex → Array Name
   | .not a | .neg a | .field a _ | .card a => a.vars
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ => a.vars ++ b.vars
   | .ite c a b => c.vars ++ a.vars ++ b.vars
-  | .app _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.vars)
+  | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.vars)
   | .method _ r args => r.vars ++ args.flatMap (·.vars)
   | .matches r _ _ => r.vars
   | .match e arms => e.vars ++ arms.flatMap (·.2.vars)
@@ -381,7 +381,7 @@ partial def Ex.strLits : Ex → Array String × Array String
   | .not a | .neg a | .field a _ | .card a => a.strLits
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ => join #[a, b]
   | .ite c a b => join #[c, a, b]
-  | .app _ args | .ctor _ _ args | .setLit args | .seqLit args => join args
+  | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => join args
   | .method _ r args => join (#[r] ++ args)
   | .match e arms => join (#[e] ++ arms.map (·.2))
   | .update e fs => join (#[e] ++ fs.map (·.2))

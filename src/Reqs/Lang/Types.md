@@ -25,7 +25,8 @@ type := "Bool" | "Int" | "Nat" | "String" | "Set" "(" type ")" | "Seq" "(" type 
 
 A type written as a path must name an enumeration, a record or an abstract
 type. `Bool`, `Int`, `Nat`, `String` and `Set` are built in and cannot be
-redeclared.
+redeclared, nor can the built-in functions `exactly_one?` and
+`at_most_one?` (see [Functions](Items.md#functions)).
 
 Every expression has exactly one type, and the only conversion between
 types is *widening*: a `Nat` is accepted where an `Int` is expected (see

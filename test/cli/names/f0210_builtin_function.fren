@@ -1,0 +1,2 @@
+-- A built-in function that is not applied.
+comp c { in a? expect e: at_most_one? }

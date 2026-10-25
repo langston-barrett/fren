@@ -1,0 +1,78 @@
+-- The cardinality operators `exactly_one?` and `at_most_one?`: their laws,
+-- many arguments, and arguments that are expressions.
+
+expect constants: exactly_one?(true, false, false) and not exactly_one?(true, true) and at_most_one?(false, false)
+    and not at_most_one?(true, false, true) and not exactly_one?(false)
+
+const ONE_ACTIVE: Bool := exactly_one?(true, false)
+
+comp laws {
+    in a?
+    in b?
+    in c?
+
+    expect at_most_one_single: at_most_one?(a?)
+    expect exactly_one_single: exactly_one?(a?) = a?
+    expect exactly_implies_at_most: when exactly_one?(a?, b?, c?), at_most_one?(a?, b?, c?)
+    expect exactly_one_pair: exactly_one?(a?, b?) = (a? != b?)
+    expect at_most_one_pair: at_most_one?(a?, b?) iff not (a? and b?)
+    expect pairwise: at_most_one?(a?, b?, c?) iff (not (a? and b?) and not (a? and c?) and not (b? and c?))
+    expect some_and_at_most: exactly_one?(a?, b?, c?) iff ((a? or b? or c?) and at_most_one?(a?, b?, c?))
+    expect order: exactly_one?(a?, b?, c?) = exactly_one?(c?, a?, b?)
+    expect repeated: at_most_one?(a?, a?) iff not a?
+    expect constant: ONE_ACTIVE
+    expect wrong: exactly_one?(a?, b?)               --~ error: expectation `laws::wrong` does not hold
+}
+
+enum Mode { Off, Heat, Cool, Fan }
+
+comp modes {
+    in mode: Mode
+    in t: Int
+    in q: Seq(Int)
+    pub out heating?
+    pub out cooling?
+    pub out idle?
+
+    req h: heating? iff mode = Mode::Heat
+    req c: cooling? iff mode = Mode::Cool
+    req i: idle? iff mode in {Mode::Off, Mode::Fan}
+
+    expect exclusive: exactly_one?(heating?, cooling?, idle?)
+    expect expressions: exactly_one?(t > 0, t < 0, t = 0) and at_most_one?(t > 1, t < -1, t = 0)
+    expect conditional: at_most_one?(if heating? then t > 0 else false, cooling? and t > 0)
+    expect matched: at_most_one?(match mode { Mode::Off => t > 0, _ => false }, mode is Mode::Heat | Mode::Cool, mode = Mode::Fan)
+    expect many: at_most_one?(mode = Mode::Off, mode = Mode::Heat, mode = Mode::Cool, mode = Mode::Fan, false, false, false, false)
+    expect nested: exactly_one?(exactly_one?(heating?, cooling?), idle?)
+    expect indexed: when q.len > 1, at_most_one?(q[0] > 0 and q[1] > 0, q[0] <= 0)
+    expect linear: when exactly_one?(t > 0, t < 0), 2 * t != 0
+    -- No argument guards another, as the operands of `and` do.
+    expect unguarded: at_most_one?(q = [], q[0] > 0 and q != [])   --~ error: an index of `modes::unguarded` may be out of range
+    --~^ warning: the bound comes after the index it guards
+}
+
+-- A lint's fix keeps a cardinality operator whole, as an atom.
+comp lints {
+    in a?
+    in b?
+    in c?
+    pub out t?
+
+    req q: t? iff not not at_most_one?(a?, b? and c?)   --~ warning: write `at_most_one?(a?, b? and c?)`
+}
+
+-- Global expectations relate the behaviours of components.
+expect global_exclusive: forall (m: modes), at_most_one?(m.heating?, m.cooling?)
+
+-- A defined function's body may apply them.
+fn one_of?(a?, b?, c?) := exactly_one?(a?, b?, c?)
+
+comp functions {
+    in a?
+    in b?
+
+    expect defined: one_of?(a?, b?, false) = (a? != b?)
+}
+
+--@ summary: 36 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

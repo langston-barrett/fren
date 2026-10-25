@@ -47,6 +47,8 @@ operator keeps its own. The changes are:
 | `swap-repetition` | in a [regular-expression pattern](Lang/Expressions.md#patterns), `*` and `+`, each to the other |
 | `narrow-class` | in a regular-expression pattern, an item of a class of at least two, removed, unless that leaves a `^` first, which would negate the class |
 | `drop-alternative` | an alternative of the pattern of a [pattern test](Lang/Expressions.md#pattern-tests) of at least two, removed, with its `\|` |
+| `swap-cardinality` | `exactly_one?` and `at_most_one?`, the [cardinality operators](Lang/Expressions.md#cardinality), each to the other |
+| `drop-argument` | an argument of a cardinality operator of at least two, removed, with its `,` |
 
 A regular-expression pattern is changed only where its text is its
 value: a raw literal, or a literal without escapes.

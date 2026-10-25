@@ -1527,6 +1527,24 @@ struct Point { x: Int, y: Int }
 comp c { in p: Point pub out q: Point req r: q = { p with x := 2 } }
 ```
 "# },
+  { code := "F0365", explanation := r#"A function is declared with the name of a built-in function.
+
+Erroneous code example:
+
+```fren
+fn exactly_one?(a?, b?) := a? != b?
+```
+
+`exactly_one?` and `at_most_one?` are built-in functions, the cardinality
+operators: `exactly_one?(a?, b?, c?)` holds when exactly one of its `Bool`
+arguments is `true`, and `at_most_one?(a?, b?, c?)` when at most one is.
+Their names are reserved. Apply the built-in function, or give your
+function another name:
+
+```fren
+fn either?(a?, b?) := exactly_one?(a?, b?)
+```
+"# },
   { code := "F0401", explanation := r#"An assumption mentions a variable that is not an `in`.
 
 Erroneous code example:
