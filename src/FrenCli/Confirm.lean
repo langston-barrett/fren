@@ -131,17 +131,21 @@ structure Symbols where
   sorts : Std.HashMap String Name := {}
 
 def Symbols.of (sp : Spec) : Symbols := Id.run do
-  let mut s : Symbols := {}
+  -- Each map in its own variable, so that inserting does not copy it.
+  let mut ctors := {}
+  let mut selectors := {}
+  let mut sorts := {}
   for (p, d) in sp.data do
+    let shown := Fren.Core.showPath p
     for c in d.ctors, idx in [0:d.ctors.size] do
       -- A record's constructor is `R{}` (`recordCtorSym`), which no field can be.
-      let ctor := if d.isRecord then s!"{Fren.Core.showPath p}\{}" else s!"{Fren.Core.showPath p}::{c.name}"
-      s := { s with ctors := s.ctors.insert ctor (p, idx) }
+      let ctor := if d.isRecord then s!"{shown}\{}" else s!"{shown}::{c.name}"
+      ctors := ctors.insert ctor (p, idx)
       for (f, _) in c.fields, k in [0:c.fields.size] do
-        let sel := if d.isRecord then s!"{Fren.Core.showPath p}::{f}" else s!"{Fren.Core.showPath p}::{c.name}::{k}"
-        s := { s with selectors := s.selectors.insert sel (p, idx, k) }
-  for p in sp.sorts do s := { s with sorts := s.sorts.insert s!"::{Fren.Core.showPath p}" p }
-  return s
+        let sel := if d.isRecord then s!"{shown}::{f}" else s!"{shown}::{c.name}::{k}"
+        selectors := selectors.insert sel (p, idx, k)
+  for p in sp.sorts do sorts := sorts.insert s!"::{Fren.Core.showPath p}" p
+  return { ctors, selectors, sorts }
 
 /-- `@::a::T_3`, a value of an abstract type, as `T#3`. -/
 def Symbols.abstract? (sy : Symbols) (a : String) : Option Val := do

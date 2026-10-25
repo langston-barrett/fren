@@ -456,45 +456,59 @@ def indexAfterUseMsg (a b : String) : Msg :=
 
 def isWordChar (c : Char) : Bool := c.isAlphanum || c == '_' || c == '?'
 
-/-- `s` without the comments outside its string literals: line comments,
-and block comments, which nest. Each comment becomes a space. -/
-def withoutComments (s : String) : String := Id.run do
-  let cs := s.toList.toArray
-  let mut out := ""
-  let mut i := 0
+/-- The characters `cs[start:stop]` without the comments outside their
+string literals: line comments, and block comments, which nest. Each
+comment becomes a space. With `limit? := some n`, it stops once it has `n`
+characters from the first that is not whitespace, a prefix of the whole
+result, which is all that a caller reading the first lexeme needs. -/
+def withoutCommentsIn (cs : Array Char) (start stop : Nat) (limit? : Option Nat := none) : Array Char := Id.run do
+  let stop := min stop cs.size
+  let mut out : Array Char := #[]
+  let mut i := start
+  -- The first character of `out` that is not whitespace, once there is one,
+  -- and how far `out` has been scanned for it.
+  let mut first? : Option Nat := none
+  let mut scanned := 0
   -- In a string literal: the number of `#` that end it, if raw.
   let mut str? : Option (Option Nat) := none
-  while i < cs.size do
+  while i < stop do
+    if let some limit := limit? then
+      while first?.isNone && scanned < out.size do
+        if !out[scanned]!.isWhitespace then first? := some scanned
+        scanned := scanned + 1
+      if let some f := first? then
+        if out.size - f ≥ limit then break
     let c := cs[i]!
     match str? with
     | some raw? =>
       out := out.push c
       match raw? with
       | none =>
-        if c == '\\' && i + 1 < cs.size then out := out.push cs[i + 1]!; i := i + 1
+        if c == '\\' && i + 1 < stop then out := out.push cs[i + 1]!; i := i + 1
         else if c == '"' then str? := none
       | some n =>
-        if c == '"' && (List.range n).all (fun k => cs[i + 1 + k]? == some '#') then
+        if c == '"' && (List.range n).all (fun k => i + 1 + k < stop && cs[i + 1 + k]! == '#') then
           for _ in [0:n] do out := out.push '#'
           i := i + n
           str? := none
       i := i + 1
     | none =>
-      if c == '-' && cs[i + 1]? == some '-' then
-        while i < cs.size && cs[i]! != '\n' do i := i + 1
+      if c == '-' && i + 1 < stop && cs[i + 1]! == '-' then
+        while i < stop && cs[i]! != '\n' do i := i + 1
         out := out.push ' '
-      else if c == '/' && cs[i + 1]? == some '-' then
+      else if c == '/' && i + 1 < stop && cs[i + 1]! == '-' then
         let mut depth := 1
         i := i + 2
-        while i < cs.size && depth > 0 do
-          if cs[i]! == '/' && cs[i + 1]? == some '-' then depth := depth + 1; i := i + 2
-          else if cs[i]! == '-' && cs[i + 1]? == some '/' then depth := depth - 1; i := i + 2
+        while i < stop && depth > 0 do
+          if cs[i]! == '/' && i + 1 < stop && cs[i + 1]! == '-' then depth := depth + 1; i := i + 2
+          else if cs[i]! == '-' && i + 1 < stop && cs[i + 1]! == '/' then depth := depth - 1; i := i + 2
           else i := i + 1
         out := out.push ' '
       else if c == '"' then
         -- A raw literal is `r`, some `#`, then `"`.
-        let hashes := ((cs.extract 0 i).toList.reverse.takeWhile (· == '#')).length
-        let raw := i ≥ hashes + 1 && cs[i - hashes - 1]! == 'r'
+        let mut hashes := 0
+        while hashes < i - start && cs[i - 1 - hashes]! == '#' do hashes := hashes + 1
+        let raw := i - start ≥ hashes + 1 && cs[i - hashes - 1]! == 'r'
         str? := some (if raw then some hashes else none)
         out := out.push c
         i := i + 1
@@ -502,6 +516,11 @@ def withoutComments (s : String) : String := Id.run do
         out := out.push c
         i := i + 1
   return out
+
+/-- `s` without the comments outside its string literals (`withoutCommentsIn`). -/
+def withoutComments (s : String) : String :=
+  let cs := s.toList.toArray
+  String.ofList (withoutCommentsIn cs 0 cs.size).toList
 
 /-- The text `s` as the lints compare it, so that two texts are *written the
 same* (`Reqs/Lint#written-the-same`) if these agree: without comments or
@@ -524,7 +543,8 @@ def writtenForm (s : String) : String := Id.run do
     i := i + 1
     if c == '"' then
       -- A raw literal is `r`, some `#`, then `"`, and has no escapes.
-      let hashes := (out.pop.toList.reverse.takeWhile (· == '#')).length
+      let mut hashes := 0
+      while hashes + 1 < out.size && out[out.size - 2 - hashes]! == '#' do hashes := hashes + 1
       let raw := out.size ≥ hashes + 2 && out[out.size - hashes - 2]! == 'r'
       let closes (k : Nat) : Bool :=
         cs[k]! == '"' && (!raw || (List.range hashes).all fun h => cs[k + 1 + h]? == some '#')
@@ -539,7 +559,31 @@ def writtenForm (s : String) : String := Id.run do
       i := stop
   return String.ofList out.toList
 
-def writtenSame (a b : String) : Bool := writtenForm a == writtenForm b
+/-- Whether `cs` has, anywhere, the two characters that start a line
+comment, or the two that start a block comment: without them,
+`withoutComments` leaves a text as it is. -/
+def mayHaveComments : List Char → Bool
+  | '-' :: '-' :: _ | '/' :: '-' :: _ => true
+  | _ :: rest => mayHaveComments rest
+  | [] => false
+
+/-- Whether `a` and `b` have the same characters other than whitespace. -/
+def sameNonWhitespace : List Char → List Char → Bool
+  | c :: a, b => if c.isWhitespace then sameNonWhitespace a b else
+    match b.dropWhile Char.isWhitespace with
+    | d :: b => c == d && sameNonWhitespace a b
+    | [] => false
+  | [], b => b.all Char.isWhitespace
+
+/-- Whether `a` and `b` are written the same: whether their `writtenForm`s
+agree. Most pairs that a lint compares differ, and are told apart without
+computing those forms: `writtenForm` keeps every character of its text but
+comments and whitespace, so two texts without comments that have different
+characters other than whitespace have different forms. -/
+def writtenSame (a b : String) : Bool :=
+  let (as, bs) := (a.toList, b.toList)
+  if !mayHaveComments as && !mayHaveComments bs && !sameNonWhitespace as bs then false
+  else writtenForm a == writtenForm b
 
 /-! ## Tests of variants -/
 
@@ -1141,12 +1185,14 @@ def endsOpen (t : String) : Bool := Id.run do
       i := i + 1
   return false
 
-/-- Whether the text `after`, which follows an expression, starts with an
+/-- Whether `cs[start:stop]`, which follows an expression, starts with an
 infix operator, after whitespace and comments, which would take the
 expression as its left operand, or the `.` or `[` that take it as a
-receiver. -/
-def startsWithOperator (after : String) : Bool :=
-  let cs := ((withoutComments after).toList.dropWhile Char.isWhitespace)
+receiver. It reads only the first 7 characters after the whitespace and
+comments, one more than the longest operator, `subset`: a word that fills
+them is longer than any operator, and a shorter one ends within them. -/
+def startsWithOperatorIn (cs : Array Char) (start stop : Nat) : Bool :=
+  let cs := ((withoutCommentsIn cs start stop (some 7)).toList.dropWhile Char.isWhitespace)
   let lexeme := match cs with
     | c :: d :: _ =>
       if isWordChar c then String.ofList (cs.takeWhile isWordChar)
@@ -1155,6 +1201,12 @@ def startsWithOperator (after : String) : Bool :=
     | [c] => c.toString
     | [] => ""
   binaryOps.contains lexeme || lexeme == "." || lexeme == "["
+
+/-- Whether the text `after`, which follows an expression, starts with an
+infix operator (`startsWithOperatorIn`). -/
+def startsWithOperator (after : String) : Bool :=
+  let cs := after.toList.toArray
+  startsWithOperatorIn cs 0 cs.size
 
 /-- The precedence of an expression's outermost operator, as
 `lang::operand` uses it. A conditional counts as binding most loosely,
@@ -1296,45 +1348,73 @@ def textOf (src : Array Char) (r : Range) : String := String.ofList (src.extract
 
 /-- Whether an infix operator follows `r` in `src` (`startsWithOperator`). -/
 def followedAt (src : Array Char) (r : Range) : Bool :=
-  startsWithOperator (textOf src { start := r.stop, stop := src.size })
+  startsWithOperatorIn src r.stop src.size
 
 /-- `src` up to the end of the expression at `root`, so that what follows
 that expression, which is not an operand of it, is not seen as following
-the expressions in it (`followedAt`). -/
-def upTo (src : Array Char) (root : Range) : Array Char := src.extract 0 root.stop
+the expressions in it (`followedAt`). It is `src` itself, not a copy, if
+`src` already ends there, so that a caller that cuts `src` once can pass it
+to each lint. -/
+def upTo (src : Array Char) (root : Range) : Array Char :=
+  if src.size ≤ root.stop then src else src.extract 0 root.stop
+
+/-- What `simplifyNode` gives for an expression: its text rewritten, and
+its operands', each computed only if it is read, and whether the rewritten
+text is known to be the text as written. Most expressions have nothing to
+rewrite, and then no text is built, which would copy the text of each
+operand once for each expression around it. -/
+structure Simplified where
+  text : Thunk BText
+  kids : Array (Thunk BText)
+  /-- If `true`, `text` is the expression's text as written. If `false`, it
+  may still be, and a caller compares the texts. -/
+  asWritten : Bool
+  deriving Inhabited
 
 /-- The text of `n` rewritten by the rules of `l`, where `n` is in `slot`
 within `parent`, and of its operands, with the reports of `l` in it, in
 order. -/
 partial def simplifyNode (l : ExLint) (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) :
-    StateM (Array (BoolReport α)) (BText × Array BText) := do
+    StateM (Array (BoolReport α)) Simplified := do
   let .mk kind range ref kids := n
   let mut results := #[]
   for k in kids, s in kind.slots do
     results := results.push (← simplifyNode l src k s range)
   let kidRange (k : BNode α) : Range := match k with | .mk _ kr .. => kr
-  -- The node as written, with its operands' simplified texts.
-  let mut text := ""
-  let mut pos := range.start
+  -- Each operand's text in the node: as written if it is known to be, else
+  -- its rewritten text, in parentheses if it needs them there; and whether
+  -- one differs from the text as written.
+  let mut texts : Array (Option String) := #[]
   let mut changed := false
-  for k in kids, (t, _) in results, s in kind.slots do
-    let kr := kidRange k
-    let written := textOf src kr
-    let t' := if t.text == written || enclosed src range kr then t.text else t.inPlace s (followedAt src kr)
-    if t' != written then changed := true
-    text := text ++ textOf src { start := pos, stop := kr.start } ++ t'
-    pos := kr.stop
-  text := if changed then text ++ textOf src { start := pos, stop := range.stop } else textOf src range
-  let own : BText := { text, prec := kind.prec, sameKind := true }
-  let kidTexts := results.map (·.1)
+  for k in kids, r in results, s in kind.slots do
+    if r.asWritten then
+      texts := texts.push none
+    else
+      let kr := kidRange k
+      let t := r.text.get
+      let written := textOf src kr
+      let t' := if t.text == written || enclosed src range kr then t.text else t.inPlace s (followedAt src kr)
+      if t' != written then changed := true
+      texts := texts.push (some t')
+  -- The node as written, with its operands' simplified texts.
+  let own : Thunk BText := if !changed then Thunk.mk fun _ => { text := textOf src range, prec := kind.prec, sameKind := true }
+    else Thunk.mk fun _ => Id.run do
+      let mut text := ""
+      let mut pos := range.start
+      for k in kids, t? in texts do
+        let kr := kidRange k
+        text := text ++ textOf src { start := pos, stop := kr.start } ++ t?.getD (textOf src kr)
+        pos := kr.stop
+      return { text := text ++ textOf src { start := pos, stop := range.stop }, prec := kind.prec, sameKind := true }
+  let kidTexts := results.map (·.text)
   -- Decided by the rules, from what `n` is as written, as `Ex.simp` does.
   match (n.toEx 3).simplerForm l with
   | some (label, s) =>
-    let t := { s.text results with sameKind := s.sameKind kind }
+    let t := { s.text (results.map fun r => (r.text.get, r.kids.map (·.get))) with sameKind := s.sameKind kind }
     let replacement := if enclosed src parent range then t.text else t.inPlace slot (followedAt src range)
     modify (·.push { ref, range, label, replacement })
-    return (t, kidTexts)
-  | none => return (own, kidTexts)
+    return { text := Thunk.pure t, kids := kidTexts, asWritten := false }
+  | none => return { text := own, kids := kidTexts, asWritten := !changed }
 
 /-- The reports of `l` in an expression written in `src`, in the order
 they start, the outer of two that start together first: for each, the
@@ -1369,6 +1449,7 @@ def rewriteMsg (l : ExLint) (r : BoolReport α) (fixable : Bool := false) : Msg 
 /-- The reports of the lints that rewrite expressions (`ExLint`) in an
 expression written in `src`, each with its lint and message. -/
 def rewriteReports (src : Array Char) (root : BNode α) (fixable : Bool := false) : Array (Lint × α × Msg) :=
+  let src := upTo src (match root with | .mk _ r .. => r)
   ExLint.all.flatMap fun l => (simplerBools l src root).map fun r => (l.lint, r.ref, rewriteMsg l r fixable)
 
 /-! ## Matches -/
@@ -1431,11 +1512,13 @@ def sameArmsFix (all wildcard : Bool) : ArmsFix :=
 order: the arms that bind no names, by their bodies, where two or more have
 one. -/
 def sameArmGroups (arms : Array ArmInfo) : Array (Array Nat) := Id.run do
+  -- Each body's form once, not once for each group it is compared with.
+  let forms := arms.map (writtenForm ·.body.text)
   let mut groups : Array (Array Nat) := #[]
   for a in arms, i in [0:arms.size] do
     let fires (g : Array Nat) :=
       let b := arms[g[0]!]!
-      sameArmsFires (writtenForm b.body.text == writtenForm a.body.text) (b.binds || a.binds)
+      sameArmsFires (forms[g[0]!]! == forms[i]!) (b.binds || a.binds)
     match groups.findIdx? fires with
     | some j => groups := groups.modify j (·.push i)
     | none => if !a.binds then groups := groups.push #[i]

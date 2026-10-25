@@ -18,17 +18,30 @@ def coverageLeanArgs : Array String := if (get_config? coverage).isSome then #["
 def coverageLinkArgs : Array String := match get_config? coverage with
   | some runtime => #[runtime]
   | none => #[]
+-- Precompiled modules, but not when measuring coverage: their shared
+-- libraries, which Lean loads while building `Reqs`, would then hold gcov's
+-- counters without the runtime that they call, and the builds' runs would
+-- count as runs of the code.
+def precompile : Bool := (get_config? coverage).isNone
 
 -- Mathlib-free fork of lean-smt (the fork Veil uses).
 require smt from git "https://github.com/verse-lab/lean-smt.git"@"v4.32.0-veil-no-mathlib"
 
 -- Shared by the Lean library and the binary; depends only on Lean core.
+-- Precompiled, as is `Fren`, so that the hosted front end's elaborators,
+-- which run on every build of `Reqs`, run as native code rather than in
+-- Lean's interpreter. `Fren` loads `FrenCore` as one shared library, built
+-- from the modules that `globs` gives, so they must be all of them, not only
+-- those that the module `FrenCore` imports.
 @[default_target] lean_lib FrenCore where
+  globs := #[.andSubmodules `FrenCore]
+  precompileModules := precompile
   moreLeancArgs := coverageArgs
   moreLeanArgs := coverageLeanArgs
 
 -- The Lean-hosted front end (uses lean-smt).
 @[default_target] lean_lib Fren where
+  precompileModules := precompile
   moreLeancArgs := coverageArgs
   moreLeanArgs := coverageLeanArgs
 

@@ -111,6 +111,9 @@ inductive Ex where
   | lit (v : Val)
   /-- A variable of the comp, such as `x` or `w.x`. -/
   | var (n : Name)
+  /-- A variable of a search, by its index in the search's environment
+  (`Problem.solve`), which reads it without looking up its name. -/
+  | slot (k : Nat)
   /-- A binder of an enclosing `match` arm. -/
   | bound (n : Name)
   | not (a : Ex)
@@ -298,33 +301,38 @@ def binV : Op → Option Val → Option Val → Option Val
   | .div => intOp fun x y => .int (Int.ediv x y)
   | .mod => intOp fun x y => .int (Int.emod x y)
 
-partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := []) : Ex → Option Val
+/-- The value of an expression, as far as it is known: each variable as
+`look` gives it, each binder of a `match` arm as `locals` does, and each
+`slot k` as `slots[k]` does. -/
+partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := []) (slots : Array (Option Val) := #[]) :
+    Ex → Option Val
   | .lit v => some v
   | .var n => look n
+  | .slot k => slots[k]?.join
   | .bound n => locals.lookup n
-  | .not a => notV (a.eval I look locals)
-  | .neg a => match a.eval I look locals with
+  | .not a => notV (a.eval I look locals slots)
+  | .neg a => match a.eval I look locals slots with
     | some (.int x) => some (.int (-x))
     | _ => none
   -- Membership in a set literal, without building the set, which does
   -- not change which values are members.
   | .bin .member a (.setLit es) => do
-    let x ← a.eval I look locals
-    return .bool ((← es.mapM (·.eval I look locals)).contains x)
-  | .bin op a b => binV op (a.eval I look locals) (b.eval I look locals)
+    let x ← a.eval I look locals slots
+    return .bool ((← es.mapM (·.eval I look locals slots)).contains x)
+  | .bin op a b => binV op (a.eval I look locals slots) (b.eval I look locals slots)
   | .when negated c d =>
-    let c := c.eval I look locals
-    kleeneOr (notV (if negated then notV c else c)) (d.eval I look locals)
-  | .ite c a b => match c.eval I look locals with
-    | some (.bool true) => a.eval I look locals
-    | some (.bool false) => b.eval I look locals
+    let c := c.eval I look locals slots
+    kleeneOr (notV (if negated then notV c else c)) (d.eval I look locals slots)
+  | .ite c a b => match c.eval I look locals slots with
+    | some (.bool true) => a.eval I look locals slots
+    | some (.bool false) => b.eval I look locals slots
     | _ =>
-      let x := a.eval I look locals
-      if x.isSome && x == b.eval I look locals then x else none
-  | .app f args => do I.fn f (← args.mapM (·.eval I look locals))
+      let x := a.eval I look locals slots
+      if x.isSome && x == b.eval I look locals slots then x else none
+  | .app f args => do I.fn f (← args.mapM (·.eval I look locals slots))
   | .method m recv args => do
-    let r ← recv.eval I look locals
-    let args ← args.mapM (·.eval I look locals)
+    let r ← recv.eval I look locals slots
+    let args ← args.mapM (·.eval I look locals slots)
     -- A relation's methods.
     if let .set ps := r then
       let fsts := ps.filterMap fun | .pair a _ => some a | _ => none
@@ -384,21 +392,21 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
       | .replaceAll => .str (Fren.Str.replaceAll s (str 0) (str 1))
       | _ => .int 0
   | .matches recv _ re => do
-    let .str s ← recv.eval I look locals | none
+    let .str s ← recv.eval I look locals slots | none
     return .bool (re.matches s)
-  | .pair a b => do return .pair (← a.eval I look locals) (← b.eval I look locals)
-  | .seqLit es => do return .seq (← es.mapM (·.eval I look locals))
+  | .pair a b => do return .pair (← a.eval I look locals slots) (← b.eval I look locals slots)
+  | .seqLit es => do return .seq (← es.mapM (·.eval I look locals slots))
   -- Out of range, an index is part of the interpretation, which is unknown.
   | .index q i _ => do
-    let .seq es ← q.eval I look locals | none
-    let .int k ← i.eval I look locals | none
+    let .seq es ← q.eval I look locals slots | none
+    let .int k ← i.eval I look locals slots | none
     if 0 ≤ k && k < es.size then es[k.toNat]? else none
-  | .ctor ty idx args => do return .ctor ty idx (← args.mapM (·.eval I look locals))
-  | .setLit es => do return Val.setOf (← es.mapM (·.eval I look locals))
+  | .ctor ty idx args => do return .ctor ty idx (← args.mapM (·.eval I look locals slots))
+  | .setLit es => do return Val.setOf (← es.mapM (·.eval I look locals slots))
   | .card s => do
-    let .set ms ← s.eval I look locals | none
+    let .set ms ← s.eval I look locals slots | none
     return .int ms.size
-  | .field e idx => match e.eval I look locals with
+  | .field e idx => match e.eval I look locals slots with
     | some (.ctor _ _ vs) => vs[idx]?
     | _ => none
   | .update e fs => do
@@ -407,17 +415,17 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
     for (k, x) in fs do vs := vs.set! k (← x.eval I look locals)
     return .ctor ty idx vs
   | .match e arms => do
-    let .ctor _ idx vs ← e.eval I look locals | none
+    let .ctor _ idx vs ← e.eval I look locals slots | none
     let some (p, body) := arms.find? fun
         | (.wild, _) => true
         | (.ctor i _, _) => i == idx
         | (.alts is, _) => is.contains idx
       | none
     match p with
-    | .wild | .alts _ => body.eval I look locals
+    | .wild | .alts _ => body.eval I look locals slots
     | .ctor _ bs =>
       let new := (bs.zip vs).toList.filter (·.1 != `_)
-      body.eval I look (new ++ locals)
+      body.eval I look (new ++ locals) slots
 
 /-- The trigger of a constraint (`Reqs/Lang/Components#triggers`): the
 conditions of its top-level `when`/`unless` chain, conjoined. -/
@@ -437,7 +445,7 @@ arms of `match`; `wrap` puts a definedness under those around `e`. -/
 partial def Ex.indexGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Ex) :=
   let go (e : Ex) (w : Ex → Ex := wrap) := e.indexGoals w
   match e with
-  | .lit _ | .var _ | .bound _ => #[]
+  | .lit _ | .var _ | .slot _ | .bound _ => #[]
   | .not a | .neg a | .field a _ | .card a => go a
   | .update a fs => go a ++ fs.flatMap (go ·.2)
   | .when negated c d => go c ++ go d (fun g => wrap (.when negated c g))
@@ -643,6 +651,7 @@ def evalClosed (e : Ex) : Option Val := e.eval {} fun _ => none
 partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .lit v => .lit v
   | .var n => .var n
+  | .slot k => .slot k
   | .bound n => .bound (f n)
   | .not a => .not (a.renameBound f)
   | .neg a => .neg (a.renameBound f)
@@ -669,6 +678,7 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
 partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .lit v => .lit v
   | .var n => .var (f n)
+  | .slot k => .slot k
   | .bound n => .bound n
   | .not a => .not (a.renameVars f)
   | .neg a => .neg (a.renameVars f)
@@ -692,6 +702,7 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
 partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .lit v => .lit v
   | .var n => f n
+  | .slot k => .slot k
   | .bound n => .bound n
   | .not a => .not (a.substVars f)
   | .neg a => .neg (a.substVars f)
@@ -737,6 +748,7 @@ expressions. -/
 partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .lit v => .lit v
   | .var n => .var n
+  | .slot k => .slot k
   | .bound n => (σ.lookup n).getD (.bound n)
   | .not a => .not (a.subst σ)
   | .neg a => .neg (a.subst σ)

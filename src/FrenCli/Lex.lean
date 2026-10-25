@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCore.Lexical
 import FrenCore.Syntax
+import Std.Data.HashMap
 -- keep-sorted end
 
 /-!
@@ -95,12 +96,20 @@ def escapeAt (src : Array Char) (i : Nat) : Option (Char × Nat) :=
 
 /-- Whether `s` is in `src` at `i`. -/
 def occursAt (src : Array Char) (i : Nat) (s : String) : Bool :=
-  (s.foldl (fun (ok, k) c => (ok && src[k]? == some c, k + 1)) (true, i)).1
+  -- The first character first, which rules out most of `punctuators`
+  -- without reading the rest.
+  s.isEmpty || (src[i]? == some s.front && (s.foldl (fun (ok, k) c => (ok && src[k]? == some c, k + 1)) (true, i)).1)
 
 /-- The punctuator at `i`: the longest, by maximal munch, since
 `punctuators` is longest first (`lang::punctuator_end`). -/
-def punctuatorAt (src : Array Char) (i : Nat) : Option String :=
-  punctuators.find? (occursAt src i)
+def punctuatorAt (src : Array Char) (i : Nat) : Option String := do
+  (punctuatorsByFirst[← src[i]?]?.getD []).find? (occursAt src i)
+where
+  /-- `punctuators` by their first character, each list in the same order,
+  so that the first of them that occurs is the first of `punctuators` that
+  does: one that does not start with `src[i]` cannot occur at `i`. -/
+  punctuatorsByFirst : Std.HashMap Char (List String) :=
+    punctuators.foldr (init := {}) fun p m => m.alter p.front fun ps? => some (p :: ps?.getD [])
 
 /-- The tokens of `src`, and the spans of its comments. -/
 def lexWithComments (src : Array Char) : Except LexError (Array Token × Array Span) := Id.run do

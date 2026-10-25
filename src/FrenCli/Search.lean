@@ -39,9 +39,13 @@ def below (n : Nat) : R Nat := do
   -- `r.toNat % n`, without a `Nat` as large as `r`.
   return if n < UInt64.size then (r % n.toUInt64).toNat else r.toNat % n
 
+/-- Fisher–Yates: each `i` from the last index down to `0` swaps with a
+random `j ≤ i`. -/
 def shuffle (xs : Array α) : R (Array α) := do
   let mut xs := xs
-  for i in (List.range xs.size).reverse do
+  let mut i := xs.size
+  while i > 0 do
+    i := i - 1
     let j ← below (i + 1)
     xs := xs.swapIfInBounds i j
   return xs
@@ -107,7 +111,7 @@ def World.interp (sp : Spec) (w : World) : Interp where
 
 partial def Ex.lits : Ex → Array Int
   | .lit (.int i) => #[i]
-  | .lit _ | .var _ | .bound _ => #[]
+  | .lit _ | .var _ | .slot _ | .bound _ => #[]
   | .not a | .neg a | .field a _ => a.lits
   | .bin _ a b | .when _ a b => a.lits ++ b.lits
   | .ite c a b => c.lits ++ a.lits ++ b.lits
@@ -121,11 +125,12 @@ partial def Ex.lits : Ex → Array Int
   | .match e arms => e.lits ++ arms.flatMap (·.2.lits)
   | .update e fs => e.lits ++ fs.flatMap (·.2.lits)
 
-/-- The expressions that `e` equates the variable `x` with. -/
-partial def Ex.equated (x : Name) : Ex → Array Ex
-  | .bin .eq (.var y) e | .bin .iff (.var y) e => (if y == x then #[e] else #[]) ++ e.equated x
-  | .bin .eq e (.var y) | .bin .iff e (.var y) => (if y == x then #[e] else #[]) ++ e.equated x
-  | .lit _ | .var _ | .bound _ => #[]
+/-- The expressions that `e`, a constraint over the search's environment
+(`Ex.slot`), equates the variable at index `x` with. -/
+partial def Ex.equated (x : Nat) : Ex → Array Ex
+  | .bin .eq (.slot y) e | .bin .iff (.slot y) e => (if y == x then #[e] else #[]) ++ e.equated x
+  | .bin .eq e (.slot y) | .bin .iff e (.slot y) => (if y == x then #[e] else #[]) ++ e.equated x
+  | .lit _ | .var _ | .slot _ | .bound _ => #[]
   | .not a | .neg a | .field a _ => a.equated x
   | .bin _ a b | .when _ a b => a.equated x ++ b.equated x
   | .ite c a b => c.equated x ++ a.equated x ++ b.equated x
@@ -184,7 +189,7 @@ partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array
 /-- The variables of `e`. -/
 partial def Ex.vars : Ex → Array Name
   | .var n => #[n]
-  | .lit _ | .bound _ => #[]
+  | .lit _ | .slot _ | .bound _ => #[]
   | .not a | .neg a | .field a _ | .card a => a.vars
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ => a.vars ++ b.vars
   | .ite c a b => c.vars ++ a.vars ++ b.vars
@@ -208,12 +213,16 @@ abbrev Env := Std.HashMap Name Val
 
 def Env.look (env : Env) : Look := fun n => env[n]?
 
+/-- The values of a search's variables, by index (`Ex.slot`), as far as
+they are known. -/
+abbrev Slots := Array (Option Val)
+
 /-- The candidates for a variable of type `ty`, given `equated`, what the
-constraints equate it with, over full names (`Atom.full`). -/
-def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (ty : VTy)
+constraints equate it with, over the search's environment `slots`. -/
+def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (slots : Slots) (ty : VTy)
     (equated : Array Ex) : R (Array Val) := do
   -- Values that a constraint equates the variable with, first.
-  let eqs := equated.filterMap (·.eval I env.look)
+  let eqs := equated.filterMap (·.eval I (fun _ => none) [] slots)
   let mut ints := p.ints
   for _ in [0:2] do ints := ints.push (((← below 41) : Int) - 20)
   let mut pool := smallValues sp w ints p.strs 24 2 ty
@@ -230,14 +239,10 @@ def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (env :
   let eqs := eqs.foldl (fun acc v => if acc.contains v then acc else acc.push v) #[]
   return eqs ++ pool.filter (!eqs.contains ·)
 
-/-- A constraint as the search evaluates it: over the variables' full
-names, `pfx.x` for `x` of a constraint nested at `pfx`. -/
-def Atom.full (a : Atom) : Ex := if a.pfx.isAnonymous then a.e else a.e.renameVars (a.pfx ++ ·)
-
-/-- Whether `e`, a constraint over full names, is `true`, `false` or
-unknown in `env`. -/
-def holds (I : Interp) (env : Env) (e : Ex) : Option Bool :=
-  match e.eval I env.look with
+/-- Whether `e`, a constraint over the search's environment, is `true`,
+`false` or unknown in `slots`. -/
+def holdsIn (I : Interp) (slots : Slots) (e : Ex) : Option Bool :=
+  match e.eval I (fun _ => none) [] slots with
   | some (.bool b) => some b
   | _ => none
 
@@ -245,63 +250,109 @@ def holds (I : Interp) (env : Env) (e : Ex) : Option Bool :=
 `true` under `I`, within `budget` steps. `w` gives the candidates of the
 abstract types.
 
+The constraints are compiled once per search: each variable `x` of a
+constraint nested at `pfx` is read as the full name `pfx.x`, and each full
+name, and each variable to choose, gets an index in the search's
+environment (`Slots`), so that evaluation reads a variable without looking
+up its name. Compiling changes no value: `.slot k` evaluates to the value
+of the `k`th name, which is what `.var` of that name evaluated to in the
+environment keyed by name, and the same names get values in the same
+order. The environment is changed in place: a value is set before a
+branch and cleared after it, so that each branch starts from the
+environment that its parent had.
+
 A branch is viable while no constraint is `false`. Extending a viable
 environment with a value for `x` can change only the constraints that
 mention `x` and are not yet known to be true, so only they are evaluated
 again, which gives the same answer as evaluating them all, since evaluation
-is monotone (`FrenCli.Eval`). -/
+is monotone (`FrenCli.Eval`). Those that become true are marked so for the
+branch and unmarked after it. -/
 partial def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (budget : Nat := 4000) :
     R (Option Env) := do
-  let full := p.atoms.map Atom.full
-  -- The constraints that mention each variable, by index.
-  let byVar : Std.HashMap Name (Array Nat) := Id.run do
-    let mut m := {}
-    for e in full, k in [0:full.size] do
-      for x in e.vars do
-        m := m.alter x fun
-          | some ks => if ks.back? == some k then some ks else some (ks.push k)
-          | none => some #[k]
-    return m
+  -- The names of the environment: the variables to choose, then those of
+  -- the constraints; and the constraints that mention each, by index.
+  let (names, index, byVar) := Id.run do
+    let mut names : Array Name := #[]
+    let mut index : Std.HashMap Name Nat := {}
+    let mut byVar : Array (Array Nat) := #[]
+    for (x, _) in p.vars do
+      unless index.contains x do
+        index := index.insert x names.size
+        names := names.push x
+        byVar := byVar.push #[]
+    for a in p.atoms, k in [0:p.atoms.size] do
+      for n in a.e.vars do
+        let x := a.pfx ++ n
+        let j ← match index[x]? with
+          | some j => pure j
+          | none =>
+            index := index.insert x names.size
+            names := names.push x
+            byVar := byVar.push #[]
+            pure (names.size - 1)
+        byVar := byVar.modify j fun ks => if ks.back? == some k then ks else ks.push k
+    return (names, index, byVar)
+  -- Every name looked up here was given an index above: each variable to
+  -- choose, and each variable `pfx.n` of a constraint.
+  let full := p.atoms.map fun a => a.e.substVars fun n => .slot index[a.pfx ++ n]!
+  let varSlot := p.vars.map fun (x, _) => index[x]!
+  let slots : Slots := names.map (env[·]?)
   -- Each constraint's value in `env`. A constraint that is `true` stays
   -- so on that branch (evaluation is monotone), and is not evaluated again.
-  let atRoot := full.map (holds I env ·)
+  let atRoot := full.map (holdsIn I slots ·)
   let rootViable := !atRoot.any (· == some false)
   let rootTrue := atRoot.map (· == some true)
-  -- The constraints known to be `true` in `env` extended with `x`, or
-  -- `none` if one is `false`.
-  let viable (env : Env) (x : Name) (known : Array Bool) : Option (Array Bool) := Id.run do
+  -- The constraints that become `true` when the variable `x`, by index,
+  -- gets its value in `slots`, or `none` if one becomes `false`.
+  let viable (slots : Slots) (x : Nat) (known : Array Bool) : Option (Array Nat) := Id.run do
     if !rootViable then
-      return if full.any (holds I env · == some false) then none else some known
-    let mut known := known
-    for k in byVar.getD x #[] do
+      return if full.any (holdsIn I slots · == some false) then none else some #[]
+    let mut newly := #[]
+    for k in byVar[x]! do
       if known[k]! then continue
-      match holds I env full[k]! with
+      match holdsIn I slots full[k]! with
       | some false => return none
-      | some true => known := known.set! k true
+      | some true => newly := newly.push k
       | none => pure ()
-    return some known
+    return some newly
   -- What the constraints equate each variable with, computed when the
   -- search first reaches it.
-  let equated : Array (Thunk (Array Ex)) := p.vars.map fun (x, _) => Thunk.mk fun _ => full.flatMap (·.equated x)
-  let rec go (i : Nat) (env : Env) (known : Array Bool) (left : Nat) : R (Option Env × Nat) := do
-    if left == 0 then return (none, 0)
+  let equated : Array (Thunk (Array Ex)) := varSlot.map fun x => Thunk.mk fun _ => full.flatMap (·.equated x)
+  -- Returns whether it found values, with `slots` and `known` as they were
+  -- given if it did not, and with the values found if it did.
+  let rec go (i : Nat) (slots : Slots) (known : Array Bool) (left : Nat) : R (Bool × Slots × Array Bool × Nat) := do
+    if left == 0 then return (false, slots, known, 0)
     if h : i < p.vars.size then
-      let (x, ty) := p.vars[i]
-      if env.contains x then return ← go (i + 1) env known left
+      let (_, ty) := p.vars[i]
+      let x := varSlot[i]!
+      if slots[x]!.isSome then return ← go (i + 1) slots known left
       let mut left := left
-      for v in ← p.candidates sp w I env ty (equated[i]?.map (·.get) |>.getD #[]) do
+      let mut slots := slots
+      let mut known := known
+      for v in ← p.candidates sp w I slots ty (equated[i]?.map (·.get) |>.getD #[]) do
         if left == 0 then break
         left := left - 1
-        let env' := env.insert x v
-        if let some known' := viable env' x known then
-          let (r, l) ← go (i + 1) env' known' left
+        slots := slots.set! x (some v)
+        if let some newly := viable slots x known then
+          for k in newly do known := known.set! k true
+          let (found, slots', known', l) ← go (i + 1) slots known left
+          slots := slots'
+          known := known'
           left := l
-          if r.isSome then return (r, left)
-      return (none, left)
+          if found then return (true, slots, known, left)
+          for k in newly do known := known.set! k false
+      return (false, slots.set! x none, known, left)
     else
-      let all := (full.zip known).all fun (e, t) => t || holds I env e == some true
-      return (if all then some env else none, left)
-  return (← go 0 env rootTrue budget).1
+      let all := (full.zip known).all fun (e, t) => t || holdsIn I slots e == some true
+      return (all, slots, known, left)
+  let (found, slots, _, _) ← go 0 slots rootTrue budget
+  if !found then return none
+  -- The values found, added in the order of `p.vars`, the order in which
+  -- the search chose them.
+  return some <| p.vars.zipIdx.foldl (init := env) fun env ((x, _), i) =>
+    if env.contains x then env else match slots[varSlot[i]!]! with
+      | some v => env.insert x v
+      | none => env
 
 /-- The integers that `atoms` mention, their neighbours, and a few small
 ones. -/
@@ -325,7 +376,7 @@ partial def Val.strs : Val → Array String
 are not literals of strings that it constrains. -/
 partial def Ex.strLits : Ex → Array String × Array String
   | .lit v => (v.strs, #[])
-  | .var _ | .bound _ => (#[], #[])
+  | .var _ | .slot _ | .bound _ => (#[], #[])
   | .method .matches r #[.lit (.str p)] | .matches r p _ => let (ls, ps) := r.strLits; (ls, ps.push p)
   | .not a | .neg a | .field a _ | .card a => a.strLits
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ => join #[a, b]

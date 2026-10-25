@@ -69,6 +69,12 @@ structure DataDecl where
   ctors : Array (Name × Array (Name × Ty))
   /-- Its values can be arbitrarily large (`Reqs/Lang/Types`). -/
   unbounded : Bool
+  /-- Its declaration in the prelude, `DataDecl.decl`, and the names of the
+  symbols that it declares, computed once by `DataDecl.withPrelude` when it
+  is added to the state, rather than each time the prelude is built, which
+  `fren mutate` does for every mutant. -/
+  text : String := ""
+  syms : Array String := #[]
   deriving Inhabited
 
 def DataDecl.ctorSym (d : DataDecl) (c : Name) : String :=
@@ -92,6 +98,13 @@ def DataDecl.decl (d : DataDecl) : String :=
     let sels := String.join <| (fs.toList.zipIdx).map fun ((_, t), k) => s!" ({d.selSym c k} {t.sort})"
     s!"({d.ctorSym c}{sels})"
   s!"(declare-datatype {quote (showPath d.path)} ({ctors}))\n"
+
+/-- `d` with its declaration and the names of the symbols that it declares:
+the datatype, its constructors and its selectors. -/
+def DataDecl.withPrelude (d : DataDecl) : DataDecl :=
+  let unquote (sym : String) : String := ((sym.drop 1).dropEnd 1).toString
+  let ctors := d.ctors.flatMap fun (c, fs) => #[d.ctorSym c] ++ (List.range fs.size).toArray.map (d.selSym c)
+  { d with text := d.decl, syms := (#[quote (showPath d.path)] ++ ctors).map unquote }
 
 /-- A comp variable: one of its own, or one of an instance's (`w.x`). -/
 structure CVar where
@@ -825,25 +838,28 @@ def Expr.operands : Expr → Array Expr
   | .num .. | .bool .. | .path .. | .str .. => #[]
 
 /-- `e` as the lints that rewrite it (`Fren.Core.ExLint`) and the operator
-lints see it. -/
-partial def Expr.boolNode : Expr → Fren.Core.BNode Span
-  | .when s n c d => .mk (.when n) (toRange s) s #[c.boolNode, d.boolNode]
-  | .ite s c a b => .mk .ite (toRange s) s #[c.boolNode, a.boolNode, b.boolNode]
-  | .bin s op a b => .mk (.bin op) (toRange s) s #[a.boolNode, b.boolNode]
-  | .not s a => .mk .not (toRange s) s #[a.boolNode]
-  | .neg s a => .mk .neg (toRange s) s #[a.boolNode]
+lints see it, with its ranges counted from `base`, its spans as they are. -/
+partial def Expr.boolNode (e : Expr) (base : Nat := 0) : Fren.Core.BNode Span :=
+  match e with
+  | .when s n c d => .mk (.when n) (toRange s) s #[c.boolNode base, d.boolNode base]
+  | .ite s c a b => .mk .ite (toRange s) s #[c.boolNode base, a.boolNode base, b.boolNode base]
+  | .bin s op a b => .mk (.bin op) (toRange s) s #[a.boolNode base, b.boolNode base]
+  | .not s a => .mk .not (toRange s) s #[a.boolNode base]
+  | .neg s a => .mk .neg (toRange s) s #[a.boolNode base]
   | .bool s b => .mk (.lit b) (toRange s) s #[]
-  | .method s r m args => .mk (.method m.name) (toRange s) s (#[r.boolNode] ++ args.map (·.boolNode))
-  | .app s _ args | .set s args | .seq s args => .mk .atom (toRange s) s (args.map (·.boolNode))
-  | .record s _ fields => .mk .atom (toRange s) s (fields.filterMap (·.2.map (·.boolNode)))
-  | .update s r fields => .mk .atom (toRange s) s (#[r.boolNode] ++ fields.filterMap (·.2.map (·.boolNode)))
-  | .field s a _ => .mk .atom (toRange s) s #[a.boolNode]
-  | .is s scrutinee _ => .mk .patternTest (toRange s) s #[scrutinee.boolNode]
-  | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode] ++ arms.map (·.2.boolNode))
-  | .pair s a b | .index s a b => .mk .atom (toRange s) s #[a.boolNode, b.boolNode]
+  | .method s r m args => .mk (.method m.name) (toRange s) s (#[r.boolNode base] ++ args.map (·.boolNode base))
+  | .app s _ args | .set s args | .seq s args => .mk .atom (toRange s) s (args.map (·.boolNode base))
+  | .record s _ fields => .mk .atom (toRange s) s (fields.filterMap (·.2.map (·.boolNode base)))
+  | .update s r fields => .mk .atom (toRange s) s (#[r.boolNode base] ++ fields.filterMap (·.2.map (·.boolNode base)))
+  | .field s a _ => .mk .atom (toRange s) s #[a.boolNode base]
+  | .is s scrutinee _ => .mk .patternTest (toRange s) s #[scrutinee.boolNode base]
+  | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode base] ++ arms.map (·.2.boolNode base))
+  | .pair s a b | .index s a b => .mk .atom (toRange s) s #[a.boolNode base, b.boolNode base]
   | .num s _ | .path s _ | .str s .. => .mk .atom (toRange s) s #[]
-  | .chain s es ops => .mk (.chain ops.size) (toRange s) s (es.map (·.boolNode))
-where toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
+  | .chain s es ops => .mk (.chain ops.size) (toRange s) s (es.map (·.boolNode base))
+-- `base` is at most the start of `e`'s span, and every span in `e` is within
+-- it, so the subtractions do not truncate.
+where toRange (sp : Span) : Fren.Core.Range := { start := sp.start - base, stop := sp.stop - base }
 
 /-- The span of `e` as written: a field read, method call or index of a
 receiver in parentheses starts at the `(`, which its span leaves out. -/
@@ -914,14 +930,19 @@ def Expr.text (src : Array Char) (e : Expr) : Fren.Core.BText :=
 (`nonminimal_bool`), the operator and method lints, the arithmetic lints
 and double parentheses in it, once `e` is elaborated. -/
 def lintBools (e : Expr) : M Unit := do
-  let root := e.boolNode
-  for (l, ref, msg) in Fren.Core.rewriteReports (← get).src root do
+  -- The text of `e` alone, and `e` over it, as the Lean front end gives
+  -- them: the three lints read no text outside `e` (`Fren.Core.upTo`), and
+  -- report at the spans, which stay as they are. Cutting out `e`, not all
+  -- the text before it, keeps the cost of each expression to its size.
+  let src := (← get).src.extract e.span.start e.span.stop
+  let root := e.boolNode e.span.start
+  for (l, ref, msg) in Fren.Core.rewriteReports src root do
     lintFix l ref msg
   let boolEqs := (← get).boolEqs
   modify fun s => { s with boolEqs := #[] }
-  for r in Fren.Core.opReports (← get).src boolEqs.contains root do
+  for r in Fren.Core.opReports src boolEqs.contains root do
     lintFix r.lint r.ref r.msg
-  for r in Fren.Core.arithReports (← get).src root do
+  for r in Fren.Core.arithReports src root do
     lintFix r.lint r.ref r.msg
   lintParens e
 
@@ -1572,8 +1593,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   | .bin span op a b =>
     -- `eq_op` (`lint::eq_op`).
     if let (some o, true) := (Fren.Core.InfixOp.ofOp? op, cx.noteIndexes) then
-      let ta ← srcAt a.span
-      if let some v := Fren.Core.eqOp o (Fren.Core.writtenSame ta (← srcAt b.span)) then lint .eqOp span (Fren.Core.eqOpMsg o v ta)
+      -- Only for an operator that `eqOp` can report, whatever the operands.
+      if (Fren.Core.eqOp o true).isSome then
+        let ta ← srcAt a.span
+        if let some v := Fren.Core.eqOp o (Fren.Core.writtenSame ta (← srcAt b.span)) then lint .eqOp span (Fren.Core.eqOpMsg o v ta)
     match op with
     | "iff" | "or" | "and" =>
       let smt := if op == "iff" then "=" else op
@@ -2616,7 +2639,7 @@ partial def elabItem : Item → M Unit
       modify fun s => { s with items := s.items.push ({ what := .enumeration, path, level := s.levels.get .deadCode }, name.span) }
     modify fun s => { s with
       table := (s.table.addItem { kind := .enumItem, path, isPub, owner := s.module }).addEnum { path, variants := vs }
-      datatypes := s.datatypes.push { path, isRecord := false, ctors, unbounded } }
+      datatypes := s.datatypes.push { path, isRecord := false, ctors, unbounded : DataDecl }.withPrelude }
   | .record isPub name fields => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "record" n)
@@ -2649,7 +2672,7 @@ partial def elabItem : Item → M Unit
       modify fun s => { s with items := s.items.push ({ what := .record, path, level := s.levels.get .deadCode }, name.span) }
     modify fun s => { s with
       table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
-      datatypes := s.datatypes.push { path, isRecord := true, ctors := #[(`«{}», fs)], unbounded } }
+      datatypes := s.datatypes.push { path, isRecord := true, ctors := #[(`«{}», fs)], unbounded : DataDecl }.withPrelude }
   | .abstractType isPub name => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "abstract type" n)
@@ -2890,9 +2913,7 @@ def State.prelude (s : State) : Array PreludeDecl :=
   let unquote (sym : String) : String := ((sym.drop 1).dropEnd 1).toString
   let sorts := s.sorts.map fun p => { text := s!"(declare-sort {itemSym p} 0)\n", syms := #[unquote (itemSym p)] }
   -- A datatype declares its constructors and selectors too.
-  let enums := s.datatypes.map fun d =>
-    let ctors := d.ctors.flatMap fun (c, fs) => #[d.ctorSym c] ++ (List.range fs.size).toArray.map (d.selSym c)
-    { text := d.decl, syms := (#[quote (showPath d.path)] ++ ctors).map unquote }
+  let enums := s.datatypes.map fun d => { text := d.text, syms := d.syms }
   let funs := s.funs.map fun (p, ps, r) =>
     { text := s!"(declare-fun {itemSym p} ({" ".intercalate (ps.toList.map (·.sort))}) {r.sort})\n", syms := #[unquote (itemSym p)] }
   let defs := s.defs.map fun (p, ps, r, body) =>
