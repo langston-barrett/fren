@@ -29,6 +29,12 @@ open Lean Elab Command Term Meta
 
 namespace Fren
 
+-- `stx[i]` needs a proof of `True`, which `get_elem_tactic` finds only after
+-- trying `assumption` and its other rules: about 10 ms for each of this
+-- file's hundreds of indexes. This rule, tried first, proves it at once, and fails
+-- at once for any other bound, which the other rules then prove.
+local macro_rules | `(tactic| get_elem_tactic_extensible) => `(tactic| exact True.intro)
+
 /-- The identifiers of a `Lang.fren_path`. -/
 def pathSegs (p : Syntax) : Array Syntax := p[0].getSepArgs
 

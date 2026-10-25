@@ -1,5 +1,12 @@
+-- `Fren`'s modules rather than `Fren`, which imports only them: importing
+-- it would wait for its own build too, on the build's critical path.
 -- keep-sorted start
-import Fren
+import Fren.Check
+import Fren.Impl
+import Fren.Literate
+import Fren.Spec
+import Fren.Trace
+import Fren.View
 -- keep-sorted end
 open Fren.Lang
 
