@@ -534,6 +534,8 @@ written there.
 `{(a, b), (c, d)}` is a relation, the set of the pairs `(a, b)` and `(c,
 d)`. A pair is written only as a member of a relation literal and as the
 left operand of `in`, as in `(a, b) in r`: there is no type of pairs.
+Parentheses make an expression, which a pair is not, so a pair in
+parentheses is neither, as in `((a, b)) in r` and `{((a, b))}`.
 
 `{}` has no member to give it a type, so it takes its type from where it
 is written: an operand of `=`, `!=`, `union`, `inter`, `minus` or `subset`

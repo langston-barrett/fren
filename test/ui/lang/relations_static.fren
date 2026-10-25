@@ -14,6 +14,16 @@ comp join_set { in s: Set(Role) in q: Rel(Role, Role) pub out p? req t: p? iff s
 --~^ error: `join` needs relations, found `Set(Role)`
 comp pair { in x: Int pub out p? req q: p? iff (x, 1) = (1, x) }
 --~^ error: a pair can only be a member of a relation literal or the left of `in`
+-- A pair in parentheses is neither a member of a relation literal nor the
+-- left of `in`.
+comp paren_in { in x: Int in r: Rel(Int, Int) pub out p? req q: p? iff ((1, x)) in r }
+--~^ error: a pair can only be a member of a relation literal or the left of `in`
+comp paren_member { in x: Int in r: Rel(Int, Int) pub out p? req q: p? iff r = {((1, x))} }
+--~^ error: a pair can only be a member of a relation literal or the left of `in`
+comp paren_members { in x: Int in r: Rel(Int, Int) pub out p? req q: p? iff r = {(2, x), ((1, x))} }
+--~^ error: a pair can only be a member of a relation literal or the left of `in`
+comp paren_eq { in x: Int pub out p? req q: p? iff x = ((1, x)) }
+--~^ error: a pair can only be a member of a relation literal or the left of `in`
 comp unknown { in r: Rel(Role, Role) pub out n: Int req q: n = r.size }
 --~^ error: `Rel(Role, Role)` has no method `size`
 comp pair_type { in r: Rel(Role, Role) pub out p? req q: p? iff (1, Role::Admin) in r }

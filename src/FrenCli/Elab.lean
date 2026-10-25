@@ -767,6 +767,12 @@ partial def lintParens (e : Expr) (call : Bool := false) : M Unit := do
   | .method _ r _ #[a] => lintParens r; lintParens a true
   | _ => for k in e.operands do lintParens k
 
+/-- The members of `e` if it is a pair, `(a, b)`, not in parentheses: in
+them it would be an expression, which a pair is not. -/
+def Expr.pair? (src : Array Char) : Expr → Option (Expr × Expr)
+  | .pair s a b => if Fren.Core.enclosed src { start := 0, stop := src.size } (toRange s) then none else some (a, b)
+  | _ => none
+
 /-- Where `e`, an operand of `p`, is, as `lang::operand` sees it; `none`
 where any expression can be written, as in parentheses. -/
 def Expr.operandSlot (src : Array Char) (p e : Expr) : Option Fren.Core.Slot :=
@@ -1245,7 +1251,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     -- A member, as the fields of its tuple, and the type of the literal
     -- it makes: a pair makes a relation.
     let member (e : Expr) (expected? : Option Ty) : M (String × Ty) := do
-      if let .pair _ a b := e then
+      if let some (a, b) := e.pair? (← get).src then
         let (ea?, eb?) := match expected? with | some (.rel x y) => (some x, some y) | _ => (none, none)
         let (x, tx) ← elabExpr { cx with expected? := ea? } a
         let (y, ty) ← elabExpr { cx with expected? := eb? } b
@@ -1425,7 +1431,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         | ">" => s!"(str.< {y} {x})"
         | _ => s!"(str.<= {y} {x})", .bool)
     | "in" =>
-      if let .pair _ pa pb := a then
+      if let some (pa, pb) := a.pair? (← get).src then
         let (x, tx) ← elabExpr cx pa
         let (y, ty) ← elabExpr cx pb
         let (r, tr) ← elabExpr { cx with expected? := some (.rel tx ty) } b
