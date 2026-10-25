@@ -2,11 +2,7 @@
 (set-logic UFDTLIA)
 (set-option :produce-models true)
 (set-option :tlimit-per 10000)
-(declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
-(declare-const |m| |Mode|)
 (declare-const |x| Int)
-(declare-const |y| Int)
-(declare-const |y'| Int)
 (assert (> |x| 0)) ; pos
 (assert (not false))
 (check-sat)
@@ -20,7 +16,6 @@
 (declare-const |m| |Mode|)
 (declare-const |x| Int)
 (declare-const |y| Int)
-(declare-const |y'| Int)
 (assert (> |x| 0)) ; pos
 (assert (not (exists ((|y| Int)) (and (=> (= |m| |Mode::On|) (= |y| |x|)) (=> (= |m| |Mode::Off|) (= |y| 0))))))
 (check-sat)
@@ -34,7 +29,6 @@
 (declare-const |m| |Mode|)
 (declare-const |x| Int)
 (declare-const |y| Int)
-(declare-const |y'| Int)
 (assert (> |x| 0)) ; pos
 (assert (=> (= |m| |Mode::On|) (= |y| |x|))) ; on
 (assert (=> (= |m| |Mode::Off|) (= |y| 0))) ; off
@@ -50,7 +44,6 @@
 (declare-const |m| |Mode|)
 (declare-const |x| Int)
 (declare-const |y| Int)
-(declare-const |y'| Int)
 (assert (> |x| 0)) ; pos
 (assert (=> (= |m| |Mode::On|) (= |y| |x|))) ; on
 (assert (=> (= |m| |Mode::Off|) (= |y| 0))) ; off
@@ -62,11 +55,7 @@
 (set-logic QF_UFDTLIA)
 (set-option :produce-models true)
 (set-option :tlimit-per 10000)
-(declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
-(declare-const |m| |Mode|)
 (declare-const |x| Int)
-(declare-const |y| Int)
-(declare-const |y'| Int)
 (assert (> |x| 0)) ; pos
 (assert (not false))
 (check-sat)
@@ -76,11 +65,7 @@
 (set-logic QF_UFDTLIA)
 (set-option :produce-models true)
 (set-option :tlimit-per 10000)
-(declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
-(declare-const |m| |Mode|)
 (declare-const |x| Int)
-(declare-const |y| Int)
-(declare-const |y'| Int)
 (assert (not (> |x| 0)))
 (check-sat)
 (reset)
@@ -93,7 +78,6 @@
 (declare-const |m| |Mode|)
 (declare-const |x| Int)
 (declare-const |y| Int)
-(declare-const |y'| Int)
 (assert (> |x| 0)) ; pos
 (assert (=> (= |m| |Mode::On|) (= |y| |x|))) ; on
 (assert (=> (= |m| |Mode::Off|) (= |y| 0))) ; off
@@ -109,7 +93,6 @@
 (declare-const |m| |Mode|)
 (declare-const |x| Int)
 (declare-const |y| Int)
-(declare-const |y'| Int)
 (assert (> |x| 0)) ; pos
 (assert (=> (= |m| |Mode::Off|) (= |y| 0))) ; off
 (assert (not (=> (= |m| |Mode::On|) (= |y| |x|))))
@@ -124,7 +107,6 @@
 (declare-const |m| |Mode|)
 (declare-const |x| Int)
 (declare-const |y| Int)
-(declare-const |y'| Int)
 (assert (> |x| 0)) ; pos
 (assert (=> (= |m| |Mode::On|) (= |y| |x|))) ; on
 (assert (not (=> (= |m| |Mode::Off|) (= |y| 0))))

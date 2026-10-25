@@ -1,0 +1,40 @@
+-- A counterexample shows only the variables that the check's query
+-- mentions (`Reqs/View#check-results`): `b` and `s` are in no formula.
+
+set_option fren.lint.unused_variables "allow"
+
+comp unmentioned {
+    in a: Int
+    in b: Int
+    in n: Nat
+    in s: String
+    pub out p?
+
+    assume pinned: a = -1
+    assume small: n < 1
+    req r: p? iff a > 0
+    expect e: p?  --~ error: counterexample: a = -1, n = 0, p? = false
+}
+
+-- That a `Nat` is at least 0 is a formula of the query, so `n` is shown,
+-- though nothing else mentions it.
+comp nat_fact {
+    in a: Int
+    in n: Nat
+
+    assume pinned: a = -1
+    expect e: a > 0  --~ error: counterexample: a = -1, n = 0
+}
+
+-- A variable that only an assumption mentions is shown.
+comp assumed {
+    in a: Int
+    in d: Int
+
+    assume pinned: a = -1
+    assume three: d = 3
+    expect e: a > 0  --~ error: counterexample: a = -1, d = 3
+}
+
+--@ summary: 9 passed, 3 failed, 0 inconclusive, 0 redundant
+--@ exit: 1
