@@ -1092,6 +1092,8 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let mut earlier : Array Term := #[]
   -- An arm's body is guarded by its being the first arm that matches
   -- (`Core.GuardedOperand.armBody`): no earlier test holds, and its own does.
+  -- That is built directly: its negation is never needed, so `guard` would
+  -- only return it.
   for arm in arms, pat in pats, t? in tests do
     let guards := cx.guards ++ (← earlier.mapM fun t => `(¬$t)) ++ t?.toArray
     earlier := earlier ++ t?.toArray

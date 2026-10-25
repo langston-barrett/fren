@@ -1678,6 +1678,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     let mut earlier : Array String := #[]
     -- An arm's body is guarded by its being the first arm that matches
     -- (`Fren.Core.GuardedOperand.armBody`): no earlier test holds, and its own does.
+    -- That is built directly: its negation is never needed, so `guard` would
+    -- only return it.
     for (p, body) in arms, pat in pats, test in tests do
       let armGuards := cx.guards ++ earlier.map (s!"(not {·})") ++ test.toArray
       earlier := earlier ++ test.toArray

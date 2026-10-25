@@ -501,7 +501,8 @@ left to right:
 - in `when C, D`, `D` is guarded by `C`, and in `unless C, D` by `not C`;
 - in `if c then x else y`, `x` is guarded by `c`, and `y` by `not c`;
 - in `a and b`, `b` is guarded by `a`, and in `a or b` by `not a`;
-- in a `match` arm, the body is guarded by its pattern's test;
+- in a `match` arm, the body is guarded by the arm's being the first that
+  matches: no earlier arm's pattern matches, and its own does;
 - guards nest by conjunction.
 
 So `q != [] and q[0] = x` is defined, and `q[0] = x and q != []` is not,
@@ -533,8 +534,8 @@ pub comp guard {
     -- `a and b` is false without `b` once `a` is, and `a or b` true once `a` is.
     expect and_short_circuits: when operand = AndRight and not holds?, not evaluated?
     expect or_short_circuits: when operand = OrRight and holds?, not evaluated?
-    -- `when` and `unless` hold vacuously when their bodies are not evaluated.
-    expect vacuous: when operand = WhenBody or operand = UnlessBody, evaluated? iff (holds? iff operand = WhenBody)
+    -- The bodies of `when C` and `unless C` are evaluated under opposite conditions.
+    expect opposite: when operand = WhenBody or operand = UnlessBody, evaluated? iff (holds? iff operand = WhenBody)
 }
 ```
 
