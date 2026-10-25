@@ -1,0 +1,4 @@
+-- A repeated variant whose name is not a single segment: both front ends
+-- report the name before the repeat (`lang::distinct_names`).
+
+enum E { A.b, A.b }   --~ error: `A.b` is not a single name

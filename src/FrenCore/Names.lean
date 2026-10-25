@@ -622,6 +622,31 @@ theorem repeatsOfList_eq_zero : ∀ {l : List Name}, repeatsOfList l = 0 ↔ l.N
 theorem repeatsOf_eq_zero {names : Array Name} : repeatsOf names = 0 ↔ names.toList.Nodup :=
   repeatsOfList_eq_zero
 
+/-- The indexes of the names that repeat an earlier one, in order: where a
+list of declarations has a name declared again (`lang::distinct_names`). -/
+def repeatsAt (names : Array Name) : Array Nat := go [] names.toList 0
+where
+  go : List Name → List Name → Nat → Array Nat
+    | _, [], _ => #[]
+    | seen, n :: rest, i => if seen.contains n then #[i] ++ go seen rest (i + 1) else go (n :: seen) rest (i + 1)
+
+theorem repeatsAt_go_eq_empty : ∀ {seen l : List Name} {i : Nat},
+    repeatsAt.go seen l i = #[] ↔ (∀ x ∈ l, x ∉ seen) ∧ l.Nodup
+  | _, [], _ => by simp [repeatsAt.go]
+  | seen, a :: l, i => by
+    have ih := @repeatsAt_go_eq_empty (a :: seen) l (i + 1)
+    by_cases h : a ∈ seen
+    · simp [repeatsAt.go, h]
+    · simp [repeatsAt.go, h, ih]
+      constructor
+      · rintro ⟨h1, h2⟩
+        exact ⟨fun x hx => (h1 x hx).2, fun hm => (h1 a hm).1 rfl, h2⟩
+      · rintro ⟨h1, h2, h3⟩
+        exact ⟨fun x hx => ⟨fun e => h2 (e ▸ hx), h1 x hx⟩, h3⟩
+
+theorem repeatsAt_eq_empty {names : Array Name} : repeatsAt names = #[] ↔ names.toList.Nodup := by
+  simp [repeatsAt, repeatsAt_go_eq_empty]
+
 /-- The names of the inputs among `vars`. -/
 def inputsOf (vars : Array (Name × Role)) : Array Name :=
   vars.filterMap fun (n, r) => if r == .input then some n else none

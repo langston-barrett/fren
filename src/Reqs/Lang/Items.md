@@ -105,6 +105,37 @@ the record would have no values. So records are never recursive
 themselves, though a field may have an [unbounded
 type](Types.md#recursive-and-unbounded-types).
 
+## Distinct names
+
+The names of a list of declarations are distinct: the variants of an
+enumeration, the fields of a record, the parameters of a defined function,
+the variables, instances and constraints of a component, which share one
+namespace, and the binders of a global expectation or of a pattern. A
+pattern's `_` declares no name. A name declared again is an error,
+reported where it is declared again, in the order the declarations are
+written, whatever their kinds.
+`lang::distinct_names` states this, from how many names a list declares
+and the set of them:
+
+```fren
+pub mod lang
+
+pub type DeclaredName
+
+pub comp distinct_names {
+    in count: Int                  -- how many names the list declares
+    in names: Set(DeclaredName)    -- the names it declares
+    pub det out accepted?
+
+    assume counted: names.card <= count
+
+    req rule: accepted? iff names.card = count
+
+    expect repeated: when names.card < count, not accepted?
+    expect empty: when count = 0, accepted?
+}
+```
+
 ## Fields and payloads
 
 A field or a payload may have any type in which no abstract type occurs:

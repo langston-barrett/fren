@@ -1284,11 +1284,14 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let mut new : Array CBinder := #[]
       if let (.variant _ _ (some bs), some #[idx]) := (p, pat) then
         let (c, fs) := d.ctors[idx]!
+        -- Distinct names (`lang::distinct_names`); `_` binds nothing.
+        let named := bs.filter (·.name != "_")
+        if let some k := (Fren.Core.repeatsAt (named.map (Name.mkSimple ·.name)))[0]? then
+          err named[k]!.span (Fren.Core.dupPatternBinderMsg (Name.mkSimple named[k]!.name))
         for b in bs, f in fs, k in [0:bs.size] do
           let t := f.2
           if b.name == "_" then continue
           let bn := Name.mkSimple b.name
-          if new.any (·.name == bn) then err b.span (Fren.Core.dupPatternBinderMsg bn)
           liftMsg b.span (Fren.Core.checkVarName bn (some (t == .bool)))
           lintName .binder bn b.span
           new := new.push { name := bn, smt := s!"({d.selSym c k} {s})", ty := t, scrutinee, outer := cx.binders.size }
@@ -1486,13 +1489,17 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   liftMsg name.span (st.table.checkFresh st.module n)
   lintName .component n name.span
   declareMemberUses (st.module ++ n) members
-  let mut seen : Array Name := #[]
+  -- Distinct names (`lang::distinct_names`): variables, instances and
+  -- constraints share one namespace.
+  let named := members.filterMap fun
+    | .var _ _ _ x _ _ | .inst x _ _ | .prop _ x _ => some x
+    | _ => none
+  if let some k := (Fren.Core.repeatsAt (named.map (Name.mkSimple ·.name)))[0]? then
+    err named[k]!.span (Fren.Core.dupMemberMsg (Name.mkSimple named[k]!.name))
   let mut vars := #[]
   for m in members do
     let .var isIn isPub' isDet x ty? defn? := m | continue
     let xn := Name.mkSimple x.name
-    if seen.contains xn then err x.span (Fren.Core.dupMemberMsg xn)
-    seen := seen.push xn
     lintName .variable xn x.span
     if let some c := (← get).table.shadowedConstant? (← get).scope xn then
       lint .shadowedConstants x.span (Fren.Core.shadowedMsg xn c)
@@ -1508,8 +1515,6 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   for m in members do
     let .inst x p bs := m | continue
     let xn := Name.mkSimple x.name
-    if seen.contains xn then err x.span (Fren.Core.dupMemberMsg xn)
-    seen := seen.push xn
     lintName .instance xn x.span
     let (pi, ivars) ← resolveInst x p bs
     pending := pending.push pi
@@ -1539,8 +1544,6 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   for m in members do
     let .prop kind x e := m | continue
     let xn := Name.mkSimple x.name
-    if seen.contains xn then err x.span (Fren.Core.dupMemberMsg xn)
-    seen := seen.push xn
     if x.name.endsWith "?" then err x.span (Fren.Core.propNameMsg xn)
     lintName .constraint xn x.span
     let cx : ExprCtx := { vars, insts := instNames, place := if kind == .assume then .assume else .prop }
@@ -1667,6 +1670,10 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
   lintName .global n name.span
   let mut vars : Array CVar := #[]
   let mut insts : Array CInst := #[]
+  -- Distinct names (`lang::distinct_names`).
+  let binderIds := binders.flatMap (·.1)
+  if let some k := (Fren.Core.repeatsAt (binderIds.map (Name.mkSimple ·.name)))[0]? then
+    err binderIds[k]!.span (Fren.Core.dupBinderMsg (Name.mkSimple binderIds[k]!.name))
   for (xs, p) in binders do
     let path ← match ← resolve p with
       | .item { kind := .compItem, path, .. } => pure path
@@ -1679,7 +1686,6 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
     for x in xs do
       let w := Name.mkSimple x.name
       liftMsg x.span (Fren.Core.checkItemName "instance" w)
-      if insts.any (·.name == w) then err x.span (Fren.Core.dupBinderMsg w)
       lintName .instance w x.span
       -- Like an instance's, but its inputs are shown in counterexamples.
       vars := vars ++ c.vars.map fun v =>
@@ -1732,10 +1738,12 @@ partial def elabItem : Item → M Unit
     let mut ctors := #[]
     let mut nRecursive := 0
     let mut unbounded := false
+    -- Distinct names (`lang::distinct_names`).
+    if let some k := (Fren.Core.repeatsAt (variants.map (Name.mkSimple ·.1.name)))[0]? then
+      err variants[k]!.1.span (Fren.Core.dupVariantMsg (Name.mkSimple variants[k]!.1.name))
     for (v, payload?) in variants do
       let vn := Name.mkSimple v.name
       liftMsg v.span (Fren.Core.checkItemName "variant" vn)
-      if vs.contains vn then err v.span (Fren.Core.dupVariantMsg vn)
       lintName .variant vn v.span
       vs := vs.push vn
       let mut fs := #[]
@@ -1768,9 +1776,11 @@ partial def elabItem : Item → M Unit
     lintName .record n name.span
     let path := st.module ++ n
     let mut fs : Array (Name × Ty) := #[]
+    -- Distinct names (`lang::distinct_names`).
+    if let some k := (Fren.Core.repeatsAt (fields.map (Name.mkSimple ·.1.name)))[0]? then
+      err fields[k]!.1.span (Fren.Core.dupFieldMsg (Name.mkSimple fields[k]!.1.name))
     for (f, ty?) in fields do
       let fn := Name.mkSimple f.name
-      if fs.any (·.1 == fn) then err f.span (Fren.Core.dupFieldMsg fn)
       lintName .field fn f.span
       if let some segs := ty? then
         let (own, ownInSet) := ownIn segs name
@@ -1820,10 +1830,12 @@ partial def elabItem : Item → M Unit
     | some body =>
       -- The parameters, declared like a comp's inputs.
       let mut vars : Array CVar := #[]
+      -- Distinct names (`lang::distinct_names`).
+      if let some k := (Fren.Core.repeatsAt (params.map (Name.mkSimple ·.1[0]!.name)))[0]? then
+        err params[k]!.1[0]!.span (Fren.Core.dupParamMsg (Name.mkSimple params[k]!.1[0]!.name))
       for (p, ty?) in params do
         let x := p[0]!
         let xn := Name.mkSimple x.name
-        if vars.any (·.name == xn) then err x.span (Fren.Core.dupParamMsg xn)
         lintName .variable xn x.span
         let t ← varTy ty? x
         vars := vars.push { name := xn, role := .input, isPub := true, ty := t, span := x.span }

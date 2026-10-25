@@ -462,4 +462,42 @@ impl variant_mention: lang::variant_mention for (n : Nat) (a : Bool) {
   intro n a _
   cases a <;> rcases n with _ | n <;> simp [fren_spec, Fren.Core.variantMentionAccepted] <;> omega
 
+interp lang::DeclaredName := Lean.Name
+
+/-- A list's distinct members are as many as it has exactly when none
+repeats. -/
+theorem nub_length_eq_iff {α : Type} [DecidableEq α] :
+    ∀ (l : List α), (Fren.FinSet.nub l).length = l.length ↔ l.Nodup
+  | [] => by simp [Fren.FinSet.nub]
+  | a :: l => by
+    have ih := nub_length_eq_iff l
+    have hle : (Fren.FinSet.nub l).length ≤ l.length :=
+      Fren.FinSet.length_le_of_nodup (Fren.FinSet.nodup_nub l) fun _ hx => Fren.FinSet.mem_nub.mp hx
+    unfold Fren.FinSet.nub
+    by_cases h : a ∈ Fren.FinSet.nub l
+    · have ha : a ∈ l := Fren.FinSet.mem_nub.mp h
+      simp only [h, if_true, List.length_cons, List.nodup_cons, ha, not_true_eq_false, false_and, iff_false]
+      omega
+    · have ha : a ∉ l := fun m => h (Fren.FinSet.mem_nub.mpr m)
+      simp [h, List.nodup_cons, ha, ih]
+
+/-- A list's set of members has as many as the list exactly when none
+repeats. -/
+theorem card_ofList_eq_length_iff {α : Type} [DecidableEq α] (l : List α) :
+    (Fren.FinSet.ofList l).card = (l.length : Int) ↔ l.Nodup := by
+  rw [Fren.FinSet.card_ofList, Int.natCast_inj]
+  exact nub_length_eq_iff l
+
+-- For every list of declared names, with the check that both front ends use.
+impl distinct_names: lang::distinct_names for (names : Array Lean.Name) {
+  count := names.size,
+  names := Fren.FinSet.ofArray names,
+  accepted? := (Fren.Core.repeatsAt names).isEmpty,
+} by
+  intro names _
+  have := @card_ofList_eq_length_iff _ (fun a b => Classical.propDecidable (a = b)) names.toList
+  simp only [Array.length_toList] at this
+  simp only [fren_spec, Fren.FinSet.ofArray, Array.isEmpty_iff, Fren.Core.repeatsAt_eq_empty]
+  exact this.symm
+
 end Fren.Impls

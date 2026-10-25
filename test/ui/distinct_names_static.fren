@@ -1,0 +1,16 @@
+-- Repeated names are reported where they are declared again, in source
+-- order, whatever kind of member comes first; `_` declares no name.
+
+comp constraint_first {
+    req x: true
+    in x: Int     --~ error: `x` is defined multiple times in this component
+}
+
+enum Shape { Pair(Int, Int), Empty }
+
+comp wildcards {
+    in s: Shape
+    pub out paired?
+
+    req r: paired? iff match s { Shape::Pair(_, _) => true, Shape::Empty => false }
+}
