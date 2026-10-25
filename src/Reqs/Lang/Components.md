@@ -265,7 +265,8 @@ constraint that it is at least 0, as though it were written in the spec:
 - an input, an assumption;
 - an output, public or private, a requirement;
 - an instance's variable, a constraint of the instance, as its
-  component's own variable does;
+  component's own variable does, even one that is a defined output there,
+  where its definition already makes it at least 0;
 - a defined output, none: its definition is a `Nat`, so it is at least 0
   already.
 

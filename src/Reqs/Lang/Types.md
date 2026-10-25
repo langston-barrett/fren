@@ -114,7 +114,8 @@ result, or a constant, and nothing else: it is not the type of a field or
 a payload, nor the element type of a set, relation or sequence, where an
 `Int` and a constraint serve instead. So a `Nat` is never inside another
 value, and the constraints that it brings are always on a variable or an
-application. `lang::nat_place` states where `Nat` may be written:
+application. `Nat` written anywhere else is an error (`F0338`).
+`lang::nat_place` states where `Nat` may be written:
 
 ```fren
 pub enum TypePlace { Variable, Parameter, Result, Constant, Field, Payload, Element }
@@ -390,10 +391,10 @@ pub comp synthesizes {
     use self::Shape::{EmptyLiteral, Other, Pair, SharedParts}
     in shape: Shape
     in parts: Int            -- how many shared parts it has, or members, for a pair
-    in synthesizing: Int     -- how many of them synthesize their types
+    in synthesizing: Nat     -- how many of them synthesize their types
     pub det out synthesizes?
 
-    assume counted: 0 <= synthesizing and synthesizing <= parts
+    assume counted: synthesizing <= parts
     assume pair: when shape = Pair, parts = 2
 
     req rule: synthesizes? iff match shape {

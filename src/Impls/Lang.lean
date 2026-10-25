@@ -117,7 +117,7 @@ theorem anySynthesizes_eq_any (ps : List Fren.Core.TypeShape) :
 impl synthesizes: lang::synthesizes for (s : Fren.Core.TypeShape) {
   shape := toShape s,
   parts := ((shapeParts s).length : Int),
-  synthesizing := (((shapeParts s).filter Fren.Core.TypeShape.synthesizes).length : Int),
+  synthesizing := ((shapeParts s).filter Fren.Core.TypeShape.synthesizes).length,
   synthesizes? := s.synthesizes,
 } by
   intro s _

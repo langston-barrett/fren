@@ -27,8 +27,14 @@ pub mod refinement
 `a` and `c` are related through `a`'s variables. By default, each is
 read as the variable of `c` of the same name: each input of `a` must be
 an input of `c`, and each output of `a` a public output of `c`, of the same
-type, or a `Nat` where `a` has an `Int`, which is
-[widened](Types.md#natural-numbers), as in an explicit binding. A private output of `a` must be a public output of `c` too: `a`'s
+type, or one that [widens](Types.md#natural-numbers) in the direction its
+values flow. An output of `c` is read where `a`'s type is expected, so
+`c`'s type must widen to `a`'s: a `Nat` output of `c` serves for an `Int`
+of `a`. An input of `a` is given to `c`, so `a`'s type must widen to
+`c`'s: an `Int` input of `c` serves for a `Nat` of `a`, but a `Nat` input
+of `c` does not serve for an `Int` of `a`, since `c` need not accept the
+inputs below 0 that `a` does. The input then has `a`'s type, and the
+output `c`'s, for what a `Nat` brings. A private output of `a` must be a public output of `c` too: `a`'s
 requirements may mention it, and the refinement can read it only from
 `c`'s public outputs, since a private output says nothing about how `c`
 computes it. `c` may have more inputs and outputs than `a`; an input of
@@ -44,13 +50,17 @@ pub comp interface {
     in in_concrete?      -- `c` has a variable of the same name
     in concrete_input?   -- that variable is an input of `c`
     in concrete_pub?     -- that variable is public in `c`
-    in typed?            -- its type widens to its type in `a` (`lang::widening`)
+    in a_widens?         -- its type in `a` widens to its type in `c` (`lang::widening`)
+    in c_widens?         -- its type in `c` widens to its type in `a`
     pub det out accepted?
 
-    req rule: accepted? iff (in_concrete? and typed?
+    req rule: accepted? iff (in_concrete? and (if input? then a_widens? else c_widens?)
         and (if input? then concrete_input? else not concrete_input? and concrete_pub?))
 
     expect hidden_outputs: when not input? and not concrete_pub?, not accepted?
+    -- An input flows from `a` to `c`, and an output from `c` to `a`.
+    expect inputs_from_abstract: when input? and accepted?, a_widens?
+    expect outputs_from_concrete: when not input? and accepted?, c_widens?
 }
 ```
 

@@ -106,7 +106,7 @@ pub comp other { in x: Int pub out z: Int req r: z = x }
 /--
 error: `refinement_test::other` cannot refine `refinement_test::rough`: it has no variable `y`
 
-note: each input of `refinement_test::rough` must be an input of `refinement_test::other`, and each output a public output, of the same type, or a `Nat` where it has an `Int`
+note: each input of `refinement_test::rough` must be an input of `refinement_test::other`, and each output a public output, of the same type, or one that widens: an output may be a `Nat` for an `Int`, and an input an `Int` for a `Nat`
 help: or bind it to an expression over the variables of `refinement_test::other`, as in `{ y := ... }`
 -/
 #guard_msgs in

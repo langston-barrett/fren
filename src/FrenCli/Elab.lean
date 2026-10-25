@@ -2338,12 +2338,15 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
   for v in a.vars.filter fun v => v.name.isAtomic && !bound.contains v.name do
     let cv? := c.vars.find? (·.name == v.name)
     let input := v.role == Role.input
+    -- Widening in the direction values flow: an input's from `a`, an
+    -- output's from `c`.
+    let typed (cv : CVar) := if input then v.ty.widens cv.ty else cv.ty.widens v.ty
     let ok := Fren.Core.interfaceAccepted input cv?.isSome (cv?.any (·.role == Role.input))
-      (cv?.any (·.isPub)) (cv?.any (·.ty.widens v.ty))
+      (cv?.any (·.isPub)) (cv?.any (v.ty.widens ·.ty)) (cv?.any (·.ty.widens v.ty))
     unless ok do
       let why := match cv? with
         | none => s!"it has no variable `{v.name}`"
-        | some cv => if !cv.ty.widens v.ty then s!"its `{v.name}` has another type"
+        | some cv => if !typed cv then s!"its `{v.name}` has another type"
           else if input then s!"its `{v.name}` is not an input"
           else if cv.role == Role.input then s!"its `{v.name}` is an input, not an output"
           else s!"its output `{v.name}` is not public"
@@ -2381,7 +2384,12 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
   let ren (smt : String) := substQuoted (fun p => match bindings.find? (·.1.name.toString == p) with
     | some (_, b, _) => ownC b
     | none => if outs.any (·.name.toString == p) then quote (w ++ identName p).toString else quote p) smt
-  let inputs := c.vars.filter fun v => v.name.isAtomic && v.role == .input
+  -- An input that `a` reads has `a`'s type, which widens to `c`'s
+  -- (`refinement::interface`).
+  let inputs := (c.vars.filter fun v => v.name.isAtomic && v.role == .input).map fun v =>
+    match a.vars.find? fun u => u.name == v.name && u.role == .input && !bound.contains u.name with
+    | some u => { v with ty := u.ty }
+    | none => v
   let vars := inputs ++ c.vars.map (fun v =>
       let role := Role.ofInst v.role v.isPub
       { v with name := w ++ v.name, role, isPub := role != .instHidden, isDet := false, defn? := none })

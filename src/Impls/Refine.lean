@@ -14,16 +14,17 @@ namespace Fren.Impls
 
 open Fren.Core (CheckKind interfaceAccepted refineBindingsAccepted refineMentionOk refinementRuns repeatsOf_eq_zero)
 
-impl interface_rule: refinement::interface for (i c ci p t : Bool) {
+impl interface_rule: refinement::interface for (i c ci p ta tc : Bool) {
   input? := i,
   in_concrete? := c,
   concrete_input? := ci,
   concrete_pub? := p,
-  typed? := t,
-  accepted? := interfaceAccepted i c ci p t,
+  a_widens? := ta,
+  c_widens? := tc,
+  accepted? := interfaceAccepted i c ci p ta tc,
 } by
-  intro i c ci p t _
-  cases i <;> cases c <;> cases ci <;> cases p <;> cases t <;> decide
+  intro i c ci p ta tc _
+  cases i <;> cases c <;> cases ci <;> cases p <;> cases ta <;> cases tc <;> decide
 
 -- One name, bound `n` times. Over `Nat`, so a proof by cases.
 impl binding_rule: refinement::binding for (v : Bool) (n : Nat) {

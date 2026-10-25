@@ -28,13 +28,17 @@ comp inner { in n: Nat pub out m: Int req r: m = n }
 comp bound { in x: Int inst w: inner { n := x } }
 --~^ error: type mismatch: expected `Nat`, found `Int`
 
--- An implicit binding of a refinement widens too, but never narrows.
+-- An implicit binding of a refinement widens in the direction values flow:
+-- an input from the abstract component, an output from the concrete one.
+-- A `Nat` input of the concrete component does not serve for an `Int`.
 comp wide { in n: Int pub out m: Int req r: m = n }
-refine narrow_ok: inner refines wide
-comp nat_abstract { in n: Nat pub out m: Int req r: m = n }
-comp int_concrete { in n: Int pub out m: Int req r: m = n }
-refine narrowed_refinement: int_concrete refines nat_abstract
+refine nat_input: inner refines wide
 --~^ error: its `n` has another type
+-- Nor does an `Int` output for a `Nat`.
+comp nat_out { pub out m: Nat req r: m = 0 }
+comp int_out { pub out m: Int req r: m = 0 }
+refine int_output: int_out refines nat_out
+--~^ error: its `m` has another type
 
 -- A `Nat` is not an enumeration, so no pattern tests it.
 comp tested_nat { in n: Nat pub out z? req r: z? iff n is Sign::Plus }

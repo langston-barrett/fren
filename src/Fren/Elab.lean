@@ -2742,10 +2742,12 @@ and the solver is asked nothing. -/
   for v in a.vars.filter fun v => v.name.isAtomic && !bound.contains v.name do
     let cv? := c.vars.find? (·.name == v.name)
     let input := v.role == Core.Role.input
-    -- A `Nat` of `c` widens to an `Int` of `a` (`lang::widening`).
-    let widens (cv : Var) := cv.type == v.type || (cv.type.isConstOf ``Nat && v.type.isConstOf ``Int)
+    -- Widening in the direction values flow: an input's from `a`, an
+    -- output's from `c` (`lang::widening`).
+    let widensTo (s t : Expr) := s == t || (s.isConstOf ``Nat && t.isConstOf ``Int)
+    let widens (cv : Var) := if input then widensTo v.type cv.type else widensTo cv.type v.type
     let ok := Core.interfaceAccepted input cv?.isSome (cv?.any (·.role == Core.Role.input)) (cv?.any (·.isPub))
-      (cv?.any widens)
+      (cv?.any (widensTo v.type ·.type)) (cv?.any (widensTo ·.type v.type))
     unless ok do
       let why := match cv? with
         | none => s!"it has no variable `{v.name}`"
@@ -2788,7 +2790,12 @@ and the solver is asked nothing. -/
         return (v, e, ← takeIndexes cfvs)
     let (relational, counts) ← checkCounts
     let l ← getLocal
-    let inputs := c.vars.filter fun v => v.name.isAtomic && v.role == .input
+    -- An input that `a` reads has `a`'s type, which widens to `c`'s
+    -- (`refinement::interface`).
+    let inputs := (c.vars.filter fun v => v.name.isAtomic && v.role == .input).map fun v =>
+      match a.vars.find? fun u => u.name == v.name && u.role == .input && !bound.contains u.name with
+      | some u => { v with type := u.type }
+      | none => v
     let vars := inputs ++ c.vars.map (fun v =>
         let role := Core.Role.ofInst v.role v.isPub
         { v with name := w ++ v.name, role, isPub := role != .instHidden, isDet := false, defn? := none, ref := nameStx })
@@ -2796,7 +2803,11 @@ and the solver is asked nothing. -/
     withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let fvOf (x : Name) : Expr := fvs[(vars.findIdx? (·.name == x)).getD 0]!
       -- `c`'s variables as a binding reads them, its outputs from the instance.
-      let ownC := own.map fun v => fvOf (if v.role == .input then v.name else w ++ v.name)
+      -- An input of `a`'s type `Nat`, read where `c`'s `Int` is, is widened.
+      let ownC := own.map fun v =>
+        let x := fvOf (if v.role == .input then v.name else w ++ v.name)
+        if v.role == .input && v.type.isConstOf ``Int && (vars.find? (·.name == v.name)).any (·.type.isConstOf ``Nat) then
+          mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) x else x
       -- `a`'s variables: their bindings, or else `c`'s of the same names.
       let argsA := a.vars.map fun v => match bindingsA.find? (·.1.name == v.name) with
         | some (_, e, _) => e.beta ownC
@@ -2815,7 +2826,12 @@ and the solver is asked nothing. -/
         let i := (a.vars.findIdx? (·.name == d)).getD 0
         return { kind := .expect, name := d, ref := nameStx, trigger? := none, triggerRef? := none, decl := decl ++ d
                  body := ← lam (← mkEq argsA[i]! (e.beta argsA)) : PropInfo }
-      let bindings ← inputs.mapM fun v => mkEq (fvOf (w ++ v.name)) (fvOf v.name)
+      -- `a`'s `Nat`, given to `c`'s `Int`, is widened.
+      let bindings ← inputs.mapM fun v => do
+        let x := fvOf v.name
+        let x := if v.type.isConstOf ``Nat && (vars.find? (·.name == w ++ v.name)).any (·.type.isConstOf ``Int) then
+          mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) x else x
+        mkEq (fvOf (w ++ v.name)) x
       let instC : InstInfo := { name := w, comp := c.path, ref := nameStx, decl
                                 bindings := ← lam (mkAndN bindings.toList)
                                 behaviour := ← lam (c.meaning sliceC)

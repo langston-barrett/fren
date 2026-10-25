@@ -87,20 +87,30 @@ comp determined {
 
 expect outputs_grow: forall (a: counted), a.y >= a.n
 
--- A refinement reads a `Nat` of the concrete component where the abstract
--- one has an `Int`, and the applications of its components' functions are
--- at least 0.
-comp loose { in n: Int pub out c: Int req r: c >= n }
-comp tight { in n: Nat pub out c: Nat req r: c = n + count(n) }
-refine tightened: tight refines loose
+-- A refinement widens in the direction values flow. An `Int` input of the
+-- concrete component serves for a `Nat` of the abstract one, and is at
+-- least 0 by the abstract one's type: for `n < 0`, `shifted` breaks `floor`.
+comp floor { in n: Nat pub out c: Int req r: c >= n }
+comp shifted { in n: Int pub out c: Int req r: c = if n >= 0 then n else n - 1 }
+refine nat_input: shifted refines floor
 
--- Determinism over an instance's variable, applied to a function into `Nat`.
+-- A `Nat` output of the concrete component serves for an `Int`, and is at
+-- least 0 by its type, as is each application of a function into `Nat`.
+comp above { pub out c: Int req r: c >= -1 }
+comp counted_out { in n: Int pub out c: Nat req r: c = count(n) }
+comp hidden_out { pub out c: Nat req r: c != 5 }
+refine nat_output: counted_out refines above
+refine nat_output_typed: hidden_out refines above
+
+-- Determinism over an instance's variable, applied to a function into `Nat`:
+-- `z` is 0 only because both `z` and `count(w.y)` are at least 0, in the
+-- second copy of the behaviour as in the first.
 comp applied_to_instance {
     in k: Nat
     inst w: counted { n := k, m := 1 }
     pub det out z: Nat
 
-    req r: z + count(w.y) = count(w.y) + k
+    req r: z = 0 or z + count(w.y) < 0
 }
 
 -- A conflict that depends on an instance's `Nat` output.
@@ -134,5 +144,5 @@ comp empty_branch {
     expect member: when not c? and n in s, n in t
 }
 
---@ summary: 46 passed, 4 failed, 0 inconclusive, 1 redundant
+--@ summary: 54 passed, 4 failed, 0 inconclusive, 1 redundant
 --@ exit: 1

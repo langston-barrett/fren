@@ -242,12 +242,10 @@ lint of the group:
 ```fren
 pub comp group_setting {
     in current: Level        -- the lint's level before the setting
-    in n_forbidden: Int      -- lints of the group at `forbid` before it
+    in n_forbidden: Nat      -- lints of the group at `forbid` before it
     in requested: Level
     pub det out accepted?
     pub det out level: Level
-
-    assume counts: n_forbidden >= 0
 
     req forbidden: accepted? iff (n_forbidden = 0 or requested = Level::Forbid)
     req applied: level = if accepted? then requested else current

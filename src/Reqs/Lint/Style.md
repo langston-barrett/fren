@@ -136,9 +136,7 @@ comp length_zero_exact {
     in op: Comparison
     in bound: Int
     in left?
-    in n: Int            -- the length
-
-    assume length: n >= 0
+    in n: Nat            -- the length
 
     inst p: length_zero { op, bound, left? }
 
@@ -278,12 +276,10 @@ pub comp match_like_membership {
     in no_payloads?      -- every pattern names variants without a payload, or is `_`
     in wildcard?         -- there is a `_` arm
     in wildcard_true?    -- its body is `true`
-    in n_true: Int       -- variants named by arms whose body is `true`
-    in n_false: Int      -- and by arms whose body is `false`
+    in n_true: Nat       -- variants named by arms whose body is `true`
+    in n_false: Nat      -- and by arms whose body is `false`
     pub det out fires?
     pub det out negated?  -- the fix is a negated membership, of the `false` variants
-
-    assume counts: n_true >= 0 and n_false >= 0
 
     req rule: fires? iff (bool_bodies? and no_payloads?)
     req negated: negated? iff (if wildcard? then wildcard_true? else n_true > n_false)

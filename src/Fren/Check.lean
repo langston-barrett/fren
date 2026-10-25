@@ -200,7 +200,12 @@ where
 
 /-- The applications of the functions `fs`, each with its number of
 parameters, to all of them, in `e`, that mention no bound variable, each
-once, added to `acc`. -/
+once, added to `acc`. None of a check's formulas applies a function under a
+binder: a `match` is a chain of `if`s over selectors, a global
+expectation's binders are locals, defined functions, whose bodies apply no
+uninterpreted function, are unfolded only in the query, and realizability's
+`∃` is built after the facts are, over arguments that mention no output
+(`lang::argument`). -/
 partial def natApps (fs : Array (Expr × Nat)) (e : Expr) (acc : Array Expr := #[]) : Array Expr :=
   match e with
   | .app .. =>
