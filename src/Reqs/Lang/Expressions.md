@@ -268,7 +268,7 @@ pub mod lang
 
 pub comp variant_mention {
     in payload: Int          -- how many values the variant's payload has
-    in applied?              -- it is applied to values, or in a pattern to binders
+    in applied?              -- it is written with parentheses, around values or, in a pattern, binders
     pub det out accepted?
 
     assume counted: payload >= 0

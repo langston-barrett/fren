@@ -156,7 +156,11 @@ def malformedIntegerMsg (s : String) : Msg :=
       with `_`s between the digits or after the base, and ends in a digit; a decimal literal does not start \
       with `0_`"]
       ++ match s.toList with
-        | ['0', b] => if (baseDigit? b).isSome then #[s!"help: `{s}` must be followed by a digit of its base"] else #[]
+        -- A base and only `_`s, as in `0x` or `0b_`.
+        | '0' :: b :: rest =>
+          if (baseDigit? b).isSome && rest.all (· == '_') then
+            #[s!"help: `0{b}` must be followed by a digit of its base"]
+          else #[]
         | _ => #[]
     -- `0_1` without the `_`s after its `0`, as `01`, which Lean decodes.
     fixes := match s.toList with
