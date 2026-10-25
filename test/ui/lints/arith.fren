@@ -10,6 +10,7 @@ comp arith {
     in s: String
     in t: Set(Int)
     in q: Seq(Int)
+    in r: Rel(Int, Int)
 
     pub out a1? := ((x > 0))            --~ warning: parentheses directly around parentheses
     pub out a2? := (((x > 1)))          --~ warning: parentheses directly around parentheses
@@ -17,6 +18,12 @@ comp arith {
     -- A comment between them: no lint.
     pub out a4? := (  -- the bound
         (x > 2))
+    -- The parentheses of a pair, or around a receiver, are their own: no lint.
+    pub out a5? := (1, (({1}).card)) in r and ((({1}).card), 1) in r
+    pub out a6? := (1, -(({1}).card)) in r and (f((x)), y) in r
+    pub out a7? := (x, ((y))) in r      --~ warning: parentheses directly around parentheses
+    pub out a8? := (((x)), y) in r      --~ warning: parentheses directly around parentheses
+    pub out a9? := (x, f(((y)))) in r   --~ warning: parentheses directly around parentheses
     pub out b1: Int := - -x             --~ warning: negating twice is the operand itself
     pub out b2: Int := -(-(x)) + f(-(-y))
     --~^ warning: negating twice is the operand itself

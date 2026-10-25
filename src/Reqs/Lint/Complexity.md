@@ -540,8 +540,11 @@ keeps the guards for the same reasons.
 nothing but whitespace between them: `((e))` means what `(e)` means. It
 fires once for each run of such pairs, at the outermost, and its fix keeps
 only the innermost: `(((e)))` becomes `(e)`. The parentheses of an
-application or a method call are its own, not around its argument, so
-`f((x))` has one pair around `x`. Parentheses only group, so the fix
+application, a method call or a pair are its own, not around an argument
+or an element, so `f((x))` and `(1, (x))` each have one pair around `x`.
+Parentheses around a receiver are around it alone, so `(({1}).card)` has
+one pair around `{1}` and one around `({1}).card`, not two around `{1}`.
+Parentheses only group, so the fix
 changes neither the meaning nor the guards. `lint::double_parens` states
 when it fires:
 
