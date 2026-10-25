@@ -367,6 +367,14 @@ pub comp in_case {
 `lowercase_is_snake` follows from what the patterns mean: a name that
 starts with an uppercase letter has one.
 
+So a name in `snake_case` is in no other case:
+
+```fren
+expect snake_apart: forall (a b: in_case),
+    when a.name = b.name and a.case = Snake and b.case != Snake and a.conventional?,
+    not b.conventional?
+```
+
 A name in the wrong case is reported where it is declared, with the name
 converted to the right case as a suggested edit. Only declarations are
 reported: a name used in another case is a different name.
