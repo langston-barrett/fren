@@ -1,5 +1,5 @@
 error: unknown command `chekc`
-  = note: the commands are `check`, `eval`, `fix`, `fmt`, `quickcheck` and `trace`
+  = note: the commands are `check`, `eval`, `fix`, `fmt`, `mutate`, `quickcheck` and `trace`
   = help: a command with a similar name exists: `check`
   = help: run `fren --help` for usage
 exit=2

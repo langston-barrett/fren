@@ -1,0 +1,2 @@
+--@ argv: check --by solver spec.fren
+-- `--by` is an option of `fren mutate` alone.

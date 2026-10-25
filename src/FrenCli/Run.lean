@@ -2,6 +2,7 @@
 import FrenCli.Color
 import FrenCli.Exit
 import FrenCli.Fmt
+import FrenCli.MutateRun
 import FrenCli.Quick
 import FrenCli.Smt
 import FrenCore.Codes
@@ -18,6 +19,8 @@ fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
 fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
+fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--sample N] [--seed N] [--list]
+    [--timeout SECONDS] [--tests N] [-A|-W|-D|-F LINT]... FILE...
 fren --explain CODE
 ```
 
@@ -36,10 +39,11 @@ Lean-hosted front end, on stderr. Exit codes are `cli::exit` and
 `trace::trace_exit`. `fmt` formats the files (`FrenCli.Fmt`), and `fix`
 applies the edits that the elaborator finds for lints (`State.fixes`).
 `eval` and `quickcheck` evaluate the spec without the solver
-(`Reqs/Eval`, `FrenCli.Quick`).
+(`Reqs/Eval`, `FrenCli.Quick`). `mutate` checks mutants of the spec
+(`Reqs/Mutate`, `FrenCli.Mutate`).
 
 Standard output holds only what was asked for: `trace`'s evidence report,
-and the solver queries of `check --dump-smt`, as SMT-LIB separated by
+`mutate`'s kill rates, and the solver queries of `check --dump-smt`, as SMT-LIB separated by
 `(reset)`, so that the whole stream can be replayed.
 -/
 
@@ -54,6 +58,8 @@ def usage : String :=
   fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren quickcheck [--tests N] [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
+  fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--sample N] [--seed N] [--list]\n              \
+  [--timeout SECONDS] [--tests N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren --explain CODE\n\n\
   `check` checks Fren specs. Exit status: 0 all checks passed, 1 some check\n\
   failed, 2 the checks could not run, 3 no failures but some check was\n\
@@ -85,6 +91,12 @@ def usage : String :=
   `quickcheck` tests every component and global expectation on `--tests`\n\
   random behaviours (default 100), without the solver. Exit status as for\n\
   `check`. `--seed N` sets where the random search starts (default 0).\n\n\
+  `mutate` makes small changes to the spec's constraints and definitions,\n\
+  checks each changed spec (a mutant), and reports the mutants that no check\n\
+  rejects. `--by` checks them with the solver (the default), by testing, or\n\
+  both. `--comp PATH` and `--mutant ID` select mutants, and `--sample N` takes\n\
+  N of them, chosen by `--seed`. `--list` lists them without checking them.\n\
+  Exit status as for `check`, where each surviving mutant is a warning.\n\n\
   `--explain` explains an error code, such as F0105.\n\n\
   `--color WHEN` colours the output: auto (the default: if it is a terminal),\n\
   always or never."
@@ -118,6 +130,7 @@ inductive Command where
   | fix
   | eval
   | quickcheck
+  | mutate
   deriving BEq
 
 structure Args where
@@ -139,20 +152,29 @@ structure Args where
   lints : Array (Fren.Core.Lint × Fren.Core.LintLevel) := #[]
   files : Array String := #[]
   paint : Paint := {}
-  /-- `eval --comp`. -/
+  /-- `eval --comp` and `mutate --comp`. -/
   comp? : Option String := none
   /-- `eval --set`, as written. -/
   sets : Array String := #[]
-  /-- `eval --seed` and `quickcheck --seed`. -/
+  /-- `eval --seed`, `quickcheck --seed` and `mutate --seed`. -/
   seed : Nat := 0
-  /-- `quickcheck --tests`. -/
+  /-- `quickcheck --tests` and `mutate --tests`. -/
   nTests : Nat := 100
+  /-- `mutate --by`. -/
+  checker : Mutate.By := .solver
+  /-- `mutate --mutant`. -/
+  mutantIds : Array String := #[]
+  /-- `mutate --sample`. -/
+  sample? : Option Nat := none
+  /-- `mutate --list`. -/
+  listOnly : Bool := false
 
-def commands : Array String := #["check", "eval", "fix", "fmt", "quickcheck", "trace"]
+def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
 
 def options : Array String :=
   #["--timeout", "--dump-smt", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
-    "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--comp", "--set", "--seed", "--tests"]
+    "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--comp", "--set", "--seed", "--tests",
+    "--by", "--mutant", "--sample", "--list"]
 
 def unknownLint (n : String) : Msg :=
   { code? := none, headline := s!"unknown lint `{n}`"
@@ -174,12 +196,13 @@ def parseArgs (p : Paint := {}) : List String → Except String Args
   | "fix" :: rest => go rest { command := .fix, paint := p }
   | "eval" :: rest => go rest { command := .eval, paint := p }
   | "quickcheck" :: rest => go rest { command := .quickcheck, paint := p }
+  | "mutate" :: rest => go rest { command := .mutate, paint := p }
   | [] => .error usage
   | c :: _ =>
     if c.startsWith "-" then .error (argError p (unknownOption c))
     else .error (argError p {
       code? := none, headline := s!"unknown command `{c}`",
-      notes := #["note: the commands are `check`, `eval`, `fix`, `fmt`, `quickcheck` and `trace`"],
+      notes := #["note: the commands are `check`, `eval`, `fix`, `fmt`, `mutate`, `quickcheck` and `trace`"],
       fixes := (Fren.Core.similarStr c commands).toArray.map fun s => { msg := s!"a command with a similar name exists: `{s}`", replacement := s } })
 where
   only (opt : String) (cmd : String) : Except String Args :=
@@ -189,14 +212,14 @@ where
       if a.files.isEmpty then .error (argError p { code? := none, headline := "no input files" })
       else .ok a
     | "--timeout" :: n :: rest, a =>
-      if a.command != .check then only "--timeout" "check" else
+      if a.command != .check && a.command != .mutate then only "--timeout" "check` and `fren mutate" else
       match n.toNat? with
       | some t => go rest { a with timeout := t }
       | none => .error (argError p {
           code? := none, headline := s!"invalid timeout `{n}`",
           notes := #["note: the timeout is a whole number of seconds, such as `--timeout 30`"] })
     | "--comp" :: c :: rest, a =>
-      if a.command == .eval then go rest { a with comp? := some c } else only "--comp" "eval"
+      if a.command == .eval || a.command == .mutate then go rest { a with comp? := some c } else only "--comp" "eval` and `fren mutate"
     | "--set" :: x :: rest, a =>
       if a.command != .eval then only "--set" "eval"
       else if x.contains '=' then go rest { a with sets := a.sets.push x }
@@ -204,7 +227,8 @@ where
         code? := none, headline := s!"invalid `--set` value `{x}`"
         notes := #["note: a variable is set as `VAR=VALUE`, such as `--set x=3` or `--set w.ready?=true`"] })
     | "--seed" :: n :: rest, a =>
-      if a.command != .eval && a.command != .quickcheck && a.command != .check then only "--seed" "check`, `fren eval` and `fren quickcheck" else
+      if a.command != .eval && a.command != .quickcheck && a.command != .check && a.command != .mutate then
+        only "--seed" "check`, `fren eval`, `fren quickcheck` and `fren mutate" else
       match n.toNat? with
       | some k => go rest { a with seed := k }
       | none => .error (argError p {
@@ -212,12 +236,33 @@ where
           notes := #["note: the seed is a whole number, such as `--seed 7`"] })
     | "--tests" :: n :: rest, a =>
       if a.command == .trace then go rest { a with tests := a.tests.push n }
-      else if a.command != .quickcheck && a.command != .check then only "--tests" "check`, `fren trace` and `fren quickcheck" else
+      else if a.command != .quickcheck && a.command != .check && a.command != .mutate then
+        only "--tests" "check`, `fren trace`, `fren quickcheck` and `fren mutate" else
       match n.toNat? with
       | some k => go rest { a with nTests := k }
       | none => .error (argError p {
           code? := none, headline := s!"invalid number of tests `{n}`",
           notes := #["note: the number of tests is a whole number, such as `--tests 1000`"] })
+    | "--by" :: b :: rest, a =>
+      if a.command != .mutate then only "--by" "mutate" else
+      match Mutate.By.ofName? b with
+      | some k => go rest { a with checker := k }
+      | none => .error (argError p {
+          code? := none, headline := s!"invalid value `{b}` for `--by`",
+          notes := #["note: `--by` is `solver`, `testing` or `both`"]
+          fixes := (Fren.Core.similarStr b #["solver", "testing", "both"]).toArray.map fun c =>
+            { msg := s!"a value with a similar name exists: `{c}`", replacement := c } })
+    | "--mutant" :: m :: rest, a =>
+      if a.command == .mutate then go rest { a with mutantIds := a.mutantIds.push m } else only "--mutant" "mutate"
+    | "--sample" :: n :: rest, a =>
+      if a.command != .mutate then only "--sample" "mutate" else
+      match n.toNat? with
+      | some k => go rest { a with sample? := some k }
+      | none => .error (argError p {
+          code? := none, headline := s!"invalid sample size `{n}`",
+          notes := #["note: the sample size is a whole number of mutants, such as `--sample 50`"] })
+    | "--list" :: rest, a =>
+      if a.command == .mutate then go rest { a with listOnly := true } else only "--list" "mutate"
     | "--dump-smt" :: rest, a =>
       if a.command == .check then go rest { a with dumpSmt := true }
       else only "--dump-smt" "check"
@@ -252,6 +297,7 @@ where
     | [opt@"--timeout"], _ | [opt@"--tests"], _ | [opt@"--ignore"], _ | [opt@"--require"], _
     | [opt@"--only"], _ | [opt@"--skip"], _
     | [opt@"--comp"], _ | [opt@"--set"], _ | [opt@"--seed"], _
+    | [opt@"--by"], _ | [opt@"--mutant"], _ | [opt@"--sample"], _
     | [opt@"-A"], _ | [opt@"-W"], _ | [opt@"-D"], _ | [opt@"-F"], _
     | [opt@"--allow"], _ | [opt@"--warn"], _ | [opt@"--deny"], _ | [opt@"--forbid"], _ =>
       .error (argError p { code? := none, headline := s!"`{opt}` needs a value" })
@@ -301,25 +347,33 @@ def readSpec (p : Paint) (path : String) : IO (Option String) := do
     IO.eprint (Fren.Core.renderPlain .error { code? := none, headline := s!"could not read `{path}`: {why}" } p)
     return none
 
+/-- Elaborates the file `file`, with text `chars`, after the state `st` of
+the files before it. -/
+def elabText (st : State) (file : Nat) (chars : Array Char) (fixing : Array Fren.Core.Lint := #[]) : State :=
+  match lex chars with
+  | .error e => { st with diags := st.diags.push { file, span := e.span, msg := e.msg } }
+  | .ok toks =>
+    match parse toks with
+    | .error e => { st with diags := st.diags.push { file, span := e.span, msg := e.msg } }
+    | .ok items => (elabFile file chars items fixing |>.run st).2
+
+/-- The state before any file, with the lint levels `lints`. -/
+def initialState (lints : Array (Fren.Core.Lint × Fren.Core.LintLevel)) : State :=
+  { cliLevels := Fren.Core.Levels.ofFlags lints }
+
 /-- Reads and elaborates the files; `none` if one cannot be read. `fren fix`
 fixes the lints `fixing` in the files that `ignored` does not match. -/
 def elaborate (p : Paint) (paths : Array String) (lints : Array (Fren.Core.Lint × Fren.Core.LintLevel))
     (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false) :
     IO (Option (Array (String × Array Char) × State)) := do
   let mut files := #[]
-  let mut st : State := { cliLevels := Fren.Core.Levels.ofFlags lints }
+  let mut st := initialState lints
   for path in paths do
     let some src ← readSpec p path | return none
     let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
     let chars := src.toList.toArray
-    let file := files.size
+    st := elabText st files.size chars (if ignored path then #[] else fixing)
     files := files.push (path, chars)
-    match lex chars with
-    | .error e => st := { st with diags := st.diags.push { file, span := e.span, msg := e.msg } }
-    | .ok toks =>
-      match parse toks with
-      | .error e => st := { st with diags := st.diags.push { file, span := e.span, msg := e.msg } }
-      | .ok items => st := (elabFile file chars items (if ignored path then #[] else fixing) |>.run st).2
   return some (files, ← checkClaims st)
 
 /-- Prints the count of static errors, and the pointer to `--explain` for
@@ -358,6 +412,13 @@ def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (
     shown := shown.push m.msg
   return shown
 
+/-- Tests `c`, the evaluator's `ec`, on `n` random behaviours from `seed`
+(`Reqs/Eval#fren-quickcheck`). -/
+def testReport (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global : Bool) (seed n : Nat) : Eval.Report :=
+  -- Each comp has its own stream, so a run does not depend on the others.
+  let rng : Eval.Rng := ⟨Eval.mix seed.toUInt64 (hash c.path)⟩
+  (if global then sp.quickGlobal ec n else sp.quickComp ec n).run' rng
+
 /-- Tests the comp or global expectation `c`, whose counterpart is `ec`
 (`Reqs/Eval#fren-quickcheck`), and prints what testing found about the
 checks that `keep` selects: their results, and those that are not run
@@ -365,9 +426,7 @@ are dropped. Returns the results and the messages printed. -/
 def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spec) (c : CComp) (ec : Eval.Comp)
     (global : Bool) (keep : Fren.Core.CheckResult → Bool) (byCheck : Bool := false) :
     IO (Array Fren.Core.CheckResult × Array Msg) := do
-  -- Each comp has its own stream, so a run does not depend on the others.
-  let rng : Eval.Rng := ⟨Eval.mix args.seed.toUInt64 (hash c.path)⟩
-  let rep := (if global then sp.quickGlobal ec args.nTests else sp.quickComp ec args.nTests).run' rng
+  let rep := testReport sp ec c global args.seed args.nTests
   let results := rep.results.filter keep
   let mut shown := #[]
   let subject := s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
@@ -406,18 +465,48 @@ instances are hypotheses there. -/
 def refinementKeeps (c : CComp) (r : Fren.Core.CheckResult) : Bool :=
   Fren.Core.refinementRuns r.kind && (r.kind != .inst || r.prop? == c.insts[0]?.map (·.name))
 
+/-- The solver's results for `c`, a global expectation if `global`, with
+each model confirmed by the evaluator's `spec?` (`Reqs/Eval#confirming-models`);
+the results that a refuted model is about, with their internal errors; and
+an internal error if the evaluator has no counterpart of `c`. -/
+def solveComp (st : State) (spec? : Except String Eval.Spec) (c : CComp) (global : Bool) (kinds : Array Fren.Core.CheckKind)
+    (timeout : Nat) (dump? : Option (String → IO Unit) := none) :
+    IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
+  let bk := backend st.prelude st.datatypes c timeout dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection
+  let log ← IO.mkRef #[]
+  -- The checks set to testing are not asked of the solver (`check::by_testing`).
+  let (raw, missing?) ← match spec? with
+    | .ok sp => match sp.counterpart? c global with
+      | some ec =>
+        let (core, ks) := (pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start))).untested c.tested kinds
+        pure (← Fren.Core.checkComp (fun k => confirming sp ec k log (bk k)) core ks, none)
+      | none =>
+        let (core, ks) := (toCore c).untested c.tested kinds
+        pure (← Fren.Core.checkComp bk core ks,
+          some (Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"))
+    | .error _ =>
+      let (core, ks) := (toCore c).untested c.tested kinds
+      pure (← Fren.Core.checkComp bk core ks, none)
+  let (results, refuted) := applyRefutations raw (← log.get)
+  return (results, refuted, missing?)
+
+/-- Which results of testing `c` `fren check` keeps, for the checks of
+kinds `kinds` set to testing (`Reqs/Check#checking-by-testing`); for a
+refinement, only those about its obligation. -/
+def testedKeeps (c : CComp) (kinds : Array Fren.Core.CheckKind) (refinement : Bool) (r : Fren.Core.CheckResult) : Bool :=
+  kinds.contains r.kind && c.tested.covers r && Fren.Core.runOf r.kind true == .byTesting
+    && (!refinement || refinementKeeps c r)
+
 /-- Runs `fren check`, printing diagnostics and the summary to stderr and
 any solver queries to stdout; returns the exit code. -/
 def check (args : Args) : IO UInt32 := do
   let some (files, st) ← load args.paint args.files args.lints | return exitCode false none
-  let prelude := st.prelude
   let mut all := #[]
   -- Warnings from lints, already printed.
   let mut shown := st.diags.map (·.msg)
   -- Each comp, global expectation and refinement (`Reqs/Lang/Refinement`),
   -- with the checks that run on it.
-  let todo := st.comps.map (·, false, Fren.Core.kindsFor false, false) ++ st.globals.map (·, true, Fren.Core.kindsFor true, false)
-    ++ st.refinements.map (·, false, Fren.Core.CheckKind.all.filter Fren.Core.refinementRuns, true)
+  let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.refinement)
   -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
   let spec? := specOf files
   let mut internal := #[]
@@ -431,23 +520,10 @@ def check (args : Args) : IO UInt32 := do
         n.modify (· + 1)
         IO.print s!"; {c.path}: query {← n.get}\n{script}(check-sat)\n(reset)\n\n"
       else none
-    let bk := backend prelude st.datatypes c args.timeout dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection
-    let log ← IO.mkRef #[]
-    let raw ← match spec? with
-      | .ok sp => match sp.counterpart? c global with
-        | some ec =>
-          -- The checks set to testing are not asked of the solver (`check::by_testing`).
-          let (core, ks) := (pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start))).untested c.tested kinds
-          Fren.Core.checkComp (fun k => confirming sp ec k log (bk k)) core ks
-        | none =>
-          internal := internal.push (Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`")
-          printDiag args.paint files { file := c.file, span := c.span, msg := internal.back! }
-          let (core, ks) := (toCore c).untested c.tested kinds
-          Fren.Core.checkComp bk core ks
-      | .error _ =>
-        let (core, ks) := (toCore c).untested c.tested kinds
-        Fren.Core.checkComp bk core ks
-    let (results, refuted) := applyRefutations raw (← log.get)
+    let (results, refuted, missing?) ← solveComp st spec? c global kinds args.timeout dump?
+    if let some msg := missing? then
+      internal := internal.push msg
+      printDiag args.paint files { file := c.file, span := c.span, msg }
     for (r, msg) in refuted do
       let span := (r.prop?.bind fun n => c.props.find? (·.name == n)).map (·.span) |>.getD c.span
       printDiag args.paint files { file := c.file, span, msg }
@@ -460,10 +536,7 @@ def check (args : Args) : IO UInt32 := do
       match spec? with
       | .ok sp =>
         if let some ec := sp.counterpart? c global then
-          let keep (r : Fren.Core.CheckResult) :=
-            kinds.contains r.kind && c.tested.covers r && Fren.Core.runOf r.kind true == .byTesting
-              && (!refinement || refinementKeeps c r)
-          let (tested, msgs) ← testComp args files sp c ec global keep (byCheck := true)
+          let (tested, msgs) ← testComp args files sp c ec global (testedKeeps c kinds refinement) (byCheck := true)
           shown := shown ++ msgs
           all := all ++ tested
           byTesting := byTesting + (tested.filter (·.verdict == .pass)).size
@@ -672,6 +745,181 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
   printExplainHint (left.map (·.msg))
   return Fren.Core.fixExit args.diffOnly true unchanged
 
+/-- The results of one way of checking (`--by`) the spec's components,
+global expectations and refinements, by `Mutate.Todo.key`, as far as they
+have been needed. -/
+abbrev Baseline := IO.Ref (Std.HashMap String (Array Fren.Core.CheckResult))
+
+/-- The mutants of the files, as elaborated, with the lint levels `lints`,
+and the state before each file, from which a mutant of it is elaborated. -/
+def mutantsOf (files : Array (String × Array Char)) (lints : Array (Fren.Core.Lint × Fren.Core.LintLevel)) :
+    Array State × Array Mutate.Mutant := Id.run do
+  let mut before := #[]
+  let mut st := initialState lints
+  let mut all := #[]
+  for (path, chars) in files, i in [0:files.size] do
+    before := before.push st
+    st := elabText st i chars
+    if let .ok toks := lex chars then
+      if let .ok items := parse toks then all := all ++ Mutate.ofFile { file := i, path, chars, toks } items
+  return (before, all)
+
+/-- The state of the files with the mutant `m` applied, from the states
+`before` each file. -/
+def mutantState (files : Array (String × Array Char)) (before : Array State) (m : Mutate.Mutant) : State := Id.run do
+  let mut st := before[m.file]?.getD {}
+  for (_, chars) in files.extract m.file, j in [m.file:files.size] do
+    st := elabText st j (if j == m.file then m.apply chars else chars)
+  return st
+
+/-- Runs `fren mutate` (`Reqs/Mutate`), printing each surviving mutant and
+the summary to stderr and the kill rates to stdout, or with `--list`, the
+mutants to stdout; returns the exit code. -/
+def mutate (args : Args) : IO UInt32 := do
+  let p := args.paint
+  let fail (msg : Msg) : IO UInt32 := do IO.eprint (argError p msg); return 2
+  let some (files, st) ← load p args.files args.lints | return exitCode false none
+  let (before, all) := mutantsOf files args.lints
+  let comp? := args.comp?.map fun t => (t.splitOn "::").foldl Lean.Name.mkStr .anonymous
+  if let some c := comp? then
+    unless st.comps.any (·.path == c) do
+      return ← fail { code? := none, headline := s!"no component `{Fren.Core.showComp c}`"
+                      notes := #[s!"note: the components are {Fren.Core.showNameList (st.comps.map (·.path))}"] }
+  for id in args.mutantIds do
+    unless all.any (·.id == id) do
+      return ← fail { code? := none, headline := s!"no mutant `{id}`"
+                      notes := #["note: `fren mutate --list` lists the mutants"]
+                      fixes := (Fren.Core.similarStr id (all.map (·.id))).toArray.map fun s =>
+                        { msg := s!"a mutant with a similar identifier exists: `{s}`", replacement := s } }
+  let selected := Mutate.select all comp? args.mutantIds args.sample? args.seed
+  if args.listOnly then
+    for m in selected do
+      let (path, chars) := files[m.file]!
+      let (line, col) := Fren.Core.position chars m.span.start
+      IO.println s!"{m.id} {path}:{line}:{col} {m.change}"
+    return 0
+  -- The results of testing `c`, kept by `keep`.
+  let testing (spec? : Except String Eval.Spec) (c : CComp) (global : Bool) (keep : Fren.Core.CheckResult → Bool) :
+      Array Fren.Core.CheckResult :=
+    match spec? with
+    | .ok sp => match sp.counterpart? c global with
+      | some ec => (testReport sp ec c global args.seed args.nTests).results.filter keep
+      | none => #[]
+    | .error _ => #[]
+  -- As `fren check` checks `c`: with the solver, and the checks set to
+  -- testing by testing; with the internal errors, each at its place in `c`.
+  let solve (s : State) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
+      IO (Array Fren.Core.CheckResult × Array (Span × Msg)) := do
+    let (rs, refuted, missing?) ← solveComp s spec? t.comp t.global t.kinds args.timeout
+    let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds t.refinement) else #[]
+    let errors := refuted.map fun (r, msg) =>
+      ((r.prop?.bind fun n => t.comp.props.find? (·.name == n)).map (·.span) |>.getD t.comp.span, msg)
+    return (rs ++ tested, missing?.toArray.map (t.comp.span, ·) ++ errors)
+  -- As `fren quickcheck` tests `c`.
+  let test (_ : State) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
+      IO (Array Fren.Core.CheckResult × Array (Span × Msg)) :=
+    pure (testing spec? t.comp t.global fun r => !t.refinement || refinementKeeps t.comp r, #[])
+  let spec? := specOf files
+  if let .error e := spec? then
+    printDiag p files { file := 0, span := default, msg := Msg.internal s!"the evaluator cannot read the spec: {e}" }
+  -- What each component's checks read in the spec. The spec's own results
+  -- are computed only for components that some mutant changes.
+  let originals : Std.HashMap String (Mutate.Todo × String) :=
+    (Mutate.todo st).foldl (init := {}) fun m t => m.insert t.key (t, Mutate.fingerprint st.prelude t.comp)
+  let solved : Baseline ← IO.mkRef {}
+  let tested : Baseline ← IO.mkRef {}
+  let shown ← IO.mkRef (#[] : Array Msg)
+  let sevs ← IO.mkRef (if spec?.toOption.isNone then #[Fren.Core.Severity.error] else #[])
+  -- Whether one way of checking kills the mutant `st'`, and whether some
+  -- check was inconclusive on it, checking only the components it changes;
+  -- `run s spec? t` checks `t` of the spec `s`. Internal errors about the
+  -- spec are printed as `fren check` prints them, and those about the
+  -- mutant given to `onMutant`.
+  let killedBy (base : Baseline) (st' : State) (spec'? : Except String Eval.Spec)
+      (run : State → Except String Eval.Spec → Mutate.Todo → IO (Array Fren.Core.CheckResult × Array (Span × Msg)))
+      (onMutant : Msg → IO Unit) : IO (Bool × Bool) := do
+    let mut inconclusive := false
+    for t in Mutate.todo st' do
+      let some (t₀, fp) := originals[t.key]? | continue
+      if Mutate.fingerprint st'.prelude t.comp == fp then continue
+      let rs ← match (← base.get)[t.key]? with
+        | some rs => pure rs
+        | none =>
+          let (rs, errors) ← run st spec? t₀
+          for (span, msg) in errors do
+            printDiag p files { file := t₀.comp.file, span, msg }
+            shown.modify (·.push msg)
+            sevs.modify (·.push .error)
+          base.modify (·.insert t.key rs)
+          pure rs
+      let (rs', errors) ← run st' spec'? t
+      for (_, msg) in errors do onMutant msg
+      let rs := Mutate.keyed rs
+      let rs' := Mutate.keyed rs'
+      if Mutate.kills rs rs' then return (true, inconclusive)
+      inconclusive := inconclusive || Mutate.inconclusive rs rs'
+    return (false, inconclusive)
+  let mut tallies : Std.HashMap Lean.Name Mutate.Tally := {}
+  for m in selected do
+    let files' := files.modify m.file fun (path, chars) => (path, m.apply chars)
+    let st' := mutantState files before m
+    -- What to report about the mutant, at its span.
+    let reports ← IO.mkRef (#[] : Array (Msg × Fren.Core.Severity))
+    let report (msg : Msg) (severity := Fren.Core.Severity.warning) : IO Unit := reports.modify (·.push (msg, severity))
+    let group := m.comp?.getD m.item
+    let mut tally := tallies.getD group {}
+    let errors := st'.diags.filter (·.severity == .error)
+    if !errors.isEmpty then
+      -- A denied lint can reject a mutant; nothing else should.
+      if let some e := errors.find? (·.lint?.isNone) then
+        report (Msg.internal s!"the mutant `{m.id}` has a static error: {e.msg.headline}") .error
+      tally := tally.add .unviable
+    else
+      let spec'? := specOf files'
+      if let .error e := spec'? then
+        report (Msg.internal s!"the evaluator cannot read the mutant `{m.id}`: {e}") .error
+      let onMutant (msg : Msg) := report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error
+      let (bySolver, inconclusive₁) ← if args.checker.solves then killedBy solved st' spec'? solve onMutant
+        else pure (false, false)
+      let (byTesting, inconclusive₂) ← if args.checker.tests then killedBy tested st' spec'? test onMutant
+        else pure (false, false)
+      let killed := bySolver || byTesting
+      -- Short, whatever `--timeout` is, even 0, which means none.
+      let equivalent? ← if killed then pure (some false) else Mutate.equivalent st st' Mutate.equivalenceTimeout
+      let outcome := Mutate.outcome true killed (equivalent? == some true)
+      tally := tally.add outcome
+      if outcome == .survived then report (Mutate.survivedMsg m equivalent?.isNone (inconclusive₁ || inconclusive₂))
+      if args.checker == .both && Mutate.missed bySolver byTesting then
+        tally := { tally with missed := tally.missed + 1 }
+        report (Mutate.missedMsg m args.nTests)
+    tallies := tallies.insert group tally
+    let (path, chars) := files[m.file]!
+    for (msg, severity) in ← reports.get do
+      printAt p path chars severity msg { start := m.span.start, stop := m.span.stop }
+      shown.modify (·.push msg)
+      sevs.modify (·.push severity)
+  -- Each check once, though both ways of checking ran it.
+  let notPassing := ((← solved.get).toArray ++ (← tested.get).toArray).foldl (init := ({} : Std.HashSet String)) fun acc (k, rs) =>
+    (Mutate.keyed rs).foldl (init := acc) fun acc (rk, r) =>
+      if r.verdict != .pass then acc.insert s!"{k}|{rk}" else acc
+  let notPassing := notPassing.size
+  if notPassing > 0 then
+    IO.eprint (Fren.Core.renderPlain .info
+      { code? := none, headline := s!"{Mutate.plural notPassing "check"} of the spec {if notPassing == 1 then "does" else "do"} not pass, \
+          and so {if notPassing == 1 then "kills" else "kill"} no mutant"
+        notes := #["help: run `fren check` or `fren quickcheck` to see them"] } p)
+  let groups := tallies.toArray.qsort (Fren.Core.showComp ·.1 < Fren.Core.showComp ·.1)
+  for (g, t) in groups do IO.println (t.line (Fren.Core.showComp g) (args.checker == .both))
+  let total : Mutate.Tally := groups.foldl (fun acc (_, t) => acc.merge t) {}
+  IO.eprintln s!"fren: {Mutate.plural selected.size "mutant"}: {total.killed} killed, {total.survived} survived, \
+    {total.equivalent} equivalent, {total.unviable} unviable{if args.checker == .both then s!", {total.missed} missed by testing" else ""}"
+  let shown ← shown.get
+  let sevs ← sevs.get
+  if shown.any (·.code?.isSome) then
+    IO.eprintln ""
+    printExplainHint shown
+  return Mutate.exitCode true (sevs.contains .warning) (sevs.contains .error)
+
 /-- Parses the value of `--color`. -/
 def colorValue (w : String) : Except Msg ColorChoice :=
   match ColorChoice.ofString? w with
@@ -729,6 +977,7 @@ def run (args : List String) : IO UInt32 := do
       | .fix => fix a (← paintFor choice (← IO.getStdout))
       | .eval => evalCmd a
       | .quickcheck => quickcheck a
+      | .mutate => mutate a
     | .error msg => IO.eprint (if msg.endsWith "\n" then msg else msg ++ "\n"); return 2
 
 end FrenCli

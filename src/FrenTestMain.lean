@@ -22,6 +22,8 @@ import Lean.Elab.Frontend
   formatted, keeps its tokens, imports and comments when formatted, and
   formatting it again changes nothing (`fmt::safe`); `fren fmt` rewrites a
   file in place.
+- **Mutants:** every mutant of the corpus is well-formed, identified,
+  stable and, for a swap, involutive (`mutation`).
 
 The tests run as jobs, in parallel (see "Jobs" below), and the failures are
 reported sorted.
@@ -213,9 +215,14 @@ def errorCodes : IO (Array String) := do
         failures := failures.push s!"{c.code}: a fixed example still fails:\n{good}\n{out}"
   return failures
 
+/-- The Markdown specs of Fren's own requirements, in an order in which
+each module is declared before it is used. -/
+def ownSpecFiles : Array String :=
+  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Expressions",
+    "Lang/Modules", "Lang/Instances", "Check", "View", "Lint", "Cli", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
+
 def ownSpec : IO (Array String) := do
-  let files := #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Expressions", "Lang/Modules", "Lang/Instances", "Check", "View", "Lint", "Cli", "Eval", "Lang/Refinement", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
-  let (out, code) ← runCheck files
+  let (out, code) ← runCheck ownSpecFiles
   return if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"]
 
 /-! ## Formatting -/
@@ -233,7 +240,7 @@ def specFiles : IO (Array String) := do
 not formatted, and those that `fren fmt` cannot parse, such as tests of
 syntax errors and of Lean code, and the examples of Markdown specs. -/
 def fmtIgnore : List String :=
-  ["test/cli/f01*.fren", "test/cli/f0216_member_option.fren", "test/cli/fix_*.fren", "test/cli/fmt_check.fren", "test/cli/fmt_parse_error.fren", "test/ui/syntax_*.fren",
+  ["test/cli/f01*.fren", "test/cli/f0216_member_option.fren", "test/cli/fix_*.fren", "test/cli/fmt_check.fren", "test/cli/fmt_parse_error.fren", "test/cli/mutate_unformatted.fren", "test/ui/syntax_*.fren",
    "test/ui/impl.fren", "test/ui/lean_*.fren", "test/ui/trace.fren", "src/Reqs/Markdown.md",
    -- `#fren_md` in a block, which only the Lean front end reads.
    "src/FrenTest/LiterateOuter.md"]
@@ -424,6 +431,148 @@ def fixing : IO (Array String) := do
     failures := failures.push s!"`fren fix --check` reports a fixed file (exit {code}):\n{out}"
   return failures
 
+/-! ## Mutants
+
+The properties of `fren mutate`'s mutants (`Reqs/dev/Testing`), over the
+*corpus*: Fren's own requirements, and each snapshot of `fren mutate`. -/
+
+/-- The corpus, as groups of files read as `fren` reads them. -/
+def mutationCorpus : IO (Array (Array (String × Array Char))) := do
+  let read (path : String) : IO (String × Array Char) := do
+    let src ← IO.FS.readFile path
+    let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
+    return (path, src.toList.toArray)
+  let snaps := (← sortedFiles ("test" / "cli") "fren").filter fun f =>
+    let n := f.fileName.getD ""
+    n.startsWith "mutate_" || n.startsWith "f0613" || n.startsWith "f0614"
+  return #[← ownSpecFiles.mapM read] ++ (← snaps.mapM fun f => return #[← read f.toString])
+
+/-- The mutants of the text `chars` of file `file`, as `fren` makes them. -/
+def mutantsOfText (file : Nat) (path : String) (chars : Array Char) : Array FrenCli.Mutate.Mutant :=
+  match FrenCli.lex chars with
+  | .ok toks => match FrenCli.parse toks with
+    | .ok items => FrenCli.Mutate.ofFile { file, path, chars, toks } items
+    | .error _ => #[]
+  | .error _ => #[]
+
+open FrenCli in
+/-- The tree of `e`, without spans or parentheses, but where `f` gives a
+node's tree instead: operators with their operands, and leaves as their
+text. -/
+partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e : FrenCli.Expr) : String :=
+  let go := shapeWith s f
+  let list (es : Array FrenCli.Expr) := " ".intercalate (es.toList.map go)
+  match f e with
+  | some t => t
+  | none => match e with
+    | .bin _ op l r => s!"({op} {go l} {go r})"
+    | .when _ neg c b => s!"({if neg then "unless" else "when"} {go c} {go b})"
+    | .ite _ c a b => s!"(if {go c} {go a} {go b})"
+    | .not _ e => s!"(not {go e})"
+    | .neg _ e => s!"(- {go e})"
+    | .app _ fn as => s!"(app {fn.map (·.name)} {list as})"
+    | .record _ ty fs => s!"(record {ty.map (·.name)} {fs.toList.map fun (x, e?) => (x.name, e?.map go)})"
+    | .field _ e x => s!"(field {go e} {x.name})"
+    | .match _ sc arms => s!"(match {go sc} {arms.toList.map fun (p, b) => (Mutate.idText (s.text p.span), go b)})"
+    | .set _ es => s!"(set {list es})"
+    | .pair _ a b => s!"(pair {go a} {go b})"
+    | .seq _ es => s!"(seq {list es})"
+    | .index _ a i => s!"(index {go a} {go i})"
+    | .method _ r x as => s!"(method {go r} {x.name} {list as})"
+    | e => Mutate.idText (s.text e.span)
+
+open FrenCli in
+/-- The tree that the operator mutant `m` means to make of `e`. -/
+def intended (s : Mutate.Src) (m : Mutate.Mutant) (e : FrenCli.Expr) : String :=
+  let plain := shapeWith s fun _ => none
+  shapeWith s (fun
+    | .bin sp op l r =>
+      let opAt := (s.wordIn { start := l.span.stop, stop := r.span.start } op).any (·.span == m.span)
+      if m.origin == .dropConjunct && sp == m.span then
+        some (if Mutate.idText m.after == Mutate.idText (s.text (s.outer sp l.span)) then plain l else plain r)
+      else if m.origin != .dropConjunct && opAt then some s!"({m.after} {plain l} {plain r})"
+      else if m.origin == .swapAndOr && sp == m.span then some s!"({if op == "and" then "or" else "and"} {plain l} {plain r})"
+      else none
+    | .when sp neg c b =>
+      if m.origin == .negateTrigger && sp.start == m.span.start then some s!"({if neg then "when" else "unless"} {plain c} {plain b})"
+      else none
+    | _ => none) e
+
+/-- The expressions of the items of the text `chars` that mutants change. -/
+def sitesOfText (chars : Array Char) : Array (Lean.Name × FrenCli.Expr) :=
+  match FrenCli.lex chars with
+  | .ok toks => match FrenCli.parse toks with
+    | .ok items => (FrenCli.Mutate.sites items).map fun (n, _, e) => (n, e)
+    | .error _ => #[]
+  | .error _ => #[]
+
+/-- Swaps, which a second swap undoes. -/
+def isSwap (m : FrenCli.Mutate.Mutant) : Bool :=
+  [.swapComparison, .swapArithmetic, .negateTrigger, .flipBool, .swapRepetition].contains m.origin
+    || (m.origin == .swapAndOr && !m.after.startsWith "(")
+
+/-- Every mutant of the corpus:
+- **well-formed:** changes the text, and elaborates with no static error;
+- **identified:** has an identifier that no other mutant of its group has;
+- **stable:** leaves the identifiers of the mutants of other items alone,
+  and keeps its own when the file is formatted with `fren fmt`;
+- **involutive:** if it is a swap, has a mutant that swaps back;
+- **as intended:** if it changes an operator, parses as the tree intended,
+  with each other operator binding as before.
+
+And a larger sample of mutants contains a smaller one. -/
+def mutation : IO (Array String) := do
+  let mut failures := #[]
+  for files in ← mutationCorpus do
+    let (before, all) := FrenCli.mutantsOf files #[]
+    let ids := all.map (·.id)
+    if ids.toList.eraseDups.length != ids.size then
+      failures := failures.push s!"mutants of {files.map (·.1)}: duplicate identifiers"
+    for m in all do
+      let (path, chars) := files[m.file]!
+      let chars' := m.apply chars
+      if chars' == chars then failures := failures.push s!"{m.id}: changes nothing"
+      -- Only the mutated file: mutants change no declaration, so the files
+      -- after it elaborate as before.
+      let st := FrenCli.elabText (before[m.file]?.getD {}) m.file chars'
+      if let some d := (st.diags.filter fun d => d.severity == .error && d.file == m.file)[0]? then
+        failures := failures.push s!"{m.id}: has a static error: {d.msg.headline}"
+      let again := mutantsOfText m.file path chars'
+      for m₂ in all do
+        if m₂.file == m.file && m₂.item != m.item && !again.any (·.id == m₂.id) then
+          failures := failures.push s!"{m₂.id}: its identifier changes when {m.id} is applied"
+      if m.origin == .narrowClass && chars[m.span.start - 1]? == some '[' && chars[m.span.stop]? == some '^' then
+        failures := failures.push s!"{m.id}: leaves `^` first in a class, negating it"
+      if isSwap m && !again.any (fun b => b.origin == m.origin && b.apply chars' == chars) then
+        failures := failures.push s!"{m.id}: no mutant swaps it back"
+      if [.swapComparison, .swapArithmetic, .swapAndOr, .dropConjunct, .negateTrigger].contains m.origin then
+        let src : FrenCli.Mutate.Src := { file := m.file, path, chars, toks := (FrenCli.lex chars).toOption.getD #[] }
+        let src' : FrenCli.Mutate.Src := { src with chars := chars', toks := (FrenCli.lex chars').toOption.getD #[] }
+        let sites := sitesOfText chars
+        let sites' := sitesOfText chars'
+        match (Array.range sites.size).find? fun k =>
+            sites[k]!.1 == m.item && sites[k]!.2.span.start ≤ m.span.start && m.span.stop ≤ sites[k]!.2.span.stop with
+        | some k =>
+          let want := intended src m sites[k]!.2
+          let got := (sites'[k]?.map fun (_, e) => shapeWith src' (fun _ => none) e).getD "(missing)"
+          if want != got then failures := failures.push s!"{m.id}: parses as {got}, not {want}"
+        | none => failures := failures.push s!"{m.id}: is in no site of its item"
+    -- Formatting each file keeps the identifiers.
+    for (path, chars) in files, i in [0:files.size] do
+      let src ← IO.FS.readFile path
+      let .ok formatted := FrenCli.Fmt.formatFile path src | failures := failures.push s!"{path}: does not format"
+      let text := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown formatted else formatted
+      let ids := (mutantsOfText i path chars).map (·.id)
+      let ids' := (mutantsOfText i path text.toList.toArray).map (·.id)
+      if ids.qsort (· < ·) != ids'.qsort (· < ·) then
+        failures := failures.push s!"{path}: formatting changes the identifiers of {(ids.filter (!ids'.contains ·)).toList}"
+    for n in [0:20] do
+      let small := FrenCli.Mutate.select all none #[] (some n) 7 |>.map (·.id)
+      let large := FrenCli.Mutate.select all none #[] (some (n + 1)) 7 |>.map (·.id)
+      unless small.all large.contains && small.size == min n all.size do
+        failures := failures.push s!"mutants of {files.map (·.1)}: a sample of {n + 1} does not contain the sample of {n}"
+  return failures
+
 /-! ## Jobs
 
 The tests are independent, so `main` runs them as jobs, in parallel, each
@@ -445,7 +594,7 @@ def jobs : IO (Array (List String)) := do
   let batches := (List.range n).toArray.map fun k =>
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"]]
+    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["mutation"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -462,6 +611,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     | none => throw (IO.userError s!"unknown corpus `{name}`")
   | ["formatting"] => formatting
   | ["fixing"] => fixing
+  | ["mutation"] => mutation
   | job => throw (IO.userError s!"unknown job `{" ".intercalate job}`")
 
 /-- Runs `job` in a process of its own, returning its failures. -/

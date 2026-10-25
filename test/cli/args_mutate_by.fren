@@ -1,0 +1,2 @@
+--@ argv: mutate --by solve spec.fren
+-- An invalid `--by`, with the value meant.

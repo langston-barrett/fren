@@ -1,0 +1,43 @@
+--@ args: mutate --list
+-- Every origin, at every kind of site: constraints, defined outputs,
+-- instance bindings, constants and defined functions. Expectations, local
+-- and global, are not mutated. Swapping the first `and` of a chain, or
+-- the last `or`, adds parentheses, and an operand that replaces its
+-- operator keeps its own.
+mod m
+
+pub enum Mode { Off, Heat, Cool }
+
+use self::Mode::{Cool, Heat, Off}
+
+const LIMIT: Int := 10
+
+fn twice(x: Int): Int := x + x
+
+pub comp sub {
+    in a: Int
+    in on?
+    pub out b: Int
+
+    req r: b = a - 1 or on?
+}
+
+pub comp c {
+    in x: Int
+    in s: String
+    in m: Mode
+    pub out ok?
+    pub out y: Int := twice(x) + 1
+
+    assume bounded: x >= 0 and x <= LIMIT
+    req r: when x > 2 and x < 5 or not ok?, s.matches?(r"[a-z_]+x*")
+    -- `a` is not removed from `[a^b]` or `[a^]`, which would negate them.
+    req carets: s.matches?(r"[a^b][a^]") or ok?
+    req chained: ok? or x = 4 or x = 6
+    req chain: unless m = Off, (ok? or x = 1) and m in {Heat, Cool} and [1, 2].len = 2
+    inst w: sub { a := x * 2, on? := true }
+
+    expect e: when x = 3, ok?
+}
+
+expect g: forall (p: c), p.x <= 10

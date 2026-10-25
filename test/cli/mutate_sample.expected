@@ -1,0 +1,4 @@
+drop-conjunct-m::c::r-aa9824d80462 test/cli/mutate_sample.fren:9:20 `x > 1 and x < 9 and x != 5` changed to `x > 1 and x < 9`
+shift-integer-m::c::r-1740349813c9 test/cli/mutate_sample.fren:9:34 `9` changed to `10`
+swap-and-or-m::c::r-071cc49a3977 test/cli/mutate_sample.fren:9:36 `and` changed to `or`
+exit=0

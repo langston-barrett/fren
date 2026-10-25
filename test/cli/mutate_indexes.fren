@@ -1,0 +1,29 @@
+--@ args: mutate
+-- The definedness checks of a constraint are one check, which passes when
+-- every index in it is in range.
+-- In `c`, `q[1]` is out of range on the spec, so dropping `q[0] = 1`
+-- kills nothing. In `d`, the spec's index is in range, so moving it out of
+-- range kills the mutant. In `e`, the second `q[0]` is out of range on the
+-- spec, so dropping the guarded one kills nothing.
+comp c {
+    in q: Seq(Int)
+    pub out ok?
+
+    assume one: q.len >= 1
+    req r: ok? iff (q[0] = 1 and q[1] = 2)
+}
+
+comp d {
+    in q: Seq(Int)
+    pub out ok?
+
+    assume one: q.len >= 1
+    req r: ok? iff q[0] = 1
+}
+
+comp e {
+    in q: Seq(Int)
+    pub out ok?
+
+    req r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
+}

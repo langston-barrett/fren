@@ -1,0 +1,5 @@
+note: 1 check of the spec does not pass, and so kills no mutant
+  = help: run `fren check` or `fren quickcheck` to see them
+c: 3 of 3 mutants killed (100%), 5 equivalent
+fren: 8 mutants: 3 killed, 0 survived, 5 equivalent, 0 unviable
+exit=0

@@ -1,0 +1,5 @@
+error: invalid value `solve` for `--by`
+  = note: `--by` is `solver`, `testing` or `both`
+  = help: a value with a similar name exists: `solver`
+  = help: run `fren --help` for usage
+exit=2

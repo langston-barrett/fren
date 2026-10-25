@@ -35,6 +35,16 @@
   on a spec after editing it. Formatting every spec must also keep its
   tokens, imports and comments, and be idempotent (`fmt::safe`).
 
+- **Mutants** (`lake test`): over the corpus of Fren's own requirements and
+  the snapshots of `fren mutate` (`test/cli/mutate_*.fren`,
+  `f0613_*.fren` and `f0614_*.fren`), every [mutant](../Mutate.md) changes
+  the text and has no static error (*well-formed*: mutants are made so, and
+  a failure is fixed in the operator rather than by filtering), has an
+  identifier that no other mutant has, leaves the identifiers of the
+  mutants of other items alone (*stable*), and, for a swap, has a mutant
+  that swaps it back (*involutive*). A larger `--sample` contains a smaller
+  one. The snapshot `mutate_list.fren` lists a mutant of every origin, at
+  every kind of site; a new operator extends it.
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that

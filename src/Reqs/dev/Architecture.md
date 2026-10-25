@@ -23,7 +23,7 @@ Verifier in Lean", Dafny '26):
 | `Fren` | The Lean-hosted front end; lean-smt backend; implementations. `Fren.Spec` is the part without the checker | `FrenCore`, lean-smt (`Fren.Spec`: `FrenCore`) |
 | `FrenCli` | The `fren` command's lexer, parser, type checker and cvc5 backend | `FrenCore`, lean-cvc5 |
 | `Reqs` | Fren's requirements | `Fren` |
-| `Impls` | Fren's code linked to `Reqs` with `impl` | `Reqs`, `FrenCore`, `FrenCli.Exit` |
+| `Impls` | Fren's code linked to `Reqs` with `impl` | `Reqs`, `FrenCore`, `FrenCli.Exit`, `FrenCli.MutateOutcome` |
 
 The executables also link `c/glibc_c23.c`, the one non-Lean source: it
 defines the C23 glibc functions that cvc5's static Linux release calls,
