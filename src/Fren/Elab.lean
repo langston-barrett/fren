@@ -2250,7 +2250,10 @@ def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- (`lang::checked`), as in the `fren` command: `[] ++ q` takes its type
   -- from `q`, translated first without recording anything.
   let expected? ← if expected?.isNone && !synthesizes a && synthesizes b then
-      frenTypeOf? (← toTerm { cx with noteIndexes := false } b)
+      let s ← saveState
+      let t? ← frenTypeOf? (← toTerm { cx with noteIndexes := false } b)
+      s.restore
+      pure t?
     else pure expected?
   let x ← toTerm { cx with concatOk := true, emptyOk := Core.Position.shared.checked cx.emptyOk (synthesizes b), expected? } a
   -- Sequences: outside the core, unless constant.

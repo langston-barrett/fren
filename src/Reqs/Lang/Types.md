@@ -441,7 +441,9 @@ whole's. So in `if c? then {} else t`, `{}` takes `t`'s type first, and
 against `s`'s. A `match` with no type expected of it checks each arm
 against the arms before it. An arm that does not synthesize its type, before
 any arm has one, waits for a later arm that does, and then has the type it
-is checked against. The right of `in` is expected to be a set of the left's
+is checked against. A member of a set or sequence literal is expected to
+have the literal's element type, or that of the first member that
+synthesizes one. The right of `in` is expected to be a set of the left's
 type, or a sequence of it if it is written as one, or a relation of a
 pair's members' types. A `Nat` is widened to an `Int` in all of these, unless
 a `Nat` is expected of the whole.
