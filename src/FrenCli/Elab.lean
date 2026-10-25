@@ -418,6 +418,16 @@ structure State where
   /-- The edits that fix the lints whose message suggests a replacement:
   the collection, membership, index, rewriting and match lints. -/
   lintFixes : Array LintFix := #[]
+  /-- The current file's lint settings, what removing each removes, and
+  those in effect at an item (`unused_lint_setting`). -/
+  settings : Array (Fren.Core.SettingRecord × Span) := #[]
+  settingRemovals : Array Span := #[]
+  seenSettings : Array Nat := #[]
+  /-- The current file's assumptions that `unused_assumption` may fire on,
+  and what its global expectations read through instances, and its
+  refinements of their abstractions: each read's component and input. -/
+  assumptions : Array (Fren.Core.AssumptionRecord × Span) := #[]
+  globalReads : Array (Name × Name) := #[]
   /-- Where the comparisons of `Bool`s in the expression being elaborated
   are, for `bool_equality`. -/
   boolEqs : Array Span := #[]
@@ -455,17 +465,21 @@ structure State where
   natSums : Array (Nat × Span) := #[]
 
 /-- Why an item failed: its static errors, the last of which stopped it,
-and the items that its paths used before it did (`dead_code`), which
-outlive it. -/
+and the items that its paths used before it did (`dead_code`), the
+settings in effect at it (`unused_lint_setting`), and what it read of
+components (`unused_assumption`), which outlive it. -/
 structure Failure where
   diags : Array Diag
   usedItems : Array Name
+  seenSettings : Array Nat
+  globalReads : Array (Name × Name)
 
 abbrev M := StateT State (Except Failure)
 
 def err (span : Span) (msg : Msg) : M α := do
   let s ← get
-  throw { diags := s.itemErrors.push { file := s.file, span, msg }, usedItems := s.usedItems }
+  throw { diags := s.itemErrors.push { file := s.file, span, msg }, usedItems := s.usedItems
+          seenSettings := s.seenSettings, globalReads := s.globalReads }
 
 /-- Runs `x`, a member of an item that is checked on its own: on a static
 error, records it, undoes what `x` did, and gives `none`, so that the
@@ -474,13 +488,18 @@ def attempt (x : M α) : M (Option α) := do
   let s ← get
   match x.run s with
   | .ok (a, s') => set s'; return some a
-  | .error f => set { s with itemErrors := f.diags, usedItems := f.usedItems }; return none
+  | .error f =>
+    set { s with itemErrors := f.diags, usedItems := f.usedItems, seenSettings := f.seenSettings
+                 globalReads := f.globalReads }
+    return none
 
 /-- Stops the current item if a member of it had a static error, as when
 what follows would only repeat it (`Reqs/View#static-errors`). -/
 def stopIfErrors : M Unit := do
   let s ← get
-  unless s.itemErrors.isEmpty do throw { diags := s.itemErrors, usedItems := s.usedItems }
+  unless s.itemErrors.isEmpty do
+    throw { diags := s.itemErrors, usedItems := s.usedItems, seenSettings := s.seenSettings
+            globalReads := s.globalReads }
 
 def internal (span : Span) (what : String) : M α := err span (Msg.internal what)
 
@@ -772,6 +791,29 @@ def patternName (cx : ExprCtx) (x : Ident) : M Fren.Core.PatternName := do
 def patternBinders (cx : ExprCtx) (p : Pattern) : M (Array Ident) :=
   p.names.filterM fun x => return (← patternName cx x) == .binder
 
+/-- The paths of the functions that `e` applies (`unused_assumption`). -/
+partial def appliedPaths : Expr → Array (Array Ident)
+  | .app _ segs args => args.foldl (· ++ appliedPaths ·) #[segs]
+  | .when _ _ c d | .bin _ _ c d | .pair _ c d | .index _ c d => appliedPaths c ++ appliedPaths d
+  | .not _ a | .neg _ a | .field _ a _ => appliedPaths a
+  | .method _ r _ args => args.foldl (· ++ appliedPaths ·) (appliedPaths r)
+  | .set _ es | .seq _ es | .chain _ es _ => es.foldl (· ++ appliedPaths ·) #[]
+  | .ite _ c a b => appliedPaths c ++ appliedPaths a ++ appliedPaths b
+  | .record _ _ fs => fs.foldl (init := #[]) fun acc (_, e?) => acc ++ (e?.map appliedPaths).getD #[]
+  | .update _ r fs => fs.foldl (init := appliedPaths r) fun acc (_, e?) => acc ++ (e?.map appliedPaths).getD #[]
+  | .match _ s arms => arms.foldl (init := appliedPaths s) fun acc (_, body) => acc ++ appliedPaths body
+  | .is _ s _ => appliedPaths s
+  | _ => #[]
+
+/-- The uninterpreted functions that `e` applies, as links of
+`unused_assumption` (`Fren.Core.fnLink`). -/
+def appliedFns (cx : ExprCtx) (e : Expr) : M (Array Name) := do
+  let st ← get
+  return (appliedPaths e).filterMap fun segs =>
+    match st.table.resolvePath st.scope (segNames segs) cx.shadowing with
+    | .ok (.item { kind := .fnItem, path, .. }) => if st.defs.any (·.1 == path) then none else some (Fren.Core.fnLink path)
+    | _ => none
+
 /-- The shape of `e`, for what it mentions (`lang::mentions`), where `bs`
 are the binders of `e` around the subexpression, each with the shape of its
 scrutinee. -/
@@ -840,6 +882,12 @@ partial def mentions : Expr → Array Name
     acc ++ (mentions body).filter (!bound.contains ·.getRoot)
   | .is _ s _ => mentions s
   | _ => #[]
+
+/-- The atoms of `e`, a `Bool` expression: its operands through `and`
+(`lint::unrelated_binders`). -/
+partial def boolAtoms : Expr → Array Expr
+  | .bin _ "and" a b => boolAtoms a ++ boolAtoms b
+  | e => #[e]
 
 /-- The variables that the defined output `v` stands for: those its
 definition mentions, through other definitions, transitively. -/
@@ -1873,6 +1921,9 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
             (Fren.Core.manualPatternCharComparisonMsg (Fren.Core.patternLiteral lit fixed))
         if let some (fixed, found) := Fren.Core.completeRangesPattern? p then
           lintFix .almostCompleteRange args[0]!.span (Fren.Core.almostCompleteRangeMsg found (Fren.Core.patternLiteral lit fixed))
+        -- `literal_dot_in_pattern` (`lint::literal_dot_in_pattern`).
+        if let some (fixed, found) := Fren.Core.literalDotsPattern? p then
+          lintFix .literalDotInPattern args[0]!.span (Fren.Core.literalDotMsg found (Fren.Core.patternLiteral lit fixed))
       if let some (fix, lit) := Fren.Core.trivialPattern? p then
         let bare : Fren.Core.BText := { text := ← srcAt recv.span, prec := recv.boolNode.kind.prec }
         let fixed := Fren.Core.trivialPatternText bare (recv.text src).text fix lit
@@ -2298,6 +2349,30 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let (x, te) ← elabExpr { cx with expected? := some t } e
       liftMsg e.span (Fren.Core.checkType t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`"))
       smts := smts.push x
+    -- `unnecessary_struct_initialization`
+    -- (`lint::unnecessary_struct_initialization`): each field's value as
+    -- `r.f`, its own field `f` of `r`, with `r`'s text.
+    if cx.noteIndexes then
+      let src := (← get).src
+      let reads := fields.filterMap fun (f, e?) => do
+        match ← e? with
+        | .path sp #[seg] =>
+          let parts := seg.name.splitOn "."
+          guard (parts.length ≥ 2 && parts.getLast! == f.name)
+          let r := ".".intercalate parts.dropLast
+          some (Expr.path { sp with stop := sp.start + r.length } #[{ name := r, span := { sp with stop := sp.start + r.length } }], r)
+        | .field _ r g =>
+          guard (g.name == f.name)
+          some (r, Fren.Core.textOf src (Fren.Core.withParens src (toRange (r.writtenSpan src))))
+        | _ => none
+      if let some (r, t) := reads[0]? then
+        let same := reads.all (Fren.Core.writtenSame ·.2 t)
+        -- A value has a type; an instance is not one.
+        let ty? := match (elabExpr { cx with noteIndexes := false } r).run (← get) with
+          | .ok ((_, ty), _) => some ty
+          | .error _ => none
+        if Fren.Core.unnecessaryStructInit fields.size (reads.size == fields.size) same ty?.isSome (ty? == some (.record path)) then
+          lintFix .unnecessaryStructInitialization span (Fren.Core.unnecessaryStructInitMsg t)
     return (s!"({recordCtorSym path} {" ".intercalate smts.toList})", .record path)
   | .update span base fields =>
     let (rv, tr) ← elabExpr { cx with expected? := none } base
@@ -2667,6 +2742,10 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
     let some (pi, ivars) ← attempt (resolveInst x p bs) | continue
     pending := pending.push pi
     vars := vars ++ ivars
+    -- Its bindings give each input of its component a value, and the
+    -- instance's assumption check reads them (`unused_assumption`).
+    let reads := (pi.comp.vars.filter fun v => v.name.isAtomic && v.role == Role.input).map (pi.comp.path, ·.name)
+    modify fun s => { s with globalReads := s.globalReads ++ reads }
   stopIfErrors
   let instNames := pending.map (Name.mkSimple ·.name.name)
   let mut insts := #[]
@@ -2736,6 +2815,35 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) : M Unit := 
   let candidates := vars.filter fun v => v.role == .input || (v.role == .output && !(v.isPub && v.defn?.isSome))
   for (x, v) in Fren.Core.unmentioned (candidates.map fun v => (v.name, v)) mentioned do
     lint .unusedVariables v.span (Fren.Core.unusedVariableMsg x false (v.role == .output))
+  -- `unused_assumption` (`lint::unused_assumption`), unless the file reads
+  -- one of the inputs (`finishLints`), or one that another assumption ties to
+  -- a used variable, transitively.
+  let others := members.foldl (init := #[]) fun acc m => match m with
+    | .prop .assume _ _ => acc
+    | .prop _ _ e | .var _ _ _ _ _ (some e) => acc ++ mentions e
+    | .inst _ _ bs => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
+    | _ => acc
+  -- The uninterpreted functions that they apply link too.
+  let acx : ExprCtx := { vars, insts := instNames, place := .prop }
+  let others ← members.foldlM (init := others) fun acc m => match m with
+    | .prop .assume _ _ => pure acc
+    | .prop _ _ e | .var _ _ _ _ _ (some e) => return acc ++ (← appliedFns acx e)
+    | .inst _ _ bs => bs.foldlM (init := acc) fun acc (_, e?) => match e? with
+      | some e => return acc ++ (← appliedFns acx e)
+      | none => pure acc
+    | _ => pure acc
+  let inputs := vars.filter (·.role == .input) |>.map (·.name)
+  let assumed := members.filterMap fun | .prop .assume x e => some (x, e) | _ => none
+  let mss := assumed.map fun (_, e) =>
+    (mentions e).foldl (init := #[]) fun acc n => if vars.any (·.name == n) && !acc.contains n then acc.push n else acc
+  let links ← assumed.mapIdxM fun i (_, e) => return mss[i]! ++ (← appliedFns acx e)
+  let used := Fren.Core.usedAssumptions links others
+  for (x, _) in assumed, ms in mss, ls in links, u in used do
+    if Fren.Core.unusedAssumption ms.size (ms.all inputs.contains) u false then
+      let r : Fren.Core.AssumptionRecord :=
+        { component := (← get).module ++ n, name := Name.mkSimple x.name, inputs := ms, links := ls
+          level := (← get).levels.get .unusedAssumption }
+      modify fun s => { s with assumptions := s.assumptions.push (r, x.span) }
   -- `constant_output` and `definable_output` (`lint::output_lints`).
   let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
   let reqs := members.filterMap fun | .prop .req x e => some (Name.mkSimple x.name, e) | _ => none
@@ -2828,6 +2936,10 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
   -- The instance of `concrete`, named as it is.
   let w := Name.mkSimple (c.path.getString!)
   if a.insts.any (·.name == w) then err aSpan (Fren.Core.dupMemberMsg w)
+  -- `a`'s assumptions are hypotheses here, so it reads each input of `a`,
+  -- through its binding or by name (`unused_assumption`).
+  let reads := (a.vars.filter fun v => v.name.isAtomic && v.role == Role.input).map (a.path, ·.name)
+  modify fun s => { s with globalReads := s.globalReads ++ reads }
   -- The bindings, over `concrete`'s own variables, seen from outside, as
   -- the instance's: a defined output is an output (`refinement::mention`).
   let own := (c.vars.filter (·.name.isAtomic)).map fun v =>
@@ -2966,6 +3078,19 @@ def elabGlobal (name : Ident) (binders : Array (Array Ident × Array Ident)) (bo
   let binders := insts.map fun i => (i.name, i.span)
   for (w, sp) in Fren.Core.unmentioned binders ((mentions body).map (·.getRoot)) do
     lint .unusedVariables sp (Fren.Core.unusedVariableMsg w true false)
+  -- What it reads through instances (`unused_assumption`).
+  let reads := (mentions body).filterMap fun m => match m.components with
+    | [w, x] => (insts.find? (·.name == w)).map fun i => (i.comp, x)
+    | _ => none
+  -- And the uninterpreted functions it applies, which its binders'
+  -- assumptions may constrain.
+  let fns ← appliedFns cx body
+  let reads := reads ++ insts.flatMap fun i => fns.map (i.comp, ·)
+  modify fun s => { s with globalReads := s.globalReads ++ reads }
+  -- `unrelated_binders` (`lint::unrelated_binders`).
+  let groups := Fren.Core.binderGroups (insts.map (·.name)) ((boolAtoms body).map fun a => (mentions a).map (·.getRoot))
+  if Fren.Core.unrelatedBinders groups.size then
+    lint .unrelatedBinders name.span (Fren.Core.unrelatedBindersMsg name.name groups)
   let trig ← trigger? cx body
   lintDeclared .global n name.span
   let prop : CProp := { kind := .expect, name := n, span := name.span, smt
@@ -2983,9 +3108,19 @@ def lintLiterals : M Unit := do
   for (l, span, msg) in (← get).literals do lintFix l span msg
   modify fun s => { s with literals := #[] }
 
+/-- Records that the settings that set `lints` here are in effect at an
+item, or at a setting that reads their level (`unused_lint_setting`). -/
+def noteSettingsSeen (lints : Array Lint := Lint.all) : M Unit :=
+  modify fun s => { s with seenSettings := lints.foldl (init := s.seenSettings) fun acc l =>
+    match (s.levels.get l).setting? with
+    | some i => if acc.contains i then acc else acc.push i
+    | none => acc }
+
 partial def elabItem (item : Item) : M Unit := do
   -- A `set_option` leaves them to the item after it.
   unless item matches .lintSetting .. do lintLiterals
+  -- A check, such as `#fren_check`, is not about any lint.
+  unless item matches .lintSetting .. | .check _ do noteSettingsSeen
   match item with
   | .mod isPub segs => do
     let (path, new) ← liftResolve segs ((← get).table.declareModule (segNames segs) isPub)
@@ -3213,6 +3348,8 @@ partial def elabItem (item : Item) : M Unit := do
     -- change to it while the body is elaborated a copy.
     let levels := (← get).levels
     let settingStart? := (← get).settingStart?
+    -- A forbidden lint's setting decides whether this one is accepted.
+    noteSettingsSeen (Fren.Core.settingLints ++ target.members.filter fun l => (levels.get l).level == .forbid)
     if let some lint := target.rejectedBy? (levels.get · |>.level) requested then
       err stx (Fren.Core.forbiddenMsg target lint requested)
     -- `allow_attributes` (`lint::allow_attributes`), at the level before the setting.
@@ -3225,7 +3362,13 @@ partial def elabItem (item : Item) : M Unit := do
                                  expectationRemovals := s.expectationRemovals.push removal }
         pure (some k)
       else pure none
-    let set : LevelInEffect := { level := requested, isSet := true, group? := target.group?, expectation? }
+    -- `unused_lint_setting` (`lint::unused_lint_setting`).
+    let r : Fren.Core.SettingRecord := { target, requested, level := levels.get .unusedLintSetting }
+    let setting := (← get).settings.size
+    modify fun s => { s with settings := (Fren.Core.SettingRecord.replace s.settings s.levels.get target requested).push (r, stx)
+                             settingRemovals := s.settingRemovals.push removal }
+    let set : LevelInEffect := { level := requested, isSet := true, group? := target.group?, expectation?
+                                 setting? := some setting }
     for lint in target.members do
       modify fun s => { s with levels := s.levels.set lint set }
     if let some body := body? then
@@ -3287,14 +3430,22 @@ def State.fixes (s : State) (fired : Array (Lint × Span)) :
       if fires .unfulfilledExpectations sp then
         edits := edits.push (if removal == sp then delete sp else (toRange removal, ""))
         fixed := fixed.push (.unfulfilledExpectations, sp)
+  if s.fixing.contains .unusedLintSetting then
+    for (_, sp) in s.settings, removal in s.settingRemovals do
+      if fires .unusedLintSetting sp then
+        edits := edits.push (if removal == sp then delete sp else (toRange removal, ""))
+        fixed := fixed.push (.unusedLintSetting, sp)
   return (edits, fixed)
 
 /-- The lints of the file just elaborated, at its end, and the edits that
 fix them, if `fren fix` fixes any. -/
 def finishLints : StateM State Unit := do
   let s ← get
+  let atEnd := Lint.all.filterMap (s.levels.get · |>.setting?)
   let (reports, fulfilled) := Fren.Core.finishReports
-    (s.lintReports ++ Fren.Core.importReports s.useRecords s.used true ++ Fren.Core.deadCodeReports s.items s.usedItems)
+    (s.lintReports ++ Fren.Core.importReports s.useRecords s.used true ++ Fren.Core.deadCodeReports s.items s.usedItems
+      ++ Fren.Core.unusedAssumptionReports s.assumptions s.globalReads
+      ++ Fren.Core.unusedSettingReports s.settings s.seenSettings atEnd true)
   let (unfulfilled, _) := Fren.Core.finishReports (Fren.Core.expectationReports s.expectations fulfilled true)
   let all := reports ++ unfulfilled
   let (edits, fixed) := s.fixes (all.map fun (r, _) => (r.lint, r.ref))
@@ -3311,7 +3462,8 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
   modify fun s => { s with file, src, fixing, module := .anonymous, scope := .anonymous, levels := s.cliLevels, useRecords := #[], evidence? := none,
                            used := #[], expectations := #[], lintReports := #[], useLocs := #[],
                            expectationRemovals := #[], items := #[], usedItems := #[], lintFixes := #[],
-                           globalTexts := #[] }
+                           globalTexts := #[], settings := #[], settingRemovals := #[], seenSettings := #[],
+                           assumptions := #[], globalReads := #[] }
   let found := literalLints src
   for item in items, k in [0:items.size] do
     -- An item has the literals and comments up to the next item, and the
@@ -3326,8 +3478,10 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
     match (elabItem item).run s with
     | .ok ((), s') =>
       if s'.itemErrors.isEmpty then set s'
-      else set { s with diags := s.diags ++ s'.itemErrors, usedItems := s'.usedItems }
-    | .error f => set { s with diags := s.diags ++ f.diags, usedItems := f.usedItems }
+      else set { s with diags := s.diags ++ s'.itemErrors, usedItems := s'.usedItems
+                        seenSettings := s'.seenSettings, globalReads := s'.globalReads }
+    | .error f => set { s with diags := s.diags ++ f.diags, usedItems := f.usedItems, seenSettings := f.seenSettings
+                               globalReads := f.globalReads }
   finishLints
 
 /-- A declaration of the prelude: its SMT-LIB text, and the names of the

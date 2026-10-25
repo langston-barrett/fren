@@ -72,36 +72,83 @@ pub comp eq_op_conditional {
 ## Erasing operations
 
 `erasing_op` fires on an operation whose value ignores an operand: `x * 0`
-and `0 * x` are always `0`, and `s inter {}`, `{} inter s`, `{} minus s`
-and `r join {}` are always `{}`, though `{}` in `r join {}` has no type
-it can take, which is an error (see
-[Checking and synthesis](../../Lang/Types.md#checking-and-synthesis)). It mirrors
+and `0 * x` are always `0`; `s inter {}`, `{} inter s`, `{} minus s` and
+`r join {}` are always `{}`, though `{}` in `r join {}` has no type it can
+take, which is an error (see
+[Checking and synthesis](../../Lang/Types.md#checking-and-synthesis)); `x
+in {}` and `x in []` are always `false`; and `{} subset s` is always
+`true`. It mirrors
 [`identity_op`](../Complexity/Operators.md#identities), and an operand is `0` or `{}` as
 it is there. The message says what the value is. It has no fix: the
 likely mistake is the literal, and writing the value instead would keep
 the mistake and hide it. Where both operands are written the same, as in
-`{} inter {}`, `eq_op` fires instead. `lint::erasing_op` states this:
+`s = {} inter {}`, `eq_op` fires instead. It does not fire
+on `s subset {}`, which says that `s` is empty. `lint::erasing_op`
+states this:
 
 ```fren
 pub comp erasing_op {
     use self::IdentityOperand::{Empty, Zero}
-    use self::InfixOp::{Inter, Join, Minus, Mul}
+    use self::InfixOp::{In, Inter, Join, Minus, Mul, Subset}
     in op: InfixOp
     in left: IdentityOperand
     in right: IdentityOperand
     in same?             -- the operands are written the same
     pub det out fires?
 
-    req rule: fires? iff (not (same? and op in {Inter, Minus}) and match op {
+    req rule: fires? iff (not (same? and op in {Inter, Minus, Subset}) and match op {
         Mul => left = Zero or right = Zero,
         Inter | Join => left = Empty or right = Empty,
-        Minus => left = Empty,
+        Minus | Subset => left = Empty,
+        In => right = Empty,
         _ => false,
     })
 }
 
 expect erasing_not_eq_op: forall (e: erasing_op) (q: eq_op), when q.op = e.op and q.same? = e.same?,
     not (e.fires? and q.fires?)
+```
+
+The refinements below check the values of `in` and `subset` that the
+message claims: a component that computes the operation as written, one
+whose output is the value, and a [refinement](../../Lang/Refinement.md) each
+way, so that the solver checks that they agree on every input. An operand
+is a variable, standing for any expression of its type: Fren's
+expressions are pure, so what holds for every value of an operand holds
+for every expression.
+
+```fren
+set_option fren.lint.erasing_op "allow" in
+pub comp empty_membership_written {
+    in x: Int
+    pub det out v? := x in {}
+}
+
+set_option fren.lint.unused_variables "allow" in
+set_option fren.lint.constant_output "allow" in
+pub comp empty_membership_value {
+    in x: Int
+    pub det out v? := false
+}
+
+refine empty_membership_sound: empty_membership_value refines empty_membership_written
+refine empty_membership_complete: empty_membership_written refines empty_membership_value
+
+set_option fren.lint.erasing_op "allow" in
+pub comp empty_subset_written {
+    in s: Set(Int)
+    pub det out v? := {} subset s
+}
+
+set_option fren.lint.unused_variables "allow" in
+set_option fren.lint.constant_output "allow" in
+pub comp empty_subset_value {
+    in s: Set(Int)
+    pub det out v? := true
+}
+
+refine empty_subset_sound: empty_subset_value refines empty_subset_written
+refine empty_subset_complete: empty_subset_written refines empty_subset_value
 ```
 
 ## Branches written the same

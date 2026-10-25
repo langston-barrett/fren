@@ -70,6 +70,8 @@ comp erasing {
     pub out p1?
     pub out p2?
     pub out p3?
+    pub out p4?
+    pub out p5?
 
     req r1: n1 = x * 0 + (0 * x)
     --~^ warning: this `*` is always `0`
@@ -82,6 +84,11 @@ comp erasing {
     req r4: p3? iff t minus {} = t inter t
     --~^ warning: this operation has no effect
     --~^^ warning: both operands of `inter` are written the same
+    req r5: p4? iff (Mode::Heat in {} or {} subset t)
+    --~^ warning: this `in` is always `false`
+    --~^^ warning: this `subset` is always `true`
+    -- It says that `t` is empty.
+    req r6: p5? iff t subset {}
 }
 
 comp chains {

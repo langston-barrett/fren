@@ -1,0 +1,40 @@
+-- `unrelated_binders`, in both front ends: a global expectation whose
+-- binders fall into groups that no atom relates. Only an `and` splits an
+-- expectation into atoms.
+
+pub comp c {
+    in x: Int
+    pub out y: Int
+    pub out b?
+    req r: y = x + 1
+    req s: b? iff x > 0
+}
+
+expect apart: forall (a b: c), a.y = a.x + 1 and b.y = b.x + 1  --~ warning: the binders of `apart` fall into 2 groups that nothing relates
+
+-- One comparison relates them.
+expect related: forall (a b: c), when a.x = b.x, a.y = b.y
+
+-- `a` and `b` through `d`'s comparisons; `e` alone.
+expect chained: forall (a b d e: c), a.y - a.x = d.y - d.x and d.y - d.x = b.y - b.x and e.y = e.x + 1
+--~^ warning: the binders of `chained` fall into 2 groups that nothing relates
+
+-- An `and` in parentheses splits too.
+expect nested: forall (a b: c), (a.y = a.x + 1 and b.y = b.x + 1) and a.y > a.x
+--~^ warning: the binders of `nested` fall into 2 groups that nothing relates
+
+-- A `when` relates its hypothesis to its conclusion, whatever they mention.
+expect monotone: forall (p q: c), when (not q.b? or p.b?) and p.b?, q.b? or q.y = q.x + 1
+expect hypotheses: forall (a b: c), when a.x = 0 and b.x = 1, a.y = 1 and b.y = 2
+expect unless_: forall (a b: c), unless a.x = 0, b.y = b.x + 1
+
+-- A disjunction is one claim: two expectations would make it a conjunction.
+expect either: forall (p q: c), p.y = p.x + 1 or q.b?
+expect neither: forall (p q: c), not (p.y != p.x + 1 and q.b?)
+
+-- An `iff` and an `if` are atoms.
+expect atoms: forall (a b: c), (a.x = 0 iff b.x = 0) or (if a.x = 0 then b.y != 1 else a.y != 1)
+expect conditional: forall (a b: c), if a.b? then a.y = a.x + 1 else b.y = b.x + 1
+
+-- `b` is mentioned nowhere: `unused_variables`'.
+expect unused: forall (a b: c), a.y = a.x + 1  --~ warning: unused binder `b`

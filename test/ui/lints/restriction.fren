@@ -104,6 +104,9 @@ comp grouping {
 }
 
 set_option fren.lint.glob_imports "allow"  --~ warning: `glob_imports` is allowed rather than expected
+--~^ warning: this lint setting is replaced before any item
 set_option fren.lint.glob_imports "expect"  --~ warning: this lint expectation is unfulfilled
 set_option fren.lint.restriction "allow"  --~ warning: `restriction` is allowed rather than expected
+--~^ warning: this lint setting is in effect at no item
 set_option fren.lint.glob_imports "allow"
+--~^ warning: this lint setting is in effect at no item

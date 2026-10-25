@@ -1,0 +1,8 @@
+-- `unused_lint_setting`: a `deny` that its group's setting undoes, and a
+-- setting after the last item.
+set_option fren.lint.disallowed_names "deny"
+set_option fren.lint.style "allow"
+
+comp c { in x: Int pub out y: Int req r: y = x }
+
+set_option fren.lint.style "warn"

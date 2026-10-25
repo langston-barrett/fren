@@ -1,0 +1,2 @@
+-- `unused_assumption`, which has no fix.
+comp c { in x: Int in n: Int pub out y: Int assume pos: n > 0 req r: y = x + 1 }

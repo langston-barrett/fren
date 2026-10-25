@@ -74,6 +74,7 @@ impl accepts_naming: naming for (n : String) (a : Bool) { name := n, annotated? 
 type Key
 fn arity(Key): Int
 
+set_option fren.lint.unused_assumption "allow" in
 comp ranked {
     in k: Key
     pub out ok?

@@ -378,6 +378,24 @@ structure LocalState where
   paths in it resolve to (`dead_code`). -/
   items : Array (Core.ItemRecord × Syntax) := #[]
   usedItems : Array Name := #[]
+  /-- The lint settings of this file, or Markdown spec, the identifier of
+  each, and the identifiers of those in effect at an item
+  (`unused_lint_setting`). An identifier is the number of settings before
+  it in the Lean file, those of the specs it reads among them, so that a
+  setting of the file in effect in a spec is told apart from the spec's
+  own. -/
+  settings : Array (Core.SettingRecord × Syntax) := #[]
+  settingIds : Array Nat := #[]
+  seenSettings : Array Nat := #[]
+  nextSetting : Nat := 0
+  /-- The settings of the Lean file, or of a spec that reads this one, that
+  this spec's replace: each one's identifier, and what replaces it. -/
+  outerReplaced : Array (Nat × Core.LintTarget × Core.LintLevel) := #[]
+  /-- Its assumptions that `unused_assumption` may fire on, and what its
+  global expectations read through instances, and its refinements of their
+  abstractions: each read's component and input. -/
+  assumptions : Array (Core.AssumptionRecord × Syntax) := #[]
+  globalReads : Array (Name × Name) := #[]
   /-- Elaborating a Markdown spec (`#fren_md`), which reports its own lints. -/
   inMarkdown : Bool := false
   /-- For each comp, global expectation and refinement declared in a

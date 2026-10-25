@@ -3784,8 +3784,9 @@ comp c { in x: Int in y: Int pub out z: Int req r: z = x * 0 + y }
 ```
 
 `x * 0` is always `0`, whatever `x` is, as `s inter {}` and `{} minus s`
-are always `{}`. The literal is probably not the operand meant,
-so there is no fix. Write the operand meant:
+are always `{}`, `x in {}` is always `false`, and `{} subset s` always
+`true`. The literal is probably not the operand meant, so there is no
+fix. Write the operand meant:
 
 ```fren
 comp c { in x: Int in y: Int pub out z: Int req r: z = x * 2 + y }
@@ -4060,6 +4061,118 @@ same:
 
 ```fren
 comp c { in s: Set(Int) pub out p? req q: p? iff 1 in s }
+```
+"# },
+  { code := "F0790", explanation := r#"A record literal that copies each field of a value of its record (a warning, `unnecessary_struct_initialization`).
+
+Example:
+
+```fren
+struct Point { x: Int, y: Int }
+
+comp c { in p: Point pub out q: Point req r: q = Point { x := p.x, y := p.y } }
+```
+
+The literal reads each field of `p` into the same field, so it is `p`.
+It fires only where `p` is a value of the record itself: a literal of
+another record with the same fields converts, and an instance is not a
+value. `fren fix` can fix this:
+
+```fren
+struct Point { x: Int, y: Int }
+
+comp c { in p: Point pub out q: Point req r: q = p }
+```
+"# },
+  { code := "F0791", explanation := r#"A lint setting that is in effect at no item (a warning, `unused_lint_setting`).
+
+Example:
+
+```fren
+set_option fren.lint.disallowed_names "deny"
+set_option fren.lint.style "allow"
+
+comp c { in x: Int pub out y: Int req r: y = x }
+```
+
+The second setting sets `disallowed_names`, a lint of `style`, before any
+item, so the first has no effect: the `deny` is undone. A setting at the
+end of a file, after the last item, has no effect either. Remove the
+setting, as `fren fix` does, or move it to where it was meant to apply:
+
+```fren
+set_option fren.lint.style "allow"
+
+comp c { in x: Int pub out y: Int req r: y = x }
+```
+
+A setting of a lint after its group's is not reported, since it sets that
+lint alone, nor is a setting to `expect`, which
+`unfulfilled_lint_expectations` reports.
+"# },
+  { code := "F0792", explanation := r#"An assumption that constrains only inputs that nothing else mentions (a warning, `unused_assumption`).
+
+Example:
+
+```fren
+comp c { in x: Int in n: Int pub out y: Int assume pos: n > 0 req r: y = x + 1 }
+```
+
+`pos` mentions `n`, so `unused_variables` does not report it, but nothing
+else does: no requirement, expectation, definition or binding, no other
+assumption that ties it to a used variable, no global expectation of the
+file that reads it, no instance of `c` in the file, and no refinement of
+the file with `c` as its abstraction. This is what is left after the last
+requirement about an input is removed. Remove the assumption and the
+input, or use them:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = x + 1 }
+```
+
+Assumptions that are reported and linked, by an input or a function, are removed
+together: one may guard an index in another, which is not defined without
+it. Each message names the others.
+"# },
+  { code := "F0793", explanation := r#"A global expectation whose binders fall into groups that nothing relates (a warning, `unrelated_binders`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = x + 1 }
+
+expect e: forall (a b: c), (when a.x = 0, a.y = 1) and (when b.x = 1, b.y = 2)
+```
+
+`e` is a conjunction, and neither of its operands mentions both `a` and
+`b`, so `e` is two claims run together, one about each, and a
+counterexample to one names a binder that has nothing to do with it. An
+`or`, a `not`, a `when` and the other connectives relate every binder they
+mention, so only an `and` at the top separates claims. Relate the binders,
+or write one expectation for each claim:
+
+```fren
+comp c { in x: Int pub out y: Int req r: y = x + 1 }
+
+expect e: forall (a: c), when a.x = 0, a.y = 1
+expect f: forall (b: c), when b.x = 1, b.y = 2
+```
+"# },
+  { code := "F0794", explanation := r#"A `.` between two letters or digits in a pattern (a warning, `literal_dot_in_pattern`).
+
+Example:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.matches?(r"v1.2") }
+```
+
+In a pattern, `.` matches any one character, so `v1.2` matches `v1x2`
+too. Between two letters or digits, it is probably meant as a dot.
+`fren fix` writes it as the class `[.]`, which a string literal that is
+not raw can hold as it is, unlike `\.`:
+
+```fren
+comp c { in s: String pub out p? req r: p? iff s.matches?(r"v1[.]2") }
 ```
 "# },
   { code := "F0795", explanation := r#"An item that declares many single-character names (`many_single_char_names`, allowed by default).

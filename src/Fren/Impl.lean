@@ -300,6 +300,7 @@ def solverAnswer (stmt : Expr) (interps := false) : MetaM Core.Answer := do
 
 open Lang in
 @[command_elab Lang.implCmd] def elabImpl : CommandElab := fun stx => do
+  noteSettingsSeen
   let nameStx := stx[1]
   let declName := (← getCurrNamespace) ++ nameStx.getId
   let r ← resolvePath (← getLocal).currentModule (pathSegs stx[3])

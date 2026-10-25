@@ -123,6 +123,11 @@ inductive Lint where
   | minIdentChars
   | absolutePaths
   | precedence
+  | unnecessaryStructInitialization
+  | unusedLintSetting
+  | unusedAssumption
+  | unrelatedBinders
+  | literalDotInPattern
   deriving Inhabited, BEq, DecidableEq, Repr
 
 def Lint.all : Array Lint :=
@@ -139,7 +144,8 @@ def Lint.all : Array Lint :=
     .manualPatternCharComparison, .almostCompleteRange, .duplicateConstraint, .invisibleCharacters, .negativePosition,
     .absurdExtremeComparisons, .erasingOp, .ifsSameCond, .contradictoryComparisons, .redundantComparisons,
     .allowAttributes, .wildcardEnumMatchArm, .needlessRawStrings, .nonAsciiLiteral, .moduleNameRepetitions,
-    .minIdentChars, .absolutePaths, .precedence]
+    .minIdentChars, .absolutePaths, .precedence, .unnecessaryStructInitialization, .unusedLintSetting,
+    .unusedAssumption, .unrelatedBinders, .literalDotInPattern]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -219,6 +225,11 @@ def Lint.name : Lint → String
   | .minIdentChars => "min_ident_chars"
   | .absolutePaths => "absolute_paths"
   | .precedence => "precedence"
+  | .unnecessaryStructInitialization => "unnecessary_struct_initialization"
+  | .unusedLintSetting => "unused_lint_setting"
+  | .unusedAssumption => "unused_assumption"
+  | .unrelatedBinders => "unrelated_binders"
+  | .literalDotInPattern => "literal_dot_in_pattern"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -300,6 +311,11 @@ def Lint.code : Lint → String
   | .minIdentChars => "F0785"
   | .absolutePaths => "F0786"
   | .precedence => "F0787"
+  | .unnecessaryStructInitialization => "F0790"
+  | .unusedLintSetting => "F0791"
+  | .unusedAssumption => "F0792"
+  | .unrelatedBinders => "F0793"
+  | .literalDotInPattern => "F0794"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -340,7 +356,8 @@ def Group.default : Group → LintLevel
 def Group.ofName? (s : String) : Option Group := Group.all.find? (·.name == s)
 
 def Lint.group : Lint → Group
-  | .unusedImports | .unusedVariables | .deadCode | .unfulfilledExpectations => .unused
+  | .unusedImports | .unusedVariables | .deadCode | .unfulfilledExpectations | .unusedLintSetting
+  | .unusedAssumption => .unused
   | .nonSnakeCase | .nonCamelCaseTypes | .nonUpperCaseConstants => .nonstandardStyle
   | .globImports | .lengthZero | .cardZero | .unlessNot | .collapsibleWhen | .matchLikeMembership | .redundantBindings
   | .doubleNeg | .negMultiply | .trivialPattern | .redundantBoolType | .moduleInception | .enumVariantNames
@@ -348,11 +365,11 @@ def Lint.group : Lint → Group
   | .manualPatternCharComparison => .style
   | .nonminimalBool | .singletonMembership | .constantOutput | .doubleComparison | .manualMethod | .elseExtends
   | .identityOp | .doubleParens | .intPlusOne | .redundantMethodChain | .trivialMatch | .needlessBoolAssign
-  | .needlessMatch | .redundantSlicing | .redundantComparisons => .complexity
+  | .needlessMatch | .redundantSlicing | .redundantComparisons | .unnecessaryStructInitialization => .complexity
   | .indexAfterUse | .eqOp | .sameBranches | .duplicateElements | .emptyArgument
   | .suspiciousUnaryOpFormatting | .noEffectReplace | .constIsEmpty | .almostCompleteRange | .duplicateConstraint
   | .invisibleCharacters | .negativePosition | .absurdExtremeComparisons | .erasingOp | .ifsSameCond
-  | .contradictoryComparisons => .suspicious
+  | .contradictoryComparisons | .unrelatedBinders | .literalDotInPattern => .suspicious
   | .membershipChain | .definableOutput | .ifNotElse | .matchSameArms | .wildcardSingleVariant | .ifChainMatch
   | .caseSplitReqs | .boolEquality | .zeroSizedMapValues | .manySingleCharNames | .similarNames
   | .tooManyLines => .pedantic
@@ -458,6 +475,9 @@ structure LevelInEffect where
   `expect` with no expectation, as from options outside a Lean file, means
   `allow`. -/
   expectation? : Option Nat := none
+  /-- Set by a `set_option` in the file: its index among the file's lint
+  settings (`unused_lint_setting`). -/
+  setting? : Option Nat := none
   deriving Inhabited, Repr
 
 def LevelInEffect.ofDefault (l : Lint) : LevelInEffect := { level := l.default }
@@ -2625,15 +2645,22 @@ def identityOpMsg (fixed : String) (flip : Bool) : Msg :=
 (`lint::erasing_op`). -/
 def erasingOp (op : InfixOp) (left right : IdentityOperand) (same : Bool) : Bool :=
   match op, same with
-  | .inter, true | .minus, true => false
+  | .inter, true | .minus, true | .subset, true => false
   | .mul, _ => (left matches .zero) || (right matches .zero)
   | .inter, _ | .join, _ => (left matches .empty) || (right matches .empty)
-  | .minus, _ => (left matches .empty)
+  | .minus, _ | .subset, _ => (left matches .empty)
+  | .in, _ => (right matches .empty)
   | _, _ => false
 
-/-- `a OP b`, which is always `0` if `zero`, and `{}` otherwise. -/
-def erasingOpMsg (op : InfixOp) (zero : Bool) : Msg :=
-  { code? := some Lint.erasingOp.code, headline := s!"this `{op.op}` is always `{if zero then "0" else "{}"}`"
+/-- The value that `a OP b` always has where `erasing_op` fires. -/
+def erasingOpValue : InfixOp → String
+  | .mul => "0"
+  | .in => "false"
+  | .subset => "true"
+  | _ => "{}"
+
+def erasingOpMsg (op : InfixOp) : Msg :=
+  { code? := some Lint.erasingOp.code, headline := s!"this `{op.op}` is always `{erasingOpValue op}`"
     label? := some "ignores its other operand"
     notes := #["note: the literal is probably not the operand meant"] }
 
@@ -3037,7 +3064,7 @@ def erasingOpAt? (src : Array Char) (n : BNode α) : Option (OpReport α) := do
   let #[a, b] := n.kids | none
   let same := writtenSame (textOf src a.range) (textOf src b.range)
   unless erasingOp o (identityOperand src a) (identityOperand src b) same do none
-  return { lint := .erasingOp, ref := n.ref, msg := erasingOpMsg o (o == .mul) }
+  return { lint := .erasingOp, ref := n.ref, msg := erasingOpMsg o }
 
 /-- Whether `precedence` fires on an operand of `outer` whose outermost
 operator is `inner`, if it is not `parenthesized` (`lint::precedence`). -/
@@ -3477,6 +3504,47 @@ def almostCompleteRangeMsg (found : Array (String × String)) (fixed : String) :
     notes := #["note: a range is from its first character to its last, both included"]
     fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
+/-- Whether `literal_dot_in_pattern` fires on a `.` of a pattern, neither
+escaped nor in a class, from whether a letter or digit is directly before
+it, and one directly after it, neither escaped
+(`lint::literal_dot_in_pattern`). -/
+def literalDotInPattern (before after : Bool) : Bool := before && after
+
+/-- The pattern `p` from `i`, which parses, with each `.` that
+`literal_dot_in_pattern` fires on written `[.]`, and the text of each with
+the characters around it, such as `1.2`; `lit` says that the character
+before `i` is a letter or digit, not escaped. -/
+partial def literalDots (cs : Array Char) (i : Nat) (lit : Bool := false) (out : String := "")
+    (found : Array String := #[]) : String × Array String :=
+  match cs[i]? with
+  | none => (out, found)
+  | some '\\' => literalDots cs (i + 2) false (out ++ String.ofList (cs.extract i (i + 2)).toList) found
+  | some '[' =>
+    let j := classEnd cs i
+    literalDots cs j false (out ++ String.ofList (cs.extract i j).toList) found
+  | some '.' =>
+    let next := cs[i + 1]?.getD ' '
+    if literalDotInPattern lit next.isAlphanum then
+      literalDots cs (i + 1) false (out ++ "[.]") (found.push s!"{cs[i - 1]!}.{next}")
+    else literalDots cs (i + 1) false (out.push '.') found
+  | some c => literalDots cs (i + 1) c.isAlphanum (out.push c) found
+
+/-- The pattern `p`, which parses, with each `.` that
+`literal_dot_in_pattern` fires on written `[.]`, and the text around each,
+if there is one. -/
+def literalDotsPattern? (p : String) : Option (String × Array String) :=
+  let (t, found) := literalDots p.toList.toArray 0
+  if found.isEmpty then none else some (t, found)
+
+def literalDotMsg (found : Array String) (fixed : String) : Msg :=
+  let t := found[0]!
+  { code? := some Lint.literalDotInPattern.code
+    headline := if found.size == 1 then s!"the `.` in `{t}` matches any character, not only a dot"
+      else "each of these `.` matches any character, not only a dot"
+    label? := some (if found.size == 1 then "matches any character" else "`.` that match any character")
+    notes := #[s!"note: `{t}` also matches `{t.replace "." "x"}`; `[.]` matches only a dot"]
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
 /-- Whether `redundant_bool_type` fires on a declaration of `n`, where
 `isBool?` is whether its type, if written, is `Bool`
 (`lint::redundant_bool_type`). -/
@@ -3749,5 +3817,186 @@ def expectationReports (exps : Array (ExpectationRecord × α)) (fulfilled : Arr
     if expectationReported (fulfilled.count i) e.level.effective then
       some { lint := .unfulfilledExpectations, level := e.level, ref, msg := unfulfilledMsg e.target fixable }
     else none
+
+/-! ## Lint settings -/
+
+/-- A `set_option` of a lint or group in the file: what it sets, to what,
+the level of `unused_lint_setting` at it, and the last setting that
+replaced it for one of its lints, if any. -/
+structure SettingRecord where
+  target : LintTarget
+  requested : LintLevel
+  level : LevelInEffect
+  replacedBy? : Option (LintTarget × LintLevel) := none
+  deriving Inhabited, Repr
+
+/-- The lints whose level a later `set_option` reads at the setting: its
+messages are about the setting itself. -/
+def settingLints : Array Lint := #[.unfulfilledExpectations, .unusedLintSetting]
+
+/-- Whether `unused_lint_setting` fires on a setting, from whether it is in
+effect at an item, for some lint it sets, and whether it is to `expect`
+(`lint::unused_lint_setting`). -/
+def unusedLintSetting (seen expect : Bool) : Bool := !seen && !expect
+
+/-- A setting that is in effect at no item: the setting that replaced it,
+if it is not in effect at the end of the file. -/
+def unusedSettingMsg (target : LintTarget) (requested : LintLevel) (replacedBy? : Option (LintTarget × LintLevel))
+    (fixable : Bool) : Msg :=
+  let help := #["help: remove this `set_option`"] ++ (if fixable then #[fixHelp] else #[])
+  match replacedBy? with
+  | none =>
+    { code? := some Lint.unusedLintSetting.code, headline := "this lint setting is in effect at no item"
+      label? := some "no item follows it", notes := help }
+  | some (t, v) =>
+    let by_ := s!"`set_option {t.optionString} \"{v.name}\"`"
+    let undoes := if requested == .deny && v != .deny && v != .forbid then
+        #[s!"note: {by_} undoes this `deny`: `{target.name}` is not an error at the items that follow"]
+      else #[]
+    { code? := some Lint.unusedLintSetting.code, headline := "this lint setting is replaced before any item"
+      label? := some "replaced before any item"
+      notes := #[s!"note: {by_} replaces it before any item"] ++ undoes ++ help }
+
+/-- The messages of `unused_lint_setting` for the file's settings, given the
+indices of those in effect at an item, and of those in effect at the end
+of the file. -/
+def unusedSettingReports (settings : Array (SettingRecord × α)) (seen atEnd : Array Nat) (fixable : Bool := false) :
+    Array (LintReport α) :=
+  (settings.mapIdx fun i (r, ref) => (i, r, ref)).filterMap fun (i, r, ref) =>
+    if unusedLintSetting (seen.contains i) (r.requested == .expect) then
+      let replacedBy? := if atEnd.contains i then none else r.replacedBy?
+      some { lint := .unusedLintSetting, level := r.level, ref
+             msg := unusedSettingMsg r.target r.requested replacedBy? fixable }
+    else none
+
+/-- `settings` after the setting of `target` to `requested`, given the
+levels before it: each setting that it replaces for one of its lints
+records it. -/
+def SettingRecord.replace (settings : Array (SettingRecord × α)) (before : Lint → LevelInEffect)
+    (target : LintTarget) (requested : LintLevel) : Array (SettingRecord × α) :=
+  target.members.foldl (init := settings) fun ss l =>
+    match (before l).setting? with
+    | some i => ss.modify i fun (r, ref) => ({ r with replacedBy? := some (target, requested) }, ref)
+    | none => ss
+
+/-! ## Unused assumptions -/
+
+/-- Whether `unused_assumption` fires on an assumption, from the number of
+variables it mentions, whether all are inputs, whether one of them, or an
+uninterpreted function it applies, is used in the component, and whether
+one is read in the file (`lint::unused_assumption`). -/
+def unusedAssumption (nMentioned : Nat) (allInputs mentioned read : Bool) : Bool :=
+  nMentioned > 0 && allInputs && !mentioned && !read
+
+/-- An uninterpreted function, as what links assumptions for
+`unused_assumption`, beside variables: its path after a number, which no
+variable's name has. -/
+def fnLink (path : Name) : Name := Name.mkNum .anonymous 0 ++ path
+
+/-- Which of the assumptions, given the variables each mentions and the
+uninterpreted functions each applies (`fnLink`), are used: those that
+mention one of `used`, or one that a used assumption mentions,
+transitively, since they constrain the same values. -/
+def usedAssumptions (mentions : Array (Array Name)) (used : Array Name) : Array Bool := Id.run do
+  let mut used := used
+  let mut out := mentions.map fun _ => false
+  -- Each round marks one more assumption, or none.
+  for _ in [0:mentions.size] do
+    let some i := (List.range mentions.size).find? fun i => !out[i]! && mentions[i]!.any used.contains
+      | break
+    out := out.set! i true
+    used := used ++ mentions[i]!
+  return out
+
+/-- An assumption that `unused_assumption` may fire on: its component, its
+name, the inputs it mentions, those and the uninterpreted functions it
+applies (`fnLink`), and the level of the lint at the component. It fires
+unless the file reads one of its links, or one that a used assumption of
+the component mentions. -/
+structure AssumptionRecord where
+  component : Name
+  name : Name
+  inputs : Array Name
+  links : Array Name
+  level : LevelInEffect
+  deriving Inhabited, Repr
+
+def unusedAssumptionMsg (name : Name) (inputs linked : Array Name) : Msg :=
+  let show_ (ns : Array Name) := ", ".intercalate (ns.toList.map (s!"`{·}`"))
+  let together := if linked.isEmpty then #[] else
+    #[s!"note: it is linked to {show_ linked}, reported too, which may need it: remove them together"]
+  { code? := some Lint.unusedAssumption.code
+    headline := s!"the assumption `{name}` constrains only inputs that nothing uses"
+    label? := some "constrains only unused inputs"
+    notes := #[s!"note: no requirement, expectation, definition or binding mentions {show_ inputs}, \
+        nor does another assumption tie them to a used variable"] ++ together ++
+      #["help: remove the assumption and its inputs, or use them"] }
+
+/-- The messages of `unused_assumption`, given what the file's global
+expectations read through instances, or apply (`fnLink`), its instances
+bind, and its refinements read of their abstractions: each read's
+component and input or function. An assumption is read when it mentions a
+read input, or one that a read assumption of its component mentions. Each
+message names the other reported assumptions linked to it. -/
+def unusedAssumptionReports (rs : Array (AssumptionRecord × α)) (reads : Array (Name × Name)) :
+    Array (LintReport α) :=
+  let reported := rs.filter fun (r, _) =>
+    let same := (rs.filter (·.1.component == r.component)).map (·.1)
+    let used := usedAssumptions (same.map (·.links)) ((reads.filter (·.1 == r.component)).map (·.2))
+    let read := (same.findIdx? (·.name == r.name)).any (used[·]!)
+    unusedAssumption r.inputs.size true false read
+  reported.map fun (r, ref) =>
+    let others := (reported.filter fun (o, _) => o.component == r.component && o.name != r.name).map (·.1)
+    let linked := usedAssumptions (others.map (·.links)) r.links
+    let names := (others.zip linked).filterMap fun (o, l) => if l then some o.name else none
+    { lint := .unusedAssumption, level := r.level, ref, msg := unusedAssumptionMsg r.name r.inputs names }
+
+/-! ## Unrelated binders -/
+
+/-- The groups of `binders` that `atoms`, the names each atom mentions,
+relate: two binders are in one group when an atom mentions both, or each
+is in one group with a third. A binder that no atom mentions is in none. -/
+def binderGroups (binders : Array Name) (atoms : Array (Array Name)) : Array (Array Name) := Id.run do
+  let mut groups : Array (Array Name) := #[]
+  for a in atoms do
+    let bs := binders.filter a.contains
+    if bs.isEmpty then continue
+    let (joined, rest) := groups.partition fun g => g.any bs.contains
+    let merged := joined.foldl (· ++ ·) bs
+    groups := rest.push (binders.filter merged.contains)
+  return groups
+
+/-- The atoms of `n`, a `Bool` expression: its operands through `and`
+(`lint::unrelated_binders`). -/
+partial def BNode.atoms (n : BNode α) : Array (BNode α) :=
+  match n.kind with
+  | .bin "and" => n.kids.flatMap (·.atoms)
+  | _ => #[n]
+
+/-- Whether `unrelated_binders` fires on a global expectation, from the
+number of groups of its binders (`lint::unrelated_binders`). -/
+def unrelatedBinders (nGroups : Nat) : Bool := nGroups ≥ 2
+
+def unrelatedBindersMsg (name : String) (groups : Array (Array Name)) : Msg :=
+  let show_ (g : Array Name) := ", ".intercalate (g.toList.map (s!"`{·}`"))
+  { code? := some Lint.unrelatedBinders.code
+    headline := s!"the binders of `{name}` fall into {groups.size} groups that nothing relates"
+    label? := some s!"{groups.size} claims in one"
+    notes := #[s!"note: no atom mentions both a binder of {show_ groups[0]!} and one of {show_ groups[1]!}",
+      "help: relate the binders, or write one expectation for each group"] }
+
+/-! ## Record literals -/
+
+/-- Whether `unnecessary_struct_initialization` fires on a record literal
+of `n` fields, from whether each field's value reads that field of some
+`r`, `r` is written the same in each, is a value rather than an instance,
+and has the record's type (`lint::unnecessary_struct_initialization`). -/
+def unnecessaryStructInit (n : Nat) (readsOwn same value sameType : Bool) : Bool :=
+  n > 0 && readsOwn && same && value && sameType
+
+def unnecessaryStructInitMsg (r : String) : Msg :=
+  { code? := some Lint.unnecessaryStructInitialization.code, headline := s!"this record literal is `{r}`"
+    label? := some s!"copies each field of `{r}`"
+    fixes := #[{ msg := s!"write `{r}`", replacement := r }] }
 
 end Fren.Core

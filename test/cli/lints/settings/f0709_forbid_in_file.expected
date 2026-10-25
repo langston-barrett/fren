@@ -6,7 +6,20 @@ error[F0709]: `allow` for `glob_imports` is incompatible with an earlier `forbid
   |
   = note: once a lint is `forbid`, its level cannot be changed
 
+warning[F0791]: this lint setting is replaced before any item
+ --> test/cli/lints/settings/f0709_forbid_in_file.fren:5:1
+  |
+5 | set_option fren.lint.glob_imports "warn"
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ replaced before any item
+  |
+  = note: `set_option fren.lint.glob_imports "forbid"` replaces it before any item
+  = help: remove this `set_option`
+  = help: `fren fix` can fix this
+  = note: `unused_lint_setting` is `warn` by default
+  = help: to allow it, `set_option fren.lint.unused_lint_setting "allow"`
+
 error: could not check due to previous errors
 
-For more information about this error, try `fren --explain F0709`.
+Some errors have detailed explanations: F0709, F0791.
+For more information about an error, try `fren --explain F0709`.
 exit=2

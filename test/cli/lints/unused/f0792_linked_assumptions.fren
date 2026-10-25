@@ -1,0 +1,10 @@
+-- `unused_assumption` on two linked assumptions: each message names the
+-- other, since `a` guards the index in `b`.
+comp c {
+    in n: Int
+    in q: Seq(Int)
+    pub out y: Int
+    assume a: n >= 0 and n < q.len
+    assume b: q[n] > 0
+    req r: y = 1
+}

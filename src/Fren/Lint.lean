@@ -408,6 +408,31 @@ register_option fren.lint.precedence : String := {
   descr := "the level of the lint `precedence`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.unnecessary_struct_initialization : String := {
+  defValue := "warn"
+  descr := "the level of the lint `unnecessary_struct_initialization`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.unused_lint_setting : String := {
+  defValue := "warn"
+  descr := "the level of the lint `unused_lint_setting`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.unused_assumption : String := {
+  defValue := "warn"
+  descr := "the level of the lint `unused_assumption`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.unrelated_binders : String := {
+  defValue := "warn"
+  descr := "the level of the lint `unrelated_binders`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.literal_dot_in_pattern : String := {
+  defValue := "warn"
+  descr := "the level of the lint `literal_dot_in_pattern`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"
@@ -451,6 +476,11 @@ register_option fren.lint.decidability : String := {
 /-- The hidden option holding the expectation of a lint at `expect`. -/
 def expectationOption (l : Core.Lint) : Name := l.option ++ `expectation
 
+/-- The hidden option holding the identifier of the `set_option` in the
+file that set a lint's level (`unused_lint_setting`,
+`LocalState.settingIds`). -/
+def settingOption (l : Core.Lint) : Name := l.option ++ `setting
+
 /-- The hidden option marking a lint's level as set by its group's
 `set_option` in the file. -/
 def viaGroupOption (l : Core.Lint) : Name := l.option ++ `via_group
@@ -473,7 +503,10 @@ def lintLevel [Monad m] [MonadOptions m] (l : Core.Lint) : m Core.LevelInEffect 
     | some (.ofNat n) => some n
     | _ => none
   let viaGroup := own?.isNone || opts.getBool (viaGroupOption l)
-  return { level, isSet := true, group? := if viaGroup then some l.group else none, expectation? }
+  let setting? := match opts.find? (settingOption l) with
+    | some (.ofNat n) => some n
+    | _ => none
+  return { level, isSet := true, group? := if viaGroup then some l.group else none, expectation?, setting? }
 
 variable {m : Type → Type} [Monad m] [MonadEnv m] [MonadOptions m]
 
@@ -583,6 +616,26 @@ partial def lintInvisible (stx : Syntax) : m Unit := do
   if let .original _ _ trailing _ := stx.getTailInfo then
     modifyLocal fun l => { l with invisibleFrom := trailing.stopPos.byteIdx }
 
+/-- The settings in the file that set `lints` here (`unused_lint_setting`). -/
+def settingsHere (lints : Array Core.Lint := Core.Lint.all) : m (Array Nat) := do
+  let opts ← getOptions
+  return lints.filterMap fun l => match opts.find? (settingOption l) with
+    | some (.ofNat n) => some n
+    | _ => none
+
+/-- Records that the settings that set `lints` here are in effect at an
+item, or at a setting that reads their level (`unused_lint_setting`). -/
+def noteSettingsSeen (lints : Array Core.Lint := Core.Lint.all) : m Unit := do
+  let here ← settingsHere lints
+  let add (acc : Array Nat) (i : Nat) := if acc.contains i then acc else acc.push i
+  modifyLocal fun l => { l with seenSettings := here.foldl add l.seenSettings }
+
+/-- Records what the lints need at the start of the item `stx`: its
+invisible characters, and that the settings here are in effect at an item. -/
+def lintItem (stx : Syntax) : m Unit := do
+  noteSettingsSeen
+  lintInvisible stx
+
 /-- Records the item that a resolved path uses (`dead_code`). -/
 def recordUsedItem (r : Core.Resolved) : m Unit :=
   modifyLocal fun l => { l with usedItems := l.usedItems.push r.usedItem }
@@ -631,8 +684,13 @@ def pendingLints : CommandElabM (Array (Core.LintReport Syntax × Core.Severity)
   let l ← getLocal
   -- `fren fix` reads Markdown specs, but not Lean files.
   let fixable := l.inMarkdown
+  -- The settings' indices in `l.settings`, from their identifiers.
+  let atEnd := (← settingsHere).filterMap l.settingIds.idxOf?
+  let seen := l.seenSettings.filterMap l.settingIds.idxOf?
   let (reports, fulfilled) := Core.finishReports
-    (l.lintReports ++ Core.importReports l.useRecords l.used fixable ++ Core.deadCodeReports l.items l.usedItems)
+    (l.lintReports ++ Core.importReports l.useRecords l.used fixable ++ Core.deadCodeReports l.items l.usedItems
+      ++ Core.unusedAssumptionReports l.assumptions l.globalReads
+      ++ Core.unusedSettingReports l.settings seen atEnd fixable)
   let (unfulfilled, _) := Core.finishReports (Core.expectationReports l.expectations fulfilled fixable)
   return reports ++ unfulfilled
 
@@ -645,7 +703,8 @@ def reportLints : CommandElabM Unit := do
     | .warning => logWarningAt r.ref r.msg.text
     | .info => logInfoAt r.ref r.msg.text
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
-                                items := #[], usedItems := #[] }
+                                items := #[], usedItems := #[], settings := #[], settingIds := #[],
+                                seenSettings := #[], assumptions := #[], globalReads := #[] }
 
 /-- `set_option fren.lint.NAME "LEVEL"`, for a lint (`lint::setting`) or a
 group (`lint::group_setting`), which sets each of its lints. Other options,
@@ -657,6 +716,8 @@ and lints that do not exist, are left to Lean. -/
   let some v := stx[3].isStrLit? | throwUnsupportedSyntax
   let some requested := Core.LintLevel.ofName? v | throwErrorAt stx[3] (Core.invalidLevelMsg v).text
   let levels ← target.members.mapM fun l => return (l, (← lintLevel l).level)
+  -- A forbidden lint's setting decides whether this one is accepted.
+  noteSettingsSeen (Core.settingLints ++ (levels.filter (·.2 == .forbid)).map (·.1))
   let levelOf (l : Core.Lint) := ((levels.find? (·.1 == l)).map (·.2)).getD l.default
   if let some lint := target.rejectedBy? levelOf requested then
     throwErrorAt stx (Core.forbiddenMsg target lint requested).text
@@ -672,8 +733,23 @@ and lints that do not exist, are left to Lean. -/
       modifyLocal fun l => { l with expectations := l.expectations.push (e, stx) }
       pure (some n)
     else pure none
+  -- `unused_lint_setting` (`lint::unused_lint_setting`).
+  let before ← target.members.mapM fun l => return (l, ← lintLevel l)
+  let r : Core.SettingRecord := { target, requested, level := ← lintLevel .unusedLintSetting }
+  let n := (← getLocal).nextSetting
+  modifyLocal fun l =>
+    -- The settings it replaces, as indices in `l.settings`: one of the Lean
+    -- file's, in effect in a spec, is not there, and is recorded apart.
+    let outer := (target.members.filterMap fun lint => (Core.Levels.get before lint).setting?).filter
+      (!l.settingIds.contains ·)
+    let before (lint : Core.Lint) := let e := Core.Levels.get before lint
+      { e with setting? := e.setting?.bind l.settingIds.idxOf? }
+    { l with settings := (Core.SettingRecord.replace l.settings before target requested).push (r, stx)
+             settingIds := l.settingIds.push n, nextSetting := n + 1
+             outerReplaced := l.outerReplaced ++ outer.map (·, target, requested) }
   let opts := target.members.foldl (init := opts) fun opts lint =>
     let opts := opts.insert lint.option (.ofString v)
+    let opts := opts.insert (settingOption lint) (.ofNat n)
     let opts := match expectation? with
       | some n => opts.insert (expectationOption lint) (.ofNat n)
       | none => opts.erase (expectationOption lint)
