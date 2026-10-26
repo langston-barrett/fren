@@ -689,7 +689,9 @@ else, such as a guarantee, it is an error (`F0215`), and so is a
 `set_option` of any other option before a member (`F0216`). The setting is a
 statement that the solver cannot be relied on there, so it is never
 reported as unneeded. A value other than `"tested"` or `"solver"` is an
-error (`F0214`) where it would set a check.
+error (`F0214`), reported once, at the value, wherever the setting is.
+The items and members after it are elaborated as though it were
+`"solver"`, so that the error is not repeated at each of them.
 
 `fren check` asks the solver nothing about a check whose evidence is
 testing. It tests the check with `--tests` tests (default 100) from

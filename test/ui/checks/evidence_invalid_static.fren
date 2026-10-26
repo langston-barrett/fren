@@ -1,0 +1,35 @@
+-- An invalid `fren.evidence` value is reported once, at the value, in both
+-- front ends, and the items after it are elaborated as with "solver"
+-- (`Reqs/Check#checking-by-testing`): `c` and `d` report nothing.
+
+set_option fren.evidence "guess" in  --~ error: invalid evidence `guess`
+comp a {
+    in x: Int
+    pub out y: Int
+    ensure r: y = x
+}
+
+comp b {
+    in x: Int
+    set_option fren.evidence "guess" in  --~ error: invalid evidence `guess`
+    pub out y: Int
+    ensure r: y = x
+}
+
+set_option fren.evidence "guess"  --~ error: invalid evidence `guess`
+
+comp c {
+    in x: Int
+    pub out y: Int
+    ensure r: y = x
+}
+
+-- `a` was elaborated despite its setting.
+comp d {
+    in x: Int
+    inst i: a { x }
+    pub out y: Int
+    ensure r: y = i.y
+}
+
+--@ exit: 2

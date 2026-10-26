@@ -3794,6 +3794,21 @@ def evidenceTested (ref : Syntax) (value : String) : CommandElabM Bool := do
   let some b := Core.evidenceTested? value | throwErrorAt ref (Core.invalidEvidenceMsg value).text
   return b
 
+/-- Whether the item-level or file-level `fren.evidence` in effect sets
+checks to testing. An invalid value, reported once where it is set
+(`elabEvidenceOption`), sets nothing. -/
+def evidenceInEffect : CommandElabM Bool :=
+  return (Core.evidenceTested? (fren.evidence.get (← getOptions))).getD false
+
+/-- `set_option`, as Lean elaborates it, but for `fren.evidence`, an invalid
+value is reported once, at the value, rather than at each item it would
+set, and does not stop them, as in the `fren` command. -/
+@[command_elab Lean.Parser.Command.set_option] def elabEvidenceOption : CommandElab := recordingErrors fun stx => do
+  unless stx[1].getId.eraseMacroScopes == `fren.evidence do throwUnsupportedSyntax
+  if let some v := stx[3].isStrLit? then
+    if (Core.evidenceTested? v).isNone then logErrorAt stx[3] (Core.invalidEvidenceMsg v).text
+  elabSetOption stx
+
 open Lang in
 /-- A member without its `set_option fren.evidence ... in`, and the
 setting, if it has one: the innermost, if there are several. -/
@@ -3903,7 +3918,7 @@ open Lang in
   let path := modName ++ n
   let declBase := (← getCurrNamespace) ++ path
   -- The evidence settings, apart from the members they set.
-  let (members, tested) ← testedOf (← evidenceTested nameStx (fren.evidence.get (← getOptions))) stx[4].getArgs
+  let (members, tested) ← testedOf (← evidenceInEffect) stx[4].getArgs
   -- Its `use`s, and the scope that its paths resolve in.
   for m in members do
     if m.isOfKind ``Lang.useMember then declareUse (pathSegs m[1]) (!m[2].isNone) m[1] (some path)
@@ -4388,7 +4403,7 @@ def globalText (stx : Syntax) : String :=
   let binders := if stx[3].isNone then #[] else stx[3][1].getArgs
   let info ← liftTermElabM <| elabGlobalInfo modName n nameStx binders (withWhere stx[4] stx[5]) decl
   lintDeclared .global n nameStx
-  let all ← evidenceTested nameStx (fren.evidence.get (← getOptions))
+  let all ← evidenceInEffect
   let info := { info with tested := Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] }
   record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })
   record (.globalInfo path info)
@@ -4455,7 +4470,7 @@ and the solver is asked nothing. -/
   -- through its binding or by name (`unused_assumption`).
   let reads := (a.vars.filter fun v => v.name.isAtomic && v.role == Core.Role.input).map (a.path, ·.name)
   modifyLocal fun l => { l with globalReads := l.globalReads ++ reads }
-  let tested := Core.Tested.ofSettings (← evidenceTested nameStx (fren.evidence.get (← getOptions)))
+  let tested := Core.Tested.ofSettings (← evidenceInEffect)
     -- The bindings too, for the definedness of their indexes.
     (a.assumes.map (·.name) ++ bound) ((a.ensures.map (·.name) ++ a.defs.map (·.1)).map (·, none))
     -- `a`'s instances too, for the definedness of their bindings.
