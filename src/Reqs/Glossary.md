@@ -235,7 +235,7 @@ declaration's scope the name means the declaration. It is written with
 **Table.** An expression `table { C => e, ... }` that has the value of its
 first row whose condition holds: a `match` with guards and nothing to match
 on. Over a scrutinee, `table s { P if C => e, ... }`, a `match` whose arms
-are disjoint, so that their order does not matter. See
+are disjoint, so that its value does not depend on their order. See
 [Expressions](Lang/Expressions.md#tables).
 
 **Trigger.** The condition under which a `when` or `unless` constraint

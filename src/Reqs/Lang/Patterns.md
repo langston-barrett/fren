@@ -316,6 +316,66 @@ pub comp overlap {
 }
 ```
 
+`lang::pattern_overlap` states what the steps decide, over the patterns
+themselves, for those of one value: `_`, a range of integers (a literal
+is the range of one, and `_` of an integer the range without bounds), or
+a variant whose one payload value a range matches. Two patterns overlap
+exactly when some value matches both: there is then such a value, the
+`witness`, and wherever any value `v` matches both, they overlap. The
+integers are `Nat`s or not (`nat?`), and of a `Nat`, only those at least
+0 are values, so that ranges below 0 match none, as in `..=-1`, and
+`..=0` and `0..` overlap only at 0. `matches?` states which values a
+pattern matches:
+
+```fren
+-- The kinds of pattern of `lang::pattern_overlap`.
+pub enum PatternShape { Wildcard, Integers, Variant }
+
+-- A range of integers: its bounds, each where it has one.
+pub struct IntRange { bounded_below?, low: Int, bounded_above?, high: Int }
+
+-- A pattern: `_`, the integers of `range`, or the variant `variant` of an
+-- enumeration, whose payload's one value `payload` matches.
+pub struct SimplePattern { shape: PatternShape, range: IntRange, variant: Int, payload: IntRange }
+
+-- A value: an integer, `number`, or the variant `variant` with `number`
+-- as its payload's value.
+pub struct SimpleValue { variant: Int, number: Int }
+
+fn in_range?(r: IntRange, n: Int) := (not r.bounded_below? or r.low <= n) and (not r.bounded_above? or n <= r.high)
+
+fn matches?(p: SimplePattern, v: SimpleValue) := match p.shape {
+    PatternShape::Wildcard => true,
+    PatternShape::Integers => in_range?(p.range, v.number),
+    PatternShape::Variant => v.variant = p.variant and in_range?(p.payload, v.number),
+}
+
+pub comp pattern_overlap {
+    in first: SimplePattern
+    in second: SimplePattern
+    in nat?                  -- the integers are `Nat`s: the value's, or its payload's
+    in v: SimpleValue              -- any value
+    pub out overlap?
+    pub out witness: SimpleValue   -- a value that both match, where they overlap
+
+    -- Both are patterns of one type: of integers, or of an enumeration.
+    assume typed: not (first.shape = PatternShape::Integers and second.shape = PatternShape::Variant)
+        and not (first.shape = PatternShape::Variant and second.shape = PatternShape::Integers)
+    assume variants: first.variant >= 0 and second.variant >= 0
+
+    ensure common: when overlap?,
+        matches?(first, witness) and matches?(second, witness) and (not nat? or witness.number >= 0)
+    ensure complete: when matches?(first, v) and matches?(second, v) and (not nat? or v.number >= 0), overlap?
+
+    expect variants_apart: when first.shape = PatternShape::Variant and second.shape = PatternShape::Variant
+        and first.variant != second.variant, not overlap?
+    expect below_nat: when nat? and first.shape = PatternShape::Integers and first.range.bounded_above?
+        and first.range.high < 0, not overlap?
+    expect wildcards: when first.shape = PatternShape::Wildcard and second.shape = PatternShape::Wildcard
+        and (not nat? or v.number >= 0), overlap?
+}
+```
+
 The error names a value that both patterns match, as a pattern, as a
 `match` that is not exhaustive names one that no arm matches: the
 constructors that both name, with such a value of each value of their

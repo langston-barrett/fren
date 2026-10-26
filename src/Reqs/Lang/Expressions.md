@@ -1241,15 +1241,20 @@ parentheses, though no such value is matched (`F0316`).
 Where a `match` has the value of the first arm that is taken, the arms of
 a table are *disjoint*: no two of them are taken at one value of the
 scrutinee, each where its pattern matches and its guard holds. So the
-order of the arms does not matter: each can be read alone, they can be
-reordered or split, and the table has the value of the body of the one
-arm that is taken. Overlapping arms, which a `match` would quietly read in
+table's value does not depend on the order of the arms: each can be read
+alone, they can be reordered or split, and the table has the value of the
+body of the one arm that is taken. Their order still matters to the
+[definedness](../Check.md#definedness) of the indexes in their guards,
+as a `match`'s does: a guard is evaluated where no earlier arm is taken,
+so an index in it may rest on an earlier arm's guard, and reordering two
+arms with guards can leave it out of range (`F0611`). Overlapping arms, which a `match` would quietly read in
 order, as it would `n if n > 0` and `n if n >= 0`, are reported instead.
 Disjointness is decided in two parts:
 
 - Two arms without guards whose patterns [overlap](Patterns.md#overlap),
   that is, which some value matches both, are an error (`F0391`), at the
-  later arm's pattern, with such a value. The static rules decide it from
+  later arm's pattern, with such a value. Of several such pairs, the first
+  is reported, by its later arm and then by its earlier one. The static rules decide it from
   the patterns alone, nested and range patterns among them, as they decide
   [usefulness](Patterns.md#usefulness). So `Mode::On(_)` and `Mode::On(x)`
   are an error, and so are `1..=5` and `5..`, which both match `5`.
@@ -1263,8 +1268,11 @@ Two arms whose patterns do not overlap are disjoint, whatever their guards.
 A last arm `_ => e`, without a guard, means *otherwise*: it is taken
 wherever no other arm is, as a table's `_` row is. It overlaps no other
 arm, so it is neither an error nor asked about, and like the `_` row, it
-is last: an arm after it is an error (`F0359`). An arm whose pattern is a
-binder, or that is `_` with a guard, is not *otherwise*, and overlaps
+is last: an arm after it is an error (`F0359`). Where the arms without
+guards before it cover every value, it is never taken, an error
+(`F0318`), as a `_` arm after them is in a `match`: in `table b? { true
+=> 0, false => 1, _ => 2 }`, the `_` arm is dead. An arm whose pattern is
+a binder, or that is `_` with a guard, is not *otherwise*, and overlaps
 every other arm.
 
 The arms are exhaustive as a `match`'s are (`F0317`), each arm with a guard
@@ -1303,6 +1311,58 @@ pub comp table_arm_pair {
 
     cover rejected: rejected?
     cover asked: asked?
+}
+```
+
+`lang::table_arms` states the same over the arms of a table as written,
+in order, each `_` without a guard, or another pattern with a guard or
+without, for two arms `i` and `j` of them, `i` before `j`, with whether
+each arm's pattern overlaps `j`'s, as `lang::pattern_overlap` decides it.
+The otherwise is the last arm, `_` without a guard; no other arm is `_`
+without one (`F0359`). Of the
+pairs that the static rules reject, the table is reported at the first,
+in order, as above: `earlier_rejected?` says whether a pair before `(i,
+j)` is rejected, either of an arm before `j`, or of `j` and an arm before
+`i`. `table_arms_refines` confirms that it refines `table_arm_pair`:
+
+```fren
+pub enum TableArm { Unguarded, Guarded, Wildcard }
+
+pub enum Overlap { Apart, Overlapping }
+
+set_option fren.lint.undecidable "allow" in
+pub comp table_arms {
+    use self::Overlap::Overlapping
+    use self::TableArm::{Guarded, Wildcard}
+    in arms: Seq(TableArm)       -- each arm, in order: `_` without a guard, or another, with a guard or without
+    in overlaps: Seq(Overlap)    -- whether each arm's pattern overlaps arm `j`'s
+    in i: Int                    -- an arm before `j`
+    in j: Int                    -- an arm
+    in earlier_rejected?         -- the static rules reject a pair before `(i, j)`, in order
+    pub out rejected?            -- the static rules reject arms `i` and `j`
+    pub out asked?               -- the disjointness check asks whether both can be taken at once
+    pub out reported?            -- the table is reported at arm `j`, naming arm `i` (`F0391`)
+
+    -- Whether arm `i`'s pattern overlaps arm `j`'s, whether one of them
+    -- has a guard, and whether arm `j` is the otherwise: the last, `_`
+    -- without a guard.
+    ensure rule: rejected? iff (0 <= i < overlaps.len and overlaps[i] = Overlapping)
+        and not ((0 <= i < arms.len and arms[i] = Guarded) or (0 <= j < arms.len and arms[j] = Guarded))
+        and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
+    ensure check: asked? iff (0 <= i < overlaps.len and overlaps[i] = Overlapping)
+        and ((0 <= i < arms.len and arms[i] = Guarded) or (0 <= j < arms.len and arms[j] = Guarded))
+        and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
+    ensure first: reported? iff (0 <= i < j < arms.len and rejected? and not earlier_rejected?)
+
+    expect otherwise_alone: when 0 <= j and j = arms.len - 1 and arms[j] = Wildcard, not rejected? and not asked?
+    expect reported_rejected: when reported?, rejected?
+}
+
+set_option fren.lint.undecidable "allow" in
+refine table_arms_refines: table_arms refines table_arm_pair {
+    overlap? := 0 <= i < overlaps.len and overlaps[i] = Overlap::Overlapping,
+    guarded? := (0 <= i < arms.len and arms[i] = TableArm::Guarded) or (0 <= j < arms.len and arms[j] = TableArm::Guarded),
+    otherwise? := 0 <= j and j = arms.len - 1 and arms[j] = TableArm::Wildcard,
 }
 ```
 
