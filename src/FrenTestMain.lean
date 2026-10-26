@@ -271,6 +271,8 @@ def fmtIgnore : List String :=
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
    "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
    "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
+   -- The README's example keeps its hand-aligned continuation lines.
+   "README.md",
    -- `#fren_md` in a block, which only the Lean front end reads.
    "src/FrenTest/chapters/LiterateOuter.md", "src/FrenTest/chapters/LiterateReader.md",
    "src/FrenTest/chapters/deep/LiterateDeep.md", "src/FrenTest/chapters/LiterateReplacing.md",
