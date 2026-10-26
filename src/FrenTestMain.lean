@@ -27,6 +27,10 @@ import Lean.Elab.Frontend
   stable and, for a swap, involutive (`mutation`).
 - **Lean's tokens:** the tokens that both front ends read as identifiers,
   and reject as declarations, are Lean's (`leanTokens`).
+- **Decisions of `fren mutate`:** on each example of `test/mutate/`, it is
+  adequate, decides a mutant as a sample or a shard does, needs every expectation, and
+  selects the components to check, and decides each check, soundly
+  (`decisions`).
 
 The tests run as jobs, in parallel (see "Jobs" below), and the failures are
 reported sorted.
@@ -523,14 +527,18 @@ def libraries : IO (Array String) := do
 /-! ## Mutants
 
 The properties of `fren mutate`'s mutants (`Reqs/dev/Testing`), over the
-*corpus*: Fren's own requirements, and each snapshot of `fren mutate`. -/
+*corpus*: Fren's own requirements, each snapshot of `fren mutate`, and
+each example of its decisions (`decisions`). -/
+
+/-- The examples of `fren mutate`'s decisions. -/
+def decisionExamples : IO (Array FilePath) := sortedFiles ("test" / "mutate") "fren"
 
 /-- The corpus, as groups of files: Fren's own requirements first. -/
 def mutationCorpus : IO (Array (Array String)) := do
   let snaps := (← sortedFiles ("test" / "cli") "fren").filter fun f =>
     let n := f.fileName.getD ""
     n.startsWith "mutate_" || n.startsWith "f0613" || n.startsWith "f0614"
-  return #[ownSpecFiles] ++ snaps.map fun f => #[f.toString]
+  return #[ownSpecFiles] ++ (snaps ++ (← decisionExamples)).map fun f => #[f.toString]
 
 /-- The files of a group, read as `fren` reads them. -/
 def readGroup (paths : Array String) : IO (Array (String × Array Char)) :=
@@ -733,6 +741,197 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
         failures := failures.push s!"mutants of {files.map (·.1)}: the {n} shards of a selection do not partition it"
   return failures
 
+/-! ## Mutation testing, end to end
+
+The properties of what `fren mutate` decides about each mutant
+(`Reqs/dev/Testing`), over the examples in `test/mutate/`: specs whose
+expectations and cover goals pin them down, each with the mutants that no
+check can kill listed beside it, in `X.equivalent`. -/
+
+/-- The mutants of an example are run in this many shards too. -/
+def decisionShards : Nat := 3
+
+/-- At most this many mutants of an example are checked again, with every
+component, and under `fren check`. -/
+def decisionSample : Nat := 24
+
+/-- The mutants of `path` that no check can kill, listed in
+`path.equivalent` by identifier, and the problems of that file. Each line
+is `ID REASON`, where the reason says why the mutant means what the spec
+means, and a line that starts with `--` is a comment. -/
+def listedEquivalents (path : FilePath) : IO (Array String × Array String) := do
+  let file := path.withExtension "equivalent"
+  unless ← file.pathExists do return (#[], #[])
+  let mut problems := #[]
+  let mut listed := #[]
+  for line in (← IO.FS.readFile file).splitOn "\n" do
+    if line.isEmpty || line.startsWith "--" then continue
+    match line.splitOn " " with
+    | id :: reason@(_ :: _) =>
+      if reason.all (·.isEmpty) then problems := problems.push s!"{file}: `{id}` has no reason"
+      else if listed.contains id then problems := problems.push s!"{file}: `{id}` is listed twice"
+      else listed := listed.push id
+    | _ => problems := problems.push s!"{file}: `{line}` is not `ID REASON`"
+  return (problems, listed)
+
+/-- How a test names an outcome. -/
+def outcomeName : FrenCli.Mutate.Outcome → String
+  | .killed => "is killed"
+  | .survived => "survives"
+  | .equivalent => "is equivalent"
+  | .unviable => "is unviable"
+
+/-- The decisions of `fren mutate` about the mutants of `files`, or of
+those named by `ids`, or `sample?` of them, or the shard `shard?`, in
+order; checking every component of every mutant if `exhaustive`. -/
+def decisionsOf (files : Array String) (ids : Array String := #[]) (sample? : Option Nat := none)
+    (shard? : Option (Nat × Nat) := none) (exhaustive := false) : IO (Array FrenCli.Decision) := do
+  let decisions ← IO.mkRef #[]
+  let _ ← IO.FS.withIsolatedStreams
+    (FrenCli.mutate { command := .mutate, files, mutantIds := ids, sample?, shard? } (some { exhaustive, decisions }))
+  decisions.get
+
+/-- The results of `fren check` of `files`, by the key of their item and
+their own (`FrenCli.Mutate.keyed`), and its exit code. -/
+def checkResultsOf (files : Array String) :
+    IO (Std.HashMap String (Array (String × Fren.Core.CheckResult)) × UInt32) := do
+  let record ← IO.mkRef #[]
+  let (_, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files } (some record))
+  let byItem := (← record.get).foldl (init := ({} : Std.HashMap String (Array Fren.Core.CheckResult)))
+    fun m (k, r) => m.insert k ((m.getD k #[]).push r)
+  return (byItem.map fun _ rs => FrenCli.Mutate.keyed rs, code)
+
+/-- The checks that pass in `before` and fail in `after`, as `item|check`. -/
+def passToFail (before after : Std.HashMap String (Array (String × Fren.Core.CheckResult))) : Array String :=
+  after.toArray.flatMap fun (item, rs) =>
+    (FrenCli.Mutate.killers (before.getD item #[]) rs).map fun (k, _) => s!"{item}|{k}"
+
+/-- The expectations and cover goals of the text `chars`, local and
+global, each with its name and the lines that it takes. -/
+def expectationsOf (chars : Array Char) : Array (String × FrenCli.Span) :=
+  let lines (sp : FrenCli.Span) : FrenCli.Span :=
+    let start := (List.range sp.start).reverse.find? (chars[·]? == some '\n') |>.map (· + 1) |>.getD 0
+    let stop := ((List.range chars.size).drop sp.stop).find? (chars[·]? == some '\n') |>.map (· + 1) |>.getD chars.size
+    { start, stop }
+  match FrenCli.parseText chars with
+  | .ok (_, items, _) => items.flatMap fun
+    | .comp _ c members _ spans _ => (members.zip spans).filterMap fun
+      | (.prop k n _, sp) => if k == .expect || k == .cover then some (s!"{c.name}::{n.name}", lines sp) else none
+      | _ => none
+    | .global n _ body => #[(n.name, lines { start := n.span.start, stop := body.span.stop })]
+    | _ => #[]
+  | .error _ => #[]
+
+/-- `chars` written to a file named `name` in a new temporary directory,
+for `f`. -/
+def withText (name : String) (chars : Array Char) (f : String → IO α) : IO α :=
+  IO.FS.withTempDir fun dir => do
+    let path := dir / name
+    IO.FS.writeFile path (String.ofList chars.toList)
+    f path.toString
+
+/-- What `fren mutate` decides about the mutants of the example `path`:
+- **adequate:** the example passes `fren check`, and every mutant is killed
+  but those listed as equivalent, each of which survives or is shown
+  equivalent;
+- **sample and shard invariant:** a sample of half of the mutants, each run
+  after fewer others, decides each as the whole run does, and so does each
+  of `decisionShards` shards, which together hold each mutant once;
+- **every expectation needed:** without any one of its expectations and
+  cover goals, some mutant survives that was killed, and is not shown
+  equivalent, which it cannot be: it was killed, so it means something
+  else than the spec;
+- **selection sound:** checking only the components whose fingerprint a
+  mutant changes decides as checking every component does, and finds
+  only checks that checking every component finds;
+- **verdicts sound:** each check that kills a mutant, of every component,
+  passes under `fren check` of the spec, and fails under `fren check` of
+  the mutant's text; a mutant that is not killed fails no check there that
+  passes on the spec.
+
+The last two are checked on a sample of `decisionSample` mutants. -/
+def decisions (path : String) : IO (Array String) := do
+  let name := (FilePath.mk path).fileName.getD path
+  let (problems, listed) ← listedEquivalents path
+  let mut failures := problems
+  let files ← readGroup #[path]
+  let chars := files[0]!.2
+  let (_, all) := FrenCli.mutantsOf files #[]
+  let (before, code) ← checkResultsOf #[path]
+  if code != 0 then failures := failures.push s!"{path}: `fren check` exits with {code}, not 0"
+  -- Adequacy.
+  let decided ← decisionsOf #[path]
+  -- Whether the solver shows a listed mutant equivalent within its time
+  -- limit, which is in wall-clock time, can depend on the machine's load,
+  -- so a listed mutant may either survive or be equivalent.
+  for d in decided do
+    match d.outcome, listed.contains d.id with
+    | .killed, true => failures := failures.push s!"{path}: {d.id} is listed as equivalent, but is killed"
+    | .killed, false | .equivalent, true | .survived, true => pure ()
+    | o, false => failures := failures.push s!"{path}: {d.id} {outcomeName o}, and is not listed as equivalent"
+    | .unviable, true => failures := failures.push s!"{path}: {d.id} is unviable"
+  for id in listed do
+    unless decided.any (·.id == id) do failures := failures.push s!"{path}: {id} is listed, but is no mutant"
+  -- Whether a mutant that is not killed is shown equivalent depends on
+  -- the solver's time limit, as above.
+  let kind (o : FrenCli.Mutate.Outcome) := if o == .equivalent then .survived else o
+  -- A sample, in which each mutant runs after fewer others, with fewer
+  -- answers kept (`Reqs/Cli#solver-queries`), decides each as the whole
+  -- run does.
+  for d in ← decisionsOf #[path] (sample? := some (all.size / 2)) do
+    let some d₀ := decided.find? (·.id == d.id) | continue
+    if kind d.outcome != kind d₀.outcome || d.killers != d₀.killers then
+      failures := failures.push s!"{path}: {d.id} {outcomeName d₀.outcome}, killed by {d₀.killers.toList}, but in a sample \
+        {outcomeName d.outcome}, killed by {d.killers.toList}"
+  -- So do the shards, which together hold each mutant once.
+  let shards ← (List.range decisionShards).toArray.flatMapM fun k => decisionsOf #[path] (shard? := some (k, decisionShards))
+  if (shards.map (·.id)).qsort (· < ·) != (decided.map (·.id)).qsort (· < ·) then
+    failures := failures.push s!"{path}: the {decisionShards} shards do not hold each mutant once"
+  for d in shards do
+    let some d₀ := decided.find? (·.id == d.id) | continue
+    if kind d.outcome != kind d₀.outcome || d.killers != d₀.killers then
+      failures := failures.push s!"{path}: {d.id} {outcomeName d₀.outcome}, killed by {d₀.killers.toList}, but in its shard \
+        {outcomeName d.outcome}, killed by {d.killers.toList}"
+  -- Every expectation and cover goal is needed.
+  let killed := decided.map (·.outcome == .killed)
+  for (what, sp) in expectationsOf chars do
+    let chars' := chars.extract 0 sp.start ++ chars.extract sp.stop chars.size
+    let failure? ← withText name chars' fun path' => do
+      let (_, all') := FrenCli.mutantsOf (← readGroup #[path']) #[]
+      -- The same mutants, in order, but for their identifiers, which
+      -- read the file's path.
+      if all'.size != all.size || (all.zip all').any fun (m, m') => m.item != m'.item || m.change != m'.change then
+        return some s!"{path}: without `{what}`, the mutants are not the same"
+      let decided' ← decisionsOf #[path']
+      -- A mutant that the deleted check killed now means something else
+      -- than the spec, so it survives: it is not shown equivalent.
+      let outcomes := (killed.zip (decided'.map (·.outcome))).filter (·.1) |>.map (·.2)
+      if outcomes.contains .survived then return none
+      if outcomes.contains .equivalent then
+        return some s!"{path}: without `{what}`, a mutant that was killed is shown equivalent to the spec"
+      return some s!"{path}: without `{what}`, every mutant that was killed still is"
+    failures := failures ++ failure?.toArray
+  -- Selection and verdicts, on a sample.
+  let sample := FrenCli.Mutate.select all none #[] (some decisionSample) 0
+  let full ← decisionsOf #[path] (sample.map (·.id)) (exhaustive := true)
+  for m in sample do
+    let some d := full.find? (·.id == m.id) | failures := failures.push s!"{path}: {m.id} is not decided"
+    let some d₀ := decided.find? (·.id == m.id) | continue
+    if kind d.outcome != kind d₀.outcome then
+      failures := failures.push
+        s!"{path}: {m.id} {outcomeName d₀.outcome}, but {outcomeName d.outcome} when every component is checked"
+    for (item, k) in d₀.killers do
+      unless d.killers.contains (item, k) do
+        failures := failures.push s!"{path}: {m.id} is killed by {item}|{k}, which checking every component does not find"
+    let (after, _) ← withText name (m.apply chars) (checkResultsOf #[·])
+    let found := passToFail before after
+    for (item, k) in d.killers do
+      unless found.contains s!"{item}|{k}" do
+        failures := failures.push s!"{path}: {m.id} is killed by {item}|{k}, which `fren check` does not fail on it"
+    if d.outcome != .killed && !found.isEmpty then
+      failures := failures.push s!"{path}: {m.id} {outcomeName d.outcome}, but `fren check` fails it on {found.toList}"
+  return failures
+
 /-! ## Jobs
 
 The tests are independent, so `main` runs them as jobs, in parallel, each
@@ -757,6 +956,7 @@ def jobs : IO (Array (List String)) := do
     ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"], ["leanTokens"]]
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
+    ++ (← decisionExamples).map (["decisions", ·.toString])
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -775,6 +975,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["formatting"] => formatting
   | ["fixing"] => fixing
   | ["libraries"] => libraries
+  | ["decisions", path] => decisions path
   | ["mutation", group, slice, slices] => do
     -- A slice out of range would check nothing, and pass.
     match (group.toNat?.bind ((← mutationCorpus)[·]?)), slice.toNat?, slices.toNat? with

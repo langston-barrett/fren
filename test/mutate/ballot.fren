@@ -1,0 +1,18 @@
+-- A ballot of three members: it passes when at least two vote for it,
+-- unless it is vetoed.
+mod ballot
+
+pub comp ballot {
+    in a?
+    in b?
+    in c?
+    in veto?
+    pub det out passed?
+
+    ensure majority: unless veto?, passed? iff not at_most_one?(a?, b?, c?)
+    ensure vetoed: when veto?, not passed?
+
+    expect lone: when at_most_one?(a?, b?, c?), not passed?
+    cover by_a_and_b: a? and b? and not c? and passed?
+    cover by_b_and_c: not a? and b? and c? and passed?
+}

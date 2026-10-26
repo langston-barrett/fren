@@ -653,15 +653,17 @@ def jobsDefault : BaseIO Nat :=
   return max 1 (System.Platform.Internal.getHardwareConcurrency ()).toNat
 
 /-- Runs `fren check`, printing diagnostics and the summary to stderr and
-any solver queries to stdout; returns the exit code. -/
-def check (args : Args) : IO UInt32 := do
+any solver queries to stdout; returns the exit code. `record?` collects the
+results of each item, by its key (`Mutate.Todo.key`), for the tests of
+`fren mutate`'s decisions. -/
+def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.CheckResult))) := none) : IO UInt32 := do
   let some (files, st) ← load args.paint args.files args.lints | return exitCode false none
   let mut all := #[]
   -- Warnings from lints, already printed.
   let mut shown := st.diags.map (·.msg)
   -- Each comp, global expectation and refinement (`Reqs/Lang/Refinement`),
   -- with the checks that run on it.
-  let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.refinement, t.body)
+  let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.refinement, t.body, t.key)
   let prelude := Prelude.ofDecls st.prelude
   -- A query asked again, as some checks of a component share one, is
   -- answered once (`Reqs/Cli#solver-queries`).
@@ -679,7 +681,7 @@ def check (args : Args) : IO UInt32 := do
   -- checks set to testing; reported below, in order
   -- (`Reqs/Cli#parallel-checking`). Only this thread prints, so that the
   -- output is the same as one at a time.
-  let solve := fun ((c, global, kinds, _, body) : CComp × Bool × Array Fren.Core.CheckKind × Bool × Bool) => do
+  let solve := fun ((c, global, kinds, _, body, _) : CComp × Bool × Array Fren.Core.CheckKind × Bool × Bool × String) => do
     let n ← IO.mkRef 0
     let dumped ← IO.mkRef ""
     let dump? := if args.dumpSmt then some fun script => do
@@ -694,7 +696,7 @@ def check (args : Args) : IO UInt32 := do
       | .error _ => none
     return (r, ← dumped.get, tested?)
   let solving ← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
-  for (c, global, kinds, refinement, _) in todo, solved in solving do
+  for (c, global, kinds, refinement, _, key) in todo, solved in solving do
     let ((results, refuted, missing?), dumped, tested?) ← solved
     IO.print dumped
     if let some msg := missing? then
@@ -707,12 +709,14 @@ def check (args : Args) : IO UInt32 := do
     for r in results do
       shown := shown ++ (← printResult args.paint files c r)
     all := all ++ results
+    if let some r := record? then r.modify (· ++ results.map (key, ·))
     -- The evaluator's internal error, printed above, explains why the
     -- checks set to testing are missing from the summary.
     if let (.ok sp, some (ec, rep)) := (spec?, tested?) then
       let (tested, msgs) ← testComp args files sp c ec global (testedKeeps c kinds refinement) prelude (byCheck := true) rep
       shown := shown ++ msgs
       all := all ++ tested
+      if let some r := record? then r.modify (· ++ tested.map (key, ·))
       byTesting := byTesting + (tested.filter (·.verdict == .pass)).size
   IO.eprintln (Fren.Core.summary all byTesting)
   if shown.any (·.code?.isSome) then
@@ -1036,10 +1040,27 @@ partial def readAll (s : IO.FS.Stream) (acc : String := "") : IO String := do
   let line ← s.getLine
   if line.isEmpty then return acc else readAll s (acc ++ line)
 
+/-- What `fren mutate` decided about a mutant, for the tests of its
+decisions (`Reqs/dev/Testing`). -/
+structure Decision where
+  id : String
+  outcome : Mutate.Outcome
+  /-- The checks that kill it: the key of each one's item (`Mutate.Todo.key`),
+  and its own (`Mutate.keyed`). -/
+  killers : Array (String × String)
+
+/-- What the tests of `fren mutate` see of a run. -/
+structure Probe where
+  /-- Checks every component, global expectation and refinement of a
+  mutant, not only those whose fingerprint it changes, and every one of
+  their checks, rather than stopping at the first that kills it. -/
+  exhaustive : Bool := false
+  decisions : IO.Ref (Array Decision)
+
 /-- Runs `fren mutate` (`Reqs/Mutate`), printing each surviving mutant and
 the summary to stderr and the kill rates to stdout, or with `--list`, the
-mutants to stdout; returns the exit code. -/
-def mutate (args : Args) : IO UInt32 := do
+mutants to stdout; returns the exit code. `probe?` records the decisions. -/
+def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   let p := args.paint
   let fail (msg : Msg) : IO UInt32 := do IO.eprint (argError p msg); return 2
   let some (files, states, st) ← loadBefore p args.files args.lints | return exitCode false none
@@ -1133,19 +1154,23 @@ def mutate (args : Args) : IO UInt32 := do
   let tested : Baseline ← IO.mkRef {}
   let shown ← IO.mkRef (#[] : Array Msg)
   let sevs ← IO.mkRef (if spec?.toOption.isNone then #[Fren.Core.Severity.error] else #[])
-  -- Whether one way of checking kills the mutant `st'`, and whether some
-  -- check was inconclusive on it, checking only the components it changes;
+  -- The checks of one way of checking that kill the mutant `st'`, and
+  -- whether some check was inconclusive on it, checking only the
+  -- components it changes, and stopping at the first that kills it,
+  -- unless `probe?` is exhaustive;
   -- `run s prelude spec? t` checks `t` of the spec `s`, whose prelude,
   -- indexed, is `prelude`, and whose prelude's text is `preludeText'`.
   -- Internal errors about the spec are printed as `fren check` prints
   -- them, and those about the mutant given to `onMutant`.
   let killedBy (base : Baseline) (st' : State) (prelude' : Prelude) (preludeText' : String) (spec'? : Except String Eval.Spec)
       (run : State → Prelude → Except String Eval.Spec → Mutate.Todo → IO (Array Fren.Core.CheckResult × Array (Span × Msg)))
-      (onMutant : Msg → IO Unit) : IO (Bool × Bool) := do
+      (onMutant : Msg → IO Unit) : IO (Array (String × String) × Bool) := do
+    let exhaustive := probe?.any (·.exhaustive)
+    let mut killers := #[]
     let mut inconclusive := false
     for t in Mutate.todo st' do
       let some (t₀, fp) := originals[t.key]? | continue
-      unless Mutate.rechecks fp (Mutate.fingerprint preludeText' t.comp) do continue
+      unless exhaustive || Mutate.rechecks fp (Mutate.fingerprint preludeText' t.comp) do continue
       let rs ← match (← base.get)[t.key]? with
         | some rs => pure rs
         | none =>
@@ -1160,9 +1185,10 @@ def mutate (args : Args) : IO UInt32 := do
       for (_, msg) in errors do onMutant msg
       let rs := Mutate.keyed rs
       let rs' := Mutate.keyed rs'
-      if Mutate.kills rs rs' then return (true, inconclusive)
+      killers := killers ++ (Mutate.killers rs rs').map fun (k, _) => (t.key, k)
+      if !killers.isEmpty && !exhaustive then return (killers, inconclusive)
       inconclusive := inconclusive || Mutate.inconclusive rs rs'
-    return (false, inconclusive)
+    return (killers, inconclusive)
   let mut tallies : Std.HashMap Lean.Name Mutate.Tally := {}
   for m in selected do
     let chars' := m.apply files[m.file]!.2
@@ -1179,6 +1205,7 @@ def mutate (args : Args) : IO UInt32 := do
       if let some e := errors.find? (·.lint?.isNone) then
         report (Msg.internal s!"the mutant `{m.id}` has a static error: {e.msg.headline}") .error
       tally := tally.add .unviable
+      if let some probe := probe? then probe.decisions.modify (·.push { id := m.id, outcome := .unviable, killers := #[] })
     else
       let spec'? := mutantSpec parsed prefixes m parsed'
       if let .error e := spec'? then
@@ -1186,15 +1213,18 @@ def mutate (args : Args) : IO UInt32 := do
       let onMutant (msg : Msg) := report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error
       let prelude' := Prelude.ofDecls st'.prelude
       let preludeText' := st'.preludeText
-      let (bySolver, inconclusive₁) ← if args.checker.solves then killedBy solved st' prelude' preludeText' spec'? solve onMutant
-        else pure (false, false)
-      let (byTesting, inconclusive₂) ← if args.checker.tests then killedBy tested st' prelude' preludeText' spec'? test onMutant
-        else pure (false, false)
+      let (killers₁, inconclusive₁) ← if args.checker.solves then killedBy solved st' prelude' preludeText' spec'? solve onMutant
+        else pure (#[], false)
+      let (killers₂, inconclusive₂) ← if args.checker.tests then killedBy tested st' prelude' preludeText' spec'? test onMutant
+        else pure (#[], false)
+      let bySolver := !killers₁.isEmpty
+      let byTesting := !killers₂.isEmpty
       let killed := bySolver || byTesting
       -- Short, whatever `--timeout` is, even 0, which means none.
       let equivalent? ← if killed then pure (some false) else Mutate.equivalent st prelude st' Mutate.equivalenceTimeout cache
       let outcome := Mutate.outcome true killed (equivalent? == some true)
       tally := tally.add outcome
+      if let some probe := probe? then probe.decisions.modify (·.push { id := m.id, outcome, killers := killers₁ ++ killers₂ })
       if outcome == .survived then report (Mutate.survivedMsg m equivalent?.isNone (inconclusive₁ || inconclusive₂))
       if args.checker == .both && Mutate.missed bySolver byTesting then
         tally := { tally with missed := tally.missed + 1 }

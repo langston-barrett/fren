@@ -1,0 +1,28 @@
+-- A thermostat: it heats below the target, cools above it, and stays off
+-- within the dead band around it, or when it is switched off.
+mod thermostat
+
+pub enum Mode { Off, Heat, Cool }
+
+use self::Mode::{Cool, Heat, Off}
+
+const BAND: Int := 2
+
+pub comp thermostat {
+    in on?
+    in temp: Int
+    in target: Int
+    pub det out mode: Mode
+
+    ensure rule: mode = table {
+        | on? and temp < target - BAND => Heat,
+        | on? and temp > target + BAND => Cool,
+        | _ => Off,
+    }
+
+    expect switched_off: unless on?, mode = Off
+    expect cold: when on? and temp = 17 and target = 20, mode = Heat
+    expect low_edge: when on? and temp = 18 and target = 20, mode = Off
+    expect high_edge: when on? and temp = 22 and target = 20, mode = Off
+    expect hot: when on? and temp = 23 and target = 20, mode = Cool
+}
