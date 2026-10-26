@@ -29,7 +29,7 @@ instance : Fren.Finite Comparison := ⟨Comparison.all.toList, by intro x; cases
 instance : Fren.Finite Head := ⟨[.not, .unequal, .ite, .when, .unless, .other], by intro x; cases x <;> simp⟩
 
 instance : Fren.Finite Fren.Core.MemberKind :=
-  ⟨[.use, .input, .output, .assumption, .inst, .guarantee, .expectation, .cover], by intro x; cases x <;> simp⟩
+  ⟨[.use, .input, .assumption, .output, .inst, .guarantee, .expectation, .cover], by intro x; cases x <;> simp⟩
 
 def toComparison : Comparison → lint.Comparison
   | .eq => .Eq
@@ -82,8 +82,8 @@ def toGroup : Group → lint.Group
 def toMemberKind : Fren.Core.MemberKind → lint.MemberKind
   | .use => .Use
   | .input => .Input
-  | .output => .Output
   | .assumption => .Assumption
+  | .output => .Output
   | .inst => .Instance
   | .guarantee => .Guarantee
   | .expectation => .Expectation
@@ -1665,22 +1665,155 @@ trusted lint::inconsistent_struct_constructor_fixed: "a model of an expression, 
 tested lint::zero_prefixed_literal: "test/ui/lints/literals.fren", "test/cli/lints/complexity/f0758_zero_prefixed_literal.fren",
   "test/cli/fix/literals.fren"
 
--- Both front ends find the first member out of order with
--- `firstOutOfOrder?`, which asks `outOfOrder` of each member and the one
--- before it.
-impl arbitrary_source_item_ordering: lint::arbitrary_source_item_ordering for (a b : Fren.Core.MemberKind) {
-  first := toMemberKind a,
-  second := toMemberKind b,
-  fires? := Fren.Core.outOfOrder a b,
-}
+-- `arbitrary_source_item_ordering`, over every list of members and of
+-- mentions: both front ends find the first member out of order with
+-- `firstOutOfOrder?`, and `memberOrderFix?` asks `keepsMentions` of the
+-- mentions. Each quantifier over positions is a `∀` or `∃` over `Int`,
+-- taken to the list's `Nat` positions.
+theorem member_rank_to (k : Fren.Core.MemberKind) : lint.rank (toMemberKind k) = (k.rank : Int) := by
+  cases k <;> simp [lint.rank, toMemberKind, Fren.Core.MemberKind.rank]
 
--- `memberOrderFix?` asks `mentionKept` of each mention.
-impl mention_kept: lint::mention_kept for (a b : Fren.Core.MemberKind) (e : Bool) {
-  mentioner := toMemberKind a,
-  mentioned := toMemberKind b,
-  earlier? := e,
-  kept? := Fren.Core.mentionKept a b e,
-}
+theorem member_rank_nth (ks : List Fren.Core.MemberKind) (i : Int) (h0 : 0 ≤ i) (h : i < ks.length) :
+    lint.rank ((Fren.Seq.ofList (ks.map toMemberKind)).nth i) = ((ks[i.toNat]'(by omega)).rank : Int) := by
+  rw [Fren.Seq.nth_of_lt _ _ h0 (by simp; omega)]
+  simp [member_rank_to]
+
+theorem member_test_iff (ks : List Fren.Core.MemberKind) (i : Nat) (h : i < ks.length) :
+    (decide (i > 0) && Fren.Core.outOfOrder ks.toArray[i - 1]! ks.toArray[i]!) = true ↔
+      0 < i ∧ (ks[i - 1]'(by omega)).rank > (ks[i]'h).rank := by
+  simp only [Bool.and_eq_true, decide_eq_true_eq, Fren.Core.outOfOrder]
+  constructor
+  · rintro ⟨hi, ho⟩
+    refine ⟨hi, ?_⟩
+    rw [getElem!_pos ks.toArray (i - 1) (by simp; omega), getElem!_pos ks.toArray i (by simp; omega)] at ho
+    simpa using ho
+  · rintro ⟨hi, ho⟩
+    refine ⟨hi, ?_⟩
+    rw [getElem!_pos ks.toArray (i - 1) (by simp; omega), getElem!_pos ks.toArray i (by simp; omega)]
+    simpa using ho
+
+theorem member_fires_iff (ks : List Fren.Core.MemberKind) :
+    (Fren.Core.firstOutOfOrder? ks.toArray).isSome = true ↔
+      ∃ i : Int, (0 < i ∧ i < (Fren.Seq.ofList (ks.map toMemberKind)).len) ∧
+        lint.rank ((Fren.Seq.ofList (ks.map toMemberKind)).nth (i - 1)) > lint.rank ((Fren.Seq.ofList (ks.map toMemberKind)).nth i) := by
+  simp only [Fren.Core.firstOutOfOrder?, List.find?_isSome, List.mem_range, List.size_toArray, Fren.Seq.len_eq,
+    Fren.Seq.toList_ofList, List.length_map]
+  constructor
+  · rintro ⟨i, hi, ht⟩
+    have := (member_test_iff ks i hi).mp ht
+    refine ⟨i, ⟨by omega, by omega⟩, ?_⟩
+    rw [member_rank_nth ks _ (by omega) (by omega), member_rank_nth ks _ (by omega) (by omega)]
+    have e1 : ((i : Int) - 1).toNat = i - 1 := by omega
+    have e2 : (i : Int).toNat = i := by omega
+    simp only [e1, e2]
+    exact_mod_cast this.2
+  · rintro ⟨i, ⟨h0, h1⟩, ho⟩
+    refine ⟨i.toNat, by omega, (member_test_iff ks i.toNat (by omega)).mpr ⟨by omega, ?_⟩⟩
+    rw [member_rank_nth ks _ (by omega) (by omega), member_rank_nth ks _ (by omega) (by omega)] at ho
+    have e1 : (i - 1).toNat = i.toNat - 1 := by omega
+    simp only [e1] at ho
+    exact_mod_cast ho
+
+theorem member_at_first (ks : List Fren.Core.MemberKind) :
+    (if (Fren.Core.firstOutOfOrder? ks.toArray).isSome = true then
+      ((0 < (match Fren.Core.firstOutOfOrder? ks.toArray with | some i => (i : Int) | none => -1) ∧
+        (match Fren.Core.firstOutOfOrder? ks.toArray with | some i => (i : Int) | none => -1) < (Fren.Seq.ofList (ks.map toMemberKind)).len) ∧
+        lint.rank ((Fren.Seq.ofList (ks.map toMemberKind)).nth ((match Fren.Core.firstOutOfOrder? ks.toArray with | some i => (i : Int) | none => -1) - 1)) >
+          lint.rank ((Fren.Seq.ofList (ks.map toMemberKind)).nth (match Fren.Core.firstOutOfOrder? ks.toArray with | some i => (i : Int) | none => -1))) ∧
+        ∀ i' : Int, 0 < i' ∧ i' < (match Fren.Core.firstOutOfOrder? ks.toArray with | some i => (i : Int) | none => -1) →
+          lint.rank ((Fren.Seq.ofList (ks.map toMemberKind)).nth (i' - 1)) ≤ lint.rank ((Fren.Seq.ofList (ks.map toMemberKind)).nth i')
+    else (match Fren.Core.firstOutOfOrder? ks.toArray with | some i => (i : Int) | none => -1) = -1) := by
+  cases hf : Fren.Core.firstOutOfOrder? ks.toArray with
+  | none => simp
+  | some i =>
+    simp only [Option.isSome_some, if_true, Fren.Seq.len_eq, Fren.Seq.toList_ofList, List.length_map]
+    unfold Fren.Core.firstOutOfOrder? at hf
+    rw [List.find?_eq_some_iff_getElem] at hf
+    obtain ⟨ht, idx, hidx, he, hbefore⟩ := hf
+    simp only [List.getElem_range] at he
+    subst he
+    simp only [List.length_range, List.size_toArray] at hidx
+    have := (member_test_iff ks idx hidx).mp ht
+    refine ⟨⟨⟨by omega, by omega⟩, ?_⟩, ?_⟩
+    · rw [member_rank_nth ks _ (by omega) (by omega), member_rank_nth ks _ (by omega) (by omega)]
+      have e1 : ((idx : Int) - 1).toNat = idx - 1 := by omega
+      have e2 : (idx : Int).toNat = idx := by omega
+      simp only [e1, e2]
+      exact_mod_cast this.2
+    · rintro i' ⟨h0, h1⟩
+      have hj := hbefore i'.toNat (by omega)
+      simp only [List.getElem_range, List.size_toArray] at hj
+      rw [member_rank_nth ks _ (by omega) (by omega), member_rank_nth ks _ (by omega) (by omega)]
+      have e1 : (i' - 1).toNat = i'.toNat - 1 := by omega
+      simp only [e1]
+      have hn : ¬ (0 < i'.toNat ∧ (ks[i'.toNat - 1]'(by omega)).rank > (ks[i'.toNat]'(by omega)).rank) := by
+        intro hc
+        have := (member_test_iff ks i'.toNat (by omega)).mpr hc
+        simp_all
+      have : ¬ ((ks[i'.toNat - 1]'(by omega)).rank > (ks[i'.toNat]'(by omega)).rank) := fun hc => hn ⟨by omega, hc⟩
+      exact_mod_cast Nat.le_of_not_lt this
+
+def memberMentionsOf (ms : List (Nat × Nat)) : Fren.FinSet lint.Mention :=
+  Fren.FinSet.ofList (ms.map fun p => { mentioner := (p.1 : Int), mentioned := (p.2 : Int) })
+
+theorem member_kept (ks : List Fren.Core.MemberKind) (ms : List (Nat × Nat))
+    (hpos : ∀ m : lint.Mention, m ∈ memberMentionsOf ms → (0 ≤ m.mentioner ∧ m.mentioner < (Fren.Seq.ofList (ks.map toMemberKind)).len)
+      ∧ 0 ≤ m.mentioned ∧ m.mentioned < (Fren.Seq.ofList (ks.map toMemberKind)).len) :
+    Fren.Core.keepsMentions ks.toArray ms = true ↔
+      ∀ m : lint.Mention, m ∈ memberMentionsOf ms ∧ m.mentioner ≠ m.mentioned →
+        lint.rank ((Fren.Seq.ofList (ks.map toMemberKind)).nth m.mentioned) < lint.rank ((Fren.Seq.ofList (ks.map toMemberKind)).nth m.mentioner) ∨
+          lint.rank ((Fren.Seq.ofList (ks.map toMemberKind)).nth m.mentioned) = lint.rank ((Fren.Seq.ofList (ks.map toMemberKind)).nth m.mentioner) ∧
+            m.mentioned < m.mentioner := by
+  have hb : ∀ p ∈ ms, p.1 < ks.length ∧ p.2 < ks.length := by
+    intro p hp
+    have := hpos ⟨p.1, p.2⟩ (by simp [memberMentionsOf, Fren.FinSet.mem_ofList]; exact ⟨p.1, p.2, hp, rfl, rfl⟩)
+    simp at this; omega
+  simp only [Fren.Core.keepsMentions, List.all_eq_true]
+  constructor
+  · rintro h ⟨i, j⟩ ⟨hm, hne⟩
+    simp only [memberMentionsOf, Fren.FinSet.mem_ofList, List.mem_map] at hm
+    obtain ⟨⟨a, b⟩, hab, he⟩ := hm
+    simp only [lint.Mention.«{}».injEq] at he
+    obtain ⟨rfl, rfl⟩ := he
+    have := h (a, b) hab
+    have hb' := hb (a, b) hab
+    simp only at hb' hne
+    dsimp only
+    rw [member_rank_nth ks _ (by omega) (by omega), member_rank_nth ks _ (by omega) (by omega)]
+    simp only [Int.toNat_natCast]
+    simp only [Bool.or_eq_true, beq_iff_eq, List.getElem?_toArray, List.getElem?_eq_getElem hb'.1,
+      List.getElem?_eq_getElem hb'.2, Fren.Core.mentionKept, Bool.and_eq_true, decide_eq_true_eq] at this
+    rcases this with e | e
+    · exact absurd (by rw [e]) hne
+    · rcases e with e | ⟨e1, e2⟩
+      · exact Or.inl (by exact_mod_cast e)
+      · exact Or.inr ⟨by exact_mod_cast e1, by exact_mod_cast e2⟩
+  · rintro h ⟨a, b⟩ hab
+    have hb' := hb (a, b) hab
+    simp only at hb'
+    simp only [Bool.or_eq_true, beq_iff_eq, List.getElem?_toArray, List.getElem?_eq_getElem hb'.1,
+      List.getElem?_eq_getElem hb'.2, Fren.Core.mentionKept, Bool.and_eq_true, decide_eq_true_eq]
+    by_cases e : a = b
+    · exact Or.inl e
+    · right
+      have := h ⟨a, b⟩ ⟨by simp [memberMentionsOf, Fren.FinSet.mem_ofList]; exact ⟨a, b, hab, rfl, rfl⟩, by simp; omega⟩
+      simp only at this
+      rw [member_rank_nth ks _ (by omega) (by omega), member_rank_nth ks _ (by omega) (by omega)] at this
+      simp only [Int.toNat_natCast] at this
+      rcases this with e | ⟨e1, e2⟩
+      · exact Or.inl (by exact_mod_cast e)
+      · exact Or.inr ⟨by exact_mod_cast e1, by exact_mod_cast e2⟩
+impl arbitrary_source_item_ordering: lint::arbitrary_source_item_ordering for (ks : List Fren.Core.MemberKind) (ms : List (Nat × Nat)) {
+  kinds := Fren.Seq.ofList (ks.map toMemberKind),
+  mentions := memberMentionsOf ms,
+  fires? := (Fren.Core.firstOutOfOrder? ks.toArray).isSome,
+  first := match Fren.Core.firstOutOfOrder? ks.toArray with | some i => (i : Int) | none => -1,
+  keeps_mentions? := Fren.Core.keepsMentions ks.toArray ms,
+} by
+  intro ks ms hpos
+  unfold lint.arbitrary_source_item_ordering.ensures lint.arbitrary_source_item_ordering.ensure.rule
+    lint.arbitrary_source_item_ordering.ensure.at_first lint.arbitrary_source_item_ordering.ensure.kept
+  exact ⟨member_fires_iff ks, member_at_first ks, member_kept ks ms hpos⟩
 
 impl single_call_fn: lint::single_call_fn for (p d : Bool) (n : Nat) {
   pub? := p,

@@ -4,7 +4,7 @@ warning[F0779]: an input after an output
 7 |     in x: Int
   |     ^^^^^^^^^ out of order
   |
-  = note: the members of a component are written `use`, `in`, `out`, `assume`, `inst`, `ensure`, `expect`, then `cover`
+  = note: the members of a component are written `use`, `in`, `assume`, `out`, `inst`, `ensure`, `expect`, then `cover`
   = help: `fren fix` can fix this
   = note: `arbitrary_source_item_ordering` is set to `warn`
 
