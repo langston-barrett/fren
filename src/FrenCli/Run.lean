@@ -4,6 +4,7 @@ import FrenCli.Exit
 import FrenCli.Fmt
 import FrenCli.MutateRun
 import FrenCli.Quick
+import FrenCli.Same
 import FrenCli.Smt
 import FrenCore.Codes
 import FrenCore.Literate
@@ -987,9 +988,20 @@ def mutantsOf (files : Array (String × Array Char)) (lints : Array (Fren.Core.L
     states := states.push (elabParsed (states.back?.getD {}) i chars parsed[i]!)
   return (states, mutantsWith files parsed states)
 
+deriving instance BEq for Fren.Core.Pat
+deriving instance BEq for Fren.Core.PTy
+deriving instance BEq for Fren.Core.DataShape
+deriving instance BEq for Contract
+deriving instance BEq for Fren.Core.Fix
+deriving instance BEq for Fren.Core.Msg
+deriving instance BEq for Diag
+deriving instance BEq for Fren.Core.LevelInEffect
+deriving instance BEq for Fren.Core.Levels
 deriving instance BEq for Fren.Core.Item, Fren.Core.EnumDef, Fren.Core.UseDef, Fren.Core.Tested, DataDecl
 deriving instance BEq for Ident, Bound, Pattern, Binder, Expr
 deriving instance BEq for CVar, CProp, CInst, CComp
+
+instance : Same Fren.Core.Table := ⟨fun a b => same_fields% Fren.Core.Table a b except []⟩
 
 /-- The names that the file whose parse is `p` writes, as identifiers or
 keywords, with each part of a dotted identifier. A path resolves to an
@@ -1019,24 +1031,46 @@ def respliced? [BEq α] (orig mine last : Lean.NameMap α) (keys : Array Lean.Na
 
 /-- Whether a file elaborates the same after the states `a` and `b`, as
 far as it reads them, but for the fields that `skipFile?` compares by name
-or splices. The fields that `elabFile` sets before it
-reads them are not compared, nor `itemStart`, `literals` and `itemSpan`,
-which each item sets before it reads them, nor `cliLevels`, which none
-sets. -/
+or splices. Every field is compared (`same_fields%`), so a field added to
+`State` is compared unless it is named here, but for:
+- the fields that `elabFile` sets before it reads them: `file`, `src`,
+  `fixing`, `module`, `scope`, `levels`, `useRecords`, `evidence?`, `used`,
+  `expectations`, `lintReports`, `useLocs`, `expectationRemovals`,
+  `items`, `usedItems`, `lintFixes`, `globalTexts`, `settings`,
+  `settingRemovals`, `seenSettings`, `assumptions`, `globalReads` and
+  `trailingCommas`; and `itemStart`, `literals` and `itemSpan`, which it
+  sets for each item before the item reads them. The `mutation` test job
+  checks that they are not read, by elaborating files after states that
+  differ in them (`FrenTestMain`);
+- `comps`, `consts` and `constInts`, which `skipFile?` compares by name;
+- the fields that `skipFile?` splices: `globals`, `refinements`, `bodies`,
+  `diags`, `edits`, `natSums`, `claims` and `applied`, which elaboration
+  only extends, or restores to an earlier value, and reads `applied` only
+  after the size that it had when it was read; and `defs`, of which only
+  each function's name, parameters and result type are read, never its
+  body, so only they are compared.
+A file is also elaborated again after a state with static errors of an
+item in progress (`itemErrors`). -/
 def sameForLater (a b : State) : Bool :=
-  a.table.items.toList == b.table.items.toList && a.table.enums.toList == b.table.enums.toList
-    && a.table.uses.toList == b.table.uses.toList && a.table.scopes.toList == b.table.scopes.toList
-    && a.sorts == b.sorts && a.funs == b.funs && a.datatypes == b.datatypes && a.newtypes.toList == b.newtypes.toList
-    -- What is read of a defined function is its name, parameters and result
-    -- type, never its body.
+  same_fields% State a b except [file, src, fixing, module, scope, levels, useRecords, evidence?, used, expectations,
+    lintReports, useLocs, expectationRemovals, items, usedItems, lintFixes, globalTexts, settings, settingRemovals,
+    seenSettings, assumptions, globalReads, trailingCommas, itemStart, literals, itemSpan,
+    comps, consts, constInts,
+    globals, refinements, bodies, diags, edits, natSums, claims, applied, defs]
     && a.defs.isEqv b.defs (fun (n, ps, r, _) (n', ps', r', _) => n == n' && ps == ps' && r == r')
-    && a.itemErrors.isEmpty && b.itemErrors.isEmpty && a.declared == b.declared
-    && a.settingStart? == b.settingStart? && a.boolEqs == b.boolEqs && a.mentioning == b.mentioning
-    && a.variants == b.variants && a.absEnds == b.absEnds && a.usesStrings == b.usesStrings
-    && a.usesSets == b.usesSets && a.usesSeqs == b.usesSeqs && a.usesProjection == b.usesProjection
-    && a.outsideCore == b.outsideCore && a.relationalUsed == b.relationalUsed && a.countSpans == b.countSpans
-    && a.indexes == b.indexes && a.tables == b.tables && a.natApps == b.natApps && a.nLets == b.nLets
-    && a.inCompBody == b.inCompBody
+    && a.itemErrors.isEmpty && b.itemErrors.isEmpty
+
+/-- `s`, with the fields that `sameForLater` leaves out because `elabFile`
+sets them before it reads them taken from `t`. Elaborating a file after
+either gives the same state, which the `mutation` test job checks. -/
+def State.withPerFileOf (s t : State) : State :=
+  { s with file := t.file, src := t.src, fixing := t.fixing, module := t.module, scope := t.scope, levels := t.levels
+           useRecords := t.useRecords, evidence? := t.evidence?, used := t.used, expectations := t.expectations
+           lintReports := t.lintReports, useLocs := t.useLocs, expectationRemovals := t.expectationRemovals
+           items := t.items, usedItems := t.usedItems, lintFixes := t.lintFixes, globalTexts := t.globalTexts
+           settings := t.settings, settingRemovals := t.settingRemovals, seenSettings := t.seenSettings
+           assumptions := t.assumptions, globalReads := t.globalReads, trailingCommas := t.trailingCommas
+           itemStart := t.itemStart, literals := t.literals, itemSpan := t.itemSpan }
 
 /-- How a mutant's state after a file differs from the original's
 (`mutantState`): the paths of the components, and the constants, whose
