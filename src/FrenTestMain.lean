@@ -834,7 +834,9 @@ def withText (name : String) (chars : Array Char) (f : String → IO α) : IO α
 - **sample invariant:** a sample of half of the mutants, each run after
   fewer others, decides each as the whole run does;
 - **every expectation needed:** without any one of its expectations and
-  cover goals, some mutant survives that was killed;
+  cover goals, some mutant survives that was killed, and is not shown
+  equivalent, which it cannot be: it was killed, so it means something
+  else than the spec;
 - **selection sound:** checking only the components whose fingerprint a
   mutant changes decides as checking every component does, and finds
   only checks that checking every component finds;
@@ -888,7 +890,12 @@ def decisions (path : String) : IO (Array String) := do
       if all'.size != all.size || (all.zip all').any fun (m, m') => m.item != m'.item || m.change != m'.change then
         return some s!"{path}: without `{what}`, the mutants are not the same"
       let decided' ← decisionsOf #[path']
-      if (killed.zip (decided'.map (·.outcome))).any fun (k, o) => k && o != .killed then return none
+      -- A mutant that the deleted check killed now means something else
+      -- than the spec, so it survives: it is not shown equivalent.
+      let outcomes := (killed.zip (decided'.map (·.outcome))).filter (·.1) |>.map (·.2)
+      if outcomes.contains .survived then return none
+      if outcomes.contains .equivalent then
+        return some s!"{path}: without `{what}`, a mutant that was killed is shown equivalent to the spec"
       return some s!"{path}: without `{what}`, every mutant that was killed still is"
     failures := failures ++ failure?.toArray
   -- Selection and verdicts, on a sample.

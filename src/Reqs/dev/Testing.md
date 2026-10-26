@@ -81,7 +81,10 @@
     kept, `fren mutate` decides each mutant, and finds the check that kills
     it, as it does without;
   - *every expectation needed*: without any one of its expectations and
-    cover goals, local or global, some mutant survives that was killed;
+    cover goals, local or global, some mutant survives that was killed. It
+    must survive, not be shown equivalent: a mutant that some check killed
+    means something else than the spec, so this also tests the solver's
+    answers about equivalence;
   - *selection sound*: checking only the components whose fingerprint a
     mutant changes (`Mutate.fingerprint`) decides what checking every
     component does, and every check that kills the mutant then also kills
