@@ -4,6 +4,7 @@
 -- `nonminimal_bool` on a cardinality operator of one argument.
 pub ordered enum Level { Low, Mid, High, Top }
 pub struct Ms(Int)
+pub struct Qs(Seq(Int))
 
 pub comp c {
     in a?
@@ -13,6 +14,8 @@ pub comp c {
     in l: Level
     in x: Ms
     in n: Int
+    in q: Seq(Int)
+    in i: Int
     pub out p1?
     pub out p2?
     pub out p3?
@@ -25,6 +28,8 @@ pub comp c {
     pub out m2: Level
     pub out y: Ms
     pub out k: Int
+    pub out g1?
+    pub out g2?
 
     ensure r1: p1? iff not (a? and b?) and not (a? and c?) and not (b? and c?)
     ensure r2: p2? iff d? and (a? or b? or c?) and not (b? and a?) and not (c? and a?) and not (c? and b?)
@@ -38,4 +43,8 @@ pub comp c {
     ensure r10: m2 = l.min(Level::Low)
     ensure r11: y = Ms(x.0)
     ensure r12: k = 2 * Ms(n + 1).0
+    -- Neither is fixed: an operand's guard, and an empty literal.
+    ensure r13: g1? iff not (ok? and big?) and not (ok2? and big?) and not (ok? and ok2?)
+        where ok? := 0 <= i < q.len, ok2? := 0 <= i < q.len and d?, big? := q[i] > 0
+    ensure r14: g2? iff Qs([]).0.len = q.len
 }

@@ -3771,10 +3771,15 @@ inductive NodeFact where
   /-- A variant of the ordered enumeration `enum`, the one at `pos`,
   from 0, of its `count`. -/
   | ordinal (enum : String) (pos count : Nat)
-  /-- `Ms(e)`, which builds a value of the newtype `newtype`. -/
-  | wraps (newtype : String)
+  /-- `Ms(e)`, which builds a value of the newtype `newtype`, where
+  `synthesizes` says that `e` has a type of its own, rather than one taken
+  from where it is written, as `[]` and `{}` do. -/
+  | wraps (newtype : String) (synthesizes : Bool)
   /-- `x.0`, which reads the field of a value of the newtype `newtype`. -/
   | unwraps (newtype : String)
+  /-- An `and` whose operands give a definedness obligation: an index, a
+  table, or a name whose definition gives one (`Reqs/Lang/Expressions#sequences`). -/
+  | obligations
   deriving Inhabited, BEq, Repr
 
 /-- Whether the text at `i` in `src` starts with `s`. -/
@@ -3849,9 +3854,9 @@ def runTop (op : String) (src : Array Char) (n : BNode α) (slot : Option Slot) 
 `at_most_one?` (`lint::manual_at_most_one`): from whether they negate each
 pair of two different operands exactly once, and no other, whether a
 conjunct beside them is the disjunction of the operands, and whether an
-operand is written with a `[`. -/
-def manualAtMostOne (n : Nat) (everyPair disjunction bracket : Bool) : Bool × Bool :=
-  (n ≥ 3 && everyPair && !bracket, disjunction)
+operand gives a definedness obligation. -/
+def manualAtMostOne (n : Nat) (everyPair disjunction obligations : Bool) : Bool × Bool :=
+  (n ≥ 3 && everyPair && !obligations, disjunction)
 
 /-- `manual_at_most_one`'s message, whose fix is `fixed`, at `range`, the
 conjuncts with the parentheses around the disjunction, or none but a note
@@ -3869,7 +3874,8 @@ each longest run of adjacent conjuncts `not (a and b)`, not in
 parentheses, with the disjunction of their operands just before or after
 it, if there is one. The message is reported from the first conjunct it
 replaces to the last. -/
-def manualAtMostOneAt [Inhabited α] (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) :
+def manualAtMostOneAt [Inhabited α] (src : Array Char) (fact? : α → Option NodeFact) (n : BNode α) (slot : Option Slot)
+    (parent : Range) :
     Array (OpReport α) := Id.run do
   unless runTop "and" src n slot parent do return #[]
   let cs := runOperands "and" src n
@@ -3909,8 +3915,10 @@ def manualAtMostOneAt [Inhabited α] (src : Array Char) (n : BNode α) (slot : O
       | some ds, _ => (i - 1, j, some ds)
       | none, some ds => (i, j + 1, some ds)
       | none, none => (i, j, none)
-    let bracket := ops.any fun o => (withoutComments (textOf src o.range)).contains '['
-    let (fires, exactly) := manualAtMostOne ops.size everyPair disjunction?.isSome bracket
+    -- Each operand is in a pair, whose `and` the elaborator says gives an
+    -- obligation if either operand does.
+    let obligations := (cs.extract i (j + 1)).any fun c => c.kids.any fun k => fact? k.ref == some .obligations
+    let (fires, exactly) := manualAtMostOne ops.size everyPair disjunction?.isSome obligations
     if fires then
       let args := (disjunction?.getD ops).map fun o => textOf src o.range
       let fixed := s!"{cardinalityName exactly}({", ".intercalate args.toList})"
@@ -3996,7 +4004,7 @@ the last. -/
 def extremeOf? (fact? : α → Option NodeFact) (k : BNode α) : Option (Bool × Bool) :=
   let at_ (k : BNode α) := (ordinalOf? fact? k).map fun (_, p, c) => (p == 0, p + 1 == c)
   match fact? k.ref, k.kids with
-  | some (.wraps _), #[v] => at_ v
+  | some (.wraps ..), #[v] => at_ v
   | _, _ => at_ k
 
 /-- Whether `absurd_extreme_comparisons` fires on `x OP v`, or on `v OP x`
@@ -4064,12 +4072,15 @@ from whether the newtype built is the one whose field is read
 (`lint::redundant_newtype_roundtrip`). -/
 def redundantNewtypeRoundtrip (same : Bool) : Bool := same
 
-/-- `Ms(x.0)`, or `Ms(n).0` if `read`, whose fix is `fixed`. -/
-def roundtripMsg (newtype fixed : String) (read : Bool) : Msg :=
+/-- `Ms(x.0)`, or `Ms(n).0` if `read`, whose fix is `fixed`, or none but
+a note if `n` takes its type from the newtype (`untyped`). -/
+def roundtripMsg (newtype fixed : String) (read untyped : Bool) : Msg :=
   { code? := some Lint.redundantNewtypeRoundtrip.code
     headline := if read then "this reads the field of a newtype just built" else "this builds a newtype from the field of one of its own"
     label? := some s!"a round trip through `{newtype}`"
-    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+    notes := if untyped then #[s!"note: `fren fix` leaves this, since `{fixed}` takes its type from the newtype, and has none without it"]
+      else #[]
+    fixes := if untyped then #[] else #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
 /-- `redundant_newtype_roundtrip` on `n`, in `slot` within `parent`
 (`lint::redundant_newtype_roundtrip`). -/
@@ -4077,14 +4088,17 @@ def roundtripAt? (src : Array Char) (fact? : α → Option NodeFact) (n : BNode 
     (parent : Range) : Option (OpReport α) := do
   let #[k] := n.kids | none
   let #[x] := k.kids | none
-  let (t, t', read) ← match fact? n.ref, fact? k.ref with
-    | some (.wraps t), some (.unwraps t') => some (t, t', false)
-    | some (.unwraps t), some (.wraps t') => some (t, t', true)
+  let (t, t', read, untyped) ← match fact? n.ref, fact? k.ref with
+    | some (.wraps t _), some (.unwraps t') => some (t, t', false, false)
+    | some (.unwraps t), some (.wraps t' synth) =>
+      -- `Ms(x.0).0` is reported once, at `Ms(x.0)`.
+      if (match fact? x.ref with | some (.unwraps t'') => t'' == t' | _ => false) then none
+      else some (t, t', true, !synth)
     | _, _ => none
   guard (redundantNewtypeRoundtrip (t == t'))
   let fixed := placed src n slot parent (x.text src)
   let name := (t.splitOn ".").getLast?.getD t
-  return { lint := .redundantNewtypeRoundtrip, ref := n.ref, msg := roundtripMsg name fixed read }
+  return { lint := .redundantNewtypeRoundtrip, ref := n.ref, msg := roundtripMsg name fixed read untyped }
 
 /-- The messages of the operator and method lints in `n`, which is in
 `slot` within `parent`, outermost first, where `inElse` says that `n` is
@@ -4107,7 +4121,7 @@ partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool)
         ++ (erasingOpAt? src n).toArray ++ (firstEmptyAt? src n slot parent).toArray
         ++ (invalidUpcastAt? src isAbs n).toArray ++ (absurdOrderedAt? src fact? n).toArray
         ++ (manualOrderingAt? src fact? n slot parent).toArray ++ operands ++ precedenceAt src n
-        ++ (if op == "and" then chainableAt src n slot parent ++ manualAtMostOneAt src n slot parent else #[])
+        ++ (if op == "and" then chainableAt src n slot parent ++ manualAtMostOneAt src fact? n slot parent else #[])
     | .ite => (needlessBoolAssignAt? src n slot parent).toArray ++ (branchesSharingAt? src mentions n slot parent).toArray ++ (if inElse then #[] else ifsSameCondAt src n)
     | .method _ => (methodCallAt? src n slot parent).toArray ++ (minOrMaxAt? src fact? n slot parent).toArray
     | .chain ops => (contradictoryChainAt? src n ops).toArray

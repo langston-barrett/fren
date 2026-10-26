@@ -1,0 +1,4 @@
+-- A round trip whose value takes its type from the newtype has no fix.
+pub struct Qs(Seq(Int))
+
+comp c { in q: Seq(Int) pub out p? ensure r: p? iff Qs([]).0.len = q.len }

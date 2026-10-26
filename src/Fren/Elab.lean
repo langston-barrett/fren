@@ -2721,10 +2721,15 @@ def guardedTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   -- Each operand's type is checked as the `fren` command checks it
   -- (`lang::operator_type`).
   let kw := if operand matches .unlessBody then "unless" else "when"
+  -- For `manual_at_most_one`: whether the operands give a definedness
+  -- obligation.
+  let mark := (← getLocal).indexes.size + (← getLocal).tables.size
   let x ← toTerm cx c
   checkTermType c x .bool (if j.isEmpty then some s!"note: the condition of `{kw}` is a `Bool`" else Core.opNote j .bool)
   let g ← operand.guard (pure x) `(¬$x)
   let y ← toTerm { cx with guards := cx.guards.push g } d
+  if op matches .and && cx.noteIndexes && (← getLocal).indexes.size + (← getLocal).tables.size > mark then
+    modifyLocal fun l => { l with facts := l.facts.push ((e.getPos?, e.getTailPos?), .obligations) }
   if j.isEmpty then checkTermType e y .bool (some s!"note: the body of `{kw}` is a `Bool`")
   else checkTermType d y .bool (Core.opNote j .bool)
   match op with
@@ -3187,7 +3192,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       if let some found ← frenTypeOf? t then
         liftMsg a (Core.checkType u found (some s!"note: the value of `{Core.showPath path}` has type `{u.show}`"))
     if cx.noteIndexes then
-      modifyLocal fun l => { l with facts := l.facts.push ((e.getPos?, e.getTailPos?), .wraps path.toString) }
+      modifyLocal fun l => { l with facts := l.facts.push ((e.getPos?, e.getTailPos?), .wraps path.toString (synthesizes a)) }
     return ← `($(mkCIdentFrom p n.ctor) $t)
   if let .variant en idx := r then
     -- A variant with a payload, built from its values.

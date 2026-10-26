@@ -1,6 +1,14 @@
+warning[F0842]: this reads the field of a newtype just built
+  --> test/cli/fix/cardinality_ordered_newtypes.fren:49:25
+   |
+49 |     ensure r14: g2? iff Qs([]).0.len = q.len
+   |                         ^^^^^^^^ a round trip through `Qs`
+   |
+   = note: `fren fix` leaves this, since `[]` takes its type from the newtype, and has none without it
+
 --- test/cli/fix/cardinality_ordered_newtypes.fren
 +++ test/cli/fix/cardinality_ordered_newtypes.fren
-@@ -29,12 +29,12 @@
+@@ -34,12 +34,12 @@
 -    ensure r1: p1? iff not (a? and b?) and not (a? and c?) and not (b? and c?)
 -    ensure r2: p2? iff d? and (a? or b? or c?) and not (b? and a?) and not (c? and a?) and not (c? and b?)
 -    ensure r3: p3? iff not (a? and b?) and not (a? and c?) and not (b? and c?) and (c? or b? or a?) and d?
@@ -25,4 +33,5 @@
 +    ensure r10: m2 = Level::Low
 +    ensure r11: y = x
 +    ensure r12: k = 2 * (n + 1)
+For more information about this error, try `fren --explain F0842`.
 exit=1

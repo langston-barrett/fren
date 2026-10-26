@@ -2438,6 +2438,9 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let qs ← indexedIn a
         if ← qs.anyM fun q => return (← boundsSeq b q) && !(← boundsSeq a q) then
           lintFix .indexAfterUse span (Fren.Core.indexAfterUseMsg (← srcAt a.span) (← srcAt b.span))
+      -- For `manual_at_most_one`: whether the operands give a definedness
+      -- obligation.
+      let mark := (← get).indexes.size + (← get).tables.size
       let (x, tx) ← elabExpr { cx with chain := op } a
       unless tx == .bool do mismatch a .bool tx (opNote op .bool)
       -- `b` is evaluated when `a` does not decide the result.
@@ -2447,6 +2450,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         | _ => cx.guards
       let (y, ty) ← elabExpr { cx with guards, chain := op } b
       unless ty == .bool do mismatch b .bool ty (opNote op .bool)
+      if op == "and" && cx.noteIndexes && (← get).indexes.size + (← get).tables.size > mark then
+        modify fun s => { s with facts := s.facts.push (span, .obligations) }
       return (s!"({smt} {x} {y})", .bool)
     | "=" | "!=" =>
       lintLength op a b
@@ -2755,7 +2760,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         unless args.size == 1 do err span (Fren.Core.arityMsg path 1 args.size "value")
         let (x, ta) ← elabExpr { cx with expected? := some u } args[0]!
         unless ta.widens u do mismatch args[0]! u ta (some s!"note: the value of `{showPath path}` has type `{u.show}`")
-        if cx.noteIndexes then modify fun s => { s with facts := s.facts.push (span, .wraps path.toString) }
+        if cx.noteIndexes then modify fun s => { s with facts := s.facts.push (span, .wraps path.toString (synthesizes args[0]!)) }
         return (x, .newtype path u)
       | r => err fnSpan (Fren.Core.notAFunctionMsg r)
     if let some (_, params, result, _) := (← get).defs.find? (·.1 == path) then

@@ -315,7 +315,12 @@ built from the field of a value of the same newtype, `Ms(x.0)`, which is
 `x`, and on the field of a newtype just built, `Ms(n).0`, which is `n`, and
 is fixable: the fix is `x` or `n`, with its text, in parentheses where
 [fixes need them](../Lint.md#parentheses-in-fixes). The receiver may be in
-parentheses, as in `(Ms(n)).0`. It does not fire where the newtypes
+parentheses, as in `(Ms(n)).0`. There is no fix where `n` takes its type
+from the newtype, as `[]` and `{}` do ([Checking and
+synthesis](../Lang/Types.md#checking-and-synthesis)): with `struct
+Qs(Seq(Int))`, `Qs([]).0.len` would become `[].len`, which is an error,
+so the message says why and suggests nothing. `Ms(x.0).0` is reported
+once, at `Ms(x.0)`, whose fix leaves `x.0`. It does not fire where the newtypes
 differ, as in `Ms(b.0)` for `b: Bytes`, which converts a `Bytes` to an
 `Ms` on purpose, nor where the value is changed on the way, as in `Ms(x.0
 + 1)`. A newtype is [erased](../Lang/Expressions.md#newtypes) to its

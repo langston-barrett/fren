@@ -8,6 +8,8 @@ pub enum Mode { Off, Heat, Cool }
 pub struct Ms(Int)
 pub struct Bytes(Int)
 pub struct Grade(Severity)
+pub struct Qs(Seq(Int))
+pub struct Ss(Set(Int))
 
 comp cardinality {
     in a?
@@ -135,4 +137,33 @@ comp newtypes {
     ensure w4: m2 = Ms(y.0)
     ensure w5: m3 = Ms(x.0 + 1)
     expect same: Ms(n) = Ms(n)           --~ warning: both operands of `=` are written the same
+}
+
+-- An operand whose definition indexes, or is a table, keeps its guard.
+comp guarded {
+    in q: Seq(Int)
+    in i: Int
+    in x: Int
+    in z?
+    pub out o1?
+    pub out o2?
+
+    ensure r1: o1? iff not (ok? and big?) and not (ok2? and big?) and not (ok? and ok2?)
+        where ok? := 0 <= i < q.len, ok2? := 0 <= i < q.len and z?, big? := q[i] > 0
+    ensure r2: o2? iff not (pos? and t?) and not (pos2? and t?) and not (pos? and pos2?)
+        where pos? := x > 0, pos2? := x > 0 and z?, t? := table { x > 0 => true }
+}
+
+-- An empty literal takes its type from the newtype, so there is no fix;
+-- a round trip inside another is reported once.
+comp untyped {
+    in q: Seq(Int)
+    in x: Ms
+    pub out p1?
+    pub out p2?
+    pub out p3?
+
+    ensure r1: p1? iff Qs([]).0.len = q.len  --~ warning: this reads the field of a newtype just built
+    ensure r2: p2? iff Ss({}).0 = {}         --~ warning: this reads the field of a newtype just built
+    ensure r3: p3? iff Ms(x.0).0 = 3         --~ warning: this builds a newtype from the field of one of its own
 }

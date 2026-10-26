@@ -1556,7 +1556,7 @@ impl manual_at_most_one: lint::manual_at_most_one for (n : Nat) (e d b : Bool) {
   n_operands := n,
   every_pair? := e,
   disjunction? := d,
-  bracket? := b,
+  obligations? := b,
   fires? := (Fren.Core.manualAtMostOne n e d b).1,
   exactly? := (Fren.Core.manualAtMostOne n e d b).2,
 } by
@@ -1624,6 +1624,7 @@ impl redundant_newtype_roundtrip: lint::redundant_newtype_roundtrip for (s : Boo
 trusted lint::eq_op_cardinality_value: "a model of an expression, checked by the refinements in its section"
 trusted lint::eq_op_cardinality_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::manual_at_most_one_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_at_most_one_guarded: "a test that the lint does not fire, checked by its `deny`"
 trusted lint::manual_at_most_one_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::manual_ordering_fixed: "a model of an expression, checked by the refinements in its section"
 trusted lint::manual_ordering_written: "a model of an expression, checked by the refinements in its section"

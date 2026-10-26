@@ -134,9 +134,13 @@ meaning: at most one argument of `at_most_one?` holds exactly when no two
 of them hold together, and `exactly_one?` holds where, besides, one of them
 does. It keeps the guards where it fires: in the conjunction, each operand
 is [guarded](../../Lang/Expressions.md#sequences) by the operands before
-it, and the arguments of a cardinality operator by none, but only an index
-can be undefined, and the lint does not fire where an operand is written
-with a `[`, as an index `q[i]` is. Clippy has no counterpart.
+it, and the arguments of a cardinality operator by none, so the lint does
+not fire where an operand gives a [definedness](../../Check.md#definedness)
+obligation, which a guard could discharge: an index `q[i]`, a
+[table](../../Lang/Expressions.md#tables), or a name of a `let` or `where`
+whose definition gives one, as in `not (ok? and big?) and ... where big? :=
+q[i] > 0`. Operands without one are defined wherever they are evaluated,
+under any guard. Clippy has no counterpart.
 `lint::manual_at_most_one` states when it fires, and which call the fix
 is:
 
@@ -145,11 +149,11 @@ pub comp manual_at_most_one {
     in n_operands: Int   -- the operands, each counted once
     in every_pair?       -- the conjuncts negate each pair of two different operands exactly once
     in disjunction?      -- the conjunct just before or after them is the disjunction of the operands
-    in bracket?          -- an operand is written with a `[`
+    in obligations?      -- an operand gives a definedness obligation
     pub det out fires?
     pub det out exactly?   -- the fix is `exactly_one?`, rather than `at_most_one?`
 
-    ensure rule: fires? iff n_operands >= 3 and every_pair? and not bracket?
+    ensure rule: fires? iff n_operands >= 3 and every_pair? and not obligations?
     ensure fix: exactly? iff disjunction?
 }
 ```
@@ -186,4 +190,25 @@ pub comp manual_at_most_one_fixed {
 
 refine manual_at_most_one_sound: manual_at_most_one_fixed refines manual_at_most_one_written
 refine manual_at_most_one_complete: manual_at_most_one_written refines manual_at_most_one_fixed
+```
+
+It does not fire where an operand gives an obligation, which `deny`
+checks here, with an index in a `where` clause's definition and with a
+table:
+
+```fren
+set_option fren.lint.manual_at_most_one "deny" in
+pub comp manual_at_most_one_guarded {
+    in q: Seq(Int)
+    in i: Int
+    in x: Int
+    in z?
+    pub out indexed?
+    pub out tabled?
+
+    ensure indexes: indexed? iff not (ok? and big?) and not (ok2? and big?) and not (ok? and ok2?)
+        where ok? := 0 <= i < q.len, ok2? := 0 <= i < q.len and z?, big? := q[i] > 0
+    ensure tables: tabled? iff not (pos? and t?) and not (pos2? and t?) and not (pos? and pos2?)
+        where pos? := x > 0, pos2? := x > 0 and z?, t? := table { x > 0 => true }
+}
 ```
