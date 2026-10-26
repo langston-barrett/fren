@@ -1,0 +1,30 @@
+-- Refinement with bindings whose indexes may be out of range, checked by
+-- testing (`Reqs/Check#checking-by-testing`): testing runs no definedness
+-- check, in both front ends, and reads the bindings' indexes where they are
+-- in range. Only the `fren` command tests.
+--@ only: cli
+
+comp first_of {
+    in n: Int
+    in x: Int
+    pub out y: Int
+    assume pos: n > 0
+    ensure r: y = x
+}
+
+comp seqs {
+    in q: Seq(Int)
+    pub out s: Seq(Int) := q
+}
+
+-- Not a definedness error, as it is with the solver
+-- (`refinement_bindings.fren`): testing does not check definedness.
+set_option fren.evidence "tested" in
+refine unguarded: seqs refines first_of { n := 1, x := q[0], y := s[0] }
+
+-- Testing finds a sequence whose first element is not 0.
+set_option fren.evidence "tested" in
+refine wrong: seqs refines first_of { n := q.len, x := if q != [] then q[0] else 0, y := 0 }
+--~^ error: expectation `wrong::r` does not hold
+
+--@ summary: 5 passed (1 by testing), 1 failed, 0 inconclusive, 0 redundant
