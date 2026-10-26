@@ -1555,11 +1555,8 @@ trusted lint::member_order_fixed: "a model of a component, checked by the refine
 -- Both front ends decide these in `opReports`, the variants and newtypes
 -- from what each elaborator records of them (`Fren.Core.NodeFact`). Where
 -- a model's inputs are finite, `decide` proves the implementation over all
--- of them; a set of positions or operands is given by one `Bool` for each.
-
-instance : Fren.Finite lint.PairNegation where
-  all := [⟨.P, .P, false⟩, ⟨.P, .P, true⟩, ⟨.P, .Q, false⟩, ⟨.P, .Q, true⟩, ⟨.P, .R, false⟩, ⟨.P, .R, true⟩, ⟨.P, .S, false⟩, ⟨.P, .S, true⟩, ⟨.Q, .P, false⟩, ⟨.Q, .P, true⟩, ⟨.Q, .Q, false⟩, ⟨.Q, .Q, true⟩, ⟨.Q, .R, false⟩, ⟨.Q, .R, true⟩, ⟨.Q, .S, false⟩, ⟨.Q, .S, true⟩, ⟨.R, .P, false⟩, ⟨.R, .P, true⟩, ⟨.R, .Q, false⟩, ⟨.R, .Q, true⟩, ⟨.R, .R, false⟩, ⟨.R, .R, true⟩, ⟨.R, .S, false⟩, ⟨.R, .S, true⟩, ⟨.S, .P, false⟩, ⟨.S, .P, true⟩, ⟨.S, .Q, false⟩, ⟨.S, .Q, true⟩, ⟨.S, .R, false⟩, ⟨.S, .R, true⟩, ⟨.S, .S, false⟩, ⟨.S, .S, true⟩]
-  complete := by intro ⟨x, y, o⟩; cases x <;> cases y <;> cases o <;> decide
+-- of them; a set of operands, or the variants a test names, is given by one
+-- `Bool` for each.
 
 instance : Fren.Finite lint.Argument where
   all := [.Literal false, .Literal true, .Written .P, .Written .Q, .Written .R, .Written .S]
@@ -1578,30 +1575,106 @@ instance : Fren.Finite lint.Roundtrip where
     | Built t e => cases t <;> cases e with | FieldOf u => cases u <;> decide | _ => decide
     | Read t e => cases t <;> cases e with | FieldOf u => cases u <;> decide | _ => decide
 
-theorem any_finite {α : Type} [Fren.Finite α] [DecidableEq α] (l : List α) (f : α → Bool) :
-    l.any f = (Fren.Finite.all : List α).any fun x => decide (x ∈ l) && f x := by
-  apply Bool.eq_iff_iff.mpr
-  simp only [List.any_eq_true, Bool.and_eq_true, decide_eq_true_eq]
-  exact ⟨fun ⟨x, h, hf⟩ => ⟨x, Fren.Finite.complete x, h, hf⟩, fun ⟨x, _, h, hf⟩ => ⟨x, h, hf⟩⟩
+-- `manual_at_most_one`, over every list of conjuncts: the code's reading
+-- of the conjuncts is characterised with the spec's `named?` and
+-- `pair_negated?`, and the quantifiers over the four operands expanded as
+-- Fren expands them.
+theorem exOp (P : lint.Operand → Prop) : (∃ x, P x) ↔ (P .P ∨ P .Q) ∨ (P .R ∨ P .S) := by
+  constructor
+  · rintro ⟨x, h⟩; cases x <;> simp_all
+  · rintro ((h | h) | (h | h)) <;> exact ⟨_, h⟩
 
-theorem all_finite {α : Type} [Fren.Finite α] [DecidableEq α] (l : List α) (f : α → Bool) :
-    l.all f = (Fren.Finite.all : List α).all fun x => !decide (x ∈ l) || f x := by
-  apply Bool.eq_iff_iff.mpr
-  simp only [List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true', decide_eq_false_iff_not]
-  exact ⟨fun h x _ => (Classical.em (x ∈ l)).elim (fun hx => Or.inr (h x hx)) Or.inl,
-    fun h x hx => ((h x (Fren.Finite.complete x)).resolve_left (by simpa using hx))⟩
+theorem allOp (P : lint.Operand → Prop) : (∀ x, P x) ↔ (P .P ∧ P .Q) ∧ (P .R ∧ P .S) := by
+  constructor
+  · intro h; exact ⟨⟨h _, h _⟩, ⟨h _, h _⟩⟩
+  · rintro ⟨⟨h1, h2⟩, ⟨h3, h4⟩⟩ x; cases x <;> assumption
 
-theorem mem_operands (ps : List lint.PairNegation) (x : lint.Operand) :
-    decide (x ∈ ps.flatMap fun p => [p.first, p.second])
-      = ps.any fun p => p.first == x || p.second == x := by
-  apply Bool.eq_iff_iff.mpr
-  simp only [decide_eq_true_eq, List.mem_flatMap, List.mem_cons, List.not_mem_nil, or_false, List.any_eq_true,
-    Bool.or_eq_true, beq_iff_eq]
-  exact ⟨fun ⟨p, h, e⟩ => ⟨p, h, e.elim (fun e => Or.inl e.symm) (fun e => Or.inr e.symm)⟩,
-    fun ⟨p, h, e⟩ => ⟨p, h, e.elim (fun e => Or.inl e.symm) (fun e => Or.inr e.symm)⟩⟩
+theorem named_iff (ps : FinSet lint.PairNegation) (x : lint.Operand) :
+    lint.named? ps x = true ↔ ∃ y, lint.pair_negated? ps x y = true ∨ lint.pair_negated? ps y x = true := by
+  rw [exOp]; simp only [lint.named?, decide_eq_true_eq]
 
-theorem contains_eq {α : Type} [DecidableEq α] (l : List α) (x : α) : l.contains x = decide (x ∈ l) := by
-  simp
+theorem pair_negated_iff (ps : List lint.PairNegation) (x y : lint.Operand) :
+    lint.pair_negated? (FinSet.ofList ps) x y = true ↔ ∃ p ∈ ps, p.first = x ∧ p.second = y := by
+  simp only [lint.pair_negated?, decide_eq_true_eq, FinSet.mem_ofList]
+  constructor
+  · rintro (h | h) <;> exact ⟨_, h, rfl, rfl⟩
+  · rintro ⟨⟨a, b, o⟩, h, rfl, rfl⟩; cases o <;> simp_all
+
+-- The conjuncts' operands, as the lint reads them.
+theorem mem_ops (ps : List lint.PairNegation) (x : lint.Operand) :
+    x ∈ ps.flatMap (fun p => [p.first, p.second]) ↔ lint.named? (FinSet.ofList ps) x = true := by
+  simp only [named_iff, pair_negated_iff, List.mem_flatMap, List.mem_cons, List.not_mem_nil, or_false]
+  constructor
+  · rintro ⟨p, h, e | e⟩
+    · exact ⟨p.second, Or.inl ⟨p, h, e.symm, rfl⟩⟩
+    · exact ⟨p.first, Or.inr ⟨p, h, rfl, e.symm⟩⟩
+  · rintro ⟨y, ⟨p, h, e1, _⟩ | ⟨p, h, _, e2⟩⟩
+    · exact ⟨p, h, Or.inl e1.symm⟩
+    · exact ⟨p, h, Or.inr e2.symm⟩
+
+theorem negated_iff (ps : List lint.PairNegation) (x y : lint.Operand) :
+    (ps.any fun p => p.first == x && p.second == y) = true ↔ lint.pair_negated? (FinSet.ofList ps) x y = true := by
+  simp only [List.any_eq_true, Bool.and_eq_true, beq_iff_eq, lint.pair_negated?, decide_eq_true_eq, FinSet.mem_ofList]
+  constructor
+  · rintro ⟨⟨a, b, o⟩, h, rfl, rfl⟩; cases o <;> simp_all
+  · rintro (h | h) <;> exact ⟨_, h, rfl, rfl⟩
+
+section
+variable (ps : List lint.PairNegation) (ds : List lint.Operand)
+
+local notation "N" => fun x => lint.named? (FinSet.ofList ps) x = true
+local notation "G" => fun x y => lint.pair_negated? (FinSet.ofList ps) x y = true
+
+theorem mam_fst :
+    (Fren.Core.manualAtMostOne lint.PairNegation.first lint.PairNegation.second lint.PairNegation.«obligation?» ps ds).1 = true ↔
+      (((∃ x y z, ((((x ≠ y ∧ x ≠ z) ∧ y ≠ z) ∧ lint.named? (FinSet.ofList ps) x = true)
+          ∧ lint.named? (FinSet.ofList ps) y = true) ∧ lint.named? (FinSet.ofList ps) z = true)
+        ∧ (∀ x, ¬ lint.pair_negated? (FinSet.ofList ps) x x = true))
+        ∧ (∀ x y, (x ≠ y ∧ lint.named? (FinSet.ofList ps) x = true) ∧ lint.named? (FinSet.ofList ps) y = true →
+            lint.pair_negated? (FinSet.ofList ps) x y = true ∨ lint.pair_negated? (FinSet.ofList ps) y x = true))
+        ∧ ¬ ∃ x y, (⟨x, y, true⟩ : lint.PairNegation) ∈ FinSet.ofList ps := by
+  simp only [Fren.Core.manualAtMostOne, Bool.and_eq_true, Bool.not_eq_true', List.any_eq_true, List.all_eq_true,
+    bne_iff_ne, ne_eq, Bool.or_eq_true, beq_iff_eq, ← mem_ops ps, ← negated_iff ps,
+    List.any_eq_false, FinSet.mem_ofList]
+  refine and_congr (and_congr (and_congr ?_ ?_) ?_) ?_
+  · constructor
+    · rintro ⟨x, hx, y, hy, z, hz, h⟩
+      exact ⟨x, y, z, ⟨⟨⟨⟨h.1.1, h.1.2⟩, h.2⟩, hx⟩, hy⟩, hz⟩
+    · rintro ⟨x, y, z, ⟨⟨⟨⟨h1, h2⟩, h3⟩, hx⟩, hy⟩, hz⟩
+      exact ⟨x, hx, y, hy, z, hz, by simp [h1, h2, h3]⟩
+  · constructor
+    · rintro h x ⟨p, hp, e1, e2⟩; exact h p hp (e1.trans e2.symm)
+    · intro h p hp e; exact h p.first ⟨p, hp, rfl, e.symm⟩
+  · constructor
+    · rintro h x y ⟨⟨hne, hx⟩, hy⟩
+      rcases h x hx y hy with (e | g) | g
+      · exact absurd e hne
+      · exact Or.inl g
+      · exact Or.inr g
+    · intro h x hx y hy
+      by_cases e : x = y
+      · exact Or.inl (Or.inl e)
+      · rcases h x y ⟨⟨e, hx⟩, hy⟩ with g | g
+        · exact Or.inl (Or.inr g)
+        · exact Or.inr g
+  · constructor
+    · rintro h ⟨x, y, hm⟩; exact absurd rfl (h _ hm)
+    · intro h p hp; cases e : p.«obligation?»
+      · simp
+      · exact absurd ⟨p.first, p.second, by cases p; simp_all⟩ h
+
+theorem mam_snd :
+    (Fren.Core.manualAtMostOne lint.PairNegation.first lint.PairNegation.second lint.PairNegation.«obligation?» ps ds).2 = true ↔
+      ¬ FinSet.ofList ds = ∅ ∧ ∀ x, (x ∈ FinSet.ofList ds ↔ lint.named? (FinSet.ofList ps) x = true) := by
+  simp only [Fren.Core.manualAtMostOne, Bool.and_eq_true, List.any_eq_true, List.all_eq_true, List.contains_iff_mem,
+    ← mem_ops ps, FinSet.mem_ofList, FinSet.ofList_eq_empty, and_true]
+  constructor
+  · rintro ⟨⟨⟨x, hx⟩, h1⟩, h2⟩
+    exact ⟨List.ne_nil_of_mem hx, fun y => ⟨h1 y, h2 y⟩⟩
+  · rintro ⟨hne, h⟩
+    obtain ⟨x, hx⟩ := List.exists_mem_of_ne_nil ds hne
+    exact ⟨⟨⟨x, hx⟩, fun y hy => (h y).mp hy⟩, fun y hy => (h y).mpr hy⟩
+end
 
 impl manual_at_most_one: lint::manual_at_most_one for (ps : List lint.PairNegation) (ds : List lint.Operand) {
   pairs := Fren.FinSet.ofList ps,
@@ -1610,32 +1683,10 @@ impl manual_at_most_one: lint::manual_at_most_one for (ps : List lint.PairNegati
   exactly? := (Fren.Core.manualAtMostOne lint.PairNegation.first lint.PairNegation.second lint.PairNegation.«obligation?» ps ds).2,
 } by
   intro ps ds _
-  generalize hm : (fun p => decide (p ∈ ps)) = m
-  generalize hd : (fun x => decide (x ∈ ds)) = d
-  have hm' : ∀ p, p ∈ ps ↔ m p = true := fun p => by rw [← hm]; simp
-  have hd' : ∀ x, x ∈ ds ↔ d x = true := fun x => by rw [← hd]; simp
-  have hdn : ds = [] ↔ ((Fren.Finite.all : List lint.Operand).all fun x => !decide (x ∈ ds)) = true := by
-    simp only [List.all_eq_true, Bool.not_eq_true', decide_eq_false_iff_not]
-    exact ⟨fun h x _ => by simp [h], fun h => List.eq_nil_iff_forall_not_mem.mpr fun x => h x (Fren.Finite.complete x)⟩
-  simp only [fren_spec]
-  simp only [Fren.Core.manualAtMostOne, FinSet.mem_ofList, hm', hd']
-  simp only [any_finite (ps.flatMap fun p => [p.first, p.second]), all_finite (ps.flatMap fun p => [p.first, p.second]),
-    any_finite ps, all_finite ps, all_finite ds, mem_operands, contains_eq, any_finite ds]
-  have opBeq : ∀ a b : lint.Operand, (a == b) = decide (a = b) := by decide
-  have opBne : ∀ a b : lint.Operand, (a != b) = !decide (a = b) := by decide
-  try simp only [FinSet.ofList_eq_empty, hdn]
-  have hmx : ∀ p, decide (p ∈ ps) = m p := fun p => congrFun hm p
-  have hdx : ∀ x, decide (x ∈ ds) = d x := fun x => congrFun hd x
-  try simp only [hmx, hdx]
-  have hde : FinSet.ofList ds = ∅ ↔ ((Fren.Finite.all : List lint.Operand).all fun x => !d x) = true := by
-    rw [FinSet.ofList_eq_empty, hdn]; simp only [hdx]
-  simp only [Fren.Finite.all, List.any_cons, List.all_cons, List.any_nil, List.all_nil, opBeq, opBne, ne_eq,
-    reduceCtorEq, not_false_eq_true, decide_true, decide_false, Bool.true_and, Bool.and_true,
-    Bool.false_and, Bool.and_false, Bool.or_false, Bool.false_or, Bool.true_or, Bool.or_true, Bool.not_true, Bool.not_false]
-  try simp (config := { decide := true }) only []
-  rw [hde]
-  simp only [Fren.Finite.all, List.all_cons, List.all_nil, Bool.and_true]
-  bv_decide
+  unfold lint.manual_at_most_one.ensures lint.manual_at_most_one.ensure.rule lint.manual_at_most_one.ensure.fix
+  rw [mam_fst, mam_snd]
+  simp only [exOp, allOp, and_self]
+
 
 def toCardinalityFix : Bool × Bool → lint.CardinalityFix
   | (false, _) => .Unchanged

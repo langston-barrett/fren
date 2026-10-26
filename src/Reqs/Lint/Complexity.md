@@ -407,6 +407,20 @@ refine roundtrip_sound: roundtrip_fixed refines roundtrip_written
 refine roundtrip_complete: roundtrip_written refines roundtrip_fixed
 ```
 
+The round trip is the identity on the newtype's values, which is why each
+fix keeps the meaning:
+
+```fren
+set_option fren.lint.redundant_newtype_roundtrip "allow" in
+comp roundtrip_keeps_meaning {
+    in x: Ms
+    in n: Int
+
+    expect built: Ms(x.0) = x
+    expect read: Ms(n).0 = n
+}
+```
+
 ## Leading zeros
 
 `zero_prefixed_literal` fires on a decimal integer literal that starts
