@@ -80,6 +80,9 @@
     each is run after fewer others and with fewer answers to solver queries
     kept, `fren mutate` decides each mutant, and finds the check that kills
     it, as it does without;
+  - *shard invariant*: with `--shard K/3`, for each `K`, `fren mutate`
+    decides each mutant of the shard as it does without, and the three
+    shards together hold each mutant once;
   - *every expectation needed*: without any one of its expectations and
     cover goals, local or global, some mutant survives that was killed. It
     must survive, not be shown equivalent: a mutant that some check killed

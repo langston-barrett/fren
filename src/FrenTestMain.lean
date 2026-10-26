@@ -28,7 +28,7 @@ import Lean.Elab.Frontend
 - **Lean's tokens:** the tokens that both front ends read as identifiers,
   and reject as declarations, are Lean's (`leanTokens`).
 - **Decisions of `fren mutate`:** on each example of `test/mutate/`, it is
-  adequate, decides a mutant as a sample does, needs every expectation, and
+  adequate, decides a mutant as a sample or a shard does, needs every expectation, and
   selects the components to check, and decides each check, soundly
   (`decisions`).
 
@@ -748,6 +748,9 @@ The properties of what `fren mutate` decides about each mutant
 expectations and cover goals pin them down, each with the mutants that no
 check can kill listed beside it, in `X.equivalent`. -/
 
+/-- The mutants of an example are run in this many shards too. -/
+def decisionShards : Nat := 3
+
 /-- At most this many mutants of an example are checked again, with every
 component, and under `fren check`. -/
 def decisionSample : Nat := 24
@@ -779,13 +782,13 @@ def outcomeName : FrenCli.Mutate.Outcome → String
   | .unviable => "is unviable"
 
 /-- The decisions of `fren mutate` about the mutants of `files`, or of
-those named by `ids`, or `sample?` of them, in order; checking every
-component of every mutant if `exhaustive`. -/
-def decisionsOf (files : Array String) (ids : Array String := #[]) (sample? : Option Nat := none) (exhaustive := false) :
-    IO (Array FrenCli.Decision) := do
+those named by `ids`, or `sample?` of them, or the shard `shard?`, in
+order; checking every component of every mutant if `exhaustive`. -/
+def decisionsOf (files : Array String) (ids : Array String := #[]) (sample? : Option Nat := none)
+    (shard? : Option (Nat × Nat) := none) (exhaustive := false) : IO (Array FrenCli.Decision) := do
   let decisions ← IO.mkRef #[]
   let _ ← IO.FS.withIsolatedStreams
-    (FrenCli.mutate { command := .mutate, files, mutantIds := ids, sample? } (some { exhaustive, decisions }))
+    (FrenCli.mutate { command := .mutate, files, mutantIds := ids, sample?, shard? } (some { exhaustive, decisions }))
   decisions.get
 
 /-- The results of `fren check` of `files`, by the key of their item and
@@ -831,8 +834,9 @@ def withText (name : String) (chars : Array Char) (f : String → IO α) : IO α
 - **adequate:** the example passes `fren check`, and every mutant is killed
   but those listed as equivalent, each of which survives or is shown
   equivalent;
-- **sample invariant:** a sample of half of the mutants, each run after
-  fewer others, decides each as the whole run does;
+- **sample and shard invariant:** a sample of half of the mutants, each run
+  after fewer others, decides each as the whole run does, and so does each
+  of `decisionShards` shards, which together hold each mutant once;
 - **every expectation needed:** without any one of its expectations and
   cover goals, some mutant survives that was killed, and is not shown
   equivalent, which it cannot be: it was killed, so it means something
@@ -878,6 +882,15 @@ def decisions (path : String) : IO (Array String) := do
     let some d₀ := decided.find? (·.id == d.id) | continue
     if kind d.outcome != kind d₀.outcome || d.killers != d₀.killers then
       failures := failures.push s!"{path}: {d.id} {outcomeName d₀.outcome}, killed by {d₀.killers.toList}, but in a sample \
+        {outcomeName d.outcome}, killed by {d.killers.toList}"
+  -- So do the shards, which together hold each mutant once.
+  let shards ← (List.range decisionShards).toArray.flatMapM fun k => decisionsOf #[path] (shard? := some (k, decisionShards))
+  if (shards.map (·.id)).qsort (· < ·) != (decided.map (·.id)).qsort (· < ·) then
+    failures := failures.push s!"{path}: the {decisionShards} shards do not hold each mutant once"
+  for d in shards do
+    let some d₀ := decided.find? (·.id == d.id) | continue
+    if kind d.outcome != kind d₀.outcome || d.killers != d₀.killers then
+      failures := failures.push s!"{path}: {d.id} {outcomeName d₀.outcome}, killed by {d₀.killers.toList}, but in its shard \
         {outcomeName d.outcome}, killed by {d.killers.toList}"
   -- Every expectation and cover goal is needed.
   let killed := decided.map (·.outcome == .killed)
