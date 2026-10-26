@@ -53,19 +53,25 @@ pub enum ValueType { BoolTy, IntTy, NatTy, StringTy, EnumTy, RecordTy, AbstractT
 ```
 
 `lang::Ty` is the types themselves, `lang::kind` gives the kind of
-each, `lang::elem` the element type of a set type, `lang::left` and
-`lang::right` the types of a relation's pairs, and `lang::ordered_enum?`
-whether a type is an [ordered enumeration](Items.md#enumerations). Two
-enumerations, two records, two abstract types, two set types or two
-relation types may have the same kind and still be different types:
+each, `lang::elem` the element type of a set or a sequence type,
+`lang::left` and `lang::right` the types of the first and second elements
+of a relation's pairs, and `lang::ordered_enum?` whether a type is an
+[ordered enumeration](Items.md#enumerations). Two enumerations, two
+records, two abstract types, two set types or two relation types may have
+the same kind and still be different types. The
+[preconditions](Items.md#contracts) of `elem`, `left` and `right` say
+which types have element types:
 
 ```fren
 pub type Ty
 
 pub fn kind(Ty): ValueType
-pub fn elem(Ty): Ty      -- the element type of a set or a sequence
-pub fn left(Ty): Ty      -- the type of the first element of a relation's pairs
-pub fn right(Ty): Ty     -- the type of the second
+pub fn elem(t: Ty): Ty
+    assume collection: kind(t) in {ValueType::SetTy, ValueType::SeqTy}
+pub fn left(t: Ty): Ty
+    assume relation: kind(t) = ValueType::RelTy
+pub fn right(t: Ty): Ty
+    assume relation: kind(t) = ValueType::RelTy
 pub fn ordered_enum?(Ty)  -- an enumeration declared `ordered`
 ```
 

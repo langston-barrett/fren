@@ -69,3 +69,49 @@ comp holder {
 }
 
 expect read: forall (h: holder), when h.q.len > 2, h.y = h.q[2]
+
+-- Under a quantifier, the question holds in every instance; under `let`
+-- and `where`, an application in a definition is guarded where the name
+-- is mentioned; in a table, by the earlier rows.
+comp quantified {
+    in q: Seq(Int)
+    pub out ok?
+
+    ensure r: ok? iff (forall (b?: Bool), nth(q, if b? then 0 else 1) > 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `quantified::r`
+}
+
+comp named {
+    in q: Seq(Int)
+    pub out y: Int
+    pub out z: Int
+
+    ensure guarded: when q != [], y = x where x := nth(q, 0)
+    ensure unguarded: z = x where x := nth(q, 1)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `named::unguarded`
+}
+
+comp tabled {
+    in q: Seq(Int)
+    pub out y: Int
+
+    ensure r: y = table { q = [] => 0, _ => nth(q, 0) }
+}
+
+-- An instance's bindings, and a constant's value.
+comp reader {
+    in x: Int
+    pub out y: Int
+
+    ensure r: y = x
+}
+
+comp reading {
+    in q: Seq(Int)
+    pub out y: Int
+
+    inst w: reader { x := nth(q, 0) }   --~ error: the precondition `in_range` of `nth` may not hold at this application in `reading::w`
+
+    ensure r: y = w.y
+}
+
+const FIRST: Int := nth([1, 2], 0)
+const NONE: Int := nth([], 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `NONE`
