@@ -199,7 +199,12 @@ is finite. Over a type that is not finite, which is outside the core, they
 are cvc5's projections, which it supports only in higher-order logic, so
 such a spec uses `HO_ALL`. The Lean-hosted front end does the same, for
 each query with a projection, by cvc5's option `force-logic`, since
-lean-smt always sets `ALL`. Its queries are still in the
+lean-smt always sets `ALL`. A query with a quantifier over a
+collection's elements, which a [pattern type](Lang/Types.md#meaning)
+within an element type brings, and which is outside the core, sets
+`fmf-bound`, with which cvc5 finds models of quantifiers bounded by
+membership, as each such quantifier is, rather than giving up; both front
+ends set it for exactly those queries. Its queries are still in the
 [decidable core](Lang/Decidability.md), unless it opts out. A spec uses
 sets if it writes a `Set(…)` or `Rel(…)` type, or a set or relation
 literal such as `{1, 2}`, and sequences if it writes a `Seq(…)` type, a

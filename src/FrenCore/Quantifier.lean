@@ -67,7 +67,7 @@ def instanceCount (sizes : Array Nat) : Nat := sizes.foldl (· * ·) 1
 def quantifiedTypeMsg (ty : String) (collection : Bool) : Msg :=
   { code? := some "F0355", headline := s!"a quantifier cannot range over `{ty}`"
     label? := some "not a type whose values can be listed"
-    notes := #["note: a quantifier ranges over `Bool`, or an enum or record whose payloads and fields it ranges over",
+    notes := #["note: a quantifier ranges over `Bool`, an enum or record whose payloads and fields it ranges over, or a pattern type whose base type it ranges over or whose integer ranges are bounded",
       if collection then "help: to quantify over the members of a set `s`, quantify over their type: `forall (x: T), when x in s, ...`"
       else "help: state it of a variable of that type instead, which the checks hold for every value of"] }
 

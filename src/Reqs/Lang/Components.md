@@ -359,13 +359,18 @@ and payloads, brings the constraint that its value matches, just as a
 `lang::nat_variable` states: an assumption for an input, a guarantee for
 an output, a constraint of the instance for an instance's variable, and
 nothing for a defined output, whose definition is checked to match instead
-(see [Checks](../Check.md#pattern-types)). With `in hops: Int is 1..`, the
+(see [Checks](../Check.md#pattern-types)). An instance's input is the one
+exception: what its type brings is the instantiated component's
+assumption, which the instance check asks of its binding, so it is not
+also a constraint of the instance. With `in hops: Int is 1..`, the
 component assumes `hops is 1..`; with `pub out level: Loud`, it guarantees
 that `level` is one of `Loud`'s variants. Like a `Nat`'s, these constraints
 have no names, are never reported in a minimal set, and are never checked
 for redundancy. An instance's binding of an input of a pattern type is
 checked like any other assumption of the instantiated component, by the
-[instance check](../Check.md#instance-assumptions).
+[instance check](../Check.md#instance-assumptions). A [global
+expectation's](Global.md) binders have no bindings, so their inputs bring
+their constraints, as their assumptions do.
 
 ## Interpretations
 

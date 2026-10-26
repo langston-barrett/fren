@@ -1,0 +1,27 @@
+--@ args: quickcheck
+-- Testing draws inputs, outputs, fields, elements and functions' values
+-- from their pattern types: every expectation here holds of the values of
+-- its types, and testing finds no counterexample, though values of the
+-- base types refute each one.
+type Byte := Int is 100..=200
+
+struct Packet { length: Byte }
+
+fn size(Int): Byte
+
+set_option fren.lint.undecidable "allow" in
+comp sized {
+    in b: Byte
+    in p: Packet
+    in s: Set(Byte)
+    in n: Int
+    pub out y: Byte
+
+    ensure r: y = b
+
+    expect input: b >= 100
+    expect field: p.length <= 200
+    expect element: not 1 in s
+    expect applied: size(n) > 99
+    expect output: y + 1 > 100
+}

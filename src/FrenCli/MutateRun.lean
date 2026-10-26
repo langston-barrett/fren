@@ -115,7 +115,7 @@ def formulas (c : CComp) : Array (String × String) :=
     -- The indexes of an item together, as the definedness check of the
     -- item, so that a mutant that adds or drops one still compares.
     ++ (c.indexes.map (·.1)).toList.eraseDups.toArray.map (fun n =>
-      (s!"indexes {n}", conj (c.indexes.filter (·.1 == n) |>.map (·.2.2.2))))
+      (s!"indexes {n}", conj (c.indexes.filter (·.1 == n) |>.map (·.2.2.2.1))))
     -- And the questions about its tables.
     ++ (c.tables.map (·.1)).toList.eraseDups.toArray.map fun n =>
       (s!"tables {n}", conj (c.tables.filter (·.1 == n) |>.map (·.2.2.2.2)))

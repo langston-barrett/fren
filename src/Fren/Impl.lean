@@ -41,7 +41,8 @@ scoped syntax (name := implCmd) "impl " ident " : " fren_path (" for " fren_impl
   " { " sepBy(fren_impl_map, ", ", ", ", allowTrailingSep) " }" (" by " Lean.Parser.Tactic.tacticSeq)? : command
 
 /-- `interp p := t [by tac]`: the Lean meaning of abstract type or function
-`p`, and for a function with postconditions, their proof. -/
+`p`, and for a function with postconditions or whose result type brings a
+constraint, the proof that `t` meets them. -/
 scoped syntax (name := interpCmd) "interp " fren_path " := " term (" by " Lean.Parser.Tactic.tacticSeq)? : command
 
 end Lang
@@ -377,11 +378,15 @@ open Lang in
     logWarningAt nameStx s!"could not prove that `{nameStx.getId}` implements `{compStr}`\n\nnote: `decide` does not apply, and the solver does not see the definitions of the implementation\nhelp: write a proof after `by`"
 
 /-- The statement that the interpretation `decl` of the function at `path`
-meets the postconditions of its contract `k` wherever its arguments meet
-the preconditions, over the interpretations of the abstract types and
-functions that the contract uses (`Reqs/Impl#interpretations`). -/
-def contractStatement (path : Name) (placeholder : Name) (interp : Expr) (k : ContractInfo) : MetaM Expr := do
-  let uses := (k.pres ++ k.posts).foldl (init := #[]) fun acc c =>
+gives values of its result type, if it brings a constraint `typed?`, a
+predicate over the abstract types it names, at every argument, and meets
+the postconditions of its contract `k` wherever its arguments meet the
+preconditions, over the interpretations of the abstract types and
+functions that the contract and the result type use
+(`Reqs/Impl#interpretations`). -/
+def contractStatement (path : Name) (placeholder : Name) (interp : Expr) (k : ContractInfo)
+    (typed? : Option (Array Name × Expr) := none) : MetaM Expr := do
+  let uses := (k.pres ++ k.posts).foldl (init := (typed?.map (·.1)).getD #[]) fun acc c =>
     c.uses.foldl (fun acc u => if acc.contains u then acc else acc.push u) acc
   -- The function's own interpretation is `interp`, which is not recorded
   -- until it is proved.
@@ -391,14 +396,20 @@ def contractStatement (path : Name) (placeholder : Name) (interp : Expr) (k : Co
     | .error p => throwError s!"the contract of `{Core.showComp path}` uses `{Core.showComp p}`, which has no interpretation\n\n\
         help: interpret `{Core.showComp p}` first"
   let ι := uses.map fun u => if u == placeholder then interp else ((others.idxOf? u).map (ι[·]!)).getD interp
-  forallTelescope (← inferType interp) fun xs _ => do
+  forallTelescope (← inferType interp) fun xs r => do
     let atArgs (c : ClauseInfo) := (replaceUses uses ι (c.at xs)).headBeta
+    -- Over an `Int`, as the solver sees a function into `Nat`.
+    let typed := typed?.toList.map fun (_, pred) =>
+      let app := mkAppN interp xs
+      let v := if r.isConstOf ``Nat then mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) app else app
+      (replaceUses uses ι pred).beta #[v]
     let post := mkAndN (k.posts.map atArgs).toList
-    let stmt ← k.pres.foldrM (fun c acc => mkArrow (atArgs c) acc) post
-    mkForallFVars xs stmt
+    let posts ← if k.posts.isEmpty then pure [] else
+      pure [← k.pres.foldrM (fun c acc => mkArrow (atArgs c) acc) post]
+    mkForallFVars xs (mkAndN (typed ++ posts))
 
-/-- How an interpretation proves its function's postconditions
-(`impls::ContractProof`). -/
+/-- How an interpretation proves its function's postconditions and its
+result type's constraint (`impls::ContractProof`). -/
 inductive ContractProofKind where
   | notNeeded
   | theorem
@@ -406,8 +417,9 @@ inductive ContractProofKind where
   | unproved
   deriving Inhabited, BEq, DecidableEq, Repr
 
-/-- How an interpretation proves its function's postconditions, from
-whether it has any, whether it has a written proof, whether that
+/-- How an interpretation proves its function's postconditions and its
+result type's constraint, from whether it has any, whether it has a
+written proof, whether that
 elaborates without an error and whether it uses `sorry`, and the answers
 of `decide` and the solver, each asked only when the earlier ones prove
 nothing (`impls::interpretation_contract`). -/
@@ -431,14 +443,27 @@ inductive ContractProof where
 
 open Lang in
 /-- Proves that `t`, the interpretation of the function at `path`, whose
-placeholder is `placeholder`, meets its postconditions (`contractStatement`):
-by the interpretation's tactics if it has any, and otherwise by `decide` or
-by the solver, which makes it an axiom; or reports that it is not, as for
-an `impl`, an error, and a proof that uses `sorry` is none. -/
-def proveContract (stx : Syntax) (path placeholder : Name) (t : Expr) (k : ContractInfo) :
-    CommandElabM (Option ContractProof) := do
-  let stmt ← liftTermElabM <| contractStatement path placeholder t k
+placeholder is `placeholder`, gives values of its result type `ty?`, if it
+brings a constraint `typed?`, and meets its postconditions
+(`contractStatement`): one statement, proved by the interpretation's
+tactics if it has any, and otherwise by `decide` or by the solver, which
+makes it an axiom; or reports that it is not, as for an `impl`, an error,
+and a proof that uses `sorry` is none. -/
+def proveContract (stx : Syntax) (path placeholder : Name) (t : Expr) (k : ContractInfo)
+    (typed? : Option (Array Name × Expr) := none) (ty : String := "") : CommandElabM (Option ContractProof) := do
+  let stmt ← liftTermElabM <| contractStatement path placeholder t k typed?
   let subject := s!"the interpretation of `{Core.showComp path}`"
+  -- What it is to prove, with the verb in the third person or not.
+  let claim (third : Bool) : String :=
+    let give := if third then "gives" else "give"
+    let meet := if third then "meets" else "meet"
+    match typed?.isSome, k.posts.isEmpty with
+    | true, true => s!"{give} values of its result type `{ty}`"
+    | true, false => s!"{give} values of its result type `{ty}` and {meet} its postconditions"
+    | false, _ => s!"{meet} its postconditions"
+  let them := if typed?.isSome && k.posts.isEmpty then "it" else "them"
+  -- Every application assumes its result type's constraint.
+  let assumed := if typed?.isSome then s!"\nnote: each application of `{Core.showComp path}` is assumed to give one" else ""
   if !stx[4].isNone then
     let tac : TSyntax ``Lean.Parser.Tactic.tacticSeq := ⟨stx[4][1]⟩
     let errorsBefore := (← get).messages.toList.filter (·.severity == .error) |>.length
@@ -453,8 +478,8 @@ def proveContract (stx : Syntax) (path placeholder : Name) (t : Expr) (k : Contr
     | _ =>
       -- An error in the tactics is reported already.
       if writtenOk then
-        logErrorAt stx[4] s!"the proof that {subject} meets its postconditions uses `sorry`\n\n\
-          note: an interpretation whose postconditions are not proved adds nothing"
+        logErrorAt stx[4] s!"the proof that {subject} {claim true} uses `sorry`\n\n\
+          note: an interpretation that is not proved to {claim false} adds nothing"
       return none
   let decided ← liftTermElabM (evalDecide stmt)
   let decideQ : Core.Answer := match decided with | some true => .unsat | some false => .sat | none => .unknown
@@ -468,11 +493,11 @@ def proveContract (stx : Syntax) (path placeholder : Name) (t : Expr) (k : Contr
   | .axiom => return some .solver
   | _ =>
     if decideQ == .sat then
-      logErrorAt stx[1] s!"{subject} does not meet its postconditions: `decide` evaluates their statement to false\n\n\
-        help: correct the interpretation, or the contract"
+      logErrorAt stx[1] s!"{subject} does not {claim false}: `decide` evaluates the statement to false\n{assumed}\n\
+        help: correct the interpretation, or the {if k.posts.isEmpty then "result type" else "contract"}"
     else
-      logErrorAt stx[1] s!"could not prove that {subject} meets its postconditions\n\n\
-        note: `decide` does not apply, and the solver did not prove them\n\
+      logErrorAt stx[1] s!"could not prove that {subject} {claim true}\n\n\
+        note: `decide` does not apply, and the solver did not prove {them}{assumed}\n\
         help: write a proof after `by`"
     return none
 
@@ -519,14 +544,15 @@ open Lang in
       throwErrorAt stx[1] "internal error: the interpretation is rejected without a reason"
     return (expected, t)
   let (expected, t) := term
-  -- A function's postconditions, proved of the term before anything is
-  -- added: an interpretation that does not meet them adds nothing
-  -- (`Reqs/Impl#interpretations`).
-  let proof? ← match (← getState).contracts.get? path with
-    | some k => if k.posts.isEmpty then pure none else do
-      let some p ← proveContract stx path a.placeholder t k | return
-      pure (some (k, p))
-    | none => pure none
+  -- A function's postconditions, and its result type's constraint, which
+  -- every application assumes, proved of the term in one statement before
+  -- anything is added: an interpretation that does not meet them adds
+  -- nothing (`Reqs/Impl#interpretations`).
+  let k := ((← getState).contracts.get? path).getD { path, pres := #[], posts := #[], defined := false }
+  let typed? := a.fact?.map (a.deps, ·)
+  let proof? ← if k.posts.isEmpty && typed?.isNone then pure none else do
+    let some p ← proveContract stx path a.placeholder t k typed? a.ptys.2.text | return
+    pure (some (k, p))
   liftTermElabM do
     addDecl (.defnDecl { name := decl, levelParams := [], «type» := expected, value := t, hints := .abbrev, safety := .safe })
     setReducibleAttribute decl
@@ -535,7 +561,7 @@ open Lang in
   -- `decl.ensures`, stated of `decl`, which is `t`.
   if let some (k, p) := proof? then
     let name := decl ++ `ensures
-    let stmt ← liftTermElabM <| contractStatement path a.placeholder (mkConst decl) k
+    let stmt ← liftTermElabM <| contractStatement path a.placeholder (mkConst decl) k typed?
     liftCoreM <| addDecl <| match p with
       | .proof value => .thmDecl { name, levelParams := [], «type» := stmt, value }
       | .solver => .axiomDecl { name, levelParams := [], «type» := stmt, isUnsafe := false }

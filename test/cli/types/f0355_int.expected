@@ -4,7 +4,7 @@ error[F0355]: a quantifier cannot range over `Int`
 2 | comp c { in x: Int pub out ok? ensure r: ok? iff (exists (n: Int), n = x) }
   |                                                              ^^^ not a type whose values can be listed
   |
-  = note: a quantifier ranges over `Bool`, or an enum or record whose payloads and fields it ranges over
+  = note: a quantifier ranges over `Bool`, an enum or record whose payloads and fields it ranges over, or a pattern type whose base type it ranges over or whose integer ranges are bounded
   = help: state it of a variable of that type instead, which the checks hold for every value of
 
 error: could not check due to previous errors

@@ -165,12 +165,13 @@ of an uninterpreted function whose result is a `Nat` (see
 types](#pattern-types)), with two exceptions for now: it is not the
 element type of a set, relation or sequence, nor the type of a payload of a
 recursive enumeration, where an `Int` and a constraint serve instead.
-There its constraint would hold of every element, and Lean's `Nat` within a
-collection would need conversions that Fren does not have. `Nat` written
-there is an error (`F0338`). In a record's field or a payload of an
-enumeration that is not recursive, it is the solver's `Int`, and Lean's
-too, with the constraint that it is at least 0, which each value read from
-it brings, as a pattern type's does. `lang::nat_place` states where `Nat`
+There its constraint would hold of every element, which quantifies, as
+a pattern type's does there, and Fren does not yet carry it there for
+`Nat`, whose values Lean and the solver represent differently: `Int is
+0..` serves instead. `Nat` written there is an error (`F0338`). In a record's field or a payload of an
+enumeration that is not recursive, it is Lean's `Nat` and the solver's
+`Int`, with the constraint that it is at least 0, which a value of the
+record or enumeration brings, as it brings a pattern type's. `lang::nat_place` states where `Nat`
 may be written:
 
 ```fren
@@ -237,16 +238,14 @@ expected, and where a `Set(Int is 0..)` is, with the obligation that each
 member matches `0..`. The obligation is asked wherever the declared type has
 a pattern, at the top or in an element type, even where the value is a
 variable of the same pattern type, whose constraint then proves it.
-`lang::pattern_widening` states this, from the types without their
-patterns, which `widening` compares, and whether the declared type has a
-pattern:
+`lang::pattern_widening` states this, from whether `widening` accepts
+the expression's type where the declared type without its patterns is
+expected, and whether the declared type has a pattern:
 
 ```fren
 pub comp pattern_widening {
-    in found: Ty             -- the expression's type, which has no pattern
-    in expected: Ty          -- the declared type, without its patterns
     in patterned?            -- the declared type has a pattern, at the top or in an element type
-    in widened?              -- `widening` accepts `found` where `expected` is
+    in widened?              -- `widening` accepts the expression's type, which has no pattern, where the declared type without its patterns is expected
     pub det out accepted?
     pub det out obliged?     -- a check confirms that the value matches
 
@@ -255,6 +254,58 @@ pub comp pattern_widening {
 
     expect never_by_type: when widened?, accepted?
     expect only_patterns: unless patterned?, not obliged?
+}
+```
+
+What an obligation asks follows the declared type: that the value matches
+its pattern, if it has one, and for a set, relation or sequence, that each
+element, or each member of each pair, meets the obligation of its element
+type, which is that of an element type alone. A record's, newtype's or
+enumeration's own fields and payloads ask nothing more: its values were
+built to meet them. At an instance's binding, the value asks nothing where
+it is given, since the instance check asks the same of the binding. Where
+`lang::ValuePlace` is where a value is given and `lang::Duty` what an
+obligation asks of it, `lang::obligation` states this:
+
+```fren
+pub enum ValuePlace { Definition, Argument, Field, Payload, Construction, Let, Body, Constant, Binding }
+
+-- Nothing; that the value matches the pattern; that each element meets
+-- its element type's obligation; or both.
+pub enum Duty { Nothing, Matches, Each, MatchesAndEach }
+
+pub comp obligation {
+    use self::ValueType::{RelTy, SeqTy, SetTy}
+    in place: ValuePlace         -- where the value is given
+    in type_kind: ValueType      -- the declared type's kind
+    in pattern?                  -- the declared type has a pattern at the top
+    in element: Duty             -- for a set, relation or sequence, its element type's obligation
+    pub det out duty: Duty
+
+    ensure rule: duty = (if place = ValuePlace::Binding then Duty::Nothing
+        else if pattern? and each? then Duty::MatchesAndEach
+        else if pattern? then Duty::Matches
+        else if each? then Duty::Each
+        else Duty::Nothing)
+        where each? := type_kind in {SetTy, RelTy, SeqTy} and element != Duty::Nothing
+
+    expect by_instances: when place = ValuePlace::Binding, duty = Duty::Nothing
+    expect records_built: when type_kind = ValueType::RecordTy and not pattern?, duty = Duty::Nothing
+}
+```
+
+`lang::obligation` is the detailed statement of `lang::pattern_widening`:
+a value has an obligation exactly where its declared type has a pattern,
+at the top or in an element type, and it is not given at an instance's
+binding, which the instance check asks instead:
+
+```fren
+refine obligation_widening: obligation refines pattern_widening {
+    patterned? := place != ValuePlace::Binding
+        and (pattern? or (type_kind in {ValueType::SetTy, ValueType::RelTy, ValueType::SeqTy} and element != Duty::Nothing)),
+    widened? := true,
+    accepted? := true,
+    obliged? := duty != Duty::Nothing,
 }
 ```
 
@@ -270,7 +321,11 @@ within them: a variable `p` of `struct Packet { length: Byte }` brings `p.length
 is 0..=255`, and one of `enum Reading { Raw(Byte), Missing }` brings that
 when it is `Raw`, its payload is in range. These are quantifier-free, one
 for each field or payload, since a record or an enumeration that is not
-recursive has finitely many of them, however deep.
+recursive has finitely many of them, however deep. They are brought where the value comes
+from, a variable or an application, rather than where a field is read,
+since two values can be compared without reading their fields: with `struct
+Flag { on?: Bool is true }`, which has one value, `a = b` holds of any two
+`Flag`s `a` and `b`, though neither reads `on?`.
 
 Within a set's, relation's or sequence's element type, a pattern type
 brings a constraint on every element, which quantifies over them, and
@@ -334,6 +389,87 @@ pub comp pattern_finite {
 
     expect ranges: when integers? and bounded?, finite?
     expect unbounded_range: when integers? and not bounded?, not finite?
+}
+```
+
+### Integer patterns
+
+An integer pattern, of `Int` or `Nat`, is an or-pattern of *alternatives*,
+each a range with or without a lower and an upper bound, or an integer
+`n`, which is the range `n..=n`; `a..b` is `a..=b - 1`. `lang::Alternative`
+is one, and `lang::above?` and `lang::below?` say whether an integer is
+within its bounds:
+
+```fren
+pub enum Bound { Open, At(Int) }
+
+-- A range from `lo` to `hi`, both included; `Bound::Open` is no bound.
+pub struct Alternative { lo: Bound, hi: Bound }
+
+pub fn above?(b: Bound, x: Int) := match b { Bound::Open => true, Bound::At(l) => l <= x }
+
+pub fn below?(b: Bound, x: Int) := match b { Bound::Open => true, Bound::At(h) => x <= h }
+```
+
+An integer matches the pattern if it is within the bounds of one of its
+alternatives. `lang::pattern_member` states this, with a witness: the
+alternative that it is within, which every check, constraint and
+obligation of a pattern type, and the evaluator, decide by. The witness is
+an output that the guarantees index by, which is outside the decidable
+core, so it opts out:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp pattern_member {
+    in alts: Seq(Alternative)    -- the pattern's alternatives, in order
+    in x: Int
+    in k: Int                    -- any position among the alternatives
+    pub out member?
+    pub out witness: Int         -- the position of an alternative that `x` is within, if it matches
+
+    ensure within: when 0 <= k < alts.len and above?(alts[k].lo, x) and below?(alts[k].hi, x), member?
+    ensure witnessed: when member?,
+        0 <= witness < alts.len and above?(alts[witness].lo, x) and below?(alts[witness].hi, x)
+
+    expect no_alternatives: when alts = [], not member?
+}
+```
+
+The pattern matches finitely many integers when each alternative has both
+bounds, and then how many it matches is counted from the bounds, without
+listing them: an alternative from `lo` to `hi` has `hi - lo + 1` integers,
+or none if `hi < lo`, and alternatives that overlap count their integers
+once. `lang::pattern_count` states this for up to two alternatives, which
+is how the solver and both front ends count them for any number:
+
+```fren
+-- A bound's integer, and 0 for no bound.
+pub fn bound_value(b: Bound): Int := match b { Bound::At(v) => v, Bound::Open => 0 }
+
+pub fn bounded?(a: Alternative) := a.lo != Bound::Open and a.hi != Bound::Open
+
+-- How many integers a bounded alternative has.
+pub fn width(a: Alternative): Int := if bounded?(a) and bound_value(a.lo) <= bound_value(a.hi) then bound_value(a.hi) - bound_value(a.lo) + 1 else 0
+
+pub comp pattern_count {
+    in alts: Seq(Alternative)
+    pub det out finite?
+    pub out count: Nat           -- how many integers it matches, when finitely many
+
+    assume few: alts.len <= 2
+
+    ensure bounds: finite? iff ((alts = [] or bounded?(alts[0])) and (alts.len < 2 or bounded?(alts[1])))
+    ensure none: when alts = [], count = 0
+    ensure one: when finite? and alts.len = 1, count = width(alts[0])
+    ensure apart: when finite? and alts.len = 2 and width(alts[0]) > 0 and width(alts[1]) > 0
+        and (bound_value(alts[0].hi) + 1 < bound_value(alts[1].lo) or bound_value(alts[1].hi) + 1 < bound_value(alts[0].lo)),
+        count = width(alts[0]) + width(alts[1])
+    -- Alternatives that overlap or touch count as their union, once.
+    ensure joined: when finite? and alts.len = 2 and width(alts[0]) > 0 and width(alts[1]) > 0
+        and not (bound_value(alts[0].hi) + 1 < bound_value(alts[1].lo) or bound_value(alts[1].hi) + 1 < bound_value(alts[0].lo)),
+        count = bound_value(alts[0].hi).max(bound_value(alts[1].hi)) - bound_value(alts[0].lo).min(bound_value(alts[1].lo)) + 1
+    ensure empty_first: when finite? and alts.len = 2 and width(alts[0]) = 0, count = width(alts[1])
+    ensure empty_second: when finite? and alts.len = 2 and width(alts[1]) = 0, count = width(alts[0])
 }
 ```
 

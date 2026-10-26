@@ -1,0 +1,43 @@
+-- The obligations of pattern types: each value given where one is
+-- declared is checked to match its pattern, and fails where it may not.
+-- fren-covers: check::pattern_obligation, lang::pattern_widening
+
+type Byte := Int is 0..=255
+
+enum Reading { Raw(Byte), Missing }
+struct Packet { length: Byte, ok?: Bool is true }
+struct Level(Int is 0..=9)
+
+fn scale(b: Byte): Int := b * 2
+fn size(Byte): Int
+
+comp sub {
+    in b: Byte
+    pub out y: Int
+
+    ensure r: y = b
+}
+
+comp values {
+    in x: Int
+    pub out y: Int
+    pub det out d: Byte := x   --~ error: a value in `values::d` may not have the type `Byte`
+    pub det out guarded: Byte := if 0 <= x <= 255 then x else 0
+    inst w: sub { b := x }   --~ error: the input `b` of `sub` may not have its type `Byte` for instance `values::w`
+    inst v: sub { b := guarded }
+
+    ensure args: y = scale(x) + size(x)   --~ error: a value in `values::args` may not have the type `Byte`
+    --~^ error: a value in `values::args` may not have the type `Byte`
+    expect guarded_args: when 0 <= x <= 255, scale(x) = 2 * x
+    expect payload: Reading::Raw(x) != Reading::Missing   --~ error: a value in `values::payload` may not have the type `Byte`
+    expect field: Packet { length := 3, ok? := x > 0 }.length = 3   --~ error: a value in `values::field` may not have the type `Bool is true`
+    expect update: { Packet { length := 3, ok? := true } with length := x }.ok?   --~ error: a value in `values::update` may not have the type `Byte`
+    assume newtype: Level(x) != Level(0)   --~ error: a value in `values::newtype` may not have the type `Int is 0..=9`
+    expect defined: (let b: Byte := x + 1 in b) > x   --~ error: a value in `values::defined` may not have the type `Byte`
+}
+
+-- A refinement checks what the types of the abstract component's outputs
+-- bring, as it checks its guarantees.
+comp abstract_out { pub out y: Byte ensure r: y != 7 }
+comp concrete_out { pub out y: Int ensure r: y = 300 }
+refine wider: concrete_out refines abstract_out   --~ error: a value in `wider::y` may not have the type `Byte`

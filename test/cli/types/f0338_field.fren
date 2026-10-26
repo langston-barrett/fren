@@ -1,3 +1,0 @@
--- A field of type `Nat`.
--- fren-covers: lang::nat_place
-struct Stock { item: Int, count: Nat }

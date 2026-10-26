@@ -24,12 +24,12 @@ pub enum Case { Snake, Camel, Upper }
 use self::Case::{Camel, Snake, Upper}
 
 pub comp naming_case {
-    use self::Named::{AbstractType, Constant, Enumeration, Record, Variant}
+    use self::Named::{AbstractType, Constant, Enumeration, Record, TypeAlias, Variant}
     in what: Named
     pub det out case: Case
 
     ensure rule: case = match what {
-        Enumeration | Variant | Record | AbstractType => Camel,
+        Enumeration | Variant | Record | AbstractType | TypeAlias => Camel,
         Constant => Upper,
         _ => Snake,
     }

@@ -2,9 +2,11 @@
 -- fren-covers: lang::operator_type, lang::nat_place, lang::widening, lang::literal_type
 set_option fren.lint.dead_code "allow"
 
--- Not a field, a payload or an element type.
-struct Stock { item: Int, count: Nat }   --~ error: `Nat` cannot be the type of a field
-enum Order { Placed(Nat), Cancelled }    --~ error: `Nat` cannot be the type of a payload
+-- A field or a payload, but not an element type, nor a payload of a
+-- recursive enumeration.
+struct Stock { item: Int, count: Nat }
+enum Order { Placed(Nat), Cancelled }
+enum Counts { Last, More(Nat, Counts) }  --~ error: `Nat` cannot be the type of a payload of a recursive enumeration
 comp sets { in s: Set(Nat) }             --~ error: `Nat` cannot be the element type of a set, relation or sequence
 comp seqs { in q: Seq(Nat) }             --~ error: `Nat` cannot be the element type of a set, relation or sequence
 comp rels { in r: Rel(Int, Nat) }        --~ error: `Nat` cannot be the element type of a set, relation or sequence

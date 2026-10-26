@@ -95,3 +95,79 @@ help: check the terms it gives the inputs, and the interpretations they use
 #guard_msgs in
 impl never_ranked: ranked for (k : Int) { k := k, ok? := true } by
   intro _ _; simp [fren_spec]
+
+-- An interpretation of a function whose result is a pattern type must give
+-- values of it: every application assumes one, so an interpretation that
+-- gives 300 for an `Int is 0..=255` is rejected, and no implementation can
+-- rely on it (`Reqs/Impl#interpretations`).
+mod interp_typed
+
+fn size(Int): Int is 0..=255
+fn small(Int): Int is 0..=255
+fn proved(Int): Int is 0..=255
+fn count(Int): Nat is 1..
+
+comp sized {
+    in x: Int
+    pub out y: Int
+    ensure r: y = size(x)
+    expect e: y <= 255
+}
+
+/--
+error: could not prove that the interpretation of `interp_typed::size` gives values of its result type `Int is 0..=255`
+
+note: `decide` does not apply, and the solver did not prove it
+note: each application of `interp_typed::size` is assumed to give one
+help: write a proof after `by`
+-/
+#guard_msgs in
+interp size := fun (_ : Int) => (300 : Int)
+
+-- The solver proves it, as an axiom.
+interp small := fun (x : Int) => if x < 0 then 0 else if x > 255 then 255 else x
+
+/-- info: 'interp_typed.small.ensures' depends on axioms: [interp_typed.small.ensures] -/
+#guard_msgs in #print axioms interp_typed.small.ensures
+
+-- Or a proof after `by`.
+interp proved := fun (_ : Int) => (7 : Int) by intro _; show (0 : Int) ≤ 7 ∧ (7 : Int) ≤ 255; decide
+
+/-- info: 'interp_typed.proved.ensures' does not depend on any axioms -/
+#guard_msgs in #print axioms interp_typed.proved.ensures
+
+-- Into `Nat`, over an `Int`, as the solver sees it.
+interp count := fun (_ : Int) => (3 : Nat)
+
+-- With postconditions too, one statement: the result type's constraint at
+-- every argument, and the postconditions where the preconditions hold. An
+-- interpretation that meets the postconditions but not the result type
+-- adds nothing, so the function can be interpreted again.
+mod interp_typed_contract
+
+fn capped(n: Int): Int is 0..=255
+    assume nonneg: n >= 0
+    ensure within: capped(n) <= n
+
+/--
+error: could not prove that the interpretation of `interp_typed_contract::capped` gives values of its result type `Int is 0..=255` and meets its postconditions
+
+note: `decide` does not apply, and the solver did not prove them
+note: each application of `interp_typed_contract::capped` is assumed to give one
+help: write a proof after `by`
+-/
+#guard_msgs in
+interp capped := fun (n : Int) => n
+
+/--
+error: the proof that the interpretation of `interp_typed_contract::capped` gives values of its result type `Int is 0..=255` and meets its postconditions uses `sorry`
+
+note: an interpretation that is not proved to give values of its result type `Int is 0..=255` and meet its postconditions adds nothing
+-/
+#guard_msgs in
+interp capped := fun (n : Int) => n by sorry
+
+interp capped := fun (n : Int) => if n < 0 then 0 else if n > 255 then 255 else n
+
+/-- info: 'interp_typed_contract.capped.ensures' depends on axioms: [interp_typed_contract.capped.ensures] -/
+#guard_msgs in #print axioms interp_typed_contract.capped.ensures

@@ -1,0 +1,9 @@
+--@ args: eval --comp c --set x=300 --set y=5
+-- A value given outside its pattern type makes the behaviour inadmissible,
+-- if it is an input's, or violate the component, if it is an output's.
+comp c {
+    in x: Int is 0..=255
+    pub out y: Int is 10..
+
+    ensure r: y = x - 295
+}

@@ -1,0 +1,25 @@
+-- `Nat` fields and payloads: built from `Nat` arithmetic, read as `Nat`s,
+-- and at least 0 (`lang::nat_place`).
+-- fren-covers: lang::nat_place
+
+struct S { n: Nat, m: Int }
+enum E { A(Nat), B }
+
+comp c {
+    in s: S
+    in e: E
+    in k: Nat
+    in x: Int
+    pub det out a: S := S { n := k + 1, m := 0 }
+    pub det out t: S := { s with n := k + 1 }
+    pub det out u: S := S { n := s.n * 2, m := x }
+    pub det out v: E := E::A(k + 1)
+    pub det out z: Nat := s.n + 1
+
+    expect pos: s.n + x >= x
+    expect pay: match e { E::A(p) => p >= 0, E::B => true }
+    expect tn: t.n >= 1 and a.n = k + 1
+    expect un: u.n = 2 * s.n
+    expect vz: match v { E::A(p) => p >= 1, E::B => false } and z >= 1
+    expect bad: s.n >= 1   --~ error: expectation `c::bad` does not hold
+}

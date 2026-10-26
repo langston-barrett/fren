@@ -107,21 +107,45 @@ partial def hashVal : Val → UInt64
   | .abs s k => mix (hash s) k.toUInt64
   | .ctor t i args => args.foldl (fun h a => mix h (hashVal a)) (mix (hash t) i.toUInt64)
 
+/-- A value of `ty`, of the declared type `t`, chosen by `h`, as `valueOf`
+chooses one: the first of a few choices that is a value of `t`
+(`typeHolds`), or else, for an integer type whose pattern has a bound, a
+bound of its first alternative that has one. -/
+def typedValueOf (sp : Spec) (w : World) (h : UInt64) (ty : VTy) (t : Fren.Core.PTy) : Val := Id.run do
+  let shapes := sp.shapes.find?
+  for k in [0:16] do
+    let v := valueOf sp w (if k == 0 then h else mix h k.toUInt64) 2 ty
+    if typeHolds shapes t v then return v
+  let bound : Fren.Core.Pat → Option Int
+    | .int lo hi => lo <|> hi
+    | .or ps => ps.findSome? fun
+      | .int lo hi => lo <|> hi
+      | _ => none
+    | _ => none
+  match t.pat?.bind bound with
+  | some i => return .int i
+  | none => return valueOf sp w h 2 ty
+
 /-- The value of the function `f` at `args` in the interpretation `w`:
 random, but where the arguments meet `f`'s preconditions, the first of a
 few random values that meets its postconditions, and none if none does
-(`Reqs/Eval#searching-for-behaviours`). The clauses are evaluated with the
+(`Reqs/Eval#searching-for-behaviours`), each a value of its result
+type, as declared (`typedValueOf`). The clauses are evaluated with the
 other functions' values, to the depth `depth`, beyond which they are not
 checked. -/
 partial def World.value (sp : Spec) (w : World) (f : Name) (args : Array Val) (depth : Nat := 3) : Option Val := do
   let (_, r) ← sp.funs.find? f
   let h := args.foldl (fun h a => mix h (hashVal a)) (mix w.seed (hash f))
-  let some (ps, pres, posts) := sp.contracts.find? f | return valueOf sp w h 2 r
-  if depth == 0 then return valueOf sp w h 2 r
+  -- Its result is a value of its declared type (`Reqs/Lang/Items#uninterpreted-functions`).
+  let valueAt (h : UInt64) : Val := match sp.results.find? f with
+    | some t => typedValueOf sp w h r t
+    | none => valueOf sp w h 2 r
+  let some (ps, pres, posts) := sp.contracts.find? f | return valueAt h
+  if depth == 0 then return valueAt h
   let others : Interp := { fn := fun g as => w.value sp g as (depth - 1) }
   let locals := (ps.zip args).toList
-  unless pres.all (·.eval others (fun _ => none) locals == some (.bool true)) do return valueOf sp w h 2 r
-  let candidates := (List.range 8).map fun k => valueOf sp w (if k == 0 then h else mix h k.toUInt64) 2 r
+  unless pres.all (·.eval others (fun _ => none) locals == some (.bool true)) do return valueAt h
+  let candidates := (List.range 8).map fun k => valueAt (if k == 0 then h else mix h k.toUInt64)
   candidates.find? fun v =>
     let I : Interp := { fn := fun g as => if g == f && as == args then some v else w.value sp g as (depth - 1) }
     posts.all (·.eval I (fun _ => none) locals == some (.bool true))
@@ -129,6 +153,7 @@ partial def World.value (sp : Spec) (w : World) (f : Name) (args : Array Val) (d
 def World.interp (sp : Spec) (w : World) : Interp where
   fn f args := w.value sp f args
   matchMemo p s := do return (← (← sp.matchMemo[p]?)[s]?).get
+  shapes := sp.shapes.find?
 
 /-! ## Candidates -/
 
@@ -162,6 +187,8 @@ partial def Ex.lits : Ex → Array Int
   | .quant _ _ _ b => b.lits
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.lits)).getD #[] ++ v.lits
   | .const _ e => e.lits
+  -- The bounds of the patterns of the type, which the values must meet.
+  | .typed _ is e => is ++ e.lits
 
 /-- The expressions that `e`, a constraint over the search's environment
 (`Ex.slot`), equates the variable at index `x` with. -/
@@ -184,6 +211,7 @@ partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .quant _ _ _ b => b.equated x
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.equated x)).getD #[] ++ v.equated x
   | .const .. => #[]
+  | .typed _ _ e => e.equated x
 
 /-- Every value of `ty` up to `depth`, at most `cap` of them. -/
 partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array String) (cap : Nat) (depth : Nat) :
@@ -261,6 +289,7 @@ partial def Ex.vars : Ex → Array Name
   | .quant _ _ _ b => b.vars
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.vars)).getD #[] ++ v.vars
   | .const .. => #[]
+  | .typed _ _ e => e.vars
 
 structure Problem where
   /-- The variables to choose, in order, with their types. -/
@@ -541,6 +570,7 @@ partial def Ex.strLits : Ex → Array String × Array String
   | .quant _ _ _ b => b.strLits
   | .table _ rows _ => join (rows.flatMap fun (_, c?, v) => c?.toArray.push v)
   | .const _ e => e.strLits
+  | .typed _ _ e => e.strLits
 where
   join (es : Array Ex) : Array String × Array String :=
     es.foldl (fun (ls, ps) e => let (l, p) := e.strLits; (ls ++ l, ps ++ p)) (#[], #[])

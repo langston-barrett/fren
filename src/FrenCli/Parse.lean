@@ -2,6 +2,7 @@
 import FrenCli.Lex
 import FrenCore.Evidence
 import FrenCore.Names
+import FrenCore.PatternTypes
 -- keep-sorted end
 
 /-!
@@ -83,6 +84,130 @@ structure Binder where
   ty : Array Ident
   span : Span
   deriving Inhabited
+
+/-! ### Patterns within types
+
+A type is a flat array of segments (`typeExpr`), so a pattern type's
+pattern is a segment of its own, whose name holds the pattern written out
+by `Pattern.encode`, and which `Pattern.decode` reads back. -/
+
+/-- The atoms of an encoded pattern, each prefixed by its length, so that
+any string literal's characters fit. -/
+private def atom (s : String) : String := s!"{s.length}:{s}"
+
+private def spanAtoms (sp : Span) : String := atom (toString sp.start) ++ atom (toString sp.stop)
+
+private def segAtoms (segs : Array Ident) : String :=
+  atom (toString segs.size) ++ String.join (segs.toList.map fun i => atom i.name ++ spanAtoms i.span)
+
+/-- `p`, written as atoms (`Pattern.decode`). -/
+partial def Pattern.encode : Pattern → String
+  | .wild sp => atom "w" ++ spanAtoms sp
+  | .num sp v => atom "n" ++ spanAtoms sp ++ atom (toString v)
+  | .str sp v => atom "s" ++ spanAtoms sp ++ atom v
+  | .range sp lo hi inclusive =>
+    let bound : Option Bound → String
+      | none => atom "-"
+      | some (.num bs v) => atom "bn" ++ spanAtoms bs ++ atom (toString v)
+      | some (.path bs segs) => atom "bp" ++ spanAtoms bs ++ segAtoms segs
+    atom "r" ++ spanAtoms sp ++ atom (if inclusive then "1" else "0") ++ bound lo ++ bound hi
+  | .variant sp segs args =>
+    atom "v" ++ spanAtoms sp ++ segAtoms segs ++ match args with
+      | none => atom "0"
+      | some as => atom "1" ++ atom (toString as.size) ++ String.join (as.toList.map Pattern.encode)
+  | .or sp alts => atom "o" ++ spanAtoms sp ++ atom (toString alts.size) ++ String.join (alts.toList.map Pattern.encode)
+
+/-- The atoms of `s`, as `atom` writes them. -/
+private partial def atomsOf (s : List Char) (acc : Array String := #[]) : Array String :=
+  if s.isEmpty then acc else
+  let digits := s.takeWhile (·.isDigit)
+  let n := (String.ofList digits).toNat!
+  let rest := s.drop (digits.length + 1)
+  atomsOf (rest.drop n) (acc.push (String.ofList (rest.take n)))
+
+private abbrev D := StateT Nat (Except String)
+
+private def next (as : Array String) : D String := do
+  let i ← get
+  let some a := as[i]? | throw "a truncated pattern"
+  set (i + 1)
+  return a
+
+private def nextNat (as : Array String) : D Nat := return (← next as).toNat!
+
+private def nextInt (as : Array String) : D Int := do
+  let a ← next as
+  return if a.startsWith "-" then -((a.drop 1).toString.toNat! : Int) else (a.toNat! : Int)
+
+private def nextSpan (as : Array String) : D Span := return { start := ← nextNat as, stop := ← nextNat as }
+
+private def nextSegs (as : Array String) : D (Array Ident) := do
+  let n ← nextNat as
+  (Array.range n).mapM fun _ => do return { name := ← next as, span := ← nextSpan as }
+
+private partial def decodeAt (as : Array String) : D Pattern := do
+  match ← next as with
+  | "w" => return .wild (← nextSpan as)
+  | "n" => return .num (← nextSpan as) (← nextInt as)
+  | "s" => return .str (← nextSpan as) (← next as)
+  | "r" =>
+    let sp ← nextSpan as
+    let inclusive := (← next as) == "1"
+    let bound : D (Option Bound) := do
+      match ← next as with
+      | "bn" => return some (.num (← nextSpan as) (← nextInt as))
+      | "bp" => return some (.path (← nextSpan as) (← nextSegs as))
+      | _ => return none
+    let lo ← bound
+    let hi ← bound
+    return .range sp lo hi inclusive
+  | "v" =>
+    let sp ← nextSpan as
+    let segs ← nextSegs as
+    if (← next as) == "0" then return .variant sp segs none
+    let n ← nextNat as
+    return .variant sp segs (some (← (Array.range n).mapM fun _ => decodeAt as))
+  | "o" =>
+    let sp ← nextSpan as
+    let n ← nextNat as
+    return .or sp (← (Array.range n).mapM fun _ => decodeAt as)
+  | t => throw s!"an unknown pattern `{t}`"
+
+/-- The pattern that `Pattern.encode` wrote as `s`. -/
+def Pattern.decode (s : String) : Except String Pattern := (decodeAt (atomsOf s.toList)).run' 0
+
+/-- The prefix of the name of a pattern type's pattern's segment, which no
+identifier can start with: it follows the segments of the base type, or,
+for a base type that is a set, relation or sequence, precedes them
+(`patOuterSeg`), so that it is never read as an element type's. -/
+def patSeg : String := "is "
+
+def patOuterSeg : String := "is( "
+
+/-- The segment of the pattern `p`, after the base type, or before it if
+`outer`. -/
+def Pattern.seg (p : Pattern) (outer : Bool) : Ident :=
+  { name := (if outer then patOuterSeg else patSeg) ++ p.encode, span := p.span }
+
+/-- The type `segs`, split into its base type and its pattern, if it is a
+pattern type (`patSeg`). -/
+def splitPatternType (segs : Array Ident) : Array Ident × Option Ident :=
+  match segs[0]?, segs.back? with
+  | some f, some b =>
+    if f.name.startsWith patOuterSeg then (segs.extract 1, some f)
+    -- A set's, relation's or sequence's last segment is its element type's.
+    else if f.name == "Set(" || f.name == "Seq(" || f.name == "Rel(" then (segs, none)
+    else if b.name.startsWith patSeg && segs.size > 1 then (segs.pop, some b) else (segs, none)
+  | _, _ => (segs, none)
+
+/-- Whether the segment `s` is a pattern type's pattern's. -/
+def Ident.isPatternSeg (s : Ident) : Bool := s.name.startsWith patSeg || s.name.startsWith patOuterSeg
+
+/-- The pattern of the segment `seg` that `Pattern.seg` made. -/
+def Ident.pattern? (seg : Ident) : Option Pattern :=
+  let text := if seg.name.startsWith patOuterSeg then seg.name.drop patOuterSeg.length
+    else if seg.name.startsWith patSeg then seg.name.drop patSeg.length else ""
+  if text.isEmpty then none else (Pattern.decode text.toString).toOption
 
 inductive Expr where
   | when (span : Span) (negated : Bool) (cond body : Expr)
@@ -191,6 +316,8 @@ inductive Item where
   | newtype (isPub : Bool) (name : Ident) (fields : Array (Array Ident))
   /-- `type T`, an abstract type. -/
   | abstractType (isPub : Bool) (name : Ident)
+  /-- `type T := U`, a type alias. -/
+  | typeAlias (isPub : Bool) (name : Ident) (ty : Array Ident)
   /-- `fn f(T, U): R`, or `fn f(x: T, y?): R := e`: each parameter's path,
 and its type after `:` if written. The result type is `none` if it is not
 written, and the body if the function is uninterpreted. Then the clauses
@@ -566,8 +693,21 @@ def splitRel (segs : Array Ident) : Array Ident × Array Ident := Id.run do
 
 def seqSeg : String := "Seq("
 
-/-- A type: a path, `Set(T)`, `Seq(T)` or `Rel(A, B)`. -/
+mutual
+/-- A type: a path, `Set(T)`, `Seq(T)` or `Rel(A, B)`, optionally followed
+by `is` and a pattern, for a pattern type. -/
 partial def typeExpr : P (Array Ident) := do
+  let base ← baseType
+  unless isKw (← peek) "is" do return base
+  discard bump
+  let p ← pattern (arm := false)
+  if let some t ← eatKw "is" then throw { span := t.span, msg := Fren.Core.nestedPatternMsg }
+  let outer := base[0]?.any fun s => s.name == setSeg || s.name == seqSeg || s.name == relSeg
+  return if outer then #[p.seg true] ++ base else base.push (p.seg false)
+
+/-- A type without a pattern of its own: a path, `Set(T)`, `Seq(T)` or
+`Rel(A, B)`, whose element types may be pattern types. -/
+partial def baseType : P (Array Ident) := do
   let t ← peek
   let s ← get
   if t.tok == .ident "Set" && (s.toks[s.pos + 1]?).any (isKw · "(") then
@@ -594,6 +734,8 @@ partial def typeExpr : P (Array Ident) := do
     discard (expectKw ")")
     return #[{ name := relSeg, span := t.span }] ++ a ++ #[{ name := relSep, span := c.span }] ++ b
   return (← path false).1
+
+end
 
 def type? : P (Option (Array Ident)) := do
   if (← eatKw ":").isNone then return none
@@ -1231,7 +1373,9 @@ partial def item : P Item := do
     return .record isPub name fs
   if isKw t "type" then
     discard bump
-    return .abstractType isPub (← ident)
+    let name ← ident
+    if (← eatKw ":=").isSome then return .typeAlias isPub name (← typeExpr)
+    return .abstractType isPub name
   if isKw t "fn" then
     discard bump
     let name ← ident

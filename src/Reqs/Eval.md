@@ -43,7 +43,16 @@ other reason is an internal error. The evaluator computes it from the
 spec itself, not from the formulas given to the solver, so it is an
 independent statement of what a spec means. A name of a
 [`let` or `where`](Lang/Let.md) is read as its definition, so it is not
-part of a behaviour, and counterexamples show variables only. In the notation of
+part of a behaviour, and counterexamples show variables only. What a
+variable's [pattern type](Lang/Types.md#pattern-types) brings is a
+constraint of its component, as for the solver: an input's among the
+assumptions, an output's among the guarantees, and an instance's input's
+among the assumptions of the instantiated component, which the instance
+check asks of the bindings. A value is of a type if it matches the
+type's pattern, and so do all its fields, payloads and elements, at every
+depth, and each `Nat` within it is at least 0. An uninterpreted function's
+values are of its result type. In `fren eval`, such a constraint is shown
+as `type x`, after the variable it is about. In the notation of
 [Components](Lang/Components.md#meaning), a behaviour is *admissible* if
 `A` and `I` hold in it, and it *meets* the component if `R` holds as well.
 `eval::status` gives the status of a behaviour:

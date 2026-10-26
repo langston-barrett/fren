@@ -66,6 +66,13 @@ least 0. -/
     if let .lit (.natVal k) := n.consumeMData then return some (literalT (toString k))
     return some (← applyTranslators! n)
   | Fren.natResult i => return some (← applyTranslators! i)
+  -- `x.toNat`, which lean-smt's preprocessing writes for a `Nat` that it
+  -- makes an `Int` and which reaches a `Nat` field or payload: exactly, as
+  -- a conditional, rather than as a function that a quantified axiom states
+  -- is at least 0.
+  | Int.toNat i =>
+    let x ← applyTranslators! i
+    return some (mkApp3 (symbolT "ite") (mkApp2 (symbolT ">=") x (literalT "0")) x (literalT "0"))
   | _ => return none
 
 /-- The character that `e`, as `Lean.ToExpr` writes one, stands for. -/

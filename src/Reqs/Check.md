@@ -59,7 +59,8 @@ payloads or elements, matches it, and that each payload of a recursive
 enumeration that the query reads matches its pattern type, if it has one.
 Each variable's constraints come in the order of the variables, after its
 `Nat`'s, and each application's or payload's in the order in which the
-query mentions them. So a query's facts about applications depend only on its
+query mentions them, one application's as one fact each: its `Nat`'s, its
+type's, then its postconditions'. So a query's facts about applications depend only on its
 formulas: an instance's query has none about its component's
 expectations, which are not among them. Every query has both among its hypotheses,
 though the formulas below leave them implicit, and realizability also
