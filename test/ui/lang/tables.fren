@@ -121,7 +121,7 @@ comp nested {
 }
 
 -- Rows whose values are newtypes, with and without a `_` row.
-pub struct Ms(Int)
+pub ordered struct Ms(Int)
 
 comp delays {
     in fast?

@@ -4,9 +4,9 @@
 -- Its round trips are deliberate.
 set_option fren.lint.redundant_newtype_roundtrip "allow"
 
-pub struct Ms(Int)
+pub ordered struct Ms(Int)
 pub struct Bytes(Int)
-pub struct Name(String)
+pub ordered struct Name(String)
 pub struct Flag(Bool)
 
 pub enum Mode { Idle, Busy }
@@ -57,7 +57,7 @@ comp others {
 
 -- A newtype of an ordered enumeration is ordered as its values are.
 pub ordered enum Level { Low, Mid, High }
-pub struct Grade(Level)
+pub ordered struct Grade(Level)
 
 comp grades {
     in g: Grade

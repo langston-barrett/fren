@@ -79,6 +79,8 @@ structure RecordInfo where
   unbounded : Bool := false
   /-- Its fields' types, as declared, for their constraints. -/
   shape : Core.DataShape := {}
+  /-- Declared `ordered` (`Reqs/Lang/Items#ordered-declarations`). -/
+  ordered : Bool := false
   deriving Inhabited
 
 /-- The constructor of the structure generated for a record: not `mk`,
@@ -95,6 +97,8 @@ structure NewtypeInfo where
   unbounded : Bool := false
   /-- Its field's type, as declared, for its constraint. -/
   shape : Core.DataShape := {}
+  /-- Declared `ordered` (`Reqs/Lang/Items#ordered-declarations`). -/
+  ordered : Bool := false
   deriving Inhabited
 
 /-- The field of the structure generated for a newtype. -/
@@ -443,6 +447,17 @@ def State.newtypeOfDecl? (s : State) (decl : Name) : Option NewtypeInfo :=
 
 /-- The newtype whose Lean type is `ty`, if it is one. -/
 def State.newtypeOf? (s : State) (ty : Expr) : Option NewtypeInfo := ty.constName?.bind s.newtypeOfDecl?
+
+/-- Whether the enumeration, record or newtype at `path` is declared
+`ordered`, for `Core.Ty.ordered`. -/
+def State.orderedDecl (s : State) (path : Name) : Bool :=
+  (s.enums.get? path).any (·.ordered) || (s.records.get? path).any (·.ordered) || (s.newtypes.get? path).any (·.ordered)
+
+/-- How values of `t` are compared, if it is ordered (`Core.orderPlan?`). -/
+def State.orderPlan? (s : State) (t : Core.Ty) : Option Core.OrderPlan :=
+  let fieldsOf (p : Name) := ((s.records.get? p).map fun r =>
+    r.fields.zipIdx.toList.map fun ((f, _), k) => (f, ((r.shape.parts[0]?.bind (·[k]?)).map (·.ty)).getD .bool)).getD []
+  Core.orderPlan? s.orderedDecl fieldsOf (s.records.size + s.newtypes.size) t
 
 /-- What is known of the record, newtype or enumeration at `path`, for
 the constraints of its values (`Core.DataShape`). -/

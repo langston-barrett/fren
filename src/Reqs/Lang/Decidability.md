@@ -89,6 +89,19 @@ reports each such pattern type where it is written, and the `Nat` that
 would be the same is an error instead (see [Natural
 numbers](Types.md#natural-numbers)).
 
+## Orderings
+
+An ordering of `Int`s or `Nat`s is linear arithmetic, and one of the
+values of an ordered enumeration compares their variants' positions, which
+are finitely many. An ordering of the values of an [ordered record or
+newtype](Items.md#ordered-declarations), and its `min` and `max`, unfold,
+field by field, into orderings and equations of its fields' values, joined
+by `and` and `or`: no ordered declaration is recursive, so the unfolding
+ends, and it is quantifier-free. Such an ordering is in the core exactly
+when the orderings that it unfolds into are, so one whose type has a
+`String` within it, at any depth, is an ordering of strings, in the core
+when one side is a constant, as below. The others are always in the core.
+
 ## Strings
 
 The core of the theory of strings is *regular constraints with length*:
@@ -105,7 +118,7 @@ variables, and lengths are used in linear arithmetic.
 | `s.at(i)`, `s.slice(i, n)` | `i` and `n` are constants: a substring at fixed positions is a regular condition on `s` |
 | `s.index_of(t, i)`, `s.replace(a, b)`, `s.replace_all(a, b)` | never, unless every operand is a constant |
 | `s = t`, `s != t`, on strings | one side is a constant, or both are variables |
-| `s < t`, `s <= t`, `s > t`, `s >= t`, on strings | one side is a constant |
+| `s < t`, `s <= t`, `s > t`, `s >= t`, `s.min(t)`, `s.max(t)`, on strings, or on values of an ordered record or newtype with a `String` within | one side is a constant |
 | `a ++ b` | it is the receiver of a method, a side of `=` or `!=` whose other side is a constant, a [definition](Components.md#defined-outputs) or part of one, or itself a constant |
 
 Here a *constant* is an expression that mentions no variable and no

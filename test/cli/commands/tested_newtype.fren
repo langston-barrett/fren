@@ -1,6 +1,6 @@
 -- Testing shows a newtype's value as Fren builds it, as the solver's
 -- counterexamples do, though its value is its underlying type's.
-pub struct Ms(Int)
+pub ordered struct Ms(Int)
 pub struct Job { took: Ms, waits: Set(Ms) }
 
 set_option fren.evidence "tested" in

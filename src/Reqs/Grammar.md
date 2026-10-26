@@ -27,8 +27,8 @@ module         := ["pub"] "mod" path
 use            := "use" path ["::*" | "::{" path ("," path)* [","] "}"]
 enumeration    := ["pub"] ["ordered"] "enum" IDENT "{" variant ("," variant)* [","] "}"
 variant        := IDENT | IDENT"(" type ("," type)* ")"
-record         := ["pub"] "struct" IDENT "{" field ("," field)* [","] "}"
-                | ["pub"] "struct" IDENT"(" [type ("," type)*] ")"
+record         := ["pub"] ["ordered"] "struct" IDENT "{" field ("," field)* [","] "}"
+                | ["pub"] ["ordered"] "struct" IDENT"(" [type ("," type)*] ")"
 field          := IDENT [":" type]
 abstract-type  := ["pub"] "type" IDENT
 type-alias     := ["pub"] "type" IDENT ":=" type

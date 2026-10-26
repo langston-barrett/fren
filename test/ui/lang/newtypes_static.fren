@@ -2,9 +2,9 @@
 -- fren-covers: lang::operator_type
 set_option fren.lint.dead_code "allow"
 
-pub struct Ms(Int)
+pub ordered struct Ms(Int)
 pub struct Bytes(Int)
-pub struct Name(String)
+pub ordered struct Name(String)
 pub struct Flag(Bool)
 pub struct Point { x: Int, y: Int }
 type Id
@@ -29,13 +29,13 @@ comp string_sum { in a: Name in b: Name pub out c? ensure r: c? iff a + b = a }
 comp string_concat { in a: Name in b: Name pub out c? ensure r: c? iff a ++ b = a }
 --~^ error: newtype `Name` has no operator `++`
 comp bool_order { in a: Flag in b: Flag pub out c? ensure r: c? iff a < b }
---~^ error: newtype `Flag` has no operator `<`
+--~^ error: `Flag` is not ordered, so its values cannot be compared with `<`
 enum Shade { Light, Dark }
 struct Tone(Shade)
 comp enum_order { in a: Tone in b: Tone pub out c? ensure r: c? iff a < b }
---~^ error: newtype `Tone` has no operator `<`
+--~^ error: `Tone` is not ordered, so its values cannot be compared with `<`
 comp bool_chain { in a: Flag in b: Flag pub out c? ensure r: c? iff a <= b <= a }
---~^ error: newtype `Flag` has no operator `<=`
+--~^ error: `Flag` is not ordered, so its values cannot be compared with `<=`
 
 -- Two newtypes, or a newtype and its underlying type, never mix.
 comp mixed { in a: Ms in b: Bytes pub out c? ensure r: c? iff a < b }  --~ error: cannot compare `Ms` with `Bytes`

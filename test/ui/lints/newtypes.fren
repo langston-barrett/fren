@@ -1,7 +1,7 @@
 -- Lints around newtypes, in both front ends: `Ms(e)` and `x.0` are atoms,
 -- so the simpler forms need no parentheses around them, and a private
 -- newtype is used by building it as by naming its type.
-struct Ms(Int)
+ordered struct Ms(Int)
 struct Unused(Int)  --~ warning: record `Unused` is never used
 struct Flag(Bool)
 

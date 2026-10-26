@@ -1,0 +1,4 @@
+-- Values of a struct that is not ordered, compared (F0352).
+struct Ms(Int)
+
+comp c { in a: Ms in b: Ms pub out late? ensure r: late? iff a > b }

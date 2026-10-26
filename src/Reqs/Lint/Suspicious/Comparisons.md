@@ -51,8 +51,8 @@ comp absurd_extreme_comparisons_exact {
 
 `absurd_extreme_comparisons` also fires on a comparison that orders with
 the first or the last variant of an [ordered
-enumeration](../../Lang/Items.md#enumerations), written as a path, or a
-[newtype](../../Lang/Items.md#newtypes) built from one, as in `g >=
+enumeration](../../Lang/Items.md#enumerations), written as a path, or an
+ordered [newtype](../../Lang/Items.md#newtypes) built from one, as in `g >=
 Grade(Level::Low)`. No value is below the first variant, so `x >= First`
 is always `true` and `x < First` always `false`, and none is above the
 last, so `x <= Last` is always `true` and `x > Last` always `false`. The

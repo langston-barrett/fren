@@ -1,0 +1,13 @@
+error[F0352]: `Ms` is not ordered, so its values cannot be compared with `>`
+ --> test/cli/types/f0352_unordered_struct.fren:4:62
+  |
+4 | comp c { in a: Ms in b: Ms pub out late? ensure r: late? iff a > b }
+  |                                                              ^ `Ms` is not ordered
+  |
+  = note: only `Int`s, `Nat`s, `String`s and the types declared `ordered` are ordered
+  = help: to order its values as their fields are, declare it `ordered struct Ms(...)`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0352`.
+exit=2

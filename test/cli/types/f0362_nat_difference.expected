@@ -1,0 +1,14 @@
+error[F0362]: newtype `Seconds` has no operator `-`
+ --> test/cli/types/f0362_nat_difference.fren:4:71
+  |
+4 | comp c { in a: Seconds in b: Seconds pub out d: Seconds ensure r: d = a - b }
+  |                                                                       ^^^^^ `-` of `Seconds`
+  |
+  = note: a newtype of `Nat` has `=`, `!=`, `<`, `<=`, `>`, `>=`, and `+` of two of them
+  = note: an `Int` is never narrowed to a `Nat`, and `a - b` and `-a` are `Int`s, even of `Nat`s
+  = help: read its `Nat` with `.0`, as in `x.0`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0362`.
+exit=2

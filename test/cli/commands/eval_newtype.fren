@@ -1,6 +1,6 @@
 --@ args: eval --comp c --set took=Ms(3)
 -- A newtype's value is given and shown as Fren builds it.
-pub struct Ms(Int)
+pub ordered struct Ms(Int)
 
 comp c {
     in took: Ms

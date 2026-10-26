@@ -33,7 +33,8 @@ tested lang::operator_type: "test/ui/lang/types.fren", "test/ui/lang/ordered_enu
   "test/cli/types/f0304_arith.fren", "test/cli/types/f0304_operand.fren",
   "test/cli/types/f0305_bool_int.fren", "test/cli/types/f0305_enum_int.fren", "test/cli/types/f0306_branches.fren",
   "test/ui/lang/nat.fren", "test/ui/lang/nat_static.fren", "test/cli/types/f0304_narrowing.fren",
-  "test/ui/lang/newtypes.fren", "test/ui/lang/newtypes_static.fren", "test/ui/lang/membership_static.fren"
+  "test/ui/lang/newtypes.fren", "test/ui/lang/newtypes_static.fren", "test/ui/lang/membership_static.fren",
+  "test/ui/lang/ordered_structs.fren", "test/ui/lang/ordered_structs_static.fren"
 tested lang::widening: "test/ui/lang/nat.fren", "test/ui/lang/nat_static.fren", "test/cli/types/f0304_narrowing.fren"
 tested lang::literal_type: "test/ui/lang/nat.fren", "test/ui/lang/nat_static.fren"
 tested lang::nat_variable: "test/ui/lang/nat.fren"

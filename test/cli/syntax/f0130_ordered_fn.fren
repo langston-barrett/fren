@@ -1,0 +1,2 @@
+-- `ordered` on an item other than an enum or a struct (F0130).
+ordered fn f(Int): Int

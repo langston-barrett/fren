@@ -4,7 +4,7 @@ error[F0322]: `Bool` has no methods, so it has no method `contains?`
 5 |     ensure r: p? iff (b?).contains?(1)
   |                           ^^^^^^^^^ no methods
   |
-  = note: only `Int`s, `String`s, sets, relations, sequences and the values of an ordered enum have methods
+  = note: only `Int`s, `String`s, sets, relations, sequences and the values of a type declared `ordered` have methods
 
 error: could not check due to previous errors
 

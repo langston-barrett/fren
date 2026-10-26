@@ -230,8 +230,8 @@ pub comp reserved_word {
 ```
 
 `ordered`, the modifier of an [ordered
-enumeration](Items.md#enumerations), is reserved, as `pub` and `enum`
-are, since an item can start with it.
+declaration](Items.md#ordered-declarations), is reserved, as `pub`,
+`enum` and `struct` are, since an item can start with it.
 
 Lean's other keywords that have the shape of an identifier, such as `at`,
 `for`, `by`, `fun`, `unless` and `Type`, are reserved in Fren too: none

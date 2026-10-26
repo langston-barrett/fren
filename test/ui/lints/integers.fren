@@ -41,7 +41,8 @@ comp lesser_greater {
     pub out m6: Int := if 0 < x then 0 else x                   --~ warning: write `x.min(0)`
     pub out m7: Int := if x + 1 < y then x + 1 else y           --~ warning: write `y.min(x + 1)`
     pub out m8: Int := if x < LIMIT then LIMIT else x           --~ warning: write `x.max(LIMIT)`
-    -- Strings have no `min`, literals on both sides would change type, and
+    -- The lint suggests `min` and `max` of numbers only, not of `String`s,
+    -- which have them too; literals on both sides would change type, and
     -- `=` or other branches are not `min` or `max`: no lint.
     pub out n1: Int := if x = y then x else y
     pub out n2: Int := if x < y then x else x + 1
@@ -136,9 +137,10 @@ comp concrete { in v: Int pub out w: Int assume nonneg: v >= 0 ensure r: w = v +
 comp abstract { in v: Int pub out w: Int assume nonneg: v >= 0 ensure r: w > v }   --~ warning: `v` is never negative
 refine reads: concrete refines abstract
 
--- A newtype has no `min`, `max` or `abs`, and an ordered enumeration has
--- `min` and `max` only: the lints follow the type the condition compares.
-pub struct Ms(Int)
+-- A newtype has no `abs`, and an ordered enumeration has `min` and `max`
+-- only: the lints follow the type the condition compares. An ordered
+-- newtype has `min` and `max` too, which the lints do not suggest yet.
+pub ordered struct Ms(Int)
 ordered enum Level { Low, Mid, High }
 
 comp newtypes {

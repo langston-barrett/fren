@@ -1,0 +1,94 @@
+-- Ordered structs and newtypes, `ordered struct`: ordered lexicographically
+-- by their fields, in the order declared, with `<`, `<=`, `>`, `>=`,
+-- chains, `min` and `max`; and the `+` and `-` of newtypes of `Nat`s and of
+-- pattern types.
+-- fren-covers: lang::operator_type
+set_option fren.lint.dead_code "allow"
+
+pub ordered enum Level { Low, Mid, High }
+pub ordered struct Version { major: Nat, minor: Int is 0..=99, level: Level }
+
+-- Every newly ordered underlying type: `Nat`, pattern types, type aliases
+-- of ordered types, and an ordered newtype.
+pub ordered struct Seconds(Nat)
+pub ordered struct Pos(Int is 0..)
+pub ordered struct Status(Nat is 100..=599)
+pub type Small := Int is 0..=9
+pub ordered struct Digit(Small)
+pub type Label := String
+pub ordered struct Tag(Label)
+pub ordered struct Timeout(Seconds)
+pub ordered struct Release(Version)
+
+comp versions {
+    in a: Version
+    in b: Version
+    in c: Version
+
+    -- Lexicographic: the first field that differs decides.
+    expect major_first: when a.major < b.major, a < b
+    expect minor_next: when a.major = b.major and a.minor < b.minor, a < b
+    expect level_last: when a.major = b.major and a.minor = b.minor, (a < b iff a.level < b.level)
+    -- The laws of an order, as for an ordered enumeration.
+    expect total: a <= b or b <= a
+    expect asymmetric: not (a < b and b < a)
+    expect transitive: when a < b < c, a < c
+    expect antisymmetric: when a <= b <= a, a = b
+    expect flipped: (a > b iff b < a) and (a >= b iff b <= a)
+    expect min_below: a.min(b) <= a and a.min(b) <= b and (a.min(b) = a or a.min(b) = b)
+    expect max_above: a.max(b) >= a and a.max(b) >= b and (a.max(b) = a or a.max(b) = b)
+    expect wrong: a.major <= b.major   --~ error: expectation `versions::wrong` does not hold
+}
+
+comp newtypes {
+    in s: Seconds
+    in p: Pos
+    in st: Status
+    in d: Digit
+    in t: Tag
+    in o: Timeout
+    in r: Release
+    pub det out late? := s > Seconds(3)
+
+    expect seconds: Seconds(0) <= s and (late? iff s.0 > 3) and s.min(Seconds(2)) <= Seconds(2)
+    expect seconds_chain: when Seconds(1) < s <= Seconds(5), s >= Seconds(2)
+    expect positions: p >= Pos(0) and p.max(Pos(3)) >= Pos(3) and (Pos(0) <= p < Pos(10) iff p.0 < 10)
+    expect statuses: Status(100) <= st <= Status(599) and (st >= Status(500) iff st.0 >= 500)
+    expect digits: Digit(0) <= d <= Digit(9) and d.min(Digit(9)) = d
+    expect tags: (t < Tag("m") iff t.0 < "m") and Tag("a") <= Tag("b") < Tag("c")
+    expect timeouts: (o > Timeout(Seconds(3)) iff o.0.0 > 3) and Timeout(Seconds(0)) <= o
+    expect releases: (r < Release(Version { major := 1, minor := 0, level := Level::Low }) iff r.0.major = 0)
+}
+
+comp strings {
+    in a: String
+    pub det out m: String := a.min("m")
+    expect below: m <= "m" and (a <= "m" iff m = a)
+    expect most: a.max("m") >= "m"
+}
+
+-- `+` of a newtype of `Nat` is a `Nat`'s, and gives the newtype; and `+`
+-- and `-` of a newtype of a pattern type have the obligation that
+-- building the newtype from the sum or difference has.
+comp sums {
+    in a: Seconds
+    in b: Seconds
+    in x: Digit
+    in y: Pos
+    pub det out total: Seconds := a + b
+    pub det out twice: Digit := x + x   --~ error: a value in `sums::twice` may not have the type `Small`
+    pub det out fewer: Pos := y - Pos(1)   --~ error: a value in `sums::fewer` may not have the type `Int is 0..`
+
+    expect added: total.0 = a.0 + b.0 and total >= a
+}
+
+comp guarded_sums {
+    in x: Digit
+    in y: Pos
+    pub det out next: Digit := if x < Digit(9) then x + Digit(1) else x
+    pub det out fewer: Pos := if y > Pos(0) then y - Pos(1) else y
+
+    expect bounded: next <= Digit(9) and fewer <= y
+}
+
+--@ exit: 1

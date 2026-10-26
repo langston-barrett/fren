@@ -43,13 +43,14 @@ def checkNumber (op : String) (found : Ty) : Except Msg Unit :=
   else throw (typeMismatchMsg .int found (some s!"note: the operands of `{op}` are `Int`s or `Nat`s"))
 
 /-- Checks the operator `op`, prefix if `pre`, of operands of the types `tx`
-and `ty`, if one is a newtype, whose underlying type is an ordered
-enumeration if `ordered`: that newtype has `op`, and both are of it
+and `ty`, if one is a newtype, where `orderedDecl` says which declarations
+are ordered: that newtype has `op`, and both are of it
 (`lang::newtype_operator`). Both front ends check an operator's operands
 with this before checking them against the operator's own types, so a
 newtype's error is reported as its own. -/
-def checkNewtypeOperator (op : String) (pre : Bool) (tx ty : Ty) (ordered := false) : Except Msg Unit := do
+def checkNewtypeOperator (op : String) (pre : Bool) (tx ty : Ty) (orderedDecl : Lean.Name → Bool) : Except Msg Unit := do
   let some (p, u) := newtypeOf? tx ty | return
+  let ordered := orderedDecl p
   unless newtypeOpAccepted (.ofOp op pre) u ordered do throw (newtypeOpMsg op p u ordered)
   unless tx == ty do throw (newtypeMixMsg op tx ty p u)
 
@@ -57,7 +58,7 @@ def checkNewtypeOperator (op : String) (pre : Bool) (tx ty : Ty) (ordered := fal
 have one type, after widening: of a newtype, as `checkNewtypeOperator`
 does. -/
 def checkComparable (op : String) (tx ty : Ty) : Except Msg Unit := do
-  checkNewtypeOperator op false tx ty
+  checkNewtypeOperator op false tx ty (fun _ => false)
   if tx.widens ty || ty.widens tx then return
   let hint := match tx, ty with
     | .enum p, .int | .int, .enum p => #[s!"note: enums are not numbers", s!"help: compare with a variant, e.g. `{p.getString!}::Variant`"]
@@ -68,17 +69,17 @@ def checkComparable (op : String) (tx ty : Ty) : Except Msg Unit := do
           notes := #[s!"note: both sides of `{op}` must have the same type"] ++ hint }
 
 /-- The type of the operands of the ordering `op`, from the type `tx` of
-its left operand, which `ordered` says is an ordered enumeration, if it is
-an enumeration: a `String`, that enumeration, or else an `Int`, which a
-`Nat` widens to; an error if `tx` is none of these, or is an enumeration
-that is not ordered (`lang::operator_type`). Both front ends check the left
-operand with this before they elaborate the right, which must then have
-the type given. -/
-def orderingType (op : String) (tx : Ty) (ordered : Bool) : Except Msg Ty :=
-  match tx with
-  | .string => pure .string
-  | .enum _ => if ordered then pure tx else throw (unorderedCompareMsg op tx.show)
-  | _ => do checkType .int tx (opNote op .int); pure .int
+its left operand, where `orderedDecl` says which declarations are ordered:
+`tx` itself if it is ordered (`Ty.ordered`), with a `Nat` widened to an
+`Int`; an error if it is not, that says to declare an enumeration, record
+or newtype `ordered`, or else that `op`'s operands are `Int`s
+(`lang::operator_type`). Both front ends check the left operand with this
+before they elaborate the right, which must then have the type given. -/
+def orderingType (op : String) (tx : Ty) (orderedDecl : Lean.Name → Bool) : Except Msg Ty :=
+  if tx.ordered orderedDecl then pure tx.widen
+  else match tx.orderedDecl? with
+    | some d => throw (unorderedCompareMsg d op tx.show)
+    | none => do checkType .int tx (opNote op .int); pure .int
 
 /-- Checks the operands of `op`, `union`, `inter`, `minus` or `subset`, of
 types `tx` and `ty`: sets or relations, both of one type. The error is about
