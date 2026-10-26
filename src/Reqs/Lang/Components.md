@@ -94,9 +94,9 @@ pub comp variable_type {
     in output?           -- the variable is an output, public or private
     in unbounded?        -- its type is unbounded
     in defined?          -- it is declared with `:= e`
-    pub det out accepted?
 
     assume only_outputs: when defined?, output?
+    pub det out accepted?
 
     ensure rule: accepted? iff not (output? and unbounded? and not defined?)
 
@@ -202,9 +202,9 @@ pub comp shadowing {
     in hides?            -- the declared name hides a name in scope
     in bang?             -- the declaration is written with `!`
     in own_function?     -- it is a parameter named like its own function
-    pub det out accepted?
 
     assume not_in_own_body: when own_function?, not hides?
+    pub det out accepted?
 
     ensure rule: accepted? iff (hides? iff bang?)
 
@@ -337,9 +337,9 @@ pub enum Brought { Nothing, Assumption, Guarantee }
 pub comp nat_variable {
     in own_output?       -- an output of the component itself, rather than an input or an instance's variable
     in defined?          -- a defined output
-    pub det out brought: Brought
 
     assume only_outputs: when defined?, own_output?
+    pub det out brought: Brought
 
     ensure rule: brought = (if defined? then Brought::Nothing
         else if own_output? then Brought::Guarantee

@@ -21,8 +21,8 @@ comp len_of {
 
 comp through_instance {
     in ite: Int
-    inst str: len_of { sqrt := ite }
     pub det out select: Int
+    inst str: len_of { sqrt := ite }
     ensure r: select = str.len
 
     expect positive: select >= 0

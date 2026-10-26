@@ -79,9 +79,9 @@ pub comp absurd_ordered {
     in variant: Position  -- the variant compared with, or that the newtype built from it holds
     in last: Position    -- the last variant of its enumeration
     in right?            -- the variant is the right operand, rather than the left
-    pub det out value: AbsurdValue  -- what the comparison always is, if it fires
 
     assume within: variant <= last
+    pub det out value: AbsurdValue  -- what the comparison always is, if it fires
 
     ensure rule: value = (if not op in {Lt, Le, Gt, Ge} then NotFixed
         else if (forall (x: Position), when x <= last, compared?(op, variant, right?, x)) then AlwaysTrue

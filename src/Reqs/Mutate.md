@@ -186,13 +186,13 @@ pub comp skip {
     in changed?         -- the mutant changes the fingerprint of the check's item
     in before: Verdict  -- the check's verdict on the spec
     in after: Verdict   -- its verdict on the mutant
-    pub det out run?    -- the check runs on the mutant
 
     assume determined: unless changed?, after = before
-
-    ensure rule: run? iff changed?
+    pub det out run?    -- the check runs on the mutant
 
     inst k: kill { before, after }
+
+    ensure rule: run? iff changed?
     expect skipped_kill_nothing: unless run?, not k.kills?
 }
 ```

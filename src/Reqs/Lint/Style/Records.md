@@ -93,9 +93,9 @@ states when it fires:
 pub comp manual_record_update {
     in n_fields: Nat   -- the fields of the record
     in n_copied: Nat   -- the fields copied from `r`
-    pub det out fires?
 
     assume within: n_copied <= n_fields
+    pub det out fires?
 
     ensure rule: fires? iff n_copied < n_fields < 2 * n_copied
 

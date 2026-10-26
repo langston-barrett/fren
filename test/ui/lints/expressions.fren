@@ -77,9 +77,9 @@ const LIMIT: Int := 10
 
 comp constants {
     in x: Int
-    pub out y: Int
 
     assume small: x < LIMIT
+    pub out y: Int
     ensure r1: y = x
     expect e1: LIMIT > 0  --~ warning: this expectation mentions no variable
     expect e2: (true)  --~ warning: this expectation mentions no variable

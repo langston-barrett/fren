@@ -7,10 +7,10 @@ comp repeats {
     in a?
     in b?
     in x: Int
-    pub out p?
-    pub out q?
 
     assume pos: x > 0
+    pub out p?
+    pub out q?
     ensure r1: p? iff a? or b?
     ensure r2: q? iff a? and b?
     expect e1: p? iff a? or b?

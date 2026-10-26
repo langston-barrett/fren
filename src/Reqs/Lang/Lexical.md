@@ -188,10 +188,10 @@ pub mod lang
 set_option fren.lint.undecidable "allow" in
 pub comp path_shape {
     in segs: Seq(String)         -- a path's segments
-    pub det out accepted?
 
     assume nonempty: segs != []
     assume identifiers: not "" in segs
+    pub det out accepted?
 
     ensure rule: accepted? iff not "self" in segs.slice(1, segs.len)
 
@@ -481,10 +481,10 @@ pub comp punctuator {
 pub comp punctuator_end {
     in lexeme: String
     in remaining: String     -- the input after the lexeme
-    pub det out ends?
-    out longer: String := lexeme ++ remaining.at(0)
 
     assume a_punctuator: lexeme in PUNCTUATORS
+    pub det out ends?
+    out longer: String := lexeme ++ remaining.at(0)
 
     inst one: punctuator { lexeme := longer }
     ensure maximal_munch: ends? iff (remaining = "" or not one.accepted?)
@@ -510,9 +510,9 @@ set_option fren.evidence "tested" in
 pub comp longest_punctuator {
     in lexeme: String
     in remaining: String     -- the input after the lexeme
-    pub out ends?
 
     assume a_punctuator: lexeme in PUNCTUATORS
+    pub out ends?
 
     inst one: punctuator { lexeme := lexeme ++ remaining.at(0) }
     inst two: punctuator { lexeme := lexeme ++ remaining.slice(0, 2) }

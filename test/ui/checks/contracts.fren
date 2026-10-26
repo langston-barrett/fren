@@ -18,13 +18,13 @@ comp unguarded {
 comp assumed {
     in q: Seq(Int)
     in i: Int
-    pub out y: Int
-
-    ensure r: y = nth(q, i)
 
     assume valid: 0 <= i < q.len
     assume positive: nth(q, i) > 0
     assume first: nth(q, 1) > 0   --~ error: the precondition `in_range` of `nth` may not hold at this application in `assumed::first`
+    pub out y: Int
+
+    ensure r: y = nth(q, i)
 }
 
 -- Each application of a function with two preconditions is two checks.
@@ -35,9 +35,9 @@ fn ratio(a: Int, b: Int): Int := a + b
 comp ratios {
     in a: Int
     in b: Int
-    pub out y: Int
 
     assume a_nonneg: a >= 0  --~ warning: `a` is never negative
+    pub out y: Int
     ensure r: y = ratio(a, b)   --~ error: the precondition `nonzero` of `ratio` may not hold at this application in `ratios::r`
 }
 
@@ -122,9 +122,9 @@ enum Pick { First, Last, Neither }
 comp picked {
     in p: Pick
     in q: Seq(Int)
-    pub out y: Int
 
     assume nonempty: q != []
+    pub out y: Int
     ensure r: y = match p {
         Pick::First => nth(q, 0),
         Pick::Last => nth(q, q.len - 1),

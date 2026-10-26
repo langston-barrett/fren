@@ -77,9 +77,9 @@ comp guarded {
 -- A guarantee's own hypotheses make the table complete.
 comp hypotheses {
     in x: Int
-    pub out y: Int
 
     assume small: 0 <= x <= 2
+    pub out y: Int
 
     ensure r: y = table { x = 0 => 10, x = 1 => 11, x = 2 => 12 }
 

@@ -425,9 +425,9 @@ core, so the refinement is checked by testing:
 ```fren
 pub comp stepwise {
     in settings: Seq(Level)
-    pub out accepted?
 
     assume three: settings.len = 3
+    pub out accepted?
 
     inst first: setting { current := Warn, requested := settings[0] }
     inst second: setting { current := first.level, requested := settings[1] }
@@ -453,11 +453,11 @@ pub comp effective {
     in cli: Level        -- the level it sets
     in src_set?          -- a `set_option` in the file sets the lint here
     in src: Level        -- the level it sets
+
+    assume no_cli_expect: cli != Expect
     pub det out after_cli: Level  -- the level from the default and the command line
     pub det out level: Level
     pub det out error?   -- the `set_option` tries to change a forbidden lint
-
-    assume no_cli_expect: cli != Expect
 
     ensure cli_rule: after_cli = if cli_set? and (default_level != Forbid or cli = Forbid)
         then cli else default_level

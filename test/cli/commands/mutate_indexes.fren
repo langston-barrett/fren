@@ -7,17 +7,17 @@
 -- spec, so dropping the guarded one kills nothing.
 comp c {
     in q: Seq(Int)
-    pub out ok?
 
     assume one: q.len >= 1
+    pub out ok?
     ensure r: ok? iff (q[0] = 1 and q[1] = 2)
 }
 
 comp d {
     in q: Seq(Int)
-    pub out ok?
 
     assume one: q.len >= 1
+    pub out ok?
     ensure r: ok? iff q[0] = 1
 }
 

@@ -9,10 +9,10 @@ comp unmentioned {
     in b: Int
     in n: Nat
     in s: String
-    pub out p?
 
     assume pinned: a = -1
     assume small: n < 1
+    pub out p?
     ensure r: p? iff a > 0
     expect e: p?  --~ error: counterexample: a = -1, n = 0, p? = false
 }

@@ -46,10 +46,11 @@ pub comp c {
     in m: Mode
     in rd: Reading
     in sp: Span
-    pub out ok?
-    pub out y: Int := twice(x) + 1
 
     assume bounded: x >= 0 and x <= LIMIT
+    pub out ok?
+    pub out y: Int := twice(x) + 1
+    inst w: sub { a := x * 2, on? := true }
     ensure r: when x > 2 and x < 5 or not ok?, s.matches?(r"[a-z_]+x*")
     -- `a` is not removed from `[a^b]` or `[a^]`, which would negate them.
     ensure carets: s.matches?(r"[a^b][a^]") or ok?
@@ -71,7 +72,6 @@ pub comp c {
     ensure arms: y = match rd { Reading::Missing => 0, Reading::Stale(_) => 1, Reading::Value(v) => v }
     ensure modes: m != Mode::Heat or s.starts_with?("h")
     ensure spans: sp = { sp with lo := x.min(y), hi := 3 }
-    inst w: sub { a := x * 2, on? := true }
 
     expect e: when x = 3, ok?
 }

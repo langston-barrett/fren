@@ -41,12 +41,12 @@ fn f(Int): Int
 
 comp mentions {
     in x: Int
+
+    assume positive: k > 0
     out k: Int := x + 1
     pub out y: Int
 
     inst w: chained { a := k }
-
-    assume positive: k > 0
 
     ensure r: f(k) = y
 
@@ -56,8 +56,8 @@ comp mentions {
 -- An instance's defined outputs are determined by its definitions.
 comp determined {
     in a: Int
-    inst w: listed { head := a }
     pub det out h: Int
+    inst w: listed { head := a }
 
     ensure r: h = match w.l { IntList::Cons(x, _) => x, IntList::Nil => 0 }
 }

@@ -19,18 +19,18 @@ warning[F0820]: cover goal `never` has a trigger
    = help: to allow it, `set_option fren.lint.trivial_cover "allow"`
 
 error[F0603]: expectation `sensor::only_warm` does not hold
-  --> test/cli/commands/cover_constrains_nothing.fren:13:12
+  --> test/cli/commands/cover_constrains_nothing.fren:11:12
    |
-13 |     expect only_warm: x = 50
+11 |     expect only_warm: x = 50
    |            ^^^^^^^^^ does not follow from the guarantees
    |
    = counterexample: x = 0, hot? = false
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
 note: cover goal `sensor::warm` is met
-  --> test/cli/commands/cover_constrains_nothing.fren:12:11
+  --> test/cli/commands/cover_constrains_nothing.fren:13:11
    |
-12 |     cover warm: x = 50 and not hot?
+13 |     cover warm: x = 50 and not hot?
    |           ^^^^ met
    |
    = witness: x = 50, hot? = false

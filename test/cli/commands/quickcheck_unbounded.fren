@@ -9,9 +9,9 @@
 -- on a longer one.
 comp sorted3 {
     in q: Seq(Int)
-    pub out sorted?
 
     assume short: q.len <= 3
+    pub out sorted?
 
     ensure r: sorted? iff ((q.len < 2 or q[0] <= q[1]) and (q.len < 3 or q[1] <= q[2]))
 }

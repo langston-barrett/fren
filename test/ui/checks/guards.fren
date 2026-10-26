@@ -55,18 +55,18 @@ comp after_guard {
 -- an assumption can make the arms complete, or an arm unreachable.
 comp hypotheses {
     in x: Int
-    pub out s: Int
 
     assume nonzero: x != 0
+    pub out s: Int
 
     ensure r: s = match x { n if n > 0 => 1, n if n < 0 => -1 }
 }
 
 comp ruled_out {
     in x: Int
-    pub out s: Int
 
     assume positive: x > 0
+    pub out s: Int
 
     ensure q: s = match x { n if n < 0 => 0, _ => 1 }   --~ error: arm 1 of a `match` in `ruled_out::q` is never taken
 }

@@ -94,10 +94,10 @@ pub comp item_visible {
     in owner: ModuleName  -- the module that declares the item
     in here: ModuleName   -- the module where the path is written
     in middle: ModuleName  -- any module, for `transitive`
-    pub out visible?
 
     -- A submodule of a submodule is a submodule.
     assume transitive: when descends?(here, middle) and descends?(middle, owner), descends?(here, owner)
+    pub out visible?
 
     ensure rule: visible? iff (is_pub? or here = owner or descends?(here, owner))
 

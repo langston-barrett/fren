@@ -14,9 +14,9 @@ help: write `0 <= m <= n - k`
   |
 
 warning[F0810]: `n` is never negative, so it can be a `Nat`
- --> test/cli/lints/style/f0810_manual_nat.fren:7:20
+ --> test/cli/lints/style/f0810_manual_nat.fren:6:20
   |
-7 |     assume counts: n >= 0 and k < n
+6 |     assume counts: n >= 0 and k < n
   |                    ^^^^^^ `n` is at least 0 by this assumption
   |
   = note: a `Nat` input brings this assumption with its type

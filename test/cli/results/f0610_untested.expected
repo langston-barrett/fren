@@ -1,7 +1,7 @@
 warning[F0766]: these two comparisons cannot both hold
- --> test/cli/results/f0610_untested.fren:5:19
+ --> test/cli/results/f0610_untested.fren:4:19
   |
-5 |     assume never: x > 0 and x < 0
+4 |     assume never: x > 0 and x < 0
   |                   ^^^^^^^^^^^^^^^ always `false`
   |
   = note: `and` and `or` may be swapped, or a value may not be the one meant

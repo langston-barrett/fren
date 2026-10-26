@@ -26,9 +26,9 @@ pub mod lint
 pub comp trivial_match {
     in n_arms: Int
     in binds?            -- the first arm's pattern binds a name
-    pub det out fires?
 
     assume counts: n_arms >= 1
+    pub det out fires?
 
     ensure rule: fires? iff (n_arms = 1 and not binds?)
 }

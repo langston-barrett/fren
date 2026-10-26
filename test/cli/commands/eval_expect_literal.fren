@@ -3,9 +3,9 @@
 -- has five characters, which `five` assumes.
 comp c {
     in s: String
-    pub out ok?
 
     assume five: s.len = 5
+    pub out ok?
     ensure r: ok? iff s.starts_with?("h")
 
     expect not_hello: s != "hello"

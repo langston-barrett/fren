@@ -56,9 +56,9 @@ pub comp membership_chain {
     in same_left?        -- each is an equation, or for `and` a disequation, with the same left operand
     in later_indexes?    -- a value after the first indexes a sequence
     in patterns?         -- each value is one that a pattern writes
-    pub det out fires?
 
     assume counts: n >= 2
+    pub det out fires?
 
     ensure rule: fires? iff (same_left? and n >= 3 and not later_indexes? and not patterns?)
 }
@@ -603,11 +603,11 @@ the fix writes:
 pub comp needless_raw_string_hashes {
     in hashes: Int       -- the `#`s around the literal
     in longest: Int      -- the longest run of `#` after a `"` in its body, or `-1` if it has no `"`
-    pub det out fires?
-    pub det out fewest: Int  -- the `#`s that the fix writes
 
     -- The literal ends where its `#`s say: no `"` in its body is followed by as many.
     assume counts: -1 <= longest < hashes
+    pub det out fires?
+    pub det out fewest: Int  -- the `#`s that the fix writes
 
     ensure fewest_rule: fewest = longest + 1
     ensure rule: fires? iff hashes > fewest

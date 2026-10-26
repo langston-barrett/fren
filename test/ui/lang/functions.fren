@@ -21,10 +21,10 @@ comp naming {
 comp distinct {
     in a: Name
     in b: Name
-    pub out same?
-    pub out first: Name             -- an output of an abstract type
 
     assume injective: when arity(a) = arity(b), a = b
+    pub out same?
+    pub out first: Name             -- an output of an abstract type
     ensure r: same? iff a = b
     ensure pick: first = a
 

@@ -37,9 +37,9 @@ set_option fren.lint.undecidable "allow" in
 pub comp lean_name {
     in current: Seq(String)      -- the current Lean namespace's components, [] at the root
     in path: Seq(String)         -- the item's path's segments
-    pub out name: Seq(String) := current ++ NAMESPACE ++ path
 
     assume item: path != []
+    pub out name: Seq(String) := current ++ NAMESPACE ++ path
 
     expect length: name.len = current.len + 2 + path.len
     expect starts_in_namespace: name.starts_with?(current ++ NAMESPACE)

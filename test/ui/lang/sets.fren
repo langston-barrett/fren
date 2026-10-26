@@ -47,9 +47,9 @@ expect precedence: {1} union {2} inter {3} = {1}
 comp lines {
     in x: Int
     in s: Set(Int)
+    in y: Int                                             --~ warning: unused variable `y`
     pub out ok?
     ensure r: ok? iff x in s
-    in y: Int                                             --~ warning: unused variable `y`
 }
 --@ summary: 19 passed, 1 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

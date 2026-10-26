@@ -104,9 +104,6 @@ comp naturals {
     in i: Int
     in h: Int
     in c?
-    pub out m: Int
-    pub out p: Int
-    pub out q: Int
 
     assume counts: n >= 0 and k > n                             --~ warning: `n` is never negative, so it can be a `Nat`
     --~^ warning: these comparisons can be chained
@@ -117,14 +114,17 @@ comp naturals {
     assume either: i >= 0 or k = 1
     assume shifted: h >= 1
     --~^ warning: the assumption `shifted` constrains only inputs that nothing uses
+    pub out m: Int
+    pub out p: Int
+    pub out q: Int
 
     ensure r: m >= 0 and m <= n                                    --~ warning: `m` is never negative, so it can be a `Nat`
     --~^ warning: these comparisons can be chained
     ensure s: p = n + q
-    -- An expectation: no lint.
-    expect e: when c?, q >= 0
     -- A guarantee on an input: no lint.
     ensure u: q = 1 and k >= 0
+    -- An expectation: no lint.
+    expect e: when c?, q >= 0
 }
 
 -- An instance that binds an `Int`, or a refinement that reads one by name,

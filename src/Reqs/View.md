@@ -106,11 +106,11 @@ pub enum Group { Syntax, Names, Types, Instances, Traceability, Results, Lints }
 pub comp code_group {
     use self::Group::{Instances, Lints, Names, Results, Syntax, Traceability, Types}
     in code: String
-    pub det out group: Group
 
     assume well_formed: code.len = 5 and (code.starts_with?("F01") or code.starts_with?("F02")
         or code.starts_with?("F03") or code.starts_with?("F04") or code.starts_with?("F05")
         or code.starts_with?("F06") or code.starts_with?("F07") or code.starts_with?("F08"))
+    pub det out group: Group
 
     ensure syntax_codes: when code.starts_with?("F01"), group = Syntax
     ensure names: when code.starts_with?("F02"), group = Names
@@ -235,10 +235,10 @@ pub comp clash_text {
     in others: String        -- the other guarantees of the conflict, named as a list
     in count: Int            -- how many others there are
     in other_value: String   -- the value that they force the output to
-    pub out text: String := "`" ++ guarantee ++ "` forces " ++ output ++ " = " ++ value ++ ", but " ++ others
-        ++ (if count = 1 then " forces " else " force ") ++ output ++ " = " ++ other_value
 
     assume some_other: count >= 1
+    pub out text: String := "`" ++ guarantee ++ "` forces " ++ output ++ " = " ++ value ++ ", but " ++ others
+        ++ (if count = 1 then " forces " else " force ") ++ output ++ " = " ++ other_value
 
     expect one_other: when guarantee = "low" and output = "y" and value = "0" and others = "`high`" and count = 1
         and other_value = "1", text = "`low` forces y = 0, but `high` forces y = 1"

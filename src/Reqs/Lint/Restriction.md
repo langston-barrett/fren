@@ -212,9 +212,9 @@ is for its [trigger](../Lang/Components.md#triggers). `lint::absolute_paths` sta
 ```fren
 pub comp absolute_paths {
     in n_segments: Int   -- the path's segments
-    pub det out fires?
 
     assume counts: n_segments >= 1
+    pub det out fires?
 
     ensure rule: fires? iff n_segments >= 3
 }
@@ -269,7 +269,10 @@ accepts members in any order, and a component can read better with a
 constraint next to the variable it is about. The message is reported once
 for each component, at the first member written after one of a later
 kind, and names both kinds. [`fren fmt`](../Fmt.md) never reorders
-members: it changes only the layout, and ordering them is the lint's.
+members: it changes only the layout, and ordering them is the lint's. The
+components of these chapters write their members in this order, but for
+`lint::unused_bound`, whose definition reads its instance, and which
+expects the lint.
 
 Order matters to what a component means in one place only: an instance's
 binding may mention another instance's variable only if that instance is

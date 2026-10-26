@@ -213,9 +213,9 @@ pub comp indent {
     in depth: Nat            -- braces open at the start of the line
     in start: LineStart      -- what the line's first token does, or for a comment, the next line's
     in comment?              -- the line is a comment
-    pub det out columns: Int
 
     assume closes_open: when start = Closing, depth >= 1
+    pub det out columns: Int
 
     ensure closing: when start = Closing, columns = 4 * (if comment? then depth else depth - 1)
     ensure starting: when start = Starting, columns = 4 * depth
@@ -371,10 +371,10 @@ pub comp group_layout {
     in n_paths: Int          -- paths imported from the prefix
     in was_vertical?         -- some import merged into it spanned several lines
     in fits?                 -- on one line, it is at most 100 columns wide
-    pub det out braces?      -- it is written with braces
-    pub det out vertical?    -- it is written with one path on each line
 
     assume some_path: n_paths >= 1
+    pub det out braces?      -- it is written with braces
+    pub det out vertical?    -- it is written with one path on each line
 
     ensure braced: braces? iff n_paths > 1
     ensure vertical_rule: vertical? iff (braces? and (was_vertical? or not fits?))
