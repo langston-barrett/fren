@@ -34,6 +34,8 @@ register_option fren.testGlobs : String := {
 }
 
 @[command_elab Lang.traceCmd] def elabTrace : CommandElab := fun stx => do
+  -- What Lean recovered from a parse error that it has reported.
+  if stx.hasMissing then return
   lintInvisible stx
   let s ← getState
   let opt := fren.requireEvidence.get (← getOptions)

@@ -1,6 +1,6 @@
 -- A field's value in a record update cannot be a bare `when`, which would
 -- swallow the fields after it.
-struct Q { on?, n: Int }
+pub struct Q { on?, n: Int }
 comp bare_when { in q: Q in a? pub out o: Q ensure r: o = { q with on? := when a?, a?, n := 1 } }
 --~^[cli] error: `when` must be parenthesized here
 --~^^[hosted] error: unexpected identifier; expected

@@ -632,8 +632,13 @@ open Lean Elab Command in
 /-- Runs `k`, then records how many errors its top-level command has
 logged (`LocalState.staticErrors`), but those of checks
 (`LocalState.checkErrors`). An error that `k` throws is logged here, as
-`elabCommand` would, to be counted. -/
+`elabCommand` would, to be counted.
+
+A command that Lean's parser recovered from a parse error, which it has
+reported, has missing parts: it is not elaborated, as the `fren` command
+stops at the parse error (`Reqs/View#static-errors`). -/
 def recordingErrors (k : CommandElab) : CommandElab := fun stx => do
+  if stx.hasMissing then return
   let checks := (← getLocal).checkErrors
   try k stx
   catch ex =>

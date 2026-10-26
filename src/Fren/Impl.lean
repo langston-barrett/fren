@@ -306,6 +306,8 @@ def solverAnswer (stmt : Expr) (interps := false) : MetaM Core.Answer := do
 
 open Lang in
 @[command_elab Lang.implCmd] def elabImpl : CommandElab := fun stx => do
+  -- What Lean recovered from a parse error that it has reported.
+  if stx.hasMissing then return
   noteSettingsSeen
   let nameStx := stx[1]
   let declName := (← getCurrNamespace) ++ nameStx.getId
@@ -503,6 +505,8 @@ def proveContract (stx : Syntax) (path placeholder : Name) (t : Expr) (k : Contr
 
 open Lang in
 @[command_elab Lang.interpCmd] def elabInterp : CommandElab := fun stx => do
+  -- What Lean recovered from a parse error that it has reported.
+  if stx.hasMissing then return
   let segs := pathSegs stx[1]
   let r ← resolvePath (← getLocal).currentModule segs
   let defined := (← getState).defined
