@@ -1,14 +1,15 @@
 # The `fren` command
 
 ```
-fren check [--timeout SECONDS] [--dump-smt] [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
+fren check [--timeout SECONDS] [--resource-limit N] [--jobs N] [--dump-smt] [--tests N] [--seed N]
+    [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
 fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--sample N] [--seed N] [--list]
-    [--timeout SECONDS] [--tests N] [-A|-W|-D|-F LINT]... FILE...
+    [--timeout SECONDS] [--resource-limit N] [--tests N] [-A|-W|-D|-F LINT]... FILE...
 fren --explain CODE
 fren --help
 fren --version
@@ -34,7 +35,9 @@ installation. It is built by `lake build fren`.
 
 | Option | Meaning |
 |---|---|
-| `--timeout SECONDS` | `check` and `mutate`: time limit for each solver query (default 10) |
+| `--timeout SECONDS` | `check` and `mutate`: time limit for each solver query (default 10; 0 means none); see [Limits](#limits) |
+| `--resource-limit N` | `check` and `mutate`: limit on the solver's work for each query, in cvc5's resource units (default 0, which means none); see [Limits](#limits) |
+| `--jobs N` | `check`: how many components to check at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
 | `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
 | `--tests GLOB` | `trace`: scan the matching files for markers; may be repeated |
 | `--require LEVEL` | `trace`: warn about, and fail on, components with weaker evidence than `trusted`, `tested`, `solver` or `proved` |
@@ -148,9 +151,12 @@ one exception is a script whose first answer was `sat` without a model,
 because no model was wanted: asked again for a model, it is asked of the
 solver again, and that answer is kept in place of the first, whatever it
 is, since under a time limit it can be `unknown`. The
-script is the whole query, with its logic, options and time limit, so the
+script is the whole query, with its logic, options and limits, so the
 same script is the same question. `--dump-smt` still writes each query,
-asked again or not. [`fren mutate`](Mutate.md) shares the answers between
+asked again or not. Two components that ask the same script at once, in
+[parallel](#parallel-checking), may both ask the solver; a fresh solver
+gives the same script the same answer, model and all, unless it reaches a
+[limit](#limits). [`fren mutate`](Mutate.md) shares the answers between
 the spec and all its mutants.
 
 Each script sets the [SMT-LIB logic](https://smt-lib.org/logics.shtml) of
@@ -241,6 +247,51 @@ declares what each query's formulas mention; the front end sets every
 option above, whether or not the spec uses strings and sets, which
 changes how cvc5 searches, not what a query means; and it answers a
 query that a component asks again once, as `fren check` does.
+
+## Limits
+
+Each solver query has two limits, and a query that reaches either is
+`Unknown` (see [Verdicts](Check.md#verdicts)), with cvc5's explanation of
+why it stopped.
+
+- `--timeout SECONDS` limits the query's wall-clock time, by cvc5's
+  option `tlimit-per`. Whether a query reaches it depends on the machine
+  and on what else runs on it, so under load a check can be inconclusive
+  that another run decides.
+- `--resource-limit N` limits the solver's work on the query, counted in
+  cvc5's resource units, by its option `rlimit-per`. cvc5 counts them the
+  same way on every run, whatever the machine's speed and load, so whether
+  a query reaches this limit depends only on the query and on the version
+  of cvc5. A script sets `rlimit-per` only when the limit is not 0.
+
+With `--timeout 0` and a resource limit, every run of `fren check` on the
+same spec has the same results. The limits are those of each query, not of
+the whole run.
+
+The Lean-hosted front end has both limits as options: `fren.timeout` and
+`fren.resourceLimit` (see [Options](Lean.md#options)). It sets the same
+cvc5 options, but its scripts differ from `fren check`'s (see [Solver
+queries](#solver-queries)), and the work that a query needs can differ
+with its script, so a query near a resource limit can reach it in one front
+end and not in the other, as a query near a time limit can.
+
+## Parallel checking
+
+`fren check` checks up to `--jobs` components and global expectations at
+once, each in a thread of its own, but reports them in the order in which
+it would check them one at a time. Its output is the same for every
+`--jobs`, and the same as checking them one at a time: the diagnostics and
+their counterexamples, in the same order, the summary, the exit status,
+and the queries of `--dump-smt`, whatever the order in which the queries
+run. A query that reaches a [limit](#limits) is the one exception: a busier
+machine can make a query reach `--timeout`, and running queries at once
+makes the machine busier. A resource limit does not depend on the load, so
+with `--timeout 0` and `--resource-limit`, the output is the same for every
+`--jobs` too. A component's [checks by
+testing](Check.md#checking-by-testing) run with its solver queries, from
+a random stream of its own, so they do not depend on the order either.
+`--jobs` is at least 1.
+`fren mutate` checks its mutants one at a time.
 
 ## Exit status
 

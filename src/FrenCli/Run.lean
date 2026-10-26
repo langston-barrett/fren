@@ -13,14 +13,15 @@ import FrenCore.Literate
 # Running `fren`
 
 ```
-fren check [--timeout SECONDS] [--dump-smt] [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
+fren check [--timeout SECONDS] [--resource-limit N] [--jobs N] [--dump-smt] [--tests N] [--seed N]
+    [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
 fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--sample N] [--seed N] [--list]
-    [--timeout SECONDS] [--tests N] [-A|-W|-D|-F LINT]... FILE...
+    [--timeout SECONDS] [--resource-limit N] [--tests N] [-A|-W|-D|-F LINT]... FILE...
 fren --explain CODE
 ```
 
@@ -52,20 +53,26 @@ namespace FrenCli
 open Fren.Core (Msg Paint)
 
 def usage : String :=
-  "usage: fren check [--timeout SECONDS] [--dump-smt] [--tests N] [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
+  "usage: fren check [--timeout SECONDS] [--resource-limit N] [--jobs N] [--dump-smt] [--tests N] [--seed N]\n              \
+  [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren trace [--tests GLOB]... [--require LEVEL] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren fmt [--check] [--ignore GLOB]... [--color WHEN] FILE...\n       \
   fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren quickcheck [--tests N] [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--sample N] [--seed N] [--list]\n              \
-  [--timeout SECONDS] [--tests N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
+  [--timeout SECONDS] [--resource-limit N] [--tests N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren --explain CODE\n\n\
   `check` checks Fren specs. Exit status: 0 all checks passed, 1 some check\n\
   failed, 2 the checks could not run, 3 no failures but some check was\n\
   inconclusive, some constraint redundant or some lint warned. `--dump-smt` writes each solver\n\
   query to stdout, as SMT-LIB; diagnostics go to stderr. `--tests N` and\n\
-  `--seed N` are as for `quickcheck`, for checks set to testing.\n\n\
+  `--seed N` are as for `quickcheck`, for checks set to testing.\n\
+  `--timeout` limits each solver query's wall-clock time (default 10), and\n\
+  `--resource-limit` its work, in cvc5's resource units, which unlike time\n\
+  does not depend on the machine's load (default none); 0 is no limit.\n\
+  `--jobs N` checks N components at once (default: the number of cores),\n\
+  with the same output as one at a time.\n\n\
   `trace` reports the evidence for every component, and scans the tests for\n\
   `fren-covers:` markers. LEVEL is trusted, tested, solver or proved. Exit\n\
   status: 0 nothing below LEVEL and no stray markers, 1 otherwise, 2 the\n\
@@ -134,7 +141,11 @@ inductive Command where
 
 structure Args where
   command : Command := .check
-  timeout : Nat := 10
+  /-- `--timeout` and `--resource-limit` (`Reqs/Cli#limits`). -/
+  limits : Limits := {}
+  /-- `check --jobs`; by default, the number of cores
+  (`Reqs/Cli#parallel-checking`). -/
+  jobs? : Option Nat := none
   dumpSmt : Bool := false
   /-- `fmt --check` and `fix --check`. -/
   diffOnly : Bool := false
@@ -171,7 +182,7 @@ structure Args where
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
 
 def options : Array String :=
-  #["--timeout", "--dump-smt", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
+  #["--timeout", "--resource-limit", "--jobs", "--dump-smt", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
     "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--comp", "--set", "--seed", "--tests",
     "--by", "--mutant", "--sample", "--list"]
 
@@ -213,10 +224,24 @@ where
     | "--timeout" :: n :: rest, a =>
       if a.command != .check && a.command != .mutate then only "--timeout" "check` and `fren mutate" else
       match n.toNat? with
-      | some t => go rest { a with timeout := t }
+      | some t => go rest { a with limits.timeoutSecs := t }
       | none => .error (argError p {
           code? := none, headline := s!"invalid timeout `{n}`",
           notes := #["note: the timeout is a whole number of seconds, such as `--timeout 30`"] })
+    | "--resource-limit" :: n :: rest, a =>
+      if a.command != .check && a.command != .mutate then only "--resource-limit" "check` and `fren mutate" else
+      match n.toNat? with
+      | some r => go rest { a with limits.resources := r }
+      | none => .error (argError p {
+          code? := none, headline := s!"invalid resource limit `{n}`",
+          notes := #["note: the resource limit is a whole number of cvc5's resource units, such as `--resource-limit 100000`"] })
+    | "--jobs" :: n :: rest, a =>
+      if a.command != .check then only "--jobs" "check" else
+      match n.toNat? with
+      | some j@(_ + 1) => go rest { a with jobs? := some j }
+      | _ => .error (argError p {
+          code? := none, headline := s!"invalid number of jobs `{n}`",
+          notes := #["note: the number of jobs is a whole number of at least 1, such as `--jobs 4`"] })
     | "--comp" :: c :: rest, a =>
       if a.command == .eval || a.command == .mutate then go rest { a with comp? := some c } else only "--comp" "eval` and `fren mutate"
     | "--set" :: x :: rest, a =>
@@ -293,7 +318,7 @@ where
     | opt@"-W" :: n :: rest, a | opt@"--warn" :: n :: rest, a => do go rest (← addLint opt .warn n a)
     | opt@"-D" :: n :: rest, a | opt@"--deny" :: n :: rest, a => do go rest (← addLint opt .deny n a)
     | opt@"-F" :: n :: rest, a | opt@"--forbid" :: n :: rest, a => do go rest (← addLint opt .forbid n a)
-    | [opt@"--timeout"], _ | [opt@"--tests"], _ | [opt@"--ignore"], _ | [opt@"--require"], _
+    | [opt@"--timeout"], _ | [opt@"--resource-limit"], _ | [opt@"--jobs"], _ | [opt@"--tests"], _ | [opt@"--ignore"], _ | [opt@"--require"], _
     | [opt@"--only"], _ | [opt@"--skip"], _
     | [opt@"--comp"], _ | [opt@"--set"], _ | [opt@"--seed"], _
     | [opt@"--by"], _ | [opt@"--mutant"], _ | [opt@"--sample"], _
@@ -480,11 +505,12 @@ def testReport (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global : Bool) (se
 /-- Tests the comp or global expectation `c`, whose counterpart is `ec`
 (`Reqs/Eval#fren-quickcheck`), and prints what testing found about the
 checks that `keep` selects: their results, and those that are not run
-are dropped. Returns the results and the messages printed. -/
+are dropped. Returns the results and the messages printed. `rep` is the
+report of testing it (`testReport`), if it has been tested already. -/
 def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spec) (c : CComp) (ec : Eval.Comp)
-    (global : Bool) (keep : Fren.Core.CheckResult → Bool) (prelude : Prelude) (byCheck : Bool := false) :
+    (global : Bool) (keep : Fren.Core.CheckResult → Bool) (prelude : Prelude) (byCheck : Bool := false)
+    (rep : Eval.Report := testReport sp ec c global args.seed args.nTests) :
     IO (Array Fren.Core.CheckResult × Array Msg) := do
-  let rep := testReport sp ec c global args.seed args.nTests
   let results := markInterpreted prelude c (rep.results.filter keep)
   let mut shown := #[]
   let subject := s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
@@ -548,9 +574,9 @@ an internal error if the evaluator has no counterpart of `c`. `sy` is
 before (`QueryCache`). -/
 def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
-    (timeout : Nat) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false) :
+    (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
-  let bk := backend prelude st.datatypes c timeout dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache
+  let bk := backend prelude st.datatypes c limits dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache
   let log ← IO.mkRef #[]
   -- The checks set to testing are not asked of the solver (`check::by_testing`).
   let (raw, missing?) ← match spec? with
@@ -576,6 +602,28 @@ def testedKeeps (c : CComp) (kinds : Array Fren.Core.CheckKind) (refinement : Bo
   kinds.contains r.kind && c.tested.covers r && Fren.Core.runOf r.kind true == .byTesting
     && (!refinement || refinementKeeps c r)
 
+/-- `f` of each of `xs`, taken in order by at most `jobs` threads at
+once: for each, in the order of `xs`, an action that waits for it. With
+one job, each action runs `f` itself, in the thread that runs it, so that
+nothing is shared between threads. -/
+def inParallel [Nonempty β] (jobs : Nat) (xs : Array α) (f : α → IO β) : IO (Array (IO β)) := do
+  if jobs ≤ 1 then return xs.map f
+  let promises ← xs.mapM fun _ => IO.Promise.new
+  let next ← IO.mkRef 0
+  let worker : IO Unit := do
+    repeat
+      let i ← next.modifyGet fun i => (i, i + 1)
+      let (some x, some p) := (xs[i]?, promises[i]?) | break
+      p.resolve (← (f x).toBaseIO)
+  for _ in [0:min jobs xs.size] do
+    discard <| IO.asTask worker .dedicated
+  return promises.map fun p => IO.ofExcept p.result!.get
+
+/-- How many components `fren check` checks at once without `--jobs`: as
+many as the machine has cores (`Reqs/Cli#parallel-checking`). -/
+def jobsDefault : BaseIO Nat :=
+  return max 1 (System.Platform.Internal.getHardwareConcurrency ()).toNat
+
 /-- Runs `fren check`, printing diagnostics and the summary to stderr and
 any solver queries to stdout; returns the exit code. -/
 def check (args : Args) : IO UInt32 := do
@@ -598,13 +646,29 @@ def check (args : Args) : IO UInt32 := do
   if let .error e := spec? then
     internal := internal.push (Msg.internal s!"the evaluator cannot read the spec: {e}")
     printDiag args.paint files { file := 0, span := default, msg := internal.back! }
-  for (c, global, kinds, refinement, body) in todo do
+  -- The solver's answers for each, `--jobs` at a time, each with the
+  -- queries that it writes for `--dump-smt` and the report of testing its
+  -- checks set to testing; reported below, in order
+  -- (`Reqs/Cli#parallel-checking`). Only this thread prints, so that the
+  -- output is the same as one at a time.
+  let solve := fun ((c, global, kinds, _, body) : CComp × Bool × Array Fren.Core.CheckKind × Bool × Bool) => do
     let n ← IO.mkRef 0
+    let dumped ← IO.mkRef ""
     let dump? := if args.dumpSmt then some fun script => do
         n.modify (· + 1)
-        IO.print s!"; {c.path}: query {← n.get}\n{script}(check-sat)\n(reset)\n\n"
+        let k ← n.get
+        dumped.modify (· ++ s!"; {c.path}: query {k}\n{script}(check-sat)\n(reset)\n\n")
       else none
-    let (results, refuted, missing?) ← solveComp st prelude spec? sy c global kinds args.timeout cache dump? body
+    let r ← solveComp st prelude spec? sy c global kinds args.limits cache dump? body
+    -- The checks set to testing, tested (`Reqs/Check#checking-by-testing`).
+    let tested? := if !c.tested.any then none else match spec? with
+      | .ok sp => (sp.counterpart? c global).map fun ec => (ec, testReport sp ec c global args.seed args.nTests)
+      | .error _ => none
+    return (r, ← dumped.get, tested?)
+  let solving ← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
+  for (c, global, kinds, refinement, _) in todo, solved in solving do
+    let ((results, refuted, missing?), dumped, tested?) ← solved
+    IO.print dumped
     if let some msg := missing? then
       internal := internal.push msg
       printDiag args.paint files { file := c.file, span := c.span, msg }
@@ -615,18 +679,13 @@ def check (args : Args) : IO UInt32 := do
     for r in results do
       shown := shown ++ (← printResult args.paint files c r)
     all := all ++ results
-    -- The checks set to testing, tested (`Reqs/Check#checking-by-testing`).
-    if c.tested.any then
-      match spec? with
-      | .ok sp =>
-        if let some ec := sp.counterpart? c global then
-          let (tested, msgs) ← testComp args files sp c ec global (testedKeeps c kinds refinement) prelude (byCheck := true)
-          shown := shown ++ msgs
-          all := all ++ tested
-          byTesting := byTesting + (tested.filter (·.verdict == .pass)).size
-      -- The evaluator's internal error, printed above, explains why the
-      -- checks set to testing are missing from the summary.
-      | .error _ => pure ()
+    -- The evaluator's internal error, printed above, explains why the
+    -- checks set to testing are missing from the summary.
+    if let (.ok sp, some (ec, rep)) := (spec?, tested?) then
+      let (tested, msgs) ← testComp args files sp c ec global (testedKeeps c kinds refinement) prelude (byCheck := true) rep
+      shown := shown ++ msgs
+      all := all ++ tested
+      byTesting := byTesting + (tested.filter (·.verdict == .pass)).size
   IO.eprintln (Fren.Core.summary all byTesting)
   if shown.any (·.code?.isSome) then
     IO.eprintln ""
@@ -993,7 +1052,7 @@ def mutate (args : Args) : IO UInt32 := do
   let solve (s : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) := do
     -- A component's checks share the symbols of its spec.
-    let (rs, refuted, missing?) ← solveComp s prelude spec? (symbolsOf spec?) t.comp t.global t.kinds args.timeout cache (body := t.body)
+    let (rs, refuted, missing?) ← solveComp s prelude spec? (symbolsOf spec?) t.comp t.global t.kinds args.limits cache (body := t.body)
     let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds t.refinement) else #[]
     let errors := refuted.map fun (r, msg) =>
       ((r.prop?.bind fun n => t.comp.props.find? (·.name == n)).map (·.span) |>.getD t.comp.span, msg)

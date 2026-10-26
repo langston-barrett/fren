@@ -706,7 +706,7 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
   for (c, global) in st.comps.map (·, false) ++ st.globals.map (·, true) do
     let some ec := sp.counterpart? c global | found := found.push s!"no counterpart of {c.path}"; continue
     let log ← IO.mkRef #[]
-    let bk := backend prelude st.datatypes c timeout none (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs)
+    let bk := backend prelude st.datatypes c { timeoutSecs := timeout } none (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs)
       st.usesProjection
     let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
     let results ← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k)) core (Fren.Core.kindsFor global)

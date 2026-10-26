@@ -1,0 +1,4 @@
+error: invalid number of jobs `0`
+  = note: the number of jobs is a whole number of at least 1, such as `--jobs 4`
+  = help: run `fren --help` for usage
+exit=2

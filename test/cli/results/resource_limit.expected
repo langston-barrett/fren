@@ -1,0 +1,22 @@
+warning[F0608]: could not decide whether `c` is realizable: the solver returned unknown (RESOURCEOUT)
+ --> test/cli/results/resource_limit.fren:4:6
+  |
+4 | comp c {
+  |      ^ undecided
+  |
+  = note: the solver gave up, so this check neither passed nor failed
+  = help: raise the time limit with `--timeout`, or simplify the constraints involved
+
+warning[F0608]: could not decide whether `c::r` is redundant: the solver returned unknown (RESOURCEOUT)
+ --> test/cli/results/resource_limit.fren:7:12
+  |
+7 |     ensure r: y = x + 1
+  |            ^ undecided
+  |
+  = note: the solver gave up, so this check neither passed nor failed
+  = help: raise the time limit with `--timeout`, or simplify the constraints involved
+
+fren: 1 passed, 0 failed, 2 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0608`.
+exit=3

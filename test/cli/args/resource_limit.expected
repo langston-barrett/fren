@@ -1,0 +1,4 @@
+error: invalid resource limit `lots`
+  = note: the resource limit is a whole number of cvc5's resource units, such as `--resource-limit 100000`
+  = help: run `fren --help` for usage
+exit=2

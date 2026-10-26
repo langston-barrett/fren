@@ -61,22 +61,39 @@ def Prelude.interprets (p : Prelude) (syms : Array String) : Bool := Id.run do
     work := work ++ p.deps[i]!
   return false
 
+/-- The limits of each solver query (`Reqs/Cli#limits`): `timeoutSecs`
+seconds of wall-clock time (`--timeout`), and `resources` of cvc5's
+resource units (`--resource-limit`), which do not depend on the machine's
+load. Either is none when 0. -/
+structure Limits where
+  timeoutSecs : Nat := 10
+  resources : Nat := 0
+  deriving Inhabited
+
+/-- The options that set `limits`. A script without a resource limit sets
+none, so that it is the script that `fren` wrote before the limit
+existed. -/
+def Limits.options (limits : Limits) : String :=
+  s!"(set-option :tlimit-per {limits.timeoutSecs * 1000})\n" ++
+    if limits.resources == 0 then "" else s!"(set-option :rlimit-per {limits.resources})\n"
+
 /-- The SMT-LIB script that asserts `hyps` and the negation of `goal`, each
 hypothesis followed by a comment with its name; without `(check-sat)`. It
 declares only what the prelude needs to (`Prelude.needed`). -/
-def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar) (timeoutSecs : Nat)
+def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
     (hyps : Array (Lean.Name × String)) (goal : String) : String :=
   let decls := String.join (vars.toList.map fun v => s!"(declare-const {quote v.name.toString} {v.ty.sort})\n")
   let asserts := String.join (hyps.toList.map fun (n, h) => s!"(assert {h}) ; {n}\n")
   let body := s!"{decls}{asserts}(assert (not {goal}))\n"
   let script := s!"(set-logic {logic})\n(set-option :produce-models true)\n\
-    (set-option :tlimit-per {timeoutSecs * 1000})\n{options}{prelude.needed (quotedSymbols body)}{body}"
+    {limits.options}{options}{prelude.needed (quotedSymbols body)}{body}"
   mapQuoted Fren.Core.smtName script
 
 /-- The answers to the queries asked so far, by script, each with whether
 it has a model: a script asked again gets the same answer without the
 solver (`Reqs/Cli#solver-queries`). The script is the whole query, with its
-logic, options and time limit, so the same script means the same question. -/
+logic, options and limits, so the same script means the same question. The
+checks of several components may share it at once (`Reqs/Cli#parallel-checking`). -/
 abbrev QueryCache := IO.Ref (Std.HashMap String (Outcome String × Bool))
 
 /-- Checks the satisfiability of `script`, a query over `vars`, with values
@@ -113,10 +130,10 @@ def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) : IO (O
 /-- Asserts `hyps` and the negation of `goal` and checks satisfiability,
 first passing the script to `dump?`, if any, and answering from `cache?`,
 if any, a script asked before. -/
-def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (timeoutSecs : Nat)
+def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
     (dump? : Option (String → IO Unit)) (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool)
     (cache? : Option QueryCache := none) : IO (Outcome String) := do
-  let script := queryScript logic options prelude vars timeoutSecs hyps goal
+  let script := queryScript logic options prelude vars limits hyps goal
   if let some dump := dump? then dump script
   let some cache := cache? | solveScript script vars wantModel
   -- A model's variables are those that the script declares, which are `vars`.
@@ -334,7 +351,7 @@ def termsIn (terms : Array String) (f : String) : Array String := Id.run do
 strings and sets, and `projection` whether it projects a relation over a
 type that is not finite (`cli::logic`); answering from `cache?`, if any,
 the scripts asked before (`runQuery`). -/
-def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (timeoutSecs : Nat) (dump? : Option (String → IO Unit) := none)
+def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Limits) (dump? : Option (String → IO Unit) := none)
     (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (kind : Fren.Core.CheckKind) :
     Fren.Core.Backend IO String String where
   -- cvc5 refuses some string operations without `strings-exp`. Every query
@@ -356,7 +373,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (timeoutSecs 
     let appFacts ← Fren.Core.natAppFacts (m := Id) appsOf (s!"(>= {·} 0)") hyps goal
     runQuery (Fren.Core.logic kind (strings || sets) projection)
       (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n"))
-      prelude vars timeoutSecs dump? (facts.map (`nat, ·) ++ appFacts ++ hyps) goal wantModel cache?
+      prelude vars limits dump? (facts.map (`nat, ·) ++ appFacts ++ hyps) goal wantModel cache?
   falseF := "false"
   notF f := s!"(not {f})"
   conj := conj

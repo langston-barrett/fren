@@ -2602,10 +2602,12 @@ comp c {
   { code := "F0608", args := none, explanation := r#"A check could not be decided (a warning).
 
 The solver neither proved nor refuted the check's query within the time
-limit, or gave up, so the check neither passed nor failed. The message says
-which check, and why the solver stopped.
+limit or the resource limit, or gave up, so the check neither passed nor
+failed. The message says which check, and why the solver stopped,
+such as `RESOURCEOUT` for the resource limit.
 
 Raise the time limit with `fren check --timeout SECONDS` (the default is 10),
+or the resource limit with `--resource-limit N` (by default there is none),
 or simplify the constraints involved: large constants and many `if`s make
 queries harder.
 "# },
