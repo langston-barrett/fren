@@ -23,7 +23,7 @@ pub enum Mode { Off, Heat, Cool }
 
 pub enum Reading { Value(Int), Missing, Stale(Int) }
 
-pub struct Span { lo: Int, hi: Int }
+pub struct Span { lo: Int, hi: Int, open? }
 
 use self::Mode::{Cool, Heat, Off}
 

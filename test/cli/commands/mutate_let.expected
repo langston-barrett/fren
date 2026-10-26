@@ -11,6 +11,7 @@ swap-arithmetic-c::s-505b5aedfb93 test/cli/commands/mutate_let.fren:9:26 `+` cha
 shift-integer-c::s-5b95802606a6 test/cli/commands/mutate_let.fren:9:28 `1` changed to `2`
 shift-integer-c::s-859576563fb0 test/cli/commands/mutate_let.fren:9:28 `1` changed to `0`
 negate-trigger-c::s-e73b05ef7019 test/cli/commands/mutate_let.fren:9:33 `when` changed to `unless`
+drop-trigger-c::s-72bf37b25251 test/cli/commands/mutate_let.fren:9:33 `when k > 0, y?` changed to `y?`
 swap-comparison-c::s-cff79c4de306 test/cli/commands/mutate_let.fren:9:40 `>` changed to `>=`
 shift-integer-c::s-62e699cc5ee3 test/cli/commands/mutate_let.fren:9:42 `0` changed to `1`
 exit=0

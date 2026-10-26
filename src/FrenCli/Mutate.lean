@@ -121,8 +121,12 @@ structure Src where
   /-- The spec's enumerations, in any of its files. -/
   enums : Enums := {}
   /-- The variants that the file's `use`s bring into scope by their own
-  names. -/
-  bare : Std.HashSet String := {}
+  names, each with the name of its enumeration. -/
+  bare : Std.HashMap String String := {}
+  /-- The names that the file declares with a `!`, shadowing
+  (`Reqs/Lang/Components#shadowing`): a variant of such a name, written by
+  its name alone, may mean the binder instead. -/
+  shadowed : Std.HashSet String := {}
 
 def Src.text (s : Src) (sp : Span) : String := String.ofList (s.chars.extract sp.start sp.stop).toList
 
@@ -328,22 +332,36 @@ partial def enumsOf (items : Array Item) : Enums := Id.run do
     else out := out.insert n vs
   return clash.fold (init := out) fun acc n => acc.erase n
 
-/-- The variants of `enums` that the `use`s of `items` bring into scope by
-their own names: `use E::V`, `use E::{V, W}` and `use E::*`, for any
-prefix of `E`. -/
-def bareVariants (enums : Enums) (items : Array Item) : Std.HashSet String := Id.run do
-  let mut out : Std.HashSet String := {}
-  let paths := items.flatMap fun
-    | .use _ path glob => #[(path, glob)]
-    | .useGroup _ pre paths => paths.map (pre ++ ·, false)
-    | _ => #[]
+/-- The variants of `enums` that the `use`s `paths`, each a path and
+whether it ends in `*`, bring into scope by their own names, `use E::V`,
+`use E::{V, W}` and `use E::*` for any prefix of `E`, each with the name of
+its enumeration, added to those of `outer`, which they shadow. A name that
+`paths` bring from two enumerations is left out. -/
+def importedVariants (enums : Enums) (paths : Array (Array Ident × Bool)) (outer : Std.HashMap String String := {}) :
+    Std.HashMap String String := Id.run do
+  let mut found : Array (String × String) := #[]
   for (path, glob) in paths do
     let names := path.map (·.name)
     if glob then
-      if let some vs := names.back?.bind (enums[·]?) then out := out.insertMany (vs.map (·.1))
+      if let some e := names.back? then
+        if let some vs := enums[e]? then found := found ++ vs.map (·.1, e)
     else if h : 2 ≤ names.size then
-      if (enums[names[names.size - 2]]?).any (·.any (·.1 == names.back!)) then out := out.insert names.back!
-  return out
+      let e := names[names.size - 2]
+      if (enums[e]?).any (·.any (·.1 == names.back!)) then found := found.push (names.back!, e)
+  let mut out : Std.HashMap String String := {}
+  let mut clash : Std.HashSet String := {}
+  for (v, e) in found do
+    match out[v]? with
+    | some e' => if e' != e then clash := clash.insert v
+    | none => out := out.insert v e
+  let own := clash.fold (init := out) fun acc v => acc.erase v
+  return own.fold (init := clash.fold (init := outer) fun acc v => acc.erase v) fun acc v e => acc.insert v e
+
+/-- The names that tokens `toks` declare with a `!`, without it. -/
+def shadowedNames (toks : Array Token) : Std.HashSet String :=
+  toks.foldl (init := {}) fun acc t => match t.tok with
+    | .ident w => if w.endsWith "!" then acc.insert (w.dropEnd 1).toString else acc
+    | _ => acc
 
 /-- Whether pattern `p` binds a name: a path of one segment that is not
 `true`, `false` or a variant in scope (`lang::pattern_name`). -/
@@ -354,20 +372,21 @@ partial def Src.binds (s : Src) : Pattern → Bool
   | _ => false
 
 /-- The payload-free variants next to the variant that the path `segs`
-names, in the order declared, written as `segs` would write them: `E::V`
-for any variant of `E`, and `V` only for those that `use`s bring into
-scope. -/
+names, in the order declared, written as `segs` would write them: `E::W`
+after `E::V`, and `W` after `V` only if `use`s bring both into scope from
+the same enumeration, and no binder shadows `V`. -/
 def Src.neighbours (s : Src) (segs : Array Ident) : Array String := Id.run do
   let some v := segs.back? | return #[]
-  let found := if segs.size ≥ 2 then (s.enums[segs[segs.size - 2]!.name]?).toArray
-    else if s.bare.contains v.name then s.enums.toArray.filterMap fun (_, vs) => if vs.any (·.1 == v.name) then some vs else none
-    else #[]
-  let #[vs] := found | return #[]
+  let enum? := if segs.size ≥ 2 then some segs[segs.size - 2]!.name
+    else if s.shadowed.contains v.name then none
+    else s.bare[v.name]?
+  let some e := enum? | return #[]
+  let some vs := s.enums[e]? | return #[]
   let some i := vs.findIdx? (·.1 == v.name) | return #[]
   if vs[i]!.2 then return #[]
   let near := (if i > 0 then #[vs[i - 1]!] else #[]) ++ (vs[i + 1]?.toArray)
   return near.filterMap fun (w, payload) =>
-    if payload || (segs.size == 1 && !s.bare.contains w) then none else some w
+    if payload || (segs.size == 1 && s.bare[w]? != some e) then none else some w
 
 /-- The spans of the items of a list separated by commas, as removed:
 each with the `,` after it, and the last with the `,` before it. -/
@@ -608,7 +627,29 @@ def ofFile (s : Src) (items : Array Item) (divisors : Std.HashSet String := {}) 
   let divisors := divisors.insertMany (divisorConstants items)
   -- The file's own enumerations, if its spec's are not given.
   let enums := (enumsOf items).fold (init := s.enums) fun acc n vs => if acc.contains n then acc else acc.insert n vs
-  let s := { s with enums, bare := bareVariants enums items }
+  let s := { s with enums, shadowed := shadowedNames s.toks }
+  -- The `use`s of the file, which bring names into scope after them, and
+  -- those of each component, which bring them into its scope
+  -- (`Reqs/Lang/Modules`).
+  let fileUses := items.flatMap fun
+    | .use sp path glob => #[(sp, path, glob)]
+    | .useGroup sp pre paths => paths.map (sp, pre ++ ·, false)
+    | _ => #[]
+  let compUses : Std.HashMap Name (Array (Array Ident × Bool)) := Id.run do
+    let mut module : Name := .anonymous
+    let mut out := {}
+    let rec comp? : Item → Option (Ident × Array Member)
+      | .comp _ n members .. => some (n, members)
+      | .lintSetting _ _ _ _ _ (some body) => comp? body
+      | _ => none
+    for item in items do
+      if let .mod _ segs := item then module := segs.foldl (fun n i => Name.mkStr n i.name) .anonymous
+      if let some (n, members) := comp? item then
+        out := out.insert (.str module n.name) (members.flatMap fun
+          | .use _ path glob => #[(path, glob)]
+          | .useGroup _ pre paths => paths.map (pre ++ ·, false)
+          | _ => #[])
+    return out
   let rec constName? : Item → Option String
     | .const _ n _ _ => some n.name
     | .lintSetting _ _ _ _ _ (some body) => constName? body
@@ -616,6 +657,8 @@ def ofFile (s : Src) (items : Array Item) (divisors : Std.HashSet String := {}) 
   let consts := items.filterMap constName?
   for (item, comp?, e) in sites items do
     if comp?.isNone && consts.contains item.getString! && divisors.contains item.getString! then continue
+    let outer := importedVariants enums ((fileUses.filter (·.1.stop ≤ e.span.start)).map (·.2))
+    let s := { s with bare := importedVariants enums ((comp?.bind (compUses[·]?)).getD #[]) outer }
     for ed in edits s e do
       let before := s.text ed.span
       let key := "\x00".intercalate [ed.origin.name, idPath s.path, item.toString, idText (s.text ed.context), idText before, idText ed.after]

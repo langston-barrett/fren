@@ -52,7 +52,7 @@ operator keeps its own. The changes are:
 | `drop-argument` | an argument of a cardinality operator of at least two, removed, with its `,` |
 | `swap-rows` | the values of two consecutive rows of a [table](Lang/Expressions.md#tables), each to the other's, unless they are written the same |
 | `drop-row` | a row of a table of at least two, removed, with its `\|` |
-| `shift-variant` | a variant without a payload, in an expression, to the variants without a payload just before and just after it in its [enumeration](Lang/Items.md#enumerations), written as it is written: as `E::W` after `E::V`, and as `W` after `V` only if a `use` brings `W` into scope by its own name |
+| `shift-variant` | a variant without a payload, in an expression, to the variants without a payload just before and just after it in its [enumeration](Lang/Items.md#enumerations), written as it is written: as `E::W` after `E::V`, and as `W` after `V` only if `use`s bring both into scope by their own names from the same enumeration, and no binder shadows `V` |
 | `swap-branches` | `if c then a else b` to `if c then b else a`, unless `a` and `b` are written the same |
 | `drop-negation` | `not e` to `e`, and `-e` to `e` |
 | `drop-trigger` | `when c, e` and `unless c, e` to `e` |
@@ -284,6 +284,7 @@ pub comp missed {
 
     expect killed_by_testing: when by_testing?, not missed?
     expect killed_by_the_solver: when missed?, by_solver?
+    expect missed_are_killed: when missed?, by_solver? or by_testing?
 }
 ```
 
