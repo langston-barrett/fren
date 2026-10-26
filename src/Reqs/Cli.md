@@ -126,7 +126,10 @@ cvc5 queries.smt2
 The scripts declare variables as quoted symbols, such as `|y|`, and
 abstract types as sorts and functions as uninterpreted functions, named by
 their paths after `::`, such as `|::lang::Name|`, which no variable can be
-named. A second
+named. A variable whose name is also a symbol of one of cvc5's
+theories, such as `abs`, `div`, `exp` or an instance's `str.len`, gets a
+`#` after its name, `|abs#|`, since `|abs|` is the theory's symbol; no
+Fren name contains `#`. A second
 copy of a variable, as used by the [determinism](Check.md#determinism)
 check, is primed: `|y'|`. A script declares every variable of its
 component, but of the spec's abstract types, enumerations, records and

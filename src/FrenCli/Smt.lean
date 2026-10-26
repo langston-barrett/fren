@@ -69,8 +69,9 @@ def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar)
   let decls := String.join (vars.toList.map fun v => s!"(declare-const {quote v.name.toString} {v.ty.sort})\n")
   let asserts := String.join (hyps.toList.map fun (n, h) => s!"(assert {h}) ; {n}\n")
   let body := s!"{decls}{asserts}(assert (not {goal}))\n"
-  s!"(set-logic {logic})\n(set-option :produce-models true)\n\
+  let script := s!"(set-logic {logic})\n(set-option :produce-models true)\n\
     (set-option :tlimit-per {timeoutSecs * 1000})\n{options}{prelude.needed (quotedSymbols body)}{body}"
+  mapQuoted Fren.Core.smtName script
 
 /-- The answers to the queries asked so far, by script, each with whether
 it has a model: a script asked again gets the same answer without the
@@ -102,7 +103,7 @@ def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) : IO (O
     let mut model := #[]
     for t in ← sm.getDeclaredTerms do
       let n := (toString t).replace "|" ""
-      if let some v := vars.find? (·.name.toString == n) then
+      if let some v := vars.find? (Fren.Core.smtName ·.name.toString == n) then
         model := model.push (v.name, toString (← solver.getValue t))
     return .sat model
   match r with

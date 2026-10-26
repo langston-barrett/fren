@@ -104,6 +104,21 @@ def atLeast0 (x : Expr) : MetaM Expr := do
   if (← inferType x).isConstOf ``Nat then mkAppM ``LE.le #[mkNatLit 0, x]
   else mkAppM ``LE.le #[← mkNumeral (mkConst ``Int) 0, x]
 
+/-- `n` as the solver knows it (`Core.smtName`): lean-smt names a local or a
+bound variable after its user name, and cvc5 rejects one named after a
+theory's symbol, such as `abs`. -/
+def smtUserName (n : Name) : Name :=
+  let s := n.toString (escape := false)
+  if Core.theorySymbols.contains s then .mkSimple (Core.smtName s) else n
+
+/-- `e` with its binders named as the solver knows them (`smtUserName`). -/
+def smtBinders (e : Expr) : MetaM Expr :=
+  Lean.Core.transform e (post := fun
+    | .lam n t b bi => return .done (.lam (smtUserName n) t b bi)
+    | .forallE n t b bi => return .done (.forallE (smtUserName n) t b bi)
+    | .letE n t v b nd => return .done (.letE (smtUserName n) t v b nd)
+    | e => return .done e)
+
 /-- The lean-smt backend, for a comp whose variables are the free variables
 `fvs`, and whose variables other than its `in`s have second copies `primes`
 (`Core.primed`), answering from `cache` the queries asked before. `facts` are
@@ -131,8 +146,12 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     let appFacts ← Core.natAppFacts natAppsOf atLeast0 (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
       (← zetaReduce goal)
     let hyps ← (facts.map (`nat, ·) ++ appFacts ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
-    let goal ← unfoldDefined goal
+    let goal ← smtBinders (← unfoldDefined goal)
+    let hyps ← hyps.mapM fun (n, t) => return (n, ← smtBinders t)
     withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do
+    -- The locals named as the solver knows them, as their binders are.
+    let lctx := (← getLCtx).foldl (init := ← getLCtx) fun l d => l.setUserName d.fvarId (smtUserName d.userName)
+    withLCtx lctx (← getLocalInstances) do
       let timeout := fren.timeout.get (← getOptions)
       -- A relation's `domain` or `range` over an infinite type is a
       -- projection, which needs higher-order logic (`cli::logic`); lean-smt
