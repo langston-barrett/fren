@@ -281,7 +281,6 @@ with `rate` uninterpreted: its value is unknown even at a fixed argument.
 `lang::linear_product` states this, from what each operand mentions:
 
 ```fren
-set_option fren.evidence "enumerated" in
 pub comp linear_product {
     in a_mentioned: Set(Mention)  -- what the left operand mentions (`lang::mentions`)
     in b_mentioned: Set(Mention)  -- what the right operand mentions
