@@ -83,7 +83,9 @@ An [abstract type](Lang/Types.md#abstract-types) or
 [uninterpreted function](Lang/Items.md#uninterpreted-functions) generates nothing: its Lean meaning is
 given by an [interpretation](Impl.md#interpretations), which may come
 later, so the definitions that use it take it as a parameter (see
-[Components](#components)). An interpretation generates the definition `p`.
+[Components](#components)). An interpretation generates the definition `p`,
+and, for a function with postconditions, the theorem `p.ensures` (see
+[Contracts](#contracts)).
 
 ## Defined functions
 
@@ -94,6 +96,23 @@ example, `fn double(n: Int): Int := 2 * n` becomes `double : Int → Int`.
 Like a component's definitions, it first takes a parameter for each
 abstract type it uses: those that its parameter and result types, and its
 body, mention.
+
+## Contracts
+
+Each clause `n` of a function's [contract](Lang/Items.md#contracts)
+becomes `def p.n : Prop`, with one explicit parameter for each of the
+function's parameters, as for a defined function, and the clause as its
+value. Like a component's definitions, it first takes a parameter for
+each abstract type and function it uses: those that the function's
+parameter and result types, and the clause, mention, the function itself
+among them if the clause applies it. The checks state a precondition's
+obligation at an application, and a postcondition's claim, with these
+definitions: the obligation is `p.n` applied to the arguments, and the
+claim is that `p.n` holds for all values of the parameters for which each
+precondition does. The [postcondition check](Check.md#postconditions) is
+trusted from the solver, as every check is, so a defined function's
+postconditions are not Lean theorems; an uninterpreted function's are,
+of its [interpretation](Impl.md#interpretations).
 
 ## Constants
 

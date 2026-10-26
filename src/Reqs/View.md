@@ -144,6 +144,8 @@ Each check yields one result for each thing it checks:
 | Definedness | index |
 | Completeness | table without a `_` row |
 | Disjointness | two rows of a table, other than `_` |
+| Preconditions | application and precondition of the applied function |
+| Postconditions | postcondition of a defined function |
 
 A passing result is silent, except that a passing cover goal shows its
 witness (see below). A failing result is an error, except that a
@@ -163,6 +165,8 @@ failure is reported at:
 | Index may be out of range | the index's `[` | a counterexample: the public variables |
 | Table may have no row that holds | the table's `table` | a counterexample: the public variables, for which no row holds |
 | Rows may both hold | the later row's condition | the two rows, by their numbers from 1, and a witness: the public variables, for which both hold |
+| Precondition may not hold | the applied function's name | the precondition, and a counterexample: the public variables |
+| Postcondition does not hold | the postcondition's name | a counterexample: the function's parameters |
 
 A passing [cover goal](Check.md#cover-goals) is reported with its
 witness, the behaviour in which it holds, as a note at the goal's name:

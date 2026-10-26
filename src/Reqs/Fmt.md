@@ -191,6 +191,14 @@ ensure sized: sized? iff s is
     | Shape::Rect(_, _)
 ```
 
+A function's [contract](Lang/Items.md#contracts) clause continues its
+function, so a clause on its own line is indented by four spaces:
+
+```text
+fn at(q: Seq(Int), i: Int): Int := q[i]
+    assume in_range: 0 <= i < q.len
+```
+
 A line that starts with a closing brace is indented as the line that
 opened it. A comment on a line of its own is indented as the line after
 it, but inside the braces when that line closes them. Parentheses do not

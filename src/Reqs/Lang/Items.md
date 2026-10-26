@@ -236,7 +236,8 @@ Id(T)`, nor one whose values are restricted, as in `struct Byte(Int is
 ## Distinct names
 
 The names of a list of declarations are distinct: the variants of an
-enumeration, the fields of a record, the parameters of a defined function,
+enumeration, the fields of a record, the parameters and contract clauses
+of a function, which share one namespace,
 the variables, instances and constraints of a component, which share one
 namespace, and the binders of a global expectation, of a pattern or of a
 [quantifier](Quantifiers.md#names), across all of its binders. A
@@ -380,7 +381,9 @@ at least one, and whether two of them are equal.
 
 ```
 function := ["pub"] "fn" IDENT "(" type ("," type)* ")" [":" type]
+          | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] [":=" top] clause+
           | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] ":=" top
+clause   := ("assume" | "ensure") IDENT ":" top
 ```
 
 `fn arity(Name): Int` declares the function `arity`, from values of type
@@ -394,7 +397,8 @@ order they are written, so the parameters come before the result:
 `fn f(Nope): Gone` reports `Nope`.
 
 A function written with `:= e` is *defined*, and any other is
-*uninterpreted*.
+*uninterpreted*. Either may have a [contract](#contracts): the clauses
+after its signature, and after its body if it has one.
 
 `exactly_one?` and `at_most_one?` are built-in functions, the
 [cardinality operators](Expressions.md#cardinality), and no function may
@@ -408,23 +412,25 @@ value at any `Int` `n` is `2 * n`. A defined function's parameters are
 declared like a component's variables, `n: Int` or `ready?` for a `Bool`,
 and its *body* `e` is an [expression](Expressions.md) of its result type,
 optionally followed by a [`where` clause](Let.md).
-An uninterpreted function's parameters have types but no names, and a
-defined function's all have names, so that the body can mention them.
-`lang::function_params` states this, from the number of parameters and of
-those written with a name:
+An uninterpreted function's parameters have types but no names, unless
+it has a contract, and a defined function's all have names, so that the
+body and the contract can mention them. `lang::function_params` states
+this, from the number of parameters and of those written with a name:
 
 ```fren
 pub comp function_params {
     in defined?          -- written with `:= e`
+    in contract?         -- it has a contract: an `assume` or an `ensure` clause
     in n_params: Int
     in n_named: Nat      -- parameters written with a name
     pub det out accepted?
 
     assume counts: n_params >= 1 and n_named <= n_params
 
-    ensure rule: accepted? iff n_named = (if defined? then n_params else 0)
+    ensure rule: accepted? iff n_named = (if defined? or contract? then n_params else 0)
 
     expect all_or_nothing: when accepted? and n_named > 0, n_named = n_params
+    expect contracts_name: when contract? and accepted?, n_named = n_params
 }
 ```
 
@@ -459,28 +465,112 @@ An application of a defined function has the value of its body, with each
 parameter standing for the value of its argument (see [Function
 applications](Expressions.md#function-applications)). The body has a value
 for every argument, so there is nothing about the function itself to
-check: a defined function is like a component with an input for each
-parameter, and one `det out` that a single guarantee makes equal to the
-body, which always meets its checks. Unlike a component, it is applied in
-expressions rather than instantiated. Only how the body is written is
-checked: the [completeness](../Check.md#completeness) and
+check but its [contract](#contracts): a defined function is like a
+component with an input for each parameter, and one `det out` that a
+single guarantee makes equal to the body, which always meets its checks.
+Unlike a component, it is applied in expressions rather than
+instantiated. Otherwise only how the body is written is checked: the
+[completeness](../Check.md#completeness) and
 [disjointness](../Check.md#disjointness) of its
-[tables](Expressions.md#tables), for every value of the parameters, as
-for the value of a [constant](#constants).
+[tables](Expressions.md#tables), and the
+[preconditions](../Check.md#preconditions) of the functions it applies,
+for every value of the parameters that meets its preconditions, as for
+the value of a [constant](#constants).
 
 ### Uninterpreted functions
 
 The spec does not say what an uninterpreted function's value is for any
 argument. All that is known of it is that it is a function: applied
-to equal arguments, it gives equal results, of its result type. So an
+to equal arguments, it gives equal results, of its result type, and
+that it meets its [postconditions](#contracts). So an
 application of a function whose result is a `Nat` is at least 0, as a
-`Nat` variable is (see [Components](Components.md#natural-numbers)):
-each application brings that constraint where it is written, and no
-constraint quantifies over the function's arguments. So it relates values
+`Nat` variable is (see [Components](Components.md#natural-numbers)), and
+an application of a function with postconditions meets each of them
+wherever it meets the preconditions: each application brings these
+constraints where it is written, and no constraint quantifies over the
+function's arguments. So it relates values
 consistently wherever it is applied, across the constraints of a
 component, its instances, and the behaviours of a [global
 expectation](Global.md). What its values are is given by an
 [interpretation](Components.md#interpretations).
+
+### Contracts
+
+A function's *contract* is the clauses written after its signature, and
+after its body for a defined function, one per line: `assume n: e`
+declares the *precondition* `n`, and `ensure n: e` the *postcondition*
+`n`, each a `Bool` expression `e`, optionally followed by a [`where`
+clause](Let.md):
+
+```text
+fn at(q: Seq(Int), i: Int): Int := q[i]
+    assume in_range: 0 <= i < q.len
+
+pub type Name
+pub fn arity(n: Name): Nat
+    ensure positive: arity(n) > 0
+```
+
+A contract states what a function needs of its arguments and what it
+gives, as a component's [assumptions and
+guarantees](Components.md#meaning) do of its inputs and outputs: a
+function is like a component with an input for each parameter and one
+`det out`, its value. The names of the clauses share one namespace with
+the parameters (see [Distinct names](#distinct-names)). A clause mentions
+what a defined function's body may: the parameters, binders and names of
+its own, constants, variants, and defined functions declared before the
+function. A postcondition may also mention the function's value, by
+applying the function to its parameters, each written as its name, in
+order, as `arity(n)` above. A clause applies no other uninterpreted
+function, whose value it does not know, and a precondition does not apply
+the function itself, which is defined only where the preconditions hold.
+`lang::contract_application` states which applications a clause may
+have:
+
+```fren
+pub enum ClauseKind { Precondition, Postcondition }
+pub enum Applied { Own, Defined, Uninterpreted }
+
+pub comp contract_application {
+    use self::Applied::{Defined, Own, Uninterpreted}
+    in clause: ClauseKind
+    in applied: Applied      -- the function itself, or another, defined or uninterpreted
+    in to_params?            -- its arguments are the parameters, each written as its name, in order
+    pub det out accepted?
+
+    ensure rule: accepted? iff match applied {
+        Own => clause = ClauseKind::Postcondition and to_params?,
+        Defined => true,
+        Uninterpreted => false,
+    }
+
+    expect value_only: when applied = Own and not to_params?, not accepted?
+    expect not_in_preconditions: when clause = ClauseKind::Precondition and applied = Own, not accepted?
+}
+```
+
+At each application of a function, its arguments must meet its
+preconditions: the [precondition check](../Check.md#preconditions)
+confirms that each holds where the application is evaluated, as the
+[instance check](../Check.md#instance-assumptions) confirms an instance's
+bindings meet its component's assumptions. Where one fails, the
+application's value is still what the body gives, for a defined function,
+or unknown, for an uninterpreted one: the failure is reported, never
+assumed away. A defined function's body, and its postconditions, are
+checked under its preconditions.
+
+A defined function's postconditions are claims about its body, which the
+[postcondition check](../Check.md#postconditions) confirms for every
+value of the parameters that meets the preconditions, as the expectation
+check confirms an expectation. An uninterpreted function's postconditions
+are what is known of it: each application brings, where it is written,
+that if its arguments meet the preconditions, its value meets each
+postcondition, one constraint for each, so that no constraint quantifies
+over the function's arguments (see [Uninterpreted
+functions](#uninterpreted-functions)). In Lean, an
+[interpretation](../Impl.md#interpretations) of the function proves them.
+Contracts on constants, and contracts on components beyond what
+components already state, are not part of Fren.
 
 Every function is used by [applying it](Expressions.md#function-applications),
 as in `arity(n) > 0`. Like any other item, a function or abstract type is

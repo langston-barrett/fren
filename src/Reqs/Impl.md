@@ -124,7 +124,7 @@ pub comp interpreted {
 ## Interpretations
 
 ```
-interpretation := "interp" path ":=" TERM
+interpretation := "interp" path ":=" TERM ["by" TACTICS]
 ```
 
 An interpretation gives the Lean meaning of an [abstract
@@ -160,8 +160,18 @@ declarations](Generated.md)).
 Each abstract type and function is interpreted at most once, in a Lean file
 and the files it imports, so every implementation uses the same meaning.
 An interpretation is not checked against the spec, which states nothing
-about a function beyond its type: it says what the spec's author means by
-the function, and is reviewed as part of the spec. It is what makes an
+about a function beyond its type and its
+[postconditions](Lang/Items.md#contracts): it says what the spec's author
+means by the function, and is reviewed as part of the spec. A function's
+postconditions are proved of its interpretation: `interp p := t`, for a
+function with postconditions, adds the theorem `q.ensures`, that for all
+values of the parameters that meet the preconditions, `t` meets each
+postcondition, where the abstract types and functions that the contract
+uses are their interpretations. It is proved by the tactics after `by`, if
+there are any, and otherwise by `decide` or, failing that, by the solver,
+as an [implementation](#proof) is, in which case it is an axiom. An
+interpretation whose postconditions are not proved is an error, and adds
+nothing. It is what makes an
 implementation a claim about the code: the implementation of a component
 that applies `ends_in_q?` is proved against the interpretation, not
 against what the code computes. `impls::interpretation` decides whether an
