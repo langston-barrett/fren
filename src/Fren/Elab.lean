@@ -2569,10 +2569,46 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     return ← `((∅ : Fren.FinSet _))
   checkCore cx e .setAlgebra true true elems
   if cx.noteIndexes then lintDuplicates e elems
-  -- Each element is checked against the literal's element type, or another's (`lang::checked`).
-  -- A member is never a `Nat` (`lang::nat_place`).
-  let xs ← elems.mapIdxM fun k x => do
-    widenTerm (← pairOrTerm toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) } x)
+  -- A member, given the type of the literal expected of it, as the `fren`
+  -- command's `member`: a pair's members expect a relation's types. A member
+  -- is never a `Nat` (`lang::nat_place`).
+  let member (k : Nat) (lit? : Option Core.Ty) (noteIndexes := cx.noteIndexes) : TermElabM Term := do
+    let x := elems[k]!
+    let mcx := { cx with noteIndexes, emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) }
+    if x.isOfKind ``Lang.pairExpr then
+      let (ea?, eb?) := match lit? with | some (.rel a b) => (some a, some b) | _ => (none, none)
+      let (a, b) := (← widenTerm (← toTerm { mcx with expected? := ea? } x[1]), ← widenTerm (← toTerm { mcx with expected? := eb? } x[3]))
+      return ← `((($a, $b) : $(typeSyntax (← typeOf a)) × $(typeSyntax (← typeOf b))))
+    widenTerm (← toTerm { mcx with expected? := lit?.bind fun | .set t => some t | _ => none } x)
+  -- The type of the literal a member makes: a pair makes a relation.
+  let litTy (k : Nat) (x : Term) : TermElabM (Option Core.Ty) := do
+    if elems[k]!.isOfKind ``Lang.pairExpr then
+      let t ← instantiateMVars (← typeOf x)
+      unless t.isAppOfArity ``Prod 2 do return none
+      let (some a, some b) := (← coreTy? t.appFn!.appArg!, ← coreTy? t.appArg!) | return none
+      return some (.rel a.widen b.widen)
+    return (← frenTypeOf? x).map (.set ·.widen)
+  -- Each member is checked against the literal's type, or another's
+  -- (`lang::checked`): the first that synthesizes one, if the first does not.
+  let lit? ← if expected?.isNone && !synthesizes elems[0]! then
+      match elems.findIdx? synthesizes with
+      | some k => do
+        let s ← saveState
+        let t? ← litTy k (← member k none (noteIndexes := false))
+        s.restore
+        pure t?
+      | none => pure none
+    else pure expected?
+  let x0 ← member 0 lit?
+  let t0? := (← litTy 0 x0).orElse fun _ => if synthesizes elems[0]! then none else lit?
+  let mut xs := #[x0]
+  for k in [1:elems.size] do
+    let x ← member k t0?
+    if let (some t, some t0) := (← litTy k x, t0?) then
+      unless t == t0 do
+        let (mt, mt0) := match t, t0 with | .set u, .set u0 => (u.show, u0.show) | _, _ => (t.show, t0.show)
+        throwErrorAt elems[k]! (Core.membersMsg false mt0 mt t0.show).text
+    xs := xs.push x
   checkNewtypeMembers false elems xs
   `(($(← finSetLit xs) : Fren.FinSet _))
 
@@ -2862,11 +2898,30 @@ def seqLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     unless emptyOk do throwErrorAt e Core.emptySeqTypeMsg.text
     if expected?.isSome then discard (liftMsg e (Core.checkEmptyLiteral true expected?))
     return ← `((∅ : Fren.Seq _))
-  checkCore cx e .seqArray true true elems
-  -- Each element is checked against the literal's element type, or another's (`lang::checked`).
+  let ecx (k : Nat) := { cx with emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) }
+  -- Each element is checked against the literal's element type, or another's
+  -- (`lang::checked`): the first that synthesizes one, if the first does not.
   -- An element is never a `Nat` (`lang::nat_place`).
-  let xs ← elems.mapIdxM fun k x => do
-    widenTerm (← toTerm { cx with emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) } x)
+  let elem? ← match expected?.bind fun | .seq t => some t | _ => none with
+    | some t => pure (some t)
+    | none => if synthesizes elems[0]! then pure none else
+        match elems.findIdx? synthesizes with
+        | some k => do
+          let s ← saveState
+          let t? ← frenTypeOf? (← toTerm { ecx k with noteIndexes := false } elems[k]!)
+          s.restore
+          pure t?
+        | none => pure none
+  let x0 ← toTerm { ecx 0 with expected? := elem? } elems[0]!
+  let t0? := ((← frenTypeOf? x0).orElse fun _ => if synthesizes elems[0]! then none else elem?).map (·.widen)
+  let mut xs := #[← widenTerm x0]
+  for k in [1:elems.size] do
+    let x ← toTerm { ecx k with expected? := t0? } elems[k]!
+    if let (some t, some t0) := ((← frenTypeOf? x).map (·.widen), t0?) then
+      unless t == t0 do throwErrorAt elems[k]! (Core.membersMsg true t0.show t.show (Core.Ty.seq t0).show).text
+    xs := xs.push (← widenTerm x)
+  -- After its elements, as in the `fren` command.
+  checkCore cx e .seqArray true true elems
   checkNewtypeMembers true elems xs
   let mut t ← `(Fren.Seq.unit $(xs.back!))
   for x in xs.pop.reverse do t ← `(Fren.Seq.unit $x ++ $t)
