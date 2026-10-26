@@ -66,8 +66,9 @@ into scope in the current module. See [Modules and visibility](Modules.md#use-de
 ## Enumerations
 
 ```
-enumeration := ["pub"] ["ordered"] "enum" IDENT "{" variant ("," variant)* [","] "}"
-variant     := IDENT ["(" type ("," type)* ")"]
+enumeration   := ["pub"] ["ordered"] "enum" declared-type "{" variant ("," variant)* [","] "}"
+variant       := IDENT ["(" type ("," type)* ")"]
+declared-type := IDENT | IDENT"(" IDENT ("," IDENT)* ")"
 ```
 
 `enum E { A, B }` declares the enumeration `E` with the variants `A` and
@@ -85,7 +86,9 @@ by a [`match`](Expressions.md#matches). The payload's values have types
 but no names. A payload may have the type of its own enumeration, which
 makes the enumeration [recursive](Types.md#recursive-and-unbounded-types),
 as in `enum List { Nil, Cons(Int, List) }`; this is the one exception to
-an item being declared before it is used.
+an item being declared before it is used. An enumeration with type
+parameters, as `enum Option(T) { None, Some(T) }`, is
+[generic](Generics.md).
 
 An enumeration declared with the modifier `ordered`, after `pub` if it
 has both, is *ordered*: its variants are ordered as they are declared, so
@@ -128,7 +131,7 @@ pub comp enumeration_order {
 ## Records
 
 ```
-record := ["pub"] ["ordered"] "struct" IDENT "{" field ("," field)* [","] "}"
+record := ["pub"] ["ordered"] "struct" declared-type "{" field ("," field)* [","] "}"
         | ["pub"] ["ordered"] "struct" IDENT "(" [type ("," type)*] ")"
 field  := IDENT [":" type]
 ```
@@ -149,7 +152,9 @@ the record would have no values. So records are never recursive
 themselves, though a field may have an [unbounded
 type](Types.md#recursive-and-unbounded-types).
 
-A record declared `ordered`, as `ordered struct Version { major: Nat,
+A record with type parameters, as `struct Pair(A, B) { fst: A, snd: B }`,
+is [generic](Generics.md); it cannot be declared `ordered` (`F0390`). A
+record declared `ordered`, as `ordered struct Version { major: Nat,
 minor: Nat }`, orders its values by their fields (see [Ordered
 declarations](#ordered-declarations)).
 
@@ -303,7 +308,8 @@ ordered types](Expressions.md#orderings-of-ordered-types).
 ## Distinct names
 
 The names of a list of declarations are distinct: the variants of an
-enumeration, the fields of a record, the parameters and contract clauses
+enumeration, the fields of a record, the [type
+parameters](Generics.md#type-parameters) of either, the parameters and contract clauses
 of a function, which share one namespace,
 the variables, instances and constraints of a component, which share one
 namespace, and the binders of a global expectation, of a pattern or of a
@@ -318,7 +324,7 @@ are compared without their `!` of [shadowing](Components.md#shadowing), so
 `in x: Int` and `in x!: Int` declare the same name, and so do `in x: Int`
 and `ensure x!: true`, even though a constraint never shadows. The names of
 variants and fields are compared as written: neither ever shadows, and a
-`!` on one is an error of its own.
+`!` on one is an error of its own, and so is one on a type parameter.
 `lang::distinct_names` states this, from how many names a list declares
 and the set of them:
 

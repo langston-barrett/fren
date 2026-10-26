@@ -1,0 +1,11 @@
+--- test/cli/fmt/generics.fren
++++ test/cli/fmt/generics.fren
+@@ -4,2 +4,2 @@
+-pub enum Option(  T ) { None, Some( T ) }
+-pub struct Pair( A,B ) { fst: A, snd: B }
++pub enum Option(T) { None, Some(T) }
++pub struct Pair(A, B) { fst: A, snd: B }
+@@ -7 +7 @@
+-    in x: Option(Pair( Int,Bool ))
++    in x: Option(Pair(Int, Bool))
+exit=1

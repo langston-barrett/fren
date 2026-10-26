@@ -1,0 +1,3 @@
+-- A generic enumeration whose recursive payload has other type arguments
+-- than its own parameters.
+enum Tree(T) { Leaf(T), Node(Tree(Int)) }

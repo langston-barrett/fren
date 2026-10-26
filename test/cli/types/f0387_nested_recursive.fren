@@ -1,0 +1,4 @@
+-- A non-generic recursive payload within an instance's argument: the note
+-- says what a recursive payload is, with no type parameters.
+pub struct Pair(A, B) { fst: A, snd: B }
+pub enum Tree { Leaf, Node(Pair(Tree, Tree)) }

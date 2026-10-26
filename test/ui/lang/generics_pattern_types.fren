@@ -1,0 +1,58 @@
+-- Generic types with pattern types and aliases as type arguments: a payload
+-- or field of a type parameter brings its argument's constraint, a value
+-- given where an instance is declared has its arguments' obligations, and a
+-- pattern type's base type may be an instance. In a module, since Lean has
+-- an `Option` of its own.
+
+mod generics_pattern_types
+
+type Byte := Int is 0..=255
+
+pub enum Option(T) { None, Some(T) }
+pub struct Pair(A, B) { fst: A, snd: B }
+pub enum Tagged(T) { Plain(T), Marked(Int is 0..=3, T) }
+type Present := Option(Int) is Option::Some(_)
+
+fn read(Int): Option(Byte)
+
+comp holder {
+    in x: Option(Byte)
+    in d: Option(Int is 0..=9)
+    in p: Pair(Byte, Option(Int is 1..))
+    in t: Tagged(Byte)
+    in s: Present
+    in n: Int
+    pub out y: Int
+
+    ensure r: y = match x { Option::Some(b) => b, Option::None => 0 }
+
+    expect byte: match x { Option::Some(b) => 0 <= b <= 255, Option::None => true }
+    expect digit: match d { Option::Some(k) => k < 10, Option::None => true }
+    expect fst: p.fst <= 255
+    expect snd: match p.snd { Option::Some(k) => k >= 1, Option::None => true }
+    expect tagged: match t { Tagged::Plain(b) => b <= 255, Tagged::Marked(m, b) => m <= 3 and b >= 0 }
+    expect present: s != Option::None
+    expect applied: match read(n) { Option::Some(b) => b >= 0, Option::None => true }
+    expect bounded: y < 255   --~ error: expectation `generics_pattern_types::holder::bounded` does not hold
+}
+
+comp giver {
+    in n: Int
+    pub det out ok: Option(Byte) := if 0 <= n <= 255 then Option::Some(n) else Option::None
+    pub det out bad: Option(Byte) := Option::Some(n)   --~ error: a value in `generics_pattern_types::giver::bad` may not have the type `Option(Byte)`
+    pub det out pair: Pair(Byte, Int) := Pair { fst := n, snd := n }   --~ error: a value in `generics_pattern_types::giver::pair` may not have the type `Pair(Byte, Int)`
+    pub det out marked: Tagged(Int) := Tagged::Marked(n, 0)   --~ error: a value in `generics_pattern_types::giver::marked` may not have the type `Int is 0..=3`
+    pub det out some: Present := if n > 0 then Option::None else Option::Some(n)   --~ error: a value in `generics_pattern_types::giver::some` may not have the type `Present`
+    inst h: holder { x := Option::Some(n), d := Option::None, p := Pair { fst := 0, snd := Option::None }, t := Tagged::Plain(0), s := Option::Some(0), n }   --~ error: the input `x` of `generics_pattern_types::holder` may not have its type `Option(Byte)` for instance `generics_pattern_types::giver::h`
+}
+
+-- A quantifier ranges over an instance's values that meet its arguments'
+-- patterns, as over a pattern type's.
+set_option fren.lint.assertions_on_constants "allow" in
+expect digits: forall (d: Int is 0..=2), d != 2   --~ error: expectation `generics_pattern_types::digits` does not hold
+set_option fren.lint.assertions_on_constants "allow" in
+expect small: forall (o: Option(Int is 0..=2)), o != Option::Some(3)
+set_option fren.lint.assertions_on_constants "allow" in
+expect pairs: forall (p: Pair(Bool, Int is 1..=2)), p.snd >= 1
+set_option fren.lint.assertions_on_constants "allow" in
+expect too_small: forall (o: Option(Int is 0..=2)), o != Option::Some(2)   --~ error: expectation `generics_pattern_types::too_small` does not hold

@@ -1,0 +1,5 @@
+-- A generic type's parameters follow its name directly, with no space.
+pub enum Option (T) { None, Some(T) }
+--~^[cli] error: a space before the `(` of the type parameters of `Option`
+--~^^[hosted] error: unexpected token '('; expected '{'
+--@ exit: 2

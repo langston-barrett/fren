@@ -121,6 +121,28 @@ Each enumeration whose variants have no payloads also has an instance
 `p.instFinite` of `Fren.Finite`, a class whose instances list every value
 of a type.
 
+## Generic types
+
+A [generic type](Lang/Generics.md) becomes an inductive type or structure,
+as above, with one explicit parameter of type `Type` for each type
+parameter, of the same name, and named as any other item's declarations
+are (see [Names](#names)): `enum Option(T) { None, Some(T) }` becomes
+`inductive Option (T : Type)`, which at the root module is
+`Fren.Generated.Option`, apart from Lean's `Option`, with `Option.Some :
+{T : Type} → T → Option T`. Deriving `DecidableEq`, `Repr` and `Inhabited` asks the same of
+the arguments, which every Fren type has. Its instances are applications,
+as `Option Int`, and a construction gives its inferred arguments
+explicitly, as `@Option.None Int`, so that Lean infers nothing that Fren
+does not. A generic record's constructor is `p.mk!`, rather than
+`p.«{}»` (see [Records](#records)), which no field is named, since no
+field's name has a `!`: lean-smt qualifies a constructor of a parametric
+datatype by its sort, as `(as C (Pair Int Bool))`, where cvc5 finds the
+constructor only by a symbol that needs no `|`s. A selector takes the parameters as implicit arguments, with an
+`Inhabited` instance of each, for its `default`: `Option.Some.x0 :
+{T : Type} → [Inhabited T] → Option T → T`. The solver is given the
+inductive type as a parametric datatype (see [Generic
+types](Lang/Generics.md#meaning)).
+
 ## Records
 
 A record becomes `structure p`, with one field of the same name for each

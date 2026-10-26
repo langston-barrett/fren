@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCli.Lex
 import FrenCore.Checking
+import FrenCore.Generics
 import FrenCore.Guards
 import FrenCore.PatternTypes
 import FrenCore.Patterns
@@ -105,12 +106,16 @@ def toShape : Fren.Core.TypeShape → lang.Shape
   | .emptyLiteral => .EmptyLiteral
   | .anyPart _ => .SharedParts
   | .pair .. => .Pair
+  | .construction _ => .Construction
   | .other => .Other
 
-/-- The shared parts of an expression of shape `s`, or a pair's members. -/
+/-- The shared parts of an expression of shape `s`, or a pair's members, or,
+for a construction, each type parameter's values whose declared types
+mention it, as one shape that synthesizes when one of them does. -/
 def shapeParts : Fren.Core.TypeShape → List Fren.Core.TypeShape
   | .anyPart ps => ps
   | .pair a b => [a, b]
+  | .construction ps => ps.map .anyPart
   | .emptyLiteral | .other => []
 
 theorem anySynthesizes_eq_any (ps : List Fren.Core.TypeShape) :
@@ -118,6 +123,12 @@ theorem anySynthesizes_eq_any (ps : List Fren.Core.TypeShape) :
   induction ps with
   | nil => simp [Fren.Core.TypeShape.anySynthesizes]
   | cons p ps ih => simp [Fren.Core.TypeShape.anySynthesizes, ih]
+
+theorem allGiven_eq_all (ps : List (List Fren.Core.TypeShape)) :
+    Fren.Core.TypeShape.allGiven ps = (ps.map .anyPart).all Fren.Core.TypeShape.synthesizes := by
+  induction ps with
+  | nil => simp [Fren.Core.TypeShape.allGiven]
+  | cons p ps ih => simp [Fren.Core.TypeShape.allGiven, Fren.Core.TypeShape.synthesizes, ih]
 
 -- For every shape, with its parts' own decisions: the walk that both front
 -- ends decide by.
@@ -138,6 +149,12 @@ impl synthesizes: lang::synthesizes for (s : Fren.Core.TypeShape) {
     simp only [fren_spec, toShape, shapeParts, Fren.Core.TypeShape.synthesizes, anySynthesizes_eq_any]
     cases h : ps.any Fren.Core.TypeShape.synthesizes <;>
       simp_all [List.any_eq_false, List.any_eq_true, List.filter_eq_nil_iff, List.length_pos_iff]
+  | construction ps =>
+    simp only [fren_spec, toShape, shapeParts, Fren.Core.TypeShape.synthesizes, allGiven_eq_all]
+    simp only [List.all_eq_true, List.mem_map, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂]
+    simp
+    rw [Int.natCast_inj, ← List.length_map (f := Fren.Core.TypeShape.anyPart), List.length_filter_eq_length_iff]
+    simp
 
 impl linear_product: lang::linear_product for (a b : Bool) {
   a_mentions? := a,
@@ -268,9 +285,12 @@ def kindOf : Fren.Core.Ty → lang.ValueType
   | .set _ => .SetTy
   | .rel .. => .RelTy
   | .seq _ => .SeqTy
-  | .enum _ => .EnumTy
-  | .record _ => .RecordTy
+  | .enum .. => .EnumTy
+  | .record .. => .RecordTy
   | .abstract _ => .AbstractTy
+  -- Within its declaration, a type parameter's values are not described
+  -- there, like an abstract type's (`Reqs/Lang/Generics#type-parameters`).
+  | .param .. => .AbstractTy
   -- A newtype is a record (`Reqs/Lang/Items#newtypes`).
   | .newtype _ _ => .RecordTy
 
@@ -330,6 +350,7 @@ def toTypePlace : Fren.Core.TypePlace → lang.TypePlace
   | .payload => .Payload
   | .recursivePayload => .RecursivePayload
   | .element => .Element
+  | .argument => .Argument
 
 impl nat_place: lang::nat_place for (p : Fren.Core.TypePlace) {
   place := toTypePlace p,
@@ -432,7 +453,7 @@ interp lang::TypeName := Lean.Name
 
 /-- The path of an enumeration, record or newtype (`lang::type_name`). -/
 def typeNameOf : Fren.Core.Ty → Lean.Name
-  | .enum p | .record p | .newtype p _ => p
+  | .enum p _ | .record p _ | .newtype p _ => p
   | _ => .anonymous
 
 interp lang::type_name := typeNameOf
@@ -554,7 +575,7 @@ interp lang::FieldName := Lean.Name
 def planKind : Fren.Core.OrderPlan → lang.Plan
   | .number => .Number
   | .string => .Text
-  | .enum _ => .Position
+  | .enum .. => .Position
   | .newtype .. => .AsField
   | .record .. => .Fields
 
@@ -594,7 +615,8 @@ theorem fields_plan {α β : Type} (g : β → Option Fren.Core.OrderPlan) :
 
 /-- The record's plan, where `t` is the record `q` that `od` orders. -/
 theorem record_plan (od : Lean.Name → Bool) (fieldsOf : Lean.Name → List (Lean.Name × Fren.Core.Ty)) (m : Nat)
-    (q : Lean.Name) (p : Fren.Core.OrderPlan) (h : Fren.Core.orderPlanAt od fieldsOf (m + 1) (.record q) = some p) :
+    (q : Lean.Name) (as : List Fren.Core.Ty) (p : Fren.Core.OrderPlan)
+    (h : Fren.Core.orderPlanAt od fieldsOf (m + 1) (.record q as) = some p) :
     ∃ r, p = .record q r ∧
       (fieldsOf q).mapM (fun (f, t) => (f, ·) <$> Fren.Core.orderPlanAt od fieldsOf m t) = some r := by
   simp only [Fren.Core.orderPlanAt] at h
@@ -635,16 +657,16 @@ impl order_plan: lang::order_plan
     refine ⟨?_, ?_, ?_⟩
     · cases t <;> simp_all [kindOf, typeNameOf, Fren.Core.Ty.ordered]
     · intro hf
-      obtain ⟨q, rfl⟩ : ∃ q, t = .record q := by
-        cases t <;> first | exact ⟨_, rfl⟩ | simp [lang.plan_of, kindOf, Fren.Core.orderPlanAt] at hf hp
-      · obtain ⟨r, rfl, hr⟩ := record_plan _ fieldsOf (n + 1) q p hp
+      obtain ⟨q, as, rfl⟩ : ∃ q as, t = .record q as := by
+        cases t <;> first | exact ⟨_, _, rfl⟩ | simp [lang.plan_of, kindOf, Fren.Core.orderPlanAt] at hf hp
+      · obtain ⟨r, rfl, hr⟩ := record_plan _ fieldsOf (n + 1) q as p hp
         obtain ⟨hn, _⟩ := fields_plan _ (fieldsOf q) r hr
         have hlen : r.length = (fieldsOf q).length := by simpa using congrArg List.length hn
         exact ⟨by simp [typeNameOf, hn], by simp [typeNameOf, hlen]⟩
     · intro ⟨hf, h0, hkl⟩
-      obtain ⟨q, rfl⟩ : ∃ q, t = .record q := by
-        cases t <;> first | exact ⟨_, rfl⟩ | simp [lang.plan_of, kindOf, Fren.Core.orderPlanAt] at hf hp
-      · obtain ⟨r, rfl, hr⟩ := record_plan _ fieldsOf (n + 1) q p hp
+      obtain ⟨q, as, rfl⟩ : ∃ q as, t = .record q as := by
+        cases t <;> first | exact ⟨_, _, rfl⟩ | simp [lang.plan_of, kindOf, Fren.Core.orderPlanAt] at hf hp
+      · obtain ⟨r, rfl, hr⟩ := record_plan _ fieldsOf (n + 1) q as p hp
         obtain ⟨_, hi⟩ := fields_plan _ (fieldsOf q) r hr
         have hkl' : k < (fieldsOf q).length := by simp [typeNameOf] at hkl; omega
         obtain ⟨h', hg⟩ := hi k hkl'
@@ -1762,6 +1784,704 @@ impl guarded_match: lang::guarded_match for (arms : List (Bool × Bool × Int)) 
       rw [Fren.Seq.nth_of_lt _ _ (by simp) (by simpa using hlt)]
       simp [List.getElem?_eq_getElem hlt]
 
+/-! ## Generic types (`Reqs/Lang/Generics`) -/
+
+/-- Where a type parameter is written (`lang::ParamPlace`). -/
+def toParamPlace : Fren.Core.ParamPlace → lang.ParamPlace
+  | .whole => .Whole
+  | .argument => .Argument
+  | .ownParameter => .OwnParameter
+  | .ownOther => .OwnOther
+  | .element => .Element
+
+-- For every place where a type parameter is written, with the check that
+-- both front ends make (`Core.typeParamPlaceAccepted`).
+impl type_parameter_place: lang::type_parameter_place for (p : Fren.Core.ParamPlace) {
+  place := toParamPlace p,
+  accepted? := Fren.Core.typeParamPlaceAccepted p,
+} by
+  intro p _
+  cases p <;> simp [fren_spec, toParamPlace, Fren.Core.typeParamPlaceAccepted]
+
+-- For every number of type parameters and of arguments, with the check that
+-- both front ends make wherever a type is written (`Core.typeArgumentsAccepted`).
+impl type_arguments: lang::type_arguments for (params args : Nat) {
+  params := (params : Int),
+  args := (args : Int),
+  accepted? := Fren.Core.typeArgumentsAccepted params args,
+} by
+  intro params args _
+  simp [fren_spec, Fren.Core.typeArgumentsAccepted, Int.natCast_inj]
+
+-- For every record, whether it is ordered and how many type parameters it
+-- has, with the check that both front ends make of its declaration
+-- (`Core.orderedGenericAccepted`).
+impl ordered_generic: lang::ordered_generic for (o : Bool) (params : Nat) {
+  ordered? := o,
+  params := params,
+  accepted? := Fren.Core.orderedGenericAccepted o params,
+} by
+  intro o params _
+  cases o <;> simp [fren_spec, Fren.Core.orderedGenericAccepted]
+
+/-- The type that the declared type of a construction's value is here: the
+type parameter it mentions, or `Int`, which mentions none. -/
+def argTy : lang.Arg → Fren.Core.Ty
+  | .P0 => .param 0 `T0
+  | .P1 => .param 1 `T1
+  | .P2 => .param 2 `T2
+  | .Other => .int
+
+def valueTy : lang.Value → Fren.Core.Ty
+  | .Gives a | .Waits a => argTy a
+
+/-- A value that synthesizes its type, and one that does not. -/
+def valueShape : lang.Value → Fren.Core.TypeShape
+  | .Gives _ => .other
+  | .Waits _ => .emptyLiteral
+
+def argOf : Nat → lang.Arg
+  | 0 => .P0
+  | 1 => .P1
+  | 2 => .P2
+  | _ => .Other
+
+-- For every enumeration with at most three type parameters, every written
+-- list of its own type's arguments, and within an instance's argument or
+-- not: the check that both front ends make of a recursive payload
+-- (`Core.recursivePlace`), once each has read the payload's type into
+-- whether its arguments are the parameters, in order (`Core.ownArgs`).
+impl recursive_payload: lang::recursive_payload for (n : Fin 4) (as : List lang.Arg) (nested : Bool) {
+  params := Fren.Seq.ofList ((List.range n).map argOf),
+  args := Fren.Seq.ofList as,
+  nested? := nested,
+  accepted? := Fren.Core.typeParamPlaceAccepted
+    (Fren.Core.recursivePlace (decide (as = (List.range n).map argOf)) nested),
+} by
+  intro n as nested _
+  obtain ⟨n, hn⟩ := n
+  obtain _ | _ | _ | _ | n := n
+  all_goals first | omega | skip
+  all_goals cases nested <;>
+    simp [fren_spec, Fren.Core.recursivePlace, Fren.Seq.ext_iff, List.range_succ, argOf] <;>
+    first | rfl | (split <;> simp_all [Fren.Core.typeParamPlaceAccepted])
+
+/-- A segment, as both front ends give it to `Core.ownArgs` and `Core.ownIn`
+(`lang::Segment`): the own type's name `G`, the type parameters' names `T0`,
+`T1` and `T2`, another name `X`, and the markers. -/
+def segString : lang.Segment → String
+  | .Own => "G"
+  | .Ident .P0 => "T0"
+  | .Ident .P1 => "T1"
+  | .Ident .P2 => "T2"
+  | .Ident .Other => "X"
+  | .ArgsOpen => Fren.Core.argsOpen
+  | .ArgsSep => Fren.Core.argsSep
+  | .ArgsClose => Fren.Core.argsClose
+  | .SetOf => Fren.Core.setSeg
+  | .SeqOf => Fren.Core.seqSeg
+  | .RelOf => Fren.Core.relSeg
+  | .RelSep => Fren.Core.relSep
+
+/-- The names of the first `n` type parameters, as `Core.ownArgs` takes them. -/
+def ownParams (n : Nat) : Array String := (["T0", "T1", "T2"].take n).toArray
+
+/-- The own type with its first `n` type parameters, in order
+(`lang::own_written`). -/
+def ownWrittenList : Nat → List lang.Segment
+  | 0 => [.Own]
+  | 1 => [.Own, .ArgsOpen, .Ident .P0, .ArgsClose]
+  | 2 => [.Own, .ArgsOpen, .Ident .P0, .ArgsSep, .Ident .P1, .ArgsClose]
+  | _ => [.Own, .ArgsOpen, .Ident .P0, .ArgsSep, .Ident .P1, .ArgsSep, .Ident .P2, .ArgsClose]
+
+/-- No segment is a pattern's, so `Core.withoutPatterns` keeps them all. -/
+theorem segString_patterns (a : lang.Segment) :
+    (!(segString a).startsWith Fren.Core.patSeg && !(segString a).startsWith Fren.Core.patOuterSeg) = true := by
+  rcases a with _ | ⟨_ | _ | _ | _⟩ | _ | _ | _ | _ | _ | _ | _ <;> decide +kernel
+
+theorem withoutPatterns_segs (L : List lang.Segment) :
+    Fren.Core.withoutPatterns (L.map segString).toArray = (L.map segString).toArray := by
+  apply Array.toList_inj.1
+  simp only [Fren.Core.withoutPatterns, Array.toList_filter]
+  rw [List.filter_eq_self.2]
+  intro a ha
+  obtain ⟨b, _, rfl⟩ := List.mem_map.1 ha
+  exact segString_patterns b
+
+/-- Distinct segments are distinct strings. -/
+theorem segString_beq (a b : lang.Segment) : (segString a == segString b) = decide (a = b) := by
+  rcases a with _ | ⟨_ | _ | _ | _⟩ | _ | _ | _ | _ | _ | _ | _ <;>
+    rcases b with _ | ⟨_ | _ | _ | _⟩ | _ | _ | _ | _ | _ | _ | _ <;> decide
+
+theorem map_segString_inj (l m : List lang.Segment) : (l.map segString = m.map segString) ↔ l = m := by
+  induction l generalizing m with
+  | nil => cases m <;> simp
+  | cons a l ih =>
+    cases m with
+    | nil => simp
+    | cons b m =>
+      have := segString_beq a b
+      simp only [List.map_cons, List.cons.injEq, ih]
+      constructor
+      · rintro ⟨h, rfl⟩; refine ⟨?_, rfl⟩; simpa [h] using this
+      · rintro ⟨rfl, rfl⟩; simp
+
+theorem asDeclared_eq (n : Fin 4) (h : (n : Nat) ≠ 0) :
+    Fren.Core.argsOpen :: (ownParams n).toList.intersperse Fren.Core.argsSep ++ [Fren.Core.argsClose] =
+      ((ownWrittenList n).drop 1).map segString := by
+  obtain ⟨_ | _ | _ | _ | n, hn⟩ := n <;> first | omega | exact absurd rfl h | rfl
+
+theorem beq_own (a : lang.Segment) : (segString a == "G") = decide (a = .Own) := segString_beq a .Own
+theorem beq_argsOpen (a : lang.Segment) : (segString a == Fren.Core.argsOpen) = decide (a = .ArgsOpen) :=
+  segString_beq a .ArgsOpen
+theorem beq_setSeg (a : lang.Segment) : (segString a == Fren.Core.setSeg) = decide (a = .SetOf) :=
+  segString_beq a .SetOf
+theorem beq_seqSeg (a : lang.Segment) : (segString a == Fren.Core.seqSeg) = decide (a = .SeqOf) :=
+  segString_beq a .SeqOf
+theorem beq_relSeg (a : lang.Segment) : (segString a == Fren.Core.relSeg) = decide (a = .RelOf) :=
+  segString_beq a .RelOf
+theorem beq_relSep (a : lang.Segment) : (segString a == Fren.Core.relSep) = decide (a = .RelSep) :=
+  segString_beq a .RelSep
+
+theorem any_own (L : List lang.Segment) : ((L.map segString).any fun s => s == "G") = decide (.Own ∈ L) := by
+  induction L with
+  | nil => rfl
+  | cons a L ih => simp [ih, beq_own, eq_comm]
+
+theorem beq_map (l m : List lang.Segment) : (l.map segString == m.map segString) = decide (l = m) := by
+  rw [Bool.eq_iff_iff]; simp [map_segString_inj]
+
+theorem beq_map_cons (b : lang.Segment) (l m : List lang.Segment) :
+    (segString b :: l.map segString == m.map segString) = decide (b :: l = m) := by
+  rw [← List.map_cons]; exact beq_map _ _
+
+theorem beq_map_tail (b : lang.Segment) (l m : List lang.Segment) :
+    (segString b :: l.map segString == (m.map segString).tail) = decide (b :: l = m.tail) := by
+  rw [← List.map_tail]; exact beq_map_cons _ _ _
+
+theorem isEmpty_map_tail (m : List lang.Segment) : (m.map segString).tail.isEmpty = decide (m.tail = []) := by
+  cases m with
+  | nil => rfl
+  | cons a m => cases m <;> rfl
+
+theorem any_eq_own (l : List lang.Segment) : (l.any fun x => decide (x = .Own)) = decide (.Own ∈ l) := by
+  induction l with
+  | nil => rfl
+  | cons a l ih => simp [ih, eq_comm]
+
+theorem own_eq (x : lang.Segment) : (lang.Segment.Own = x) ↔ (x = .Own) := eq_comm
+
+theorem ownParams_empty (n : Fin 4) : (ownParams n = #[]) ↔ (n : Nat) = 0 := by
+  obtain ⟨_ | _ | _ | _ | n, hn⟩ := n <;> first | omega | simp [ownParams]
+
+/-- Whether segments are the own type, with type arguments or without. -/
+def wholeB (L : List lang.Segment) : Bool :=
+  decide (L.head? = some .Own) && (decide (L.length = 1) || decide (L[1]? = some .ArgsOpen))
+
+/-- Whether segments are a set's, sequence's or relation's. -/
+def elemHead (L : List lang.Segment) : Bool :=
+  decide (L.head? = some .SetOf) || decide (L.head? = some .SeqOf) || decide (L.head? = some .RelOf)
+
+/-- What `Core.ownArgs` computes from segments, over the segments. -/
+theorem ownArgs_eq (L : List lang.Segment) (n : Fin 4) :
+    Fren.Core.ownArgs (L.map segString).toArray "G" (ownParams n) =
+      (wholeB L, (if (n : Nat) = 0 then decide (L.length = 1) else decide (L.drop 1 = (ownWrittenList n).drop 1)),
+        !elemHead L && decide (.Own ∈ (if wholeB L then L.drop 1 else L))) := by
+  simp only [Fren.Core.ownArgs, withoutPatterns_segs]
+  by_cases h0 : (n : Nat) = 0
+  · rcases L with _ | ⟨a, _ | ⟨b, rest⟩⟩
+    all_goals simp [wholeB, elemHead, beq_own, beq_argsOpen, beq_setSeg, beq_seqSeg, beq_relSeg, h0,
+      ownParams, List.take_of_length_le]
+    all_goals try split
+    all_goals simp_all [any_eq_own, own_eq, beq_own, Function.comp_def]
+  · rw [asDeclared_eq n h0]
+    rcases L with _ | ⟨a, _ | ⟨b, rest⟩⟩
+    all_goals simp [wholeB, elemHead, beq_own, beq_argsOpen, beq_setSeg, beq_seqSeg, beq_relSeg, h0, ownParams_empty,
+      List.take_of_length_le, beq_map_tail, isEmpty_map_tail]
+    all_goals try split
+    all_goals simp_all [any_eq_own, own_eq, beq_own, Function.comp_def]
+
+/-- Whether a segment is a marker of an element type. -/
+def isMarker (x : lang.Segment) : Bool :=
+  decide (x = .SetOf) || decide (x = .SeqOf) || decide (x = .RelOf) || decide (x = .RelSep)
+
+theorem filter_markers (L : List lang.Segment) :
+    (L.map segString).filter (fun s => s != Fren.Core.setSeg && s != Fren.Core.relSeg && s != Fren.Core.relSep &&
+      s != Fren.Core.seqSeg) = (L.filter fun x => !isMarker x).map segString := by
+  rw [List.filter_map]
+  congr 1
+  apply List.filter_congr
+  intro x _
+  simp only [Function.comp_apply, bne, beq_setSeg, beq_relSeg, beq_relSep, beq_seqSeg, isMarker]
+  cases x <;> simp
+
+/-- What `Core.ownIn` computes from segments, over the segments. -/
+theorem ownIn_eq (L : List lang.Segment) :
+    Fren.Core.ownIn (L.map segString).toArray "G" =
+      (decide (L = [.Own]), decide ((((.SetOf ∈ L ∨ .SeqOf ∈ L) ∨ .RelOf ∈ L) ∨ .RelSep ∈ L) ∧ .Own ∈ L)) := by
+  simp only [Fren.Core.ownIn, withoutPatterns_segs]
+  simp [filter_markers]
+  have ho (a : lang.Segment) : (!isMarker a && segString a == "G") = decide (a = .Own) := by
+    rcases a with _ | ⟨_ | _ | _ | _⟩ | _ | _ | _ | _ | _ | _ | _ <;> decide
+  constructor
+  · rcases L with _ | ⟨a, _ | ⟨b, rest⟩⟩
+    · rfl
+    · rcases a with _ | ⟨_ | _ | _ | _⟩ | _ | _ | _ | _ | _ | _ | _ <;> decide
+    · have h1 := List.length_filter_le (fun x => !isMarker x) rest
+      simp only [List.length_cons, List.filter_cons]
+      split <;> split <;> simp <;> omega
+  · simp only [ho, any_eq_own]
+    rw [Bool.eq_iff_iff]
+    simp only [isMarker, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq]
+    constructor
+    · rintro ⟨⟨x, hx, ((h | h) | h) | h⟩, h'⟩ <;> subst h <;> simp_all
+    · rintro ⟨((h | h) | h) | h, h'⟩ <;> exact ⟨⟨_, h, by simp⟩, h'⟩
+
+theorem nth_zero_cons (a : lang.Segment) (l : List lang.Segment) : (Seq.ofList (a :: l)).nth 0 = a := by
+  rw [Seq.nth_of_lt _ _ (by decide) (by simp)]; rfl
+
+theorem nth_one_cons (a b : lang.Segment) (l : List lang.Segment) : (Seq.ofList (a :: b :: l)).nth 1 = b := by
+  rw [Seq.nth_of_lt _ _ (by decide) (by simp; omega)]; rfl
+
+theorem own_elem_spec (L : List lang.Segment) :
+    (Seq.ofList L ≠ ∅ ∧ (Seq.ofList L).nth 0 ∈ ({.SetOf, .SeqOf, .RelOf} : Fren.FinSet lang.Segment))
+      ↔ elemHead L = true := by
+  rcases L with _ | ⟨a, rest⟩ <;> simp [elemHead, Seq.ext_iff, or_assoc]
+
+theorem recursivePlace_accepted (d e : Bool) :
+    Fren.Core.typeParamPlaceAccepted (Fren.Core.recursivePlace d e) = (!e && d) := by
+  cases d <;> cases e <;> rfl
+
+theorem own_whole_spec (L : List lang.Segment) :
+    ((Seq.ofList L ≠ ∅ ∧ (Seq.ofList L).nth 0 = .Own) ∧ ((Seq.ofList L).len = 1 ∨ (Seq.ofList L).nth 1 = .ArgsOpen))
+      ↔ wholeB L = true := by
+  rcases L with _ | ⟨a, _ | ⟨b, rest⟩⟩ <;> simp [wholeB, Seq.ext_iff, nth_zero_cons, nth_one_cons] <;> omega
+
+theorem own_written_spec (n : Fin 4) :
+    (if ((n : Nat) : Int) = 0 then Seq.unit lang.Segment.Own
+      else if ((n : Nat) : Int) = 1 then
+        Seq.unit lang.Segment.Own ++ (Seq.unit lang.Segment.ArgsOpen ++
+          (Seq.unit (lang.Segment.Ident lang.Arg.P0) ++ Seq.unit lang.Segment.ArgsClose))
+      else if ((n : Nat) : Int) = 2 then
+        Seq.unit lang.Segment.Own ++ (Seq.unit lang.Segment.ArgsOpen ++ (Seq.unit (lang.Segment.Ident lang.Arg.P0) ++
+          (Seq.unit lang.Segment.ArgsSep ++ (Seq.unit (lang.Segment.Ident lang.Arg.P1) ++
+            Seq.unit lang.Segment.ArgsClose))))
+      else
+        Seq.unit lang.Segment.Own ++ (Seq.unit lang.Segment.ArgsOpen ++ (Seq.unit (lang.Segment.Ident lang.Arg.P0) ++
+          (Seq.unit lang.Segment.ArgsSep ++ (Seq.unit (lang.Segment.Ident lang.Arg.P1) ++
+            (Seq.unit lang.Segment.ArgsSep ++ (Seq.unit (lang.Segment.Ident lang.Arg.P2) ++
+              Seq.unit lang.Segment.ArgsClose)))))))
+      = Seq.ofList (ownWrittenList n) := by
+  obtain ⟨_ | _ | _ | _ | n, hn⟩ := n <;> first | omega | rfl
+
+theorem own_slice_spec (L : List lang.Segment) (c : Prop) [Decidable c] :
+    (Seq.ofList L).slice (if c then 1 else 0) (Seq.ofList L).len = Seq.ofList (if c then L.drop 1 else L) := by
+  unfold Seq.slice
+  split <;> rename_i h <;> split <;> simp_all [Seq.ext_iff]
+  all_goals first | exact List.take_of_length_le (by simp) | (rcases L with _ | ⟨_, _ | _⟩ <;> simp_all <;> omega)
+
+theorem own_decl_eq (L : List lang.Segment) (n : Fin 4) (h : wholeB L = true) :
+    (if n = 0 then decide (L.length = 1) else decide (L.tail = (ownWrittenList n).tail)) =
+      decide (L = ownWrittenList n) := by
+  rcases L with _ | ⟨a, rest⟩
+  · simp [wholeB] at h
+  · have ha : a = .Own := by simp [wholeB] at h; exact h.1
+    subst ha
+    obtain ⟨_ | _ | _ | _ | n, hn⟩ := n <;> first | omega | simp [ownWrittenList]
+
+-- For every declaration with at most three type parameters and every
+-- written type, as segments: what both front ends read from a payload's or
+-- field's type (`Core.ownArgs`, `Core.ownIn`), and the check of a recursive
+-- payload that both make with it (`Core.recursivePlace`).
+impl own_type: lang::own_type for (n : Fin 4) (segs : List lang.Segment) {
+  params := (n : Nat),
+  segs := Fren.Seq.ofList segs,
+  own? := (Fren.Core.ownArgs (segs.map segString).toArray "G" (ownParams n)).1,
+  as_declared? := (Fren.Core.ownArgs (segs.map segString).toArray "G" (ownParams n)).1 &&
+    (Fren.Core.ownArgs (segs.map segString).toArray "G" (ownParams n)).2.1,
+  nested? := (Fren.Core.ownArgs (segs.map segString).toArray "G" (ownParams n)).2.2,
+  bare? := (Fren.Core.ownIn (segs.map segString).toArray "G").1,
+  in_element? := (Fren.Core.ownIn (segs.map segString).toArray "G").2,
+  accepted? := let (own, declared, nested) := Fren.Core.ownArgs (segs.map segString).toArray "G" (ownParams n)
+    !(own || nested) || Fren.Core.typeParamPlaceAccepted (Fren.Core.recursivePlace declared nested),
+} by
+  intro n segs _
+  simp only [fren_spec, ownArgs_eq, ownIn_eq, own_whole_spec, own_written_spec, own_slice_spec, own_elem_spec]
+  have h3 : ((n : Nat) : Int) ≤ 3 := by omega
+  cases hw : wholeB segs
+  · simp [Seq.ext_iff, recursivePlace_accepted]
+    by_cases ho : lang.Segment.Own ∈ segs <;> cases elemHead segs <;> simp [ho]
+  · simp [h3, Seq.ext_iff, own_decl_eq segs n hw, recursivePlace_accepted]
+    intro
+    cases elemHead segs <;> simp
+
+/-- What a type's path names (`lang::Named`). -/
+def toTypeNamed : Fren.Core.TypeNamed → lang.Named
+  | .builtin => .Builtin
+  | .parameter => .Parameter
+  | .data => .Data
+  | .other => .OtherItem
+
+-- For whatever a type's path names, with its type parameters if it is an
+-- enumeration or record, and every list of written arguments: the check
+-- that both front ends make wherever a type is written with type arguments
+-- (`Core.writtenArgumentsAccepted`).
+impl written_type_arguments: lang::written_type_arguments for (k : Fren.Core.TypeNamed) (ps as : List lang.Arg) {
+  named := toTypeNamed k,
+  params := Fren.Seq.ofList ps,
+  args := Fren.Seq.ofList as,
+  accepted? := Fren.Core.writtenArgumentsAccepted k ps.length as.length,
+} by
+  intro k ps as _
+  cases k <;> simp [fren_spec, toTypeNamed, Fren.Core.writtenArgumentsAccepted, Fren.Core.typeArgumentsAccepted, Int.natCast_inj]
+
+/-- The type parameters `T0`, `T1`, ... of a generic type with `n` of them. -/
+def typeParamNames (n : Nat) : Array Lean.Name := ((List.range n).map fun i => Lean.Name.mkSimple s!"T{i}").toArray
+
+theorem anySynthesizes_given (vs : List lang.Value) (k : Nat) (hk : k < 3) :
+    Fren.Core.TypeShape.anySynthesizes (List.map (fun x => x.snd)
+      (List.filter (fun x => Fren.Core.Ty.mentions k x.fst) ((vs.map valueTy).zip (vs.map valueShape))))
+      = decide (lang.Value.Gives (argOf k) ∈ vs) := by
+  rw [anySynthesizes_eq_any]
+  induction vs with
+  | nil => simp
+  | cons v vs ih =>
+    rcases v with a | a <;> cases a <;>
+      (obtain _ | _ | _ | k := k <;>
+        simp_all [valueTy, valueShape, argTy, argOf, Fren.Core.Ty.mentions, Fren.Core.TypeShape.synthesizes]) <;>
+      omega
+
+-- For every generic type with at most three type parameters and every
+-- construction's values: the shape that both front ends decide by
+-- (`Core.constructionShape`, by way of `Core.inferConstruction`), and
+-- whether it synthesizes its type.
+impl construction_synthesis: lang::construction_synthesis for (n : Fin 4) (vs : List lang.Value) {
+  params := (n : Nat),
+  values := Fren.Seq.ofList vs,
+  synthesizes? := (Fren.Core.constructionShape (typeParamNames n) (vs.map valueTy).toArray
+    (vs.map valueShape).toArray).synthesizes,
+} by
+  intro n vs _
+  simp only [fren_spec]
+  simp only [Fren.Core.constructionShape, Fren.Core.TypeShape.synthesizes, allGiven_eq_all]
+  obtain ⟨n, hn⟩ := n
+  obtain _ | _ | _ | _ | n := n
+  all_goals first | omega | skip
+  all_goals simp [typeParamNames, List.range_succ, Fren.Core.TypeShape.synthesizes, anySynthesizes_given _ 0 (by omega),
+    anySynthesizes_given _ 1 (by omega), anySynthesizes_given _ 2 (by omega), argOf, and_assoc]
+
+/-- Whether a type is a type parameter (`lang::param?`). -/
+def isParam : Fren.Core.Ty → Bool
+  | .param .. => true
+  | _ => false
+
+interp lang::param? := isParam
+
+/-- A type parameter's position among its declaration's, and 0 for any
+other type (`lang::param_index`). -/
+def paramIndex : Fren.Core.Ty → Nat
+  | .param k _ => k
+  | _ => 0
+
+interp lang::param_index := paramIndex
+interp lang::parts := fun (t : Fren.Core.Ty) => Fren.Seq.ofList t.parts
+interp lang::with_parts := fun (t : Fren.Core.Ty) (ps : Fren.Seq Fren.Core.Ty) => t.withParts ps.toList
+
+theorem substAll_eq_map (args : Array Fren.Core.Ty) (ts : List Fren.Core.Ty) :
+    Fren.Core.Ty.substAll args ts = ts.map (Fren.Core.Ty.subst args) := by
+  induction ts with
+  | nil => simp [Fren.Core.Ty.substAll]
+  | cons t ts ih => simp [Fren.Core.Ty.substAll, ih]
+
+-- For every type and arguments, with the substitution that both front ends
+-- make in an instance's payloads and fields (`Ty.subst`).
+impl instantiation: lang::instantiation for (ty : Fren.Core.Ty) (args : List Fren.Core.Ty) {
+  ty := ty,
+  arguments := Fren.Seq.ofList args,
+  instantiated := Fren.Seq.ofList (ty.parts.map (·.subst args.toArray)),
+  result := ty.subst args.toArray,
+} by
+  intro ty args _
+  cases ty
+  case param k n _ =>
+    by_cases h : k < args.length <;> simp [fren_spec, isParam, paramIndex, Fren.Core.Ty.subst, h]
+  all_goals
+    simp [fren_spec, isParam, Fren.Core.Ty.subst, Fren.Core.Ty.parts, Fren.Core.Ty.withParts, substAll_eq_map]
+
+mutual
+/-- Matching against a declared type that does not mention `k` gives `k`
+no argument. -/
+theorem matchParam_of_not_mentions (k : Nat) : (d f : Fren.Core.Ty) → d.mentions k = false →
+    Fren.Core.matchParam k d f = none
+  | .param j _, f, h => by simp_all [Fren.Core.Ty.mentions, Fren.Core.matchParam]
+  | .set d, f, h | .seq d, f, h => by
+    cases f <;> simp [Fren.Core.matchParam]
+    exact matchParam_of_not_mentions k d _ (by simpa [Fren.Core.Ty.mentions] using h)
+  | .rel d e, f, h => by
+    simp only [Fren.Core.Ty.mentions, Bool.or_eq_false_iff] at h
+    cases f <;> simp [Fren.Core.matchParam, h.1]
+    exact matchParam_of_not_mentions k e _ h.2
+  | .enum p ds, f, h | .record p ds, f, h => by
+    cases f <;> simp [Fren.Core.matchParam]
+    intro _ _
+    exact matchFirst_of_not_mentions k ds _ (by simpa [Fren.Core.Ty.mentions] using h)
+  | .bool, f, _ | .int, f, _ | .nat, f, _ | .string, f, _ | .abstract _, f, _ | .newtype .., f, _ => by
+    cases f <;> simp [Fren.Core.matchParam]
+
+theorem matchFirst_of_not_mentions (k : Nat) :
+    (ds fs : List Fren.Core.Ty) → Fren.Core.Ty.mentionsAny k ds = false → Fren.Core.matchFirst k ds fs = none
+  | [], fs, _ => by cases fs <;> simp [Fren.Core.matchFirst]
+  | d :: ds, [], _ => by simp [Fren.Core.matchFirst]
+  | d :: ds, f :: fs, h => by
+    simp only [Fren.Core.Ty.mentionsAny, Bool.or_eq_false_iff] at h
+    simp [Fren.Core.matchFirst, h.1]
+    exact matchFirst_of_not_mentions k ds fs h.2
+end
+
+/-- The argument that matching the part of `fs` in its place against the
+first of `ds` that mentions the type parameter `k` gives `k`, if it gives
+one. -/
+def matchFirstMentioning (k : Nat) (ds fs : List Fren.Core.Ty) : Option Fren.Core.Ty :=
+  (ds.findIdx? (·.mentions k)).bind fun i => do Fren.Core.matchParam k (← ds[i]?) (← fs[i]?)
+
+theorem matchFirst_eq (k : Nat) (ds fs : List Fren.Core.Ty) :
+    Fren.Core.matchFirst k ds fs = matchFirstMentioning k ds fs := by
+  induction ds generalizing fs with
+  | nil => cases fs <;> simp [Fren.Core.matchFirst, matchFirstMentioning]
+  | cons d ds ih =>
+    cases fs with
+    | nil => cases h : d.mentions k <;> simp [Fren.Core.matchFirst, matchFirstMentioning, List.findIdx?_cons, h]
+    | cons f fs =>
+      cases h : d.mentions k <;> simp [Fren.Core.matchFirst, matchFirstMentioning, List.findIdx?_cons, h, ih,
+        Option.bind_map, Function.comp_def]
+
+/-- Matching against a declared type that is not a type parameter matches
+against the first of its parts that mentions `k`, if the two types have
+the same shape. -/
+theorem matchParam_eq (k : Nat) (d f : Fren.Core.Ty) (hd : isParam d = false) :
+    Fren.Core.matchParam k d f = if d.sameShape f then matchFirstMentioning k d.parts f.parts else none := by
+  cases d
+  case param => simp [isParam] at hd
+  case set d | seq d =>
+    cases f <;> try simp [Fren.Core.matchParam, Fren.Core.Ty.sameShape, Fren.Core.Ty.parts]
+    all_goals cases h : d.mentions k <;> simp [matchFirstMentioning, h, matchParam_of_not_mentions]
+  case rel d e =>
+    cases f <;> try simp [Fren.Core.matchParam, Fren.Core.Ty.sameShape, Fren.Core.Ty.parts]
+    cases h : d.mentions k <;> cases h' : e.mentions k <;>
+      simp [matchFirstMentioning, List.findIdx?_cons, h, h', matchParam_of_not_mentions]
+  all_goals cases f <;>
+    simp [Fren.Core.matchParam, Fren.Core.Ty.sameShape, Fren.Core.Ty.parts, matchFirst_eq, Bool.and_comm]
+
+interp lang::same_shape? := Fren.Core.Ty.sameShape
+
+-- For every declared type, found type and type parameter, with the matching
+-- that both front ends make to infer a construction's type arguments
+-- (`Core.matchParam`). With no match, the argument is not used, and the one
+-- that the definition gives stands in for it.
+impl parameter_matching: lang::parameter_matching for (declared found : Fren.Core.Ty) (k : Nat) {
+  declared := declared,
+  found := found,
+  k := k,
+  first := ((declared.parts.findIdx? (·.mentions k)).map Int.ofNat).getD (-1),
+  part_matched? := (matchFirstMentioning k declared.parts found.parts).isSome,
+  part_argument := (matchFirstMentioning k declared.parts found.parts).getD found,
+  matched? := (Fren.Core.matchParam k declared found).isSome,
+  argument := (Fren.Core.matchParam k declared found).getD
+    (if isParam declared then found else (matchFirstMentioning k declared.parts found.parts).getD found),
+} by
+  intro declared found k _
+  cases hd : isParam declared
+  · rw [matchParam_eq k declared found hd]
+    cases hs : declared.sameShape found <;> cases hm : matchFirstMentioning k declared.parts found.parts <;>
+      simp_all [fren_spec]
+    cases hf : declared.parts.findIdx? (·.mentions k) <;> simp_all [matchFirstMentioning]
+  · cases declared <;> simp [isParam] at hd
+    rename_i j _ _
+    by_cases h : j = k <;> simp [fren_spec, isParam, paramIndex, Fren.Core.matchParam, h]
+
+interp lang::first_giver := fun (d : Fren.Seq Fren.Core.Ty) (s : Fren.Seq Bool) (k : Nat) =>
+  Fren.Core.firstGiver d.toList.toArray s.toList.toArray k
+interp lang::widened := Fren.Core.Ty.widen
+
+/-- What matching the type of the first of a construction's values that
+synthesizes its type, and whose declared type mentions the type parameter
+`k`, against its declared type gives `k`, before it is widened
+(`Core.inferArg`). -/
+def giverMatch (declared : Array Fren.Core.Ty) (found : Array (Option Fren.Core.Ty)) (k : Nat) :
+    Option Fren.Core.Ty :=
+  let j := Fren.Core.firstGiver declared (found.map Option.isSome) k
+  if j < 0 then none else do Fren.Core.matchParam k declared[j.toNat]! (← found[j.toNat]?.join)
+
+-- For every type parameter `k` of a generic type with `n` of them, the
+-- declared types of a construction's values and the types of those that
+-- synthesize them, and the arguments of the instance expected of it, if one
+-- is: the inference that both front ends make (`Core.inferArg`, by way of
+-- `Core.inferConstruction`). With no argument, the one that the definition
+-- gives stands in for it.
+impl type_argument_inference: lang::type_argument_inference
+    for (n : Nat) (k : Fin n) (declared : Array Fren.Core.Ty) (found : Array (Option Fren.Core.Ty))
+      (expected? : Option (Vector Fren.Core.Ty n)) {
+  declared := Fren.Seq.ofList declared.toList,
+  synthesizes := Fren.Seq.ofList (found.map Option.isSome).toList,
+  k := k,
+  expected? := expected?.isSome,
+  expected_arg := (expected?.map (·[k])).getD .bool,
+  matched? := (giverMatch declared found k).isSome,
+  matched := (giverMatch declared found k).getD .bool,
+  giver := Fren.Core.firstGiver declared (found.map Option.isSome) k,
+  known? := (Fren.Core.inferArg declared found (expected?.map (·.toArray)) k).isSome,
+  argument := (Fren.Core.inferArg declared found (expected?.map (·.toArray)) k).getD .bool,
+} by
+  intro n k declared found expected? _
+  have hs : (found.toList.map Option.isSome).toArray = found.map Option.isSome := by cases found; simp
+  cases expected? with
+  | some as => simp [fren_spec, Fren.Core.inferArg, hs]
+  | none =>
+    simp [fren_spec, Fren.Core.inferArg, giverMatch, hs]
+    generalize Fren.Core.firstGiver declared (found.map Option.isSome) k = j
+    by_cases hj : j < 0
+    · simp [hj, Fren.Core.Ty.widen]
+    · have h0 : 0 ≤ j := by omega
+      cases found[j.toNat]?.join with
+      | none => simp [h0, Fren.Core.Ty.widen]
+      | some f =>
+        cases hm : Fren.Core.matchParam k declared[j.toNat]! f <;> simp [hj, h0, hm, Fren.Core.Ty.widen]
+
+/-- Whether a construction's value synthesizes its type (`lang::Value`). -/
+def valueSynthesizes : lang.Value → Bool
+  | .Gives _ => true
+  | .Waits _ => false
+
+/-- `Core.inferConstruction` on a construction of a generic type with `n` type
+parameters, `T0`, `T1`, ..., whose values are `vs`, with an instance
+expected of it if `expected` is: its type arguments, the positions of the
+values in the order in which it elaborates them, and whether it reports the
+arguments unknown. Each value elaborated has the type `Int`, and an expected
+instance has the arguments `Bool`, so that the parameters with arguments are
+those that are not type parameters in the result. -/
+def runConstruction (n : Nat) (vs : List lang.Value) (expected : Bool) : Array Fren.Core.Ty × (List Nat × Bool) :=
+  (Fren.Core.inferConstruction (m := StateM (List Nat × Bool)) (Array.replicate n .anonymous) (vs.map valueTy).toArray
+    (vs.map valueSynthesizes).toArray (if expected then some (Array.replicate n .bool) else none)
+    (modify fun s => (s.1, true))
+    (fun k _ => do modify (fun s => (s.1 ++ [k], s.2)); pure (some .int))
+    (fun _ _ _ => pure ())).run ([], false)
+
+/-- Every `lang::Value`. -/
+def allValues : List lang.Value :=
+  [.Gives .P0, .Gives .P1, .Gives .P2, .Gives .Other, .Waits .P0, .Waits .P1, .Waits .P2, .Waits .Other]
+
+/-- Every list of at most `k` values. -/
+def valueLists : Nat → List (List lang.Value)
+  | 0 => [[]]
+  | k + 1 => [] :: (allValues.flatMap fun v => (valueLists k).map (v :: ·))
+
+/-- The obligation of `construction_order` for `n`, `vs` and `e`. -/
+abbrev orderObligation (n : Nat) (vs : List lang.Value) (e : Bool) : Prop :=
+  lang.construction_order.assumes n (Seq.ofList vs) e
+    (Seq.ofList ((runConstruction n vs e).2.1.map Int.ofNat))
+    (Seq.ofList ((runConstruction n vs e).1.toList.map fun t => !isParam t))
+    (runConstruction n vs e).2.2 →
+  lang.construction_order.defs n (Seq.ofList vs) e
+      (Seq.ofList ((runConstruction n vs e).2.1.map Int.ofNat))
+      (Seq.ofList ((runConstruction n vs e).1.toList.map fun t => !isParam t))
+      (runConstruction n vs e).2.2 ∧
+    lang.construction_order.ensures n (Seq.ofList vs) e
+      (Seq.ofList ((runConstruction n vs e).2.1.map Int.ofNat))
+      (Seq.ofList ((runConstruction n vs e).1.toList.map fun t => !isParam t))
+      (runConstruction n vs e).2.2
+
+theorem mem_valueLists : (k : Nat) → (vs : List lang.Value) → vs.length ≤ k → vs ∈ valueLists k
+  | 0, [], _ => by simp [valueLists]
+  | k + 1, [], _ => by simp [valueLists]
+  | k + 1, v :: vs, h => by
+    simp only [valueLists, List.mem_cons, List.mem_flatMap, List.mem_map]
+    refine .inr ⟨v, ?_, vs, mem_valueLists k vs (by simp at h; omega), rfl⟩
+    rcases v with (_ | _ | _ | _) | (_ | _ | _ | _) <;> decide
+
+/-- The obligation for every construction of at most three values, of a type
+with at most three type parameters, by evaluation. -/
+theorem construction_order_cases : ((List.range 4).all fun n => [false, true].all fun e => (valueLists 3).all fun vs =>
+    decide (orderObligation n vs e)) = true := by decide +kernel
+
+-- For every construction of at most three values, of a generic type with at
+-- most three type parameters, and with an instance expected of it or not:
+-- the order in which both front ends elaborate its values, and the
+-- arguments that they infer (`Core.inferConstruction`), run with the
+-- elaboration of each value recorded.
+impl construction_order: lang::construction_order for (n : Fin 4) (vs : List lang.Value) (e : Bool) {
+  params := (n : Nat),
+  values := Fren.Seq.ofList vs,
+  expected? := e,
+  order := Fren.Seq.ofList ((runConstruction n vs e).2.1.map Int.ofNat),
+  given := Fren.Seq.ofList ((runConstruction n vs e).1.toList.map fun t => !isParam t),
+  unknown? := (runConstruction n vs e).2.2,
+} by
+  intro n vs e h
+  have hl : vs.length ≤ 3 := by
+    have h' := h
+    simp only [fren_spec] at h'
+    have h3 := h'.1.1
+    simp at h3
+    omega
+  have := construction_order_cases
+  simp only [List.all_eq_true, decide_eq_true_eq] at this
+  exact this n (by simp) e (by cases e <;> simp) vs (mem_valueLists 3 vs hl) h
+
+/-- The declarations of `Option(T)`, `Pair(A, B)` and `List(T)`, which is
+recursive, as both front ends give them to `Core.countIn`
+(`lang::instance_values`). -/
+def exampleSigs (p : Lean.Name) : Option Fren.Core.DataSig :=
+  if p == `Option then some { isRecord := false, unbounded := false, ctors := #[#[], #[.param 0 `T]] }
+  else if p == `Pair then some { isRecord := true, unbounded := false, ctors := #[#[.param 0 `A, .param 1 `B]] }
+  else if p == `List then
+    some { isRecord := false, unbounded := true, ctors := #[#[], #[.param 0 `T, .enum `List [.param 0 `T]]] }
+  else none
+
+/-- A number of values, or `-1` if a quantifier ranges over none
+(`lang::instance_values`). -/
+def countInt (c : Option Nat) : Int := (c.map Int.ofNat).getD (-1)
+
+theorem countIn_param (sigs : Lean.Name → Option Fren.Core.DataSig) (n : Nat) (env : List (Option Nat))
+    (k : Nat) (x : Lean.Name) : Fren.Core.countIn sigs (n + 1) env (.param k x) = env[k]?.join := by
+  simp [Fren.Core.countIn]
+
+theorem count_option (n : Nat) (a : Fren.Core.Ty) :
+    Fren.Core.countIn exampleSigs (n + 2) [] (.enum `Option [a]) =
+      (Fren.Core.countIn exampleSigs (n + 1) [] a).map (· + 1) := by
+  rw [Fren.Core.countIn]
+  cases h : Fren.Core.countIn exampleSigs (n + 1) [] a <;>
+    simp [exampleSigs, h, countIn_param, Fren.Core.quantifiedTypeAccepted] <;> omega
+
+theorem count_pair (n : Nat) (a b : Fren.Core.Ty) :
+    (Fren.Core.countIn exampleSigs (n + 2) [] (.record `Pair [a, b])).isSome =
+      ((Fren.Core.countIn exampleSigs (n + 1) [] a).isSome &&
+        (Fren.Core.countIn exampleSigs (n + 1) [] b).isSome) := by
+  rw [Fren.Core.countIn]
+  cases h : Fren.Core.countIn exampleSigs (n + 1) [] a <;> cases h' : Fren.Core.countIn exampleSigs (n + 1) [] b <;>
+    simp [exampleSigs, h, h', countIn_param, Fren.Core.quantifiedTypeAccepted]
+
+theorem count_list (n : Nat) (a : Fren.Core.Ty) :
+    Fren.Core.countIn exampleSigs (n + 1) [] (.enum `List [a]) = none := by
+  rw [Fren.Core.countIn]
+  simp [exampleSigs]
+
+-- For every two type arguments, by the count that both front ends make of a
+-- quantified type's values (`Ty.valueCount`), with the declarations of
+-- `Option`, `Pair` and `List`. Each argument is counted as `Core.countIn`
+-- counts it within an instance: one level less deep.
+impl instance_values: lang::instance_values for (a b : Fren.Core.Ty) {
+  a := countInt (Fren.Core.countIn exampleSigs (Fren.Core.valueFuel - 1) [] a),
+  b := countInt (Fren.Core.countIn exampleSigs (Fren.Core.valueFuel - 1) [] b),
+  option := countInt ((Fren.Core.Ty.enum `Option [a]).valueCount exampleSigs),
+  pair_finite? := ((Fren.Core.Ty.record `Pair [a, b]).valueCount exampleSigs).isSome,
+  list := countInt ((Fren.Core.Ty.enum `List [a]).valueCount exampleSigs),
+} by
+  intro a b _
+  have hf : Fren.Core.valueFuel = 998 + 2 := rfl
+  simp only [Fren.Core.Ty.valueCount, hf, count_option, count_pair, count_list]
+  cases Fren.Core.countIn exampleSigs (998 + 1) [] a <;> cases Fren.Core.countIn exampleSigs (998 + 1) [] b <;>
+    simp [fren_spec, countInt] <;> omega
+
 /-! ## The overlap of patterns -/
 
 section PatternOverlap
@@ -1825,7 +2545,7 @@ theorem ow_ww (sigs : Sigs) (ty : PatTy) : Pat.overlapWit? sigs ty (.wild false)
   all_goals (intros; simp_all)
 
 theorem sw_c (k : Nat) (pty : PatTy) (i : Nat) (hi : i ≤ k) (c d : Option Int) :
-    Pat.someWit? (ovSigs k pty) (.enum `E) (.ctor i #[.int c d]) =
+    Pat.someWit? (ovSigs k pty) (.enum `E []) (.ctor i #[.int c d]) =
       (meetIntervals pty (c, d) (none, none)).map fun iv => .ctor (.num `E i) #[Wit.ofInterval iv] := by
   rw [Pat.someWit?]
   simp [ctorTys, ovSigs, sw_i, Ctor.wit, Nat.lt_succ_of_le hi]
@@ -1833,21 +2553,21 @@ theorem sw_c (k : Nat) (pty : PatTy) (i : Nat) (hi : i ≤ k) (c d : Option Int)
   rfl
 
 theorem ow_wv (k : Nat) (pty : PatTy) (i : Nat) (hi : i ≤ k) (c d : Option Int) :
-    Pat.overlapWit? (ovSigs k pty) (.enum `E) (.wild false) (.ctor i #[.int c d]) =
+    Pat.overlapWit? (ovSigs k pty) (.enum `E []) (.wild false) (.ctor i #[.int c d]) =
       (meetIntervals pty (c, d) (none, none)).map fun iv => .ctor (.num `E i) #[Wit.ofInterval iv] := by
   rw [Pat.overlapWit?]
   simp [overlapStep, Pat.headKind, sw_c k pty i hi]
   all_goals (intros; simp_all)
 
 theorem ow_vw (k : Nat) (pty : PatTy) (i : Nat) (hi : i ≤ k) (c d : Option Int) :
-    Pat.overlapWit? (ovSigs k pty) (.enum `E) (.ctor i #[.int c d]) (.wild false) =
+    Pat.overlapWit? (ovSigs k pty) (.enum `E []) (.ctor i #[.int c d]) (.wild false) =
       (meetIntervals pty (c, d) (none, none)).map fun iv => .ctor (.num `E i) #[Wit.ofInterval iv] := by
   rw [Pat.overlapWit?]
   simp [overlapStep, Pat.headKind, sw_c k pty i hi]
   all_goals (intros; simp_all)
 
 theorem ow_vv (k : Nat) (pty : PatTy) (i j : Nat) (hi : i ≤ k) (a b c d : Option Int) :
-    Pat.overlapWit? (ovSigs k pty) (.enum `E) (.ctor i #[.int a b]) (.ctor j #[.int c d]) =
+    Pat.overlapWit? (ovSigs k pty) (.enum `E []) (.ctor i #[.int a b]) (.ctor j #[.int c d]) =
       if i = j then (meetIntervals pty (a, b) (c, d)).map fun iv => .ctor (.num `E i) #[Wit.ofInterval iv]
       else none := by
   rw [Pat.overlapWit?]
@@ -1892,7 +2612,7 @@ def ptyOf (nat : Bool) : PatTy := if nat then .nat else .int
 /-- What `Pat.overlapWit?` gives two patterns of `lang::pattern_overlap`. -/
 def owOf (f s : lang.SimplePattern) (nat : Bool) : Option Wit :=
   Pat.overlapWit? (ovSigs (max f.variant.toNat s.variant.toNat) (ptyOf nat))
-    (if f.shape = .Variant ∨ s.shape = .Variant then .enum `E else ptyOf nat) (toPat f) (toPat s)
+    (if f.shape = .Variant ∨ s.shape = .Variant then .enum `E [] else ptyOf nat) (toPat f) (toPat s)
 
 theorem ofInterval_eq (iv : Option Int × Option Int) :
     Wit.ofInterval iv = .int (some (ivPoint iv)) (some (ivPoint iv)) := by

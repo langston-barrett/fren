@@ -38,8 +38,8 @@ comp retry {
 
     ensure transient:
         retry? iff status is 429 | 503
-               and method != Method::Post
-               and attempt < MAX_ATTEMPTS
+        and method != Method::Post
+        and attempt < MAX_ATTEMPTS
     ensure honor_server: when retry?, delay >= retry_after
     ensure backoff: when retry?, delay >= Seconds(2 * attempt)
     ensure latency_budget: delay <= MAX_DELAY
@@ -50,7 +50,7 @@ comp retry {
 -- Once the client gives up, a later attempt doesn't start retrying again.
 expect gives_up_for_good: forall (a b: retry),
     when a.method = b.method and a.status = b.status and a.retry_after = b.retry_after
-        and a.attempt <= b.attempt and b.retry?,
+    and a.attempt <= b.attempt and b.retry?,
     a.retry?
 ```
 

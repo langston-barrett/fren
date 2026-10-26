@@ -1,0 +1,13 @@
+error[F0385]: `Option` takes 1 type argument, but none was given
+ --> test/cli/types/f0385_missing_type_arguments.fren:4:16
+  |
+4 | comp c { in x: Option }
+  |                ^^^^^^ no type arguments
+  |
+  = note: `Option` is generic, with the type parameter `T`
+  = help: write it with its argument, as in `Option(Int)`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0385`.
+exit=2

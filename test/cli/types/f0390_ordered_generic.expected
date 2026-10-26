@@ -1,0 +1,13 @@
+error[F0390]: the ordered struct `Pair` cannot have type parameters, for now
+ --> test/cli/types/f0390_ordered_generic.fren:2:16
+  |
+2 | ordered struct Pair(A, B) { fst: A, snd: B }
+  |                ^^^^ ordered, with type parameters
+  |
+  = note: an ordered struct orders its values by their fields, whose types must be ordered, and a type parameter's type is not known until an instance gives it
+  = help: declare `Pair` without `ordered`, or without type parameters
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0390`.
+exit=2

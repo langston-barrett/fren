@@ -1,0 +1,2 @@
+-- A type parameter declared twice.
+struct Pair(A, A) { fst: A, snd: A }

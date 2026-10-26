@@ -1,0 +1,12 @@
+error[F0387]: a recursive payload must be `Tree(T)`
+ --> test/cli/types/f0387_recursive_arguments.fren:3:30
+  |
+3 | enum Tree(T) { Leaf(T), Node(Tree(Int)) }
+  |                              ^^^^^^^^^ not `Tree(T)`
+  |
+  = note: a generic enumeration's payload of its own type gives it its own type parameters, in order
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0387`.
+exit=2

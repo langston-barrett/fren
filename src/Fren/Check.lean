@@ -86,17 +86,22 @@ partial def render (ty : Expr) (val : Expr) : MetaM String := do
   if let some n := st.newtypeOf? ty then
     if val.isAppOfArity n.ctor 1 then return s!"{n.path.getString!}({← render n.under val.appArg!})"
   if let .const c _ := val.getAppFn then
-    let args := val.getAppArgs
+    -- A generic type's constructor is applied to its type arguments first,
+    -- which a value is shown without (`Reqs/Lang/Generics#printing`); its
+    -- payload's or fields' types have the type's arguments.
+    let targs := ty.getAppArgs
     if let some e := st.enumOfDecl? c.getPrefix then
+      let args := val.getAppArgs.extract e.params.size
       let v := s!"{e.path.getString!}::{c.getString!}"
       let some idx := e.variants.idxOf? (Name.mkSimple c.getString!) | return v
-      let tys := e.payloads[idx]?.getD #[]
+      let tys := (e.payloadsAt targs)[idx]?.getD #[]
       if args.isEmpty || args.size != tys.size then return v
       let vals ← (tys.zip args).mapM fun (t, a) => render t a
       return s!"{v}({", ".intercalate vals.toList})"
     if let some r := st.recordOfDecl? c.getPrefix then
-      if c == recordCtor r.decl && args.size == r.fields.size then
-        let fs ← (r.fields.zip args).mapM fun ((f, t), a) => return s!"{f} := {← render t a}"
+      let args := val.getAppArgs.extract r.params.size
+      if c == r.ctor && args.size == r.fields.size then
+        let fs ← ((r.fieldsAt targs).zip args).mapM fun ((f, t), a) => return s!"{f} := {← render t a}"
         return s!"{r.path.getString!} \{ {", ".intercalate fs.toList} }"
   return toString (← ppExpr val)
 
@@ -472,11 +477,14 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     -- recursive enumerations' payloads, that bring a constraint, each with
     -- its predicate (`Reqs/Check`).
     let st ← getState
-    let typedApps : Array (Expr × Nat × Expr) :=
+    -- A generic enumeration's selector takes its type arguments and their
+    -- `Inhabited` instances before the value, and so does its predicate.
+    let typedApps : Array (Expr × Nat × Expr × Nat) :=
       fns.filterMap (fun (u, x, n, _) =>
         (st.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == u then some a else none).bind fun a =>
-          a.fact?.map fun p => (x, n, p))
-      ++ st.enums.foldl (init := #[]) fun acc _ e => acc ++ e.readFacts.map fun (sel, p) => (mkConst sel, 1, p)
+          a.fact?.map fun p => (x, n, p, 0))
+      ++ st.enums.foldl (init := #[]) fun acc _ e =>
+        acc ++ e.readFacts.map fun (sel, p) => (mkConst sel, 1 + 2 * e.params.size, p, 2 * e.params.size)
     -- Whether its queries may quantify over a collection's elements, read
     -- from the types, as the `fren` command's `State.bounded` reads it:
     -- its variables' types' constraints, the obligations it asks, and the
@@ -510,7 +518,7 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     -- An application's `nat`, then its `type`, then its postconditions'.
     let factsOf (app : Expr) : MetaM (Array (Name × Expr)) := do
       let typeFact ← match typedApps.find? (·.1 == app.getAppFn) with
-        | some (_, _, p) => pure #[(`type, ← rep (p.beta #[app]))]
+        | some (_, _, p, k) => pure #[(`type, ← rep (p.beta ((app.getAppArgs.extract 0 k).push app)))]
         | none => pure #[]
       let some (u, _, _, nat) := factFns.find? (·.2.1 == app.getAppFn) | return typeFact
       let args := app.getAppArgs
@@ -520,7 +528,7 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
       let natFact ← if nat then pure #[(`nat, ← atLeast0 app)] else pure #[]
       return natFact ++ typeFact ++ posts
     let bk (k : CheckKind) :=
-      let heads := factFns.map (fun (_, x, n, _) => (x, n)) ++ typedApps.map fun (x, n, _) => (x, n)
+      let heads := factFns.map (fun (_, x, n, _) => (x, n)) ++ typedApps.map fun (x, n, _, _) => (x, n)
       let b := leanBackend c fvs primes cache facts outFacts (natApps heads ·) (closedFacts factsOf)
         (modelOptional := k == .cover) bounded
       if k != .cover then b else

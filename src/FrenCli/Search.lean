@@ -88,15 +88,17 @@ partial def valueOf (sp : Spec) (w : World) (h : UInt64) (depth : Nat := 2) : VT
   | .rel a b => if h % 2 == 0 then .set #[] else Val.setOf #[.pair (valueOf sp w (mix h 1) depth a) (valueOf sp w (mix h 2) depth b)]
   | .abstract s => .abs s ((h % (w.size s).toUInt64).toNat)
   | .newtype _ u => valueOf sp w h depth u
-  | .data p => Id.run do
+  -- Never asked for: every type a value is made for is an instance's.
+  | .param _ => .bool false
+  | .data p targs => Id.run do
     let some d := sp.data.find? p | return .ctor p 0 #[]
     -- Below the depth, only constructors without the type in their fields.
-    let ok := if depth == 0 then d.ctors.filter (·.fields.all (·.2 != .data p)) else d.ctors
+    let ok := if depth == 0 then d.ctors.filter (·.fields.all fun (_, t) => match t with | .data q _ => q != p | _ => true) else d.ctors
     let cs := if ok.isEmpty then d.ctors else ok
     let i := (h % cs.size.toUInt64).toNat
     let c := cs[i]!
     let idx := (d.ctors.findIdx? (·.name == c.name)).getD 0
-    let args := c.fields.mapIdx fun k (_, t) => valueOf sp w (mix h (k.toUInt64 + 1)) (depth - 1) t
+    let args := c.fields.mapIdx fun k (_, t) => valueOf sp w (mix h (k.toUInt64 + 1)) (depth - 1) (t.subst targs)
     return .ctor p idx args
 
 partial def hashVal : Val → UInt64
@@ -248,15 +250,16 @@ partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array
     return out
   | .abstract s => (Array.range (w.size s)).map (.abs s)
   | .newtype _ u => smallValues sp w ints strs cap depth u
+  | .param _ => #[]
   -- Each variant's, taken in turn, so that each has some within `cap`.
-  | .data p => Id.run do
+  | .data p targs => Id.run do
     let some d := sp.data.find? p | return #[]
     let mut each : Array (Array Val) := #[]
     for c in d.ctors, idx in [0:d.ctors.size] do
       if depth == 0 && !c.fields.isEmpty then continue
       let mut combos : Array (Array Val) := #[#[]]
       for (_, t) in c.fields do
-        let vs := smallValues sp w ints strs cap (depth - 1) t
+        let vs := smallValues sp w ints strs cap (depth - 1) (t.subst targs)
         combos := (combos.flatMap fun pre => vs.map pre.push).extract 0 cap
       each := each.push (combos.map (.ctor p idx ·))
     if each.foldl (· + ·.size) 0 ≤ cap then return each.flatten
@@ -279,11 +282,13 @@ partial def VTy.readsInts (sp : Spec) (seen : List Name := []) : VTy → Bool
   | .rel a b => a.readsInts sp seen || b.readsInts sp seen
   -- A newtype's values are its underlying type's (`smallValues`).
   | .newtype _ u => u.readsInts sp seen
-  | .data p =>
-    if seen.contains p then false else
+  | .data p targs =>
+    -- An instance's arguments are among its parts (`lang::parts`).
+    targs.any (·.readsInts sp seen) || if seen.contains p then false else
       match sp.data.find? p with
       | some d => d.ctors.any (·.fields.any (·.2.readsInts sp (p :: seen)))
       | none => false
+  | .param _ => false
 
 /-- The variables of `e`. -/
 partial def Ex.vars : Ex → Array Name

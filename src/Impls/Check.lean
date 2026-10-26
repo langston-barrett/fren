@@ -624,7 +624,7 @@ theorem any_flatArm (l : List check.FlatArm) (a : check.FlatArm) : l.any (· == 
   rw [Bool.eq_iff_iff]; simp [List.any_eq_true]
 
 theorem flatUnguardedExhaustive_flat (arms : List check.FlatArm) :
-    (Fren.Core.flatUnguardedExhaustive? (fun _ => 3) (.enum `E) (arms.toArray.map flatOf)).getD true =
+    (Fren.Core.flatUnguardedExhaustive? (fun _ => 3) (.enum `E []) (arms.toArray.map flatOf)).getD true =
       (decide (.Wild ∈ arms) || (decide (.A ∈ arms) && decide (.B ∈ arms) && decide (.C ∈ arms))) := by
   have hflat : ((List.map flatOf arms).toArray.all fun a => a.fst.flatEnum) = true := by
     simp only [List.all_toArray, List.all_map, List.all_eq_true]
@@ -649,7 +649,7 @@ theorem flatUnguardedExhaustive_flat (arms : List check.FlatArm) :
 impl flat_completeness_asked: check::flat_completeness_asked for (arms : List check.FlatArm) {
   arms := Fren.Seq.ofList arms,
   asked? := Fren.Core.completenessAsked
-    ((Fren.Core.flatUnguardedExhaustive? (fun _ => 3) (.enum `E) (arms.toArray.map flatOf)).getD true),
+    ((Fren.Core.flatUnguardedExhaustive? (fun _ => 3) (.enum `E []) (arms.toArray.map flatOf)).getD true),
 } by
   intro arms _
   simp only [fren_spec, flatUnguardedExhaustive_flat, Fren.Core.completenessAsked, Fren.Seq.mem_iff,

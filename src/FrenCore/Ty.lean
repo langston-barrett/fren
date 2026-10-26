@@ -27,14 +27,103 @@ inductive Ty where
   | rel (a b : Ty)
   /-- `Seq(T)`. -/
   | seq (elem : Ty)
-  | enum (path : Name)
-  | record (path : Name)
+  /-- An enumeration, with its type arguments if it is generic
+  (`Reqs/Lang/Generics`). -/
+  | enum (path : Name) (args : List Ty)
+  /-- A record, with its type arguments if it is generic. -/
+  | record (path : Name) (args : List Ty)
   /-- An abstract type. -/
   | abstract (path : Name)
   /-- A newtype, with its underlying type, which is how the solver sees it
   (`Reqs/Lang/Items#newtypes`). -/
   | newtype (path : Name) (under : Ty)
-  deriving Inhabited, DecidableEq
+  /-- A type parameter, within the declaration of a generic type, by its
+  position among the declaration's and its name: what a payload's or
+  field's type is before the arguments of an instance stand for its
+  parameters (`Ty.subst`). -/
+  | param (index : Nat) (name : Name)
+  deriving Inhabited
+
+/-! Lean derives no `DecidableEq` for `Ty`, whose type arguments are a
+`List Ty`: it derives one for `Ty.Flat`, which holds them in a type of its
+own, and `Ty` decides equality through it. -/
+
+mutual
+/-- `Ty`, with its type arguments in `Ty.FlatList` rather than a `List`. -/
+inductive Ty.Flat where
+  | bool | int | nat | string
+  | set (elem : Ty.Flat)
+  | rel (a b : Ty.Flat)
+  | seq (elem : Ty.Flat)
+  | enum (path : Name) (args : Ty.FlatList)
+  | record (path : Name) (args : Ty.FlatList)
+  | abstract (path : Name)
+  | newtype (path : Name) (under : Ty.Flat)
+  | param (index : Nat) (name : Name)
+
+inductive Ty.FlatList where
+  | nil
+  | cons (head : Ty.Flat) (tail : Ty.FlatList)
+end
+
+deriving instance DecidableEq for Ty.Flat, Ty.FlatList
+
+mutual
+def Ty.flat : Ty → Ty.Flat
+  | .bool => .bool
+  | .int => .int
+  | .nat => .nat
+  | .string => .string
+  | .set t => .set t.flat
+  | .rel a b => .rel a.flat b.flat
+  | .seq t => .seq t.flat
+  | .enum p as => .enum p (Ty.flatList as)
+  | .record p as => .record p (Ty.flatList as)
+  | .abstract p => .abstract p
+  | .newtype p u => .newtype p u.flat
+  | .param k n => .param k n
+
+def Ty.flatList : List Ty → Ty.FlatList
+  | [] => .nil
+  | t :: ts => .cons t.flat (Ty.flatList ts)
+end
+
+mutual
+def Ty.Flat.unflat : Ty.Flat → Ty
+  | .bool => .bool
+  | .int => .int
+  | .nat => .nat
+  | .string => .string
+  | .set t => .set t.unflat
+  | .rel a b => .rel a.unflat b.unflat
+  | .seq t => .seq t.unflat
+  | .enum p as => .enum p as.unflat
+  | .record p as => .record p as.unflat
+  | .abstract p => .abstract p
+  | .newtype p u => .newtype p u.unflat
+  | .param k n => .param k n
+
+def Ty.FlatList.unflat : Ty.FlatList → List Ty
+  | .nil => []
+  | .cons t ts => t.unflat :: ts.unflat
+end
+
+mutual
+theorem Ty.unflat_flat : (t : Ty) → t.flat.unflat = t
+  | .bool | .int | .nat | .string | .abstract _ | .param .. => rfl
+  | .set t | .seq t => by simp [Ty.flat, Ty.Flat.unflat, Ty.unflat_flat t]
+  | .rel a b => by simp [Ty.flat, Ty.Flat.unflat, Ty.unflat_flat a, Ty.unflat_flat b]
+  | .enum _ as | .record _ as => by simp [Ty.flat, Ty.Flat.unflat, Ty.unflat_flatList as]
+  | .newtype _ u => by simp [Ty.flat, Ty.Flat.unflat, Ty.unflat_flat u]
+
+theorem Ty.unflat_flatList : (ts : List Ty) → (Ty.flatList ts).unflat = ts
+  | [] => rfl
+  | t :: ts => by simp [Ty.flatList, Ty.FlatList.unflat, Ty.unflat_flat t, Ty.unflat_flatList ts]
+end
+
+instance : DecidableEq Ty := fun a b =>
+  if h : a.flat = b.flat then isTrue (by rw [← Ty.unflat_flat a, h, Ty.unflat_flat])
+  else isFalse fun e => h (e ▸ rfl)
 
 /-- The abstract type that `t` is, or that is an element type within it. -/
 def Ty.abstractWithin? : Ty → Option Name
@@ -44,6 +133,9 @@ def Ty.abstractWithin? : Ty → Option Name
   | .seq t => t.abstractWithin?
   | _ => none
 
+mutual
+/-- A type as it is written, with its type arguments, if any
+(`Reqs/Lang/Generics#printing`). -/
 def Ty.show : Ty → String
   | .bool => "Bool"
   | .int => "Int"
@@ -52,7 +144,16 @@ def Ty.show : Ty → String
   | .set t => s!"Set({t.show})"
   | .rel a b => s!"Rel({a.show}, {b.show})"
   | .seq t => s!"Seq({t.show})"
-  | .enum p | .record p | .abstract p | .newtype p _ => showPath p
+  | .enum p args | .record p args =>
+    showPath p ++ (if args.isEmpty then "" else "(" ++ ", ".intercalate (Ty.showAll args) ++ ")")
+  | .abstract p | .newtype p _ => showPath p
+  | .param _ n => n.toString
+
+/-- Each of `ts`, as written. -/
+def Ty.showAll : List Ty → List String
+  | [] => []
+  | t :: ts => t.show :: Ty.showAll ts
+end
 
 /-- Whether an expression of type `found` is accepted where `expected` is:
 the same type, or a `Nat` widened to an `Int` (`lang::widening`). -/
@@ -110,11 +211,14 @@ inductive TypePlace where
   /-- A payload of a recursive enumeration. -/
   | recursivePayload
   | element
+  /-- A type argument of an instance of a generic type
+  (`Reqs/Lang/Generics#type-parameters`). -/
+  | argument
   deriving Inhabited, DecidableEq, Repr
 
 /-- Whether `Nat` may be written at `place` (`lang::nat_place`). -/
 def natPlaceAccepted : TypePlace → Bool
-  | .recursivePayload | .element => false
+  | .recursivePayload | .element | .argument => false
   | _ => true
 
 /-- The note of a type mismatch where a `Nat` is expected and an `Int`
@@ -131,9 +235,11 @@ def narrowingMsg (why : String) : Msg :=
 def natPlaceMsg (place : TypePlace) : Msg :=
   let what := match place with
     | .recursivePayload => "the type of a payload of a recursive enumeration"
+    | .argument => "a type argument"
     | _ => "the element type of a set, relation or sequence"
   { code? := some "F0338", headline := s!"`Nat` cannot be {what}", label? := some "a `Nat`"
-    notes := #["note: for now, a `Nat` is never inside a collection, nor a payload of a recursive enumeration, where its constraint would hold of every element",
+    notes := #[if place == .argument then "note: a type argument is never `Nat`, so that an instance's type arguments are those that a construction's values give, widened"
+        else "note: for now, a `Nat` is never inside a collection, nor a payload of a recursive enumeration, where its constraint would hold of every element",
       "help: use `Int`, and say where it is used that it is at least 0"] }
 
 /-- What a `Nat` variable brings (`lang::nat_variable`). -/
@@ -168,13 +274,13 @@ a `String`, and an enumeration, record or newtype declared `ordered`, which
 a type alias the type it names, so each is ordered exactly when that is. -/
 def Ty.ordered (orderedDecl : Name → Bool) : Ty → Bool
   | .int | .nat | .string => true
-  | .enum p | .record p | .newtype p _ => orderedDecl p
+  | .enum p _ | .record p _ | .newtype p _ => orderedDecl p
   | _ => false
 
 /-- The kind of declaration that `t` is, if it can be declared `ordered`. -/
 def Ty.orderedDecl? : Ty → Option OrderedDecl
-  | .enum _ => some .enumeration
-  | .record _ => some .record
+  | .enum .. => some .enumeration
+  | .record .. => some .record
   | .newtype .. => some .newtype
   | _ => none
 
@@ -200,7 +306,8 @@ render it in their own terms. -/
 inductive OrderPlan where
   | number
   | string
-  | enum (path : Name)
+  /-- An ordered enumeration, with its type arguments if it is generic. -/
+  | enum (path : Name) (args : List Ty)
   /-- A record's fields, by name, in the order declared, each with how it
   is compared. -/
   | record (path : Name) (fields : List (Name × OrderPlan))
@@ -217,8 +324,8 @@ def orderPlanAt (orderedDecl : Name → Bool) (fieldsOf : Name → List (Name ×
   | 0, _ => none
   | _ + 1, .int | _ + 1, .nat => some .number
   | _ + 1, .string => some .string
-  | _ + 1, .enum p => if orderedDecl p then some (.enum p) else none
-  | n + 1, .record p =>
+  | _ + 1, .enum p as => if orderedDecl p then some (.enum p as) else none
+  | n + 1, .record p _ =>
     if orderedDecl p then
       (.record p) <$> (fieldsOf p).mapM fun (f, t) => (f, ·) <$> orderPlanAt orderedDecl fieldsOf n t
     else none

@@ -1,0 +1,13 @@
+error[F0388]: type parameter `Mode` has the name of an enum
+ --> test/cli/types/f0388_parameter_name.fren:4:17
+  |
+4 | pub enum Option(Mode) { None, Some(Mode) }
+  |                 ^^^^ already a name
+  |
+  = note: within its declaration, a type parameter's name must mean only the parameter
+  = help: rename it, as in `T`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0388`.
+exit=2

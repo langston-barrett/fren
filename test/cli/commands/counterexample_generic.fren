@@ -1,0 +1,10 @@
+-- A counterexample shows values of generic types as Fren builds them,
+-- without type arguments (`Reqs/Lang/Generics#printing`).
+pub enum Option(T) { None, Some(T) }
+pub struct Pair(A, B) { fst: A, snd: B }
+
+comp shown {
+    in x: Option(Int)
+    in p: Pair(Option(Bool), Int)
+    expect small: x = Option::None or p.fst = Option::Some(true)
+}

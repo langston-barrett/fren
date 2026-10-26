@@ -1,0 +1,4 @@
+-- A type that is not generic, written with a type argument.
+pub enum Mode { Off, On }
+
+comp c { in m: Mode(Int) }

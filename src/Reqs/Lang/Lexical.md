@@ -417,13 +417,15 @@ space, a line break or a comment, opens what the name takes, as in Lean:
 | a function's name, where it is declared | its parameters | `fn f(Int): Int` |
 | a variant's name, where it is declared | its payload's types | `enum S { A(Int) }` |
 | a newtype's name, where it is declared | its types | `struct Ms(Int)` |
+| a generic type's name, where it is declared | its type parameters | `enum Option(T) { None, Some(T) }` |
 | `Set`, `Seq` and `Rel` | their element types | `Set(Int)` |
+| a generic type, in a type | its type arguments | `Option(Int)` |
 
 A `(` after a space in one of these places is an error (`F0144`), in both
-front ends: `f (x)`, `S::A (_)`, `struct Ms (Int)` and `Set (Int)` do not
-parse. A `(` that does not follow a name, such as one that groups an
-expression or opens a quantifier's binders (`forall (x: T), e`), may follow a
-space. The `[` of an [index](Expressions.md#sequences) is written so too.
+front ends: `f (x)`, `S::A (_)`, `struct Ms (Int)`, `Set (Int)`,
+`enum Option (T)` and `Option (Int)` do not parse. A `(` that does not
+follow a name, such as one that groups an expression or opens a
+quantifier's binders (`forall (x: T), e`), may follow a space. The `[` of an [index](Expressions.md#sequences) is written so too.
 
 `_` is an [identifier](#identifiers). `#fren_check` and `#fren_trace` are
 commands, single tokens that start with `#`.
