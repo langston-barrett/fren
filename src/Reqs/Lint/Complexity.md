@@ -112,8 +112,10 @@ pub comp nonminimal_bool_keeps_meaning {
     expect true_literals: ((a? = true) iff a?) and ((a? != false) iff a?) and ((a? iff true) iff a?)
     expect false_literals: ((a? = false) iff not a?) and ((a? != true) iff not a?) and ((a? iff false) iff not a?)
     expect literals_left: ((true = a?) iff a?) and ((true iff a?) iff a?) and ((false = a?) iff not a?)
+        and ((true != a?) iff not a?) and ((false != a?) iff a?) and ((false iff a?) iff not a?)
     expect double_negation: (not not a?) iff a?
-    expect negated_literal: (not (a? = true)) iff not a?
+    expect negated_literal: ((not (a? = true)) iff not a?) and ((not (a? = false)) iff a?)
+        and ((not (a? != true)) iff a?) and ((not (a? != false)) iff not a?)
     expect complements: ((not (x = y)) iff x != y) and ((not (x != y)) iff x = y)
         and ((not (x < y)) iff x >= y) and ((not (x <= y)) iff x > y)
         and ((not (x > y)) iff x <= y) and ((not (x >= y)) iff x < y)

@@ -604,7 +604,8 @@ the fixed form on the right. Each component expects its lints, so it also
 checks that each of them fires somewhere in it, though not that it fires
 on every form. `index_after_use` is left out: its fix only swaps the
 operands of `and`, which means the same either way round, and its written
-form has an index that may be out of range. To keep the meaning, a fix
+form has an index that may be out of range, which the
+[definedness](Check.md#definedness) check would report in the law itself. To keep the meaning, a fix
 puts parentheses where [Parentheses in fixes](#parentheses-in-fixes)
 says.
 
