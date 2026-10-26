@@ -76,6 +76,8 @@ def relativeTo (base path : System.FilePath) : String :=
   | cs => "/".intercalate cs
 
 @[command_elab Lang.mdCmd] def elabMd : CommandElab := fun stx => do
+  -- What Lean recovered from a parse error that it has reported.
+  if stx.hasMissing then return
   let some rel := stx[1].isStrLit? | throwUnsupportedSyntax
   let some dir := (System.FilePath.mk (← getFileName)).parent
     | throwError "cannot compute the directory of `{← getFileName}`"

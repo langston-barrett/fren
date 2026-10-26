@@ -1,7 +1,4 @@
 -- `req` is not a keyword: a guarantee is written `ensure` (F0142).
--- Lean elaborates what parsed, whose variables nothing then uses.
-set_option fren.lint.unused_variables "allow"
-
 comp c { in x: Int pub out y? req r: y? iff x > 0 }
 --~^[cli] error: `req` is now written `ensure`
 --~^^[hosted] error: expected

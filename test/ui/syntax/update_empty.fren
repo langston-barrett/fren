@@ -1,5 +1,5 @@
 -- A record update gives at least one field.
-struct P { x: Int, y: Int }
+pub struct P { x: Int, y: Int }
 comp empty { in p: P pub out o: P ensure r: o = { p with } }
 --~^[cli] error: expected a name, found `}`
 --~^^[hosted] error: expected identifier

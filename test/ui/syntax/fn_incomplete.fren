@@ -1,0 +1,7 @@
+-- A function with no parameters or body is a parse error, and only that:
+-- Lean does not elaborate what it recovered of it.
+pub fn f(
+pub type T
+--~^[cli] error: expected a name, found keyword `pub`
+--~^^^[hosted] error: unexpected token 'pub'; expected fren_type
+--@ exit: 2

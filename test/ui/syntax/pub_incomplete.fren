@@ -1,0 +1,7 @@
+-- An item that stops after `pub` is a parse error, and only that: Lean
+-- does not elaborate what it recovered of it.
+pub x
+pub type T
+--~^^[cli] error: expected an item
+--~^^^[hosted] error: unexpected identifier; expected 'comp'
+--@ exit: 2

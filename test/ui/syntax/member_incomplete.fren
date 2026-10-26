@@ -1,0 +1,6 @@
+-- A variable with no type is a parse error, and only that: Lean does not
+-- elaborate what it recovered of its component.
+pub comp c { in x: }
+--~^[cli] error: expected a name, found `}`
+--~^^[hosted] error: unexpected token '}'; expected fren_type
+--@ exit: 2

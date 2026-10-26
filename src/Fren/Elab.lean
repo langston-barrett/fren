@@ -1897,9 +1897,6 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   return (t, pt)
 
 @[command_elab Lang.enumCmd] def elabEnum : CommandElab := recordingErrors fun stx => do
-  -- What Lean recovered from a parse error that it has reported, as in
-  -- `ordered struct`.
-  if stx.hasMissing then return
   checkLexemes stx
   checkParsed stx
   lintItem stx
@@ -2044,6 +2041,8 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   unless isPub do recordItem .record path nameStx
 
 @[command_elab Lang.newtypeCmd] def elabNewtype : CommandElab := fun stx => do
+  -- What Lean recovered from a parse error that it has reported.
+  if stx.hasMissing then return
   checkLexemes stx
   checkParsed stx
   let modName := (← getLocal).currentModule

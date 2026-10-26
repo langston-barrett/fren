@@ -25,7 +25,9 @@ of the checks' results and summary, the `fren` command ends with `could
 not check due to previous errors`, with no location, and Lean's
 `#fren_check` reports the same. The errors are not counted, since the
 `fren` command stops at a parse error, where Lean goes on and may find
-more. In Lean, the static errors are those before the `#fren_check`, in
+more. Lean goes on only after the item with the parse error: what its
+parser recovers of that item is not elaborated, so its parse error is all
+that is reported about it, and it neither declares nor uses a name. In Lean, the static errors are those before the `#fren_check`, in
 any file: those of Fren's items, of `#fren_check`s (but not their
 checks'), and of `set_option`s of lints and evidence claims; Lean's parse
 errors, which it finds by parsing the file again with the syntax in scope
