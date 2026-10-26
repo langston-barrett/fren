@@ -305,3 +305,49 @@ pub comp manual_at_most_one_guarded {
         where pos? := x > 0, pos2? := x > 0 and z?, t? := table { x > 0 => true }
 }
 ```
+
+The `obligation?` of a conjunct is what makes the fix keep definedness. In
+the conjunct `not (a and b)`, the `and` is a [layer](../../Lang/Meaning.md#guards),
+`Op("and", "")`, whose second operand is guarded by its first; in the fix,
+the operands are the parts of `Op("at_most_one?", "")`, which guards none.
+An `and` without an obligation is one whose operands are defined in every
+environment, so the two layers are defined alike, whatever the operands'
+values: the guard that the fix drops was not needed.
+`lint::manual_at_most_one_defined` states this over `lang::node`; with an
+obligation, the `and` can be defined where the call is not, which is why
+the lint does not fire there:
+
+```fren
+comp manual_at_most_one_defined {
+    use lang::{Env, Head, Val, node}
+    in env: Env
+    in a: Val                        -- the operands' values
+    in b: Val
+    in undefined_parts: Set(Int)     -- which operands, `0` and `1`, are not defined
+    in obligation?                   -- the `and` gives a definedness obligation
+
+    assume no_obligation: unless obligation?, undefined_parts = {}
+
+    inst conjunct: node {
+        head := Head::Op("and", ""),
+        env,
+        values := Val::Cons(a, Val::Cons(b, Val::Nil)),
+        parts_mentioned := {},
+        undefined_parts,
+    }
+    inst call: node {
+        head := Head::Op("at_most_one?", ""),
+        env,
+        values := Val::Cons(a, Val::Cons(b, Val::Nil)),
+        parts_mentioned := {},
+        undefined_parts,
+    }
+
+    expect kept: unless obligation?, conjunct.defined? and call.defined?
+    -- Where `a` is false, `b` is not evaluated, so the `and` is defined
+    -- though `b` is not.
+    expect guarded: when a = Val::B(false) and undefined_parts = {1}, conjunct.defined? and not call.defined?
+
+    cover guard_needed: obligation? and conjunct.defined? and not call.defined?
+}
+```

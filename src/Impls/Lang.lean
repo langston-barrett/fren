@@ -95,11 +95,12 @@ def toGuardedOperand : Fren.Core.GuardedOperand → lang.GuardedOperand
   | .armBody => .ArmBody
 
 -- For every operand and condition: the guard that both front ends add, by
--- `GuardedOperand.guard`, here over the condition's truth. That each front
--- end calls it with the right operand is not proved here, but tested by both
--- on the same ui tests.
+-- `GuardedOperand.guard`, here over the condition's value, a `Bool`. That
+-- each front end calls it with the right operand is not proved here, but
+-- tested by both on the same ui tests.
 impl guard: lang::guard for (o : Fren.Core.GuardedOperand) (h : Bool) {
   operand := toGuardedOperand o,
+  condition := .B h,
   holds? := h,
   evaluated? := o.guard h (!h),
 } by

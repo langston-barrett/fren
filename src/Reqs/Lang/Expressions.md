@@ -312,7 +312,7 @@ expect defined_scales: forall (m: node) (p: linear_product),
 
 The rule is what makes the product linear: of an accepted product, one
 operand is a *fixed factor*, with the same value in every environment
-where it is specified, by the [laws of a layer](Meaning.md#laws). Where it
+where it is defined, by the [laws of a layer](Meaning.md#laws). Where it
 is not, as `get([1], 5)` with `fn get(q: Seq(Int), i: Int): Int := q[i]`,
 a check reports why: the [definedness check](../Check.md#definedness)
 reports the index in `get`'s body, as the [precondition
@@ -326,7 +326,7 @@ induction (see [The whole tree](Meaning.md#the-whole-tree)):
 expect fixed_factor: forall (p: linear_product) (a a2 b b2: node),
     when p.accepted? and p.a_mentioned = a.mentioned and p.b_mentioned = b.mentioned
     and a2.head = a.head and a2.values = a.values and b2.head = b.head and b2.values = b.values
-    and a.specified? and b.specified?,
+    and a.defined? and b.defined?,
     a2.value = a.value or b2.value = b.value
 ```
 
@@ -1647,51 +1647,14 @@ So `q != [] and q[0] = x` is defined, and `q[0] = x and q != []` is not,
 though the two mean the same: the order of `and` and `or` changes only
 definedness, never meaning.
 
-`lang::guard` states which operands are guarded, and by what, from the
-operand and whether its *condition* holds. The condition is that of
-`when`, `unless` or the conditional, the left operand of `and` or `or`,
-for a `match` arm's guard, that its pattern matches and no earlier arm is
-taken, and for its body, that the arm is the first that is taken. The rows
-of a [table](#tables) are guarded as `match` arms are, by the earlier
-rows' conditions, which are their guards.
-An operand is evaluated exactly when its guard holds, and an operand that
-is not one of these is evaluated whenever the expression it is in is.
-
-```fren
--- The operands evaluated only under a condition.
-pub enum GuardedOperand { WhenBody, UnlessBody, ThenBranch, ElseBranch, AndRight, OrRight, ArmGuard, ArmBody }
-
-pub comp guard {
-    use self::GuardedOperand::{
-        AndRight,
-        ArmBody,
-        ArmGuard,
-        ElseBranch,
-        OrRight,
-        ThenBranch,
-        UnlessBody,
-        WhenBody,
-    }
-    in operand: GuardedOperand
-    in holds?                -- its condition holds
-    pub det out evaluated?   -- it is evaluated: its guard holds
-
-    ensure rule: evaluated? iff match operand {
-        WhenBody | ThenBranch | AndRight | ArmGuard | ArmBody => holds?,
-        UnlessBody | ElseBranch | OrRight => not holds?,
-    }
-
-    -- `a and b` is false without `b` once `a` is, and `a or b` true once `a` is.
-    expect and_short_circuits: when operand = AndRight and not holds?, not evaluated?
-    expect or_short_circuits: when operand = OrRight and holds?, not evaluated?
-    -- The bodies of `when C` and `unless C` are evaluated under opposite conditions.
-    expect opposite: when operand is WhenBody | UnlessBody, evaluated? iff (holds? iff operand = WhenBody)
-}
-```
-
-The branches of a conditional have opposite guards, as do the bodies of
-`when C, D` and `unless C, D`: of each pair, exactly one is evaluated,
-whatever `C`.
+`lang::guard` (see [Guards](Meaning.md#guards)) states which operands
+are guarded, and by what, from the operand and the value of its
+*condition*: that of `when`, `unless` or the conditional, or the left
+operand of `and` or `or`. `lang::node` uses it to say which parts a layer
+evaluates, and a layer is defined where every part it evaluates is. That a
+part that is not evaluated changes neither the value nor the definedness
+is the law `unevaluated` (see [Laws](Meaning.md#laws)), which is why the
+definedness check asks for an index's range only under its guard.
 
 ## Relations
 

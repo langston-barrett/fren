@@ -158,26 +158,123 @@ pub fn fixed_value(Head, Val): Val
 pub fn fixed_specified?(Head, Val)
 ```
 
+## Guards
+
+A *connective* is a layer that evaluates a part only under a condition, its
+first part (see [Sequences](Expressions.md#sequences)): `and`, `or`,
+`when`, `unless` and the conditional `if`, as `Op("and", "")` and so on. A
+[chained comparison](Expressions.md#chained-comparisons) is the `and` of
+its comparisons, and is guarded as those are. `lang::guard` states which
+part a condition guards, and whether it is evaluated, from the operand and
+the condition's value. For a `match` arm's guard, the condition is that
+its pattern matches and no earlier arm is taken, and for its body, that
+the arm is the first that is taken; the rows of a
+[table](Expressions.md#tables) are guarded as `match` arms are, by the
+earlier rows' conditions, which are their guards. An operand is evaluated
+exactly when its guard holds, and an operand that is not one of these is
+evaluated whenever the expression it is in is.
+
+```fren
+-- The operands evaluated only under a condition.
+pub enum GuardedOperand { WhenBody, UnlessBody, ThenBranch, ElseBranch, AndRight, OrRight, ArmGuard, ArmBody }
+
+pub comp guard {
+    use self::GuardedOperand::{
+        AndRight,
+        ArmBody,
+        ArmGuard,
+        ElseBranch,
+        OrRight,
+        ThenBranch,
+        UnlessBody,
+        WhenBody,
+    }
+    in operand: GuardedOperand
+    in condition: Val        -- the condition's value
+
+    pub det out holds? := condition = Val::B(true)
+    pub det out evaluated?   -- it is evaluated: its guard holds
+
+    ensure rule: evaluated? iff match operand {
+        WhenBody | ThenBranch | AndRight | ArmGuard | ArmBody => holds?,
+        UnlessBody | ElseBranch | OrRight => not holds?,
+    }
+
+    -- `a and b` is false without `b` once `a` is, and `a or b` true once `a` is.
+    expect and_short_circuits: when operand = AndRight and not holds?, not evaluated?
+    expect or_short_circuits: when operand = OrRight and holds?, not evaluated?
+    -- The bodies of `when C` and `unless C` are evaluated under opposite conditions.
+    expect opposite: when operand is WhenBody | UnlessBody, evaluated? iff (holds? iff operand = WhenBody)
+}
+```
+
+The branches of a conditional have opposite guards, as do the bodies of
+`when C, D` and `unless C, D`: of each pair, exactly one is evaluated,
+whatever `C`. A connective's second part is guarded by its condition as
+`second_guard` says, and a conditional's third by the condition's
+negation, and its value is that of the parts it evaluates:
+`a and b` is `false` where `a` is, `when C, D` is `true` where `C` is not,
+and so on. A `match` or a table evaluates its arms as
+`lang::guarded_match` says, which a later slice of the model states as
+their layers' `step`.
+
+```fren
+-- The first part's value, and the rest of the parts' values.
+pub fn only_part(values: Val): Val := match values {
+    Val::Cons(v, _) => v,
+    _ => values,
+}
+
+pub fn rest(values: Val): Val := match values {
+    Val::Cons(_, r) => r,
+    _ => Val::Nil,
+}
+
+-- The operator of a layer, and `""` for a layer that is not an operator.
+pub fn operator(head: Head): Id := match head {
+    Head::Op(o, _) => o,
+    _ => "",
+}
+
+pub fn connective?(o: Id) := o in {"and", "or", "when", "unless", "if"}
+
+-- The operators whose value is always specified.
+pub fn total?(o: Id) := connective?(o) or o in {"at_most_one?", "exactly_one?"}
+
+-- What guards a connective's second part.
+pub fn second_guard(o: Id): GuardedOperand := if o = "or" then GuardedOperand::OrRight
+    else if o = "when" then GuardedOperand::WhenBody
+    else if o = "unless" then GuardedOperand::UnlessBody
+    else if o = "if" then GuardedOperand::ThenBranch
+    else GuardedOperand::AndRight
+
+-- The value of the connective `o` at its parts' values.
+pub fn connective_value(o: Id, values: Val): Val := let c? := only_part(values) = Val::B(true),
+    second := only_part(rest(values))
+    in if o = "and" then (if c? then second else Val::B(false))
+    else if o = "or" then (if c? then Val::B(true) else second)
+    else if o = "when" then (if c? then second else Val::B(true))
+    else if o = "unless" then (if c? then Val::B(true) else second)
+    else if c? then second
+    else only_part(rest(rest(values)))
+```
+
 ## One layer
 
 The value of a layer is `step` of its head, its environment and its
 parts' values: a literal is its value, a variable is read from the
 environment, a definition has its one part's value, a construction is its
 variant and its parts, an application of an uninterpreted function is
-read from the environment at the function and its arguments, and every
+read from the environment at the function and its arguments, a
+[connective](#guards) has the value of the parts it evaluates, and every
 other layer has the value the spec fixes where that is specified, and the
-unspecified one elsewhere. `step` is a function with a contract, rather
+unspecified one elsewhere. A connective, and a [cardinality
+operator](Expressions.md#cardinality), is always specified. `step` is a function with a contract, rather
 than a defined function, since it applies the functions above, and a
 defined function applies no uninterpreted function (see [Defined
 functions](Items.md#defined-functions)). Its postcondition determines it:
 
 ```fren
--- The value of a layer's only part, the first of its parts' values.
-pub fn only_part(values: Val): Val := match values {
-    Val::Cons(v, _) => v,
-    _ => values,
-}
-
 pub fn step(head: Head, env: Env, values: Val): Val
     ensure layer: step(head, env, values) = match head {
     Head::Literal(v) => v,
@@ -186,6 +283,9 @@ pub fn step(head: Head, env: Env, values: Val): Val
     Head::Definition(_) => only_part(values),
     Head::Construction(c, _) => Val::C(c, values),
     Head::Uninterpreted(f) => meaning(env, f, values),
+    Head::Op(o, _) => if connective?(o) then connective_value(o, values)
+        else if total?(o) or fixed_specified?(head, values) then fixed_value(head, values)
+        else unspecified(env, head, values),
     _ => if fixed_specified?(head, values) then fixed_value(head, values) else unspecified(env, head, values),
 }
 ```
@@ -214,15 +314,26 @@ nothing. Its `value` is its `step`, and `mentioned` what it mentions.
 `read` is what it reads of the environment at its own name: a variable's
 value, or an uninterpreted function's at the parts' values, and `Nil` for
 a layer that has no name of its own to read at. `specified?` says that its
-value is not the unspecified one:
+value is not the unspecified one. `undefined_parts` are the positions,
+from 0, of its parts that are not [defined](../Check.md#definedness), and
+`unevaluated` those that it does not evaluate: a connective's second part
+where its guard fails, and a conditional's third where the condition
+holds. The layer is `defined?` where it is specified and every part it
+evaluates is defined. Guards nest by conjunction: a part is evaluated
+where its layer is and its own guard holds. A definition of a `let` or
+`where` is not a part of the `let`, whose only part is its body, but of
+each `Definition` layer that mentions it, so it is guarded where its name
+is mentioned, as if written there, and not at all where it is never
+mentioned:
 
 ```fren
 pub comp node {
-    use self::Head::{Bound, Constant, Construction, Definition, Literal, Uninterpreted, Variable}
+    use self::Head::{Bound, Constant, Construction, Definition, Literal, Op, Uninterpreted, Variable}
     in head: Head
     in env: Env
     in values: Val                   -- its parts' values, in order, as a list
     in parts_mentioned: Set(Mention)  -- what its parts mention, together
+    in undefined_parts: Set(Int)     -- the positions of its parts that are not defined
 
     assume leaves: when head is Literal(_) | Bound(_) | Constant(_) | Variable(_), parts_mentioned = {}
 
@@ -236,8 +347,15 @@ pub comp node {
     }
     pub det out specified? := match head {
         Literal(_) | Bound(_) | Variable(_) | Definition(_) | Construction(_, _) | Uninterpreted(_) => true,
+        Op(o, _) => total?(o) or fixed_specified?(head, values),
         _ => fixed_specified?(head, values),
     }
+    pub det out unevaluated: Set(Int) := (if connective?(operator(head)) and not second.evaluated? then {1} else {})
+        union (if operator(head) = "if" and not third.evaluated? then {2} else {})
+    pub det out defined? := specified? and undefined_parts subset unevaluated
+
+    inst second: guard { operand := second_guard(operator(head)), condition := only_part(values) }
+    inst third: guard { operand := GuardedOperand::ElseBranch, condition := only_part(values) }
 
     -- What a part mentions, the whole does, and so does a layer's own name.
     expect parts_kept: parts_mentioned subset mentioned
@@ -249,12 +367,21 @@ pub comp node {
     -- Only a layer whose value the spec fixes can be unspecified.
     expect fixed_only: when head is Literal(_) | Bound(_) | Variable(_) | Definition(_) | Construction(_, _)
         | Uninterpreted(_), specified?
+    -- Only a connective leaves a part unevaluated, and never its condition.
+    expect evaluates_condition: not 0 in unevaluated
+    expect all_evaluated: unless connective?(operator(head)), unevaluated = {}
+    -- A layer whose parts are all defined is defined where it is specified.
+    expect parts_defined: when undefined_parts = {}, defined? iff specified?
+    -- Its first part is always evaluated, so it must be defined.
+    expect first_evaluated: when 0 in undefined_parts, not defined?
+
+    cover guarded: defined? and undefined_parts != {}
 }
 ```
 
 ## Laws
 
-Four laws relate behaviours of `node`. Each is about one layer, so the
+Six laws relate behaviours of `node`. Each is about one layer, so the
 solver decides it.
 
 `frame`: a specified layer reads its environment only at its own name. Two
@@ -280,6 +407,46 @@ give the same value, specified or not:
 ```fren
 expect same_written: forall (p q: node),
     when p.head = q.head and p.values = q.values and p.env = q.env, p.value = q.value
+```
+
+`unevaluated`: a part that a layer does not evaluate changes neither its
+value nor its definedness. Two layers with the same head and environment
+whose parts differ only at an unevaluated position, in their values and
+in whether they are defined, have the same value, and are defined alike.
+This is the law behind the [definedness check](../Check.md#definedness),
+which asks whether an index is in range only under its guard. The second
+and third positions are the only ones a layer leaves unevaluated:
+
+```fren
+expect unevaluated: forall (p q: node),
+    when p.head = q.head and p.env = q.env and 1 in p.unevaluated and only_part(p.values) = only_part(q.values)
+    and rest(rest(p.values)) = rest(rest(q.values)) and p.undefined_parts minus {1} = q.undefined_parts minus {1},
+    p.value = q.value and (p.defined? iff q.defined?)
+
+expect unevaluated_third: forall (p q: node),
+    when p.head = q.head and p.env = q.env and 2 in p.unevaluated and only_part(p.values) = only_part(q.values)
+    and only_part(rest(p.values)) = only_part(rest(q.values))
+    and rest(rest(rest(p.values))) = rest(rest(rest(q.values)))
+    and p.undefined_parts minus {2} = q.undefined_parts minus {2},
+    p.value = q.value and (p.defined? iff q.defined?)
+```
+
+`frame_mentioned`: environments that agree on what a defined layer
+mentions give it the same value, so a defined layer that mentions nothing
+has the same value in every environment. It is stated the other way
+round: where two environments give a defined layer different values, they
+differ at something that it mentions, a variable, or a function at the
+layer's parts' values, its arguments. Its unbounded quantifiers range over
+the names at which they differ, so it is outside the [decidable
+core](Decidability.md#what-is-promised); the solver proves it by
+instantiating them at the layer's own name:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+expect frame_mentioned: forall (p q: node),
+    when p.head = q.head and p.values = q.values and p.defined? and p.value != q.value,
+    (exists (x: Id), Mention::Var(x) in p.mentioned and lookup(p.env, x) != lookup(q.env, x))
+    or (exists (f: Id), Mention::Fn(f) in p.mentioned and meaning(p.env, f, p.values) != meaning(q.env, f, p.values))
 ```
 
 `field_order`: a construction's value does not depend on the order in
