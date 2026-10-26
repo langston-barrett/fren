@@ -1,0 +1,11 @@
+-- A newtype built from its own field, and the field of one just built.
+pub struct Ms(Int)
+
+comp c {
+    in x: Ms
+    in n: Int
+    pub out y: Ms
+    pub out k: Int
+    ensure r: y = Ms(x.0)
+    ensure s: k = Ms(n + 1).0 * 2
+}

@@ -1,6 +1,10 @@
 -- The cardinality operators `exactly_one?` and `at_most_one?`: their laws,
 -- many arguments, and arguments that are expressions.
 set_option fren.lint.is_equality "allow"
+-- Its laws state what the lints of cardinality operators report.
+set_option fren.lint.eq_op "allow"
+set_option fren.lint.manual_at_most_one "allow"
+set_option fren.lint.nonminimal_bool "allow"
 
 expect constants: exactly_one?(true, false, false) and not exactly_one?(true, true) and at_most_one?(false, false)
     and not at_most_one?(true, false, true) and not exactly_one?(false)
@@ -55,6 +59,7 @@ comp modes {
 }
 
 -- A lint's fix keeps a cardinality operator whole, as an atom.
+set_option fren.lint.nonminimal_bool "warn" in
 comp lints {
     in a?
     in b?

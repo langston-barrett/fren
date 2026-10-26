@@ -1299,6 +1299,9 @@ def fieldTerm (cx : ExprCtx) (e : Syntax) (t : Term) : TermElabM Term := do
   let ty ← typeOf t
   if ty.isConstOf ``String then checkCore cx e .stringAtom true true #[e[0]]
   let f := fieldName e[2]
+  -- For `redundant_newtype_roundtrip`.
+  if let (some n, true) := ((← getState).newtypeOf? ty, cx.noteIndexes && f == Name.mkSimple "0") then
+    modifyLocal fun l => { l with facts := l.facts.push ((e.getPos?, e.getTailPos?), .unwraps n.path.toString) }
   let r ← readField e[2] t ty f
   if let (true, some m) := (ty.isAppOfArity ``Fren.Seq 1, Core.Method.ofName? f.toString) then
     checkCore cx e m.seqConstruct true true #[e[0]] (← isConstant cx e[0])
@@ -1365,6 +1368,10 @@ partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.
     let recvStop := off (id.getTailPos?.getD base) - m.length - 1
     .mk (.method m) range e (#[.mk .atom { range with stop := recvStop } id #[]] ++ e[2].getSepArgs.map go)
   else if e.isOfKind ``Lang.isExpr then .mk .patternTest range e #[go e[0]]
+  -- An application's operands are its arguments, and a field read's its
+  -- receiver, as the `fren` command sees them.
+  else if e.isOfKind ``Lang.appExpr then .mk .atom range e (e[2].getSepArgs.map go)
+  else if e.isOfKind ``Lang.fieldExpr then .mk .atom range e #[go e[0]]
   else if e.isOfKind ``Lang.quantExpr then .mk .quant range e #[go e[3]]
   -- A table, with its rows' conditions and values, as the `fren` command
   -- sees it.
@@ -1442,13 +1449,14 @@ def lintBools (e : Syntax) : TermElabM Unit := do
   let node := boolNode sub.str sub.startPos e
   for (l, ref, msg) in Core.rewriteReports src node fixable do
     recordLint l ref msg
-  let (boolEqs, variants, absEnds, mentioning) :=
-    ((← getLocal).boolEqs, (← getLocal).variants, (← getLocal).absEnds, (← getLocal).mentioning)
-  modifyLocal fun l => { l with boolEqs := #[], variants := #[], absEnds := #[], mentioning := #[] }
+  let (boolEqs, variants, absEnds, mentioning, facts) :=
+    ((← getLocal).boolEqs, (← getLocal).variants, (← getLocal).absEnds, (← getLocal).mentioning, (← getLocal).facts)
+  modifyLocal fun l => { l with boolEqs := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
   let variant? (s : Syntax) := (variants.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
+  let fact? (s : Syntax) := (facts.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
   let help (msg : Core.Msg) := if fixable && !msg.fixes.isEmpty then #[Core.fixHelp] else #[]
   let mentions (s : Syntax) := mentioning.contains (s.getPos?, s.getTailPos?)
-  for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) variant? (absEnds.contains ·.getTailPos?) mentions node do
+  for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) variant? (absEnds.contains ·.getTailPos?) mentions fact? node do
     -- A node's position is its first token's, and its tail its last's.
     let ref := match r.last? with | some l => mkNullNode #[r.ref, l] | none => r.ref
     recordLint r.lint ref { r.msg with notes := r.msg.notes ++ help r.msg }
@@ -2713,10 +2721,15 @@ def guardedTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   -- Each operand's type is checked as the `fren` command checks it
   -- (`lang::operator_type`).
   let kw := if operand matches .unlessBody then "unless" else "when"
+  -- For `manual_at_most_one`: whether the operands give a definedness
+  -- obligation.
+  let mark := (← getLocal).indexes.size + (← getLocal).tables.size
   let x ← toTerm cx c
   checkTermType c x .bool (if j.isEmpty then some s!"note: the condition of `{kw}` is a `Bool`" else Core.opNote j .bool)
   let g ← operand.guard (pure x) `(¬$x)
   let y ← toTerm { cx with guards := cx.guards.push g } d
+  if op matches .and && cx.noteIndexes && (← getLocal).indexes.size + (← getLocal).tables.size > mark then
+    modifyLocal fun l => { l with facts := l.facts.push ((e.getPos?, e.getTailPos?), .obligations) }
   if j.isEmpty then checkTermType e y .bool (some s!"note: the body of `{kw}` is a `Bool`")
   else checkTermType d y .bool (Core.opNote j .bool)
   match op with
@@ -3117,6 +3130,9 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
     if cx.noteIndexes then
       let v := ((e.getPos?, e.getTailPos?), (en.path ++ en.variants[idx]!).toString)
       modifyLocal fun l => { l with variants := l.variants.push v }
+      if info.ordered then
+        let f := ((e.getPos?, e.getTailPos?), Core.NodeFact.ordinal en.path.toString idx info.variants.size)
+        modifyLocal fun l => { l with facts := l.facts.push f }
     return mkCIdentFrom e (info.decl ++ en.variants[idx]!)
   | .item { kind := .constItem, path, .. } =>
     let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
@@ -3175,6 +3191,8 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     if let (true, some u) := (synthesizes a, ← coreTy? n.under) then
       if let some found ← frenTypeOf? t then
         liftMsg a (Core.checkType u found (some s!"note: the value of `{Core.showPath path}` has type `{u.show}`"))
+    if cx.noteIndexes then
+      modifyLocal fun l => { l with facts := l.facts.push ((e.getPos?, e.getTailPos?), .wraps path.toString (synthesizes a)) }
     return ← `($(mkCIdentFrom p n.ctor) $t)
   if let .variant en idx := r then
     -- A variant with a payload, built from its values.

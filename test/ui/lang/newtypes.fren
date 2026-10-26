@@ -1,6 +1,8 @@
 -- Newtypes, `struct Ms(Int)`, in both front ends: built with `Ms(e)`,
 -- read with `x.0`, compared, added and subtracted.
 -- fren-covers: lang::operator_type
+-- Its round trips are deliberate.
+set_option fren.lint.redundant_newtype_roundtrip "allow"
 
 pub struct Ms(Int)
 pub struct Bytes(Int)

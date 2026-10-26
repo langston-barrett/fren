@@ -1547,4 +1547,93 @@ trusted lint::zero_prefixed_fixed: "a model of an expression, checked by the ref
 trusted lint::member_order_written: "a model of a component, checked by the refinements in its section"
 trusted lint::member_order_fixed: "a model of a component, checked by the refinements in its section"
 
+
+/-! ## Cardinality, ordered enumerations and newtypes -/
+
+-- Both front ends decide these in `opReports`, the variants and newtypes
+-- from what each elaborator records of them (`Fren.Core.NodeFact`).
+impl manual_at_most_one: lint::manual_at_most_one for (n : Nat) (e d b : Bool) {
+  n_operands := n,
+  every_pair? := e,
+  disjunction? := d,
+  obligations? := b,
+  fires? := (Fren.Core.manualAtMostOne n e d b).1,
+  exactly? := (Fren.Core.manualAtMostOne n e d b).2,
+} by
+  intro n e d b _
+  cases e <;> cases d <;> cases b <;> simp [fren_spec, Fren.Core.manualAtMostOne] <;> omega
+
+impl nonminimal_cardinality: lint::nonminimal_cardinality for (e : Bool) (n : Nat) {
+  exactly? := e,
+  n_args := n,
+  fires? := (Fren.Core.nonminimalCardinality e n).1,
+  argument? := (Fren.Core.nonminimalCardinality e n).2,
+} by
+  intro e n _
+  cases e <;> simp [fren_spec, Fren.Core.nonminimalCardinality] <;> omega
+
+impl eq_op_cardinality: lint::eq_op_cardinality for (r : Bool) {
+  repeated? := r,
+  fires? := Fren.Core.eqOpCardinality r,
+} by
+  intro r _
+  cases r <;> simp [fren_spec, Fren.Core.eqOpCardinality]
+
+impl manual_ordering: lint::manual_ordering for (c n : Nat) (f l g : Bool) {
+  count := c,
+  named := n,
+  first? := f,
+  last? := l,
+  negated? := g,
+  fires? := (Fren.Core.manualOrdering c n f l g).1,
+  op := toComparison (Fren.Core.manualOrdering c n f l g).2,
+} by
+  intro c n f l g _
+  cases f <;> cases l <;> cases g <;> simp [fren_spec, toComparison, Fren.Core.manualOrdering] <;> omega
+
+impl absurd_ordered: lint::absurd_ordered for (c : Comparison) (f l r : Bool) {
+  op := toComparison c,
+  first? := f,
+  last? := l,
+  right? := r,
+  fires? := (Fren.Core.absurdOrdered c f l r).1,
+  value? := (Fren.Core.absurdOrdered c f l r).2,
+} by
+  intro c f l r _
+  cases c <;> cases f <;> cases l <;> cases r <;>
+    simp [fren_spec, toComparison, Fren.Core.absurdOrdered, Fren.Core.Comparison.mirror]
+
+impl unnecessary_min_or_max: lint::unnecessary_min_or_max for (m f l : Bool) {
+  max? := m,
+  first? := f,
+  last? := l,
+  fires? := (Fren.Core.unnecessaryMinOrMax m f l).1,
+  argument? := (Fren.Core.unnecessaryMinOrMax m f l).2,
+} by
+  intro m f l _
+  cases m <;> cases f <;> cases l <;> simp [fren_spec, Fren.Core.unnecessaryMinOrMax]
+
+impl redundant_newtype_roundtrip: lint::redundant_newtype_roundtrip for (s : Bool) {
+  same_newtype? := s,
+  fires? := Fren.Core.redundantNewtypeRoundtrip s,
+} by
+  intro s _
+  cases s <;> simp [fren_spec, Fren.Core.redundantNewtypeRoundtrip]
+
+-- keep-sorted start
+trusted lint::eq_op_cardinality_value: "a model of an expression, checked by the refinements in its section"
+trusted lint::eq_op_cardinality_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_at_most_one_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_at_most_one_guarded: "a test that the lint does not fire, checked by its `deny`"
+trusted lint::manual_at_most_one_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_ordering_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_ordering_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::min_or_max_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::min_or_max_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::nonminimal_cardinality_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::nonminimal_cardinality_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::roundtrip_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::roundtrip_written: "a model of an expression, checked by the refinements in its section"
+-- keep-sorted end
+
 end Fren.Impls

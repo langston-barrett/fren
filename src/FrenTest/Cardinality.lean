@@ -11,6 +11,8 @@ open Fren.Lang
 
 mod cardinality_test
 
+-- `at_most_one?(a?)` is always `true`, deliberately.
+set_option fren.lint.nonminimal_bool "allow" in
 comp modes {
   in a?
   in b?

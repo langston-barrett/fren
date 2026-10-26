@@ -125,6 +125,7 @@ is the order of declaration, and it is total:
 ```fren
 pub ordered enum Level { Low, Middle, High }
 
+set_option fren.lint.unnecessary_min_or_max "allow" in
 pub comp enumeration_order {
     use self::Level::{High, Low, Middle}
     in a: Level

@@ -69,6 +69,44 @@ pub comp eq_op_conditional {
 }
 ```
 
+`eq_op` also fires on an argument of a [cardinality
+operator](../../Lang/Expressions.md#cardinality) written the same as an
+earlier one, as in `at_most_one?(a?, b?, a?)`. Where the argument holds,
+it counts twice, so neither `exactly_one?` nor `at_most_one?` holds: the
+call holds only where it does not, which is seldom what a list of
+conditions meant, and one of the two is probably a typo for another. The
+message is reported at the later one, and says this. `true` and `false`
+are left to the lints of constants. `lint::eq_op_cardinality` states when
+it fires, and the refinements check what the message says, on a call with
+the repeated argument written once:
+
+```fren
+pub comp eq_op_cardinality {
+    in repeated?         -- an argument, not `true` or `false`, is written the same as an earlier one
+    pub det out fires?
+
+    ensure rule: fires? iff repeated?
+}
+
+set_option fren.lint.eq_op "allow" in
+pub comp eq_op_cardinality_written {
+    in a?
+    in b?
+    pub det out exactly? := exactly_one?(a?, b?, a?)
+    pub det out at_most? := at_most_one?(a?, b?, a?)
+}
+
+pub comp eq_op_cardinality_value {
+    in a?
+    in b?
+    pub det out exactly? := not a? and b?
+    pub det out at_most? := not a?
+}
+
+refine eq_op_cardinality_sound: eq_op_cardinality_value refines eq_op_cardinality_written
+refine eq_op_cardinality_complete: eq_op_cardinality_written refines eq_op_cardinality_value
+```
+
 ## Erasing operations
 
 `erasing_op` fires on an operation whose value ignores an operand: `x * 0`

@@ -1,0 +1,2 @@
+-- An argument of a cardinality operator written twice.
+comp c { in a? in b? pub out p? ensure r: p? iff at_most_one?(a?, b?, a?) }

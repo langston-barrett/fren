@@ -471,6 +471,10 @@ structure LocalState where
   /-- Where the calls of `abs` in the expression being elaborated end, for
   `invalid_upcast_comparisons`. -/
   absEnds : Array (Option String.Pos.Raw) := #[]
+  /-- What is known of the variants of ordered enumerations, and of the
+  newtypes built and read, in the expression being elaborated, for the
+  lints of ordered enumerations and newtypes. -/
+  facts : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × Core.NodeFact) := #[]
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false

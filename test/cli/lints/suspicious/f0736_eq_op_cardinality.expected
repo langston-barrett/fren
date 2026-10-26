@@ -1,0 +1,14 @@
+warning[F0736]: `a?` is an argument of `at_most_one?` more than once
+ --> test/cli/lints/suspicious/f0736_eq_op_cardinality.fren:2:71
+  |
+2 | comp c { in a? in b? pub out p? ensure r: p? iff at_most_one?(a?, b?, a?) }
+  |                                                                       ^^ written the same as an earlier argument
+  |
+  = note: the call holds only where `a?` is `false`, so one of the two is probably not the one meant
+  = note: `eq_op` is `warn` by default
+  = help: to allow it, `set_option fren.lint.eq_op "allow"`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0736`.
+exit=3

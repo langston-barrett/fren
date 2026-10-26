@@ -519,6 +519,26 @@ register_option fren.lint.single_call_fn : String := {
   descr := "the level of the lint `single_call_fn`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.manual_at_most_one : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_at_most_one`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.manual_ordering : String := {
+  defValue := "allow"
+  descr := "the level of the lint `manual_ordering`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.redundant_newtype_roundtrip : String := {
+  defValue := "warn"
+  descr := "the level of the lint `redundant_newtype_roundtrip`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.unnecessary_min_or_max : String := {
+  defValue := "warn"
+  descr := "the level of the lint `unnecessary_min_or_max`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"
