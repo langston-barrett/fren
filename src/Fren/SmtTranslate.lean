@@ -97,6 +97,15 @@ partial def exprToRe? (e : Expr) : Option Fren.Core.Re :=
   | (``Fren.Core.Re.star, #[a]) => do return .star (← exprToRe? a)
   | _ => none
 
+/-- `decide p`, a condition as a `Bool`, is `p`: lean-smt makes a `Bool`
+variable a `Prop`, and a `Bool` member of a set or sequence its `decide`,
+which it would otherwise declare as an uninterpreted function of an
+uninterpreted `Decidable`, which cvc5 rejects. -/
+@[smt_translate] def translateDecide : Translator := fun e => do
+  match_expr e with
+  | Decidable.decide p _ => return some (← applyTranslators! p)
+  | _ => return none
+
 /-- Fren's string literals and methods (`Fren.Str`), as SMT-LIB's string
 functions. lean-smt translates `++` and `<` on strings, but writes literals
 without escaping them, and `>` as `str.>`, which is not SMT-LIB: so Fren

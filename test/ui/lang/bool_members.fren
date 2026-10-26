@@ -1,0 +1,13 @@
+-- A condition is a `Bool` as a member of a set or sequence, as `true` and
+-- a `Bool` variable are, in both front ends; and a set or sequence of
+-- `Bool`s reaches the solver in both.
+enum E { A, B, C }
+
+comp in_set { in s: E pub out p? ensure r: p? iff {s = E::A or s = E::B} = {true} }
+
+comp in_seq { in s: E in x? pub out p? ensure r: p? iff [s = E::A] = [x?] }
+
+comp mixed { in s: E in x? pub out p? ensure r: p? iff {x?, s = E::C}.card = 2 }
+
+comp bool_variable { in x? pub out p? ensure r: p? iff {x?}.card = 1 }
+--@ summary: 8 passed, 0 failed, 0 inconclusive, 0 redundant
