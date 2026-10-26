@@ -25,9 +25,10 @@ item           := module | use | enumeration | record | abstract-type | type-ali
 
 module         := ["pub"] "mod" path
 use            := "use" path ["::*" | "::{" path ("," path)* [","] "}"]
-enumeration    := ["pub"] ["ordered"] "enum" IDENT "{" variant ("," variant)* [","] "}"
+enumeration    := ["pub"] ["ordered"] "enum" declared-type "{" variant ("," variant)* [","] "}"
 variant        := IDENT | IDENT"(" type ("," type)* ")"
-record         := ["pub"] ["ordered"] "struct" IDENT "{" field ("," field)* [","] "}"
+declared-type  := IDENT | IDENT"(" IDENT ("," IDENT)* ")"
+record         := ["pub"] ["ordered"] "struct" declared-type "{" field ("," field)* [","] "}"
                 | ["pub"] ["ordered"] "struct" IDENT"(" [type ("," type)*] ")"
 field          := IDENT [":" type]
 abstract-type  := ["pub"] "type" IDENT
@@ -74,7 +75,7 @@ instance       := "inst" DECL ":" path "{" [binding ("," binding)* [","]] "}"
 binding        := IDENT [":=" expr]
 type           := base ["is" pattern]
 base           := "Bool" | "Int" | "Nat" | "String" | "Set""(" type ")" | "Seq""(" type ")" | "Rel""(" type "," type ")"
-                | path
+                | path | path"(" type ("," type)* ")"
 path           := IDENT ("::" IDENT)*
 ```
 

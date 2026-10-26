@@ -8,6 +8,7 @@
 - [Lexical structure](Lang/Lexical.md)
 - [Types](Lang/Types.md)
 - [Items](Lang/Items.md)
+  - [Generic types](Lang/Generics.md)
 - [Components](Lang/Components.md)
 - [Expressions](Lang/Expressions.md)
   - [Local definitions](Lang/Let.md)
