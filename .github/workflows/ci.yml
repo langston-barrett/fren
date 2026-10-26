@@ -73,7 +73,10 @@ jobs:
         case $code in
           0) ;;
           3) echo "::warning title=fren mutate::some mutants survived (seed $SEED); see the step's log" ;;
-          *) echo "::error title=fren mutate::exited with $code"; exit "$code" ;;
+          # Shown as an error, and as the step's outcome, though
+          # `continue-on-error` keeps the build passing.
+          1) echo "::error title=fren mutate::an internal error (seed $SEED); see the step's log"; exit 1 ;;
+          *) echo "::error title=fren mutate::could not run (exit $code); see the step's log"; exit "$code" ;;
         esac
     # Only once the packages Fren imports, `Smt` and `cvc5`, are built (and so
     # everything they import): a fetch or a dependency build that failed

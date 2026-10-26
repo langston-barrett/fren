@@ -1,8 +1,9 @@
 --@ args: mutate --list --diff test/cli/commands/mutate_diff.patch
 -- The mutants of the items that the patch touches: `m::c`, whose
--- expectation changed; and `m::f`, which lost a line. Not `m::d`, though
--- the patch removes lines just after it, nor the constant and function
--- that it leaves alone; and not the file that is not given.
+-- expectation changed; `m::f`, which lost a line; and `m::twice`, which
+-- lost the line after its last. Not `m::d`, though the patch removes a
+-- whole item after the blank line that follows it, nor the constant that
+-- it leaves alone; and not the file that is not given.
 mod m
 
 const LIMIT: Int := 10

@@ -48,13 +48,12 @@ structure Changes where
   deriving Inhabited
 
 /-- Whether a change at `line` touches an item from line `first` to line
-`last` (`mutate::touches`): a line added, if it is one of the item's;
-lines removed, if they were between two of the item's. -/
-def touchesLine (first last line : Nat) (added : Bool) : Bool :=
-  if added then first ≤ line && line ≤ last else first ≤ line && line < last
+`last` (`mutate::touches`): a line added, or the line after which lines
+were removed, if it is one of the item's. -/
+def touchesLine (first last line : Nat) : Bool := first ≤ line && line ≤ last
 
 def Changes.touches (c : Changes) (first last : Nat) : Bool :=
-  c.added.any (touchesLine first last · true) || c.removed.any (touchesLine first last · false)
+  (c.added ++ c.removed).any (touchesLine first last ·)
 
 /-- The start and number of lines of one side of a hunk's header, `S,N`,
 or `S`, which means `S,1`. -/
@@ -146,6 +145,11 @@ written, or without the `a/` or `b/` that `git diff` writes before it. -/
 def patchNames (p path : String) : Bool :=
   let path := idPath path
   idPath p == path || ((p.startsWith "a/" || p.startsWith "b/") && idPath (String.ofList (p.toList.drop 2)) == path)
+
+/-- Whether some path of `changes`, from `parsePatch`, names one of the
+files at `paths`. -/
+def namesAny (changes : Array (String × Changes)) (paths : Array String) : Bool :=
+  changes.any fun (p, _) => paths.any (patchNames p)
 
 /-- What `changes`, from `parsePatch`, change in the file at `path`. -/
 def changesOf (changes : Array (String × Changes)) (path : String) : Changes :=

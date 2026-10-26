@@ -21,7 +21,8 @@ fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... 
 fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
-    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N] [-A|-W|-D|-F LINT]... FILE...
+    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N]
+    [-A|-W|-D|-F LINT]... FILE...
 fren --explain CODE
 ```
 
@@ -61,7 +62,8 @@ def usage : String :=
   fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren quickcheck [--tests N] [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]\n              \
-  [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
+  [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N]\n              \
+  [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren --explain CODE\n\n\
   `check` checks Fren specs. Exit status: 0 all checks passed, 1 some check\n\
   failed, 2 the checks could not run, 3 no failures but some check was\n\
@@ -1063,6 +1065,13 @@ def mutate (args : Args) : IO UInt32 := do
         return ← fail { code? := none, headline := s!"`{patch}` is not a unified diff"
                         notes := #[s!"note: line {line}: {why}", "note: `--diff` reads a patch such as `git diff -U0` writes"] }
       | .ok changes =>
+        -- Such as a patch with absolute paths, or made in another directory.
+        unless changes.isEmpty || Mutate.namesAny changes (files.map (·.1)) do
+          IO.eprint (Fren.Core.renderPlain .warning
+            { code? := none, headline := s!"`{patch}` changes none of the files given"
+              notes := #[s!"note: it changes {", ".intercalate (changes.toList.map (s!"`{·.1}`"))}",
+                "note: a file is named as given, or without the `a/` or `b/` that `git diff` writes",
+                "help: run `fren mutate` where `git diff` ran, with the paths it prints"] } p)
         let ofFile := files.mapIdx fun i (path, chars) =>
           let items := match parsed[i]! with
             | .ok (toks, _, starts, _) => Mutate.itemLines chars toks starts

@@ -151,15 +151,14 @@ impl mutant_selection: mutate::selection for (c n t s h : Bool) {
   cases c <;> cases n <;> cases t <;> cases s <;> cases h <;> decide
 
 -- Over `Nat`, so `decide` does not apply.
-impl patch_touches: mutate::touches for (f l n : Nat) (a : Bool) {
+impl patch_touches: mutate::touches for (f l n : Nat) {
   first := f,
   last := l,
   line := n,
-  added? := a,
-  touched? := FrenCli.Mutate.touchesLine f l n a,
+  touched? := FrenCli.Mutate.touchesLine f l n,
 } by
-  intro f l n a _
-  cases a <;> simp [fren_spec, FrenCli.Mutate.touchesLine] <;> omega
+  intro f l n _
+  simp [fren_spec, FrenCli.Mutate.touchesLine]
 
 impl mutant_sample: mutate::sample for (r s : Nat) {
   rank := r,

@@ -2,7 +2,8 @@
 
 ```
 fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
-    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N] [-A|-W|-D|-F LINT]... FILE...
+    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N]
+    [-A|-W|-D|-F LINT]... FILE...
 ```
 
 `fren mutate` makes small changes to a spec's constraints and definitions,
@@ -335,9 +336,12 @@ changes some line of the new text: the component, constant or function
 whose text holds the mutant's change, from its first token to its last. A
 component is touched by a change to any of its lines, an expectation's or
 a cover goal's too, since they decide what kills its mutants. Lines that
-the patch removes touch the item that they were inside: between two of
-its lines, not before its first or after its last, so removing a whole
-item touches none of its neighbours. A line between items, such as a blank
+the patch removes touch the item whose line they followed, if any: lines
+removed between two of its lines, and lines removed after its last, such
+as the end of a definition that runs over several lines. So removing a
+whole item that directly follows another touches that other: selecting
+too many mutants only checks more of them, but selecting too few would
+miss what the change leaves unchecked. A line between items, such as a blank
 line, or a comment outside a component, touches nothing, and nor does a
 change to a global expectation, which has no mutants of its own.
 
@@ -347,7 +351,9 @@ or without the `a/` or `b/` that `git diff` writes before it, either
 without `.` segments or repeated `/`. Its lines are the file's lines as
 written, so a [Markdown spec](Markdown.md)'s are those of the Markdown. The
 files that the patch changes but that are not given, and the files that it
-removes, are left alone. Lines outside a hunk, such as `git diff`'s
+removes, are left alone; if it changes some file, but none of those
+given, such as with absolute paths or paths from another directory, a
+warning says so, on standard error, and the exit status does not change. Lines outside a hunk, such as `git diff`'s
 headers, are skipped. The patch is not a unified diff if a hunk's header
 is not `@@ -S,N +S,N @@` (`,N` may be left out), a hunk comes before the
 `+++` line naming its file, a hunk's lines do not fit its header, or its
@@ -359,17 +365,13 @@ pub comp touches {
     in first: Nat       -- the item's first line, counted from 1
     in last: Nat        -- its last line
     in line: Nat        -- a line that the patch adds, or after which it removes lines (0 if before the first)
-    in added?           -- the patch adds `line`, rather than removing lines after it
     pub det out touched?
 
-    ensure added: when added?, touched? iff first <= line <= last
-    ensure removed: unless added?, touched? iff first <= line < last
+    ensure rule: touched? iff first <= line <= last
 
-    expect inside: when first <= line < last, touched?
     expect outside: when line < first or line > last, not touched?
-    expect last_line: when added? and first <= last and line = last, touched?
-    -- Lines removed after the item's last are not inside it.
-    expect after_last: when not added? and line = last, not touched?
+    expect first_line: when first <= last and line = first, touched?
+    expect last_line: when first <= last and line = last, touched?
 }
 ```
 
@@ -498,7 +500,8 @@ could be killed, that is 100 exactly when every one that could be was. The
 rate divides by the number of mutants, which the solver cannot (see
 [Decidability](Lang/Decidability.md)), so the component says what the
 rate is like rather than how it is computed, and leaves it
-undetermined:
+undetermined. `Impls/Mutate` proves that the code's
+`100 * killed / (killed + survived)` has these properties:
 
 ```fren
 pub comp rate {
