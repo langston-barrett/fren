@@ -1,0 +1,2 @@
+-- `--examples` needs a value.
+--@ argv: check --examples

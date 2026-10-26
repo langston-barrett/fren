@@ -28,6 +28,11 @@ register_option fren.timeout : Nat := {
   descr := "time limit in seconds for each SMT query made by Fren"
 }
 
+register_option fren.examples : Nat := {
+  defValue := 1
+  descr := "the most notes of guarantees that force an output to different values that Fren shows for each unrealizable component"
+}
+
 register_option fren.resourceLimit : Nat := {
   defValue := 0
   descr := "limit on cvc5's work for each SMT query made by Fren, in its resource units; 0 means none"
@@ -473,7 +478,7 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     let interprets (e : Expr) : Bool := e.hasAnyFVar useIds.contains
     let full := { comp with typesInterpreted := c.vars.any fun v => interprets v.type }
     -- Only the `fren` command runs the checks set to testing (`check::by_testing`).
-    let (comp, kinds) := comp.untested c.tested kinds
+    let (comp, kinds) := full.untested c.tested kinds
     let cache : QueryCache ← IO.mkRef {}
     -- The models of the cover goals' queries, by goal, for their theorems.
     let models ← IO.mkRef (#[] : Array (Expr × Array (Name × Expr)))
@@ -508,7 +513,8 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
           let o ← b.query hyps goal wantModel
           if let .sat model := o then models.modify (·.push (goal, model))
           return o }
-    let results := Core.withInterpreted full interprets (← Core.checkComp bk comp kinds)
+    let examples := fren.examples.get (← getOptions)
+    let results := Core.withInterpreted full interprets (← Core.checkComp bk comp kinds (some examples) interprets)
     let mut witnesses := #[]
     for g in c.covers do
       let passed := results.any fun r => r.kind == .cover && r.prop? == some g.name && r.verdict == .pass

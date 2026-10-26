@@ -1,0 +1,27 @@
+-- A component that is not realizable (F0601), with a note at the guarantee
+-- that forces an output to a value that the rest of the conflict rules out.
+-- fren-covers: check::clash_notes
+mod http
+
+enum Method { Get, Put, Post, Delete }
+struct Seconds(Int)
+
+const MAX_ATTEMPTS: Nat := 5
+const MAX_DELAY: Seconds := Seconds(30)
+
+comp retry {
+    in method: Method
+    in status: Nat
+    in attempt: Nat
+    in retry_after: Seconds
+    pub det out retry?
+    pub out delay: Seconds
+
+    assume sane: attempt >= 1 and retry_after >= Seconds(0)
+
+    ensure transient: retry? iff (status = 429 or status = 503)
+        and method != Method::Post and attempt < MAX_ATTEMPTS
+    ensure honor_server: when retry?, delay >= retry_after
+    ensure backoff: when retry?, delay >= Seconds(2 * attempt)
+    ensure latency_budget: delay <= MAX_DELAY
+}

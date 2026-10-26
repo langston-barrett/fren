@@ -1,0 +1,36 @@
+-- `--examples all`: a note at every guarantee of a conflict that forces an
+-- output to a value other than the rest of it does. In `retry`, only
+-- `transient` does; in `pinned`, both guarantees do.
+-- fren-covers: check::clash_notes
+--@ args: check --examples all
+mod http
+
+enum Method { Get, Put, Post, Delete }
+struct Seconds(Int)
+
+const MAX_ATTEMPTS: Nat := 5
+const MAX_DELAY: Seconds := Seconds(30)
+
+comp retry {
+    in method: Method
+    in status: Nat
+    in attempt: Nat
+    in retry_after: Seconds
+    pub det out retry?
+    pub out delay: Seconds
+
+    assume sane: attempt >= 1 and retry_after >= Seconds(0)
+
+    ensure transient: retry? iff (status = 429 or status = 503)
+        and method != Method::Post and attempt < MAX_ATTEMPTS
+    ensure honor_server: when retry?, delay >= retry_after
+    ensure backoff: when retry?, delay >= Seconds(2 * attempt)
+    ensure latency_budget: delay <= MAX_DELAY
+}
+
+comp pinned {
+    in x: Int
+    pub out y: Int
+    ensure low: y = x
+    ensure high: y = x + 1
+}

@@ -14,15 +14,15 @@ import FrenCore.Literate
 # Running `fren`
 
 ```
-fren check [--timeout SECONDS] [--resource-limit N] [--jobs N] [--dump-smt] [--tests N] [--seed N]
-    [-A|-W|-D|-F LINT]... FILE...
+fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--tests N]
+    [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
 fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
-    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N]
+    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--examples N] [--tests N]
     [-A|-W|-D|-F LINT]... FILE...
 fren --explain CODE
 ```
@@ -55,15 +55,15 @@ namespace FrenCli
 open Fren.Core (Msg Paint)
 
 def usage : String :=
-  "usage: fren check [--timeout SECONDS] [--resource-limit N] [--jobs N] [--dump-smt] [--tests N] [--seed N]\n              \
-  [LINT OPTIONS] [--color WHEN] FILE...\n       \
+  "usage: fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--tests N]\n              \
+  [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren trace [--tests GLOB]... [--require LEVEL] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren fmt [--check] [--ignore GLOB]... [--color WHEN] FILE...\n       \
   fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren quickcheck [--tests N] [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]\n              \
-  [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N]\n              \
+  [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--examples N] [--tests N]\n              \
   [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren --explain CODE\n\n\
   `check` checks Fren specs. Exit status: 0 all checks passed, 1 some check\n\
@@ -74,6 +74,9 @@ def usage : String :=
   `--timeout` limits each solver query's wall-clock time (default 10), and\n\
   `--resource-limit` its work, in cvc5's resource units, which unlike time\n\
   does not depend on the machine's load (default none); 0 is no limit.\n\
+  `--examples N` shows at most N notes of guarantees that force an output\n\
+  to different values, for each unrealizable component (default 1), or\n\
+  all of them with `all`.\n\
   `--jobs N` checks N components at once (default: the number of cores),\n\
   with the same output as one at a time.\n\n\
   `trace` reports the evidence for every component, and scans the tests for\n\
@@ -147,6 +150,9 @@ inductive Command where
 
 structure Args where
   command : Command := .check
+  /-- `--examples`: at most this many clash notes for each realizability
+  conflict, `none` for `all` (`Reqs/Cli#forced-outputs`). -/
+  examples : Option Nat := some 1
   /-- `--timeout` and `--resource-limit` (`Reqs/Cli#limits`). -/
   limits : Limits := {}
   /-- `check --jobs`; by default, the number of cores
@@ -192,7 +198,7 @@ structure Args where
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
 
 def options : Array String :=
-  #["--timeout", "--resource-limit", "--jobs", "--dump-smt", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
+  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
     "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--comp", "--set", "--seed", "--tests",
     "--by", "--mutant", "--sample", "--list", "--diff", "--shard"]
 
@@ -245,6 +251,14 @@ where
       | none => .error (argError p {
           code? := none, headline := s!"invalid resource limit `{n}`",
           notes := #["note: the resource limit is a whole number of cvc5's resource units, such as `--resource-limit 100000`"] })
+    | "--examples" :: n :: rest, a =>
+      if a.command != .check && a.command != .mutate then only "--examples" "check` and `fren mutate" else
+      match n, n.toNat? with
+      | "all", _ => go rest { a with examples := none }
+      | _, some k => go rest { a with examples := some k }
+      | _, none => .error (argError p {
+          code? := none, headline := s!"invalid number of examples `{n}`",
+          notes := #["note: the number of examples is a whole number, such as `--examples 3`, or `all`"] })
     | "--jobs" :: n :: rest, a =>
       if a.command != .check then only "--jobs" "check" else
       match n.toNat? with
@@ -337,7 +351,7 @@ where
     | opt@"-W" :: n :: rest, a | opt@"--warn" :: n :: rest, a => do go rest (← addLint opt .warn n a)
     | opt@"-D" :: n :: rest, a | opt@"--deny" :: n :: rest, a => do go rest (← addLint opt .deny n a)
     | opt@"-F" :: n :: rest, a | opt@"--forbid" :: n :: rest, a => do go rest (← addLint opt .forbid n a)
-    | [opt@"--timeout"], _ | [opt@"--resource-limit"], _ | [opt@"--jobs"], _ | [opt@"--tests"], _ | [opt@"--ignore"], _ | [opt@"--require"], _
+    | [opt@"--timeout"], _ | [opt@"--resource-limit"], _ | [opt@"--examples"], _ | [opt@"--jobs"], _ | [opt@"--tests"], _ | [opt@"--ignore"], _ | [opt@"--require"], _
     | [opt@"--only"], _ | [opt@"--skip"], _
     | [opt@"--comp"], _ | [opt@"--set"], _ | [opt@"--seed"], _
     | [opt@"--by"], _ | [opt@"--mutant"], _ | [opt@"--sample"], _ | [opt@"--diff"], _ | [opt@"--shard"], _
@@ -602,25 +616,31 @@ an internal error if the evaluator has no counterpart of `c`. `sy` is
 before (`QueryCache`). -/
 def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
-    (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false) :
+    (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
+    (examples : Option Nat := some 1) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
   let bk := backend prelude st.datatypes { c with funFacts := st.funFacts, bounded := st.bounded c } limits dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache
     st.appFuns
+  -- Whether a formula uses an abstract type or an uninterpreted function,
+  -- for the values that a realizability conflict's notes may show
+  -- (`Fren.Core.Comp.realizableInterpreted`), as `markInterpreted` decides.
+  let interprets (f : String) : Bool := prelude.interprets (quotedSymbols f)
+  let typesInterpreted := c.vars.any (interprets ·.ty.sort)
   let log ← IO.mkRef #[]
   -- The checks set to testing are not asked of the solver (`check::by_testing`).
   let (raw, missing?) ← match spec? with
     | .ok sp => match sp.counterpart? c global body with
       | some ec =>
         let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
-        let (core, ks) := core.untested c.tested kinds
-        pure (← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k)) core ks, none)
+        let (core, ks) := { core with typesInterpreted }.untested c.tested kinds
+        pure (← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k)) core ks examples (interprets ·.1), none)
       | none =>
-        let (core, ks) := (toCore c).untested c.tested kinds
-        pure (← Fren.Core.checkComp bk core ks,
+        let (core, ks) := { toCore c with typesInterpreted }.untested c.tested kinds
+        pure (← Fren.Core.checkComp bk core ks examples interprets,
           some (Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"))
     | .error _ =>
-      let (core, ks) := (toCore c).untested c.tested kinds
-      pure (← Fren.Core.checkComp bk core ks, none)
+      let (core, ks) := { toCore c with typesInterpreted }.untested c.tested kinds
+      pure (← Fren.Core.checkComp bk core ks examples interprets, none)
   let (results, refuted) := applyRefutations raw (← log.get)
   return (markInterpreted prelude c results, refuted, missing?)
 
@@ -690,7 +710,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
         let k ← n.get
         dumped.modify (· ++ s!"; {c.path}: query {k}\n{script}(check-sat)\n(reset)\n\n")
       else none
-    let r ← solveComp st prelude spec? sy c global kinds args.limits cache dump? body
+    let r ← solveComp st prelude spec? sy c global kinds args.limits cache dump? body args.examples
     -- The checks set to testing, tested (`Reqs/Check#checking-by-testing`).
     let tested? := if !c.tested.any then none else match spec? with
       | .ok sp => (sp.counterpart? c global).map fun ec => (ec, testReport sp ec c global args.seed args.nTests)
@@ -1287,6 +1307,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) := do
     -- A component's checks share the symbols of its spec.
     let (rs, refuted, missing?) ← solveComp s prelude spec? (symbolsOf spec?) t.comp t.global t.kinds args.limits cache (body := t.body)
+      (examples := args.examples)
     let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds t.refinement) else #[]
     let errors := refuted.map fun (r, msg) =>
       ((r.prop?.bind fun n => t.comp.props.find? (·.name == n)).map (·.span) |>.getD t.comp.span, msg)

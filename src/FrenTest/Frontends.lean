@@ -21,12 +21,14 @@ fuzzing"). `fren_fuzz_frontends` compares the front ends with it;
   errors included. A Lean error with no error of the binary on its line is
   always reported.
 - Messages are compared by line, severity and first line, with the values
-  of a model masked (`normHead`). So are the requirements that a
-  realizability failure names, which are a minimal set that conflicts on
-  its input, which comes from the solver's model (`cli::agreement`): they
-  are compared only when both front ends report the same input
-  (`conflictInput?`), and its notes at them (`isConflictNote`) are left
-  out.
+  of a model masked (`normHead`). The requirements that a realizability
+  failure names in its note, which are a minimal set that conflicts on its
+  input, which comes from the solver's model (`cli::agreement`), are
+  compared only when both front ends report the same input
+  (`conflictInput?`, `conflictCore?`), and so are its notes at them
+  (`isConflictNote`): the outputs that they force to different values, or
+  whom they conflict with, which must then be the same in both, at the
+  same lines.
 - Checks whose evidence is testing, which Lean does not run, are left out.
 - A static error, including a denied lint, stops both front ends'
   checks, so neither reports results or a summary. Both report the lints
@@ -61,38 +63,51 @@ def maskBetween (s start : String) (stops : List String) : String :=
 
 /-- The first line of a message, with the values of a model masked:
 counterexample values may differ (`cli::agreement`), and the Lean front end
-may show none. So are the requirements that a realizability failure names,
-which conflict on its input (`compare` compares them for the same input);
-other names, such as those of a vacuity's constraints, are kept. The
-solver's reason for an undecided check, its own words, is dropped. -/
+may show none. Other names, such as those of a vacuity's constraints, are
+kept. The solver's reason for an undecided check, its own words, is
+dropped. -/
 def normHead (text : String) : String :=
   let head := (text.splitOn "\n").head!
   let head := if head.startsWith "could not decide whether " then (head.splitOn ": ").head! else head
-  -- `… is not realizable: for the input VALUES, no outputs satisfy …` and
   -- `… is not determined by the inputs: for the input VALUES, it can be A or B`.
-  let head := maskBetween head ": for the input " [", no outputs satisfy ", ", it can be "]
-  let head := maskBetween head ", no outputs satisfy " []
-  let head := maskBetween head ", it can be " []
-  -- The notes on a conflict's constraints: `is false when VALUES` and
-  -- `conflicts with NAMES when VALUES`.
-  if head.startsWith "is false when " then "is false when …"
-  else if head.startsWith "conflicts with " then maskBetween head "` when " []
-  else head
+  let head := maskBetween head ": for the input " [", it can be "]
+  maskBetween head ", it can be " []
+
+/-- The lines of a realizability failure's note (`Fren.Core.conflictNote`),
+trimmed, if `text` is one's: its input, one variable to a line, and then
+the line that names the requirements. -/
+def conflictLines? (text : String) : Option (List String) :=
+  let lines := text.splitOn "\n" |>.map (·.trimAscii.toString)
+  if !(lines.head!.endsWith " is not realizable") then none else
+  match lines.dropWhile fun l => !l.startsWith "note: for the input" && !l.startsWith "note: no outputs satisfy " with
+  | [] => none
+  | first :: rest =>
+    if first.startsWith "note: no outputs satisfy " then some [first.drop 6 |>.toString]
+    else
+      let (input, more) := rest.span fun l => !l.startsWith "no outputs satisfy "
+      some (input ++ more.take 1)
 
 /-- The input of a realizability failure, on which the requirements it
-names conflict (`cli::agreement`). -/
+names conflict (`cli::agreement`): its variables, one to a line. -/
 def conflictInput? (text : String) : Option String :=
-  let head := (text.splitOn "\n").head!
-  if !head.contains " is not realizable: for the input " then none else
-  match head.splitOn "for the input " with
-  | _ :: rest@(_ :: _) => some ((("for the input ".intercalate rest).splitOn ", no outputs satisfy ").head!)
-  | _ => none
+  (conflictLines? text).map fun ls => "\n".intercalate ls.dropLast
 
-/-- A note at a requirement of a realizability failure, which is at the
-requirements that conflict on its input. -/
+/-- The requirements that a realizability failure names, as its note's
+last line names them. -/
+def conflictCore? (text : String) : Option String :=
+  (conflictLines? text).bind (·.getLast?)
+
+/-- The first line of a note at a requirement of a realizability failure
+(`isConflictNote`). -/
+def isConflictHead (h : String) : Bool :=
+  (h.startsWith "`" && (h.splitOn "` forces ").length > 1) || h.startsWith "conflicts with `" || h == "is false for this input"
+
+/-- A note at a requirement of a realizability failure, which depends on
+the requirements that conflict on its input: that it and the rest of the
+conflict force an output to different values, that it conflicts with the
+rest, or that it is false, in a conflict of one. -/
 def isConflictNote (d : Diagnostic) : Bool :=
-  d.severity == "info" && d.code?.isNone &&
-    ((headOf d).startsWith "is false when " || (headOf d).startsWith "conflicts with `")
+  d.severity == "info" && d.code?.isNone && isConflictHead (headOf d)
 
 /-- The text after a leading subject in backquotes, as in "`c::q` is
 vacuous: …", or the whole text. -/
@@ -111,7 +126,7 @@ def isCheckHeadline (h : String) : Bool :=
   let r := afterSubject h
   h.startsWith "could not decide whether "
   || (rest "the assumptions of ").any (·.startsWith " are unsatisfiable: ")
-  || r.startsWith " is not realizable: for the input "
+  || r == " is not realizable"
   || (rest "an index of ").any (· == " may be out of range")
   || (rest "a table in ").any (· == " may have no row that holds")
   || (h.startsWith "rows " && (h.splitOn " of a table in `").length > 1 && h.endsWith "` may both hold")
@@ -122,7 +137,7 @@ def isCheckHeadline (h : String) : Bool :=
   || r.startsWith " is redundant: "
   || r.startsWith " is not determined by the inputs: for the input "
   || h.startsWith "testing found no " || h.startsWith "testing never reached `"
-  || h.startsWith "is false when " || h.startsWith "conflicts with `"
+  || isConflictHead h
 
 /-- A check's result, rather than a static error or a lint: by its code
 where the front end shows one (the binary), else by its headline. The
@@ -218,8 +233,20 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   let sameInput := (cliDiags.filter keep).filterMap fun c => do
     let i ← conflictInput? c.text
     let h ← (hosted.diags.filter keep).find? fun h => h.line == c.line && conflictInput? h.text == some i
-    guard (headOf c != headOf h)
-    return s!"line {c.line}: for the same input, fren says `{headOf c}`, Lean says `{headOf h}`"
+    let (cc, hc) := (conflictCore? c.text, conflictCore? h.text)
+    guard (cc != hc)
+    return s!"line {c.line}: for the same input, fren says `{cc.getD ""}`, Lean says `{hc.getD ""}`"
+  -- For the same input and requirements, the notes at them are the same.
+  let notesIn (ds : Array Diagnostic) (line : Nat) :=
+    (ds.filter fun d => keep d && isConflictNote d && itemAt d.line == itemAt line)|>.map (fun d => s!"line {d.line}: {headOf d}") |>.qsort (· < ·)
+  let sameNotes := (cliDiags.filter keep).filterMap fun c => do
+    let i ← conflictInput? c.text
+    let h ← (hosted.diags.filter keep).find? fun h => h.line == c.line && conflictInput? h.text == some i
+    guard (conflictCore? c.text == conflictCore? h.text)
+    let (cn, hn) := (notesIn cliDiags c.line, notesIn hosted.diags c.line)
+    guard (cn != hn)
+    return s!"line {c.line}: for the same input, fren notes {cn}, Lean notes {hn}"
+  let sameInput := sameInput ++ sameNotes
   let keep (d : Diagnostic) := keep d && !isConflictNote d
   let mut cs := cliDiags.filter keep
   let hs := hosted.diags.filter keep

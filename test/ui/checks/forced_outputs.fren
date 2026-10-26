@@ -1,0 +1,65 @@
+-- The notes of an unrealizable component's guarantees that force an output
+-- to a value that the rest of the conflict rules out (`check::clash_notes`).
+-- fren-covers: check::clash_notes
+
+-- Each guarantee forces `y`, to a different value: one note, at the first.
+comp pinned {   --~ error: no outputs satisfy `low` and `high`
+    in x: Int
+    pub out y: Int
+    ensure low: y = x      --~ info: `low` forces y = 0, but `high` forces y = 1
+    ensure high: y = x + 1   --~ info: conflicts with `low`
+}
+
+-- A conflict of one guarantee: the rest of it is empty, and forces nothing.
+comp alone {   --~ error: no outputs satisfy `r`
+    in x: Int
+    pub out y: Int
+    ensure r: x > 0 and y = x   --~ info: is false for this input
+}
+
+-- Neither guarantee forces `y`.
+comp loose {   --~ error: no outputs satisfy `up` and `down`
+    in x: Int
+    pub out y: Int
+    ensure up: y > x   --~ info: conflicts with `down`
+    ensure down: y < x   --~ info: conflicts with `up`
+}
+
+-- A variable of an abstract type: the values would depend on its
+-- interpretation, so no note.
+type Token
+
+comp abstract {   --~ error: no outputs satisfy `low` and `high`
+    in t: Token
+    in u: Token
+    pub out same?
+    ensure low: same? iff t = u   --~ info: conflicts with `high`
+    ensure high: same? iff t != u   --~ info: conflicts with `low`
+}
+
+-- An uninterpreted function in a guarantee: no note either, although
+-- `low` forces `y` whatever `weight` is.
+fn weight(Int): Int
+
+comp weighed {   --~ error: no outputs satisfy `low` and `high`
+    in x: Int
+    pub out y: Int
+    ensure low: y = 0 and weight(x) > 0   --~ info: conflicts with `high`
+    ensure high: y = 1   --~ info: conflicts with `low`
+}
+
+-- A defined output is not an output that a note names: its definition
+-- stands for it. The output it is defined by is.
+comp defined {   --~ error: no outputs satisfy `low` and `high`
+    in x: Int
+    pub out y: Int
+    pub out z: Int := y + 1
+    ensure low: z = x + 1    --~ info: `low` forces y =
+    ensure high: y = x + 1   --~ info: conflicts with `low`
+}
+
+-- The postconditions of an uninterpreted function, of its value.
+pub fn level(n: Int): Int   --~ error: no value of `level` satisfies `zero` and `one`
+    ensure zero: level(n) = 0   --~ info: `zero` forces level = 0, but `one` forces level = 1
+    ensure one: level(n) = 1   --~ info: conflicts with `zero`
+--@ exit: 1

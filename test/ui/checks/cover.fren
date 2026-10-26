@@ -40,8 +40,8 @@ comp stuck {                                       --~ error: `stuck` is not rea
     in x: Int
     pub out y: Int
 
-    ensure a: y > x                                   --~ info: conflicts with `b`
-    ensure b: y < x                                   --~ info: conflicts with `a`
+    ensure a: y > x   --~ info: conflicts with `b`
+    ensure b: y < x   --~ info: conflicts with `a`
 
     cover any: true                                --~ error: cover goal `stuck::any` cannot be met: it is ruled out by `a`, `b`
     --~^ warning: this cover goal mentions no variable

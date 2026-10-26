@@ -1,0 +1,2 @@
+-- An invalid number of examples.
+--@ args: check --examples many
