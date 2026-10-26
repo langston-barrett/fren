@@ -1,5 +1,5 @@
 -- keep-sorted start
-import Fren
+import Fren.Elab
 -- keep-sorted end
 
 -- Lean-only behaviour of nested, literal and range patterns: what a `match`

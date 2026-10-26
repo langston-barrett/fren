@@ -1,5 +1,5 @@
 -- keep-sorted start
-import Fren
+import Fren.Impl
 -- keep-sorted end
 
 -- Lean-only behaviour of tables: a table generates `if`s over its rows'

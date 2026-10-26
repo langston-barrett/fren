@@ -41,6 +41,17 @@ require smt from git "https://github.com/verse-lab/lean-smt.git"@"v4.32.0-veil-n
   moreLeancArgs := coverageArgs
   moreLeanArgs := coverageLeanArgs
 
+-- `Fren.Elab`, the hosted front end's elaborators, is compiled without
+-- optimization. Only the executables that load `Fren` run its C code
+-- (`fren_test`, `fren_fuzz_frontends`, `fren_coverage`): `lean` interprets
+-- it on every build of `Reqs`. At `-O3`, clang took 17 s on it, on the path
+-- of `lake test`'s build; at `-O0` it takes 3 s, and `lake test`'s run takes
+-- no longer. (Lake places a module in the last library that has it.)
+lean_lib FrenElab where
+  globs := #[`Fren.Elab]
+  moreLeancArgs := coverageArgs ++ #["-O0"]
+  moreLeanArgs := coverageLeanArgs
+
 -- Fren's own requirements, written in Fren and checked on every build. They
 -- are Markdown specs (`src/Reqs/*.md`) read by `#fren_md`, which Lake can't
 -- see, hence `needs`. The libraries after `Reqs` hold its modules by the

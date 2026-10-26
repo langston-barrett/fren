@@ -1,5 +1,6 @@
 -- keep-sorted start
-import Fren
+import Fren.Impl
+import Fren.View
 -- keep-sorted end
 
 -- Lean-only behaviour of newtypes: `struct Ms(Int)` generates a structure
