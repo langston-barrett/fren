@@ -199,6 +199,40 @@ refine empty_subset_sound: empty_subset_value refines empty_subset_written
 refine empty_subset_complete: empty_subset_written refines empty_subset_value
 ```
 
+It also fires on `0 div k` and `0 mod k`, and on `-0 div k` and `-0 mod
+k`, which are always `0`: `k` is a
+constant that is not `0` (see [Division and
+remainder](../../Lang/Expressions.md#division-and-remainder)), and `0` is a
+multiple of every such `k`. `lint::erasing_division` states this, and the
+[refinements](../../Lang/Refinement.md) below check the value, for a
+positive divisor and a negative one:
+
+```fren
+pub comp erasing_division {
+    in literal?          -- the dividend is an integer literal, possibly negated
+    in dividend: Int     -- its value, if it is
+    pub det out fires?
+
+    ensure rule: fires? iff (literal? and dividend = 0)
+}
+
+set_option fren.lint.erasing_op "allow" in
+set_option fren.lint.constant_output "allow" in
+pub comp erasing_division_written {
+    pub det out quotient: Int := 0 div 7
+    pub det out remainder: Int := 0 mod -3
+}
+
+set_option fren.lint.constant_output "allow" in
+pub comp erasing_division_fixed {
+    pub det out quotient: Int := 0
+    pub det out remainder: Int := 0
+}
+
+refine erasing_division_sound: erasing_division_fixed refines erasing_division_written
+refine erasing_division_complete: erasing_division_written refines erasing_division_fixed
+```
+
 ## Branches written the same
 
 `same_branches` fires on `if c then a else b`, where `a` and `b` are

@@ -1,0 +1,20 @@
+warning[F0815]: `mod` is never negative already
+ --> test/cli/lints/complexity/f0815_manual_rem_euclid.fren:2:49
+  |
+2 | comp c { in x: Int pub out n: Int ensure r: n = (x mod 12 + 12) mod 12 }
+  |                                                 ^^^^^^^^^^^^^^^^^^^^^^ adds the divisor to a remainder
+  |
+  = note: `mod` is Euclidean, so `a mod k` is at least 0 and below the size of `k`, even where `a` is negative
+  = help: `fren fix` can fix this
+  = note: `manual_rem_euclid` is `warn` by default
+  = help: to allow it, `set_option fren.lint.manual_rem_euclid "allow"`
+help: write `x mod 12`
+  |
+2 - comp c { in x: Int pub out n: Int ensure r: n = (x mod 12 + 12) mod 12 }
+2 + comp c { in x: Int pub out n: Int ensure r: n = x mod 12 }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0815`.
+exit=3

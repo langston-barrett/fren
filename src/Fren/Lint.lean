@@ -554,6 +554,46 @@ register_option fren.lint.trivial_cover : String := {
   descr := "the level of the lint `trivial_cover`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.manual_nat : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_nat`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.manual_abs : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_abs`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.manual_abs_diff : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_abs_diff`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.manual_min_max : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_min_max`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.manual_clamp : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_clamp`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.manual_rem_euclid : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_rem_euclid`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.modulo_one : String := {
+  defValue := "warn"
+  descr := "the level of the lint `modulo_one`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.min_max : String := {
+  defValue := "warn"
+  descr := "the level of the lint `min_max`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"
@@ -814,8 +854,9 @@ def pendingLints : CommandElabM (Array (Core.LintReport Syntax × Core.Severity)
   -- The settings' indices in `l.settings`, from their identifiers.
   let atEnd := (← settingsHere).filterMap l.settingIds.idxOf?
   let seen := l.seenSettings.filterMap l.settingIds.idxOf?
+  let nats := l.natReports.filterMap fun (c, x, r) => if l.natKept.contains (c, x) then none else some r
   let (reports, fulfilled) := Core.finishReports
-    (l.lintReports ++ Core.importReports l.useRecords l.used fixable ++ Core.deadCodeReports l.items l.usedItems
+    (l.lintReports ++ nats ++ Core.importReports l.useRecords l.used fixable ++ Core.deadCodeReports l.items l.usedItems
       ++ Core.unusedAssumptionReports l.assumptions l.globalReads
       ++ Core.unusedSettingReports l.settings seen atEnd fixable
       ++ Core.singleCallReports l.items l.usedItems)
@@ -831,7 +872,7 @@ def reportLints : CommandElabM Unit := do
     | .warning => logWarningAt r.ref r.msg.text
     | .info => logInfoAt r.ref r.msg.text
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
-                                items := #[], usedItems := #[], settings := #[], settingIds := #[],
+                                items := #[], usedItems := #[], natReports := #[], natKept := #[], settings := #[], settingIds := #[],
                                 seenSettings := #[], assumptions := #[], globalReads := #[] }
 
 /-- `set_option fren.lint.NAME "LEVEL"`, for a lint (`lint::setting`) or a

@@ -1,0 +1,2 @@
+-- `manual_abs`, keeping the receiver's parentheses.
+comp c { in x: Int in y: Int pub out n: Int ensure r: n = if x - y < 0 then -(x - y) else x - y }

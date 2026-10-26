@@ -6,7 +6,7 @@ set_option fren.lint.assertions_on_constants "allow"
 const LOW: Int := -5
 
 expect abs_values: (-3).abs = 3 and (3).abs = 3 and (0).abs = 0 and LOW.abs = 5
-expect min_values: (-3).min(2) = -3 and (2).min(-3) = -3 and LOW.min(LOW) = LOW
+expect min_values: (-3).min(2) = -3 and (2).min(-3) = -3 and LOW.min(LOW) = LOW  --~ warning: the receiver and the argument of `min` are written the same
 expect max_values: (-3).max(2) = 2 and (2).max(-3) = 2 and LOW.max(0) = 0
 expect chained: LOW.abs.min(3) = 3 and (LOW - 2).abs.max(1) = 7
 

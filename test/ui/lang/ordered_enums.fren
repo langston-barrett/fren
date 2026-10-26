@@ -16,6 +16,7 @@ expect declared: Silent < Info < Warning < Error and Error > Warning >= Warning 
 expect methods: (Silent).max(Info) = Info and (Error).min(Warning) = Warning and (Severity::Info).max(Silent) = Info
 expect bare_receiver: Silent.max(Info) = Info
 expect single: (Only::One).max(Only::One) = Only::One
+--~^ warning: the receiver and the argument of `max` are written the same
 
 comp exit {
     in ran?

@@ -75,11 +75,11 @@ name is written in, or the number of definitions for the body:
 ```fren
 pub comp definition_order {
     in n: Int            -- the number of definitions of the clause
-    in k_def: Int        -- the position of the definition named
-    in k_use: Int        -- the position of the definition the name is in, or `n` in the body
+    in k_def: Nat        -- the position of the definition named
+    in k_use: Nat        -- the position of the definition the name is in, or `n` in the body
     pub det out means?   -- the name means the definition
 
-    assume positions: 0 <= k_def < n and 0 <= k_use <= n
+    assume positions: k_def < n and k_use <= n
 
     ensure rule: means? iff k_def < k_use
 
