@@ -59,7 +59,8 @@
   identifier that no other mutant has, leaves the identifiers of the
   mutants of other items alone (*stable*), and, for a swap, has a mutant
   that swaps it back (*involutive*). A larger `--sample` contains a smaller
-  one. The snapshot `mutate_list.fren` lists a mutant of every origin, at
+  one, and the shards of `--shard K/N` partition a selection, sampled or
+  not. The snapshot `mutate_list.fren` lists a mutant of every origin, at
   every kind of site; a new operator extends it.
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see

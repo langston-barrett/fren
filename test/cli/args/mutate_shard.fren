@@ -1,0 +1,8 @@
+--@ args: mutate --shard 2/2
+-- A shard must be below the number of shards.
+comp c {
+    in x: Int
+    pub out y?
+
+    ensure r: y? iff x > 1
+}

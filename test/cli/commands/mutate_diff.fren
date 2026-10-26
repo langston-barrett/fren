@@ -1,0 +1,34 @@
+--@ args: mutate --list --diff test/cli/commands/mutate_diff.patch
+-- The mutants of the items that the patch touches: `m::c`, whose
+-- expectation changed; `m::f`, which lost a line; and `m::twice`, which
+-- lost the line after its last. Not `m::d`, though the patch removes a
+-- whole item after the blank line that follows it, nor the constant that
+-- it leaves alone; and not the file that is not given.
+mod m
+
+const LIMIT: Int := 10
+
+pub comp c {
+    in x: Int
+    pub out y?
+
+    ensure r: y? iff x > 1
+
+    expect e: when x = 5, y?
+}
+
+pub comp d {
+    in x: Int
+    pub out y?
+
+    ensure r: y? iff x < LIMIT
+}
+
+pub comp f {
+    in x: Int
+    pub out y?
+
+    ensure r: y? iff x != 3
+}
+
+pub fn twice(x: Int): Int := x + x

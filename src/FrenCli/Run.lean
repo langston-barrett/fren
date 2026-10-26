@@ -20,8 +20,9 @@ fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
 fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
-fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--sample N] [--seed N] [--list]
-    [--timeout SECONDS] [--resource-limit N] [--tests N] [-A|-W|-D|-F LINT]... FILE...
+fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
+    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N]
+    [-A|-W|-D|-F LINT]... FILE...
 fren --explain CODE
 ```
 
@@ -60,8 +61,9 @@ def usage : String :=
   fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren quickcheck [--tests N] [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
-  fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--sample N] [--seed N] [--list]\n              \
-  [--timeout SECONDS] [--resource-limit N] [--tests N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
+  fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]\n              \
+  [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N]\n              \
+  [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren --explain CODE\n\n\
   `check` checks Fren specs. Exit status: 0 all checks passed, 1 some check\n\
   failed, 2 the checks could not run, 3 no failures but some check was\n\
@@ -100,8 +102,11 @@ def usage : String :=
   `mutate` makes small changes to the spec's constraints and definitions,\n\
   checks each changed spec (a mutant), and reports the mutants that no check\n\
   rejects. `--by` checks them with the solver (the default), by testing, or\n\
-  both. `--comp PATH` and `--mutant ID` select mutants, and `--sample N` takes\n\
-  N of them, chosen by `--seed`. `--list` lists them without checking them.\n\
+  both. `--comp PATH` and `--mutant ID` select mutants, and `--diff PATCH`\n\
+  those of the items whose lines a unified diff (`-` for stdin), such as\n\
+  `git diff -U0`, adds or changes. `--sample N` takes N of them, chosen by\n\
+  `--seed`, and `--shard K/N` the Kth of N parts of those, from 0.\n\
+  `--list` lists them without checking them.\n\
   Exit status as for `check`, where each surviving mutant is a warning.\n\n\
   `--explain` explains an error code, such as F0105.\n\n\
   `--color WHEN` colours the output: auto (the default: if it is a terminal),\n\
@@ -176,6 +181,10 @@ structure Args where
   mutantIds : Array String := #[]
   /-- `mutate --sample`. -/
   sample? : Option Nat := none
+  /-- `mutate --diff`: the patch's path, or `-`. -/
+  diff? : Option String := none
+  /-- `mutate --shard K/N`, as `(K, N)`. -/
+  shard? : Option (Nat × Nat) := none
   /-- `mutate --list`. -/
   listOnly : Bool := false
 
@@ -184,7 +193,7 @@ def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quick
 def options : Array String :=
   #["--timeout", "--resource-limit", "--jobs", "--dump-smt", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
     "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--comp", "--set", "--seed", "--tests",
-    "--by", "--mutant", "--sample", "--list"]
+    "--by", "--mutant", "--sample", "--list", "--diff", "--shard"]
 
 def unknownLint (n : String) : Msg :=
   { code? := none, headline := s!"unknown lint `{n}`"
@@ -287,6 +296,15 @@ where
           notes := #["note: the sample size is a whole number of mutants, such as `--sample 50`"] })
     | "--list" :: rest, a =>
       if a.command == .mutate then go rest { a with listOnly := true } else only "--list" "mutate"
+    | "--diff" :: d :: rest, a =>
+      if a.command == .mutate then go rest { a with diff? := some d } else only "--diff" "mutate"
+    | "--shard" :: k :: rest, a =>
+      if a.command != .mutate then only "--shard" "mutate" else
+      match Mutate.shard? k with
+      | some s => go rest { a with shard? := some s }
+      | none => .error (argError p {
+          code? := none, headline := s!"invalid shard `{k}`",
+          notes := #["note: a shard is `K/N`, the `K`th of `N` from 0, with `K < N`, such as `--shard 0/4`"] })
     | "--dump-smt" :: rest, a =>
       if a.command == .check then go rest { a with dumpSmt := true }
       else only "--dump-smt" "check"
@@ -321,7 +339,7 @@ where
     | [opt@"--timeout"], _ | [opt@"--resource-limit"], _ | [opt@"--jobs"], _ | [opt@"--tests"], _ | [opt@"--ignore"], _ | [opt@"--require"], _
     | [opt@"--only"], _ | [opt@"--skip"], _
     | [opt@"--comp"], _ | [opt@"--set"], _ | [opt@"--seed"], _
-    | [opt@"--by"], _ | [opt@"--mutant"], _ | [opt@"--sample"], _
+    | [opt@"--by"], _ | [opt@"--mutant"], _ | [opt@"--sample"], _ | [opt@"--diff"], _ | [opt@"--shard"], _
     | [opt@"-A"], _ | [opt@"-W"], _ | [opt@"-D"], _ | [opt@"-F"], _
     | [opt@"--allow"], _ | [opt@"--warn"], _ | [opt@"--deny"], _ | [opt@"--forbid"], _ =>
       .error (argError p { code? := none, headline := s!"`{opt}` needs a value" })
@@ -360,14 +378,17 @@ def checkClaims (st : State) : IO State := do
         st := { st with diags := st.diags.push { file := c.file, span, msg } }
   return st
 
+/-- Why a file could not be read. -/
+def readError : IO.Error → String
+  | .noFileOrDirectory .. => "no such file or directory"
+  | .permissionDenied .. => "permission denied"
+  | .inappropriateType .. => "it is a directory"
+  | e => toString e
+
 /-- Reads a file, or prints why it could not. -/
 def readSpec (p : Paint) (path : String) : IO (Option String) := do
   try return some (← IO.FS.readFile path) catch e =>
-    let why := match e with
-      | .noFileOrDirectory .. => "no such file or directory"
-      | .permissionDenied .. => "permission denied"
-      | .inappropriateType .. => "it is a directory"
-      | e => toString e
+    let why := readError e
     IO.eprint (Fren.Core.renderPlain .error { code? := none, headline := s!"could not read `{path}`: {why}" } p)
     return none
 
@@ -1004,6 +1025,11 @@ def mutantSpec (parsed : Array Parsed) (prefixes : Array (Except String Eval.LSt
   let st ← prefixes[m.file]!
   return (← Eval.lowerFrom st (items.extract m.file)).spec
 
+/-- The rest of `s`, as text. -/
+partial def readAll (s : IO.FS.Stream) (acc : String := "") : IO String := do
+  let line ← s.getLine
+  if line.isEmpty then return acc else readAll s (acc ++ line)
+
 /-- Runs `fren mutate` (`Reqs/Mutate`), printing each surviving mutant and
 the summary to stderr and the kill rates to stdout, or with `--list`, the
 mutants to stdout; returns the exit code. -/
@@ -1028,7 +1054,31 @@ def mutate (args : Args) : IO UInt32 := do
                       notes := #["note: `fren mutate --list` lists the mutants"]
                       fixes := (Fren.Core.similarStr id (all.map (·.id))).toArray.map fun s =>
                         { msg := s!"a mutant with a similar identifier exists: `{s}`", replacement := s } }
-  let selected := Mutate.select all comp? args.mutantIds args.sample? args.seed
+  let touched : Mutate.Mutant → Bool ← match args.diff? with
+    | none => pure fun _ => true
+    | some patch => do
+      let text ← try
+          if patch == "-" then readAll (← IO.getStdin) else IO.FS.readFile patch
+        catch e => return ← fail { code? := none, headline := s!"could not read `{patch}`: {readError e}" }
+      match Mutate.parsePatch text with
+      | .error (line, why) =>
+        return ← fail { code? := none, headline := s!"`{patch}` is not a unified diff"
+                        notes := #[s!"note: line {line}: {why}", "note: `--diff` reads a patch such as `git diff -U0` writes"] }
+      | .ok changes =>
+        -- Such as a patch with absolute paths, or made in another directory.
+        unless changes.isEmpty || Mutate.namesAny changes (files.map (·.1)) do
+          IO.eprint (Fren.Core.renderPlain .warning
+            { code? := none, headline := s!"`{patch}` changes none of the files given"
+              notes := #[s!"note: it changes {", ".intercalate (changes.toList.map (s!"`{·.1}`"))}",
+                "note: a file is named as given, or without the `a/` or `b/` that `git diff` writes",
+                "help: run `fren mutate` where `git diff` ran, with the paths it prints"] } p)
+        let ofFile := files.mapIdx fun i (path, chars) =>
+          let items := match parsed[i]! with
+            | .ok (toks, _, starts, _) => Mutate.itemLines chars toks starts
+            | .error _ => #[]
+          (Mutate.changesOf changes path, items)
+        pure fun (m : Mutate.Mutant) => let (c, items) := ofFile[m.file]!; Mutate.touchedAt c items m.span.start
+  let selected := Mutate.select all comp? args.mutantIds args.sample? args.seed touched args.shard?
   if args.listOnly then
     for m in selected do
       let (path, chars) := files[m.file]!

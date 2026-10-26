@@ -1,0 +1,8 @@
+--- a/test/cli/commands/mutate_diff_markdown.md
++++ b/test/cli/commands/mutate_diff_markdown.md
+@@ -3 +3 @@
+-Prose.
++Prose before the code, which the patch's line numbers count.
+@@ -23 +23 @@
+-    ensure r: y? iff x < 8
++    ensure r: y? iff x < 9

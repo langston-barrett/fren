@@ -1,0 +1,8 @@
+--@ args: mutate --diff test/cli/args/mutate_diff.patch
+-- A patch whose hunk has more lines than its header says.
+comp c {
+    in x: Int
+    pub out y?
+
+    ensure r: y? iff x > 1
+}

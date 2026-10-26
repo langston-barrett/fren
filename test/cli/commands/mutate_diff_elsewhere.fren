@@ -1,0 +1,11 @@
+--@ args: mutate --list --diff test/cli/commands/mutate_diff_elsewhere.patch
+-- A patch made in another directory names none of the files given: a
+-- warning says so, and no mutant is selected.
+mod m
+
+pub comp c {
+    in x: Int
+    pub out y?
+
+    ensure r: y? iff x > 1
+}

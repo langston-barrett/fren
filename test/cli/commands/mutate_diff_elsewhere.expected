@@ -1,0 +1,5 @@
+warning: `test/cli/commands/mutate_diff_elsewhere.patch` changes none of the files given
+  = note: it changes `b/mutate_diff_elsewhere.fren`
+  = note: a file is named as given, or without the `a/` or `b/` that `git diff` writes
+  = help: run `fren mutate` where `git diff` ran, with the paths it prints
+exit=0

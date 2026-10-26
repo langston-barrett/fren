@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.MutateOutcome
+import FrenCli.MutateSelect
 import Impls.Check
 import Impls.Cli
 import Reqs.Mutate
@@ -9,9 +10,10 @@ open Fren.Lang
 /-!
 # What becomes of a mutant (`Reqs/Mutate`)
 
-The decisions in `FrenCli.MutateOutcome` implement the comps of `mutate`.
-Each obligation is proved by `decide`, given the variables of
-`mutate::exit`'s instance.
+The decisions in `FrenCli.MutateOutcome` and `FrenCli.MutateSelect`
+implement the comps of `mutate`. Each obligation over `Bool` is proved by
+`decide`, given the variables of `mutate::exit`'s instance, and each over
+`Nat` by `simp`.
 -/
 
 namespace Fren.Impls
@@ -136,5 +138,43 @@ impl equivalence_parts: mutate::combine for (a b : Option Bool) {
 } by
   intro a b _
   rcases a with _ | _ | _ <;> rcases b with _ | _ | _ <;> decide
+
+impl mutant_selection: mutate::selection for (c n t s h : Bool) {
+  of_comp? := c,
+  named? := n,
+  touched? := t,
+  sampled? := s,
+  sharded? := h,
+  selected? := FrenCli.Mutate.chosen c n t s h,
+} by
+  intro c n t s h _
+  cases c <;> cases n <;> cases t <;> cases s <;> cases h <;> decide
+
+-- Over `Nat`, so `decide` does not apply.
+impl patch_touches: mutate::touches for (f l n : Nat) {
+  first := f,
+  last := l,
+  line := n,
+  touched? := FrenCli.Mutate.touchesLine f l n,
+} by
+  intro f l n _
+  simp [fren_spec, FrenCli.Mutate.touchesLine]
+
+impl mutant_sample: mutate::sample for (r s : Nat) {
+  rank := r,
+  size := s,
+  taken? := FrenCli.Mutate.takes r s,
+} by
+  intro r s _
+  simp [fren_spec, FrenCli.Mutate.takes]
+
+-- The remainder is the code's: that of the identifier's hash.
+impl mutant_shard: mutate::shard for (h k n : Nat) {
+  remainder := h % n,
+  k := k,
+  taken? := FrenCli.Mutate.inShard h k n,
+} by
+  intro h k n _
+  simp [fren_spec, FrenCli.Mutate.inShard]
 
 end Fren.Impls

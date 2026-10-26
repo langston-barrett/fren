@@ -1,0 +1,21 @@
+diff --git a/test/cli/commands/mutate_diff.fren b/test/cli/commands/mutate_diff.fren
+index 0123456..789abcd 100644
+--- a/test/cli/commands/mutate_diff.fren
++++ b/test/cli/commands/mutate_diff.fren
+@@ -17 +17 @@ pub comp c {
+-    expect e: when x = 6, y?
++    expect e: when x = 5, y?
+@@ -27,2 +26,0 @@ pub comp d {
+-const OTHER: Int := 1
+-
+@@ -32 +29,0 @@ pub comp f {
+-    in z: Int
+@@ -38 +34,0 @@ pub comp f {
+-    + 0
+diff --git a/elsewhere.fren b/elsewhere.fren
+--- a/elsewhere.fren
++++ b/elsewhere.fren
+@@ -1,2 +1,2 @@
+ mod m
+-const LIMIT: Int := 9
++const LIMIT: Int := 10

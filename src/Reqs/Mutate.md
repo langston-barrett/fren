@@ -1,8 +1,9 @@
 # Mutation testing
 
 ```
-fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--sample N] [--seed N] [--list]
-    [--timeout SECONDS] [--resource-limit N] [--tests N] [-A|-W|-D|-F LINT]... FILE...
+fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
+    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N]
+    [-A|-W|-D|-F LINT]... FILE...
 ```
 
 `fren mutate` makes small changes to a spec's constraints and definitions,
@@ -296,19 +297,154 @@ pub comp missed {
 ## Selecting mutants
 
 `--comp PATH` selects the mutants of the component `PATH`; `--mutant ID`
-selects the mutant `ID`, and may be repeated. Given both, a mutant must
-meet both. A `--comp` or `--mutant` that the spec does not have is an
-error in the arguments, and `fren mutate` exits with 2. `--sample N` then
+selects the mutant `ID`, and may be repeated. `--diff PATCH` selects the
+mutants of the items that the patch `PATCH` touches (see below), and
+reads it from standard input if `PATCH` is `-`. Given several, a mutant must
+meet each. A `--comp` or `--mutant` that the spec does not have, and a
+`PATCH` that cannot be read or is not a unified diff, are errors in the
+arguments, and `fren mutate` exits with 2. `--sample N` then
 takes `N` of the selected mutants, chosen by
 `--seed` (default 0). The same seed starts testing's search, so with
-`--by testing` or `--by both`, a different seed also tests differently. Whether a mutant
-is taken depends only on its identifier and the seed, so a larger sample
-contains a smaller one. `--list` writes the selected mutants to standard
-output, one per line, with their identifier, position and change, and
-checks nothing:
+`--by testing` or `--by both`, a different seed also tests differently.
+`--shard K/N` then takes the `K`th of `N` parts of those, counted from 0,
+with `K < N`; any other value is an error in the arguments. `--list` writes
+the selected mutants to standard output, one per line, with their
+identifier, position and change, and checks nothing:
 
 ```text
 swap-comparison-c::r-0a1b2c3d4e5f spec.fren:4:21 `>` changed to `>=`
+```
+
+`mutate::selection` puts the filters together:
+
+```fren
+pub comp selection {
+    in of_comp?         -- `--comp` names the mutant's component, or is not given
+    in named?           -- `--mutant` names the mutant, or is not given
+    in touched?         -- `--diff` touches the mutant's item, or is not given
+    in sampled?         -- `--sample` takes the mutant, or is not given
+    in sharded?         -- `--shard` takes the mutant, or is not given
+    pub det out selected?
+
+    ensure rule: selected? iff (of_comp? and named? and touched? and sampled? and sharded?)
+
+    expect each_narrows: when selected?, of_comp? and named? and touched? and sampled? and sharded?
+    expect untouched_not_run: unless touched?, not selected?
+}
+```
+
+### Patches
+
+`--diff PATCH` reads a unified diff, such as `git diff -U0 REV -- FILE...`
+writes, and selects the mutants of each *item* of which it adds or
+changes some line of the new text: the component, constant or function
+whose text holds the mutant's change, from its first token to its last. A
+component is touched by a change to any of its lines, an expectation's or
+a cover goal's too, since they decide what kills its mutants. Lines that
+the patch removes touch the item whose line they followed, if any: lines
+removed between two of its lines, and lines removed after its last, such
+as the end of a definition that runs over several lines. So removing a
+whole item that directly follows another touches that other: selecting
+too many mutants only checks more of them, but selecting too few would
+miss what the change leaves unchecked. A line between items, such as a blank
+line, or a comment outside a component, touches nothing, and nor does a
+change to a global expectation, which has no mutants of its own.
+
+A patch's file is the path after `+++`, without the date that `diff -u`
+writes after it, and matched to a file given to `fren mutate` as written,
+or without the `a/` or `b/` that `git diff` writes before it, either
+without `.` segments or repeated `/`. Its lines are the file's lines as
+written, so a [Markdown spec](Markdown.md)'s are those of the Markdown. The
+files that the patch changes but that are not given, and the files that it
+removes, are left alone; if it changes some file, but none of those
+given, such as with absolute paths or paths from another directory, a
+warning says so, on standard error, and the exit status does not change. Lines outside a hunk, such as `git diff`'s
+headers, are skipped. The patch is not a unified diff if a hunk's header
+is not `@@ -S,N +S,N @@` (`,N` may be left out), a hunk comes before the
+`+++` line naming its file, a hunk's lines do not fit its header, or its
+text is not empty but has no `diff`, `---` or `+++` line at all.
+`mutate::touches` says which lines touch an item:
+
+```fren
+pub comp touches {
+    in first: Nat       -- the item's first line, counted from 1
+    in last: Nat        -- its last line
+    in line: Nat        -- a line that the patch adds, or after which it removes lines (0 if before the first)
+    pub det out touched?
+
+    ensure rule: touched? iff first <= line <= last
+
+    expect outside: when line < first or line > last, not touched?
+    expect first_line: when first <= last and line = first, touched?
+    expect last_line: when first <= last and line = last, touched?
+}
+```
+
+### Samples and shards
+
+Whether a mutant is taken by a sample depends only on its identifier and
+the seed: the selected mutants are ordered by the 64-bit FNV-1a hash of
+the seed and the identifier, and the sample takes the first `N`.
+
+```fren
+pub comp sample {
+    in rank: Nat        -- how many selected mutants come before it in that order
+    in size: Nat        -- `N` of `--sample N`
+    pub det out taken?
+
+    ensure rule: taken? iff rank < size
+
+    -- Ranks from 0, so a sample of `size` stops before the rank `size`.
+    expect size_not_taken: when rank = size, not taken?
+}
+```
+
+So a larger sample contains a smaller one, with the same seed:
+
+```fren
+pub comp samples_nest {
+    in rank: Nat
+    in smaller: Nat
+    in larger: Nat
+
+    assume nested: smaller <= larger
+
+    inst small: sample { rank, size := smaller }
+    inst large: sample { rank, size := larger }
+
+    expect contains: when small.taken?, large.taken?
+    cover same_size: smaller = larger and small.taken?
+}
+```
+
+A shard is taken after the sample, by the remainder of the FNV-1a hash of
+the identifier alone, divided by `N`. So a mutant stays in its shard as
+other mutants come and go, and the `N` shards of a run, with the same
+`--sample` and `--seed`, partition it: run together, they are the whole
+run, each mutant in exactly one of them. The remainder is below `N`, so
+it names one of the shards, the one that takes the mutant.
+
+```fren
+pub comp shard {
+    in remainder: Nat   -- the hash of the mutant's identifier, modulo `N` of `--shard K/N`
+    in k: Nat           -- `K`
+    pub det out taken?
+
+    ensure rule: taken? iff remainder = k
+}
+
+pub comp shards_partition {
+    in remainder: Nat
+    in j: Nat
+    in k: Nat
+
+    inst first: shard { remainder, k := j }
+    inst second: shard { remainder, k }
+    inst own: shard { remainder, k := remainder }
+
+    expect disjoint: when first.taken? and second.taken?, j = k
+    expect covered: own.taken?
+}
 ```
 
 ## Output
@@ -369,7 +505,8 @@ could be killed, that is 100 exactly when every one that could be was. The
 rate divides by the number of mutants, which the solver cannot (see
 [Decidability](Lang/Decidability.md)), so the component says what the
 rate is like rather than how it is computed, and leaves it
-undetermined:
+undetermined. `Impls/Mutate` proves that the code's
+`100 * killed / (killed + survived)` has these properties:
 
 ```fren
 pub comp rate {

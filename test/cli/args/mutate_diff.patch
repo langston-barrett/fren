@@ -1,0 +1,6 @@
+--- a/test/cli/args/mutate_diff.fren
++++ b/test/cli/args/mutate_diff.fren
+@@ -7 +7 @@
+-    ensure r: y? iff x > 2
++    ensure r: y? iff x > 1
++    ensure s: y? iff x > 0

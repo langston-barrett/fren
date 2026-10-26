@@ -1,0 +1,8 @@
+swap-comparison-m::c::r-a83c599f55ac test/cli/commands/mutate_diff.fren:15:24 `>` changed to `>=`
+shift-integer-m::c::r-7bf5ca427c9e test/cli/commands/mutate_diff.fren:15:26 `1` changed to `2`
+shift-integer-m::c::r-a5f5c072b5a8 test/cli/commands/mutate_diff.fren:15:26 `1` changed to `0`
+swap-comparison-m::f::r-ae1b80c36c7b test/cli/commands/mutate_diff.fren:31:24 `!=` changed to `=`
+shift-integer-m::f::r-2c47abe53e4f test/cli/commands/mutate_diff.fren:31:27 `3` changed to `4`
+shift-integer-m::f::r-d647a2149dd9 test/cli/commands/mutate_diff.fren:31:27 `3` changed to `2`
+swap-arithmetic-m::twice-9f1f399094ab test/cli/commands/mutate_diff.fren:34:32 `+` changed to `-`
+exit=0
