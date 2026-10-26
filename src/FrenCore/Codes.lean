@@ -2263,6 +2263,126 @@ drop the field, or declare the struct without `ordered`:
 ordered struct Entry { key: Int, size: Nat }
 ```
 "# },
+  { code := "F0385", explanation := r#"A type written with the wrong number of type arguments.
+
+Erroneous code example:
+
+```fren
+pub enum Option(T) { None, Some(T) }
+
+comp c { in x: Option }
+```
+
+A generic type, declared with type parameters as `enum Option(T)`, is a
+type only with a type argument for each parameter, as in `Option(Int)`.
+Any other type, `Int` or an enumeration without type parameters, takes
+none:
+
+```fren
+pub enum Option(T) { None, Some(T) }
+
+comp c { in x: Option(Int) }
+```
+"# },
+  { code := "F0386", explanation := r#"A variant or record of a generic type whose type arguments cannot be inferred.
+
+Erroneous code example:
+
+```fren
+pub enum Option(T) { None, Some(T) }
+
+comp c { pub out ok? ensure r: ok? iff Option::None = Option::None }
+```
+
+An expression never writes type arguments: they are inferred from the
+instance expected where it is written, or from the values of its payload
+or fields. Here neither side says which `Option` is meant. Write it where
+an instance is expected, as of a variable of that type:
+
+```fren
+pub enum Option(T) { None, Some(T) }
+
+comp c { in x: Option(Int) pub out ok? ensure r: ok? iff x = Option::None }
+```
+"# },
+  { code := "F0387", explanation := r#"A type parameter written where it may not be.
+
+Erroneous code example:
+
+```fren
+enum Bag(T) { Empty, Many(Set(T)) }
+```
+
+For now, a type parameter is a payload's or field's whole type, or an
+argument of a generic type, as in `Option(T)`, but not an element type of
+a set, relation or sequence. And a generic enumeration's payload of its own
+type gives it its own type parameters, in order, as `List(T)` does within
+`enum List(T) { Nil, Cons(T, List(T)) }`:
+
+```fren
+enum Bag(T) { Empty, One(T) }
+```
+"# },
+  { code := "F0388", explanation := r#"A type parameter with the name of a type or an item.
+
+Erroneous code example:
+
+```fren
+pub enum Mode { Off, On }
+
+pub enum Option(Mode) { None, Some(Mode) }
+```
+
+Within its declaration, a type parameter's name must mean only the
+parameter, so it cannot be the name of a built-in type, such as `Int`, or
+of an item in scope. Rename it:
+
+```fren
+pub enum Mode { Off, On }
+
+pub enum Option(T) { None, Some(T) }
+```
+"# },
+  { code := "F0389", explanation := r#"A type argument of a recursive enumeration whose values bring a constraint.
+
+Erroneous code example:
+
+```fren
+pub enum List(T) { Nil, Cons(T, List(T)) }
+
+comp c { in xs: List(Int is 0..=9) }
+```
+
+A pattern type's constraint, or a constraint that a value of a record or
+enumeration brings, would hold of every payload of a recursive
+enumeration, at every depth, so for now a type argument of one brings none.
+Give the argument no pattern, and say of the payloads that the spec reads
+what it needs:
+
+```fren
+pub enum List(T) { Nil, Cons(T, List(T)) }
+
+comp c { in xs: List(Int) }
+```
+"# },
+  { code := "F0390", explanation := r#"An ordered struct with type parameters.
+
+Erroneous code example:
+
+```fren
+ordered struct Pair(A, B) { fst: A, snd: B }
+```
+
+An ordered struct orders its values by their fields, so each field's type
+must be ordered. A type parameter's type is not known until an instance
+gives it, as `Pair(Int, Int)` does, so for now a struct with type
+parameters cannot be declared `ordered`. Declare it without `ordered`, or
+without type parameters:
+
+```fren
+ordered struct Pair { fst: Int, snd: Int }
+```
+"# },
   { code := "F0401", explanation := r#"An assumption mentions a variable that is not an `in`.
 
 Erroneous code example:
@@ -5643,8 +5763,8 @@ comp c {
 }
 ```
 
-The members of a component are written in one order: `use`, `in`, `out`,
-`assume`, `inst`, `ensure`, `expect`, then `cover`. `fren fix` can fix this,
+The members of a component are written in one order: `use`, `in`,
+`assume`, `out`, `inst`, `ensure`, `expect`, then `cover`. `fren fix` can fix this,
 unless a definition or a binding would then come before what it mentions:
 
 ```fren

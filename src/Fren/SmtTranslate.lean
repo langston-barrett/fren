@@ -22,12 +22,17 @@ open Lean Meta Smt Translator Term
 namespace Fren
 
 /-- The selector of the field `field` of the constructor `ctor`, as
-lean-smt names it, applied to `arg`; `none` if `ctor` belongs to a
-parametric or indexed inductive, which lean-smt does not declare. -/
+lean-smt names it, applied to `arg`; `none` if `ctor` belongs to an indexed
+inductive, or one with a parameter that is not a type, which lean-smt does
+not declare as a datatype. One whose parameters are types, as a generic
+type's are (`Reqs/Generated#generic-types`), it declares as a parametric
+datatype, whose selectors are named as any other's. -/
 def selectorApp (ctor : Name) (field : Name) (arg : Expr) : TranslationM (Option Smt.Term) := do
   let some (.ctorInfo c) := (← getEnv).find? ctor | return none
   let some (.inductInfo i) := (← getEnv).find? c.induct | return none
-  if i.numParams != 0 || i.numIndices != 0 then return none
+  if i.numIndices != 0 then return none
+  let typesOnly ← forallBoundedTelescope i.type i.numParams fun ps _ => ps.allM fun p => return (← inferType p).isSort
+  unless typesOnly do return none
   -- The datatype that declares the selector.
   modify fun st => { st with depConstants := st.depConstants.insert c.induct }
   return some (appT (symbolT s!"{ctor}.{field}") (← applyTranslators! arg))
@@ -39,13 +44,19 @@ def selectorApp (ctor : Name) (field : Name) (arg : Expr) : TranslationM (Option
     let some info := getStructureInfo? env s | return none
     let some field := info.fieldNames[idx]? | return none
     selectorApp (getStructureCtor env s).name field arg
-  | .app (.const f _) arg =>
+  | .app .. =>
+    -- The value is the last argument, after a generic type's parameters and,
+    -- for a payload selector, their `Inhabited` instances.
+    let .const f _ := e.getAppFn | return none
+    let args := e.getAppArgs
+    let some arg := args.back? | return none
     if let some p := env.getProjectionFnInfo? f then
-      if p.fromClass || p.numParams != 0 then return none
+      if p.fromClass || args.size != p.numParams + 1 then return none
       return ← selectorApp p.ctorName (Name.mkSimple f.getString!) arg
     -- A payload selector, `ctor.xk` (`Fren.selectorName`).
-    let some (.ctorInfo _) := env.find? f.getPrefix | return none
+    let some (.ctorInfo c) := env.find? f.getPrefix | return none
     let some (.defnInfo _) := env.find? f | return none
+    unless args.size == 2 * c.numParams + 1 do return none
     selectorApp f.getPrefix (Name.mkSimple f.getString!) arg
   | _ => return none
 

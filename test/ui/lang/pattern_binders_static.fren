@@ -44,4 +44,9 @@ enum Flag { On(Bool), Off }
 comp bool_name { in f: Flag pub out z? ensure a: when f is Flag::On(b), z? iff b }
 --~^ error: `Bool` variable `b` must end in `?`
 
+-- A binder of a generic payload has the instantiated type.
+enum Opt(T) { None, Some(T) }
+comp generic { in o: Opt(Int) pub out w? ensure a: when o is Opt::Some(x), w? iff x }
+--~^ error: type mismatch: expected `Bool`, found `Int`
+
 --@ exit: 2

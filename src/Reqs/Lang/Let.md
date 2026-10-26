@@ -77,9 +77,9 @@ pub comp definition_order {
     in n: Int            -- the number of definitions of the clause
     in k_def: Nat        -- the position of the definition named
     in k_use: Nat        -- the position of the definition the name is in, or `n` in the body
-    pub det out means?   -- the name means the definition
 
     assume positions: k_def < n and k_use <= n
+    pub det out means?   -- the name means the definition
 
     ensure rule: means? iff k_def < k_use
 

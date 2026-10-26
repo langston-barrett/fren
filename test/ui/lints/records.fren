@@ -15,7 +15,6 @@ comp copies {
     in p: Point
     in l: Line
     in c?
-    inst w: src {}
     pub out a: Pair
     pub out b: Point
     pub out d: Point
@@ -23,6 +22,7 @@ comp copies {
     pub out f: Point
     pub out g: Point
     pub out h: Point
+    inst w: src {}
 
     -- A conversion, and an instance, which is not a value.
     ensure ra: a = Pair { x := p.x, y := p.y }

@@ -10,10 +10,10 @@ use self::Mode::{Cool, Heat, Off}
 pub comp thermostat {
     in temp: Int
     in target: Int
-    pub out mode: Mode
-    pub out fan?
 
     assume sane: -50 <= temp and temp <= 150 and 50 <= target and target <= 90
+    pub out mode: Mode
+    pub out fan?
 
     ensure heat: when temp < target - 2, mode = Heat
     ensure cool: when temp > target + 2, mode = Cool

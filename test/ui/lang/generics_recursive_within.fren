@@ -1,0 +1,43 @@
+-- A constrained type argument reaches a recursive enumeration within an
+-- instance, once the instance's arguments stand for its parameters: it is
+-- an error there too, as where it is written (`F0389`). In a module, since
+-- Lean has a `List` of its own.
+
+mod generics_recursive_within
+
+type Byte := Int is 0..=255
+pub enum List(T) { Nil, Cons(T, List(T)) }
+pub enum Wrap(T) { W(List(T)) }
+pub enum Twice(T) { T2(Wrap(T)) }
+pub struct InSet(T) { s: Set(List(T)) }
+pub struct InSeq(T) { q: Seq(List(T)) }
+pub struct InRel(T) { r: Rel(Int, List(T)) }
+
+comp giver {
+    in n: Int
+    pub det out w: Wrap(Byte) := Wrap::W(List::Cons(n, List::Nil))   --~ error: `Byte` cannot be a type argument of the recursive enumeration `generics_recursive_within::List`
+}
+
+comp deeper {
+    in t: Twice(Byte)   --~ error: `Byte` cannot be a type argument of the recursive enumeration `generics_recursive_within::List`
+}
+
+-- Through a set's, sequence's or relation's element types.
+comp in_set {
+    in n: Int
+    pub det out x: InSet(Byte) := InSet { s := {List::Cons(n, List::Nil)} }   --~ error: `Byte` cannot be a type argument of the recursive enumeration `generics_recursive_within::List`
+}
+
+comp in_seq {
+    in x: InSeq(Byte)   --~ error: `Byte` cannot be a type argument of the recursive enumeration `generics_recursive_within::List`
+}
+
+comp in_rel {
+    in x: InRel(Byte)   --~ error: `Byte` cannot be a type argument of the recursive enumeration `generics_recursive_within::List`
+}
+
+comp plain {
+    in n: Int
+    pub det out w: Wrap(Int) := Wrap::W(List::Cons(n, List::Nil))
+    expect some: w != Wrap::W(List::Nil)
+}

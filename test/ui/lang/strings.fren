@@ -14,9 +14,9 @@ const PREFIX: String := "user-"
 comp handle {
     in name: String
     in taken?
-    pub out accepted?
 
     assume nonempty: name != ""
+    pub out accepted?
 
     ensure shape: accepted? iff (name.len <= 20 and not taken? and not name.contains?(" ")
         and name.starts_with?("a"))

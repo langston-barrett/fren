@@ -166,9 +166,9 @@ pub comp comparison_chain {
     in n_ascending: Nat     -- operators `<` and `<=`
     in n_descending: Nat    -- operators `>` and `>=`
     in n_other: Nat         -- operators `=`, `!=`, `in`, `subset` and `is`
-    pub det out accepted?
 
     assume compares: n_ascending + n_descending + n_other >= 1
+    pub det out accepted?
 
     ensure rule: accepted? iff (n_ascending + n_descending + n_other = 1
         or (n_other = 0 and (n_ascending = 0 or n_descending = 0)))
@@ -493,9 +493,9 @@ pub comp application {
     in params: Seq(Ty)   -- the parameters' types
     in args: Seq(Ty)     -- the arguments' types
     in k: Int            -- any position, for `typed`
-    pub det out accepted?
 
     assume some_param: params != []
+    pub det out accepted?
 
     ensure rule: accepted? iff args = params
 
@@ -554,10 +554,10 @@ pub comp cardinality {
     in op: Cardinality
     in n_args: Nat           -- how many arguments it has
     in n_true: Nat           -- how many of them are `true`
-    pub det out value?
 
     assume some_argument: n_args >= 1
     assume counted: n_true <= n_args
+    pub det out value?
 
     ensure rule: value? iff match op {
         Exactly => n_true = 1,
@@ -606,9 +606,9 @@ states this, from how many arguments it has and how many of them are
 pub comp cardinality_args {
     in n_args: Nat           -- how many arguments it has
     in n_bool: Nat           -- how many of them are `Bool`s
-    pub det out accepted?
 
     assume counted: n_bool <= n_args
+    pub det out accepted?
 
     ensure rule: accepted? iff (n_args >= 1 and n_bool = n_args)
 
@@ -728,9 +728,9 @@ pub comp record_update {
     in fields: Set(FieldName)        -- the fields of its record
     in given: Set(FieldName)         -- the names the update gives
     in n_repeated: Nat               -- names given more than once, counting each repeat
-    pub det out accepted?
 
     assume some_given: given != {}
+    pub det out accepted?
 
     ensure rule: accepted? iff (record? and given subset fields and n_repeated = 0)
 
@@ -822,10 +822,10 @@ pub comp newtype_operator {
     in underlying: Ty            -- the newtype's underlying type
     in ordered?                  -- the newtype is ordered (`ordered_type`): declared `ordered`
     in inner_has?                -- the underlying type is a newtype that has `op` itself
-    pub det out accepted?
 
     -- A newtype is a record.
     assume inner_newtypes: when inner_has?, newtype?(underlying) and kind(underlying) = ValueType::RecordTy
+    pub det out accepted?
 
     ensure rule: accepted? iff match op {
         Equality => true,
@@ -878,7 +878,9 @@ pub comp variant_mention {
 ```
 
 As for a function, `lang::application` gives whether the application is
-accepted, where the parameters are the payload's types. Unlike a
+accepted, where the parameters are the payload's types. Of a variant of a
+[generic type](Generics.md), those are the payload's types with its
+inferred [type arguments](Generics.md#type-arguments) for its parameters. Unlike a
 function's value, a variant's value is fixed: building one is not an
 application for the rules of [linear arithmetic](#linear-arithmetic) or of
 constants, and its arguments may mention any variable that its place
@@ -1066,10 +1068,10 @@ pub comp guarded_match {
     in arms: Seq(ArmAt)      -- what each arm does at the scrutinee's value, in order
     in bodies: Seq(Int)      -- each arm's body's value there
     in k: Int                -- any position, for `none_before`
-    pub out first: Int := arms.index_of([Taken], 0)  -- the position of the arm taken, `-1` if none is
-    pub out value: Int       -- the `match`'s value
 
     assume aligned: bodies.len = arms.len
+    pub out first: Int := arms.index_of([Taken], 0)  -- the position of the arm taken, `-1` if none is
+    pub out value: Int       -- the `match`'s value
 
     ensure valued: when first >= 0, value = bodies[first]
 
@@ -1242,19 +1244,19 @@ pub enum Reading { Missing, Value(Int) }
 pub comp pattern_binding {
     in r: Reading
     in limit: Int
-    pub det out within?      -- `when r is Reading::Value(v), v <= limit`
+    pub det out at_most_limit?      -- `when r is Reading::Value(v), v <= limit`
     pub det out exceeds?       -- `r is Reading::Value(v) and v > limit`
     pub det out clamped: Int  -- `if r is Reading::Value(v) and v <= limit then v else limit`
 
-    ensure within_rule: within? iff (when r is Reading::Value(v), v <= limit)
+    ensure within_rule: at_most_limit? iff (when r is Reading::Value(v), v <= limit)
     ensure above_rule: exceeds? iff r is Reading::Value(v) and v > limit
     ensure clamped_rule: clamped = (if r is Reading::Value(v) and v <= limit then v else limit)
 
-    expect within_match: within? iff match r { Reading::Value(v) => v <= limit, _ => true }
+    expect within_match: at_most_limit? iff match r { Reading::Value(v) => v <= limit, _ => true }
     expect above_match: exceeds? iff match r { Reading::Value(v) => v > limit, _ => false }
     expect clamped_match: clamped = match r { Reading::Value(v) if v <= limit => v, _ => limit }
-    expect complement: when r is Reading::Value(_), within? iff not exceeds?
-    expect missing: when r = Reading::Missing, within? and not exceeds? and clamped = limit
+    expect complement: when r is Reading::Value(_), at_most_limit? iff not exceeds?
+    expect missing: when r = Reading::Missing, at_most_limit? and not exceeds? and clamped = limit
     expect at_most: clamped <= limit
 }
 ```
@@ -1521,11 +1523,11 @@ pub comp table_match {
     in values: Seq(Int)      -- each arm's body's value there
     in otherwise: Seq(Int)   -- `[v]` where the table has a last arm `_ => e` and `e`'s value there is `v`, `[]` where it has none
     in k: Int                -- any position, for `only` and `none_holds`
+
+    assume aligned: values.len = arms.len
     pub out one: Int := arms.index_of([Taken], 0)  -- the arm that holds, `-1` if none does
     pub out disjoint? := arms.index_of([Taken], one + 1) = -1  -- no two arms hold
     pub out value: Int       -- the table's value
-
-    assume aligned: values.len = arms.len
 
     ensure held: when disjoint? and one >= 0, value = values[one]
     ensure otherwise_held: when one = -1 and otherwise != [], value = otherwise[0]
@@ -1551,10 +1553,10 @@ pub comp table_eval {
     in arms: Seq(ArmAt)      -- what each arm but `_` does at the scrutinee's value, in order
     in values: Seq(Int)      -- each arm's body's value there
     in otherwise: Seq(Int)   -- the value of the `_` arm's body there, `[]` without one
-    pub out first: Int := arms.index_of([Taken], 0)  -- the first arm that holds, `-1` if none does
-    pub out value: Int       -- the table's value
 
     assume aligned: values.len = arms.len
+    pub out first: Int := arms.index_of([Taken], 0)  -- the first arm that holds, `-1` if none does
+    pub out value: Int       -- the table's value
 
     ensure first_held: when first >= 0, value = values[first]
     ensure otherwise_held: when first = -1 and otherwise != [], value = otherwise[0]
@@ -2036,11 +2038,11 @@ pub comp method_type {
     in method: Method
     in receiver: ValueType
     in ordered?
+
+    assume ordered_kinds: when ordered?, receiver in {StringTy, EnumTy, RecordTy}
     pub det out accepted?
     pub det out result: ValueType
     pub det out n_params: Int
-
-    assume ordered_kinds: when ordered?, receiver in {StringTy, EnumTy, RecordTy}
 
     ensure receivers: accepted? iff match method {
         Card => receiver in {SetTy, RelTy},
@@ -2171,10 +2173,10 @@ pub comp order_plan {
     in compared: Seq(FieldName)       -- for a record: the fields that its plan compares, in order
     in field_plans: Seq(Plan)         -- and the kind of each one's plan
     in k: Int                         -- any position among the fields
-    pub out planned?                  -- `t` has a plan
-    pub out plan: Plan
 
     assume aligned: field_types.len = fields.len
+    pub out planned?                  -- `t` has a plan
+    pub out plan: Plan
 
     ensure only_ordered: when planned?, ordered_in?(kind(t), type_name(t), ordered_items)
     ensure kind_of_plan: when planned?, plan = plan_of(kind(t), newtype?(t))
@@ -2273,14 +2275,14 @@ pub comp operator_type {
     in cond: Ty
     in inner_has?            -- for `+` or `-` of a newtype `a`: its underlying type is a newtype that has it itself
     in ordered_items: Set(TypeName)  -- the enumerations, records and newtypes declared `ordered`
-    pub out accepted?
-    pub out result: ValueType
 
     -- There is one `Bool` type, one `Int` type and one `Nat` type.
     assume primitive_unique: when kind(a) = kind(b) and kind(a) in {BoolTy, IntTy, NatTy, StringTy}, a = b
     -- A newtype is a record.
     assume newtype_record: (when newtype?(a), kind(a) = RecordTy) and (when newtype?(b), kind(b) = RecordTy)
     assume inner_newtypes: when inner_has?, newtype?(under(a)) and kind(under(a)) = RecordTy
+    pub out accepted?
+    pub out result: ValueType
 
     -- Whether `a` is ordered, and whether a newtype `a` has `+` or `-`.
     inst order: ordered_type { base := a, patterned? := false, ordered_items }

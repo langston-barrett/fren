@@ -14,10 +14,10 @@ comp retry {
     in status: Nat
     in attempt: Nat
     in retry_after: Seconds
-    pub det out retry?
-    pub out delay: Seconds
 
     assume sane: attempt >= 1 and retry_after >= Seconds(0)
+    pub det out retry?
+    pub out delay: Seconds
 
     ensure transient: retry? iff status is 429 | 503
         and method != Method::Post and attempt < MAX_ATTEMPTS

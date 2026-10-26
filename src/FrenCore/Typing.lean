@@ -24,7 +24,7 @@ def typeMismatchMsg (expected found : Ty) (why : Option String := none) : Msg :=
     | .bool, .int | .bool, .nat => #["help: compare it to make a `Bool`, e.g. `x > 0` or `x != 0`"]
     | .int, .bool => #["help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`"]
     | .nat, .int => #[narrowingNote]
-    | .bool, .enum p | .int, .enum p => #[s!"help: compare it with a variant to make a `Bool`, e.g. `x = {p.getString!}::Variant`"]
+    | .bool, .enum p _ | .int, .enum p _ => #[s!"help: compare it with a variant to make a `Bool`, e.g. `x = {p.getString!}::Variant`"]
     | _, _ => #[]
   { code? := some "F0304", headline := s!"type mismatch: expected `{expected.show}`, found `{found.show}`"
     label? := some s!"expected `{expected.show}`, found `{found.show}`"
@@ -61,7 +61,7 @@ def checkComparable (op : String) (tx ty : Ty) : Except Msg Unit := do
   checkNewtypeOperator op false tx ty (fun _ => false)
   if tx.widens ty || ty.widens tx then return
   let hint := match tx, ty with
-    | .enum p, .int | .int, .enum p => #[s!"note: enums are not numbers", s!"help: compare with a variant, e.g. `{p.getString!}::Variant`"]
+    | .enum p _, .int | .int, .enum p _ => #[s!"note: enums are not numbers", s!"help: compare with a variant, e.g. `{p.getString!}::Variant`"]
     | .bool, .int | .int, .bool => #["note: `Bool`s are not numbers: `true` and `false` are `Bool`s"]
     | _, _ => #[]
   throw { code? := some "F0305", headline := s!"cannot compare `{tx.show}` with `{ty.show}`"

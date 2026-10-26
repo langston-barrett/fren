@@ -2,10 +2,10 @@
 
 comp counter {
     in n: Int
-    pub out next: Int
-    out scratch: Int
 
     assume nonneg: n >= 0
+    pub out next: Int
+    out scratch: Int
 
     ensure inc: next = n + 1
     ensure copy: scratch = n
@@ -14,9 +14,9 @@ comp counter {
 -- `b`'s assumption follows from `a`'s guarantees.
 comp twice {
     in n: Int
-    pub out m: Int
 
     assume nonneg: n >= 0  --~ warning: `n` is never negative
+    pub out m: Int
 
     inst a: counter { n }
     inst b: counter { n := a.next }

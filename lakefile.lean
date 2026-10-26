@@ -19,11 +19,14 @@ def coverageLinkArgs : Array String := match get_config? coverage with
   | some runtime => #[runtime]
   | none => #[]
 
--- The Mathlib-free fork of lean-smt that Veil uses
--- (verse-lab's `v4.32.0-veil-no-mathlib`), with a patch under `trust`: the
+-- Fren's fork of the Mathlib-free lean-smt that Veil uses (verse-lab's
+-- `v4.32.0-veil-no-mathlib`), with two patches: under `trust`, the
 -- preprocessing skips the proofs of the goal's simplification, which Fren
--- discards, and which take time quadratic in the number of binders.
-require smt from git "https://github.com/langston-barrett/lean-smt.git"@"trust-skip-proofs"
+-- discards, and which take time quadratic in the number of binders; and
+-- inductive types with type parameters are translated as SMT-LIB parametric
+-- datatypes (`Reqs/Lang/Generics`). The commit is on the fork's branch
+-- `parametric-datatypes-v2`, on top of `trust-skip-proofs`.
+require smt from git "https://github.com/langston-barrett/lean-smt.git"@"47210ac176828db8a6cc97d82fb26ccd9389fa99"
 
 -- Shared by the Lean library and the binary; depends only on Lean core.
 -- All of its modules, not only those that the module `FrenCore` imports.

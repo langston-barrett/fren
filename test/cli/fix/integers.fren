@@ -7,14 +7,14 @@ pub comp c {
     in j: Int
     in x: Int
     in y: Int
+
+    assume counts: k >= 0 and n >= 0 and x < y
+    assume order: j >= 0  -- why
     pub out m: Int
     pub out a: Int
     pub out b: Int
     pub out d: Int
     pub out e: Int
-
-    assume counts: k >= 0 and n >= 0 and x < y
-    assume order: j >= 0  -- why
 
     ensure rm: m >= 0 and m <= n
     ensure ra: a = 2 * if x - y > 0 then x - y else -(x - y)

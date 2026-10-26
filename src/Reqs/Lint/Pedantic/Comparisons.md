@@ -85,9 +85,9 @@ pub comp manual_ordering {
     in named: NamedVariants          -- the variants that the test names
     in last: Position        -- the last variant of the enumeration
     in negated?              -- the test is that the operand is none of them
-    pub det out fix: OrderingFix
 
     assume within: forall (v: Position), when names?(named, v), v <= last
+    pub det out fix: OrderingFix
 
     ensure first: forall (m: Position), when some_named?(named, last) and bounded?(named, last, m, true),
         fix = Compare(if negated? then Gt else Le, m)

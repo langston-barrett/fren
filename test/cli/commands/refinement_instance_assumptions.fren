@@ -3,15 +3,15 @@
 -- tested, and the summary counts one test, the expectation `r`.
 pub comp guarded {
     in k: Int
-    pub out m: Int
     assume pos: k > 0
+    pub out m: Int
     ensure r: m = k
 }
 
 pub comp abstract {
     in x: Int
-    pub out y: Int
     assume pos: x > 0
+    pub out y: Int
     inst g: guarded { k := x }
     ensure r: y >= g.m
 }

@@ -27,8 +27,8 @@ comp source {
 
 comp member {
     in x: Int
-    inst w: source { x }
     pub out z?
+    inst w: source { x }
     ensure q: z? iff x in {w.y, 0}
 }
 

@@ -1,0 +1,25 @@
+-- A pattern test's binders of a generic payload have the instantiated
+-- types (`Reqs/Lang/Expressions#binding-names`). In a module, since Lean has
+-- an `Option` of its own.
+mod pattern_binders_generic
+
+enum Opt(T) { None, Some(T) }
+struct Ms(Int)
+
+comp c {
+    in o: Opt(Int)
+    in b: Opt(Bool)
+    in m: Opt(Ms)
+    pub det out positive?
+    pub det out set?
+    pub det out ms: Int
+
+    ensure positive_rule: positive? iff o is Opt::Some(x) and x > 0
+    ensure set_rule: set? iff (when b is Opt::Some(on?), on?)
+    ensure ms_rule: ms = (if m is Opt::Some(n) then n.0 else 0)
+
+    expect positive_match: positive? iff match o { Opt::Some(x) => x > 0, _ => false }
+    expect none_set: when b = Opt::None, set?
+    expect some_ms: when m = Opt::Some(Ms(4)), ms = 4
+    expect wrong: positive?  --~ error: expectation `pattern_binders_generic::c::wrong` does not hold
+}

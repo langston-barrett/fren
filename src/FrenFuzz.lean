@@ -470,9 +470,11 @@ partial def domain (sp : Spec) (size : Nat) : VTy → Array Val
     let xs := domain sp size t
     #[.seq #[]] ++ xs.map (.seq #[·]) ++ xs.flatMap fun x => xs.map fun y => .seq #[x, y]
   | .abstract s => (Array.range size).map (.abs s)
-  | .data p => match sp.data.find? p with
+  | .data p _ => match sp.data.find? p with
     | some d => (Array.range d.ctors.size).map (.ctor p · #[])
     | none => #[]
+  -- The generator declares no generic types.
+  | .param _ => #[]
 
 /-- Every interpretation of the functions, whose parameters are abstract
 types of `size` values. -/

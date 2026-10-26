@@ -56,12 +56,12 @@ comp guarded {
 comp assumed {
     in x: Int
     in y: Int
-    pub out o: Int
 
     assume nonneg: y >= 0
     --~^ warning: `y` is never negative, so it can be a `Nat`
     assume r: table { y = 0 => x < 0, y > 0 => x >= 0 }
     assume s: table { x > 5 => y > 5 }   --~ error: a table in `assumed::s` may have no row that holds
+    pub out o: Int
 
     ensure uses: o = x + y
 }

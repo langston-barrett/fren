@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCli.Lex
 import FrenCore.Evidence
+import FrenCore.Generics
 import FrenCore.Names
 import FrenCore.PatternTypes
 -- keep-sorted end
@@ -180,9 +181,9 @@ def Pattern.decode (s : String) : Except String Pattern := (decodeAt (atomsOf s.
 identifier can start with: it follows the segments of the base type, or,
 for a base type that is a set, relation or sequence, precedes them
 (`patOuterSeg`), so that it is never read as an element type's. -/
-def patSeg : String := "is "
+def patSeg : String := Fren.Core.patSeg
 
-def patOuterSeg : String := "is( "
+def patOuterSeg : String := Fren.Core.patOuterSeg
 
 /-- The segment of the pattern `p`, after the base type, or before it if
 `outer`. -/
@@ -309,11 +310,15 @@ inductive Item where
   /-- `use pre::{a, b::c}`: each path is appended to `pre`. -/
   | useGroup (span : Span) (pre : Array Ident) (paths : Array (Array Ident))
   /-- `enum E { A, B(T, U) }`: each variant with its payload's types, if
-  it has a payload; `ordered enum E { A, B }` if `isOrdered`. -/
-  | enum (isPub : Bool) (name : Ident) (variants : Array (Ident × Option (Array (Array Ident)))) (isOrdered : Bool := false)
+  it has a payload; `ordered enum E { A, B }` if `isOrdered`; with type
+  parameters, `enum E(T) { ... }`. -/
+  | enum (isPub : Bool) (name : Ident) (variants : Array (Ident × Option (Array (Array Ident)))) (isOrdered : Bool)
+      (params : Array Ident)
   /-- `struct R { x: T, y? }`: each field with its type, if written;
-  `ordered struct R { ... }` if `isOrdered`. -/
-  | record (isPub : Bool) (name : Ident) (fields : Array (Ident × Option (Array Ident))) (isOrdered : Bool := false)
+  `ordered struct R { ... }` if `isOrdered`; with type parameters,
+  `struct R(A, B) { ... }`. -/
+  | record (isPub : Bool) (name : Ident) (fields : Array (Ident × Option (Array Ident))) (isOrdered : Bool)
+      (params : Array Ident)
   /-- `struct N(T)`: a newtype, with the types in its parentheses, which
   must be one (`lang::newtype`); `ordered struct N(T)` if `isOrdered`. -/
   | newtype (isPub : Bool) (name : Ident) (fields : Array (Array Ident)) (isOrdered : Bool := false)
@@ -694,11 +699,11 @@ def pattern (arm := true) : P Pattern := do
 /-- The segment that starts `Set(T)` in a type, which no identifier can
 be: a type is a path, `Set(` followed by its element type, or `Rel(`
 followed by its two element types, separated by `relSep`. -/
-def setSeg : String := "Set("
+def setSeg : String := Fren.Core.setSeg
 
-def relSeg : String := "Rel("
+def relSeg : String := Fren.Core.relSeg
 
-def relSep : String := ","
+def relSep : String := Fren.Core.relSep
 
 /-- The two element types of the segments of `Rel(A, B)` after `Rel(`: each
 `Rel(` within `A` is matched by a separator of its own. -/
@@ -711,11 +716,39 @@ def splitRel (segs : Array Ident) : Array Ident × Array Ident := Id.run do
       depth := depth - 1
   return (segs, #[])
 
-def seqSeg : String := "Seq("
+def seqSeg : String := Fren.Core.seqSeg
+
+/-- The segments around and between the type arguments of an instance of a
+generic type, `G(A, B)`, written as `G`'s path, `argsOpen`, `A`, `argsSep`,
+`B` and `argsClose`, none of which an identifier can be. `argsSep` is not
+`relSep`, so that `splitRel` never splits at it. -/
+def argsOpen : String := Fren.Core.argsOpen
+
+def argsSep : String := Fren.Core.argsSep
+
+def argsClose : String := Fren.Core.argsClose
+
+/-- The type arguments within the segments between `argsOpen` and
+`argsClose`, split at each `argsSep` that is not within another instance's
+arguments. -/
+def splitArgs (segs : Array Ident) : Array (Array Ident) := Id.run do
+  let mut out := #[]
+  let mut cur := #[]
+  let mut depth := 0
+  for s in segs do
+    if s.name == argsOpen then depth := depth + 1
+    else if s.name == argsClose then depth := depth - 1
+    else if s.name == argsSep && depth == 0 then
+      out := out.push cur
+      cur := #[]
+      continue
+    cur := cur.push s
+  return if cur.isEmpty && out.isEmpty then #[] else out.push cur
 
 mutual
-/-- A type: a path, `Set(T)`, `Seq(T)` or `Rel(A, B)`, optionally followed
-by `is` and a pattern, for a pattern type. -/
+/-- A type: a path, `Set(T)`, `Seq(T)`, `Rel(A, B)`, or an instance of a
+generic type, `G(A, B)`, optionally followed by `is` and a pattern, for a
+pattern type. -/
 partial def typeExpr : P (Array Ident) := do
   let base ← baseType
   unless isKw (← peek) "is" do return base
@@ -725,8 +758,9 @@ partial def typeExpr : P (Array Ident) := do
   let outer := base[0]?.any fun s => s.name == setSeg || s.name == seqSeg || s.name == relSeg
   return if outer then #[p.seg true] ++ base else base.push (p.seg false)
 
-/-- A type without a pattern of its own: a path, `Set(T)`, `Seq(T)` or
-`Rel(A, B)`, whose element types may be pattern types. -/
+/-- A type without a pattern of its own: a path, `Set(T)`, `Seq(T)`,
+`Rel(A, B)` or an instance of a generic type, `G(A, B)`, whose element
+types and type arguments may be pattern types. -/
 partial def baseType : P (Array Ident) := do
   let t ← peek
   let s ← get
@@ -756,7 +790,18 @@ partial def baseType : P (Array Ident) := do
     let b ← typeExpr
     discard (expectKw ")")
     return #[{ name := relSeg, span := t.span }] ++ a ++ #[{ name := relSep, span := c.span }] ++ b
-  return (← path false).1
+  let p := (← path false).1
+  let pathName := "::".intercalate (p.map (·.name)).toList
+  noSpaceBeforeParen pathName s!"the type arguments of `{pathName}`"
+  unless isKw (← peek) "(" do return p
+  markCall
+  let o ← bump
+  let mut out := p ++ #[{ name := argsOpen, span := o.span }] ++ (← typeExpr)
+  while isKw (← peek) "," do
+    let c ← bump
+    out := out ++ #[{ name := argsSep, span := c.span }] ++ (← typeExpr)
+  let close ← expectKw ")"
+  return out.push { name := argsClose, span := close.span }
 
 end
 
@@ -1163,6 +1208,33 @@ def useRest (t : Token) (first : Nat) : P (Span × Array Ident × Bool × Option
   used
   return (t.span.to (← lastSpan), segs, false, some paths)
 
+
+/-- Whether the next tokens are a record's type parameters: `(`, up to the
+matching `)`, followed by `{`, which a newtype's types are not. -/
+def generic : P Bool := do
+  let s ← get
+  unless (s.toks[s.pos]?).any (isKw · "(") do return false
+  let mut depth := 0
+  let mut i := s.pos
+  while h : i < s.toks.size do
+    let t := s.toks[i]
+    if isKw t "(" then depth := depth + 1
+    else if isKw t ")" then
+      depth := depth - 1
+      if depth == 0 then return (s.toks[i + 1]?).any (isKw · "{")
+    i := i + 1
+  return false
+
+/-- The type parameters of an enumeration or record, `(A, B)`, if any. -/
+def typeParams : P (Array Ident) := do
+  unless isKw (← peek) "(" do return #[]
+  markCall
+  discard bump
+  let mut ps := #[← ident]
+  while (← eatKw ",").isSome do ps := ps.push (← ident)
+  discard (expectKw ")")
+  return ps
+
 /-- `{ x := e, y, ... }`: the bindings of an instance or a refinement. -/
 def bindings : P (Array (Ident × Option Expr)) := do
   markList
@@ -1363,6 +1435,8 @@ partial def item : P Item := do
   if isKw t "enum" then
     discard bump
     let name ← ident
+    noSpaceBeforeParen name.name s!"the type parameters of `{name.name}`"
+    let params ← typeParams
     markList
     discard (expectKw "{")
     let variant : P (Ident × Option (Array (Array Ident))) := do
@@ -1381,12 +1455,19 @@ partial def item : P Item := do
       if isKw (← peek) "}" then break
       vs := vs.push (← variant)
     discard (expectKw "}")
-    return .enum isPub name vs ordered?.isSome
+    return .enum isPub name vs ordered?.isSome params
   if isKw t "struct" then
     discard bump
     let name ← ident
-    noSpaceBeforeParen name.name s!"the types of `{name.name}`"
-    if isKw (← peek) "(" then
+    -- Type parameters are followed by the fields' `{`; a newtype's types
+    -- are not.
+    let params ← if ← generic then do
+        noSpaceBeforeParen name.name s!"the type parameters of `{name.name}`"
+        typeParams
+      else do
+        noSpaceBeforeParen name.name s!"the types of `{name.name}`"
+        pure #[]
+    if params.isEmpty && isKw (← peek) "(" then
       -- A newtype: its types, in parentheses.
       markCall
       discard bump
@@ -1407,7 +1488,7 @@ partial def item : P Item := do
       if isKw (← peek) "}" then break
       fs := fs.push (← field)
     discard (expectKw "}")
-    return .record isPub name fs ordered?.isSome
+    return .record isPub name fs ordered?.isSome params
   if isKw t "type" then
     discard bump
     let name ← ident

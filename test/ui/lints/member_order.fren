@@ -20,9 +20,9 @@ comp in_order {
     use self::Shape::Square
     in x: Int
     in shape: Shape
+    assume small: x < 100
     pub out y: Int
     out z: Int := x + 1
-    assume small: x < 100
     inst w: severity_of { x }
     ensure r: y = double(x) + triple(x) + triple(z) + half(x) + unknown(x) + w.v
     expect e: shape = Square or shape = Shape::Circle  --~ warning: this says that `shape` matches one of these patterns

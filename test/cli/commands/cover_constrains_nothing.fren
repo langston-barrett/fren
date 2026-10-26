@@ -8,8 +8,8 @@ comp sensor {
     pub out hot?
 
     ensure r: hot? iff x > 100
+    expect only_warm: x = 50
 
     cover warm: x = 50 and not hot?
-    expect only_warm: x = 50
     cover never: when x > 5 and x < 3, hot?
 }

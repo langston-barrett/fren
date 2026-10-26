@@ -143,9 +143,13 @@ pub comp scope {
 ```
 
 A quantifier's bound name is unused if its body's tree does not have it
-free. `lint::unused_bound` states this, for the bound names `names`:
+free. `lint::unused_bound` states this, for the bound names `names`. Its
+definition reads its instance, so the instance is written first, against
+[the order of members](Restriction.md#the-order-of-members), and the
+component expects that lint:
 
 ```fren
+set_option fren.lint.arbitrary_source_item_ordering "expect" in
 pub comp unused_bound {
     in names: Set(Local)
     in body: Tree
@@ -176,10 +180,10 @@ pub comp unused_definitions {
     in uses: Rel(DefIndex, Local)        -- the names free in each definition's expression
     in body: Set(Local)                  -- the names free in the body
     in k: DefIndex
-    pub det out unused?
 
     assume one_name: forall (p: DefIndex) (a b: Local), when (p, a) in names and (p, b) in names, a = b
     assume earlier: uses.domain subset names.domain
+    pub det out unused?
 
     ensure rule: unused? iff (k in names.domain and not (exists (x: Local),
         (k, x) in names and ((x in body and not (exists (m: DefIndex), k < m and (m, x) in names))

@@ -157,10 +157,10 @@ pub comp range_union {
     in lo2: Int
     in hi2: Int
     in n: Int            -- an integer between the lowest and the highest bound
-    pub det out joined?  -- they leave no gap
 
     assume sorted: lo1 <= lo2 <= hi2 and lo1 <= hi1
     assume between: lo1 <= n <= hi1.max(hi2)
+    pub det out joined?  -- they leave no gap
 
     ensure rule: joined? iff lo2 <= hi1 + 1
 

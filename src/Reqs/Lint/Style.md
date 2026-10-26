@@ -287,9 +287,9 @@ pub comp manual_pattern_char_comparison {
 
 pub comp class_char {
     in c: String         -- a character
-    pub det out escaped?  -- the fix writes it `\c`, rather than `c`
 
     assume one: c.len = 1
+    pub det out escaped?  -- the fix writes it `\c`, rather than `c`
 
     ensure rule: escaped? iff c in {"\\", "]", "^", "-"}
 }

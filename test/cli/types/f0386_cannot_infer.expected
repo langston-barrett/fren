@@ -1,0 +1,24 @@
+error[F0386]: cannot infer the type arguments of `Option::None`
+ --> test/cli/types/f0386_cannot_infer.fren:4:40
+  |
+4 | comp c { pub out ok? ensure r: ok? iff Option::None = Option::None }
+  |                                        ^^^^^^^^^^^^ which instance of `Option`?
+  |
+  = note: `Option` is generic, and neither what is expected here nor the values given say what its type arguments are
+  = help: write it where an instance of `Option` is expected, as where it is compared with a variable of one, or give it a type with `let`
+
+warning[F0736]: both operands of `=` are written the same
+ --> test/cli/types/f0386_cannot_infer.fren:4:40
+  |
+4 | comp c { pub out ok? ensure r: ok? iff Option::None = Option::None }
+  |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^ always `true`
+  |
+  = note: one of them is probably not the operand meant
+  = note: `eq_op` is `warn` by default
+  = help: to allow it, `set_option fren.lint.eq_op "allow"`
+
+error: could not check due to previous errors
+
+Some errors have detailed explanations: F0386, F0736.
+For more information about an error, try `fren --explain F0386`.
+exit=2

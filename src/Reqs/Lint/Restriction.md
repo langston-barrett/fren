@@ -212,9 +212,9 @@ is for its [trigger](../Lang/Components.md#triggers). `lint::absolute_paths` sta
 ```fren
 pub comp absolute_paths {
     in n_segments: Int   -- the path's segments
-    pub det out fires?
 
     assume counts: n_segments >= 1
+    pub det out fires?
 
     ensure rule: fires? iff n_segments >= 3
 }
@@ -253,19 +253,26 @@ pub comp precedence {
 ## The order of members
 
 `arbitrary_source_item_ordering` fires on a component whose members are
-not in this order: `use`, `in`, `out`, defined or not, `assume`, `inst`,
-`ensure`, `expect`, then `cover`. Only kinds are ordered: the members of one kind may
-be in any order. A `set_option fren.evidence ... in` is part of the member
-after it. The components of these chapters, and of the others, write
-their members in this order. When the lint was added, all but two did:
-`cli::logic` had an `assume` between two `ensure`s, and
-`lang::punctuator_end` a defined output after an `assume`. Both are now
-in order, which changes what neither means. Like Clippy's lint of the
-same name, which orders the items of a module, it is in `restriction`:
-Fren accepts members in any order, and a component can read better with a
-constraint next to the variable it is about. The message is reported once for each
-component, at the first member written after one of a later kind, and
-names both kinds.
+not in this order: `use`, `in`, `assume`, `out`, defined or not, `inst`,
+`ensure`, `expect`, then `cover`. Only kinds are ordered: the members of
+one kind may be in any order. A `set_option fren.evidence ... in` is part
+of the member after it. The order reads as a contract: what the component
+is given, its inputs, and what it assumes of them, then what it gives,
+its outputs and instances, and what it guarantees and claims of them.
+An `assume` mentions only inputs, so it is written with them, and before
+a definition that relies on it for its definedness, such as `out y :=
+q[i]`. An instance's bindings may mention outputs, and the guarantees its
+variables, so `inst` comes between the two, and cover goals, which claim
+that a scenario can happen, come last. Like Clippy's lint of the same
+name, which orders the items of a module, it is in `restriction`: Fren
+accepts members in any order, and a component can read better with a
+constraint next to the variable it is about. The message is reported once
+for each component, at the first member written after one of a later
+kind, and names both kinds. [`fren fmt`](../Fmt.md) never reorders
+members: it changes only the layout, and ordering them is the lint's. The
+components of these chapters write their members in this order, but for
+`lint::unused_bound`, whose definition reads its instance, and which
+expects the lint.
 
 Order matters to what a component means in one place only: an instance's
 binding may mention another instance's variable only if that instance is
@@ -290,44 +297,58 @@ when each member starts its line, and only a comment follows it on its
 last one.
 
 `lint::rank` is a kind's place in the order. `lint::arbitrary_source_item_ordering`
-states when it fires, on two members written one after the other, and
-`lint::mention_kept` when the new order keeps a mention after what it
-mentions:
+states the lint over a component's members, as written: their kinds, and
+the mentions of one member by another's definition or bindings, each by
+the two members' positions. It gives whether the lint fires, at which
+member, and whether the new order keeps every mention after what it
+mentions. Its quantifiers range over positions, unbounded, so it is
+outside the [decidable core](../Lang/Decidability.md), and its
+implementation is proved in Lean of the lint's code, for every number of
+members and mentions. The solver does not decide its own checks, such as
+whether it is realizable, over unbounded sequences, so they are checked by
+[testing](../Check.md#checking-by-testing).
 
 ```fren
-pub enum MemberKind { Use, Input, Output, Assumption, Instance, Guarantee, Expectation, Cover }
+pub enum MemberKind { Use, Input, Assumption, Output, Instance, Guarantee, Expectation, Cover }
 
 pub fn rank(kind: MemberKind): Int := match kind {
     MemberKind::Use => 0,
     MemberKind::Input => 1,
-    MemberKind::Output => 2,
-    MemberKind::Assumption => 3,
+    MemberKind::Assumption => 2,
+    MemberKind::Output => 3,
     MemberKind::Instance => 4,
     MemberKind::Guarantee => 5,
     MemberKind::Expectation => 6,
     MemberKind::Cover => 7,
 }
 
+-- The definition or a binding of the member at `mentioner` mentions the
+-- member at `mentioned`.
+pub struct Mention { mentioner: Int, mentioned: Int }
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
 pub comp arbitrary_source_item_ordering {
-    in first: MemberKind     -- a member
-    in second: MemberKind    -- the member written after it
+    in kinds: Seq(MemberKind)    -- the members' kinds, in the order written
+    in mentions: Set(Mention)
+    assume positions: forall (m: Mention), when m in mentions,
+        0 <= m.mentioner < kinds.len and 0 <= m.mentioned < kinds.len
     pub det out fires?
+    pub det out first: Int       -- where it is reported, or `-1`
+    pub det out keeps_mentions?  -- in order, each mention comes after what it mentions
 
-    ensure rule: fires? iff rank(first) > rank(second)
-
-    expect same_kind: when first = second, not fires?
-}
-
-pub comp mention_kept {
-    in mentioner: MemberKind     -- a defined output or an instance
-    in mentioned: MemberKind     -- what its definition or a binding mentions
-    in earlier?                  -- the mentioned member is written before the other
-    pub det out kept?
-
-    ensure rule: kept? iff (rank(mentioned) < rank(mentioner) or (rank(mentioned) = rank(mentioner) and earlier?))
-
-    expect instances_in_order: when mentioner = MemberKind::Instance and mentioned = MemberKind::Instance,
-        kept? iff earlier?
+    -- Some member is written after one of a later kind.
+    ensure rule: fires? iff (exists (i: Int), 0 < i < kinds.len and rank(kinds[i - 1]) > rank(kinds[i]))
+    -- The first such member; the members before it are in order.
+    ensure at_first: if fires?
+        then 0 < first < kinds.len and rank(kinds[first - 1]) > rank(kinds[first])
+        and (forall (i: Int), when 0 < i < first, rank(kinds[i - 1]) <= rank(kinds[i]))
+        else first = -1
+    -- In order, a member comes before another of a later kind, and before a
+    -- later one of its own kind.
+    ensure kept: keeps_mentions? iff (forall (m: Mention), when m in mentions and m.mentioner != m.mentioned,
+        rank(kinds[m.mentioned]) < rank(kinds[m.mentioner])
+        or (rank(kinds[m.mentioned]) = rank(kinds[m.mentioner]) and m.mentioned < m.mentioner))
 }
 ```
 
@@ -342,15 +363,15 @@ pub comp member_order_written {
     expect never_info: shown != Severity::Info
     ensure rule: shown = warned.result
     inst warned: severity { level := Level::Warn }
-    assume known: group != Group::Decidability
     pub det out shown: Severity
+    assume known: group != Group::Decidability
     in group: Group
 }
 
 pub comp member_order_fixed {
     in group: Group
-    pub det out shown: Severity
     assume known: group != Group::Decidability
+    pub det out shown: Severity
     inst warned: severity { level := Level::Warn }
     ensure rule: shown = warned.result
     expect never_info: shown != Severity::Info

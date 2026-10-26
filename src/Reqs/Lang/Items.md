@@ -25,11 +25,11 @@ pub comp declared_before {
     in user: ItemName            -- the item the path is written in
     in k_used: Nat               -- the position of `used` in `items`
     in k_user: Nat               -- the position of `user`
-    pub det out accepted?
 
     assume positions: k_used < items.len and items[k_used] = used
         and k_user < items.len and items[k_user] = user
     assume distinct: when used = user, k_used = k_user
+    pub det out accepted?
 
     ensure rule: accepted? iff (used = user or k_used < k_user)
 
@@ -66,8 +66,9 @@ into scope in the current module. See [Modules and visibility](Modules.md#use-de
 ## Enumerations
 
 ```
-enumeration := ["pub"] ["ordered"] "enum" IDENT "{" variant ("," variant)* [","] "}"
-variant     := IDENT ["(" type ("," type)* ")"]
+enumeration   := ["pub"] ["ordered"] "enum" declared-type "{" variant ("," variant)* [","] "}"
+variant       := IDENT ["(" type ("," type)* ")"]
+declared-type := IDENT | IDENT"(" IDENT ("," IDENT)* ")"
 ```
 
 `enum E { A, B }` declares the enumeration `E` with the variants `A` and
@@ -85,7 +86,9 @@ by a [`match`](Expressions.md#matches). The payload's values have types
 but no names. A payload may have the type of its own enumeration, which
 makes the enumeration [recursive](Types.md#recursive-and-unbounded-types),
 as in `enum List { Nil, Cons(Int, List) }`; this is the one exception to
-an item being declared before it is used.
+an item being declared before it is used. An enumeration with type
+parameters, as `enum Option(T) { None, Some(T) }`, is
+[generic](Generics.md).
 
 An enumeration declared with the modifier `ordered`, after `pub` if it
 has both, is *ordered*: its variants are ordered as they are declared, so
@@ -128,7 +131,7 @@ pub comp enumeration_order {
 ## Records
 
 ```
-record := ["pub"] ["ordered"] "struct" IDENT "{" field ("," field)* [","] "}"
+record := ["pub"] ["ordered"] "struct" declared-type "{" field ("," field)* [","] "}"
         | ["pub"] ["ordered"] "struct" IDENT "(" [type ("," type)*] ")"
 field  := IDENT [":" type]
 ```
@@ -149,7 +152,9 @@ the record would have no values. So records are never recursive
 themselves, though a field may have an [unbounded
 type](Types.md#recursive-and-unbounded-types).
 
-A record declared `ordered`, as `ordered struct Version { major: Nat,
+A record with type parameters, as `struct Pair(A, B) { fst: A, snd: B }`,
+is [generic](Generics.md); it cannot be declared `ordered` (`F0390`). A
+record declared `ordered`, as `ordered struct Version { major: Nat,
 minor: Nat }`, orders its values by their fields (see [Ordered
 declarations](#ordered-declarations)).
 
@@ -277,11 +282,11 @@ pub comp ordered_declaration {
     in fields: Seq(Ty)                -- a record's fields' types, in order, or a newtype's underlying type, without patterns
     in ordered_items: Set(TypeName)   -- the enumerations, records and newtypes declared `ordered`
     in k: Int                         -- any position among the fields
-    pub out first_unordered: Int      -- the field reported: the first whose type is not ordered, `-1` if none is
-    pub out accepted?
 
     assume enumerations_without_fields: when declaration = Enumeration, fields = []
     assume structs_without_payloads: when declaration != Enumeration, n_payloads = 0
+    pub out first_unordered: Int      -- the field reported: the first whose type is not ordered, `-1` if none is
+    pub out accepted?
 
     ensure in_range: -1 <= first_unordered < fields.len
     ensure reported: when k = first_unordered and k != -1,
@@ -303,7 +308,8 @@ ordered types](Expressions.md#orderings-of-ordered-types).
 ## Distinct names
 
 The names of a list of declarations are distinct: the variants of an
-enumeration, the fields of a record, the parameters and contract clauses
+enumeration, the fields of a record, the [type
+parameters](Generics.md#type-parameters) of either, the parameters and contract clauses
 of a function, which share one namespace,
 the variables, instances and constraints of a component, which share one
 namespace, and the binders of a global expectation, of a pattern or of a
@@ -318,7 +324,7 @@ are compared without their `!` of [shadowing](Components.md#shadowing), so
 `in x: Int` and `in x!: Int` declare the same name, and so do `in x: Int`
 and `ensure x!: true`, even though a constraint never shadows. The names of
 variants and fields are compared as written: neither ever shadows, and a
-`!` on one is an error of its own.
+`!` on one is an error of its own, and so is one on a type parameter.
 `lang::distinct_names` states this, from how many names a list declares
 and the set of them:
 
@@ -330,9 +336,9 @@ pub type DeclaredName
 pub comp distinct_names {
     in count: Int                  -- how many names the list declares
     in names: Set(DeclaredName)    -- the names it declares
-    pub det out accepted?
 
     assume counted: names.card <= count
+    pub det out accepted?
 
     ensure rule: accepted? iff names.card = count
 
@@ -387,12 +393,12 @@ pub comp field_type {
     in own?              -- the type is the item being declared
     in own_in_set?       -- the item being declared is a set's element type within the type
     in payload?          -- a variant's payload, rather than a record's field
-    pub det out accepted?
 
     assume own_enum: when own? and payload?, kind = ValueType::EnumTy
     assume own_record: when own? and not payload?, kind = ValueType::RecordTy
     assume abstract_kind: when kind = ValueType::AbstractTy, abstract_within?
     assume in_set: when own_in_set?, kind = ValueType::SetTy and not own?
+    pub det out accepted?
 
     ensure rule: accepted? iff (not abstract_within? and not own_in_set? and (payload? or not own?))
 
@@ -424,10 +430,10 @@ pub type VariantName
 pub comp well_founded {
     in variants: Set(VariantName)
     in recursive: Set(VariantName)   -- variants with a payload of the enumeration's own type
-    pub det out accepted?
 
     assume some_variant: variants != {}
     assume among: recursive subset variants
+    pub det out accepted?
 
     ensure rule: accepted? iff recursive != variants
 
@@ -518,9 +524,9 @@ pub comp function_params {
     in contract?         -- it has a contract: an `assume` or an `ensure` clause
     in n_params: Nat is 1..
     in n_named: Nat      -- parameters written with a name
-    pub det out accepted?
 
     assume counts: n_named <= n_params
+    pub det out accepted?
 
     ensure rule: accepted? iff n_named = (if defined? or contract? then n_params else 0)
 

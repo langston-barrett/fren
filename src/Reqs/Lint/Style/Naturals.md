@@ -138,9 +138,9 @@ set_option fren.lint.manual_nat "allow" in
 pub comp manual_nat_input_written {
     in n: Int
     in k: Int
-    pub out m: Int
 
     assume counts: n >= 0 and k < n
+    pub out m: Int
 
     ensure r: m = n - k
 }
@@ -148,9 +148,9 @@ pub comp manual_nat_input_written {
 pub comp manual_nat_input_fixed {
     in n: Nat
     in k: Int
-    pub out m: Int
 
     assume counts: k < n
+    pub out m: Int
 
     ensure r: m = n - k
 }

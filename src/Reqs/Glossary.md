@@ -86,6 +86,11 @@ e`, has the value of its body `e`. Of an uninterpreted function, the spec
 says only its type. The cardinality operators are built-in functions. See
 [Items](Lang/Items.md#functions).
 
+**Generic type.** An enumeration or record with type parameters, as
+`enum Option(T) { None, Some(T) }`, which is a type once given a type
+argument for each parameter, as in `Option(Int)`. See [Generic
+types](Lang/Generics.md).
+
 **Global expectation.** A claim about one or more components as a whole,
 declared with `expect` outside any component, that the checks confirm. See
 [Global expectations](Lang/Global.md).
@@ -122,6 +127,9 @@ with `in`.
 
 **Instance.** A use of one component inside another, declared with `inst`.
 See [Instances](Lang/Instances.md).
+
+**Instance of a generic type.** A generic type with its type arguments,
+such as `Option(Int)`. See [Generic types](Lang/Generics.md).
 
 **Instance of a quantifier.** The body of a quantifier over listed types
 with each bound name standing for one value; such a quantifier means the
@@ -254,6 +262,15 @@ first row whose condition holds: a `match` with guards and nothing to match
 on. Over a scrutinee, `table s { P if C => e, ... }`, a `match` whose arms
 are disjoint, so that its value does not depend on their order. See
 [Expressions](Lang/Expressions.md#tables).
+
+**Type argument.** A type that stands for a type parameter in an
+instance of a generic type, as `Int` in `Option(Int)`. Expressions never
+write them: they are inferred. See [Generic
+types](Lang/Generics.md#type-arguments).
+
+**Type parameter.** A name that stands for a type within the declaration
+of a generic type, as `T` in `enum Option(T) { None, Some(T) }`. See
+[Generic types](Lang/Generics.md#type-parameters).
 
 **Trigger.** The condition under which a `when` or `unless` constraint
 applies. See [Components](Lang/Components.md#triggers).

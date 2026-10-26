@@ -20,6 +20,7 @@ comp sub {
 
 comp values {
     in x: Int
+    assume newtype: Level(x) != Level(0)   --~ error: a value in `values::newtype` may not have the type `Int is 0..=9`
     pub out y: Int
     pub det out d: Byte := x   --~ error: a value in `values::d` may not have the type `Byte`
     pub det out guarded: Byte := if 0 <= x <= 255 then x else 0
@@ -32,7 +33,6 @@ comp values {
     expect payload: Reading::Raw(x) != Reading::Missing   --~ error: a value in `values::payload` may not have the type `Byte`
     expect field: Packet { length := 3, ok? := x > 0 }.length = 3   --~ error: a value in `values::field` may not have the type `Bool is true`
     expect update: { Packet { length := 3, ok? := true } with length := x }.ok?   --~ error: a value in `values::update` may not have the type `Byte`
-    assume newtype: Level(x) != Level(0)   --~ error: a value in `values::newtype` may not have the type `Int is 0..=9`
     expect defined: (let b: Byte := x + 1 in b) > x   --~ error: a value in `values::defined` may not have the type `Byte`
 }
 

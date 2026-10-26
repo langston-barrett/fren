@@ -46,13 +46,26 @@ inductive VTy where
   | set (elem : VTy)
   | rel (a b : VTy)
   | seq (elem : VTy)
-  /-- An enumeration or a record. -/
-  | data (path : Name)
+  /-- An enumeration or a record, with its type arguments if it is generic,
+  or none if a construction's are not known here. -/
+  | data (path : Name) (args : List VTy)
   | abstract (path : Name)
   /-- A newtype, whose values are its underlying type's, `under`
   (`Reqs/Lang/Items#newtypes`): only how they are shown differs. -/
   | newtype (path : Name) (under : VTy)
+  /-- The `k`th type parameter, within a generic type's declaration. -/
+  | param (k : Nat)
   deriving Inhabited, BEq, Hashable, Repr
+
+/-- `t`, with the `k`th of `args` for each type parameter `k`
+(`lang::instantiation`). A parameter without one stays. -/
+partial def VTy.subst (args : List VTy) : VTy → VTy
+  | .param k => args[k]?.getD (.param k)
+  | .set t => .set (t.subst args)
+  | .rel a b => .rel (a.subst args) (b.subst args)
+  | .seq t => .seq (t.subst args)
+  | .data p as => .data p (as.map (·.subst args))
+  | t => t
 
 /-- `t`, as an element type: a `Nat` is widened to an `Int`. -/
 def VTy.widen : VTy → VTy
@@ -142,12 +155,13 @@ partial def Pat.core : Pat → Fren.Core.Pat
   | .alts ps => .or (ps.map Pat.core)
 
 /-- The type of a value that patterns match, as they see it. -/
-def VTy.patTy : VTy → Fren.Core.PatTy
+partial def VTy.patTy : VTy → Fren.Core.PatTy
   | .bool => .bool
   | .int => .int
   | .nat => .nat
   | .string => .string
-  | .data p => .enum p
+  | .data p as => .enum p (as.map VTy.patTy)
+  | .param k => .param k
   | _ => .other
 
 /-- The names that `p` binds. -/
@@ -337,9 +351,9 @@ def Spec.comp? (sp : Spec) (path : Name) : Option Comp := sp.comps.find? (·.pat
 type, such as a recursive enumeration. -/
 partial def Spec.values (sp : Spec) : VTy → Array Val
   | .bool => #[.bool true, .bool false]
-  | .data p => match sp.data.find? p with
+  | .data p args => match sp.data.find? p with
     | some d => (d.ctors.mapIdx fun idx c =>
-        (c.fields.foldl (fun acc (_, t) => acc.flatMap fun pre => (sp.values t).map pre.push) #[#[]]).map (.ctor p idx ·)).flatten
+        (c.fields.foldl (fun acc (_, t) => acc.flatMap fun pre => (sp.values (t.subst args)).map pre.push) #[#[]]).map (.ctor p idx ·)).flatten
     | none => #[]
   | _ => #[]
 
@@ -562,8 +576,8 @@ partial def typeHolds (shapes : Name → Option Fren.Core.DataShape) (t : Fren.C
       | _ => true
     -- A newtype's value is its underlying type's.
     | .newtype p _, v => ((shapes p).bind (·.parts[0]?) |>.bind (·[0]?)).all (typeHolds shapes · v)
-    | .record p, .ctor _ idx args | .enum p, .ctor _ idx args =>
-      ((shapes p).bind (·.parts[idx]?)).all fun ts => (ts.zip args).all fun (u, w) => typeHolds shapes u w
+    | .record p _, .ctor _ idx args | .enum p _, .ctor _ idx args =>
+      ((shapes p).bind (·.inst t.parts |>.parts[idx]?)).all fun ts => (ts.zip args).all fun (u, w) => typeHolds shapes u w
     | _, _ => true
 
 /-- The value of an expression, as far as it is known: each variable as
@@ -1042,10 +1056,10 @@ partial def Val.showAs (sp : Spec) (ty : VTy) (v : Val) : String :=
       | m => m.show sp
     "{" ++ ", ".intercalate ((ms.map pair).toList.mergeSort (· < ·)) ++ "}"
   | .seq t, .seq es => "[" ++ ", ".intercalate (es.toList.map (·.showAs sp t)) ++ "]"
-  | .data p, .ctor _ idx args =>
+  | .data p targs, .ctor _ idx args =>
     match (sp.data.find? p).bind (·.ctors[idx]?), sp.data.find? p with
     | some c, some d =>
-      let shown := (c.fields.zip args).map fun ((_, t), a) => a.showAs sp t
+      let shown := (c.fields.zip args).map fun ((_, t), a) => a.showAs sp (t.subst targs)
       if d.isRecord then
         let fs := (c.fields.zip shown).toList.map fun ((f, _), a) => s!"{f} := {a}"
         s!"{p.getString!} \{ {", ".intercalate fs} }"
@@ -1071,6 +1085,8 @@ structure LState where
   and as declared. -/
   aliases : NameMap VTy := {}
   declaredAliases : NameMap Fren.Core.PTy := {}
+  /-- The type parameters of the generic type being declared. -/
+  typeParams : Array Name := #[]
 
 abbrev L := StateT LState (Except String)
 
@@ -1094,6 +1110,15 @@ def dotted (parts : List String) : Name := parts.foldl Name.mkStr .anonymous
 partial def lowerTy (segs : Array Ident) : L VTy := do
   -- A pattern type has its base type's values, to the evaluator.
   let segs := (splitPatternType segs).1
+  -- An instance of a generic type, `G(A, B)`.
+  if let some i := segs.findIdx? (·.name == Parser.argsOpen) then
+    if i > 0 && segs[0]!.name != Parser.setSeg && segs[0]!.name != Parser.seqSeg && segs[0]!.name != Parser.relSeg then
+      let args ← (Parser.splitArgs (segs.extract (i + 1) (segs.size - 1))).mapM lowerTy
+      return match ← resolve (segs.extract 0 i) with
+        | .item { path, .. } => .data path args.toList
+        | r => .data r.path args.toList
+  if let some k := (← get).typeParams.idxOf? (Name.mkSimple segs[0]!.name) then
+    if segs.size == 1 then return .param k
   if segs.size == 1 && segs[0]!.name == "Bool" then return .bool
   if segs.size == 1 && segs[0]!.name == "Int" then return .int
   if segs.size == 1 && segs[0]!.name == "Nat" then return .nat
@@ -1106,8 +1131,8 @@ partial def lowerTy (segs : Array Ident) : L VTy := do
   match ← resolve segs with
   | .item { kind := .recordItem, path, .. } =>
     if let some u := (← get).spec.newtypes.find? path then return .newtype path u
-    return .data path
-  | .item { kind := .enumItem, path, .. } => return .data path
+    return .data path []
+  | .item { kind := .enumItem, path, .. } => return .data path []
   | .item { kind := .typeItem, path, .. } =>
     if let some t := (← get).aliases.find? path then return t
     return .abstract path
@@ -1134,7 +1159,7 @@ def methodTy (m : Fren.Core.Method) (t : VTy) : VTy :=
   match m.result, t with
   | .bool, _ => .bool
   -- `min` and `max`, the only methods of an ordered enumeration.
-  | _, .data _ => t
+  | _, .data .. => t
   | .int, _ => .int
   | .string, _ => .string
   | .elem, .seq e => e
@@ -1172,12 +1197,12 @@ def readFields (e : Ex) (ty : VTy) (fs : List String) : L (Ex × VTy) := do
       e := .method m e #[]
       ty := methodTy m ty
       continue
-    let .data p := ty | throw s!"`.{f}` reads a field of a value that is not a record"
+    let .data p targs := ty | throw s!"`.{f}` reads a field of a value that is not a record"
     let d ← dataDef p
     let some c := d.ctors[0]? | throw s!"`{showPath p}` has no constructor"
     let some idx := c.fields.findIdx? (·.1 == Name.mkSimple f) | throw s!"`{showPath p}` has no field `{f}`"
     e := .field e idx
-    ty := c.fields[idx]!.2
+    ty := c.fields[idx]!.2.subst targs
   return (e, ty)
 
 def evalClosed (e : Ex) : Option Val := e.eval {} fun _ => none
@@ -1372,10 +1397,10 @@ partial def lowerPattern (t : VTy) (p : Pattern) : L (Pat × List (Name × VTy �
         return (.bind (Name.mkNum n k), [(n, t, Name.mkNum n k)])
       | .variant => pure ()
     let .variant en idx ← resolve segs | throw "a pattern names no variant"
-    let .data path := t | throw "a variant matches a value that is not an enumeration"
+    let .data path targs := t | throw "a variant matches a value that is not an enumeration"
     unless en.path == path do throw s!"the pattern's variant is not of `{showPath path}`"
     let d ← dataDef path
-    let tys := d.ctors[idx]!.fields.map (·.2)
+    let tys := d.ctors[idx]!.fields.map (·.2.subst targs)
     let mut ps := #[]
     let mut bound := []
     for a in args?.getD #[], ta in tys do
@@ -1419,9 +1444,12 @@ partial def VTy.core (sp : Spec) : VTy → Fren.Core.Ty
   | .set t => .set (t.core sp)
   | .rel a b => .rel (a.core sp) (b.core sp)
   | .seq t => .seq (t.core sp)
-  | .data p => if (sp.data.find? p).any (·.isRecord) then .record p else .enum p
+  | .data p as =>
+    let as := as.map (·.core sp)
+    if (sp.data.find? p).any (·.isRecord) then .record p as else .enum p as
   | .abstract p => .abstract p
   | .newtype p u => .newtype p (u.core sp)
+  | .param k => .param k .anonymous
 
 /-- The declared type written `segs`, with the patterns of the pattern
 types within it, as the elaborator's `elabPTy` has it. -/
@@ -1443,8 +1471,14 @@ where
       let (a, b) := Parser.splitRel (segs.extract 1)
       let sp := (← get).spec
       return { ty := (← lowerTy segs).core sp, elems := #[← lowerPTy a, ← lowerPTy b] }
-    if segs.size == 1 && ["Bool", "Int", "Nat", "String"].contains segs[0]!.name then
+    if segs.size == 1 && (["Bool", "Int", "Nat", "String"].contains segs[0]!.name
+        || (← get).typeParams.contains (Name.mkSimple segs[0]!.name)) then
       return .plain ((← lowerTy segs).core (← get).spec)
+    -- An instance of a generic type, with its type arguments as declared.
+    if let some i := segs.findIdx? (·.name == Parser.argsOpen) then
+      if i > 0 then
+        let args ← (Parser.splitArgs (segs.extract (i + 1) (segs.size - 1))).mapM lowerPTy
+        return { ty := (← lowerTy segs).core (← get).spec, elems := args }
     if let .item { kind := .typeItem, path, .. } ← resolve segs then
       if let some t := (← get).declaredAliases.find? path then return t
     return .plain ((← lowerTy segs).core (← get).spec)
@@ -1455,8 +1489,8 @@ partial def Spec.ofPVal (sp : Spec) : VTy → Fren.Core.PVal → Val
   | _, .bool b => .bool b
   | _, .int i => .int i
   | .newtype _ u, .ctor _ #[w] => sp.ofPVal u w
-  | .data p, .ctor idx args => match sp.data.find? p with
-    | some d => .ctor p idx ((args.zip (d.ctors[idx]!.fields.map (·.2))).map fun (w, u) => sp.ofPVal u w)
+  | .data p targs, .ctor idx args => match sp.data.find? p with
+    | some d => .ctor p idx ((args.zip (d.ctors[idx]!.fields.map (·.2.subst targs))).map fun (w, u) => sp.ofPVal u w)
     | none => .ctor p idx #[]
   | _, .ctor idx _ => .ctor .anonymous idx #[]
 
@@ -1466,8 +1500,8 @@ are listed (`lang::quantified_type`), as the elaborator's
 `State.valueCount` says. -/
 partial def Spec.listedTy (sp : Spec) : VTy → Bool
   | .bool => true
-  | .data p => match sp.shapes.find? p, sp.data.find? p with
-    | some sh, some d => !sh.recursive && d.ctors.all (·.fields.all (sp.listedTy ·.2))
+  | .data p targs => match sp.shapes.find? p, sp.data.find? p with
+    | some sh, some d => !sh.recursive && d.ctors.all (·.fields.all fun (_, u) => sp.listedTy (u.subst targs))
     | _, _ => false
   | _ => false
 
@@ -1608,7 +1642,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     | .variant en idx => do
       let d ← dataDef en.path
       unless d.ctors[idx]!.fields.isEmpty do throw s!"`{showPath en.path}::{en.variants[idx]!}` needs a payload"
-      return (.lit (.ctor en.path idx #[]), .data en.path)
+      return (.lit (.ctor en.path idx #[]), .data en.path [])
     | .item { kind := .constItem, path, .. } =>
       let some (v, t) := (← get).spec.consts.find? path | throw s!"unknown constant `{showPath path}`"
       return (v, t)
@@ -1632,7 +1666,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
         return (← withPres (body.subst (ps.zip args).toList), r)
       let some (_, r) := (← get).spec.funs.find? path | throw s!"unknown function `{showPath path}`"
       return (← withPres (.app path args), r)
-    | .variant en idx => return (.ctor en.path idx args, .data en.path)
+    | .variant en idx => return (.ctor en.path idx args, .data en.path [])
     -- A newtype, erased to its value.
     | .item { kind := .recordItem, path, .. } => do
       let some u := (← get).spec.newtypes.find? path | throw s!"`{showPath path}` is not a newtype"
@@ -1649,10 +1683,10 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     for (f, _) in c.fields do
       let some (x, e?) := fields.find? (fun (x, _) => Name.mkSimple x.name == f) | throw s!"no value for field `{f}`"
       vals := vals.push (← lowerExpr cx (e?.getD (.path span #[x]))).1
-    return (.ctor path 0 vals, .data path)
+    return (.ctor path 0 vals, .data path [])
   | .update _ base fields => do
     let (r, t) ← lowerExpr cx base
-    let .data path := t | throw "an updated value is not a record"
+    let .data path targs := t | throw "an updated value is not a record"
     let d ← dataDef path
     let some c := d.ctors[0]? | throw s!"`{showPath path}` has no constructor"
     -- In the order of the record's fields, as the elaborator reads them.
@@ -1660,7 +1694,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     for (f, _) in c.fields, k in [0:c.fields.size] do
       let some (x, e?) := fields.find? (fun (x, _) => Name.mkSimple x.name == f) | continue
       vals := vals.push (k, (← lowerExpr cx (e?.getD (.path x.span #[x]))).1)
-    return (.update r vals, .data path)
+    return (.update r vals, .data path targs)
   | .field _ e f => do
     let (x, t) ← lowerExpr cx e
     readFields x t [f.name]
@@ -1813,7 +1847,7 @@ def typeConstraint (kind : PropKind) (x : Name) (t : Fren.Core.PTy) : L (Option 
     | fuel + 1 =>
       let own := (t.pat?.map Fren.Core.Pat.bounds).getD #[]
       let parts := match t.ty with
-        | .record p | .enum p | .newtype p _ => ((sp.shapes.find? p).map (·.parts.flatten)).getD #[]
+        | .record p _ | .enum p _ | .newtype p _ => ((sp.shapes.find? p).map (·.parts.flatten)).getD #[]
         | _ => #[]
       own ++ (t.elems ++ parts).flatMap (ints fuel ·)
   return some { kind, name := .num x 0, e := .typed t (ints 8 t) (.var x), typed? := some "" }
@@ -1939,9 +1973,10 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with table := new.foldl (·.addItem ·) s.table, module := path, scope := path }
   | .use _ segs glob => declareUse segs glob
   | .useGroup _ pre paths => do for p in paths do declareUse (pre ++ p) false
-  | .enum isPub name variants _ => do
+  | .enum isPub name variants _ params => do
     let st ← get
     let path := st.module ++ Name.mkSimple name.name
+    modify fun s => { s with typeParams := params.map (Name.mkSimple ·.name) }
     let vs := variants.map (Name.mkSimple ·.1.name)
     -- Declared first: a payload may have the enumeration's own type.
     modify fun s => { s with table := (s.table.addItem { kind := .enumItem, path, isPub, owner := s.module }).addEnum { path, variants := vs } }
@@ -1952,11 +1987,14 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with spec.data := s.spec.data.insert path { path, isRecord := false, ctors } }
     -- Its payloads' types, as declared, once it is declared.
     let parts ← variants.mapM fun (_, payload?) => (payload?.getD #[]).mapM lowerPTy
-    let recursive := ctors.any (·.fields.any (·.2 == .data path))
-    modify fun s => { s with spec.shapes := s.spec.shapes.insert path { recursive, parts } }
-  | .record isPub name fields _ => do
+    let recursive := ctors.any (·.fields.any fun (_, t) => match t with
+      | .data q _ => q == path
+      | _ => false)
+    modify fun s => { s with spec.shapes := s.spec.shapes.insert path { recursive, parts }, typeParams := #[] }
+  | .record isPub name fields _ params => do
     let st ← get
     let path := st.module ++ Name.mkSimple name.name
+    modify fun s => { s with typeParams := params.map (Name.mkSimple ·.name) }
     let mut fs := #[]
     for (f, ty?) in fields do fs := fs.push (Name.mkSimple f.name, ← varTy ty?)
     let parts ← fields.mapM fun (_, ty?) => match ty? with
@@ -1965,7 +2003,8 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with
       table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
       spec.data := s.spec.data.insert path { path, isRecord := true, ctors := #[{ name := `mk, fields := fs }] }
-      spec.shapes := s.spec.shapes.insert path { isRecord := true, parts := #[parts] } }
+      spec.shapes := s.spec.shapes.insert path { isRecord := true, parts := #[parts] }
+      typeParams := #[] }
   | .newtype isPub name fields _ => do
     let path := (← get).module ++ Name.mkSimple name.name
     let some ty := fields[0]? | throw s!"`{showPath path}` has no field"
@@ -2095,7 +2134,9 @@ def VTy.show : VTy → String
   | .set t => s!"Set({t.show})"
   | .rel a b => s!"Rel({a.show}, {b.show})"
   | .seq t => s!"Seq({t.show})"
-  | .data p | .abstract p | .newtype p _ => showPath p
+  | .data p [] | .abstract p | .newtype p _ => showPath p
+  | .data p args => s!"{showPath p}({", ".intercalate (args.map VTy.show)})"
+  | .param k => s!"#{k}"
 
 /-- Whether `e` is a `Nat` where one is expected (`lang::literal_type`,
 `lang::operator_type`): a literal, a `Nat` constant, or `+`, `*` or a
@@ -2107,6 +2148,20 @@ partial def natTyped (e : Expr) : L Bool := do
   | .ite _ _ a b => return (← natTyped a) && (← natTyped b)
   | .path .. => return (← lowerExpr {} e).2 == .nat
   | _ => return false
+
+/-- Whether `v` is a value of `ty`, looking into a generic type's values,
+whose constructions have no type arguments of their own (`VTy.data`). -/
+partial def Spec.fits (sp : Spec) : VTy → Val → Bool
+  | .bool, .bool _ | .int, .int _ | .string, .str _ => true
+  | .nat, .int i => i ≥ 0
+  | .set t, .set ms | .seq t, .seq ms => ms.all (sp.fits t)
+  | .rel a b, .set ms => ms.all fun | .pair x y => sp.fits a x && sp.fits b y | _ => false
+  | .newtype _ u, v => sp.fits u v
+  | .abstract s, .abs s' _ => s == s'
+  | .data p args, .ctor q idx vs => p == q && match (sp.data.find? p).bind (·.ctors[idx]?) with
+    | some c => c.fields.size == vs.size && (c.fields.zip vs).all fun ((_, t), v) => sp.fits (t.subst args) v
+    | none => false
+  | _, _ => false
 
 /-- A value written as Fren shows values (`Reqs/Eval#values`), of type
 `ty`, read in module `module`. -/
@@ -2133,8 +2188,13 @@ def parseValue (st : LState) (module : Name) (ty : VTy) (text : String) : Except
   let empty := match ex, ty with
     | .setLit #[], .set _ | .setLit #[], .rel .. | .seqLit #[], .seq _ => true
     | _, _ => false
-  unless t == ty || empty do throw s!"`{text}` is {a t} `{t.show}`, not {a ty} `{ty.show}`"
+  -- A construction of a generic type is typed by its values.
+  let generic := match t, ty with
+    | .data p [], .data q (_ :: _) => p == q
+    | _, _ => false
+  unless t == ty || empty || generic do throw s!"`{text}` is {a t} `{t.show}`, not {a ty} `{ty.show}`"
   let some v := evalClosed ex | throw s!"`{text}` is not a value"
+  if generic && !st.spec.fits ty v then throw s!"`{text}` is not a value of `{ty.show}`"
   return v
 
 end FrenCli.Eval

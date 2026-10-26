@@ -8,9 +8,9 @@ comp sub { in n: Int pub out m: Int ensure r: m = n }
 
 comp c {
     in s: E
-    inst w: sub { n := 1 }
     pub out y?
     pub out z: Int
+    inst w: sub { n := 1 }
 
     ensure r: y? iff match s { E::V0 => K1.matches?("a*"), _ => true }
     ensure q: z = match s { E::V0 => w.m, _ => 0 }

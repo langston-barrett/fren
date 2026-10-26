@@ -162,8 +162,8 @@ def sampleTy : lang.ValueType → Fren.Core.Ty
   | .IntTy => .int
   | .NatTy => .nat
   | .StringTy => .string
-  | .EnumTy => .enum `e
-  | .RecordTy => .record `r
+  | .EnumTy => .enum `e []
+  | .RecordTy => .record `r []
   | .AbstractTy => .abstract `a
   | .SetTy => .set .int
   | .RelTy => .rel .int .int

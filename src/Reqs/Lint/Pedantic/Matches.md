@@ -95,9 +95,9 @@ states when it fires:
 ```fren
 pub comp wildcard_single_variant {
     in n_matched: Int    -- variants that no other arm names
-    pub det out fires?
 
     assume reachable: n_matched >= 1
+    pub det out fires?
 
     ensure rule: fires? iff n_matched = 1
 }
@@ -139,10 +139,10 @@ pub comp if_chain_match {
     in variant_tests?    -- each is a variant test of the same scrutinee
     in n_repeated: Nat   -- times a test names a variant that it, or an earlier test, names before
     in n_untested: Nat   -- variants of the enumeration that no test names
-    pub det out fires?
-    pub det out wildcard?  -- the fix keeps the final `else`, as the `_` arm
 
     assume counts: n_tests >= 1
+    pub det out fires?
+    pub det out wildcard?  -- the fix keeps the final `else`, as the `_` arm
 
     ensure rule: fires? iff (variant_tests? and n_tests >= 2 and n_repeated = 0)
     ensure fix: wildcard? iff n_untested > 0

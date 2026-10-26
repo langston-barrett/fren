@@ -28,14 +28,19 @@ of a type of one of these kinds that match a pattern, and a [type
 alias](Items.md#type-aliases) names a type, so that `type Byte := Int is
 0..=255` is written once.
 
+An enumeration or record may have type parameters, as in `enum Option(T)
+{ None, Some(T) }`: it is then [generic](Generics.md), and each of its
+instances, such as `Option(Int)`, is a type of its own kind.
+
 ```
 type := base ["is" pattern]
 base := "Bool" | "Int" | "Nat" | "String" | "Set" "(" type ")" | "Seq" "(" type ")"
-      | "Rel" "(" type "," type ")" | path
+      | "Rel" "(" type "," type ")" | path ["(" type ("," type)* ")"]
 ```
 
 A type written as a path must name an enumeration, a record, an abstract
-type or a type alias, which stands for the type that it names. `Bool`, `Int`, `Nat`, `String` and `Set` are built in and cannot be
+type or a type alias, which stands for the type that it names, with [type
+arguments](Generics.md#type-arguments) exactly when it names a generic type. `Bool`, `Int`, `Nat`, `String` and `Set` are built in and cannot be
 redeclared, nor can the built-in functions `exactly_one?` and
 `at_most_one?` (see [Functions](Items.md#functions)).
 
@@ -95,6 +100,10 @@ pub fn under(Ty): Ty     -- the underlying type of a newtype
 
 An enumeration is *recursive* if the payload of one of its variants has
 the enumeration's own type, as in `enum List { Nil, Cons(Int, List) }`.
+An instance of a generic enumeration whose payload has the enumeration's
+type, as `List(T)` within `enum List(T) { Nil, Cons(T, List(T)) }`, is
+recursive too, whatever its arguments (see [Generic
+types](Generics.md#recursive-unbounded-and-finite-instances)).
 A type is *unbounded* if its values can be arbitrarily large: it is
 `String`, a set, relation or sequence type, a recursive enumeration, or an enumeration or
 record with a payload or field of an unbounded type, such as a newtype
@@ -164,7 +173,9 @@ of an uninterpreted function whose result is a `Nat` (see
 `Nat` may be written where a pattern type may (see [Pattern
 types](#pattern-types)), with two exceptions for now: it is not the
 element type of a set, relation or sequence, nor the type of a payload of a
-recursive enumeration, where an `Int` and a constraint serve instead.
+recursive enumeration, where an `Int` and a constraint serve instead. Nor
+is it a [type argument](Generics.md#type-arguments), which a construction
+infers widened, so that `Option(Int)` serves.
 There its constraint would hold of every element, which quantifies, as
 a pattern type's does there, and Fren does not yet carry it there for
 `Nat`, whose values Lean and the solver represent differently: `Int is
@@ -175,14 +186,14 @@ record or enumeration brings, as it brings a pattern type's. `lang::nat_place` s
 may be written:
 
 ```fren
-pub enum TypePlace { Variable, Parameter, Result, Constant, Definition, Field, Payload, RecursivePayload, Element }
+pub enum TypePlace { Variable, Parameter, Result, Constant, Definition, Field, Payload, RecursivePayload, Element, Argument }
 
 pub comp nat_place {
-    use self::TypePlace::{Element, Field, Payload, RecursivePayload}
+    use self::TypePlace::{Argument, Element, Field, Payload, RecursivePayload}
     in place: TypePlace      -- where the type `Nat` is written
     pub det out accepted?
 
-    ensure rule: accepted? iff not place in {RecursivePayload, Element}
+    ensure rule: accepted? iff not place in {RecursivePayload, Element, Argument}
 
     expect variables: when place = TypePlace::Variable, accepted?
     expect definitions: when place = TypePlace::Definition, accepted?
@@ -349,9 +360,9 @@ pub comp pattern_place {
     use self::PatternPlace::{Element, Payload, Top}
     in place: PatternPlace       -- where the pattern type is written: the top of a declared type, a record's field, a variant's payload, or an element type
     in recursive?                -- for a payload: its enumeration is recursive
-    pub det out decidable?
 
     assume payloads_only: when recursive?, place = Payload
+    pub det out decidable?
 
     ensure rule: decidable? iff not (place = Element or (place = Payload and recursive?))
 
@@ -384,9 +395,9 @@ pub comp pattern_finite {
     in base_finite?          -- the base type is finite
     in integers?             -- the base type is `Int` or `Nat`
     in bounded?              -- every alternative of the pattern is a bounded range or an integer
-    pub det out finite?
 
     assume not_both: when integers?, not base_finite?
+    pub det out finite?
 
     ensure rule: finite? iff (base_finite? or (integers? and bounded?))
 
@@ -456,10 +467,10 @@ pub fn width(a: Alternative): Int := if bounded?(a) and bound_value(a.lo) <= bou
 
 pub comp pattern_count {
     in alts: Seq(Alternative)
-    pub det out finite?
-    pub out count: Nat           -- how many integers it matches, when finitely many
 
     assume few: alts.len <= 2
+    pub det out finite?
+    pub out count: Nat           -- how many integers it matches, when finitely many
 
     ensure bounds: finite? iff ((alts = [] or bounded?(alts[0])) and (alts.len < 2 or bounded?(alts[1])))
     ensure none: when alts = [], count = 0
@@ -672,7 +683,8 @@ record whose fields have finite types, a set or relation type whose
 element types are finite, and a pattern type that `lang::pattern_finite`
 says is. `Int`, `Nat`, `String` and abstract types are not
 finite, and neither is any sequence type. Where a type is built from others, its *parts* are the types of
-its fields, payloads and elements, and a type is built from everything
+its fields, payloads and elements, those of an instance of a generic type
+with its arguments for its parameters, and a type is built from everything
 that the closure of the parts relation reaches from it. `lang::finite`
 and `lang::unbounded` state the two notions by that reachability:
 
@@ -756,9 +768,9 @@ use self::Annot::{BoolTy, IntTy, Missing, NamedTy, NatTy, StringTy}
 pub comp bool_naming {
     in name: String      -- the declared name
     in annot: Annot      -- `Missing` when there is no `: type`
-    pub out accepted?
 
     assume identifier: name.matches?(r"[A-Za-z_][A-Za-z0-9_']*\??")
+    pub out accepted?
 
     ensure q_is_bool: when name.ends_with?("?"), accepted? iff annot is Missing | BoolTy
     ensure bool_is_q: unless name.ends_with?("?"),
@@ -784,7 +796,9 @@ Where an expression is written decides whether it is checked:
   of an instance or of a refinement, a field of a record literal or of a
   record update, the value of a [newtype](Items.md#newtypes), as in
   `Ms(e)`, an argument of a function application, a variant's payload,
-  an argument of a sequence's method, a defined output's definition, a
+  an argument of a sequence's method, the argument of an enumeration's or
+  record's `min` or `max`, against the receiver's type, a defined
+  output's definition, a
   constant's value, and a definition of a [`let` or `where`](Let.md)
   whose type is written.
 - **Shared.** Its type follows from that of the expression it is a part
@@ -799,7 +813,10 @@ Where an expression is written decides whether it is checked:
 - **Compared.** Its type follows from the other operand's: it is the same,
   or, for the right of `in`, a set or sequence of it, as it is written. It
   is checked if the other synthesizes its type. These are the operands of
-  `=`, `!=` and `subset`, and the right of `in`.
+  `=`, `!=`, `subset` and the orderings, and the right of `in`. In a chain
+  of orderings, as `a < b <= c`, each operand after the first is checked
+  against the first's type, and the first against the type of the first
+  operand that synthesizes one, as in `E::A < x`.
 - **Synthesized.** Anywhere else, as the left of `in`, an operand of
   `join`, an argument of a method of anything but a sequence, as in
   `r.image({})`, a receiver, the scrutinee of a `match` or of `e is P`,
@@ -842,34 +859,40 @@ pub comp checked {
 An expression synthesizes its type unless it is `{}` or `[]`, or it is
 made of shared parts none of which synthesizes one, as `{{}}`,
 `if c? then {} else []` and `({})` are, or it is a pair, `(a, b)`, one of
-whose members does not. `lang::synthesizes` states this, from the
+whose members does not, or it is a variant or record of a generic type, one
+of whose type parameters no value of its payload or fields that
+synthesizes its type gives an argument, as `Option::None` (see [Type
+arguments](Generics.md#type-arguments)). `lang::synthesizes` states this, from the
 expression's shape and how many of its shared parts, or of a pair's two
 members, synthesize their types.
 
 ```fren
 -- `EmptyLiteral` is `{}` or `[]`; `SharedParts` is an expression whose type
--- is that of its shared parts; `Pair` is a pair; `Other` is any other.
-pub enum Shape { EmptyLiteral, SharedParts, Pair, Other }
+-- is that of its shared parts; `Pair` is a pair; `Construction` is a variant
+-- or record of a generic type; `Other` is any other.
+pub enum Shape { EmptyLiteral, SharedParts, Pair, Construction, Other }
 
 pub comp synthesizes {
-    use self::Shape::{EmptyLiteral, Other, Pair, SharedParts}
+    use self::Shape::{Construction, EmptyLiteral, Other, Pair, SharedParts}
     in shape: Shape
-    in parts: Int            -- how many shared parts it has, or members, for a pair
-    in synthesizing: Nat     -- how many of them synthesize their types
-    pub det out synthesizes?
+    in parts: Int            -- how many shared parts it has, members, for a pair, or type parameters, for a construction
+    in synthesizing: Nat     -- how many of them synthesize their types, or, for a construction, are given an argument
 
     assume counted: synthesizing <= parts
     assume pair: when shape = Pair, parts = 2
+    pub det out synthesizes?
 
     ensure rule: synthesizes? iff match shape {
         EmptyLiteral => false,
         SharedParts => synthesizing > 0,
         Pair => synthesizing = parts,
+        Construction => synthesizing = parts,
         Other => true,
     }
 
     expect one_part_suffices: when shape = SharedParts and synthesizing > 0, synthesizes?
     expect pair_needs_both: when shape = Pair and synthesizing < 2, not synthesizes?
+    expect construction_needs_all: when shape = Construction and synthesizing < parts, not synthesizes?
 }
 ```
 

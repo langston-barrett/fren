@@ -1,0 +1,12 @@
+error[F0387]: a recursive payload must be `Tree`
+ --> test/cli/types/f0387_nested_recursive.fren:4:28
+  |
+4 | pub enum Tree { Leaf, Node(Pair(Tree, Tree)) }
+  |                            ^^^^^^^^^^^^^^^^ not `Tree`
+  |
+  = note: a recursive payload is the enumeration itself, not within an argument of an instance, as in `Tree`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0387`.
+exit=2

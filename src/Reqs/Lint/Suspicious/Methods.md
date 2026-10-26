@@ -118,11 +118,11 @@ pub comp no_effect_replace {
     in a: String         -- the first argument
     in b: String         -- the second
     in u: String         -- any string
+
+    assume written: when same?, a = b
     pub det out fires?
     pub out replaced?    -- `s.replace(a, b) = u`
     pub out replaced_all?  -- `s.replace_all(a, b) = u`
-
-    assume written: when same?, a = b
 
     ensure rule: fires? iff same?
     ensure first: when fires?, replaced? iff s = u
