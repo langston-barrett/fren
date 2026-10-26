@@ -233,14 +233,28 @@ pub comp reserved_word {
 enumeration](Items.md#enumerations), is reserved, as `pub` and `enum`
 are, since an item can start with it.
 
-Lean reserves its other keywords too, such as `for`, `by` and `fun`, so a
-spec read by Lean cannot use them as names. These *contextual keywords*
-have special meaning at the start of a construct, and are otherwise
-ordinary identifiers:
+Lean's other keywords that have the shape of an identifier, such as `at`,
+`for`, `by`, `fun`, `unless` and `Type`, are reserved in Fren too: none
+can be declared, as any kind of name, in either front end (`F0221`).
+They are the tokens of Lean's that importing `Fren` brings in, as
+`Fren.Core.leanKeywords` lists them. Where Fren's syntax expects an
+identifier, both front ends read one as an identifier, so that both
+report the declaration, and the use of an unknown name elsewhere; Lean's
+parser would otherwise reject it before the Lean front end sees it. A
+method name after `.`, as in `s.at(0)`, is not a declaration, so `at` is
+still a method. After `#fren_check`, though, one starts the next command,
+not the name of what to check. As for [tokens ending in `!`](#identifiers), a library
+that a Lean file also imports may add keywords that the `fren` command
+does not know.
+
+These *contextual keywords* have special meaning at the start of a
+construct, and are otherwise ordinary identifiers:
 
 ```
 when  unless  not  true  false  det  out  assume  ensure  cover  inst
 ```
+
+`unless` is a keyword of Lean's too, so it cannot be declared.
 
 `req`, which a guarantee was written with before `ensure`, is not a
 keyword of any kind, so it can be a name. Where a member of a component

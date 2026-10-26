@@ -458,6 +458,48 @@ def leanBangTokens : List String :=
   ["assert!", "debug_assert!", "f!", "m!", "panic!", "println!", "reportDbgIssue!", "reportEMatchIssue!",
    "reportIssue!", "s!", "unreachable!", "using!"]
 
+/-- Lean's keywords, with `Fren` imported and `Fren.Lang` open, that have the
+shape of a Fren identifier but are not Fren's reserved words
+(`Reqs/Lang/Lexical#keywords`). Lean reads each as a token of its own, so
+the Lean front end reads one as an identifier where Fren expects one
+(`Fren.Lang.frenIdent`), and both front ends reject it as a declaration
+(`F0221`). `lake test`'s `leanTokens` job checks this list against Lean's token
+table. -/
+def leanKeywords : List String :=
+  ["Prop", "Sort", "StateRefT", "Type", "abbrev", "add_decl_doc", "assert_not_exists", "assert_not_imported",
+   "assumeInstancesCommuteDummy", "at", "attribute", "aux_def", "axiom", "bif", "binder_predicate",
+   "blocking", "break", "builtin_cbv_simproc", "builtin_cbv_simproc_decl", "builtin_dsimproc",
+   "builtin_dsimproc_decl", "builtin_grind_propagator", "builtin_initialize", "builtin_simproc",
+   "builtin_simproc_decl", "by", "by?", "by_elab", "calc", "catch", "cbv_eval", "cbv_simproc",
+   "cbv_simproc_decl", "class", "coinductive", "coinductive_fixpoint", "continue", "dbg_trace",
+   "declare_bitwise_int_theorems", "declare_bitwise_uint_theorems", "declare_command_config_elab",
+   "declare_command_config_elab_legacy", "declare_config_elab", "declare_config_elab_legacy",
+   "declare_core_config_elab", "declare_eval_bin", "declare_eval_bin_bitwise", "declare_eval_bin_bool_pred",
+   "declare_int_theorems", "declare_rebindable", "declare_simp_like_tactic", "declare_sint_simprocs",
+   "declare_syntax_cat", "declare_term_config_elab", "declare_uint_simprocs", "declare_uint_theorems",
+   "decreasing_by", "def", "def_eval_config_item", "deprecated_module", "deprecated_syntax", "deriving",
+   "do", "docs_to_verso", "dsimproc", "dsimproc_decl", "elab", "elab_rules", "elab_stx_quot", "end",
+   "eval_prec", "eval_prio", "example", "export", "extends", "finally", "flipCongrArg", "flipNotAnd", "for",
+   "from", "fun", "generalizing", "grind_annotated", "grind_pattern", "grind_propagator", "have", "haveI",
+   "hiding", "idbg", "import", "include", "include_str", "inductive", "inductive_fixpoint",
+   "inferInstanceAs", "infix", "infixl", "infixr", "init_grind_norm", "init_quot", "initialize", "instance",
+   "leading_parser", "letI", "let_delayed", "let_expr", "let_fun", "let_opaque", "let_tmp", "local",
+   "logNamedError", "logNamedErrorAt", "logNamedWarning", "logNamedWarningAt", "macro", "macro_rules",
+   "match_expr", "matches", "max_prec", "meta", "mkConstFamily", "mod_cast", "mut", "mutual", "namespace",
+   "nat_lit", "ncInterp", "no_index", "nofun", "nomatch", "noncomputable", "nonrec", "norm_cast_add_elim",
+   "notation", "omit", "opaque", "open", "partial", "partial_fixpoint", "postfix", "prefix", "private",
+   "protected", "public", "recommended_spelling", "register_builtin_option", "register_error_explanation",
+   "register_grind_attr", "register_label_attr", "register_linter_set", "register_option",
+   "register_parser_alias", "register_simp_attr", "register_sym_dsimp", "register_sym_simp",
+   "register_sym_simp_attr", "register_tactic_tag", "renaming", "repeat", "reprove", "return", "run_cmd",
+   "run_elab", "run_meta", "scoped", "seal", "section", "set_library_suggestions", "set_option", "show",
+   "show_panel_widgets", "show_term", "show_term_elab", "simproc", "simproc_decl", "smtIte", "sorry",
+   "structure", "suffices", "syntax", "tactic_alt", "tactic_extension", "tactic_name", "tactic_tag",
+   "termination_by", "termination_by?", "test_extern", "theorem", "throwError", "throwErrorAt",
+   "throwNamedError", "throwNamedErrorAt", "trailing_parser", "try", "unif_hint", "universe", "unless",
+   "unlock_limits", "unsafe", "unseal", "until", "using", "variable", "while", "with_annotate_term",
+   "with_weak_namespace", "without_expected_type"]
+
 /-- Fails if `n`, a name being declared, is `true` or `false`: these are
 literals wherever an expression is expected, so nothing could mention the
 declaration (`Reqs/Lang/Lexical#keywords`). -/
@@ -469,8 +511,9 @@ def checkNotLiteral (n : Name) : Except Msg Unit := do
               "help: rename the declaration"] }
 
 /-- Fails if the declaration of `n`, written with `!` if `bang`, is a
-literal (`checkNotLiteral`) or one of Lean's tokens. Every declaration's
-name is checked by this. -/
+literal (`checkNotLiteral`), one of Lean's tokens (`leanBangTokens`) or
+one of Lean's keywords (`leanKeywords`). Every declaration's name is
+checked by this. -/
 def checkDeclaredName (n : Name) (bang : Bool) : Except Msg Unit := do
   checkNotLiteral n
   let text := n.toString ++ "!"
@@ -478,6 +521,12 @@ def checkDeclaredName (n : Name) (bang : Bool) : Except Msg Unit := do
     throw { code? := some "F0219", headline := s!"`{text}` is a Lean token, so it cannot be declared"
             label? := some "a Lean token"
             notes := #[s!"note: Lean reads `{text}` as a token of its own, not as `{n}` followed by `!`",
+              "help: rename the declaration"] }
+  let text := n.toString (escape := false)
+  if leanKeywords.contains text then
+    throw { code? := some "F0221", headline := s!"`{text}` is a Lean keyword, so it cannot be declared"
+            label? := some "a Lean keyword"
+            notes := #[s!"note: Lean reads `{text}` as a keyword, not as a name, so Fren reserves it",
               "help: rename the declaration"] }
 
 /-- Fails if `n`, the name of a declaration that never shadows, such as an

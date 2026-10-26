@@ -25,6 +25,8 @@ import Lean.Elab.Frontend
   file in place.
 - **Mutants:** every mutant of the corpus is well-formed, identified,
   stable and, for a swap, involutive (`mutation`).
+- **Lean's tokens:** the tokens that both front ends read as identifiers,
+  and reject as declarations, are Lean's (`leanTokens`).
 
 The tests run as jobs, in parallel (see "Jobs" below), and the failures are
 reported sorted.
@@ -155,6 +157,40 @@ def lintTable : IO (Array String) := do
       failures := failures.push s!"{w.1}: no row `| `{w.1}` | `{w.2.1}` | `{w.2.2.1}` | `{w.2.2.2}` |` in the table of src/Reqs/Lint.md"
   for r in rows do
     unless want.contains r do failures := failures.push s!"{r.1}: a row of the table of src/Reqs/Lint.md that is no lint as written"
+  return failures
+
+/-- `Fren.Core.leanBangTokens` and `Fren.Core.leanKeywords` list Lean's
+tokens, with `Fren` imported and `Fren.Lang` open, that are an identifier
+followed by `!`, and that have the shape of an identifier but are not
+reserved words (`Reqs/Lang/Lexical#keywords`). The tokens are those of the
+`lean` that Lake runs, which has builtin parsers, and so tokens, that this
+program does not link. -/
+def leanTokens : IO (Array String) := do
+  let src := "import Fren\nopen Fren.Lang\nopen Lean Elab Command in\n" ++
+    "#eval show CommandElabM Unit from do\n" ++
+    "  for t in (Lean.Parser.getTokenTable (← getEnv)).values do IO.println t\n"
+  let child ← IO.Process.spawn { cmd := ((← findSysroot) / "bin" / "lean").toString, args := #["--stdin"]
+                                 stdin := .piped, stdout := .piped, stderr := .piped }
+  let (stdin, child) ← child.takeStdin
+  stdin.putStr src
+  stdin.flush
+  let (_, child) ← child.takeStdin
+  let stdout ← IO.asTask child.stdout.readToEnd
+  let stderr ← child.stderr.readToEnd
+  let code ← child.wait
+  let out ← IO.ofExcept stdout.get
+  if code != 0 then return #[s!"leanTokens: `lean` failed (exit {code}):\n{out}{stderr}"]
+  let toks := ((out.splitOn "\n").filter (!·.isEmpty)).toArray.qsort (· < ·)
+  -- An identifier of Fren's, without its `!`: `?` only at its end.
+  let isIdent (t : String) := (t.front.isAlpha || t.front == '_') && !(t.dropEnd 1).contains '?'
+    && t.all fun c => c.isAlphanum || c == '_' || c == '\'' || c == '?'
+  let bang := toks.filter fun t => t.length > 1 && t.endsWith "!" && isIdent (t.dropEnd 1).toString
+  let keywords := toks.filter fun t => t != "_" && !FrenCli.reserved.contains t && isIdent t
+  let mut failures := #[]
+  unless bang == Fren.Core.leanBangTokens.toArray.qsort (· < ·) do
+    failures := failures.push s!"Fren.Core.leanBangTokens: Lean's tokens that are an identifier and `!` are {bang}"
+  unless keywords == Fren.Core.leanKeywords.toArray.qsort (· < ·) do
+    failures := failures.push s!"Fren.Core.leanKeywords: Lean's keywords that are identifiers are {keywords}"
   return failures
 
 /-- Every code is explained and covered by a snapshot; each explanation's
@@ -694,7 +730,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"]]
+    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"], ["leanTokens"]]
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
 
 /-- Runs a job in this process. -/
@@ -704,6 +740,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     initSearchPath (← findSysroot)
     let env ← importModules #[{ module := `Fren }] {} (loadExts := true)
     uiTests env (files.toArray.map FilePath.mk)
+  | ["leanTokens"] => leanTokens
   | ["snapshots"] => snapshots bless
   | ["errorCodes"] => errorCodes
   | ["ownSpec"] => ownSpec

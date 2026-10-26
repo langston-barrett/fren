@@ -19,8 +19,9 @@ namespace Lang
 
 /-- Run the checks on the comps and global expectations declared in this file
 (or just the named one) and report the results. Declared here rather than in `Fren.Syntax`, so that
-`Fren.Spec` alone does not accept it. -/
-scoped syntax (name := checkCmd) "#fren_check" (ppSpace fren_path)? : command
+`Fren.Spec` alone does not accept it. A Lean keyword after it starts the
+next command, though `frenIdent` reads one as a name elsewhere. -/
+scoped syntax (name := checkCmd) "#fren_check" (ppSpace notLeanKeyword fren_path)? : command
 
 end Lang
 
