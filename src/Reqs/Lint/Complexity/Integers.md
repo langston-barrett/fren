@@ -48,6 +48,7 @@ fires, from the comparison with `x` on its left, mirrored where `x` is
 written on the right:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp manual_abs {
     use self::Comparison::{Ge, Gt, Le, Lt}
     in compared: Ordered  -- what the condition compares

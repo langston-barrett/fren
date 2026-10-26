@@ -427,6 +427,7 @@ pub comp severity {
 the results of a `#fren_check`:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp build {
     in worst: Severity
     pub det out fails?     -- `lake build` fails
@@ -443,6 +444,7 @@ pub comp build {
 counts, so it has none as inputs:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp summary {
     pub det out level: Severity
 

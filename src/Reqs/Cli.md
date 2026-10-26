@@ -490,6 +490,7 @@ pub enum ColorChoice { Auto, Always, Never }
 
 use self::ColorChoice::{Always, Auto, Never}
 
+set_option fren.evidence "enumerated" in
 pub comp color {
     in choice: ColorChoice
     in tty?        -- standard error is a terminal
@@ -538,6 +539,7 @@ pub enum Construct { Fren, LeanCode }
 
 use self::Construct::Fren
 
+set_option fren.evidence "enumerated" in
 pub comp accepts {
     in construct: Construct
     pub out accepted?
@@ -562,6 +564,7 @@ with them. `cli::agreement` states this:
 ```fren
 pub enum FrontEnd { Hosted, Standalone }
 
+set_option fren.evidence "enumerated" in
 pub comp agreement {
     in hosted: Verdict
     pub out standalone: Verdict

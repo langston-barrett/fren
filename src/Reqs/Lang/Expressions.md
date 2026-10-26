@@ -281,6 +281,7 @@ with `rate` uninterpreted: its value is unknown even at a fixed argument.
 `lang::linear_product` states this, from what each operand mentions:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp linear_product {
     in a_mentioned: Set(Mention)  -- what the left operand mentions (`lang::mentions`)
     in b_mentioned: Set(Mention)  -- what the right operand mentions
@@ -435,6 +436,7 @@ is widened. The operand of `-` is never expected to be a `Nat`, so `-1`
 is an `Int`. `lang::literal_type` states the type of a literal:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp literal_type {
     in nat_expected?         -- a `Nat` is expected where the literal is
     pub det out result: ValueType
@@ -530,6 +532,7 @@ applies no uninterpreted function, so its arguments may mention anything.
 `lang::argument` states this:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp argument {
     in defined?          -- the function is defined
     in mentions_output?  -- the argument mentions an output of the enclosing component
@@ -594,6 +597,7 @@ two, `exactly_one?` is `!=`; `exactly_one?` implies `at_most_one?`; and
 set_option fren.lint.eq_op "allow" in
 set_option fren.lint.manual_at_most_one "allow" in
 set_option fren.lint.nonminimal_bool "allow" in
+set_option fren.evidence "enumerated" in
 pub comp cardinality_laws {
     in a?
     in b?
@@ -1445,6 +1449,7 @@ scrutinee, from whether their patterns overlap, whether one of them has a
 guard, and whether one of them is the last arm `_`, which has none:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp table_arm_pair {
     in overlap?              -- some value matches both patterns (`lang::overlap`)
     in guarded?              -- one of the arms has a guard

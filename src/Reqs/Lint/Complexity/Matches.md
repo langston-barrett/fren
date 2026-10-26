@@ -62,6 +62,7 @@ only drops the bodies, which index nothing, so no guard is weaker.
 `lint::needless_match` states when it fires:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp needless_match {
     in given_back?       -- each arm but `_` gives back the variant it matches, with its binders in order
     in wildcard?         -- there is a `_` arm

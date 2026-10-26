@@ -256,6 +256,7 @@ way round:
 
 ```fren
 set_option fren.lint.manual_at_most_one "allow" in
+set_option fren.evidence "enumerated" in
 pub comp manual_at_most_one_written {
     in a?
     in b?
@@ -269,6 +270,7 @@ pub comp manual_at_most_one_written {
     pub det out after? := not (a? and b?) and not (a? and c?) and not (b? and c?) and (c? or a? or b?)
 }
 
+set_option fren.evidence "enumerated" in
 pub comp manual_at_most_one_fixed {
     in a?
     in b?

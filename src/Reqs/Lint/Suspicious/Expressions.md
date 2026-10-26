@@ -111,6 +111,7 @@ compared in their scopes, as the operands of `and` are.
 value is `written_same`, as for `eq_op`:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp eq_op_conditional {
     use self::EqOpValue::AlwaysTrue
     in unless?           -- `unless`, rather than `when`
@@ -170,6 +171,7 @@ pub comp eq_op_cardinality {
 }
 
 set_option fren.lint.eq_op "allow" in
+set_option fren.evidence "enumerated" in
 pub comp eq_op_cardinality_written {
     in a?
     in b?
@@ -177,6 +179,7 @@ pub comp eq_op_cardinality_written {
     pub det out at_most? := at_most_one?(a?, b?, a?)
 }
 
+set_option fren.evidence "enumerated" in
 pub comp eq_op_cardinality_value {
     in a?
     in b?
@@ -289,12 +292,14 @@ pub comp erasing_division {
 
 set_option fren.lint.erasing_op "allow" in
 set_option fren.lint.constant_output "allow" in
+set_option fren.evidence "enumerated" in
 pub comp erasing_division_written {
     pub det out quotient: Int := 0 div 7
     pub det out remainder: Int := 0 mod -3
 }
 
 set_option fren.lint.constant_output "allow" in
+set_option fren.evidence "enumerated" in
 pub comp erasing_division_fixed {
     pub det out quotient: Int := 0
     pub det out remainder: Int := 0
@@ -328,6 +333,7 @@ value. It leaves such a conditional even where the branches mention none
 of those names, rather than compare what they mention:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp same_branches {
     in binders: Set(lang::Id)  -- the binders of the condition's pattern tests
     in then_branch: Scoped     -- the branches, as written in their scopes
@@ -426,6 +432,7 @@ chain. It has no fix: one of the tests is probably not the one meant.
 `lint::ifs_same_cond` states when it fires:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp ifs_same_cond {
     in earlier?          -- an earlier test of the chain is written the same
     pub det out fires?

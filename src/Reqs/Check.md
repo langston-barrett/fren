@@ -158,6 +158,7 @@ pub comp proved {
     expect conservative: when q = Unknown, verdict = Inconclusive
 }
 
+set_option fren.evidence "enumerated" in
 pub comp satisfiable {
     in q: Outcome          -- can the negation of the goal be proved?
     pub det out verdict: Verdict
@@ -188,6 +189,7 @@ and postconditions (see [Contracts](#contracts-of-uninterpreted-functions)):
 ```fren
 pub enum CheckedItem { Component, GlobalExpectation, Body, Contract }
 
+set_option fren.evidence "enumerated" in
 pub comp applies {
     use self::CheckedItem::{Body, Component, Contract, GlobalExpectation}
     use self::Kind::{
@@ -250,6 +252,7 @@ cover the nine pairs of outcomes, each exactly once, which the
 confirm:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp realizability {
     in assume_q: Outcome   -- can `False` be proved from A?
     in cex_q: Outcome      -- can `exists outputs, R` be proved from A and I?
@@ -650,6 +653,7 @@ realizability check then fails for the same component.
 `check::expectation` gives the verdict, from the outcome `q` of the query:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp expectation {
     in q: Outcome          -- can `e` be proved from A, I and R?
     pub det out verdict: Verdict
@@ -688,6 +692,7 @@ own component: an instance of the component does not check it again.
 `q` of the query:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp cover_goal {
     in q: Outcome          -- can `not e` be proved from A, I and R?
     pub det out verdict: Verdict
@@ -763,6 +768,7 @@ checked.
 `check::non_vacuity` gives the verdict, from the outcome `q` of the query:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp non_vacuity {
     in q: Outcome          -- can `not trigger` be proved from A, I and R?
     pub det out verdict: Verdict
@@ -805,6 +811,7 @@ a trigger, so `A ∧ I ∧ R`, and `A` with it, are satisfiable, and
 `consistent_q` is `Sat` for both.
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp redundancy_asked {
     in consistent_q: Outcome
     in vacuous?            -- it failed the vacuity check
@@ -818,6 +825,7 @@ pub comp redundancy_asked {
 query:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp non_redundancy {
     in q: Outcome          -- can the constraint be proved from the others?
     pub det out verdict: Verdict
@@ -913,6 +921,7 @@ when it has no `_` row. `check::completeness_asked` gives which are asked
 about:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp completeness_asked {
     in unguarded_exhaustive?  -- its arms without guards are exhaustive
     pub det out asked?
@@ -1089,6 +1098,7 @@ but a table whose only row is `_`. `check::reachability_asked` gives which
 arms are asked about:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp reachability_asked {
     in guarded?              -- the arm has a guard
     in after_guard?          -- some arm before it has a guard
@@ -1151,6 +1161,7 @@ one always holds. `check::reachability` decides each query like
 [vacuity](#vacuity), whose query also asks whether something can hold:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp reachability {
     in q: Outcome          -- can `not (F_j and T_j)` be proved from the guard and the hypotheses?
     pub det out verdict: Verdict
@@ -1218,6 +1229,7 @@ that is already so.
 reachability and disjointness ask under:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp reach_hypothesis {
     in definedness?          -- the hypothesis is one of the definedness check's at the `match`
     in enclosing?            -- it is the constraint, definition or binding that the `match` is in
@@ -1461,6 +1473,7 @@ the second copy renames:
 ```fren
 pub enum Symbol { Input, InstanceVariable, Output, Function }
 
+set_option fren.evidence "enumerated" in
 pub comp copied {
     in symbol: Symbol
     pub det out copied?
@@ -1642,6 +1655,7 @@ pub enum EvidenceValue { Solver, Tested, Enumerated, EnumeratedTested, Other }
 
 pub enum Method { Solver, Testing, Enumeration, EnumerationThenTesting, Skipped }
 
+set_option fren.evidence "enumerated" in
 pub comp evidence_value {
     use self::EvidenceValue::{Enumerated, EnumeratedTested, Other, Tested}
     in value: EvidenceValue

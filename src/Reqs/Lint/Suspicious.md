@@ -99,6 +99,7 @@ the meaning nor the guards. [`fren fmt`](../Fmt.md) writes the negation so
 too. `lint::suspicious_unary_op_formatting` states when it fires:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp suspicious_unary_op_formatting {
     in punctuator?       -- the operator is a punctuator other than `-`
     in adjacent?         -- the `-` directly follows it
@@ -155,6 +156,7 @@ mistake and hide it. Clippy has no exact analogue; rustc's
 `lint::irrefutable_is` states when it fires:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp irrefutable_is {
     in matches_every?    -- no value of the scrutinee's type is left for `_` after the pattern
     pub det out fires?
@@ -219,6 +221,7 @@ since Rust has no cover goals. `lint::trivial_cover` states when it
 fires:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp trivial_cover {
     in trigger?    -- the goal has a trigger
     in restates?   -- it is written the same as an assumption or a guarantee

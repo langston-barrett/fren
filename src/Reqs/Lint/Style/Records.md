@@ -25,6 +25,7 @@ mentions only what `r` does. `lint::field_copy` states when it fires on
 ```fren
 pub mod lint
 
+set_option fren.evidence "enumerated" in
 pub comp field_copy {
     in path?     -- `r` is a name or a dotted path of names
     in copy?     -- the value is written the same as `r`, then `.`, then the field's name

@@ -186,6 +186,7 @@ changes, so it keeps the guards. `lint::literal_dot_in_pattern` states
 when it fires:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp literal_dot_in_pattern {
     in before?           -- a letter or digit, neither escaped nor in a class, is directly before the `.`
     in after?            -- one is directly after it

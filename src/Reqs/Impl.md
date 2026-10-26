@@ -300,6 +300,7 @@ The obligation is proved in one of three ways:
 accepted, and the outcomes of `decide` and the solver:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp obligation {
     in written?          -- a proof is written with `by`
     in written_ok?       -- Lean accepts it

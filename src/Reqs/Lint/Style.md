@@ -75,6 +75,7 @@ pub comp unless_not {
     expect other: when condition = Head::Other, not fires?
 }
 
+set_option fren.evidence "enumerated" in
 pub comp collapsible_when {
     in unless?           -- the conditional is `unless`, rather than `when`
     in body: Head
@@ -434,6 +435,7 @@ parentheses, as in `-(-x)` and `-(-(x))`: it is `x`, which is its fix.
 fixable:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp double_neg {
     in negated_operand?  -- the operand of the negation, through parentheses, is a negation
     pub det out fires?
@@ -441,6 +443,7 @@ pub comp double_neg {
     ensure rule: fires? iff negated_operand?
 }
 
+set_option fren.evidence "enumerated" in
 pub comp neg_multiply {
     in left_minus_one?   -- the left operand, through parentheses, is `-1`
     in right_minus_one?  -- the right operand is
@@ -627,6 +630,7 @@ expression mentions, as [`lang::mentions`](../Lang/Expressions.md#mentions)
 gives it:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp assertions_on_constants {
     in mentioned: Set(lang::Mention)  -- what the expression mentions
     pub det out fires?
