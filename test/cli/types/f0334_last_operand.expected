@@ -1,0 +1,18 @@
+error[F0334]: a pattern test cannot bind `v` here
+ --> test/cli/types/f0334_last_operand.fren:3:81
+  |
+3 | comp c { in r: Reply in b? pub out z? ensure a: z? iff b? and r is Reply::Value(v) }
+  |                                                                                 ^ binds a name
+  |
+  = note: a pattern test binds names only for what follows it where it matches: the later operands of its `and`, the body of `when`, or the `then` branch of `if`
+  = help: to read the payload, bind it in a `when`'s condition, as in `when x is P(v), ...`, or write a `match`
+help: ignore the value
+  |
+3 - comp c { in r: Reply in b? pub out z? ensure a: z? iff b? and r is Reply::Value(v) }
+3 + comp c { in r: Reply in b? pub out z? ensure a: z? iff b? and r is Reply::Value(_) }
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0334`.
+exit=2

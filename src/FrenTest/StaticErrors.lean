@@ -10,6 +10,7 @@ mod static_errors_test
 /--
 error: nonlinear arithmetic is not supported
 
+note: the left side mentions the variable `x`, and the right side the variable `x`
 note: the solver decides only linear integer arithmetic
 help: one side of `*` must mention no variable and no uninterpreted function, such as `2 * x` or `(MAX - MIN) * x`
 -/

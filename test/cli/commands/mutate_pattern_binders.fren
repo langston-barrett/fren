@@ -1,0 +1,25 @@
+--@ args: mutate --list
+-- A `when` whose condition's pattern test binds a name is not mutated as a
+-- whole, though its parts are: dropping or negating its trigger would move
+-- the name out of scope. Whether a name binds is decided as in a pattern:
+-- `V` binds, though it is capitalized, and `on` and `off`, which `use`
+-- brings into scope as variants, do not, so those `when`s are mutated.
+set_option fren.lint.non_camel_case_types "allow"
+set_option fren.lint.non_snake_case "allow"
+set_option fren.lint.is_equality "allow"
+
+enum Reply { Empty, Value(Int) }
+enum Mode { on, off }
+use self::Mode::{off, on}
+
+comp m {
+    in r: Reply
+    in x: Mode
+    in y: Int
+    pub out w: Int
+    pub out z: Int
+
+    ensure bound: when r is Reply::Value(V), w = V
+    ensure on_mode: when x is on, z = y
+    ensure off_mode: when x is off, z = 0
+}

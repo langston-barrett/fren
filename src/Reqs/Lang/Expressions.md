@@ -186,8 +186,9 @@ uninterpreted [function](Items.md#functions): those of [linear
 arithmetic](#linear-arithmetic), of the [decidable
 core](Decidability.md#strings), and of the
 [lint](../Lint/Complexity.md#constant-outputs) `constant_output`. An expression that mentions
-neither has the same value in every behaviour. What an expression
-mentions is decided from its parts, as `lang::mentions` states:
+neither has the same value in every behaviour, unless it is
+unspecified there, as an index out of range within a constant's value is
+(see [The whole tree](Meaning.md#the-whole-tree)). What an expression mentions is decided from its parts, as `lang::mentions` states:
 
 - A literal mentions nothing, and neither does a
   [constant](Items.md#constants), a variant without a payload, or any
@@ -225,50 +226,39 @@ mentions is decided from its parts, as `lang::mentions` states:
   from an expression that is not a name, such as `R { a := x }.a`, and a
   literal of a set, pair or sequence.
 
+Each kind of expression is the head of a [layer](Meaning.md#layers), a
+`lang::Head`, and what it mentions is a set of names, of variables and
+uninterpreted functions as `Mention`s, given by `mentioned_by`. `lang::mentions` states
+it, from the head and what the parts mention together:
+
 ```fren
--- The kinds of expression, for what one mentions. `Literal` is a literal;
--- `Constant` is a constant, a variant without a payload, or a path of more
--- than one segment; `Variable` is a variable, an instance's variable, or a
--- field read from one, or a bound name of a type that is not listed; `Binder` is a binder of a `match` arm or a name of a
--- `let` or `where`; `Bound` is a quantifier's bound name of a listed type; `Construction` is a variant with a payload, a
--- record literal, a record update or a newtype built from its value,
--- `Ms(e)`; `Uninterpreted` and `Defined` are
--- applications of uninterpreted and defined functions; `Compound` is an
--- operator, `when` or `unless`, a `let`, a quantifier, a conditional, a `match`, a table, a pattern
--- test, a cardinality operator, indexing, a field read from an expression that is
--- not a name, or a literal of a set, pair or sequence.
-pub enum ExprKind {
-    Literal, Constant, Variable, DefinedOutput, Binder, Bound, Construction, Method, Uninterpreted, Defined, Compound,
-}
-
 pub comp mentions {
-    use self::ExprKind::{
-        Binder,
-        Bound,
-        Compound,
-        Constant,
-        Construction,
-        Defined,
-        DefinedOutput,
-        Literal,
-        Method,
-        Uninterpreted,
-        Variable,
-    }
-    in expr_kind: ExprKind
-    in parts?                -- one of its parts mentions a variable or an uninterpreted function
-    pub det out mentions?    -- it mentions a variable or an uninterpreted function
+    use self::Head::{Bound, Constant, Construction, Defined, Literal, Method, Uninterpreted, Variable}
+    in head: Head
+    in parts_mentioned: Set(Mention)  -- what its parts mention, together
 
-    ensure rule: mentions? iff match expr_kind {
-        Literal | Constant | Bound => false,
-        Variable | Uninterpreted => true,
-        DefinedOutput | Binder | Construction | Method | Defined | Compound => parts?,
+    assume leaves: when head is Literal(_) | Bound(_) | Constant(_) | Variable(_), parts_mentioned = {}
+
+    pub det out mentioned: Set(Mention) := mentioned_by(head, parts_mentioned)
+    pub det out mentions? := mentioned != {}    -- it mentions a variable or an uninterpreted function
+
+    expect fixed_meaning: when head is Defined(_) | Method(_) | Construction(_, _), mentioned = parts_mentioned
+    expect unknown: when head is Variable(_) | Uninterpreted(_), mentions?
+    expect bound_fixed: when head is Bound(_), not mentions?
+    expect itself: match head {
+        Variable(x) => mentioned = {Mention::Var(x)},
+        _ => true,
     }
 
-    expect fixed_meaning: when expr_kind is Defined | Method | Construction, mentions? iff parts?
-    expect unknown: when expr_kind is Variable | Uninterpreted, mentions?
-    expect bound_fixed: when expr_kind = Bound, not mentions?
+    cover through_parts: parts_mentioned != {} and mentions?
 }
+```
+
+Each layer of an expression mentions what `lang::mentions` says, so
+`lang::node` refines it:
+
+```fren
+refine layer_mentions: node refines mentions
 ```
 
 The parts of a defined output, of a binder and of a name of a `let` or
@@ -288,19 +278,19 @@ the solver decides. `x * y` is an error, and so is `x * RATE` within a
 component that declares a variable `RATE!`, which shadows the constant
 (see [Shadowing](Components.md#shadowing)). So is `x * rate(1)`,
 with `rate` uninterpreted: its value is unknown even at a fixed argument.
-`lang::linear_product` states this, from whether each operand mentions a
-variable or an uninterpreted function:
+`lang::linear_product` states this, from what each operand mentions:
 
 ```fren
 pub comp linear_product {
-    in a_mentions?    -- the left operand mentions a variable or an uninterpreted function
-    in b_mentions?    -- the right operand mentions a variable or an uninterpreted function
+    in a_mentioned: Set(Mention)  -- what the left operand mentions (`lang::mentions`)
+    in b_mentioned: Set(Mention)  -- what the right operand mentions
+
     pub det out accepted?
 
-    ensure rule: accepted? iff not (a_mentions? and b_mentions?)
+    ensure rule: accepted? iff (a_mentioned = {} or b_mentioned = {})
 
-    expect scaling: when not a_mentions?, accepted?
-    expect no_variable_products: when a_mentions? and b_mentions?, not accepted?
+    expect scaling: when a_mentioned = {}, accepted?
+    expect no_variable_products: when a_mentioned != {} and b_mentioned != {}, not accepted?
 }
 ```
 
@@ -308,7 +298,7 @@ An operand that mentions less never makes a product nonlinear:
 
 ```fren
 expect fewer_mentions: forall (p q: linear_product),
-    when (not q.a_mentions? or p.a_mentions?) and (not q.b_mentions? or p.b_mentions?) and p.accepted?,
+    when q.a_mentioned subset p.a_mentioned and q.b_mentioned subset p.b_mentioned and p.accepted?,
     q.accepted?
 ```
 
@@ -316,8 +306,28 @@ A defined function applied to constants scales a product like a literal,
 whatever the other operand:
 
 ```fren
-expect defined_scales: forall (m: mentions) (p: linear_product),
-    when m.expr_kind = ExprKind::Defined and not m.parts? and (p.a_mentions? iff m.mentions?), p.accepted?
+expect defined_scales: forall (m: node) (p: linear_product),
+    when m.head is Head::Defined(_) and m.parts_mentioned = {} and p.a_mentioned = m.mentioned, p.accepted?
+```
+
+The rule is what makes the product linear: of an accepted product, one
+operand is a *fixed factor*, with the same value in every environment
+where it is specified, by the [laws of a layer](Meaning.md#laws). Where it
+is not, as `get([1], 5)` with `fn get(q: Seq(Int), i: Int): Int := q[i]`,
+a check reports why: the [definedness check](../Check.md#definedness)
+reports the index in `get`'s body, as the [precondition
+check](../Check.md#preconditions) reports an application outside a
+function's preconditions. Here `a` and `b` are the operands'
+layers and `a2` and `b2` the same layers, with the same parts' values, in
+any other environment; that the parts' values are the same follows by
+induction (see [The whole tree](Meaning.md#the-whole-tree)):
+
+```fren
+expect fixed_factor: forall (p: linear_product) (a a2 b b2: node),
+    when p.accepted? and p.a_mentioned = a.mentioned and p.b_mentioned = b.mentioned
+    and a2.head = a.head and a2.values = a.values and b2.head = b.head and b2.values = b.values
+    and a.specified? and b.specified?,
+    a2.value = a.value or b2.value = b.value
 ```
 
 ## Division and remainder
@@ -1094,17 +1104,18 @@ s is Shape::Circle(_)
 s is Shape::Rect(_, _) | Shape::Empty
 r is Reply::Ok(Shape::Circle(_))
 n is 0..=9
+when s is Shape::Circle(radius), radius > 0
 ```
 
 A *pattern test*, `e is P`, is `true` exactly when the pattern `P` matches
 `e`: it means `match e { P => true, _ => false }`. `e` is a value of an
 enumeration, a `Bool`, an `Int`, a `Nat` or a `String`, as a `match`'s scrutinee is
 (`F0335`), and `P` is a [pattern](Patterns.md) as in a [`match`
-arm](#matches), nested, literal, range and or-patterns included, but it
-binds no names: each of its binders is `_` (`F0334`, which names a binder
-`n!` as `n`, the name it would declare), since a test has no body in which
-a name could be mentioned. To read a payload, write a
-`match`. The pattern matches some value, and each alternative of its
+arm](#matches), nested, literal, range and or-patterns included. Its
+binders name parts of the value only where something follows the test
+that is evaluated where the pattern matches (see [Binding
+names](#binding-names)); elsewhere, each of them is `_`. The pattern
+matches some value, and each alternative of its
 or-patterns is reachable, as in a `match` (`F0318`): so `k is -5..=-1`, on
 a `Nat`, is an error, as an arm with that pattern would be. A pattern that
 matches every value, such as `_`, is allowed, though the test is then
@@ -1133,24 +1144,154 @@ set constant or a set that is computed. A pattern with a payload may still
 have alternatives without one, as in `s is Shape::Rect(_, _) |
 Shape::Empty`.
 
-`lang::pattern_test` states which patterns are accepted, from the numbers
-of their binders that are not `_` and of their alternatives that are not
-reachable, and whether they match some value:
+### Binding names
+
+A pattern test binds the names of its pattern's binders for what follows
+it where it holds, as Rust's `if let` and its chains of `let` do:
+
+- `when x is P, D`: the names are in scope in `D`, and the `when` means
+  `match x { P => D, _ => true }`.
+- `x is P and E`: the names are in scope in `E`, and the `and` means
+  `match x { P => E, _ => false }`. `E` is evaluated only where the
+  pattern matches, as the right operand of `and` is
+  [guarded](#sequences) by its left.
+- `if x is P then a else b`: the names are in scope in `a` alone, and the
+  `if` means `match x { P => a, _ => b }`.
+
+The operands of `and`, through parentheses, form a *chain*, and a
+pattern test that is not an operand of `and` is a chain of one. A name
+that a test of a chain binds is in scope in the operands of the chain
+after the test, and, if the chain is the condition of a `when` or an
+`if`, in the `when`'s body or the `if`'s `then` branch. So in `x is P(d)
+and y is Q(e) and d < e`, `d` is in scope in `y is Q(e)` and in `d < e`,
+and `e` in `d < e`, however the chain is parenthesized: `(x is P(d) and
+y is Q(e)) and d < e` and `x is P(d) and (y is Q(e) and d < e)` are the
+same chain. `when a and b, D` means `when a, when b, D`, so `when x is
+P(d) and d > 0, D` is `match x { P(d) => (when d > 0, D), _ => true }`.
+Nothing else sees the names: not the operands before the test, not the
+`else` branch, and not what is around the chain.
+
+A test whose names would be in scope nowhere cannot bind any (`F0334`):
+the last operand of a chain, or a chain of one, that is not the condition
+of a `when` or an `if`. That is a test on its own, an operand of `iff`,
+of a comparison or of a function, and a test under `or` or `not`, where
+what follows need not be evaluated where the pattern matches. It is also
+the condition of `unless`, whose body holds where the condition does not:
+`unless x is P(d), D` would mention `d` where `x` does not match `P`.
+`unless x is P(d) and d > 0, D` is accepted, as `d` is in scope in `d >
+0`, but not in `D`. Write `_` for each binder of such a test, or read the
+payload with a [`match`](#matches).
+
+The binders of a pattern test are a `match` arm's binders: each names a
+value of the scrutinee, their names are distinct (`F0213`) and follow the
+[Boolean names](Types.md#boolean-names) rule, an or-pattern binds none
+(`F0333`), and one that shadows a name in scope, a binder of an earlier
+test of its chain included, is written with `!` (see
+[Shadowing](Components.md#shadowing)). A binder is not a variable, and
+mentioning it counts as mentioning everything its scrutinee mentions.
+
+A guarantee `when x is P(d), D` is one constraint, as a `match` is: the
+checks that count constraints, such as [vacuity](../Check.md#vacuity),
+[redundancy](../Check.md#redundancy) and [minimal
+sets](../Check.md#minimal-sets), treat it as one, so a conflict names it
+apart from the guarantees beside it. Its trigger, for vacuity, is its
+condition, `x is P(_)`, and for `when x is P(d), when d > 0, D`, the
+pattern's matching and `d > 0`, with `d` the payload's value.
+
+`lang::test_scope` states where a name that a pattern test binds is in
+scope, from what its chain is a part of, `context`, the chain's number of
+operands and the test's position among them, and where the name is
+mentioned, `site`; and so whether the test may bind names at all:
+
+```fren
+-- What a chain of `and` that holds a pattern test is a part of.
+pub enum TestContext {
+    WhenCondition,     -- the condition of `when`
+    UnlessCondition,   -- the condition of `unless`
+    IfCondition,       -- the condition of `if`
+    OrOperand,         -- an operand of `or`
+    NotOperand,        -- the operand of `not`
+    Standalone,        -- anything else: a whole constraint, an operand of `iff`
+}
+
+-- Where, in and around such a chain, a name is mentioned.
+pub enum Site {
+    Operand(Nat),      -- the chain's operand at this position, from 0
+    Body,              -- the body of the `when` or `unless`, or the `then` branch of the `if`
+    ElseBranch,        -- the `else` branch of the `if`
+    Outside,           -- anywhere else
+}
+
+pub comp test_scope {
+    in context: TestContext
+    in operands: Nat         -- the chain's operands
+    in test_at: Nat          -- the test's position among them, from 0
+    in site: Site            -- where a name that the test binds is mentioned
+    pub det out visible?     -- the name is in scope there
+    pub det out binds?       -- the test may bind names
+
+    assume within: test_at < operands
+
+    ensure later: when site is Site::Operand(k), visible? iff test_at < k < operands
+    ensure body: when site = Site::Body, visible? iff context is TestContext::WhenCondition | TestContext::IfCondition
+    ensure nowhere_else: when site is Site::ElseBranch | Site::Outside, not visible?
+    ensure binds: binds? iff (test_at + 1 < operands or context is TestContext::WhenCondition | TestContext::IfCondition)
+
+    expect unless_body: when context = TestContext::UnlessCondition and site = Site::Body, not visible?
+    expect alone: when operands = 1 and not context is TestContext::WhenCondition | TestContext::IfCondition, not binds?
+    expect next_operand: when test_at + 1 < operands, binds?
+    expect earlier: when site is Site::Operand(k) and k <= test_at, not visible?
+}
+```
+
+`lang::pattern_binding` states what a pattern test that binds a name
+means, over an enumeration whose one variant has a payload: each form
+means the `match` that the rules above give it.
+
+```fren
+pub enum Reading { Missing, Value(Int) }
+
+pub comp pattern_binding {
+    in r: Reading
+    in limit: Int
+    pub det out at_most_limit?      -- `when r is Reading::Value(v), v <= limit`
+    pub det out exceeds?       -- `r is Reading::Value(v) and v > limit`
+    pub det out clamped: Int  -- `if r is Reading::Value(v) and v <= limit then v else limit`
+
+    ensure within_rule: at_most_limit? iff (when r is Reading::Value(v), v <= limit)
+    ensure above_rule: exceeds? iff r is Reading::Value(v) and v > limit
+    ensure clamped_rule: clamped = (if r is Reading::Value(v) and v <= limit then v else limit)
+
+    expect within_match: at_most_limit? iff match r { Reading::Value(v) => v <= limit, _ => true }
+    expect above_match: exceeds? iff match r { Reading::Value(v) => v > limit, _ => false }
+    expect clamped_match: clamped = match r { Reading::Value(v) if v <= limit => v, _ => limit }
+    expect complement: when r is Reading::Value(_), at_most_limit? iff not exceeds?
+    expect missing: when r = Reading::Missing, at_most_limit? and not exceeds? and clamped = limit
+    expect at_most: clamped <= limit
+}
+```
+
+`lang::pattern_test` states which patterns are accepted, from whether the
+test may bind names, by `lang::test_scope`, the numbers of their binders
+that are not `_` and of their alternatives that are not reachable, and
+whether they match some value:
 
 ```fren
 pub comp pattern_test {
+    in binds?                        -- the test may bind names (`lang::test_scope`)
     in n_bound: Nat                  -- binders that are not `_`
     in n_useless_alternatives: Nat   -- alternatives that no useful case of the pattern takes
     in matches_some?                 -- some value matches the pattern
     pub det out accepted?
 
-    ensure rule: accepted? iff (n_bound = 0 and n_useless_alternatives = 0 and matches_some?)
+    ensure rule: accepted? iff ((binds? or n_bound = 0) and n_useless_alternatives = 0 and matches_some?)
 
-    expect binds_nothing: when accepted?, n_bound = 0
+    expect binds_nothing: when accepted? and not binds?, n_bound = 0
     expect every_alternative: when accepted?, n_useless_alternatives = 0
     expect matches_something: when accepted?, matches_some?
 
     cover accepted: accepted?
+    cover binding: accepted? and n_bound > 0
     cover empty_rejected: not matches_some? and not accepted?
 }
 ```

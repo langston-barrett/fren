@@ -4,6 +4,7 @@ error[F0307]: nonlinear arithmetic is not supported
 2 | comp c { in x: Int pub out y: Int ensure r: y = x * x }
   |                                                 ^^^^^ both sides mention variables or uninterpreted functions
   |
+  = note: the left side mentions the variable `x`, and the right side the variable `x`
   = note: the solver decides only linear integer arithmetic
   = help: one side of `*` must mention no variable and no uninterpreted function, such as `2 * x` or `(MAX - MIN) * x`
 

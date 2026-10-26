@@ -10,6 +10,7 @@
 - [Items](Lang/Items.md)
   - [Generic types](Lang/Generics.md)
 - [Components](Lang/Components.md)
+- [Meaning](Lang/Meaning.md)
 - [Expressions](Lang/Expressions.md)
   - [Local definitions](Lang/Let.md)
 - [Patterns](Lang/Patterns.md)

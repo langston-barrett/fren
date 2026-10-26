@@ -25,8 +25,10 @@ where the next member follows on the same line.
 
 - `_` matches any value.
 - A *binder*, an identifier, matches any value, and names it within the
-  arm's guard and body. A binder is not a variable: see
-  [Matches](Expressions.md#matches) for what it may shadow and mention.
+  arm's guard and body, or, in a pattern test, in what follows the test
+  where it holds (see [Binding names](Expressions.md#binding-names)). A
+  binder is not a variable: see [Matches](Expressions.md#matches) for what
+  it may shadow and mention.
 - A *literal* matches the value it denotes: `0`, `-1` and `0x10` match an
   `Int` or a `Nat`, `"a"` a `String`, and `true` and `false` a `Bool`.
 - A *range* matches the integers between its bounds: `a..=b` those from `a`

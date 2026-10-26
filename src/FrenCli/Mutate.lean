@@ -408,11 +408,26 @@ structure Edit where
   /-- The expression changed, for the identifier. -/
   context : Span
 
+/-- Whether a pattern test of the chain of `and` `c` binds a name
+(`Src.binds`), which the rest of the chain, or the body of the `when` or
+`if` whose condition it is, may mention (`lang::test_scope`): a mutant of
+the chain, the `when` or the `if` could move it out of its scope. -/
+partial def Src.chainBinds (s : Src) (c : Expr) : Bool :=
+  match c with
+  | .bin _ "and" a b => s.chainBinds a || s.chainBinds b
+  | .is _ _ p => s.binds p
+  | _ => false
+
 /-- The edits of expression `e`. `inAndLeft` says that `e` is the left
 operand of an `and`, unparenthesized, where an `or` needs parentheses; an
 `or` whose left operand is an unparenthesized `or` parenthesizes it. -/
 partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bool := false) : Array Edit :=
-  let here : Array Edit := match e with
+  -- Not of a chain, a `when` or an `if` whose pattern tests bind names.
+  let binding := match e with
+    | .bin _ "and" .. => s.chainBinds e
+    | .when _ _ c _ | .ite _ c _ _ => s.chainBinds c
+    | _ => false
+  let here : Array Edit := if binding then #[] else match e with
     | .bin sp op l r =>
       let opTok? := s.wordIn { start := l.span.stop, stop := r.span.start } op
       let swap (origin : Origin) (new : String) : Array Edit := match opTok? with

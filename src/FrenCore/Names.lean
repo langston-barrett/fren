@@ -1136,15 +1136,6 @@ and whether it mentions an output of the enclosing component
 (`lang::argument`). -/
 def argumentAccepted (defined mentionsOutput : Bool) : Bool := defined || !mentionsOutput
 
-/-- Whether `a * b` is linear, from whether each operand mentions a variable
-or an uninterpreted function (`lang::linear_product`). -/
-def productAccepted (a b : Bool) : Bool := !(a && b)
-
-def nonlinearMsg : Msg :=
-  { code? := some "F0307", headline := "nonlinear arithmetic is not supported", label? := some "both sides mention variables or uninterpreted functions"
-    notes := #["note: the solver decides only linear integer arithmetic",
-      "help: one side of `*` must mention no variable and no uninterpreted function, such as `2 * x` or `(MAX - MIN) * x`"] }
-
 /-- The form of a divisor, without its `-` and parentheses
 (`lang::divisor`): an integer literal, a constant whose value is an integer
 constant expression, a constant whose value is not, or any other

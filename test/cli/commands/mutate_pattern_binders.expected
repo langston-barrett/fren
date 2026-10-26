@@ -1,0 +1,9 @@
+swap-comparison-m::bound-357ccb2796e9 test/cli/commands/mutate_pattern_binders.fren:22:48 `=` changed to `!=`
+negate-trigger-m::on_mode-b93bfcab4638 test/cli/commands/mutate_pattern_binders.fren:23:21 `when` changed to `unless`
+drop-trigger-m::on_mode-1ab9fdf39674 test/cli/commands/mutate_pattern_binders.fren:23:21 `when x is on, z = y` changed to `z = y`
+swap-comparison-m::on_mode-65a97f4c5088 test/cli/commands/mutate_pattern_binders.fren:23:37 `=` changed to `!=`
+negate-trigger-m::off_mode-c4c2369a3771 test/cli/commands/mutate_pattern_binders.fren:24:22 `when` changed to `unless`
+drop-trigger-m::off_mode-427eca01850d test/cli/commands/mutate_pattern_binders.fren:24:22 `when x is off, z = 0` changed to `z = 0`
+swap-comparison-m::off_mode-fc50f747dc19 test/cli/commands/mutate_pattern_binders.fren:24:39 `=` changed to `!=`
+shift-integer-m::off_mode-07c28f58d4aa test/cli/commands/mutate_pattern_binders.fren:24:41 `0` changed to `1`
+exit=0
