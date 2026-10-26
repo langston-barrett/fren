@@ -428,7 +428,10 @@ checked if it failed the vacuity check, since a guarantee that never
 applies always follows from the others. `check::redundancy_asked` gives
 when a constraint is checked, from the outcome of asking whether `False`
 can be proved from the constraints it would be compared with and itself
-(`consistent_q`):
+(`consistent_q`). That question is not asked once a vacuity query of the
+component has answered `Sat`. That query's hypotheses are `A`, `I`, `R` and
+a trigger, so `A ∧ I ∧ R`, and `A` with it, are satisfiable, and
+`consistent_q` is `Sat` for both.
 
 ```fren
 pub comp redundancy_asked {

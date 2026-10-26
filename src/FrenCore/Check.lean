@@ -591,17 +591,26 @@ def consistent (hs : Array (Name × F)) : m Answer := do
 def vacuousOf (vacuities : Array CheckResult) : Array Name :=
   vacuities.filterMap fun r => if r.verdict == .fail then r.prop? else none
 
+/-- Whether some `vacuity` query answered `sat`, its check passing: its
+hypotheses are the definitions, `A`, `I` and `R`, with a trigger, so they
+are satisfiable. -/
+def satisfiedOf (vacuities : Array CheckResult) : Bool :=
+  vacuities.any (·.verdict == .pass)
+
 /-- `redundancy` for each assumption, then for each requirement that is not
 `vacuous`, unless they are contradictory: contradictory constraints entail
 everything, and a vacuous requirement is already reported
-(`check::redundancy_asked`). -/
-def checkRedundancies (c : Comp F) (vacuous : Array Name) : m (Array CheckResult) := do
-  let assumeQ ← consistent b (c.defEqs .redundancy ++ c.assumes)
+(`check::redundancy_asked`). If `satisfied`, the definitions, `A`, `I` and
+`R` are known to be satisfiable (`satisfiedOf`), so neither question of
+consistency is asked: its answer is `sat`. -/
+def checkRedundancies (c : Comp F) (vacuous : Array Name) (satisfied : Bool := false) : m (Array CheckResult) := do
+  let assumeQ ← if satisfied then pure .sat else consistent b (c.defEqs .redundancy ++ c.assumes)
   let assumes ← c.assumes.filterMapM fun a => do
     if redundancyAsked assumeQ false then
       return some (← checkRedundant b c (c.assumes.filter (·.1 != a.1)) a)
     return none
-  let allQ ← if c.reqs.isEmpty then pure .sat else consistent b (c.defEqs .redundancy ++ (c.hyps b ++ c.reqs))
+  let allQ ← if c.reqs.isEmpty || satisfied then pure .sat
+    else consistent b (c.defEqs .redundancy ++ (c.hyps b ++ c.reqs))
   let reqs ← c.reqs.filterMapM fun r => do
     if redundancyAsked allQ (vacuous.contains r.1) then
       return some (← checkRedundant b c (c.hyps b ++ c.reqs.filter (·.1 != r.1)) r)
@@ -627,7 +636,8 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
   let covers ← ifSelected (kinds.contains .cover) (c.covers.mapM (checkCover (bk .cover) c))
   let vacuities ← ifSelected (kinds.contains .vacuity) (c.triggers.mapM (checkVacuity (bk .vacuity) c))
   let redundancies ←
-    ifSelected (kinds.contains .redundancy) (checkRedundancies (bk .redundancy) c (vacuousOf vacuities))
+    ifSelected (kinds.contains .redundancy)
+      (checkRedundancies (bk .redundancy) c (vacuousOf vacuities) (satisfiedOf vacuities))
   let dets ← ifSelected (kinds.contains .determinism) (checkDets (bk .determinism) c)
   let defined ← ifSelected (kinds.contains .definedness) (c.indexes.mapM (checkDefinedness (bk .definedness) c))
   let complete ← ifSelected (kinds.contains .completeness) ((c.tablesOf .completeness).mapM (checkTable (bk .completeness) c))
