@@ -4,6 +4,7 @@ import FrenCli.Exit
 import FrenCli.Fmt
 import FrenCli.MutateRun
 import FrenCli.Quick
+import FrenCli.Same
 import FrenCli.Smt
 import FrenCore.Codes
 import FrenCore.Literate
@@ -977,25 +978,178 @@ def mutantsWith (files : Array (String × Array Char)) (parsed : Array Parsed) (
   return all
 
 /-- The mutants of the files, as elaborated, with the lint levels `lints`,
-and the state before each file, from which a mutant of it is elaborated. -/
+and the state before each file, from which a mutant of it is elaborated,
+then after the last. -/
 def mutantsOf (files : Array (String × Array Char)) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
     Array State × Array Mutate.Mutant := Id.run do
   let parsed := files.map (parseText ·.2)
   let mut states := #[initialState lints]
   for (_, chars) in files, i in [0:files.size] do
     states := states.push (elabParsed (states.back?.getD {}) i chars parsed[i]!)
-  return (states.pop, mutantsWith files parsed states)
+  return (states, mutantsWith files parsed states)
+
+deriving instance BEq for Fren.Core.Pat
+deriving instance BEq for Fren.Core.PTy
+deriving instance BEq for Fren.Core.DataShape
+deriving instance BEq for Contract
+deriving instance BEq for Fren.Core.Fix
+deriving instance BEq for Fren.Core.Msg
+deriving instance BEq for Diag
+deriving instance BEq for Fren.Core.LevelInEffect
+deriving instance BEq for Fren.Core.Levels
+deriving instance BEq for Fren.Core.Item, Fren.Core.EnumDef, Fren.Core.UseDef, Fren.Core.Tested, DataDecl
+deriving instance BEq for Ident, Bound, Pattern, Binder, Expr
+deriving instance BEq for CVar, CProp, CInst, CComp
+
+instance : Same Fren.Core.Table := ⟨fun a b => same_fields% Fren.Core.Table a b except []⟩
+
+/-- The names that the file whose parse is `p` writes, as identifiers or
+keywords, with each part of a dotted identifier. A path resolves to an
+item whose last name is the path's last segment (`Table.resolvePath`), so
+a file that writes no item's name reads no item of that name
+(`skipFile?`). -/
+def writtenNames : Parsed → Std.HashSet String
+  | .ok (toks, _) => toks.foldl (init := {}) fun s t => match t.tok with
+    | .ident x | .kw x => (x.splitOn ".").foldl (·.insert ·) (s.insert x)
+    | _ => s
+  | .error _ => {}
+
+/-- The keys at which `a` and `b` differ. -/
+def changedKeys [BEq α] (a b : Lean.NameMap α) : Array Lean.Name :=
+  let missing (x y : Lean.NameMap α) := x.foldl (init := #[]) fun acc k v => if y.find? k == some v then acc else acc.push k
+  missing a b ++ missing b a
+
+/-- `last`, with the entries at `keys` as in `mine`, if they are as in
+`orig`: `last` is `orig`, extended by the files after it, which did not
+change these entries. -/
+def respliced? [BEq α] (orig mine last : Lean.NameMap α) (keys : Array Lean.Name) : Option (Lean.NameMap α) :=
+  keys.foldlM (init := last) fun acc k => do
+    unless last.find? k == orig.find? k do none
+    return match mine.find? k with
+      | some v => acc.insert k v
+      | none => acc.erase k
+
+/-- Whether a file elaborates the same after the states `a` and `b`, as
+far as it reads them, but for the fields that `skipFile?` compares by name
+or splices. Every field is compared (`same_fields%`), so a field added to
+`State` is compared unless it is named here, but for:
+- the fields that `elabFile` sets before it reads them: `file`, `src`,
+  `fixing`, `module`, `scope`, `levels`, `useRecords`, `evidence?`, `used`,
+  `expectations`, `lintReports`, `useLocs`, `expectationRemovals`,
+  `items`, `usedItems`, `lintFixes`, `globalTexts`, `settings`,
+  `settingRemovals`, `seenSettings`, `assumptions`, `globalReads` and
+  `trailingCommas`; and `itemStart`, `literals` and `itemSpan`, which it
+  sets for each item before the item reads them. The `mutation` test job
+  checks that they are not read, by elaborating files after states that
+  differ in them (`FrenTestMain`);
+- `comps`, `consts` and `constInts`, which `skipFile?` compares by name;
+- the fields that `skipFile?` splices: `globals`, `refinements`, `bodies`,
+  `diags`, `edits`, `natSums`, `claims` and `applied`, which elaboration
+  only extends, or restores to an earlier value, and reads `applied` only
+  after the size that it had when it was read; and `defs`, of which only
+  each function's name, parameters and result type are read, never its
+  body, so only they are compared.
+A file is also elaborated again after a state with static errors of an
+item in progress (`itemErrors`). -/
+def sameForLater (a b : State) : Bool :=
+  same_fields% State a b except [file, src, fixing, module, scope, levels, useRecords, evidence?, used, expectations,
+    lintReports, useLocs, expectationRemovals, items, usedItems, lintFixes, globalTexts, settings, settingRemovals,
+    seenSettings, assumptions, globalReads, trailingCommas, itemStart, literals, itemSpan,
+    comps, consts, constInts,
+    globals, refinements, bodies, diags, edits, natSums, claims, applied, defs]
+    && a.defs.isEqv b.defs (fun (n, ps, r, _) (n', ps', r', _) => n == n' && ps == ps' && r == r')
+    && a.itemErrors.isEmpty && b.itemErrors.isEmpty
+
+/-- `s`, with the fields that `sameForLater` leaves out because `elabFile`
+sets them before it reads them taken from `t`. Elaborating a file after
+either gives the same state, which the `mutation` test job checks. -/
+def State.withPerFileOf (s t : State) : State :=
+  { s with file := t.file, src := t.src, fixing := t.fixing, module := t.module, scope := t.scope, levels := t.levels
+           useRecords := t.useRecords, evidence? := t.evidence?, used := t.used, expectations := t.expectations
+           lintReports := t.lintReports, useLocs := t.useLocs, expectationRemovals := t.expectationRemovals
+           items := t.items, usedItems := t.usedItems, lintFixes := t.lintFixes, globalTexts := t.globalTexts
+           settings := t.settings, settingRemovals := t.settingRemovals, seenSettings := t.seenSettings
+           assumptions := t.assumptions, globalReads := t.globalReads, trailingCommas := t.trailingCommas
+           itemStart := t.itemStart, literals := t.literals, itemSpan := t.itemSpan }
+
+/-- How a mutant's state after a file differs from the original's
+(`mutantState`): the paths of the components, and the constants, whose
+entries differ, and whether both have as many components and agree on what
+`sameForLater` compares. -/
+structure Drift where
+  comps : Array Lean.Name := #[]
+  consts : Array Lean.Name := #[]
+  constInts : Array Lean.Name := #[]
+  aligned : Bool := true
+
+/-- `d`, the drift of the state `mine` before a file from the original's,
+`orig`, updated for the file: `mine'` and `orig'` are the states after it. -/
+def Drift.next (d : Drift) (orig mine orig' mine' : State) : Drift :=
+  let aligned := d.aligned && mine.comps.size == orig.comps.size && mine'.comps.size == orig'.comps.size
+    && sameForLater orig' mine'
+  -- The components that the file added; those before it are unchanged.
+  let added := (orig'.comps.extract orig.comps.size).zip (mine'.comps.extract mine.comps.size)
+  { comps := d.comps ++ added.filterMap fun (c, c') => if c == c' then none else some c.path
+    consts := changedKeys orig'.consts mine'.consts, constInts := changedKeys orig'.constInts mine'.constInts, aligned }
+
+/-- The state after file `j`, elaborated after `mine` rather than after
+`orig`, the state before it as it is, if that can be told without
+elaborating it: `orig'` is the state after file `j`, elaborated after
+`orig`, `d` is how `mine` differs from `orig`, `written` are the names that
+file `j` writes (`writtenNames`), and `items` whether it parses and has an
+item.
+
+Then `elabFile` and the first item set the fields that `sameForLater` does
+not compare before they read them. If `mine` and `orig` agree on the
+fields that it compares, and file `j` writes the name of no component or
+constant whose entry differs, its elaboration reads the same values after
+either, and so does the same:
+- `comps` is read by a component's path, and `consts` and `constInts` by a
+  constant's, each resolved from a path written in the file, which ends in
+  the item's name (`Table.resolvePath`); the latter two are otherwise only
+  extended;
+- `globals`, `refinements`, `bodies`, `diags`, `edits`, `natSums`,
+  `claims` and `applied` are only extended or restored to an earlier value,
+  and `applied` is read after the size that it had when it was read;
+- `defs` is read only as `sameForLater` compares it.
+Those fields of the result are `mine`'s, changed as `orig`'s were, and
+every other field is `orig'`'s. -/
+def skipFile? (orig mine orig' : State) (d : Drift) (written : Std.HashSet String) (items : Bool) : Option State := do
+  let named : Lean.Name → Bool
+    | .str _ s => written.contains s
+    | _ => true
+  unless items && d.aligned && !(d.comps ++ d.consts ++ d.constInts).any named do none
+  let splice {α} (f : State → Array α) : Array α := f mine ++ (f orig').extract (f orig).size
+  return { orig' with consts := ← respliced? orig.consts mine.consts orig'.consts d.consts
+                      constInts := ← respliced? orig.constInts mine.constInts orig'.constInts d.constInts
+                      comps := splice (·.comps), globals := splice (·.globals), refinements := splice (·.refinements)
+                      bodies := splice (·.bodies), diags := splice (·.diags), edits := splice (·.edits)
+                      natSums := splice (·.natSums), claims := splice (·.claims), applied := splice (·.applied)
+                      defs := splice (·.defs) }
 
 /-- The state of the files with the mutant `m` applied, from the states
-`before` each file. `parsed` are the files' parses, and `chars'` and
-`parsed'` the text of `m`'s file with `m` applied and its parse: the
+`states` before each file and after the last. `parsed` are the files'
+parses, `names` the names that each writes (`writtenNames`), and `chars'`
+and `parsed'` the text of `m`'s file with `m` applied and its parse: the
 files after it are elaborated again, from the parses they had, since a
-mutant changes no file but its own. -/
-def mutantState (files : Array (String × Array Char)) (parsed : Array Parsed) (before : Array State)
-    (m : Mutate.Mutant) (chars' : Array Char) (parsed' : Parsed) : State := Id.run do
-  let mut st := before[m.file]?.getD {}
-  for (_, chars) in files.extract m.file, j in [m.file:files.size] do
-    st := if j == m.file then elabParsed st j chars' parsed' else elabParsed st j chars parsed[j]!
+mutant changes no file but its own, unless `skipFile?` tells the state
+after one. -/
+def mutantState (files : Array (String × Array Char)) (parsed : Array Parsed) (names : Array (Std.HashSet String))
+    (states : Array State) (m : Mutate.Mutant) (chars' : Array Char) (parsed' : Parsed) : State := Id.run do
+  let orig := states[m.file]?.getD {}
+  let mut st := elabParsed orig m.file chars' parsed'
+  let mut drift := ({} : Drift).next orig orig (states[m.file + 1]?.getD {}) st
+  for (_, chars) in files.extract (m.file + 1), j in [m.file + 1:files.size] do
+    let (orig, orig') := (states[j]?.getD {}, states[j + 1]?.getD {})
+    let items := match parsed[j]! with
+      | .ok (_, is, _) => !is.isEmpty
+      | .error _ => false
+    if let some st' := skipFile? orig st orig' drift (names[j]?.getD {}) items then
+      st := st'
+    else
+      let st' := elabParsed st j chars parsed[j]!
+      drift := drift.next orig st orig' st'
+      st := st'
   return st
 
 /-- The items of each file, as `specStateOf` reads them: the first file
@@ -1068,7 +1222,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   -- files are elaborated from these states, and its spec read from these
   -- parses, as `mutantsOf`, `specOf` and `elabText` would.
   let parsed := files.map (parseText ·.2)
-  let before := states.pop
+  let names := parsed.map writtenNames
   let all := mutantsWith files parsed states
   let comp? := args.comp?.map fun t => (t.splitOn "::").foldl Lean.Name.mkStr .anonymous
   if let some c := comp? then
@@ -1193,7 +1347,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   for m in selected do
     let chars' := m.apply files[m.file]!.2
     let parsed' := parseText chars'
-    let st' := mutantState files parsed before m chars' parsed'
+    let st' := mutantState files parsed names states m chars' parsed'
     -- What to report about the mutant, at its span.
     let reports ← IO.mkRef (#[] : Array (Msg × Fren.Core.Severity))
     let report (msg : Msg) (severity := Fren.Core.Severity.warning) : IO Unit := reports.modify (·.push (msg, severity))
