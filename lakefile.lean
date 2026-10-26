@@ -148,8 +148,9 @@ lean_exe fren_test where
   moreLinkArgs := coverageLinkArgs
 
 -- `lake exe fren_fuzz`: random specs, checked by `fren check` and by brute
--- force from the evaluator (`Reqs/dev/Testing`).
-lean_exe fren_fuzz where
+-- force from the evaluator (`Reqs/dev/Testing`). A default target, so that
+-- `lake build` keeps it building.
+@[default_target] lean_exe fren_fuzz where
   root := `FrenFuzz
   moreLinkArgs := coverageLinkArgs
 

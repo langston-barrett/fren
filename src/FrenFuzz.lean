@@ -702,13 +702,14 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
   let mut inconclusive := 0
   let mut skipped := 0
   let prelude := Prelude.ofDecls st.prelude
+  let sy := Symbols.of sp
   for (c, global) in st.comps.map (·, false) ++ st.globals.map (·, true) do
     let some ec := sp.counterpart? c global | found := found.push s!"no counterpart of {c.path}"; continue
     let log ← IO.mkRef #[]
     let bk := backend prelude st.datatypes c timeout none (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs)
       st.usesProjection
     let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
-    let results ← Fren.Core.checkComp (fun k => confirming sp ec k log (bk k)) core (Fren.Core.kindsFor global)
+    let results ← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k)) core (Fren.Core.kindsFor global)
     -- A definedness result, by its index's position, and a table's, by
     -- where it is reported and its rows, as brute force keys them.
     let keyOf (r : CheckResult) :=
