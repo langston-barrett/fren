@@ -1,6 +1,6 @@
 -- keep-sorted start
+import Fren.Lint
 import Fren.Model
-import Fren.Resolve
 import Fren.SmtTranslate
 import FrenCore.Check
 import FrenCore.Ty

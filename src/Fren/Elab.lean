@@ -1,8 +1,8 @@
 -- keep-sorted start
 import Fren.FinSet
 import Fren.Finite
+import Fren.Lint
 import Fren.Model
-import Fren.Resolve
 import Fren.SimpSet
 import Fren.Syntax
 import FrenCore.Checking
