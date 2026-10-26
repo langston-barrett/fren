@@ -290,15 +290,33 @@ pub comp contract_realizability {
     in pres: Set(Argument)   -- the arguments that meet the preconditions
     in posts: Set(Point)     -- the arguments and values that meet the postconditions
     pub det out verdict: Verdict
+    pub det out reports_cex?       -- report the arguments and the conflicting postconditions
+    pub det out reports_vacuous?   -- report that the preconditions are contradictory
 
     ensure rule: verdict = (if pres != {}
         and (forall (a: Argument), when a in pres, exists (v: Value), Point { arg := a, value := v } in posts)
         then Pass else Fail)
+    ensure vacuous: reports_vacuous? iff pres = {}
+    ensure cex: reports_cex? iff (pres != {} and verdict = Fail)
 
     expect unrealizable: when posts = {}, verdict = Fail
     expect contradictory_preconditions: when pres = {}, verdict = Fail
     expect everywhere: when pres != {} and (forall (a: Argument), exists (v: Value), Point { arg := a, value := v } in posts),
         verdict = Pass
+}
+```
+
+It refines `check::realizability`, the check of a component, whose
+queries' answers are those of the contract over this domain: the
+preconditions are contradictory exactly when no argument meets them, and
+the postconditions can be proved satisfiable exactly when every argument
+that meets the preconditions has a value that meets the postconditions:
+
+```fren
+refine contract_realizes: contract_realizability refines realizability {
+    assume_q := if pres = {} then Unsat else Sat,
+    cex_q := if forall (a: Argument), when a in pres, exists (v: Value), Point { arg := a, value := v } in posts
+        then Unsat else Sat,
 }
 ```
 
@@ -677,6 +695,32 @@ pub comp precondition {
 }
 ```
 
+`check::precondition_at` states the check in detail, over the domain of
+[realizability](#contracts-of-uninterpreted-functions): an application
+whose arguments may be either argument, of a function whose precondition
+holds at the arguments `pres`, evaluated where its guard holds, at the
+arguments `guarded`. Its implementation asks the question that both front
+ends build (`check::application_contract`) with the real check, and a
+solver that tries every argument. It refines `check::precondition`, whose
+query is proved exactly when every guarded argument meets the
+precondition:
+
+```fren
+pub comp precondition_at {
+    in pres: Set(Argument)      -- the arguments that meet the precondition
+    in guarded: Set(Argument)   -- the arguments where the application's guard holds
+    pub det out verdict: Verdict
+    pub det out reports_cex?
+
+    ensure rule: verdict = (if guarded subset pres then Pass else Fail)
+    ensure cex: reports_cex? iff verdict = Fail
+
+    expect unguarded: when guarded = {}, verdict = Pass
+}
+
+refine precondition_detail: precondition_at refines precondition { q := if guarded subset pres then Unsat else Sat }
+```
+
 A precondition that fails is reported, and nothing more: the
 application's value is still the body's, for a defined function, or
 unknown, for an uninterpreted one, so a check that rests on it holds for
@@ -743,6 +787,29 @@ pub comp postcondition {
 
     ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 }
+```
+
+`check::postcondition_at` states it in detail, over the same domain: a
+defined function whose preconditions hold at the arguments `pres`, and
+whose postcondition holds, of the body's value, at the arguments `posts`.
+Its implementation builds the body's component with the function's
+preconditions and postcondition, and runs the real check, with a solver
+that tries every argument. It refines `check::postcondition`:
+
+```fren
+pub comp postcondition_at {
+    in pres: Set(Argument)    -- the arguments that meet the preconditions
+    in posts: Set(Argument)   -- the arguments where the postcondition holds
+    pub det out verdict: Verdict
+    pub det out reports_cex?
+
+    ensure rule: verdict = (if pres subset posts then Pass else Fail)
+    ensure cex: reports_cex? iff verdict = Fail
+
+    expect everywhere: when posts = {Argument::A0, Argument::A1}, verdict = Pass
+}
+
+refine postcondition_detail: postcondition_at refines postcondition { q := if pres subset posts then Unsat else Sat }
 ```
 
 ## Minimal sets

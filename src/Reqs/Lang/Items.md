@@ -544,6 +544,40 @@ pub comp contract_application {
 }
 ```
 
+`lang::contract_arguments` states the rule over the arguments as they
+are written, which both front ends read alike: each is one of the
+parameters' names, not hidden by a name of the clause's own, or another
+expression. The parameters are three at most here, and the rule is the
+same for more. It refines `lang::contract_application`, whose
+`to_params?` is that the arguments are the parameters. Comparing
+sequences is outside the [decidable core](Decidability.md), so both opt
+out:
+
+```fren
+pub enum Param { P0, P1, P2 }
+pub enum Written { Name(Param), Other }   -- an argument, as written
+
+set_option fren.lint.undecidable "allow" in
+pub comp contract_arguments {
+    in clause: ClauseKind
+    in own?                  -- it applies the function whose contract the clause is in
+    in params: Seq(Written)  -- the function's parameters, each as its name, never `Other`
+    in args: Seq(Written)    -- the application's arguments, as written
+    pub det out accepted?
+
+    ensure rule: accepted? iff (not own? or (clause = ClauseKind::Postcondition and args = params
+        and not Written::Other in params))
+
+    expect expressions: when own? and Written::Other in args, not accepted?
+    expect arity: when own? and args.len != params.len, not accepted?
+}
+
+set_option fren.lint.undecidable "allow" in
+refine arguments_detail: contract_arguments refines contract_application {
+    to_params? := args = params and not Written::Other in params,
+}
+```
+
 At each application of a function, its arguments must meet its
 preconditions: the [precondition check](../Check.md#preconditions)
 confirms that each holds where the application is evaluated, as the

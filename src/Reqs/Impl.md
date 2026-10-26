@@ -231,6 +231,45 @@ pub comp interpretation_contract {
 }
 ```
 
+`impls::interpretation_at` states what an interpretation without a
+written proof must meet, over the domain of [contract
+realizability](Check.md#contracts-of-uninterpreted-functions): the
+interpretation gives each argument a value, `at_a0` and `at_a1`, and is
+recorded exactly when, at each argument that meets the preconditions, its
+value meets the postconditions, which `decide` decides on so small a
+domain. Its implementation decides the statement over the domain and
+proves with the real decision. It refines
+`impls::interpretation_contract`:
+
+```fren
+use check::{Argument, Point, Value}
+
+pub comp interpretation_at {
+    in pres: Set(Argument)   -- the arguments that meet the preconditions
+    in posts: Set(Point)     -- the arguments and values that meet the postconditions
+    in at_a0: Value          -- the interpretation's value at `A0`
+    in at_a1: Value          -- at `A1`
+    pub det out recorded?
+
+    ensure rule: recorded? iff ((when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
+        and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts))
+
+    expect unconstrained: when pres = {}, recorded?
+}
+
+refine interpretation_detail: interpretation_at refines interpretation_contract {
+    posts? := true,
+    written? := false,
+    written_ok? := false,
+    uses_sorry? := false,
+    decide_q := if (when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
+        and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts) then Unsat else Sat,
+    smt_q := Unknown,
+    proof := if recorded? then ContractProof::Theorem else ContractProof::Unproved,
+    error? := not recorded?,
+}
+```
+
 ## Proof
 
 The obligation is proved in one of three ways:
