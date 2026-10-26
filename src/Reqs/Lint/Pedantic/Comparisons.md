@@ -73,11 +73,7 @@ fn bounded_at?(named: NamedVariants, last: Position, v: Position, m: Position, u
 
 -- The variants named are those up to `m`, if `up?`, or from `m`.
 fn bounded?(named: NamedVariants, last: Position, m: Position, up?) :=
-    bounded_at?(named, last, Position::V0, m, up?)
-    and bounded_at?(named, last, Position::V1, m, up?)
-    and bounded_at?(named, last, Position::V2, m, up?)
-    and bounded_at?(named, last, Position::V3, m, up?)
-    and bounded_at?(named, last, Position::V4, m, up?)
+    forall (v: Position), bounded_at?(named, last, v, m, up?)
 
 -- `x OP m` holds exactly where the test does, at `x`.
 fn agrees_at?(named: NamedVariants, last: Position, negated?, op: Comparison, m: Position, x: Position) :=

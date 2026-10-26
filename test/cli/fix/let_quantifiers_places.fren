@@ -1,0 +1,29 @@
+--@ args: fix --check
+-- `fren fix` puts a quantifier that `manual_forall` writes in parentheses
+-- where a field, an arm's body, an element or an argument takes no
+-- open-ended form, and writes no fix for `trivial_quantifier` where the
+-- body declares a bound name again, which would then hide nothing.
+enum Mode { Heat, Cool, Off }
+enum Solo { Only }
+struct R { a? }
+fn g?(m: Mode) := m = Mode::Heat
+fn h?(b?) := b?
+
+pub comp c {
+    in t: Set(Solo)
+    in c?
+    in m: Mode
+    pub out r: R
+    pub out w?
+    pub out x?
+    pub out y?
+    pub out z?
+    pub out v?
+
+    ensure e1: r = R { a? := g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off) }
+    ensure e2: w? iff match m { Mode::Heat => g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off), _ => c? }
+    ensure e3: x? iff {g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off)} = {c?}
+    ensure e4: y? iff h?(g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off))
+    ensure e5: z? iff (forall (u: Solo), (forall (u!: Solo), u in t) and u in t)
+    ensure e6: v? iff (exists (u: Solo), let u! := u in u in t)
+}

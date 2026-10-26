@@ -1,6 +1,7 @@
 --@ args: fix --check
 -- `fren fix` keeps the parentheses that a `let` needs as an operand, and
 -- simplifies within its body.
+set_option fren.lint.let_and_return "allow" in
 pub comp c {
     in a?
     in x: Int

@@ -164,7 +164,8 @@ pub comp zero_sized_map_values {
 `many_single_char_names` and `similar_names` look at the names that an
 item declares: the variables and instances of a component, the
 parameters of a defined function, the binders of a global expectation, and
-the binders of the `match` arms in each of them. Each name counts once,
+the binders of the `match` arms, the bound names of the quantifiers and
+the names of the `let` and `where` clauses in each of them. Each name counts once,
 however many times it is declared: `x` and a later `x!` that
 [shadows](../Lang/Components.md#shadowing) it are one name. A final `?` is
 not counted. Neither lint has a fix: only the writer knows what a name stands

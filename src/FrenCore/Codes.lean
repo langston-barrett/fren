@@ -3684,8 +3684,10 @@ comp c { in x: Int in spare: Int pub out y: Int ensure r: y = x }
 
 No constraint of `c` mentions `spare`, so it does not affect `c`. An
 output that nothing mentions can take any value. A binder of a global
-expectation that its body never mentions is reported too. Remove the
-variable, or mention it:
+expectation that its body never mentions is reported too, and so are a
+name of a `let` or `where` that neither its body nor a later definition
+mentions, and a quantifier's bound name that its body never mentions.
+Remove the variable, or mention it:
 
 ```fren
 comp c { in x: Int pub out y: Int ensure r: y = x }
@@ -5949,6 +5951,79 @@ comp c {
     ensure r: y = x + 1
     cover big: x > 10 and y > 11
 }
+```
+"# },
+  { code := "F0824", explanation := r#"A `let` or `where` clause whose body is the name of its last definition (a warning, `let_and_return`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = (let d := x + 1 in d) }
+```
+
+The name says nothing that its definition does not, since nothing else
+mentions it. Write the definition in place of the name, and drop the
+definition, or the clause if it has no other. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
+```
+"# },
+  { code := "F0825", explanation := r#"A definition `x! := x` of a `let` or `where` clause (a warning, `redundant_locals`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = (let x! := x in x + 1) }
+```
+
+The definition names the value that `x` already has, so `x` means the
+same with it and without it; perhaps another expression was meant. Remove
+the definition, or the clause if it has no other. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
+```
+"# },
+  { code := "F0826", explanation := r#"A run of `and` or `or` whose operands are one expression at each variant of an enumeration (a warning, `manual_forall`).
+
+Example:
+
+```fren
+enum Mode { Heat, Cool, Off }
+
+comp c { in s: Set(Mode) pub out p? ensure r: p? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s }
+```
+
+A `forall` over the enumeration says the same once, and an `exists` for
+a run of `or`. It fires on three or more operands that name each variant
+once, in a constraint without indexes or tables, whose guards the
+quantifier might change. `fren fix` can fix this:
+
+```fren
+enum Mode { Heat, Cool, Off }
+
+comp c { in s: Set(Mode) pub out p? ensure r: p? iff (forall (mode: Mode), mode in s) }
+```
+"# },
+  { code := "F0827", explanation := r#"A quantifier over a type of one value (a warning, `trivial_quantifier`).
+
+Example:
+
+```fren
+enum Solo { Only }
+
+comp c { in s: Set(Solo) pub out p? ensure r: p? iff (forall (u: Solo), u in s) }
+```
+
+A `forall` or an `exists` over a type of one value is its body at that
+value. Write the body with the value in place of the bound name. `fren
+fix` can fix this, for a variant without a payload:
+
+```fren
+enum Solo { Only }
+
+comp c { in s: Set(Solo) pub out p? ensure r: p? iff Solo::Only in s }
 ```
 "# }
 ]

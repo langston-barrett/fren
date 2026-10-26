@@ -1,6 +1,10 @@
 -- `let` and `where` (`Reqs/Lang/Let`): names that stand for their definitions.
 -- fren-covers: lang::definition_order, lang::definition_type, lang::definition_form
 
+-- Some bodies are only their last definition's name, to test where a
+-- definition can be written.
+set_option fren.lint.let_and_return "allow"
+
 enum Mode { Off, Heat }
 use self::Mode::{Heat, Off}
 
@@ -77,7 +81,7 @@ comp unused {
     in q: Seq(Int)
     pub out n: Int
 
-    ensure r: n = 1 where head := q[0]
+    ensure r: n = 1 where head := q[0]  --~ warning: unused definition `head`
 }
 
 -- A `let` nested in a definition takes its own `in`: in an `if`, whose

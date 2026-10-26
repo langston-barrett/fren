@@ -57,12 +57,17 @@ suggests removing the `use`.
 
 `unused_variables` reports a variable of a component that nothing in the
 component mentions, a binder of a global expectation over a component's
-behaviours that its body never mentions, and a parameter of a defined
+behaviours that its body never mentions, a parameter of a defined
 function that neither its body nor its [contract](../Lang/Items.md#contracts)
-mentions. It does not report a
-[quantifier's](../Lang/Quantifiers.md) bound name, including a binder
-of a global expectation over a type's values. An input that nothing mentions does not affect the
-component, and an output that nothing mentions can take any value.
+mentions, a
+[quantifier's](../Lang/Quantifiers.md) bound name that its body never
+mentions, including a binder of a global expectation over a type's
+values, and a name of a [`let` or `where`](../Lang/Let.md) clause that
+neither its body nor a later definition of the clause mentions. An input
+that nothing mentions does not affect the component, and an output that
+nothing mentions can take any value. A quantifier over a name that its
+body does not mention is its body, since every type has a value, and a
+definition that nothing mentions has no effect.
 
 A variable is mentioned by a path in one of the component's constraints,
 or in a binding of one of its instances, whose only segment is the
@@ -72,16 +77,133 @@ true }`, the `x` of the arm is the binder that
 [shadows](../Lang/Components.md#shadowing) the variable, so it does not
 mention the variable, and neither does the `x` of the body of `forall
 (x!: Mode), x = Mode::Off`. A binder `w` is mentioned by a path `w.x`, and a
-parameter as a variable is. A path in a definition of a [`let` or
-`where`](../Lang/Let.md) counts, whether or not the name defined is
-mentioned, and the names defined are not reported. Mentions elsewhere, such as
+parameter as a variable is. A path in a definition of a `let` or
+`where` counts, whether or not the name defined is mentioned, and so does
+a later definition's mention of an earlier name of its clause: in `let k
+:= x, m := k + 1 in x`, `m` is reported, but `k` is not, since `m`'s
+definition mentions it. A name of a clause, or a bound name, is mentioned as a
+variable is, so in `let k := 1, k! := 2 in k`, the first `k` is reported.
+Mentions elsewhere, such as
 through an instance of the component in another one, do not count: they
 cannot constrain the variable. The variables of the component's own
 instances are not reported, and neither are the variables of a component,
 or the binders of a global expectation, with a static error.
 
 The message is reported at the variable's declaration, in the order of
-declaration.
+declaration. A name of a clause, or a bound name, has no fix, as a
+variable has none: it may be meant to be mentioned. A name that starts
+with `_`, such as `_m` in `forall (_m: Mode), p?` or `_k` in `let _k := x
+in y`, is reported like any other, as are the binders of global
+expectations: unlike Rust, Fren has no `_` prefix that opts a name out.
+
+### Scopes
+
+The lints of local definitions and quantifiers, here and in the chapters
+after this one, read an expression through a model of its scopes: a tree
+of a few nodes, `Node`, over a few names, `Local`, small enough for the
+solver to check every claim about it over every tree. A node is a part of
+the expression, such as an operator, an application, a clause's body or a
+quantifier's body; its children are its parts; it *declares* the names
+whose scope it is, as a quantifier's body declares its bound names and a
+`match` arm's body its pattern's binders; and it *mentions* the names
+written as paths of one segment directly in it. A node that is only a
+name, `x`, mentions it and is a `path` of it.
+
+```fren
+pub enum Node { N0, N1, N2, N3 }
+pub enum Local { A, B, C }
+
+pub struct Tree {
+    root: Node,
+    children: Rel(Node, Node),
+    declares: Rel(Node, Local),
+    mentions: Rel(Node, Local),
+    paths: Rel(Node, Local),
+}
+```
+
+`lint::scope` computes, from a tree, its nodes, the names declared
+anywhere in it, and its *free* names: those it mentions where neither the node of the mention nor one around
+it declares them, which so mean what they mean outside
+the tree. A mention below a node that declares its name means that
+declaration, as the body's `x` does in `forall (x!: Mode), x = Mode::Off`:
+
+```fren
+pub comp scope {
+    in t: Tree
+    -- The mentions in or below a node that declares their names.
+    out hidden: Rel(Node, Local) := (t.children.closure.inverse join t.declares) union t.declares
+    pub det out nodes: Set(Node) := t.children.closure.image({t.root}) union {t.root}
+    pub det out declared: Set(Local) := t.declares.image(nodes)
+    pub det out free: Set(Local) := (t.mentions minus hidden).image(nodes)
+
+    expect mentioned: free subset t.mentions.range
+    expect declared_hides: free inter t.declares.image({t.root}) = {}
+}
+```
+
+A quantifier's bound name is unused if its body's tree does not have it
+free. `lint::unused_bound` states this, for the bound names `names`:
+
+```fren
+pub comp unused_bound {
+    in names: Set(Local)
+    in body: Tree
+
+    inst s: scope { t := body }
+
+    pub det out unused: Set(Local) := names minus s.free
+
+    expect shadowed: when body.children = {(Node::N0, Node::N1)} and body.root = Node::N0
+        and body.declares = {(Node::N1, Local::A)} and body.mentions = {(Node::N1, Local::A)},
+        unused = names
+}
+```
+
+The definitions of a clause are at positions, `DefIndex`, in order, each
+declaring one name and mentioning the names that its expression has free;
+the body mentions its own free names. A definition is used if the body
+mentions its name and no later definition declares the name again, or a
+later definition mentions it and none between them declares it again,
+since a mention means the last declaration before it.
+`lint::unused_definitions` states whether the definition at `k` is reported:
+
+```fren
+pub ordered enum DefIndex { P0, P1, P2, P3 }
+
+pub comp unused_definitions {
+    in names: Rel(DefIndex, Local)       -- the name each definition declares
+    in uses: Rel(DefIndex, Local)        -- the names free in each definition's expression
+    in body: Set(Local)                  -- the names free in the body
+    in k: DefIndex
+    pub det out unused?
+
+    assume one_name: forall (p: DefIndex) (a b: Local), when (p, a) in names and (p, b) in names, a = b
+    assume earlier: uses.domain subset names.domain
+
+    ensure rule: unused? iff (k in names.domain and not (exists (x: Local),
+        (k, x) in names and ((x in body and not (exists (m: DefIndex), k < m and (m, x) in names))
+        or (exists (j: DefIndex), k < j and (j, x) in uses
+        and not (exists (m: DefIndex), k < m < j and (m, x) in names)))))
+
+    expect declared_only: when unused?, k in names.domain
+    expect used_by_body: when names = {(DefIndex::P0, Local::A)} and body = {Local::A}, not unused?
+    expect hidden_by_later: when names = {(DefIndex::P0, Local::A), (DefIndex::P1, Local::A)} and uses = {}
+        and body = {Local::A} and k = DefIndex::P0, unused?
+}
+```
+
+Both front ends compute these from their syntax trees, as their mentions
+(`Reqs/Lang/Expressions#mentions`) are, and decide a clause's with
+`clauseMentions`. The components of these chapters over trees are
+`tested` against the ui tests of local definitions and quantifiers, not
+proved against the code: the functions in `FrenCore` that decide the
+lints take facts that each front end reads from its own syntax tree, not
+a tree of this model, so no `impl` can relate the two until expressions
+are modelled in Fren itself; and a tree's relations have too many values
+for `decide`. Where a component is over finite data that the code takes
+as it is, as [where a quantifier goes in
+parentheses](Style/Let.md#operands-at-each-variant) is, it is proved.
 
 ## Dead code
 

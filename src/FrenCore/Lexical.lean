@@ -14,6 +14,12 @@ would read as one identifier but Fren would not.
 
 namespace Fren.Core
 
+/-- Reserved where `Fren.Lang` is open (plus Lean's `in`, `if`, `then`,
+`else`, `match`, `forall`, `exists`, `with`, `let` and `where`): `lang::reserved_word`. Other Fren keywords
+(`when`, `out`, `ensure`, ...) are contextual and lexed as identifiers. -/
+def reservedWords : List String :=
+  ["mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join", "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "refine", "with", "let", "where", "table"]
+
 /-- `[A-Za-z_]`: starts an identifier (`lang::identifier`). -/
 def isIdStart (c : Char) : Bool := ('A' ≤ c && c ≤ 'Z') || ('a' ≤ c && c ≤ 'z') || c == '_'
 

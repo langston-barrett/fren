@@ -1,0 +1,45 @@
+warning[F0827]: this `forall` ranges over one value
+  --> test/cli/fix/let_quantifiers_places.fren:27:31
+   |
+27 |     ensure e5: z? iff (forall (u: Solo), (forall (u!: Solo), u in t) and u in t)
+   |                               ^^^^^^^^^ `Solo` has one value
+   |
+   = note: a `forall` over a type of one value is its body at that value
+   = help: write the body with `Solo::Only` in place of `u`
+
+warning[F0825]: redundant definition of `u`
+  --> test/cli/fix/let_quantifiers_places.fren:28:46
+   |
+28 |     ensure e6: v? iff (exists (u: Solo), let u! := u in u in t)
+   |                                              ^^ defines `u` as the `u` it hides
+   |
+   = note: `u` means the same with the definition and without it
+   = help: write the expression meant for `u`, or remove the definition
+   = note: `redundant_locals` is `warn` by default
+   = help: to allow it, `set_option fren.lint.redundant_locals "allow"`
+
+warning[F0827]: this `exists` ranges over one value
+  --> test/cli/fix/let_quantifiers_places.fren:28:31
+   |
+28 |     ensure e6: v? iff (exists (u: Solo), let u! := u in u in t)
+   |                               ^^^^^^^^^ `Solo` has one value
+   |
+   = note: an `exists` over a type of one value is its body at that value
+   = help: write the body with `Solo::Only` in place of `u`
+
+--- test/cli/fix/let_quantifiers_places.fren
++++ test/cli/fix/let_quantifiers_places.fren
+@@ -23,5 +23,5 @@
+-    ensure e1: r = R { a? := g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off) }
+-    ensure e2: w? iff match m { Mode::Heat => g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off), _ => c? }
+-    ensure e3: x? iff {g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off)} = {c?}
+-    ensure e4: y? iff h?(g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off))
+-    ensure e5: z? iff (forall (u: Solo), (forall (u!: Solo), u in t) and u in t)
++    ensure e1: r = R { a? := (forall (mode: Mode), g?(mode)) }
++    ensure e2: w? iff match m { Mode::Heat => (forall (mode: Mode), g?(mode)), _ => c? }
++    ensure e3: x? iff {(forall (mode: Mode), g?(mode))} = {c?}
++    ensure e4: y? iff h?((forall (mode: Mode), g?(mode)))
++    ensure e5: z? iff ((Solo::Only in t) and Solo::Only in t)
+Some errors have detailed explanations: F0825, F0827.
+For more information about an error, try `fren --explain F0825`.
+exit=1

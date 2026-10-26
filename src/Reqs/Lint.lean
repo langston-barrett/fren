@@ -16,6 +16,7 @@ open Fren.Lang
 #fren_md "Lint/Style/Records.md"
 #fren_md "Lint/Style/Naturals.md"
 #fren_md "Lint/Style/Matches.md"
+#fren_md "Lint/Style/Let.md"
 #fren_md "Lint/Complexity.md"
 #fren_md "Lint/Complexity/Comparisons.md"
 #fren_md "Lint/Complexity/Operators.md"

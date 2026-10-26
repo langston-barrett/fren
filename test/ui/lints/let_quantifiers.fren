@@ -1,0 +1,126 @@
+-- The lints of `let`, `where` and quantifiers, in both front ends.
+-- fren-covers: lint::let_and_return, lint::manual_forall, lint::redundant_locals, lint::scope, lint::trivial_quantifier, lint::unused_bound, lint::unused_definitions
+enum Mode { Heat, Cool, Off }
+enum Single { Only }
+enum Pair { One, Two }
+
+comp lets {
+    in x: Int
+    in y: Int
+    pub out a: Int
+    pub out b: Int
+    pub det out c: Int := m where m := x + y     --~ warning: this `where` clause only gives back its last definition
+    pub out d: Int
+    pub out e: Int
+    pub out f: Int
+    pub out g?
+    pub out h: Int
+    pub out i: Int
+
+    ensure r1: a = (let k := x + 1 in k)           --~ warning: this `let` only gives back its last definition
+    ensure r2: b = (let k := x + 1, m := k * 2 in m)  --~ warning: this `let` only gives back its last definition
+    -- A `where` clause of a constraint has the whole constraint as its body.
+    ensure r3: i = m where m := x
+    -- A written type is kept, and so is a body that is not the last name.
+    ensure r4: d = (let k: Int := x in k)
+    ensure r5: e = (let k := x, m := y in k + m)
+    ensure r6: f = (let k := x, m := k + 1 in k)
+    --~^ warning: unused definition `m`
+    ensure r7: g? iff (let x! := x in x > 0)       --~ warning: redundant definition of `x`
+    ensure r8: h = x + k where k := y, x! := x, k! := 1
+    --~^ warning: redundant definition of `x`
+    --~^^ warning: unused definition `k`
+}
+
+comp unused {
+    in x: Int
+    pub out a: Int
+    pub out b?
+    pub out c?
+
+    -- A name that only a later definition mentions is used.
+    ensure r1: a = (let k := x, m := k + 1 in m * 2)
+    ensure r2: b? iff (forall (m: Mode), x > 0)        --~ warning: unused bound name `m`
+    ensure r3: c? iff (exists (m n: Mode), m != Mode::Off)
+    --~^ warning: unused bound name `n`
+}
+
+comp quantifiers {
+    in s: Set(Mode)
+    in t: Set(Single)
+    in u: Set(Pair)
+    in mode: Mode
+    pub out a?
+    pub out b?
+    pub out c?
+    pub out d?
+    pub out e?
+    pub out f?
+    pub out g?
+    pub out h?
+
+    ensure r1: a? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s
+    --~^ warning: these conjuncts are one expression at each variant of `Mode`
+    ensure r2: b? iff Mode::Heat in s or Mode::Off in s or Mode::Cool in s
+    --~^ warning: these disjuncts are one expression at each variant of `Mode`
+    -- Not every variant, two values, or in parentheses.
+    ensure r3: c? iff Mode::Heat in s and Mode::Cool in s
+    ensure r4: d? iff Pair::One in u and Pair::Two in u
+    ensure r5: e? iff Mode::Heat in s and Mode::Cool in s and (Mode::Off in s)
+    -- Within a longer run, with the variable `mode` in scope.
+    ensure r6: f? iff mode in s and Mode::Heat in s and Mode::Cool in s and Mode::Off in s
+    --~^ warning: these conjuncts are one expression at each variant of `Mode`
+    ensure r7: g? iff (forall (k: Single), k in t)     --~ warning: this `forall` ranges over one value
+    ensure r8: h? iff (exists (k: Single) (m: Mode), k in t and m in s)
+    --~^ warning: this `exists` ranges over one value
+}
+
+-- A quantifier written where an open-ended form needs parentheses, and a
+-- body that declares a bound name again.
+fn g?(m: Mode) := m = Mode::Heat
+fn h?(b?) := b?
+
+comp places {
+    in t: Set(Single)
+    in c?
+    in m: Mode
+    pub out w?
+    pub out x?
+    pub out z?
+    pub out v?
+
+    ensure e2: w? iff match m { Mode::Heat => g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off), _ => c? }
+    --~^ warning: these conjuncts are one expression at each variant of `Mode`
+    -- An argument takes it in parentheses too.
+    ensure e3: x? iff h?(g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off))
+    --~^ warning: these conjuncts are one expression at each variant of `Mode`
+    ensure e5: z? iff (forall (u: Single), (forall (u!: Single), u in t) and u in t)
+    --~^ warning: this `forall` ranges over one value
+    --~^^ warning: this `forall` ranges over one value
+    ensure e6: v? iff (exists (u: Single), let u! := u in u in t)
+    --~^ warning: this `exists` ranges over one value
+    --~^^ warning: redundant definition of `u`
+}
+
+-- A quantifier over an unbounded type has more than one value, and its
+-- bound name is mentioned.
+set_option fren.lint.undecidable "allow" in
+comp unbounded {
+    in x: Int
+    in u: Set(Single)
+    pub out a?
+
+    ensure r1: a? iff (forall (i: Int), when 0 <= i < x, i >= 0) and (exists (k: Single) (j: Int), 0 <= j < x and k in u)
+    --~^ warning: this `exists` ranges over one value
+}
+
+-- An index makes the order of the operands matter, so the lint leaves them.
+comp guarded {
+    in q: Seq(Mode)
+    pub out a?
+
+    ensure r1: a? iff q != [] and (q[0] = Mode::Heat or q[0] = Mode::Cool or q[0] = Mode::Off)
+    --~^ warning: this says that `q[0]` matches one of these patterns
+}
+
+--@ exit: 3

@@ -54,6 +54,7 @@ comp constant_clash { in x: Int pub out y? ensure r: let LIMIT := 4 in y? iff x 
 comp function_clash { in x: Int pub out y? ensure r: let g := 4 in y? iff x > g }
 --~^ error: `g` shadows the function `g`
 comp clash_ok { in x: Int pub out y? ensure r: let g! := 4, LIMIT! := 5 in y? iff x > g + LIMIT }
+--~^ warning: binder `LIMIT` should have a snake case name
 
 -- A name mentions what its definition mentions.
 comp assumed { in x: Int pub out o: Int assume a: let v := o in v > x }

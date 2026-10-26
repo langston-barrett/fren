@@ -1,0 +1,31 @@
+warning[F0825]: redundant definition of `x`
+  --> test/cli/fix/let_quantifiers.fren:25:25
+   |
+25 |     ensure r2: b = (let x! := x, k := 2 in x * k)
+   |                         ^^ defines `x` as the `x` it hides
+   |
+   = note: `x` means the same with the definition and without it
+   = help: write the expression meant for `x`, or remove the definition
+   = note: `redundant_locals` is `warn` by default
+   = help: to allow it, `set_option fren.lint.redundant_locals "allow"`
+
+--- test/cli/fix/let_quantifiers.fren
++++ test/cli/fix/let_quantifiers.fren
+@@ -20 +20 @@
+-    pub det out d: Int := m where k := 2, m := x * k
++    pub det out d: Int := x * k where k := 2
+@@ -22 +22 @@
+-        := Mode::Heat in s or Mode::Cool in s or Mode::Off in s
++        := exists (mode!: Mode), mode in s
+@@ -24 +24 @@
+-    ensure r1: a = (let k := x + 1 in k) * 2
++    ensure r1: a = (x + 1) * 2
+@@ -26,3 +26,3 @@
+-    ensure r3: p? iff mode in s and Mode::Heat in s and Mode::Cool in s and Mode::Off in s
+-    ensure r4: q? iff (forall (u: Solo), u in t and x > 0)
+-    ensure r5: w? iff (exists (u: Solo), u in t) or p?
++    ensure r3: p? iff mode in s and (forall (mode!: Mode), mode in s)
++    ensure r4: q? iff (Solo::Only in t and x > 0)
++    ensure r5: w? iff (Solo::Only in t) or p?
+For more information about this error, try `fren --explain F0825`.
+exit=1

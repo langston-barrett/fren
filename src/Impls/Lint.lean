@@ -2367,4 +2367,56 @@ trusted lint::manual_table_fixed: "a model of an expression, checked against the
 trusted lint::same_rows_written: "a model of an expression, checked against its fix by the refinements in its section"
 trusted lint::same_rows_fixed: "a model of an expression, checked against its fix by the refinements in its section"
 
+
+/-! ## Local definitions and quantifiers -/
+
+instance : Fren.Finite Fren.Core.RunPlace :=
+  ⟨[.free, .body, .condition, .operand, .receiver], by intro x; cases x <;> simp⟩
+
+def toRunPlace : Fren.Core.RunPlace → lint.RunPlace
+  | .free => .Free
+  | .body => .Body
+  | .condition => .Condition
+  | .operand => .Operand
+  | .receiver => .Receiver
+
+-- `manualForallAt` places its quantifier with `quantifierParenthesized`, at
+-- `RunPlace.ofSlot` of the run's slot.
+impl quantifier_parentheses: lint::quantifier_parentheses for (p : Fren.Core.RunPlace) (f w e : Bool) {
+  place := toRunPlace p,
+  followed? := f,
+  whole? := w,
+  enclosed? := e,
+  parenthesized? := Fren.Core.quantifierParenthesized p f w e,
+} by
+  intro p f w e _
+  cases p <;> cases f <;> cases w <;> cases e <;> simp [fren_spec, toRunPlace, Fren.Core.quantifierParenthesized]
+
+-- Both front ends read these from their syntax trees, with `mentions`
+-- (`pathMentions`), `declaredNames` and `clauseMentions`, and decide them
+-- with `letAndReturn`, `redundantLocal`, `manualForallAt` and
+-- `trivialQuantifier`; a tree of nodes and relations has too many values
+-- for `decide`, so the ui and fix tests check them against the components.
+-- keep-sorted start
+tested lint::let_and_return: "test/ui/lints/let_quantifiers.fren"
+tested lint::manual_forall: "test/ui/lints/let_quantifiers.fren"
+tested lint::redundant_locals: "test/ui/lints/let_quantifiers.fren"
+tested lint::scope: "test/ui/lints/let_quantifiers.fren"
+tested lint::trivial_quantifier: "test/ui/lints/let_quantifiers.fren"
+tested lint::unused_bound: "test/ui/lints/let_quantifiers.fren"
+tested lint::unused_definitions: "test/ui/lints/let_quantifiers.fren"
+-- keep-sorted end
+
+-- The models of the expressions that the refinements of these lints compare.
+-- keep-sorted start
+trusted lint::let_and_return_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::let_and_return_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_forall_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_forall_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::redundant_locals_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::redundant_locals_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::trivial_quantifier_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::trivial_quantifier_written: "a model of an expression, checked by the refinements in its section"
+-- keep-sorted end
+
 end Fren.Impls

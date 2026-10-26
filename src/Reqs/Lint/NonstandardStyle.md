@@ -9,7 +9,7 @@ The case of a name says what it names:
 
 | Case | Names | Lint |
 |---|---|---|
-| `snake_case` | modules, components, variables, fields, functions, instances, constraints, global expectations and their binders, and the binders of `match` patterns | `non_snake_case` |
+| `snake_case` | modules, components, variables, fields, functions, instances, constraints, global expectations and their binders, the binders of `match` patterns, the bound names of quantifiers, and the names of `let` and `where` clauses | `non_snake_case` |
 | `CamelCase` | enumerations, variants, records and abstract types | `non_camel_case_types` |
 | `UPPER_CASE` | constants | `non_upper_case_constants` |
 

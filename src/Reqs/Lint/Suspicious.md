@@ -2,7 +2,8 @@
 
 The lints of the `suspicious` group find what is probably not what the
 writer meant. This chapter has the lints of names, of constraints, of
-the spacing of negations and of the binders of global expectations, and
+the spacing of negations, of the binders of global expectations and of
+definitions, and
 its subchapters the others: those of
 [expressions](Suspicious/Expressions.md), of [methods and
 indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md), of
@@ -206,4 +207,78 @@ pub comp trivial_cover {
 
     ensure rule: fires? iff (trigger? or restates?)
 }
+```
+
+## Redundant definitions
+
+`redundant_locals` fires on a definition of a [`let` or
+`where`](../Lang/Let.md) clause that names again what it
+[hides](../Lang/Components.md#shadowing), `x! := x`, with no type written.
+The `x` of the definition means what `x!` hides, so `x` means the same
+with the definition and without it, and the definition was probably meant
+to be another expression, such as `x! := x + 1`, perhaps left unfinished.
+The message suggests writing that expression, or removing the definition,
+with the `,` after it, or before it if it is the last, and the whole
+clause, leaving its body, if it is its only one: `let x! := x in x > 0`
+would become `x > 0`. `fren fix` does not apply that removal, as it would
+hide the unfinished edit rather than finish it. The removal keeps the
+meaning, since a name stands for its definition
+([Meaning](../Lang/Let.md#meaning)), and the guards, since the definition
+has no index of its own; a later `x!` of the clause hides the `x` it hid
+instead, which is the same value, so it still hides something. A
+definition with a written type, `x!: Int := x`, may say more than `x`
+does, where `x` is a `Nat`, and is left as it is.
+
+Clippy's `redundant_locals`, of `let x = x;`, is in `correctness`, which
+is denied by default; here it is in `suspicious`, and `warn` (see
+[Groups](../Lint.md#groups)). `x := x` in a binding or a record literal,
+which `x` alone writes, is [`redundant_bindings`](Style.md#bindings)'s.
+The refinements after the component check that the removal the message
+suggests keeps the meaning. `lint::redundant_locals` states when it fires, on the definition in the
+[model of scopes](Unused.md#scopes): its name, whether it is written with
+`!` and with a type, and the tree of its expression, whose root is then a
+path of that one name with no parts:
+
+```fren
+pub comp redundant_locals {
+    use lint::{Local, Tree}
+    in name: Local
+    in bang?
+    in annotated?
+    in value: Tree
+    pub det out fires?
+
+    ensure rule: fires? iff (bang? and not annotated? and (value.root, name) in value.paths
+        and value.children.image({value.root}) = {})
+
+    expect more: when value.children != {} and value.root in value.children.domain, not fires?
+}
+```
+
+The refinements check the suggested removal, of a `let` of one
+definition, of the first of two, of the last of two, and of a `where`
+clause:
+
+```fren
+set_option fren.lint.redundant_locals "allow" in
+pub comp redundant_locals_written {
+    in x: Int
+    in y: Int
+    pub det out only? := let x! := x in x > 0
+    pub det out first: Int := let x! := x, k := 2 in x * k
+    pub det out last: Int := let k := 2, y! := y in y * k
+    pub det out clause: Int := x + y where y! := y
+}
+
+pub comp redundant_locals_fixed {
+    in x: Int
+    in y: Int
+    pub det out only? := x > 0
+    pub det out first: Int := let k := 2 in x * k
+    pub det out last: Int := let k := 2 in y * k
+    pub det out clause: Int := x + y
+}
+
+refine redundant_locals_sound: redundant_locals_fixed refines redundant_locals_written
+refine redundant_locals_complete: redundant_locals_written refines redundant_locals_fixed
 ```

@@ -1421,7 +1421,7 @@ impl reserved_word: lang::reserved_word for (s : String) {
   reserved? := FrenCli.reserved.contains s,
 } by
   intro s _
-  simp [fren_spec, FrenCli.reserved]
+  simp [fren_spec, FrenCli.reserved, Fren.Core.reservedWords]
 
 -- For every lexeme: the lexer's punctuators are the spec's.
 impl punctuator: lang::punctuator for (s : String) {

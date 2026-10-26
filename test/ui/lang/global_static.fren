@@ -14,6 +14,7 @@ expect hides: forall (a: sub), a.hidden = a.x  --~ error: `a.hidden` is private 
 expect no_var: forall (a: sub), a.nope = 0     --~ error: instance `a` has no `in` or `pub out` named `nope`
 expect not_comp: forall (a: LIMIT), true       --~ error: expected a component or a type, but `LIMIT` is a constant
 expect over_values: forall (a: E), a = E::A  --~ warning: this expectation mentions no variable
+--~^ warning: this `forall` ranges over one value
 expect twice: forall (a: sub) (a: sub), true   --~ error: `a` is bound multiple times in this expectation
 expect twice2: forall (a a: sub), true         --~ error: `a` is bound multiple times in this expectation
 expect q?: forall (a: sub), true               --~ error: constraint names cannot end in `?`

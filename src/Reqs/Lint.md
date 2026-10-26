@@ -64,11 +64,13 @@ use view::Severity
 | `is_equality` | `F0802` | `style` | `warn` | a pattern test of one variant without a payload, or one literal, such as `x is E::A` (see [Pattern tests](Lint/Style/Comparisons.md#pattern-tests)) |
 | `just_underscores_and_digits` | `F0751` | `style` | `warn` | a declared name made only of `_` and digits, such as `_1` (see [Names](Lint/Style.md#names)) |
 | `length_zero` | `F0715` | `style` | `warn` | a comparison of a string's or sequence's `len` with `0` or `1`, or of its `at(0)` with `""` or `[]`, that says whether it is empty, such as `s.len = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
+| `let_and_return` | `F0824` | `style` | `warn` | a `let` or `where` clause whose body is the name of its last definition, such as `let d := x + 1 in d` (see [Returned definitions](Lint/Style/Let.md#returned-definitions)) |
 | `literal_dot_in_pattern` | `F0794` | `suspicious` | `warn` | a `.` between two letters or digits in a pattern, such as `r"v1.2"` (see [Dots in patterns](Lint/Suspicious/Literals.md#dots-in-patterns)) |
 | `manual_abs` | `F0811` | `complexity` | `warn` | a conditional that is the absolute value, such as `if x < 0 then -x else x` (see [Absolute values](Lint/Complexity/Integers.md#absolute-values)) |
 | `manual_abs_diff` | `F0812` | `complexity` | `warn` | a conditional that is the absolute value of a difference, such as `if a > b then a - b else b - a` (see [Absolute values](Lint/Complexity/Integers.md#absolute-values)) |
 | `manual_at_most_one` | `F0840` | `complexity` | `warn` | a conjunction that negates each pair of three or more operands, such as `not (a? and b?) and not (a? and c?) and not (b? and c?)` (see [Cardinality](Lint/Complexity/Operators.md#cardinality)) |
 | `manual_clamp` | `F0814` | `complexity` | `warn` | a conditional that keeps its operand between two literals, such as `if x < 0 then 0 else if x > 9 then 9 else x` (see [Lesser and greater](Lint/Complexity/Integers.md#lesser-and-greater)) |
+| `manual_forall` | `F0826` | `style` | `warn` | three or more operands of a run of `and` or `or` that are one expression at each variant of an enumeration, such as `Mode::Heat in s and Mode::Cool in s and Mode::Off in s` (see [Operands at each variant](Lint/Style/Let.md#operands-at-each-variant)) |
 | `manual_method` | `F0732` | `complexity` | `warn` | a search written with `index_of`, `slice` or `at`, such as `s.index_of(t, 0) >= 0` (see [Searches](Lint/Complexity/Methods.md#searches)) |
 | `manual_min_max` | `F0813` | `complexity` | `warn` | a conditional that is `min` or `max`, such as `if a < b then a else b` (see [Lesser and greater](Lint/Complexity/Integers.md#lesser-and-greater)) |
 | `manual_nat` | `F0810` | `style` | `warn` | an `Int` input or output that an assumption or a guarantee keeps at least 0, as in `assume counts: n >= 0` (see [Natural numbers](Lint/Style/Naturals.md#integers-kept-at-least-0)) |
@@ -108,6 +110,7 @@ use view::Severity
 | `redundant_bindings` | `F0735` | `style` | `warn` | a binding or field `x := x`, or a field `x := r.x` of an update of `r` (see [Bindings](Lint/Style.md#bindings)) |
 | `redundant_bool_type` | `F0746` | `style` | `warn` | a `: Bool` that a name ending in `?` implies, as in `in ready?: Bool` (see [Boolean types](Lint/Style.md#boolean-types)) |
 | `redundant_comparisons` | `F0767` | `complexity` | `warn` | two comparisons of one operand with integers, of which one implies the other, such as `x < 3 and x < 5` (see [Redundant comparisons](Lint/Complexity/Comparisons.md#redundant-comparisons)) |
+| `redundant_locals` | `F0825` | `suspicious` | `warn` | a definition `x! := x` of a `let` or `where` clause (see [Redundant definitions](Lint/Suspicious.md#redundant-definitions)) |
 | `redundant_method_chain` | `F0743` | `complexity` | `warn` | a chain of methods with a shorter form, such as `q.rev.rev` (see [Chains of methods](Lint/Complexity/Methods.md#chains-of-methods)) |
 | `redundant_newtype_roundtrip` | `F0842` | `complexity` | `warn` | a newtype built from the field of one, `Ms(x.0)`, or the field of one just built, `Ms(n).0` (see [Newtypes](Lint/Complexity.md#newtypes)) |
 | `redundant_slicing` | `F0753` | `complexity` | `warn` | `s.slice(0, s.len)` (see [Whole slices](Lint/Complexity/Methods.md#whole-slices)) |
@@ -123,6 +126,7 @@ use view::Severity
 | `trivial_cover` | `F0820` | `suspicious` | `warn` | a cover goal that has a trigger, or is written the same as an assumption or a guarantee (see [Cover goals](Lint/Suspicious.md#cover-goals)) |
 | `trivial_match` | `F0747` | `complexity` | `warn` | a `match` of one arm that binds nothing, such as `match x { _ => e }` (see [Trivial matches](Lint/Complexity/Matches.md#trivial-matches)) |
 | `trivial_pattern` | `F0744` | `style` | `warn` | `s.matches?(p)`, where `p` is a string, with `.*` or not at either end (see [Trivial patterns](Lint/Style.md#trivial-patterns)) |
+| `trivial_quantifier` | `F0827` | `complexity` | `warn` | a quantifier with a bound name whose type has one value (see [Trivial quantifiers](Lint/Complexity.md#trivial-quantifiers)) |
 | `undecidable` | `F0714` | `decidability` | `deny` | a construct outside the decidable core (see [Undecidable constructs](Lint/Decidability.md#undecidable-constructs)) |
 | `unfulfilled_lint_expectations` | `F0706` | `unused` | `warn` | a `set_option` that expects a lint that never fires (see [Expecting lints](#expecting-lints)) |
 | `unicode_not_nfc` | `F0799` | `pedantic` | `allow` | a string literal whose value is not in Unicode NFC (see [Unicode normalization](Lint/Pedantic/Text.md#unicode-normalization)) |
@@ -245,6 +249,10 @@ theirs is in the group of the same name: a Clippy lint in `pedantic` or
   [`manual_pattern_test`](Lint/Style/Comparisons.md#pattern-tests-written-out)
   writes, as Clippy never pushes `matches!(x, A | B)` toward
   `[A, B].contains(&x)`.
+- `redundant_locals`: Clippy's is in `correctness`. As for `eq_op`, Fren
+  has no `correctness` group, and the definition changes no meaning, so it
+  is in `suspicious`, and `warn` (see [Redundant
+  definitions](Lint/Suspicious.md#redundant-definitions)).
 - `redundant_bool_type`: its Clippy counterpart, `redundant_type_annotations`,
   is in `restriction`, which is allowed by default. The `?` of a name
   already gives its type, so the `: Bool` only repeats it: it is in
@@ -586,11 +594,13 @@ what the spec means:
 | `invisible_characters` | writes each character as an escape in a literal, and removes it from a comment |
 | `is_equality` | replaces `x is E::A` with `x = E::A` |
 | `length_zero` | compares the string with `""`, or the sequence with `[]`, as the message suggests |
+| `let_and_return` | writes the last definition's expression in place of the body, and removes the definition, or the clause if it has no other |
 | `literal_dot_in_pattern` | writes each `.` that it fires on as `[.]` |
 | `manual_abs` | replaces the conditional with `x.abs` |
 | `manual_abs_diff` | replaces the conditional with the `abs` of its `then` branch, `(a - b).abs` |
 | `manual_at_most_one` | replaces the conjuncts with `at_most_one?`, or with `exactly_one?` where the disjunction of the operands is among them |
 | `manual_clamp` | replaces the conditional with `x.max(lo).min(hi)` |
+| `manual_forall` | replaces the operands with `forall (x: T), e`, or `exists` for `or`, as the message suggests |
 | `manual_method` | replaces the comparison with a call of `contains?`, `starts_with?` or `ends_with?`, or `s.slice(i, 1)` with `s.at(i)`, as the message suggests |
 | `manual_min_max` | replaces the conditional with `a.min(b)` or `a.max(b)`, as the message suggests |
 | `manual_ordering` | replaces the test with a comparison with the last or first variant it names, as the message suggests |
@@ -625,6 +635,7 @@ what the spec means:
 | `suspicious_unary_op_formatting` | moves the whitespace after the `-` to before it: `x >=- 1` becomes `x >= -1` |
 | `trivial_match` | replaces the `match` with its arm's body |
 | `trivial_pattern` | replaces `s.matches?(p)` with an equation or a call of `starts_with?`, `ends_with?` or `contains?` |
+| `trivial_quantifier` | replaces the quantifier with its body, with the value of each bound name in place of its mentions |
 | `unfulfilled_lint_expectations` | removes the `set_option`, or for `set_option ... in item`, removes `set_option ... in` and keeps the item |
 | `unless_not` | removes the negation and writes `when`, as the message suggests |
 | `unnecessary_min_or_max` | replaces the call with the operand it always is |
@@ -799,6 +810,13 @@ not already in them and either:
   conditional counts as binding more loosely than any operator; or
 - it ends in an *open-ended* form, and something follows it.
 
+The arguments of an application or a method call, the fields of a
+record literal, the elements of a set, relation or sequence literal, an
+index, and a `match`'s scrutinee and arms' bodies take an operand as a
+`when`'s condition does: any expression but an open-ended one, defined
+below, at its top. That is required for a
+field or an arm's body, where a `when`, a `let` or a quantifier cannot be
+written bare, and for the rest it keeps the reading plain.
 An open-ended form is a conditional, a `when`, an `unless`, a
 [`let`](Lang/Let.md) or a [quantifier](Lang/Quantifiers.md) that is not in
 parentheses, brackets or braces: its last operand, or its body, extends as
