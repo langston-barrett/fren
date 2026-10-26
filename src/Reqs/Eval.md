@@ -337,9 +337,13 @@ table's conditions, and paired with the solver's by the place where each
 is reported in the source, and by its question: a table's `table` for its
 completeness, and the later row's condition for the disjointness of two
 rows. In the body of a function, the parameters are the variables. The
-goals of the [precondition](Check.md#preconditions) and
-[postcondition](Check.md#postconditions) checks are not found by the
-evaluator, so they leave the answer undecided unless a hypothesis is false.
+goals of the [precondition](Check.md#preconditions) check are found in
+the same way, each at the applied function's name, as its precondition
+at the application's arguments, which the evaluator evaluates as it does
+the function's body, or under the model's interpretation of the functions
+that the precondition applies. A function's preconditions, and a defined
+function's [postconditions](Check.md#postconditions), are the hypotheses
+and goals of the checks of its body, over its parameters.
 `eval::confirm` gives the result:
 
 ```fren

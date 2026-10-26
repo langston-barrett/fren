@@ -147,7 +147,7 @@ partial def Pat.strLits : Pat → Array String
 partial def Ex.lits : Ex → Array Int
   | .lit (.int i) => #[i]
   | .lit _ | .var _ | .slot _ | .bound _ => #[]
-  | .not a | .neg a | .field a _ => a.lits
+  | .not a | .neg a | .field a _ | .pre _ _ _ a => a.lits
   | .bin _ a b | .when _ a b => a.lits ++ b.lits
   | .ite c a b => c.lits ++ a.lits ++ b.lits
   | .app _ args | .cardinality _ args | .ctor _ _ args => args.flatMap (·.lits)
@@ -169,7 +169,7 @@ partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .bin .eq (.slot y) e | .bin .iff (.slot y) e => (if y == x then #[e] else #[]) ++ e.equated x
   | .bin .eq e (.slot y) | .bin .iff e (.slot y) => (if y == x then #[e] else #[]) ++ e.equated x
   | .lit _ | .var _ | .slot _ | .bound _ => #[]
-  | .not a | .neg a | .field a _ => a.equated x
+  | .not a | .neg a | .field a _ | .pre _ _ _ a => a.equated x
   | .bin _ a b | .when _ a b => a.equated x ++ b.equated x
   | .ite c a b => c.equated x ++ a.equated x ++ b.equated x
   | .app _ args | .cardinality _ args | .ctor _ _ args => args.flatMap (·.equated x)
@@ -250,7 +250,7 @@ partial def VTy.readsInts (sp : Spec) (seen : List Name := []) : VTy → Bool
 partial def Ex.vars : Ex → Array Name
   | .var n => #[n]
   | .lit _ | .slot _ | .bound _ => #[]
-  | .not a | .neg a | .field a _ | .card a => a.vars
+  | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a => a.vars
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ => a.vars ++ b.vars
   | .ite c a b => c.vars ++ a.vars ++ b.vars
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.vars)
@@ -529,7 +529,7 @@ partial def Ex.strLits : Ex → Array String × Array String
   | .lit v => (v.strs, #[])
   | .var _ | .slot _ | .bound _ => (#[], #[])
   | .method .matches r #[.lit (.str p)] | .matches r p _ => let (ls, ps) := r.strLits; (ls, ps.push p)
-  | .not a | .neg a | .field a _ | .card a => a.strLits
+  | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a => a.strLits
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ => join #[a, b]
   | .ite c a b => join #[c, a, b]
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => join args

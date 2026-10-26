@@ -198,6 +198,11 @@ inductive Ex where
   which is the constant's own: what the checks ask of its indexes and
   tables is asked of the constant, not of where it is mentioned. -/
   | const (path : Name) (e : Ex)
+  /-- `e`, an application, at the source position `pos`, of the function
+  `f`, with each of `f`'s preconditions at its arguments: its value is
+  `e`'s, and the positions pair the preconditions with their checks
+  (`Ex.tableGoals`, `check::precondition`). -/
+  | pre (pos : Nat) (f : Name) (goals : Array (Name × Ex)) (e : Ex)
   deriving Inhabited
 
 structure Var where
@@ -255,6 +260,11 @@ structure Spec where
   binders of its clauses, its preconditions and its postconditions, which
   a random interpretation meets (`Reqs/Eval#searching-for-behaviours`). -/
   contracts : NameMap (Array Name × Array Ex × Array Ex) := {}
+  /-- Each function with preconditions: its parameters, as binders of its
+  preconditions, named after the function as a defined function's are,
+  and each precondition with its name, which each application states of
+  its arguments (`Ex.pre`). -/
+  pres : NameMap (Array Name × Array (Name × Ex)) := {}
   /-- Each defined function's parameters, as binders of its body, the
   body, and its result type. -/
   defs : NameMap (Array Name × Ex × VTy) := {}
@@ -501,6 +511,7 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
       let x := a.eval I look locals slots
       if x.isSome && x == b.eval I look locals slots then x else none
   | .app f args => do I.fn f (← args.mapM (·.eval I look locals slots))
+  | .pre _ _ _ e => e.eval I look locals slots
   -- Known once the unknown arguments cannot change it: with two `true`,
   -- whatever the rest are.
   | .cardinality c args =>
@@ -662,6 +673,9 @@ partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Optio
   | .bin _ a b | .pair a b => go a ++ go b
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (go ·)
   | .method _ r args => go r ++ args.flatMap (go ·)
+  -- Its arguments' questions, then its preconditions', as the elaborator
+  -- records them.
+  | .pre pos f goals e => go e ++ goals.map fun (p, g) => (pos, some (.precondition f p), wrap g)
   | .matches r _ _ => go r
   | .index q i pos =>
     let bounds := Ex.bin .and (.bin .le (.lit (.int 0)) i) (.bin .lt i (.method .len q #[]))
@@ -944,6 +958,7 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .when negated c d => .when negated (c.renameBound f) (d.renameBound f)
   | .ite c a b => .ite (c.renameBound f) (a.renameBound f) (b.renameBound f)
   | .app g args => .app g (args.map (·.renameBound f))
+  | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.renameBound f)) (e.renameBound f)
   | .cardinality c args => .cardinality c (args.map (·.renameBound f))
   | .method m r args => .method m (r.renameBound f) (args.map (·.renameBound f))
   | .matches r p re => .matches (r.renameBound f) p re
@@ -972,6 +987,7 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .when negated c d => .when negated (c.renameVars f) (d.renameVars f)
   | .ite c a b => .ite (c.renameVars f) (a.renameVars f) (b.renameVars f)
   | .app g args => .app g (args.map (·.renameVars f))
+  | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.renameVars f)) (e.renameVars f)
   | .cardinality c args => .cardinality c (args.map (·.renameVars f))
   | .method m r args => .method m (r.renameVars f) (args.map (·.renameVars f))
   | .matches r p re => .matches (r.renameVars f) p re
@@ -1000,6 +1016,7 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .when negated c d => .when negated (c.substVars f) (d.substVars f)
   | .ite c a b => .ite (c.substVars f) (a.substVars f) (b.substVars f)
   | .app g args => .app g (args.map (·.substVars f))
+  | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.substVars f)) (e.substVars f)
   | .cardinality c args => .cardinality c (args.map (·.substVars f))
   | .method m r args => .method m (r.substVars f) (args.map (·.substVars f))
   | .matches r p re => .matches (r.substVars f) p re
@@ -1051,6 +1068,7 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .when negated c d => .when negated (c.subst σ) (d.subst σ)
   | .ite c a b => .ite (c.subst σ) (a.subst σ) (b.subst σ)
   | .app g args => .app g (args.map (·.subst σ))
+  | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.subst σ)) (e.subst σ)
   | .cardinality c args => .cardinality c (args.map (·.subst σ))
   | .method m r args => .method m (r.subst σ) (args.map (·.subst σ))
   | .matches r p re => .matches (r.subst σ) p re
@@ -1130,7 +1148,7 @@ partial def Ex.readsUnspecified : Ex → Bool
   | .index .. | .table _ _ (some _) | .const .. => true
   | .table _ rows none => rows.any fun (_, c?, v) => c?.any (·.readsUnspecified) || v.readsUnspecified
   | .lit _ | .var _ | .slot _ | .bound _ => false
-  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .quant _ _ _ a => a.readsUnspecified
+  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .quant _ _ _ a | .pre _ _ _ a => a.readsUnspecified
   | .bin _ a b | .when _ a b | .pair a b => a.readsUnspecified || b.readsUnspecified
   | .ite c a b => c.readsUnspecified || a.readsUnspecified || b.readsUnspecified
   | .app _ args | .ctor _ _ args | .setLit args | .seqLit args | .cardinality _ args => args.any (·.readsUnspecified)
@@ -1237,12 +1255,17 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       return (.cardinality c args, .bool)
     match ← resolve segs with
     | .item { kind := .fnItem, path, .. } =>
+      -- With its preconditions at its arguments, if it has any.
+      let withPres (x : Ex) : L Ex := do
+        let some (ps, pres) := (← get).spec.pres.find? path | return x
+        let σ := (ps.zip args).toList
+        return .pre segs[0]!.span.start path (pres.map fun (n, g) => (n, g.subst σ)) x
       -- A defined function's body, with its parameters standing for the
       -- arguments.
       if let some (ps, body, r) := (← get).spec.defs.find? path then
-        return (body.subst (ps.zip args).toList, r)
+        return (← withPres (body.subst (ps.zip args).toList), r)
       let some (_, r) := (← get).spec.funs.find? path | throw s!"unknown function `{showPath path}`"
-      return (.app path args, r)
+      return (← withPres (.app path args), r)
     | .variant en idx => return (.ctor en.path idx args, .data en.path)
     -- A newtype, erased to its value.
     | .item { kind := .recordItem, path, .. } => do
@@ -1389,9 +1412,36 @@ def lowerComp (isPub : Bool) (name : Ident) (members : Array Member) : L Unit :=
 inputs `vars`, as a comp for the checks of its tables and of the
 applications in it and in the function's contract (`Spec.bodies`). Each is
 recorded, since an application's question is the elaborator's alone. -/
-def noteBody (n : Name) (vars : Array Var) (e : Ex) : L Unit := do
+def noteBody (n : Name) (vars : Array Var) (e : Ex) (constraints : Array Constraint := #[]) : L Unit := do
   modify fun s => { s with
-    spec.bodies := s.spec.bodies.push { path := s.module, vars, constraints := #[], insts := #[], body? := some (n, e) } }
+    spec.bodies := s.spec.bodies.push { path := s.module, vars, constraints, insts := #[], body? := some (n, e) } }
+
+/-- The clauses of the contract of the function `n` at `path`, whose
+parameters are `ps`: records them for the function's applications, and,
+for an uninterpreted function with postconditions, for a random
+interpretation, which meets them. Gives them over the parameters as the
+inputs `vars`, as the constraints of the function's body, named after the
+function and the clause: the preconditions, and the postconditions if the
+function is `defined` (`Reqs/Eval#confirming-models`). -/
+def lowerContract (path n : Name) (defined : Bool) (ps : Array (Name × VTy)) (vars : Array Var)
+    (clauses : Array (Bool × Ident × Expr)) : L (Array Constraint) := do
+  let cx : Cx := { binders := ps.toList.reverse.map fun (x, t) => (x, t, x) }
+  let mut pres := #[]
+  let mut posts := #[]
+  let mut constraints := #[]
+  for (post, x, e) in clauses do
+    let cn := Name.mkSimple x.name
+    let bound := (← lowerExpr cx e).1
+    if post then posts := posts.push bound else pres := pres.push (cn, bound)
+    if defined || !post then
+      let c := (← lowerExpr { vars } e).1
+      constraints := constraints.push { kind := (if post then .ensure else .assume), name := n ++ cn, e := c }
+  unless pres.isEmpty do
+    let entry := (ps.map (path ++ ·.1), pres.map fun (cn, g) => (cn, g.renameBound (path ++ ·)))
+    modify fun s => { s with spec.pres := s.spec.pres.insert path entry }
+  unless defined || posts.isEmpty do
+    modify fun s => { s with spec.contracts := s.spec.contracts.insert path (ps.map (·.1), pres.map (·.2), posts) }
+  return constraints
 
 /-- The path of the component that `segs` names. -/
 def resolveComp (segs : Array Ident) : L Name := do
@@ -1469,16 +1519,10 @@ partial def lowerItem : Item → L Unit
         modify fun s => { s with
           spec.funs := s.spec.funs.insert path (ps.map (·.2), r)
           table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
-        -- Its clauses, over its parameters as binders, for a random
-        -- interpretation, which meets them.
-        let cx : Cx := { binders := ps.toList.reverse.map fun (n, t) => (n, t, n) }
-        let pres ← (clauses.filter (!·.1)).mapM fun (_, _, e) => return (← lowerExpr cx e).1
-        let posts ← (clauses.filter (·.1)).mapM fun (_, _, e) => return (← lowerExpr cx e).1
-        unless posts.isEmpty do
-          modify fun s => { s with spec.contracts := s.spec.contracts.insert path (ps.map (·.1), pres, posts) }
         -- Over the parameters as inputs, for the checks of its clauses.
         let vars := ps.map fun (x, t) => ({ name := x, ty := t, role := .input, isPub := true } : Var)
-        noteBody (Name.mkSimple name.name) vars (.lit (.bool true))
+        let cs ← lowerContract path (Name.mkSimple name.name) false ps vars clauses
+        noteBody (Name.mkSimple name.name) vars (.lit (.bool true)) cs
     | some body =>
       let ps ← params.mapM fun (p, ty?) => return (declName p[0]!, ← varTy ty?)
       let (b, _) ← lowerExpr { binders := ps.toList.reverse.map fun (n, t) => (n, t, n) } body
@@ -1487,9 +1531,13 @@ partial def lowerItem : Item → L Unit
       -- function's.
       let b := b.renameBound (path ++ ·)
       modify fun s => { s with spec.defs := s.spec.defs.insert path (ps.map (path ++ ·.1), b, r) }
-      -- Over the parameters as inputs, for the checks of its tables.
+      -- Over the parameters as inputs, for the checks of its tables, and
+      -- its contract's, once it can be applied.
       let vars := ps.map fun (x, t) => ({ name := x, ty := t, role := .input, isPub := true } : Var)
-      noteBody (Name.mkSimple name.name) vars (← lowerExpr { vars } body).1
+      let e := (← lowerExpr { vars } body).1
+      modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
+      let cs ← lowerContract path (Name.mkSimple name.name) true ps vars clauses
+      noteBody (Name.mkSimple name.name) vars e cs
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
   | .const isPub name ty value => do
     let path := (← get).module ++ Name.mkSimple name.name
