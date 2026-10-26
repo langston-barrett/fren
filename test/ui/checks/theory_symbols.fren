@@ -51,5 +51,14 @@ comp abstract {
     expect same: when x = 1, y = cos(1)
 }
 
---@ summary: 22 passed, 1 failed, 0 inconclusive, 0 redundant
+-- A counterexample names the variables as written, not as the solver
+-- knows them.
+comp shown {
+    pub det out abs: Int
+    pub det out exp: Int
+    ensure r: abs = 1 and exp = 2
+    expect differ: abs = exp  --~ error: counterexample: abs = 1, exp = 2
+}
+
+--@ summary: 26 passed, 2 failed, 0 inconclusive, 0 redundant
 --@ exit: 1
