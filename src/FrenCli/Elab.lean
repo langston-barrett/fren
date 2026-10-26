@@ -1194,12 +1194,12 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
     let n := identName segs[0]!.name
     if let some (_, k) := bs.reverse.find? (·.1 == n.getRoot) then return k
     if let some b := cx.binder? n.getRoot then
-      let some sc := b.scrutinee | return .leaf (if b.unbounded then .variable else .bound)
+      let some sc := b.scrutinee | return .leaf (if b.unbounded then .variable (n.toString (escape := false)) else .bound)
       return .node .binder [← shapeOf (cx.at b) #[] sc]
     -- Definitions are acyclic, so this ends.
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
-      return .node .definedOutput [← shapeOf { cx with binders := #[] } #[] d]
-    return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable else .constant)
+      return .node .definition [← shapeOf { cx with binders := #[] } #[] d]
+    return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable (n.toString (escape := false)) else .constant)
   -- The names that the pattern tests of a condition, or of the left
   -- operand of `and`, bind, in what sees them (`lang::test_scope`).
   | .when _ false c d | .bin _ "and" c d => do
@@ -1219,10 +1219,10 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
     -- A cardinality operator has a fixed meaning, as an operator does.
     let k : Fren.Core.MentionKind ← if isCardinality segs then pure .compound
       else if ← isConstruction cx segs then pure .construction
-      else if ← isDefined cx segs then pure .defined else pure .uninterpreted
+      else if ← isDefined cx segs then pure .defined else pure (.uninterpreted ("::".intercalate (segs.toList.map (·.name))))
     parts k args.toList
   | .record _ _ fs => parts .construction (fs.toList.map fun (f, e?) => e?.getD (.path f.span #[f]))
-  | .update _ r fs => parts .construction (r :: fs.toList.map fun (f, e?) => e?.getD (.path f.span #[f]))
+  | .update _ r fs => parts .compound (r :: fs.toList.map fun (f, e?) => e?.getD (.path f.span #[f]))
   | .match _ s arms _ =>
     let s' ← shapeOf cx bs s
     let arms ← arms.toList.flatMapM fun (p, g?, body) => do
@@ -1234,7 +1234,7 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
   | .«let» _ defs body _ =>
     -- Each name stands for its definition, which sees the earlier names.
     let bs ← defs.foldlM (init := bs) fun bs (x, _, d) => do
-      return bs.push (Name.mkSimple (declaredIdent x).1.name, .node .binder [← shapeOf cx bs d])
+      return bs.push (Name.mkSimple (declaredIdent x).1.name, .node .definition [← shapeOf cx bs d])
     return .node .compound [← shapeOf cx bs body]
   | .table _ rows => parts .compound (tableParts rows).toList
   | .num .. | .bool .. | .str .. => return .leaf .literal
@@ -1249,6 +1249,10 @@ def testNames (c : Expr) : Array Name :=
   (chainOperands "and" c).flatMap fun
     | .is _ _ p => p.names.map fun b => Name.mkSimple (declaredIdent b).1.name
     | _ => #[]
+
+/-- The names of the variables and uninterpreted functions that `e`
+mentions (`lang::mentions`). -/
+def mentionedNames (cx : ExprCtx) (e : Expr) : M (List Fren.Core.Mention) := return (← shapeOf cx #[] e).mentioned
 
 /-- The names of the variables that `e` mentions: its paths of one
 segment, and for `p.x`, `p` too. -/
@@ -3589,11 +3593,11 @@ partial def elabArithExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (
   let number := exprNumber
   let newtypeOp := @exprNewtypeOp
   if op == "*" then
-    let (ma, mb) := (← mentionsAny cx a, ← mentionsAny cx b)
-    unless cx.unmentioned || Fren.Core.productAccepted ma mb do err span Fren.Core.nonlinearMsg
+    let (ma, mb) := (← mentionedNames cx a, ← mentionedNames cx b)
+    unless cx.unmentioned || Fren.Core.productAccepted ma mb do err span (Fren.Core.nonlinearMsg ma mb)
     -- For `branches_sharing_code`.
     if cx.noteIndexes then
-      modify fun s => { s with mentioning := s.mentioning ++ ([(ma, a.span), (mb, b.span)].filter (·.1) |>.map (·.2)) }
+      modify fun s => { s with mentioning := s.mentioning ++ ([(ma, a.span), (mb, b.span)].filter (!·.1.isEmpty) |>.map (·.2)) }
   -- `+` and `*` of `Nat`s are `Nat`s; `-` is always an `Int`, so that
   -- nothing truncates (`lang::operator_type`).
   let nat := op != "-" && expected? == some .nat

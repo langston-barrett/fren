@@ -22,12 +22,15 @@ comp method { in x: Int pub out y: Int ensure r: y = "abc".len * x }
 
 -- Variables, and what mentions them.
 comp shadowed { in RATE!: Int in x: Int pub out y: Int ensure r: y = x * RATE }
---~^ error: nonlinear arithmetic is not supported
+--~^ error: the left side mentions the variable `x`, and the right side the variable `RATE`
 --~^^ warning: variable `RATE` should have a snake case name
 comp defined_arg { in x: Int in z: Int pub out y: Int ensure r: y = x * double(z) }
 --~^ error: nonlinear arithmetic is not supported
 comp uninterpreted { in x: Int pub out y: Int ensure r: y = x * rate(1) }
---~^ error: nonlinear arithmetic is not supported
+--~^ error: the left side mentions the variable `x`, and the right side the function `rate`
+-- Each mention once, in the order written, a variable apart from a function.
+comp mentions_named { in x: Int pub out y: Int ensure r: y = rate(x) * (x + x) }
+--~^ error: the left side mentions the variable `x`, the function `rate`, and the right side the variable `x`
 comp record_field { in a: Int in x: Int pub out y: Int ensure r: y = R { a }.a * x }
 --~^ error: nonlinear arithmetic is not supported
 -- An update mentions what its updated value mentions, even with every
@@ -54,7 +57,7 @@ comp binder { in e: E in x: Int pub out y: Int ensure r: y = match e { E::V(k) =
 -- An instance's variable is a variable.
 comp inner { in a: Int pub out b: Int := a }
 comp instance_variable { in x: Int inst i: inner { a := x } pub out y: Int ensure r: y = i.b * x }
---~^ error: nonlinear arithmetic is not supported
+--~^ error: the left side mentions the variable `i.b`, and the right side the variable `x`
 
 -- A defined function applied to constants is a constant for the decidable
 -- core too; applied to a variable, it is not.

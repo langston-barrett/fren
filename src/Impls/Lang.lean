@@ -36,30 +36,53 @@ impl bool_naming: lang::bool_naming for (s : String) (a : lang.Annot) {
   cases h : Fren.Str.endsWith s "?" <;> cases a <;>
     simp [fren_spec, Fren.Core.checkVarName, Fren.Core.checkVarKind, isBool?, hs, h, Except.isOk, Except.toBool] <;> rfl
 
-def toExprKind : Fren.Core.MentionKind → lang.ExprKind
-  | .literal => .Literal
-  | .constant => .Constant
-  | .variable => .Variable
-  | .definedOutput => .DefinedOutput
-  | .binder => .Binder
-  | .bound => .Bound
-  | .construction => .Construction
-  | .method => .Method
-  | .uninterpreted => .Uninterpreted
-  | .defined => .Defined
-  | .compound => .Compound
+/-- A mention, as the spec writes it. -/
+def toMention : Fren.Core.Mention → lang.Mention
+  | .var x => .Var x
+  | .fn f => .Fn f
 
--- For every expression's shape: the decision for each kind, and the walk over
--- a shape that both front ends decide by. That each front end classifies its
--- syntax into the right kinds is not proved here, but tested by both on the
--- same ui tests.
-impl mentions: lang::mentions for (k : Fren.Core.MentionKind) (ps : List Fren.Core.MentionShape) {
-  expr_kind := toExprKind k,
-  parts? := Fren.Core.MentionShape.anyMentions ps,
+/-- The layer (`lang::Head`) of an expression of kind `k`, where `v` is its
+value, for a literal or a bound name, and `x` and `y` its names and static
+parts, for the kinds whose names `Fren.Core.MentionKind` does not keep,
+since what they mention does not depend on them. -/
+def toLayerHead (v : lang.Val) (x y : String) : Fren.Core.MentionKind → lang.Head
+  | .literal => .Literal v
+  | .constant => .Constant x
+  | .variable n => .Variable n
+  | .definition => .Definition x
+  | .binder => .Binder x
+  | .bound => .Bound v
+  | .construction => .Construction x y
+  | .method => .Method x
+  | .uninterpreted f => .Uninterpreted f
+  | .defined => .Defined x
+  | .compound => .Op x y
+
+/-- What `ms` mention, as a set of the spec's mentions. -/
+def mentionSet (ms : List Fren.Core.Mention) : Fren.FinSet lang.Mention := Fren.FinSet.ofList (ms.map toMention)
+
+-- For every expression's shape, and every value, name and static part of
+-- its layer: what each kind mentions, and the walk over a shape that both
+-- front ends decide by. That each front end classifies its syntax into the
+-- right kinds is not proved here, but tested by both on the same ui tests,
+-- whose messages name what each operand of a nonlinear product mentions.
+impl mentions: lang::mentions for (k : Fren.Core.MentionKind) (ps : List Fren.Core.MentionShape) (v : lang.Val)
+    (x y : String) {
+  head := toLayerHead v x y k,
+  parts_mentioned := mentionSet (Fren.Core.MentionShape.allMentioned ps),
+  mentioned := mentionSet (Fren.Core.MentionShape.node k ps).mentioned,
   mentions? := (Fren.Core.MentionShape.node k ps).mentions,
 } by
-  intro k ps _
-  cases k <;> simp [fren_spec, toExprKind, Fren.Core.MentionShape.mentions, Fren.Core.kindMentions]
+  intro k ps v x y h
+  cases k <;> simp_all [fren_spec, toLayerHead, mentionSet, toMention, Fren.Core.MentionShape.mentions,
+    Fren.Core.MentionShape.mentioned, Fren.Core.kindMentioned, lang.Head.Literal.x0, lang.Head.Bound.x0,
+    lang.Head.Constant.x0, lang.Head.Variable.x0, lang.Head.Uninterpreted.x0, Fren.FinSet.ext_iff, or_comm]
+  all_goals cases Fren.Core.MentionShape.allMentioned ps <;> simp [Fren.FinSet.ext_iff]
+  all_goals exact ⟨_, fun h => absurd rfl h⟩
+
+-- What a layer mentions is proved of the code through `lang::mentions`,
+-- which `lang::node` refines; its value has no code to be proved of yet.
+trusted lang::node: "one layer's meaning, the model of evaluation that the rules of the language are stated over; no code in Fren evaluates an expression one layer at a time, so its value is not proved of code, and what it mentions is `lang::mentions`, which is proved of `Fren.Core.MentionShape` (#281)"
 
 def toGuardedOperand : Fren.Core.GuardedOperand → lang.GuardedOperand
   | .whenBody => .WhenBody
@@ -156,13 +179,14 @@ impl synthesizes: lang::synthesizes for (s : Fren.Core.TypeShape) {
     rw [Int.natCast_inj, ← List.length_map (f := Fren.Core.TypeShape.anyPart), List.length_filter_eq_length_iff]
     simp
 
-impl linear_product: lang::linear_product for (a b : Bool) {
-  a_mentions? := a,
-  b_mentions? := b,
+-- For every two operands, by what each mentions.
+impl linear_product: lang::linear_product for (a b : List Fren.Core.Mention) {
+  a_mentioned := mentionSet a,
+  b_mentioned := mentionSet b,
   accepted? := Fren.Core.productAccepted a b,
 } by
   intro a b _
-  cases a <;> cases b <;> simp [fren_spec, Fren.Core.productAccepted]
+  cases a <;> cases b <;> simp [fren_spec, Fren.Core.productAccepted, mentionSet]
 
 def toDivisorForm : Fren.Core.DivisorForm → lang.DivisorForm
   | .literal => .LiteralDivisor
