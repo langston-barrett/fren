@@ -412,8 +412,8 @@ recursive enumeration's payload of a pattern type, brings
 (`State.appFuns`) and `types` of its head symbol (`State.funFacts`): that
 it is at least 0, if its result is a `Nat`, that it matches its type, and
 that it meets each postcondition where its arguments meet the
-preconditions, named by the postcondition, within the `let`s around it,
-as the Lean front end's are. -/
+preconditions, named by the postcondition, within the `let`s and
+`forall`s around it, as the Lean front end's are. -/
 def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (types : Std.HashMap String String) (app : String) :
     Array (Lean.Name × String) :=
   let (pre, inner, post) := splitLets app
@@ -425,14 +425,14 @@ def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (types : Std.HashM
   let posts := Fren.Core.postconditionFacts implies (k.pres.map fun (_, p) => s!"({p} {args})")
     (k.posts.map fun (n, sym) => (n, s!"({sym} {args})"))
   let typed := (types.get? head).map fun t => (`type, pre ++ t.replace factHole inner ++ post)
-  (if nat then #[(`nat, s!"(>= {app} 0)")] else #[]) ++ typed.toArray ++ posts.map fun (n, f) => (n, pre ++ f ++ post)
+  (if nat then #[(`nat, pre ++ s!"(>= {inner} 0)" ++ post)] else #[]) ++ typed.toArray ++ posts.map fun (n, f) => (n, pre ++ f ++ post)
 
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
 type that is not finite (`cli::logic`); answering from `cache?`, if any,
 the scripts asked before (`runQuery`). -/
 def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Limits) (dump? : Option (String → IO Unit) := none)
-    (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none)
+    (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (quantified : Bool := false)
     (funs : Std.HashMap String (Bool × Contract) := {}) (kind : Fren.Core.CheckKind) :
     Fren.Core.Backend IO String String where
   -- cvc5 refuses some string operations without `strings-exp`. Every query
@@ -458,7 +458,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     -- A component whose queries may quantify sets `fmf-bound`
     -- (`State.bounded`).
     let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
-    runQuery (Fren.Core.logic kind (strings || sets) projection)
+    runQuery (Fren.Core.logic kind (strings || sets) projection quantified)
       (String.join (options.map fun (o, v) => s!"(set-option :{o} {v})\n"))
       prelude vars limits dump? (facts ++ appFacts ++ hyps) goal wantModel cache?
   falseF := "false"

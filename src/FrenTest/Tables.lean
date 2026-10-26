@@ -66,7 +66,7 @@ comp incomplete {
 /--
 warning: could not prove that `incomplete_impl` implements `table_test::incomplete`
 
-note: `decide` does not apply, and the solver does not see the definitions of the implementation
+note: `decide` does not apply, and the solver did not prove it, without unfolding the Lean functions that the implementation applies
 help: write a proof after `by`
 -/
 #guard_msgs in

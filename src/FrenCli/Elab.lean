@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCli.Guard
 import FrenCli.Parse
 import FrenCore.Checking
 import FrenCore.Evidence
@@ -292,6 +293,10 @@ structure CComp where
   /-- Whether a query quantifies over a collection's elements, which sets
   `fmf-bound` (`CComp.bounded`). -/
   bounded : Bool := false
+  /-- It has an unbounded quantifier with a bound name that has a domain,
+  directly, through an instance or through a defined function, which sets
+  `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
+  guarded : Bool := false
   deriving Inhabited
 
 def conj (fs : Array String) : String :=
@@ -637,6 +642,16 @@ structure State where
   usesStrings : Bool := false
   /-- Some type is a set. -/
   usesSets : Bool := false
+  /-- Some quantifier is unbounded, so every query may quantify
+  (`cli::logic`). -/
+  quantified : Bool := false
+  /-- The current item has an unbounded quantifier with a bound name that
+  has a domain, directly, through an instance or through a defined
+  function, so its queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
+  guardedUsed : Bool := false
+  /-- The defined functions and constants whose bodies or values have such a
+  quantifier, directly or through others. -/
+  guardedItems : Std.HashSet Name := {}
   /-- Whether the spec uses sequences, which cvc5 decides in its strings
   solver (`cli::logic`). -/
   usesSeqs : Bool := false
@@ -903,6 +918,10 @@ structure CBinder where
   obligations : Array (Span × String × Option (String × Bool)) := #[]
   /-- Likewise, the questions about the rows of its definition's tables. -/
   tableObligations : Array (Span × Fren.Core.TableGoal × String) := #[]
+  /-- A bound name of a type that is not listed, of an unbounded quantifier,
+  whose symbol the solver's quantifier binds: within the body, it mentions
+  itself, as a variable does. -/
+  unbounded : Bool := false
 
 structure ExprCtx where
   vars : Array CVar
@@ -1102,7 +1121,7 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
     let n := identName segs[0]!.name
     if let some (_, k) := bs.reverse.find? (·.1 == n.getRoot) then return k
     if let some b := cx.binder? n.getRoot then
-      let some sc := b.scrutinee | return .leaf .bound
+      let some sc := b.scrutinee | return .leaf (if b.unbounded then .variable else .bound)
       return .node .binder [← shapeOf (cx.at b) #[] sc]
     -- Definitions are acyclic, so this ends.
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
@@ -1756,15 +1775,17 @@ definition, the first outermost. -/
 def wrapLets (binds : Array (String × String)) (e : String) : String :=
   binds.foldr (fun (x, d) acc => s!"(let (({x} {d})) {acc})") e
 
-/-- The term within the SMT-LIB `let`s that `wrapLets` puts around it,
-read outside string literals, where `""` is a `"`. -/
+/-- The term within the SMT-LIB `let`s that `wrapLets` puts around it, and
+the `forall`s that an unbounded quantifier puts around an application in
+its body (`natApps`), read outside string literals, where `""` is a `"`. -/
 partial def peelLets (t : String) : String := Id.run do
-  unless t.startsWith "(let ((" do return t
+  let start := if t.startsWith "(let ((" then 5 else if t.startsWith "(forall ((" then 8 else 0
+  if start == 0 then return t
   let cs := t.toList.toArray
   -- The bindings start at the second `(`, and end where it closes.
   let mut depth := 0
   let mut inString := false
-  let mut i := 5
+  let mut i := start
   while i < cs.size do
     let c := cs[i]!
     if c == '"' then inString := !inString
@@ -2469,15 +2490,27 @@ def binderValues (t : Fren.Core.PTy) : M (Option (Nat × Array String)) := do
   let vs := (t.values st.shapeOf Fren.Core.maxInstances).getD #[]
   return some (n, vs.map (st.valueSmt t.ty))
 
-/-- The bound names of a quantifier's binders `bs`, declared in `cx`, and
-every combination of their values, as SMT-LIB terms, the last name
-varying fastest (`Reqs/Lang/Quantifiers#meaning`). Each type must be one
-that a quantifier ranges over (`lang::quantified_type`), the names
-distinct, following the Boolean names rule and written with `!` exactly
-when they shadow (`lang::shadowing`), and the combinations at most
-`Fren.Core.maxInstances` (`lang::quantifier_size`). A bound name's term is
-a symbol that no variable has, which each instance replaces. -/
-def quantBinders (cx : ExprCtx) (bs : Array Binder) : M (Array CBinder × Array (Array String)) := do
+/-- A bound name of an unbounded quantifier, as the solver's quantifier
+declares it: its symbol, its sort, and what its type brings of it, if
+anything, as a formula (`Reqs/Cli#solver-queries`). -/
+structure FreeBound where
+  sym : String
+  sort : String
+  cons? : Option String
+
+/-- The bound names of a quantifier's binders `bs`, declared in `cx`, every
+combination of the values of those of listed types, as SMT-LIB terms, the
+last name varying fastest (`Reqs/Lang/Quantifiers#meaning`), and those of
+the other types, which the solver's quantifier binds
+(`Reqs/Lang/Quantifiers#unbounded-quantifiers`). The names must be
+distinct, follow the Boolean names rule and be written with `!` exactly
+when they shadow (`lang::shadowing`), and the combinations be at most
+`Fren.Core.maxInstances` (`lang::quantifier_size`). A bound name of a
+listed type has a symbol that no variable has, which each instance
+replaces; one of another type, the symbol `x'k`, with `k` its position
+among the binders in scope, which the solver's quantifier binds, and which
+`undecidable` reports at its binder (`lang::in_core`). -/
+def quantBinders (cx : ExprCtx) (bs : Array Binder) : M (Array CBinder × Array (Array String) × Array FreeBound) := do
   -- Distinct names (`lang::distinct_names`), by the names they declare.
   let ids := bs.flatMap (·.names)
   let declared := ids.map fun x => Name.mkSimple (declaredIdent x).1.name
@@ -2485,11 +2518,14 @@ def quantBinders (cx : ExprCtx) (bs : Array Binder) : M (Array CBinder × Array 
   let mut out : Array CBinder := #[]
   let mut sizes := #[]
   let mut listed := #[]
+  let mut free := #[]
   for b in bs do
     let pt ← binderTy b.ty
     let t := pt.ty
-    let some (n, vs) ← binderValues pt
-      | err (typeSpan b.ty) (Fren.Core.quantifiedTypeMsg (if pt.pat?.isSome then pt.text else t.show) (t matches .set _ | .rel .. | .seq _))
+    let values? ← binderValues pt
+    if values?.isNone then
+      modify fun s => { s with quantified := true }
+      checkCore cx b.span .quantifier true true #[]
     for x in b.names do
       let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
         ((cx.binders ++ out).map (·.what)) cx.selfFn.isSome cx.inGlobal
@@ -2498,13 +2534,30 @@ def quantBinders (cx : ExprCtx) (bs : Array Binder) : M (Array CBinder × Array 
       liftMsg y.span (Fren.Core.checkVarName bn (some (t == .bool)))
       lintName .binder bn y.span
       let k := cx.binders.size + out.size
-      out := out.push { name := bn, smt := quote s!"{k} {bn}", ty := t, scrutinee := none, outer := k }
-      sizes := sizes.push n
-      listed := listed.push vs
+      match values? with
+      | some (n, vs) =>
+        out := out.push { name := bn, smt := quote s!"{k} {bn}", ty := t, scrutinee := none, outer := k }
+        sizes := sizes.push n
+        listed := listed.push vs
+      | none =>
+        let sym := quote s!"{y.name}'{k}"
+        let st ← get
+        free := free.push { sym, sort := t.sort, cons? := (pt.cons st.shapeOf true).map (consSmt st.dataOf? · sym) }
+        out := out.push { name := bn, smt := sym, ty := t, scrutinee := none, outer := k, unbounded := true }
   let n := cx.instances * Fren.Core.instanceCount sizes
   unless Fren.Core.quantifierSizeAccepted n do
     err (bs[0]!.span.to bs.back!.span) (Fren.Core.quantifierSizeMsg n (cx.instances > 1))
-  return (out, listed.foldl (fun acc vs => acc.flatMap fun pre => vs.map pre.push) #[#[]])
+  return (out, listed.foldl (fun acc vs => acc.flatMap fun pre => vs.map pre.push) #[#[]], free)
+
+/-- `body` under the solver's quantifier over `free`, a `forall` if `all`,
+or `body` if there are none: what their types bring is a hypothesis of a
+`forall`'s body, and a conjunct of an `exists`'s. -/
+def bindFree (free : Array FreeBound) (all : Bool) (body : String) : String :=
+  if free.isEmpty then body else
+  let decls := " ".intercalate (free.toList.map fun u => s!"({u.sym} {u.sort})")
+  let cons := free.filterMap (·.cons?)
+  let body := if cons.isEmpty then body else if all then s!"(=> {conj cons} {body})" else s!"(and {conj cons} {body})"
+  s!"({if all then "forall" else "exists"} ({decls}) {body})"
 
 /-- What one operand expects of the other: its type, but a `Nat` only where
 one is expected of both. -/
@@ -2665,29 +2718,47 @@ partial def elabWhenExpr (cx : ExprCtx) (e : Expr) (span : Span) (neg : Bool) (c
 
 /-- `elabExpr` on a quantifier. -/
 partial def elabQuantExpr (cx : ExprCtx) (all : Bool) (bs : Array Binder) (body : Expr) : M (String × Ty) := do
-  -- Expanded: the body, elaborated once, at each combination of the bound
-  -- names' values (`Reqs/Lang/Quantifiers#meaning`), and so are the
-  -- definedness goals of its indexes, and the questions about its
-  -- tables, which hold in every instance.
-  let (new, combos) ← quantBinders cx bs
+  -- Expanded over the bound names of listed types: the body, elaborated
+  -- once, at each combination of their values
+  -- (`Reqs/Lang/Quantifiers#meaning`), and so are the definedness goals
+  -- of its indexes, and the questions about its tables, which hold in
+  -- every instance. The other bound names are the solver's quantifier's,
+  -- around the expansion, and around those goals as a `forall`, whatever
+  -- the quantifier (`Reqs/Lang/Quantifiers#unbounded-quantifiers`).
+  let (new, combos, free) ← quantBinders cx bs
+  -- A bound name of a type that is not listed, with a domain, makes the
+  -- queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`).
+  let names := new.map (·.name.getString!)
+  if new.zipIdx.any (fun (c, k) => c.unbounded && (domainOf all names body k (c.ty == Ty.nat)).1 != .unbounded) then
+    modify fun s => { s with guardedUsed := true }
   let outer ← takeIndexes
   let outerTables ← takeTables
   let natBefore := (← get).natApps.size
   let (b, tb) ← elabExpr { cx with binders := cx.binders ++ new, instances := cx.instances * combos.size } body
   let kw := if all then "forall" else "exists"
   unless tb == .bool do mismatch body .bool tb (some s!"note: the body of `{kw}` is a `Bool`")
-  let syms := new.map (·.smt)
+  let syms := new.filterMap fun c => if c.unbounded then none else some c.smt
   let inst (smt : String) (vals : Array String) : String :=
     substQuoted (fun p => match syms.idxOf? (quote p) with | some i => vals[i]! | none => quote p) smt
   let inner ← takeIndexes
   let innerTables ← takeTables
-  modify fun s => { s with indexes := outer ++ inner.map (fun (sp, g, t) => (sp, conj (combos.map (inst g)), t)),
-                           tables := outerTables ++ innerTables.map fun (sp, q, g) => (sp, q, conj (combos.map (inst g))) }
-  -- The `Nat` applications in the body, at each instance, as the solver sees them (`natFacts`).
+  modify fun s => { s with indexes := outer ++ inner.map (fun (sp, g, t) => (sp, bindFree free true (conj (combos.map (inst g))), t)),
+                           tables := outerTables ++ innerTables.map fun (sp, q, g) => (sp, q, bindFree free true (conj (combos.map (inst g)))) }
+  -- The `Nat` applications in the body, at each instance, as the solver
+  -- sees them (`natFacts`); one whose arguments mention a bound name of a
+  -- type that is not listed brings its facts for every value of the bound
+  -- names, as each holds whatever the arguments: the solver's quantifier
+  -- over them, around it, whose facts are within it (`appFactsOf`).
+  let freeIn (app : String) : Array FreeBound := free.filter fun u => (app.splitOn u.sym).length > 1
+  let close (app : String) : String :=
+    let us := freeIn app
+    if us.isEmpty then app
+    else s!"(forall ({" ".intercalate (us.toList.map fun u => s!"({u.sym} {u.sort})")}) {app})"
   modify fun s => { s with natApps := s.natApps.extract 0 natBefore
-    ++ ((s.natApps.extract natBefore).flatMap fun app => combos.map (inst app)).toList.eraseDups.toArray }
+    ++ ((s.natApps.extract natBefore).map close |>.flatMap fun app => combos.map (inst app)).toList.eraseDups.toArray }
   let instances := combos.map (inst b)
-  return (if all then conj instances else if instances.size == 1 then instances[0]! else s!"(or {" ".intercalate instances.toList})", .bool)
+  let expanded := if all then conj instances else if instances.size == 1 then instances[0]! else s!"(or {" ".intercalate instances.toList})"
+  return (bindFree free all expanded, .bool)
 
 /-- `elabExpr` on an `if`. -/
 partial def elabIteExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (inElse : Bool) (span : Span) (c : Expr) (a : Expr) (b : Expr) : M (String × Ty) := do
@@ -3288,6 +3359,9 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (parent? : Option Expr) (segs
     return (ctorSym en.path en.variants[idx]!, .enum en.path)
   | .item { kind := .constItem, path, .. } =>
     let some c := (← get).consts.find? path | internal e.span s!"unknown constant `{path}`"
+    -- Its value's quantifiers are part of the queries
+    -- (`Reqs/Lang/Quantifiers#guards`).
+    if (← get).guardedItems.contains path then modify fun s => { s with guardedUsed := true }
     return c
   | .item { kind := .fnItem, path, .. } => err e.span (Fren.Core.unappliedMsg path)
   | r => err e.span (Fren.Core.notAValueMsg r)
@@ -3369,6 +3443,9 @@ partial def elabAppExpr (cx : ExprCtx) (span : Span) (segs : Array Ident) (args 
       noteObligation cx .argument a.span (ptys[k]?.getD default) x
       smts := smts.push x
     notePreconditions cx fnSpan path smts
+    -- Its body's quantifiers are part of the queries
+    -- (`Reqs/Lang/Quantifiers#guards`).
+    if (← get).guardedItems.contains path then modify fun s => { s with guardedUsed := true }
     return (s!"({itemSym path} {" ".intercalate smts.toList})", result)
   if cx.selfFn.isSome then err fnSpan (Fren.Core.appliesUninterpretedMsg path)
   modify fun s => { s with applied := s.applied.push span }
@@ -3885,7 +3962,7 @@ def varTy (ty? : Option (Array Ident)) (name : Ident) : M Ty := return (← varP
 /-- Records what an instance of `c`, written at `span`, brings to the current
 comp's mix of relational operators and counting. -/
 def noteCounts (c : CComp) (span : Span) : M Unit :=
-  modify fun s => { s with relationalUsed := s.relationalUsed || c.relational
+  modify fun s => { s with relationalUsed := s.relationalUsed || c.relational, guardedUsed := s.guardedUsed || c.guarded
                            countSpans := if c.counts then s.countSpans.push span else s.countSpans }
 
 /-- An instance whose comp has been resolved, before its bindings are
@@ -4347,7 +4424,7 @@ def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (inst
 
 def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Array Span) (openStop : Nat) : M Unit := do
   let n := Name.mkSimple name.name
-  modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[], natApps := #[] }
+  modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
   liftMsg name.span (Fren.Core.checkItemName "component" n)
   let module := (← get).module
   liftMsg name.span ((← get).table.checkFresh module n)
@@ -4394,7 +4471,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
     table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
     scope := s.module
     comps := s.comps.push { path, file := s.file, span := name.span, vars, props, insts, defs, indexes, tables, decidable := !s.outsideCore
-                            relational, counts, tested, natApps := s.natApps } }
+                            relational, counts, tested, natApps := s.natApps, guarded := s.guardedUsed } }
 
 /-- Elaborates `refine name: concrete refines abstract { bindings }` into
 the comp that checks it (`Reqs/Lang/Refinement`): `concrete`'s inputs,
@@ -4461,7 +4538,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
   -- The mix of relational operators and counting, as in a component
   -- (`Reqs/Lang/Decidability#relations`): `concrete`'s, `abstract`'s and
   -- the bindings'.
-  modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[], natApps := #[] }
+  modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
   noteCounts c (concreteSegs[0]!.span.to concreteSegs.back!.span)
   noteCounts a aSpan
   discard takeIndexes
@@ -4552,7 +4629,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
     table := s.table.addItem { kind := .expectItem, path := module ++ n, isPub := false, owner := s.module }
     refinements := s.refinements.push { path := module ++ n, file := s.file, span := name.span, vars, props, insts
                                         indexes, tables, decidable := c.decidable && a.decidable && !afterBindings.outsideCore
-                                        relational, counts, tested, natApps } }
+                                        relational, counts, tested, natApps, guarded := afterBindings.guardedUsed } }
 
 /-- The component that a global expectation's binder of type `segs` ranges
 over the behaviours of, or `none` if it ranges over the values of a type
@@ -4573,7 +4650,7 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
   liftMsg name.span (Fren.Core.checkNoBang n)
   let all ← evidenceInEffect
   if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
-  modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[], natApps := #[] }
+  modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
   let module := (← get).module
   liftMsg name.span ((← get).table.checkFresh module n)
   lintName .global n name.span
@@ -4659,7 +4736,7 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
   modify fun s => { s with
     table := s.table.addItem { kind := .expectItem, path := module ++ n, isPub := false, owner := s.module }
     globals := s.globals.push { path := s.module, file := s.file, span := name.span, vars, props := #[prop], insts, indexes, tables
-                                decidable := !s.outsideCore, natApps := s.natApps
+                                decidable := !s.outsideCore, natApps := s.natApps, guarded := s.guardedUsed
                                 tested := Fren.Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] } }
 
 /-- Elaborates the clauses of the contract of the function `n` at `path`,
@@ -4741,7 +4818,7 @@ def noteBody (n : Name) (span : Span) (vars : Array CVar)
   if tables.isEmpty && sites.isEmpty && obligations.isEmpty && !props.any (·.kind == .ensure) then return
   modify fun s => { s with
     bodies := s.bodies.push { path := s.module, file := s.file, span, vars, props, decidable := !s.outsideCore
-                              tables := tables ++ sites, natApps := s.natApps, bodyOf? := some n, fn?
+                              tables := tables ++ sites, natApps := s.natApps, bodyOf? := some n, fn?, guarded := s.guardedUsed
                               indexes := obligations.map fun (sp, g, t) => (n, .body, sp, g, t) } }
 
 /-- `fn_params_excessive_bools` on the function `n`, declared at `span`,
@@ -5025,7 +5102,7 @@ partial def elabItem (item : Item) : M Unit := do
         modify fun s => { s with funs := s.funs.push (path, vars.map (·.ty), rp.ty)
                                  funPTys := s.funPTys.insert path (vars.map (·.ptype), rp) }
         discard takeTables
-        modify fun s => { s with outsideCore := false, natApps := #[] }
+        modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }
         let (vars, props, sites) ← elabContract path n false vars clauses rp.ty name.span
         noteBody n name.span vars (props, sites) path
         lintDeclared .function n name.span
@@ -5038,7 +5115,7 @@ partial def elabItem (item : Item) : M Unit := do
       modify fun s => { s with funPTys := s.funPTys.insert path (vars.map (·.ptype), rp) }
       discard takeTables
       discard takeIndexes
-      modify fun s => { s with outsideCore := false, natApps := #[] }
+      modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }
       let cx : ExprCtx := { vars, place := .prop, selfFn := some n, expected? := if r == .nat then some .nat else none }
       let (smt, t) ← elabExpr cx body
       noteObligation cx .body body.span rp smt
@@ -5050,7 +5127,8 @@ partial def elabItem (item : Item) : M Unit := do
       let mentioned := (mentions body ++ clauses.flatMap fun (_, _, e) => mentions e).map (·.getRoot)
       for (x, v) in Fren.Core.unmentioned (vars.map fun v => (v.name, v)) mentioned do
         lint .unusedVariables v.span (Fren.Core.unusedParamMsg x)
-      modify fun s => { s with defs := s.defs.push (path, vars.map fun v => (v.name, v.ty), r, smt) }
+      modify fun s => { s with defs := s.defs.push (path, vars.map fun v => (v.name, v.ty), r, smt)
+                               guardedItems := if s.guardedUsed then s.guardedItems.insert path else s.guardedItems }
       let (_, props, sites) ← if contract then elabContract path n true vars clauses r name.span else pure (vars, #[], #[])
       modify fun s => { s with tables := bodyTables }
       noteBody n name.span vars (props, sites) path bodyObligations
@@ -5091,7 +5169,7 @@ partial def elabItem (item : Item) : M Unit := do
     let before := (← get).applied.size
     discard takeTables
     discard takeIndexes
-    modify fun s => { s with outsideCore := false, natApps := #[] }
+    modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }
     let cx : ExprCtx := { vars := #[], place := .prop, expected? := some t }
     let (smt, t') ← elabExpr cx value
     noteObligation cx .constant value.span pt smt
@@ -5108,6 +5186,7 @@ partial def elabItem (item : Item) : M Unit := do
     modify fun s => { s with
       table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
       consts := s.consts.insert path (smt, t)
+      guardedItems := if s.guardedUsed then s.guardedItems.insert path else s.guardedItems
       constInts := match int? with | some v => s.constInts.insert path v | none => s.constInts }
   | .global name binders body => elabGlobal name binders body
   | .refine name c a bs => elabRefine name c a bs
@@ -5316,7 +5395,7 @@ it makes, and the obligations it asks may: they then set `fmf-bound`
 (`Fren.Core.boundedOptions`). It is read from the types, not the formulas,
 as the Lean front end's `bounded` is. -/
 def State.bounded (s : State) (c : CComp) : Bool :=
-  c.vars.any (fun v => v.fact?.isSome && (v.ptype.cons s.shapeOf).any (·.quantifies))
+  c.guarded || c.vars.any (fun v => v.fact?.isSome && (v.ptype.cons s.shapeOf).any (·.quantifies))
     || c.indexes.any (fun (_, _, _, _, t) => t.any (·.2))
     || c.insts.any (·.bounded)
     || c.natApps.any fun app => ((quotedSymbols (peelLets app))[0]?).any fun h => s.quantifiedFns.contains (quote h)

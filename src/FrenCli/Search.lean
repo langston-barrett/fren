@@ -186,7 +186,8 @@ partial def Ex.lits : Ex → Array Int
   | .card e => e.lits
   | .match e arms .. => e.lits ++ arms.flatMap fun (p, g?, b) => p.lits ++ (g?.map (·.lits)).getD #[] ++ b.lits
   | .update e fs => e.lits ++ fs.flatMap (·.2.lits)
-  | .quant _ _ _ b => b.lits
+  | .quant _ _ _ _ ds _ b => b.lits ++ ds.flatMap (·.toArray.flatMap (·.lits))
+  | .range lo hi => lo.lits ++ hi.lits
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.lits)).getD #[] ++ v.lits
   | .const _ e => e.lits
   -- The bounds of the patterns of the type, which the values must meet.
@@ -210,7 +211,8 @@ partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .card e => e.equated x
   | .match e arms .. => e.equated x ++ arms.flatMap fun (_, g?, b) => (g?.map (·.equated x)).getD #[] ++ b.equated x
   | .update e fs => e.equated x ++ fs.flatMap (·.2.equated x)
-  | .quant _ _ _ b => b.equated x
+  | .quant _ _ _ _ ds _ b => b.equated x ++ ds.flatMap (·.toArray.flatMap (·.equated x))
+  | .range lo hi => lo.equated x ++ hi.equated x
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.equated x)).getD #[] ++ v.equated x
   | .const .. => #[]
   | .typed _ _ e => e.equated x
@@ -246,16 +248,23 @@ partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array
     return out
   | .abstract s => (Array.range (w.size s)).map (.abs s)
   | .newtype _ u => smallValues sp w ints strs cap depth u
+  -- Each variant's, taken in turn, so that each has some within `cap`.
   | .data p => Id.run do
     let some d := sp.data.find? p | return #[]
-    let mut out := #[]
+    let mut each : Array (Array Val) := #[]
     for c in d.ctors, idx in [0:d.ctors.size] do
       if depth == 0 && !c.fields.isEmpty then continue
       let mut combos : Array (Array Val) := #[#[]]
       for (_, t) in c.fields do
         let vs := smallValues sp w ints strs cap (depth - 1) t
         combos := (combos.flatMap fun pre => vs.map pre.push).extract 0 cap
-      out := out ++ combos.map (.ctor p idx ·)
+      each := each.push (combos.map (.ctor p idx ·))
+    if each.foldl (· + ·.size) 0 ≤ cap then return each.flatten
+    let mut out := #[]
+    for k in [0:cap] do
+      for vs in each do
+        if let some v := vs[k]? then out := out.push v
+      if out.size ≥ cap then break
     return out.extract 0 cap
 
 /-- Whether `smallValues` reads its integers for `ty`: whether an `Int` or
@@ -288,7 +297,8 @@ partial def Ex.vars : Ex → Array Name
   | .matches r _ _ => r.vars
   | .match e arms .. => e.vars ++ arms.flatMap fun (_, g?, b) => (g?.map (·.vars)).getD #[] ++ b.vars
   | .update e fs => e.vars ++ fs.flatMap (·.2.vars)
-  | .quant _ _ _ b => b.vars
+  | .quant _ _ _ _ ds _ b => b.vars ++ ds.flatMap (·.toArray.flatMap (·.vars))
+  | .range lo hi => lo.vars ++ hi.vars
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.vars)).getD #[] ++ v.vars
   | .const .. => #[]
   | .typed _ _ e => e.vars
@@ -313,12 +323,13 @@ abbrev Slots := Array (Option Val)
 
 /-- The values of type `ty` that `Problem.candidates` starts from, if they
 do not depend on its random integers: `ty` is not a sequence, whose longer
-candidates have the lengths of those integers, and `smallValues` does not
-read them (`VTy.readsInts`). Then they are the same at every call of a
-search, which computes them once. -/
+candidates have the lengths of those integers, nor a set, whose larger
+candidates are random, and `smallValues` does not read them
+(`VTy.readsInts`). Then they are the same at every call of a search, which
+computes them once. -/
 def Problem.fixedPool? (sp : Spec) (w : World) (p : Problem) (ty : VTy) : Option (Array Val) :=
   match ty with
-  | .seq _ => none
+  | .seq _ | .set _ => none
   | _ => if ty.readsInts sp then none else some (smallValues sp w p.ints p.strs 24 2 ty)
 
 /-- A condition on a search's environment under which an expression's value
@@ -360,9 +371,11 @@ are, since it reads only the slots. By the cases of `Ex.eval`:
 - `ite c a b` is `none` when both branches are, and when `c` and one
   branch are, since with an unknown condition it has a value only where
   both branches have the same one.
-- A quantifier with instances folds `kleeneAnd` or `kleeneOr`, from a
-  known value, over its body's values. Each is `none` under the body's
-  condition, which no binder affects, and then so is the fold.
+- A quantifier over listed types, which has instances, folds `kleeneAnd`
+  or `kleeneOr`, from a known value, over its body's values. Each is
+  `none` under the body's condition, which no binder affects, and then so
+  is the fold. An unbounded quantifier's domain may be empty, which gives
+  it a value, so it gets `never`.
 - Everything else, such as a table or a constant, gets `never`. -/
 partial def Ex.unknownIf : Ex → UnknownIf
   | .slot k => .slot k
@@ -374,7 +387,9 @@ partial def Ex.unknownIf : Ex → UnknownIf
     (a.and b).or (c.and (a.or b))
   | .app _ args | .ctor _ _ args | .setLit args | .seqLit args => args.foldl (fun u a => u.or a.unknownIf) .never
   | .method _ r args => args.foldl (fun u a => u.or a.unknownIf) r.unknownIf
-  | .quant _ _ insts body => if insts.isEmpty then .never else body.unknownIf
+  | .quant _ _ _ _ ds _ body =>
+    -- Every domain is a nonempty literal: a listed type's values.
+    if ds.all (fun | some (.lit (.seq vs)) => !vs.isEmpty | _ => false) then body.unknownIf else .never
   | _ => .never
 
 /-- The values that a variable of type `ty` takes, other than those that the
@@ -398,6 +413,13 @@ def Problem.pool (sp : Spec) (w : World) (p : Problem) (ty : VTy) (fixed? : Opti
           for n in (ints.filterMap fun i => if 3 ≤ i && i ≤ 4 then some i.toNat else none).toList.eraseDups do
             for _ in [0:6] do
               pool := pool.push (.seq (← (Array.range n).mapM fun _ => do return elems[← below elems.size]!))
+      -- Larger sets: a few of two, three and four candidates of the elements.
+      if let .set t := ty then
+        let elems := smallValues sp w ints p.strs 24 2 t
+        if elems.size ≥ 2 then
+          for n in [2, 3, 4] do
+            for _ in [0:4] do
+              pool := pool.push (Val.setOf (← (Array.range n).mapM fun _ => do return elems[← below elems.size]!))
       pure pool
   return pool
 
@@ -433,7 +455,8 @@ partial def Ex.slots : Ex → Array Nat
   | .method _ r args => r.slots ++ args.flatMap (·.slots)
   | .match e arms .. => e.slots ++ arms.flatMap fun (_, g?, b) => (g?.map (·.slots)).getD #[] ++ b.slots
   | .update e fs => e.slots ++ fs.flatMap (·.2.slots)
-  | .quant _ _ _ b => b.slots
+  | .quant _ _ _ _ ds _ b => ds.flatMap (·.toArray.flatMap (·.slots)) ++ b.slots
+  | .range lo hi => lo.slots ++ hi.slots
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.slots)).getD #[] ++ v.slots
   | .pre _ _ gs e => gs.flatMap (·.2.slots) ++ e.slots
   | .typed _ _ e => e.slots
@@ -636,7 +659,8 @@ partial def Ex.strLits : Ex → Array String × Array String
     let (ls, ps) := join (#[e] ++ arms.flatMap fun (_, g?, b) => g?.toArray.push b)
     (ls ++ arms.flatMap (·.1.strLits), ps)
   | .update e fs => join (#[e] ++ fs.map (·.2))
-  | .quant _ _ _ b => b.strLits
+  | .quant _ _ _ _ ds _ b => join (ds.flatMap (·.toArray) |>.push b)
+  | .range lo hi => join #[lo, hi]
   | .table _ rows _ => join (rows.flatMap fun (_, c?, v) => c?.toArray.push v)
   | .const _ e => e.strLits
   | .typed _ _ e => e.strLits

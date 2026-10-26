@@ -1,0 +1,10 @@
+q = [1, 3, 2]
+s = {4}
+sorted? = false
+pos? = true
+any? = true
+ensure r: true
+ensure p: true
+ensure a: unknown
+status: unknown
+exit=1

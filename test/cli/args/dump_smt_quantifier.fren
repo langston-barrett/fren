@@ -1,0 +1,12 @@
+--@ args: check --dump-smt
+-- An unbounded quantifier is the solver's: `forall` over `Int`, its bound
+-- name declared by the quantifier as `i'0`, with no declaration of its own,
+-- and its guard bounds it, so the queries set `fmf-bound`. A spec with an
+-- unbounded quantifier quantifies, so its logic is `UFDTLIA`.
+set_option fren.lint.undecidable "allow" in
+comp c {
+    in n: Int
+    pub out none?
+
+    ensure r: none? iff (forall (i: Int), when 0 <= i < n, i != 3)
+}

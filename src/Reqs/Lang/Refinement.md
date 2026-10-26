@@ -219,7 +219,14 @@ only repeat those of `a` and `c`.
 
 By default the solver decides the obligation. `set_option fren.evidence
 "tested" in` before the refinement has it tested instead (see [Checking by
-testing](../Check.md#checking-by-testing)).
+testing](../Check.md#checking-by-testing)). Where a precise component,
+whose [unbounded quantifiers](Quantifiers.md#unbounded-quantifiers) put it
+outside the decidable core, cannot be proved of the code, as
+[Quantifiers](Quantifiers.md#unbounded-quantifiers) prefers, this is how
+it is related to a bounded one in the core: the tests evaluate the precise component's quantifiers on the
+behaviours of the refinement, as long as each has a
+[domain](Quantifiers.md#guards). A quantifier without one cannot be
+tested, which is an error (`F0639`).
 
 In Lean, `by` and tactics prove it instead: Fren generates the obligation
 as a proposition, `r`, named as every item's declarations are (see

@@ -1518,6 +1518,8 @@ inductive Construct where
   | relationalCard
   | seqArray
   | seqWord
+  /-- An unbounded quantifier's binder of a type that is not listed. -/
+  | quantifier
   deriving Inhabited, BEq, DecidableEq, Repr
 
 inductive Method where
@@ -1680,19 +1682,22 @@ def noMethodsMsg (m : String) (ty : String) : Msg :=
     notes := #["note: only `Int`s, `String`s, sets, relations, sequences and the values of a type declared `ordered` have methods"] }
 
 /-- Whether a construct is in the decidable core (`lang::in_core`); one
-whose operands are all constants (`ground`) has a fixed value. -/
+whose operands are all constants (`ground`) has a fixed value, except a
+quantifier's binder, which is never in it. -/
 def inCore (c : Construct) (constantArgs comparable infiniteOutput ground : Bool) (infiniteElems : Bool := true)
     (finiteRange : Bool := true) (literalOperand : Bool := false) : Bool :=
-  ground || !infiniteOutput && match c with
-    | .stringAtom | .stringIndex => constantArgs
-    | .stringCompare => comparable
-    | .stringSearch => false
-    | .setAlgebra => true
-    | .setFunction => infiniteElems
-    | .relational => finiteRange
-    | .relationalCard => false
-    | .seqArray => true
-    | .seqWord => literalOperand
+  let core (inner : Bool) := ground || !infiniteOutput && inner
+  match c with
+  | .stringAtom | .stringIndex => core constantArgs
+  | .stringCompare => core comparable
+  | .stringSearch => core false
+  | .setAlgebra => core true
+  | .setFunction => core infiniteElems
+  | .relational => core finiteRange
+  | .relationalCard => core false
+  | .seqArray => core true
+  | .seqWord => core literalOperand
+  | .quantifier => false
 
 /-- Why a construct is outside the core, and how to stay in it. -/
 def undecidableMsg (c : Construct) (infiniteOutput : Bool) : Msg :=
@@ -1712,6 +1717,8 @@ def undecidableMsg (c : Construct) (infiniteOutput : Bool) : Msg :=
       | .seqWord => ("an operation on sequences other than indexing, `len` and `update` makes a word equation, which may be undecidable",
         "help: index at positions, or compare with a literal, as in `x in [a, b]` or `q.starts_with?([a])`")
       | .seqArray => ("it is an operation on sequences", "help: mention the inputs that the output depends on")
+      | .quantifier => ("a quantifier over a type whose values cannot be listed is not expanded, but given to the solver",
+        "help: quantify over a listed type, such as `Bool` or an enum, or opt out, and guard it, as in `forall (x: T), when x in s, ...`, so that it can be tested")
       | .stringCompare => ("it compares two strings that are not both variables, and neither is a constant",
         "help: compare with a constant, or compare two variables with `=`")
       | .stringSearch => ("searching a string, or `++` here, which makes a word equation, may be undecidable",

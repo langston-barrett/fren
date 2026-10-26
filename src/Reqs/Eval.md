@@ -34,9 +34,11 @@ In a behaviour, every constraint is `true` or `false`, by the meaning of
 its [expression](Lang/Expressions.md). The evaluator computes the value of
 each [constant](Lang/Items.md#constants) once, when it reads the spec,
 without an interpretation. A constant whose value then reads an index out
-of range, or a table or `match` where no row or arm is taken, is kept as its
-expression: in each behaviour, it has the value that the interpretation
-gives the table or `match`, and none for the index; its indexes, tables
+of range, or a table or `match` where no row or arm is taken, or that has
+an [unbounded quantifier](#quantifiers), is kept as its expression: in
+each behaviour, it has the value that the interpretation gives the table
+or `match`, none for the index, and the quantifier's where it is
+mentioned, as [Quantifiers](#quantifiers) gives it; its indexes, tables
 and `match`es are the constant's own, which the checks ask about at the constant, not
 where it is mentioned. A constant whose value cannot be computed for any
 other reason is an internal error. The evaluator computes it from the
@@ -89,6 +91,63 @@ name, `#` and a number, such as `Name#0`. Within one behaviour, two values
 of an abstract type written alike are equal, and two written differently
 are not.
 
+## Quantifiers
+
+The evaluator evaluates a [quantifier](Lang/Quantifiers.md) over listed
+types by its expansion: the conjunction or disjunction of its instances,
+decided as soon as one instance decides it. It evaluates an [unbounded
+quantifier](Lang/Quantifiers.md#unbounded-quantifiers) by enumerating the
+values of each bound name in turn, in the order that they are written:
+those of its type, for a bound name of a listed type, and those of its
+[domain](Lang/Quantifiers.md#guards), for any other, evaluated with the
+values of the bound names before it:
+
+- for `Members`, the members of the set, or the elements of the sequence,
+  that the expression `e` of the conjunct `x in e` at `lo` has;
+- for `Range`, the integers from the expression of the lower bound at
+  `lo`, plus 1 if it is strict, up to that of the upper bound at `hi`,
+  minus 1 if it is strict;
+- for `FromZero`, those from 0 up to the upper bound's.
+
+A value that is not of the bound name's type is left out: a negative one
+for a `Nat`, and one that its pattern type does not match. The body is
+evaluated at each combination of the values, and the quantifier is the
+conjunction of those values for a `forall`, and their disjunction for an
+`exists`, decided as soon as one decides it. That is its value: at any
+value outside the domain, a conjunct of the guard is false, so the body
+of a `forall` is true there, and that of an `exists` false, which changes
+neither. So `forall (i: Int), when 0 <= i < q.len, q[i] > 0` is evaluated
+at each position of `q`, and `exists (x: Name), x in s and p?(x)` at each
+member of `s`.
+
+A quantifier has no value that the evaluator knows, as an index out of
+range has none, where a bound name of a type that is not listed has no
+domain, where the expression of a domain has none, and where a range has
+more than `MAX_ENUMERATED` values:
+
+```fren
+pub const MAX_ENUMERATED: Int := 1024
+```
+
+Beyond `MAX_ENUMERATED`, then, a test gives no evidence about what reads
+the quantifier: a behaviour where it has no value is not one that the
+search can find, so the checks it reaches are reported as for any other
+behaviour not found, inconclusive with `F0610` or `F0612`, and a model
+that the solver gives is left undecided (see [Confirming
+models](#confirming-models)). `fren eval` then shows the constraints that
+read it as `unknown`. A check
+that needs it cannot be tested: when `fren check` [tests a
+check](Check.md#checking-by-testing), and when `fren quickcheck` tests a
+component, global expectation or refinement, a quantifier without a domain
+in what the test evaluates is an error (`F0639`), at the quantifier, and
+the tests of what reads it are not run: its constraints, its definitions,
+its instances' components, and the bodies of the functions and values of
+the constants that those apply, read directly or through others. The
+solver decides such a check, or a `trusted` claim stands for it. A domain
+that has no value, or too many, in one behaviour only leaves that
+behaviour without a value for the quantifier, as an index out of range
+does, so the test that finds it reaches nothing.
+
 ## Searching for behaviours
 
 Both commands search for behaviours. The search chooses the variables in
@@ -105,7 +164,8 @@ shuffled again each time the search reaches the variable, in an order
 drawn from the values chosen before it. A variable's candidates are:
 
 - both `Bool`s, and each variant of an enumeration, with a payload built
-  from the candidates of its types, to a bounded depth;
+  from the candidates of its types, to a bounded depth, taking a few of
+  each variant's in turn where there are many;
 - for an `Int`, small integers, the integer literals and constants of the
   component, its expectations included, and their neighbours, random integers, and the value of
   any expression that a constraint equates the variable with, such as `x
@@ -120,9 +180,9 @@ drawn from the values chosen before it. A variable's candidates are:
   them; a few random strings that match each pattern of a `matches?` in
   the component, each also followed by `"a"`; and the value of any
   expression that a constraint equates the variable with;
-- for a `Set(T)`, the empty set and singletons of the candidates of `T`,
-  and the value of any expression that a constraint equates the variable
-  with;
+- for a `Set(T)`, the empty set, singletons of the candidates of `T`, a
+  few random sets of two, three and four of them, and the value of any
+  expression that a constraint equates the variable with;
 - for a `Seq(T)`, the empty sequence, and sequences of one and two of the
   candidates of `T`; for each integer candidate from 3 to 4, such as the
   `3` of `q.len = 3`, a few random sequences of that length; and the value

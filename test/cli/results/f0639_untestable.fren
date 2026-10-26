@@ -1,0 +1,22 @@
+--@ args: check
+-- A check set to testing whose component has an unbounded quantifier
+-- without a domain cannot be tested: the quantifier is an error, and the
+-- component's checks set to testing are not run. Those of `guarded`, whose
+-- quantifier has one, are.
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
+comp unguarded {
+    in s: Set(Int)
+    pub out pos?
+
+    ensure r: pos? iff (forall (x: Int), not (x in s) or x > 0)
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
+comp guarded {
+    in s: Set(Int)
+    pub out pos?
+
+    ensure r: pos? iff (forall (x: Int), when x in s, x > 0)
+}

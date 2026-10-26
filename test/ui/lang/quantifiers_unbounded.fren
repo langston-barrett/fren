@@ -1,0 +1,113 @@
+-- Unbounded quantifiers: over a type that is not listed, a quantifier is
+-- Lean's `∀` or `∃`, and the solver's, which decides these.
+-- fren-covers: lang::quantified_type
+
+type Name
+enum Mode { Off, On }
+
+fn rank(Name): Int
+
+-- Over a sequence's positions, by a range.
+set_option fren.lint.undecidable "allow" in
+comp sorted {
+    in q: Seq(Int)
+    pub out sorted?
+
+    ensure r: sorted? iff (forall (i: Int), when 0 <= i < q.len - 1, q[i] <= q[i + 1])
+
+    expect first: when sorted? and q.len >= 2, q[0] <= q[1]
+}
+
+-- Over a set's members, by membership.
+set_option fren.lint.undecidable "allow" in
+comp members {
+    in s: Set(Int)
+    pub out pos?
+
+    ensure r: pos? iff (forall (x: Int), when x in s, x > 0)
+
+    expect one: when s = {3}, pos?
+    expect has: when (exists (x: Int), x in s and x <= 0), not pos?
+}
+
+-- Some position, by a range.
+set_option fren.lint.undecidable "allow" in
+comp elements {
+    in q: Seq(Int)
+    pub out negative?
+
+    ensure r: negative? iff (exists (i: Int), 0 <= i < q.len and q[i] < 0)
+
+    expect nonempty: when negative?, q != []
+}
+
+-- A pattern type's values, and a `Nat`'s.
+set_option fren.lint.undecidable "allow" in
+comp patterns {
+    in n: Int
+    pub out small?
+    pub out few?
+
+    ensure r: small? iff (forall (x: Int is 0..), when x < n, x < 10)
+    ensure s: few? iff (forall (k: Nat), when k < n, k < 10)
+
+    expect same: small? iff few?
+    expect bound: small? iff n <= 10
+}
+
+-- A `Nat` ranges over the integers at least 0.
+set_option fren.lint.undecidable "allow" in
+comp nats {
+    in n: Int
+    pub out below?
+
+    ensure r: below? iff (exists (k: Nat), k < n)
+
+    expect positive: below? iff n > 0
+}
+
+-- A law of every value of an abstract type, without a guard.
+set_option fren.lint.undecidable "allow" in
+comp law {
+    in a: Name
+    pub out ok?
+
+    ensure r: ok? iff (forall (x: Name), when x = a, rank(x) = rank(a))
+
+    expect holds: ok?
+}
+
+-- Bound names of listed types are expanded within.
+set_option fren.lint.undecidable "allow" in
+comp mixed {
+    in s: Set(Int)
+    pub out ok?
+
+    ensure r: ok? iff (forall (x: Int) (m: Mode), when x in s, m = Mode::Off or x != 0)
+
+    expect zero: ok? iff not 0 in s
+}
+
+-- The solver finds a counterexample.
+set_option fren.lint.undecidable "allow" in
+comp positive {
+    in q: Seq(Int)
+    pub out pos?
+
+    ensure r: pos? iff (forall (i: Int), when 0 <= i < q.len, q[i] > 0)
+
+    expect wrong: when pos?, q != []  --~ error: expectation `positive::wrong` does not hold
+}
+
+-- An index must be in range for every value where its guard holds.
+set_option fren.lint.undecidable "allow" in
+comp out_of_range {
+    in q: Seq(Int)
+    pub out ok?
+
+    ensure r: ok? iff (forall (i: Int), when 0 <= i <= q.len, q[i] > 0)  --~ error: an index of `out_of_range::r` may be out of range
+}
+
+-- A global expectation's leading `forall` ranges over values of any type.
+set_option fren.lint.undecidable "allow" in
+expect pairs: forall (s: sorted) (i: Int), when s.sorted? and 0 <= i < s.q.len - 1, s.q[i] <= s.q[i + 1]

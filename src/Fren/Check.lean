@@ -304,25 +304,40 @@ def checkUses (c : CompInfo) : MetaM (Array Name) := do
   return uses
 
 /-- The applications of the functions `fs`, each with its number of
-parameters, to all of them, in `e`, that mention no bound variable, each
-once, added to `acc`. None of a check's formulas applies a function under a
-binder: a `match` is a chain of `if`s over selectors, a global
-expectation's binders are locals, defined functions, whose bodies apply no
-uninterpreted function, and the clauses of contracts, which the `fren`
-command's queries apply as functions too, are unfolded only after the
-facts are found, and under realizability's `∃`, an application's
-arguments mention no output (`lang::argument`). An application is met before its arguments, and they
-from left to right, as `natAppFacts` orders them. -/
-partial def natApps (fs : Array (Expr × Nat)) (e : Expr) (acc : Array Expr := #[]) : Array Expr :=
+parameters, to all of them, in `e`, each once, added to `acc`. An
+application that mentions a bound variable, of an unbounded quantifier's
+`∀` or `∃` (`Reqs/Lang/Quantifiers#unbounded-quantifiers`), is closed over
+the binders around it, `bs`, outermost first, as a `fun`: its facts hold
+for every value of them (`closedFacts`). Elsewhere, none of a check's
+formulas applies a function under a binder: a `match` is a chain of `if`s
+over selectors, a global expectation's binders are locals, defined
+functions, whose bodies apply no uninterpreted function, and the clauses of
+contracts, which the `fren` command's queries apply as functions too, are
+unfolded only after the facts are found, and under realizability's `∃`,
+an application's arguments mention no output (`lang::argument`). An
+application is met before its arguments, and they from left to right, as
+`natAppFacts` orders them. -/
+partial def natApps (fs : Array (Expr × Nat)) (e : Expr) (acc : Array Expr := #[])
+    (bs : Array (Name × Expr × BinderInfo) := #[]) : Array Expr :=
   match e with
   | .app .. =>
     let full := fs.contains (e.getAppFn, e.getAppNumArgs)
-    let acc := if full && !e.hasLooseBVars && !acc.contains e then acc.push e else acc
-    e.getAppArgs.foldl (fun acc a => natApps fs a acc) acc
-  | .lam _ d b _ | .forallE _ d b _ => natApps fs b (natApps fs d acc)
-  | .letE _ t v b _ => natApps fs b (natApps fs v (natApps fs t acc))
-  | .mdata _ b | .proj _ _ b => natApps fs b acc
+    let closed := bs.foldr (fun (n, d, bi) b => .lam n d b bi) e
+    let a := if e.hasLooseBVars then closed else e
+    let acc := if full && !a.hasLooseBVars && !acc.contains a then acc.push a else acc
+    e.getAppArgs.foldl (fun acc x => natApps fs x acc bs) acc
+  | .lam n d b bi | .forallE n d b bi => natApps fs b (natApps fs d acc bs) (bs.push (n, d, bi))
+  | .letE n t v b _ => natApps fs b (natApps fs v (natApps fs t acc bs) bs) (bs.push (n, t, .default))
+  | .mdata _ b | .proj _ _ b => natApps fs b acc bs
   | _ => acc
+
+/-- The facts of `app`, by `factsOf`, where `app` is an application closed
+over the binders around it as a `fun` (`natApps`): each holds for every
+value of the binders that it mentions, as `∀`. -/
+def closedFacts (factsOf : Expr → MetaM (Array (Name × Expr))) (app : Expr) : MetaM (Array (Name × Expr)) := do
+  unless app.isLambda do return ← factsOf app
+  lambdaTelescope app fun xs body => do
+    (← factsOf body).mapM fun (n, f) => return (n, ← mkForallFVars (xs.filter (f.containsFVar ·.fvarId!)) f)
 
 /-- `∃ xs, body`, over the free variables `xs`, in order. -/
 def mkExistsFVars (xs : List Expr) (body : Expr) : MetaM Expr := do
@@ -467,7 +482,7 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     -- its variables' types' constraints, the obligations it asks, and the
     -- results of the functions it uses.
     let quantifies (e : Expr) := (e.find? fun x => x.isForall && !x.isArrow).isSome
-    let bounded := c.vars.any (fun v => v.fact?.isSome && (v.ptype.cons st.shapeOf).any (·.quantifies))
+    let bounded := c.guarded || c.vars.any (fun v => v.fact?.isSome && (v.ptype.cons st.shapeOf).any (·.quantifies))
       || c.indexes.any (fun (_, _, _, _, g) => (obligationTy? g).isSome && quantifies g)
       || c.insts.any (fun i => i.assumes.any fun (n, a) => i.typed.any (·.1 == n) && quantifies a)
       || c.uses.any fun u => st.abstracts.foldl (init := false) fun acc _ a =>
@@ -506,7 +521,7 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
       return natFact ++ typeFact ++ posts
     let bk (k : CheckKind) :=
       let heads := factFns.map (fun (_, x, n, _) => (x, n)) ++ typedApps.map fun (x, n, _) => (x, n)
-      let b := leanBackend c fvs primes cache facts outFacts (natApps heads ·) factsOf
+      let b := leanBackend c fvs primes cache facts outFacts (natApps heads ·) (closedFacts factsOf)
         (modelOptional := k == .cover) bounded
       if k != .cover then b else
       { b with query := fun hyps goal wantModel => do

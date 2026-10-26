@@ -1,0 +1,13 @@
+--@ args: quickcheck
+-- A constant whose value has a quantifier without a domain is kept as its
+-- expression, and testing what mentions it is an error at that quantifier.
+set_option fren.lint.undecidable "allow"
+
+const THREE: Bool := exists (x: Int), x = 3
+
+comp c {
+    in n: Int
+    pub out a?
+
+    ensure r: a? iff THREE and n > 0
+}

@@ -207,6 +207,50 @@ comp manual_at_most_one_meaning {
 }
 ```
 
+`lint::manual_at_most_one` names the operands by the four of
+`lint::Operand`, which is enough to tell the cases of the rule apart and
+keeps the component in the decidable core, so that `decide` checks its
+implementation over every list of conjuncts. `lint::manual_at_most_one_any`
+states the same rule precisely, over any number of operands, each a
+string, as written, since the lint compares operands as written, with
+[unbounded quantifiers](../../Lang/Quantifiers.md#unbounded-quantifiers)
+over them. It is outside the decidable core, and its implementation is
+proved in Lean of the lint's code, for every run of conjuncts: each
+`forall` of the rule is a `∀` of the theorem. The two are the pattern for a
+lint's spec: the precise one proved of the code, and the bounded one a
+`decide` check of it.
+
+```fren
+-- `not (first and second)`, where `obligation?` says that the `and` gives a
+-- definedness obligation, with its operands as written.
+pub struct WrittenNegation { first: String, second: String, obligation? }
+
+-- Some conjunct is `not (x and y)`.
+fn written_negated?(pairs: Set(WrittenNegation), x: String, y: String) :=
+    exists (o?: Bool), WrittenNegation { first := x, second := y, obligation? := o? } in pairs
+
+-- `x` is an operand of some conjunct.
+set_option fren.lint.undecidable "allow" in
+fn written_named?(pairs: Set(WrittenNegation), x: String) :=
+    exists (p: WrittenNegation), p in pairs and (p.first = x or p.second = x)
+
+set_option fren.lint.undecidable "allow" in
+pub comp manual_at_most_one_any {
+    in pairs: Set(WrittenNegation)    -- the run of conjuncts `not (a and b)`
+    in disjunction: Set(String)       -- the operands of the disjunction beside them; `{}` if there is none
+    pub det out fires?
+    pub det out exactly?              -- the fix is `exactly_one?`, rather than `at_most_one?`
+
+    ensure rule: fires? iff ((exists (x y z: String), x != y and x != z and y != z
+        and written_named?(pairs, x) and written_named?(pairs, y) and written_named?(pairs, z))
+        and (forall (p: WrittenNegation), when p in pairs, p.first != p.second)
+        and (forall (x y: String), when x != y and written_named?(pairs, x) and written_named?(pairs, y),
+        written_negated?(pairs, x, y) or written_negated?(pairs, y, x))
+        and not (exists (p: WrittenNegation), p in pairs and p.obligation?))
+    ensure fix: exactly? iff (disjunction != {} and (forall (x: String), x in disjunction iff written_named?(pairs, x)))
+}
+```
+
 The refinements check both fixes, with the pairs in any order and either
 way round:
 

@@ -54,7 +54,8 @@ tested lang::relation_op: "test/ui/lang/relations.fren", "test/ui/lang/relations
 tested lang::pair_membership: "test/ui/lang/relations.fren", "test/ui/lang/relations_static.fren", "test/cli/types/f0329_pair.fren"
 tested lang::finite: "test/ui/lang/relations_static.fren", "test/ui/lang/sets.fren"
 tested lang::quantifier: "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_places.fren"
-tested lang::quantified_type: "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_static.fren"
+tested lang::quantified_type: "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_static.fren",
+  "test/ui/lang/quantifiers_unbounded.fren"
 tested lang::quantifier_size: "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_static.fren"
 tested lang::quantifier_binder: "test/ui/lang/quantifiers_global.fren"
 tested check::minimal: "test/ui/checks/redundancy.fren", "test/ui/checks/self_conflict.fren"
