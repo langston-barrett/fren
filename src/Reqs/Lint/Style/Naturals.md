@@ -53,32 +53,74 @@ seen, which is why `fren fix` leaves the fix to the writer, and the
 message says that an instance must then give a `Nat`. It is
 `warn` by default, as most such inputs are counts or positions, which
 are `Nat`s, and nothing but the variable's uses decides that. Clippy has
-no lint like it. `lint::manual_nat` states when it fires, and
-`lint::nat_kept` when a refinement that reads a variable by name keeps it an `Int`:
+no lint like it.
+
+`lint::manual_nat` states where it fires for one variable, over the
+conjuncts of the component's assumptions and guarantees, in order, and
+the types that the file's instances, refinements and `impl`s give the
+variable. `bounds?` says that a conjunct is a bound of the variable that
+the `Nat` would bring: the variable is declared an `Int`, the conjunct
+says that it is at least `0`, as its written operands show, and it is an
+assumption of an input or a guarantee of an output that is not defined.
+The lint is reported at the first bound, unless the file gives the
+variable an `Int`. `k` is any position, so the guarantee `first` holds of
+every position, and together the guarantees make `position` the least
+bound. Over sequences of records the solver is incomplete, so the
+component's checks are by testing:
 
 ```fren
+pub enum NatRole { Input, Output, DefinedOutput }
+
+pub enum BoundOp { AtLeast, AtMost, OtherOp }  -- `>=`, `<=`, or another comparison
+
+pub struct NatVariable { name: String, role: NatRole, int? }
+
+-- A conjunct: whether its constraint is an assumption, its comparison, and its operands' written forms.
+pub struct NatConjunct { assumption?, op: BoundOp, left: String, right: String }
+
+pub enum Given { Integer, Natural }  -- `Int` or `Nat`
+
+pub fn bounds?(v: NatVariable, c: NatConjunct) := v.int?
+    and (match c.op { BoundOp::AtLeast => c.left = v.name and c.right = "0",
+    BoundOp::AtMost => c.left = "0" and c.right = v.name, BoundOp::OtherOp => false })
+    and (match v.role { NatRole::Input => c.assumption?, NatRole::Output => not c.assumption?,
+    NatRole::DefinedOutput => false })
+
+set_option fren.evidence "tested" in
+set_option fren.lint.undecidable "allow" in
 pub comp manual_nat {
-    in input?            -- the variable is an input, rather than an output
-    in defined?          -- it is a defined output
-    in int?              -- it is declared an `Int`
-    in assumption?       -- the constraint is an assumption, rather than a guarantee
-    in bound?            -- the constraint has the conjunct `x >= 0` or `0 <= x`
-    pub det out fires?
+    in var: NatVariable
+    in conjuncts: Seq(NatConjunct)  -- the conjuncts of the assumptions and guarantees, in order
+    in uses: Seq(Given)  -- the types that the file's instances, refinements and `impl`s give it
+    in k: Int            -- any position in `conjuncts`
+    pub out position: Int  -- of the bound it is reported at, or -1 where it does not fire
 
-    ensure rule: fires? iff (int? and not defined? and bound? and (input? iff assumption?))
-
-    expect inputs_assume: when fires? and input?, assumption?
+    ensure kept: when Given::Integer in uses, position = -1
+    ensure found: when position != -1, 0 <= position < conjuncts.len and bounds?(var, conjuncts[position])
+    ensure first: unless Given::Integer in uses,
+        when 0 <= k < conjuncts.len and bounds?(var, conjuncts[k]), 0 <= position <= k
 }
+```
 
-pub comp nat_kept {
+A refinement reads a variable by name from both components, and gives
+it one of them: an input's value flows from the abstract component to
+the concrete one, and an output's from the concrete component back. It
+gives the variable the other component's type, so it keeps the receiving
+component's variable an `Int` when the other's is one.
+`lint::refinement_given` states which component it gives, and the type:
+
+```fren
+pub enum Side { Concrete, Abstract }
+
+pub comp refinement_given {
     in input?            -- the variable is an input, rather than an output
-    in abstract_int?     -- the abstract component's variable of the name is an `Int`
-    in concrete_int?     -- the concrete component's is
-    pub det out kept?    -- the refinement keeps one of them an `Int`
-    pub det out concrete?  -- that one is the concrete component's, rather than the abstract one's
+    in abstract_type: Given  -- the abstract component's variable's type
+    in concrete_type: Given  -- the concrete component's
+    pub det out side: Side   -- the component it gives a value
+    pub det out given: Given  -- the type of that value
 
-    ensure rule: kept? iff (abstract_int? and concrete_int?)
-    ensure which: concrete? iff input?
+    ensure flow: side = (if input? then Side::Concrete else Side::Abstract)
+    ensure typed: given = (if input? then abstract_type else concrete_type)
 }
 ```
 

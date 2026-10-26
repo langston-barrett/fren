@@ -604,7 +604,7 @@ structure State where
   /-- The reports of `manual_nat` in the file so far. -/
   natReports : Array NatReport := #[]
   /-- The variables that an instance or a refinement in the file keeps
-  `Int`s, by their components (`Fren.Core.refinementKeepsInt`). -/
+  `Int`s, by their components (`Fren.Core.refinementGiven`). -/
   natKept : Array (Name × String) := #[]
   /-- Where the comparisons of `Bool`s in the expression being elaborated
   are, for `bool_equality`. -/
@@ -628,8 +628,8 @@ structure State where
   trailingCommas : Array (Span × String) := #[]
   /-- The span of the item being elaborated, up to where the next starts. -/
   itemSpan : Span := ⟨0, 0⟩
-  /-- The orderings of `String`s, for `manual_min_max`. -/
-  strOrds : Array Span := #[]
+  /-- The orderings, by the type they compare, for the lints of integers. -/
+  ordereds : Array (Span × Fren.Core.Ordered) := #[]
   /-- Some type or literal is a `String`, so the queries need the theory of
   strings (`cli::logic`). -/
   usesStrings : Bool := false
@@ -1430,12 +1430,13 @@ def lintBools (e : Expr) : M Unit := do
     { m with fixes := m.fixes.map fun f => { f with range? := f.range?.map fun r => { start := r.start + w.start, stop := r.stop + w.start } } }
   for (l, ref, msg) in Fren.Core.rewriteReports src root do
     lintFix l ref (shift msg)
-  let (boolEqs, strOrds, variants, absEnds, mentioning, facts) :=
-    ((← get).boolEqs, (← get).strOrds, (← get).variants, (← get).absEnds, (← get).mentioning, (← get).facts)
-  modify fun s => { s with boolEqs := #[], strOrds := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
+  let (boolEqs, ordereds, variants, absEnds, mentioning, facts) :=
+    ((← get).boolEqs, (← get).ordereds, (← get).variants, (← get).absEnds, (← get).mentioning, (← get).facts)
+  modify fun s => { s with boolEqs := #[], ordereds := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
   let variant? (sp : Span) := (variants.find? (·.1 == sp)).map (·.2)
   let fact? (sp : Span) := (facts.find? (·.1 == sp)).map (·.2)
-  for r in Fren.Core.opReports src boolEqs.contains strOrds.contains variant? (absEnds.contains ·.stop) mentioning.contains fact? root do
+  let ordered? (sp : Span) := (ordereds.find? (·.1 == sp)).map (·.2)
+  for r in Fren.Core.opReports src boolEqs.contains ordered? variant? (absEnds.contains ·.stop) mentioning.contains fact? root do
     lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) (shift r.msg)
   for r in Fren.Core.arithReports src root do
     lintFix r.lint r.ref (shift r.msg)
@@ -2796,11 +2797,14 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
           newtypeOp op span tx ty
           liftMsg b.span (Fren.Core.checkType t ty (Fren.Core.opNote op t))
           pure (y, t)
+      -- For the lints of integers, at the end of the expression: what it compares.
+      if cx.noteIndexes && !(tx matches .newtype ..) then
+        let ordered : Fren.Core.Ordered := if (← orderedData? t).isSome then .enumeration
+          else if t == .int || t == .nat then .number else .other
+        modify fun s => { s with ordereds := s.ordereds.push (span, ordered) }
       -- An ordered enumeration's values compare by their positions.
       if let some d ← orderedData? t then return (s!"({op} {d.ordinal x} {d.ordinal y})", .bool)
       unless t == .string do return (s!"({op} {x} {y})", .bool)
-      -- For `manual_min_max`, at the end of the expression.
-      if cx.noteIndexes then modify fun s => { s with strOrds := s.strOrds.push span }
       let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
       checkCore cx span .stringCompare true (ca || cb) #[a, b] (ca && cb)
       -- SMT-LIB has only `str.<` and `str.<=`.
@@ -3676,13 +3680,14 @@ def lintManualNat (comp : Name) (members : Array Member) : M Unit := do
     | .prop kind x e => some (kind, x, e, if kind == .assume || kind == .ensure then constraintConjuncts src e else #[])
     | _ => none
   let wf (e : Expr) : String := Fren.Core.writtenForm (Fren.Core.textOf src (toRange e.span))
-  let shape (e : Expr) : String × String × String := match e with
-    | .bin _ op l r => (op, wf l, wf r)
-    | _ => ("", "", "")
+  let conjunct (assumption : Bool) (e : Expr) : Fren.Core.NatConjunct := match e with
+    | .bin _ op l r => { assumption, op := .ofOp op, left := wf l, right := wf r }
+    | _ => { assumption, op := .otherOp, left := "", right := "" }
   let isInt (ty? : Option (Array Ident)) : Bool := match ty? with | some #[t] => t.name == "Int" | _ => false
   let bounds := Fren.Core.manualNatBounds
-    (vars.map fun (x, ty?, isIn, defined) => { name := x.name, input := isIn, defined, int := isInt ty? })
-    (props.map fun (kind, _, _, cs) => (kind == .assume, cs.map shape))
+    (vars.map fun (x, ty?, isIn, defined) =>
+      { name := x.name, role := if isIn then .input else if defined then .definedOutput else .output, int := isInt ty? })
+    (props.map fun (kind, _, _, cs) => cs.map (conjunct (kind == .assume)))
   for (i, p, k) in bounds do
     let (x, _, isIn, _) := vars[i]!
     let (_, name, _, cs) := props[p]!
@@ -4109,7 +4114,8 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
       err aSpan (Fren.Core.interfaceMsg c.path a.path v.name why)
     -- What it reads by name keeps an `Int` one (`lint::manual_nat`).
     if let some cv := cv? then
-      if let some concrete := Fren.Core.refinementKeepsInt input (v.ty == .int) (cv.ty == .int) then
+      let given (t : Ty) : Fren.Core.Given := if t == .int then .givenInt else .givenNat
+      if let (concrete, .givenInt) := Fren.Core.refinementGiven input (given v.ty) (given cv.ty) then
         let kept := (if concrete then c.path else a.path, Fren.Core.nameText v.name)
         modify fun s => { s with natKept := s.natKept.push kept }
   -- The instance of `concrete`, named as it is.

@@ -1298,15 +1298,16 @@ def lintBools (e : Syntax) : TermElabM Unit := do
   let node := boolNode sub.str sub.startPos e
   for (l, ref, msg) in Core.rewriteReports src node fixable do
     recordLint l ref msg
-  let (boolEqs, strOrds, variants, absEnds, mentioning, facts) :=
-    ((← getLocal).boolEqs, (← getLocal).strOrds, (← getLocal).variants, (← getLocal).absEnds, (← getLocal).mentioning,
+  let (boolEqs, ordereds, variants, absEnds, mentioning, facts) :=
+    ((← getLocal).boolEqs, (← getLocal).ordereds, (← getLocal).variants, (← getLocal).absEnds, (← getLocal).mentioning,
       (← getLocal).facts)
-  modifyLocal fun l => { l with boolEqs := #[], strOrds := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
+  modifyLocal fun l => { l with boolEqs := #[], ordereds := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
   let variant? (s : Syntax) := (variants.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
   let fact? (s : Syntax) := (facts.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
+  let ordered? (s : Syntax) := (ordereds.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
   let help (msg : Core.Msg) := if fixable && !msg.fixes.isEmpty then #[Core.fixHelp] else #[]
   let at_ (rs : Array (Option String.Pos.Raw × Option String.Pos.Raw)) (s : Syntax) := rs.contains (s.getPos?, s.getTailPos?)
-  for r in Core.opReports src (at_ boolEqs) (at_ strOrds) variant? (absEnds.contains ·.getTailPos?) (at_ mentioning) fact? node do
+  for r in Core.opReports src (at_ boolEqs) ordered? variant? (absEnds.contains ·.getTailPos?) (at_ mentioning) fact? node do
     -- A node's position is its first token's, and its tail its last's.
     let ref := match r.last? with | some l => mkNullNode #[r.ref, l] | none => r.ref
     recordLint r.lint ref { r.msg with notes := r.msg.notes ++ help r.msg }
@@ -2711,6 +2712,11 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
       checkNewtypeOp op tx? (← frenTypeOf? y)
       checkTermType b y operandTy (Core.opNote op operandTy)
       pure (x, y, operandTy, info?)
+  -- For the lints of integers, at the end of the expression: what it compares.
+  if cx.noteIndexes && !(tx? matches some (.newtype ..)) then
+    let compared : Core.Ordered := if operandTy matches .enum _ && info?.any (·.ordered) then .enumeration
+      else if operandTy == .int || operandTy == .nat then .number else .other
+    modifyLocal fun l => { l with ordereds := l.ordereds.push ((e.getPos?, e.getTailPos?), compared) }
   -- An ordered enumeration's values compare by their positions.
   if let (.enum _, some info) := (operandTy, info?) then
     let (i, j) := (← ordinalTerm info x, ← ordinalTerm info y)
@@ -2719,8 +2725,6 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   unless ← string x do
     return ← match op with
       | "<" => `($x < $y) | "<=" => `($x ≤ $y) | ">" => `($x > $y) | _ => `($x ≥ $y)
-  -- For `manual_min_max`, at the end of the expression.
-  if cx.noteIndexes then modifyLocal fun l => { l with strOrds := l.strOrds.push (e.getPos?, e.getTailPos?) }
   checkCore cx e .stringCompare true (ca || cb) #[a, b] (ca && cb)
   match op with
   | "<" => `(Fren.Str.lt $x $y) | "<=" => `(Fren.Str.le $x $y) | ">" => `(Fren.Str.lt $y $x) | _ => `(Fren.Str.le $y $x)
@@ -4431,15 +4435,17 @@ def lintManualNat (compPath : Name) (members : Array Syntax) : TermElabM Unit :=
     | `(fren_member| cover $x:ident : $e) => some (false, x.raw, #[])
     | _ => none
   let wf (e : Syntax) : String := Core.writtenForm (exactText (unparen e))
-  let shape (e : Syntax) : String × String × String :=
+  let conjunct (assumption : Bool) (e : Syntax) : Core.NatConjunct :=
     let e := unparen e
     if e.getNumArgs == 3 && e[1].isAtom && Core.binaryOps.contains e[1].getAtomVal.trimAscii.toString then
-      (e[1].getAtomVal.trimAscii.toString, wf e[0], wf e[2])
-    else ("", "", "")
+      { assumption, op := .ofOp e[1].getAtomVal.trimAscii.toString, left := wf e[0], right := wf e[2] }
+    else { assumption, op := .otherOp, left := "", right := "" }
   let isInt (ty? : Option Syntax) : Bool := ty?.any (exactText · == "Int")
   let bounds := Core.manualNatBounds
-    (vars.map fun (x, ty?, isIn, defined) => { name := Core.nameText x.getId, input := isIn, defined, int := isInt ty? })
-    (props.map fun (assumption, _, cs) => (assumption, cs.map shape))
+    (vars.map fun (x, ty?, isIn, defined) =>
+      { name := Core.nameText x.getId, role := if isIn then .input else if defined then .definedOutput else .output
+        int := isInt ty? })
+    (props.map fun (assumption, _, cs) => cs.map (conjunct assumption))
   for (i, p, k) in bounds do
     let (x, _, isIn, _) := vars[i]!
     let (_, name, cs) := props[p]!
@@ -5187,7 +5193,8 @@ and the solver is asked nothing. -/
       throwErrorAt stx[5] (Core.interfaceMsg c.path a.path v.name why).text
     -- What it reads by name keeps an `Int` one (`lint::manual_nat`).
     if let some cv := cv? then
-      if let some concrete := Core.refinementKeepsInt input (v.type.isConstOf ``Int) (cv.type.isConstOf ``Int) then
+      let given (t : Expr) : Core.Given := if t.isConstOf ``Int then .givenInt else .givenNat
+      if let (concrete, .givenInt) := Core.refinementGiven input (given v.type) (given cv.type) then
         let kept := (if concrete then c.path else a.path, Core.nameText v.name)
         modifyLocal fun l => { l with natKept := l.natKept.push kept }
   let w := Name.mkSimple c.path.getString!

@@ -1872,63 +1872,174 @@ def toMinMax : Fren.Core.MinMax → lint.MinMax
   | .min => .Min
   | .max => .Max
 
+def toOrdered : Fren.Core.Ordered → lint.Ordered
+  | .number => .Number
+  | .enumeration => .Enumeration
+  | .other => .OtherType
+
+instance : Fren.Finite Fren.Core.Ordered := ⟨[.number, .enumeration, .other], by intro x; cases x <;> simp⟩
+
+def toNatRole : Fren.Core.NatRole → lint.NatRole
+  | .input => .Input
+  | .output => .Output
+  | .definedOutput => .DefinedOutput
+
+def toBoundOp : Fren.Core.BoundOp → lint.BoundOp
+  | .atLeast => .AtLeast
+  | .atMost => .AtMost
+  | .otherOp => .OtherOp
+
+def toNatVariable (v : Fren.Core.NatVariable) : lint.NatVariable := ⟨v.name, toNatRole v.role, v.int⟩
+
+def toNatConjunct (c : Fren.Core.NatConjunct) : lint.NatConjunct := ⟨c.assumption, toBoundOp c.op, c.left, c.right⟩
+
+def toGiven : Fren.Core.Given → lint.Given
+  | .givenInt => .Integer
+  | .givenNat => .Natural
+
+instance : Fren.Finite Fren.Core.Given := ⟨[.givenInt, .givenNat], by intro x; cases x <;> simp⟩
+
+theorem natBounds_iff (v : Fren.Core.NatVariable) (c : Fren.Core.NatConjunct) :
+    Fren.Core.natBounds v c = true ↔ lint.bounds? (toNatVariable v) (toNatConjunct c) := by
+  rcases v with ⟨n, r, i⟩; rcases c with ⟨a, o, l, rt⟩
+  cases r <;> cases o <;> cases i <;> cases a <;>
+    simp [Fren.Core.natBounds, lint.bounds?, toNatVariable, toNatConjunct, toNatRole, toBoundOp, fren_spec]
+
 -- Both front ends find each variable's bound with `manualNatBounds`, which
--- asks `manualNat`.
-impl manual_nat: lint::manual_nat for (i d n a b : Bool) {
+-- asks `manualNatAt` of the conjuncts of the component's assumptions and
+-- guarantees, in order, and drop at the end of the file the reports of the
+-- variables that an instance, a refinement or an `impl` gives an `Int`.
+impl manual_nat: lint::manual_nat for (v : Fren.Core.NatVariable) (cs : List Fren.Core.NatConjunct)
+    (us : List Fren.Core.Given) (k : Int) {
+  var := toNatVariable v,
+  conjuncts := Fren.Seq.ofList (cs.map toNatConjunct),
+  uses := Fren.Seq.ofList (us.map toGiven),
+  k := k,
+  position := ((Fren.Core.manualNatAt v cs (us.contains .givenInt)).map Int.ofNat).getD (-1),
+} by
+  intro v cs us k _
+  have hg : (lint.Given.Integer ∈ Fren.Seq.ofList (us.map toGiven)) ↔ us.contains .givenInt = true := by
+    simp only [Fren.Seq.mem_iff, Fren.Seq.toList_ofList, List.mem_map, List.contains_iff_mem]
+    constructor
+    · rintro ⟨x, hx, h⟩
+      cases x <;> simp_all [toGiven]
+    · intro h
+      exact ⟨_, h, rfl⟩
+  have hnth : ∀ i : Nat, (h : i < cs.length) →
+      (Fren.Seq.ofList (cs.map toNatConjunct)).nth (i : Int) = toNatConjunct cs[i] := by
+    intro i h
+    rw [Fren.Seq.nth_of_lt _ _ (by omega) (by simpa using h)]
+    simp
+  have hb : ∀ c, Fren.Core.natBounds v c = true ↔ lint.bounds? (toNatVariable v) (toNatConjunct c) := natBounds_iff v
+  simp only [fren_spec] at hb
+  simp only [fren_spec, hg, Fren.Core.manualNatAt]
+  by_cases hk : us.contains .givenInt = true
+  · simp only [hk, if_true, Option.map_none, Option.getD_none]
+    simp
+  · simp only [hk, Bool.false_eq_true, if_false, false_implies, true_and]
+    cases hf : cs.findIdx? (Fren.Core.natBounds v) with
+    | none =>
+      rw [List.findIdx?_eq_none_iff] at hf
+      simp only [Option.map_none, Option.getD_none, ne_eq, not_true_eq_false, false_implies, true_and,
+        not_false_eq_true, true_implies]
+      intro h0
+      obtain ⟨⟨hk0, hkl⟩, hbk⟩ := h0
+      exfalso
+      have hk' : k.toNat < cs.length := by simp at hkl; omega
+      have e : k = ((k.toNat : Nat) : Int) := by omega
+      rw [e, hnth _ hk'] at hbk
+      have h := (hb cs[k.toNat]).mpr
+      rw [hf _ (List.getElem_mem hk')] at h
+      exact absurd (h (by simpa using hbk)) (by simp)
+    | some i =>
+      rw [List.findIdx?_eq_some_iff_getElem] at hf
+      obtain ⟨hi, hp, hmin⟩ := hf
+      simp only [Option.map_some, Option.getD_some, Int.ofNat_eq_natCast, hnth _ hi]
+      refine ⟨fun _ => ⟨⟨by omega, by simpa using hi⟩, by simpa using (hb cs[i]).mp hp⟩, fun _ h0 => ?_⟩
+      obtain ⟨⟨hk0, hkl⟩, hbk⟩ := h0
+      have hk' : k.toNat < cs.length := by simp at hkl; omega
+      have e : k = ((k.toNat : Nat) : Int) := by omega
+      rw [e] at hbk
+      simp only [hnth _ hk'] at hbk
+      refine ⟨by omega, ?_⟩
+      rcases Nat.lt_or_ge k.toNat i with hlt | hge
+      · exact absurd ((hb _).mpr (by simpa using hbk)) (hmin k.toNat hlt)
+      · omega
+
+-- Both front ends ask `refinementGiven` at each variable that a refinement
+-- reads by name.
+impl refinement_given: lint::refinement_given for (i : Bool) (a c : Fren.Core.Given) {
   input? := i,
-  defined? := d,
-  int? := n,
-  assumption? := a,
-  bound? := b,
-  fires? := Fren.Core.manualNat i d n a b,
+  abstract_type := toGiven a,
+  concrete_type := toGiven c,
+  side := if (Fren.Core.refinementGiven i a c).1 then .Concrete else .Abstract,
+  given := toGiven (Fren.Core.refinementGiven i a c).2,
 }
 
--- Both front ends ask `refinementKeepsInt` at each variable that a
--- refinement reads by name.
-impl nat_kept: lint::nat_kept for (i a c : Bool) {
-  input? := i,
-  abstract_int? := a,
-  concrete_int? := c,
-  kept? := (Fren.Core.refinementKeepsInt i a c).isSome,
-  concrete? := (Fren.Core.refinementKeepsInt i a c).getD i,
-}
-
--- The rest are decided in `opReports`, in both front ends.
-impl manual_abs: lint::manual_abs for (c : Comparison) (t : Bool) {
+-- The rest are decided in `opReports`, in both front ends, from the type
+-- that each front end records for each ordering.
+impl manual_abs: lint::manual_abs for (o : Fren.Core.Ordered) (c : Comparison) (t : Bool) {
+  compared := toOrdered o,
   op := toComparison c,
   negated_then? := t,
-  fires? := Fren.Core.manualAbs c t,
+  fires? := Fren.Core.manualAbs o c t,
 }
 
-impl manual_abs_diff: lint::manual_abs_diff for (c : Comparison) (t : Bool) {
+impl manual_abs_diff: lint::manual_abs_diff for (c : Comparison) (o : Fren.Core.Ordered) (a b : String)
+    (t e : String × String) {
   op := toComparison c,
-  then_left_first? := t,
-  fires? := Fren.Core.manualAbsDiff c t,
-}
+  compared := toOrdered o,
+  a := a,
+  b := b,
+  then_branch := ⟨t.1, t.2⟩,
+  else_branch := ⟨e.1, e.2⟩,
+  fires? := Fren.Core.manualAbsDiffRule c o a b t e,
+} by
+  intro c o a b t e _
+  rcases t with ⟨t1, t2⟩; rcases e with ⟨e1, e2⟩
+  cases c <;> cases o <;> simp [fren_spec, toOrdered, toComparison, Fren.Core.manualAbsDiffRule, Fren.Core.manualAbsDiff,
+    Comparison.below, Comparison.above]
 
-impl manual_min_max: lint::manual_min_max for (c : Comparison) (t : Bool) {
+impl manual_min_max: lint::manual_min_max for (c : Comparison) (o : Fren.Core.Ordered) (a b t e : String)
+    (al bl : Bool) {
   op := toComparison c,
-  then_left? := t,
-  fires? := (Fren.Core.manualMinMax c t).isSome,
-  method := toMinMax ((Fren.Core.manualMinMax c t).getD .min),
-}
+  compared := toOrdered o,
+  a := ⟨a, al⟩,
+  b := ⟨b, bl⟩,
+  then_branch := t,
+  else_branch := e,
+  fires? := (Fren.Core.manualMinMaxRule c o a b t e al bl).isSome,
+  method := toMinMax (((Fren.Core.manualMinMaxRule c o a b t e al bl).map (·.1)).getD .min),
+  receiver_left? := ((Fren.Core.manualMinMaxRule c o a b t e al bl).map (·.2)).getD true,
+} by
+  intro c o a b t e al bl _
+  cases c <;> cases o <;> cases al <;> cases bl <;> simp [fren_spec, toOrdered, toComparison, toMinMax,
+    Fren.Core.manualMinMaxRule, Fren.Core.manualMinMax, Comparison.below, Comparison.above] <;>
+    (try refine ⟨fun h1 h2 => ?_, fun h1 h2 => ?_⟩) <;> simp_all <;> split <;> simp_all
 
-impl manual_clamp: lint::manual_clamp for (f s : Comparison) (a b : Int) {
+impl manual_clamp: lint::manual_clamp for (o : Fren.Core.Ordered) (f s : Comparison) (a b : Int) {
+  compared := toOrdered o,
   first_op := toComparison f,
   second_op := toComparison s,
   first := a,
   second := b,
-  fires? := Fren.Core.manualClamp f s a b,
+  fires? := Fren.Core.manualClamp o f s a b,
   low_first? := f.below,
 } by
-  intro f s a b _
-  cases f <;> cases s <;> simp [fren_spec, toComparison, Fren.Core.manualClamp, Comparison.below, Comparison.above]
+  intro o f s a b _
+  cases o <;> cases f <;> cases s <;> simp [fren_spec, toOrdered, toComparison, Fren.Core.manualClamp, Comparison.below, Comparison.above]
 
-impl manual_rem_euclid: lint::manual_rem_euclid for (d a : Bool) {
-  same_divisor? := d,
-  same_addend? := a,
-  fires? := Fren.Core.manualRemEuclid d a,
-}
+def toSummand (p : Fren.Core.Summand) : lint.Summand := ⟨p.text, p.divisor?.isSome, p.divisor?.getD ""⟩
+
+impl manual_rem_euclid: lint::manual_rem_euclid for (p q : Fren.Core.Summand) (k : String) {
+  p := toSummand p,
+  q := toSummand q,
+  k := k,
+  fires? := Fren.Core.manualRemEuclidRule p q k,
+} by
+  intro p q k _
+  rcases p with ⟨pt, _ | pd⟩ <;> rcases q with ⟨qt, _ | qd⟩ <;> simp [fren_spec, toSummand, Fren.Core.manualRemEuclidRule]
+  done
 
 impl modulo_one: lint::modulo_one for (k : Int) {
   divisor := k,
@@ -1947,16 +2058,23 @@ impl min_max: lint::min_max for (i o : Fren.Core.MinMax) (a b : Int) {
   intro i o a b _
   cases i <;> cases o <;> simp [fren_spec, toMinMax, Fren.Core.minMax]
 
--- `erasingOpAt?` asks `erasingDivision` at each `div` and `mod`.
-impl erasing_division: lint::erasing_division for (z : Bool) {
-  zero_dividend? := z,
-  fires? := Fren.Core.erasingDivision z,
-}
+-- `erasingOpAt?` asks `erasingDivision` at each `div` and `mod`, with the
+-- value of a dividend that is an integer literal.
+impl erasing_division: lint::erasing_division for (d : Option Int) {
+  literal? := d.isSome,
+  dividend := d.getD 0,
+  fires? := Fren.Core.erasingDivision d,
+} by
+  intro d _
+  cases d <;> simp [fren_spec, Fren.Core.erasingDivision]
 
-impl eq_op_method: lint::eq_op_method for (s : Bool) {
-  same? := s,
-  fires? := Fren.Core.eqOpMethod s,
-}
+impl eq_op_method: lint::eq_op_method for (r a : String) {
+  receiver := r,
+  argument := a,
+  fires? := Fren.Core.eqOpMethod r a,
+} by
+  intro r a _
+  simp [fren_spec, Fren.Core.eqOpMethod]
 
 trusted lint::manual_nat_input_written: "a model of a component, checked by the refinements in its section"
 trusted lint::manual_nat_input_fixed: "a model of a component, checked by the refinements in its section"

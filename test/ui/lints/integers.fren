@@ -136,4 +136,21 @@ comp concrete { in v: Int pub out w: Int assume nonneg: v >= 0 ensure r: w = v +
 comp abstract { in v: Int pub out w: Int assume nonneg: v >= 0 ensure r: w > v }   --~ warning: `v` is never negative
 refine reads: concrete refines abstract
 
---@ summary: 37 passed, 0 failed, 0 inconclusive, 0 redundant
+-- A newtype has no `min`, `max` or `abs`, and an ordered enumeration has
+-- `min` and `max` only: the lints follow the type the condition compares.
+pub struct Ms(Int)
+ordered enum Level { Low, Mid, High }
+
+comp newtypes {
+    in a: Ms
+    in b: Ms
+    in l: Level
+    in k: Level
+    pub out m: Ms := if a < b then a else b
+    pub out d: Ms := if a > b then a - b else b - a
+    pub out n: Level := if l < k then l else k              --~ warning: write `l.min(k)`
+    pub out o: Level := if l < k then l  -- the lower
+        else k  --~^ warning: the fix would drop the comments in the conditional
+}
+
+--@ summary: 38 passed, 0 failed, 0 inconclusive, 0 redundant

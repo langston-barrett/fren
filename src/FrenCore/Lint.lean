@@ -3113,9 +3113,9 @@ def erasingOp (op : InfixOp) (left right : IdentityOperand) (same : Bool) : Bool
   | .in, _ => (right matches .empty)
   | _, _ => false
 
-/-- Whether `erasing_op` fires on `a div k` or `a mod k`, from whether `a`
-is `0` (`lint::erasing_division`). -/
-def erasingDivision (zeroDividend : Bool) : Bool := zeroDividend
+/-- Whether `erasing_op` fires on `a div k` or `a mod k`, from the value of
+`a` if it is an integer literal, possibly negated (`lint::erasing_division`). -/
+def erasingDivision (dividend : Option Int) : Bool := dividend == some 0
 
 /-- `0 div k` or `0 mod k`, for `op`, `div` or `mod`. -/
 def erasingDivisionMsg (op : String) : Msg :=
@@ -3736,7 +3736,7 @@ def erasingOpAt? (src : Array Char) (n : BNode α) : Option (OpReport α) := do
   let .bin op := n.kind | none
   if op == "div" || op == "mod" then
     let #[a, _] := n.kids | none
-    guard (erasingDivision (identityOperand src a == .zero))
+    guard (erasingDivision (intLiteral? src a))
     return { lint := .erasingOp, ref := n.ref, msg := erasingDivisionMsg op }
   let o ← InfixOp.ofOp? op
   let #[a, b] := n.kids | none
@@ -4284,12 +4284,21 @@ def Comparison.above : Comparison → Bool
   | .gt | .ge => true
   | _ => false
 
+/-- The type that an ordering compares, as the lints of integers see it
+(`lint::Ordered`): `Int` or `Nat`, an ordered enumeration, or another,
+such as `String` or a newtype. -/
+inductive Ordered where
+  | number
+  | enumeration
+  | other
+  deriving Inhabited, DecidableEq, Repr
+
 /-- Whether `manual_abs` fires on `if x OP 0 then a else b`, where `op` has
 `x` on its left, mirrored where `x` is written on the right, and
 `negatedThen` says that `a` is `-x` and `b` is `x`, rather than the reverse
 (`lint::manual_abs`). -/
-def manualAbs (op : Comparison) (negatedThen : Bool) : Bool :=
-  (op.below && negatedThen) || (op.above && !negatedThen)
+def manualAbs (compared : Ordered) (op : Comparison) (negatedThen : Bool) : Bool :=
+  compared == .number && ((op.below && negatedThen) || (op.above && !negatedThen))
 
 def manualAbsMsg (fixed : String) : Msg :=
   { code? := some Lint.manualAbs.code, headline := "this conditional is the absolute value"
@@ -4301,6 +4310,14 @@ def manualAbsMsg (fixed : String) : Msg :=
 the reverse (`lint::manual_abs_diff`). -/
 def manualAbsDiff (op : Comparison) (thenLeftFirst : Bool) : Bool :=
   (op.above && thenLeftFirst) || (op.below && !thenLeftFirst)
+
+/-- Whether `manual_abs_diff` fires on `if a OP b then c else d`, where
+`compared` is the type that `OP` compares, `a` and `b` are the written
+forms of its operands, and `c` and `d` those of the operands of the
+branches, each a subtraction (`lint::manual_abs_diff`). -/
+def manualAbsDiffRule (op : Comparison) (compared : Ordered) (a b : String) (c d : String × String) : Bool :=
+  compared == .number && a != b
+    && ((c == (a, b) && d == (b, a) && manualAbsDiff op true) || (c == (b, a) && d == (a, b) && manualAbsDiff op false))
 
 def manualAbsDiffMsg (fixed : String) : Msg :=
   { code? := some Lint.manualAbsDiff.code, headline := "this conditional is the absolute value of a difference"
@@ -4330,6 +4347,17 @@ def manualMinMax (op : Comparison) (thenLeft : Bool) : Option MinMax :=
   else if op.above then some (if thenLeft then .max else .min)
   else none
 
+/-- The method that `if a OP b then c else d` is, and whether the fix's
+receiver is `a`, rather than `b`, if `manual_min_max` fires, where
+`compared` is the type that `OP` compares, `a`, `b`, `c` and `d` are
+written forms, and `aLit` and `bLit` say whether `a` and `b` have an
+integer literal in them (`lint::manual_min_max`). -/
+def manualMinMaxRule (op : Comparison) (compared : Ordered) (a b c d : String) (aLit bLit : Bool) :
+    Option (MinMax × Bool) :=
+  if compared != .other && a != b && !(aLit && bLit) && ((c == a && d == b) || (c == b && d == a)) then
+    (manualMinMax op (c == a)).map (·, !aLit)
+  else none
+
 def manualMinMaxMsg (m : MinMax) (fixed : String) : Msg :=
   { code? := some Lint.manualMinMax.code, headline := s!"this conditional is `{m.name}`"
     label? := some s!"gives the {if m == .min then "lesser" else "greater"} operand"
@@ -4338,18 +4366,30 @@ def manualMinMaxMsg (m : MinMax) (fixed : String) : Msg :=
 /-- Whether `manual_clamp` fires on `if x OP₁ b₁ then b₁ else if x OP₂ b₂
 then b₂ else x`, where each comparison has `x` on its left and the bounds
 are integer literals (`lint::manual_clamp`). -/
-def manualClamp (firstOp secondOp : Comparison) (first second : Int) : Bool :=
-  (firstOp.below && secondOp.above && first ≤ second) || (firstOp.above && secondOp.below && second ≤ first)
+def manualClamp (compared : Ordered) (firstOp secondOp : Comparison) (first second : Int) : Bool :=
+  compared == .number && ((firstOp.below && secondOp.above && first ≤ second) || (firstOp.above && secondOp.below && second ≤ first))
 
 def manualClampMsg (fixed : String) : Msg :=
   { code? := some Lint.manualClamp.code, headline := "this conditional keeps its operand between two bounds"
     label? := some "gives a bound where the operand is past it"
     fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
-/-- Whether `manual_rem_euclid` fires on `(a mod k₁ + d) mod k`, or `(d +
-a mod k₁) mod k`, from whether `k₁` and `d` are each written the same as
-`k` (`lint::manual_rem_euclid`). -/
-def manualRemEuclid (sameDivisor sameAddend : Bool) : Bool := sameDivisor && sameAddend
+/-- An operand of the `+` in `(p + q) mod k`, as `manual_rem_euclid` sees
+it (`lint::Summand`): its written form, and the written form of its
+divisor if it is a `mod`. -/
+structure Summand where
+  text : String
+  divisor? : Option String
+  deriving Inhabited, BEq, Repr
+
+/-- Whether `manual_rem_euclid` fires on `(p + q) mod k`, where `divisor`
+is the written form of `k` (`lint::manual_rem_euclid`): the first of `p`
+and `q` that is a `mod` is by `k`, and the other is written as `k`. -/
+def manualRemEuclidRule (p q : Summand) (divisor : String) : Bool :=
+  match p.divisor?, q.divisor? with
+  | some d, _ => d == divisor && q.text == divisor
+  | none, some d => d == divisor && p.text == divisor
+  | none, none => false
 
 def manualRemEuclidMsg (fixed : String) : Msg :=
   { code? := some Lint.manualRemEuclid.code, headline := "`mod` is never negative already"
@@ -4380,7 +4420,7 @@ def minMaxMsg (inner outer : MinMax) (b : String) : Msg :=
 
 /-- Whether `eq_op` fires on a call of `min` or `max`, from whether its
 receiver and argument are written the same (`lint::eq_op_method`). -/
-def eqOpMethod (same : Bool) : Bool := same
+def eqOpMethod (receiver argument : String) : Bool := receiver == argument
 
 /-- `r.m(r)`, for `min` or `max`, where `r` is the text of the receiver
 (`lint::eq_op_method`). -/
@@ -4403,13 +4443,21 @@ def hasIntLiteral (t : String) : Bool := Id.run do
 method: in parentheses where `lang::operand` requires them. -/
 def receiverText (src : Array Char) (k : BNode α) : String := (k.text src).inSlot (some receiverSlot)
 
+/-- `msg` without its fix where the text of `n` has a comment, which the
+fix would drop. -/
+def keepComments (src : Array Char) (n : BNode α) (msg : Msg) : Msg :=
+  if hasComment (textOf src n.range) then
+    { msg with fixes := #[], notes := msg.notes.push "note: the fix would drop the comments in the conditional, so it has none" }
+  else msg
+
 /-- The method call `t`, which replaces `n`, in `slot` within `parent`. -/
 def placedCall (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) (t : String) : String :=
   placed src n slot parent { text := t, prec := (BKind.method "").prec }
 
 /-- `manual_abs` on `n`, a conditional in `slot` within `parent`
 (`lint::manual_abs`). -/
-def manualAbsAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) : Option (OpReport α) := do
+def manualAbsAt? (src : Array Char) (ordered? : α → Option Ordered) (n : BNode α) (slot : Option Slot) (parent : Range) :
+    Option (OpReport α) := do
   guard (n.kind == .ite)
   let #[c, t, e] := n.kids | none
   let .bin cop := c.kind | none
@@ -4423,51 +4471,46 @@ def manualAbsAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent 
     | .neg, #[o] => wf o == wf x
     | _, _ => false
   let negatedThen ← if negated t && wf e == wf x then some true else if wf t == wf x && negated e then some false else none
-  guard (manualAbs op negatedThen)
+  guard (manualAbs ((ordered? c.ref).getD .other) op negatedThen)
   let fixed := placedCall src n slot parent s!"{receiverText src x}.abs"
-  return { lint := .manualAbs, ref := n.ref, msg := manualAbsMsg fixed }
+  return { lint := .manualAbs, ref := n.ref, msg := keepComments src n (manualAbsMsg fixed) }
 
 /-- `manual_abs_diff` on `n`, a conditional in `slot` within `parent`
 (`lint::manual_abs_diff`). -/
-def manualAbsDiffAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) : Option (OpReport α) := do
+def manualAbsDiffAt? (src : Array Char) (ordered? : α → Option Ordered) (n : BNode α) (slot : Option Slot)
+    (parent : Range) : Option (OpReport α) := do
   guard (n.kind == .ite)
   let #[c, t, e] := n.kids | none
   let (op, a, b) ← comparisonOf? src c
-  guard (a != b)
   let wf (k : BNode α) := writtenForm (textOf src k.range)
   let diff? (k : BNode α) : Option (String × String) := match k.kind, k.kids with
     | .bin "-", #[l, r] => some (wf l, wf r)
     | _, _ => none
-  let (t1, t2) ← diff? t
-  let (e1, e2) ← diff? e
-  let thenLeftFirst ← if (t1, t2, e1, e2) == (a, b, b, a) then some true
-    else if (t1, t2, e1, e2) == (b, a, a, b) then some false else none
-  guard (manualAbsDiff op thenLeftFirst)
+  guard (manualAbsDiffRule op ((ordered? c.ref).getD .other) a b (← diff? t) (← diff? e))
   let fixed := placedCall src n slot parent s!"({textOf src t.range}).abs"
-  return { lint := .manualAbsDiff, ref := n.ref, msg := manualAbsDiffMsg fixed }
+  return { lint := .manualAbsDiff, ref := n.ref, msg := keepComments src n (manualAbsDiffMsg fixed) }
 
 /-- `manual_min_max` on `n`, a conditional in `slot` within `parent`, where
-`strOrd` says whether an ordering compares `String`s
-(`lint::manual_min_max`). The receiver of the fix is an operand without
-an integer literal, the left one if both are. -/
-def manualMinMaxAt? (src : Array Char) (strOrd : α → Bool) (n : BNode α) (slot : Option Slot) (parent : Range) :
-    Option (OpReport α) := do
+`ordered?` says what type an ordering compares (`lint::manual_min_max`).
+The receiver of the fix is an operand without an integer literal, the left
+one if both are. -/
+def manualMinMaxAt? (src : Array Char) (ordered? : α → Option Ordered) (n : BNode α) (slot : Option Slot)
+    (parent : Range) : Option (OpReport α) := do
   guard (n.kind == .ite)
   let #[c, t, e] := n.kids | none
   let (op, a, b) ← comparisonOf? src c
-  guard (a != b && !strOrd c.ref)
   let #[ca, cb] := c.kids | none
   let wf (k : BNode α) := writtenForm (textOf src k.range)
-  let thenLeft ← if wf t == a && wf e == b then some true else if wf t == b && wf e == a then some false else none
-  let m ← manualMinMax op thenLeft
-  let (r, arg) ← if !hasIntLiteral (textOf src ca.range) then some (ca, cb)
-    else if !hasIntLiteral (textOf src cb.range) then some (cb, ca) else none
+  let (m, left) ← manualMinMaxRule op ((ordered? c.ref).getD .other) a b (wf t) (wf e)
+    (hasIntLiteral (textOf src ca.range)) (hasIntLiteral (textOf src cb.range))
+  let (r, arg) := if left then (ca, cb) else (cb, ca)
   let fixed := placedCall src n slot parent s!"{receiverText src r}.{m.name}({textOf src arg.range})"
-  return { lint := .manualMinMax, ref := n.ref, msg := manualMinMaxMsg m fixed }
+  return { lint := .manualMinMax, ref := n.ref, msg := keepComments src n (manualMinMaxMsg m fixed) }
 
 /-- `manual_clamp` on `n`, a conditional in `slot` within `parent`
 (`lint::manual_clamp`). -/
-def manualClampAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) : Option (OpReport α) := do
+def manualClampAt? (src : Array Char) (ordered? : α → Option Ordered) (n : BNode α) (slot : Option Slot)
+    (parent : Range) : Option (OpReport α) := do
   guard (n.kind == .ite)
   let #[c1, t1, e1] := n.kids | none
   guard (e1.kind == .ite)
@@ -4483,11 +4526,11 @@ def manualClampAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (paren
   let (x, op1, b1, v1) ← test c1 t1
   let (x', op2, b2, v2) ← test c2 t2
   guard (wf x == wf x' && wf e2 == wf x && !hasIntLiteral (textOf src x.range))
-  guard (manualClamp op1 op2 v1 v2)
+  guard (manualClamp ((ordered? c1.ref).getD .other) op1 op2 v1 v2)
   let (lo, hi) := if op1.below then (b1, b2) else (b2, b1)
   let fixed := placedCall src n slot parent
     s!"{receiverText src x}.max({textOf src lo.range}).min({textOf src hi.range})"
-  return { lint := .manualClamp, ref := n.ref, msg := manualClampMsg fixed }
+  return { lint := .manualClamp, ref := n.ref, msg := keepComments src n (manualClampMsg fixed) }
 
 /-- `manual_rem_euclid` on `n`, a `mod` in `slot` within `parent`
 (`lint::manual_rem_euclid`). -/
@@ -4497,15 +4540,12 @@ def manualRemEuclidAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (p
   guard (s.kind == .bin "+")
   let #[p, q] := s.kids | none
   let wf (k : BNode α) := writtenForm (textOf src k.range)
-  -- The remainder, and the divisor it is by.
-  let rem? (r : BNode α) : Option (BNode α × String) := match r.kind, r.kids with
-    | .bin "mod", #[_, d] => some (r, wf d)
-    | _, _ => none
-  let (inner, d, addend) ← match rem? p, rem? q with
-    | some (r, d), _ => some (r, d, wf q)
-    | none, some (r, d) => some (r, d, wf p)
-    | none, none => none
-  guard (manualRemEuclid (d == wf k) (addend == wf k))
+  -- Each operand, with the divisor of a remainder.
+  let summand (r : BNode α) : Summand := match r.kind, r.kids with
+    | .bin "mod", #[_, d] => { text := wf r, divisor? := some (wf d) }
+    | _, _ => { text := wf r, divisor? := none }
+  guard (manualRemEuclidRule (summand p) (summand q) (wf k))
+  let inner := if (summand p).divisor?.isSome then p else q
   let fixed := placed src n slot parent (inner.text src)
   return { lint := .manualRemEuclid, ref := n.ref, msg := manualRemEuclidMsg fixed }
 
@@ -4534,18 +4574,18 @@ def eqOpMethodAt? (src : Array Char) (n : BNode α) : Option (OpReport α) := do
   let m ← MinMax.ofName? name
   let #[r, a] := n.kids | none
   let wf (k : BNode α) := writtenForm (textOf src k.range)
-  guard (eqOpMethod (wf r == wf a))
+  guard (eqOpMethod (wf r) (wf a))
   return { lint := .eqOp, ref := n.ref, msg := eqOpMethodMsg m (textOf src r.range) }
 
 /-- The messages of the operator and method lints in `n`, which is in
 `slot` within `parent`, outermost first, where `inElse` says that `n` is
 the `else` branch of a conditional, and `inClamp` that it is that of a
 clamp (`manualClampAt?`). -/
-partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq strOrd : α → Bool) (variant? : α → Option String)
-    (isAbs : α → Bool) (mentions : α → Bool) (fact? : α → Option NodeFact) (n : BNode α) (slot : Option Slot)
-    (parent : Range) (inElse inClamp : Bool := false) : Array (OpReport α) :=
+partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool) (ordered? : α → Option Ordered)
+    (variant? : α → Option String) (isAbs : α → Bool) (mentions : α → Bool) (fact? : α → Option NodeFact)
+    (n : BNode α) (slot : Option Slot) (parent : Range) (inElse inClamp : Bool := false) : Array (OpReport α) :=
   let slots := n.kind.slots
-  let clamp := if n.kind == .ite then manualClampAt? src n slot parent else none
+  let clamp := if n.kind == .ite then manualClampAt? src ordered? n slot parent else none
   let own := match n.kind with
     | .bin op =>
       let operands := (n.kids.zip slots).filterMap fun (k, s) => s.bind (elseExtendsAt? src n k ·)
@@ -4565,9 +4605,10 @@ partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq strOrd : α �
     | .ite =>
       (needlessBoolAssignAt? src n slot parent).toArray ++ (branchesSharingAt? src mentions n slot parent).toArray
         ++ (if inElse then #[] else ifsSameCondAt src n)
-        ++ clamp.toArray ++ (manualAbsAt? src n slot parent).toArray ++ (manualAbsDiffAt? src n slot parent).toArray
+        ++ clamp.toArray ++ (manualAbsAt? src ordered? n slot parent).toArray
+        ++ (manualAbsDiffAt? src ordered? n slot parent).toArray
         -- The inner conditional of a clamp is the clamp's, not a `min` or `max` of its own.
-        ++ (if inClamp then #[] else (manualMinMaxAt? src strOrd n slot parent).toArray)
+        ++ (if inClamp then #[] else (manualMinMaxAt? src ordered? n slot parent).toArray)
     | .method _ => (methodCallAt? src n slot parent).toArray ++ (minOrMaxAt? src fact? n slot parent).toArray
         ++ (minMaxAt? src n).toArray ++ (eqOpMethodAt? src n).toArray
     | .chain ops => (contradictoryChainAt? src n ops).toArray
@@ -4579,20 +4620,19 @@ partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq strOrd : α �
     | .atom, some k => if isReceiverOf src n k then #[some receiverSlot] else slots
     | _, _ => slots
   own ++ (n.kids.mapIdx fun i k =>
-    opReportsIn src boolEq strOrd variant? isAbs mentions fact? k (slots[i]?.join) n.range (n.kind == .ite && i == 2)
+    opReportsIn src boolEq ordered? variant? isAbs mentions fact? k (slots[i]?.join) n.range (n.kind == .ite && i == 2)
       (clamp.isSome && i == 2)).flatten
 
 /-- The messages of the operator and method lints in an expression written
 in `src` (`Reqs/Lint/Complexity/Comparisons`), where `boolEq` says whether a
-comparison compares `Bool`s, `strOrd` whether an ordering compares
-`String`s, `variant?` which variant without a payload a path is, if it is
-one, `isAbs` whether an expression is a call of `abs`, `mentions` whether
+comparison compares `Bool`s, `ordered?` what type an ordering compares,
+`variant?` which variant without a payload a path is, if it is one, `isAbs` whether an expression is a call of `abs`, `mentions` whether
 an expression mentions a variable or an uninterpreted function, and
 `fact?` what is known of an expression of an ordered enumeration or a
 newtype. -/
-def opReports [Inhabited α] (src : Array Char) (boolEq strOrd : α → Bool) (variant? : α → Option String)
-    (isAbs : α → Bool) (mentions : α → Bool) (fact? : α → Option NodeFact) (root : BNode α) : Array (OpReport α) :=
-  opReportsIn (upTo src root.range) boolEq strOrd variant? isAbs mentions fact? root none root.range
+def opReports [Inhabited α] (src : Array Char) (boolEq : α → Bool) (ordered? : α → Option Ordered)
+    (variant? : α → Option String) (isAbs : α → Bool) (mentions : α → Bool) (fact? : α → Option NodeFact) (root : BNode α) : Array (OpReport α) :=
+  opReportsIn (upTo src root.range) boolEq ordered? variant? isAbs mentions fact? root none root.range
 
 /-! ## Arithmetic and parentheses -/
 
@@ -5116,54 +5156,95 @@ def redundantBoolTypeMsg (n : Name) : Msg :=
     notes := #["note: a name that ends in `?` is a `Bool`, and only such a name is"]
     fixes := #[{ msg := "remove `: Bool`", replacement := "" }] }
 
-/-- A variable of a component, as `manual_nat` sees it: its name, whether
-it is an input rather than an output, whether it is a defined output, and
-whether it is declared an `Int`. -/
-structure NatCandidate where
+/-- What a variable of a component is, as `manual_nat` sees it
+(`lint::NatRole`). -/
+inductive NatRole where
+  | input
+  | output
+  | definedOutput
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- A variable of a component, as `manual_nat` sees it
+(`lint::NatVariable`): its name, what it is, and whether it is declared an
+`Int`. -/
+structure NatVariable where
   name : String
-  input : Bool
-  defined : Bool
+  role : NatRole
   int : Bool
-  deriving Inhabited
+  deriving Inhabited, BEq, Repr
 
-/-- Whether `manual_nat` fires on a variable, from a constraint of its
-component that has the conjunct `x >= 0` or `0 <= x` if `bound`
-(`lint::manual_nat`). -/
-def manualNat (input defined int assumption bound : Bool) : Bool :=
-  int && !defined && bound && input == assumption
+/-- The comparison of a conjunct, as `manual_nat` sees it
+(`lint::BoundOp`): `>=`, `<=`, or another. -/
+inductive BoundOp where
+  | atLeast
+  | atMost
+  | otherOp
+  deriving Inhabited, BEq, DecidableEq, Repr
 
-/-- Whether the conjunct `l op r`, as the written forms of its operands,
-says that `x` is at least 0. -/
-def natBound (x op l r : String) : Bool := (op == ">=" && l == x && r == "0") || (op == "<=" && l == "0" && r == x)
+def BoundOp.ofOp : String → BoundOp
+  | ">=" => .atLeast
+  | "<=" => .atMost
+  | _ => .otherOp
+
+/-- A conjunct of an assumption or a guarantee, as `manual_nat` sees it
+(`lint::NatConjunct`): whether its constraint is an assumption, its
+comparison, and the written forms of its operands. -/
+structure NatConjunct where
+  assumption : Bool
+  op : BoundOp
+  left : String
+  right : String
+  deriving Inhabited, BEq, Repr
+
+/-- Whether the conjunct `c` is a bound of `v` that `manual_nat` reports
+(`lint::bounds?`): `v` is declared an `Int`, `c` says that it is at least
+`0`, and `c` is an assumption of an input or a guarantee of an output that
+is not defined. -/
+def natBounds (v : NatVariable) (c : NatConjunct) : Bool :=
+  v.int
+    && (match c.op with
+      | .atLeast => c.left == v.name && c.right == "0"
+      | .atMost => c.left == "0" && c.right == v.name
+      | .otherOp => false)
+    && (match v.role with
+      | .input => c.assumption
+      | .output => !c.assumption
+      | .definedOutput => false)
+
+/-- The position in `cs`, the conjuncts of a component's assumptions and
+guarantees in order, of the bound of `v` that `manual_nat` reports, if it
+fires, where `kept` says that an instance, a refinement or an `impl` in
+the file gives `v` an `Int` (`lint::manual_nat`). -/
+def manualNatAt (v : NatVariable) (cs : List NatConjunct) (kept : Bool) : Option Nat :=
+  if kept then none else cs.findIdx? (natBounds v)
 
 /-- Where `manual_nat` fires in a component, given its own variables and
-its constraints, each whether it is an assumption and its conjuncts, as
-an operator and the written forms of its operands, or `""`s: for each
-variable it fires on, its index, and the constraint and conjunct of its
-first bound. -/
-def manualNatBounds (vars : Array NatCandidate) (props : Array (Bool × Array (String × String × String))) :
-    Array (Nat × Nat × Nat) :=
+the conjuncts of each of its assumptions and guarantees, before the end of
+the file shows which variables are kept `Int`s: for each variable it
+fires on, its position, and the constraint and conjunct of its bound. -/
+def manualNatBounds (vars : Array NatVariable) (props : Array (Array NatConjunct)) : Array (Nat × Nat × Nat) :=
+  let flat := props.toList.zipIdx.flatMap fun (cs, p) => cs.toList.zipIdx.map fun (c, k) => (c, p, k)
   vars.zipIdx.filterMap fun (v, i) => do
-    let (p, k) ← props.zipIdx.findSome? fun ((assumption, cs), p) =>
-      (cs.findIdx? fun (op, l, r) => manualNat v.input v.defined v.int assumption (natBound v.name op l r)).map (p, ·)
+    let j ← manualNatAt v (flat.map (·.1)) false
+    let (_, p, k) ← flat[j]?
     return (i, p, k)
 
-/-- The variable of a component that a refinement reads by name keeps from
-being a `Nat`, given whether it is an input and whether the abstract
-component's and the concrete one's are `Int`s: the concrete component's
-input, which the abstract one's `Int` gives, or the abstract component's
-output, which the concrete one's `Int` gives; `some true` for the
-concrete component's (`lint::manual_nat`). -/
-def refinementKeepsInt (input abstractInt concreteInt : Bool) : Option Bool :=
-  if abstractInt && concreteInt then some input else none
+/-- A type that a file gives a variable of a component, by an instance's,
+a refinement's or an `impl`'s binding, or a refinement that reads it by
+name (`lint::Given`). -/
+inductive Given where
+  | givenInt
+  | givenNat
+  deriving Inhabited, DecidableEq, Repr
 
-/-- The reports of `manual_nat` that stand, given each one's component and
-variable, and the variables that an instance or a refinement in the same
-file keeps `Int`s. -/
-def keptNatReports (reports : Array (LintReport α)) (nats : Array (Name × String × Nat)) (kept : Array (Name × String)) :
-    Array (LintReport α) :=
-  let dropped := nats.filterMap fun (c, x, i) => if kept.contains (c, x) then some i else none
-  (reports.zipIdx.filter fun (r, i) => !(r.lint == .manualNat && dropped.contains i)).map (·.1)
+/-- Which component a refinement reading a variable by name gives a value,
+the concrete one if `true`, and the type it gives, from whether the
+variable is an input of the abstract component and the types of the
+abstract and the concrete component's variables: an input's value flows
+from the abstract component to the concrete one, and an output's back
+(`lint::refinement_given`). -/
+def refinementGiven (input : Bool) (abstractTy concreteTy : Given) : Bool × Given :=
+  if input then (true, abstractTy) else (false, concreteTy)
 
 /-- `manual_nat` on the variable `x`, whose bound `bound` is a conjunct of
 the constraint `prop`. -/

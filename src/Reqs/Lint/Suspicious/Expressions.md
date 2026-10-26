@@ -199,7 +199,8 @@ refine empty_subset_sound: empty_subset_value refines empty_subset_written
 refine empty_subset_complete: empty_subset_written refines empty_subset_value
 ```
 
-It also fires on `0 div k` and `0 mod k`, which are always `0`: `k` is a
+It also fires on `0 div k` and `0 mod k`, and on `-0 div k` and `-0 mod
+k`, which are always `0`: `k` is a
 constant that is not `0` (see [Division and
 remainder](../../Lang/Expressions.md#division-and-remainder)), and `0` is a
 multiple of every such `k`. `lint::erasing_division` states this, and the
@@ -208,10 +209,11 @@ positive divisor and a negative one:
 
 ```fren
 pub comp erasing_division {
-    in zero_dividend?    -- the dividend is the literal `0`
+    in literal?          -- the dividend is an integer literal, possibly negated
+    in dividend: Int     -- its value, if it is
     pub det out fires?
 
-    ensure rule: fires? iff zero_dividend?
+    ensure rule: fires? iff (literal? and dividend = 0)
 }
 
 set_option fren.lint.erasing_op "allow" in

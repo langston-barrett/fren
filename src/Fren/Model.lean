@@ -495,7 +495,7 @@ structure LocalState where
   keeps the variable an `Int` (`natKept`). -/
   natReports : Array (Name × String × Core.LintReport Syntax) := #[]
   /-- The variables that an instance or a refinement in the file keeps
-  `Int`s, by their components (`Core.refinementKeepsInt`). -/
+  `Int`s, by their components (`Core.refinementGiven`). -/
   natKept : Array (Name × String) := #[]
   /-- The variables, parameters, instances and binders that the item being
   elaborated declares (`many_single_char_names`, `similar_names`). -/
@@ -561,8 +561,9 @@ structure LocalState where
   newtypes built and read, in the expression being elaborated, for the
   lints of ordered enumerations and newtypes. -/
   facts : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × Core.NodeFact) := #[]
-  /-- Where the orderings of `String`s in it are, for `manual_min_max`. -/
-  strOrds : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
+  /-- Where the orderings in it are, by the type they compare, for the
+  lints of integers. -/
+  ordereds : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × Core.Ordered) := #[]
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false

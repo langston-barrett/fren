@@ -91,10 +91,11 @@ states when it fires:
 
 ```fren
 pub comp eq_op_method {
-    in same?             -- the receiver and the argument are written the same
+    in receiver: String  -- the receiver's written form
+    in argument: String  -- the argument's
     pub det out fires?
 
-    ensure rule: fires? iff same?
+    ensure rule: fires? iff receiver = argument
 }
 ```
 

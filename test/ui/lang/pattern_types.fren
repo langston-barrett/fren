@@ -32,7 +32,8 @@ comp user {
 }
 
 pub fn clamp(x: Int): Byte := if x < 0 then 0 else x   --~ error: a value in `clamp` may not have the type `Byte`
-fn clamped(x: Int): Byte := if x < 0 then 0 else if x > 255 then 255 else x
+--~^ warning: this conditional is `max`
+fn clamped(x: Int): Byte := if x < 0 then 0 else if x > 255 then 255 else x  --~ warning: keeps its operand between two bounds
 
 const BIG: Byte := 300   --~ error: a value in `BIG` may not have the type `Byte`
 const SMALL: Byte := 30
