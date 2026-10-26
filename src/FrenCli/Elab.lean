@@ -2797,7 +2797,7 @@ def lintQuant (span : Span) (all : Bool) (bs : Array Binder) (new : Array CBinde
   -- The value of a type of one value, if it is a variant without a payload.
   let values ← (List.range new.size).toArray.mapM fun k => do
     let some b := new[k]? | return none
-    let Ty.enum p := b.ty | return none
+    let Ty.enum p .. := b.ty | return none
     let some { ctors := #[(v, #[])], .. } := st.dataOf? p | return none
     return some s!"{← tyText k}::{v}"
   let quant := toRange span
