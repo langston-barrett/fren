@@ -88,7 +88,11 @@ the top-level alternatives of a pattern test's pattern are dropped:
 dropping an alternative never makes another unreachable. For the same
 reason, a constant that bounds a range pattern is left alone as a divisor's
 is, since its value decides whether a range is empty and which arms the
-ranges reach.
+ranges reach. A [guard](Lang/Expressions.md#matches) is an expression,
+changed as any other is: the static rules ignore what it says, and a
+mutant whose guard leaves an arm never taken, or a `match` with no arm
+taken somewhere, is killed by the [reachability](Check.md#reachability) or
+[completeness](Check.md#completeness) check.
 
 Mutants change what a spec asserts: the expressions of `assume`s, `ensure`s,
 defined outputs, instance bindings, constants and defined functions,
@@ -164,7 +168,8 @@ constraint, instance or variable that they are about. The
 check, which passes when every index in it is in range: an index has no
 name but its position, which a mutant that adds or drops one changes.
 Likewise, its [completeness](Check.md#completeness) checks are one check,
-and so are its [disjointness](Check.md#disjointness) checks, since a
+and so are its [disjointness](Check.md#disjointness) checks and its
+[reachability](Check.md#reachability) checks, since a
 mutant that drops a row renumbers the rows. A
 redundancy counts as a failure: a mutant that makes a constraint
 redundant is killed by that check.

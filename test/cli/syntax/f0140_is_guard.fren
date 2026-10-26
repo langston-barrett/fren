@@ -1,0 +1,10 @@
+-- A pattern test with a guard, which only a `match` arm takes.
+enum Shape { Circle(Int), Empty }
+
+comp c {
+    in s: Shape
+    in ok?
+    pub out y?
+
+    ensure r: y? iff s is Shape::Circle(_) if ok?
+}

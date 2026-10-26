@@ -381,13 +381,21 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
         | some (_, g) => .atoms #[{ label := .num x.prop x.k, pfx := .anonymous, e := g }]
         | none => .unknown) }
     tables := core.tables.mapIdx fun j t =>
+      let atom (g : Ex) : Atom := { label := .num t.site.prop t.site.k, pfx := .anonymous, e := g }
+      let at? (pos : Nat) := ((exsOf t.site.prop).flatMap (·.tableGoals)).filter fun (p, q, _) => p == pos && q == t.goal
+      -- A reachability question is the conjunction of its case's goals at
+      -- every mention of a `let` or `where` name (`Fren.Core.mergeReach`).
+      if t.goal matches .reachability .. then
+        let gs := ((tablePositions[j]?.map at?).getD #[]).map (·.2.2)
+        { t with site := { t.site with goal := (t.site.goal, if gs.isEmpty then .unknown else .atoms (gs.map atom)) } }
+      else
       -- Likewise the `n`th question at a position.
       let goal? := tablePositions[j]?.bind fun pos =>
         let n := ((tablePositions.extract 0 j).zip (core.tables.extract 0 j)).filter (fun (p, y) =>
           p == pos && y.site.prop == t.site.prop && y.goal == t.goal) |>.size
-        (((exsOf t.site.prop).flatMap (·.tableGoals)).filter fun (p, q, _) => p == pos && q == t.goal)[n]?
+        (at? pos)[n]?
       { t with site := { t.site with goal := (t.site.goal, match goal? with
-        | some (_, _, g) => .atoms #[{ label := .num t.site.prop t.site.k, pfx := .anonymous, e := g }]
+        | some (_, _, g) => .atoms #[atom g]
         | none => .unknown) } }
     insts := core.insts.map fun i =>
       let ei? := ec.insts.find? (·.name == i.name)
@@ -406,7 +414,8 @@ def Refutation.about (x : Refutation) (r : Fren.Core.CheckResult) : Bool :=
     | some s => match r.kind, r.prop?, r.target? with
       | .inst, some w, some (_, a) => s == w ++ a
       | .definedness, some p, _ => s == .num p (r.index?.getD 0)
-      | .completeness, some p, _ | .disjointness, some p, _ | .precondition, some p, _ => s == .num p (r.site?.getD 0)
+      | .completeness, some p, _ | .disjointness, some p, _ | .precondition, some p, _ | .reachability, some p, _ =>
+        s == .num p (r.site?.getD 0)
       | _, some p, _ => s == p
       | _, none, _ => true
 
@@ -415,6 +424,7 @@ def kindName : Fren.Core.CheckKind → String
   | .vacuity => "vacuity" | .redundancy => "redundancy" | .determinism => "determinism"
   | .definedness => "definedness" | .completeness => "completeness" | .disjointness => "disjointness"
   | .precondition => "precondition" | .postcondition => "postcondition"
+  | .reachability => "reachability"
 
 def Refutation.msg (x : Refutation) (r : Fren.Core.CheckResult) : Fren.Core.Msg :=
   let subject := Fren.Core.showComp (r.comp ++ (r.prop?.getD .anonymous))

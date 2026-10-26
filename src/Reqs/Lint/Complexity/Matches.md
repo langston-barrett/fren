@@ -14,8 +14,11 @@ with, and is put in parentheses where [fixes need them](../../Lint.md#parenthese
 x - 1 }` becomes `x = 2 * (x - 1)`. The body's guard is the guard of the
 `match` and its pattern's test, which every value passes, so it is the
 guard of the `match`, where the fix puts the body. The fix only drops the
-scrutinee, which removes what was evaluated, so no guard is weaker.
-`lint::trivial_match` states when it fires:
+scrutinee, which removes what was evaluated, so no guard is weaker. It
+does not fire where the arm has a [guard](../../Lang/Expressions.md#matches),
+which may fail where the pattern matches, so the arm is not taken
+everywhere. `lint::trivial_match` states when it fires, of a `match`
+without guards:
 
 ```fren
 pub mod lint
@@ -39,7 +42,9 @@ value it matches: `E::V => E::V`, for a variant without a payload, or
 pattern names, with the pattern's binders, in order and none of them `_`,
 written the same as its arguments. The variants are compared as they
 resolve, so `V`, brought into scope by `use`, is `E::V`. An arm with an
-or-pattern gives back nothing, and a `_` arm gives back its value only if
+or-pattern or a [guard](../../Lang/Expressions.md#matches) gives back
+nothing, the second since where its guard fails, a later arm gives the
+value, and a `_` arm gives back its value only if
 its body is written the same as the scrutinee. It does not fire where
 [`trivial_match`](#trivial-matches) does, whose fix is the body. It is
 fixable: the fix replaces the `match` with its scrutinee, which keeps the

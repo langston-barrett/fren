@@ -263,6 +263,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/newtypes.fren",
    "test/cli/fmt/table.fren",
    "test/cli/fmt/contract.fren",
+   "test/cli/fmt/guards.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
    "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
    "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
@@ -580,7 +581,8 @@ partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e :
     | .record _ ty fs => s!"(record {ty.map (·.name)} {fs.toList.map fun (x, e?) => (x.name, e?.map go)})"
     | .update _ r fs => s!"(update {go r} {fs.toList.map fun (x, e?) => (x.name, e?.map go)})"
     | .field _ e x => s!"(field {go e} {x.name})"
-    | .match _ sc arms => s!"(match {go sc} {arms.toList.map fun (p, b) => (Mutate.idText (s.text p.span), go b)})"
+    | .match _ sc arms =>
+      s!"(match {go sc} {arms.toList.map fun (p, g?, b) => (Mutate.idText (s.text p.span), g?.map go, go b)})"
     | .is _ sc p => s!"(is {go sc} {Mutate.idText (s.text p.span)})"
     | .set _ es => s!"(set {list es})"
     | .pair _ a b => s!"(pair {go a} {go b})"

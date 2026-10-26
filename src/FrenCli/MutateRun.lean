@@ -67,18 +67,19 @@ def Todo.key (t : Todo) : String :=
 definedness checks of a constraint are one check, which passes when every
 index in it is in range: an index is named only by its position, which a
 mutant that adds or drops an index changes. So are its completeness
-checks, and its disjointness checks, which a mutant that drops a row
-renumbers. -/
+checks, its disjointness checks and its reachability checks, which a
+mutant that drops a row renumbers. -/
 def keyed (rs : Array CheckResult) : Array (String × CheckResult) := Id.run do
   let key (r : CheckResult) := s!"{repr r.kind}|{r.prop?}|{r.target?}"
   let mut out : Array (String × CheckResult) := #[]
   for r in rs do
     let k := key r
-    unless r.kind == .definedness || r.kind == .completeness || r.kind == .disjointness || r.kind == .precondition do
+    unless r.kind == .definedness || r.kind == .completeness || r.kind == .disjointness || r.kind == .precondition
+        || r.kind == .reachability do
       out := out.push (k, r)
       continue
     match out.findIdx? (·.1 == k) with
-    | none => out := out.push (k, { r with index? := none, site? := none, rows? := none })
+    | none => out := out.push (k, { r with index? := none, site? := none, rows? := none, goal? := none })
     | some i =>
       -- A failure decides, then an inconclusive result.
       let v := match out[i]!.2.verdict, r.verdict with

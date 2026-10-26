@@ -383,7 +383,11 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     let beta (e : Expr) : MetaM Expr := return (← rep e).beta fvs
     -- The indexes, and the questions about tables.
     let indexes := c.indexes.filter (·.2.2.2.1.isNone)
-    let tables := c.indexes.filter (·.2.2.2.1.isSome)
+    -- Each case's reachability questions, which a `let` or `where` name
+    -- gives at each mention, merged (`Core.mergeReach`).
+    let tables ← (c.indexes.filterMap fun (n, place, r, q?, g) => q?.map fun q => ((n, place, r.getPos?), q, g)).mapM
+      fun (k, q, g) => return (k, q, ← beta g)
+    let tables := (Core.mergeReach Lean.mkAnd tables).map fun ((n, place, _), q, g) => (n, place, q, g)
     let named (ps : Array PropInfo) := ps.mapM fun p => return (p.name, ← beta p.body)
     let comp : Core.Comp Expr := {
       path := c.path
@@ -407,9 +411,9 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
       indexes := ← indexes.mapIdxM fun j (n, place, _, _, goal) => do
         let k := (indexes.extract 0 j).filter (·.1 == n) |>.size
         return { prop := n, k, place, goal := ← beta goal }
-      tables := ← tables.mapIdxM fun j (n, place, _, q, goal) => do
+      tables := tables.mapIdx fun j (n, place, q, goal) =>
         let k := (tables.extract 0 j).filter (·.1 == n) |>.size
-        return { site := { prop := n, k, place, goal := ← beta goal }, goal := q.getD .completeness }
+        { site := { prop := n, k, place, goal }, goal := q }
       defs := ← c.defs.filterMapM fun (d, e) => do
         let some i := c.vars.findIdx? (·.name == d) | return none
         let e ← beta e

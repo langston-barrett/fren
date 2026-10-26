@@ -495,16 +495,21 @@ def Pat.directAlternatives : Pat → Array (Nat × Pat)
   | _ => #[]
 
 /-- For the arms `arms`, each pattern's or-free patterns, whether each is
-useful with respect to all those before it, and the alternatives each
-takes. -/
-def usefulness (sigs : Sigs) (ty : PatTy) (arms : Array Pat) : Array (Array (Pat × Bool × Array Nat)) := Id.run do
+useful with respect to those of the arms before it without a guard and
+those of its own arm before it, and the alternatives each takes. The arms
+that have a guard are `guarded`: one may not be taken where its pattern
+matches, so it hides nothing from the arms after it. -/
+def usefulness (sigs : Sigs) (ty : PatTy) (arms : Array Pat) (guarded : Array Bool := #[]) :
+    Array (Array (Pat × Bool × Array Nat)) := Id.run do
   let mut rows : Array (List Pat) := #[]
   let mut out := #[]
-  for arm in arms do
+  for arm in arms, i in [0:arms.size] do
     let mut here := #[]
+    let mut own := rows
     for (e, ids) in (arm.expand).1 do
-      here := here.push (e, useful sigs [ty] rows [e], ids)
-      rows := rows.push [e]
+      here := here.push (e, useful sigs [ty] own [e], ids)
+      own := own.push [e]
+    unless guarded[i]?.getD false do rows := own
     out := out.push here
   return out
 
@@ -513,22 +518,60 @@ def usefulness (sigs : Sigs) (ty : PatTy) (arms : Array Pat) : Array (Array (Pat
 def uselessAlternatives (p : Pat) (es : Array (Pat × Bool × Array Nat)) : Array Nat :=
   (Array.range (p.alternatives.size)).filter fun j => !es.any fun (_, u, ids) => u && ids.contains j
 
-/-- Checks the arms of a `match` on a value of `ty`, each its pattern,
-explaining the first problem: at an arm and, for an alternative, its number
-in preorder (`Pat.alternatives`), or at the `match`. -/
-def checkMatch (sigs : Sigs) (ty : PatTy) (arms : Array Pat) : Except (Option (Nat × Option Nat) × Msg) Unit := do
+/-- Whether `p` is a flat pattern of an enumeration: `_`, a binder, or a
+variant whose payload's patterns are `_` or binders. -/
+def Pat.flatEnum : Pat → Bool
+  | .wild _ => true
+  | .ctor _ args => args.all (· matches .wild _)
+  | _ => false
+
+/-- Whether `p` names the variant `i`. -/
+def Pat.names (i : Nat) : Pat → Bool
+  | .ctor j _ => j == i
+  | _ => false
+
+/-- Whether the arms of a `match` on an enumeration of `nCtors ty` variants,
+each with whether it has a guard, are exhaustive without the arms with guards,
+where every pattern is flat (`Pat.flatEnum`): an arm without a guard
+matches every value, or each variant is named by one; `none` otherwise.
+It is what the usefulness of `_` after them comes to there
+(`check::flat_completeness_asked`). -/
+def flatUnguardedExhaustive? (nCtors : Name → Nat) (ty : PatTy) (arms : Array (Pat × Bool)) : Option Bool :=
+  match ty with
+  | .enum e =>
+    if !arms.all (·.1.flatEnum) then none else
+    let unguarded := (arms.filter (!·.2)).map (·.1)
+    some (unguarded.any (· matches .wild _) || (List.range (nCtors e)).all fun i => unguarded.any (Pat.names i))
+  | _ => none
+
+/-- Checks the arms of a `match` on a value of `ty`, each its pattern, of
+which those that have a guard are `guarded`, explaining the first problem:
+at an arm and, for an alternative, its number in preorder
+(`Pat.alternatives`), or at the `match`. Gives whether the arms without a
+guard are exhaustive, without which the checks ask whether some arm is
+taken (`check::completeness_asked`). -/
+def checkMatch (sigs : Sigs) (ty : PatTy) (arms : Array Pat) (guarded : Array Bool := #[]) :
+    Except (Option (Nat × Option Nat) × Msg) Bool := do
   if let some i := arms.findIdx? (·.cases > maxCases) then throw (some (i, none), tooManyCasesMsg arms[i]!.cases)
-  let us := usefulness sigs ty arms
+  let isGuarded (i : Nat) : Bool := guarded[i]?.getD false
+  let us := usefulness sigs ty arms guarded
   let uselessArms := (Array.range arms.size).filter fun i => !us[i]!.any (·.2.1)
   let uselessAlts := (Array.range arms.size).flatMap fun i =>
     if uselessArms.contains i then #[] else (uselessAlternatives arms[i]! us[i]!).map (i, ·)
   let rows := us.flatMap (·.map fun (e, _) => [e])
   let ws := missing sigs 64 [ty] rows
-  if matchArmsAccepted (uselessArms.size + uselessAlts.size) ws.isEmpty then return
+  if matchArmsAccepted (uselessArms.size + uselessAlts.size) ws.isEmpty then
+    -- The guards are ignored for exhaustiveness, but not for whether some
+    -- arm is always taken.
+    let unguarded := (us.zipIdx.filter (!isGuarded ·.2)).flatMap (·.1.map fun (e, _) => [e])
+    let paired := arms.mapIdx fun i p => (p, isGuarded i)
+    return (flatUnguardedExhaustive? (sigs · |>.size) ty paired).getD (!useful sigs [ty] unguarded [.wild false])
   -- The first problem, by arm and then by alternative.
   for arm in arms, i in [0:arms.size] do
-    let earlier := (us.extract 0 i).flatMap (·.map (·.1))
-    let wild? := (arms.extract 0 i).findSome? fun | .wild b => some b | _ => none
+    -- Only the arms before it without guards hide what it matches.
+    let before := (Array.range i).filter (!isGuarded ·)
+    let earlier := before.flatMap fun k => us[k]!.map (·.1)
+    let wild? := before.findSome? fun k => match arms[k]! with | .wild b => some b | _ => none
     if uselessArms.contains i then
       let p? := if arm matches .or _ then none else some arm
       throw (some (i, none), unreachableMsg false (unreachableNote sigs ty false p? earlier wild?))

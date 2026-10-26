@@ -25,7 +25,7 @@ inductive Run where
 /-- The checks that testing cannot decide (`check::by_testing`). -/
 def CheckKind.untestable (kind : CheckKind) : Bool :=
   kind == .vacuity || kind == .redundancy || kind == .definedness || kind == .completeness || kind == .disjointness
-    || kind == .precondition
+    || kind == .precondition || kind == .reachability
 
 /-- How a check of kind `kind` is run, given whether its evidence is
 testing (`check::by_testing`). Vacuity and redundancy ask whether
@@ -71,7 +71,8 @@ def Tested.covers (t : Tested) (r : CheckResult) : Bool :=
   | .realizable, _ => t.realizable
   | .redundancy, _ => t.redundancy
   | .expect, some n | .cover, some n | .vacuity, some n => t.props.contains n
-  | .definedness, some n | .completeness, some n | .disjointness, some n | .precondition, some n =>
+  | .definedness, some n | .completeness, some n | .disjointness, some n | .precondition, some n
+  | .reachability, some n =>
     t.props.contains n || t.insts.contains n
   | .inst, some n => t.insts.contains n
   | .determinism, some n => t.dets.contains n

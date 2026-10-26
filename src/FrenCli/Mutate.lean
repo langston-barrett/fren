@@ -209,7 +209,7 @@ def exprChildren : Expr → Array Expr
   | .not _ e | .neg _ e | .field _ e _ => #[e]
   | .app _ _ as | .set _ as | .seq _ as => as
   | .record _ _ fs => fs.filterMap (·.2)
-  | .match _ sc arms => #[sc] ++ arms.map (·.2)
+  | .match _ sc arms => #[sc] ++ armParts arms
   | .is _ sc _ => #[sc]
   | .table _ rows => tableParts rows
   | .method _ r _ as => #[r] ++ as
@@ -558,7 +558,7 @@ where
     | .app _ _ as | .set _ as | .seq _ as | .chain _ as _ => as.map (edits s ·)
     | .record _ _ fs => fs.filterMap fun (_, e?) => e?.map (edits s ·)
     | .update _ r fs => #[edits s r] ++ fs.filterMap fun (_, e?) => e?.map (edits s ·)
-    | .match _ sc arms => #[edits s sc] ++ arms.map fun (_, b) => edits s b
+    | .match _ sc arms => #[edits s sc] ++ (armParts arms).map (edits s ·)
     | .table _ rows => (tableParts rows).map (edits s ·)
     | .is _ sc _ => #[edits s sc]
     -- The body once, not each instance.

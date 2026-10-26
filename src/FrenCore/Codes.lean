@@ -538,6 +538,26 @@ fn pred(n: Int): Int := n - 1
 
 In Lean, Lean's own parser reports this, as a syntax error.
 "# },
+  { code := "F0140", explanation := r#"A pattern test has a guard.
+
+Erroneous code example:
+
+```fren
+enum Shape { Circle(Int), Empty }
+comp c { in s: Shape in ok? pub out y? ensure r: y? iff s is Shape::Circle(_) if ok? }
+```
+
+A guard, `if C`, belongs to a `match` arm, which it keeps from being taken
+where `C` fails. A pattern test `e is P` has no arms, and a condition
+beside its pattern is a conjunction:
+
+```fren
+enum Shape { Circle(Int), Empty }
+comp c { in s: Shape in ok? pub out y? ensure r: y? iff (s is Shape::Circle(_) and ok?) }
+```
+
+In Lean, Lean's own parser reports this, as a syntax error.
+"# },
   { code := "F0201", explanation := r#"A name that is not in scope.
 
 Erroneous code example:
@@ -2910,6 +2930,97 @@ remove one of them:
 fn rate(n: Int): Int
     assume positive: n > 0
     ensure bounded: rate(n) < n
+```
+"# },
+  { code := "F0625", explanation := r#"A `match` may have no arm that is taken where it is evaluated.
+
+Erroneous code example:
+
+```fren
+comp sign {
+    in x: Int
+    pub out s: Int
+
+    ensure r: s = match x { n if n > 0 => 1, n if n < 0 => -1 }
+}
+```
+
+An arm with a guard is taken only where its guard holds, so a `match`
+whose arms without guards do not cover every value may have no arm that is
+taken. There it has no specified value, so the checks hold whatever it is,
+and the constraint says nothing useful: here, `s` is unconstrained when
+`x` is `0`. The static rules ignore guards, so Fren asks whether some arm's
+pattern and guard follow from the conditions under which the `match` is
+evaluated, and the hypotheses of where it is written. Add an arm for the
+case, or end the `match` with an arm without a guard:
+
+```fren
+comp sign {
+    in x: Int
+    pub out s: Int
+
+    ensure r: s = match x { n if n > 0 => 1, n if n < 0 => -1, _ => 0 }
+}
+```
+"# },
+  { code := "F0626", explanation := r#"An arm of a `match` is never taken.
+
+Erroneous code example:
+
+```fren
+comp size {
+    in x: Int
+    pub out s: Int
+
+    ensure r: s = match x { n if n > 10 => 2, n if n > 20 => 3, _ => 1 }
+}
+```
+
+An arm is taken where its pattern matches, its guard holds and no earlier
+arm is taken. Fren asks whether that can happen, under the conditions
+under which the `match` is evaluated and the hypotheses of where it is
+written, but the constraint that it is in, for each arm that has a guard
+or follows one. Here, every `x`
+above 20 is above 10, so the first arm takes it, and the second arm is
+never taken. Correct the guards, or the order of the arms:
+
+```fren
+comp size {
+    in x: Int
+    pub out s: Int
+
+    ensure r: s = match x { n if n > 20 => 3, n if n > 10 => 2, _ => 1 }
+}
+```
+"# },
+  { code := "F0627", explanation := r#"A row of a table is never the first that holds.
+
+Erroneous code example:
+
+```fren
+comp size {
+    in x: Int
+    pub out s: Int
+
+    ensure r: s = table { x >= 0 => 1, x < 0 => 0, _ => 2 }
+}
+```
+
+A table has the value of its first row that holds, and a row `_` holds
+wherever no earlier one does. Fren asks, for each row, whether it can be
+the first that holds, under the conditions under which the table is
+evaluated and the hypotheses of where it is written, but the constraint
+that it is in. Here, one of the
+first two rows always holds, so the `_` row never gives the table's
+value. Remove the row, or correct the conditions before it:
+
+```fren
+comp size {
+    in x: Int
+    pub out s: Int
+
+    ensure r: s = table { x >= 0 => 1, x < 0 => 0 }
+}
 ```
 "# },
   { code := "F0610", args := some ["quickcheck"], explanation := r#"Testing found no admissible behaviour (a warning).

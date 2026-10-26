@@ -1,0 +1,8 @@
+-- A pattern test takes no guard: `e is P if C` is written `e is P and C`.
+set_option fren.lint.unused_variables "allow"
+
+enum Shape { Circle(Int), Empty }
+comp c { in s: Shape in ok? pub out y? ensure r: y? iff s is Shape::Circle(_) if ok? }
+--~^[cli] error: a pattern test has no guard
+--~^^[hosted] error: unexpected
+--@ exit: 2

@@ -203,9 +203,11 @@ lean-smt always sets `ALL`. Its queries are still in the
 [decidable core](Lang/Decidability.md), unless it opts out. A spec uses
 sets if it writes a `Set(…)` or `Rel(…)` type, or a set or relation
 literal such as `{1, 2}`, and sequences if it writes a `Seq(…)` type, a
-sequence literal such as `[x]`, or a [table](Lang/Expressions.md#tables)
+sequence literal such as `[x]`, a [table](Lang/Expressions.md#tables)
 without a `_` row, whose value where no row holds is an index out of range
-of the empty sequence, even if no variable has such a type.
+of the empty sequence, or a [`match`](Lang/Expressions.md#matches) whose
+arms without guards are not exhaustive, likewise where no arm is taken,
+even if no variable has such a type.
 `cli::logic` gives the logic from the check, where `QuantifierFree` is
 `QF_UFDTLIA`, `Quantified` is `UFDTLIA` and `HigherOrder` is `HO_ALL`:
 

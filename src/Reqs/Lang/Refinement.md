@@ -182,7 +182,11 @@ checks, with a counterexample, at the refinement. `refinement::checks` gives
 which checks run on a refinement: those that check the obligation, and the
 [definedness](../Check.md#definedness), [completeness](../Check.md#completeness),
 [disjointness](../Check.md#disjointness) and
-[preconditions](../Check.md#preconditions) of what it reads:
+[preconditions](../Check.md#preconditions) of what it reads. Not
+[reachability](../Check.md#reachability): the bindings may narrow the
+abstract component's inputs, so that an arm or a row of one of its
+`match`es or tables is never taken under them, which says nothing about
+how it is written, and the abstract component's own checks ask it:
 
 ```fren
 use check::Kind

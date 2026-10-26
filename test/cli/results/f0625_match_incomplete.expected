@@ -1,0 +1,14 @@
+error[F0625]: a `match` in `sign::r` may have no arm that is taken
+ --> test/cli/results/f0625_match_incomplete.fren:6:19
+  |
+6 |     ensure r: s = match x { n if n > 0 => 1, n if n < 0 => -1 }
+  |                   ^^^^^ may have no arm that is taken
+  |
+  = counterexample: x = 0, s = 0
+  = note: where no arm is taken, the `match` is an unknown value, so the constraint says nothing useful there
+  = help: add an arm for this case, or end the `match` with `_ => e`
+
+fren: 4 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0625`.
+exit=1

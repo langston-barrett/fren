@@ -1,0 +1,8 @@
+-- A row of a table that is never the first that holds: one of the rows
+-- before `_` always holds.
+comp size {
+    in x: Int
+    pub out s: Int
+
+    ensure r: s = table { x >= 0 => 1, x < 0 => 0, _ => 2 }
+}

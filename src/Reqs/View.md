@@ -142,10 +142,11 @@ Each check yields one result for each thing it checks:
 | Redundancy | assumption and guarantee |
 | Determinism | `det out` |
 | Definedness | index |
-| Completeness | table without a `_` row |
+| Completeness | table without a `_` row, and `match` whose arms without guards are not exhaustive |
 | Disjointness | two rows of a table, other than `_` |
 | Preconditions | application and precondition of the applied function |
 | Postconditions | postcondition of a defined function |
+| Reachability | arm of a `match` that has a guard or follows one, and row of a table but its only row `_` |
 
 A passing result is silent, except that a passing cover goal shows its
 witness (see below). A failing result is an error, except that a
@@ -169,6 +170,9 @@ failure is reported at:
 | Postcondition does not hold | the postcondition's name | a counterexample: the function's parameters |
 | Postconditions cannot all hold | the function's name | the arguments, a note at each conflicting postcondition |
 | Contradictory preconditions | the function's name | the contradictory preconditions |
+| `match` may have no arm that is taken | the `match`'s `match` | a counterexample: the public variables, for which no arm is taken |
+| Arm never taken | the arm's pattern | the arm, by its number from 1 |
+| Row never the first that holds | the row's condition, or its `_` | the row, by its number from 1 |
 
 A passing [cover goal](Check.md#cover-goals) is reported with its
 witness, the behaviour in which it holds, as a note at the goal's name:

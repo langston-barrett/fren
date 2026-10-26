@@ -24,6 +24,7 @@ and `at_most_one?`, which hold when exactly one, or at most one, of their
 [Expressions](Lang/Expressions.md#chained-comparisons).
 
 **Complete.** Of a table: some row's condition holds wherever the table is
+evaluated; of a `match` with guards, some arm is taken wherever it is
 evaluated. See [Checks](Check.md#completeness).
 
 **Component.** A part of a system, described by its inputs, outputs and
@@ -67,7 +68,7 @@ constant, possibly negated or in parentheses, whose value is not `0`. See
 **Environment.** Whatever chooses a component's inputs.
 
 **Exhaustive.** Of a `match`: every value of its scrutinee's type matches
-the pattern of some arm. See [Expressions](Lang/Expressions.md#matches).
+the pattern of some arm, guards ignored. See [Expressions](Lang/Expressions.md#matches).
 
 **Expectation.** A claim, declared with `expect`, that follows from a
 component's assumptions and guarantees, and that the checks confirm.
@@ -83,6 +84,12 @@ declared with `expect` outside any component, that the checks confirm. See
 
 **Guarantee.** A constraint on what the system must do, declared with
 `ensure`.
+
+**Guard.** A condition, `if C`, after the pattern of a `match` arm: the
+arm is taken only where it holds. See
+[Expressions](Lang/Expressions.md#matches). Also, of an operand, the
+conditions under which it is evaluated. See
+[Expressions](Lang/Expressions.md#sequences).
 
 **Implementation.** A Lean proof that Lean code meets a component, declared
 with `impl`. See [Implementations](Impl.md).
@@ -121,7 +128,8 @@ such as an unused import, whose level (`allow`, `warn`, `deny` or
 `forbid`) can be set. See [Lints](Lint.md).
 
 **Match.** An expression that has the value of the body of the first of its
-arms whose pattern matches its scrutinee. See
+arms whose pattern matches its scrutinee and whose guard, if it has one,
+holds. See
 [Expressions](Lang/Expressions.md#matches).
 
 **Member.** A declaration inside a component: an input, output, constraint
@@ -168,8 +176,10 @@ bounds, such as `0..=9`, `0..10`, `1..` and `..=-1`. See
 [Patterns](Lang/Patterns.md#kinds-of-pattern).
 
 **Reachable.** Of an arm of a `match`, or an alternative of an
-or-pattern: matching some value that no arm or alternative before it
-matches. See [Expressions](Lang/Expressions.md#matches).
+or-pattern: matching some value that no arm without a guard, or
+alternative, before it matches. See [Expressions](Lang/Expressions.md#matches).
+Of an arm with a guard, or after one, or of a row of a table: taken
+somewhere it is evaluated. See [Checks](Check.md#reachability).
 
 **Realizable.** Of a component: some system can meet its guarantees for
 every admissible input. See [Checks](Check.md#realizability).
@@ -198,7 +208,8 @@ declaration's scope the name means the declaration. It is written with
 **System.** Whatever chooses a component's outputs.
 
 **Table.** An expression `table { C => e, ... }` that has the value of its
-first row whose condition holds. See [Expressions](Lang/Expressions.md#tables).
+first row whose condition holds: a `match` with guards and nothing to match
+on. See [Expressions](Lang/Expressions.md#tables).
 
 **Trigger.** The condition under which a `when` or `unless` constraint
 applies. See [Components](Lang/Components.md#triggers).

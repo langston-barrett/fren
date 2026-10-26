@@ -213,9 +213,24 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
     unless (sc.of .wrap).isEmpty do kinds := kinds ++ #[9, 9]
     match ← pick kinds with
     | 1 =>
-      -- A `match` on a `Bool`, with literal patterns.
+      -- A `match` on a `Bool`, with literal patterns, sometimes with a
+      -- guard on `true` that falls through to its arm without one, or
+      -- with only guarded arms, which the completeness check asks about.
       if depth > 0 && (← chance 15) then
-        return s!"(match {← pick (sc.of .bool)} \{ true => {← genBool sc (depth - 1)}, false => {← genBool sc (depth - 1)} })"
+        let b ← pick (sc.of .bool)
+        if ← chance 40 then
+          let g ← genBool sc (depth - 1)
+          if ← chance 50 then
+            return s!"(match {b} \{ true if {g} => {← genBool sc (depth - 1)}, true => {← genBool sc (depth - 1)}, false => {← genBool sc (depth - 1)} })"
+          return s!"(match {b} \{ true if {g} => {← genBool sc (depth - 1)}, false if {← genBool sc (depth - 1)} => {← genBool sc (depth - 1)}, _ => {← genBool sc (depth - 1)} })"
+        return s!"(match {b} \{ true => {← genBool sc (depth - 1)}, false => {← genBool sc (depth - 1)} })"
+      -- A table, whose rows are guarded arms, sometimes without `_`.
+      if depth > 0 && (← chance 10) then
+        let rows := #[s!"{← genBool sc (depth - 1)} => {← genBool sc (depth - 1)}",
+          s!"{← genBool sc (depth - 1)} => {← genBool sc (depth - 1)}"]
+        let wild ← if ← chance 50 then pure #[s!"_ => {← genBool sc (depth - 1)}"] else pure #[]
+        let rows := rows ++ wild
+        return s!"table \{ {", ".intercalate rows.toList} }"
       pick (sc.of .bool)
     | 2 =>
       -- A pattern test of a literal or a range, or a `match` on an `Int`.
@@ -522,12 +537,25 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
   let constraintsWithTrig := (c.constraints.filter fun p => p.kind == .ensure || p.kind == .expect).filterMap fun p =>
     p.e.trigger?.map (p, ·)
   -- Definedness, of each index by its position, and the completeness and
-  -- disjointness of each table, by where it is reported and the earlier
-  -- row (`tableKey`): in every model of `ms`, its goal holds.
-  let defined (o : Oracle) (p : Name) (e : Ex) (ms : Array (Interp × Array Env)) : Oracle :=
-    let always (g : Ex) := pass (ms.all fun (I, ms) => ms.all (holds I · { label := p, pfx := .anonymous, e := g }))
-    let o := e.indexGoals.foldl (init := o) fun o (pos, g) => put o .definedness (some (.num p pos)) (always g)
-    e.tableGoals.foldl (init := o) fun o (pos, q, g) => put o q.kind (some (tableKey p pos q.rows?)) (always g)
+  -- disjointness of each table and `match`, by where it is reported and the
+  -- earlier row (`tableKey`): in every model of `ms`, its goal holds. The
+  -- reachability of an arm or a row: in some model of `rms`, the models
+  -- without the constraint itself (`Comp.reachHyps`), its goal fails.
+  let defined (o : Oracle) (p : Name) (e : Ex) (ms : Array (Interp × Array Env))
+      (rms : Array (Interp × Array Env) := ms) : Oracle :=
+    let always (ms : Array (Interp × Array Env)) (g : Ex) :=
+      ms.all fun (I, ms) => ms.all (holds I · { label := p, pfx := .anonymous, e := g })
+    let o := e.indexGoals.foldl (init := o) fun o (pos, g) => put o .definedness (some (.num p pos)) (pass (always ms g))
+    let o := e.tableGoals.foldl (init := o) fun o (pos, q, g) =>
+      if q.kind == .reachability then o else put o q.kind (some (tableKey p pos q.rows?)) (pass (always ms g))
+    -- A case is reachable where some mention of a `let` or `where` name
+    -- reaches it (`Fren.Core.mergeReach`): one verdict for all its goals.
+    let reach := e.tableGoals.filter (·.2.1.kind == .reachability)
+    let keys := reach.foldl (init := (#[] : Array (Nat × Fren.Core.TableGoal))) fun ks (pos, q, _) =>
+      if ks.contains (pos, q) then ks else ks.push (pos, q)
+    keys.foldl (init := o) fun o (pos, q) =>
+      let gs := reach.filter (fun (p', q', _) => p' == pos && q' == q)
+      put o .reachability (some (tableKey p pos q.rows?)) (pass (gs.any fun (_, _, g) => !always rms g))
   if c.isGlobal then
     let MG := Is.map fun I => (I, models sp size I order (sp.insts c))
     for e in es do out := put out .expect (some e.name) (pass (MG.all fun (I, ms) => ms.all (holds I · (atom e))))
@@ -561,7 +589,10 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
   for a in as, k in [0:as.size] do
     let others := (A.extract 0 k) ++ A.extract (k + 1)
     out := defined out a.name a.e (Is.map fun I => (I, models sp size I ownIns others))
-  for p in rs ++ es ++ gs do out := defined out p.name p.e MF
+  for p in es ++ gs do out := defined out p.name p.e MF
+  for p in rs do
+    let others := A ++ Iw ++ R.filter (·.label != p.name)
+    out := defined out p.name p.e MF (Is.map fun I => (I, models sp size I order others))
   for e in es do
     out := put out .expect (some e.name) (pass (MF.all fun (I, ms) => ms.all (holds I · (atom e))))
   -- A cover goal: some behaviour satisfies it (`check::cover_goal`).
@@ -713,7 +744,7 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
     -- A definedness result, by its index's position, and a table's, by
     -- where it is reported and its rows, as brute force keys them.
     let keyOf (r : CheckResult) :=
-      if r.kind == .completeness || r.kind == .disjointness then
+      if r.kind == .completeness || r.kind == .disjointness || r.kind == .reachability then
         let pos? := r.prop?.bind fun p => (c.tables.filter (·.1 == p))[r.site?.getD 0]?.map (·.2.2.1.start)
         (r.kind, r.prop?.map fun p => tableKey p (pos?.getD 0) r.rows?, r.target?)
       else if r.kind != .definedness then keyOf r else

@@ -358,7 +358,9 @@ from firing, since a pattern test binds none. The alternatives are written
 as the patterns write them, so a variant brought into scope by `use`
 stays unqualified, and `x` and the result are in parentheses where [fixes
 need them](../Lint.md#parentheses-in-fixes). The bodies are literals,
-which guard nothing, and `x` is evaluated as before. A `match` whose arms
+which guard nothing, and `x` is evaluated as before. It does not fire on
+a `match` with a [guard](../Lang/Expressions.md#matches), which a
+membership or a pattern test has no place for. A `match` whose arms
 are all `true`, or all `false`, is left to
 [`match_same_arms`](Pedantic/Matches.md#arms).
 `lint::match_like_membership` states when it fires, when its fix is

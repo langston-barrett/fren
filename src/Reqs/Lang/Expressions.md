@@ -29,7 +29,7 @@ atom  := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | "(" expr 
        | "{" [expr ("," expr)* [","]] "}"
        | "{" expr "with" field-init ("," field-init)* [","] "}"
 field-init := IDENT [":=" expr]
-arm   := pattern "=>" expr
+arm   := pattern ["if" iff] "=>" expr
 definition := DECL [":" type] ":=" iff
 row   := ["|"] (iff | "_") "=>" iff
 ```
@@ -215,7 +215,7 @@ mentions is decided from its parts, as `lang::mentions` states:
   mention: its value is fixed by theirs.
 - Every other expression mentions what its parts mention: an operator,
   `when` and `unless`, a `let`, a quantifier (its body), a conditional, a
-  `match` (its scrutinee and the bodies of its arms), a [table](#tables) (its rows' conditions and
+  `match` (its scrutinee, and the guards and bodies of its arms), a [table](#tables) (its rows' conditions and
   values), a [pattern
   test](#pattern-tests) (its scrutinee), a [cardinality
   operator](#cardinality) (its arguments), indexing `q[i]`, a field read
@@ -904,11 +904,30 @@ match n {
 }
 ```
 
-Within its arm's body, each binder of the arm's pattern, at any depth,
+An arm may have a *guard*, `if C` after its pattern, where `C` is a
+`Bool`. The `match` then has the value of the body of the first arm whose
+pattern matches the scrutinee and whose guard holds: an arm whose guard is
+false falls through to the arms after it, as if its pattern had not
+matched. An arm without a guard is *taken* wherever its pattern matches and
+no earlier arm is taken, and an arm with one where its guard holds too. The
+guard follows the whole pattern, so in `Gt | Ne if bound = -1 => Found`, it
+guards both alternatives:
+
+```text
+match op {
+    Ge if bound = 0 => Found,
+    Gt | Ne if bound = -1 => Found,
+    Eq if bound = -1 => Absent,
+    Eq if bound = 0 => AtStart,
+    _ => Other,
+}
+```
+
+Within its arm's guard and body, each binder of the arm's pattern, at any depth,
 names the value it matches: the scrutinee, or a value of a payload. The
 binders of a pattern have distinct names, and follow the [Boolean
 names](Types.md#boolean-names) rule for the types of their values. A binder
-is not a variable. Within its arm's body, it may shadow a variable, a
+is not a variable. Within its arm's guard and body, it may shadow a variable, a
 constant or another name in scope, written with `!`, as in
 `Shape::Circle(r!)` (see [Shadowing](Components.md#shadowing)); a mention
 of it there is not a mention of what it shadows. Mentioning it counts as
@@ -922,7 +941,11 @@ in an argument of `f`, which is an error.
 The bodies of all arms have the same type, or are `Nat`s and `Int`s, and
 the `match` has that type, or `Int` if they are mixed. As in a binding, a
 body cannot be a top-level `when`, `unless`, `let` or
-[quantifier](Quantifiers.md), which would run on into the next arm.
+[quantifier](Quantifiers.md), which would run on into the next arm, and
+neither can a guard, which would run on into its arm's `=>`: write those
+in parentheses. A guard is a `Bool` (`F0304`), as a table's row's
+condition is, and is checked as one, without an expected type from the
+arms.
 
 The bodies are checked in order, each against the type of the arms
 before it, as both front ends do. An arm of another type is reported at
@@ -953,23 +976,28 @@ pub comp arm_type {
 A `match` is *exhaustive*, and each of its arms and alternatives is
 *reachable*: every value of the scrutinee's type matches some arm's pattern
 (`F0317`), and each arm, and each alternative of its or-patterns, matches
-some value that no arm before it matches (`F0318`). Both are decided by the
+some value that no arm before it without a guard matches (`F0318`). Both are decided by the
 [usefulness](Patterns.md#usefulness) of patterns: an arm is reachable when
-its pattern is useful with respect to those of the arms before it, an
+its pattern is useful with respect to those of the arms before it that
+have no guard, an
 alternative when some case of its arm that takes it is, and the `match` is
-exhaustive when `_` would not be useful after its last arm. So `true` and
+exhaustive when `_` would not be useful after its last arm, each arm with a
+guard counted as if it had none. So `true` and
 `false` together cover a `Bool`, ranges and literals cover an `Int` only
 when they match every integer, as `..=-1`, `0` and `1..` do, and a `Nat`
 when they match every integer that is at least 0, as `0` and `1..` do, and
-a `match` on a `String` needs a last arm `_` or a binder. `lang::match_arms` states
+a `match` on a `String` needs a last arm `_` or a binder. An arm with a
+guard may not be taken where its pattern matches, so it hides nothing from
+the arms after it, as `Eq if bound = 0` above does not hide `Eq` from the
+next arm. `lang::match_arms` states
 this, from the numbers of arms and alternatives that are not useful, and
 whether the arms are exhaustive:
 
 ```fren
 pub comp match_arms {
-    in n_useless_arms: Nat           -- arms not useful with respect to the arms before them
+    in n_useless_arms: Nat           -- arms not useful with respect to the arms before them without guards
     in n_useless_alternatives: Nat   -- alternatives of the other arms that no useful case of their arm takes
-    in exhaustive?                   -- `_` is not useful with respect to all the arms
+    in exhaustive?                   -- `_` is not useful with respect to all the arms, guards ignored
     pub det out accepted?
 
     ensure rule: accepted? iff (n_useless_arms = 0 and n_useless_alternatives = 0 and exhaustive?)
@@ -980,6 +1008,62 @@ pub comp match_arms {
     cover accepted: accepted?
     cover useless_rejected: n_useless_arms > 0 and not accepted?
     cover not_exhaustive_rejected: not exhaustive? and not accepted?
+}
+```
+
+The static rules never ask what a guard's value is. Whether an arm with a
+guard, or an arm after one, can be taken, and whether some arm is always
+taken in a `match` that is exhaustive only when its arms with guards are
+counted as if they had none, are [checks](../Check.md#reachability), with
+verdicts, as an index's [definedness](../Check.md#definedness) is. Where
+no arm is taken, a `match` is unspecified, as a [table](#tables) where no
+row holds is: its value is the same unknown value of its type, that of
+`[][0]` of the empty sequence of its type. The [completeness
+check](../Check.md#completeness) reports a `match` where no arm may be
+taken, and the [reachability check](../Check.md#reachability) an arm that
+can never be.
+
+`lang::guarded_match` states what a `match` with guards means, at one
+value of its scrutinee: from what each arm does there, in order, and the
+value of each arm's body there. An arm's pattern may not match
+(`NoMatch`); it may match, with a guard that fails (`GuardFails`); or it
+may match, without a guard or with one that holds (`Taken`). The arm
+*taken* is the first that is `Taken`, and the `match` has its body's
+value. An arm whose guard fails is passed over as one whose pattern does
+not match is, so the arms after it are tried. Where no arm is taken, the
+guarantees say nothing of the value: it is unspecified. A table is the
+same, with every pattern `_`, which matches: a row is `Taken` where its
+condition holds, and `GuardFails` where it fails, and a `_` row is always
+`Taken`. The position of the arm taken is that of the first `Taken`,
+`index_of` a sequence of one `Taken`, which is outside the decidable core,
+and `-1` where there is none. `k` stands for any position, so
+`none_before` holds of every arm before the one taken:
+
+```fren
+pub enum ArmAt { NoMatch, GuardFails, Taken }
+
+set_option fren.lint.undecidable "allow" in
+pub comp guarded_match {
+    use self::ArmAt::{GuardFails, NoMatch, Taken}
+    in arms: Seq(ArmAt)      -- what each arm does at the scrutinee's value, in order
+    in bodies: Seq(Int)      -- each arm's body's value there
+    in k: Int                -- any position, for `none_before`
+    pub out first: Int := arms.index_of([Taken], 0)  -- the position of the arm taken, `-1` if none is
+    pub out value: Int       -- the `match`'s value
+
+    assume aligned: bodies.len = arms.len
+
+    ensure valued: when first >= 0, value = bodies[first]
+
+    expect in_range: -1 <= first < arms.len
+    expect first_taken: when first >= 0, arms[first] = Taken
+    expect none_before: when 0 <= k < arms.len and (first = -1 or k < first), arms[k] != Taken
+
+    -- An arm whose guard fails is passed over, as one that does not match.
+    expect falls_through: when arms != [] and arms[0] = GuardFails, first != 0
+    expect no_match: when arms != [] and arms[0] = NoMatch, first != 0
+    -- An arm that is taken, and none before it, is the first.
+    expect some_taken: when 0 <= k < arms.len and arms[k] = Taken, 0 <= first <= k
 }
 ```
 
@@ -1003,7 +1087,8 @@ body in which a name could be mentioned. To read a payload, write a
 or-patterns is reachable, as in a `match` (`F0318`): so `k is -5..=-1`, on
 a `Nat`, is an error, as an arm with that pattern would be. A pattern that
 matches every value, such as `_`, is allowed, though the test is then
-always `true`.
+always `true`. A pattern test takes no guard: `e is P if C` is an error
+(`F0140`), and is written `e is P and C`.
 
 `is` is a comparison: it binds as `=` does, below `+` and above `not`, and
 is not associative. So `not s is Shape::Circle(_)` means `not (s is
@@ -1064,7 +1149,14 @@ The rows are separated by commas, as the arms of a `match` are, and each
 may start with `|`, so that they line up one per line. A table is an
 atom, so it can be an operand without parentheses.
 
-Each row's condition is a `Bool`, and the values of all rows have the
+A table is a [`match`](#matches) with guards and nothing to match on: each
+row `C => e` is an arm `_ if C => e`, and a row `_ => e` the arm `_ => e`.
+So the table above means what a `match` would whose arms were `_ if not
+ran? => 2`, `_ if worst = Severity::Error => 1`, `_ if worst =
+Severity::Warning => 3` and `_ => 0`, on any scrutinee, and its rules, its
+value and its checks are that `match`'s, but for what follows.
+
+Each row's condition is a `Bool`, as a guard is, and the values of all rows have the
 same type, which is the type of the table, as the bodies of a `match`'s
 arms do, or are `Nat`s and `Int`s, which make an `Int` (see [Natural
 numbers](#natural-numbers)). The values are [checked](Types.md#checking-and-synthesis)
@@ -1072,21 +1164,29 @@ as the bodies of a `match`'s arms are. As in a `match` arm, neither a
 condition nor a value can be a top-level `when` or `unless`, which would
 run on into the next row. Only the last row can be `_`: a row after it
 could never be reached, which is an error (`F0359`), as an arm after a
-`_` arm is.
+`_` arm is. That is the static rule of a `match`'s arms, which a row
+breaks only there, reported in the words of a table: the arms of rows other than
+`_` have guards, so they hide nothing from the rows after them, and every
+arm's pattern is `_`, so the arms are exhaustive when guards are ignored.
 
-Where no row holds, a table without a `_` row is unspecified, as an
+Where no row holds, a table without a `_` row is unspecified, as a `match`
+where no arm is taken is, and an
 [index out of range](#sequences) is: its value is that of `[][0]` of the
 empty sequence of its type, an unknown value of that type, which the
 checks hold for every interpretation of. It is the same for every such
-table of that type: two incomplete tables of one type coincide where
+table and `match` of that type: two incomplete tables of one type coincide where
 neither has a row that holds, so `table { x > 0 => 1 } = table { x > 0 =>
 2 }` holds wherever `x <= 0`, and an expectation that compares such
 values can pass by that coincidence alone. The constraint then says
 nothing useful there, which is almost always a
-mistake: the [completeness check](../Check.md#completeness) reports a table
-where no row may hold, given its [guard](#sequences). Rows whose
+mistake: the [completeness check](../Check.md#completeness) of the
+`match` reports a table
+where no row may hold, given its [guard](#sequences), and its
+[reachability check](../Check.md#reachability) a row that can never be the
+first that holds. Rows whose
 conditions can hold at once make the order of the rows matter, which is
-easy to misread: the [disjointness check](../Check.md#disjointness) reports
+easy to misread: the [disjointness check](../Check.md#disjointness), which
+only tables have, reports
 two rows that may both hold. A table with a `_` row is always complete,
 and its `_` row overlaps no other.
 
@@ -1144,8 +1244,9 @@ left to right:
 - in a [chained comparison](#chained-comparisons), as in its expansion
   with `and`, an operand is guarded by the comparisons before it: in
   `0 <= i < q.len < q[i]`, `q[i]` is guarded by `0 <= i and i < q.len`;
-- in a `match` arm, the body is guarded by the arm's being the first that
-  matches: no earlier arm's pattern matches, and its own does;
+- in a `match` arm, the guard is guarded by the arm's pattern's matching
+  where no earlier arm is taken, and the body by the arm's being the first
+  that is taken: that and its guard's holding;
 - a definition of a [`let` or `where`](Let.md#meaning) is guarded where its
   name is mentioned, as if written there, and not at all if it is never
   mentioned;
@@ -1153,7 +1254,8 @@ left to right:
   instance by what guards the quantifier, and the instances do not guard
   each other: an index must be in range in every instance where its guard
   holds;
-- in a [table](#tables)'s row, the condition is guarded by no earlier
+- in a [table](#tables)'s row, as in the arm `_ if C => e` that it is,
+  the condition is guarded by no earlier
   row's condition holding, and the value by that and the row's own
   condition: by the row's being the first that holds;
 - guards nest by conjunction.
@@ -1164,25 +1266,35 @@ definedness, never meaning.
 
 `lang::guard` states which operands are guarded, and by what, from the
 operand and whether its *condition* holds. The condition is that of
-`when`, `unless` or the conditional, the left operand of `and` or `or`, or,
-for a `match` arm's body, that the arm is the first whose pattern matches.
-The rows of a [table](#tables) are guarded as `match` arms are, by the
-earlier rows' conditions instead of their patterns.
+`when`, `unless` or the conditional, the left operand of `and` or `or`,
+for a `match` arm's guard, that its pattern matches and no earlier arm is
+taken, and for its body, that the arm is the first that is taken. The rows
+of a [table](#tables) are guarded as `match` arms are, by the earlier
+rows' conditions, which are their guards.
 An operand is evaluated exactly when its guard holds, and an operand that
 is not one of these is evaluated whenever the expression it is in is.
 
 ```fren
 -- The operands evaluated only under a condition.
-pub enum GuardedOperand { WhenBody, UnlessBody, ThenBranch, ElseBranch, AndRight, OrRight, ArmBody }
+pub enum GuardedOperand { WhenBody, UnlessBody, ThenBranch, ElseBranch, AndRight, OrRight, ArmGuard, ArmBody }
 
 pub comp guard {
-    use self::GuardedOperand::{AndRight, ArmBody, ElseBranch, OrRight, ThenBranch, UnlessBody, WhenBody}
+    use self::GuardedOperand::{
+        AndRight,
+        ArmBody,
+        ArmGuard,
+        ElseBranch,
+        OrRight,
+        ThenBranch,
+        UnlessBody,
+        WhenBody,
+    }
     in operand: GuardedOperand
     in holds?                -- its condition holds
     pub det out evaluated?   -- it is evaluated: its guard holds
 
     ensure rule: evaluated? iff match operand {
-        WhenBody | ThenBranch | AndRight | ArmBody => holds?,
+        WhenBody | ThenBranch | AndRight | ArmGuard | ArmBody => holds?,
         UnlessBody | ElseBranch | OrRight => not holds?,
     }
 

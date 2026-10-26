@@ -185,10 +185,10 @@ structure CComp where
   is in, where that is, the index's span, and the formula that it is in
   range (`check::definedness`). -/
   indexes : Array (Name × Fren.Core.IndexPlace × Span × String) := #[]
-  /-- Each question about the rows of a table of its constraints,
-  definitions and bindings: the item it is in, where that is, where it is
-  reported, the question, and the formula that it holds
-  (`check::completeness`, `check::disjointness`). -/
+  /-- Each question about the rows of a table or the arms of a `match` of
+  its constraints, definitions and bindings: the item it is in, where that
+  is, where it is reported, the question, and the formula that it holds
+  (`check::completeness`, `check::disjointness`, `check::reachability`). -/
   tables : Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String) := #[]
   /-- It, or one of its instances, applies a relational operator. -/
   relational : Bool := false
@@ -957,7 +957,7 @@ partial def appliedPaths : Expr → Array (Array Ident)
   | .ite _ c a b => appliedPaths c ++ appliedPaths a ++ appliedPaths b
   | .record _ _ fs => fs.foldl (init := #[]) fun acc (_, e?) => acc ++ (e?.map appliedPaths).getD #[]
   | .update _ r fs => fs.foldl (init := appliedPaths r) fun acc (_, e?) => acc ++ (e?.map appliedPaths).getD #[]
-  | .match _ s arms => arms.foldl (init := appliedPaths s) fun acc (_, body) => acc ++ appliedPaths body
+  | .match _ s arms => (armParts arms).foldl (init := appliedPaths s) fun acc e => acc ++ appliedPaths e
   | .is _ s _ => appliedPaths s
   | _ => #[]
 
@@ -1006,10 +1006,10 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
   | .update _ r fs => parts .construction (r :: fs.toList.map fun (f, e?) => e?.getD (.path f.span #[f]))
   | .match _ s arms =>
     let s' ← shapeOf cx bs s
-    let arms ← arms.toList.mapM fun (p, body) => do
+    let arms ← arms.toList.flatMapM fun (p, g?, body) => do
       let new := (← patternBinders cx p).map fun x =>
         (Name.mkSimple (declaredIdent x).1.name, Fren.Core.MentionShape.node .binder [s'])
-      shapeOf cx (bs ++ new) body
+      (g?.toList ++ [body]).mapM (shapeOf cx (bs ++ new))
     return .node .compound (s' :: arms)
   | .is _ s _ => parts .compound [s]
   | .«let» _ defs body _ =>
@@ -1045,10 +1045,10 @@ partial def mentions (e : Expr) (all : Bool := true) : Array Name :=
   | .app _ _ args => args.foldl (· ++ mentions ·) #[]
   | .record _ _ fs => fs.foldl (init := #[]) fun acc (f, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple f.name]
   | .update _ r fs => fs.foldl (init := mentions r) fun acc (f, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple f.name]
-  | .match _ s arms => arms.foldl (init := mentions s) fun acc (p, body) =>
+  | .match _ s arms => arms.foldl (init := mentions s) fun acc (p, g?, body) =>
     -- In its arm, a binder's name means the binder, not what it shadows.
     let bound := p.names.map fun b => Name.mkSimple (declaredIdent b).1.name
-    acc ++ (mentions body).filter (!bound.contains ·.getRoot)
+    acc ++ ((g?.map mentions).getD #[] ++ mentions body).filter (!bound.contains ·.getRoot)
   | .is _ s _ => mentions s
   | .«let» _ defs body _ =>
     (Fren.Core.clauseMentions (defs.map fun (x, _, _) => Name.mkSimple (declaredIdent x).1.name)
@@ -1143,7 +1143,7 @@ partial def hasConcat (cx : ExprCtx) (e : Expr) : M Bool := do
   | .record _ _ fs => fs.anyM fun (_, e?) => match e? with | some e => hasConcat cx e | none => pure false
   | .update _ r fs =>
     return (← hasConcat cx r) || (← fs.anyM fun (_, e?) => match e? with | some e => hasConcat cx e | none => pure false)
-  | .match _ s arms => return (← hasConcat cx s) || (← arms.anyM (hasConcat cx ·.2))
+  | .match _ s arms => return (← hasConcat cx s) || (← (armParts arms).anyM (hasConcat cx))
   | .is _ s _ => hasConcat cx s
   | .«let» _ defs body _ => return (← defs.anyM (hasConcat cx ·.2.2)) || (← hasConcat cx body)
   | .quant _ _ _ b => hasConcat cx b
@@ -1171,7 +1171,7 @@ def Expr.operands : Expr → Array Expr
   | .method _ r _ args => #[r] ++ args
   | .record _ _ fs => fs.filterMap (·.2)
   | .update _ r fs => #[r] ++ fs.filterMap (·.2)
-  | .match _ s arms => #[s] ++ arms.map (·.2)
+  | .match _ s arms => #[s] ++ armParts arms
   | .quant _ _ _ b => #[b]
   | .is _ s _ => #[s]
   | .«let» _ defs body _ => defs.map (·.2.2) |>.push body
@@ -1227,7 +1227,7 @@ partial def Expr.boolNode (e : Expr) (src : Array Char := #[]) (base : Nat := 0)
     let s := if src.isEmpty then s else e.writtenSpan src
     .mk .atom (toRange s) s #[a.boolNode src base]
   | .is s scrutinee _ => .mk .patternTest (toRange s) s #[scrutinee.boolNode src base]
-  | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode src base] ++ arms.map (·.2.boolNode src base))
+  | .match s scrutinee arms => .mk .atom (toRange s) s (#[scrutinee.boolNode src base] ++ (armParts arms).map (·.boolNode src base))
   | .table s rows => .mk .atom (toRange s) s ((tableParts rows).map (·.boolNode src base))
   | .pair s a b | .index s a b => .mk .atom (toRange s) s #[a.boolNode src base, b.boolNode src base]
   | .chain s es ops => .mk (.chain (ops.map (·.1))) (toRange s) s (es.map (·.boolNode src base))
@@ -1495,6 +1495,9 @@ def relRange? (t : Ty) (m : String) : Option (Array Ty) :=
 
 def andSmt (a b : String) : String := s!"(and {a} {b})"
 
+/-- The SMT-LIB disjunction of `cs`. -/
+def orSmt (cs : Array String) : String := if cs.size == 1 then cs[0]! else s!"(or {" ".intercalate cs.toList})"
+
 /-- The indexes recorded since the last call, which it forgets. -/
 def takeIndexes : M (Array (Span × String)) := do
   let xs := (← get).indexes
@@ -1562,7 +1565,7 @@ partial def indexedIn : Expr → M (Array String)
   | .method _ r _ args => return (← indexedIn r) ++ (← args.foldlM (fun acc a => return acc ++ (← indexedIn a)) #[])
   | .app _ _ args | .set _ args | .seq _ args | .chain _ args _ => args.foldlM (fun acc a => return acc ++ (← indexedIn a)) #[]
   | .record _ _ fs => fs.foldlM (fun acc (_, e?) => return acc ++ (← (e?.map indexedIn).getD (pure #[]))) #[]
-  | .match _ sc arms => return (← indexedIn sc) ++ (← arms.foldlM (fun acc (_, b) => return acc ++ (← indexedIn b)) #[])
+  | .match _ sc arms => return (← indexedIn sc) ++ (← (armParts arms).foldlM (fun acc b => return acc ++ (← indexedIn b)) #[])
   -- As the Lean front end reads it: the record, and the new values.
   | .update _ r fs => do
     fs.foldlM (init := ← indexedIn r) fun acc (_, e?) => return acc ++ (← (e?.map indexedIn).getD (pure #[]))
@@ -1636,18 +1639,43 @@ def notePreconditions (cx : ExprCtx) (span : Span) (path : Name) (args : Array S
 
 /-- Records the questions about the rows of the table at `span`, whose
 rows other than `_` have the SMT-LIB conditions `conds`, written at
-`starts`, whose indexes are in range where `defined` says, for its
-completeness and disjointness checks
-(`check::completeness`, `check::disjointness`): completeness is reported
-at `table`, and the disjointness of two rows at the later one's condition. -/
+`starts`, each row's condition or its `_`, whose indexes are in range where
+`defined` says, for its completeness, disjointness and reachability checks
+(`check::completeness`, `check::disjointness`, `check::reachability`):
+completeness is reported at `table`, the disjointness of two rows at the
+later one's condition, and the reachability of a row at its condition or
+`_`. -/
 def noteTable (cx : ExprCtx) (span : Span) (starts : Array Span) (conds : Array String) (defined : Array (Option String))
     (wild : Bool) : M Unit := do
   unless cx.noteIndexes do return
-  let orF (cs : Array String) := if cs.size == 1 then cs[0]! else s!"(or {" ".intercalate cs.toList})"
-  for (g, f) in Fren.Core.tableGoals orF andSmt (s!"(not {·})") conds defined wild do
+  for (g, f) in Fren.Core.tableGoals orSmt andSmt (s!"(not {·})") "true" conds defined wild do
     let at_ := match g with
-      | .disjointness _ j => starts[j]!
+      | .disjointness _ j | .reachability _ j => starts[j]!
       | _ => { start := span.start, stop := span.start + "table".length }
+    modify fun s => { s with tables := s.tables.push (at_, g, guarded cx.guards f) }
+
+/-- An item's questions, with each case's reachability questions merged
+(`Fren.Core.mergeReach`). -/
+def mergeReachTables (tbl : Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) :
+    Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String) :=
+  (Fren.Core.mergeReach andSmt (tbl.map fun (n, place, sp, g, f) => ((n, place, sp), g, f))).map
+    fun ((n, place, sp), g, f) => (n, place, sp, g, f)
+
+/-- Records the questions about the arms of the `match` at `span`, whose
+patterns are at `pats`, each taken where `taken` says, of which those with
+a guard are `guarded`, for its completeness and reachability checks
+(`check::completeness`, `check::reachability`): completeness, unless its
+arms without guards are exhaustive, is reported at `match`, and the
+reachability of an arm at its pattern. -/
+def noteMatch (cx : ExprCtx) (span : Span) (pats : Array Span) (taken : Array (Option String)) (hasGuard : Array Bool)
+    (unguardedExhaustive : Bool) : M Unit := do
+  unless cx.noteIndexes do return
+  let goals := Fren.Core.splitGoals .match orSmt andSmt (s!"(not {·})") "true" taken hasGuard
+    (Fren.Core.completenessAsked unguardedExhaustive)
+  for (g, f) in goals do
+    let at_ := match g with
+      | .reachability _ j => pats[j]!
+      | _ => { start := span.start, stop := span.start + "match".length }
     modify fun s => { s with tables := s.tables.push (at_, g, guarded cx.guards f) }
 
 /-- Records a `card`, of the receiver `recv` of type `t`: in a comp that
@@ -1686,8 +1714,14 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
     M Unit := do
   let .match span scrutinee arms := e | return
   let src := (← get).src
+  -- An arm with a guard may not be taken where its pattern matches, so
+  -- the lints that move, merge or remove arms, or replace the `match`,
+  -- look only at a `match` without guards, and the arms with guards name
+  -- no variant for the lints of `_` (`Reqs/Lint/Pedantic/Matches#arms`).
+  let guarded := arms.map (·.2.1.isSome)
+  let anyGuard := guarded.any id
   let mut infos : Array Fren.Core.ArmInfo := #[]
-  for (p, body) in arms, pat in pats do
+  for (p, _, body) in arms, pat in pats do
     let alts := if p matches .wild _ then #[] else p.alts.map fun a => Fren.Core.textOf src (toRange a.span)
     let binds := !(← patternBinders cx p).isEmpty
     infos := infos.push { alts, binds, noPayload := pat.noPayload, equatable := Fren.Core.equatable pat alts
@@ -1695,7 +1729,7 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
   let flat := pats.all (·.flat)
   -- `trivial_match` (`lint::trivial_match`).
   if let #[info] := infos then
-    if Fren.Core.trivialMatch infos.size info.binds then
+    if Fren.Core.trivialMatch infos.size info.binds && !anyGuard then
       lintFix .trivialMatch span (Fren.Core.trivialMatchMsg (info.body.inSlot slot (← followedSpan span)))
   -- `needless_match` (`lint::needless_match`).
   let st ← get
@@ -1708,7 +1742,7 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
   let ep := match ty with
     | .enum p => p
     | _ => .anonymous
-  for (p, body) in arms, pat in pats do
+  for (p, _, body) in arms, pat in pats do
     match p, pat with
     | _, .wild false =>
       wildcard := true
@@ -1730,15 +1764,15 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
       unless Fren.Core.givesBack same binders (← args.mapM (srcAt ·.span)) do givenBack := false
     | _, _ => givenBack := false
   let trivial := Fren.Core.trivialMatch infos.size (infos[0]?.any (·.binds))
-  let needless := Fren.Core.needlessMatch givenBack wildcard scrutineeBack trivial
+  let needless := Fren.Core.needlessMatch (givenBack && !anyGuard) wildcard scrutineeBack trivial
   if needless then
     let bare : Fren.Core.BText := { text := scr, prec := scrutinee.boolNode.kind.prec }
     lintFix .needlessMatch span (Fren.Core.needlessMatchMsg (bare.inSlot slot (← followedSpan span)))
-  let bodyRanges := arms.map fun (_, b) => Fren.Core.withParens src (toRange b.span)
+  let bodyRanges := arms.map fun (_, _, b) => Fren.Core.withParens src (toRange b.span)
   let armRanges := arms.zipWith (fun (p, _) (b : Fren.Core.Range) => { start := p.span.start, stop := b.stop }) bodyRanges
-  let groups := if flat then Fren.Core.sameArmGroups infos else #[]
+  let groups := if flat && !anyGuard then Fren.Core.sameArmGroups infos else #[]
   let mut firstSame? : Option Span := none
-  if flat then
+  if flat && !anyGuard then
     let edits := Fren.Core.sameArmsEdits (toRange span) infos armRanges (arms.map (toRange ·.1.span)) bodyRanges slot (← followedSpan span)
     for g in groups do
       let (i, msg) := Fren.Core.sameArmsMsg infos g slot (← followedSpan span)
@@ -1746,23 +1780,26 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
       lintEdits .matchSameArms at_ msg (if firstSame?.isNone then edits else #[])
       if firstSame?.isNone then firstSame? := some at_
   let scr := scrutinee.text src
-  let membership? := Fren.Core.membershipParts? infos scr slot
+  let membership? := if anyGuard then none else Fren.Core.membershipParts? infos scr slot
   if let some (pre, post, test) := membership? then
     let r := Fren.Core.withParens src (toRange scrutinee.span)
     lintEdits .matchLikeMembership span (Fren.Core.membershipMsg (pre ++ scr.text ++ post) test)
       #[({ start := span.start, stop := r.start }, pre), ({ start := r.stop, stop := span.stop }, post)]
   -- `single_match_else` (`lint::single_match_else`).
-  if let some fixed := Fren.Core.singleMatchElseFix? infos scr slot (membership?.isSome || needless || trivial) (← followedSpan span) then
+  let followed ← followedSpan span
+  if let some fixed := (if anyGuard then none else
+      Fren.Core.singleMatchElseFix? infos scr slot (membership?.isSome || needless || trivial) followed) then
     lintFix .singleMatchElse span (Fren.Core.singleMatchElseMsg fixed (Fren.Core.hasComment (← srcAt span)))
   unless flat do return
   let .enum ep := ty | return
   let some d := (← get).dataOf? ep | return
-  let some w := arms.findIdx? (·.1 matches .wild _) | return
+  let some w := (Array.range arms.size).find? fun i => arms[i]!.1 matches .wild _ && !guarded[i]! | return
   let names (p : Fren.Core.Pat) : Array Nat := match p with
     | .ctor k _ => #[k]
     | .or alts => alts.filterMap fun | .ctor k _ => some k | _ => none
     | _ => #[]
-  let covered := ((List.range d.ctors.size).filter fun k => !pats.any (names · |>.contains k)).toArray
+  let unguarded := (pats.zip guarded).filterMap fun (p, g) => if g then none else some p
+  let covered := ((List.range d.ctors.size).filter fun k => !unguarded.any (names · |>.contains k)).toArray
   let siblings := (arms.flatMap (·.1.alts)).filterMap fun | .variant _ segs _ => some (segs.map (Name.mkSimple ·.name)) | _ => none
   let st ← get
   -- The pattern that names each variant that `_` matches, if one resolves.
@@ -1978,7 +2015,7 @@ partial def typeShape : Expr → Fren.Core.TypeShape
   | .bin _ op a b => if op == "union" || op == "inter" || op == "minus" || op == "++" then
       .anyPart [typeShape a, typeShape b] else .other
   | .ite _ _ a b => .anyPart [typeShape a, typeShape b]
-  | .match _ _ arms => .anyPart (arms.toList.map (typeShape ·.2))
+  | .match _ _ arms => .anyPart (arms.toList.map (typeShape ·.2.2))
   | .«let» _ _ body _ => .anyPart [typeShape body]
   | .table _ rows => .anyPart (rows.toList.map (typeShape ·.2.2))
   | _ => .other
@@ -1992,7 +2029,7 @@ right of `in` is checked against a sequence. -/
 partial def seqShaped : Expr → Bool
   | .seq .. => true
   | .bin _ "++" a b | .ite _ _ a b => seqShaped a || seqShaped b
-  | .match _ _ arms => arms.any (seqShaped ·.2)
+  | .match _ _ arms => arms.any (seqShaped ·.2.2)
   | .«let» _ _ body _ => seqShaped body
   | .table _ rows => rows.any (seqShaped ·.2.2)
   | _ => false
@@ -2994,27 +3031,28 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     unless ts matches .enum _ | .bool | .int | .nat | .string do err scrutinee.span (Fren.Core.scrutineeMsg ts.show)
     -- Each arm's pattern, its binders and its test.
     let mut resolved := #[]
-    for (p, _) in arms do resolved := resolved.push (← resolvePattern cx ts s false false p)
+    for (p, _, _) in arms do resolved := resolved.push (← resolvePattern cx ts s false false p)
     let pats := resolved.map (·.1)
-    match Fren.Core.checkMatch (← patSigs) ts.patTy pats with
-    | .ok () => pure ()
-    | .error (some (i, some j), msg) => err arms[i]!.1.alternatives[j]!.span msg
-    | .error (some (i, none), msg) => err arms[i]!.1.span msg
-    | .error (none, msg) => err span msg
+    let guarded := arms.map (·.2.1.isSome)
+    let unguardedExhaustive ← match Fren.Core.checkMatch (← patSigs) ts.patTy pats guarded with
+      | .ok u => pure u
+      | .error (some (i, some j), msg) => err arms[i]!.1.alternatives[j]!.span msg
+      | .error (some (i, none), msg) => err arms[i]!.1.span msg
+      | .error (none, msg) => err span msg
     if cx.noteIndexes then lintMatch cx e ts pats (parent?.bind (Expr.operandSlot (← get).src · e))
-    let tests := resolved.map (·.2.2)
     let mut bodies : Array String := #[]
     let mut ty? : Option Ty := none
     let mut waiting : Array (Nat × ExprCtx × Expr) := #[]
-    -- An arm is evaluated when its pattern matches and no earlier one does.
-    let mut earlier : Array String := #[]
-    -- An arm's body is guarded by its being the first arm that matches
-    -- (`Fren.Core.GuardedOperand.armBody`): no earlier test holds, and its own does.
-    -- That is built directly: its negation is never needed, so `guard` would
-    -- only return it.
-    for (_, body) in arms, (_, bs, test) in resolved do
-      let armGuards := cx.guards ++ earlier.map (s!"(not {·})") ++ test.toArray
-      earlier := earlier ++ test.toArray
+    -- Where each arm is taken, if no earlier one is: its test and its
+    -- guard; `none` for an arm taken wherever it is tried.
+    let mut taken : Array (Option String) := #[]
+    -- An arm's guard is guarded by its pattern's matching where no earlier
+    -- arm is taken (`Fren.Core.GuardedOperand.armGuard`), and its body by
+    -- its being the first arm taken (`Fren.Core.GuardedOperand.armBody`).
+    -- They are built directly: their negations are never needed, so
+    -- `guard` would only return them.
+    for (_, guard?, body) in arms, (_, bs, test) in resolved do
+      let armGuards := cx.guards ++ taken.filterMap (·.map (s!"(not {·})")) ++ test.toArray
       -- Distinct names (`lang::distinct_names`), by the names they declare,
       -- without the `!` of shadowing.
       let declared := bs.map fun b => Name.mkSimple (declaredIdent b.ident).1.name
@@ -3029,13 +3067,21 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         liftMsg x.span (Fren.Core.checkVarName bn (some (b.ty == .bool)))
         lintName .binder bn x.span
         new := new.push { name := bn, smt := b.smt, ty := b.ty, scrutinee := some scrutinee, outer := cx.binders.size }
+      let gcx := { cx with binders := cx.binders ++ new, guards := armGuards }
+      -- The guard, a `Bool`, checked as one (`Reqs/Lang/Expressions#matches`).
+      let g? ← guard?.mapM fun g => do
+        let (x, tg) ← elabExpr { gcx with expected? := none } g
+        liftMsg g.span (Fren.Core.checkType .bool tg (some Fren.Core.armGuardNote))
+        pure x
+      let own := (test.toArray ++ g?.toArray)
+      taken := taken.push (Fren.Core.allOf? andSmt own)
       -- Each body is checked against the whole's type, or another's
       -- (`lang::checked`): one that does not synthesize its own, before any
       -- other has given a type, waits for a later one that does.
-      let bcx := { cx with binders := cx.binders ++ new, guards := armGuards }
+      let bcx := { gcx with guards := armGuards ++ g?.toArray }
       -- Another arm's `Nat` is widened: a `Nat` is expected only of the whole.
       let shared? := expected?.orElse fun _ => ty?.map (·.widen)
-      if shared?.isNone && !synthesizes body && arms.any (synthesizes ·.2) then
+      if shared?.isNone && !synthesizes body && arms.any (synthesizes ·.2.2) then
         waiting := waiting.push (bodies.size, bcx, body)
         bodies := bodies.push ""
         continue
@@ -3046,12 +3092,21 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let (x, t) ← elabExpr { bcx with expected? := ty?.map (·.widen) } body
       if ty?.isSome then ty? := some (← liftMsg body.span (Fren.Core.checkArm ty? t))
       bodies := bodies.set! k x
-    -- The first arm that matches; the last arm matches whatever is left.
-    let mut out := bodies.back!
-    for i in (List.range (bodies.size - 1)).reverse do
-      if let some t := tests[i]! then
+    let ty := ty?.get!
+    noteMatch cx span (arms.map (·.1.span)) taken guarded unguardedExhaustive
+    -- The first arm that is taken. Where the arms without guards are
+    -- exhaustive, the last arm has none, and takes whatever is left;
+    -- otherwise, where none is taken, the `match` is unspecified, as a
+    -- table where no row holds is.
+    let complete := !Fren.Core.completenessAsked unguardedExhaustive
+    let mut out := if complete then bodies.back! else unspecified ty
+    if !complete then modify fun s => { s with usesSeqs := true }
+    for i in (List.range (if complete then bodies.size - 1 else bodies.size)).reverse do
+      if let some t := taken[i]! then
         out := s!"(ite {t} {bodies[i]!} {out})"
-    return (out, ty?.get!)
+      else
+        out := bodies[i]!
+    return (out, ty)
   | .table span rows =>
     -- Only the last row may be `_` (`Reqs/Lang/Expressions#tables`).
     if let some k := Fren.Core.rowAfterWild? (rows.map (·.2.1.isNone)) then err rows[k]!.1 Fren.Core.rowAfterWildMsg
@@ -3100,7 +3155,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         liftMsg v.span (Fren.Core.checkRowType t0 t)
       ty? := ty?.map (·.join t)
       values := values.set! k x
-    noteTable cx span (rows.filterMap (·.2.1.map (·.span))) conds defined wild
+    -- Each row's condition, or its `_`, which is last.
+    noteTable cx span (rows.map fun (st, c?, _) => (c?.map (·.span)).getD st) conds defined wild
     let ty := ty?.get!
     -- The first row whose condition holds; with no `_` row, where none
     -- does, the table is unspecified, as an index out of range is.
@@ -3482,7 +3538,7 @@ def elabCompBindings (vars : Array CVar) (instNames : Array Name) (pending : Arr
       | continue
     insts := insts.push i
     indexes := indexes ++ idx
-    tables := tables ++ tbl
+    tables := tables ++ mergeReachTables tbl
   return (insts, indexes, tables)
 
 /-- A comp's definitions, each after those it mentions, with their indexes
@@ -3508,7 +3564,7 @@ def elabCompDefinitions (name : Ident) (vars : Array CVar) (instNames : Array Na
       | continue
     defs := defs.push (v.name, smt)
     indexes := indexes ++ idx
-    tables := tables ++ tbl
+    tables := tables ++ mergeReachTables tbl
   return (defs, indexes, tables)
 
 /-- A comp's assumptions, requirements, expectations and cover goals, with
@@ -3538,7 +3594,7 @@ def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames 
       | continue
     props := props.push p
     indexes := indexes ++ idx
-    tables := tables ++ tbl
+    tables := tables ++ mergeReachTables tbl
   return (props, indexes, tables)
 
 /-- `duplicate_constraint` (`lint::duplicate_constraint`), of a comp's

@@ -70,12 +70,14 @@ pub comp identity_op {
     pub det out rewrite: Rewrite  -- `Flip` is `x - y` for `x + -y`, and `x + y` for `x - -y`
 
     ensure rule: rewrite = match op {
-        Add => if right = Zero then KeepLeft else if left = Zero then KeepRight
-            else if right = Negation then Flip else Unchanged,
-        Sub => if right = Zero then KeepLeft else if right = Negation then Flip else Unchanged,
-        Mul => if right = One then KeepLeft else if left = One then KeepRight else Unchanged,
-        Concat | Union => if right = Empty then KeepLeft else if left = Empty then KeepRight else Unchanged,
-        Minus => if right = Empty then KeepLeft else Unchanged,
+        Add | Sub if right = Zero => KeepLeft,
+        Add if left = Zero => KeepRight,
+        Add | Sub if right = Negation => Flip,
+        Mul if right = One => KeepLeft,
+        Mul if left = One => KeepRight,
+        Concat | Union | Minus if right = Empty => KeepLeft,
+        Concat | Union if left = Empty => KeepRight,
+        _ => Unchanged,
     }
 
     expect flips_only_sums: when rewrite = Flip, op in {Add, Sub}

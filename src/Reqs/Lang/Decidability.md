@@ -44,8 +44,10 @@ A [table](Expressions.md#tables) is in the core when its rows' conditions
 and values are: it is a chain of conditionals, and where no row of one
 without a `_` row holds, its value is an index of the empty sequence,
 `[][0]`, which is in the core (see [Sequences](#sequences)). Its
-completeness and disjointness checks ask quantifier-free questions of its
-conditions.
+completeness, disjointness and reachability checks ask quantifier-free
+questions of its conditions. So is a [`match`](Expressions.md#matches)
+with guards, when its scrutinee, guards and bodies are, and its checks
+likewise.
 
 ## Integers
 

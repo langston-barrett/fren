@@ -303,9 +303,9 @@ scoped syntax (name := uptoPattern) "..=" noWs fren_bound : fren_pattern
 after a leading `|`. -/
 syntax fren_top_pattern := ("| ")? sepBy1(fren_pattern, " | ")
 
-/-- `pattern => e`; like a binding's, the expression cannot be a bare
-`when`/`unless`. -/
-syntax fren_arm := fren_top_pattern " => " fren_expr:20
+/-- `pattern => e`, or `pattern if C => e` with a guard; like a binding's,
+neither the guard nor the expression can be a bare `when`/`unless`. -/
+syntax fren_arm := fren_top_pattern (" if " fren_expr:20)? " => " fren_expr:20
 
 /-- `match e { pattern => e, ... }`. -/
 scoped syntax:max (name := matchExpr) "match " withoutForbidden(fren_expr:max) " { " withoutForbidden(sepBy(fren_arm, ", ", ", ", allowTrailingSep)) " }" : fren_expr
