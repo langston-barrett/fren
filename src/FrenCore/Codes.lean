@@ -536,6 +536,21 @@ comp c { in x: Int pub out y? ensure r: y? iff x > 0 }
 
 In Lean, Lean's own parser reports this, as a syntax error.
 "# },
+  { code := "F0152", explanation := r#"A generic function's type parameter that is not a name.
+
+Erroneous code example:
+
+```fren
+fn first(Set(T))(s: Int): Int := s
+```
+
+A generic function's type parameters are names, written in parentheses
+right after its name and before its parameters, as in `fn f(T)(x: T): T`:
+
+```fren
+fn first(T)(x: T): T := x
+```
+"# },
   { code := "F0144", explanation := r#"A space before the `(` that opens what a name takes.
 
 Erroneous code example:
@@ -2382,6 +2397,51 @@ without type parameters:
 ```fren
 ordered struct Pair { fst: Int, snd: Int }
 ```
+"# },
+  { code := "F0399", explanation := r#"A generic function without a body.
+
+Erroneous code example:
+
+```fren
+fn pick(T)(a: T, b: T): T
+```
+
+SMT-LIB has no polymorphic `declare-fun`, so an uninterpreted function
+cannot have type parameters, for now. A defined function may: each
+application is unfolded at its type arguments, so the solver never sees a
+polymorphic function. Define it:
+
+```fren
+fn pick(T)(a: T, b: T): T := a
+```
+"# },
+  { code := "F0400", explanation := r#"A generic function's type arguments that cannot be inferred.
+
+Erroneous code example:
+
+```fren
+pub enum Option(T) { None, Some(T) }
+
+fn is_none?(T)(o: Option(T)) := o = Option::None
+
+comp c { pub out ok? ensure r: ok? iff is_none?(Option::None) }
+```
+
+An application never writes type arguments: they are inferred from the
+type expected where it is written, and from its arguments. Here neither
+says which `Option` is meant. Give it an argument whose type is known, as
+a variable's:
+
+```fren
+pub enum Option(T) { None, Some(T) }
+
+fn is_none?(T)(o: Option(T)) := o = Option::None
+
+comp c { in x: Option(Int) pub out ok? ensure r: ok? iff is_none?(x) }
+```
+
+A type parameter that no parameter's type nor the result's mentions could
+never be inferred, and is an error where the function is declared.
 "# },
   { code := "F0401", explanation := r#"An assumption mentions a variable that is not an `in`.
 

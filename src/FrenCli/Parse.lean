@@ -326,13 +326,14 @@ inductive Item where
   | abstractType (isPub : Bool) (name : Ident)
   /-- `type T := U`, a type alias. -/
   | typeAlias (isPub : Bool) (name : Ident) (ty : Array Ident)
-  /-- `fn f(T, U): R`, or `fn f(x: T, y?): R := e`: each parameter's path,
+  /-- `fn f(T, U): R`, or `fn f(x: T, y?): R := e`, or with type parameters
+`fn f(A, B)(x: A): B := e`: each parameter's path,
 and its type after `:` if written. The result type is `none` if it is not
 written, and the body if the function is uninterpreted. Then the clauses
 of its contract: whether each is a postcondition, its name and its
 expression. `last` is the span of its last token, such as a `)` around the
 body, which `body` leaves out. -/
-  | function (isPub : Bool) (name : Ident) (params : Array (Array Ident × Option (Array Ident)))
+  | function (isPub : Bool) (name : Ident) (typeParams : Array Ident) (params : Array (Array Ident × Option (Array Ident)))
       (result : Option (Array Ident)) (body : Option Expr) (clauses : Array (Bool × Ident × Expr)) (last : Span)
   | const (isPub : Bool) (name : Ident) (ty : Array Ident) (value : Expr)
   /-- `comp c { members }`, with the span of its closing `}`, the span of each
@@ -1503,9 +1504,25 @@ partial def item : P Item := do
     let param : P (Array Ident × Option (Array Ident)) := do
       let p ← typeExpr
       return (p, ← type?)
-    let mut params := #[← param]
-    while (← eatKw ",").isSome do params := params.push (← param)
-    discard (expectKw ")")
+    let group : P (Array (Array Ident × Option (Array Ident))) := do
+      let mut params := #[← param]
+      while (← eatKw ",").isSome do params := params.push (← param)
+      discard (expectKw ")")
+      return params
+    let mut params ← group
+    -- A second `(` right after the first group: that group was the type
+    -- parameters (`Reqs/Lang/GenericFunctions`), each a name.
+    let mut typeParams := #[]
+    if isKw (← peek) "(" then
+      for (p, ty?) in params do
+        if p.size != 1 || ty?.isSome || p[0]!.name.any fun c => !(c.isAlphanum || c == '_' || c == '?' || c == '!') then
+          err p[0]!.span "F0152" "a type parameter is a name" (some "not a name")
+            #["note: a generic function's type parameters are names, written in parentheses before its parameters, as in `fn f(T)(x: T): T`"]
+        typeParams := typeParams.push p[0]!
+      noSpaceBeforeParen name.name s!"the parameters of `{name.name}`"
+      markCall
+      discard (expectKw "(")
+      params ← group
     let result ← if (← eatKw ":").isSome then some <$> typeExpr else pure none
     let body ← if (← eatKw ":=").isSome then some <$> top else pure none
     -- Its contract (`Reqs/Lang/Items#contracts`), each clause continuing it.
@@ -1522,7 +1539,7 @@ partial def item : P Item := do
       err t.span "F0143" "a function's body is written after its contract" (some "after the contract")
         #["note: the clauses of a contract follow the signature and the body, as in `fn f(x: Int): Int := x + 1` and then `assume pos: x > 0`",
           "help: move the body, with its `:=`, before the first `assume` or `ensure`"]
-    return .function isPub name params result body clauses (← lastSpan)
+    return .function isPub name typeParams params result body clauses (← lastSpan)
   if isKw t "const" then
     discard bump
     let name ← ident

@@ -58,7 +58,11 @@ def fromModel (ty : Expr) (val : Expr) : Expr :=
 partial def render (ty : Expr) (val : Expr) : MetaM String := do
   -- A value of an abstract type, a local standing for it (`checkComp`).
   if let .fvar id := ty then
-    return s!"{(← id.getUserName).getString!}#{← ppExpr val}"
+    -- By the last segment of its sort's name, as the `fren` command has it
+    -- (`renderAbstract?`): a generic function's type parameter is named by
+    -- its whole path (`withNatUses`), and shown by its name.
+    let sort := (← id.getUserName).getString!
+    return s!"{(sort.splitOn "::").getLast?.getD sort}#{← ppExpr val}"
   let val := fromModel ty val
   if let .lit (.strVal s) := val then return s.quote
   -- A pair, a member of a relation.
@@ -284,7 +288,13 @@ where
       let ty := replaceUses uses reps (← getConstInfo uses[i]).type
       let bi := if isInhabitedName uses[i] then .instImplicit else .default
       let nat := ty.isForall && (resultType ty).isConstOf ``Nat
-      Meta.withLocalDecl (Name.mkSimple uses[i].getString!) bi (if nat then intResult ty else ty) fun x => do
+      -- A generic function's type parameter is a sort named by its whole
+      -- path, as the `fren` command names it (`Core.typeParamPath`): a
+      -- parametric datatype's own parameter may have its name.
+      let name := if (Core.typeParamName? uses[i]).isSome
+        then Name.mkSimple ("::" ++ Core.showPath (uses[i].replacePrefix `Fren.Abstract .anonymous))
+        else Name.mkSimple uses[i].getString!
+      Meta.withLocalDecl name bi (if nat then intResult ty else ty) fun x => do
         let fns := if ty.isForall then fns.push (uses[i], x, ty.getForallArity, nat) else fns
         if !nat then return ← go (i + 1) (reps.push x) fns
         let r ← Meta.forallTelescope ty fun xs _ => do mkLambdaFVars xs (mkApp (mkConst ``Fren.natResult) (mkAppN x xs))

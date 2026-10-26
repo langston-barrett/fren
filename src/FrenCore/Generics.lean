@@ -150,6 +150,43 @@ def constructionShape (params : Array Name) (declared : Array Ty) (shapes : Arra
   .construction <| (List.range params.size).map fun k =>
     ((declared.zip shapes).filter (·.1.mentions k)).toList.map (·.2)
 
+/-- `inferConstruction`'s and `inferCall`'s elaboration of the values: in
+order, but for those that wait, and each value once. `argOf found i` is the
+argument of the type parameter `i`, if it has one, from the types `found`
+of the values that synthesize them and have been elaborated (`inferArg`,
+`inferCallArg`): before any value is, what is expected gives it; once the
+first value that gives it one is, that value's. -/
+def inferFrom [Monad m] (params : Array Name) (declared : Array Ty) (synth : Array Bool)
+    (argOf : Array (Option Ty) → Nat → Option Ty) (unknown : m Unit) (elabValue : Nat → Option Ty → m (Option Ty))
+    (check : Nat → Ty → Ty → m Unit) : m (Array Ty) := do
+  -- The types of the values that synthesize them, as they are elaborated.
+  let mut found : Array (Option Ty) := declared.map fun _ => none
+  let init := params.mapIdx fun i _ => argOf found i
+  let mut b : Array (Option Ty) := init
+  let current (b : Array (Option Ty)) : Array Ty := b.mapIdx fun i a => a.getD (.param i params[i]!)
+  -- The parameters that a value has given an argument, or tried to.
+  let mut tried := params.mapIdx fun i _ => (init[i]?.join).isSome
+  let mut waiting := #[]
+  for d in declared, k in [0:declared.size] do
+    if !d.unknownIn b then
+      let x := d.subst (current b)
+      if let some f ← elabValue k (some x) then check k x f
+    else if synth[k]?.getD false then
+      if let some f ← elabValue k none then
+        found := found.set! k (some f)
+        for i in [0:params.size] do
+          if d.mentions i && !tried[i]! then
+            -- This value is the first that gives `i` an argument.
+            b := b.set! i (argOf found i)
+            tried := tried.set! i true
+        check k (d.subst (current b)) f
+    else waiting := waiting.push k
+  for k in waiting do
+    let x := declared[k]!.subst (current b)
+    if let some f ← elabValue k (some x) then check k x f
+  if b.any (·.isNone) then unknown
+  return current b
+
 /-- Elaborates the values of a construction of a generic type with the
 type parameters `params`, whose values have the declared types `declared`,
 and returns its type arguments (`Reqs/Lang/Generics#type-arguments`).
@@ -168,32 +205,13 @@ order. -/
 def inferConstruction [Monad m] (params : Array Name) (declared : Array Ty) (synth : Array Bool)
     (expected? : Option (Array Ty)) (unknown : m Unit) (elabValue : Nat → Option Ty → m (Option Ty))
     (check : Nat → Ty → Ty → m Unit) : m (Array Ty) := do
-  let mut b : Array (Option Ty) := match expected? with
+  let init : Array (Option Ty) := match expected? with
     | some as => as.map some
     | none => params.map fun _ => none
   if expected?.isNone && !(constructionShape params declared (synth.map fun s => if s then .other else .emptyLiteral)).synthesizes then
     unknown
-  let current (b : Array (Option Ty)) : Array Ty := b.mapIdx fun i a => a.getD (.param i params[i]!)
-  -- The parameters that a value has given an argument, or tried to.
-  let mut tried := params.map fun _ => expected?.isSome
-  let mut waiting := #[]
-  for d in declared, k in [0:declared.size] do
-    if !d.unknownIn b then
-      let x := d.subst (current b)
-      if let some f ← elabValue k (some x) then check k x f
-    else if synth[k]?.getD false then
-      if let some f ← elabValue k none then
-        for i in [0:params.size] do
-          if d.mentions i && !tried[i]! then
-            b := b.set! i ((matchParam i d f).map (·.widen))
-            tried := tried.set! i true
-        check k (d.subst (current b)) f
-    else waiting := waiting.push k
-  for k in waiting do
-    let x := declared[k]!.subst (current b)
-    if let some f ← elabValue k (some x) then check k x f
-  if b.any (·.isNone) then unknown
-  return current b
+  inferFrom params declared synth (fun found i => if expected?.isSome then (init[i]?).join else inferArg declared found none i)
+    unknown elabValue check
 
 /-! ## Values of instances -/
 
@@ -406,5 +424,126 @@ def typeParamNameMsg (p : Name) (what : String) : Msg :=
     label? := some "already a name"
     notes := #["note: within its declaration, a type parameter's name must mean only the parameter",
       s!"help: rename it, as in `T`"] }
+
+/-! ## Generic functions (`Reqs/Lang/GenericFunctions`) -/
+
+mutual
+/-- `t`, with the type parameter at `typeParamPath fn k n` for each abstract
+type that is one of the type parameters `params` of the generic function at
+`fn`: a type as the function's signature declares it, from the type that
+its body sees (`Ty.asAbstract`). -/
+def Ty.asParams (fn : Name) (params : Array Name) : Ty → Ty
+  | .abstract p =>
+    match (List.range params.size).find? fun k => typeParamPath fn k params[k]! == p with
+    | some k => .param k params[k]!
+    | none => .abstract p
+  | .set t => .set (t.asParams fn params)
+  | .rel a b => .rel (a.asParams fn params) (b.asParams fn params)
+  | .seq t => .seq (t.asParams fn params)
+  | .enum p as => .enum p (Ty.asParamsAll fn params as)
+  | .record p as => .record p (Ty.asParamsAll fn params as)
+  | .newtype p u => .newtype p u
+  | t => t
+
+/-- Each of `ts`, as `Ty.asParams` gives it. -/
+def Ty.asParamsAll (fn : Name) (params : Array Name) : List Ty → List Ty
+  | [] => []
+  | t :: ts => t.asParams fn params :: Ty.asParamsAll fn params ts
+end
+
+/-- `t`, as the body of the generic function at `fn`, with the type
+parameters `params`, sees it: each type parameter an abstract type of its
+own (`Reqs/Lang/GenericFunctions#type-parameters`). -/
+def Ty.asAbstract (fn : Name) (params : Array Name) (t : Ty) : Ty :=
+  t.subst (params.mapIdx fun k n => .abstract (typeParamPath fn k n))
+
+/-- Whether a function may have `params` type parameters
+(`lang::generic_function`): if it has any, it is defined, and each is
+mentioned by its signature. -/
+def genericFunctionAccepted (defined : Bool) (params : Nat) (unmentioned : Bool) : Bool :=
+  params == 0 || (defined && !unmentioned)
+
+/-- Whether the type parameter `k` is mentioned by one of the parameters'
+declared types `declared` or by the result's, `result`. -/
+def inSignature (declared : Array Ty) (result : Ty) (k : Nat) : Bool :=
+  result.mentions k || declared.any (·.mentions k)
+
+/-- The first of `n` type parameters that the signature does not mention
+(`inSignature`), if one is not. -/
+def firstUnmentioned? (declared : Array Ty) (result : Ty) (n : Nat) : Option Nat :=
+  (List.range n).find? fun k => !inSignature declared result k
+
+/-- The arguments that matching the type `expected?`, if one is expected of
+an application, against the declared result type `result` gives each of
+`n` type parameters, widened (`lang::call_type_argument`). -/
+def expectedArgs (result : Ty) (expected? : Option Ty) (n : Nat) : Array (Option Ty) :=
+  (Array.range n).map fun k => expected?.bind fun x => (matchParam k result x).map (·.widen)
+
+/-- The argument of the type parameter `k` of an application of a generic
+function whose parameters have the declared types `declared`, and whose
+arguments the types `found`, for those that synthesize them, with the
+declared result type `result`, if it can be inferred
+(`lang::call_type_argument`): what matching the expected type, if there is
+one, against the result gives it, and otherwise what the first argument
+that gives it one gives it (`inferArg`). -/
+def inferCallArg (declared : Array Ty) (found : Array (Option Ty)) (result : Ty) (expected? : Option Ty) (k : Nat) :
+    Option Ty :=
+  match (expectedArgs result expected? (k + 1))[k]?.join with
+  | some a => some a
+  | none => inferArg declared found none k
+
+/-- Elaborates the arguments of an application of a generic function with
+the type parameters `params`, whose parameters have the declared types
+`declared` and whose result the declared type `result`, and returns its type
+arguments (`Reqs/Lang/GenericFunctions#applications`), as
+`inferConstruction` does a construction's, in the same order
+(`lang::call_order`): what matching the type expected of the application,
+`expected?`, against the result gives a type parameter stands for an
+expected instance's argument. `unknown` reports that the arguments cannot
+be inferred, before any argument is elaborated if some type parameter has
+neither an argument from what is expected nor an argument that synthesizes
+its type and whose declared type mentions it. -/
+def inferCall [Monad m] (params : Array Name) (declared : Array Ty) (result : Ty) (synth : Array Bool)
+    (expected? : Option Ty) (unknown : m Unit) (elabValue : Nat → Option Ty → m (Option Ty))
+    (check : Nat → Ty → Ty → m Unit) : m (Array Ty) := do
+  let init := expectedArgs result expected? params.size
+  if (List.range params.size).any fun k => (init[k]?.join).isNone && firstGiver declared synth k < 0 then unknown
+  inferFrom params declared synth (inferCallArg declared · result expected?) unknown elabValue check
+
+/-- The shape of an application of a generic function with `n` type
+parameters, whose parameters have the declared types `declared`, its result
+the declared type `result`, and its arguments the shapes `shapes`: a
+construction whose parts are the type parameters that the result mentions
+(`Reqs/Lang/GenericFunctions#applications`). -/
+def callShape (n : Nat) (declared : Array Ty) (result : Ty) (shapes : Array TypeShape) : TypeShape :=
+  .construction <| ((List.range n).filter result.mentions).map fun k =>
+    ((declared.zip shapes).filter (·.1.mentions k)).toList.map (·.2)
+
+/-- The type of an application of a generic function whose declared result
+type is `result`, with the type arguments `args` (`lang::call_instance`). -/
+def callType (result : Ty) (args : Array Ty) : Ty := result.subst args
+
+/-- The generic function `f`, which has no body (`lang::generic_function`). -/
+def uninterpretedGenericMsg (f : Name) : Msg :=
+  { code? := some "F0399", headline := s!"the generic function `{f}` must be defined"
+    label? := some "type parameters, but no body"
+    notes := #["note: SMT-LIB has no polymorphic `declare-fun`, so an uninterpreted function cannot have type parameters, for now",
+      "help: define it with `:= e`, or remove its type parameters"] }
+
+/-- The type parameter `p` of the generic function `f`, which its signature
+does not mention (`lang::generic_function`). -/
+def unmentionedTypeParamMsg (f p : Name) : Msg :=
+  { code? := some "F0400", headline := s!"type parameter `{p}` of `{f}` cannot be inferred"
+    label? := some "not in the signature"
+    notes := #[s!"note: a type parameter's argument is inferred at each application from the parameters' and the result's types, and none of them mentions `{p}`",
+      s!"help: mention `{p}` in a parameter's type or the result's, or remove it"] }
+
+/-- An application of the generic function `f`, whose type arguments
+cannot be inferred (`Reqs/Lang/GenericFunctions#applications`). -/
+def cannotInferCallMsg (f : String) : Msg :=
+  { code? := some "F0400", headline := s!"cannot infer the type arguments of `{f}`"
+    label? := some s!"which instance of `{f}`?"
+    notes := #[s!"note: `{f}` is generic, and neither what is expected here nor its arguments say what its type arguments are",
+      "help: write it where its result's type is expected, as where it is compared with a variable, or give it a type with `let`"] }
 
 end Fren.Core

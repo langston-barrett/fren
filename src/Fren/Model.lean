@@ -232,6 +232,12 @@ structure DefinedInfo where
   nParams : Nat
   /-- Its parameters' and result's types, as declared. -/
   ptys : Array Core.PTy × Core.PTy := (#[], default)
+  /-- Its type parameters, if it is generic, and its parameters' and
+  result's types, which mention them as `Core.Ty.param`
+  (`Reqs/Lang/GenericFunctions`). -/
+  typeParams : Array Name := #[]
+  declared : Array Core.Ty := #[]
+  result : Core.Ty := .bool
   /-- Its body has an unbounded quantifier with a bound name that has a
   domain, directly or through the functions and constants it applies,
   which sets `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
@@ -588,6 +594,9 @@ structure LocalState where
   /-- The positions of the pattern tests translated whose patterns bind
   names, for `lintBools`, which reads and clears them. -/
   bindingTests : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
+  /-- The generic function being declared, with its type parameters, which
+  are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
+  fnTypeParams : Option (Name × Array Name) := none
   /-- Comps declared in this file, in order. -/
   comps : Array Name := #[]
   /-- Global expectations declared in this file, in order. -/
@@ -780,6 +789,8 @@ def recordingErrors (k : CommandElab) : CommandElab := fun stx => do
     | .internal id _ => if id == unsupportedSyntaxExceptionId || id == interruptExceptionId then throw ex
                         else logException ex
     | _ => logException ex
+  -- A generic function's type parameters end with it, even after an error.
+  modifyLocal fun l => { l with fnTypeParams := none }
   openGenerated
   let n := (← get).messages.toList.filter (·.severity == .error) |>.length
   let n := n - ((← getLocal).checkErrors - checks)

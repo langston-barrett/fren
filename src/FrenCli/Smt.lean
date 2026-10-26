@@ -206,6 +206,39 @@ partial def parseTerms (cs : Array Char) (i : Nat) : Array Term × Nat := Id.run
       i := j
   return (out, i)
 
+/-- The atoms that `t` mentions as the solver sees it, once its
+`define-fun`s are unfolded and its `let`s substituted, as the Lean-hosted
+front end gives them to lean-smt (`Fren.unfoldDefined`): an argument of a
+function in `used` whose parameter its body does not mention, and a `let`'s
+definition of a name that its body does not mention, are not mentioned. -/
+partial def termMentions (used : Std.HashMap String (Array Bool)) : Term → Array String
+  | .atom a => #[a]
+  | .list ts => match ts.toList with
+    | [.atom "let", .list binds, body] =>
+      let inBody := termMentions used body
+      binds.foldl (init := inBody) fun acc b => match b with
+        | Term.list #[Term.atom x, e] => if inBody.contains x then acc ++ termMentions used e else acc
+        | b => acc ++ termMentions used b
+    | .atom f :: args => match used[f]? with
+      | some u => (args.toArray.zipIdx.filter fun (_, i) => u[i]?.getD true).flatMap (termMentions used ·.1)
+      | none => ts.flatMap (termMentions used)
+    | _ => ts.flatMap (termMentions used)
+
+/-- Of each `define-fun` of `decls`, by its symbol, which of its parameters
+its body mentions (`termMentions`), in order, so that each sees those
+before it. -/
+def usedParams (decls : Array PreludeDecl) : Std.HashMap String (Array Bool) := Id.run do
+  let mut used : Std.HashMap String (Array Bool) := {}
+  for d in decls do
+    unless d.text.startsWith "(define-fun" do continue
+    let (ts, _) := parseTerms d.text.toList.toArray 0
+    let some (Term.list #[_, Term.atom f, Term.list ps, _, body]) := ts[0]? | continue
+    let inBody := termMentions used body
+    used := used.insert f (ps.map fun
+      | Term.list #[Term.atom x, _] => inBody.contains x
+      | _ => true)
+  return used
+
 /-- `check::Verdict::Pass` ↦ `Verdict::Pass`: a variant or record by its
 type's name, without its module. -/
 def lastTwo (s : String) : String :=
@@ -468,8 +501,14 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
   query hyps goal wantModel := do
     let facts := c.natFacts false ++ c.natFacts true
     let facts := facts ++ (facts.map fun (n, f) => (n, prime c f)).filter (!facts.contains ·)
-    let mentioned : Std.HashSet String := .ofArray ((facts.map (·.2) ++ hyps.map (·.2) |>.push goal).flatMap quotedSymbols)
+    let formulas := facts.map (·.2) ++ hyps.map (·.2) |>.push goal
+    let mentioned : Std.HashSet String := .ofArray (formulas.flatMap quotedSymbols)
     let vars := (c.vars ++ primes c).filter (mentioned.contains ·.name.toString)
+    -- A model shows those that the formulas mention once their definitions
+    -- are unfolded, as Lean's does (`termMentions`).
+    let used := usedParams prelude.decls
+    let shown : Std.HashSet String :=
+      .ofArray (formulas.flatMap fun f => (parseTerms f.toList.toArray 0).1.flatMap (termMentions used))
     let apps := c.natApps ++ (c.natApps.map (prime c)).filter (!c.natApps.contains ·)
     -- An application within a `let` or `where` is found as it is written
     -- there, and its fact is within the clause's `let`s.
@@ -482,9 +521,12 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     -- A component whose queries may quantify sets `fmf-bound`
     -- (`State.bounded`).
     let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
-    runQuery (Fren.Core.logic kind (strings || sets) projection quantified)
+    let o ← runQuery (Fren.Core.logic kind (strings || sets) projection quantified)
       (String.join (options.map fun (o, v) => s!"(set-option :{o} {v})\n"))
       prelude vars limits dump? (facts ++ appFacts ++ hyps) goal wantModel cache?
+    return match o with
+      | .sat m => .sat (m.filter fun (n, _) => shown.contains n.toString)
+      | o => o
   falseF := "false"
   notF f := s!"(not {f})"
   conj := conj

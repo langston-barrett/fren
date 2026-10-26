@@ -1,0 +1,108 @@
+; c: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))
+(define-fun |::id(Int)| ((|x| Int)) Int |x|)
+(define-fun |::unwrap_or(Int)| ((|o| (|Option| Int)) (|d| Int)) Int (ite (= |o| ((as Option~Some (|Option| Int)) (|Option::Some::0| |o|))) (|Option::Some::0| |o|) (|::id(Int)| |d|)))
+(declare-const |x| (|Option| Int))
+(declare-const |y| Int)
+(assert (let ((|y| (|::unwrap_or(Int)| |x| 0))) (distinct |x| (as Option~None (|Option| Int))))) ; some
+(assert (not false))
+(check-sat)
+(reset)
+
+; c: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))
+(define-fun |::id(Int)| ((|x| Int)) Int |x|)
+(define-fun |::unwrap_or(Int)| ((|o| (|Option| Int)) (|d| Int)) Int (ite (= |o| ((as Option~Some (|Option| Int)) (|Option::Some::0| |o|))) (|Option::Some::0| |o|) (|::id(Int)| |d|)))
+(declare-const |x| (|Option| Int))
+(declare-const |y| Int)
+(assert (let ((|y| (|::unwrap_or(Int)| |x| 0))) (distinct |x| (as Option~None (|Option| Int))))) ; some
+(assert (not (let ((|y| (|::unwrap_or(Int)| |x| 0))) true)))
+(check-sat)
+(reset)
+
+; c: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))
+(define-fun |::id(Int)| ((|x| Int)) Int |x|)
+(define-fun |::unwrap_or(Int)| ((|o| (|Option| Int)) (|d| Int)) Int (ite (= |o| ((as Option~Some (|Option| Int)) (|Option::Some::0| |o|))) (|Option::Some::0| |o|) (|::id(Int)| |d|)))
+(declare-const |x| (|Option| Int))
+(declare-const |y| Int)
+(assert (= |y| (|::unwrap_or(Int)| |x| 0))) ; y
+(assert (distinct |x| (as Option~None (|Option| Int)))) ; some
+(assert (not false))
+(check-sat)
+(reset)
+
+; c: query 4
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))
+(define-fun |::id(Int)| ((|x| Int)) Int |x|)
+(define-fun |::unwrap_or(Int)| ((|o| (|Option| Int)) (|d| Int)) Int (ite (= |o| ((as Option~Some (|Option| Int)) (|Option::Some::0| |o|))) (|Option::Some::0| |o|) (|::id(Int)| |d|)))
+(declare-const |x| (|Option| Int))
+(declare-const |y| Int)
+(assert (= |y| (|::unwrap_or(Int)| |x| 0))) ; y
+(assert (not (distinct |x| (as Option~None (|Option| Int)))))
+(check-sat)
+(reset)
+
+; c: query 5
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))
+(define-fun |::id(Int)| ((|x| Int)) Int |x|)
+(define-fun |::unwrap_or(Int)| ((|o| (|Option| Int)) (|d| Int)) Int (ite (= |o| ((as Option~Some (|Option| Int)) (|Option::Some::0| |o|))) (|Option::Some::0| |o|) (|::id(Int)| |d|)))
+(declare-const |x| (|Option| Int))
+(declare-const |y| Int)
+(declare-const |y'| Int)
+(assert (= |y| (|::unwrap_or(Int)| |x| 0))) ; y
+(assert (distinct |x| (as Option~None (|Option| Int)))) ; some
+(assert (= |y'| (|::unwrap_or(Int)| |x| 0))) ; y'
+(assert (distinct |x| (as Option~None (|Option| Int)))) ; some'
+(assert (not (= |y| |y'|)))
+(check-sat)
+(reset)
+
+; c: query 6
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))
+(define-fun |::id(Int)| ((|x| Int)) Int |x|)
+(define-fun |::unwrap_or(Int)| ((|o| (|Option| Int)) (|d| Int)) Int (ite (= |o| ((as Option~Some (|Option| Int)) (|Option::Some::0| |o|))) (|Option::Some::0| |o|) (|::id(Int)| |d|)))
+(define-fun |::unwrap_or(Int)#known| ((|o| (|Option| Int)) (|d| Int)) Bool (distinct |o| (as Option~None (|Option| Int))))
+(declare-const |x| (|Option| Int))
+(declare-const |y| Int)
+(assert (= |y| (|::unwrap_or(Int)| |x| 0))) ; y
+(assert (distinct |x| (as Option~None (|Option| Int)))) ; some
+(assert (not (|::unwrap_or(Int)#known| |x| 0)))
+(check-sat)
+(reset)
+
+; [anonymous]: query 1
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-sort |::unwrap_or::0::T| 0)
+(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))
+(define-fun |::id(unwrap_or::0::T)| ((|x| |::unwrap_or::0::T|)) |::unwrap_or::0::T| |x|)
+(define-fun |::unwrap_or| ((|o| (|Option| |::unwrap_or::0::T|)) (|d| |::unwrap_or::0::T|)) |::unwrap_or::0::T| (ite (= |o| ((as Option~Some (|Option| |::unwrap_or::0::T|)) (|Option::Some::0| |o|))) (|Option::Some::0| |o|) (|::id(unwrap_or::0::T)| |d|)))
+(declare-const |o| (|Option| |::unwrap_or::0::T|))
+(declare-const |d| |::unwrap_or::0::T|)
+(assert (distinct |o| (as Option~None (|Option| |::unwrap_or::0::T|)))) ; unwrap_or.known
+(assert (not (= ((as Option~Some (|Option| |::unwrap_or::0::T|)) (|::unwrap_or| |o| |d|)) |o|)))
+(check-sat)
+(reset)
+
+fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0

@@ -125,9 +125,23 @@ instance : DecidableEq Ty := fun a b =>
   if h : a.flat = b.flat then isTrue (by rw [← Ty.unflat_flat a, h, Ty.unflat_flat])
   else isFalse fun e => h (e ▸ rfl)
 
+/-- The path of the abstract type that the type parameter `n`, the `k`th of
+the generic function at `fn`, is within the function
+(`Reqs/Lang/GenericFunctions#type-parameters`): `fn::k::n`, whose numeric
+segment no path that a spec writes has. -/
+def typeParamPath (fn : Name) (k : Nat) (n : Name) : Name := Name.mkStr (Name.mkNum fn k) n.toString
+
+/-- The name of the type parameter whose abstract type is at `p`
+(`typeParamPath`), if `p` is one's. -/
+def typeParamName? : Name → Option String
+  | .str (.num _ _) n => some n
+  | _ => none
+
 /-- The abstract type that `t` is, or that is an element type within it. -/
 def Ty.abstractWithin? : Ty → Option Name
-  | .abstract p => some p
+  -- A generic function's type parameter, which is an abstract type only
+  -- within the function (`typeParamPath`), may be anywhere a type is.
+  | .abstract p => if (typeParamName? p).isSome then none else some p
   | .set t => t.abstractWithin?
   | .rel a b => a.abstractWithin? <|> b.abstractWithin?
   | .seq t => t.abstractWithin?
@@ -146,7 +160,8 @@ def Ty.show : Ty → String
   | .seq t => s!"Seq({t.show})"
   | .enum p args | .record p args =>
     showPath p ++ (if args.isEmpty then "" else "(" ++ ", ".intercalate (Ty.showAll args) ++ ")")
-  | .abstract p | .newtype p _ => showPath p
+  | .abstract p => (typeParamName? p).getD (showPath p)
+  | .newtype p _ => showPath p
   | .param _ n => n.toString
 
 /-- Each of `ts`, as written. -/

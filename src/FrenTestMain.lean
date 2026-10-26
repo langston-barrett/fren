@@ -264,7 +264,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/chain_error.fren", "test/cli/fmt/quantifier.fren", "test/cli/fmt/quantifier_error.fren", "test/cli/fmt/quantifier_unbounded.fren",
    "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/patterns.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
    "test/cli/fmt/cover.fren",
-   "test/cli/fmt/generics.fren",
+   "test/cli/fmt/generics.fren", "test/cli/fmt/generic_functions.fren",
    "test/cli/fmt/newtypes.fren",
    "test/cli/fmt/table.fren", "test/cli/fmt/pattern_types.fren",
    "test/cli/fmt/contract.fren",

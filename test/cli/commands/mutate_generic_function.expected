@@ -1,0 +1,4 @@
+m::c: 1 of 1 mutant killed (100%)
+m::size: 4 of 4 mutants killed (100%)
+fren: 5 mutants: 5 killed, 0 survived, 0 equivalent, 0 unviable
+exit=0

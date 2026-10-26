@@ -1,0 +1,3 @@
+-- A generic function's type parameter that its signature does not mention,
+-- which no application could infer.
+pub fn first(T, U)(x: T): T := x
