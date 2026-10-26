@@ -26,7 +26,7 @@ comp lints {
     ensure r2: b = table e { E::A => 1, E::B => 1, E::C => 2 }
     --~^ warning: this arm has the same body as the arm `E::A`
     ensure r3: c = table e { E::A => 1, _ => 2 }
-    --~^ warning: this table tests for one variant
+    --~^ warning: this table tests for one pattern
     --~^^ warning: `_` matches `E::B` and `E::C`
     ensure r4: d? iff table e { E::A | E::B => true, E::C => false }
     --~^ warning: this table only tests which of its patterns its scrutinee matches
