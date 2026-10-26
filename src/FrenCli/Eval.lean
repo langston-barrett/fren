@@ -598,9 +598,9 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
     | some (.ctor _ _ vs) => vs[idx]?
     | _ => none
   | .update e fs => do
-    let .ctor ty idx vs ← e.eval I look locals | none
+    let .ctor ty idx vs ← e.eval I look locals slots | none
     let mut vs := vs
-    for (k, x) in fs do vs := vs.set! k (← x.eval I look locals)
+    for (k, x) in fs do vs := vs.set! k (← x.eval I look locals slots)
     return .ctor ty idx vs
   -- The first row whose condition holds; where none does, the
   -- interpretation's unspecified value of its type.

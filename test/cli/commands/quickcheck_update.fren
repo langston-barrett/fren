@@ -1,0 +1,18 @@
+--@ args: quickcheck
+-- Testing decides constraints that update a searched record
+-- (`Reqs/Eval#searching-for-behaviours`): `{ p with x := n }` whose base
+-- `p` is an input.
+mod moves
+
+pub struct Point { x: Int, y: Int }
+
+pub comp moved {
+    in p: Point
+    in n: Int
+    pub det out q: Point
+
+    req r: q = { p with x := n }
+
+    expect keeps_y: q.y = p.y
+    expect wrong: q = p
+}
