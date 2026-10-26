@@ -1,0 +1,64 @@
+-- Names that are also symbols of the solver's theories, such as `abs`, and
+-- an instance's `str.len`, are checked like any other names, in both front
+-- ends (`Reqs/Cli#solver-queries`).
+
+comp c {
+    in x: Int
+    pub out abs: Int
+    pub det out exp: Int
+    ensure r: abs = x
+    ensure e: exp = x + 1
+
+    expect same: abs - x = 0
+    expect wrong: abs = exp  --~ error: expectation `c::wrong` does not hold
+}
+
+comp len_of {
+    in sqrt: Int
+    pub det out len: Int
+    ensure r: len = sqrt.abs
+}
+
+comp through_instance {
+    in ite: Int
+    inst str: len_of { sqrt := ite }
+    pub det out select: Int
+    ensure r: select = str.len
+
+    expect positive: select >= 0
+}
+
+pub struct Pair { a?, b? }
+
+fn store(tuple: Pair): Int := if tuple.a? then 1 else 0
+
+comp binders {
+    in sin: Int
+    pub det out xor?
+
+    ensure r: xor? iff (forall (bag: Pair), store(bag) >= 0)
+    expect always: xor?
+    expect bound: let cos := sin + 1 in cos > sin
+}
+
+-- An abstract function, which the Lean front end declares as a local.
+fn cos(Int): Int
+
+comp abstract {
+    in x: Int
+    pub det out y: Int
+    ensure r: y = cos(x)
+    expect same: when x = 1, y = cos(1)
+}
+
+-- A counterexample names the variables as written, not as the solver
+-- knows them.
+comp shown {
+    pub det out abs: Int
+    pub det out exp: Int
+    ensure r: abs = 1 and exp = 2
+    expect differ: abs = exp  --~ error: counterexample: abs = 1, exp = 2
+}
+
+--@ summary: 26 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

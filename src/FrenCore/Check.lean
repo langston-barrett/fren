@@ -528,6 +528,47 @@ def logic (kind : CheckKind) (extended : Bool := false) (projection : Bool := fa
     | .realizable => "UFDTLIA"
     | _ => "QF_UFDTLIA"
 
+/-- The symbols of cvc5's theories, under `HO_ALL`, that a Fren name can
+spell: cvc5 rejects a declaration of any of them, quoted or not, as
+shadowing a theory function symbol. Found by declaring each identifier of
+cvc5's libraries as a constant. -/
+def theorySymbols : Std.HashSet String := .ofList [
+  "abs", "and", "arccos", "arccot", "arccsc", "arcsec", "arcsin", "arctan", "bag", "bag.all",
+  "bag.card", "bag.choose", "bag.count", "bag.difference_remove", "bag.difference_subtract",
+  "bag.filter", "bag.fold", "bag.inter_min", "bag.map", "bag.member", "bag.partition", "bag.setof",
+  "bag.some", "bag.subbag", "bag.union_disjoint", "bag.union_max", "bv2nat", "bvadd", "bvand",
+  "bvashr", "bvcomp", "bvite", "bvlshr", "bvmul", "bvnand", "bvneg", "bvnego", "bvnor", "bvnot",
+  "bvor", "bvredand", "bvredor", "bvsaddo", "bvsdiv", "bvsdivo", "bvsge", "bvsgt", "bvshl",
+  "bvsle", "bvslt", "bvsmod", "bvsmulo", "bvsrem", "bvssubo", "bvsub", "bvuaddo", "bvudiv",
+  "bvuge", "bvugt", "bvule", "bvult", "bvumulo", "bvurem", "bvusubo", "bvxnor", "bvxor", "concat",
+  "cos", "cot", "csc", "distinct", "div", "div_total", "eqrange", "exists", "exp", "ff.add",
+  "ff.bitsum", "ff.mul", "ff.neg", "forall", "fp", "fp.abs", "fp.add", "fp.div", "fp.eq", "fp.fma",
+  "fp.geq", "fp.gt", "fp.isInfinite", "fp.isNaN", "fp.isNegative", "fp.isNormal", "fp.isPositive",
+  "fp.isSubnormal", "fp.isZero", "fp.leq", "fp.lt", "fp.max", "fp.min", "fp.mul", "fp.neg",
+  "fp.rem", "fp.roundToIntegral", "fp.sqrt", "fp.sub", "fp.to_real", "int.log2", "int.pow2",
+  "is_int", "ite", "lambda", "mod", "mod_total", "not", "nullable.is_null", "nullable.is_some",
+  "nullable.lift", "nullable.some", "nullable.val", "or", "piand", "pto", "re.comp", "re.diff",
+  "re.inter", "re.opt", "re.range", "re.union", "rel.aggr", "rel.group", "rel.iden", "rel.join",
+  "rel.join_image", "rel.product", "rel.project", "rel.table_join", "rel.tclosure",
+  "rel.transpose", "sbv_to_int", "sec", "select", "sep", "seq.at", "seq.contains", "seq.extract",
+  "seq.indexof", "seq.len", "seq.nth", "seq.prefixof", "seq.replace", "seq.replace_all", "seq.rev",
+  "seq.suffixof", "seq.unit", "seq.update", "set.all", "set.card", "set.choose", "set.complement",
+  "set.comprehension", "set.filter", "set.fold", "set.insert", "set.inter", "set.is_empty",
+  "set.is_singleton", "set.map", "set.member", "set.minus", "set.singleton", "set.some",
+  "set.subset", "set.union", "sin", "sqrt", "store", "str.at", "str.contains", "str.from_code",
+  "str.from_int", "str.in_re", "str.indexof", "str.indexof_re", "str.is_digit", "str.len",
+  "str.prefixof", "str.replace", "str.replace_all", "str.replace_re", "str.replace_re_all",
+  "str.rev", "str.substr", "str.suffixof", "str.to_code", "str.to_int", "str.to_lower",
+  "str.to_re", "str.to_upper", "str.update", "table.aggr", "table.group", "table.join",
+  "table.product", "table.project", "tan", "to_int", "to_real", "tuple", "tuple.project",
+  "ubv_to_int", "wand", "xor"
+]
+
+/-- The name that the solver knows the name `s` by, in both front ends
+(`Reqs/Cli#solver-queries`): `s`, or with a `#` after it if it is a
+theory's symbol (`theorySymbols`), since no Fren name contains `#`. -/
+def smtName (s : String) : String := if theorySymbols.contains s then s!"{s}#" else s
+
 /-- The cvc5 options for a spec that uses strings and sets (`cli::logic`):
 `strings-exp` for the extended string functions, `re-inter-mode` to
 decide intersections of patterns, `re-elim` to rewrite a match that needs
