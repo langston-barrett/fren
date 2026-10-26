@@ -1,8 +1,8 @@
 -- keep-sorted start
 import Fren.FinSet
 import Fren.Finite
+import Fren.Lint
 import Fren.Model
-import Fren.Resolve
 import Fren.SimpSet
 import Fren.Syntax
 import FrenCore.Checking
@@ -3902,7 +3902,376 @@ def lintMemberOrder (stx : Syntax) (raw members : Array Syntax) : CommandElabM U
   let fixable := (← getLocal).inMarkdown && fix?.isSome
   recordLint .arbitrarySourceItemOrdering raw[i]! (if fixable then msg.note Core.fixHelp else msg)
 
-open Lang in
+/-! ### `elabComp`, in parts
+
+Each part is a definition of its own, so that the compiler, whose time grows
+faster than the length of a `do` block, compiles several short ones, and
+in parallel. -/
+
+section
+open Lang
+
+/-- The indexes of a comp's items, and the questions about its tables:
+each item's name, where it is, the index's syntax, the question, and the
+goal over the comp's variables. -/
+abbrev CompIndexes := Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)
+
+/-- A comp's variables, the names declared so far, and whether every one
+was declared without an error, reporting each error, and one cycle of
+definitions, as the `fren` command does. -/
+def elabCompVars (scope : Name) (members : Array Syntax) : TermElabM (Array Var × NameSet × Bool) := do
+  let mut ok := true
+  let mut names : NameSet := {}
+  let mut vars : Array Var := #[]
+  for m in members do
+    let (role, isPub, isDet, x, ty?, defn?) ← match m.getKind with
+      -- An input has no definition (`checkParsed`).
+      | ``Lang.inMember =>
+        pure (Core.Role.input, true, false, m[1], if m[2].isNone then none else some m[2][1], none)
+      | ``Lang.outMember =>
+        pure (.output, !m[0].isNone, !m[1].isNone, m[3], if m[4].isNone then none else some m[4][1], definition? m)
+      | _ => continue
+    -- An error in shadowing leaves the variable's meaning clear.
+    let x ← try declare x scope
+      catch ex => logException ex; ok := false; pure (declaredIdent x).1
+    names := names.insert x.getId
+    lintName .variable x.getId x
+    try
+      let ty ← varType scope x ty?
+      let st ← getState
+      unless Core.variableTypeAccepted (role == .output) (st.unbounded ty) defn?.isSome do
+        throwErrorAt x (Core.unboundedOutputMsg x.getId (← typeName ty)).text
+      vars := vars.push { name := x.getId, role, isPub, isDet, «type» := ty, ref := x, defn? }
+    catch ex => logException ex; ok := false
+  -- One cycle is reported, as by the `fren` command.
+  if let some (v, cycle) := vars.findSome? fun v => (defCycle? vars v.name).map (v, ·) then
+    logErrorAt v.ref (Core.cyclicDefinitionMsg cycle).text; ok := false
+  return (vars, names, ok)
+
+/-- A comp's instances, whose variables follow the comp's own `vars`: the
+instances still to elaborate, all the variables, the names declared so
+far, and whether every instance was resolved. -/
+def elabCompInsts (scope : Name) (members : Array Syntax) (vars : Array Var) (names : NameSet) :
+    TermElabM (Array PendingInst × Array Var × NameSet × Bool) := do
+  let mut ok := true
+  let mut vars := vars
+  let mut names := names
+  let mut pending : Array PendingInst := #[]
+  for m in members do
+    let `(fren_member| inst $x:ident : $p:fren_path { $bs,* }) := m | continue
+    -- An instance named by a literal is not resolved, which would report
+    -- its name again; the `fren` command stops at the first report too.
+    if let .error msg := Core.checkNotLiteral (declaredIdent x).1.getId then
+      logErrorAt x msg.text; ok := false; continue
+    let x ← try declare x scope
+      catch ex => logException ex; ok := false; pure (declaredIdent x).1
+    names := names.insert x.getId
+    lintName .instance x.getId x
+    try
+      let (pi, ivars) ← resolveInst scope x p bs.getElems vars.size
+      pending := pending.push pi
+      vars := vars ++ ivars
+      -- Its bindings give each input of its component a value, and the
+      -- instance's assumption check reads them (`unused_assumption`).
+      let reads := (pi.comp.vars.filter fun v => v.name.isAtomic && v.role == Core.Role.input).map (pi.comp.path, ·.name)
+      modifyLocal fun l => { l with globalReads := l.globalReads ++ reads }
+    catch ex => logException ex; ok := false
+  return (pending, vars, names, ok)
+
+/-- A comp's instances, over its variables `fvs`, and then its definitions,
+each after those it mentions, with the earlier ones substituted, so that
+each value mentions no defined output: the instances, the generated
+definitions so far, the definitions' values, the variables they define,
+and the indexes, and whether all were elaborated. -/
+def elabCompDefinitions (scope : Name) (vars : Array Var) (pending : Array PendingInst) (declBase : Name)
+    (fvs : Array Expr) :
+    TermElabM (Array InstInfo × Array (Name × Expr) × Array (Name × Expr) × Array Expr × CompIndexes × Bool) := do
+  let instNames := pending.map (·.name)
+  let mut good := true
+  let mut insts : Array InstInfo := #[]
+  let mut indexes : CompIndexes := #[]
+  -- The generated definitions, over `fvs`, added once the placeholders
+  -- that they use are known.
+  let mut defs : Array (Name × Expr) := #[]
+  for pi in pending, k in [0:pending.size] do
+    try
+      let cx := { modName := scope, vars, insts := instNames, place := .binding, current := k }
+      let (i, body) ← elabInst cx fvs pi (declBase ++ `inst ++ pi.name)
+      insts := insts.push i
+      defs := defs.push (i.decl, body)
+      indexes := indexes ++ (← takeIndexes fvs).map fun (r, q, g) => (pi.name, .binding k, r, q, g)
+    catch ex => logException ex; good := false
+  let mut values : Array (Name × Expr) := #[]
+  let mut todo := vars.filter (·.defn?.isSome)
+  let mut defnFvs : Array Expr := #[]
+  while !todo.isEmpty do
+    let some v := todo.find? fun v => (pathMentions v.defn?.get!).all fun n => !todo.any (·.name == n)
+      | break
+    todo := todo.filter (·.name != v.name)
+    let some idx := vars.findIdx? (·.name == v.name) | continue
+    try
+      let e := v.defn?.get!
+      discard (takeIndexes fvs)
+      let value ← withRef e do
+        -- A definition assigns once and acyclically, so `++` is in the core in it.
+        let t ← toTerm { modName := scope, vars, insts := instNames, place := .prop, emptyOk := Core.Position.declared.checked false false, concatOk := true
+                         natOk := v.type.isConstOf ``Nat, expected? := ← coreTy? v.type } e
+        checkDeclared e t v.type fun ty => s!"note: `{v.name}` has type `{ty}`, so its definition must too"
+        elabProp t v.type
+      indexes := indexes ++ (← takeIndexes fvs).map fun (r, q, g) => (v.name, .prop, r, q, g)
+      lintBools e
+      let value := value.replaceFVars defnFvs (values.map (·.2))
+      defs := defs.push (declBase ++ `def ++ v.name, ← mkEq fvs[idx]! value)
+      values := values.push (v.name, value)
+      defnFvs := defnFvs.push fvs[idx]!
+    catch ex => logException ex; good := false
+  return (insts, defs, values, defnFvs, indexes, good)
+
+/-- A comp's assumptions, requirements and expectations, over its variables
+`fvs`, where the defined outputs `defnFvs` have the values `values`: the
+constraints, the generated definitions with theirs added, the indexes with
+theirs added, the names declared, and whether all were elaborated. -/
+def elabCompConstraints (scope : Name) (members : Array Syntax) (vars : Array Var) (instNames : Array Name)
+    (declBase : Name) (fvs defnFvs : Array Expr) (values : Array (Name × Expr)) (names : NameSet)
+    (defs : Array (Name × Expr)) (indexes : CompIndexes) :
+    TermElabM (Array PropInfo × Array (Name × Expr) × CompIndexes × NameSet × Bool) := do
+  let mut good := true
+  let mut names := names
+  let mut defs := defs
+  let mut indexes := indexes
+  let mut props : Array PropInfo := #[]
+  for m in members do
+    let some (kind, x, e) := constraint? m | continue
+    if let .error msg := Core.checkNoBang x.getId then
+      logErrorAt x msg.text; good := false; continue
+    names := names.insert x.getId
+    lintName .constraint x.getId x
+    try
+      if x.getId.toString.endsWith "?" then
+        throwErrorAt x (Core.propNameMsg x.getId).text
+      let cx := { modName := scope, vars, insts := instNames, place := if kind == .assume then .assume else .prop }
+      discard (takeIndexes fvs)
+      let t ← toTerm cx e
+      checkDeclared e t (mkConst ``Bool) fun _ => "note: a constraint is a `Bool`"
+      let body ← elabProp t
+      -- An assumption sees defined outputs only as their definitions.
+      let subst (b : Expr) := if kind == .assume then b.replaceFVars defnFvs (values.map (·.2)) else b
+      let body := subst body
+      let place : Core.IndexPlace := if kind == .assume then .assume else .prop
+      indexes := indexes ++ (← takeIndexes fvs subst).map fun (r, q, g) => (x.getId, place, r, q, g)
+      lintBools e
+      lintConstant cx kind.keyword e
+      let trig ← triggerOf cx e
+      let trigger? ← trig.mapM fun (t, _) => do mkLambdaFVars fvs (← elabProp t)
+      let decl := declBase ++ Name.mkSimple kind.keyword ++ x.getId
+      defs := defs.push (decl, body)
+      props := props.push {
+        kind, name := x.getId, ref := x, body := ← mkLambdaFVars fvs body,
+        trigger?, triggerRef? := trig.map (·.2), decl }
+    catch ex => logException ex; good := false
+  return (props, defs, indexes, names, good)
+
+/-- `duplicate_constraint` (`lint::duplicate_constraint`), of a comp's
+constraints. -/
+def lintDuplicateConstraints (members : Array Syntax) : TermElabM Unit := do
+  let constraints := members.filterMap fun m => match m with
+    | `(fren_member| assume $x:ident : $e) => some (Core.ConstraintKind.assume, x.raw, e.raw)
+    | `(fren_member| ensure $x:ident : $e) => some (.ensure, x.raw, e.raw)
+    | `(fren_member| expect $x:ident : $e) => some (.expect, x.raw, e.raw)
+    | _ => none
+  for (i, j) in Core.repeatedConstraints (constraints.map fun (_, _, e) => exactText (unparen e)) do
+    let (k, x, _) := constraints[i]!
+    let (k', x', _) := constraints[j]!
+    let msg := Core.duplicateConstraintMsg k' k x'.getId.toString
+    let fixable := (Core.duplicateConstraint k' k true).2 && (← getLocal).inMarkdown
+    recordLint .duplicateConstraint x (if fixable then msg.note Core.fixHelp else msg)
+
+/-- `constant_output` and `definable_output` (`lint::output_lints`), of a
+comp's outputs. -/
+def lintOutputs (lcx : ExprCtx) (members : Array Syntax) (vars : Array Var) : TermElabM Unit := do
+  let reqs := members.filterMap fun m => match constraint? m with
+    | some (.ensure, x, e) => some (x.getId, e)
+    | _ => none
+  for v in vars.filter (fun v => v.role == .output && v.name.isAtomic) do
+    let about := reqs.filter fun (_, e) => (pathMentions e).contains v.name
+    let isX (e : Syntax) : Bool :=
+      let e := unparen e
+      let p := if e.getNumArgs == 1 then e[0] else e
+      p.isOfKind ``Lang.fren_path && (pathSegs p).size == 1 && (pathSegs p)[0]!.getId == v.name
+    -- The only requirement that mentions it, as `x = e` or `x? iff e`, with `e` other variables'.
+    let equation := match about with
+      | #[(_, e)] =>
+        let e := unparen e
+        (isBinOp e "=" || isBinOp e "iff")
+          && ((isX e[0] && !(pathMentions e[2]).contains v.name) || (isX e[2] && !(pathMentions e[0]).contains v.name))
+      | _ => false
+    let mentions ← match v.defn? with | some d => mentionsAny lcx d | none => pure true
+    let (constant, definable) := Core.outputLints v.defn?.isSome mentions about.size equation
+    if constant then recordLint .constantOutput v.ref (Core.constantOutputMsg v.name)
+    if definable then recordLint .definableOutput v.ref (Core.definableOutputMsg v.name about[0]!.1)
+
+/-- `case_split_guarantees` (`lint::case_split_guarantees`), of a comp's
+requirements. -/
+def lintCaseSplitGuarantees (lcx : ExprCtx) (members : Array Syntax) (vars : Array Var) : TermElabM Unit := do
+  -- Each requirement `when T, y = e`, as its name, where it is
+  -- reported, `y`, the operator, `T` and the text of `e`.
+  let mut cases : Array (Name × Syntax × String × String × Core.VariantTest × String) := #[]
+  for m in members do
+    let `(fren_member| ensure $x:ident : $e) := m | continue
+    let e := unparen e.raw
+    unless isConditional e && e[0].getAtomVal.trimAscii.toString == "when" do continue
+    let body := unparen e[3]
+    let op := if isBinOp body "=" then "=" else if isBinOp body "iff" then "iff" else ""
+    if op.isEmpty then continue
+    let y := unparen body[0]
+    let y := if y.getNumArgs == 1 then y[0] else y
+    unless y.isOfKind ``Lang.fren_path && (pathSegs y).size == 1 do continue
+    let yn := (pathSegs y)[0]!.getId
+    unless vars.any (fun v => v.role == .output && v.name == yn) do continue
+    let some t ← variantTest? lcx e[1] | continue
+    cases := cases.push (x.getId, x, srcText y, op, t, armBodyOf body[2])
+  let mut grouped : Array Nat := #[]
+  for i in [0:cases.size] do
+    if grouped.contains i then continue
+    let (_, _, y, op, t, _) := cases[i]!
+    let group := (Array.range cases.size).filter fun j =>
+      j ≥ i && cases[j]!.2.2.1 == y && cases[j]!.2.2.2.2.1.key == t.key && cases[j]!.2.2.2.2.1.enum == t.enum
+    grouped := grouped ++ group
+    let cs := group.map fun j => let (n, _, _, _, t, e) := cases[j]!; (n, t, e)
+    let ts := cs.map (·.2.1)
+    let n := (((← getState).enums.get? t.enum).map (·.variants.size)).getD 0
+    if Core.caseSplitGuarantees cs.size (Core.repeatedVariants ts) then
+      recordLint .caseSplitGuarantees cases[group[1]!]!.2.1 (Core.caseSplitGuaranteesMsg y op cs (Core.untestedVariants n ts))
+
+/-- Adds a comp's generated definitions `defs` over its variables `fvs`,
+with `p.defs`, `p.assumes` and `p.ensures`, and `p.out.d` for each definition
+that mentions only inputs. -/
+def addCompDefs (vars : Array Var) (declBase : Name) (fvs : Array Expr) (uses : Array Name)
+    (props : Array PropInfo) (values : Array (Name × Expr)) (defs : Array (Name × Expr)) : TermElabM Unit := do
+  let appD (decl : Name) := mkAppN (Lean.mkConst decl) (uses.map (Lean.mkConst ·) ++ fvs)
+  let app (p : PropInfo) := appD p.decl
+  let mut defs := defs
+  unless values.isEmpty do
+    defs := defs.push (declBase ++ `defs, mkAndN (values.map fun (d, _) => appD (declBase ++ `def ++ d)).toList)
+  defs := defs ++ #[(declBase ++ `assumes, mkAndN (props.filter (·.kind == .assume) |>.map app).toList),
+    (declBase ++ `ensures, mkAndN (props.filter (·.kind == .ensure) |>.map app).toList)]
+  for (decl, body) in defs do
+    addUsesDef uses decl (← mkLambdaFVars fvs body)
+  -- `p.out.d`, a function of the inputs, when the definition mentions
+  -- only inputs.
+  let inputs := (vars.zip fvs).filter (·.1.role == .input) |>.map (·.2)
+  for (d, value) in values do
+    let others := fvs.filter (!inputs.contains ·)
+    unless others.any (value.containsFVar ·.fvarId!) do
+      addUsesDef uses (declBase ++ `out ++ d) (← mkLambdaFVars inputs value)
+
+/-- A comp's instances, definitions and constraints, elaborated over its
+variables, with its lints of them, and, if all were elaborated, its
+generated definitions added: the constraints, the instances, the
+placeholders used, the definitions' values over the variables, the
+indexes, and whether all were elaborated. -/
+def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pending : Array PendingInst)
+    (declBase : Name) (varsOk : Bool) (varNames : NameSet) :
+    TermElabM (Array PropInfo × Array InstInfo × Array Name × Array (Name × Expr) × CompIndexes × Bool) := do
+  let instNames := pending.map (·.name)
+  let decls := vars.map fun v => (v.name, fun _ => pure v.type)
+  withLocalDeclsD decls fun fvs => do
+    discard (takeIndexes fvs)
+    let (insts, defs, values, defnFvs, indexes, defsOk) ← elabCompDefinitions scope vars pending declBase fvs
+    let (props, defs, indexes, _, propsOk) ←
+      elabCompConstraints scope members vars instNames declBase fvs defnFvs values varNames defs indexes
+    let good := varsOk && defsOk && propsOk
+    lintDuplicateConstraints members
+    let lcx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
+    lintOutputs lcx members vars
+    lintCaseSplitGuarantees lcx members vars
+    let uses ← usesOf ((← fvs.mapM fun x => inferType x) ++ defs.map (·.2))
+    if good then addCompDefs vars declBase fvs uses props values defs
+    let closed ← values.mapM fun (d, v) => return (d, ← mkLambdaFVars fvs v)
+    return (props, insts, uses, closed, indexes, good)
+
+/-- `unused_variables` and `unused_assumption` (`lint::unused_assumption`)
+of a comp whose items were all elaborated: the latter is recorded, to be
+reported unless the file reads one of the inputs (`reportLints`), or one
+that another assumption ties to a used variable, transitively. -/
+def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Var) (instNames : Array Name) :
+    TermElabM Unit := do
+  let mut mentioned := #[]
+  for m in members do
+    match m with
+    | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
+      for b in bs.getElems do
+        let b := b.raw
+        mentioned := mentioned ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
+    | _ => if let some (_, _, e) := constraint? m then mentioned := mentioned ++ pathMentions e
+  for v in vars do
+    if let some d := v.defn? then mentioned := mentioned ++ pathMentions d
+  -- A public definition says what the output is, so it is used.
+  let own := vars.filter fun v => v.role == .input || (v.role == .output && !(v.isPub && v.defn?.isSome))
+  for (x, v) in Core.unmentioned (own.map fun v => (v.name, v)) mentioned do
+    recordLint .unusedVariables v.ref (Core.unusedVariableMsg x false (v.role == .output))
+  let mut others := #[]
+  for m in members do
+    match m with
+    | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
+      for b in bs.getElems do
+        let b := b.raw
+        others := others ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
+    | _ => if let some (kind, _, e) := constraint? m then
+        unless kind == .assume do others := others ++ pathMentions e
+  for v in vars do
+    if let some d := v.defn? then others := others ++ pathMentions d
+  let inputs := vars.filter (·.role == .input) |>.map (·.name)
+  let level ← lintLevel .unusedAssumption
+  let assumed := members.filterMap fun m => match constraint? m with
+    | some (.assume, x, e) => some (x, e)
+    | _ => none
+  let mss := assumed.map fun (_, e) => (pathMentions e).foldl (init := #[]) fun acc n =>
+    if vars.any (·.name == n) && !acc.contains n then acc.push n else acc
+  -- The uninterpreted functions that they apply link too.
+  let acx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
+  for m in members do
+    match m with
+    | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
+      for b in bs.getElems do
+        if !b.raw[1].isNone then others := others ++ (← appliedFns acx b.raw[1][1])
+    | _ => if let some (kind, _, e) := constraint? m then
+        unless kind == .assume do others := others ++ (← appliedFns acx e)
+  for v in vars do
+    if let some d := v.defn? then others := others ++ (← appliedFns acx d)
+  let links ← assumed.mapIdxM fun i (_, e) => return mss[i]! ++ (← appliedFns acx e)
+  let used := Core.usedAssumptions links others
+  for (x, _) in assumed, ms in mss, ls in links, u in used do
+    if Core.unusedAssumption ms.size (ms.all inputs.contains) u false then
+      let r : Core.AssumptionRecord := { component := path, name := x.getId, inputs := ms, links := ls, level }
+      modifyLocal fun l => { l with assumptions := l.assumptions.push (r, x) }
+
+/-- A comp's members, elaborated, with the comp recorded if all were: whether
+they were, and the generated declarations. -/
+def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx : Syntax)
+    (members : Array Syntax) (tested : Core.Tested) : TermElabM (Bool × Array Name) := do
+  let (vars, names, ok) ← elabCompVars scope members
+  unless ok do return (false, #[])
+  let (pending, vars, names, ok) ← elabCompInsts scope members vars names
+  let instNames := pending.map (·.name)
+  -- An instance that is not resolved is reported once, not again at each
+  -- use of it, as by the `fren` command (`Reqs/View#static-errors`).
+  unless ok do return (false, #[])
+  -- Bindings; assumptions, requirements and expectations
+  let (props, insts, uses, values, indexes, ok) ← elabCompBody scope members vars pending declBase ok names
+  if ok then lintCompUnused scope path members vars instNames
+  let mut generated := insts.map (·.decl) ++ props.map (·.decl) ++ #[declBase ++ `assumes, declBase ++ `ensures]
+    ++ values.map (declBase ++ `def ++ ·.1) ++ (if values.isEmpty then #[] else #[declBase ++ `defs])
+  let env ← getEnv
+  generated := generated ++ (values.map (declBase ++ `out ++ ·.1)).filter env.contains
+  if ok then
+    record (.item { item := { kind := .compItem, path, isPub, owner := modName }, ref := nameStx })
+    let (relational, counts) ← checkCounts
+    record (.compInfo { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
+                        decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
+                        relational, counts, indexes, tested })
+  return (ok, generated)
+
 @[command_elab Lang.compCmd] def elabComp : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
@@ -3936,293 +4305,15 @@ open Lang in
   if let some k := (Core.repeatsAt declared)[0]? then
     throwErrorAt named[k]! (Core.dupMemberMsg declared[k]!).text
   lintMemberOrder stx stx[4].getArgs members
-  let (ok, generated) ← liftTermElabM do
-    let mut ok := true
-    let mut generated : Array Name := #[]
-    let mut names : NameSet := {}
-    -- Variables
-    let mut vars : Array Var := #[]
-    for m in members do
-      let (role, isPub, isDet, x, ty?, defn?) ← match m.getKind with
-        -- An input has no definition (`checkParsed`).
-        | ``Lang.inMember =>
-          pure (Core.Role.input, true, false, m[1], if m[2].isNone then none else some m[2][1], none)
-        | ``Lang.outMember =>
-          pure (.output, !m[0].isNone, !m[1].isNone, m[3], if m[4].isNone then none else some m[4][1], definition? m)
-        | _ => continue
-      -- An error in shadowing leaves the variable's meaning clear.
-      let x ← try declare x scope
-        catch ex => logException ex; ok := false; pure (declaredIdent x).1
-      names := names.insert x.getId
-      lintName .variable x.getId x
-      try
-        let ty ← varType scope x ty?
-        let st ← getState
-        unless Core.variableTypeAccepted (role == .output) (st.unbounded ty) defn?.isSome do
-          throwErrorAt x (Core.unboundedOutputMsg x.getId (← typeName ty)).text
-        vars := vars.push { name := x.getId, role, isPub, isDet, «type» := ty, ref := x, defn? }
-      catch ex => logException ex; ok := false
-    -- One cycle is reported, as by the `fren` command.
-    if let some (v, cycle) := vars.findSome? fun v => (defCycle? vars v.name).map (v, ·) then
-      logErrorAt v.ref (Core.cyclicDefinitionMsg cycle).text; ok := false
-    let ok' := ok
-    unless ok' do return (false, #[])
-    -- Instances, whose variables follow the comp's own
-    let mut pending : Array PendingInst := #[]
-    for m in members do
-      let `(fren_member| inst $x:ident : $p:fren_path { $bs,* }) := m | continue
-      -- An instance named by a literal is not resolved, which would report
-      -- its name again; the `fren` command stops at the first report too.
-      if let .error msg := Core.checkNotLiteral (declaredIdent x).1.getId then
-        logErrorAt x msg.text; ok := false; continue
-      let x ← try declare x scope
-        catch ex => logException ex; ok := false; pure (declaredIdent x).1
-      names := names.insert x.getId
-      lintName .instance x.getId x
-      try
-        let (pi, ivars) ← resolveInst scope x p bs.getElems vars.size
-        pending := pending.push pi
-        vars := vars ++ ivars
-        -- Its bindings give each input of its component a value, and the
-        -- instance's assumption check reads them (`unused_assumption`).
-        let reads := (pi.comp.vars.filter fun v => v.name.isAtomic && v.role == Core.Role.input).map (pi.comp.path, ·.name)
-        modifyLocal fun l => { l with globalReads := l.globalReads ++ reads }
-      catch ex => logException ex; ok := false
-    let instNames := pending.map (·.name)
-    -- An instance that is not resolved is reported once, not again at each
-    -- use of it, as by the `fren` command (`Reqs/View#static-errors`).
-    let instsOk := ok
-    unless instsOk do return (false, #[])
-    -- Bindings; assumptions, requirements and expectations
-    let decls := vars.map fun v => (v.name, fun _ => pure v.type)
-    let varsOk := ok
-    let varNames := names
-    let (props, insts, uses, values, indexes, propsOk) ← withLocalDeclsD decls fun fvs => do
-      let mut good := varsOk
-      let mut insts : Array InstInfo := #[]
-      let mut indexes : Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr) := #[]
-      discard (takeIndexes fvs)
-      -- The generated definitions, over `fvs`, added once the placeholders
-      -- that they use are known.
-      let mut defs : Array (Name × Expr) := #[]
-      for pi in pending, k in [0:pending.size] do
-        try
-          let cx := { modName := scope, vars, insts := instNames, place := .binding, current := k }
-          let (i, body) ← elabInst cx fvs pi (declBase ++ `inst ++ pi.name)
-          insts := insts.push i
-          defs := defs.push (i.decl, body)
-          indexes := indexes ++ (← takeIndexes fvs).map fun (r, q, g) => (pi.name, .binding k, r, q, g)
-        catch ex => logException ex; good := false
-      -- Definitions, each after those it mentions, with the earlier ones
-      -- substituted, so that each value mentions no defined output.
-      let mut values : Array (Name × Expr) := #[]
-      let mut todo := vars.filter (·.defn?.isSome)
-      let mut defnFvs : Array Expr := #[]
-      while !todo.isEmpty do
-        let some v := todo.find? fun v => (pathMentions v.defn?.get!).all fun n => !todo.any (·.name == n)
-          | break
-        todo := todo.filter (·.name != v.name)
-        let some idx := vars.findIdx? (·.name == v.name) | continue
-        try
-          let e := v.defn?.get!
-          discard (takeIndexes fvs)
-          let value ← withRef e do
-            -- A definition assigns once and acyclically, so `++` is in the core in it.
-            let t ← toTerm { modName := scope, vars, insts := instNames, place := .prop, emptyOk := Core.Position.declared.checked false false, concatOk := true
-                             natOk := v.type.isConstOf ``Nat, expected? := ← coreTy? v.type } e
-            checkDeclared e t v.type fun ty => s!"note: `{v.name}` has type `{ty}`, so its definition must too"
-            elabProp t v.type
-          indexes := indexes ++ (← takeIndexes fvs).map fun (r, q, g) => (v.name, .prop, r, q, g)
-          lintBools e
-          let value := value.replaceFVars defnFvs (values.map (·.2))
-          defs := defs.push (declBase ++ `def ++ v.name, ← mkEq fvs[idx]! value)
-          values := values.push (v.name, value)
-          defnFvs := defnFvs.push fvs[idx]!
-        catch ex => logException ex; good := false
-      let mut names := varNames
-      let mut props : Array PropInfo := #[]
-      for m in members do
-        let some (kind, x, e) := constraint? m | continue
-        if let .error msg := Core.checkNoBang x.getId then
-          logErrorAt x msg.text; good := false; continue
-        names := names.insert x.getId
-        lintName .constraint x.getId x
-        try
-          if x.getId.toString.endsWith "?" then
-            throwErrorAt x (Core.propNameMsg x.getId).text
-          let cx := { modName := scope, vars, insts := instNames, place := if kind == .assume then .assume else .prop }
-          discard (takeIndexes fvs)
-          let t ← toTerm cx e
-          checkDeclared e t (mkConst ``Bool) fun _ => "note: a constraint is a `Bool`"
-          let body ← elabProp t
-          -- An assumption sees defined outputs only as their definitions.
-          let subst (b : Expr) := if kind == .assume then b.replaceFVars defnFvs (values.map (·.2)) else b
-          let body := subst body
-          let place : Core.IndexPlace := if kind == .assume then .assume else .prop
-          indexes := indexes ++ (← takeIndexes fvs subst).map fun (r, q, g) => (x.getId, place, r, q, g)
-          lintBools e
-          lintConstant cx kind.keyword e
-          let trig ← triggerOf cx e
-          let trigger? ← trig.mapM fun (t, _) => do mkLambdaFVars fvs (← elabProp t)
-          let decl := declBase ++ Name.mkSimple kind.keyword ++ x.getId
-          defs := defs.push (decl, body)
-          props := props.push {
-            kind, name := x.getId, ref := x, body := ← mkLambdaFVars fvs body,
-            trigger?, triggerRef? := trig.map (·.2), decl }
-        catch ex => logException ex; good := false
-      -- `duplicate_constraint` (`lint::duplicate_constraint`).
-      let constraints := members.filterMap fun m => match m with
-        | `(fren_member| assume $x:ident : $e) => some (Core.ConstraintKind.assume, x.raw, e.raw)
-        | `(fren_member| ensure $x:ident : $e) => some (.ensure, x.raw, e.raw)
-        | `(fren_member| expect $x:ident : $e) => some (.expect, x.raw, e.raw)
-        | _ => none
-      for (i, j) in Core.repeatedConstraints (constraints.map fun (_, _, e) => exactText (unparen e)) do
-        let (k, x, _) := constraints[i]!
-        let (k', x', _) := constraints[j]!
-        let msg := Core.duplicateConstraintMsg k' k x'.getId.toString
-        let fixable := (Core.duplicateConstraint k' k true).2 && (← getLocal).inMarkdown
-        recordLint .duplicateConstraint x (if fixable then msg.note Core.fixHelp else msg)
-      -- `constant_output` and `definable_output` (`lint::output_lints`).
-      let lcx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
-      let reqs := members.filterMap fun m => match constraint? m with
-        | some (.ensure, x, e) => some (x.getId, e)
-        | _ => none
-      for v in vars.filter (fun v => v.role == .output && v.name.isAtomic) do
-        let about := reqs.filter fun (_, e) => (pathMentions e).contains v.name
-        let isX (e : Syntax) : Bool :=
-          let e := unparen e
-          let p := if e.getNumArgs == 1 then e[0] else e
-          p.isOfKind ``Lang.fren_path && (pathSegs p).size == 1 && (pathSegs p)[0]!.getId == v.name
-        -- The only requirement that mentions it, as `x = e` or `x? iff e`, with `e` other variables'.
-        let equation := match about with
-          | #[(_, e)] =>
-            let e := unparen e
-            (isBinOp e "=" || isBinOp e "iff")
-              && ((isX e[0] && !(pathMentions e[2]).contains v.name) || (isX e[2] && !(pathMentions e[0]).contains v.name))
-          | _ => false
-        let mentions ← match v.defn? with | some d => mentionsAny lcx d | none => pure true
-        let (constant, definable) := Core.outputLints v.defn?.isSome mentions about.size equation
-        if constant then recordLint .constantOutput v.ref (Core.constantOutputMsg v.name)
-        if definable then recordLint .definableOutput v.ref (Core.definableOutputMsg v.name about[0]!.1)
-      -- `case_split_guarantees` (`lint::case_split_guarantees`): each requirement `when T, y = e`, as its name, where it is
-      -- reported, `y`, the operator, `T` and the text of `e`.
-      let mut cases : Array (Name × Syntax × String × String × Core.VariantTest × String) := #[]
-      for m in members do
-        let `(fren_member| ensure $x:ident : $e) := m | continue
-        let e := unparen e.raw
-        unless isConditional e && e[0].getAtomVal.trimAscii.toString == "when" do continue
-        let body := unparen e[3]
-        let op := if isBinOp body "=" then "=" else if isBinOp body "iff" then "iff" else ""
-        if op.isEmpty then continue
-        let y := unparen body[0]
-        let y := if y.getNumArgs == 1 then y[0] else y
-        unless y.isOfKind ``Lang.fren_path && (pathSegs y).size == 1 do continue
-        let yn := (pathSegs y)[0]!.getId
-        unless vars.any (fun v => v.role == .output && v.name == yn) do continue
-        let some t ← variantTest? lcx e[1] | continue
-        cases := cases.push (x.getId, x, srcText y, op, t, armBodyOf body[2])
-      let mut grouped : Array Nat := #[]
-      for i in [0:cases.size] do
-        if grouped.contains i then continue
-        let (_, _, y, op, t, _) := cases[i]!
-        let group := (Array.range cases.size).filter fun j =>
-          j ≥ i && cases[j]!.2.2.1 == y && cases[j]!.2.2.2.2.1.key == t.key && cases[j]!.2.2.2.2.1.enum == t.enum
-        grouped := grouped ++ group
-        let cs := group.map fun j => let (n, _, _, _, t, e) := cases[j]!; (n, t, e)
-        let ts := cs.map (·.2.1)
-        let n := (((← getState).enums.get? t.enum).map (·.variants.size)).getD 0
-        if Core.caseSplitGuarantees cs.size (Core.repeatedVariants ts) then
-          recordLint .caseSplitGuarantees cases[group[1]!]!.2.1 (Core.caseSplitGuaranteesMsg y op cs (Core.untestedVariants n ts))
-      let uses ← usesOf ((← fvs.mapM fun x => inferType x) ++ defs.map (·.2))
-      if good then
-        let appD (decl : Name) := mkAppN (Lean.mkConst decl) (uses.map (Lean.mkConst ·) ++ fvs)
-        let app (p : PropInfo) := appD p.decl
-        unless values.isEmpty do
-          defs := defs.push (declBase ++ `defs, mkAndN (values.map fun (d, _) => appD (declBase ++ `def ++ d)).toList)
-        defs := defs ++ #[(declBase ++ `assumes, mkAndN (props.filter (·.kind == .assume) |>.map app).toList),
-          (declBase ++ `ensures, mkAndN (props.filter (·.kind == .ensure) |>.map app).toList)]
-        for (decl, body) in defs do
-          addUsesDef uses decl (← mkLambdaFVars fvs body)
-        -- `p.out.d`, a function of the inputs, when the definition mentions
-        -- only inputs.
-        let inputs := (vars.zip fvs).filter (·.1.role == .input) |>.map (·.2)
-        for (d, value) in values do
-          let others := fvs.filter (!inputs.contains ·)
-          unless others.any (value.containsFVar ·.fvarId!) do
-            addUsesDef uses (declBase ++ `out ++ d) (← mkLambdaFVars inputs value)
-      let closed ← values.mapM fun (d, v) => return (d, ← mkLambdaFVars fvs v)
-      return (props, insts, uses, closed, indexes, good)
-    ok := propsOk
-    if ok then
-      let mut mentioned := #[]
-      for m in members do
-        match m with
-        | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
-          for b in bs.getElems do
-            let b := b.raw
-            mentioned := mentioned ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
-        | _ => if let some (_, _, e) := constraint? m then mentioned := mentioned ++ pathMentions e
-      for v in vars do
-        if let some d := v.defn? then mentioned := mentioned ++ pathMentions d
-      -- A public definition says what the output is, so it is used.
-      let own := vars.filter fun v => v.role == .input || (v.role == .output && !(v.isPub && v.defn?.isSome))
-      for (x, v) in Core.unmentioned (own.map fun v => (v.name, v)) mentioned do
-        recordLint .unusedVariables v.ref (Core.unusedVariableMsg x false (v.role == .output))
-      -- `unused_assumption` (`lint::unused_assumption`), unless the file
-      -- reads one of the inputs (`reportLints`), or one that another assumption
-      -- ties to a used variable, transitively.
-      let mut others := #[]
-      for m in members do
-        match m with
-        | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
-          for b in bs.getElems do
-            let b := b.raw
-            others := others ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
-        | _ => if let some (kind, _, e) := constraint? m then
-            unless kind == .assume do others := others ++ pathMentions e
-      for v in vars do
-        if let some d := v.defn? then others := others ++ pathMentions d
-      let inputs := vars.filter (·.role == .input) |>.map (·.name)
-      let level ← lintLevel .unusedAssumption
-      let assumed := members.filterMap fun m => match constraint? m with
-        | some (.assume, x, e) => some (x, e)
-        | _ => none
-      let mss := assumed.map fun (_, e) => (pathMentions e).foldl (init := #[]) fun acc n =>
-        if vars.any (·.name == n) && !acc.contains n then acc.push n else acc
-      -- The uninterpreted functions that they apply link too.
-      let acx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
-      for m in members do
-        match m with
-        | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
-          for b in bs.getElems do
-            if !b.raw[1].isNone then others := others ++ (← appliedFns acx b.raw[1][1])
-        | _ => if let some (kind, _, e) := constraint? m then
-            unless kind == .assume do others := others ++ (← appliedFns acx e)
-      for v in vars do
-        if let some d := v.defn? then others := others ++ (← appliedFns acx d)
-      let links ← assumed.mapIdxM fun i (_, e) => return mss[i]! ++ (← appliedFns acx e)
-      let used := Core.usedAssumptions links others
-      for (x, _) in assumed, ms in mss, ls in links, u in used do
-        if Core.unusedAssumption ms.size (ms.all inputs.contains) u false then
-          let r : Core.AssumptionRecord := { component := path, name := x.getId, inputs := ms, links := ls, level }
-          modifyLocal fun l => { l with assumptions := l.assumptions.push (r, x) }
-    generated := insts.map (·.decl) ++ props.map (·.decl) ++ #[declBase ++ `assumes, declBase ++ `ensures]
-      ++ values.map (declBase ++ `def ++ ·.1) ++ (if values.isEmpty then #[] else #[declBase ++ `defs])
-    let env ← getEnv
-    generated := generated ++ (values.map (declBase ++ `out ++ ·.1)).filter env.contains
-    if ok then
-      record (.item { item := { kind := .compItem, path, isPub, owner := modName }, ref := nameStx })
-      let (relational, counts) ← checkCounts
-      record (.compInfo { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
-                          decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
-                          relational, counts, indexes, tested })
-    return (ok, generated)
+  let (ok, generated) ← liftTermElabM <| elabCompMembers scope path modName declBase isPub nameStx members tested
   lintDeclared .component n nameStx
   lintLines .component n nameStx stx
   if ok = true then
     for d in generated do
       elabCommand (← `(attribute [fren_spec] $(mkCIdent d)))
     modifyLocal fun l => { l with comps := l.comps.push path }.declared path
+
+end
 
 /-! ## Constants and global expectations -/
 
