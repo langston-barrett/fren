@@ -1198,7 +1198,7 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
       return .node .binder [← shapeOf (cx.at b) #[] sc]
     -- Definitions are acyclic, so this ends.
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
-      return .node .definedOutput [← shapeOf { cx with binders := #[] } #[] d]
+      return .node .definition [← shapeOf { cx with binders := #[] } #[] d]
     return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable (n.toString (escape := false)) else .constant)
   -- The names that the pattern tests of a condition, or of the left
   -- operand of `and`, bind, in what sees them (`lang::test_scope`).
@@ -1234,7 +1234,7 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
   | .«let» _ defs body _ =>
     -- Each name stands for its definition, which sees the earlier names.
     let bs ← defs.foldlM (init := bs) fun bs (x, _, d) => do
-      return bs.push (Name.mkSimple (declaredIdent x).1.name, .node .binder [← shapeOf cx bs d])
+      return bs.push (Name.mkSimple (declaredIdent x).1.name, .node .definition [← shapeOf cx bs d])
     return .node .compound [← shapeOf cx bs body]
   | .table _ rows => parts .compound (tableParts rows).toList
   | .num .. | .bool .. | .str .. => return .leaf .literal
@@ -1252,7 +1252,7 @@ def testNames (c : Expr) : Array Name :=
 
 /-- The names of the variables and uninterpreted functions that `e`
 mentions (`lang::mentions`). -/
-def mentionedNames (cx : ExprCtx) (e : Expr) : M (List String) := return (← shapeOf cx #[] e).mentioned
+def mentionedNames (cx : ExprCtx) (e : Expr) : M (List Fren.Core.Mention) := return (← shapeOf cx #[] e).mentioned
 
 /-- The names of the variables that `e` mentions: its paths of one
 segment, and for `p.x`, `p` too. -/
@@ -3594,7 +3594,7 @@ partial def elabArithExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (
   let newtypeOp := @exprNewtypeOp
   if op == "*" then
     let (ma, mb) := (← mentionedNames cx a, ← mentionedNames cx b)
-    unless cx.unmentioned || Fren.Core.productAccepted ma mb do err span Fren.Core.nonlinearMsg
+    unless cx.unmentioned || Fren.Core.productAccepted ma mb do err span (Fren.Core.nonlinearMsg ma mb)
     -- For `branches_sharing_code`.
     if cx.noteIndexes then
       modify fun s => { s with mentioning := s.mentioning ++ ([(ma, a.span), (mb, b.span)].filter (!·.1.isEmpty) |>.map (·.2)) }

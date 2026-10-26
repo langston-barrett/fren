@@ -1221,7 +1221,7 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
   else if e.isOfKind ``Lang.letExpr then
     -- Each name stands for its definition, which sees the earlier names.
     let bs ← e[1].getSepArgs.foldlM (init := bs) fun bs d => do
-      return bs.push ((declaredIdent d[0]).1.getId, .node .binder [← shapeOf cx d[3] bs])
+      return bs.push ((declaredIdent d[0]).1.getId, .node .definition [← shapeOf cx d[3] bs])
     return .node .compound [← shapeOf cx e[3] bs]
   else if e.isOfKind ``Lang.quantExpr then
     let new := quantNames e |>.map fun n => (n, Core.MentionShape.leaf .bound)
@@ -1236,7 +1236,7 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
       return .node .binder [← shapeOf (cx.at b) sc]
     -- Definitions are acyclic, so this ends.
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
-      return .node .definedOutput [← shapeOf { cx with binders := #[] } d]
+      return .node .definition [← shapeOf { cx with binders := #[] } d]
     return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable (n.toString (escape := false)) else .constant)
   else if e.isAtom || e.isIdent then return .leaf .literal
   -- The names that the pattern tests of a condition, or of the left
@@ -1254,7 +1254,7 @@ def mentionsAny (cx : ExprCtx) (e : Syntax) : TermElabM Bool := return (← shap
 
 /-- The names of the variables and uninterpreted functions that `e`
 mentions (`lang::mentions`). -/
-def mentionedNames (cx : ExprCtx) (e : Syntax) : TermElabM (List String) := return (← shapeOf cx e).mentioned
+def mentionedNames (cx : ExprCtx) (e : Syntax) : TermElabM (List Core.Mention) := return (← shapeOf cx e).mentioned
 
 /-- The applications of uninterpreted functions in `e`. -/
 partial def applications (cx : ExprCtx) (e : Syntax) : TermElabM (Array Syntax) := do
@@ -4787,7 +4787,7 @@ def arithTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (n
   if op == "*" then
     let (ma, mb) := (← mentionedNames cx a, ← mentionedNames cx b)
     unless cx.unmentioned || Core.productAccepted ma mb do
-      throwError Core.nonlinearMsg.text
+      throwError (Core.nonlinearMsg ma mb).text
     -- For `branches_sharing_code`, without parentheses, as `boolNode` has them.
     if cx.noteIndexes then
       let at_ (s : Syntax) := ((unparen s).getPos?, (unparen s).getTailPos?)

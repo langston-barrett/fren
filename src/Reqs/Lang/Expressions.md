@@ -186,8 +186,9 @@ uninterpreted [function](Items.md#functions): those of [linear
 arithmetic](#linear-arithmetic), of the [decidable
 core](Decidability.md#strings), and of the
 [lint](../Lint/Complexity.md#constant-outputs) `constant_output`. An expression that mentions
-neither has the same value in every behaviour (see [The whole
-tree](Meaning.md#the-whole-tree)). What an expression mentions is decided from its parts, as `lang::mentions` states:
+neither has the same value in every behaviour, unless it is
+unspecified there, as an index out of range within a constant's value is
+(see [The whole tree](Meaning.md#the-whole-tree)). What an expression mentions is decided from its parts, as `lang::mentions` states:
 
 - A literal mentions nothing, and neither does a
   [constant](Items.md#constants), a variant without a payload, or any
@@ -227,25 +228,25 @@ tree](Meaning.md#the-whole-tree)). What an expression mentions is decided from i
 
 Each kind of expression is the head of a [layer](Meaning.md#layers), a
 `lang::Head`, and what it mentions is a set of names, of variables and
-uninterpreted functions, given by `mentioned_by`. `lang::mentions` states
+uninterpreted functions as `Mention`s, given by `mentioned_by`. `lang::mentions` states
 it, from the head and what the parts mention together:
 
 ```fren
 pub comp mentions {
     use self::Head::{Bound, Constant, Construction, Defined, Literal, Method, Uninterpreted, Variable}
     in head: Head
-    in parts_mentioned: Set(Id)  -- what its parts mention, together
+    in parts_mentioned: Set(Mention)  -- what its parts mention, together
 
     assume leaves: when head is Literal(_) | Bound(_) | Constant(_) | Variable(_), parts_mentioned = {}
 
-    pub det out mentioned: Set(Id) := mentioned_by(head, parts_mentioned)
+    pub det out mentioned: Set(Mention) := mentioned_by(head, parts_mentioned)
     pub det out mentions? := mentioned != {}    -- it mentions a variable or an uninterpreted function
 
-    expect fixed_meaning: when head is Defined(_) | Method(_) | Construction(_), mentioned = parts_mentioned
+    expect fixed_meaning: when head is Defined(_) | Method(_) | Construction(_, _), mentioned = parts_mentioned
     expect unknown: when head is Variable(_) | Uninterpreted(_), mentions?
     expect bound_fixed: when head is Bound(_), not mentions?
     expect itself: match head {
-        Variable(x) => mentioned = {x},
+        Variable(x) => mentioned = {Mention::Var(x)},
         _ => true,
     }
 
@@ -281,8 +282,8 @@ with `rate` uninterpreted: its value is unknown even at a fixed argument.
 
 ```fren
 pub comp linear_product {
-    in a_mentioned: Set(Id)  -- what the left operand mentions (`lang::mentions`)
-    in b_mentioned: Set(Id)  -- what the right operand mentions
+    in a_mentioned: Set(Mention)  -- what the left operand mentions (`lang::mentions`)
+    in b_mentioned: Set(Mention)  -- what the right operand mentions
 
     pub det out accepted?
 
@@ -310,8 +311,13 @@ expect defined_scales: forall (m: node) (p: linear_product),
 ```
 
 The rule is what makes the product linear: of an accepted product, one
-operand is a *fixed factor*, with the same value in every environment, by
-the [laws of a layer](Meaning.md#laws). Here `a` and `b` are the operands'
+operand is a *fixed factor*, with the same value in every environment
+where it is specified, by the [laws of a layer](Meaning.md#laws). Where it
+is not, as `get([1], 5)` with `fn get(q: Seq(Int), i: Int): Int := q[i]`,
+a check reports why: the [definedness check](../Check.md#definedness)
+reports the index in `get`'s body, as the [precondition
+check](../Check.md#preconditions) reports an application outside a
+function's preconditions. Here `a` and `b` are the operands'
 layers and `a2` and `b2` the same layers, with the same parts' values, in
 any other environment; that the parts' values are the same follows by
 induction (see [The whole tree](Meaning.md#the-whole-tree)):

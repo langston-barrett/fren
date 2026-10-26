@@ -1,3 +1,7 @@
+-- keep-sorted start
+import FrenCore.Diagnostic
+-- keep-sorted end
+
 /-! # What an expression mentions (`Reqs/Lang/Expressions#mentions`)
 
 What an expression mentions: the names of the variables and uninterpreted
@@ -6,8 +10,21 @@ translate their syntax into. -/
 
 namespace Fren.Core
 
+/-- What an expression mentions (`lang::Mention`): a variable, or an
+uninterpreted function, by its name as written, named apart. -/
+inductive Mention where
+  | var (x : String)
+  | fn (f : String)
+  deriving BEq, DecidableEq, Inhabited, Repr
+
+/-- `m` as a message writes it. -/
+def Mention.describe : Mention → String
+  | .var x => s!"the variable `{x}`"
+  | .fn f => s!"the function `{f}`"
+
 /-- The kinds of expression, for what one mentions (`lang::mentions`), each
-a `lang::Head` (`Reqs/Lang/Meaning#layers`). -/
+a `lang::Head` (`Reqs/Lang/Meaning#layers`). Only the names that it
+mentions are kept: what it mentions does not depend on the rest. -/
 inductive MentionKind where
   /-- A literal, or a part with no expression, such as a field's name. -/
   | literal
@@ -17,11 +34,14 @@ inductive MentionKind where
   /-- A variable `x` of the component or of one of its instances, or a
   field read from one, or the bound name of an unbounded quantifier. -/
   | variable (x : String)
-  /-- A defined output, whose part is its definition. -/
-  | definedOutput
-  /-- A binder of a `match` arm, whose part is its scrutinee. -/
+  /-- A defined output, or a name of a `let` or `where`, whose part is its
+  definition. -/
+  | definition
+  /-- A binder of a `match` arm or of a pattern test, whose part is its
+  scrutinee. -/
   | binder
-  /-- A quantifier's bound name: one value in each instance. -/
+  /-- A quantifier's bound name of a listed type: one value in each
+  instance. -/
   | bound
   /-- A variant with a payload, a record literal or a newtype built from
   its value, whose parts are its arguments or its fields. -/
@@ -32,18 +52,19 @@ inductive MentionKind where
   | uninterpreted (f : String)
   /-- An application of a defined function, whose parts are its arguments. -/
   | defined
-  /-- An operator, a conditional, a `match`, a field read, a record update
-  or a literal of a set, pair or sequence, whose parts are its operands. -/
+  /-- An operator, a conditional, a `match`, a pattern test, a table, a
+  field read, a record update, a `let`, a quantifier or a literal of a set,
+  pair or sequence, whose parts are its operands. -/
   | compound
   deriving BEq, Inhabited, Repr
 
 /-- What an expression of kind `k` mentions, where `ps` is what its parts
 mention, together (`lang::mentioned_by`). -/
-def kindMentioned : MentionKind → List String → List String
+def kindMentioned : MentionKind → List Mention → List Mention
   | .literal | .constant | .bound => fun _ => []
-  | .variable x => fun _ => [x]
-  | .uninterpreted f => fun ps => ps ++ [f]
-  | .definedOutput | .binder | .construction | .method | .defined | .compound => id
+  | .variable x => fun _ => [.var x]
+  | .uninterpreted f => fun ps => ps ++ [.fn f]
+  | .definition | .binder | .construction | .method | .defined | .compound => id
 
 /-- An expression as far as what it mentions: its kind and its parts. Both
 front ends translate their syntax into it, so that they agree on what an
@@ -53,12 +74,12 @@ inductive MentionShape where
   deriving Inhabited
 
 mutual
-/-- The names that `e` mentions, perhaps more than once (`lang::mentions`). -/
-def MentionShape.mentioned : MentionShape → List String
+/-- What `e` mentions, perhaps more than once (`lang::mentions`). -/
+def MentionShape.mentioned : MentionShape → List Mention
   | .node k ps => kindMentioned k (MentionShape.allMentioned ps)
 
-/-- The names that `ps` mention, together. -/
-def MentionShape.allMentioned : List MentionShape → List String
+/-- What `ps` mention, together. -/
+def MentionShape.allMentioned : List MentionShape → List Mention
   | [] => []
   | p :: ps => p.mentioned ++ MentionShape.allMentioned ps
 end
@@ -66,6 +87,22 @@ end
 /-- Whether `e` mentions a variable or an uninterpreted function
 (`lang::mentions`). -/
 def MentionShape.mentions (e : MentionShape) : Bool := !e.mentioned.isEmpty
+
+/-- Whether `a * b` is linear, from what each operand mentions
+(`lang::linear_product`): one of them mentions nothing. -/
+def productAccepted (a b : List Mention) : Bool := a.isEmpty || b.isEmpty
+
+/-- What `ms` mention, each once, as a message lists them. -/
+def describeMentions (ms : List Mention) : String :=
+  ", ".intercalate (ms.eraseDups.map Mention.describe)
+
+/-- The error of a product of two operands that mention `a` and `b`
+(`lang::linear_product`). -/
+def nonlinearMsg (a b : List Mention) : Msg :=
+  { code? := some "F0307", headline := "nonlinear arithmetic is not supported", label? := some "both sides mention variables or uninterpreted functions"
+    notes := #[s!"note: the left side mentions {describeMentions a}, and the right side {describeMentions b}",
+      "note: the solver decides only linear integer arithmetic",
+      "help: one side of `*` must mention no variable and no uninterpreted function, such as `2 * x` or `(MAX - MIN) * x`"] }
 
 /-- The names that a `let` or `where` clause mentions, from those of its
 definitions `names`, what each definition mentions (`defs`, as paths whose
