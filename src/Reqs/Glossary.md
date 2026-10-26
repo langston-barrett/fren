@@ -189,7 +189,9 @@ private.
 payload, or an or-pattern. See [Patterns](Lang/Patterns.md).
 
 **Pattern test.** An expression `e is P`, which is `true` exactly when the
-pattern `P`, as of a `match` arm but binding no names, matches `e`. See
+pattern `P`, as of a `match` arm, matches `e`. Its binders name parts of
+`e` in the later operands of its chain of `and`, and in the body of a
+`when` or the `then` branch of an `if` whose condition it is. See
 [Expressions](Lang/Expressions.md#pattern-tests).
 
 **Pattern type.** A type `T is P`, whose values are those of its base

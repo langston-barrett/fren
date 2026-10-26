@@ -39,6 +39,7 @@ tested lang::widening: "test/ui/lang/nat.fren", "test/ui/lang/nat_static.fren", 
 tested lang::literal_type: "test/ui/lang/nat.fren", "test/ui/lang/nat_static.fren"
 tested lang::nat_variable: "test/ui/lang/nat.fren"
 tested lang::pattern_place: "test/ui/lang/pattern_types_static.fren"
+tested lang::pattern_binding: "test/ui/lang/pattern_binders.fren", "test/ui/checks/pattern_binders.fren"
 tested lang::pattern_finite: "test/ui/lang/pattern_types_meaning.fren"
 tested lang::pattern_widening: "test/ui/checks/pattern_obligations.fren"
 tested check::pattern_obligation: "test/ui/checks/pattern_obligations.fren", "test/ui/checks/pattern_obligations_elements.fren"

@@ -1,0 +1,18 @@
+error[F0334]: a pattern test cannot bind `v` here
+ --> test/cli/types/f0334_unless.fren:3:72
+  |
+3 | comp c { in r: Reply pub out w: Int ensure a: unless r is Reply::Value(v), w = v }
+  |                                                                        ^ binds a name
+  |
+  = note: the body of `unless` holds where the pattern does not match, where `v` has no value
+  = help: to read the payload, bind it in a `when`'s condition, as in `when x is P(v), ...`, or write a `match`
+help: ignore the value
+  |
+3 - comp c { in r: Reply pub out w: Int ensure a: unless r is Reply::Value(v), w = v }
+3 + comp c { in r: Reply pub out w: Int ensure a: unless r is Reply::Value(_), w = v }
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0334`.
+exit=2

@@ -408,11 +408,31 @@ structure Edit where
   /-- The expression changed, for the identifier. -/
   context : Span
 
+/-- Whether a pattern test of the chain of `and` `c` may bind a name that
+the rest of the chain, or the body of the `when` or `if` whose condition
+it is, mentions (`lang::test_scope`): whether its pattern has a name of one
+segment in lower case, other than `true` and `false`. Mutants are made
+without resolving names, and variants are written in upper camel case
+(`lint::enum_variant_names`), so this keeps a mutant from moving such a
+name out of its scope. -/
+partial def bindsNames (c : Expr) : Bool :=
+  match c with
+  | .bin _ "and" a b => bindsNames a || bindsNames b
+  | .is _ _ p => p.names.any fun x =>
+    let n := x.name
+    n != "true" && n != "false" && (n.front.isLower || n.front == '_')
+  | _ => false
+
 /-- The edits of expression `e`. `inAndLeft` says that `e` is the left
 operand of an `and`, unparenthesized, where an `or` needs parentheses; an
 `or` whose left operand is an unparenthesized `or` parenthesizes it. -/
 partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bool := false) : Array Edit :=
-  let here : Array Edit := match e with
+  -- Not of a chain, a `when` or an `if` whose pattern tests bind names.
+  let binding := match e with
+    | .bin _ "and" .. => bindsNames e
+    | .when _ _ c _ | .ite _ c _ _ => bindsNames c
+    | _ => false
+  let here : Array Edit := if binding then #[] else match e with
     | .bin sp op l r =>
       let opTok? := s.wordIn { start := l.span.stop, stop := r.span.start } op
       let swap (origin : Origin) (new : String) : Array Edit := match opTok? with

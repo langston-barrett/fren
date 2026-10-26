@@ -542,6 +542,15 @@ def State.unbounded (s : State) (ty : Expr) : Bool :=
 structure LocalState where
   /-- The module that items are currently being declared in. -/
   currentModule : Name := .anonymous
+  /-- The names that the pattern tests of the chain of `and` being
+  translated bind, innermost last, for the later operands of the chain and
+  the body of the `when` or `if` whose condition it is
+  (`lang::test_scope`): each with its term, its type, its scrutinee, and
+  the number of binders in scope there. -/
+  bound : Array (Name × Syntax × Expr × Syntax × Nat) := #[]
+  /-- The positions of the pattern tests translated whose patterns bind
+  names, for `lintBools`, which reads and clears them. -/
+  bindingTests : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
   /-- Comps declared in this file, in order. -/
   comps : Array Name := #[]
   /-- Global expectations declared in this file, in order. -/

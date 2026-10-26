@@ -489,6 +489,32 @@ structure LintFix where
   unless? : Option (Lint × Span) := none
   deriving Inhabited
 
+/-- A binder of a `match` pattern, a quantifier's bound name, or a name of a
+`let` or `where` (`isDef`), in scope. -/
+structure CBinder where
+  name : Name
+  /-- Its value: the selector applied to the scrutinee, the symbol of the
+  SMT-LIB `let` that defines the name, or for a bound name, a symbol that
+  each instance replaces with a value. -/
+  smt : String
+  ty : Ty
+  /-- Its scrutinee or definition, and the number of binders in scope
+  there: mentioning it counts as mentioning what that mentions. A bound
+  name has none, and mentions nothing. -/
+  scrutinee : Option Expr
+  outer : Nat
+  isDef : Bool := false
+  /-- For a name, the indexes of its definition, each with the formula that
+  it is in range, guarded only within the definition: a mention puts them
+  under its own guards (`Reqs/Lang/Let#meaning`). -/
+  obligations : Array (Span × String × Option (String × Bool)) := #[]
+  /-- Likewise, the questions about the rows of its definition's tables. -/
+  tableObligations : Array (Span × Fren.Core.TableGoal × String) := #[]
+  /-- A bound name of a type that is not listed, of an unbounded quantifier,
+  whose symbol the solver's quantifier binds: within the body, it mentions
+  itself, as a variable does. -/
+  unbounded : Bool := false
+
 structure State where
   table : Table := {}
   claims : Array CClaim := #[]
@@ -690,6 +716,13 @@ structure State where
   its name and the distinctness of its members' names: after a failure
   there, its declaration and line lints still run, as in Lean. -/
   inCompBody : Bool := false
+  /-- The names that the pattern tests of the chain of `and` being
+  elaborated bind, innermost last, for the later operands of the chain and
+  the body of the `when` or `if` whose condition it is (`lang::test_scope`). -/
+  bound : Array CBinder := #[]
+  /-- The pattern tests elaborated whose patterns bind names, for
+  `lintBools`, which reads and clears them. -/
+  bindingTests : Array Span := #[]
 
 /-- `s`, with what `t` recorded for the lints: what a failed member or item
 recorded before its error outlives it, as in Lean, where an error undoes
@@ -900,32 +933,6 @@ def lintEdits (l : Lint) (span : Span) (msg : Msg) (edits : Array (Fren.Core.Ran
 
 /-! ## Expressions -/
 
-/-- A binder of a `match` pattern, a quantifier's bound name, or a name of a
-`let` or `where` (`isDef`), in scope. -/
-structure CBinder where
-  name : Name
-  /-- Its value: the selector applied to the scrutinee, the symbol of the
-  SMT-LIB `let` that defines the name, or for a bound name, a symbol that
-  each instance replaces with a value. -/
-  smt : String
-  ty : Ty
-  /-- Its scrutinee or definition, and the number of binders in scope
-  there: mentioning it counts as mentioning what that mentions. A bound
-  name has none, and mentions nothing. -/
-  scrutinee : Option Expr
-  outer : Nat
-  isDef : Bool := false
-  /-- For a name, the indexes of its definition, each with the formula that
-  it is in range, guarded only within the definition: a mention puts them
-  under its own guards (`Reqs/Lang/Let#meaning`). -/
-  obligations : Array (Span × String × Option (String × Bool)) := #[]
-  /-- Likewise, the questions about the rows of its definition's tables. -/
-  tableObligations : Array (Span × Fren.Core.TableGoal × String) := #[]
-  /-- A bound name of a type that is not listed, of an unbounded quantifier,
-  whose symbol the solver's quantifier binds: within the body, it mentions
-  itself, as a variable does. -/
-  unbounded : Bool := false
-
 structure ExprCtx where
   vars : Array CVar
   /-- The comp's instances, in order. -/
@@ -978,6 +985,13 @@ structure ExprCtx where
   counts for nothing: what it may mention, linear arithmetic and the
   decidable core are not checked in it (`Reqs/Lang/Let#meaning`). -/
   unmentioned : Bool := false
+  /-- What the chain of `and` that this expression is an operand of, or is,
+  is a part of, for its pattern tests (`lang::test_scope`). Only `and` and
+  `is` read it, and only their operands see it. -/
+  testContext : Fren.Core.TestContext := .standalone
+  /-- For an operand of a chain of `and`, its position in the chain and the
+  chain's number of operands. -/
+  testAt? : Option (Nat × Nat) := none
 
 /-- What the binder `b` is, for a declaration that hides it (`Fren.Core.bindingLocals`). -/
 def CBinder.what (b : CBinder) : Name × String :=
@@ -1089,6 +1103,18 @@ def patternName (cx : ExprCtx) (x : Ident) : M Fren.Core.PatternName := do
 def patternBinders (cx : ExprCtx) (p : Pattern) : M (Array Ident) :=
   p.names.filterM fun x => return (← patternName cx x) == .binder
 
+/-- The operands of a chain of `op`, `or` or `and`. -/
+partial def chainOperands (op : String) (e : Expr) : Array Expr :=
+  match e with
+  | .bin _ op' l r => if op' == op then chainOperands op l ++ chainOperands op r else #[e]
+  | _ => #[e]
+
+/-- Whether a pattern test of the chain of `and` `c` binds names. -/
+def chainBinds (cx : ExprCtx) (c : Expr) : M Bool :=
+  (chainOperands "and" c).anyM fun
+    | .is _ _ p => return !(← patternBinders cx p).isEmpty
+    | _ => pure false
+
 /-- The paths of the functions that `e` applies (`unused_assumption`). -/
 partial def appliedPaths : Expr → Array (Array Ident)
   | .app _ segs args => args.foldl (· ++ appliedPaths ·) #[segs]
@@ -1118,6 +1144,14 @@ scrutinee. -/
 partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) := #[]) (e : Expr) : M Fren.Core.MentionShape := do
   let parts (k : Fren.Core.MentionKind) (es : List Expr) : M Fren.Core.MentionShape :=
     return .node k (← es.mapM (shapeOf cx bs))
+  -- The binders of the pattern tests of the chain of `and` `c`, each with
+  -- the shape of its scrutinee.
+  let testBinderShapes (c : Expr) : M (Array (Name × Fren.Core.MentionShape)) :=
+    (chainOperands "and" c).flatMapM fun
+      | .is _ sc p => do
+        let s' ← shapeOf cx bs sc
+        return (← patternBinders cx p).map fun x => (Name.mkSimple (declaredIdent x).1.name, Fren.Core.MentionShape.node .binder [s'])
+      | _ => pure #[]
   match e with
   | .path _ segs =>
     if segs.size != 1 then return .leaf .constant
@@ -1130,11 +1164,18 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
       return .node .definedOutput [← shapeOf { cx with binders := #[] } #[] d]
     return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable else .constant)
+  -- The names that the pattern tests of a condition, or of the left
+  -- operand of `and`, bind, in what sees them (`lang::test_scope`).
+  | .when _ false c d | .bin _ "and" c d => do
+    let new ← testBinderShapes c
+    return .node .compound [← shapeOf cx bs c, ← shapeOf cx (bs ++ new) d]
+  | .ite _ c a b => do
+    let new ← testBinderShapes c
+    return .node .compound [← shapeOf cx bs c, ← shapeOf cx (bs ++ new) a, ← shapeOf cx bs b]
   | .when _ _ c d | .bin _ _ c d | .pair _ c d | .index _ c d => parts .compound [c, d]
   | .not _ a | .neg _ a | .field _ a _ => parts .compound [a]
   | .method _ r _ args => parts .method (r :: args.toList)
   | .set _ es | .seq _ es | .chain _ es _ => parts .compound es.toList
-  | .ite _ c a b => parts .compound [c, a, b]
   | .quant _ _ binders body =>
     let new := binders.flatMap (·.names) |>.map fun x => (Name.mkSimple (declaredIdent x).1.name, Fren.Core.MentionShape.leaf .bound)
     return .node .compound [← shapeOf cx (bs ++ new) body]
@@ -1166,6 +1207,13 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
 (`lang::mentions`). -/
 def mentionsAny (cx : ExprCtx) (e : Expr) : M Bool := return (← shapeOf cx #[] e).mentions
 
+/-- The names that the pattern tests of the chain of `and` `c` would bind,
+as written, without their `!`. -/
+def testNames (c : Expr) : Array Name :=
+  (chainOperands "and" c).flatMap fun
+    | .is _ _ p => p.names.map fun b => Name.mkSimple (declaredIdent b).1.name
+    | _ => #[]
+
 /-- The names of the variables that `e` mentions: its paths of one
 segment, and for `p.x`, `p` too. -/
 partial def mentions (e : Expr) (all : Bool := true) : Array Name :=
@@ -1176,13 +1224,16 @@ partial def mentions (e : Expr) (all : Bool := true) : Array Name :=
       let n := identName segs[0]!.name
       (n.components.foldl (init := (#[], Name.anonymous)) fun (acc, p) c => let p := p ++ c; (acc.push p, p)).1
     else #[]
+  -- In what sees them, the names that the pattern tests of a condition,
+  -- or of the left operand of `and`, bind mean them (`lang::test_scope`).
+  | .when _ false c d | .bin _ "and" c d => mentions c ++ (mentions d).filter (!(testNames c).contains ·.getRoot)
+  | .ite _ c a b => mentions c ++ (mentions a).filter (!(testNames c).contains ·.getRoot) ++ mentions b
   | .when _ _ c d => mentions c ++ mentions d
   | .not _ a | .neg _ a | .field _ a _ => mentions a
   | .method _ r _ args => args.foldl (· ++ mentions ·) (mentions r)
   | .set _ es => es.foldl (· ++ mentions ·) #[]
   | .pair _ a b | .index _ a b => mentions a ++ mentions b
   | .seq _ es | .chain _ es _ => es.foldl (· ++ mentions ·) #[]
-  | .ite _ c a b => mentions c ++ mentions a ++ mentions b
   | .bin _ _ a b => mentions a ++ mentions b
   | .app _ _ args => args.foldl (· ++ mentions ·) #[]
   | .record _ _ fs => fs.foldl (init := #[]) fun acc (f, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple f.name]
@@ -1461,6 +1512,12 @@ def hidesIn (cx : ExprCtx) (extra : Array (Name × String) := #[]) : M (String �
 and double parentheses in it, once `e` is elaborated, where `hides` says
 whether a name declared there would hide something in scope. -/
 def lintBools (e : Expr) (hides : String → Bool) : M Unit := do
+  -- Not a rewrite of an expression with a pattern test that binds names,
+  -- which could move what mentions them out of their scope
+  -- (`lang::test_scope`).
+  let tests := (← get).bindingTests
+  modify fun s => { s with bindingTests := #[] }
+  let keeps (sp : Span) := !tests.any fun t => sp.start ≤ t.start && t.stop ≤ sp.stop
   -- The text of `e` alone, as written, and `e` over it, as the Lean front
   -- end gives them: the three lints read no text outside `e`
   -- (`Fren.Core.upTo`), and report at the spans, which stay as they are.
@@ -1474,7 +1531,7 @@ def lintBools (e : Expr) (hides : String → Bool) : M Unit := do
   let shift (m : Msg) : Msg :=
     { m with fixes := m.fixes.map fun f => { f with range? := f.range?.map fun r => { start := r.start + w.start, stop := r.stop + w.start } } }
   for (l, ref, msg) in Fren.Core.rewriteReports src root do
-    lintFix l ref (shift msg)
+    if keeps ref then lintFix l ref (shift msg)
   let (boolEqs, ordereds, variants, absEnds, mentioning, facts) :=
     ((← get).boolEqs, (← get).ordereds, (← get).variants, (← get).absEnds, (← get).mentioning, (← get).facts)
   modify fun s => { s with boolEqs := #[], ordereds := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
@@ -1487,9 +1544,10 @@ def lintBools (e : Expr) (hides : String → Bool) : M Unit := do
         if d.isRecord || d.ctors.any (!·.2.isEmpty) then none else some d.ctors.size
       declared := e.declaredNames, hides, unguarded := !Fren.Core.hasGuarded (String.ofList src.toList) }
   for r in Fren.Core.opReports src boolEqs.contains ordered? variant? (absEnds.contains ·.stop) mentioning.contains fact? fcx root do
-    lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) (shift r.msg) r.unless?
+    let ref := match r.last? with | some l => r.ref.to l | none => r.ref
+    if keeps ref then lintFix r.lint ref (shift r.msg) r.unless?
   for r in Fren.Core.arithReports src root do
-    lintFix r.lint r.ref (shift r.msg)
+    if keeps r.ref then lintFix r.lint r.ref (shift r.msg)
   for sp in e.integerSpans do
     if let some (r, msg) := Fren.Core.zeroPrefixedReport? full (toRange sp) then
       lintFix .zeroPrefixedLiteral { start := r.start, stop := r.stop } msg
@@ -1765,12 +1823,6 @@ partial def namesRead (e : Expr) : Array (Expr × String) :=
   match lastName? e with
   | some (r, n) => (namesRead r).push (r, n)
   | none => #[]
-
-/-- The operands of a chain of `op`, `or` or `and`. -/
-partial def chainOperands (op : String) (e : Expr) : Array Expr :=
-  match e with
-  | .bin _ op' l r => if op' == op then chainOperands op l ++ chainOperands op r else #[e]
-  | _ => #[e]
 
 /-- The sequences that `e` indexes, as their text. -/
 partial def indexedIn : Expr → M (Array String)
@@ -2329,6 +2381,9 @@ def rowPartOf (e : Expr) : M String := return Fren.Core.rowPart (← srcAt e.spa
 `e` (`lint::if_chain_match`, `lint::manual_table`). -/
 def lintIfChain (cx : ExprCtx) (e : Expr) : M Unit := do
   let (cs, as, z) := ifChain e
+  -- A table's row does not see what its condition's pattern tests bind
+  -- (`lang::test_scope`).
+  if ← cs.anyM (chainBinds cx) then return
   let ts? := Fren.Core.sameScrutinee (← cs.mapM (variantTest? cx))
   let ts := ts?.getD #[]
   let enums := (← get).table.enums
@@ -2670,6 +2725,17 @@ def lintQuant (span : Span) (all : Bool) (bs : Array Binder) (new : Array CBinde
   lintFix .trivialQuantifier binders[i]!.span
     (Fren.Core.trivialQuantifierMsg all b.name (← tyText i) values[i]! quant fixed?)
 
+
+/-- Runs `x`, and returns with its result the names that the pattern tests
+that it elaborates bind (`State.bound`), which it removes: those of the
+condition of a `when` or `if` (`lang::test_scope`). -/
+def withBound (x : M α) : M (α × Array CBinder) := do
+  let mark := (← get).bound.size
+  let r ← x
+  let new := (← get).bound.extract mark
+  modify fun s => { s with bound := s.bound.extract 0 mark }
+  return (r, new)
+
 mutual
 /-- Two operands of the same type, each checked against the other's, when it
 does not synthesize its own (`lang::checked`). -/
@@ -2770,13 +2836,15 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   let chain := cx.chain
   let parent? := cx.parent?
   let inElse := cx.inElse
-  let cx := { cx with concatOk := false, expected? := none, chain := "", parent? := some e, inElse := false }
-  let expect := @exprExpect cx
+  -- Only `and` and `is` read where their chain is (`lang::test_scope`).
+  let test := (cx.testContext, cx.testAt?)
+  let cx := { cx with concatOk := false, expected? := none, chain := "", parent? := some e, inElse := false
+                      testContext := .standalone, testAt? := none }
   let opNote := Fren.Core.opNote
   match e with
   | .when span neg c d => elabWhenExpr cx e span neg c d
   | .quant span all bs body => elabQuantExpr cx span all bs body
-  | .not _ a => return (s!"(not {← expect a .bool (opNote "not" .bool)})", .bool)
+  | .not _ a => return (s!"(not {← exprExpect { cx with testContext := .notOperand } a .bool (opNote "not" .bool)})", .bool)
   | .ite span c a b => elabIteExpr cx e expected? inElse span c a b
   | .neg span a => elabNegExpr cx span a
   | .num _ v => return (toString v, Fren.Core.literalTy (expected? == some .nat))
@@ -2788,7 +2856,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   | .method span recv m args => elabMethodExpr cx e expected? parent? span recv m args
   | .bool _ b => return (toString b, .bool)
   | .chain _ es ops => elabChainExpr cx es ops
-  | .bin span op a b => elabBinExpr cx e concatOk expected? chain span op a b
+  | .bin span op a b => elabBinExpr cx e concatOk expected? chain test span op a b
   | .path _ segs => elabPathExpr cx e parent? segs
   | .app span segs args => elabAppExpr cx span segs args
   | .field span a f => elabFieldExpr cx e parent? span a f
@@ -2796,21 +2864,25 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   | .update span base fields => elabUpdateExpr cx span base fields
   | .match span scrutinee arms isTable => elabMatchExpr cx e expected? parent? span scrutinee arms isTable
   | .table span rows => elabTableExpr cx e expected? parent? span rows
-  | .is span scrutinee p => elabIsExpr cx span scrutinee p
+  | .is span scrutinee p => elabIsExpr cx test span scrutinee p
   | .«let» span defs body isWhere => elabLetExpr cx span concatOk expected? defs body isWhere
 
 /-- `elabExpr` on a `when` or `unless`. -/
 partial def elabWhenExpr (cx : ExprCtx) (e : Expr) (span : Span) (neg : Bool) (c : Expr) (d : Expr) : M (String × Ty) := do
-  let expect := @exprExpect cx
   -- `eq_op` (`lint::eq_op_conditional`).
   if cx.noteIndexes then
     let tc ← srcAt c.span
     if let some v := Fren.Core.eqOpConditional neg (Fren.Core.writtenSame tc (← srcAt d.span)) then
       lint .eqOp span (Fren.Core.eqOpConditionalMsg neg v tc)
   let kw := if neg then "unless" else "when"
-  let c ← expect c .bool (some s!"note: the condition of `{kw}` is a `Bool`")
+  -- The names that the condition's pattern tests bind, which the body of
+  -- `when` sees (`lang::test_scope`).
+  let context : Fren.Core.TestContext := if neg then .unlessCondition else .whenCondition
+  let (c, new) ← withBound do
+    exprExpect { cx with testContext := context } c .bool (some s!"note: the condition of `{kw}` is a `Bool`")
   let g := (if neg then Fren.Core.GuardedOperand.unlessBody else .whenBody).guard c s!"(not {c})"
-  let (d, td) ← elabExpr { cx with guards := cx.guards.push g } d
+  let seen := if Fren.Core.binderVisible context 0 1 .body then new else #[]
+  let (d, td) ← elabExpr { cx with guards := cx.guards.push g, binders := cx.binders ++ seen } d
   unless td == .bool do mismatch e .bool td (some s!"note: the body of `{kw}` is a `Bool`")
   return (if neg then s!"(=> (not {c}) {d})" else s!"(=> {c} {d})", .bool)
 
@@ -2863,7 +2935,6 @@ partial def elabQuantExpr (cx : ExprCtx) (span : Span) (all : Bool) (bs : Array 
 /-- `elabExpr` on an `if`. -/
 partial def elabIteExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (inElse : Bool) (span : Span) (c : Expr) (a : Expr) (b : Expr) : M (String × Ty) := do
   let pair := exprPair
-  let expect := @exprExpect cx
   if cx.noteIndexes && !inElse then lintIfChain cx e
   -- `same_branches` (`lint::same_branches`).
   if cx.noteIndexes then
@@ -2873,11 +2944,15 @@ partial def elabIteExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (inEls
       lintFix .sameBranches span (Fren.Core.sameBranchesMsg ta kind.prec (← srcAt { start := 0, stop := span.start })
         (← srcAt { start := span.stop, stop := (← get).src.size }))
   if cx.noteIndexes && (← mentionsAny cx c) then modify fun s => { s with mentioning := s.mentioning.push c.span }
-  let c ← expect c .bool (some "note: the condition of `if` is a `Bool`")
+  -- The names that the condition's pattern tests bind, which the `then`
+  -- branch sees (`lang::test_scope`).
+  let (c, new) ← withBound do
+    exprExpect { cx with testContext := .ifCondition } c .bool (some "note: the condition of `if` is a `Bool`")
   let gx := Fren.Core.GuardedOperand.thenBranch.guard c s!"(not {c})"
   let gy := Fren.Core.GuardedOperand.elseBranch.guard c s!"(not {c})"
-  let ((x, tx), (y, ty)) ← pair { cx with expected?, guards := cx.guards.push gx }
-    { cx with expected?, guards := cx.guards.push gy, inElse := true } a b
+  let seen (site : Fren.Core.TestSite) := if Fren.Core.binderVisible .ifCondition 0 1 site then new else #[]
+  let ((x, tx), (y, ty)) ← pair { cx with expected?, guards := cx.guards.push gx, binders := cx.binders ++ seen .body }
+    { cx with expected?, guards := cx.guards.push gy, inElse := true, binders := cx.binders ++ seen .elseBranch } a b
   liftMsg span (Fren.Core.checkBranches tx ty)
   return (s!"(ite {c} {x} {y})", tx.join ty)
 
@@ -3107,7 +3182,8 @@ partial def elabChainExpr (cx : ExprCtx) (es : Array Expr) (ops : Array (String 
   return (s!"(and {" ".intercalate links.toList})", .bool)
 
 /-- `elabExpr` on a binary operator. -/
-partial def elabBinExpr (cx : ExprCtx) (e : Expr) (concatOk : Bool) (expected? : Option Ty) (chain : String) (span : Span) (op : String) (a : Expr) (b : Expr) : M (String × Ty) := do
+partial def elabBinExpr (cx : ExprCtx) (e : Expr) (concatOk : Bool) (expected? : Option Ty) (chain : String)
+    (test : Fren.Core.TestContext × Option (Nat × Nat)) (span : Span) (op : String) (a : Expr) (b : Expr) : M (String × Ty) := do
   -- `eq_op` (`lint::eq_op`).
   if let (some o, true) := (Fren.Core.InfixOp.ofOp? op, cx.noteIndexes) then
     -- Only for an operator that `eqOp` can report, whatever the operands.
@@ -3115,7 +3191,7 @@ partial def elabBinExpr (cx : ExprCtx) (e : Expr) (concatOk : Bool) (expected? :
       let ta ← srcAt a.span
       if let some v := Fren.Core.eqOp o (Fren.Core.writtenSame ta (← srcAt b.span)) then lint .eqOp span (Fren.Core.eqOpMsg o v ta)
   match op with
-  | "iff" | "or" | "and" => elabBoolOpExpr cx e chain span op a b
+  | "iff" | "or" | "and" => elabBoolOpExpr cx e chain test span op a b
   | "=" | "!=" => elabEqualityExpr cx e span op a b
   | "<" | "<=" | ">" | ">=" => elabComparisonExpr cx e span op a b
   | "in" => elabInExpr cx e span a b
@@ -3126,7 +3202,8 @@ partial def elabBinExpr (cx : ExprCtx) (e : Expr) (concatOk : Bool) (expected? :
   | _ => elabArithExpr cx expected? span op a b
 
 /-- `elabExpr` on a Boolean operator. -/
-partial def elabBoolOpExpr (cx : ExprCtx) (e : Expr) (chain : String) (span : Span) (op : String) (a : Expr) (b : Expr) : M (String × Ty) := do
+partial def elabBoolOpExpr (cx : ExprCtx) (e : Expr) (chain : String) (test : Fren.Core.TestContext × Option (Nat × Nat))
+    (span : Span) (op : String) (a : Expr) (b : Expr) : M (String × Ty) := do
   let opNote := Fren.Core.opNote
   let smt := if op == "iff" then "=" else op
   -- `membership_chain`, at the top of a chain of `or` or of `and` (`lint::membership_chain`).
@@ -3142,22 +3219,38 @@ partial def elabBoolOpExpr (cx : ExprCtx) (e : Expr) (chain : String) (span : Sp
       lintFix .membershipChain span
         (Fren.Core.membershipChainMsg lefts[0]! (← eqs.mapM fun (_, r) => srcAt r.span) (op == "and"))
   -- `index_after_use` (`lint::index_after_use`).
-  if op == "and" && cx.noteIndexes then
+  if op == "and" && cx.noteIndexes && !(← chainBinds cx a) then
     let qs ← indexedIn a
     if ← qs.anyM fun q => return (← boundsSeq b q) && !(← boundsSeq a q) then
       lintFix .indexAfterUse span (Fren.Core.indexAfterUseMsg (← srcAt a.span) (← srcAt b.span))
   -- For `manual_at_most_one`: whether the operands give a definedness
   -- obligation.
   let mark := (← get).indexes.size + (← get).tables.size
-  let (x, tx) ← elabExpr { cx with chain := op } a
+  -- Of `and`, the position of each operand in its chain, and the names
+  -- that the left one's pattern tests bind, which the right one sees; at
+  -- the top of the chain, those of the whole, which only the body of the
+  -- `when` or `if` whose condition it is sees (`lang::test_scope`).
+  let (context, at?) := test
+  let (k, n) := at?.getD (0, (chainOperands "and" e).size)
+  let left := (chainOperands "and" a).size
+  let (acx, bcx) : ExprCtx × ExprCtx := match op with
+    | "and" => ({ cx with testContext := context, testAt? := some (k, n) }, { cx with testContext := context, testAt? := some (k + left, n) })
+    | "or" => ({ cx with testContext := .orOperand }, { cx with testContext := .orOperand })
+    | _ => (cx, cx)
+  let boundMark := (← get).bound.size
+  let (x, tx) ← elabExpr { acx with chain := op } a
   unless tx == .bool do mismatch a .bool tx (opNote op .bool)
   -- `b` is evaluated when `a` does not decide the result.
   let guards := match op with
     | "and" => cx.guards.push (Fren.Core.GuardedOperand.andRight.guard x s!"(not {x})")
     | "or" => cx.guards.push (Fren.Core.GuardedOperand.orRight.guard x s!"(not {x})")
     | _ => cx.guards
-  let (y, ty) ← elabExpr { cx with guards, chain := op } b
+  let bound := (← get).bound
+  let new := if op == "and" then bound.extract boundMark else #[]
+  let (y, ty) ← elabExpr { bcx with guards, chain := op, binders := cx.binders ++ new } b
   unless ty == .bool do mismatch b .bool ty (opNote op .bool)
+  if op == "and" && at?.isNone && !Fren.Core.binderVisible context 0 n .body then
+    modify fun s => { s with bound := s.bound.extract 0 boundMark }
   if op == "and" && cx.noteIndexes && (← get).indexes.size + (← get).tables.size > mark then
     modify fun s => { s with facts := s.facts.push (span, .obligations) }
   return (s!"({smt} {x} {y})", .bool)
@@ -3908,25 +4001,51 @@ partial def elabTableExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     out := s!"(ite {conds[i]!} {values[i]!} {out})"
   return (out, ty)
 
-/-- `elabExpr` on a pattern test `is`. -/
-partial def elabIsExpr (cx : ExprCtx) (span : Span) (scrutinee : Expr) (p : Pattern) : M (String × Ty) := do
+/-- `elabExpr` on a pattern test `is`, an operand of a chain of `and` that
+is a part of `test.1`, at the position and of the size that `test.2` gives,
+if it is a chain of more than one. -/
+partial def elabIsExpr (cx : ExprCtx) (test : Fren.Core.TestContext × Option (Nat × Nat)) (span : Span)
+    (scrutinee : Expr) (p : Pattern) : M (String × Ty) := do
   let (s, ts) ← elabExpr cx scrutinee
   unless ts matches .enum _ | .bool | .int | .nat | .string do err scrutinee.span (Fren.Core.isScrutineeMsg ts.show)
-  let (q, bs, test) ← resolvePattern cx ts s false true p
-  match Fren.Core.checkPatternTest (← patSigs) ts.patTy q (bs.map (Name.mkSimple ·.ident.name)) with
+  -- Whether the names that it binds are in scope anywhere (`lang::test_scope`):
+  -- then its or-patterns bind none, as a `match` arm's do.
+  let (context, at?) := test
+  let (k, n) := at?.getD (0, 1)
+  let binds := Fren.Core.testBinds context k n
+  let (q, bs, smt) ← resolvePattern cx ts s false (!binds) p
+  match Fren.Core.checkPatternTest (← patSigs) ts.patTy q (bs.map (Name.mkSimple ·.ident.name)) binds context with
   | .ok () => pure ()
   | .error (.binder k, msg) => err bs[k]!.ident.span msg
   | .error (.alternative j, msg) => err p.alternatives[j]!.span msg
   | .error (.whole, msg) => err p.span msg
+  if cx.noteIndexes && !bs.isEmpty then modify fun s => { s with bindingTests := s.bindingTests.push span }
+  if binds && !bs.isEmpty then
+    -- Declared as a `match` arm's binders are, for the later operands of the
+    -- chain and the body that sees them.
+    let declared := bs.map fun b => Name.mkSimple (declaredIdent b.ident).1.name
+    if let some k := (Fren.Core.repeatsAt declared)[0]? then
+      err bs[k]!.ident.span (Fren.Core.dupPatternBinderMsg declared[k]!)
+    let mut new : Array CBinder := #[]
+    for b in bs do
+      let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+        (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
+      let x ← declare b.ident locals
+      let bn := Name.mkSimple x.name
+      liftMsg x.span (Fren.Core.checkVarName bn (some (b.ty == .bool)))
+      if cx.noteIndexes then lintName .binder bn x.span
+      new := new.push { name := bn, smt := b.smt, ty := b.ty, scrutinee := some scrutinee, outer := cx.binders.size }
+    modify fun s => { s with bound := s.bound ++ new }
   if cx.noteIndexes then
-    -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`).
-    let irrefutable := Fren.Core.irrefutableIs (Fren.Core.matchesEvery (← patSigs) ts.patTy q)
+    -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`):
+    -- not of a test that binds names, which it is needed for.
+    let irrefutable := bs.isEmpty && Fren.Core.irrefutableIs (Fren.Core.matchesEvery (← patSigs) ts.patTy q)
     if irrefutable then lint .irrefutableIs span (Fren.Core.irrefutableIsMsg ts.show (q matches .wild _))
     lintOrPatterns (patNode (← get).src p q)
     let texts ← p.alts.mapM (srcAt ·.span)
     if Fren.Core.isEquality texts.size (Fren.Core.equatable q texts) irrefutable then
       lintFix .isEquality span (Fren.Core.isEqualityMsg (scrutinee.text (← get).src) texts[0]!)
-  return (test.getD "true", .bool)
+  return (smt.getD "true", .bool)
 
 /-- `elabExpr` on a `let` or `where`. -/
 partial def elabLetExpr (cx : ExprCtx) (span : Span) (concatOk : Bool) (expected? : Option Ty) (defs : Array (Ident × Option (Array Ident) × Expr)) (body : Expr) (isWhere : Bool) : M (String × Ty) := do
@@ -4012,10 +4131,14 @@ def lintConstant (cx : ExprCtx) (kind : String) (e : Expr) : M Unit := do
 /-- The conditions of a top-level `when`/`unless` chain, and their span. -/
 partial def trigger? (cx : ExprCtx) : Expr → M (Option (String × Span))
   | .when span neg c d => do
-    let (cs, _) ← elabExpr { cx with noteIndexes := false } c
+    -- With the names that its pattern tests bind, which the body may see
+    -- (`lang::test_scope`).
+    let context : Fren.Core.TestContext := if neg then .unlessCondition else .whenCondition
+    let ((cs, _), new) ← withBound (elabExpr { cx with noteIndexes := false, testContext := context } c)
     let cs := if neg then s!"(not {cs})" else cs
     let here : Span := { start := span.start, stop := c.span.stop }
-    match ← trigger? cx d with
+    let seen := if Fren.Core.binderVisible context 0 1 .body then new else #[]
+    match ← trigger? { cx with binders := cx.binders ++ seen } d with
     | none => return some (cs, here)
     | some (t, s) => return some (s!"(and {cs} {t})", here.to s)
   -- Through a `let` or `where`, whose names stand for their definitions.

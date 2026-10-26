@@ -847,15 +847,49 @@ impl match_arms: lang::match_arms for (a b : Nat) (e : Bool) {
   intro a b e _
   cases e <;> simp [fren_spec, Fren.Core.matchArmsAccepted] <;> omega
 
--- For every pattern test: the counts that `checkPatternTest` decides by.
-impl pattern_test: lang::pattern_test for (b u : Nat) (m : Bool) {
+-- For every pattern test: whether it may bind names, and the counts that
+-- `checkPatternTest` decides by.
+impl pattern_test: lang::pattern_test for (k : Bool) (b u : Nat) (m : Bool) {
+  binds? := k,
   n_bound := b,
   n_useless_alternatives := u,
   matches_some? := m,
-  accepted? := Fren.Core.patternTestAccepted b u m,
+  accepted? := Fren.Core.patternTestAccepted k b u m,
 } by
-  intro b u m _
-  cases m <;> simp [fren_spec, Fren.Core.patternTestAccepted]
+  intro k b u m _
+  cases k <;> cases m <;> simp [fren_spec, Fren.Core.patternTestAccepted]
+
+def toTestContext : Fren.Core.TestContext → lang.TestContext
+  | .whenCondition => .WhenCondition
+  | .unlessCondition => .UnlessCondition
+  | .ifCondition => .IfCondition
+  | .orOperand => .OrOperand
+  | .notOperand => .NotOperand
+  | .standalone => .Standalone
+
+def toSite : Fren.Core.TestSite → lang.Site
+  | .operand k => .Operand k
+  | .body => .Body
+  | .elseBranch => .ElseBranch
+  | .outside => .Outside
+
+-- For every pattern test and mention: both front ends decide whether the
+-- test binds with `testBinds`, and which part of a `when`, an `if` or a
+-- chain of `and` sees its names with `binderVisible`. That each classifies
+-- its syntax into the right context and positions is not proved here, but
+-- tested by both on the same ui tests (`test/ui/lang/pattern_binders*.fren`).
+impl test_scope: lang::test_scope for (c : Fren.Core.TestContext) (n t : Nat) (s : Fren.Core.TestSite) {
+  context := toTestContext c,
+  operands := n,
+  test_at := t,
+  site := toSite s,
+  visible? := Fren.Core.binderVisible c t n s,
+  binds? := Fren.Core.testBinds c t n,
+} by
+  intro c n t s _
+  cases c <;> cases s <;>
+    simp [fren_spec, toTestContext, toSite, Fren.Core.binderVisible, Fren.Core.testBinds,
+      Fren.Core.TestContext.bodySees] <;> omega
 
 /-! ## Patterns (`Reqs/Lang/Patterns`) -/
 

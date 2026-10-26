@@ -754,7 +754,7 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
       let other := before[if j == 0 then files.size else 0]?.getD {}
       let st := FrenCli.elabParsed (before[j]?.getD {}) j chars parsed[j]!
       let st' := FrenCli.elabParsed ((before[j]?.getD {}).withPerFileOf other) j chars parsed[j]!
-      unless same_fields% FrenCli.State st st' except [] do
+      unless same_fields% FrenCli.State st st' except [bound] && st.bound.size == st'.bound.size do
         failures := failures.push s!"{files[j]!.1}: elaborates differently after a state with another file's per-file fields"
   if slice != 0 then return failures
   -- Formatting each file keeps the identifiers.

@@ -1080,7 +1080,9 @@ or splices. Every field is compared (`same_fields%`), so a field added to
   only extends, or restores to an earlier value, and reads `applied` only
   after the size that it had when it was read; and `defs`, of which only
   each function's name, parameters and result type are read, never its
-  body, so only they are compared.
+  body, so only they are compared;
+- `bound`, which is empty between items, as `withBound` and the chains of
+  `and` that hold pattern tests leave it, so only its size is compared.
 A file is also elaborated again after a state with static errors of an
 item in progress (`itemErrors`). -/
 def sameForLater (a b : State) : Bool :=
@@ -1088,7 +1090,8 @@ def sameForLater (a b : State) : Bool :=
     lintReports, useLocs, expectationRemovals, items, usedItems, lintFixes, globalTexts, settings, settingRemovals,
     seenSettings, assumptions, globalReads, trailingCommas, natReports, natKept, itemStart, literals, itemSpan,
     comps, consts, constInts,
-    globals, refinements, bodies, diags, edits, natSums, claims, applied, defs]
+    globals, refinements, bodies, diags, edits, natSums, claims, applied, defs, bound]
+    && a.bound.size == b.bound.size
     && a.defs.isEqv b.defs (fun (n, ps, r, _) (n', ps', r', _) => n == n' && ps == ps' && r == r')
     && a.itemErrors.isEmpty && b.itemErrors.isEmpty
 

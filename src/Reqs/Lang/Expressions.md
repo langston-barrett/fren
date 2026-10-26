@@ -1092,17 +1092,18 @@ s is Shape::Circle(_)
 s is Shape::Rect(_, _) | Shape::Empty
 r is Reply::Ok(Shape::Circle(_))
 n is 0..=9
+when s is Shape::Circle(radius), radius > 0
 ```
 
 A *pattern test*, `e is P`, is `true` exactly when the pattern `P` matches
 `e`: it means `match e { P => true, _ => false }`. `e` is a value of an
 enumeration, a `Bool`, an `Int`, a `Nat` or a `String`, as a `match`'s scrutinee is
 (`F0335`), and `P` is a [pattern](Patterns.md) as in a [`match`
-arm](#matches), nested, literal, range and or-patterns included, but it
-binds no names: each of its binders is `_` (`F0334`, which names a binder
-`n!` as `n`, the name it would declare), since a test has no body in which
-a name could be mentioned. To read a payload, write a
-`match`. The pattern matches some value, and each alternative of its
+arm](#matches), nested, literal, range and or-patterns included. Its
+binders name parts of the value only where something follows the test
+that is evaluated where the pattern matches (see [Binding
+names](#binding-names)); elsewhere, each of them is `_`. The pattern
+matches some value, and each alternative of its
 or-patterns is reachable, as in a `match` (`F0318`): so `k is -5..=-1`, on
 a `Nat`, is an error, as an arm with that pattern would be. A pattern that
 matches every value, such as `_`, is allowed, though the test is then
@@ -1131,24 +1132,154 @@ set constant or a set that is computed. A pattern with a payload may still
 have alternatives without one, as in `s is Shape::Rect(_, _) |
 Shape::Empty`.
 
-`lang::pattern_test` states which patterns are accepted, from the numbers
-of their binders that are not `_` and of their alternatives that are not
-reachable, and whether they match some value:
+### Binding names
+
+A pattern test binds the names of its pattern's binders for what follows
+it where it holds, as Rust's `if let` and its chains of `let` do:
+
+- `when x is P, D`: the names are in scope in `D`, and the `when` means
+  `match x { P => D, _ => true }`.
+- `x is P and E`: the names are in scope in `E`, and the `and` means
+  `match x { P => E, _ => false }`. `E` is evaluated only where the
+  pattern matches, as the right operand of `and` is
+  [guarded](#sequences) by its left.
+- `if x is P then a else b`: the names are in scope in `a` alone, and the
+  `if` means `match x { P => a, _ => b }`.
+
+The operands of `and`, through parentheses, form a *chain*, and a
+pattern test that is not an operand of `and` is a chain of one. A name
+that a test of a chain binds is in scope in the operands of the chain
+after the test, and, if the chain is the condition of a `when` or an
+`if`, in the `when`'s body or the `if`'s `then` branch. So in `x is P(d)
+and y is Q(e) and d < e`, `d` is in scope in `y is Q(e)` and in `d < e`,
+and `e` in `d < e`, however the chain is parenthesized: `(x is P(d) and
+y is Q(e)) and d < e` and `x is P(d) and (y is Q(e) and d < e)` are the
+same chain. `when a and b, D` means `when a, when b, D`, so `when x is
+P(d) and d > 0, D` is `match x { P(d) => (when d > 0, D), _ => true }`.
+Nothing else sees the names: not the operands before the test, not the
+`else` branch, and not what is around the chain.
+
+A test whose names would be in scope nowhere cannot bind any (`F0334`):
+the last operand of a chain, or a chain of one, that is not the condition
+of a `when` or an `if`. That is a test on its own, an operand of `iff`,
+of a comparison or of a function, and a test under `or` or `not`, where
+what follows need not be evaluated where the pattern matches. It is also
+the condition of `unless`, whose body holds where the condition does not:
+`unless x is P(d), D` would mention `d` where `x` does not match `P`.
+`unless x is P(d) and d > 0, D` is accepted, as `d` is in scope in `d >
+0`, but not in `D`. Write `_` for each binder of such a test, or read the
+payload with a [`match`](#matches).
+
+The binders of a pattern test are a `match` arm's binders: each names a
+value of the scrutinee, their names are distinct (`F0213`) and follow the
+[Boolean names](Types.md#boolean-names) rule, an or-pattern binds none
+(`F0333`), and one that shadows a name in scope, a binder of an earlier
+test of its chain included, is written with `!` (see
+[Shadowing](Components.md#shadowing)). A binder is not a variable, and
+mentioning it counts as mentioning everything its scrutinee mentions.
+
+A guarantee `when x is P(d), D` is one constraint, as a `match` is: the
+checks that count constraints, such as [vacuity](../Check.md#vacuity),
+[redundancy](../Check.md#redundancy) and [minimal
+sets](../Check.md#minimal-sets), treat it as one, so a conflict names it
+apart from the guarantees beside it. Its trigger, for vacuity, is its
+condition, `x is P(_)`, and for `when x is P(d), when d > 0, D`, the
+pattern's matching and `d > 0`, with `d` the payload's value.
+
+`lang::test_scope` states where a name that a pattern test binds is in
+scope, from what its chain is a part of, `context`, the chain's number of
+operands and the test's position among them, and where the name is
+mentioned, `site`; and so whether the test may bind names at all:
+
+```fren
+-- What a chain of `and` that holds a pattern test is a part of.
+pub enum TestContext {
+    WhenCondition,     -- the condition of `when`
+    UnlessCondition,   -- the condition of `unless`
+    IfCondition,       -- the condition of `if`
+    OrOperand,         -- an operand of `or`
+    NotOperand,        -- the operand of `not`
+    Standalone,        -- anything else: a whole constraint, an operand of `iff`
+}
+
+-- Where, in and around such a chain, a name is mentioned.
+pub enum Site {
+    Operand(Nat),      -- the chain's operand at this position, from 0
+    Body,              -- the body of the `when` or `unless`, or the `then` branch of the `if`
+    ElseBranch,        -- the `else` branch of the `if`
+    Outside,           -- anywhere else
+}
+
+pub comp test_scope {
+    in context: TestContext
+    in operands: Nat         -- the chain's operands
+    in test_at: Nat          -- the test's position among them, from 0
+    in site: Site            -- where a name that the test binds is mentioned
+    pub det out visible?     -- the name is in scope there
+    pub det out binds?       -- the test may bind names
+
+    assume within: test_at < operands
+
+    ensure later: when site is Site::Operand(k), visible? iff test_at < k < operands
+    ensure body: when site = Site::Body, visible? iff context is TestContext::WhenCondition | TestContext::IfCondition
+    ensure nowhere_else: when site is Site::ElseBranch | Site::Outside, not visible?
+    ensure binds: binds? iff (test_at + 1 < operands or context is TestContext::WhenCondition | TestContext::IfCondition)
+
+    expect unless_body: when context = TestContext::UnlessCondition and site = Site::Body, not visible?
+    expect alone: when operands = 1 and not context is TestContext::WhenCondition | TestContext::IfCondition, not binds?
+    expect next_operand: when test_at + 1 < operands, binds?
+    expect earlier: when site is Site::Operand(k) and k <= test_at, not visible?
+}
+```
+
+`lang::pattern_binding` states what a pattern test that binds a name
+means, over an enumeration whose one variant has a payload: each form
+means the `match` that the rules above give it.
+
+```fren
+pub enum Reading { Missing, Value(Int) }
+
+pub comp pattern_binding {
+    in r: Reading
+    in limit: Int
+    pub det out within?      -- `when r is Reading::Value(v), v <= limit`
+    pub det out exceeds?       -- `r is Reading::Value(v) and v > limit`
+    pub det out clamped: Int  -- `if r is Reading::Value(v) and v <= limit then v else limit`
+
+    ensure within_rule: within? iff (when r is Reading::Value(v), v <= limit)
+    ensure above_rule: exceeds? iff r is Reading::Value(v) and v > limit
+    ensure clamped_rule: clamped = (if r is Reading::Value(v) and v <= limit then v else limit)
+
+    expect within_match: within? iff match r { Reading::Value(v) => v <= limit, _ => true }
+    expect above_match: exceeds? iff match r { Reading::Value(v) => v > limit, _ => false }
+    expect clamped_match: clamped = match r { Reading::Value(v) if v <= limit => v, _ => limit }
+    expect complement: when r is Reading::Value(_), within? iff not exceeds?
+    expect missing: when r = Reading::Missing, within? and not exceeds? and clamped = limit
+    expect at_most: clamped <= limit
+}
+```
+
+`lang::pattern_test` states which patterns are accepted, from whether the
+test may bind names, by `lang::test_scope`, the numbers of their binders
+that are not `_` and of their alternatives that are not reachable, and
+whether they match some value:
 
 ```fren
 pub comp pattern_test {
+    in binds?                        -- the test may bind names (`lang::test_scope`)
     in n_bound: Nat                  -- binders that are not `_`
     in n_useless_alternatives: Nat   -- alternatives that no useful case of the pattern takes
     in matches_some?                 -- some value matches the pattern
     pub det out accepted?
 
-    ensure rule: accepted? iff (n_bound = 0 and n_useless_alternatives = 0 and matches_some?)
+    ensure rule: accepted? iff ((binds? or n_bound = 0) and n_useless_alternatives = 0 and matches_some?)
 
-    expect binds_nothing: when accepted?, n_bound = 0
+    expect binds_nothing: when accepted? and not binds?, n_bound = 0
     expect every_alternative: when accepted?, n_useless_alternatives = 0
     expect matches_something: when accepted?, matches_some?
 
     cover accepted: accepted?
+    cover binding: accepted? and n_bound > 0
     cover empty_rejected: not matches_some? and not accepted?
 }
 ```

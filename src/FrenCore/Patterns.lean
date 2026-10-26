@@ -392,11 +392,68 @@ alternatives that are not useful and whether it is exhaustive
 (`lang::match_arms`). -/
 def matchArmsAccepted (nUseless : Nat) (exhaustive : Bool) : Bool := nUseless == 0 && exhaustive
 
-/-- Whether the pattern of `e is P` is accepted, from the number of its
-binders that are not `_` and of its alternatives that are not useful, and
-whether it matches some value (`lang::pattern_test`). -/
-def patternTestAccepted (nBound nUseless : Nat) (matchesSome : Bool) : Bool :=
-  nBound == 0 && nUseless == 0 && matchesSome
+/-- What the chain of `and` that a pattern test is an operand of is a
+part of: the operands of a chain are those of `and`, through parentheses,
+and a test that is not an operand of `and` is a chain of one
+(`lang::test_scope`). -/
+inductive TestContext where
+  /-- The condition of `when`. -/
+  | whenCondition
+  /-- The condition of `unless`. -/
+  | unlessCondition
+  /-- The condition of `if`. -/
+  | ifCondition
+  /-- An operand of `or`. -/
+  | orOperand
+  /-- The operand of `not`. -/
+  | notOperand
+  /-- Anything else: a whole constraint, a definition, or an operand or
+  argument of another form. -/
+  | standalone
+  deriving BEq, DecidableEq, Inhabited, Repr
+
+/-- Where a name is mentioned, in and around a chain of `and`
+(`lang::test_scope`). -/
+inductive TestSite where
+  /-- The chain's operand at this position, from 0. -/
+  | operand (k : Nat)
+  /-- The body of the `when` or `unless`, or the `then` branch of the
+  `if`, whose condition the chain is. -/
+  | body
+  /-- The `else` branch of the `if` whose condition the chain is. -/
+  | elseBranch
+  /-- Anywhere else. -/
+  | outside
+  deriving BEq, DecidableEq, Inhabited, Repr
+
+/-- Whether the conditions of `context` see the names that their chain's
+pattern tests bind in their body: those of `when` and of `if`, whose body
+and `then` branch are evaluated where the patterns match. -/
+def TestContext.bodySees : TestContext → Bool
+  | .whenCondition | .ifCondition => true
+  | _ => false
+
+/-- Whether a name that the pattern test at `testAt` of a chain of `and` of
+`operands` operands, a part of `context`, binds is in scope at `site`
+(`lang::test_scope`): in the later operands of the chain, and in the body
+of `when` and the `then` branch of `if`, where the pattern matches. -/
+def binderVisible (context : TestContext) (testAt operands : Nat) : TestSite → Bool
+  | .operand k => testAt < k && k < operands
+  | .body => context.bodySees
+  | .elseBranch | .outside => false
+
+/-- Whether the pattern test at `testAt` of a chain of `and` of `operands`
+operands, a part of `context`, may bind names: whether they are in scope
+somewhere, in the next operand or in the body (`lang::test_scope`). -/
+def testBinds (context : TestContext) (testAt operands : Nat) : Bool :=
+  binderVisible context testAt operands (.operand (testAt + 1)) || binderVisible context testAt operands .body
+
+/-- Whether the pattern of `e is P` is accepted, from whether the test may
+bind names (`testBinds`), the number of its binders that are not `_` and
+of its alternatives that are not useful, and whether it matches some value
+(`lang::pattern_test`). -/
+def patternTestAccepted (binds : Bool) (nBound nUseless : Nat) (matchesSome : Bool) : Bool :=
+  (binds || nBound == 0) && nUseless == 0 && matchesSome
 
 /-- The number of or-free patterns that `p` stands for (`Pat.expand`): the
 product of the payload's, and the sum of an or-pattern's alternatives'. -/
@@ -787,25 +844,32 @@ def binderName (n : Name) : Name :=
   | .str p s => if s.endsWith "!" && s.length > 1 then .str p (s.dropEnd 1).toString else n
   | _ => n
 
-/-- A binder of the pattern of `e is P` that names its value, named as
-`binderName` gives it. -/
-def isBinderMsg (n : Name) : Msg :=
+/-- A binder of the pattern of `e is P`, a part of `context`, where nothing
+sees the names that it binds (`testBinds`), named as `binderName` gives
+it. -/
+def isBinderMsg (n : Name) (context : TestContext := .standalone) : Msg :=
   let n := binderName n
-  { code? := some "F0334", headline := s!"a pattern test cannot bind `{n}`", label? := some "binds a name"
-    notes := #["note: a pattern test has no body in which to mention the name",
-      "help: to read the payload, write a `match`"]
+  let why := match context with
+    | .unlessCondition => s!"note: the body of `unless` holds where the pattern does not match, where `{n}` has no value"
+    | .orOperand => s!"note: an operand of `or` binds no names: where the other operand holds, the pattern need not match, and `{n}` would have no value"
+    | .notOperand => s!"note: under `not`, what follows holds where the pattern does not match, where `{n}` has no value"
+    | _ => "note: a pattern test binds names only for what follows it where it matches: the later operands of its `and`, the body of `when`, or the `then` branch of `if`"
+  { code? := some "F0334", headline := s!"a pattern test cannot bind `{n}` here", label? := some "binds a name"
+    notes := #[why, s!"help: to read the payload, bind it in a `when`'s condition, as in `when x is P({n}), ...`, or write a `match`"]
     fixes := #[{ msg := "ignore the value", replacement := "_" }] }
 
 /-- Checks the pattern `p` of `e is P` on a value of `ty`, whose binders,
-`_` excluded, are `binders`, in preorder, explaining the first problem. A
-pattern that matches every value is accepted. -/
-def checkPatternTest (sigs : Sigs) (ty : PatTy) (p : Pat) (binders : Array Name) : Except (TestAt × Msg) Unit := do
+`_` excluded, are `binders`, in preorder, explaining the first problem,
+where the test, a part of `context`, may bind names if `binds`
+(`testBinds`). A pattern that matches every value is accepted. -/
+def checkPatternTest (sigs : Sigs) (ty : PatTy) (p : Pat) (binders : Array Name) (binds : Bool)
+    (context : TestContext) : Except (TestAt × Msg) Unit := do
   if p.cases > maxCases then throw (.whole, tooManyCasesMsg p.cases)
   let us := usefulness sigs ty #[p]
   let useless := uselessAlternatives p us[0]!
   let matchesSome := us[0]!.any (·.2.1)
-  if patternTestAccepted binders.size useless.size matchesSome then return
-  if let some n := binders[0]? then throw (.binder 0, isBinderMsg n)
+  if patternTestAccepted binds binders.size useless.size matchesSome then return
+  if let (some n, false) := (binders[0]?, binds) then throw (.binder 0, isBinderMsg n context)
   unless matchesSome do
     throw (.whole, unreachableMsg true (unreachableNote sigs ty true (if p matches .or _ then none else some p) #[] none))
   let j := useless[0]!

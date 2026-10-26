@@ -1,11 +1,11 @@
-error[F0334]: a pattern test cannot bind `n`
+error[F0334]: a pattern test cannot bind `n` here
  --> test/cli/types/f0334_is_binder.fren:3:73
   |
 3 | comp c { in s: Shape pub out big? ensure r: big? iff s is Shape::Circle(n) }
   |                                                                         ^ binds a name
   |
-  = note: a pattern test has no body in which to mention the name
-  = help: to read the payload, write a `match`
+  = note: a pattern test binds names only for what follows it where it matches: the later operands of its `and`, the body of `when`, or the `then` branch of `if`
+  = help: to read the payload, bind it in a `when`'s condition, as in `when x is P(n), ...`, or write a `match`
 help: ignore the value
   |
 3 - comp c { in s: Shape pub out big? ensure r: big? iff s is Shape::Circle(n) }

@@ -1,0 +1,17 @@
+error[F0217]: `v` shadows the input `v`
+ --> test/cli/names/f0217_is_binder.fren:3:80
+  |
+3 | comp c { in r: Reply in v: Int pub out w: Int ensure a: when r is Reply::Value(v), w = v }
+  |                                                                                ^ shadows without `!`
+  |
+  = note: shadowing is explicit: a declaration that hides a name in scope is written with `!`, as `v!`
+help: to shadow the input `v`, write `v!`
+  |
+3 - comp c { in r: Reply in v: Int pub out w: Int ensure a: when r is Reply::Value(v), w = v }
+3 + comp c { in r: Reply in v: Int pub out w: Int ensure a: when r is Reply::Value(v!), w = v }
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0217`.
+exit=2

@@ -55,7 +55,10 @@ without a `_` row holds, its value is an index of the empty sequence,
 completeness, disjointness and reachability checks ask quantifier-free
 questions of its conditions. So is a [`match`](Expressions.md#matches)
 with guards, when its scrutinee, guards and bodies are, and its checks
-likewise.
+likewise. A [pattern test](Expressions.md#binding-names) that binds names
+is too, when its scrutinee and what sees its names are: as a `match`
+arm's binders are, each name stands for a selector of the scrutinee's
+payload, so no quantifier is added.
 
 ## Integers
 
