@@ -1081,8 +1081,9 @@ A *pattern test*, `e is P`, is `true` exactly when the pattern `P` matches
 enumeration, a `Bool`, an `Int`, a `Nat` or a `String`, as a `match`'s scrutinee is
 (`F0335`), and `P` is a [pattern](Patterns.md) as in a [`match`
 arm](#matches), nested, literal, range and or-patterns included, but it
-binds no names: each of its binders is `_` (`F0334`), since a test has no
-body in which a name could be mentioned. To read a payload, write a
+binds no names: each of its binders is `_` (`F0334`, which names a binder
+`n!` as `n`, the name it would declare), since a test has no body in which
+a name could be mentioned. To read a payload, write a
 `match`. The pattern matches some value, and each alternative of its
 or-patterns is reachable, as in a `match` (`F0318`): so `k is -5..=-1`, on
 a `Nat`, is an error, as an arm with that pattern would be. A pattern that
