@@ -31,14 +31,22 @@ The rest of the language is decidable by three rules:
    [Instances](Instances.md#instance-variables)), so the quantifier never
    reaches under a function.
 
-A [quantifier](Quantifiers.md) in an expression adds no quantifier to a
+A [quantifier](Quantifiers.md) over listed types adds no quantifier to a
 query: it ranges over a finite type, and is expanded into a conjunction
 or disjunction of at most 256 instances before anything is asked, so the
 first rule still holds. Its bound names mention nothing, so each instance
 is in the core exactly when the body would be with a constant in place of
 each bound name: `forall (m: Method), s.starts_with?(prefix(m))`, with
 `prefix` a defined function, is in the core, as each
-`s.starts_with?(prefix(Method::Len))` is.
+`s.starts_with?(prefix(Method::Len))` is. An [unbounded
+quantifier](Quantifiers.md#unbounded-quantifiers), over a type that is
+not listed, is given to the solver as a quantifier, which breaks the first
+rule, so it is outside the core, whatever its body and its guard: a
+quantifier over the integers alone is Presburger arithmetic, which is
+decidable, but not with uninterpreted functions, strings, sets or
+sequences beside it, and a guard that bounds it bounds it by a term, not
+by a constant. The `undecidable` lint reports it at each binder whose
+type is not listed (`Quantifier`).
 
 A [table](Expressions.md#tables) is in the core when its rows' conditions
 and values are: it is a chain of conditionals, and where no row of one
@@ -270,14 +278,16 @@ pub mod lang
 -- or relation type; `Relational` is a relational operator; `RelationalCard` is
 -- `card`, or an instance of a component that counts, where there is one;
 -- `SeqArray` is a sequence's literals, `len`, indexing and `update`; `SeqWord`
--- is the other operations on sequences.
+-- is the other operations on sequences; `Quantifier` is an unbounded
+-- quantifier's binder of a type that is not listed.
 pub enum Construct {
     StringCompare, StringAtom, StringIndex, StringSearch, SetAlgebra, SetFunction, Relational, RelationalCard,
-    SeqArray, SeqWord,
+    SeqArray, SeqWord, Quantifier,
 }
 
 pub comp in_core {
     use self::Construct::{
+        Quantifier,
         Relational,
         RelationalCard,
         SeqArray,
@@ -299,19 +309,20 @@ pub comp in_core {
     in literal_operand?      -- for `SeqWord`: `x in L`, `starts_with?(L)` or `ends_with?(L)`, with `L` a literal
     pub det out decidable?
 
-    ensure rule: decidable? iff (ground? or (not infinite_output? and match construct {
+    ensure rule: decidable? iff (construct != Quantifier and (ground? or (not infinite_output? and match construct {
         StringAtom | StringIndex => constant_args?,
         StringCompare => comparable?,
         SetAlgebra | SeqArray => true,
         SetFunction => infinite_elems?,
         Relational => finite_range?,
         SeqWord => literal_operand?,
-        StringSearch | RelationalCard => false,
-    }))
+        StringSearch | RelationalCard | Quantifier => false,
+    })))
 
     expect outputs_block: when infinite_output? and not ground?, not decidable?
     expect search_never: when construct = StringSearch and not ground?, not decidable?
-    expect ground_always: when ground?, decidable?
+    expect ground_always: when ground? and construct != Quantifier, decidable?
+    expect quantifier_never: when construct = Quantifier, not decidable?
     expect algebra_always: when construct = SetAlgebra and not infinite_output?, decidable?
     expect relational_finite: when construct = Relational and not ground? and decidable?, finite_range?
     expect relational_card_never: when construct = RelationalCard and not ground?, not decidable?

@@ -13,7 +13,9 @@ variables, including its instances'. See [Evaluation and
 testing](Eval.md#behaviours).
 
 **Bound name.** A name that a quantifier's binder declares, standing for
-one value of its type in each instance. See [Quantifiers](Lang/Quantifiers.md).
+one value of its type in each instance, or, in an unbounded quantifier,
+for every value of a type that is not listed. See
+[Quantifiers](Lang/Quantifiers.md).
 
 **Cardinality operator.** One of the built-in functions `exactly_one?`
 and `at_most_one?`, which hold when exactly one, or at most one, of their
@@ -62,6 +64,11 @@ at once wherever the table is evaluated; of the arms of a table over a
 scrutinee, no two of them are taken at once. See
 [Checks](Check.md#disjointness).
 
+**Domain.** Of a bound name of an unbounded quantifier: the values that
+its guard bounds it to, which the evaluator enumerates: the members of a
+set or sequence, or a range of integers. See
+[Quantifiers](Lang/Quantifiers.md#guards).
+
 **Divisor.** The right operand of `div` or `mod`: an integer literal or a
 constant, possibly negated or in parentheses, whose value is not `0`. See
 [Expressions](Lang/Expressions.md#division-and-remainder).
@@ -90,7 +97,10 @@ declared with `expect` outside any component, that the checks confirm. See
 arm is taken only where it holds. See
 [Expressions](Lang/Expressions.md#matches). Also, of an operand, the
 conditions under which it is evaluated. See
-[Expressions](Lang/Expressions.md#sequences).
+[Expressions](Lang/Expressions.md#sequences). Also, of a quantifier, the
+conditions of the `when`s at the top of a `forall`'s body, or the
+conjuncts of an `exists`'s body, which may bound its bound names. See
+[Quantifiers](Lang/Quantifiers.md#guards).
 
 **Implementation.** A Lean proof that Lean code meets a component, declared
 with `impl`. See [Implementations](Impl.md).
@@ -113,9 +123,9 @@ with `in`.
 **Instance.** A use of one component inside another, declared with `inst`.
 See [Instances](Lang/Instances.md).
 
-**Instance of a quantifier.** The body of a quantifier with each bound
-name standing for one value; a quantifier means the conjunction or
-disjunction of its instances. See [Quantifiers](Lang/Quantifiers.md#meaning).
+**Instance of a quantifier.** The body of a quantifier over listed types
+with each bound name standing for one value; such a quantifier means the
+conjunction or disjunction of its instances. See [Quantifiers](Lang/Quantifiers.md#meaning).
 
 **Item.** A top-level declaration: a module, `use` declaration,
 enumeration, record, abstract type, function, constant, component, global
@@ -127,6 +137,11 @@ expectation, check or claim. See [Items](Lang/Items.md).
 **Lint.** A diagnostic about something allowed but probably not intended,
 such as an unused import, whose level (`allow`, `warn`, `deny` or
 `forbid`) can be set. See [Lints](Lint.md).
+
+**Listed type.** A type whose values a quantifier can list: `Bool`, or an
+enumeration or record whose payloads and fields have listed types. A
+quantifier over listed types is expanded into its instances. See
+[Quantifiers](Lang/Quantifiers.md#types).
 
 **Match.** An expression that has the value of the body of the first of its
 arms whose pattern matches its scrutinee and whose guard, if it has one,
@@ -193,8 +208,8 @@ preconditions. See [Items](Lang/Items.md#contracts).
 [Items](Lang/Items.md#contracts).
 
 **Quantifier.** An expression, `forall (x: T), e` or `exists (x: T), e`,
-that says that `e` holds for every value, or for some value, of a finite
-type `T`. See [Quantifiers](Lang/Quantifiers.md).
+that says that `e` holds for every value, or for some value, of the type
+`T`. See [Quantifiers](Lang/Quantifiers.md).
 
 **Range pattern.** A pattern that matches the integers between its
 bounds, such as `0..=9`, `0..10`, `1..` and `..=-1`. See
@@ -249,6 +264,11 @@ is not a new type. See [Items](Lang/Items.md#type-aliases).
 
 **Underlying type.** The type of a newtype's field, whose values the
 newtype has. See [Items](Lang/Items.md#newtypes).
+
+**Unbounded quantifier.** A quantifier with a bound name of a type that is
+not listed, such as `Int`: Lean's `∀` or `∃`, and a quantifier for the
+solver, outside the decidable core. See
+[Quantifiers](Lang/Quantifiers.md#unbounded-quantifiers).
 
 **Unbounded type.** A type with arbitrarily large values: a recursive
 enumeration, or one with a field or payload of an unbounded type. See

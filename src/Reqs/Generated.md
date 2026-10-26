@@ -275,15 +275,30 @@ operator](Lang/Expressions.md#cardinality) is the sum of a conditional for
 each argument, compared with 1: `exactly_one?(a?, b?)` is `((if a? = true
 then 1 else 0) + if b? = true then 1 else 0) = 1`, of type `Int`, and
 `at_most_one?` compares with `≤`, with no definition of its own for the
-solver to unfold. A [quantifier](Lang/Quantifiers.md), which ranges over a
-finite type, is its expansion: `forall (m: Method), m != x` is
+solver to unfold. A [quantifier](Lang/Quantifiers.md) over listed types is
+its expansion: `forall (m: Method), m != x` is
 `Method.Len ≠ x ∧ Method.Card ≠ x` for `enum Method { Len, Card }`, the body
 at each value in the order of [its instances](Lang/Quantifiers.md#meaning),
 conjoined by `∧`, or by `∨` for `exists`, with nothing left of the
 quantifier: no `∀`, `∃` or `Fintype`. The `∧`s and `∨`s form a balanced
 tree, `(a ∧ b) ∧ (c ∧ d)`, so that an expansion of 256 instances is 8 deep,
 not 256. Within a [`let` or `where`](Lang/Let.md), an expansion that mentions its
-names is a function of them, applied to the locals of their `have`s.
+names is a function of them, applied to the locals of their `have`s. An
+[unbounded quantifier](Lang/Quantifiers.md#unbounded-quantifiers) is a
+`Prop`, Lean's `∀` or `∃` over the Lean type of each bound name of a
+type that is not listed, named `x#k` as the solver knows it, with
+its bound names of listed types expanded within it: `forall (i: Int),
+when 0 <= i < q.len, q[i] > 0` is `∀ (i#0 : Int), 0 ≤ i#0 ∧ i#0 < Fren.Seq.len q →
+Fren.Seq.nth q i#0 > 0`. A pattern type's constraint, and a `Nat`'s, are
+part of the bound name's type, as `∀ (n#0 : Nat)`, or a hypothesis before
+the body for `∀`, and a conjunct for `∃`. Its body has no `have`: the
+names of `let`s and `where`s within it are substituted. Where a `Bool`
+is needed of it, as the value of a `Bool` variable or function, the
+condition of an `if`, or a member of a set, it is decided by
+`Classical.propDecidable`, since it has no other `Decidable` instance, as
+equality on an abstract type has none; that is why the definitions that
+need one are not computable. The checks and implementations read the
+propositions, which need no `Decidable` instance.
 
 A component *uses* the abstract types and uninterpreted functions that its
 variables' types, its constraints and its bindings mention, those that its

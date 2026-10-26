@@ -1445,7 +1445,13 @@ The items and members after it are elaborated as though it were
 testing. It tests the check with `--tests` tests (default 100) from
 `--seed` (default 0), and reports the result as `fren quickcheck` does
 (`eval::test_verdict`): a counterexample fails the check, and testing that
-reaches no conclusion leaves it inconclusive, with the same warnings. The
+reaches no conclusion leaves it inconclusive, with the same warnings. A
+check whose tests would evaluate an [unbounded
+quantifier](Lang/Quantifiers.md#unbounded-quantifiers) that the evaluator
+cannot enumerate, one with a bound name without a
+[domain](Lang/Quantifiers.md#guards), is not run, and the quantifier is an
+error (`F0639`), as [Evaluation](Eval.md#quantifiers) says: such a check
+needs the solver's evidence, or a `trusted` claim. The
 checks that testing cannot decide are not run: vacuity and redundancy,
 which ask whether something can hold at all, which a failed search does
 not refute; definedness, since an index out of range has no value

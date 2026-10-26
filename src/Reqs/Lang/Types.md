@@ -373,8 +373,9 @@ A pattern type is [unbounded](#recursive-and-unbounded-types) exactly when
 its base type is, and [finite](#finite-types) when its base type is, or
 when its base type is `Int` or `Nat` and every alternative of its pattern
 is a bounded range or an integer, as `Int is 0..=7` and `Int is 1 | 3 |
-5` are. So a [quantifier](Quantifiers.md) can range over `Int is 0..=7`,
-and has one instance for each integer that matches, in increasing order. A
+5` are. So a [quantifier](Quantifiers.md) over `Int is 0..=7` is
+expanded, with one instance for each integer that matches, in increasing
+order. A
 pattern type of an enumeration or a record ranges over the values of its
 base type that match, in their order. `lang::pattern_finite` states this:
 

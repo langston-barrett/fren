@@ -187,7 +187,18 @@ not to `fren check`, so the two can write such a comparison differently;
 like any difference in how a query is written, it can only change
 whether the solver answers in time. Only the
 [realizability](Check.md#realizability) check quantifies, over outputs, which never occur in a function's arguments (see
-[Instances](Lang/Instances.md#instance-variables)). A spec that uses
+[Instances](Lang/Instances.md#instance-variables)), unless the spec has
+an [unbounded quantifier](Lang/Quantifiers.md#unbounded-quantifiers),
+which every query that reads it gives the solver as a quantifier: each
+bound name of a type that is not listed is declared by the quantifier at
+its type's sort, as `(forall ((|i#0| Int)) ...)`, where `#` and the
+bound name's position among those in scope, from 0, keep it apart from
+every variable; a `Nat` is an `Int` there, with `(>= |n#0| 0)` before
+the body, as an implication for `forall` and a conjunct for `exists`, and
+a pattern type's constraint likewise. Its bound names of listed types are
+expanded within it. A spec with an unbounded quantifier quantifies, so
+its queries use a quantified logic: `UFDTLIA` where they would be
+`QF_UFDTLIA`. A spec that uses
 strings needs the theory of strings, which has no smaller standard logic,
 so its queries use `ALL`, and set cvc5's options `strings-exp`, without
 which cvc5 refuses some string operations, `re-inter-mode all`, so
@@ -209,7 +220,11 @@ collection's elements, which a [pattern type](Lang/Types.md#meaning)
 within an element type brings, and which is outside the core, sets
 `fmf-bound`, with which cvc5 finds models of quantifiers bounded by
 membership, as each such quantifier is, rather than giving up; both front
-ends set it for exactly those queries. Its queries are still in the
+ends set it for exactly those queries. So does a component, global
+expectation or refinement whose queries have an unbounded quantifier with
+a bound name that has a [domain](Lang/Quantifiers.md#guards): in its
+own constraints, definitions and bindings, those of its instances'
+components, and the bodies of the defined functions that they apply. Its queries are still in the
 [decidable core](Lang/Decidability.md), unless it opts out. A spec uses
 sets if it writes a `Set(…)` or `Rel(…)` type, or a set or relation
 literal such as `{1, 2}`, and sequences if it writes a `Seq(…)` type, a
@@ -233,6 +248,7 @@ pub comp logic {
     in kind: Kind
     in theories: Set(Theory)     -- beyond uninterpreted functions, datatypes and linear integer arithmetic
     in projection?               -- the spec takes the domain or range of a relation over a type that is not finite
+    in quantified?               -- the spec has an unbounded quantifier
     pub det out logic: Logic
     pub det out strings_exp?     -- set cvc5's `strings-exp`, `re-inter-mode` and `re-elim` options
     pub det out sets_exp?        -- set cvc5's `sets-exp` option
@@ -240,13 +256,13 @@ pub comp logic {
     assume relations_are_sets: when projection?, Sets in theories
 
     ensure base: when theories = {},
-        logic = (if kind = Realizability then Quantified else QuantifierFree)
+        logic = (if kind = Realizability or quantified? then Quantified else QuantifierFree)
     ensure all: when theories != {}, logic = (if projection? then HigherOrder else All)
     -- cvc5 decides sequences in its strings solver.
     ensure options: (strings_exp? iff (Strings in theories or Sequences in theories))
         and (sets_exp? iff (Sets in theories or Sequences in theories))
 
-    expect quantifier_free_when_possible: when logic = QuantifierFree, kind != Realizability
+    expect quantifier_free_when_possible: when logic = QuantifierFree, kind != Realizability and not quantified?
     expect sets_alone: when theories = {Sets}, not strings_exp?
     expect higher_order_rarely: when logic = HigherOrder, projection?
 }

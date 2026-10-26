@@ -200,8 +200,11 @@ mentions is decided from its parts, as `lang::mentions` states:
 - A [defined output](Components.md#defined-outputs) mentions what its
   definition mentions, a [binder](#matches) what its scrutinee
   mentions, and a name of a [`let` or `where`](Let.md) what its
-  definition mentions. A [quantifier's](Quantifiers.md) bound name
-  mentions nothing: in each instance, it is one value.
+  definition mentions. A [quantifier's](Quantifiers.md) bound name of a
+  listed type mentions nothing: in each instance, it is one value. A bound
+  name of any other type, of an [unbounded
+  quantifier](Quantifiers.md#unbounded-quantifiers), mentions itself, as
+  a variable does: it stands for every value of its type at once.
 - A [variant](#variants-with-payloads), a [record literal](#records) or
   a [newtype](#newtypes) built from its value mentions what its arguments
   or fields mention: its value is fixed. So does a [record
@@ -226,8 +229,8 @@ mentions is decided from its parts, as `lang::mentions` states:
 -- The kinds of expression, for what one mentions. `Literal` is a literal;
 -- `Constant` is a constant, a variant without a payload, or a path of more
 -- than one segment; `Variable` is a variable, an instance's variable, or a
--- field read from one; `Binder` is a binder of a `match` arm or a name of a
--- `let` or `where`; `Bound` is a quantifier's bound name; `Construction` is a variant with a payload, a
+-- field read from one, or a bound name of a type that is not listed; `Binder` is a binder of a `match` arm or a name of a
+-- `let` or `where`; `Bound` is a quantifier's bound name of a listed type; `Construction` is a variant with a payload, a
 -- record literal, a record update or a newtype built from its value,
 -- `Ms(e)`; `Uninterpreted` and `Defined` are
 -- applications of uninterpreted and defined functions; `Compound` is an
