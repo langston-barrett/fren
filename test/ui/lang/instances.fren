@@ -16,7 +16,7 @@ comp twice {
     in n: Int
     pub out m: Int
 
-    assume nonneg: n >= 0
+    assume nonneg: n >= 0  --~ warning: `n` is never negative
 
     inst a: counter { n }
     inst b: counter { n := a.next }
@@ -51,7 +51,7 @@ comp hopes {   --~ error: `hopes` is not realizable: for the input pick.b? = fal
 comp observes {
     in n: Int
 
-    assume nonneg: n >= 0
+    assume nonneg: n >= 0  --~ warning: `n` is never negative
 
     inst c: counter { n }
 

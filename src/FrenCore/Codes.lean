@@ -536,6 +536,27 @@ comp c { in x: Int pub out y? ensure r: y? iff x > 0 }
 
 In Lean, Lean's own parser reports this, as a syntax error.
 "# },
+  { code := "F0144", explanation := r#"A space before the `(` that opens what a name takes.
+
+Erroneous code example:
+
+```fren
+fn f(Int): Int
+comp c { in x: Int pub out y: Int ensure r: y = f (x) }
+```
+
+The `(` that opens a function's or a variant's arguments, a pattern's
+binders, a declaration's parameters or types, or the element types of
+`Set`, `Seq` and `Rel`, follows the name directly, with no space, as in
+Lean. Remove the space:
+
+```fren
+fn f(Int): Int
+comp c { in x: Int pub out y: Int ensure r: y = f(x) }
+```
+
+In Lean, Lean's own parser reports this, as a syntax error.
+"# },
   { code := "F0143", explanation := r#"A function's body is written after its contract.
 
 Erroneous code example:
@@ -4074,7 +4095,7 @@ Example:
 comp c { in x: Int pub out n: Int ensure r: n = x * 1 }
 ```
 
-`x + 0`, `0 + x`, `x - 0`, `x * 1` and `1 * x` are `x`; `s ++ ""` and
+`x + 0`, `0 + x`, `x - 0`, `x * 1`, `1 * x` and `x div 1` are `x`; `s ++ ""` and
 `"" ++ s` are `s`, and so for `[]`; `a union {}`, `{} union a` and `a minus
 {}` are `a`. `x + -y` is `x - y`, and `x - -y` is `x + y`. `fren fix` can
 fix this:
@@ -5417,6 +5438,134 @@ fix this:
 pub ordered enum Level { Low, Mid, High }
 
 comp c { in l: Level pub out m: Level ensure r: m = l }
+```
+"# },
+  { code := "F0810", explanation := r#"An `Int` that a constraint keeps at least 0 (a warning, `manual_nat`).
+
+Example:
+
+```fren
+comp c { in n: Int pub out m: Int assume counts: n >= 0 ensure r: m = n + 1 }
+```
+
+A `Nat` input brings the assumption that it is at least 0 with its type,
+and a `Nat` output the guarantee. Declare the variable a `Nat`, and
+remove its bound, or the constraint if nothing else is left of it.
+`fren fix` leaves this to the writer, since an instance or a refinement
+in another file may need the `Int`:
+
+```fren
+comp c { in n: Nat pub out m: Int ensure r: m = n + 1 }
+```
+
+An instance must then bind the input to a `Nat`, since an `Int` is never
+narrowed, so the lint does not fire where an instance or a refinement in
+the same file keeps the variable an `Int`.
+"# },
+  { code := "F0811", explanation := r#"A conditional that is the absolute value (a warning, `manual_abs`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = if x < 0 then -x else x }
+```
+
+`if x < 0 then -x else x`, and its forms with `<=`, `>`, `>=` and the
+branches swapped, are `x.abs`. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = x.abs }
+```
+"# },
+  { code := "F0812", explanation := r#"A conditional that is the absolute value of a difference (a warning, `manual_abs_diff`).
+
+Example:
+
+```fren
+comp c { in a: Int in b: Int pub out y: Int ensure r: y = if a > b then a - b else b - a }
+```
+
+`if a > b then a - b else b - a`, and its forms with `>=`, `<`, `<=` and
+the branches swapped, are `(a - b).abs`. `fren fix` can fix this:
+
+```fren
+comp c { in a: Int in b: Int pub out y: Int ensure r: y = (a - b).abs }
+```
+"# },
+  { code := "F0813", explanation := r#"A conditional that is `min` or `max` (a warning, `manual_min_max`).
+
+Example:
+
+```fren
+comp c { in a: Int in b: Int pub out y: Int ensure r: y = if a < b then a else b }
+```
+
+`if a < b then a else b` is `a.min(b)`, and `if a < b then b else a` is
+`a.max(b)`, and so with `<=`, `>` and `>=`. `fren fix` can fix this:
+
+```fren
+comp c { in a: Int in b: Int pub out y: Int ensure r: y = a.min(b) }
+```
+"# },
+  { code := "F0814", explanation := r#"A conditional that keeps its operand between two bounds (a warning, `manual_clamp`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = if x < 0 then 0 else if x > 9 then 9 else x }
+```
+
+Where the bounds are integer literals, the lower at most the upper, the
+conditional is `x.max(0).min(9)`. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = x.max(0).min(9) }
+```
+"# },
+  { code := "F0815", explanation := r#"A remainder made non-negative by hand (a warning, `manual_rem_euclid`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = (x mod 7 + 7) mod 7 }
+```
+
+`mod` is Euclidean: `x mod 7` is between 0 and 6 even where `x` is
+negative, so adding the divisor and taking the remainder again changes
+nothing. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = x mod 7 }
+```
+"# },
+  { code := "F0816", explanation := r#"A remainder by `1` or `-1` (a warning, `modulo_one`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out even? ensure r: even? iff x mod 1 = 0 }
+```
+
+Every integer is a multiple of `1`, so `x mod 1` is always `0`. The
+divisor is probably not the one meant:
+
+```fren
+comp c { in x: Int pub out even? ensure r: even? iff x mod 2 = 0 }
+```
+"# },
+  { code := "F0817", explanation := r#"A `min` and a `max` whose bounds leave one value (a warning, `min_max`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = x.min(0).max(9) }
+```
+
+`x.min(0)` is at most 0, so its `max` with 9 is always 9; so too
+`x.max(9).min(0)` is always 0. The bounds are probably swapped:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = x.max(0).min(9) }
 ```
 "# },
   { code := "F0818", explanation := r#"A record literal that copies most of its fields from one value (a warning, `manual_record_update`).

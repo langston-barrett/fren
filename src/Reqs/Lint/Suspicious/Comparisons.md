@@ -39,9 +39,7 @@ comp absurd_extreme_comparisons_exact {
     in op: Comparison
     in bound: Int
     in left?
-    in n: Int            -- the length
-
-    assume length: n >= 0
+    in n: Nat            -- the length
 
     inst p: absurd_extreme_comparisons { op, bound, left? }
     inst q: length_zero { op, bound, left? }

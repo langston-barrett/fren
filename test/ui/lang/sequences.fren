@@ -19,7 +19,7 @@ comp dispatch {
     in capacity: Int
     pub out start?               -- start the job at the head of the queue
 
-    assume sane: capacity >= 0
+    assume sane: capacity >= 0  --~ warning: `capacity` is never negative
 
     ensure rule: start? iff (pending != [] and running.card < capacity and not pending[0] in running)
 

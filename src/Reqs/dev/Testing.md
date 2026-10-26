@@ -52,8 +52,10 @@
   tokens, imports and comments, and be idempotent (`fmt::safe`).
 
 - **Mutants** (`lake test`): over the corpus of Fren's own requirements,
-  the snapshots of `fren mutate` (`test/cli/mutate_*.fren`,
-  `f0613_*.fren` and `f0614_*.fren`) and the examples of its decisions
+  the snapshots of `fren mutate` (every file under `test/cli/`, in any
+  subdirectory, named `mutate_*.fren`, `f0613_*.fren` or `f0614_*.fren`,
+  so a snapshot of its arguments, such as `args/mutate_by.fren`, is in it
+  too) and the examples of its decisions
   (`test/mutate/*.fren`, below), every [mutant](../Mutate.md) changes
   the text and has no static error (*well-formed*: mutants are made so, and
   a failure is fixed in the operator rather than by filtering), has an

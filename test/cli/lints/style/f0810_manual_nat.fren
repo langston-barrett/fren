@@ -1,0 +1,10 @@
+-- `manual_nat`, on an input and an output.
+comp c {
+    in n: Int
+    in k: Int
+    pub out m: Int
+
+    assume counts: n >= 0 and k < n
+
+    ensure r: 0 <= m and m <= n - k
+}

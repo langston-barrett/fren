@@ -463,6 +463,15 @@ def literalLints (src : Array Char) (toks : Array Token) (comments : Array Span)
       (Lint.needlessRawStringHashes, sp, Fren.Core.needlessRawHashesMsg fixed)
     invisible ++ hashes ++ if comment then #[] else (Fren.Core.literalMsgs text).map fun (l, msg) => (l, sp, msg)
 
+/-- A report of `manual_nat`, kept until the end of the file, where an
+instance or a refinement may keep its variable an `Int`
+(`lint::manual_nat`): the component, the variable and the report. -/
+structure NatReport where
+  comp : Name
+  var : String
+  report : Fren.Core.LintReport Span
+  deriving Inhabited
+
 /-- The edits that fix a lint's message, which `fren fix` makes where the
 message is reported. -/
 structure LintFix where
@@ -594,6 +603,11 @@ structure State where
   refinements of their abstractions: each read's component and input. -/
   assumptions : Array (Fren.Core.AssumptionRecord × Span) := #[]
   globalReads : Array (Name × Name) := #[]
+  /-- The reports of `manual_nat` in the file so far. -/
+  natReports : Array NatReport := #[]
+  /-- The variables that an instance or a refinement in the file keeps
+  `Int`s, by their components (`Fren.Core.refinementGiven`). -/
+  natKept : Array (Name × String) := #[]
   /-- Where the comparisons of `Bool`s in the expression being elaborated
   are, for `bool_equality`. -/
   boolEqs : Array Span := #[]
@@ -616,6 +630,8 @@ structure State where
   trailingCommas : Array (Span × String) := #[]
   /-- The span of the item being elaborated, up to where the next starts. -/
   itemSpan : Span := ⟨0, 0⟩
+  /-- The orderings, by the type they compare, for the lints of integers. -/
+  ordereds : Array (Span × Fren.Core.Ordered) := #[]
   /-- Some type or literal is a `String`, so the queries need the theory of
   strings (`cli::logic`). -/
   usesStrings : Bool := false
@@ -1416,12 +1432,13 @@ def lintBools (e : Expr) : M Unit := do
     { m with fixes := m.fixes.map fun f => { f with range? := f.range?.map fun r => { start := r.start + w.start, stop := r.stop + w.start } } }
   for (l, ref, msg) in Fren.Core.rewriteReports src root do
     lintFix l ref (shift msg)
-  let (boolEqs, variants, absEnds, mentioning, facts) :=
-    ((← get).boolEqs, (← get).variants, (← get).absEnds, (← get).mentioning, (← get).facts)
-  modify fun s => { s with boolEqs := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
+  let (boolEqs, ordereds, variants, absEnds, mentioning, facts) :=
+    ((← get).boolEqs, (← get).ordereds, (← get).variants, (← get).absEnds, (← get).mentioning, (← get).facts)
+  modify fun s => { s with boolEqs := #[], ordereds := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
   let variant? (sp : Span) := (variants.find? (·.1 == sp)).map (·.2)
   let fact? (sp : Span) := (facts.find? (·.1 == sp)).map (·.2)
-  for r in Fren.Core.opReports src boolEqs.contains variant? (absEnds.contains ·.stop) mentioning.contains fact? root do
+  let ordered? (sp : Span) := (ordereds.find? (·.1 == sp)).map (·.2)
+  for r in Fren.Core.opReports src boolEqs.contains ordered? variant? (absEnds.contains ·.stop) mentioning.contains fact? root do
     lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) (shift r.msg)
   for r in Fren.Core.arithReports src root do
     lintFix r.lint r.ref (shift r.msg)
@@ -2822,6 +2839,11 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let (y, ty) ← elabExpr cx b
       newtypeOp op span tx ty
       liftMsg b.span (Fren.Core.checkType t ty (Fren.Core.opNote op t))
+      -- For the lints of integers, at the end of the expression: what it compares.
+      if cx.noteIndexes && !(tx matches .newtype ..) then
+        let ordered : Fren.Core.Ordered := if t matches .enum _ then .enumeration
+          else if t == .int || t == .nat then .number else .other
+        modify fun s => { s with ordereds := s.ordereds.push (span, ordered) }
       let plan := (← orderPlan? t).getD .number
       if plan.strings then
         let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
@@ -3630,6 +3652,8 @@ def elabInst (cx : ExprCtx) (pi : PendingInst) : M CInst := do
       | internal b.span s!"no variable for `{b.name}`"
     let (smt, t) ← elabExpr { cx with expected? := some v.ty } e
     liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{b.name}` of `{showPath c.path}` has type `{v.ty.show}`"))
+    -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
+    if v.ty == .int && t == .int then modify fun s => { s with natKept := s.natKept.push (c.path, b.name) }
     lintBools e
     eqs := eqs.push s!"(= {quote v.name.toString} {smt})"
   modify fun s => { s with natApps := s.natApps ++ c.natApps.map (rename w c.vars) }
@@ -3678,6 +3702,44 @@ def evidenceInEffect : M Bool := do
   match (← get).evidence? with
   | none => return false
   | some (value, _) => return (Fren.Core.evidenceTested? value).getD false
+
+/-- The conjuncts of `e`, a constraint: the operands of its `and`s, not
+through parentheses but its own (`lint::manual_nat`). -/
+partial def constraintConjuncts (src : Array Char) (e : Expr) : Array Expr :=
+  let rec go (top : Bool) (e : Expr) : Array Expr :=
+    let bare := top || Fren.Core.withParens src (toRange e.span) == toRange e.span
+    match e with
+    | .bin _ "and" a b => if bare then go false a ++ go false b else #[e]
+    | _ => #[e]
+  go true e
+
+/-- Records `manual_nat` in the component `comp` of `members`
+(`lint::manual_nat`): for each variable it fires on, at its first bound,
+reported at the end of the file (`finishNat`). -/
+def lintManualNat (comp : Name) (members : Array Member) : M Unit := do
+  let src := (← get).src
+  let vars := members.filterMap fun
+    | .var isIn _ _ x ty? defn? => some ((declaredIdent x).1, ty?, isIn, defn?.isSome)
+    | _ => none
+  -- Only assumptions and guarantees constrain; an expectation or a cover goal has no bound.
+  let props := members.filterMap fun
+    | .prop kind x e => some (kind, x, e, if kind == .assume || kind == .ensure then constraintConjuncts src e else #[])
+    | _ => none
+  let wf (e : Expr) : String := Fren.Core.writtenForm (Fren.Core.textOf src (toRange e.span))
+  let conjunct (assumption : Bool) (e : Expr) : Fren.Core.NatConjunct := match e with
+    | .bin _ op l r => { assumption, op := .ofOp op, left := wf l, right := wf r }
+    | _ => { assumption, op := .otherOp, left := "", right := "" }
+  let isInt (ty? : Option (Array Ident)) : Bool := match ty? with | some #[t] => t.name == "Int" | _ => false
+  let bounds := Fren.Core.manualNatBounds
+    (vars.map fun (x, ty?, isIn, defined) =>
+      { name := x.name, role := if isIn then .input else if defined then .definedOutput else .output, int := isInt ty? })
+    (props.map fun (kind, _, _, cs) => cs.map (conjunct (kind == .assume)))
+  for (i, p, k) in bounds do
+    let (x, _, isIn, _) := vars[i]!
+    let (_, name, _, cs) := props[p]!
+    let msg := Fren.Core.manualNatMsg x.name isIn name.name (Fren.Core.textOf src (toRange cs[k]!.span))
+    let report := { lint := .manualNat, level := (← get).levels.get .manualNat, ref := cs[k]!.span, msg }
+    modify fun s => { s with natReports := s.natReports.push { comp, var := x.name, report } }
 
 /-- The checks of a comp with `members` that are tested
 (`Reqs/Check#checking-by-testing`): `all` if the comp is set to testing,
@@ -4032,6 +4094,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
   let (insts, indexes, tables) ← elabCompBindings vars instNames pending
   let (defs, indexes, tables) ← elabCompDefinitions name vars instNames indexes tables
   let (props, indexes, tables) ← elabCompConstraints members vars instNames indexes tables
+  lintManualNat (module ++ n) members
   lintDuplicateConstraints members
   let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
   lintOutputs lcx members vars
@@ -4095,6 +4158,12 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
           else if cv.role == Role.input then s!"its `{v.name}` is an input, not an output"
           else s!"its output `{v.name}` is not public"
       err aSpan (Fren.Core.interfaceMsg c.path a.path v.name why)
+    -- What it reads by name keeps an `Int` one (`lint::manual_nat`).
+    if let some cv := cv? then
+      let given (t : Ty) : Fren.Core.Given := if t == .int then .givenInt else .givenNat
+      if let (concrete, .givenInt) := Fren.Core.refinementGiven input (given v.ty) (given cv.ty) then
+        let kept := (if concrete then c.path else a.path, Fren.Core.nameText v.name)
+        modify fun s => { s with natKept := s.natKept.push kept }
   -- The instance of `concrete`, named as it is.
   let w := Name.mkSimple (c.path.getString!)
   if a.insts.any (·.name == w) then err aSpan (Fren.Core.dupMemberMsg w)
@@ -4122,6 +4191,8 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
                           refining? := some { concrete := c.path, abstract := a.path, input := v.role == .input } }
     let (smt, t) ← elabExpr cx e
     liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{b.name}` of `{showPath a.path}` has type `{v.ty.show}`"))
+    -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
+    if v.ty == .int && t == .int then modify fun s => { s with natKept := s.natKept.push (a.path, b.name) }
     lintBools e
     bindings := bindings.push (v, smt, ← takeIndexes, ← takeTables)
   let (relational, counts) ← checkCounts
@@ -4878,9 +4949,18 @@ def State.fixes (s : State) (fired : Array (Lint × Span)) :
         fixed := fixed.push (.unusedLintSetting, sp)
   return (edits, fixed)
 
+/-- Records the reports of `manual_nat` in the file that no instance or
+refinement in it keeps an `Int` (`lint::manual_nat`). Their fix is a
+suggestion, which `fren fix` does not make. -/
+def finishNat : StateM State Unit := do
+  let s ← get
+  let rs := s.natReports.filter fun r => !s.natKept.contains (r.comp, r.var)
+  set { s with lintReports := s.lintReports ++ rs.map NatReport.report }
+
 /-- The lints of the file just elaborated, at its end, and the edits that
 fix them, if `fren fix` fixes any. -/
 def finishLints : StateM State Unit := do
+  finishNat
   let s ← get
   let atEnd := Lint.all.filterMap (s.levels.get · |>.setting?)
   let (reports, fulfilled) := Fren.Core.finishReports
@@ -4925,7 +5005,7 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
   modify fun s => { s with file, src, fixing, module := .anonymous, scope := .anonymous, levels := s.cliLevels, useRecords := #[], evidence? := none,
                            used := #[], expectations := #[], lintReports := #[], useLocs := #[],
                            expectationRemovals := #[], items := #[], usedItems := #[], lintFixes := #[],
-                           globalTexts := #[], settings := #[], settingRemovals := #[], seenSettings := #[],
+                           globalTexts := #[], natReports := #[], natKept := #[], settings := #[], settingRemovals := #[], seenSettings := #[],
                            assumptions := #[], globalReads := #[], trailingCommas }
   for item in items, k in [0:items.size] do
     -- An item has the literals and comments up to the next item, and the

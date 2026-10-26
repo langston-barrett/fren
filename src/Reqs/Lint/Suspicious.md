@@ -5,8 +5,8 @@ writer meant. This chapter has the lints of names, of constraints, of
 the spacing of negations and of the binders of global expectations, and
 its subchapters the others: those of
 [expressions](Suspicious/Expressions.md), of [methods and
-indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md) and of
-[comparisons](Suspicious/Comparisons.md).
+indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md), of
+[comparisons](Suspicious/Comparisons.md) and of [integers](Suspicious/Integers.md).
 
 ## Repeated constraints
 
@@ -109,10 +109,8 @@ expectations. `lint::unrelated_binders` states when it fires:
 
 ```fren
 pub comp unrelated_binders {
-    in n_groups: Int     -- groups of the binders that atoms mention
+    in n_groups: Nat     -- groups of the binders that atoms mention
     pub det out fires?
-
-    assume counts: n_groups >= 0
 
     ensure rule: fires? iff n_groups >= 2
 }

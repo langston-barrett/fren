@@ -498,6 +498,20 @@ def withIn (x : P α) : P α := do
   modify fun s => { s with noIn := saved }
   return r
 
+/-- If the next token is a `(` after a space, reports it (`F0144`): the
+`(` that opens what a name takes follows it directly, as in Lean
+(`Reqs/Lang/Lexical#punctuators`). `name` is the name before it, and
+`what` what the `(` would open. -/
+def noSpaceBeforeParen (name what : String) : P Unit := do
+  let s ← get
+  let some t := s.toks[s.pos]? | return
+  unless isKw t "(" do return
+  let some prev := s.toks[s.pos - 1]? | return
+  if s.pos == 0 || prev.span.stop == t.span.start then return
+  err t.span "F0144" s!"a space before the `(` of {what}" (some "after a space")
+    #["note: the `(` that opens what a name takes follows the name directly, as in Lean",
+      s!"help: remove the space: `{name}(`"]
+
 /-- `.x` reading a field of `e`, an atom that ends in `)` or `}`; the `.`
 touches both. After `.`, `x.y` is one (dotted) identifier. If `(` follows
 the last of them, without a space, it is a method call, whose arguments
@@ -540,6 +554,7 @@ def fieldReads (args : P (Array Expr)) (index : P Expr) (e : Expr) (start? : Opt
       first := e.span
       start := span.stop + 1
     let last : Ident := { name := parts.getLast!, span := { start, stop := next.span.stop } }
+    noSpaceBeforeParen last.name s!"the arguments of `{last.name}`"
     let s ← get
     if (s.toks[s.pos]?).any fun t => isKw t "(" && t.span.start == next.span.stop then
       let as ← args
@@ -635,6 +650,8 @@ partial def primaryPattern : P Pattern := do
     let (segs, _) ← path false
     let start := segs[0]!.span
     let pathSpan := start.to segs.back!.span
+    let name := "::".intercalate (segs.map (·.name)).toList
+    noSpaceBeforeParen name s!"the binders of `{name}`"
     let next ← peek
     if isKw next "(" && (← touching) then
       markCall
@@ -713,6 +730,7 @@ partial def baseType : P (Array Ident) := do
   let s ← get
   if t.tok == .ident "Set" && (s.toks[s.pos + 1]?).any (isKw · "(") then
     discard bump
+    noSpaceBeforeParen "Set" "`Set`'s element type"
     markCall
     discard bump
     let inner ← typeExpr
@@ -720,6 +738,7 @@ partial def baseType : P (Array Ident) := do
     return #[{ name := setSeg, span := t.span }] ++ inner
   if t.tok == .ident "Seq" && (s.toks[s.pos + 1]?).any (isKw · "(") then
     discard bump
+    noSpaceBeforeParen "Seq" "`Seq`'s element type"
     markCall
     discard bump
     let inner ← typeExpr
@@ -727,6 +746,7 @@ partial def baseType : P (Array Ident) := do
     return #[{ name := seqSeg, span := t.span }] ++ inner
   if t.tok == .ident "Rel" && (s.toks[s.pos + 1]?).any (isKw · "(") then
     discard bump
+    noSpaceBeforeParen "Rel" "`Rel`'s element types"
     markCall
     discard bump
     let a ← typeExpr
@@ -956,6 +976,7 @@ partial def atom : P Expr := do
       let s' ← get
       unless (s'.toks[s'.pos + 1]?).any (isKw · "::") do
         discard bump
+        noSpaceBeforeParen s s!"the arguments of `{(s.splitOn ".").getLast!}`"
         -- `x.m(a)`: a method call on `x`, which may itself be dotted.
         if (s'.toks[s'.pos + 1]?).any fun n => isKw n "(" && n.span.start == t.span.stop then
           let parts := s.splitOn "."
@@ -973,6 +994,8 @@ partial def atom : P Expr := do
       let fs ← fieldInits "a record literal"
       discard (expectKw "}")
       return ← fieldReads callArgs indexArg (.record (← spanFrom start) segs fs)
+    let name := "::".intercalate (segs.map (·.name)).toList
+    noSpaceBeforeParen name s!"the arguments of `{name}`"
     unless isKw (← peek) "(" do return ← fieldReads callArgs indexArg (.path (start.to segs.back!.span) segs)
     markCall
     discard bump
@@ -1335,6 +1358,7 @@ partial def item : P Item := do
     let variant : P (Ident × Option (Array (Array Ident))) := do
       markStart
       let v ← ident
+      noSpaceBeforeParen v.name s!"the types of `{v.name}`'s payload"
       unless isKw (← peek) "(" do return (v, none)
       markCall
       discard bump
@@ -1351,6 +1375,7 @@ partial def item : P Item := do
   if isKw t "struct" then
     discard bump
     let name ← ident
+    noSpaceBeforeParen name.name s!"the types of `{name.name}`"
     if isKw (← peek) "(" then
       -- A newtype: its types, in parentheses.
       markCall
@@ -1381,6 +1406,7 @@ partial def item : P Item := do
   if isKw t "fn" then
     discard bump
     let name ← ident
+    noSpaceBeforeParen name.name s!"the parameters of `{name.name}`"
     markCall
     discard (expectKw "(")
     let param : P (Array Ident × Option (Array Ident)) := do

@@ -193,13 +193,11 @@ the inputs would change the component's interface.
 
 ```fren
 pub comp unused_assumption {
-    in n_mentioned: Int  -- variables the assumption mentions
+    in n_mentioned: Nat  -- variables the assumption mentions
     in all_inputs?       -- each of them is an input
     in mentioned?        -- one of them, or a function it applies, is used in the component, through its other assumptions too
     in read?             -- one of them, or a function it applies, is read in the file, by a global expectation, an instance or a refinement, through the component's other assumptions too
     pub det out fires?
-
-    assume counts: n_mentioned >= 0
 
     ensure rule: fires? iff (n_mentioned > 0 and all_inputs? and not mentioned? and not read?)
 }
@@ -243,11 +241,9 @@ before. `lint::unused_lint_setting` states when it fires:
 
 ```fren
 pub comp unused_lint_setting {
-    in n_places: Int     -- items and later settings where it is in effect for a lint it sets
+    in n_places: Nat     -- items and later settings where it is in effect for a lint it sets
     in expect?           -- it is to `expect`
     pub det out fires?
-
-    assume counts: n_places >= 0
 
     ensure rule: fires? iff (n_places = 0 and not expect?)
 }

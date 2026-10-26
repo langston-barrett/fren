@@ -406,6 +406,25 @@ refine escape_sequence_starts: escape_sequence refines escape_start
 
 `..` and `..=` are written only in a [range pattern](Patterns.md#kinds-of-pattern).
 
+A `(` that follows a name directly, with nothing between them, not even a
+space, a line break or a comment, opens what the name takes, as in Lean:
+
+| After | The `(` opens | Example |
+|---|---|---|
+| a function, a variant, a newtype or a cardinality operator, in an expression | its arguments | `f(x)`, `S::A(1)`, `Ms(1)`, `exactly_one?(a?, b?)` |
+| a method's name, after `.` | its arguments | `s.at(0)` |
+| a variant, in a pattern | its binders | `S::A(_)` |
+| a function's name, where it is declared | its parameters | `fn f(Int): Int` |
+| a variant's name, where it is declared | its payload's types | `enum S { A(Int) }` |
+| a newtype's name, where it is declared | its types | `struct Ms(Int)` |
+| `Set`, `Seq` and `Rel` | their element types | `Set(Int)` |
+
+A `(` after a space in one of these places is an error (`F0144`), in both
+front ends: `f (x)`, `S::A (_)`, `struct Ms (Int)` and `Set (Int)` do not
+parse. A `(` that does not follow a name, such as one that groups an
+expression or opens a quantifier's binders (`forall (x: T), e`), may follow a
+space. The `[` of an [index](Expressions.md#sequences) is written so too.
+
 `_` is an [identifier](#identifiers). `#fren_check` and `#fren_trace` are
 commands, single tokens that start with `#`.
 

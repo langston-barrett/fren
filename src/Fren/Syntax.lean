@@ -378,7 +378,7 @@ scoped syntax (name := structCmd) ("pub ")? ("ordered ")? "struct " frenIdent " 
 
 /-- `[pub] [ordered] struct N(T)`, a newtype; its parentheses must hold one
 type (`lang::newtype`), which the elaborator checks. -/
-scoped syntax (name := newtypeCmd) ("pub ")? ("ordered ")? "struct " frenIdent "(" sepBy(fren_type, ", ") ")" : command
+scoped syntax (name := newtypeCmd) ("pub ")? ("ordered ")? "struct " frenIdent noWs "(" sepBy(fren_type, ", ") ")" : command
 
 scoped syntax (name := compCmd) ("pub ")? "comp " frenIdent " { " fren_member* " }" : command
 

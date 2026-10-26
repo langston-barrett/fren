@@ -1,0 +1,24 @@
+--@ args: fix --check
+-- `fren fix` fixes the lints of `Nat`, `div`, `mod`, `abs`, `min` and
+-- `max`, with the operands parenthesized where they need it.
+pub comp c {
+    in n: Int
+    in k: Int
+    in j: Int
+    in x: Int
+    in y: Int
+    pub out m: Int
+    pub out a: Int
+    pub out b: Int
+    pub out d: Int
+    pub out e: Int
+
+    assume counts: k >= 0 and n >= 0 and x < y
+    assume order: j >= 0  -- why
+
+    ensure rm: m >= 0 and m <= n
+    ensure ra: a = 2 * if x - y > 0 then x - y else -(x - y)
+    ensure rb: b = if y >= x then y - x else x - y
+    ensure rd: d = (if x < y then x else y) + (if 0 > x then 0 else if x > 7 then 7 else x)
+    ensure re: e = 2 * ((x mod 3 + 3) mod 3) + n div 1
+}

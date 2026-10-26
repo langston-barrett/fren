@@ -201,8 +201,8 @@ match the pattern `P`, after Rust's: `Int is 0..=255` has the integers from
 | Severity::Error` two variants of an enumeration. `P` is a
 [pattern](Patterns.md) of `match` and `is`, of a value of `T`, as in a
 [pattern test](Expressions.md#pattern-tests), that binds no names: a
-binder, which would match every value and name it, is an error (`F0370`),
-and `_` is written instead. Pattern types are not nested: the base type is
+binder, which would match every value and name it, is an error (`F0370`,
+which names a binder `n!` as `n`), and `_` is written instead. Pattern types are not nested: the base type is
 never itself a pattern type, so `Int is 0.. is ..=9` does not parse, and a
 pattern on a type alias that names a pattern type is an error (`F0369`).
 

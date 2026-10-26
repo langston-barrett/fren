@@ -224,6 +224,9 @@ def mkObligation (c : CompInfo) (binders : Array Syntax) (maps : Array Syntax) (
         let t ← withoutErrToSorry <| withSynthesize <| elabTermEnsuringType m[2] v.type
         let t ← instantiateMVars t
         if t.hasMVar || t.hasSorry then throwErrorAt m[2] "could not elaborate this term"
+        -- An `Int` bound to an `Int`, not a `Nat` widened, keeps it one (`lint::manual_nat`).
+        if v.type.isConstOf ``Int && !(t.isAppOfArity ``Nat.cast 3 || t.isAppOfArity ``Int.ofNat 1) then
+          modifyLocal fun l => { l with natKept := l.natKept.push (c.path, Core.nameText v.name) }
         args := args.push (some t)
       | none => args := args.push none
     let hidden := (c.vars.zip args).filterMap fun (v, a) => if a.isNone then some v else none

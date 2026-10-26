@@ -38,6 +38,7 @@ comp vacuous {
 -- A defined output, a function's body, a constant and a global expectation
 -- take a `where` clause too.
 pub fn clamp(n: Int): Int := if n < lo then lo else n where lo := 0
+--~^ warning: this conditional is `max`
 
 pub const LIMIT: Int := base + 1 where base := 9
 
