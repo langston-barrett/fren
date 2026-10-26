@@ -1,0 +1,14 @@
+-- `zero_prefixed_literal` in the definitions of a `where` clause and a
+-- `let`, whose text follows or precedes the expression it names within.
+comp c {
+    in x: Int
+    pub out y?
+    pub out z?
+
+    req r: y? iff x > k where k := 007
+    --~^ warning: `007` is 7
+    req s: let j := 010 in z? iff x > j
+    --~^ warning: `010` is 10
+}
+
+--@ summary: 3 passed, 0 failed, 0 inconclusive, 0 redundant

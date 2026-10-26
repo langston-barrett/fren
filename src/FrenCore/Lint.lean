@@ -3868,7 +3868,8 @@ in an expression or a pattern, after a `-` if it is negated: the literal's
 range, and the message. A literal needs no parentheses. -/
 def zeroPrefixedReport? (src : Array Char) (r : Range) : Option (Range × Msg) := do
   let neg := if src[r.start]? == some '-' then 1 else 0
-  let start := ((List.range' (r.start + neg) (r.stop - min r.stop (r.start + neg))).find? (!src[·]!.isWhitespace)).getD r.stop
+  let start := ((List.range' (r.start + neg) (r.stop - min r.stop (r.start + neg))).find?
+    fun i => !(src[i]?.getD ' ').isWhitespace).getD r.stop
   let t := textOf src { start, stop := r.stop }
   guard (integerLiteral t && zeroPrefixed t)
   return ({ start, stop := r.stop }, zeroPrefixedMsg t)
