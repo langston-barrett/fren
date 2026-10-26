@@ -347,6 +347,54 @@ def termsIn (terms : Array String) (f : String) : Array String := Id.run do
     i := i + 1
   return out
 
+/-- The term that starts at `i` in `cs`, an application in parentheses, to
+its closing parenthesis, outside string literals and quoted symbols. -/
+def balancedAt (cs : Array Char) (i : Nat) : String := Id.run do
+  let mut depth := 0
+  let mut j := i
+  let mut inString := false
+  let mut inSym := false
+  while h : j < cs.size do
+    let c := cs[j]
+    if inString then
+      if c == '"' then inString := false
+    else if inSym then
+      if c == '|' then inSym := false
+    else if c == '"' then inString := true
+    else if c == '|' then inSym := true
+    else if c == '(' then depth := depth + 1
+    else if c == ')' then
+      depth := depth - 1
+      if depth == 0 then return String.ofList (cs.extract i (j + 1)).toList
+    j := j + 1
+  return String.ofList (cs.extract i cs.size).toList
+
+/-- The terms of the SMT-LIB text `f` that bring facts, in the order in
+which they start, as `termsIn` finds them: those of `terms`, and the
+applications of the selectors `heads`, whatever their arguments, as the
+Lean front end's `natApps` walks a term. -/
+def factTermsIn (terms heads : Array String) (f : String) : Array String := Id.run do
+  let cs := f.toList.toArray
+  let pats := terms.map fun t => (t, t.toList.toArray)
+  let hpats := heads.map fun h => ("(" ++ h ++ " ").toList.toArray
+  let mut out := #[]
+  let mut i := 0
+  let mut inString := false
+  while h : i < cs.size do
+    let c := cs[i]
+    if c == '"' then
+      inString := !inString
+    else if !inString && c == '(' then
+      for (t, p) in pats do
+        let here := i + p.size ≤ cs.size && (List.range p.size).all fun k => cs[i + k]! == p[k]!
+        if here && !out.contains t then out := out.push t
+      for p in hpats do
+        if i + p.size ≤ cs.size && (List.range p.size).all fun k => cs[i + k]! == p[k]! then
+          let t := balancedAt cs i
+          if !out.contains t then out := out.push t
+    i := i + 1
+  return out
+
 /-- `t`, the SMT-LIB text that `wrapLets` makes of a term, as the `let`s
 around the term, the term, and the parentheses that close them. -/
 partial def splitLets (t : String) : String × String × String :=
@@ -358,12 +406,16 @@ partial def splitLets (t : String) : String × String × String :=
   ((t.take (n - closes)).toString, inner, (t.takeEnd closes).toString)
 
 /-- The facts that the application `app`, of an uninterpreted function into
-`Nat` or with postconditions, brings (`Fren.Core.appFacts`), from what
-`funs` says of its function (`State.appFuns`): that it is at least 0, if
-its result is a `Nat`, and that it meets each postcondition where its
-arguments meet the preconditions, named by the postcondition, within the
-`let`s around it, as the Lean front end's are. -/
-def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (app : String) : Array (Lean.Name × String) :=
+`Nat`, into a pattern type or with postconditions, or a read of a
+recursive enumeration's payload of a pattern type, brings
+(`Fren.Core.appFacts`), from what `funs` says of its function
+(`State.appFuns`) and `types` of its head symbol (`State.funFacts`): that
+it is at least 0, if its result is a `Nat`, that it matches its type, and
+that it meets each postcondition where its arguments meet the
+preconditions, named by the postcondition, within the `let`s around it,
+as the Lean front end's are. -/
+def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (types : Std.HashMap String String) (app : String) :
+    Array (Lean.Name × String) :=
   let (pre, inner, post) := splitLets app
   -- `(SYM ARGS)`.
   let head := ((inner.drop 1).takeWhile (· != ' ')).toString
@@ -372,7 +424,8 @@ def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (app : String) : A
   let implies (ps : Array String) (q : String) := if ps.isEmpty then q else s!"(=> {conj ps} {q})"
   let posts := Fren.Core.postconditionFacts implies (k.pres.map fun (_, p) => s!"({p} {args})")
     (k.posts.map fun (n, sym) => (n, s!"({sym} {args})"))
-  (if nat then #[(`nat, s!"(>= {app} 0)")] else #[]) ++ posts.map fun (n, f) => (n, pre ++ f ++ post)
+  let typed := (types.get? head).map fun t => (`type, pre ++ t.replace factHole inner ++ post)
+  (if nat then #[(`nat, s!"(>= {app} 0)")] else #[]) ++ typed.toArray ++ posts.map fun (n, f) => (n, pre ++ f ++ post)
 
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
@@ -390,18 +443,24 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
   -- those, as in Lean (`Reqs/View#check-results`).
   query hyps goal wantModel := do
     let facts := c.natFacts false ++ c.natFacts true
-    let facts := facts ++ (facts.map (prime c)).filter (!facts.contains ·)
-    let mentioned : Std.HashSet String := .ofArray ((facts ++ hyps.map (·.2) |>.push goal).flatMap quotedSymbols)
+    let facts := facts ++ (facts.map fun (n, f) => (n, prime c f)).filter (!facts.contains ·)
+    let mentioned : Std.HashSet String := .ofArray ((facts.map (·.2) ++ hyps.map (·.2) |>.push goal).flatMap quotedSymbols)
     let vars := (c.vars ++ primes c).filter (mentioned.contains ·.name.toString)
     let apps := c.natApps ++ (c.natApps.map (prime c)).filter (!c.natApps.contains ·)
     -- An application within a `let` or `where` is found as it is written
     -- there, and its fact is within the clause's `let`s.
     let peeled := apps.map peelLets
-    let appsOf (f : String) := (termsIn peeled f).filterMap fun t => (peeled.idxOf? t).map (apps[·]!)
-    let appFacts ← Fren.Core.appFacts (m := Id) appsOf (appFactsOf funs) hyps goal
+    -- And each read of a recursive enumeration's payload whose type brings
+    -- a constraint, by its selector (`State.funFacts`).
+    let heads := c.funFacts.toArray.filterMap fun (h, _) => if h.startsWith "|::" then none else some h
+    let appsOf (f : String) := (factTermsIn peeled heads f).map fun t => ((peeled.idxOf? t).map (apps[·]!)).getD t
+    let appFacts ← Fren.Core.appFacts (m := Id) appsOf (appFactsOf funs c.funFacts) hyps goal
+    -- A component whose queries may quantify sets `fmf-bound`
+    -- (`State.bounded`).
+    let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
     runQuery (Fren.Core.logic kind (strings || sets) projection)
-      (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n"))
-      prelude vars limits dump? (facts.map (`nat, ·) ++ appFacts ++ hyps) goal wantModel cache?
+      (String.join (options.map fun (o, v) => s!"(set-option :{o} {v})\n"))
+      prelude vars limits dump? (facts ++ appFacts ++ hyps) goal wantModel cache?
   falseF := "false"
   notF f := s!"(not {f})"
   conj := conj
@@ -411,7 +470,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     if outs.isEmpty then return f
     let binders := " ".intercalate (outs.toList.map fun v => s!"({quote v.name.toString} {v.ty.sort})")
     -- The outputs' `Nat`s are at least 0, with the requirements.
-    return s!"(exists ({binders}) {conj (c.natFacts true ++ #[f])})"
+    return s!"(exists ({binders}) {conj ((c.natFacts true).map (·.2) ++ #[f])})"
   -- A value of an abstract type names a solver-internal constant, such as
   -- `@U_0`, which a fresh query cannot parse.
   pin n v := return if v.contains '@' then none else some s!"(= {quote n.toString} {v})"
@@ -439,13 +498,14 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
       expects := props .expect
       covers := props .cover
       insts := c.insts.map fun i =>
-        { name := i.name, comp := i.comp, bindings := i.bindings, behaviour := i.behaviour, assumes := i.assumes }
+        { name := i.name, comp := i.comp, bindings := i.bindings, behaviour := i.behaviour, assumes := i.assumes
+          typed := i.typed }
       triggers := (c.props.filter fun p => p.kind == .ensure || p.kind == .expect).filterMap fun p =>
         p.trigger?.map (p.name, ·)
       defs := c.defs.map fun (d, e) => (d, s!"(= {quote d.toString} {e})", e)
       -- Numbered in order within each item.
-      indexes := c.indexes.mapIdx fun j (n, place, _, goal) =>
-        { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal }
+      indexes := c.indexes.mapIdx fun j (n, place, _, goal, t) =>
+        { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal, patTy? := t.map (·.1) }
       tables := c.tables.mapIdx fun j (n, place, _, q, goal) =>
         { site := { prop := n, k := (c.tables.extract 0 j).filter (·.1 == n) |>.size, place, goal }, goal := q } }
   -- An uninterpreted function's contract, as both front ends build it

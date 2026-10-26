@@ -47,6 +47,13 @@ something of every member of a set `s` of a finite type `T`, write
 as a variable's is, so a path that names no type is an error, and so is
 one that names a component, except in a global expectation's leading
 `forall` (see [Global expectations](#global-expectations)).
+A [pattern type](Types.md#pattern-types) is ranged over when it is
+finite and not unbounded, as `lang::pattern_finite` says: `forall (x: Int
+is 0..=7), e` has eight instances, for 0 to 7 in increasing order, and
+`forall (s: Severity is Severity::Warning | Severity::Error), e` two, the
+variants that match in their declaration's order. Its values are those of
+its base type that match its pattern, and are counted so. Within a binder's
+type, as anywhere, a pattern type's alias stands for it.
 `lang::quantified_type` states which types a quantifier ranges over, from
 the kind of the type, whether it is a recursive enumeration, and whether
 the types of its payloads or fields are all ones it ranges over:

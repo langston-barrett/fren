@@ -1,7 +1,7 @@
 # Language overview
 
 A spec is a sequence of *items*: modules, `use` declarations,
-enumerations, records, abstract types, functions, constants, components
+enumerations, records, abstract types, type aliases, functions, constants, components
 and global expectations. Items are
 grouped into [modules](Modules.md). A [component](Components.md) declares
 its inputs and outputs, and constraints on them: assumptions,
@@ -23,10 +23,8 @@ const MAX_TARGET: Int := 90
 
 pub comp thermostat {
   in temp: Int
-  in target: Int
+  in target: Int is MIN_TARGET..=MAX_TARGET
   pub out mode: Mode
-
-  assume sane_target: MIN_TARGET <= target and target <= MAX_TARGET
 
   ensure heat: when temp < target - 2, mode = Heat
   ensure cool: when temp > target + 2, mode = Cool
@@ -42,13 +40,13 @@ pub comp thermostat {
 - `MIN_TARGET` and `MAX_TARGET` are [constants](Items.md#constants): each
   stands for its value.
 - `thermostat` has two inputs, `temp` and `target`, and one public output,
-  `mode`.
-- The assumption `sane_target` says the environment only ever sets a target
-  between 50 and 90.
+  `mode`. `target`'s type is a [pattern type](Types.md#pattern-types): an
+  `Int` that matches the range `MIN_TARGET..=MAX_TARGET`, so the component
+  assumes that the environment only ever sets a target between 50 and 90.
 - The guarantees `heat`, `cool` and `idle` say which mode the system must
   choose.
-- The expectation `cold_heats` claims a consequence: given the assumption
-  and the guarantees, a temperature below 40 always means heating.
+- The expectation `cold_heats` claims a consequence: given the type of
+  `target` and the guarantees, a temperature below 40 always means heating.
 
 Checking this spec (see [Checks](../Check.md)) confirms that some mode
 always satisfies all three guarantees, that `cold_heats` follows, and that

@@ -1,0 +1,47 @@
+-- Pattern types: what a variable, an application, a field and a payload
+-- of one bring, and the obligations of the values given where one is
+-- declared.
+
+type Byte := Int is 0..=255
+
+pub enum Severity { Silent, Info, Warning, Error }
+type Loud := Severity is Severity::Warning | Severity::Error
+
+struct Packet { length: Byte, level: Loud }
+
+fn size(Int): Byte
+
+comp router {
+    in p: Packet
+    in hops: Int is 1..
+    pub out y: Int
+
+    ensure r: y = p.length + hops
+
+    expect positive: y >= 1
+    expect bounded: y <= 255   --~ error: expectation `router::bounded` does not hold
+    expect applied: size(hops) <= 255
+    expect loud: p.level != Severity::Info
+}
+
+comp user {
+    in x: Int
+    pub det out d: Byte := x   --~ error: a value in `user::d` may not have the type `Byte`
+    inst w: router { p := Packet { length := x, level := Severity::Warning }, hops := x }   --~ error: the input `hops` of `router` may not have its type `Int is 1..` for instance `user::w`
+    --~^ error: a value in `user::w` may not have the type `Byte`
+}
+
+pub fn clamp(x: Int): Byte := if x < 0 then 0 else x   --~ error: a value in `clamp` may not have the type `Byte`
+fn clamped(x: Int): Byte := if x < 0 then 0 else if x > 255 then 255 else x
+
+const BIG: Byte := 300   --~ error: a value in `BIG` may not have the type `Byte`
+const SMALL: Byte := 30
+
+comp uses {
+    in x: Byte
+    pub out y: Byte
+
+    ensure r: y = clamped(x + SMALL + BIG)
+
+    expect in_range: y <= 255
+}

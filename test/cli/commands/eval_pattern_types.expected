@@ -1,0 +1,7 @@
+x = 300
+y = 5
+type x: false
+type y: false
+ensure r: true
+status: inadmissible
+exit=1

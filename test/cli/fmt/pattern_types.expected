@@ -1,0 +1,14 @@
+--- test/cli/fmt/pattern_types.fren
++++ test/cli/fmt/pattern_types.fren
+@@ -4 +4 @@
+-type   Byte:=Int   is  0..=255
++type Byte := Int is 0..=255
+@@ -6 +6 @@
+-type Loud :=Level is Level::High|Level::Low
++type Loud := Level is Level::High | Level::Low
+@@ -8,2 +8,2 @@
+-    in b: Set( Byte )
+-    in n:Int is 1..
++    in b: Set(Byte)
++    in n: Int is 1..
+exit=1

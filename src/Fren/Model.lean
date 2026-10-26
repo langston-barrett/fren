@@ -5,6 +5,7 @@ import FrenCore.Check
 import FrenCore.Evidence
 import FrenCore.Lint
 import FrenCore.Names
+import FrenCore.PatternTypes
 import FrenCore.Refine
 import Lean
 -- keep-sorted end
@@ -56,6 +57,12 @@ structure EnumInfo where
   unbounded : Bool := false
   /-- Declared `ordered` (`Reqs/Lang/Items#enumerations`). -/
   ordered : Bool := false
+  /-- Its payloads' types, as declared, for their constraints. -/
+  shape : Core.DataShape := {}
+  /-- For a recursive enumeration, what each read of a payload whose type
+  brings a constraint brings: its selector, and the constraint as a
+  predicate (`Core.readCons`). -/
+  readFacts : Array (Name × Expr) := #[]
   deriving Inhabited
 
 /-- The selector of the `k`th value of the payload of the constructor
@@ -70,6 +77,8 @@ structure RecordInfo where
   /-- The fields, with their Lean types. -/
   fields : Array (Name × Expr)
   unbounded : Bool := false
+  /-- Its fields' types, as declared, for their constraints. -/
+  shape : Core.DataShape := {}
   deriving Inhabited
 
 /-- The constructor of the structure generated for a record: not `mk`,
@@ -84,6 +93,8 @@ structure NewtypeInfo where
   /-- The Lean type of its underlying type. -/
   under : Expr
   unbounded : Bool := false
+  /-- Its field's type, as declared, for its constraint. -/
+  shape : Core.DataShape := {}
   deriving Inhabited
 
 /-- The field of the structure generated for a newtype. -/
@@ -116,6 +127,11 @@ structure AbstractInfo where
   isType : Bool
   /-- The placeholders of the abstract types in a function's signature. -/
   deps : Array Name := #[]
+  /-- A function's parameters' and result's types, as declared. -/
+  ptys : Array Core.PTy × Core.PTy := (#[], default)
+  /-- What each application of a function brings, as a predicate of its
+  result, if its result's type brings a constraint (`Reqs/Check`). -/
+  fact? : Option Expr := none
   deriving Inhabited
 
 /-- The placeholder for the item at `path`. -/
@@ -137,6 +153,8 @@ structure DefinedInfo where
   decl : Name
   uses : Array Name
   nParams : Nat
+  /-- Its parameters' and result's types, as declared. -/
+  ptys : Array Core.PTy × Core.PTy := (#[], default)
   deriving Inhabited
 
 /-- A clause of a function's contract, and the Lean definition generated
@@ -181,6 +199,11 @@ structure Var where
   ref : Syntax
   /-- The definition of a defined output of the comp itself. -/
   defn? : Option Syntax := none
+  /-- Its type as declared, with its patterns. -/
+  ptype : Core.PTy := default
+  /-- The constraint that its type brings, as a predicate of its value
+  (`Reqs/Lang/Components#pattern-types`). -/
+  fact? : Option Expr := none
   deriving Inhabited
 
 inductive PropKind where
@@ -220,8 +243,11 @@ structure InstInfo where
   /-- The instantiated comp's meaning (`CompInfo.meaning`) over the instance's
   variables. -/
   behaviour : Expr
-  /-- The instantiated comp's assumptions over the instance's variables. -/
+  /-- The instantiated comp's assumptions over the instance's variables,
+  after its inputs' types' obligations (`Core.Inst.typed`). -/
   assumes : Array (Name × Expr)
+  /-- Which of `assumes` are its inputs' types' obligations, with those types. -/
+  typed : Array (Name × String) := #[]
   decl : Name
   deriving Inhabited
 
@@ -325,6 +351,8 @@ inductive Entry where
   `path`, which has tables, as a comp whose path is its module, with the
   function's parameters as inputs, for the checks of its tables. -/
   | bodyInfo (path : Name) (c : CompInfo)
+  /-- A type alias, with the Lean type and the declared type it names. -/
+  | aliasInfo (path : Name) (ty : Expr) (pty : Core.PTy)
   | implInfo (i : ImplInfo)
   | claimInfo (c : ClaimInfo)
   deriving Inhabited
@@ -357,6 +385,8 @@ structure State where
   /-- The bodies of functions and values of constants that have tables, by
   the function's or constant's path (`Entry.bodyInfo`). -/
   bodies : NameMap CompInfo := {}
+  /-- The type aliases, each with the Lean type and the declared type it names. -/
+  aliases : NameMap (Expr × Core.PTy) := {}
   /-- The `impl`s of each comp. -/
   impls : NameMap (Array Name) := {}
   /-- The `impl`s proved by the solver, which are axioms. -/
@@ -385,6 +415,7 @@ def State.add (s : State) : Entry → State
   | .globalInfo p c => { s with globals := s.globals.insert p c }
   | .refinementInfo c => { s with refinements := s.refinements.insert c.path c }
   | .bodyInfo p c => { s with bodies := s.bodies.insert p c }
+  | .aliasInfo p t pt => { s with aliases := s.aliases.insert p (t, pt) }
   | .implInfo i =>
     { s with impls := s.impls.insert i.comp ((s.impls.getD i.comp #[]).push i.decl)
              axiomImpls := if i.isAxiom then s.axiomImpls.insert i.decl else s.axiomImpls }
@@ -412,6 +443,23 @@ def State.newtypeOfDecl? (s : State) (decl : Name) : Option NewtypeInfo :=
 
 /-- The newtype whose Lean type is `ty`, if it is one. -/
 def State.newtypeOf? (s : State) (ty : Expr) : Option NewtypeInfo := ty.constName?.bind s.newtypeOfDecl?
+
+/-- What is known of the record, newtype or enumeration at `path`, for
+the constraints of its values (`Core.DataShape`). -/
+def State.shapeOf (s : State) (path : Name) : Option Core.DataShape :=
+  (s.enums.get? path).map (·.shape) <|> (s.records.get? path).map (·.shape) <|> (s.newtypes.get? path).map (·.shape)
+
+/-- The obligation of a value given where the type `ty` is declared, in a
+definedness goal: `p`, marked with the type, as written, so that the check
+reports it (`Reqs/Check#pattern-types`). -/
+def typeObligation (_ty : String) (p : Prop) : Prop := p
+
+/-- `ty`, if `e` is marked with it as an obligation (`typeObligation`). -/
+def obligationTy? (e : Expr) : Option String :=
+  (e.find? (·.isAppOfArity ``Fren.typeObligation 2)).bind fun m =>
+    match m.appFn!.appArg!.consumeMData with
+    | .lit (.strVal s) => some s
+    | _ => none
 
 /-- Whether the Lean type of a Fren type is unbounded (`Reqs/Lang/Types`). -/
 def State.unbounded (s : State) (ty : Expr) : Bool :=

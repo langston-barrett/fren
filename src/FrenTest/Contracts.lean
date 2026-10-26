@@ -25,7 +25,7 @@ fn rank(k: Key): Nat
 interp Key := Bool
 
 /--
-error: the interpretation of `contract_test::rank` does not meet its postconditions: `decide` evaluates their statement to false
+error: the interpretation of `contract_test::rank` does not meet its postconditions: `decide` evaluates the statement to false
 
 help: correct the interpretation, or the contract
 -/
@@ -79,7 +79,7 @@ fn shifted(n: Int): Int
 /--
 error: the proof that the interpretation of `contract_test::shifted` meets its postconditions uses `sorry`
 
-note: an interpretation whose postconditions are not proved adds nothing
+note: an interpretation that is not proved to meet its postconditions adds nothing
 -/
 #guard_msgs in interp shifted := fun n => n by sorry
 

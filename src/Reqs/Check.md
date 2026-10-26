@@ -12,14 +12,16 @@ Fren checks each component seven ways:
 | [Redundancy](#redundancy) | `redundancy` | no assumption or guarantee follows from the others |
 | [Determinism](#determinism) | `determinism` | each `det out` is determined by the inputs |
 
-and checks how its constraints are written five more ways, wherever they
+and checks how its constraints are written six more ways, wherever they
 have an index, a [table](Lang/Expressions.md#tables), a
-[`match`](Lang/Expressions.md#matches) with guards or an application of a
-function with a [contract](Lang/Items.md#contracts):
+[`match`](Lang/Expressions.md#matches) with guards, an application of a
+function with a [contract](Lang/Items.md#contracts), or a value given
+where a [pattern type](Lang/Types.md#pattern-types) is declared:
 
 | Check | Confirms |
 |---|---|
 | [Definedness](#definedness) | each index is in range where it is evaluated |
+| [Pattern types](#pattern-types) | each value given where a pattern type is declared matches its pattern |
 | [Completeness](#completeness) | some row of each table without a `_` row holds, and some arm of each `match` that needs its guards to be exhaustive is taken, where it is evaluated |
 | [Disjointness](#disjointness) | no two rows of a table, other than `_`, hold at once where it is evaluated |
 | [Preconditions](#preconditions) | each application of a function meets the function's preconditions where it is evaluated |
@@ -31,8 +33,10 @@ and the [vacuity check](#vacuity) that its trigger can hold. The body of a
 [defined function](Lang/Items.md#defined-functions), the value of a
 [constant](Lang/Items.md#constants), and the clauses of a function's
 [contract](Lang/Items.md#contracts) are checked for completeness,
-disjointness, reachability and preconditions too, and a defined function's
-[postconditions](#postconditions) are checked to hold.
+disjointness, reachability and preconditions too, a defined function's
+[postconditions](#postconditions) are checked to hold, and the values in a
+body or a value given where pattern types are declared, including the body
+or value itself, are checked for their patterns.
 
 The formulas below use the notation of [Components](Lang/Components.md#meaning):
 `A` is the conjunction of the component's assumptions, `R` of its
@@ -41,14 +45,22 @@ variables `y` and the outputs `o`.
 `D` is the equations `d = e` of the component's [defined
 outputs](Lang/Components.md#defined-outputs), and `o` excludes them.
 `N` is the constraints that [natural
-numbers](Lang/Components.md#natural-numbers) and the
+numbers](Lang/Components.md#natural-numbers), [pattern
+types](Lang/Components.md#pattern-types) and the
 [postconditions](Lang/Items.md#contracts) of uninterpreted functions
 bring: `N(i, y)` that each `Nat` input and instance variable, and each
 application of an uninterpreted function whose result is a `Nat` that the
 query's own hypotheses or goal mention, is at least 0, and that each such
 application of an uninterpreted function with postconditions meets each
 of them if its arguments meet the function's preconditions; and `N(o)`
-that each `Nat` output is at least 0. So a query's facts about applications depend only on its
+that each `Nat` output is at least 0; and likewise that each variable and
+application whose type is a pattern type, or has one within its fields,
+payloads or elements, matches it, and that each payload of a recursive
+enumeration that the query reads matches its pattern type, if it has one.
+Each variable's constraints come in the order of the variables, after its
+`Nat`'s, and each application's or payload's in the order in which the
+query mentions them, one application's as one fact each: its `Nat`'s, its
+type's, then its postconditions'. So a query's facts about applications depend only on its
 formulas: an instance's query has none about its component's
 expectations, which are not among them. Every query has both among its hypotheses,
 though the formulas below leave them implicit, and realizability also
@@ -161,14 +173,17 @@ pub comp satisfiable {
 constrains nothing, so there is nothing to realize, determine or find
 redundant, and its binders' inputs have no obligations. The body of a
 function, its contract, or the value of a constant is not a constraint
-either: only its tables, its `match`es with guards and the applications in
-it are checked, and the function's postconditions. A component has no
-postconditions, so their check has no results there. The contract of an
-uninterpreted function with postconditions is checked for
-[realizability](#realizability) too, as a component whose inputs are the
-function's parameters, whose one `det out` is its value, and whose
-assumptions and guarantees are its preconditions and postconditions (see
-[Contracts](#contracts-of-uninterpreted-functions)):
+either: only its tables, its `match`es with guards, the applications in
+it, and its values given where pattern types are declared are checked, and
+the function's postconditions. The [pattern-type check](#pattern-types) is
+part of definedness: its results are definedness results, and it runs
+where definedness does, though in a body or a value, definedness asks
+nothing of its indexes. A component has no postconditions, so their check
+has no results there. The contract of an uninterpreted function with
+postconditions is checked for [realizability](#realizability) too, as a
+component whose inputs are the function's parameters, whose one `det out`
+is its value, and whose assumptions and guarantees are its preconditions
+and postconditions (see [Contracts](#contracts-of-uninterpreted-functions)):
 
 ```fren
 pub enum CheckedItem { Component, GlobalExpectation, Body, Contract }
@@ -194,7 +209,7 @@ pub comp applies {
     ensure rule: runs? iff match item {
         Component => true,
         GlobalExpectation => kind in {Expectation, Vacuity, Definedness, Completeness, Disjointness, Precondition, Reachability},
-        Body => kind in {Completeness, Disjointness, Precondition, Postcondition, Reachability},
+        Body => kind in {Definedness, Completeness, Disjointness, Precondition, Postcondition, Reachability},
         Contract => kind in {Realizability, Completeness, Disjointness, Precondition, Reachability},
     }
 
@@ -455,7 +470,9 @@ The realizability check then fails for `c_k`.
 ## Instance assumptions
 
 For each instance `w` of a component `c`, and each assumption `a` of `c`,
-Fren asks whether `a`, with `w`'s bindings substituted, can be proved from
+and each input `x` of `c` whose type brings a constraint (see [Pattern
+types](Lang/Components.md#pattern-types)), before its assumptions,
+Fren asks whether `a`, or `x`'s constraint, with `w`'s bindings substituted, can be proved from
 `A`, the bindings of `w`, and the constraints `I_v` of the instances `v`
 declared before `w`. A model is a counterexample: Fren reports the values of
 the inputs, and of the public outputs of the earlier instances.
@@ -585,6 +602,38 @@ reported at the `[` of the index:
 ```fren
 pub comp definedness {
     in q: Outcome          -- can `0 <= i < q.len` be proved from the guard and the hypotheses?
+    pub det out verdict: Verdict
+    pub det out reports_cex?
+
+    inst as_expect: expectation { q }
+
+    ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
+}
+```
+
+## Pattern types
+
+The pattern-type check is part of [definedness](#definedness), whose
+results it gives. A value given where a [pattern type](Lang/Types.md#pattern-types) is
+declared has an *obligation*: it must match the pattern. For each value
+given where a pattern type is declared, at the top of the declared type or
+in an element type (a definition, an argument of a function, a field of a
+record literal or update, a value of a payload, a typed `let` or `where`
+definition, a defined function's body, or a constant's value), with its
+guard `G`, Fren asks whether the value matches, as `e is P`, or for an
+element type, whether each element does, can be proved from `G` and the
+hypotheses of where it is written, as for [definedness](#definedness): in
+the body of a defined function or the value of a constant, `G` and `N`
+over the function's parameters, which assumes that the parameters match
+their own pattern types. An instance's binding is checked instead by the
+[instance check](#instance-assumptions). A component or item with no
+such value has no pattern-type results. `check::pattern_obligation`
+decides each query like an expectation, and a model is a counterexample,
+reported at the value:
+
+```fren
+pub comp pattern_obligation {
+    in q: Outcome          -- can `e is P` be proved from the guard and the hypotheses?
     pub det out verdict: Verdict
     pub det out reports_cex?
 

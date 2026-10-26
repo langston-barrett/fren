@@ -85,11 +85,11 @@ declaration.
 
 ## Dead code
 
-`dead_code` reports a private enumeration, record, abstract type, function
-or constant that no path in its file resolves to. A path to a variant uses
-its enumeration, and so does a path through it, such as `Mode::Heat`. A
-function is used by applying it, and a record or abstract type by naming
-it, as the type of a variable, field, payload or function, or, for a
+`dead_code` reports a private enumeration, record, abstract type, type
+alias, function or constant that no path in its file resolves to. A path
+to a variant uses its enumeration, and so does a path through it, such as
+`Mode::Heat`. A function is used by applying it, and a record, abstract
+type or type alias by naming it, as a type, or, for a
 record, in a record literal. As for [unused
 imports](#unused-imports), paths in `use` declarations do not count, and
 only uses in the same file count, even though a private item is visible
@@ -119,10 +119,11 @@ pub enum Named {
     Variant,
     Record,
     AbstractType,
+    TypeAlias,
     Constant,
 }
 
-use self::Named::{AbstractType, Component, Constant, Enumeration, Function, Record}
+use self::Named::{AbstractType, Component, Constant, Enumeration, Function, Record, TypeAlias}
 
 pub comp dead_item {
     in what: Named
@@ -130,7 +131,7 @@ pub comp dead_item {
     in n_uses: Nat       -- paths in its file that resolve to it, to one of its variants, or through it
     pub det out dead?
 
-    ensure rule: dead? iff (what in {Enumeration, Record, AbstractType, Function, Constant} and not pub? and n_uses = 0)
+    ensure rule: dead? iff (what in {Enumeration, Record, AbstractType, TypeAlias, Function, Constant} and not pub? and n_uses = 0)
 
     expect public_lives: when pub?, not dead?
     expect components_live: when what = Component, not dead?

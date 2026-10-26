@@ -19,7 +19,7 @@
 
 ```
 spec           := item*
-item           := module | use | enumeration | record | abstract-type | function | constant
+item           := module | use | enumeration | record | abstract-type | type-alias | function | constant
                 | component | expectation | refinement | check | claim | lint-setting | evidence-setting ["in" item] | lean-item
 
 module         := ["pub"] "mod" path
@@ -30,6 +30,7 @@ record         := ["pub"] "struct" IDENT "{" field ("," field)* [","] "}"
                 | ["pub"] "struct" IDENT "(" [type ("," type)*] ")"
 field          := IDENT [":" type]
 abstract-type  := ["pub"] "type" IDENT
+type-alias     := ["pub"] "type" IDENT ":=" type
 function       := ["pub"] "fn" IDENT "(" type ("," type)* ")" [":" type]
                 | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] [":=" top] clause+
                 | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] ":=" top
@@ -70,7 +71,8 @@ member         := "in" variable
 variable       := DECL [":" type]
 instance       := "inst" DECL ":" path "{" [binding ("," binding)* [","]] "}"
 binding        := IDENT [":=" expr]
-type           := "Bool" | "Int" | "Nat" | "String" | "Set" "(" type ")" | "Seq" "(" type ")" | "Rel" "(" type "," type ")"
+type           := base ["is" pattern]
+base           := "Bool" | "Int" | "Nat" | "String" | "Set" "(" type ")" | "Seq" "(" type ")" | "Rel" "(" type "," type ")"
                 | path
 path           := IDENT ("::" IDENT)*
 ```

@@ -499,6 +499,24 @@ enum Mode { Off, Heat }
 comp c { in x: Mode pub out ok? ensure r: ok? iff (exists (m: Mode), m = x) }
 ```
 "# },
+  { code := "F0137", explanation := r#"A pattern type has a second pattern.
+
+Erroneous code example:
+
+```fren
+comp c { in n: Int is 0.. is ..=9 }
+```
+
+A pattern type `T is P` has the values of `T` that match `P`, and its base
+type `T` is never itself a pattern type, so `is` follows a type at most
+once. Write one pattern that matches what both do:
+
+```fren
+comp c { in n: Int is 0..=9 }
+```
+
+In Lean, Lean's own parser reports this, as a syntax error.
+"# },
   { code := "F0142", explanation := r#"`req`, where a member of a component is expected.
 
 Erroneous code example:
@@ -1945,32 +1963,31 @@ comp c {
 }
 ```
 "# },
-  { code := "F0338", explanation := r#"`Nat` is the type of a field or payload, or an element type.
+  { code := "F0338", explanation := r#"`Nat` is an element type, or the type of a payload of a recursive enumeration.
 
 Erroneous code example:
 
 ```fren
-struct Stock { item: Int, count: Nat }
+struct Stock { counts: Set(Nat) }
 ```
 
-For now, `Nat` is the type of a variable, a function's parameter or
-result, a constant, or a definition of a `let` or `where`, and nothing
-else: not of a field or a payload, nor
-the element type of a set, relation or sequence. A `Nat` variable brings
-the constraint that it is at least 0, and Fren does not yet carry that
-constraint into the values of other types. Use an `Int`, and say where it
-is used that it is at least 0:
+A `Nat` brings the constraint that it is at least 0. Within a set,
+relation or sequence, or as a payload of a recursive enumeration, that
+constraint would hold of every element, and for now Fren does not carry it
+there. Use an `Int`, and say where it is used that it is at least 0, or
+use the pattern type `Int is 0..`, which may be an element type outside
+the decidable core:
 
 ```fren
-struct Stock { item: Int, count: Int }
+struct Stock { counts: Set(Int) }
 
 comp restock {
     in stock: Stock
     pub out more?
 
-    assume counted: stock.count >= 0
+    assume counted: not -1 in stock.counts
 
-    ensure rule: more? iff stock.count < 10
+    ensure rule: more? iff 0 in stock.counts
 }
 ```
 "# },
@@ -2142,6 +2159,42 @@ x := 1, y := 2 }`, not as `Point(1, 2)`:
 struct Ms(Int)
 
 comp c { pub out t: Ms ensure r: t = Ms(5) }
+```
+"# },
+  { code := "F0369", explanation := r#"A pattern on a type alias that names a pattern type.
+
+Erroneous code example:
+
+```fren
+type Byte := Int is 0..=255
+comp c { in n: Byte is ..=9 }
+```
+
+Pattern types are not nested: the base type of `T is P` is never itself a
+pattern type, and an alias of one is that pattern type. Write one pattern
+type, whose pattern matches what both patterns do:
+
+```fren
+type Byte := Int is 0..=255
+comp c { in n: Int is 0..=9 }
+```
+"# },
+  { code := "F0370", explanation := r#"A pattern type's pattern binds a name.
+
+Erroneous code example:
+
+```fren
+type Any := Int is n
+```
+
+A pattern type's pattern binds no names: a name of one segment that is not
+a variant, `true` or `false` would match every value and name it, which
+means nothing in a type. Write `_` to match every value, or name a variant,
+or a constant as a range's bound:
+
+```fren
+const MAX: Int := 9
+type Digit := Int is 0..=MAX
 ```
 "# },
   { code := "F0401", explanation := r#"An assumption mentions a variable that is not an `in`.
@@ -3197,6 +3250,68 @@ comp c {
   pub out big?
   ensure r: big? iff x > 1000
   cover large: x > 2000 and big?
+}
+```
+"# },
+  { code := "F0622", explanation := r#"A value given where a pattern type is declared may not match its pattern.
+
+Erroneous code example:
+
+```fren
+type Byte := Int is 0..=255
+
+comp c {
+    in x: Int
+    pub det out b: Byte := x
+}
+```
+
+Where a pattern type `T is P` is declared, as the type of a defined output,
+an argument, a field, a payload, a `let` definition, a function's result or
+a constant, a value of `T` is accepted with the obligation that it matches
+`P`, which the solver checks where the value is written, under the same
+hypotheses as an index's definedness. The counterexample is a behaviour in
+which the value does not match. Guard the value so that it matches, or add
+an assumption that ensures it:
+
+```fren
+type Byte := Int is 0..=255
+
+comp c {
+    in x: Int
+    pub det out b: Byte := if 0 <= x <= 255 then x else 0
+}
+```
+"# },
+  { code := "F0623", explanation := r#"An instance binds an input of a pattern type to a value that may not match its pattern.
+
+Erroneous code example:
+
+```fren
+type Byte := Int is 0..=255
+
+comp sub { in b: Byte pub out y: Int ensure r: y = b }
+
+comp c {
+    in x: Int
+    inst w: sub { b := x }
+}
+```
+
+An input of a pattern type is an assumption of its component, so an
+instance's binding of it is checked, as the component's other assumptions
+are. The counterexample is a behaviour in which the bound value does not
+match. Bind the input to a value of its type, or add an assumption that
+guarantees it:
+
+```fren
+type Byte := Int is 0..=255
+
+comp sub { in b: Byte pub out y: Int ensure r: y = b }
+
+comp c {
+    in x: Byte
+    inst w: sub { b := x }
 }
 ```
 "# },

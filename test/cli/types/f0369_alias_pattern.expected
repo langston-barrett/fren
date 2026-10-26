@@ -1,0 +1,13 @@
+error[F0369]: `Byte` is a pattern type, so it cannot have a pattern of its own
+ --> test/cli/types/f0369_alias_pattern.fren:3:16
+  |
+3 | comp c { in n: Byte is ..=9 }
+  |                ^^^^ already a pattern type
+  |
+  = note: pattern types are not nested: the base type of `T is P` is never itself a pattern type
+  = help: write one pattern type, whose pattern matches what both patterns do
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0369`.
+exit=2

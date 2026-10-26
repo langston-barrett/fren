@@ -1,0 +1,10 @@
+-- A string literal that looks like how an obligation might be marked is a
+-- string, and its index's definedness is reported as an index's.
+comp c {
+    in q: Seq(Int)
+    in i: Int
+    in x: String
+    pub out o?
+
+    ensure e: o? iff (when x = "; fren-type 41-42", q[i] = 0)   --~ error: an index of `c::e` may be out of range
+}

@@ -1275,6 +1275,7 @@ inductive Named where
   | variant
   | record
   | abstractType
+  | typeAlias
   | constant
   deriving Inhabited, BEq, DecidableEq, Repr
 
@@ -1292,11 +1293,12 @@ def Named.describe : Named → String
   | .variant => "variant"
   | .record => "record"
   | .abstractType => "abstract type"
+  | .typeAlias => "type alias"
   | .constant => "constant"
 
 /-- The case of a name (`lint::naming_case`). -/
 def Named.case : Named → Case
-  | .enumeration | .variant | .record | .abstractType => .camel
+  | .enumeration | .variant | .record | .abstractType | .typeAlias => .camel
   | .constant => .upper
   | _ => .snake
 
@@ -1593,7 +1595,7 @@ def nameMsgs (what : Named) (n : Name) : Array (Lint × Msg) :=
 /-- Whether a declared name of `what` is an item's, which a path from
 outside its module reaches through the module's name. -/
 def Named.isItem : Named → Bool
-  | .module | .component | .function | .global | .enumeration | .record | .abstractType | .constant => true
+  | .module | .component | .function | .global | .enumeration | .record | .abstractType | .typeAlias | .constant => true
   | _ => false
 
 /-- Whether `module_name_repetitions` fires on an item whose name has
@@ -1643,7 +1645,7 @@ def unmentioned (declared : Array (Name × α)) (mentioned : Array Name) : Array
 /-- Whether an item is dead (`lint::dead_item`). -/
 def deadItem (what : Named) (isPub : Bool) (nUses : Nat) : Bool :=
   match what with
-  | .enumeration | .record | .abstractType | .function | .constant => !isPub && nUses == 0
+  | .enumeration | .record | .abstractType | .typeAlias | .function | .constant => !isPub && nUses == 0
   | _ => false
 
 /-- A private enumeration, record, abstract type, function or constant declared in

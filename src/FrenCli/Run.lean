@@ -532,7 +532,13 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     (global : Bool) (keep : Fren.Core.CheckResult → Bool) (prelude : Prelude) (byCheck : Bool := false)
     (rep : Eval.Report := testReport sp ec c global args.seed args.nTests) :
     IO (Array Fren.Core.CheckResult × Array Msg) := do
-  let results := markInterpreted prelude c (rep.results.filter keep)
+  -- An instance's binding of an input of a pattern type, with that type, as
+  -- the solver's check has it (`Fren.Core.Inst.typed`).
+  let typedOf (r : Fren.Core.CheckResult) : Fren.Core.CheckResult :=
+    match r.kind, r.prop?, r.target? with
+    | .inst, some w, some (_, a) => { r with patTy? := (c.insts.find? (·.name == w)).bind fun i => (i.typed.find? (·.1 == a)).map (·.2) }
+    | _, _, _ => r
+  let results := markInterpreted prelude c ((rep.results.filter keep).map typedOf)
   let mut shown := #[]
   let subject := s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
   for r in results do
@@ -597,7 +603,7 @@ def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec)
     (kinds : Array Fren.Core.CheckKind)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
-  let bk := backend prelude st.datatypes c limits dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache
+  let bk := backend prelude st.datatypes { c with funFacts := st.funFacts, bounded := st.bounded c } limits dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache
     st.appFuns
   let log ← IO.mkRef #[]
   -- The checks set to testing are not asked of the solver (`check::by_testing`).

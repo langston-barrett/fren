@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCore.Diagnostic
 import FrenCore.Names
+import FrenCore.PatternTypes
 import FrenCore.Table
 import Lean.Data.Name
 -- keep-sorted end
@@ -92,6 +93,10 @@ structure CheckResult where
   rows? : Option (Nat × Nat) := none
   /-- For `completeness`, `disjointness` and `reachability`: the question. -/
   goal? : Option TableGoal := none
+  /-- For `definedness`, of a value given where a pattern type is declared,
+  and for `inst`, of an input of a pattern type: that type, as written
+  (`Reqs/Check#pattern-types`). -/
+  patTy? : Option String := none
   verdict : Verdict
   detail : Detail := .none
   /-- For `cover`: its query depends on an interpretation, so its witness's
@@ -219,8 +224,12 @@ structure Inst (F : Type) where
   bindings : F
   /-- The instantiated comp's assumptions, requirements and instances. -/
   behaviour : F
-  /-- The instantiated comp's assumptions, each an obligation. -/
+  /-- The instantiated comp's assumptions, each an obligation, after the
+  constraints of its inputs' types (`Reqs/Check#instance-assumptions`). -/
   assumes : Array (Name × F)
+  /-- Which of `assumes` are its inputs' types' constraints, each with its
+  type, as written. -/
+  typed : Array (Name × String) := #[]
 
 /-- Where an index or a table is written, which gives the hypotheses of its
 definedness query (`check::definedness`), and of the questions about its
@@ -246,6 +255,9 @@ structure IndexSite (F : Type) where
   k : Nat
   place : IndexPlace
   goal : F
+  /-- For a value given where a pattern type is declared, rather than an
+  index: that type, as written (`Reqs/Check#pattern-types`). -/
+  patTy? : Option String := none
   deriving Inhabited
 
 /-- A question about the cases of a table or a `match` (`TableGoal`), where
@@ -395,7 +407,8 @@ assumptions, `k`'s bindings and the earlier instances
 (`check::instance_assumption`). -/
 def checkInst (c : Comp F) (k : Nat) (i : Inst F) (a : Name × F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
-    { kind := .inst, comp := c.path, prop? := some i.name, target? := some (i.comp, a.1), verdict, detail }
+    { kind := .inst, comp := c.path, prop? := some i.name, target? := some (i.comp, a.1), verdict, detail
+      patTy? := (i.typed.find? (·.1 == a.1)).map (·.2) }
   let q ← b.query (c.defEqs .inst ++ (c.hyps b k).push (i.name, i.bindings)) a.2 true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
@@ -449,7 +462,8 @@ other assumptions; for a binding, the assumptions and earlier instances;
 otherwise the assumptions, instances and requirements. -/
 def checkDefinedness (c : Comp F) (site : IndexSite F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
-    { kind := .definedness, comp := c.path, prop? := some site.prop, index? := some site.k, verdict, detail }
+    { kind := .definedness, comp := c.path, prop? := some site.prop, index? := some site.k, verdict, detail
+      patTy? := site.patTy? }
   let q ← b.query (c.defEqs .definedness ++ c.siteHyps b site) site.goal true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
@@ -572,7 +586,7 @@ def globalKinds : Array CheckKind :=
 a function or the value of a constant, and of a defined function's
 postconditions (`check::applies`), as a `Comp` whose path is its module,
 with its parameters as inputs and its preconditions as assumptions. -/
-def bodyKinds : Array CheckKind := #[.completeness, .disjointness, .precondition, .postcondition, .reachability]
+def bodyKinds : Array CheckKind := #[.definedness, .completeness, .disjointness, .precondition, .postcondition, .reachability]
 
 /-- The checks of the contract of an uninterpreted function with
 postconditions (`check::applies`), as a `Comp` whose path is its module,
@@ -663,6 +677,12 @@ def solverOptions (strings sets : Bool) : List (String × String) :=
   (if strings then [("strings-exp", "true"), ("re-inter-mode", "all"), ("re-elim", "on")] else [])
     ++ (if sets then [("sets-exp", "true")] else [])
 
+/-- The cvc5 option for a query with a quantifier over a collection's
+elements, which a pattern type within an element type brings
+(`Reqs/Cli#solver-queries`): `fmf-bound`, with which cvc5 finds models of
+quantifiers that membership bounds. -/
+def boundedOptions : List (String × String) := [("fmf-bound", "true")]
+
 /-- `inst` for each assumption of each instance, in order. -/
 def checkInsts (c : Comp F) : m (Array CheckResult) := do
   return (← c.insts.zipIdx.mapM fun (i, k) => i.assumes.mapM (checkInst b c k i)).flatten
@@ -736,7 +756,8 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
 /-- What the applications of uninterpreted functions in a query bring
 (`Reqs/Check`): for each application that `appsOf` finds in the query's
 own hypotheses and goal, each once, the facts that `factsOf` gives of it:
-that it is at least 0, named `nat`, if its result is a `Nat`, and that it
+that it is at least 0, named `nat`, if its result is a `Nat`, that it
+matches its result type, named `type`, if that brings a constraint, and that it
 meets each postcondition of its function where its arguments meet the
 preconditions, named by the postcondition. They are in one order in both
 front ends: the hypotheses' in order and then the goal's, and within a
@@ -912,14 +933,18 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
     let what := match r.kind, r.target? with
       | .realizable, some (f, _) => s!"the postconditions of `{showComp f}` can hold"
       | .realizable, _ => s!"{subject} is realizable"
-      | .inst, some (sub, a) => s!"the assumption `{a}` of `{showComp sub}` holds for instance {subject}"
+      | .inst, some (sub, a) => match r.patTy? with
+        | some ty => s!"the input `{a.getPrefix}` of `{showComp sub}` has its type `{ty}` for instance {subject}"
+        | none => s!"the assumption `{a}` of `{showComp sub}` holds for instance {subject}"
       | .inst, none => s!"{subject} holds"
       | .expect, _ => s!"{subject} holds"
       | .cover, _ => s!"{subject} can be met"
       | .vacuity, _ => s!"{subject} is vacuous"
       | .redundancy, _ => s!"{subject} is redundant"
       | .determinism, _ => s!"{subject} is determined by the inputs"
-      | .definedness, _ => s!"an index of {subject} is in range"
+      | .definedness, _ => match r.patTy? with
+        | some ty => s!"a value in {subject} has the type `{ty}`"
+        | none => s!"an index of {subject} is in range"
       | .completeness, _ => match r.goal? with
         | some (.completeness .match) => s!"some arm of a `match` in {subject} is taken"
         | _ => s!"some row of a table in {subject} holds"
@@ -970,6 +995,14 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         msg := { code? := none, headline := if others.isEmpty then s!"is false when {showAssignment input}"
           else s!"conflicts with {showNames others} when {showAssignment input}" } }
   | .fail, .counterexample vals =>
+    if let (.definedness, some ty) := (r.kind, r.patTy?) then
+      let m := obligationMsg subject ty (showAssignment vals) priv
+      #[one "F0622" m.headline m.label? m.notes]
+    else
+    if let (.inst, some (sub, a), some ty) := (r.kind, r.target?, r.patTy?) then
+      let m := instanceTypeMsg subject (showComp sub) (a.getPrefix.toString) ty (showAssignment vals)
+      #[one "F0623" m.headline m.label? m.notes]
+    else
     if r.kind == .definedness then
       #[one "F0611" s!"an index of {subject} may be out of range" (some "may be out of range")
         #[s!"counterexample: {showAssignment vals}",
