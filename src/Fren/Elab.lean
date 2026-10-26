@@ -4098,14 +4098,15 @@ open Lang in
           for b in bs.getElems do
             let b := b.raw
             others := others ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
-        | `(fren_member| req $_:ident : $e) | `(fren_member| expect $_:ident : $e) => others := others ++ pathMentions e
-        | _ => pure ()
+        | _ => if let some (kind, _, e) := constraint? m then
+            unless kind == .assume do others := others ++ pathMentions e
       for v in vars do
         if let some d := v.defn? then others := others ++ pathMentions d
       let inputs := vars.filter (·.role == .input) |>.map (·.name)
       let level ← lintLevel .unusedAssumption
-      let assumed := members.filterMap fun
-        | `(fren_member| assume $x:ident : $e) => some (x, e) | _ => none
+      let assumed := members.filterMap fun m => match constraint? m with
+        | some (.assume, x, e) => some (x, e)
+        | _ => none
       let mss := assumed.map fun (_, e) => (pathMentions e).foldl (init := #[]) fun acc n =>
         if vars.any (·.name == n) && !acc.contains n then acc.push n else acc
       -- The uninterpreted functions that they apply link too.
@@ -4115,9 +4116,8 @@ open Lang in
         | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
           for b in bs.getElems do
             if !b.raw[1].isNone then others := others ++ (← appliedFns acx b.raw[1][1])
-        | `(fren_member| req $_:ident : $e) | `(fren_member| expect $_:ident : $e) =>
-          others := others ++ (← appliedFns acx e)
-        | _ => pure ()
+        | _ => if let some (kind, _, e) := constraint? m then
+            unless kind == .assume do others := others ++ (← appliedFns acx e)
       for v in vars do
         if let some d := v.defn? then others := others ++ (← appliedFns acx d)
       let links ← assumed.mapIdxM fun i (_, e) => return mss[i]! ++ (← appliedFns acx e)

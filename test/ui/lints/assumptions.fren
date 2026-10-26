@@ -211,3 +211,20 @@ comp guarded_pair {
     assume b: q[n] > 0  --~ warning: it is linked to `a`, reported too, which may need it: remove them together
     req r: y = 1
 }
+
+-- A cover goal is a use: whether it is reachable depends on the assumption.
+comp covered {
+    in n: Int
+    pub out y: Int
+    assume a: n > 0
+    req r: y = 1
+    cover g: n = 2  --~ info: cover goal `covered::g` is met
+}
+
+-- So is a requirement with a `where` clause.
+comp where_clause {
+    in n: Int
+    pub out y: Int
+    assume a: n > 0
+    req r: y = m where m := n
+}
