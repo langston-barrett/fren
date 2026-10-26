@@ -35,20 +35,43 @@ inductive PatTy where
   /-- `Nat`: the integers that are at least 0. -/
   | nat
   | string
-  | enum (path : Name)
+  /-- An enumeration, with its type arguments if it is generic. -/
+  | enum (path : Name) (args : List PatTy)
+  /-- The `k`th type parameter of a generic enumeration, in a payload's
+  type, for which an instance's `k`th argument stands. -/
+  | param (k : Nat)
   /-- A type that only `_` and binders match: a record, a set, ... -/
   | other
-  deriving Inhabited, BEq, DecidableEq, Repr
+  deriving Inhabited, BEq, Repr
 
-def Ty.patTy : Ty → PatTy
+/-- Whether `t` is `Nat`. `PatTy`, whose type arguments are a `List`, has
+no derived `DecidableEq` to decide `t = .nat` with. -/
+def PatTy.isNat : PatTy → Bool
+  | .nat => true
+  | _ => false
+
+@[simp] theorem PatTy.isNat_eq_true (t : PatTy) : t.isNat = true ↔ t = .nat := by
+  cases t <;> simp [PatTy.isNat]
+
+/-- `ty` as patterns see it. -/
+partial def Ty.patTy (ty : Ty) : PatTy :=
+  match ty with
   | .bool => .bool
   | .int => .int
   | .nat => .nat
   | .string => .string
-  | .enum p => .enum p
+  | .enum p args => .enum p (args.map (·.patTy))
+  | .param k _ => .param k
   | _ => .other
 
-/-- The variants of each enumeration, each with its payload's types. -/
+/-- `t`, with the `k`th of `args` for each `.param k`. -/
+partial def PatTy.subst (args : List PatTy) : PatTy → PatTy
+  | .param k => args[k]?.getD .other
+  | .enum p as => .enum p (as.map (·.subst args))
+  | t => t
+
+/-- The variants of each enumeration, each with its payload's types, which
+mention its type parameters as `.param`. -/
 abbrev Sigs := Name → Array (Name × Array PatTy)
 
 /-- A pattern, resolved. -/
@@ -202,11 +225,11 @@ inductive ColumnKind where
   deriving Inhabited, BEq, DecidableEq, Repr
 
 def PatTy.kind : PatTy → ColumnKind
-  | .enum _ => .enumeration
+  | .enum .. => .enumeration
   | .bool => .boolean
   | .int | .nat => .integer
   | .string => .string
-  | .other => .other
+  | .param _ | .other => .other
 
 /-- Whether the constructors at the heads of a column are all those of its
 type (`lang::signature_complete`): every variant of an enumeration, from
@@ -228,10 +251,14 @@ partial def expandRow : List Pat → Array (List Pat)
   | .or alts :: rest => alts.flatMap fun a => expandRow (a :: rest)
   | r => #[r]
 
-/-- The types of the payload of the constructor `c` of `ty`. -/
+/-- The types of the payload of the constructor `c` of `ty`: of an
+instance of a generic enumeration, with its arguments for its parameters;
+of any other, as declared, since it has none. -/
 def ctorTys (sigs : Sigs) (ty : PatTy) (c : Ctor) : Array PatTy :=
   match ty, c with
-  | .enum p, .variant i => ((sigs p)[i]?.map (·.2)).getD #[]
+  | .enum p args, .variant i =>
+    let tys := ((sigs p)[i]?.map (·.2)).getD #[]
+    if args.isEmpty then tys else tys.map (·.subst args)
   | _, _ => #[]
 
 /-- The intervals of the integer patterns among `heads`. -/
@@ -247,7 +274,7 @@ stands for every other string, so it is not listed. -/
 def columnCtors (sigs : Sigs) (ty : PatTy) (heads : Array Pat) (extra : Array (Option Int × Option Int) := #[]) :
     Array (Ctor × Bool) × Bool :=
   match ty with
-  | .enum p =>
+  | .enum p _ =>
     let cs := (Array.range (sigs p).size).map fun i => (Ctor.variant i, heads.any fun | .ctor j _ => j == i | _ => false)
     (cs, signatureComplete .enumeration (sigs p).size (cs.filter (·.2)).size false false false)
   | .bool =>
@@ -264,7 +291,7 @@ def columnCtors (sigs : Sigs) (ty : PatTy) (heads : Array Pat) (extra : Array (O
     let ss := heads.filterMap fun | .str s => some s | _ => none
     let ss := ss.foldl (init := #[]) fun acc s => if acc.contains s then acc else acc.push s
     (ss.map (Ctor.str ·, true), signatureComplete .string 0 0 false false false)
-  | .other => (#[], signatureComplete .other 0 0 false false false)
+  | .param _ | .other => (#[], signatureComplete .other 0 0 false false false)
 
 /-- The constructors that the or-free pattern `q`, not a wildcard, matches,
 among those that split the column of `heads`. -/
@@ -338,7 +365,7 @@ partial def Wit.show : Wit → String
 /-- The witness that the constructor `c` of `ty` builds from `args`. -/
 def Ctor.wit (sigs : Sigs) (ty : PatTy) (c : Ctor) (args : Array Wit) : Wit :=
   match ty, c with
-  | .enum p, .variant i => .ctor (p ++ ((sigs p)[i]?.map (·.1)).getD .anonymous) args
+  | .enum p _, .variant i => .ctor (p ++ ((sigs p)[i]?.map (·.1)).getD .anonymous) args
   | _, .bool b => .bool b
   | _, .int lo hi => .int lo hi
   | _, .str s => .str s
@@ -447,7 +474,7 @@ def unreachableNote (sigs : Sigs) (ty : PatTy) (alternative : Bool) (p? : Option
   | some false, _ => "note: an earlier `_` arm matches every value"
   | some true, _ => "note: an earlier arm binds every value"
   | none, some (.wild _) => match ty with
-    | .enum e => s!"note: every variant of `{showPath e}` has an arm before it"
+    | .enum e _ => s!"note: every variant of `{showPath e}` has an arm before it"
     | .bool => "note: `true` and `false` each have an arm before it"
     | .int => "note: the earlier arms cover every integer"
     | .nat => "note: the earlier arms cover every natural number"
@@ -476,7 +503,7 @@ def nonExhaustiveMsg (ty : PatTy) (ws : Array Wit) (table := false) : Msg :=
   { code? := some "F0317", headline := s!"non-exhaustive {if table then "table" else "match"}: {names} not covered"
     label? := some s!"{names} not covered"
     notes := #[what <| match ty with
-      | .enum _ => "note: a `match` has an arm for every variant, or a last arm `_`"
+      | .enum .. => "note: a `match` has an arm for every variant, or a last arm `_`"
       | .bool => "note: a `match` on a `Bool` has arms for `true` and `false`, or a last arm `_`"
       | .int => "note: a `match` on an `Int` has a last arm `_`, unless its ranges cover every integer"
       | .nat => "note: a `match` on a `Nat` has a last arm `_`, unless its ranges cover every natural number"
@@ -540,7 +567,7 @@ It is what the usefulness of `_` after them comes to there
 (`check::flat_completeness_asked`). -/
 def flatUnguardedExhaustive? (nCtors : Name → Nat) (ty : PatTy) (arms : Array (Pat × Bool)) : Option Bool :=
   match ty with
-  | .enum e =>
+  | .enum e _ =>
     if !arms.all (·.1.flatEnum) then none else
     let unguarded := (arms.filter (!·.2)).map (·.1)
     some (unguarded.any (· matches .wild _) || (List.range (nCtors e)).all fun i => unguarded.any (Pat.names i))
@@ -623,7 +650,7 @@ def minBound : Option Int → Option Int → Option Int
 /-- The integers that both of two intervals contain, if any, of those that
 `ty` has: at least 0 for a `Nat`. -/
 def meetIntervals (ty : PatTy) (a b : Option Int × Option Int) : Option (Option Int × Option Int) :=
-  let lo := if ty = .nat then some (max ((maxBound a.1 b.1).getD 0) 0) else maxBound a.1 b.1
+  let lo := if ty.isNat then some (max ((maxBound a.1 b.1).getD 0) 0) else maxBound a.1 b.1
   let hi := minBound a.2 b.2
   if (match lo, hi with | some l, some h => decide (l ≤ h) | _, _ => true) then some (lo, hi) else none
 

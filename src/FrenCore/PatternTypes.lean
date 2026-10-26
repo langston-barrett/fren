@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Diagnostic
+import FrenCore.Generics
 import FrenCore.Patterns
 -- keep-sorted end
 
@@ -23,7 +24,8 @@ open Lean (Name)
 /-- A type as it is declared: `ty`, the type that the type checker sees,
 without patterns; `pat?`, the pattern of the type itself, if it is a
 pattern type; and `elems`, the same for each of its element types, one
-for a set or a sequence, two for a relation, and none otherwise. -/
+for a set or a sequence, two for a relation, for each type argument of an
+instance of a generic type (`Reqs/Lang/Generics`), and none otherwise. -/
 structure PTy where
   ty : Ty
   pat? : Option Pat := none
@@ -40,11 +42,26 @@ def typeText (s : String) : String :=
   " ".intercalate (if last.isEmpty then words else words.push last).toList
 
 /-- The declared type `t`, without patterns anywhere within it. -/
-def PTy.plain (t : Ty) : PTy :=
+partial def PTy.plain (t : Ty) : PTy :=
   match t with
   | .set e | .seq e => { ty := t, elems := #[PTy.plain e] }
   | .rel a b => { ty := t, elems := #[PTy.plain a, PTy.plain b] }
+  | .enum _ as | .record _ as => { ty := t, elems := as.toArray.map PTy.plain }
   | _ => { ty := t }
+
+/-- The declared types of the parts of `t` (`Ty.parts`): its element
+types, or its type arguments, without patterns if `t` does not give them. -/
+def PTy.parts (t : PTy) : Array PTy :=
+  let ps := t.ty.parts.toArray
+  if t.elems.size == ps.size then t.elems else ps.map PTy.plain
+
+/-- `t`, with the declared type `args[k]` for each type parameter `k`, with
+its patterns (`Ty.subst`): the declared type of a payload or field of an
+instance of a generic type. -/
+partial def PTy.subst (args : Array PTy) (t : PTy) : PTy :=
+  match t.ty with
+  | .param k _ => args[k]?.getD t
+  | ty => { t with ty := ty.subst (args.map (·.ty)), elems := t.parts.map (·.subst args) }
 
 /-- Whether the declared type `t` is ordered (`lang::ordered_type`): its
 type without patterns is, a pattern type's base type or the type an alias
@@ -75,6 +92,11 @@ structure DataShape where
   parts : Array (Array PTy) := #[]
   deriving Inhabited
 
+/-- `d`, a generic type's, with the declared types `args` for its type
+parameters: its instance's (`PTy.subst`). -/
+def DataShape.inst (d : DataShape) (args : Array PTy) : DataShape :=
+  if args.isEmpty then d else { d with parts := d.parts.map (·.map (·.subst args)) }
+
 /-- What a value of a type must satisfy beyond its type, as a formula about
 the value, built from parts (`Reqs/Lang/Types#meaning`). -/
 inductive Cons where
@@ -83,13 +105,15 @@ inductive Cons where
   /-- The value, a `Nat` within a record or a payload, which is an `Int`
   there, is at least 0. -/
   | atLeast0
-  /-- Each field of the record `path`, by its index, meets its constraint. -/
-  | fields (path : Name) (cs : Array (Nat × Cons))
+  /-- Each field of the record `path`, or of its instance with the type
+  arguments `args`, by its index, meets its constraint. -/
+  | fields (path : Name) (args : List Ty) (cs : Array (Nat × Cons))
   /-- The newtype `path`'s field meets the constraint. -/
   | newtype (path : Name) (c : Cons)
-  /-- When the value is the variant `v` of the enumeration `path`, the
-  `k`th value of its payload meets the constraint: `(v, k, c)`. -/
-  | payloads (path : Name) (cs : Array (Nat × Nat × Cons))
+  /-- When the value is the variant `v` of the enumeration `path`, or of its
+  instance with the type arguments `args`, the `k`th value of its payload
+  meets the constraint: `(v, k, c)`. -/
+  | payloads (path : Name) (args : List Ty) (cs : Array (Nat × Nat × Cons))
   /-- Each element of the set or sequence, of type `elem`, meets the
   constraint. -/
   | elems (seq : Bool) (elem : Ty) (c : Cons)
@@ -104,9 +128,9 @@ inductive Cons where
 (`lang::pattern_place`). -/
 partial def Cons.quantifies : Cons → Bool
   | .pat .. | .atLeast0 => false
-  | .fields _ cs => cs.any (·.2.quantifies)
+  | .fields _ _ cs => cs.any (·.2.quantifies)
   | .newtype _ c => c.quantifies
-  | .payloads _ cs => cs.any (·.2.2.quantifies)
+  | .payloads _ _ cs => cs.any (·.2.2.quantifies)
   | .elems .. | .pairs .. => true
   | .all cs => cs.any (·.quantifies)
 
@@ -127,7 +151,7 @@ enumeration. -/
 partial def PTy.cons (shapes : Name → Option DataShape) (t : PTy) (nat : Bool := false) : Option Cons :=
   let own : Array Cons := match t.ty with
     | .nat => if nat then #[.atLeast0] else #[]
-    | .record p | .enum p => (dataCons shapes p).toArray
+    | .record p _ | .enum p _ => (dataCons shapes p t.parts).toArray
     | .newtype p _ => (dataCons shapes p).toArray
     | .set e | .seq e =>
       ((t.elems[0]?.getD (PTy.plain e)).cons shapes true).toArray.map (.elems (t.ty matches .seq _) e)
@@ -139,18 +163,19 @@ partial def PTy.cons (shapes : Name → Option DataShape) (t : PTy) (nat : Bool 
   Cons.allOf? (own ++ (t.pat?.map (.pat t.ty)).toArray)
 
 /-- The constraints of the fields or payloads of the record, newtype or
-enumeration `p`, which is not recursive. -/
-partial def dataCons (shapes : Name → Option DataShape) (p : Name) : Option Cons := do
-  let d ← shapes p
+enumeration `p`, which is not recursive, with the declared types `args`
+for its type parameters, if it is generic. -/
+partial def dataCons (shapes : Name → Option DataShape) (p : Name) (args : Array PTy := #[]) : Option Cons := do
+  let d := (← shapes p).inst args
   if d.recursive then none
   if d.isNewtype then
     let c ← (d.parts[0]?.bind (·[0]?)).bind (·.cons shapes true)
     return .newtype p c
   if d.isRecord then
     let cs := ((d.parts[0]?.getD #[]).zipIdx.filterMap fun (f, k) => (f.cons shapes true).map (k, ·))
-    if cs.isEmpty then none else return .fields p cs
+    if cs.isEmpty then none else return .fields p (args.toList.map (·.ty)) cs
   let cs := d.parts.zipIdx.flatMap fun (ts, v) => ts.zipIdx.filterMap fun (t, k) => (t.cons shapes true).map (v, k, ·)
-  if cs.isEmpty then none else return .payloads p cs
+  if cs.isEmpty then none else return .payloads p (args.toList.map (·.ty)) cs
 end
 
 /-- The constraint that the `k`th value of the payload of the variant `v`
@@ -174,13 +199,63 @@ def obligationCons (ty : Ty) (top? : Option Pat) (e1? e2? : Option Cons) : Optio
     | _ => #[]
   Cons.allOf? (own ++ (top?.map (.pat ty)).toArray)
 
+mutual
 /-- The obligation of a value given where the type `t` is declared, `none`
 if it has none (`lang::pattern_widening`, `lang::obligation`): its
 pattern, and its elements' patterns, for every element. A record's or an
 enumeration's own constraints need no obligation: its values were built to
-meet them. -/
-partial def PTy.obligation (t : PTy) : Option Cons :=
-  obligationCons t.ty t.pat? (t.elems[0]?.bind (·.obligation)) (t.elems[1]?.bind (·.obligation))
+meet them. But an instance's payloads and fields whose declared types
+mention its type parameters were built to meet the parameters', which have
+no patterns, so they have the obligations of their types with the
+instance's type arguments (`instanceObligation`). `shapes` gives what is
+known of each record and enumeration. -/
+partial def PTy.obligation (shapes : Name → Option DataShape) (t : PTy) : Option Cons :=
+  match t.ty with
+  | .enum p (_ :: _) | .record p (_ :: _) =>
+    Cons.allOf? ((instanceObligation shapes p t.parts).toArray ++ (t.pat?.map (.pat t.ty)).toArray)
+  | _ => obligationCons t.ty t.pat? (t.elems[0]?.bind (·.obligation shapes)) (t.elems[1]?.bind (·.obligation shapes))
+
+/-- The obligation of a value of the instance of the generic record or
+enumeration `p` with the declared type arguments `args`
+(`Reqs/Lang/Generics#pattern-types-as-type-arguments`): for each payload or
+field whose declared type mentions a type parameter, the obligation of its
+type with the arguments, guarded by its variant. -/
+partial def instanceObligation (shapes : Name → Option DataShape) (p : Name) (args : Array PTy) : Option Cons := do
+  let d ← shapes p
+  -- A recursive instance's type arguments bring no constraints
+  -- (`recursiveArgumentMsg`).
+  if d.recursive then none
+  let mentions (t : PTy) := (List.range args.size).any (t.ty.mentions ·)
+  let cs := d.parts.zipIdx.flatMap fun (ts, v) => ts.zipIdx.filterMap fun (t, k) =>
+    if mentions t then ((t.subst args).obligation shapes).map (v, k, ·) else none
+  if cs.isEmpty then none
+  let tys := args.toList.map (·.ty)
+  if d.isRecord then return .fields p tys (cs.map fun (_, k, c) => (k, c)) else return .payloads p tys cs
+end
+
+/-- The enumeration or record that `t` is an instance of, if it is one. -/
+def Ty.dataPath? : Ty → Option Name
+  | .enum p _ | .record p _ => some p
+  | _ => none
+
+/-- Within the instance of the generic record or enumeration `p` with the
+declared type arguments `args`, once they stand for its type parameters,
+the first type argument of an instance of a recursive enumeration whose
+values bring a constraint (`recursiveArgumentMsg`), with that enumeration:
+as `Byte` of `List(Byte)` within `Wrap(Byte)`, for
+`enum Wrap(T) { W(List(T)) }`. Each instance is looked into once. -/
+partial def recursiveArgumentWithin? (shapes : Name → Option DataShape) (p : Name) (args : Array PTy)
+    (seen : List Name := []) : Option (PTy × Name) := do
+  if args.isEmpty || seen.contains p then none
+  let d ← shapes p
+  let parts := (d.inst args).parts.flatten
+  parts.findSome? fun t =>
+    let inner (q : Name) : Option (PTy × Name) :=
+      if t.elems.isEmpty then none
+      else if (shapes q).any (·.recursive) && q != p then
+        (t.elems.find? fun e => (e.cons shapes).isSome).map (·, q)
+      else recursiveArgumentWithin? shapes q t.elems (p :: seen)
+    t.ty.dataPath?.bind inner
 
 /-- Where a value is given for a declared type (`lang::ValuePlace`). -/
 inductive ValuePlace where
@@ -259,6 +334,15 @@ def undecidableRecursivePayloadMsg : Msg :=
   { code? := some "F0714", headline := "this is outside the decidable core: a recursive enumeration's payload's constraint holds of every payload, at every depth"
     label? := some "outside the decidable core"
     notes := #["help: give the payload no pattern, and say of the payloads that the spec reads what it needs"] }
+
+/-- A type argument `arg` of the recursive generic enumeration `ty` whose
+values bring a constraint, which would hold of every payload, at every
+depth (`Reqs/Lang/Generics#pattern-types-as-type-arguments`). -/
+def recursiveArgumentMsg (arg ty : String) : Msg :=
+  { code? := some "F0389", headline := s!"`{arg}` cannot be a type argument of the recursive enumeration `{ty}`"
+    label? := some "its values bring a constraint"
+    notes := #["note: for now, a type argument of a recursive enumeration brings no constraint, which would hold of every payload, at every depth",
+      "help: give the argument no pattern, and say of the payloads that the spec reads what it needs"] }
 
 /-- A pattern on the type alias `alias`, which names a pattern type
 (`Reqs/Lang/Types#pattern-types`). -/
@@ -421,8 +505,8 @@ partial def PTy.values (shapes : Name → Option DataShape) (t : PTy) (cap : Nat
       if n > cap then none
       let vs ← t.pat?.bind Pat.intValues?
       some ((if t.ty == .nat then vs.filter (0 ≤ ·) else vs).map .int)
-    | .enum p | .record p | .newtype p _ => do
-      let d ← shapes p
+    | .enum p _ | .record p _ | .newtype p _ => do
+      let d := (← shapes p).inst t.parts
       if d.recursive then none
       let mut out := #[]
       for parts in d.parts, idx in [0:d.parts.size] do
@@ -453,8 +537,8 @@ partial def PTy.count? (shapes : Name → Option DataShape) (t : PTy) (cap : Nat
     | none => do
       match t.ty with
       | .bool => some 2
-      | .enum p | .record p | .newtype p _ =>
-        let d ← shapes p
+      | .enum p _ | .record p _ | .newtype p _ =>
+        let d := (← shapes p).inst t.parts
         if d.recursive then none
         let counts ← d.parts.mapM fun parts => parts.mapM (·.count? shapes cap)
         some (counts.foldl (fun n cs => n + cs.foldl (· * ·) 1) 0)

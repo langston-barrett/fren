@@ -1,0 +1,62 @@
+; c: query 1
+(set-logic ALL)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :sets-exp true)
+(set-option :fmf-bound true)
+(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))
+(declare-const |x| (|Option| Int))
+(declare-const |s| (|Option| (Set (Tuple Int))))
+(assert (=> (= |x| ((as Option~Some (|Option| Int)) (|Option::Some::0| |x|))) (and (<= 0 (|Option::Some::0| |x|)) (<= (|Option::Some::0| |x|) 255)))) ; type
+(assert (=> (= |s| ((as Option~Some (|Option| (Set (Tuple Int)))) (|Option::Some::0| |s|))) (forall ((|#e0| Int)) (=> (set.member (tuple |#e0|) (|Option::Some::0| |s|)) (and (<= 0 |#e0|) (<= |#e0| 9)))))) ; type
+(assert (not false))
+(check-sat)
+(reset)
+
+; c: query 2
+(set-logic ALL)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :sets-exp true)
+(set-option :fmf-bound true)
+(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))
+(declare-const |x| (|Option| Int))
+(declare-const |s| (|Option| (Set (Tuple Int))))
+(assert (=> (= |x| ((as Option~Some (|Option| Int)) (|Option::Some::0| |x|))) (and (<= 0 (|Option::Some::0| |x|)) (<= (|Option::Some::0| |x|) 255)))) ; type
+(assert (=> (= |s| ((as Option~Some (|Option| (Set (Tuple Int)))) (|Option::Some::0| |s|))) (forall ((|#e0| Int)) (=> (set.member (tuple |#e0|) (|Option::Some::0| |s|)) (and (<= 0 |#e0|) (<= |#e0| 9)))))) ; type
+(assert (not true))
+(check-sat)
+(reset)
+
+; c: query 3
+(set-logic ALL)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :sets-exp true)
+(set-option :fmf-bound true)
+(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))
+(declare-const |x| (|Option| Int))
+(declare-const |s| (|Option| (Set (Tuple Int))))
+(assert (=> (= |x| ((as Option~Some (|Option| Int)) (|Option::Some::0| |x|))) (and (<= 0 (|Option::Some::0| |x|)) (<= (|Option::Some::0| |x|) 255)))) ; type
+(assert (=> (= |s| ((as Option~Some (|Option| (Set (Tuple Int)))) (|Option::Some::0| |s|))) (forall ((|#e0| Int)) (=> (set.member (tuple |#e0|) (|Option::Some::0| |s|)) (and (<= 0 |#e0|) (<= |#e0| 9)))))) ; type
+(assert (not (ite (= |x| ((as Option~Some (|Option| Int)) (|Option::Some::0| |x|))) (<= (|Option::Some::0| |x|) 255) true)))
+(check-sat)
+(reset)
+
+; c: query 4
+(set-logic ALL)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :sets-exp true)
+(set-option :fmf-bound true)
+(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))
+(declare-const |x| (|Option| Int))
+(declare-const |s| (|Option| (Set (Tuple Int))))
+(assert (=> (= |x| ((as Option~Some (|Option| Int)) (|Option::Some::0| |x|))) (and (<= 0 (|Option::Some::0| |x|)) (<= (|Option::Some::0| |x|) 255)))) ; type
+(assert (=> (= |s| ((as Option~Some (|Option| (Set (Tuple Int)))) (|Option::Some::0| |s|))) (forall ((|#e0| Int)) (=> (set.member (tuple |#e0|) (|Option::Some::0| |s|)) (and (<= 0 |#e0|) (<= |#e0| 9)))))) ; type
+(assert (not (ite (= |s| ((as Option~Some (|Option| (Set (Tuple Int)))) (|Option::Some::0| |s|))) (not (set.member (tuple 10) (|Option::Some::0| |s|))) true)))
+(check-sat)
+(reset)
+
+fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0

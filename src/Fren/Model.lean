@@ -63,7 +63,15 @@ structure EnumInfo where
   brings a constraint brings: its selector, and the constraint as a
   predicate (`Core.readCons`). -/
   readFacts : Array (Name × Expr) := #[]
+  /-- Its type parameters (`Reqs/Lang/Generics`), which its payloads' types
+  mention as loose bound variables: `.bvar k` for the `k`th. -/
+  params : Array Name := #[]
   deriving Inhabited
+
+/-- The Lean types of each variant's payload, in the instance with the
+arguments `args` (`lang::instantiation`). -/
+def EnumInfo.payloadsAt (e : EnumInfo) (args : Array Expr) : Array (Array Expr) :=
+  if e.params.isEmpty then e.payloads else e.payloads.map (·.map (·.instantiate args))
 
 /-- The selector of the `k`th value of the payload of the constructor
 `ctor`, generated for an enum. Its name is that of lean-smt's selector of
@@ -79,13 +87,31 @@ structure RecordInfo where
   unbounded : Bool := false
   /-- Its fields' types, as declared, for their constraints. -/
   shape : Core.DataShape := {}
+  /-- Its type parameters, which its fields' types mention as loose bound
+  variables, as an `EnumInfo`'s do. -/
+  params : Array Name := #[]
   /-- Declared `ordered` (`Reqs/Lang/Items#ordered-declarations`). -/
   ordered : Bool := false
   deriving Inhabited
 
+/-- The fields, with their Lean types in the instance with the arguments
+`args` (`lang::instantiation`). -/
+def RecordInfo.fieldsAt (r : RecordInfo) (args : Array Expr) : Array (Name × Expr) :=
+  if r.params.isEmpty then r.fields else r.fields.map fun (f, t) => (f, t.instantiate args)
+
 /-- The constructor of the structure generated for a record: not `mk`,
 which may be a field. -/
 def recordCtor (decl : Name) : Name := decl ++ `«{}»
+
+/-- The constructor of a generic record's structure: `mk!`, which no field
+is named, since a field's name has no `!`, rather than `«{}»`. lean-smt
+qualifies a parametric datatype's constructor by its sort, as
+`(as |Pair.«{}»| (Pair Int Bool))`, where cvc5 finds a constructor only by
+a symbol without `|`s (`Reqs/Generated#generic-types`). -/
+def genericRecordCtor (decl : Name) : Name := decl ++ Name.mkSimple "mk!"
+
+/-- The constructor of the structure generated for `r`. -/
+def RecordInfo.ctor (r : RecordInfo) : Name := if r.params.isEmpty then recordCtor r.decl else genericRecordCtor r.decl
 
 /-- A newtype and the Lean structure generated for it, with one field,
 `«0»`, and the constructor `mk` (`Reqs/Generated#newtypes`). -/
@@ -531,10 +557,21 @@ def obligationTy? (e : Expr) : Option String :=
     | .lit (.strVal s) => some s
     | _ => none
 
-/-- Whether the Lean type of a Fren type is unbounded (`Reqs/Lang/Types`). -/
-def State.unbounded (s : State) (ty : Expr) : Bool :=
-  ty.isConstOf ``String || ty.isAppOf ``Fren.FinSet || ty.isAppOf ``Fren.Seq || match ty.constName? with
-  | some d => (s.enumOfDecl? d).any (·.unbounded) || (s.recordOfDecl? d).any (·.unbounded)
+/-- The enumeration whose Lean type, or an instance of it, is `ty`. -/
+def State.enumOf? (s : State) (ty : Expr) : Option EnumInfo := ty.getAppFn.constName?.bind s.enumOfDecl?
+
+/-- The record whose Lean type, or an instance of it, is `ty`. -/
+def State.recordOf? (s : State) (ty : Expr) : Option RecordInfo := ty.getAppFn.constName?.bind s.recordOfDecl?
+
+/-- Whether the Lean type of a Fren type is unbounded (`Reqs/Lang/Types`):
+an instance of a generic type by its payloads' or fields' types too
+(`Reqs/Lang/Generics#recursive-unbounded-and-finite-instances`). -/
+partial def State.unbounded (s : State) (ty : Expr) : Bool :=
+  let args := ty.getAppArgs
+  let inst := !args.isEmpty && !ty.isAppOf ``Fren.FinSet && !ty.isAppOf ``Fren.Seq
+  ty.isConstOf ``String || ty.isAppOf ``Fren.FinSet || ty.isAppOf ``Fren.Seq || match ty.getAppFn.constName? with
+  | some d => (s.enumOfDecl? d).any (fun e => e.unbounded || inst && (e.payloadsAt args).any (·.any s.unbounded))
+    || (s.recordOfDecl? d).any (fun r => r.unbounded || inst && (r.fieldsAt args).any (s.unbounded ·.2))
     || (s.newtypeOfDecl? d).any (·.unbounded)
   | none => false
 

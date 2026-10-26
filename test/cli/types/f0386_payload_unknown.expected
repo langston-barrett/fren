@@ -1,0 +1,13 @@
+error[F0386]: cannot infer the type arguments of `Option::Some`
+ --> test/cli/types/f0386_payload_unknown.fren:5:40
+  |
+5 | comp c { pub out ok? ensure r: ok? iff Option::Some({}) is Option::Some(_) }
+  |                                        ^^^^^^^^^^^^^^^^ which instance of `Option`?
+  |
+  = note: `Option` is generic, and neither what is expected here nor the values given say what its type arguments are
+  = help: write it where an instance of `Option` is expected, as where it is compared with a variable of one, or give it a type with `let`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0386`.
+exit=2

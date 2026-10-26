@@ -1,0 +1,10 @@
+error[F0213]: type parameter `A` is defined multiple times
+ --> test/cli/types/f0213_duplicate_parameter.fren:2:16
+  |
+2 | struct Pair(A, A) { fst: A, snd: A }
+  |                ^ defined again here
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0213`.
+exit=2

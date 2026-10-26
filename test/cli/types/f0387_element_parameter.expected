@@ -1,0 +1,12 @@
+error[F0387]: type parameter `T` cannot be an element type, for now
+ --> test/cli/types/f0387_element_parameter.fren:2:31
+  |
+2 | enum Bag(T) { Empty, Many(Set(T)) }
+  |                               ^ an element type
+  |
+  = note: a type parameter is a payload's or field's type, or an argument of a generic type, as in `Option(T)`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0387`.
+exit=2

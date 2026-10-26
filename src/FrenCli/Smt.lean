@@ -239,6 +239,24 @@ def fieldTys (dts : Array DataDecl) (c : String) : Option (Array Fren.Core.Ty) :
   let (_, fs) ← if d.isRecord then d.ctors[0]? else d.ctors.find? (named d ·.1)
   return fs.map (·.2)
 
+/-- The symbol that a non-generic type's constructor would have, for a
+generic type's constructor `c`, which is a simple symbol with `~` for `::`
+(`DataDecl.ctorSym`): `Option~Some` ↦ `Option::Some`, `Pair~` ↦ `Pair{}`. -/
+def genericCtor (c : String) : String :=
+  if c.endsWith "~" then ((c.dropEnd 1).toString.replace "~" "::") ++ "{}" else c.replace "~" "::"
+
+/-- `t`, with a generic type's constructor, which cvc5 writes qualified by
+its sort, `(as C (D Int))`, as a constructor of any other type. -/
+def unqualify : Term → Term
+  | .atom c => if !c.startsWith "\"" && c.contains '~' then .atom (genericCtor c) else .atom c
+  | .list ts => match ts[0]? with
+    | some (Term.atom "as") => match ts[1]? with
+      | some (Term.atom c) => if c.contains '~' then .atom (genericCtor c) else .list ts
+      | _ => .list ts
+    | some (Term.list #[.atom "as", .atom c, _]) =>
+      if c.contains '~' then .list (#[.atom (genericCtor c)] ++ ts.extract 1) else .list ts
+    | _ => .list ts
+
 /-- A value as Fren builds it (`Reqs/View`), where `dts` are the
 enumerations and records: `(- 3)` ↦ `-3`, `|check::Verdict::Pass|` ↦
 `Verdict::Pass`, `(|Shape::Circle| 2)` ↦ `Shape::Circle(2)` and
@@ -247,6 +265,7 @@ enumerations and records: `(- 3)` ↦ `-3`, `|check::Verdict::Pass|` ↦
 not see: `5` of the newtype `Ms` ↦ `Ms(5)`. -/
 partial def renderTerm (dts : Array DataDecl) (ty? : Option Fren.Core.Ty) (t : Term) : String :=
   if let some (.newtype p u) := ty? then s!"{p.getString!}({renderTerm dts (some u) t})" else
+  let t := unqualify t
   let elemTy? : Option Fren.Core.Ty := match ty? with
     | some (.set e) | some (.seq e) => some e
     | _ => none
@@ -280,8 +299,13 @@ partial def renderTerm (dts : Array DataDecl) (ty? : Option Fren.Core.Ty) (t : T
       let shown := ms.map (renderTerm dts memberTy?) |>.toList.eraseDups.toArray.qsort (· < ·)
       "{" ++ ", ".intercalate shown.toList ++ "}"
     else
+    -- A generic type's fields, with the instance's arguments for its
+    -- parameters, so that a newtype among them is shown.
+    let instArgs : Array Fren.Core.Ty := match ty? with
+      | some (.enum _ as) | some (.record _ as) => as.toArray
+      | _ => #[]
     let tys := match ts[0]? with
-      | some (Term.atom c) => (fieldTys dts c).getD #[]
+      | some (Term.atom c) => ((fieldTys dts c).getD #[]).map (Fren.Core.Ty.subst instArgs)
       | _ => #[]
     let args := (ts.extract 1 ts.size).mapIdx fun k a => renderTerm dts tys[k]? a
     match ts[0]? with

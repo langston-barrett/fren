@@ -1,0 +1,13 @@
+error[F0603]: expectation `m::c::e` does not hold
+ --> test/cli/commands/counterexample_generic_newtype.fren:9:12
+  |
+9 |     expect e: m = Opt::None
+  |            ^ does not follow from the guarantees
+  |
+  = counterexample: m = Opt::Some(Ms(0))
+  = help: strengthen the guarantees so that it follows, or correct the expectation
+
+fren: 1 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0603`.
+exit=1

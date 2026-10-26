@@ -1,0 +1,24 @@
+-- An ordering's right operand, and each later operand of a chain, is
+-- expected to have the left operand's type, and the left operand the
+-- right's, if only the right synthesizes one (`lang::checked`). So a
+-- variant of a generic enumeration takes its type arguments from the other
+-- side, in both front ends.
+
+mod generics_ordering
+
+pub ordered enum Level(T) { Low, Mid, High }
+
+comp c {
+    in x: Level(Int)
+    in y: Level(Int)
+    expect lt: when x = Level::Low, x < Level::High
+    expect le: when x != Level::High, x < Level::High
+    expect left: when x = Level::High, Level::Mid < x
+    expect chained: when x = Level::Mid, Level::Low < x < Level::High
+    expect chained_right: when x = Level::Low, x < Level::Mid < Level::High
+    expect min: when x = Level::Low, x.min(y) <= Level::Low
+    expect wrong: x < Level::Mid  --~ error: expectation `generics_ordering::c::wrong` does not hold
+}
+
+--@ summary: 13 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

@@ -1,0 +1,27 @@
+-- Generic types whose payloads bring constraints that quantify over a
+-- collection's elements, and a recursive generic enumeration whose payloads
+-- bring their declared patterns where they are read, in both front ends.
+set_option fren.lint.undecidable "allow"
+
+mod generics_pattern_elements
+
+pub enum Option(T) { None, Some(T) }
+pub struct Pair(A, B) { fst: A, snd: B }
+pub enum Tree(T) { Leaf, Node(Int is 0..=9, T, Tree(T)) }
+pub enum Bag(T) { Empty, More(Pair(Int is 0..=9, T), Bag(T)) }
+type Byte := Int is 0..=255
+
+comp c {
+    in x: Option(Set(Int is 0..=9))
+    in q: Option(Seq(Byte))
+    in t: Tree(Int)
+    in b: Bag(Bool)
+    in k: Int
+
+    expect member: match x { Option::Some(s) => not (k in s) or k <= 9, Option::None => true }
+    expect nth: match q { Option::Some(s) => s = [] or s[0] <= 255, Option::None => true }
+    expect tag: match t { Tree::Node(d, _, _) => d <= 9, Tree::Leaf => true }
+    expect deep: match t { Tree::Node(_, _, Tree::Node(d, _, _)) => d <= 9, _ => true }
+    expect bag: match b { Bag::More(p, Bag::More(r, _)) => p.fst <= 9 and r.fst >= 0, _ => true }
+    expect unbounded: match t { Tree::Node(_, v, _) => v <= 9, Tree::Leaf => true }   --~ error: expectation `generics_pattern_elements::c::unbounded` does not hold
+}

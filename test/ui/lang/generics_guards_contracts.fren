@@ -1,0 +1,59 @@
+-- Generic types with guards on `match` arms and contracts on functions: a
+-- `match` on an instance whose arms have guards, and a function whose
+-- parameter and result are instances, with preconditions and
+-- postconditions over them. In a module, since Lean has an `Option` of its
+-- own.
+set_option fren.lint.dead_code "allow"
+
+mod generics_guards_contracts
+
+pub enum Option(T) { None, Some(T) }
+pub struct Pair(A, B) { fst: A, snd: B }
+
+-- The payload, or `fallback` where there is none.
+fn unwrap_or(o: Option(Int), fallback: Int): Int
+    ensure some: when o = Option::Some(3), unwrap_or(o, fallback) = 3
+    ensure none: when o = Option::None, unwrap_or(o, fallback) = fallback
+
+-- Defined only on a `Some`.
+fn get(o: Option(Int)): Int := match o { Option::Some(n) => n, Option::None => 0 }
+    assume present: o != Option::None
+
+-- A result that is an instance.
+fn half(n: Int): Option(Int)
+    ensure even: when n mod 2 = 0, half(n) = Option::Some(n div 2)
+    ensure odd: when n mod 2 != 0, half(n) = Option::None
+
+fn swap(p: Pair(Int, Bool)): Pair(Bool, Int) := Pair { fst := p.snd, snd := p.fst }
+    ensure swapped: swap(p).snd = p.fst
+
+comp sign {
+    in x: Option(Int)
+    pub det out s: Int := match x {
+        Option::Some(n) if n > 0 => 1,
+        Option::Some(n) if n < 0 => -1,
+        Option::Some(_) => 0,
+        Option::None => 0,
+    }
+
+    expect positive: when x = Option::Some(5), s = 1
+    expect negative: when x = Option::Some(-2), s = -1
+    expect zero: when x = Option::Some(0), s = 0
+    expect never_two: s != 2
+    expect always_one: s = 1   --~ error: expectation `generics_guards_contracts::sign::always_one` does not hold
+}
+
+comp users {
+    in o: Option(Int)
+    in n: Int
+    in p: Pair(Int, Bool)
+
+    expect three: unwrap_or(Option::Some(3), n) = 3
+    expect fallback: unwrap_or(Option::None, n) = n
+    expect halved: half(4) = Option::Some(2)
+    expect odd: half(3) = Option::None
+    expect swapped: swap(p).fst = p.snd and swap(p).snd = p.fst
+    expect guarded: when o != Option::None, get(o) = (match o { Option::Some(k) => k, Option::None => 1 })
+    expect unguarded: get(o) = n or o != Option::Some(n)   --~ error: the precondition `present` of `generics_guards_contracts::get` may not hold at this application in `generics_guards_contracts::users::unguarded`
+    expect wrong: unwrap_or(o, n) = n   --~ error: expectation `generics_guards_contracts::users::wrong` does not hold
+}

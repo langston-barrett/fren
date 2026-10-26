@@ -5,6 +5,7 @@ import FrenCore.Check
 import FrenCore.Codes
 import FrenCore.Diagnostic
 import FrenCore.Evidence
+import FrenCore.Generics
 import FrenCore.Lexical
 import FrenCore.Lint
 import FrenCore.Literate

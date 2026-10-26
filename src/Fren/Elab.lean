@@ -6,6 +6,7 @@ import Fren.Model
 import Fren.SimpSet
 import Fren.Syntax
 import FrenCore.Checking
+import FrenCore.Generics
 import FrenCore.Guards
 import FrenCore.Lexical
 import FrenCore.Mentions
@@ -186,45 +187,120 @@ def declareUse (segs : Array Syntax) (glob : Bool) (ref : Syntax) (scope : Optio
   for p in stx[3].getSepArgs do
     declareUse (pathSegs stx[1] ++ pathSegs p) false p
 
-/-- The path of a type written as one, or `none` for `Set(T)` and `Rel(A, B)`. -/
+/-- The path of a type written as one, or `none` for `Set(T)`, `Rel(A, B)`
+and an instance of a generic type. -/
 def typePath? (ty : Syntax) : Option Syntax :=
   if ty.isOfKind ``Lang.fren_path then some ty
   else if ty.isOfKind ``Lang.setType || ty.isOfKind ``Lang.relType || ty.isOfKind ``Lang.seqType
-    || ty.isOfKind ``Lang.patType then none
+    || ty.isOfKind ``Lang.patType || ty.isOfKind ``Lang.instanceType then none
   else some ty[0]
 
-/-- The Lean type of the Fren type `ty`. -/
-partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFileMap m] (modName : Name) (ty : Syntax) : m Expr := do
+/-- The type `ty` as its segments, as the `fren` command's parser has it
+(`Core.ownIn`). -/
+partial def typeSegs (ty : Syntax) : Array String :=
+  -- A pattern's segment, which `Core.ownIn` leaves out, is left out here.
+  if ty.isOfKind ``Lang.patType then typeSegs ty[0]
+  else if ty.isOfKind ``Lang.setType then #[Core.setSeg] ++ typeSegs ty[2]
+  else if ty.isOfKind ``Lang.seqType then #[Core.seqSeg] ++ typeSegs ty[2]
+  else if ty.isOfKind ``Lang.relType then #[Core.relSeg] ++ typeSegs ty[2] ++ #[Core.relSep] ++ typeSegs ty[4]
+  else if ty.isOfKind ``Lang.instanceType then
+    let args := (ty[2].getSepArgs.map typeSegs).toList.intersperse #[Core.argsSep]
+    (pathSegs ty[0]).map (·.getId.toString) ++ #[Core.argsOpen] ++ args.foldl (· ++ ·) #[] ++ #[Core.argsClose]
+  else match typePath? ty with
+    | some p => (pathSegs p).map (·.getId.toString)
+    | none => #[]
+
+/-- The Lean types within the `Fren.FinSet`s and pairs of `t`. -/
+partial def elemTypes (t : Expr) : Array Expr :=
+  if t.isAppOfArity ``Fren.FinSet 1 || t.isAppOfArity ``Fren.Seq 1 then elemTypes t.appArg!
+  else if t.isAppOfArity ``Prod 2 then elemTypes t.appFn!.appArg! ++ elemTypes t.appArg!
+  else #[t]
+
+/-- The abstract type that the Lean type `t` is, or that is an element type
+within it (`Core.Ty.abstractWithin?`), and whether it is `t` itself. -/
+def abstractWithin? [Monad m] [MonadEnv m] (t : Expr) : m (Option (Name × Bool)) := do
+  let st ← getState
+  let some e := (elemTypes t).find? fun e => e.isConst && st.placeholders.contains e.constName | return none
+  let p := st.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == e.constName then some a.path else none
+  return some (p.getD .anonymous, e == t)
+
+/-- The Lean type of the type named by the path `segs`, with the type
+arguments `args`, as many as its type parameters (`lang::type_arguments`),
+written at `ref`; `params` are the type parameters in scope. -/
+def instanceType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFileMap m] (modName : Name)
+    (segs : Array Syntax) (args : Array Expr) (params : Array Name) (ref : Syntax) : m Expr := do
+  let one := segs.size == 1
+  let builtin := one && [`Bool, `Int, `Nat, `String, `Set, `Seq, `Rel].contains segs[0]!.getId
+  if builtin || (one && params.contains segs[0]!.getId) then
+    unless Core.writtenArgumentsAccepted (if builtin then .builtin else .parameter) 0 args.size do
+      throwErrorAt ref (Core.typeArgsMsg segs[0]!.getId.toString #[] args.size).text
+  let arity (named : Core.TypeNamed) (path : Name) (ps : Array Name) : m Unit := do
+    unless Core.writtenArgumentsAccepted named ps.size args.size do
+      throwErrorAt ref (Core.typeArgsMsg (Core.showPath path) ps args.size).text
+  match ← resolveWritten modName segs with
+  | .item { kind := .enumItem, path, .. } =>
+    arity .data path ((((← getState).enums.get? path).map (·.params)).getD #[])
+    return mkAppN (Lean.mkConst (← enumDecl path)) args
+  | .item { kind := .recordItem, path, .. } =>
+    if let some n := (← getState).newtypes.get? path then
+      arity .other path #[]
+      return Lean.mkConst n.decl
+    let some r := (← getState).records.get? path | throwError "internal error: unknown record `{path}`"
+    arity .data path r.params
+    return mkAppN (Lean.mkConst r.decl) args
+  | .item { kind := .typeItem, path, .. } =>
+    arity .other path #[]
+    if let some (t, _) := (← getState).aliases.get? path then return t
+    return Lean.mkConst (placeholderName path)
+  | r => throwErrorAt ref (Core.notATypeMsg r).text
+
+/-- The Lean type of the Fren type `ty`. Within the declaration of a generic
+type, its type parameters `params` are types, the `k`th the loose bound
+variable `.bvar k` (`Reqs/Lang/Generics`). -/
+partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFileMap m] (modName : Name) (ty : Syntax)
+    (params : Array Name := #[]) : m Expr := do
   -- A pattern type's Lean type is its base type's.
-  if ty.isOfKind ``Lang.patType then return ← elabType modName ty[0]
+  if ty.isOfKind ``Lang.patType then return ← elabType modName ty[0] params
   -- `Set(T)`: `"Set" "(" T ")"`; `Rel(A, B)`: `"Rel" "(" A "," B ")"`.
-  -- An element type, which is never a `Nat` (`lang::nat_place`).
+  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a type
+  -- parameter (`lang::type_parameter_place`).
   let elem (e : Syntax) : m Expr := do
-    let t ← elabType modName e
+    let t ← elabType modName e params
     if t.isConstOf ``Nat then throwErrorAt e (Core.natPlaceMsg .element).text
+    if let .bvar k := t then throwErrorAt e (Core.typeParamPlaceMsg params[k]! .element "").text
     return t
+  -- An instance of a generic type, `G(A, B)`, whose arguments are payloads'
+  -- types (`Reqs/Lang/Generics#type-parameters`).
+  if ty.isOfKind ``Lang.instanceType then
+    let segs := pathSegs ty[0]
+    let given := ty[2].getSepArgs
+    -- `Set`, `Seq` and `Rel` with too many or too few types, which the
+    -- `fren` command's parser reports, at what follows the types it reads.
+    if segs.size == 1 && [`Set, `Seq, `Rel].contains segs[0]!.getId then
+      let n := if segs[0]!.getId == `Rel then 2 else 1
+      let at_ := if given.size > n then ty[2].getArgs[2 * n - 1]! else ty[3]
+      throwErrorAt at_ s!"expected `{if given.size > n then ")" else ","}`"
+    let mut args := #[]
+    for a in given do
+      let t ← elabType modName a params
+      unless !t.isConstOf ``Nat || Core.natPlaceAccepted .argument do throwErrorAt a (Core.natPlaceMsg .argument).text
+      if let some (p, whole) ← abstractWithin? t then throwErrorAt a (Core.abstractFieldMsg p true !whole).text
+      args := args.push t
+    return ← instanceType modName segs args params ty
   let some p := typePath? ty |
     if ty.isOfKind ``Lang.relType then
       return mkApp (Lean.mkConst ``Fren.FinSet [Level.zero])
         (mkApp2 (Lean.mkConst ``Prod [Level.zero, Level.zero]) (← elem ty[2]) (← elem ty[4]))
     else if ty.isOfKind ``Lang.seqType then return mkApp (Lean.mkConst ``Fren.Seq [Level.zero]) (← elem ty[2])
     else return mkApp (Lean.mkConst ``Fren.FinSet [Level.zero]) (← elem ty[2])
-  let ty := p
-  let segs := pathSegs ty
+  let segs := pathSegs p
+  if segs.size == 1 then
+    if let some k := params.idxOf? segs[0]!.getId then return .bvar k
   if segs.size == 1 && segs[0]!.getId == `Bool then return Lean.mkConst ``Bool
   if segs.size == 1 && segs[0]!.getId == `Int then return Lean.mkConst ``Int
   if segs.size == 1 && segs[0]!.getId == `Nat then return Lean.mkConst ``Nat
   if segs.size == 1 && segs[0]!.getId == `String then return Lean.mkConst ``String
-  match ← resolveWritten modName segs with
-  | .item { kind := .enumItem, path, .. } => return Lean.mkConst (← enumDecl path)
-  | .item { kind := .recordItem, path, .. } =>
-    if let some n := (← getState).newtypes.get? path then return Lean.mkConst n.decl
-    let some r := (← getState).records.get? path | throwError "internal error: unknown record `{path}`"
-    return Lean.mkConst r.decl
-  | .item { kind := .typeItem, path, .. } =>
-    if let some (t, _) := (← getState).aliases.get? path then return t
-    return Lean.mkConst (placeholderName path)
-  | r => throwErrorAt ty (Core.notATypeMsg r).text
+  instanceType modName segs #[] params p
 
 /-- The `Rel(A, B)`s within the type `ty`. -/
 partial def relTypes (ty : Syntax) : Array Syntax :=
@@ -234,10 +310,10 @@ partial def relTypes (ty : Syntax) : Array Syntax :=
 `ty` whose `B` is an enumeration of one variant without a payload
 (`lint::zero_sized_map_values`). -/
 def lintRelTypes [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFileMap m] (modName : Name)
-    (ty : Syntax) : m Unit := do
+    (ty : Syntax) (params : Array Name := #[]) : m Unit := do
   for r in relTypes ty do
-    let b ← elabType modName r[4]
-    let some e := b.constName?.bind (← getState).enumOfDecl? | continue
+    let b ← elabType modName r[4] params
+    let some e := (← getState).enumOf? b | continue
     if Core.zeroSizedMapValues true e.variants.size (e.payloads.any (!·.isEmpty)) then
       let text (t : Syntax) := ((t.reprint.getD "").trimAscii).toString
       recordLint .zeroSizedMapValues r (Core.zeroSizedMapValuesMsg (text r[2]) (text r[4]) e.variants[0]!.toString)
@@ -270,28 +346,26 @@ def varType (modName : Name) (name : Syntax) (ty? : Option Syntax) : TermElabM E
   if let (some ty, some t) := (ty?, t) then lintBoolType n ty t
   return t.getD (Lean.mkConst ``Bool)
 
-/-- The paths within the `Set(...)`s and `Rel(...)`s of the type `ty`, and
-whether there are any. -/
-partial def typeElems (ty : Syntax) : Array Syntax × Bool :=
-  if ty.isOfKind ``Lang.patType then typeElems ty[0] else
-  match typePath? ty with
-  | some p => (#[p], false)
-  | none =>
-    if ty.isOfKind ``Lang.relType then ((typeElems ty[2]).1 ++ (typeElems ty[4]).1, true)
-    else ((typeElems ty[2]).1, true)
+/-- What a field's or payload's type is declared in: a payload of an
+enumeration, a field of a record, or a newtype's. -/
+inductive FieldPlace where
+  | payload
+  | field
+  | newtype
+  deriving BEq
 
-/-- The Lean types within the `Fren.FinSet`s and pairs of `t`. -/
-partial def elemTypes (t : Expr) : Array Expr :=
-  if t.isAppOfArity ``Fren.FinSet 1 || t.isAppOfArity ``Fren.Seq 1 then elemTypes t.appArg!
-  else if t.isAppOfArity ``Prod 2 then elemTypes t.appFn!.appArg! ++ elemTypes t.appArg!
-  else #[t]
-
-/-- Lean syntax for the Lean type of a Fren type: a constant. -/
-partial def typeSyntax (t : Expr) : Term :=
-  if t.isAppOfArity ``Fren.FinSet 1 then Unhygienic.run `(Fren.FinSet $(typeSyntax t.appArg!))
-  else if t.isAppOfArity ``Fren.Seq 1 then Unhygienic.run `(Fren.Seq $(typeSyntax t.appArg!))
-  else if t.isAppOfArity ``Prod 2 then Unhygienic.run `($(typeSyntax t.appFn!.appArg!) × $(typeSyntax t.appArg!))
+/-- Lean syntax for the Lean type of a Fren type: a constant, or one applied
+to type arguments; within the declaration of a generic type, `.bvar k` is
+its type parameter `params[k]`. -/
+partial def typeSyntax (t : Expr) (params : Array Name := #[]) : Term :=
+  let go (t : Expr) := typeSyntax t params
+  if t.isAppOfArity ``Fren.FinSet 1 then Unhygienic.run `(Fren.FinSet $(go t.appArg!))
+  else if t.isAppOfArity ``Fren.Seq 1 then Unhygienic.run `(Fren.Seq $(go t.appArg!))
+  else if t.isAppOfArity ``Prod 2 then Unhygienic.run `($(go t.appFn!.appArg!) × $(go t.appArg!))
+  else if let .bvar k := t then mkIdent (params[k]?.getD `_)
   else if t.isConst then mkCIdent t.constName!
+  else if t.getAppFn.isConst then
+    Unhygienic.run `(($(mkCIdent t.getAppFn.constName!) $(t.getAppArgs.map go)*))
   -- Not known yet, as the element type of `[]`: Lean infers it.
   else Unhygienic.run `(_)
 
@@ -447,6 +521,41 @@ def appliedFns (cx : ExprCtx) (e : Syntax) : TermElabM (Array Name) := do
     let .ok (.item { kind := .fnItem, path, .. }) := s.table.resolvePath cx.modName names cx.shadowing | return none
     return if s.defined.contains path then none else some (Core.fnLink path)
 
+/-- The Lean type `t` as the Fren type it stands for (`coreTy?`), given the
+model `s`. -/
+partial def coreTyOf (s : State) (t : Expr) (params : Array Name := #[]) : Option Core.Ty :=
+  let go (t : Expr) := coreTyOf s t params
+  if t.isProp || t.isConstOf ``Bool then some .bool
+  else if t.isConstOf ``Int then some .int
+  else if t.isConstOf ``Nat then some .nat
+  else if t.isConstOf ``String then some .string
+  else if let .bvar k := t then some (.param k (params[k]?.getD .anonymous))
+  else if t.isAppOfArity ``Fren.Seq 1 then (go t.appArg!).map .seq
+  else if t.isAppOfArity ``Fren.FinSet 1 then
+    let e := t.appArg!
+    if e.isAppOfArity ``Prod 2 then do
+      return .rel (← go e.appFn!.appArg!) (← go e.appArg!)
+    else (go e).map .set
+  else if let some e := s.enumOf? t then do
+    return .enum e.path (← t.getAppArgs.toList.mapM go)
+  else if let some r := s.recordOf? t then do
+    return .record r.path (← t.getAppArgs.toList.mapM go)
+  else match t.constName? with
+    | none => none
+    | some d =>
+      if let some n := s.newtypeOfDecl? d then (go n.under).map (.newtype n.path)
+      else (s.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == d then some a else none).map
+        (.abstract ·.path)
+
+/-- What counting the values of the instances of the enumeration or record
+`p` needs of its declaration (`Core.Ty.valueCount`), given the model `s`. -/
+def dataSig (s : State) (p : Name) : Option Core.DataSig :=
+  let tys (params : Array Name) (ts : Array Expr) := ts.map fun t => (coreTyOf s t params).getD (.abstract .anonymous)
+  match s.enums.get? p, s.records.get? p with
+  | some e, _ => some { isRecord := false, unbounded := e.unbounded, ctors := e.payloads.map (tys e.params) }
+  | none, some r => some { isRecord := true, unbounded := r.unbounded, ctors := #[tys r.params (r.fields.map (·.2))] }
+  | none, none => none
+
 /-- The Fren name of the type whose Lean type is `t`. -/
 partial def typeName (t : Expr) : TermElabM String := do
   -- A comparison or connective is a `Prop` in Lean, and a `Bool` in Fren.
@@ -460,37 +569,21 @@ partial def typeName (t : Expr) : TermElabM String := do
     if e.isAppOfArity ``Prod 2 then return s!"Rel({← typeName e.appFn!.appArg!}, {← typeName e.appArg!})"
     return s!"Set({← typeName e})"
   let s ← getState
+  -- An instance of a generic type, with its arguments (`Reqs/Lang/Generics#printing`).
+  if let some e := s.enumOf? t then return ((coreTyOf s t).map (·.show)).getD (Core.showPath e.path)
+  if let some r := s.recordOf? t then return ((coreTyOf s t).map (·.show)).getD (Core.showPath r.path)
   let some d := t.constName? | return toString t
-  if let some e := s.enumOfDecl? d then return Core.showPath e.path
-  if let some r := s.recordOfDecl? d then return Core.showPath r.path
   if let some n := s.newtypeOfDecl? d then return Core.showPath n.path
   if let some a := s.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == d then some a else none then
     return Core.showPath a.path
   return toString d
 
 /-- The Lean type `t` as the Fren type it stands for, as the `fren` command
-has it (`Core.Ty`), if it is one: a condition's `Prop` is a `Bool`. -/
-partial def coreTy? (t : Expr) : TermElabM (Option Core.Ty) := do
-  let t ← instantiateMVars t
-  if t.isProp || t.isConstOf ``Bool then return some .bool
-  if t.isConstOf ``Int then return some .int
-  if t.isConstOf ``Nat then return some .nat
-  if t.isConstOf ``String then return some .string
-  if t.isAppOfArity ``Fren.Seq 1 then return (← coreTy? t.appArg!).map .seq
-  if t.isAppOfArity ``Fren.FinSet 1 then
-    let e := t.appArg!
-    if e.isAppOfArity ``Prod 2 then
-      let (some a, some b) := (← coreTy? e.appFn!.appArg!, ← coreTy? e.appArg!) | return none
-      return some (.rel a b)
-    return (← coreTy? e).map .set
-  let s ← getState
-  let some d := t.constName? | return none
-  if let some e := s.enumOfDecl? d then return some (.enum e.path)
-  if let some r := s.recordOfDecl? d then return some (.record r.path)
-  if let some n := s.newtypeOfDecl? d then return (← coreTy? n.under).map (.newtype n.path)
-  if let some a := s.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == d then some a else none then
-    return some (.abstract a.path)
-  return none
+has it (`Core.Ty`), if it is one: a condition's `Prop` is a `Bool`, and
+`.bvar k`, within the declaration of a generic type, its type parameter
+`params[k]`. -/
+def coreTy? (t : Expr) (params : Array Name := #[]) : TermElabM (Option Core.Ty) := do
+  return coreTyOf (← getState) (← instantiateMVars t) params
 
 /-- The operator `op`, prefix if `pre`, at the current syntax, of operands
 of the Fren types `tx?` and `ty?`, if they have them: if one is a newtype,
@@ -585,23 +678,34 @@ def relTypes? (ty : Expr) : Option (Expr × Expr) :=
     some (ty.appArg!.appFn!.appArg!, ty.appArg!.appArg!)
   else none
 
+/-- The constructor `c` of an enumeration or record, applied to the type
+arguments `targs`, explicitly if there are any, and to `args`: so that Lean
+infers no argument that Fren does not (`Reqs/Generated#generic-types`). -/
+def ctorApp (c : Name) (targs : Array Expr) (args : Array Term) (ref : Syntax := .missing) : TermElabM Term := do
+  let f := if ref.isMissing then mkCIdent c else mkCIdentFrom ref c
+  if targs.isEmpty then return ← `($f $args*)
+  `(@$f $(targs.map typeSyntax)* $args*)
+
 /-- Every value of a finite type, as terms, if there are at most `cap` of
 them: a relation's `domain` and `range` are its image under them, which
 the solver decides without a projection (`Reqs/Cli`). -/
 partial def valuesOf? (ty : Expr) (cap : Nat := 64) : TermElabM (Option (Array Term)) := do
   if ty.isConstOf ``Bool then return some #[← `(true), ← `(false)]
   let s ← getState
-  let some d := ty.constName? | return none
+  -- An instance's, with its arguments for the type parameters
+  -- (`lang::instantiation`), given to each constructor explicitly.
+  let targs := ty.getAppArgs
   let ctors : Array (Name × Array Expr) ←
-    if let some e := s.enumOfDecl? d then
-      if e.unbounded then return none
-      pure (e.variants.mapIdx fun i v => (e.decl ++ v, e.payloads[i]?.getD #[]))
-    else if let some r := s.recordOfDecl? d then
-      if r.unbounded then return none
-      pure #[(recordCtor r.decl, r.fields.map (·.2))]
+    if let some e := s.enumOf? ty then
+      if s.unbounded ty then return none
+      let ps := e.payloadsAt targs
+      pure (e.variants.mapIdx fun i v => (e.decl ++ v, ps[i]?.getD #[]))
+    else if let some r := s.recordOf? ty then
+      if s.unbounded ty then return none
+      pure #[(r.ctor, (r.fieldsAt targs).map (·.2))]
     -- A newtype's values are its underlying type's, as the `fren` command
     -- has them.
-    else if let some n := s.newtypeOfDecl? d then
+    else if let some n := ty.constName?.bind s.newtypeOfDecl? then
       pure #[(n.ctor, #[n.under])]
     else return none
   let mut out := #[]
@@ -611,7 +715,7 @@ partial def valuesOf? (ty : Expr) (cap : Nat := 64) : TermElabM (Option (Array T
       let some vs ← valuesOf? t cap | return none
       combos := combos.flatMap fun pre => vs.map pre.push
       if combos.size > cap then return none
-    for args in combos do out := out.push (← `($(mkCIdent c) $args*))
+    for args in combos do out := out.push (← ctorApp c targs args)
     if out.size > cap then return none
   return some out
 
@@ -634,7 +738,7 @@ partial def orderTerm (o : Core.OrderPlan) (strict : Bool) (x y : Term) : TermEl
   match o with
   | .number => if strict then `($x < $y) else `($x ≤ $y)
   | .string => if strict then `(Fren.Str.lt $x $y) else `(Fren.Str.le $x $y)
-  | .enum p =>
+  | .enum p _ =>
     let some info := st.enums.get? p | throwError "internal error: unknown enum `{p}`"
     let (i, j) := (← ordinalTerm info x, ← ordinalTerm info y)
     if strict then `($i < $j) else `($i ≤ $j)
@@ -663,7 +767,7 @@ partial def orderingTerm (o : Core.OrderPlan) (op : String) (x y : Term) : TermE
     orderingTerm u op (← `($(mkCIdent n.field) $x)) (← `($(mkCIdent n.field) $y))
   | .number => match op with
     | "<" => `($x < $y) | "<=" => `($x ≤ $y) | ">" => `($x > $y) | _ => `($x ≥ $y)
-  | .enum p =>
+  | .enum p _ =>
     let some info := (← getState).enums.get? p | throwError "internal error: unknown enum `{p}`"
     let (i, j) := (← ordinalTerm info x, ← ordinalTerm info y)
     match op with
@@ -757,7 +861,7 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
   -- by their order, and a record's or newtype's other methods, which it has
   -- none of (`lang::method_type`, `lang::ordered_type`).
   let st ← getState
-  if let some ct := (← coreTy? ty).filter (fun ct => ct matches .record _ | .newtype .. || (ct == .string && (m == "min" || m == "max"))) then
+  if let some ct := (← coreTy? ty).filter (fun ct => ct matches .record .. | .newtype .. || (ct == .string && (m == "min" || m == "max"))) then
     let name := ct.show
     let ordered := ct.ordered st.orderedDecl
     let some method := (Core.Method.ofName? m).filter (·.accepts false false (ordered := ordered))
@@ -772,7 +876,7 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
     let some plan := st.orderPlan? ct | throwError "internal error: `{name}` is not ordered"
     let cmp ← orderingTerm plan (if method == .min then "<=" else ">=") t y
     return (← `(if $cmp then $t else $y), ty)
-  if let some info := ty.constName?.bind st.enumOfDecl? then
+  if let some info := st.enumOf? ty then
     let name := Core.showPath info.path
     let some method := (Core.Method.ofName? m).filter (·.accepts false false (ordered := info.ordered))
       | throwErrorAt ref (if info.ordered then Core.unknownMethodMsg m name false (ordered := true)
@@ -828,7 +932,7 @@ def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term
     unless f == Name.mkSimple "0" do throwErrorAt ref (Core.noFieldMsg f (Core.showPath n.path) #[Name.mkSimple "0"]).text
     return (← `($(mkCIdentFrom ref n.field) $t), n.under)
   -- A field named by digits is no method's name.
-  if Core.positionalField f && (ty.constName?.bind (← getState).recordOfDecl?).isNone then
+  if Core.positionalField f && ((← getState).recordOf? ty).isNone then
     throwErrorAt ref (Core.noFieldMsg f (← typeName ty) #[]).text
   -- For `invalid_upcast_comparisons`, at the end of the expression.
   if (ty.isConstOf ``Int || ty.isConstOf ``Nat) && f == `abs then
@@ -836,15 +940,16 @@ def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term
   if ty.isConstOf ``String || ty.isConstOf ``Int || ty.isConstOf ``Nat || (relTypes? ty).isSome || ty.isAppOfArity ``Fren.Seq 1 then
     return ← callMethod ref t ty f.toString #[]
   -- An enumeration's methods, `min` and `max`, which take an argument.
-  if (ty.constName?.bind (← getState).enumOfDecl?).isSome && (f == `min || f == `max) then
+  if ((← getState).enumOf? ty).isSome && (f == `min || f == `max) then
     return ← callMethod ref t ty f.toString #[]
   if ty.isAppOfArity ``Fren.FinSet 1 then
     unless f == `card do throwErrorAt ref (Core.unknownSetMethodMsg f.toString (← typeName ty)).text
     return (← `(Fren.FinSet.card $t), Lean.mkConst ``Int)
-  let some r := ty.constName?.bind (← getState).recordOfDecl?
+  let some r := (← getState).recordOf? ty
     | throwErrorAt ref (Core.noFieldMsg f (← typeName ty) #[]).text
-  let some (_, ft) := r.fields.find? (·.1 == f)
-    | throwErrorAt ref (Core.noFieldMsg f (Core.showPath r.path) (r.fields.map (·.1))).text
+  -- With the record's arguments for its type parameters (`lang::instantiation`).
+  let some (_, ft) := (r.fieldsAt ty.getAppArgs).find? (·.1 == f)
+    | throwErrorAt ref (Core.noFieldMsg f (← typeName ty) (r.fields.map (·.1))).text
   return (← `($(mkCIdentFrom ref (r.decl ++ f)) $t), ft)
 
 /-! ### Patterns (`Reqs/Lang/Patterns`) -/
@@ -1096,9 +1201,10 @@ partial def infiniteType (ty : Expr) : TermElabM Bool := do
   if ty.isAppOfArity ``Fren.Seq 1 then return true
   if ty.isAppOfArity ``Prod 2 then return (← infiniteType ty.appFn!.appArg!) || (← infiniteType ty.appArg!)
   let s ← getState
+  -- An instance, by its payloads' or fields' types (`Reqs/Lang/Generics`).
+  if let some e := s.enumOf? ty then return e.unbounded || (← (e.payloadsAt ty.getAppArgs).anyM (·.anyM infiniteType))
+  if let some r := s.recordOf? ty then return r.unbounded || (← (r.fieldsAt ty.getAppArgs).anyM (infiniteType ·.2))
   let some d := ty.constName? | return true
-  if let some e := s.enumOfDecl? d then return e.unbounded || (← e.payloads.anyM (·.anyM infiniteType))
-  if let some r := s.recordOfDecl? d then return r.unbounded || (← r.fields.anyM (infiniteType ·.2))
   -- A newtype has its underlying type's values, as the `fren` command has
   -- it: a newtype of a set of a finite type is finite, though unbounded.
   if let some n := s.newtypeOfDecl? d then return ← infiniteType n.under
@@ -1447,11 +1553,129 @@ def lintFieldOrder (e : Syntax) (path : Name) (declared : Array Name) (given : A
   let msg := Core.inconsistentStructConstructorMsg (Name.mkSimple path.getString!) declared fixed?
   recordLint .inconsistentStructConstructor e (if (← getLocal).inMarkdown && fixed?.isSome then msg.note Core.fixHelp else msg)
 
+/-- The Lean type of the Fren type `t`, the inverse of `coreTy?`, for the
+type arguments of a construction. -/
+partial def leanTypeOf (t : Core.Ty) : TermElabM Expr := do
+  let s ← getState
+  let set (e : Expr) := mkApp (Lean.mkConst ``Fren.FinSet [Level.zero]) e
+  match t with
+  | .bool => return Lean.mkConst ``Bool
+  | .int => return Lean.mkConst ``Int
+  | .nat => return Lean.mkConst ``Nat
+  | .string => return Lean.mkConst ``String
+  | .set e => return set (← leanTypeOf e)
+  | .rel a b => return set (mkApp2 (Lean.mkConst ``Prod [Level.zero, Level.zero]) (← leanTypeOf a) (← leanTypeOf b))
+  | .seq e => return mkApp (Lean.mkConst ``Fren.Seq [Level.zero]) (← leanTypeOf e)
+  | .enum p as =>
+    let some e := s.enums.get? p | throwError "internal error: unknown enum `{p}`"
+    return mkAppN (Lean.mkConst e.decl) (← as.toArray.mapM leanTypeOf)
+  | .record p as =>
+    let some r := s.records.get? p | throwError "internal error: unknown record `{p}`"
+    return mkAppN (Lean.mkConst r.decl) (← as.toArray.mapM leanTypeOf)
+  | .abstract p => return Lean.mkConst (placeholderName p)
+  | .newtype p _ =>
+    let some n := s.newtypes.get? p | throwError "internal error: unknown newtype `{p}`"
+    return Lean.mkConst n.decl
+  | .param _ n => throwError "internal error: the type parameter `{n}` outside its declaration"
+
+/-- A construction of a generic type (`Reqs/Lang/Generics#type-arguments`).
+-/
+structure Construction where
+  /-- The generic type's path. -/
+  path : Name
+  params : Array Name
+  /-- Its values' declared types, which mention the type parameters. -/
+  declared : Array Core.Ty
+  /-- Its values in their order: a record's fields in the order of its
+  declaration, `none` for one that is not given. -/
+  values : Array (Option Syntax)
+
+open Lang in
+/-- The construction of a generic enumeration or record that `e` is, if it
+is one, as the `fren` command's `construction?` finds it. -/
+def construction? (cx : ExprCtx) (e : Syntax) : TermElabM (Option Construction) := do
+  let st ← getState
+  let tys (params : Array Name) (ts : Array Expr) := ts.map fun t => (coreTyOf st t params).getD (.abstract .anonymous)
+  let variant (p : Syntax) (vals : Array Syntax) : Option Construction := do
+    let .ok (.variant en idx) := st.table.resolvePath cx.modName ((pathSegs p).map (·.getId)) cx.shadowing | none
+    let info ← st.enums.get? en.path
+    guard !info.params.isEmpty
+    let ts ← info.payloads[idx]?
+    return { path := en.path, params := info.params, declared := tys info.params ts, values := vals.map some }
+  if e.isOfKind ``Lang.appExpr then return variant e[0] e[2].getSepArgs
+  if e.getNumArgs == 1 && e[0].isOfKind ``Lang.fren_path then return variant e[0] #[]
+  if e.isOfKind ``Lang.recordExpr then
+    let .ok (.item { kind := .recordItem, path, .. }) := st.table.resolvePath cx.modName ((pathSegs e[0]).map (·.getId)) cx.shadowing
+      | return none
+    let some info := st.records.get? path | return none
+    if info.params.isEmpty then return none
+    let given := e[2].getSepArgs
+    let vals ← info.fields.mapM fun (f, _) => do
+      let some b := given.find? (·[0].getId == f) | return none
+      if b[1].isNone then return some (← pathExpr b[0] b[0].getId) else return some b[1][1]
+    return some { path, params := info.params, declared := tys info.params (info.fields.map (·.2)), values := vals }
+  return none
+
+open Lang in
+/-- `e`'s shape, for whether it synthesizes a type (`Core.TypeShape`). -/
+partial def typeShape (cx : ExprCtx) (e : Syntax) : TermElabM Core.TypeShape := do
+  let go := typeShape cx
+  if let some c ← construction? cx e then
+    let shapes ← c.values.mapM fun v? => match v? with
+      | some v => go v
+      | none => pure .other
+    return Core.constructionShape c.params c.declared shapes
+  if e.isOfKind ``Lang.setExpr || e.isOfKind ``Lang.seqExpr then
+    let elems := e[1].getSepArgs
+    if elems.isEmpty then return .emptyLiteral else return .anyPart (← elems.toList.mapM go)
+  else if e.isOfKind ``Lang.pairExpr then return .pair (← go e[1]) (← go e[3])
+  else if e.isOfKind ``Lang.unionExpr || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr then
+    return .anyPart [← go e[0], ← go e[2]]
+  else if isMatchLike e then return .anyPart (← e[3].getSepArgs.toList.mapM (go ·[3]))
+  else if e.isOfKind ``Lang.letExpr then return .anyPart [← go e[3]]
+  else if e.isOfKind ``Lang.tableExpr then return .anyPart (← e[2].getSepArgs.toList.mapM (go ·[3]))
+  else match e with
+    | `(fren_expr| $a ++ $b) => return .anyPart [← go a, ← go b]
+    | `(fren_expr| ($a)) => return .anyPart [← go a]
+    | `(fren_expr| if $_ then $a else $b) => return .anyPart [← go a, ← go b]
+    | _ => return .other
+
+/-- Whether `e` synthesizes a type (`lang::synthesizes`). -/
+def synthesizes (cx : ExprCtx) (e : Syntax) : TermElabM Bool := return (← typeShape cx e).synthesizes
+
+/-- Whether one of `es` synthesizes a type. -/
+def anySynthesizes (cx : ExprCtx) (es : Array Syntax) : TermElabM Bool := es.anyM (synthesizes cx)
+
+/-- Translates the values `vals` of the construction `c` of a generic type,
+written `what` at `ref`, with `go`, which translates a value checked against
+a type, if one is given, and returns their terms and the construction's
+type arguments, which are inferred (`Core.inferConstruction`), as the
+`fren` command's `elabConstruction` does, in the same order. `expected?` is
+the type expected of the construction, and `note k t` explains that value
+`k` has the type `t`. -/
+def constructionTerms (go : Option Core.Ty → Syntax → TermElabM Term) (cx : ExprCtx) (expected? : Option Core.Ty)
+    (ref : Syntax) (c : Construction) (vals : Array Syntax) (what : String) (note : Nat → Core.Ty → String) :
+    TermElabM (Array Term × Array Core.Ty) := do
+  let exp := match expected? with
+    | some (.enum p as) | some (.record p as) => if p == c.path then some as.toArray else none
+    | _ => none
+  let synth ← vals.mapM (synthesizes cx)
+  let run : StateT (Array Term) TermElabM (Array Core.Ty) :=
+    Core.inferConstruction c.params c.declared synth exp
+      (throwErrorAt ref (Core.cannotInferMsg what (Core.showPath c.path)).text : TermElabM Unit)
+      (fun k x? => do
+        let t ← (go x? vals[k]! : TermElabM Term)
+        modify (·.set! k t)
+        frenTypeOf? t)
+      (fun k x f => (liftMsg vals[k]! (Core.checkType x f (some (note k x))) : TermElabM Unit))
+  let (args, ts) ← run.run (vals.map fun _ => default)
+  return (ts, args)
+
 open Lang in
 /-- `unnecessary_struct_initialization` on the record literal `e`, of the
-record whose structure is `decl`, with the fields `given`, where `go`
-translates expressions (`lint::unnecessary_struct_initialization`). -/
-def lintStructInit (go : Syntax → TermElabM Term) (decl : Name) (e : Syntax) (given : Array Syntax) :
+type `ty`, with the fields `given`, where `go` translates expressions
+(`lint::unnecessary_struct_initialization`). -/
+def lintStructInit (go : Syntax → TermElabM Term) (ty : Core.Ty) (e : Syntax) (given : Array Syntax) :
     TermElabM Unit := do
   -- Each field's value as `r.f`, its own field `f` of `r`, with `r`'s text.
   let mut reads := #[]
@@ -1474,8 +1698,9 @@ def lintStructInit (go : Syntax → TermElabM Term) (decl : Name) (e : Syntax) (
   -- A value has a type; an instance is not one.
   let saved ← saveState
   let ty? ← try some <$> typeOf (← go r) catch _ => pure none
+  let core? ← ty?.bindM coreTy?
   saved.restore
-  if Core.unnecessaryStructInit given.size true same ty?.isSome (ty?.bind (·.constName?) == some decl) then
+  if Core.unnecessaryStructInit given.size true same ty?.isSome (core? == some ty) then
     let msg := Core.unnecessaryStructInitMsg t
     recordLint .unnecessaryStructInitialization e (if (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
 
@@ -1630,7 +1855,7 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
   -- `needless_match` (`lint::needless_match`): only a `match` whose arms
   -- are `_` and variants whose payloads' patterns are `_` or binders.
   let scr := exactText (unparen e[1])
-  let enum? := ty.constName?.bind (← getState).enumOfDecl?
+  let enum? := (← getState).enumOf? ty
   let mut givenBack := true
   let mut wildcard := false
   let mut scrutineeBack := false
@@ -1697,7 +1922,7 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
   -- In a table over a scrutinee, `_` also takes what the guards of the
   -- other arms leave, which no pattern can name without overlapping them.
   unless flat && !(isTable && anyGuard) do return
-  let some info := ty.constName?.bind (← getState).enumOfDecl? | return
+  let some info := (← getState).enumOf? ty | return
   let some w := (Array.range infos.size).find? fun i => infos[i]!.wildcard && !guarded[i]! | return
   let names (p : Core.Pat) : Array Nat := match p with
     | .ctor k _ => #[k]
@@ -1729,13 +1954,15 @@ structure PatBinder where
   deriving Inhabited
 
 /-- The type of a value of the Lean type `t`, as patterns see it. -/
-def patTyOf (st : State) (t : Expr) : Core.PatTy :=
+partial def patTyOf (st : State) (t : Expr) : Core.PatTy :=
   if t.isConstOf ``Bool || t.isProp then .bool
   else if t.isConstOf ``Int then .int
   else if t.isConstOf ``Nat then .nat
   else if t.isConstOf ``String then .string
-  else match t.constName?.bind st.enumOfDecl? with
-    | some e => .enum e.path
+  -- A type parameter, in a payload's type (`Core.Sigs`).
+  else if let .bvar k := t then .param k
+  else match st.enumOf? t with
+    | some e => .enum e.path (t.getAppArgs.toList.map (patTyOf st))
     | none => .other
 
 /-- The variants of each enumeration, with their payloads' types, as
@@ -1756,31 +1983,6 @@ def intTerm (v : Int) : TermElabM Term := do
 def conjTerm (ts : Array Term) : TermElabM (Option Term) := do
   let some last := ts.back? | return none
   some <$> ts.pop.foldrM (init := last) fun t acc => `($t ∧ $acc)
-
-open Lang in
-/-- `e`'s shape, for whether it synthesizes a type (`Core.TypeShape`). -/
-partial def typeShape (e : Syntax) : Core.TypeShape :=
-  if e.isOfKind ``Lang.setExpr || e.isOfKind ``Lang.seqExpr then
-    let elems := e[1].getSepArgs
-    if elems.isEmpty then .emptyLiteral else .anyPart (elems.toList.map typeShape)
-  else if e.isOfKind ``Lang.pairExpr then .pair (typeShape e[1]) (typeShape e[3])
-  else if e.isOfKind ``Lang.unionExpr || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr then
-    .anyPart [typeShape e[0], typeShape e[2]]
-  else if isMatchLike e then .anyPart (e[3].getSepArgs.toList.map (typeShape ·[3]))
-  else if e.isOfKind ``Lang.letExpr then .anyPart [typeShape e[3]]
-  else if e.isOfKind ``Lang.tableExpr then .anyPart (e[2].getSepArgs.toList.map (typeShape ·[3]))
-  else match e with
-    | `(fren_expr| $a ++ $b) => .anyPart [typeShape a, typeShape b]
-    | `(fren_expr| ($a)) => .anyPart [typeShape a]
-    | `(fren_expr| if $_ then $a else $b) => .anyPart [typeShape a, typeShape b]
-    | _ => .other
-
-/-- Whether `e` synthesizes a type (`lang::synthesizes`). -/
-def synthesizes (e : Syntax) : Bool := (typeShape e).synthesizes
-
-/-- Whether one of `es` synthesizes a type. -/
-def anySynthesizes (es : Array Syntax) : Bool := es.any synthesizes
-
 
 /-- The value of the bound `b` of a range pattern. -/
 def boundValue (cx : ExprCtx) (b : Syntax) : TermElabM Int := do
@@ -1852,7 +2054,7 @@ partial def resolvePattern (cx : ExprCtx) (ty : Expr) (x : Term) (inOr test : Bo
       return (.wild true, #[{ ident := segs[0]!, type := ty, term := x }], none)
     | .variant => pure ()
   let r ← resolveWritten cx.modName segs cx.shadowing cx.noteIndexes
-  let some info := ty.constName?.bind (← getState).enumOfDecl?
+  let some info := (← getState).enumOf? ty
     | throwErrorAt p (Core.patternTypeMsg (← patTypeName ty) (match r with
         | .variant en _ => s!"a pattern of `{Core.showPath en.path}`"
         | r => r.describe)).text
@@ -1860,7 +2062,8 @@ partial def resolvePattern (cx : ExprCtx) (ty : Expr) (x : Term) (inOr test : Bo
   if en.path != info.path then
     throwErrorAt p (Core.notAVariantOfMsg info.path s!"a variant of `{Core.showPath en.path}`").text
   let v := info.path ++ en.variants[idx]!
-  let tys := info.payloads[idx]!
+  -- The payload's types, with the scrutinee's arguments (`lang::instantiation`).
+  let tys := (info.payloadsAt ty.getAppArgs)[idx]!
   if let some msg := Core.variantMentionMsg? v tys.size (!p[1].isNone) then throwErrorAt p msg.text
   let args := patternArgs p
   unless args.size == tys.size do throwErrorAt p (Core.arityMsg v tys.size args.size "pattern").text
@@ -1868,7 +2071,7 @@ partial def resolvePattern (cx : ExprCtx) (ty : Expr) (x : Term) (inOr test : Bo
   let sels ← (Array.range tys.size).mapM fun k => `($(mkCIdent (selectorName ctor k)) $x)
   let mut pats := #[]
   let mut bs := #[]
-  let mut tests := #[← `($x = $(mkCIdent ctor) $sels*)]
+  let mut tests := #[← `($x = $(← ctorApp ctor ty.getAppArgs sels))]
   for a in args, t in tys, sel in sels do
     let (q, qbs, qt) ← resolveOr cx t sel inOr test a[0].getSepArgs false
     pats := pats.push q
@@ -1925,24 +2128,26 @@ def recordOutsideCore (ref : Syntax) (msg : Core.Msg) : TermElabM Unit := do
 /-- The declared type `ty`, written in the module `modName`: its Lean type,
 and the type with the patterns of the pattern types within it
 (`Reqs/Lang/Types#pattern-types`), as the `fren` command's `elabPTy`. -/
-partial def elabPType (modName : Name) (ty : Syntax) : TermElabM (Expr × Core.PTy) := do
+partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]) : TermElabM (Expr × Core.PTy) := do
   -- What Lean recovered from a parse error that it has reported.
   if ty.hasMissing then throwAbortTerm
   let text := Core.typeText (exactText ty)
   if ty.isOfKind ``Lang.patType then
-    let (t, base) ← elabPType modName ty[0]
+    let (t, base) ← elabPType modName ty[0] params
     -- Pattern types are not nested, also through an alias.
     if base.pat?.isSome then throwErrorAt ty[0] (Core.nestedAliasMsg (exactText ty[0])).text
     let cx : ExprCtx := { modName, vars := #[], insts := #[], place := .prop }
     let (q, bs, _) ← resolveTop cx t (mkIdent `x) true ty[2]
     if let some b := bs[0]? then throwErrorAt b.ident (Core.patternTypeBinderMsg (declaredIdent b.ident).1.getId).text
     return (t, { base with pat? := some q, text })
-  -- An element type, which is never a `Nat` (`lang::nat_place`), and whose
-  -- constraint, if any, quantifies over the elements, outside the decidable
-  -- core (`lang::pattern_place`).
+  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a type
+  -- parameter (`lang::type_parameter_place`), and whose constraint, if any,
+  -- quantifies over the elements, outside the decidable core
+  -- (`lang::pattern_place`).
   let elem (e : Syntax) : TermElabM (Expr × Core.PTy) := do
-    let (t, pt) ← elabPType modName e
+    let (t, pt) ← elabPType modName e params
     if t.isConstOf ``Nat then throwErrorAt e (Core.natPlaceMsg .element).text
+    if let .bvar k := t then throwErrorAt e (Core.typeParamPlaceMsg params[k]! .element "").text
     if (pt.cons (← getState).shapeOf).isSome then recordOutsideCore e Core.undecidableElementsMsg
     return (t, pt)
   if ty.isOfKind ``Lang.relType then
@@ -1956,12 +2161,49 @@ partial def elabPType (modName : Name) (ty : Syntax) : TermElabM (Expr × Core.P
   if ty.isOfKind ``Lang.setType then
     let (a, pa) ← elem ty[2]
     return (mkApp (Lean.mkConst ``Fren.FinSet [Level.zero]) a, { ty := .set pa.ty, elems := #[pa], text })
+  -- An instance of a generic type, `G(A, B)`, whose arguments are declared
+  -- types, with their patterns, as the `fren` command's `elabBasePTy` checks
+  -- them (`Reqs/Lang/Generics#type-parameters`).
+  if ty.isOfKind ``Lang.instanceType then
+    let segs := pathSegs ty[0]
+    let given := ty[2].getSepArgs
+    -- `Set`, `Seq` and `Rel` with too many or too few types, which the
+    -- `fren` command's parser reports, at what follows the types it reads.
+    if segs.size == 1 && [`Set, `Seq, `Rel].contains segs[0]!.getId then
+      let n := if segs[0]!.getId == `Rel then 2 else 1
+      let at_ := if given.size > n then ty[2].getArgs[2 * n - 1]! else ty[3]
+      throwErrorAt at_ s!"expected `{if given.size > n then ")" else ","}`"
+    let mut args := #[]
+    let mut pts := #[]
+    for a in given do
+      let (t, pt) ← elabPType modName a params
+      -- An argument is never `Nat` (`lang::nat_place`), and is a payload's
+      -- type.
+      unless !t.isConstOf ``Nat || Core.natPlaceAccepted .argument do throwErrorAt a (Core.natPlaceMsg .argument).text
+      if let some (p, whole) ← abstractWithin? t then throwErrorAt a (Core.abstractFieldMsg p true !whole).text
+      args := args.push t
+      pts := pts.push pt
+    let t ← instanceType modName segs args params ty
+    let some ct ← coreTy? t params | throwErrorAt ty s!"internal error: a type without a Fren type"
+    -- A recursive enumeration's type arguments bring no constraints
+    -- (`Reqs/Lang/Generics#pattern-types-as-type-arguments`).
+    if let .enum p _ := ct then
+      if ((← getState).shapeOf p).any (·.recursive) then
+        for a in given, pt in pts do
+          if (pt.cons (← getState).shapeOf).isSome then
+            throwErrorAt a (Core.recursiveArgumentMsg pt.text (Core.showPath p)).text
+    -- Nor do they within an instance, once its arguments stand for its
+    -- parameters.
+    if let some p := ct.dataPath? then
+      if let some (a, q) := Core.recursiveArgumentWithin? (← getState).shapeOf p pts then
+        throwErrorAt ty (Core.recursiveArgumentMsg a.text (Core.showPath q)).text
+    return (t, { ty := ct, elems := pts, text })
   -- A path: an alias names a type, as declared.
-  let t ← elabType modName ty
+  let t ← elabType modName ty params
   let segs := pathSegs (typePath? ty).get!
   if let .ok (.item { kind := .typeItem, path, .. }) := (← getState).table.resolvePath modName (← segNames segs) #[] then
     if let some (t, pt) := (← getState).aliases.get? path then return (t, { pt with text })
-  let some ct ← coreTy? t | throwErrorAt ty s!"internal error: a type without a Fren type"
+  let some ct ← coreTy? t params | throwErrorAt ty s!"internal error: a type without a Fren type"
   return (t, { Core.PTy.plain ct with text })
 
 /-- That the term `x`, of the type `ty`, matches the pattern `p`, as a
@@ -1977,10 +2219,11 @@ partial def patTerm (ty : Core.Ty) (p : Core.Pat) (x : Term) : TermElabM Term :=
     return (← conjTerm parts).getD (← `(True))
   | .str v => `($x = Fren.Str.lit $(quote v))
   | .ctor idx args =>
-    let .enum ep := ty | `(True)
+    let .enum ep targs := ty | `(True)
     let some info := (← getState).enums.get? ep | `(True)
     let ctor := info.decl ++ info.variants[idx]!
-    let tys := info.shape.parts[idx]?.getD #[]
+    -- With an instance's arguments for its type parameters.
+    let tys := (info.shape.inst (targs.toArray.map .plain)).parts[idx]?.getD #[]
     let sels ← (Array.range (info.payloads[idx]!.size)).mapM fun k => `($(mkCIdent (selectorName ctor k)) $x)
     let mut tests := #[← `($x = $(mkCIdent ctor) $sels*)]
     for a in args, k in [0:args.size] do
@@ -2001,14 +2244,14 @@ partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM T
   match c with
   | .pat ty p => patTerm ty p x
   | .atLeast0 => `(0 ≤ $x)
-  | .fields path cs =>
+  | .fields path _ cs =>
     let some r := st.records.get? path | `(True)
     let ts ← cs.mapM fun (k, c) => do consTerm c (← `($(mkCIdent (r.decl ++ r.fields[k]!.1)) $x)) depth
     return (← conjTerm ts).getD (← `(True))
   | .newtype path c =>
     let some n := st.newtypes.get? path | `(True)
     consTerm c (← `($(mkCIdent n.field) $x)) depth
-  | .payloads path cs =>
+  | .payloads path _ cs =>
     let some info := st.enums.get? path | `(True)
     let ts ← cs.mapM fun (v, k, c) => do
       let ctor := info.decl ++ info.variants[v]!
@@ -2035,6 +2278,24 @@ def predOf (ty : Expr) (c : Core.Cons) : TermElabM Expr :=
     let p ← elabProp (← consTerm c (mkIdent `fren_x))
     mkLambdaFVars #[x] p
 
+/-- The constraint `c` of a value of the Lean type `ty`, which mentions the
+type parameters `params` of a generic type as loose bound variables, as a
+predicate over the arguments of a selector of the type, `{T : Type}`,
+`[Inhabited T]` and the value: `fun T inst x => c x`. -/
+def genericPredOf (params : Array Name) (ty : Expr) (c : Core.Cons) : TermElabM Expr := do
+  if params.isEmpty then return ← predOf ty c
+  let rec go (k : Nat) (ts : Array Expr) : TermElabM Expr := do
+    if h : k < params.size then
+      withLocalDecl params[k] .implicit (mkSort Level.one) fun t => go (k + 1) (ts.push t)
+    else
+      let insts := ts.mapIdx fun i t => (Name.mkSimple s!"inst{i}", mkApp (mkConst ``Inhabited [Level.one]) t)
+      withLocalDeclsDND insts fun is =>
+        withLocalDeclD `fren_x (ty.instantiate ts) fun x => do
+          let p ← elabProp (← consTerm c (mkIdent `fren_x))
+          mkLambdaFVars (ts ++ is ++ #[x]) p
+  termination_by params.size - k
+  go 0 #[]
+
 /-- The constraint that a value of the declared type `pt`, of the Lean
 type `ty`, brings, as a predicate (`Core.PTy.cons`). -/
 def factPred? (ty : Expr) (pt : Core.PTy) (nat : Bool := false) : TermElabM (Option Expr) := do
@@ -2052,40 +2313,89 @@ def varPType (modName : Name) (name : Syntax) (ty? : Option Syntax) : TermElabM 
   if let (some ty, some (t, _)) := (ty?, t) then lintBoolType n ty t
   return t.getD (Lean.mkConst ``Bool, .plain .bool)
 
+/-- The declared type of the `k`th field or payload value of the variant
+`v` of a record, newtype or enumeration whose parts are `shape`'s, with the
+type arguments `args` for its type parameters, if it is generic, as the
+`fren` command's `partPTy` has it (`Core.PTy.subst`). -/
+def partPType (shape : Core.DataShape) (v k : Nat) (args : Array Core.Ty := #[]) : Core.PTy :=
+  let t := (shape.parts[v]?.bind (·[k]?)).getD default
+  if args.isEmpty then t else t.subst (args.map .plain)
+
 /-- Records the obligation of the value `x`, given at `ref` where the type
 `t` is declared, if it has one, for the pattern-type check
 (`Reqs/Check#pattern-types`): its guard implies that the value matches,
 marked with its type (`Fren.typeObligation`). -/
 def noteObligation (cx : ExprCtx) (place : Core.ValuePlace) (ref : Syntax) (t : Core.PTy) (x : Term) : TermElabM Unit := do
   unless cx.noteIndexes do return
-  let some o := Core.siteObligation place t.obligation | return
+  let some o := Core.siteObligation place (t.obligation (← getState).shapeOf) | return
   let goal ← `(Fren.typeObligation $(quote t.text) $(← consTerm o x))
   let goal ← cx.guards.foldrM (fun g acc => `($g → $acc)) goal
   modifyLocal fun l => { l with indexes := l.indexes.push (ref, goal) }
 
-/-- The Lean type of a field or payload, `ty`, checking that it is accepted
-(`lang::field_type`): `own` is the type being declared. -/
-def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool) (ownName : Name) :
-    CommandElabM (Expr × Core.PTy) := do
-  let (cores, inSet) := typeElems ty
-  let own1 (core : Syntax) := let segs := pathSegs core; segs.size == 1 && segs[0]!.getId == ownName
-  let isOwn := cores.any own1
-  if isOwn && inSet then throwErrorAt ty (Core.recursiveSetMsg (modName ++ ownName)).text
-  if let some decl := own then
+/-- The Lean type of a field or payload, `ty`, of the type `ownName`, with
+the type parameters `params`, being declared in the module `modName` as the
+Lean type `own`, and its type as declared, checking that it is accepted
+(`lang::field_type`, `lang::type_parameter_place`), in the order of the
+`fren` command's checks. -/
+def fieldType (modName : Name) (ty : Syntax) (own : Name) (place : FieldPlace) (ownName : Name)
+    (params : Array Name := #[]) : CommandElabM (Expr × Core.PTy) := do
+  let path := modName ++ ownName
+  let segs := typeSegs ty
+  let (whole, inSet) := Core.ownIn segs ownName.toString
+  let (isOwn, declared, nested) := Core.ownArgs segs ownName.toString (params.map toString)
+  match place with
+  | .payload =>
+    if inSet then throwErrorAt ty (Core.recursiveSetMsg path).text
+    -- A recursive payload is the enumeration with its own parameters.
+    let place := Core.recursivePlace declared nested
+    if (isOwn || nested) && !Core.typeParamPlaceAccepted place then
+      throwErrorAt ty (Core.typeParamPlaceMsg .anonymous place (Core.ownWritten path params) !params.isEmpty).text
     if isOwn then
-      unless Core.fieldTypeAccepted false true false payload do
-        throwErrorAt ty (Core.recursiveRecordMsg ownName).text
-      return (Lean.mkConst decl, .plain (.enum (modName ++ ownName)))
-  let (t, pt) ← liftTermElabM (elabPType modName ty)
-  lintRelTypes modName ty
-  let st ← getState
-  let e := ((elemTypes t).find? fun e => e.isConst && st.placeholders.contains e.constName).getD t
-  let abstract := e.isConst && st.placeholders.contains e.constName
-  unless Core.fieldTypeAccepted abstract false false payload do
-    let p := ((← getState).abstracts.foldl (init := none) fun acc _ a =>
-      acc <|> if a.placeholder == e.constName then some a.path else none).getD .anonymous
-    throwErrorAt ty (Core.abstractFieldMsg p payload inSet).text
+      return (mkAppN (Lean.mkConst own) ((Array.range params.size).map (.bvar ·)),
+        .plain (.enum path (params.toList.zipIdx.map fun (p, k) => .param k p)))
+  | .field =>
+    if isOwn || nested then throwErrorAt ty (Core.recursiveRecordMsg ownName).text
+    if inSet then throwErrorAt ty (Core.recursiveSetMsg path).text
+  | .newtype =>
+    if whole then throwErrorAt ty (Core.recursiveRecordMsg ownName).text
+    if inSet then throwErrorAt ty (Core.recursiveSetMsg path).text
+  let payload := place == .payload
+  let (t, pt) ← liftTermElabM (elabPType modName ty params)
+  lintRelTypes modName ty params
+  if let some (p, whole) ← abstractWithin? t then
+    unless Core.fieldTypeAccepted true false false payload do
+      throwErrorAt ty (Core.abstractFieldMsg p payload !whole).text
   return (t, pt)
+
+/-- The type parameters `params` of the enumeration or record being
+declared in the module `modName`, checked as the `fren` command checks
+them: distinct (`lang::distinct_names`), without `!`, and without the name
+of a built-in type or of an item in scope (`Reqs/Lang/Generics`). -/
+def elabTypeParams (modName : Name) (params : Array Syntax) : CommandElabM (Array Name) := do
+  for p in params do discard (segName p)
+  let ns := params.map (·.getId)
+  if let some k := (Core.repeatsAt ns)[0]? then throwErrorAt params[k]! (Core.dupTypeParamMsg ns[k]!).text
+  for p in params, n in ns do
+    liftMsg p (Core.checkNoBang n)
+    if [`Bool, `Int, `Nat, `String, `Set, `Seq, `Rel].contains n then
+      throwErrorAt p (Core.typeParamNameMsg n s!"the built-in type `{n}`").text
+    if let .ok r := (← getState).table.resolvePath modName #[n] #[] then
+      throwErrorAt p (Core.typeParamNameMsg n r.describe).text
+  return ns
+
+/-- The binders of the type parameters `params` of a generic type's
+declaration, `(T : Type)`, or implicit, `{T : Type}`, followed by an
+`Inhabited` instance of each, `[Inhabited T]`. -/
+def paramBinders (params : Array Name) (implicit : Bool) : CommandElabM (Array (TSyntax ``Lean.Parser.Term.bracketedBinder)) := do
+  if !implicit then
+    return ← params.mapM fun p => `(Lean.Parser.Term.bracketedBinderF| ($(mkIdent p) : Type))
+  let types ← params.mapM fun p => `(Lean.Parser.Term.bracketedBinderF| {$(mkIdent p) : Type})
+  let insts ← params.mapM fun p => `(Lean.Parser.Term.bracketedBinderF| [Inhabited $(mkIdent p)])
+  return types ++ insts
+
+/-- The Lean type `decl`, applied to the type parameters `params`. -/
+def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
+  if params.isEmpty then pure (mkCIdent decl) else `(($(mkCIdent decl) $(params.map fun p => (mkIdent p : Term))*))
 
 @[command_elab Lang.enumCmd] def elabEnum : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
@@ -2101,7 +2411,8 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   lintName .enumeration n nameStx
   let path := modName ++ n
   let decl ← generatedName path
-  let variantStxs := stx[5].getSepArgs
+  let params ← elabTypeParams modName (if stx[4].isNone then #[] else stx[4][0][1].getSepArgs)
+  let variantStxs := stx[6].getSepArgs
   -- Distinct names (`lang::distinct_names`), of names that are single
   -- segments, as the `fren` command parses them.
   for v in variantStxs do discard (segName v[0])
@@ -2117,11 +2428,11 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
     lintName .variant vn v[0]
     variants := variants.push vn
     let tys := if v[1].isNone then #[] else v[1][1].getSepArgs
-    let tps ← tys.mapM fun t => fieldType modName t (some decl) true n
+    let tps ← tys.mapM fun t => fieldType modName t decl .payload n params
     let ts := tps.map (·.1)
-    if ts.any (·.isConstOf decl) then nRecursive := nRecursive + 1
+    if ts.any (·.getAppFn.isConstOf decl) then nRecursive := nRecursive + 1
     let st ← getState
-    unbounded := unbounded || ts.any fun t => t.isConstOf decl || st.unbounded t
+    unbounded := unbounded || ts.any fun t => t.getAppFn.isConstOf decl || st.unbounded t
     payloads := payloads.push ts
     ptys := ptys.push (tps.zip tys |>.map fun ((_, pt), t) => (pt, t))
   unless Core.wellFounded variants.size nRecursive do throwErrorAt nameStx (Core.illFoundedMsg n).text
@@ -2146,32 +2457,42 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   let withPayload := variantStxs.filter (!·[1].isNone)
   unless Core.orderedDeclAccepted isOrdered withPayload.size none do
     throwErrorAt withPayload[0]![0] (Core.orderedPayloadMsg n withPayload[0]![0].getId).text
+  let own : Term ← if params.isEmpty then pure (mkIdent decl) else `(($(mkIdent decl) $(params.map fun p => (mkIdent p : Term))*))
   let ctors ← (variants.zip payloads).mapM fun (v, ts) => do
     let bs ← ts.mapIdxM fun k t => do
-      let ty := if t.isConstOf decl then mkIdent decl else typeSyntax t
+      let ty := if t.getAppFn.isConstOf decl then own else typeSyntax t params
       `(Lean.Parser.Term.bracketedBinderF| ($(mkIdent (Name.mkSimple s!"x{k}")) : $ty))
     `(Lean.Parser.Command.ctor| | $(mkIdent v):ident $bs:bracketedBinder*)
-  -- Declared by its name relative to the current namespace, `decl`, so that
-  -- Lean names the instances it derives in `decl`'s namespace, apart from
-  -- other items' and Lean's own.
-  elabCommand (← `(inductive $(mkIdentFrom nameStx (leanName .anonymous path)):ident where $ctors:ctor* deriving DecidableEq, Repr, Inhabited))
-  if payloads.all (·.isEmpty) then
+  -- A generic type has a parameter of type `Type` for each of its type
+  -- parameters (`Reqs/Generated#generic-types`). Declared by its name
+  -- relative to the current namespace, `decl`, so that Lean names the
+  -- instances it derives in `decl`'s namespace, apart from other items' and
+  -- Lean's own.
+  let binders ← paramBinders params false
+  elabCommand (← `(inductive $(mkIdentFrom nameStx (leanName .anonymous path)):ident $binders:bracketedBinder* where $ctors:ctor*
+    deriving DecidableEq, Repr, Inhabited))
+  if payloads.all (·.isEmpty) && params.isEmpty then
     let vals := variants.map fun v => mkCIdent (decl ++ v)
     -- Named after the full path: an anonymous instance is named after `n`
     -- alone, which enumerations in different modules can share.
     elabCommand (← `(instance $(mkIdent (`_root_ ++ decl ++ `instFinite)):ident : Fren.Finite $(mkCIdent decl) :=
       ⟨[$vals,*], by intro x; cases x <;> decide⟩))
-  -- A selector for each value of each payload, which a `match` reads.
+  -- A selector for each value of each payload, which a `match` reads; of a
+  -- generic type, with its parameters implicit, and an `Inhabited` instance
+  -- of each, for `default`.
+  let self ← selfType decl params
+  let implicits ← paramBinders params true
   for v in variants, ts in payloads do
     let ctor := decl ++ v
     let xs := (Array.range ts.size).map fun k => mkIdent (Name.mkSimple s!"x{k}")
     for t in ts, k in [0:ts.size] do
       let sel := mkIdent (`_root_ ++ selectorName ctor k)
       let x := xs[k]!
+      let ty := if t.getAppFn.isConstOf decl then self else typeSyntax t params
       let cmd ← if variants.size == 1 then
-          `(def $sel:ident (v : $(mkCIdent decl)) : $(typeSyntax t) := match v with | $(mkCIdent ctor) $xs* => $x)
+          `(def $sel:ident $implicits:bracketedBinder* (v : $self) : $ty := match v with | $(mkCIdent ctor) $xs* => $x)
         else
-          `(def $sel:ident (v : $(mkCIdent decl)) : $(typeSyntax t) := match v with | $(mkCIdent ctor) $xs* => $x | _ => default)
+          `(def $sel:ident $implicits:bracketedBinder* (v : $self) : $ty := match v with | $(mkCIdent ctor) $xs* => $x | _ => default)
       elabCommand cmd
   -- Each read of a recursive enumeration's payload brings the payload's
   -- constraint (`Core.readCons`), as an application does.
@@ -2182,10 +2503,10 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
     for v in variants, ts in payloads, vi in [0:variants.size] do
       for t in ts, k in [0:ts.size] do
         if let some c := Core.readCons shapes path vi k then
-          out := out.push (selectorName (decl ++ v) k, ← predOf t c)
+          out := out.push (selectorName (decl ++ v) k, ← genericPredOf params t c)
     return out
   record (.item { item := { kind := .enumItem, path, isPub, owner := modName }, ref := nameStx })
-  record (.enumInfo { path, decl, variants, payloads, unbounded, ordered := isOrdered, shape, readFacts })
+  record (.enumInfo { path, decl, variants, payloads, unbounded, ordered := isOrdered, shape, readFacts, params })
   unless isPub do recordItem .enumeration path nameStx
 
 @[command_elab Lang.structCmd] def elabStruct : CommandElab := recordingErrors fun stx => do
@@ -2202,9 +2523,12 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   lintName .record n nameStx
   let path := modName ++ n
   let decl ← generatedName path
+  let params ← elabTypeParams modName (if stx[4].isNone then #[] else stx[4][0][1].getSepArgs)
+  -- A generic record is not ordered, for now (`Core.orderedGenericAccepted`).
+  unless Core.orderedGenericAccepted isOrdered params.size do throwErrorAt nameStx (Core.orderedGenericMsg n).text
   let mut fields : Array (Name × Expr) := #[]
   let mut ptys : Array Core.PTy := #[]
-  let fieldStxs := stx[5].getSepArgs
+  let fieldStxs := stx[6].getSepArgs
   for f in fieldStxs do discard (segName f[0])
   if let some k := (Core.repeatsAt (fieldStxs.map (·[0].getId)))[0]? then
     throwErrorAt fieldStxs[k]![0] (Core.dupFieldMsg fieldStxs[k]![0].getId).text
@@ -2212,7 +2536,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
     let fn := f[0].getId
     liftMsg f[0] (Core.checkNoBang fn)
     lintName .field fn f[0]
-    let (t, pt) ← if f[1].isNone then pure (Lean.mkConst ``Bool, .plain .bool) else fieldType modName f[1][1] (some decl) false n
+    let (t, pt) ← if f[1].isNone then pure (Lean.mkConst ``Bool, .plain .bool) else fieldType modName f[1][1] decl .field n params
     ptys := ptys.push pt
     -- As for a variable (`lang::bool_naming`).
     liftMsg f[0] (Core.checkVarName fn (if f[1].isNone then none else some (t.isConstOf ``Bool)))
@@ -2220,7 +2544,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
     fields := fields.push (fn, t)
   -- `struct_field_names` (`lint::struct_field_names`, `lint::field_has_record_name`).
   if let some msg := Core.structFieldNamesMsg? n (fields.map (·.1)) then recordLint .structFieldNames nameStx msg
-  for f in stx[5].getSepArgs, (fn, _) in fields do
+  for f in fieldStxs, (fn, _) in fields do
     if let some msg := Core.fieldNameMsg? n fn then recordLint .structFieldNames f[0] msg
   -- `struct_excessive_bools` (`lint::struct_excessive_bools`).
   let nBools := (fields.filter (·.2.isConstOf ``Bool)).size
@@ -2234,12 +2558,13 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
       let f := fieldStxs[k]!
       throwErrorAt (if f[1].isNone then f[0] else f[1][1]) (Core.unorderedFieldMsg .record n fields[k]!.1 ptys[k]!.ty).text
   let unbounded := fields.any fun (_, t) => st.unbounded t
-  let bs ← fields.mapM fun (f, t) => `(Lean.Parser.Command.structExplicitBinder| ($(mkIdent f):ident : $(typeSyntax t)))
-  elabCommand (← `(structure $(mkIdentFrom nameStx (leanName .anonymous path)):ident where
-    $(mkIdent `«{}»):ident :: $bs:structExplicitBinder*
+  let bs ← fields.mapM fun (f, t) => `(Lean.Parser.Command.structExplicitBinder| ($(mkIdent f):ident : $(typeSyntax t params)))
+  let binders ← paramBinders params false
+  elabCommand (← `(structure $(mkIdentFrom nameStx (leanName .anonymous path)):ident $binders:bracketedBinder* where
+    $(mkIdent (if params.isEmpty then `«{}» else Name.mkSimple "mk!")):ident :: $bs:structExplicitBinder*
     deriving DecidableEq, Repr, Inhabited))
   record (.item { item := { kind := .recordItem, path, isPub, owner := modName }, ref := nameStx })
-  record (.recordInfo { path, decl, fields, unbounded, shape := { isRecord := true, parts := #[ptys] }, ordered := isOrdered })
+  record (.recordInfo { path, decl, fields, unbounded, shape := { isRecord := true, parts := #[ptys] }, params, ordered := isOrdered })
   unless isPub do recordItem .record path nameStx
 
 @[command_elab Lang.newtypeCmd] def elabNewtype : CommandElab := fun stx => do
@@ -2262,7 +2587,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   let tys := stx[5].getSepArgs
   let some ty := tys[0]? | throwErrorAt nameStx (Core.newtypeFieldsMsg path 0).text
   unless Core.newtypeAccepted tys.size true do throwErrorAt nameStx (Core.newtypeFieldsMsg path tys.size).text
-  let (under, pt) ← fieldType modName ty (some decl) false n
+  let (under, pt) ← fieldType modName ty decl .newtype n
   -- An ordered newtype's underlying type is ordered
   -- (`lang::ordered_declaration`).
   unless Core.orderedDeclAccepted isOrdered 0 (Core.PTy.firstUnordered? (← getState).orderedDecl [pt]) do
@@ -2297,7 +2622,7 @@ def pairTerms (toTerm : ExprCtx → Syntax → TermElabM Term) (cxa cxb : ExprCt
   let sibling (cx' : ExprCtx) (t : Term) : TermElabM (Option Core.Ty) := do
     if cx'.expected? == some .nat then return some .nat
     return ((← frenTypeOf? t).map (·.widen)).orElse fun _ => cx'.expected?
-  if !synthesizes a && synthesizes b then
+  if !(← synthesizes cxa a) && (← synthesizes cxb b) then
     let y ← toTerm cxb b
     return (← toTerm { cxa with expected? := ← sibling cxa y } a, y)
   let x ← toTerm cxa a
@@ -2306,7 +2631,8 @@ def pairTerms (toTerm : ExprCtx → Syntax → TermElabM Term) (cxa cxb : ExprCt
 open Lang in
 /-- Translates a record literal, where `go` translates its values, given
 the type each is expected to have. -/
-def recordTerm (go : Option Core.Ty → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
+def recordTerm (go : Option Core.Ty → Syntax → TermElabM Term) (cx : ExprCtx) (expected? : Option Core.Ty) (e : Syntax) :
+    TermElabM Term := withRef e do
   let r ← resolveWritten cx.modName (pathSegs e[0]) cx.shadowing cx.noteIndexes
   let .item { kind := .recordItem, path, .. } := r | throwErrorAt e[0] (Core.wrongKindMsg "a record" r).text
   if (← getState).newtypes.contains path then throwErrorAt e[0] (Core.constructionMsg path true).text
@@ -2317,6 +2643,20 @@ def recordTerm (go : Option Core.Ty → Syntax → TermElabM Term) (cx : ExprCtx
   | .error (some i, msg) => throwErrorAt given[i]![0] msg.text
   | .error (none, msg) => throwError msg.text
   if cx.noteIndexes then lintFieldOrder e path (info.fields.map (·.1)) given
+  -- A generic record's type arguments are inferred, as the `fren` command
+  -- infers them (`Reqs/Lang/Generics#type-arguments`).
+  if let some c ← construction? cx e then
+    let vals ← info.fields.mapM fun (f, _) => do
+      let some b := given.find? (·[0].getId == f) | throwError "internal error: no field `{f}`"
+      if cx.noteIndexes then lintRedundant b true
+      if b[1].isNone then return (← `(fren_expr| $(⟨b[0]⟩):ident)).raw else pure b[1][1]
+    let note (k : Nat) (t : Core.Ty) := s!"note: `{info.fields[k]!.1}` of `{Core.showPath path}` has type `{t.show}`"
+    let (args, targs) ← constructionTerms go cx expected? e c vals (Core.showPath path) note
+    -- Each field's obligation, of its type with the record's arguments.
+    for v in vals, t in args, k in [0:vals.size] do
+      noteObligation cx .field v (partPType info.shape 0 k targs) t
+    if cx.noteIndexes then lintStructInit (go none) (.record path targs.toList) e given
+    return ← ctorApp info.ctor (← targs.mapM leanTypeOf) args e[0]
   let args ← info.fields.zipIdx.mapM fun ((f, ty), k) => do
     let some b := given.find? (·[0].getId == f) | throwError "internal error: no field `{f}`"
     if cx.noteIndexes then lintRedundant b true
@@ -2324,9 +2664,9 @@ def recordTerm (go : Option Core.Ty → Syntax → TermElabM Term) (cx : ExprCtx
     let x? ← coreTy? ty
     let t ← if b[1].isNone then go x? (← `(fren_expr| $(⟨b[0]⟩):ident)) else go x? b[1][1]
     checkDeclared v t ty fun tn => s!"note: `{f}` of `{Core.showPath path}` has type `{tn}`"
-    noteObligation cx .field v ((info.shape.parts[0]?.bind (·[k]?)).getD default) t
+    noteObligation cx .field v (partPType info.shape 0 k) t
     return t
-  if cx.noteIndexes then lintStructInit (go none) info.decl e given
+  if cx.noteIndexes then lintStructInit (go none) (.record path []) e given
   `($(mkCIdentFrom e[0] (recordCtor info.decl)) $args*)
 
 open Lang in
@@ -2337,7 +2677,7 @@ def updateTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     withRef e <| withFreshMacroScope do
   let rv ← toTerm { cx with emptyOk := Core.Position.synthesized.checked false false } e[1]
   let ty ← typeOf rv
-  let some info := ty.constName?.bind (← getState).recordOfDecl?
+  let some info := (← getState).recordOf? ty
     | throwErrorAt e[1] (Core.updateBaseMsg (← typeName ty)).text
   let given := e[3].getSepArgs
   match Core.checkFieldUpdates info.path (info.fields.map (·.1)) (given.map (·[0].getId)) with
@@ -2349,24 +2689,30 @@ def updateTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- `r` bound once, so that nested updates grow linearly.
   let bind := info.fields.size > given.size && !rv.raw.isIdent
   let r ← if bind then `(r) else pure rv
-  let args ← info.fields.zipIdx.mapM fun ((f, ty), k) => do
+  -- With the record's arguments for its type parameters (`lang::instantiation`).
+  let targs := ty.getAppArgs
+  let cargs := match ← coreTy? ty with
+    | some (.record _ as) => as.toArray
+    | _ => #[]
+  let args ← (info.fieldsAt targs).zipIdx.mapM fun ((f, ty), k) => do
     let some b := given.find? (·[0].getId == f) | `($(mkCIdentFrom e[1] (info.decl ++ f)) $r)
     let v := if b[1].isNone then b[0] else b[1][1]
     let x? ← coreTy? ty
     let t ← if b[1].isNone then go x? (← `(fren_expr| $(⟨b[0]⟩):ident)) else go x? b[1][1]
     checkDeclared v t ty fun tn => s!"note: `{f}` of `{Core.showPath info.path}` has type `{tn}`"
-    noteObligation cx .field v ((info.shape.parts[0]?.bind (·[k]?)).getD default) t
+    noteObligation cx .field v (partPType info.shape 0 k cargs) t
     return t
-  let lit ← `($(mkCIdentFrom e (recordCtor info.decl)) $args*)
+  let lit ← ctorApp info.ctor targs args e
   if bind then `(let r := $rv; $lit) else pure lit
 
 /-- The type of a `match`'s arms so far, `armsTy?`, after the arm whose body
 `ref` is translated to `body` and checked against `shared?`
 (`lang::arm_type`). A body that does not synthesize its type has the one
 it is checked against, as in the `fren` command. -/
-def armType (armsTy? : Option Core.Ty) (ref : Syntax) (body : Term) (shared? : Option Core.Ty) :
+def armType (cx : ExprCtx) (armsTy? : Option Core.Ty) (ref : Syntax) (body : Term) (shared? : Option Core.Ty) :
     TermElabM (Option Core.Ty) := do
-  let t? := (← frenTypeOf? body).orElse fun _ => if synthesizes ref then none else shared?
+  let synth ← synthesizes cx ref
+  let t? := (← frenTypeOf? body).orElse fun _ => if synth then none else shared?
   let some t := t? | return armsTy?
   return some (← liftMsg ref (Core.checkArm armsTy? t))
 
@@ -2499,22 +2845,22 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let own := t?.toArray ++ g?.toArray
     taken := taken.push (Core.allOf? (fun a b => Unhygienic.run `($a ∧ $b)) own)
     let others := (arms.eraseIdx! bodies.size).map (·[3])
-    let emptyOk := Core.Position.shared.checked cx.emptyOk (anySynthesizes others)
+    let emptyOk := Core.Position.shared.checked cx.emptyOk (← anySynthesizes cx others)
     let acx := { gcx with guards := armGuards ++ g?.toArray, emptyOk }
     -- Each body is checked against the whole's type, or the arms' so far,
     -- as the `fren` command does: one that does not synthesize its own,
     -- before any has given one, waits for a later arm that does.
     let shared? := expected?.orElse fun _ => armsTy?.map (·.widen)
-    if shared?.isNone && !synthesizes arm[3] && arms.any (synthesizes ·[3]) then
+    if shared?.isNone && !(← synthesizes cx arm[3]) && (← arms.anyM (synthesizes cx ·[3])) then
       waiting := waiting.push (bodies.size, acx, arm[3])
       bodies := bodies.push (← `(sorry))
       continue
     let body ← toTerm { acx with expected? := shared? } arm[3]
-    armsTy? ← armType armsTy? arm[3] body shared?
+    armsTy? ← armType cx armsTy? arm[3] body shared?
     bodies := bodies.push body
   for (k, acx, b) in waiting do
     let body ← toTerm { acx with expected? := armsTy?.map (·.widen) } b
-    if armsTy?.isSome then armsTy? ← armType armsTy? b body (armsTy?.map (·.widen))
+    if armsTy?.isSome then armsTy? ← armType cx armsTy? b body (armsTy?.map (·.widen))
     bodies := bodies.set! k body
   noteMatch cx e (arms.map (·[0])) taken guarded unguardedExhaustive (if isTable then some pairs else none) defined
   let widened ← widenMixed bodies
@@ -2913,6 +3259,20 @@ def lintPattern (cx : ExprCtx) (parent? : Option Syntax) (e recv : Syntax) (args
   let fixed := (Core.trivialPatternText (bareText recv) (srcText recv) fix s).inSlot (parent?.bind (operandSlot · e))
   recordLint .trivialPattern e (Core.trivialPatternMsg fix fixed)
 
+/-- What the first of the operands `xs` of an ordering is expected to be,
+as the `fren` command's `orderingExpected?`: if it does not synthesize its
+type, the type, widened, of the first that does, translated without
+effect; otherwise nothing, as each later operand is expected to be of the
+first's type (`lang::checked`). -/
+def orderingExpected? (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (xs : Array Syntax) :
+    TermElabM (Option Core.Ty) := do
+  if ← synthesizes cx xs[0]! then return none
+  let some m ← xs.findM? (synthesizes cx) | return none
+  let s ← saveState
+  let t? ← frenTypeOf? (← toTerm { cx with noteIndexes := false } m)
+  s.restore
+  return t?.map (·.widen)
+
 open Lang in
 /-- `a = b`, `a != b` and the orderings; on strings, checks the decidable
 core, and writes the orderings with `Fren.Str.lt` and `Fren.Str.le`, and
@@ -2926,8 +3286,8 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
   if op == "=" || op == "!=" then
     -- `++` is in the core against a constant.
-    let (x, y) ← pairTerms toTerm { cx with concatOk := cb, emptyOk := Core.Position.compared.checked false (synthesizes b) }
-      { cx with concatOk := ca, emptyOk := Core.Position.compared.checked false (synthesizes a) } a b
+    let (x, y) ← pairTerms toTerm { cx with concatOk := cb, emptyOk := Core.Position.compared.checked false (← synthesizes cx b) }
+      { cx with concatOk := ca, emptyOk := Core.Position.compared.checked false (← synthesizes cx a) } a b
     -- Both sides have one type, after widening, as the `fren` command checks
     -- (`lang::operator_type`).
     if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then
@@ -2953,29 +3313,31 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   -- gives: `Int`s, `Nat`s, `String`s, or the values of an ordered
   -- enumeration, record or newtype, as the `fren` command checks
   -- (`lang::operator_type`, `lang::ordered_type`, `lang::newtype_operator`).
-  let x ← toTerm cx a
+  -- The right is expected to have the left's type, and the left the
+  -- right's, if only the right synthesizes one (`lang::checked`).
+  let x ← toTerm { cx with expected? := ← orderingExpected? toTerm cx #[a, b] } a
   let tx? ← frenTypeOf? x
   let st ← getState
-  let info? := (← typeOf x).constName?.bind st.enumOfDecl?
+  let info? := st.enumOf? (← typeOf x)
   let operandTy : Core.Ty ← match tx? with
     | some tx => liftMsg a (Core.orderingType op tx st.orderedDecl)
     | none => pure .int
-  let y ← toTerm cx b
+  let y ← toTerm { cx with expected? := some operandTy } b
   checkNewtypeOp op tx? (← frenTypeOf? y)
   checkTermType b y operandTy (Core.opNote op operandTy)
   -- For the lints of integers, at the end of the expression: what it compares.
   if cx.noteIndexes && !(tx? matches some (.newtype ..)) then
-    let compared : Core.Ordered := if operandTy matches .enum _ && info?.any (·.ordered) then .enumeration
+    let compared : Core.Ordered := if operandTy matches .enum .. && info?.any (·.ordered) then .enumeration
       else if operandTy == .int || operandTy == .nat then .number else .other
     modifyLocal fun l => { l with ordereds := l.ordereds.push ((e.getPos?, e.getTailPos?), compared) }
   -- An ordered record's values compare by their fields, and a newtype's as
   -- their fields do (`Reqs/Lang/Items#ordered-declarations`).
-  if operandTy matches .record _ | .newtype .. then
+  if operandTy matches .record .. | .newtype .. then
     let some plan := st.orderPlan? operandTy | throwError "internal error: `{operandTy.show}` is not ordered"
     if plan.strings then checkCore cx e .stringCompare true (ca || cb) #[a, b] (ca && cb)
     return ← orderingTerm plan op x y
   -- An ordered enumeration's values compare by their positions.
-  if let (.enum _, some info) := (operandTy, info?) then
+  if let (.enum .., some info) := (operandTy, info?) then
     let (i, j) := (← ordinalTerm info x, ← ordinalTerm info y)
     return ← match op with
       | "<" => `($i < $j) | "<=" => `($i ≤ $j) | ">" => `($i > $j) | _ => `($i ≥ $j)
@@ -2996,13 +3358,14 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     TermElabM Term := withRef e do
   let names := ops.map (·.getAtomVal.trimAscii.toString)
   if let .error (k, msg) := Core.checkChain names then throwErrorAt ops[k]! msg.text
-  let mut x ← toTerm cx xs[0]!
+  let mut x ← toTerm { cx with expected? := ← orderingExpected? toTerm cx xs } xs[0]!
   -- A value of an ordered type, a `Nat` widened, and every operand the
-  -- first's type, as the `fren` command checks (`lang::operator_type`,
-  -- `lang::ordered_type`, `lang::newtype_operator`).
+  -- first's type, which each is expected to have (`lang::checked`), as the
+  -- `fren` command checks (`lang::operator_type`, `lang::ordered_type`,
+  -- `lang::newtype_operator`).
   let tx0? ← frenTypeOf? x
   let st ← getState
-  let info? := (← typeOf x).constName?.bind st.enumOfDecl?
+  let info? := st.enumOf? (← typeOf x)
   let t0? ← match tx0? with
     | some t => some <$> liftMsg xs[0]! (Core.orderingType names[0]! t st.orderedDecl)
     | none => pure none
@@ -3010,13 +3373,13 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- An ordered enumeration's values compare by their positions, and an
   -- ordered record's or newtype's by their fields.
   let plan? := match t0? with
-    | some t@(.record _) | some t@(.newtype ..) => st.orderPlan? t
+    | some t@(.record ..) | some t@(.newtype ..) => st.orderPlan? t
     | _ => none
-  let ordinal := if t0? matches some (.enum _) then info? else none
+  let ordinal := if t0? matches some (.enum ..) then info? else none
   let pos (t : Term) : TermElabM Term := match ordinal with | some info => ordinalTerm info t | none => pure t
   let mut links := #[]
   for op in names, a in xs, b in xs.extract 1, opStx in ops do
-    let y ← toTerm { cx with guards := cx.guards ++ links } b
+    let y ← toTerm { cx with guards := cx.guards ++ links, expected? := t0? } b
     -- A node's position is its first token's, and its tail its last's, so
     -- this one spans the comparison, from `a` to `b`, for its messages.
     let link := mkNullNode #[a, opStx, b]
@@ -3052,19 +3415,19 @@ def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- Each operand is checked against the whole's type, or the other's
   -- (`lang::checked`), as in the `fren` command: `[] ++ q` takes its type
   -- from `q`, translated first without recording anything.
-  let expected? ← if expected?.isNone && !synthesizes a && synthesizes b then
+  let expected? ← if expected?.isNone && !(← synthesizes cx a) && (← synthesizes cx b) then
       let s ← saveState
       let t? ← frenTypeOf? (← toTerm { cx with noteIndexes := false } b)
       s.restore
       pure t?
     else pure expected?
-  let x ← toTerm { cx with concatOk := true, emptyOk := Core.Position.shared.checked cx.emptyOk (synthesizes b), expected? } a
-  unless (← getState).newtypes.isEmpty || !synthesizes a do
+  let x ← toTerm { cx with concatOk := true, emptyOk := Core.Position.shared.checked cx.emptyOk (← synthesizes cx b), expected? } a
+  unless (← getState).newtypes.isEmpty || !(← synthesizes cx a) do
     let tx? ← frenTypeOf? x
     checkNewtypeOp "++" tx? tx?
   -- Sequences: outside the core, unless constant.
   if (← typeOf x).isAppOfArity ``Fren.Seq 1 then
-    let y ← toTerm { cx with emptyOk := Core.Position.shared.checked cx.emptyOk (synthesizes a), expected? := ← frenTypeOf? x } b
+    let y ← toTerm { cx with emptyOk := Core.Position.shared.checked cx.emptyOk (← synthesizes cx a), expected? := ← frenTypeOf? x } b
     if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then liftMsg b (Core.checkConcatOperands tx ty)
     checkCore cx e .seqWord true true #[a, b] (← isConstant cx e)
     return ← `(($x ++ $y : $(typeSyntax (← typeOf x))))
@@ -3107,7 +3470,7 @@ def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- `min` and `max` of an ordered record or newtype with a `String` within
   -- compare strings (`Reqs/Lang/Decidability#orderings`).
   if m == "min" || m == "max" then
-    let ct? := (← frenTypeOf? r).filter (· matches .record _ | .newtype ..)
+    let ct? := (← frenTypeOf? r).filter (· matches .record .. | .newtype ..)
     if let some ct := ct? then
       if (((← getState).orderPlan? ct).map (·.strings)).getD false then
         let (ca, cb) := (← isConstant cx recvStx, ← args.allM (isConstant cx ·))
@@ -3139,11 +3502,11 @@ open Lang in
 elements of a sequence literal), written `elems`, have the first's type, if
 a newtype is one of them, with the `fren` command's message: Lean's reports
 other mismatches. -/
-def checkNewtypeMembers (seq : Bool) (elems : Array Syntax) (xs : Array Term) : TermElabM Unit := do
+def checkNewtypeMembers (cx : ExprCtx) (seq : Bool) (elems : Array Syntax) (xs : Array Term) : TermElabM Unit := do
   let s ← getState
   if s.newtypes.isEmpty then return
   let typed ← (elems.zip xs).filterMapM fun (e, x) => do
-    if !synthesizes e || e.isOfKind ``Lang.pairExpr then return none
+    if !(← synthesizes cx e) || e.isOfKind ``Lang.pairExpr then return none
     return some (e, ← typeOf x)
   let some (_, t0) := typed[0]? | return
   unless typed.any fun (_, t) => (s.newtypeOf? t).isSome do return
@@ -3171,12 +3534,13 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     return ← `((∅ : Fren.FinSet _))
   checkCore cx e .setAlgebra true true elems
   if cx.noteIndexes then lintDuplicates e elems
+  let synth ← elems.mapM (synthesizes cx)
   -- A member, given the type of the literal expected of it, as the `fren`
   -- command's `member`: a pair's members expect a relation's types. A member
   -- is never a `Nat` (`lang::nat_place`).
   let member (k : Nat) (lit? : Option Core.Ty) (noteIndexes := cx.noteIndexes) : TermElabM Term := do
     let x := elems[k]!
-    let mcx := { cx with noteIndexes, emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) }
+    let mcx := { cx with noteIndexes, emptyOk := Core.Position.shared.checked emptyOk ((synth.eraseIdx! k).any id) }
     if x.isOfKind ``Lang.pairExpr then
       let (ea?, eb?) := match lit? with | some (.rel a b) => (some a, some b) | _ => (none, none)
       let (a, b) := (← widenTerm (← toTerm { mcx with expected? := ea? } x[1]), ← widenTerm (← toTerm { mcx with expected? := eb? } x[3]))
@@ -3192,8 +3556,8 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     return (← frenTypeOf? x).map (.set ·.widen)
   -- Each member is checked against the literal's type, or another's
   -- (`lang::checked`): the first that synthesizes one, if the first does not.
-  let lit? ← if expected?.isNone && !synthesizes elems[0]! then
-      match elems.findIdx? synthesizes with
+  let lit? ← if expected?.isNone && !synth[0]! then
+      match synth.findIdx? id with
       | some k => do
         let s ← saveState
         let t? ← litTy k (← member k none (noteIndexes := false))
@@ -3202,7 +3566,7 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
       | none => pure none
     else pure expected?
   let x0 ← member 0 lit?
-  let t0? := (← litTy 0 x0).orElse fun _ => if synthesizes elems[0]! then none else lit?
+  let t0? := (← litTy 0 x0).orElse fun _ => if synth[0]! then none else lit?
   let mut xs := #[x0]
   for k in [1:elems.size] do
     let x ← member k t0?
@@ -3211,7 +3575,7 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
         let (mt, mt0) := match t, t0 with | .set u, .set u0 => (u.show, u0.show) | _, _ => (t.show, t0.show)
         throwErrorAt elems[k]! (Core.membersMsg false mt0 mt t0.show).text
     xs := xs.push x
-  checkNewtypeMembers false elems xs
+  checkNewtypeMembers cx false elems xs
   `(($(← finSetLit xs) : Fren.FinSet _))
 
 /-- `x in s`, `s subset t`, `s union t`, `s inter t` and `s minus t`. -/
@@ -3234,7 +3598,7 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
         let (some p, some q) := (← coreTy? tx.appFn!.appArg!, ← coreTy? tx.appArg!) | pure none
         pure (some (Core.Ty.rel p.widen q.widen))
       else pure ((← coreTy? tx).map fun t => if seqShaped b then .seq t.widen else .set t.widen)
-    let s ← toTerm { cx with emptyOk := Core.Position.compared.checked false (synthesizes a), expected? := elem? } b
+    let s ← toTerm { cx with emptyOk := Core.Position.compared.checked false (← synthesizes cx a), expected? := elem? } b
     let (tx, ts) := (← typeOf x, ← typeOf s)
     -- `ts` is taken apart only once it is known to be a `Seq`: a `(← ...)`
     -- after `&&` would run, and panic, for any other type.
@@ -3254,8 +3618,8 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     if e.isOfKind ``Lang.joinExpr then .synthesized
     else if e.isOfKind ``Lang.subsetExpr then .compared
     else .shared
-  let cxa := { cx with emptyOk := position.checked cx.emptyOk (synthesizes b) }
-  let cxb := { cx with emptyOk := position.checked cx.emptyOk (synthesizes a) }
+  let cxa := { cx with emptyOk := position.checked cx.emptyOk (← synthesizes cx b) }
+  let cxb := { cx with emptyOk := position.checked cx.emptyOk (← synthesizes cx a) }
   let (x, y) ← if e.isOfKind ``Lang.joinExpr then pure (← toTerm cxa a, ← toTerm cxb b)
     else
       -- The whole's expected type is not the operands' for `subset`.
@@ -3412,7 +3776,7 @@ def tableTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       own := #[c]
     -- Each value is checked against the whole's type, or another's (`lang::checked`).
     let others := (rows.eraseIdx! k).map (·[3])
-    let emptyOk := Core.Position.shared.checked cx.emptyOk (anySynthesizes others)
+    let emptyOk := Core.Position.shared.checked cx.emptyOk (← anySynthesizes cx others)
     values := values.push (← toTerm { cx with guards := before ++ own, emptyOk } r[3])
   -- Each value has the type of those before it (`Core.checkRowType`).
   let mut t0? : Option Core.Ty := none
@@ -3537,14 +3901,15 @@ def seqLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     unless emptyOk do throwErrorAt e Core.emptySeqTypeMsg.text
     if expected?.isSome then discard (liftMsg e (Core.checkEmptyLiteral true expected?))
     return ← `((∅ : Fren.Seq _))
-  let ecx (k : Nat) := { cx with emptyOk := Core.Position.shared.checked emptyOk (anySynthesizes (elems.eraseIdx! k)) }
+  let synth ← elems.mapM (synthesizes cx)
+  let ecx (k : Nat) := { cx with emptyOk := Core.Position.shared.checked emptyOk ((synth.eraseIdx! k).any id) }
   -- Each element is checked against the literal's element type, or another's
   -- (`lang::checked`): the first that synthesizes one, if the first does not.
   -- An element is never a `Nat` (`lang::nat_place`).
   let elem? ← match expected?.bind fun | .seq t => some t | _ => none with
     | some t => pure (some t)
-    | none => if synthesizes elems[0]! then pure none else
-        match elems.findIdx? synthesizes with
+    | none => if synth[0]! then pure none else
+        match synth.findIdx? id with
         | some k => do
           let s ← saveState
           let t? ← frenTypeOf? (← toTerm { ecx k with noteIndexes := false } elems[k]!)
@@ -3552,7 +3917,7 @@ def seqLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
           pure t?
         | none => pure none
   let x0 ← toTerm { ecx 0 with expected? := elem? } elems[0]!
-  let t0? := ((← frenTypeOf? x0).orElse fun _ => if synthesizes elems[0]! then none else elem?).map (·.widen)
+  let t0? := ((← frenTypeOf? x0).orElse fun _ => if synth[0]! then none else elem?).map (·.widen)
   let mut xs := #[← boolTerm (← widenTerm x0)]
   for k in [1:elems.size] do
     let x ← toTerm { ecx k with expected? := t0? } elems[k]!
@@ -3561,7 +3926,7 @@ def seqLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     xs := xs.push (← boolTerm (← widenTerm x))
   -- After its elements, as in the `fren` command.
   checkCore cx e .seqArray true true elems
-  checkNewtypeMembers true elems xs
+  checkNewtypeMembers cx true elems xs
   let mut t ← `(Fren.Seq.unit $(xs.back!))
   for x in xs.pop.reverse do t ← `(Fren.Seq.unit $x ++ $t)
   return t
@@ -3686,7 +4051,7 @@ open Lang in
 fields read from it, or a variant. `toTerm` translates its parts, and
 `parent?` is the expression around it. -/
 def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (parent? : Option Syntax) (e : Syntax)
-    (p : TSyntax ``fren_path) : TermElabM Term := do
+    (p : TSyntax ``fren_path) (expected? : Option Core.Ty := none) : TermElabM Term := do
   let segs := pathSegs p
   if h : segs.size = 1 then
     lintChain toTerm cx parent? e
@@ -3749,6 +4114,12 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
       if info.ordered then
         let f := ((e.getPos?, e.getTailPos?), Core.NodeFact.ordinal en.path.toString idx info.variants.size)
         modifyLocal fun l => { l with facts := l.facts.push f }
+    -- Of a generic enumeration, with its type arguments, which are inferred
+    -- from what is expected (`Reqs/Lang/Generics#type-arguments`).
+    if let some c ← construction? cx e then
+      let (_, targs) ← constructionTerms (fun _ v => toTerm cx v) cx expected? e c #[]
+        (Core.showPath (en.path ++ en.variants[idx]!)) fun _ _ => ""
+      return ← ctorApp (info.decl ++ en.variants[idx]!) (← targs.mapM leanTypeOf) #[] e
     return mkCIdentFrom e (info.decl ++ en.variants[idx]!)
   | .item { kind := .constItem, path, .. } =>
     let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
@@ -3787,7 +4158,8 @@ open Lang in
 /-- `p(args)`: a method, a variant with a payload, or a function applied.
 `toTerm` translates its parts, and `parent?` is the expression around it. -/
 def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (parent? : Option Syntax) (e : Syntax)
-    (p : TSyntax ``fren_path) (args : Syntax.TSepArray `fren_expr ",") : TermElabM Term := do
+    (p : TSyntax ``fren_path) (args : Syntax.TSepArray `fren_expr ",") (expected? : Option Core.Ty := none) :
+    TermElabM Term := do
   if let some (recv, m) := methodApp? cx e then
     let recv ← pathExpr p recv
     if m.toString == "matches?" then lintPattern cx parent? e recv args.getElems
@@ -3824,12 +4196,13 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     let a := args.getElems[0]!
     let t ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := n.under.isConstOf ``Nat } a
     -- Its value is checked as the `fren` command checks it (`Core.checkType`).
-    if let (true, some u) := (synthesizes a, ← coreTy? n.under) then
+    if let (true, some u) := (← synthesizes cx a, ← coreTy? n.under) then
       if let some found ← frenTypeOf? t then
         liftMsg a (Core.checkType u found (some s!"note: the value of `{Core.showPath path}` has type `{u.show}`"))
     if cx.noteIndexes then
-      modifyLocal fun l => { l with facts := l.facts.push ((e.getPos?, e.getTailPos?), .wraps path.toString (synthesizes a)) }
-    noteObligation cx .construction a ((n.shape.parts[0]?.bind (·[0]?)).getD default) t
+      let synth ← synthesizes cx a
+      modifyLocal fun l => { l with facts := l.facts.push ((e.getPos?, e.getTailPos?), .wraps path.toString synth) }
+    noteObligation cx .construction a (partPType n.shape 0 0) t
     return ← `($(mkCIdentFrom p n.ctor) $t)
   if let .variant en idx := r then
     -- A variant with a payload, built from its values.
@@ -3838,11 +4211,21 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     let n := (info.payloads[idx]?.map (·.size)).getD 0
     if let some msg := Core.variantMentionMsg? v n true then throwError msg.text
     unless args.getElems.size == n do throwError (Core.arityMsg v n args.getElems.size "value").text
+    let note (k : Nat) (ty : String) := s!"note: value {k + 1} of the payload of `{Core.showPath v}` has type `{ty}`"
+    -- Of a generic enumeration, with its type arguments, which are inferred
+    -- (`Reqs/Lang/Generics#type-arguments`).
+    if let some c ← construction? cx e then
+      let go (x? : Option Core.Ty) := toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := false, expected? := x? }
+      let (ts, targs) ← constructionTerms go cx expected? e c args.getElems (Core.showPath v) fun k t => note k t.show
+      -- Each value's obligation, of its type with the enumeration's arguments.
+      for a in args.getElems, t in ts, k in [0:ts.size] do
+        noteObligation cx .payload a (partPType info.shape idx k targs) t
+      return ← ctorApp (info.decl ++ en.variants[idx]!) (← targs.mapM leanTypeOf) ts p
     let args ← args.getElems.zipIdx.mapM fun (a, k) => do
       let t ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := info.payloads[idx]![k]!.isConstOf ``Nat,
                                 expected? := ← coreTy? info.payloads[idx]![k]! } a
-      checkDeclared a t info.payloads[idx]![k]! fun ty => s!"note: value {k + 1} of the payload of `{Core.showPath v}` has type `{ty}`"
-      noteObligation cx .payload a ((info.shape.parts[idx]?.bind (·[k]?)).getD default) t
+      checkDeclared a t info.payloads[idx]![k]! (note k)
+      noteObligation cx .payload a (partPType info.shape idx k) t
       return t
     return ← `($(mkCIdentFrom p (info.decl ++ en.variants[idx]!)) $args*)
   let .item { kind := .fnItem, path, .. } := r | throwErrorAt p (Core.notAFunctionMsg r).text
@@ -3911,18 +4294,12 @@ def isForall (e : Syntax) : Bool :=
 (`lang::quantified_type`), counted without listing them. An unbounded
 enumeration or record is recursive or has a part that a quantifier does
 not range over, so it is not looked into, and the recursion ends. -/
-partial def valueCount? (ty : Expr) : TermElabM (Option Nat) := do
-  if ty.isConstOf ``Bool then return some 2
+def valueCount? (ty : Expr) : TermElabM (Option Nat) := do
+  -- As the `fren` command counts them, by an instance's arguments too
+  -- (`lang::instance_values`).
   let s ← getState
-  let some d := ty.constName? | return none
-  let (kind, unbounded, ctors) : Core.QuantifiedKind × Bool × Array (Array Expr) :=
-    if let some e := s.enumOfDecl? d then (.enum, e.unbounded, e.variants.mapIdx fun i _ => e.payloads[i]?.getD #[])
-    else if let some r := s.recordOfDecl? d then (.record, r.unbounded, #[r.fields.map (·.2)])
-    else (.other, false, #[])
-  if unbounded then return none
-  let counts ← ctors.mapM (·.mapM valueCount?)
-  unless Core.quantifiedTypeAccepted kind false (counts.all (·.all Option.isSome)) do return none
-  return some (counts.foldl (fun n cs => n + cs.foldl (fun m c => m * c.getD 0) 1) 0)
+  let some t := coreTyOf s (← instantiateMVars ty) | return none
+  return t.valueCount (dataSig s)
 
 /-- The Lean type of a quantifier's binder's type `ty`, which must not be a
 component. -/
@@ -3939,10 +4316,12 @@ partial def valueTerm (ty : Expr) (v : Core.PVal) : TermElabM Term := do
   | .bool b => if b then `(true) else `(false)
   | .int i => if ty.isConstOf ``Nat then `(($(Syntax.mkNumLit (toString i.toNat)) : Nat)) else intTerm i
   | .ctor idx args =>
-    let some d := ty.constName? | `(sorry)
+    let some d := ty.getAppFn.constName? | `(sorry)
+    -- With an instance's arguments for its type parameters.
+    let targs := ty.getAppArgs
     let (c, ts) :=
-      if let some e := s.enumOfDecl? d then (e.decl ++ e.variants[idx]!, e.payloads[idx]?.getD #[])
-      else if let some r := s.recordOfDecl? d then (recordCtor r.decl, r.fields.map (·.2))
+      if let some e := s.enumOfDecl? d then (e.decl ++ e.variants[idx]!, (e.payloadsAt targs)[idx]?.getD #[])
+      else if let some r := s.recordOfDecl? d then (r.ctor, (r.fieldsAt targs).map (·.2))
       else if let some n := s.newtypeOfDecl? d then (n.ctor, #[n.under])
       else (.anonymous, #[])
     let as ← (args.zip ts).mapM fun (w, t) => valueTerm t w
@@ -4128,8 +4507,8 @@ def iteTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
   checkTermType c' c .bool (some "note: the condition of `if` is a `Bool`")
   let gx ← Core.GuardedOperand.thenBranch.guard (pure c) `(¬$c)
   let gy ← Core.GuardedOperand.elseBranch.guard (pure c) `(¬$c)
-  let cxa := { cx with emptyOk := Core.Position.shared.checked emptyOk (synthesizes b), natOk, guards := cx.guards.push gx, inElse := false, expected? }
-  let cxb := { cx with emptyOk := Core.Position.shared.checked emptyOk (synthesizes a), natOk, guards := cx.guards.push gy, inElse := true, expected? }
+  let cxa := { cx with emptyOk := Core.Position.shared.checked emptyOk (← synthesizes cx b), natOk, guards := cx.guards.push gx, inElse := false, expected? }
+  let cxb := { cx with emptyOk := Core.Position.shared.checked emptyOk (← synthesizes cx a), natOk, guards := cx.guards.push gy, inElse := true, expected? }
   let (x, y) ← pairTerms toTerm cxa cxb a b
   if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then liftMsg e (Core.checkBranches tx ty)
   let #[x, y] ← widenMixed #[x, y] | unreachable!
@@ -4204,7 +4583,7 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
   else if e.isOfKind ``Lang.seqExpr then seqLitTerm toTerm { cx with expected? } emptyOk e
   else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
   else if e.isOfKind ``Lang.recordExpr then do
-    let t ← recordTerm (fun x? => toTerm { cx with emptyOk := Core.Position.declared.checked false false, expected? := x?, natOk := x? == some .nat }) cx e
+    let t ← recordTerm (fun x? => toTerm { cx with emptyOk := Core.Position.declared.checked false false, expected? := x?, natOk := x? == some .nat }) cx expected? e
     if let .item { kind := .recordItem, path, .. } ← resolvePath cx.modName (pathSegs e[0]) cx.shadowing then
       lintManualUpdate toTerm cx e path
     return t
@@ -4279,8 +4658,8 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $n:num) => if natOk then `(($n : Nat)) else `(($n : Int))
   | `(fren_expr| true) => `(true)
   | `(fren_expr| false) => `(false)
-  | `(fren_expr| $p:fren_path) => pathTerm toTerm cx parent? e p
-  | `(fren_expr| $p:fren_path($args,*)) => appTerm toTerm { cx with natOk } parent? e p args
+  | `(fren_expr| $p:fren_path) => pathTerm toTerm cx parent? e p expected?
+  | `(fren_expr| $p:fren_path($args,*)) => appTerm toTerm { cx with natOk } parent? e p args expected?
   | _ =>
     if e.isOfKind ``Lang.letExpr then letTerm toTerm { cx with natOk } emptyOk concatOk e
     else otherTerm toTerm { cx with expected? } parent? emptyOk natOk e
@@ -4671,7 +5050,7 @@ with its type, as written, and closed over `fvs`
 def typedObligations (c : CompInfo) (slice fvs : Array Expr) : TermElabM (Array (Name × String × Expr)) :=
   (c.vars.zip slice).filterMapM fun (v, x) => do
     unless v.role == .input do return none
-    let some o := v.ptype.obligation | return none
+    let some o := v.ptype.obligation (← getState).shapeOf | return none
     let p ← predOf v.type o
     return some (Name.num v.name 0, v.ptype.text, ← mkLambdaFVars fvs (p.beta #[x]))
 
@@ -5683,7 +6062,7 @@ and the solver is asked nothing. -/
       -- are (`Reqs/Lang/Refinement#the-interface`): an obligation of each.
       let indexes := indexes ++ (← (a.vars.zip argsA).filterMapM fun (v, x) => do
         unless v.name.isAtomic && v.role == .output && v.defn?.isNone do return none
-        let some o := v.ptype.obligation | return none
+        let some o := v.ptype.obligation (← getState).shapeOf | return none
         let p ← predOf v.type o
         let goal := mkApp2 (mkConst ``Fren.typeObligation) (mkStrLit v.ptype.text) (p.beta #[x])
         return some (v.name, Core.IndexPlace.prop, nameStx, none, ← lam goal))

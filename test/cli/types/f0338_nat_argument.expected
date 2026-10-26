@@ -1,0 +1,13 @@
+error[F0338]: `Nat` cannot be a type argument
+ --> test/cli/types/f0338_nat_argument.fren:4:23
+  |
+4 | comp c { in x: Option(Nat) }
+  |                       ^^^ a `Nat`
+  |
+  = note: a type argument is never `Nat`, so that an instance's type arguments are those that a construction's values give, widened
+  = help: use `Int`, and say where it is used that it is at least 0
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0338`.
+exit=2

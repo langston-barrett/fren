@@ -1,0 +1,5 @@
+-- A variant whose payload does not synthesize its type, where no type is
+-- expected of it: the scrutinee of `is` synthesizes its type.
+pub enum Option(T) { None, Some(T) }
+
+comp c { pub out ok? ensure r: ok? iff Option::Some({}) is Option::Some(_) }

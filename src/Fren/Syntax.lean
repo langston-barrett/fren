@@ -92,6 +92,9 @@ syntax (name := setType) &"Set" noWs "(" fren_type ")" : fren_type
 syntax (name := seqType) &"Seq" noWs "(" fren_type ")" : fren_type
 /-- `Rel(A, B)`. -/
 syntax (name := relType) &"Rel" noWs "(" fren_type ", " fren_type ")" : fren_type
+/-- `G(A, B)`, an instance of a generic type (`Reqs/Lang/Generics`). Below
+`Set(T)`, `Seq(T)` and `Rel(A, B)`, which it would also read. -/
+syntax (name := instanceType) (priority := low) fren_path noWs "(" sepBy1(fren_type, ", ") ")" : fren_type
 
 open Lean Parser in
 /-- The expression of a definition of a `let`: below `when`, which would
@@ -372,16 +375,23 @@ scoped syntax (name := useGroupCmd) "use " fren_path "::{" sepBy1(fren_path, ", 
 /-- `V` or `V(T, U)`, a variant with a payload. -/
 syntax fren_variant := frenIdent (noWs "(" sepBy1(fren_type, ", ") ")")?
 
+/-- `(A, B)`, the type parameters of an enumeration or record
+(`Reqs/Lang/Generics`). -/
+syntax fren_type_params := "(" sepBy1(frenIdent, ", ") ")"
+
 /-- `[pub] [ordered] enum E { A, B }`: `ordered` orders the variants as they
-are declared (`Reqs/Lang/Items#enumerations`). -/
-scoped syntax (name := enumCmd) ("pub ")? ("ordered ")? "enum " frenIdent " { " sepBy1(fren_variant, ", ", ", ", allowTrailingSep) " }" : command
+are declared (`Reqs/Lang/Items#enumerations`); with type parameters,
+`enum E(T) { ... }`. -/
+scoped syntax (name := enumCmd) ("pub ")? ("ordered ")? "enum " frenIdent (noWs fren_type_params)? " { " sepBy1(fren_variant, ", ", ", ", allowTrailingSep) " }" : command
 
 /-- `x: T`, or `x?` for a `Bool`. -/
 syntax fren_field := frenIdent (" : " fren_type)?
 
 /-- `[pub] [ordered] struct R { x: T, ... }`, a record; `ordered` orders its
-values by their fields (`Reqs/Lang/Items#ordered-declarations`). -/
-scoped syntax (name := structCmd) ("pub ")? ("ordered ")? "struct " frenIdent " { " sepBy1(fren_field, ", ", ", ", allowTrailingSep) " }" : command
+values by their fields (`Reqs/Lang/Items#ordered-declarations`). With type
+parameters, `struct R(A, B) { ... }`, which the `{` tells apart from a
+newtype. -/
+scoped syntax (name := structCmd) ("pub ")? ("ordered ")? "struct " frenIdent (noWs fren_type_params)? " { " sepBy1(fren_field, ", ", ", ", allowTrailingSep) " }" : command
 
 /-- `[pub] [ordered] struct N(T)`, a newtype; its parentheses must hold one
 type (`lang::newtype`), which the elaborator checks. -/

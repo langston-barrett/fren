@@ -1,0 +1,5 @@
+-- A recursive payload within an instance's argument is an error (`F0387`),
+-- for an enumeration with no type parameters too.
+mod generics_nested_recursive
+pub struct Pair(A, B) { fst: A, snd: B }
+pub enum Tree { Leaf, Node(Pair(Tree, Tree)) }   --~ error: a recursive payload must be `generics_nested_recursive::Tree`

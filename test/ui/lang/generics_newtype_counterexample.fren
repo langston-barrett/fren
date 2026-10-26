@@ -1,0 +1,12 @@
+-- A newtype within an instance of a generic type is shown as one in a
+-- counterexample, by both front ends. In a module, since Lean has an
+-- `Option` of its own.
+mod generics_newtype_counterexample
+struct Ms(Int)
+enum Opt(T) { None, Some(T) }
+
+comp c {
+    in m: Opt(Ms)
+    expect e: m = Opt::None
+    --~^ error: counterexample: m = Opt::Some(Ms(0))
+}

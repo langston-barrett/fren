@@ -41,11 +41,16 @@ def Position.checked : Position → (expected sibling : Bool) → Bool
 /-- An expression's shape, for whether it synthesizes a type
 (`lang::synthesizes`): `{}` or `[]`; one whose type is any of its parts',
 the shared ones (see `Position.shared`); a pair, whose type needs both of
-its members'; or any other. -/
+its members'; a variant or record of a generic type, whose type needs an
+argument for each of its type parameters, from any of the values of its
+payload or fields whose declared types mention it; or any other. -/
 inductive TypeShape where
   | emptyLiteral
   | anyPart (parts : List TypeShape)
   | pair (a b : TypeShape)
+  /-- For each type parameter, the shapes of the values whose declared
+  types mention it (`Reqs/Lang/Generics#type-arguments`). -/
+  | construction (params : List (List TypeShape))
   | other
   deriving Inhabited, Repr
 
@@ -55,12 +60,20 @@ def TypeShape.synthesizes : TypeShape → Bool
   | .emptyLiteral => false
   | .anyPart ps => TypeShape.anySynthesizes ps
   | .pair a b => a.synthesizes && b.synthesizes
+  | .construction ps => TypeShape.allGiven ps
   | .other => true
 
 /-- Whether one of `ps` synthesizes a type. -/
 def TypeShape.anySynthesizes : List TypeShape → Bool
   | [] => false
   | p :: ps => p.synthesizes || TypeShape.anySynthesizes ps
+
+/-- Whether each type parameter, given the shapes of the values whose
+declared types mention it, is given an argument: one of them synthesizes
+its type. -/
+def TypeShape.allGiven : List (List TypeShape) → Bool
+  | [] => true
+  | p :: ps => TypeShape.anySynthesizes p && TypeShape.allGiven ps
 end
 
 end Fren.Core

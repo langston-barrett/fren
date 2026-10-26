@@ -321,7 +321,7 @@ def Src.literalBody? (s : Src) (sp : Span) : Option Span := do
 /-- The enumerations of `items` (`Enums`). -/
 partial def enumsOf (items : Array Item) : Enums := Id.run do
   let rec decls : Item → Array (String × Array (String × Bool))
-    | .enum _ n vs _ => #[(n.name, vs.map fun (v, p?) => (v.name, p?.isSome))]
+    | .enum _ n vs _ _ => #[(n.name, vs.map fun (v, p?) => (v.name, p?.isSome))]
     | .lintSetting _ _ _ _ _ (some body) => decls body
     | _ => #[]
   let mut out : Enums := {}
