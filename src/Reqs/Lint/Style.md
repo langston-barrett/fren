@@ -168,7 +168,7 @@ pub comp length_zero_keeps_meaning {
     expect length_one: ((s.len < 1) iff s = "") and ((s.len >= 1) iff s != "") and ((s.len != 0) iff s != "")
     expect length_right: ((0 = q.len) iff q = []) and ((0 < q.len) iff q != []) and ((1 > q.len) iff q = [])
     expect card_zero: ((t.card = 0) iff t = {}) and ((t.card <= 0) iff t = {}) and ((t.card > 0) iff t != {})
-    expect relation_card_zero: ((r.card = 0) iff r = {}) and ((r.card > 0) iff r != {})
+    expect relation_card_zero: ((r.card = 0) iff r = {}) and ((r.card <= 0) iff r = {}) and ((r.card > 0) iff r != {})
 }
 ```
 
