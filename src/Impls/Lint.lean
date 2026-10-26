@@ -465,8 +465,7 @@ impl match_like_membership: lint::match_like_membership
   pattern_test? := (Fren.Core.matchMembership bb bs d tf ff et ef w wt t f).2.2,
 } by
   intro bb bs d tf ff et ef w wt t f _
-  cases bb <;> cases bs <;> cases d <;> cases tf <;> cases ff <;> cases et <;> cases ef <;> cases w <;> cases wt <;>
-    simp [fren_spec, Fren.Core.matchMembership] <;> omega
+  simp [fren_spec, Fren.Core.matchMembership]
 
 impl wildcard_single_variant: lint::wildcard_single_variant for (n : Nat) {
   n_matched := n,
@@ -509,8 +508,7 @@ impl chainable_comparison: lint::chainable_comparison for (la ra ls rs lf fl ff 
   flip_right? := (Fren.Core.chainableComparison la ra ls rs lf fl ff ll).2.2,
 } by
   intro la ra ls rs lf fl ff ll _
-  cases la <;> cases ra <;> cases ls <;> cases rs <;> cases lf <;> cases fl <;> cases ff <;> cases ll <;>
-    simp [fren_spec, Fren.Core.chainableComparison]
+  simp [fren_spec, Fren.Core.chainableComparison]
 
 /-! ## Matches and bindings -/
 
@@ -778,7 +776,7 @@ impl redundant_comparisons: lint::redundant_comparisons for (conj : Bool) (c1 : 
   keep_first? := (Fren.Core.redundantComparisons conj c1 a c2 b).2,
 } by
   intro conj c1 a c2 b _
-  cases conj <;> cases c1 <;> cases c2 <;>
+  cases c1 <;> cases c2 <;>
     simp [fren_spec, toComparison, Fren.Core.redundantComparisons, Fren.Core.disjointBounds,
       Fren.Core.Comparison.complement, Fren.Core.Comparison.boundsBelow, Fren.Core.Comparison.boundsAbove,
       Fren.Core.Comparison.least, Fren.Core.Comparison.greatest] <;> omega
