@@ -2,6 +2,7 @@
 import FrenCli.Lex
 import FrenCore.Checking
 import FrenCore.Guards
+import FrenCore.PatternTypes
 import FrenCore.Patterns
 import FrenCore.Quantifier
 import FrenCore.Ty
@@ -327,6 +328,7 @@ def toTypePlace : Fren.Core.TypePlace → lang.TypePlace
   | .definition => .Definition
   | .field => .Field
   | .payload => .Payload
+  | .recursivePayload => .RecursivePayload
   | .element => .Element
 
 impl nat_place: lang::nat_place for (p : Fren.Core.TypePlace) {
@@ -335,6 +337,32 @@ impl nat_place: lang::nat_place for (p : Fren.Core.TypePlace) {
 } by
   intro p _
   cases p <;> simp [fren_spec, toTypePlace, Fren.Core.natPlaceAccepted]
+
+impl pattern_place: lang::pattern_place for (p : Fren.Core.PatternPlace) (r : Bool) {
+  place := match p with | .top => .Top | .field => .Field | .payload => .Payload | .element => .Element,
+  recursive? := r && p == .payload,
+  decidable? := Fren.Core.patternPlaceDecidable p (r && p == .payload),
+} by
+  intro p r _
+  cases p <;> cases r <;> simp [fren_spec, Fren.Core.patternPlaceDecidable]
+
+impl pattern_finite: lang::pattern_finite for (b i n : Bool) {
+  base_finite? := b && !i,
+  integers? := i,
+  bounded? := n,
+  finite? := Fren.Core.patternFinite (b && !i) i n,
+} by
+  intro b i n _
+  cases b <;> cases i <;> cases n <;> simp [fren_spec, Fren.Core.patternFinite]
+
+impl pattern_widening: lang::pattern_widening for (p w : Bool) {
+  patterned? := p,
+  widened? := w,
+  accepted? := (Fren.Core.patternWidening w p).1,
+  obliged? := (Fren.Core.patternWidening w p).2,
+} by
+  intro p w _
+  cases p <;> cases w <;> simp [fren_spec, Fren.Core.patternWidening]
 
 def toBrought : Fren.Core.Brought → lang.Brought
   | .nothing => .Nothing

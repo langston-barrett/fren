@@ -22,19 +22,26 @@ Fren has eight kinds of type:
   Their values are not described by the spec (see [Abstract
   types](#abstract-types)).
 
+A [pattern type](#pattern-types), such as `Int is 0..=255`, has the values
+of a type of one of these kinds that match a pattern, and a [type
+alias](Items.md#type-aliases) names a type, so that `type Byte := Int is
+0..=255` is written once.
+
 ```
-type := "Bool" | "Int" | "Nat" | "String" | "Set" "(" type ")" | "Seq" "(" type ")"
+type := base ["is" pattern]
+base := "Bool" | "Int" | "Nat" | "String" | "Set" "(" type ")" | "Seq" "(" type ")"
       | "Rel" "(" type "," type ")" | path
 ```
 
-A type written as a path must name an enumeration, a record or an abstract
-type. `Bool`, `Int`, `Nat`, `String` and `Set` are built in and cannot be
+A type written as a path must name an enumeration, a record, an abstract
+type or a type alias, which stands for the type that it names. `Bool`, `Int`, `Nat`, `String` and `Set` are built in and cannot be
 redeclared, nor can the built-in functions `exactly_one?` and
 `at_most_one?` (see [Functions](Items.md#functions)).
 
 Every expression has exactly one type, and the only conversion between
 types is *widening*: a `Nat` is accepted where an `Int` is expected (see
-[Natural numbers](#natural-numbers)). Comparing values of other different
+[Natural numbers](#natural-numbers)), and a pattern type where its base
+type is (see [Pattern types](#pattern-types)). Comparing values of other different
 types, such as an `Int` with an enumeration, is an error. Which operators apply to which types is given in
 [Expressions](Expressions.md). Two values of an enumeration or a record
 are equal if they are built alike: the same variant with equal payloads,
@@ -103,7 +110,14 @@ whether outputs exist, never asks for an unbounded value.
 
 ## Natural numbers
 
-A `Nat` is a natural number: an integer that is at least 0. Every `Nat`
+A `Nat` is a natural number: an integer that is at least 0. Its values
+are those of the [pattern type](#pattern-types) `Int is 0..`, and it
+follows the same rules for what a variable of it brings, and for where it
+may be written, but it is a type of its own, closed under `+` and `*`:
+`n + 1` is a `Nat` where `n` is, while the result of an operator on an
+`Int is 0..` is an `Int`, and an `Int` given where a `Nat` is expected is
+an error rather than an obligation. Lean has `Nat`, and the solver has
+`Int`, so it is the one pattern type that both know. Every `Nat`
 is an `Int`, so a `Nat` is accepted wherever an `Int` is expected, as an
 argument, a binding, a definition or an operand: it is *widened* to an
 `Int`. An `Int` is never accepted where a `Nat` is expected, even where it
@@ -147,28 +161,350 @@ of an uninterpreted function whose result is a `Nat` (see
 [Items](Items.md#uninterpreted-functions)). In Lean, a `Nat` is Lean's
 `Nat`, and widening is Lean's coercion `↑` to `Int`.
 
-For now, `Nat` is the type of a variable, a function's parameter or
-result, a constant, or a [`let` or `where`](Let.md) definition, which is
-substituted, and nothing else: it is not the type of a field or
-a payload, nor the element type of a set, relation or sequence, where an
-`Int` and a constraint serve instead. So a `Nat` is never inside another
-value, and the constraints that it brings are always on a variable or an
-application. `Nat` written anywhere else is an error (`F0338`).
-`lang::nat_place` states where `Nat` may be written:
+`Nat` may be written where a pattern type may (see [Pattern
+types](#pattern-types)), with two exceptions for now: it is not the
+element type of a set, relation or sequence, nor the type of a payload of a
+recursive enumeration, where an `Int` and a constraint serve instead.
+There its constraint would hold of every element, which quantifies, as
+a pattern type's does there, and Fren does not yet carry it there for
+`Nat`, whose values Lean and the solver represent differently: `Int is
+0..` serves instead. `Nat` written there is an error (`F0338`). In a record's field or a payload of an
+enumeration that is not recursive, it is Lean's `Nat` and the solver's
+`Int`, with the constraint that it is at least 0, which a value of the
+record or enumeration brings, as it brings a pattern type's. `lang::nat_place` states where `Nat`
+may be written:
 
 ```fren
-pub enum TypePlace { Variable, Parameter, Result, Constant, Definition, Field, Payload, Element }
+pub enum TypePlace { Variable, Parameter, Result, Constant, Definition, Field, Payload, RecursivePayload, Element }
 
 pub comp nat_place {
-    use self::TypePlace::{Element, Field, Payload}
+    use self::TypePlace::{Element, Field, Payload, RecursivePayload}
     in place: TypePlace      -- where the type `Nat` is written
     pub det out accepted?
 
-    ensure rule: accepted? iff not place in {Field, Payload, Element}
+    ensure rule: accepted? iff not place in {RecursivePayload, Element}
 
     expect variables: when place = TypePlace::Variable, accepted?
     expect definitions: when place = TypePlace::Definition, accepted?
+    expect fields: when place in {Field, Payload}, accepted?
     expect not_in_collections: when place = Element, not accepted?
+}
+```
+
+## Pattern types
+
+A *pattern type* `T is P` has the values of its *base type* `T` that
+match the pattern `P`, after Rust's: `Int is 0..=255` has the integers from
+0 to 255, `Int is 1..` the positive ones, and `Severity is Severity::Warning
+| Severity::Error` two variants of an enumeration. `P` is a
+[pattern](Patterns.md) of `match` and `is`, of a value of `T`, as in a
+[pattern test](Expressions.md#pattern-tests), that binds no names: a
+binder, which would match every value and name it, is an error (`F0370`,
+which names a binder `n!` as `n`), and `_` is written instead. Pattern types are not nested: the base type is
+never itself a pattern type, so `Int is 0.. is ..=9` does not parse, and a
+pattern on a type alias that names a pattern type is an error (`F0369`).
+
+A pattern type is named with a [type alias](Items.md#type-aliases), which
+is not a new type: `Byte` and `Int is 0..=255` are the same type. A type
+whose values are restricted and that is distinct from its base type is a
+[newtype](Items.md#newtypes) of a pattern type, as `struct Byte(Int is
+0..=255)`.
+
+### Typing
+
+The static semantics of a pattern type is its base type's: Fren never
+decides from the types alone whether a value matches a pattern, which
+the solver does instead. An expression's type is never a pattern type: a
+variable of type `Int is 0..=9` is an `Int` where it is used, so `x + 1` is
+an `Int`, and so is every result of an operator. Every value of `T is P`
+is a `T`, so it is accepted wherever a `T` is expected: it is widened. A
+`T` is accepted where a `T is P` is expected too, with an *obligation*: the
+value must match `P`, which a [check](../Check.md#pattern-types) confirms
+with the solver, where the type is declared:
+
+- a defined output's definition, a defined function's body, a constant's
+  value, a field of a record literal or of a record update, a value of a
+  variant's payload, a newtype's constructor's argument, a written type of
+  a [`let` or `where`](Let.md) definition, and an argument of a function
+  application, each by the pattern-type check, under the hypotheses of
+  where it is written, as an index's definedness is;
+- a binding of an instance, by the [instance
+  check](../Check.md#instance-assumptions), since the instantiated
+  component assumes what its input's pattern type brings.
+
+Two types are compared with their patterns left out, wherever they are
+compared: so `Set(Int is 1..)` is accepted where a `Set(Int)` is
+expected, and where a `Set(Int is 0..)` is, with the obligation that each
+member matches `0..`. The obligation is asked wherever the declared type has
+a pattern, at the top or in an element type, even where the value is a
+variable of the same pattern type, whose constraint then proves it.
+`lang::pattern_widening` states this, from whether `widening` accepts
+the expression's type where the declared type without its patterns is
+expected, and whether the declared type has a pattern:
+
+```fren
+pub comp pattern_widening {
+    in patterned?            -- the declared type has a pattern, at the top or in an element type
+    in widened?              -- `widening` accepts the expression's type, which has no pattern, where the declared type without its patterns is expected
+    pub det out accepted?
+    pub det out obliged?     -- a check confirms that the value matches
+
+    ensure rule: accepted? iff widened?
+    ensure obligation: obliged? iff (accepted? and patterned?)
+
+    expect never_by_type: when widened?, accepted?
+    expect only_patterns: unless patterned?, not obliged?
+}
+```
+
+What an obligation asks follows the declared type: that the value matches
+its pattern, if it has one, and for a set, relation or sequence, that each
+element, or each member of each pair, meets the obligation of its element
+type, which is that of an element type alone. A record's, newtype's or
+enumeration's own fields and payloads ask nothing more: its values were
+built to meet them. At an instance's binding, the value asks nothing where
+it is given, since the instance check asks the same of the binding. Where
+`lang::ValuePlace` is where a value is given and `lang::Duty` what an
+obligation asks of it, `lang::obligation` states this:
+
+```fren
+pub enum ValuePlace { Definition, Argument, Field, Payload, Construction, Let, Body, Constant, Binding }
+
+-- Nothing; that the value matches the pattern; that each element meets
+-- its element type's obligation; or both.
+pub enum Duty { Nothing, Matches, Each, MatchesAndEach }
+
+pub comp obligation {
+    use self::ValueType::{RelTy, SeqTy, SetTy}
+    in place: ValuePlace         -- where the value is given
+    in type_kind: ValueType      -- the declared type's kind
+    in pattern?                  -- the declared type has a pattern at the top
+    in element: Duty             -- for a set, relation or sequence, its element type's obligation
+    pub det out duty: Duty
+
+    ensure rule: duty = (if place = ValuePlace::Binding then Duty::Nothing
+        else if pattern? and each? then Duty::MatchesAndEach
+        else if pattern? then Duty::Matches
+        else if each? then Duty::Each
+        else Duty::Nothing)
+        where each? := type_kind in {SetTy, RelTy, SeqTy} and element != Duty::Nothing
+
+    expect by_instances: when place = ValuePlace::Binding, duty = Duty::Nothing
+    expect records_built: when type_kind = ValueType::RecordTy and not pattern?, duty = Duty::Nothing
+}
+```
+
+`lang::obligation` is the detailed statement of `lang::pattern_widening`:
+a value has an obligation exactly where its declared type has a pattern,
+at the top or in an element type, and it is not given at an instance's
+binding, which the instance check asks instead:
+
+```fren
+refine obligation_widening: obligation refines pattern_widening {
+    patterned? := place != ValuePlace::Binding
+        and (pattern? or (type_kind in {ValueType::SetTy, ValueType::RelTy, ValueType::SeqTy} and element != Duty::Nothing)),
+    widened? := true,
+    accepted? := true,
+    obliged? := duty != Duty::Nothing,
+}
+```
+
+### Meaning
+
+A variable, a parameter or an application of an uninterpreted function
+whose type is a pattern type brings the constraint that its value
+matches the pattern, as a [`Nat`](#natural-numbers) brings that it is at
+least 0 (see [Components](Components.md#pattern-types)). A record whose
+field, or an enumeration whose payload, has a pattern type or is a `Nat`
+brings the constraints of those on its fields and payloads, and so on
+within them: a variable `p` of `struct Packet { length: Byte }` brings `p.length
+is 0..=255`, and one of `enum Reading { Raw(Byte), Missing }` brings that
+when it is `Raw`, its payload is in range. These are quantifier-free, one
+for each field or payload, since a record or an enumeration that is not
+recursive has finitely many of them, however deep. They are brought where the value comes
+from, a variable or an application, rather than where a field is read,
+since two values can be compared without reading their fields: with `struct
+Flag { on?: Bool is true }`, which has one value, `a = b` holds of any two
+`Flag`s `a` and `b`, though neither reads `on?`.
+
+Within a set's, relation's or sequence's element type, a pattern type
+brings a constraint on every element, which quantifies over them, and
+within a recursive enumeration's payload, a constraint on every payload of
+every value that the query reads from it, since its values have payloads of
+every depth. Both are allowed, but they are outside the [decidable
+core](Decidability.md#pattern-types), so the [`undecidable`
+lint](../Lint/Decidability.md#undecidable-constructs) reports the type
+where it is written.
+
+`lang::pattern_place` states which written pattern types are within the
+decidable core, from where the type is written and whether that
+enumeration is recursive:
+
+```fren
+pub enum PatternPlace { Top, Field, Payload, Element }
+
+pub comp pattern_place {
+    use self::PatternPlace::{Element, Payload, Top}
+    in place: PatternPlace       -- where the pattern type is written: the top of a declared type, a record's field, a variant's payload, or an element type
+    in recursive?                -- for a payload: its enumeration is recursive
+    pub det out decidable?
+
+    assume payloads_only: when recursive?, place = Payload
+
+    ensure rule: decidable? iff not (place = Element or (place = Payload and recursive?))
+
+    expect top_decided: when place = Top, decidable?
+    expect elements_quantify: when place = Element, not decidable?
+}
+```
+
+In Lean, a pattern type is its base type, and the constraints are
+hypotheses of the checks, as a `Nat` function's results are (see
+[Generated declarations](../Generated.md#components)). To the solver, it is
+its base type, with the constraints among each query's hypotheses and the
+obligations as queries of their own (see [Checks](../Check.md)), so both
+front ends report the same verdicts and minimal sets.
+
+### Bounded and finite
+
+A pattern type is [unbounded](#recursive-and-unbounded-types) exactly when
+its base type is, and [finite](#finite-types) when its base type is, or
+when its base type is `Int` or `Nat` and every alternative of its pattern
+is a bounded range or an integer, as `Int is 0..=7` and `Int is 1 | 3 |
+5` are. So a [quantifier](Quantifiers.md) can range over `Int is 0..=7`,
+and has one instance for each integer that matches, in increasing order. A
+pattern type of an enumeration or a record ranges over the values of its
+base type that match, in their order. `lang::pattern_finite` states this:
+
+```fren
+pub comp pattern_finite {
+    in base_finite?          -- the base type is finite
+    in integers?             -- the base type is `Int` or `Nat`
+    in bounded?              -- every alternative of the pattern is a bounded range or an integer
+    pub det out finite?
+
+    assume not_both: when integers?, not base_finite?
+
+    ensure rule: finite? iff (base_finite? or (integers? and bounded?))
+
+    expect ranges: when integers? and bounded?, finite?
+    expect unbounded_range: when integers? and not bounded?, not finite?
+}
+```
+
+### Integer patterns
+
+An integer pattern, of `Int` or `Nat`, is an or-pattern of *alternatives*,
+each a range with or without a lower and an upper bound, or an integer
+`n`, which is the range `n..=n`; `a..b` is `a..=b - 1`. `lang::Alternative`
+is one, and `lang::above?` and `lang::below?` say whether an integer is
+within its bounds:
+
+```fren
+pub enum Bound { Open, At(Int) }
+
+-- A range from `lo` to `hi`, both included; `Bound::Open` is no bound.
+pub struct Alternative { lo: Bound, hi: Bound }
+
+pub fn above?(b: Bound, x: Int) := match b { Bound::Open => true, Bound::At(l) => l <= x }
+
+pub fn below?(b: Bound, x: Int) := match b { Bound::Open => true, Bound::At(h) => x <= h }
+```
+
+An integer matches the pattern if it is within the bounds of one of its
+alternatives. `lang::pattern_member` states this, with a witness: the
+alternative that it is within, which every check, constraint and
+obligation of a pattern type, and the evaluator, decide by. The witness is
+an output that the guarantees index by, which is outside the decidable
+core, so it opts out:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp pattern_member {
+    in alts: Seq(Alternative)    -- the pattern's alternatives, in order
+    in x: Int
+    in k: Int                    -- any position among the alternatives
+    pub out member?
+    pub out witness: Int         -- the position of an alternative that `x` is within, if it matches
+
+    ensure within: when 0 <= k < alts.len and above?(alts[k].lo, x) and below?(alts[k].hi, x), member?
+    ensure witnessed: when member?,
+        0 <= witness < alts.len and above?(alts[witness].lo, x) and below?(alts[witness].hi, x)
+
+    expect no_alternatives: when alts = [], not member?
+}
+```
+
+The pattern matches finitely many integers when each alternative has both
+bounds, and then how many it matches is counted from the bounds, without
+listing them: an alternative from `lo` to `hi` has `hi - lo + 1` integers,
+or none if `hi < lo`, and alternatives that overlap count their integers
+once. `lang::pattern_count` states this for up to two alternatives, which
+is how the solver and both front ends count them for any number:
+
+```fren
+-- A bound's integer, and 0 for no bound.
+pub fn bound_value(b: Bound): Int := match b { Bound::At(v) => v, Bound::Open => 0 }
+
+pub fn bounded?(a: Alternative) := a.lo != Bound::Open and a.hi != Bound::Open
+
+-- How many integers a bounded alternative has.
+pub fn width(a: Alternative): Int := if bounded?(a) and bound_value(a.lo) <= bound_value(a.hi) then bound_value(a.hi) - bound_value(a.lo) + 1 else 0
+
+pub comp pattern_count {
+    in alts: Seq(Alternative)
+    pub det out finite?
+    pub out count: Nat           -- how many integers it matches, when finitely many
+
+    assume few: alts.len <= 2
+
+    ensure bounds: finite? iff ((alts = [] or bounded?(alts[0])) and (alts.len < 2 or bounded?(alts[1])))
+    ensure none: when alts = [], count = 0
+    ensure one: when finite? and alts.len = 1, count = width(alts[0])
+    ensure apart: when finite? and alts.len = 2 and width(alts[0]) > 0 and width(alts[1]) > 0
+        and (bound_value(alts[0].hi) + 1 < bound_value(alts[1].lo) or bound_value(alts[1].hi) + 1 < bound_value(alts[0].lo)),
+        count = width(alts[0]) + width(alts[1])
+    -- Alternatives that overlap or touch count as their union, once.
+    ensure joined: when finite? and alts.len = 2 and width(alts[0]) > 0 and width(alts[1]) > 0
+        and not (bound_value(alts[0].hi) + 1 < bound_value(alts[1].lo) or bound_value(alts[1].hi) + 1 < bound_value(alts[0].lo)),
+        count = bound_value(alts[0].hi).max(bound_value(alts[1].hi)) - bound_value(alts[0].lo).min(bound_value(alts[1].lo)) + 1
+    ensure empty_first: when finite? and alts.len = 2 and width(alts[0]) = 0, count = width(alts[1])
+    ensure empty_second: when finite? and alts.len = 2 and width(alts[1]) = 0, count = width(alts[0])
+}
+```
+
+For any number of alternatives, `lang::pattern_bounds` states when they
+are counted: exactly when each has both bounds, which it says of their
+lower and upper bounds, each a sequence in the alternatives' order.
+Membership in a sequence is outside the decidable core, so it opts out,
+and so does its refinement:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp pattern_bounds {
+    in los: Seq(Bound)       -- the alternatives' lower bounds, in order
+    in his: Seq(Bound)       -- their upper bounds, in the same order
+    pub det out finite?      -- the pattern matches finitely many integers
+    pub det out counted?     -- how many integers it matches is counted from the bounds
+
+    ensure finite: finite? iff not (Bound::Open in los or Bound::Open in his)
+    ensure counts: counted? iff finite?
+
+    expect no_alternatives: when los = [] and his = [], finite?
+    expect one_open: when Bound::Open in his, not counted?
+}
+```
+
+It refines `lang::pattern_finite` for an integer base type, whose pattern
+is bounded exactly when no alternative lacks a bound:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+refine bounds_finite: pattern_bounds refines pattern_finite {
+    base_finite? := false,
+    integers? := true,
+    bounded? := not (Bound::Open in los or Bound::Open in his),
+    finite? := finite?,
 }
 ```
 
@@ -251,8 +587,9 @@ enumeration may not contain itself within a sequence.
 
 A type is *finite* if it has finitely many values: `Bool`, an
 enumeration that is not recursive and whose payloads have finite types, a
-record whose fields have finite types, and a set or relation type whose
-element types are finite. `Int`, `Nat`, `String` and abstract types are not
+record whose fields have finite types, a set or relation type whose
+element types are finite, and a pattern type that `lang::pattern_finite`
+says is. `Int`, `Nat`, `String` and abstract types are not
 finite, and neither is any sequence type. Where a type is built from others, its *parts* are the types of
 its fields, payloads and elements, and a type is built from everything
 that the closure of the parts relation reaches from it. `lang::finite`

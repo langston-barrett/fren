@@ -323,6 +323,11 @@ scoped syntax:max (name := tableExpr) "table " "{ " sepBy1(fren_row, ", ", ", ",
 is a reserved word where `Fren.Lang` is open, as the set operators are. -/
 scoped syntax:50 (name := isExpr) fren_expr:50 " is " fren_top_pattern : fren_expr
 
+/-- `T is P`, a pattern type: the values of `T` that match `P`
+(`Reqs/Lang/Types#pattern-types`). Its base type is never itself a pattern
+type, so a second `is` does not parse. -/
+scoped syntax:10 (name := patType) fren_type:11 " is " fren_top_pattern : fren_type
+
 declare_syntax_cat fren_member (behavior := both)
 
 /-- `in x: T`; a definition, `:= e`, is parsed only to report that inputs
@@ -372,12 +377,12 @@ scoped syntax (name := structCmd) ("pub ")? "struct " frenIdent " { " sepBy1(fre
 
 /-- `struct N(T)`, a newtype; its parentheses must hold one type
 (`lang::newtype`), which the elaborator checks. -/
-scoped syntax (name := newtypeCmd) ("pub ")? "struct " frenIdent "(" sepBy(fren_type, ", ") ")" : command
+scoped syntax (name := newtypeCmd) ("pub ")? "struct " frenIdent noWs "(" sepBy(fren_type, ", ") ")" : command
 
 scoped syntax (name := compCmd) ("pub ")? "comp " frenIdent " { " fren_member* " }" : command
 
-/-- `type T`, an abstract type. -/
-scoped syntax (name := typeCmd) ("pub ")? "type " frenIdent : command
+/-- `type T`, an abstract type, or `type T := U`, a type alias. -/
+scoped syntax (name := typeCmd) ("pub ")? "type " frenIdent (" := " fren_type)? : command
 
 /-- A function's parameter: `T` of an uninterpreted function, `x: T` or
 `x?` of a defined one. Which it is depends on whether the function has a

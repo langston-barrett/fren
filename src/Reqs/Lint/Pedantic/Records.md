@@ -74,23 +74,19 @@ records of three or more fields. `lint::struct_field_names` and
 
 ```fren
 pub comp struct_field_names {
-    in n_fields: Int
+    in n_fields: Nat
     in shared_first?     -- every field has two or more words, and all have the same first word
     in shared_last?      -- every field has two or more words, and all have the same last word
     pub det out fires?
-
-    assume counts: n_fields >= 0
 
     ensure rule: fires? iff (n_fields >= 2 and (shared_first? or shared_last?))
 }
 
 pub comp field_has_record_name {
-    in n_words: Int      -- the words of the field's name
-    in n_record_words: Int  -- the words of its record's name
+    in n_words: Nat      -- the words of the field's name
+    in n_record_words: Nat  -- the words of its record's name
     in contains?         -- the field's words have the record's, one after another
     pub det out fires?
-
-    assume counts: n_words >= 0 and n_record_words >= 0
 
     ensure rule: fires? iff (contains? and n_words > n_record_words)
 
@@ -114,19 +110,15 @@ when they fire:
 
 ```fren
 pub comp struct_excessive_bools {
-    in n_bools: Int      -- the record's `Bool` fields
+    in n_bools: Nat      -- the record's `Bool` fields
     pub det out fires?
-
-    assume counts: n_bools >= 0
 
     ensure rule: fires? iff n_bools > 3
 }
 
 pub comp fn_params_excessive_bools {
-    in n_bools: Int      -- the function's `Bool` parameters
+    in n_bools: Nat      -- the function's `Bool` parameters
     pub det out fires?
-
-    assume counts: n_bools >= 0
 
     ensure rule: fires? iff n_bools > 3
 }

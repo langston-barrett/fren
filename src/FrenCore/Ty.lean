@@ -107,12 +107,14 @@ inductive TypePlace where
   | definition
   | field
   | payload
+  /-- A payload of a recursive enumeration. -/
+  | recursivePayload
   | element
   deriving Inhabited, DecidableEq, Repr
 
 /-- Whether `Nat` may be written at `place` (`lang::nat_place`). -/
 def natPlaceAccepted : TypePlace → Bool
-  | .field | .payload | .element => false
+  | .recursivePayload | .element => false
   | _ => true
 
 /-- The note of a type mismatch where a `Nat` is expected and an `Int`
@@ -128,11 +130,10 @@ def narrowingMsg (why : String) : Msg :=
 /-- `Nat` written at `place`, where it may not be (`lang::nat_place`). -/
 def natPlaceMsg (place : TypePlace) : Msg :=
   let what := match place with
-    | .field => "the type of a field"
-    | .payload => "the type of a payload"
+    | .recursivePayload => "the type of a payload of a recursive enumeration"
     | _ => "the element type of a set, relation or sequence"
   { code? := some "F0338", headline := s!"`Nat` cannot be {what}", label? := some "a `Nat`"
-    notes := #["note: for now, `Nat` is only the type of a variable, a function's parameter or result, a constant, or a definition of a `let` or `where`",
+    notes := #["note: for now, a `Nat` is never inside a collection, nor a payload of a recursive enumeration, where its constraint would hold of every element",
       "help: use `Int`, and say where it is used that it is at least 0"] }
 
 /-- What a `Nat` variable brings (`lang::nat_variable`). -/

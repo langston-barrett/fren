@@ -160,19 +160,26 @@ declarations](Generated.md)).
 Each abstract type and function is interpreted at most once, in a Lean file
 and the files it imports, so every implementation uses the same meaning.
 An interpretation is not checked against the spec, which states nothing
-about a function beyond its type and its
+about a function beyond its type, including a [pattern
+type](Lang/Types.md#pattern-types) of its result, and its
 [postconditions](Lang/Items.md#contracts): it says what the spec's author
-means by the function, and is reviewed as part of the spec. A function's
-postconditions are proved of its interpretation: `interp p := t`, for a
-function with postconditions, adds the theorem `q.ensures`, that for all
-values of the parameters that meet the preconditions, `t` meets each
-postcondition, where the abstract types and functions that the contract
-uses are their interpretations. It is proved by the tactics after `by`, if
-there are any, and otherwise by `decide` or, failing that, by the solver,
-as an [implementation](#proof) is, in which case it is an axiom. An
-interpretation whose postconditions are not proved is an error, and adds
+means by the function, and is reviewed as part of the spec. Every
+application is assumed to meet both, so they are proved of its
+interpretation, as one statement: `interp p := t`, for a function with
+postconditions or whose result type brings a constraint, adds the theorem
+`q.ensures`, that for all values of the parameters, `t` at them matches
+the result type, whatever the parameters' types, since an application's
+constraint holds wherever it is written, and, where they meet the
+preconditions, meets each postcondition, where the abstract types and
+functions that the contract and the result type use are their
+interpretations. It is proved by the tactics after `by`, if there are
+any, and otherwise by `decide` or, failing that, by the solver, as an
+[implementation](#proof) is, in which case it is an axiom. An
+interpretation whose statement is not proved is an error, and adds
 nothing, so the function can be interpreted again; a proof that uses
-`sorry` proves nothing. An interpretation is what makes an
+`sorry` proves nothing. So with `fn size(Int): Int is 0..=255`, `interp
+size := fun _ => 300` is rejected, and no implementation can rely on it.
+An interpretation is what makes an
 implementation a claim about the code: the implementation of a component
 that applies `ends_in_q?` is proved against the interpretation, not
 against what the code computes. `impls::interpretation` decides whether an
@@ -197,8 +204,8 @@ pub comp interpretation {
 ```
 
 `impls::interpretation_contract` states how an
-interpretation of a function proves its postconditions, from whether it
-has any, its written proof, if any, and the answers of `decide` and the
+interpretation of a function proves its postconditions and its result
+type's constraint, from whether it has any, its written proof, if any, and the answers of `decide` and the
 solver, which are asked in turn only when the earlier ones prove nothing:
 
 ```fren
@@ -206,7 +213,7 @@ pub enum ContractProof { NotNeeded, Theorem, Axiom, Unproved }
 
 pub comp interpretation_contract {
     use self::ContractProof::{Axiom, NotNeeded, Theorem, Unproved}
-    in posts?            -- the function has postconditions
+    in obligated?        -- the function has postconditions, or its result type brings a constraint
     in written?          -- the interpretation has tactics after `by`
     in written_ok?       -- they elaborate without an error
     in uses_sorry?       -- the proof they give uses `sorry`
@@ -217,16 +224,16 @@ pub comp interpretation_contract {
     pub det out error?       -- an error is reported
 
     ensure rule: proof = table {
-        | not posts? => NotNeeded,
-        | posts? and written? => if written_ok? and not uses_sorry? then Theorem else Unproved,
-        | posts? and not written? and decide_q = Unsat => Theorem,
-        | posts? and not written? and decide_q = Sat => Unproved,
-        | posts? and not written? and decide_q = Unknown => if smt_q = Unsat then Axiom else Unproved,
+        | not obligated? => NotNeeded,
+        | obligated? and written? => if written_ok? and not uses_sorry? then Theorem else Unproved,
+        | obligated? and not written? and decide_q = Unsat => Theorem,
+        | obligated? and not written? and decide_q = Sat => Unproved,
+        | obligated? and not written? and decide_q = Unknown => if smt_q = Unsat then Axiom else Unproved,
     }
     ensure records: recorded? iff proof != Unproved
     ensure reports: error? iff proof = Unproved
 
-    expect sorry_proves_nothing: when posts? and written? and uses_sorry?, not recorded? and error?
+    expect sorry_proves_nothing: when obligated? and written? and uses_sorry?, not recorded? and error?
     expect failure_records_nothing: when error?, not recorded?
 }
 ```
@@ -258,7 +265,7 @@ pub comp interpretation_at {
 }
 
 refine interpretation_detail: interpretation_at refines interpretation_contract {
-    posts? := true,
+    obligated? := true,
     written? := false,
     written_ok? := false,
     uses_sorry? := false,

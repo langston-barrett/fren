@@ -308,7 +308,9 @@ def Spec.evaluate (sp : Spec) (I : Interp) (c : Comp) (env : Env) : Evaluation :
     | some false, _ => some (statusOf false true true)
     | some true, some r => some (statusOf true true r)
     | _, _ => none
-  let lines := (as ++ rs ++ es ++ gs).map (fun (p, v) => (s!"{kw p.kind} {p.name}", v))
+  -- What a variable's type brings is named after the variable.
+  let lines := (as ++ rs ++ es ++ gs).map (fun (p, v) =>
+      (if p.typed?.isSome then s!"type {p.name.getPrefix}" else s!"{kw p.kind} {p.name}", v))
     ++ is.map fun (i, v) => (s!"inst {i.name}", v)
   return { lines, status?, expectFalse := es.any (·.2 == some false) }
 

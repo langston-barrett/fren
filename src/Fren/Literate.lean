@@ -76,6 +76,8 @@ def relativeTo (base path : System.FilePath) : String :=
   | cs => "/".intercalate cs
 
 @[command_elab Lang.mdCmd] def elabMd : CommandElab := fun stx => do
+  -- What Lean recovered from a parse error that it has reported.
+  if stx.hasMissing then return
   let some rel := stx[1].isStrLit? | throwUnsupportedSyntax
   let some dir := (System.FilePath.mk (← getFileName)).parent
     | throwError "cannot compute the directory of `{← getFileName}`"
@@ -101,7 +103,7 @@ def relativeTo (base path : System.FilePath) : String :=
   let leanName := (leanFile?.map (·.1)).getD (← getFileName)
   let name := relativeTo ((System.FilePath.mk leanName).parent.getD ".") path
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
-                                items := #[], usedItems := #[], inMarkdown := true, leanFile?,
+                                items := #[], usedItems := #[], natReports := #[], natKept := #[], inMarkdown := true, leanFile?,
                                 mdSource? := some (name, inputCtx.fileMap), globalTexts := #[],
                                 invisibleFrom := 0, settings := #[], settingIds := #[], seenSettings := #[],
                                 outerReplaced := #[], assumptions := #[], globalReads := #[] }
@@ -147,6 +149,7 @@ def relativeTo (base path : System.FilePath) : String :=
     else outer.staticErrors.push (fileName, cmdPos, static)
   modifyLocal fun l => { l with useRecords := outer.useRecords, used := outer.used,
                                 expectations := outer.expectations, lintReports := outer.lintReports,
+                                natReports := outer.natReports, natKept := outer.natKept,
                                 items := outer.items, usedItems := outer.usedItems, inMarkdown := outer.inMarkdown,
                                 leanFile? := outer.leanFile?, mdSource? := outer.mdSource?, globalTexts := outer.globalTexts,
                                 invisibleFrom := outer.invisibleFrom, staticErrors, settings,

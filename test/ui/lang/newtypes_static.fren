@@ -14,7 +14,7 @@ struct Pair(Int, Int)  --~ error: newtype `Pair` has 2 fields, but a newtype has
 struct Empty()  --~ error: newtype `Empty` has 0 fields, but a newtype has exactly one
 struct Abstract(Id)  --~ error: a field cannot have the abstract type `Id`
 struct Ids(Set(Id))  --~ error: a field's type cannot have the abstract type `Id` within it
-struct Count(Nat)  --~ error: `Nat` cannot be the type of a field
+struct Count(Nat)
 struct Loop(Loop)  --~ error: record `Loop` has a field of its own type
 struct Sets(Set(Sets))  --~ error: `Sets` cannot be an element type within itself
 

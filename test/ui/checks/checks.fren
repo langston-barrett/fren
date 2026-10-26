@@ -7,7 +7,8 @@ comp exit {   --~ error: no outputs satisfy `failures` and `strict_inconc`
     pub out code: Int
     out scratch: Int
 
-    assume counts: n_fail >= 0 and n_inconc >= 0
+    assume counts: n_fail >= 0 and n_inconc >= 0  --~ warning: `n_fail` is never negative
+    --~^ warning: `n_inconc` is never negative
 
     ensure failures: when n_fail > 0, code = 1                 --~ info: `failures` forces code = 1, but `strict_inconc` forces code = 2
     ensure strict_inconc: when strict? and n_inconc > 0, code = 2

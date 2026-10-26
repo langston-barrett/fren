@@ -1,0 +1,2 @@
+-- `manual_min_max`, with the literal as the argument.
+comp c { in x: Nat pub out n: Nat ensure r: n = 1 + if 3 < x then 3 else x }

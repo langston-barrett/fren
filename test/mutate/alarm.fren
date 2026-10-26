@@ -1,0 +1,29 @@
+-- An alarm that rings above a threshold, through an instance of a
+-- comparator that assumes its limit is positive. The comparator's
+-- expectation and cover goal pin down its assumption, and the alarm's
+-- expectations, local and global, pin down its rule.
+mod alarm
+
+pub comp threshold {
+    in x: Int
+    in limit: Int
+    pub det out over?
+
+    assume positive: limit > 0
+    ensure rule: over? iff x > limit
+
+    expect small: when x <= 1, not over?
+    cover lowest: limit = 1
+}
+
+pub comp alarm {
+    in temp: Int
+    pub det out ring?
+
+    inst t: threshold { x := temp, limit := 40 }
+    ensure rings: ring? iff t.over?
+
+    expect hot: when temp = 41, ring?
+}
+
+expect quiet: forall (a: alarm), when a.temp <= 40, not a.ring?

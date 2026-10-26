@@ -1,0 +1,12 @@
+--@ args: fmt --check
+-- `fren fmt` writes a pattern type's `is` between spaces, and its range
+-- without them, and a type alias's `:=` between spaces.
+type   Byte:=Int   is  0..=255
+pub enum Level { Low, High }
+type Loud :=Level is Level::High|Level::Low
+comp c {
+    in b: Set( Byte )
+    in n:Int is 1..
+    pub out l: Loud
+    ensure r: l = Level::High
+}

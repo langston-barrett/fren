@@ -34,7 +34,12 @@ of `a`. An input of `a` is given to `c`, so `a`'s type must widen to
 `c`'s: an `Int` input of `c` serves for a `Nat` of `a`, but a `Nat` input
 of `c` does not serve for an `Int` of `a`, since `c` need not accept the
 inputs below 0 that `a` does. The input then has `a`'s type, and the
-output `c`'s, for what a `Nat` brings. A private output of `a` must be a public output of `c` too: `a`'s
+output `c`'s, for what a `Nat` brings. Types are compared without their
+[patterns](Types.md#pattern-types), as anywhere, and their constraints
+follow the values too: the refinement assumes what `a`'s inputs' pattern
+types bring, checks what `c`'s inputs' bring as `c`'s instance
+assumptions, and checks what `a`'s outputs' bring as it checks `a`'s
+guarantees. A private output of `a` must be a public output of `c` too: `a`'s
 guarantees may mention it, and the refinement can read it only from
 `c`'s public outputs, since a private output says nothing about how `c`
 computes it. `c` may have more inputs and outputs than `a`. An input of

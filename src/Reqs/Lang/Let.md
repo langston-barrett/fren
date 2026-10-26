@@ -33,7 +33,13 @@ in top`.
 A definition `x := e` names the value of `e`. Its type is that of `e`,
 and may be written, `x: T := e`, in which case `e` must have type `T`.
 A written type may be a [`Nat`](Types.md#natural-numbers), and an `Int`
-then accepts a `Nat`, as anywhere an `Int` is expected.
+then accepts a `Nat`, as anywhere an `Int` is expected. It may be a
+[pattern type](Types.md#pattern-types), as in `low: Byte := x - 1`, which
+compares as its base type does, with the obligation that `e` matches its
+pattern, which the [pattern-type check](../Check.md#pattern-types) asks
+where the definition is written. A definition is substituted, so its
+name brings no constraint of its own: its value is `e`, which the
+obligation says matches.
 The name follows the [Boolean names](Types.md#boolean-names) rule for its
 type, as a binder of a pattern does: `cold? := temp < 40`, and `n := 3`.
 `lang::definition_type` states this:
@@ -69,11 +75,11 @@ name is written in, or the number of definitions for the body:
 ```fren
 pub comp definition_order {
     in n: Int            -- the number of definitions of the clause
-    in k_def: Int        -- the position of the definition named
-    in k_use: Int        -- the position of the definition the name is in, or `n` in the body
+    in k_def: Nat        -- the position of the definition named
+    in k_use: Nat        -- the position of the definition the name is in, or `n` in the body
     pub det out means?   -- the name means the definition
 
-    assume positions: 0 <= k_def < n and 0 <= k_use <= n
+    assume positions: k_def < n and k_use <= n
 
     ensure rule: means? iff k_def < k_use
 

@@ -9,7 +9,7 @@ comp binds { in s: S pub out z? ensure r: z? iff s is S::A(n) }
 comp binds_alt { in s: S pub out z? ensure r: z? iff s is S::B | S::C(_, n) }
 --~^ error: a pattern test cannot bind `n`
 comp shadow { in n: Int in s: S pub out z? ensure r: z? iff s is S::A(n!) }
---~^ error: a pattern test cannot bind `n!`
+--~^ error: a pattern test cannot bind `n`
 comp repeated { in s: S pub out z? ensure r: z? iff s is S::A(_) | S::A(_) }
 --~^ error: unreachable pattern
 comp not_enum { in i: Int pub out z? ensure r: z? iff i is S::A(_) }

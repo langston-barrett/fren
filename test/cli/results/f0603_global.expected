@@ -1,3 +1,15 @@
+warning[F0810]: `target` is never negative, so it can be a `Nat`
+  --> test/cli/results/f0603_global.fren:10:18
+   |
+10 |     assume sane: 0 <= target and target <= HIGH
+   |                  ^^^^^^^^^^^ `target` is at least 0 by this assumption
+   |
+   = note: a `Nat` input brings this assumption with its type
+   = note: an instance must then bind `target` to a `Nat`
+   = help: declare `target: Nat`, and remove `0 <= target` from `sane`, where nothing binds `target` to an `Int`
+   = note: `manual_nat` is `warn` by default
+   = help: to allow it, `set_option fren.lint.manual_nat "allow"`
+
 error[F0603]: expectation `same` does not hold
   --> test/cli/results/f0603_global.fren:14:8
    |
@@ -18,6 +30,6 @@ error[F0605]: `never` is vacuous: its condition can never hold, given `a`
 
 fren: 5 passed, 2 failed, 0 inconclusive, 0 redundant
 
-Some errors have detailed explanations: F0603, F0605.
+Some errors have detailed explanations: F0603, F0605, F0810.
 For more information about an error, try `fren --explain F0603`.
 exit=1

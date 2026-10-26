@@ -29,7 +29,7 @@ comp chained {
     pub out total: Int := twice + p
     out twice: Int := 2 * a
 
-    ensure pos: p >= 0
+    ensure pos: p >= 0  --~ warning: `p` is never negative
 
     expect at_least: total >= 2 * a
     expect exact: total = 2 * a     --~ error: expectation `chained::exact` does not hold

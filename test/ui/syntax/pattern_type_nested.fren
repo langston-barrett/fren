@@ -1,0 +1,6 @@
+-- A pattern type's base is never a pattern type, so a second `is` does
+-- not parse.
+comp c { in n: Int is 0.. is ..=9 }
+--~^[cli] error: a pattern type cannot have a second pattern
+--~^^[hosted] error: unexpected token 'is'
+--@ exit: 2

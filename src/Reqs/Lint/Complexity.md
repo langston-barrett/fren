@@ -6,8 +6,8 @@ same meaning, and `fren fix` fixes each of them but `constant_output` and
 This chapter has the lints of `Bool` expressions, of membership, of
 outputs, of records and newtypes, and of literals, and its subchapters the others: those of
 [comparisons](Complexity/Comparisons.md), of [operators](Complexity/Operators.md),
-of [methods](Complexity/Methods.md), of [matches](Complexity/Matches.md)
-and of [record updates](Complexity/Updates.md).
+of [methods](Complexity/Methods.md), of [matches](Complexity/Matches.md),
+of [integers](Complexity/Integers.md) and of [record updates](Complexity/Updates.md).
 
 ## Simpler `Bool` expressions
 
@@ -129,6 +129,15 @@ pub comp nonminimal_bool_keeps_meaning {
 }
 ```
 
+The lints of cardinality operators model their operands by
+`lint::Operand`, of four: two operands are the same exactly when they are
+[written the same](../Lint.md#written-the-same), and four are enough to
+tell every case of their rules apart.
+
+```fren
+pub enum Operand { P, Q, R, S }
+```
+
 `nonminimal_bool` also fires on a [cardinality
 operator](../Lang/Expressions.md#cardinality) of one argument:
 `exactly_one?(A)` is `A`, and `at_most_one?(A)` is always `true`, which is
@@ -136,18 +145,25 @@ its fix. The fix of `exactly_one?(A)` keeps `A`'s text, in parentheses
 where fixes need them, and evaluates it where the call did; that of
 `at_most_one?(A)` evaluates nothing, so both keep the guards. These are
 not in the model proved in Lean, and the refinements below check them
-instead. `lint::nonminimal_cardinality` states when it fires, and what the
-fix is:
+instead. `lint::nonminimal_cardinality` models the call by the values of
+its arguments, and states what the fix is, and that it has the call's
+value:
 
 ```fren
-pub comp nonminimal_cardinality {
-    in exactly?          -- `exactly_one?`, rather than `at_most_one?`
-    in n_args: Int       -- the arguments
-    pub det out fires?
-    pub det out argument?  -- the fix is the argument, rather than `true`
+pub enum CardinalityFix { Unchanged, Argument, True }
 
-    ensure rule: fires? iff n_args = 1
-    ensure fix: argument? iff exactly?
+-- Its expectation applies a cardinality operator to one argument.
+set_option fren.lint.nonminimal_bool "allow" in
+pub comp nonminimal_cardinality {
+    use self::CardinalityFix::{Argument, True, Unchanged}
+    in exactly?          -- `exactly_one?`, rather than `at_most_one?`
+    in args: Seq(Bool)   -- the values of the arguments, in order
+    pub det out fix: CardinalityFix
+
+    ensure rule: fix = (if args.len != 1 then Unchanged else if exactly? then Argument else True)
+
+    expect keeps_meaning: when fix != Unchanged,
+        (if exactly? then exactly_one?(args[0]) else at_most_one?(args[0])) = (if fix = Argument then args[0] else true)
 }
 
 set_option fren.lint.nonminimal_bool "allow" in
@@ -271,14 +287,12 @@ wherever its receiver is, and `r` takes the literal's place.
 
 ```fren
 pub comp unnecessary_struct_initialization {
-    in n_fields: Int     -- the fields of the literal
+    in n_fields: Nat     -- the fields of the literal
     in reads_own?        -- each field's value reads that field of some `r`, as `r.x` for `x`
     in same?             -- `r` is written the same in each
     in value?            -- `r` is a value, rather than an instance
     in same_type?        -- `r`'s type is the record
     pub det out fires?
-
-    assume counts: n_fields >= 0
 
     ensure rule: fires? iff (n_fields > 0 and reads_own? and same? and value? and same_type?)
 }
@@ -330,14 +344,38 @@ underlying type, so the fix has the same value, and it evaluates the same
 expression where the original did, so it keeps the guards. This is
 Clippy's `useless_conversion`, in `complexity`, which fires on a
 conversion of a value to its own type, such as `x.into()` for `x: T` where
-a `T` is wanted. `lint::redundant_newtype_roundtrip` states when it fires:
+a `T` is wanted. `lint::redundant_newtype_roundtrip` models the
+expression by its shape, the newtypes it builds and reads, and what is
+inside, and states whether it fires, and whether with a fix:
 
 ```fren
-pub comp redundant_newtype_roundtrip {
-    in same_newtype?     -- the newtype built is the one whose field is read
-    pub det out fires?
+pub enum Newtype { Ms, Bytes }
 
-    ensure rule: fires? iff same_newtype?
+-- The value a newtype is built from: the field of a value of a newtype,
+-- `x.0`, or another expression, which has a type of its own, or takes one
+-- from where it is written, as `[]` and `{}` do.
+pub enum Inner { FieldOf(Newtype), Typed, Untyped }
+
+-- `T(e)`, or `T(e).0`.
+pub enum Roundtrip { Built(Newtype, Inner), Read(Newtype, Inner) }
+
+pub enum RoundtripFix { Unchanged, Reported, Fixed }  -- `Reported` is reported without a fix
+
+pub comp redundant_newtype_roundtrip {
+    use self::Inner::{FieldOf, Typed, Untyped}
+    use self::Roundtrip::{Built, Read}
+    use self::RoundtripFix::{Fixed, Reported, Unchanged}
+    in shape: Roundtrip
+    pub det out fix: RoundtripFix
+
+    ensure rule: fix = match shape {
+        Built(t, FieldOf(u)) => if t = u then Fixed else Unchanged,
+        Built(_, _) => Unchanged,
+        -- `T(x.0).0` is reported once, at `T(x.0)`.
+        Read(t, FieldOf(u)) => if t = u then Unchanged else Fixed,
+        Read(_, Untyped) => Reported,
+        Read(_, Typed) => Fixed,
+    }
 }
 ```
 
@@ -365,6 +403,20 @@ pub comp roundtrip_fixed {
 
 refine roundtrip_sound: roundtrip_fixed refines roundtrip_written
 refine roundtrip_complete: roundtrip_written refines roundtrip_fixed
+```
+
+The round trip is the identity on the newtype's values, which is why each
+fix keeps the meaning:
+
+```fren
+set_option fren.lint.redundant_newtype_roundtrip "allow" in
+comp roundtrip_keeps_meaning {
+    in x: Ms
+    in n: Int
+
+    expect built: Ms(x.0) = x
+    expect read: Ms(n).0 = n
+}
 ```
 
 ## Leading zeros

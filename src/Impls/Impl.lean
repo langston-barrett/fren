@@ -32,7 +32,7 @@ def toContractProof : ContractProofKind → impls.ContractProof
 -- records an interpretation, and reports no error of its own, exactly when
 -- `contractRecorded` says.
 impl interpretation_contract: impls::interpretation_contract for (p w wo u : Bool) (d s : Answer) {
-  posts? := p,
+  obligated? := p,
   written? := w,
   written_ok? := wo,
   uses_sorry? := u,

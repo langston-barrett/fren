@@ -499,6 +499,24 @@ enum Mode { Off, Heat }
 comp c { in x: Mode pub out ok? ensure r: ok? iff (exists (m: Mode), m = x) }
 ```
 "# },
+  { code := "F0137", explanation := r#"A pattern type has a second pattern.
+
+Erroneous code example:
+
+```fren
+comp c { in n: Int is 0.. is ..=9 }
+```
+
+A pattern type `T is P` has the values of `T` that match `P`, and its base
+type `T` is never itself a pattern type, so `is` follows a type at most
+once. Write one pattern that matches what both do:
+
+```fren
+comp c { in n: Int is 0..=9 }
+```
+
+In Lean, Lean's own parser reports this, as a syntax error.
+"# },
   { code := "F0142", explanation := r#"`req`, where a member of a component is expected.
 
 Erroneous code example:
@@ -513,6 +531,27 @@ before, and is no longer a keyword: write `ensure` instead.
 
 ```fren
 comp c { in x: Int pub out y? ensure r: y? iff x > 0 }
+```
+
+In Lean, Lean's own parser reports this, as a syntax error.
+"# },
+  { code := "F0144", explanation := r#"A space before the `(` that opens what a name takes.
+
+Erroneous code example:
+
+```fren
+fn f(Int): Int
+comp c { in x: Int pub out y: Int ensure r: y = f (x) }
+```
+
+The `(` that opens a function's or a variant's arguments, a pattern's
+binders, a declaration's parameters or types, or the element types of
+`Set`, `Seq` and `Rel`, follows the name directly, with no space, as in
+Lean. Remove the space:
+
+```fren
+fn f(Int): Int
+comp c { in x: Int pub out y: Int ensure r: y = f(x) }
 ```
 
 In Lean, Lean's own parser reports this, as a syntax error.
@@ -1945,32 +1984,31 @@ comp c {
 }
 ```
 "# },
-  { code := "F0338", explanation := r#"`Nat` is the type of a field or payload, or an element type.
+  { code := "F0338", explanation := r#"`Nat` is an element type, or the type of a payload of a recursive enumeration.
 
 Erroneous code example:
 
 ```fren
-struct Stock { item: Int, count: Nat }
+struct Stock { counts: Set(Nat) }
 ```
 
-For now, `Nat` is the type of a variable, a function's parameter or
-result, a constant, or a definition of a `let` or `where`, and nothing
-else: not of a field or a payload, nor
-the element type of a set, relation or sequence. A `Nat` variable brings
-the constraint that it is at least 0, and Fren does not yet carry that
-constraint into the values of other types. Use an `Int`, and say where it
-is used that it is at least 0:
+A `Nat` brings the constraint that it is at least 0. Within a set,
+relation or sequence, or as a payload of a recursive enumeration, that
+constraint would hold of every element, and for now Fren does not carry it
+there. Use an `Int`, and say where it is used that it is at least 0, or
+use the pattern type `Int is 0..`, which may be an element type outside
+the decidable core:
 
 ```fren
-struct Stock { item: Int, count: Int }
+struct Stock { counts: Set(Int) }
 
 comp restock {
     in stock: Stock
     pub out more?
 
-    assume counted: stock.count >= 0
+    assume counted: not -1 in stock.counts
 
-    ensure rule: more? iff stock.count < 10
+    ensure rule: more? iff 0 in stock.counts
 }
 ```
 "# },
@@ -2142,6 +2180,42 @@ x := 1, y := 2 }`, not as `Point(1, 2)`:
 struct Ms(Int)
 
 comp c { pub out t: Ms ensure r: t = Ms(5) }
+```
+"# },
+  { code := "F0369", explanation := r#"A pattern on a type alias that names a pattern type.
+
+Erroneous code example:
+
+```fren
+type Byte := Int is 0..=255
+comp c { in n: Byte is ..=9 }
+```
+
+Pattern types are not nested: the base type of `T is P` is never itself a
+pattern type, and an alias of one is that pattern type. Write one pattern
+type, whose pattern matches what both patterns do:
+
+```fren
+type Byte := Int is 0..=255
+comp c { in n: Int is 0..=9 }
+```
+"# },
+  { code := "F0370", explanation := r#"A pattern type's pattern binds a name.
+
+Erroneous code example:
+
+```fren
+type Any := Int is n
+```
+
+A pattern type's pattern binds no names: a name of one segment that is not
+a variant, `true` or `false` would match every value and name it, which
+means nothing in a type. Write `_` to match every value, or name a variant,
+or a constant as a range's bound:
+
+```fren
+const MAX: Int := 9
+type Digit := Int is 0..=MAX
 ```
 "# },
   { code := "F0401", explanation := r#"An assumption mentions a variable that is not an `in`.
@@ -3208,6 +3282,68 @@ comp c {
 }
 ```
 "# },
+  { code := "F0622", explanation := r#"A value given where a pattern type is declared may not match its pattern.
+
+Erroneous code example:
+
+```fren
+type Byte := Int is 0..=255
+
+comp c {
+    in x: Int
+    pub det out b: Byte := x
+}
+```
+
+Where a pattern type `T is P` is declared, as the type of a defined output,
+an argument, a field, a payload, a `let` definition, a function's result or
+a constant, a value of `T` is accepted with the obligation that it matches
+`P`, which the solver checks where the value is written, under the same
+hypotheses as an index's definedness. The counterexample is a behaviour in
+which the value does not match. Guard the value so that it matches, or add
+an assumption that ensures it:
+
+```fren
+type Byte := Int is 0..=255
+
+comp c {
+    in x: Int
+    pub det out b: Byte := if 0 <= x <= 255 then x else 0
+}
+```
+"# },
+  { code := "F0623", explanation := r#"An instance binds an input of a pattern type to a value that may not match its pattern.
+
+Erroneous code example:
+
+```fren
+type Byte := Int is 0..=255
+
+comp sub { in b: Byte pub out y: Int ensure r: y = b }
+
+comp c {
+    in x: Int
+    inst w: sub { b := x }
+}
+```
+
+An input of a pattern type is an assumption of its component, so an
+instance's binding of it is checked, as the component's other assumptions
+are. The counterexample is a behaviour in which the bound value does not
+match. Bind the input to a value of its type, or add an assumption that
+guarantees it:
+
+```fren
+type Byte := Int is 0..=255
+
+comp sub { in b: Byte pub out y: Int ensure r: y = b }
+
+comp c {
+    in x: Byte
+    inst w: sub { b := x }
+}
+```
+"# },
   { code := "F0701", explanation := r#"An import that nothing uses (the lint `unused_imports`, a warning by default).
 
 Erroneous code example:
@@ -3936,7 +4072,7 @@ Example:
 comp c { in x: Int pub out n: Int ensure r: n = x * 1 }
 ```
 
-`x + 0`, `0 + x`, `x - 0`, `x * 1` and `1 * x` are `x`; `s ++ ""` and
+`x + 0`, `0 + x`, `x - 0`, `x * 1`, `1 * x` and `x div 1` are `x`; `s ++ ""` and
 `"" ++ s` are `s`, and so for `[]`; `a union {}`, `{} union a` and `a minus
 {}` are `a`. `x + -y` is `x - y`, and `x - -y` is `x + y`. `fren fix` can
 fix this:
@@ -5279,6 +5415,134 @@ fix this:
 pub ordered enum Level { Low, Mid, High }
 
 comp c { in l: Level pub out m: Level ensure r: m = l }
+```
+"# },
+  { code := "F0810", explanation := r#"An `Int` that a constraint keeps at least 0 (a warning, `manual_nat`).
+
+Example:
+
+```fren
+comp c { in n: Int pub out m: Int assume counts: n >= 0 ensure r: m = n + 1 }
+```
+
+A `Nat` input brings the assumption that it is at least 0 with its type,
+and a `Nat` output the guarantee. Declare the variable a `Nat`, and
+remove its bound, or the constraint if nothing else is left of it.
+`fren fix` leaves this to the writer, since an instance or a refinement
+in another file may need the `Int`:
+
+```fren
+comp c { in n: Nat pub out m: Int ensure r: m = n + 1 }
+```
+
+An instance must then bind the input to a `Nat`, since an `Int` is never
+narrowed, so the lint does not fire where an instance or a refinement in
+the same file keeps the variable an `Int`.
+"# },
+  { code := "F0811", explanation := r#"A conditional that is the absolute value (a warning, `manual_abs`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = if x < 0 then -x else x }
+```
+
+`if x < 0 then -x else x`, and its forms with `<=`, `>`, `>=` and the
+branches swapped, are `x.abs`. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = x.abs }
+```
+"# },
+  { code := "F0812", explanation := r#"A conditional that is the absolute value of a difference (a warning, `manual_abs_diff`).
+
+Example:
+
+```fren
+comp c { in a: Int in b: Int pub out y: Int ensure r: y = if a > b then a - b else b - a }
+```
+
+`if a > b then a - b else b - a`, and its forms with `>=`, `<`, `<=` and
+the branches swapped, are `(a - b).abs`. `fren fix` can fix this:
+
+```fren
+comp c { in a: Int in b: Int pub out y: Int ensure r: y = (a - b).abs }
+```
+"# },
+  { code := "F0813", explanation := r#"A conditional that is `min` or `max` (a warning, `manual_min_max`).
+
+Example:
+
+```fren
+comp c { in a: Int in b: Int pub out y: Int ensure r: y = if a < b then a else b }
+```
+
+`if a < b then a else b` is `a.min(b)`, and `if a < b then b else a` is
+`a.max(b)`, and so with `<=`, `>` and `>=`. `fren fix` can fix this:
+
+```fren
+comp c { in a: Int in b: Int pub out y: Int ensure r: y = a.min(b) }
+```
+"# },
+  { code := "F0814", explanation := r#"A conditional that keeps its operand between two bounds (a warning, `manual_clamp`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = if x < 0 then 0 else if x > 9 then 9 else x }
+```
+
+Where the bounds are integer literals, the lower at most the upper, the
+conditional is `x.max(0).min(9)`. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = x.max(0).min(9) }
+```
+"# },
+  { code := "F0815", explanation := r#"A remainder made non-negative by hand (a warning, `manual_rem_euclid`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = (x mod 7 + 7) mod 7 }
+```
+
+`mod` is Euclidean: `x mod 7` is between 0 and 6 even where `x` is
+negative, so adding the divisor and taking the remainder again changes
+nothing. `fren fix` can fix this:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = x mod 7 }
+```
+"# },
+  { code := "F0816", explanation := r#"A remainder by `1` or `-1` (a warning, `modulo_one`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out even? ensure r: even? iff x mod 1 = 0 }
+```
+
+Every integer is a multiple of `1`, so `x mod 1` is always `0`. The
+divisor is probably not the one meant:
+
+```fren
+comp c { in x: Int pub out even? ensure r: even? iff x mod 2 = 0 }
+```
+"# },
+  { code := "F0817", explanation := r#"A `min` and a `max` whose bounds leave one value (a warning, `min_max`).
+
+Example:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = x.min(0).max(9) }
+```
+
+`x.min(0)` is at most 0, so its `max` with 9 is always 9; so too
+`x.max(9).min(0)` is always 0. The bounds are probably swapped:
+
+```fren
+comp c { in x: Int pub out y: Int ensure r: y = x.max(0).min(9) }
 ```
 "# },
   { code := "F0818", explanation := r#"A record literal that copies most of its fields from one value (a warning, `manual_record_update`).

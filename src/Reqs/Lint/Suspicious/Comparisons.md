@@ -39,9 +39,7 @@ comp absurd_extreme_comparisons_exact {
     in op: Comparison
     in bound: Int
     in left?
-    in n: Int            -- the length
-
-    assume length: n >= 0
+    in n: Nat            -- the length
 
     inst p: absurd_extreme_comparisons { op, bound, left? }
     inst q: length_zero { op, bound, left? }
@@ -61,40 +59,36 @@ last, so `x <= Last` is always `true` and `x > Last` always `false`. The
 variant may be on either side, as in `Last >= x`. It does not fire on `=`
 or `!=`, nor on the comparisons of a [chained
 comparison](../../Lang/Expressions.md#chained-comparisons).
-`lint::absurd_ordered` states when it fires, and
-`lint::absurd_ordered_exact` checks the value against the positions of
-the variants:
+`lint::absurd_ordered` models the comparison by its operator, the
+position of the variant ([`lint::Position`](../Complexity/Methods.md#bounds-of-orderings)),
+the last variant of the enumeration, and the side the variant is on. It
+fires exactly where the comparison orders and has the same value for
+every value of the other operand:
 
 ```fren
+pub enum AbsurdValue { NotFixed, AlwaysTrue, AlwaysFalse }
+
+-- Whether the comparison holds where the other operand is `x`.
+fn compared?(op: Comparison, variant: Position, right?, x: Position) :=
+    if right? then orders?(op, x, variant) else orders?(op, variant, x)
+
 pub comp absurd_ordered {
+    use self::AbsurdValue::{AlwaysFalse, AlwaysTrue, NotFixed}
     use self::Comparison::{Ge, Gt, Le, Lt}
     in op: Comparison
-    in first?            -- the variant is the first
-    in last?             -- the variant is the last
+    in variant: Position  -- the variant compared with, or that the newtype built from it holds
+    in last: Position    -- the last variant of its enumeration
     in right?            -- the variant is the right operand, rather than the left
-    pub det out fires?
-    pub det out value?   -- what the comparison always is, where it fires
+    pub det out value: AbsurdValue  -- what the comparison always is, if it fires
 
-    ensure rule: fires? iff (if right? then (first? and op in {Ge, Lt}) or (last? and op in {Le, Gt})
-        else (first? and op in {Le, Gt}) or (last? and op in {Ge, Lt}))
-    ensure fixed: value? iff op in {Ge, Le}
-}
+    assume within: variant <= last
 
-comp absurd_ordered_exact {
-    in op: Comparison
-    in first?
-    in last?
-    in right?
-    in count: Int        -- the variants of the enumeration
-    in x: Int            -- the position of the other operand
+    ensure rule: value = (if not op in {Lt, Le, Gt, Ge} then NotFixed
+        else if (forall (x: Position), when x <= last, compared?(op, variant, right?, x)) then AlwaysTrue
+        else if (forall (x: Position), when x <= last, not compared?(op, variant, right?, x)) then AlwaysFalse
+        else NotFixed)
 
-    assume positions: 0 <= x < count
-    assume single: (first? and last?) iff count = 1
-
-    inst p: absurd_ordered { op, first?, last?, right? }
-
-    expect exact: when p.fires?, compares?(op, if right? then x else (if first? then 0 else count - 1),
-        if right? then (if first? then 0 else count - 1) else x) iff p.value?
+    expect extreme: when value != NotFixed, variant = Position::V0 or variant = last
 }
 ```
 

@@ -51,9 +51,12 @@
   on a spec after editing it. Formatting every spec must also keep its
   tokens, imports and comments, and be idempotent (`fmt::safe`).
 
-- **Mutants** (`lake test`): over the corpus of Fren's own requirements and
-  the snapshots of `fren mutate` (`test/cli/mutate_*.fren`,
-  `f0613_*.fren` and `f0614_*.fren`), every [mutant](../Mutate.md) changes
+- **Mutants** (`lake test`): over the corpus of Fren's own requirements,
+  the snapshots of `fren mutate` (every file under `test/cli/`, in any
+  subdirectory, named `mutate_*.fren`, `f0613_*.fren` or `f0614_*.fren`,
+  so a snapshot of its arguments, such as `args/mutate_by.fren`, is in it
+  too) and the examples of its decisions
+  (`test/mutate/*.fren`, below), every [mutant](../Mutate.md) changes
   the text and has no static error (*well-formed*: mutants are made so, and
   a failure is fixed in the operator rather than by filtering), has an
   identifier that no other mutant has, leaves the identifiers of the
@@ -62,6 +65,43 @@
   one, and the shards of `--shard K/N` partition a selection, sampled or
   not. The snapshot `mutate_list.fren` lists a mutant of every origin, at
   every kind of site; a new operator extends it.
+- **Decisions of `fren mutate`** (`lake test`): these run `fren mutate`
+  end to end, as treemut's meta-mutation tests (M1, M2, M5 and M8) do,
+  over the examples in
+  `test/mutate/`: small specs whose expectations and cover goals pin them
+  down. Beside an example `X.fren`, `X.equivalent` lists the mutants that
+  no check can kill, one per line as `ID REASON`, where the reason says why
+  the mutant means what the spec means. Strengthening the spec, so that the
+  mutant is not made or is killed, is better than listing it. Each example
+  must be:
+  - *adequate*: it passes `fren check`, and `fren mutate` kills every
+    mutant of it but those listed, each of which survives or is shown
+    equivalent, either of which may happen, since the solver's time limit
+    for equivalence is in wall-clock time;
+  - *sample invariant*: with `--sample` of half of its mutants, so that
+    each is run after fewer others and with fewer answers to solver queries
+    kept, `fren mutate` decides each mutant, and finds the check that kills
+    it, as it does without;
+  - *shard invariant*: with `--shard K/3`, for each `K`, `fren mutate`
+    decides each mutant of the shard as it does without, and the three
+    shards together hold each mutant once;
+  - *every expectation needed*: without any one of its expectations and
+    cover goals, local or global, some mutant survives that was killed. It
+    must survive, not be shown equivalent: a mutant that some check killed
+    means something else than the spec, so this also tests the solver's
+    answers about equivalence;
+  - *selection sound*: checking only the components whose fingerprint a
+    mutant changes (`Mutate.fingerprint`) decides what checking every
+    component does, and every check that kills the mutant then also kills
+    it when every check of every component is run;
+  - *verdicts sound*: each check that kills a mutant, when every check of
+    every component is run, passes under `fren check` of the spec and fails
+    under `fren check` of the mutant's text, and a mutant that is not
+    killed fails no check there that passes on the spec.
+
+  The last two are checked on a sample of at most 24 mutants of each
+  example. A new origin may need the examples strengthened, or new
+  mutants listed.
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that
@@ -163,6 +203,7 @@ every mutant of its group, which the checks of one mutant compare it with,
 and the checks of the whole group run in the first slice. A mutation job
 whose group or slice is out of range is an error, rather than a job that
 checks nothing, and a crash in one is reported with the files of its group.
+The decisions of `fren mutate` are checked in a job per example.
 As many jobs run at once as the machine has cores, but at most sixteen.
 This cap is a heuristic: the solver's time limit is in wall-clock time, so
 too many jobs at once could make checks inconclusive, and a job can take

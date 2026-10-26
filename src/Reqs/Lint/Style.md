@@ -5,7 +5,8 @@ thing, and `fren fix` fixes each of them but the lints of
 [names](#names), whose fixes would rename, and `assertions_on_constants`,
 which finds a constraint that says nothing about the variables.
 Its subchapters have the lints of [pattern tests and chained
-comparisons](Style/Comparisons.md) and of [records](Style/Records.md).
+comparisons](Style/Comparisons.md), of [natural numbers](Style/Naturals.md)
+and of [records](Style/Records.md).
 
 ## Glob imports
 
@@ -511,23 +512,19 @@ enumeration's name. `lint::enum_variant_names` and
 
 ```fren
 pub comp enum_variant_names {
-    in n_variants: Int
+    in n_variants: Nat
     in shared_first?     -- every variant has two or more words, and all have the same first word
     in shared_last?      -- every variant has two or more words, and all have the same last word
     pub det out fires?
-
-    assume counts: n_variants >= 0
 
     ensure rule: fires? iff (n_variants >= 2 and (shared_first? or shared_last?))
 }
 
 pub comp variant_has_enum_name {
-    in n_words: Int      -- the words of the variant's name
-    in n_enum_words: Int  -- the words of its enumeration's name
+    in n_words: Nat      -- the words of the variant's name
+    in n_enum_words: Nat  -- the words of its enumeration's name
     in contains?         -- the variant's words have the enumeration's, one after another
     pub det out fires?
-
-    assume counts: n_words >= 0 and n_enum_words >= 0
 
     ensure rule: fires? iff (contains? and n_words > n_enum_words)
 

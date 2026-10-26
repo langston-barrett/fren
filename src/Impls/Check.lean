@@ -122,6 +122,14 @@ impl definedness: check::definedness for (q : Answer) {
   reports_cex? := (expectVerdict q).2,
 }
 
+-- A pattern type's obligation is a definedness site, which `checkDefinedness`
+-- decides with `expectVerdict`.
+impl pattern_obligation: check::pattern_obligation for (q : Answer) {
+  q := toOutcome q,
+  verdict := toVerdict (expectVerdict q).1,
+  reports_cex? := (expectVerdict q).2,
+}
+
 -- `checkTable` decides with `expectVerdict`, as `checkDefinedness` does.
 impl completeness: check::completeness for (q : Answer) {
   q := toOutcome q,

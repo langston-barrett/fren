@@ -1,0 +1,2 @@
+-- A pattern type's pattern that binds a name (F0370).
+type Any := Int is n

@@ -1,0 +1,21 @@
+-- Pattern types and type aliases: the static errors.
+-- fren-covers: lang::nat_place, lang::pattern_place
+set_option fren.lint.dead_code "allow"
+
+type Byte := Int is 0..=255
+type Small := Byte is ..=9   --~ error: `Byte` is a pattern type, so it cannot have a pattern of its own
+
+enum Color { Red, Green }
+
+type Hue := Color is c   --~ error: a pattern type's pattern cannot bind `c`
+type Shade := Color is c!   --~ error: a pattern type's pattern cannot bind `c`
+type Odd := Int is Color::Red   --~ error: expected a pattern of `Int`, but this is a pattern of `Color`
+type Empty := Int is 5..=1   --~ error: the range `5..=1` matches no integer
+
+struct Counts { items: Set(Nat) }   --~ error: `Nat` cannot be the element type of a set, relation or sequence
+enum List { Nil, Cons(Nat, List) }   --~ error: `Nat` cannot be the type of a payload of a recursive enumeration
+
+-- Within an element type, or a recursive enumeration's payload, a pattern
+-- type is outside the decidable core.
+struct Bytes { all: Seq(Byte) }   --~ error: this is outside the decidable core: the constraint of an element type
+enum Chain { End, Link(Byte, Chain) }   --~ error: this is outside the decidable core: a recursive enumeration's payload

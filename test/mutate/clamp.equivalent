@@ -1,0 +1,4 @@
+-- The mutants of `clamp.fren` that no check can kill, each with why
+-- (`Reqs/dev/Testing`): `ID REASON`.
+swap-comparison-clamp::clamp-3d33a836d9df `x < LOW` to `x <= LOW`: at `x = LOW`, both branches give `LOW`
+swap-comparison-clamp::clamp-b49513b144c7 `x > HIGH` to `x >= HIGH`: at `x = HIGH`, both branches give `HIGH`

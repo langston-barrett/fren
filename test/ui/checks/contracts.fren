@@ -37,7 +37,7 @@ comp ratios {
     in b: Int
     pub out y: Int
 
-    assume a_nonneg: a >= 0
+    assume a_nonneg: a >= 0  --~ warning: `a` is never negative
     ensure r: y = ratio(a, b)   --~ error: the precondition `nonzero` of `ratio` may not hold at this application in `ratios::r`
 }
 

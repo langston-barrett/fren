@@ -90,10 +90,10 @@ def keyed (rs : Array CheckResult) : Array (String × CheckResult) := Id.run do
       out := out.set! i (k, { out[i]!.2 with verdict := v })
   return out
 
-/-- Whether some check of `after` kills the mutant, against the results
+/-- The checks of `after` that kill the mutant, against the results
 `before` of the original, both keyed. -/
-def kills (before after : Array (String × CheckResult)) : Bool :=
-  after.any fun (k, r) => before.any fun (k', b) => k == k' && killsCheck b.verdict r.verdict
+def killers (before after : Array (String × CheckResult)) : Array (String × CheckResult) :=
+  after.filter fun (k, r) => before.any fun (k', b) => k == k' && killsCheck b.verdict r.verdict
 
 /-- Whether some check that passes on the original is inconclusive in
 `after`. -/
@@ -116,7 +116,7 @@ def formulas (c : CComp) : Array (String × String) :=
     -- The indexes of an item together, as the definedness check of the
     -- item, so that a mutant that adds or drops one still compares.
     ++ (c.indexes.map (·.1)).toList.eraseDups.toArray.map (fun n =>
-      (s!"indexes {n}", conj (c.indexes.filter (·.1 == n) |>.map (·.2.2.2))))
+      (s!"indexes {n}", conj (c.indexes.filter (·.1 == n) |>.map (·.2.2.2.1))))
     -- And the questions about its tables.
     ++ (c.tables.map (·.1)).toList.eraseDups.toArray.map fun n =>
       (s!"tables {n}", conj (c.tables.filter (·.1 == n) |>.map (·.2.2.2.2)))

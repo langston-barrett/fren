@@ -1,0 +1,14 @@
+error[F0622]: a value in `c::b` may not have the type `Byte`
+ --> test/cli/results/f0622_definition.fren:6:28
+  |
+6 |     pub det out b: Byte := x
+  |                            ^ may not have the type `Byte`
+  |
+  = counterexample: x = -1, b = -1
+  = note: a value given where a pattern type is declared must match its pattern
+  = help: guard the value with a condition that makes it match, or add an assumption that ensures it
+
+fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0622`.
+exit=1

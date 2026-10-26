@@ -1,0 +1,73 @@
+-- What pattern types bring: fields, payloads, `Nat`s within values,
+-- collections, recursive enumerations, quantifiers and refinements.
+-- fren-covers: lang::pattern_finite, lang::nat_place
+
+type Byte := Int is 0..=255
+type Digit := Int is 0..=9
+
+-- A record's fields and an enumeration's payloads bring their constraints,
+-- however deep, and a `Nat` within one is at least 0.
+struct Stock { item: Byte, count: Nat }
+enum Reading { Raw(Stock), Missing }
+struct Flag { on?: Bool is true }
+
+comp stocked {
+    in r: Reading
+    in a: Flag
+    in b: Flag
+
+    expect deep: match r { Reading::Raw(s) => s.item <= 255 and s.count >= 0, Reading::Missing => true }
+    expect same: a = b
+}
+
+-- A newtype of a pattern type.
+struct Level(Int is 1..=3)
+
+comp levels {
+    in l: Level
+    pub out y: Int
+
+    ensure r: y = l.0 + 1
+
+    expect high: y <= 4
+}
+
+-- A quantifier ranges over a bounded pattern type.
+comp digits {
+    in d: Digit
+
+    expect all: forall (k: Digit), k + d <= 18
+    expect some: exists (k: Int is 0..=7), k = 7 and k > d - 3
+    expect one: d < 10
+}
+
+-- Elements bring their constraint for every element, outside the
+-- decidable core.
+set_option fren.lint.undecidable "allow" in
+comp collections {
+    in s: Set(Digit)
+    in q: Seq(Digit)
+
+    expect members: 12 in s or s != {}   --~ error: expectation `collections::members` does not hold
+    expect index: when q != [], q[0] <= 9
+    expect no_twelve: not 12 in s
+}
+
+-- A recursive enumeration's payload brings its constraint where it is read.
+set_option fren.lint.undecidable "allow" in
+enum Chain { End, Link(Digit, Chain) }
+
+comp chained {
+    in c: Chain
+
+    expect heads: match c { Chain::Link(d, Chain::Link(e, _)) => d + e <= 18, _ => true }
+}
+
+-- A global expectation's binders bring their inputs' constraints.
+expect positive: forall (a: levels), a.l.0 >= 1
+
+-- A refinement assumes what the abstract component's inputs bring, and
+-- checks what the concrete one's do.
+comp abstract_lvl { in n: Int is 0..=9 pub out y: Int ensure r: y >= n }
+comp concrete_lvl { in n: Int is 0.. pub out y: Int ensure r: y = n }
+refine narrower: concrete_lvl refines abstract_lvl

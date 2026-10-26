@@ -1,0 +1,14 @@
+warning[F0816]: the remainder by `1` is always `0`
+ --> test/cli/lints/suspicious/f0816_modulo_one.fren:2:54
+  |
+2 | comp c { in x: Int pub out even? ensure r: even? iff x mod 1 = 0 }
+  |                                                      ^^^^^^^ always `0`
+  |
+  = note: the divisor is probably not the one meant
+  = note: `modulo_one` is `warn` by default
+  = help: to allow it, `set_option fren.lint.modulo_one "allow"`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0816`.
+exit=3

@@ -4,7 +4,7 @@ error[F0355]: a quantifier cannot range over `Set(Bool)`
 2 | comp c { in s: Set(Bool) pub out ok? ensure r: ok? iff (exists (t: Set(Bool)), t = s) }
   |                                                                    ^^^^^^^^ not a type whose values can be listed
   |
-  = note: a quantifier ranges over `Bool`, or an enum or record whose payloads and fields it ranges over
+  = note: a quantifier ranges over `Bool`, an enum or record whose payloads and fields it ranges over, or a pattern type whose base type it ranges over or whose integer ranges are bounded
   = help: to quantify over the members of a set `s`, quantify over their type: `forall (x: T), when x in s, ...`
 
 error: could not check due to previous errors

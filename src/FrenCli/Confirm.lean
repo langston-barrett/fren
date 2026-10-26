@@ -233,9 +233,10 @@ def readModel (sp : Spec) (sy : Symbols) (model : Array (Name × String)) : Env 
         funs := funs.insert p (names, body)
       continue
     if let some v := sy.eval [] e then env := env.insert n v
-  let interp : Interp := { fn := fun f args => do
+  let fn (f : Name) (args : Array Val) : Option Val := do
     let (ps, body) ← funs[f]?
-    sy.eval (ps.toList.zip args.toList) body }
+    sy.eval (ps.toList.zip args.toList) body
+  let interp : Interp := { fn, shapes := sp.shapes.find? }
   return (env, interp)
 
 /-! ## Evaluating formulas in a model -/
@@ -374,8 +375,11 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
       -- The `n`th index at a position is the `n`th goal there: a name of a
       -- `let` or `where` repeats its definition's indexes where it is
       -- mentioned.
-      let goal? := positions[j]?.bind fun pos =>
-        let n := ((positions.extract 0 j).zip (core.indexes.extract 0 j)).filter (fun (p, y) => p == pos && y.prop == x.prop) |>.size
+      -- A pattern type's obligation, which the evaluator does not know
+      -- of, is not confirmed.
+      let goal? := if x.patTy?.isSome then none else positions[j]?.bind fun pos =>
+        let n := ((positions.extract 0 j).zip (core.indexes.extract 0 j)).filter (fun (p, y) =>
+          p == pos && y.prop == x.prop && y.patTy?.isNone) |>.size
         (((exsOf x.prop).flatMap (·.indexGoals)).filter (·.1 == pos))[n]?
       { x with goal := (x.goal, match goal? with
         | some (_, g) => .atoms #[{ label := .num x.prop x.k, pfx := .anonymous, e := g }]
@@ -402,10 +406,15 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
       let d? := ei?.bind (sp.comp? ·.comp)
       { name := i.name, comp := i.comp
         bindings := (i.bindings, .atoms ((ei?.map (bindingAtoms .anonymous)).getD #[]))
-        behaviour := (i.behaviour, .atoms ((d?.map (sp.meaning · i.name)).getD #[]))
+        behaviour := (i.behaviour, .atoms ((d?.map (sp.meaning · i.name (typedInputs := false))).getD #[]))
+        -- An input's type's obligation, which the evaluator does not
+        -- know of, is not confirmed.
         assumes := i.assumes.map fun (a, s) =>
           let e? := d?.bind fun d => (d.constraints.find? (·.name == a)).map (·.e)
-          (a, (s, .atoms ((e?.map fun e => #[{ label := i.name ++ a, pfx := i.name, e }]).getD #[]))) } }
+          (a, (s, match e? with
+            | some e => .atoms #[{ label := i.name ++ a, pfx := i.name, e }]
+            | none => if i.typed.any (·.1 == a) then .unknown else .atoms #[]))
+        typed := i.typed } }
 
 /-- Whether a refutation is about result `r`. -/
 def Refutation.about (x : Refutation) (r : Fren.Core.CheckResult) : Bool :=

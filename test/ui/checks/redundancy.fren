@@ -11,6 +11,7 @@ comp thermostat {
 
     assume sane: target >= 5 and target <= 30
     assume warm: target >= 0             --~ warning: `thermostat::warm` is redundant: it follows from `sane`
+    --~^ warning: `target` is never negative
 
     ensure heats: heat? iff temp < target - 2
     ensure cools: cool? iff temp > target + 2

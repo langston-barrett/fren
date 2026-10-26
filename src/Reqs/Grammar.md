@@ -10,6 +10,7 @@
 | `[a]` | `a`, optionally |
 | `a*`, `a+` | zero or more, one or more `a` |
 | `( ... )` | grouping |
+| `a"("` | `a` and then `(`, with nothing between them, not even a space (see [Punctuators](Lang/Lexical.md#punctuators)); the same for `[` |
 | `IDENT`, `INT`, `STRING` | an identifier, an integer literal, a string literal, raw or not (see [Lexical structure](Lang/Lexical.md)) |
 | `DIGITS` | decimal digits, which name a field after `.`, as in `x.0` (see [Newtypes](Lang/Expressions.md#newtypes)) |
 | `DECL` | an identifier that declares a name, which ends in `!` if it shadows another (see [Shadowing](Lang/Components.md#shadowing)); no other `IDENT` ends in `!` |
@@ -19,20 +20,21 @@
 
 ```
 spec           := item*
-item           := module | use | enumeration | record | abstract-type | function | constant
+item           := module | use | enumeration | record | abstract-type | type-alias | function | constant
                 | component | expectation | refinement | check | claim | lint-setting | evidence-setting ["in" item] | lean-item
 
 module         := ["pub"] "mod" path
 use            := "use" path ["::*" | "::{" path ("," path)* [","] "}"]
 enumeration    := ["pub"] ["ordered"] "enum" IDENT "{" variant ("," variant)* [","] "}"
-variant        := IDENT ["(" type ("," type)* ")"]
+variant        := IDENT | IDENT"(" type ("," type)* ")"
 record         := ["pub"] "struct" IDENT "{" field ("," field)* [","] "}"
-                | ["pub"] "struct" IDENT "(" [type ("," type)*] ")"
+                | ["pub"] "struct" IDENT"(" [type ("," type)*] ")"
 field          := IDENT [":" type]
 abstract-type  := ["pub"] "type" IDENT
-function       := ["pub"] "fn" IDENT "(" type ("," type)* ")" [":" type]
-                | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] [":=" top] clause+
-                | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] ":=" top
+type-alias     := ["pub"] "type" IDENT ":=" type
+function       := ["pub"] "fn" IDENT"(" type ("," type)* ")" [":" type]
+                | ["pub"] "fn" IDENT"(" variable ("," variable)* ")" [":" type] [":=" top] clause+
+                | ["pub"] "fn" IDENT"(" variable ("," variable)* ")" [":" type] ":=" top
 clause         := ("assume" | "ensure") IDENT ":" top
 constant       := ["pub"] "const" IDENT ":" type ":=" top
 component      := ["pub"] "comp" IDENT "{" member* "}"
@@ -70,7 +72,8 @@ member         := "in" variable
 variable       := DECL [":" type]
 instance       := "inst" DECL ":" path "{" [binding ("," binding)* [","]] "}"
 binding        := IDENT [":=" expr]
-type           := "Bool" | "Int" | "Nat" | "String" | "Set" "(" type ")" | "Seq" "(" type ")" | "Rel" "(" type "," type ")"
+type           := base ["is" pattern]
+base           := "Bool" | "Int" | "Nat" | "String" | "Set""(" type ")" | "Seq""(" type ")" | "Rel""(" type "," type ")"
                 | path
 path           := IDENT ("::" IDENT)*
 ```
@@ -99,17 +102,17 @@ prod           := prod ("*" | "div" | "mod" | "inter" | "join") neg | neg
 neg            := "-" neg | atom
 atom           := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | "(" expr ")"
                 | "if" expr "then" expr "else" expr
-                | path "(" expr ("," expr)* ")"
+                | path"(" expr ("," expr)* ")"
                 | path "{" field-init ("," field-init)* [","] "}"
-                | atom "." IDENT ["(" expr ("," expr)* ")"]
+                | atom "." IDENT | atom "." IDENT"(" expr ("," expr)* ")"
                 | atom "." DIGITS
-                | IDENT ("." IDENT)+ "(" expr ("," expr)* ")"
+                | IDENT ("." IDENT)+"(" expr ("," expr)* ")"
                 | "match" atom "{" arm ("," arm)* [","] "}"
                 | "table" "{" row ("," row)* [","] "}"
                 | "{" [element ("," element)* [","]] "}"
                 | "{" expr "with" field-init ("," field-init)* [","] "}"
                 | "[" [expr ("," expr)* [","]] "]"
-                | atom "[" expr "]"
+                | atom"[" expr "]"
 element        := expr | pair
 pair           := "(" expr "," expr ")"
 field-init     := IDENT [":=" expr]
@@ -118,7 +121,7 @@ row            := ["|"] (iff | "_") "=>" iff
 pattern        := ["|"] or-pattern
 or-pattern     := primary ("|" primary)*
 primary        := "_" | DECL | literal | range
-                | path ["(" or-pattern ("," or-pattern)* ")"]
+                | path | path"(" or-pattern ("," or-pattern)* ")"
 literal        := ["-"] INT | STRING | "true" | "false"
 range          := bound "..=" bound | bound ".." [bound] | "..=" bound
 bound          := ["-"] INT | path

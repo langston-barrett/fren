@@ -1,0 +1,5 @@
+-- A newtype's types follow its name directly, with no space.
+pub struct Ms (Int)
+--~^[cli] error: a space before the `(` of the types of `Ms`
+--~^^[hosted] error: no space before
+--@ exit: 2

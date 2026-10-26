@@ -107,8 +107,8 @@ update binds its updated value with, and `let` and `where` become
 defined function's body may have one. -/
 def unfoldDefined (e : Expr) : MetaM Expr := do
   let s ← getState
-  if s.defined.isEmpty && s.contracts.isEmpty then return ← Meta.zetaReduce e
-  let ds := s.defined.foldl (init := ({} : NameSet)) fun acc _ d => acc.insert d.decl
+  -- A pattern type's obligation is its proposition (`Fren.typeObligation`).
+  let ds := s.defined.foldl (init := ({} : NameSet).insert ``Fren.typeObligation) fun acc _ d => acc.insert d.decl
   -- And the clauses of contracts, which the questions about applications
   -- and the facts about them apply.
   let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
@@ -150,9 +150,10 @@ assumes of its own (`Reqs/Check`). With `modelOptional`, a model that lean-smt c
 it cannot some values of abstract types, is left out rather than making the
 answer unknown: a cover goal passes on `sat`, with or without one. Such an
 answer is not cached. -/
-def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (facts : Array Expr := #[])
+def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (facts : Array (Name × Expr) := #[])
     (outFacts : Array Expr := #[]) (appsOf : Expr → Array Expr := fun _ => #[])
-    (factsOf : Expr → MetaM (Array (Name × Expr)) := fun _ => pure #[]) (modelOptional : Bool := false) :
+    (factsOf : Expr → MetaM (Array (Name × Expr)) := fun _ => pure #[]) (modelOptional : Bool := false)
+    (bounded : Bool := false) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -166,7 +167,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     -- application to a name mentions no bound variable.
     let appFacts ← Core.appFacts appsOf factsOf (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
       (← zetaReduce goal)
-    let hyps ← (facts.map (`nat, ·) ++ appFacts ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
+    let hyps ← (facts ++ appFacts ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
     let goal ← smtBinders (← unfoldDefined goal)
     let hyps ← hyps.mapM fun (n, t) => return (n, ← smtBinders t)
     withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do
@@ -185,6 +186,9 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       -- lean-smt reads an unsat core of every `unsat`, so it keeps those.
       let cvc5Defaults := [("simplification", "batch"), ("enum-inst", "false"), ("enum-inst-interleave", "false"),
         ("cegqi-midpoint", "false")]
+      -- A component whose queries may quantify over a collection's
+      -- elements sets `fmf-bound` (`Core.boundedOptions`).
+      let bounded := if bounded then Core.boundedOptions else []
       -- Each attempt on a goal of its own.
       let solve (model : Bool) : MetaM (Core.Outcome Expr) := do
         let mv ← mkFreshExprMVar goal
@@ -193,7 +197,9 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         -- can depend on the order (#173), so they are given reversed, to be
         -- asserted in the binary's order.
         match ← Smt.smt { trust := true, model, timeout := some timeout
-                          extraSolverOptions := Core.solverOptions true true ++ logic ++ cvc5Defaults
+                          -- `fmf-bound` right after the options both front ends set, as the
+                          -- binary sets it.
+                          extraSolverOptions := Core.solverOptions true true ++ bounded ++ logic ++ cvc5Defaults
                             ++ resourceLimitOptions (← getOptions) }
                   mv.mvarId! hs.reverse with
         | .sat (some m) =>
@@ -410,12 +416,12 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
       covers := ← named c.covers
       insts := ← c.insts.mapM fun i => return {
         name := i.name, comp := i.comp, bindings := ← beta i.bindings, behaviour := ← beta i.behaviour
-        assumes := ← i.assumes.mapM fun (n, a) => return (n, ← beta a) }
+        assumes := ← i.assumes.mapM fun (n, a) => return (n, ← beta a), typed := i.typed }
       triggers := ← (c.ensures ++ c.expects).filterMapM fun p => p.trigger?.mapM fun t => return (p.name, ← beta t)
       -- Numbered in order within each item.
       indexes := ← indexes.mapIdxM fun j (n, place, _, _, goal) => do
         let k := (indexes.extract 0 j).filter (·.1 == n) |>.size
-        return { prop := n, k, place, goal := ← beta goal }
+        return { prop := n, k, place, goal := ← beta goal, patTy? := obligationTy? goal }
       tables := tables.mapIdx fun j (n, place, q, goal) =>
         let k := (tables.extract 0 j).filter (·.1 == n) |>.size
         { site := { prop := n, k, place, goal }, goal := q }
@@ -432,16 +438,40 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     -- What the `Nat` variables bring (`lang::nat_variable`): each, of both
     -- copies, is at least 0. Each query's applications bring their own
     -- (`Core.appFacts`).
-    let natVars (outputs : Bool) := (c.vars.zip fvs).filter fun (v, _) =>
-      v.type.isConstOf ``Nat && match Core.natBrought (v.role == .output) v.defn?.isSome with
+    let varFacts (outputs : Bool) : MetaM (Array (Name × Expr)) := do
+      let vs := (c.vars.zip fvs).filter fun (v, _) => match Core.natBrought (v.role == .output) v.defn?.isSome with
         | .nothing => false
         | .guarantee => outputs
         | .assumption => !outputs
-    let outFacts ← (natVars true).mapM (atLeast0 ·.2)
-    let facts ← (natVars false).mapM (atLeast0 ·.2)
+      vs.flatMapM fun (v, x) => do
+        let nat ← if v.type.isConstOf ``Nat then pure #[(`nat, ← atLeast0 x)] else pure #[]
+        let ty ← v.fact?.mapM fun p => return (`type, ← rep (p.beta #[x]))
+        return nat ++ ty.toArray
+    let outFacts ← varFacts true
+    let facts ← varFacts false
     let copiedFvs := (c.vars.zip fvs).filter (fun (v, _) => (Core.Symbol.ofRole v.role).copied) |>.map (·.2)
     let all := facts ++ outFacts
-    let facts := all ++ (all.map (·.replaceFVars copiedFvs primes)).filter (!all.contains ·)
+    let facts := all ++ (all.map fun (n, f) => (n, f.replaceFVars copiedFvs primes)).filter (!all.contains ·)
+    let outFacts := outFacts.map (·.2)
+    -- The applications of functions into pattern types, and the reads of
+    -- recursive enumerations' payloads, that bring a constraint, each with
+    -- its predicate (`Reqs/Check`).
+    let st ← getState
+    let typedApps : Array (Expr × Nat × Expr) :=
+      fns.filterMap (fun (u, x, n, _) =>
+        (st.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == u then some a else none).bind fun a =>
+          a.fact?.map fun p => (x, n, p))
+      ++ st.enums.foldl (init := #[]) fun acc _ e => acc ++ e.readFacts.map fun (sel, p) => (mkConst sel, 1, p)
+    -- Whether its queries may quantify over a collection's elements, read
+    -- from the types, as the `fren` command's `State.bounded` reads it:
+    -- its variables' types' constraints, the obligations it asks, and the
+    -- results of the functions it uses.
+    let quantifies (e : Expr) := (e.find? fun x => x.isForall && !x.isArrow).isSome
+    let bounded := c.vars.any (fun v => v.fact?.isSome && (v.ptype.cons st.shapeOf).any (·.quantifies))
+      || c.indexes.any (fun (_, _, _, _, g) => (obligationTy? g).isSome && quantifies g)
+      || c.insts.any (fun i => i.assumes.any fun (n, a) => i.typed.any (·.1 == n) && quantifies a)
+      || c.uses.any fun u => st.abstracts.foldl (init := false) fun acc _ a =>
+        acc || (a.placeholder == u && (a.ptys.2.cons st.shapeOf).any (·.quantifies))
     -- What stands for the abstract types and functions, by which a formula
     -- uses them (`Core.coverInterpreted`).
     let useIds := ufs.foldl (fun acc u => (collectFVars acc u)) {} |>.fvarIds
@@ -461,18 +491,23 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     let presOf (u : Name) : Array ClauseInfo :=
       st.abstracts.foldl (init := #[]) fun ps _ a =>
         if a.placeholder == u then ((st.contracts.get? a.path).map (·.pres)).getD #[] else ps
-    let factFns := fns.filter fun (u, _, _, nat) => nat || !(postsOf u).isEmpty
+    let factFns := fns.filter fun (u, x, _, nat) => nat || !(postsOf u).isEmpty || typedApps.any (·.1 == x)
+    -- An application's `nat`, then its `type`, then its postconditions'.
     let factsOf (app : Expr) : MetaM (Array (Name × Expr)) := do
-      let some (u, _, _, nat) := factFns.find? (·.2.1 == app.getAppFn) | return #[]
+      let typeFact ← match typedApps.find? (·.1 == app.getAppFn) with
+        | some (_, _, p) => pure #[(`type, ← rep (p.beta #[app]))]
+        | none => pure #[]
+      let some (u, _, _, nat) := factFns.find? (·.2.1 == app.getAppFn) | return typeFact
       let args := app.getAppArgs
       let pres ← (presOf u).mapM fun k => rep (k.at args)
       let implies (ps : Array Expr) (q : Expr) : Expr := ps.foldr (fun p acc => mkForall `h .default p acc) q
       let posts := Core.postconditionFacts implies pres (← (postsOf u).mapM fun k => return (k.name, ← rep (k.at args)))
       let natFact ← if nat then pure #[(`nat, ← atLeast0 app)] else pure #[]
-      return natFact ++ posts
+      return natFact ++ typeFact ++ posts
     let bk (k : CheckKind) :=
-      let b := leanBackend c fvs primes cache facts outFacts (natApps (factFns.map fun (_, x, n, _) => (x, n)) ·) factsOf
-        (modelOptional := k == .cover)
+      let heads := factFns.map (fun (_, x, n, _) => (x, n)) ++ typedApps.map fun (x, n, _) => (x, n)
+      let b := leanBackend c fvs primes cache facts outFacts (natApps heads ·) factsOf
+        (modelOptional := k == .cover) bounded
       if k != .cover then b else
       { b with query := fun hyps goal wantModel => do
           let o ← b.query hyps goal wantModel

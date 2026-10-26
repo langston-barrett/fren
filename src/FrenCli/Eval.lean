@@ -2,6 +2,7 @@
 import Fren.Seq
 import FrenCli.Parse
 import FrenCore.Names
+import FrenCore.PatternTypes
 import FrenCore.Patterns
 import FrenCore.Regex
 import FrenCore.Table
@@ -228,6 +229,9 @@ inductive Ex where
   `e`'s, and the positions pair the preconditions with their checks
   (`Ex.tableGoals`, `check::precondition`). -/
   | pre (pos : Nat) (f : Name) (goals : Array (Name × Ex)) (e : Ex)
+  /-- That `e` is a value of the declared type `t`: what its pattern
+  types, and those within it, say of it (`Reqs/Lang/Types#meaning`). -/
+  | typed (t : Fren.Core.PTy) (ints : Array Int) (e : Ex)
   deriving Inhabited
 
 structure Var where
@@ -243,6 +247,9 @@ structure Constraint where
   kind : PropKind
   name : Name
   e : Ex
+  /-- For what a variable's type brings, rather than a constraint of the
+  spec: that type, as written (`Reqs/Lang/Components#pattern-types`). -/
+  typed? : Option String := none
   deriving Inhabited
 
 structure Inst where
@@ -305,6 +312,11 @@ structure Spec where
   /-- The bodies of defined functions and values of constants that have
   tables, each as a comp (`Comp.body?`). -/
   bodies : Array Comp := #[]
+  /-- The fields of each record and newtype, and the payloads of each
+  enumeration, as declared (`Fren.Core.DataShape`). -/
+  shapes : NameMap Fren.Core.DataShape := {}
+  /-- The result type of each uninterpreted function, as declared. -/
+  results : NameMap Fren.Core.PTy := {}
   deriving Inhabited
 
 def Spec.comp? (sp : Spec) (path : Name) : Option Comp := sp.comps.find? (·.path == path)
@@ -343,6 +355,9 @@ structure Interp where
   without matching it: `Fren.Core.Re.matches` of `p`'s parse, remembered
   (`Spec.withMatchMemo`). It is not part of the meaning. -/
   matchMemo : String → String → Option Bool := fun _ _ => none
+  /-- The parts of each record, newtype and enumeration, as declared, for
+  `Ex.typed` (`Spec.shapes`). -/
+  shapes : Name → Option Fren.Core.DataShape := fun _ => none
 
 instance : Inhabited Interp := ⟨{}⟩
 
@@ -494,6 +509,35 @@ def binV (op : Op) (x y : Option Val) : Option Val :=
   -- Euclidean, as SMT-LIB's; the divisor is never `0`.
   | .div => intOp (fun x y => .int (Int.ediv x y)) x y
   | .mod => intOp (fun x y => .int (Int.emod x y)) x y
+
+/-- Whether the pattern `p` matches the value `v`. -/
+partial def patHolds : Fren.Core.Pat → Val → Bool
+  | .wild _, _ => true
+  | .bool b, .bool c => b == c
+  | .int lo hi, .int i => Fren.Core.intervalHolds lo hi i
+  | .str s, .str t => s == t
+  | .ctor i ps, .ctor _ j vs => i == j && ps.size == vs.size && (ps.zip vs).all fun (p, w) => patHolds p w
+  | .or ps, v => ps.any (patHolds · v)
+  | _, _ => false
+
+/-- Whether `v` is a value of the declared type `t`, where `shapes` gives
+the records', newtypes' and enumerations' parts: it matches the pattern
+of `t`, and so does each of its fields, payloads and elements, however
+deep, and each `Nat` within it is at least 0. A value is finite, so this
+reads all of it, a recursive enumeration's too, which the solver states
+only of what a query reads (`Fren.Core.PTy.cons`). -/
+partial def typeHolds (shapes : Name → Option Fren.Core.DataShape) (t : Fren.Core.PTy) (v : Val) : Bool :=
+  t.pat?.all (patHolds · v) && match t.ty, v with
+    | .nat, .int i => 0 ≤ i
+    | .set _, .set ms | .seq _, .seq ms => (t.elems[0]?).all fun e => ms.all (typeHolds shapes e)
+    | .rel .., .set ms => ms.all fun
+      | .pair a b => (t.elems[0]?).all (typeHolds shapes · a) && (t.elems[1]?).all (typeHolds shapes · b)
+      | _ => true
+    -- A newtype's value is its underlying type's.
+    | .newtype p _, v => ((shapes p).bind (·.parts[0]?) |>.bind (·[0]?)).all (typeHolds shapes · v)
+    | .record p, .ctor _ idx args | .enum p, .ctor _ idx args =>
+      ((shapes p).bind (·.parts[idx]?)).all fun ts => (ts.zip args).all fun (u, w) => typeHolds shapes u w
+    | _, _ => true
 
 /-- The value of an expression, as far as it is known: each variable as
 `look` gives it, each binder of a `match` arm as `locals` does, and each
@@ -657,6 +701,7 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
     | none => I.fn (← unspec?) #[]
   -- A closed expression, which neither variables nor binders reach.
   | .const _ e => e.eval I (fun _ => none)
+  | .typed t _ e => return .bool (typeHolds I.shapes t (← e.eval I look locals slots))
   -- The first arm whose pattern matches and whose guard holds; where none
   -- is taken, the interpretation's unspecified value of its type.
   -- The first arm that is taken: whose pattern matches and whose guard
@@ -754,6 +799,7 @@ partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Optio
   -- value by its own holding too; then the table's own questions.
   -- A constant's indexes and tables are the constant's.
   | .const .. => #[]
+  | .typed _ _ a => go a
   | .table pos rows _ =>
     let unlessAll (cs : Array Ex) (g : Ex) : Ex := cs.foldr (fun c g => .when true c g) g
     let (inRows, _) := rows.foldl (init := ((#[] : Array (Nat × Option Fren.Core.TableGoal × Ex)), (#[] : Array Ex)))
@@ -831,13 +877,16 @@ mutual
 bindings, and the meaning of its comp. -/
 partial def Spec.instAtoms (sp : Spec) (pfx : Name) (i : Inst) : Array Atom :=
   match sp.comp? i.comp with
-  | some d => bindingAtoms pfx i ++ sp.meaning d (pfx ++ i.name)
+  -- What its inputs' types bring is its assumption, which the instance
+  -- check asks of the bindings, rather than part of its behaviour.
+  | some d => bindingAtoms pfx i ++ sp.meaning d (pfx ++ i.name) (typedInputs := false)
   | none => #[]
 
 /-- Everything a comp nested at `pfx` says of its variables: its
 assumptions, requirements and instances (`Reqs/Lang/Components#meaning`). -/
-partial def Spec.meaning (sp : Spec) (c : Comp) (pfx : Name := .anonymous) : Array Atom :=
-  c.defAtoms pfx ++ atomsOf pfx (c.ofKind .assume) ++ atomsOf pfx (c.ofKind .ensure) ++ c.insts.flatMap (sp.instAtoms pfx)
+partial def Spec.meaning (sp : Spec) (c : Comp) (pfx : Name := .anonymous) (typedInputs : Bool := true) : Array Atom :=
+  c.defAtoms pfx ++ atomsOf pfx ((c.ofKind .assume).filter fun a => typedInputs || a.typed?.isNone)
+    ++ atomsOf pfx (c.ofKind .ensure) ++ c.insts.flatMap (sp.instAtoms pfx)
 end
 
 /-- `I`, of the instances before `upTo`. -/
@@ -903,6 +952,10 @@ structure LState where
   spec : Spec := {}
   /-- The binders of `match` arms lowered so far, which number their names. -/
   fresh : Nat := 0
+  /-- The type aliases, each with the type it names, without its patterns,
+  and as declared. -/
+  aliases : NameMap VTy := {}
+  declaredAliases : NameMap Fren.Core.PTy := {}
 
 abbrev L := StateT LState (Except String)
 
@@ -924,6 +977,8 @@ def resolve (segs : Array Ident) : L Resolved := do
 def dotted (parts : List String) : Name := parts.foldl Name.mkStr .anonymous
 
 partial def lowerTy (segs : Array Ident) : L VTy := do
+  -- A pattern type has its base type's values, to the evaluator.
+  let segs := (splitPatternType segs).1
   if segs.size == 1 && segs[0]!.name == "Bool" then return .bool
   if segs.size == 1 && segs[0]!.name == "Int" then return .int
   if segs.size == 1 && segs[0]!.name == "Nat" then return .nat
@@ -938,7 +993,9 @@ partial def lowerTy (segs : Array Ident) : L VTy := do
     if let some u := (← get).spec.newtypes.find? path then return .newtype path u
     return .data path
   | .item { kind := .enumItem, path, .. } => return .data path
-  | .item { kind := .typeItem, path, .. } => return .abstract path
+  | .item { kind := .typeItem, path, .. } =>
+    if let some t := (← get).aliases.find? path then return t
+    return .abstract path
   | r => throw s!"`{showPath r.path}` is not a type"
 
 def dataDef (path : Name) : L DataDef := do
@@ -1036,6 +1093,7 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .update e fs => .update (e.renameBound f) (fs.map fun (k, x) => (k, x.renameBound f))
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.renameBound f), v.renameBound f)) u
   | .const p e => .const p e
+  | .typed t is a => .typed t is (a.renameBound f)
   | .match e arms pos ps u =>
     .match (e.renameBound f) (arms.map fun (p, g?, b) => (p.rename f, g?.map (·.renameBound f), b.renameBound f)) pos ps u
   | .quant all ns insts b => .quant all (ns.map f) insts (b.renameBound f)
@@ -1068,6 +1126,7 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .quant all ns insts b => .quant all ns insts (b.renameVars f)
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.renameVars f), v.renameVars f)) u
   | .const p e => .const p e
+  | .typed t is a => .typed t is (a.renameVars f)
 
 /-- `e` with each variable `n` replaced by `f n`. -/
 partial def Ex.substVars (f : Name → Ex) : Ex → Ex
@@ -1097,6 +1156,7 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .quant all ns insts b => .quant all ns insts (b.substVars f)
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.substVars f), v.substVars f)) u
   | .const p e => .const p e
+  | .typed t is a => .typed t is (a.substVars f)
 
 /-- The comp that checks that `c` refines `a` (`Reqs/Lang/Refinement`): its
 inputs are `c`'s, its assumptions `a`'s, it has an instance `w` of `c` and
@@ -1147,6 +1207,7 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .update e fs => .update (e.subst σ) (fs.map fun (k, x) => (k, x.subst σ))
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.subst σ), v.subst σ)) u
   | .const p e => .const p e
+  | .typed t is a => .typed t is (a.subst σ)
   -- An arm's binders shadow those of `σ`.
   | .match e arms pos ps u =>
     .match (e.subst σ) (arms.map fun (p, g?, b) =>
@@ -1214,6 +1275,7 @@ def unspecifiedFn (t : VTy) : Name := .str .anonymous s!"[][0] : {reprStr t}"
 may be unknown without an interpretation. -/
 partial def Ex.readsUnspecified : Ex → Bool
   | .index .. | .table _ _ (some _) | .const .. => true
+  | .typed _ _ a => a.readsUnspecified
   | .table _ rows none => rows.any fun (_, c?, v) => c?.any (·.readsUnspecified) || v.readsUnspecified
   | .lit _ | .var _ | .slot _ | .bound _ => false
   | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .quant _ _ _ a | .pre _ _ _ a => a.readsUnspecified
@@ -1446,6 +1508,62 @@ def varTy (ty? : Option (Array Ident)) : L VTy := do
   | some t => lowerTy t
   | none => return .bool
 
+/-- `t` as both front ends see it (`Fren.Core.Ty`). -/
+partial def VTy.core (sp : Spec) : VTy → Fren.Core.Ty
+  | .bool => .bool
+  | .int => .int
+  | .nat => .nat
+  | .string => .string
+  | .set t => .set (t.core sp)
+  | .rel a b => .rel (a.core sp) (b.core sp)
+  | .seq t => .seq (t.core sp)
+  | .data p => if (sp.data.find? p).any (·.isRecord) then .record p else .enum p
+  | .abstract p => .abstract p
+  | .newtype p u => .newtype p (u.core sp)
+
+/-- The declared type written `segs`, with the patterns of the pattern
+types within it, as the elaborator's `elabPTy` has it. -/
+partial def lowerPTy (segs : Array Ident) : L Fren.Core.PTy := do
+  let (base, seg?) := splitPatternType segs
+  let t ← lowerBasePTy base
+  let some seg := seg? | return t
+  let some p := seg.pattern? | throw "a pattern type's pattern"
+  let vt ← lowerTy base
+  let (q, _) ← lowerPattern vt p
+  return { t with pat? := some q.core }
+where
+  lowerBasePTy (segs : Array Ident) : L Fren.Core.PTy := do
+    if segs[0]!.name == Parser.setSeg || segs[0]!.name == Parser.seqSeg then
+      let e ← lowerPTy (segs.extract 1)
+      let sp := (← get).spec
+      return { ty := (← lowerTy segs).core sp, elems := #[e] }
+    if segs[0]!.name == Parser.relSeg then
+      let (a, b) := Parser.splitRel (segs.extract 1)
+      let sp := (← get).spec
+      return { ty := (← lowerTy segs).core sp, elems := #[← lowerPTy a, ← lowerPTy b] }
+    if segs.size == 1 && ["Bool", "Int", "Nat", "String"].contains segs[0]!.name then
+      return .plain ((← lowerTy segs).core (← get).spec)
+    if let .item { kind := .typeItem, path, .. } ← resolve segs then
+      if let some t := (← get).declaredAliases.find? path then return t
+    return .plain ((← lowerTy segs).core (← get).spec)
+
+/-- `x`'s constraint of its declared type `t`, if it has one: what its
+type brings, as a constraint (`Reqs/Lang/Components#pattern-types`). -/
+def typeConstraint (kind : PropKind) (x : Name) (t : Fren.Core.PTy) : L (Option Constraint) := do
+  let sp := (← get).spec
+  if (t.cons sp.shapes.find?).isNone then return none
+  -- The bounds of its patterns, and of those within it, to search among.
+  let rec ints (fuel : Nat) (t : Fren.Core.PTy) : Array Int :=
+    match fuel with
+    | 0 => #[]
+    | fuel + 1 =>
+      let own := (t.pat?.map Fren.Core.Pat.bounds).getD #[]
+      let parts := match t.ty with
+        | .record p | .enum p | .newtype p _ => ((sp.shapes.find? p).map (·.parts.flatten)).getD #[]
+        | _ => #[]
+      own ++ (t.elems ++ parts).flatMap (ints fuel ·)
+  return some { kind, name := .num x 0, e := .typed t (ints 8 t) (.var x), typed? := some "" }
+
 /-- Imports `segs` into the current module, or into the component `scope`. -/
 def declareUseIn (segs : Array Ident) (glob : Bool) (scope : Option Name) : L Unit := do
   let st ← get
@@ -1479,7 +1597,15 @@ def lowerComp (isPub : Bool) (name : Ident) (members : Array Member) : L Unit :=
     for (b, e?) in bs do
       bindings := bindings.push (Name.mkSimple b.name, (← lowerExpr cx (e?.getD (.path b.span #[b]))).1)
     insts := insts.push { name := w, comp := cpath, bindings }
+  -- What each variable's type brings, but a defined output's, first: an
+  -- input's an assumption, an output's a guarantee.
   let mut constraints := #[]
+  for m in members do
+    let .var isIn _ _ x ty? defn? := m | continue
+    let some ty := ty? | continue
+    if defn?.isSome then continue
+    if let some c ← typeConstraint (if isIn then .assume else .ensure) (declName x) (← lowerPTy ty) then
+      constraints := constraints.push c
   for m in members do
     let .prop kind x e := m | continue
     constraints := constraints.push { kind, name := Name.mkSimple x.name, e := (← lowerExpr cx e).1 }
@@ -1570,21 +1696,39 @@ partial def lowerItem : Item → L Unit
       let tys ← (payload?.getD #[]).mapM lowerTy
       ctors := ctors.push { name := Name.mkSimple v.name, fields := tys.map (.anonymous, ·) }
     modify fun s => { s with spec.data := s.spec.data.insert path { path, isRecord := false, ctors } }
+    -- Its payloads' types, as declared, once it is declared.
+    let parts ← variants.mapM fun (_, payload?) => (payload?.getD #[]).mapM lowerPTy
+    let recursive := ctors.any (·.fields.any (·.2 == .data path))
+    modify fun s => { s with spec.shapes := s.spec.shapes.insert path { recursive, parts } }
   | .record isPub name fields => do
     let st ← get
     let path := st.module ++ Name.mkSimple name.name
     let mut fs := #[]
     for (f, ty?) in fields do fs := fs.push (Name.mkSimple f.name, ← varTy ty?)
+    let parts ← fields.mapM fun (_, ty?) => match ty? with
+      | some t => lowerPTy t
+      | none => pure (.plain .bool)
     modify fun s => { s with
       table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
-      spec.data := s.spec.data.insert path { path, isRecord := true, ctors := #[{ name := `mk, fields := fs }] } }
+      spec.data := s.spec.data.insert path { path, isRecord := true, ctors := #[{ name := `mk, fields := fs }] }
+      spec.shapes := s.spec.shapes.insert path { isRecord := true, parts := #[parts] } }
   | .newtype isPub name fields => do
     let path := (← get).module ++ Name.mkSimple name.name
     let some ty := fields[0]? | throw s!"`{showPath path}` has no field"
     let u ← lowerTy ty
+    let pt ← lowerPTy ty
     modify fun s => { s with
       table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
-      spec.newtypes := s.spec.newtypes.insert path u }
+      spec.newtypes := s.spec.newtypes.insert path u
+      spec.shapes := s.spec.shapes.insert path { isRecord := true, isNewtype := true, parts := #[#[pt]] } }
+  | .typeAlias isPub name ty => do
+    let path := (← get).module ++ Name.mkSimple name.name
+    let t ← lowerTy ty
+    let pt ← lowerPTy ty
+    modify fun s => { s with
+      table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
+      aliases := s.aliases.insert path t
+      declaredAliases := s.declaredAliases.insert path pt }
   | .abstractType isPub name => do
     let path := (← get).module ++ Name.mkSimple name.name
     modify fun s => { s with
@@ -1596,6 +1740,12 @@ partial def lowerItem : Item → L Unit
     let contract := !clauses.isEmpty
     match body with
     | none =>
+      -- Its results are values of its result type, as declared.
+      let rt ← match result with
+        | some t => lowerPTy t
+        | none => pure (.plain .bool)
+      let constrained := (rt.cons (← get).spec.shapes.find?).isSome
+      modify fun s => { s with spec.results := if constrained then s.spec.results.insert path rt else s.spec.results }
       if !contract then
         let ps ← params.mapM (lowerTy ·.1)
         modify fun s => { s with spec.funs := s.spec.funs.insert path (ps, r) }
