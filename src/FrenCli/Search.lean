@@ -154,10 +154,19 @@ partial def World.value (sp : Spec) (w : World) (f : Name) (args : Array Val) (d
     let I : Interp := { fn := fun g as => if g == f && as == args then some v else w.value sp g as (depth - 1) }
     posts.all (·.eval I (fun _ => none) locals == some (.bool true))
 
-def World.interp (sp : Spec) (w : World) : Interp where
+/-- `sp.shapes`, in a hash map, in which `typeHolds` looks up a type more
+cheaply than in a `NameMap`, at each instance of a quantifier. It has the
+same entries. -/
+def Spec.shapeMap (sp : Spec) : Std.HashMap Name Fren.Core.DataShape := sp.shapes.foldl (·.insert · ·) {}
+
+/-- The interpretation that `w` gives, where `shapes?` is `sp.shapeMap`, if
+it is given, built once for many interpretations. -/
+def World.interp (sp : Spec) (w : World) (shapes? : Option (Std.HashMap Name Fren.Core.DataShape) := none) : Interp where
   fn f args := w.value sp f args
   matchMemo p s := do return (← (← sp.matchMemo[p]?)[s]?).get
-  shapes := sp.shapes.find?
+  shapes p := match shapes? with
+    | some m => m[p]?
+    | none => sp.shapes.find? p
 
 /-! ## Candidates -/
 

@@ -444,8 +444,8 @@ def fail (t : Token) (expected : String) (keywords : Array String := #[]) : P α
     else #[]
   err span "F0104" s!"expected {expected}, found {t.tok.describe}" (some s!"expected {expected}") notes fixes
 
-def isKw (t : Token) (s : String) : Bool := t.tok == .kw s
-def isWord (t : Token) (s : String) : Bool := t.tok == .ident s
+def isKw (t : Token) (s : String) : Bool := match t.tok with | .kw k => k == s | _ => false
+def isWord (t : Token) (s : String) : Bool := match t.tok with | .ident w => w == s | _ => false
 
 def eatKw (s : String) : P (Option Token) := do
   let t ← peek
