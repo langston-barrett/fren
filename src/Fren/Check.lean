@@ -255,11 +255,12 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       let .const c _ := val.getAppFn | return none
       if c.getPrefix != e.decl then return none
       let some idx := e.variants.idxOf? (Name.mkSimple c.getString!) | return none
-      -- A generic type's constructor and selectors take its type
-      -- arguments first.
+      -- A generic type's constructor takes its type arguments first, and
+      -- its selectors take them, and an `Inhabited` instance of each,
+      -- implicitly, which `mkAppM` finds.
       let targs := ty.getAppArgs
       let arity := (e.payloads[idx]?.map (·.size)).getD 0
-      let sels := (Array.range arity).map fun k => mkAppN (mkConst (selectorName c k)) (targs.push x)
+      let sels ← (Array.range arity).mapM fun k => mkAppM (selectorName c k) #[x]
       let k : Core.Variant := { name := s!"{e.path.getString!}::{c.getString!}", arity }
       return some (k, ← mkEq x (mkAppN (mkConst c) (targs ++ sels)))
     render := fun n val => do

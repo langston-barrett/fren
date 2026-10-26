@@ -315,7 +315,11 @@ def genWide (avoidKnown : Bool := false) : R String := do
   if hasMs then out := out ++ "pub ordered struct Ms(Int)\n"
   let ms := if hasMs then #[WTy.ms] else #[]
   let hasPay ← chance 40
-  if hasPay then out := out ++ "pub enum P { A, B(Int), C(Bool) }\n"
+  -- Sometimes generic, as `P(Int)`, whose variables' types are written so
+  -- below.
+  let genericPay ← chance 50
+  if hasPay then
+    out := out ++ (if genericPay then "pub enum P(X) { A, B(X), C(Bool) }\n" else "pub enum P { A, B(Int), C(Bool) }\n")
   let pays := if hasPay then #[WTy.pay] else #[]
   let mut sc : WScope := { nVariants, ordered, relElem, avoidKnown, hasMs, hasPay }
   -- Constants, each over the earlier ones.
@@ -398,7 +402,8 @@ def genWide (avoidKnown : Bool := false) : R String := do
       out := out ++ s!"    {tested}cover g{k}: {← gen csc .bool 3}\n"
     out := out ++ "}\n"
     comps := comps.push (s!"c{c}", vars.filterMap (fun (n, t, i) => if i then some (n, t) else none), shown)
-  return out
+  -- Only variables have the type `P`, each declared on a line of its own.
+  return if genericPay then out.replace ": P\n" ": P(Int)\n" else out
 
 end Wide
 

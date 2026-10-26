@@ -377,8 +377,8 @@ note: `transient` forces retry? = true, but `honor_server` and `latency_budget` 
 ```
 
 An output whose type is an
-[enumeration](Lang/Items.md#enumerations) may be forced only part of the
-way: a set of guarantees *forces* the output to a *variant* when every
+[enumeration](Lang/Items.md#enumerations), [generic](Lang/Generics.md) or
+not, may be forced only part of the way: a set of guarantees *forces* the output to a *variant* when every
 assignment that satisfies them gives the output a value of that variant,
 whatever its payload. A side that rules out `Decision::GiveUp` forces
 `Decision::RetryAfter`, without forcing a delay. Where the two sides force

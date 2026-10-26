@@ -236,6 +236,7 @@ in a string is outside the decidable core, though the solver decides
 these:
 
 ```fren
+-- `replace_all` is outside the decidable core, and no other method states the shape.
 set_option fren.lint.undecidable "allow" in
 pub comp wildcards {
     in arity: Nat
@@ -258,6 +259,7 @@ core too:
 -- or a variant, as Fren names it (`E::C`), with how many values its payload has.
 pub enum Forced { Value(String), Variant(String, Nat) }
 
+-- `++` in a `match` arm makes a word equation; flattening `Forced` into flags would avoid it.
 set_option fren.lint.undecidable "allow" in
 pub comp clash_text {
     in guarantee: String     -- the guarantee's name

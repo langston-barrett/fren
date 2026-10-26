@@ -448,6 +448,7 @@ def genSpec : R GSpec := do
   let useAbs ← chance 35
   let useWrap ← chance 35
   let usePay ← chance 35
+  let genericPay ← chance 50
   let nVariants := (← below 2) + 2
   let ordered ← chance 50
   let mut collections := #[]
@@ -461,14 +462,17 @@ def genSpec : R GSpec := do
     out := out ++ s!"pub {if ordered then "ordered " else ""}enum E \{ {", ".intercalate ((List.range nVariants).map (s!"V{·}"))} }\n"
   if useAbs then out := out ++ "pub type T\npub fn p?(T)\n"
   if useWrap then out := out ++ "pub ordered struct W(Int)\n"
-  if usePay then out := out ++ "pub enum P { A, B(Bool), C(Bool) }\n"
+  -- Sometimes generic, declared as `P(Bool)`, whose values are the same.
+  if usePay then
+    out := out ++ (if genericPay then "pub enum P(X) { A, B(X), C(Bool) }\n" else "pub enum P { A, B(Bool), C(Bool) }\n")
   let mut comps : Array GComp := #[]
   for i in [0:(← below 2) + 1] do
     comps := comps.push (← genComp i comps useEnum useAbs useWrap usePay nVariants ordered collections)
   for c in comps do
     out := out ++ s!"\npub comp {c.name} \{\n"
     for v in c.vars do
-      let ty := if v.ty == .bool then "" else s!": {tyName (elemTy useEnum) v.ty}"
+      let ty := if v.ty == .bool then "" else if v.ty == .pay && genericPay then ": P(Bool)"
+        else s!": {tyName (elemTy useEnum) v.ty}"
       let mods := if v.isIn then "in" else s!"{if v.isPub then "pub " else ""}{if v.isDet then "det " else ""}out"
       out := out ++ s!"    {mods} {v.name}{ty}\n"
     if let some i := c.inst? then
@@ -518,13 +522,14 @@ partial def domain (sp : Spec) (size : Nat) : VTy → Array Val
     #[.seq #[]] ++ xs.map (.seq #[·]) ++ xs.flatMap fun x => xs.map fun y => .seq #[x, y]
   | .abstract s => (Array.range size).map (.abs s)
   -- Each variant with each value of its payload, which the generator
-  -- makes of finite types (`P`'s `Bool`s).
-  | .data p _ => match sp.data.find? p with
+  -- makes of finite types (`P`'s `Bool`s), with a generic type's
+  -- arguments for its parameters.
+  | .data p args => match sp.data.find? p with
     | some d => (d.ctors.zipIdx).flatMap fun (c, i) =>
-      (c.fields.foldl (init := #[#[]]) fun pre (_, t) => pre.flatMap fun xs => (domain sp size t).map xs.push).map
-        (.ctor p i ·)
+      (c.fields.foldl (init := #[#[]]) fun pre (_, t) =>
+        pre.flatMap fun xs => (domain sp size (t.subst args)).map xs.push).map (.ctor p i ·)
     | none => #[]
-  -- The generator declares no generic types.
+  -- Substituted by the type's arguments, above.
   | .param _ => #[]
 
 /-- Every interpretation of the functions, whose parameters are abstract
