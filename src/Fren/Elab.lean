@@ -2639,6 +2639,11 @@ def checkNewtypeMembers (seq : Bool) (elems : Array Syntax) (xs : Array Term) : 
       let lit := if seq then s!"Seq({name})" else s!"Set({name})"
       throwErrorAt e (Core.membersMsg seq (← typeName t0) (← typeName t) lit).text
 
+/-- `t`, a `Bool` if it is a condition, a `Prop`: a member of a set is a
+value, and a `Bool` in Fren, as `true` is. -/
+def boolTerm (t : Term) : TermElabM Term := do
+  if (← typeOf t).isProp then `(if $t then true else false) else pure t
+
 /-- `{a, b}`, or `{}` where `emptyOk` says that something gives it a type. -/
 def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emptyOk : Bool) (e : Syntax) :
     TermElabM Term := withRef e do
@@ -2662,7 +2667,7 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
       let (ea?, eb?) := match lit? with | some (.rel a b) => (some a, some b) | _ => (none, none)
       let (a, b) := (← widenTerm (← toTerm { mcx with expected? := ea? } x[1]), ← widenTerm (← toTerm { mcx with expected? := eb? } x[3]))
       return ← `((($a, $b) : $(typeSyntax (← typeOf a)) × $(typeSyntax (← typeOf b))))
-    widenTerm (← toTerm { mcx with expected? := lit?.bind fun | .set t => some t | _ => none } x)
+    boolTerm (← widenTerm (← toTerm { mcx with expected? := lit?.bind fun | .set t => some t | _ => none } x))
   -- The type of the literal a member makes: a pair makes a relation.
   let litTy (k : Nat) (x : Term) : TermElabM (Option Core.Ty) := do
     if elems[k]!.isOfKind ``Lang.pairExpr then
@@ -3014,12 +3019,12 @@ def seqLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
         | none => pure none
   let x0 ← toTerm { ecx 0 with expected? := elem? } elems[0]!
   let t0? := ((← frenTypeOf? x0).orElse fun _ => if synthesizes elems[0]! then none else elem?).map (·.widen)
-  let mut xs := #[← widenTerm x0]
+  let mut xs := #[← boolTerm (← widenTerm x0)]
   for k in [1:elems.size] do
     let x ← toTerm { ecx k with expected? := t0? } elems[k]!
     if let (some t, some t0) := ((← frenTypeOf? x).map (·.widen), t0?) then
       unless t == t0 do throwErrorAt elems[k]! (Core.membersMsg true t0.show t.show (Core.Ty.seq t0).show).text
-    xs := xs.push (← widenTerm x)
+    xs := xs.push (← boolTerm (← widenTerm x))
   -- After its elements, as in the `fren` command.
   checkCore cx e .seqArray true true elems
   checkNewtypeMembers true elems xs
