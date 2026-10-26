@@ -619,6 +619,40 @@ pub comp completeness_asked {
 }
 ```
 
+Whether the arms without guards are exhaustive is decided by the
+[usefulness](Lang/Patterns.md#usefulness) of `_` after them. Where every
+pattern is flat, `_`, a binder or a variant without a payload, `_`'s
+usefulness comes to this: the arms without guards are exhaustive exactly
+when one of them matches every value, or each variant is named by one of
+them. `check::flat_completeness_asked` states it of a `match` on an
+enumeration of three such variants, `A`, `B` and `C`, from its arms in
+order, each `_` or a variant, with a guard or without, and
+`flat_completeness_refines` confirms that it refines `completeness_asked`.
+Patterns that are nested, literals or ranges, and payloads, are left to
+`lang::usefulness`. Membership in a sequence is outside the decidable
+core, though the solver decides these:
+
+```fren
+pub enum FlatArm { Wild, A, B, C, GuardedWild, GuardedA, GuardedB, GuardedC }
+
+set_option fren.lint.undecidable "allow" in
+pub comp flat_completeness_asked {
+    use self::FlatArm::{A, B, C, Wild}
+    in arms: Seq(FlatArm)    -- the arms, in order
+    pub out asked?
+
+    ensure rule: asked? iff not (Wild in arms or (A in arms and B in arms and C in arms))
+
+    -- An arm with a guard names nothing: a `match` that needs it is asked about.
+    expect guarded_needed: when arms = [FlatArm::GuardedA, B, C], asked?
+}
+
+set_option fren.lint.undecidable "allow" in
+refine flat_completeness_refines: flat_completeness_asked refines completeness_asked {
+    unguarded_exhaustive? := FlatArm::Wild in arms or (FlatArm::A in arms and FlatArm::B in arms and FlatArm::C in arms),
+}
+```
+
 With the arms' patterns `P_1`, ..., `P_n`, their guards `C_1`, ...,
 `C_n` (`true` for an arm without one; for a table, the patterns are `_`
 and the guards its rows' conditions), and the `match`'s guard `G`, the
@@ -834,6 +868,34 @@ pub comp reach_hypothesis {
     pub det out used?
 
     ensure rule: used? iff (definedness? and not enclosing?)
+}
+```
+
+`check::reach_hypotheses` states the same over the hypotheses that the
+check is built from, in order: each one of definedness's at the case
+other than the item that the case is in (`Definedness`), that item
+(`Enclosing`), or none of definedness's (`Other`). Reachability asks
+under the hypotheses at the positions where `used?` holds, and
+`reach_hypotheses_refines` confirms that it refines `reach_hypothesis`:
+
+```fren
+pub enum HypAt { Definedness, Enclosing, Other }
+
+pub comp reach_hypotheses {
+    use self::HypAt::Definedness
+    in hyps: Seq(HypAt)      -- the hypotheses, in order
+    in k: Int                -- a hypothesis, by its position
+    pub out used?            -- reachability asks under hypothesis `k`
+
+    ensure rule: used? iff (0 <= k < hyps.len and hyps[k] = Definedness)
+
+    -- The item that the case is in is never among them.
+    expect not_enclosing: when 0 <= k < hyps.len and hyps[k] = HypAt::Enclosing, not used?
+}
+
+refine reach_hypotheses_refines: reach_hypotheses refines reach_hypothesis {
+    definedness? := 0 <= k < hyps.len and hyps[k] != HypAt::Other,
+    enclosing? := 0 <= k < hyps.len and hyps[k] = HypAt::Enclosing,
 }
 ```
 
