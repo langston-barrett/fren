@@ -1,0 +1,20 @@
+--@ args: fmt --check
+-- `fren fmt` spaces a guard as any other expression, `P if C => e`, and
+-- lays out an arm with a guard as one without: each `|` that starts a line
+-- starts its alternative, and the arms of a vertical `match` get a
+-- trailing comma.
+enum Mode { Off, Heat, Cool }
+
+comp c {
+    in m: Mode
+    in t: Int
+    pub out y: Int
+    ensure a: y = match m {Mode::Off if t>0=>1,_=>0}
+    ensure b: y = match m {
+    | Mode::Off
+          | Mode::Heat if t > 0 =>
+    1,
+    Mode::Cool   if   (t < 0 and t > -5) => 2,
+    _ => 0
+    }
+}

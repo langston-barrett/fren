@@ -153,11 +153,13 @@ pub comp index_test {
     assume positions: position >= -1
 
     ensure rule: test = match op {
-        Ge => if bound = 0 then Found else Other,
-        Gt | Ne => if bound = -1 then Found else Other,
-        Lt => if bound = 0 then Absent else Other,
-        Le => if bound = -1 then Absent else Other,
-        Eq => if bound = -1 then Absent else if bound = 0 then AtStart else Other,
+        Ge if bound = 0 => Found,
+        Gt | Ne if bound = -1 => Found,
+        Lt if bound = 0 => Absent,
+        Le if bound = -1 => Absent,
+        Eq if bound = -1 => Absent,
+        Eq if bound = 0 => AtStart,
+        _ => Other,
     }
 
     expect found: when test = Found, compares?(op, position, bound) iff position >= 0

@@ -105,7 +105,9 @@ inductive Expr where
   (dotted) identifier. `x.0` reads the field `0` of a newtype, for any
   `e`: a field named by digits is never part of an identifier. -/
   | field (span : Span) (e : Expr) (field : Ident)
-  | «match» (span : Span) (scrutinee : Expr) (arms : Array (Pattern × Expr))
+  /-- `match e { P => b, Q if C => c }`: each arm's pattern, its guard, if
+  it has one, and its body. -/
+  | «match» (span : Span) (scrutinee : Expr) (arms : Array (Pattern × Option Expr × Expr))
   /-- `e is P`, a pattern test. -/
   | is (span : Span) (scrutinee : Expr) (pattern : Pattern)
   /-- A string literal, with its value. -/
@@ -145,6 +147,10 @@ def Expr.span : Expr → Span
 /-- The conditions and values of a table's rows, in order. -/
 def tableParts (rows : Array (Span × Option Expr × Expr)) : Array Expr :=
   rows.flatMap fun (_, c?, v) => c?.toArray.push v
+
+/-- The guards and bodies of a `match`'s arms, in order. -/
+def armParts (arms : Array (Pattern × Option Expr × Expr)) : Array Expr :=
+  arms.flatMap fun (_, g?, b) => g?.toArray.push b
 
 inductive PropKind where
   | assume
@@ -691,6 +697,10 @@ partial def cmp : P Expr := do
   let l ← add
   if let some isTok ← eatKw "is" then
     let p ← pattern (arm := false)
+    -- A pattern test takes no guard (`Reqs/Lang/Expressions#pattern-tests`).
+    if let some g ← eatKw "if" then
+      err g.span "F0140" "a pattern test has no guard" (some "a guard here")
+        #["note: a guard belongs to a `match` arm", "help: write `e is P and C`"]
     let e := Expr.is (← spanFrom start) l p
     if (← cmpOp?).isSome || isKw (← peek) "is" then chainedIs isTok
     return e
@@ -846,9 +856,11 @@ partial def atom : P Expr := do
       if isKw (← peek) "}" then break
       markStart
       let p ← pattern
+      -- A guard, below `when`, which would swallow the arm's body.
+      let guard? ← if (← eatKw "if").isSome then some <$> withRecords iff else pure none
       discard (expectKw "=>")
       -- Below `when`, which would swallow the following arms.
-      arms := arms.push (p, ← withRecords iff)
+      arms := arms.push (p, guard?, ← withRecords iff)
       if (← eatKw ",").isNone then break
     discard (expectKw "}")
     fieldReads callArgs indexArg (.match (← spanFrom t.span) scrutinee arms)

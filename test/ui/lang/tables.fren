@@ -163,7 +163,7 @@ comp lets {
 -- every value of the parameters.
 fn sign(x: Int): Int := table { x > 0 => 1, x < 0 => -1, x = 0 => 0 }
 
-const LIMIT: Int := table { 1 < 2 => 10, _ => 20 }
+const LIMIT: Int := table { 1 < 2 => 10 }
 
 -- A `Nat` parameter is at least 0, which the checks of a body assume too.
 fn bit(n: Nat): Int := table { n = 0 => 0, n > 0 => 1 }
@@ -180,5 +180,5 @@ comp uses {
 -- In a global expectation.
 expect exit_codes: forall (e: exit), table { e.ran? => e.code != 2, not e.ran? => e.code = 2 }
 
---@ summary: 114 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ summary: 168 passed, 0 failed, 0 inconclusive, 0 redundant
 --@ exit: 0

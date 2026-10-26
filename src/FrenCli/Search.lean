@@ -157,7 +157,7 @@ partial def Ex.lits : Ex → Array Int
   | .pair a b | .index a b _ => a.lits ++ b.lits
   | .seqLit es => es.flatMap (·.lits)
   | .card e => e.lits
-  | .match e arms => e.lits ++ arms.flatMap fun (p, b) => p.lits ++ b.lits
+  | .match e arms .. => e.lits ++ arms.flatMap fun (p, g?, b) => p.lits ++ (g?.map (·.lits)).getD #[] ++ b.lits
   | .update e fs => e.lits ++ fs.flatMap (·.2.lits)
   | .quant _ _ _ b => b.lits
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.lits)).getD #[] ++ v.lits
@@ -179,7 +179,7 @@ partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .pair a b | .index a b _ => a.equated x ++ b.equated x
   | .seqLit es => es.flatMap (·.equated x)
   | .card e => e.equated x
-  | .match e arms => e.equated x ++ arms.flatMap (·.2.equated x)
+  | .match e arms .. => e.equated x ++ arms.flatMap fun (_, g?, b) => (g?.map (·.equated x)).getD #[] ++ b.equated x
   | .update e fs => e.equated x ++ fs.flatMap (·.2.equated x)
   | .quant _ _ _ b => b.equated x
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.equated x)).getD #[] ++ v.equated x
@@ -256,7 +256,7 @@ partial def Ex.vars : Ex → Array Name
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.vars)
   | .method _ r args => r.vars ++ args.flatMap (·.vars)
   | .matches r _ _ => r.vars
-  | .match e arms => e.vars ++ arms.flatMap (·.2.vars)
+  | .match e arms .. => e.vars ++ arms.flatMap fun (_, g?, b) => (g?.map (·.vars)).getD #[] ++ b.vars
   | .update e fs => e.vars ++ fs.flatMap (·.2.vars)
   | .quant _ _ _ b => b.vars
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.vars)).getD #[] ++ v.vars
@@ -534,8 +534,8 @@ partial def Ex.strLits : Ex → Array String × Array String
   | .ite c a b => join #[c, a, b]
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => join args
   | .method _ r args => join (#[r] ++ args)
-  | .match e arms =>
-    let (ls, ps) := join (#[e] ++ arms.map (·.2))
+  | .match e arms .. =>
+    let (ls, ps) := join (#[e] ++ arms.flatMap fun (_, g?, b) => g?.toArray.push b)
     (ls ++ arms.flatMap (·.1.strLits), ps)
   | .update e fs => join (#[e] ++ fs.map (·.2))
   | .quant _ _ _ b => b.strLits

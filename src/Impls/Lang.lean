@@ -66,6 +66,7 @@ def toGuardedOperand : Fren.Core.GuardedOperand → lang.GuardedOperand
   | .elseBranch => .ElseBranch
   | .andRight => .AndRight
   | .orRight => .OrRight
+  | .armGuard => .ArmGuard
   | .armBody => .ArmBody
 
 -- For every operand and condition: the guard that both front ends add, by

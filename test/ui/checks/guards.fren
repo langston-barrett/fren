@@ -1,0 +1,147 @@
+-- The completeness and reachability of a `match` with guards
+-- (`check::completeness`, `check::reachability`): where they fail, with a
+-- counterexample at the `match`, or at the arm that is never taken.
+set_option fren.lint.dead_code "allow"
+
+comp incomplete {
+    in x: Int
+    pub out s: Int
+
+    ensure r: s = match x { n if n > 0 => 1, n if n < 0 => -1 }   --~ error: a `match` in `incomplete::r` may have no arm that is taken
+}
+
+-- The second guard is implied by the first, so the second arm is never
+-- taken.
+comp shadowed {
+    in x: Int
+    pub out s: Int
+
+    ensure r: s = match x {
+        n if n > 10 => 2,
+        n if n > 20 => 3,   --~ error: arm 2 of a `match` in `shadowed::r` is never taken
+        _ => 1,
+    }
+}
+
+-- A guard that is `false`, or contradicts its pattern.
+enum Mode { Off, Heat, Cool }
+
+comp contradictory {
+    in m: Mode
+    pub out y: Int
+
+    ensure r: y = match m {
+        Mode::Off if false => 0,   --~ error: arm 1 of a `match` in `contradictory::r` is never taken
+        Mode::Heat if m = Mode::Cool => 1,   --~ error: arm 2 of a `match` in `contradictory::r` is never taken
+        _ => 2,
+    }
+}
+
+-- An arm without a guard after one with a guard is asked about too: here
+-- the guard always holds, so `Mode::Off` is taken by the first arm.
+comp after_guard {
+    in m: Mode
+    in t: Nat
+    pub out y: Int
+
+    ensure r: y = match m {
+        Mode::Off if t >= 0 => 0,
+        Mode::Off => 1,   --~ error: arm 2 of a `match` in `after_guard::r` is never taken
+        _ => 2,
+    }
+}
+
+-- The checks are under the hypotheses of where the `match` is written:
+-- an assumption can make the arms complete, or an arm unreachable.
+comp hypotheses {
+    in x: Int
+    pub out s: Int
+
+    assume nonzero: x != 0
+
+    ensure r: s = match x { n if n > 0 => 1, n if n < 0 => -1 }
+}
+
+comp ruled_out {
+    in x: Int
+    pub out s: Int
+
+    assume positive: x > 0
+
+    ensure q: s = match x { n if n < 0 => 0, _ => 1 }   --~ error: arm 1 of a `match` in `ruled_out::q` is never taken
+}
+
+-- Under `when`, the guard of the `match` is the trigger.
+comp guarded {
+    in x: Int
+    pub out y: Int
+
+    ensure r: when x > 0, y = match x { n if n > 5 => 2, n if n < 3 => 1 }   --~ error: a `match` in `guarded::r` may have no arm that is taken
+    ensure s: when x <= 0, y = 0
+}
+
+-- A guarantee that is the `match` itself rules out the behaviours that
+-- take its last arm (`Reqs/Check#reachability`).
+comp itself {
+    pub out m: Mode
+    pub out ok?
+
+    ensure r: match m { Mode::Off if ok? => true, _ => false }   --~ error: arm 2 of a `match` in `itself::r` is never taken
+}
+
+-- In a quantifier's body, a `match` is checked at each instance: an arm
+-- is reachable if some instance takes it, and the arms complete only if
+-- each instance takes one.
+comp quantified {
+    in t: Int
+    pub out y?
+
+    ensure r: y? iff (forall (m: Mode), match m {   --~ error: a `match` in `quantified::r` may have no arm that is taken
+        Mode::Off if t > 0 => true,
+        Mode::Off if t <= 0 => false,
+        Mode::Heat if m = Mode::Cool => false,   --~ error: arm 3 of a `match` in `quantified::r` is never taken
+        Mode::Heat | Mode::Cool if t > 5 => true,
+    })
+}
+
+-- In the definition of a `let`, a `match` is checked where the name is
+-- mentioned.
+comp in_let {
+    in m: Mode
+    in t: Int
+    pub out y: Int
+
+    ensure r: y = (let k := match m { Mode::Off if t > 0 => 1, _ if t < 0 => 2 } in k + 1)
+    --~^ error: a `match` in `in_let::r` may have no arm that is taken
+}
+
+-- In a function's body, a `match` is checked for every argument.
+fn sign(x: Int): Int := match x { n if n > 0 => 1, n if n < 0 => -1 }   --~ error: a `match` in `sign` may have no arm that is taken
+
+-- The rows of a table are asked about as the arms `_ if C => e`: a row
+-- that an earlier one always takes, and a `_` after rows of which one
+-- always holds.
+comp rows {
+    in x: Int
+    pub out y: Int
+    pub out z: Int
+
+    ensure r: y = table { x >= 0 => 1, x < 0 => 0, _ => 2 }   --~ error: row 3 of a table in `rows::r` is never the first that holds
+    ensure s: z = table { x > 0 => 1, x > 5 => 2, _ => 0 }
+    --~^ error: rows 1 and 2 of a table in `rows::s` may both hold
+    --~^^ error: row 2 of a table in `rows::s` is never the first that holds
+}
+
+-- In a global expectation, under the meanings of its binders.
+comp counter {
+    in n: Int
+    pub out m: Int
+
+    ensure r: m = n + 1
+}
+
+expect bigger: forall (c: counter), match c.m { k if k > c.n => true, _ => false }
+--~^ error: arm 2 of a `match` in `bigger` is never taken
+
+--@ summary: 58 passed, 16 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

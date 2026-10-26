@@ -8,7 +8,7 @@ error[F0619]: rows 1 and 2 of a table in `grade::r` may both hold
   = note: where rows overlap, the first of them gives the table's value, so the order of the rows matters
   = help: make the conditions exclusive, as in `a => x, not a and b => y`
 
-fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
+fren: 5 passed, 1 failed, 0 inconclusive, 0 redundant
 
 For more information about this error, try `fren --explain F0619`.
 exit=1

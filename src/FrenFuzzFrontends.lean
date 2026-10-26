@@ -116,13 +116,19 @@ partial def app? (sc : WScope) (t : WTy) (d : Nat) : R (Option String) := do
   let args ← ps.mapM (gen asc · (d - 1))
   return some s!"{f}({", ".intercalate args.toList})"
 
-/-- A `match` on an enumeration, with arms of type `t`. -/
+/-- A `match` on an enumeration, with arms of type `t`, some of them
+with guards, and an arm with a guard sometimes followed by its variant's
+arm without one. -/
 partial def matchOn (sc : WScope) (t : WTy) (d : Nat) : R String := do
   let scrut ← gen sc .enum 0
   let mut arms := #[]
   let n := sc.nVariants
   let covered ← below (n + 1)
-  for k in [0:covered] do arms := arms.push s!"E::V{k} => {← gen sc t (d - 1)}"
+  for k in [0:covered] do
+    if ← chance 30 then
+      arms := arms.push s!"E::V{k} if {← gen sc .bool (d - 1)} => {← gen sc t (d - 1)}"
+      unless ← chance 50 do continue
+    arms := arms.push s!"E::V{k} => {← gen sc t (d - 1)}"
   if covered < n || (← chance 5) then arms := arms.push s!"_ => {← gen sc t (d - 1)}"
   return s!"match {scrut} \{ {", ".intercalate arms.toList} }"
 

@@ -399,7 +399,7 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
         return { prop := n, k, place, goal := ← beta goal }
       tables := ← tables.mapIdxM fun j (n, place, _, q, goal) => do
         let k := (tables.extract 0 j).filter (·.1 == n) |>.size
-        return { site := { prop := n, k, place, goal := ← beta goal }, goal := q.getD .completeness }
+        return { site := { prop := n, k, place, goal := ← beta goal }, goal := q.getD (.completeness .table) }
       defs := ← c.defs.filterMapM fun (d, e) => do
         let some i := c.vars.findIdx? (·.name == d) | return none
         let e ← beta e

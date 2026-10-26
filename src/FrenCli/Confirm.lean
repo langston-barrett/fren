@@ -406,7 +406,8 @@ def Refutation.about (x : Refutation) (r : Fren.Core.CheckResult) : Bool :=
     | some s => match r.kind, r.prop?, r.target? with
       | .inst, some w, some (_, a) => s == w ++ a
       | .definedness, some p, _ => s == .num p (r.index?.getD 0)
-      | .completeness, some p, _ | .disjointness, some p, _ | .precondition, some p, _ => s == .num p (r.site?.getD 0)
+      | .completeness, some p, _ | .disjointness, some p, _ | .precondition, some p, _ | .reachability, some p, _ =>
+        s == .num p (r.site?.getD 0)
       | _, some p, _ => s == p
       | _, none, _ => true
 
@@ -415,6 +416,7 @@ def kindName : Fren.Core.CheckKind → String
   | .vacuity => "vacuity" | .redundancy => "redundancy" | .determinism => "determinism"
   | .definedness => "definedness" | .completeness => "completeness" | .disjointness => "disjointness"
   | .precondition => "precondition" | .postcondition => "postcondition"
+  | .reachability => "reachability"
 
 def Refutation.msg (x : Refutation) (r : Fren.Core.CheckResult) : Fren.Core.Msg :=
   let subject := Fren.Core.showComp (r.comp ++ (r.prop?.getD .anonymous))

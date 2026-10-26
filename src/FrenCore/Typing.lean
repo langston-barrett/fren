@@ -146,4 +146,8 @@ def checkRowType (t0 t : Ty) : Except Msg Unit := do
 /-- Why a row's condition must be a `Bool`. -/
 def rowConditionNote : String := "note: the condition of a row of a table is a `Bool`"
 
+/-- Why the guard of a `match` arm must be a `Bool`
+(`Reqs/Lang/Expressions#matches`). -/
+def armGuardNote : String := "note: the guard of a `match` arm is a `Bool`"
+
 end Fren.Core

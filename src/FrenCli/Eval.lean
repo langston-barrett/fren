@@ -129,6 +129,25 @@ partial def Pat.matchVal : Pat → Val → Option (List (Name × Val))
   | .alts ps, v => ps.findSome? (·.matchVal v)
   | _, _ => none
 
+/-- `p` as the static rules see it (`Fren.Core.Pat`). -/
+partial def Pat.core : Pat → Fren.Core.Pat
+  | .wild => .wild
+  | .bind _ => .wild true
+  | .bool b => .bool b
+  | .int lo hi => .int lo hi
+  | .str s => .str s
+  | .ctor idx ps => .ctor idx (ps.map Pat.core)
+  | .alts ps => .or (ps.map Pat.core)
+
+/-- The type of a value that patterns match, as they see it. -/
+def VTy.patTy : VTy → Fren.Core.PatTy
+  | .bool => .bool
+  | .int => .int
+  | .nat => .nat
+  | .string => .string
+  | .data p => .enum p
+  | _ => .other
+
 /-- The names that `p` binds. -/
 partial def Pat.binders : Pat → Array Name
   | .bind n => #[n]
@@ -164,7 +183,13 @@ inductive Ex where
   /-- `e`, a record, with each field `idx` of `fields` given a new value: a
   record update. -/
   | update (e : Ex) (fields : Array (Nat × Ex))
-  | «match» (e : Ex) (arms : Array (Pat × Ex))
+  /-- A `match` on `e`, whose `match` is at the source position `pos`:
+  each arm's pattern, its guard, if it has one, and its body, and the
+  position of each arm's pattern, which pair it with the checks of its arms
+  (`Ex.tableGoals`). Where its arms without guards are not exhaustive, and
+  no arm is taken, its value is the interpretation's of the function
+  `unspec?` without parameters (`unspecifiedFn`), as a table's is. -/
+  | «match» (e : Ex) (arms : Array (Pat × Option Ex × Ex)) (pos : Nat) (armPos : Array Nat) (unspec? : Option Name)
   /-- A method of a `String` (`Reqs/Lang/Expressions#methods`). -/
   | method (m : Fren.Core.Method) (recv : Ex) (args : Array Ex)
   /-- `recv.matches?(p)` for a literal `p`, with its pattern `re`, parsed
@@ -629,10 +654,17 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
     I.fn (← unspec?) #[]
   -- A closed expression, which neither variables nor binders reach.
   | .const _ e => e.eval I (fun _ => none)
-  | .match e arms => do
+  -- The first arm whose pattern matches and whose guard holds; where none
+  -- is taken, the interpretation's unspecified value of its type.
+  | .match e arms _ _ unspec? => do
     let v ← e.eval I look locals slots
-    let some (new, body) := arms.findSome? fun (p, body) => (p.matchVal v).map (·, body) | none
-    body.eval I look (new ++ locals) slots
+    for (p, g?, body) in arms do
+      let some new := p.matchVal v | continue
+      if let some g := g? then
+        let .bool b ← g.eval I look (new ++ locals) slots | none
+        unless b do continue
+      return ← body.eval I look (new ++ locals) slots
+    I.fn (← unspec?) #[]
   -- The conjunction or disjunction of its instances, decided when one
   -- instance decides it.
   | .quant all names insts body =>
@@ -650,13 +682,15 @@ def Ex.trigger? : Ex → Option Ex
     | some t => some (.bin .and c t)
   | _ => none
 
-/-- The indexes and tables in `e`, as the questions that the checks ask
-of them, each with its position, the question about a table's rows
-(`none` for an index's definedness), and its formula: that it holds
-wherever the conditions before it hold (`check::definedness`,
-`check::completeness`, `check::disjointness`). An index's position is its
-own, and a table's question is at its `table` for completeness and at the
-later row for disjointness. The conditions are read left to right, as the
+/-- The indexes, tables and `match`es in `e`, as the questions that the
+checks ask of them, each with its position, the question about a table's
+rows or a `match`'s arms (`none` for an index's definedness), and its
+formula: that it holds wherever the conditions before it hold
+(`check::definedness`, `check::completeness`, `check::disjointness`,
+`check::reachability`). An index's position is its own, and a table's or
+a `match`'s question is at its `table` or `match` for completeness, at
+the later row for disjointness, and at the row's condition or `_`, or the
+arm's pattern, for reachability. The conditions are read left to right, as the
 elaborator reads them, through `when`, `unless`, `if`, `and`, `or`, the
 arms of `match` and the rows of tables; `wrap` puts a formula under those
 around `e`. -/
@@ -680,12 +714,30 @@ partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Optio
   | .index q i pos =>
     let bounds := Ex.bin .and (.bin .le (.lit (.int 0)) i) (.bin .lt i (.method .len q #[]))
     go q ++ go i ++ #[(pos, none, wrap bounds)]
-  -- An arm's indexes are guarded by its pattern and the earlier ones not
-  -- matching: the same `match`, true in every other arm.
-  | .match s arms =>
-    let arm (j : Nat) (g : Ex) : Ex :=
-      .match s (arms.mapIdx fun j' (p, _) => (p, if j' == j then g else Ex.lit (.bool true)))
-    go s ++ (List.range arms.size).toArray.flatMap fun j => go arms[j]!.2 (fun g => wrap (arm j g))
+  -- An arm's guard is guarded by its pattern's matching where no earlier
+  -- arm is taken, and its body by its being the first arm taken: the same
+  -- `match`, with `g` in that arm and true in every other and where no arm
+  -- is taken. Then the `match`'s own questions.
+  | .match s arms pos armPos unspec? =>
+    let tt := Ex.lit (.bool true)
+    let others (j : Nat) := (arms.extract 0 j).map fun (p, g?, _) => (p, g?, tt)
+    let inGuard (j : Nat) (g : Ex) : Ex := .match s (others j ++ #[(arms[j]!.1, none, g), (.wild, none, tt)]) pos armPos none
+    let inBody (j : Nat) (g : Ex) : Ex :=
+      .match s (others j ++ #[(arms[j]!.1, arms[j]!.2.1, g), (.wild, none, tt)]) pos armPos none
+    let inArms := (List.range arms.size).toArray.flatMap fun j =>
+      (match arms[j]!.2.1 with | some c => go c (fun g => wrap (inGuard j g)) | none => #[]) ++
+        go arms[j]!.2.2 (fun g => wrap (inBody j g))
+    -- Where each arm is taken, if no earlier one is: its pattern matches and
+    -- its guard holds; `none` for `_` or a binder without a guard.
+    let taken := arms.map fun (p, g?, _) => match p, g? with
+      | .wild, none | .bind _, none => none
+      | _, _ => some (Ex.match s #[(p, none, g?.getD tt), (.wild, none, .lit (.bool false))] pos #[] none)
+    let guarded := arms.map (·.2.1.isSome)
+    let orF (cs : Array Ex) : Ex := if cs.isEmpty then .lit (.bool false) else cs.pop.foldr (fun c acc => .bin .or c acc) cs.back!
+    -- Completeness is asked exactly where no arm may be taken.
+    let goals := Fren.Core.splitGoals .match orF (.bin .and) .not tt taken guarded (unspec?.isSome)
+    go s ++ inArms ++ goals.map fun (g, f) =>
+      ((match g with | .reachability _ j => armPos[j]! | _ => pos), some g, wrap f)
   -- In every instance, whatever the quantifier: the instances do not guard
   -- each other.
   | .quant _ names insts body => go body (fun g => wrap (.quant true names insts g))
@@ -709,8 +761,11 @@ partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Optio
     -- That a condition's indexes are in range where it evaluates them.
     let defined := conds.map fun c =>
       Fren.Core.allOf? (.bin .and) (c.siteGoals.filterMap fun (_, g?, f) => if g?.isNone then some f else none)
-    inRows ++ (Fren.Core.tableGoals orF (.bin .and) .not conds defined wild).map fun (g, f) =>
-      ((match g with | .disjointness _ j => starts[j]! | _ => pos), some g, wrap f)
+    inRows ++ (Fren.Core.tableGoals orF (.bin .and) .not (.lit (.bool true)) conds defined wild).map fun (g, f) =>
+      ((match g with
+        | .disjointness _ j => starts[j]!
+        | .reachability _ j => rows[j]!.1
+        | _ => pos), some g, wrap f)
 
 /-- The indexes in `e`, each with its position and its definedness: that
 its position is in range wherever the conditions before it hold
@@ -972,7 +1027,8 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .update e fs => .update (e.renameBound f) (fs.map fun (k, x) => (k, x.renameBound f))
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.renameBound f), v.renameBound f)) u
   | .const p e => .const p e
-  | .match e arms => .match (e.renameBound f) <| arms.map fun (p, b) => (p.rename f, b.renameBound f)
+  | .match e arms pos ps u =>
+    .match (e.renameBound f) (arms.map fun (p, g?, b) => (p.rename f, g?.map (·.renameBound f), b.renameBound f)) pos ps u
   | .quant all ns insts b => .quant all (ns.map f) insts (b.renameBound f)
 
 /-- `e` with each variable renamed by `f`. -/
@@ -999,7 +1055,7 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .ctor ty idx args => .ctor ty idx (args.map (·.renameVars f))
   | .field e idx => .field (e.renameVars f) idx
   | .update e fs => .update (e.renameVars f) (fs.map fun (k, x) => (k, x.renameVars f))
-  | .match e arms => .match (e.renameVars f) (arms.map fun (p, b) => (p, b.renameVars f))
+  | .match e arms pos ps u => .match (e.renameVars f) (arms.map fun (p, g?, b) => (p, g?.map (·.renameVars f), b.renameVars f)) pos ps u
   | .quant all ns insts b => .quant all ns insts (b.renameVars f)
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.renameVars f), v.renameVars f)) u
   | .const p e => .const p e
@@ -1028,7 +1084,7 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .ctor ty idx args => .ctor ty idx (args.map (·.substVars f))
   | .field e idx => .field (e.substVars f) idx
   | .update e fs => .update (e.substVars f) (fs.map fun (k, x) => (k, x.substVars f))
-  | .match e arms => .match (e.substVars f) (arms.map fun (p, b) => (p, b.substVars f))
+  | .match e arms pos ps u => .match (e.substVars f) (arms.map fun (p, g?, b) => (p, g?.map (·.substVars f), b.substVars f)) pos ps u
   | .quant all ns insts b => .quant all ns insts (b.substVars f)
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.substVars f), v.substVars f)) u
   | .const p e => .const p e
@@ -1083,7 +1139,10 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.subst σ), v.subst σ)) u
   | .const p e => .const p e
   -- An arm's binders shadow those of `σ`.
-  | .match e arms => .match (e.subst σ) <| arms.map fun (p, b) => (p, b.subst (σ.filter (!p.binders.contains ·.1)))
+  | .match e arms pos ps u =>
+    .match (e.subst σ) (arms.map fun (p, g?, b) =>
+      let σ' := σ.filter (!p.binders.contains ·.1)
+      (p, g?.map (·.subst σ'), b.subst σ')) pos ps u
   -- So do a quantifier's bound names.
   | .quant all ns insts b => .quant all ns insts (b.subst (σ.filter (!ns.contains ·.1)))
 
@@ -1154,7 +1213,8 @@ partial def Ex.readsUnspecified : Ex → Bool
   | .app _ args | .ctor _ _ args | .setLit args | .seqLit args | .cardinality _ args => args.any (·.readsUnspecified)
   | .method _ r args => r.readsUnspecified || args.any (·.readsUnspecified)
   | .update e fs => e.readsUnspecified || fs.any (·.2.readsUnspecified)
-  | .match e arms => e.readsUnspecified || arms.any (·.2.readsUnspecified)
+  | .match e arms _ _ u => u.isSome || e.readsUnspecified || arms.any fun (_, g?, b) =>
+    g?.any (·.readsUnspecified) || b.readsUnspecified
 
 mutual
 partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
@@ -1298,17 +1358,31 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
   | .field _ e f => do
     let (x, t) ← lowerExpr cx e
     readFields x t [f.name]
-  | .match _ scrutinee arms => do
+  | .match span scrutinee arms => do
     let (s, t) ← lowerExpr cx scrutinee
     let mut out := #[]
     let mut ty := VTy.bool
-    for (p, body) in arms do
+    for (p, guard?, body) in arms do
       let (pat, bound) ← lowerPattern t p
-      let (b, t) ← lowerExpr { cx with binders := bound.reverse ++ cx.binders
-                                       lets := cx.lets.filter fun (n, _) => !bound.any (·.1 == n) } body
+      let acx := { cx with binders := bound.reverse ++ cx.binders, lets := cx.lets.filter fun (n, _) => !bound.any (·.1 == n) }
+      let g? ← guard?.mapM fun g => return (← lowerExpr acx g).1
+      let (b, t) ← lowerExpr acx body
       ty := t
-      out := out.push (pat, b)
-    return (.match s out, ty)
+      out := out.push (pat, g?, b)
+    -- Whether some arm may not be taken, as the elaborator decides it
+    -- (`Fren.Core.checkMatch`), which has accepted the spec.
+    let st ← get
+    let sigs : Fren.Core.Sigs := fun p =>
+      ((st.spec.data.find? p).map fun d => d.ctors.map fun c => (c.name, c.fields.map (·.2.patTy))).getD #[]
+    let unguardedExhaustive := match Fren.Core.checkMatch sigs t.patTy (out.map (·.1.core)) (out.map (·.2.1.isSome)) with
+      | .ok u => u
+      | .error _ => true
+    let armPos := arms.map (·.1.span.start)
+    if unguardedExhaustive then return (.match s out span.start armPos none, ty)
+    -- The function of the interpretation for its type's unspecified value.
+    let u := unspecifiedFn ty
+    modify fun s => { s with spec.funs := s.spec.funs.insert u (#[], ty) }
+    return (.match s out span.start armPos (some u), ty)
   | .table span rows => do
     let mut out := #[]
     let mut ty := VTy.bool
@@ -1327,7 +1401,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
   | .is _ scrutinee p => do
     let (s, t) ← lowerExpr cx scrutinee
     let (pat, _) ← lowerPattern t p
-    return (.match s #[(pat, .lit (.bool true)), (.wild, .lit (.bool false))], .bool)
+    return (.match s #[(pat, none, .lit (.bool true)), (.wild, none, .lit (.bool false))] 0 #[] none, .bool)
   | .«let» _ defs body _ => do
     -- Each name stands for its definition, which sees the earlier names.
     let mut cx := cx

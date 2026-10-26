@@ -17,7 +17,7 @@ comp overlapping {
     ensure r: y = table {
         | x >= 0 => 1,
         | x <= 0 => -1,   --~ error: rows 1 and 2 of a table in `overlapping::r` may both hold
-        | _ => 0,
+        | _ => 0,   --~ error: row 3 of a table in `overlapping::r` is never the first that holds
     }
 }
 
@@ -31,6 +31,8 @@ comp pairs {
     --~^ error: rows 1 and 2 of a table in `pairs::r` may both hold
     --~^^ error: rows 1 and 3 of a table in `pairs::r` may both hold
     --~^^^ error: rows 2 and 3 of a table in `pairs::r` may both hold
+    --~^^^^ error: row 2 of a table in `pairs::r` is never the first that holds
+    --~^^^^^ error: row 3 of a table in `pairs::r` is never the first that holds
 }
 
 -- Rows overlap only where both conditions have values: `q[0] > 0` is
@@ -77,11 +79,13 @@ comp sides {
 fn half(x: Int): Int := table { x > 0 => x div 2 }   --~ error: a table in `half` may have no row that holds
 
 const K: Int := table { 1 < 2 => 1, 2 < 3 => 2 }   --~ error: rows 1 and 2 of a table in `K` may both hold
+--~^ error: row 2 of a table in `K` is never the first that holds
 
 -- A constant whose value reads a table where no row holds, or an index
 -- out of range, has the interpretation's value: the evaluator still reads
 -- the spec, and confirms the models of the components that mention it.
 const B: Bool := table { 1 > 2 => true }   --~ error: a table in `B` may have no row that holds
+--~^ error: row 1 of a table in `B` is never the first that holds
 const OUT: Int := [1, 2][5]
 
 comp mentions_unknown {
@@ -119,5 +123,5 @@ expect positive: forall (c: counter), table { c.m > 0 => true, c.n < -1 => true 
 --~^ error: a table in `positive` may have no row that holds
 --~^^ error: expectation `positive` does not hold
 
---@ summary: 32 passed, 14 failed, 0 inconclusive, 0 redundant
+--@ summary: 52 passed, 19 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

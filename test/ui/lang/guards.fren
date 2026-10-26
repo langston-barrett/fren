@@ -1,0 +1,155 @@
+-- Guards on `match` arms, `P if C => e`: the first arm whose pattern
+-- matches and whose guard holds gives the value; an arm whose guard fails
+-- falls through to the arms after it. Matches whose arms are all taken
+-- somewhere, and that always take one, pass their checks.
+set_option fren.lint.dead_code "allow"
+
+enum Comparison { Eq, Ne, Lt, Le, Gt, Ge }
+
+enum IndexTest { Found, Absent, AtStart, Other }
+
+-- The issue's example: each case is stated once, and `Other` once.
+comp index_test {
+    use self::Comparison::{Eq, Ge, Gt, Le, Lt, Ne}
+    use self::IndexTest::{Absent, AtStart, Found, Other}
+    in op: Comparison
+    in bound: Int
+    pub det out test: IndexTest
+
+    ensure rule: test = match op {
+        Ge if bound = 0 => Found,
+        Gt | Ne if bound = -1 => Found,
+        Lt if bound = 0 => Absent,
+        Le if bound = -1 => Absent,
+        Eq if bound = -1 => Absent,
+        Eq if bound = 0 => AtStart,
+        _ => Other,
+    }
+
+    -- The guard follows the whole pattern: it guards both alternatives.
+    expect both: when op = Ne and bound = -1, test = Found
+    -- A guard that fails falls through, to a later arm of the same variant.
+    expect fall_through: when op = Eq and bound = 0, test = AtStart
+    expect otherwise: when op = Ge and bound != 0, test = Other
+}
+
+-- The binders of an arm's pattern are in scope in its guard, at any depth.
+enum Shape { Circle(Int), Rect(Int, Int), Empty }
+
+comp area {
+    in s: Shape
+    pub det out big?
+
+    ensure r: big? iff match s {
+        Shape::Circle(r) if r > 10 => true,
+        Shape::Rect(w, h) if w * 2 > 20 and h > 0 => true,
+        _ => false,
+    }
+
+    expect small: when s = Shape::Circle(5), not big?
+    expect large: when s = Shape::Circle(11), big?
+}
+
+-- An arm with a guard hides nothing from the arms after it, so the arms
+-- without guards make the `match` exhaustive, and the last arm takes
+-- whatever is left.
+comp hides_nothing {
+    in b?
+    in x: Int
+    pub det out y: Int
+
+    ensure r: y = match b? {
+        true if x > 0 => 2,
+        true => 1,
+        false => 0,
+    }
+
+    expect neg: when b? and x <= 0, y = 1
+}
+
+-- Every arm may have a guard, if the guards cover every case: the `match`
+-- is checked for completeness, as a table without `_` is.
+comp all_guarded {
+    in x: Int
+    pub det out s: Int
+
+    ensure r: s = match x {
+        n if n > 0 => 1,
+        n if n < 0 => -1,
+        n if n = 0 => 0,
+    }
+
+    expect sign: -1 <= s <= 1
+}
+
+-- Literal, range and nested patterns take guards too.
+enum Reply { Ok(Shape), Err(Int) }
+
+comp nested {
+    in r: Reply
+    in limit: Int
+    pub det out y: Int
+
+    ensure rule: y = match r {
+        Reply::Ok(Shape::Circle(radius)) if radius > limit => 2,
+        Reply::Ok(_) => 1,
+        Reply::Err(0..=9) if limit > 0 => 0,
+        Reply::Err(_) => -1,
+    }
+
+    expect clipped: when r = Reply::Ok(Shape::Circle(3)) and limit = 5, y = 1
+}
+
+-- An index in a guard is guarded by the arm's pattern's matching where no
+-- earlier arm is taken, and one in a body by its guard too.
+comp indexes {
+    in q: Seq(Int)
+    in n: Nat
+    pub det out y: Int
+
+    ensure r: y = match n {
+        0 => 0,
+        k if k < q.len and q[k] > 0 => q[k],
+        _ => -1,
+    }
+}
+
+-- A guard may be a quantifier or a `let`, in parentheses.
+enum Mode { Off, Heat, Cool }
+
+comp quantified {
+    in m: Mode
+    in q: Seq(Int)
+    pub det out y: Int
+
+    ensure r: y = match m {
+        Mode::Off if (forall (o: Mode), o = Mode::Off or q != []) => 0,
+        Mode::Off => 3,
+        Mode::Heat if (let k := q.len in k > 2) => 1,
+        _ => 2,
+    }
+
+    expect cool: when m = Mode::Cool, y = 2
+    expect heat: when m = Mode::Heat and q.len > 2, y = 1
+}
+
+-- A guard is a `Bool`, so a `Nat` or `Int` comparison makes one.
+comp in_body {
+    in x: Int
+    pub det out y?
+
+    ensure r: y? iff match x { 0 => false, k if k mod 2 = 0 => true, _ => false }
+}
+
+-- The body of a defined function takes guards, checked for every argument.
+fn clamp(x: Int): Int := match x { n if n > 10 => 10, n if n < 0 => 0, n => n }
+
+comp clamped {
+    in x: Int
+    pub det out y: Int
+
+    ensure r: y = clamp(x)
+
+    expect bounds: 0 <= y <= 10
+}
+--@ exit: 0

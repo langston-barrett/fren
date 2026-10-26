@@ -35,11 +35,12 @@ inductive CheckKind where
   | precondition
   /-- A defined function meets a postcondition. -/
   | postcondition
+  | reachability
   deriving Inhabited, DecidableEq, Repr
 
 def CheckKind.all : Array CheckKind :=
   #[.realizable, .inst, .expect, .cover, .vacuity, .redundancy, .determinism, .definedness, .completeness, .disjointness,
-    .precondition, .postcondition]
+    .precondition, .postcondition, .reachability]
 
 inductive Verdict where
   | pass
@@ -84,11 +85,13 @@ structure CheckResult where
   target? : Option (Name × Name) := none
   /-- For `definedness`: which index of the constraint, in order. -/
   index? : Option Nat := none
-  /-- For `completeness` and `disjointness`: which of the constraint's
-  questions about its tables, in order. -/
+  /-- For `completeness`, `disjointness` and `reachability`: which of the
+  constraint's questions about its tables and `match`es, in order. -/
   site? : Option Nat := none
   /-- For `disjointness`: the rows, counted from 0. -/
   rows? : Option (Nat × Nat) := none
+  /-- For `completeness`, `disjointness` and `reachability`: the question. -/
+  goal? : Option TableGoal := none
   verdict : Verdict
   detail : Detail := .none
   /-- For `cover`: its query depends on an interpretation, so its witness's
@@ -245,8 +248,8 @@ structure IndexSite (F : Type) where
   goal : F
   deriving Inhabited
 
-/-- A question about the rows of a table (`TableGoal`), where its table is
-written: its site's goal is the question, under the guard of the table. -/
+/-- A question about the cases of a table or a `match` (`TableGoal`), where
+it is written: its site's goal is the question, under its guard. -/
 structure TableSite (F : Type) where
   /-- Its place, the item it is in, and which of the item's questions
   about its tables it is, in order. -/
@@ -254,12 +257,13 @@ structure TableSite (F : Type) where
   goal : TableGoal
   deriving Inhabited
 
-/-- The check that answers a question about a table's rows, or about an
+/-- The check that answers a question about a split's cases, or about an
 application's arguments. -/
 def TableGoal.kind : TableGoal → CheckKind
-  | .completeness => .completeness
+  | .completeness _ => .completeness
   | .disjointness .. => .disjointness
   | .precondition .. => .precondition
+  | .reachability .. => .reachability
 
 /-- The rows that a question is about, for `disjointness`. -/
 def TableGoal.rows? : TableGoal → Option (Nat × Nat)
@@ -290,8 +294,8 @@ structure Comp (F : Type) where
   /-- Some variable's type, its own or an instance's, is or contains an
   abstract type. -/
   typesInterpreted : Bool := false
-  /-- The questions about the rows of its tables, and about the arguments
-  of its applications of functions with preconditions. -/
+  /-- The questions about the cases of its tables and `match`es, and about
+  the arguments of its applications of functions with preconditions. -/
   tables : Array (TableSite F) := #[]
   /-- For the body of a defined function: its postconditions, each a claim
   over its parameters (`check::postcondition`); its preconditions are its
@@ -457,15 +461,15 @@ def checkDefinedness (c : Comp F) (site : IndexSite F) : m CheckResult := do
 `k` answer. -/
 def Comp.tablesOf (c : Comp F) (k : CheckKind) : Array (TableSite F) := c.tables.filter (·.goal.kind == k)
 
-/-- `completeness` or `disjointness`: what the question about the rows of
-a table asks holds wherever the table is evaluated, given the hypotheses of
-its place, as for `definedness` (`check::completeness`,
+/-- `completeness` or `disjointness`: what the question about the cases of
+a table or a `match` asks holds wherever it is evaluated, given the
+hypotheses of its place, as for `definedness` (`check::completeness`,
 `check::disjointness`). -/
 def checkTable (c : Comp F) (t : TableSite F) : m CheckResult := do
   let kind := t.goal.kind
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind, comp := c.path, prop? := some t.site.prop, site? := some t.site.k, rows? := t.goal.rows?,
-      target? := t.goal.target?, verdict, detail }
+      target? := t.goal.target?, goal? := some t.goal, verdict, detail }
   let q ← b.query (c.defEqs kind ++ c.siteHyps b t.site) t.site.goal true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
@@ -486,6 +490,19 @@ def checkPostcondition (c : Comp F) (p : Name × F) : m CheckResult := do
     return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
+
+/-- `reachability`: the case of a table or a `match` that the question is
+about can be taken somewhere it is evaluated, given the hypotheses of its
+place: its goal, that the case is not taken there, cannot be proved, as
+for `vacuity` (`check::reachability`). -/
+def checkReach (c : Comp F) (t : TableSite F) : m CheckResult := do
+  let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
+    { kind := .reachability, comp := c.path, prop? := some t.site.prop, site? := some t.site.k, goal? := some t.goal
+      verdict, detail }
+  let q ← b.query (c.defEqs .reachability ++ c.siteHyps b t.site) t.site.goal false
+  match vacuityVerdict q.answer with
+  | .inconclusive => return result .inconclusive (.unknown q.reason)
+  | verdict => return result verdict
 
 /-- `vacuity`: the trigger can hold in some behaviour satisfying the
 assumptions and requirements (`check::non_vacuity`). -/
@@ -532,13 +549,14 @@ def checkDeterminism (c : Comp F) (x : Name) : m CheckResult := do
 /-- The checks of a global expectation (`Reqs/Lang/Global`), as a `Comp`
 whose path is the expectation's module, with one instance per binder (no
 bindings, and no assumptions as obligations) and the expectation itself. -/
-def globalKinds : Array CheckKind := #[.expect, .vacuity, .definedness, .completeness, .disjointness, .precondition]
+def globalKinds : Array CheckKind :=
+  #[.expect, .vacuity, .definedness, .completeness, .disjointness, .precondition, .reachability]
 
-/-- The checks of the tables and applications in the body and contract of
+/-- The checks of the tables, `match`es and applications in the body and contract of
 a function or the value of a constant, and of a defined function's
 postconditions (`check::applies`), as a `Comp` whose path is its module,
 with its parameters as inputs and its preconditions as assumptions. -/
-def bodyKinds : Array CheckKind := #[.completeness, .disjointness, .precondition, .postcondition]
+def bodyKinds : Array CheckKind := #[.completeness, .disjointness, .precondition, .postcondition, .reachability]
 
 /-- The checks of the contract of an uninterpreted function with
 postconditions (`check::applies`), as a `Comp` whose path is its module,
@@ -546,7 +564,7 @@ with its parameters as inputs, its value as its one `out`, its
 preconditions as assumptions and its postconditions, of its value, as
 guarantees: whether they can hold together, and the tables and
 applications in its clauses. -/
-def contractKinds : Array CheckKind := #[.realizable, .completeness, .disjointness, .precondition]
+def contractKinds : Array CheckKind := #[.realizable, .completeness, .disjointness, .precondition, .reachability]
 
 /-- The checks run on a global expectation if `global`, else on a component
 (`check::applies`). -/
@@ -695,8 +713,9 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
   let disjoint ← ifSelected (kinds.contains .disjointness) ((c.tablesOf .disjointness).mapM (checkTable (bk .disjointness) c))
   let pres ← ifSelected (kinds.contains .precondition) ((c.tablesOf .precondition).mapM (checkTable (bk .precondition) c))
   let posts ← ifSelected (kinds.contains .postcondition) (c.posts.mapM (checkPostcondition (bk .postcondition) c))
+  let reach ← ifSelected (kinds.contains .reachability) ((c.tablesOf .reachability).mapM (checkReach (bk .reachability) c))
   return realizable ++ insts ++ expects ++ covers ++ vacuities ++ redundancies ++ dets ++ defined ++ complete ++ disjoint
-    ++ pres ++ posts
+    ++ pres ++ posts ++ reach
 
 /-- What the applications of uninterpreted functions in a query bring
 (`Reqs/Check`): for each application that `appsOf` finds in the query's
@@ -813,6 +832,18 @@ def showNames (ns : Array Name) : String :=
 def showAssignment (a : Assignment) : String :=
   if a.isEmpty then "(any values)" else ", ".intercalate (a.toList.map fun (n, v) => s!"{n} = {v}")
 
+/-- The case that a question about a split is about, as a message names
+it, from 1. -/
+def caseText : Option TableGoal → String
+  | some (.reachability .match j) => s!"arm {j + 1}"
+  | some (.reachability .table j) => s!"row {j + 1}"
+  | _ => "a case"
+
+/-- The split that a question is about, as a message names it. -/
+def splitText : Option TableGoal → String
+  | some (.reachability .match _) | some (.completeness .match) => "a `match`"
+  | _ => "a table"
+
 /-- Rows `i` and `j`, counted from 0, as a message names them, from 1. -/
 def rowsText : Option (Nat × Nat) → String
   | some (i, j) => s!"rows {i + 1} and {j + 1}"
@@ -873,12 +904,15 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       | .redundancy, _ => s!"{subject} is redundant"
       | .determinism, _ => s!"{subject} is determined by the inputs"
       | .definedness, _ => s!"an index of {subject} is in range"
-      | .completeness, _ => s!"some row of a table in {subject} holds"
+      | .completeness, _ => match r.goal? with
+        | some (.completeness .match) => s!"some arm of a `match` in {subject} is taken"
+        | _ => s!"some row of a table in {subject} holds"
       | .disjointness, _ => s!"{rowsText r.rows?} of a table in {subject} are disjoint"
       | .precondition, some (f, p) => s!"the precondition `{p}` of `{showComp f}` holds at an application in {subject}"
       | .precondition, none => s!"a precondition holds at an application in {subject}"
       | .postcondition, some (f, p) => s!"the postcondition `{p}` of `{showComp f}` holds"
       | .postcondition, none => s!"{subject} holds"
+      | .reachability, _ => s!"{caseText r.goal?} of {splitText r.goal?} in {subject} can be taken"
     let advice := match inconclusiveAdvice decidable with
       | .raiseTimeout => #["note: the solver gave up, so this check neither passed nor failed",
         "help: raise the time limit with `--timeout`, or simplify the constraints involved"]
@@ -925,6 +959,12 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         #[s!"counterexample: {showAssignment vals}",
           "note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there",
           "help: guard it with a bound, as in `i < q.len and q[i] = x`, before it in an `and`, or in a `when`"]]
+    else
+    if r.kind == .completeness && r.goal? == some (.completeness .match) then
+      #[one "F0625" s!"a `match` in {subject} may have no arm that is taken" (some "may have no arm that is taken")
+        #[s!"counterexample: {showAssignment vals}",
+          "note: where no arm is taken, the `match` is an unknown value, so the constraint says nothing useful there",
+          "help: add an arm for this case, or end the `match` with `_ => e`"]]
     else
     if r.kind == .completeness then
       #[one "F0618" s!"a table in {subject} may have no row that holds" (some "may have no row that holds")
@@ -979,7 +1019,17 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
     #[one "F0607" s!"{subject} is not determined by the inputs: for the input {showAssignment input}, it can be {v₁} or {v₂}"
       (some "not determined") #["note: a `det out` must have exactly one value for each input",
         "help: add guarantees that pin it down, or remove `det`"]]
-  | .fail, _ => #[{ severity := sev, item? := r.prop?, msg := Msg.internal s!"{subject} failed without details" }]
+  | .fail, _ =>
+    match r.kind, r.goal? with
+    | .reachability, some (.reachability .match j) =>
+      #[one "F0626" s!"arm {j + 1} of a `match` in {subject} is never taken" (some "never taken")
+        #["note: wherever the `match` is evaluated, its pattern or guard fails, or an earlier arm is taken",
+          "help: correct its guard or the arms before it, or remove it"]]
+    | .reachability, some (.reachability .table j) =>
+      #[one "F0627" s!"row {j + 1} of a table in {subject} is never the first that holds" (some "never the first that holds")
+        #["note: wherever the table is evaluated, an earlier row holds, or this row's condition fails",
+          "help: correct its condition or the rows before it, or remove it"]]
+    | _, _ => #[{ severity := sev, item? := r.prop?, msg := Msg.internal s!"{subject} failed without details" }]
 
 /-- The help of a warning from testing: from `fren check`, testing a check
 set to testing, running `fren check` would not help (`Reqs/Check#checking-by-testing`). -/

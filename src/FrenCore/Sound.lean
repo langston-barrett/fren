@@ -533,6 +533,26 @@ theorem checkTable_fail (t : TableSite F) (h : (checkTable b c t).run.verdict = 
   obtain ⟨ρ, ht, hρ, hg, hm⟩ := s.query_sat hq
   exact ⟨ρ, ht, (s.holds_site t.goal.kind_substitutes t.site ht).1 hρ, hg, _, hm, rfl⟩
 
+/-- A `pass` of `reachability` is an environment where the case is
+evaluated and its goal, that it is not taken, is false: the case is taken
+there. -/
+theorem checkReach_pass (t : TableSite F) (h : (checkReach b c t).run.verdict = .pass) :
+    ∃ ρ, s.Typed ρ ∧ s.AtSite t.site ρ ∧ ¬s.den t.site.goal ρ := by
+  unfold checkReach at h
+  cases hq : b.query (c.defEqs .reachability ++ c.siteHyps b t.site) t.site.goal false <;>
+    simp [hq, vacuityVerdict, Outcome.answer] at h
+  obtain ⟨ρ, ht, hρ, hg, -⟩ := s.query_sat hq
+  exact ⟨ρ, ht, (s.holds_site (kd := .reachability) rfl t.site ht).1 hρ, hg⟩
+
+/-- A `fail` of `reachability` means that the case is taken nowhere it is
+evaluated: its goal holds wherever its place's hypotheses do. -/
+theorem checkReach_fail (t : TableSite F) (h : (checkReach b c t).run.verdict = .fail) :
+    ∀ ρ, s.Typed ρ → s.AtSite t.site ρ → s.den t.site.goal ρ := by
+  unfold checkReach at h
+  cases hq : b.query (c.defEqs .reachability ++ c.siteHyps b t.site) t.site.goal false <;>
+    simp [hq, vacuityVerdict, Outcome.answer] at h
+  exact fun ρ ht hρ => s.query_unsat hq ρ ht ((s.holds_site (kd := .reachability) rfl t.site ht).2 hρ)
+
 /-! ## Realizability -/
 
 /-- `n` is the name of a defined output. -/
@@ -891,6 +911,8 @@ theorem checkComp_eq (bk : CheckKind → Backend Id F V) (kinds : Array CheckKin
       (if kinds.contains .precondition then (c.tablesOf .precondition).map (checkTable (bk .precondition) c · |>.run)
         else #[]) ++
       (if kinds.contains .postcondition then c.posts.map (checkPostcondition (bk .postcondition) c · |>.run)
+        else #[]) ++
+      (if kinds.contains .reachability then (c.tablesOf .reachability).map (checkReach (bk .reachability) c · |>.run)
         else #[]) := by
   unfold checkComp
   simp only [bind_eq, run_eq, pure_eq, ifSelected, map_eq, mapM_id']
@@ -916,10 +938,11 @@ theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKi
     (∃ t ∈ c.tablesOf .completeness, r = (checkTable (bk .completeness) c t).run) ∨
     (∃ t ∈ c.tablesOf .disjointness, r = (checkTable (bk .disjointness) c t).run) ∨
     (∃ t ∈ c.tablesOf .precondition, r = (checkTable (bk .precondition) c t).run) ∨
-    (∃ p ∈ c.posts, r = (checkPostcondition (bk .postcondition) c p).run) := by
+    (∃ p ∈ c.posts, r = (checkPostcondition (bk .postcondition) c p).run) ∨
+    (∃ t ∈ c.tablesOf .reachability, r = (checkReach (bk .reachability) c t).run) := by
   rw [checkComp_eq] at h
   simp only [Array.mem_append, or_assoc] at h
-  rcases h with h | h | h | h | h | h | h | h | h | h | h | h
+  rcases h with h | h | h | h | h | h | h | h | h | h | h | h | h
   · left; simpa using (mem_ite h).2
   · exact .inr (.inl (checkInsts_mem.1 (mem_ite h).2))
   · obtain ⟨e, he, rfl⟩ := Array.mem_map.1 (mem_ite h).2
@@ -941,7 +964,9 @@ theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKi
   · obtain ⟨t, ht, rfl⟩ := Array.mem_map.1 (mem_ite h).2
     exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨t, ht, rfl⟩)))))))))))
   · obtain ⟨p, hp, rfl⟩ := Array.mem_map.1 (mem_ite h).2
-    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ⟨p, hp, rfl⟩)))))))))))
+    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨p, hp, rfl⟩))))))))))))
+  · obtain ⟨t, ht, rfl⟩ := Array.mem_map.1 (mem_ite h).2
+    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ⟨t, ht, rfl⟩))))))))))))
 
 /-- Each selected check runs: on the component, on each assumption of each
 instance, each expectation, each cover goal, each trigger, each `det out` and each index; and
@@ -983,42 +1008,46 @@ theorem checkComp_runs {bk : CheckKind → Backend Id F V} {kinds : Array CheckK
     (kinds.contains .precondition → ∀ t ∈ c.tablesOf .precondition,
       (checkTable (bk .precondition) c t).run ∈ (checkComp bk c kinds).run) ∧
     (kinds.contains .postcondition → ∀ p ∈ c.posts,
-      (checkPostcondition (bk .postcondition) c p).run ∈ (checkComp bk c kinds).run) := by
+      (checkPostcondition (bk .postcondition) c p).run ∈ (checkComp bk c kinds).run) ∧
+    (kinds.contains .reachability → ∀ t ∈ c.tablesOf .reachability,
+      (checkReach (bk .reachability) c t).run ∈ (checkComp bk c kinds).run) := by
   simp only [checkComp_eq, Array.mem_append]
   refine ⟨fun hk => ?_, fun hk k hk' a ha => ?_, fun hk e he => ?_, fun hk g hg => ?_, fun hk t ht => ?_,
     fun hk a ha hq => ?_, fun hk q hq hr => ?_, fun hk v hv hd => ?_, fun hk site hs => ?_, fun hk t ht => ?_,
-    fun hk t ht => ?_, fun hk t ht => ?_, fun hk p hp => ?_⟩
+    fun hk t ht => ?_, fun hk t ht => ?_, fun hk p hp => ?_, fun hk t ht => ?_⟩
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (Array.mem_singleton.2 rfl)))))))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (Array.mem_singleton.2 rfl))))))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (checkInsts_mem.2 ⟨k, hk', a, ha, rfl⟩)))))))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (checkInsts_mem.2 ⟨k, hk', a, ha, rfl⟩))))))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨e, he, rfl⟩))))))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨e, he, rfl⟩)))))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨g, hg, rfl⟩)))))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨g, hg, rfl⟩))))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩))))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩)))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inl (.inr (checkRedundancies_mem.2 (.inl ⟨a, ha, hq, rfl⟩))))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (checkRedundancies_mem.2 (.inl ⟨a, ha, hq, rfl⟩)))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inl (.inr (checkRedundancies_mem.2 (.inr ⟨q, hq, hr, rfl⟩))))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (checkRedundancies_mem.2 (.inr ⟨q, hq, hr, rfl⟩)))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inr (checkDets_mem.2 ⟨v, hv, hd, rfl⟩))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inr (checkDets_mem.2 ⟨v, hv, hd, rfl⟩)))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨site, hs, rfl⟩)))))
+    exact .inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨site, hs, rfl⟩))))))
+  · simp only [hk, if_true]
+    exact .inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩)))))
   · simp only [hk, if_true]
     exact .inl (.inl (.inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩))))
   · simp only [hk, if_true]
     exact .inl (.inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩)))
   · simp only [hk, if_true]
-    exact .inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩))
+    exact .inl (.inr (Array.mem_map.2 ⟨p, hp, rfl⟩))
   · simp only [hk, if_true]
-    exact .inr (Array.mem_map.2 ⟨p, hp, rfl⟩)
+    exact .inr (Array.mem_map.2 ⟨t, ht, rfl⟩)
 
 /-- What `fren` runs for a global expectation, and for a component
 (`check::applies`). -/
 theorem kindsFor_spec :
-    kindsFor true = #[.expect, .vacuity, .definedness, .completeness, .disjointness, .precondition] ∧
+    kindsFor true = #[.expect, .vacuity, .definedness, .completeness, .disjointness, .precondition, .reachability] ∧
       kindsFor false = CheckKind.all :=
   ⟨rfl, rfl⟩
 
@@ -1072,6 +1101,13 @@ theorem checkTable_kind {b : Backend Id F V} {t : TableSite F} :
   repeat' split
   all_goals rfl
 
+theorem checkReach_kind {b : Backend Id F V} {t : TableSite F} :
+    (checkReach b c t).run.kind = .reachability := by
+  unfold checkReach
+  simp only [bind_eq, run_eq, pure_eq]
+  repeat' split
+  all_goals rfl
+
 /-- Interpretations with the same meaning of formulas and sorts mean the
 same by a component. -/
 private theorem Sound.congr {b b' : Backend Id F V} (s : Sound b c.vars Val) (s' : Sound b' c.vars Val)
@@ -1096,8 +1132,9 @@ assumptions hold, every expectation holds, every cover goal is met by some
 behaviour, every trigger can hold, every
 `det out`'s check passes, so that `checkDeterminism_pass` applies to it (the
 front ends allow `det` only on `out`s), every index is in range where it
-is evaluated, and every question about a table's rows holds where the
-table is evaluated. This is for backends that agree on what formulas and sorts
+is evaluated, every question about a table's rows or a `match`'s arms
+but reachability holds where it is evaluated, and every arm or row asked
+about is taken somewhere it is evaluated. This is for backends that agree on what formulas and sorts
 mean, as the front ends' do (they differ only in the SMT-LIB logic they
 declare), and whose definitions realizability can substitute
 (`Sound.DefsOk`). And when changing the `out`s keeps an environment
@@ -1119,12 +1156,15 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
     (∀ v ∈ c.vars, v.isDet → (checkDeterminism (bk .determinism) c v.name).run.verdict = .pass) ∧
     (∀ site ∈ c.indexes, ∀ ρ, (s .realizable).Typed ρ → (s .realizable).AtSite site ρ →
       (s .realizable).den site.goal ρ) ∧
-    (∀ t ∈ c.tables, ∀ ρ, (s .realizable).Typed ρ → (s .realizable).AtSite t.site ρ →
+    (∀ t ∈ c.tables, t.goal.kind ≠ .reachability → ∀ ρ, (s .realizable).Typed ρ → (s .realizable).AtSite t.site ρ →
       (s .realizable).den t.site.goal ρ) ∧
+    (∀ t ∈ c.tablesOf .reachability, ∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).AtSite t.site ρ ∧
+      ¬(s .realizable).den t.site.goal ρ) ∧
     ((∀ ρ ρ', OnlyOuts c.vars ρ ρ' → (s .realizable).Possible ρ → (s .realizable).Possible ρ') →
       (∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Admits ρ) →
       ∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Behaves ρ ∧ ∀ e ∈ c.expects, (s .realizable).den e.2 ρ) := by
-  obtain ⟨hr, hi, he, hcv, hv, -, -, hd, hix, hcp, hdj, hpre, -⟩ := checkComp_runs (c := c) (bk := bk) (kinds := CheckKind.all)
+  obtain ⟨hr, hi, he, hcv, hv, -, -, hd, hix, hcp, hdj, hpre, -, hrc⟩ :=
+    checkComp_runs (c := c) (bk := bk) (kinds := CheckKind.all)
   have all : ∀ k, CheckKind.all.contains k := by intro k; cases k <;> simp +decide [CheckKind.all]
   have pass : ∀ r ∈ (checkComp bk c).run, r.kind ≠ .redundancy → r.verdict = .pass := h
   have hR := checkRealizable_pass (s .realizable) hdefs
@@ -1137,7 +1177,7 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
     simpa only [tT, tB, (hsame _).1] using this
   refine ⟨hR, fun k hk a ha ρ => ?_, hE, fun g hg => ?_, fun t ht => ?_,
     fun v hv' hdet => pass _ (hd (all _) v hv' hdet) (by rw [checkDeterminism_kind]; intro h; cases h),
-    fun site hs ρ => ?_, fun t hs ρ => ?_, fun hindep ⟨ρ, ht, hρ⟩ => ?_⟩
+    fun site hs ρ => ?_, fun t hs hk ρ => ?_, fun t hs => ?_, fun hindep ⟨ρ, ht, hρ⟩ => ?_⟩
   · have := checkInst_pass (s .inst) k _ a (pass _ (hi (all _) k hk a ha) (by rw [checkInst_kind]; intro h; cases h)) ρ
     obtain ⟨tT, tA, -, -⟩ := Sound.congr (s .inst) (s .realizable) (hsame _)
     simpa only [tT, tA, (hsame _).1] using this
@@ -1159,10 +1199,15 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
       · exact hcp (all _) t hmem
       · exact hdj (all _) t hmem
       · exact hpre (all _) t hmem
+      · exact absurd (by rw [hg]; rfl) hk
     have := checkTable_pass (s t.goal.kind) t (pass _ hrun (by
       rw [checkTable_kind]; cases t.goal <;> intro h <;> cases h)) ρ
     obtain ⟨tT, -, -, tS⟩ := Sound.congr (s t.goal.kind) (s .realizable) (hsame _)
     simpa only [tT, tS, (hsame _).1] using this
+  · obtain ⟨ρ, ht, hρ, hg⟩ := checkReach_pass (s .reachability) t
+      (pass _ (hrc (all _) t hs) (by rw [checkReach_kind]; intro h; cases h))
+    obtain ⟨tT, -, -, tS⟩ := Sound.congr (s .reachability) (s .realizable) (hsame _)
+    exact ⟨ρ, (tT ρ).1 ht, (tS _ ρ).1 hρ, by simpa only [(hsame _).1] using hg⟩
   · obtain ⟨ρ', ht', -, hb⟩ := realizable_behaves (s .realizable) hdefs hindep
       (pass _ (hr (all _)) (by rw [checkRealizable_kind]; intro h; cases h)) ρ ht hρ
     exact ⟨ρ', ht', hb, fun e he' => hE e he' ρ' ht' hb⟩

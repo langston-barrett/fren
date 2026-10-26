@@ -1002,7 +1002,8 @@ partial def pathMentions (e : Syntax) (all : Bool := true) : Array Name :=
     e[3].getSepArgs.foldl (init := pathMentions e[1]) fun acc arm =>
       -- In its arm, a binder's name means the binder, not what it shadows.
       let bound := (topNames arm[0]).map fun b => (declaredIdent b).1.getId
-      acc ++ (pathMentions arm[2]).filter (!bound.contains ·.getRoot)
+      let guard := if arm[1].isNone then #[] else pathMentions arm[1][1]
+      acc ++ (guard ++ pathMentions arm[3]).filter (!bound.contains ·.getRoot)
   -- A pattern's paths name variants.
   else if e.isOfKind ``Lang.isExpr then pathMentions e[0]
   else if e.isOfKind ``Lang.letExpr then
@@ -1128,9 +1129,9 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
       if b[1].isNone then return (← pathExpr b[0] b[0].getId)[0] else pure b[1][1]))
   else if e.isOfKind ``Lang.matchExpr then
     let s ← shapeOf cx e[1] bs
-    let arms ← e[3].getSepArgs.toList.mapM fun arm => do
+    let arms ← e[3].getSepArgs.toList.flatMapM fun arm => do
       let new := (← topBinders cx arm[0]).map fun b => ((declaredIdent b).1.getId, Core.MentionShape.node .binder [s])
-      shapeOf cx arm[2] (bs ++ new)
+      ((if arm[1].isNone then [] else [arm[1][1]]) ++ [arm[3]]).mapM (shapeOf cx · (bs ++ new))
     return .node .compound (s :: arms)
   else if e.isOfKind ``Lang.isExpr then parts .compound #[e[0]]
   else if e.isOfKind ``Lang.letExpr then
@@ -1621,6 +1622,12 @@ it. -/
 def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
     (slot : Option Core.Slot) : TermElabM Unit := do
   let arms := e[3].getSepArgs
+  -- An arm with a guard may not be taken where its pattern matches, so
+  -- the lints that move, merge or remove arms, or replace the `match`,
+  -- look only at a `match` without guards, and the arms with guards name
+  -- no variant for the lints of `_` (`Reqs/Lint/Pedantic/Matches#arms`).
+  let guarded := arms.map (!·[1].isNone)
+  let anyGuard := guarded.any id
   let mut infos : Array Core.ArmInfo := #[]
   for arm in arms, pat in pats do
     let (alts, _) := topAlts arm[0]
@@ -1628,14 +1635,14 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
     let texts := alts.map exactText
     infos := infos.push { alts := texts, binds := !(← topBinders cx arm[0]).isEmpty, noPayload := pat.noPayload
                           equatable := Core.equatable pat texts, disjoint := alts.isEmpty || Core.disjointPat pat texts
-                          body := { text := exactText arm[2], prec := exprPrec arm[2] } }
+                          body := { text := exactText arm[3], prec := exprPrec arm[3] } }
   let flat := pats.all (·.flat)
   -- `fren fix` reads Markdown specs, but not Lean files.
   let fixable := (← getLocal).inMarkdown
   let help (m : Core.Msg) := if fixable then m.note Core.fixHelp else m
   -- `trivial_match` (`lint::trivial_match`).
   if let #[i] := infos then
-    if Core.trivialMatch infos.size i.binds then recordLint .trivialMatch e (Core.trivialMatchMsg (i.body.inSlot slot (followedStx e)))
+    if Core.trivialMatch infos.size i.binds && !anyGuard then recordLint .trivialMatch e (Core.trivialMatchMsg (i.body.inSlot slot (followedStx e)))
   -- `needless_match` (`lint::needless_match`): only a `match` whose arms
   -- are `_` and variants whose payloads' patterns are `_` or binders.
   let scr := exactText (unparen e[1])
@@ -1644,7 +1651,7 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
   let mut wildcard := false
   let mut scrutineeBack := false
   for arm in arms, pat in pats do
-    let body := unparen arm[2]
+    let body := unparen arm[3]
     let (alts, isOr) := topAlts arm[0]
     match pat, enum?, alts with
     | .wild false, _, _ =>
@@ -1668,30 +1675,32 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
       unless Core.givesBack same binders (args.map (exactText ∘ unparen)) do givenBack := false
     | _, _, _ => givenBack := false
   let trivial := Core.trivialMatch infos.size (infos[0]?.any (·.binds))
-  let needless := Core.needlessMatch givenBack wildcard scrutineeBack trivial
+  let needless := Core.needlessMatch (givenBack && !anyGuard) wildcard scrutineeBack trivial
   if needless then
     let scrutinee : Core.BText := { text := scr, prec := exprPrec (unparen e[1]) }
     recordLint .needlessMatch e (help (Core.needlessMatchMsg (scrutinee.inSlot slot (followedStx e))))
-  if flat then
+  if flat && !anyGuard then
     for g in Core.sameArmGroups infos do
       let (i, msg) := Core.sameArmsMsg infos g slot (followedStx e)
       recordLint .matchSameArms arms[i]! (help msg)
   let scrutinee : Core.BText := { text := exactText e[1], prec := exprPrec e[1] }
-  let membership? := Core.membershipParts? infos scrutinee slot
+  let membership? := if anyGuard then none else Core.membershipParts? infos scrutinee slot
   if let some (pre, post, test) := membership? then
     recordLint .matchLikeMembership e (help (Core.membershipMsg (pre ++ scrutinee.text ++ post) test))
   -- `single_match_else` (`lint::single_match_else`).
-  if let some fixed := Core.singleMatchElseFix? infos scrutinee slot (membership?.isSome || needless || trivial) (followedStx e) then
+  if let some fixed := (if anyGuard then none else
+      Core.singleMatchElseFix? infos scrutinee slot (membership?.isSome || needless || trivial) (followedStx e)) then
     let msg := Core.singleMatchElseMsg fixed (Core.hasComment (exactText e))
     recordLint .singleMatchElse e (if msg.fixes.isEmpty then msg else help msg)
   unless flat do return
   let some info := ty.constName?.bind (← getState).enumOfDecl? | return
-  let some w := infos.findIdx? (·.wildcard) | return
+  let some w := (Array.range infos.size).find? fun i => infos[i]!.wildcard && !guarded[i]! | return
   let names (p : Core.Pat) : Array Nat := match p with
     | .ctor k _ => #[k]
     | .or alts => alts.filterMap fun | .ctor k _ => some k | _ => none
     | _ => #[]
-  let covered := ((List.range info.variants.size).filter fun k => !pats.any (names · |>.contains k)).toArray
+  let unguarded := (pats.zip guarded).filterMap fun (p, g) => if g then none else some p
+  let covered := ((List.range info.variants.size).filter fun k => !unguarded.any (names · |>.contains k)).toArray
   let siblings ← (arms.flatMap fun arm => (topAlts arm[0]).1.filter (·.isOfKind ``Lang.variantPattern)).mapM fun p =>
     (pathSegs p[0]).mapM segName
   let table := (← getState).table
@@ -1753,7 +1762,7 @@ partial def typeShape (e : Syntax) : Core.TypeShape :=
   else if e.isOfKind ``Lang.pairExpr then .pair (typeShape e[1]) (typeShape e[3])
   else if e.isOfKind ``Lang.unionExpr || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr then
     .anyPart [typeShape e[0], typeShape e[2]]
-  else if e.isOfKind ``Lang.matchExpr then .anyPart (e[3].getSepArgs.toList.map (typeShape ·[2]))
+  else if e.isOfKind ``Lang.matchExpr then .anyPart (e[3].getSepArgs.toList.map (typeShape ·[3]))
   else if e.isOfKind ``Lang.letExpr then .anyPart [typeShape e[3]]
   else if e.isOfKind ``Lang.tableExpr then .anyPart (e[2].getSepArgs.toList.map (typeShape ·[3]))
   else match e with
@@ -1896,7 +1905,7 @@ conditional or a `match` with one among its shared parts, so that the right
 of `in` is checked against a sequence, as in the `fren` command. -/
 partial def seqShaped (e : Syntax) : Bool :=
   if e.isOfKind ``Lang.seqExpr then true
-  else if e.isOfKind ``Lang.matchExpr then e[3].getSepArgs.any (seqShaped ·[2])
+  else if e.isOfKind ``Lang.matchExpr then e[3].getSepArgs.any (seqShaped ·[3])
   else match e with
     | `(fren_expr| $a ++ $b) | `(fren_expr| if $_ then $a else $b) => seqShaped a || seqShaped b
     | _ => false
@@ -1954,6 +1963,26 @@ def armType (armsTy? : Option Core.Ty) (ref : Syntax) (body : Term) (shared? : O
   let some t := t? | return armsTy?
   return some (← liftMsg ref (Core.checkArm armsTy? t))
 
+/-- Records the questions about the arms of the `match` `e`, whose patterns
+are `pats`, each taken where `taken` says, of which those with a guard
+are `guarded`, for its completeness and reachability checks
+(`check::completeness`, `check::reachability`): completeness, unless its
+arms without guards are exhaustive, is reported at `match`, and the
+reachability of an arm at its pattern. -/
+def noteMatch (cx : ExprCtx) (e : Syntax) (pats : Array Syntax) (taken : Array (Option Term)) (guarded : Array Bool)
+    (unguardedExhaustive : Bool) : TermElabM Unit := do
+  unless cx.noteIndexes do return
+  let orF (cs : Array Term) : Term := cs.pop.foldr (fun c acc => Unhygienic.run `($c ∨ $acc)) cs.back!
+  let andF (a b : Term) : Term := Unhygienic.run `($a ∧ $b)
+  let notF (c : Term) : Term := Unhygienic.run `(¬$c)
+  let trueF : Term := Unhygienic.run `(True)
+  for (g, f) in Core.splitGoals .match orF andF notF trueF taken guarded (Core.completenessAsked unguardedExhaustive) do
+    let ref := match g with
+      | .reachability _ j => pats[j]!
+      | _ => e[0]
+    let goal ← cx.guards.foldrM (fun g acc => `($g → $acc)) f
+    modifyLocal fun l => { l with tables := l.tables.push (ref, g, goal) }
+
 open Lang in
 /-- Translates a `match` into a chain of `if`s that test its scrutinee
 against each arm's pattern, where `toTerm` translates its parts: a variant
@@ -1977,27 +2006,28 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let mut resolved := #[]
   for arm in arms do resolved := resolved.push (← resolveTop cx ty s false arm[0])
   let pats := resolved.map (·.1)
-  match Core.checkMatch (← patSigs) pty pats with
-  | .ok () => pure ()
-  | .error (some (i, some j), msg) => throwErrorAt (topAlternatives arms[i]![0])[j]! msg.text
-  | .error (some (i, none), msg) => throwErrorAt arms[i]![0] msg.text
-  | .error (none, msg) => throwError msg.text
+  let guarded := arms.map (!·[1].isNone)
+  let unguardedExhaustive ← match Core.checkMatch (← patSigs) pty pats guarded with
+    | .ok u => pure u
+    | .error (some (i, some j), msg) => throwErrorAt (topAlternatives arms[i]![0])[j]! msg.text
+    | .error (some (i, none), msg) => throwErrorAt arms[i]![0] msg.text
+    | .error (none, msg) => throwError msg.text
   if cx.noteIndexes then lintMatch cx e ty pats slot
   let mut bodies : Array Term := #[]
-  -- An arm is evaluated when its pattern matches and no earlier one does.
-  let tests := resolved.map (·.2.2)
-  let mut earlier : Array Term := #[]
+  -- Where each arm is taken, if no earlier one is: its test and its guard;
+  -- `none` for an arm taken wherever it is tried.
+  let mut taken : Array (Option Term) := #[]
   -- The type of the arms so far, once one has one.
   let mut armsTy? : Option Core.Ty := none
   -- The arms that wait for another's type: their index, context and body.
   let mut waiting : Array (Nat × ExprCtx × Syntax) := #[]
-  -- An arm's body is guarded by its being the first arm that matches
-  -- (`Core.GuardedOperand.armBody`): no earlier test holds, and its own does.
-  -- That is built directly: its negation is never needed, so `guard` would
-  -- only return it.
+  -- An arm's guard is guarded by its pattern's matching where no earlier
+  -- arm is taken (`Core.GuardedOperand.armGuard`), and its body by its
+  -- being the first arm taken (`Core.GuardedOperand.armBody`). They are
+  -- built directly: their negations are never needed, so `guard` would
+  -- only return them.
   for arm in arms, (_, bs, t?) in resolved do
-    let guards := cx.guards ++ (← earlier.mapM fun t => `(¬$t)) ++ t?.toArray
-    earlier := earlier ++ t?.toArray
+    let armGuards := cx.guards ++ (← taken.filterMapM fun t? => t?.mapM fun t => `(¬$t)) ++ t?.toArray
     -- Distinct names (`lang::distinct_names`), by the names they declare,
     -- without the `!` of shadowing.
     let declared := bs.map fun b => (declaredIdent b.ident).1.getId
@@ -2012,30 +2042,45 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       liftMsg y (Core.checkVarName bn (some (b.type.isConstOf ``Bool || b.type.isProp)))
       lintName .binder bn y
       new := new.push { name := bn, term := b.term, «type» := b.type, scrutinee := some scrutinee, outer := cx.binders.size }
-    let others := (arms.eraseIdx! bodies.size).map (·[2])
+    let gcx := { cx with binders := cx.binders ++ new, guards := armGuards }
+    -- The guard, a `Bool`, checked as one (`Reqs/Lang/Expressions#matches`).
+    let g? ← if arm[1].isNone then pure none else do
+      let g := arm[1][1]
+      let c ← toTerm { gcx with natOk := false, emptyOk := false, expected? := none } g
+      checkTermType g c .bool (some Core.armGuardNote)
+      pure (some c)
+    let own := t?.toArray ++ g?.toArray
+    taken := taken.push (Core.allOf? (fun a b => Unhygienic.run `($a ∧ $b)) own)
+    let others := (arms.eraseIdx! bodies.size).map (·[3])
     let emptyOk := Core.Position.shared.checked cx.emptyOk (anySynthesizes others)
-    let acx := { cx with binders := cx.binders ++ new, guards, emptyOk }
+    let acx := { gcx with guards := armGuards ++ g?.toArray, emptyOk }
     -- Each body is checked against the whole's type, or the arms' so far,
     -- as the `fren` command does: one that does not synthesize its own,
     -- before any has given one, waits for a later arm that does.
     let shared? := expected?.orElse fun _ => armsTy?.map (·.widen)
-    if shared?.isNone && !synthesizes arm[2] && arms.any (synthesizes ·[2]) then
-      waiting := waiting.push (bodies.size, acx, arm[2])
+    if shared?.isNone && !synthesizes arm[3] && arms.any (synthesizes ·[3]) then
+      waiting := waiting.push (bodies.size, acx, arm[3])
       bodies := bodies.push (← `(sorry))
       continue
-    let body ← toTerm { acx with expected? := shared? } arm[2]
-    armsTy? ← armType armsTy? arm[2] body shared?
+    let body ← toTerm { acx with expected? := shared? } arm[3]
+    armsTy? ← armType armsTy? arm[3] body shared?
     bodies := bodies.push body
   for (k, acx, b) in waiting do
     let body ← toTerm { acx with expected? := armsTy?.map (·.widen) } b
     if armsTy?.isSome then armsTy? ← armType armsTy? b body (armsTy?.map (·.widen))
     bodies := bodies.set! k body
+  noteMatch cx e (arms.map (·[0])) taken guarded unguardedExhaustive
   let widened ← widenMixed bodies
-  -- The first arm that matches; the last arm matches whatever is left.
-  let mut out := widened.back!
-  for i in (List.range (bodies.size - 1)).reverse do
-    if let some t := tests[i]! then
-      out ← `(if $t then $(widened[i]!) else $out)
+  -- The first arm that is taken. Where the arms without guards are
+  -- exhaustive, the last arm has none, and takes whatever is left;
+  -- otherwise, where none is taken, the `match` is the index out of range
+  -- of the empty sequence, as a table where no row holds is.
+  let complete := !Core.completenessAsked unguardedExhaustive
+  let mut out ← if complete then pure widened.back! else `(Fren.Seq.nth (∅ : Fren.Seq _) 0)
+  for i in (List.range (if complete then bodies.size - 1 else bodies.size)).reverse do
+    out ← match taken[i]! with
+      | some t => `(if $t then $(widened[i]!) else $out)
+      | none => pure widened[i]!
   return out
 
 open Lang in
@@ -2826,9 +2871,9 @@ def noteTable (cx : ExprCtx) (e : Syntax) (refs : Array Syntax) (conds : Array T
   let orF (cs : Array Term) : Term := cs.pop.foldr (fun c acc => Unhygienic.run `($c ∨ $acc)) cs.back!
   let andF (a b : Term) : Term := Unhygienic.run `($a ∧ $b)
   let notF (c : Term) : Term := Unhygienic.run `(¬$c)
-  for (g, f) in Core.tableGoals orF andF notF conds defined wild do
+  for (g, f) in Core.tableGoals orF andF notF (Unhygienic.run `(True)) conds defined wild do
     let ref := match g with
-      | .disjointness _ j => refs[j]!
+      | .disjointness _ j | .reachability _ j => refs[j]!
       | _ => e[0]
     let goal ← guardedGoal cx.guards f
     modifyLocal fun l => { l with tables := l.tables.push (ref, g, goal) }
@@ -2866,7 +2911,10 @@ def tableTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   for r in rows, k in [0:rows.size] do
     let before := cx.guards ++ negs
     let mut own := #[]
-    unless isWildRow r do
+    if isWildRow r then
+      -- The `_` row, which is last, for its reachability.
+      refs := refs.push r[1]
+    else
       -- Translated under its own guards alone, so that its indexes say where
       -- it defines them; then they, and the questions about its tables, are
       -- put under the guards around it.

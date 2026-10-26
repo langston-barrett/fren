@@ -522,12 +522,14 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
   let constraintsWithTrig := (c.constraints.filter fun p => p.kind == .ensure || p.kind == .expect).filterMap fun p =>
     p.e.trigger?.map (p, ·)
   -- Definedness, of each index by its position, and the completeness and
-  -- disjointness of each table, by where it is reported and the earlier
-  -- row (`tableKey`): in every model of `ms`, its goal holds.
+  -- disjointness of each table and `match`, by where it is reported and the
+  -- earlier row (`tableKey`): in every model of `ms`, its goal holds. The
+  -- reachability of an arm or a row: in some model, its goal fails.
   let defined (o : Oracle) (p : Name) (e : Ex) (ms : Array (Interp × Array Env)) : Oracle :=
-    let always (g : Ex) := pass (ms.all fun (I, ms) => ms.all (holds I · { label := p, pfx := .anonymous, e := g }))
-    let o := e.indexGoals.foldl (init := o) fun o (pos, g) => put o .definedness (some (.num p pos)) (always g)
-    e.tableGoals.foldl (init := o) fun o (pos, q, g) => put o q.kind (some (tableKey p pos q.rows?)) (always g)
+    let always (g : Ex) := ms.all fun (I, ms) => ms.all (holds I · { label := p, pfx := .anonymous, e := g })
+    let o := e.indexGoals.foldl (init := o) fun o (pos, g) => put o .definedness (some (.num p pos)) (pass (always g))
+    e.tableGoals.foldl (init := o) fun o (pos, q, g) =>
+      put o q.kind (some (tableKey p pos q.rows?)) (pass (if q.kind == .reachability then !always g else always g))
   if c.isGlobal then
     let MG := Is.map fun I => (I, models sp size I order (sp.insts c))
     for e in es do out := put out .expect (some e.name) (pass (MG.all fun (I, ms) => ms.all (holds I · (atom e))))
@@ -713,7 +715,7 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
     -- A definedness result, by its index's position, and a table's, by
     -- where it is reported and its rows, as brute force keys them.
     let keyOf (r : CheckResult) :=
-      if r.kind == .completeness || r.kind == .disjointness then
+      if r.kind == .completeness || r.kind == .disjointness || r.kind == .reachability then
         let pos? := r.prop?.bind fun p => (c.tables.filter (·.1 == p))[r.site?.getD 0]?.map (·.2.2.1.start)
         (r.kind, r.prop?.map fun p => tableKey p (pos?.getD 0) r.rows?, r.target?)
       else if r.kind != .definedness then keyOf r else

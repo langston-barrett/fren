@@ -521,9 +521,10 @@ structure LocalState where
   /-- The indexes of the constraint being elaborated, each with the term
   that it is in range where it is evaluated (`check::definedness`). -/
   indexes : Array (Syntax × Lean.Term) := #[]
-  /-- The questions about the rows of its tables, each where it is
-  reported, with the term that it holds where the table is evaluated
-  (`check::completeness`, `check::disjointness`). -/
+  /-- The questions about the rows of its tables and the arms of its
+  `match`es, each where it is reported, with the term that it holds where
+  the table or `match` is evaluated (`check::completeness`,
+  `check::disjointness`, `check::reachability`). -/
   tables : Array (Syntax × Core.TableGoal × Lean.Term) := #[]
   /-- The static errors so far, by top-level command: its file, where it
   starts and how many errors it has logged (`recordingErrors`). They stop

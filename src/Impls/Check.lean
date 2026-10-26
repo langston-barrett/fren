@@ -18,7 +18,7 @@ required. Each obligation is proved by `decide`.
 namespace Fren.Impls
 
 open Fren.Core (Answer Verdict CheckKind realizableVerdict expectVerdict vacuityVerdict coverVerdict
-  determinismVerdict redundancyAsked kindsFor)
+  determinismVerdict redundancyAsked kindsFor reachabilityAsked completenessAsked)
 
 instance : Fren.Finite Answer := ⟨[.sat, .unsat, .unknown], by intro x; cases x <;> simp⟩
 instance : Fren.Finite Verdict := ⟨[.pass, .fail, .inconclusive], by intro x; cases x <;> simp⟩
@@ -35,7 +35,7 @@ def toVerdict : Verdict → check.Verdict
 
 instance : Fren.Finite CheckKind :=
   ⟨[.realizable, .inst, .«expect», .cover, .vacuity, .redundancy, .determinism, .definedness, .completeness,
-    .disjointness, .precondition, .postcondition], by intro x; cases x <;> simp⟩
+    .disjointness, .precondition, .postcondition, .reachability], by intro x; cases x <;> simp⟩
 
 def toCheckKind : CheckKind → check.Kind
   | .realizable => .Realizability
@@ -50,6 +50,7 @@ def toCheckKind : CheckKind → check.Kind
   | .disjointness => .Disjointness
   | .precondition => .Precondition
   | .postcondition => .Postcondition
+  | .reachability => .Reachability
 
 instance : Fren.Finite Fren.Core.CheckedItem := ⟨[.component, .global, .body, .contract], by intro x; cases x <;> simp⟩
 
@@ -132,6 +133,26 @@ impl disjointness: check::disjointness for (q : Answer) {
   q := toOutcome q,
   verdict := toVerdict (expectVerdict q).1,
   reports_witness? := (expectVerdict q).2,
+}
+
+-- `checkReach` decides with `vacuityVerdict`, as `checkVacuity` does.
+impl reachability: check::reachability for (q : Answer) {
+  q := toOutcome q,
+  verdict := toVerdict (vacuityVerdict q),
+}
+
+-- Both front ends ask about the arms that `splitGoals` asks about, by
+-- `reachabilityAsked`, and about the completeness of a `match` by
+-- `completenessAsked`, from what `checkMatch` gives.
+impl reachability_asked: check::reachability_asked for (g a : Bool) {
+  guarded? := g,
+  after_guard? := a,
+  asked? := reachabilityAsked g a,
+}
+
+impl completeness_asked: check::completeness_asked for (u : Bool) {
+  unguarded_exhaustive? := u,
+  asked? := completenessAsked u,
 }
 
 -- `checkTable` decides a precondition's question too, and

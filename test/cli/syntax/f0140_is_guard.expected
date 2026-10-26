@@ -1,0 +1,13 @@
+error[F0140]: a pattern test has no guard
+ --> test/cli/syntax/f0140_is_guard.fren:9:44
+  |
+9 |     ensure r: y? iff s is Shape::Circle(_) if ok?
+  |                                            ^^ a guard here
+  |
+  = note: a guard belongs to a `match` arm
+  = help: write `e is P and C`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0140`.
+exit=2

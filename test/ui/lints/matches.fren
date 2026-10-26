@@ -65,5 +65,27 @@ comp wildcard {
     --~^ warning: `_` matches only `Shape::Rect`
     ensure r3: c = match e { A => 1, B => 2, _ => 3 }
 }
---@ summary: 15 passed, 0 failed, 0 inconclusive, 0 redundant
+-- An arm with a guard may not be taken where its pattern matches: the
+-- lints that merge or remove arms, or replace the `match`, leave a `match`
+-- with a guard alone, and `_` matches the variants that only arms with
+-- guards name (`Reqs/Lint/Pedantic/Matches#arms`).
+set_option fren.lint.single_match_else "warn" in
+comp guarded {
+    in e: E
+    in x: Int
+    pub out a: Int
+    pub out b?
+    pub out c: Int
+    pub out d: E
+    pub out f: Int
+
+    -- `_` matches `E::A` too, where `x <= 0`.
+    ensure r1: a = match e { E::A if x > 0 => 1, E::B => 2, E::C => 3, _ => 4 }
+    ensure r2: b? iff match e { E::A if x > 0 => true, _ => false }
+    ensure r3: c = match e { E::A if x > 0 => 1, E::B => 1, _ => 2 }
+    ensure r4: d = match e { E::A if x > 0 => E::A, _ => e }
+    ensure r5: f = match e { E::A if x > 0 => 1, E::A => 2, E::B => 3, E::C => 4, _ => 5 }
+    --~^ warning: `_` matches only `E::D`
+}
+--@ summary: 37 passed, 0 failed, 0 inconclusive, 0 redundant
 --@ exit: 3
