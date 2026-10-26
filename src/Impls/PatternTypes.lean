@@ -118,6 +118,44 @@ impl pattern_count: lang::pattern_count for (ivs : List (Option Int × Option In
     simp at h
     omega
 
+/-- Whether a range has both bounds, as `Fren.Core.intervalsFinite` asks of each. -/
+def hasBounds (iv : Option Int × Option Int) : Bool := iv.1.isSome && iv.2.isSome
+
+theorem intervalsFinite_iff (ivs : List (Option Int × Option Int)) :
+    Fren.Core.intervalsFinite ivs = true ↔ ∀ iv ∈ ivs, hasBounds iv = true := by
+  induction ivs with
+  | nil => simp [Fren.Core.intervalsFinite]
+  | cons iv rest ih =>
+    obtain ⟨a, b⟩ := iv
+    have : Fren.Core.intervalsFinite ((a, b) :: rest) = (hasBounds (a, b) && Fren.Core.intervalsFinite rest) := by
+      cases a <;> cases b <;> simp [Fren.Core.intervalsFinite, hasBounds]
+    rw [this]; simp [ih]
+
+-- When a pattern's alternatives are counted, for any number of them: by
+-- the functions that both front ends call (`Fren.Core.intervalsFinite`,
+-- `Fren.Core.intervalsCount?`), whichever alternatives they are.
+impl pattern_bounds: lang::pattern_bounds for (ivs : List (Option Int × Option Int)) {
+  los := Fren.Seq.ofList (ivs.map (toBound ·.1)),
+  his := Fren.Seq.ofList (ivs.map (toBound ·.2)),
+  finite? := Fren.Core.intervalsFinite ivs,
+  counted? := (Fren.Core.intervalsCount? ivs).isSome,
+} by
+  intro ivs
+  simp only [fren_spec]
+  simp
+  refine ⟨?_, ?_⟩
+  · rw [intervalsFinite_iff]
+    constructor
+    · intro h
+      refine ⟨fun a b hm => ?_, fun a b hm => ?_⟩ <;> have := h _ hm <;> cases a <;> cases b <;>
+        simp_all [hasBounds, toBound]
+    · rintro ⟨h1, h2⟩ ⟨a, b⟩ hm
+      have := h1 a b hm
+      have := h2 a b hm
+      cases a <;> cases b <;> simp_all [hasBounds, toBound]
+  · simp only [Fren.Core.intervalsCount?]
+    split <;> simp_all
+
 /-- A sample type of the kind `k`, for `lang::obligation`. -/
 def sampleTy : lang.ValueType → Fren.Core.Ty
   | .BoolTy => .bool

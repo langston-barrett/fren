@@ -473,6 +473,41 @@ pub comp pattern_count {
 }
 ```
 
+For any number of alternatives, `lang::pattern_bounds` states when they
+are counted: exactly when each has both bounds, which it says of their
+lower and upper bounds, each a sequence in the alternatives' order.
+Membership in a sequence is outside the decidable core, so it opts out,
+and so does its refinement:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp pattern_bounds {
+    in los: Seq(Bound)       -- the alternatives' lower bounds, in order
+    in his: Seq(Bound)       -- their upper bounds, in the same order
+    pub det out finite?      -- the pattern matches finitely many integers
+    pub det out counted?     -- how many integers it matches is counted from the bounds
+
+    ensure finite: finite? iff not (Bound::Open in los or Bound::Open in his)
+    ensure counts: counted? iff finite?
+
+    expect no_alternatives: when los = [] and his = [], finite?
+    expect one_open: when Bound::Open in his, not counted?
+}
+```
+
+It refines `lang::pattern_finite` for an integer base type, whose pattern
+is bounded exactly when no alternative lacks a bound:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+refine bounds_finite: pattern_bounds refines pattern_finite {
+    base_finite? := false,
+    integers? := true,
+    bounded? := not (Bound::Open in los or Bound::Open in his),
+    finite? := finite?,
+}
+```
+
 ## Strings
 
 A `String` is a finite sequence of characters. Two strings are equal if
