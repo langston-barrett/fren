@@ -1,5 +1,6 @@
 -- keep-sorted start
 import Fren.Seq
+import FrenCli.Guard
 import FrenCli.Parse
 import FrenCore.Names
 import FrenCore.PatternTypes
@@ -211,10 +212,18 @@ inductive Ex where
   /-- `exactly_one?(a, b)` or `at_most_one?(a, b)`
   (`Reqs/Lang/Expressions#cardinality`). -/
   | cardinality (c : Fren.Core.Cardinality) (args : Array Ex)
-  /-- `forall`, or `exists` if not `all`, over the bound names `names`:
-  its body at each of `insts`, the values of the names in each instance
-  (`Reqs/Lang/Quantifiers#meaning`). -/
-  | quant (all : Bool) (names : Array Name) (insts : Array (Array Val)) (body : Ex)
+  /-- `forall`, or `exists` if not `all`, written at the source position
+  `pos` of the file `file`, over the bound names `names`, each with its domain, which lists the
+  values that it takes given those of the names before it, as a sequence or
+  a set, or `none` if it has none, and its declared type, whose values those
+  are: its body at each combination of their values
+  (`Reqs/Eval#quantifiers`). A bound name of a listed type has every value
+  of its type as its domain (`Reqs/Lang/Quantifiers#meaning`). -/
+  | quant (file pos : Nat) (all : Bool) (names : Array Name) (doms : Array (Option Ex)) (tys : Array Fren.Core.PTy)
+      (body : Ex)
+  /-- The integers from `lo` up to `hi`, but not `hi`, as a sequence, if
+  there are at most `maxEnumerated` of them (`Reqs/Eval#quantifiers`). -/
+  | range (lo hi : Ex)
   /-- A table, whose `table` is at the source position `pos`: each row's
   position, its condition, `none` for `_`, and its value. The positions
   pair it with the checks of its rows (`Ex.tableGoals`). Without a `_` row,
@@ -364,6 +373,10 @@ instance : Inhabited Interp := ⟨{}⟩
 
 /-- The value of each variable, as far as it is known. -/
 abbrev Look := Name → Option Val
+
+/-- The most values that the evaluator enumerates of a range
+(`eval::MAX_ENUMERATED`). -/
+def maxEnumerated : Int := 1024
 
 /-- `some (.bool b)`, without allocating it: each of the two values is a
 closed term, which the compiler allocates once. -/
@@ -734,12 +747,67 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
     match taken? with
     | some (new, body) => body.eval I look (new ++ locals) slots
     | none => I.fn (← unspec?) #[]
+  | .range lo hi => do
+    let .int a ← lo.eval I look locals slots | none
+    let .int b ← hi.eval I look locals slots | none
+    if b - a > maxEnumerated then none
+    return .seq ((Array.range (b - a).toNat).map fun (k : Nat) => Val.int (a + k))
   -- The conjunction or disjunction of its instances, decided when one
-  -- instance decides it.
-  | .quant all names insts body =>
-    insts.foldl (init := some (.bool all)) fun acc vals =>
-      let v := body.eval I look ((names.zip vals).toList ++ locals) slots
-      if all then kleeneAnd acc v else kleeneOr acc v
+  -- instance decides it: the body at each combination of the values of its
+  -- bound names' domains, of their types.
+  | .quant _ _ all names doms tys body =>
+    let rec go (k : Nat) (locals : List (Name × Val)) : Option Val :=
+      if h : k < names.size then
+        match doms[k]?.bind id |>.bind (·.eval I look locals slots) with
+        | some (.seq vs) | some (.set vs) =>
+          vs.foldl (init := some (.bool all)) fun acc v =>
+            if acc == some (.bool !all) || !(tys[k]?.all (typeHolds I.shapes · v)) then acc
+            else
+              let x := go (k + 1) ((names[k], v) :: locals)
+              if all then kleeneAnd acc x else kleeneOr acc x
+        | _ => none
+      else body.eval I look locals slots
+    go 0 locals
+
+/-- The expressions directly within `e`. -/
+def Ex.children : Ex → Array Ex
+  | .lit _ | .var _ | .slot _ | .bound _ => #[]
+  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .const _ a | .typed _ _ a => #[a]
+  | .bin _ a b | .when _ a b | .pair a b | .index a b _ | .range a b => #[a, b]
+  | .ite c a b => #[c, a, b]
+  | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args
+  | .method _ r args => #[r] ++ args
+  | .update e fs => #[e] ++ fs.map (·.2)
+  | .match e arms .. => arms.foldl (init := #[e]) fun acc (_, g?, b) => acc ++ g?.toArray ++ #[b]
+  | .quant _ _ _ _ ds _ b => (ds.filterMap id).push b
+  | .table _ rows _ => rows.flatMap fun (_, c?, v) => c?.toArray.push v
+  | .pre _ _ gs e => (gs.map (·.2)).push e
+
+/-- Whether `e` has an unbounded quantifier: one with a bound name whose
+domain is not its type's listed values. -/
+partial def Ex.unbounded (e : Ex) : Bool :=
+  match e with
+  | .quant _ _ _ _ ds _ b => ds.any (fun | some (.lit _) => false | _ => true) || b.unbounded
+  | _ => e.children.any (·.unbounded)
+
+/-- Where `e` has a quantifier with a bound name without a domain, which the
+evaluator cannot evaluate (`Reqs/Eval#quantifiers`): its file and position. -/
+partial def Ex.undomained? (e : Ex) : Option (Nat × Nat) :=
+  match e with
+  | .quant file pos _ _ ds _ _ => if ds.any Option.isNone then some (file, pos) else e.children.findSome? (·.undomained?)
+  | _ => e.children.findSome? (·.undomained?)
+
+/-- Where what testing `c` evaluates has a quantifier that the evaluator
+cannot evaluate (`Reqs/Eval#quantifiers`): its constraints, definitions and
+bindings, its instances' bindings and components, and so the bodies of the
+defined functions and values of the constants that they apply, which are
+part of them. -/
+partial def Spec.untestable? (sp : Spec) (c : Comp) (seen : List Name := []) : Option (Nat × Nat) :=
+  c.constraints.findSome? (·.e.undomained?)
+    <|> c.defs.findSome? (·.2.undomained?)
+    <|> c.bindings.findSome? (·.2.undomained?)
+    <|> c.insts.findSome? fun i => i.bindings.findSome? (·.2.undomained?)
+      <|> if seen.contains i.comp then none else (sp.comp? i.comp).bind (sp.untestable? · (i.comp :: seen))
 
 /-- The trigger of a constraint (`Reqs/Lang/Components#triggers`): the
 conditions of its top-level `when`/`unless` chain, conjoined. -/
@@ -825,7 +893,8 @@ partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Optio
       ((match g with | .reachability _ j | .disjointness _ _ j => armPos[j]! | _ => pos), some g, wrap f)
   -- In every instance, whatever the quantifier: the instances do not guard
   -- each other.
-  | .quant _ names insts body => go body (fun g => wrap (.quant true names insts g))
+  | .quant file pos _ names doms tys body => go body (fun g => wrap (.quant file pos true names doms tys g))
+  | .range lo hi => go lo ++ go hi
   -- A row's condition is guarded by the earlier rows' not holding, and its
   -- value by its own holding too; then the table's own questions.
   -- A constant's indexes and tables are the constant's.
@@ -983,6 +1052,8 @@ structure LState where
   spec : Spec := {}
   /-- The binders of `match` arms lowered so far, which number their names. -/
   fresh : Nat := 0
+  /-- The file being lowered, by its position among the files. -/
+  file : Nat := 0
   /-- The type aliases, each with the type it names, without its patterns,
   and as declared. -/
   aliases : NameMap VTy := {}
@@ -1127,7 +1198,8 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .typed t is a => .typed t is (a.renameBound f)
   | .match e arms pos ps u t =>
     .match (e.renameBound f) (arms.map fun (p, g?, b) => (p.rename f, g?.map (·.renameBound f), b.renameBound f)) pos ps u t
-  | .quant all ns insts b => .quant all (ns.map f) insts (b.renameBound f)
+  | .quant file pos all ns ds ts b => .quant file pos all (ns.map f) (ds.map (·.map (·.renameBound f))) ts (b.renameBound f)
+  | .range lo hi => .range (lo.renameBound f) (hi.renameBound f)
 
 /-- `e` with each variable renamed by `f`. -/
 partial def Ex.renameVars (f : Name → Name) : Ex → Ex
@@ -1154,7 +1226,8 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .field e idx => .field (e.renameVars f) idx
   | .update e fs => .update (e.renameVars f) (fs.map fun (k, x) => (k, x.renameVars f))
   | .match e arms pos ps u t => .match (e.renameVars f) (arms.map fun (p, g?, b) => (p, g?.map (·.renameVars f), b.renameVars f)) pos ps u t
-  | .quant all ns insts b => .quant all ns insts (b.renameVars f)
+  | .quant file pos all ns ds ts b => .quant file pos all ns (ds.map (·.map (·.renameVars f))) ts (b.renameVars f)
+  | .range lo hi => .range (lo.renameVars f) (hi.renameVars f)
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.renameVars f), v.renameVars f)) u
   | .const p e => .const p e
   | .typed t is a => .typed t is (a.renameVars f)
@@ -1184,7 +1257,8 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .field e idx => .field (e.substVars f) idx
   | .update e fs => .update (e.substVars f) (fs.map fun (k, x) => (k, x.substVars f))
   | .match e arms pos ps u t => .match (e.substVars f) (arms.map fun (p, g?, b) => (p, g?.map (·.substVars f), b.substVars f)) pos ps u t
-  | .quant all ns insts b => .quant all ns insts (b.substVars f)
+  | .quant file pos all ns ds ts b => .quant file pos all ns (ds.map (·.map (·.substVars f))) ts (b.substVars f)
+  | .range lo hi => .range (lo.substVars f) (hi.substVars f)
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.substVars f), v.substVars f)) u
   | .const p e => .const p e
   | .typed t is a => .typed t is (a.substVars f)
@@ -1245,7 +1319,10 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
       let σ' := σ.filter (!p.binders.contains ·.1)
       (p, g?.map (·.subst σ'), b.subst σ')) pos ps u t
   -- So do a quantifier's bound names.
-  | .quant all ns insts b => .quant all ns insts (b.subst (σ.filter (!ns.contains ·.1)))
+  | .quant file pos all ns ds ts b =>
+    let σ' := σ.filter (!ns.contains ·.1)
+    .quant file pos all ns (ds.map (·.map (·.subst σ'))) ts (b.subst σ')
+  | .range lo hi => .range (lo.subst σ) (hi.subst σ)
 
 /-- The value of a bound of a range pattern. -/
 def boundValue : Bound → L Int
@@ -1309,7 +1386,9 @@ partial def Ex.readsUnspecified : Ex → Bool
   | .typed _ _ a => a.readsUnspecified
   | .table _ rows none => rows.any fun (_, c?, v) => c?.any (·.readsUnspecified) || v.readsUnspecified
   | .lit _ | .var _ | .slot _ | .bound _ => false
-  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .quant _ _ _ a | .pre _ _ _ a => a.readsUnspecified
+  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .pre _ _ _ a => a.readsUnspecified
+  | .quant _ _ _ _ ds _ a => a.readsUnspecified || ds.any (·.any (·.readsUnspecified))
+  | .range lo hi => lo.readsUnspecified || hi.readsUnspecified
   | .bin _ a b | .when _ a b | .pair a b => a.readsUnspecified || b.readsUnspecified
   | .ite c a b => c.readsUnspecified || a.readsUnspecified || b.readsUnspecified
   | .app _ args | .ctor _ _ args | .setLit args | .seqLit args | .cardinality _ args => args.any (·.readsUnspecified)
@@ -1317,6 +1396,80 @@ partial def Ex.readsUnspecified : Ex → Bool
   | .update e fs => e.readsUnspecified || fs.any (·.2.readsUnspecified)
   | .match e arms _ _ u _ => u.isSome || e.readsUnspecified || arms.any fun (_, g?, b) =>
     g?.any (·.readsUnspecified) || b.readsUnspecified
+
+/-- `t` as both front ends see it (`Fren.Core.Ty`). -/
+partial def VTy.core (sp : Spec) : VTy → Fren.Core.Ty
+  | .bool => .bool
+  | .int => .int
+  | .nat => .nat
+  | .string => .string
+  | .set t => .set (t.core sp)
+  | .rel a b => .rel (a.core sp) (b.core sp)
+  | .seq t => .seq (t.core sp)
+  | .data p => if (sp.data.find? p).any (·.isRecord) then .record p else .enum p
+  | .abstract p => .abstract p
+  | .newtype p u => .newtype p (u.core sp)
+
+/-- The declared type written `segs`, with the patterns of the pattern
+types within it, as the elaborator's `elabPTy` has it. -/
+partial def lowerPTy (segs : Array Ident) : L Fren.Core.PTy := do
+  let (base, seg?) := splitPatternType segs
+  let t ← lowerBasePTy base
+  let some seg := seg? | return t
+  let some p := seg.pattern? | throw "a pattern type's pattern"
+  let vt ← lowerTy base
+  let (q, _) ← lowerPattern vt p
+  return { t with pat? := some q.core }
+where
+  lowerBasePTy (segs : Array Ident) : L Fren.Core.PTy := do
+    if segs[0]!.name == Parser.setSeg || segs[0]!.name == Parser.seqSeg then
+      let e ← lowerPTy (segs.extract 1)
+      let sp := (← get).spec
+      return { ty := (← lowerTy segs).core sp, elems := #[e] }
+    if segs[0]!.name == Parser.relSeg then
+      let (a, b) := Parser.splitRel (segs.extract 1)
+      let sp := (← get).spec
+      return { ty := (← lowerTy segs).core sp, elems := #[← lowerPTy a, ← lowerPTy b] }
+    if segs.size == 1 && ["Bool", "Int", "Nat", "String"].contains segs[0]!.name then
+      return .plain ((← lowerTy segs).core (← get).spec)
+    if let .item { kind := .typeItem, path, .. } ← resolve segs then
+      if let some t := (← get).declaredAliases.find? path then return t
+    return .plain ((← lowerTy segs).core (← get).spec)
+
+/-- The value `v` of the type `t` (`Fren.Core.PVal`): a newtype's is its
+underlying type's. -/
+partial def Spec.ofPVal (sp : Spec) : VTy → Fren.Core.PVal → Val
+  | _, .bool b => .bool b
+  | _, .int i => .int i
+  | .newtype _ u, .ctor _ #[w] => sp.ofPVal u w
+  | .data p, .ctor idx args => match sp.data.find? p with
+    | some d => .ctor p idx ((args.zip (d.ctors[idx]!.fields.map (·.2))).map fun (w, u) => sp.ofPVal u w)
+    | none => .ctor p idx #[]
+  | _, .ctor idx _ => .ctor .anonymous idx #[]
+
+/-- Whether `t`, a type without patterns, is listed: `Bool`, or an
+enumeration or record that is not recursive and whose payloads and fields
+are listed (`lang::quantified_type`), as the elaborator's
+`State.valueCount` says. -/
+partial def Spec.listedTy (sp : Spec) : VTy → Bool
+  | .bool => true
+  | .data p => match sp.shapes.find? p, sp.data.find? p with
+    | some sh, some d => !sh.recursive && d.ctors.all (·.fields.all (sp.listedTy ·.2))
+    | _, _ => false
+  | _ => false
+
+/-- Every value of the declared type `pt`, of the type `t`, in the order of a
+quantifier's instances, if it is listed, as the elaborator's
+`binderValues` says (`lang::quantified_type`, `lang::pattern_finite`). -/
+def Spec.listedValues (sp : Spec) (t : VTy) (pt : Fren.Core.PTy) : Option (Array Val) :=
+  let shapes := sp.shapes.find?
+  if (pt.cons shapes).isNone then
+    if sp.listedTy t then some (sp.values t) else none
+  else match pt.count? shapes with
+    | some n =>
+      if n > Fren.Core.maxInstances then some #[]
+      else some (((pt.values shapes Fren.Core.maxInstances).map (·.map (sp.ofPVal t))).getD #[])
+    | none => none
 
 mutual
 partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
@@ -1519,69 +1672,60 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       let n := declName x
       cx := { cx with lets := (n, e, t) :: cx.lets, binders := cx.binders.filter (·.1 != n) }
     lowerExpr cx body
-  | .quant _ all bs body => do
-    -- Each bound name with its type and a name made unique, as a
-    -- pattern's binder's is.
-    let mut bound := #[]
+  | .quant span all bs body => do
+    -- Each bound name with its type, as declared, and a name made unique,
+    -- as a pattern's binder's is.
+    let mut bound : Array (Name × VTy × Fren.Core.PTy × Name) := #[]
     for b in bs do
       let t ← lowerTy b.ty
+      let pt ← lowerPTy b.ty
       for x in b.names do
         let k := (← get).fresh
         modify fun s => { s with fresh := s.fresh + 1 }
-        bound := bound.push (declName x, t, Name.mkNum (declName x) k)
-    let sp := (← get).spec
-    -- Every combination of the names' values, the last fastest.
-    let insts := bound.foldl (fun acc (_, t, _) => acc.flatMap fun pre => (sp.values t).map pre.push) #[#[]]
+        bound := bound.push (declName x, t, pt, Name.mkNum (declName x) k)
     -- A bound name hides a name of an enclosing `let` or `where`.
     let names := bound.map (·.1)
-    let (b, _) ← lowerExpr { cx with binders := bound.toList.reverse ++ cx.binders,
-                                     lets := cx.lets.filter (!names.contains ·.1) } body
-    return (.quant all (bound.map (·.2.2)) insts b, .bool)
+    let inner := { cx with binders := (bound.map fun (n, t, _, u) => (n, t, u)).toList.reverse ++ cx.binders,
+                           lets := cx.lets.filter (!names.contains ·.1) }
+    let (b, _) ← lowerExpr inner body
+    let low (e : Expr) : L Ex := return (← lowerExpr inner e).1
+    let sp := (← get).spec
+    -- Each bound name's domain: every value of a listed type, and for any
+    -- other, what its guard bounds it to (`Reqs/Eval#quantifiers`).
+    let strs := names.map (·.getString!)
+    let mut doms : Array (Option Ex) := #[]
+    for (_, t, pt, _) in bound, k in [0:bound.size] do
+      if let some vs := sp.listedValues t pt then
+        doms := doms.push (some (.lit (.seq vs)))
+        continue
+      let (d, reads) := domainOf all strs body k (t == .nat)
+      let one := Ex.lit (.int 1)
+      -- A lower bound, and an upper bound past the range's end.
+      let lower (j : Nat) : L (Option Ex) := do
+        let some (e, strict) := reads[j]?.bind id | return none
+        let x ← low e
+        return some (if strict then .bin .add x one else x)
+      let upper (j : Nat) : L (Option Ex) := do
+        let some (e, strict) := reads[j]?.bind id | return none
+        let x ← low e
+        return some (if strict then x else .bin .add x one)
+      let dom ← match d with
+        | .members j => match reads[j]?.bind id with
+          | some (e, _) => some <$> low e
+          | none => pure none
+        | .range lo hi => do
+          let (some l, some h) := (← lower lo, ← upper hi) | pure none
+          pure (some (.range l h))
+        | .fromZero hi => do pure ((← upper hi).map (Ex.range (.lit (.int 0))))
+        | .unbounded => pure none
+      doms := doms.push dom
+    return (.quant (← get).file span.start all (bound.map (·.2.2.2)) doms (bound.map (·.2.2.1)) b, .bool)
 end
 
 def varTy (ty? : Option (Array Ident)) : L VTy := do
   match ty? with
   | some t => lowerTy t
   | none => return .bool
-
-/-- `t` as both front ends see it (`Fren.Core.Ty`). -/
-partial def VTy.core (sp : Spec) : VTy → Fren.Core.Ty
-  | .bool => .bool
-  | .int => .int
-  | .nat => .nat
-  | .string => .string
-  | .set t => .set (t.core sp)
-  | .rel a b => .rel (a.core sp) (b.core sp)
-  | .seq t => .seq (t.core sp)
-  | .data p => if (sp.data.find? p).any (·.isRecord) then .record p else .enum p
-  | .abstract p => .abstract p
-  | .newtype p u => .newtype p (u.core sp)
-
-/-- The declared type written `segs`, with the patterns of the pattern
-types within it, as the elaborator's `elabPTy` has it. -/
-partial def lowerPTy (segs : Array Ident) : L Fren.Core.PTy := do
-  let (base, seg?) := splitPatternType segs
-  let t ← lowerBasePTy base
-  let some seg := seg? | return t
-  let some p := seg.pattern? | throw "a pattern type's pattern"
-  let vt ← lowerTy base
-  let (q, _) ← lowerPattern vt p
-  return { t with pat? := some q.core }
-where
-  lowerBasePTy (segs : Array Ident) : L Fren.Core.PTy := do
-    if segs[0]!.name == Parser.setSeg || segs[0]!.name == Parser.seqSeg then
-      let e ← lowerPTy (segs.extract 1)
-      let sp := (← get).spec
-      return { ty := (← lowerTy segs).core sp, elems := #[e] }
-    if segs[0]!.name == Parser.relSeg then
-      let (a, b) := Parser.splitRel (segs.extract 1)
-      let sp := (← get).spec
-      return { ty := (← lowerTy segs).core sp, elems := #[← lowerPTy a, ← lowerPTy b] }
-    if segs.size == 1 && ["Bool", "Int", "Nat", "String"].contains segs[0]!.name then
-      return .plain ((← lowerTy segs).core (← get).spec)
-    if let .item { kind := .typeItem, path, .. } ← resolve segs then
-      if let some t := (← get).declaredAliases.find? path then return t
-    return .plain ((← lowerTy segs).core (← get).spec)
 
 /-- `x`'s constraint of its declared type `t`, if it has one: what its
 type brings, as a constraint (`Reqs/Lang/Components#pattern-types`). -/
@@ -1816,12 +1960,15 @@ partial def lowerItem : Item → L Unit
     let (e, _) ← lowerExpr {} value
     noteBody (Name.mkSimple name.name) #[] e
     -- Unknown where it reads an index out of range or a table where no
-    -- row holds, which only an interpretation gives a value: then it is
-    -- the constant, kept as its expression, wherever it is mentioned.
+    -- row holds, which only an interpretation gives a value, or where an
+    -- unbounded quantifier has a bound name without a domain, or one too
+    -- large (`Reqs/Eval#quantifiers`): then it is the constant, kept as its
+    -- expression, wherever it is mentioned, and testing what reads it is an
+    -- error if a domain is missing (`Spec.untestable?`).
     let v ← match evalClosed e with
       | some v => pure (Ex.lit v)
       | none =>
-        unless e.readsUnspecified do throw s!"the value of `{showPath path}` cannot be evaluated"
+        unless e.readsUnspecified || e.unbounded do throw s!"the value of `{showPath path}` cannot be evaluated"
         pure (.const path e)
     modify fun s => { s with
       table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
@@ -1855,6 +2002,7 @@ def lowerFrom (st : LState) (files : Array (Array Item)) : Except String LState 
     st := { st with module := .anonymous, scope := .anonymous }
     for item in items do
       st := (← (lowerItem item).run st).2
+    st := { st with file := st.file + 1 }
   return st
 
 /-- The spec of the files' items, which the elaborator accepted, with the

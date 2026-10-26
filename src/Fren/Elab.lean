@@ -323,6 +323,10 @@ structure MatchBinder where
   obligations : Array (Syntax × Term) := #[]
   /-- Likewise, the questions about the rows of its definition's tables. -/
   tableObligations : Array (Syntax × Core.TableGoal × Term) := #[]
+  /-- A bound name of a type that is not listed, of an unbounded quantifier,
+  which Lean's `∀` or `∃` binds: within the body, it mentions itself, as a
+  variable does. -/
+  unbounded : Bool := false
 
 /-- A clause of the contract of the function at `path`, whose parameters
 are `params`: whether it is a postcondition (`lang::contract_application`). -/
@@ -1064,7 +1068,7 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
     let n := segs[0]!.getId
     if let some (_, k) := bs.reverse.find? (·.1 == n.getRoot) then return k
     if let some b := cx.binder? n.getRoot then
-      let some sc := b.scrutinee | return .leaf .bound
+      let some sc := b.scrutinee | return .leaf (if b.unbounded then .variable else .bound)
       return .node .binder [← shapeOf (cx.at b) sc]
     -- Definitions are acyclic, so this ends.
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
@@ -1185,7 +1189,7 @@ def checkCounts [Monad m] [MonadEnv m] [MonadOptions m] [MonadLog m] [AddMessage
 /-- Records what an instance of `c`, written at `ref`, brings to the current
 comp's mix of relational operators and counting. -/
 def noteCounts [Monad m] [MonadEnv m] (c : CompInfo) (ref : Syntax) : m Unit :=
-  modifyLocal fun l => { l with relationalUsed := l.relationalUsed || c.relational
+  modifyLocal fun l => { l with relationalUsed := l.relationalUsed || c.relational, guardedUsed := l.guardedUsed || c.guarded
                                 countRefs := if c.counts then l.countRefs.push ref else l.countRefs }
 
 /-- Reads the field `f` of the term `t` of Lean type `ty`, which is the dotted
@@ -3627,6 +3631,9 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
     return mkCIdentFrom e (info.decl ++ en.variants[idx]!)
   | .item { kind := .constItem, path, .. } =>
     let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
+    -- Its value's quantifiers are part of the queries
+    -- (`Reqs/Lang/Quantifiers#guards`).
+    if c.guarded then modifyLocal fun l => { l with guardedUsed := true }
     -- Its value, not its generated definition (see `Fren.Model`).
     `(($(← exprToSyntax c.value) : $(← exprToSyntax c.type)))
   | .item { kind := .fnItem, path, .. } => throwError (Core.unappliedMsg path).text
@@ -3729,6 +3736,9 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       noteObligation cx .argument a (d.ptys.1[k]?.getD default) t
       return t
     notePreconditions cx p path args
+    -- Its body's quantifiers are part of the queries
+    -- (`Reqs/Lang/Quantifiers#guards`).
+    if d.guarded then modifyLocal fun l => { l with guardedUsed := true }
     return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
   if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
   let a ← placeholderOf path
@@ -3830,18 +3840,74 @@ def binderValues (ty : Expr) (pt : Core.PTy) : TermElabM (Option (Nat × Array T
   let vs := (pt.values st.shapeOf Core.maxInstances).getD #[]
   return some (n, ← vs.mapM (valueTerm ty))
 
+/-- Whether `e` names `n` anywhere within it: as a path of one segment
+whose root is `n`, or a field of a record literal or update written
+without `:=`; not as an applied function, a record's type, or within a
+type or pattern. A name is compared as written, whatever shadows it, as
+the `fren` command's `Expr.names` does. -/
+partial def namesBound (n : Name) (e : Syntax) : Bool :=
+  if e.isOfKind ``Lang.fren_path then
+    let segs := pathSegs e
+    segs.size == 1 && segs[0]!.getId.getRoot == n
+  else if e.isOfKind ``Lang.fren_binding then
+    (e[1].isNone && e[0].getId == n) || namesBound n e[1]
+  else if e.isOfKind ``Lang.appExpr || e.isOfKind ``Lang.recordExpr then e.getArgs.extract 1 |>.any (namesBound n)
+  else if e.isOfKind ``Lang.fren_binder || e.isOfKind ``Lang.fren_top_pattern || e.isOfKind ``Lang.fren_or_pattern then false
+  else if e.isOfKind ``Lang.fren_let_def then namesBound n e[3]
+  else e.getArgs.any (namesBound n)
+
+/-- What `Core.splitConjuncts` sees of a node of a guard, without the
+parentheses around it, as the `fren` command's `guardNode`. -/
+def guardNode (e : Syntax) : Core.GuardNode Syntax :=
+  let e := unparen e
+  let op (o : Syntax) := o.getAtomVal.trimAscii.toString
+  if e.getNumArgs == 3 && e[1].isAtom && op e[1] == "and" then .conj e[0] e[2]
+  else if let some (xs, ops) := chainOf? e then .compare xs (ops.map op)
+  else if isComparison e then .compare #[e[0], e[2]] #[op e[1]]
+  else .other
+
+/-- The condition and body of `e`, if it is a `when`. -/
+def whenOf? (e : Syntax) : Option (Syntax × Syntax) :=
+  let e := unparen e
+  if e.getNumArgs == 4 && e[0].isAtom && e[0].getAtomVal.trimAscii.toString == "when" then some (e[1], e[3]) else none
+
+/-- The conjuncts of the guard of a quantifier, a `forall` if `all`, whose
+body is `body` (`Core.guardConjunctsBy`). -/
+def guardConjuncts (all : Bool) (body : Syntax) : Array (Core.GuardConjunct Syntax) :=
+  Core.guardConjunctsBy guardNode whenOf? all body
+
+/-- The domain of the bound name at position `k` of `names`, the bound
+names of a quantifier, a `forall` if `all`, with the body `body`, where
+`nat` says that it is a `Nat` (`Core.boundDomain`), as the `fren` command's
+`domainOf`. -/
+def domainOf (all : Bool) (names : Array Name) (body : Syntax) (k : Nat) (nat : Bool) : Core.GuardDomain :=
+  let alone (e : Syntax) : Option Nat :=
+    -- A path, as an expression, is a node around it.
+    let e := unparen e
+    let e := if e.getNumArgs == 1 then e[0] else e
+    if e.isOfKind ``Lang.fren_path then
+      let segs := pathSegs e
+      if segs.size == 1 then names.idxOf? segs[0]!.getId else none
+    else none
+  let mentions (e : Syntax) : List Nat := (List.range names.size).filter fun j => namesBound names[j]! e
+  (Core.boundDomain alone mentions (guardConjuncts all body) k nat).1
+
 open Lang in
 /-- `forall (x: T), e`, or `exists` unless `all`, with the binders
-`binders` and the body `body`, expanded (`Reqs/Lang/Quantifiers#meaning`):
-the body is elaborated once, over a local for each bound name, and
-instantiated at every combination of their values, the last name varying
-fastest, and the instances conjoined or disjoined; so are the definedness
-goals of its indexes, which hold in every instance. Each type must be one
-that a quantifier ranges over (`lang::quantified_type`), the names
-distinct, following the Boolean names rule and written with `!` exactly
-when they shadow (`lang::shadowing`), and the combinations at most
-`Core.maxInstances` (`lang::quantifier_size`), as the `fren` command checks
-them. -/
+`binders` and the body `body`: expanded over the bound names of listed
+types (`Reqs/Lang/Quantifiers#meaning`), and Lean's `∀` or `∃` over the
+others, around the expansion (`Reqs/Lang/Quantifiers#unbounded-quantifiers`).
+The body is elaborated once, over a local for each bound name, and
+instantiated at every combination of the values of those of listed types,
+the last name varying fastest, and the instances conjoined or disjoined;
+so are the definedness goals of its indexes, which hold in every instance,
+under `∀` whatever the quantifier. A local of a type that is not listed is
+named `x'k`, with `k` its position among the binders in scope, as the
+solver knows it, and `undecidable` is reported at its binder
+(`lang::in_core`). The names must be distinct, follow the Boolean names
+rule and be written with `!` exactly when they shadow (`lang::shadowing`),
+and the combinations be at most `Core.maxInstances`
+(`lang::quantifier_size`), as the `fren` command checks them. -/
 def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (all : Bool)
     (binders : Array Syntax) (body : Syntax) : TermElabM Term := withRef e do
   -- Distinct names (`lang::distinct_names`), by the names they declare.
@@ -3850,15 +3916,14 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let declared := ids.map fun x => (declaredIdent x).1.getId
   if let some k := (Core.repeatsAt declared)[0]? then
     throwErrorAt ids[k]! (Core.dupBoundMsg declared[k]!).text
-  let mut bound : Array (Name × Expr) := #[]
+  -- Each bound name, its Lean type and declared type, and its values if
+  -- its type is listed.
+  let mut bound : Array (Name × Expr × Core.PTy × Option (Array Term)) := #[]
   let mut sizes := #[]
-  let mut listed := #[]
   for b in binders do
     let (ty, pt) ← binderType cx.modName b[3]
-    let some (n, vs) ← binderValues ty pt
-      | let collection := ty.isAppOfArity ``Fren.FinSet 1 || ty.isAppOfArity ``Fren.Seq 1
-        let shown ← if pt.pat?.isSome then pure pt.text else typeName ty
-        throwErrorAt b[3] (Core.quantifiedTypeMsg shown collection).text
+    let values? ← binderValues ty pt
+    if values?.isNone then checkCore cx b .quantifier true true #[]
     for x in b[1].getArgs do
       let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
         (cx.binders.map (·.what) ++ bound.map (·.1, "the bound name")) cx.selfFn.isSome cx.inGlobal
@@ -3866,17 +3931,26 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       let bn := x.getId
       liftMsg x (Core.checkVarName bn (some (ty.isConstOf ``Bool)))
       lintName .binder bn x
-      bound := bound.push (bn, ty)
-      sizes := sizes.push n
-      listed := listed.push vs
+      bound := bound.push (bn, ty, pt, values?.map (·.2))
+      if let some (n, _) := values? then sizes := sizes.push n
   let n := cx.instances * Core.instanceCount sizes
   unless Core.quantifierSizeAccepted n do
     throwErrorAt (mkNullNode binders) (Core.quantifierSizeMsg n (cx.instances > 1)).text
-  let values ← (bound.zip listed).mapM fun ((_, ty), vs) => vs.mapM (elabProp · ty)
+  -- A bound name of a type that is not listed, with a domain, makes the
+  -- queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`).
+  let names := bound.map (·.1)
+  if bound.zipIdx.any (fun ((_, ty, _, vs?), k) => vs?.isNone && domainOf all names body k (ty.isConstOf ``Nat) != .unbounded) then
+    modifyLocal fun l => { l with guardedUsed := true }
+  let values ← bound.filterMapM fun (_, ty, _, vs?) => vs?.mapM (·.mapM (elabProp · ty))
   let combos := values.foldl (fun acc vs => acc.flatMap fun pre => vs.map pre.push) #[#[]]
-  withLocalDeclsD (bound.map fun (bn, ty) => (bn, fun _ => pure ty)) fun fvs => do
-    let new ← (bound.zip fvs).mapIdxM fun i ((bn, ty), fv) => do
-      return { name := bn, term := ← exprToSyntax fv, «type» := ty, scrutinee := none, outer := cx.binders.size + i : MatchBinder }
+  let localName (k : Nat) (bn : Name) (listed : Bool) : Name :=
+    if listed then bn else .mkSimple s!"{bn.getString!}'{cx.binders.size + k}"
+  withLocalDeclsD (bound.mapIdx fun k (bn, ty, _, vs?) => (localName k bn vs?.isSome, fun _ => pure ty)) fun fvs => do
+    let new ← (bound.zip fvs).mapIdxM fun i ((bn, ty, _, vs?), fv) => do
+      return { name := bn, term := ← exprToSyntax fv, «type» := ty, scrutinee := none, outer := cx.binders.size + i
+               unbounded := vs?.isNone : MatchBinder }
+    let listedFvs := (bound.zip fvs).filterMap fun ((_, _, _, vs?), fv) => vs?.map fun _ => fv
+    let free := (bound.zip fvs).filterMap fun ((_, ty, pt, vs?), fv) => if vs?.isNone then some (fv, ty, pt) else none
     let outer := (← getLocal).indexes
     let outerTables := (← getLocal).tables
     modifyLocal fun l => { l with indexes := #[], tables := #[] }
@@ -3885,7 +3959,19 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let b ← elabProp t
     let inner ← (← getLocal).indexes.mapM fun (ref, g) => return (ref, ← elabProp g)
     let innerTables ← (← getLocal).tables.mapM fun (ref, q, g) => return (ref, q, ← elabProp g)
-    let inst (x : Expr) (vals : Array Expr) : Expr := x.replaceFVars fvs vals
+    let inst (x : Expr) (vals : Array Expr) : Expr := x.replaceFVars listedFvs vals
+    -- Lean's `∀`, or `∃` unless `forall?`, over the bound names of types
+    -- that are not listed, with what their types bring as a hypothesis or a
+    -- conjunct, and without `have`s, which lean-smt does not translate.
+    let bindFree (forall? : Bool) (x : Expr) : TermElabM Expr := do
+      if free.isEmpty then return x
+      let cons ← free.filterMapM fun (fv, ty, pt) => return (← factPred? ty pt).map (·.beta #[fv])
+      let x ← zetaReduce x
+      if forall? then
+        mkForallFVars (free.map (·.1)) (cons.foldr mkArrow' x)
+      else
+        free.foldrM (init := cons.foldr mkAnd x) fun (fv, _, _) acc => do
+          mkAppM ``Exists #[← mkLambdaFVars #[fv] acc]
     -- The names of enclosing `let`s and `where`s are locals here, which the
     -- `have`s that define them bind again: what mentions them is closed
     -- over them, and applied to their names.
@@ -3897,10 +3983,14 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       if used.isEmpty then return ← exprToSyntax x
       let f ← exprToSyntax (← mkLambdaFVars (used.map (·.2)) x)
       `($f $(used.map (·.1))*)
-    let goals ← inner.mapM fun (ref, g) => return (ref, ← close (balanced mkAnd (combos.map (inst g))))
-    let tableGoals ← innerTables.mapM fun (ref, q, g) => return (ref, q, ← close (balanced mkAnd (combos.map (inst g))))
+    let goals ← inner.mapM fun (ref, g) => return (ref, ← close (← bindFree true (balanced mkAnd (combos.map (inst g)))))
+    let tableGoals ← innerTables.mapM fun (ref, q, g) =>
+      return (ref, q, ← close (← bindFree true (balanced mkAnd (combos.map (inst g)))))
     modifyLocal fun l => { l with indexes := outer ++ goals, tables := outerTables ++ tableGoals }
-    close (balanced (if all then mkAnd else mkOr) (combos.map (inst b)))
+    close (← bindFree all (balanced (if all then mkAnd else mkOr) (combos.map (inst b))))
+where
+  /-- `p → q`, a non-dependent arrow. -/
+  mkArrow' (p q : Expr) : Expr := .forallE `h p q .default
 
 /-- `if c then a else b`, where `toTerm` translates its parts, which are
 checked against a type if `emptyOk`, and are `Nat`s if `natOk` is. -/
@@ -4160,7 +4250,7 @@ def recordBody (path : Name) (ref : Syntax) (decl : Name) (vars : Array Var)
   if tables.isEmpty && !props.any (·.kind == .ensure) then return
   let uses ← usesOf (tables.map (·.2.2.2.2) ++ props.map (·.body))
   let info : CompInfo := { path := path.getPrefix, vars, props, ref, decl, uses, fn?
-                           decidable := !(← getLocal).outsideCore
+                           decidable := !(← getLocal).outsideCore, guarded := (← getLocal).guardedUsed
                            indexes := tables }
   record (.bodyInfo path info)
   modifyLocal fun l => { l with bodies := l.bodies.push path }.declared path
@@ -4356,7 +4446,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
         lintFnBools n nameStx (vars.map (·.type))
         let (result, rp) ← varPType modName nameStx (if stx[6].isNone then none else some stx[6][1])
         declarePlaceholder path (← mkArrowN (vars.map (·.type)) result) false (vars.map (·.ptype), rp) (← resultFact? result rp)
-        modifyLocal fun l => { l with outsideCore := false }
+        modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
         let (vars, props, sites) ← elabContract modName path n decl false vars clauses
         recordBody path nameStx decl vars sites props path
       else
@@ -4376,7 +4466,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
     let vars ← paramVars modName path params
     lintFnBools n nameStx (vars.map (·.type))
     let (result, rp) ← varPType modName nameStx (if stx[6].isNone then none else some stx[6][1])
-    modifyLocal fun l => { l with outsideCore := false }
+    modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
     let (lam, tables) ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let cx : ExprCtx := { modName, vars, insts := #[], place := .prop, selfFn := some n, natOk := result.isConstOf ``Nat
                             expected? := if result.isConstOf ``Nat then some .nat else none }
@@ -4405,7 +4495,8 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
       recordLint .unusedVariables v.ref (Core.unusedParamMsg x)
     let uses ← usesOf #[lam]
     addUsesDef uses decl lam
-    record (.definedInfo { path, decl, uses, nParams := vars.size, ptys := (vars.map (·.ptype), rp) })
+    record (.definedInfo { path, decl, uses, nParams := vars.size, ptys := (vars.map (·.ptype), rp)
+                           guarded := (← getLocal).guardedUsed })
     let (_, props, sites) ← if contract then elabContract modName path n decl true vars clauses else pure (vars, #[], #[])
     recordBody path nameStx decl vars (tables.map (fun (r, q, g) => (n, .body, r, q, g)) ++ sites) props path
   lintDeclared .function n nameStx
@@ -5056,7 +5147,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
     let (relational, counts) ← checkCounts
     record (.compInfo { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
                         decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
-                        relational, counts, indexes, tested })
+                        relational, counts, indexes, tested, guarded := (← getLocal).guardedUsed })
   return (ok, generated)
 
 @[command_elab Lang.compCmd] def elabComp : CommandElab := recordingErrors fun stx => do
@@ -5082,7 +5173,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
       for p in m[3].getSepArgs do declareUse (pathSegs m[1] ++ pathSegs p) false p (some path)
   let scope := if members.any (fun m => m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember) then path
     else modName
-  modifyLocal fun l => { l with outsideCore := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
+  modifyLocal fun l => { l with outsideCore := false, guardedUsed := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
   -- Distinct names (`lang::distinct_names`): variables, instances and
   -- constraints share one namespace.
   let named := members.filterMap memberName?
@@ -5127,14 +5218,23 @@ end
     let abstract := (← getState).placeholders.contains type.constName
     unless Core.constantAccepted abstract false do
       throwErrorAt stx[4] (Core.unknownConstantMsg abstract).text
-    modifyLocal fun l => { l with outsideCore := false }
+    modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
     discard (takeIndexes #[])
     let cx : ExprCtx := { modName, vars := #[], insts := #[], place := .prop, emptyOk := Core.Position.declared.checked false false, natOk := type.isConstOf ``Nat, expected? := ← coreTy? type }
     let t ← toTerm cx valueStx
     noteObligation cx .constant valueStx pt t
     let tables := (← takeIndexes #[]).filter fun (_, q, g) => q.isSome || (obligationTy? g).isSome
     checkDeclared valueStx t type fun ty => s!"note: `{n}` has type `{ty}`"
-    let value ← elabProp t type
+    -- A `Bool` value is decided, classically if need be, as a defined
+    -- function's body is: an unbounded quantifier, or equality on an
+    -- abstract type, has no other `Decidable` instance.
+    let value ← if type.isConstOf ``Bool then do
+        let p ← elabProp t
+        let inst ← match ← trySynthInstance (mkApp (mkConst ``Decidable) p) with
+          | .some i => pure i
+          | _ => pure (mkApp (mkConst ``Classical.propDecidable) p)
+        pure (mkApp2 (mkConst ``Decidable.decide) p inst)
+      else elabProp t type
     let applies ← applications { modName, vars := #[], insts := #[], place := .prop } valueStx
     unless Core.constantAccepted abstract !applies.isEmpty do
       throwErrorAt applies[0]! (Core.unknownConstantMsg abstract).text
@@ -5144,7 +5244,7 @@ end
     record (.item { item := { kind := .constItem, path, isPub, owner := modName }, ref := nameStx })
     let int? ← if type.isConstOf ``Int || type.isConstOf ``Nat then intConstValue? { modName, vars := #[], insts := #[], place := .prop } valueStx
       else pure none
-    record (.constInfo { path, decl, type, value, int? })
+    record (.constInfo { path, decl, type, value, int?, guarded := (← getLocal).guardedUsed })
     recordBody path nameStx decl #[] (tables.map fun (r, q, g) => (n, .body, r, q, g))
     unless isPub do recordItem .constant path nameStx
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
@@ -5176,7 +5276,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     (decl : Name) : TermElabM CompInfo := do
   let mut vars : Array Var := #[]
   let mut binders : Array Binder := #[]
-  modifyLocal fun l => { l with outsideCore := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
+  modifyLocal fun l => { l with outsideCore := false, guardedUsed := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
   -- Distinct names (`lang::distinct_names`).
   let binderIds := binderStxs.flatMap (·[1].getArgs)
   for x in binderIds do discard (segName x)
@@ -5248,7 +5348,8 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
       trigger?, triggerRef? := trig.map (·.2), decl }
     discard checkCounts
     return { path := modName, vars, props := #[prop], insts, ref := nameStx, decl, uses
-             decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied, indexes }
+             decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied, indexes
+             guarded := (← getLocal).guardedUsed }
 
 /-- The text of the global expectation `stx` that `duplicate_constraint`
 compares: after its name, without the parentheses around its body. -/
@@ -5370,7 +5471,7 @@ and the solver is asked nothing. -/
       { v with role := if v.role == .input then .input else Core.Role.ofInst v.role v.isPub, defn? := none }
     -- The mix of relational operators and counting, as in a component
     -- (`Reqs/Lang/Decidability#relations`): `c`'s, `a`'s and the bindings'.
-    modifyLocal fun l => { l with outsideCore := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
+    modifyLocal fun l => { l with outsideCore := false, guardedUsed := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
     noteCounts c stx[3]
     noteCounts a stx[5]
     let bindingsA ← withLocalDeclsD (own.map fun v => (v.name, fun _ => pure v.type)) fun cfvs => do
@@ -5476,7 +5577,7 @@ and the solver is asked nothing. -/
       return { path, vars, props := assumes ++ reqs ++ defs, insts := #[instC] ++ instsA, ref := nameStx, decl, uses
                decidable := c.decidable && a.decidable && !l.outsideCore
                undecidableDenied := c.undecidableDenied || a.undecidableDenied || l.undecidableDenied
-               relational, counts, indexes, tested : CompInfo }
+               relational, counts, indexes, tested, guarded := l.guardedUsed : CompInfo }
   record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
   match proof? with

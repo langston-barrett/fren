@@ -1845,6 +1845,83 @@ impl manual_at_most_one: lint::manual_at_most_one for (ps : List lint.PairNegati
   simp only [exOp, allOp, and_self]
 
 
+-- `manual_at_most_one_any`, the precise rule, over every list of conjuncts
+-- and every number of operands: the code's reading of the conjuncts is
+-- characterised with the spec's `written_named?` and `written_negated?`, and
+-- each `forall` of the rule is a `∀`.
+theorem wnamed_iff (ps : List lint.WrittenNegation) (x : String) :
+    lint.written_named? (Fren.FinSet.ofList ps) x = true ↔ x ∈ ps.flatMap (fun p => [p.first, p.second]) := by
+  simp only [lint.written_named?, decide_eq_true_eq, Fren.FinSet.mem_ofList, List.mem_flatMap, List.mem_cons,
+    List.not_mem_nil, or_false]
+  constructor
+  · rintro ⟨p, h, e | e⟩ <;> exact ⟨p, h, by simp [e]⟩
+  · rintro ⟨p, h, e | e⟩ <;> exact ⟨p, h, by simp [e]⟩
+
+theorem wnegated_iff (ps : List lint.WrittenNegation) (x y : String) :
+    lint.written_negated? (Fren.FinSet.ofList ps) x y = true ↔ (ps.any fun p => p.first == x && p.second == y) = true := by
+  simp only [List.any_eq_true, Bool.and_eq_true, beq_iff_eq, lint.written_negated?, decide_eq_true_eq, Fren.FinSet.mem_ofList]
+  constructor
+  · rintro (h | h) <;> exact ⟨_, h, rfl, rfl⟩
+  · rintro ⟨⟨a, b, o⟩, h, rfl, rfl⟩; cases o <;> simp_all
+
+theorem written_fires (ps : List lint.WrittenNegation) (ds : List String) :
+    lint.manual_at_most_one_any.ensure.rule (Fren.FinSet.ofList ps) (Fren.FinSet.ofList ds)
+      (Fren.Core.manualAtMostOne lint.WrittenNegation.first lint.WrittenNegation.second lint.WrittenNegation.«obligation?» ps ds).1
+      (Fren.Core.manualAtMostOne lint.WrittenNegation.first lint.WrittenNegation.second lint.WrittenNegation.«obligation?» ps ds).2 := by
+  unfold lint.manual_at_most_one_any.ensure.rule
+  simp only [wnamed_iff, wnegated_iff]
+  simp only [Fren.Core.manualAtMostOne, Bool.and_eq_true, Bool.not_eq_true', List.any_eq_true, List.all_eq_true,
+    bne_iff_ne, ne_eq, Bool.or_eq_true, beq_iff_eq, List.any_eq_false, Fren.FinSet.mem_ofList]
+  refine and_congr (and_congr (and_congr ?_ ?_) ?_) ?_
+  · constructor
+    · rintro ⟨x, hx, y, hy, z, hz, h⟩
+      exact ⟨x, y, z, ⟨⟨⟨⟨h.1.1, h.1.2⟩, h.2⟩, hx⟩, hy⟩, hz⟩
+    · rintro ⟨x, y, z, ⟨⟨⟨⟨h1, h2⟩, h3⟩, hx⟩, hy⟩, hz⟩
+      exact ⟨x, hx, y, hy, z, hz, by simp [h1, h2, h3]⟩
+  · exact Iff.rfl
+  · constructor
+    · rintro h x y ⟨⟨hne, hx⟩, hy⟩
+      rcases h x hx y hy with (e | g) | g
+      · exact absurd e hne
+      · exact Or.inl g
+      · exact Or.inr g
+    · intro h x hx y hy
+      by_cases e : x = y
+      · exact Or.inl (Or.inl e)
+      · rcases h x y ⟨⟨e, hx⟩, hy⟩ with g | g
+        · exact Or.inl (Or.inr g)
+        · exact Or.inr g
+  · constructor
+    · rintro h ⟨p, hp, e⟩; exact absurd e (by simpa using h p hp)
+    · intro h p hp; cases e : p.«obligation?»
+      · simp
+      · exact absurd ⟨p, hp, e⟩ h
+
+theorem written_exactly (ps : List lint.WrittenNegation) (ds : List String) :
+    lint.manual_at_most_one_any.ensure.fix (Fren.FinSet.ofList ps) (Fren.FinSet.ofList ds)
+      (Fren.Core.manualAtMostOne lint.WrittenNegation.first lint.WrittenNegation.second lint.WrittenNegation.«obligation?» ps ds).1
+      (Fren.Core.manualAtMostOne lint.WrittenNegation.first lint.WrittenNegation.second lint.WrittenNegation.«obligation?» ps ds).2 := by
+  unfold lint.manual_at_most_one_any.ensure.fix
+  simp only [wnamed_iff]
+  simp only [Fren.Core.manualAtMostOne, Bool.and_eq_true, List.any_eq_true, List.all_eq_true, List.contains_iff_mem,
+    Fren.FinSet.mem_ofList, ne_eq, Fren.FinSet.ofList_eq_empty, and_true]
+  constructor
+  · rintro ⟨⟨⟨x, hx⟩, h1⟩, h2⟩
+    exact ⟨List.ne_nil_of_mem hx, fun y => ⟨h1 y, h2 y⟩⟩
+  · rintro ⟨hne, h⟩
+    obtain ⟨x, hx⟩ := List.exists_mem_of_ne_nil ds hne
+    exact ⟨⟨⟨x, hx⟩, fun y hy => (h y).mp hy⟩, fun y hy => (h y).mpr hy⟩
+
+impl manual_at_most_one_any: lint::manual_at_most_one_any for (ps : List lint.WrittenNegation) (ds : List String) {
+  pairs := Fren.FinSet.ofList ps,
+  disjunction := Fren.FinSet.ofList ds,
+  fires? := (Fren.Core.manualAtMostOne lint.WrittenNegation.first lint.WrittenNegation.second lint.WrittenNegation.«obligation?» ps ds).1,
+  exactly? := (Fren.Core.manualAtMostOne lint.WrittenNegation.first lint.WrittenNegation.second lint.WrittenNegation.«obligation?» ps ds).2,
+} by
+  intro ps ds _
+  unfold lint.manual_at_most_one_any.ensures
+  exact ⟨written_fires ps ds, written_exactly ps ds⟩
+
 def toCardinalityFix : Bool × Bool → lint.CardinalityFix
   | (false, _) => .Unchanged
   | (true, true) => .Argument

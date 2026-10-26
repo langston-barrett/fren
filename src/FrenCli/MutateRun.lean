@@ -141,7 +141,7 @@ def equal (st : State) (prelude : Prelude) (vars : Array CVar) (pairs : Array (S
   let sets := st.usesSets || st.usesSeqs
   let options := String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n")
   let goal := conj (pairs.map fun (a, b) => s!"(= {a} {b})")
-  match ← runQuery (Fren.Core.logic .expect (strings || sets) st.usesProjection) options prelude vars { timeoutSecs := timeout } none #[] goal false cache with
+  match ← runQuery (Fren.Core.logic .expect (strings || sets) st.usesProjection st.quantified) options prelude vars { timeoutSecs := timeout } none #[] goal false cache with
   | .unsat => return some true
   | .sat _ => return some false
   | .unknown _ => return none

@@ -1855,31 +1855,6 @@ ordered enum Level { Low, High }
 comp c { in a: Level in b: Level pub out m: Level ensure r: m = a.max(b) }
 ```
 "# },
-  { code := "F0355", explanation := r#"A quantifier over a type whose values cannot be listed.
-
-Erroneous code example:
-
-```fren
-comp c { in x: Int pub out ok? ensure r: ok? iff (exists (n: Int), n = x) }
-```
-
-A quantifier is expanded into one instance for each value of its type, so
-it ranges only over `Bool`, and over enums and records whose payloads and
-fields are such types. `Int`, `Nat`, `String` and abstract types have infinitely
-many values, a recursive enum has values of every size, and a set, relation
-or sequence type is never quantified over, even of a finite element type.
-State the property of a variable instead, which the checks hold for every
-value of, or quantify over a finite type:
-
-```fren
-comp c { in x: Int in n: Int pub out ok? ensure r: ok? iff n = x }
-```
-
-```fren
-enum Digit { Zero, One, Two }
-comp c { in x: Digit pub out ok? ensure r: ok? iff (exists (d: Digit), d = x) }
-```
-"# },
   { code := "F0356", explanation := r#"A quantifier with more than 256 instances.
 
 Erroneous code example:
@@ -3503,6 +3478,37 @@ comp sub { in b: Byte pub out y: Int ensure r: y = b }
 comp c {
     in x: Byte
     inst w: sub { b := x }
+}
+```
+"# },
+  { code := "F0639", args := some ["quickcheck"], explanation := r#"A quantifier that testing cannot evaluate.
+
+Erroneous code example:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+comp c {
+  in s: Set(Int)
+  pub out pos?
+  ensure r: pos? iff (forall (x: Int), not (x in s) or x > 0)
+}
+```
+
+Testing evaluates an unbounded quantifier, over a type whose values cannot
+be listed, by enumerating each bound name's domain, which its guard gives:
+the members of `s` in `x in s`, or the integers between the bounds of
+`0 <= i < n`. The guard of a `forall` is the conditions of the `when`s at
+the top of its body, and that of an `exists` the conjuncts of its body.
+Here the bound name has no domain, so neither `fren quickcheck` nor `fren
+check`, for a check set to be tested, can evaluate the quantifier. Guard
+it, or leave the check to the solver:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+comp c {
+  in s: Set(Int)
+  pub out pos?
+  ensure r: pos? iff (forall (x: Int), when x in s, x > 0)
 }
 ```
 "# },

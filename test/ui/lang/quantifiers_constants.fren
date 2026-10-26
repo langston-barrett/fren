@@ -1,0 +1,19 @@
+-- A `Bool` constant whose value is an unbounded quantifier: Lean decides it
+-- classically, and the evaluator keeps it as its expression, evaluated
+-- where it is mentioned.
+set_option fren.lint.undecidable "allow"
+
+enum Mode { Off, On }
+
+const LISTED: Bool := forall (m: Mode), exists (k: Mode), k = m
+const SMALL: Bool := forall (x: Int), when x in {1, 2}, x < 4
+const THREE: Bool := exists (x: Int), x = 3
+
+comp c {
+    in n: Int
+    pub out a?
+
+    ensure r: a? iff LISTED and SMALL and THREE and n > 0
+
+    expect same: a? iff n > 0
+}

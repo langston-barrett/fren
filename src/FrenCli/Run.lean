@@ -541,12 +541,21 @@ def testReport (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global : Bool) (se
 /-- Tests the comp or global expectation `c`, whose counterpart is `ec`
 (`Reqs/Eval#fren-quickcheck`), and prints what testing found about the
 checks that `keep` selects: their results, and those that are not run
-are dropped. Returns the results and the messages printed. `rep` is the
-report of testing it (`testReport`), if it has been tested already. -/
+are dropped. Returns the results and the messages printed, and whether
+one is an error. `rep` is the report of testing it (`testReport`), if it
+has been tested already. What testing it evaluates must have no quantifier
+that the evaluator cannot evaluate: one is an error (`F0639`), at the
+quantifier, and none of its checks is run (`Reqs/Eval#quantifiers`). -/
 def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spec) (c : CComp) (ec : Eval.Comp)
     (global : Bool) (keep : Fren.Core.CheckResult → Bool) (prelude : Prelude) (byCheck : Bool := false)
     (rep : Eval.Report := testReport sp ec c global args.seed args.nTests) :
-    IO (Array Fren.Core.CheckResult × Array Msg) := do
+    IO (Array Fren.Core.CheckResult × Array Msg × Bool) := do
+  let subject := s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
+  if let some (file, pos) := sp.untestable? ec then
+    let msg := Fren.Core.untestableMsg subject
+    -- At its keyword, `forall` or `exists`.
+    printDiag args.paint files { file, span := { start := pos, stop := pos + 6 }, msg }
+    return (#[], #[msg], true)
   -- An instance's binding of an input of a pattern type, with that type, as
   -- the solver's check has it (`Fren.Core.Inst.typed`).
   let typedOf (r : Fren.Core.CheckResult) : Fren.Core.CheckResult :=
@@ -555,7 +564,6 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     | _, _, _ => r
   let results := markInterpreted prelude c ((rep.results.filter keep).map typedOf)
   let mut shown := #[]
-  let subject := s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
   for r in results do
     -- Inconclusive results are reported below, once for the comp; a
     -- cover goal's pass shows its witness.
@@ -591,7 +599,7 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     let msg := Fren.Core.unwitnessedMsg s!"`{Fren.Core.showComp (c.path ++ n)}`" args.nTests byCheck
     printDiag args.paint files { file := c.file, span, severity := .warning, msg }
     shown := shown.push msg
-  return (results, shown)
+  return (results, shown, false)
 
 /-- Whether the result `r` of testing the refinement `c` is about its
 obligation (`Reqs/Lang/Refinement#the-obligation`): of the instances, only
@@ -619,7 +627,7 @@ def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
     (examples : Option Nat := some 1) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
-  let bk := backend prelude st.datatypes { c with funFacts := st.funFacts, bounded := st.bounded c } limits dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache
+  let bk := backend prelude st.datatypes { c with funFacts := st.funFacts, bounded := st.bounded c } limits dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache st.quantified
     st.appFuns
   -- Whether a formula uses an abstract type or an uninterpreted function,
   -- for the values that a realizability conflict's notes may show
@@ -713,7 +721,9 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     let r ← solveComp st prelude spec? sy c global kinds args.limits cache dump? body args.examples
     -- The checks set to testing, tested (`Reqs/Check#checking-by-testing`).
     let tested? := if !c.tested.any then none else match spec? with
-      | .ok sp => (sp.counterpart? c global).map fun ec => (ec, testReport sp ec c global args.seed args.nTests)
+      | .ok sp => (sp.counterpart? c global).map fun ec =>
+        -- Not tested if it cannot be (`testComp`).
+        (ec, if (sp.untestable? ec).isSome then {} else testReport sp ec c global args.seed args.nTests)
       | .error _ => none
     return (r, ← dumped.get, tested?)
   let solving ← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
@@ -734,8 +744,9 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     -- The evaluator's internal error, printed above, explains why the
     -- checks set to testing are missing from the summary.
     if let (.ok sp, some (ec, rep)) := (spec?, tested?) then
-      let (tested, msgs) ← testComp args files sp c ec global (testedKeeps c kinds refinement) prelude (byCheck := true) rep
+      let (tested, msgs, failed) ← testComp args files sp c ec global (testedKeeps c kinds refinement) prelude (byCheck := true) rep
       shown := shown ++ msgs
+      if failed then internal := internal.push msgs[0]!
       all := all ++ tested
       if let some r := record? then r.modify (· ++ tested.map (key, ·))
       byTesting := byTesting + (tested.filter (·.verdict == .pass)).size
@@ -766,8 +777,9 @@ def quickcheck (args : Args) : IO UInt32 := do
         printDiag args.paint files { file := c.file, span := c.span, msg }
         sevs := sevs.push .error
     let keep (r : Fren.Core.CheckResult) := !refinement || refinementKeeps c r
-    let (results, msgs) ← testComp args files sp c ec global keep prelude
+    let (results, msgs, failed) ← testComp args files sp c ec global keep prelude
     shown := shown ++ msgs
+    if failed then sevs := sevs.push .error
     all := all ++ results
   let count v := (all.filter (·.verdict == v)).size
   IO.eprintln s!"fren: {count .pass} passed, {count .fail} failed, {count .inconclusive} inconclusive, in {args.nTests} tests each"

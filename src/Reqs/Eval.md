@@ -34,9 +34,11 @@ In a behaviour, every constraint is `true` or `false`, by the meaning of
 its [expression](Lang/Expressions.md). The evaluator computes the value of
 each [constant](Lang/Items.md#constants) once, when it reads the spec,
 without an interpretation. A constant whose value then reads an index out
-of range, or a table or `match` where no row or arm is taken, is kept as its
-expression: in each behaviour, it has the value that the interpretation
-gives the table or `match`, and none for the index; its indexes, tables
+of range, or a table or `match` where no row or arm is taken, or that has
+an [unbounded quantifier](#quantifiers), is kept as its expression: in
+each behaviour, it has the value that the interpretation gives the table
+or `match`, none for the index, and the quantifier's where it is
+mentioned, as [Quantifiers](#quantifiers) gives it; its indexes, tables
 and `match`es are the constant's own, which the checks ask about at the constant, not
 where it is mentioned. A constant whose value cannot be computed for any
 other reason is an internal error. The evaluator computes it from the
@@ -100,11 +102,12 @@ those of its type, for a bound name of a listed type, and those of its
 [domain](Lang/Quantifiers.md#guards), for any other, evaluated with the
 values of the bound names before it:
 
-- for `Members(k)`, the members of the set, or the elements of the
-  sequence, that the expression `e` of the conjunct `x in e` at `k` has;
-- for `Range(lo, hi)`, the integers from the lower bound's expression,
-  plus 1 if it is strict, up to the upper bound's, minus 1 if it is strict;
-- for `FromZero(hi)`, those from 0 up to the upper bound's.
+- for `Members`, the members of the set, or the elements of the sequence,
+  that the expression `e` of the conjunct `x in e` at `lo` has;
+- for `Range`, the integers from the expression of the lower bound at
+  `lo`, plus 1 if it is strict, up to that of the upper bound at `hi`,
+  minus 1 if it is strict;
+- for `FromZero`, those from 0 up to the upper bound's.
 
 A value that is not of the bound name's type is left out: a negative one
 for a `Nat`, and one that its pattern type does not match. The body is
@@ -126,7 +129,13 @@ more than `MAX_ENUMERATED` values:
 pub const MAX_ENUMERATED: Int := 1024
 ```
 
-`fren eval` then shows the constraints that read it as `unknown`. A check
+Beyond `MAX_ENUMERATED`, then, a test gives no evidence about what reads
+the quantifier: a behaviour where it has no value is not one that the
+search can find, so the checks it reaches are reported as for any other
+behaviour not found, inconclusive with `F0610` or `F0612`, and a model
+that the solver gives is left undecided (see [Confirming
+models](#confirming-models)). `fren eval` then shows the constraints that
+read it as `unknown`. A check
 that needs it cannot be tested: when `fren check` [tests a
 check](Check.md#checking-by-testing), and when `fren quickcheck` tests a
 component, global expectation or refinement, a quantifier without a domain
@@ -155,7 +164,8 @@ shuffled again each time the search reaches the variable, in an order
 drawn from the values chosen before it. A variable's candidates are:
 
 - both `Bool`s, and each variant of an enumeration, with a payload built
-  from the candidates of its types, to a bounded depth;
+  from the candidates of its types, to a bounded depth, taking a few of
+  each variant's in turn where there are many;
 - for an `Int`, small integers, the integer literals and constants of the
   component, its expectations included, and their neighbours, random integers, and the value of
   any expression that a constraint equates the variable with, such as `x

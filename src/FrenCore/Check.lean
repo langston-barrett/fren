@@ -732,14 +732,16 @@ def CheckedItem.kinds : CheckedItem → Array CheckKind
   | .body => bodyKinds
   | .contract => contractKinds
 
-/-- The SMT-LIB logic of a check's queries (`cli::logic`): only
-realizability quantifies, over outputs; a spec that uses strings or sets
+/-- The SMT-LIB logic of a check's queries (`cli::logic`): realizability
+quantifies, over outputs, and so does every query of a spec with an
+unbounded quantifier (`quantified`); a spec that uses strings or sets
 (`extended`) needs `ALL`, and one that projects a relation over a type that
 is not finite (`projection`), `HO_ALL`. -/
-def logic (kind : CheckKind) (extended : Bool := false) (projection : Bool := false) : String :=
+def logic (kind : CheckKind) (extended : Bool := false) (projection : Bool := false) (quantified : Bool := false) :
+    String :=
   if extended then (if projection then "HO_ALL" else "ALL") else match kind with
     | .realizable => "UFDTLIA"
-    | _ => "QF_UFDTLIA"
+    | _ => if quantified then "UFDTLIA" else "QF_UFDTLIA"
 
 /-- The symbols of cvc5's theories, under `HO_ALL`, that a Fren name can
 spell: cvc5 rejects a declaration of any of them, quoted or not, as

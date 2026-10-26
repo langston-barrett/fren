@@ -117,6 +117,9 @@ structure ConstInfo where
   /-- Its value, if it is an integer constant expression
   (`Reqs/Lang/Expressions#division-and-remainder`). -/
   int? : Option Int := none
+  /-- Its value has an unbounded quantifier with a bound name that has a
+  domain, which sets `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
+  guarded : Bool := false
   deriving Inhabited
 
 /-- An abstract type or a function. In the model it is a placeholder: an
@@ -203,6 +206,10 @@ structure DefinedInfo where
   nParams : Nat
   /-- Its parameters' and result's types, as declared. -/
   ptys : Array Core.PTy × Core.PTy := (#[], default)
+  /-- Its body has an unbounded quantifier with a bound name that has a
+  domain, directly or through the functions and constants it applies,
+  which sets `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
+  guarded : Bool := false
   deriving Inhabited
 
 /-- A clause of a function's contract, and the Lean definition generated
@@ -325,6 +332,10 @@ structure CompInfo where
   relational : Bool := false
   /-- It, or one of its instances, uses `card`. -/
   counts : Bool := false
+  /-- It has an unbounded quantifier with a bound name that has a domain,
+  directly, through an instance or through a defined function, which sets
+  `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
+  guarded : Bool := false
   /-- Each index and table of its constraints and definitions: the item it
   is in, where that is, the index, or where the question about the table's
   rows is reported, the question (`none` for an index), and the closed
@@ -632,6 +643,10 @@ structure LocalState where
   /-- Whether the current comp, or an instance of it, applies a relational
   operator; with `card`, it is outside the decidable core. -/
   relationalUsed : Bool := false
+  /-- The current item has an unbounded quantifier with a bound name that
+  has a domain, directly, through an instance or through a defined function
+  or constant, so its queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
+  guardedUsed : Bool := false
   /-- Where the current comp counts: its `card`s, and its instances whose
   comps count. -/
   countRefs : Array Syntax := #[]

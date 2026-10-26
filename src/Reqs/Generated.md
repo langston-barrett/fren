@@ -286,11 +286,11 @@ not 256. Within a [`let` or `where`](Lang/Let.md), an expansion that mentions it
 names is a function of them, applied to the locals of their `have`s. An
 [unbounded quantifier](Lang/Quantifiers.md#unbounded-quantifiers) is a
 `Prop`, Lean's `∀` or `∃` over the Lean type of each bound name of a
-type that is not listed, named `x#k` as the solver knows it, with
+type that is not listed, named `x'k` as the solver knows it, with
 its bound names of listed types expanded within it: `forall (i: Int),
-when 0 <= i < q.len, q[i] > 0` is `∀ (i#0 : Int), 0 ≤ i#0 ∧ i#0 < Fren.Seq.len q →
-Fren.Seq.nth q i#0 > 0`. A pattern type's constraint, and a `Nat`'s, are
-part of the bound name's type, as `∀ (n#0 : Nat)`, or a hypothesis before
+when 0 <= i < q.len, q[i] > 0` is `∀ (i'0 : Int), 0 ≤ i'0 ∧ i'0 < Fren.Seq.len q →
+Fren.Seq.nth q i'0 > 0`. A pattern type's constraint, and a `Nat`'s, are
+part of the bound name's type, as `∀ (n'0 : Nat)`, or a hypothesis before
 the body for `∀`, and a conjunct for `∃`. Its body has no `have`: the
 names of `let`s and `where`s within it are substituted. Where a `Bool`
 is needed of it, as the value of a `Bool` variable or function, the

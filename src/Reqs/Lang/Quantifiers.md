@@ -220,25 +220,28 @@ instead, where the evaluator can evaluate the quantifier (see
 
 This is how a precise spec is written beside a decidable one. A
 component that states a rule over any number of things, with unbounded
-quantifiers, and a bounded model of it over a listed type, which `decide`
-or the solver proves of the code, are related by a
-[refinement](Refinement.md#evidence) whose evidence is testing: `fren
-check` and `fren quickcheck` then test the precise statement on the
-bounded one's behaviours, and its expectations on behaviours of any size.
-`lint::manual_at_most_one_any` is one (see
-[Cardinality](../Lint/Complexity/Operators.md#cardinality)).
+quantifiers, is bound by an [implementation](../Impl.md) to the code and
+proved in Lean, where each `forall` is a `∀` of the theorem, for every
+input. A bounded model of it, over a listed type, stays in the decidable
+core, where `decide` checks its implementation. `lint::manual_at_most_one_any`
+and `lint::manual_at_most_one` are such a pair (see
+[Cardinality](../Lint/Complexity/Operators.md#cardinality)). Where a proof
+is out of reach, a [refinement](Refinement.md#evidence) whose evidence is
+testing relates the two instead, and testing evaluates the quantifiers
+where they have [domains](#guards).
 
 Within an unbounded quantifier's body, an application of a function whose
-arguments mention one of its bound names brings none of the facts that an
+arguments mention one of its bound names brings the facts that an
 application brings elsewhere: that a `Nat` result is at least 0, that the
-result is of its pattern type, and the function's postconditions (see
-[Contracts](../Check.md#contracts-of-uninterpreted-functions)). Each is
-about one application, at fixed arguments, and here the arguments range
-over the values of the bound names. The solver then knows less of the
-application, so a check may not be proved that would be with the facts,
-and a counterexample that needs a fact to be false is refuted when Fren
-confirms the model (see [Confirming models](../Eval.md#confirming-models)):
-the check is then `Inconclusive`, never wrongly passed.
+result is of its pattern type, and that the function's postconditions
+hold where its preconditions do (see
+[Contracts](../Check.md#contracts-of-uninterpreted-functions)). Each holds
+whatever the arguments, so it is stated for every value of the bound names
+that the application mentions, under the solver's quantifier over them,
+without the guard: for `forall (i: Int), when 0 <= i < n, h(i) >= 0`, with
+`fn h(Int): Nat`, the queries assume `(forall ((|i'0| Int)) (>= (h |i'0|)
+0))`, and in Lean, `∀ i'0, 0 ≤ ↑(h i'0)`. Both front ends state the same
+facts, so the checks agree.
 
 ## Guards
 
@@ -258,46 +261,53 @@ Each conjunct gives a *bound* for each bound name `x` of a type that is
 not listed: `x in e` gives its members, `x >= e`, `x > e`, `e <= x` and
 `e < x` a lower bound, and `x <= e`, `x < e`, `e >= x` and `e > x` an
 upper bound, where `x` is the bound name alone, not a field read from it,
-and `e` mentions neither `x` nor a bound name declared after `x` in the
-same quantifier. A bound by `<` or `>` is *strict*: the bound itself is
-not in range. Any other conjunct gives no bound. `lang::guard_bound`
-states the bound from the conjunct's operands, seen from `x`, and its
-relation:
+and `e` names neither `x` nor a bound name declared after `x` in the same
+quantifier: no name of one segment within it, nor the root of a dotted
+name, nor a field of a record literal written without `:=`, is one of
+theirs, whatever shadows it. A bound by `<` or `>` is *strict*: the bound
+itself is not in range. Any other conjunct gives no bound. Seen from `x`,
+an operand is `x` itself (`Name`), an expression that names neither `x`
+nor a later bound name (`Free`), or any other (`Later`), and
+`lang::guard_bound` states the bound from a conjunct's operands, `lhs`
+and `rhs`, and its relation:
 
 ```fren
--- An operand of a conjunct, seen from a bound name `x`: `x` itself, written
--- alone; an expression that mentions neither `x` nor a bound name declared
--- after it (`Free`); or any other (`Later`).
+-- An operand of a conjunct, seen from a bound name `x`.
 pub enum GuardOperand { Name, Free, Later }
 
 -- The relation of a conjunct: a comparison, `in`, or anything else
 -- (`Other`), whose operands are then irrelevant.
 pub enum GuardRelation { Lt, Le, Gt, Ge, In, Other }
 
-pub enum Bound { Members, Lower, Upper, NoBound }
+pub enum GuardBound { Members, Lower, Upper, NoBound }
+
+-- The bound that `lhs relation rhs` gives.
+fn guard_bound_of(lhs: GuardOperand, relation: GuardRelation, rhs: GuardOperand): GuardBound := table {
+    | lhs = GuardOperand::Name and relation = GuardRelation::In and rhs = GuardOperand::Free => GuardBound::Members,
+    | (lhs = GuardOperand::Name and relation in {GuardRelation::Gt, GuardRelation::Ge} and rhs = GuardOperand::Free)
+        or (lhs = GuardOperand::Free and relation in {GuardRelation::Lt, GuardRelation::Le} and rhs = GuardOperand::Name)
+        => GuardBound::Lower,
+    | (lhs = GuardOperand::Name and relation in {GuardRelation::Lt, GuardRelation::Le} and rhs = GuardOperand::Free)
+        or (lhs = GuardOperand::Free and relation in {GuardRelation::Gt, GuardRelation::Ge} and rhs = GuardOperand::Name)
+        => GuardBound::Upper,
+    | _ => GuardBound::NoBound,
+}
 
 pub comp guard_bound {
-    use self::Bound::{Lower, Members, NoBound, Upper}
-    use self::GuardOperand::{Free, Name}
-    use self::GuardRelation::{Ge, Gt, In, Le, Lt}
-    in left: GuardOperand
+    use self::GuardBound::{Members, NoBound}
+    use self::GuardOperand::Name
+    use self::GuardRelation::{Gt, In, Lt}
+    in lhs: GuardOperand
     in relation: GuardRelation
-    in right: GuardOperand
-    pub det out bound: Bound
+    in rhs: GuardOperand
+    pub det out bound: GuardBound
     pub det out strict?      -- the bound itself is not in range
 
-    ensure rule: bound = table {
-        | left = Name and relation = In and right = Free => Members,
-        | (left = Name and relation in {Gt, Ge} and right = Free)
-            or (left = Free and relation in {Lt, Le} and right = Name) => Lower,
-        | (left = Name and relation in {Lt, Le} and right = Free)
-            or (left = Free and relation in {Gt, Ge} and right = Name) => Upper,
-        | _ => NoBound,
-    }
+    ensure rule: bound = guard_bound_of(lhs, relation, rhs)
     ensure strictness: strict? iff relation in {Lt, Gt}
 
     expect members_by_in: when bound = Members, relation = In
-    expect name_alone: when bound != NoBound, (left = Name) != (right = Name)
+    expect name_alone: when bound != NoBound, (lhs = Name) != (rhs = Name)
 }
 ```
 
@@ -305,44 +315,78 @@ The bound name's *domain* comes from its conjuncts' bounds, in order: its
 members, from the first conjunct that gives them; otherwise a range, from
 the first conjunct that gives a lower bound and the first that gives an
 upper bound, where a `Nat` with no lower bound starts from 0; otherwise
-none. `lang::guard_domain` states it, from each conjunct's bound, naming
-the conjuncts by their positions, from 0:
+none. `lang::guard_domain` states it, from the conjuncts as written: each
+side of each with the position of the bound name that it is, written
+alone, and those of the bound names that it names, which is all that each
+front end reads of a conjunct's syntax. The bound names and the conjuncts
+are named by their positions, from 0:
 
 ```fren
--- No bound of `bounds` before position `k` is `b`.
-set_option fren.lint.undecidable "allow" in
-fn none_before?(bounds: Seq(Bound), b: Bound, k: Int) := forall (j: Int), when 0 <= j < k, bounds[j] != b
+-- A side of a conjunct: the position of the bound name that it is, written
+-- alone, or -1 if it is none; and the positions of the bound names that it
+-- names.
+pub struct GuardSide { alone: Int, names: Seq(Int) }
 
--- `b` is the bound at position `k` of `bounds`, and at none before it.
-set_option fren.lint.undecidable "allow" in
-fn first_at?(bounds: Seq(Bound), b: Bound, k: Int) := bounds[k] = b and none_before?(bounds, b, k)
+-- A conjunct of a guard: a comparison or membership, or `Other`.
+pub struct GuardConjunct { lhs: GuardSide, relation: GuardRelation, rhs: GuardSide }
 
--- `Members(k)`: the members of the conjunct at `k`. `Range(lo, hi)`: from
--- the lower bound at `lo` to the upper bound at `hi`. `FromZero(hi)`: from 0
--- to the upper bound at `hi`. `Unbounded`: no domain.
-pub enum Domain { Members(Int), Range(Int, Int), FromZero(Int), Unbounded }
+-- What the side `s` is, seen from the bound name at position `k`.
+set_option fren.lint.undecidable "allow" in
+fn guard_operand(s: GuardSide, k: Int): GuardOperand :=
+    if s.alone = k then GuardOperand::Name
+    else if (exists (j: Int), j in s.names and j >= k) then GuardOperand::Later
+    else GuardOperand::Free
+
+-- The bound that the conjunct `c` gives the bound name at position `k`.
+set_option fren.lint.undecidable "allow" in
+fn conjunct_bound(c: GuardConjunct, k: Int): GuardBound :=
+    guard_bound_of(guard_operand(c.lhs, k), c.relation, guard_operand(c.rhs, k))
+
+-- No conjunct of `cs` before position `n` gives the bound name at `k` the
+-- bound `b`.
+set_option fren.lint.undecidable "allow" in
+fn none_before?(cs: Seq(GuardConjunct), k: Int, b: GuardBound, n: Int) :=
+    forall (j: Int), when 0 <= j < n, conjunct_bound(cs[j], k) != b
+
+-- The conjunct at position `j` gives the bound name at `k` the bound `b`,
+-- and none before it does.
+set_option fren.lint.undecidable "allow" in
+fn first_at?(cs: Seq(GuardConjunct), k: Int, b: GuardBound, j: Int) :=
+    conjunct_bound(cs[j], k) = b and none_before?(cs, k, b, j)
+
+-- `Members`: the members of the conjunct at `lo`. `Range`: from the lower
+-- bound at `lo` to the upper bound at `hi`. `FromZero`: from 0 to the upper
+-- bound at `hi`. `Unbounded`: no domain.
+pub enum DomainShape { Members, Range, FromZero, Unbounded }
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
 pub comp guard_domain {
-    use self::Bound::{Lower, Members, Upper}
-    in bounds: Seq(Bound)    -- the bound of each conjunct, in order
-    in nat?                  -- the bound name is a `Nat`
-    pub det out domain: Domain
+    use self::GuardBound::{Lower, Members, Upper}
+    in conjuncts: Seq(GuardConjunct)  -- the conjuncts of the guard, in order
+    in k: Nat                         -- the position of the bound name
+    in nat?                           -- the bound name is a `Nat`
+    pub det out shape: DomainShape
+    pub det out lo: Int               -- the position of the conjunct that gives the members or the lower bound, or -1
+    pub det out hi: Int               -- the position of the conjunct that gives the upper bound, or -1
 
-    ensure members: forall (k: Int), when 0 <= k < bounds.len and first_at?(bounds, Members, k),
-        domain = Domain::Members(k)
-    ensure range: forall (lo hi: Int), when 0 <= lo < bounds.len and 0 <= hi < bounds.len
-        and none_before?(bounds, Members, bounds.len) and first_at?(bounds, Lower, lo) and first_at?(bounds, Upper, hi),
-        domain = Domain::Range(lo, hi)
-    ensure from_zero: forall (hi: Int), when 0 <= hi < bounds.len and nat? and none_before?(bounds, Members, bounds.len)
-        and none_before?(bounds, Lower, bounds.len) and first_at?(bounds, Upper, hi),
-        domain = Domain::FromZero(hi)
-    ensure unbounded: when none_before?(bounds, Members, bounds.len) and (none_before?(bounds, Upper, bounds.len)
-        or (not nat? and none_before?(bounds, Lower, bounds.len))), domain = Domain::Unbounded
+    ensure members: forall (j: Int), when 0 <= j < conjuncts.len and first_at?(conjuncts, k, Members, j),
+        shape = DomainShape::Members and lo = j and hi = -1
+    ensure range: forall (l h: Int), when 0 <= l < conjuncts.len and 0 <= h < conjuncts.len
+        and none_before?(conjuncts, k, Members, conjuncts.len) and first_at?(conjuncts, k, Lower, l)
+        and first_at?(conjuncts, k, Upper, h),
+        shape = DomainShape::Range and lo = l and hi = h
+    ensure from_zero: forall (h: Int), when 0 <= h < conjuncts.len and nat?
+        and none_before?(conjuncts, k, Members, conjuncts.len) and none_before?(conjuncts, k, Lower, conjuncts.len)
+        and first_at?(conjuncts, k, Upper, h),
+        shape = DomainShape::FromZero and lo = -1 and hi = h
+    ensure unbounded: when none_before?(conjuncts, k, Members, conjuncts.len)
+        and (none_before?(conjuncts, k, Upper, conjuncts.len)
+        or (not nat? and none_before?(conjuncts, k, Lower, conjuncts.len))),
+        shape = DomainShape::Unbounded and lo = -1 and hi = -1
 
-    expect members_first: when Members in bounds, domain is Domain::Members(_)
-    expect bounded_above: when domain is Domain::Range(_, _) | Domain::FromZero(_), Upper in bounds
+    expect positions: (lo = -1 or 0 <= lo < conjuncts.len) and (hi = -1 or 0 <= hi < conjuncts.len)
+    expect bounded_above: shape in {DomainShape::Members, DomainShape::Unbounded} or hi >= 0
 }
 ```
 

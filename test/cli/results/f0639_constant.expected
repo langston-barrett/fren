@@ -1,0 +1,13 @@
+error[F0639]: this quantifier cannot be evaluated, so `c` cannot be tested
+ --> test/cli/results/f0639_constant.fren:6:22
+  |
+6 | const THREE: Bool := exists (x: Int), x = 3
+  |                      ^^^^^^ a bound name without a domain
+  |
+  = note: testing enumerates a bound name of a type that is not listed over its domain: the members in `x in s`, or the integers between a lower and an upper bound, as in `0 <= i < n`, in the guard
+  = help: guard the bound name, as in `forall (x: T), when x in s, ...` or `exists (i: Int), 0 <= i < q.len and ...`, or check it with the solver
+
+fren: 0 passed, 0 failed, 0 inconclusive, in 100 tests each
+
+For more information about this error, try `fren --explain F0639`.
+exit=1

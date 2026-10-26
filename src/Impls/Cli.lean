@@ -102,11 +102,12 @@ def theories (strings sets seqs : Bool) : Fren.FinSet cli.Theory :=
 
 -- With the logic and options that the `fren` command sets.
 -- The `fren` command gives sequences the options of strings and of sets.
-impl logic: cli::logic for (k : Fren.Core.CheckKind) (strings sets seqs proj : Bool) {
+impl logic: cli::logic for (k : Fren.Core.CheckKind) (strings sets seqs proj q : Bool) {
   kind := toCheckKind k,
   theories := theories strings sets seqs,
   projection? := proj,
-  logic := toLogic (Fren.Core.logic k (strings || sets || seqs) proj),
+  quantified? := q,
+  logic := toLogic (Fren.Core.logic k (strings || sets || seqs) proj q),
   strings_exp? := ["strings-exp", "re-inter-mode", "re-elim"].all fun o =>
     (Fren.Core.solverOptions (strings || seqs) (sets || seqs)).any (·.1 == o),
   sets_exp? := (Fren.Core.solverOptions (strings || seqs) (sets || seqs)).any (·.1 == "sets-exp"),

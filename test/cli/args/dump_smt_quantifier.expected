@@ -1,0 +1,45 @@
+; c: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :fmf-bound true)
+(assert (not false))
+(check-sat)
+(reset)
+
+; c: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :fmf-bound true)
+(declare-const |n| Int)
+(declare-const |none?| Bool)
+(assert (not (exists ((|none?| Bool)) (= |none?| (forall ((|i'0| Int)) (=> (and (<= 0 |i'0|) (< |i'0| |n|)) (distinct |i'0| 3)))))))
+(check-sat)
+(reset)
+
+; c: query 3
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :fmf-bound true)
+(declare-const |n| Int)
+(declare-const |none?| Bool)
+(assert (= |none?| (forall ((|i'0| Int)) (=> (and (<= 0 |i'0|) (< |i'0| |n|)) (distinct |i'0| 3))))) ; r
+(assert (not false))
+(check-sat)
+(reset)
+
+; c: query 4
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :fmf-bound true)
+(declare-const |n| Int)
+(declare-const |none?| Bool)
+(assert (not (= |none?| (forall ((|i'0| Int)) (=> (and (<= 0 |i'0|) (< |i'0| |n|)) (distinct |i'0| 3))))))
+(check-sat)
+(reset)
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0

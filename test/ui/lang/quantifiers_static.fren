@@ -1,5 +1,7 @@
--- Static rules for quantifiers: the types they range over, how many
--- instances they have, and their bound names.
+-- Static rules for quantifiers: the types they expand, how many instances
+-- they have, and their bound names. A quantifier over any other type is
+-- unbounded, and outside the decidable core, which `undecidable` reports at
+-- its binder.
 -- fren-covers: lang::quantified_type, lang::quantifier_size
 set_option fren.lint.eq_op "allow"
 
@@ -15,37 +17,37 @@ comp valid { pub out ok? ensure r: ok? }
 
 comp ints {
     pub out ok?
-    ensure r: ok? iff (forall (n: Int), n = n)    --~ error: a quantifier cannot range over `Int`
+    ensure r: ok? iff (forall (n: Int), n = n)    --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
 }
 
 comp nats {
     pub out ok?
-    ensure r: ok? iff (forall (n: Nat), n = n)    --~ error: a quantifier cannot range over `Nat`
+    ensure r: ok? iff (forall (n: Nat), n = n)    --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
 }
 
 comp strings {
     pub out ok?
-    ensure r: ok? iff (exists (s: String), s = "")  --~ error: a quantifier cannot range over `String`
+    ensure r: ok? iff (exists (s: String), s = "")  --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
 }
 
 comp names {
     pub out ok?
-    ensure r: ok? iff (exists (n: Name), n = n)   --~ error: a quantifier cannot range over `Name`
+    ensure r: ok? iff (exists (n: Name), n = n)   --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
 }
 
 comp sets {
     pub out ok?
-    ensure r: ok? iff (exists (s: Set(Bool)), s = {})  --~ error: a quantifier cannot range over `Set(Bool)`
+    ensure r: ok? iff (exists (s: Set(Bool)), s = {})  --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
 }
 
 comp recursive {
     pub out ok?
-    ensure r: ok? iff (exists (t: Tree), t = Tree::Leaf)  --~ error: a quantifier cannot range over `Tree`
+    ensure r: ok? iff (exists (t: Tree), t = Tree::Leaf)  --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
 }
 
 comp payload {
     pub out ok?
-    ensure r: ok? iff (exists (b: Boxed), b = b)  --~ error: a quantifier cannot range over `Boxed`
+    ensure r: ok? iff (exists (b: Boxed), b = b)  --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
 }
 
 -- At most 256 instances, counting those of the quantifiers around one:
@@ -69,10 +71,11 @@ enum Holder { Holds(Set(Bool)) }
 
 comp set_payload {
     pub out ok?
-    ensure r: ok? iff (exists (h: Holder), h = h)  --~ error: a quantifier cannot range over `Holder`
+    ensure r: ok? iff (exists (h: Holder), h = h)  --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
 }
 
-expect nat_binder: forall (n: Nat), n >= 0  --~ error: a quantifier cannot range over `Nat`
+expect nat_binder: forall (n: Nat), n >= 0  --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
+--~^ warning: this expectation mentions no variable
 
 comp too_many {
     pub out ok?

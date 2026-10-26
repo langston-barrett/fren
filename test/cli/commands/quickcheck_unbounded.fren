@@ -1,0 +1,38 @@
+--@ args: quickcheck
+-- Testing evaluates an unbounded quantifier over its guard's domain, on
+-- inputs of any size. `sorted3` is a bounded model, of sequences of at most
+-- three, and `sorted_any` the precise statement, over sequences of any
+-- length. The precise one refines the bounded one on the bounded one's
+-- inputs. `sorted_pairs`, which compares only the first three elements, is
+-- the bounded model without its bound: it agrees with the precise statement
+-- on every sequence of up to three, so testing refutes its refinement only
+-- on a longer one.
+comp sorted3 {
+    in q: Seq(Int)
+    pub out sorted?
+
+    assume short: q.len <= 3
+
+    ensure r: sorted? iff ((q.len < 2 or q[0] <= q[1]) and (q.len < 3 or q[1] <= q[2]))
+}
+
+set_option fren.lint.undecidable "allow" in
+comp sorted_any {
+    in q: Seq(Int)
+    pub out sorted?
+
+    ensure r: sorted? iff (forall (i: Int), when 0 <= i < q.len - 1, q[i] <= q[i + 1])
+}
+
+comp sorted_pairs {
+    in q: Seq(Int)
+    pub out sorted?
+
+    ensure r: sorted? iff ((q.len < 2 or q[0] <= q[1]) and (q.len < 3 or q[1] <= q[2]))
+}
+
+set_option fren.lint.undecidable "allow" in
+refine precise: sorted_any refines sorted3
+
+set_option fren.lint.undecidable "allow" in
+refine pairs_only: sorted_pairs refines sorted_any

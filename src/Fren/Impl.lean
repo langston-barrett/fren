@@ -381,7 +381,7 @@ open Lang in
         logErrorAt nameStx s!"{subject}: {Core.showNames falsified} {verb} false when {at_}"
     | _, _ => logErrorAt nameStx s!"{subject}: `decide` evaluates its statement to false"
   | .inconclusive =>
-    logWarningAt nameStx s!"could not prove that `{nameStx.getId}` implements `{compStr}`\n\nnote: `decide` does not apply, and the solver does not see the definitions of the implementation\nhelp: write a proof after `by`"
+    logWarningAt nameStx s!"could not prove that `{nameStx.getId}` implements `{compStr}`\n\nnote: `decide` does not apply, and the solver did not prove it, without unfolding the Lean functions that the implementation applies\nhelp: write a proof after `by`"
 
 /-- The statement that the interpretation `decl` of the function at `path`
 gives values of its result type, if it brings a constraint `typed?`, a

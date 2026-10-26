@@ -209,24 +209,21 @@ comp manual_at_most_one_meaning {
 
 `lint::manual_at_most_one` names the operands by the four of
 `lint::Operand`, which is enough to tell the cases of the rule apart and
-keeps the component in the decidable core, so that its implementation is
-proved of the lint's code. `lint::manual_at_most_one_any` states the same
-rule precisely, over any number of operands, each a string, as written,
-since the lint compares operands as written: with [unbounded
-quantifiers](../../Lang/Quantifiers.md#unbounded-quantifiers) over the
-conjuncts, each guarded by its membership in `pairs`, so that the
-evaluator can enumerate them. An operand is named by some conjunct, on one
-of its sides, so a quantifier over the operands is one over the
-conjuncts and their sides, where `side(p, first?)` is the operand that `p`
-names first, or else second:
+keeps the component in the decidable core, so that `decide` checks its
+implementation over every list of conjuncts. `lint::manual_at_most_one_any`
+states the same rule precisely, over any number of operands, each a
+string, as written, since the lint compares operands as written, with
+[unbounded quantifiers](../../Lang/Quantifiers.md#unbounded-quantifiers)
+over them. It is outside the decidable core, and its implementation is
+proved in Lean of the lint's code, for every run of conjuncts: each
+`forall` of the rule is a `∀` of the theorem. The two are the pattern for a
+lint's spec: the precise one proved of the code, and the bounded one a
+`decide` check of it.
 
 ```fren
 -- `not (first and second)`, where `obligation?` says that the `and` gives a
 -- definedness obligation, with its operands as written.
 pub struct WrittenNegation { first: String, second: String, obligation? }
-
--- The operand of `p` on the left, or else on the right.
-fn side(p: WrittenNegation, first?: Bool): String := if first? then p.first else p.second
 
 -- Some conjunct is `not (x and y)`.
 fn written_negated?(pairs: Set(WrittenNegation), x: String, y: String) :=
@@ -235,95 +232,22 @@ fn written_negated?(pairs: Set(WrittenNegation), x: String, y: String) :=
 -- `x` is an operand of some conjunct.
 set_option fren.lint.undecidable "allow" in
 fn written_named?(pairs: Set(WrittenNegation), x: String) :=
-    exists (p: WrittenNegation) (first?: Bool), p in pairs and side(p, first?) = x
+    exists (p: WrittenNegation), p in pairs and (p.first = x or p.second = x)
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
 pub comp manual_at_most_one_any {
     in pairs: Set(WrittenNegation)    -- the run of conjuncts `not (a and b)`
     in disjunction: Set(String)       -- the operands of the disjunction beside them; `{}` if there is none
     pub det out fires?
     pub det out exactly?              -- the fix is `exactly_one?`, rather than `at_most_one?`
 
-    ensure rule: fires? iff ((exists (p q r: WrittenNegation) (a? b? c?: Bool), p in pairs and q in pairs and r in pairs
-        and side(p, a?) != side(q, b?) and side(p, a?) != side(r, c?) and side(q, b?) != side(r, c?))
+    ensure rule: fires? iff ((exists (x y z: String), x != y and x != z and y != z
+        and written_named?(pairs, x) and written_named?(pairs, y) and written_named?(pairs, z))
         and (forall (p: WrittenNegation), when p in pairs, p.first != p.second)
-        and (forall (p q: WrittenNegation) (a? b?: Bool), when p in pairs and q in pairs and side(p, a?) != side(q, b?),
-        written_negated?(pairs, side(p, a?), side(q, b?)) or written_negated?(pairs, side(q, b?), side(p, a?)))
+        and (forall (x y: String), when x != y and written_named?(pairs, x) and written_named?(pairs, y),
+        written_negated?(pairs, x, y) or written_negated?(pairs, y, x))
         and not (exists (p: WrittenNegation), p in pairs and p.obligation?))
-    ensure fix: exactly? iff (disjunction != {} and (forall (x: String), when x in disjunction, written_named?(pairs, x))
-        and (forall (p: WrittenNegation) (a?: Bool), when p in pairs, side(p, a?) in disjunction))
-}
-```
-
-Its meaning is that of the bounded model's, for any number of operands:
-where it fires, the conjuncts hold exactly where no two named operands
-hold together. Testing checks it on sets of every size that the search
-tries:
-
-```fren
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
-comp manual_at_most_one_any_meaning {
-    in pairs: Set(WrittenNegation)
-    in disjunction: Set(String)
-    in holds: Set(String)
-
-    inst m: manual_at_most_one_any { pairs, disjunction }
-
-    expect at_most: when m.fires?,
-        (forall (p: WrittenNegation), when p in pairs, not (p.first in holds and p.second in holds))
-        iff (forall (x y: String), when x in holds and y in holds and x != y,
-        not (written_named?(pairs, x) and written_named?(pairs, y)))
-}
-```
-
-The bounded model refines the precise rule, by testing: the operands
-`P` to `S` are written `p?` to `s?`, and each conjunct of `pairs` and
-operand of `disjunction` is mapped to its written form. So wherever the
-lint's code meets `lint::manual_at_most_one`, as its implementation
-proves, it meets `lint::manual_at_most_one_any` on every run of up to four
-operands; on more, the precise rule is what the lint means.
-
-```fren
--- An operand as written.
-fn written(x: Operand): String := match x {
-    Operand::P => "p?",
-    Operand::Q => "q?",
-    Operand::R => "r?",
-    Operand::S => "s?",
-}
-
--- The conjunct `p` as written, if `pairs` has it.
-fn written_pair(pairs: Set(PairNegation), p: PairNegation): Set(WrittenNegation) :=
-    if p in pairs then {WrittenNegation { first := written(p.first), second := written(p.second), obligation? := p.obligation? }}
-    else {}
-
--- The conjuncts `not (x and y)` of `pairs`, as written.
-fn written_with(pairs: Set(PairNegation), x: Operand, y: Operand): Set(WrittenNegation) :=
-    written_pair(pairs, PairNegation { first := x, second := y, obligation? := true })
-    union written_pair(pairs, PairNegation { first := x, second := y, obligation? := false })
-
--- The conjuncts of `pairs` whose first operand is `x`, as written.
-fn written_from(pairs: Set(PairNegation), x: Operand): Set(WrittenNegation) :=
-    written_with(pairs, x, Operand::P) union written_with(pairs, x, Operand::Q) union written_with(pairs, x, Operand::R)
-    union written_with(pairs, x, Operand::S)
-
--- Every conjunct of `pairs`, as written.
-fn written_pairs(pairs: Set(PairNegation)): Set(WrittenNegation) :=
-    written_from(pairs, Operand::P) union written_from(pairs, Operand::Q) union written_from(pairs, Operand::R)
-    union written_from(pairs, Operand::S)
-
--- Every operand of `ds`, as written.
-fn written_operands(ds: Set(Operand)): Set(String) :=
-    (if Operand::P in ds then {"p?"} else {}) union (if Operand::Q in ds then {"q?"} else {})
-    union (if Operand::R in ds then {"r?"} else {}) union (if Operand::S in ds then {"s?"} else {})
-
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
-refine manual_at_most_one_bounded: manual_at_most_one refines manual_at_most_one_any {
-    pairs := written_pairs(pairs),
-    disjunction := written_operands(disjunction),
+    ensure fix: exactly? iff (disjunction != {} and (forall (x: String), x in disjunction iff written_named?(pairs, x)))
 }
 ```
 
