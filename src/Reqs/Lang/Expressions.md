@@ -1023,6 +1023,48 @@ check](../Check.md#completeness) reports a `match` where no arm may be
 taken, and the [reachability check](../Check.md#reachability) an arm that
 can never be.
 
+`lang::guarded_match` states what a `match` with guards means, at one
+value of its scrutinee: from what each arm does there, in order, and the
+value of each arm's body there. An arm's pattern may not match
+(`NoMatch`); it may match, with a guard that fails (`GuardFails`); or it
+may match, without a guard or with one that holds (`Taken`). The arm
+*taken* is the first that is `Taken`, and the `match` has its body's
+value. An arm whose guard fails is passed over as one whose pattern does
+not match is, so the arms after it are tried. Where no arm is taken, the
+guarantees say nothing of the value: it is unspecified. A table is the
+same, with every pattern `_`, which matches: a row is `Taken` where its
+condition holds, and `GuardFails` where it fails, and a `_` row is always
+`Taken`. `k` stands for any position, so `none_before` holds of every arm
+before the one taken. The position taken is an `Int` that the guarantees
+characterize, which the decidable core does not allow:
+
+```fren
+pub enum ArmAt { NoMatch, GuardFails, Taken }
+
+set_option fren.lint.undecidable "allow" in
+pub comp guarded_match {
+    use self::ArmAt::{GuardFails, NoMatch, Taken}
+    in arms: Seq(ArmAt)      -- what each arm does at the scrutinee's value, in order
+    in bodies: Seq(Int)      -- each arm's body's value there
+    in k: Int                -- any position, for `none_before`
+    pub out first: Int       -- the position of the arm taken, `-1` if none is
+    pub out value: Int       -- the `match`'s value
+
+    assume aligned: bodies.len = arms.len
+
+    ensure in_range: -1 <= first < arms.len
+    ensure first_taken: when first >= 0, arms[first] = Taken
+    ensure none_before: when 0 <= k < arms.len and (first = -1 or k < first), arms[k] != Taken
+    ensure valued: when first >= 0, value = bodies[first]
+
+    -- An arm whose guard fails is passed over, as one that does not match.
+    expect falls_through: when arms != [] and arms[0] = GuardFails, first != 0
+    expect no_match: when arms != [] and arms[0] = NoMatch, first != 0
+    -- An arm that is taken, and none before it, is the first.
+    expect some_taken: when 0 <= k < arms.len and arms[k] = Taken, 0 <= first <= k
+}
+```
+
 ## Pattern tests
 
 ```text

@@ -745,6 +745,42 @@ pub comp reachability {
 A model is a behaviour that takes the arm, which is not reported: a pass
 is silent.
 
+`check::split_questions` states what the goals of these questions are,
+in each behaviour, from what each arm of the `match` does there, as
+[`lang::guarded_match`](Lang/Expressions.md#matches) has it, with its
+`ArmAt` again here. The goal of
+arm `j`'s reachability is that `j` is not the arm taken, so the check
+fails exactly when no behaviour that the hypotheses allow takes it; the
+goal of completeness is that some arm is taken. Of a table, each row is
+`Taken` where its condition holds, else `GuardFails`, and a `_` row is
+`Taken`. `k` stands for any position, as there:
+
+```fren
+pub enum ArmAt { NoMatch, GuardFails, Taken }
+
+set_option fren.lint.undecidable "allow" in
+pub comp split_questions {
+    use self::ArmAt::Taken
+    in arms: Seq(ArmAt)      -- what each arm does here, in order
+    in j: Int                -- the arm whose reachability is asked about
+    in k: Int                -- any position, for `none_before`
+    pub out first: Int       -- the position of the arm taken, `-1` if none is
+    pub out reach_goal?      -- the goal of arm `j`'s reachability question here
+    pub out complete_goal?   -- the goal of the completeness question here
+
+    assume an_arm: 0 <= j < arms.len
+
+    ensure in_range: -1 <= first < arms.len
+    ensure first_taken: when first >= 0, arms[first] = Taken
+    ensure none_before: when 0 <= k < arms.len and (first = -1 or k < first), arms[k] != Taken
+    ensure reach: reach_goal? iff first != j
+    ensure complete: complete_goal? iff first >= 0
+
+    -- Arm `j` is reachable here exactly when it is taken here.
+    expect taken_here: when not reach_goal?, arms[j] = Taken
+}
+```
+
 Completeness, disjointness and reachability ask one query each, as
 definedness does, so they have no query order of their own, and their
 queries, like definedness's, are quantifier-free. Their hypotheses are those of
