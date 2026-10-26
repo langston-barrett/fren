@@ -1,0 +1,23 @@
+--@ args: fix --check
+-- `fren fix` writes equations of one expression with values that patterns
+-- write as a pattern test, with the pattern tests among them, and the dual
+-- as a negated one.
+enum Shade { Light, Dark, Tinted(Int) }
+
+pub comp c {
+    in s: Shade
+    in x: Int
+    in t: String
+    in q: Seq(Int)
+    in p?
+    pub out a? := x = 429 or 503 = x
+    pub out b? := x = 429 or x is 500..=599
+    pub out d? := p? or (x = 1) or x = 2 or t = "a"
+    pub out e? := x != 0 and not x is 10..
+    pub out f? := s = Shade::Light or s is Shade::Tinted(_)
+    pub out g? := q != [] and (q[0] = 1 or q[0] = 2)
+    pub out h? := not (t = "a" or t = "b") and p?
+    pub out i? := x = 1 or x = 2 or x = 3
+    -- A comment within the operands: no fix.
+    pub out j? := x = 1 or /- one more -/ x = 2
+}

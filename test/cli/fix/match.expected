@@ -43,8 +43,8 @@ help: name the variant
 -    ensure r5: f = 2 * match e { A => x + 1, B => x + 1, _ => x + 1 }
 -    ensure r6: g = match e { A => 1, B => 2, C => 3, _ => 4 }
 +    ensure r2: b = match e { A => 1, B => 2, _ => 3 }
-+    ensure r3: (c? iff e in {A, B}) and x > 0
-+    ensure r4: d? iff not e in {A, B}
++    ensure r3: (c? iff e is A | B) and x > 0
++    ensure r4: d? iff not e is A | B
 +    ensure r5: f = 2 * (x + 1)
 +    ensure r6: g = match e { A => 1, B => 2, C => 3, E::D => 4 }
 For more information about this error, try `fren --explain F0728`.

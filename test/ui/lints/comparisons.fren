@@ -131,7 +131,7 @@ comp contradictory {
     -- Both may hold, or both fail; `Heat` is `Mode::Heat`.
     ensure r7: p6? iff (x > 3 and x < 5 or x < 3 or x > 5 or m = Heat and m = Mode::Heat)
     --~^ warning: these comparisons can be chained
-    ensure r8: p7? iff (w = "a" or w = "b") and (b? or w != "a" or w != "\x61")
+    ensure r8: p7? iff w is "a" | "b" and (b? or w != "a" or w != "\x61")
 }
 
 comp redundant {

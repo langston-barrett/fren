@@ -146,9 +146,8 @@ pub comp space {
     ensure negations: when before = Negation and after = Negation, space?
     ensure tight: unless before = Comment or after = Comment or (before = Brace and after = CloseBrace)
         or (before = Negation and after = Negation),
-        space? iff not (before = Open or before = Call or before = Group or before = Path or before = Negation
-        or before = RangeLeading or after = Close or after = CloseGroup or after = Path or after = Comma
-        or after = Colon or after = Group or after = Call or after = RangeTrailing)
+        space? iff not (before is Open | Call | Group | Path | Negation | RangeLeading
+        or after is Close | CloseGroup | Path | Comma | Colon | Group | Call | RangeTrailing)
 
     expect binary_operators: when before = Kind::Other and after = Kind::Other, space?
     expect braces_spaced: when before = Brace and after = Kind::Other, space?

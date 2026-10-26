@@ -8,17 +8,19 @@ enum E { A, B, C }
 
 comp chain {
     in e: E
+    in f: E
     pub out p?
 
-    ensure r: p? iff (e = E::A or e = E::B or e = E::C)  --~ warning: this is `e` in a set of 3
+    ensure r: p? iff (e = E::A or e = E::B or e = f)  --~ warning: this is `e` in a set of 3
 }
 
 set_option fren.lint.pedantic "expect" in
 comp expected {
     in e: E
+    in f: E
     pub out p?
 
-    ensure r: p? iff (e = E::A or e = E::B or e = E::C)
+    ensure r: p? iff (e = E::A or e = E::B or e = f)
 }
 
 set_option fren.lint.style "deny" in

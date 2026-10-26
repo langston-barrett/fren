@@ -41,6 +41,7 @@ comp characters {
     ensure r1: p? iff s = "a​b" or s = "c­d"
     --~^ warning: this string literal contains an invisible character, `U+200B` (zero width space)
     --~^^ warning: this string literal contains an invisible character, `U+00AD` (soft hyphen)
+    --~^^^ warning: this says that `s` matches one of these patterns
     ensure r2: o? iff s.matches?(r"x‮y[0-9]") or s = "⁦e⁩﻿"
     --~^ warning: this string literal contains an invisible character, `U+202E` (right-to-left override)
     --~^^ warning: this string literal contains invisible characters: `U+2066` (left-to-right isolate), `U+2069` (pop directional isolate), `U+FEFF` (zero width no-break space)

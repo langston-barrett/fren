@@ -16,5 +16,5 @@ pub comp c {
     pub out d: Int := (x + y) * -1 + -1 * f(x) + x * (-1) * -1
     pub out e? := x >= y + 1 and 1 + y <= x and x - 1 >= y and y <= x - 1 and x - 1 >= y + 1
     pub out g? := 0 < s.len or 1 <= q.len or s.len != 0 or q.len < 1 or 0 = s.len
-    pub out h? := (x != 1 and x != 2 and x != 3) or (q != [] and (y = 1 or y = q[0] or y = 2))
+    pub out h? := (x != 1 and x != 2 and x != y) or (q != [] and (y = 1 or y = q[0] or y = 2))
 }

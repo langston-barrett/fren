@@ -22,7 +22,7 @@ pub comp parity {
     in n: Int
     set_option fren.evidence "solver" in
     pub det out even?
-    ensure r: even? iff (n = 0 or n = 2 or n = 4)
+    ensure r: even? iff n is 0 | 2 | 4
     expect zero: when n = 0, even?
 }
 

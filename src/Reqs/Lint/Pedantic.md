@@ -24,7 +24,15 @@ prose says why each fix also keeps the guards.
 three or more equations of one expression with others, `x = a or x = b or x
 = c`, whose fix is `x in {a, b, c}`, and on its De Morgan dual, a
 conjunction of three or more disequations, `x != a and x != b and x != c`,
-whose fix is `not x in {a, b, c}`.
+whose fix is `not x in {a, b, c}`. It fires only where some value is not
+one that a pattern writes, such as a variable, a constant or a computed
+value, as in `x = 1 or x = 2 or x = y`: a membership is for a collection of
+values. Where each value is an integer literal, a string literal, `true`,
+`false` or a variant without a payload, the chain is a [pattern
+test](../Lang/Expressions.md#pattern-tests) written out, which
+[`manual_pattern_test`](Style/Comparisons.md#pattern-tests-written-out)
+reports, with the fix `x is a | b | c`, and this lint does not fire, so the
+two never fire on the same chain.
 
 In the chain, each operand is guarded by those before it (see
 [Expressions](../Lang/Expressions.md#sequences)): `x = b` by `not x = a`, and
@@ -36,8 +44,9 @@ those of the later values. So the lint does not fire if a value after the
 first indexes a sequence, which might be out of range: `x = 1 or x = q[0] or
 x = 2` is left as it is. `lint::membership_chain` states when it fires,
 from the number of operands of the chain, whether they all equate, or
-disequate, the same expression, written the same way, on their left, and
-whether a later value indexes a sequence:
+disequate, the same expression, written the same way, on their left,
+whether a later value indexes a sequence, and whether each value is one
+that a pattern writes:
 
 ```fren
 pub mod lint
@@ -46,11 +55,12 @@ pub comp membership_chain {
     in n: Int            -- operands of the chain of `or`, or of `and`
     in same_left?        -- each is an equation, or for `and` a disequation, with the same left operand
     in later_indexes?    -- a value after the first indexes a sequence
+    in patterns?         -- each value is one that a pattern writes
     pub det out fires?
 
     assume counts: n >= 2
 
-    ensure rule: fires? iff (same_left? and n >= 3 and not later_indexes?)
+    ensure rule: fires? iff (same_left? and n >= 3 and not later_indexes? and not patterns?)
 }
 ```
 

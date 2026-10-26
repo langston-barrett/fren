@@ -262,8 +262,8 @@ pub comp mentions {
         DefinedOutput | Binder | Construction | Method | Defined | Compound => parts?,
     }
 
-    expect fixed_meaning: when expr_kind = Defined or expr_kind = Method or expr_kind = Construction, mentions? iff parts?
-    expect unknown: when expr_kind = Variable or expr_kind = Uninterpreted, mentions?
+    expect fixed_meaning: when expr_kind is Defined | Method | Construction, mentions? iff parts?
+    expect unknown: when expr_kind is Variable | Uninterpreted, mentions?
     expect bound_fixed: when expr_kind = Bound, not mentions?
 }
 ```
@@ -1098,13 +1098,17 @@ Shape::Circle(_) = true` and `x < y is A(_)` are errors (`F0108`), since
 its alternatives do, so `s is A(_) | B(_) and t?` means `(s is A(_) |
 B(_)) and t?`.
 
-`=` and `in` compare with values, and `is` is for the patterns that `=`
-cannot express: those with a payload, and ranges. So write `x = E::A` and
-`x in {E::A, E::B}`, not `x is E::A` or `x is E::A | E::B`, and likewise
-`x != E::A` and `not x in {E::A, E::B}`, not `not x is E::A` or `not x is
-E::A | E::B`. Test a `Bool` with `iff` or `not` rather than `is true`, and
-compare an `Int`, a `Nat` or a `String` with a literal with `=`, but test it against a
-range with `is`, as in `n is 0..=9`. A pattern with a payload may still
+`=` compares with one value, and `is` tests against several, and against
+the patterns that `=` cannot express: those with a payload, and ranges. So
+write `x = E::A` and `x is E::A | E::B`, not `x is E::A` or `x = E::A or x
+= E::B`, and likewise `x != E::A` and `not x is E::A | E::B`. Test a `Bool`
+with `iff` or `not` rather than `is true`, and compare an `Int`, a `Nat` or
+a `String` with a literal with `=`, but test it against several literals or
+a range with `is`, as in `n is 0 | 1` and `n is 0..=9`. A pattern test
+writes its alternatives in the syntax of a [pattern
+type](Types.md#pattern-types), and a range or a payload extends it as it
+is, as in `status is 429 | 500..=599`; `in` is for collections, such as a
+set constant or a set that is computed. A pattern with a payload may still
 have alternatives without one, as in `s is Shape::Rect(_, _) |
 Shape::Empty`.
 
@@ -1302,7 +1306,7 @@ pub comp guard {
     expect and_short_circuits: when operand = AndRight and not holds?, not evaluated?
     expect or_short_circuits: when operand = OrRight and holds?, not evaluated?
     -- The bodies of `when C` and `unless C` are evaluated under opposite conditions.
-    expect opposite: when operand = WhenBody or operand = UnlessBody, evaluated? iff (holds? iff operand = WhenBody)
+    expect opposite: when operand is WhenBody | UnlessBody, evaluated? iff (holds? iff operand = WhenBody)
 }
 ```
 
@@ -1877,7 +1881,7 @@ pub comp operator_type {
     expect newtypes_ordered: when op = Ordering and a = b and newtype?(a) and kind(under(a)) = IntTy, accepted?
     expect newtype_sums: when op in {Addition, Subtraction} and newtype?(a) and accepted?, a = b and result = RecordTy
     expect newtypes_not_multiplied: when op in {Multiplication, Negation} and newtype?(a), not accepted?
-    expect newtypes_apart: when op != Membership and op != Conditional and newtype?(a) and a != b, not accepted?
+    expect newtypes_apart: when not op is Membership | Conditional and newtype?(a) and a != b, not accepted?
     expect nat_compared_with_int: when op in {Equality, Ordering} and kind(a) = NatTy and kind(b) = IntTy, accepted?
     -- Sets of different element types are different types.
     expect sets_of_different_types: when op = Equality and kind(a) = SetTy and kind(b) = SetTy and elem(a) != elem(b),

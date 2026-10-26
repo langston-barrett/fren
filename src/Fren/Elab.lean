@@ -2302,8 +2302,8 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
     let irrefutable := Core.irrefutableIs (Core.matchesEvery (← patSigs) pty q)
     if irrefutable then recordLint .irrefutableIs e (Core.irrefutableIsMsg (← patTypeName ty) (q matches .wild _))
     let texts := (topAlts e[2]).1.map exactText
-    if Core.isEquality (Core.equatable q texts) irrefutable then
-      let msg := Core.isEqualityMsg { text := exactText scrutinee, prec := exprPrec scrutinee } texts
+    if Core.isEquality texts.size (Core.equatable q texts) irrefutable then
+      let msg := Core.isEqualityMsg { text := exactText scrutinee, prec := exprPrec scrutinee } texts[0]!
       recordLint .isEquality e (if (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
   match test with
   | some t => return t
@@ -2673,7 +2673,11 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
       { cx with concatOk := ca, emptyOk := Core.Position.compared.checked false (synthesizes a) } a b
     -- Both sides have one type, after widening, as the `fren` command checks
     -- (`lang::operator_type`).
-    if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then liftMsg e (Core.checkComparable op tx ty)
+    if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then
+      liftMsg e (Core.checkComparable op tx ty)
+      -- For `manual_pattern_test`, at the end of the expression.
+      if cx.noteIndexes && (tx == .nat || ty == .nat) then
+        modifyLocal fun l => { l with facts := l.facts.push ((e.getPos?, e.getTailPos?), .natOperands) }
     -- After the sides and their types, as in the binary: not where either
     -- is an error.
     lintEmptyEquation cx e
@@ -3029,7 +3033,8 @@ def guardedTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
     let eqs := ds.filterMap fun d => let d := unparen d; if isBinOp d cmp then some (d[0], d[2]) else none
     let lefts := eqs.map (srcText ·.1)
     let laterIndexes := (eqs.extract 1).any fun (_, v) => !(indexedIn v).isEmpty
-    if Core.membershipChainFires ds.size (eqs.size == ds.size && lefts.all (· == lefts[0]!)) laterIndexes then
+    let patterns ← eqs.allM fun (_, v) => return Core.patternValue (srcText (unparen v)) (← variantOf? cx v).isSome
+    if Core.membershipChainFires ds.size (eqs.size == ds.size && lefts.all (· == lefts[0]!)) laterIndexes patterns then
       recordLint .membershipChain e (Core.membershipChainMsg lefts[0]! (eqs.map (srcText ·.2)) (op matches .and))
   -- `index_after_use` (`lint::index_after_use`).
   if op matches .and && cx.noteIndexes then

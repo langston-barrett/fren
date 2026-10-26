@@ -464,6 +464,11 @@ register_option fren.lint.chainable_comparison : String := {
   descr := "the level of the lint `chainable_comparison`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.manual_pattern_test : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_pattern_test`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.single_match_else : String := {
   defValue := "allow"
   descr := "the level of the lint `single_match_else`: allow, expect, warn, deny or forbid"

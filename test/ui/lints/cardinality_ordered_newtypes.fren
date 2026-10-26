@@ -86,6 +86,9 @@ comp orderings {
     --~^ warning: these two comparisons are `s <= Severity::Warning`
 }
 
+-- The equations are left as they are: a pattern test is
+-- `manual_pattern_test`'s fix.
+set_option fren.lint.manual_pattern_test "allow" in
 comp memberships {
     in s: Severity
     in m: Mode

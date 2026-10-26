@@ -1,0 +1,30 @@
+warning[F0805]: this says that `x` matches one of these patterns
+  --> test/cli/fix/manual_pattern_test.fren:22:19
+   |
+22 |     pub out j? := x = 1 or /- one more -/ x = 2
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ equations of one expression with values that patterns write
+   |
+   = help: write `x is 1 | 2`
+   = note: `fren fix` leaves this, since the pattern test would lose the comment within the operands
+
+--- test/cli/fix/manual_pattern_test.fren
++++ test/cli/fix/manual_pattern_test.fren
+@@ -13,8 +13,8 @@
+-    pub out a? := x = 429 or 503 = x
+-    pub out b? := x = 429 or x is 500..=599
+-    pub out d? := p? or (x = 1) or x = 2 or t = "a"
+-    pub out e? := x != 0 and not x is 10..
+-    pub out f? := s = Shade::Light or s is Shade::Tinted(_)
+-    pub out g? := q != [] and (q[0] = 1 or q[0] = 2)
+-    pub out h? := not (t = "a" or t = "b") and p?
+-    pub out i? := x = 1 or x = 2 or x = 3
++    pub out a? := x is 429 | 503
++    pub out b? := x is 429 | 500..=599
++    pub out d? := p? or x is 1 | 2 or t = "a"
++    pub out e? := not x is 0 | 10..
++    pub out f? := s is Shade::Light | Shade::Tinted(_)
++    pub out g? := q != [] and q[0] is 1 | 2
++    pub out h? := not t is "a" | "b" and p?
++    pub out i? := x is 1 | 2 | 3
+For more information about this error, try `fren --explain F0805`.
+exit=1
