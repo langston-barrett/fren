@@ -1,0 +1,36 @@
+error[F0601]: `http::retry` is not realizable
+  --> test/cli/results/f0601_forced_variant_all.fren:15:6
+   |
+15 | comp retry {
+   |      ^^^^^ not realizable
+   |
+   = note: for the input
+               method = Method::Get
+               status = 429
+               attempt = 4
+               retry_after = Seconds(31)
+           no outputs satisfy `transient`, `honor_server` and `latency_budget`
+   = help: weaken one of them, or add an `assume` that rules this input out
+
+note: `transient` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
+  --> test/cli/results/f0601_forced_variant_all.fren:22:12
+   |
+22 |     ensure transient:
+   |            ^^^^^^^^^
+
+note: conflicts with `transient` and `latency_budget`
+  --> test/cli/results/f0601_forced_variant_all.fren:26:12
+   |
+26 |     ensure honor_server: match decision { Decision::RetryAfter(d) => d >= retry_after, _ => true }
+   |            ^^^^^^^^^^^^
+
+note: conflicts with `transient` and `honor_server`
+  --> test/cli/results/f0601_forced_variant_all.fren:28:12
+   |
+28 |     ensure latency_budget: match decision { Decision::RetryAfter(d) => d <= MAX_DELAY, _ => true }
+   |            ^^^^^^^^^^^^^^
+
+fren: 4 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0601`.
+exit=1

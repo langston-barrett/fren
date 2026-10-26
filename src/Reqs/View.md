@@ -219,29 +219,73 @@ arguments` and `no value of `f` satisfies`.
 Each guarantee of the conflict has one note, information at its name,
 so that an editor marks every one. A guarantee that
 [forces](Check.md#forced-outputs) an output has a clash note: the
-guarantee, the output and the value it forces it to, and then the other
-guarantees of the conflict, named as a list, and the value they force it
-to, with `forces` after one guarantee and `force` after more. Any other
+guarantee and what it forces, and then the other guarantees of the
+conflict, named as a list, and what they force, with `forces` after one
+guarantee and `force` after more. A whole value `v` of the output `o` is
+`o = v`. A variant is the pattern test `o is P`, where `P` is the pattern
+that exactly the variant's values match: `E::C(_)`, with a `_` for each
+value of the payload, as in `E::C(_, _)`, or `E::C` for a variant without
+a payload. A variant without a payload has one value, so a side that
+forces it forces that value, and the note gives it as `o = E::C`. Any other guarantee
 has `conflicts with` and the other guarantees, named as a list, or, in a
 conflict of one guarantee, `is false for this input`; neither repeats the
-input, which the error's note gives. `view::clash_text` states the clash
-note:
+input, which the error's note gives. `view::wildcards` states the `_`s of
+a payload of `arity` values: `_`, and then `, _` for each further value,
+which is all that is left of `text` once each `, _` is removed. Replacing
+in a string is outside the decidable core, though the solver decides
+these:
 
 ```fren
+set_option fren.lint.undecidable "allow" in
+pub comp wildcards {
+    in arity: Nat
+    in text: String   -- the wildcards
+    pub det out shaped? := (if arity = 0 then text = ""
+        else text.starts_with?("_") and text.len = 3 * arity - 2 and text.replace_all(", _", "") = "_")
+
+    expect two: when arity = 2 and text = "_, _", shaped?
+    expect not_three: when arity = 3 and text = "_, _", not shaped?
+}
+```
+
+`view::clash_text` states the clash note, where each side is a `Forced`,
+with its wildcards, `blanks`, which `view::wildcards` shapes for a
+variant's arity. Concatenating within a `match` is outside the decidable
+core too:
+
+```fren
+-- What a clash note says a side forces: a whole value, as Fren writes it,
+-- or a variant, as Fren names it (`E::C`), with how many values its payload has.
+pub enum Forced { Value(String), Variant(String, Nat) }
+
+set_option fren.lint.undecidable "allow" in
 pub comp clash_text {
     in guarantee: String     -- the guarantee's name
     in output: String        -- the output's name
-    in value: String         -- the value that the guarantee forces the output to
+    in forced: Forced        -- what the guarantee forces of the output
+    in blanks: String        -- the wildcards of its variant, if it is one
     in others: String        -- the other guarantees of the conflict, named as a list
     in count: Int            -- how many others there are
-    in other_value: String   -- the value that they force the output to
+    in other_forced: Forced  -- what they force of the output
+    in other_blanks: String  -- the wildcards of its variant, if it is one
 
     assume some_other: count >= 1
-    pub out text: String := "`" ++ guarantee ++ "` forces " ++ output ++ " = " ++ value ++ ", but " ++ others
-        ++ (if count = 1 then " forces " else " force ") ++ output ++ " = " ++ other_value
+    pub out said: String := match forced {   -- what the guarantee forces, as the note says it
+        Forced::Value(v) => output ++ " = " ++ v,
+        Forced::Variant(c, n) => output ++ " is " ++ c ++ (if n = 0 then "" else "(" ++ blanks ++ ")"),
+    }
+    pub out other_said: String := match other_forced {   -- what the others force
+        Forced::Value(v) => output ++ " = " ++ v,
+        Forced::Variant(c, n) => output ++ " is " ++ c ++ (if n = 0 then "" else "(" ++ other_blanks ++ ")"),
+    }
+    pub out text: String := "`" ++ guarantee ++ "` forces " ++ said ++ ", but " ++ others
+        ++ (if count = 1 then " forces " else " force ") ++ other_said
 
-    expect one_other: when guarantee = "low" and output = "y" and value = "0" and others = "`high`" and count = 1
-        and other_value = "1", text = "`low` forces y = 0, but `high` forces y = 1"
+    expect one_other: when guarantee = "low" and output = "y" and forced = Forced::Value("0") and others = "`high`"
+        and count = 1 and other_forced = Forced::Value("1"), text = "`low` forces y = 0, but `high` forces y = 1"
+    expect variant: when guarantee = "t" and output = "d" and forced = Forced::Variant("D::R", 1) and blanks = "_"
+        and others = "`h`" and count = 1 and other_forced = Forced::Value("D::G"),
+        text = "`t` forces d is D::R(_), but `h` forces d = D::G"
 }
 ```
 

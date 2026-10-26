@@ -74,19 +74,33 @@ inductive Detail where
   | unknown (reason : String)
   deriving Inhabited
 
+/-- A variant of an enumeration: its constructor, as Fren writes it in a
+value (`E::C`), and how many values its payload has. -/
+structure Variant where
+  name : String
+  arity : Nat
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- What a set of guarantees forces an output to (`check::forcing`): a whole
+value, as Fren writes it, or only its variant. -/
+inductive Forced where
+  | value (v : String)
+  | variant (k : Variant)
+  deriving Inhabited, BEq, DecidableEq, Repr
+
 /-- At a realizability conflict, a guarantee of the minimal core and the
 rest of the core force an output to different values on the conflict's
-input (`check::clash_notes`). -/
+input, or to values of different variants (`check::clash_notes`). -/
 structure Clash where
   /-- The guarantee, where the note is. -/
   guarantee : Name
   /-- The other guarantees of the core, in its order. -/
   rest : Array Name
   output : Name
-  /-- The value that `guarantee` forces `output` to. -/
-  value : String
-  /-- The value that `rest` forces `output` to. -/
-  restValue : String
+  /-- What `guarantee` forces `output` to. -/
+  forced : Forced
+  /-- What `rest` forces `output` to. -/
+  restForced : Forced
   deriving Inhabited
 
 structure CheckResult where
@@ -207,6 +221,11 @@ structure Backend (m : Type → Type) (F V : Type) where
   existsOutputs : F → m F
   /-- `x = v` for variable `x`, if `v` can be used in a formula. -/
   pin : Name → V → m (Option F)
+  /-- The variant of `v`, a value of the variable `x` whose type is an
+  enumeration, with the formula that `x` is of that variant, its tester;
+  none if `x`'s type is not an enumeration, or the formula cannot be
+  built. -/
+  pinVariant : Name → V → m (Option (Variant × F))
   /-- `v`, written the way Fren writes values. -/
   render : Name → V → m String
   /-- `f` with each variable `x` that is not an own `in` (instance variables
@@ -356,14 +375,36 @@ def forces (hyps : Array (Name × F)) (x : Name) (v : V) : m Bool := do
   let some f ← b.pin x v | return false
   return (← b.query hyps f false).isUnsat
 
+/-- Whether `hyps` force the variable `x` to `v`'s variant, where `v` is
+its value in a model of them: that `x` is of that variant follows from
+them (`check::forcing`). A variant that cannot be pinned is not known to
+be forced. -/
+def forcesVariant (hyps : Array (Name × F)) (x : Name) (v : V) : m Bool := do
+  let some (_, f) ← b.pinVariant x v | return false
+  return (← b.query hyps f false).isUnsat
+
+/-- What `hyps` force the variable `x` to, where `v` is its value in a model
+of them and `k?` the variant of `v`: the value `v`, rendered as `s`, if it
+is forced (`forces`); else its variant, if that is forced
+(`forcesVariant`); else nothing (`check::forcing`). -/
+def forcedOf (hyps : Array (Name × F)) (x : Name) (v : V) (s : String) (k? : Option Variant) : m (Option Forced) := do
+  if ← forces b hyps x v then return some (.value s)
+  let some k := k? | return none
+  if ← forcesVariant b hyps x v then return some (.variant k)
+  return none
+
 /-- The clash at the guarantee `e` of the minimal core `core`, on the input
 that `pinned` pins: the first of the outputs `outs` that `{e}` and the
-rest of the core force to different values (`check::clash_notes`). Each
-side is asked for a model, then whether each output's value in it
-follows (`forces`); only the outputs whose values in the two models
-differ are asked about, since sides that force an output both force its
-value in their models. None if the rest is empty, which forces nothing,
-or a side has no model. -/
+rest of the core force to different values, or to values of different
+variants (`check::clash_notes`). Each side is asked for a model, then
+whether each output's value in it follows (`forces`); only the outputs
+whose values in the two models differ are asked about, since sides that
+force an output both force its value in their models. Where the two
+values have the same variant, or either has none, only a clash of whole
+values is looked for; where their variants differ, each side forces the
+output's whole value or, failing that, its variant (`forcedOf`), so a
+clash of whole values is preferred to one of variants. None if the rest
+is empty, which forces nothing, or a side has no model. -/
 def clashAt (pinned core : Array (Name × F)) (outs : Array Name) (e : Name) : m (Option Clash) := do
   let one := core.filter (·.1 == e)
   let rest := core.filter (·.1 != e)
@@ -376,9 +417,13 @@ def clashAt (pinned core : Array (Name × F)) (outs : Array Name) (e : Name) : m
     let s₁ ← b.render o v₁
     let s₂ ← b.render o v₂
     if s₁ == s₂ then continue
-    if !(← forces b (pinned ++ one) o v₁) then continue
-    if !(← forces b (pinned ++ rest) o v₂) then continue
-    return some { guarantee := e, rest := rest.map (·.1), output := o, value := s₁, restValue := s₂ }
+    let k₁ := (← b.pinVariant o v₁).map (·.1)
+    let k₂ := (← b.pinVariant o v₂).map (·.1)
+    -- Of the same variant, or of none: only whole values can clash.
+    let variants := k₁.isSome && k₂.isSome && k₁ != k₂
+    let some f₁ ← forcedOf b (pinned ++ one) o v₁ s₁ (if variants then k₁ else none) | continue
+    let some f₂ ← forcedOf b (pinned ++ rest) o v₂ s₂ (if variants then k₂ else none) | continue
+    return some { guarantee := e, rest := rest.map (·.1), output := o, forced := f₁, restForced := f₂ }
   return none
 
 /-- Whether `found` notes leave room for another under the budget
@@ -1003,16 +1048,43 @@ def conflictNote (what : String) (input : Assignment) (unmet : String) : String 
   if input.isEmpty then s!"note: {unmet}"
   else s!"note: for the {what}\n" ++ String.join (input.toList.map fun (n, v) => s!"    {n} = {v}\n") ++ unmet
 
+/-- `, _` for each of `k` values of a payload after its first
+(`view::wildcards`). -/
+def furtherWildcards (k : Nat) : String := String.join (List.replicate k ", _")
+
+/-- One `_` for each of `arity` values of a payload, separated by `, `,
+as a pattern of the variant writes them (`view::wildcards`). -/
+def wildcards (arity : Nat) : String := if arity = 0 then "" else "_" ++ furtherWildcards (arity - 1)
+
+/-- The wildcards of what a clash note says is forced: of its variant's
+payload, and none of a value (`view::clash_text`). -/
+def Forced.blanks : Forced → String
+  | .value _ => ""
+  | .variant k => wildcards k.arity
+
+/-- The variant `k` as a pattern that its values match: `E::C` without a
+payload, else `E::C(_)`, with one `_` for each value of the payload
+(`view::clash_text`). -/
+def Variant.pattern (k : Variant) : String :=
+  if k.arity = 0 then k.name else s!"{k.name}({wildcards k.arity})"
+
+/-- What a clash note says is forced of the output `o` (`view::clash_text`):
+`o = v` of a whole value `v`, and `o is P` of a variant, `P` the pattern
+of its values. -/
+def forcedText (o : String) : Forced → String
+  | .value v => s!"{o} = {v}"
+  | .variant k => s!"{o} is {k.pattern}"
+
 /-- The headline of a clash note (`view::clash_text`): the guarantee
-`g` forces the output `o` to `v`, and the `count` others of its conflict,
-named as the list `others`, force it to `w`. -/
-def clashLine (g o v others w : String) (count : Nat) : String :=
-  s!"`{g}` forces {o} = {v}, but {others}{if count = 1 then " forces " else " force "}{o} = {w}"
+`g` forces `f` of the output `o`, and the `count` others of its conflict,
+named as the list `others`, force `f'`. -/
+def clashLine (g o : String) (f : Forced) (others : String) (f' : Forced) (count : Nat) : String :=
+  s!"`{g}` forces {forcedText o f}, but {others}{if count = 1 then " forces " else " force "}{forcedText o f'}"
 
 /-- The headline of a clash note (`Reqs/View#check-results`), at its
 guarantee, with the rest of the core named `rest`. -/
 def clashText (cl : Clash) (rest : Array Name) : String :=
-  clashLine cl.guarantee.getString! (toString cl.output) cl.value (showNamesAnd rest) cl.restValue rest.size
+  clashLine cl.guarantee.getString! (toString cl.output) cl.forced (showNamesAnd rest) cl.restForced rest.size
 
 /-- The note at a guarantee of a realizability conflict's core
 (`Reqs/View#check-results`), one at each: its clash, if it has one

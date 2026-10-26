@@ -1,0 +1,60 @@
+-- The notes of an unrealizable component's guarantees that force an
+-- output of an enumeration to values of different variants
+-- (`check::clash_notes`), where a side forces only a variant.
+-- fren-covers: check::clash_notes
+
+enum Shape { Circle(Int), Square(Int), Rect(Int, Int), Empty }
+
+-- Each guarantee forces only a variant, a different one.
+comp variants {   --~ error: no outputs satisfy `round` and `square`
+    pub out s: Shape
+    ensure round: s is Shape::Circle(_)   --~ info: `round` forces s is Shape::Circle(_), but `square` forces s is Shape::Square(_)
+    ensure square: s is Shape::Square(_)   --~ info: conflicts with `round`
+}
+
+-- A whole value against a variant, of a payload of two values.
+comp mixed {   --~ error: no outputs satisfy `one` and `boxy`
+    in x: Int
+    pub out s: Shape
+    ensure one: s = Shape::Circle(x)   --~ info: `one` forces s = Shape::Circle(0), but `boxy` forces s is Shape::Rect(_, _)
+    ensure boxy: s is Shape::Rect(_, _)   --~ info: conflicts with `one`
+}
+
+-- A variant without a payload has one value, which a side that forces
+-- the variant forces.
+comp empty {   --~ error: no outputs satisfy `square` and `none`
+    pub out s: Shape
+    ensure square: s is Shape::Square(_)   --~ info: `square` forces s is Shape::Square(_), but `none` forces s = Shape::Empty
+    ensure none: not (s is Shape::Circle(_) | Shape::Square(_) | Shape::Rect(_, _))   --~ info: conflicts with `square`
+}
+
+-- Of the same variant: `one` forces a value, `other` only the variant, so
+-- they do not clash.
+comp same_variant {   --~ error: no outputs satisfy `one` and `other`
+    in x: Int
+    pub out s: Shape
+    ensure one: s = Shape::Circle(x)   --~ info: conflicts with `other`
+    ensure other: s is Shape::Circle(_) and s != Shape::Circle(x)   --~ info: conflicts with `one`
+}
+
+-- A variable of an abstract type: the values would depend on its
+-- interpretation, so no note.
+type Token
+
+comp abstract {   --~ error: no outputs satisfy `round` and `square`
+    in t: Token
+    in u: Token
+    pub out s: Shape
+    ensure round: s is Shape::Circle(_) and t = u   --~ info: conflicts with `square`
+    ensure square: s is Shape::Square(_)   --~ info: conflicts with `round`
+}
+
+-- An output of a pattern type over an enumeration.
+type Roundish := Shape is Shape::Circle(_) | Shape::Rect(_, _)
+
+comp patterned {   --~ error: no outputs satisfy `round` and `boxy`
+    pub out s: Roundish
+    ensure round: s is Shape::Circle(_)   --~ info: `round` forces s is Shape::Circle(_), but `boxy` forces s is Shape::Rect(_, _)
+    ensure boxy: s is Shape::Rect(_, _)   --~ info: conflicts with `round`
+}
+--@ exit: 1

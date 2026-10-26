@@ -1,0 +1,29 @@
+-- `--examples all`: a note at each guarantee whose output's forced
+-- variant the rest of the conflict rules out.
+-- fren-covers: check::clash_notes
+--@ args: check --examples all
+mod http
+
+enum Method { Get, Put, Post, Delete }
+type Status := Nat is 100..=599
+ordered struct Seconds(Nat)
+enum Decision { GiveUp, RetryAfter(Seconds) }
+
+const MAX_ATTEMPTS: Nat := 5
+const MAX_DELAY: Seconds := Seconds(30)
+
+comp retry {
+    in method: Method
+    in status: Status
+    in attempt: Nat is 1..
+    in retry_after: Seconds
+    pub out decision: Decision
+
+    ensure transient:
+        decision != Decision::GiveUp iff status is 429 | 503
+        and method != Method::Post
+        and attempt < MAX_ATTEMPTS
+    ensure honor_server: match decision { Decision::RetryAfter(d) => d >= retry_after, _ => true }
+    ensure backoff: match decision { Decision::RetryAfter(d) => d >= Seconds(2 * attempt), _ => true }
+    ensure latency_budget: match decision { Decision::RetryAfter(d) => d <= MAX_DELAY, _ => true }
+}
