@@ -6,8 +6,8 @@ comp c {
     in x: Int
     pub out abs: Int
     pub det out exp: Int
-    req r: abs = x
-    req e: exp = x + 1
+    ensure r: abs = x
+    ensure e: exp = x + 1
 
     expect same: abs - x = 0
     expect wrong: abs = exp  --~ error: expectation `c::wrong` does not hold
@@ -16,14 +16,14 @@ comp c {
 comp len_of {
     in sqrt: Int
     pub det out len: Int
-    req r: len = sqrt.abs
+    ensure r: len = sqrt.abs
 }
 
 comp through_instance {
     in ite: Int
     inst str: len_of { sqrt := ite }
     pub det out select: Int
-    req r: select = str.len
+    ensure r: select = str.len
 
     expect positive: select >= 0
 }
@@ -36,7 +36,7 @@ comp binders {
     in sin: Int
     pub det out xor?
 
-    req r: xor? iff (forall (bag: Pair), store(bag) >= 0)
+    ensure r: xor? iff (forall (bag: Pair), store(bag) >= 0)
     expect always: xor?
     expect bound: let cos := sin + 1 in cos > sin
 }
@@ -47,7 +47,7 @@ fn cos(Int): Int
 comp abstract {
     in x: Int
     pub det out y: Int
-    req r: y = cos(x)
+    ensure r: y = cos(x)
     expect same: when x = 1, y = cos(1)
 }
 
