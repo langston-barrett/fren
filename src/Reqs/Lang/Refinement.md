@@ -188,7 +188,14 @@ which checks run on a refinement: those that check the obligation, and the
 use check::Kind
 
 pub comp checks {
-    use check::Kind::{Completeness, Definedness, Disjointness, Expectation, InstanceAssumption, Precondition}
+    use check::Kind::{
+        Completeness,
+        Definedness,
+        Disjointness,
+        Expectation,
+        InstanceAssumption,
+        Precondition,
+    }
     in kind: Kind
     pub det out runs?
 

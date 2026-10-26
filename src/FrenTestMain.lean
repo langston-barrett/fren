@@ -262,6 +262,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/cover.fren",
    "test/cli/fmt/newtypes.fren",
    "test/cli/fmt/table.fren",
+   "test/cli/fmt/contract.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
    "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
    "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
