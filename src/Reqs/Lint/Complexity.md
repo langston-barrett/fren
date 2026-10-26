@@ -4,7 +4,7 @@ The lints of the `complexity` group find a simpler expression with the
 same meaning, and `fren fix` fixes each of them but `constant_output` and
 [`needless_update`](Complexity/Updates.md#needless-updates).
 This chapter has the lints of `Bool` expressions, of membership, of
-outputs, of records and newtypes, and of literals, and its subchapters the others: those of
+outputs, of records and newtypes, of literals and of quantifiers, and its subchapters the others: those of
 [comparisons](Complexity/Comparisons.md), of [operators](Complexity/Operators.md),
 of [methods](Complexity/Methods.md), of [matches](Complexity/Matches.md),
 of [integers](Complexity/Integers.md) and of [record updates](Complexity/Updates.md).
@@ -488,4 +488,92 @@ pub comp zero_prefixed_fixed {
 
 refine zero_prefixed_sound: zero_prefixed_fixed refines zero_prefixed_written
 refine zero_prefixed_complete: zero_prefixed_written refines zero_prefixed_fixed
+```
+
+## Trivial quantifiers
+
+`trivial_quantifier` fires on a [quantifier](../Lang/Quantifiers.md), or a
+global expectation's leading `forall`, with a bound name whose type has
+one value, as an enumeration with one variant without a payload has, or a
+record whose fields each have one: its expansion has one instance for
+each value of the other bound names, so the bound name could be its value
+instead. The message is at the binder of the first such name. It is
+fixable where every bound name's type is an enumeration with one variant
+without a payload, `T::V`, and the quantifier is not a global
+expectation's, whose binders over components stay: the fix writes the
+body, with `T::V`, `T` as the binder writes it, in place of each mention
+of a bound name, so `forall (u: Solo), u in s` becomes `Solo::Only in s`.
+That is the quantifier's one instance, so the fix keeps the meaning, and
+its guards, which are the quantifier's own. A path binds as tightly as
+any expression, and the body binds at least as tightly as the quantifier,
+so neither needs parentheses. A mention is a path of one segment that
+means the bound name, and not what an inner binder of that name hides.
+There is no fix where the body declares a bound name again, as in
+`forall (u: Solo), (forall (u!: Solo), u in t) and u in t` or `exists
+(u: Solo), let u! := u in u in t`: without the quantifier, that `u!`
+would hide nothing ([Shadowing](../Lang/Components.md#shadowing)), which
+is an error.
+`fren fix` leaves a quantifier with a comment in it, which the fix could
+lose.
+
+Clippy's `single_element_loop`, a loop over one element, is in
+`complexity`, and so `warn`, and so is this; a quantifier over a type of
+no values cannot be written, since every type has one
+([Meaning](../Lang/Quantifiers.md#meaning)), so Clippy's `never_loop` has
+no counterpart.
+
+`lint::trivial_quantifier` states when it fires, and when it is fixed, on
+the quantifier in the [model of scopes](Unused.md#scopes): its bound
+names, those whose types have one value, those whose types are an
+enumeration of one variant without a payload, and its body's tree, in
+which it finds the names declared again:
+
+```fren
+pub comp trivial_quantifier {
+    use lint::{Local, Tree, scope}
+    in names: Set(Local)           -- the bound names
+    in one_value: Set(Local)       -- those whose types have one value
+    in variant: Set(Local)         -- those whose types are an enumeration of one variant without a payload
+    in global?                     -- a global expectation's leading `forall`
+    in body: Tree
+    pub det out fires?
+    pub det out fixed?
+
+    inst s: scope { t := body }
+
+    ensure rule: fires? iff (one_value inter names) != {}
+    ensure fix: fixed? iff (names != {} and names subset one_value and names subset variant and not global? and (names inter s.declared) = {})
+
+    -- `forall (u: Solo), (forall (u!: Solo), u in t) and u in t`.
+    expect inner_bang: when names = {Local::A} and one_value = names and variant = names
+        and body.declares = {(body.root, Local::A)}, fires? and not fixed?
+    expect fixed_fires: when fixed?, fires?
+}
+```
+
+The refinements check the fixes, of a `forall` and of an `exists` of one
+bound name, of two bound names, and of one mentioned twice:
+
+```fren
+pub enum Solo { Only }
+
+set_option fren.lint.trivial_quantifier "allow" in
+pub comp trivial_quantifier_written {
+    in s: Set(Solo)
+    in t: Set(Solo)
+    pub det out every? := forall (u: Solo), u in s
+    pub det out some? := exists (u: Solo), u in s and u in t
+    pub det out pair? := forall (u v: Solo), u in s or v in t
+}
+
+pub comp trivial_quantifier_fixed {
+    in s: Set(Solo)
+    in t: Set(Solo)
+    pub det out every? := Solo::Only in s
+    pub det out some? := Solo::Only in s and Solo::Only in t
+    pub det out pair? := Solo::Only in s or Solo::Only in t
+}
+
+refine trivial_quantifier_sound: trivial_quantifier_fixed refines trivial_quantifier_written
+refine trivial_quantifier_complete: trivial_quantifier_written refines trivial_quantifier_fixed
 ```

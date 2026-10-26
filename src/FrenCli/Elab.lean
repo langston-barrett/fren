@@ -630,6 +630,9 @@ structure State where
   newtypes built and read, in the expression being elaborated, for the
   lints of ordered enumerations and newtypes. -/
   facts : Array (Span × Fren.Core.NodeFact) := #[]
+  /-- Where the bound names of quantifiers are mentioned, each with the
+  bound name's symbol, for `trivial_quantifier`. -/
+  boundMentions : Array (Span × String) := #[]
   /-- The current file's trailing commas that `unnecessary_trailing_comma`
   reports, each with the `}` or `]` after it. -/
   trailingCommas : Array (Span × String) := #[]
@@ -1317,6 +1320,18 @@ def Expr.operands : Expr → Array Expr
   | .table _ rows => tableParts rows
   | .num .. | .bool .. | .path .. | .str .. => #[]
 
+/-- The names that `e` declares, without their `!`: those of its `let`s and
+`where` clauses, its bound names and its patterns' binders
+(`Fren.Core.ForallCx`). -/
+partial def Expr.declaredNames (e : Expr) : Array String :=
+  let own := match e with
+    | .«let» _ defs _ _ => defs.map fun (x, _, _) => (declaredIdent x).1.name
+    | .quant _ _ bs _ => bs.flatMap (·.names) |>.map fun x => (declaredIdent x).1.name
+    | .match _ _ arms _ => arms.flatMap fun (p, _, _) => p.names.map fun x => (declaredIdent x).1.name
+    | .is _ _ p => p.names.map fun x => (declaredIdent x).1.name
+    | _ => #[]
+  own ++ e.operands.flatMap (·.declaredNames)
+
 /-- The integer literals of a pattern: its own, its bounds' and those of
 its parts. -/
 partial def Pattern.integerSpans : Pattern → Array Span
@@ -1432,11 +1447,20 @@ def Expr.text (src : Array Char) (e : Expr) : Fren.Core.BText :=
   let prec := if r != toRange e.span then Fren.Core.BKind.atom.prec else match e.boolNode with | .mk k .. => k.prec
   { text := Fren.Core.textOf src r, prec }
 
+/-- Whether a name declared in `cx`, or among `extra`, would hide
+something in scope (`lang::shadowing`). -/
+def hidesIn (cx : ExprCtx) (extra : Array (Name × String) := #[]) : M (String → Bool) := do
+  let st ← get
+  let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+    (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal ++ extra
+  return fun n => (st.table.hidden? st.scope locals (Name.mkSimple n)).isSome
+
 /-- Reports the expressions in `e` that the lints that rewrite them
 (`Fren.Core.ExLint`) report, such as `Bool` expressions with a simpler form
 (`nonminimal_bool`), the operator and method lints, the arithmetic lints
-and double parentheses in it, once `e` is elaborated. -/
-def lintBools (e : Expr) : M Unit := do
+and double parentheses in it, once `e` is elaborated, where `hides` says
+whether a name declared there would hide something in scope. -/
+def lintBools (e : Expr) (hides : String → Bool) : M Unit := do
   -- The text of `e` alone, as written, and `e` over it, as the Lean front
   -- end gives them: the three lints read no text outside `e`
   -- (`Fren.Core.upTo`), and report at the spans, which stay as they are.
@@ -1457,7 +1481,12 @@ def lintBools (e : Expr) : M Unit := do
   let variant? (sp : Span) := (variants.find? (·.1 == sp)).map (·.2)
   let fact? (sp : Span) := (facts.find? (·.1 == sp)).map (·.2)
   let ordered? (sp : Span) := (ordereds.find? (·.1 == sp)).map (·.2)
-  for r in Fren.Core.opReports src boolEqs.contains ordered? variant? (absEnds.contains ·.stop) mentioning.contains fact? root do
+  let st ← get
+  let fcx : Fren.Core.ForallCx :=
+    { variants? := fun p => (st.dataOf? p.toName).bind fun d =>
+        if d.isRecord || d.ctors.any (!·.2.isEmpty) then none else some d.ctors.size
+      declared := e.declaredNames, hides, unguarded := !Fren.Core.hasGuarded (String.ofList src.toList) }
+  for r in Fren.Core.opReports src boolEqs.contains ordered? variant? (absEnds.contains ·.stop) mentioning.contains fact? fcx root do
     lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) (shift r.msg) r.unless?
   for r in Fren.Core.arithReports src root do
     lintFix r.lint r.ref (shift r.msg)
@@ -2572,6 +2601,75 @@ of it (`lang::newtype_operator`). -/
 def exprNewtypeOp (op : String) (span : Span) (tx ty : Ty) (pre := false) : M Unit := do
   liftMsg span (Fren.Core.checkNewtypeOperator op pre tx ty (← orderedDecl))
 
+/-- Reports the lints of the `let` or `where` clause at `span`, of the
+definitions `defs` and the body `body`: its names that neither the body nor
+a later definition mentions (`unused_variables`), `let_and_return` and
+`redundant_locals` (`lint::let_and_return`, `lint::redundant_locals`). -/
+def lintClause (span : Span) (defs : Array (Ident × Option (Array Ident) × Expr)) (body : Expr) (isWhere : Bool) :
+    M Unit := do
+  let names := defs.map fun (x, _, _) => Name.mkSimple (declaredIdent x).1.name
+  let used := (Fren.Core.clauseMentions names (defs.map fun (_, _, d) => mentions d) (mentions body) true).2
+  for (x, _, _) in defs, n in names, u in used do
+    unless u do lint .unusedVariables (declaredIdent x).1.span (Fren.Core.unusedDefinitionMsg n)
+  let src := (← get).src
+  let clause := toRange span
+  let commented := Fren.Core.hasComment (Fren.Core.textOf src clause)
+  -- Each definition from its name to the end of its expression, and the
+  -- body, with their parentheses.
+  let written (e : Expr) := Fren.Core.withParensIn src clause (toRange e.span)
+  let ranges : Array Fren.Core.Range := defs.map fun (x, _, d) => { start := x.span.start, stop := (written d).stop }
+  if let some (x, ty?, d) := defs.back? then
+    let bodyIsLast := match body with | .path _ #[y] => y.name == (declaredIdent x).1.name | _ => false
+    if Fren.Core.letAndReturn bodyIsLast ty?.isSome then
+      let earlier? := if defs.size < 2 then none
+        else some (Fren.Core.textOf src { start := ranges[0]!.start, stop := ranges[defs.size - 2]!.stop })
+      let fixed := Fren.Core.letAndReturnFixed isWhere earlier? (Fren.Core.textOf src (written d))
+      lintFix .letAndReturn body.span (Fren.Core.letAndReturnMsg names.back! isWhere clause fixed commented)
+  for (x, ty?, d) in defs, n in names do
+    let (y, bang) := declaredIdent x
+    let own := match d with | .path _ #[z] => z.name == y.name | _ => false
+    if Fren.Core.redundantLocal bang ty?.isSome own then lint .redundantLocals x.span (Fren.Core.redundantLocalMsg n)
+
+/-- Reports the lints of the quantifier at `span`, a `forall` if `all`,
+whose binders `bs` declare `new` and whose body is `body`: its bound names
+that the body does not mention (`unused_variables`), and
+`trivial_quantifier` (`lint::trivial_quantifier`), whose fix writes the
+value of each bound name in place of its mentions recorded since `mark`. -/
+def lintQuant (span : Span) (all : Bool) (bs : Array Binder) (new : Array CBinder) (body : Expr) (mark : Nat) :
+    M Unit := do
+  let mentioned := (mentions body).map (·.getRoot)
+  for x in bs.flatMap (·.names), b in new do
+    unless mentioned.contains b.name do lint .unusedVariables (declaredIdent x).1.span (Fren.Core.unusedBoundMsg b.name all)
+  let st ← get
+  let counts := new.map fun b => (st.valueCount b.ty).getD 0
+  unless Fren.Core.trivialQuantifier (counts.filter (· == 1)).size do return
+  -- The binder of each bound name.
+  let binders := bs.flatMap fun b => b.names.map fun _ => b
+  let some i := counts.idxOf? 1 | return
+  let tyText (k : Nat) : M String := srcAt (binders[k]!.ty[0]!.span.to binders[k]!.ty.back!.span)
+  -- The value of a type of one value, if it is a variant without a payload.
+  let values ← (List.range new.size).toArray.mapM fun k => do
+    let some b := new[k]? | return none
+    let Ty.enum p := b.ty | return none
+    let some { ctors := #[(v, #[])], .. } := st.dataOf? p | return none
+    return some s!"{← tyText k}::{v}"
+  let quant := toRange span
+  -- A global expectation's binders over values have no `forall` of their own.
+  let own := bs[0]?.any (·.span.start != span.start)
+  let fixed? : Option String := do
+    -- A name the body declares again would hide nothing once the quantifier is gone.
+    let redeclared := new.any fun b => body.declaredNames.contains (Fren.Core.nameText b.name)
+    guard (Fren.Core.trivialQuantifierFixed (counts.filter (· == 1)).size counts.size (values.all Option.isSome) (!own)
+      redeclared)
+    guard (!Fren.Core.hasComment (Fren.Core.textOf st.src quant))
+    let vs ← values.mapM id
+    let ms := (st.boundMentions.extract mark).filterMap fun (sp, sym) =>
+      (new.findIdx? (·.smt == sym)).map fun k => (toRange sp, vs[k]!)
+    pure (Fren.Core.substituted st.src (Fren.Core.withParensIn st.src quant (toRange body.span)) ms)
+  let some b := new[i]? | return
+  lintFix .trivialQuantifier binders[i]!.span
+    (Fren.Core.trivialQuantifierMsg all b.name (← tyText i) values[i]! quant fixed?)
+
 mutual
 /-- Two operands of the same type, each checked against the other's, when it
 does not synthesize its own (`lang::checked`). -/
@@ -2677,7 +2775,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   let opNote := Fren.Core.opNote
   match e with
   | .when span neg c d => elabWhenExpr cx e span neg c d
-  | .quant _ all bs body => elabQuantExpr cx all bs body
+  | .quant span all bs body => elabQuantExpr cx span all bs body
   | .not _ a => return (s!"(not {← expect a .bool (opNote "not" .bool)})", .bool)
   | .ite span c a b => elabIteExpr cx e expected? inElse span c a b
   | .neg span a => elabNegExpr cx span a
@@ -2699,7 +2797,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   | .match span scrutinee arms isTable => elabMatchExpr cx e expected? parent? span scrutinee arms isTable
   | .table span rows => elabTableExpr cx e expected? parent? span rows
   | .is span scrutinee p => elabIsExpr cx span scrutinee p
-  | .«let» _ defs body isWhere => elabLetExpr cx concatOk expected? defs body isWhere
+  | .«let» span defs body isWhere => elabLetExpr cx span concatOk expected? defs body isWhere
 
 /-- `elabExpr` on a `when` or `unless`. -/
 partial def elabWhenExpr (cx : ExprCtx) (e : Expr) (span : Span) (neg : Bool) (c : Expr) (d : Expr) : M (String × Ty) := do
@@ -2717,7 +2815,7 @@ partial def elabWhenExpr (cx : ExprCtx) (e : Expr) (span : Span) (neg : Bool) (c
   return (if neg then s!"(=> (not {c}) {d})" else s!"(=> {c} {d})", .bool)
 
 /-- `elabExpr` on a quantifier. -/
-partial def elabQuantExpr (cx : ExprCtx) (all : Bool) (bs : Array Binder) (body : Expr) : M (String × Ty) := do
+partial def elabQuantExpr (cx : ExprCtx) (span : Span) (all : Bool) (bs : Array Binder) (body : Expr) : M (String × Ty) := do
   -- Expanded over the bound names of listed types: the body, elaborated
   -- once, at each combination of their values
   -- (`Reqs/Lang/Quantifiers#meaning`), and so are the definedness goals
@@ -2734,7 +2832,9 @@ partial def elabQuantExpr (cx : ExprCtx) (all : Bool) (bs : Array Binder) (body 
   let outer ← takeIndexes
   let outerTables ← takeTables
   let natBefore := (← get).natApps.size
+  let mark := (← get).boundMentions.size
   let (b, tb) ← elabExpr { cx with binders := cx.binders ++ new, instances := cx.instances * combos.size } body
+  if cx.noteIndexes then lintQuant span all bs new body mark
   let kw := if all then "forall" else "exists"
   unless tb == .bool do mismatch body .bool tb (some s!"note: the body of `{kw}` is a `Bool`")
   let syms := new.filterMap fun c => if c.unbounded then none else some c.smt
@@ -3281,6 +3381,8 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (parent? : Option Expr) (segs
             discard (elabExpr { cx.at b with noteIndexes := false, pending := #[], expected? := some b.ty } sc)
             set saved
           else discard (elabExpr (cx.at b) sc)
+        else if cx.noteIndexes && n.isAtomic then
+          modify fun s => { s with boundMentions := s.boundMentions.push (span, b.smt) }
         pure (some ((b.smt, b.ty), n.components.drop 1))
       else
         let ks := (List.range n.components.length).reverse.map (· + 1)
@@ -3827,7 +3929,7 @@ partial def elabIsExpr (cx : ExprCtx) (span : Span) (scrutinee : Expr) (p : Patt
   return (test.getD "true", .bool)
 
 /-- `elabExpr` on a `let` or `where`. -/
-partial def elabLetExpr (cx : ExprCtx) (concatOk : Bool) (expected? : Option Ty) (defs : Array (Ident × Option (Array Ident) × Expr)) (body : Expr) (isWhere : Bool) : M (String × Ty) := do
+partial def elabLetExpr (cx : ExprCtx) (span : Span) (concatOk : Bool) (expected? : Option Ty) (defs : Array (Ident × Option (Array Ident) × Expr)) (body : Expr) (isWhere : Bool) : M (String × Ty) := do
   let appMark := (← get).natApps.size
   let (bcx, binds) ← elabDefinitions cx defs (!isWhere) (usedDefinitions defs body)
   let mark := (← get).indexes.size
@@ -3852,6 +3954,7 @@ partial def elabLetExpr (cx : ExprCtx) (concatOk : Bool) (expected? : Option Ty)
   -- which are asserted to be at least 0 outside it.
   modify fun s => { s with natApps := s.natApps.extract 0 appMark ++
     (s.natApps.extract appMark s.natApps.size).map (wrapLets binds) }
+  if cx.noteIndexes then lintClause span defs body isWhere
   return (wrapLets binds b, t)
 
 /-- Elaborates the definitions of a `let` (`inLet`) or `where` clause, in
@@ -3891,6 +3994,7 @@ partial def elabDefinitions (cx : ExprCtx) (defs : Array (Ident × Option (Array
       unless a == t || (a == .int && t == .nat) do err e.span (Fren.Core.definitionTypeMsg n a.show t.show last)
     let t := annot?.getD t
     liftMsg y.span ((Fren.Core.checkVarName n (some (t == .bool))).mapError (Fren.Core.membershipNote last))
+    if cx.noteIndexes then lintName .binder n y.span
     let sym := s!"let@{(← get).nLets}"
     modify fun s => { s with nLets := s.nLets + 1 }
     binds := binds.push (sym, smt)
@@ -4014,7 +4118,7 @@ def elabInst (cx : ExprCtx) (pi : PendingInst) : M CInst := do
     liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{b.name}` of `{showPath c.path}` has type `{v.ty.show}`"))
     -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
     if v.ty == .int && t == .int then modify fun s => { s with natKept := s.natKept.push (c.path, b.name) }
-    lintBools e
+    lintBools e (← hidesIn cx)
     eqs := eqs.push s!"(= {quote v.name.toString} {smt})"
   modify fun s => { s with natApps := s.natApps ++ c.natApps.map (rename w c.vars) }
   -- Each input whose type has an obligation assumes it, before the
@@ -4266,7 +4370,7 @@ def elabCompDefinitions (name : Ident) (vars : Array CVar) (instNames : Array Na
         let (smt, t) ← elabExpr dcx e
         liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{v.name}` has type `{v.ty.show}`, so its definition must too"))
         noteObligation dcx .definition e.span v.ptype smt
-        lintBools e
+        lintBools e (← hidesIn dcx)
         return (smt, (← takeIndexes).map fun (sp, g, t) => (v.name, Fren.Core.IndexPlace.prop, sp, g, t),
           (← takeTables).map fun (sp, q, g) => (v.name, Fren.Core.IndexPlace.prop, sp, q, g))
       | continue
@@ -4293,7 +4397,7 @@ def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames 
         let cx : ExprCtx := { vars, insts := instNames, place := if kind == .assume then .assume else .prop }
         let (smt, t) ← elabExpr cx e
         liftMsg e.span (Fren.Core.checkType .bool t (some "note: a constraint is a `Bool`"))
-        lintBools e
+        lintBools e (← hidesIn cx)
         lintConstant cx (match kind with | .assume => "assume" | .ensure => "ensure" | .expect => "expect" | .cover => "cover") e
         let trig ← trigger? cx e
         let place := if kind == .assume then Fren.Core.IndexPlace.assume else .prop
@@ -4553,7 +4657,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
     liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{b.name}` of `{showPath a.path}` has type `{v.ty.show}`"))
     -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
     if v.ty == .int && t == .int then modify fun s => { s with natKept := s.natKept.push (a.path, b.name) }
-    lintBools e
+    lintBools e (← hidesIn cx)
     bindings := bindings.push (v, smt, ← takeIndexes, ← takeTables)
   let (relational, counts) ← checkCounts
   let afterBindings ← get
@@ -4710,7 +4814,9 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
   let indexes := (← takeIndexes).map fun (sp, g, t) => (n, Fren.Core.IndexPlace.prop, sp, g, t)
   let tables := (← takeTables).map fun (sp, q, g) => (n, Fren.Core.IndexPlace.prop, sp, q, g)
   liftMsg body.span (Fren.Core.checkType .bool t (some "note: an expectation is a `Bool`"))
-  lintBools body
+  -- The body is in the scope of the binders over values too.
+  lintBools body (← hidesIn cx (valueBinders.flatMap (·.names) |>.map fun x =>
+    (Name.mkSimple (declaredIdent x).1.name, "the bound name")))
   lintConstant cx "expect" body
   let binders := insts.map fun i => (i.name, i.span)
   for (w, sp) in Fren.Core.unmentioned binders ((mentions body).map (·.getRoot)) do
@@ -4763,11 +4869,12 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
     lintName .constraint cn x.span
     if x.name.endsWith "?" then err x.span (Fren.Core.propNameMsg cn)
     discard takeTables
-    let (smt, t) ← elabExpr { vars, place := .prop, contract? := some (path, post, vars.map (·.name)) } e
+    let cx : ExprCtx := { vars, place := .prop, contract? := some (path, post, vars.map (·.name)) }
+    let (smt, t) ← elabExpr cx e
     liftMsg e.span (Fren.Core.checkType .bool t (some "note: a clause of a contract is a `Bool`"))
     let place := if post then Fren.Core.IndexPlace.body else .assume
     sites := sites ++ (← takeTables).map fun (sp, q, g) => (n ++ cn, place, sp, q, g)
-    lintBools e
+    lintBools e (← hidesIn cx)
     let sym := clauseSym path cn
     modify fun s => { s with clauseDefs := s.clauseDefs.push (sym, vars.map fun v => (v.name, v.ty), smt) }
     if post then k := { k with posts := k.posts.push (cn, sym) } else k := { k with pres := k.pres.push (cn, sym) }
@@ -5122,7 +5229,7 @@ partial def elabItem (item : Item) : M Unit := do
       let bodyTables ← takeTables
       let bodyObligations ← takeIndexes
       liftMsg body.span (Fren.Core.checkType r t (some s!"note: `{n}` returns `{r.show}`"))
-      lintBools body
+      lintBools body (← hidesIn cx)
       -- A parameter that only the contract mentions is used too.
       let mentioned := (mentions body ++ clauses.flatMap fun (_, _, e) => mentions e).map (·.getRoot)
       for (x, v) in Fren.Core.unmentioned (vars.map fun v => (v.name, v)) mentioned do
@@ -5178,7 +5285,7 @@ partial def elabItem (item : Item) : M Unit := do
     unless Fren.Core.constantAccepted abstract applies.isEmpty.not do
       err applies[0]! (Fren.Core.unknownConstantMsg abstract)
     liftMsg value.span (Fren.Core.checkType t t' (some s!"note: `{n}` has type `{t.show}`"))
-    lintBools value
+    lintBools value (← hidesIn cx)
     let path := module ++ n
     unless isPub do
       modify fun s => { s with items := s.items.push ({ what := .constant, path, level := s.levels.get .deadCode }, name.span) }

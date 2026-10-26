@@ -1364,11 +1364,33 @@ partial def numLits (e : Syntax) : Array Syntax :=
 partial def lastTailPos (e : Syntax) : String.Pos.Raw :=
   e.getArgs.foldl (fun acc a => max acc (lastTailPos a)) (e.getTailPos?.getD 0)
 
+/-- Whether a name declared in `cx`, or among `extra`, would hide
+something in scope (`lang::shadowing`). -/
+def hidesIn (cx : ExprCtx) (extra : Array (Name × String) := #[]) : TermElabM (String → Bool) := do
+  let table := (← getState).table
+  let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+    (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal ++ extra
+  return fun n => (table.hidden? cx.modName locals (Name.mkSimple n)).isSome
+
+/-- The names that `e` declares, without their `!`: those of its `let`s and
+`where` clauses, its bound names and its patterns' binders
+(`Core.ForallCx`). -/
+partial def declaredNames (e : Syntax) : Array String :=
+  let own :=
+    if e.isOfKind ``Lang.letExpr then e[1].getSepArgs.map fun d => Core.nameText (declaredIdent d[0]).1.getId
+    else if e.isOfKind ``Lang.quantExpr then (quantNames e).map Core.nameText
+    else if e.isOfKind ``Lang.matchExpr then
+      e[3].getSepArgs.flatMap fun arm => (topNames arm[0]).map fun b => Core.nameText (declaredIdent b).1.getId
+    else if e.isOfKind ``Lang.isExpr then (topNames e[2]).map fun b => Core.nameText (declaredIdent b).1.getId
+    else #[]
+  own ++ e.getArgs.flatMap declaredNames
+
 /-- Records the expressions in `e` that the lints that rewrite them
 (`Core.ExLint`) report, such as `Bool` expressions with a simpler form
 (`nonminimal_bool`), the operator and method lints, the arithmetic lints
-and double parentheses in it, once `e` is elaborated. -/
-def lintBools (e : Syntax) : TermElabM Unit := do
+and double parentheses in it, once `e` is elaborated, where `hides` says
+whether a name declared there would hide something in scope. -/
+def lintBools (e : Syntax) (hides : String → Bool) : TermElabM Unit := do
   let some sub := e.getSubstring? false false | return
   -- To the end of everything in `e`: the `let` that a `where` clause
   -- becomes ends where its expression does, before its definitions
@@ -1389,7 +1411,12 @@ def lintBools (e : Syntax) : TermElabM Unit := do
   let ordered? (s : Syntax) := (ordereds.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
   let help (msg : Core.Msg) := if fixable && !msg.fixes.isEmpty then #[Core.fixHelp] else #[]
   let at_ (rs : Array (Option String.Pos.Raw × Option String.Pos.Raw)) (s : Syntax) := rs.contains (s.getPos?, s.getTailPos?)
-  for r in Core.opReports src (at_ boolEqs) ordered? variant? (absEnds.contains ·.getTailPos?) (at_ mentioning) fact? node do
+  let st ← getState
+  let fcx : Core.ForallCx :=
+    { variants? := fun p => (st.enums.get? p.toName).bind fun info =>
+        if (List.range info.variants.size).all (info.payloads[·]?.all (·.isEmpty)) then some info.variants.size else none
+      declared := declaredNames e, hides, unguarded := !Core.hasGuarded (e.reprint.getD "") }
+  for r in Core.opReports src (at_ boolEqs) ordered? variant? (absEnds.contains ·.getTailPos?) (at_ mentioning) fact? fcx node do
     -- A node's position is its first token's, and its tail its last's.
     let ref := match r.last? with | some l => mkNullNode #[r.ref, l] | none => r.ref
     recordLint r.lint ref { r.msg with notes := r.msg.notes ++ help r.msg }
@@ -3442,6 +3469,59 @@ definition, the first outermost. -/
 def haves (binds : Array (Ident × Term × Term)) (t : Term) : TermElabM Term :=
   binds.foldrM (fun (x, ty, d) acc => `(have $x : $ty := $d; $acc)) t
 
+/-- The range of `stx` in the characters of `str`, the text it is written
+in, as the `fren` command counts it. -/
+def charRange (str : String) (stx : Syntax) : Core.Range := charRangeAt str (stx.getPos?, stx.getTailPos?)
+where
+  /-- The range from `p` to `q`, in characters. -/
+  charRangeAt (str : String) : Option String.Pos.Raw × Option String.Pos.Raw → Core.Range
+    | (p, q) =>
+      let off (p : Option String.Pos.Raw) := (String.Pos.Raw.extract str 0 (p.getD 0)).length
+      { start := off p, stop := off q }
+
+/-- The text that `stx` is written in, as characters. -/
+def sourceOf (stx : Syntax) : String :=
+  match stx.getSubstring? false false with
+  | some sub => sub.str
+  | none => ""
+
+/-- Records the lints of the `let` or `where` clause `e`, of the
+definitions `defs`: its names that neither the body nor a later definition
+mentions (`unused_variables`), `let_and_return` and `redundant_locals`
+(`lint::let_and_return`, `lint::redundant_locals`), as the `fren` command
+reports them. -/
+def lintClause (e : Syntax) (defs : Array Syntax) (isWhere : Bool) : TermElabM Unit := do
+  let body := e[3]
+  let names := defs.map fun d => (declaredIdent d[0]).1.getId
+  let used := (Core.clauseMentions names (defs.map (pathMentions ·[3])) (pathMentions body) true).2
+  for d in defs, n in names, u in used do
+    unless u do recordLint .unusedVariables (declaredIdent d[0]).1 (Core.unusedDefinitionMsg n)
+  let fixable := (← getLocal).inMarkdown
+  let help (m : Core.Msg) := if fixable && !m.fixes.isEmpty then m.note Core.fixHelp else m
+  -- A path, as an expression, is a node around the path.
+  let ownName (x : Syntax) (n : Name) : Bool :=
+    let x := unparen x
+    let x := if x.getNumArgs == 1 then x[0] else x
+    x.isOfKind ``Lang.fren_path && (match pathSegs x with | #[y] => y.getId == n | _ => false)
+  let bodyIsLast := defs.size > 0 && ownName body names.back!
+  let redundant := (defs.zip names).map fun (d, n) =>
+    Core.redundantLocal (declaredIdent d[0]).2 (!d[1].isNone) (ownName d[3] n)
+  unless (defs.size > 0 && Core.letAndReturn bodyIsLast (!defs.back![1].isNone)) || redundant.contains true do return
+  -- The clause's text, from `let`, or from its body to its last definition.
+  let str := sourceOf body
+  let cs := str.toList.toArray
+  let clause : Core.Range := if isWhere then { start := (charRange str body).start, stop := (charRange str defs.back!).stop }
+    else charRange str e
+  let commented := Core.hasComment (Core.textOf cs clause)
+  let ranges := defs.map fun d => ({ start := (charRange str d).start, stop := (charRange str d[3]).stop } : Core.Range)
+  if defs.size > 0 && Core.letAndReturn bodyIsLast (!defs.back![1].isNone) then
+    let earlier? := if defs.size < 2 then none
+      else some (Core.textOf cs { start := ranges[0]!.start, stop := ranges[defs.size - 2]!.stop })
+    let fixed := Core.letAndReturnFixed isWhere earlier? (Core.textOf cs (charRange str defs.back![3]))
+    recordLint .letAndReturn (unparen body) (help (Core.letAndReturnMsg names.back! isWhere clause fixed commented))
+  for d in defs, n in names, r in redundant do
+    if r then recordLint .redundantLocals d[0] (Core.redundantLocalMsg n)
+
 open Lang in
 /-- Elaborates the definitions `defs` of a `let` (`inLet`) or `where`
 clause, from the `k`th, each in the scope of the earlier ones, and runs
@@ -3489,6 +3569,7 @@ partial def withDefinitions (toTerm : ExprCtx → Syntax → TermElabM Term) (cx
     | none => pure ty
   let t ← if widens then widenTerm t else pure t
   liftMsg x ((Core.checkVarName n (some (ty.isConstOf ``Bool))).mapError (Core.membershipNote last))
+  if cx.noteIndexes then lintName .binder n x
   -- Named apart from every local around it, so that putting a definition's
   -- indexes under the `have`s of its uses captures nothing.
   let lname := Name.mkSimple s!"{Core.nameText n}@{cx.binders.size}"
@@ -3517,6 +3598,7 @@ def letTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
       unless inLet && e[3].isOfKind ``Lang.memberExpr do throw ex
       let text ← msg.toString
       throw (.error ref m!"{text}{if (text.splitOn "\n\n").length > 1 then "\n" else "\n\n"}{Core.membershipNoteText}")
+    if cx.noteIndexes then lintClause e defs !inLet
     -- The indexes of the body, and of the names it mentions, are within the
     -- `have`s.
     let xs := (← getLocal).indexes
@@ -3708,6 +3790,8 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
             discard (toTerm { cx.at b with noteIndexes := false, pending := #[], emptyOk := true } sc)
             saved.restore
           else discard (toTerm (cx.at b) sc)
+        else if cx.noteIndexes && n.isAtomic then
+          modifyLocal fun l => { l with boundMentions := l.boundMentions.push ((id.getPos?, id.getTailPos?), b.outer) }
         pure (some ((b.term, b.type), n.components.drop 1))
       else
         let ks := (List.range n.components.length).reverse.map (· + 1)
@@ -4013,6 +4097,48 @@ def domainOf (all : Bool) (names : Array Name) (body : Syntax) (k : Nat) (nat : 
   let mentions (e : Syntax) : List Nat := (List.range names.size).filter fun j => namesBound names[j]! e
   (Core.boundDomain alone mentions (guardConjuncts all body) k nat).1
 
+/-- Records the lints of the quantifier `e`, a `forall` if `all`, whose
+binders `binders` declare `ids`, with their types `bound`, of `sizes`
+values each, and whose body is `body`: its bound names that the body does
+not mention (`unused_variables`), and `trivial_quantifier`
+(`lint::trivial_quantifier`), whose fix writes the value of each bound
+name in place of its mentions recorded since `mark`, of the binders from
+`outer`. A global expectation's binders over values, whose `e` is its
+body, have no `forall` of their own, and no fix. -/
+def lintQuant (e : Syntax) (all : Bool) (binders ids : Array Syntax) (bound : Array (Name × Expr)) (sizes : Array Nat)
+    (body : Syntax) (outer mark : Nat) : TermElabM Unit := do
+  let mentioned := (pathMentions body).map (·.getRoot)
+  for x in ids, (bn, _) in bound do
+    unless mentioned.contains bn do recordLint .unusedVariables (declaredIdent x).1 (Core.unusedBoundMsg bn all)
+  unless Core.trivialQuantifier (sizes.filter (· == 1)).size do return
+  let some i := sizes.idxOf? 1 | return
+  -- The binder of each bound name.
+  let bs := binders.flatMap fun b => b[1].getArgs.map fun _ => b
+  let st ← getState
+  -- The value of a type of one value, if it is a variant without a payload.
+  let values := bound.mapIdx fun k (_, ty) => do
+    let info ← ty.constName?.bind st.enumOfDecl?
+    let #[v] := info.variants | none
+    guard (info.payloads[0]?.all (·.isEmpty))
+    pure s!"{exactText bs[k]![3]}::{v}"
+  let str := sourceOf body
+  let cs := str.toList.toArray
+  let quant := charRange str e
+  let own := e.getPos? != body.getPos?
+  let recorded := (← getLocal).boundMentions.extract mark
+  let fixed? : Option String := do
+    -- A name the body declares again would hide nothing once the quantifier is gone.
+    let redeclared := bound.any fun (bn, _) => (declaredNames body).contains (Core.nameText bn)
+    guard (Core.trivialQuantifierFixed (sizes.filter (· == 1)).size sizes.size (values.all Option.isSome) (!own)
+      redeclared)
+    guard (!Core.hasComment (Core.textOf cs quant))
+    let vs ← values.mapM id
+    let ms := recorded.filterMap fun (r, k) =>
+      if outer ≤ k && k < outer + vs.size then some (charRange.charRangeAt str r, vs[k - outer]!) else none
+    pure (Core.substituted cs (charRange str body) ms)
+  let msg := Core.trivialQuantifierMsg all bound[i]!.1 (exactText bs[i]![3]) values[i]! quant fixed?
+  recordLint .trivialQuantifier bs[i]! (if (← getLocal).inMarkdown && fixed?.isSome then msg.note Core.fixHelp else msg)
+
 open Lang in
 /-- `forall (x: T), e`, or `exists` unless `all`, with the binders
 `binders` and the body `body`: expanded over the bound names of listed
@@ -4075,7 +4201,12 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let outer := (← getLocal).indexes
     let outerTables := (← getLocal).tables
     modifyLocal fun l => { l with indexes := #[], tables := #[] }
+    let mark := (← getLocal).boundMentions.size
     let t ← toTerm { cx with binders := cx.binders ++ new, natOk := false, instances := cx.instances * combos.size } body
+    -- Each bound name's number of values, 0 for a type that is not listed.
+    if cx.noteIndexes then
+      lintQuant e all binders ids (bound.map fun (bn, ty, _, _) => (bn, ty))
+        (bound.map fun (_, _, _, vs?) => (vs?.map (·.size)).getD 0) body cx.binders.size mark
     checkTermType body t .bool (some s!"note: the body of `{if all then "forall" else "exists"}` is a `Bool`")
     let b ← elabProp t
     let inner ← (← getLocal).indexes.mapM fun (ref, g) => return (ref, ← elabProp g)
@@ -4511,7 +4642,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
           some <$> mkLambdaFVars (fvs.push x) (body.replace fun t => if t == app then some x else none)
         | _, _ => pure none
       return (← mkLambdaFVars fvs body, ofValue?, tables)
-    lintBools e
+    lintBools e (← hidesIn { modName, vars, insts := #[], place := .prop })
     let uses ← usesOf #[lam]
     let k : ClauseInfo := { name := cn, decl := decl ++ cn, uses }
     addUsesDef uses k.decl lam
@@ -4609,7 +4740,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
           pure (mkApp2 (mkConst ``Decidable.decide) p inst)
         else elabProp t result
       return (← mkLambdaFVars fvs value, tables)
-    lintBools body
+    lintBools body (← hidesIn { modName, vars, insts := #[], place := .prop, selfFn := some n })
     -- A parameter that only the contract mentions is used too.
     let mentioned := (pathMentions body ++ clauses.flatMap fun c => pathMentions (withWhere c[3] c[4])).map (·.getRoot)
     for (x, v) in Core.unmentioned (vars.map fun v => (v.name, v)) mentioned do
@@ -4691,7 +4822,7 @@ def elabBindings (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) : TermElab
     -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
     if cx.vars[idx]!.type.isConstOf ``Int && (← frenTypeOf? t) == some .int then
       modifyLocal fun l => { l with natKept := l.natKept.push (pi.comp.path, Core.nameText x.getId) }
-    unless b[1].isNone do lintBools b[1][1]
+    unless b[1].isNone do lintBools b[1][1] (← hidesIn cx)
     lintRedundant b false
     let fv := fvs[idx]!
     eqs := eqs.push (← mkEq fv (← elabProp t (← inferType fv)))
@@ -4990,7 +5121,7 @@ def elabCompDefinitions (scope : Name) (vars : Array Var) (pending : Array Pendi
         noteObligation dcx .definition e v.ptype t
         elabProp t v.type
       indexes := indexes ++ (← takeIndexes fvs).map fun (r, q, g) => (v.name, .prop, r, q, g)
-      lintBools e
+      lintBools e (← hidesIn { modName := scope, vars, insts := instNames, place := .prop })
       let value := value.replaceFVars defnFvs (values.map (·.2))
       defs := defs.push (declBase ++ `def ++ v.name, ← mkEq fvs[idx]! value)
       values := values.push (v.name, value)
@@ -5030,7 +5161,7 @@ def elabCompConstraints (scope : Name) (members : Array Syntax) (vars : Array Va
       let body := subst body
       let place : Core.IndexPlace := if kind == .assume then .assume else .prop
       indexes := indexes ++ (← takeIndexes fvs subst).map fun (r, q, g) => (x.getId, place, r, q, g)
-      lintBools e
+      lintBools e (← hidesIn cx)
       lintConstant cx kind.keyword e
       let trig ← triggerOf cx e
       let trigger? ← trig.mapM fun (t, _) => do mkLambdaFVars fvs (← elabProp t)
@@ -5359,7 +5490,7 @@ end
     let applies ← applications { modName, vars := #[], insts := #[], place := .prop } valueStx
     unless Core.constantAccepted abstract !applies.isEmpty do
       throwErrorAt applies[0]! (Core.unknownConstantMsg abstract).text
-    lintBools valueStx
+    lintBools valueStx (← hidesIn { modName, vars := #[], insts := #[], place := .prop })
     addDecl (.defnDecl { name := decl, levelParams := [], type, value, hints := .abbrev, safety := .safe })
     setReducibleAttribute decl
     record (.item { item := { kind := .constItem, path, isPub, owner := modName }, ref := nameStx })
@@ -5432,7 +5563,9 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     checkDeclared body t (mkConst ``Bool) fun _ => "note: an expectation is a `Bool`"
     let e ← elabProp t
     let indexes := (← takeIndexes fvs).map fun (r, q, g) => (n, Core.IndexPlace.prop, r, q, g)
-    lintBools body
+    -- The body is in the scope of the binders over values too.
+    lintBools body (← hidesIn cx (valueBinders.flatMap (·[1].getArgs) |>.map fun x =>
+      ((declaredIdent x).1.getId, "the bound name")))
     lintConstant cx "expect" body
     for (w, ref) in Core.unmentioned (binders.map fun b => (b.name, b.ref)) ((pathMentions body).map (·.getRoot)) do
       recordLint .unusedVariables ref (Core.unusedVariableMsg w true false)
@@ -5609,7 +5742,7 @@ and the solver is asked nothing. -/
         -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
         if v.type.isConstOf ``Int && (← frenTypeOf? t) == some .int then
           modifyLocal fun l => { l with natKept := l.natKept.push (a.path, Core.nameText x.getId) }
-        unless b[1].isNone do lintBools b[1][1]
+        unless b[1].isNone do lintBools b[1][1] (← hidesIn cx)
         let e ← mkLambdaFVars cfvs (← elabProp t v.type)
         return (v, e, ← takeIndexes cfvs)
     let (relational, counts) ← checkCounts

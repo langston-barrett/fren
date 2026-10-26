@@ -1,0 +1,2 @@
+-- A definition that names again what it hides.
+comp c { in x: Int pub out y: Int ensure r: y = x + 1 where x! := x }

@@ -634,6 +634,26 @@ register_option fren.lint.manual_table : String := {
   descr := "the level of the lint `manual_table`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.let_and_return : String := {
+  defValue := "warn"
+  descr := "the level of the lint `let_and_return`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.redundant_locals : String := {
+  defValue := "warn"
+  descr := "the level of the lint `redundant_locals`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.manual_forall : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_forall`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.trivial_quantifier : String := {
+  defValue := "warn"
+  descr := "the level of the lint `trivial_quantifier`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"

@@ -11,6 +11,7 @@ comp c {
     --~^ warning: write `(let k := 2 in x > k)`
     ensure r2: p? iff (let b? := a? in b?) = true
     --~^ warning: write `(let b? := a? in b?)`
+    --~^^ warning: this `let` only gives back its last definition
     ensure r3: q? iff (let k := 2 in not (x < k)) and a?
     --~^ warning: write `x >= k`
 }

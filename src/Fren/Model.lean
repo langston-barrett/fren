@@ -634,6 +634,9 @@ structure LocalState where
   /-- Where the orderings in it are, by the type they compare, for the
   lints of integers. -/
   ordereds : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × Core.Ordered) := #[]
+  /-- Where the bound names of quantifiers are mentioned, each with the
+  number of binders outside the bound name, for `trivial_quantifier`. -/
+  boundMentions : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × Nat) := #[]
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false

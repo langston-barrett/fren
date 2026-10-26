@@ -118,6 +118,7 @@ comp shadows_explicitly {
 comp not_bool {
     pub out ok?
     ensure r: ok? iff (forall (m: Method), 1)  --~ error: type mismatch: expected `Bool`, found `Int`
+    --~^ warning: unused bound name `m`
 }
 
 --@ exit: 2

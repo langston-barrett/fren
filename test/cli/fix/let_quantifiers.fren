@@ -1,0 +1,32 @@
+--@ args: fix --check
+-- `fren fix` on `let`, `where` and quantifiers: it writes a definition in
+-- place of the name it returns, removes a definition that names what it
+-- hides, writes a quantifier for operands at each variant, and the body of a
+-- quantifier over one value.
+enum Mode { Heat, Cool, Off }
+enum Solo { Only }
+
+pub comp c {
+    in x: Int
+    in s: Set(Mode)
+    in t: Set(Solo)
+    in mode: Mode
+    pub out a: Int
+    pub out b: Int
+    pub out p?
+    pub out q?
+    pub out w?
+    pub out z?
+    pub det out d: Int := m where k := 2, m := x * k
+    pub det out e?
+        := Mode::Heat in s or Mode::Cool in s or Mode::Off in s
+
+    ensure r1: a = (let k := x + 1 in k) * 2
+    ensure r2: b = (let x! := x, k := 2 in x * k)
+    ensure r3: p? iff mode in s and Mode::Heat in s and Mode::Cool in s and Mode::Off in s
+    ensure r4: q? iff (forall (u: Solo), u in t and x > 0)
+    ensure r5: w? iff (exists (u: Solo), u in t) or p?
+    -- A comment would be lost, so these are left.
+    ensure r6: z? iff (let k := x -- the input
+        in k > 0)
+}

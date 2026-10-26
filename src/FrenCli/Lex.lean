@@ -49,11 +49,8 @@ structure Token where
   nlBefore : Bool := false
   deriving Inhabited
 
-/-- Reserved where `Fren.Lang` is open (plus Lean's `in`, `if`, `then`,
-`else`, `match`, `forall`, `exists`, `with`, `let` and `where`): `lang::reserved_word`. Other Fren keywords
-(`when`, `out`, `ensure`, ...) are contextual and lexed as identifiers. -/
-def reserved : List String :=
-  ["mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join", "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "refine", "with", "let", "where", "table"]
+/-- The reserved words (`Fren.Core.reservedWords`): `lang::reserved_word`. -/
+def reserved : List String := Fren.Core.reservedWords
 
 /-- The punctuators (`Reqs/Lang/Lexical#punctuators`), longest first.
 Includes tokens Fren doesn't use but Lean lexes (`==`, `&&`, `||`, `<-`), so

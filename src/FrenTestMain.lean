@@ -237,7 +237,7 @@ each module is declared before it is used. -/
 def ownSpecFiles : Array String :=
   #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Let", "Lang/Quantifiers", "Lang/Expressions",
     "Lang/Modules", "Lang/Instances", "Check", "View", "Cli", "Lint", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style",
-    "Lint/Style/Comparisons", "Lint/Style/Naturals", "Lint/Style/Records", "Lint/Style/Matches", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches", "Lint/Complexity/Patterns", "Lint/Complexity/Integers", "Lint/Complexity/Updates",
+    "Lint/Style/Comparisons", "Lint/Style/Naturals", "Lint/Style/Records", "Lint/Style/Matches", "Lint/Style/Let", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches", "Lint/Complexity/Patterns", "Lint/Complexity/Integers", "Lint/Complexity/Updates",
     "Lint/Suspicious", "Lint/Suspicious/Expressions", "Lint/Suspicious/Methods", "Lint/Suspicious/Literals",
     "Lint/Suspicious/Comparisons", "Lint/Suspicious/Integers", "Lint/Pedantic", "Lint/Pedantic/Matches", "Lint/Pedantic/Records", "Lint/Pedantic/Text", "Lint/Pedantic/Comparisons", "Lint/Restriction", "Lint/Decidability", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Generated", "Trace"].map fun r => s!"src/Reqs/{r}.md"
 
