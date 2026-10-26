@@ -925,6 +925,26 @@ impl specialize: lang::specialize for (p : Fren.Core.Pat) (c : Fren.Core.Ctor) (
   simp only [Fren.Core.specializeHead]
   cases p.headKind <;> cases p.sameCtor c <;> simp [fren_spec, toHeadKind]
 
+/-- `some ()` where `b` holds: a step of overlap read as a decision. -/
+def someIf (b : Bool) : Option Unit := if b then some () else none
+
+-- For every step of `Pat.overlapWit?`, which calls `overlapStep` with the
+-- smaller problems as functions; its decision is whether it has a witness.
+impl overlap: lang::overlap for (f g : Fren.Core.HeadKind) (same args fm gm alt : Bool) {
+  first := toHeadKind f,
+  second := toHeadKind g,
+  same? := same,
+  args_overlap? := args,
+  first_matches? := fm,
+  second_matches? := gm,
+  some_alternative? := alt,
+  overlap? := (Fren.Core.overlapStep f g same (fun _ => someIf args) (fun _ => someIf fm) (fun _ => someIf gm)
+    (fun _ => someIf alt)).isSome,
+} by
+  intro f g same args fm gm alt _
+  cases f <;> cases g <;> cases same <;> cases args <;> cases fm <;> cases gm <;> cases alt <;>
+    simp [fren_spec, toHeadKind, Fren.Core.overlapStep, someIf]
+
 def toColumnType : Fren.Core.ColumnKind → lang.ColumnType
   | .enumeration => .EnumType
   | .boolean => .BoolType
@@ -1505,6 +1525,14 @@ theorem find?_eq_findIdx? (l : List α) (p : α → Bool) : l.find? p = (l.findI
     · simp [h, List.findIdx?_cons, ih]
       cases l.findIdx? p <;> simp
 
+theorem firstTakenIdx_indexOf (arms : List (Bool × Bool × Int)) :
+    firstTakenIdx arms = Fren.Seq.indexOf (Fren.Seq.ofList (arms.map fun a => toArmAt (a.1, a.2.1)))
+      (Fren.Seq.unit lang.ArmAt.Taken) 0 := by
+  rw [indexOf_single, firstTakenIdx, List.findIdx?_map]
+  congr 3
+  funext a
+  rcases a with ⟨_ | _, _ | _, _⟩ <;> rfl
+
 impl guarded_match: lang::guarded_match for (arms : List (Bool × Bool × Int)) (k : Int) {
   arms := Fren.Seq.ofList (arms.map fun a => toArmAt (a.1, a.2.1)),
   bodies := Fren.Seq.ofList (arms.map (·.2.2)),
@@ -1514,11 +1542,7 @@ impl guarded_match: lang::guarded_match for (arms : List (Bool × Bool × Int)) 
 } by
   intro arms k _
   simp only [fren_spec]
-  refine ⟨?_, fun h0 => ?_⟩
-  · rw [indexOf_single, firstTakenIdx, List.findIdx?_map]
-    congr 3
-    funext a
-    rcases a with ⟨_ | _, _ | _, _⟩ <;> rfl
+  refine ⟨firstTakenIdx_indexOf arms, fun h0 => ?_⟩
   · simp only [firstTakenIdx, firstCase_find, find?_eq_findIdx?]
     cases hi : arms.findIdx? (fun a => a.1 && a.2.1) with
     | none => simp [firstTakenIdx, hi] at h0
@@ -1526,5 +1550,97 @@ impl guarded_match: lang::guarded_match for (arms : List (Bool × Bool × Int)) 
       obtain ⟨hlt, _, _⟩ := List.findIdx?_eq_some_iff_getElem.1 hi
       rw [Fren.Seq.nth_of_lt _ _ (by simp) (by simpa using hlt)]
       simp [List.getElem?_eq_getElem hlt]
+
+/-! ## Tables over a scrutinee -/
+
+-- `checkTableArms` rejects a pair, or asks about it, by `tableArmPair`.
+impl table_arm_pair: lang::table_arm_pair for (o g w : Bool) {
+  overlap? := o,
+  guarded? := g,
+  otherwise? := w,
+  rejected? := (Fren.Core.tableArmPair o g w).1,
+  asked? := (Fren.Core.tableArmPair o g w).2,
+} by
+  intro o g w _
+  cases o <;> cases g <;> cases w <;> simp [fren_spec, Fren.Core.tableArmPair]
+
+/-- The arms of a table over a scrutinee as the evaluator tries them, the
+`_` arm last, whose pattern matches and which has no guard. -/
+def evalArms (arms : List (Bool × Bool × Int)) (otherwise : Option Int) : List (Bool × Bool × Int) :=
+  arms ++ otherwise.toList.map fun v => (true, true, v)
+
+/-- The value that the evaluator gives a table over a scrutinee: that of
+its first arm taken (`Fren.Core.firstCase`), as of the `match` it means. -/
+def evalTable (arms : List (Bool × Bool × Int)) (otherwise : Option Int) : Int :=
+  ((Fren.Core.firstCase (evalArms arms otherwise) fun a => some (if a.1 && a.2.1 then some a.2.2 else none)).join).getD 0
+
+theorem evalTable_first (arms : List (Bool × Bool × Int)) (otherwise : Option Int) (i : Nat)
+    (hi : arms.findIdx? (fun a => a.1 && a.2.1) = some i) :
+    evalTable arms otherwise = (arms[i]?.map (·.2.2)).getD 0 := by
+  obtain ⟨hlt, hp, _⟩ := List.findIdx?_eq_some_iff_getElem.1 hi
+  have hf : (evalArms arms otherwise).find? (fun a => a.1 && a.2.1) = some arms[i] := by
+    rw [evalArms, List.find?_append, find?_eq_findIdx?, hi]
+    simp [List.getElem?_eq_getElem hlt]
+  simp only [evalTable, firstCase_find, hf, List.getElem?_eq_getElem hlt]
+  simp
+
+theorem evalTable_none (arms : List (Bool × Bool × Int)) (v : Int)
+    (hi : arms.findIdx? (fun a => a.1 && a.2.1) = none) : evalTable arms (some v) = v := by
+  have hn : arms.find? (fun a => a.1 && a.2.1) = none := by
+    rw [find?_eq_findIdx?, hi]; rfl
+  rw [evalTable, firstCase_find, evalArms, List.find?_append, hn]
+  simp
+
+theorem evalTable_held (arms : List (Bool × Bool × Int)) (otherwise : Option Int) (h0 : firstTakenIdx arms ≥ 0) :
+    evalTable arms otherwise = (Fren.Seq.ofList (arms.map (·.2.2))).nth (firstTakenIdx arms) := by
+  cases hi : arms.findIdx? (fun a => a.1 && a.2.1) with
+  | none => simp [firstTakenIdx, hi] at h0
+  | some i =>
+    obtain ⟨hlt, _, _⟩ := List.findIdx?_eq_some_iff_getElem.1 hi
+    rw [evalTable_first arms otherwise i hi, firstTakenIdx, hi,
+      Fren.Seq.nth_of_lt _ _ (by simp) (by simpa using hlt)]
+    simp [List.getElem?_eq_getElem hlt]
+
+theorem evalTable_otherwise (arms : List (Bool × Bool × Int)) (otherwise : Option Int)
+    (h1 : firstTakenIdx arms = -1) (h2 : Fren.Seq.ofList otherwise.toList ≠ ∅) :
+    evalTable arms otherwise = (Fren.Seq.ofList otherwise.toList).nth 0 := by
+  cases otherwise with
+  | none => exact absurd rfl h2
+  | some v =>
+    have hi : arms.findIdx? (fun a => a.1 && a.2.1) = none := by
+      cases h : arms.findIdx? (fun a => a.1 && a.2.1) with
+      | none => rfl
+      | some i => simp [firstTakenIdx, h] at h1
+    rw [evalTable_none arms v hi, Fren.Seq.nth_of_lt _ _ (by simp) (by simp)]
+    rfl
+
+impl table_eval: lang::table_eval for (arms : List (Bool × Bool × Int)) (otherwise : Option Int) {
+  arms := Fren.Seq.ofList (arms.map fun a => toArmAt (a.1, a.2.1)),
+  values := Fren.Seq.ofList (arms.map (·.2.2)),
+  otherwise := Fren.Seq.ofList otherwise.toList,
+  first := firstTakenIdx arms,
+  value := evalTable arms otherwise,
+} by
+  intro arms otherwise _
+  simp only [fren_spec]
+  exact ⟨firstTakenIdx_indexOf arms, evalTable_held arms otherwise, fun ⟨h1, h2⟩ => evalTable_otherwise arms otherwise h1 h2⟩
+
+-- The meaning of a table over a scrutinee, as the evaluator gives it: the
+-- value of its first arm taken, which is the one where they are disjoint.
+impl table_match: lang::table_match for (arms : List (Bool × Bool × Int)) (otherwise : Option Int) (k : Int) {
+  arms := Fren.Seq.ofList (arms.map fun a => toArmAt (a.1, a.2.1)),
+  values := Fren.Seq.ofList (arms.map (·.2.2)),
+  otherwise := Fren.Seq.ofList otherwise.toList,
+  k := k,
+  one := firstTakenIdx arms,
+  disjoint? := decide (Fren.Seq.indexOf (Fren.Seq.ofList (arms.map fun a => toArmAt (a.1, a.2.1)))
+    (Fren.Seq.unit lang.ArmAt.Taken) (firstTakenIdx arms + 1) = -1),
+  value := evalTable arms otherwise,
+} by
+  intro arms otherwise k _
+  simp only [fren_spec]
+  rw [← firstTakenIdx_indexOf arms]
+  exact ⟨⟨rfl, rfl⟩, fun ⟨_, h0⟩ => evalTable_held arms otherwise h0,
+    fun ⟨h1, h2⟩ => evalTable_otherwise arms otherwise h1 h2⟩
 
 end Fren.Impls

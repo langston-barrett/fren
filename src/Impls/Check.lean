@@ -686,6 +686,51 @@ impl reach_hypotheses: check::reach_hypotheses for (ns : List Lean.Name) (p : Le
     by_cases he : ns[k.toNat] = p <;> simp [he, hk0, hk1]
   · simp [hk]
 
+/-! ## The goal of the disjointness of two cases -/
+
+/-- What a case does, from whether its pattern matches and whether its
+guard holds (`check::ArmAt`). -/
+def caseAt : Bool × Bool → check.ArmAt
+  | (false, _) => .NoMatch
+  | (true, false) => .GuardFails
+  | (true, true) => .Taken
+
+/-- Whether the indexes in a case's guard are in range (`check::Indexes`). -/
+def indexesAt (d : Bool) : check.Indexes := if d then .Defined else .Undefined
+
+/-- The goal that `disjointGoals` builds for cases `i` and `j`, over
+`Bool`s: each case taken where its pattern matches and its guard holds,
+with its guard's indexes in range where the third says. -/
+def disjointGoalOf (cs : List (Bool × Bool × Bool)) (i j : Nat) : Bool :=
+  ((Fren.Core.disjointGoals .tableMatch (· && ·) (!·) true (cs.map fun c => some (c.1 && c.2.1)).toArray
+    (cs.map fun c => some c.2.2).toArray #[(i, j)])[0]?.map (·.2)).getD true
+
+-- Both front ends and the evaluator build the goal of each pair with
+-- `disjointGoals` (`check::disjoint_question`).
+impl disjoint_question: check::disjoint_question for (cs : List (Bool × Bool × Bool)) (i j : Int) {
+  arms := Fren.Seq.ofList (cs.map fun c => caseAt (c.1, c.2.1)),
+  defined := Fren.Seq.ofList (cs.map fun c => indexesAt c.2.2),
+  i := i,
+  j := j,
+  goal? := disjointGoalOf cs i.toNat j.toNat,
+} by
+  intro cs i j hA
+  have hl : (Fren.Seq.ofList (cs.map fun c => indexesAt c.2.2)).len = (cs.length : Int) := by
+    simp [Fren.Seq.len_eq]
+  simp only [check.disjoint_question.assumes, check.disjoint_question.assume.pair] at hA
+  have hl' : (Fren.Seq.ofList (cs.map fun c => caseAt (c.1, c.2.1))).len = (cs.length : Int) := by
+    simp [Fren.Seq.len_eq]
+  rw [hl, hl'] at hA
+  simp only [fren_spec]
+  have hi : i.toNat < cs.length := by omega
+  have hj : j.toNat < cs.length := by omega
+  rw [Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega), Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega),
+    Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega), Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega)]
+  simp only [disjointGoalOf, Fren.Core.disjointGoals, Fren.Core.pairGoal]
+  simp [List.getElem?_eq_getElem hi, List.getElem?_eq_getElem hj]
+  rcases cs[i.toNat] with ⟨_ | _, _ | _, _ | _⟩ <;> rcases cs[j.toNat] with ⟨_ | _, _ | _, _ | _⟩ <;>
+    simp [caseAt, indexesAt]
+
 -- The two families of verdicts: `expectVerdict` for the checks that prove,
 -- `vacuityVerdict` for those that ask whether something can hold.
 impl proved: check::proved for (q : Answer) {

@@ -513,25 +513,47 @@ theorem checkDefinedness_fail (site : IndexSite F) (h : (checkDefinedness b c si
 theorem TableGoal.kind_substitutes (g : TableGoal) : g.kind.substitutes = false := by
   cases g <;> rfl
 
+/-- The hypotheses of a question about a table hold wherever it is
+evaluated: they are those of its place, or, for disjointness, some of
+them (`Comp.tableHyps`). -/
+theorem Sound.holds_tableHyps (t : TableSite F) {ρ : Env Val} (ht : s.Typed ρ) (hρ : s.AtSite t.site ρ) :
+    s.Holds (c.tableHyps b t) ρ := by
+  have hall := (s.holds_site t.goal.kind_substitutes t.site ht).2 hρ
+  unfold Comp.tableHyps
+  split
+  · rename_i hk
+    have hk : t.goal.kind = .disjointness := by simpa using hk
+    unfold Comp.caseHyps
+    rw [← hk]
+    exact fun h hm => hall h (Array.mem_filter.1 hm).1
+  · exact hall
+
 /-- A `pass` means that what the question about the table's rows asks
 holds wherever the table is evaluated. -/
 theorem checkTable_pass (t : TableSite F) (h : (checkTable b c t).run.verdict = .pass) :
     ∀ ρ, s.Typed ρ → s.AtSite t.site ρ → s.den t.site.goal ρ := by
   unfold checkTable at h
-  cases hq : b.query (c.defEqs t.goal.kind ++ c.siteHyps b t.site) t.site.goal true <;>
+  cases hq : b.query (c.tableHyps b t) t.site.goal true <;>
     simp [hq, expectVerdict, Outcome.answer] at h
-  exact fun ρ ht hρ => s.query_unsat hq ρ ht ((s.holds_site t.goal.kind_substitutes t.site ht).2 hρ)
+  exact fun ρ ht hρ => s.query_unsat hq ρ ht (s.holds_tableHyps t ht hρ)
 
-/-- A `fail` is an environment where the table is evaluated and what the
-question asks is false, which the counterexample shows. -/
+/-- A `fail` is an environment where the hypotheses of the question hold
+(`Comp.tableHyps`), the table is evaluated there unless the question is
+about disjointness, which leaves out the constraint that the table is in,
+and what the question asks is false, which the counterexample shows. -/
 theorem checkTable_fail (t : TableSite F) (h : (checkTable b c t).run.verdict = .fail) :
-    ∃ ρ model, s.Typed ρ ∧ s.AtSite t.site ρ ∧ ¬s.den t.site.goal ρ ∧ s.Agrees ρ model ∧
+    ∃ ρ model, s.Typed ρ ∧ s.Holds (c.tableHyps b t) ρ ∧ (t.goal.kind ≠ .disjointness → s.AtSite t.site ρ) ∧
+      ¬s.den t.site.goal ρ ∧ s.Agrees ρ model ∧
       (checkTable b c t).run.detail = .counterexample (renderModel b c.vars model (·.isPub)).run := by
   unfold checkTable at h ⊢
-  cases hq : b.query (c.defEqs t.goal.kind ++ c.siteHyps b t.site) t.site.goal true <;>
+  cases hq : b.query (c.tableHyps b t) t.site.goal true <;>
     simp [hq, expectVerdict, Outcome.answer] at h ⊢
   obtain ⟨ρ, ht, hρ, hg, hm⟩ := s.query_sat hq
-  exact ⟨ρ, ht, (s.holds_site t.goal.kind_substitutes t.site ht).1 hρ, hg, _, hm, rfl⟩
+  refine ⟨ρ, ht, hρ, fun hk => ?_, hg, _, hm, rfl⟩
+  have : c.tableHyps b t = c.defEqs t.goal.kind ++ c.siteHyps b t.site := by
+    simp [Comp.tableHyps, hk]
+  rw [this] at hρ
+  exact (s.holds_site t.goal.kind_substitutes t.site ht).1 hρ
 
 /-- A `pass` of `reachability` is an environment where the hypotheses of
 the case's place hold, but perhaps not the constraint it is in

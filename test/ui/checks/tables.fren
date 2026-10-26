@@ -124,5 +124,18 @@ expect positive: forall (c: counter), table { c.m > 0 => true, c.n < -1 => true 
 --~^ error: a table in `positive` may have no row that holds
 --~^^ error: expectation `positive` does not hold
 
---@ summary: 52 passed, 19 failed, 0 inconclusive, 0 redundant
+-- Disjointness leaves out the constraint that the table is in, as
+-- reachability does: `r` rules out `y > 0`, where both rows hold, only
+-- through the table's own value.
+comp enclosing {
+    pub out y: Int
+
+    ensure r: y = table {
+        y > 0 => 0,
+        y >= 0 => 0,   --~ error: rows 1 and 2 of a table in `enclosing::r` may both hold
+        _ => -1,
+    }
+}
+
+--@ summary: 57 passed, 20 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

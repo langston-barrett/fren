@@ -1,0 +1,14 @@
+error[F0636]: arms 2 and 3 of a table in `level::r` may both be taken
+  --> test/cli/results/f0636_arms_overlap.fren:12:9
+   |
+12 |         Mode::On(x) if x <= 0 => 1,
+   |         ^^^^^^^^^^^ overlaps an earlier arm
+   |
+   = witness: m = Mode::On(0)
+   = note: the arms of a table are disjoint, so that their order does not matter, but here both patterns match and both guards hold
+   = help: make the guards exclusive, as in `V(x) if x > 0 => a, V(x) if x <= 0 => b`
+
+fren: 5 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0636`.
+exit=1

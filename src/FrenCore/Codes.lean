@@ -1994,6 +1994,37 @@ comp c {
 }
 ```
 "# },
+  { code := "F0391", explanation := r#"Two arms of a table over a scrutinee, without guards, overlap.
+
+Erroneous code example:
+
+```fren
+comp grade {
+    in n: Int
+    pub out g: Int
+
+    ensure r: g = table n { ..=49 => 0, 50..=100 => 1, 100.. => 2 }
+}
+```
+
+The arms of a table over a scrutinee are disjoint, so that their order
+does not matter: no two of them are taken at one value of the scrutinee.
+Two arms without guards whose patterns some value matches both overlap
+everywhere that value is the scrutinee, so the static rules reject them,
+naming such a value; here, both the second and the third arm match `100`.
+A last arm `_` is taken wherever no other arm is, so it overlaps none.
+Narrow one of the patterns, tell the arms apart with guards, or write a
+`match`, which takes the first arm that matches:
+
+```fren
+comp grade {
+    in n: Int
+    pub out g: Int
+
+    ensure r: g = table n { ..=49 => 0, 50..=99 => 1, 100.. => 2 }
+}
+```
+"# },
   { code := "F0338", explanation := r#"`Nat` is an element type, or the type of a payload of a recursive enumeration.
 
 Erroneous code example:
@@ -3134,6 +3165,100 @@ comp size {
     pub out s: Int
 
     ensure r: s = table { x >= 0 => 1, x < 0 => 0 }
+}
+```
+"# },
+  { code := "F0636", explanation := r#"Two arms of a table over a scrutinee may both be taken.
+
+Erroneous code example:
+
+```fren
+enum Mode { Off, On(Int) }
+
+comp level {
+    in m: Mode
+    pub out y: Int
+
+    ensure r: y = table m { Mode::Off => 0, Mode::On(x) if x >= 0 => x, Mode::On(x) if x <= 0 => 1 }
+}
+```
+
+The arms of a table over a scrutinee are disjoint, so that their order
+does not matter: no two of them are taken at one value of the scrutinee.
+Two arms without guards whose patterns overlap are a static error
+(`F0391`); for two whose patterns overlap where one has a guard, Fren asks
+whether both can be taken at once, under the conditions under which the
+table is evaluated and the hypotheses of where it is written, but the
+constraint that it is in. Here, both guards hold when `x` is 0. Make the
+guards exclusive:
+
+```fren
+enum Mode { Off, On(Int) }
+
+comp level {
+    in m: Mode
+    pub out y: Int
+
+    ensure r: y = table m { Mode::Off => 0, Mode::On(x) if x > 0 => x, Mode::On(x) if x <= 0 => 1 }
+}
+```
+"# },
+  { code := "F0637", explanation := r#"A table over a scrutinee may have no arm that is taken where it is evaluated.
+
+Erroneous code example:
+
+```fren
+comp sign {
+    in n: Int
+    pub out s: Int
+
+    ensure r: s = table n { k if k > 0 => 1, k if k < 0 => -1 }
+}
+```
+
+Its arms without guards are not exhaustive, so Fren asks whether some arm
+is always taken, as for a `match` (`F0625`). Where none is, the table is an
+unknown value, so the constraint says nothing useful there. Here, no arm
+is taken when `n` is 0. Add an arm for it, or end the table with `_ => e`:
+
+```fren
+comp sign {
+    in n: Int
+    pub out s: Int
+
+    ensure r: s = table n { k if k > 0 => 1, k if k < 0 => -1, _ => 0 }
+}
+```
+"# },
+  { code := "F0638", explanation := r#"An arm of a table over a scrutinee is never taken.
+
+Erroneous code example:
+
+```fren
+comp size {
+    in x: Int
+    pub out s: Int
+
+    assume small: x < 5
+
+    ensure r: s = table x { n if n > 10 => 2, _ => 1 }
+}
+```
+
+Fren asks of each arm that has a guard or follows one whether it can be
+taken, as for a `match` (`F0626`), under the conditions under which the
+table is evaluated and the hypotheses of where it is written, but the
+constraint that it is in. Here, `x` is below 5, so the first arm is dead.
+Correct its guard, or remove it:
+
+```fren
+comp size {
+    in x: Int
+    pub out s: Int
+
+    assume small: x < 5
+
+    ensure r: s = table x { n if n > 3 => 2, _ => 1 }
 }
 ```
 "# },

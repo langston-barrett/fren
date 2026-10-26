@@ -19,7 +19,8 @@ reports in comments.
 
 Brute force is not needed, so the generator is wider than `fren_fuzz`'s,
 and aims at the analyses that each front end implements on its own:
-constants, defined outputs, defined and uninterpreted functions, `match`,
+constants, defined outputs, defined and uninterpreted functions, `match`
+and tables over a scrutinee,
 string methods with constant and non-constant arguments and `++`, products
 of every kind of operand, orderings and `min` and `max` of an ordered
 enumeration, and sets and relations with `card`, so that it
@@ -118,7 +119,8 @@ partial def app? (sc : WScope) (t : WTy) (d : Nat) : R (Option String) := do
 
 /-- A `match` on an enumeration, with arms of type `t`, some of them
 with guards, and an arm with a guard sometimes followed by its variant's
-arm without one. -/
+arm without one; or a table over the scrutinee with those arms, which
+then overlap. -/
 partial def matchOn (sc : WScope) (t : WTy) (d : Nat) : R String := do
   let scrut ← gen sc .enum 0
   let mut arms := #[]
@@ -130,7 +132,8 @@ partial def matchOn (sc : WScope) (t : WTy) (d : Nat) : R String := do
       unless ← chance 50 do continue
     arms := arms.push s!"E::V{k} => {← gen sc t (d - 1)}"
   if covered < n || (← chance 5) then arms := arms.push s!"_ => {← gen sc t (d - 1)}"
-  return s!"match {scrut} \{ {", ".intercalate arms.toList} }"
+  let kw ← if ← chance 25 then pure "table" else pure "match"
+  return s!"{kw} {scrut} \{ {", ".intercalate arms.toList} }"
 
 /-- A table with values of type `t`: one to three rows, sometimes after
 a leading `|`, and sometimes a last `_` row. -/

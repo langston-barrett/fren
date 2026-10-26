@@ -1,0 +1,8 @@
+-- Two arms of a table over a scrutinee without guards whose patterns
+-- overlap: both match `100`.
+comp grade {
+    in n: Int
+    pub out g: Int
+
+    ensure r: g = table n { ..=49 => 0, 50..=100 => 1, 100.. => 2 }
+}

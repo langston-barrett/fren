@@ -1,0 +1,13 @@
+error[F0638]: arm 1 of a table in `size::r` is never taken
+ --> test/cli/results/f0638_table_arm_unreachable.fren:9:29
+  |
+9 |     ensure r: s = table x { n if n > 10 => 2, _ => 1 }
+  |                             ^ never taken
+  |
+  = note: wherever the table is evaluated, its pattern or guard fails, or another arm is taken
+  = help: correct its guard or the arms that take its cases, or remove it
+
+fren: 4 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0638`.
+exit=1

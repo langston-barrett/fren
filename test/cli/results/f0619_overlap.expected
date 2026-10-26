@@ -4,7 +4,7 @@ error[F0619]: rows 1 and 2 of a table in `grade::r` may both hold
 8 |         | score >= 0 => false,
   |           ^^^^^^^^^^ overlaps an earlier row
   |
-  = witness: score = 50, pass? = true
+  = witness: score = 50
   = note: where rows overlap, the first of them gives the table's value, so the order of the rows matters
   = help: make the conditions exclusive, as in `a => x, not a and b => y`
 

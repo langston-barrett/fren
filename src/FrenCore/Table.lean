@@ -14,15 +14,19 @@ asked whether two of them hold at once.
 
 namespace Fren.Core
 
-/-- Which kind of split a question is about: a table, or a `match`. -/
+/-- Which kind of split a question is about: a table, a `match`, or a
+table over a scrutinee, which means a `match` whose arms are disjoint
+(`Reqs/Lang/Expressions#tables-over-a-scrutinee`). -/
 inductive Split where
   | table
   | «match»
+  | tableMatch
   deriving Inhabited, BEq, DecidableEq, Repr
 
 /-- A question about the cases of a split: whether some case is taken
-(`completeness`), whether rows `i` and `j` of a table, counted from 0 in
-order with `i < j`, can both hold (`disjointness`), or whether case `j`,
+(`completeness`), whether rows `i` and `j` of a table, or arms of a table
+over a scrutinee, counted from 0 in order with `i < j`, can both hold
+(`disjointness`), or whether case `j`,
 counted from 0, can be taken (`reachability`). Or one about an
 application of the function `f` with a precondition `p`
 (`Reqs/Check#preconditions`): whether its arguments meet `p`, which is
@@ -31,7 +35,7 @@ where the split is, and so is recorded, guarded and instantiated with
 them by both front ends. -/
 inductive TableGoal where
   | completeness (s : Split)
-  | disjointness (i j : Nat)
+  | disjointness (s : Split) (i j : Nat)
   | precondition (f p : Lean.Name)
   | reachability (s : Split) (j : Nat)
   deriving Inhabited, BEq, Repr
@@ -116,6 +120,23 @@ def splitGoals (s : Split) (orF : Array α → α) (andF : α → α → α) (no
     some (TableGoal.reachability s j, reachGoal andF notF trueF taken j)
   completeness ++ reach
 
+/-- The goal of the disjointness of two cases, taken where `ti` and `tj`
+say, whose guards' indexes are in range where `di` and `dj` say, if they
+have any: not that both are taken with their indexes in range
+(`check::disjoint_question`). -/
+def pairGoal (andF : α → α → α) (notF : α → α) (ti tj : α) (di dj : Option α) : α :=
+  notF (#[di, dj].filterMap id |>.foldr andF (andF ti tj))
+
+/-- The questions about the disjointness of the pairs `pairs` of the cases
+of a split of kind `s`, each taken where `taken` says (`none` for one
+taken wherever it is tried), whose guards' indexes are in range where
+`defined` says, in order (`check::disjointness`). -/
+def disjointGoals (s : Split) (andF : α → α → α) (notF : α → α) (trueF : α) (taken : Array (Option α))
+    (defined : Array (Option α)) (pairs : Array (Nat × Nat)) : Array (TableGoal × α) :=
+  pairs.map fun (i, j) =>
+    let t (k : Nat) := (taken[k]?.join).getD trueF
+    (TableGoal.disjointness s i j, pairGoal andF notF (t i) (t j) defined[i]?.join defined[j]?.join)
+
 /-- The questions about a table whose rows other than `_` have the
 conditions `conds`, each with its formula: completeness, unless it has a
 `_` row (`wild`), which always holds; the disjointness of each pair of
@@ -128,13 +149,31 @@ earlier row guards, as `q[0] > 0` after `q = [] => ...`, does not overlap
 that row where it is undefined. -/
 def tableGoals (orF : Array α → α) (andF : α → α → α) (notF : α → α) (trueF : α) (conds : Array α)
     (defined : Array (Option α)) (wild : Bool) : Array (TableGoal × α) :=
-  let pairs := conds.zipIdx.flatMap fun (cj, j) =>
-    (conds.extract 0 j).zipIdx.map fun (ci, i) =>
-      let both := #[defined[i]?.join, defined[j]?.join].filterMap id |>.foldr andF (andF ci cj)
-      (TableGoal.disjointness i j, notF both)
+  let all := (Array.range conds.size).flatMap fun j => (Array.range j).map (·, j)
+  let pairs := disjointGoals .table andF notF trueF (conds.map some) defined all
   let taken := conds.map some ++ (if wild then #[none] else #[])
   let guarded := conds.map (fun _ => true) ++ (if wild then #[false] else #[])
   let split := splitGoals .table orF andF notF trueF taken guarded (completenessAsked wild)
   split.filter (·.1 matches .completeness _) ++ pairs ++ split.filter (·.1 matches .reachability ..)
+
+/-- Whether the static rules reject two arms of a table over a scrutinee,
+and whether the disjointness check asks about them, from whether their
+patterns overlap, whether one has a guard, and whether one is the last
+arm `_`, without a guard (`lang::table_arm_pair`). -/
+def tableArmPair (overlap guarded otherwise : Bool) : Bool × Bool :=
+  (overlap && !guarded && !otherwise, overlap && guarded && !otherwise)
+
+/-- The questions about a table over a scrutinee, which are those of the
+`match` it means (`splitGoals`), with the disjointness of the pairs of its
+arms `pairs` that `tableArmPair` asks about, between them: completeness,
+then disjointness, then reachability, as for a table (`tableGoals`).
+`defined` gives, for each arm's guard, that the indexes in it are in range
+where it evaluates them, if it has any. -/
+def tableMatchGoals (orF : Array α → α) (andF : α → α → α) (notF : α → α) (trueF : α)
+    (taken : Array (Option α)) (guarded : Array Bool) (defined : Array (Option α)) (pairs : Array (Nat × Nat))
+    (complete : Bool) : Array (TableGoal × α) :=
+  let split := splitGoals .tableMatch orF andF notF trueF taken guarded complete
+  split.filter (·.1 matches .completeness _) ++ disjointGoals .tableMatch andF notF trueF taken defined pairs ++
+    split.filter (·.1 matches .reachability ..)
 
 end Fren.Core

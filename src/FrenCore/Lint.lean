@@ -2356,6 +2356,14 @@ def singleMatchElseFix? (arms : Array ArmInfo) (scrutinee : BText) (slot : Optio
   let t : BText := { text := s!"if {scr} = {a.alts[0]!} then {a.body.text} else {b.body.text}", prec := BKind.ite.prec }
   return t.inSlot slot followed
 
+/-- A match lint's message about a table over a scrutinee, which means a
+`match` whose arms are disjoint, and which the lints look at as at that
+`match`: it calls it a table (`Reqs/Lint/Pedantic/Matches#arms`). -/
+def Msg.ofTable (m : Msg) : Msg :=
+  let f (t : String) := t.replace "`match`" "table"
+  { m with headline := f m.headline, label? := m.label?.map f, notes := m.notes.map f
+           fixes := m.fixes.map fun x => { x with msg := f x.msg } }
+
 /-- `single_match_else` on a `match` whose fix is `replacement`, which it
 does not have where the `match` is `commented`: the fix would drop its
 comments. -/

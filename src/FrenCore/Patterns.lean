@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCore.Table
 import FrenCore.Ty
 -- keep-sorted end
 
@@ -550,11 +551,14 @@ at an arm and, for an alternative, its number in preorder
 (`Pat.alternatives`), or at the `match`. Gives whether the arms without a
 guard are exhaustive, without which the checks ask whether some arm is
 taken (`check::completeness_asked`). -/
-def checkMatch (sigs : Sigs) (ty : PatTy) (arms : Array Pat) (guarded : Array Bool := #[]) :
+def checkMatch (sigs : Sigs) (ty : PatTy) (arms : Array Pat) (guarded : Array Bool := #[]) (ordered := true) :
     Except (Option (Nat × Option Nat) × Msg) Bool := do
   if let some i := arms.findIdx? (·.cases > maxCases) then throw (some (i, none), tooManyCasesMsg arms[i]!.cases)
   let isGuarded (i : Nat) : Bool := guarded[i]?.getD false
-  let us := usefulness sigs ty arms guarded
+  -- In a table over a scrutinee, no arm hides another: each is useful
+  -- with respect to its own cases alone (`checkTableArms`).
+  let hides := if ordered then guarded else arms.map fun _ => true
+  let us := usefulness sigs ty arms hides
   let uselessArms := (Array.range arms.size).filter fun i => !us[i]!.any (·.2.1)
   let uselessAlts := (Array.range arms.size).flatMap fun i =>
     if uselessArms.contains i then #[] else (uselessAlternatives arms[i]! us[i]!).map (i, ·)
@@ -568,8 +572,9 @@ def checkMatch (sigs : Sigs) (ty : PatTy) (arms : Array Pat) (guarded : Array Bo
     return (flatUnguardedExhaustive? (sigs · |>.size) ty paired).getD (!useful sigs [ty] unguarded [.wild false])
   -- The first problem, by arm and then by alternative.
   for arm in arms, i in [0:arms.size] do
-    -- Only the arms before it without guards hide what it matches.
-    let before := (Array.range i).filter (!isGuarded ·)
+    -- Only the arms before it without guards hide what it matches, and
+    -- none in a table over a scrutinee.
+    let before := if ordered then (Array.range i).filter (!isGuarded ·) else #[]
     let earlier := before.flatMap fun k => us[k]!.map (·.1)
     let wild? := before.findSome? fun k => match arms[k]! with | .wild b => some b | _ => none
     if uselessArms.contains i then
@@ -583,6 +588,120 @@ def checkMatch (sigs : Sigs) (ty : PatTy) (arms : Array Pat) (guarded : Array Bo
       let before := earlier ++ ((direct.filter (·.1 < j)).map (·.2))
       throw (some (i, some j), unreachableMsg true (unreachableNote sigs ty true p? before wild?))
   throw (none, nonExhaustiveMsg ty (ws.filterMap (·.head?)))
+
+/-! ## Overlap -/
+
+/-- One step of overlap (`lang::overlap`): what two patterns, whose heads
+are `first` and `second`, have in common, if anything, from the smaller
+problems, passed as functions so that only the one the rule needs is
+solved: for an or-pattern, an alternative of either that overlaps the
+other; for a wildcard, what the other pattern matches, if anything; and
+for two constructors that are the same, what the values of their payloads
+have in common. Both decisions and witnesses are read from it: `α` is a
+witness, or `Unit`. -/
+def overlapStep (first second : HeadKind) (same : Bool)
+    (args firstSome secondSome someAlternative : Unit → Option α) : Option α :=
+  if first matches .or || second matches .or then someAlternative ()
+  else match first, second with
+    | .wildcard, _ => secondSome ()
+    | _, .wildcard => firstSome ()
+    | _, _ => if same then args () else none
+
+/-- The integers that both of two intervals contain, if any, of those that
+`ty` has: at least 0 for a `Nat`. -/
+def meetIntervals (ty : PatTy) (a b : Option Int × Option Int) : Option (Option Int × Option Int) :=
+  let lo := match a.1, b.1 with
+    | some x, some y => some (max x y)
+    | x, none => x
+    | none, y => y
+  let lo := if ty == .nat then some (max (lo.getD 0) 0) else lo
+  let hi := match a.2, b.2 with
+    | some x, some y => some (min x y)
+    | x, none => x
+    | none, y => y
+  match lo, hi with
+  | some l, some h => if l ≤ h then some (lo, hi) else none
+  | _, _ => some (lo, hi)
+
+/-- An integer of the interval `iv`, as a witness. -/
+def Wit.ofInterval : Option Int × Option Int → Wit
+  | (some l, _) => .int (some l) (some l)
+  | (none, some h) => .int (some h) (some h)
+  | (none, none) => .int (some 0) (some 0)
+
+/-- A value that the or-free pattern `p` of `ty` matches, as a witness, if
+it matches any: every pattern does, but one with a range that matches no
+value of its type, such as `..=-1` within a `Nat`. -/
+partial def Pat.someWit? (sigs : Sigs) (ty : PatTy) : Pat → Option Wit
+  | .wild _ => some .any
+  | .bool b => some (.bool b)
+  | .str v => some (.str v)
+  | .int lo hi => (meetIntervals ty (lo, hi) (none, none)).map Wit.ofInterval
+  | .ctor i args =>
+    let tys := ctorTys sigs ty (.variant i)
+    (args.zipIdx.mapM fun ((a : Pat), (k : Nat)) => a.someWit? sigs (tys[k]?.getD .other)).map ((Ctor.variant i).wit sigs ty ·)
+  | .or alts => alts.findSome? (·.someWit? sigs ty)
+
+/-- Whether two constructor patterns, neither a wildcard nor an
+or-pattern, are the same constructor, and the witness of what they have in
+common at the head: two integer patterns are the same where some integer
+of `ty` matches both. -/
+def Pat.sameHead (ty : PatTy) : Pat → Pat → Bool × Option Wit
+  | .ctor i _, .ctor j _ => (i == j, none)
+  | .bool a, .bool b => (a == b, some (.bool a))
+  | .str a, .str b => (a == b, some (.str a))
+  | .int l h, .int l' h' => match meetIntervals ty (l, h) (l', h') with
+    | some iv => (true, some (Wit.ofInterval iv))
+    | none => (false, none)
+  | _, _ => (false, none)
+
+/-- A value that both patterns `p` and `q` of `ty` match, as a witness, if
+they overlap (`lang::overlap`). -/
+partial def Pat.overlapWit? (sigs : Sigs) (ty : PatTy) (p q : Pat) : Option Wit :=
+  let (same, head?) := p.sameHead ty q
+  overlapStep p.headKind q.headKind same
+    (fun _ => match p, q with
+      | .ctor i as, .ctor _ bs =>
+        let tys := ctorTys sigs ty (.variant i)
+        ((as.zip bs).zipIdx.mapM fun (((a : Pat), b), (k : Nat)) => a.overlapWit? sigs (tys[k]?.getD .other) b).map
+          ((Ctor.variant i).wit sigs ty ·)
+      | _, _ => head?)
+    (fun _ => p.someWit? sigs ty) (fun _ => q.someWit? sigs ty)
+    (fun _ => match p, q with
+      | .or alts, _ => alts.findSome? (·.overlapWit? sigs ty q)
+      | _, .or alts => alts.findSome? (p.overlapWit? sigs ty ·)
+      | _, _ => none)
+
+/-- Two arms of a table over a scrutinee without guards whose patterns
+overlap, both matching `w`: the later arm, which overlaps arm `i`, counted
+from 0. -/
+def armsOverlapMsg (i : Nat) (w : Wit) : Msg :=
+  { code? := some "F0391", headline := s!"this arm overlaps arm {i + 1}", label? := some s!"overlaps arm {i + 1}"
+    notes := #[s!"note: both match `{w.show}`",
+      "note: the arms of a table are disjoint, so that their order does not matter",
+      "help: narrow one of the patterns, tell the arms apart with guards, or write a `match`, which takes the first arm that matches"] }
+
+/-- Checks the arms of a table over a scrutinee of `ty`, each its pattern,
+of which those that have a guard are `guarded`, explaining the first
+problem, as `checkMatch` does (`Reqs/Lang/Expressions#tables-over-a-scrutinee`):
+two arms without guards whose patterns overlap, but for a last arm `_`
+without a guard (`lang::table_arm_pair`), and then the rules of a `match`,
+in which no arm hides another. Gives whether the arms without guards are
+exhaustive, and the pairs of arms, in order, that the disjointness check
+asks about. -/
+def checkTableArms (sigs : Sigs) (ty : PatTy) (arms : Array Pat) (guarded : Array Bool) :
+    Except (Option (Nat × Option Nat) × Msg) (Bool × Array (Nat × Nat)) := do
+  if let some i := arms.findIdx? (·.cases > maxCases) then throw (some (i, none), tooManyCasesMsg arms[i]!.cases)
+  let isGuarded (i : Nat) : Bool := guarded[i]?.getD false
+  let otherwise (k : Nat) : Bool := k + 1 == arms.size && arms[k]! matches .wild false && !isGuarded k
+  let mut pairs := #[]
+  for j in [0:arms.size] do
+    for i in [0:j] do
+      let w? := arms[i]!.overlapWit? sigs ty arms[j]!
+      let (rejected, asked) := tableArmPair w?.isSome (isGuarded i || isGuarded j) (otherwise i || otherwise j)
+      if rejected then throw (some (j, none), armsOverlapMsg i w?.get!)
+      if asked then pairs := pairs.push (i, j)
+  return (← checkMatch sigs ty arms guarded (ordered := false), pairs)
 
 /-- Where a problem of a pattern test is: a binder, numbered in preorder,
 or an alternative. -/

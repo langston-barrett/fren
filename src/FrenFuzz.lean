@@ -224,6 +224,14 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
             return s!"(match {b} \{ true if {g} => {← genBool sc (depth - 1)}, true => {← genBool sc (depth - 1)}, false => {← genBool sc (depth - 1)} })"
           return s!"(match {b} \{ true if {g} => {← genBool sc (depth - 1)}, false if {← genBool sc (depth - 1)} => {← genBool sc (depth - 1)}, _ => {← genBool sc (depth - 1)} })"
         return s!"(match {b} \{ true => {← genBool sc (depth - 1)}, false => {← genBool sc (depth - 1)} })"
+      -- A table over a `Bool`, whose arms of `true` have guards that may
+      -- overlap, which the disjointness check asks about, or leave a case,
+      -- which the completeness check asks about.
+      if depth > 0 && (← chance 10) then
+        let b ← pick (sc.of .bool)
+        let g ← genBool sc (depth - 1)
+        let h ← if ← chance 50 then pure s!"not ({g})" else genBool sc (depth - 1)
+        return s!"(table {b} \{ true if {g} => {← genBool sc (depth - 1)}, true if {h} => {← genBool sc (depth - 1)}, false => {← genBool sc (depth - 1)} })"
       -- A table, whose rows are guarded arms, sometimes without `_`.
       if depth > 0 && (← chance 10) then
         let rows := #[s!"{← genBool sc (depth - 1)} => {← genBool sc (depth - 1)}",
@@ -538,16 +546,20 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
     p.e.trigger?.map (p, ·)
   -- Definedness, of each index by its position, and the completeness and
   -- disjointness of each table and `match`, by where it is reported and the
-  -- earlier row (`tableKey`): in every model of `ms`, its goal holds. The
-  -- reachability of an arm or a row: in some model of `rms`, the models
-  -- without the constraint itself (`Comp.reachHyps`), its goal fails.
+  -- earlier row (`tableKey`): in every model of `ms`, its goal holds, or of
+  -- `rms` for disjointness. The reachability of an arm or a row: in some
+  -- model of `rms`, the models without the constraint itself
+  -- (`Comp.reachHyps`), its goal fails.
   let defined (o : Oracle) (p : Name) (e : Ex) (ms : Array (Interp × Array Env))
       (rms : Array (Interp × Array Env) := ms) : Oracle :=
     let always (ms : Array (Interp × Array Env)) (g : Ex) :=
       ms.all fun (I, ms) => ms.all (holds I · { label := p, pfx := .anonymous, e := g })
     let o := e.indexGoals.foldl (init := o) fun o (pos, g) => put o .definedness (some (.num p pos)) (pass (always ms g))
+    -- Disjointness, as reachability, without the constraint itself
+    -- (`Comp.caseHyps`): in every model of `rms`, its goal holds.
     let o := e.tableGoals.foldl (init := o) fun o (pos, q, g) =>
-      if q.kind == .reachability then o else put o q.kind (some (tableKey p pos q.rows?)) (pass (always ms g))
+      if q.kind == .reachability then o
+      else put o q.kind (some (tableKey p pos q.rows?)) (pass (always (if q.kind == .disjointness then rms else ms) g))
     -- A case is reachable where some mention of a `let` or `where` name
     -- reaches it (`Fren.Core.mergeReach`): one verdict for all its goals.
     let reach := e.tableGoals.filter (·.2.1.kind == .reachability)

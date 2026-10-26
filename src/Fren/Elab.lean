@@ -37,6 +37,10 @@ namespace Fren
 -- at once for any other bound, which the other rules then prove.
 local macro_rules | `(tactic| get_elem_tactic_extensible) => `(tactic| exact True.intro)
 
+/-- Whether `e` is a `match`, or a table over a scrutinee, which means
+one: their scrutinee is `e[1]` and their arms `e[3]`. -/
+def isMatchLike (e : Syntax) : Bool := e.isOfKind ``Lang.matchExpr || e.isOfKind ``Lang.tableMatchExpr
+
 /-- The identifiers of a `Lang.fren_path`. -/
 def pathSegs (p : Syntax) : Array Syntax := p[0].getSepArgs
 
@@ -910,7 +914,7 @@ partial def pathMentions (e : Syntax) (all : Bool := true) : Array Name :=
   else if e.isOfKind ``Lang.updateExpr then
     e[3].getSepArgs.foldl (init := pathMentions e[1]) fun acc b =>
       acc ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
-  else if e.isOfKind ``Lang.matchExpr then
+  else if isMatchLike e then
     e[3].getSepArgs.foldl (init := pathMentions e[1]) fun acc arm =>
       -- In its arm, a binder's name means the binder, not what it shadows.
       let bound := (topNames arm[0]).map fun b => (declaredIdent b).1.getId
@@ -1039,7 +1043,7 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
     -- The updated value, and the new values.
     parts .construction (#[e[1]] ++ (← e[3].getSepArgs.mapM fun b =>
       if b[1].isNone then return (← pathExpr b[0] b[0].getId)[0] else pure b[1][1]))
-  else if e.isOfKind ``Lang.matchExpr then
+  else if isMatchLike e then
     let s ← shapeOf cx e[1] bs
     let arms ← e[3].getSepArgs.toList.flatMapM fun arm => do
       let new := (← topBinders cx arm[0]).map fun b => ((declaredIdent b).1.getId, Core.MentionShape.node .binder [s])
@@ -1487,7 +1491,7 @@ def operandSlot (p e : Syntax) : Option Core.Slot :=
   let at_ (k : Core.BKind) (idxs : Array Nat) := (idxs.findIdx? (same p[·])).bind (k.slots[·]?.join)
   if p.isOfKind ``Lang.fieldExpr || p.isOfKind ``Lang.methodExpr || p.isOfKind ``Lang.indexExpr then
     if same p[0] then some Core.receiverSlot else none
-  else if p.isOfKind ``Lang.matchExpr then
+  else if isMatchLike p then
     if same p[1] then some Core.receiverSlot else none
   else if p.isOfKind ``Lang.isExpr then at_ .patternTest #[0]
   else if p.isOfKind ``Lang.quantExpr then at_ .quant #[3]
@@ -1511,6 +1515,8 @@ it. -/
 def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
     (slot : Option Core.Slot) : TermElabM Unit := do
   let arms := e[3].getSepArgs
+  -- A table over a scrutinee is called a table (`Core.Msg.ofTable`).
+  let tm (m : Core.Msg) : Core.Msg := if e.isOfKind ``Lang.tableMatchExpr then m.ofTable else m
   -- An arm with a guard may not be taken where its pattern matches, so
   -- the lints that move, merge or remove arms, or replace the `match`,
   -- look only at a `match` without guards, and the arms with guards name
@@ -1531,7 +1537,7 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
   let help (m : Core.Msg) := if fixable then m.note Core.fixHelp else m
   -- `trivial_match` (`lint::trivial_match`).
   if let #[i] := infos then
-    if Core.trivialMatch infos.size i.binds && !anyGuard then recordLint .trivialMatch e (Core.trivialMatchMsg (i.body.inSlot slot (followedStx e)))
+    if Core.trivialMatch infos.size i.binds && !anyGuard then recordLint .trivialMatch e (tm (Core.trivialMatchMsg (i.body.inSlot slot (followedStx e))))
   -- `needless_match` (`lint::needless_match`): only a `match` whose arms
   -- are `_` and variants whose payloads' patterns are `_` or binders.
   let scr := exactText (unparen e[1])
@@ -1567,21 +1573,23 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
   let needless := Core.needlessMatch (givenBack && !anyGuard) wildcard scrutineeBack trivial
   if needless then
     let scrutinee : Core.BText := { text := scr, prec := exprPrec (unparen e[1]) }
-    recordLint .needlessMatch e (help (Core.needlessMatchMsg (scrutinee.inSlot slot (followedStx e))))
+    recordLint .needlessMatch e (help (tm (Core.needlessMatchMsg (scrutinee.inSlot slot (followedStx e)))))
   if flat && !anyGuard then
     for g in Core.sameArmGroups infos do
       let (i, msg) := Core.sameArmsMsg infos g slot (followedStx e)
-      recordLint .matchSameArms arms[i]! (help msg)
+      recordLint .matchSameArms arms[i]! (help (tm msg))
   let scrutinee : Core.BText := { text := exactText e[1], prec := exprPrec e[1] }
   let membership? := if anyGuard then none else Core.membershipParts? infos scrutinee slot
   if let some (pre, post, test) := membership? then
-    recordLint .matchLikeMembership e (help (Core.membershipMsg (pre ++ scrutinee.text ++ post) test))
+    recordLint .matchLikeMembership e (help (tm (Core.membershipMsg (pre ++ scrutinee.text ++ post) test)))
   -- `single_match_else` (`lint::single_match_else`).
   if let some fixed := (if anyGuard then none else
       Core.singleMatchElseFix? infos scrutinee slot (membership?.isSome || needless || trivial) (followedStx e)) then
-    let msg := Core.singleMatchElseMsg fixed (Core.hasComment (exactText e))
+    let msg := tm (Core.singleMatchElseMsg fixed (Core.hasComment (exactText e)))
     recordLint .singleMatchElse e (if msg.fixes.isEmpty then msg else help msg)
-  unless flat do return
+  -- In a table over a scrutinee, `_` also takes what the guards of the
+  -- other arms leave, which no pattern can name without overlapping them.
+  unless flat && !(e.isOfKind ``Lang.tableMatchExpr && anyGuard) do return
   let some info := ty.constName?.bind (← getState).enumOfDecl? | return
   let some w := (Array.range infos.size).find? fun i => infos[i]!.wildcard && !guarded[i]! | return
   let names (p : Core.Pat) : Array Nat := match p with
@@ -1599,10 +1607,10 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
   -- `wildcard_enum_match_arm` (`lint::wildcard_enum_match_arm`).
   let (_, fixable) := Core.wildcardEnumMatchArm true (named.filter (·.isNone)).size
   let pattern? := if fixable then some (" | ".intercalate (named.filterMap id).toList) else none
-  let msg := Core.wildcardEnumMsg (covered.map (info.path ++ info.variants[·]!)) pattern?
+  let msg := tm (Core.wildcardEnumMsg (covered.map (info.path ++ info.variants[·]!)) pattern?)
   recordLint .wildcardEnumMatchArm arms[w]![0] (if fixable then help msg else msg)
   unless Core.wildcardSingle covered.size do return
-  let msg := Core.wildcardMsg (info.path ++ info.variants[covered[0]!]!) named[0]!
+  let msg := tm (Core.wildcardMsg (info.path ++ info.variants[covered[0]!]!) named[0]!)
   recordLint .wildcardSingleVariant arms[w]![0] (if named[0]!.isSome then help msg else msg)
 
 /-- A binder of a pattern, with the type of its value, and its value, read
@@ -1651,7 +1659,7 @@ partial def typeShape (e : Syntax) : Core.TypeShape :=
   else if e.isOfKind ``Lang.pairExpr then .pair (typeShape e[1]) (typeShape e[3])
   else if e.isOfKind ``Lang.unionExpr || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr then
     .anyPart [typeShape e[0], typeShape e[2]]
-  else if e.isOfKind ``Lang.matchExpr then .anyPart (e[3].getSepArgs.toList.map (typeShape ·[3]))
+  else if isMatchLike e then .anyPart (e[3].getSepArgs.toList.map (typeShape ·[3]))
   else if e.isOfKind ``Lang.letExpr then .anyPart [typeShape e[3]]
   else if e.isOfKind ``Lang.tableExpr then .anyPart (e[2].getSepArgs.toList.map (typeShape ·[3]))
   else match e with
@@ -2168,7 +2176,7 @@ conditional or a `match` with one among its shared parts, so that the right
 of `in` is checked against a sequence, as in the `fren` command. -/
 partial def seqShaped (e : Syntax) : Bool :=
   if e.isOfKind ``Lang.seqExpr then true
-  else if e.isOfKind ``Lang.matchExpr then e[3].getSepArgs.any (seqShaped ·[3])
+  else if isMatchLike e then e[3].getSepArgs.any (seqShaped ·[3])
   else match e with
     | `(fren_expr| $a ++ $b) | `(fren_expr| if $_ then $a else $b) => seqShaped a || seqShaped b
     | _ => false
@@ -2260,17 +2268,26 @@ are `pats`, each taken where `taken` says, of which those with a guard
 are `guarded`, for its completeness and reachability checks
 (`check::completeness`, `check::reachability`): completeness, unless its
 arms without guards are exhaustive, is reported at `match`, and the
-reachability of an arm at its pattern. -/
+reachability of an arm at its pattern. Of a table over a scrutinee
+(`table?`, the pairs of its arms that the disjointness check asks about,
+whose guards' indexes are in range where `defined` says), also the
+disjointness of those pairs, at the later arm's pattern, and completeness
+at `table`. -/
 def noteMatch (cx : ExprCtx) (e : Syntax) (pats : Array Syntax) (taken : Array (Option Term)) (guarded : Array Bool)
-    (unguardedExhaustive : Bool) : TermElabM Unit := do
+    (unguardedExhaustive : Bool) (table? : Option (Array (Nat × Nat))) (defined : Array (Option Term)) :
+    TermElabM Unit := do
   unless cx.noteIndexes do return
   let orF (cs : Array Term) : Term := cs.pop.foldr (fun c acc => Unhygienic.run `($c ∨ $acc)) cs.back!
   let andF (a b : Term) : Term := Unhygienic.run `($a ∧ $b)
   let notF (c : Term) : Term := Unhygienic.run `(¬$c)
   let trueF : Term := Unhygienic.run `(True)
-  for (g, f) in Core.splitGoals .match orF andF notF trueF taken guarded (Core.completenessAsked unguardedExhaustive) do
+  let complete := Core.completenessAsked unguardedExhaustive
+  let goals := match table? with
+    | some pairs => Core.tableMatchGoals orF andF notF trueF taken guarded defined pairs complete
+    | none => Core.splitGoals .match orF andF notF trueF taken guarded complete
+  for (g, f) in goals do
     let ref := match g with
-      | .reachability _ j => pats[j]!
+      | .reachability _ j | .disjointness _ _ j => pats[j]!
       | _ => e[0]
     let goal ← cx.guards.foldrM (fun g acc => `($g → $acc)) f
     modifyLocal fun l => { l with tables := l.tables.push (ref, g, goal) }
@@ -2299,7 +2316,16 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   for arm in arms do resolved := resolved.push (← resolveTop cx ty s false arm[0])
   let pats := resolved.map (·.1)
   let guarded := arms.map (!·[1].isNone)
-  let unguardedExhaustive ← match Core.checkMatch (← patSigs) pty pats guarded with
+  let isTable := e.isOfKind ``Lang.tableMatchExpr
+  -- In a table over a scrutinee, only the last arm may be `_` without a
+  -- guard, the otherwise (`Reqs/Lang/Expressions#tables-over-a-scrutinee`).
+  if isTable then
+    if let some k := Core.rowAfterWild? ((pats.zip guarded).map fun (p, g) => p matches .wild false && !g) then
+      throwErrorAt arms[k]![0] Core.rowAfterWildMsg.text
+  let sigs ← patSigs
+  let checked := if isTable then Core.checkTableArms sigs pty pats guarded
+    else (Core.checkMatch sigs pty pats guarded).map (·, #[])
+  let (unguardedExhaustive, pairs) ← match checked with
     | .ok u => pure u
     | .error (some (i, some j), msg) => throwErrorAt (topAlternatives arms[i]![0])[j]! msg.text
     | .error (some (i, none), msg) => throwErrorAt arms[i]![0] msg.text
@@ -2309,6 +2335,9 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- Where each arm is taken, if no earlier one is: its test and its guard;
   -- `none` for an arm taken wherever it is tried.
   let mut taken : Array (Option Term) := #[]
+  -- Of a table over a scrutinee, that the indexes in each arm's guard are
+  -- in range where it evaluates them, if it has any.
+  let mut defined : Array (Option Term) := #[]
   -- The type of the arms so far, once one has one.
   let mut armsTy? : Option Core.Ty := none
   -- The arms that wait for another's type: their index, context and body.
@@ -2319,7 +2348,8 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- built directly: their negations are never needed, so `guard` would
   -- only return them.
   for arm in arms, (_, bs, t?) in resolved do
-    let armGuards := cx.guards ++ (← taken.filterMapM fun t? => t?.mapM fun t => `(¬$t)) ++ t?.toArray
+    let before := cx.guards ++ (← taken.filterMapM fun t? => t?.mapM fun t => `(¬$t))
+    let armGuards := before ++ t?.toArray
     -- Distinct names (`lang::distinct_names`), by the names they declare,
     -- without the `!` of shadowing.
     let declared := bs.map fun b => (declaredIdent b.ident).1.getId
@@ -2336,11 +2366,29 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       new := new.push { name := bn, term := b.term, «type» := b.type, scrutinee := some scrutinee, outer := cx.binders.size }
     let gcx := { cx with binders := cx.binders ++ new, guards := armGuards }
     -- The guard, a `Bool`, checked as one (`Reqs/Lang/Expressions#matches`).
-    let g? ← if arm[1].isNone then pure none else do
+    let (g?, d?) ← if arm[1].isNone then pure (none, none) else if !isTable then do
       let g := arm[1][1]
       let c ← toTerm { gcx with natOk := false, emptyOk := false, expected? := none } g
       checkTermType g c .bool (some Core.armGuardNote)
-      pure (some c)
+      pure (some c, none)
+    else do
+      -- In a table over a scrutinee, translated under its pattern's test
+      -- alone, so that its indexes say where it defines them, for its
+      -- disjointness; then they, and the questions about its tables, are
+      -- put under the earlier arms' not being taken, as a row's condition
+      -- is.
+      let g := arm[1][1]
+      let (k, kt) := ((← getLocal).indexes.size, (← getLocal).tables.size)
+      let c ← toTerm { gcx with natOk := false, emptyOk := false, expected? := none, guards := t?.toArray } g
+      checkTermType g c .bool (some Core.armGuardNote)
+      let l ← getLocal
+      let inGuard := l.indexes.extract k
+      let under (f : Term) : TermElabM Term := before.foldrM (fun g acc => `($g → $acc)) f
+      let idx ← inGuard.mapM fun (r, f) => return (r, ← under f)
+      let tbl ← (l.tables.extract kt).mapM fun (r, q, f) => return (r, q, ← under f)
+      modifyLocal fun l => { l with indexes := l.indexes.extract 0 k ++ idx, tables := l.tables.extract 0 kt ++ tbl }
+      pure (some c, Core.allOf? (fun a b => Unhygienic.run `($a ∧ $b)) (inGuard.map (·.2)))
+    defined := defined.push d?
     let own := t?.toArray ++ g?.toArray
     taken := taken.push (Core.allOf? (fun a b => Unhygienic.run `($a ∧ $b)) own)
     let others := (arms.eraseIdx! bodies.size).map (·[3])
@@ -2361,7 +2409,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let body ← toTerm { acx with expected? := armsTy?.map (·.widen) } b
     if armsTy?.isSome then armsTy? ← armType armsTy? b body (armsTy?.map (·.widen))
     bodies := bodies.set! k body
-  noteMatch cx e (arms.map (·[0])) taken guarded unguardedExhaustive
+  noteMatch cx e (arms.map (·[0])) taken guarded unguardedExhaustive (if isTable then some pairs else none) defined
   let widened ← widenMixed bodies
   -- The first arm that is taken. Where the arms without guards are
   -- exhaustive, the last arm has none, and takes whatever is left;
@@ -3187,7 +3235,7 @@ def noteTable (cx : ExprCtx) (e : Syntax) (refs : Array Syntax) (conds : Array T
   let notF (c : Term) : Term := Unhygienic.run `(¬$c)
   for (g, f) in Core.tableGoals orF andF notF (Unhygienic.run `(True)) conds defined wild do
     let ref := match g with
-      | .disjointness _ j | .reachability _ j => refs[j]!
+      | .disjointness _ _ j | .reachability _ j => refs[j]!
       | _ => e[0]
     let goal ← guardedGoal cx.guards f
     modifyLocal fun l => { l with tables := l.tables.push (ref, g, goal) }
@@ -3949,7 +3997,7 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
     if let .item { kind := .recordItem, path, .. } ← resolvePath cx.modName (pathSegs e[0]) cx.shadowing then
       lintManualUpdate toTerm cx e path
     return t
-  else if e.isOfKind ``Lang.matchExpr then matchTerm toTerm { cx with emptyOk, natOk, expected? } e (parent?.bind (operandSlot · e))
+  else if isMatchLike e then matchTerm toTerm { cx with emptyOk, natOk, expected? } e (parent?.bind (operandSlot · e))
   else if e.isOfKind ``Lang.tableExpr then tableTerm toTerm { cx with emptyOk, natOk, expected? } e
   else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
   else if e.isOfKind ``Lang.updateExpr then do

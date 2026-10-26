@@ -1,0 +1,45 @@
+-- Static rules for tables over a scrutinee
+-- (`Reqs/Lang/Expressions#tables-over-a-scrutinee`): two arms without
+-- guards whose patterns overlap are an error, with a value both match; a
+-- last `_` overlaps none, and only the last arm may be `_`; the arms are
+-- exhaustive as a `match`'s are.
+set_option fren.lint.dead_code "allow"
+
+enum Mode { Off, On(Int) }
+
+-- A wildcard payload and a binder overlap.
+comp payload { in m: Mode pub out y: Int ensure r: y = table m { Mode::Off => 0, Mode::On(_) => 1, Mode::On(x) => x } }
+--~^ error: this arm overlaps arm 2
+-- Ranges that share an integer.
+comp ranges { in n: Int pub out y: Int ensure r: y = table n { 1..=5 => 0, 5.. => 1, _ => 2 } }
+--~^ error: this arm overlaps arm 1
+-- A binder overlaps every other arm, even last: only `_` is otherwise.
+comp binder { in n: Int pub out y: Int ensure r: y = table n { 0 => 0, k => k } }
+--~^ error: this arm overlaps arm 1
+-- An arm after `_`.
+comp after_wild { in m: Mode pub out y: Int ensure r: y = table m { Mode::Off => 0, _ => 1, Mode::On(_) => 2 } }
+--~^ error: a row after `_` can never be reached
+-- Not exhaustive, guards counted as if absent.
+comp missing { in m: Mode in ok? pub out y: Int ensure r: y = table m { Mode::On(x) if ok? => x } }
+--~^ error: non-exhaustive match: `Mode::Off` not covered
+-- An alternative that an earlier one of the same arm covers.
+comp alternatives { in n: Int pub out y: Int ensure r: y = table n { 1 | 1 => 0, _ => 1 } }
+--~^ error: unreachable pattern
+-- Ranges that overlap only on values a `Nat` does not have do not overlap.
+comp nat_apart { in k: Nat pub out y: Int ensure r: y = table k { ..=0 => 0, 1.. => 1 } }
+-- Nested patterns that do not overlap, and arms with guards whose patterns
+-- overlap, are not static errors.
+enum Pair { Two(Mode, Mode) }
+comp nested {
+    in p: Pair
+    in ok?
+    pub out y: Int
+
+    ensure r: y = table p {
+        Pair::Two(Mode::Off, _) => 0,
+        Pair::Two(Mode::On(_), Mode::Off) => 1,
+        Pair::Two(Mode::On(a), Mode::On(b)) if ok? => a + b,
+        Pair::Two(Mode::On(_), Mode::On(_)) if not ok? => 2,
+    }
+}
+--@ exit: 2
