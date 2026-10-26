@@ -1,0 +1,5 @@
+-- A variant's payload follows its name directly, with no space.
+pub enum S { A (Int), B }
+--~^[cli] error: a space before the `(` of the types of `A`'s payload
+--~^^[hosted] error: unexpected token '('; expected '}'
+--@ exit: 2

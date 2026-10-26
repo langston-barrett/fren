@@ -1,0 +1,5 @@
+-- A function's parameters follow its name directly, with no space.
+pub fn f (Int): Int
+--~^[cli] error: a space before the `(` of the parameters of `f`
+--~^^[hosted] error: expected no space before
+--@ exit: 2

@@ -1,0 +1,5 @@
+-- A method's arguments follow its name directly, with no space.
+comp c { in s: String pub out p? ensure r: p? iff s.starts_with? ("a") }
+--~^[cli] error: a space before the `(` of the arguments of `starts_with?`
+--~^^[hosted] error: unexpected token '('; expected '}'
+--@ exit: 2

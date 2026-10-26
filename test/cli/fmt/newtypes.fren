@@ -1,10 +1,10 @@
 --@ args: fmt --check
--- `fren fmt` writes a newtype's parentheses as a call's, after its name,
+-- `fren fmt` writes a newtype's parentheses as a call's, with no spaces inside,
 -- and its field's `.0` without spaces.
-pub struct Ms (  Int )
+pub struct Ms(  Int )
 comp c {
     in t: Ms
     pub out d: Ms
-    ensure a: d = Ms ( t.0+1 )
+    ensure a: d = Ms( t.0+1 )
     ensure b: d.0 = t.0.abs
 }
