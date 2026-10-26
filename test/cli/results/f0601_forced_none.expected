@@ -15,7 +15,7 @@ error[F0601]: `http::retry` is not realizable
 note: conflicts with `honor_server` and `latency_budget`
   --> test/cli/results/f0601_forced_none.fren:22:12
    |
-22 |     ensure transient: retry? iff (status = 429 or status = 503)
+22 |     ensure transient: retry? iff status is 429 | 503
    |            ^^^^^^^^^
 
 note: conflicts with `transient` and `latency_budget`

@@ -4,7 +4,7 @@
 mod http
 
 enum Method { Get, Put, Post, Delete }
-struct Seconds(Int)
+ordered struct Seconds(Int)
 
 const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)
@@ -19,7 +19,7 @@ comp retry {
 
     assume sane: attempt >= 1 and retry_after >= Seconds(0)
 
-    ensure transient: retry? iff (status = 429 or status = 503)
+    ensure transient: retry? iff status is 429 | 503
         and method != Method::Post and attempt < MAX_ATTEMPTS
     ensure honor_server: when retry?, delay >= retry_after
     ensure backoff: when retry?, delay >= Seconds(2 * attempt)
