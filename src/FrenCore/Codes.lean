@@ -1417,7 +1417,7 @@ same type:
 comp c { in x: Int pub out y: Int ensure r: y = table { x > 0 => 1, _ => 0 } }
 ```
 "# },
-  { code := "F0359", explanation := r#"A row of a table comes after its `_` row.
+  { code := "F0359", explanation := r#"A row of a table, or an arm of a table over a scrutinee, comes after its `_`.
 
 Erroneous code example:
 
@@ -1431,6 +1431,9 @@ reached. `_` is the last row:
 ```fren
 comp c { in x: Int pub out y: Int ensure r: y = table { x > 0 => 1, _ => 0 } }
 ```
+
+Likewise, the `_` arm without a guard of a table over a scrutinee is taken
+wherever no other arm is, so it is the last arm.
 "# },
   { code := "F0321", explanation := r#"A method that a type does not have.
 
@@ -2007,8 +2010,9 @@ comp grade {
 }
 ```
 
-The arms of a table over a scrutinee are disjoint, so that their order
-does not matter: no two of them are taken at one value of the scrutinee.
+The arms of a table over a scrutinee are disjoint, so that its value
+does not depend on their order: no two of them are taken at one value of
+the scrutinee.
 Two arms without guards whose patterns some value matches both overlap
 everywhere that value is the scrutinee, so the static rules reject them,
 naming such a value; here, both the second and the third arm match `100`.
@@ -3183,8 +3187,9 @@ comp level {
 }
 ```
 
-The arms of a table over a scrutinee are disjoint, so that their order
-does not matter: no two of them are taken at one value of the scrutinee.
+The arms of a table over a scrutinee are disjoint, so that its value
+does not depend on their order: no two of them are taken at one value of
+the scrutinee.
 Two arms without guards whose patterns overlap are a static error
 (`F0391`); for two whose patterns overlap where one has a guard, Fren asks
 whether both can be taken at once, under the conditions under which the

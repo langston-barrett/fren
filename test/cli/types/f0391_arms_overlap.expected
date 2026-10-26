@@ -5,7 +5,7 @@ error[F0391]: this arm overlaps arm 2
   |                                                        ^^^^^ overlaps arm 2
   |
   = note: both match `100`
-  = note: the arms of a table are disjoint, so that their order does not matter
+  = note: the arms of a table are disjoint, so that its value does not depend on their order
   = help: narrow one of the patterns, tell the arms apart with guards, or write a `match`, which takes the first arm that matches
 
 error: could not check due to previous errors

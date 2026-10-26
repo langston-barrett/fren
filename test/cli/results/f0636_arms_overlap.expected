@@ -5,7 +5,7 @@ error[F0636]: arms 2 and 3 of a table in `level::r` may both be taken
    |         ^^^^^^^^^^^ overlaps an earlier arm
    |
    = witness: m = Mode::On(0)
-   = note: the arms of a table are disjoint, so that their order does not matter, but here both patterns match and both guards hold
+   = note: the arms of a table are disjoint, so that its value does not depend on their order, but here both patterns match and both guards hold
    = help: make the guards exclusive, as in `V(x) if x > 0 => a, V(x) if x <= 0 => b`
 
 fren: 5 passed, 1 failed, 0 inconclusive, 0 redundant

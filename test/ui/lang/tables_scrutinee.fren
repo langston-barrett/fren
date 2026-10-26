@@ -1,6 +1,6 @@
 -- Tables over a scrutinee, `table e { P if C => e, ... }`
 -- (`Reqs/Lang/Expressions#tables-over-a-scrutinee`): the `match` whose
--- arms are disjoint, so that their order does not matter. Tables whose
+-- arms are disjoint, so that its value does not depend on their order. Tables whose
 -- arms are disjoint, complete and each taken somewhere pass their checks.
 set_option fren.lint.dead_code "allow"
 

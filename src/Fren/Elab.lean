@@ -2321,7 +2321,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- guard, the otherwise (`Reqs/Lang/Expressions#tables-over-a-scrutinee`).
   if isTable then
     if let some k := Core.rowAfterWild? ((pats.zip guarded).map fun (p, g) => p matches .wild false && !g) then
-      throwErrorAt arms[k]![0] Core.rowAfterWildMsg.text
+      throwErrorAt arms[k]![0] Core.armAfterWildMsg.text
   let sigs ← patSigs
   let checked := if isTable then Core.checkTableArms sigs pty pats guarded
     else (Core.checkMatch sigs pty pats guarded).map (·, #[])

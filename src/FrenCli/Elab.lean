@@ -3458,7 +3458,7 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
   -- guard, the otherwise (`Reqs/Lang/Expressions#tables-over-a-scrutinee`).
   if isTable then
     if let some k := Fren.Core.rowAfterWild? (arms.map fun (p, g?, _) => p matches .wild _ && g?.isNone) then
-      err arms[k]!.1.span Fren.Core.rowAfterWildMsg
+      err arms[k]!.1.span Fren.Core.armAfterWildMsg
   let sigs ← patSigs
   let checked := if isTable then Fren.Core.checkTableArms sigs ts.patTy pats guarded
     else (Fren.Core.checkMatch sigs ts.patTy pats guarded).map (·, #[])

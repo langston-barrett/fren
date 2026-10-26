@@ -18,10 +18,13 @@ comp binder { in n: Int pub out y: Int ensure r: y = table n { 0 => 0, k => k } 
 --~^ error: this arm overlaps arm 1
 -- An arm after `_`.
 comp after_wild { in m: Mode pub out y: Int ensure r: y = table m { Mode::Off => 0, _ => 1, Mode::On(_) => 2 } }
---~^ error: a row after `_` can never be reached
+--~^ error: an arm after `_` can never be reached
 -- Not exhaustive, guards counted as if absent.
 comp missing { in m: Mode in ok? pub out y: Int ensure r: y = table m { Mode::On(x) if ok? => x } }
---~^ error: non-exhaustive match: `Mode::Off` not covered
+--~^ error: non-exhaustive table: `Mode::Off` not covered
+-- A last `_` that the arms without guards cover is never taken.
+comp dead_wild { in b? pub out y: Int ensure r: y = table b? { true => 0, false => 1, _ => 2 } }
+--~^ error: unreachable arm
 -- An alternative that an earlier one of the same arm covers.
 comp alternatives { in n: Int pub out y: Int ensure r: y = table n { 1 | 1 => 0, _ => 1 } }
 --~^ error: unreachable pattern

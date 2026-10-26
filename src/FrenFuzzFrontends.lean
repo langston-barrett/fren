@@ -136,8 +136,15 @@ partial def matchOn (sc : WScope) (t : WTy) (d : Nat) : R String := do
   return s!"{kw} {scrut} \{ {", ".intercalate arms.toList} }"
 
 /-- A table with values of type `t`: one to three rows, sometimes after
-a leading `|`, and sometimes a last `_` row. -/
+a leading `|`, and sometimes a last `_` row; or a table over an integer,
+whose ranges may overlap, which the static rules reject (`F0391`). -/
 partial def tableOf (sc : WScope) (t : WTy) (d : Nat) : R String := do
+  if ← chance 30 then
+    let (a, b, c) := (← below 4, ← below 4, ← below 4)
+    let guard ← if ← chance 50 then pure s!" if {← gen sc .bool (d - 1)}" else pure ""
+    let arms := #[s!"{min a b}..={max a b} => {← gen sc t (d - 1)}", s!"{c}..{guard} => {← gen sc t (d - 1)}",
+      s!"..=-1 => {← gen sc t (d - 1)}", s!"_ => {← gen sc t (d - 1)}"]
+    return s!"table ({← gen sc .int 0}) \{ {", ".intercalate arms.toList} }"
   let mut rows := #[]
   for _ in [0:(← below 3) + 1] do rows := rows.push s!"{← gen sc .bool (d - 1)} => {← gen sc t (d - 1)}"
   if ← chance 40 then rows := rows.push s!"_ => {← gen sc t (d - 1)}"

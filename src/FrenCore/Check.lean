@@ -1186,7 +1186,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
     if r.kind == .disjointness && r.goal? matches some (.disjointness .tableMatch ..) then
       #[one "F0636" s!"{rowsText r.rows? true} of a table in {subject} may both be taken" (some "overlaps an earlier arm")
         #[s!"witness: {showAssignment vals}",
-          "note: the arms of a table are disjoint, so that their order does not matter, but here both patterns match and both guards hold",
+          "note: the arms of a table are disjoint, so that its value does not depend on their order, but here both patterns match and both guards hold",
           "help: make the guards exclusive, as in `V(x) if x > 0 => a, V(x) if x <= 0 => b`"]]
     else
     if r.kind == .disjointness then

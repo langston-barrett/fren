@@ -250,6 +250,13 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
       if depth > 0 && (← chance 10) then
         let k ← below 3
         return s!"(match {← pick (sc.of .int)} \{ {k} => {← genBool sc (depth - 1)}, {k + 1} | -1 => {← genBool sc (depth - 1)}, _ => {← genBool sc (depth - 1)} })"
+      -- A table over an `Int`, whose ranges do not overlap, and whose arms
+      -- of one range have guards, which the disjointness check asks about.
+      if depth > 0 && (← chance 10) then
+        let k ← below 3
+        let g ← genBool sc (depth - 1)
+        let h ← if ← chance 50 then pure s!"not ({g})" else genBool sc (depth - 1)
+        return s!"(table {← pick (sc.of .int)} \{ ..={k} => {← genBool sc (depth - 1)}, {k + 1}..={k + 2} if {g} => {← genBool sc (depth - 1)}, {k + 1}..={k + 2} if {h} => {← genBool sc (depth - 1)}, {k + 3}.. => {← genBool sc (depth - 1)} })"
       return s!"{← intTerm sc} {← pick #["=", "!=", "<", "<=", ">", ">="]} {← intTerm sc}"
     | 3 =>
       let es := sc.of .enum
