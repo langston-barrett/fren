@@ -26,14 +26,14 @@ comp pick {
 }
 
 /--
-info: @[reducible] def guard_test.pick.ensure.r : guard_test.Mode → Int → Int → Int → Prop :=
+info: @[reducible] def Fren.Generated.guard_test.pick.ensure.r : guard_test.Mode → Int → Int → Int → Prop :=
 fun m t y z => y = if m = guard_test.Mode.Off ∧ t > 0 then 1 else if m = guard_test.Mode.Off then 2 else 3
 -/
 #guard_msgs in
 #print guard_test.pick.ensure.r
 
 /--
-info: @[reducible] def guard_test.pick.ensure.s : guard_test.Mode → Int → Int → Int → Prop :=
+info: @[reducible] def Fren.Generated.guard_test.pick.ensure.s : guard_test.Mode → Int → Int → Int → Prop :=
 fun m t y z => z = if t > 0 then 1 else if t ≤ 0 then 2 else ∅.nth 0
 -/
 #guard_msgs in

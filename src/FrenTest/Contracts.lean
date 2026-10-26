@@ -68,7 +68,7 @@ fn grows(n: Int): Int
 
 interp grows := fun n => n + 2
 
-/-- info: 'contract_test.grows.ensures' depends on axioms: [contract_test.grows.ensures] -/
+/-- info: 'Fren.Generated.contract_test.grows.ensures' depends on axioms: [contract_test.grows.ensures] -/
 #guard_msgs in #print axioms contract_test.grows.ensures
 
 -- A proof that uses `sorry` proves nothing, and neither does a statement

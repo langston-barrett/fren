@@ -27,14 +27,14 @@ pub comp exit {
 
 -- Generated declarations are ordinary Lean definitions.
 /--
-info: @[reducible] def check.exit.ensure.failed : Bool → check.Verdict → Int → Prop :=
+info: @[reducible] def Fren.Generated.check.exit.ensure.failed : Bool → check.Verdict → Int → Prop :=
 fun ran? worst code => ran? = true ∧ worst = check.Verdict.Fail → code = 1
 -/
 #guard_msgs in
 #print check.exit.ensure.failed
 
 /--
-info: @[reducible] def check.exit.ensures : Bool → check.Verdict → Int → Prop :=
+info: @[reducible] def Fren.Generated.check.exit.ensures : Bool → check.Verdict → Int → Prop :=
 fun ran? worst code =>
   check.exit.ensure.not_run ran? worst code ∧
     check.exit.ensure.failed ran? worst code ∧
@@ -43,7 +43,7 @@ fun ran? worst code =>
 #guard_msgs in
 #print check.exit.ensures
 
-/-- info: @[reducible] def check.exit.assumes : Bool → check.Verdict → Int → Prop :=
+/-- info: @[reducible] def Fren.Generated.check.exit.assumes : Bool → check.Verdict → Int → Prop :=
 fun ran? worst code => True -/
 #guard_msgs in
 #print check.exit.assumes
@@ -59,7 +59,7 @@ comp always_runs {
 }
 
 /--
-info: @[reducible] def check.always_runs.inst.e : check.Verdict → Int → Bool → check.Verdict → Int → Prop :=
+info: @[reducible] def Fren.Generated.check.always_runs.inst.e : check.Verdict → Int → Bool → check.Verdict → Int → Prop :=
 fun worst code e.ran? e.worst e.code =>
   (e.ran? = true ∧ e.worst = worst) ∧
     check.exit.assumes e.ran? e.worst e.code ∧ check.exit.ensures e.ran? e.worst e.code
@@ -73,7 +73,7 @@ fun worst code e.ran? e.worst e.code =>
 set_option fren.lint.dead_code "allow" in
 const FAILED: Int := 2 - 1
 
-/-- info: @[reducible] def check.FAILED : Int :=
+/-- info: @[reducible] def Fren.Generated.check.FAILED : Int :=
 2 - 1 -/
 #guard_msgs in
 #print check.FAILED
@@ -82,7 +82,7 @@ expect deterministic: forall (a b: exit),
   when a.ran? = b.ran? and a.worst = b.worst, a.code = b.code
 
 /--
-info: @[reducible] def check.deterministic : Prop :=
+info: @[reducible] def Fren.Generated.check.deterministic : Prop :=
 ∀ (a.ran? : Bool) (a.worst : check.Verdict) (a.code : Int) (b.ran? : Bool) (b.worst : check.Verdict) (b.code : Int),
   (check.exit.assumes a.ran? a.worst a.code ∧ check.exit.ensures a.ran? a.worst a.code) ∧
       check.exit.assumes b.ran? b.worst b.code ∧ check.exit.ensures b.ran? b.worst b.code →
@@ -111,14 +111,14 @@ comp arith {
 }
 
 /--
-info: @[reducible] def check.arith.ensure.quotient : Int → Int → Int → Int → Int → Prop :=
+info: @[reducible] def Fren.Generated.check.arith.ensure.quotient : Int → Int → Int → Int → Int → Prop :=
 fun x y q r a => q = -(x / 4)
 -/
 #guard_msgs in
 #print check.arith.ensure.quotient
 
 /--
-info: @[reducible] def check.arith.ensure.absolute : Int → Int → Int → Int → Int → Prop :=
+info: @[reducible] def Fren.Generated.check.arith.ensure.absolute : Int → Int → Int → Int → Int → Prop :=
 fun x y q r a =>
   a =
     if (if x - y < 0 then -(x - y) else x - y) ≤ if y ≥ 0 then y else 0 then if x - y < 0 then -(x - y) else x - y
@@ -148,14 +148,14 @@ comp ranged {
 }
 
 /--
-info: @[reducible] def check.ranged.ensure.inside : Int → Int → String → Bool → Bool → Prop :=
+info: @[reducible] def Fren.Generated.check.ranged.ensure.inside : Int → Int → String → Bool → Bool → Prop :=
 fun i n s inside? lower? => inside? = true ↔ (0 ≤ i ∧ i < n) ∧ n ≤ 10
 -/
 #guard_msgs in
 #print check.ranged.ensure.inside
 
 /--
-info: @[reducible] def check.ranged.ensure.lower : Int → Int → String → Bool → Bool → Prop :=
+info: @[reducible] def Fren.Generated.check.ranged.ensure.lower : Int → Int → String → Bool → Bool → Prop :=
 fun i n s inside? lower? => lower? = true ↔ Fren.Str.lt s (Fren.Str.lit "z") ∧ Fren.Str.le (Fren.Str.lit "a") s
 -/
 #guard_msgs in
@@ -177,7 +177,7 @@ comp leveled {
 }
 
 /--
-info: @[reducible] def check.leveled.ensure.above : check.Level → check.Level → Bool → check.Level → Prop :=
+info: @[reducible] def Fren.Generated.check.leveled.ensure.above : check.Level → check.Level → Bool → check.Level → Prop :=
 fun a b above? top =>
   above? = true ↔
     ((if check.Level.Low = check.Level.Low then 0 else if check.Level.Low = check.Level.Middle then 1 else 2) <
@@ -189,7 +189,7 @@ fun a b above? top =>
 #print check.leveled.ensure.above
 
 /--
-info: @[reducible] def check.leveled.ensure.highest : check.Level → check.Level → Bool → check.Level → Prop :=
+info: @[reducible] def Fren.Generated.check.leveled.ensure.highest : check.Level → check.Level → Bool → check.Level → Prop :=
 fun a b above? top =>
   top =
     if

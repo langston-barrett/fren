@@ -22,7 +22,8 @@ comp moves {
 }
 
 /--
-info: @[reducible] def record_update_test.moves.ensure.r : record_update_test.Point → Int → record_update_test.Point → Prop :=
+info: @[reducible] def Fren.Generated.record_update_test.moves.ensure.r : record_update_test.Point →
+  Int → record_update_test.Point → Prop :=
 fun p n q => q = { x := n, y := p.y }
 -/
 #guard_msgs in
@@ -35,7 +36,8 @@ example (p : record_update_test.Point) (n : Int) (q : record_update_test.Point) 
 -- An updated value that is not a name is bound once, so that nested updates
 -- grow linearly.
 /--
-info: @[reducible] def record_update_test.moves.ensure.s : record_update_test.Point → Int → record_update_test.Point → Prop :=
+info: @[reducible] def Fren.Generated.record_update_test.moves.ensure.s : record_update_test.Point →
+  Int → record_update_test.Point → Prop :=
 fun p n q =>
   q =
     let r := { x := p.x, y := 0 };

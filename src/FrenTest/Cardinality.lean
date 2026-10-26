@@ -25,7 +25,7 @@ comp modes {
 }
 
 /--
-info: @[reducible] def cardinality_test.modes.ensure.r : Bool → Bool → Int → Bool → Bool → Prop :=
+info: @[reducible] def Fren.Generated.cardinality_test.modes.ensure.r : Bool → Bool → Int → Bool → Bool → Prop :=
 fun a? b? x one? some? =>
   one? = true ↔ (((if a? = true then 1 else 0) + if b? = true then 1 else 0) + if x > 0 then 1 else 0) = 1
 -/
@@ -33,7 +33,7 @@ fun a? b? x one? some? =>
 #print cardinality_test.modes.ensure.r
 
 /--
-info: @[reducible] def cardinality_test.modes.ensure.s : Bool → Bool → Int → Bool → Bool → Prop :=
+info: @[reducible] def Fren.Generated.cardinality_test.modes.ensure.s : Bool → Bool → Int → Bool → Bool → Prop :=
 fun a? b? x one? some? => some? = true ↔ (if a? = true then 1 else 0) ≤ 1
 -/
 #guard_msgs in

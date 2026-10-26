@@ -16,7 +16,7 @@ pub comp heater {
 }
 
 /--
-info: @[reducible] def heating.heater.ensure.heat : Int → Bool → Prop :=
+info: @[reducible] def Fren.Generated.heating.heater.ensure.heat : Int → Bool → Prop :=
 fun temp on? =>
   have «limit@0» := 18;
   have «cold?@1» := decide (temp < «limit@0»);
@@ -26,7 +26,7 @@ fun temp on? =>
 #print heating.heater.ensure.heat
 
 /--
-info: @[reducible] def heating.heater.expect.warm : Int → Bool → Prop :=
+info: @[reducible] def Fren.Generated.heating.heater.expect.warm : Int → Bool → Prop :=
 fun temp on? =>
   have «hot?@0» := decide (temp > 30);
   «hot?@0» = true → ¬on? = true

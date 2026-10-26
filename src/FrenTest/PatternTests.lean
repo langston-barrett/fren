@@ -30,7 +30,7 @@ comp kinds {
 -- The scrutinee is equal to the variant built from its own payload, as in
 -- the test of a `match` arm.
 /--
-info: @[reducible] def pattern_test.kinds.ensure.round : pattern_test.Shape → Bool → Bool → Bool → Prop :=
+info: @[reducible] def Fren.Generated.pattern_test.kinds.ensure.round : pattern_test.Shape → Bool → Bool → Bool → Prop :=
 fun s round? boxy? any? => round? = true ↔ s = pattern_test.Shape.Circle (pattern_test.Shape.Circle.x0 s)
 -/
 #guard_msgs in
@@ -38,7 +38,7 @@ fun s round? boxy? any? => round? = true ↔ s = pattern_test.Shape.Circle (patt
 
 -- An or-pattern is the disjunction of its alternatives' tests.
 /--
-info: @[reducible] def pattern_test.kinds.ensure.boxy : pattern_test.Shape → Bool → Bool → Bool → Prop :=
+info: @[reducible] def Fren.Generated.pattern_test.kinds.ensure.boxy : pattern_test.Shape → Bool → Bool → Bool → Prop :=
 fun s round? boxy? any? =>
   boxy? = true ↔
     s = pattern_test.Shape.Rect (pattern_test.Shape.Rect.x0 s) (pattern_test.Shape.Rect.x1 s) ∨
@@ -49,7 +49,7 @@ fun s round? boxy? any? =>
 
 -- `_` matches every value.
 /--
-info: @[reducible] def pattern_test.kinds.ensure.any : pattern_test.Shape → Bool → Bool → Bool → Prop :=
+info: @[reducible] def Fren.Generated.pattern_test.kinds.ensure.any : pattern_test.Shape → Bool → Bool → Bool → Prop :=
 fun s round? boxy? any? => any? = true ↔ true = true
 -/
 #guard_msgs in

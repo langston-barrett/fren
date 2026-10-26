@@ -127,13 +127,13 @@ interp size := fun (_ : Int) => (300 : Int)
 -- The solver proves it, as an axiom.
 interp small := fun (x : Int) => if x < 0 then 0 else if x > 255 then 255 else x
 
-/-- info: 'interp_typed.small.ensures' depends on axioms: [interp_typed.small.ensures] -/
+/-- info: 'Fren.Generated.interp_typed.small.ensures' depends on axioms: [interp_typed.small.ensures] -/
 #guard_msgs in #print axioms interp_typed.small.ensures
 
 -- Or a proof after `by`.
 interp proved := fun (_ : Int) => (7 : Int) by intro _; show (0 : Int) ≤ 7 ∧ (7 : Int) ≤ 255; decide
 
-/-- info: 'interp_typed.proved.ensures' does not depend on any axioms -/
+/-- info: 'Fren.Generated.interp_typed.proved.ensures' does not depend on any axioms -/
 #guard_msgs in #print axioms interp_typed.proved.ensures
 
 -- Into `Nat`, over an `Int`, as the solver sees it.
@@ -169,5 +169,5 @@ interp capped := fun (n : Int) => n by sorry
 
 interp capped := fun (n : Int) => if n < 0 then 0 else if n > 255 then 255 else n
 
-/-- info: 'interp_typed_contract.capped.ensures' depends on axioms: [interp_typed_contract.capped.ensures] -/
+/-- info: 'Fren.Generated.interp_typed_contract.capped.ensures' depends on axioms: [interp_typed_contract.capped.ensures] -/
 #guard_msgs in #print axioms interp_typed_contract.capped.ensures

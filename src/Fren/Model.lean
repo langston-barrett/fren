@@ -134,6 +134,50 @@ structure AbstractInfo where
   fact? : Option Expr := none
   deriving Inhabited
 
+/-- The Lean namespace, under the current one, of every declaration generated
+for a Fren item (`Reqs/Generated#names`): Lean declares nothing in it but
+them, so that no item's name can be one of Lean's, such as `Option`. -/
+def generatedNamespace : Name := `Fren.Generated
+
+/-- `pre` followed by the components of `n`: `pre ++ n`, without `++`'s
+treatment of macro scopes, which neither has. -/
+def underName (pre : Name) : Name → Name
+  | .anonymous => pre
+  | .str p s => .str (underName pre p) s
+  | .num p k => .num (underName pre p) k
+
+/-- The Lean name of the declaration generated for the item at the Fren
+path `path`, declared where `ns` is the current Lean namespace
+(`Reqs/Generated#names`): `ns.Fren.Generated.path`. Every generated name is
+this, or a name under it; a message never shows it, but names the item by
+its path. With `ns` anonymous, it is the name relative to the current
+namespace, by which a command declares it. -/
+def leanName (ns path : Name) : Name := underName (underName ns generatedNamespace) path
+
+/-- The Lean name of the declaration generated for the item at `path`, in
+the current namespace (`leanName`). -/
+def generatedName [Monad m] [MonadResolveName m] (path : Name) : m Name :=
+  return leanName (← getCurrNamespace) path
+
+/-- Opens the namespace of the generated declarations (`leanName`) for the
+rest of the current section, so that Lean code there names an item's
+declarations by its path, as `climate.Mode.Heat`. Every Fren command does. -/
+def openGenerated : Elab.Command.CommandElabM Unit := do
+  let d := OpenDecl.simple (underName (← getCurrNamespace) generatedNamespace) []
+  unless (← getOpenDecls).contains d do
+    Elab.Command.modifyScope fun sc => { sc with openDecls := d :: sc.openDecls }
+
+open Elab Command in
+/-- `open`, which, where it opens `Fren.Lang`, Fren's syntax, also opens the
+namespace of the generated declarations (`openGenerated`), so that Lean code
+that imports a spec names its items' declarations by their paths, as
+`check.Verdict`. Any other `open` is Lean's own. -/
+@[command_elab Lean.Parser.Command.open] def elabOpenLang : CommandElab := fun stx => do
+  let isLang (d : OpenDecl) := d matches .simple `Fren.Lang _
+  let before := (← getOpenDecls).filter isLang |>.length
+  elabOpen stx
+  if ((← getOpenDecls).filter isLang |>.length) > before then openGenerated
+
 /-- The placeholder for the item at `path`. -/
 def placeholderName (path : Name) : Name := `Fren.Abstract ++ path
 
@@ -642,7 +686,8 @@ open Lean Elab Command in
 /-- Runs `k`, then records how many errors its top-level command has
 logged (`LocalState.staticErrors`), but those of checks
 (`LocalState.checkErrors`). An error that `k` throws is logged here, as
-`elabCommand` would, to be counted.
+`elabCommand` would, to be counted. Then it opens the namespace of the
+generated declarations (`openGenerated`).
 
 A command that Lean's parser recovered from a parse error, which it has
 reported, has missing parts: it is not elaborated, as the `fren` command
@@ -656,6 +701,7 @@ def recordingErrors (k : CommandElab) : CommandElab := fun stx => do
     | .internal id _ => if id == unsupportedSyntaxExceptionId || id == interruptExceptionId then throw ex
                         else logException ex
     | _ => logException ex
+  openGenerated
   let n := (← get).messages.toList.filter (·.severity == .error) |>.length
   let n := n - ((← getLocal).checkErrors - checks)
   if n == 0 then return

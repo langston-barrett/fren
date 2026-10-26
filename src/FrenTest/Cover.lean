@@ -22,7 +22,7 @@ pub comp heater {
 }
 
 /--
-info: @[reducible] def cover_test.heater.cover.heating : Int → cover_test.Mode → Int → Prop :=
+info: @[reducible] def Fren.Generated.cover_test.heater.cover.heating : Int → cover_test.Mode → Int → Prop :=
 fun temp mode margin => mode = cover_test.Mode.Heat ∧ margin > 2
 -/
 #guard_msgs in #print cover_test.heater.cover.heating
@@ -30,7 +30,7 @@ fun temp mode margin => mode = cover_test.Mode.Heat ∧ margin > 2
 #guard_msgs (drop info) in #fren_check heater
 
 /--
-info: cover_test.heater.cover.heating.met :
+info: Fren.Generated.cover_test.heater.cover.heating.met :
   ∃ temp mode margin,
     (cover_test.heater.assumes temp mode margin ∧ cover_test.heater.ensures temp mode margin) ∧
       cover_test.heater.cover.heating temp mode margin
@@ -53,9 +53,9 @@ pub comp named {
 
 #guard_msgs (drop info) in #fren_check named
 
-/-- error: Unknown constant `cover_test.named.cover.distinct.met` -/
+/-- error: Unknown constant `Fren.Generated.cover_test.named.cover.distinct.met` -/
 #guard_msgs in #check cover_test.named.cover.distinct.met
 
 -- Proved in the kernel, not on the solver's word.
-/-- info: 'cover_test.heater.cover.heating.met' does not depend on any axioms -/
+/-- info: 'Fren.Generated.cover_test.heater.cover.heating.met' does not depend on any axioms -/
 #guard_msgs in #print axioms cover_test.heater.cover.heating.met

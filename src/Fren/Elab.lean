@@ -1911,7 +1911,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   checkFresh modName n nameStx
   lintName .enumeration n nameStx
   let path := modName ++ n
-  let decl := (← getCurrNamespace) ++ path
+  let decl ← generatedName path
   let variantStxs := stx[5].getSepArgs
   -- Distinct names (`lang::distinct_names`), of names that are single
   -- segments, as the `fren` command parses them.
@@ -1959,15 +1959,18 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
     throwErrorAt withPayload[0]![0] (Core.orderedPayloadMsg n withPayload[0]![0].getId).text
   let ctors ← (variants.zip payloads).mapM fun (v, ts) => do
     let bs ← ts.mapIdxM fun k t => do
-      let ty := if t.isConstOf decl then mkIdent path else typeSyntax t
+      let ty := if t.isConstOf decl then mkIdent decl else typeSyntax t
       `(Lean.Parser.Term.bracketedBinderF| ($(mkIdent (Name.mkSimple s!"x{k}")) : $ty))
     `(Lean.Parser.Command.ctor| | $(mkIdent v):ident $bs:bracketedBinder*)
-  elabCommand (← `(inductive $(mkIdentFrom nameStx path):ident where $ctors:ctor* deriving DecidableEq, Repr, Inhabited))
+  -- Declared by its name relative to the current namespace, `decl`, so that
+  -- Lean names the instances it derives in `decl`'s namespace, apart from
+  -- other items' and Lean's own.
+  elabCommand (← `(inductive $(mkIdentFrom nameStx (leanName .anonymous path)):ident where $ctors:ctor* deriving DecidableEq, Repr, Inhabited))
   if payloads.all (·.isEmpty) then
-    let vals := variants.map fun v => mkIdent (decl ++ v)
+    let vals := variants.map fun v => mkCIdent (decl ++ v)
     -- Named after the full path: an anonymous instance is named after `n`
     -- alone, which enumerations in different modules can share.
-    elabCommand (← `(instance $(mkIdent (`_root_ ++ decl ++ `instFinite)):ident : Fren.Finite $(mkIdent decl) :=
+    elabCommand (← `(instance $(mkIdent (`_root_ ++ decl ++ `instFinite)):ident : Fren.Finite $(mkCIdent decl) :=
       ⟨[$vals,*], by intro x; cases x <;> decide⟩))
   -- A selector for each value of each payload, which a `match` reads.
   for v in variants, ts in payloads do
@@ -2008,7 +2011,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   checkFresh modName n nameStx
   lintName .record n nameStx
   let path := modName ++ n
-  let decl := (← getCurrNamespace) ++ path
+  let decl ← generatedName path
   let mut fields : Array (Name × Expr) := #[]
   let mut ptys : Array Core.PTy := #[]
   let fieldStxs := stx[4].getSepArgs
@@ -2035,7 +2038,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   let st ← getState
   let unbounded := fields.any fun (_, t) => st.unbounded t
   let bs ← fields.mapM fun (f, t) => `(Lean.Parser.Command.structExplicitBinder| ($(mkIdent f):ident : $(typeSyntax t)))
-  elabCommand (← `(structure $(mkIdentFrom nameStx path):ident where
+  elabCommand (← `(structure $(mkIdentFrom nameStx (leanName .anonymous path)):ident where
     $(mkIdent `«{}»):ident :: $bs:structExplicitBinder*
     deriving DecidableEq, Repr, Inhabited))
   record (.item { item := { kind := .recordItem, path, isPub, owner := modName }, ref := nameStx })
@@ -2045,6 +2048,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
 @[command_elab Lang.newtypeCmd] def elabNewtype : CommandElab := fun stx => do
   -- What Lean recovered from a parse error that it has reported.
   if stx.hasMissing then return
+  openGenerated
   checkLexemes stx
   checkParsed stx
   let modName := (← getLocal).currentModule
@@ -2054,7 +2058,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   checkFresh modName n nameStx
   lintName .record n nameStx
   let path := modName ++ n
-  let decl := (← getCurrNamespace) ++ path
+  let decl ← generatedName path
   -- Exactly one field, whose type is accepted as a record's field's
   -- (`lang::newtype`).
   let tys := stx[4].getSepArgs
@@ -2063,7 +2067,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   let (under, pt) ← fieldType modName ty (some decl) false n
   let unbounded := Core.newtypeUnbounded ((← getState).unbounded under)
   -- One field, `«0»`, so that `x.0` in Fren is `x.«0»` in Lean.
-  elabCommand (← `(structure $(mkIdentFrom nameStx path):ident where
+  elabCommand (← `(structure $(mkIdentFrom nameStx (leanName .anonymous path)):ident where
     $(mkIdent `mk):ident :: $(mkIdent (Name.mkSimple "0")):ident : $(typeSyntax under)
     deriving DecidableEq, Repr, Inhabited))
   record (.item { item := { kind := .recordItem, path, isPub, owner := modName }, ref := nameStx })
@@ -4194,7 +4198,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   unless Core.functionParamsAccepted body?.isSome contract params.size nNamed do
     let bad := params.find? (named · != (body?.isSome || contract)) |>.getD nameStx
     throwErrorAt bad (Core.functionParamsMsg path body?.isSome contract).text
-  let decl := (← getCurrNamespace) ++ path
+  let decl ← generatedName path
   let some body := body? | do
     liftTermElabM do
       if contract then
@@ -4918,7 +4922,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   lintName .component n nameStx
   startDeclared
   let path := modName ++ n
-  let declBase := (← getCurrNamespace) ++ path
+  let declBase ← generatedName path
   -- The evidence settings, apart from the members they set.
   let (members, tested) ← testedOf (← evidenceInEffect) stx[4].getArgs
   -- Its `use`s, and the scope that its paths resolve in.
@@ -4964,7 +4968,7 @@ end
   checkFresh modName n nameStx
   lintName .constant n nameStx
   let path := modName ++ n
-  let decl := (← getCurrNamespace) ++ path
+  let decl ← generatedName path
   liftTermElabM do
     let (type, pt) ← elabPType modName stx[4]
     lintRelTypes modName stx[4]
@@ -5126,7 +5130,7 @@ def globalText (stx : Syntax) : String :=
     recordLint .duplicateConstraint nameStx (if l.inMarkdown then msg.note Core.fixHelp else msg)
   modifyLocal fun l => { l with globalTexts := l.globalTexts.push (modName, n, text) }
   let path := modName ++ n
-  let decl := (← getCurrNamespace) ++ path
+  let decl ← generatedName path
   let binders := if stx[3].isNone then #[] else stx[3][1].getArgs
   let info ← liftTermElabM <| elabGlobalInfo modName n nameStx binders (withWhere stx[4] stx[5]) decl
   lintDeclared .global n nameStx
@@ -5159,7 +5163,7 @@ and the solver is asked nothing. -/
   liftMsg nameStx (Core.checkItemName "refinement" n)
   checkFresh modName n nameStx
   let path := modName ++ n
-  let decl := (← getCurrNamespace) ++ path
+  let decl ← generatedName path
   let compOf (p : Syntax) : CommandElabM CompInfo := do
     let r ← resolvePath modName (pathSegs p)
     let .item { kind := .compItem, path := cp, .. } := r | throwErrorAt p (Core.notACompMsg r).text

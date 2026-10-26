@@ -21,21 +21,21 @@ pub comp stock {
 }
 
 /--
-info: @[reducible] def nat_test.stock.def.next : (Int → Nat) → Nat → Int → Nat → Int → Int → Prop :=
+info: @[reducible] def Fren.Generated.nat_test.stock.def.next : (Int → Nat) → Nat → Int → Nat → Int → Int → Prop :=
 fun count n m next prev total => next = n + 1
 -/
 #guard_msgs in
 #print nat_test.stock.def.next
 
 /--
-info: @[reducible] def nat_test.stock.def.prev : (Int → Nat) → Nat → Int → Nat → Int → Int → Prop :=
+info: @[reducible] def Fren.Generated.nat_test.stock.def.prev : (Int → Nat) → Nat → Int → Nat → Int → Int → Prop :=
 fun count n m next prev total => prev = ↑n - 1
 -/
 #guard_msgs in
 #print nat_test.stock.def.prev
 
 /--
-info: @[reducible] def nat_test.stock.def.total : (Int → Nat) → Nat → Int → Nat → Int → Int → Prop :=
+info: @[reducible] def Fren.Generated.nat_test.stock.def.total : (Int → Nat) → Nat → Int → Nat → Int → Int → Prop :=
 fun count n m next prev total => total = ↑n + m
 -/
 #guard_msgs in

@@ -41,7 +41,8 @@ comp tests {
 -- A nested pattern tests the payload, read with the selector, after the
 -- variant; a literal is an equality.
 /--
-info: @[reducible] def nested_pattern.tests.ensure.nested : nested_pattern.Reply → Int → String → Int → Int → Int → Prop :=
+info: @[reducible] def Fren.Generated.nested_pattern.tests.ensure.nested : nested_pattern.Reply →
+  Int → String → Int → Int → Int → Prop :=
 fun r n s x y z =>
   x =
     if
@@ -58,14 +59,16 @@ fun r n s x y z =>
 -- A range is comparisons with its bounds, a constant's by its value, and
 -- `0..MAX` excludes `MAX`.
 /--
-info: @[reducible] def nested_pattern.tests.ensure.ranges : nested_pattern.Reply → Int → String → Int → Int → Int → Prop :=
+info: @[reducible] def Fren.Generated.nested_pattern.tests.ensure.ranges : nested_pattern.Reply →
+  Int → String → Int → Int → Int → Prop :=
 fun r n s x y z => y = if n ≤ -1 then 0 else if 0 ≤ n ∧ n ≤ 9 then 1 else 2
 -/
 #guard_msgs in
 #print nested_pattern.tests.ensure.ranges
 
 /--
-info: @[reducible] def nested_pattern.tests.ensure.strings : nested_pattern.Reply → Int → String → Int → Int → Int → Prop :=
+info: @[reducible] def Fren.Generated.nested_pattern.tests.ensure.strings : nested_pattern.Reply →
+  Int → String → Int → Int → Int → Prop :=
 fun r n s x y z => z = if s = Fren.Str.lit "a" then 1 else 2
 -/
 #guard_msgs in
