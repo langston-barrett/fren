@@ -4,6 +4,7 @@ mod clamp
 const LOW: Int := 0
 const HIGH: Int := 10
 
+set_option fren.lint.manual_min_max "allow" in
 fn clamp(x: Int): Int := if x < LOW then LOW else if x > HIGH then HIGH else x
 
 pub comp mixer {

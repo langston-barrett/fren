@@ -660,6 +660,7 @@ deriving instance BEq for Fren.Core.LintReport
 deriving instance BEq for FrenCli.UseLoc
 deriving instance BEq for Fren.Core.ItemRecord
 deriving instance BEq for FrenCli.LintFix
+deriving instance BEq for FrenCli.NatReport
 deriving instance BEq for Fren.Core.SettingRecord
 deriving instance BEq for Fren.Core.AssumptionRecord
 

@@ -1037,8 +1037,8 @@ or splices. Every field is compared (`same_fields%`), so a field added to
   `fixing`, `module`, `scope`, `levels`, `useRecords`, `evidence?`, `used`,
   `expectations`, `lintReports`, `useLocs`, `expectationRemovals`,
   `items`, `usedItems`, `lintFixes`, `globalTexts`, `settings`,
-  `settingRemovals`, `seenSettings`, `assumptions`, `globalReads` and
-  `trailingCommas`; and `itemStart`, `literals` and `itemSpan`, which it
+  `settingRemovals`, `seenSettings`, `assumptions`, `globalReads`,
+  `trailingCommas`, `natReports` and `natKept`; and `itemStart`, `literals` and `itemSpan`, which it
   sets for each item before the item reads them. The `mutation` test job
   checks that they are not read, by elaborating files after states that
   differ in them (`FrenTestMain`);
@@ -1054,7 +1054,7 @@ item in progress (`itemErrors`). -/
 def sameForLater (a b : State) : Bool :=
   same_fields% State a b except [file, src, fixing, module, scope, levels, useRecords, evidence?, used, expectations,
     lintReports, useLocs, expectationRemovals, items, usedItems, lintFixes, globalTexts, settings, settingRemovals,
-    seenSettings, assumptions, globalReads, trailingCommas, itemStart, literals, itemSpan,
+    seenSettings, assumptions, globalReads, trailingCommas, natReports, natKept, itemStart, literals, itemSpan,
     comps, consts, constInts,
     globals, refinements, bodies, diags, edits, natSums, claims, applied, defs]
     && a.defs.isEqv b.defs (fun (n, ps, r, _) (n', ps', r', _) => n == n' && ps == ps' && r == r')
@@ -1070,6 +1070,7 @@ def State.withPerFileOf (s t : State) : State :=
            items := t.items, usedItems := t.usedItems, lintFixes := t.lintFixes, globalTexts := t.globalTexts
            settings := t.settings, settingRemovals := t.settingRemovals, seenSettings := t.seenSettings
            assumptions := t.assumptions, globalReads := t.globalReads, trailingCommas := t.trailingCommas
+           natReports := t.natReports, natKept := t.natKept
            itemStart := t.itemStart, literals := t.literals, itemSpan := t.itemSpan }
 
 /-- How a mutant's state after a file differs from the original's
