@@ -52,6 +52,29 @@ jobs:
         build-args: --wfail
         test: true
         lint: false
+    # A few mutants of Fren's own requirements on each push, a different few
+    # each run (the seed is the run's number), so that over many pushes the
+    # runs cover them: all of them, over 3000, are too many for one run.
+    # Survivors are warnings, and the step never fails the build, since the
+    # survivors are not triaged yet.
+    - name: Mutate a few requirements
+      continue-on-error: true
+      timeout-minutes: 2
+      env:
+        SEED: ${{ github.run_number }}
+      run: |
+        set -euo pipefail
+        # Fren's own requirements, in the order in which `lake test` checks
+        # them (`ownSpecFiles`).
+        mapfile -t files < <(sed -n '/^def ownSpecFiles/,/map fun r/p' src/FrenTestMain.lean \
+          | grep -o '"[A-Za-z/]*"' | tr -d '"' | sed 's|.*|src/Reqs/&.md|')
+        test "${#files[@]}" -gt 0
+        if .lake/build/bin/fren mutate --sample 5 --seed "$SEED" --timeout 5 "${files[@]}"; then code=0; else code=$?; fi
+        case $code in
+          0) ;;
+          3) echo "::warning title=fren mutate::some mutants survived (seed $SEED); see the step's log" ;;
+          *) echo "::error title=fren mutate::exited with $code"; exit "$code" ;;
+        esac
     # Only once the packages Fren imports, `Smt` and `cvc5`, are built (and so
     # everything they import): a fetch or a dependency build that failed
     # partway must not be saved, as the exact key would keep it.
