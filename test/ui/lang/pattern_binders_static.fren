@@ -1,0 +1,52 @@
+-- Static rules for pattern tests that bind names (`lang::test_scope`).
+set_option fren.lint.dead_code "allow"
+
+enum Reply { Empty, Value(Int), Pair(Int, Int) }
+
+-- Where nothing sees the names, a test cannot bind them.
+comp alone { in r: Reply pub out z? ensure a: z? iff r is Reply::Value(v) }
+--~^ error: a pattern test cannot bind `v` here
+comp last { in r: Reply in b? pub out z? ensure a: z? iff (b? and r is Reply::Value(v)) }
+--~^ error: a pattern test cannot bind `v` here
+comp in_unless { in r: Reply pub out w: Int ensure a: unless r is Reply::Value(v), w = 0 }
+--~^ error: a pattern test cannot bind `v` here
+comp in_or { in r: Reply in b? pub out z? ensure a: z? iff (r is Reply::Value(v) or b?) }
+--~^ error: a pattern test cannot bind `v` here
+comp in_not { in r: Reply pub out w: Int ensure a: when not r is Reply::Value(v), w = 0 }
+--~^ error: a pattern test cannot bind `v` here
+comp body_is { in r: Reply pub out z? ensure a: when z?, r is Reply::Value(v) }
+--~^ error: a pattern test cannot bind `v` here
+
+-- The names are not in scope outside what sees them.
+comp else_branch { in r: Reply pub out w: Int ensure a: w = (if r is Reply::Value(v) then 0 else v) }
+--~^ error: cannot find `v`
+comp unless_and { in r: Reply pub out w: Int ensure a: unless r is Reply::Value(v) and v > 0, w = v }
+--~^ error: cannot find `v`
+comp before { in r: Reply pub out z? ensure a: z? iff (v > 0 and r is Reply::Value(v)) }
+--~^ error: cannot find `v`
+comp under_or { in r: Reply in b? pub out w: Int ensure a: when (r is Reply::Value(v) and v > 0) or b?, w = v }
+--~^ error: cannot find `v`
+
+-- An or-pattern binds no names, as in a `match`.
+comp or_pattern { in r: Reply pub out w: Int ensure a: when r is Reply::Value(v) | Reply::Pair(v, _), w = v }
+--~^ error: an or-pattern cannot bind `v`
+
+-- Each name once in a pattern, and shadowing only with `!`.
+comp twice { in r: Reply pub out w: Int ensure a: when r is Reply::Pair(v, v), w = v }
+--~^ error: `v` is bound multiple times in this pattern
+comp shadows_input { in r: Reply in v: Int pub out w: Int ensure a: when r is Reply::Value(v), w = v }
+--~^ error: `v` shadows
+comp shadows_test { in r: Reply in s: Reply pub out w: Int ensure a: when r is Reply::Value(v) and s is Reply::Value(v), w = v }
+--~^ error: `v` shadows
+
+-- A binder of `Bool` ends in `?`.
+enum Flag { On(Bool), Off }
+comp bool_name { in f: Flag pub out z? ensure a: when f is Flag::On(b), z? iff b }
+--~^ error: `Bool` variable `b` must end in `?`
+
+-- A binder of a generic payload has the instantiated type.
+enum Opt(T) { None, Some(T) }
+comp generic { in o: Opt(Int) pub out w? ensure a: when o is Opt::Some(x), w? iff x }
+--~^ error: type mismatch: expected `Bool`, found `Int`
+
+--@ exit: 2

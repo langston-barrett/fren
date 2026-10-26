@@ -1,0 +1,22 @@
+warning[F0612]: testing never reached `q::bound` in 100 tests: its trigger held in none of them
+  --> test/cli/results/f0612_binding.fren:10:19
+   |
+10 |     expect bound: when r is Reply::Value(v), v = 1
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^ never held
+   |
+   = note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it
+   = help: run `fren check` to decide it, or raise `--tests`
+
+warning[F0612]: testing never reached `q::unbound` in 100 tests: its trigger held in none of them
+  --> test/cli/results/f0612_binding.fren:11:21
+   |
+11 |     expect unbound: when r is Reply::Value(_), w = 1
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^ never held
+   |
+   = note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it
+   = help: run `fren check` to decide it, or raise `--tests`
+
+fren: 2 passed, 0 failed, 2 inconclusive, in 100 tests each
+
+For more information about this error, try `fren --explain F0612`.
+exit=3

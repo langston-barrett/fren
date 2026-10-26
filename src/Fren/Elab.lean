@@ -471,6 +471,13 @@ structure ExprCtx where
   counts for nothing: what it may mention, linear arithmetic and the
   decidable core are not checked in it (`Reqs/Lang/Let#meaning`). -/
   unmentioned : Bool := false
+  /-- What the chain of `and` that this expression is an operand of, or is,
+  is a part of, for its pattern tests (`lang::test_scope`). Only `and`,
+  `is` and parentheses read it, and only their operands see it. -/
+  testContext : Core.TestContext := .standalone
+  /-- For an operand of a chain of `and`, its position in the chain and the
+  chain's number of operands. -/
+  testAt? : Option (Nat × Nat) := none
 
 /-- What the binder `b` is, for a declaration that hides it (`Core.bindingLocals`). -/
 def MatchBinder.what (b : MatchBinder) : Name × String :=
@@ -484,6 +491,22 @@ def ExprCtx.at (cx : ExprCtx) (b : MatchBinder) : ExprCtx := { cx with binders :
 /-- Names that shadow items: variables of one segment, and binders. -/
 def ExprCtx.shadowing (cx : ExprCtx) : Array Name :=
   (cx.vars.filter (·.name.isAtomic) |>.map (·.name)) ++ cx.binders.map (·.name)
+
+/-- The names that the pattern tests translated since `LocalState.bound`
+had `mark` names bind. -/
+def boundSince (mark : Nat) : TermElabM (Array MatchBinder) :=
+  return ((← getLocal).bound.extract mark).map fun (name, term, type, sc, outer) =>
+    { name, term := ⟨term⟩, type, scrutinee := some sc, outer }
+
+/-- Runs `x`, and returns with its result the names that the pattern tests
+that it translates bind (`LocalState.bound`), which it removes: those of
+the condition of a `when` or `if` (`lang::test_scope`). -/
+def withBound (x : TermElabM α) : TermElabM (α × Array MatchBinder) := do
+  let mark := (← getLocal).bound.size
+  let r ← x
+  let new ← boundSince mark
+  modifyLocal fun l => { l with bound := l.bound.extract 0 mark }
+  return (r, new)
 
 /-- Whether the path `p` names a variant. -/
 def isVariant (cx : ExprCtx) (p : Syntax) : TermElabM Bool := do
@@ -655,6 +678,32 @@ def paramTypes : Expr → Array Expr
 /-- Strips parentheses from `e`. -/
 partial def unparen (e : Syntax) : Syntax :=
   if e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(" then unparen e[1] else e
+
+/-- Whether `e` is the binary operator `op`. -/
+def isBinOp (e : Syntax) (op : String) : Bool :=
+  e.getNumArgs == 3 && e[1].isAtom && e[1].getAtomVal.trimAscii.toString == op
+
+/-- The operands of a chain of `op`, `or` or `and`, through parentheses, as
+the `fren` command's parser, which drops them, sees it. -/
+partial def chainOperands (op : String) (e : Syntax) : Array Syntax :=
+  let e := unparen e
+  if isBinOp e op then chainOperands op e[0] ++ chainOperands op e[2] else #[e]
+
+/-- Whether `e` is `if c then a else b`. -/
+def isIte (e : Syntax) : Bool := e.getNumArgs == 6 && e[0].isAtom && e[0].getAtomVal.trimAscii.toString == "if"
+
+/-- Of `when c, d`, `c and d` and `if c then d else f`: `c`, whose pattern
+tests' names `d` sees, `d`, and the other parts (`lang::test_scope`). -/
+def testScoped? (e : Syntax) : Option (Syntax × Syntax × Array Syntax) :=
+  if e.getNumArgs == 4 && e[0].isAtom && e[0].getAtomVal.trimAscii.toString == "when" then some (e[1], e[3], #[])
+  else if isBinOp e "and" then some (e[0], e[2], #[])
+  else if isIte e then some (e[1], e[3], #[e[5]])
+  else none
+
+/-- The pattern tests of the chain of `and` `c`, each with its scrutinee and
+its pattern. -/
+def chainTests (c : Syntax) : Array (Syntax × Syntax) :=
+  (chainOperands "and" c).filterMap fun o => if o.isOfKind ``Lang.isExpr then some (o[0], o[2]) else none
 
 /-- The pattern of `s.matches?(p)`, `p`, as a closed `Fren.Core.Re` term
 (`Reqs/Lang/Expressions#patterns`). -/
@@ -1039,6 +1088,11 @@ partial def pathMentions (e : Syntax) (all : Bool := true) : Array Name :=
   else if e.isOfKind ``Lang.quantExpr then
     let bound := quantNames e
     (pathMentions e[3]).filter (!bound.contains ·.getRoot)
+  -- In what sees them, the names that the pattern tests of a condition, or
+  -- of the left operand of `and`, bind mean them (`lang::test_scope`).
+  else if let some (c, d, others) := testScoped? e then
+    let bound := (chainTests c).flatMap fun (_, p) => (topNames p).map fun b => (declaredIdent b).1.getId
+    pathMentions c ++ (pathMentions d).filter (!bound.contains ·.getRoot) ++ others.foldl (· ++ pathMentions ·) #[]
   else e.getArgs.foldl (· ++ pathMentions ·) #[]
 
 /-- Which of the definitions `defs` of a `let` or `where` clause its body
@@ -1130,6 +1184,10 @@ def patternName (cx : ExprCtx) (p x : Syntax) : TermElabM Core.PatternName := do
 def topBinders (cx : ExprCtx) (top : Syntax) : TermElabM (Array Syntax) :=
   (topNames top).filterM fun x => return (← patternName cx (mkNode ``Lang.fren_path #[mkNullNode #[x]]) x) == .binder
 
+/-- Whether a pattern test of the chain of `and` `c` binds names. -/
+def chainBinds (cx : ExprCtx) (c : Syntax) : TermElabM Bool :=
+  (chainTests c).anyM fun (_, p) => return !(← topBinders cx p).isEmpty
+
 /-- The shape of `e`, for what it mentions (`lang::mentions`), where `bs`
 are the binders of `e` around the subexpression, each with the shape of its
 scrutinee. -/
@@ -1180,6 +1238,13 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
       return .node .definedOutput [← shapeOf { cx with binders := #[] } d]
     return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable else .constant)
   else if e.isAtom || e.isIdent then return .leaf .literal
+  -- The names that the pattern tests of a condition, or of the left
+  -- operand of `and`, bind, in what sees them (`lang::test_scope`).
+  else if let some (c, d, others) := testScoped? e then
+    let new ← (chainTests c).flatMapM fun (sc, p) => do
+      let s ← shapeOf cx sc bs
+      return (← topBinders cx p).map fun b => ((declaredIdent b).1.getId, Core.MentionShape.node .binder [s])
+    return .node .compound ([← shapeOf cx c bs, ← shapeOf cx d (bs ++ new)] ++ (← others.toList.mapM (shapeOf cx · bs)))
   else parts .compound e.getArgs
 
 /-- Whether `e` mentions a variable or an uninterpreted function
@@ -1506,8 +1571,16 @@ def lintBools (e : Syntax) (hides : String → Bool) : TermElabM Unit := do
   -- `fren fix` reads Markdown specs, but not Lean files.
   let fixable := (← getLocal).inMarkdown
   let node := boolNode sub.str sub.startPos e
+  -- Not a rewrite of an expression with a pattern test that binds names,
+  -- which could move what mentions them out of their scope
+  -- (`lang::test_scope`).
+  let tests := (← getLocal).bindingTests
+  modifyLocal fun l => { l with bindingTests := #[] }
+  let pos (p : Option String.Pos.Raw) : Nat := (p.map (·.byteIdx)).getD 0
+  let keeps (first last : Syntax) := !tests.any fun (a, b) =>
+    pos first.getPos? ≤ pos a && pos b ≤ pos last.getTailPos?
   for (l, ref, msg) in Core.rewriteReports src node fixable do
-    recordLint l ref msg
+    if keeps ref ref then recordLint l ref msg
   let (boolEqs, ordereds, variants, absEnds, mentioning, facts) :=
     ((← getLocal).boolEqs, (← getLocal).ordereds, (← getLocal).variants, (← getLocal).absEnds, (← getLocal).mentioning,
       (← getLocal).facts)
@@ -1525,9 +1598,9 @@ def lintBools (e : Syntax) (hides : String → Bool) : TermElabM Unit := do
   for r in Core.opReports src (at_ boolEqs) ordered? variant? (absEnds.contains ·.getTailPos?) (at_ mentioning) fact? fcx node do
     -- A node's position is its first token's, and its tail its last's.
     let ref := match r.last? with | some l => mkNullNode #[r.ref, l] | none => r.ref
-    recordLint r.lint ref { r.msg with notes := r.msg.notes ++ help r.msg }
+    if keeps r.ref (r.last?.getD r.ref) then recordLint r.lint ref { r.msg with notes := r.msg.notes ++ help r.msg }
   for r in Core.arithReports src node do
-    recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ help r.msg }
+    if keeps r.ref r.ref then recordLint r.lint r.ref { r.msg with notes := r.msg.notes ++ help r.msg }
   -- `zero_prefixed_literal`, in expressions and patterns alike.
   let off (p : Option String.Pos.Raw) := (String.Pos.Raw.extract sub.str sub.startPos (p.getD sub.startPos)).length
   for n in numLits e do
@@ -2912,15 +2985,42 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
   let ty ← typeOf s
   let pty := patTyOf (← getState) ty
   if pty == .other then throwErrorAt scrutinee (Core.isScrutineeMsg (← typeName ty)).text
-  let (q, bs, test) ← resolveTop cx ty s true e[2]
-  match Core.checkPatternTest (← patSigs) pty q (bs.map (·.ident.getId)) with
+  -- Whether the names that it binds are in scope anywhere (`lang::test_scope`):
+  -- then its or-patterns bind none, as a `match` arm's do.
+  let (k, n) := cx.testAt?.getD (0, 1)
+  let binds := Core.testBinds cx.testContext k n
+  let (q, bs, test) ← resolveTop cx ty s (!binds) e[2]
+  match Core.checkPatternTest (← patSigs) pty q (bs.map (·.ident.getId)) binds cx.testContext with
   | .ok () => pure ()
   | .error (.binder k, msg) => throwErrorAt bs[k]!.ident msg.text
   | .error (.alternative j, msg) => throwErrorAt (topAlternatives e[2])[j]! msg.text
   | .error (.whole, msg) => throwErrorAt e[2] msg.text
+  if cx.noteIndexes && !bs.isEmpty then
+    modifyLocal fun l => { l with bindingTests := l.bindingTests.push (e.getPos?, e.getTailPos?) }
+  if binds && !bs.isEmpty then
+    -- Declared as a `match` arm's binders are, for the later operands of the
+    -- chain and the body that sees them.
+    let declared := bs.map fun b => (declaredIdent b.ident).1.getId
+    if let some k := (Core.repeatsAt declared)[0]? then
+      throwErrorAt bs[k]!.ident (Core.dupPatternBinderMsg declared[k]!).text
+    let mut new := #[]
+    for b in bs do
+      let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+        (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
+      let y ← declare b.ident cx.modName locals
+      let bn := y.getId
+      liftMsg y (Core.checkVarName bn (some (b.type.isConstOf ``Bool || b.type.isProp)))
+      if cx.noteIndexes then lintName .binder bn y
+      -- With its type, so that where a `Prop` is expected, as in the body
+      -- of `when`, the selector's type parameters are those of the
+      -- scrutinee's type, not inferred from there.
+      let term ← `(($(b.term) : $(← exprToSyntax b.type)))
+      new := new.push (bn, term.raw, b.type, scrutinee, cx.binders.size)
+    modifyLocal fun l => { l with bound := l.bound ++ new }
   if cx.noteIndexes then
-    -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`).
-    let irrefutable := Core.irrefutableIs (Core.matchesEvery (← patSigs) pty q)
+    -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`):
+    -- not of a test that binds names, which it is needed for.
+    let irrefutable := bs.isEmpty && Core.irrefutableIs (Core.matchesEvery (← patSigs) pty q)
     if irrefutable then recordLint .irrefutableIs e (Core.irrefutableIsMsg (← patTypeName ty) (q matches .wild _))
     lintOrPatterns (orNode (topAlts e[2]).1 q)
     let texts := (topAlts e[2]).1.map exactText
@@ -2930,19 +3030,6 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
   match test with
   | some t => return t
   | none => `(true)
-
-/-- Whether `e` is the binary operator `op`. -/
-def isBinOp (e : Syntax) (op : String) : Bool :=
-  e.getNumArgs == 3 && e[1].isAtom && e[1].getAtomVal.trimAscii.toString == op
-
-/-- The operands of a chain of `op`, `or` or `and`, through parentheses, as
-the `fren` command's parser, which drops them, sees it. -/
-partial def chainOperands (op : String) (e : Syntax) : Array Syntax :=
-  let e := unparen e
-  if isBinOp e op then chainOperands op e[0] ++ chainOperands op e[2] else #[e]
-
-/-- Whether `e` is `if c then a else b`. -/
-def isIte (e : Syntax) : Bool := e.getNumArgs == 6 && e[0].isAtom && e[0].getAtomVal.trimAscii.toString == "if"
 
 /-- Whether `e` is a `when`, an `unless` or a quantifier, whose body
 extends as far right as possible. -/
@@ -3018,6 +3105,9 @@ def rowPartOf (e : Syntax) : String :=
 `e` (`lint::if_chain_match`, `lint::manual_table`). -/
 def lintIfChain (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
   let (cs, as, z) := ifChain e
+  -- A table's row does not see what its condition's pattern tests bind
+  -- (`lang::test_scope`).
+  if ← cs.anyM (chainBinds cx) then return
   let ts? := Core.sameScrutinee (← cs.mapM (variantTest? cx))
   let ts := ts?.getD #[]
   let enums := (← getState).enums
@@ -3687,7 +3777,7 @@ inductive Join where
 /-- `when c, d`, `unless c, d`, `c and d` or `c or d`, where `d` is the
 `operand`, guarded by `c` or by `not c` (`lang::guard`). -/
 def guardedTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (c d : Syntax) (operand : Core.GuardedOperand)
-    (op : Join := .implies) : TermElabM Term := do
+    (op : Join := .implies) (test : Core.TestContext × Option (Nat × Nat) := (.standalone, none)) : TermElabM Term := do
   let e ← getRef
   let j := match op with | .or => "or" | .and => "and" | .implies => ""
   -- `membership_chain`, at the top of a chain of `or` or of `and` (`lint::membership_chain`).
@@ -3701,7 +3791,7 @@ def guardedTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
     if Core.membershipChainFires ds.size (eqs.size == ds.size && lefts.all (· == lefts[0]!)) laterIndexes patterns then
       recordLint .membershipChain e (Core.membershipChainMsg lefts[0]! (eqs.map (srcText ·.2)) (op matches .and))
   -- `index_after_use` (`lint::index_after_use`).
-  if op matches .and && cx.noteIndexes then
+  if op matches .and && cx.noteIndexes && !(← chainBinds cx c) then
     if (indexedIn c).any (fun q => boundsSeq d q && !boundsSeq c q) then recordLint .indexAfterUse e (Core.indexAfterUseMsg (srcText c) (srcText d))
   let cx := { cx with chain := j }
   -- Each operand's type is checked as the `fren` command checks it
@@ -3710,10 +3800,32 @@ def guardedTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   -- For `manual_at_most_one`: whether the operands give a definedness
   -- obligation.
   let mark := (← getLocal).indexes.size + (← getLocal).tables.size
-  let x ← toTerm cx c
+  -- Of `and`, the position of each operand in its chain, and the names
+  -- that the left one's pattern tests bind, which the right one sees; at
+  -- the top of the chain, those of the whole, which only the body of the
+  -- `when` or `if` whose condition it is sees. Of `when`, the names that
+  -- its condition's pattern tests bind, which its body sees
+  -- (`lang::test_scope`).
+  let (context, at?) := test
+  let (k, n) := at?.getD (0, (chainOperands "and" e).size)
+  let left := (chainOperands "and" c).size
+  let (ccx, dcx) : ExprCtx × ExprCtx := match op with
+    | .and => ({ cx with testContext := context, testAt? := some (k, n) }, { cx with testContext := context, testAt? := some (k + left, n) })
+    | .or => ({ cx with testContext := .orOperand }, { cx with testContext := .orOperand })
+    | .implies => ({ cx with testContext := if operand matches .unlessBody then .unlessCondition else .whenCondition }, cx)
+  let boundMark := (← getLocal).bound.size
+  let x ← toTerm ccx c
   checkTermType c x .bool (if j.isEmpty then some s!"note: the condition of `{kw}` is a `Bool`" else Core.opNote j .bool)
   let g ← operand.guard (pure x) `(¬$x)
-  let y ← toTerm { cx with guards := cx.guards.push g } d
+  let new ← boundSince boundMark
+  let seen := match op with
+    | .and => new
+    | .or => #[]
+    | .implies => if Core.binderVisible ccx.testContext 0 1 .body then new else #[]
+  if op matches .implies then modifyLocal fun l => { l with bound := l.bound.extract 0 boundMark }
+  let y ← toTerm { dcx with guards := cx.guards.push g, binders := cx.binders ++ seen } d
+  if op matches .and && at?.isNone && !Core.binderVisible context 0 n .body then
+    modifyLocal fun l => { l with bound := l.bound.extract 0 boundMark }
   if op matches .and && cx.noteIndexes && (← getLocal).indexes.size + (← getLocal).tables.size > mark then
     modifyLocal fun l => { l with facts := l.facts.push ((e.getPos?, e.getTailPos?), .obligations) }
   if j.isEmpty then checkTermType e y .bool (some s!"note: the body of `{kw}` is a `Bool`")
@@ -4638,15 +4750,23 @@ def iteTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
   let expected? := cx.expected?
   let cx := { cx with expected? := none }
   if cx.noteIndexes && !cx.inElse then lintIfChain cx e
-  if cx.noteIndexes then lintSameBranches e a b
+  -- Not where the condition's pattern tests bind names, which the `then`
+  -- branch sees and the `else` branch does not, so that the same text may
+  -- mean different values (`lang::test_scope`).
+  if cx.noteIndexes && !(← chainBinds cx c') then lintSameBranches e a b
   if cx.noteIndexes && (← mentionsAny cx c') then
     modifyLocal fun l => { l with mentioning := l.mentioning.push ((unparen c').getPos?, (unparen c').getTailPos?) }
-  let c ← toTerm { cx with inElse := false } c'
+  -- The names that the condition's pattern tests bind, which the `then`
+  -- branch sees (`lang::test_scope`).
+  let (c, new) ← withBound (toTerm { cx with inElse := false, testContext := .ifCondition } c')
   checkTermType c' c .bool (some "note: the condition of `if` is a `Bool`")
   let gx ← Core.GuardedOperand.thenBranch.guard (pure c) `(¬$c)
   let gy ← Core.GuardedOperand.elseBranch.guard (pure c) `(¬$c)
-  let cxa := { cx with emptyOk := Core.Position.shared.checked emptyOk (← synthesizes cx b), natOk, guards := cx.guards.push gx, inElse := false, expected? }
-  let cxb := { cx with emptyOk := Core.Position.shared.checked emptyOk (← synthesizes cx a), natOk, guards := cx.guards.push gy, inElse := true, expected? }
+  let seen (site : Core.TestSite) := if Core.binderVisible .ifCondition 0 1 site then new else #[]
+  let cxa := { cx with emptyOk := Core.Position.shared.checked emptyOk (← synthesizes cx b), natOk, guards := cx.guards.push gx, inElse := false, expected?
+                       binders := cx.binders ++ seen .body }
+  let cxb := { cx with emptyOk := Core.Position.shared.checked emptyOk (← synthesizes cx a), natOk, guards := cx.guards.push gy, inElse := true, expected?
+                       binders := cx.binders ++ seen .elseBranch }
   let (x, y) ← pairTerms toTerm cxa cxb a b
   if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then liftMsg e (Core.checkBranches tx ty)
   let #[x, y] ← widenMixed #[x, y] | unreachable!
@@ -4755,9 +4875,12 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   let expected? := cx.expected?
   -- An operand of `or` or `and` continues its chain only if it is one too.
   let parent? := cx.parent?
+  -- Only `and`, `is` and parentheses read where their chain is (`lang::test_scope`).
+  let test := (cx.testContext, cx.testAt?)
   let cx := { cx with concatOk := false, emptyOk := false, natOk := false, expected? := none
                       chain := if isBinOp (unparen e) cx.chain then cx.chain else ""
-                      parent? := some e, inElse := cx.inElse && isIte (unparen e) }
+                      parent? := some e, inElse := cx.inElse && isIte (unparen e)
+                      testContext := .standalone, testAt? := none }
   let go := toTerm cx
   -- A chained comparison's comparisons are not operators of their own here.
   if cx.noteIndexes && (chainOf? e).isNone then lintEqOp e
@@ -4767,8 +4890,8 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| unless $c, $d) => guardedTerm toTerm cx c d .unlessBody
   | `(fren_expr| $a iff $b) => `($(← boolOperand toTerm cx "iff" a) ↔ $(← boolOperand toTerm cx "iff" b))
   | `(fren_expr| $a or $b) => guardedTerm toTerm cx a b .orRight (op := .or)
-  | `(fren_expr| $a and $b) => guardedTerm toTerm cx a b .andRight (op := .and)
-  | `(fren_expr| not $a) => `(¬$(← boolOperand toTerm cx "not" a))
+  | `(fren_expr| $a and $b) => guardedTerm toTerm cx a b .andRight (op := .and) (test := test)
+  | `(fren_expr| not $a) => `(¬$(← boolOperand toTerm { cx with testContext := .notOperand } "not" a))
   | `(fren_expr| if $c' then $a else $b) => iteTerm toTerm { cx with expected? } emptyOk natOk e c' a b
   | `(fren_expr| $_ = $_) | `(fren_expr| $_ != $_) | `(fren_expr| $_ < $_) | `(fren_expr| $_ <= $_)
   | `(fren_expr| $_ > $_) | `(fren_expr| $_ >= $_) => compareTerm toTerm cx e
@@ -4792,7 +4915,10 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| !$_) => throwErrorAt e[0] (Core.foreignOpMsg "!").text
   | `(fren_expr| $_ <- $_) => throwErrorAt e[1] Core.leftArrowMsg.text
   -- Checked against the whole's type, if it is (`lang::checked`).
-  | `(fren_expr| ($a)) => `(($(← toTerm { cx with concatOk, natOk, expected?, emptyOk := Core.Position.shared.checked emptyOk false } a)))
+  | `(fren_expr| ($a)) =>
+    let inner ← toTerm { cx with concatOk, natOk, expected?, emptyOk := Core.Position.shared.checked emptyOk false,
+                                 testContext := test.1, testAt? := test.2 } a
+    `(($inner))
   | `(fren_expr| $n:num) => if natOk then `(($n : Nat)) else `(($n : Int))
   | `(fren_expr| true) => `(true)
   | `(fren_expr| false) => `(false)
@@ -4800,7 +4926,8 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $p:fren_path($args,*)) => appTerm toTerm { cx with natOk } parent? e p args expected?
   | _ =>
     if e.isOfKind ``Lang.letExpr then letTerm toTerm { cx with natOk } emptyOk concatOk e
-    else otherTerm toTerm { cx with expected? } parent? emptyOk natOk e
+    -- Only `is` reads where its chain is, and its operand does not see it.
+    else otherTerm toTerm { cx with expected?, testContext := test.1, testAt? := test.2 } parent? emptyOk natOk e
 
 open Lang in
 /-- The conditions of a top-level `when`/`unless` chain, as a term, and a
@@ -4821,9 +4948,13 @@ partial def triggerOf (cx : ExprCtx) (e : Syntax) : TermElabM (Option (Term × S
     | `(fren_expr| unless $c, $d) => pure (c, true, d)
     | `(fren_expr| ($a)) => return ← triggerOf cx a
     | _ => return none
-  let c ← toTerm { cx with noteIndexes := false } cond
+  -- With the names that its pattern tests bind, which the body may see
+  -- (`lang::test_scope`).
+  let context : Core.TestContext := if neg then .unlessCondition else .whenCondition
+  let (c, new) ← withBound (toTerm { cx with noteIndexes := false, testContext := context } cond)
   let c ← if neg then `(¬$c) else pure c
-  match ← triggerOf cx body with
+  let seen := if Core.binderVisible context 0 1 .body then new else #[]
+  match ← triggerOf { cx with binders := cx.binders ++ seen } body with
   | none => return some (c, mkNullNode #[e[0], cond])
   | some (t, ref) => return some (← `($c ∧ $t), mkNullNode #[e[0], ref])
 

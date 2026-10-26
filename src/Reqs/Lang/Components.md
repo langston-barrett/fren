@@ -403,7 +403,10 @@ trigger, and neither does one whose top level is a
 [quantifier](Quantifiers.md#names), even around a `when`. A `let` or
 `where` at the top of a constraint is read through: the trigger of `when
 C, D where x := e` is `C`, with `x` standing for `e` (see [Local
-definitions](Let.md#meaning)). The [vacuity check](../Check.md#vacuity)
+definitions](Let.md#meaning)). A name that a [pattern
+test](Expressions.md#binding-names) of `C1` binds stands for the value it
+matches in a nested trigger: the trigger of `when x is P(d), when d > 0,
+D` is that `x` matches `P(_)` and its payload's value is positive. The [vacuity check](../Check.md#vacuity)
 confirms that the trigger of every guarantee and expectation can hold.
 A cover goal's trigger is not checked: the [cover
 check](../Check.md#cover-goals) confirms the goal itself.

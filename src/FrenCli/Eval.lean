@@ -823,14 +823,27 @@ partial def Spec.untestable? (sp : Spec) (c : Comp) (seen : List Name := []) : O
     <|> c.insts.findSome? fun i => i.bindings.findSome? (·.2.undomained?)
       <|> if seen.contains i.comp then none else (sp.comp? i.comp).bind (sp.untestable? · (i.comp :: seen))
 
+/-- The position of the `match` that a `when` whose condition's pattern
+test binds names is lowered to, `match x { P => D, _ => true }`
+(`lowerExpr`): no `match` is written there, since it has no arms'
+positions, and `Ex.trigger?` reads it as a `when`, which the `is` of a
+test (at position 0) and an `if` are not. -/
+def whenPos : Nat := 1
+
 /-- The trigger of a constraint (`Reqs/Lang/Components#triggers`): the
 conditions of its top-level `when`/`unless` chain, conjoined. -/
-def Ex.trigger? : Ex → Option Ex
+partial def Ex.trigger? : Ex → Option Ex
   | .when negated c d =>
     let c := if negated then .not c else c
     match d.trigger? with
     | none => some c
     | some t => some (.bin .and c t)
+  -- A `when` whose condition's pattern test binds names, as `lowerExpr`
+  -- gives it: `match x { P => D, _ => true }`, without the positions of a
+  -- written `match`. Its trigger is that `P` matches, and `D`'s, with the
+  -- names bound.
+  | .match s #[(p, none, d), (.wild, none, .lit (.bool true))] 1 #[] none none =>
+    some (.match s #[(p, none, d.trigger?.getD (.lit (.bool true))), (.wild, none, .lit (.bool false))] 0 #[] none none)
   | _ => none
 
 /-- The indexes, tables and `match`es in `e`, as the questions that the
@@ -1505,13 +1518,51 @@ def Spec.listedValues (sp : Spec) (t : VTy) (pt : Fren.Core.PTy) : Option (Array
       else some (((pt.values shapes Fren.Core.maxInstances).map (·.map (sp.ofPVal t))).getD #[])
     | none => none
 
+/-- The operands of the chain of `and` `e`. -/
+partial def andOperands : Expr → Array Expr
+  | .bin _ "and" a b => andOperands a ++ andOperands b
+  | e => #[e]
+
+/-- Whether `e` is a pattern test whose pattern binds a name. -/
+def bindingTest (e : Expr) : L Bool := do
+  let .is _ _ p := e | return false
+  let st ← get
+  return p.names.any fun x =>
+    let (n, bang) := Fren.Core.declaredName (Name.mkSimple x.name)
+    let variant := st.table.resolvePath st.scope #[Name.mkSimple x.name] matches .ok (.variant ..)
+    Fren.Core.patternName (n == `true || n == `false) bang variant == .binder
+
 mutual
 partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
+  -- A condition whose pattern tests bind names: `when x is P, D` is
+  -- `match x { P => D, _ => true }`, and `when a and b, D` is `when a, when
+  -- b, D` (`Reqs/Lang/Expressions#pattern-tests`).
+  | .when _ false c d => do
+    let cs := andOperands c
+    unless ← cs.anyM bindingTest do return (.when false (← lowerExpr cx c).1 (← lowerExpr cx d).1, .bool)
+    let (x, _) ← lowerChain cx cs.toList (fun cx => lowerExpr cx d) (fun ci rest => .when false ci rest)
+      (.lit (.bool true)) whenPos
+    return (x, .bool)
   | .when _ negated c d => do
     return (.when negated (← lowerExpr cx c).1 (← lowerExpr cx d).1, .bool)
+  -- Likewise, `if x is P then a else b` is `match x { P => a, _ => b }`, and
+  -- `if c and d then a else b` is `if c then (if d then a else b) else b`.
   | .ite _ c a b => do
-    let (a, t) ← lowerExpr cx a
-    return (.ite (← lowerExpr cx c).1 a (← lowerExpr cx b).1, t)
+    let (y, _) ← lowerExpr cx b
+    let cs := andOperands c
+    unless ← cs.anyM bindingTest do
+      let (a, t) ← lowerExpr cx a
+      return (.ite (← lowerExpr cx c).1 a y, t)
+    lowerChain cx cs.toList (fun cx => lowerExpr cx a) (fun ci rest => .ite ci rest y) y
+  -- And `x is P and e` is `match x { P => e, _ => false }`.
+  | e@(.bin _ "and" _ _) => do
+    let cs := andOperands e
+    unless ← (cs.pop).anyM bindingTest do
+      let .bin _ _ a b := e | unreachable!
+      return (.bin .and (← lowerExpr cx a).1 (← lowerExpr cx b).1, .bool)
+    let (x, _) ← lowerChain cx (cs.pop).toList (fun cx => lowerExpr cx cs.back!) (fun ci rest => .bin .and ci rest)
+      (.lit (.bool false))
+    return (x, .bool)
   | .bin _ op a b => do
     let some o := Op.ofString? op | throw s!"unknown operator `{op}`"
     let (x, ta) ← lowerExpr cx a
@@ -1754,6 +1805,29 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
         | .unbounded => pure none
       doms := doms.push dom
     return (.quant (← get).file span.start all (bound.map (·.2.2.2)) doms (bound.map (·.2.2.1)) b, .bool)
+
+/-- The chain of `and` `cs`, at the position `pos` for its `match`es
+(`whenPos` for a `when`'s condition), each of whose operands decides whether what
+`last` gives is the value: a pattern test that binds names, as `match x {
+P => rest, _ => otherwise }`, with its binders in scope in the rest, and
+any other operand `c` by `join c rest`. -/
+partial def lowerChain (cx : Cx) (cs : List Expr) (last : Cx → L (Ex × VTy)) (join : Ex → Ex → Ex) (otherwise : Ex)
+    (pos : Nat := 0) :
+    L (Ex × VTy) := do
+  match cs with
+  | [] => last cx
+  | c :: cs =>
+    if let .is _ scrutinee p := c then
+      if ← bindingTest c then
+        let (s, t) ← lowerExpr cx scrutinee
+        let (pat, bound) ← lowerPattern t p
+        let bcx := { cx with binders := bound.reverse ++ cx.binders, lets := cx.lets.filter fun (n, _) => !bound.any (·.1 == n) }
+        let (rest, ty) ← lowerChain bcx cs last join otherwise pos
+        return (.match s #[(pat, none, rest), (.wild, none, otherwise)] pos #[] none none, ty)
+    let (x, _) ← lowerExpr cx c
+    let (rest, ty) ← lowerChain cx cs last join otherwise pos
+    return (join x rest, ty)
+
 end
 
 def varTy (ty? : Option (Array Ident)) : L VTy := do

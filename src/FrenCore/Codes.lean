@@ -1618,7 +1618,7 @@ enum Shape { Circle(Int), Square(Int), Empty }
 comp c { in s: Shape pub out a: Int ensure r: a = match s { Shape::Circle(n) => n, Shape::Square(n) => n, _ => 0 } }
 ```
 "# },
-  { code := "F0334", explanation := r#"A pattern test binds a name.
+  { code := "F0334", explanation := r#"A pattern test binds a name where nothing could mention it.
 
 Erroneous code example:
 
@@ -1628,15 +1628,19 @@ enum Shape { Circle(Int), Empty }
 comp c { in s: Shape pub out big? ensure r: big? iff s is Shape::Circle(n) }
 ```
 
-A pattern test, `e is P`, is `true` or `false`, and has no body in which
-to mention a name that its pattern binds, so every binder is `_`. To test
-the variant, ignore the payload; to read it, write a `match`:
+A pattern test, `e is P`, binds the names of its pattern only for what
+follows it where it holds: the later operands of its chain of `and`, the
+body of a `when`, and the `then` branch of an `if`, whose condition it is.
+On its own, as here, under `or` or `not`, or as the condition of `unless`,
+whose body holds where the pattern does not match, nothing could mention
+them, so every binder is `_`. To test the variant, ignore the payload; to
+read it, bind it where something follows the test:
 
 ```fren
 enum Shape { Circle(Int), Empty }
 
 comp c { in s: Shape pub out round? pub out big? ensure r: round? iff s is Shape::Circle(_)
-    ensure b: big? iff match s { Shape::Circle(n) => n > 10, _ => false } }
+    ensure b: big? iff s is Shape::Circle(n) and n > 10 }
 ```
 "# },
   { code := "F0335", explanation := r#"A pattern test on a value of a type that patterns do not match.
