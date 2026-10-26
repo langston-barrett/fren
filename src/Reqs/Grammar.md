@@ -109,6 +109,7 @@ atom           := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | 
                 | IDENT ("." IDENT)+"(" expr ("," expr)* ")"
                 | "match" atom "{" arm ("," arm)* [","] "}"
                 | "table" "{" row ("," row)* [","] "}"
+                | "table" atom "{" arm ("," arm)* [","] "}"
                 | "{" [element ("," element)* [","]] "}"
                 | "{" expr "with" field-init ("," field-init)* [","] "}"
                 | "[" [expr ("," expr)* [","]] "]"
@@ -135,7 +136,7 @@ left-associative. A `cmp` with more than one operator is a [chained
 comparison](Lang/Expressions.md#chained-comparisons). For precedence and typing, see
 [Expressions](Lang/Expressions.md). In the definitions of a `let`, an
 `in` outside brackets, the condition and `then` branch of an `if` and a
-`match`'s scrutinee ends the last definition rather than starting a
+`match`'s or a table's scrutinee ends the last definition rather than starting a
 membership (an `else` branch keeps that restriction), and a nested `let` ends its own definitions with its own `in`
 (see [Local definitions](Lang/Let.md#parentheses)). A `binder` of a
 quantifier names a type, and one of a global expectation's leading

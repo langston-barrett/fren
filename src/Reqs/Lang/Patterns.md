@@ -269,3 +269,54 @@ matches, as patterns, such as `Reply::Ok(Shape::Square(_))`, `false`, or
 specialization, following each constructor that some arm names, and listing
 the constructors that none names; `_` stands for any value, such as any
 string.
+
+In a [table over a scrutinee](Expressions.md#tables-over-a-scrutinee), no
+arm hides another, so each case of an arm is tested with respect to the
+cases of its own arm before it alone.
+
+## Overlap
+
+Two patterns *overlap* when some value matches both. The arms of a [table
+over a scrutinee](Expressions.md#tables-over-a-scrutinee) must not overlap
+unless one has a guard, and the static rules decide it from the patterns
+alone, one pair at a time, from their heads, as they decide usefulness:
+
+- an or-pattern overlaps a pattern when one of its alternatives does;
+- a wildcard, `_` or a binder, overlaps a pattern that matches some value,
+  as every pattern does but one that has a range that matches no value of
+  its type, such as `..=-1` within a `Nat`;
+- two constructors overlap when they are the same, and the patterns of
+  each value of their payloads overlap, the first's with the second's. Two
+  variants are the same when they are one variant, two Booleans or two
+  strings when they are equal, and two literals or ranges of integers when
+  some integer matches both, one at least 0 for a `Nat`.
+
+`lang::overlap` states this for two patterns, from their heads:
+
+```fren
+pub comp overlap {
+    in first: HeadKind       -- the first pattern's head
+    in second: HeadKind      -- the second's
+    in same?                 -- for two constructors, they are the same
+    in args_overlap?         -- for two constructors, the patterns of each value of their payloads overlap
+    in first_matches?        -- the first pattern matches some value
+    in second_matches?       -- the second does
+    in some_alternative?     -- for an or-pattern, an alternative of one overlaps the other
+    pub det out overlap?
+
+    ensure alternatives: when first = HeadKind::Or or second = HeadKind::Or, overlap? iff some_alternative?
+    ensure wildcard_first: when first = HeadKind::Wildcard and second != HeadKind::Or, overlap? iff second_matches?
+    ensure wildcard_second: when first = HeadKind::Constructor and second = HeadKind::Wildcard, overlap? iff first_matches?
+    ensure constructors: when first = HeadKind::Constructor and second = HeadKind::Constructor,
+        overlap? iff (same? and args_overlap?)
+
+    -- Two wildcards overlap, since every type has values.
+    expect wildcards: when first = HeadKind::Wildcard and second = HeadKind::Wildcard and second_matches?, overlap?
+    expect different: when first = HeadKind::Constructor and second = HeadKind::Constructor and not same?, not overlap?
+}
+```
+
+The error names a value that both patterns match, as a pattern, as a
+`match` that is not exhaustive names one that no arm matches: the
+constructors that both name, with such a value of each value of their
+payloads, an integer that both match, or `_` where both are wildcards.

@@ -51,14 +51,14 @@ operator keeps its own. The changes are:
 | `drop-alternative` | an alternative of the pattern of a [pattern test](Lang/Expressions.md#pattern-tests) of at least two, removed, with its `\|` |
 | `swap-cardinality` | `exactly_one?` and `at_most_one?`, the [cardinality operators](Lang/Expressions.md#cardinality), each to the other |
 | `drop-argument` | an argument of a cardinality operator of at least two, removed, with its `,` |
-| `swap-rows` | the values of two consecutive rows of a [table](Lang/Expressions.md#tables), each to the other's, unless they are written the same |
-| `drop-row` | a row of a table of at least two, removed, with its `\|` |
+| `swap-rows` | the values of two consecutive rows of a [table](Lang/Expressions.md#tables) by conditions, each to the other's, unless they are written the same |
+| `drop-row` | a row of a table by conditions of at least two, removed, with its `\|` |
 | `shift-variant` | a variant without a payload, in an expression, to the variants without a payload just before and just after it in its [enumeration](Lang/Items.md#enumerations), written as it is written: as `E::W` after `E::V`, and as `W` after `V` only if `use`s bring both into scope by their own names from the same enumeration, and no binder shadows `V` |
 | `swap-branches` | `if c then a else b` to `if c then b else a`, unless `a` and `b` are written the same |
 | `drop-negation` | `not e` to `e`, and `-e` to `e` |
 | `drop-trigger` | `when c, e` and `unless c, e` to `e` |
 | `drop-update` | a field of a [record update](Lang/Expressions.md#record-updates) of at least two fields, removed, with its `,` |
-| `swap-arms` | the values of two consecutive arms of a `match`, each to the other's, unless either arm's pattern binds a name, or they are written the same |
+| `swap-arms` | the values of two consecutive arms of a `match` or of a [table over a scrutinee](Lang/Expressions.md#tables-over-a-scrutinee), each to the other's, unless either arm's pattern binds a name, or they are written the same |
 | `swap-min-max` | `x.min(y)` and `x.max(y)`, each to the other |
 | `swap-affix` | `s.starts_with?(p)` and `s.ends_with?(p)`, each to the other |
 

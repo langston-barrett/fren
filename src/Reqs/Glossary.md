@@ -58,7 +58,8 @@ variants, with the variant's payload, declared with `enum`. See
 [Items](Lang/Items.md#enumerations).
 
 **Disjoint.** Of the rows of a table: no two of them, other than `_`, hold
-at once wherever the table is evaluated. See
+at once wherever the table is evaluated; of the arms of a table over a
+scrutinee, no two of them are taken at once. See
 [Checks](Check.md#disjointness).
 
 **Divisor.** The right operand of `div` or `mod`: an integer literal or a
@@ -157,9 +158,16 @@ their fields, lexicographically. See [Items](Lang/Items.md#ordered-declarations)
 compare: `Int`, `Nat`, `String`, and the ordered declarations, with
 pattern types and type aliases of these. See [Types](Lang/Types.md#ordered-types).
 
+**Otherwise.** The last arm `_ => e`, without a guard, of a table over a
+scrutinee, taken wherever no other arm is, as a table's `_` row is. See
+[Expressions](Lang/Expressions.md#tables-over-a-scrutinee).
+
 **Output.** A variable of a component chosen by the system, declared with
 `out`. A *public output* is declared with `pub out`; other outputs are
 private.
+
+**Overlap.** Of two patterns: some value matches both. See
+[Patterns](Lang/Patterns.md#overlap).
 
 **Pattern.** What a `match` arm or a pattern test matches values against:
 `_`, a binder, a literal, a range, a variant with patterns for its
@@ -226,7 +234,9 @@ declaration's scope the name means the declaration. It is written with
 
 **Table.** An expression `table { C => e, ... }` that has the value of its
 first row whose condition holds: a `match` with guards and nothing to match
-on. See [Expressions](Lang/Expressions.md#tables).
+on. Over a scrutinee, `table s { P if C => e, ... }`, a `match` whose arms
+are disjoint, so that their order does not matter. See
+[Expressions](Lang/Expressions.md#tables).
 
 **Trigger.** The condition under which a `when` or `unless` constraint
 applies. See [Components](Lang/Components.md#triggers).

@@ -173,7 +173,8 @@ comp c {
 }
 ```
 
-A line that starts with a `|` of a `match` arm's pattern starts its
+A line that starts with a `|` of a `match` arm's pattern, or of a table
+arm's, starts its
 alternative, so the alternatives of an or-pattern written one per line
 line up, and so does a line that starts with the `|` of a
 [table](Lang/Expressions.md#tables)'s row, which starts the row. In a [pattern test](Lang/Expressions.md#pattern-tests), such a
@@ -275,8 +276,8 @@ A list is *vertical* if its closing brace starts a line, or, for the files
 of a `tested` claim, which have no brace, if the last file is on a later
 line than `tested`. The elements of a vertical list, the bindings of an
 instance, the variants of an enumeration, the fields of a record, of a
-record literal or of a record update, the arms of a `match`, the rows of
-a table, the paths of a `use ...::{}` and the files of a `tested` claim,
+record literal or of a record update, the arms of a `match` or of a
+table over a scrutinee, the rows of a table, the paths of a `use ...::{}` and the files of a `tested` claim,
 each end with a comma, including the last; other lists have no comma after
 their last element:
 

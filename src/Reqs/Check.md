@@ -23,7 +23,7 @@ where a [pattern type](Lang/Types.md#pattern-types) is declared:
 | [Definedness](#definedness) | each index is in range where it is evaluated |
 | [Pattern types](#pattern-types) | each value given where a pattern type is declared matches its pattern |
 | [Completeness](#completeness) | some row of each table without a `_` row holds, and some arm of each `match` that needs its guards to be exhaustive is taken, where it is evaluated |
-| [Disjointness](#disjointness) | no two rows of a table, other than `_`, hold at once where it is evaluated |
+| [Disjointness](#disjointness) | no two rows of a table, other than `_`, hold at once, and no two arms of a [table over a scrutinee](Lang/Expressions.md#tables-over-a-scrutinee) are taken at once, where it is evaluated |
 | [Preconditions](#preconditions) | each application of a function meets the function's preconditions where it is evaluated |
 | [Reachability](#reachability) | each arm of a `match` that has a guard or follows one, and each row of a table, can be taken where it is evaluated |
 
@@ -881,8 +881,10 @@ the function's preconditions, over its parameters, and in the value of a
 constant only `G` and `N`: a function's body is checked for every argument
 that meets its preconditions, not only those that a component passes it. `check::completeness` decides each query like an expectation, and a
 model is a counterexample, a value of the variables for which no arm is
-taken, reported at the `match`'s `match` (`F0625`), or at the table's
-`table` (`F0618`):
+taken, reported at the `match`'s `match` (`F0625`), at the table's
+`table` (`F0618`), or at the `table` of a [table over a
+scrutinee](Lang/Expressions.md#tables-over-a-scrutinee), which is asked
+about as the `match` it means is (`F0637`):
 
 ```fren
 pub comp completeness {
@@ -904,17 +906,34 @@ For each two rows `i < j` of a table, other than a `_` row, with the
 conditions `C_i` and `C_j` and the table's guard `G`, Fren asks whether
 `not (D_i and D_j and C_i and C_j)` can be proved from `G` and the
 hypotheses of where the table is written, as for
-[completeness](#completeness). `D_i` says that the indexes in `C_i` are in
+[reachability](#reachability), without the constraint, definition or
+binding that the table is in. `D_i` says that the indexes in `C_i` are in
 range where `C_i` evaluates them, under the guards within `C_i` alone (see
 [Sequences](Lang/Expressions.md#sequences)), and is `true` if it has none.
 A row's condition is evaluated only where the earlier rows' fail, so an
 index in it may rest on them: in `table { q = [] => 0, q[0] > 0 => 1, _
 => 2 }`, `q[0]` is defined wherever it is evaluated, and the two rows do
 not overlap, though `q[0] > 0` could hold of the unknown value of `[][0]`.
-Each pair is its own check, so the message can name both rows. `check::disjointness`
-decides each query like an expectation, and a model is a witness, a value
-of the variables for which both rows hold, reported at the condition of
-the later row:
+
+The arms of a [table over a
+scrutinee](Lang/Expressions.md#tables-over-a-scrutinee) are asked about
+the same way, each two arms `i < j` that
+[`lang::table_arm_pair`](Lang/Expressions.md#tables-over-a-scrutinee)
+asks about: those whose patterns overlap, of which one has a guard. With
+`T_i` for `P_i and C_i`, that arm `i` is taken where it is tried, as for
+[completeness](#completeness), and `D_i` for the indexes in its guard,
+Fren asks whether `not (D_i and D_j and T_i and T_j)` can be proved.
+
+The enclosing constraint is left out for the reason that reachability
+leaves it out: it holds of a behaviour only where the table has the value
+it needs, so it would hide two rows that overlap where it does not, as
+in `ensure r: table { x > 0 => true, x >= 0 => false, _ => false }`,
+which holds only where `x <= 0`. Each pair is its own check, so the
+message can name both rows. `check::disjointness` decides each query like
+an expectation, and a model is a witness, a value of the variables for
+which both rows hold, reported at the condition of the later row
+(`F0619`), or for which both arms are taken, at the pattern of the later
+arm (`F0636`):
 
 ```fren
 pub comp disjointness {
@@ -928,13 +947,45 @@ pub comp disjointness {
 }
 ```
 
+`check::disjoint_question` states what the goal of the question about
+two cases is, in each behaviour: from what each case does there, as
+[`lang::guarded_match`](Lang/Expressions.md#matches) has it, with its
+`ArmAt` again here (a row's pattern is `_`, which matches, and its guard its condition), and
+whether the indexes in each case's guard or condition are in range there.
+The goal fails exactly where both cases are `Taken` and their indexes are
+in range:
+
+```fren
+pub enum ArmAt { NoMatch, GuardFails, Taken }
+pub enum Indexes { Defined, Undefined }
+
+set_option fren.lint.undecidable "allow" in
+pub comp disjoint_question {
+    use self::ArmAt::Taken
+    use self::Indexes::Defined
+    in arms: Seq(ArmAt)          -- what each case does here, in order
+    in defined: Seq(Indexes)     -- whether the indexes in each case's guard are in range here
+    in i: Int                    -- the earlier case
+    in j: Int                    -- the later case
+    pub out goal?                -- the goal of the question about `i` and `j` here
+
+    assume pair: 0 <= i < j < arms.len and defined.len = arms.len
+
+    ensure rule: goal? iff not (defined[i] = Defined and defined[j] = Defined and arms[i] = Taken and arms[j] = Taken)
+
+    -- Where one of them is not taken, they do not overlap here.
+    expect apart: when arms[i] != Taken, goal?
+}
+```
+
 A `_` row holds wherever no earlier row does, so it overlaps none, and is
-in no disjointness check. The checks of a table are on its conditions
-alone: a row's value can be the same as another's, and the rows still
-overlap. Only tables are checked for disjointness: the arms of a `match`
-are told apart by their patterns first, and an arm with a guard is
-usually followed by one that its guard's failure leads to, as in `Eq if
-bound = 0 => AtStart, Eq => Other`.
+in no disjointness check, and so is a last arm `_` without a guard. The
+checks of a table are on its conditions and patterns alone: a row's value
+can be the same as another's, and the rows still overlap. The arms of a
+`match` are not checked for disjointness: they are told apart by their
+order, and an arm with a guard is usually followed by one that its
+guard's failure leads to, as in `Eq if bound = 0 => AtStart, Eq =>
+Other`.
 
 ## Reachability
 
@@ -1000,8 +1051,10 @@ arms whose values it does not need: in `ensure r: match k { Kind::A if
 ok? => true, _ => false }`, `r` holds only where the first arm is taken,
 yet the last arm is how `r` says what it rules out, and is not dead. If
 it can be proved, no behaviour that the other hypotheses allow
-takes the arm, and the check fails, at the arm's pattern (`F0626`), or, for
-a table, at the row's condition or its `_` (`F0627`). So a guard that is
+takes the arm, and the check fails, at the arm's pattern (`F0626`), for
+a table, at the row's condition or its `_` (`F0627`), or, for a [table
+over a scrutinee](Lang/Expressions.md#tables-over-a-scrutinee), which is
+asked about as the `match` it means is, at the arm's pattern (`F0638`). So a guard that is
 `false`, or that contradicts the arm's pattern or the hypotheses, fails it,
 and so does an arm after others that take every case it would, as `x >= 0`
 after `x > 0` and `x = 0` does, or a table's `_` row after rows of which
@@ -1025,7 +1078,7 @@ is silent.
 `check::split_questions` states what the goals of these questions are,
 in each behaviour, from what each arm of the `match` does there, as
 [`lang::guarded_match`](Lang/Expressions.md#matches) has it, with its
-`ArmAt` again here. The goal of
+`ArmAt` again here, as for [disjointness](#disjointness). The goal of
 arm `j`'s reachability is that `j` is not the arm taken, so the check
 fails exactly when no behaviour that the hypotheses allow takes it; the
 goal of completeness is that some arm is taken. Of a table, each row is
@@ -1034,8 +1087,6 @@ goal of completeness is that some arm is taken. Of a table, each row is
 position, as there:
 
 ```fren
-pub enum ArmAt { NoMatch, GuardFails, Taken }
-
 set_option fren.lint.undecidable "allow" in
 pub comp split_questions {
     use self::ArmAt::Taken
@@ -1068,14 +1119,14 @@ guarantee's own `R` is among its hypotheses, so a table or a `match` in a
 guarantee may be complete only because another guarantee rules out
 the cases it leaves out, and an arm of one may be unreachable because
 another guarantee rules out every behaviour that takes it. Reachability
-alone leaves out the constraint, definition or binding that the `match`
-or table is in, as above: a definition's equation in `D` too, so that in
+and disjointness leave out the constraint, definition or binding that the
+`match` or table is in, as above: a definition's equation in `D` too, so that in
 `out y: Int := match x { n if n > 0 => 1, _ => 2 }` beside `ensure q: y =
 1`, the last arm is reachable, as it would be in an `ensure`. For an
 assumption, and a binding, whose instance is not among its hypotheses,
 that is already so.
 `check::reach_hypothesis` states which of the hypotheses of definedness
-reachability asks under:
+reachability and disjointness ask under:
 
 ```fren
 pub comp reach_hypothesis {

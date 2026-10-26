@@ -23,6 +23,19 @@ taken for the others where their guards fail, as `E::A` in `match e {
 E::A if ok? => 1, _ => 2 }`, and it looks only at a `_` arm without a
 guard.
 
+A [table over a scrutinee](../../Lang/Expressions.md#tables-over-a-scrutinee)
+means a `match`, and the match lints, these, those of
+[Complexity](../Complexity/Matches.md), `match_like_membership` and
+[`wildcard_enum_match_arm`](../Restriction.md#wildcard-arms), look at it as
+at that `match`, and call it a table in their messages. Their fixes keep
+its arms disjoint: an or-pattern of arms that have the same body matches
+what they did, and removing an arm that has the body of the `_` arm, the
+otherwise, leaves its values to `_`. But the `_` arm of a table is also
+taken where the guards of the other arms fail, which no pattern can name
+without overlapping the arms with guards, so `wildcard_single_variant` and
+`wildcard_enum_match_arm` do not fire on a table that has an arm with a
+guard.
+
 `match_same_arms`, `allow` by default, fires on two arms whose bodies are
 [written the same](../../Lint.md#written-the-same), and whose patterns bind no names.
 It is reported once for each group of such arms, at the first arm that
