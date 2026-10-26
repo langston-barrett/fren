@@ -59,7 +59,9 @@ pub comp allow_attributes {
 [`match`](../Lang/Expressions.md#matches) on an enumeration whose patterns
 are all flat, as [`wildcard_single_variant`](Pedantic/Matches.md#arms) does, and
 is fixable. As for that lint, the variants that `_` matches are those that
-no arm without a guard names. The fix replaces
+no arm without a guard names, and it does not fire on a [table over a
+scrutinee](../Lang/Expressions.md#tables-over-a-scrutinee) that has an arm
+with a guard (see [Arms](Pedantic/Matches.md#arms)). The fix replaces
 `_` with an or-pattern of the variants it matches, in the order of their
 enumeration, each written as
 [`wildcard_single_variant`](Pedantic/Matches.md#arms) writes one: `E::V`, or

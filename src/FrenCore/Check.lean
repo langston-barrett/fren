@@ -297,7 +297,7 @@ def TableGoal.kind : TableGoal → CheckKind
 
 /-- The rows that a question is about, for `disjointness`. -/
 def TableGoal.rows? : TableGoal → Option (Nat × Nat)
-  | .disjointness i j => some (i, j)
+  | .disjointness _ i j => some (i, j)
   | _ => none
 
 /-- The function and precondition that a question is about, for
@@ -572,16 +572,48 @@ def checkDefinedness (c : Comp F) (site : IndexSite F) : m CheckResult := do
 `k` answer. -/
 def Comp.tablesOf (c : Comp F) (k : CheckKind) : Array (TableSite F) := c.tables.filter (·.goal.kind == k)
 
+/-- Whether reachability asks under a hypothesis, from whether it is one
+of definedness's at the case and whether it is the constraint, definition
+or binding that the case is in (`check::reach_hypothesis`). -/
+def reachUses (definedness enclosing : Bool) : Bool := definedness && !enclosing
+
+/-- The hypotheses of the checks of kind `kind` that leave out the
+constraint, definition or binding that a case is in, reachability and
+disjointness (`check::reach_hypothesis`): those of its place for
+`definedness`, the definitions among them, but that one. -/
+def Comp.caseHyps (c : Comp F) (b : Backend m F V) (kind : CheckKind) (site : IndexSite F) : Array (Name × F) :=
+  (c.defEqs kind ++ c.siteHyps b site).filter fun h => reachUses true (h.1 == site.prop)
+
+/-- The hypotheses of a case's reachability: those of its place for
+`definedness`, the definitions among them, but the constraint, definition
+or binding that it is in, which may rule out the behaviours that take the
+case only because the case is written in it, as in `ensure r: match k { A
+if ok? => true, _ => false }`, or in the definition of `y` beside `ensure
+q: y = 1` (`check::reachability`). A binding's own instance is never
+among them. -/
+def Comp.reachHyps (c : Comp F) (b : Backend m F V) (site : IndexSite F) : Array (Name × F) :=
+  c.caseHyps b .reachability site
+
+/-- The hypotheses of a question about the cases of a table or a `match`
+but reachability: those of its place, as for `definedness`, but for
+disjointness, which leaves out the constraint, definition or binding that
+the table is in, as reachability does (`Comp.caseHyps`): it holds only
+where the table has the value it needs, so it would hide two rows that
+overlap where it does not (`check::disjointness`). -/
+def Comp.tableHyps (c : Comp F) (b : Backend m F V) (t : TableSite F) : Array (Name × F) :=
+  if t.goal.kind == .disjointness then c.caseHyps b .disjointness t.site
+  else c.defEqs t.goal.kind ++ c.siteHyps b t.site
+
 /-- `completeness` or `disjointness`: what the question about the cases of
 a table or a `match` asks holds wherever it is evaluated, given the
-hypotheses of its place, as for `definedness` (`check::completeness`,
+hypotheses of its place (`Comp.tableHyps`) (`check::completeness`,
 `check::disjointness`). -/
 def checkTable (c : Comp F) (t : TableSite F) : m CheckResult := do
   let kind := t.goal.kind
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind, comp := c.path, prop? := some t.site.prop, site? := some t.site.k, rows? := t.goal.rows?,
       target? := t.goal.target?, goal? := some t.goal, verdict, detail }
-  let q ← b.query (c.defEqs kind ++ c.siteHyps b t.site) t.site.goal true
+  let q ← b.query (c.tableHyps b t) t.site.goal true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
     return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
@@ -601,21 +633,6 @@ def checkPostcondition (c : Comp F) (p : Name × F) : m CheckResult := do
     return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
-
-/-- Whether reachability asks under a hypothesis, from whether it is one
-of definedness's at the case and whether it is the constraint, definition
-or binding that the case is in (`check::reach_hypothesis`). -/
-def reachUses (definedness enclosing : Bool) : Bool := definedness && !enclosing
-
-/-- The hypotheses of a case's reachability: those of its place for
-`definedness`, the definitions among them, but the constraint, definition
-or binding that it is in, which may rule out the behaviours that take the
-case only because the case is written in it, as in `ensure r: match k { A
-if ok? => true, _ => false }`, or in the definition of `y` beside `ensure
-q: y = 1` (`check::reachability`). A binding's own instance is never
-among them. -/
-def Comp.reachHyps (c : Comp F) (b : Backend m F V) (site : IndexSite F) : Array (Name × F) :=
-  (c.defEqs .reachability ++ c.siteHyps b site).filter fun h => reachUses true (h.1 == site.prop)
 
 /-- `reachability`: the case of a table or a `match` that the question is
 about can be taken somewhere it is evaluated, given the hypotheses of its
@@ -1010,6 +1027,7 @@ it, from 1. -/
 def caseText : Option TableGoal → String
   | some (.reachability .match j) => s!"arm {j + 1}"
   | some (.reachability .table j) => s!"row {j + 1}"
+  | some (.reachability .tableMatch j) => s!"arm {j + 1}"
   | _ => "a case"
 
 /-- The split that a question is about, as a message names it. -/
@@ -1017,10 +1035,13 @@ def splitText : Option TableGoal → String
   | some (.reachability .match _) | some (.completeness .match) => "a `match`"
   | _ => "a table"
 
-/-- Rows `i` and `j`, counted from 0, as a message names them, from 1. -/
-def rowsText : Option (Nat × Nat) → String
-  | some (i, j) => s!"rows {i + 1} and {j + 1}"
-  | none => "two rows"
+/-- Rows `i` and `j`, counted from 0, as a message names them, from 1:
+arms, of a table over a scrutinee (`arms`). -/
+def rowsText (rows? : Option (Nat × Nat)) (arms : Bool := false) : String :=
+  let what := if arms then "arms" else "rows"
+  match rows? with
+  | some (i, j) => s!"{what} {i + 1} and {j + 1}"
+  | none => s!"two {what}"
 
 /-- The name of a clause of a contract, without its function's
 (`Comp.fn?`). -/
@@ -1083,8 +1104,10 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         | none => s!"an index of {subject} is in range"
       | .completeness, _ => match r.goal? with
         | some (.completeness .match) => s!"some arm of a `match` in {subject} is taken"
+        | some (.completeness .tableMatch) => s!"some arm of a table in {subject} is taken"
         | _ => s!"some row of a table in {subject} holds"
-      | .disjointness, _ => s!"{rowsText r.rows?} of a table in {subject} are disjoint"
+      | .disjointness, _ =>
+        s!"{rowsText r.rows? (r.goal? matches some (.disjointness .tableMatch ..))} of a table in {subject} are disjoint"
       | .precondition, some (f, p) => s!"the precondition `{p}` of `{showComp f}` holds at an application in {subject}"
       | .precondition, none => s!"a precondition holds at an application in {subject}"
       | .postcondition, some (f, p) => s!"the postcondition `{p}` of `{showComp f}` holds"
@@ -1148,11 +1171,23 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
           "note: where no arm is taken, the `match` is an unknown value, so the constraint says nothing useful there",
           "help: add an arm for this case, or end the `match` with `_ => e`"]]
     else
+    if r.kind == .completeness && r.goal? == some (.completeness .tableMatch) then
+      #[one "F0637" s!"a table in {subject} may have no arm that is taken" (some "may have no arm that is taken")
+        #[s!"counterexample: {showAssignment vals}",
+          "note: where no arm is taken, the table is an unknown value, so the constraint says nothing useful there",
+          "help: add an arm for this case, or end the table with `_ => e`"]]
+    else
     if r.kind == .completeness then
       #[one "F0618" s!"a table in {subject} may have no row that holds" (some "may have no row that holds")
         #[s!"counterexample: {showAssignment vals}",
           "note: where no row holds, the table is an unknown value, so the constraint says nothing useful there",
           "help: add a row for this case, or end the table with `_ => e`"]]
+    else
+    if r.kind == .disjointness && r.goal? matches some (.disjointness .tableMatch ..) then
+      #[one "F0636" s!"{rowsText r.rows? true} of a table in {subject} may both be taken" (some "overlaps an earlier arm")
+        #[s!"witness: {showAssignment vals}",
+          "note: the arms of a table are disjoint, so that its value does not depend on their order, but here both patterns match and both guards hold",
+          "help: make the guards exclusive, as in `V(x) if x > 0 => a, V(x) if x <= 0 => b`"]]
     else
     if r.kind == .disjointness then
       #[one "F0619" s!"{rowsText r.rows?} of a table in {subject} may both hold" (some "overlaps an earlier row")
@@ -1211,6 +1246,10 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       #[one "F0627" s!"row {j + 1} of a table in {subject} is never the first that holds" (some "never the first that holds")
         #["note: wherever the table is evaluated, an earlier row holds, or this row's condition fails",
           "help: correct its condition or the rows before it, or remove it"]]
+    | .reachability, some (.reachability .tableMatch j) =>
+      #[one "F0638" s!"arm {j + 1} of a table in {subject} is never taken" (some "never taken")
+        #["note: wherever the table is evaluated, its pattern or guard fails, or another arm is taken",
+          "help: correct its guard or the arms that take its cases, or remove it"]]
     | _, _ => #[{ severity := sev, item? := r.prop?, msg := Msg.internal s!"{subject} failed without details" }]
 
 /-- The help of a warning from testing: from `fren check`, testing a check

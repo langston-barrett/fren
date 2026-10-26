@@ -231,8 +231,10 @@ inductive Expr where
   `e`: a field named by digits is never part of an identifier. -/
   | field (span : Span) (e : Expr) (field : Ident)
   /-- `match e { P => b, Q if C => c }`: each arm's pattern, its guard, if
-  it has one, and its body. -/
-  | «match» (span : Span) (scrutinee : Expr) (arms : Array (Pattern × Option Expr × Expr))
+  it has one, and its body; or `table e { ... }`, a table over a
+  scrutinee (`table`), which means the `match` whose arms are disjoint
+  (`Reqs/Lang/Expressions#tables-over-a-scrutinee`). -/
+  | «match» (span : Span) (scrutinee : Expr) (arms : Array (Pattern × Option Expr × Expr)) (table : Bool)
   /-- `e is P`, a pattern test. -/
   | is (span : Span) (scrutinee : Expr) (pattern : Pattern)
   /-- A string literal, with its value. -/
@@ -951,6 +953,31 @@ partial def fieldInits (what : String) : P (Array (Ident × Option Expr)) := do
     fs := fs.push (f, e)
     if (← eatKw ",").isNone then break
   return fs
+/-- The scrutinee and arms of `match e { ... }`, or of `table e { ... }`, a
+table over a scrutinee (`table`), whose first token is `t`. -/
+partial def matchArms (t : Token) (table : Bool) : P Expr := do
+  discard bump
+  let saved := (← get).noRecord
+  modify fun s => { s with noRecord := true }
+  -- An atom, as Lean reads it.
+  let scrutinee ← withIn atom
+  modify fun s => { s with noRecord := saved }
+  markList
+  discard (expectKw "{")
+  let mut arms := #[]
+  repeat
+    if isKw (← peek) "}" && !(table && arms.isEmpty) then break
+    markStart
+    let p ← pattern
+    -- A guard, below `when`, which would swallow the arm's body.
+    let guard? ← if (← eatKw "if").isSome then some <$> withRecords iff else pure none
+    discard (expectKw "=>")
+    -- Below `when`, which would swallow the following arms.
+    arms := arms.push (p, guard?, ← withRecords iff)
+    if (← eatKw ",").isNone then break
+  discard (expectKw "}")
+  fieldReads callArgs indexArg (.match (← spanFrom t.span) scrutinee arms table)
+
 partial def atom : P Expr := do
   let t ← peek
   match t.tok with
@@ -1008,29 +1035,11 @@ partial def atom : P Expr := do
     while (← eatKw ",").isSome do args := args.push (← withRecords expr)
     discard (expectKw ")")
     fieldReads callArgs indexArg (.app (← spanFrom start) segs args)
-  | .kw "match" =>
-    discard bump
-    let saved := (← get).noRecord
-    modify fun s => { s with noRecord := true }
-    -- An atom, as Lean reads it.
-    let scrutinee ← withIn atom
-    modify fun s => { s with noRecord := saved }
-    markList
-    discard (expectKw "{")
-    let mut arms := #[]
-    repeat
-      if isKw (← peek) "}" then break
-      markStart
-      let p ← pattern
-      -- A guard, below `when`, which would swallow the arm's body.
-      let guard? ← if (← eatKw "if").isSome then some <$> withRecords iff else pure none
-      discard (expectKw "=>")
-      -- Below `when`, which would swallow the following arms.
-      arms := arms.push (p, guard?, ← withRecords iff)
-      if (← eatKw ",").isNone then break
-    discard (expectKw "}")
-    fieldReads callArgs indexArg (.match (← spanFrom t.span) scrutinee arms)
   | .kw "table" =>
+    -- `{` right after `table` starts the rows of a table by conditions,
+    -- and anything else its scrutinee.
+    let st ← get
+    if !isKw (st.toks[st.pos + 1]?.getD (← peek)) "{" then matchArms t true else
     discard bump
     markList
     discard (expectKw "{")
@@ -1048,6 +1057,7 @@ partial def atom : P Expr := do
       if (← eatKw ",").isNone then break
     discard (expectKw "}")
     fieldReads callArgs indexArg (.table (← spanFrom t.span) rows)
+  | .kw "match" => matchArms t false
   | .kw "{" =>
     -- A set literal, or a record update if `with` follows the first
     -- expression.

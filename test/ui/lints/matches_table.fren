@@ -1,0 +1,40 @@
+-- The match lints on tables over a scrutinee, in both front ends: they
+-- look at one as at the `match` it means, and call it a table; the
+-- wildcard lints do not fire on one that has an arm with a guard, whose
+-- `_` also takes what the guards leave.
+set_option fren.lint.match_same_arms "warn"
+set_option fren.lint.wildcard_single_variant "warn"
+set_option fren.lint.wildcard_enum_match_arm "warn"
+set_option fren.lint.single_match_else "warn"
+
+enum E { A, B, C }
+
+comp lints {
+    in e: E
+    in ok?
+    pub out a: E
+    pub out b: Int
+    pub out c: Int
+    pub out d?
+    pub out f: Int
+    pub out g: Int
+
+    ensure r1: a = table e { E::A => E::A, E::B => E::B, _ => e }
+    --~^ warning: this table gives back its scrutinee
+    --~^^ warning: `_` matches `E::C`
+    --~^^^ warning: `_` matches only `E::C`
+    ensure r2: b = table e { E::A => 1, E::B => 1, E::C => 2 }
+    --~^ warning: this arm has the same body as the arm `E::A`
+    ensure r3: c = table e { E::A => 1, _ => 2 }
+    --~^ warning: this table tests for one variant
+    --~^^ warning: `_` matches `E::B` and `E::C`
+    ensure r4: d? iff table e { E::A | E::B => true, E::C => false }
+    --~^ warning: this table only tests which of its patterns its scrutinee matches
+    ensure r5: f = table e { _ => 2 }
+    --~^ warning: this table has one arm, which binds nothing
+    --~^^ warning: `_` matches `E::A`, `E::B` and `E::C`
+    -- With a guard, `_` also takes `E::A` where `ok?` fails: no wildcard lint.
+    ensure r6: g = table e { E::A if ok? => 1, E::B => 3, _ => 2 }
+}
+--@ summary: 10 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ exit: 3

@@ -209,7 +209,7 @@ def exprChildren : Expr → Array Expr
   | .not _ e | .neg _ e | .field _ e _ => #[e]
   | .app _ _ as | .set _ as | .seq _ as => as
   | .record _ _ fs => fs.filterMap (·.2)
-  | .match _ sc arms => #[sc] ++ armParts arms
+  | .match _ sc arms _ => #[sc] ++ armParts arms
   | .is _ sc _ => #[sc]
   | .table _ rows => tableParts rows
   | .method _ r _ as => #[r] ++ as
@@ -253,7 +253,7 @@ partial def divisorConstants (items : Array Item) : Std.HashSet String := Id.run
     if let .bin _ op _ k := e then
       if op == "div" || op == "mod" then
         if let some n := named k then out := out.insert n
-    if let .match _ _ arms := e then
+    if let .match _ _ arms _ := e then
       out := out.insertMany (arms.flatMap (rangeBounds ·.1))
     if let .is _ _ p := e then
       out := out.insertMany (rangeBounds p)
@@ -476,7 +476,7 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
         | some v => { start := x.span.start, stop := (s.outer sp v.span).stop }
         | none => x.span
       (removals spans).map fun span => { origin := .dropUpdate, span, after := "", context := sp }
-    | .match sp _ arms =>
+    | .match sp _ arms _ =>
       let vals := arms.map fun (_, _, b) => s.outer sp b.span
       (Array.range (arms.size - 1)).filterMap fun k =>
         let (a, b) := (vals[k]!, vals[k + 1]!)
@@ -558,7 +558,7 @@ where
     | .app _ _ as | .set _ as | .seq _ as | .chain _ as _ => as.map (edits s ·)
     | .record _ _ fs => fs.filterMap fun (_, e?) => e?.map (edits s ·)
     | .update _ r fs => #[edits s r] ++ fs.filterMap fun (_, e?) => e?.map (edits s ·)
-    | .match _ sc arms => #[edits s sc] ++ (armParts arms).map (edits s ·)
+    | .match _ sc arms _ => #[edits s sc] ++ (armParts arms).map (edits s ·)
     | .table _ rows => (tableParts rows).map (edits s ·)
     | .is _ sc _ => #[edits s sc]
     -- The body once, not each instance.

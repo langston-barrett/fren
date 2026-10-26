@@ -319,6 +319,13 @@ syntax fren_row := ("| ")? ("_" <|> fren_expr:20) " => " fren_expr:20
 where `Fren.Lang` is open. -/
 scoped syntax:max (name := tableExpr) "table " "{ " sepBy1(fren_row, ", ", ", ", allowTrailingSep) " }" : fren_expr
 
+/-- `table e { pattern => e, ... }`, a table over a scrutinee: the `match`
+whose arms are disjoint (`Reqs/Lang/Expressions#tables-over-a-scrutinee`).
+Its parts are where a `match`'s are. `{` right after `table` starts the
+rows of a table by conditions, so the scrutinee does not start with it. -/
+scoped syntax:max (name := tableMatchExpr) "table " notFollowedBy("{") withoutForbidden(fren_expr:max) " { "
+  withoutForbidden(sepBy1(fren_arm, ", ", ", ", allowTrailingSep)) " }" : fren_expr
+
 /-- `e is P`, a pattern test, at the precedence of the comparisons. `is`
 is a reserved word where `Fren.Lang` is open, as the set operators are. -/
 scoped syntax:50 (name := isExpr) fren_expr:50 " is " fren_top_pattern : fren_expr

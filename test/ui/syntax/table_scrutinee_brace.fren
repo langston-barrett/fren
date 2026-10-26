@@ -1,0 +1,6 @@
+-- `{` right after `table` starts the rows of a table by conditions, so a
+-- scrutinee that starts with `{` is written in parentheses.
+comp brace { in x: Int pub out y: Int ensure r: y = table {x} { _ => 0 } }
+--~^[cli] error: expected `=>`, found `}`
+--~^^[hosted] error: unexpected token '{'
+--@ exit: 2

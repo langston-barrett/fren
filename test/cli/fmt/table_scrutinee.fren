@@ -1,0 +1,21 @@
+--@ args: fmt --check
+-- `fren fmt` lays out a table over a scrutinee as a `match`: its arms are
+-- spaced as any other, each `|` that starts a line starts its
+-- alternative, and the arms of a vertical table get a trailing comma. A
+-- table by conditions is unchanged by it.
+enum Mode { Off, Heat, Cool }
+
+comp c {
+    in m: Mode
+    in t: Int
+    pub out y: Int
+    ensure a: y = table m {Mode::Off if t>0=>1,_=>0}
+    ensure b: y = table m {
+    | Mode::Off
+          | Mode::Heat if t > 0 =>
+    1,
+    Mode::Cool   if   (t < 0 and t > -5) => 2,
+    _ => 0
+    }
+    ensure d: y = table {t>0=>1,_=>0}
+}

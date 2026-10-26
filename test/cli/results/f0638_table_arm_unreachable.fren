@@ -1,0 +1,10 @@
+-- An arm of a table over a scrutinee that is never taken: the assumption
+-- keeps `x` below 5.
+comp size {
+    in x: Int
+    pub out s: Int
+
+    assume small: x < 5
+
+    ensure r: s = table x { n if n > 10 => 2, _ => 1 }
+}

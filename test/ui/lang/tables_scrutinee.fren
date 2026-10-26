@@ -1,0 +1,97 @@
+-- Tables over a scrutinee, `table e { P if C => e, ... }`
+-- (`Reqs/Lang/Expressions#tables-over-a-scrutinee`): the `match` whose
+-- arms are disjoint, so that its value does not depend on their order. Tables whose
+-- arms are disjoint, complete and each taken somewhere pass their checks.
+set_option fren.lint.dead_code "allow"
+
+enum Mode { Off, On(Int) }
+
+-- The issue's example, with its overlap removed: the value is that of the
+-- one arm that is taken.
+comp level {
+    in m: Mode
+    pub det out y: Int
+
+    ensure r: y = table m {
+        Mode::Off => 0,
+        Mode::On(x) if x > 0 => x,
+        Mode::On(x) if x <= 0 => 1,
+    }
+
+    expect off: when m = Mode::Off, y = 0
+    expect high: when m = Mode::On(7), y = 7
+    expect low: when m = Mode::On(-3), y = 1
+}
+
+-- The order of the arms does not matter: the same arms, reversed, mean the
+-- same.
+comp reordered {
+    in m: Mode
+    pub det out y: Int
+    pub det out z: Int
+
+    ensure r: y = table m { Mode::Off => 0, Mode::On(x) if x > 0 => x, Mode::On(x) if x <= 0 => 1 }
+    ensure s: z = table m { Mode::On(x) if x <= 0 => 1, Mode::On(x) if x > 0 => x, Mode::Off => 0 }
+
+    expect same: y = z
+}
+
+-- A last `_` is otherwise: it takes what no other arm does, including
+-- where a guard fails, and overlaps no arm.
+comp otherwise {
+    in m: Mode
+    pub det out y: Int
+
+    ensure r: y = table m { Mode::On(x) if x > 10 => 2, _ => 0 }
+
+    expect small: when m = Mode::On(3), y = 0
+    expect off: when m = Mode::Off, y = 0
+}
+
+-- Ranges and literals that do not overlap, of an `Int` and a `Nat`.
+comp ranges {
+    in n: Int
+    in k: Nat
+    pub det out s: Int
+    pub det out t: Int
+
+    ensure r: s = table n { ..=-1 => -1, 0 => 0, 1.. => 1 }
+    ensure q: t = table k { 0 => 0, 1..=9 => 1, 10.. => 2 }
+
+    expect sign: when n = -4, s = -1
+    expect tens: when k = 12, t = 2
+}
+
+-- A `Bool` scrutinee, and a table as an operand, without parentheses.
+comp booleans {
+    in b?
+    in x: Int
+    pub det out y: Int
+
+    ensure r: y = 1 + table b? { true if x > 0 => x, true if x <= 0 => 0, false => -1 }
+
+    expect off: when not b?, y = 0
+}
+
+-- A scrutinee in parentheses, and a table in a `let`, under a quantifier
+-- and in a defined output.
+enum Light { Red, Amber, Green }
+
+fn wait(l: Light, n: Int): Int := table l {
+    Light::Red if n > 0 => n,
+    Light::Red if n <= 0 => 1,
+    Light::Amber => 1,
+    Light::Green => 0,
+}
+
+comp places {
+    in l: Light
+    in n: Int
+    pub det out a: Int := table (if n > 0 then l else Light::Red) { Light::Red => 2, _ => 3 }
+    pub det out b?
+
+    ensure r: b? iff (forall (m: Light), let w := table m { Light::Green => 0, _ => 1 } in w <= 1)
+
+    expect waits: when l = Light::Green, wait(l, n) = 0
+    expect red: when n <= 0, a = 2
+}

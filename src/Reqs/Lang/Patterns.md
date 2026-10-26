@@ -269,3 +269,114 @@ matches, as patterns, such as `Reply::Ok(Shape::Square(_))`, `false`, or
 specialization, following each constructor that some arm names, and listing
 the constructors that none names; `_` stands for any value, such as any
 string.
+
+In a [table over a scrutinee](Expressions.md#tables-over-a-scrutinee), no
+arm hides another, so each case of an arm is tested with respect to the
+cases of its own arm before it alone.
+
+## Overlap
+
+Two patterns *overlap* when some value matches both. The arms of a [table
+over a scrutinee](Expressions.md#tables-over-a-scrutinee) must not overlap
+unless one has a guard, and the static rules decide it from the patterns
+alone, one pair at a time, from their heads, as they decide usefulness:
+
+- an or-pattern overlaps a pattern when one of its alternatives does;
+- a wildcard, `_` or a binder, overlaps a pattern that matches some value,
+  as every pattern does but one that has a range that matches no value of
+  its type, such as `..=-1` within a `Nat`;
+- two constructors overlap when they are the same, and the patterns of
+  each value of their payloads overlap, the first's with the second's. Two
+  variants are the same when they are one variant, two Booleans or two
+  strings when they are equal, and two literals or ranges of integers when
+  some integer matches both, one at least 0 for a `Nat`.
+
+`lang::overlap` states this for two patterns, from their heads:
+
+```fren
+pub comp overlap {
+    in first: HeadKind       -- the first pattern's head
+    in second: HeadKind      -- the second's
+    in same?                 -- for two constructors, they are the same
+    in args_overlap?         -- for two constructors, the patterns of each value of their payloads overlap
+    in first_matches?        -- the first pattern matches some value
+    in second_matches?       -- the second does
+    in some_alternative?     -- for an or-pattern, an alternative of one overlaps the other
+    pub det out overlap?
+
+    ensure alternatives: when first = HeadKind::Or or second = HeadKind::Or, overlap? iff some_alternative?
+    ensure wildcard_first: when first = HeadKind::Wildcard and second != HeadKind::Or, overlap? iff second_matches?
+    ensure wildcard_second: when first = HeadKind::Constructor and second = HeadKind::Wildcard, overlap? iff first_matches?
+    ensure constructors: when first = HeadKind::Constructor and second = HeadKind::Constructor,
+        overlap? iff (same? and args_overlap?)
+
+    -- Two wildcards overlap, since every type has values.
+    expect wildcards: when first = HeadKind::Wildcard and second = HeadKind::Wildcard and second_matches?, overlap?
+    expect different: when first = HeadKind::Constructor and second = HeadKind::Constructor and not same?, not overlap?
+}
+```
+
+`lang::pattern_overlap` states what the steps decide, over the patterns
+themselves, for those of one value: `_`, a range of integers (a literal
+is the range of one, and `_` of an integer the range without bounds), or
+a variant whose one payload value a range matches. Two patterns overlap
+exactly when some value matches both: there is then such a value, the
+`witness`, and wherever any value `v` matches both, they overlap. The
+integers are `Nat`s or not (`nat?`), and of a `Nat`, only those at least
+0 are values, so that ranges below 0 match none, as in `..=-1`, and
+`..=0` and `0..` overlap only at 0. `matches?` states which values a
+pattern matches:
+
+```fren
+-- The kinds of pattern of `lang::pattern_overlap`.
+pub enum PatternShape { Wildcard, Integers, Variant }
+
+-- A range of integers: its bounds, each where it has one.
+pub struct IntRange { bounded_below?, low: Int, bounded_above?, high: Int }
+
+-- A pattern: `_`, the integers of `range`, or the variant `variant` of an
+-- enumeration, whose payload's one value `payload` matches.
+pub struct SimplePattern { shape: PatternShape, range: IntRange, variant: Int, payload: IntRange }
+
+-- A value: an integer, `number`, or the variant `variant` with `number`
+-- as its payload's value.
+pub struct SimpleValue { variant: Int, number: Int }
+
+fn in_range?(r: IntRange, n: Int) := (not r.bounded_below? or r.low <= n) and (not r.bounded_above? or n <= r.high)
+
+fn matches?(p: SimplePattern, v: SimpleValue) := match p.shape {
+    PatternShape::Wildcard => true,
+    PatternShape::Integers => in_range?(p.range, v.number),
+    PatternShape::Variant => v.variant = p.variant and in_range?(p.payload, v.number),
+}
+
+pub comp pattern_overlap {
+    in first: SimplePattern
+    in second: SimplePattern
+    in nat?                  -- the integers are `Nat`s: the value's, or its payload's
+    in v: SimpleValue              -- any value
+    pub out overlap?
+    pub out witness: SimpleValue   -- a value that both match, where they overlap
+
+    -- Both are patterns of one type: of integers, or of an enumeration.
+    assume typed: not (first.shape = PatternShape::Integers and second.shape = PatternShape::Variant)
+        and not (first.shape = PatternShape::Variant and second.shape = PatternShape::Integers)
+    assume variants: first.variant >= 0 and second.variant >= 0
+
+    ensure common: when overlap?,
+        matches?(first, witness) and matches?(second, witness) and (not nat? or witness.number >= 0)
+    ensure complete: when matches?(first, v) and matches?(second, v) and (not nat? or v.number >= 0), overlap?
+
+    expect variants_apart: when first.shape = PatternShape::Variant and second.shape = PatternShape::Variant
+        and first.variant != second.variant, not overlap?
+    expect below_nat: when nat? and first.shape = PatternShape::Integers and first.range.bounded_above?
+        and first.range.high < 0, not overlap?
+    expect wildcards: when first.shape = PatternShape::Wildcard and second.shape = PatternShape::Wildcard
+        and (not nat? or v.number >= 0), overlap?
+}
+```
+
+The error names a value that both patterns match, as a pattern, as a
+`match` that is not exhaustive names one that no arm matches: the
+constructors that both name, with such a value of each value of their
+payloads, an integer that both match, or `_` where both are wildcards.

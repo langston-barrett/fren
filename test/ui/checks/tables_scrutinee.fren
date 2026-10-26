@@ -1,0 +1,119 @@
+-- The checks of a table over a scrutinee (`check::disjointness`,
+-- `check::completeness`, `check::reachability`): two arms that may both be
+-- taken, with a witness at the later arm's pattern; a table that may take
+-- no arm, at `table`; and an arm that is never taken, at its pattern.
+set_option fren.lint.dead_code "allow"
+
+enum Mode { Off, On(Int) }
+
+-- The issue's example: `x > 0` and `_` of `Mode::On` overlap where
+-- `x > 0`.
+comp overlapping {
+    in m: Mode
+    pub out y: Int
+
+    ensure r: y = table m {
+        Mode::Off => 0,
+        Mode::On(x) if x > 0 => x,
+        Mode::On(_) => 1,   --~ error: arms 2 and 3 of a table in `overlapping::r` may both be taken
+    }
+}
+
+-- Two guards that both hold at 0, as `>` and `>=` would in a `match`.
+comp both_guarded {
+    in n: Int
+    pub out y: Int
+
+    ensure r: y = table n {
+        k if k > 0 => 1,
+        k if k >= 0 => 2,   --~ error: arms 1 and 2 of a table in `both_guarded::r` may both be taken
+        k if k < 0 => 3,
+    }
+}
+
+-- Not complete: no arm is taken at 0.
+comp incomplete {
+    in n: Int
+    pub out s: Int
+
+    ensure r: s = table n { k if k > 0 => 1, k if k < 0 => -1 }   --~ error: a table in `incomplete::r` may have no arm that is taken
+}
+
+-- An arm that the hypotheses rule out is never taken.
+comp ruled_out {
+    in n: Int
+    pub out s: Int
+
+    assume small: n < 5
+
+    ensure r: s = table n { k if k > 10 => 2, _ => 1 }   --~ error: arm 1 of a table in `ruled_out::r` is never taken
+}
+
+-- Disjointness leaves out the constraint that the table is in, as
+-- reachability does: `r` rules out `y > 0`, where both guards hold, only
+-- through the table's own value.
+comp enclosing {
+    in n: Int
+    pub out y: Int
+
+    ensure r: y = table n {
+        k if y > 0 => 0,
+        k if y >= 0 => 0,   --~ error: arms 1 and 2 of a table in `enclosing::r` may both be taken
+        _ => -1,
+    }
+}
+
+-- Other hypotheses do make arms disjoint: these overlap only at 0.
+comp hypotheses {
+    in n: Int
+    pub out s: Int
+
+    assume nonzero: n != 0
+
+    ensure r: s = table n { k if k >= 0 => 1, k if k <= 0 => 2 }
+}
+
+-- Two arms overlap only where their guards' indexes are in range: the
+-- first guard rules out the empty sequence, which the second reads.
+comp defined {
+    in q: Seq(Int)
+    in m: Mode
+    pub out s: Int
+
+    ensure r: s = table m {
+        Mode::On(_) if q = [] => 0,
+        Mode::On(_) if q != [] and q[0] > 0 => 1,
+        _ => 2,
+    }
+}
+
+-- The order of the arms still matters to the definedness of their guards'
+-- indexes: `q[0]` is defined after `q = []` fails, but not before it.
+comp order_defined {
+    in q: Seq(Int)
+    in m: Mode
+    pub out s: Int
+
+    ensure r: s = table m { Mode::On(_) if q = [] => 0, Mode::On(_) if q[0] > 0 => 1, _ => 2 }
+}
+
+comp order_undefined {
+    in q: Seq(Int)
+    in m: Mode
+    pub out s: Int
+
+    ensure r: s = table m { Mode::On(_) if q[0] > 0 => 1, Mode::On(_) if q = [] => 0, _ => 2 }   --~ error: an index of `order_undefined::r` may be out of range
+}
+
+-- Under a quantifier, each instance's arms are asked about.
+enum Light { Red, Amber, Green }
+
+comp quantified {
+    in n: Int
+    pub out b?
+
+    ensure r: b? iff (forall (l: Light), table l { Light::Red if n > 0 => true, Light::Red if n >= 0 => false, _ => true })
+    --~^ error: arms 1 and 2 of a table in `quantified::r` may both be taken
+}
+--@ summary: 58 passed, 7 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

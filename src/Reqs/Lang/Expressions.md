@@ -26,6 +26,7 @@ atom  := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | "(" expr 
        | IDENT ("." IDENT)+ "(" expr ("," expr)* ")"
        | "match" atom "{" arm ("," arm)* [","] "}"
        | "table" "{" row ("," row)* [","] "}"
+       | "table" atom "{" arm ("," arm)* [","] "}"
        | "{" [expr ("," expr)* [","]] "}"
        | "{" expr "with" field-init ("," field-init)* [","] "}"
 field-init := IDENT [":=" expr]
@@ -711,7 +712,7 @@ Like a [set literal](#sets), an update starts with `{`: after the
 expression that follows the `{`, `with` makes it an update, and `,` or
 `}` a set literal. So `{ r with x := 1 }` is an update and `{r}` a set,
 and an update is written only where a set literal could be: after a
-path, `{` starts a record literal, and after `match e`, the arms. An
+path, `{` starts a record literal, and after `match e` or `table e`, the arms. An
 update is an atom, so `{ p with x := 1 }.y` reads a field of it.
 
 `lang::record_update` states which updates are accepted, from whether
@@ -1161,7 +1162,8 @@ table {
 ```
 
 A *table* chooses a value by conditions, as the tabular guarantees of
-Parnas and of SCR do. Each row has a condition and a value, and the table
+Parnas and of SCR do, or by the patterns of a scrutinee (see [Tables over
+a scrutinee](#tables-over-a-scrutinee)). Each row has a condition and a value, and the table
 has the value of the first row whose condition holds, as a chain of
 conditionals has. A last row `_ => e` holds wherever no earlier row does.
 The rows are separated by commas, as the arms of a `match` are, and each
@@ -1215,6 +1217,222 @@ where the row is the first that holds, which guards their indexes (see
 `where`](Let.md#meaning) name is checked where the name is mentioned, as
 the definition's indexes are. Mentioning a table mentions what its conditions
 and values mention (see [Mentions](#mentions)).
+
+### Tables over a scrutinee
+
+```text
+table m {
+    Mode::Off => 0,
+    Mode::On(x) if x > 0 => x,
+    Mode::On(x) if x <= 0 => 1,
+}
+```
+
+A table may have a scrutinee, written after `table` as a `match`'s is
+after `match`: an atom that is not a record literal. Its rows are then
+arms, written as a [`match`'s](#matches) are, each with a pattern, a
+guard if it has one, and a body, and the table means what the `match`
+with the same scrutinee and arms means: its static rules, its value and
+its checks are that `match`'s, but for what follows. `{` right after
+`table` starts the rows of a table by conditions, so a scrutinee that
+starts with `{`, a set literal or a record update, is written in
+parentheses, though no such value is matched (`F0316`).
+
+Where a `match` has the value of the first arm that is taken, the arms of
+a table are *disjoint*: no two of them are taken at one value of the
+scrutinee, each where its pattern matches and its guard holds. So the
+table's value does not depend on the order of the arms: each can be read
+alone, they can be reordered or split, and the table has the value of the
+body of the one arm that is taken. Their order still matters to the
+[definedness](../Check.md#definedness) of the indexes in their guards,
+as a `match`'s does: a guard is evaluated where no earlier arm is taken,
+so an index in it may rest on an earlier arm's guard, and reordering two
+arms with guards can leave it out of range (`F0611`). Overlapping arms, which a `match` would quietly read in
+order, as it would `n if n > 0` and `n if n >= 0`, are reported instead.
+Disjointness is decided in two parts:
+
+- Two arms without guards whose patterns [overlap](Patterns.md#overlap),
+  that is, which some value matches both, are an error (`F0391`), at the
+  later arm's pattern, with such a value. Of several such pairs, the first
+  is reported, by its later arm and then by its earlier one. The static rules decide it from
+  the patterns alone, nested and range patterns among them, as they decide
+  [usefulness](Patterns.md#usefulness). So `Mode::On(_)` and `Mode::On(x)`
+  are an error, and so are `1..=5` and `5..`, which both match `5`.
+- Two arms whose patterns overlap, of which at least one has a guard, are
+  asked about by the [disjointness check](../Check.md#disjointness): only
+  the solver can tell whether their guards can hold at once, as for two
+  rows of a table by conditions.
+
+Two arms whose patterns do not overlap are disjoint, whatever their guards.
+
+A last arm `_ => e`, without a guard, means *otherwise*: it is taken
+wherever no other arm is, as a table's `_` row is. It overlaps no other
+arm, so it is neither an error nor asked about, and like the `_` row, it
+is last: an arm after it is an error (`F0359`). Where the arms without
+guards before it cover every value, it is never taken, an error
+(`F0318`), as a `_` arm after them is in a `match`: in `table b? { true
+=> 0, false => 1, _ => 2 }`, the `_` arm is dead. An arm whose pattern is
+a binder, or that is `_` with a guard, is not *otherwise*, and overlaps
+every other arm.
+
+The arms are exhaustive as a `match`'s are (`F0317`), each arm with a guard
+counted as if it had none, and each alternative of an arm's or-patterns
+matches some value that the alternatives before it in the same arm do not
+(`F0318`). No arm hides the arms after it, as an arm without a guard does
+in a `match`: an arm that the arms without guards before it would cover
+overlaps one of them, and is reported as such, wherever it is written.
+Where the arms without guards are not exhaustive, the [completeness
+check](../Check.md#completeness) asks whether some arm is always taken,
+and reports a table where none may be at its `table` (`F0637`), and the
+[reachability check](../Check.md#reachability) asks of each arm that has a
+guard or follows one whether it can be taken, and reports one that never
+is at its pattern (`F0638`), as for a `match`. Where no arm is taken, the
+table is unspecified, as a `match` is.
+
+`lang::table_arm_pair` states the rule for two arms of a table over a
+scrutinee, from whether their patterns overlap, whether one of them has a
+guard, and whether one of them is the last arm `_`, which has none:
+
+```fren
+pub comp table_arm_pair {
+    in overlap?              -- some value matches both patterns (`lang::overlap`)
+    in guarded?              -- one of the arms has a guard
+    in otherwise?            -- one of the arms is the last arm `_`, without a guard
+    pub det out rejected?    -- the static rules reject the table (`F0391`)
+    pub det out asked?       -- the disjointness check asks whether both can be taken at once
+
+    ensure static: rejected? iff (overlap? and not guarded? and not otherwise?)
+    ensure checked: asked? iff (overlap? and guarded? and not otherwise?)
+
+    expect never_both: not (rejected? and asked?)
+    -- Arms whose patterns do not overlap are disjoint, whatever their guards.
+    expect apart: when not overlap?, not rejected? and not asked?
+    expect otherwise_alone: when otherwise?, not rejected? and not asked?
+
+    cover rejected: rejected?
+    cover asked: asked?
+}
+```
+
+`lang::table_arms` states the same over the arms of a table as written,
+in order, each `_` without a guard, or another pattern with a guard or
+without, for two arms `i` and `j` of them, `i` before `j`, with whether
+each arm's pattern overlaps `j`'s, as `lang::pattern_overlap` decides it.
+The otherwise is the last arm, `_` without a guard; no other arm is `_`
+without one (`F0359`). Of the
+pairs that the static rules reject, the table is reported at the first,
+in order, as above: `earlier_rejected?` says whether a pair before `(i,
+j)` is rejected, either of an arm before `j`, or of `j` and an arm before
+`i`. `table_arms_refines` confirms that it refines `table_arm_pair`:
+
+```fren
+pub enum TableArm { Unguarded, Guarded, Wildcard }
+
+pub enum Overlap { Apart, Overlapping }
+
+set_option fren.lint.undecidable "allow" in
+pub comp table_arms {
+    use self::Overlap::Overlapping
+    use self::TableArm::{Guarded, Wildcard}
+    in arms: Seq(TableArm)       -- each arm, in order: `_` without a guard, or another, with a guard or without
+    in overlaps: Seq(Overlap)    -- whether each arm's pattern overlaps arm `j`'s
+    in i: Int                    -- an arm before `j`
+    in j: Int                    -- an arm
+    in earlier_rejected?         -- the static rules reject a pair before `(i, j)`, in order
+    pub out rejected?            -- the static rules reject arms `i` and `j`
+    pub out asked?               -- the disjointness check asks whether both can be taken at once
+    pub out reported?            -- the table is reported at arm `j`, naming arm `i` (`F0391`)
+
+    -- Whether arm `i`'s pattern overlaps arm `j`'s, whether one of them
+    -- has a guard, and whether arm `j` is the otherwise: the last, `_`
+    -- without a guard.
+    ensure rule: rejected? iff (0 <= i < overlaps.len and overlaps[i] = Overlapping)
+        and not ((0 <= i < arms.len and arms[i] = Guarded) or (0 <= j < arms.len and arms[j] = Guarded))
+        and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
+    ensure check: asked? iff (0 <= i < overlaps.len and overlaps[i] = Overlapping)
+        and ((0 <= i < arms.len and arms[i] = Guarded) or (0 <= j < arms.len and arms[j] = Guarded))
+        and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
+    ensure first: reported? iff (0 <= i < j < arms.len and rejected? and not earlier_rejected?)
+
+    expect otherwise_alone: when 0 <= j and j = arms.len - 1 and arms[j] = Wildcard, not rejected? and not asked?
+    expect reported_rejected: when reported?, rejected?
+}
+
+set_option fren.lint.undecidable "allow" in
+refine table_arms_refines: table_arms refines table_arm_pair {
+    overlap? := 0 <= i < overlaps.len and overlaps[i] = Overlap::Overlapping,
+    guarded? := (0 <= i < arms.len and arms[i] = TableArm::Guarded) or (0 <= j < arms.len and arms[j] = TableArm::Guarded),
+    otherwise? := 0 <= j and j = arms.len - 1 and arms[j] = TableArm::Wildcard,
+}
+```
+
+`lang::table_match` states what a table over a scrutinee means, at one
+value of its scrutinee: from what each of its arms but the last `_` does
+there, as [`lang::guarded_match`](#matches) has it with its `ArmAt`, the
+value of each arm's body there, and the value of the body of its `_` arm,
+the *otherwise*, if it has one. An arm *holds* where it is `Taken`: its
+pattern matches the value and its guard, if it has one, holds there. The
+arms are *disjoint* there when no two of them hold: none holds after the
+first that does. The table then has the value of the body of the one arm
+that holds, `one`, and where none does, that of the otherwise. Where the
+arms overlap, or none holds and there is no otherwise, the guarantees say
+nothing of the value. The position of the arm that holds is found as in
+`lang::guarded_match`, and `k` stands for any position:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp table_match {
+    use self::ArmAt::Taken
+    in arms: Seq(ArmAt)      -- what each arm but `_` does at the scrutinee's value, in order
+    in values: Seq(Int)      -- each arm's body's value there
+    in otherwise: Seq(Int)   -- `[v]` where the table has a last arm `_ => e` and `e`'s value there is `v`, `[]` where it has none
+    in k: Int                -- any position, for `only` and `none_holds`
+    pub out one: Int := arms.index_of([Taken], 0)  -- the arm that holds, `-1` if none does
+    pub out disjoint? := arms.index_of([Taken], one + 1) = -1  -- no two arms hold
+    pub out value: Int       -- the table's value
+
+    assume aligned: values.len = arms.len
+
+    ensure held: when disjoint? and one >= 0, value = values[one]
+    ensure otherwise_held: when one = -1 and otherwise != [], value = otherwise[0]
+
+    -- Where the arms are disjoint, the arm that holds is the only one, so
+    -- the value does not depend on the order of the arms.
+    expect only: when disjoint? and 0 <= k < arms.len and arms[k] = Taken, k = one
+    expect none_holds: when one = -1 and 0 <= k < arms.len, arms[k] != Taken
+}
+```
+
+`lang::table_eval` states how both front ends and the evaluator give a
+table over a scrutinee its value: as the `match` it means, whose arms are
+tried in order, its `_` arm last. So its value is that of the first arm
+that holds, or the otherwise where none does, as `lang::guarded_match` has
+it. `table_eval_refines` confirms that this is the meaning above: where
+the arms are disjoint, the first arm that holds is the one that does.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp table_eval {
+    use self::ArmAt::Taken
+    in arms: Seq(ArmAt)      -- what each arm but `_` does at the scrutinee's value, in order
+    in values: Seq(Int)      -- each arm's body's value there
+    in otherwise: Seq(Int)   -- the value of the `_` arm's body there, `[]` without one
+    pub out first: Int := arms.index_of([Taken], 0)  -- the first arm that holds, `-1` if none does
+    pub out value: Int       -- the table's value
+
+    assume aligned: values.len = arms.len
+
+    ensure first_held: when first >= 0, value = values[first]
+    ensure otherwise_held: when first = -1 and otherwise != [], value = otherwise[0]
+}
+
+set_option fren.lint.undecidable "allow" in
+refine table_eval_refines: table_eval refines table_match {
+    k := 0,                  -- only the expectations read `k`
+    one := first,
+    disjoint? := arms.index_of([ArmAt::Taken], first + 1) = -1,
+}
+```
 
 ## Sets
 

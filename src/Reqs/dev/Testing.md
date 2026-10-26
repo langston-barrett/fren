@@ -118,7 +118,7 @@
   or of `Bool`, and sequences of one that `range_*` constraints bound to
   two elements, with instances, `det out`s, cover goals, global
   expectations, quantifiers over the enumeration and over `Bool`, and
-  `Bool` tables. Each index is guarded, before or after it, so that every
+  `Bool` tables, by conditions and over a `Bool` or an `Int`. Each index is guarded, before or after it, so that every
   constraint has a value whatever an index out of range is; a table has
   one even where no row holds, which is the interpretation's unspecified
   value of its type. Its constraints include
