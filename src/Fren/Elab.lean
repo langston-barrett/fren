@@ -1200,7 +1200,8 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
   if (cardinalityApp? e).isSome then return ← parts .compound e[2].getSepArgs
   if e.isOfKind ``Lang.appExpr then
     let k : Core.MentionKind ← if ← isConstruction cx e[0] then pure .construction
-      else if (← definedFn? cx e[0]).isSome then pure .defined else pure .uninterpreted
+      else if (← definedFn? cx e[0]).isSome then pure .defined
+      else pure (.uninterpreted ("::".intercalate ((pathSegs e[0]).toList.map (·.getId.toString (escape := false)))))
     parts k e[2].getSepArgs
   else if e.isOfKind ``Lang.recordExpr then
     -- A field without `:= e` is `x := x`.
@@ -1208,7 +1209,7 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
       if b[1].isNone then return (← pathExpr b[0] b[0].getId)[0] else pure b[1][1])
   else if e.isOfKind ``Lang.updateExpr then
     -- The updated value, and the new values.
-    parts .construction (#[e[1]] ++ (← e[3].getSepArgs.mapM fun b =>
+    parts .compound (#[e[1]] ++ (← e[3].getSepArgs.mapM fun b =>
       if b[1].isNone then return (← pathExpr b[0] b[0].getId)[0] else pure b[1][1]))
   else if isMatchLike e then
     let s ← shapeOf cx e[1] bs
@@ -1231,12 +1232,12 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
     let n := segs[0]!.getId
     if let some (_, k) := bs.reverse.find? (·.1 == n.getRoot) then return k
     if let some b := cx.binder? n.getRoot then
-      let some sc := b.scrutinee | return .leaf (if b.unbounded then .variable else .bound)
+      let some sc := b.scrutinee | return .leaf (if b.unbounded then .variable (n.toString (escape := false)) else .bound)
       return .node .binder [← shapeOf (cx.at b) sc]
     -- Definitions are acyclic, so this ends.
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
       return .node .definedOutput [← shapeOf { cx with binders := #[] } d]
-    return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable else .constant)
+    return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable (n.toString (escape := false)) else .constant)
   else if e.isAtom || e.isIdent then return .leaf .literal
   -- The names that the pattern tests of a condition, or of the left
   -- operand of `and`, bind, in what sees them (`lang::test_scope`).
@@ -1250,6 +1251,10 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
 /-- Whether `e` mentions a variable or an uninterpreted function
 (`lang::mentions`). -/
 def mentionsAny (cx : ExprCtx) (e : Syntax) : TermElabM Bool := return (← shapeOf cx e).mentions
+
+/-- The names of the variables and uninterpreted functions that `e`
+mentions (`lang::mentions`). -/
+def mentionedNames (cx : ExprCtx) (e : Syntax) : TermElabM (List String) := return (← shapeOf cx e).mentioned
 
 /-- The applications of uninterpreted functions in `e`. -/
 partial def applications (cx : ExprCtx) (e : Syntax) : TermElabM (Array Syntax) := do
@@ -4780,13 +4785,13 @@ and a `Nat` is expected of the operands where one is of the whole
 def arithTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (natOk : Bool) (op : String) (a b : Syntax) :
     TermElabM Term := do
   if op == "*" then
-    let (ma, mb) := (← mentionsAny cx a, ← mentionsAny cx b)
+    let (ma, mb) := (← mentionedNames cx a, ← mentionedNames cx b)
     unless cx.unmentioned || Core.productAccepted ma mb do
       throwError Core.nonlinearMsg.text
     -- For `branches_sharing_code`, without parentheses, as `boolNode` has them.
     if cx.noteIndexes then
       let at_ (s : Syntax) := ((unparen s).getPos?, (unparen s).getTailPos?)
-      modifyLocal fun l => { l with mentioning := l.mentioning ++ ([(ma, a), (mb, b)].filter (·.1) |>.map (at_ ·.2)) }
+      modifyLocal fun l => { l with mentioning := l.mentioning ++ ([(ma, a), (mb, b)].filter (!·.1.isEmpty) |>.map (at_ ·.2)) }
   let natOk := natOk && op != "-"
   let x ← toTerm { cx with natOk } a
   -- Of a newtype, its underlying type's `+` or `-`, on its field, which is

@@ -186,8 +186,8 @@ uninterpreted [function](Items.md#functions): those of [linear
 arithmetic](#linear-arithmetic), of the [decidable
 core](Decidability.md#strings), and of the
 [lint](../Lint/Complexity.md#constant-outputs) `constant_output`. An expression that mentions
-neither has the same value in every behaviour. What an expression
-mentions is decided from its parts, as `lang::mentions` states:
+neither has the same value in every behaviour (see [The whole
+tree](Meaning.md#the-whole-tree)). What an expression mentions is decided from its parts, as `lang::mentions` states:
 
 - A literal mentions nothing, and neither does a
   [constant](Items.md#constants), a variant without a payload, or any
@@ -225,50 +225,39 @@ mentions is decided from its parts, as `lang::mentions` states:
   from an expression that is not a name, such as `R { a := x }.a`, and a
   literal of a set, pair or sequence.
 
+Each kind of expression is the head of a [layer](Meaning.md#layers), a
+`lang::Head`, and what it mentions is a set of names, of variables and
+uninterpreted functions, given by `mentioned_by`. `lang::mentions` states
+it, from the head and what the parts mention together:
+
 ```fren
--- The kinds of expression, for what one mentions. `Literal` is a literal;
--- `Constant` is a constant, a variant without a payload, or a path of more
--- than one segment; `Variable` is a variable, an instance's variable, or a
--- field read from one, or a bound name of a type that is not listed; `Binder` is a binder of a `match` arm or a name of a
--- `let` or `where`; `Bound` is a quantifier's bound name of a listed type; `Construction` is a variant with a payload, a
--- record literal, a record update or a newtype built from its value,
--- `Ms(e)`; `Uninterpreted` and `Defined` are
--- applications of uninterpreted and defined functions; `Compound` is an
--- operator, `when` or `unless`, a `let`, a quantifier, a conditional, a `match`, a table, a pattern
--- test, a cardinality operator, indexing, a field read from an expression that is
--- not a name, or a literal of a set, pair or sequence.
-pub enum ExprKind {
-    Literal, Constant, Variable, DefinedOutput, Binder, Bound, Construction, Method, Uninterpreted, Defined, Compound,
-}
-
 pub comp mentions {
-    use self::ExprKind::{
-        Binder,
-        Bound,
-        Compound,
-        Constant,
-        Construction,
-        Defined,
-        DefinedOutput,
-        Literal,
-        Method,
-        Uninterpreted,
-        Variable,
-    }
-    in expr_kind: ExprKind
-    in parts?                -- one of its parts mentions a variable or an uninterpreted function
-    pub det out mentions?    -- it mentions a variable or an uninterpreted function
+    use self::Head::{Bound, Constant, Construction, Defined, Literal, Method, Uninterpreted, Variable}
+    in head: Head
+    in parts_mentioned: Set(Id)  -- what its parts mention, together
 
-    ensure rule: mentions? iff match expr_kind {
-        Literal | Constant | Bound => false,
-        Variable | Uninterpreted => true,
-        DefinedOutput | Binder | Construction | Method | Defined | Compound => parts?,
+    assume leaves: when head is Literal(_) | Bound(_) | Constant(_) | Variable(_), parts_mentioned = {}
+
+    pub det out mentioned: Set(Id) := mentioned_by(head, parts_mentioned)
+    pub det out mentions? := mentioned != {}    -- it mentions a variable or an uninterpreted function
+
+    expect fixed_meaning: when head is Defined(_) | Method(_) | Construction(_), mentioned = parts_mentioned
+    expect unknown: when head is Variable(_) | Uninterpreted(_), mentions?
+    expect bound_fixed: when head is Bound(_), not mentions?
+    expect itself: match head {
+        Variable(x) => mentioned = {x},
+        _ => true,
     }
 
-    expect fixed_meaning: when expr_kind is Defined | Method | Construction, mentions? iff parts?
-    expect unknown: when expr_kind is Variable | Uninterpreted, mentions?
-    expect bound_fixed: when expr_kind = Bound, not mentions?
+    cover through_parts: parts_mentioned != {} and mentions?
 }
+```
+
+Each layer of an expression mentions what `lang::mentions` says, so
+`lang::node` refines it:
+
+```fren
+refine layer_mentions: node refines mentions
 ```
 
 The parts of a defined output, of a binder and of a name of a `let` or
@@ -288,19 +277,19 @@ the solver decides. `x * y` is an error, and so is `x * RATE` within a
 component that declares a variable `RATE!`, which shadows the constant
 (see [Shadowing](Components.md#shadowing)). So is `x * rate(1)`,
 with `rate` uninterpreted: its value is unknown even at a fixed argument.
-`lang::linear_product` states this, from whether each operand mentions a
-variable or an uninterpreted function:
+`lang::linear_product` states this, from what each operand mentions:
 
 ```fren
 pub comp linear_product {
-    in a_mentions?    -- the left operand mentions a variable or an uninterpreted function
-    in b_mentions?    -- the right operand mentions a variable or an uninterpreted function
+    in a_mentioned: Set(Id)  -- what the left operand mentions (`lang::mentions`)
+    in b_mentioned: Set(Id)  -- what the right operand mentions
+
     pub det out accepted?
 
-    ensure rule: accepted? iff not (a_mentions? and b_mentions?)
+    ensure rule: accepted? iff (a_mentioned = {} or b_mentioned = {})
 
-    expect scaling: when not a_mentions?, accepted?
-    expect no_variable_products: when a_mentions? and b_mentions?, not accepted?
+    expect scaling: when a_mentioned = {}, accepted?
+    expect no_variable_products: when a_mentioned != {} and b_mentioned != {}, not accepted?
 }
 ```
 
@@ -308,7 +297,7 @@ An operand that mentions less never makes a product nonlinear:
 
 ```fren
 expect fewer_mentions: forall (p q: linear_product),
-    when (not q.a_mentions? or p.a_mentions?) and (not q.b_mentions? or p.b_mentions?) and p.accepted?,
+    when q.a_mentioned subset p.a_mentioned and q.b_mentioned subset p.b_mentioned and p.accepted?,
     q.accepted?
 ```
 
@@ -316,8 +305,23 @@ A defined function applied to constants scales a product like a literal,
 whatever the other operand:
 
 ```fren
-expect defined_scales: forall (m: mentions) (p: linear_product),
-    when m.expr_kind = ExprKind::Defined and not m.parts? and (p.a_mentions? iff m.mentions?), p.accepted?
+expect defined_scales: forall (m: node) (p: linear_product),
+    when m.head is Head::Defined(_) and m.parts_mentioned = {} and p.a_mentioned = m.mentioned, p.accepted?
+```
+
+The rule is what makes the product linear: of an accepted product, one
+operand is a *fixed factor*, with the same value in every environment, by
+the [laws of a layer](Meaning.md#laws). Here `a` and `b` are the operands'
+layers and `a2` and `b2` the same layers, with the same parts' values, in
+any other environment; that the parts' values are the same follows by
+induction (see [The whole tree](Meaning.md#the-whole-tree)):
+
+```fren
+expect fixed_factor: forall (p: linear_product) (a a2 b b2: node),
+    when p.accepted? and p.a_mentioned = a.mentioned and p.b_mentioned = b.mentioned
+    and a2.head = a.head and a2.values = a.values and b2.head = b.head and b2.values = b.values
+    and a.specified? and b.specified?,
+    a2.value = a.value or b2.value = b.value
 ```
 
 ## Division and remainder

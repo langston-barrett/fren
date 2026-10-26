@@ -1,48 +1,48 @@
 /-! # What an expression mentions (`Reqs/Lang/Expressions#mentions`)
 
-Whether an expression mentions a variable or an uninterpreted function,
-decided over a shape that both front ends translate their syntax into. -/
+What an expression mentions: the names of the variables and uninterpreted
+functions it may depend on, decided over a shape that both front ends
+translate their syntax into. -/
 
 namespace Fren.Core
 
-/-- The kinds of expression, for whether one mentions a variable or an
-uninterpreted function (`lang::mentions`). -/
+/-- The kinds of expression, for what one mentions (`lang::mentions`), each
+a `lang::Head` (`Reqs/Lang/Meaning#layers`). -/
 inductive MentionKind where
   /-- A literal, or a part with no expression, such as a field's name. -/
   | literal
   /-- A constant, a variant without a payload, or another name that is not
   a variable: a path of more than one segment is never one. -/
   | constant
-  /-- A variable of the component or of one of its instances, or a field
-  read from one. -/
-  | variable
+  /-- A variable `x` of the component or of one of its instances, or a
+  field read from one, or the bound name of an unbounded quantifier. -/
+  | variable (x : String)
   /-- A defined output, whose part is its definition. -/
   | definedOutput
   /-- A binder of a `match` arm, whose part is its scrutinee. -/
   | binder
   /-- A quantifier's bound name: one value in each instance. -/
   | bound
-  /-- A variant with a payload, a record literal or a record update, whose
-  parts are its arguments, its fields, or its updated value and new
-  values. -/
+  /-- A variant with a payload, a record literal or a newtype built from
+  its value, whose parts are its arguments or its fields. -/
   | construction
   /-- A method call, whose parts are its receiver and arguments. -/
   | method
-  /-- An application of an uninterpreted function. -/
-  | uninterpreted
+  /-- An application of the uninterpreted function `f`. -/
+  | uninterpreted (f : String)
   /-- An application of a defined function, whose parts are its arguments. -/
   | defined
-  /-- An operator, a conditional, a `match`, a field read or a literal of a
-  set, pair or sequence, whose parts are its operands. -/
+  /-- An operator, a conditional, a `match`, a field read, a record update
+  or a literal of a set, pair or sequence, whose parts are its operands. -/
   | compound
   deriving BEq, Inhabited, Repr
 
-/-- Whether an expression of kind `k` mentions a variable or an
-uninterpreted function, where `parts` is whether one of its parts does
-(`lang::mentions`). -/
-def kindMentions : MentionKind → Bool → Bool
-  | .literal | .constant | .bound => fun _ => false
-  | .variable | .uninterpreted => fun _ => true
+/-- What an expression of kind `k` mentions, where `ps` is what its parts
+mention, together (`lang::mentioned_by`). -/
+def kindMentioned : MentionKind → List String → List String
+  | .literal | .constant | .bound => fun _ => []
+  | .variable x => fun _ => [x]
+  | .uninterpreted f => fun ps => ps ++ [f]
   | .definedOutput | .binder | .construction | .method | .defined | .compound => id
 
 /-- An expression as far as what it mentions: its kind and its parts. Both
@@ -53,16 +53,19 @@ inductive MentionShape where
   deriving Inhabited
 
 mutual
+/-- The names that `e` mentions, perhaps more than once (`lang::mentions`). -/
+def MentionShape.mentioned : MentionShape → List String
+  | .node k ps => kindMentioned k (MentionShape.allMentioned ps)
+
+/-- The names that `ps` mention, together. -/
+def MentionShape.allMentioned : List MentionShape → List String
+  | [] => []
+  | p :: ps => p.mentioned ++ MentionShape.allMentioned ps
+end
+
 /-- Whether `e` mentions a variable or an uninterpreted function
 (`lang::mentions`). -/
-def MentionShape.mentions : MentionShape → Bool
-  | .node k ps => kindMentions k (MentionShape.anyMentions ps)
-
-/-- Whether one of `ps` mentions a variable or an uninterpreted function. -/
-def MentionShape.anyMentions : List MentionShape → Bool
-  | [] => false
-  | p :: ps => p.mentions || MentionShape.anyMentions ps
-end
+def MentionShape.mentions (e : MentionShape) : Bool := !e.mentioned.isEmpty
 
 /-- The names that a `let` or `where` clause mentions, from those of its
 definitions `names`, what each definition mentions (`defs`, as paths whose

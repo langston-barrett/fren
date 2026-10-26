@@ -1136,9 +1136,9 @@ and whether it mentions an output of the enclosing component
 (`lang::argument`). -/
 def argumentAccepted (defined mentionsOutput : Bool) : Bool := defined || !mentionsOutput
 
-/-- Whether `a * b` is linear, from whether each operand mentions a variable
-or an uninterpreted function (`lang::linear_product`). -/
-def productAccepted (a b : Bool) : Bool := !(a && b)
+/-- Whether `a * b` is linear, from the names that each operand mentions
+(`lang::linear_product`): one of them mentions none. -/
+def productAccepted (a b : List String) : Bool := a.isEmpty || b.isEmpty
 
 def nonlinearMsg : Msg :=
   { code? := some "F0307", headline := "nonlinear arithmetic is not supported", label? := some "both sides mention variables or uninterpreted functions"
