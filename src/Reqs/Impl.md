@@ -154,8 +154,8 @@ one value. For a function, `t` must have the function's Lean type, with
 each abstract type replaced by its interpretation, so the abstract types in
 a function's parameters and result must be interpreted before it. The
 interpretation adds the reducible definition `q := t`, where `q` is the
-Lean name of `p` in the current Lean namespace (see [Generated Lean
-declarations](Generated.md)).
+Lean name of `p`, in `Fren.Generated` under the current Lean namespace
+(see [Names](Generated.md#names)).
 
 Each abstract type and function is interpreted at most once, in a Lean file
 and the files it imports, so every implementation uses the same meaning.

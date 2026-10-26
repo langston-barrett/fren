@@ -78,7 +78,7 @@ input_dir reqs_md where
   filter := .extension #["md"]
 
 lean_lib ReqsChapters where
-  globs := #[`Reqs.Check, `Reqs.Cli, `Reqs.Eval, `Reqs.Fmt, `Reqs.Impl, `Reqs.Mutate, `Reqs.Trace, `Reqs.View]
+  globs := #[`Reqs.Check, `Reqs.Cli, `Reqs.Eval, `Reqs.Fmt, `Reqs.Generated, `Reqs.Impl, `Reqs.Mutate, `Reqs.Trace, `Reqs.View]
   needs := #[`@/reqs_chapters_md]
 
 -- The specs in `src/Reqs` itself, not in its subdirectories.
@@ -132,7 +132,7 @@ input_file test_main where
   text := true
 
 lean_lib ImplsProofs where
-  globs := #[`Impls.Check, `Impls.Cli, `Impls.Eval, `Impls.Fmt, `Impls.Impl, `Impls.Inst, `Impls.Lang, `Impls.Modules,
+  globs := #[`Impls.Check, `Impls.Cli, `Impls.Eval, `Impls.Fmt, `Impls.Generated, `Impls.Impl, `Impls.Inst, `Impls.Lang, `Impls.Modules,
     `Impls.Mutate, `Impls.PatternTypes, `Impls.Refine, `Impls.View]
 
 -- Regression tests: each file checks its own messages with `#guard_msgs`.
