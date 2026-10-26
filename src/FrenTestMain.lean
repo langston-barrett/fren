@@ -653,6 +653,14 @@ def isSwap (m : FrenCli.Mutate.Mutant) : Bool :=
     .swapMinMax, .swapAffix].contains m.origin
     || (m.origin == .swapAndOr && !m.after.startsWith "(")
 
+/-- Whether `a` and `b` agree on what `fren mutate` reads of a mutant's
+state (`FrenCli.mutate`). -/
+def sameForMutate (a b : FrenCli.State) : Bool :=
+  let diag (d : FrenCli.Diag) := s!"{d.file} {d.span.start} {d.span.stop} {repr d.severity} {repr d.msg} {d.lint?.map (·.ctorIdx)} {d.fixed}"
+  a.diags.map diag == b.diags.map diag && a.comps == b.comps && a.globals == b.globals && a.refinements == b.refinements
+    && a.bodies == b.bodies && a.defs == b.defs && a.preludeText == b.preludeText && a.consts.toList == b.consts.toList
+    && a.constInts.toList == b.constInts.toList && FrenCli.sameForLater a b
+
 /-- Every mutant of the corpus:
 - **well-formed:** changes the text, and elaborates with no static error;
 - **identified:** has an identifier that no other mutant of its group has;
@@ -673,7 +681,9 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
   let mut failures := #[]
   let files ← readGroup paths
   let (before, all) := FrenCli.mutantsOf files #[]
-  let enums := FrenCli.Mutate.enumsOf (files.flatMap fun (_, chars) => match FrenCli.parseText chars with
+  let parsed := files.map (FrenCli.parseText ·.2)
+  let names := parsed.map FrenCli.writtenNames
+  let enums := FrenCli.Mutate.enumsOf (parsed.flatMap fun
     | .ok (_, items, _) => items
     | .error _ => #[])
   let ids := all.map (·.id)
@@ -692,6 +702,13 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
     -- Only the mutated file: mutants change no declaration, so the files
     -- after it elaborate as before.
     let st := FrenCli.elabParsed (before[m.file]?.getD {}) m.file chars' parsed'
+    -- Some of the mutants: `mutantState`, which elaborates again only the
+    -- files after it that it must, reads as elaborating all of them again.
+    if (i / slices) % 16 == 0 then
+      let all := (files.extract (m.file + 1)).zipIdx.foldl (init := st) fun s ((_, cs), k) =>
+        FrenCli.elabParsed s (m.file + 1 + k) cs parsed[m.file + 1 + k]!
+      unless sameForMutate (FrenCli.mutantState files parsed names before m chars' parsed') all do
+        failures := failures.push s!"{m.id}: `mutantState` differs from elaborating every file after it again"
     if let some d := (st.diags.filter fun d => d.severity == .error && d.file == m.file)[0]? then
       failures := failures.push s!"{m.id}: has a static error: {d.msg.headline}"
     let again := mutantsOfParsed m.file path chars' parsed' enums
