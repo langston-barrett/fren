@@ -349,25 +349,26 @@ def readSpec (p : Paint) (path : String) : IO (Option String) := do
 /-- Elaborates the file `file`, with text `chars`, after the state `st` of
 the files before it. -/
 def elabText (st : State) (file : Nat) (chars : Array Char) (fixing : Array Fren.Core.Lint := #[]) : State :=
-  match lex chars with
+  match lexWithComments chars with
   | .error e => { st with diags := st.diags.push { file, span := e.span, msg := e.msg } }
-  | .ok toks =>
+  | .ok (toks, comments) =>
     match parseItems toks with
     | .error e => { st with diags := st.diags.push { file, span := e.span, msg := e.msg } }
-    | .ok (items, starts) => (elabFile file chars items starts (trailingCommas toks) fixing |>.run st).2
+    | .ok (items, starts) =>
+      (elabFile file chars items starts (trailingCommas toks) (literalLints chars toks comments) fixing |>.run st).2
 
-/-- A file's tokens, items, and where each item starts, as `elabText`
-reads them, or the error, at its span, of the lexer or else of the
-parser. -/
-abbrev Parsed := Except (Span × Msg) (Array Token × Array Item × Array Nat)
+/-- A file's tokens, items, where each item starts, and the lints of its
+literals and comments (`literalLints`), as `elabText` reads them, or the
+error, at its span, of the lexer or else of the parser. -/
+abbrev Parsed := Except (Span × Msg) (Array Token × Array Item × Array Nat × Array (Fren.Core.Lint × Span × Msg))
 
 /-- The file with text `chars`, lexed and parsed. -/
 def parseText (chars : Array Char) : Parsed :=
-  match lex chars with
+  match lexWithComments chars with
   | .error e => .error (e.span, e.msg)
-  | .ok toks => match parseItems toks with
+  | .ok (toks, comments) => match parseItems toks with
     | .error e => .error (e.span, e.msg)
-    | .ok (items, starts) => .ok (toks, items, starts)
+    | .ok (items, starts) => .ok (toks, items, starts, literalLints chars toks comments)
 
 /-- `elabText st file chars`, where `p` is `parseText chars`: the same
 cases, after the same lexing and parsing, so that a file parsed once can
@@ -375,7 +376,7 @@ be elaborated after several states. -/
 def elabParsed (st : State) (file : Nat) (chars : Array Char) (p : Parsed) : State :=
   match p with
   | .error (span, msg) => { st with diags := st.diags.push { file, span, msg } }
-  | .ok (toks, items, starts) => (elabFile file chars items starts (trailingCommas toks) |>.run st).2
+  | .ok (toks, items, starts, found) => (elabFile file chars items starts (trailingCommas toks) found |>.run st).2
 
 /-- The state before any file, with the lint levels `lints`. -/
 def initialState (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) : State :=

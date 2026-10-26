@@ -560,9 +560,21 @@ abbrev Levels := Array (Lint × LevelInEffect)
 
 def Levels.defaults : Levels := Lint.all.map fun l => (l, .ofDefault l)
 
+/-- The level of `l` in `ls`. Every `Levels` is built from
+`Levels.defaults`, which has one entry per lint, in the order of
+`Lint.all`, by `Levels.set`, which keeps that so. `Lint.all` lists the
+lints in the order of their constructors, so the entry of `l` is usually
+at its constructor's index, where it is looked for first; the search is a
+fallback. The answer is that of the search, since `l` has only one entry. -/
 def Levels.get (ls : Levels) (l : Lint) : LevelInEffect :=
-  ((ls.find? (·.1 == l)).map (·.2)).getD (.ofDefault l)
+  match ls[l.ctorIdx]? with
+  | some (l', v) => if l' == l then v else slow
+  | none => slow
+where slow := ((ls.find? (·.1 == l)).map (·.2)).getD (.ofDefault l)
 
+/-- `ls` with `l` at level `v`. It keeps each entry in its place, and adds
+one only for a lint that has none, so each lint still has one entry
+(`Levels.get`). -/
 def Levels.set (ls : Levels) (l : Lint) (v : LevelInEffect) : Levels :=
   if ls.any (·.1 == l) then ls.map fun (l', v') => (l', if l' == l then v else v') else ls.push (l, v)
 
@@ -2507,8 +2519,14 @@ def duplicateConstraint (earlier later : ConstraintKind) (same : Bool) : Bool ×
 texts in order, its position and that of the first such
 (`lint::duplicate_constraint`). -/
 def repeatedConstraints (texts : Array String) : Array (Nat × Nat) :=
-  let forms := texts.map writtenForm
-  (Array.range forms.size).filterMap fun i => ((Array.range i).find? (forms[·]! == forms[i]!)).map (i, ·)
+  -- `writtenSame`, with each text's form computed once, if at all.
+  let chars := texts.map (·.toList)
+  let plain := chars.map (!mayHaveComments ·)
+  let forms := texts.map fun t => Thunk.mk fun _ => writtenForm t
+  let same (j i : Nat) : Bool :=
+    if plain[j]! && plain[i]! && !sameNonWhitespace chars[j]! chars[i]! then false
+    else forms[j]!.get == forms[i]!.get
+  (Array.range texts.size).filterMap fun i => ((Array.range i).find? (same · i)).map (i, ·)
 
 /-- A constraint of kind `later`, written the same as the earlier `name`, of
 kind `earlier`. When the two are of one kind, the fix removes the later. -/
@@ -3250,14 +3268,44 @@ def elseExtendsAt? (src : Array Char) (n k : BNode α) (slot : Slot) : Option (O
     ++ textOf src { start := e.range.stop, stop := k.range.stop }
   return { lint := .elseExtends, ref := k.ref, msg := elseExtendsMsg op branch fixed }
 
+/-- Whether the text of `src` in `r` (`textOf`) has more than two
+characters other than whitespace, and no `-` or `/`. Then it has no
+comment, so `writtenForm` keeps each of those characters, and its form is
+longer than two characters. -/
+def formLongerThanTwo (src : Array Char) (r : Range) : Bool :=
+  go (min r.stop src.size) r.start 0
+where
+  go (stop i seen : Nat) : Bool :=
+    if h : i < stop then
+      let c := src[i]!
+      if c == '-' || c == '/' then false
+      else if c.isWhitespace then go stop (i + 1) seen
+      else if seen == 2 then
+        -- A third character; the rest of the text must still have no `-`
+        -- or `/`, since a comment could start there.
+        rest stop (i + 1)
+      else go stop (i + 1) (seen + 1)
+    else false
+  termination_by stop - i
+  rest (stop i : Nat) : Bool :=
+    if h : i < stop then
+      let c := src[i]!
+      if c == '-' || c == '/' then false else rest stop (i + 1)
+    else true
+  termination_by stop - i
+
 /-- How `identity_op` sees the operand `k`. -/
 def identityOperand (src : Array Char) (k : BNode α) : IdentityOperand :=
-  match k.kind, writtenForm (textOf src k.range) with
-  | .neg, _ => .negation
-  | .atom, "0" => .zero
-  | .atom, "1" => .one
-  | .atom, "\"\"" | .atom, "[]" | .atom, "{}" => .empty
-  | _, _ => .other
+  match k.kind with
+  | .neg => .negation
+  -- Only an atom's text is read, and not even that when it is surely
+  -- longer than the forms below (`formLongerThanTwo`).
+  | .atom => if formLongerThanTwo src k.range then .other else match writtenForm (textOf src k.range) with
+    | "0" => .zero
+    | "1" => .one
+    | "\"\"" | "[]" | "{}" => .empty
+    | _ => .other
+  | _ => .other
 
 /-- `identity_op` on `n`, a binary operator in `slot` within `parent`
 (`lint::identity_op`). -/
@@ -4362,41 +4410,43 @@ def similarNamesMsg (a b : Name) (what : Named) (n : Name) : Msg :=
     notes := #[s!"note: both are declared in {what.describe} `{nameText n}`",
       "help: rename one, so that they differ at a glance"] }
 
-/-- The lines of `text` that have something other than whitespace and
-comments: `--` to the end of the line, and `/-` to `-/`, which nest. A
-`--` in a string literal starts no comment. -/
-def codeLines (text : String) : Nat := Id.run do
+/-- The lines of the text of `cs` from `start` up to `stop`, read in place,
+that have something other than whitespace and comments: `--` to the end
+of the line, and `/-` to `-/`, which nest. A `--` in a string literal
+starts no comment. -/
+def codeLinesIn (cs : Array Char) (start stop : Nat) : Nat :=
+  go (min stop cs.size) start 0 false 0 false
+where
+  /-- The index of the first line break at or after `i`, or `stop`. -/
+  lineEnd (stop i : Nat) : Nat :=
+    if h : i < stop then if cs[i]! == '\n' then i else lineEnd stop (i + 1) else i
+  termination_by stop - i
+  /-- From `i`, with `n` lines counted, `code` if the current line has
+  code, in `depth` nested comments, and `inString` if in a string literal.
+  A loop of its own, so that its state is not boxed at each character. -/
+  go (stop i n : Nat) (code : Bool) (depth : Nat) (inString : Bool) : Nat :=
+    if h : i < stop then
+      let c := cs[i]!
+      let next := if i + 1 < stop then cs[i + 1]? else none
+      if c == '\n' then go stop (i + 1) (if code then n + 1 else n) false depth false
+      else if depth > 0 then
+        if c == '-' && next == some '/' then go stop (i + 2) n code (depth - 1) inString
+        else if c == '/' && next == some '-' then go stop (i + 2) n code (depth + 1) inString
+        else go stop (i + 1) n code depth inString
+      else if inString then
+        if c == '\\' then go stop (i + 2) n code depth inString
+        else go stop (i + 1) n code depth (c != '"')
+      -- `c` is no line break, so the line's end is past `i`.
+      else if c == '-' && next == some '-' then go stop (max (lineEnd stop i) (i + 1)) n code depth inString
+      else if c == '/' && next == some '-' then go stop (i + 2) n code 1 inString
+      else go stop (i + 1) n (code || !c.isWhitespace) depth (c == '"')
+    else if code then n + 1 else n
+  termination_by stop - i
+
+/-- `codeLinesIn` of all of `text`. -/
+def codeLines (text : String) : Nat :=
   let cs := text.toList.toArray
-  let mut n := 0
-  let mut code := false
-  let mut depth := 0
-  let mut inString := false
-  let mut i := 0
-  while i < cs.size do
-    let c := cs[i]!
-    let next := cs[i + 1]?
-    if c == '\n' then
-      if code then n := n + 1
-      code := false
-      inString := false
-      i := i + 1
-    else if depth > 0 then
-      if c == '-' && next == some '/' then depth := depth - 1; i := i + 2
-      else if c == '/' && next == some '-' then depth := depth + 1; i := i + 2
-      else i := i + 1
-    else if inString then
-      if c == '\\' then i := i + 2
-      else
-        if c == '"' then inString := false
-        i := i + 1
-    else if c == '-' && next == some '-' then
-      while i < cs.size && cs[i]! != '\n' do i := i + 1
-    else if c == '/' && next == some '-' then depth := 1; i := i + 2
-    else
-      if c == '"' then inString := true
-      unless c.isWhitespace do code := true
-      i := i + 1
-  return if code then n + 1 else n
+  codeLinesIn cs 0 cs.size
 
 /-- Whether `too_many_lines` fires on an item of `n` lines of code
 (`lint::too_many_lines`). -/
