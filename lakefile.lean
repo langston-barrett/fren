@@ -33,7 +33,14 @@ require smt from git "https://github.com/langston-barrett/lean-smt.git"@"trust-s
 -- then run as native code rather than in Lean's interpreter: a module that
 -- imports a precompiled one waits for its C code to be compiled and linked,
 -- which put `Fren.Elab`'s, some 13 s, on the build's critical path, for a
--- second or so less in each of the slowest modules of `Reqs`.
+-- second or so less in each of the slowest modules of `Reqs`. With
+-- `Fren.Elab` at `-O0` (below), it is still no faster: `Reqs` then waits
+-- for the C code of every module of `Fren` and of `FrenCore`, and for their
+-- shared libraries, for 1–3 s less CPU in each of `Reqs.Lang`, `Reqs.Lint`
+-- and `Reqs.Check`. (Precompiling needs the libraries layered by imports,
+-- with the modules that `Fren.Elab` imports in a library of their own, and
+-- `roots := #[]` on each library with no root module, so that Lake loads
+-- it with `--load-dynlib` rather than as a plugin.)
 @[default_target] lean_lib FrenCore where
   globs := #[.andSubmodules `FrenCore]
   moreLeancArgs := coverageArgs
@@ -145,6 +152,12 @@ extern_lib glibc_c23 pkg := do
 -- The standalone binary for `.fren` files: a native executable with cvc5
 -- linked in, needing no .olean files at runtime. There is no module `FrenCli`,
 -- so the library is its modules.
+--
+-- Unlike `Fren.Elab`, `FrenCli.Elab` keeps `-O3`, although clang takes
+-- 23–30 s on its C code, most of it on `elabExpr`. At `-O0` (3 s), the
+-- binary elaborates 40–50% slower, and `lake test`, whose mutation jobs
+-- elaborate Fren's own requirements once for each mutant, took about 25%
+-- more CPU; `-O1 -fno-inline` (12 s) still costs a mutation job 10%.
 lean_lib FrenCli where
   globs := #[.submodules `FrenCli]
   moreLeancArgs := coverageArgs
