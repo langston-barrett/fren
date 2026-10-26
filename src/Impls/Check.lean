@@ -318,6 +318,56 @@ impl postcondition_at: check::postcondition_at for (p0 p1 q0 q1 : Bool) {
   reports_cex? := (postconditionResult (pre p0 p1) (pre q0 q1)).detail matches .counterexample ..,
 }
 
+/-! ## Forced outputs -/
+
+instance : Fren.Finite check.Choice := ⟨[.C0, .C1, .C2], by intro x; cases x <;> simp⟩
+
+/-- A solver over one output with three values, which decides by trying
+each: a formula is a predicate on the output's value, and a model is never
+needed (`Core.forces` takes the value as given). -/
+def choiceBackend : Fren.Core.Backend Id (check.Choice → Bool) Unit where
+  query hyps goal _ :=
+    if [check.Choice.C0, .C1, .C2].all fun v => !(hyps.all (·.2 v)) || goal v then .unsat else .sat #[]
+  falseF _ := false
+  notF f v := !f v
+  conj fs v := fs.all (· v)
+  existsOutputs f := pure fun _ => [check.Choice.C0, .C1, .C2].any f
+  pin _ _ := pure none
+  render _ _ := pure ""
+  prime f := f
+  samePrimed _ _ := true
+  subst _ f := f
+
+/-- `choiceBackend`, pinning the output to the value `m`. -/
+def pinning (m : check.Choice) : Fren.Core.Backend Id (check.Choice → Bool) Unit :=
+  { choiceBackend with pin := fun _ _ => pure (some (· == m)) }
+
+/-- The values that `c0`, `c1` and `c2` say. -/
+def valuesOf (c0 c1 c2 : Bool) (v : check.Choice) : Bool :=
+  match v with
+  | .C0 => c0
+  | .C1 => c1
+  | .C2 => c2
+
+/-- The set of the values that `c0`, `c1` and `c2` say. -/
+def choicesOf (c0 c1 c2 : Bool) : Fren.FinSet check.Choice :=
+  Fren.FinSet.ofList ((if c0 then [check.Choice.C0] else []) ++ (if c1 then [.C1] else []) ++ (if c2 then [.C2] else []))
+
+-- For every set of values of the output and every value in the model:
+-- `Core.forces`, with the side's formula true at exactly those values,
+-- asks the pin query and finds what forcing means.
+impl forcing: check::forcing for (c0 c1 c2 : Bool) (m : check.Choice) {
+  values := choicesOf c0 c1 c2,
+  model := m,
+  pin_q := toOutcome ((pinning m).query #[(`s, valuesOf c0 c1 c2)] (· == m) false).answer,
+  forced? := decide ([c0, c1, c2].count true ≤ 1),
+  found? := (Fren.Core.forces (pinning m) #[(`s, valuesOf c0 c1 c2)] `o ()).run,
+} by
+  intro c0 c1 c2 m
+  cases c0 <;> cases c1 <;> cases c2 <;> cases m <;>
+    simp +decide [fren_spec, pinning, choiceBackend, Fren.Core.forces, toOutcome, Fren.Core.Outcome.answer,
+      Fren.Core.Outcome.isUnsat]
+
 /-! ## The position of the first of a value in a sequence -/
 
 theorem find?_range_getElem? [DecidableEq α] (l : List α) (x : α) :

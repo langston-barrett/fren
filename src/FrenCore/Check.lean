@@ -73,6 +73,21 @@ inductive Detail where
   | unknown (reason : String)
   deriving Inhabited
 
+/-- At a realizability conflict, a guarantee of the minimal core and the
+rest of the core force an output to different values on the conflict's
+input (`check::clash_notes`). -/
+structure Clash where
+  /-- The guarantee, where the note is. -/
+  guarantee : Name
+  /-- The other guarantees of the core, in its order. -/
+  rest : Array Name
+  output : Name
+  /-- The value that `guarantee` forces `output` to. -/
+  value : String
+  /-- The value that `rest` forces `output` to. -/
+  restValue : String
+  deriving Inhabited
+
 structure CheckResult where
   kind : CheckKind
   comp : Name
@@ -97,6 +112,9 @@ structure CheckResult where
   /-- For `cover`: its query depends on an interpretation, so its witness's
   values are not shown (`coverInterpreted`). -/
   interpreted : Bool := false
+  /-- For `realizable`, failing with a conflict: the clashes of forced
+  outputs between its core's guarantees (`clashesOf`). -/
+  clashes : Array Clash := #[]
   deriving Inhabited
 
 inductive Outcome (V : Type) where
@@ -319,6 +337,54 @@ def minimize (base cands : Array (Name × F)) (goal : F) : m (Array Name) := do
       keep := trial
   return keep.map (·.1)
 
+/-- Whether `hyps` force the variable `x` to `v`, its value in a model of
+them: `x = v` follows from them (`check::forcing`). A value that cannot be
+pinned is not known to be forced. -/
+def forces (hyps : Array (Name × F)) (x : Name) (v : V) : m Bool := do
+  let some f ← b.pin x v | return false
+  return (← b.query hyps f false).isUnsat
+
+/-- The clash at the guarantee `e` of the minimal core `core`, on the input
+that `pinned` pins: the first of the outputs `outs` that `{e}` and the
+rest of the core force to different values (`check::clash_notes`). Each
+side is asked for a model, then whether each output's value in it
+follows (`forces`); only the outputs whose values in the two models
+differ are asked about, since sides that force an output both force its
+value in their models. None if the rest is empty, which forces nothing,
+or a side has no model. -/
+def clashAt (pinned core : Array (Name × F)) (outs : Array Name) (e : Name) : m (Option Clash) := do
+  let one := core.filter (·.1 == e)
+  let rest := core.filter (·.1 != e)
+  if rest.isEmpty then return none
+  let .sat m₁ ← b.query (pinned ++ one) b.falseF true | return none
+  let .sat m₂ ← b.query (pinned ++ rest) b.falseF true | return none
+  for o in outs do
+    let some (_, v₁) := m₁.find? (·.1 == o) | continue
+    let some (_, v₂) := m₂.find? (·.1 == o) | continue
+    let s₁ ← b.render o v₁
+    let s₂ ← b.render o v₂
+    if s₁ == s₂ then continue
+    if !(← forces b (pinned ++ one) o v₁) then continue
+    if !(← forces b (pinned ++ rest) o v₂) then continue
+    return some { guarantee := e, rest := rest.map (·.1), output := o, value := s₁, restValue := s₂ }
+  return none
+
+/-- Whether `found` notes leave room for another under the budget
+`examples`, `none` for no limit (`check::clash_notes`). -/
+def withinBudget (found : Nat) : Option Nat → Bool
+  | none => true
+  | some n => found < n
+
+/-- The clashes of a conflict, one at most at each guarantee of the
+minimal core `core`, in its order, and at most `examples` in all
+(`check::clash_notes`): no query is asked once they are found. -/
+def clashesOf (pinned core : Array (Name × F)) (outs : Array Name) (examples : Option Nat) : m (Array Clash) := do
+  let mut found := #[]
+  for (e, _) in core do
+    if !withinBudget found.size examples then break
+    if let some cl ← clashAt b pinned core outs e then found := found.push cl
+  return found
+
 def renderModel (vars : Array VarSig) (model : Array (Name × V)) (keep : VarSig → Bool) :
     m Assignment :=
   vars.filterMapM fun v => do
@@ -365,11 +431,37 @@ def Comp.substHyps (c : Comp F) (b : Backend m F V) (hs : Array (Name × F)) : A
 def Comp.hyps (c : Comp F) (b : Backend m F V) (upTo : Nat := c.insts.size) : Array (Name × F) :=
   c.assumes ++ (c.insts.extract 0 upTo).map fun i => (i.name, b.conj #[i.bindings, i.behaviour])
 
+/-- The outputs whose values a clash note may give: the public ones that
+are not defined, since realizability replaces those by their definitions. -/
+def Comp.clashOutputs (c : Comp F) : Array Name :=
+  (c.vars.filter fun v => v.role == .output && v.isPub && !c.defs.any (·.1 == v.name)).map (·.name)
+
+/-- Whether the values of a realizability conflict's clash notes would
+depend on an interpretation (`check::clash_notes`), as a cover goal's
+witness would (`coverInterpreted`): whether some variable's type is
+abstract, or some formula of the notes' queries, a guarantee or a
+definition substituted into one, uses an abstract type or an
+uninterpreted function, as `interprets` says of a formula. -/
+def Comp.realizableInterpreted (c : Comp F) (interprets : F → Bool) : Bool :=
+  c.typesInterpreted || (c.defs.map (·.2.1) ++ c.reqs.map (·.2)).any interprets
+
+/-- The clashes of a realizability conflict on the input that `pinned`
+pins, with the minimal core `core` (`clashesOf`): none if they would depend
+on an interpretation (`Comp.realizableInterpreted`). -/
+def conflictClashes (c : Comp F) (pinned : Array (Name × F)) (core : Array Name) (examples : Option Nat)
+    (interprets : F → Bool) : m (Array Clash) :=
+  if c.realizableInterpreted interprets then pure #[]
+  else clashesOf b pinned ((c.substHyps b c.reqs).filter (core.contains ·.1)) c.clashOutputs examples
+
 /-- `realizable`: every input allowed by the assumptions has outputs
 satisfying the requirements, whatever the instances do
 (`check::realizability`). Defined outputs are replaced by their
-definitions, so that they are never under `∃` (`check::definitions`). -/
-def checkRealizable (c : Comp F) : m CheckResult := do
+definitions, so that they are never under `∃` (`check::definitions`). A
+conflict comes with at most `examples` clashes of forced outputs
+(`clashesOf`), `none` for no limit, and none if they would depend on an
+interpretation, as `interprets` says of a formula. -/
+def checkRealizable (c : Comp F) (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false) :
+    m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .realizable, comp := c.path, prop? := none, target? := c.fn?.map (·, .anonymous), verdict, detail }
   let sub := c.substHyps b
@@ -384,8 +476,10 @@ def checkRealizable (c : Comp F) : m CheckResult := do
   if reportsCex then
     let .sat model := cexQ | return result verdict
     let input := conflictInput c.vars model
-    let core ← minimize b (← pins b input) (sub c.reqs) b.falseF
-    return result verdict (.conflict (← renderModel b c.vars input fun v => v.isIn && v.isPub) core)
+    let pinned ← pins b input
+    let core ← minimize b pinned (sub c.reqs) b.falseF
+    let clashes ← conflictClashes b c pinned core examples interprets
+    return { result verdict (.conflict (← renderModel b c.vars input fun v => v.isIn && v.isPub) core) with clashes }
   if verdict == .inconclusive then
     return result verdict (.unknown (if cexQ.reason.isEmpty then assumeQ.reason else cexQ.reason))
   return result verdict
@@ -712,10 +806,14 @@ def checkDets (c : Comp F) : m (Array CheckResult) :=
 def ifSelected (selected : Bool) (x : m (Array α)) : m (Array α) := if selected then x else pure #[]
 
 /-- All selected checks for one comp, in reporting order, each with the
-backend `bk` gives for its kind. -/
-def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array CheckKind := CheckKind.all) :
-    m (Array CheckResult) := do
-  let realizable ← ifSelected (kinds.contains .realizable) ((#[·]) <$> checkRealizable (bk .realizable) c)
+backend `bk` gives for its kind. A realizability conflict has at most
+`examples` clash notes, `none` for no limit, and none where `interprets`
+says that their queries depend on an interpretation
+(`Comp.realizableInterpreted`). -/
+def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array CheckKind := CheckKind.all)
+    (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false) : m (Array CheckResult) := do
+  let realizable ← ifSelected (kinds.contains .realizable)
+    ((#[·]) <$> checkRealizable (bk .realizable) c examples interprets)
   let insts ← ifSelected (kinds.contains .inst) (checkInsts (bk .inst) c)
   let expects ← ifSelected (kinds.contains .expect) (c.expects.mapM (checkExpect (bk .expect) c))
   let covers ← ifSelected (kinds.contains .cover) (c.covers.mapM (checkCover (bk .cover) c))
@@ -848,6 +946,31 @@ def showNames (ns : Array Name) : String :=
 def showAssignment (a : Assignment) : String :=
   if a.isEmpty then "(any values)" else ", ".intercalate (a.toList.map fun (n, v) => s!"{n} = {v}")
 
+/-- `` `a`, `b` and `c` ``: names in prose. -/
+def showNamesAnd (ns : Array Name) : String :=
+  match ns.toList.map (s!"`{·}`") |>.reverse with
+  | [] => ""
+  | [n] => n
+  | last :: rest => s!"{", ".intercalate rest.reverse} and {last}"
+
+/-- The note of a realizability conflict (`Reqs/View#check-results`): the
+input, or the arguments of a function (`what`), one variable to a line,
+and then what no outputs satisfy, `unmet`. -/
+def conflictNote (what : String) (input : Assignment) (unmet : String) : String :=
+  if input.isEmpty then s!"note: {unmet}"
+  else s!"note: for the {what}\n" ++ String.join (input.toList.map fun (n, v) => s!"    {n} = {v}\n") ++ unmet
+
+/-- The headline of a clash note (`view::clash_text`): the guarantee
+`g` forces the output `o` to `v`, and the `count` others of its conflict,
+named as the list `others`, force it to `w`. -/
+def clashLine (g o v others w : String) (count : Nat) : String :=
+  s!"`{g}` forces {o} = {v}, but {others}{if count = 1 then " forces " else " force "}{o} = {w}"
+
+/-- The headline of a clash note (`Reqs/View#check-results`), at its
+guarantee, with the rest of the core named `rest`. -/
+def clashText (cl : Clash) (rest : Array Name) : String :=
+  clashLine cl.guarantee.getString! (toString cl.output) cl.value (showNamesAnd rest) cl.restValue rest.size
+
 /-- The case that a question about a split is about, as a message names
 it, from 1. -/
 def caseText : Option TableGoal → String
@@ -946,29 +1069,25 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       (some "no input satisfies its assumptions") #["note: every guarantee would hold vacuously",
         "help: weaken or remove one of them"] (item? := none)]
   | .fail, .conflict input core =>
-    if let some (f, _) := r.target? then
-      let names := showNames (core.map clauseName)
-      #[one "F0631" s!"the postconditions of `{showComp f}` cannot all hold: for the arguments {showAssignment input}, no value of `{showComp f}` satisfies {names}"
-        (some "unrealizable contract")
-        #["note: an uninterpreted function's postconditions are assumed wherever it is applied, so if they cannot hold, every check that applies it would pass",
+    let contract := r.target?.map (·.1)
+    let names := if contract.isSome then core.map clauseName else core
+    let clashNotes := r.clashes.map fun cl =>
+      let restNames := if contract.isSome then cl.rest.map clauseName else cl.rest
+      { severity := .info, item? := some cl.guarantee, msg := { code? := none, headline := clashText cl restNames } }
+    if let some f := contract then
+      #[one "F0631" s!"the postconditions of `{showComp f}` cannot all hold" (some "unrealizable contract")
+        #[conflictNote "arguments" input s!"no value of `{showComp f}` satisfies {showNamesAnd names}",
+          "note: an uninterpreted function's postconditions are assumed wherever it is applied, so if they cannot hold, every check that applies it would pass",
           "help: weaken one of them, or add a precondition that rules these arguments out"] (item? := none)]
-      ++ core.map fun n =>
-        let others := (core.filter (· != n)).map clauseName
-        { severity := .info, item? := some n,
-          msg := { code? := none, headline := if others.isEmpty then s!"is false when {showAssignment input}"
-            else s!"conflicts with {showNames others} when {showAssignment input}" } }
+      ++ clashNotes
     else
     -- Instance variables (`w.x`) cannot be assumed about.
     let help := if input.all (·.1.isAtomic) then #["help: weaken one of them, or add an `assume` that rules this input out"]
       else #["help: weaken one of them",
         "note: instance variables are part of the system: whatever the instances do, the component must cope"]
-    #[one "F0601" s!"{subject} is not realizable: for the input {showAssignment input}, no outputs satisfy {showNames core}"
-      (some "not realizable") help (item? := none)]
-    ++ core.map fun n =>
-      let others := core.filter (· != n)
-      { severity := .info, item? := some n,
-        msg := { code? := none, headline := if others.isEmpty then s!"is false when {showAssignment input}"
-          else s!"conflicts with {showNames others} when {showAssignment input}" } }
+    #[one "F0601" s!"{subject} is not realizable" (some "not realizable")
+      (#[conflictNote "input" input s!"no outputs satisfy {showNamesAnd names}"] ++ help) (item? := none)]
+    ++ clashNotes
   | .fail, .counterexample vals =>
     if r.kind == .definedness then
       #[one "F0611" s!"an index of {subject} may be out of range" (some "may be out of range")

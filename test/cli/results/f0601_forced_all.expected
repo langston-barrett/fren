@@ -1,0 +1,47 @@
+error[F0601]: `http::retry` is not realizable
+  --> test/cli/results/f0601_forced_all.fren:14:6
+   |
+14 | comp retry {
+   |      ^^^^^ not realizable
+   |
+   = note: for the input
+               method = Method::Get
+               status = 429
+               attempt = 4
+               retry_after = Seconds(31)
+           no outputs satisfy `transient`, `honor_server` and `latency_budget`
+   = help: weaken one of them, or add an `assume` that rules this input out
+
+note: `transient` forces retry? = true, but `honor_server` and `latency_budget` force retry? = false
+  --> test/cli/results/f0601_forced_all.fren:24:12
+   |
+24 |     ensure transient: retry? iff (status = 429 or status = 503)
+   |            ^^^^^^^^^
+
+error[F0601]: `http::pinned` is not realizable
+  --> test/cli/results/f0601_forced_all.fren:31:6
+   |
+31 | comp pinned {
+   |      ^^^^^^ not realizable
+   |
+   = note: for the input
+               x = 0
+           no outputs satisfy `low` and `high`
+   = help: weaken one of them, or add an `assume` that rules this input out
+
+note: `low` forces y = 0, but `high` forces y = 1
+  --> test/cli/results/f0601_forced_all.fren:34:12
+   |
+34 |     ensure low: y = x
+   |            ^^^
+
+note: `high` forces y = 1, but `low` forces y = 0
+  --> test/cli/results/f0601_forced_all.fren:35:12
+   |
+35 |     ensure high: y = x + 1
+   |            ^^^^
+
+fren: 8 passed, 2 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0601`.
+exit=1

@@ -1,0 +1,2 @@
+-- `--examples` is an option of `fren check` and `fren mutate` only.
+--@ args: quickcheck --examples 2

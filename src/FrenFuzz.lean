@@ -671,6 +671,18 @@ def checkDetail (st : LState) (c : Comp) (r : CheckResult) : Option String := Id
     let context := sp.meaning c |>.filter fun a => !(c.ofKind .ensure).any (·.name == a.label)
     if Is.all fun I => !(models sp size I order (context ++ named sp c core) env).isEmpty then
       return some s!"on the input {input}, outputs satisfy {core}"
+    -- Each clash: its guarantee, and the rest of the core, force the
+    -- output to the values shown. They are shown only where they depend on
+    -- no interpretation; the context, which the clash's queries do not
+    -- have, can only force more.
+    for cl in r.clashes do
+      let some v := flat.find? (·.name == cl.output) | return some s!"a clash names {cl.output}, which is not an output"
+      let forced (names : Array Name) (text : String) : Bool :=
+        match parseValue st c.path.getPrefix v.ty text with
+        | .ok val => Is.all fun I => (models sp size I order (context ++ named sp c names) env).all (·[cl.output]? == some val)
+        | .error _ => false
+      unless forced #[cl.guarantee] cl.value && forced cl.rest cl.restValue && cl.value != cl.restValue do
+        return some s!"on the input {input}, {cl.guarantee} and {cl.rest} do not force {cl.output} to {cl.value} and {cl.restValue}"
   | .vacuous core =>
     let some p := prop? | return none
     -- A cover goal's core rules out the goal itself.
@@ -740,7 +752,12 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
     let bk := backend prelude st.datatypes c { timeoutSecs := timeout } none (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs)
       st.usesProjection (funs := st.appFuns)
     let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
+    -- Every clash of a conflict, where it depends on no interpretation
+    -- (`Fren.Core.Comp.realizableInterpreted`), as `fren check` decides.
+    let interprets (f : String) : Bool := prelude.interprets (quotedSymbols f)
+    let core := { core with typesInterpreted := c.vars.any (interprets ·.ty.sort) }
     let results ← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k)) core (Fren.Core.kindsFor global)
+      (examples := none) (interprets := (interprets ·.1))
     -- A definedness result, by its index's position, and a table's, by
     -- where it is reported and its rows, as brute force keys them.
     let keyOf (r : CheckResult) :=

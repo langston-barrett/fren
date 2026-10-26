@@ -42,10 +42,10 @@ comp chooser {
 
 -- Instance variables are not the comp's to choose: whatever `pick` does, the
 -- comp must cope.
-comp hopes {   --~ error: `hopes` is not realizable: for the input pick.b? = false, no outputs satisfy `lucky`
+comp hopes {   --~ error: no outputs satisfy `lucky`
     pub out x: Int
     inst pick: chooser {}
-    ensure lucky: pick.b? and x = 0  --~ info: is false when pick.b? = false
+    ensure lucky: pick.b? and x = 0
 }
 
 comp observes {

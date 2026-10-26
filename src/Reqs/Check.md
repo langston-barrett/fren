@@ -223,7 +223,10 @@ Fren asks two queries:
 - **Counterexample.** Can `∃ o. R(i, y, o)` be proved from `A` and `I`, with
   the inputs and instance variables free? A model is an input, together
   with a behaviour of the instances, that no system could answer. Fren
-  reports it, with a minimal set of guarantees that conflict on it.
+  reports it, with a [minimal](#minimal-sets) set of guarantees that
+  conflict on it, its *core*, and notes at the guarantees of the core that
+  force an output to a value that the rest of the core rules out (see
+  [Forced outputs](#forced-outputs)).
 
 `check::realizability` gives the verdict and what is reported, from the
 outcomes of the two queries (`assume_q` and `cex_q`). Its table's rows
@@ -274,8 +277,10 @@ function's contract is checked once all of theirs have been: an
 interpretation of each in turn meets them all. The two queries are those
 of a component, and so are the verdicts, but the failures are reported at
 the function's name: contradictory preconditions (`F0632`), and arguments
-for which no value meets the postconditions (`F0631`), with a note at each
-postcondition of a minimal set that conflicts on them.
+for which no value meets the postconditions (`F0631`), with a minimal set
+of postconditions that conflicts on them, and notes at those that force
+the value to one that the others rule out (see [Forced
+outputs](#forced-outputs)).
 
 `check::contract_realizability` states the verdict, over a small domain:
 two arguments and two values, where the preconditions hold at the
@@ -340,6 +345,147 @@ expect realizability_protocol: forall (asked always: realizability),
     asked.verdict = always.verdict
     and (asked.reports_cex? iff always.reports_cex?)
     and (asked.reports_vacuous? iff always.reports_vacuous?)
+```
+
+### Forced outputs
+
+On the input of a conflict, the guarantees of its core rule each other
+out, but not always for the same reason. A set of guarantees *forces* an
+output to a value on the input when every assignment of the outputs that
+satisfies them there gives the output that value. Where a guarantee `E`
+of the core forces an output to one value, and the rest of the core, its
+other guarantees, force it to another, `E` is part of the conflict for
+that reason, and a note at `E` says so:
+
+```text
+note: `transient` forces retry? = true, but `honor_server` and `latency_budget` force retry? = false
+```
+
+The outputs are the component's public ones that are not
+[defined](#definitions): a defined output is replaced by its definition,
+so what forces it forces the outputs that it is defined by. For an
+uninterpreted function's [contract](#contracts-of-uninterpreted-functions),
+the one output is its value. The input is pinned as the core was found
+(see [Minimal sets](#minimal-sets)): `P` is the equation `x = v` of each
+variable `x` of the input and its value `v`, where `v` can be written in a
+formula. For a set of guarantees `S`, with the defined outputs replaced by
+their definitions, Fren asks two kinds of query:
+
+- **Model.** Can `False` be proved from `P` and `S`? A model gives each
+  output that they mention a value. On the input of a minimal core, a
+  proper subset of the core is satisfiable, so the answer is `Sat`, unless
+  the solver gives up.
+- **Pin.** For an output `o` and its value `v` in the model, can `o = v` be
+  proved from `P` and `S`? `Unsat` means that `S` forces `o` to `v`.
+
+`check::forcing` states that the two queries find what forcing means,
+over an output with three values: `values` are its values in the
+assignments that satisfy `S` on the input, the model's is one of them, and
+the solver decides the pin query. A value that cannot be written in a
+formula is not pinned, and so not found to be forced:
+
+```fren
+pub enum Choice { C0, C1, C2 }
+
+pub comp forcing {
+    in values: Set(Choice)   -- the output's values where `P` and `S` hold
+    in model: Choice         -- its value in the model of `P` and `S`
+    in pin_q: Outcome        -- can `o = model` be proved from `P` and `S`?
+    pub det out forced?      -- `S` forces the output on the input
+    pub det out found?       -- Fren finds that `S` forces it to `model`
+
+    assume modelled: model in values
+    assume decided: pin_q = (if (forall (v: Choice), when v in values, v = model) then Unsat else Sat)
+
+    ensure meaning: forced? iff (forall (a b: Choice), when a in values and b in values, a = b)
+    ensure query: found? iff pin_q = Unsat
+
+    expect computes: found? iff forced?
+}
+```
+
+For each guarantee `E` of the core, in the core's order, Fren asks the
+model query of `{E}` and of the rest of the core, and then, for each
+output in the order of the component's variables whose values in the two
+models differ, the pin query of `{E}` and, if it forces the output, of the
+rest. The note is at the first output that both force; outputs whose
+values in the models are the same are not asked about, since two sets
+that force an output give it their forced values in their models. When
+the core has one guarantee, its rest is empty and forces nothing, so no
+note is asked for. Fren shows at most `examples` notes, `--examples` or
+the Lean-hosted front end's `fren.examples` (see [Forced
+outputs](Cli.md#forced-outputs)), and asks no more of these queries once
+it has them all.
+
+A note's values would depend on an
+[interpretation](Lang/Components.md#interpretations) where some variable
+of the component, its own or an instance's, has a type that is or contains
+an [abstract type](Lang/Types.md#abstract-types), or where a guarantee or
+a definition substituted into one uses an abstract type or an
+[uninterpreted function](Lang/Items.md#uninterpreted-functions), directly
+or through a defined function. A model then fixes an interpretation that
+the note could not show, so a failure has no notes there, and none of
+their queries are asked, as for the witness of a [cover
+goal](View.md#check-results). Both front ends decide this by the same rule.
+
+`check::clash_notes` states which guarantees have a note, over a core of
+at most three guarantees, in the order of the enumeration, and two
+outputs, in the order of theirs. `alone` holds what each guarantee `g`
+forces on its own, and `rest` what the rest of the core forces, as the
+queries above find them; `earlier` is the guarantees of the core before
+`g` that have a clash. The rules are of the guarantee `g`, so quantifying
+over it states them of the whole core:
+
+```fren
+pub ordered enum Guarantee { G0, G1, G2 }
+pub ordered enum Output { O0, O1 }
+
+-- A set of guarantees forces `output` to `value`; `guarantee` is the one
+-- that it is, or that it is the rest of.
+pub struct Forcing { guarantee: Guarantee, output: Output, value: Choice }
+
+pub enum Budget { All, AtMost(Int) }   -- `all`, or a count, at least 0
+
+-- `g` forces `o` to one value, and the rest of the core to another.
+pub fn clashes?(alone: Set(Forcing), rest: Set(Forcing), g: Guarantee, o: Output) :=
+    exists (a b: Choice), a != b and Forcing { guarantee := g, output := o, value := a } in alone
+    and Forcing { guarantee := g, output := o, value := b } in rest
+
+-- A set of guarantees forces each output to one value, at most.
+pub fn single_valued?(forced: Set(Forcing)) :=
+    forall (h: Guarantee) (o: Output) (a b: Choice),
+    when Forcing { guarantee := h, output := o, value := a } in forced
+    and Forcing { guarantee := h, output := o, value := b } in forced, a = b
+
+pub comp clash_notes {
+    in core: Set(Guarantee)
+    in alone: Set(Forcing)     -- what each guarantee forces on its own
+    in rest: Set(Forcing)      -- what the rest of the core forces, for each guarantee
+    in examples: Budget        -- `--examples`
+    in interpreted?            -- the notes' values would depend on an interpretation
+    in g: Guarantee            -- a guarantee, for the rules of each
+    in earlier: Set(Guarantee)
+    pub det out noted?         -- a note is at `g`
+    pub out output: Output     -- the output that it names
+
+    -- What the queries find of the guarantees of the core: one value, at most,
+    -- for each output, and nothing of the empty rest of a core of one.
+    assume of_core: forall (f: Forcing), when f in alone or f in rest, f.guarantee in core
+    assume one_value: single_valued?(alone) and single_valued?(rest)
+    assume empty_rest: forall (f: Forcing), when f in rest, core != {f.guarantee}
+    assume earlier_clashes: forall (h: Guarantee),
+        h in earlier iff (h in core and h < g and (exists (o: Output), clashes?(alone, rest, h, o)))
+
+    ensure rule: noted? iff (not interpreted? and g in core and (exists (o: Output), clashes?(alone, rest, g, o))
+        and match examples { Budget::All => true, Budget::AtMost(n) => earlier.card < n })
+    ensure first: when noted?, clashes?(alone, rest, g, output)
+        and (forall (o: Output), when o < output, not clashes?(alone, rest, g, o))
+
+    expect single: when core = {g}, not noted?
+    expect none: when examples = Budget::AtMost(0), not noted?
+    expect uninterpreted: when interpreted?, not noted?
+    expect within_budget: when noted? and examples = Budget::AtMost(1), earlier = {}
+}
 ```
 
 ## Definitions

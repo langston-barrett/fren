@@ -44,11 +44,15 @@ def cliDiagnostics (file : String) (out : String) (keepUnlocated := false) : Arr
   let mut summary := none
   -- Whether the last header's ` --> ` line may still come.
   let mut pending := false
+  -- Where the text of the last `= note` line starts, for the lines of a
+  -- note that spans several (`Fren.Core.noteRows`).
+  let mut noteAt? : Option Nat := none
   for line in out.splitOn "\n" do
     let trimmed := line.trimAscii.toString
     if let some (sev, code?, text) := header? line then
       diags := diags.push ({ line := 0, severity := sev, text, code? }, keepUnlocated)
       pending := true
+      noteAt? := none
     else if let some loc := trimmed.dropPrefix? "--> " then
       if pending then
         -- `file:line:col`
@@ -62,8 +66,15 @@ def cliDiagnostics (file : String) (out : String) (keepUnlocated := false) : Arr
     else if let some (d, k) := diags.back? then
       if let some n := trimmed.dropPrefix? "= " then
         diags := diags.pop.push ({ d with text := d.text ++ "\n" ++ n.toString }, k)
+        noteAt? := some ((line.toList.takeWhile (· == ' ')).length + 2)
       else if line.startsWith "help: " then
         diags := diags.pop.push ({ d with text := d.text ++ "\n" ++ line }, k)
+        noteAt? := none
+      else if let some at_ := noteAt? then
+        -- A later line of a note, indented under its text.
+        if line.length > at_ && (line.take at_).all (· == ' ') then
+          diags := diags.pop.push ({ d with text := d.text ++ "\n" ++ (line.drop at_).toString }, k)
+        else noteAt? := none
   return (diags.filterMap fun (d, k) => if k then some d else none, summary)
 
 /-- The Lean front end's messages about the Fren source `src`, and its

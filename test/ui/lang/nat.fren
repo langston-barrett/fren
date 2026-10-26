@@ -36,10 +36,10 @@ comp defined {
 }
 
 -- No output is a `Nat` below 0.
-comp unreal {   --~ error: `unreal` is not realizable: for the input n = 0, no outputs satisfy `r`
+comp unreal {   --~ error: no outputs satisfy `r`
     in n: Nat
     out y: Nat
-    ensure r: y = n - 1   --~ info: is false when n = 0
+    ensure r: y = n - 1
 }
 
 -- An instance's variables are at least 0, as its component's own are.
@@ -119,7 +119,7 @@ comp below_instance {   --~ error: `below_instance` is not realizable
     inst w: counted { n := k, m := 0 }
     out x: Int
 
-    ensure r: x < 0 and x = w.y   --~ info: is false when
+    ensure r: x < 0 and x = w.y
 }
 
 -- A pattern test beside a `Nat`.

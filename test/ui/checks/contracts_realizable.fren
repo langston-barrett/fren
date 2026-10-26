@@ -8,12 +8,12 @@ set_option fren.lint.chainable_comparison "allow"
 
 -- Postconditions that contradict each other.
 fn bad(n: Int): Int   --~ error: the postconditions of `bad` cannot all hold
-    ensure a: bad(n) > 0   --~? info: conflicts with
-    ensure b: bad(n) < 0   --~? info: conflicts with
+    ensure a: bad(n) > 0
+    ensure b: bad(n) < 0
 
 -- A postcondition that says nothing of the value, and can be false.
-fn other(n: Int): Int   --~ error: the postconditions of `other` cannot all hold: for the arguments n = 0, no value of `other` satisfies `c`
-    ensure c: n > 0   --~ info: is false when n = 0
+fn other(n: Int): Int   --~ error: no value of `other` satisfies `c`
+    ensure c: n > 0
 
 -- A precondition rules out the arguments where it would be false.
 fn guarded(n: Int): Int
@@ -29,7 +29,7 @@ fn never(n: Int): Int   --~ error: the preconditions of `never` are unsatisfiabl
 -- A postcondition over an earlier function, which is free: it can be false.
 fn base(Int): Int
 fn above(n: Int): Int   --~ error: the postconditions of `above` cannot all hold
-    ensure over: base(n) > 0 and above(n) > base(n)   --~ info: is false when
+    ensure over: base(n) > 0 and above(n) > base(n)
 
 -- One that relates the value to an earlier function holds.
 fn after(n: Int): Int

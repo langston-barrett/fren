@@ -57,11 +57,30 @@ structure Msg where
 def Msg.internal (what : String) : Msg :=
   { code? := none, headline := s!"internal error: {what}", notes := #["note: this is a bug in Fren"] }
 
+/-- The lines of a note: a note may span several, and each after the
+first is indented to the text after its label, as rustc aligns them:
+
+```
+note: for the input
+          x = 1
+      no outputs satisfy `r`
+```
+-/
+def noteLines (n : String) : List String :=
+  match n.splitOn "\n" with
+  | [] => []
+  | first :: rest =>
+    let pad := match first.splitOn ": " with
+      | label :: _ :: _ => String.ofList (List.replicate (label.length + 2) ' ')
+      | _ => ""
+    first :: rest.map (pad ++ ·)
+
 /-- The text of the message as the Lean front end shows it: the headline,
-then a blank line and the notes and fixes, one per line. -/
+then a blank line and the notes and fixes, one per line, or more for a
+note that spans several (`noteLines`). -/
 def Msg.text (m : Msg) : String :=
-  let lines := m.notes ++ m.fixes.map ("help: " ++ ·.msg)
-  if lines.isEmpty then m.headline else m.headline ++ "\n\n" ++ "\n".intercalate lines.toList
+  let lines := (m.notes.toList.flatMap noteLines) ++ (m.fixes.map ("help: " ++ ·.msg)).toList
+  if lines.isEmpty then m.headline else m.headline ++ "\n\n" ++ "\n".intercalate lines
 
 /-- Adds a note at the end. -/
 def Msg.note (m : Msg) (line : String) : Msg := { m with notes := m.notes.push line }
@@ -213,6 +232,13 @@ def Diagnostic.gutterWidth (d : Diagnostic) (src : Array Char) : Nat :=
   let ns := #[(lineAt src d.range.start).1] ++ d.msg.fixes.map fun f => (lineAt src (f.target d.range).start).1
   (toString (ns.foldl max 0)).length
 
+/-- A note as rows after `indent`: `= note: text`, and the rest of its
+lines (`noteLines`) under its text. Only the first has its label painted. -/
+def noteRows (p : Paint) (indent : String) (n : String) : Array String :=
+  match noteLines n with
+  | [] => #[]
+  | first :: rest => #[s!"{indent} {p.blue "="} {p.labelled first}"] ++ rest.toArray.map (s!"{indent}   {·}")
+
 /-- The header line: `error[F0105]: headline`. -/
 def header (level : Severity) (msg : Msg) (p : Paint := {}) : String :=
   let code := msg.code?.map (s!"[{·}]") |>.getD ""
@@ -234,7 +260,7 @@ def Diagnostic.render (d : Diagnostic) (path : String) (src : Array Char) (p : P
   out := out.push s!"{gutter p w} {spaces indent}{p.level d.level (repeatChar '^' len ++ label)}"
   if !d.msg.notes.isEmpty then
     out := out.push (gutter p w)
-    for n in d.msg.notes do out := out.push s!"{spaces w} {p.blue "="} {p.labelled n}"
+    for n in d.msg.notes do out := out ++ noteRows p (spaces w) n
   else if !d.msg.fixes.isEmpty then
     out := out.push (gutter p w)
   for f in d.msg.fixes do
@@ -246,7 +272,7 @@ cannot be read. -/
 def renderPlain (level : Severity) (msg : Msg) (p : Paint := {}) : String := Id.run do
   let mut out := #[header level msg p]
   for n in msg.notes ++ msg.fixes.map ("help: " ++ ·.msg) do
-    out := out.push s!"  {p.blue "="} {p.labelled n}"
+    out := out ++ noteRows p " " n
   return "\n".intercalate out.toList ++ "\n"
 
 /-- rustc's pointer to `--explain`, for the codes of a run's errors. -/

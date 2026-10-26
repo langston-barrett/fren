@@ -1,0 +1,4 @@
+error: invalid number of examples `many`
+  = note: the number of examples is a whole number, such as `--examples 3`, or `all`
+  = help: run `fren --help` for usage
+exit=2

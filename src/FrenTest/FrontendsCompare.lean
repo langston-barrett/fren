@@ -25,6 +25,8 @@ def warn (line : Nat) (text : String) (code? : Option String := none) : Diagnost
 
 def none0 : String := "0 passed, 0 failed, 0 inconclusive, 0 redundant"
 
+def note (line : Nat) (text : String) : Diagnostic := { line, severity := "info", text }
+
 def differs (text : String) (cli hosted : Report) : Bool := !(compare text cli hosted).1.isEmpty
 
 def agrees (text : String) (cli hosted : Report) : Bool := (compare text cli hosted).1.isEmpty
@@ -88,7 +90,7 @@ def item : String := "comp c {\n    in x: Int\n    pub out y: Int\n    ensure q:
 -- A static error stops both front ends' checks: a result, or a summary,
 -- of Lean's after one is a difference.
 #guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
-  { diags := #[err 4 "nonlinear arithmetic is not supported", err 1 "`c` is not realizable: for the input x = 0, no outputs satisfy `r`"] }
+  { diags := #[err 4 "nonlinear arithmetic is not supported", err 1 "`c` is not realizable"] }
 
 #guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
   { diags := #[err 4 "nonlinear arithmetic is not supported"], summary? := none0 }
@@ -99,7 +101,7 @@ def parse : String := "comp c {\n    in x: Int\n    ensure q: x = 1\n}\n\ncomp d
 
 -- Lean's only error is a failed check in another item.
 #guard differs parse { diags := #[err 3 "expected an expression, found keyword `expect`" "F0104"], exit? := some 2 }
-  { diags := #[err 7 "`d` is not realizable: for the input y = 0, no outputs satisfy `q`"] }
+  { diags := #[err 7 "`d` is not realizable"] }
 
 -- Lean's other errors in the item, before the binary's parse error: Lean
 -- parsed the whole item, the line that the binary rejects included.
@@ -186,41 +188,52 @@ def stopped : Array Diagnostic :=
 
 /-! ## Normalized headlines -/
 
--- Values are masked, and so are the requirements of a realizability
--- failure, which conflict on its input.
-#guard normHead "conflicts with `q1` when x = 1" == normHead "conflicts with `q1` when x = 2"
-#guard normHead "conflicts with `q1` when x = 1" != normHead "conflicts with `q2` when x = 1"
-#guard normHead "`c` is not realizable: for the input x = 1, no outputs satisfy `q`"
-  == normHead "`c` is not realizable: for the input (any values), no outputs satisfy `q`"
-#guard normHead "`c` is not realizable: for the input x = 1, no outputs satisfy `q`"
-  == normHead "`c` is not realizable: for the input x = 2, no outputs satisfy `r`"
+-- Values are masked. A realizability failure's input and requirements are
+-- in its note, not its first line.
+#guard normHead "`c::x` is not determined by the inputs: for the input a = 1, it can be 1 or 2"
+  == normHead "`c::x` is not determined by the inputs: for the input a = 2, it can be 3 or 4"
+
+/-- A realizability failure of `c`, as the binary's text has it (a `=`
+note's lines, its later lines indented under its text) or Lean's (after a
+blank line). -/
+def unrealizable (input : Array String) (core : String) (hosted : Bool := false) : String :=
+  let note := if input.isEmpty then s!"note: no outputs satisfy {core}"
+    else "note: for the input\n" ++ String.join (input.toList.map (s!"          {·}\n")) ++ s!"      no outputs satisfy {core}"
+  s!"`c` is not realizable{if hosted then "\n\n" else "\n"}{note}\nhelp: weaken one of them"
+
+#guard conflictInput? (unrealizable #["x = 1", "y = 2"] "`q`") == some "x = 1\ny = 2"
+#guard conflictInput? (unrealizable #["x = 1"] "`q`" (hosted := true)) == some "x = 1"
+#guard conflictCore? (unrealizable #["x = 1"] "`q` and `r`") == some "no outputs satisfy `q` and `r`"
+#guard conflictInput? (unrealizable #[] "`q`") == some ""
+#guard conflictCore? (unrealizable #[] "`q`") == some "no outputs satisfy `q`"
+#guard conflictInput? "`c::x` is not determined by the inputs" == none
+#guard isConflictNote (note 4 "`q0` forces x = 1, but `q1` forces x = 2")
+#guard !isConflictNote (note 4 "cover goal `c::g` is met")
 
 /-! ## Realizability failures (#99) -/
 
 def conflict : String :=
   "comp c {\n    in s: String\n    inst w: d { b? := s != \"\" }\n    ensure q0: w.b?\n    ensure q1: not w.b?\n}\n"
 
-def note (line : Nat) (text : String) : Diagnostic := { line, severity := "info", text }
-
 -- Different inputs, so different requirements and notes, each minimal for
 -- its input: they agree.
 #guard agrees conflict
-  { diags := #[err 1 "`c` is not realizable: for the input s = \"\", no outputs satisfy `q0`" "F0601",
-      note 4 "is false when s = \"\""], summary? := none0, exit? := some 1 }
-  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q1`",
-      note 5 "is false when s = \"A\""], summary? := none0 }
+  { diags := #[err 1 (unrealizable #["s = \"\""] "`q0`") "F0601",
+      note 4 "`q0` forces w.b? = true, but `q1` forces w.b? = false"], summary? := none0, exit? := some 1 }
+  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q1`" (hosted := true))], summary? := none0 }
 
 -- The same input, but different requirements: they differ, even if some
 -- undecided check could explain the rest.
 #guard differs conflict
-  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q0`" "F0601",
-      note 4 "is false when s = \"A\""], summary? := none0, exit? := some 1 }
-  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q1`",
-      note 5 "is false when s = \"A\""], summary? := none0 }
+  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q0`") "F0601"], summary? := none0, exit? := some 1 }
+  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q1`" (hosted := true))], summary? := none0 }
 #guard !(compare conflict
-  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q0`" "F0601"],
-    summary? := none0, exit? := some 1 }
-  { diags := #[err 1 "`c` is not realizable: for the input s = \"A\", no outputs satisfy `q1`"], summary? := none0 }).2
+  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q0`") "F0601"], summary? := none0, exit? := some 1 }
+  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q1`" (hosted := true))], summary? := none0 }).2
+-- The same input and requirements: they agree.
+#guard agrees conflict
+  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q0` and `q1`") "F0601"], summary? := none0, exit? := some 1 }
+  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q0` and `q1`" (hosted := true))], summary? := none0 }
 -- " when " elsewhere is text, not values.
 #guard normHead "`p` holds when a" != normHead "`p` holds when b"
 

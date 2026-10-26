@@ -9,25 +9,23 @@ warning[F0710]: unused variable `b?`
    = note: `unused_variables` is `warn` by default
    = help: to allow it, `set_option fren.lint.unused_variables "allow"`
 
-error[F0601]: `exit` is not realizable: for the input n_fail = 1, n_inconc = 1, no outputs satisfy `failures`, `inconc`
+error[F0601]: `exit` is not realizable
  --> test/cli/commands/report.fren:3:6
   |
 3 | comp exit {
   |      ^^^^ not realizable
   |
+  = note: for the input
+              n_fail = 1
+              n_inconc = 1
+          no outputs satisfy `failures` and `inconc`
   = help: weaken one of them, or add an `assume` that rules this input out
 
-note: conflicts with `inconc` when n_fail = 1, n_inconc = 1
+note: `failures` forces code = 1, but `inconc` forces code = 3
  --> test/cli/commands/report.fren:9:12
   |
 9 |     ensure failures: when n_fail > 0, code = 1
   |            ^^^^^^^^
-
-note: conflicts with `failures` when n_fail = 1, n_inconc = 1
-  --> test/cli/commands/report.fren:10:12
-   |
-10 |     ensure inconc: when n_inconc > 0, code = 3
-   |            ^^^^^^
 
 error[F0603]: expectation `exit::zero` does not hold
   --> test/cli/commands/report.fren:13:12
@@ -48,20 +46,20 @@ error[F0605]: `exit::negative` is vacuous: its condition can never hold, given `
    = note: a constraint whose condition never holds says nothing
    = help: correct the condition, or the constraints that rule it out
 
-error[F0601]: `uses` is not realizable: for the input n_fail = 0, first.code = 0, second.code = 0, pick.b? = false, no outputs satisfy `lucky`
+error[F0601]: `uses` is not realizable
   --> test/cli/commands/report.fren:19:6
    |
 19 | comp uses {
    |      ^^^^ not realizable
    |
+   = note: for the input
+               n_fail = 0
+               first.code = 0
+               second.code = 0
+               pick.b? = false
+           no outputs satisfy `lucky`
    = help: weaken one of them
    = note: instance variables are part of the system: whatever the instances do, the component must cope
-
-note: is false when n_fail = 0, first.code = 0, second.code = 0, pick.b? = false
-  --> test/cli/commands/report.fren:26:12
-   |
-26 |     ensure lucky: pick.b?
-   |            ^^^^^
 
 error[F0604]: the assumption `counts` of `exit` may not hold for instance `uses::first`
   --> test/cli/commands/report.fren:22:10

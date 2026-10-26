@@ -1,15 +1,15 @@
 # The `fren` command
 
 ```
-fren check [--timeout SECONDS] [--resource-limit N] [--jobs N] [--dump-smt] [--tests N] [--seed N]
-    [-A|-W|-D|-F LINT]... FILE...
+fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--tests N]
+    [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
 fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
-    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N]
+    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--examples N] [--tests N]
     [-A|-W|-D|-F LINT]... FILE...
 fren --explain CODE
 fren --help
@@ -38,6 +38,7 @@ installation. It is built by `lake build fren`.
 |---|---|
 | `--timeout SECONDS` | `check` and `mutate`: time limit for each solver query (default 10; 0 means none); see [Limits](#limits) |
 | `--resource-limit N` | `check` and `mutate`: limit on the solver's work for each query, in cvc5's resource units (default 0, which means none); see [Limits](#limits) |
+| `--examples N` | `check` and `mutate`: the most notes of [forced outputs](#forced-outputs) to show for each unrealizable component, a whole number or `all` (default 1) |
 | `--jobs N` | `check`: how many components to check at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
 | `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
 | `--tests GLOB` | `trace`: scan the matching files for markers; may be repeated |
@@ -102,8 +103,9 @@ help: use `=` to test for equality
   |
 ```
 
-Information, such as the guarantees that conflict in an unrealizable
-component, is printed as a `note`. After the diagnostics come the summary
+Information, such as a guarantee of an unrealizable component that
+forces an output to a value that the rest of its conflict rules out, is
+printed as a `note`. After the diagnostics come the summary
 of the checks, or, if there were static errors, that they stopped them, and then a
 pointer to `fren --explain` for the codes reported.
 
@@ -285,6 +287,21 @@ cvc5 options, but its scripts differ from `fren check`'s (see [Solver
 queries](#solver-queries)), and the work that a query needs can differ
 with its script, so a query near a resource limit can reach it in one front
 end and not in the other, as a query near a time limit can.
+
+## Forced outputs
+
+An unrealizable component's error names the input on which its
+guarantees conflict, and a minimal set of guarantees that conflict on it.
+A note at a guarantee of that set says which output it forces to a value
+that the rest of the set forces to another (see [Forced
+outputs](Check.md#forced-outputs)). `--examples N` shows at most `N` such
+notes for each unrealizable component, and asks the solver no more of
+their questions once it has found them: `--examples 0` asks none, and
+`--examples all` shows a note at every guarantee that has one. The
+default is 1, since each note costs solver queries. `fren mutate` takes
+it too, as it takes `--timeout`, for the checks of its mutants. The
+Lean-hosted front end has the option `fren.examples` (see
+[Options](Lean.md#options)), a whole number with the same default.
 
 ## Parallel checking
 
@@ -512,7 +529,9 @@ constraints. Counterexample values may differ, since each comes from its
 solver's model. So may the guarantees that a realizability failure
 names, which are a [minimal](Check.md#minimal-sets) set that conflicts on
 the input it reports: each front end's are minimal for its own input, and
-for the same input they are the same. `cli::agreement` states this:
+for the same input they are the same. Its notes of [forced
+outputs](#forced-outputs) are at those guarantees, so they may differ
+with them. `cli::agreement` states this:
 
 ```fren
 pub enum FrontEnd { Hosted, Standalone }

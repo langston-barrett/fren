@@ -477,7 +477,7 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
         | none => x.span
       (removals spans).map fun span => { origin := .dropUpdate, span, after := "", context := sp }
     | .match sp _ arms =>
-      let vals := arms.map fun (_, b) => s.outer sp b.span
+      let vals := arms.map fun (_, _, b) => s.outer sp b.span
       (Array.range (arms.size - 1)).filterMap fun k =>
         let (a, b) := (vals[k]!, vals[k + 1]!)
         if s.binds arms[k]!.1 || s.binds arms[k + 1]!.1 || s.text a == s.text b then none else

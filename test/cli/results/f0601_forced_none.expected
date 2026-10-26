@@ -1,0 +1,18 @@
+error[F0601]: `http::retry` is not realizable
+  --> test/cli/results/f0601_forced_none.fren:12:6
+   |
+12 | comp retry {
+   |      ^^^^^ not realizable
+   |
+   = note: for the input
+               method = Method::Get
+               status = 429
+               attempt = 4
+               retry_after = Seconds(31)
+           no outputs satisfy `transient`, `honor_server` and `latency_budget`
+   = help: weaken one of them, or add an `assume` that rules this input out
+
+fren: 8 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0601`.
+exit=1

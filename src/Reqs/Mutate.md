@@ -2,7 +2,7 @@
 
 ```
 fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
-    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N]
+    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--examples N] [--tests N]
     [-A|-W|-D|-F LINT]... FILE...
 ```
 
@@ -266,7 +266,10 @@ pub comp outcome {
 ### Choosing the checker
 
 `--by solver`, the default, checks mutants with the solver, as `fren
-check` does, with `--timeout` and `--resource-limit` for each query. A query of a mutant that is
+check` does, with `--timeout` and `--resource-limit` for each query, and
+`--examples` for the queries of the notes of [forced
+outputs](Cli.md#forced-outputs), which a mutant's verdicts do not depend
+on. A query of a mutant that is
 also a query of the spec, or of an earlier mutant, word for word, such as
 the consistency of assumptions that the mutant leaves alone, gets the
 answer that it got first, without the solver

@@ -6,12 +6,11 @@ set_option fren.lint.assertions_on_constants "allow"
 set_option fren.lint.constant_output "allow"
 
 comp c {
-    --~^ error: `c` is not realizable: for the input (any values)
+    --~^ error: `c` is not realizable
     out s: Set(Int) := {1, 2}
     pub det out g?
 
     ensure r: {(0, 0), (1, 2)}.image(s inter {1}).card = 2
-    --~^ info: is false when (any values)
     cover goal: g?
     --~^ error: cover goal `c::goal` cannot be met: it is ruled out by `r`
 }

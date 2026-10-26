@@ -9,20 +9,17 @@ warning[F0710]: unused variable `b?`
   = note: `unused_variables` is `warn` by default
   = help: to allow it, `set_option fren.lint.unused_variables "allow"`
 
-error[F0601]: `c` is not realizable: for the input pick.b? = false, no outputs satisfy `lucky`
+error[F0601]: `c` is not realizable
  --> test/cli/results/f0601_instance.fren:3:6
   |
 3 | comp c {
   |      ^ not realizable
   |
+  = note: for the input
+              pick.b? = false
+          no outputs satisfy `lucky`
   = help: weaken one of them
   = note: instance variables are part of the system: whatever the instances do, the component must cope
-
-note: is false when pick.b? = false
- --> test/cli/results/f0601_instance.fren:6:12
-  |
-6 |     ensure lucky: pick.b? and x = 0
-  |            ^^^^^
 
 fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
 

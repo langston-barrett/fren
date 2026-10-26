@@ -27,13 +27,14 @@ pub comp conflict {
     ensure b: y = x + 1
 }
 /--
-error: `static_errors_test::conflict` is not realizable: for the input x = 0, no outputs satisfy `a`, `b`
+error: `static_errors_test::conflict` is not realizable
 
+note: for the input
+          x = 0
+      no outputs satisfy `a` and `b`
 help: weaken one of them, or add an `assume` that rules this input out
 ---
-info: conflicts with `b` when x = 0
----
-info: conflicts with `a` when x = 0
+info: `a` forces y = 0, but `b` forces y = 1
 ---
 info: fren: 0 passed, 1 failed, 0 inconclusive, 0 redundant
 -/

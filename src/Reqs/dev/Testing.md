@@ -127,9 +127,11 @@
   - Messages are compared by their first line, without the values of a
     model, which may differ, or the solver's reason for an undecided check.
     The names of the constraints that a message reports are compared,
-    except the guarantees that a realizability failure names, and its
-    notes at them: they are a minimal set that conflicts on its input, so
-    they are compared only when both report the same input.
+    except the guarantees that a realizability failure names in its note,
+    and its notes at them of [forced outputs](../Check.md#forced-outputs):
+    they are a minimal set that conflicts on its input, so they are
+    compared only when both report the same input, and the notes at them
+    are not compared.
   - Checks by testing, which Lean does not run, are left out, and so are
     the summary and exit status of a spec that has them.
   - Both front ends must say that a static error stopped the checks

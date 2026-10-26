@@ -1,6 +1,6 @@
 -- Each check failing, with what it names (`check`).
 
-comp exit {   --~ error: `exit` is not realizable: for the input strict? = true, n_fail = 1, n_inconc = 1, no outputs satisfy `failures`, `strict_inconc`
+comp exit {   --~ error: no outputs satisfy `failures` and `strict_inconc`
     in strict?
     in n_fail: Int
     in n_inconc: Int
@@ -9,8 +9,8 @@ comp exit {   --~ error: `exit` is not realizable: for the input strict? = true,
 
     assume counts: n_fail >= 0 and n_inconc >= 0
 
-    ensure failures: when n_fail > 0, code = 1                 --~ info: conflicts with `strict_inconc`
-    ensure strict_inconc: when strict? and n_inconc > 0, code = 2  --~ info: conflicts with `failures`
+    ensure failures: when n_fail > 0, code = 1                 --~ info: `failures` forces code = 1, but `strict_inconc` forces code = 2
+    ensure strict_inconc: when strict? and n_inconc > 0, code = 2
     ensure clean: when n_fail = 0 and n_inconc = 0, code = 0
     ensure negative: when n_fail < 0, code = 3                 --~ error: `exit::negative` is vacuous: its condition can never hold, given `counts`
     ensure scratch_def: scratch = 2 * n_fail - (-1)  --~ warning: this negation can be the other operator

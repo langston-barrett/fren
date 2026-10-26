@@ -50,6 +50,8 @@ tested lang::quantified_type: "test/ui/lang/quantifiers.fren", "test/ui/lang/qua
 tested lang::quantifier_size: "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_static.fren"
 tested lang::quantifier_binder: "test/ui/lang/quantifiers_global.fren"
 tested check::minimal: "test/ui/checks/redundancy.fren", "test/ui/checks/self_conflict.fren"
+tested check::clash_notes: "test/ui/checks/forced_outputs.fren", "test/cli/results/f0601_forced.fren",
+  "test/cli/results/f0601_forced_all.fren", "test/cli/results/f0601_forced_none.fren"
 tested lang::path_shape: "test/ui/lang/scoping.fren"
 tested lang::declared_before: "test/ui/lang/scoping.fren"
 tested lang::definition_order: "test/ui/lang/let.fren", "test/ui/lang/let_static.fren",

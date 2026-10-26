@@ -8,19 +8,16 @@ warning[F0719]: defined output `limit` is the same in every behaviour
   = note: `constant_output` is `warn` by default
   = help: to allow it, `set_option fren.lint.constant_output "allow"`
 
-error[F0601]: `c` is not realizable: for the input x = 10, no outputs satisfy `r`
+error[F0601]: `c` is not realizable
  --> test/cli/lints/complexity/f0719_constant_output.fren:2:6
   |
 2 | comp c { in x: Int pub out limit: Int := 10 ensure r: x < limit }
   |      ^ not realizable
   |
+  = note: for the input
+              x = 10
+          no outputs satisfy `r`
   = help: weaken one of them, or add an `assume` that rules this input out
-
-note: is false when x = 10
- --> test/cli/lints/complexity/f0719_constant_output.fren:2:52
-  |
-2 | comp c { in x: Int pub out limit: Int := 10 ensure r: x < limit }
-  |                                                    ^
 
 fren: 1 passed, 1 failed, 0 inconclusive, 0 redundant
 
