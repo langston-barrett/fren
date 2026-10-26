@@ -1,0 +1,6 @@
+-- The arguments of a call follow the function directly, with no space.
+pub fn f(Int): Int
+comp c { in x: Int pub out p? ensure r: p? iff f (x) > 0 }
+--~^[cli] error: a space before the `(` of the arguments of `f`
+--~^^[hosted] error: unexpected token '('; expected '}'
+--@ exit: 2

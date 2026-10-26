@@ -535,6 +535,27 @@ comp c { in x: Int pub out y? ensure r: y? iff x > 0 }
 
 In Lean, Lean's own parser reports this, as a syntax error.
 "# },
+  { code := "F0144", explanation := r#"A space before the `(` that opens what a name takes.
+
+Erroneous code example:
+
+```fren
+fn f(Int): Int
+comp c { in x: Int pub out y: Int ensure r: y = f (x) }
+```
+
+The `(` that opens a function's or a variant's arguments, a pattern's
+binders, a declaration's parameters or types, or the element types of
+`Set`, `Seq` and `Rel`, follows the name directly, with no space, as in
+Lean. Remove the space:
+
+```fren
+fn f(Int): Int
+comp c { in x: Int pub out y: Int ensure r: y = f(x) }
+```
+
+In Lean, Lean's own parser reports this, as a syntax error.
+"# },
   { code := "F0143", explanation := r#"A function's body is written after its contract.
 
 Erroneous code example:
