@@ -711,6 +711,33 @@ pub comp reachability_asked {
 }
 ```
 
+`check::arms_asked` states the same over the arms of a `match` as
+written, in order, each with a guard or without, and
+`arms_asked_refines` confirms that it refines `reachability_asked`, its
+arm `j` having a guard where `guarded?` says, and an arm before it having
+one where `after_guard?` says. An arm is asked about exactly when the
+first arm with a guard is at or before it:
+
+```fren
+pub enum GuardOf { Unguarded, Guarded }
+
+set_option fren.lint.undecidable "allow" in
+pub comp arms_asked {
+    use self::GuardOf::Guarded
+    in guards: Seq(GuardOf)  -- whether each arm has a guard, in order
+    in j: Int                -- the arm asked about, by its position
+    pub out asked?
+
+    ensure rule: asked? iff 0 <= guards.index_of([Guarded], 0) <= j
+}
+
+set_option fren.lint.undecidable "allow" in
+refine arms_asked_refines: arms_asked refines reachability_asked {
+    guarded? := 0 <= j < guards.len and guards[j] = GuardOf::Guarded,
+    after_guard? := 0 <= guards.index_of([GuardOf::Guarded], 0) < j,
+}
+```
+
 For arm `j`, with `P_k` and `C_k` as for [completeness](#completeness),
 `T_k` for `P_k and C_k`, that arm `k` is taken if no arm before it is,
 `F_j` for `not T_1 and ... and not T_(j-1)`, and the `match`'s guard `G`,
@@ -753,7 +780,8 @@ arm `j`'s reachability is that `j` is not the arm taken, so the check
 fails exactly when no behaviour that the hypotheses allow takes it; the
 goal of completeness is that some arm is taken. Of a table, each row is
 `Taken` where its condition holds, else `GuardFails`, and a `_` row is
-`Taken`. `k` stands for any position, as there:
+`Taken`. The arm taken is found as there, and `k` stands for any
+position, as there:
 
 ```fren
 pub enum ArmAt { NoMatch, GuardFails, Taken }
@@ -764,17 +792,18 @@ pub comp split_questions {
     in arms: Seq(ArmAt)      -- what each arm does here, in order
     in j: Int                -- the arm whose reachability is asked about
     in k: Int                -- any position, for `none_before`
-    pub out first: Int       -- the position of the arm taken, `-1` if none is
+    pub out first: Int := arms.index_of([Taken], 0)  -- the position of the arm taken, `-1` if none is
     pub out reach_goal?      -- the goal of arm `j`'s reachability question here
     pub out complete_goal?   -- the goal of the completeness question here
 
     assume an_arm: 0 <= j < arms.len
 
-    ensure in_range: -1 <= first < arms.len
-    ensure first_taken: when first >= 0, arms[first] = Taken
-    ensure none_before: when 0 <= k < arms.len and (first = -1 or k < first), arms[k] != Taken
     ensure reach: reach_goal? iff first != j
     ensure complete: complete_goal? iff first >= 0
+
+    expect in_range: -1 <= first < arms.len
+    expect first_taken: when first >= 0, arms[first] = Taken
+    expect none_before: when 0 <= k < arms.len and (first = -1 or k < first), arms[k] != Taken
 
     -- Arm `j` is reachable here exactly when it is taken here.
     expect taken_here: when not reach_goal?, arms[j] = Taken

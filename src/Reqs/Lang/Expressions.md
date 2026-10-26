@@ -1034,9 +1034,10 @@ not match is, so the arms after it are tried. Where no arm is taken, the
 guarantees say nothing of the value: it is unspecified. A table is the
 same, with every pattern `_`, which matches: a row is `Taken` where its
 condition holds, and `GuardFails` where it fails, and a `_` row is always
-`Taken`. `k` stands for any position, so `none_before` holds of every arm
-before the one taken. The position taken is an `Int` that the guarantees
-characterize, which the decidable core does not allow:
+`Taken`. The position of the arm taken is that of the first `Taken`,
+`index_of` a sequence of one `Taken`, which is outside the decidable core,
+and `-1` where there is none. `k` stands for any position, so
+`none_before` holds of every arm before the one taken:
 
 ```fren
 pub enum ArmAt { NoMatch, GuardFails, Taken }
@@ -1047,15 +1048,16 @@ pub comp guarded_match {
     in arms: Seq(ArmAt)      -- what each arm does at the scrutinee's value, in order
     in bodies: Seq(Int)      -- each arm's body's value there
     in k: Int                -- any position, for `none_before`
-    pub out first: Int       -- the position of the arm taken, `-1` if none is
+    pub out first: Int := arms.index_of([Taken], 0)  -- the position of the arm taken, `-1` if none is
     pub out value: Int       -- the `match`'s value
 
     assume aligned: bodies.len = arms.len
 
-    ensure in_range: -1 <= first < arms.len
-    ensure first_taken: when first >= 0, arms[first] = Taken
-    ensure none_before: when 0 <= k < arms.len and (first = -1 or k < first), arms[k] != Taken
     ensure valued: when first >= 0, value = bodies[first]
+
+    expect in_range: -1 <= first < arms.len
+    expect first_taken: when first >= 0, arms[first] = Taken
+    expect none_before: when 0 <= k < arms.len and (first = -1 or k < first), arms[k] != Taken
 
     -- An arm whose guard fails is passed over, as one that does not match.
     expect falls_through: when arms != [] and arms[0] = GuardFails, first != 0
