@@ -937,11 +937,12 @@ def mutantsWith (files : Array (String × Array Char)) (parsed : Array Parsed) (
   let parsed := parsed.map (·.toOption)
   -- The constants that divisors name, in any of the files.
   let divisors := Mutate.divisorConstants (parsed.flatMap fun p => (p.map (·.2.1)).getD #[])
+  let enums := Mutate.enumsOf (parsed.flatMap fun p => (p.map (·.2.1)).getD #[])
   for (path, chars) in files, i in [0:files.size] do
     if let some (toks, items, _) := parsed[i]! then
       -- The state after file `i`.
       let natSums := ((states[i + 1]?.map (·.natSums)).getD #[]).filterMap fun (f, sp) => if f == i then some sp else none
-      all := all ++ Mutate.ofFile { file := i, path, chars, toks, natSums } items divisors
+      all := all ++ Mutate.ofFile { file := i, path, chars, toks, natSums, enums } items divisors
   return all
 
 /-- The mutants of the files, as elaborated, with the lint levels `lints`,
@@ -1088,7 +1089,7 @@ def mutate (args : Args) : IO UInt32 := do
     let mut inconclusive := false
     for t in Mutate.todo st' do
       let some (t₀, fp) := originals[t.key]? | continue
-      if Mutate.fingerprint preludeText' t.comp == fp then continue
+      unless Mutate.rechecks fp (Mutate.fingerprint preludeText' t.comp) do continue
       let rs ← match (← base.get)[t.key]? with
         | some rs => pure rs
         | none =>

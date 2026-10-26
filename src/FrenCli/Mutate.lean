@@ -41,11 +41,20 @@ inductive Origin where
   | dropArgument
   | swapRows
   | dropRow
+  | shiftVariant
+  | swapBranches
+  | dropNegation
+  | dropTrigger
+  | dropUpdate
+  | swapArms
+  | swapMinMax
+  | swapAffix
   deriving BEq, Inhabited, Repr
 
 def Origin.all : Array Origin :=
   #[.swapComparison, .swapAndOr, .swapArithmetic, .dropConjunct, .negateTrigger, .swapQuantifier, .shiftInteger, .flipBool,
-    .removeElement, .swapRepetition, .narrowClass, .dropAlternative, .swapCardinality, .dropArgument, .swapRows, .dropRow]
+    .removeElement, .swapRepetition, .narrowClass, .dropAlternative, .swapCardinality, .dropArgument, .swapRows, .dropRow,
+    .shiftVariant, .swapBranches, .dropNegation, .dropTrigger, .dropUpdate, .swapArms, .swapMinMax, .swapAffix]
 
 def Origin.name : Origin → String
   | .swapComparison => "swap-comparison"
@@ -64,6 +73,14 @@ def Origin.name : Origin → String
   | .dropArgument => "drop-argument"
   | .swapRows => "swap-rows"
   | .dropRow => "drop-row"
+  | .shiftVariant => "shift-variant"
+  | .swapBranches => "swap-branches"
+  | .dropNegation => "drop-negation"
+  | .dropTrigger => "drop-trigger"
+  | .dropUpdate => "drop-update"
+  | .swapArms => "swap-arms"
+  | .swapMinMax => "swap-min-max"
+  | .swapAffix => "swap-affix"
 
 structure Mutant where
   origin : Origin
@@ -87,6 +104,11 @@ def Mutant.apply (m : Mutant) (chars : Array Char) : Array Char :=
 
 /-! ## Text and tokens -/
 
+/-- The enumerations of a spec, by name: each variant in order, with
+whether it has a payload. Two enumerations of one name are left out, since
+a name alone does not tell them apart. -/
+abbrev Enums := Std.HashMap String (Array (String × Bool))
+
 /-- What generation needs of one file. -/
 structure Src where
   file : Nat
@@ -96,6 +118,11 @@ structure Src where
   toks : Array Token
   /-- Each `+` where a `Nat` is expected, which a `-` would make an `Int`. -/
   natSums : Array Span := #[]
+  /-- The spec's enumerations, in any of its files. -/
+  enums : Enums := {}
+  /-- The variants that the file's `use`s bring into scope by their own
+  names. -/
+  bare : Std.HashSet String := {}
 
 def Src.text (s : Src) (sp : Span) : String := String.ofList (s.chars.extract sp.start sp.stop).toList
 
@@ -287,6 +314,73 @@ def Src.literalBody? (s : Src) (sp : Span) : Option Span := do
   guard !text.contains '\\'
   return { start := sp.start + 1, stop := sp.stop - 1 }
 
+/-- The enumerations of `items` (`Enums`). -/
+partial def enumsOf (items : Array Item) : Enums := Id.run do
+  let rec decls : Item → Array (String × Array (String × Bool))
+    | .enum _ n vs _ => #[(n.name, vs.map fun (v, p?) => (v.name, p?.isSome))]
+    | .lintSetting _ _ _ _ _ (some body) => decls body
+    | _ => #[]
+  let mut out : Enums := {}
+  let mut clash : Std.HashSet String := {}
+  for (n, vs) in items.flatMap decls do
+    if let some old := out[n]? then
+      if old.map (·.1) != vs.map (·.1) then clash := clash.insert n
+    else out := out.insert n vs
+  return clash.fold (init := out) fun acc n => acc.erase n
+
+/-- The variants of `enums` that the `use`s of `items` bring into scope by
+their own names: `use E::V`, `use E::{V, W}` and `use E::*`, for any
+prefix of `E`. -/
+def bareVariants (enums : Enums) (items : Array Item) : Std.HashSet String := Id.run do
+  let mut out : Std.HashSet String := {}
+  let paths := items.flatMap fun
+    | .use _ path glob => #[(path, glob)]
+    | .useGroup _ pre paths => paths.map (pre ++ ·, false)
+    | _ => #[]
+  for (path, glob) in paths do
+    let names := path.map (·.name)
+    if glob then
+      if let some vs := names.back?.bind (enums[·]?) then out := out.insertMany (vs.map (·.1))
+    else if h : 2 ≤ names.size then
+      if (enums[names[names.size - 2]]?).any (·.any (·.1 == names.back!)) then out := out.insert names.back!
+  return out
+
+/-- Whether pattern `p` binds a name: a path of one segment that is not
+`true`, `false` or a variant in scope (`lang::pattern_name`). -/
+partial def Src.binds (s : Src) : Pattern → Bool
+  | .variant _ #[x] none => x.name != "true" && x.name != "false" && !s.bare.contains x.name
+  | .variant _ _ (some args) => args.any s.binds
+  | .or _ alts => alts.any s.binds
+  | _ => false
+
+/-- The payload-free variants next to the variant that the path `segs`
+names, in the order declared, written as `segs` would write them: `E::V`
+for any variant of `E`, and `V` only for those that `use`s bring into
+scope. -/
+def Src.neighbours (s : Src) (segs : Array Ident) : Array String := Id.run do
+  let some v := segs.back? | return #[]
+  let found := if segs.size ≥ 2 then (s.enums[segs[segs.size - 2]!.name]?).toArray
+    else if s.bare.contains v.name then s.enums.toArray.filterMap fun (_, vs) => if vs.any (·.1 == v.name) then some vs else none
+    else #[]
+  let #[vs] := found | return #[]
+  let some i := vs.findIdx? (·.1 == v.name) | return #[]
+  if vs[i]!.2 then return #[]
+  let near := (if i > 0 then #[vs[i - 1]!] else #[]) ++ (vs[i + 1]?.toArray)
+  return near.filterMap fun (w, payload) =>
+    if payload || (segs.size == 1 && !s.bare.contains w) then none else some w
+
+/-- The spans of the items of a list separated by commas, as removed:
+each with the `,` after it, and the last with the `,` before it. -/
+def removals (spans : Array Span) : Array Span :=
+  (Array.range spans.size).map fun k =>
+    if h : k + 1 < spans.size then { start := spans[k]!.start, stop := spans[k + 1].start }
+    else { start := spans[k - 1]!.stop, stop := spans[k]!.stop }
+
+/-- The text of `a` and `b`, two spans in order, each written where the
+other was. -/
+def Src.swapped (s : Src) (a b : Span) : String :=
+  s.text b ++ s.text { start := a.stop, stop := b.start } ++ s.text a
+
 /-- A candidate change, before it is given its item and identifier. -/
 structure Edit where
   origin : Origin
@@ -336,10 +430,11 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
       -- Without its first comparison, and without its last.
       swaps ++ #[{ start := outs[1]!.start, stop := sp.stop }, { start := sp.start, stop := outs[outs.size - 2]!.stop }].map fun k =>
         { origin := .dropConjunct, span := sp, after := s.text k, context := sp }
-    | .when sp negated _ _ =>
+    | .when sp negated _ body =>
       let kw := if negated then "unless" else "when"
       #[{ origin := .negateTrigger, span := { start := sp.start, stop := sp.start + kw.length }, after := if negated then "when" else "unless",
-          context := sp }]
+          context := sp },
+        { origin := .dropTrigger, span := sp, after := s.text (s.outer sp body.span), context := sp }]
     -- `forall` and `exists` are both six letters long.
     | .quant sp all _ _ =>
       #[{ origin := .swapQuantifier, span := { start := sp.start, stop := sp.start + 6 }, after := if all then "exists" else "forall",
@@ -349,6 +444,25 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
     | .num sp n => (#[n + 1] ++ (if n > 0 && !(divisor && n == 1) then #[n - 1] else #[])).map fun k =>
         { origin := .shiftInteger, span := sp, after := toString k, context := sp }
     | .bool sp b => #[{ origin := .flipBool, span := sp, after := if b then "false" else "true", context := sp }]
+    | .path sp segs => (s.neighbours segs).map fun w =>
+        { origin := .shiftVariant, span := segs.back!.span, after := w, context := sp }
+    | .ite sp _ a b =>
+      let (a, b) := (s.outer sp a.span, s.outer sp b.span)
+      if s.text a == s.text b then #[] else
+      #[{ origin := .swapBranches, span := { start := a.start, stop := b.stop }, after := s.swapped a b, context := sp }]
+    | .not sp k | .neg sp k => #[{ origin := .dropNegation, span := sp, after := s.text (s.outer sp k.span), context := sp }]
+    | .update sp _ fs =>
+      if fs.size < 2 then #[] else
+      let spans := fs.map fun (x, e?) => match e? with
+        | some v => { start := x.span.start, stop := (s.outer sp v.span).stop }
+        | none => x.span
+      (removals spans).map fun span => { origin := .dropUpdate, span, after := "", context := sp }
+    | .match sp _ arms =>
+      let vals := arms.map fun (_, b) => s.outer sp b.span
+      (Array.range (arms.size - 1)).filterMap fun k =>
+        let (a, b) := (vals[k]!, vals[k + 1]!)
+        if s.binds arms[k]!.1 || s.binds arms[k + 1]!.1 || s.text a == s.text b then none else
+        some { origin := .swapArms, span := { start := a.start, stop := b.stop }, after := s.swapped a b, context := sp }
     -- A well-formed spec applies no variable, so this is the built-in
     -- function.
     | .app sp #[f] args =>
@@ -397,13 +511,20 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
           else { start := vals[k - 1]!.stop, stop := vals[k]!.stop }
         { origin := .dropRow, span, after := "", context := sp }
       swaps ++ drops
-    | .method sp _ name #[.str lit _] =>
-      if name.name != "matches?" then #[] else
-      match s.literalBody? lit with
-      | some body =>
-        (patternEdits (s.chars.extract body.start body.stop)).map fun (origin, p, after) =>
-          { origin, span := { start := body.start + p.start, stop := body.start + p.stop }, after, context := sp }
-      | none => #[]
+    | .method sp _ name args =>
+      let swap (origin : Origin) (new : String) : Array Edit := #[{ origin, span := name.span, after := new, context := sp }]
+      match name.name, args with
+      | "min", #[_] => swap .swapMinMax "max"
+      | "max", #[_] => swap .swapMinMax "min"
+      | "starts_with?", #[_] => swap .swapAffix "ends_with?"
+      | "ends_with?", #[_] => swap .swapAffix "starts_with?"
+      | "matches?", #[.str lit _] =>
+        match s.literalBody? lit with
+        | some body =>
+          (patternEdits (s.chars.extract body.start body.stop)).map fun (origin, p, after) =>
+            { origin, span := { start := body.start + p.start, stop := body.start + p.stop }, after, context := sp }
+        | none => #[]
+      | _, _ => #[]
     | _ => #[]
   here ++ (children e).flatMap id
 where
@@ -485,6 +606,9 @@ def ofFile (s : Src) (items : Array Item) (divisors : Std.HashSet String := {}) 
   -- How many identical mutants each item has had so far.
   let mut seen : Std.HashMap String Nat := {}
   let divisors := divisors.insertMany (divisorConstants items)
+  -- The file's own enumerations, if its spec's are not given.
+  let enums := (enumsOf items).fold (init := s.enums) fun acc n vs => if acc.contains n then acc else acc.insert n vs
+  let s := { s with enums, bare := bareVariants enums items }
   let rec constName? : Item → Option String
     | .const _ n _ _ => some n.name
     | .lintSetting _ _ _ _ _ (some body) => constName? body

@@ -543,15 +543,17 @@ each taking every `n`th mutant; every other group is one job. -/
 def mutationSlices : Nat := 8
 
 /-- The mutants of the text `chars` of file `file`, whose parse is
-`parsed` (`FrenCli.parseText`), as `fren` makes them. -/
-def mutantsOfParsed (file : Nat) (path : String) (chars : Array Char) (parsed : FrenCli.Parsed) : Array FrenCli.Mutate.Mutant :=
+`parsed` (`FrenCli.parseText`), as `fren` makes them, where the spec's
+enumerations are `enums`. -/
+def mutantsOfParsed (file : Nat) (path : String) (chars : Array Char) (parsed : FrenCli.Parsed)
+    (enums : FrenCli.Mutate.Enums) : Array FrenCli.Mutate.Mutant :=
   match parsed with
-  | .ok (toks, items, _) => FrenCli.Mutate.ofFile { file, path, chars, toks } items
+  | .ok (toks, items, _) => FrenCli.Mutate.ofFile { file, path, chars, toks, enums } items
   | .error _ => #[]
 
 /-- The mutants of the text `chars` of file `file`, as `fren` makes them. -/
-def mutantsOfText (file : Nat) (path : String) (chars : Array Char) : Array FrenCli.Mutate.Mutant :=
-  mutantsOfParsed file path chars (FrenCli.parseText chars)
+def mutantsOfText (file : Nat) (path : String) (chars : Array Char) (enums : FrenCli.Mutate.Enums) : Array FrenCli.Mutate.Mutant :=
+  mutantsOfParsed file path chars (FrenCli.parseText chars) enums
 
 /-- The tree of a chained comparison of `es` with the operators `ops`, as
 `shapeWith` writes it: with one operator, a comparison. -/
@@ -612,13 +614,19 @@ def intended (s : Mutate.Src) (m : Mutate.Mutant) (e : FrenCli.Expr) : String :=
         let dropFirst := Mutate.idText m.after == Mutate.idText (s.text { start := (s.outer sp es[1]!.span).start, stop := sp.stop })
         some (if dropFirst then chainShape plain (es.extract 1) (names.extract 1) else chainShape plain es.pop names.pop)
       else none
-    | .when sp neg c b =>
-      if m.origin == .negateTrigger && sp.start == m.span.start then some s!"({if neg then "when" else "unless"} {plain c} {plain b})"
-      else none
     | .quant sp all bs b =>
       if m.origin == .swapQuantifier && sp.start == m.span.start then
         some s!"({if all then "exists" else "forall"} {bs.toList.map fun x => Mutate.idText (s.text x.span)} {plain b})"
       else none
+    | .when sp neg c b =>
+      if m.origin == .negateTrigger && sp.start == m.span.start then some s!"({if neg then "when" else "unless"} {plain c} {plain b})"
+      else if m.origin == .dropTrigger && sp == m.span then some (plain b)
+      else none
+    | .ite sp c a b =>
+      if m.origin == .swapBranches && (s.outer sp a.span).start == m.span.start && (s.outer sp b.span).stop == m.span.stop then
+        some s!"(if {plain c} {plain b} {plain a})"
+      else none
+    | .not sp k | .neg sp k => if m.origin == .dropNegation && sp == m.span then some (plain k) else none
     | _ => none) e
 
 /-- The expressions of the items of the text `chars` that mutants change. -/
@@ -631,7 +639,8 @@ def sitesOfText (chars : Array Char) : Array (Lean.Name × FrenCli.Expr) := site
 
 /-- Swaps, which a second swap undoes. -/
 def isSwap (m : FrenCli.Mutate.Mutant) : Bool :=
-  [.swapComparison, .swapArithmetic, .negateTrigger, .swapQuantifier, .flipBool, .swapRepetition, .swapRows].contains m.origin
+  [.swapComparison, .swapArithmetic, .negateTrigger, .swapQuantifier, .flipBool, .swapRepetition, .swapRows, .swapBranches, .swapArms,
+    .swapMinMax, .swapAffix].contains m.origin
     || (m.origin == .swapAndOr && !m.after.startsWith "(")
 
 /-- Every mutant of the corpus:
@@ -653,6 +662,9 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
   let mut failures := #[]
   let files ← readGroup paths
   let (before, all) := FrenCli.mutantsOf files #[]
+  let enums := FrenCli.Mutate.enumsOf (files.flatMap fun (_, chars) => match FrenCli.parseText chars with
+    | .ok (_, items, _) => items
+    | .error _ => #[])
   let ids := all.map (·.id)
   if slice == 0 && ids.toList.eraseDups.length != ids.size then
     failures := failures.push s!"mutants of {files.map (·.1)}: duplicate identifiers"
@@ -671,7 +683,7 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
     let st := FrenCli.elabParsed (before[m.file]?.getD {}) m.file chars' parsed'
     if let some d := (st.diags.filter fun d => d.severity == .error && d.file == m.file)[0]? then
       failures := failures.push s!"{m.id}: has a static error: {d.msg.headline}"
-    let again := mutantsOfParsed m.file path chars' parsed'
+    let again := mutantsOfParsed m.file path chars' parsed' enums
     let againIds : Std.HashSet String := .ofArray (again.map (·.id))
     for m₂ in all do
       if m₂.file == m.file && m₂.item != m.item && !againIds.contains m₂.id then
@@ -680,7 +692,8 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
       failures := failures.push s!"{m.id}: leaves `^` first in a class, negating it"
     if isSwap m && !again.any (fun b => b.origin == m.origin && b.apply chars' == chars) then
       failures := failures.push s!"{m.id}: no mutant swaps it back"
-    if [.swapComparison, .swapArithmetic, .swapAndOr, .dropConjunct, .negateTrigger, .swapQuantifier].contains m.origin then
+    if [.swapComparison, .swapArithmetic, .swapAndOr, .dropConjunct, .negateTrigger, .swapQuantifier, .swapBranches, .dropNegation,
+        .dropTrigger].contains m.origin then
       let src : FrenCli.Mutate.Src := { file := m.file, path, chars, toks := toks[m.file]! }
       let src' : FrenCli.Mutate.Src := { src with chars := chars', toks := (FrenCli.lex chars').toOption.getD #[] }
       let sites := fileSites[m.file]!
@@ -698,8 +711,8 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
     let src ← IO.FS.readFile path
     let .ok formatted := FrenCli.Fmt.formatFile path src | failures := failures.push s!"{path}: does not format"
     let text := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown formatted else formatted
-    let ids := (mutantsOfText i path chars).map (·.id)
-    let ids' := (mutantsOfText i path text.toList.toArray).map (·.id)
+    let ids := (mutantsOfText i path chars enums).map (·.id)
+    let ids' := (mutantsOfText i path text.toList.toArray enums).map (·.id)
     if ids.qsort (· < ·) != ids'.qsort (· < ·) then
       failures := failures.push s!"{path}: formatting changes the identifiers of {(ids.filter (!ids'.contains ·)).toList}"
   for n in [0:20] do

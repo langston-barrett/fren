@@ -54,8 +54,8 @@ help: the mutant
 10 +     ensure shape: accepted? iff (name.len <= 19 and name.starts_with?("a"))
    |
 
-handle: 2 of 6 mutants killed (33%)
-fren: 6 mutants: 2 killed, 4 survived, 0 equivalent, 0 unviable
+handle: 3 of 7 mutants killed (42%)
+fren: 7 mutants: 3 killed, 4 survived, 0 equivalent, 0 unviable
 
 For more information about this error, try `fren --explain F0613`.
 exit=3
