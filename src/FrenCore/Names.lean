@@ -1090,6 +1090,13 @@ def contractSelfMsg (f : Name) (precondition : Bool) : Msg :=
       notes := #["note: a postcondition states what the function gives at its own arguments, written as its parameters' names, in order",
         "help: apply it to the parameters, or state this where the function is applied"] }
 
+/-- The name of the value of the uninterpreted function `f`, whose
+parameters are `params`, an output of the comp that checks its contract's
+realizability: `f`, or `f'` if a parameter is named `f`
+(`Reqs/Check#contracts-of-uninterpreted-functions`). -/
+def contractValueName (f : Name) (params : Array Name) : Name :=
+  if params.contains f then f.appendAfter "'" else f
+
 /-- A contract clause named as a parameter or another clause of its
 function (`lang::distinct_names`). -/
 def dupClauseMsg (n : Name) : Msg :=

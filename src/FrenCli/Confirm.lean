@@ -363,7 +363,10 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
     | none => .atoms #[]
   { path := core.path, vars := core.vars
     defs := core.defs.map fun (d, eq, e) => (d, (eq, defn d), (e, defn d))
-    assumes := props core.assumes, reqs := props core.reqs, expects := props core.expects
+    assumes := props core.assumes, expects := props core.expects
+    -- An uninterpreted function's postconditions, of its value, which the
+    -- evaluator's comp of its contract does not have: undecided.
+    reqs := if core.fn?.isSome then core.reqs.map fun (n, s) => (n, (s, .unknown)) else props core.reqs
     posts := props core.posts, fn? := core.fn?
     covers := props core.covers
     triggers := core.triggers.map fun (n, s) => (n, (s, trigger n))

@@ -1,0 +1,40 @@
+-- The realizability of an uninterpreted function's contract
+-- (`Reqs/Check#contracts-of-uninterpreted-functions`): its postconditions
+-- must be able to hold for all arguments that meet its preconditions,
+-- whatever the other functions are, or every check that applies it would
+-- pass.
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.chainable_comparison "allow"
+
+-- Postconditions that contradict each other.
+fn bad(n: Int): Int   --~ error: the postconditions of `bad` cannot all hold
+    ensure a: bad(n) > 0   --~? info: conflicts with
+    ensure b: bad(n) < 0   --~? info: conflicts with
+
+-- A postcondition that says nothing of the value, and can be false.
+fn other(n: Int): Int   --~ error: the postconditions of `other` cannot all hold: for the arguments n = 0, no value of `other` satisfies `c`
+    ensure c: n > 0   --~ info: is false when n = 0
+
+-- A precondition rules out the arguments where it would be false.
+fn guarded(n: Int): Int
+    assume positive: n > 0
+    ensure c: n > 0 and guarded(n) > n
+
+-- Contradictory preconditions.
+fn never(n: Int): Int   --~ error: the preconditions of `never` are unsatisfiable: `p`, `q` contradict each other
+    assume p: n > 0
+    assume q: n < 0
+    ensure r: never(n) = n
+
+-- A postcondition over an earlier function, which is free: it can be false.
+fn base(Int): Int
+fn above(n: Int): Int   --~ error: the postconditions of `above` cannot all hold
+    ensure over: base(n) > 0 and above(n) > base(n)   --~ info: is false when
+
+-- One that relates the value to an earlier function holds.
+fn after(n: Int): Int
+    ensure over: after(n) > base(n)
+
+-- A `Nat` value is at least 0.
+fn count(n: Int): Nat
+    ensure small: count(n) < 1

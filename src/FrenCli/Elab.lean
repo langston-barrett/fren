@@ -1630,8 +1630,9 @@ guard implies each precondition at the arguments, in order. -/
 def notePreconditions (cx : ExprCtx) (span : Span) (path : Name) (args : Array String) : M Unit := do
   unless cx.noteIndexes do return
   let some k := (← get).contracts.find? path | return
-  for (n, sym) in k.pres do
-    modify fun s => { s with tables := s.tables.push (span, .precondition path n, guarded cx.guards s!"({sym} {" ".intercalate args.toList})") }
+  let pres := k.pres.map fun (n, sym) => (n, s!"({sym} {" ".intercalate args.toList})")
+  for (q, goal) in Fren.Core.preconditionQuestions (guarded cx.guards) path pres do
+    modify fun s => { s with tables := s.tables.push (span, q, goal) }
 
 /-- Records the questions about the rows of the table at `span`, whose
 rows other than `_` have the SMT-LIB conditions `conds`, written at
@@ -3952,8 +3953,8 @@ function and the clause, a postcondition only if the function is defined;
 and the questions about the tables and applications in them: a
 precondition's under the other preconditions, a postcondition's under all
 of them. -/
-def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses : Array (Bool × Ident × Expr)) :
-    M (Array CProp × Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) := do
+def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses : Array (Bool × Ident × Expr)) (result : Ty)
+    (span : Span) : M (Array CVar × Array CProp × Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) := do
   -- The clauses' names share one namespace with the parameters
   -- (`lang::distinct_names`).
   let names := vars.map (·.name) ++ clauses.map fun (_, x, _) => Name.mkSimple (declaredIdent x).1.name
@@ -3976,11 +3977,20 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
     let sym := clauseSym path cn
     modify fun s => { s with clauseDefs := s.clauseDefs.push (sym, vars.map fun v => (v.name, v.ty), smt) }
     if post then k := { k with posts := k.posts.push (cn, sym) } else k := { k with pres := k.pres.push (cn, sym) }
-    if defined || !post then
-      props := props.push ({ kind := if post then .ensure else .assume, name := n ++ cn, span := x.span, smt
-                             trigger? := none, triggerSpan? := none } : CProp)
+    -- An uninterpreted function's postcondition is of its value, for its
+    -- contract's realizability: the function applied to its parameters is
+    -- the value (`Reqs/Check#contracts-of-uninterpreted-functions`).
+    let app := s!"({itemSym path} {" ".intercalate (vars.toList.map fun v => quote v.name.toString)})"
+    let value := quote (Fren.Core.contractValueName n (vars.map (·.name))).toString
+    let smt := if post && !defined then smt.replace app value else smt
+    props := props.push ({ kind := if post then .ensure else .assume, name := n ++ cn, span := x.span, smt
+                           trigger? := none, triggerSpan? := none } : CProp)
   modify fun s => { s with contracts := s.contracts.insert path k }
-  return (props, sites)
+  -- Without postconditions, an uninterpreted function's contract has
+  -- nothing to realize.
+  if defined || k.posts.isEmpty then return (vars, props.filter (defined || ·.kind == .assume), sites)
+  let v : CVar := { name := Fren.Core.contractValueName n (vars.map (·.name)), role := .output, isPub := true, ty := result, span }
+  return (vars.push v, props, sites)
 
 /-- Records the tables of the body of the function `n`, whose parameters
 are `vars`, or of the value of the constant `n`, just elaborated, and the
@@ -4220,8 +4230,8 @@ partial def elabItem (item : Item) : M Unit := do
         modify fun s => { s with funs := s.funs.push (path, vars.map (·.ty), r) }
         discard takeTables
         modify fun s => { s with outsideCore := false, natApps := #[] }
-        let c ← elabContract path n false vars clauses
-        noteBody n name.span vars c path
+        let (vars, props, sites) ← elabContract path n false vars clauses r name.span
+        noteBody n name.span vars (props, sites) path
         lintDeclared .function n name.span
         lintLines .function n name.span last
     | some body =>
@@ -4234,12 +4244,14 @@ partial def elabItem (item : Item) : M Unit := do
       let bodyTables ← takeTables
       liftMsg body.span (Fren.Core.checkType r t (some s!"note: `{n}` returns `{r.show}`"))
       lintBools body
-      for (x, v) in Fren.Core.unmentioned (vars.map fun v => (v.name, v)) ((mentions body).map (·.getRoot)) do
+      -- A parameter that only the contract mentions is used too.
+      let mentioned := (mentions body ++ clauses.flatMap fun (_, _, e) => mentions e).map (·.getRoot)
+      for (x, v) in Fren.Core.unmentioned (vars.map fun v => (v.name, v)) mentioned do
         lint .unusedVariables v.span (Fren.Core.unusedParamMsg x)
       modify fun s => { s with defs := s.defs.push (path, vars.map fun v => (v.name, v.ty), r, smt) }
-      let c ← if contract then elabContract path n true vars clauses else pure (#[], #[])
+      let (_, props, sites) ← if contract then elabContract path n true vars clauses r name.span else pure (vars, #[], #[])
       modify fun s => { s with tables := bodyTables }
-      noteBody n name.span vars c path
+      noteBody n name.span vars (props, sites) path
       lintDeclared .function n name.span
       lintLines .function n name.span last
     unless isPub do

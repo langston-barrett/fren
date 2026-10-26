@@ -367,7 +367,7 @@ satisfying the requirements, whatever the instances do
 definitions, so that they are never under `∃` (`check::definitions`). -/
 def checkRealizable (c : Comp F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
-    { kind := .realizable, comp := c.path, prop? := none, verdict, detail }
+    { kind := .realizable, comp := c.path, prop? := none, target? := c.fn?.map (·, .anonymous), verdict, detail }
   let sub := c.substHyps b
   let assumes := sub c.assumes
   let assumeQ ← b.query assumes b.falseF false
@@ -540,6 +540,14 @@ postconditions (`check::applies`), as a `Comp` whose path is its module,
 with its parameters as inputs and its preconditions as assumptions. -/
 def bodyKinds : Array CheckKind := #[.completeness, .disjointness, .precondition, .postcondition]
 
+/-- The checks of the contract of an uninterpreted function with
+postconditions (`check::applies`), as a `Comp` whose path is its module,
+with its parameters as inputs, its value as its one `out`, its
+preconditions as assumptions and its postconditions, of its value, as
+guarantees: whether they can hold together, and the tables and
+applications in its clauses. -/
+def contractKinds : Array CheckKind := #[.realizable, .completeness, .disjointness, .precondition]
+
 /-- The checks run on a global expectation if `global`, else on a component
 (`check::applies`). -/
 def kindsFor (global : Bool) : Array CheckKind :=
@@ -551,6 +559,8 @@ inductive CheckedItem where
   | global
   /-- The body and contract of a function, or the value of a constant. -/
   | body
+  /-- The contract of an uninterpreted function with postconditions. -/
+  | contract
   deriving Inhabited, DecidableEq, Repr
 
 /-- The checks run on an item (`check::applies`). -/
@@ -558,6 +568,7 @@ def CheckedItem.kinds : CheckedItem → Array CheckKind
   | .component => kindsFor false
   | .global => kindsFor true
   | .body => bodyKinds
+  | .contract => contractKinds
 
 /-- The SMT-LIB logic of a check's queries (`cli::logic`): only
 realizability quantifies, over outputs; a spec that uses strings or sets
@@ -708,6 +719,35 @@ def appFacts [Monad m] [BEq F] (appsOf : F → Array F) (factsOf : F → m (Arra
     (appsOf f).foldl (init := acc) fun acc a => if acc.contains a then acc else acc.push a
   return (← apps.mapM factsOf).flatten
 
+/-- The questions that an application of the function `f` asks of its
+arguments, for the precondition check (`check::application_contract`):
+each of its preconditions `pres`, at the arguments, where the
+application's guard holds, as `guarded` puts it. Both front ends record
+these. -/
+def preconditionQuestions (guarded : F → F) (f : Name) (pres : Array (Name × F)) : Array (TableGoal × F) :=
+  pres.map fun (p, g) => (.precondition f p, guarded g)
+
+/-- The facts that an application of an uninterpreted function brings of
+its postconditions `posts`, each named by its postcondition, at the
+arguments and the application's value (`check::application_contract`):
+each holds where its preconditions `pres` imply it, as `implies` puts it.
+Both front ends' `factsOf` give these, after the application's `nat`. -/
+def postconditionFacts (implies : Array F → F → F) (pres : Array F) (posts : Array (Name × F)) : Array (Name × F) :=
+  posts.map fun (n, q) => (n, implies pres q)
+
+/-- The component that checks the realizability of the contract of the
+uninterpreted function `f` (`Reqs/Check#contracts-of-uninterpreted-functions`),
+whose path is its module `path`: its parameters `params` as inputs, its
+value `value` as its one output, and its preconditions `pres` and
+postconditions `posts`, of the value, as its assumptions and guarantees,
+with `sites`, the questions about the tables and applications in its
+clauses. Both front ends check this component. -/
+def contractComp (path f : Name) (params : Array Name) (value : Name) (pres posts : Array (Name × F))
+    (sites : Array (TableSite F) := #[]) : Comp F :=
+  { path, vars := params.map (fun x => { name := x, role := .input, isPub := true }) |>.push
+      { name := value, role := .output, isPub := true }
+    assumes := pres, reqs := posts, expects := #[], triggers := #[], tables := sites, fn? := some f }
+
 /-- The formulas of the query of the cover goal `g` (`checkCover`): the
 definitions, the assumptions, each instance's bindings and the meaning of
 its component, the requirements, and the goal. No expectation or other
@@ -778,6 +818,10 @@ def rowsText : Option (Nat × Nat) → String
   | some (i, j) => s!"rows {i + 1} and {j + 1}"
   | none => "two rows"
 
+/-- The name of a clause of a contract, without its function's
+(`Comp.fn?`). -/
+def clauseName (n : Name) : Name := Name.mkSimple n.getString!
+
 def showComp (path : Name) : String :=
   "::".intercalate (path.components.map (·.toString))
 
@@ -819,6 +863,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
   | .inconclusive, d =>
     let why := match d with | .unknown w => s!": {w}" | _ => ""
     let what := match r.kind, r.target? with
+      | .realizable, some (f, _) => s!"the postconditions of `{showComp f}` can hold"
       | .realizable, _ => s!"{subject} is realizable"
       | .inst, some (sub, a) => s!"the assumption `{a}` of `{showComp sub}` holds for instance {subject}"
       | .inst, none => s!"{subject} holds"
@@ -842,10 +887,27 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         "help: bring it back into the decidable core, or raise the time limit with `--timeout`"]
     #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
   | .fail, .vacuousAssumptions core =>
+    if let some (f, _) := r.target? then
+      #[one "F0632" s!"the preconditions of `{showComp f}` are unsatisfiable: {showNames (core.map clauseName)} contradict each other"
+        (some "no arguments meet its preconditions") #["note: the function could never be applied where its contract says anything",
+          "help: weaken or remove one of them"] (item? := none)]
+    else
     #[one "F0602" s!"the assumptions of {subject} are unsatisfiable: {showNames core} contradict each other"
       (some "no input satisfies its assumptions") #["note: every guarantee would hold vacuously",
         "help: weaken or remove one of them"] (item? := none)]
   | .fail, .conflict input core =>
+    if let some (f, _) := r.target? then
+      let names := showNames (core.map clauseName)
+      #[one "F0631" s!"the postconditions of `{showComp f}` cannot all hold: for the arguments {showAssignment input}, no value of `{showComp f}` satisfies {names}"
+        (some "unrealizable contract")
+        #["note: an uninterpreted function's postconditions are assumed wherever it is applied, so if they cannot hold, every check that applies it would pass",
+          "help: weaken one of them, or add a precondition that rules these arguments out"] (item? := none)]
+      ++ core.map fun n =>
+        let others := (core.filter (· != n)).map clauseName
+        { severity := .info, item? := some n,
+          msg := { code? := none, headline := if others.isEmpty then s!"is false when {showAssignment input}"
+            else s!"conflicts with {showNames others} when {showAssignment input}" } }
+    else
     -- Instance variables (`w.x`) cannot be assumed about.
     let help := if input.all (·.1.isAtomic) then #["help: weaken one of them, or add an `assume` that rules this input out"]
       else #["help: weaken one of them",

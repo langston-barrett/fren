@@ -369,11 +369,10 @@ def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (app : String) : A
   let head := ((inner.drop 1).takeWhile (· != ' ')).toString
   let args := ((inner.drop (head.length + 2)).dropEnd 1).toString
   let (nat, k) := funs.getD head (false, {})
-  let posts := k.posts.map fun (n, sym) =>
-    let pres := k.pres.map fun (_, p) => s!"({p} {args})"
-    let goal := s!"({sym} {args})"
-    (n, pre ++ (if pres.isEmpty then goal else s!"(=> {conj pres} {goal})") ++ post)
-  (if nat then #[(`nat, s!"(>= {app} 0)")] else #[]) ++ posts
+  let implies (ps : Array String) (q : String) := if ps.isEmpty then q else s!"(=> {conj ps} {q})"
+  let posts := Fren.Core.postconditionFacts implies (k.pres.map fun (_, p) => s!"({p} {args})")
+    (k.posts.map fun (n, sym) => (n, s!"({sym} {args})"))
+  (if nat then #[(`nat, s!"(>= {app} 0)")] else #[]) ++ posts.map fun (n, f) => (n, pre ++ f ++ post)
 
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
@@ -425,27 +424,35 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
 
 def toCore (c : CComp) : Fren.Core.Comp String :=
   let props (k : PropKind) := c.props.filter (·.kind == k) |>.map fun p => (p.name, p.smt)
-  { path := c.path
-    vars := c.vars.map fun v =>
-      { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
-    assumes := props .assume
-    -- A function's postconditions are claims of its own
-    -- (`check::postcondition`), and the hypotheses of nothing.
-    reqs := if c.fn?.isSome then #[] else props .ensure
-    posts := if c.fn?.isSome then props .ensure else #[]
-    fn? := c.fn?
-    expects := props .expect
-    covers := props .cover
-    insts := c.insts.map fun i =>
-      { name := i.name, comp := i.comp, bindings := i.bindings, behaviour := i.behaviour, assumes := i.assumes }
-    triggers := (c.props.filter fun p => p.kind == .ensure || p.kind == .expect).filterMap fun p =>
-      p.trigger?.map (p.name, ·)
-    defs := c.defs.map fun (d, e) => (d, s!"(= {quote d.toString} {e})", e)
-    -- Numbered in order within each item.
-    indexes := c.indexes.mapIdx fun j (n, place, _, goal) =>
-      { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal }
-    tables := c.tables.mapIdx fun j (n, place, _, q, goal) =>
-      { site := { prop := n, k := (c.tables.extract 0 j).filter (·.1 == n) |>.size, place, goal }, goal := q } }
+  -- The contract of an uninterpreted function, whose value is an output.
+  let contract := c.fn?.isSome && c.vars.any (·.role == .output)
+  let core : Fren.Core.Comp String :=
+    { path := c.path
+      vars := c.vars.map fun v =>
+        { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
+      assumes := props .assume
+      -- A function's postconditions are claims of its own
+      -- (`check::postcondition`), and the hypotheses of nothing.
+      reqs := if c.fn?.isNone || contract then props .ensure else #[]
+      posts := if c.fn?.isSome && !contract then props .ensure else #[]
+      fn? := c.fn?
+      expects := props .expect
+      covers := props .cover
+      insts := c.insts.map fun i =>
+        { name := i.name, comp := i.comp, bindings := i.bindings, behaviour := i.behaviour, assumes := i.assumes }
+      triggers := (c.props.filter fun p => p.kind == .ensure || p.kind == .expect).filterMap fun p =>
+        p.trigger?.map (p.name, ·)
+      defs := c.defs.map fun (d, e) => (d, s!"(= {quote d.toString} {e})", e)
+      -- Numbered in order within each item.
+      indexes := c.indexes.mapIdx fun j (n, place, _, goal) =>
+        { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal }
+      tables := c.tables.mapIdx fun j (n, place, _, q, goal) =>
+        { site := { prop := n, k := (c.tables.extract 0 j).filter (·.1 == n) |>.size, place, goal }, goal := q } }
+  -- An uninterpreted function's contract, as both front ends build it
+  -- (`Fren.Core.contractComp`).
+  match contract, c.fn?, c.vars.back? with
+  | true, some f, some v => Fren.Core.contractComp core.path f (c.vars.pop.map (·.name)) v.name core.assumes core.reqs core.tables
+  | _, _, _ => core
 
 /-- `rs`, results of `c`, with each cover goal's marked if its query uses
 an abstract type or an uninterpreted function, as the prelude declarations

@@ -360,6 +360,8 @@ that its cover goals are met (`coverWitness`), for the caller to add. -/
 def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     MetaM (Array CheckResult × Array Declaration) := do
   let c := { c with uses := ← checkUses c }
+  -- The contract of an uninterpreted function, whose value is an output.
+  let contract := c.fn?.isSome && c.vars.any (·.role == .output)
   -- The abstract types and functions become locals, which lean-smt
   -- declares as sorts and uninterpreted functions (`check::Interpretations`).
   withNatUses c.uses fun ufs fns => do
@@ -378,10 +380,12 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
       vars := c.vars.map fun v =>
         { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
       assumes := ← named c.assumes
-      -- A function's postconditions are claims of its own
-      -- (`check::postcondition`), and the hypotheses of nothing.
-      reqs := ← if c.fn?.isSome then pure #[] else named c.ensures
-      posts := ← if c.fn?.isSome then named c.ensures else pure #[]
+      -- A defined function's postconditions are claims of its own
+      -- (`check::postcondition`), and the hypotheses of nothing; an
+      -- uninterpreted function's, of its value, its contract's guarantees
+      -- (`Reqs/Check#contracts-of-uninterpreted-functions`).
+      reqs := ← if c.fn?.isNone || contract then named c.ensures else pure #[]
+      posts := ← if c.fn?.isSome && !contract then named c.ensures else pure #[]
       fn? := c.fn?
       expects := ← named c.expects
       covers := ← named c.covers
@@ -400,9 +404,15 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
         let some i := c.vars.findIdx? (·.name == d) | return none
         let e ← beta e
         return some (d, ← mkEq fvs[i]! e, e) }
+    -- An uninterpreted function's contract, as both front ends build it
+    -- (`Core.contractComp`).
+    let comp : Core.Comp Expr := match contract, c.fn?, c.vars.back? with
+      | true, some f, some v =>
+        Core.contractComp c.path f (c.vars.pop.map fun (x : Var) => x.name) v.name comp.assumes comp.reqs comp.tables
+      | _, _, _ => comp
     -- What the `Nat` variables bring (`lang::nat_variable`): each, of both
     -- copies, is at least 0. Each query's applications bring their own
-    -- (`Core.natAppFacts`).
+    -- (`Core.appFacts`).
     let natVars (outputs : Bool) := (c.vars.zip fvs).filter fun (v, _) =>
       v.type.isConstOf ``Nat && match Core.natBrought (v.role == .output) v.defn?.isSome with
         | .nothing => false
@@ -437,8 +447,8 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
       let some (u, _, _, nat) := factFns.find? (·.2.1 == app.getAppFn) | return #[]
       let args := app.getAppArgs
       let pres ← (presOf u).mapM fun k => rep (k.at args)
-      let posts ← (postsOf u).mapM fun k => do
-        return (k.name, ← pres.foldrM (fun p acc => mkArrow p acc) (← rep (k.at args)))
+      let implies (ps : Array Expr) (q : Expr) : Expr := ps.foldr (fun p acc => mkForall `h .default p acc) q
+      let posts := Core.postconditionFacts implies pres (← (postsOf u).mapM fun k => return (k.name, ← rep (k.at args)))
       let natFact ← if nat then pure #[(`nat, ← atLeast0 app)] else pure #[]
       return natFact ++ posts
     let bk (k : CheckKind) :=

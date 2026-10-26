@@ -53,7 +53,9 @@ def todo (st : State) : Array Todo :=
   st.comps.map (⟨·, false, Fren.Core.CheckedItem.component.kinds, false, false⟩)
     ++ st.globals.map (⟨·, true, Fren.Core.CheckedItem.global.kinds, false, false⟩)
     ++ st.refinements.map (⟨·, false, Fren.Core.CheckKind.all.filter Fren.Core.refinementRuns, true, false⟩)
-    ++ st.bodies.map (⟨·, false, Fren.Core.CheckedItem.body.kinds, false, true⟩)
+    -- An uninterpreted function's contract has its value as an output.
+    ++ st.bodies.map fun b =>
+      ⟨b, false, (if b.vars.any (·.role == .output) then Fren.Core.CheckedItem.contract else .body).kinds, false, true⟩
 
 /-- The key of its results. -/
 def Todo.key (t : Todo) : String :=

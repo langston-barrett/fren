@@ -22,6 +22,27 @@ impl obligation: impls::obligation for (written writtenOk : Bool) (d s : Answer)
   axiom? := (implVerdict written writtenOk d s).2.2,
 }
 
+def toContractProof : ContractProofKind → impls.ContractProof
+  | .notNeeded => .NotNeeded
+  | .theorem => .Theorem
+  | .axiom => .Axiom
+  | .unproved => .Unproved
+
+-- `proveContract` decides with `contractProofOf`, and `elabInterp`
+-- records an interpretation, and reports no error of its own, exactly when
+-- `contractRecorded` says.
+impl interpretation_contract: impls::interpretation_contract for (p w wo u : Bool) (d s : Answer) {
+  posts? := p,
+  written? := w,
+  written_ok? := wo,
+  uses_sorry? := u,
+  decide_q := toOutcome d,
+  smt_q := toOutcome s,
+  proof := toContractProof (contractProofOf p w wo u d s),
+  recorded? := contractRecorded (contractProofOf p w wo u d s),
+  error? := !contractRecorded (contractProofOf p w wo u d s),
+}
+
 -- One variable, given `n` terms. Over `Nat`, so a proof by cases.
 impl mapping: impls::mapping for (r : Fren.Core.Role) (p : Bool) (n : Nat) {
   role := toRole r,

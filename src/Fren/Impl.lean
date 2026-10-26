@@ -380,53 +380,101 @@ open Lang in
 meets the postconditions of its contract `k` wherever its arguments meet
 the preconditions, over the interpretations of the abstract types and
 functions that the contract uses (`Reqs/Impl#interpretations`). -/
-def contractStatement (path decl : Name) (k : ContractInfo) : MetaM Expr := do
+def contractStatement (path : Name) (placeholder : Name) (interp : Expr) (k : ContractInfo) : MetaM Expr := do
   let uses := (k.pres ++ k.posts).foldl (init := #[]) fun acc c =>
     c.uses.foldl (fun acc u => if acc.contains u then acc else acc.push u) acc
-  let ι ← match ← interpsOf uses with
+  -- The function's own interpretation is `interp`, which is not recorded
+  -- until it is proved.
+  let others := uses.filter (· != placeholder)
+  let ι ← match ← interpsOf others with
     | .ok ι => pure ι
     | .error p => throwError s!"the contract of `{Core.showComp path}` uses `{Core.showComp p}`, which has no interpretation\n\n\
         help: interpret `{Core.showComp p}` first"
-  forallTelescope (← inferType (mkConst decl)) fun xs _ => do
+  let ι := uses.map fun u => if u == placeholder then interp else ((others.idxOf? u).map (ι[·]!)).getD interp
+  forallTelescope (← inferType interp) fun xs _ => do
     let atArgs (c : ClauseInfo) := (replaceUses uses ι (c.at xs)).headBeta
     let post := mkAndN (k.posts.map atArgs).toList
     let stmt ← k.pres.foldrM (fun c acc => mkArrow (atArgs c) acc) post
     mkForallFVars xs stmt
 
+/-- How an interpretation proves its function's postconditions
+(`impls::ContractProof`). -/
+inductive ContractProofKind where
+  | notNeeded
+  | theorem
+  | axiom
+  | unproved
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- How an interpretation proves its function's postconditions, from
+whether it has any, whether it has a written proof, whether that
+elaborates without an error and whether it uses `sorry`, and the answers
+of `decide` and the solver, each asked only when the earlier ones prove
+nothing (`impls::interpretation_contract`). -/
+def contractProofOf (posts written writtenOk usesSorry : Bool) (decideQ smtQ : Core.Answer) : ContractProofKind :=
+  if !posts then .notNeeded
+  else if written then (if writtenOk && !usesSorry then .theorem else .unproved)
+  else match decideQ with
+    | .unsat => .theorem
+    | .sat => .unproved
+    | .unknown => if smtQ == .unsat then .axiom else .unproved
+
+/-- Whether an interpretation is added (`impls::interpretation_contract`):
+unless its postconditions are unproved. -/
+def contractRecorded (k : ContractProofKind) : Bool := k != .unproved
+
+/-- How a contract's statement was proved (`proveContract`): a proof, or
+the solver's answer, an axiom. -/
+inductive ContractProof where
+  | proof (pf : Expr)
+  | solver
+
 open Lang in
-/-- Adds the theorem `decl.ensures`, that the interpretation `decl` of the
-function at `path` meets its postconditions, proved by the interpretation's
-tactics if it has any, and otherwise by `decide` or by the solver, which
-makes it an axiom; or reports that it is not proved, as for an `impl`. -/
-def proveContract (stx : Syntax) (path decl : Name) (k : ContractInfo) : CommandElabM Unit := do
-  let name := decl ++ `ensures
-  let stmt ← liftTermElabM <| contractStatement path decl k
+/-- Proves that `t`, the interpretation of the function at `path`, whose
+placeholder is `placeholder`, meets its postconditions (`contractStatement`):
+by the interpretation's tactics if it has any, and otherwise by `decide` or
+by the solver, which makes it an axiom; or reports that it is not, as for
+an `impl`, an error, and a proof that uses `sorry` is none. -/
+def proveContract (stx : Syntax) (path placeholder : Name) (t : Expr) (k : ContractInfo) :
+    CommandElabM (Option ContractProof) := do
+  let stmt ← liftTermElabM <| contractStatement path placeholder t k
   let subject := s!"the interpretation of `{Core.showComp path}`"
   if !stx[4].isNone then
     let tac : TSyntax ``Lean.Parser.Tactic.tacticSeq := ⟨stx[4][1]⟩
+    let errorsBefore := (← get).messages.toList.filter (·.severity == .error) |>.length
     let pf ← liftTermElabM do
       let pf ← elabTermEnsuringType (← `(by $tac)) stmt
       synthesizeSyntheticMVarsNoPostponing
       instantiateMVars pf
-    unless pf.hasMVar || pf.hasSorry do
-      liftCoreM <| addDecl (.thmDecl { name, levelParams := [], «type» := stmt, value := pf })
-    return
-  match ← liftTermElabM (evalDecide stmt) with
-  | some true =>
+    let errors := (← get).messages.toList.filter (·.severity == .error) |>.length
+    let writtenOk := errors == errorsBefore && !pf.hasMVar
+    match contractProofOf true true writtenOk pf.hasSorry .unknown .unknown with
+    | .theorem => return some (.proof pf)
+    | _ =>
+      -- An error in the tactics is reported already.
+      if writtenOk then
+        logErrorAt stx[4] s!"the proof that {subject} meets its postconditions uses `sorry`\n\n\
+          note: an interpretation whose postconditions are not proved adds nothing"
+      return none
+  let decided ← liftTermElabM (evalDecide stmt)
+  let decideQ : Core.Answer := match decided with | some true => .unsat | some false => .sat | none => .unknown
+  let smtQ ← if decideQ == .unknown then liftTermElabM (solverAnswer stmt (interps := true)) else pure .unknown
+  match contractProofOf true false false false decideQ smtQ with
+  | .theorem =>
     let pf ← liftTermElabM do
       let inst ← synthInstance (mkApp (mkConst ``Decidable) stmt)
       return mkApp3 (mkConst ``of_decide_eq_true) stmt inst (mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Bool) (mkConst ``Bool.true))
-    liftCoreM <| addDecl (.thmDecl { name, levelParams := [], «type» := stmt, value := pf })
-  | some false =>
-    logErrorAt stx[1] s!"{subject} does not meet its postconditions: `decide` evaluates their statement to false\n\n\
-      help: correct the interpretation, or the contract"
-  | none =>
-    if (← liftTermElabM (solverAnswer stmt (interps := true))) == .unsat then
-      liftCoreM <| addDecl (.axiomDecl { name, levelParams := [], «type» := stmt, isUnsafe := false })
+    return some (.proof pf)
+  | .axiom => return some .solver
+  | _ =>
+    if decideQ == .sat then
+      logErrorAt stx[1] s!"{subject} does not meet its postconditions: `decide` evaluates their statement to false\n\n\
+        help: correct the interpretation, or the contract"
     else
       logErrorAt stx[1] s!"could not prove that {subject} meets its postconditions\n\n\
         note: `decide` does not apply, and the solver did not prove them\n\
         help: write a proof after `by`"
+    return none
 
 open Lang in
 @[command_elab Lang.interpCmd] def elabInterp : CommandElab := fun stx => do
@@ -446,7 +494,7 @@ open Lang in
       note: each abstract type and function has one interpretation, which every `impl` uses"
   let some a := s.abstracts.get? path | throwError "internal error: unknown abstract item `{path}`"
   let decl := (← getCurrNamespace) ++ path
-  liftTermElabM do
+  let term ← liftTermElabM do
     -- The type the term must have: the function's, over the interpretations
     -- of its abstract types.
     let (expected, typesInterpreted) ← match ← interpsOf a.deps with
@@ -469,11 +517,27 @@ open Lang in
         note: an abstract type has at least one value"
     unless interpAccepted what earlier typed typesInterpreted do
       throwErrorAt stx[1] "internal error: the interpretation is rejected without a reason"
+    return (expected, t)
+  let (expected, t) := term
+  -- A function's postconditions, proved of the term before anything is
+  -- added: an interpretation that does not meet them adds nothing
+  -- (`Reqs/Impl#interpretations`).
+  let proof? ← match (← getState).contracts.get? path with
+    | some k => if k.posts.isEmpty then pure none else do
+      let some p ← proveContract stx path a.placeholder t k | return
+      pure (some (k, p))
+    | none => pure none
+  liftTermElabM do
     addDecl (.defnDecl { name := decl, levelParams := [], «type» := expected, value := t, hints := .abbrev, safety := .safe })
     setReducibleAttribute decl
   record (.interpInfo path decl)
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
-  if let some k := (← getState).contracts.get? path then
-    unless k.posts.isEmpty do proveContract stx path decl k
+  -- `decl.ensures`, stated of `decl`, which is `t`.
+  if let some (k, p) := proof? then
+    let name := decl ++ `ensures
+    let stmt ← liftTermElabM <| contractStatement path a.placeholder (mkConst decl) k
+    liftCoreM <| addDecl <| match p with
+      | .proof value => .thmDecl { name, levelParams := [], «type» := stmt, value }
+      | .solver => .axiomDecl { name, levelParams := [], «type» := stmt, isUnsafe := false }
 
 end Fren

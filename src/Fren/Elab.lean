@@ -2840,10 +2840,10 @@ precondition at the arguments, in order. -/
 def notePreconditions (cx : ExprCtx) (ref : Syntax) (path : Name) (args : Array Term) : TermElabM Unit := do
   unless cx.noteIndexes do return
   let some k := (← getState).contracts.get? path | return
-  for pre in k.pres do
-    let goal ← `($(mkCIdent pre.decl) $(pre.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
-    let goal ← guardedGoal cx.guards goal
-    modifyLocal fun l => { l with tables := l.tables.push (ref, .precondition path pre.name, goal) }
+  let pres ← k.pres.mapM fun pre => return (pre.name, ← `($(mkCIdent pre.decl) $(pre.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*))
+  let guarded (g : Term) : Term := cx.guards.foldr (fun c acc => Unhygienic.run `($c → $acc)) g
+  for (q, goal) in Core.preconditionQuestions guarded path pres do
+    modifyLocal fun l => { l with tables := l.tables.push (ref, q, goal) }
 
 open Lang in
 /-- Translates a table into a chain of `if`s over its rows' conditions,
@@ -3784,12 +3784,20 @@ and the clause, a postcondition only if the function is defined; and the
 questions about the tables and applications in them: a precondition's
 under the other preconditions, a postcondition's under all of them. -/
 def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var) (clauses : Array Syntax) :
-    TermElabM (Array PropInfo × Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)) := do
+    TermElabM (Array Var × Array PropInfo × Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)) := do
   -- The clauses' names share one namespace with the parameters
   -- (`lang::distinct_names`).
   let names := vars.map (·.name) ++ clauses.map fun c => (declaredIdent c[1]).1.getId
   if let some k := (Core.repeatsAt names)[0]? then
     if k ≥ vars.size then throwErrorAt clauses[k - vars.size]![1] (Core.dupClauseMsg names[k]!).text
+  -- An uninterpreted function's value, an output of its contract's comp,
+  -- for its realizability (`Reqs/Check#contracts-of-uninterpreted-functions`):
+  -- named after the function, unless a parameter is.
+  let value? ← if defined then pure none else do
+    let a ← placeholderOf path
+    let name := Core.contractValueName n (vars.map (·.name))
+    let ty ← forallTelescope (← getConstInfo a.placeholder).type fun _ r => pure r
+    pure (some (a.placeholder, ({ name, role := .output, isPub := true, «type» := ty, ref := mkIdent name } : Var)))
   let mut pres : Array ClauseInfo := #[]
   let mut posts : Array ClauseInfo := #[]
   let mut props : Array PropInfo := #[]
@@ -3803,7 +3811,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
     lintName .constraint cn x
     if cn.toString.endsWith "?" then throwErrorAt x (Core.propNameMsg cn).text
     let e := withWhere c[3] c[4]
-    let (lam, tables) ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+    let (lam, ofValue?, tables) ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let cx : ExprCtx := { modName, vars, insts := #[], place := .prop
                             contract? := some { path, post, params := vars.map (·.name) } }
       discard (takeIndexes fvs)
@@ -3811,18 +3819,34 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
       checkDeclared e t (mkConst ``Bool) fun _ => "note: a clause of a contract is a `Bool`"
       let body ← elabProp t
       let tables := (← takeIndexes fvs).filter (·.2.1.isSome)
-      return (← mkLambdaFVars fvs body, tables)
+      -- A postcondition of the value, for realizability: the function
+      -- applied to its parameters is the value.
+      let ofValue? ← match post, value? with
+        | true, some (ph, v) => withLocalDeclD v.name v.type fun x => do
+          let app := mkAppN (mkConst ph) fvs
+          some <$> mkLambdaFVars (fvs.push x) (body.replace fun t => if t == app then some x else none)
+        | _, _ => pure none
+      return (← mkLambdaFVars fvs body, ofValue?, tables)
     lintBools e
     let uses ← usesOf #[lam]
     let k : ClauseInfo := { name := cn, decl := decl ++ cn, uses }
     addUsesDef uses k.decl lam
     if post then posts := posts.push k else pres := pres.push k
     sites := sites ++ tables.map fun (r, q, g) => (n ++ cn, if post then Core.IndexPlace.body else .assume, r, q, g)
-    if defined || !post then
-      props := props.push { kind := if post then .ensure else .assume, name := n ++ cn, ref := x, body := lam
-                            trigger? := none, triggerRef? := none, decl := k.decl }
+    props := props.push { kind := if post then .ensure else .assume, name := n ++ cn, ref := x, body := ofValue?.getD lam
+                          trigger? := none, triggerRef? := none, decl := k.decl }
   record (.contractInfo { path, pres, posts, defined })
-  return (props, sites)
+  -- A defined function's contract has nothing to realize, nor an
+  -- uninterpreted function's without postconditions.
+  let some (_, v) := value?.filter fun _ => !posts.isEmpty
+    | return (vars, props.filter (defined || ·.kind == .assume), sites)
+  -- Every other formula over the parameters is over the value too, which
+  -- it does not mention.
+  let withValue (e : Expr) : TermElabM Expr :=
+    lambdaBoundedTelescope e vars.size fun xs b => withLocalDeclD v.name v.type fun x => mkLambdaFVars (xs.push x) b
+  let props' ← props.mapM fun p => if p.kind == .ensure then pure p else return { p with body := ← withValue p.body }
+  let sites' ← sites.mapM fun (n, place, r, q, g) => return (n, place, r, q, ← withValue g)
+  return (vars.push v, props', sites')
 
 @[command_elab Lang.fnCmd] def elabFunction : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
@@ -3860,7 +3884,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
         let result ← varType modName nameStx (if stx[6].isNone then none else some stx[6][1])
         declarePlaceholder path (← mkArrowN (vars.map (·.type)) result) false
         modifyLocal fun l => { l with outsideCore := false }
-        let (props, sites) ← elabContract modName path n decl false vars clauses
+        let (vars, props, sites) ← elabContract modName path n decl false vars clauses
         recordBody path nameStx decl vars sites props path
       else
         let params ← params.mapM fun p => do lintRelTypes modName p[0]; elabType modName p[0]
@@ -3899,12 +3923,14 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
         else elabProp t result
       return (← mkLambdaFVars fvs value, tables)
     lintBools body
-    for (x, v) in Core.unmentioned (vars.map fun v => (v.name, v)) ((pathMentions body).map (·.getRoot)) do
+    -- A parameter that only the contract mentions is used too.
+    let mentioned := (pathMentions body ++ clauses.flatMap fun c => pathMentions (withWhere c[3] c[4])).map (·.getRoot)
+    for (x, v) in Core.unmentioned (vars.map fun v => (v.name, v)) mentioned do
       recordLint .unusedVariables v.ref (Core.unusedParamMsg x)
     let uses ← usesOf #[lam]
     addUsesDef uses decl lam
     record (.definedInfo { path, decl, uses, nParams := vars.size })
-    let (props, sites) ← if contract then elabContract modName path n decl true vars clauses else pure (#[], #[])
+    let (_, props, sites) ← if contract then elabContract modName path n decl true vars clauses else pure (vars, #[], #[])
     recordBody path nameStx decl vars (tables.map (fun (r, q, g) => (n, .body, r, q, g)) ++ sites) props path
   lintDeclared .function n nameStx
   lintLines .function n nameStx stx

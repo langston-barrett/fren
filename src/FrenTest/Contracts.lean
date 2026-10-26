@@ -31,6 +31,15 @@ help: correct the interpretation, or the contract
 -/
 #guard_msgs in interp rank := fun (_ : Bool) => 0
 
+-- It added nothing, so `rank` can be interpreted again.
+interp rank := fun (_ : Bool) => 1
+
+/--
+info: contract_test.rank.ensures : ∀ (x : contract_test.Key),
+  contract_test.rank.positive contract_test.Key contract_test.rank x
+-/
+#guard_msgs in #check @contract_test.rank.ensures
+
 -- `decide` proves it, under the preconditions.
 fn level(k: Key, on?): Nat
     assume chosen: on?
@@ -61,3 +70,28 @@ interp grows := fun n => n + 2
 
 /-- info: 'contract_test.grows.ensures' depends on axioms: [contract_test.grows.ensures] -/
 #guard_msgs in #print axioms contract_test.grows.ensures
+
+-- A proof that uses `sorry` proves nothing, and neither does a statement
+-- that the solver does not prove: both add nothing.
+fn shifted(n: Int): Int
+    ensure greater: shifted(n) > n
+
+/--
+error: the proof that the interpretation of `contract_test::shifted` meets its postconditions uses `sorry`
+
+note: an interpretation whose postconditions are not proved adds nothing
+-/
+#guard_msgs in interp shifted := fun n => n by sorry
+
+/--
+error: could not prove that the interpretation of `contract_test::shifted` meets its postconditions
+
+note: `decide` does not apply, and the solver did not prove them
+help: write a proof after `by`
+-/
+#guard_msgs in interp shifted := fun n => n - 1
+
+/-- error: Unknown identifier `contract_test.shifted` -/
+#guard_msgs in #check @contract_test.shifted
+
+interp shifted := fun n => n + 3

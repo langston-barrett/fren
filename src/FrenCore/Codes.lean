@@ -2869,6 +2869,49 @@ fn pred(n: Int): Int := n - 1
     ensure natural: pred(n) >= 0
 ```
 "# },
+  { code := "F0631", explanation := r#"An uninterpreted function's postconditions cannot all hold.
+
+Erroneous code example:
+
+```fren
+fn rate(n: Int): Int
+    ensure positive: rate(n) > 0
+    ensure negative: rate(n) < 0
+```
+
+An uninterpreted function's postconditions are what is known of it, and
+are assumed wherever it is applied. If for some arguments that meet its
+preconditions no value meets them all, they contradict each other, and
+every check that applies the function would pass. The same goes for a
+postcondition that says nothing of the function's value and can be false.
+Weaken one of them, or add a precondition that rules those arguments out:
+
+```fren
+fn rate(n: Int): Int
+    ensure positive: rate(n) > 0
+```
+"# },
+  { code := "F0632", explanation := r#"An uninterpreted function's preconditions contradict each other.
+
+Erroneous code example:
+
+```fren
+fn rate(n: Int): Int
+    assume positive: n > 0
+    assume negative: n < 0
+    ensure bounded: rate(n) < n
+```
+
+No arguments meet the preconditions, so the postconditions say nothing,
+and no application of the function can meet its preconditions. Weaken or
+remove one of them:
+
+```fren
+fn rate(n: Int): Int
+    assume positive: n > 0
+    ensure bounded: rate(n) < n
+```
+"# },
   { code := "F0610", args := some ["quickcheck"], explanation := r#"Testing found no admissible behaviour (a warning).
 
 Erroneous code example:

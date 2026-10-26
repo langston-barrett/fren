@@ -175,7 +175,8 @@ where
       | none, some g, _ => pure (g, Core.CheckedItem.global.kinds)
       | none, none, some r => pure (r, Core.CheckKind.all.filter Core.refinementRuns)
       | none, none, none => match s.bodies.get? p with
-        | some b => pure (b, Core.CheckedItem.body.kinds)
+        -- An uninterpreted function's contract has its value as an output.
+        | some b => pure (b, (if b.vars.any (·.role == .output) then Core.CheckedItem.contract else .body).kinds)
         | none => continue
     -- Not where `undecidable` is denied, though the error does not stop
     -- `#fren_check` where `#guard_msgs` catches it: the solver is not asked

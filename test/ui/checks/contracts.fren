@@ -115,3 +115,42 @@ comp reading {
 
 const FIRST: Int := nth([1, 2], 0)
 const NONE: Int := nth([], 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `NONE`
+
+-- In a `match` arm, an application is guarded by the arm's pattern.
+enum Pick { First, Last, Neither }
+
+comp picked {
+    in p: Pick
+    in q: Seq(Int)
+    pub out y: Int
+
+    assume nonempty: q != []
+    ensure r: y = match p {
+        Pick::First => nth(q, 0),
+        Pick::Last => nth(q, q.len - 1),
+        Pick::Neither => nth(q, 1),   --~ error: the precondition `in_range` of `nth` may not hold at this application in `picked::r`
+    }
+}
+
+-- In a refinement's binding, under the concrete component's assumptions.
+comp abstract_reader {
+    in q: Seq(Int)
+    pub out y: Int
+
+    ensure r: when q.len > 3, y = q[3]
+}
+
+comp concrete_reader {
+    in q: Seq(Int)
+    pub out y: Int
+
+    ensure r: when q.len > 3, y = q[3]
+}
+
+refine reads_third: concrete_reader refines abstract_reader {
+    y := nth(q, 3),   --~ error: the precondition `in_range` of `nth` may not hold at this application in `reads_third::y`
+}
+
+-- A failing precondition in a global expectation.
+expect unguarded_read: forall (h: holder), h.y = nth(h.q, 2)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `unguarded_read`
+--~^ error: expectation `unguarded_read` does not hold
