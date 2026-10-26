@@ -112,21 +112,22 @@ pub comp double_parens {
 ## Cardinality
 
 `manual_at_most_one` fires on a run of adjacent conjuncts of an `and`,
-each `not (a and b)`, that negate each pair of three or more operands
-exactly once, and nothing else, and is fixable: `not (a? and b?) and not
+each `not (a and b)` of two different operands, that negate each pair of
+three or more operands, and is fixable: `not (a? and b?) and not
 (a? and c?) and not (b? and c?)` becomes `at_most_one?(a?, b?, c?)` (see
 [Cardinality](../../Lang/Expressions.md#cardinality)). Where the conjunct
-just before or after the run is the disjunction of the operands, each
-once, as in `(a? or b? or c?) and not (a? and b?) and ...`, the run takes
+just before or after the run is the disjunction of exactly those
+operands, as in `(a? or b? or c?) and not (a? and b?) and ...`, the run takes
 it in, and the fix is `exactly_one?(a?, b?, c?)`. Operands are compared
 as [written the same](../../Lint.md#written-the-same), and a pair may be
-written either way round, as in `not (b? and a?)`. The run of `and` is
+written either way round, as in `not (b? and a?)`, or more than once,
+which the conjunction means the same with. The run of `and` is
 read as [`chainable_comparison`](../Style/Comparisons.md#chained-comparisons)
 reads it, and a conjunct in parentheses is not in a run, so `p? and not
 (a? and b?) and ...` fires at the conjuncts after `p?`. The message is
 reported from the first conjunct it replaces to the last. The fix writes
-the operands as the disjunction orders them, or else in the order they
-are first written, and there is no fix where a comment is within the
+each operand once, as the disjunction orders them, or else in the order
+they are first written, and there is no fix where a comment is within the
 conjuncts, which the call would lose; the message then suggests the call.
 
 `n` operands take `n * (n - 1) / 2` such conjuncts, and one left out is
@@ -143,20 +144,64 @@ obligation, which a guard could discharge: an index `q[i]`, a
 whose definition gives one, as in `not (ok? and big?) and ... where big? :=
 q[i] > 0`. Operands without one are defined wherever they are evaluated,
 under any guard. Clippy has no counterpart.
-`lint::manual_at_most_one` states when it fires, and which call the fix
-is:
+`lint::manual_at_most_one` models the run as the set of conjuncts `not
+(a and b)` it reads, each with its two operands and whether the `and` gives a
+definedness obligation, and the operands of the disjunction just before or
+after it, if there is one. Operands are the four of
+[`lint::Operand`](../Complexity.md#simpler-bool-expressions), enough to
+tell every case of the rule apart. The component states when
+the lint fires, which call the fix is, and that the fix holds exactly where
+the conjuncts do, for every set of operands that hold:
 
 ```fren
-pub comp manual_at_most_one {
-    in n_operands: Int   -- the operands, each counted once
-    in every_pair?       -- the conjuncts negate each pair of two different operands exactly once
-    in disjunction?      -- the conjunct just before or after them is the disjunction of the operands
-    in obligations?      -- an operand gives a definedness obligation
-    pub det out fires?
-    pub det out exactly?   -- the fix is `exactly_one?`, rather than `at_most_one?`
+-- `not (first and second)`, where `obligation?` says that the `and` gives a
+-- definedness obligation.
+pub struct PairNegation { first: Operand, second: Operand, obligation? }
 
-    ensure rule: fires? iff n_operands >= 3 and every_pair? and not obligations?
-    ensure fix: exactly? iff disjunction?
+-- Some conjunct is `not (x and y)`.
+fn pair_negated?(pairs: Set(PairNegation), x: Operand, y: Operand) :=
+    PairNegation { first := x, second := y, obligation? := true } in pairs
+    or PairNegation { first := x, second := y, obligation? := false } in pairs
+
+-- `x` is an operand of some conjunct.
+fn named?(pairs: Set(PairNegation), x: Operand) := exists (y: Operand), pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x)
+
+pub comp manual_at_most_one {
+    in pairs: Set(PairNegation)   -- the run of conjuncts `not (a and b)`
+    in disjunction: Set(Operand)  -- the operands of the disjunction beside them; `{}` if there is none
+    pub det out fires?
+    pub det out exactly?          -- the fix is `exactly_one?`, rather than `at_most_one?`
+
+    ensure rule: fires? iff ((exists (x y z: Operand), x != y and x != z and y != z
+        and named?(pairs, x) and named?(pairs, y) and named?(pairs, z))
+        and (forall (x: Operand), not pair_negated?(pairs, x, x))
+        and (forall (x y: Operand), when x != y and named?(pairs, x) and named?(pairs, y),
+        pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x))
+        and not (exists (x y: Operand), PairNegation { first := x, second := y, obligation? := true } in pairs))
+    ensure fix: exactly? iff (disjunction != {} and (forall (x: Operand), x in disjunction iff named?(pairs, x)))
+}
+```
+
+The fix keeps the meaning: `holds` is the set of operands that hold, and
+where the lint fires, the conjuncts hold exactly where at most one named
+operand does, and with the disjunction, exactly where one does:
+
+```fren
+comp manual_at_most_one_meaning {
+    in pairs: Set(PairNegation)
+    in disjunction: Set(Operand)
+    in holds: Set(Operand)
+
+    inst m: manual_at_most_one { pairs, disjunction }
+
+    expect at_most: when m.fires?,
+        (forall (x y: Operand), when pair_negated?(pairs, x, y), not (x in holds and y in holds))
+        iff (forall (x y: Operand), when x != y and named?(pairs, x) and named?(pairs, y), not (x in holds and y in holds))
+    expect exactly: when m.fires? and m.exactly?,
+        ((exists (x: Operand), x in disjunction and x in holds)
+        and (forall (x y: Operand), when pair_negated?(pairs, x, y), not (x in holds and y in holds)))
+        iff (exists (x: Operand), named?(pairs, x) and x in holds
+        and (forall (y: Operand), when y != x and named?(pairs, y), not y in holds))
 }
 ```
 

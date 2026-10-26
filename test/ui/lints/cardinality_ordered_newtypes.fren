@@ -23,6 +23,7 @@ comp cardinality {
     pub out o4?
     pub out o5?
     pub out o6?
+    pub out o6b?
     pub out o7?
     pub out o8?
     pub out o9?
@@ -36,11 +37,15 @@ comp cardinality {
     --~^ warning: this is `exactly_one?` of 3 operands
     ensure r3: o3? iff d? and not (b? and a?) and not (c? and a?) and not (c? and b?) and (c? or b? or a?)
     --~^ warning: this is `exactly_one?` of 3 operands
-    -- A pair left out, two operands, a pair written twice, or a conjunct
-    -- in parentheses: none fires.
+    -- A pair left out, two operands, or a conjunct in parentheses: none
+    -- fires. A pair written twice is the same conjunction.
     ensure r4: o4? iff not (a? and b?) and not (a? and c?)
     ensure r5: o5? iff not (a? and b?)
     ensure r6: o6? iff not (a? and b?) and not (b? and a?) and not (a? and c?) and not (b? and c?)
+    --~^ warning: this is `at_most_one?` of 3 operands
+    -- An operand written twice in the disjunction is still the disjunction.
+    ensure r6b: o6b? iff (a? or b? or c? or a?) and not (a? and b?) and not (b? and c?) and not (a? and c?)
+    --~^ warning: this is `exactly_one?` of 3 operands
     ensure r7: o7? iff not (a? and b?) and (not (a? and c?)) and not (b? and c?)
     -- Nor where an operand indexes, whose guards would change.
     ensure r8: when q.len > 1, o8? iff (not (q[0] > 0 and a?) and not (q[0] > 0 and q[1] > 0) and not (a? and q[1] > 0))
@@ -88,6 +93,7 @@ comp memberships {
     pub out p2?
     pub out p3?
     pub out p4?
+    pub out p4b?
     pub out p5?
     pub out p6?
     pub out p7?
@@ -97,6 +103,9 @@ comp memberships {
     ensure r2: p2? iff s in {Severity::Error, Severity::Warning}  --~ warning: this is `s >= Severity::Warning`
     ensure r3: p3? iff s = Severity::Silent or s = Severity::Info   --~ warning: this is `s <= Severity::Info`
     ensure r4: p4? iff s != Severity::Error and s != Severity::Warning  --~ warning: this is `s < Severity::Warning`
+    -- A variant written twice is still a variant of the test.
+    ensure r4b: p4b? iff s = Severity::Error or s = Severity::Warning or s = Severity::Error
+    --~^ warning: this is `s >= Severity::Warning`
     -- Not the first or last variants, all of them, or not ordered.
     ensure r5: p5? iff s in {Severity::Silent, Severity::Warning}
     ensure r6: p6? iff s in {Severity::Silent, Severity::Info, Severity::Warning, Severity::Error}

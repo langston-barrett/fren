@@ -1553,74 +1553,252 @@ trusted lint::member_order_fixed: "a model of a component, checked by the refine
 /-! ## Cardinality, ordered enumerations and newtypes -/
 
 -- Both front ends decide these in `opReports`, the variants and newtypes
--- from what each elaborator records of them (`Fren.Core.NodeFact`).
-impl manual_at_most_one: lint::manual_at_most_one for (n : Nat) (e d b : Bool) {
-  n_operands := n,
-  every_pair? := e,
-  disjunction? := d,
-  obligations? := b,
-  fires? := (Fren.Core.manualAtMostOne n e d b).1,
-  exactly? := (Fren.Core.manualAtMostOne n e d b).2,
-} by
-  intro n e d b _
-  cases e <;> cases d <;> cases b <;> simp [fren_spec, Fren.Core.manualAtMostOne] <;> omega
+-- from what each elaborator records of them (`Fren.Core.NodeFact`). Where
+-- a model's inputs are finite, `decide` proves the implementation over all
+-- of them; a set of operands, or the variants a test names, is given by one
+-- `Bool` for each.
 
-impl nonminimal_cardinality: lint::nonminimal_cardinality for (e : Bool) (n : Nat) {
+instance : Fren.Finite lint.Argument where
+  all := [.Literal false, .Literal true, .Written .P, .Written .Q, .Written .R, .Written .S]
+  complete := by intro a; cases a with | Literal b => cases b <;> decide | Written x => cases x <;> decide
+
+instance : Fren.Finite lint.Inner where
+  all := [.FieldOf .Ms, .FieldOf .Bytes, .Typed, .Untyped]
+  complete := by intro a; cases a with | FieldOf t => cases t <;> decide | _ => decide
+
+instance : Fren.Finite lint.Roundtrip where
+  all := (Fren.Finite.all : List lint.Inner).flatMap fun e =>
+    [.Built .Ms e, .Built .Bytes e, .Read .Ms e, .Read .Bytes e]
+  complete := by
+    intro r
+    cases r with
+    | Built t e => cases t <;> cases e with | FieldOf u => cases u <;> decide | _ => decide
+    | Read t e => cases t <;> cases e with | FieldOf u => cases u <;> decide | _ => decide
+
+-- `manual_at_most_one`, over every list of conjuncts: the code's reading
+-- of the conjuncts is characterised with the spec's `named?` and
+-- `pair_negated?`, and the quantifiers over the four operands expanded as
+-- Fren expands them.
+theorem exOp (P : lint.Operand → Prop) : (∃ x, P x) ↔ (P .P ∨ P .Q) ∨ (P .R ∨ P .S) := by
+  constructor
+  · rintro ⟨x, h⟩; cases x <;> simp_all
+  · rintro ((h | h) | (h | h)) <;> exact ⟨_, h⟩
+
+theorem allOp (P : lint.Operand → Prop) : (∀ x, P x) ↔ (P .P ∧ P .Q) ∧ (P .R ∧ P .S) := by
+  constructor
+  · intro h; exact ⟨⟨h _, h _⟩, ⟨h _, h _⟩⟩
+  · rintro ⟨⟨h1, h2⟩, ⟨h3, h4⟩⟩ x; cases x <;> assumption
+
+theorem named_iff (ps : FinSet lint.PairNegation) (x : lint.Operand) :
+    lint.named? ps x = true ↔ ∃ y, lint.pair_negated? ps x y = true ∨ lint.pair_negated? ps y x = true := by
+  rw [exOp]; simp only [lint.named?, decide_eq_true_eq]
+
+theorem pair_negated_iff (ps : List lint.PairNegation) (x y : lint.Operand) :
+    lint.pair_negated? (FinSet.ofList ps) x y = true ↔ ∃ p ∈ ps, p.first = x ∧ p.second = y := by
+  simp only [lint.pair_negated?, decide_eq_true_eq, FinSet.mem_ofList]
+  constructor
+  · rintro (h | h) <;> exact ⟨_, h, rfl, rfl⟩
+  · rintro ⟨⟨a, b, o⟩, h, rfl, rfl⟩; cases o <;> simp_all
+
+-- The conjuncts' operands, as the lint reads them.
+theorem mem_ops (ps : List lint.PairNegation) (x : lint.Operand) :
+    x ∈ ps.flatMap (fun p => [p.first, p.second]) ↔ lint.named? (FinSet.ofList ps) x = true := by
+  simp only [named_iff, pair_negated_iff, List.mem_flatMap, List.mem_cons, List.not_mem_nil, or_false]
+  constructor
+  · rintro ⟨p, h, e | e⟩
+    · exact ⟨p.second, Or.inl ⟨p, h, e.symm, rfl⟩⟩
+    · exact ⟨p.first, Or.inr ⟨p, h, rfl, e.symm⟩⟩
+  · rintro ⟨y, ⟨p, h, e1, _⟩ | ⟨p, h, _, e2⟩⟩
+    · exact ⟨p, h, Or.inl e1.symm⟩
+    · exact ⟨p, h, Or.inr e2.symm⟩
+
+theorem negated_iff (ps : List lint.PairNegation) (x y : lint.Operand) :
+    (ps.any fun p => p.first == x && p.second == y) = true ↔ lint.pair_negated? (FinSet.ofList ps) x y = true := by
+  simp only [List.any_eq_true, Bool.and_eq_true, beq_iff_eq, lint.pair_negated?, decide_eq_true_eq, FinSet.mem_ofList]
+  constructor
+  · rintro ⟨⟨a, b, o⟩, h, rfl, rfl⟩; cases o <;> simp_all
+  · rintro (h | h) <;> exact ⟨_, h, rfl, rfl⟩
+
+section
+variable (ps : List lint.PairNegation) (ds : List lint.Operand)
+
+local notation "N" => fun x => lint.named? (FinSet.ofList ps) x = true
+local notation "G" => fun x y => lint.pair_negated? (FinSet.ofList ps) x y = true
+
+theorem mam_fst :
+    (Fren.Core.manualAtMostOne lint.PairNegation.first lint.PairNegation.second lint.PairNegation.«obligation?» ps ds).1 = true ↔
+      (((∃ x y z, ((((x ≠ y ∧ x ≠ z) ∧ y ≠ z) ∧ lint.named? (FinSet.ofList ps) x = true)
+          ∧ lint.named? (FinSet.ofList ps) y = true) ∧ lint.named? (FinSet.ofList ps) z = true)
+        ∧ (∀ x, ¬ lint.pair_negated? (FinSet.ofList ps) x x = true))
+        ∧ (∀ x y, (x ≠ y ∧ lint.named? (FinSet.ofList ps) x = true) ∧ lint.named? (FinSet.ofList ps) y = true →
+            lint.pair_negated? (FinSet.ofList ps) x y = true ∨ lint.pair_negated? (FinSet.ofList ps) y x = true))
+        ∧ ¬ ∃ x y, (⟨x, y, true⟩ : lint.PairNegation) ∈ FinSet.ofList ps := by
+  simp only [Fren.Core.manualAtMostOne, Bool.and_eq_true, Bool.not_eq_true', List.any_eq_true, List.all_eq_true,
+    bne_iff_ne, ne_eq, Bool.or_eq_true, beq_iff_eq, ← mem_ops ps, ← negated_iff ps,
+    List.any_eq_false, FinSet.mem_ofList]
+  refine and_congr (and_congr (and_congr ?_ ?_) ?_) ?_
+  · constructor
+    · rintro ⟨x, hx, y, hy, z, hz, h⟩
+      exact ⟨x, y, z, ⟨⟨⟨⟨h.1.1, h.1.2⟩, h.2⟩, hx⟩, hy⟩, hz⟩
+    · rintro ⟨x, y, z, ⟨⟨⟨⟨h1, h2⟩, h3⟩, hx⟩, hy⟩, hz⟩
+      exact ⟨x, hx, y, hy, z, hz, by simp [h1, h2, h3]⟩
+  · constructor
+    · rintro h x ⟨p, hp, e1, e2⟩; exact h p hp (e1.trans e2.symm)
+    · intro h p hp e; exact h p.first ⟨p, hp, rfl, e.symm⟩
+  · constructor
+    · rintro h x y ⟨⟨hne, hx⟩, hy⟩
+      rcases h x hx y hy with (e | g) | g
+      · exact absurd e hne
+      · exact Or.inl g
+      · exact Or.inr g
+    · intro h x hx y hy
+      by_cases e : x = y
+      · exact Or.inl (Or.inl e)
+      · rcases h x y ⟨⟨e, hx⟩, hy⟩ with g | g
+        · exact Or.inl (Or.inr g)
+        · exact Or.inr g
+  · constructor
+    · rintro h ⟨x, y, hm⟩; exact absurd rfl (h _ hm)
+    · intro h p hp; cases e : p.«obligation?»
+      · simp
+      · exact absurd ⟨p.first, p.second, by cases p; simp_all⟩ h
+
+theorem mam_snd :
+    (Fren.Core.manualAtMostOne lint.PairNegation.first lint.PairNegation.second lint.PairNegation.«obligation?» ps ds).2 = true ↔
+      ¬ FinSet.ofList ds = ∅ ∧ ∀ x, (x ∈ FinSet.ofList ds ↔ lint.named? (FinSet.ofList ps) x = true) := by
+  simp only [Fren.Core.manualAtMostOne, Bool.and_eq_true, List.any_eq_true, List.all_eq_true, List.contains_iff_mem,
+    ← mem_ops ps, FinSet.mem_ofList, FinSet.ofList_eq_empty, and_true]
+  constructor
+  · rintro ⟨⟨⟨x, hx⟩, h1⟩, h2⟩
+    exact ⟨List.ne_nil_of_mem hx, fun y => ⟨h1 y, h2 y⟩⟩
+  · rintro ⟨hne, h⟩
+    obtain ⟨x, hx⟩ := List.exists_mem_of_ne_nil ds hne
+    exact ⟨⟨⟨x, hx⟩, fun y hy => (h y).mp hy⟩, fun y hy => (h y).mpr hy⟩
+end
+
+impl manual_at_most_one: lint::manual_at_most_one for (ps : List lint.PairNegation) (ds : List lint.Operand) {
+  pairs := Fren.FinSet.ofList ps,
+  disjunction := Fren.FinSet.ofList ds,
+  fires? := (Fren.Core.manualAtMostOne lint.PairNegation.first lint.PairNegation.second lint.PairNegation.«obligation?» ps ds).1,
+  exactly? := (Fren.Core.manualAtMostOne lint.PairNegation.first lint.PairNegation.second lint.PairNegation.«obligation?» ps ds).2,
+} by
+  intro ps ds _
+  unfold lint.manual_at_most_one.ensures lint.manual_at_most_one.ensure.rule lint.manual_at_most_one.ensure.fix
+  rw [mam_fst, mam_snd]
+  simp only [exOp, allOp, and_self]
+
+
+def toCardinalityFix : Bool × Bool → lint.CardinalityFix
+  | (false, _) => .Unchanged
+  | (true, true) => .Argument
+  | (true, false) => .True
+
+impl nonminimal_cardinality: lint::nonminimal_cardinality for (e : Bool) (args : List Bool) {
   exactly? := e,
-  n_args := n,
-  fires? := (Fren.Core.nonminimalCardinality e n).1,
-  argument? := (Fren.Core.nonminimalCardinality e n).2,
+  args := Fren.Seq.ofList args,
+  fix := toCardinalityFix (Fren.Core.nonminimalCardinality e args.length),
 } by
-  intro e n _
-  cases e <;> simp [fren_spec, Fren.Core.nonminimalCardinality] <;> omega
+  intro e args _
+  have h' : ((args.length : Int) = 1) ↔ args.length = 1 := by omega
+  cases e <;> by_cases h : args.length = 1 <;>
+    simp [fren_spec, Fren.Core.nonminimalCardinality, toCardinalityFix, h, h']
 
-impl eq_op_cardinality: lint::eq_op_cardinality for (r : Bool) {
-  repeated? := r,
-  fires? := Fren.Core.eqOpCardinality r,
-} by
-  intro r _
-  cases r <;> simp [fren_spec, Fren.Core.eqOpCardinality]
+/-- The operands whose `Bool` is `true`, in order. -/
+def chosenOperands (p q r s : Bool) : List lint.Operand :=
+  ([(lint.Operand.P, p), (.Q, q), (.R, r), (.S, s)].filter (·.2)).map (·.1)
 
-impl manual_ordering: lint::manual_ordering for (c n : Nat) (f l g : Bool) {
-  count := c,
-  named := n,
-  first? := f,
-  last? := l,
+def argOperand : lint.Argument → Option lint.Operand
+  | .Written x => some x
+  | .Literal _ => none
+
+impl eq_op_cardinality: lint::eq_op_cardinality for (p q r s : Bool) (a : lint.Argument) {
+  earlier := Fren.FinSet.ofList (chosenOperands p q r s),
+  argument := a,
+  fires? := Fren.Core.eqOpCardinality (chosenOperands p q r s) (argOperand a),
+}
+
+def posIdx : lint.Position → Nat
+  | .V0 => 0
+  | .V1 => 1
+  | .V2 => 2
+  | .V3 => 3
+  | .V4 => 4
+
+def ofPosIdx : Nat → lint.Position
+  | 0 => .V0
+  | 1 => .V1
+  | 2 => .V2
+  | 3 => .V3
+  | _ => .V4
+
+/-- The positions whose `Bool` is `true`, in order. -/
+def chosenPositions (b0 b1 b2 b3 b4 : Bool) : List lint.Position :=
+  ([(lint.Position.V0, b0), (.V1, b1), (.V2, b2), (.V3, b3), (.V4, b4)].filter (·.2)).map (·.1)
+
+def ofLintComparison : lint.Comparison → Comparison
+  | .Eq => .eq
+  | .Ne => .ne
+  | .Lt => .lt
+  | .Le => .le
+  | .Gt => .gt
+  | .Ge => .ge
+
+def toOrderingFix : Option (Comparison × Nat) → lint.OrderingFix
+  | none => .Unchanged
+  | some (c, k) => .Compare (toComparison c) (ofPosIdx k)
+
+impl manual_ordering: lint::manual_ordering for (l : lint.Position) (b0 b1 b2 b3 b4 g : Bool) {
+  named := ⟨b0, b1, b2, b3, b4⟩,
+  last := l,
   negated? := g,
-  fires? := (Fren.Core.manualOrdering c n f l g).1,
-  op := toComparison (Fren.Core.manualOrdering c n f l g).2,
+  fix := toOrderingFix (Fren.Core.manualOrdering (posIdx l + 1) ((chosenPositions b0 b1 b2 b3 b4).map posIdx) g),
 } by
-  intro c n f l g _
-  cases f <;> cases l <;> cases g <;> simp [fren_spec, toComparison, Fren.Core.manualOrdering] <;> omega
+  intro l b0 b1 b2 b3 b4 g
+  cases l <;> cases g <;> revert b0 b1 b2 b3 b4 <;> decide
 
-impl absurd_ordered: lint::absurd_ordered for (c : Comparison) (f l r : Bool) {
-  op := toComparison c,
-  first? := f,
-  last? := l,
+def toAbsurdValue : Bool × Bool → lint.AbsurdValue
+  | (true, true) => .AlwaysTrue
+  | (true, false) => .AlwaysFalse
+  | (false, _) => .NotFixed
+
+impl absurd_ordered: lint::absurd_ordered for (c : lint.Comparison) (v l : lint.Position) (r : Bool) {
+  op := c,
+  variant := v,
+  last := l,
   right? := r,
-  fires? := (Fren.Core.absurdOrdered c f l r).1,
-  value? := (Fren.Core.absurdOrdered c f l r).2,
-} by
-  intro c f l r _
-  cases c <;> cases f <;> cases l <;> cases r <;>
-    simp [fren_spec, toComparison, Fren.Core.absurdOrdered, Fren.Core.Comparison.mirror]
+  value := toAbsurdValue (Fren.Core.absurdOrdered (ofLintComparison c) (posIdx v) (posIdx l + 1) r),
+}
 
-impl unnecessary_min_or_max: lint::unnecessary_min_or_max for (m f l : Bool) {
+def toMinMaxFix : Option Bool → lint.MinMaxFix
+  | none => .Unchanged
+  | some true => .Argument
+  | some false => .Receiver
+
+impl unnecessary_min_or_max: lint::unnecessary_min_or_max for (m : Bool) (a l : lint.Position) {
   max? := m,
-  first? := f,
-  last? := l,
-  fires? := (Fren.Core.unnecessaryMinOrMax m f l).1,
-  argument? := (Fren.Core.unnecessaryMinOrMax m f l).2,
-} by
-  intro m f l _
-  cases m <;> cases f <;> cases l <;> simp [fren_spec, Fren.Core.unnecessaryMinOrMax]
+  argument := a,
+  last := l,
+  fix := toMinMaxFix (Fren.Core.unnecessaryMinOrMax m (posIdx a) (posIdx l + 1)),
+}
 
-impl redundant_newtype_roundtrip: lint::redundant_newtype_roundtrip for (s : Bool) {
-  same_newtype? := s,
-  fires? := Fren.Core.redundantNewtypeRoundtrip s,
-} by
-  intro s _
-  cases s <;> simp [fren_spec, Fren.Core.redundantNewtypeRoundtrip]
+def ofLintInner : lint.Inner → Fren.Core.RoundtripInner lint.Newtype
+  | .FieldOf t => .fieldOf t
+  | .Typed => .typed
+  | .Untyped => .untyped
+
+def ofLintRoundtrip : lint.Roundtrip → Fren.Core.Roundtrip lint.Newtype
+  | .Built t e => .built t (ofLintInner e)
+  | .Read t e => .read t (ofLintInner e)
+
+def toRoundtripFix : Fren.Core.RoundtripFix → lint.RoundtripFix
+  | .unchanged => .Unchanged
+  | .reported => .Reported
+  | .fixed => .Fixed
+
+impl redundant_newtype_roundtrip: lint::redundant_newtype_roundtrip for (r : lint.Roundtrip) {
+  shape := r,
+  fix := toRoundtripFix (Fren.Core.redundantNewtypeRoundtrip (ofLintRoundtrip r)),
+}
 
 -- keep-sorted start
 trusted lint::eq_op_cardinality_value: "a model of an expression, checked by the refinements in its section"
