@@ -171,7 +171,8 @@ uses are their interpretations. It is proved by the tactics after `by`, if
 there are any, and otherwise by `decide` or, failing that, by the solver,
 as an [implementation](#proof) is, in which case it is an axiom. An
 interpretation whose postconditions are not proved is an error, and adds
-nothing. It is what makes an
+nothing, so the function can be interpreted again; a proof that uses
+`sorry` proves nothing. An interpretation is what makes an
 implementation a claim about the code: the implementation of a component
 that applies `ends_in_q?` is proved against the interpretation, not
 against what the code computes. `impls::interpretation` decides whether an
@@ -192,6 +193,41 @@ pub comp interpretation {
 
     expect once: when earlier > 0, not accepted?
     expect only_open_items: when what = Interpreted::Other, not accepted?
+}
+```
+
+`impls::interpretation_contract` states how an
+interpretation of a function proves its postconditions, from whether it
+has any, its written proof, if any, and the answers of `decide` and the
+solver, which are asked in turn only when the earlier ones prove nothing:
+
+```fren
+pub enum ContractProof { NotNeeded, Theorem, Axiom, Unproved }
+
+pub comp interpretation_contract {
+    use self::ContractProof::{Axiom, NotNeeded, Theorem, Unproved}
+    in posts?            -- the function has postconditions
+    in written?          -- the interpretation has tactics after `by`
+    in written_ok?       -- they elaborate without an error
+    in uses_sorry?       -- the proof they give uses `sorry`
+    in decide_q: Outcome  -- `Unsat` if `decide` proves the statement, `Sat` if it evaluates it to false
+    in smt_q: Outcome    -- can the solver prove the statement?
+    pub det out proof: ContractProof
+    pub det out recorded?    -- the interpretation, and its theorem, are added
+    pub det out error?       -- an error is reported
+
+    ensure rule: proof = table {
+        | not posts? => NotNeeded,
+        | posts? and written? => if written_ok? and not uses_sorry? then Theorem else Unproved,
+        | posts? and not written? and decide_q = Unsat => Theorem,
+        | posts? and not written? and decide_q = Sat => Unproved,
+        | posts? and not written? and decide_q = Unknown => if smt_q = Unsat then Axiom else Unproved,
+    }
+    ensure records: recorded? iff proof != Unproved
+    ensure reports: error? iff proof = Unproved
+
+    expect sorry_proves_nothing: when posts? and written? and uses_sorry?, not recorded? and error?
+    expect failure_records_nothing: when error?, not recorded?
 }
 ```
 

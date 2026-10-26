@@ -562,7 +562,13 @@ are what is known of it: each application brings, where it is written,
 that if its arguments meet the preconditions, its value meets each
 postcondition, one constraint for each, so that no constraint quantifies
 over the function's arguments (see [Uninterpreted
-functions](#uninterpreted-functions)). In Lean, an
+functions](#uninterpreted-functions)). So they must be able to hold: for
+all arguments that meet the preconditions, some value must meet every
+postcondition, whatever the other functions are, which the
+[realizability check](../Check.md#contracts-of-uninterpreted-functions)
+confirms. Postconditions that contradict each other, as `bad(n) > 0` and
+`bad(n) < 0`, or one that says nothing of the function's value and can be
+false, as `n > 0`, fail it. In Lean, an
 [interpretation](../Impl.md#interpretations) of the function proves them.
 Contracts on constants, and contracts on components beyond what
 components already state, are not part of Fren.

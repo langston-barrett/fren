@@ -112,7 +112,8 @@ claim is that `p.n` holds for all values of the parameters for which each
 precondition does. The [postcondition check](Check.md#postconditions) is
 trusted from the solver, as every check is, so a defined function's
 postconditions are not Lean theorems; an uninterpreted function's are,
-of its [interpretation](Impl.md#interpretations).
+of its [interpretation](Impl.md#interpretations): a theorem, or an axiom
+where the solver proved them.
 
 ## Constants
 

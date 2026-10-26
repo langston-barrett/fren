@@ -160,13 +160,17 @@ redundant, and its binders' inputs have no obligations. The body of a
 function, its contract, or the value of a constant is not a constraint
 either: only its tables and the applications in it are checked, and the
 function's postconditions. A component has no postconditions, so their
-check has no results there:
+check has no results there. The contract of an uninterpreted function with
+postconditions is checked for [realizability](#realizability) too, as a
+component whose inputs are the function's parameters, whose one `det out`
+is its value, and whose assumptions and guarantees are its preconditions
+and postconditions (see [Contracts](#contracts-of-uninterpreted-functions)):
 
 ```fren
-pub enum CheckedItem { Component, GlobalExpectation, Body }
+pub enum CheckedItem { Component, GlobalExpectation, Body, Contract }
 
 pub comp applies {
-    use self::CheckedItem::{Body, Component, GlobalExpectation}
+    use self::CheckedItem::{Body, Component, Contract, GlobalExpectation}
     use self::Kind::{
         Completeness,
         Definedness,
@@ -186,9 +190,11 @@ pub comp applies {
         Component => true,
         GlobalExpectation => kind in {Expectation, Vacuity, Definedness, Completeness, Disjointness, Precondition},
         Body => kind in {Completeness, Disjointness, Precondition, Postcondition},
+        Contract => kind in {Realizability, Completeness, Disjointness, Precondition},
     }
 
-    expect claims_only: when item != Component and runs?, not kind in {Realizability, Determinism}
+    expect claims_only: when item in {GlobalExpectation, Body} and runs?, not kind in {Realizability, Determinism}
+    expect determined: when item != Component, kind != Determinism or not runs?
 }
 ```
 
@@ -240,6 +246,59 @@ pub comp realizability {
 
     expect never_upgrades: when assume_q = Unknown or cex_q = Unknown, verdict != Pass
     expect fail_explains: when verdict = Fail, reports_cex? or reports_vacuous?
+}
+```
+
+### Contracts of uninterpreted functions
+
+An uninterpreted function's [postconditions](Lang/Items.md#contracts)
+are assumed at each of its applications, so if they cannot hold together,
+every check that applies the function holds vacuously. So its contract is
+checked as a component is: the inputs are its parameters `x`, the one
+output is its value `v`, `A` is its preconditions, and `R` its
+postconditions, with `v` for each application of the function to its
+parameters:
+
+  ∀ x. A(x) ⇒ ∃ v. R(x, v)
+
+The other functions that the clauses apply are free, as they are in any
+check, so a postcondition that says nothing of the function's value, and
+can be false, as `ensure c: n > 0` of `fn other(n: Int): Int`, fails. The
+functions that a contract applies are declared before it, so each
+function's contract is checked once all of theirs have been: an
+interpretation of each in turn meets them all. The two queries are those
+of a component, and so are the verdicts, but the failures are reported at
+the function's name: contradictory preconditions (`F0632`), and arguments
+for which no value meets the postconditions (`F0631`), with a note at each
+postcondition of a minimal set that conflicts on them.
+
+`check::contract_realizability` states the verdict, over a small domain:
+two arguments and two values, where the preconditions hold at the
+arguments `pres`, and the postconditions at the pairs `posts`. Where no
+argument meets the preconditions, they contradict each other, and the
+check fails. Its
+implementation builds the contract's component as both front ends do,
+and runs the realizability check on it, with a solver that decides by
+trying every argument and value:
+
+```fren
+pub enum Argument { A0, A1 }
+pub enum Value { V0, V1 }
+pub struct Point { arg: Argument, value: Value }
+
+pub comp contract_realizability {
+    in pres: Set(Argument)   -- the arguments that meet the preconditions
+    in posts: Set(Point)     -- the arguments and values that meet the postconditions
+    pub det out verdict: Verdict
+
+    ensure rule: verdict = (if pres != {}
+        and (forall (a: Argument), when a in pres, exists (v: Value), Point { arg := a, value := v } in posts)
+        then Pass else Fail)
+
+    expect unrealizable: when posts = {}, verdict = Fail
+    expect contradictory_preconditions: when pres = {}, verdict = Fail
+    expect everywhere: when pres != {} and (forall (a: Argument), exists (v: Value), Point { arg := a, value := v } in posts),
+        verdict = Pass
 }
 ```
 
@@ -622,6 +681,42 @@ A precondition that fails is reported, and nothing more: the
 application's value is still the body's, for a defined function, or
 unknown, for an uninterpreted one, so a check that rests on it holds for
 every value the application could have, as for an index out of range.
+
+`check::application_contract` states what an application means to the
+checks, from the values, at its arguments, of the applied function's
+clauses, in order, and whether its guard holds: it asks a question of each
+precondition, whose goal holds where the guard fails or the precondition
+holds; and an application of an uninterpreted function brings a fact of
+each postcondition to its queries, which holds where some precondition
+fails or the postcondition holds (see [Postconditions](#postconditions)).
+`k` is any clause, so the rule is checked for each. Both front ends build
+the questions and facts with the same functions, which its implementation
+runs on these values. Membership in a sequence of unknown length, as
+`false in pres`, is outside the [decidable core](Lang/Decidability.md),
+so the component opts out:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp application_contract {
+    in pres: Seq(Bool)     -- the function's preconditions, in order, at the arguments
+    in posts: Seq(Bool)    -- its postconditions, in order, at the arguments and the application's value
+    in guarded?            -- the application's guard holds
+    in k: Int              -- any clause
+    pub det out asks?      -- the application asks a question of precondition `k`
+    pub det out question?  -- the question's goal holds
+    pub det out brings?    -- the application brings a fact of postcondition `k`
+    pub det out fact?      -- the fact holds
+
+    ensure asked: asks? iff 0 <= k < pres.len
+    ensure question: question? iff (asks? and (not guarded? or pres[k]))
+    ensure brought: brings? iff 0 <= k < posts.len
+    ensure fact: fact? iff (brings? and (false in pres or posts[k]))
+
+    expect unguarded: when asks? and not guarded?, question?
+    expect met: when brings? and not (false in pres), fact? iff posts[k]
+    expect vacuous: when brings? and false in pres, fact?
+}
+```
 
 ## Postconditions
 
