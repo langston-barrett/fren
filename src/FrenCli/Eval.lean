@@ -251,6 +251,10 @@ structure Spec where
   /-- The abstract types, in order. -/
   sorts : Array Name := #[]
   funs : NameMap (Array VTy × VTy) := {}
+  /-- Each uninterpreted function with postconditions: its parameters, as
+  binders of its clauses, its preconditions and its postconditions, which
+  a random interpretation meets (`Reqs/Eval#searching-for-behaviours`). -/
+  contracts : NameMap (Array Name × Array Ex × Array Ex) := {}
   /-- Each defined function's parameters, as binders of its body, the
   body, and its result type. -/
   defs : NameMap (Array Name × Ex × VTy) := {}
@@ -692,7 +696,7 @@ partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Optio
     let defined := conds.map fun c =>
       Fren.Core.allOf? (.bin .and) (c.siteGoals.filterMap fun (_, g?, f) => if g?.isNone then some f else none)
     inRows ++ (Fren.Core.tableGoals orF (.bin .and) .not conds defined wild).map fun (g, f) =>
-      ((match g with | .completeness => pos | .disjointness _ j => starts[j]!), some g, wrap f)
+      ((match g with | .disjointness _ j => starts[j]! | _ => pos), some g, wrap f)
 
 /-- The indexes in `e`, each with its position and its definedness: that
 its position is in range wherever the conditions before it hold
@@ -1382,10 +1386,10 @@ def lowerComp (isPub : Bool) (name : Ident) (members : Array Member) : L Unit :=
     spec.comps := s.spec.comps.push c }
 
 /-- Records the body or value `e` of the function or constant `n`, over the
-inputs `vars`, as a comp for the checks of its tables, if it has any
-(`Spec.bodies`). -/
+inputs `vars`, as a comp for the checks of its tables and of the
+applications in it and in the function's contract (`Spec.bodies`). Each is
+recorded, since an application's question is the elaborator's alone. -/
 def noteBody (n : Name) (vars : Array Var) (e : Ex) : L Unit := do
-  if e.tableGoals.isEmpty then return
   modify fun s => { s with
     spec.bodies := s.spec.bodies.push { path := s.module, vars, constraints := #[], insts := #[], body? := some (n, e) } }
 
@@ -1451,13 +1455,30 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       spec.sorts := s.spec.sorts.push path }
-  | .function isPub name params result body _ => do
+  | .function isPub name params result body clauses _ => do
     let path := (← get).module ++ Name.mkSimple name.name
     let r ← varTy result
+    let contract := !clauses.isEmpty
     match body with
     | none =>
-      let ps ← params.mapM (lowerTy ·.1)
-      modify fun s => { s with spec.funs := s.spec.funs.insert path (ps, r) }
+      if !contract then
+        let ps ← params.mapM (lowerTy ·.1)
+        modify fun s => { s with spec.funs := s.spec.funs.insert path (ps, r) }
+      else
+        let ps ← params.mapM fun (p, ty?) => return (declName p[0]!, ← varTy ty?)
+        modify fun s => { s with
+          spec.funs := s.spec.funs.insert path (ps.map (·.2), r)
+          table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
+        -- Its clauses, over its parameters as binders, for a random
+        -- interpretation, which meets them.
+        let cx : Cx := { binders := ps.toList.reverse.map fun (n, t) => (n, t, n) }
+        let pres ← (clauses.filter (!·.1)).mapM fun (_, _, e) => return (← lowerExpr cx e).1
+        let posts ← (clauses.filter (·.1)).mapM fun (_, _, e) => return (← lowerExpr cx e).1
+        unless posts.isEmpty do
+          modify fun s => { s with spec.contracts := s.spec.contracts.insert path (ps.map (·.1), pres, posts) }
+        -- Over the parameters as inputs, for the checks of its clauses.
+        let vars := ps.map fun (x, t) => ({ name := x, ty := t, role := .input, isPub := true } : Var)
+        noteBody (Name.mkSimple name.name) vars (.lit (.bool true))
     | some body =>
       let ps ← params.mapM fun (p, ty?) => return (declName p[0]!, ← varTy ty?)
       let (b, _) ← lowerExpr { binders := ps.toList.reverse.map fun (n, t) => (n, t, n) } body

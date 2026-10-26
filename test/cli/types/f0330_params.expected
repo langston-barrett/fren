@@ -4,7 +4,7 @@ error[F0330]: the parameters of uninterpreted function `rate` have no names
 2 | fn rate(n: Int): Int
   |         ^ named
   |
-  = note: only a defined function's body mentions its parameters
+  = note: only a defined function's body, or a function's contract, mentions its parameters
   = help: write only the parameter's type, or give the function a body with `:= ...`
 
 error: could not check due to previous errors

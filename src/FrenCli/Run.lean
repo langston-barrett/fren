@@ -577,6 +577,7 @@ def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
   let bk := backend prelude st.datatypes c limits dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache
+    st.appFuns
   let log ← IO.mkRef #[]
   -- The checks set to testing are not asked of the solver (`check::by_testing`).
   let (raw, missing?) ← match spec? with

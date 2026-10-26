@@ -102,8 +102,11 @@ update binds its updated value with, and `let` and `where` become
 defined function's body may have one. -/
 def unfoldDefined (e : Expr) : MetaM Expr := do
   let s ← getState
-  if s.defined.isEmpty then return ← Meta.zetaReduce e
+  if s.defined.isEmpty && s.contracts.isEmpty then return ← Meta.zetaReduce e
   let ds := s.defined.foldl (init := ({} : NameSet)) fun acc _ d => acc.insert d.decl
+  -- And the clauses of contracts, which the questions about applications
+  -- and the facts about them apply.
+  let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
   Meta.zetaReduce (← Lean.Core.betaReduce (← Meta.deltaExpand e ds.contains))
 
 /-- The answers to a component's queries so far, by hypotheses, goal and
@@ -136,14 +139,15 @@ def smtBinders (e : Expr) : MetaM Expr :=
 (`Core.primed`), answering from `cache` the queries asked before. `facts` are
 what its `Nat` variables bring, of both copies, which every query assumes,
 and `outFacts` those of its outputs, which realizability's `∃` asserts too;
-`natAppsOf` finds the applications of functions into `Nat` in a formula,
-whose facts each query assumes of its own (`Reqs/Check`). With `modelOptional`, a model that lean-smt cannot read, as
+`appsOf` finds the applications of uninterpreted functions into `Nat` or
+with postconditions in a formula, whose facts, by `factsOf`, each query
+assumes of its own (`Reqs/Check`). With `modelOptional`, a model that lean-smt cannot read, as
 it cannot some values of abstract types, is left out rather than making the
 answer unknown: a cover goal passes on `sat`, with or without one. Such an
 answer is not cached. -/
 def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (facts : Array Expr := #[])
-    (outFacts : Array Expr := #[]) (natAppsOf : Expr → Array Expr := fun _ => #[])
-    (modelOptional : Bool := false) :
+    (outFacts : Array Expr := #[]) (appsOf : Expr → Array Expr := fun _ => #[])
+    (factsOf : Expr → MetaM (Array (Name × Expr)) := fun _ => pure #[]) (modelOptional : Bool := false) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -155,7 +159,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     withoutModifyingState do
     -- With the `have`s of `let`s and `where` clauses substituted, so that an
     -- application to a name mentions no bound variable.
-    let appFacts ← Core.natAppFacts natAppsOf atLeast0 (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
+    let appFacts ← Core.appFacts appsOf factsOf (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
       (← zetaReduce goal)
     let hyps ← (facts.map (`nat, ·) ++ appFacts ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
     let goal ← smtBinders (← unfoldDefined goal)
@@ -242,30 +246,51 @@ def intResult : Expr → Expr
 `f` whose result is an `Int`, and its placeholder stands for
 `fun xs => Fren.natResult (f xs)`: lean-smt would assert of a function
 into `Nat` a quantified axiom, which each application's hypothesis replaces
-(`natApps`). Gives what each placeholder stands for, and the functions
-whose results are `Nat`s, each with its number of parameters. -/
-def withNatUses {α : Type} (uses : Array Name) (k : Array Expr → Array (Expr × Nat) → MetaM α) : MetaM α :=
+(`natApps`). Gives what each placeholder stands for, and the local of each
+function, with its number of parameters and whether its result is a
+`Nat`. -/
+def withNatUses {α : Type} (uses : Array Name) (k : Array Expr → Array (Name × Expr × Nat × Bool) → MetaM α) :
+    MetaM α :=
   go 0 #[] #[]
 where
-  go (i : Nat) (reps : Array Expr) (nats : Array (Expr × Nat)) : MetaM α := do
+  go (i : Nat) (reps : Array Expr) (fns : Array (Name × Expr × Nat × Bool)) : MetaM α := do
     if h : i < uses.size then
       let ty := replaceUses uses reps (← getConstInfo uses[i]).type
       let bi := if isInhabitedName uses[i] then .instImplicit else .default
       let nat := ty.isForall && (resultType ty).isConstOf ``Nat
       Meta.withLocalDecl (Name.mkSimple uses[i].getString!) bi (if nat then intResult ty else ty) fun x => do
-        if !nat then return ← go (i + 1) (reps.push x) nats
+        let fns := if ty.isForall then fns.push (uses[i], x, ty.getForallArity, nat) else fns
+        if !nat then return ← go (i + 1) (reps.push x) fns
         let r ← Meta.forallTelescope ty fun xs _ => do mkLambdaFVars xs (mkApp (mkConst ``Fren.natResult) (mkAppN x xs))
-        go (i + 1) (reps.push r) (nats.push (x, ty.getForallArity))
-    else k reps nats
+        go (i + 1) (reps.push r) fns
+    else k reps fns
+
+/-- The placeholders that the checks of `c` use: those of its formulas and
+of its questions' goals, which apply the clauses of contracts to the
+placeholders they use, and those that the postconditions of the
+uninterpreted functions among them use, which their applications' facts
+state (`Core.appFacts`), in declaration order. -/
+def checkUses (c : CompInfo) : MetaM (Array Name) := do
+  let s ← getState
+  let mut uses ← usesOf (c.uses.map (mkConst ·) ++ c.indexes.map (·.2.2.2.2))
+  repeat
+    let more := uses.foldl (init := uses) fun acc u =>
+      let posts := s.abstracts.foldl (init := #[]) fun ps _ a =>
+        if a.placeholder == u then ((s.contracts.get? a.path).map (·.posts)).getD #[] else ps
+      posts.foldl (fun acc k => k.uses.foldl (fun acc v => if acc.contains v then acc else acc.push v) acc) acc
+    if more.size == uses.size then break
+    uses ← usesOf (more.map (mkConst ·))
+  return uses
 
 /-- The applications of the functions `fs`, each with its number of
 parameters, to all of them, in `e`, that mention no bound variable, each
 once, added to `acc`. None of a check's formulas applies a function under a
 binder: a `match` is a chain of `if`s over selectors, a global
 expectation's binders are locals, defined functions, whose bodies apply no
-uninterpreted function, are unfolded only after the facts are found, and
-under realizability's `∃`, an application's arguments mention no output
-(`lang::argument`). An application is met before its arguments, and they
+uninterpreted function, and the clauses of contracts, which the `fren`
+command's queries apply as functions too, are unfolded only after the
+facts are found, and under realizability's `∃`, an application's
+arguments mention no output (`lang::argument`). An application is met before its arguments, and they
 from left to right, as `natAppFacts` orders them. -/
 partial def natApps (fs : Array (Expr × Nat)) (e : Expr) (acc : Array Expr := #[]) : Array Expr :=
   match e with
@@ -333,10 +358,11 @@ def addCoverWitness (d : Declaration) : CoreM Unit :=
 /-- All selected checks for one comp, in reporting order, with the theorems
 that its cover goals are met (`coverWitness`), for the caller to add. -/
 def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
-    MetaM (Array CheckResult × Array Declaration) :=
+    MetaM (Array CheckResult × Array Declaration) := do
+  let c := { c with uses := ← checkUses c }
   -- The abstract types and functions become locals, which lean-smt
   -- declares as sorts and uninterpreted functions (`check::Interpretations`).
-  withNatUses c.uses fun ufs nats => do
+  withNatUses c.uses fun ufs fns => do
   let rep (e : Expr) : MetaM Expr := Lean.Core.betaReduce (replaceUses c.uses ufs e)
   let c := { c with vars := ← c.vars.mapM fun v => return { v with type := ← rep v.type } }
   withLocalDeclsD (c.vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
@@ -352,7 +378,11 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
       vars := c.vars.map fun v =>
         { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
       assumes := ← named c.assumes
-      reqs := ← named c.ensures
+      -- A function's postconditions are claims of its own
+      -- (`check::postcondition`), and the hypotheses of nothing.
+      reqs := ← if c.fn?.isSome then pure #[] else named c.ensures
+      posts := ← if c.fn?.isSome then named c.ensures else pure #[]
+      fn? := c.fn?
       expects := ← named c.expects
       covers := ← named c.covers
       insts := ← c.insts.mapM fun i => return {
@@ -393,8 +423,27 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     let cache : QueryCache ← IO.mkRef {}
     -- The models of the cover goals' queries, by goal, for their theorems.
     let models ← IO.mkRef (#[] : Array (Expr × Array (Name × Expr)))
+    -- The functions whose applications bring facts: those into `Nat`, and
+    -- the uninterpreted ones with postconditions (`Core.appFacts`).
+    let st ← getState
+    let postsOf (u : Name) : Array ClauseInfo :=
+      st.abstracts.foldl (init := #[]) fun ps _ a =>
+        if a.placeholder == u then ((st.contracts.get? a.path).map (·.posts)).getD #[] else ps
+    let presOf (u : Name) : Array ClauseInfo :=
+      st.abstracts.foldl (init := #[]) fun ps _ a =>
+        if a.placeholder == u then ((st.contracts.get? a.path).map (·.pres)).getD #[] else ps
+    let factFns := fns.filter fun (u, _, _, nat) => nat || !(postsOf u).isEmpty
+    let factsOf (app : Expr) : MetaM (Array (Name × Expr)) := do
+      let some (u, _, _, nat) := factFns.find? (·.2.1 == app.getAppFn) | return #[]
+      let args := app.getAppArgs
+      let pres ← (presOf u).mapM fun k => rep (k.at args)
+      let posts ← (postsOf u).mapM fun k => do
+        return (k.name, ← pres.foldrM (fun p acc => mkArrow p acc) (← rep (k.at args)))
+      let natFact ← if nat then pure #[(`nat, ← atLeast0 app)] else pure #[]
+      return natFact ++ posts
     let bk (k : CheckKind) :=
-      let b := leanBackend c fvs primes cache facts outFacts (natApps nats ·) (modelOptional := k == .cover)
+      let b := leanBackend c fvs primes cache facts outFacts (natApps (factFns.map fun (_, x, n, _) => (x, n)) ·) factsOf
+        (modelOptional := k == .cover)
       if k != .cover then b else
       { b with query := fun hyps goal wantModel => do
           let o ← b.query hyps goal wantModel

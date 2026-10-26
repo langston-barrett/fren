@@ -187,10 +187,12 @@ inductive Item where
   | abstractType (isPub : Bool) (name : Ident)
   /-- `fn f(T, U): R`, or `fn f(x: T, y?): R := e`: each parameter's path,
 and its type after `:` if written. The result type is `none` if it is not
-written, and the body if the function is uninterpreted. `last` is the span
-of its last token, such as a `)` around the body, which `body` leaves out. -/
+written, and the body if the function is uninterpreted. Then the clauses
+of its contract: whether each is a postcondition, its name and its
+expression. `last` is the span of its last token, such as a `)` around the
+body, which `body` leaves out. -/
   | function (isPub : Bool) (name : Ident) (params : Array (Array Ident × Option (Array Ident)))
-      (result : Option (Array Ident)) (body : Option Expr) (last : Span)
+      (result : Option (Array Ident)) (body : Option Expr) (clauses : Array (Bool × Ident × Expr)) (last : Span)
   | const (isPub : Bool) (name : Ident) (ty : Array Ident) (value : Expr)
   /-- `comp c { members }`, with the span of its closing `}`, the span of each
   member, and where its `{` ends. -/
@@ -1231,7 +1233,21 @@ partial def item : P Item := do
     discard (expectKw ")")
     let result ← if (← eatKw ":").isSome then some <$> typeExpr else pure none
     let body ← if (← eatKw ":=").isSome then some <$> top else pure none
-    return .function isPub name params result body (← lastSpan)
+    -- Its contract (`Reqs/Lang/Items#contracts`), each clause continuing it.
+    let mut clauses := #[]
+    repeat
+      let c ← peek
+      unless isWord c "assume" || isWord c "ensure" do break
+      discard bump
+      let x ← ident
+      discard (expectKw ":")
+      clauses := clauses.push (isWord c "ensure", x, ← top)
+    let t ← peek
+    if !clauses.isEmpty && isKw t ":=" then
+      err t.span "F0143" "a function's body is written after its contract" (some "after the contract")
+        #["note: the clauses of a contract follow the signature and the body, as in `fn f(x: Int): Int := x + 1` and then `assume pos: x > 0`",
+          "help: move the body, with its `:=`, before the first `assume` or `ensure`"]
+    return .function isPub name params result body clauses (← lastSpan)
   if isKw t "const" then
     discard bump
     let name ← ident

@@ -482,6 +482,14 @@ structure MatchBinder where
   /-- Likewise, the questions about the rows of its definition's tables. -/
   tableObligations : Array (Syntax × Core.TableGoal × Term) := #[]
 
+/-- A clause of the contract of the function at `path`, whose parameters
+are `params`: whether it is a postcondition (`lang::contract_application`). -/
+structure ContractCx where
+  path : Name
+  post : Bool
+  params : Array Name
+  deriving Inhabited
+
 /-- What expression translation needs to know about the comp. -/
 structure ExprCtx where
   modName : Name
@@ -501,6 +509,8 @@ structure ExprCtx where
   instances : Nat := 1
   /-- In a defined function's body, the function's name. -/
   selfFn : Option Name := none
+  /-- In a clause of a function's contract, the function. -/
+  contract? : Option ContractCx := none
   /-- In a global expectation, whose instances are its binders. -/
   inGlobal : Bool := false
   /-- `++` here is in the decidable core: the receiver of a method, or a
@@ -2818,10 +2828,22 @@ def noteTable (cx : ExprCtx) (e : Syntax) (refs : Array Syntax) (conds : Array T
   let notF (c : Term) : Term := Unhygienic.run `(¬$c)
   for (g, f) in Core.tableGoals orF andF notF conds defined wild do
     let ref := match g with
-      | .completeness => e[0]
       | .disjointness _ j => refs[j]!
+      | _ => e[0]
     let goal ← guardedGoal cx.guards f
     modifyLocal fun l => { l with tables := l.tables.push (ref, g, goal) }
+
+/-- Records the questions about the application at `ref` of the function at
+`path` to the arguments `args`, if the function has preconditions, for
+the precondition check (`check::precondition`): its guard implies each
+precondition at the arguments, in order. -/
+def notePreconditions (cx : ExprCtx) (ref : Syntax) (path : Name) (args : Array Term) : TermElabM Unit := do
+  unless cx.noteIndexes do return
+  let some k := (← getState).contracts.get? path | return
+  for pre in k.pres do
+    let goal ← `($(mkCIdent pre.decl) $(pre.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
+    let goal ← guardedGoal cx.guards goal
+    modifyLocal fun l => { l with tables := l.tables.push (ref, .precondition path pre.name, goal) }
 
 open Lang in
 /-- Translates a table into a chain of `if`s over its rows' conditions,
@@ -3234,8 +3256,20 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   if segs.size == 1 && cx.selfFn == some segs[0]!.getId then
     throwErrorAt p (Core.recursiveMsg (cx.modName ++ segs[0]!.getId)).text
   if let some c := cardinalityApp? e then return ← cardinalityTerm toTerm cx c args.getElems
+  -- In its own contract, the function is applied to its parameters, in a
+  -- postcondition (`lang::contract_application`); it is not yet in scope.
+  let own? := cx.contract?.filter fun k => segs.size == 1 && segs[0]!.getId == Name.mkSimple k.path.getString!
+  if let some k := own? then
+    let toParams := args.getElems.size == k.params.size && (args.getElems.zip k.params).all fun (a, x) =>
+      let a := unparen a
+      let a := if a.getNumArgs == 1 then a[0] else a
+      a.isOfKind ``Lang.fren_path && (pathSegs a).size == 1 && (pathSegs a)[0]!.getId == x && (cx.binder? x).isNone
+    unless Core.contractApplicationAccepted (if k.post then .postcondition else .precondition) true toParams do
+      throwErrorAt p (Core.contractSelfMsg k.path !k.post).text
   -- A variable shadows a function, as it does any other item.
-  let r ← resolveWritten cx.modName (pathSegs p) cx.shadowing cx.noteIndexes
+  let r ← match own? with
+    | some k => pure (.item { kind := .fnItem, path := k.path, isPub := true, owner := cx.modName })
+    | none => resolveWritten cx.modName (pathSegs p) cx.shadowing cx.noteIndexes
   if let .item { kind := .recordItem, path, .. } := r then
     -- A newtype, built from its value (`Reqs/Lang/Expressions#newtypes`).
     let some n := (← getState).newtypes.get? path | throwErrorAt p (Core.constructionMsg path false).text
@@ -3271,6 +3305,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       let t ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := tys[k]!.isConstOf ``Nat, expected? := ← coreTy? tys[k]! } a
       checkDeclared a t tys[k]! fun ty => s!"note: argument {k + 1} of `{Core.showPath path}` has type `{ty}`"
       return t
+    notePreconditions cx p path args
     return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
   if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
   let a ← placeholderOf path
@@ -3284,6 +3319,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     let t ← toTerm { acx with emptyOk := Core.Position.declared.checked false false, natOk := tys[k]!.isConstOf ``Nat, expected? := ← coreTy? tys[k]! } a
     checkDeclared a t tys[k]! fun ty => s!"note: argument {k + 1} of `{Core.showPath path}` has type `{ty}`"
     return t
+  notePreconditions cx p path args
   `($(mkCIdentFrom p a.placeholder) $args*)
 
 /-- The operand `a` of the arithmetic operator `op`, an `Int` or a `Nat`, of
@@ -3664,16 +3700,19 @@ def addUsesDef (uses : Array Name) (name : Name) (value : Expr) : TermElabM Unit
 
 /-! ## Abstract types and functions -/
 
-/-- Records the tables of the body of the function at `path`, named `n`,
-whose parameters are `vars`, or of the value of the constant at `path`, as
-a comp for their checks (`Entry.bodyInfo`), if it has any. -/
-def recordBody (path n : Name) (ref : Syntax) (decl : Name) (vars : Array Var)
-    (tables : Array (Syntax × Option Core.TableGoal × Expr)) : TermElabM Unit := do
-  if tables.isEmpty then return
-  let uses ← usesOf (tables.map (·.2.2))
-  let info : CompInfo := { path := path.getPrefix, vars, props := #[], ref, decl, uses
+/-- Records the questions about the tables and applications of the body
+and contract of the function at `path`, whose parameters are `vars`, or of
+the value of the constant at `path`, `tables`, with its preconditions and
+postconditions, `props`, as a comp for their checks (`Entry.bodyInfo`), if
+it has any questions or postconditions to check (`Core.bodyKinds`). -/
+def recordBody (path : Name) (ref : Syntax) (decl : Name) (vars : Array Var)
+    (tables : Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)) (props : Array PropInfo := #[])
+    (fn? : Option Name := none) : TermElabM Unit := do
+  if tables.isEmpty && !props.any (·.kind == .ensure) then return
+  let uses ← usesOf (tables.map (·.2.2.2.2) ++ props.map (·.body))
+  let info : CompInfo := { path := path.getPrefix, vars, props, ref, decl, uses, fn?
                            decidable := !(← getLocal).outsideCore
-                           indexes := tables.map fun (r, q, g) => (n, .body, r, q, g) }
+                           indexes := tables }
   record (.bodyInfo path info)
   modifyLocal fun l => { l with bodies := l.bodies.push path }.declared path
 
@@ -3717,6 +3756,74 @@ def lintFnBools (n : Name) (nameStx : Syntax) (params : Array Expr) : TermElabM 
   if Core.fnParamsExcessiveBools nBools then
     recordLint .fnParamsExcessiveBools nameStx (Core.fnParamsExcessiveBoolsMsg n nBools)
 
+open Lang in
+/-- The parameters `params` of the function `path`, all named, declared like
+a comp's inputs. -/
+def paramVars (modName path : Name) (params : Array Syntax) : TermElabM (Array Var) := do
+  let paramIds ← params.mapM fun p => do
+    let some q := typePath? p[0] | throwErrorAt p[0] (Core.functionParamsMsg path true).text
+    pure (pathSegs q)[0]!
+  for x in paramIds do discard (segName x)
+  -- By the names they declare, without the `!` of shadowing.
+  let declared := paramIds.map fun x => (declaredIdent x).1.getId
+  if let some k := (Core.repeatsAt declared)[0]? then
+    throwErrorAt paramIds[k]! (Core.dupParamMsg declared[k]!).text
+  let mut vars : Array Var := #[]
+  for p in params, x0 in paramIds do
+    let x ← declare x0 modName
+    lintName .variable x.getId x
+    let ty ← varType modName x (if p[1].isNone then none else some p[1][1])
+    vars := vars.push { name := x.getId, role := .input, isPub := true, «type» := ty, ref := x }
+  return vars
+
+/-- Elaborates the clauses of the contract of the function `n` at `path`,
+whose parameters are `vars` and whose definitions are named under `decl`,
+and records the contract (`Reqs/Lang/Items#contracts`). Gives each clause
+as a constraint of the function's body's comp, named after the function
+and the clause, a postcondition only if the function is defined; and the
+questions about the tables and applications in them: a precondition's
+under the other preconditions, a postcondition's under all of them. -/
+def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var) (clauses : Array Syntax) :
+    TermElabM (Array PropInfo × Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)) := do
+  -- The clauses' names share one namespace with the parameters
+  -- (`lang::distinct_names`).
+  let names := vars.map (·.name) ++ clauses.map fun c => (declaredIdent c[1]).1.getId
+  if let some k := (Core.repeatsAt names)[0]? then
+    if k ≥ vars.size then throwErrorAt clauses[k - vars.size]![1] (Core.dupClauseMsg names[k]!).text
+  let mut pres : Array ClauseInfo := #[]
+  let mut posts : Array ClauseInfo := #[]
+  let mut props : Array PropInfo := #[]
+  let mut sites := #[]
+  for c in clauses do
+    let kw := if c[0].isAtom then c[0] else c[0][0]
+    let post := kw.getAtomVal.trimAscii.toString == "ensure"
+    let x := c[1]
+    liftMsg x (Core.checkNoBang x.getId)
+    let cn ← segName x
+    lintName .constraint cn x
+    if cn.toString.endsWith "?" then throwErrorAt x (Core.propNameMsg cn).text
+    let e := withWhere c[3] c[4]
+    let (lam, tables) ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+      let cx : ExprCtx := { modName, vars, insts := #[], place := .prop
+                            contract? := some { path, post, params := vars.map (·.name) } }
+      discard (takeIndexes fvs)
+      let t ← toTerm cx e
+      checkDeclared e t (mkConst ``Bool) fun _ => "note: a clause of a contract is a `Bool`"
+      let body ← elabProp t
+      let tables := (← takeIndexes fvs).filter (·.2.1.isSome)
+      return (← mkLambdaFVars fvs body, tables)
+    lintBools e
+    let uses ← usesOf #[lam]
+    let k : ClauseInfo := { name := cn, decl := decl ++ cn, uses }
+    addUsesDef uses k.decl lam
+    if post then posts := posts.push k else pres := pres.push k
+    sites := sites ++ tables.map fun (r, q, g) => (n ++ cn, if post then Core.IndexPlace.body else .assume, r, q, g)
+    if defined || !post then
+      props := props.push { kind := if post then .ensure else .assume, name := n ++ cn, ref := x, body := lam
+                            trigger? := none, triggerRef? := none, decl := k.decl }
+  record (.contractInfo { path, pres, posts, defined })
+  return (props, sites)
+
 @[command_elab Lang.fnCmd] def elabFunction : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
@@ -3734,40 +3841,41 @@ def lintFnBools (n : Name) (nameStx : Syntax) (params : Array Expr) : TermElabM 
   let path := modName ++ n
   let params := stx[4].getSepArgs
   let body? := if stx[7].isNone then none else some (withWhere stx[7][1] stx[7][2])
+  let clauses := stx[8].getArgs
+  let contract := !clauses.isEmpty
   -- A parameter is named if it has a type after `:`, or is a `Bool`
   -- written `x?` (`lang::function_params`).
   let named (p : Syntax) := !p[1].isNone ||
     (typePath? p[0]).any fun q => (pathSegs q).size == 1 && (declaredIdent (pathSegs q)[0]!).1.getId.toString.endsWith "?"
   let nNamed := (params.filter named).size
-  unless Core.functionParamsAccepted body?.isSome params.size nNamed do
-    let bad := params.find? (named · != body?.isSome) |>.getD nameStx
-    throwErrorAt bad (Core.functionParamsMsg path body?.isSome).text
+  unless Core.functionParamsAccepted body?.isSome contract params.size nNamed do
+    let bad := params.find? (named · != (body?.isSome || contract)) |>.getD nameStx
+    throwErrorAt bad (Core.functionParamsMsg path body?.isSome contract).text
+  let decl := (← getCurrNamespace) ++ path
   let some body := body? | do
     liftTermElabM do
-      let params ← params.mapM fun p => do lintRelTypes modName p[0]; elabType modName p[0]
-      lintFnBools n nameStx params
-      -- As for a variable, with the result type (`lang::bool_naming`).
-      let result ← varType modName nameStx (if stx[6].isNone then none else some stx[6][1])
-      declarePlaceholder path (← mkArrowN params result) false
+      if contract then
+        let vars ← paramVars modName path params
+        lintFnBools n nameStx (vars.map (·.type))
+        let result ← varType modName nameStx (if stx[6].isNone then none else some stx[6][1])
+        declarePlaceholder path (← mkArrowN (vars.map (·.type)) result) false
+        modifyLocal fun l => { l with outsideCore := false }
+        let (props, sites) ← elabContract modName path n decl false vars clauses
+        recordBody path nameStx decl vars sites props path
+      else
+        let params ← params.mapM fun p => do lintRelTypes modName p[0]; elabType modName p[0]
+        lintFnBools n nameStx params
+        -- As for a variable, with the result type (`lang::bool_naming`).
+        let result ← varType modName nameStx (if stx[6].isNone then none else some stx[6][1])
+        declarePlaceholder path (← mkArrowN params result) false
+    if contract then
+      lintDeclared .function n nameStx
+      lintLines .function n nameStx stx
     record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
     unless isPub do recordItem .function path nameStx
-  let decl := (← getCurrNamespace) ++ path
   liftTermElabM do
     -- The parameters, declared like a comp's inputs.
-    let mut vars : Array Var := #[]
-    let paramIds ← params.mapM fun p => do
-      let some q := typePath? p[0] | throwErrorAt p[0] (Core.functionParamsMsg path true).text
-      pure (pathSegs q)[0]!
-    for x in paramIds do discard (segName x)
-    -- By the names they declare, without the `!` of shadowing.
-    let declared := paramIds.map fun x => (declaredIdent x).1.getId
-    if let some k := (Core.repeatsAt declared)[0]? then
-      throwErrorAt paramIds[k]! (Core.dupParamMsg declared[k]!).text
-    for p in params, x0 in paramIds do
-      let x ← declare x0 modName
-      lintName .variable x.getId x
-      let ty ← varType modName x (if p[1].isNone then none else some p[1][1])
-      vars := vars.push { name := x.getId, role := .input, isPub := true, «type» := ty, ref := x }
+    let vars ← paramVars modName path params
     lintFnBools n nameStx (vars.map (·.type))
     let result ← varType modName nameStx (if stx[6].isNone then none else some stx[6][1])
     modifyLocal fun l => { l with outsideCore := false }
@@ -3776,7 +3884,8 @@ def lintFnBools (n : Name) (nameStx : Syntax) (params : Array Expr) : TermElabM 
                             expected? := if result.isConstOf ``Nat then some .nat else none }
       discard (takeIndexes fvs)
       let t ← toTerm cx body
-      -- Its tables, for their checks; its indexes are not checked.
+      -- Its tables, and the applications of functions with preconditions,
+      -- for their checks; its indexes are not checked.
       let tables := (← takeIndexes fvs).filter (·.2.1.isSome)
       checkDeclared body t result fun ty => s!"note: `{n}` returns `{ty}`"
       -- A `Bool` body is decided, classically if need be: equality on an
@@ -3795,7 +3904,8 @@ def lintFnBools (n : Name) (nameStx : Syntax) (params : Array Expr) : TermElabM 
     let uses ← usesOf #[lam]
     addUsesDef uses decl lam
     record (.definedInfo { path, decl, uses, nParams := vars.size })
-    recordBody path n nameStx decl vars tables
+    let (props, sites) ← if contract then elabContract modName path n decl true vars clauses else pure (#[], #[])
+    recordBody path nameStx decl vars (tables.map (fun (r, q, g) => (n, .body, r, q, g)) ++ sites) props path
   lintDeclared .function n nameStx
   lintLines .function n nameStx stx
   record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
@@ -4458,7 +4568,7 @@ end
     let int? ← if type.isConstOf ``Int || type.isConstOf ``Nat then intConstValue? { modName, vars := #[], insts := #[], place := .prop } valueStx
       else pure none
     record (.constInfo { path, decl, type, value, int? })
-    recordBody path n nameStx decl #[] tables
+    recordBody path nameStx decl #[] (tables.map fun (r, q, g) => (n, .body, r, q, g))
     unless isPub do recordItem .constant path nameStx
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
 

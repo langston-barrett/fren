@@ -159,7 +159,8 @@ constrains nothing, so there is nothing to realize, determine or find
 redundant, and its binders' inputs have no obligations. The body of a
 function, its contract, or the value of a constant is not a constraint
 either: only its tables and the applications in it are checked, and the
-function's postconditions:
+function's postconditions. A component has no postconditions, so their
+check has no results there:
 
 ```fren
 pub enum CheckedItem { Component, GlobalExpectation, Body }
@@ -188,7 +189,6 @@ pub comp applies {
     }
 
     expect claims_only: when item != Component and runs?, not kind in {Realizability, Determinism}
-    expect postconditions_of_functions: when kind = Postcondition and runs?, item = Body
 }
 ```
 

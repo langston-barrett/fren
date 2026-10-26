@@ -364,6 +364,8 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
   { path := core.path, vars := core.vars
     defs := core.defs.map fun (d, eq, e) => (d, (eq, defn d), (e, defn d))
     assumes := props core.assumes, reqs := props core.reqs, expects := props core.expects
+    -- The evaluator does not read a function's clauses.
+    posts := core.posts.map fun (n, s) => (n, (s, .unknown)), fn? := core.fn?
     covers := props core.covers
     triggers := core.triggers.map fun (n, s) => (n, (s, trigger n))
     indexes := core.indexes.mapIdx fun j x =>
@@ -402,7 +404,7 @@ def Refutation.about (x : Refutation) (r : Fren.Core.CheckResult) : Bool :=
     | some s => match r.kind, r.prop?, r.target? with
       | .inst, some w, some (_, a) => s == w ++ a
       | .definedness, some p, _ => s == .num p (r.index?.getD 0)
-      | .completeness, some p, _ | .disjointness, some p, _ => s == .num p (r.site?.getD 0)
+      | .completeness, some p, _ | .disjointness, some p, _ | .precondition, some p, _ => s == .num p (r.site?.getD 0)
       | _, some p, _ => s == p
       | _, none, _ => true
 
@@ -410,6 +412,7 @@ def kindName : Fren.Core.CheckKind → String
   | .realizable => "realizability" | .inst => "instance" | .expect => "expectation" | .cover => "cover"
   | .vacuity => "vacuity" | .redundancy => "redundancy" | .determinism => "determinism"
   | .definedness => "definedness" | .completeness => "completeness" | .disjointness => "disjointness"
+  | .precondition => "precondition" | .postcondition => "postcondition"
 
 def Refutation.msg (x : Refutation) (r : Fren.Core.CheckResult) : Fren.Core.Msg :=
   let subject := Fren.Core.showComp (r.comp ++ (r.prop?.getD .anonymous))
@@ -452,7 +455,7 @@ def specOf (files : Array (String × Array Char)) : Except String Spec := (·.sp
 global expectation by its module and name, or for the body of a function
 or the value of a constant (`body`) by its module and the item. -/
 def Eval.Spec.counterpart? (sp : Spec) (c : CComp) (global : Bool) (body : Bool := false) : Option Comp :=
-  if body then sp.bodies.find? fun b => b.path == c.path && (b.body?.map (·.1)) == c.tables[0]?.map (·.1)
+  if body then sp.bodies.find? fun b => b.path == c.path && (b.body?.map (·.1)) == c.bodyOf?
   else if global then sp.globals.find? fun g => g.path == c.path && g.constraints.map (·.name) == c.props.map (·.name)
   else sp.comp? c.path
 

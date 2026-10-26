@@ -107,11 +107,27 @@ partial def hashVal : Val → UInt64
   | .abs s k => mix (hash s) k.toUInt64
   | .ctor t i args => args.foldl (fun h a => mix h (hashVal a)) (mix (hash t) i.toUInt64)
 
+/-- The value of the function `f` at `args` in the interpretation `w`:
+random, but where the arguments meet `f`'s preconditions, the first of a
+few random values that meets its postconditions, and none if none does
+(`Reqs/Eval#searching-for-behaviours`). The clauses are evaluated with the
+other functions' values, to the depth `depth`, beyond which they are not
+checked. -/
+partial def World.value (sp : Spec) (w : World) (f : Name) (args : Array Val) (depth : Nat := 3) : Option Val := do
+  let (_, r) ← sp.funs.find? f
+  let h := args.foldl (fun h a => mix h (hashVal a)) (mix w.seed (hash f))
+  let some (ps, pres, posts) := sp.contracts.find? f | return valueOf sp w h 2 r
+  if depth == 0 then return valueOf sp w h 2 r
+  let others : Interp := { fn := fun g as => w.value sp g as (depth - 1) }
+  let locals := (ps.zip args).toList
+  unless pres.all (·.eval others (fun _ => none) locals == some (.bool true)) do return valueOf sp w h 2 r
+  let candidates := (List.range 8).map fun k => valueOf sp w (if k == 0 then h else mix h k.toUInt64) 2 r
+  candidates.find? fun v =>
+    let I : Interp := { fn := fun g as => if g == f && as == args then some v else w.value sp g as (depth - 1) }
+    posts.all (·.eval I (fun _ => none) locals == some (.bool true))
+
 def World.interp (sp : Spec) (w : World) : Interp where
-  fn f args := do
-    let (_, r) ← sp.funs.find? f
-    let h := args.foldl (fun h a => mix h (hashVal a)) (mix w.seed (hash f))
-    return valueOf sp w h 2 r
+  fn f args := w.value sp f args
   matchMemo p s := do return (← (← sp.matchMemo[p]?)[s]?).get
 
 /-! ## Candidates -/

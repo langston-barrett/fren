@@ -1,0 +1,10 @@
+--@ args: fmt --check
+-- `fren fmt` indents the clauses of a function's contract by four spaces,
+-- as lines that continue the function, and spaces them as constraints.
+pub type Name
+pub fn arity(n:Name):Nat
+ensure positive :arity(n)>0
+pub fn nth(q: Seq(Int), i: Int): Int := q[i]
+        assume in_range: 0 <= i < q.len
+    ensure same: nth(q, i) = q[i]
+        where j := i

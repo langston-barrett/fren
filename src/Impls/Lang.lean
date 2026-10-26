@@ -609,14 +609,30 @@ impl signature_complete: lang::signature_complete for (k : Fren.Core.ColumnKind)
   intro k n m t f i _
   cases k <;> simp [fren_spec, toColumnType, Fren.Core.signatureComplete] <;> omega
 
-impl function_params: lang::function_params for (d : Bool) (p n : Nat) {
+impl function_params: lang::function_params for (d c : Bool) (p n : Nat) {
   defined? := d,
+  contract? := c,
   n_params := p,
   n_named := n,
-  accepted? := Fren.Core.functionParamsAccepted d p n,
+  accepted? := Fren.Core.functionParamsAccepted d c p n,
 } by
-  intro d p n _
-  cases d <;> simp [fren_spec, Fren.Core.functionParamsAccepted] <;> omega
+  intro d c p n _
+  cases d <;> cases c <;> simp [fren_spec, Fren.Core.functionParamsAccepted] <;> omega
+
+def toClauseKind : Fren.Core.ClauseKind → lang.ClauseKind
+  | .precondition => .Precondition
+  | .postcondition => .Postcondition
+
+instance : Fren.Finite Fren.Core.ClauseKind := ⟨[.precondition, .postcondition], by intro x; cases x <;> simp⟩
+
+-- For every clause and application: the rule that both front ends call at
+-- each application of the function itself in its contract.
+impl contract_application: lang::contract_application for (k : Fren.Core.ClauseKind) (o t : Bool) {
+  clause := toClauseKind k,
+  own? := o,
+  to_params? := t,
+  accepted? := Fren.Core.contractApplicationAccepted k o t,
+}
 
 def toCardinality : Fren.Core.Cardinality → lang.Cardinality
   | .exactlyOne => .Exactly

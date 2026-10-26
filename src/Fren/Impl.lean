@@ -40,8 +40,9 @@ syntax fren_impl_binder := "(" ident+ " : " term ")"
 scoped syntax (name := implCmd) "impl " ident " : " fren_path (" for " fren_impl_binder+)?
   " { " sepBy(fren_impl_map, ", ", ", ", allowTrailingSep) " }" (" by " Lean.Parser.Tactic.tacticSeq)? : command
 
-/-- `interp p := t`: the Lean meaning of abstract type or function `p`. -/
-scoped syntax (name := interpCmd) "interp " fren_path " := " term : command
+/-- `interp p := t [by tac]`: the Lean meaning of abstract type or function
+`p`, and for a function with postconditions, their proof. -/
+scoped syntax (name := interpCmd) "interp " fren_path " := " term (" by " Lean.Parser.Tactic.tacticSeq)? : command
 
 end Lang
 
@@ -274,6 +275,8 @@ def generatedDecls : MetaM NameSet := do
     for (d, _) in c.defs do ns := ns.insert (c.decl ++ `def ++ d)
     for i in c.insts do ns := ns.insert i.decl
   for (_, d) in (← getState).defined do ns := ns.insert d.decl
+  for (_, k) in (← getState).contracts do
+    for c in k.pres ++ k.posts do ns := ns.insert c.decl
   return ns
 
 /-- Asks the solver to prove `stmt`, with Fren's generated definitions, and
@@ -373,6 +376,58 @@ open Lang in
   | .inconclusive =>
     logWarningAt nameStx s!"could not prove that `{nameStx.getId}` implements `{compStr}`\n\nnote: `decide` does not apply, and the solver does not see the definitions of the implementation\nhelp: write a proof after `by`"
 
+/-- The statement that the interpretation `decl` of the function at `path`
+meets the postconditions of its contract `k` wherever its arguments meet
+the preconditions, over the interpretations of the abstract types and
+functions that the contract uses (`Reqs/Impl#interpretations`). -/
+def contractStatement (path decl : Name) (k : ContractInfo) : MetaM Expr := do
+  let uses := (k.pres ++ k.posts).foldl (init := #[]) fun acc c =>
+    c.uses.foldl (fun acc u => if acc.contains u then acc else acc.push u) acc
+  let ι ← match ← interpsOf uses with
+    | .ok ι => pure ι
+    | .error p => throwError s!"the contract of `{Core.showComp path}` uses `{Core.showComp p}`, which has no interpretation\n\n\
+        help: interpret `{Core.showComp p}` first"
+  forallTelescope (← inferType (mkConst decl)) fun xs _ => do
+    let atArgs (c : ClauseInfo) := (replaceUses uses ι (c.at xs)).headBeta
+    let post := mkAndN (k.posts.map atArgs).toList
+    let stmt ← k.pres.foldrM (fun c acc => mkArrow (atArgs c) acc) post
+    mkForallFVars xs stmt
+
+open Lang in
+/-- Adds the theorem `decl.ensures`, that the interpretation `decl` of the
+function at `path` meets its postconditions, proved by the interpretation's
+tactics if it has any, and otherwise by `decide` or by the solver, which
+makes it an axiom; or reports that it is not proved, as for an `impl`. -/
+def proveContract (stx : Syntax) (path decl : Name) (k : ContractInfo) : CommandElabM Unit := do
+  let name := decl ++ `ensures
+  let stmt ← liftTermElabM <| contractStatement path decl k
+  let subject := s!"the interpretation of `{Core.showComp path}`"
+  if !stx[4].isNone then
+    let tac : TSyntax ``Lean.Parser.Tactic.tacticSeq := ⟨stx[4][1]⟩
+    let pf ← liftTermElabM do
+      let pf ← elabTermEnsuringType (← `(by $tac)) stmt
+      synthesizeSyntheticMVarsNoPostponing
+      instantiateMVars pf
+    unless pf.hasMVar || pf.hasSorry do
+      liftCoreM <| addDecl (.thmDecl { name, levelParams := [], «type» := stmt, value := pf })
+    return
+  match ← liftTermElabM (evalDecide stmt) with
+  | some true =>
+    let pf ← liftTermElabM do
+      let inst ← synthInstance (mkApp (mkConst ``Decidable) stmt)
+      return mkApp3 (mkConst ``of_decide_eq_true) stmt inst (mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Bool) (mkConst ``Bool.true))
+    liftCoreM <| addDecl (.thmDecl { name, levelParams := [], «type» := stmt, value := pf })
+  | some false =>
+    logErrorAt stx[1] s!"{subject} does not meet its postconditions: `decide` evaluates their statement to false\n\n\
+      help: correct the interpretation, or the contract"
+  | none =>
+    if (← liftTermElabM (solverAnswer stmt (interps := true))) == .unsat then
+      liftCoreM <| addDecl (.axiomDecl { name, levelParams := [], «type» := stmt, isUnsafe := false })
+    else
+      logErrorAt stx[1] s!"could not prove that {subject} meets its postconditions\n\n\
+        note: `decide` does not apply, and the solver did not prove them\n\
+        help: write a proof after `by`"
+
 open Lang in
 @[command_elab Lang.interpCmd] def elabInterp : CommandElab := fun stx => do
   let segs := pathSegs stx[1]
@@ -418,5 +473,7 @@ open Lang in
     setReducibleAttribute decl
   record (.interpInfo path decl)
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
+  if let some k := (← getState).contracts.get? path then
+    unless k.posts.isEmpty do proveContract stx path decl k
 
 end Fren

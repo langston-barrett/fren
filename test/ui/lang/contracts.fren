@@ -1,0 +1,75 @@
+-- Contracts on functions (`Reqs/Lang/Items#contracts`): preconditions
+-- written `assume`, postconditions written `ensure`, after the signature
+-- and the body. An uninterpreted function's postconditions are what is
+-- known of it; a defined function's are claims about its body.
+set_option fren.lint.dead_code "allow"
+
+type Name
+
+-- A precondition, where the body is defined only on some arguments.
+fn nth(q: Seq(Int), i: Int): Int := q[i]
+    assume in_range: 0 <= i < q.len
+
+-- Postconditions of a defined function hold of its body.
+fn double(n: Int): Int := 2 * n
+    ensure twice: double(n) - n = n
+    ensure grows: when n > 0, double(n) > n
+
+-- An uninterpreted function's postconditions are facts about each of its
+-- applications.
+fn arity(n: Name): Nat
+    ensure positive: arity(n) > 0
+
+-- A precondition qualifies the postconditions: where it fails, nothing is
+-- known.
+fn shrink(n: Int): Int
+    assume big: n > 10
+    ensure smaller: shrink(n) < n
+
+comp reads {
+    in q: Seq(Int)
+    pub out y: Int
+
+    assume long: q.len >= 2
+
+    ensure first: y = nth(q, 0)
+
+    expect same: y = q[0]
+}
+
+comp guarded {
+    in q: Seq(Int)
+    pub out y: Int
+
+    -- `nth(q, 0)` is evaluated only where `q != []`.
+    ensure r: when q != [], y = nth(q, 0)
+    ensure e: when q = [], y = 0
+}
+
+comp names {
+    in m: Name
+
+    expect at_least_one: arity(m) >= 1
+    expect not_two: arity(m) >= 2   --~ error: expectation `names::not_two` does not hold
+}
+
+comp shrinking {
+    in n: Int
+
+    expect smaller: when n > 10, shrink(n) < n
+    -- Below the precondition, `shrink` says nothing.
+    expect anywhere: shrink(n) < n   --~ error: expectation `shrinking::anywhere` does not hold
+    --~^ error: the precondition `big` of `shrink` may not hold at this application in `shrinking::anywhere`
+}
+
+-- The function's own postconditions, and its preconditions, apply to its
+-- values everywhere, including under quantifiers and `let`.
+enum Mode { Off, Low, High }
+
+fn level(m: Mode): Int
+    ensure bounded: 0 <= level(m) <= 10
+
+comp quantified {
+    expect all_bounded: forall (m: Mode), level(m) <= 10
+    expect named: x <= 10 where x := level(Mode::Low)
+}

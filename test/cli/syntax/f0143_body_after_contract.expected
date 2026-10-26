@@ -1,0 +1,13 @@
+error[F0143]: a function's body is written after its contract
+ --> test/cli/syntax/f0143_body_after_contract.fren:4:5
+  |
+4 |     := n - 1
+  |     ^^ after the contract
+  |
+  = note: the clauses of a contract follow the signature and the body, as in `fn f(x: Int): Int := x + 1` and then `assume pos: x > 0`
+  = help: move the body, with its `:=`, before the first `assume` or `ensure`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0143`.
+exit=2

@@ -14,10 +14,15 @@ namespace Fren.Core
 
 /-- A question about the rows of a table: whether some row holds, or
 whether rows `i` and `j`, counted from 0 in order with `i < j`, can both
-hold. -/
+hold. Or one about an application of the function `f` with a
+precondition `p` (`Reqs/Check#preconditions`): whether its arguments meet
+`p`, which is asked where the application is evaluated, as a table's
+questions are where the table is, and so is recorded, guarded and
+instantiated with them by both front ends. -/
 inductive TableGoal where
   | completeness
   | disjointness (i j : Nat)
+  | precondition (f p : Lean.Name)
   deriving Inhabited, BEq, Repr
 
 /-- The guard that the earlier cases add to case `j` of a split whose

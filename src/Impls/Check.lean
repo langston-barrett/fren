@@ -35,7 +35,7 @@ def toVerdict : Verdict → check.Verdict
 
 instance : Fren.Finite CheckKind :=
   ⟨[.realizable, .inst, .«expect», .cover, .vacuity, .redundancy, .determinism, .definedness, .completeness,
-    .disjointness], by intro x; cases x <;> simp⟩
+    .disjointness, .precondition, .postcondition], by intro x; cases x <;> simp⟩
 
 def toCheckKind : CheckKind → check.Kind
   | .realizable => .Realizability
@@ -48,6 +48,8 @@ def toCheckKind : CheckKind → check.Kind
   | .definedness => .Definedness
   | .completeness => .Completeness
   | .disjointness => .Disjointness
+  | .precondition => .Precondition
+  | .postcondition => .Postcondition
 
 instance : Fren.Finite Fren.Core.CheckedItem := ⟨[.component, .global, .body], by intro x; cases x <;> simp⟩
 
@@ -129,6 +131,20 @@ impl disjointness: check::disjointness for (q : Answer) {
   q := toOutcome q,
   verdict := toVerdict (expectVerdict q).1,
   reports_witness? := (expectVerdict q).2,
+}
+
+-- `checkTable` decides a precondition's question too, and
+-- `checkPostcondition` with `expectVerdict`, as `checkExpect` does.
+impl precondition: check::precondition for (q : Answer) {
+  q := toOutcome q,
+  verdict := toVerdict (expectVerdict q).1,
+  reports_cex? := (expectVerdict q).2,
+}
+
+impl postcondition: check::postcondition for (q : Answer) {
+  q := toOutcome q,
+  verdict := toVerdict (expectVerdict q).1,
+  reports_cex? := (expectVerdict q).2,
 }
 
 -- The two families of verdicts: `expectVerdict` for the checks that prove,

@@ -1039,24 +1039,62 @@ def unknownConstantMsg (abstract : Bool) : Msg :=
 /-! ## Defined functions -/
 
 /-- Whether a function's parameters are accepted, from whether it is
-defined, its number of parameters, and how many are written with a name
-(`lang::function_params`). -/
-def functionParamsAccepted (defined : Bool) (nParams nNamed : Nat) : Bool :=
-  nNamed == if defined then nParams else 0
+defined, whether it has a contract, its number of parameters, and how many
+are written with a name (`lang::function_params`). -/
+def functionParamsAccepted (defined contract : Bool) (nParams nNamed : Nat) : Bool :=
+  nNamed == if defined || contract then nParams else 0
 
-/-- A parameter named in an uninterpreted function, or unnamed in a
-defined one (`lang::function_params`). -/
-def functionParamsMsg (f : Name) (defined : Bool) : Msg :=
+/-- A parameter named in an uninterpreted function without a contract, or
+unnamed in a defined one or one with a contract (`lang::function_params`). -/
+def functionParamsMsg (f : Name) (defined : Bool) (contract : Bool := false) : Msg :=
   if defined then
     { code? := some "F0330", headline := s!"the parameters of defined function `{showPath f}` must be named"
       label? := some "no name"
       notes := #["note: the body mentions its parameters by name",
         "help: write the parameter as `x: T`, or `x?` for a `Bool`"] }
+  else if contract then
+    { code? := some "F0330", headline := s!"the parameters of uninterpreted function `{showPath f}` must be named"
+      label? := some "no name"
+      notes := #["note: its contract mentions its parameters by name",
+        "help: write the parameter as `x: T`, or `x?` for a `Bool`"] }
   else
     { code? := some "F0330", headline := s!"the parameters of uninterpreted function `{showPath f}` have no names"
       label? := some "named"
-      notes := #["note: only a defined function's body mentions its parameters",
+      notes := #["note: only a defined function's body, or a function's contract, mentions its parameters",
         "help: write only the parameter's type, or give the function a body with `:= ...`"] }
+
+/-- A clause of a function's contract (`lang::ClauseKind`). -/
+inductive ClauseKind where
+  | precondition
+  | postcondition
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- Whether an application in a contract clause is accepted, from the
+clause's kind, whether it applies the function whose contract it is in,
+and whether its arguments are the function's parameters, each written as
+its name, in order (`lang::contract_application`). -/
+def contractApplicationAccepted (clause : ClauseKind) (own toParams : Bool) : Bool :=
+  !own || (clause == .postcondition && toParams)
+
+/-- A clause of `f`'s contract applies `f` in a precondition, or to
+arguments other than its parameters (`lang::contract_application`). -/
+def contractSelfMsg (f : Name) (precondition : Bool) : Msg :=
+  if precondition then
+    { code? := some "F0380", headline := s!"a precondition of `{showPath f}` cannot apply `{showPath f}`"
+      label? := some "applied in its own precondition"
+      notes := #["note: a precondition says where the function may be applied, so it cannot depend on the function's value",
+        "help: state what the value gives in a postcondition, with `ensure`"] }
+  else
+    { code? := some "F0381", headline := s!"a postcondition of `{showPath f}` applies `{showPath f}` to other than its parameters"
+      label? := some "not its parameters"
+      notes := #["note: a postcondition states what the function gives at its own arguments, written as its parameters' names, in order",
+        "help: apply it to the parameters, or state this where the function is applied"] }
+
+/-- A contract clause named as a parameter or another clause of its
+function (`lang::distinct_names`). -/
+def dupClauseMsg (n : Name) : Msg :=
+  { code? := some "F0213", headline := s!"`{n}` is defined multiple times", label? := some "defined again here"
+    notes := #["note: a function's parameters and the clauses of its contract share one namespace"] }
 
 /-- Whether a defined function's body is accepted, from whether it has the
 result type and whether it applies the function itself or an uninterpreted

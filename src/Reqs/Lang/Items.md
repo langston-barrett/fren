@@ -517,35 +517,30 @@ guarantees](Components.md#meaning) do of its inputs and outputs: a
 function is like a component with an input for each parameter and one
 `det out`, its value. The names of the clauses share one namespace with
 the parameters (see [Distinct names](#distinct-names)). A clause mentions
-what a defined function's body may: the parameters, binders and names of
-its own, constants, variants, and defined functions declared before the
-function. A postcondition may also mention the function's value, by
+what a component's constraint may, but for variables: the parameters,
+binders and names of its own, constants, variants, and functions declared
+before the function, so that a precondition of `elem` can say what `kind`
+its argument has. A postcondition may also mention the function's value, by
 applying the function to its parameters, each written as its name, in
-order, as `arity(n)` above. A clause applies no other uninterpreted
-function, whose value it does not know, and a precondition does not apply
-the function itself, which is defined only where the preconditions hold.
-`lang::contract_application` states which applications a clause may
-have:
+order, as `arity(n)` above. A precondition does not apply the function
+itself: it says where the function may be applied, so it cannot depend on
+the function's value. `lang::contract_application` states which
+applications of the function itself a clause may have:
 
 ```fren
 pub enum ClauseKind { Precondition, Postcondition }
-pub enum Applied { Own, Defined, Uninterpreted }
 
 pub comp contract_application {
-    use self::Applied::{Defined, Own, Uninterpreted}
     in clause: ClauseKind
-    in applied: Applied      -- the function itself, or another, defined or uninterpreted
+    in own?                  -- it applies the function whose contract the clause is in
     in to_params?            -- its arguments are the parameters, each written as its name, in order
     pub det out accepted?
 
-    ensure rule: accepted? iff match applied {
-        Own => clause = ClauseKind::Postcondition and to_params?,
-        Defined => true,
-        Uninterpreted => false,
-    }
+    ensure rule: accepted? iff (not own? or (clause = ClauseKind::Postcondition and to_params?))
 
-    expect value_only: when applied = Own and not to_params?, not accepted?
-    expect not_in_preconditions: when clause = ClauseKind::Precondition and applied = Own, not accepted?
+    expect others: when not own?, accepted?
+    expect value_only: when own? and not to_params?, not accepted?
+    expect not_in_preconditions: when clause = ClauseKind::Precondition and own?, not accepted?
 }
 ```
 

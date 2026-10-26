@@ -347,12 +347,41 @@ def termsIn (terms : Array String) (f : String) : Array String := Id.run do
     i := i + 1
   return out
 
+/-- `t`, the SMT-LIB text that `wrapLets` makes of a term, as the `let`s
+around the term, the term, and the parentheses that close them. -/
+partial def splitLets (t : String) : String × String × String :=
+  let inner := peelLets t
+  if inner.length == t.length then ("", t, "") else
+  let n := t.length - inner.length
+  -- `(let BINDINGS ` before, and `)` after, for each `let`.
+  let closes := (t.toList.reverse.takeWhile (· == ')')).length - (inner.toList.reverse.takeWhile (· == ')')).length
+  ((t.take (n - closes)).toString, inner, (t.takeEnd closes).toString)
+
+/-- The facts that the application `app`, of an uninterpreted function into
+`Nat` or with postconditions, brings (`Fren.Core.appFacts`), from what
+`funs` says of its function (`State.appFuns`): that it is at least 0, if
+its result is a `Nat`, and that it meets each postcondition where its
+arguments meet the preconditions, named by the postcondition, within the
+`let`s around it, as the Lean front end's are. -/
+def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (app : String) : Array (Lean.Name × String) :=
+  let (pre, inner, post) := splitLets app
+  -- `(SYM ARGS)`.
+  let head := ((inner.drop 1).takeWhile (· != ' ')).toString
+  let args := ((inner.drop (head.length + 2)).dropEnd 1).toString
+  let (nat, k) := funs.getD head (false, {})
+  let posts := k.posts.map fun (n, sym) =>
+    let pres := k.pres.map fun (_, p) => s!"({p} {args})"
+    let goal := s!"({sym} {args})"
+    (n, pre ++ (if pres.isEmpty then goal else s!"(=> {conj pres} {goal})") ++ post)
+  (if nat then #[(`nat, s!"(>= {app} 0)")] else #[]) ++ posts
+
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
 type that is not finite (`cli::logic`); answering from `cache?`, if any,
 the scripts asked before (`runQuery`). -/
 def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Limits) (dump? : Option (String → IO Unit) := none)
-    (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (kind : Fren.Core.CheckKind) :
+    (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none)
+    (funs : Std.HashMap String (Bool × Contract) := {}) (kind : Fren.Core.CheckKind) :
     Fren.Core.Backend IO String String where
   -- cvc5 refuses some string operations without `strings-exp`. Every query
   -- has what the `Nat` variables bring, of both copies, and what the
@@ -370,7 +399,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     -- there, and its fact is within the clause's `let`s.
     let peeled := apps.map peelLets
     let appsOf (f : String) := (termsIn peeled f).filterMap fun t => (peeled.idxOf? t).map (apps[·]!)
-    let appFacts ← Fren.Core.natAppFacts (m := Id) appsOf (s!"(>= {·} 0)") hyps goal
+    let appFacts ← Fren.Core.appFacts (m := Id) appsOf (appFactsOf funs) hyps goal
     runQuery (Fren.Core.logic kind (strings || sets) projection)
       (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n"))
       prelude vars limits dump? (facts.map (`nat, ·) ++ appFacts ++ hyps) goal wantModel cache?
@@ -400,7 +429,11 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
     vars := c.vars.map fun v =>
       { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
     assumes := props .assume
-    reqs := props .ensure
+    -- A function's postconditions are claims of its own
+    -- (`check::postcondition`), and the hypotheses of nothing.
+    reqs := if c.fn?.isSome then #[] else props .ensure
+    posts := if c.fn?.isSome then props .ensure else #[]
+    fn? := c.fn?
     expects := props .expect
     covers := props .cover
     insts := c.insts.map fun i =>

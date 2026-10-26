@@ -517,6 +517,27 @@ comp c { in x: Int pub out y? ensure r: y? iff x > 0 }
 
 In Lean, Lean's own parser reports this, as a syntax error.
 "# },
+  { code := "F0143", explanation := r#"A function's body is written after its contract.
+
+Erroneous code example:
+
+```fren
+fn pred(n: Int): Int
+    assume positive: n > 0
+    := n - 1
+```
+
+A function's contract follows its signature and, for a defined function,
+its body: write the body, with its `:=`, before the first `assume` or
+`ensure`.
+
+```fren
+fn pred(n: Int): Int := n - 1
+    assume positive: n > 0
+```
+
+In Lean, Lean's own parser reports this, as a syntax error.
+"# },
   { code := "F0201", explanation := r#"A name that is not in scope.
 
 Erroneous code example:
@@ -1805,23 +1826,27 @@ enum Nine { N(Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool) }
 comp c { in x: Nine in n: Nine pub out ok? ensure r: ok? iff n = x }
 ```
 "# },
-  { code := "F0330", explanation := r#"A function's parameters are named, but it has no body, or it has a body, but a parameter has no name.
+  { code := "F0330", explanation := r#"A function's parameters are named, but it has neither a body nor a contract, or it has one, but a parameter has no name.
 
 Erroneous code examples:
 
 ```fren
 fn rate(n: Int): Int
 fn double(Int): Int := 1
+fn half(Int): Int
+    assume even: true
 ```
 
-An uninterpreted function's parameters have types but no names, since
-nothing mentions them. A defined function's body mentions its parameters,
-so each is named, like a component's variable: `x: T`, or `x?` for a
-`Bool`.
+An uninterpreted function without a contract has parameters with types but
+no names, since nothing mentions them. A defined function's body, and the
+clauses of a function's contract, mention its parameters, so each is
+named, like a component's variable: `x: T`, or `x?` for a `Bool`.
 
 ```fren
 fn rate(Int): Int
 fn double(n: Int): Int := 2 * n
+fn half(n: Int): Int
+    assume even: n mod 2 = 0
 ```
 "# },
   { code := "F0331", explanation := r#"A defined function's body applies the function itself, or an uninterpreted function.
@@ -1849,6 +1874,55 @@ fn arity(Name): Int
 fn rank(a: Int): Int := a + 1
 
 comp c { in n: Name pub out r: Int ensure ranked: r = rank(arity(n)) }
+```
+"# },
+  { code := "F0380", explanation := r#"A precondition applies the function whose contract it is in.
+
+Erroneous code example:
+
+```fren
+fn rate(n: Int): Int
+    assume small: rate(n) < 10
+```
+
+A precondition says where the function may be applied, so it cannot
+depend on the function's value. What the value gives is a postcondition,
+written with `ensure`:
+
+```fren
+fn rate(n: Int): Int
+    ensure small: rate(n) < 10
+```
+"# },
+  { code := "F0381", explanation := r#"A postcondition applies the function whose contract it is in to other than its parameters.
+
+Erroneous code example:
+
+```fren
+fn rate(n: Int): Int
+    ensure grows: rate(n + 1) > rate(n)
+```
+
+A postcondition states what the function gives at its own arguments: the
+function's value is written by applying it to its parameters, each by its
+name, in order, as `rate(n)`. A relation between its values at different
+arguments is stated where the function is applied, as an assumption of a
+component:
+
+```fren
+fn rate(n: Int): Int
+    ensure positive: rate(n) > 0
+
+comp c {
+    in n: Int
+    pub out r: Int
+
+    assume grows: rate(n + 1) > rate(n)
+
+    ensure def: r = rate(n + 1) - rate(n)
+
+    expect positive: r > 0
+}
 ```
 "# },
   { code := "F0338", explanation := r#"`Nat` is the type of a field or payload, or an element type.
@@ -2740,6 +2814,59 @@ comp grade {
 
     ensure r: pass? iff table { score >= 50 => true, 0 <= score < 50 => false, _ => false }
 }
+```
+"# },
+  { code := "F0629", explanation := r#"An application of a function may not meet one of the function's preconditions.
+
+Erroneous code example:
+
+```fren
+fn nth(q: Seq(Int), i: Int): Int := q[i]
+    assume in_range: 0 <= i < q.len
+
+comp c { in q: Seq(Int) pub out y: Int ensure r: y = nth(q, 0) }
+```
+
+A function's preconditions say what its arguments must meet. At each
+application, Fren asks whether each holds, given the conditions under
+which the application is evaluated and the hypotheses of where it is
+written: here, `q` may be empty. Where a precondition fails, the
+application's value is not what the function is for, so the constraint
+says nothing useful there. Guard the application, or assume what the
+precondition needs:
+
+```fren
+fn nth(q: Seq(Int), i: Int): Int := q[i]
+    assume in_range: 0 <= i < q.len
+
+comp c {
+    in q: Seq(Int)
+    pub out y: Int
+
+    ensure r: when q != [], y = nth(q, 0)
+    ensure e: when q = [], y = 0
+}
+```
+"# },
+  { code := "F0630", explanation := r#"A defined function's postcondition does not hold.
+
+Erroneous code example:
+
+```fren
+fn pred(n: Int): Int := n - 1
+    assume positive: n > 0
+    ensure positive_result: pred(n) > 0
+```
+
+A defined function's postconditions are claims about its body, which Fren
+checks for every value of the parameters that meets its preconditions:
+here, `pred(1)` is 0. Correct the body or the postcondition, or add a
+precondition that rules the case out:
+
+```fren
+fn pred(n: Int): Int := n - 1
+    assume positive: n > 0
+    ensure natural: pred(n) >= 0
 ```
 "# },
   { code := "F0610", args := some ["quickcheck"], explanation := r#"Testing found no admissible behaviour (a warning).
