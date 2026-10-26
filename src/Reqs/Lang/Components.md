@@ -350,6 +350,23 @@ pub comp nat_variable {
 }
 ```
 
+## Pattern types
+
+A variable whose type is a [pattern type](Types.md#pattern-types), or a
+record or an enumeration with a pattern type or a `Nat` within its fields
+and payloads, brings the constraint that its value matches, just as a
+`Nat` variable brings that it is at least 0, and in the same way, which
+`lang::nat_variable` states: an assumption for an input, a guarantee for
+an output, a constraint of the instance for an instance's variable, and
+nothing for a defined output, whose definition is checked to match instead
+(see [Checks](../Check.md#pattern-types)). With `in hops: Int is 1..`, the
+component assumes `hops is 1..`; with `pub out level: Loud`, it guarantees
+that `level` is one of `Loud`'s variants. Like a `Nat`'s, these constraints
+have no names, are never reported in a minimal set, and are never checked
+for redundancy. An instance's binding of an input of a pattern type is
+checked like any other assumption of the instantiated component, by the
+[instance check](../Check.md#instance-assumptions).
+
 ## Interpretations
 
 The [abstract types](Types.md#abstract-types) and

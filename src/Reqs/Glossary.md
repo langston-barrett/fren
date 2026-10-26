@@ -139,6 +139,10 @@ or instance.
 as `struct Ms(Int)`: a type distinct from every other, with the values of
 its underlying type. See [Items](Lang/Items.md#newtypes).
 
+**Obligation.** That a value given where a pattern type is declared
+matches its pattern, which a check asks the solver. See
+[Types](Lang/Types.md#typing).
+
 **Ordered enumeration.** An enumeration without payloads, declared with
 `ordered enum`, whose variants are ordered as they are declared, so that
 `<`, `<=`, `>`, `>=`, `min` and `max` apply to its values. See
@@ -155,6 +159,10 @@ payload, or an or-pattern. See [Patterns](Lang/Patterns.md).
 **Pattern test.** An expression `e is P`, which is `true` exactly when the
 pattern `P`, as of a `match` arm but binding no names, matches `e`. See
 [Expressions](Lang/Expressions.md#pattern-tests).
+
+**Pattern type.** A type `T is P`, whose values are those of its base
+type `T` that match the pattern `P`, such as `Int is 0..=255`. See
+[Types](Lang/Types.md#pattern-types).
 
 **Payload.** The values that a variant carries, as in `Circle(Int)`. See
 [Items](Lang/Items.md#enumerations).
@@ -217,6 +225,9 @@ applies. See [Components](Lang/Components.md#triggers).
 **Vacuous.** Of a constraint: holding only because its trigger can never
 hold. See [Checks](Check.md#vacuity).
 
+**Type alias.** A name for a type, declared with `type Name := T`, which
+is not a new type. See [Items](Lang/Items.md#type-aliases).
+
 **Underlying type.** The type of a newtype's field, whose values the
 newtype has. See [Items](Lang/Items.md#newtypes).
 
@@ -235,8 +246,8 @@ or not.
 of a constraint or cover goal, a definition, a function's body or a constant's value,
 that name expressions within it. See [Local definitions](Lang/Let.md).
 
-**Widening.** Accepting a `Nat` where an `Int` is expected, the only
-conversion between types. See [Types](Lang/Types.md#natural-numbers).
+**Widening.** Accepting a `Nat` where an `Int` is expected, or a pattern
+type where its base type is, the only conversion between types. See [Types](Lang/Types.md#natural-numbers).
 
 **Witness.** Values of a component's variables that satisfy the
 hypotheses of a check that asks whether something can hold, and its goal,

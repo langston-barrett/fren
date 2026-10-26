@@ -1741,12 +1741,12 @@ the literal. A range must not be reversed: `lang::char_range` states this,
 from the code points of the characters before and after its `-`:
 
 ```fren
-pub comp char_range {
-    in low: Int          -- the code point of the character before `-`
-    in high: Int         -- the code point of the character after it
-    pub det out accepted?
+type CodePoint := Int is 0..=MAX_CHAR
 
-    assume characters: 0 <= low <= MAX_CHAR and 0 <= high <= MAX_CHAR
+pub comp char_range {
+    in low: CodePoint    -- the code point of the character before `-`
+    in high: CodePoint   -- the code point of the character after it
+    pub det out accepted?
 
     ensure rule: accepted? iff low <= high
 

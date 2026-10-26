@@ -159,7 +159,18 @@ named `w.x`. A variable of type `Bool`, `Int`, `Nat`, `String`, an
 enumeration `E` or a record `R`, a newtype among them, has the Lean type
 `Bool`, `Int`, `Nat`, `String`, or the inductive or structure for `E` or
 `R`, and a `Nat` that
-is widened to an `Int` is Lean's `↑n`. A variable of type `Set(T)` has the
+is widened to an `Int` is Lean's `↑n`. A [pattern
+type](Lang/Types.md#pattern-types) has its base type's Lean type, and a
+type alias that of the type it names. A field or payload of type `Nat` is
+an `Int` in Lean, as the solver has it, and a value read from it is
+`Fren.natResult` of it, a `Nat`, as an application of an uninterpreted
+function into `Nat` is in a check; one built into it is widened with `↑`.
+What pattern types bring is part of the definitions: `p.assumes` starts
+with the constraints of the inputs whose types bring one (see
+[Components](Lang/Components.md#pattern-types)), in order, and `p.ensures`
+with those of the outputs that are not defined, before the assumptions
+and guarantees that the spec writes, so that an implementation's
+obligation assumes them and proves them. A variable of type `Set(T)` has the
 Lean type `Fren.FinSet T'`, where `T'` is that of `T`: a list up to having
 the same members, with `∈`, `∪`, `∩`, `\`, `⊆`, `∅`, `{a, b}` and
 `Fren.FinSet.card`, each with a `simp` lemma stating it by membership. A

@@ -4,7 +4,7 @@ A spec is a sequence of items. Each item is a Lean command, so in a Lean file
 items can be mixed with Lean code.
 
 ```
-item := module | use | enumeration | record | abstract-type | function | constant
+item := module | use | enumeration | record | abstract-type | type-alias | function | constant
       | component | expectation | check | claim | lint-setting | lean-item
 ```
 
@@ -200,10 +200,11 @@ value, and `x.0` reads its field (see
 [Newtypes](Expressions.md#newtypes), which also says which operators a
 newtype has). A newtype is a record, so its field follows the rules of
 a record's [fields](#fields-and-payloads): its type has no abstract type
-within it, is not `Nat` and does not have the newtype as an element type,
-and is not the newtype itself. For now, a newtype's underlying type is
-therefore never `Nat`: a count is a newtype of `Int`, and its constraints
-say that it is at least 0. Like any type, a newtype is
+within it and it does not have the newtype as an element type, and is not
+the newtype itself. It may be a `Nat`, or a [pattern
+type](Types.md#pattern-types), as in `struct Byte(Int is 0..=255)`: a value
+of it is then in range wherever it is read, and `Byte(e)` has the
+obligation that `e` is. Like any type, a newtype is
 [unbounded](Types.md#recursive-and-unbounded-types) exactly when its
 underlying type is.
 
@@ -299,8 +300,9 @@ the item.
 ## Fields and payloads
 
 A field or a payload may have any type in which no abstract type occurs,
-and that is not and does not contain `Nat` (see [Natural
-numbers](Types.md#natural-numbers)): the values of a record or
+including a [pattern type](Types.md#pattern-types) and a `Nat`, but not a
+`Nat` within an element type, nor as a payload of a recursive enumeration
+(see [Natural numbers](Types.md#natural-numbers)): the values of a record or
 enumeration are fully described by the spec, and `Set(Name)` is as
 abstract as `Name`. Nor may the item being declared
 occur within a set's element type, as in `enum Tree { Node(Set(Tree)) }`:
@@ -335,7 +337,8 @@ pub comp field_type {
 ```
 
 A [newtype](#newtypes)'s field is a record's field, so no abstract type is
-within it either:
+within it either. Its type may be a [pattern type](Types.md#pattern-types),
+as any field's may:
 
 ```fren
 expect newtype_not_abstract: forall (n: newtype) (f: field_type),
@@ -376,6 +379,32 @@ abstract-type := ["pub"] "type" IDENT
 `type Name` declares the [abstract type](Types.md#abstract-types) `Name`.
 Its values are not described: all that is known of them is that there is
 at least one, and whether two of them are equal.
+
+## Type aliases
+
+```
+type-alias := ["pub"] "type" IDENT ":=" type
+```
+
+`type Byte := Int is 0..=255` declares the *type alias* `Byte`, which
+names the type after `:=`, as a constant names a value: wherever `Byte` is
+written as a type, it means `Int is 0..=255`. An alias is not a new type:
+`Byte` and `Int is 0..=255` are the same type, both widen to `Int`, and a
+`Byte` is accepted wherever an `Int is 0..=255` is (see [Pattern
+types](Types.md#pattern-types)). A type that is distinct from the one it is
+made from is a [newtype](#newtypes). Without `:=`, `type Name` still
+declares an abstract type.
+
+An alias names any type, most often a pattern type, so that it is written
+once and used everywhere: `type Port := Int is 1..=65535`, `type Loud :=
+Severity is Severity::Warning | Severity::Error`. Like any item, it is
+declared before it is used, so an alias is never recursive: its type
+mentions only types declared before it. It is a type and nothing else: a
+path that names an alias is not a record for a record literal, nor an
+enumeration for its variants. Its name follows the rules of a type's, and
+like any other item, it is visible according to `pub`, and can be brought
+into scope with `use`. A pattern on an alias of a pattern type is an error,
+since pattern types are not nested (`F0369`).
 
 ## Functions
 
@@ -421,11 +450,11 @@ this, from the number of parameters and of those written with a name:
 pub comp function_params {
     in defined?          -- written with `:= e`
     in contract?         -- it has a contract: an `assume` or an `ensure` clause
-    in n_params: Int
+    in n_params: Nat is 1..
     in n_named: Nat      -- parameters written with a name
     pub det out accepted?
 
-    assume counts: n_params >= 1 and n_named <= n_params
+    assume counts: n_named <= n_params
 
     ensure rule: accepted? iff n_named = (if defined? or contract? then n_params else 0)
 
@@ -474,10 +503,12 @@ instantiated. Otherwise only how the body is written is checked: the
 [disjointness](../Check.md#disjointness) and
 [reachability](../Check.md#reachability) of its
 [tables](Expressions.md#tables) and its [`match`es](Expressions.md#matches)
-with guards, and the
+with guards, the
 [preconditions](../Check.md#preconditions) of the functions it applies,
-for every value of the parameters that meets its preconditions, as for
-the value of a [constant](#constants).
+and its [pattern types' obligations](../Check.md#pattern-types), such as
+that the body is in range where the result is a pattern type, for every
+value of the parameters that meets its preconditions and their types, as
+for the value of a [constant](#constants).
 
 ### Uninterpreted functions
 
@@ -486,9 +517,10 @@ argument. All that is known of it is that it is a function: applied
 to equal arguments, it gives equal results, of its result type, and
 that it meets its [postconditions](#contracts). So an
 application of a function whose result is a `Nat` is at least 0, as a
-`Nat` variable is (see [Components](Components.md#natural-numbers)), and
-an application of a function with postconditions meets each of them
-wherever it meets the preconditions: each application brings these
+`Nat` variable is (see [Components](Components.md#natural-numbers)), one
+whose result is a [pattern type](Types.md#pattern-types) matches its
+pattern, and an application of a function with postconditions meets each
+of them wherever it meets the preconditions: each application brings these
 constraints where it is written, and no constraint quantifies over the
 function's arguments. So it relates values
 consistently wherever it is applied, across the constraints of a
@@ -632,7 +664,9 @@ mentions no variables: only literals, variants, names of its own `let`s
 and `where` clauses, and constants declared before it, so constants cannot depend on each other in a cycle. It may
 apply [defined functions](#defined-functions) declared before it, but no
 uninterpreted function, since its value is unknown. And the constant's
-type is not an abstract type, which has no literals. `lang::constant`
+type is not an abstract type, which has no literals. Its type may be a
+[pattern type](Types.md#pattern-types), and its value is then checked to
+match it, as a defined function's body is. `lang::constant`
 states this:
 
 ```fren
