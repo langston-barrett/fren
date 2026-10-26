@@ -1,0 +1,27 @@
+-- Lints that compare or rewrite parts of an expression leave those whose
+-- pattern tests bind names, whose scope the parts' positions decide
+-- (`lang::test_scope`).
+enum Reply { Empty, Value(Int) }
+
+comp shadowing {
+    in r: Reply
+    in v: Int
+    pub out w: Int
+    pub out m: Int
+
+    -- The `then` branch's `v` is the payload, and the `else` branch's the input.
+    ensure same: w = (if r is Reply::Value(v!) then v else v)
+    ensure method: m = (if r is Reply::Value(v!) then v.max(0) else v.max(0))
+
+    expect payload: when r = Reply::Value(3), w = 3 and m = 3
+    expect input: when r = Reply::Empty, w = v
+}
+
+-- Without a binder, `same_branches` reports it.
+comp plain {
+    in r: Reply
+    in v: Int
+    pub out w: Int
+
+    ensure same: w = (if r is Reply::Value(_) then v else v)   --~ warning: both branches of `if` are written the same
+}

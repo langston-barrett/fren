@@ -408,19 +408,14 @@ structure Edit where
   /-- The expression changed, for the identifier. -/
   context : Span
 
-/-- Whether a pattern test of the chain of `and` `c` may bind a name that
-the rest of the chain, or the body of the `when` or `if` whose condition
-it is, mentions (`lang::test_scope`): whether its pattern has a name of one
-segment in lower case, other than `true` and `false`. Mutants are made
-without resolving names, and variants are written in upper camel case
-(`lint::enum_variant_names`), so this keeps a mutant from moving such a
-name out of its scope. -/
-partial def bindsNames (c : Expr) : Bool :=
+/-- Whether a pattern test of the chain of `and` `c` binds a name
+(`Src.binds`), which the rest of the chain, or the body of the `when` or
+`if` whose condition it is, may mention (`lang::test_scope`): a mutant of
+the chain, the `when` or the `if` could move it out of its scope. -/
+partial def Src.chainBinds (s : Src) (c : Expr) : Bool :=
   match c with
-  | .bin _ "and" a b => bindsNames a || bindsNames b
-  | .is _ _ p => p.names.any fun x =>
-    let n := x.name
-    n != "true" && n != "false" && (n.front.isLower || n.front == '_')
+  | .bin _ "and" a b => s.chainBinds a || s.chainBinds b
+  | .is _ _ p => s.binds p
   | _ => false
 
 /-- The edits of expression `e`. `inAndLeft` says that `e` is the left
@@ -429,8 +424,8 @@ operand of an `and`, unparenthesized, where an `or` needs parentheses; an
 partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bool := false) : Array Edit :=
   -- Not of a chain, a `when` or an `if` whose pattern tests bind names.
   let binding := match e with
-    | .bin _ "and" .. => bindsNames e
-    | .when _ _ c _ | .ite _ c _ _ => bindsNames c
+    | .bin _ "and" .. => s.chainBinds e
+    | .when _ _ c _ | .ite _ c _ _ => s.chainBinds c
     | _ => false
   let here : Array Edit := if binding then #[] else match e with
     | .bin sp op l r =>

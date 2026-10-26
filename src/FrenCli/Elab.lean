@@ -2936,8 +2936,11 @@ partial def elabQuantExpr (cx : ExprCtx) (span : Span) (all : Bool) (bs : Array 
 partial def elabIteExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (inElse : Bool) (span : Span) (c : Expr) (a : Expr) (b : Expr) : M (String × Ty) := do
   let pair := exprPair
   if cx.noteIndexes && !inElse then lintIfChain cx e
-  -- `same_branches` (`lint::same_branches`).
-  if cx.noteIndexes then
+  -- `same_branches` (`lint::same_branches`): not where the condition's
+  -- pattern tests bind names, which the `then` branch sees and the `else`
+  -- branch does not, so that the same text may mean different values
+  -- (`lang::test_scope`).
+  if cx.noteIndexes && !(← chainBinds cx c) then
     let ta ← srcAt a.span
     if Fren.Core.sameBranches (Fren.Core.writtenSame ta (← srcAt b.span)) then
       let .mk kind .. := a.boolNode

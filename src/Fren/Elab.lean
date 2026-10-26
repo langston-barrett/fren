@@ -4360,7 +4360,10 @@ def iteTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
   let expected? := cx.expected?
   let cx := { cx with expected? := none }
   if cx.noteIndexes && !cx.inElse then lintIfChain cx e
-  if cx.noteIndexes then lintSameBranches e a b
+  -- Not where the condition's pattern tests bind names, which the `then`
+  -- branch sees and the `else` branch does not, so that the same text may
+  -- mean different values (`lang::test_scope`).
+  if cx.noteIndexes && !(← chainBinds cx c') then lintSameBranches e a b
   if cx.noteIndexes && (← mentionsAny cx c') then
     modifyLocal fun l => { l with mentioning := l.mentioning.push ((unparen c').getPos?, (unparen c').getTailPos?) }
   -- The names that the condition's pattern tests bind, which the `then`
