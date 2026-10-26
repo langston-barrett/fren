@@ -478,6 +478,10 @@ structure State where
   /-- Where the calls of `abs` in the expression being elaborated end, for
   `invalid_upcast_comparisons`. -/
   absEnds : Array Nat := #[]
+  /-- What is known of the variants of ordered enumerations, and of the
+  newtypes built and read, in the expression being elaborated, for the
+  lints of ordered enumerations and newtypes. -/
+  facts : Array (Span × Fren.Core.NodeFact) := #[]
   /-- The current file's trailing commas that `unnecessary_trailing_comma`
   reports, each with the `}` or `]` after it. -/
   trailingCommas : Array (Span × String) := #[]
@@ -1277,10 +1281,12 @@ def lintBools (e : Expr) : M Unit := do
     { m with fixes := m.fixes.map fun f => { f with range? := f.range?.map fun r => { start := r.start + w.start, stop := r.stop + w.start } } }
   for (l, ref, msg) in Fren.Core.rewriteReports src root do
     lintFix l ref (shift msg)
-  let (boolEqs, variants, absEnds, mentioning) := ((← get).boolEqs, (← get).variants, (← get).absEnds, (← get).mentioning)
-  modify fun s => { s with boolEqs := #[], variants := #[], absEnds := #[], mentioning := #[] }
+  let (boolEqs, variants, absEnds, mentioning, facts) :=
+    ((← get).boolEqs, (← get).variants, (← get).absEnds, (← get).mentioning, (← get).facts)
+  modify fun s => { s with boolEqs := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
   let variant? (sp : Span) := (variants.find? (·.1 == sp)).map (·.2)
-  for r in Fren.Core.opReports src boolEqs.contains variant? (absEnds.contains ·.stop) mentioning.contains root do
+  let fact? (sp : Span) := (facts.find? (·.1 == sp)).map (·.2)
+  for r in Fren.Core.opReports src boolEqs.contains variant? (absEnds.contains ·.stop) mentioning.contains fact? root do
     lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) (shift r.msg)
   for r in Fren.Core.arithReports src root do
     lintFix r.lint r.ref (shift r.msg)
@@ -2696,6 +2702,9 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       if let some msg := Fren.Core.variantMentionMsg? (en.path ++ en.variants[idx]!) n false then err e.span msg
       if cx.noteIndexes then
         modify fun s => { s with variants := s.variants.push (e.span, (en.path ++ en.variants[idx]!).toString) }
+        if let some d := d then
+          if d.ordered then
+            modify fun s => { s with facts := s.facts.push (e.span, .ordinal en.path.toString idx d.ctors.size) }
       return (ctorSym en.path en.variants[idx]!, .enum en.path)
     | .item { kind := .constItem, path, .. } =>
       let some c := (← get).consts.find? path | internal e.span s!"unknown constant `{path}`"
@@ -2746,6 +2755,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         unless args.size == 1 do err span (Fren.Core.arityMsg path 1 args.size "value")
         let (x, ta) ← elabExpr { cx with expected? := some u } args[0]!
         unless ta.widens u do mismatch args[0]! u ta (some s!"note: the value of `{showPath path}` has type `{u.show}`")
+        if cx.noteIndexes then modify fun s => { s with facts := s.facts.push (span, .wraps path.toString) }
         return (x, .newtype path u)
       | r => err fnSpan (Fren.Core.notAFunctionMsg r)
     if let some (_, params, result, _) := (← get).defs.find? (·.1 == path) then
@@ -2786,6 +2796,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     checkRelationalCard cx span t f.name a
     if let (.seq _, some m) := (t, Fren.Core.Method.ofName? f.name) then
       checkCore cx span m.seqConstruct true true #[a] (← isConstant cx a)
+    -- For `redundant_newtype_roundtrip`, at its span as written, as the
+    -- lints see it (`Expr.boolNode`).
+    if let (.newtype p _, "0", true) := (t, f.name, cx.noteIndexes) then
+      modify fun s => { s with facts := s.facts.push (e.writtenSpan s.src, .unwraps p.toString) }
     readField f.span x t (Name.mkSimple f.name)
   | .record span tySegs fields =>
     let tySpan := tySegs[0]!.span.to tySegs.back!.span

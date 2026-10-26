@@ -214,3 +214,60 @@ pub comp redundant_slicing {
     ensure value: when fires?, slice? iff s = u
 }
 ```
+
+## Bounds of orderings
+
+`unnecessary_min_or_max` fires on `x.min(v)` or `x.max(v)`, where `v` is
+the first or the last variant of an [ordered
+enumeration](../../Lang/Items.md#enumerations), whose value is then always
+one of the two, and is fixable: no value is below the first variant, so
+`x.max(First)` is `x` and `x.min(First)` is `First`, and none is above the
+last, so `x.min(Last)` is `x` and `x.max(Last)` is `Last`. The fix is that
+operand, with its text, in parentheses where [fixes
+need them](../../Lint.md#parentheses-in-fixes). The variant is the argument,
+written as a path; a variant as the receiver, as in `First.max(x)`, is
+left as it is. The fix evaluates only operands that the call did, where it
+did, so it keeps the guards. This is Clippy's `unnecessary_min_or_max`,
+in `complexity`, which fires on `x.min(u8::MIN)` and the like.
+`lint::unnecessary_min_or_max` states when it fires, and which operand the
+fix is:
+
+```fren
+pub comp unnecessary_min_or_max {
+    in max?              -- `max`, rather than `min`
+    in first?            -- the argument is the first variant
+    in last?             -- the argument is the last variant
+    pub det out fires?
+    pub det out argument?  -- the fix is the argument, rather than the receiver
+
+    ensure rule: fires? iff (first? or last?)
+    ensure fix: argument? iff (first? != max?)
+}
+```
+
+The refinements check each fix:
+
+```fren
+pub ordered enum Tier { Low, Mid, High }
+
+set_option fren.lint.unnecessary_min_or_max "allow" in
+pub comp min_or_max_written {
+    in x: Tier
+    pub det out max_first: Tier := x.max(Tier::Low)
+    pub det out min_first: Tier := x.min(Tier::Low)
+    pub det out min_last: Tier := x.min(Tier::High)
+    pub det out max_last: Tier := x.max(Tier::High)
+}
+
+set_option fren.lint.constant_output "allow" in
+pub comp min_or_max_fixed {
+    in x: Tier
+    pub det out max_first: Tier := x
+    pub det out min_first: Tier := Tier::Low
+    pub det out min_last: Tier := x
+    pub det out max_last: Tier := Tier::High
+}
+
+refine min_or_max_sound: min_or_max_fixed refines min_or_max_written
+refine min_or_max_complete: min_or_max_written refines min_or_max_fixed
+```

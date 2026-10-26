@@ -3,7 +3,7 @@
 The lints of the `complexity` group find a simpler expression with the
 same meaning, and `fren fix` fixes each of them but `constant_output`.
 This chapter has the lints of `Bool` expressions, of membership, of
-outputs and of literals, and its subchapters the others: those of
+outputs, of records and newtypes, and of literals, and its subchapters the others: those of
 [comparisons](Complexity/Comparisons.md), of [operators](Complexity/Operators.md),
 of [methods](Complexity/Methods.md) and of [matches](Complexity/Matches.md).
 
@@ -125,6 +125,48 @@ pub comp nonminimal_bool_keeps_meaning {
         and ((if c? then false else a?) iff (not c? and a?))
         and ((if c? then a? else true) iff (not c? or a?))
 }
+```
+
+`nonminimal_bool` also fires on a [cardinality
+operator](../Lang/Expressions.md#cardinality) of one argument:
+`exactly_one?(A)` is `A`, and `at_most_one?(A)` is always `true`, which is
+its fix. The fix of `exactly_one?(A)` keeps `A`'s text, in parentheses
+where fixes need them, and evaluates it where the call did; that of
+`at_most_one?(A)` evaluates nothing, so both keep the guards. These are
+not in the model proved in Lean, and the refinements below check them
+instead. `lint::nonminimal_cardinality` states when it fires, and what the
+fix is:
+
+```fren
+pub comp nonminimal_cardinality {
+    in exactly?          -- `exactly_one?`, rather than `at_most_one?`
+    in n_args: Int       -- the arguments
+    pub det out fires?
+    pub det out argument?  -- the fix is the argument, rather than `true`
+
+    ensure rule: fires? iff n_args = 1
+    ensure fix: argument? iff exactly?
+}
+
+set_option fren.lint.nonminimal_bool "allow" in
+pub comp nonminimal_cardinality_written {
+    in a?
+    in x: Int
+    pub det out exactly? := exactly_one?(a?)
+    pub det out at_most? := at_most_one?(x > 0)
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.lint.unused_variables "allow" in
+pub comp nonminimal_cardinality_fixed {
+    in a?
+    in x: Int
+    pub det out exactly? := a?
+    pub det out at_most? := true
+}
+
+refine nonminimal_cardinality_sound: nonminimal_cardinality_fixed refines nonminimal_cardinality_written
+refine nonminimal_cardinality_complete: nonminimal_cardinality_written refines nonminimal_cardinality_fixed
 ```
 
 ## Conditionals of `Bool`s
@@ -264,6 +306,58 @@ pub comp struct_initialization_fixed {
 
 refine struct_initialization_sound: struct_initialization_fixed refines struct_initialization_written
 refine struct_initialization_complete: struct_initialization_written refines struct_initialization_fixed
+```
+
+## Newtypes
+
+`redundant_newtype_roundtrip` fires on a [newtype](../Lang/Items.md#newtypes)
+built from the field of a value of the same newtype, `Ms(x.0)`, which is
+`x`, and on the field of a newtype just built, `Ms(n).0`, which is `n`, and
+is fixable: the fix is `x` or `n`, with its text, in parentheses where
+[fixes need them](../Lint.md#parentheses-in-fixes). The receiver may be in
+parentheses, as in `(Ms(n)).0`. It does not fire where the newtypes
+differ, as in `Ms(b.0)` for `b: Bytes`, which converts a `Bytes` to an
+`Ms` on purpose, nor where the value is changed on the way, as in `Ms(x.0
++ 1)`. A newtype is [erased](../Lang/Expressions.md#newtypes) to its
+underlying type, so the fix has the same value, and it evaluates the same
+expression where the original did, so it keeps the guards. This is
+Clippy's `useless_conversion`, in `complexity`, which fires on a
+conversion of a value to its own type, such as `x.into()` for `x: T` where
+a `T` is wanted. `lint::redundant_newtype_roundtrip` states when it fires:
+
+```fren
+pub comp redundant_newtype_roundtrip {
+    in same_newtype?     -- the newtype built is the one whose field is read
+    pub det out fires?
+
+    ensure rule: fires? iff same_newtype?
+}
+```
+
+The refinements check both fixes:
+
+```fren
+pub struct Ms(Int)
+
+set_option fren.lint.redundant_newtype_roundtrip "allow" in
+pub comp roundtrip_written {
+    in x: Ms
+    in n: Int
+    pub det out built: Ms := Ms(x.0)
+    pub det out read: Int := Ms(n).0
+    pub det out read_parenthesized: Int := (Ms(n + 1)).0 * 2
+}
+
+pub comp roundtrip_fixed {
+    in x: Ms
+    in n: Int
+    pub det out built: Ms := x
+    pub det out read: Int := n
+    pub det out read_parenthesized: Int := (n + 1) * 2
+}
+
+refine roundtrip_sound: roundtrip_fixed refines roundtrip_written
+refine roundtrip_complete: roundtrip_written refines roundtrip_fixed
 ```
 
 ## Leading zeros

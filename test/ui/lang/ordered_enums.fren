@@ -1,7 +1,10 @@
 -- Ordered enumerations: comparisons, chained comparisons, and `min` and
 -- `max`, in the order of declaration.
--- Its expectations of constants are deliberate.
+-- Its expectations of constants are deliberate, as are its comparisons
+-- with the first and last variants.
+set_option fren.lint.absurd_extreme_comparisons "allow"
 set_option fren.lint.assertions_on_constants "allow"
+set_option fren.lint.unnecessary_min_or_max "allow"
 
 pub ordered enum Severity { Silent, Info, Warning, Error }
 use Severity::{Error, Info, Silent, Warning}

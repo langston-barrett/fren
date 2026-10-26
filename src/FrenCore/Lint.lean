@@ -148,6 +148,10 @@ inductive Lint where
   | zeroPrefixedLiteral
   | arbitrarySourceItemOrdering
   | singleCallFn
+  | manualAtMostOne
+  | manualOrdering
+  | redundantNewtypeRoundtrip
+  | unnecessaryMinOrMax
   -- `BEq` from `DecidableEq`, which makes it lawful at once; a derived `BEq`
   -- would need a proof over every pair of lints.
   deriving Inhabited, DecidableEq, Repr
@@ -172,7 +176,8 @@ def Lint.all : Array Lint :=
     .isEquality, .irrefutableIs, .chainableComparison,
     .singleMatchElse, .inconsistentStructConstructor, .overlyComplexBoolExpr, .structFieldNames, .fnParamsExcessiveBools,
     .structExcessiveBools, .needlessRawStringHashes, .branchesSharingCode, .zeroPrefixedLiteral,
-    .arbitrarySourceItemOrdering, .singleCallFn]
+    .arbitrarySourceItemOrdering, .singleCallFn,
+    .manualAtMostOne, .manualOrdering, .redundantNewtypeRoundtrip, .unnecessaryMinOrMax]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -274,6 +279,10 @@ def Lint.name : Lint → String
   | .zeroPrefixedLiteral => "zero_prefixed_literal"
   | .arbitrarySourceItemOrdering => "arbitrary_source_item_ordering"
   | .singleCallFn => "single_call_fn"
+  | .manualAtMostOne => "manual_at_most_one"
+  | .manualOrdering => "manual_ordering"
+  | .redundantNewtypeRoundtrip => "redundant_newtype_roundtrip"
+  | .unnecessaryMinOrMax => "unnecessary_min_or_max"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -377,6 +386,10 @@ def Lint.code : Lint → String
   | .zeroPrefixedLiteral => "F0758"
   | .arbitrarySourceItemOrdering => "F0779"
   | .singleCallFn => "F0788"
+  | .manualAtMostOne => "F0840"
+  | .manualOrdering => "F0841"
+  | .redundantNewtypeRoundtrip => "F0842"
+  | .unnecessaryMinOrMax => "F0843"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -427,7 +440,7 @@ def Lint.group : Lint → Group
   | .nonminimalBool | .singletonMembership | .constantOutput | .doubleComparison | .manualMethod | .elseExtends
   | .identityOp | .doubleParens | .intPlusOne | .redundantMethodChain | .trivialMatch | .needlessBoolAssign
   | .needlessMatch | .redundantSlicing | .redundantComparisons | .unnecessaryStructInitialization
-  | .zeroPrefixedLiteral => .complexity
+  | .zeroPrefixedLiteral | .manualAtMostOne | .redundantNewtypeRoundtrip | .unnecessaryMinOrMax => .complexity
   | .indexAfterUse | .eqOp | .sameBranches | .duplicateElements | .emptyArgument
   | .suspiciousUnaryOpFormatting | .noEffectReplace | .constIsEmpty | .almostCompleteRange | .duplicateConstraint
   | .invisibleCharacters | .negativePosition | .absurdExtremeComparisons | .erasingOp | .ifsSameCond
@@ -440,7 +453,7 @@ def Lint.group : Lint → Group
   | .singleCallFn => .restriction
   | .singleMatchElse | .inconsistentStructConstructor | .overlyComplexBoolExpr
   | .structFieldNames | .fnParamsExcessiveBools | .structExcessiveBools | .needlessRawStringHashes
-  | .branchesSharingCode => .pedantic
+  | .branchesSharingCode | .manualOrdering => .pedantic
   | .undecidable => .decidability
 
 def Lint.default (l : Lint) : LintLevel := l.group.default
@@ -3750,11 +3763,335 @@ def chainableAt [Inhabited α] (src : Array Char) (n : BNode α) (slot : Option 
     let commented := (withoutComments (textOf src range)).length != (textOf src range).length
     { lint := .chainableComparison, ref := cs[a]!.ref, last? := some cs[b]!.ref, msg := chainableComparisonMsg fixed commented }
 
+/-! ## Cardinality, ordered enumerations and newtypes -/
+
+/-- What an elaborator knows of an expression that the lints of ordered
+enumerations and newtypes read. -/
+inductive NodeFact where
+  /-- A variant of the ordered enumeration `enum`, the one at `pos`,
+  from 0, of its `count`. -/
+  | ordinal (enum : String) (pos count : Nat)
+  /-- `Ms(e)`, which builds a value of the newtype `newtype`. -/
+  | wraps (newtype : String)
+  /-- `x.0`, which reads the field of a value of the newtype `newtype`. -/
+  | unwraps (newtype : String)
+  deriving Inhabited, BEq, Repr
+
+/-- Whether the text at `i` in `src` starts with `s`. -/
+def startsWithAt (src : Array Char) (i : Nat) (s : String) : Bool :=
+  (s.toList.zipIdx).all fun (c, k) => src[i + k]? == some c
+
+/-- Whether `n` applies a cardinality operator, `some true` for
+`exactly_one?` and `some false` for `at_most_one?`: their names are
+reserved, so an application written with one is theirs. -/
+def cardinalityCall? (src : Array Char) (n : BNode α) : Option Bool :=
+  if n.kind != .atom then none
+  else if startsWithAt src n.range.start "exactly_one?(" then some true
+  else if startsWithAt src n.range.start "at_most_one?(" then some false
+  else none
+
+def cardinalityName (exactly : Bool) : String := if exactly then "exactly_one?" else "at_most_one?"
+
+/-- Whether `nonminimal_bool` fires on a cardinality operator of `n`
+arguments, and whether its fix is the argument, rather than `true`
+(`lint::nonminimal_cardinality`). -/
+def nonminimalCardinality (exactly : Bool) (n : Nat) : Bool × Bool := (n == 1, exactly)
+
+/-- Whether `eq_op` fires on a cardinality operator, from whether one of
+its arguments is written the same as an earlier one
+(`lint::eq_op_cardinality`). -/
+def eqOpCardinality (repeated : Bool) : Bool := repeated
+
+/-- `eq_op` on the argument `arg` of a cardinality operator, written the
+same as an earlier one. -/
+def eqOpCardinalityMsg (exactly : Bool) (arg : String) : Msg :=
+  { code? := some Lint.eqOp.code, headline := s!"`{arg}` is an argument of `{cardinalityName exactly}` more than once"
+    label? := some "written the same as an earlier argument"
+    notes := #[s!"note: the call holds only where `{arg}` is `false`, so one of the two is probably not the one meant"] }
+
+/-- `nonminimal_bool` and `eq_op` on `n`, a cardinality operator, in
+`slot` within `parent` (`lint::nonminimal_cardinality`,
+`lint::eq_op_cardinality`). -/
+def cardinalityAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) : Option (OpReport α) := do
+  let exactly ← cardinalityCall? src n
+  let (single, operand) := nonminimalCardinality exactly n.kids.size
+  if let (true, some a) := (single, n.kids[0]?) then
+    let fixed := if operand then placed src n slot parent (a.text src) else "true"
+    let label := if operand then s!"`{cardinalityName exactly}` of one argument is that argument"
+      else s!"`{cardinalityName exactly}` of one argument always holds"
+    return { lint := .nonminimalBool, ref := n.ref
+             msg := { code? := some Lint.nonminimalBool.code, headline := "this `Bool` expression can be simpler"
+                      label? := some label, fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] } }
+  -- A literal is left to the lints of constants.
+  let forms := n.kids.map fun k => if k.kind matches .lit _ then none else some (writtenForm (textOf src k.range))
+  let j? := (List.range forms.size).find? fun j => forms[j]!.isSome && (forms.extract 0 j).contains forms[j]!
+  guard (eqOpCardinality j?.isSome)
+  let k ← n.kids[← j?]?
+  return { lint := .eqOp, ref := k.ref, msg := eqOpCardinalityMsg exactly (textOf src k.range) }
+
+/-- The operands of the run of `op`, `and` or `or`, that `n` is the top
+of, in order: through each left operand that is an `op` not in
+parentheses, as `conjuncts` reads a run of `and`. -/
+partial def runOperands (op : String) (src : Array Char) (n : BNode α) : Array (BNode α) :=
+  match n.kind, n.kids with
+  | .bin o, #[l, r] =>
+    if o != op then #[n] else
+    (if l.kind == .bin op && !enclosed src n.range l.range then runOperands op src l else #[l]).push r
+  | _, _ => #[n]
+
+/-- Whether `n`, an `op` in `slot` within `parent`, is the top of its run
+of `op`: not the left operand of another, outside parentheses. -/
+def runTop (op : String) (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) : Bool :=
+  n.kind == .bin op && !(slot.any (fun s => s.outer == (BKind.bin op).prec && !s.right) && !enclosed src parent n.range)
+
+/-- Whether `manual_at_most_one` fires on conjuncts that negate pairs of
+`n` operands, and whether its fix is `exactly_one?` rather than
+`at_most_one?` (`lint::manual_at_most_one`): from whether they negate each
+pair of two different operands exactly once, and no other, whether a
+conjunct beside them is the disjunction of the operands, and whether an
+operand is written with a `[`. -/
+def manualAtMostOne (n : Nat) (everyPair disjunction bracket : Bool) : Bool × Bool :=
+  (n ≥ 3 && everyPair && !bracket, disjunction)
+
+/-- `manual_at_most_one`'s message, whose fix is `fixed`, at `range`, the
+conjuncts with the parentheses around the disjunction, or none but a note
+if a comment within them would be lost (`commented`). -/
+def manualAtMostOneMsg (exactly : Bool) (n : Nat) (fixed : String) (range : Range) (commented : Bool) : Msg :=
+  { code? := some Lint.manualAtMostOne.code, headline := s!"this is `{cardinalityName exactly}` of {n} operands"
+    label? := some (if exactly then s!"says that one of {n} operands holds, and negates each pair" else s!"negates each pair of {n} operands")
+    notes := if commented then #[s!"help: write `{fixed}`",
+      "note: `fren fix` leaves this, since the call would lose the comment within the conjuncts"] else #[]
+    fixes := if commented then #[] else #[{ msg := s!"write `{fixed}`", replacement := fixed, range? := some range }] }
+
+/-- `manual_at_most_one` on `n`, an `and` in `slot` within `parent`, if it
+is the top of a run of `and` (`lint::manual_at_most_one`): one report for
+each longest run of adjacent conjuncts `not (a and b)`, not in
+parentheses, with the disjunction of their operands just before or after
+it, if there is one. The message is reported from the first conjunct it
+replaces to the last. -/
+def manualAtMostOneAt [Inhabited α] (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) :
+    Array (OpReport α) := Id.run do
+  unless runTop "and" src n slot parent do return #[]
+  let cs := runOperands "and" src n
+  let bare (k : BNode α) := !enclosed src n.range k.range
+  let form (k : BNode α) := writtenForm (textOf src k.range)
+  let pair? (k : BNode α) : Option (BNode α × BNode α) := do
+    guard (bare k)
+    let (.not, #[i]) := (k.kind, k.kids) | none
+    let (.bin "and", #[a, b]) := (i.kind, i.kids) | none
+    pure (a, b)
+  let mut out := #[]
+  let mut i := 0
+  while i < cs.size do
+    if (pair? cs[i]!).isNone then
+      i := i + 1
+      continue
+    let mut j := i
+    while j + 1 < cs.size && (pair? cs[j + 1]!).isSome do j := j + 1
+    let pairs := (cs.extract i (j + 1)).filterMap pair?
+    -- The operands, each once, in the order they are first written.
+    let ops := pairs.foldl (init := (#[] : Array (BNode α))) fun acc (a, b) =>
+      let acc := if acc.any (form · == form a) then acc else acc.push a
+      if acc.any (form · == form b) then acc else acc.push b
+    let idx (k : BNode α) := (ops.findIdx? (form · == form k)).getD 0
+    let keys := pairs.map fun (a, b) => (min (idx a) (idx b), max (idx a) (idx b))
+    let everyPair := keys.all (fun (x, y) => x != y) && keys.size == ops.size * (ops.size - 1) / 2
+      && (List.range keys.size).all fun k => !(keys.extract 0 k).contains keys[k]!
+    -- The disjunction of the operands, each once, just before or after,
+    -- in the parentheses that an operand of `and` needs.
+    let disj? (k : Nat) : Option (Array (BNode α)) := do
+      let c ← cs[k]?
+      guard (c.kind == .bin "or")
+      let ds := runOperands "or" src c
+      guard (ds.size == ops.size && ops.all fun o => (ds.filter (form · == form o)).size == 1)
+      pure ds
+    let (first, last, disjunction?) := match (if i > 0 then disj? (i - 1) else none), disj? (j + 1) with
+      | some ds, _ => (i - 1, j, some ds)
+      | none, some ds => (i, j + 1, some ds)
+      | none, none => (i, j, none)
+    let bracket := ops.any fun o => (withoutComments (textOf src o.range)).contains '['
+    let (fires, exactly) := manualAtMostOne ops.size everyPair disjunction?.isSome bracket
+    if fires then
+      let args := (disjunction?.getD ops).map fun o => textOf src o.range
+      let fixed := s!"{cardinalityName exactly}({", ".intercalate args.toList})"
+      let range : Range := { start := (withParensIn src n.range cs[first]!.range).start
+                             stop := (withParensIn src n.range cs[last]!.range).stop }
+      let commented := hasComment (textOf src range)
+      out := out.push { lint := .manualAtMostOne, ref := cs[first]!.ref, last? := some cs[last]!.ref
+                        msg := manualAtMostOneMsg exactly ops.size fixed range commented }
+    i := j + 1
+  return out
+
+/-- The variant of an ordered enumeration that `k` is, if it is one, as
+its enumeration, its position and the number of variants. -/
+def ordinalOf? (fact? : α → Option NodeFact) (k : BNode α) : Option (String × Nat × Nat) :=
+  match fact? k.ref with
+  | some (.ordinal e p c) => some (e, p, c)
+  | _ => none
+
+/-- Whether `manual_ordering` fires on a test that an operand is one of
+`named` variants of an ordered enumeration of `count`, or, if `negated`,
+none of them, and the comparison its fix is (`lint::manual_ordering`):
+from whether they are the first variants, and whether they are the last.
+The fix compares with the last of them if they are the first, and with
+the first of them otherwise. -/
+def manualOrdering (count named : Nat) (first last negated : Bool) : Bool × Comparison :=
+  (2 ≤ named && named < count && (first || last),
+    if negated then (if first then .gt else .lt) else (if first then .le else .ge))
+
+/-- `manual_ordering`'s message, whose fix is `fixed`, from whether the
+variants are the first of the enumeration, and whether the test is that
+the operand is none of them. -/
+def manualOrderingMsg (fixed : String) (first negated : Bool) (named : Nat) : Msg :=
+  { code? := some Lint.manualOrdering.code, headline := s!"this is `{fixed}`"
+    label? := some s!"{if negated then "excludes" else "names"} the {if first then "first" else "last"} {named} variants of an ordered enumeration"
+    notes := #["note: they differ once a variant is added among those named: the comparison takes it in, and the test does not"]
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-- `manual_ordering` on `n`, in `slot` within `parent`, where `x` is the
+operand and `vs` the variants it is tested against, and `negated` says
+that the test is that it is none of them (`lint::manual_ordering`). -/
+def manualOrderingOf? (src : Array Char) (fact? : α → Option NodeFact) (n x : BNode α) (vs : Array (BNode α))
+    (negated : Bool) (slot : Option Slot) (parent : Range) : Option (OpReport α) := do
+  let ords ← vs.mapM (ordinalOf? fact?)
+  let (e, _, count) ← ords[0]?
+  guard (ords.all fun (e', _, c) => e' == e && c == count)
+  let ps := ords.map (·.2.1)
+  guard ((List.range ps.size).all fun k => !(ps.extract 0 k).contains ps[k]!)
+  let first := ps.all (· < ps.size)
+  let last := ps.all (· + ps.size ≥ count)
+  let (fires, c) := manualOrdering count ps.size first last negated
+  guard fires
+  -- The variant compared with: the last named if they are the first,
+  -- and the first named otherwise.
+  let target := if first then ps.size - 1 else count - ps.size
+  let k ← (ps.findIdx? (· == target)).bind (vs[·]?)
+  let fixed := placed src n slot parent (binText c.op (x.text src) (k.text src))
+  return { lint := .manualOrdering, ref := n.ref, msg := manualOrderingMsg fixed first negated ps.size }
+
+/-- `manual_ordering` on `n`, in `slot` within `parent`: `x in {...}`, or
+at the top of a run of `or` of `x = V`, or of `and` of `x != V`
+(`lint::manual_ordering`). -/
+def manualOrderingAt? (src : Array Char) (fact? : α → Option NodeFact) (n : BNode α) (slot : Option Slot)
+    (parent : Range) : Option (OpReport α) := do
+  match n.kind, n.kids with
+  | .bin "in", #[x, s] =>
+    guard (s.kind == .atom && startsWithAt src s.range.start "{")
+    manualOrderingOf? src fact? n x s.kids false slot parent
+  | .bin op, _ =>
+    let cmp ← if op == "or" then some "=" else if op == "and" then some "!=" else none
+    guard (runTop op src n slot parent)
+    let ds := runOperands op src n
+    let eqs ← ds.mapM fun d => match d.kind, d.kids with
+      | .bin c, #[l, r] => if c == cmp && !enclosed src n.range d.range then some (l, r) else none
+      | _, _ => none
+    let (x, _) ← eqs[0]?
+    guard (eqs.all fun (l, _) => writtenForm (textOf src l.range) == writtenForm (textOf src x.range))
+    manualOrderingOf? src fact? n x (eqs.map (·.2)) (op == "and") slot parent
+  | _, _ => none
+
+/-- The variant of an ordered enumeration that `k` is, or that the
+newtype `k` builds holds, as whether it is the first, and whether it is
+the last. -/
+def extremeOf? (fact? : α → Option NodeFact) (k : BNode α) : Option (Bool × Bool) :=
+  let at_ (k : BNode α) := (ordinalOf? fact? k).map fun (_, p, c) => (p == 0, p + 1 == c)
+  match fact? k.ref, k.kids with
+  | some (.wraps _), #[v] => at_ v
+  | _, _ => at_ k
+
+/-- Whether `absurd_extreme_comparisons` fires on `x OP v`, or on `v OP x`
+if not `right`, where `v` is the first value of an ordered enumeration, or
+a newtype of one, if `first`, and the last if `last`, and what the
+comparison always is (`lint::absurd_ordered`). -/
+def absurdOrdered (op : Comparison) (first last right : Bool) : Bool × Bool :=
+  match if right then op else op.mirror with
+  | .ge => (first, true)
+  | .lt => (first, false)
+  | .le => (last, true)
+  | .gt => (last, false)
+  | _ => (false, false)
+
+/-- A comparison with `v`, the least value of its type if `least` and the
+greatest otherwise, that is always `value`. -/
+def absurdOrderedMsg (v : String) (least value : Bool) : Msg :=
+  { code? := some Lint.absurdExtremeComparisons.code, headline := s!"this comparison is always `{value}`"
+    label? := some s!"`{v}` is the {if least then "least" else "greatest"} value of its type"
+    notes := #["note: the bound or the operator is probably not the one meant"] }
+
+/-- `absurd_extreme_comparisons` on `n`, a comparison that orders, with
+the first or last variant of an ordered enumeration
+(`lint::absurd_ordered`). -/
+def absurdOrderedAt? (src : Array Char) (fact? : α → Option NodeFact) (n : BNode α) : Option (OpReport α) := do
+  let .bin op := n.kind | none
+  let #[a, b] := n.kids | none
+  let c ← Comparison.ofOp? op
+  let try_ (v : BNode α) (right : Bool) : Option (OpReport α) := do
+    let (first, last) ← extremeOf? fact? v
+    let (fires, value) := absurdOrdered c first last right
+    guard fires
+    let least := if right then c matches .ge | .lt else c matches .le | .gt
+    return { lint := .absurdExtremeComparisons, ref := n.ref, msg := absurdOrderedMsg (textOf src v.range) least value }
+  try_ b true <|> try_ a false
+
+/-- Whether `unnecessary_min_or_max` fires on `x.min(v)`, or `x.max(v)` if
+`max`, where `v` is the first variant of an ordered enumeration if
+`first`, and the last if `last`, and whether the call is always `v`,
+rather than `x` (`lint::unnecessary_min_or_max`). -/
+def unnecessaryMinOrMax (max first last : Bool) : Bool × Bool :=
+  (first || last, if first then !max else max)
+
+def unnecessaryMinOrMaxMsg (fixed v : String) (first : Bool) : Msg :=
+  { code? := some Lint.unnecessaryMinOrMax.code, headline := s!"this is always `{fixed}`"
+    label? := some s!"`{v}` is the {if first then "least" else "greatest"} value of its enumeration"
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-- `unnecessary_min_or_max` on `n`, a call of `min` or `max`, in `slot`
+within `parent` (`lint::unnecessary_min_or_max`). -/
+def minOrMaxAt? (src : Array Char) (fact? : α → Option NodeFact) (n : BNode α) (slot : Option Slot)
+    (parent : Range) : Option (OpReport α) := do
+  let .method m := n.kind | none
+  guard (m == "min" || m == "max")
+  let #[x, v] := n.kids | none
+  let (_, p, count) ← ordinalOf? fact? v
+  let first := p == 0
+  let (fires, toV) := unnecessaryMinOrMax (m == "max") first (p + 1 == count)
+  guard fires
+  let fixed := placed src n slot parent ((if toV then v else x).text src)
+  return { lint := .unnecessaryMinOrMax, ref := n.ref, msg := unnecessaryMinOrMaxMsg fixed (textOf src v.range) first }
+
+/-- Whether `redundant_newtype_roundtrip` fires on `Ms(x.0)`, or `Ms(n).0`,
+from whether the newtype built is the one whose field is read
+(`lint::redundant_newtype_roundtrip`). -/
+def redundantNewtypeRoundtrip (same : Bool) : Bool := same
+
+/-- `Ms(x.0)`, or `Ms(n).0` if `read`, whose fix is `fixed`. -/
+def roundtripMsg (newtype fixed : String) (read : Bool) : Msg :=
+  { code? := some Lint.redundantNewtypeRoundtrip.code
+    headline := if read then "this reads the field of a newtype just built" else "this builds a newtype from the field of one of its own"
+    label? := some s!"a round trip through `{newtype}`"
+    fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
+
+/-- `redundant_newtype_roundtrip` on `n`, in `slot` within `parent`
+(`lint::redundant_newtype_roundtrip`). -/
+def roundtripAt? (src : Array Char) (fact? : α → Option NodeFact) (n : BNode α) (slot : Option Slot)
+    (parent : Range) : Option (OpReport α) := do
+  let #[k] := n.kids | none
+  let #[x] := k.kids | none
+  let (t, t', read) ← match fact? n.ref, fact? k.ref with
+    | some (.wraps t), some (.unwraps t') => some (t, t', false)
+    | some (.unwraps t), some (.wraps t') => some (t, t', true)
+    | _, _ => none
+  guard (redundantNewtypeRoundtrip (t == t'))
+  let fixed := placed src n slot parent (x.text src)
+  let name := (t.splitOn ".").getLast?.getD t
+  return { lint := .redundantNewtypeRoundtrip, ref := n.ref, msg := roundtripMsg name fixed read }
+
 /-- The messages of the operator and method lints in `n`, which is in
 `slot` within `parent`, outermost first, where `inElse` says that `n` is
 the `else` branch of a conditional. -/
 partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (isAbs : α → Bool)
-    (mentions : α → Bool) (n : BNode α) (slot : Option Slot) (parent : Range) (inElse : Bool := false) : Array (OpReport α) :=
+    (mentions : α → Bool) (fact? : α → Option NodeFact) (n : BNode α) (slot : Option Slot) (parent : Range)
+    (inElse : Bool := false) : Array (OpReport α) :=
   let slots := n.kind.slots
   let own := match n.kind with
     | .bin op =>
@@ -3768,11 +4105,13 @@ partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool)
         ++ (boolEqualityAt? src boolEq n slot parent).toArray ++ (manualMethodAt? src n slot parent).toArray
         ++ (identityOpAt? src n slot parent).toArray ++ (suspiciousUnaryAt? src n).toArray
         ++ (erasingOpAt? src n).toArray ++ (firstEmptyAt? src n slot parent).toArray
-        ++ (invalidUpcastAt? src isAbs n).toArray ++ operands ++ precedenceAt src n
-        ++ (if op == "and" then chainableAt src n slot parent else #[])
+        ++ (invalidUpcastAt? src isAbs n).toArray ++ (absurdOrderedAt? src fact? n).toArray
+        ++ (manualOrderingAt? src fact? n slot parent).toArray ++ operands ++ precedenceAt src n
+        ++ (if op == "and" then chainableAt src n slot parent ++ manualAtMostOneAt src n slot parent else #[])
     | .ite => (needlessBoolAssignAt? src n slot parent).toArray ++ (branchesSharingAt? src mentions n slot parent).toArray ++ (if inElse then #[] else ifsSameCondAt src n)
-    | .method _ => (methodCallAt? src n slot parent).toArray
+    | .method _ => (methodCallAt? src n slot parent).toArray ++ (minOrMaxAt? src fact? n slot parent).toArray
     | .chain ops => (contradictoryChainAt? src n ops).toArray
+    | .atom => (cardinalityAt? src n slot parent).toArray ++ (roundtripAt? src fact? n slot parent).toArray
     | _ => #[]
   -- A receiver needs parentheses as an operand does.
   let slots := match n.kind, n.kids[0]? with
@@ -3780,17 +4119,18 @@ partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool)
     | .atom, some k => if isReceiverOf src n k then #[some receiverSlot] else slots
     | _, _ => slots
   own ++ (n.kids.mapIdx fun i k =>
-    opReportsIn src boolEq variant? isAbs mentions k (slots[i]?.join) n.range (n.kind == .ite && i == 2)).flatten
+    opReportsIn src boolEq variant? isAbs mentions fact? k (slots[i]?.join) n.range (n.kind == .ite && i == 2)).flatten
 
 /-- The messages of the operator and method lints in an expression written
 in `src` (`Reqs/Lint/Complexity/Comparisons`), where `boolEq` says whether a
 comparison compares `Bool`s, `variant?` which variant without a payload a
 path is, if it is one, `isAbs` whether an expression is a call of `abs`,
-and `mentions` whether an expression mentions a variable or an
-uninterpreted function. -/
+`mentions` whether an expression mentions a variable or an uninterpreted
+function, and `fact?` what is known of an expression of an ordered
+enumeration or a newtype. -/
 def opReports [Inhabited α] (src : Array Char) (boolEq : α → Bool) (variant? : α → Option String) (isAbs : α → Bool)
-    (mentions : α → Bool) (root : BNode α) : Array (OpReport α) :=
-  opReportsIn (upTo src root.range) boolEq variant? isAbs mentions root none root.range
+    (mentions : α → Bool) (fact? : α → Option NodeFact) (root : BNode α) : Array (OpReport α) :=
+  opReportsIn (upTo src root.range) boolEq variant? isAbs mentions fact? root none root.range
 
 /-! ## Arithmetic and parentheses -/
 

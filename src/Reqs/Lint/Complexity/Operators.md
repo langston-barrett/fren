@@ -106,3 +106,84 @@ pub comp double_parens {
     ensure rule: fires? iff depth >= 2
 }
 ```
+
+## Cardinality
+
+`manual_at_most_one` fires on a run of adjacent conjuncts of an `and`,
+each `not (a and b)`, that negate each pair of three or more operands
+exactly once, and nothing else, and is fixable: `not (a? and b?) and not
+(a? and c?) and not (b? and c?)` becomes `at_most_one?(a?, b?, c?)` (see
+[Cardinality](../../Lang/Expressions.md#cardinality)). Where the conjunct
+just before or after the run is the disjunction of the operands, each
+once, as in `(a? or b? or c?) and not (a? and b?) and ...`, the run takes
+it in, and the fix is `exactly_one?(a?, b?, c?)`. Operands are compared
+as [written the same](../../Lint.md#written-the-same), and a pair may be
+written either way round, as in `not (b? and a?)`. The run of `and` is
+read as [`chainable_comparison`](../Style/Comparisons.md#chained-comparisons)
+reads it, and a conjunct in parentheses is not in a run, so `p? and not
+(a? and b?) and ...` fires at the conjuncts after `p?`. The message is
+reported from the first conjunct it replaces to the last. The fix writes
+the operands as the disjunction orders them, or else in the order they
+are first written, and there is no fix where a comment is within the
+conjuncts, which the call would lose; the message then suggests the call.
+
+`n` operands take `n * (n - 1) / 2` such conjuncts, and one left out is
+hard to see among the rest. With two, `not (a? and b?)` is as clear as
+`at_most_one?(a?, b?)`, so the lint does not fire. The fix keeps the
+meaning: at most one argument of `at_most_one?` holds exactly when no two
+of them hold together, and `exactly_one?` holds where, besides, one of them
+does. It keeps the guards where it fires: in the conjunction, each operand
+is [guarded](../../Lang/Expressions.md#sequences) by the operands before
+it, and the arguments of a cardinality operator by none, but only an index
+can be undefined, and the lint does not fire where an operand is written
+with a `[`, as an index `q[i]` is. Clippy has no counterpart.
+`lint::manual_at_most_one` states when it fires, and which call the fix
+is:
+
+```fren
+pub comp manual_at_most_one {
+    in n_operands: Int   -- the operands, each counted once
+    in every_pair?       -- the conjuncts negate each pair of two different operands exactly once
+    in disjunction?      -- the conjunct just before or after them is the disjunction of the operands
+    in bracket?          -- an operand is written with a `[`
+    pub det out fires?
+    pub det out exactly?   -- the fix is `exactly_one?`, rather than `at_most_one?`
+
+    ensure rule: fires? iff n_operands >= 3 and every_pair? and not bracket?
+    ensure fix: exactly? iff disjunction?
+}
+```
+
+The refinements check both fixes, with the pairs in any order and either
+way round:
+
+```fren
+set_option fren.lint.manual_at_most_one "allow" in
+pub comp manual_at_most_one_written {
+    in a?
+    in b?
+    in c?
+    in d?
+    pub det out three? := not (a? and b?) and not (a? and c?) and not (b? and c?)
+    pub det out turned? := not (b? and a?) and not (c? and b?) and not (c? and a?)
+    pub det out four? := not (a? and b?) and not (a? and c?) and not (a? and d?) and not (b? and c?)
+        and not (b? and d?) and not (c? and d?)
+    pub det out exactly? := (a? or b? or c?) and not (a? and b?) and not (a? and c?) and not (b? and c?)
+    pub det out after? := not (a? and b?) and not (a? and c?) and not (b? and c?) and (c? or a? or b?)
+}
+
+pub comp manual_at_most_one_fixed {
+    in a?
+    in b?
+    in c?
+    in d?
+    pub det out three? := at_most_one?(a?, b?, c?)
+    pub det out turned? := at_most_one?(b?, a?, c?)
+    pub det out four? := at_most_one?(a?, b?, c?, d?)
+    pub det out exactly? := exactly_one?(a?, b?, c?)
+    pub det out after? := exactly_one?(c?, a?, b?)
+}
+
+refine manual_at_most_one_sound: manual_at_most_one_fixed refines manual_at_most_one_written
+refine manual_at_most_one_complete: manual_at_most_one_written refines manual_at_most_one_fixed
+```

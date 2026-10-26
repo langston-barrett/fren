@@ -1,0 +1,32 @@
+warning[F0842]: this builds a newtype from the field of one of its own
+ --> test/cli/lints/complexity/f0842_redundant_newtype_roundtrip.fren:9:19
+  |
+9 |     ensure r: y = Ms(x.0)
+  |                   ^^^^^^^ a round trip through `Ms`
+  |
+  = help: `fren fix` can fix this
+  = note: `redundant_newtype_roundtrip` is `warn` by default
+  = help: to allow it, `set_option fren.lint.redundant_newtype_roundtrip "allow"`
+help: write `x`
+  |
+9 -     ensure r: y = Ms(x.0)
+9 +     ensure r: y = x
+  |
+
+warning[F0842]: this reads the field of a newtype just built
+  --> test/cli/lints/complexity/f0842_redundant_newtype_roundtrip.fren:10:19
+   |
+10 |     ensure s: k = Ms(n + 1).0 * 2
+   |                   ^^^^^^^^^^^ a round trip through `Ms`
+   |
+   = help: `fren fix` can fix this
+help: write `(n + 1)`
+   |
+10 -     ensure s: k = Ms(n + 1).0 * 2
+10 +     ensure s: k = (n + 1) * 2
+   |
+
+fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0842`.
+exit=3

@@ -1,0 +1,11 @@
+-- Conjuncts that negate each pair of three operands, with and without
+-- their disjunction.
+comp c {
+    in a?
+    in b?
+    in c?
+    pub out p?
+    pub out q?
+    ensure r: p? iff not (a? and b?) and not (a? and c?) and not (b? and c?)
+    ensure s: q? iff (a? or b? or c?) and not (a? and b?) and not (a? and c?) and not (b? and c?)
+}

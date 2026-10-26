@@ -1,0 +1,2 @@
+-- Cardinality operators of one argument.
+comp c { in a? in b? pub out p? ensure r: p? iff exactly_one?(a?) and not at_most_one?(b?) }

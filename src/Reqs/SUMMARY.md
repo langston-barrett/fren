@@ -42,6 +42,7 @@
     - [Matches](Lint/Pedantic/Matches.md)
     - [Records and functions](Lint/Pedantic/Records.md)
     - [Source text](Lint/Pedantic/Text.md)
+    - [Comparisons](Lint/Pedantic/Comparisons.md)
   - [Restriction](Lint/Restriction.md)
   - [Decidability](Lint/Decidability.md)
 

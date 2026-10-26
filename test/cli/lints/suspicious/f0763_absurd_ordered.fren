@@ -1,0 +1,13 @@
+-- Comparisons with the first or the last variant of an ordered
+-- enumeration, and through a newtype of one.
+pub ordered enum Level { Low, Mid, High }
+pub struct Grade(Level)
+
+comp c {
+    in l: Level
+    in g: Grade
+    pub out p?
+    pub out q?
+    ensure r: p? iff l >= Level::Low or Level::High < l
+    ensure s: q? iff g <= Grade(Level::High)
+}

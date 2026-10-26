@@ -51,6 +51,53 @@ comp absurd_extreme_comparisons_exact {
 }
 ```
 
+`absurd_extreme_comparisons` also fires on a comparison that orders with
+the first or the last variant of an [ordered
+enumeration](../../Lang/Items.md#enumerations), written as a path, or a
+[newtype](../../Lang/Items.md#newtypes) built from one, as in `g >=
+Grade(Level::Low)`. No value is below the first variant, so `x >= First`
+is always `true` and `x < First` always `false`, and none is above the
+last, so `x <= Last` is always `true` and `x > Last` always `false`. The
+variant may be on either side, as in `Last >= x`. It does not fire on `=`
+or `!=`, nor on the comparisons of a [chained
+comparison](../../Lang/Expressions.md#chained-comparisons).
+`lint::absurd_ordered` states when it fires, and
+`lint::absurd_ordered_exact` checks the value against the positions of
+the variants:
+
+```fren
+pub comp absurd_ordered {
+    use self::Comparison::{Ge, Gt, Le, Lt}
+    in op: Comparison
+    in first?            -- the variant is the first
+    in last?             -- the variant is the last
+    in right?            -- the variant is the right operand, rather than the left
+    pub det out fires?
+    pub det out value?   -- what the comparison always is, where it fires
+
+    ensure rule: fires? iff (if right? then (first? and op in {Ge, Lt}) or (last? and op in {Le, Gt})
+        else (first? and op in {Le, Gt}) or (last? and op in {Ge, Lt}))
+    ensure fixed: value? iff op in {Ge, Le}
+}
+
+comp absurd_ordered_exact {
+    in op: Comparison
+    in first?
+    in last?
+    in right?
+    in count: Int        -- the variants of the enumeration
+    in x: Int            -- the position of the other operand
+
+    assume positions: 0 <= x < count
+    assume single: (first? and last?) iff count = 1
+
+    inst p: absurd_ordered { op, first?, last?, right? }
+
+    expect exact: when p.fires?, compares?(op, if right? then x else (if first? then 0 else count - 1),
+        if right? then (if first? then 0 else count - 1) else x) iff p.value?
+}
+```
+
 `contradictory_comparisons` fires on two comparisons of one operand,
 written the same, joined by `and` and never both true, or joined by `or`
 and never both false:

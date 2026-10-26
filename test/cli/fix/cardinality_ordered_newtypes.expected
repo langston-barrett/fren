@@ -1,0 +1,28 @@
+--- test/cli/fix/cardinality_ordered_newtypes.fren
++++ test/cli/fix/cardinality_ordered_newtypes.fren
+@@ -29,12 +29,12 @@
+-    ensure r1: p1? iff not (a? and b?) and not (a? and c?) and not (b? and c?)
+-    ensure r2: p2? iff d? and (a? or b? or c?) and not (b? and a?) and not (c? and a?) and not (c? and b?)
+-    ensure r3: p3? iff not (a? and b?) and not (a? and c?) and not (b? and c?) and (c? or b? or a?) and d?
+-    ensure r4: p4? iff l in {Level::Low, Level::Mid}
+-    ensure r5: p5? iff l = Level::Top or l = Level::High
+-    ensure r6: p6? iff l != Level::Low and l != Level::Mid
+-    ensure r7: p7? iff not exactly_one?(a? or b?)
+-    ensure r8: p8? iff at_most_one?(d?) and c?
+-    ensure r9: m1 = l.max(Level::Low)
+-    ensure r10: m2 = l.min(Level::Low)
+-    ensure r11: y = Ms(x.0)
+-    ensure r12: k = 2 * Ms(n + 1).0
++    ensure r1: p1? iff at_most_one?(a?, b?, c?)
++    ensure r2: p2? iff d? and exactly_one?(a?, b?, c?)
++    ensure r3: p3? iff exactly_one?(c?, b?, a?) and d?
++    ensure r4: p4? iff l <= Level::Mid
++    ensure r5: p5? iff l >= Level::High
++    ensure r6: p6? iff l > Level::Mid
++    ensure r7: p7? iff not (a? or b?)
++    ensure r8: p8? iff true and c?
++    ensure r9: m1 = l
++    ensure r10: m2 = Level::Low
++    ensure r11: y = x
++    ensure r12: k = 2 * (n + 1)
+exit=1

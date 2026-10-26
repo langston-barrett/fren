@@ -1,0 +1,138 @@
+-- The lints of cardinality operators, ordered enumerations and newtypes,
+-- in both front ends.
+set_option fren.lint.manual_ordering "warn"
+
+pub ordered enum Severity { Silent, Info, Warning, Error }
+pub ordered enum Single { Only }
+pub enum Mode { Off, Heat, Cool }
+pub struct Ms(Int)
+pub struct Bytes(Int)
+pub struct Grade(Severity)
+
+comp cardinality {
+    in a?
+    in b?
+    in c?
+    in d?
+    in q: Seq(Int)
+    pub out o1?
+    pub out o2?
+    pub out o3?
+    pub out o4?
+    pub out o5?
+    pub out o6?
+    pub out o7?
+    pub out o8?
+    pub out o9?
+    pub out o10?
+    pub out o11?
+    pub out o12?
+
+    ensure r1: o1? iff not (a? and b?) and not (a? and c?) and not (b? and c?)
+    --~^ warning: this is `at_most_one?` of 3 operands
+    ensure r2: o2? iff (a? or b? or c?) and not (a? and b?) and not (b? and c?) and not (a? and c?)
+    --~^ warning: this is `exactly_one?` of 3 operands
+    ensure r3: o3? iff d? and not (b? and a?) and not (c? and a?) and not (c? and b?) and (c? or b? or a?)
+    --~^ warning: this is `exactly_one?` of 3 operands
+    -- A pair left out, two operands, a pair written twice, or a conjunct
+    -- in parentheses: none fires.
+    ensure r4: o4? iff not (a? and b?) and not (a? and c?)
+    ensure r5: o5? iff not (a? and b?)
+    ensure r6: o6? iff not (a? and b?) and not (b? and a?) and not (a? and c?) and not (b? and c?)
+    ensure r7: o7? iff not (a? and b?) and (not (a? and c?)) and not (b? and c?)
+    -- Nor where an operand indexes, whose guards would change.
+    ensure r8: when q.len > 1, o8? iff (not (q[0] > 0 and a?) and not (q[0] > 0 and q[1] > 0) and not (a? and q[1] > 0))
+    ensure r9: o9? iff exactly_one?(a?)            --~ warning: this `Bool` expression can be simpler
+    ensure r10: o10? iff at_most_one?(b?) or c?    --~ warning: this `Bool` expression can be simpler
+    ensure r11: o11? iff exactly_one?(a?, b?, a?)  --~ warning: `a?` is an argument of `exactly_one?` more than once
+    ensure r12: o12? iff at_most_one?(a?, b?, c?) and exactly_one?(a?, not a?)
+}
+
+comp orderings {
+    in s: Severity
+    in t: Severity
+    in g: Grade
+    in o: Single
+    in m: Mode
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+    pub out p5?
+    pub out p6?
+    pub out p7?
+    pub out p8?
+    pub out p9?
+
+    ensure r1: p1? iff s >= Severity::Silent       --~ warning: this comparison is always `true`
+    ensure r2: p2? iff s < Severity::Silent        --~ warning: this comparison is always `false`
+    ensure r3: p3? iff Severity::Error >= s        --~ warning: this comparison is always `true`
+    ensure r4: p4? iff s > Severity::Error         --~ warning: this comparison is always `false`
+    ensure r5: p5? iff g >= Grade(Severity::Silent)  --~ warning: this comparison is always `true`
+    ensure r6: p6? iff o <= Single::Only           --~ warning: this comparison is always `true`
+    -- Comparisons with a variant between the first and the last, which
+    -- chain as `Int`s do, and of an enumeration that is not ordered.
+    ensure r7: p7? iff s > Severity::Silent and s < Severity::Error and t <= Severity::Warning
+    --~^ warning: these comparisons can be chained
+    ensure r8: p8? iff m = Mode::Off or m != Mode::Cool
+    ensure r9: p9? iff s < Severity::Warning or s = Severity::Warning
+    --~^ warning: these two comparisons are `s <= Severity::Warning`
+}
+
+comp memberships {
+    in s: Severity
+    in m: Mode
+    pub out p1?
+    pub out p2?
+    pub out p3?
+    pub out p4?
+    pub out p5?
+    pub out p6?
+    pub out p7?
+    pub out p8?
+
+    ensure r1: p1? iff s in {Severity::Silent, Severity::Info}   --~ warning: this is `s <= Severity::Info`
+    ensure r2: p2? iff s in {Severity::Error, Severity::Warning}  --~ warning: this is `s >= Severity::Warning`
+    ensure r3: p3? iff s = Severity::Silent or s = Severity::Info   --~ warning: this is `s <= Severity::Info`
+    ensure r4: p4? iff s != Severity::Error and s != Severity::Warning  --~ warning: this is `s < Severity::Warning`
+    -- Not the first or last variants, all of them, or not ordered.
+    ensure r5: p5? iff s in {Severity::Silent, Severity::Warning}
+    ensure r6: p6? iff s in {Severity::Silent, Severity::Info, Severity::Warning, Severity::Error}
+    ensure r7: p7? iff m in {Mode::Off, Mode::Heat}
+    ensure r8: p8? iff s = Severity::Silent or s = Severity::Info or s = Severity::Error
+}
+
+comp bounds {
+    in s: Severity
+    in t: Severity
+    pub out v1: Severity
+    pub out v2: Severity
+    pub out v3: Severity
+    pub out v4: Severity
+    pub out v5: Severity
+
+    ensure r1: v1 = s.max(Severity::Silent)  --~ warning: this is always `s`
+    ensure r2: v2 = s.min(Severity::Silent)  --~ warning: this is always `Severity::Silent`
+    ensure r3: v3 = s.max(Severity::Error)   --~ warning: this is always `Severity::Error`
+    ensure r4: v4 = s.min(Severity::Error)   --~ warning: this is always `s`
+    ensure r5: v5 = s.max(t).min(Severity::Info)
+}
+
+comp newtypes {
+    in x: Ms
+    in n: Int
+    in y: Bytes
+    pub out m1: Ms
+    pub out k1: Int
+    pub out m2: Ms
+    pub out k2: Int
+    pub out m3: Ms
+
+    ensure w1: m1 = Ms(x.0)                 --~ warning: this builds a newtype from the field of one of its own
+    ensure w2: k1 = Ms(n + 1).0 * 2         --~ warning: this reads the field of a newtype just built
+    ensure w3: k2 = (Ms(n)).0 + 1           --~ warning: this reads the field of a newtype just built
+    -- A conversion from another newtype, and a field changed.
+    ensure w4: m2 = Ms(y.0)
+    ensure w5: m3 = Ms(x.0 + 1)
+    expect same: Ms(n) = Ms(n)           --~ warning: both operands of `=` are written the same
+}

@@ -570,6 +570,9 @@ two, `exactly_one?` is `!=`; `exactly_one?` implies `at_most_one?`; and
 `at_most_one?` is the conjunction over each pair:
 
 ```fren
+set_option fren.lint.eq_op "allow" in
+set_option fren.lint.manual_at_most_one "allow" in
+set_option fren.lint.nonminimal_bool "allow" in
 pub comp cardinality_laws {
     in a?
     in b?

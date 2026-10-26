@@ -3,8 +3,9 @@
 The lints of the `pedantic` group are matters of judgement, or would fire
 on much that reads well as it is, so they are `allow` by default. This
 chapter has the lints of expressions and of literals, and its subchapters
-the others: those of [matches](Pedantic/Matches.md) and of [records and
-functions](Pedantic/Records.md).
+the others: those of [matches](Pedantic/Matches.md), of [records and
+functions](Pedantic/Records.md), of [source text](Pedantic/Text.md) and of
+[comparisons](Pedantic/Comparisons.md).
 
 Where a lint rewrites an expression, its section checks the rewrite with
 [refinement](../Lang/Refinement.md): a component `lint::R_written`

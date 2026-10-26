@@ -1,0 +1,33 @@
+warning[F0841]: this is `l <= Level::Mid`
+  --> test/cli/lints/pedantic/f0841_manual_ordering.fren:10:22
+   |
+10 |     ensure r: p? iff l in {Level::Low, Level::Mid}
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ names the first 2 variants of an ordered enumeration
+   |
+   = note: they differ once a variant is added among those named: the comparison takes it in, and the test does not
+   = help: `fren fix` can fix this
+   = note: `manual_ordering` is set to `warn`
+help: write `l <= Level::Mid`
+   |
+10 -     ensure r: p? iff l in {Level::Low, Level::Mid}
+10 +     ensure r: p? iff l <= Level::Mid
+   |
+
+warning[F0841]: this is `l < Level::High`
+  --> test/cli/lints/pedantic/f0841_manual_ordering.fren:11:22
+   |
+11 |     ensure s: q? iff l != Level::Top and l != Level::High
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ excludes the last 2 variants of an ordered enumeration
+   |
+   = note: they differ once a variant is added among those named: the comparison takes it in, and the test does not
+   = help: `fren fix` can fix this
+help: write `l < Level::High`
+   |
+11 -     ensure s: q? iff l != Level::Top and l != Level::High
+11 +     ensure s: q? iff l < Level::High
+   |
+
+fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0841`.
+exit=3

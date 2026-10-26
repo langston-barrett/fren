@@ -3483,7 +3483,9 @@ The lint fires on `=`, `!=`, `<`, `<=`, `>`, `>=`, `iff`, `subset`, `and`,
 of the operand, but not on `+`, `*` or `++`, where `x + x` means something.
 It also fires on `when c?, c?`, which is always `true`, and `unless c?,
 c?`, which is `c?`: the body is probably a copy of the condition, pasted
-where the consequent was meant.
+where the consequent was meant. And it fires on an argument of
+`exactly_one?` or `at_most_one?` written twice, as in `at_most_one?(a?,
+b?, a?)`, which holds only where `a?` is `false`.
 "# },
   { code := "F0737", explanation := r#"A conditional whose two branches are written the same (a warning, `same_branches`).
 
@@ -4075,6 +4077,11 @@ comp c { in q: Seq(Int) pub out p? ensure r: p? iff q.len < 3 }
 
 The comparisons that say whether a collection is empty, such as `q.len >
 0`, are `length_zero`'s and `card_zero`'s.
+
+No value of an ordered enumeration is below its first variant or above its
+last, so a comparison with one of them can be fixed too: with `pub ordered
+enum Level { Low, High }`, `l >= Level::Low` is always `true`, and `l >
+Level::High` always `false`.
 "# },
   { code := "F0764", explanation := r#"An operation whose value ignores an operand (a warning, `erasing_op`).
 
@@ -4871,6 +4878,92 @@ place of the application, with the arguments in place of the parameters:
 
 ```fren
 comp c { in x: Int pub out y: Int ensure r: y = 2 * x }
+```
+"# },
+  { code := "F0840", explanation := r#"A conjunction that negates each pair of three or more operands (a warning, `manual_at_most_one`).
+
+Example:
+
+```fren
+comp c { in a? in b? in c? pub out p? ensure r: p? iff not (a? and b?) and not (a? and c?) and not (b? and c?) }
+```
+
+The conjunction says that at most one of the operands holds, which
+`at_most_one?` says directly, and without the pair that is easy to miss
+among the conjuncts. With the disjunction of the operands as well, as in
+`(a? or b? or c?) and ...`, it says that exactly one holds. `fren fix` can
+fix this:
+
+```fren
+comp c { in a? in b? in c? pub out p? ensure r: p? iff at_most_one?(a?, b?, c?) }
+```
+"# },
+  { code := "F0841", explanation := r#"A membership that names the first or last variants of an ordered enumeration (`manual_ordering`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.manual_ordering "warn"
+
+pub ordered enum Level { Low, Mid, High, Top }
+
+comp c { in l: Level pub out p? ensure r: p? iff l in {Level::Low, Level::Mid} }
+```
+
+`Level::Low` and `Level::Mid` are the first two variants of `Level`, so the
+membership is `l <= Level::Mid`. A chain of `l = V` joined by `or` is a
+membership too, and one of `l != V` joined by `and` is the opposite, so
+`l != Level::Top and l != Level::High` is `l < Level::High`. The two differ
+once a variant is added among the ones named: the comparison takes it in,
+and the membership does not, which is why the lint is allowed by default.
+`fren fix` can fix this:
+
+```fren
+pub ordered enum Level { Low, Mid, High, Top }
+
+comp c { in l: Level pub out p? ensure r: p? iff l <= Level::Mid }
+```
+"# },
+  { code := "F0842", explanation := r#"A newtype built from the field of one, or the field of a newtype just built (a warning, `redundant_newtype_roundtrip`).
+
+Example:
+
+```fren
+pub struct Ms(Int)
+
+comp c { in x: Ms pub out y: Ms ensure r: y = Ms(x.0) }
+```
+
+`Ms(x.0)` is `x`, when `x` is an `Ms`, and `Ms(n).0` is `n`. Building a
+newtype from the field of another, such as `Ms(b.0)` for `b` of `struct
+Bytes(Int)`, converts between the two, and is left as it is. `fren fix`
+can fix this:
+
+```fren
+pub struct Ms(Int)
+
+comp c { in x: Ms pub out y: Ms ensure r: y = x }
+```
+"# },
+  { code := "F0843", explanation := r#"A `min` or `max` with the least or greatest value of an ordered enumeration (a warning, `unnecessary_min_or_max`).
+
+Example:
+
+```fren
+pub ordered enum Level { Low, Mid, High }
+
+comp c { in l: Level pub out m: Level ensure r: m = l.max(Level::Low) }
+```
+
+No value is below `Level::Low`, so `l.max(Level::Low)` is always `l`, and
+`l.min(Level::Low)` always `Level::Low`; with `Level::High`, the last
+variant, `min` is always `l` and `max` always `Level::High`. `fren fix` can
+fix this:
+
+```fren
+pub ordered enum Level { Low, Mid, High }
+
+comp c { in l: Level pub out m: Level ensure r: m = l }
 ```
 "# }
 ]
