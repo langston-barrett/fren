@@ -104,6 +104,11 @@ structure Sound (b : Backend Id F V) (vars : Array VarSig) (Val : Type) where
   existsOutputs : (∀ n, HasType n (ρ n)) →
     (den (b.existsOutputs f) ρ ↔ ∃ ρ', (∀ n, HasType n (ρ' n)) ∧ OnlyOuts vars ρ ρ' ∧ den f ρ')
   pin : b.pin n v = some f → (∀ n, HasType n (ρ n)) → (den f ρ ↔ ρ n = value v)
+  /-- The variant of a value of an enumeration; none for any other value. -/
+  variantOf : Val → Option Variant
+  /-- A tester: `x` is of the variant of `v`, which `pinVariant` gives. -/
+  pinVariant : b.pinVariant n v = some (k, f) → (∀ n, HasType n (ρ n)) →
+    variantOf (value v) = some k ∧ (den f ρ ↔ variantOf (ρ n) = some k)
   prime : (∀ n, HasType n (ρ n)) → (den (b.prime f) ρ ↔ den f (primeEnv vars ρ))
   samePrimed : (∀ n, HasType n (ρ n)) → (den (b.samePrimed x) ρ ↔ ρ x = ρ (primed x))
   /-- Different values of a sort are rendered differently. -/
@@ -315,6 +320,37 @@ theorem minimize_spec (base cands : Array (Name × F)) (goal : F) :
       rw [Array.toList_filter]
       exact List.filter_sublist.trans hsub
     · exact ⟨_, rfl, hsub, hent, hor⟩
+
+/-- Found forcing is forcing (`check::forcing`): if `forces` says `hyps`
+force `x` to `v`, then `x` is `v` wherever they hold. -/
+theorem forces_spec (hyps : Array (Name × F)) (x : Name) (v : V) (h : (forces b hyps x v).run = true) :
+    ∀ ρ, s.Typed ρ → s.Holds hyps ρ → ρ x = s.value v := by
+  unfold forces at h
+  simp only [bind_eq, run_eq] at h
+  cases hf : b.pin x v with
+  | none => simp [hf, pure_eq] at h
+  | some f =>
+    simp only [hf, pure_eq] at h
+    intro ρ hρ hh
+    exact (s.pin hf hρ).1 (s.query_unsat (Outcome.isUnsat_iff.1 h) ρ hρ hh)
+
+/-- Found variant forcing is variant forcing (`check::forcing`): if
+`forcesVariant` says `hyps` force `x` to `v`'s variant, then `x` is of
+that variant wherever they hold. -/
+theorem forcesVariant_spec (hyps : Array (Name × F)) (x : Name) (v : V)
+    (h : (forcesVariant b hyps x v).run = true) :
+    ∀ ρ, s.Typed ρ → s.Holds hyps ρ → s.variantOf (ρ x) = s.variantOf (s.value v) := by
+  unfold forcesVariant at h
+  simp only [bind_eq, run_eq] at h
+  cases hf : b.pinVariant x v with
+  | none => simp [hf, pure_eq] at h
+  | some kf =>
+    obtain ⟨k, f⟩ := kf
+    simp only [hf, pure_eq] at h
+    intro ρ hρ hh
+    have ⟨hv, hd⟩ := s.pinVariant hf hρ
+    rw [hv]
+    exact hd.1 (s.query_unsat (Outcome.isUnsat_iff.1 h) ρ hρ hh)
 
 /-- A `fail` means the trigger holds in no behaviour, and the reported
 constraints rule it out wherever the definitions hold. -/
@@ -1254,6 +1290,8 @@ noncomputable def semBackend (vars : Array VarSig) (Val : Type) (ty : Name → V
     conj := fun fs ρ => ∀ f ∈ fs, f ρ
     existsOutputs := fun f ρ => ∃ ρ', (∀ n, ty n (ρ' n)) ∧ OnlyOuts vars ρ ρ' ∧ f ρ'
     pin := fun n v => some fun ρ => ρ n = v
+    -- Values have no variants here.
+    pinVariant := fun _ _ => none
     render := fun _ v => str v
     prime := fun f ρ => f (primeEnv vars ρ)
     samePrimed := fun x ρ => ρ x = ρ (primed x)
@@ -1292,6 +1330,10 @@ noncomputable def semSound (vars : Array VarSig) (Val : Type) (ty : Name → Val
     intro _ _ _ _ h _
     cases h
     rfl
+  variantOf _ := none
+  pinVariant := by
+    intro _ _ _ _ _ h
+    cases h
   prime := fun _ => .rfl
   samePrimed := fun _ => .rfl
   render_inj := fun h _ _ => hstr _ _ h

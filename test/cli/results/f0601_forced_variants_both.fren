@@ -1,0 +1,18 @@
+-- Two guarantees that force an output of an enumeration only to variants,
+-- different ones, and a whole value against a variant of a payload of two
+-- values (F0601).
+-- fren-covers: check::clash_notes
+enum Shape { Circle(Int), Square(Int), Rect(Int, Int), Empty }
+
+comp variants {
+    pub out s: Shape
+    ensure round: s is Shape::Circle(_)
+    ensure square: s is Shape::Square(_)
+}
+
+comp mixed {
+    in x: Int
+    pub out s: Shape
+    ensure one: s = Shape::Circle(x)
+    ensure boxy: s is Shape::Rect(_, _)
+}

@@ -12,7 +12,8 @@ from the evaluator (`FrenCli.Eval`), from the definitions of
 `Reqs/Check`.
 
 The specs stay in a fragment where brute force is exact: `Bool`s,
-enumerations without payloads, ordered or not, `Int`s that constraints named `range_*`
+enumerations without payloads, ordered or not, the enumeration `P` with `Bool`
+payloads, `Int`s that constraints named `range_*`
 bound to `0..2`, an abstract type and a function from it to `Bool`, with
 instances, `det out`s and global expectations. Every query's hypotheses
 then bound every `Int` that matters, except the comparison sets of the
@@ -40,6 +41,9 @@ inductive GTy where
   | bool | int | enum | abs
   /-- The newtype `W` of `Int`. -/
   | wrap
+  /-- The enumeration with payloads `P { A, B(Bool), C(Bool) }`, whose
+  values' variants a clash note may give (`Reqs/Check#forced-outputs`). -/
+  | pay
   /-- Of the spec's element type. -/
   | set | rel | seq
   deriving BEq, Inhabited
@@ -78,7 +82,7 @@ def elemTy (useEnum : Bool) : GTy := if useEnum then .enum else .bool
 
 def tyName (elem : GTy) (t : GTy) : String :=
   let base : GTy → String
-    | .int => "Int" | .enum => "E" | .abs => "T" | .wrap => "W" | _ => "Bool"
+    | .int => "Int" | .enum => "E" | .abs => "T" | .wrap => "W" | .pay => "P" | _ => "Bool"
   match t with
   | .set => s!"Set({base elem})"
   | .rel => s!"Rel({base elem}, {base elem})"
@@ -122,6 +126,31 @@ def wrapTerm (sc : Scope) : R String := do
   | 2 => return s!"W({← intTerm sc})"
   | 3 => return s!"W({← below 3})"
   | _ => pick ws
+
+/-- A value of `P`: a variable, or a literal, whose payload may be an
+expression. -/
+def payTerm (sc : Scope) (b : String) : R String := do
+  let ps := sc.of .pay
+  if !ps.isEmpty && (← chance 50) then return ← pick ps
+  match ← below 3 with
+  | 0 => return "P::A"
+  | 1 => return s!"P::B({b})"
+  | _ => return s!"P::C({b})"
+
+/-- A pattern of `P`: of one variant, or two, with `_` or a literal for
+its payload. -/
+def payPattern : R String := do
+  let one : R String := do
+    match ← below 5 with
+    | 0 => return "P::A"
+    | 1 => return "P::B(_)"
+    | 2 => return "P::C(_)"
+    | _ => return s!"P::{← pick #["B", "C"]}({← pick #["true", "false"]})"
+  -- Of two variants, so that neither alternative is unreachable.
+  if ← chance 30 then
+    let (a, b) ← pick #[("P::A", "P::B(_)"), ("P::B(true)", "P::C(_)"), ("P::C(false)", "P::A")]
+    return s!"{a} | {b}"
+  one
 
 /-- A value of the element type. -/
 def elemTerm (sc : Scope) : R String := do
@@ -211,6 +240,7 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
     unless (sc.of .rel).isEmpty do kinds := kinds ++ #[7, 7]
     unless (sc.of .seq).isEmpty do kinds := kinds ++ #[8, 8]
     unless (sc.of .wrap).isEmpty do kinds := kinds ++ #[9, 9]
+    unless (sc.of .pay).isEmpty do kinds := kinds ++ #[10, 10, 10]
     match ← pick kinds with
     | 1 =>
       -- A `match` on a `Bool`, with literal patterns, sometimes with a
@@ -281,6 +311,17 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
     | 9 =>
       if ← chance 30 then return s!"{← pick (sc.of .wrap)}.0 {← pick #["=", "<", ">="]} {← intTerm sc}"
       return s!"{← wrapTerm sc} {← pick #["=", "!=", "<", "<=", ">", ">="]} {← wrapTerm sc}"
+    | 10 =>
+      let x ← pick (sc.of .pay)
+      -- A pattern test, an equation, or a `match` that reads a payload.
+      match ← below 4 with
+      | 0 | 1 => return s!"{x} is {← payPattern}"
+      | 2 =>
+        let b ← if depth > 0 then genBool sc (depth - 1) else pick #["true", "false"]
+        return s!"{x} {← pick #["=", "!="]} {← payTerm sc b}"
+      | _ =>
+        let rest ← if depth > 0 then genBool sc (depth - 1) else pick #["true", "false"]
+        return s!"(match {x} \{ P::B(y?) => y?, P::C(y?) => not y?, _ => {rest} })"
     | _ => pick #["true", "false"]
   if depth == 0 then return ← atom
   match ← below 10 with
@@ -328,14 +369,17 @@ def varName (t : GTy) (isIn : Bool) (k : Nat) : String :=
   | .enum, true => s!"m{k}" | .enum, false => s!"e{k}"
   | .abs, _ => s!"t{k}"
   | .wrap, true => s!"u{k}" | .wrap, false => s!"v{k}"
+  | .pay, true => s!"i{k}" | .pay, false => s!"o{k}"
   | .set, _ => s!"s{k}" | .rel, _ => s!"rel{k}" | .seq, _ => s!"q{k}"
 
-def genComp (idx : Nat) (prev : Array GComp) (useEnum useAbs useWrap : Bool) (nVariants : Nat) (ordered : Bool)
+def genComp (idx : Nat) (prev : Array GComp) (useEnum useAbs useWrap usePay : Bool) (nVariants : Nat) (ordered : Bool)
     (collections : Array GTy) : R GComp := do
   let wraps := if useWrap then #[GTy.wrap] else #[]
+  let pays := if usePay then #[GTy.pay] else #[]
   let tys := #[GTy.bool, .bool, .int] ++ (if useEnum then #[GTy.enum] else #[]) ++ (if useAbs then #[GTy.abs] else #[])
-    ++ wraps ++ collections
-  let outTys := #[GTy.bool, .int] ++ (if useEnum then #[GTy.enum] else #[]) ++ wraps
+    ++ wraps ++ pays ++ collections
+  -- Outputs of `P` more often, for clashes of variants.
+  let outTys := #[GTy.bool, .int] ++ (if useEnum then #[GTy.enum] else #[]) ++ wraps ++ pays ++ pays
   let mut vars : Array GVar := #[]
   for k in [0:(← below 3) + 1] do
     let t ← pick tys
@@ -364,6 +408,7 @@ def genComp (idx : Nat) (prev : Array GComp) (useEnum useAbs useWrap : Bool) (nV
         | .enum => if (insc.of .enum).isEmpty || (← chance 30) then pure s!"E::V{← below nVariants}" else pick (insc.of .enum)
         | .abs => pick (insc.of .abs)
         | .wrap => if (insc.of .wrap).isEmpty || (← chance 30) then pure s!"W({← below 3})" else pick (insc.of .wrap)
+        | .pay => payTerm insc (← pick #["true", "false"])
         | .set => setTerm insc
         | .rel => relTerm insc
         | .seq => seqTerm insc
@@ -402,6 +447,8 @@ def genSpec : R GSpec := do
   let useEnum ← chance 60
   let useAbs ← chance 35
   let useWrap ← chance 35
+  let usePay ← chance 35
+  let genericPay ← chance 50
   let nVariants := (← below 2) + 2
   let ordered ← chance 50
   let mut collections := #[]
@@ -415,13 +462,17 @@ def genSpec : R GSpec := do
     out := out ++ s!"pub {if ordered then "ordered " else ""}enum E \{ {", ".intercalate ((List.range nVariants).map (s!"V{·}"))} }\n"
   if useAbs then out := out ++ "pub type T\npub fn p?(T)\n"
   if useWrap then out := out ++ "pub ordered struct W(Int)\n"
+  -- Sometimes generic, declared as `P(Bool)`, whose values are the same.
+  if usePay then
+    out := out ++ (if genericPay then "pub enum P(X) { A, B(X), C(Bool) }\n" else "pub enum P { A, B(Bool), C(Bool) }\n")
   let mut comps : Array GComp := #[]
   for i in [0:(← below 2) + 1] do
-    comps := comps.push (← genComp i comps useEnum useAbs useWrap nVariants ordered collections)
+    comps := comps.push (← genComp i comps useEnum useAbs useWrap usePay nVariants ordered collections)
   for c in comps do
     out := out ++ s!"\npub comp {c.name} \{\n"
     for v in c.vars do
-      let ty := if v.ty == .bool then "" else s!": {tyName (elemTy useEnum) v.ty}"
+      let ty := if v.ty == .bool then "" else if v.ty == .pay && genericPay then ": P(Bool)"
+        else s!": {tyName (elemTy useEnum) v.ty}"
       let mods := if v.isIn then "in" else s!"{if v.isPub then "pub " else ""}{if v.isDet then "det " else ""}out"
       out := out ++ s!"    {mods} {v.name}{ty}\n"
     if let some i := c.inst? then
@@ -470,10 +521,15 @@ partial def domain (sp : Spec) (size : Nat) : VTy → Array Val
     let xs := domain sp size t
     #[.seq #[]] ++ xs.map (.seq #[·]) ++ xs.flatMap fun x => xs.map fun y => .seq #[x, y]
   | .abstract s => (Array.range size).map (.abs s)
-  | .data p _ => match sp.data.find? p with
-    | some d => (Array.range d.ctors.size).map (.ctor p · #[])
+  -- Each variant with each value of its payload, which the generator
+  -- makes of finite types (`P`'s `Bool`s), with a generic type's
+  -- arguments for its parameters.
+  | .data p args => match sp.data.find? p with
+    | some d => (d.ctors.zipIdx).flatMap fun (c, i) =>
+      (c.fields.foldl (init := #[#[]]) fun pre (_, t) =>
+        pre.flatMap fun xs => (domain sp size (t.subst args)).map xs.push).map (.ctor p i ·)
     | none => #[]
-  -- The generator declares no generic types.
+  -- Substituted by the type's arguments, above.
   | .param _ => #[]
 
 /-- Every interpretation of the functions, whose parameters are abstract
@@ -698,12 +754,37 @@ def checkDetail (st : LState) (c : Comp) (r : CheckResult) : Option String := Id
     -- have, can only force more.
     for cl in r.clashes do
       let some v := flat.find? (·.name == cl.output) | return some s!"a clash names {cl.output}, which is not an output"
-      let forced (names : Array Name) (text : String) : Bool :=
-        match parseValue st c.path.getPrefix v.ty text with
-        | .ok val => Is.all fun I => (models sp size I order (context ++ named sp c names) env).all (·[cl.output]? == some val)
-        | .error _ => false
-      unless forced #[cl.guarantee] cl.value && forced cl.rest cl.restValue && cl.value != cl.restValue do
-        return some s!"on the input {input}, {cl.guarantee} and {cl.rest} do not force {cl.output} to {cl.value} and {cl.restValue}"
+      -- A value's variant, as a clash note names it.
+      let variantOf (val : Val) : Option String := match val with
+        | .ctor ty idx _ => do
+          let d ← sp.data.find? ty
+          if d.isRecord then none
+          return s!"{ty.getString!}::{(← d.ctors[idx]?).name}"
+        | _ => none
+      let models' (names : Array Name) (I : Interp) := models sp size I order (context ++ named sp c names) env
+      -- Every assignment that satisfies them has the value, or a value of
+      -- the variant, and some does.
+      let forced (names : Array Name) : Fren.Core.Forced → Bool
+        | .value text => match parseValue st c.path.getPrefix v.ty text with
+          | .ok val => Is.all fun I => (models' names I).all (·[cl.output]? == some val)
+          | .error _ => false
+        | .variant k => Is.all fun I => (models' names I).all fun m => (m[cl.output]?.bind variantOf) == some k.name
+      -- Different values, or values of different variants.
+      let variant : Fren.Core.Forced → Option String
+        | .value text => (parseValue st c.path.getPrefix v.ty text).toOption.bind variantOf
+        | .variant k => some k.name
+      let differ := match cl.forced, cl.restForced with
+        | .value a, .value b => a != b
+        | f, f' => (variant f).isSome && variant f != variant f'
+      -- A side shows its variant only where it does not force its value.
+      let onlyVariant (names : Array Name) : Fren.Core.Forced → Bool
+        | .variant _ => Is.any fun I => !(models' names I).isEmpty && !((models' names I).all fun m =>
+            (models' names I).all fun m' => m[cl.output]? == m'[cl.output]?)
+        | .value _ => true
+      unless forced #[cl.guarantee] cl.forced && forced cl.rest cl.restForced && differ do
+        return some s!"on the input {input}, {cl.guarantee} and {cl.rest} do not force {cl.output} to {repr cl.forced} and {repr cl.restForced}"
+      unless onlyVariant #[cl.guarantee] cl.forced && onlyVariant cl.rest cl.restForced do
+        return some s!"on the input {input}, {cl.guarantee} or {cl.rest} force a whole value of {cl.output}, but only a variant is shown"
   | .vacuous core =>
     let some p := prop? | return none
     -- A cover goal's core rules out the goal itself.

@@ -331,6 +331,28 @@ def renderValue (dts : Array DataDecl) (v : String) (ty? : Option Fren.Core.Ty :
   | #[t] => renderTerm dts ty? t
   | _ => wrap (v.replace "|" "")
 
+/-- The variant of `v`, a value as cvc5 writes it, of the type `ty`, an
+enumeration: the variant as Fren names it (`Decision::RetryAfter`, as
+`renderTerm` shows its constructor), its index among the enumeration's, the
+enumeration and its type arguments. Not of a newtype of one, whose values
+no pattern matches (`Reqs/Check#forced-outputs`). -/
+def variantOfValue (dts : Array DataDecl) (ty : Fren.Core.Ty) (v : String) :
+    Option (Fren.Core.Variant × Nat × DataDecl × List Fren.Core.Ty) := do
+  match ty with
+  | .enum path args =>
+    let d ← dts.find? fun d => d.path == path && !d.isRecord
+    -- A value of an abstract type within it cannot be written back.
+    if v.contains '@' then none
+    let #[t] := (parseTerms v.toList.toArray 0).1 | none
+    let head ← match unqualify t with
+      | Term.atom a => some a
+      | Term.list ts => match ts[0]? with
+        | some (Term.atom a) => some a
+        | _ => none
+    let idx ← d.ctors.findIdx? fun (c, _) => s!"{Fren.Core.showPath d.path}::{c}" == head
+    return ({ name := lastTwo head, arity := d.ctors[idx]!.2.size }, idx, d, args)
+  | _ => none
+
 /-- The variables of `c` other than its `in`s, renamed to their second
 copies (`Fren.Core.primed`). -/
 def primes (c : CComp) : Array CVar :=
@@ -498,6 +520,11 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
   -- A value of an abstract type names a solver-internal constant, such as
   -- `@U_0`, which a fresh query cannot parse.
   pin n v := return if v.contains '@' then none else some s!"(= {quote n.toString} {v})"
+  -- The tester of its variant (`DataDecl.tester`), by the variable's type.
+  pinVariant n v := return do
+    let ty ← (c.vars ++ primes c).find? (·.name == n) |>.map (·.ty)
+    let (k, idx, d, args) ← variantOfValue dts ty v
+    return (k, d.tester idx (quote n.toString) args)
   -- By the variable's type, for its newtypes.
   render n v := return renderValue dts v ((c.vars ++ primes c).find? (·.name == n) |>.map (·.ty))
   prime := prime c

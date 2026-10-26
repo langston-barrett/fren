@@ -32,6 +32,8 @@ inductive Fm where
   | exOutputs (outs : Array (Name × VTy)) (f : Fm)
   /-- `x = v`, for a value as the solver writes it. -/
   | pin (x : Name) (v : String)
+  /-- `x` is of the variant of `v`, a value as the solver writes it. -/
+  | pinVariant (x : Name) (v : String)
   /-- `f` over the second copy of the variables that `copied` names. -/
   | primed (copied : Array Name) (f : Fm)
   /-- `x = x'`. -/
@@ -260,6 +262,10 @@ partial def Fm.eval (sp : Spec) (sy : Symbols) (I : Interp) (env : Env) (tys : N
   | .pin x v => do
     let v ← parseSExp? v >>= sy.eval []
     return env[x]? == some v
+  | .pinVariant x v => do
+    let .ctor ty idx _ ← parseSExp? v >>= sy.eval [] | none
+    let .ctor ty' idx' _ ← env[x]? | none
+    return ty == ty' && idx == idx'
   | .same x => do return (← env[x]?) == (← env[Fren.Core.primed x]?)
   | .defn d e => do return (← env[d]?) == (← e.eval I env.look)
   | .defined ds f =>
@@ -325,6 +331,7 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
     conj := fun fs => (b.conj (fs.map (·.1)), .conj (fs.map (·.2)))
     existsOutputs := fun f => do return (← b.existsOutputs f.1, .exOutputs outs f.2)
     pin := fun n v => do return (← b.pin n v).map (·, .pin n v)
+    pinVariant := fun n v => do return (← b.pinVariant n v).map fun (k, f) => (k, (f, .pinVariant n v))
     render := b.render
     prime := fun f => (b.prime f.1, .primed copied f.2)
     samePrimed := fun n => (b.samePrimed n, .same n)

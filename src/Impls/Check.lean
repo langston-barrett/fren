@@ -242,6 +242,7 @@ def finiteBackend : Fren.Core.Backend Id (Nat → Nat → Bool) Unit where
   conj fs a v := fs.all (· a v)
   existsOutputs f := pure fun a _ => (List.range 2).any (f a)
   pin _ _ := pure none
+  pinVariant _ _ := pure none
   render _ _ := pure ""
   prime f := f
   samePrimed _ _ _ := true
@@ -328,53 +329,72 @@ impl postcondition_at: check::postcondition_at for (p0 p1 q0 q1 : Bool) {
 
 /-! ## Forced outputs -/
 
-instance : Fren.Finite check.Choice := ⟨[.C0, .C1, .C2], by intro x; cases x <;> simp⟩
+instance : Fren.Finite check.Choice :=
+  ⟨[.C0, .C1 false, .C1 true], by intro x; cases x with | C0 => simp | C1 b => cases b <;> simp⟩
+
+/-- The three values of `check::Choice`. -/
+def allChoices : List check.Choice := [.C0, .C1 false, .C1 true]
 
 /-- A solver over one output with three values, which decides by trying
 each: a formula is a predicate on the output's value, and a model is never
-needed (`Core.forces` takes the value as given). -/
+needed (`Core.forces` and `Core.forcesVariant` take the value as given). -/
 def choiceBackend : Fren.Core.Backend Id (check.Choice → Bool) Unit where
   query hyps goal _ :=
-    if [check.Choice.C0, .C1, .C2].all fun v => !(hyps.all (·.2 v)) || goal v then .unsat else .sat #[]
+    if allChoices.all fun v => !(hyps.all (·.2 v)) || goal v then .unsat else .sat #[]
   falseF _ := false
   notF f v := !f v
   conj fs v := fs.all (· v)
-  existsOutputs f := pure fun _ => [check.Choice.C0, .C1, .C2].any f
+  existsOutputs f := pure fun _ => allChoices.any f
   pin _ _ := pure none
+  pinVariant _ _ := pure none
   render _ _ := pure ""
   prime f := f
   samePrimed _ _ := true
   subst _ f := f
 
-/-- `choiceBackend`, pinning the output to the value `m`. -/
-def pinning (m : check.Choice) : Fren.Core.Backend Id (check.Choice → Bool) Unit :=
-  { choiceBackend with pin := fun _ _ => pure (some (· == m)) }
+/-- The variant of `c`, as the backend's tester sees it. -/
+def choiceVariant : check.Choice → Nat
+  | .C0 => 0
+  | .C1 _ => 1
 
-/-- The values that `c0`, `c1` and `c2` say. -/
+/-- `choiceBackend`, pinning the output to the value `m`, and to its
+variant, with the tester of `m`'s variant. -/
+def pinning (m : check.Choice) : Fren.Core.Backend Id (check.Choice → Bool) Unit :=
+  { choiceBackend with
+    pin := fun _ _ => pure (some (· == m))
+    pinVariant := fun _ _ => pure (some ({ name := "", arity := choiceVariant m }, (choiceVariant · == choiceVariant m))) }
+
+/-- The values that `c0`, `c1` and `c2` say: `C0`, `C1(false)` and
+`C1(true)`. -/
 def valuesOf (c0 c1 c2 : Bool) (v : check.Choice) : Bool :=
   match v with
   | .C0 => c0
-  | .C1 => c1
-  | .C2 => c2
+  | .C1 false => c1
+  | .C1 true => c2
 
 /-- The set of the values that `c0`, `c1` and `c2` say. -/
 def choicesOf (c0 c1 c2 : Bool) : Fren.FinSet check.Choice :=
-  Fren.FinSet.ofList ((if c0 then [check.Choice.C0] else []) ++ (if c1 then [.C1] else []) ++ (if c2 then [.C2] else []))
+  Fren.FinSet.ofList ((if c0 then [check.Choice.C0] else []) ++ (if c1 then [.C1 false] else [])
+    ++ (if c2 then [.C1 true] else []))
 
 -- For every set of values of the output and every value in the model:
--- `Core.forces`, with the side's formula true at exactly those values,
--- asks the pin query and finds what forcing means.
+-- `Core.forces` and `Core.forcesVariant`, with the side's formula true at
+-- exactly those values, ask the pin and variant queries and find what
+-- forcing means.
 impl forcing: check::forcing for (c0 c1 c2 : Bool) (m : check.Choice) {
   values := choicesOf c0 c1 c2,
   model := m,
   pin_q := toOutcome ((pinning m).query #[(`s, valuesOf c0 c1 c2)] (· == m) false).answer,
+  variant_q := toOutcome ((pinning m).query #[(`s, valuesOf c0 c1 c2)] (choiceVariant · == choiceVariant m) false).answer,
   forced? := decide ([c0, c1, c2].count true ≤ 1),
   found? := (Fren.Core.forces (pinning m) #[(`s, valuesOf c0 c1 c2)] `o ()).run,
+  variant_forced? := !(c0 && (c1 || c2)),
+  variant_found? := (Fren.Core.forcesVariant (pinning m) #[(`s, valuesOf c0 c1 c2)] `o ()).run,
 } by
   intro c0 c1 c2 m
-  cases c0 <;> cases c1 <;> cases c2 <;> cases m <;>
-    simp +decide [fren_spec, pinning, choiceBackend, Fren.Core.forces, toOutcome, Fren.Core.Outcome.answer,
-      Fren.Core.Outcome.isUnsat]
+  rcases m with _ | ⟨_ | _⟩ <;> cases c0 <;> cases c1 <;> cases c2 <;>
+    simp +decide [fren_spec, pinning, choiceBackend, allChoices, choiceVariant, Fren.Core.forces, Fren.Core.forcesVariant,
+      toOutcome, Fren.Core.Outcome.answer, Fren.Core.Outcome.isUnsat]
 
 /-! ## The position of the first of a value in a sequence -/
 
