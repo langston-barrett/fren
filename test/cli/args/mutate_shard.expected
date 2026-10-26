@@ -1,0 +1,4 @@
+error: invalid shard `2/2`
+  = note: a shard is `K/N`, the `K`th of `N` from 0, with `K < N`, such as `--shard 0/4`
+  = help: run `fren --help` for usage
+exit=2

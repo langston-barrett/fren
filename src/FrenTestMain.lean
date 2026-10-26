@@ -652,7 +652,8 @@ def isSwap (m : FrenCli.Mutate.Mutant) : Bool :=
 - **as intended:** if it changes an operator, parses as the tree intended,
   with each other operator binding as before.
 
-And a larger sample of mutants contains a smaller one.
+And a larger sample of mutants contains a smaller one, and the shards of
+a selection partition it.
 
 These are the checks of the group `paths` for the mutants whose index is
 `slice` modulo `slices`; the checks of the whole group are in slice 0. Each
@@ -720,6 +721,14 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
     let large := FrenCli.Mutate.select all none #[] (some (n + 1)) 7 |>.map (·.id)
     unless small.all large.contains && small.size == min n all.size do
       failures := failures.push s!"mutants of {files.map (·.1)}: a sample of {n + 1} does not contain the sample of {n}"
+  -- The shards of a selection, sampled or not, partition it.
+  for sample? in [none, some 20] do
+    let whole := FrenCli.Mutate.select all none #[] sample? 7 |>.map (·.id)
+    for n in [1:5] do
+      let shards := (List.range n).map fun k => FrenCli.Mutate.select all none #[] sample? 7 (shard? := some (k, n)) |>.map (·.id)
+      let union : Std.HashSet String := .ofList (shards.flatMap (·.toList))
+      unless (shards.map (·.size)).sum == whole.size && whole.all union.contains do
+        failures := failures.push s!"mutants of {files.map (·.1)}: the {n} shards of a selection do not partition it"
   return failures
 
 /-! ## Jobs

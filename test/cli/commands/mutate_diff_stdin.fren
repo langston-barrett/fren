@@ -1,0 +1,10 @@
+--@ args: mutate --list --diff -
+-- An empty patch, from standard input, touches nothing.
+mod m
+
+pub comp c {
+    in x: Int
+    pub out y?
+
+    ensure r: y? iff x > 1
+}

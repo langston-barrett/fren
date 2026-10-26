@@ -1,0 +1,92 @@
+name: mutate
+# `fren mutate` on Fren's own requirements (`Reqs/Mutate`), but only on the
+# items that a push to main changes: all of them make over 3000 mutants,
+# far too many to check on every push (`Reqs/Mutate#patches`).
+on:
+  push:
+    branches:
+    - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    # Not blocking, at first: the survivors in Fren's own requirements are
+    # not triaged yet, so a push would often fail on mutants that it did
+    # not make survive. The step reports them as warnings meanwhile, and
+    # fails only if `fren mutate` could not run or had an internal error.
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        # The whole history, so that the commit before the push is there to
+        # diff against, however many commits the push has.
+        fetch-depth: 0
+    # As in `ci.yml`, which saves this cache.
+    - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: .lake/packages
+        key: lake-packages-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
+    - uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6 # v1.6.2
+      with:
+        build-args: fren
+        test: false
+        lint: false
+        use-github-cache: false
+    # The shards run at once on the runner's cores, rather than as a
+    # matrix, whose every job would build `fren` again. `--sample` bounds
+    # the time that a push which touches most of the requirements takes;
+    # the shards then split the sample.
+    - name: Mutate what the push changed
+      env:
+        BEFORE: ${{ github.event.before }}
+      run: |
+        set -euo pipefail
+        shards=4
+        # Fren's own requirements, in the order in which `lake test` checks
+        # them, each module declared before it is used (`ownSpecFiles`).
+        mapfile -t files < <(sed -n '/^def ownSpecFiles/,/map fun r/p' src/FrenTestMain.lean \
+          | grep -o '"[A-Za-z/]*"' | tr -d '"' | sed 's|.*|src/Reqs/&.md|')
+        test "${#files[@]}" -gt 0
+        for f in "${files[@]}"; do test -f "$f"; done
+        # A push that creates the branch has no commit before it, nor has a
+        # run by hand; nor is the one before a forced push still there.
+        if [ -z "$BEFORE" ] || [ "$BEFORE" = 0000000000000000000000000000000000000000 ] \
+            || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+          BEFORE=$(git rev-parse HEAD^)
+        fi
+        git diff -U0 "$BEFORE" HEAD -- "${files[@]}" > reqs.patch
+        echo "Mutating the items that $BEFORE..$(git rev-parse HEAD) changes in:"
+        git diff --stat "$BEFORE" HEAD -- "${files[@]}"
+        pids=()
+        for k in $(seq 0 $((shards - 1))); do
+          .lake/build/bin/fren mutate --diff reqs.patch --sample 400 --shard "$k/$shards" "${files[@]}" \
+            > "rates-$k.txt" 2> "report-$k.txt" &
+          pids+=($!)
+        done
+        failed=0
+        for k in $(seq 0 $((shards - 1))); do
+          if wait "${pids[$k]}"; then code=0; else code=$?; fi
+          echo "::group::Shard $k/$shards (exit $code)"
+          cat "report-$k.txt"
+          echo "::endgroup::"
+          case $code in
+            0) ;;
+            3) echo "::warning title=fren mutate::shard $k/$shards: some mutants survived; see the step's log" ;;
+            *) echo "::error title=fren mutate::shard $k/$shards exited with $code"; failed=1 ;;
+          esac
+        done
+        {
+          echo '### Kill rates of the mutants of the items that the push changed'
+          echo
+          echo '```text'
+          # A component's mutants may be split over the shards, one line each.
+          sort rates-*.txt
+          echo '```'
+        } >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+        exit "$failed"

@@ -8,8 +8,8 @@ fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
 fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
-fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--sample N] [--seed N] [--list]
-    [--timeout SECONDS] [--resource-limit N] [--tests N] [-A|-W|-D|-F LINT]... FILE...
+fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
+    [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--tests N] [-A|-W|-D|-F LINT]... FILE...
 fren --explain CODE
 fren --help
 fren --version
@@ -52,7 +52,9 @@ installation. It is built by `lake build fren`.
 | `--tests N` | `quickcheck` and `mutate`: tests per component and global expectation; `check`: tests per component or global expectation with [checks by testing](Check.md#checking-by-testing) (default 100) |
 | `--by WHAT` | `mutate`: check mutants with the `solver` (the default), by `testing`, or `both` |
 | `--mutant ID` | `mutate`: check the mutant `ID`; may be repeated |
+| `--diff PATCH` | `mutate`: check the mutants of the items that the unified diff `PATCH` touches, or the one on standard input if `PATCH` is `-`; see [Patches](Mutate.md#patches) |
 | `--sample N` | `mutate`: check `N` of the mutants |
+| `--shard K/N` | `mutate`: check the `K`th of `N` parts of the mutants, counted from 0; see [Samples and shards](Mutate.md#samples-and-shards) |
 | `--list` | `mutate`: list the mutants, and check none |
 | `--color WHEN` | colour the output: `auto` (the default), `always` or `never` |
 

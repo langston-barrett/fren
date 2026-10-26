@@ -1,0 +1,5 @@
+error: `test/cli/args/mutate_diff.patch` is not a unified diff
+  = note: line 6: a hunk has more lines than its header says
+  = note: `--diff` reads a patch such as `git diff -U0` writes
+  = help: run `fren --help` for usage
+exit=2

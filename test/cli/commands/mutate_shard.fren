@@ -1,0 +1,12 @@
+--@ args: mutate --list --sample 6 --seed 1 --shard 1/2
+-- The second of two shards of a sample of six: the shard is taken from
+-- the sample, by each mutant's identifier alone.
+set_option fren.lint.chainable_comparison "allow"
+mod m
+
+pub comp c {
+    in x: Int
+    pub out y?
+
+    ensure r: y? iff (x > 1 and x < 9 and x != 5)
+}

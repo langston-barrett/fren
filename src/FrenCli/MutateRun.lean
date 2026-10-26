@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCli.Mutate
 import FrenCli.MutateOutcome
+import FrenCli.MutateSelect
 import FrenCli.Quick
 import FrenCli.Smt
 -- keep-sorted end
@@ -185,18 +186,26 @@ def equivalent (st : State) (prelude : Prelude) (st' : State) (timeout : Nat) (c
     if result == some false then return result
   return result
 
-/-- The mutants to run (`Reqs/Mutate#selecting-mutants`): those of the component `comp?`,
-if any; those named by `ids`, if any; and of those, `sample?` of them, if
-given, chosen by `seed`. A mutant is sampled by its identifier alone, so a
-larger sample contains a smaller one. -/
-def select (all : Array Mutant) (comp? : Option Name) (ids : Array String) (sample? : Option Nat) (seed : Nat) : Array Mutant :=
-  let ms := all.filter fun m => comp?.all (m.comp? == some ·) && (ids.isEmpty || ids.contains m.id)
-  match sample? with
-  | none => ms
-  | some n =>
-    let rank (m : Mutant) := fnv1a s!"{seed}\x00{m.id}"
-    let chosen := (ms.qsort fun a b => rank a < rank b).extract 0 n |>.map (·.id)
-    ms.filter (chosen.contains ·.id)
+/-- The mutants to run (`Reqs/Mutate#selecting-mutants`): those of the
+component `comp?`, if any; those named by `ids`, if any; and those that
+`touched` keeps, such as those of the items that a patch touches. Of
+those, `sample?` of them, if given, chosen by `seed`; and of those, the
+shard `k` of `n`, if `shard?` is `(k, n)`. A mutant is sampled, and
+sharded, by its identifier alone, so a larger sample contains a smaller
+one, and the shards of a selection partition it. -/
+def select (all : Array Mutant) (comp? : Option Name) (ids : Array String) (sample? : Option Nat) (seed : Nat)
+    (touched : Mutant → Bool := fun _ => true) (shard? : Option (Nat × Nat) := none) : Array Mutant :=
+  let ofComp (m : Mutant) := comp?.all (m.comp? == some ·)
+  let named (m : Mutant) := ids.isEmpty || ids.contains m.id
+  let ms := all.filter fun m => ofComp m && named m && touched m
+  let sampled : Std.HashSet String := match sample? with
+    | none => .ofArray (ms.map (·.id))
+    | some n =>
+      let rank (m : Mutant) := fnv1a s!"{seed}\x00{m.id}"
+      let ranked := ms.qsort fun a b => rank a < rank b
+      .ofArray ((ranked.zipIdx.filter fun (_, i) => takes i n).map (·.1.id))
+  let sharded (m : Mutant) := shard?.all fun (k, n) => inShard (fnv1a m.id).toNat k n
+  all.filter fun m => chosen (ofComp m) (named m) (touched m) (sampled.contains m.id) (sharded m)
 
 /-- What a mutant changes, such as `` `<` to `<=` ``. -/
 def Mutant.change (m : Mutant) : String :=

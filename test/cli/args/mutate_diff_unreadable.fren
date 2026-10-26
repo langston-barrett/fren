@@ -1,0 +1,8 @@
+--@ args: mutate --diff test/cli/args/no_such.patch
+-- A patch that cannot be read.
+comp c {
+    in x: Int
+    pub out y?
+
+    ensure r: y? iff x > 1
+}
