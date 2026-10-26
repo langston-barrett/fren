@@ -1422,13 +1422,21 @@ def lintConstant (cx : ExprCtx) (kind : String) (e : Syntax) : TermElabM Unit :=
 partial def numLits (e : Syntax) : Array Syntax :=
   if e.isOfKind numLitKind then #[e] else e.getArgs.flatMap numLits
 
+/-- The end of the last token in `e`, wherever it is among its parts. -/
+partial def lastTailPos (e : Syntax) : String.Pos.Raw :=
+  e.getArgs.foldl (fun acc a => max acc (lastTailPos a)) (e.getTailPos?.getD 0)
+
 /-- Records the expressions in `e` that the lints that rewrite them
 (`Core.ExLint`) report, such as `Bool` expressions with a simpler form
 (`nonminimal_bool`), the operator and method lints, the arithmetic lints
 and double parentheses in it, once `e` is elaborated. -/
 def lintBools (e : Syntax) : TermElabM Unit := do
   let some sub := e.getSubstring? false false | return
-  let src := (String.Pos.Raw.extract sub.str sub.startPos sub.stopPos).toList.toArray
+  -- To the end of everything in `e`: the `let` that a `where` clause
+  -- becomes ends where its expression does, before its definitions
+  -- (`withWhere`).
+  let stop := max sub.stopPos (lastTailPos e)
+  let src := (String.Pos.Raw.extract sub.str sub.startPos stop).toList.toArray
   -- `fren fix` reads Markdown specs, but not Lean files.
   let fixable := (← getLocal).inMarkdown
   let node := boolNode sub.str sub.startPos e
@@ -1449,7 +1457,9 @@ def lintBools (e : Syntax) : TermElabM Unit := do
   -- `zero_prefixed_literal`, in expressions and patterns alike.
   let off (p : Option String.Pos.Raw) := (String.Pos.Raw.extract sub.str sub.startPos (p.getD sub.startPos)).length
   for n in numLits e do
-    if let some (_, msg) := Core.zeroPrefixedReport? src { start := off n.getPos?, stop := off n.getTailPos? } then
+    let r : Core.Range := { start := off n.getPos?, stop := off n.getTailPos? }
+    unless r.stop ≤ src.size do throwErrorAt n "internal error: a literal outside the text of its expression"
+    if let some (_, msg) := Core.zeroPrefixedReport? src r then
       recordLint .zeroPrefixedLiteral n (if fixable then msg.note Core.fixHelp else msg)
   lintParens fixable sub.str e
 
