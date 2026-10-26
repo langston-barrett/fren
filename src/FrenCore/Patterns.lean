@@ -518,6 +518,32 @@ def usefulness (sigs : Sigs) (ty : PatTy) (arms : Array Pat) (guarded : Array Bo
 def uselessAlternatives (p : Pat) (es : Array (Pat × Bool × Array Nat)) : Array Nat :=
   (Array.range (p.alternatives.size)).filter fun j => !es.any fun (_, u, ids) => u && ids.contains j
 
+/-- Whether `p` is a flat pattern of an enumeration: `_`, a binder, or a
+variant whose payload's patterns are `_` or binders. -/
+def Pat.flatEnum : Pat → Bool
+  | .wild _ => true
+  | .ctor _ args => args.all (· matches .wild _)
+  | _ => false
+
+/-- Whether `p` names the variant `i`. -/
+def Pat.names (i : Nat) : Pat → Bool
+  | .ctor j _ => j == i
+  | _ => false
+
+/-- Whether the arms of a `match` on an enumeration of `nCtors ty` variants,
+each with whether it has a guard, are exhaustive without the arms with guards,
+where every pattern is flat (`Pat.flatEnum`): an arm without a guard
+matches every value, or each variant is named by one; `none` otherwise.
+It is what the usefulness of `_` after them comes to there
+(`check::flat_completeness_asked`). -/
+def flatUnguardedExhaustive? (nCtors : Name → Nat) (ty : PatTy) (arms : Array (Pat × Bool)) : Option Bool :=
+  match ty with
+  | .enum e =>
+    if !arms.all (·.1.flatEnum) then none else
+    let unguarded := (arms.filter (!·.2)).map (·.1)
+    some (unguarded.any (· matches .wild _) || (List.range (nCtors e)).all fun i => unguarded.any (Pat.names i))
+  | _ => none
+
 /-- Checks the arms of a `match` on a value of `ty`, each its pattern, of
 which those that have a guard are `guarded`, explaining the first problem:
 at an arm and, for an alternative, its number in preorder
@@ -538,7 +564,8 @@ def checkMatch (sigs : Sigs) (ty : PatTy) (arms : Array Pat) (guarded : Array Bo
     -- The guards are ignored for exhaustiveness, but not for whether some
     -- arm is always taken.
     let unguarded := (us.zipIdx.filter (!isGuarded ·.2)).flatMap (·.1.map fun (e, _) => [e])
-    return !useful sigs [ty] unguarded [.wild false]
+    let paired := arms.mapIdx fun i p => (p, isGuarded i)
+    return (flatUnguardedExhaustive? (sigs · |>.size) ty paired).getD (!useful sigs [ty] unguarded [.wild false])
   -- The first problem, by arm and then by alternative.
   for arm in arms, i in [0:arms.size] do
     -- Only the arms before it without guards hide what it matches.
