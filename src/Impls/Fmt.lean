@@ -45,7 +45,8 @@ impl space: fmt::space for (b a : Kind) {
   space? := FrenCli.Fmt.space b a,
 } by
   intro b a _
-  cases b <;> cases a <;> simp [fren_spec, toFmtKind, FrenCli.Fmt.space] <;> decide
+  revert a
+  cases b <;> decide
 
 -- Over `Nat`, so `decide` does not apply: proofs by cases.
 impl indent: fmt::indent for (d : Nat) (s : LineStart) (c : Bool) {
