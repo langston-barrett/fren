@@ -1,0 +1,87 @@
+-- `manual_record_update`, `needless_update` and `redundant_bindings` on
+-- record literals and updates, and `trivial_cover` and `duplicate_constraint` on
+-- cover goals, in both front ends.
+struct P { x: Int, y: Int }
+struct T { a: Int, b: Int, c: Int }
+struct Q { a: Int, b: Int, c: Int }
+
+comp records {
+    in p: P
+    in t: T
+    in u: T
+    in q: Q
+    in n: Int
+    pub out o1: P
+    pub out o2: T
+    pub out o3: T
+    pub out o4: T
+    pub out o5: T
+    pub out o6: T
+    pub out o7: P
+    pub out o8: T
+    pub out o9: T
+    pub out o10: T
+    pub out o11: T
+
+    -- Copies more than it gives.
+    ensure m2: o2 = T { a := t.a, b := n + 1, c := t.c }      --~ warning: write `{ t with b := n + 1 }`
+    -- From the value with the most copies.
+    ensure m3: o3 = T { a := u.a, b := t.b, c := t.c }        --~ warning: write `{ t with a := u.a }`
+    -- Not: as many copies as given, fewer, copies from another record, or every field copied.
+    ensure m1: o1 = P { x := n, y := p.y }
+    ensure m4: o4 = T { a := n, b := n, c := t.c }
+    ensure m5: o5 = T { a := n, b := q.b, c := q.c }
+    ensure m6: o6 = T { a := t.a, b := t.b, c := t.c }        --~ warning: this record literal is `t`
+    -- Not: a field that reads another field.
+    ensure m7: o7 = P { x := p.y, y := n }
+
+    -- Every field given.
+    ensure n1: o8 = { t with a := n, b := n, c := n }         --~ warning: this update gives every field of `T`
+    -- Not: some field left out.
+    ensure n2: o9 = { t with a := n, b := n }
+
+    -- A field copied from the updated value, or written `x := x`.
+    ensure r1: o10 = { t with a := t.a, b := n }              --~ warning: `a := t.a` gives `a` the value it has in `t`
+    ensure r2: o11 = { t with b := n, c := t.c }              --~ warning: `c := t.c` gives `c` the value it has in `t`
+}
+
+-- Not: every field a copy, or a value read from another record.
+comp records_not {
+    in t: T
+    in u: T
+    pub out o1: T
+    pub out o2: T
+
+    ensure r1: o1 = { t with a := t.a }
+    ensure r2: o2 = { t with a := u.a }
+}
+
+comp covers {
+    in x: Int
+    pub out y: Int
+    pub out z?
+
+    assume positive: x > 0
+
+    ensure r: y = x + 1
+    ensure s: z? iff y > 5
+
+    cover c1: true                       --~ warning: this cover goal mentions no variable
+    --~^ info: cover goal `covers::c1` is met
+    cover c2: 1 < 2                      --~ warning: this cover goal mentions no variable
+    --~^ info: cover goal `covers::c2` is met
+    cover c3: when x > 10, z?            --~ warning: cover goal `c3` has a trigger
+    --~^ info: cover goal `covers::c3` is met
+    cover c4: unless x > 10, not z?      --~ warning: cover goal `c4` has a trigger
+    --~^ info: cover goal `covers::c4` is met
+    cover c5: x > 0                      --~ warning: cover goal `c5` is written the same as the assumption `positive`
+    --~^ info: cover goal `covers::c5` is met
+    cover c6: y = x /- same -/ + 1       --~ warning: cover goal `c6` is written the same as the guarantee `r`
+    --~^ info: cover goal `covers::c6` is met
+    cover c7: x > 10 and z?              --~ info: cover goal `covers::c7` is met
+    cover c8: x > 10 and z?              --~ warning: this is written the same as `c7`
+    --~^ info: cover goal `covers::c8` is met
+    -- Not: a goal that mentions a variable, or that differs from the others.
+    cover c9: x = 1 and not z?           --~ info: cover goal `covers::c9` is met
+    cover c10: 2 * x = 4                 --~ info: cover goal `covers::c10` is met
+}

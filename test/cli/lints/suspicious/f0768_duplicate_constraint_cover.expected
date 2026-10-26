@@ -1,0 +1,31 @@
+warning[F0768]: this is written the same as `low`
+ --> test/cli/lints/suspicious/f0768_duplicate_constraint_cover.fren:7:11
+  |
+7 |     cover high: x < 0 and y < 0
+  |           ^^^^ the same as `low`
+  |
+  = help: remove it
+  = help: `fren fix` can fix this
+  = note: `duplicate_constraint` is `warn` by default
+  = help: to allow it, `set_option fren.lint.duplicate_constraint "allow"`
+
+note: cover goal `c::low` is met
+ --> test/cli/lints/suspicious/f0768_duplicate_constraint_cover.fren:6:11
+  |
+6 |     cover low: x < 0 and y < 0
+  |           ^^^ met
+  |
+  = witness: x = -2, y = -1
+
+note: cover goal `c::high` is met
+ --> test/cli/lints/suspicious/f0768_duplicate_constraint_cover.fren:7:11
+  |
+7 |     cover high: x < 0 and y < 0
+  |           ^^^^ met
+  |
+  = witness: x = -2, y = -1
+
+fren: 4 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0768`.
+exit=3

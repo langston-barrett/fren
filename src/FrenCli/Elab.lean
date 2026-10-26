@@ -314,13 +314,13 @@ structure CClaim where
 
 def toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
 
-/-- The kind of a constraint that `duplicate_constraint` compares, if it
-compares it: not a cover goal, which states a scenario, not a constraint. -/
-def PropKind.core? : PropKind → Option Fren.Core.ConstraintKind
-  | .assume => some .assume
-  | .ensure => some .ensure
-  | .expect => some .expect
-  | .cover => none
+/-- The kind of a constraint, or cover goal, that `duplicate_constraint`
+compares. -/
+def PropKind.core : PropKind → Fren.Core.ConstraintKind
+  | .assume => .assume
+  | .ensure => .ensure
+  | .expect => .expect
+  | .cover => .cover
 
 /-- Where the word that ends before `pos`, but for whitespace, starts: the
 keyword of a member, before its name. -/
@@ -2858,6 +2858,33 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
           | .error _ => none
         if Fren.Core.unnecessaryStructInit fields.size (reads.size == fields.size) same ty?.isSome (ty? == some (.record path)) then
           lintFix .unnecessaryStructInitialization span (Fren.Core.unnecessaryStructInitMsg t)
+    if cx.noteIndexes then
+      -- `manual_record_update` (`lint::manual_record_update`): the fields that
+      -- read their own field from a value of this record, by the value's text.
+      let mut copies : Array (String × Span × Array Nat) := #[]
+      for h : i in [0:fields.size] do
+        let (fi, e?) := fields[i]
+        let some (recv, n) := e?.bind lastName? | continue
+        unless n == fi.name do continue
+        -- Only its type: what elaborating it reports is reported where it is.
+        let saved ← get
+        let t? ← tryCatch (some <$> (·.2) <$> elabExpr { cx with noteIndexes := false, expected? := none } recv)
+          fun _ => pure none
+        set saved
+        unless t? == some (Ty.record path) do continue
+        let w := Fren.Core.writtenForm (← srcAt recv.span)
+        match copies.findIdx? (·.1 == w) with
+        | some k => copies := copies.modify k fun (w, s, ks) => (w, s, ks.push i)
+        | none => copies := copies.push (w, recv.span, #[i])
+      -- The value with the most copies, the first of those with as many.
+      let best? := copies.foldl (init := none) fun acc c =>
+        if acc.all (·.2.2.size < c.2.2.size) then some c else acc
+      if let some (_, rs, ks) := best? then
+        if Fren.Core.manualRecordUpdate fs.size ks.size then
+          let kept ← ((Array.range fields.size).filter (!ks.contains ·)).mapM fun i =>
+            let (fi, e?) := fields[i]!
+            srcAt ((e?.map (fi.span.to ·.span)).getD fi.span)
+          lintFix .manualRecordUpdate span (Fren.Core.manualRecordUpdateMsg (← srcAt rs) ks.size kept)
     return (s!"({recordCtorSym path} {" ".intercalate smts.toList})", .record path)
   | .update span base fields =>
     let (rv, tr) ← elabExpr { cx with expected? := none } base
@@ -2879,6 +2906,24 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let (x, te) ← elabExpr { cx with expected? := some t } e
       liftMsg e.span (Fren.Core.checkType t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`"))
       smts := smts.push x
+    if cx.noteIndexes then
+      if Fren.Core.needlessUpdate fs.size fields.size then
+        lint .needlessUpdate span (Fren.Core.needlessUpdateMsg (showPath path) (← srcAt base.span))
+      -- `redundant_bindings` on each field (`lint::redundant_bindings`, `lint::field_copy`).
+      let baseText := Fren.Core.writtenForm (← srcAt base.span)
+      let values ← fields.mapM fun (_, e?) => e?.mapM fun e => do pure (Fren.Core.writtenForm (← srcAt e.span))
+      let copy (i : Nat) : Bool := Fren.Core.fieldCopy fields[i]!.1.name ((values[i]!).getD "") baseText true
+      let others := (Array.range fields.size).any (!copy ·)
+      let stop (i : Nat) : Nat := let (fi, e?) := fields[i]!; ((e?.map (·.span.stop)).getD fi.span.stop)
+      for h : i in [0:fields.size] do
+        let (fi, e?) := fields[i]
+        let some e := e? | continue
+        lintRedundant fi e true
+        if Fren.Core.fieldCopy fi.name ((values[i]!).getD "") baseText others then
+          -- The field and the comma before it, or for the first, the comma after it.
+          let r : Fren.Core.Range := if i == 0 then { start := fi.span.start, stop := fields[1]!.1.span.start }
+            else { start := stop (i - 1), stop := e.span.stop }
+          lintEdits .redundantBindings (fi.span.to e.span) (Fren.Core.fieldCopyMsg fi.name (← srcAt base.span)) #[(r, "")]
     let lit := s!"({recordCtorSym path} {" ".intercalate smts.toList})"
     return (if bind then s!"(let (({r} {rv})) {lit})" else lit, .record path)
   | .match span scrutinee arms =>
@@ -3437,15 +3482,17 @@ def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames 
 constraints. -/
 def lintDuplicateConstraints (members : Array Member) : M Unit := do
   let src := (← get).src
-  let constraints := members.filterMap fun | .prop k x e => k.core?.map (·, x, e) | _ => none
-  for (i, j) in Fren.Core.repeatedConstraints (← constraints.mapM fun (_, _, e) => srcAt (e.writtenSpan src)) do
-    let (k, x, e) := constraints[i]!
-    let (k', x', _) := constraints[j]!
-    let msg := Fren.Core.duplicateConstraintMsg k' k x'.name
-    if (Fren.Core.duplicateConstraint k' k true).2 then
-      let stop := withLineComment src (Fren.Core.withParens src (toRange (e.writtenSpan src))).stop
-      lintEdits .duplicateConstraint x.span msg #[(Fren.Core.deletionRange src { start := wordStart src x.span.start, stop }, "")]
-    else lint .duplicateConstraint x.span msg
+  -- Cover goals are compared with each other, and constraints with each other.
+  let all := members.filterMap fun | .prop k x e => some (k.core, x, e) | _ => none
+  for constraints in #[all.filter (·.1 != .cover), all.filter (·.1 == .cover)] do
+    for (i, j) in Fren.Core.repeatedConstraints (← constraints.mapM fun (_, _, e) => srcAt (e.writtenSpan src)) do
+      let (k, x, e) := constraints[i]!
+      let (k', x', _) := constraints[j]!
+      let msg := Fren.Core.duplicateConstraintMsg k' k x'.name
+      if (Fren.Core.duplicateConstraint k' k true).2 then
+        let stop := withLineComment src (Fren.Core.withParens src (toRange (e.writtenSpan src))).stop
+        lintEdits .duplicateConstraint x.span msg #[(Fren.Core.deletionRange src { start := wordStart src x.span.start, stop }, "")]
+      else lint .duplicateConstraint x.span msg
 
 /-- `constant_output` and `definable_output` (`lint::output_lints`), of a
 comp's outputs. -/
@@ -3463,6 +3510,25 @@ def lintOutputs (lcx : ExprCtx) (members : Array Member) (vars : Array CVar) : M
     let (constant, definable) := Fren.Core.outputLints v.defn?.isSome mentions about.size equation
     if constant then lint .constantOutput v.span (Fren.Core.constantOutputMsg v.name)
     if definable then lint .definableOutput v.span (Fren.Core.definableOutputMsg v.name about[0]!.1)
+
+/-- `trivial_cover` (`lint::trivial_cover`), of a comp's cover goals: each
+assumption and guarantee as its kind, its name and its written form. -/
+def lintTrivialCover (lcx : ExprCtx) (members : Array Member) : M Unit := do
+  let src := (← get).src
+  let facts ← members.filterMapM fun m => match m with
+    | .prop .assume x e => return some ("assumption", Name.mkSimple x.name, Fren.Core.writtenForm (← srcAt (e.writtenSpan src)))
+    | .prop .ensure x e => return some ("guarantee", Name.mkSimple x.name, Fren.Core.writtenForm (← srcAt (e.writtenSpan src)))
+    | _ => pure none
+  for m in members do
+    let .prop .cover x e := m | continue
+    let w := Fren.Core.writtenForm (← srcAt (e.writtenSpan src))
+    -- Only whether it has one: what elaborating it reports is reported where it is.
+    let saved ← get
+    let trigger ← tryCatch (Option.isSome <$> trigger? lcx e) fun _ => pure false
+    set saved
+    let same? := (facts.find? (·.2.2 == w)).map fun (k, n, _) => (k, n)
+    if let some why := Fren.Core.trivialCover trigger same? then
+      lint .trivialCover x.span (Fren.Core.trivialCoverMsg (Name.mkSimple x.name) why)
 
 /-- `case_split_guarantees` (`lint::case_split_guarantees`), of a comp's
 requirements. -/
@@ -3564,6 +3630,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
   lintDuplicateConstraints members
   let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
   lintOutputs lcx members vars
+  lintTrivialCover lcx members
   lintCaseSplitGuarantees lcx members vars
   -- The lints above are found despite a constraint's static error, as in
   -- Lean; `unused_variables`, and the rest, only without one.

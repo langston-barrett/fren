@@ -41,7 +41,7 @@ use view::Severity
 | `double_comparison` | `F0730` | `complexity` | `warn` | two comparisons of the same operands that are one, such as `a < b or a = b` (see [Double comparisons](Lint/Complexity/Comparisons.md#double-comparisons)) |
 | `double_neg` | `F0740` | `style` | `warn` | a negation of a negation, `- -x` (see [Negations](Lint/Style.md#negations)) |
 | `double_parens` | `F0739` | `complexity` | `warn` | parentheses directly around parentheses, `((e))` (see [Parentheses](Lint/Complexity/Operators.md#parentheses)) |
-| `duplicate_constraint` | `F0768` | `suspicious` | `warn` | a constraint or global expectation written the same as an earlier one (see [Repeated constraints](Lint/Suspicious.md#repeated-constraints)) |
+| `duplicate_constraint` | `F0768` | `suspicious` | `warn` | a constraint or global expectation written the same as an earlier one, or a cover goal written the same as an earlier cover goal (see [Repeated constraints](Lint/Suspicious.md#repeated-constraints)) |
 | `duplicate_elements` | `F0738` | `suspicious` | `warn` | a set or relation literal with an element written the same as an earlier one, such as `{a, b, a}` (see [Elements written the same](Lint/Suspicious/Expressions.md#elements-written-the-same)) |
 | `else_extends` | `F0733` | `complexity` | `warn` | a conditional operand whose `else` branch extends past its operator, as in `2 * if c? then x else y + 1` (see [Conditional operands](Lint/Complexity/Operators.md#conditional-operands)) |
 | `empty_argument` | `F0745` | `suspicious` | `warn` | a method applied to `""` or `[]`, or a `slice` of length `0`, such as `s.starts_with?("")` (see [Empty arguments](Lint/Suspicious/Methods.md#empty-arguments)) |
@@ -68,6 +68,7 @@ use view::Severity
 | `manual_method` | `F0732` | `complexity` | `warn` | a search written with `index_of`, `slice` or `at`, such as `s.index_of(t, 0) >= 0` (see [Searches](Lint/Complexity/Methods.md#searches)) |
 | `manual_ordering` | `F0841` | `pedantic` | `allow` | a membership in the first or last variants of an ordered enumeration, such as `s in {Severity::Silent, Severity::Info}` (see [Orderings written out](Lint/Pedantic/Comparisons.md#orderings-written-out)) |
 | `manual_pattern_char_comparison` | `F0756` | `style` | `warn` | an alternation of single characters in a pattern, such as `a\|b` (see [Classes of characters](Lint/Style.md#classes-of-characters)) |
+| `manual_record_update` | `F0818` | `style` | `warn` | a record literal that copies more fields from one value than it gives, such as `Point { x := 1, y := p.y, z := p.z }` (see [Record literals](Lint/Style/Records.md#record-literals)) |
 | `many_single_char_names` | `F0795` | `pedantic` | `allow` | a component, function or global expectation that declares more than four single-character names (see [Names](Lint/Pedantic.md#names)) |
 | `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false`, and bind no name (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
 | `match_same_arms` | `F0725` | `pedantic` | `allow` | an arm of a `match` with the same body as another (see [Arms](Lint/Pedantic/Matches.md#arms)) |
@@ -79,6 +80,7 @@ use view::Severity
 | `needless_match` | `F0760` | `complexity` | `warn` | a `match` whose every arm gives back the value it matches, such as `match x { E::A => E::A, _ => x }` (see [Matches that give back the scrutinee](Lint/Complexity/Matches.md#matches-that-give-back-the-scrutinee)) |
 | `needless_raw_string_hashes` | `F0777` | `pedantic` | `allow` | a raw string literal with more `#`s than it needs, such as `r#"a"#` (see [Raw string literals](Lint/Pedantic.md#raw-string-literals)) |
 | `needless_raw_strings` | `F0782` | `restriction` | `allow` | a raw string literal with no `\` and no `"` (see [Literals](Lint/Restriction.md#literals)) |
+| `needless_update` | `F0819` | `complexity` | `warn` | a record update that gives every field (see [Needless updates](Lint/Complexity/Updates.md#needless-updates)) |
 | `neg_multiply` | `F0742` | `style` | `warn` | a product with `-1`, `x * -1` or `-1 * x` (see [Negations](Lint/Style.md#negations)) |
 | `negative_position` | `F0770` | `suspicious` | `warn` | a negative integer literal as a position, such as `q[-1]` or `s.at(-1)` (see [Indexes](Lint/Suspicious/Methods.md#indexes)) |
 | `no_effect_replace` | `F0754` | `suspicious` | `warn` | `s.replace(a, a)` or `s.replace_all(a, a)` (see [Replacements](Lint/Suspicious/Methods.md#replacements)) |
@@ -89,7 +91,7 @@ use view::Severity
 | `nonminimal_bool` | `F0712` | `complexity` | `warn` | a `Bool` expression with a simpler form, such as `a? = true` or `exactly_one?(a?)` (see [Simpler `Bool` expressions](Lint/Complexity.md#simpler-bool-expressions)) |
 | `overly_complex_bool_expr` | `F0773` | `pedantic` | `allow` | an `and` or `or` with an operand that can be dropped, such as `a or (a and b)` or `a and not a` (see [Operands that can be dropped](Lint/Pedantic.md#operands-that-can-be-dropped)) |
 | `precedence` | `F0787` | `restriction` | `allow` | an `and` in an `or`, or a `join` or `inter` in a `union` or `minus`, without parentheses, such as `a? or b? and c?` (see [Precedence](Lint/Restriction.md#precedence)) |
-| `redundant_bindings` | `F0735` | `style` | `warn` | a binding or field `x := x` (see [Bindings](Lint/Style.md#bindings)) |
+| `redundant_bindings` | `F0735` | `style` | `warn` | a binding or field `x := x`, or a field `x := r.x` of an update of `r` (see [Bindings](Lint/Style.md#bindings)) |
 | `redundant_bool_type` | `F0746` | `style` | `warn` | a `: Bool` that a name ending in `?` implies, as in `in ready?: Bool` (see [Boolean types](Lint/Style.md#boolean-types)) |
 | `redundant_comparisons` | `F0767` | `complexity` | `warn` | two comparisons of one operand with integers, of which one implies the other, such as `x < 3 and x < 5` (see [Redundant comparisons](Lint/Complexity/Comparisons.md#redundant-comparisons)) |
 | `redundant_method_chain` | `F0743` | `complexity` | `warn` | a chain of methods with a shorter form, such as `q.rev.rev` (see [Chains of methods](Lint/Complexity/Methods.md#chains-of-methods)) |
@@ -104,6 +106,7 @@ use view::Severity
 | `struct_field_names` | `F0774` | `pedantic` | `allow` | a record whose fields all start, or all end, with the same word, or a field that contains its record's name (see [Field names](Lint/Pedantic/Records.md#field-names)) |
 | `suspicious_unary_op_formatting` | `F0762` | `suspicious` | `warn` | a binary operator directly followed by a negation and then whitespace, such as `x >=- 1` (see [Negations after operators](Lint/Suspicious.md#negations-after-operators)) |
 | `too_many_lines` | `F0797` | `pedantic` | `allow` | a component or defined function of more than 100 lines (see [Long items](Lint/Pedantic.md#long-items)) |
+| `trivial_cover` | `F0820` | `suspicious` | `warn` | a cover goal that has a trigger, or is written the same as an assumption or a guarantee (see [Cover goals](Lint/Suspicious.md#cover-goals)) |
 | `trivial_match` | `F0747` | `complexity` | `warn` | a `match` of one arm that binds nothing, such as `match x { _ => e }` (see [Trivial matches](Lint/Complexity/Matches.md#trivial-matches)) |
 | `trivial_pattern` | `F0744` | `style` | `warn` | `s.matches?(p)`, where `p` is a string, with `.*` or not at either end (see [Trivial patterns](Lint/Style.md#trivial-patterns)) |
 | `undecidable` | `F0714` | `decidability` | `deny` | a construct outside the decidable core (see [Undecidable constructs](Lint/Decidability.md#undecidable-constructs)) |
@@ -125,7 +128,7 @@ use view::Severity
 | `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel(A, B)` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
 <!-- keep-sorted end -->
 
-The lints' codes run from `F0701` to `F0804`, and each group's codes start
+The lints' codes run from `F0701` to `F0843`, and each group's codes start
 at `01`. Among them, `F0707`, `F0708` and `F0709` are errors in [setting
 levels](#setting-levels), and `F0713` is the removed `shadowed_constants`'s.
 
@@ -460,7 +463,7 @@ accepts no other `set_option` (see [Input files](Cli.md#input-files)).
 
 A lint that was renamed is unknown by its old name, and the `fren` command's
 error names the new one: `case_split_reqs` is now `case_split_guarantees`,
-since a constraint once written `req` is now a guarantee, written `ensure`.
+since a constraint once written `ensure` is now a guarantee, written `ensure`.
 
 ## Messages
 
@@ -548,7 +551,7 @@ what the spec means:
 | `double_comparison` | replaces the two comparisons with the one they are |
 | `double_neg` | replaces `- -x` with `x` |
 | `double_parens` | removes all but the innermost pair of parentheses |
-| `duplicate_constraint` | removes the later constraint, where the two are of one kind |
+| `duplicate_constraint` | removes the later constraint, or cover goal, where the two are of one kind |
 | `duplicate_elements` | removes each repeated element, with the `,` before it |
 | `else_extends` | puts the `else` branch in parentheses |
 | `glob_imports` | imports by name the variants that the file uses through the glob: `use E::*` becomes `use E::{A, B}`, or `use E::A` for a single variant |
@@ -566,6 +569,7 @@ what the spec means:
 | `manual_method` | replaces the comparison with a call of `contains?`, `starts_with?` or `ends_with?`, or `s.slice(i, 1)` with `s.at(i)`, as the message suggests |
 | `manual_ordering` | replaces the test with a comparison with the last or first variant it names, as the message suggests |
 | `manual_pattern_char_comparison` | replaces the pattern with one that writes each alternation of single characters as a class |
+| `manual_record_update` | replaces the literal with an update of the value it copies from, as the message suggests |
 | `match_like_membership` | replaces the `match` with a membership, `x in {E::A, E::B}`, or a pattern test, `x is E::A(_) \| E::B`, as the message suggests |
 | `match_same_arms` | merges the arms into one with an or-pattern, removes those with the body of the `_` arm, or replaces the `match` with its body, as the message suggests |
 | `membership_chain` | replaces the chain with a membership, `x in {a, b, c}`, or `not x in {a, b, c}` |
@@ -579,7 +583,7 @@ what the spec means:
 | `nonminimal_bool` | replaces the expression with its simpler form, as the message suggests |
 | `overly_complex_bool_expr` | replaces the expression with the operand that stays, or with `false` or `true` |
 | `precedence` | puts the operand in parentheses |
-| `redundant_bindings` | replaces `x := x` with `x` |
+| `redundant_bindings` | replaces `x := x` with `x`, and removes a field `x := r.x` of an update of `r`, with a comma |
 | `redundant_bool_type` | removes the `: Bool` |
 | `redundant_comparisons` | replaces the two comparisons with the one that implies the other, under `and`, or the one that the other implies, under `or` |
 | `redundant_method_chain` | replaces the chain with its shorter form |

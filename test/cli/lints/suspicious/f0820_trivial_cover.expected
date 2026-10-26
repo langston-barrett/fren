@@ -1,0 +1,38 @@
+warning[F0820]: cover goal `triggered` has a trigger
+ --> test/cli/lints/suspicious/f0820_trivial_cover.fren:7:11
+  |
+7 |     cover triggered: when x > 10, y > 11
+  |           ^^^^^^^^^ met by any behaviour in which the trigger is false
+  |
+  = help: write the scenario as a conjunction, such as `c? and d?` for `when c?, d?`
+  = note: `trivial_cover` is `warn` by default
+  = help: to allow it, `set_option fren.lint.trivial_cover "allow"`
+
+warning[F0820]: cover goal `restated` is written the same as the assumption `a`
+ --> test/cli/lints/suspicious/f0820_trivial_cover.fren:8:11
+  |
+8 |     cover restated: x > 0
+  |           ^^^^^^^^ holds in every behaviour that meets the component
+  |
+  = note: it is met unless the component allows no behaviour, which the vacuity check reports
+
+note: cover goal `c::triggered` is met
+ --> test/cli/lints/suspicious/f0820_trivial_cover.fren:7:11
+  |
+7 |     cover triggered: when x > 10, y > 11
+  |           ^^^^^^^^^ met
+  |
+  = witness: x = 1, y = 2
+
+note: cover goal `c::restated` is met
+ --> test/cli/lints/suspicious/f0820_trivial_cover.fren:8:11
+  |
+8 |     cover restated: x > 0
+  |           ^^^^^^^^ met
+  |
+  = witness: x = 1, y = 2
+
+fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0820`.
+exit=3

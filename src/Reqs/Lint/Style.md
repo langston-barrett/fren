@@ -4,6 +4,8 @@ The lints of the `style` group find a clearer way to write the same
 thing, and `fren fix` fixes each of them but the lints of
 [names](#names), whose fixes would rename, and `assertions_on_constants`,
 which finds a constraint that says nothing about the variables.
+Its subchapters have the lints of [pattern tests and chained
+comparisons](Style/Comparisons.md) and of [records](Style/Records.md).
 
 ## Glob imports
 
@@ -412,6 +414,9 @@ pub comp redundant_bindings {
     ensure rule: fires? iff value = name
 }
 ```
+
+In a [record update](Style/Records.md#fields-of-updates), it also fires
+on a field `x := r.x`, copied from the updated value `r`.
 
 ## Negations
 

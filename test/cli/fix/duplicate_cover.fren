@@ -1,0 +1,12 @@
+--@ args: fix --check
+-- `fren fix` removes a cover goal written the same as an earlier one.
+pub comp c {
+    in x: Int
+    pub out y: Int
+
+    ensure r: y = x + 1
+
+    cover low: x < 0 and y < 0
+    cover high: x < 0 and y < 0  -- a copy
+    cover big: x > 10
+}

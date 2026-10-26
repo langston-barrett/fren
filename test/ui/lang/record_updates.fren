@@ -16,7 +16,7 @@ comp moves {
     expect keeps_y: q.y = p.y
     expect sets_x: q.x = n
     expect as_literal: q = Point { x := n, y := p.y }
-    expect every_field: { p with y := 2, x := 1 } = Point { x := 1, y := 2 }
+    expect every_field: { p with y := 2, x := 1 } = Point { x := 1, y := 2 }  --~ warning: this update gives every field of `Point`
     expect same: { p with x := p.x } = p
     expect wrong: q = p  --~ error: expectation `moves::wrong` does not hold
 }
@@ -102,6 +102,7 @@ comp guarded {
     ensure ra: a = if q != [] then { p with x := q[0] } else p
     ensure rb: b = { p with x := q[0] }  --~ error: an index of `guarded::rb` may be out of range
     ensure rc: c = { ps[0] with x := 1, y := 2 }  --~ error: an index of `guarded::rc` may be out of range
+    --~^ warning: this update gives every field of `Point`
 
     expect sets: when q != [], a.x = q[0]
     expect every_field: c = Point { x := 1, y := 2 }
