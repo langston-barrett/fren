@@ -27,7 +27,12 @@ variant by comparing the value with the variant built from its own payload,
 and then its payload's patterns on the values the selectors read; a literal
 by equality; a range by comparisons with its bounds, a constant's by its
 value; an or-pattern by the disjunction of its alternatives' tests. Binders
-read their values with the selectors. A [`let`](Lang/Let.md) becomes
+read their values with the selectors. An arm with a guard tests its guard
+too, in the same `if`, `if T and C then x else ...`, so that where its
+guard fails, the chain falls through to the arms after it, as Fren's
+`match` does: Lean's `match` has no guards in term mode. Where no arm is
+taken, a `match` whose arms without guards are not exhaustive is
+`Fren.Seq.nth ∅ 0`, as a table is below. A [`let`](Lang/Let.md) becomes
 Lean's `have`, one for each definition, and so does a `where` clause,
 around the expression it follows. A [table](Lang/Expressions.md#tables) becomes `if`s over its rows'
 conditions, in order: `table { a => x, b => y, _ => z }` is `if a then x
@@ -38,11 +43,14 @@ is `if a then x else if b then y else Fren.Seq.nth ∅ 0`. That is one
 interpretation of the solver's unspecified value of the type, the same for
 every such table, as `default` is of an index out of range, so every check
 that passes, and every `impl` that the solver proves, holds of the
-generated definitions. The checks of a table generate nothing: a table's
+generated definitions. The checks of a table or a `match` generate
+nothing: a table's
 completeness is the theorem that the disjunction of its conditions follows
-from its guard, and the disjointness of two rows that the conjunction of
-their conditions, where they are defined, is false under it, which a proof
-about the generated definitions can state.
+from its guard, the disjointness of two rows that the conjunction of
+their conditions, where they are defined, is false under it, and the
+reachability of a row or an arm that its own test and the failure of the
+tests before it can hold together under it, theorems about its patterns
+and guards, which a proof about the generated definitions can state.
 
 Each enumeration whose variants have no payloads also has an instance
 `p.instFinite` of `Fren.Finite`, a class whose instances list every value

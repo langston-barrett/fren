@@ -470,9 +470,11 @@ component with an input for each parameter, and one `det out` that a
 single guarantee makes equal to the body, which always meets its checks.
 Unlike a component, it is applied in expressions rather than
 instantiated. Otherwise only how the body is written is checked: the
-[completeness](../Check.md#completeness) and
-[disjointness](../Check.md#disjointness) of its
-[tables](Expressions.md#tables), and the
+[completeness](../Check.md#completeness),
+[disjointness](../Check.md#disjointness) and
+[reachability](../Check.md#reachability) of its
+[tables](Expressions.md#tables) and its [`match`es](Expressions.md#matches)
+with guards, and the
 [preconditions](../Check.md#preconditions) of the functions it applies,
 for every value of the parameters that meets its preconditions, as for
 the value of a [constant](#constants).

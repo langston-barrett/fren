@@ -13,6 +13,16 @@ earlier, removing one, or naming what `_` matches keeps the meaning. With
 a nested, literal or range pattern, an arm can match part of what a later
 one does, as `S::A(0)` does of `S::A(_)`.
 
+An arm with a [guard](../../Lang/Expressions.md#matches) is not taken
+everywhere its pattern matches: where its guard fails, the arms after it
+are tried. So `match_same_arms` does not fire on a `match` with a guard,
+where merging or removing an arm would move the values it matches past a
+guard or out from under one. `wildcard_single_variant` counts the variants
+that `_` matches as those that no arm without a guard names, since `_` is
+taken for the others where their guards fail, as `E::A` in `match e {
+E::A if ok? => 1, _ => 2 }`, and it looks only at a `_` arm without a
+guard.
+
 `match_same_arms`, `allow` by default, fires on two arms whose bodies are
 [written the same](../../Lint.md#written-the-same), and whose patterns bind no names.
 It is reported once for each group of such arms, at the first arm that
@@ -174,7 +184,9 @@ the bodies are `true` and `false`;
 where both arms give back the scrutinee; `match_same_arms`, where the
 bodies are written the same; and
 [`trivial_match`](../Complexity/Matches.md#trivial-matches), which reports
-a `match` of one arm. Where the `match` has a comment, the lint has no
+a `match` of one arm. Nor does it fire where either arm has a
+[guard](../../Lang/Expressions.md#matches), which the `if` has no place
+for. Where the `match` has a comment, the lint has no
 fix: the fix writes the `if` from the scrutinee, the pattern and the
 bodies, and would drop it. Its Clippy counterpart, of the same name, is
 `pedantic` too. `lint::single_match_else` states when it fires:

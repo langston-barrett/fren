@@ -12,16 +12,18 @@ Fren checks each component seven ways:
 | [Redundancy](#redundancy) | `redundancy` | no assumption or guarantee follows from the others |
 | [Determinism](#determinism) | `determinism` | each `det out` is determined by the inputs |
 
-and checks how its constraints are written four more ways, wherever they
-have an index, a [table](Lang/Expressions.md#tables) or an application of a
+and checks how its constraints are written five more ways, wherever they
+have an index, a [table](Lang/Expressions.md#tables), a
+[`match`](Lang/Expressions.md#matches) with guards or an application of a
 function with a [contract](Lang/Items.md#contracts):
 
 | Check | Confirms |
 |---|---|
 | [Definedness](#definedness) | each index is in range where it is evaluated |
-| [Completeness](#completeness) | some row of each table without a `_` row holds where it is evaluated |
+| [Completeness](#completeness) | some row of each table without a `_` row holds, and some arm of each `match` that needs its guards to be exhaustive is taken, where it is evaluated |
 | [Disjointness](#disjointness) | no two rows of a table, other than `_`, hold at once where it is evaluated |
 | [Preconditions](#preconditions) | each application of a function meets the function's preconditions where it is evaluated |
+| [Reachability](#reachability) | each arm of a `match` that has a guard or follows one, and each row of a table, can be taken where it is evaluated |
 
 A [global expectation](Lang/Global.md) is checked two of the first six
 ways: the [expectation check](#global-expectations) confirms that it holds,
@@ -29,7 +31,7 @@ and the [vacuity check](#vacuity) that its trigger can hold. The body of a
 [defined function](Lang/Items.md#defined-functions), the value of a
 [constant](Lang/Items.md#constants), and the clauses of a function's
 [contract](Lang/Items.md#contracts) are checked for completeness,
-disjointness and preconditions too, and a defined function's
+disjointness, reachability and preconditions too, and a defined function's
 [postconditions](#postconditions) are checked to hold.
 
 The formulas below use the notation of [Components](Lang/Components.md#meaning):
@@ -112,6 +114,7 @@ pub enum Kind {
     Disjointness,
     Precondition,
     Postcondition,
+    Reachability,
 }
 
 use self::Outcome::{Sat, Unknown, Unsat}
@@ -158,13 +161,14 @@ pub comp satisfiable {
 constrains nothing, so there is nothing to realize, determine or find
 redundant, and its binders' inputs have no obligations. The body of a
 function, its contract, or the value of a constant is not a constraint
-either: only its tables and the applications in it are checked, and the
-function's postconditions. A component has no postconditions, so their
-check has no results there. The contract of an uninterpreted function with
-postconditions is checked for [realizability](#realizability) too, as a
-component whose inputs are the function's parameters, whose one `det out`
-is its value, and whose assumptions and guarantees are its preconditions
-and postconditions (see [Contracts](#contracts-of-uninterpreted-functions)):
+either: only its tables, its `match`es with guards and the applications in
+it are checked, and the function's postconditions. A component has no
+postconditions, so their check has no results there. The contract of an
+uninterpreted function with postconditions is checked for
+[realizability](#realizability) too, as a component whose inputs are the
+function's parameters, whose one `det out` is its value, and whose
+assumptions and guarantees are its preconditions and postconditions (see
+[Contracts](#contracts-of-uninterpreted-functions)):
 
 ```fren
 pub enum CheckedItem { Component, GlobalExpectation, Body, Contract }
@@ -179,6 +183,7 @@ pub comp applies {
         Expectation,
         Postcondition,
         Precondition,
+        Reachability,
         Realizability,
         Vacuity,
     }
@@ -188,9 +193,9 @@ pub comp applies {
 
     ensure rule: runs? iff match item {
         Component => true,
-        GlobalExpectation => kind in {Expectation, Vacuity, Definedness, Completeness, Disjointness, Precondition},
-        Body => kind in {Completeness, Disjointness, Precondition, Postcondition},
-        Contract => kind in {Realizability, Completeness, Disjointness, Precondition},
+        GlobalExpectation => kind in {Expectation, Vacuity, Definedness, Completeness, Disjointness, Precondition, Reachability},
+        Body => kind in {Completeness, Disjointness, Precondition, Postcondition, Reachability},
+        Contract => kind in {Realizability, Completeness, Disjointness, Precondition, Reachability},
     }
 
     expect claims_only: when item in {GlobalExpectation, Body} and runs?, not kind in {Realizability, Determinism}
@@ -591,27 +596,47 @@ pub comp definedness {
 
 ## Completeness
 
-A [table](Lang/Expressions.md#tables) without a `_` row has no specified
-value where none of its rows holds, as an index out of range has none: the
-checks hold for every value it could have there, so the constraint then
-says nothing useful. For each table without a `_` row, with the conditions
-`C_1`, ..., `C_n` of its rows and its guard `G`, the conditions under which
-it is evaluated (read as an index's are, see
-[Sequences](Lang/Expressions.md#sequences)), Fren asks whether `C_1 or ...
-or C_n` can be proved from `G` and the hypotheses of where the table is
-written, as for [definedness](#definedness). In the body of a defined
-function, there are no hypotheses but `G`, `N` and the function's
-preconditions, over its parameters, and in the value of a constant only
-`G` and `N`: a function's body is checked for every argument that meets
-its preconditions, not only those that a component passes it. A table with a `_`
-row is always complete, and has no completeness result.
-`check::completeness` decides each query like an expectation, and a model
-is a counterexample, a value of the variables for which no row holds,
-reported at the table's `table`:
+A [`match`](Lang/Expressions.md#matches) in which no arm is taken has no
+specified value, as an index out of range has none: the checks hold for
+every value it could have there, so the constraint then says nothing
+useful. The static rules make every `match` exhaustive when its guards are
+ignored, so this can happen only in one whose arms without guards are not
+exhaustive, and for each such `match`, Fren asks whether some arm is
+always taken. A [table](Lang/Expressions.md#tables) is such a `match`,
+each of whose rows other than `_` has a guard: it is asked about exactly
+when it has no `_` row. `check::completeness_asked` gives which are asked
+about:
+
+```fren
+pub comp completeness_asked {
+    in unguarded_exhaustive?  -- its arms without guards are exhaustive
+    pub det out asked?
+
+    ensure rule: asked? iff not unguarded_exhaustive?
+
+    -- A `match` without guards, or a table with a `_` row, is never asked about.
+    expect without_guards: when unguarded_exhaustive?, not asked?
+}
+```
+
+With the arms' patterns `P_1`, ..., `P_n`, their guards `C_1`, ...,
+`C_n` (`true` for an arm without one; for a table, the patterns are `_`
+and the guards its rows' conditions), and the `match`'s guard `G`, the
+conditions under which it is evaluated (read as an index's are, see
+[Sequences](Lang/Expressions.md#sequences)), Fren asks whether `(P_1 and
+C_1) or ... or (P_n and C_n)` can be proved from `G` and the hypotheses of
+where the `match` is written, as for [definedness](#definedness). In the
+body of a defined function, there are no hypotheses but `G`, `N` and
+the function's preconditions, over its parameters, and in the value of a
+constant only `G` and `N`: a function's body is checked for every argument
+that meets its preconditions, not only those that a component passes it. `check::completeness` decides each query like an expectation, and a
+model is a counterexample, a value of the variables for which no arm is
+taken, reported at the `match`'s `match` (`F0625`), or at the table's
+`table` (`F0618`):
 
 ```fren
 pub comp completeness {
-    in q: Outcome          -- can `C_1 or ... or C_n` be proved from the guard and the hypotheses?
+    in q: Outcome          -- can `(P_1 and C_1) or ... or (P_n and C_n)` be proved from the guard and the hypotheses?
     pub det out verdict: Verdict
     pub det out reports_cex?
 
@@ -656,14 +681,74 @@ pub comp disjointness {
 A `_` row holds wherever no earlier row does, so it overlaps none, and is
 in no disjointness check. The checks of a table are on its conditions
 alone: a row's value can be the same as another's, and the rows still
-overlap.
+overlap. Only tables are checked for disjointness: the arms of a `match`
+are told apart by their patterns first, and an arm with a guard is
+usually followed by one that its guard's failure leads to, as in `Eq if
+bound = 0 => AtStart, Eq => Other`.
 
-Completeness and disjointness ask one query each, as definedness does, so
-they have no query order of their own. Their hypotheses are those of
+## Reachability
+
+An arm of a [`match`](Lang/Expressions.md#matches) that is never taken
+where the `match` is evaluated is dead, which usually indicates a mistake:
+its guard can never hold, or the arms before it take every case it would.
+The static rules already reject an arm that the patterns of the arms
+before it without guards cover. Whether a guard holds is left to this
+check, which asks about each arm that has a guard or follows an arm that
+has one. Every row of a [table](Lang/Expressions.md#tables) is such an arm,
+but a table whose only row is `_`. `check::reachability_asked` gives which
+arms are asked about:
+
+```fren
+pub comp reachability_asked {
+    in guarded?              -- the arm has a guard
+    in after_guard?          -- some arm before it has a guard
+    pub det out asked?
+
+    ensure rule: asked? iff (guarded? or after_guard?)
+
+    -- An arm of a `match` without guards is never asked about.
+    expect static_only: when not guarded? and not after_guard?, not asked?
+}
+```
+
+For arm `j`, with `P_k` and `C_k` as for [completeness](#completeness),
+`T_k` for `P_k and C_k`, that arm `k` is taken if no arm before it is,
+`F_j` for `not T_1 and ... and not T_(j-1)`, and the `match`'s guard `G`,
+Fren asks whether `not (F_j and T_j)` can be proved from `G` and the
+hypotheses of where the `match` is written, as for
+[completeness](#completeness). If it can, no behaviour that they allow
+takes the arm, and the check fails, at the arm's pattern (`F0626`), or, for
+a table, at the row's condition or its `_` (`F0627`). So a guard that is
+`false`, or that contradicts the arm's pattern or the hypotheses, fails it,
+and so does an arm after others that take every case it would, as `x >= 0`
+after `x > 0` and `x = 0` does, or a table's `_` row after rows of which
+one always holds. `check::reachability` decides each query like
+[vacuity](#vacuity), whose query also asks whether something can hold:
+
+```fren
+pub comp reachability {
+    in q: Outcome          -- can `not (F_j and T_j)` be proved from the guard and the hypotheses?
+    pub det out verdict: Verdict
+
+    inst as_vacuity: non_vacuity { q }
+
+    ensure like_vacuity: verdict = as_vacuity.verdict
+}
+```
+
+A model is a behaviour that takes the arm, which is not reported: a pass
+is silent.
+
+Completeness, disjointness and reachability ask one query each, as
+definedness does, so they have no query order of their own, and their
+queries, like definedness's, are quantifier-free. Their hypotheses are those of
 definedness, `N` among them (see the [table above](#definedness)): a
-guarantee's own `R` is among its hypotheses, so a table in a
+guarantee's own `R` is among its hypotheses, so a table or a `match` in a
 guarantee may be complete only because another guarantee rules out
-the cases it leaves out.
+the cases it leaves out, and an arm of one may be unreachable because
+another guarantee, or the guarantee itself, rules out every behaviour
+that takes it, as in `ensure r: match k { Kind::A if ok? => true, _ => false
+}`, which no behaviour meets by its last arm: write it `k = Kind::A and ok?`.
 
 ## Preconditions
 
@@ -919,12 +1004,12 @@ that of the member's checks, which takes precedence:
 
 | Before | Its checks |
 |---|---|
-| an expectation | the expectation, its vacuity, and the definedness, completeness, disjointness and preconditions of what it reads |
-| a cover goal | the cover goal, and the definedness, completeness, disjointness and preconditions of what it reads |
-| an instance | the instance's assumptions, and the definedness, completeness, disjointness and preconditions of its bindings |
+| an expectation | the expectation, its vacuity, and the definedness, completeness, disjointness, reachability and preconditions of what it reads |
+| a cover goal | the cover goal, and the definedness, completeness, disjointness, reachability and preconditions of what it reads |
+| an instance | the instance's assumptions, and the definedness, completeness, disjointness, reachability and preconditions of its bindings |
 | a `det out` | its determinism |
 | a component | all of the component's checks |
-| a global expectation | its expectation, its vacuity, and the definedness, completeness, disjointness and preconditions of what it reads |
+| a global expectation | its expectation, its vacuity, and the definedness, completeness, disjointness, reachability and preconditions of what it reads |
 | a [refinement](Lang/Refinement.md) | all of the checks of its obligation, including the definedness of the bindings of the abstract component's instances |
 
 As with a [lint setting](Lint.md), `set_option` without `in` sets the
@@ -949,14 +1034,14 @@ checks that testing cannot decide are not run: vacuity and redundancy,
 which ask whether something can hold at all, which a failed search does
 not refute; definedness, since an index out of range has no value
 that the evaluator knows (see [Evaluation](Eval.md#searching-for-behaviours)),
-so testing can neither pass nor fail it; and completeness and
-disjointness, which, like definedness, are about where an expression is
+so testing can neither pass nor fail it; completeness, disjointness and
+reachability, which, like definedness, are about where an expression is
 evaluated: a test only reaches behaviours in which the constraints have
-values, and a table where no row holds has none, so testing could never
-find a counterexample to completeness, and the checks of a table are run
-together; and preconditions, which, like definedness, are about where an
-application is evaluated, and whose failure leaves the application's
-value unknown. A test that reaches
+values, and a table or `match` where no row or arm is taken has none, so
+testing could never find a counterexample to completeness, and the checks
+of a table or `match` are run together; and preconditions, which, like
+definedness, are about where an application is evaluated, and whose
+failure leaves the application's value unknown. A test that reaches
 an expectation shows that its trigger can hold, which is what its vacuity
 check would show. A cover goal asks whether something can hold too, but
 testing can pass it: a test that finds a behaviour that meets the
@@ -979,7 +1064,7 @@ check is not part of the [agreement with Lean](Cli.md#agreement-with-lean).
 pub enum Run { BySolver, ByTesting, Skipped }
 
 pub comp by_testing {
-    use self::Kind::{Completeness, Definedness, Disjointness, Precondition, Redundancy, Vacuity}
+    use self::Kind::{Completeness, Definedness, Disjointness, Precondition, Reachability, Redundancy, Vacuity}
     use self::Run::{BySolver, ByTesting, Skipped}
     in kind: Kind
     in tested?             -- the check's evidence is testing
@@ -987,8 +1072,8 @@ pub comp by_testing {
 
     ensure rule: run = table {
         | not tested? => BySolver,
-        | tested? and not kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness, Precondition} => ByTesting,
-        | tested? and kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness, Precondition} => Skipped,
+        | tested? and not kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness, Precondition, Reachability} => ByTesting,
+        | tested? and kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness, Precondition, Reachability} => Skipped,
     }
 
     expect never_both: when tested?, run != BySolver
@@ -1013,6 +1098,7 @@ refine determinism_proves: determinism refines proved
 refine vacuity_witnesses: non_vacuity refines satisfiable
 refine cover_witnesses: cover_goal refines satisfiable
 refine redundancy_witnesses: non_redundancy refines satisfiable
+refine reachability_witnesses: reachability refines satisfiable
 
 #fren_check
 ```

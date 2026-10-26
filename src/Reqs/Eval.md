@@ -34,10 +34,10 @@ In a behaviour, every constraint is `true` or `false`, by the meaning of
 its [expression](Lang/Expressions.md). The evaluator computes the value of
 each [constant](Lang/Items.md#constants) once, when it reads the spec,
 without an interpretation. A constant whose value then reads an index out
-of range, or a table without a `_` row where no row holds, is kept as its
+of range, or a table or `match` where no row or arm is taken, is kept as its
 expression: in each behaviour, it has the value that the interpretation
-gives the table, and none for the index; its indexes and tables
-are the constant's own, which the checks ask about at the constant, not
+gives the table or `match`, and none for the index; its indexes, tables
+and `match`es are the constant's own, which the checks ask about at the constant, not
 where it is mentioned. A constant whose value cannot be computed for any
 other reason is an internal error. The evaluator computes it from the
 spec itself, not from the formulas given to the solver, so it is an
@@ -129,8 +129,9 @@ application has no value that the evaluator knows, as an index out of
 range has none, since a value that does not meet them is no
 interpretation of the spec. So is the value of each type that
 a [table](Lang/Expressions.md#tables) without a `_` row has where no row
-holds, which the interpretation gives, as the solver's does: one value of
-each type, the same for every such table.
+holds, and a [`match`](Lang/Expressions.md#matches) where no arm is taken,
+which the interpretation gives, as the solver's does: one value of
+each type, the same for every such table and `match`.
 
 The search may miss a behaviour that exists, since it tries only some
 values, but every behaviour it reports is genuine: it is a behaviour of the
@@ -205,7 +206,7 @@ hold at all, which a failed search does not refute. A [cover
 goal](Check.md#cover-goals) asks that too, but a behaviour found shows
 that it can hold, so testing passes a goal for which it finds a witness,
 and never fails one. Nor are definedness,
-completeness and disjointness (see [Checking by
+completeness, disjointness and reachability (see [Checking by
 testing](Check.md#checking-by-testing)).
 
 A test *reaches* a check when it finds what the check is about, as in the
@@ -331,12 +332,15 @@ from the constraint, definition or binding that has the index, by the same
 left-to-right reading, and pairs it with the solver's by the index's
 position in the source. An index out of range in the guard has no value
 that the evaluator knows, so it leaves the goal undecided unless the rest
-decides it. The goals of [completeness](Check.md#completeness) and
-[disjointness](Check.md#disjointness) are found in the same way, from the
-table's conditions, and paired with the solver's by the place where each
-is reported in the source, and by its question: a table's `table` for its
-completeness, and the later row's condition for the disjointness of two
-rows. In the body of a function, the parameters are the variables. The
+decides it. The goals of [completeness](Check.md#completeness),
+[disjointness](Check.md#disjointness) and
+[reachability](Check.md#reachability) are found in the same way, from the
+patterns and guards of a `match`'s arms or a table's conditions, and
+paired with the solver's by the place where each is reported in the
+source, and by its question: a `match`'s `match` or a table's `table` for
+its completeness, the later row's condition for the disjointness of two
+rows, and an arm's pattern or a row's condition or `_` for its
+reachability. In the body of a function, the parameters are the variables. The
 goals of the [precondition](Check.md#preconditions) check are found in
 the same way, each at the applied function's name, as its precondition
 at the application's arguments, which the evaluator evaluates as it does

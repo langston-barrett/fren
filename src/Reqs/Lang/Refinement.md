@@ -181,7 +181,8 @@ checks](../Check.md#expectations). A failure is reported as for those
 checks, with a counterexample, at the refinement. `refinement::checks` gives
 which checks run on a refinement: those that check the obligation, and the
 [definedness](../Check.md#definedness), [completeness](../Check.md#completeness),
-[disjointness](../Check.md#disjointness) and
+[disjointness](../Check.md#disjointness),
+[reachability](../Check.md#reachability) and
 [preconditions](../Check.md#preconditions) of what it reads:
 
 ```fren
@@ -195,11 +196,12 @@ pub comp checks {
         Expectation,
         InstanceAssumption,
         Precondition,
+        Reachability,
     }
     in kind: Kind
     pub det out runs?
 
-    ensure rule: runs? iff kind in {InstanceAssumption, Expectation, Definedness, Completeness, Disjointness, Precondition}
+    ensure rule: runs? iff kind in {InstanceAssumption, Expectation, Definedness, Completeness, Disjointness, Precondition, Reachability}
 }
 ```
 

@@ -25,7 +25,7 @@ where the next member follows on the same line.
 
 - `_` matches any value.
 - A *binder*, an identifier, matches any value, and names it within the
-  arm's body. A binder is not a variable: see
+  arm's guard and body. A binder is not a variable: see
   [Matches](Expressions.md#matches) for what it may shadow and mention.
 - A *literal* matches the value it denotes: `0`, `-1` and `0x10` match an
   `Int` or a `Nat`, `"a"` a `String`, and `true` and `false` a `Bool`.
@@ -119,9 +119,10 @@ and a *matrix* is a list of vectors of the same types, its *rows*. A vector
 is *useful* with respect to a matrix when some list of values matches the
 vector and no row of the matrix. So an arm is reachable when its pattern,
 as a vector of one pattern, is useful with respect to the patterns of the
-arms before it, and a `match` is exhaustive when `_` is not useful with
-respect to the patterns of all its arms (see
-[Matches](Expressions.md#matches)).
+arms before it that have no [guard](Expressions.md#matches), and a `match`
+is exhaustive when `_` is not useful with respect to the patterns of all
+its arms, guards ignored (see [Matches](Expressions.md#matches)). Whether
+a guard holds is left to the [checks](../Check.md#reachability).
 
 Usefulness is decided one column at a time, from the first pattern of the
 vector, its *head*, and the heads of the rows. The values of a type are
@@ -255,7 +256,7 @@ An or-pattern's alternative is reachable when some case of its arm that
 takes it is useful: an arm's pattern stands for the or-free patterns that
 choosing one alternative of each of its or-patterns gives, in order, and
 each is tested for usefulness with respect to the patterns of the arms
-before it and the cases of its own arm before it. An alternative that no
+before it that have no guard and the cases of its own arm before it. An alternative that no
 useful case takes never matches (`F0318`). Since these cases are
 tested one by one, and or-patterns within several values of a payload
 multiply them, as `V(A | B, A | B)` stands for four, a pattern may stand

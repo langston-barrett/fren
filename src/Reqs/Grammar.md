@@ -113,7 +113,7 @@ atom           := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | 
 element        := expr | pair
 pair           := "(" expr "," expr ")"
 field-init     := IDENT [":=" expr]
-arm            := pattern "=>" expr
+arm            := pattern ["if" iff] "=>" expr
 row            := ["|"] (iff | "_") "=>" iff
 pattern        := ["|"] or-pattern
 or-pattern     := primary ("|" primary)*
