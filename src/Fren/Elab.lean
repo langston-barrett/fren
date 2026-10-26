@@ -2722,7 +2722,10 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       else pure ((← coreTy? tx).map fun t => if seqShaped b then .seq t.widen else .set t.widen)
     let s ← toTerm { cx with emptyOk := Core.Position.compared.checked false (synthesizes a), expected? := elem? } b
     let (tx, ts) := (← typeOf x, ← typeOf s)
-    if ts.isAppOfArity ``Fren.Seq 1 && (← isDefEq ts.appArg! tx) then
+    -- `ts` is taken apart only once it is known to be a `Seq`: a `(← ...)`
+    -- after `&&` would run, and panic, for any other type.
+    let isSeq ← if ts.isAppOfArity ``Fren.Seq 1 then isDefEq ts.appArg! tx else pure false
+    if isSeq then
       checkCore cx e .seqWord true true #[a, b] (← isConstant cx e) (literalOperand := (unparen b).isOfKind ``Lang.seqExpr)
       return ← `($x ∈ $s)
     let ok ← if ts.isAppOfArity ``Fren.FinSet 1 then isDefEq ts.appArg! tx else pure false
