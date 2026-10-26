@@ -248,9 +248,31 @@ def substQuoted (f : String → String) (smt : String) : String :=
 /-- Applies `f` to the name of each quoted symbol of `smt`. -/
 def mapQuoted (f : String → String) (smt : String) : String := substQuoted (quote ∘ f) smt
 
-/-- The names of the quoted symbols of `smt`, as `mapQuoted` finds them. -/
-def quotedSymbols (smt : String) : Array String :=
-  (quotedPieces smt).filterMap fun | .inr name => some name | .inl _ => none
+/-- The names of the quoted symbols of `smt`, as `mapQuoted` finds them
+(`quotedPieces`), without building the text between them. It reads the
+UTF-8 bytes: `"` and `|` are ASCII, and no byte of a character that is not
+ASCII is one of them, so the symbols are found where `quotedPieces` finds
+them, and each is whole characters. -/
+def quotedSymbols (smt : String) : Array String := Id.run do
+  let bs := smt.toUTF8
+  let mut out := #[]
+  let mut i := 0
+  while i < bs.size do
+    let c := bs[i]!
+    if c == '"'.toUInt8 then
+      -- A string literal, in which `""` is a `"`.
+      let mut j := i + 1
+      while j < bs.size && !(bs[j]! == '"'.toUInt8 && bs[j + 1]? != some '"'.toUInt8) do
+        j := if bs[j]! == '"'.toUInt8 then j + 2 else j + 1
+      i := j + 1
+    else if c == '|'.toUInt8 then
+      let mut j := i + 1
+      while j < bs.size && bs[j]! != '|'.toUInt8 do j := j + 1
+      out := out.push (String.fromUTF8! (bs.extract (i + 1) j))
+      i := j + 1
+    else
+      i := i + 1
+  return out
 
 /-- Renames the variables `vars` in `smt` to `pfx.x`. Variables are quoted
 symbols, as are enum constructors, which contain `::` and so never clash. -/

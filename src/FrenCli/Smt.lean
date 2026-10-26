@@ -309,6 +309,7 @@ terms within it, and otherwise from left to right, as the Lean front end's
 `natApps` walks a term. Each of `terms` is a whole term, an application in
 parentheses, so its text occurs in `f` just where `f` mentions it. -/
 def termsIn (terms : Array String) (f : String) : Array String := Id.run do
+  if terms.isEmpty then return #[]
   let cs := f.toList.toArray
   let pats := terms.map fun t => (t, t.toList.toArray)
   let mut out := #[]
@@ -321,7 +322,10 @@ def termsIn (terms : Array String) (f : String) : Array String := Id.run do
       inString := !inString
     else if !inString && c == '(' then
       for (t, p) in pats do
-        let here := i + p.size ≤ cs.size && (List.range p.size).all fun k => cs[i + k]! == p[k]!
+        let here := i + p.size ≤ cs.size && Id.run do
+          for k in [0:p.size] do
+            if cs[i + k]! != p[k]! then return false
+          return true
         if here && !out.contains t then out := out.push t
     i := i + 1
   return out
@@ -342,7 +346,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (timeoutSecs 
   query hyps goal wantModel := do
     let facts := c.natFacts false ++ c.natFacts true
     let facts := facts ++ (facts.map (prime c)).filter (!facts.contains ·)
-    let mentioned := (facts ++ hyps.map (·.2) |>.push goal).flatMap quotedSymbols
+    let mentioned : Std.HashSet String := .ofArray ((facts ++ hyps.map (·.2) |>.push goal).flatMap quotedSymbols)
     let vars := (c.vars ++ primes c).filter (mentioned.contains ·.name.toString)
     let apps := c.natApps ++ (c.natApps.map (prime c)).filter (!c.natApps.contains ·)
     -- An application within a `let` or `where` is found as it is written

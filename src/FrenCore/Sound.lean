@@ -846,18 +846,21 @@ private theorem checkInsts_mem {b : Backend Id F V} {r : CheckResult} :
     exact ⟨_, ⟨(c.insts[k], k), Array.mem_zipIdx_iff_getElem?.2 (by simp [hk]), rfl⟩,
       Array.mem_map.2 ⟨a, ha, rfl⟩⟩
 
-private theorem checkRedundancies_mem {b : Backend Id F V} {vacuous : Array Name} {r : CheckResult} :
-    r ∈ (checkRedundancies b c vacuous).run ↔
-      (∃ a ∈ c.assumes, redundancyAsked (consistent b (c.defEqs .redundancy ++ c.assumes)).run false ∧
+private theorem checkRedundancies_mem {b : Backend Id F V} {vacuous : Array Name} {satisfied : Bool}
+    {r : CheckResult} :
+    r ∈ (checkRedundancies b c vacuous satisfied).run ↔
+      (∃ a ∈ c.assumes,
+        redundancyAsked (if satisfied then .sat else (consistent b (c.defEqs .redundancy ++ c.assumes)).run) false ∧
         r = (checkRedundant b c (c.assumes.filter (·.1 != a.1)) a).run) ∨
       (∃ q ∈ c.reqs,
-        redundancyAsked (if c.reqs.isEmpty then .sat else (consistent b (c.defEqs .redundancy ++ (c.hyps b ++ c.reqs))).run)
+        redundancyAsked (if c.reqs.isEmpty || satisfied then .sat
+            else (consistent b (c.defEqs .redundancy ++ (c.hyps b ++ c.reqs))).run)
           (vacuous.contains q.1) ∧
         r = (checkRedundant b c (c.hyps b ++ c.reqs.filter (·.1 != q.1)) q).run) := by
   unfold checkRedundancies
-  by_cases he : c.reqs.isEmpty <;>
+  by_cases he : c.reqs.isEmpty <;> cases satisfied <;>
     simp only [bind_eq, run_eq, pure_eq, filterMapM_id', he, if_true, if_false, Bool.false_eq_true,
-      Array.mem_append] <;>
+      Bool.or_true, Bool.or_false, Array.mem_append] <;>
     exact or_congr mem_filterMap_ite mem_filterMap_ite
 
 private theorem checkDets_mem {b : Backend Id F V} {r : CheckResult} :
@@ -875,6 +878,8 @@ theorem checkComp_eq (bk : CheckKind → Backend Id F V) (kinds : Array CheckKin
       (if kinds.contains .cover then c.covers.map (checkCover (bk .cover) c · |>.run) else #[]) ++
       (if kinds.contains .vacuity then c.triggers.map (checkVacuity (bk .vacuity) c · |>.run) else #[]) ++
       (if kinds.contains .redundancy then (checkRedundancies (bk .redundancy) c (vacuousOf
+        (if kinds.contains .vacuity then c.triggers.map (checkVacuity (bk .vacuity) c · |>.run) else #[]))
+        (satisfiedOf
         (if kinds.contains .vacuity then c.triggers.map (checkVacuity (bk .vacuity) c · |>.run) else #[]))).run
         else #[]) ++
       (if kinds.contains .determinism then (checkDets (bk .determinism) c).run else #[]) ++
@@ -932,7 +937,8 @@ theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKi
 instance, each expectation, each cover goal, each trigger, each `det out` and each index; and
 `redundancy` on each assumption and each requirement it is asked about
 (`check::redundancy_asked`): not if they are contradictory, nor for a
-requirement whose `vacuity` check failed. -/
+requirement whose `vacuity` check failed. Whether they are contradictory is
+not asked once a `vacuity` check has passed (`satisfiedOf`). -/
 theorem checkComp_runs {bk : CheckKind → Backend Id F V} {kinds : Array CheckKind} :
     (kinds.contains .realizable → (checkRealizable (bk .realizable) c).run ∈ (checkComp bk c kinds).run) ∧
     (kinds.contains .inst → ∀ k (hk : k < c.insts.size), ∀ a ∈ c.insts[k].assumes,
@@ -942,11 +948,16 @@ theorem checkComp_runs {bk : CheckKind → Backend Id F V} {kinds : Array CheckK
     (kinds.contains .vacuity → ∀ t ∈ c.triggers,
       (checkVacuity (bk .vacuity) c t).run ∈ (checkComp bk c kinds).run) ∧
     (kinds.contains .redundancy → ∀ a ∈ c.assumes,
-      redundancyAsked (consistent (bk .redundancy) (c.defEqs .redundancy ++ c.assumes)).run false →
+      redundancyAsked
+        (if satisfiedOf (if kinds.contains .vacuity then c.triggers.map (checkVacuity (bk .vacuity) c · |>.run)
+          else #[]) then .sat
+        else (consistent (bk .redundancy) (c.defEqs .redundancy ++ c.assumes)).run) false →
       (checkRedundant (bk .redundancy) c (c.assumes.filter (·.1 != a.1)) a).run ∈ (checkComp bk c kinds).run) ∧
     (kinds.contains .redundancy → ∀ q ∈ c.reqs,
       redundancyAsked
-        (if c.reqs.isEmpty then .sat else (consistent (bk .redundancy) (c.defEqs .redundancy ++ (c.hyps (bk .redundancy) ++ c.reqs))).run)
+        (if c.reqs.isEmpty || satisfiedOf (if kinds.contains .vacuity then
+            c.triggers.map (checkVacuity (bk .vacuity) c · |>.run) else #[]) then .sat
+          else (consistent (bk .redundancy) (c.defEqs .redundancy ++ (c.hyps (bk .redundancy) ++ c.reqs))).run)
         ((vacuousOf (if kinds.contains .vacuity then c.triggers.map (checkVacuity (bk .vacuity) c · |>.run)
           else #[])).contains q.1) →
       (checkRedundant (bk .redundancy) c (c.hyps (bk .redundancy) ++ c.reqs.filter (·.1 != q.1)) q).run ∈
