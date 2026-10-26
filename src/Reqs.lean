@@ -4,6 +4,7 @@ import Reqs.Check
 import Reqs.Cli
 import Reqs.Eval
 import Reqs.Fmt
+import Reqs.Generated
 import Reqs.Impl
 import Reqs.Inst
 import Reqs.Lang

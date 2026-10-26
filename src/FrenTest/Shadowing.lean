@@ -23,7 +23,7 @@ pub comp scaled {
 pub fn bump(RATE!: Int): Int := RATE + 1
 
 /--
-info: @[reducible] def shadowing_test.scaled.ensure.r : Int → shadowing_test.Shape → Int → Prop :=
+info: @[reducible] def Fren.Generated.shadowing_test.scaled.ensure.r : Int → shadowing_test.Shape → Int → Prop :=
 fun RATE s y =>
   y =
     if s = shadowing_test.Shape.Circle (shadowing_test.Shape.Circle.x0 s) then shadowing_test.Shape.Circle.x0 s
@@ -32,7 +32,7 @@ fun RATE s y =>
 #guard_msgs in #print shadowing_test.scaled.ensure.r
 
 /--
-info: @[reducible] def shadowing_test.bump : Int → Int :=
+info: @[reducible] def Fren.Generated.shadowing_test.bump : Int → Int :=
 fun RATE => RATE + 1
 -/
 #guard_msgs in #print shadowing_test.bump

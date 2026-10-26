@@ -222,8 +222,8 @@ By default the solver decides the obligation. `set_option fren.evidence
 testing](../Check.md#checking-by-testing)).
 
 In Lean, `by` and tactics prove it instead: Fren generates the obligation
-as a proposition, `r`, in the module's namespace, and the tactics must
-prove it. Then no check of the refinement is asked of the solver, and a
+as a proposition, `r`, named as every item's declarations are (see
+[Names](../Generated.md#names)), and the tactics must prove it. Then no check of the refinement is asked of the solver, and a
 proof that does not succeed is an error. The `fren` command does not run
 Lean, so `by` is a static error there, like any construct that needs Lean
 (see [The `fren` command](../Cli.md#agreement-with-lean)).

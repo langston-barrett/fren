@@ -1,0 +1,69 @@
+-- Items named as Lean's own declarations are: both front ends accept them,
+-- at the root module and in modules, since the hosted front end declares
+-- them apart from Lean's, in `Fren.Generated` (`Reqs/Generated#names`).
+
+-- The repro of issue #249, without type parameters.
+pub enum Option { None, Some(Int) }
+pub struct List { x: Int }
+
+comp c {
+    in x: Option
+    in l: List
+    expect some: when x = Option::Some(3), x != Option::None
+    expect field: when l = List { x := 1 }, l.x = 1
+}
+
+-- Others of Lean's names at the root module: an enumeration, a recursive
+-- one, a newtype, an abstract type, a function, a constant and a component.
+pub enum Array { Empty, One(Int) }
+pub enum Except { Done, More(Except) }
+pub struct Unit(Int)
+pub type Id
+pub fn max(a: Int, b: Int): Int := a.max(b)
+set_option fren.lint.non_upper_case_constants "allow" in
+pub const Fin: Int := 3
+pub comp id {
+    in a: Array
+    in e: Except
+    in u: Unit
+    in i: Id
+    in j: Id
+    pub out y: Int
+    ensure r: y = max(u.0, Fin)
+    expect bound: y >= 3
+    expect kinds: a = Array::Empty or a != Array::Empty
+    expect recursive: e = Except::Done or e != Except::Done
+    expect abstract: when i = j, j = i
+}
+
+-- Each construct that generates Lean code naming them: a match, a
+-- quantifier, a record update and a table.
+pub enum Ordering { Lt, Eq, Gt }
+pub struct Prod { fst: Int, snd: Int }
+
+comp uses {
+    in x: Option
+    in p: Prod
+    in f?
+    pub out n: Int := match x { Option::Some(k) => k, Option::None => 0 }
+    pub out q: Prod := { p with fst := n }
+    pub out t: Int := table { f? => 1, _ => 2 }
+    expect matched: when x = Option::Some(4), n = 4
+    expect updated: q.fst = n and q.snd = p.snd
+    expect tabled: t >= 1
+    expect quantified: when n > 0, exists (o: Ordering), o != Ordering::Lt and n > 0
+    -- A witness names the values by their paths, as every message does.
+    expect witness: x = Option::None  --~ error: counterexample: x = Option::Some(
+}
+
+-- And in a module, where each was always apart from Lean's.
+mod option
+pub enum Option { None, Some(Int) }
+pub struct List { x: Int }
+comp m {
+    in x: Option
+    in l: List
+    expect some: when x = Option::Some(3), x != Option::None
+    expect field: when l = List { x := 1 }, l.x = 1
+}
+--@ summary: 26 passed, 1 failed, 0 inconclusive, 0 redundant

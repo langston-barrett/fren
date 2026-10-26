@@ -3,8 +3,73 @@
 In Lean, each enumeration, record, defined function, constant, component and
 global expectation becomes ordinary Lean declarations,
 so that Lean code can use a spec. An item at the Fren path `a::b::c` gets
-the Lean name `a.b.c`, prefixed by the current Lean namespace. Below, `p`
-stands for that name.
+the Lean name `Fren.Generated.a.b.c`, prefixed by the current Lean
+namespace, and Lean code names it `a.b.c` (see [Names](#names)). Below,
+`p` stands for that name.
+
+## Names
+
+The declarations generated for an item are in a namespace of their own,
+`Fren.Generated`, under the current Lean namespace: the item at the path
+`a::b::c`, declared where the current Lean namespace is `N`, gets the
+Lean name `N.Fren.Generated.a.b.c`, and every other declaration generated
+for it, such as a variant's constructor or a component's guarantee, a name
+under that one. Lean declares nothing else in `Fren.Generated`, so no
+item's Lean name is one of Lean's own: `enum Option` at the root module is
+`Fren.Generated.Option`, apart from Lean's `Option`, and both front ends
+accept it, as they accept `struct List`. Messages, notes and witnesses
+name an item by its Fren path, never by its Lean name, so the two front
+ends' messages agree.
+
+`generated::lean_name` states the name over the components of names, which
+are strings: those of the current Lean namespace, and the segments of the
+item's path, which is the full path from the root module. Its rules join
+sequences, which is outside the [decidable
+core](Lang/Decidability.md#sequences), so they opt out:
+
+```fren
+pub mod generated
+
+-- The namespace, under the current Lean namespace, of every generated declaration.
+pub const NAMESPACE: Seq(String) := ["Fren", "Generated"]
+
+set_option fren.lint.undecidable "allow" in
+pub comp lean_name {
+    in current: Seq(String)      -- the current Lean namespace's components, [] at the root
+    in path: Seq(String)         -- the item's path's segments
+    pub out name: Seq(String) := current ++ NAMESPACE ++ path
+
+    assume item: path != []
+
+    expect length: name.len = current.len + 2 + path.len
+    expect starts_in_namespace: name.starts_with?(current ++ NAMESPACE)
+    expect ends_in_path: name.ends_with?(path)
+    expect root_option: when current = [] and path = ["Option"], name = ["Fren", "Generated", "Option"]
+    expect never_leans: when current = [] and path = ["Option"], name != ["Option"]
+    expect in_module: when current = [] and path = ["check", "Verdict"], name = ["Fren", "Generated", "check", "Verdict"]
+    expect in_lean_namespace: when current = ["FrenTest", "Ui"] and path = ["Mode"],
+        name = ["FrenTest", "Ui", "Fren", "Generated", "Mode"]
+}
+
+set_option fren.lint.undecidable "allow" in
+expect distinct_paths: forall (a b: lean_name),
+    when a.current = b.current and a.path != b.path, a.name != b.name
+```
+
+`generated::distinct_paths` claims that two items never share a Lean name:
+in one Lean namespace, distinct paths have distinct names.
+
+Wherever `Fren.Lang` is open, so is `Fren.Generated`, under the current
+Lean namespace: `open Fren.Lang` opens it too, and so does each Fren
+command, if it is not yet open. So Lean code names an item's declarations
+by its path, `a.b.c`, such as `climate.Mode.Heat` or `simp [fren_spec,
+size]`, and `Fren.Generated.a.b.c` names them anywhere. Where an item's
+name is also the name of one of Lean's declarations, as `Option` at the
+root module is, the name alone is ambiguous in Lean code where both are
+visible: `Fren.Generated.Option` names the item's, and `_root_.Option`
+Lean's. The generated declarations name each other by their full Lean
+names, so they are never ambiguous. Lean's `#print` and `#check` show a
+declaration's full Lean name, `Fren.Generated.a.b.c`.
 
 ## Enumerations
 

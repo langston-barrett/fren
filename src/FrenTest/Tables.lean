@@ -20,14 +20,14 @@ comp sign {
 }
 
 /--
-info: @[reducible] def table_test.sign.ensure.r : Int → Int → Prop :=
+info: @[reducible] def Fren.Generated.table_test.sign.ensure.r : Int → Int → Prop :=
 fun x s => s = if x > 0 then 1 else if x < 0 then -1 else if x = 0 then 0 else ∅.nth 0
 -/
 #guard_msgs in
 #print table_test.sign.ensure.r
 
 /--
-info: @[reducible] def table_test.sign.ensure.w : Int → Int → Prop :=
+info: @[reducible] def Fren.Generated.table_test.sign.ensure.w : Int → Int → Prop :=
 fun x s => s = if x > 0 then 1 else if x < 0 then -1 else 0
 -/
 #guard_msgs in

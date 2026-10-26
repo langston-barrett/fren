@@ -16,12 +16,12 @@ pub struct Bytes(Int)
 pub ordered struct Name(String)
 
 /--
-info: structure newtype_test.Ms : Type
+info: structure Fren.Generated.newtype_test.Ms : Type
 number of parameters: 0
 fields:
-  newtype_test.Ms.«0» : Int
+  Fren.Generated.newtype_test.Ms.«0» : Int
 constructor:
-  newtype_test.Ms.mk («0» : Int) : newtype_test.Ms
+  Fren.Generated.newtype_test.Ms.mk («0» : Int) : newtype_test.Ms
 -/
 #guard_msgs in
 #print newtype_test.Ms
@@ -48,7 +48,7 @@ comp timer {
 }
 
 /--
-info: @[reducible] def newtype_test.timer.def.left : newtype_test.Ms →
+info: @[reducible] def Fren.Generated.newtype_test.timer.def.left : newtype_test.Ms →
   newtype_test.Ms → newtype_test.Name → newtype_test.Ms → Bool → Bool → Prop :=
 fun elapsed budget n left late? early? => left = { «0» := budget.«0» - elapsed.«0» }
 -/
@@ -56,7 +56,7 @@ fun elapsed budget n left late? early? => left = { «0» := budget.«0» - elaps
 #print newtype_test.timer.def.left
 
 /--
-info: @[reducible] def newtype_test.timer.def.late? : newtype_test.Ms →
+info: @[reducible] def Fren.Generated.newtype_test.timer.def.late? : newtype_test.Ms →
   newtype_test.Ms → newtype_test.Name → newtype_test.Ms → Bool → Bool → Prop :=
 fun elapsed budget n left late? early? => late? = decide (elapsed.«0» > budget.«0»)
 -/

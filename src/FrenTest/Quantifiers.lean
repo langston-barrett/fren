@@ -24,7 +24,7 @@ comp c {
 }
 
 /--
-info: @[reducible] def quant.c.ensure.all_other : quant.Method → Bool → Bool → Bool → Prop :=
+info: @[reducible] def Fren.Generated.quant.c.ensure.all_other : quant.Method → Bool → Bool → Bool → Prop :=
 fun x all_other? some_pair? nested? =>
   all_other? = true ↔ quant.Method.Len ≠ x ∧ quant.Method.Card ≠ x ∧ quant.Method.Rev ≠ x
 -/
@@ -34,7 +34,7 @@ fun x all_other? some_pair? nested? =>
 -- A record's values are every combination of its fields', the last field
 -- fastest, and `Bool`'s are `true` then `false`.
 /--
-info: @[reducible] def quant.c.ensure.some_pair : quant.Method → Bool → Bool → Bool → Prop :=
+info: @[reducible] def Fren.Generated.quant.c.ensure.some_pair : quant.Method → Bool → Bool → Bool → Prop :=
 fun x all_other? some_pair? nested? =>
   some_pair? = true ↔
     ({ a? := true, b? := true }.a? = true ∧ ¬{ a? := true, b? := true }.b? = true ∨
@@ -47,7 +47,7 @@ fun x all_other? some_pair? nested? =>
 
 -- Two bound names: every combination, the last fastest, in one balanced tree.
 /--
-info: @[reducible] def quant.c.ensure.nested : quant.Method → Bool → Bool → Bool → Prop :=
+info: @[reducible] def Fren.Generated.quant.c.ensure.nested : quant.Method → Bool → Bool → Bool → Prop :=
 fun x all_other? some_pair? nested? =>
   nested? = true ↔
     ((true = true ∨ true = true) ∧ (true = true ∨ false = true)) ∧

@@ -67,4 +67,5 @@ A Lean file sees the Fren modules and items of the Lean files it imports,
 and starts in the root module (see [Modules and
 visibility](Lang/Modules.md#across-files)). Fren modules are independent of
 Lean namespaces, but the [generated declarations](Generated.md) are placed
-in the current Lean namespace.
+in `Fren.Generated`, under the current Lean namespace, which `open
+Fren.Lang` opens (see [Names](Generated.md#names)).

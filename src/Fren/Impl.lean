@@ -311,6 +311,7 @@ open Lang in
 @[command_elab Lang.implCmd] def elabImpl : CommandElab := fun stx => do
   -- What Lean recovered from a parse error that it has reported.
   if stx.hasMissing then return
+  openGenerated
   noteSettingsSeen
   let nameStx := stx[1]
   let declName := (← getCurrNamespace) ++ nameStx.getId
@@ -510,6 +511,7 @@ open Lang in
 @[command_elab Lang.interpCmd] def elabInterp : CommandElab := fun stx => do
   -- What Lean recovered from a parse error that it has reported.
   if stx.hasMissing then return
+  openGenerated
   let segs := pathSegs stx[1]
   let r ← resolvePath (← getLocal).currentModule segs
   let defined := (← getState).defined
@@ -525,7 +527,7 @@ open Lang in
     throwErrorAt stx[1] s!"`{Core.showComp path}` is already interpreted\n\n\
       note: each abstract type and function has one interpretation, which every `impl` uses"
   let some a := s.abstracts.get? path | throwError "internal error: unknown abstract item `{path}`"
-  let decl := (← getCurrNamespace) ++ path
+  let decl ← generatedName path
   let term ← liftTermElabM do
     -- The type the term must have: the function's, over the interpretations
     -- of its abstract types.
