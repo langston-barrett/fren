@@ -33,9 +33,9 @@ record         := ["pub"] ["ordered"] "struct" declared-type "{" field ("," fiel
 field          := IDENT [":" type]
 abstract-type  := ["pub"] "type" IDENT
 type-alias     := ["pub"] "type" IDENT ":=" type
-function       := ["pub"] "fn" IDENT"(" type ("," type)* ")" [":" type]
-                | ["pub"] "fn" IDENT"(" variable ("," variable)* ")" [":" type] [":=" top] clause+
-                | ["pub"] "fn" IDENT"(" variable ("," variable)* ")" [":" type] ":=" top
+function       := ["pub"] "fn" declared-type"(" type ("," type)* ")" [":" type]
+                | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" [":" type] [":=" top] clause+
+                | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" [":" type] ":=" top
 clause         := ("assume" | "ensure") IDENT ":" top
 constant       := ["pub"] "const" IDENT ":" type ":=" top
 component      := ["pub"] "comp" IDENT "{" member* "}"

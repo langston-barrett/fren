@@ -15,7 +15,7 @@ pub mod lang
 
 ## Values
 
-`lang::Val` is the value of an expression, of any type: a `Bool`, an
+`lang::Value` is the value of an expression, of any type: a `Bool`, an
 `Int` (a `Nat` too), a `String`, a list, or a value of an enumeration,
 record or newtype, by its variant, record or newtype and its payload's or
 fields' values as a list, a record's in the order the record declares its
@@ -31,7 +31,7 @@ hold them:
 ```fren
 pub type Id := String
 
-pub enum Val { B(Bool), I(Int), S(String), Nil, Cons(Val, Val), C(Id, Val) }
+pub enum Value { B(Bool), I(Int), S(String), Nil, Cons(Value, Value), C(Id, Value) }
 ```
 
 ## Layers
@@ -91,8 +91,8 @@ states quantifiers.
 
 ```fren
 pub enum Head {
-    Literal(Val),
-    Bound(Val),
+    Literal(Value),
+    Bound(Value),
     Constant(Id),
     Variable(Id),
     Definition(Id),
@@ -150,12 +150,12 @@ language's.
 ```fren
 pub type Env
 
-pub fn lookup(Env, Id): Val
-pub fn meaning(Env, Id, Val): Val
-pub fn unspecified(Env, Head, Val): Val
+pub fn lookup(Env, Id): Value
+pub fn meaning(Env, Id, Value): Value
+pub fn unspecified(Env, Head, Value): Value
 
-pub fn fixed_value(Head, Val): Val
-pub fn fixed_specified?(Head, Val)
+pub fn fixed_value(Head, Value): Value
+pub fn fixed_specified?(Head, Value)
 ```
 
 ## One layer
@@ -173,18 +173,18 @@ functions](Items.md#defined-functions)). Its postcondition determines it:
 
 ```fren
 -- The value of a layer's only part, the first of its parts' values.
-pub fn only_part(values: Val): Val := match values {
-    Val::Cons(v, _) => v,
+pub fn only_part(values: Value): Value := match values {
+    Value::Cons(v, _) => v,
     _ => values,
 }
 
-pub fn step(head: Head, env: Env, values: Val): Val
+pub fn step(head: Head, env: Env, values: Value): Value
     ensure layer: step(head, env, values) = match head {
     Head::Literal(v) => v,
     Head::Bound(v) => v,
     Head::Variable(x) => lookup(env, x),
     Head::Definition(_) => only_part(values),
-    Head::Construction(c, _) => Val::C(c, values),
+    Head::Construction(c, _) => Value::C(c, values),
     Head::Uninterpreted(f) => meaning(env, f, values),
     _ => if fixed_specified?(head, values) then fixed_value(head, values) else unspecified(env, head, values),
 }
@@ -221,18 +221,18 @@ pub comp node {
     use self::Head::{Bound, Constant, Construction, Definition, Literal, Uninterpreted, Variable}
     in head: Head
     in env: Env
-    in values: Val                   -- its parts' values, in order, as a list
+    in values: Value                   -- its parts' values, in order, as a list
     in parts_mentioned: Set(Mention)  -- what its parts mention, together
 
     assume leaves: when head is Literal(_) | Bound(_) | Constant(_) | Variable(_), parts_mentioned = {}
 
-    pub det out value: Val := step(head, env, values)
+    pub det out value: Value := step(head, env, values)
     pub det out mentioned: Set(Mention) := mentioned_by(head, parts_mentioned)
     pub det out mentions? := mentioned != {}
-    pub det out read: Val := match head {
+    pub det out read: Value := match head {
         Variable(x) => lookup(env, x),
         Uninterpreted(f) => meaning(env, f, values),
-        _ => Val::Nil,
+        _ => Value::Nil,
     }
     pub det out specified? := match head {
         Literal(_) | Bound(_) | Variable(_) | Definition(_) | Construction(_, _) | Uninterpreted(_) => true,

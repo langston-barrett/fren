@@ -9,6 +9,7 @@
 - [Types](Lang/Types.md)
 - [Items](Lang/Items.md)
   - [Generic types](Lang/Generics.md)
+  - [Generic functions](Lang/GenericFunctions.md)
 - [Components](Lang/Components.md)
 - [Meaning](Lang/Meaning.md)
 - [Expressions](Lang/Expressions.md)
