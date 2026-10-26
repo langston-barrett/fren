@@ -287,14 +287,16 @@ partial def proveExists (xs vs : List Expr) (body : Expr) : MetaM (Option Expr) 
     return some (← mkAppOptM ``Exists.intro #[none, some p, some v, some pf])
   | _, _ => return none
 
-/-- Adds `p.cover.n.met`, that some behaviour of `c` meets the cover goal
-`g`, proved by `decide` from the witness `model` of its query
+/-- `p.cover.n.met`, that some behaviour of `c` meets the cover goal `g`,
+proved by `decide` from the witness `model` of its query
 (`Reqs/Generated#cover-goals`): only for a comp that uses no abstract types
 or functions, and when every value is a closed term of its variable's
-type. A variable that the model leaves out is `default`. -/
-def addCoverWitness (c : CompInfo) (fvs : Array Expr) (g : PropInfo) (model : Array (Name × Expr)) : MetaM Unit := do
+type. A variable that the model leaves out is `default`. The caller adds
+it (`addCoverWitness`), so that comps can be checked in parallel. -/
+def coverWitness (c : CompInfo) (fvs : Array Expr) (g : PropInfo) (model : Array (Name × Expr)) :
+    MetaM (Option Declaration) := do
   let name := g.decl ++ `met
-  if !c.uses.isEmpty || (← getEnv).contains name then return
+  if !c.uses.isEmpty || (← getEnv).contains name then return none
   -- Any failure, including a runtime one such as running out of
   -- heartbeats in `decide`, only means that there is no theorem.
   tryCatchRuntimeEx (do
@@ -303,17 +305,23 @@ def addCoverWitness (c : CompInfo) (fvs : Array Expr) (g : PropInfo) (model : Ar
       | some (_, val) => return fromModel v.type val
       | none => mkAppOptM ``Inhabited.default #[some v.type, none]
     for (v, val) in c.vars.zip vals do
-      if val.hasFVar || val.hasMVar || !(← isDefEq (← inferType val) v.type) then return
+      if val.hasFVar || val.hasMVar || !(← isDefEq (← inferType val) v.type) then return none
     let body := mkAnd (c.meaningDecl fvs) (mkAppN (mkConst g.decl) fvs)
     let type ← mkExistsFVars fvs.toList body
-    let some value ← proveExists fvs.toList vals.toList body | return
+    let some value ← proveExists fvs.toList vals.toList body | return none
     let value ← instantiateMVars value
-    addDecl (.thmDecl { name, levelParams := [], type, value }))
-    fun _ => pure ()
+    return some (.thmDecl { name, levelParams := [], type, value }))
+    fun _ => pure none
 
-/-- All selected checks for one comp, in reporting order. -/
+/-- Adds the theorem `coverWitness` gave; failing, as there, only means that
+there is no theorem. -/
+def addCoverWitness (d : Declaration) : CoreM Unit :=
+  tryCatchRuntimeEx (addDecl d) fun _ => pure ()
+
+/-- All selected checks for one comp, in reporting order, with the theorems
+that its cover goals are met (`coverWitness`), for the caller to add. -/
 def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
-    MetaM (Array CheckResult) :=
+    MetaM (Array CheckResult × Array Declaration) :=
   -- The abstract types and functions become locals, which lean-smt
   -- declares as sorts and uninterpreted functions (`check::Interpretations`).
   withNatUses c.uses fun ufs nats => do
@@ -381,11 +389,13 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
           if let .sat model := o then models.modify (·.push (goal, model))
           return o }
     let results := Core.withInterpreted full interprets (← Core.checkComp bk comp kinds)
+    let mut witnesses := #[]
     for g in c.covers do
       let passed := results.any fun r => r.kind == .cover && r.prop? == some g.name && r.verdict == .pass
       let goal := mkNot (← beta g.body)
       if let some (_, model) := (← models.get).find? (·.1 == goal) then
-        if passed then addCoverWitness c fvs g model
-    return results
+        if passed then
+          if let some d ← coverWitness c fvs g model then witnesses := witnesses.push d
+    return (results, witnesses)
 
 end Fren

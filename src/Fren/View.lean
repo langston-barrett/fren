@@ -123,6 +123,36 @@ def staticErrorsBefore : CommandElabM Nat := do
 def errorsLogged : CommandElabM Nat :=
   return (← get).messages.toList.filter (·.severity == .error) |>.length
 
+/-- What checking an item in a task of its own gives: its results and the
+theorems of its cover goals (`checkComp`), or the exception it threw, with
+the messages, traces and info trees that it logged. -/
+abbrev CheckOutcome :=
+  Except Exception (Array CheckResult × Array Declaration) × MessageLog × PersistentArray TraceElem ×
+    PersistentArray InfoTree
+
+/-- Checks each of `items` in a task of its own (`checkComp`), started now,
+from the current state. Each runs as `liftTermElabM` would run it here,
+with a heartbeat budget of its own, as each `liftTermElabM` has, and with
+nothing logged yet: what it logs is kept for `awaitCheck`. -/
+def checkItems (items : Array (CompInfo × Array CheckKind)) (cancel : IO.CancelToken) :
+    CommandElabM (Array (Task (Except Exception CheckOutcome))) := do
+  let run ← wrapAsync (cancelTk? := some cancel) fun ((c, kinds) : CompInfo × Array CheckKind) => do
+    modify fun s => { s with messages := {}, traceState.traces := {}, infoState.trees := {} }
+    let r ← try .ok <$> liftTermElabM (checkComp c kinds) catch ex => pure (.error ex)
+    let s ← get
+    return (r, s.messages, s.traceState.traces, s.infoState.trees)
+  items.mapM fun i => (EIO.asTask (run i) : BaseIO _)
+
+/-- Waits for a task of `checkItems`, adds what it logged to the current
+state, and gives its results, or throws its exception, as `liftTermElabM`
+would have. -/
+def awaitCheck (task : Task (Except Exception CheckOutcome)) :
+    CommandElabM (Array CheckResult × Array Declaration) := do
+  let (r, msgs, traces, trees) ← ofExcept (← IO.wait task)
+  modify fun s => { s with messages := s.messages ++ msgs, traceState.traces := s.traceState.traces ++ traces,
+                           infoState.trees := s.infoState.trees ++ trees }
+  ofExcept r
+
 /-- Checks the comps and global expectations `paths`, and reports the
 results; after a static error, checks none, as the `fren` command does. -/
 def checkAndReport (paths : Array Name) : CommandElabM Unit := do
@@ -137,7 +167,7 @@ where
   if errors > 0 then
     return ← logError Core.couldNotHeadline
   let s ← getState
-  let mut all := #[]
+  let mut items := #[]
   for p in paths do
     let (c, kinds) ← match s.comps.get? p, s.globals.get? p, s.refinements.get? p with
       | some c, _, _ => pure (c, Core.CheckedItem.component.kinds)
@@ -152,7 +182,17 @@ where
     -- opted into, on which it may abort
     -- (`Reqs/Lint/Decidability#undecidable-constructs`).
     if c.undecidableDenied then continue
-    let results ← liftTermElabM <| checkComp c kinds
+    items := items.push (p, c, kinds)
+  -- Each item is checked in a task of its own, all at once; the results are
+  -- then reported, and the cover goals' theorems added, in order, as if
+  -- each had been checked in turn (`checkItems`).
+  let cancel ← IO.CancelToken.new
+  let tasks ← checkItems (items.map fun (_, c, kinds) => (c, kinds)) cancel
+  let mut all := #[]
+  for (p, c, _) in items, task in tasks do
+    let (results, witnesses) ← try awaitCheck task catch ex => cancel.set; throw ex
+    for d in witnesses do
+      liftCoreM <| addCoverWitness d
     for r in results do
       report p c r
     if c.tested.any then
