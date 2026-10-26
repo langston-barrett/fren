@@ -9,7 +9,12 @@
 -- comparisons are dropped. A cardinality operator is swapped for the
 -- other, and loses an argument while at least one remains. A quantifier is
 -- swapped, and its body mutated once, not at each instance. The rows of a
--- table are swapped and dropped.
+-- table are swapped and dropped. A payload-free variant is shifted to
+-- those next to it, by the name in scope; the branches of an `if` and the
+-- values of two arms in a row are swapped, but not those of an arm whose
+-- pattern binds a name; a negation and a trigger are dropped, and so is
+-- each field of a record update of two; `min` and `max` are swapped, and so
+-- are `starts_with?` and `ends_with?`.
 set_option fren.lint.chainable_comparison "allow"
 set_option fren.lint.irrefutable_is "allow"
 mod m
@@ -17,6 +22,8 @@ mod m
 pub enum Mode { Off, Heat, Cool }
 
 pub enum Reading { Value(Int), Missing, Stale(Int) }
+
+pub struct Span { lo: Int, hi: Int, open? }
 
 use self::Mode::{Cool, Heat, Off}
 
@@ -38,6 +45,7 @@ pub comp c {
     in s: String
     in m: Mode
     in rd: Reading
+    in sp: Span
     pub out ok?
     pub out y: Int := twice(x) + 1
 
@@ -59,6 +67,10 @@ pub comp c {
     ensure all_modes: ok? or (forall (k: Mode), k != m or x > 1)
     -- The values of two rows in a row swapped, and each row dropped.
     ensure coded: y = table { m = Heat => 1, m = Cool => 2, _ => 0 }
+    ensure branches: y = if ok? then -x else x.max(0)
+    ensure arms: y = match rd { Reading::Missing => 0, Reading::Stale(_) => 1, Reading::Value(v) => v }
+    ensure modes: m != Mode::Heat or s.starts_with?("h")
+    ensure spans: sp = { sp with lo := x.min(y), hi := 3 }
     inst w: sub { a := x * 2, on? := true }
 
     expect e: when x = 3, ok?

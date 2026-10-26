@@ -1,0 +1,35 @@
+warning[F0701]: unused import `m::C::Q`
+  --> test/cli/commands/mutate_variants.fren:52:5
+   |
+52 | use self::C::Q
+   |     ^^^^^^^^^^ unused
+   |
+   = help: remove this `use`
+   = help: `fren fix` can fix this
+   = note: `unused_imports` is `warn` by default
+   = help: to allow it, `set_option fren.lint.unused_imports "allow"`
+
+swap-comparison-m::c::r-bc3982a53884 test/cli/commands/mutate_variants.fren:30:25 `=` changed to `!=`
+swap-and-or-m::c::s-57d5c3033468 test/cli/commands/mutate_variants.fren:31:19 `or` changed to `and`
+swap-comparison-m::c::s-5be6ff40ce11 test/cli/commands/mutate_variants.fren:31:24 `=` changed to `!=`
+swap-and-or-m::c::t-8ecff1d9d7e4 test/cli/commands/mutate_variants.fren:32:15 `ok? or m = Cool or a = A::W` changed to `(ok? or m = Cool) and a = A::W`
+swap-and-or-m::c::t-282da4a508a4 test/cli/commands/mutate_variants.fren:32:19 `or` changed to `and`
+swap-comparison-m::c::t-defcb9cf6a53 test/cli/commands/mutate_variants.fren:32:24 `=` changed to `!=`
+shift-variant-m::c::t-7fb413467d8c test/cli/commands/mutate_variants.fren:32:26 `Cool` changed to `Heat`
+swap-comparison-m::c::t-ccde2a31483c test/cli/commands/mutate_variants.fren:32:36 `=` changed to `!=`
+shift-variant-m::c::t-80a1d4fc7a89 test/cli/commands/mutate_variants.fren:32:41 `W` changed to `X`
+swap-comparison-m::c::u-ca1e8e8a9b3b test/cli/commands/mutate_variants.fren:33:17 `=` changed to `!=`
+shift-integer-m::c::u-37a2a14e4070 test/cli/commands/mutate_variants.fren:33:34 `5` changed to `6`
+shift-integer-m::c::u-0da2ab1e0766 test/cli/commands/mutate_variants.fren:33:34 `5` changed to `4`
+swap-arithmetic-m::c::u-fe78310e2373 test/cli/commands/mutate_variants.fren:33:51 `+` changed to `-`
+shift-integer-m::c::u-fa817925997c test/cli/commands/mutate_variants.fren:33:53 `1` changed to `2`
+shift-integer-m::c::u-d08182f56072 test/cli/commands/mutate_variants.fren:33:53 `1` changed to `0`
+swap-comparison-m::d::r-2444166dd834 test/cli/commands/mutate_variants.fren:40:25 `=` changed to `!=`
+shift-variant-m::d::r-5b7867fa900d test/cli/commands/mutate_variants.fren:40:30 `P` changed to `Q`
+drop-conjunct-m::e::r-7565d83e3dfe test/cli/commands/mutate_variants.fren:49:24 `a = A::W and g = P` changed to `a = A::W`
+drop-conjunct-m::e::r-a116a583cbcc test/cli/commands/mutate_variants.fren:49:24 `a = A::W and g = P` changed to `g = P`
+swap-comparison-m::e::r-7b3d9d6b41ac test/cli/commands/mutate_variants.fren:49:26 `=` changed to `!=`
+shift-variant-m::e::r-37116b049791 test/cli/commands/mutate_variants.fren:49:31 `W` changed to `X`
+swap-and-or-m::e::r-0087f02d4144 test/cli/commands/mutate_variants.fren:49:33 `and` changed to `or`
+swap-comparison-m::e::r-9c1a136d8abc test/cli/commands/mutate_variants.fren:49:39 `=` changed to `!=`
+exit=0

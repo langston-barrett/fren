@@ -11,8 +11,11 @@ warning[F0819]: this update gives every field of `m::S`
 swap-comparison-m::c::r-e8e67b9e6cd1 test/cli/commands/mutate_update.fren:14:17 `=` changed to `!=`
 swap-comparison-m::c::r-6c9e561e0897 test/cli/commands/mutate_update.fren:14:26 `>` changed to `>=`
 shift-integer-m::c::r-23282fc5be59 test/cli/commands/mutate_update.fren:14:28 `0` changed to `1`
+swap-branches-m::c::r-5023875d9b8f test/cli/commands/mutate_update.fren:14:35 `s else t` changed to `t else s`
+drop-update-m::c::r-a1683bf8f925 test/cli/commands/mutate_update.fren:14:49 `n := x + 1,` removed
 swap-arithmetic-m::c::r-dee53f2cc3b3 test/cli/commands/mutate_update.fren:14:56 `+` changed to `-`
 shift-integer-m::c::r-da985acaa6b0 test/cli/commands/mutate_update.fren:14:58 `1` changed to `2`
 shift-integer-m::c::r-b098649a6da6 test/cli/commands/mutate_update.fren:14:58 `1` changed to `0`
+drop-update-m::c::r-6c958d14aa1d test/cli/commands/mutate_update.fren:14:59 `, on? := true` removed
 flip-bool-m::c::r-d2b439c95db2 test/cli/commands/mutate_update.fren:14:68 `true` changed to `false`
 exit=0

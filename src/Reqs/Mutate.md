@@ -52,6 +52,22 @@ operator keeps its own. The changes are:
 | `drop-argument` | an argument of a cardinality operator of at least two, removed, with its `,` |
 | `swap-rows` | the values of two consecutive rows of a [table](Lang/Expressions.md#tables), each to the other's, unless they are written the same |
 | `drop-row` | a row of a table of at least two, removed, with its `\|` |
+| `shift-variant` | a variant without a payload, in an expression, to the variants without a payload just before and just after it in its [enumeration](Lang/Items.md#enumerations), written as it is written: as `E::W` after `E::V`, and as `W` after `V` only if `use`s bring both into scope by their own names from the same enumeration, and no binder shadows `V` |
+| `swap-branches` | `if c then a else b` to `if c then b else a`, unless `a` and `b` are written the same |
+| `drop-negation` | `not e` to `e`, and `-e` to `e` |
+| `drop-trigger` | `when c, e` and `unless c, e` to `e` |
+| `drop-update` | a field of a [record update](Lang/Expressions.md#record-updates) of at least two fields, removed, with its `,` |
+| `swap-arms` | the values of two consecutive arms of a `match`, each to the other's, unless either arm's pattern binds a name, or they are written the same |
+| `swap-min-max` | `x.min(y)` and `x.max(y)`, each to the other |
+| `swap-affix` | `s.starts_with?(p)` and `s.ends_with?(p)`, each to the other |
+
+An enumeration is told by its name alone, as a constant is: two
+enumerations of one name, in different modules, have no `shift-variant`
+mutants. Its neighbours are those of an ordered enumeration's order, so
+that `shift-variant` moves a variant across a comparison's boundary as
+`shift-integer` moves an integer. The values of `match` arms whose patterns
+bind names are left in place, since a value may read a name that the other
+arm's pattern does not bind.
 
 A regular-expression pattern is changed only where its text is its
 value: a raw literal, or a literal without escapes. A table's values all
@@ -153,6 +169,28 @@ mutant that drops a row renumbers the rows. A
 redundancy counts as a failure: a mutant that makes a constraint
 redundant is killed by that check.
 
+A component, global expectation or refinement is checked again only if
+the mutant changes what its checks read: its formulas, its variables, and
+the spec's declarations (its *fingerprint*). Skipping the others loses no
+kill, since a check's verdict depends only on what it reads, up to the
+solver's time limit. `mutate::skip` states this:
+
+```fren
+pub comp skip {
+    in changed?         -- the mutant changes the fingerprint of the check's item
+    in before: Verdict  -- the check's verdict on the spec
+    in after: Verdict   -- its verdict on the mutant
+    pub det out run?    -- the check runs on the mutant
+
+    assume determined: unless changed?, after = before
+
+    ensure rule: run? iff changed?
+
+    inst k: kill { before, after }
+    expect skipped_kill_nothing: unless run?, not k.kills?
+}
+```
+
 A mutant that has a static error, from a lint set to `deny` or `forbid`, is
 *unviable*: it is not checked, and is left out of the kill rate. Any other
 static error in a mutant is an internal error, since mutants are made so
@@ -172,7 +210,31 @@ with none, such as after a mutant drops its last index. If each is equal,
 the mutant is *equivalent*, and is not reported. If the solver cannot
 tell within a second, which can happen outside the [decidable
 core](Lang/Decidability.md), the mutant is reported, with a note that it
-may be equivalent. `mutate::outcome` gives what becomes of a mutant:
+may be equivalent. The answers about the parts combine as
+`mutate::combine` says: one part that differs decides, then one that the
+solver cannot tell.
+
+```fren
+pub enum Answer { Equal, Differs, Unknown }
+
+use self::Answer::{Differs, Equal, Unknown}
+
+pub comp combine {
+    in a: Answer
+    in b: Answer
+    pub det out both: Answer
+
+    ensure differs: when a = Differs or b = Differs, both = Differs
+    ensure unknown: when a != Differs and b != Differs and (a = Unknown or b = Unknown), both = Unknown
+    ensure equal: when a = Equal and b = Equal, both = Equal
+
+    expect equal_only_if_both: when both = Equal, a = Equal and b = Equal
+    expect differs_wins: when a = Differs, both = Differs
+    cover unknown_part: both = Unknown and a = Equal
+}
+```
+
+`mutate::outcome` gives what becomes of a mutant:
 
 ```fren
 pub enum Outcome { Killed, Survived, Equivalent, Unviable }
@@ -222,6 +284,7 @@ pub comp missed {
 
     expect killed_by_testing: when by_testing?, not missed?
     expect killed_by_the_solver: when missed?, by_solver?
+    expect missed_are_killed: when missed?, by_solver? or by_testing?
 }
 ```
 
@@ -267,6 +330,59 @@ m::c: 9 of 11 mutants killed (81%), 1 equivalent
 
 The line ends with the numbers of equivalent and unviable mutants, and with
 `--by both` of those missed by testing, each where it is not 0.
+
+Each mutant is counted once, under its outcome, as `mutate::count`
+says of adding one to the counts so far, so that the counts add up to the
+number of mutants selected:
+
+```fren
+pub comp count {
+    in outcome: Outcome
+    in killed: Nat
+    in survived: Nat
+    in equivalent: Nat
+    in unviable: Nat
+    pub det out killed_after: Nat
+    pub det out survived_after: Nat
+    pub det out equivalent_after: Nat
+    pub det out unviable_after: Nat
+
+    ensure killed_rule: killed_after = killed + (if outcome = Killed then 1 else 0)
+    ensure survived_rule: survived_after = survived + (if outcome = Survived then 1 else 0)
+    ensure equivalent_rule: equivalent_after = equivalent + (if outcome = Equivalent then 1 else 0)
+    ensure unviable_rule: unviable_after = unviable + (if outcome = Unviable then 1 else 0)
+
+    expect one_more: killed_after + survived_after + equivalent_after + unviable_after
+        = killed + survived + equivalent + unviable + 1
+    expect killed_counted: when outcome = Killed, killed_after = killed + 1
+    expect others_kept: when outcome != Survived, survived_after = survived
+}
+```
+
+The kill rate is `mutate::rate`: a percentage, absent when no mutant
+could be killed, that is 100 exactly when every one that could be was. The
+rate divides by the number of mutants, which the solver cannot (see
+[Decidability](Lang/Decidability.md)), so the component says what the
+rate is like rather than how it is computed, and leaves it
+undetermined:
+
+```fren
+pub comp rate {
+    in killed: Nat
+    in survived: Nat
+    pub det out rated?      -- some mutant could be killed
+    pub out rate: Nat       -- 0 when not rated
+
+    ensure rated: rated? iff killed + survived > 0
+    ensure percentage: rate <= 100
+    ensure all_killed: when rated?, rate = 100 iff survived = 0
+    ensure none_killed: when killed = 0, rate = 0
+
+    expect unrated: unless rated?, rate = 0
+    expect perfect_kills: when rate = 100, killed > 0 and survived = 0
+    cover some_survive: rated? and 0 < rate < 100
+}
+```
 
 Lints are reported on the spec as `fren check` reports them, but only
 surviving and missed mutants and internal errors decide the exit status:
