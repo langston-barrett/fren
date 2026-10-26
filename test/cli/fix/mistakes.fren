@@ -13,12 +13,12 @@ comp c {
 
     ensure r1: p? iff a? or b?
     ensure r2: p?  iff  a? or b?
+    ensure r3: when true, q? iff a?
+    ensure r4: o? iff (unless false, b?) and s.matches?(r"a​[0-9]\\") and s != "‮"
     expect e1: p? iff a? or b?
     expect e2: when a?, p?
     expect e3: when a?,
         p?  -- a repeat
-    ensure r3: when true, q? iff a?
-    ensure r4: o? iff (unless false, b?) and s.matches?(r"a​[0-9]\\") and s != "‮"
     -- a ⁦comment⁩
 }
 

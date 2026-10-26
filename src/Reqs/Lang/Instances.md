@@ -92,9 +92,9 @@ pub comp bindings {
     in outputs: Set(VarName)         -- its other variables: its outputs
     in bound: Set(VarName)           -- the names the instance binds
     in n_repeated: Nat               -- bindings of a name bound earlier in the instance
-    pub det out accepted?
 
     assume disjoint: (inputs inter outputs) = {}
+    pub det out accepted?
 
     ensure rule: accepted? iff (bound = inputs and n_repeated = 0)
 
@@ -150,12 +150,12 @@ pub comp earlier {
     in binder: InstName          -- the instance whose binding mentions it
     in k_owner: Nat              -- the position of `owner` in `order`
     in k_binder: Nat             -- the position of `binder`
-    pub det out earlier?
 
     assume positions: k_owner < order.len and order[k_owner] = owner
         and k_binder < order.len and order[k_binder] = binder
     -- Instance names are distinct.
     assume distinct: when owner = binder, k_owner = k_binder
+    pub det out earlier?
 
     ensure rule: earlier? iff k_owner < k_binder
 

@@ -58,10 +58,10 @@ comp records_not {
 
 comp covers {
     in x: Int
-    pub out y: Int
-    pub out z?
 
     assume positive: x > 0
+    pub out y: Int
+    pub out z?
 
     ensure r: y = x + 1
     ensure s: z? iff y > 5

@@ -408,11 +408,11 @@ pub comp forcing {
     in values: Set(Choice)   -- the output's values where `P` and `S` hold
     in model: Choice         -- its value in the model of `P` and `S`
     in pin_q: Outcome        -- can `o = model` be proved from `P` and `S`?
-    pub det out forced?      -- `S` forces the output on the input
-    pub det out found?       -- Fren finds that `S` forces it to `model`
 
     assume modelled: model in values
     assume decided: pin_q = (if (forall (v: Choice), when v in values, v = model) then Unsat else Sat)
+    pub det out forced?      -- `S` forces the output on the input
+    pub det out found?       -- Fren finds that `S` forces it to `model`
 
     ensure meaning: forced? iff (forall (a b: Choice), when a in values and b in values, a = b)
     ensure query: found? iff pin_q = Unsat
@@ -494,9 +494,6 @@ pub comp clash_notes {
     in unpinned?               -- some variable of the input cannot be pinned
     in g: Guarantee            -- a guarantee, for the rules of each
     in earlier: Set(Guarantee)
-    pub det out noted?         -- a clash note is at `g`
-    pub out output: Output     -- the output that it names
-    pub det out note: MemberNote
 
     -- What the queries find of the guarantees of the core: one value, at most,
     -- for each output, and nothing of the empty rest of a core of one.
@@ -505,6 +502,9 @@ pub comp clash_notes {
     assume empty_rest: forall (f: Forcing), when f in rest, core != {f.guarantee}
     assume earlier_clashes: forall (h: Guarantee),
         h in earlier iff (h in core and h < g and (exists (o: Output), clashes?(alone, rest, h, o)))
+    pub det out noted?         -- a clash note is at `g`
+    pub out output: Output     -- the output that it names
+    pub det out note: MemberNote
 
     ensure rule: noted? iff (not interpreted? and not unpinned? and g in core and (exists (o: Output), clashes?(alone, rest, g, o))
         and match examples { Budget::All => true, Budget::AtMost(n) => earlier.card < n })
@@ -967,9 +967,9 @@ pub comp disjoint_question {
     in defined: Seq(Indexes)     -- whether the indexes in each case's guard are in range here
     in i: Int                    -- the earlier case
     in j: Int                    -- the later case
-    pub out goal?                -- the goal of the question about `i` and `j` here
 
     assume pair: 0 <= i < j < arms.len and defined.len = arms.len
+    pub out goal?                -- the goal of the question about `i` and `j` here
 
     ensure rule: goal? iff not (defined[i] = Defined and defined[j] = Defined and arms[i] = Taken and arms[j] = Taken)
 
@@ -1093,11 +1093,11 @@ pub comp split_questions {
     in arms: Seq(ArmAt)      -- what each arm does here, in order
     in j: Int                -- the arm whose reachability is asked about
     in k: Int                -- any position, for `none_before`
+
+    assume an_arm: 0 <= j < arms.len
     pub out first: Int := arms.index_of([Taken], 0)  -- the position of the arm taken, `-1` if none is
     pub out reach_goal?      -- the goal of arm `j`'s reachability question here
     pub out complete_goal?   -- the goal of the completeness question here
-
-    assume an_arm: 0 <= j < arms.len
 
     ensure reach: reach_goal? iff first != j
     ensure complete: complete_goal? iff first >= 0

@@ -56,9 +56,9 @@ fn half(Int): Int
 comp widened {
     in q: Seq(Int)
     in k: Nat
-    pub out x: Int
 
     assume in_range: k < q.len
+    pub out x: Int
     ensure r: x = q[k] + half(k)
 
     expect member: when q = [3, 4], q[k] in {3, 4} and k in {0, 1}
@@ -67,9 +67,9 @@ comp widened {
 -- An assumption that a `Nat` is at least 0 always holds.
 comp redundant {
     in n: Nat
-    pub out y?
 
     assume nonneg: n >= 0   --~ warning: `redundant::nonneg` is redundant: it always holds
+    pub out y?
     ensure r: y? iff n > 0
 
     expect zero: when n < 1, not y?
@@ -107,8 +107,8 @@ refine nat_output_typed: hidden_out refines above
 -- second copy of the behaviour as in the first.
 comp applied_to_instance {
     in k: Nat
-    inst w: counted { n := k, m := 1 }
     pub det out z: Nat
+    inst w: counted { n := k, m := 1 }
 
     ensure r: z = 0 or z + count(w.y) < 0
 }
@@ -116,8 +116,8 @@ comp applied_to_instance {
 -- A conflict that depends on an instance's `Nat` output.
 comp below_instance {   --~ error: `below_instance` is not realizable
     in k: Nat
-    inst w: counted { n := k, m := 0 }
     out x: Int
+    inst w: counted { n := k, m := 0 }
 
     ensure r: x < 0 and x = w.y   --~ info: is false for this input
 }

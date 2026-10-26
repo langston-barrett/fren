@@ -52,8 +52,8 @@ pub comp foo {  --~ warning: component `foo` has a placeholder name
 
 pub comp user {
     in v: Int
-    inst _5: foo { Baz? := true, __ := v, _x := v, bar? := true, foobar? := true }  --~ warning: instance `_5` is named only with `_` and digits
     pub out w?
+    inst _5: foo { Baz? := true, __ := v, _x := v, bar? := true, foobar? := true }  --~ warning: instance `_5` is named only with `_` and digits
 
     ensure r: w? iff _5.quux?
 }

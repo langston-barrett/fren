@@ -25,11 +25,11 @@ pub comp declared_before {
     in user: ItemName            -- the item the path is written in
     in k_used: Nat               -- the position of `used` in `items`
     in k_user: Nat               -- the position of `user`
-    pub det out accepted?
 
     assume positions: k_used < items.len and items[k_used] = used
         and k_user < items.len and items[k_user] = user
     assume distinct: when used = user, k_used = k_user
+    pub det out accepted?
 
     ensure rule: accepted? iff (used = user or k_used < k_user)
 
@@ -282,11 +282,11 @@ pub comp ordered_declaration {
     in fields: Seq(Ty)                -- a record's fields' types, in order, or a newtype's underlying type, without patterns
     in ordered_items: Set(TypeName)   -- the enumerations, records and newtypes declared `ordered`
     in k: Int                         -- any position among the fields
-    pub out first_unordered: Int      -- the field reported: the first whose type is not ordered, `-1` if none is
-    pub out accepted?
 
     assume enumerations_without_fields: when declaration = Enumeration, fields = []
     assume structs_without_payloads: when declaration != Enumeration, n_payloads = 0
+    pub out first_unordered: Int      -- the field reported: the first whose type is not ordered, `-1` if none is
+    pub out accepted?
 
     ensure in_range: -1 <= first_unordered < fields.len
     ensure reported: when k = first_unordered and k != -1,
@@ -336,9 +336,9 @@ pub type DeclaredName
 pub comp distinct_names {
     in count: Int                  -- how many names the list declares
     in names: Set(DeclaredName)    -- the names it declares
-    pub det out accepted?
 
     assume counted: names.card <= count
+    pub det out accepted?
 
     ensure rule: accepted? iff names.card = count
 
@@ -393,12 +393,12 @@ pub comp field_type {
     in own?              -- the type is the item being declared
     in own_in_set?       -- the item being declared is a set's element type within the type
     in payload?          -- a variant's payload, rather than a record's field
-    pub det out accepted?
 
     assume own_enum: when own? and payload?, kind = ValueType::EnumTy
     assume own_record: when own? and not payload?, kind = ValueType::RecordTy
     assume abstract_kind: when kind = ValueType::AbstractTy, abstract_within?
     assume in_set: when own_in_set?, kind = ValueType::SetTy and not own?
+    pub det out accepted?
 
     ensure rule: accepted? iff (not abstract_within? and not own_in_set? and (payload? or not own?))
 
@@ -430,10 +430,10 @@ pub type VariantName
 pub comp well_founded {
     in variants: Set(VariantName)
     in recursive: Set(VariantName)   -- variants with a payload of the enumeration's own type
-    pub det out accepted?
 
     assume some_variant: variants != {}
     assume among: recursive subset variants
+    pub det out accepted?
 
     ensure rule: accepted? iff recursive != variants
 
@@ -524,9 +524,9 @@ pub comp function_params {
     in contract?         -- it has a contract: an `assume` or an `ensure` clause
     in n_params: Nat is 1..
     in n_named: Nat      -- parameters written with a name
-    pub det out accepted?
 
     assume counts: n_named <= n_params
+    pub det out accepted?
 
     ensure rule: accepted? iff n_named = (if defined? or contract? then n_params else 0)
 

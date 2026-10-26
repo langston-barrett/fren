@@ -103,9 +103,9 @@ when it fires:
 ```fren
 pub comp double_parens {
     in depth: Int        -- pairs of parentheses, each directly around the next
-    pub det out fires?
 
     assume counts: depth >= 1
+    pub det out fires?
 
     ensure rule: fires? iff depth >= 2
 }

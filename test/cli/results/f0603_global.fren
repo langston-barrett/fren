@@ -6,8 +6,8 @@ const HIGH: Int := 10
 comp band {
     in temp: Int
     in target: Int
-    pub out too_cold?
     assume sane: 0 <= target and target <= HIGH
+    pub out too_cold?
     ensure cold: too_cold? iff temp < target - 2
 }
 

@@ -9,16 +9,16 @@ pub comp helper {
 
 pub comp first {
     in q: Seq(Int)
-    pub out y: Int
     assume nonempty: q != []
+    pub out y: Int
     inst h: helper { v := q[0] }
     ensure r: y = h.w
 }
 
 pub comp exact {
     in q: Seq(Int)
-    pub out y: Int
     assume nonempty: q != []
+    pub out y: Int
     ensure r: y = q[0]
 }
 

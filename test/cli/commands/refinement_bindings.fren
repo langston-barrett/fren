@@ -38,8 +38,8 @@ use self::Level::Forbid
 pub comp forbidding {
     in forbidden?
     in count: Int
-    pub out stops?
     assume some: count > 0
+    pub out stops?
     ensure r: stops? iff forbidden?
 }
 

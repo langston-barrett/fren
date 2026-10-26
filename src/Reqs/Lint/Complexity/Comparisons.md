@@ -266,9 +266,9 @@ pub comp int_plus_one_in_chain {
     in comparison: Nat     -- its position in the chain, from 0
     in n_comparisons: Nat
     in drop_left?          -- `int_plus_one`'s fix of it alone drops its left operand's offset
-    pub det out fires?
 
     assume position: comparison < n_comparisons
+    pub det out fires?
 
     ensure rule: fires? iff (if drop_left? then comparison = 0 else comparison + 1 = n_comparisons)
 }

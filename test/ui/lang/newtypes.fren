@@ -18,11 +18,11 @@ comp timer {
     in elapsed: Ms
     in budget: Ms
     in size: Bytes
+
+    assume positive: elapsed >= Ms(0) and budget >= Ms(0)
     pub det out left: Ms := budget - elapsed
     pub det out over? := elapsed > budget
     pub det out total: Ms := elapsed + budget
-
-    assume positive: elapsed >= Ms(0) and budget >= Ms(0)
 
     expect left_value: left.0 = budget.0 - elapsed.0
     expect built: left = Ms(budget.0 - elapsed.0)
@@ -77,10 +77,10 @@ comp collections {
     in times: Set(Ms)
     in queue: Seq(Ms)
     in job: Job
-    pub det out longest: Ms := job.took
-    pub det out halved: Ms := half(job.took)
 
     assume some: queue.len = 1 and queue[0] in times
+    pub det out longest: Ms := job.took
+    pub det out halved: Ms := half(job.took)
 
     expect member: Ms(queue[0].0) in times
     expect record: longest = job.took and Job { took := longest, size := job.size } = job
@@ -107,9 +107,9 @@ pub struct Slot { start: Ms, tags: Set(Ms) }
 comp shown {
     in t: Ms
     in s: Slot
-    pub det out next: Ms := t + Ms(1)
 
     assume pinned: t = Ms(3) and s = Slot { start := Ms(2), tags := {Ms(9), Ms(10)} }
+    pub det out next: Ms := t + Ms(1)
 
     expect small: next < Ms(4)
     --~^ error: counterexample: t = Ms(3), s = Slot { start := Ms(2), tags := {Ms(10), Ms(9)} }, next = Ms(4)

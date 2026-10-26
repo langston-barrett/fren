@@ -21,9 +21,9 @@ comp grant {
     in requested: Set(Role)
     in b: User
     in c: User
-    pub out granted?
 
     assume admins_exist: Admin in roles.range
+    pub out granted?
 
     -- A user holds their own roles and those of everyone they act for, directly or not.
     ensure rule: granted? iff requested subset ((delegates.closure union {(user, user)}) join roles).image({user})
@@ -66,9 +66,9 @@ comp shapes {
 set_option fren.lint.undecidable "allow" in
 comp ids {
     in r: Rel(Int, Int)
-    pub out p?
 
     assume one: (1, 2) in r
+    pub out p?
     ensure rule: p? iff 1 in r.domain
 
     expect has: p?

@@ -123,11 +123,11 @@ pub comp one_character {
     in t: String         -- a string of one character
     in i: Int
     in u: String         -- any string
+
+    assume one: t.len = 1
     pub det out first?   -- `s.at(0) = t`
     pub det out last?    -- `s.at(s.len - 1) = t`
     pub det out slice?   -- `s.slice(i, 1) = u`
-
-    assume one: t.len = 1
 
     ensure first: first? iff s.starts_with?(t)
     ensure last: last? iff s.ends_with?(t)
@@ -148,9 +148,9 @@ pub comp index_test {
     in op: Comparison
     in bound: Int
     in position: Int     -- any value of `s.index_of(t, 0)`
-    pub det out test: IndexTest
 
     assume positions: position >= -1
+    pub det out test: IndexTest
 
     ensure rule: test = match op {
         Ge if bound = 0 => Found,
@@ -207,10 +207,10 @@ pub comp redundant_slicing {
     in i: Int            -- the position
     in n: Int            -- the length
     in u: String         -- any string
-    pub det out fires?
-    pub out slice?       -- `s.slice(i, n) = u`
 
     assume written: when whole?, i = 0 and n = s.len
+    pub det out fires?
+    pub out slice?       -- `s.slice(i, n) = u`
 
     ensure rule: fires? iff whole?
     ensure value: when fires?, slice? iff s = u
@@ -257,9 +257,9 @@ pub comp unnecessary_min_or_max {
     in max?              -- `max`, rather than `min`
     in argument: Position  -- the variant that is the argument
     in last: Position    -- the last variant of its enumeration
-    pub det out fix: MinMaxFix
 
     assume within: argument <= last
+    pub det out fix: MinMaxFix
 
     ensure rule: fix = (if argument = Position::V0 then (if max? then Receiver else Argument)
         else if argument = last then (if max? then Argument else Receiver) else Unchanged)

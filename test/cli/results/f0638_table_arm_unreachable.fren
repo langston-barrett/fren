@@ -2,9 +2,9 @@
 -- keeps `x` below 5.
 comp size {
     in x: Int
-    pub out s: Int
 
     assume small: x < 5
+    pub out s: Int
 
     ensure r: s = table x { n if n > 10 => 2, _ => 1 }
 }

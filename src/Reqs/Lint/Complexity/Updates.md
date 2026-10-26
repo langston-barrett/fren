@@ -20,9 +20,9 @@ pub mod lint
 pub comp needless_update {
     in n_fields: Nat   -- the fields of `r`'s record
     in n_given: Nat    -- the fields the update gives, each at most once
-    pub det out fires?
 
     assume within: n_given <= n_fields
+    pub det out fires?
 
     ensure rule: fires? iff n_given = n_fields
 }

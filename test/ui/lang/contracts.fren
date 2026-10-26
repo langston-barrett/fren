@@ -28,9 +28,9 @@ fn shrink(n: Int): Int
 
 comp reads {
     in q: Seq(Int)
-    pub out y: Int
 
     assume long: q.len >= 2
+    pub out y: Int
 
     ensure first: y = nth(q, 0)
 

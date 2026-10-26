@@ -6532,20 +6532,20 @@ def inconsistentStructConstructorMsg (r : Name) (declared : Array Name) (fixed? 
 inductive MemberKind where
   | use
   | input
-  | output
   | assumption
+  | output
   | inst
   | guarantee
   | expectation
   | cover
   deriving Inhabited, BEq, DecidableEq, Repr
 
-/-- Its place in the order (`lint::member_rank`). -/
+/-- Its place in the order (`lint::rank`). -/
 def MemberKind.rank : MemberKind → Nat
   | .use => 0
   | .input => 1
-  | .output => 2
-  | .assumption => 3
+  | .assumption => 2
+  | .output => 3
   | .inst => 4
   | .guarantee => 5
   | .expectation => 6
@@ -6575,9 +6575,17 @@ def firstOutOfOrder? (kinds : Array MemberKind) : Option Nat :=
 /-- Whether the order keeps a member's mention of another after the
 other's declaration, where `earlier` says the other is written before it:
 the kinds are put in order, and the members of one kind stay in the order
-they are written in (`lint::mention_kept`). -/
+they are written in (`lint::arbitrary_source_item_ordering`). -/
 def mentionKept (mentioner mentioned : MemberKind) (earlier : Bool) : Bool :=
   mentioned.rank < mentioner.rank || (mentioned.rank == mentioner.rank && earlier)
+
+/-- Whether the order keeps each mention after what it mentions, where a
+mention `(i, j)` is of the member at `j` by the definition or a binding of
+the one at `i` (`lint::arbitrary_source_item_ordering`). -/
+def keepsMentions (kinds : Array MemberKind) (mentions : List (Nat × Nat)) : Bool :=
+  mentions.all fun (i, j) => i == j || match kinds[i]?, kinds[j]? with
+    | some a, some b => mentionKept a b (j < i)
+    | _, _ => false
 
 /-- The members of a component in order, as indices: by kind, and as written
 within a kind. -/
@@ -6625,10 +6633,7 @@ declaration (`mentionKept`), and the members are a line apart
 (`memberLines?`). -/
 def memberOrderFix? (src : Array Char) (openStop : Nat) (members : Array Range) (kinds : Array MemberKind)
     (mentions : Array (Array Nat)) : Option (Range × String) := do
-  guard <| mentions.zipIdx.all fun (ms, i) => ms.all fun j =>
-    j == i || match kinds[i]?, kinds[j]? with
-      | some a, some b => mentionKept a b (j < i)
-      | _, _ => false
+  guard <| keepsMentions kinds (mentions.zipIdx.toList.flatMap fun (ms, i) => ms.toList.map (i, ·))
   let lines ← memberLines? src openStop members
   let first ← lines[0]?
   let last ← lines.back?
@@ -6643,7 +6648,7 @@ def memberOrderFix? (src : Array Char) (openStop : Nat) (members : Array Range) 
 def memberOrderMsg (member before : MemberKind) : Msg :=
   { code? := some Lint.arbitrarySourceItemOrdering.code, headline := s!"{member.describe} after {before.describe}"
     label? := some "out of order"
-    notes := #["note: the members of a component are written `use`, `in`, `out`, `assume`, `inst`, `ensure`, `expect`, then `cover`"] }
+    notes := #["note: the members of a component are written `use`, `in`, `assume`, `out`, `inst`, `ensure`, `expect`, then `cover`"] }
 
 /-! ## Expectations -/
 

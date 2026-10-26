@@ -87,9 +87,9 @@ set_option fren.lint.unicode_not_nfc "allow" in
 set_option fren.lint.undecidable "allow" in
 pub comp nfc_written {
     in s: String
-    pub det out cafe? := s.replace_all("\u00e9", "e\u0301") = "café"
 
     assume composed: not s.contains?("e\u0301")
+    pub det out cafe? := s.replace_all("\u00e9", "e\u0301") = "café"
 
     expect never_equal: s != "café"
 }
@@ -98,9 +98,9 @@ set_option fren.lint.unicode_not_nfc "allow" in
 set_option fren.lint.undecidable "allow" in
 pub comp nfc_fixed {
     in s: String
-    pub det out cafe? := s = "café"
 
     assume composed: not s.contains?("e\u0301")
+    pub det out cafe? := s = "café"
 }
 
 refine nfc_sound: nfc_fixed refines nfc_written

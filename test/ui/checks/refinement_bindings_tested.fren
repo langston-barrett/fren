@@ -7,8 +7,8 @@
 comp first_of {
     in n: Int
     in x: Int
-    pub out y: Int
     assume pos: n > 0
+    pub out y: Int
     ensure r: y = x
 }
 

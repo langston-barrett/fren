@@ -15,10 +15,10 @@ pub const DEFAULT: Mode := Mode::Off
 pub comp band {
     in temp: Int
     in target: Int
-    pub out too_cold?
-    pub out mode: Mode
 
     assume sane: MIN_T <= target and target <= MAX_T  -- constants in assumptions
+    pub out too_cold?
+    pub out mode: Mode
     ensure cold: too_cold? iff temp < target + NEG
     ensure off: unless too_cold?, mode = DEFAULT
     ensure heat: when too_cold?, mode = Mode::Heat

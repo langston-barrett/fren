@@ -446,11 +446,11 @@ set_option fren.lint.undecidable "allow" in
 pub comp zero_prefixed_literal {
     in lexeme: String    -- an integer literal
     in fixed: String
+
+    assume literal: lexeme.matches?(r"[0-9]([0-9_]*[0-9])?|0[xXbBoO][0-9a-fA-F_]*[0-9a-fA-F]")
     out zeros: String := lexeme.slice(0, lexeme.len - fixed.len)
     pub det out fires?
     pub det out is_fix?  -- the fix of `lexeme` writes `fixed`
-
-    assume literal: lexeme.matches?(r"[0-9]([0-9_]*[0-9])?|0[xXbBoO][0-9a-fA-F_]*[0-9a-fA-F]")
 
     ensure rule: fires? iff lexeme.matches?(r"0[0-9][0-9_]*")
     ensure fix: is_fix? iff (fires? and lexeme.ends_with?(fixed) and zeros.matches?(r"[0_]*")

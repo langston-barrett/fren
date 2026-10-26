@@ -42,9 +42,9 @@ comp incomplete {
 -- An arm that the hypotheses rule out is never taken.
 comp ruled_out {
     in n: Int
-    pub out s: Int
 
     assume small: n < 5
+    pub out s: Int
 
     ensure r: s = table n { k if k > 10 => 2, _ => 1 }   --~ error: arm 1 of a table in `ruled_out::r` is never taken
 }
@@ -66,9 +66,9 @@ comp enclosing {
 -- Other hypotheses do make arms disjoint: these overlap only at 0.
 comp hypotheses {
     in n: Int
-    pub out s: Int
 
     assume nonzero: n != 0
+    pub out s: Int
 
     ensure r: s = table n { k if k >= 0 => 1, k if k <= 0 => 2 }
 }

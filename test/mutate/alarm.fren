@@ -7,9 +7,9 @@ mod alarm
 pub comp threshold {
     in x: Int
     in limit: Int
-    pub det out over?
 
     assume positive: limit > 0
+    pub det out over?
     ensure rule: over? iff x > limit
 
     expect small: when x <= 1, not over?

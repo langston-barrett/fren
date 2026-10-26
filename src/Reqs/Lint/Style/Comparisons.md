@@ -290,10 +290,10 @@ pub comp manual_pattern_test {
     in n_operands: Nat       -- the operands of the run
     in n_equations: Nat      -- those that are equations, or disequations for `and`
     in chain?                -- `membership_chain` reads the chain the run is in
-    pub det out fires?
 
     -- The model's quantifiers range over the positions of eight alternatives.
     assume short: alts.len <= 8
+    pub det out fires?
 
     ensure rule: fires? iff (n_operands >= 2 and n_equations >= 1 and not chain?
         and (forall (i: AltPosition) (j: AltPosition), when i < j < alts.len, alts_disjoint?(alts[i], alts[j])))

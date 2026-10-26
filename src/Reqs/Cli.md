@@ -249,11 +249,11 @@ pub comp logic {
     in theories: Set(Theory)     -- beyond uninterpreted functions, datatypes and linear integer arithmetic
     in projection?               -- the spec takes the domain or range of a relation over a type that is not finite
     in quantified?               -- the spec has an unbounded quantifier
+
+    assume relations_are_sets: when projection?, Sets in theories
     pub det out logic: Logic
     pub det out strings_exp?     -- set cvc5's `strings-exp`, `re-inter-mode` and `re-elim` options
     pub det out sets_exp?        -- set cvc5's `sets-exp` option
-
-    assume relations_are_sets: when projection?, Sets in theories
 
     ensure base: when theories = {},
         logic = (if kind = Realizability or quantified? then Quantified else QuantifierFree)

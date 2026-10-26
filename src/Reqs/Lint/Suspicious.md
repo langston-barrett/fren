@@ -49,11 +49,11 @@ pub comp duplicate_constraint {
     in earlier: ConstraintKind
     in later: ConstraintKind
     in same?             -- the later is written the same as the earlier
-    pub det out fires?
-    pub det out fixed?   -- the fix removes the later
 
     -- A cover goal is compared only with cover goals.
     assume covers_apart: (earlier = ConstraintKind::Cover) iff (later = ConstraintKind::Cover)
+    pub det out fires?
+    pub det out fixed?   -- the fix removes the later
 
     ensure rule: fires? iff same?
     ensure fix: fixed? iff (same? and earlier = later)

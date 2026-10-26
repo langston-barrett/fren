@@ -5759,8 +5759,8 @@ comp c {
 }
 ```
 
-The members of a component are written in one order: `use`, `in`, `out`,
-`assume`, `inst`, `ensure`, `expect`, then `cover`. `fren fix` can fix this,
+The members of a component are written in one order: `use`, `in`,
+`assume`, `out`, `inst`, `ensure`, `expect`, then `cover`. `fren fix` can fix this,
 unless a definition or a binding would then come before what it mentions:
 
 ```fren

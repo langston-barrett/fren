@@ -81,9 +81,9 @@ pub comp quantified_type {
     in type_kind: ValueType      -- the kind of the type
     in recursive?                -- it is a recursive enumeration
     in parts?                    -- the type of each of its payloads or fields is listed
-    pub det out listed?
 
     assume enumerations_only: when type_kind != EnumTy, not recursive?
+    pub det out listed?
 
     ensure rule: listed? iff match type_kind {
         BoolTy => true,
@@ -116,9 +116,9 @@ values of the instances:
 pub comp quantifier {
     in all?                  -- `forall`, rather than `exists`
     in values: Set(Bool)     -- the values of its instances
-    pub det out holds?
 
     assume some_instance: values != {}
+    pub det out holds?
 
     ensure rule: holds? iff (if all? then not false in values else true in values)
 
@@ -169,9 +169,9 @@ pub const MAX_INSTANCES: Int := 256
 
 pub comp quantifier_size {
     in n_instances: Int      -- the combinations of the values of its bound names and those around it
-    pub det out accepted?
 
     assume some: n_instances >= 1
+    pub det out accepted?
 
     ensure rule: accepted? iff n_instances <= MAX_INSTANCES
 

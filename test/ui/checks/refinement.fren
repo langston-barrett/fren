@@ -9,15 +9,15 @@ comp precise {
 
 comp rough {
     in x: Int
-    pub out y: Int
     assume small: x < 100
+    pub out y: Int
     ensure above: y > x
 }
 
 comp picky {
     in x: Int
-    pub out y: Int
     assume positive: x > 0
+    pub out y: Int
     ensure r: y = x + 1
 }
 

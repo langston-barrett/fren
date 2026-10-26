@@ -17,9 +17,9 @@ comp dispatch {
     in pending: Seq(Job)
     in running: Set(Job)
     in capacity: Int
-    pub out start?               -- start the job at the head of the queue
 
     assume sane: capacity >= 0  --~ warning: `capacity` is never negative
+    pub out start?               -- start the job at the head of the queue
 
     ensure rule: start? iff (pending != [] and running.card < capacity and not pending[0] in running)
 
@@ -61,9 +61,9 @@ comp guards {
 -- A guarantee can ensure another's definedness.
 comp together {
     in q: Seq(Int)
-    pub out x: Int
 
     assume long: q.len > 3
+    pub out x: Int
 
     ensure third: x = q[3]
 }

@@ -360,9 +360,9 @@ pub comp pattern_place {
     use self::PatternPlace::{Element, Payload, Top}
     in place: PatternPlace       -- where the pattern type is written: the top of a declared type, a record's field, a variant's payload, or an element type
     in recursive?                -- for a payload: its enumeration is recursive
-    pub det out decidable?
 
     assume payloads_only: when recursive?, place = Payload
+    pub det out decidable?
 
     ensure rule: decidable? iff not (place = Element or (place = Payload and recursive?))
 
@@ -395,9 +395,9 @@ pub comp pattern_finite {
     in base_finite?          -- the base type is finite
     in integers?             -- the base type is `Int` or `Nat`
     in bounded?              -- every alternative of the pattern is a bounded range or an integer
-    pub det out finite?
 
     assume not_both: when integers?, not base_finite?
+    pub det out finite?
 
     ensure rule: finite? iff (base_finite? or (integers? and bounded?))
 
@@ -467,10 +467,10 @@ pub fn width(a: Alternative): Int := if bounded?(a) and bound_value(a.lo) <= bou
 
 pub comp pattern_count {
     in alts: Seq(Alternative)
-    pub det out finite?
-    pub out count: Nat           -- how many integers it matches, when finitely many
 
     assume few: alts.len <= 2
+    pub det out finite?
+    pub out count: Nat           -- how many integers it matches, when finitely many
 
     ensure bounds: finite? iff ((alts = [] or bounded?(alts[0])) and (alts.len < 2 or bounded?(alts[1])))
     ensure none: when alts = [], count = 0
@@ -768,9 +768,9 @@ use self::Annot::{BoolTy, IntTy, Missing, NamedTy, NatTy, StringTy}
 pub comp bool_naming {
     in name: String      -- the declared name
     in annot: Annot      -- `Missing` when there is no `: type`
-    pub out accepted?
 
     assume identifier: name.matches?(r"[A-Za-z_][A-Za-z0-9_']*\??")
+    pub out accepted?
 
     ensure q_is_bool: when name.ends_with?("?"), accepted? iff annot is Missing | BoolTy
     ensure bool_is_q: unless name.ends_with?("?"),
@@ -877,10 +877,10 @@ pub comp synthesizes {
     in shape: Shape
     in parts: Int            -- how many shared parts it has, members, for a pair, or type parameters, for a construction
     in synthesizing: Nat     -- how many of them synthesize their types, or, for a construction, are given an argument
-    pub det out synthesizes?
 
     assume counted: synthesizing <= parts
     assume pair: when shape = Pair, parts = 2
+    pub det out synthesizes?
 
     ensure rule: synthesizes? iff match shape {
         EmptyLiteral => false,

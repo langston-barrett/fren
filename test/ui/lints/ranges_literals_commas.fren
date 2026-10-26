@@ -93,6 +93,8 @@ comp literals {
 comp lists {
     in x: Int
     in mode: Mode
+    in fan: Fan
+    in vent: Vent
     pub out a: Set(Int) := {x, 1,}          --~ warning: unnecessary trailing comma before `}`
     pub out b: Seq(Int) := [x, 2, ]         --~ warning: unnecessary trailing comma before `]`
     pub out c: Seq(Int) := [
@@ -107,7 +109,5 @@ comp lists {
     pub out g: Seq(Int) := [x, 5]
 
     inst w: quiet { x, s := "a", }         --~ warning: unnecessary trailing comma before `}`
-    in fan: Fan
-    in vent: Vent
     expect used: fan != Fan::Low or vent != Vent::Open or mode in {Heat, Cool}
 }

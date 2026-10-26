@@ -3,10 +3,10 @@
 
 comp heater {
     in temp: Int
-    pub out alarm?
-    out margin: Int
 
     assume sane: temp < 1000
+    pub out alarm?
+    out margin: Int
 
     ensure r: alarm? iff temp > 100
     ensure m: margin = temp - 100
@@ -23,9 +23,9 @@ comp heater {
 -- checks the instance's guarantees in context.
 comp panel {
     in t: Int
-    pub out lit?
 
     assume sane: t < 1000
+    pub out lit?
 
     inst h: heater { temp := t }
 

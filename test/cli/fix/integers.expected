@@ -1,7 +1,7 @@
 warning[F0810]: `n` is never negative, so it can be a `Nat`
-  --> test/cli/fix/integers.fren:16:31
+  --> test/cli/fix/integers.fren:11:31
    |
-16 |     assume counts: k >= 0 and n >= 0 and x < y
+11 |     assume counts: k >= 0 and n >= 0 and x < y
    |                               ^^^^^^ `n` is at least 0 by this assumption
    |
    = note: a `Nat` input brings this assumption with its type
@@ -11,9 +11,9 @@ warning[F0810]: `n` is never negative, so it can be a `Nat`
    = help: to allow it, `set_option fren.lint.manual_nat "allow"`
 
 warning[F0810]: `k` is never negative, so it can be a `Nat`
-  --> test/cli/fix/integers.fren:16:20
+  --> test/cli/fix/integers.fren:11:20
    |
-16 |     assume counts: k >= 0 and n >= 0 and x < y
+11 |     assume counts: k >= 0 and n >= 0 and x < y
    |                    ^^^^^^ `k` is at least 0 by this assumption
    |
    = note: a `Nat` input brings this assumption with its type
@@ -21,9 +21,9 @@ warning[F0810]: `k` is never negative, so it can be a `Nat`
    = help: declare `k: Nat`, and remove `k >= 0` from `counts`, where nothing binds `k` to an `Int`
 
 warning[F0810]: `j` is never negative, so it can be a `Nat`
-  --> test/cli/fix/integers.fren:17:19
+  --> test/cli/fix/integers.fren:12:19
    |
-17 |     assume order: j >= 0  -- why
+12 |     assume order: j >= 0  -- why
    |                   ^^^^^^ `j` is at least 0 by this assumption
    |
    = note: a `Nat` input brings this assumption with its type
@@ -40,9 +40,9 @@ warning[F0810]: `m` is never negative, so it can be a `Nat`
    = help: declare `m: Nat`, and remove `m >= 0` from `rm`, where nothing binds `m` to an `Int`
 
 warning[F0792]: the assumption `order` constrains only inputs that nothing uses
-  --> test/cli/fix/integers.fren:17:12
+  --> test/cli/fix/integers.fren:12:12
    |
-17 |     assume order: j >= 0  -- why
+12 |     assume order: j >= 0  -- why
    |            ^^^^^ constrains only unused inputs
    |
    = note: no guarantee, expectation, definition or binding mentions `j`, nor does another assumption tie them to a used variable

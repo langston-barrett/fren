@@ -284,11 +284,11 @@ pub comp backjumping {
     in by_backtracking?          -- backtracking over the same candidates finds a behaviour within the budget
     in exhausted?                -- backtracking tries every candidate within the budget, and finds none
     in backtracking_steps: Nat   -- the candidates that backtracking tries
+
+    assume one_outcome: not (by_backtracking? and exhausted?)
     pub out found?               -- the search finds a behaviour
     pub out same?                -- it is the behaviour that backtracking finds
     pub out steps: Nat           -- the candidates that the search tries
-
-    assume one_outcome: not (by_backtracking? and exhausted?)
 
     ensure finds: when by_backtracking?, found? and same? and steps <= backtracking_steps
     ensure fails: when exhausted?, not found? and steps <= backtracking_steps
@@ -434,11 +434,11 @@ pub comp test_verdict {
     in kind: Kind
     in refuted?          -- some test is a counterexample, or an input without outputs
     in n_tests: Nat      -- the tests that reached the check (`reaches`)
-    pub det out verdict: Verdict
 
     assume testable: not kind is Kind::Vacuity | Kind::Redundancy
     -- A cover goal is reached by its witnesses, which refute nothing.
     assume witnesses: when kind = Kind::Cover, not refuted?
+    pub det out verdict: Verdict
 
     ensure definite: when refuted? and kind != Kind::Realizability, verdict = Fail
     ensure not_found: when refuted? and kind = Kind::Realizability, verdict = Inconclusive

@@ -6,12 +6,12 @@ set_option fren.lint.chainable_comparison "allow"
 comp thermostat {
     in temp: Int
     in target: Int
-    pub out heat?
-    pub out cool?
 
     assume sane: target >= 5 and target <= 30
     assume warm: target >= 0             --~ warning: `thermostat::warm` is redundant: it follows from `sane`
     --~^ warning: `target` is never negative
+    pub out heat?
+    pub out cool?
 
     ensure heats: heat? iff temp < target - 2
     ensure cools: cool? iff temp > target + 2
@@ -22,9 +22,9 @@ comp thermostat {
 -- A vacuous guarantee is reported once, by the vacuity check.
 comp vacuous {
     in x: Int
-    pub out y: Int
 
     assume pos: x > 0
+    pub out y: Int
 
     ensure y_def: y = x
     ensure never: when x < 0, y = x         --~ error: `vacuous::never` is vacuous: its condition can never hold, given `pos`
