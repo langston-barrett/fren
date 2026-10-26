@@ -57,6 +57,27 @@ comp receiver { in c? pub out y: Int := (if c? then {} else [1]).len }
 comp arm_seq { in s: S in t: Set(Int) pub out u: Set(Int) := match s { S::A(a) => [], S::B => t, S::C => t } }
 --~^ error: type mismatch: expected `Set(Int)`, found an empty sequence
 
+-- A member of a literal expects the literal's element type, or the first
+-- member's that synthesizes one; a pair's members, a relation's types.
+comp member_int { in x: Int pub out n: Int := {x, {}}.card }
+--~^ error: the type of `{}` cannot be known here
+comp member_seq { in t: Set(Int) pub out n: Int := {[], t}.card }
+--~^ error: type mismatch: expected `Set(Int)`, found an empty sequence
+comp element_set { in q: Seq(Int) pub out n: Int := [{}, q].len }
+--~^ error: type mismatch: expected `Seq(Int)`, found an empty set
+comp pair_member { in t: Set(Int) pub out n: Int := {(1, []), (2, t)}.card }
+--~^ error: type mismatch: expected `Set(Int)`, found an empty sequence
+comp declared_member { in t: Set(Int) pub out a: Set(Set(Int)) := {t, []} }
+--~^ error: type mismatch: expected `Set(Int)`, found an empty sequence
+comp declared_element { in x: Int pub out q: Seq(Seq(Int)) := [{}, [x]] }
+--~^ error: type mismatch: expected `Seq(Int)`, found an empty set
+comp declared_pair { in x: Int pub out r: Rel(Int, Set(Int)) := {(x, [])} }
+--~^ error: type mismatch: expected `Set(Int)`, found an empty sequence
+comp members { in x: Int pub out n: Int := {x, true}.card }
+--~^ error: the members of a set have different types: `Int` and `Bool`
+comp elements { in x: Int pub out n: Int := [x, "a"].len }
+--~^ error: the elements of a sequence have different types: `Int` and `String`
+
 -- Accepted: the type that is expected of them is theirs.
 comp accepted {
     in c? in s: S in t: Set(Int) in q: Seq(Int)
@@ -64,6 +85,11 @@ comp accepted {
     pub out b: Seq(Int) := if c? then [] else q
     pub out d: Set(Int) := match s { S::B => {}, S::A(n) => t, S::C => t }
     pub out f: Int := {(1, {}), (2, t)}.card
+    pub out g: Int := {{}, t}.card
+    pub out h: Int := [[], q].len
+    pub out i: Set(Set(Int)) := {{}, t}
+    pub out j: Seq(Seq(Int)) := [[], q]
+    pub out k: Rel(Int, Set(Int)) := {(1, {}), (2, t)}
 }
 
 --@ exit: 2
