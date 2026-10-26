@@ -381,13 +381,21 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
         | some (_, g) => .atoms #[{ label := .num x.prop x.k, pfx := .anonymous, e := g }]
         | none => .unknown) }
     tables := core.tables.mapIdx fun j t =>
+      let atom (g : Ex) : Atom := { label := .num t.site.prop t.site.k, pfx := .anonymous, e := g }
+      let at? (pos : Nat) := ((exsOf t.site.prop).flatMap (·.tableGoals)).filter fun (p, q, _) => p == pos && q == t.goal
+      -- A reachability question is the conjunction of its case's goals at
+      -- every mention of a `let` or `where` name (`Fren.Core.mergeReach`).
+      if t.goal matches .reachability .. then
+        let gs := ((tablePositions[j]?.map at?).getD #[]).map (·.2.2)
+        { t with site := { t.site with goal := (t.site.goal, if gs.isEmpty then .unknown else .atoms (gs.map atom)) } }
+      else
       -- Likewise the `n`th question at a position.
       let goal? := tablePositions[j]?.bind fun pos =>
         let n := ((tablePositions.extract 0 j).zip (core.tables.extract 0 j)).filter (fun (p, y) =>
           p == pos && y.site.prop == t.site.prop && y.goal == t.goal) |>.size
-        (((exsOf t.site.prop).flatMap (·.tableGoals)).filter fun (p, q, _) => p == pos && q == t.goal)[n]?
+        (at? pos)[n]?
       { t with site := { t.site with goal := (t.site.goal, match goal? with
-        | some (_, _, g) => .atoms #[{ label := .num t.site.prop t.site.k, pfx := .anonymous, e := g }]
+        | some (_, _, g) => .atoms #[atom g]
         | none => .unknown) } }
     insts := core.insts.map fun i =>
       let ei? := ec.insts.find? (·.name == i.name)

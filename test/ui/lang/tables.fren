@@ -180,5 +180,5 @@ comp uses {
 -- In a global expectation.
 expect exit_codes: forall (e: exit), table { e.ran? => e.code != 2, not e.ran? => e.code = 2 }
 
---@ summary: 168 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ summary: 166 passed, 0 failed, 0 inconclusive, 0 redundant
 --@ exit: 0

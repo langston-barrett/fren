@@ -78,7 +78,7 @@ def RefineBinding.checkMention (rb : RefineBinding) (role : Role) (isPub : Bool)
 
 /-- Whether a check of kind `k` runs on a refinement (`refinement::checks`). -/
 def refinementRuns : CheckKind → Bool
-  | .inst | .expect | .definedness | .completeness | .disjointness | .precondition | .reachability => true
+  | .inst | .expect | .definedness | .completeness | .disjointness | .precondition => true
   | _ => false
 
 /-- A variable of the abstract comp that the concrete comp lacks, or has

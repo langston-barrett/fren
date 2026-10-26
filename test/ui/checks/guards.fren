@@ -136,6 +136,16 @@ comp in_let {
     --~^ error: a `match` in `in_let::r` may have no arm that is taken
 }
 
+-- A `where` name is checked where it is mentioned: an arm is reachable
+-- where some mention reaches it, as each arm here is at one of the two.
+comp mentioned_twice {
+    in x: Int
+    pub out y?
+
+    ensure r: y? iff ((pos? and t?) or (neg? and not t?))
+        where pos? := x > 0, neg? := x < 0, t? := match x { n if n > 0 => true, _ => false }
+}
+
 -- In a function's body, a `match` is checked for every argument.
 fn sign(x: Int): Int := match x { n if n > 0 => 1, n if n < 0 => -1 }   --~ error: a `match` in `sign` may have no arm that is taken
 
@@ -164,5 +174,5 @@ comp counter {
 expect bigger: forall (c: counter), match c.m { k if k > c.n => true, _ => false }
 --~^ error: arm 2 of a `match` in `bigger` is never taken
 
---@ summary: 67 passed, 16 failed, 0 inconclusive, 0 redundant
+--@ summary: 71 passed, 16 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

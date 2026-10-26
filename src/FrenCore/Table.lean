@@ -88,6 +88,20 @@ those with a guard are `guarded` (`check::arms_asked`). -/
 def armAsked (guarded : Array Bool) (j : Nat) : Bool :=
   reachabilityAsked (guarded[j]?.getD false) ((guarded.extract 0 j).any id)
 
+/-- The questions of one item, each where it is written (`κ`), with the
+reachability questions of each case merged into one, its goals conjoined:
+the definition of a `let` or `where` name gives its questions at each
+mention of it, and a case is reachable when some mention reaches it, as
+the conjunction of its goals is refuted exactly where one of them is.
+The other questions must hold at each mention, and stay apart. -/
+def mergeReach [BEq κ] (andF : α → α → α) (qs : Array (κ × TableGoal × α)) : Array (κ × TableGoal × α) :=
+  qs.foldl (init := #[]) fun acc (k, g, f) =>
+    if g matches .reachability .. then
+      match acc.findIdx? (fun (k', g', _) => k' == k && g' == g) with
+      | some i => acc.modify i fun (k', g', f') => (k', g', andF f' f)
+      | none => acc.push (k, g, f)
+    else acc.push (k, g, f)
+
 /-- The questions about a split of kind `s` whose cases are taken where
 `taken` says, each its test and guard, or `none` for a case that is taken
 wherever it is tried, and of which those that have a guard are `guarded`:

@@ -546,8 +546,16 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
     let always (ms : Array (Interp × Array Env)) (g : Ex) :=
       ms.all fun (I, ms) => ms.all (holds I · { label := p, pfx := .anonymous, e := g })
     let o := e.indexGoals.foldl (init := o) fun o (pos, g) => put o .definedness (some (.num p pos)) (pass (always ms g))
-    e.tableGoals.foldl (init := o) fun o (pos, q, g) =>
-      put o q.kind (some (tableKey p pos q.rows?)) (pass (if q.kind == .reachability then !always rms g else always ms g))
+    let o := e.tableGoals.foldl (init := o) fun o (pos, q, g) =>
+      if q.kind == .reachability then o else put o q.kind (some (tableKey p pos q.rows?)) (pass (always ms g))
+    -- A case is reachable where some mention of a `let` or `where` name
+    -- reaches it (`Fren.Core.mergeReach`): one verdict for all its goals.
+    let reach := e.tableGoals.filter (·.2.1.kind == .reachability)
+    let keys := reach.foldl (init := (#[] : Array (Nat × Fren.Core.TableGoal))) fun ks (pos, q, _) =>
+      if ks.contains (pos, q) then ks else ks.push (pos, q)
+    keys.foldl (init := o) fun o (pos, q) =>
+      let gs := reach.filter (fun (p', q', _) => p' == pos && q' == q)
+      put o .reachability (some (tableKey p pos q.rows?)) (pass (gs.any fun (_, _, g) => !always rms g))
   if c.isGlobal then
     let MG := Is.map fun I => (I, models sp size I order (sp.insts c))
     for e in es do out := put out .expect (some e.name) (pass (MG.all fun (I, ms) => ms.all (holds I · (atom e))))

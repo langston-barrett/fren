@@ -1654,6 +1654,13 @@ def noteTable (cx : ExprCtx) (span : Span) (starts : Array Span) (conds : Array 
       | _ => { start := span.start, stop := span.start + "table".length }
     modify fun s => { s with tables := s.tables.push (at_, g, guarded cx.guards f) }
 
+/-- An item's questions, with each case's reachability questions merged
+(`Fren.Core.mergeReach`). -/
+def mergeReachTables (tbl : Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) :
+    Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String) :=
+  (Fren.Core.mergeReach andSmt (tbl.map fun (n, place, sp, g, f) => ((n, place, sp), g, f))).map
+    fun ((n, place, sp), g, f) => (n, place, sp, g, f)
+
 /-- Records the questions about the arms of the `match` at `span`, whose
 patterns are at `pats`, each taken where `taken` says, of which those with
 a guard are `guarded`, for its completeness and reachability checks
@@ -3531,7 +3538,7 @@ def elabCompBindings (vars : Array CVar) (instNames : Array Name) (pending : Arr
       | continue
     insts := insts.push i
     indexes := indexes ++ idx
-    tables := tables ++ tbl
+    tables := tables ++ mergeReachTables tbl
   return (insts, indexes, tables)
 
 /-- A comp's definitions, each after those it mentions, with their indexes
@@ -3557,7 +3564,7 @@ def elabCompDefinitions (name : Ident) (vars : Array CVar) (instNames : Array Na
       | continue
     defs := defs.push (v.name, smt)
     indexes := indexes ++ idx
-    tables := tables ++ tbl
+    tables := tables ++ mergeReachTables tbl
   return (defs, indexes, tables)
 
 /-- A comp's assumptions, requirements, expectations and cover goals, with
@@ -3587,7 +3594,7 @@ def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames 
       | continue
     props := props.push p
     indexes := indexes ++ idx
-    tables := tables ++ tbl
+    tables := tables ++ mergeReachTables tbl
   return (props, indexes, tables)
 
 /-- `duplicate_constraint` (`lint::duplicate_constraint`), of a comp's

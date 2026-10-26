@@ -335,7 +335,7 @@ are, since it reads only the slots. By the cases of `Ex.eval`:
 - Everything else, such as a table or a constant, gets `never`. -/
 partial def Ex.unknownIf : Ex → UnknownIf
   | .slot k => .slot k
-  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .match a _ => a.unknownIf
+  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .match a .. => a.unknownIf
   | .bin .and a b | .bin .or a b | .when _ a b => a.unknownIf.and b.unknownIf
   | .bin _ a b | .pair a b | .index a b _ => a.unknownIf.or b.unknownIf
   | .ite c a b =>
