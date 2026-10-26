@@ -2,6 +2,7 @@
 import FrenCli.Guard
 import FrenCli.Parse
 import FrenCore.Checking
+import FrenCore.Enumeration
 import FrenCore.Evidence
 import FrenCore.Generics
 import FrenCore.Guards
@@ -361,6 +362,10 @@ structure CComp where
   /-- The checks that are tested rather than asked of the solver
   (`Reqs/Check#checking-by-testing`). -/
   tested : Fren.Core.Tested := {}
+  /-- The checks that are enumerated rather than asked of the solver
+  (`Reqs/Check#checking-by-enumeration`), and the size bound. -/
+  enumerated : Fren.Core.Tested := {}
+  enumSize : Nat := Fren.Core.Enumeration.defaultSize
   /-- The applications of uninterpreted functions whose result is a `Nat`,
   or that have postconditions, in its constraints, definitions, bindings
   and instances: each brings its facts (`Fren.Core.appFacts`). -/
@@ -713,6 +718,8 @@ structure State where
   checked where it applies (`Reqs/Check#checking-by-testing`), and the
   value's span. -/
   evidence? : Option (String × Span) := none
+  /-- The size bound of enumeration in effect (`fren.enumeration.size`). -/
+  enumSize : Nat := Fren.Core.Enumeration.defaultSize
   /-- Where the current item starts. -/
   itemStart : Nat := 0
   /-- The string literals and comments of the current item that
@@ -4684,12 +4691,16 @@ def declareMemberUses (path : Name) (members : Array Member) : M Unit := do
       modify fun s => { s with scope := path }
     | _ => pure ()
 
+/-- The evidence that the `set_option fren.evidence` in effect sets
+(`Reqs/Check#checking-by-enumeration`); an invalid value sets nothing. -/
+def evidenceOfEffect : M Fren.Core.Evidence := do
+  match (← get).evidence? with
+  | none => return {}
+  | some (value, _) => return (Fren.Core.evidenceOf? value).getD {}
+
 /-- Whether the `set_option fren.evidence` in effect sets checks to testing.
 An invalid value, reported once where it is set (`F0214`), sets nothing. -/
-def evidenceInEffect : M Bool := do
-  match (← get).evidence? with
-  | none => return false
-  | some (value, _) => return (Fren.Core.evidenceTested? value).getD false
+def evidenceInEffect : M Bool := return (← evidenceOfEffect).tested
 
 /-- The conjuncts of `e`, a constraint: the operands of its `and`s, not
 through parentheses but its own (`lint::manual_nat`). -/
@@ -4732,15 +4743,15 @@ def lintManualNat (comp : Name) (members : Array Member) : M Unit := do
 /-- The checks of a comp with `members` that are tested
 (`Reqs/Check#checking-by-testing`): `all` if the comp is set to testing,
 then each member's own setting. -/
-def testedOf (all : Bool) (members : Array Member) : M Fren.Core.Tested := do
-  let mut pending : Option (Bool × Span) := none
+def testedOf (all : Fren.Core.Evidence) (members : Array Member) : M (Fren.Core.Tested × Fren.Core.Tested) := do
+  let mut pending : Option (Fren.Core.Evidence × Span) := none
   let mut expects := #[]
   let mut insts := #[]
   let mut dets := #[]
   let mut constraints := #[]
   for m in members do
     if let .evidence span value valueSpan := m then
-      let some b := Fren.Core.evidenceTested? value | err valueSpan (Fren.Core.invalidEvidenceMsg value)
+      let some b := Fren.Core.evidenceOf? value | err valueSpan (Fren.Core.invalidEvidenceMsg value)
       pending := some (b, span)
       continue
     let set? := pending.map (·.1)
@@ -4761,7 +4772,10 @@ def testedOf (all : Bool) (members : Array Member) : M Fren.Core.Tested := do
     | _ => pure ()
     pending := none
   if let some (_, span) := pending then err span (Fren.Core.misplacedEvidenceMsg "the end of the component")
-  return Fren.Core.Tested.ofSettings all constraints expects insts dets
+  let by_ (f : Fren.Core.Evidence → Bool) :=
+    let pick (xs : Array (Name × Option Fren.Core.Evidence)) := xs.map fun (n, e?) => (n, e?.map f)
+    Fren.Core.Tested.ofSettings (f all) constraints (pick expects) (pick insts) (pick dets)
+  return (by_ (·.tested), by_ (·.enumerated))
 
 /-- Reports `arbitrary_source_item_ordering` on a component whose members,
 written at `spans`, are `members`, and whose `{` ends at `openStop`
@@ -5093,13 +5107,14 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
   stopIfErrors
   lintCompUnused n members vars instNames
   let path := module ++ n
-  let tested ← testedOf (← evidenceInEffect) members
+  let (tested, enumerated) ← testedOf (← evidenceOfEffect) members
   let (relational, counts) ← checkCounts
   modify fun s => { s with
     table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
     scope := s.module
     comps := s.comps.push { path, file := s.file, span := name.span, vars, props, insts, defs, indexes, tables, decidable := !s.outsideCore
-                            relational, counts, tested, natApps := s.natApps, guarded := s.guardedUsed } }
+                            relational, counts, tested, enumerated, enumSize := s.enumSize, natApps := s.natApps
+                            guarded := s.guardedUsed } }
 
 /-- Elaborates `refine name: concrete refines abstract { bindings }` into
 the comp that checks it (`Reqs/Lang/Refinement`): `concrete`'s inputs,
@@ -5246,18 +5261,22 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
     (x, (match place with | .binding k => .binding (k + 1) | p => p), name.span, q, ren goal)
   let tables := tables ++ bindings.flatMap fun (v, _, _, tbl) => tbl.map fun (sp, q, g) =>
     (v.name, if v.role == .input then .binding 0 else .prop, sp, q, ownC g)
-  let tested := Fren.Core.Tested.ofSettings (← evidenceInEffect)
+  let ev ← evidenceOfEffect
+  let settings (all : Bool) := Fren.Core.Tested.ofSettings all
     -- The bindings too, for the definedness of their indexes.
     ((a.props.filter (·.kind == .assume)).map (·.name) ++ bound) (props.filter (·.kind == .expect) |>.map (·.name, none))
     -- `a`'s instances too, for the definedness of their bindings.
     (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
+  let tested := settings ev.tested
+  let enumerated := settings ev.enumerated
   -- The applications in the bindings, `concrete`'s and `abstract`'s.
   let natApps := afterBindings.natApps.map ownC ++ c.natApps.map (rename w c.vars) ++ a.natApps.map ren
   modify fun s => { s with
     table := s.table.addItem { kind := .expectItem, path := module ++ n, isPub := false, owner := s.module }
     refinements := s.refinements.push { path := module ++ n, file := s.file, span := name.span, vars, props, insts
                                         indexes, tables, decidable := c.decidable && a.decidable && !afterBindings.outsideCore
-                                        relational, counts, tested, natApps, guarded := afterBindings.guardedUsed } }
+                                        relational, counts, tested, enumerated, enumSize := s.enumSize, natApps
+                                        guarded := afterBindings.guardedUsed } }
 
 /-- The component that a global expectation's binder of type `segs` ranges
 over the behaviours of, or `none` if it ranges over the values of a type
@@ -5279,7 +5298,7 @@ def globalBinderComp? (segs : Array Ident) : M (Option Name) := do
 def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit := do
   let n := Name.mkSimple name.name
   liftMsg name.span (Fren.Core.checkNoBang n)
-  let all ← evidenceInEffect
+  let all ← evidenceOfEffect
   if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
   modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
   let module := (← get).module
@@ -5370,7 +5389,9 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
     table := s.table.addItem { kind := .expectItem, path := module ++ n, isPub := false, owner := s.module }
     globals := s.globals.push { path := s.module, file := s.file, span := name.span, vars, props := #[prop], insts, indexes, tables
                                 decidable := !s.outsideCore, natApps := s.natApps, guarded := s.guardedUsed
-                                tested := Fren.Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] } }
+                                tested := Fren.Core.Tested.ofSettings all.tested #[] #[(n, none)] #[] #[]
+                                enumerated := Fren.Core.Tested.ofSettings all.enumerated #[] #[(n, none)] #[] #[]
+                                enumSize := s.enumSize } }
 
 /-- Elaborates the clauses of the contract of the function `n` at `path`,
 whose parameters are `vars`, and records the contract, and each clause's
@@ -5878,6 +5899,18 @@ partial def elabItem (item : Item) : M Unit := do
     | .item { kind := .compItem, .. } | .item { kind := .expectItem, .. } => pure ()
     | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a component or a global expectation" r)
   | .lintSetting stx opt value valueSpan removal body? => do
+    if opt.name == "fren.enumeration.size" then
+      -- Like `fren.evidence`: for the item after `in`, or the rest of the
+      -- file (`Reqs/Check#checking-by-enumeration`).
+      let prev := (← get).enumSize
+      let n := value.toNat!
+      if n > Fren.Core.Enumeration.maxSize then
+        modify fun s => { s with diags := s.diags.push { file := s.file, span := valueSpan, msg := Fren.Core.Enumeration.sizeTooLargeMsg n } }
+      else modify fun s => { s with enumSize := n }
+      if let some body := body? then
+        elabItem body
+        modify fun s => { s with enumSize := prev }
+      return
     if opt.name == "fren.evidence" then
       -- Like a lint setting: for the item after `in`, or the rest of the file.
       let prev := (← get).evidence?
@@ -6040,6 +6073,7 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
     (trailingCommas : Array (Span × String)) (found : Array (Lint × Span × Msg)) (fixing : Array Lint := #[]) :
     StateM State Unit := do
   modify fun s => { s with file, src, fixing, module := .anonymous, scope := .anonymous, levels := s.cliLevels, useRecords := #[], evidence? := none,
+                           enumSize := Fren.Core.Enumeration.defaultSize,
                            used := #[], expectations := #[], lintReports := #[], useLocs := #[],
                            expectationRemovals := #[], items := #[], usedItems := #[], lintFixes := #[],
                            globalTexts := #[], natReports := #[], natKept := #[], settings := #[], settingRemovals := #[], seenSettings := #[],

@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Fren.Check
 import Fren.Elab
+import Fren.Enumerate
 -- keep-sorted end
 
 /-!
@@ -128,8 +129,8 @@ def errorsLogged : CommandElabM Nat :=
 theorems of its cover goals (`checkComp`), or the exception it threw, with
 the messages, traces and info trees that it logged. -/
 abbrev CheckOutcome :=
-  Except Exception (Array CheckResult × Array Declaration) × MessageLog × PersistentArray TraceElem ×
-    PersistentArray InfoTree
+  Except Exception (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated)) ×
+    MessageLog × PersistentArray TraceElem × PersistentArray InfoTree
 
 /-- Checks each of `items` in a task of its own (`checkComp`), started now,
 from the current state. Each runs as `liftTermElabM` would run it here,
@@ -139,7 +140,7 @@ def checkItems (items : Array (CompInfo × Array CheckKind)) (cancel : IO.Cancel
     CommandElabM (Array (Task (Except Exception CheckOutcome))) := do
   let run ← wrapAsync (cancelTk? := some cancel) fun ((c, kinds) : CompInfo × Array CheckKind) => do
     modify fun s => { s with messages := {}, traceState.traces := {}, infoState.trees := {} }
-    let r ← try .ok <$> liftTermElabM (checkComp c kinds) catch ex => pure (.error ex)
+    let r ← try .ok <$> liftTermElabM (checkComp c kinds (some Enumerate.enumerate)) catch ex => pure (.error ex)
     let s ← get
     return (r, s.messages, s.traceState.traces, s.infoState.trees)
   items.mapM fun i => (EIO.asTask (run i) : BaseIO _)
@@ -148,7 +149,7 @@ def checkItems (items : Array (CompInfo × Array CheckKind)) (cancel : IO.Cancel
 state, and gives its results, or throws its exception, as `liftTermElabM`
 would have. -/
 def awaitCheck (task : Task (Except Exception CheckOutcome)) :
-    CommandElabM (Array CheckResult × Array Declaration) := do
+    CommandElabM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated)) := do
   let (r, msgs, traces, trees) ← ofExcept (← IO.wait task)
   modify fun s => { s with messages := s.messages ++ msgs, traceState.traces := s.traceState.traces ++ traces,
                            infoState.trees := s.infoState.trees ++ trees }
@@ -191,8 +192,9 @@ where
   let cancel ← IO.CancelToken.new
   let tasks ← checkItems (items.map fun (_, c, kinds) => (c, kinds)) cancel
   let mut all := #[]
+  let mut byBound := 0
   for (p, c, _) in items, task in tasks do
-    let (results, witnesses) ← try awaitCheck task catch ex => cancel.set; throw ex
+    let (results, witnesses, enumerated?) ← try awaitCheck task catch ex => cancel.set; throw ex
     for d in witnesses do
       liftCoreM <| addCoverWitness d
     for r in results do
@@ -200,10 +202,22 @@ where
     if c.tested.any then
       logAbout p c.ref m!"the checks of `{Core.showComp p}` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)" .information
     all := all ++ results
+    -- The checks set to enumeration (`Reqs/Check#checking-by-enumeration`).
+    match enumerated? with
+    | some (.error msg) => logAbout p c.ref msg.text .error
+    | some (.ok e) =>
+      for r in e.results do
+        report p c r
+      all := all ++ e.results
+      let bounded := e.results.filter fun r => r.verdict == .pass && r.bounded?.isSome
+      byBound := byBound + bounded.size
+      if !bounded.isEmpty then
+        logAbout p c.ref (Core.Enumeration.boundedMsg s!"`{Core.showComp p}`" bounded.size e.bound).text .information
+    | none => pure ()
   match Core.summarySeverity all with
-  | .info => logInfo (Core.summary all)
-  | .warning => logWarning (Core.summary all)
-  | .error => logError (Core.summary all)
+  | .info => logInfo (Core.summary all 0 byBound)
+  | .warning => logWarning (Core.summary all 0 byBound)
+  | .error => logError (Core.summary all 0 byBound)
 
 @[command_elab Lang.checkCmd] def elabCheck : CommandElab := recordingErrors fun stx => do
   checkLexemes stx

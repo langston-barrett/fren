@@ -1,0 +1,13 @@
+-- A component that cannot be enumerated, for an uninterpreted function
+-- with a contract (F0645).
+type Id
+
+fn rank(i: Id): Int
+    ensure positive: rank(i) > 0
+
+set_option fren.evidence "enumerated" in
+comp c {
+    in x: Id
+    pub det out top?
+    ensure r: top? iff rank(x) = 1
+}

@@ -1,0 +1,29 @@
+-- Enumeration then testing (`Reqs/Check#enumeration-then-testing`): where
+-- enumeration is complete, its verdict stands and testing is not asked;
+-- elsewhere random tests look beyond the bound, and a counterexample from
+-- either fails the check, enumeration's first. Only the `fren` command
+-- tests.
+--@ only: cli
+
+enum Mode { Off, Heat }
+
+set_option fren.evidence "enumerated+tested" in
+comp finite {
+    in mode: Mode
+    pub det out on?
+    ensure r: on? iff mode = Mode::Heat
+    expect wrong: on?  --~ error: expectation `finite::wrong` does not hold
+}
+
+-- Testing finds what is beyond the bound, and passes the realizability
+-- that enumeration left undecided.
+set_option fren.evidence "enumerated+tested" in
+comp beyond {  --~ info: 1 check of `beyond` holds for every behaviour up to size 3, and for 100 random tests
+    in x: Int
+    pub out y: Int
+    ensure r: y = x + 1
+    expect small: y < 50  --~ error: expectation `beyond::small` does not hold
+    expect grows: y > x
+}
+
+--@ summary: 6 passed (1 by testing, 1 by bounded enumeration), 2 failed, 0 inconclusive, 0 redundant

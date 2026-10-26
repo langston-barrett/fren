@@ -1062,6 +1062,46 @@ def backjumping (corpus : String) : IO (Array String) := do
     problems := problems + n
   return if problems < 100 then failures.push s!"backjumping: only {problems} problems in `{corpus}`" else failures
 
+/-! ## Enumeration agrees with the solver -/
+
+/-- `src` with every check set to enumeration that no setting of its own
+sets otherwise (`Reqs/Check#checking-by-enumeration`). -/
+def enumeratedText (src : String) : String := "set_option fren.evidence \"enumerated\"\n" ++ src
+
+/-- The ui tests whose checks enumeration is compared with the solver's:
+those that the binary checks, without a static error. -/
+def enumerationCorpus : IO (Array FilePath) := do
+  (← sortedFiles ("test" / "ui") "fren").filterM fun f => do
+    let src ← IO.FS.readFile f
+    return !(src.splitOn "--@ only: hosted").length > 1 && (src.splitOn "--@ exit: 2").length == 1
+
+/-- Each verdict of enumeration on the ui tests matches the solver's on the
+same check (`Reqs/Check#verdicts-of-enumeration`): a failure is genuine, so
+the solver must not pass the check, and a pass that is not bounded is a
+decision, so the solver must not fail it. -/
+def enumerationAgrees : IO (Array String) := do
+  let mut failures := #[]
+  let mut compared := 0
+  for f in ← enumerationCorpus do
+    let src ← IO.FS.readFile f
+    let (solver, code) ← checkResultsOf #[f.toString]
+    if code == 2 then continue
+    let (enumerated, _) ← withText (f.fileName.getD "spec.fren") (enumeratedText src).toList.toArray fun p =>
+      checkResultsOf #[p]
+    for (item, rs) in enumerated do
+      let ss := solver.getD item #[]
+      for (k, r) in rs do
+        let some (_, s) := ss.find? (·.1 == k) | continue
+        compared := compared + 1
+        let bad := match r.verdict, s.verdict with
+          | .fail, .pass => true
+          | .pass, .fail => r.bounded?.isNone
+          | _, _ => false
+        if bad then
+          let bounded := if r.bounded?.isSome then " up to the bound" else ""
+          failures := failures.push s!"{f}: `{item}` {k}: enumeration {repr r.verdict}{bounded}, but the solver {repr s.verdict}"
+  return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
+
 /-! ## Jobs
 
 The tests are independent, so `main` runs them as jobs, in parallel, each
@@ -1084,7 +1124,8 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"]]
+    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+      ["enumeration"]]
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
 
@@ -1108,6 +1149,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["backjumping", corpus] => backjumping corpus
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
+  | ["enumeration"] => enumerationAgrees
   | ["mutation", group, slice, slices] => do
     -- A slice out of range would check nothing, and pass.
     match (group.toNat?.bind ((← mutationCorpus)[·]?)), slice.toNat?, slices.toNat? with

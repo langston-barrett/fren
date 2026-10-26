@@ -2,6 +2,7 @@
 import Fren.FinSet
 import Fren.Seq
 import FrenCore.Check
+import FrenCore.Enumeration
 import FrenCore.Evidence
 import FrenCore.Lint
 import FrenCore.Names
@@ -27,9 +28,14 @@ open Lean
 
 namespace Fren
 
+register_option fren.enumeration.size : Nat := {
+  defValue := 3
+  descr := "the size bound of enumeration: the checks set to `\"enumerated\"` enumerate every behaviour whose values have at most this size"
+}
+
 register_option fren.evidence : String := {
   defValue := "solver"
-  descr := "the evidence of the checks of the next component, global expectation or refinement: \"tested\" to have the `fren` command test them, or \"solver\""
+  descr := "the evidence of the checks of the next component, global expectation or refinement: \"tested\" to have the `fren` command test them, \"enumerated\" to decide them by enumerating behaviours, \"enumerated+tested\" for both, or \"solver\""
 }
 
 export Core (ItemKind Item EnumDef UseDef)
@@ -376,6 +382,10 @@ structure CompInfo where
   /-- The checks that only the `fren` command runs, by testing
   (`Reqs/Check#checking-by-testing`). -/
   tested : Core.Tested := {}
+  /-- The checks that are decided by enumeration
+  (`Reqs/Check#checking-by-enumeration`), and the size bound. -/
+  enumerated : Core.Tested := {}
+  enumSize : Nat := 3
   /-- For the body and contract of a function, the function: then its
   assumptions are its preconditions, and its guarantees, if it is defined,
   its postconditions, each named after the function and the clause. -/

@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Color
+import FrenCli.Enumerate
 import FrenCli.Exit
 import FrenCli.Fmt
 import FrenCli.MutateRun
@@ -640,14 +641,14 @@ def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec)
     | .ok sp => match sp.counterpart? c global body with
       | some ec =>
         let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
-        let (core, ks) := { core with typesInterpreted }.untested c.tested kinds
+        let (core, ks) := { core with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
         pure (← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k)) core ks examples (interprets ·.1), none)
       | none =>
-        let (core, ks) := { toCore c with typesInterpreted }.untested c.tested kinds
+        let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
         pure (← Fren.Core.checkComp bk core ks examples interprets,
           some (Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"))
     | .error _ =>
-      let (core, ks) := { toCore c with typesInterpreted }.untested c.tested kinds
+      let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
       pure (← Fren.Core.checkComp bk core ks examples interprets, none)
   let (results, refuted) := applyRefutations raw (← log.get)
   return (markInterpreted prelude c results, refuted, missing?)
@@ -657,7 +658,35 @@ kinds `kinds` set to testing (`Reqs/Check#checking-by-testing`); for a
 refinement, only those about its obligation. -/
 def testedKeeps (c : CComp) (kinds : Array Fren.Core.CheckKind) (refinement : Bool) (r : Fren.Core.CheckResult) : Bool :=
   kinds.contains r.kind && c.tested.covers r && Fren.Core.runOf r.kind true == .byTesting
-    && (!refinement || refinementKeeps c r)
+    && (!refinement || refinementKeeps c r) && !(c.enumerated.covers r && Fren.Core.Enumeration.enumerable r.kind)
+
+/-- The subject of the messages about `c`, as they show it. -/
+def subjectOf (c : CComp) (global : Bool) : String :=
+  s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
+
+/-- Whether two results are of the same check. -/
+def sameCheck (a b : Fren.Core.CheckResult) : Bool :=
+  a.kind == b.kind && a.prop? == b.prop? && a.target? == b.target?
+
+/-- The checks of `c` set to enumeration, enumerated
+(`Reqs/Check#checking-by-enumeration`), with those also set to testing
+combined with testing's results, `tested`, if enumeration is not complete
+(`check::combined_evidence`); or the error that stopped it. Only the
+results of the kinds `kinds`, and for a refinement those about its
+obligation, are kept. -/
+def enumerated (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global refinement : Bool) (kinds : Array Fren.Core.CheckKind)
+    (tested : Option Eval.Report) : Except Msg (Fren.Core.Enumeration.Enumerated × Nat) := do
+  let e ← enumerateComp sp ec c kinds (subjectOf c global)
+  let keep (r : Fren.Core.CheckResult) := c.enumerated.covers r && (!refinement || refinementKeeps c r)
+  -- With how many passes are testing's.
+  let combined := e.results.filter keep |>.map fun r =>
+    if e.exact || !c.tested.covers r || r.kind.untestable then (r, false)
+    else
+      let t? := (tested.map (·.results)).bind (·.find? (sameCheck r))
+      let (_, byTests) := Fren.Core.Enumeration.combinedVerdict r.verdict r.bounded?.isSome (t?.map (·.verdict))
+      let r' := Fren.Core.Enumeration.combine r t?
+      (r', byTests && r'.verdict == .pass)
+  return ({ e with results := combined.map (·.1) }, (combined.filter (·.2)).size)
 
 /-- `f` of each of `xs`, taken in order by at most `jobs` threads at
 once: for each, in the order of `xs`, an action that waits for it. With
@@ -702,6 +731,8 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   let sy := symbolsOf spec?
   let mut internal := #[]
   let mut byTesting := 0
+  let mut byBound := 0
+  let mut enumErrors := 0
   if let .error e := spec? then
     internal := internal.push (Msg.internal s!"the evaluator cannot read the spec: {e}")
     printDiag args.paint files { file := 0, span := default, msg := internal.back! }
@@ -710,7 +741,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- checks set to testing; reported below, in order
   -- (`Reqs/Cli#parallel-checking`). Only this thread prints, so that the
   -- output is the same as one at a time.
-  let solve := fun ((c, global, kinds, _, body, _) : CComp × Bool × Array Fren.Core.CheckKind × Bool × Bool × String) => do
+  let solve := fun ((c, global, kinds, refinement, body, _) : CComp × Bool × Array Fren.Core.CheckKind × Bool × Bool × String) => do
     let n ← IO.mkRef 0
     let dumped ← IO.mkRef ""
     let dump? := if args.dumpSmt then some fun script => do
@@ -725,10 +756,14 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
         -- Not tested if it cannot be (`testComp`).
         (ec, if (sp.untestable? ec).isSome then {} else testReport sp ec c global args.seed args.nTests)
       | .error _ => none
-    return (r, ← dumped.get, tested?)
+    -- And those set to enumeration, enumerated (`Reqs/Check#checking-by-enumeration`).
+    let enumerated? := if !c.enumerated.any then none else match spec? with
+      | .ok sp => (sp.counterpart? c global).map fun ec => enumerated sp ec c global refinement kinds (tested?.map (·.2))
+      | .error _ => none
+    return (r, ← dumped.get, tested?, enumerated?)
   let solving ← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
   for (c, global, kinds, refinement, _, key) in todo, solved in solving do
-    let ((results, refuted, missing?), dumped, tested?) ← solved
+    let ((results, refuted, missing?), dumped, tested?, enumerated?) ← solved
     IO.print dumped
     if let some msg := missing? then
       internal := internal.push msg
@@ -750,11 +785,31 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       all := all ++ tested
       if let some r := record? then r.modify (· ++ tested.map (key, ·))
       byTesting := byTesting + (tested.filter (·.verdict == .pass)).size
-  IO.eprintln (Fren.Core.summary all byTesting)
+    -- The checks set to enumeration (`Reqs/Check#checking-by-enumeration`).
+    match enumerated? with
+    | some (.error msg) =>
+      printDiag args.paint files { file := c.file, span := c.span, msg }
+      shown := shown.push msg
+      enumErrors := enumErrors + 1
+    | some (.ok (e, tests)) =>
+      byTesting := byTesting + tests
+      for r in e.results do
+        shown := shown ++ (← printResult args.paint files c r)
+      all := all ++ e.results
+      if let some r := record? then r.modify (· ++ e.results.map (key, ·))
+      let bounded := e.results.filter fun r => r.verdict == .pass && r.bounded?.isSome
+      byBound := byBound + bounded.size
+      if !bounded.isEmpty then
+        let tests := if c.tested.any && bounded.any (fun r => c.tested.covers r && !r.kind.untestable) then some args.nTests else none
+        let msg := Fren.Core.Enumeration.boundedMsg (subjectOf c global) bounded.size e.bound tests
+        printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
+        shown := shown.push msg
+    | none => pure ()
+  IO.eprintln (Fren.Core.summary all byTesting byBound)
   if shown.any (·.code?.isSome) then
     IO.eprintln ""
     printExplainHint shown
-  let errors := internal.map fun _ => Fren.Core.Severity.error
+  let errors := (internal.map fun _ => Fren.Core.Severity.error) ++ Array.replicate enumErrors .error
   return exitCode true (Fren.Core.worst (all.filterMap (·.severity?) ++ st.diags.map (·.severity) ++ errors))
 
 /-- Runs `fren quickcheck` (`Reqs/Eval#fren-quickcheck`), printing
