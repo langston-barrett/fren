@@ -3184,14 +3184,12 @@ def declareMemberUses (path : Name) (members : Array Member) : M Unit := do
       modify fun s => { s with scope := path }
     | _ => pure ()
 
-/-- Whether the `set_option fren.evidence` in effect sets checks to testing
-(`F0214` if its value is invalid). -/
+/-- Whether the `set_option fren.evidence` in effect sets checks to testing.
+An invalid value, reported once where it is set (`F0214`), sets nothing. -/
 def evidenceInEffect : M Bool := do
   match (← get).evidence? with
   | none => return false
-  | some (value, sp) =>
-    let some b := Fren.Core.evidenceTested? value | err sp (Fren.Core.invalidEvidenceMsg value)
-    return b
+  | some (value, _) => return (Fren.Core.evidenceTested? value).getD false
 
 /-- The checks of a comp with `members` that are tested
 (`Reqs/Check#checking-by-testing`): `all` if the comp is set to testing,
@@ -4022,6 +4020,10 @@ partial def elabItem (item : Item) : M Unit := do
     if opt.name == "fren.evidence" then
       -- Like a lint setting: for the item after `in`, or the rest of the file.
       let prev := (← get).evidence?
+      -- An invalid value is reported here, once, and does not stop the
+      -- items it would set (`Reqs/Check#checking-by-testing`).
+      if (Fren.Core.evidenceTested? value).isNone then
+        modify fun s => { s with diags := s.diags.push { file := s.file, span := valueSpan, msg := Fren.Core.invalidEvidenceMsg value } }
       modify fun s => { s with evidence? := some (value, valueSpan) }
       if let some body := body? then
         elabItem body
