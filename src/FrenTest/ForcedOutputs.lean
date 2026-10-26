@@ -39,6 +39,10 @@ note: for the input
       no outputs satisfy `low` and `high`
 help: weaken one of them, or add an `assume` that rules this input out
 ---
+info: conflicts with `high`
+---
+info: conflicts with `low`
+---
 info: fren: 0 passed, 1 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in

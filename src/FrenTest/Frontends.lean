@@ -25,8 +25,10 @@ fuzzing"). `fren_fuzz_frontends` compares the front ends with it;
   failure names in its note, which are a minimal set that conflicts on its
   input, which comes from the solver's model (`cli::agreement`), are
   compared only when both front ends report the same input
-  (`conflictInput?`, `conflictCore?`), and its notes at them, of outputs
-  that they force to different values (`isConflictNote`), are left out.
+  (`conflictInput?`, `conflictCore?`), and so are its notes at them
+  (`isConflictNote`): the outputs that they force to different values, or
+  whom they conflict with, which must then be the same in both, at the
+  same lines.
 - Checks whose evidence is testing, which Lean does not run, are left out.
 - A static error, including a denied lint, stops both front ends'
   checks, so neither reports results or a summary. Both report the lints
@@ -95,11 +97,17 @@ last line names them. -/
 def conflictCore? (text : String) : Option String :=
   (conflictLines? text).bind (·.getLast?)
 
-/-- A note at a requirement of a realizability failure: that it and the
-rest of the conflict force an output to different values, which depends on
-the requirements that conflict on its input. -/
+/-- The first line of a note at a requirement of a realizability failure
+(`isConflictNote`). -/
+def isConflictHead (h : String) : Bool :=
+  (h.startsWith "`" && (h.splitOn "` forces ").length > 1) || h.startsWith "conflicts with `" || h == "is false for this input"
+
+/-- A note at a requirement of a realizability failure, which depends on
+the requirements that conflict on its input: that it and the rest of the
+conflict force an output to different values, that it conflicts with the
+rest, or that it is false, in a conflict of one. -/
 def isConflictNote (d : Diagnostic) : Bool :=
-  d.severity == "info" && d.code?.isNone && (headOf d).startsWith "`" && ((headOf d).splitOn "` forces ").length > 1
+  d.severity == "info" && d.code?.isNone && isConflictHead (headOf d)
 
 /-- The text after a leading subject in backquotes, as in "`c::q` is
 vacuous: …", or the whole text. -/
@@ -129,7 +137,7 @@ def isCheckHeadline (h : String) : Bool :=
   || r.startsWith " is redundant: "
   || r.startsWith " is not determined by the inputs: for the input "
   || h.startsWith "testing found no " || h.startsWith "testing never reached `"
-  || (h.startsWith "`" && (h.splitOn "` forces ").length > 1)
+  || isConflictHead h
 
 /-- A check's result, rather than a static error or a lint: by its code
 where the front end shows one (the binary), else by its headline. The
@@ -228,6 +236,17 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
     let (cc, hc) := (conflictCore? c.text, conflictCore? h.text)
     guard (cc != hc)
     return s!"line {c.line}: for the same input, fren says `{cc.getD ""}`, Lean says `{hc.getD ""}`"
+  -- For the same input and requirements, the notes at them are the same.
+  let notesIn (ds : Array Diagnostic) (line : Nat) :=
+    (ds.filter fun d => keep d && isConflictNote d && itemAt d.line == itemAt line)|>.map (fun d => s!"line {d.line}: {headOf d}") |>.qsort (· < ·)
+  let sameNotes := (cliDiags.filter keep).filterMap fun c => do
+    let i ← conflictInput? c.text
+    let h ← (hosted.diags.filter keep).find? fun h => h.line == c.line && conflictInput? h.text == some i
+    guard (conflictCore? c.text == conflictCore? h.text)
+    let (cn, hn) := (notesIn cliDiags c.line, notesIn hosted.diags c.line)
+    guard (cn != hn)
+    return s!"line {c.line}: for the same input, fren notes {cn}, Lean notes {hn}"
+  let sameInput := sameInput ++ sameNotes
   let keep (d : Diagnostic) := keep d && !isConflictNote d
   let mut cs := cliDiags.filter keep
   let hs := hosted.diags.filter keep

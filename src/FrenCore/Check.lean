@@ -459,10 +459,13 @@ def Comp.realizableInterpreted (c : Comp F) (interprets : F → Bool) : Bool :=
 
 /-- The clashes of a realizability conflict on the input that `pinned`
 pins, with the minimal core `core` (`clashesOf`): none if they would depend
-on an interpretation (`Comp.realizableInterpreted`). -/
-def conflictClashes (c : Comp F) (pinned : Array (Name × F)) (core : Array Name) (examples : Option Nat)
-    (interprets : F → Bool) : m (Array Clash) :=
-  if c.realizableInterpreted interprets then pure #[]
+on an interpretation (`Comp.realizableInterpreted`), or if some variable
+of the input could not be pinned (`allPinned` is false), since the
+queries would then not be about the input that the error shows
+(`check::clash_notes`). -/
+def conflictClashes (c : Comp F) (pinned : Array (Name × F)) (allPinned : Bool) (core : Array Name)
+    (examples : Option Nat) (interprets : F → Bool) : m (Array Clash) :=
+  if c.realizableInterpreted interprets || !allPinned then pure #[]
   else clashesOf b pinned ((c.substHyps b c.reqs).filter (core.contains ·.1)) c.clashOutputs examples
 
 /-- `realizable`: every input allowed by the assumptions has outputs
@@ -490,7 +493,7 @@ def checkRealizable (c : Comp F) (examples : Option Nat := some 1) (interprets :
     let input := conflictInput c.vars model
     let pinned ← pins b input
     let core ← minimize b pinned (sub c.reqs) b.falseF
-    let clashes ← conflictClashes b c pinned core examples interprets
+    let clashes ← conflictClashes b c pinned (pinned.size == input.size) core examples interprets
     return { result verdict (.conflict (← renderModel b c.vars input fun v => v.isIn && v.isPub) core) with clashes }
   if verdict == .inconclusive then
     return result verdict (.unknown (if cexQ.reason.isEmpty then assumeQ.reason else cexQ.reason))
@@ -992,6 +995,16 @@ guarantee, with the rest of the core named `rest`. -/
 def clashText (cl : Clash) (rest : Array Name) : String :=
   clashLine cl.guarantee.getString! (toString cl.output) cl.value (showNamesAnd rest) cl.restValue rest.size
 
+/-- The note at a guarantee of a realizability conflict's core
+(`Reqs/View#check-results`), one at each: its clash, if it has one
+(`clashText`); else the other guarantees of the core, `others`, that it
+conflicts with; or, in a core of one, that it is false for the input that
+the error's note gives. `rest` names a clash's others. -/
+def memberText (clash? : Option Clash) (others : Array Name) (rest : Clash → Array Name) : String :=
+  match clash? with
+  | some cl => clashText cl (rest cl)
+  | none => if others.isEmpty then "is false for this input" else s!"conflicts with {showNamesAnd others}"
+
 /-- The case that a question about a split is about, as a message names
 it, from 1. -/
 def caseText : Option TableGoal → String
@@ -1096,9 +1109,10 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
   | .fail, .conflict input core =>
     let contract := r.target?.map (·.1)
     let names := if contract.isSome then core.map clauseName else core
-    let clashNotes := r.clashes.map fun cl =>
-      let restNames := if contract.isSome then cl.rest.map clauseName else cl.rest
-      { severity := .info, item? := some cl.guarantee, msg := { code? := none, headline := clashText cl restNames } }
+    let clashNotes := core.map fun n =>
+      let short (ns : Array Name) := if contract.isSome then ns.map clauseName else ns
+      let headline := memberText (r.clashes.find? (·.guarantee == n)) (short (core.filter (· != n))) fun cl => short cl.rest
+      { severity := .info, item? := some n, msg := { code? := none, headline } }
     if let some f := contract then
       #[one "F0631" s!"the postconditions of `{showComp f}` cannot all hold" (some "unrealizable contract")
         #[conflictNote "arguments" input s!"no value of `{showComp f}` satisfies {showNamesAnd names}",

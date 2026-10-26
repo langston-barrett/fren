@@ -230,10 +230,23 @@ def conflict : String :=
 #guard !(compare conflict
   { diags := #[err 1 (unrealizable #["s = \"A\""] "`q0`") "F0601"], summary? := none0, exit? := some 1 }
   { diags := #[err 1 (unrealizable #["s = \"A\""] "`q1`" (hosted := true))], summary? := none0 }).2
--- The same input and requirements: they agree.
+-- The same input and requirements, and the same notes at them: they agree.
 #guard agrees conflict
-  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q0` and `q1`") "F0601"], summary? := none0, exit? := some 1 }
-  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q0` and `q1`" (hosted := true))], summary? := none0 }
+  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q0` and `q1`") "F0601",
+      note 4 "`q0` forces w.b? = true, but `q1` forces w.b? = false", note 5 "conflicts with `q0`"],
+    summary? := none0, exit? := some 1 }
+  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q0` and `q1`" (hosted := true)),
+      note 5 "conflicts with `q0`", note 4 "`q0` forces w.b? = true, but `q1` forces w.b? = false"],
+    summary? := none0 }
+-- ... but a note that only one gives is a difference.
+#guard differs conflict
+  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q0` and `q1`") "F0601",
+      note 4 "`q0` forces w.b? = true, but `q1` forces w.b? = false", note 5 "conflicts with `q0`"],
+    summary? := none0, exit? := some 1 }
+  { diags := #[err 1 (unrealizable #["s = \"A\""] "`q0` and `q1`" (hosted := true)),
+      note 4 "conflicts with `q1`", note 5 "conflicts with `q0`"], summary? := none0 }
+#guard isConflictNote (note 4 "conflicts with `q1` and `q2`")
+#guard isConflictNote (note 4 "is false for this input")
 -- " when " elsewhere is text, not values.
 #guard normHead "`p` holds when a" != normHead "`p` holds when b"
 

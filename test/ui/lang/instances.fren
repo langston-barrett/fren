@@ -45,7 +45,7 @@ comp chooser {
 comp hopes {   --~ error: no outputs satisfy `lucky`
     pub out x: Int
     inst pick: chooser {}
-    ensure lucky: pick.b? and x = 0
+    ensure lucky: pick.b? and x = 0   --~ info: is false for this input
 }
 
 comp observes {

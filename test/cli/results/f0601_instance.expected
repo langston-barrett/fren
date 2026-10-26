@@ -21,6 +21,12 @@ error[F0601]: `c` is not realizable
   = help: weaken one of them
   = note: instance variables are part of the system: whatever the instances do, the component must cope
 
+note: is false for this input
+ --> test/cli/results/f0601_instance.fren:6:12
+  |
+6 |     ensure lucky: pick.b? and x = 0
+  |            ^^^^^
+
 fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
 
 Some errors have detailed explanations: F0601, F0710.

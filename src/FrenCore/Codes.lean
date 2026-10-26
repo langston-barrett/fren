@@ -2617,12 +2617,13 @@ input for which none do, one variable to a line, and the guarantees that
 conflict on it. Here, when `x` is `0`, no `y` is both above `0` and below
 `0`.
 
-Where a guarantee of the conflict forces an output to one value, and the
-rest of the conflict forces it to another, a note at that guarantee says
-so, such as "`low` forces y = 0, but `high` forces y = 1". `fren check
---examples N` shows at most `N` such notes for each component (default 1),
-or all of them with `all`. Here neither guarantee forces `y`, so there is
-no note.
+Each guarantee of the conflict has a note. Where it forces an output to
+one value, and the rest of the conflict forces it to another, the note
+says so, such as "`low` forces y = 0, but `high` forces y = 1". `fren
+check --examples N` gives at most `N` such notes for each component
+(default 1), or all of them with `all`. The other guarantees' notes say
+whom they conflict with. Here neither guarantee forces `y`, so the notes
+are "conflicts with `small`" and "conflicts with `big`".
 
 Weaken one of the guarantees, or, if such inputs cannot happen, add an
 assumption that rules them out:

@@ -19,6 +19,12 @@ error[F0601]: `c` is not realizable
           no outputs satisfy `r`
   = help: weaken one of them, or add an `assume` that rules this input out
 
+note: is false for this input
+ --> test/cli/lints/complexity/f0719_constant_output.fren:2:52
+  |
+2 | comp c { in x: Int pub out limit: Int := 10 ensure r: x < limit }
+  |                                                    ^
+
 fren: 1 passed, 1 failed, 0 inconclusive, 0 redundant
 
 Some errors have detailed explanations: F0601, F0719.

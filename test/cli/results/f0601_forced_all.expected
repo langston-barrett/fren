@@ -18,6 +18,18 @@ note: `transient` forces retry? = true, but `honor_server` and `latency_budget` 
 24 |     ensure transient: retry? iff (status = 429 or status = 503)
    |            ^^^^^^^^^
 
+note: conflicts with `transient` and `latency_budget`
+  --> test/cli/results/f0601_forced_all.fren:26:12
+   |
+26 |     ensure honor_server: when retry?, delay >= retry_after
+   |            ^^^^^^^^^^^^
+
+note: conflicts with `transient` and `honor_server`
+  --> test/cli/results/f0601_forced_all.fren:28:12
+   |
+28 |     ensure latency_budget: delay <= MAX_DELAY
+   |            ^^^^^^^^^^^^^^
+
 error[F0601]: `http::pinned` is not realizable
   --> test/cli/results/f0601_forced_all.fren:31:6
    |

@@ -34,8 +34,8 @@ comp vacuous {
 comp contradictory {  --~ error: note: no outputs satisfy `up` and `down`
     pub out y: Int
 
-    ensure up: y > 0
-    ensure down: y < 0
+    ensure up: y > 0   --~ info: conflicts with `down`
+    ensure down: y < 0   --~ info: conflicts with `up`
 }
 
 --@ summary: 7 passed, 2 failed, 0 inconclusive, 3 redundant

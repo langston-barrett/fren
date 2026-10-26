@@ -7,22 +7,22 @@ comp pinned {   --~ error: no outputs satisfy `low` and `high`
     in x: Int
     pub out y: Int
     ensure low: y = x      --~ info: `low` forces y = 0, but `high` forces y = 1
-    ensure high: y = x + 1
+    ensure high: y = x + 1   --~ info: conflicts with `low`
 }
 
 -- A conflict of one guarantee: the rest of it is empty, and forces nothing.
 comp alone {   --~ error: no outputs satisfy `r`
     in x: Int
     pub out y: Int
-    ensure r: x > 0 and y = x
+    ensure r: x > 0 and y = x   --~ info: is false for this input
 }
 
 -- Neither guarantee forces `y`.
 comp loose {   --~ error: no outputs satisfy `up` and `down`
     in x: Int
     pub out y: Int
-    ensure up: y > x
-    ensure down: y < x
+    ensure up: y > x   --~ info: conflicts with `down`
+    ensure down: y < x   --~ info: conflicts with `up`
 }
 
 -- A variable of an abstract type: the values would depend on its
@@ -33,8 +33,8 @@ comp abstract {   --~ error: no outputs satisfy `low` and `high`
     in t: Token
     in u: Token
     pub out same?
-    ensure low: same? iff t = u
-    ensure high: same? iff t != u
+    ensure low: same? iff t = u   --~ info: conflicts with `high`
+    ensure high: same? iff t != u   --~ info: conflicts with `low`
 }
 
 -- An uninterpreted function in a guarantee: no note either, although
@@ -44,8 +44,8 @@ fn weight(Int): Int
 comp weighed {   --~ error: no outputs satisfy `low` and `high`
     in x: Int
     pub out y: Int
-    ensure low: y = 0 and weight(x) > 0
-    ensure high: y = 1
+    ensure low: y = 0 and weight(x) > 0   --~ info: conflicts with `high`
+    ensure high: y = 1   --~ info: conflicts with `low`
 }
 
 -- A defined output is not an output that a note names: its definition
@@ -55,11 +55,11 @@ comp defined {   --~ error: no outputs satisfy `low` and `high`
     pub out y: Int
     pub out z: Int := y + 1
     ensure low: z = x + 1    --~ info: `low` forces y =
-    ensure high: y = x + 1
+    ensure high: y = x + 1   --~ info: conflicts with `low`
 }
 
 -- The postconditions of an uninterpreted function, of its value.
 pub fn level(n: Int): Int   --~ error: no value of `level` satisfies `zero` and `one`
     ensure zero: level(n) = 0   --~ info: `zero` forces level = 0, but `one` forces level = 1
-    ensure one: level(n) = 1
+    ensure one: level(n) = 1   --~ info: conflicts with `zero`
 --@ exit: 1

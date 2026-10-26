@@ -69,8 +69,8 @@ comp conflict {                     --~ error: `conflict` is not realizable
     out d: Int := a
     pub out o: Int
 
-    ensure r1: o = d
-    ensure r2: o != a
+    ensure r1: o = d   --~ info: conflicts with `r2`
+    ensure r2: o != a   --~ info: conflicts with `r1`
 }
 
 expect defined: forall (u: chained), u.total >= 2 * u.a

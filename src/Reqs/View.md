@@ -157,7 +157,7 @@ failure is reported at:
 
 | Failure | Position | Details |
 |---|---|---|
-| Unrealizable | the component's name | a note: the input, one variable to a line, and the guarantees that conflict on it; and a note at each of those that forces an output to a value that the others rule out, at most `--examples` of them |
+| Unrealizable | the component's name | a note: the input, one variable to a line, and the guarantees that conflict on it; and a note at each of those: the output that it forces to a value that the others rule out, for at most `--examples` of them, else whom it conflicts with |
 | Contradictory assumptions | the component's name | the contradictory assumptions |
 | Expectation does not hold | the expectation's name | a counterexample: the inputs and public outputs |
 | Cover goal cannot be met | the goal's name | the assumptions and guarantees that rule it out |
@@ -170,7 +170,7 @@ failure is reported at:
 | Rows may both hold | the later row's condition | the two rows, by their numbers from 1, and a witness: the public variables, for which both hold |
 | Precondition may not hold | the applied function's name | the precondition, and a counterexample: the public variables |
 | Postcondition does not hold | the postcondition's name | a counterexample: the function's parameters |
-| Postconditions cannot all hold | the function's name | a note: the arguments, one to a line, and the postconditions that conflict on them; and a note at each of those that forces the function's value to a value that the others rule out, at most `--examples` of them |
+| Postconditions cannot all hold | the function's name | a note: the arguments, one to a line, and the postconditions that conflict on them; and a note at each of those: the value of the function that it forces to one that the others rule out, for at most `--examples` of them, else whom it conflicts with |
 | Contradictory preconditions | the function's name | the contradictory preconditions |
 | `match` may have no arm that is taken | the `match`'s `match` | a counterexample: the public variables, for which no arm is taken |
 | Arm never taken | the arm's pattern | the arm, by its number from 1 |
@@ -214,12 +214,18 @@ Each line of a note after its first is indented under the text after
 `note: `, in both front ends. An input with no variables has no lines of
 its own: the note is then `note: no outputs satisfy ...`. A failure of an
 uninterpreted function's postconditions has the same note, with `for the
-arguments` and `no value of `f` satisfies`. Each note at a guarantee
-that [forces](Check.md#forced-outputs) an output is information, at the
-guarantee's name: the guarantee, the output and the value it forces it
-to, and then the other guarantees of the conflict, named as a list, and
-the value they force it to, with `forces` after one guarantee and `force`
-after more. `view::clash_text` states it:
+arguments` and `no value of `f` satisfies`.
+
+Each guarantee of the conflict has one note, information at its name,
+so that an editor marks every one. A guarantee that
+[forces](Check.md#forced-outputs) an output has a clash note: the
+guarantee, the output and the value it forces it to, and then the other
+guarantees of the conflict, named as a list, and the value they force it
+to, with `forces` after one guarantee and `force` after more. Any other
+has `conflicts with` and the other guarantees, named as a list, or, in a
+conflict of one guarantee, `is false for this input`; neither repeats the
+input, which the error's note gives. `view::clash_text` states the clash
+note:
 
 ```fren
 pub comp clash_text {
@@ -261,6 +267,18 @@ note: `transient` forces retry? = true, but `honor_server` and `latency_budget` 
    |
 19 |     ensure transient: retry? iff (status = 429 or status = 503)
    |            ^^^^^^^^^
+
+note: conflicts with `transient` and `latency_budget`
+  --> retry.fren:21:12
+   |
+21 |     ensure honor_server: when retry?, delay >= retry_after
+   |            ^^^^^^^^^^^^
+
+note: conflicts with `transient` and `honor_server`
+  --> retry.fren:23:12
+   |
+23 |     ensure latency_budget: delay <= MAX_DELAY
+   |            ^^^^^^^^^^^^^^
 ```
 
 A counterexample, or a witness, gives the values of the variables that

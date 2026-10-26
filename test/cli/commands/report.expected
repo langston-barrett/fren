@@ -27,6 +27,12 @@ note: `failures` forces code = 1, but `inconc` forces code = 3
 9 |     ensure failures: when n_fail > 0, code = 1
   |            ^^^^^^^^
 
+note: conflicts with `failures`
+  --> test/cli/commands/report.fren:10:12
+   |
+10 |     ensure inconc: when n_inconc > 0, code = 3
+   |            ^^^^^^
+
 error[F0603]: expectation `exit::zero` does not hold
   --> test/cli/commands/report.fren:13:12
    |
@@ -60,6 +66,12 @@ error[F0601]: `uses` is not realizable
            no outputs satisfy `lucky`
    = help: weaken one of them
    = note: instance variables are part of the system: whatever the instances do, the component must cope
+
+note: is false for this input
+  --> test/cli/commands/report.fren:26:12
+   |
+26 |     ensure lucky: pick.b?
+   |            ^^^^^
 
 error[F0604]: the assumption `counts` of `exit` may not hold for instance `uses::first`
   --> test/cli/commands/report.fren:22:10

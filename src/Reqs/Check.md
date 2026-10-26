@@ -383,7 +383,9 @@ uninterpreted function's [contract](#contracts-of-uninterpreted-functions),
 the one output is its value. The input is pinned as the core was found
 (see [Minimal sets](#minimal-sets)): `P` is the equation `x = v` of each
 variable `x` of the input and its value `v`, where `v` can be written in a
-formula. For a set of guarantees `S`, with the defined outputs replaced by
+formula. If the value of some variable of the input cannot be written so,
+`P` is about more inputs than the one the error shows, so there are no
+clash notes. For a set of guarantees `S`, with the defined outputs replaced by
 their definitions, Fren asks two kinds of query:
 
 - **Model.** Can `False` be proved from `P` and `S`? A model gives each
@@ -423,11 +425,11 @@ For each guarantee `E` of the core, in the core's order, Fren asks the
 model query of `{E}` and of the rest of the core, and then, for each
 output in the order of the component's variables whose values in the two
 models differ, the pin query of `{E}` and, if it forces the output, of the
-rest. The note is at the first output that both force; outputs whose
+rest. The clash note is at the first output that both force; outputs whose
 values in the models are the same are not asked about, since two sets
 that force an output give it their forced values in their models. When
 the core has one guarantee, its rest is empty and forces nothing, so no
-note is asked for. Fren shows at most `examples` notes, `--examples` or
+clash note is asked for. Fren shows at most `examples` clash notes, `--examples` or
 the Lean-hosted front end's `fren.examples` (see [Forced
 outputs](Cli.md#forced-outputs)), and asks no more of these queries once
 it has them all.
@@ -443,7 +445,14 @@ the note could not show, so a failure has no notes there, and none of
 their queries are asked, as for the witness of a [cover
 goal](View.md#check-results). Both front ends decide this by the same rule.
 
-`check::clash_notes` states which guarantees have a note, over a core of
+Every guarantee of the core has one note, so that an editor marks each:
+its clash note, if it has one; else, that it conflicts with the rest of
+the core; or, in a core of one, that it is false for the input. The input
+itself is in the error's note, so these do not repeat it (see [Check
+results](View.md#check-results)).
+
+`check::clash_notes` states which guarantees have a clash note, and which
+note each has, over a core of
 at most three guarantees, in the order of the enumeration, and two
 outputs, in the order of theirs. `alone` holds what each guarantee `g`
 forces on its own, and `rest` what the rest of the core forces, as the
@@ -460,6 +469,10 @@ pub ordered enum Output { O0, O1 }
 pub struct Forcing { guarantee: Guarantee, output: Output, value: Choice }
 
 pub enum Budget { All, AtMost(Int) }   -- `all`, or a count, at least 0
+
+-- The note at a guarantee: a clash, whom it conflicts with, or that it is
+-- false, in a core of one; or none, outside the core.
+pub enum MemberNote { ClashNote, ConflictsWith, FalseOnInput, NotInCore }
 
 -- `g` forces `o` to one value, and the rest of the core to another.
 pub fn clashes?(alone: Set(Forcing), rest: Set(Forcing), g: Guarantee, o: Output) :=
@@ -478,10 +491,12 @@ pub comp clash_notes {
     in rest: Set(Forcing)      -- what the rest of the core forces, for each guarantee
     in examples: Budget        -- `--examples`
     in interpreted?            -- the notes' values would depend on an interpretation
+    in unpinned?               -- some variable of the input cannot be pinned
     in g: Guarantee            -- a guarantee, for the rules of each
     in earlier: Set(Guarantee)
-    pub det out noted?         -- a note is at `g`
+    pub det out noted?         -- a clash note is at `g`
     pub out output: Output     -- the output that it names
+    pub det out note: MemberNote
 
     -- What the queries find of the guarantees of the core: one value, at most,
     -- for each output, and nothing of the empty rest of a core of one.
@@ -491,14 +506,20 @@ pub comp clash_notes {
     assume earlier_clashes: forall (h: Guarantee),
         h in earlier iff (h in core and h < g and (exists (o: Output), clashes?(alone, rest, h, o)))
 
-    ensure rule: noted? iff (not interpreted? and g in core and (exists (o: Output), clashes?(alone, rest, g, o))
+    ensure rule: noted? iff (not interpreted? and not unpinned? and g in core and (exists (o: Output), clashes?(alone, rest, g, o))
         and match examples { Budget::All => true, Budget::AtMost(n) => earlier.card < n })
     ensure first: when noted?, clashes?(alone, rest, g, output)
         and (forall (o: Output), when o < output, not clashes?(alone, rest, g, o))
+    ensure one_note: note = (if not (g in core) then MemberNote::NotInCore
+        else if noted? then MemberNote::ClashNote
+        else if core = {g} then MemberNote::FalseOnInput
+        else MemberNote::ConflictsWith)
 
     expect single: when core = {g}, not noted?
     expect none: when examples = Budget::AtMost(0), not noted?
     expect uninterpreted: when interpreted?, not noted?
+    expect pinned: when unpinned?, not noted?
+    expect marked: when g in core, note != MemberNote::NotInCore
     expect within_budget: when noted? and examples = Budget::AtMost(1), earlier = {}
 }
 ```
