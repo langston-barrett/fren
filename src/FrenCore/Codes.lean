@@ -920,6 +920,24 @@ called `true` or `false`. Rename the declaration:
 comp c { in t: Int pub out y: Int ensure r: y = t }
 ```
 "# },
+  { code := "F0221", explanation := r#"A declaration is named with one of Lean's keywords.
+
+Erroneous code example:
+
+```fren
+struct Slot { at: Int }
+```
+
+Lean reads its keywords that have the shape of an identifier, such as
+`at`, `for`, `by`, `fun` and `Type`, as keywords, so a spec read by Lean
+could not use them as names. Fren reserves them in both front ends, and
+no variable, item, field or other declaration can have one as its name.
+Rename the declaration:
+
+```fren
+struct Slot { position: Int }
+```
+"# },
   { code := "F0341", explanation := r#"A definition of a `let` or `where` clause mentions itself or a later one.
 
 Erroneous code example:
@@ -1830,7 +1848,7 @@ fn arity(Name): Int
 
 fn rank(a: Int): Int := a + 1
 
-comp c { in n: Name pub out r: Int ensure def: r = rank(arity(n)) }
+comp c { in n: Name pub out r: Int ensure ranked: r = rank(arity(n)) }
 ```
 "# },
   { code := "F0338", explanation := r#"`Nat` is the type of a field or payload, or an element type.

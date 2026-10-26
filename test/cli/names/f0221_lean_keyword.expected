@@ -1,0 +1,22 @@
+error[F0221]: `at` is a Lean keyword, so it cannot be declared
+ --> test/cli/names/f0221_lean_keyword.fren:9:23
+  |
+9 |         Shape::Circle(at) => at > 0,
+  |                       ^^ a Lean keyword
+  |
+  = note: Lean reads `at` as a keyword, not as a name, so Fren reserves it
+  = help: rename the declaration
+
+error[F0221]: `for` is a Lean keyword, so it cannot be declared
+  --> test/cli/names/f0221_lean_keyword.fren:14:14
+   |
+14 | pub fn twice(for: Int): Int := for + for
+   |              ^^^ a Lean keyword
+   |
+   = note: Lean reads `for` as a keyword, not as a name, so Fren reserves it
+   = help: rename the declaration
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0221`.
+exit=2

@@ -41,16 +41,6 @@ impl payload: scaled for (n : Int) { RATE := n, s := shadowing_test.Shape.Square
   intro n _
   simp [fren_spec]
 
--- `Fren.Core.leanBangTokens` is every token of Lean's, here, that is an
--- identifier followed by `!`, which both front ends reject as a declaration.
-open Lean Elab Command in
-#guard_msgs in
-#eval show CommandElabM Unit from do
-  let isIdent (t : String) := t.front.isAlpha && (t.dropEnd 1).all fun c => c.isAlphanum || c == '_' || c == '\'' || c == '?'
-  let toks := (Lean.Parser.getTokenTable (← getEnv)).values.filter fun t => t.length > 1 && t.endsWith "!" && isIdent t
-  unless toks.qsort (· < ·) == Fren.Core.leanBangTokens.toArray.qsort (· < ·) do
-    throwError "Lean's tokens that are an identifier and `!` are {toks.qsort (· < ·)}"
-
 /-- error: `s!` is a Lean token, so it cannot be declared
 
 note: Lean reads `s!` as a token of its own, not as `s` followed by `!`

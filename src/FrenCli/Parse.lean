@@ -1077,7 +1077,10 @@ partial def item : P Item := do
   let t ← peek
   if isKw t "#fren_check" then
     discard bump
-    if (← peek).tok matches .ident _ then return .check (some (← path false).1)
+    -- A Lean keyword after it starts the next command in Lean
+    -- (`Fren.Lang.checkCmd`).
+    if let .ident s := (← peek).tok then
+      unless Fren.Core.leanKeywords.contains s do return .check (some (← path false).1)
     return .check none
   -- Reported by `fren trace`.
   if isKw t "#fren_trace" then

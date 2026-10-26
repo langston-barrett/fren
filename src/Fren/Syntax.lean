@@ -28,9 +28,10 @@ declare_syntax_cat fren_expr (behavior := both)
 
 open Lean Parser in
 /-- One of Lean's tokens that are an identifier followed by `!`
-(`Fren.Core.leanBangTokens`), read as that identifier, so that a
-declaration of it reaches the elaborator, which rejects it as the `fren`
-command does. -/
+(`Fren.Core.leanBangTokens`), or one of Lean's keywords that have the shape
+of an identifier (`Fren.Core.leanKeywords`), read as that identifier, so
+that a declaration of it reaches the elaborator, which rejects it as the
+`fren` command does. -/
 def bangTokenFn : ParserFn := fun c s =>
   let iniSz := s.stackSize
   let iniPos := s.pos
@@ -38,7 +39,7 @@ def bangTokenFn : ParserFn := fun c s =>
   if s.hasError then s.restore iniSz iniPos |>.mkErrorAt "identifier" iniPos
   else match s.stxStack.back with
     | .atom info val =>
-      if Fren.Core.leanBangTokens.contains val then
+      if Fren.Core.leanBangTokens.contains val || Fren.Core.leanKeywords.contains val then
         s.popSyntax.pushSyntax (.ident info val.toRawSubstring (.mkSimple val) [])
       else s.restore iniSz iniPos |>.mkErrorAt "identifier" iniPos
     | _ => s.restore iniSz iniPos |>.mkErrorAt "identifier" iniPos
@@ -48,7 +49,29 @@ open Lean Parser in
 `bangTokenFn`. -/
 def frenIdent : Parser :=
   withAntiquot (mkAntiquot "ident" identKind) (identNoAntiquot <|>
-    { fn := bangTokenFn, info := { firstTokens := .tokens Fren.Core.leanBangTokens } })
+    { fn := bangTokenFn, info := { firstTokens := .tokens (Fren.Core.leanBangTokens ++ Fren.Core.leanKeywords) } })
+
+open Lean Parser in
+/-- Fails if the next token is one of `Fren.Core.leanKeywords`, which
+`frenIdent` would read as an identifier: where an optional path ends a
+command, as in `#fren_check`, a keyword that follows starts the next
+command. -/
+def notLeanKeyword : Parser where
+  fn := fun c s =>
+    let iniSz := s.stackSize
+    let iniPos := s.pos
+    let t := tokenFn [] c s
+    let keyword := !t.hasError && match t.stxStack.back with
+      | .atom _ val => Fren.Core.leanKeywords.contains val
+      | _ => false
+    let s := t.restore iniSz iniPos
+    if keyword then s.mkErrorAt "a path" iniPos else s
+
+open Lean PrettyPrinter in
+@[combinator_formatter notLeanKeyword] def notLeanKeyword.formatter : Formatter := pure ()
+
+open Lean PrettyPrinter in
+@[combinator_parenthesizer notLeanKeyword] def notLeanKeyword.parenthesizer : Parenthesizer := pure ()
 
 open Lean PrettyPrinter in
 @[combinator_formatter frenIdent] def frenIdent.formatter : Formatter := Formatter.identNoAntiquot.formatter
