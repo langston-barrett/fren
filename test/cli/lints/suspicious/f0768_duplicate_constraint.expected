@@ -15,7 +15,7 @@ warning[F0768]: this is written the same as `r1`
 2 | comp c { in a? pub out p? ensure r1: p? iff a? ensure r2: p? iff a? expect e: p? iff a? }
   |                                                                            ^ the same as `r1`
   |
-  = note: an `expect` that repeats a `ensure` tests nothing
+  = note: an `expect` that repeats an `ensure` tests nothing
   = help: the expectation was probably meant to say something stronger
 
 warning[F0606]: `c::r1` is redundant: it follows from `r2`

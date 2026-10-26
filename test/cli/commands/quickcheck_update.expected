@@ -2,10 +2,10 @@ error[F0603]: expectation `moves::moved::wrong` does not hold
   --> test/cli/commands/quickcheck_update.fren:17:12
    |
 17 |     expect wrong: q = p
-   |            ^^^^^ does not follow from the requirements
+   |            ^^^^^ does not follow from the guarantees
    |
    = counterexample: p = Point { x := 1, y := -6 }, n = 19, q = Point { x := 19, y := -6 }
-   = help: strengthen the requirements so that it follows, or correct the expectation
+   = help: strengthen the guarantees so that it follows, or correct the expectation
 
 fren: 3 passed, 1 failed, 0 inconclusive, in 100 tests each
 
