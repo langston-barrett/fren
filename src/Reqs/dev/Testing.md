@@ -7,8 +7,8 @@
   lines expect the summary and exit code. Both front ends run every file and
   must satisfy the same annotations, and both or neither must say that a
   static error stopped the checks; `--~[cli]` and `--~[hosted]` mark the
-  few messages that legitimately differ (parse and type errors, which the Lean
-  front end gets from Lean), and `--~?` allows a message without expecting
+  only messages that may differ, parse errors, which the Lean front end gets
+  from Lean's parser, and `--~?` allows a message without expecting
   it, for one that may be in one of several places, such as a conflict's
   note at whichever requirement the solver's model picks. This is how
   `cli::agreement` is tested. See
@@ -119,7 +119,7 @@
     that Lean parsed what the `fren` command rejects. Lean's parse errors
     are its messages that start with `unexpected`, `unterminated`, or
     `expected` but do not go on with `, but`, as Fren's own do.
-  - Lean's own parse and type errors stand for the `fren` command's static
+  - Lean's parse errors stand for the `fren` command's static
     errors on the same line, but not for a check's result: a check that
     fails where Lean rejects the constraint is a difference. Any other
     error of either front end is compared.
