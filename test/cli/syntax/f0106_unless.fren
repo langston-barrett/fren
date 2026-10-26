@@ -1,2 +1,2 @@
 -- No comma after the condition of `unless` (F0106).
-comp c { in x: Int pub out y: Int req r: unless x > 1 y = 3 }
+comp c { in x: Int pub out y: Int ensure r: unless x > 1 y = 3 }

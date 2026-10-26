@@ -11,7 +11,7 @@ comp quiet {
     in levels: Int
     pub out p?
 
-    req r: p? iff a + b + c + d + level + levels > 0
+    ensure r: p? iff a + b + c + d + level + levels > 0
 }
 
 set_option fren.lint.pedantic "warn"
@@ -39,7 +39,7 @@ comp relations {
     in flipped: Rel(Mark, Int)
     pub out p?
 
-    req q: p? iff (r = MARKED and r in nested and two = {} and boxed = {} and flipped = {} and marked?(r))
+    ensure q: p? iff (r = MARKED and r in nested and two = {} and boxed = {} and flipped = {} and marked?(r))
 }
 
 comp singles {  --~ warning: component `singles` declares 5 single-character names
@@ -50,7 +50,7 @@ comp singles {  --~ warning: component `singles` declares 5 single-character nam
     in f: Int
     pub out total: Int
 
-    req r: total = if c? then a + b + f else match e { Two::A => 0, Two::B => 1 }
+    ensure r: total = if c? then a + b + f else match e { Two::A => 0, Two::B => 1 }
 }
 
 -- Four is not too many.
@@ -61,7 +61,7 @@ comp four {
     in e: Two
     pub out total: Int
 
-    req r: total = if c? then a + b else match e { Two::A => 0, Two::B => 1 }
+    ensure r: total = if c? then a + b else match e { Two::A => 0, Two::B => 1 }
 }
 
 -- A name declared again with `!` is one name: `a`, `b`, `c` and `d`.
@@ -73,7 +73,7 @@ comp shadowed {
     in boxed: Boxed
     pub out total: Int
 
-    req r: total = a + b + c + d + match boxed { Boxed::Box(a!) => a }
+    ensure r: total = a + b + c + d + match boxed { Boxed::Box(a!) => a }
 }
 
 comp three {
@@ -81,7 +81,7 @@ comp three {
     in b: Int
     pub out s: Int
 
-    req r: s = a + b
+    ensure r: s = a + b
 }
 
 -- A `match` binder counts.
@@ -92,7 +92,7 @@ comp with_binder {  --~ warning: component `with_binder` declares 5 single-chara
     in x: Boxed
     pub out total: Int
 
-    req r: total = a + b + c + match x { Boxed::Box(n) => n }
+    ensure r: total = a + b + c + match x { Boxed::Box(n) => n }
 }
 
 pub fn sum(a: Int, b: Int, c: Int, d: Int, e: Int): Int := a + b + c + d + e  --~ warning: function `sum` declares 5 single-character names
@@ -109,7 +109,7 @@ comp similar {
     in item: Boxed
     pub out p?
 
-    req r: p? iff level + levels + count + counts + user + used > match item { Boxed::Box(items) => items }  --~ warning: `items` differs from `item` by one character
+    ensure r: p? iff level + levels + count + counts + user + used > match item { Boxed::Box(items) => items }  --~ warning: `items` differs from `item` by one character
 }
 
 -- Not similar: shorter than 3 characters, differing in a digit, in a
@@ -137,7 +137,7 @@ comp series {
     in lint: Int
     pub out ready?
 
-    req r: ready? iff ab + ac + x1 + x2 + level1 + level2 + a_len + b_len + len_a + len_b + ready
+    ensure r: ready? iff ab + ac + x1 + x2 + level1 + level2 + a_len + b_len + len_a + len_b + ready
         + lhs + rhs + set + get + args + arms + lit + lint > 0
 }
 
@@ -150,102 +150,102 @@ comp long {  --~ warning: component `long` has 101 lines
     -- A comment alone on its line.
     pub out ok?  -- a comment after code
     -- `/-` and `--` in a string start no comment.
-    req st: ok? iff text = "/- -- not a comment"
+    ensure st: ok? iff text = "/- -- not a comment"
     /- a block comment /- nested -/ still in it
        and on its last line -/ pub out echo: Int
-    req ru: echo = x + w
+    ensure ru: echo = x + w
     pub out y0: Int
-    req r0: y0 = x + 1
+    ensure r0: y0 = x + 1
     pub out y1: Int
-    req r1: y1 = x + 2
+    ensure r1: y1 = x + 2
     pub out y2: Int
-    req r2: y2 = x + 3
+    ensure r2: y2 = x + 3
     pub out y3: Int
-    req r3: y3 = x + 4
+    ensure r3: y3 = x + 4
     pub out y4: Int
-    req r4: y4 = x + 5
+    ensure r4: y4 = x + 5
     pub out y5: Int
-    req r5: y5 = x + 6
+    ensure r5: y5 = x + 6
     pub out y6: Int
-    req r6: y6 = x + 7
+    ensure r6: y6 = x + 7
     pub out y7: Int
-    req r7: y7 = x + 8
+    ensure r7: y7 = x + 8
     pub out y8: Int
-    req r8: y8 = x + 9
+    ensure r8: y8 = x + 9
     pub out y9: Int
-    req r9: y9 = x + 10
+    ensure r9: y9 = x + 10
     pub out y10: Int
-    req r10: y10 = x + 11
+    ensure r10: y10 = x + 11
     pub out y11: Int
-    req r11: y11 = x + 12
+    ensure r11: y11 = x + 12
     pub out y12: Int
-    req r12: y12 = x + 13
+    ensure r12: y12 = x + 13
     pub out y13: Int
-    req r13: y13 = x + 14
+    ensure r13: y13 = x + 14
     pub out y14: Int
-    req r14: y14 = x + 15
+    ensure r14: y14 = x + 15
     pub out y15: Int
-    req r15: y15 = x + 16
+    ensure r15: y15 = x + 16
     pub out y16: Int
-    req r16: y16 = x + 17
+    ensure r16: y16 = x + 17
     pub out y17: Int
-    req r17: y17 = x + 18
+    ensure r17: y17 = x + 18
     pub out y18: Int
-    req r18: y18 = x + 19
+    ensure r18: y18 = x + 19
     pub out y19: Int
-    req r19: y19 = x + 20
+    ensure r19: y19 = x + 20
     pub out y20: Int
-    req r20: y20 = x + 21
+    ensure r20: y20 = x + 21
     pub out y21: Int
-    req r21: y21 = x + 22
+    ensure r21: y21 = x + 22
     pub out y22: Int
-    req r22: y22 = x + 23
+    ensure r22: y22 = x + 23
     pub out y23: Int
-    req r23: y23 = x + 24
+    ensure r23: y23 = x + 24
     pub out y24: Int
-    req r24: y24 = x + 25
+    ensure r24: y24 = x + 25
     pub out y25: Int
-    req r25: y25 = x + 26
+    ensure r25: y25 = x + 26
     pub out y26: Int
-    req r26: y26 = x + 27
+    ensure r26: y26 = x + 27
     pub out y27: Int
-    req r27: y27 = x + 28
+    ensure r27: y27 = x + 28
     pub out y28: Int
-    req r28: y28 = x + 29
+    ensure r28: y28 = x + 29
     pub out y29: Int
-    req r29: y29 = x + 30
+    ensure r29: y29 = x + 30
     pub out y30: Int
-    req r30: y30 = x + 31
+    ensure r30: y30 = x + 31
     pub out y31: Int
-    req r31: y31 = x + 32
+    ensure r31: y31 = x + 32
     pub out y32: Int
-    req r32: y32 = x + 33
+    ensure r32: y32 = x + 33
     pub out y33: Int
-    req r33: y33 = x + 34
+    ensure r33: y33 = x + 34
     pub out y34: Int
-    req r34: y34 = x + 35
+    ensure r34: y34 = x + 35
     pub out y35: Int
-    req r35: y35 = x + 36
+    ensure r35: y35 = x + 36
     pub out y36: Int
-    req r36: y36 = x + 37
+    ensure r36: y36 = x + 37
     pub out y37: Int
-    req r37: y37 = x + 38
+    ensure r37: y37 = x + 38
     pub out y38: Int
-    req r38: y38 = x + 39
+    ensure r38: y38 = x + 39
     pub out y39: Int
-    req r39: y39 = x + 40
+    ensure r39: y39 = x + 40
     pub out y40: Int
-    req r40: y40 = x + 41
+    ensure r40: y40 = x + 41
     pub out y41: Int
-    req r41: y41 = x + 42
+    ensure r41: y41 = x + 42
     pub out y42: Int
-    req r42: y42 = x + 43
+    ensure r42: y42 = x + 43
     pub out y43: Int
-    req r43: y43 = x + 44
+    ensure r43: y43 = x + 44
     pub out y44: Int
-    req r44: y44 = x + 45
+    ensure r44: y44 = x + 45
     pub out y45: Int
-    req r45: y45 = x + 46
+    ensure r45: y45 = x + 46
     /- a block comment
        of two lines -/
 }
@@ -258,102 +258,102 @@ comp long_enough {
     -- A comment alone on its line.
     pub out ok?  -- a comment after code
     -- `/-` and `--` in a string start no comment.
-    req st: ok? iff text = "/- -- not a comment"
+    ensure st: ok? iff text = "/- -- not a comment"
     /- a block comment /- nested -/ still in it
        and on its last line -/ pub out echo: Int
-    req ru: echo = x
+    ensure ru: echo = x
     pub out y0: Int
-    req r0: y0 = x + 1
+    ensure r0: y0 = x + 1
     pub out y1: Int
-    req r1: y1 = x + 2
+    ensure r1: y1 = x + 2
     pub out y2: Int
-    req r2: y2 = x + 3
+    ensure r2: y2 = x + 3
     pub out y3: Int
-    req r3: y3 = x + 4
+    ensure r3: y3 = x + 4
     pub out y4: Int
-    req r4: y4 = x + 5
+    ensure r4: y4 = x + 5
     pub out y5: Int
-    req r5: y5 = x + 6
+    ensure r5: y5 = x + 6
     pub out y6: Int
-    req r6: y6 = x + 7
+    ensure r6: y6 = x + 7
     pub out y7: Int
-    req r7: y7 = x + 8
+    ensure r7: y7 = x + 8
     pub out y8: Int
-    req r8: y8 = x + 9
+    ensure r8: y8 = x + 9
     pub out y9: Int
-    req r9: y9 = x + 10
+    ensure r9: y9 = x + 10
     pub out y10: Int
-    req r10: y10 = x + 11
+    ensure r10: y10 = x + 11
     pub out y11: Int
-    req r11: y11 = x + 12
+    ensure r11: y11 = x + 12
     pub out y12: Int
-    req r12: y12 = x + 13
+    ensure r12: y12 = x + 13
     pub out y13: Int
-    req r13: y13 = x + 14
+    ensure r13: y13 = x + 14
     pub out y14: Int
-    req r14: y14 = x + 15
+    ensure r14: y14 = x + 15
     pub out y15: Int
-    req r15: y15 = x + 16
+    ensure r15: y15 = x + 16
     pub out y16: Int
-    req r16: y16 = x + 17
+    ensure r16: y16 = x + 17
     pub out y17: Int
-    req r17: y17 = x + 18
+    ensure r17: y17 = x + 18
     pub out y18: Int
-    req r18: y18 = x + 19
+    ensure r18: y18 = x + 19
     pub out y19: Int
-    req r19: y19 = x + 20
+    ensure r19: y19 = x + 20
     pub out y20: Int
-    req r20: y20 = x + 21
+    ensure r20: y20 = x + 21
     pub out y21: Int
-    req r21: y21 = x + 22
+    ensure r21: y21 = x + 22
     pub out y22: Int
-    req r22: y22 = x + 23
+    ensure r22: y22 = x + 23
     pub out y23: Int
-    req r23: y23 = x + 24
+    ensure r23: y23 = x + 24
     pub out y24: Int
-    req r24: y24 = x + 25
+    ensure r24: y24 = x + 25
     pub out y25: Int
-    req r25: y25 = x + 26
+    ensure r25: y25 = x + 26
     pub out y26: Int
-    req r26: y26 = x + 27
+    ensure r26: y26 = x + 27
     pub out y27: Int
-    req r27: y27 = x + 28
+    ensure r27: y27 = x + 28
     pub out y28: Int
-    req r28: y28 = x + 29
+    ensure r28: y28 = x + 29
     pub out y29: Int
-    req r29: y29 = x + 30
+    ensure r29: y29 = x + 30
     pub out y30: Int
-    req r30: y30 = x + 31
+    ensure r30: y30 = x + 31
     pub out y31: Int
-    req r31: y31 = x + 32
+    ensure r31: y31 = x + 32
     pub out y32: Int
-    req r32: y32 = x + 33
+    ensure r32: y32 = x + 33
     pub out y33: Int
-    req r33: y33 = x + 34
+    ensure r33: y33 = x + 34
     pub out y34: Int
-    req r34: y34 = x + 35
+    ensure r34: y34 = x + 35
     pub out y35: Int
-    req r35: y35 = x + 36
+    ensure r35: y35 = x + 36
     pub out y36: Int
-    req r36: y36 = x + 37
+    ensure r36: y36 = x + 37
     pub out y37: Int
-    req r37: y37 = x + 38
+    ensure r37: y37 = x + 38
     pub out y38: Int
-    req r38: y38 = x + 39
+    ensure r38: y38 = x + 39
     pub out y39: Int
-    req r39: y39 = x + 40
+    ensure r39: y39 = x + 40
     pub out y40: Int
-    req r40: y40 = x + 41
+    ensure r40: y40 = x + 41
     pub out y41: Int
-    req r41: y41 = x + 42
+    ensure r41: y41 = x + 42
     pub out y42: Int
-    req r42: y42 = x + 43
+    ensure r42: y42 = x + 43
     pub out y43: Int
-    req r43: y43 = x + 44
+    ensure r43: y43 = x + 44
     pub out y44: Int
-    req r44: y44 = x + 45
+    ensure r44: y44 = x + 45
     pub out y45: Int
-    req r45: y45 = x + 46
+    ensure r45: y45 = x + 46
     /- a block comment
        of two lines -/
 }

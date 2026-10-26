@@ -18,7 +18,7 @@ bound        := ["-"] INT | path
 The `..=` and `..` of a range are written without spaces around them, as
 in `0..=9`, `-5..0` and `..=MAX`, as the `.` of a field read is (`F0128`).
 An upper bound is part of a range only when it touches the `..`: in `n is
-0.. and ok?`, the range is `0..`, and so it is in `n is 1.. req r: ...`,
+0.. and ok?`, the range is `0..`, and so it is in `n is 1.. ensure r: ...`,
 where the next member follows on the same line.
 
 ## Kinds of pattern
@@ -77,7 +77,7 @@ pub comp pattern_name {
     in variant?              -- without the `!`, it resolves to a variant in scope
     pub det out reading: PatternName
 
-    req rule: reading = if bool_word? and not bang? then PatternName::BoolLiteral
+    ensure rule: reading = if bool_word? and not bang? then PatternName::BoolLiteral
         else if variant? and not bang? then PatternName::Variant else PatternName::Binder
 
     expect explicit_shadowing: when bang?, reading = PatternName::Binder
@@ -99,9 +99,9 @@ pub comp range_pattern {
     pub det out matches?
     pub det out empty?       -- it matches no integer
 
-    req matching: matches? iff ((not has_lower? or lower <= value)
+    ensure matching: matches? iff ((not has_lower? or lower <= value)
         and (not has_upper? or (if inclusive? then value <= upper else value < upper)))
-    req empty: empty? iff (has_lower? and has_upper? and (if inclusive? then upper < lower else upper <= lower))
+    ensure empty: empty? iff (has_lower? and has_upper? and (if inclusive? then upper < lower else upper <= lower))
 
     expect empty_matches_nothing: when empty?, not matches?
     expect literal: when has_lower? and has_upper? and inclusive? and lower = upper, matches? iff value = lower
@@ -171,11 +171,11 @@ pub comp usefulness {
     in some_alternative?     -- for an or-pattern, the vector with one of its alternatives as its head is useful
     pub det out useful?
 
-    req no_columns: when columns = 0, useful? iff rows = 0
-    req constructor: when columns > 0 and head = HeadKind::Constructor, useful? iff specialized?
-    req wildcard: when columns > 0 and head = HeadKind::Wildcard,
+    ensure no_columns: when columns = 0, useful? iff rows = 0
+    ensure constructor: when columns > 0 and head = HeadKind::Constructor, useful? iff specialized?
+    ensure wildcard: when columns > 0 and head = HeadKind::Wildcard,
         useful? iff (if complete? then some_specialized? else default?)
-    req alternatives: when columns > 0 and head = HeadKind::Or, useful? iff some_alternative?
+    ensure alternatives: when columns > 0 and head = HeadKind::Or, useful? iff some_alternative?
 
     expect first_row: when columns = 0 and rows = 0, useful?
     expect incomplete_wildcard: when columns > 0 and head = HeadKind::Wildcard and not complete?, useful? iff default?
@@ -196,10 +196,10 @@ pub comp specialize {
     pub det out kept?        -- the row is in the specialized matrix
     pub det out added: Nat   -- the patterns that replace the head in it
 
-    req wildcard: when head = HeadKind::Wildcard, kept? and added = arity
-    req constructor: when head = HeadKind::Constructor, (kept? iff same?) and added = (if same? then n_args else 0)
+    ensure wildcard: when head = HeadKind::Wildcard, kept? and added = arity
+    ensure constructor: when head = HeadKind::Constructor, (kept? iff same?) and added = (if same? then n_args else 0)
     -- An or-pattern is split into rows before.
-    req split: when head = HeadKind::Or, not kept? and added = 0
+    ensure split: when head = HeadKind::Or, not kept? and added = 0
 
     expect dropped: when not kept?, added = 0
 }
@@ -239,7 +239,7 @@ pub comp signature_complete {
 
     assume counted: n_variants > 0 and n_named <= n_variants
 
-    req rule: complete? iff match column {
+    ensure rule: complete? iff match column {
         ColumnType::EnumType => n_named = n_variants,
         ColumnType::BoolType => has_true? and has_false?,
         ColumnType::IntType => covers_integers?,

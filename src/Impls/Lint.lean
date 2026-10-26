@@ -29,7 +29,7 @@ instance : Fren.Finite Comparison := ⟨Comparison.all.toList, by intro x; cases
 instance : Fren.Finite Head := ⟨[.not, .unequal, .ite, .when, .unless, .other], by intro x; cases x <;> simp⟩
 
 instance : Fren.Finite Fren.Core.MemberKind :=
-  ⟨[.use, .input, .output, .assumption, .inst, .requirement, .expectation, .cover], by intro x; cases x <;> simp⟩
+  ⟨[.use, .input, .output, .assumption, .inst, .guarantee, .expectation, .cover], by intro x; cases x <;> simp⟩
 
 def toComparison : Comparison → lint.Comparison
   | .eq => .Eq
@@ -85,7 +85,7 @@ def toMemberKind : Fren.Core.MemberKind → lint.MemberKind
   | .output => .Output
   | .assumption => .Assumption
   | .inst => .Instance
-  | .requirement => .Requirement
+  | .guarantee => .Guarantee
   | .expectation => .Expectation
   | .cover => .Cover
 
@@ -390,7 +390,7 @@ impl membership_chain: lint::membership_chain for (n : Nat) (same later : Bool) 
 impl output_lints: lint::output_lints for (d v : Bool) (r : Nat) (eq : Bool) {
   defined? := d,
   mentions? := v,
-  n_reqs := r,
+  n_guarantees := r,
   equation? := eq,
   constant? := (Fren.Core.outputLints d v r eq).1,
   definable? := (Fren.Core.outputLints d v r eq).2,
@@ -528,13 +528,13 @@ impl if_chain_match: lint::if_chain_match for (n : Nat) (v : Bool) (r u : Nat) {
   intro n v r u _
   cases v <;> simp [fren_spec, Fren.Core.ifChainMatch] <;> omega
 
-impl case_split_reqs: lint::case_split_reqs for (n r : Nat) {
+impl case_split_guarantees: lint::case_split_guarantees for (n r : Nat) {
   n_cases := n,
   n_repeated := r,
-  fires? := Fren.Core.caseSplitReqs n r,
+  fires? := Fren.Core.caseSplitGuarantees n r,
 } by
   intro n r _
-  simp [fren_spec, Fren.Core.caseSplitReqs] <;> omega
+  simp [fren_spec, Fren.Core.caseSplitGuarantees] <;> omega
 
 impl redundant_bindings: lint::redundant_bindings for (n v : String) {
   name := n,
@@ -626,11 +626,11 @@ impl empty_argument: lint::empty_argument for (m : Fren.Core.Method) (i : Nat) (
 
 /-! ## Repeated constraints, invisible characters and negative positions -/
 
-instance : Fren.Finite Fren.Core.ConstraintKind := ⟨[.assume, .req, .expect], by intro x; cases x <;> simp⟩
+instance : Fren.Finite Fren.Core.ConstraintKind := ⟨[.assume, .ensure, .expect], by intro x; cases x <;> simp⟩
 
 def toConstraintKind : Fren.Core.ConstraintKind → lint.ConstraintKind
   | .assume => .Assume
-  | .req => .Req
+  | .ensure => .Ensure
   | .expect => .Expect
 
 -- Both front ends find the repeats with `repeatedConstraints`, and fix one

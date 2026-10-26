@@ -2,6 +2,6 @@
 comp c {
     in x: Int
     pub out y: Int
-    req big: y > x
-    req small: y < 0
+    ensure big: y > x
+    ensure small: y < 0
 }

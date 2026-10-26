@@ -1,13 +1,13 @@
 error[F0101]: unexpected character `&`
- --> test/cli/syntax/f0101_amp.fren:2:50
+ --> test/cli/syntax/f0101_amp.fren:2:53
   |
-2 | comp c { in a? in b? pub out d? req r: d? iff a? & b? }
-  |                                                  ^ not part of Fren's syntax
+2 | comp c { in a? in b? pub out d? ensure r: d? iff a? & b? }
+  |                                                     ^ not part of Fren's syntax
   |
 help: use `and`
   |
-2 - comp c { in a? in b? pub out d? req r: d? iff a? & b? }
-2 + comp c { in a? in b? pub out d? req r: d? iff a? and b? }
+2 - comp c { in a? in b? pub out d? ensure r: d? iff a? & b? }
+2 + comp c { in a? in b? pub out d? ensure r: d? iff a? and b? }
   |
 
 error: could not check due to previous errors

@@ -11,5 +11,5 @@ comp heating {
     in mode: climate::Mode
     pub out on?
 
-    req rule: on? iff mode = climate::Mode::Heat
+    ensure rule: on? iff mode = climate::Mode::Heat
 }

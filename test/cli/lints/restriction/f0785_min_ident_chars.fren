@@ -8,5 +8,5 @@ comp area {
     in s: Shape
     pub out n: Int
 
-    req rule: n = match s { Shape::Circle(r) => r, Shape::Dot => 0 }
+    ensure rule: n = match s { Shape::Circle(r) => r, Shape::Dot => 0 }
 }

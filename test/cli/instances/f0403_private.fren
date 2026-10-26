@@ -1,3 +1,3 @@
 -- A private variable of an instance (F0403).
-comp sub { in a: Int out hidden: Int req r: hidden = a }
-comp c { in i: Int pub out o: Int inst s: sub { a := i } req r: o = s.hidden }
+comp sub { in a: Int out hidden: Int ensure r: hidden = a }
+comp c { in i: Int pub out o: Int inst s: sub { a := i } ensure r: o = s.hidden }

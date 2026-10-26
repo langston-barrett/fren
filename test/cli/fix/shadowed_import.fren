@@ -15,7 +15,7 @@ pub comp by_name {
     in Square!: Int
     pub out y: Int
 
-    req r: y = Square
+    ensure r: y = Square
 }
 
 pub comp by_glob {
@@ -23,5 +23,5 @@ pub comp by_glob {
     in Red!: Int
     pub out p?
 
-    req r: p? iff (Red > 0 and Blue = Blue)
+    ensure r: p? iff (Red > 0 and Blue = Blue)
 }

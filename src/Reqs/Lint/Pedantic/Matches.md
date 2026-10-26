@@ -50,8 +50,8 @@ pub comp match_same_arms {
     pub det out fires?
     pub det out fix: ArmsFix
 
-    req rule: fires? iff (same_body? and not binds?)
-    req group_fix: fix = if all? then ArmsFix::Replace else if wildcard? then ArmsFix::Remove else ArmsFix::Merge
+    ensure rule: fires? iff (same_body? and not binds?)
+    ensure group_fix: fix = if all? then ArmsFix::Replace else if wildcard? then ArmsFix::Remove else ArmsFix::Merge
 }
 ```
 
@@ -76,7 +76,7 @@ pub comp wildcard_single_variant {
 
     assume reachable: n_matched >= 1
 
-    req rule: fires? iff n_matched = 1
+    ensure rule: fires? iff n_matched = 1
 }
 ```
 
@@ -121,31 +121,31 @@ pub comp if_chain_match {
 
     assume counts: n_tests >= 1
 
-    req rule: fires? iff (variant_tests? and n_tests >= 2 and n_repeated = 0)
-    req fix: wildcard? iff n_untested > 0
+    ensure rule: fires? iff (variant_tests? and n_tests >= 2 and n_repeated = 0)
+    ensure fix: wildcard? iff n_untested > 0
 }
 ```
 
-`case_split_reqs`, `allow` by default, fires on a component with two or
-more requirements `when T, y = e`, or `when T, y? iff e`, of one output
+`case_split_guarantees`, `allow` by default, fires on a component with two or
+more guarantees `when T, y = e`, or `when T, y? iff e`, of one output
 `y`, whose conditions `T` are variant tests of one scrutinee `x`, naming no
-variant twice. Together they say what one requirement `y = match x { ...
+variant twice. Together they say what one guarantee `y = match x { ...
 }` says, with an arm for each, and `_ => y` if some variant is not tested,
 for which they leave `y` unconstrained. Its message is reported at the
-second of them, names them all, and suggests that requirement. A
-requirement `unless T, y = e` is not one of them: it constrains `y` for the
+second of them, names them all, and suggests that guarantee. A
+guarantee `unless T, y = e` is not one of them: it constrains `y` for the
 variants that `T` does not name. As in a `match` arm, `e` is guarded by
-`T`. There is no fix: traces, claims and `impl`s refer to requirements by
+`T`. There is no fix: traces, claims and `impl`s refer to guarantees by
 name, so merging them changes the structure of the spec, not only its text.
-`lint::case_split_reqs` states when it fires:
+`lint::case_split_guarantees` states when it fires:
 
 ```fren
-pub comp case_split_reqs {
-    in n_cases: Nat      -- requirements `when T, y = e` of one output, whose `T` are variant tests of one scrutinee
+pub comp case_split_guarantees {
+    in n_cases: Nat      -- guarantees `when T, y = e` of one output, whose `T` are variant tests of one scrutinee
     in n_repeated: Nat   -- times a test names a variant that it, or an earlier test, names before
     pub det out fires?
 
-    req rule: fires? iff (n_cases >= 2 and n_repeated = 0)
+    ensure rule: fires? iff (n_cases >= 2 and n_repeated = 0)
 }
 ```
 
@@ -189,7 +189,7 @@ pub comp single_match_else {
 
     assume counts: n_arms >= 1
 
-    req rule: fires? iff (n_arms = 2 and one_variant? and wildcard? and not other?)
+    ensure rule: fires? iff (n_arms = 2 and one_variant? and wildcard? and not other?)
 }
 
 pub enum Light { Red, Amber, Green }

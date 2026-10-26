@@ -1,8 +1,8 @@
 -- A definition cannot be a bare quantifier, which would run on into the next definition.
 -- fren-covers: lang::definition_form
 enum Mode { Off, Heat }
-comp c { in x: Mode pub out y? req r: let a? := forall (m: Mode), m = x, b? := a? in y? iff b? }
+comp c { in x: Mode pub out y? ensure r: let a? := forall (m: Mode), m = x, b? := a? in y? iff b? }
 --~^[cli] error: `forall` must be parenthesized here
 --~^^[hosted] error: unexpected token at this precedence level; consider parenthesizing the term
-comp ok { in x: Mode pub out y? req r: let a? := (forall (m: Mode), m = x), b? := a? in y? iff b? }
+comp ok { in x: Mode pub out y? ensure r: let a? := (forall (m: Mode), m = x), b? := a? in y? iff b? }
 --@ exit: 2

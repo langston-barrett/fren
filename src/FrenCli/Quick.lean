@@ -130,7 +130,7 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let mut noOutputs? := none
   let mut behaviours := 0
   -- The definitions, so that the search computes defined outputs.
-  let reqs := c.defAtoms ++ atomsOf .anonymous (c.ofKind .req)
+  let reqs := c.defAtoms ++ atomsOf .anonymous (c.ofKind .ensure)
   let all := sp.meaning c
   -- The literals of the whole component, its expectations and cover goals too.
   let lits := all ++ atomsOf .anonymous expects ++ atomsOf .anonymous covers
@@ -294,9 +294,9 @@ def Spec.evaluate (sp : Spec) (I : Interp) (c : Comp) (env : Env) : Evaluation :
   let one (k : PropKind) := (c.ofKind k).map fun p =>
     (p, ({ label := p.name, pfx := .anonymous, e := p.e } : Atom).eval I env.look)
   let kw : PropKind → String
-    | .assume => "assume" | .req => "req" | .expect => "expect" | .cover => "cover"
+    | .assume => "assume" | .ensure => "ensure" | .expect => "expect" | .cover => "cover"
   let as := one .assume
-  let rs := one .req
+  let rs := one .ensure
   let es := one .expect
   let gs := one .cover
   let is := c.insts.map fun i => (i, allHold I env.look (sp.instAtoms .anonymous i))

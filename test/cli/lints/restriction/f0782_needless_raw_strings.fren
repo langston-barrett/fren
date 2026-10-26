@@ -5,5 +5,5 @@ comp word {
     in text: String
     pub out lower?
 
-    req rule: lower? iff text.matches?(r#"[a-z]+"#)
+    ensure rule: lower? iff text.matches?(r#"[a-z]+"#)
 }

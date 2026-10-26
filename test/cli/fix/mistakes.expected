@@ -4,21 +4,21 @@ warning[F0768]: this is written the same as `r1`
 16 |     expect e1: p? iff a? or b?
    |            ^^ the same as `r1`
    |
-   = note: an `expect` that repeats a `req` tests nothing
+   = note: an `expect` that repeats an `ensure` tests nothing
    = help: the expectation was probably meant to say something stronger
 
 --- test/cli/fix/mistakes.fren
 +++ test/cli/fix/mistakes.fren
 @@ -15 +14,0 @@
--    req r2: p?  iff  a? or b?
+-    ensure r2: p?  iff  a? or b?
 @@ -18,5 +17,3 @@
 -    expect e3: when a?,
 -        p?  -- a repeat
--    req r3: when true, q? iff a?
--    req r4: o? iff (unless false, b?) and s.matches?(r"a​[0-9]\\") and s != "‮"
+-    ensure r3: when true, q? iff a?
+-    ensure r4: o? iff (unless false, b?) and s.matches?(r"a​[0-9]\\") and s != "‮"
 -    -- a ⁦comment⁩
-+    req r3: q? iff a?
-+    req r4: o? iff (b?) and s.matches?("a\u200B[0-9]\\\\") and s != "\u202E"
++    ensure r3: q? iff a?
++    ensure r4: o? iff (b?) and s.matches?("a\u200B[0-9]\\\\") and s != "\u202E"
 +    -- a comment
 @@ -26,2 +22,0 @@
 -set_option fren.lint.eq_op "allow" in

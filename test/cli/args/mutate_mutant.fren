@@ -4,5 +4,5 @@ comp c {
     in x: Int
     pub out y?
 
-    req r: y? iff x > 1
+    ensure r: y? iff x > 1
 }

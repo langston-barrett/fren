@@ -4,7 +4,7 @@ comp heater {
     in temp: Int
     pub out alarm?
 
-    req r: alarm? iff temp > 100
+    ensure r: alarm? iff temp > 100
 
     cover overheat: temp > 100 and alarm?
 }

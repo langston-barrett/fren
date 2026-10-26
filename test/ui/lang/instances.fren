@@ -7,11 +7,11 @@ comp counter {
 
     assume nonneg: n >= 0
 
-    req inc: next = n + 1
-    req copy: scratch = n
+    ensure inc: next = n + 1
+    ensure copy: scratch = n
 }
 
--- `b`'s assumption follows from `a`'s requirements.
+-- `b`'s assumption follows from `a`'s guarantees.
 comp twice {
     in n: Int
     pub out m: Int
@@ -21,7 +21,7 @@ comp twice {
     inst a: counter { n }
     inst b: counter { n := a.next }
 
-    req result: m = b.next
+    ensure result: m = b.next
 
     expect plus_two: m = n + 2
 }
@@ -32,7 +32,7 @@ comp unguarded {
 
     inst c: counter { n }  --~ error: the assumption `nonneg` of `counter` may not hold for instance `unguarded::c`
 
-    req result: m = c.next
+    ensure result: m = c.next
 }
 
 comp chooser {
@@ -45,7 +45,7 @@ comp chooser {
 comp hopes {   --~ error: `hopes` is not realizable: for the input pick.b? = false, no outputs satisfy `lucky`
     pub out x: Int
     inst pick: chooser {}
-    req lucky: pick.b? and x = 0  --~ info: is false when pick.b? = false
+    ensure lucky: pick.b? and x = 0  --~ info: is false when pick.b? = false
 }
 
 comp observes {
@@ -55,7 +55,7 @@ comp observes {
 
     inst c: counter { n }
 
-    req zero: when c.next = 0, n = 0  --~ error: `observes::zero` is vacuous: its condition can never hold, given `c`
+    ensure zero: when c.next = 0, n = 0  --~ error: `observes::zero` is vacuous: its condition can never hold, given `c`
     expect big: c.next > 5           --~ error: expectation `observes::big` does not hold
 }
 

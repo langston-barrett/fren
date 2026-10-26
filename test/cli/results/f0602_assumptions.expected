@@ -4,7 +4,7 @@ error[F0602]: the assumptions of `c` are unsatisfiable: `big`, `small` contradic
 2 | comp c {
   |      ^ no input satisfies its assumptions
   |
-  = note: every requirement would hold vacuously
+  = note: every guarantee would hold vacuously
   = help: weaken or remove one of them
 
 fren: 0 passed, 1 failed, 0 inconclusive, 0 redundant

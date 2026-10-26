@@ -6,7 +6,7 @@ pub comp c {
     in x: Int
     pub out p?
 
-    req r: p? iff x!=1
+    ensure r: p? iff x!=1
 }
 
 -- Where no `=` follows, only the second applies: `x !` would not parse.
@@ -14,5 +14,5 @@ pub comp d {
     in x: Int
     pub out p?
 
-    req r: p? iff x!
+    ensure r: p? iff x!
 }

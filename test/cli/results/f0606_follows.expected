@@ -1,8 +1,8 @@
 warning[F0606]: `c::bigger` is redundant: it follows from `y_def`
- --> test/cli/results/f0606_follows.fren:6:9
+ --> test/cli/results/f0606_follows.fren:6:12
   |
-6 |     req bigger: y > x
-  |         ^^^^^^ redundant
+6 |     ensure bigger: y > x
+  |            ^^^^^^ redundant
   |
   = help: if it is meant as a consequence, make it an `expect`, so that it is checked
 

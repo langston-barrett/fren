@@ -8,6 +8,6 @@ comp c {
     pub out m: Int
     pub out n: Int
 
-    req r1: m = if not a? then x else y
-    req r2: n = if x != y then x else if a? then y else 0
+    ensure r1: m = if not a? then x else y
+    ensure r2: n = if x != y then x else if a? then y else 0
 }

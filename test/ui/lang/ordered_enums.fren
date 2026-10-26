@@ -19,10 +19,10 @@ comp exit {
     in worst: Severity
     pub det out code: Int
 
-    req not_run: unless ran?, code = 2
-    req failed: when ran? and worst = Error, code = 1
-    req warned: when ran? and worst = Warning, code = 3
-    req passed: when ran? and worst <= Info, code = 0
+    ensure not_run: unless ran?, code = 2
+    ensure failed: when ran? and worst = Error, code = 1
+    ensure warned: when ran? and worst = Warning, code = 3
+    ensure passed: when ran? and worst <= Info, code = 0
 
     expect zero_means_no_problem: when code = 0, ran? and worst < Warning
     expect problems: when ran? and Warning <= worst, code != 0
@@ -35,8 +35,8 @@ comp combined {
     pub out low: Severity
     pub out high: Severity
 
-    req l: low = a.min(b)
-    req h: high = a.max(b)
+    ensure l: low = a.min(b)
+    ensure h: high = a.max(b)
 
     expect low_below: low <= high
     expect chained: low <= a <= high and low <= b <= high

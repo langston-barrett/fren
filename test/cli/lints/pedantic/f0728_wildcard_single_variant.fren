@@ -7,5 +7,5 @@ comp c {
     in s: Shape
     pub out n: Int
 
-    req r: n = match s { Shape::Circle(r) => r, Shape::Dot => 0, _ => 1 }
+    ensure r: n = match s { Shape::Circle(r) => r, Shape::Dot => 0, _ => 1 }
 }

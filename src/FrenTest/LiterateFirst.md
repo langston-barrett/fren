@@ -10,7 +10,7 @@ pub comp gate {
     in a?
     pub out b?
 
-    req same: b? iff a?
+    ensure same: b? iff a?
     expect never: when a?, not b?
 }
 
@@ -22,7 +22,7 @@ pub comp by_testing {
     in a?
     pub out b?
 
-    req same: b? iff a?
+    ensure same: b? iff a?
 }
 ```
 
@@ -33,14 +33,14 @@ pub comp precise {
     in x: Int
     pub out y: Int
 
-    req r: y = x + 1
+    ensure r: y = x + 1
 }
 
 pub comp lower {
     in x: Int
     pub out y: Int
 
-    req below: y < x
+    ensure below: y < x
 }
 
 refine fails: precise refines lower

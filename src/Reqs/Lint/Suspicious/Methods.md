@@ -18,7 +18,7 @@ pub comp index_after_use {
     in bounds_right?     -- `b` mentions `q.len`, or compares `q` with `[]`
     pub det out fires?
 
-    req rule: fires? iff (indexes_left? and bounds_right?)
+    ensure rule: fires? iff (indexes_left? and bounds_right?)
 }
 ```
 
@@ -49,7 +49,7 @@ pub comp negative_position {
 
     assume position: arg >= 0
 
-    req rule: fires? iff (negative? and (index? or match method {
+    ensure rule: fires? iff (negative? and (index? or match method {
         At | Slice | Update => arg = 0,
         IndexOf => arg = 1,
         _ => false,
@@ -87,7 +87,7 @@ pub comp empty_argument {
     in empty?            -- it is written `""` or `[]`, or `0`
     pub det out fires?
 
-    req rule: fires? iff (empty? and match method {
+    ensure rule: fires? iff (empty? and match method {
         StartsWith | EndsWith | Contains | Replace | ReplaceAll | IndexOf => index = 0,
         Slice => index = 1,
         _ => false,
@@ -126,8 +126,8 @@ pub comp no_effect_replace {
 
     assume written: when same?, a = b
 
-    req rule: fires? iff same?
-    req first: when fires?, replaced? iff s = u
-    req all: when fires?, replaced_all? iff s = u
+    ensure rule: fires? iff same?
+    ensure first: when fires?, replaced? iff s = u
+    ensure all: when fires?, replaced_all? iff s = u
 }
 ```

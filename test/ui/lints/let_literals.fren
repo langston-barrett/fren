@@ -5,9 +5,9 @@ comp c {
     pub out y?
     pub out z?
 
-    req r: y? iff x > k where k := 007
+    ensure r: y? iff x > k where k := 007
     --~^ warning: `007` is 7
-    req s: let j := 010 in z? iff x > j
+    ensure s: let j := 010 in z? iff x > j
     --~^ warning: `010` is 10
 }
 

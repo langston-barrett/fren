@@ -9,16 +9,16 @@ comp related {
     in s: Set(E)
     pub out t: Rel(E, E) := r join r
     pub out size: Int
-    req c: size = 0 iff s = {}
+    ensure c: size = 0 iff s = {}
 }
 
-comp counted { in n: Int pub out size: Int assume pos: n >= 0 req r: size = 0 or n > 0 }
+comp counted { in n: Int pub out size: Int assume pos: n >= 0 ensure r: size = 0 or n > 0 }
 
 refine counts: related refines counted { n := s.card }
 --~^ error: the solver does not reliably combine counting with relational operators
 
 -- Without counting, the same refinement is in the core.
-comp membered { in has_a? pub out size: Int req r: when has_a?, size != 0 }
+comp membered { in has_a? pub out size: Int ensure r: when has_a?, size != 0 }
 
 refine members: related refines membered { has_a? := E::A in s }
 

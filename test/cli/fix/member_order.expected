@@ -4,20 +4,20 @@ warning[F0779]: an output after an instance
 32 |     out z: Int := w.v
    |     ^^^^^^^^^^^^^^^^^ out of order
    |
-   = note: the members of a component are written `use`, `in`, `out`, `assume`, `inst`, `req`, `expect`, then `cover`
+   = note: the members of a component are written `use`, `in`, `out`, `assume`, `inst`, `ensure`, `expect`, then `cover`
 
 warning[F0779]: an input after an output
   --> test/cli/fix/member_order.fren:38:32
    |
-38 | comp one_line { pub out y: Int in x: Int req r: y = x }
+38 | comp one_line { pub out y: Int in x: Int ensure r: y = x }
    |                                ^^^^^^^^^ out of order
    |
-   = note: the members of a component are written `use`, `in`, `out`, `assume`, `inst`, `req`, `expect`, then `cover`
+   = note: the members of a component are written `use`, `in`, `out`, `assume`, `inst`, `ensure`, `expect`, then `cover`
 
 --- test/cli/fix/member_order.fren
 +++ test/cli/fix/member_order.fren
 @@ -13 +13,3 @@
--    req first: x >= 0
+-    ensure first: x >= 0
 +    use self::Shape::Square
 +    in x: Int
 +    in shape: Shape
@@ -26,7 +26,7 @@ warning[F0779]: an input after an output
 +    assume small: x < 100
 +    set_option fren.evidence "tested" in
 +    inst w: helper { x }
-+    req first: x >= 0
++    ensure first: x >= 0
 @@ -21,5 +25,0 @@
 -    set_option fren.evidence "tested" in
 -    inst w: helper { x }

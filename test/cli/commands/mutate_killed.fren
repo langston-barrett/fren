@@ -5,7 +5,7 @@ comp c {
     in x: Int
     pub out pos?
 
-    req r: pos? iff (x > 0 and x >= 1)
+    ensure r: pos? iff (x > 0 and x >= 1)
     expect zero: when x = 0, not pos?
     expect one: when x = 1, pos?
     expect wrong: pos?

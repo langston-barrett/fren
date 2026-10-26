@@ -1,6 +1,6 @@
 temp = 5
 alarm? = false
-req r: true
+ensure r: true
 cover overheat: false
 status: meets
 exit=0

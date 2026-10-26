@@ -1,4 +1,4 @@
 -- A glob import (F0702), with the variants it is used for.
 pub enum Mode { Off, Heat, Cool }
 use Mode::*
-comp c { in m: Mode pub out on? req r: on? iff (m = Heat or m = Cool) }
+comp c { in m: Mode pub out on? ensure r: on? iff (m = Heat or m = Cool) }

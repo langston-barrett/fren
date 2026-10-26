@@ -9,7 +9,7 @@ comp sensor {
     in x: Int
     pub out hot?
 
-    req r: hot? iff x > 100
+    ensure r: hot? iff x > 100
 
     cover warm: x = 50 and not hot?                --~ info: cover goal `sensor::warm` is met
     expect only_warm: x = 50                       --~ error: expectation `sensor::only_warm` does not hold
@@ -24,7 +24,7 @@ comp reader {
 
     inst s: sensor { x := y }
 
-    req r: seen? iff s.hot?
+    ensure r: seen? iff s.hot?
 
     expect warm_through: y = 50                    --~ error: expectation `reader::warm_through` does not hold
 }

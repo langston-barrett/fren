@@ -8,7 +8,7 @@ pub comp word {
     in text: String
     pub det out accepted?
 
-    req rule: accepted? iff text.matches?(r"[a-z]+")
+    ensure rule: accepted? iff text.matches?(r"[a-z]+")
 
     expect no_zz: when text.contains?("zz"), not accepted?
     expect digit_first: when text.matches?(r"[0-9][a-z]*"), accepted?

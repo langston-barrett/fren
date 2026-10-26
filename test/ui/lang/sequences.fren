@@ -21,7 +21,7 @@ comp dispatch {
 
     assume sane: capacity >= 0
 
-    req rule: start? iff (pending != [] and running.card < capacity and not pending[0] in running)
+    ensure rule: start? iff (pending != [] and running.card < capacity and not pending[0] in running)
 
     expect waits_when_full: when running.card >= capacity, not start?
     expect head_only: when start?, pending != []
@@ -39,7 +39,7 @@ comp guards {
     in m: Mode
     pub out p?
 
-    req r: p? iff i > 0
+    ensure r: p? iff i > 0
 
     expect by_when: when q.len > 2, q[2] = q[2]
     expect by_unless: unless q.len <= 3, q[3] = q[3]
@@ -58,14 +58,14 @@ comp guards {
     --~^ warning: the bound comes after the index it guards
 }
 
--- A requirement can guarantee another's definedness.
+-- A guarantee can ensure another's definedness.
 comp together {
     in q: Seq(Int)
     pub out x: Int
 
     assume long: q.len > 3
 
-    req third: x = q[3]
+    ensure third: x = q[3]
 }
 
 -- The meaning of each operation, on constants.

@@ -1,5 +1,5 @@
 -- The condition of `when` ends with a comma.
-comp c { in x: Int req r: when x > 1 x < 3 }
+comp c { in x: Int ensure r: when x > 1 x < 3 }
 --~^[cli] error: expected `,` after the condition of `when`, found identifier `x`
 --~^^[hosted] error: unexpected identifier; expected ','
 --@ exit: 2

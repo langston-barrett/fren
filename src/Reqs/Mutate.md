@@ -74,7 +74,7 @@ reason, a constant that bounds a range pattern is left alone as a divisor's
 is, since its value decides whether a range is empty and which arms the
 ranges reach.
 
-Mutants change what a spec asserts: the expressions of `assume`s, `req`s,
+Mutants change what a spec asserts: the expressions of `assume`s, `ensure`s,
 defined outputs, instance bindings, constants and defined functions,
 including the definitions of their [`let`s and `where`
 clauses](Lang/Let.md), which are changed like any other expression. The
@@ -83,7 +83,7 @@ expectations, both of components and [global](Lang/Global.md), and the
 and their text is not changed. An expectation rejects a mutant that
 weakens what the spec says, and a cover goal one that strengthens it: a
 mutant that rules out a goal's scenario fails the goal, which kills it. But an expectation that
-reads a constant or function reads the mutant's: if a requirement and an
+reads a constant or function reads the mutant's: if a guarantee and an
 expectation both say `x <= LIMIT`, changing `LIMIT` moves both, and no
 check rejects it. Such a survivor says that nothing pins the constant down
 independently, such as an expectation with its value written out; its
@@ -131,7 +131,7 @@ pub comp kill {
     in after: Verdict     -- its verdict on the mutant
     pub det out kills?
 
-    req rule: kills? iff (before = Pass and after = Fail)
+    ensure rule: kills? iff (before = Pass and after = Fail)
 
     expect failing_kills_nothing: when before = Fail, not kills?
     expect only_failures_kill: when after != Fail, not kills?
@@ -183,10 +183,10 @@ pub comp outcome {
     in equivalent?      -- the solver shows that it means what the spec means
     pub det out outcome: Outcome
 
-    req unviable: unless viable?, outcome = Unviable
-    req killed: when viable? and killed?, outcome = Killed
-    req equivalent: when viable? and not killed? and equivalent?, outcome = Equivalent
-    req survived: when viable? and not killed? and not equivalent?, outcome = Survived
+    ensure unviable: unless viable?, outcome = Unviable
+    ensure killed: when viable? and killed?, outcome = Killed
+    ensure equivalent: when viable? and not killed? and equivalent?, outcome = Equivalent
+    ensure survived: when viable? and not killed? and not equivalent?, outcome = Survived
 
     expect reported_unexplained: when outcome = Survived, viable? and not killed? and not equivalent?
     expect kills_win: when viable? and killed?, outcome != Equivalent
@@ -216,7 +216,7 @@ pub comp missed {
     in by_testing?      -- testing kills it
     pub det out missed?
 
-    req rule: missed? iff (by_solver? and not by_testing?)
+    ensure rule: missed? iff (by_solver? and not by_testing?)
 
     expect killed_by_testing: when by_testing?, not missed?
     expect killed_by_the_solver: when missed?, by_solver?
@@ -282,7 +282,7 @@ pub comp exit {
 
     out worst: Severity := if internal? then Error else if survived? then Warning else Silent
     inst ends: cli::exit { ran?, worst }
-    req as_check: code = ends.code
+    ensure as_check: code = ends.code
 
     expect not_run: unless ran?, code = 2
     expect internal_fails: when ran? and internal?, code = 1

@@ -145,21 +145,21 @@ comp deadline {
     in t: Ms
     pub out d: Ms
 
-    req r: d >= t
+    ensure r: d >= t
 }
 
 comp next_tick {
     in t: Ms
     pub out d: Ms
 
-    req r: d = t + Ms(1)
+    ensure r: d = t + Ms(1)
 }
 
 comp seconds {
     in s: Int
     pub out d: Int
 
-    req r: d = s + 1
+    ensure r: d = s + 1
 }
 
 refine ticks: next_tick refines deadline

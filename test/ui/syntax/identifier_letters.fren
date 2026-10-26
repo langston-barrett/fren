@@ -4,5 +4,5 @@
 comp c {
     in xα: Int    --~ error: `xα` is not an identifier in Fren
     pub out y: Int
-    req r: y = 1
+    ensure r: y = 1
 }

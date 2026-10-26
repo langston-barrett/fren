@@ -1,2 +1,2 @@
 -- A quantifier over `Int`, whose values cannot be listed (F0355).
-comp c { in x: Int pub out ok? req r: ok? iff (exists (n: Int), n = x) }
+comp c { in x: Int pub out ok? ensure r: ok? iff (exists (n: Int), n = x) }

@@ -9,12 +9,12 @@ use E::*   -- opening `E` again does not make its variants ambiguous
 --~^ warning: unused import `E::*`
 --~^^ warning: `use E::*` imports every variant of `E`
 
-comp ambiguous { in e: E req r: e = A }   --~ error: `A` is ambiguous: it could be any of `E::A`, `F::A`
-comp unknown { pub out y: Int req r: y = z }  --~ error: cannot find `z` in this scope
-comp qualified { in e: E in f: F pub out o? req r: o? iff (e = B or f = C or e = E::A) }
-comp not_a_value { in e: E req r: e = E }  --~ error: expected a value, but `E` is an enum
+comp ambiguous { in e: E ensure r: e = A }   --~ error: `A` is ambiguous: it could be any of `E::A`, `F::A`
+comp unknown { pub out y: Int ensure r: y = z }  --~ error: cannot find `z` in this scope
+comp qualified { in e: E in f: F pub out o? ensure r: o? iff (e = B or f = C or e = E::A) }
+comp not_a_value { in e: E ensure r: e = E }  --~ error: expected a value, but `E` is an enum
 comp not_a_type { in x: qualified }        --~ error: expected a type, but `qualified` is a comp
-comp no_variant { in e: E req r: e = E::Z }  --~ error: no variant `Z` in enum `E`
+comp no_variant { in e: E ensure r: e = E::Z }  --~ error: no variant `Z` in enum `E`
 
 use qualified::*    --~ error: only enums can be opened with `*`, but `qualified` is a comp
 use nothing::here   --~ error: cannot find `nothing` in the root module

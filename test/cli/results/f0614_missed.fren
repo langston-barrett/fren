@@ -4,6 +4,6 @@ comp c {
     in xs: Seq(Int)
     pub out big?
 
-    req r: big? iff xs.len > 4
+    ensure r: big? iff xs.len > 4
     expect e: when xs.len = 5, big?
 }

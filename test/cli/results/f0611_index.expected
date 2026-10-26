@@ -1,8 +1,8 @@
 error[F0611]: an index of `first::r` may be out of range
- --> test/cli/results/f0611_index.fren:6:16
+ --> test/cli/results/f0611_index.fren:6:19
   |
-6 |     req r: x = q[0]
-  |                ^^^^ may be out of range
+6 |     ensure r: x = q[0]
+  |                   ^^^^ may be out of range
   |
   = counterexample: q = [], x = 0
   = note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there

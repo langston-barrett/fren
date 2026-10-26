@@ -50,7 +50,7 @@ pub comp undecidable_fires {
         construct, constant_args?, comparable?, infinite_output?, ground?, infinite_elems?, finite_range?, literal_operand?,
     }
 
-    req rule: fires? iff not core.decidable?
+    ensure rule: fires? iff not core.decidable?
 }
 
 #fren_check

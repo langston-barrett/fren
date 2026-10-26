@@ -11,8 +11,8 @@ comp c {
     pub out p2?
     pub out n: Int
 
-    req r1: p1? iff t = {(x), x}
-    req r2: p2? iff t = {x, (x)}
-    req r3: n = 2 * -- a comment
+    ensure r1: p1? iff t = {(x), x}
+    ensure r2: p2? iff t = {x, (x)}
+    ensure r3: n = 2 * -- a comment
         if a? then x + 1 else x + 1
 }

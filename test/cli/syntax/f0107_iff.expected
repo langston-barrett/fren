@@ -1,8 +1,8 @@
 error[F0107]: `iff` is not associative
- --> test/cli/syntax/f0107_iff.fren:2:50
+ --> test/cli/syntax/f0107_iff.fren:2:53
   |
-2 | comp c { in a? in b? pub out d? req r: d? iff a? iff b? }
-  |                                                  ^^^ second `iff`
+2 | comp c { in a? in b? pub out d? ensure r: d? iff a? iff b? }
+  |                                                     ^^^ second `iff`
   |
   = help: add parentheses to say which `iff` applies first, e.g. `a iff (b iff c)`
 

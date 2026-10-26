@@ -2,10 +2,10 @@ error[F0603]: expectation `same` does not hold
   --> test/cli/results/f0603_global.fren:14:8
    |
 14 | expect same: forall (a b: band),
-   |        ^^^^ does not follow from the requirements
+   |        ^^^^ does not follow from the guarantees
    |
    = counterexample: a.temp = -2, a.target = 0, a.too_cold? = false, b.temp = -2, b.target = 1, b.too_cold? = true
-   = help: strengthen the requirements so that it follows, or correct the expectation
+   = help: strengthen the guarantees so that it follows, or correct the expectation
 
 error[F0605]: `never` is vacuous: its condition can never hold, given `a`
   --> test/cli/results/f0603_global.fren:16:33

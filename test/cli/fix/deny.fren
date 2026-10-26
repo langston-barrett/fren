@@ -2,4 +2,4 @@
 -- A denied lint is fixed.
 pub enum Mode { Heat, Cool }
 use Mode::Cool
-comp c { in m: Mode pub out h? req r: h? iff m = Mode::Heat }
+comp c { in m: Mode pub out h? ensure r: h? iff m = Mode::Heat }

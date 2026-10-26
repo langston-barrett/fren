@@ -11,5 +11,5 @@ comp alarm {
     pub out ringing?
     pub out loud: Set(Int) := zones minus quiet inter tripped
 
-    req ringing_rule: ringing? iff (moving? or armed? and open?)
+    ensure ringing_rule: ringing? iff (moving? or armed? and open?)
 }

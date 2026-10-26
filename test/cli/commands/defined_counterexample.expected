@@ -2,10 +2,10 @@ error[F0603]: expectation `c::e` does not hold
  --> test/cli/commands/defined_counterexample.fren:9:12
   |
 9 |     expect e: y = next
-  |            ^ does not follow from the requirements
+  |            ^ does not follow from the guarantees
   |
   = counterexample: x = -2, next = -1, y = 0
-  = help: strengthen the requirements so that it follows, or correct the expectation
+  = help: strengthen the guarantees so that it follows, or correct the expectation
 
 fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
 

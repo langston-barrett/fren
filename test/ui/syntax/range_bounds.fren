@@ -1,5 +1,5 @@
 -- An inclusive range needs an upper bound.
-comp open_inclusive { in n: Int pub out z: Int req q: z = match n { 0..= => 0, _ => 1 } }
+comp open_inclusive { in n: Int pub out z: Int ensure q: z = match n { 0..= => 0, _ => 1 } }
 --~^[cli] error: an inclusive range needs an upper bound
 --~^^[hosted] error: expected no space before
 --@ exit: 2

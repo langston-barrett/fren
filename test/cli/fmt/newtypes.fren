@@ -5,6 +5,6 @@ pub struct Ms (  Int )
 comp c {
     in t: Ms
     pub out d: Ms
-    req a: d = Ms ( t.0+1 )
-    req b: d.0 = t.0.abs
+    ensure a: d = Ms ( t.0+1 )
+    ensure b: d.0 = t.0.abs
 }

@@ -6,17 +6,17 @@ enum Shape { Square, Circle }
 comp helper {
     in x: Int
     pub out v: Int
-    req r: v = x
+    ensure r: v = x
 }
 
 comp c {
-    req first: x >= 0
+    ensure first: x >= 0
 
     -- The result.
     pub det out y: Int  -- a trailing comment
     in x: Int
 
-    req r: y = x + w.v
+    ensure r: y = x + w.v
     expect square: shape = Square or y = x + w.v
     set_option fren.evidence "tested" in
     inst w: helper { x }
@@ -31,8 +31,8 @@ comp mentions {
     inst w: helper { x }
     out z: Int := w.v
     pub out y: Int
-    req r: y = z
+    ensure r: y = z
 }
 
 -- Not fixed: two members on one line.
-comp one_line { pub out y: Int in x: Int req r: y = x }
+comp one_line { pub out y: Int in x: Int ensure r: y = x }

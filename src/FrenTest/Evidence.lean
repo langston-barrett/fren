@@ -12,7 +12,7 @@ pub comp word {
     in text: String
     pub det out accepted?
 
-    req rule: accepted? iff text.matches?(r"[a-z]+")
+    ensure rule: accepted? iff text.matches?(r"[a-z]+")
 
     expect plain: when text = "ab", accepted?
     set_option fren.evidence "tested" in
@@ -23,7 +23,7 @@ set_option fren.evidence "tested" in
 pub comp all_tested {
     in n: Int
     pub out big?
-    req r: big? iff n > 3
+    ensure r: big? iff n > 3
     expect wrong: when n = 4, not big?
 }
 
@@ -49,10 +49,10 @@ note: `"tested"` has the checks tested instead of asked of the solver, and `"sol
 -/
 #guard_msgs in
 set_option fren.evidence "maybe" in
-pub comp bad { in x? pub out y? req r: y? iff x? }
+pub comp bad { in x? pub out y? ensure r: y? iff x? }
 
 /--
-error: `fren.evidence` cannot be set for a requirement
+error: `fren.evidence` cannot be set for a guarantee
 
 note: it can be set before a component, an expectation or global expectation, a cover goal, an instance or a `det out`
 -/
@@ -61,7 +61,7 @@ pub comp misplaced {
     in x?
     pub out y?
     set_option fren.evidence "tested" in
-    req r: y? iff x?
+    ensure r: y? iff x?
 }
 
 /--
@@ -74,5 +74,5 @@ pub comp other_option {
     in x?
     pub out y?
     set_option fren.lint.nonminimal_bool "allow" in
-    req r: y? iff x?
+    ensure r: y? iff x?
 }

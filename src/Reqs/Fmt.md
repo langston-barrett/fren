@@ -33,7 +33,7 @@ pub enum Mode {Heat,Cool}
 comp   c{
 in t:Int -- the temperature
       pub out mode:Mode
-  req r :mode = if t< 18 then Mode::Heat else Mode::Cool
+  ensure r :mode = if t< 18 then Mode::Heat else Mode::Cool
 
 
 }
@@ -47,7 +47,7 @@ pub enum Mode { Heat, Cool }
 comp c {
     in t: Int  -- the temperature
     pub out mode: Mode
-    req r: mode = if t < 18 then Mode::Heat else Mode::Cool
+    ensure r: mode = if t < 18 then Mode::Heat else Mode::Cool
 }
 ```
 
@@ -75,10 +75,10 @@ pub comp safe {
     pub out same_comments?   -- the comments are the same, in the same order
     pub out stable?          -- formatting the result again changes nothing
 
-    req tokens: when parsed?, same_tokens?
-    req imports: when parsed?, same_imports?
-    req comments: when parsed?, same_comments?
-    req idempotent: when parsed?, stable?
+    ensure tokens: when parsed?, same_tokens?
+    ensure imports: when parsed?, same_imports?
+    ensure comments: when parsed?, same_comments?
+    ensure idempotent: when parsed?, stable?
 }
 ```
 
@@ -141,10 +141,10 @@ pub comp space {
     in after: Kind
     pub det out space?
 
-    req comment: when before = Comment or after = Comment, space?
-    req empty: when before = Brace and after = CloseBrace, not space?
-    req negations: when before = Negation and after = Negation, space?
-    req tight: unless before = Comment or after = Comment or (before = Brace and after = CloseBrace)
+    ensure comment: when before = Comment or after = Comment, space?
+    ensure empty: when before = Brace and after = CloseBrace, not space?
+    ensure negations: when before = Negation and after = Negation, space?
+    ensure tight: unless before = Comment or after = Comment or (before = Brace and after = CloseBrace)
         or (before = Negation and after = Negation),
         space? iff not (before = Open or before = Call or before = Group or before = Path or before = Negation
         or before = RangeLeading or after = Close or after = CloseGroup or after = Path or after = Comma
@@ -166,7 +166,7 @@ of a list, rather than starting one, is indented by four more:
 ```text
 comp c {
     in mode: Mode
-    req r: unless mode = Mode::Off,
+    ensure r: unless mode = Mode::Off,
         on?
     inst h: heater {
         cold? := true,
@@ -186,7 +186,7 @@ match method {
     | Method::Card => 0,
     _ => 1,
 }
-req sized: sized? iff s is
+ensure sized: sized? iff s is
     | Shape::Circle(_)
     | Shape::Rect(_, _)
 ```
@@ -209,9 +209,9 @@ pub comp indent {
 
     assume closes_open: when start = Closing, depth >= 1
 
-    req closing: when start = Closing, columns = 4 * (if comment? then depth else depth - 1)
-    req starting: when start = Starting, columns = 4 * depth
-    req continuing: when start = Continuing, columns = 4 * depth + 4
+    ensure closing: when start = Closing, columns = 4 * (if comment? then depth else depth - 1)
+    ensure starting: when start = Starting, columns = 4 * depth
+    ensure continuing: when start = Continuing, columns = 4 * depth + 4
 
     expect non_negative: columns >= 0
     expect comment_inside: when comment?, columns >= 4 * depth
@@ -232,8 +232,8 @@ pub comp comment_column {
     in original: Nat         -- the column of the comment before formatting
     pub det out column: Int
 
-    req kept: when original >= width + 2, column = original
-    req moved: when original < width + 2, column = width + 2
+    ensure kept: when original >= width + 2, column = original
+    ensure moved: when original < width + 2, column = width + 2
 
     expect gap: column >= width + 2
 }
@@ -255,7 +255,7 @@ pub comp blank_lines {
     in before_close?         -- the line starts with `}`
     pub det out kept: Int
 
-    req kept_rule: kept = if first? or after_open? or before_close? or blank = 0 then 0 else 1
+    ensure kept_rule: kept = if first? or after_open? or before_close? or blank = 0 then 0 else 1
 
     expect at_most_one: kept <= 1
     expect never_added: kept <= blank
@@ -294,9 +294,9 @@ pub comp trailing_comma {
     in vertical?
     pub det out comma?
 
-    req empty_list: when empty?, not comma?
-    req vertical_list: when not empty? and vertical?, comma?
-    req horizontal: when not empty? and not vertical?, not comma?
+    ensure empty_list: when empty?, not comma?
+    ensure vertical_list: when not empty? and vertical?, comma?
+    ensure horizontal: when not empty? and not vertical?, not comma?
 }
 ```
 
@@ -368,8 +368,8 @@ pub comp group_layout {
 
     assume some_path: n_paths >= 1
 
-    req braced: braces? iff n_paths > 1
-    req vertical_rule: vertical? iff (braces? and (was_vertical? or not fits?))
+    ensure braced: braces? iff n_paths > 1
+    ensure vertical_rule: vertical? iff (braces? and (was_vertical? or not fits?))
 
     expect single: when n_paths = 1, not braces? and not vertical?
     expect stays_vertical: when n_paths > 1 and was_vertical?, vertical?
@@ -384,7 +384,7 @@ pub comp in_block {
     in nested?               -- it is the item of a `set_option ... in`
     pub det out sorted?
 
-    req block_rule: sorted? iff (alone? and not nested?)
+    ensure block_rule: sorted? iff (alone? and not nested?)
 }
 ```
 
@@ -411,8 +411,8 @@ pub comp file {
     pub det out written?     -- the file is rewritten
     pub det out diff?        -- a diff is printed
 
-    req write: written? iff (not ignored? and not check? and parsed? and not formatted?)
-    req report: diff? iff (not ignored? and check? and parsed? and not formatted?)
+    ensure write: written? iff (not ignored? and not check? and parsed? and not formatted?)
+    ensure report: diff? iff (not ignored? and check? and parsed? and not formatted?)
 
     expect check_writes_nothing: when check?, not written?
     expect formatted_untouched: when formatted?, not written? and not diff?
@@ -425,9 +425,9 @@ pub comp exit {
     in all_formatted?        -- every file that parses is already formatted
     pub det out code: Int
 
-    req failed: unless all_parsed?, code = 2
-    req unformatted: when all_parsed? and check? and not all_formatted?, code = 1
-    req formatted: when all_parsed? and (not check? or all_formatted?), code = 0
+    ensure failed: unless all_parsed?, code = 2
+    ensure unformatted: when all_parsed? and check? and not all_formatted?, code = 1
+    ensure formatted: when all_parsed? and (not check? or all_formatted?), code = 0
 
     expect write_succeeds: when all_parsed? and not check?, code = 0
     expect documented_codes: 0 <= code <= 2

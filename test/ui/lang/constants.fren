@@ -19,9 +19,9 @@ pub comp band {
     pub out mode: Mode
 
     assume sane: MIN_T <= target and target <= MAX_T  -- constants in assumptions
-    req cold: too_cold? iff temp < target + NEG
-    req off: unless too_cold?, mode = DEFAULT
-    req heat: when too_cold?, mode = Mode::Heat
+    ensure cold: too_cold? iff temp < target + NEG
+    ensure off: unless too_cold?, mode = DEFAULT
+    ensure heat: when too_cold?, mode = Mode::Heat
 
     expect strict: STRICT
     expect lowest: when target = MIN_T and temp < 47, too_cold?
@@ -30,7 +30,7 @@ pub comp band {
 comp scaled {
     in t: Int
     pub out y: Int
-    req r: y = (MAX_T - MIN_T) * t + 2 * 3 * t  -- operands with no variables
+    ensure r: y = (MAX_T - MIN_T) * t + 2 * 3 * t  -- operands with no variables
     expect at_one: when t = 1, y = 46
 }
 
@@ -41,7 +41,7 @@ comp user {
     in t: Int
     pub out cold?
     inst b: band { temp := t, target := MAX_T }  -- a constant in a binding
-    req r: cold? iff b.too_cold?
+    ensure r: cold? iff b.too_cold?
     expect at_max: when t < MAX_T - 3, cold?
 }
 
@@ -49,7 +49,7 @@ comp shadow {
     in MAX_T!: Int                            -- a variable shadows the constant, with `!`
     --~^ warning: variable `MAX_T` should have a snake case name
     pub out y: Int
-    req r: y = MAX_T
+    ensure r: y = MAX_T
     expect same: y = MAX_T  --~ warning: this is written the same as `r`
 }
 

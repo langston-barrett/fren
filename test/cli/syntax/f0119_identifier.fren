@@ -1,4 +1,4 @@
 -- `!=` written against an identifier that ends in `!`, which Lean would
 -- read as `y!!` (F0119).
-comp c { in y: Int pub out z? req r: z? iff y!!=1 }
+comp c { in y: Int pub out z? ensure r: z? iff y!!=1 }
 -- fren-covers: lang::identifier

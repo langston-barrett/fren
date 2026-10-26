@@ -98,7 +98,7 @@ def inconclusive (before after : Array (String × CheckResult)) : Bool :=
 
 def PropKind.name : PropKind → String
   | .assume => "assume"
-  | .req => "req"
+  | .ensure => "ensure"
   | .expect => "expect"
   | .cover => "cover"
 

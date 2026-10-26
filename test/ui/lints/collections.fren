@@ -15,10 +15,10 @@ comp lints {
     pub out y: Int               --~ warning: `r3` could be the definition of `y`
     pub out z?                   --~ warning: `r2` could be the definition of `z?`
 
-    req r1: p? iff s.len = 0     --~ warning: say whether it is empty with `""`, not `len`
-    req r2: z? iff (t.card > 0 or e = E::A or e = E::B or e = E::C)
+    ensure r1: p? iff s.len = 0     --~ warning: say whether it is empty with `""`, not `len`
+    ensure r2: z? iff (t.card > 0 or e = E::A or e = E::B or e = E::C)
     --~^ warning: say whether it is empty with `{}`, not `card`
-    req r3: y = x + 1
+    ensure r3: y = x + 1
     expect r4: when x in {1}, x = 1  --~ warning: membership in a set of one member is equality
     expect r5: when q.len > 0 and (e = E::A or e = E::B or e = E::C), q != []
     --~^ warning: say whether it is empty with `[]`, not `len`

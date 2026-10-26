@@ -4,8 +4,8 @@
 -pub enum Mode {Heat,Cool}
 -use Mode::*
 -use Mode::Cool
--comp c { in m:Mode pub out h? req r: h? iff m = Heat }
+-comp c { in m:Mode pub out h? ensure r: h? iff m = Heat }
 +pub enum Mode { Heat, Cool }
 +use Mode::Heat
-+comp c { in m: Mode pub out h? req r: h? iff m = Heat }
++comp c { in m: Mode pub out h? ensure r: h? iff m = Heat }
 exit=1

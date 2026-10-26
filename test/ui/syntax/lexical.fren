@@ -17,7 +17,7 @@ comp counter {
     in ready?
     pub det out y: Int
 
-    req rule: y = (if ready? then x' + 1 else x')
+    ensure rule: y = (if ready? then x' + 1 else x')
 }
 
 enum Mode { Off, Low, High }
@@ -28,7 +28,7 @@ comp outer {
     pub det out level: Int
 
     inst c: counter { x' := a, ready? := true }
-    req level_rule: level = match m { Mode::Off => 0, _ => 1 }
+    ensure level_rule: level = match m { Mode::Off => 0, _ => 1 }
 
     expect dotted: c.y=a+1
     expect symbols: c.y>=a and a<=c.y and a<c.y
@@ -44,7 +44,7 @@ comp tight {
     in f: Flag
     pub det out go?
 
-    req rule: go? iff match f { Flag::Set(ready?!)=>ready?, _=>ready? }
+    ensure rule: go? iff match f { Flag::Set(ready?!)=>ready?, _=>ready? }
 
     expect payload: when f=Flag::Set(true), go?
 }

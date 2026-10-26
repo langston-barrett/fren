@@ -16,5 +16,5 @@ pub comp c {
     in t: Typed
     pub out d?
 
-    req r: d? iff ByVariant::C = ByVariant::D
+    ensure r: d? iff ByVariant::C = ByVariant::D
 }

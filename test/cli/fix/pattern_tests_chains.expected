@@ -1,22 +1,22 @@
 --- test/cli/fix/pattern_tests_chains.fren
 +++ test/cli/fix/pattern_tests_chains.fren
 @@ -22,9 +22,9 @@
--    req r1: a? iff s is Shade::Light
--    req r2: b? iff not (s) is Shade::Light | Shade::Dark
--    req r3: d? iff match s { Shade::Light => false, Shade::Dark | Shade::Tinted(_) => true }
--    req r4: e? = match s { Shade::Tinted(_) => true, _ => false }
--    req r5: f? iff p? and 0 <= i and i < n and m > 0
--    req r6: g? iff i < n and i > 0
--    req r7: h? iff 0 < i and i < n and n < m
--    req r8: j? iff 0 <= i and i <= n - 1
--    req r9: k? iff n - 1 >= i and i >= 0
-+    req r1: a? iff s = Shade::Light
-+    req r2: b? iff not (s) in {Shade::Light, Shade::Dark}
-+    req r3: d? iff s != Shade::Light
-+    req r4: e? = (s is Shade::Tinted(_))
-+    req r5: f? iff p? and 0 <= i < n and m > 0
-+    req r6: g? iff n > i > 0
-+    req r7: h? iff 0 < i < n < m
-+    req r8: j? iff 0 <= i < n
-+    req r9: k? iff n > i >= 0
+-    ensure r1: a? iff s is Shade::Light
+-    ensure r2: b? iff not (s) is Shade::Light | Shade::Dark
+-    ensure r3: d? iff match s { Shade::Light => false, Shade::Dark | Shade::Tinted(_) => true }
+-    ensure r4: e? = match s { Shade::Tinted(_) => true, _ => false }
+-    ensure r5: f? iff p? and 0 <= i and i < n and m > 0
+-    ensure r6: g? iff i < n and i > 0
+-    ensure r7: h? iff 0 < i and i < n and n < m
+-    ensure r8: j? iff 0 <= i and i <= n - 1
+-    ensure r9: k? iff n - 1 >= i and i >= 0
++    ensure r1: a? iff s = Shade::Light
++    ensure r2: b? iff not (s) in {Shade::Light, Shade::Dark}
++    ensure r3: d? iff s != Shade::Light
++    ensure r4: e? = (s is Shade::Tinted(_))
++    ensure r5: f? iff p? and 0 <= i < n and m > 0
++    ensure r6: g? iff n > i > 0
++    ensure r7: h? iff 0 < i < n < m
++    ensure r8: j? iff 0 <= i < n
++    ensure r9: k? iff n > i >= 0
 exit=1

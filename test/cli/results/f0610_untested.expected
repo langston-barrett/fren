@@ -15,7 +15,7 @@ warning[F0610]: testing found no admissible behaviour of `c` in 100 tests
   |      ^ untested
   |
   = note: so none of its checks were tested
-  = help: run `fren check` to decide whether its assumptions and requirements can hold, or raise `--tests`
+  = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
 
 fren: 0 passed, 0 failed, 1 inconclusive, in 100 tests each
 

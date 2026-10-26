@@ -20,21 +20,21 @@ comp one_variant {
     pub out e: Int
     pub out f: Mode
 
-    req r1: a = match m { Mode::Heat => x + 1, _ => x }
+    ensure r1: a = match m { Mode::Heat => x + 1, _ => x }
     --~^ warning: this `match` tests for one variant
-    req r2: b = 2 * match m { Mode::Cool => x, _ => 0 }
+    ensure r2: b = 2 * match m { Mode::Cool => x, _ => 0 }
     --~^ warning: this `match` tests for one variant
     -- `match_like_membership`, not `single_match_else`.
-    req r3: c? iff match m { Mode::Heat => true, _ => false }
+    ensure r3: c? iff match m { Mode::Heat => true, _ => false }
     --~^ warning: this `match` only tests which of its patterns its scrutinee matches
     -- `match_same_arms`.
-    req r4: d = match m { Mode::Off => x, _ => x }
+    ensure r4: d = match m { Mode::Off => x, _ => x }
     --~^ warning: replace the `match` with its body
     -- Two named arms.
-    req r5: e = match m { Mode::Heat => 1, Mode::Cool => 2, _ => 3 }
+    ensure r5: e = match m { Mode::Heat => 1, Mode::Cool => 2, _ => 3 }
     --~^ warning: `_` matches only `Mode::Off`
     -- `needless_match`.
-    req r6: f = match m { Mode::Heat => Mode::Heat, _ => m }
+    ensure r6: f = match m { Mode::Heat => Mode::Heat, _ => m }
     --~^ warning: gives back
 }
 
@@ -51,20 +51,20 @@ comp drop_operands {
     pub out p6?
     pub out p7?
 
-    req r1: p1? iff (a? or (a? and b?))
+    ensure r1: p1? iff (a? or (a? and b?))
     --~^ warning: write `a?`
-    req r2: p2? iff ((b? or a?) and a?)
+    ensure r2: p2? iff ((b? or a?) and a?)
     --~^ warning: this `and` has an operand that does not change its value
-    req r3: p3? iff (a? and not a?)
+    ensure r3: p3? iff (a? and not a?)
     --~^ warning: this `and` is always `false`
-    req r4: p4? iff (not b? or b?)
+    ensure r4: p4? iff (not b? or b?)
     --~^ warning: this `or` is always `true`
     -- `nonminimal_bool` simplifies the negation.
-    req r5: p5? iff (x = 1 and not x = 1)
+    ensure r5: p5? iff (x = 1 and not x = 1)
     --~^ warning: this `Bool` expression can be simpler
     -- Not an operand of the operator.
-    req r6: p6? iff (a? or (a? and b? and x > 0))
-    req r7: p7? = (b? and (b? or a?))
+    ensure r6: p6? iff (a? or (a? and b? and x > 0))
+    ensure r7: p7? = (b? and (b? or a?))
     --~^ warning: write `b?`
     --~^^ warning: equality of `Bool`s is `iff`
 }
@@ -90,32 +90,32 @@ comp shared {
     pub out m: Int
     pub out n: Int
 
-    req r1: a = if c? then 2 * x + 1 else x + 1
+    ensure r1: a = if c? then 2 * x + 1 else x + 1
     --~^ warning: both branches of this `if` end with `+ 1`
-    req r2: b = 3 * (if c? then y - x else y - 1)
+    ensure r2: b = 3 * (if c? then y - x else y - 1)
     --~^ warning: both branches of this `if` start with `y -`
-    req r3: d? iff if c? then x > 0 and y > 0 else x < 0 and y > 0
+    ensure r3: d? iff if c? then x > 0 and y > 0 else x < 0 and y > 0
     --~^ warning: both branches of this `if` end with `and y > 0`
     -- The branches are written the same: `same_branches`.
-    req r4: e = if c? then x + 1 else x + 1
+    ensure r4: e = if c? then x + 1 else x + 1
     --~^ warning: both branches of `if` are written the same
     -- `(if c? then 3 else 2) * (y + 1)` would be nonlinear.
-    req r5: f = if c? then 3 * (y + 1) else 2 * (y + 1)
+    ensure r5: f = if c? then 3 * (y + 1) else 2 * (y + 1)
     -- One side of each product is a constant.
-    req r6: g = if c? then x * LIMIT else y * LIMIT
+    ensure r6: g = if c? then x * LIMIT else y * LIMIT
     --~^ warning: both branches of this `if` end with `* LIMIT`
-    req r7: h = if LIMIT > 2 then 3 * x else 2 * x
+    ensure r7: h = if LIMIT > 2 then 3 * x else 2 * x
     --~^ warning: both branches of this `if` end with `* x`
     -- An uninterpreted function counts as a variable does.
-    req r8: i = if c? then 3 * scale(x) else 2 * scale(x)
+    ensure r8: i = if c? then 3 * scale(x) else 2 * scale(x)
     -- `div` and `mod` move out a shared divisor, but not a shared dividend,
     -- which would leave the `if` as the divisor.
-    req r9: j = if c? then scale(x) div 2 else scale(y) div 2
+    ensure r9: j = if c? then scale(x) div 2 else scale(y) div 2
     --~^ warning: both branches of this `if` end with `div 2`
-    req r10: k = if c? then scale(x) div 2 else scale(x) div 3
-    req r11: m = if c? then scale(x) mod 2 else scale(y) mod 2
+    ensure r10: k = if c? then scale(x) div 2 else scale(x) div 3
+    ensure r11: m = if c? then scale(x) mod 2 else scale(y) mod 2
     --~^ warning: both branches of this `if` end with `mod 2`
-    req r12: n = if c? then scale(x) mod 2 else scale(x) mod 3
+    ensure r12: n = if c? then scale(x) mod 2 else scale(x) mod 3
 }
 
 -- `inconsistent_struct_constructor`.
@@ -130,9 +130,9 @@ comp cells {
     -- A field written alone mentions its variable: not `constant_output`.
     pub det out c: Cell := Cell { row, column }
 
-    req r1: a = Cell { column := x + 1, row }
+    ensure r1: a = Cell { column := x + 1, row }
     --~^ warning: the fields of this literal are not in the order `Cell` declares them
-    req r2: b = Cell { row, column := x }
+    ensure r2: b = Cell { row, column := x }
 }
 
 -- `struct_field_names`.
@@ -169,9 +169,9 @@ comp raw {
     pub out q?
     pub out t?
 
-    req r1: p? iff s.matches?(r#"a+b"#)
+    ensure r1: p? iff s.matches?(r#"a+b"#)
     --~^ warning: write `r"a+b"`
-    req r2: q? iff s = r##"say "hi""##
+    ensure r2: q? iff s = r##"say "hi""##
     --~^ warning: write `r#"say "hi""#`
-    req r3: t? iff s = r#"say "hi""#
+    ensure r3: t? iff s = r#"say "hi""#
 }

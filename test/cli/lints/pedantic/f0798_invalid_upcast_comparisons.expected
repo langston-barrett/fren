@@ -16,10 +16,10 @@ warning[F0798]: this comparison is always `false`
   = note: the bound or the operator is probably not the one meant
 
 warning[F0798]: this comparison is always `false`
- --> test/cli/lints/pedantic/f0798_invalid_upcast_comparisons.fren:8:48
+ --> test/cli/lints/pedantic/f0798_invalid_upcast_comparisons.fren:8:51
   |
-8 | comp d { in s: String pub out p? req r: p? iff s.index_of("a", 0) < -1 }
-  |                                                ^^^^^^^^^^^^^^^^^^^^^^^ `index_of` is never below -1
+8 | comp d { in s: String pub out p? ensure r: p? iff s.index_of("a", 0) < -1 }
+  |                                                   ^^^^^^^^^^^^^^^^^^^^^^^ `index_of` is never below -1
   |
   = note: the bound or the operator is probably not the one meant
 

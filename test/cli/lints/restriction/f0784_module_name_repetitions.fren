@@ -9,5 +9,5 @@ pub comp climate_reading {
     in mode: ClimateMode
     pub out heating?
 
-    req rule: heating? iff mode = ClimateMode::Heat
+    ensure rule: heating? iff mode = ClimateMode::Heat
 }

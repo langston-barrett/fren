@@ -10,20 +10,20 @@ mod refinement_test
 pub comp precise {
     in x: Int
     pub out y: Int
-    req r: y = x + 1
+    ensure r: y = x + 1
 }
 
 pub comp rough {
     in x: Int
     pub out y: Int
     assume small: x < 100
-    req above: y > x
+    ensure above: y > x
 }
 
 pub comp wrong {
     in x: Int
     pub out y: Int
-    req below: y < x
+    ensure below: y < x
 }
 
 refine by_solver: precise refines rough
@@ -44,7 +44,7 @@ refine by_proof: precise refines rough by
 pub comp helper {
     in v: Int
     pub out w: Int
-    req r: w = v
+    ensure r: w = v
 }
 
 pub comp first {
@@ -52,14 +52,14 @@ pub comp first {
     pub out y: Int
     assume nonempty: q != []
     inst h: helper { v := q[0] }
-    req r: y = h.w
+    ensure r: y = h.w
 }
 
 pub comp exact {
     in q: Seq(Int)
     pub out y: Int
     assume nonempty: q != []
-    req r: y = q[0]
+    ensure r: y = q[0]
 }
 
 set_option fren.evidence "tested" in
@@ -71,7 +71,7 @@ refine same: exact refines first
 pub comp shifted {
     in v: Int
     pub out w: Int
-    req r: w = v + 1
+    ensure r: w = v + 1
 }
 
 refine bound_by_solver: shifted refines rough { x := v, y := w }
@@ -90,18 +90,18 @@ pub enum Level { Allow, Warn, Forbid }
 pub comp forbidding {
     in forbidden?
     pub out stops?
-    req r: stops? iff forbidden?
+    ensure r: stops? iff forbidden?
 }
 
 pub comp stops {
     in level: Level
     pub out failures: Int
-    req f: failures = (if level = Level::Forbid then 1 else 0)
+    ensure f: failures = (if level = Level::Forbid then 1 else 0)
 }
 
 refine abstraction: stops refines forbidding { forbidden? := level = Level::Forbid, stops? := failures > 0 }
 
-pub comp other { in x: Int pub out z: Int req r: z = x }
+pub comp other { in x: Int pub out z: Int ensure r: z = x }
 
 /--
 error: `refinement_test::other` cannot refine `refinement_test::rough`: it has no variable `y`
@@ -134,7 +134,7 @@ refine bad_mention: shifted refines rough { x := w, y := w }
 error: expectation `refinement_test::fails::below` does not hold
 
 counterexample: x = -1, precise.x = -1, precise.y = 0
-help: strengthen the requirements so that it follows, or correct the expectation
+help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: the checks of `refinement_test::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
@@ -143,7 +143,7 @@ info: the checks of `refinement_test::same` set to testing are run by `fren chec
 error: expectation `refinement_test::bound_fails::below` does not hold
 
 counterexample: v = -1, shifted.v = -1, shifted.w = 0
-help: strengthen the requirements so that it follows, or correct the expectation
+help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: the checks of `refinement_test::bound_by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---

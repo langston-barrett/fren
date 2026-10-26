@@ -1,16 +1,16 @@
 warning[F0739]: parentheses directly around parentheses
- --> test/cli/lints/complexity/f0739_double_parens.fren:2:45
+ --> test/cli/lints/complexity/f0739_double_parens.fren:2:48
   |
-2 | comp c { in x: Int pub out p? req r: p? iff ((x > 0)) }
-  |                                             ^^^^^^^^^ double parentheses
+2 | comp c { in x: Int pub out p? ensure r: p? iff ((x > 0)) }
+  |                                                ^^^^^^^^^ double parentheses
   |
   = help: `fren fix` can fix this
   = note: `double_parens` is `warn` by default
   = help: to allow it, `set_option fren.lint.double_parens "allow"`
 help: remove the outer parentheses
   |
-2 - comp c { in x: Int pub out p? req r: p? iff ((x > 0)) }
-2 + comp c { in x: Int pub out p? req r: p? iff (x > 0) }
+2 - comp c { in x: Int pub out p? ensure r: p? iff ((x > 0)) }
+2 + comp c { in x: Int pub out p? ensure r: p? iff (x > 0) }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

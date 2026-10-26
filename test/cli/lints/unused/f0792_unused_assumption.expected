@@ -1,10 +1,10 @@
 warning[F0792]: the assumption `pos` constrains only inputs that nothing uses
  --> test/cli/lints/unused/f0792_unused_assumption.fren:2:52
   |
-2 | comp c { in x: Int in n: Int pub out y: Int assume pos: n > 0 req r: y = x + 1 }
+2 | comp c { in x: Int in n: Int pub out y: Int assume pos: n > 0 ensure r: y = x + 1 }
   |                                                    ^^^ constrains only unused inputs
   |
-  = note: no requirement, expectation, definition or binding mentions `n`, nor does another assumption tie them to a used variable
+  = note: no guarantee, expectation, definition or binding mentions `n`, nor does another assumption tie them to a used variable
   = help: remove the assumption and its inputs, or use them
   = note: `unused_assumption` is `warn` by default
   = help: to allow it, `set_option fren.lint.unused_assumption "allow"`

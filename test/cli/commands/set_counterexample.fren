@@ -3,7 +3,7 @@ comp c {
     in s: Set(Int)
     pub out n: Int
 
-    req r: n = s.card
+    ensure r: n = s.card
 
     expect e: n < 2
 }

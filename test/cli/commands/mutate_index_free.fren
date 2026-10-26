@@ -7,7 +7,7 @@ comp c {
     in q: Seq(Int)
     pub out ok?
 
-    req r: ok? iff (x > 0 and (q = [] or q[0] < q[0] + 1))
+    ensure r: ok? iff (x > 0 and (q = [] or q[0] < q[0] + 1))
 
     expect positive: when ok?, x > 0
     expect not_positive: when x <= 0, not ok?

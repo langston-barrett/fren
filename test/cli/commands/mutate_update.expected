@@ -1,8 +1,8 @@
-swap-comparison-m::c::r-e8e67b9e6cd1 test/cli/commands/mutate_update.fren:14:14 `=` changed to `!=`
-swap-comparison-m::c::r-6c9e561e0897 test/cli/commands/mutate_update.fren:14:23 `>` changed to `>=`
-shift-integer-m::c::r-23282fc5be59 test/cli/commands/mutate_update.fren:14:25 `0` changed to `1`
-swap-arithmetic-m::c::r-dee53f2cc3b3 test/cli/commands/mutate_update.fren:14:53 `+` changed to `-`
-shift-integer-m::c::r-da985acaa6b0 test/cli/commands/mutate_update.fren:14:55 `1` changed to `2`
-shift-integer-m::c::r-b098649a6da6 test/cli/commands/mutate_update.fren:14:55 `1` changed to `0`
-flip-bool-m::c::r-d2b439c95db2 test/cli/commands/mutate_update.fren:14:65 `true` changed to `false`
+swap-comparison-m::c::r-e8e67b9e6cd1 test/cli/commands/mutate_update.fren:14:17 `=` changed to `!=`
+swap-comparison-m::c::r-6c9e561e0897 test/cli/commands/mutate_update.fren:14:26 `>` changed to `>=`
+shift-integer-m::c::r-23282fc5be59 test/cli/commands/mutate_update.fren:14:28 `0` changed to `1`
+swap-arithmetic-m::c::r-dee53f2cc3b3 test/cli/commands/mutate_update.fren:14:56 `+` changed to `-`
+shift-integer-m::c::r-da985acaa6b0 test/cli/commands/mutate_update.fren:14:58 `1` changed to `2`
+shift-integer-m::c::r-b098649a6da6 test/cli/commands/mutate_update.fren:14:58 `1` changed to `0`
+flip-bool-m::c::r-d2b439c95db2 test/cli/commands/mutate_update.fren:14:68 `true` changed to `false`
 exit=0

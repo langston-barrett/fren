@@ -23,7 +23,7 @@ import FrenCore.Typing
 These are the only code that changes the Fren model. Each records Fren's own
 representation of a declaration, then generates ordinary Lean declarations
 from it (an `inductive` per enum; a `def` per constant; a `def` per
-`assume`/`req`/`expect`, plus `assumes` and `reqs`, per comp; a `def` per
+`assume`/`ensure`/`expect`, plus `assumes` and `ensures`, per comp; a `def` per
 global expectation) so that specs can be used from Lean.
 -/
 
@@ -1412,7 +1412,7 @@ partial def lintParens (fixable : Bool) (str : String) (e : Syntax) (inParens : 
   for a in e.getArgs, i in [0:e.getNumArgs] do lintParens fixable str a (i == 1 && isDoubleParen str e)
 
 /-- Records `assertions_on_constants` on the constraint `e`, an `assume`,
-`req` or `expect` as `kind` says (`lint::assertions_on_constants`). -/
+`ensure` or `expect` as `kind` says (`lint::assertions_on_constants`). -/
 def lintConstant (cx : ExprCtx) (kind : String) (e : Syntax) : TermElabM Unit := do
   if Core.assertionOnConstant (← mentionsAny cx e) then
     let literal? := match boolNode "" 0 (unparen e) with | .mk (.lit b) .. => some b | _ => none
@@ -3551,7 +3551,7 @@ def constraint? (m : Syntax) : Option (PropKind × Syntax × Syntax) :=
   if m.getNumArgs < 4 || m.getNumArgs > 5 || !m[0].isAtom then none else
   let kind? := match m[0].getAtomVal.trimAscii.toString with
     | "assume" => some PropKind.assume
-    | "req" => some .req
+    | "ensure" => some .ensure
     | "expect" => some .expect
     | "cover" => some .cover
     | _ => none
@@ -3823,7 +3823,7 @@ def testedOf (all : Bool) (raw : Array Syntax) : CommandElabM (Array Syntax × C
       match kind with
       | .expect | .cover => expects := expects.push (x.getId, b?)
       | .assume => misplaced "an assumption"; constraints := constraints.push x.getId
-      | .req => misplaced "a requirement"; constraints := constraints.push x.getId
+      | .ensure => misplaced "a guarantee"; constraints := constraints.push x.getId
     else match m with
     -- By the names they declare, without the `!` of shadowing.
     | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => insts := insts.push ((declaredIdent x).1.getId, b?)
@@ -3854,7 +3854,7 @@ open Lang in
 not one, which a component's members never are. -/
 def memberKind? (m : Syntax) : Option Core.MemberKind :=
   [(``Lang.useMember, .use), (``Lang.useGroupMember, .use), (``Lang.inMember, .input), (``Lang.outMember, .output),
-    (``Lang.assumeMember, .assumption), (``Lang.instMember, .inst), (``Lang.reqMember, .requirement),
+    (``Lang.assumeMember, .assumption), (``Lang.instMember, .inst), (``Lang.ensureMember, .guarantee),
     (``Lang.expectMember, .expectation), (``Lang.coverMember, .cover)].lookup m.getKind
 
 open Lang in
@@ -4058,7 +4058,7 @@ open Lang in
       -- `duplicate_constraint` (`lint::duplicate_constraint`).
       let constraints := members.filterMap fun m => match m with
         | `(fren_member| assume $x:ident : $e) => some (Core.ConstraintKind.assume, x.raw, e.raw)
-        | `(fren_member| req $x:ident : $e) => some (.req, x.raw, e.raw)
+        | `(fren_member| ensure $x:ident : $e) => some (.ensure, x.raw, e.raw)
         | `(fren_member| expect $x:ident : $e) => some (.expect, x.raw, e.raw)
         | _ => none
       for (i, j) in Core.repeatedConstraints (constraints.map fun (_, _, e) => exactText (unparen e)) do
@@ -4070,7 +4070,7 @@ open Lang in
       -- `constant_output` and `definable_output` (`lint::output_lints`).
       let lcx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
       let reqs := members.filterMap fun m => match constraint? m with
-        | some (.req, x, e) => some (x.getId, e)
+        | some (.ensure, x, e) => some (x.getId, e)
         | _ => none
       for v in vars.filter (fun v => v.role == .output && v.name.isAtomic) do
         let about := reqs.filter fun (_, e) => (pathMentions e).contains v.name
@@ -4089,11 +4089,11 @@ open Lang in
         let (constant, definable) := Core.outputLints v.defn?.isSome mentions about.size equation
         if constant then recordLint .constantOutput v.ref (Core.constantOutputMsg v.name)
         if definable then recordLint .definableOutput v.ref (Core.definableOutputMsg v.name about[0]!.1)
-      -- `case_split_reqs` (`lint::case_split_reqs`): each requirement `when T, y = e`, as its name, where it is
+      -- `case_split_guarantees` (`lint::case_split_guarantees`): each requirement `when T, y = e`, as its name, where it is
       -- reported, `y`, the operator, `T` and the text of `e`.
       let mut cases : Array (Name × Syntax × String × String × Core.VariantTest × String) := #[]
       for m in members do
-        let `(fren_member| req $x:ident : $e) := m | continue
+        let `(fren_member| ensure $x:ident : $e) := m | continue
         let e := unparen e.raw
         unless isConditional e && e[0].getAtomVal.trimAscii.toString == "when" do continue
         let body := unparen e[3]
@@ -4116,8 +4116,8 @@ open Lang in
         let cs := group.map fun j => let (n, _, _, _, t, e) := cases[j]!; (n, t, e)
         let ts := cs.map (·.2.1)
         let n := (((← getState).enums.get? t.enum).map (·.variants.size)).getD 0
-        if Core.caseSplitReqs cs.size (Core.repeatedVariants ts) then
-          recordLint .caseSplitReqs cases[group[1]!]!.2.1 (Core.caseSplitReqsMsg y op cs (Core.untestedVariants n ts))
+        if Core.caseSplitGuarantees cs.size (Core.repeatedVariants ts) then
+          recordLint .caseSplitGuarantees cases[group[1]!]!.2.1 (Core.caseSplitGuaranteesMsg y op cs (Core.untestedVariants n ts))
       let uses ← usesOf ((← fvs.mapM fun x => inferType x) ++ defs.map (·.2))
       if good then
         let appD (decl : Name) := mkAppN (Lean.mkConst decl) (uses.map (Lean.mkConst ·) ++ fvs)
@@ -4125,7 +4125,7 @@ open Lang in
         unless values.isEmpty do
           defs := defs.push (declBase ++ `defs, mkAndN (values.map fun (d, _) => appD (declBase ++ `def ++ d)).toList)
         defs := defs ++ #[(declBase ++ `assumes, mkAndN (props.filter (·.kind == .assume) |>.map app).toList),
-          (declBase ++ `reqs, mkAndN (props.filter (·.kind == .req) |>.map app).toList)]
+          (declBase ++ `ensures, mkAndN (props.filter (·.kind == .ensure) |>.map app).toList)]
         for (decl, body) in defs do
           addUsesDef uses decl (← mkLambdaFVars fvs body)
         -- `p.out.d`, a function of the inputs, when the definition mentions
@@ -4191,7 +4191,7 @@ open Lang in
         if Core.unusedAssumption ms.size (ms.all inputs.contains) u false then
           let r : Core.AssumptionRecord := { component := path, name := x.getId, inputs := ms, links := ls, level }
           modifyLocal fun l => { l with assumptions := l.assumptions.push (r, x) }
-    generated := insts.map (·.decl) ++ props.map (·.decl) ++ #[declBase ++ `assumes, declBase ++ `reqs]
+    generated := insts.map (·.decl) ++ props.map (·.decl) ++ #[declBase ++ `assumes, declBase ++ `ensures]
       ++ values.map (declBase ++ `def ++ ·.1) ++ (if values.isEmpty then #[] else #[declBase ++ `defs])
     let env ← getEnv
     generated := generated ++ (values.map (declBase ++ `out ++ ·.1)).filter env.contains
@@ -4457,7 +4457,7 @@ and the solver is asked nothing. -/
   modifyLocal fun l => { l with globalReads := l.globalReads ++ reads }
   let tested := Core.Tested.ofSettings (← evidenceTested nameStx (fren.evidence.get (← getOptions)))
     -- The bindings too, for the definedness of their indexes.
-    (a.assumes.map (·.name) ++ bound) ((a.reqs.map (·.name) ++ a.defs.map (·.1)).map (·, none))
+    (a.assumes.map (·.name) ++ bound) ((a.ensures.map (·.name) ++ a.defs.map (·.1)).map (·, none))
     -- `a`'s instances too, for the definedness of their bindings.
     (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
   let proof? := if stx[7].isNone then none else some stx[7][1]
@@ -4518,7 +4518,7 @@ and the solver is asked nothing. -/
       let lam (e : Expr) : TermElabM Expr := mkLambdaFVars fvs e
       let reported (p : PropInfo) := { p with ref := nameStx, trigger? := none, triggerRef? := none }
       let assumes ← a.assumes.mapM fun p => return { reported p with body := ← lam (p.body.beta argsA) }
-      let reqs ← a.reqs.mapM fun p => return { reported p with kind := .expect, body := ← lam (p.body.beta argsA) }
+      let reqs ← a.ensures.mapM fun p => return { reported p with kind := .expect, body := ← lam (p.body.beta argsA) }
       let defs ← a.defs.mapM fun (d, e) => do
         let i := (a.vars.findIdx? (·.name == d)).getD 0
         return { kind := .expect, name := d, ref := nameStx, trigger? := none, triggerRef? := none, decl := decl ++ d

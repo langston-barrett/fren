@@ -4,5 +4,5 @@ comp c {
     in n: Nat
     pub out y: Int
 
-    req r: y = n + 1
+    ensure r: y = n + 1
 }

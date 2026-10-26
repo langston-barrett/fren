@@ -1,5 +1,5 @@
 -- A binding `k` alone means `k := k`, so it needs a variable `k` of the
 -- concrete component.
-comp precise { in x: Int pub out y: Int req r: y = x }
-comp rough { in k: Int pub out z: Int req r: z >= k }
+comp precise { in x: Int pub out y: Int ensure r: y = x }
+comp rough { in k: Int pub out z: Int ensure r: z >= k }
 refine fits: precise refines rough { z := y, k }

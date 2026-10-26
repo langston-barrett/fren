@@ -7,16 +7,16 @@ error[F0601]: `c` is not realizable: for the input x = -1, no outputs satisfy `b
   = help: weaken one of them, or add an `assume` that rules this input out
 
 note: conflicts with `small` when x = -1
- --> test/cli/results/f0601_unrealizable.fren:5:9
+ --> test/cli/results/f0601_unrealizable.fren:5:12
   |
-5 |     req big: y > x
-  |         ^^^
+5 |     ensure big: y > x
+  |            ^^^
 
 note: conflicts with `big` when x = -1
- --> test/cli/results/f0601_unrealizable.fren:6:9
+ --> test/cli/results/f0601_unrealizable.fren:6:12
   |
-6 |     req small: y < 0
-  |         ^^^^^
+6 |     ensure small: y < 0
+  |            ^^^^^
 
 fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
 

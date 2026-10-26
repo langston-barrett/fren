@@ -1,2 +1,2 @@
 -- `constant_output`.
-comp c { in x: Int pub out limit: Int := 10 req r: x < limit }
+comp c { in x: Int pub out limit: Int := 10 ensure r: x < limit }

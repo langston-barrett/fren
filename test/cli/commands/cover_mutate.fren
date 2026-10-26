@@ -6,7 +6,7 @@ comp heater {
     in temp: Int
     pub out alarm?
 
-    req r: alarm? iff temp > 100
+    ensure r: alarm? iff temp > 100
 
     expect hot: when temp > 200, alarm?
     expect cold: when temp <= 100, not alarm?

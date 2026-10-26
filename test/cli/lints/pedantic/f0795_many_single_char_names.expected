@@ -1,7 +1,7 @@
 warning[F0795]: component `total` declares 5 single-character names
  --> test/cli/lints/pedantic/f0795_many_single_char_names.fren:4:6
   |
-4 | comp total { in a: Int in b: Int in d: Int in c? pub out s: Int req r: s = if c? then a + d else b }
+4 | comp total { in a: Int in b: Int in d: Int in c? pub out s: Int ensure r: s = if c? then a + d else b }
   |      ^^^^^ too many to tell apart
   |
   = note: they are `a`, `b`, `d`, `c?` and `s`

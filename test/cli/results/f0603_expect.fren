@@ -3,7 +3,7 @@ comp c {
     in x: Int
     pub out y: Int
     out scratch: Int
-    req r: y >= x
-    req s: scratch = x
+    ensure r: y >= x
+    ensure s: scratch = x
     expect positive: y > 0
 }

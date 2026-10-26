@@ -7,7 +7,7 @@ pub comp word {
     in text: String
     pub det out accepted?
 
-    req rule: accepted? iff text.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?")
+    ensure rule: accepted? iff text.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?")
 
     expect dotted: when text = "w.x.y?", accepted?
     set_option fren.evidence "tested" in
@@ -22,7 +22,7 @@ pub comp parity {
     in n: Int
     set_option fren.evidence "solver" in
     pub det out even?
-    req r: even? iff (n = 0 or n = 2 or n = 4)
+    ensure r: even? iff (n = 0 or n = 2 or n = 4)
     expect zero: when n = 0, even?
 }
 
@@ -52,7 +52,7 @@ expect global_wrong: forall (p: parity), when p.n = 2, not p.even?
 pub comp narrow {
     in x: Int
     pub out big?
-    req r: big? iff x > 1000
+    ensure r: big? iff x > 1000
     set_option fren.evidence "tested" in
     expect e: when 7 * x = 123459, big?
 }

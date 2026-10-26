@@ -14,107 +14,107 @@ help: write `a?`
    |
 
 warning[F0712]: this `Bool` expression can be simpler
-  --> test/cli/lints/complexity/f0712_bool.fren:19:20
+  --> test/cli/lints/complexity/f0712_bool.fren:19:23
    |
-19 |     req r1: o? iff a? = true
-   |                    ^^^^^^^^^ comparison with `true`
+19 |     ensure r1: o? iff a? = true
+   |                       ^^^^^^^^^ comparison with `true`
    |
    = help: `fren fix` can fix this
 help: write `a?`
    |
-19 -     req r1: o? iff a? = true
-19 +     req r1: o? iff a?
+19 -     ensure r1: o? iff a? = true
+19 +     ensure r1: o? iff a?
    |
 
 warning[F0712]: this `Bool` expression can be simpler
-  --> test/cli/lints/complexity/f0712_bool.fren:20:18
+  --> test/cli/lints/complexity/f0712_bool.fren:20:21
    |
-20 |     req r2: when not not (a? or b?), w? or not (x < 3)
-   |                  ^^^^^^^^^^^^^^^^^^ double negation
+20 |     ensure r2: when not not (a? or b?), w? or not (x < 3)
+   |                     ^^^^^^^^^^^^^^^^^^ double negation
    |
    = help: `fren fix` can fix this
 help: write `a? or b?`
    |
-20 -     req r2: when not not (a? or b?), w? or not (x < 3)
-20 +     req r2: when a? or b?, w? or not (x < 3)
+20 -     ensure r2: when not not (a? or b?), w? or not (x < 3)
+20 +     ensure r2: when a? or b?, w? or not (x < 3)
    |
 
 warning[F0712]: this `Bool` expression can be simpler
-  --> test/cli/lints/complexity/f0712_bool.fren:20:44
+  --> test/cli/lints/complexity/f0712_bool.fren:20:47
    |
-20 |     req r2: when not not (a? or b?), w? or not (x < 3)
-   |                                            ^^^^^^^^^^^ negated `<`
+20 |     ensure r2: when not not (a? or b?), w? or not (x < 3)
+   |                                               ^^^^^^^^^^^ negated `<`
    |
    = help: `fren fix` can fix this
 help: write `x >= 3`
    |
-20 -     req r2: when not not (a? or b?), w? or not (x < 3)
-20 +     req r2: when not not (a? or b?), w? or x >= 3
+20 -     ensure r2: when not not (a? or b?), w? or not (x < 3)
+20 +     ensure r2: when not not (a? or b?), w? or x >= 3
    |
 
 warning[F0712]: this `Bool` expression can be simpler
-  --> test/cli/lints/complexity/f0712_bool.fren:21:19
+  --> test/cli/lints/complexity/f0712_bool.fren:21:22
    |
-21 |     req r3: p? = (if b? then false else true) or false = a?
-   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^ `if` that gives `false` or `true`
+21 |     ensure r3: p? = (if b? then false else true) or false = a?
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^ `if` that gives `false` or `true`
    |
    = help: `fren fix` can fix this
 help: write `not b?`
    |
-21 -     req r3: p? = (if b? then false else true) or false = a?
-21 +     req r3: p? = (not b?) or false = a?
+21 -     ensure r3: p? = (if b? then false else true) or false = a?
+21 +     ensure r3: p? = (not b?) or false = a?
    |
 
 warning[F0712]: this `Bool` expression can be simpler
-  --> test/cli/lints/complexity/f0712_bool.fren:21:50
+  --> test/cli/lints/complexity/f0712_bool.fren:21:53
    |
-21 |     req r3: p? = (if b? then false else true) or false = a?
-   |                                                  ^^^^^^^^^^ comparison with `false`
+21 |     ensure r3: p? = (if b? then false else true) or false = a?
+   |                                                     ^^^^^^^^^^ comparison with `false`
    |
    = help: `fren fix` can fix this
 help: write `not a?`
    |
-21 -     req r3: p? = (if b? then false else true) or false = a?
-21 +     req r3: p? = (if b? then false else true) or not a?
+21 -     ensure r3: p? = (if b? then false else true) or false = a?
+21 +     ensure r3: p? = (if b? then false else true) or not a?
    |
 
 warning[F0712]: this `Bool` expression can be simpler
-  --> test/cli/lints/complexity/f0712_bool.fren:22:27
+  --> test/cli/lints/complexity/f0712_bool.fren:22:30
    |
-22 |     req r4: q? iff b? and not not (a? != true)
-   |                           ^^^^^^^^^^^^^^^^^^^^ double negation
+22 |     ensure r4: q? iff b? and not not (a? != true)
+   |                              ^^^^^^^^^^^^^^^^^^^^ double negation
    |
    = help: `fren fix` can fix this
 help: write `not a?`
    |
-22 -     req r4: q? iff b? and not not (a? != true)
-22 +     req r4: q? iff b? and not a?
+22 -     ensure r4: q? iff b? and not not (a? != true)
+22 +     ensure r4: q? iff b? and not a?
    |
 
 warning[F0712]: this `Bool` expression can be simpler
-  --> test/cli/lints/complexity/f0712_bool.fren:22:31
+  --> test/cli/lints/complexity/f0712_bool.fren:22:34
    |
-22 |     req r4: q? iff b? and not not (a? != true)
-   |                               ^^^^^^^^^^^^^^^^ negated `!=`
+22 |     ensure r4: q? iff b? and not not (a? != true)
+   |                                  ^^^^^^^^^^^^^^^^ negated `!=`
    |
    = help: `fren fix` can fix this
 help: write `a?`
    |
-22 -     req r4: q? iff b? and not not (a? != true)
-22 +     req r4: q? iff b? and not a?
+22 -     ensure r4: q? iff b? and not not (a? != true)
+22 +     ensure r4: q? iff b? and not a?
    |
 
 warning[F0712]: this `Bool` expression can be simpler
-  --> test/cli/lints/complexity/f0712_bool.fren:22:36
+  --> test/cli/lints/complexity/f0712_bool.fren:22:39
    |
-22 |     req r4: q? iff b? and not not (a? != true)
-   |                                    ^^^^^^^^^^ comparison with `true`
+22 |     ensure r4: q? iff b? and not not (a? != true)
+   |                                       ^^^^^^^^^^ comparison with `true`
    |
    = help: `fren fix` can fix this
 help: write `not a?`
    |
-22 -     req r4: q? iff b? and not not (a? != true)
-22 +     req r4: q? iff b? and not not (not a?)
+22 -     ensure r4: q? iff b? and not not (a? != true)
+22 +     ensure r4: q? iff b? and not not (not a?)
    |
 
 fren: 8 passed, 0 failed, 0 inconclusive, 0 redundant

@@ -1,18 +1,18 @@
 warning[F0755]: this test of a literal is always `false`
- --> test/cli/lints/suspicious/f0755_const_is_empty.fren:2:57
+ --> test/cli/lints/suspicious/f0755_const_is_empty.fren:2:60
   |
-2 | comp c { in x: Int pub out p? pub out q? req r1: p? iff "ab".len = 0 req r2: q? iff {x}.card > 0 }
-  |                                                         ^^^^^^^^^^^^ the literal's length is fixed
+2 | comp c { in x: Int pub out p? pub out q? ensure r1: p? iff "ab".len = 0 ensure r2: q? iff {x}.card > 0 }
+  |                                                            ^^^^^^^^^^^^ the literal's length is fixed
   |
   = note: the literal is probably not the one meant
   = note: `const_is_empty` is `warn` by default
   = help: to allow it, `set_option fren.lint.const_is_empty "allow"`
 
 warning[F0755]: this test of a literal is always `true`
- --> test/cli/lints/suspicious/f0755_const_is_empty.fren:2:85
+ --> test/cli/lints/suspicious/f0755_const_is_empty.fren:2:91
   |
-2 | comp c { in x: Int pub out p? pub out q? req r1: p? iff "ab".len = 0 req r2: q? iff {x}.card > 0 }
-  |                                                                                     ^^^^^^^^^^^^ the literal's length is fixed
+2 | comp c { in x: Int pub out p? pub out q? ensure r1: p? iff "ab".len = 0 ensure r2: q? iff {x}.card > 0 }
+  |                                                                                           ^^^^^^^^^^^^ the literal's length is fixed
   |
   = note: the literal is probably not the one meant
 

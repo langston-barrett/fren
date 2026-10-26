@@ -4,10 +4,10 @@ comp c {
     in x: Int
     pub out r: Int
 
-    req e: r = x
+    ensure e: r = x
     --~^[hosted] error: unexpected token 'mod'; expected '}'
         mod 2
-        --~^[cli] error: expected a member (`in`, `out`, `inst`, `assume`, `req`, `expect`, `cover` or `use`) or `}`, found keyword `mod`
+        --~^[cli] error: expected a member (`in`, `out`, `inst`, `assume`, `ensure`, `expect`, `cover` or `use`) or `}`, found keyword `mod`
         --~^^[hosted] error: expected identifier
 }
 --@ exit: 2

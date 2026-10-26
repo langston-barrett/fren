@@ -47,7 +47,7 @@ pub comp foo {  --~ warning: component `foo` has a placeholder name
     in foobar?
     pub out quux?  --~ warning: variable `quux?` has a placeholder name
 
-    req _4: quux? iff (Baz? and bar? and foobar? and __ > _x)  --~ warning: constraint `_4` is named only with `_` and digits
+    ensure _4: quux? iff (Baz? and bar? and foobar? and __ > _x)  --~ warning: constraint `_4` is named only with `_` and digits
 }
 
 pub comp user {
@@ -55,7 +55,7 @@ pub comp user {
     inst _5: foo { Baz? := true, __ := v, _x := v, bar? := true, foobar? := true }  --~ warning: instance `_5` is named only with `_` and digits
     pub out w?
 
-    req r: w? iff _5.quux?
+    ensure r: w? iff _5.quux?
 }
 
 set_option fren.lint.style "allow" in

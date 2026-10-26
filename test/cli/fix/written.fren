@@ -6,6 +6,6 @@ comp c {
     pub out p1?
     pub out p2?
 
-    req r1: p1? iff (s < "a b" or s = "ab")
-    req r2: p2? iff s.slice(0, "a b".len) = "ab"
+    ensure r1: p1? iff (s < "a b" or s = "ab")
+    ensure r2: p2? iff s.slice(0, "a b".len) = "ab"
 }

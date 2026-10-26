@@ -1,7 +1,7 @@
 error[F0604]: the assumption `nonneg` of `sub` may not hold for instance `c::s`
  --> test/cli/results/f0604_instance.fren:3:40
   |
-3 | comp c { in i: Int pub out o: Int inst s: sub { n := i } req r: o = s.m }
+3 | comp c { in i: Int pub out o: Int inst s: sub { n := i } ensure r: o = s.m }
   |                                        ^ may violate `sub::nonneg`
   |
   = counterexample: i = -1

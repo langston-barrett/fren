@@ -5,5 +5,5 @@ comp c {
     in e: E
     pub out p?
 
-    req r: p? iff match e { E::A => true, E::B => false, E::C => true }
+    ensure r: p? iff match e { E::A => true, E::B => false, E::C => true }
 }

@@ -5,7 +5,7 @@ enum Mode { Off, Heat }
 comp c {
   in m: Mode
   pub out o?
-  req r:o? iff(forall(k   j:Mode)  ( n :Mode),k=m or j = n)
-  req s: o? iff (exists (k: Mode),
+  ensure r:o? iff(forall(k   j:Mode)  ( n :Mode),k=m or j = n)
+  ensure s: o? iff (exists (k: Mode),
   k = m)
 }

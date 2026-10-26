@@ -143,9 +143,9 @@ register_option fren.lint.if_chain_match : String := {
   descr := "the level of the lint `if_chain_match`: allow, expect, warn, deny or forbid"
 }
 
-register_option fren.lint.case_split_reqs : String := {
+register_option fren.lint.case_split_guarantees : String := {
   defValue := "allow"
-  descr := "the level of the lint `case_split_reqs`: allow, expect, warn, deny or forbid"
+  descr := "the level of the lint `case_split_guarantees`: allow, expect, warn, deny or forbid"
 }
 
 register_option fren.lint.redundant_bindings : String := {

@@ -1,5 +1,5 @@
 -- An instance's binding takes no `where` clause.
-comp sub { in a: Int pub out b: Int req r: b = a }
+comp sub { in a: Int pub out b: Int ensure r: b = a }
 comp c { in x: Int inst s: sub { a := z where z := x } }
 --~^[cli] error: expected `}`, found keyword `where`
 --~^^[hosted] error: unexpected token 'where'; expected '}'

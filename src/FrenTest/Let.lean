@@ -11,19 +11,19 @@ pub comp heater {
   in temp: Int
   pub out on?
 
-  req heat: on? iff cold? where limit := 18, cold? := temp < limit
+  ensure heat: on? iff cold? where limit := 18, cold? := temp < limit
   expect warm: let hot? := temp > 30 in when hot?, not on?
 }
 
 /--
-info: @[reducible] def heating.heater.req.heat : Int → Bool → Prop :=
+info: @[reducible] def heating.heater.ensure.heat : Int → Bool → Prop :=
 fun temp on? =>
   have «limit@0» := 18;
   have «cold?@1» := decide (temp < «limit@0»);
   on? = true ↔ «cold?@1» = true
 -/
 #guard_msgs in
-#print heating.heater.req.heat
+#print heating.heater.ensure.heat
 
 /--
 info: @[reducible] def heating.heater.expect.warm : Int → Bool → Prop :=

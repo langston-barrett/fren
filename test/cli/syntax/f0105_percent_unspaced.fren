@@ -1,2 +1,2 @@
 -- Remainder without a space after it (F0105): the fix keeps `mod` apart from its operands.
-comp c { in x: Int pub out y: Int req r: y = x %2 }
+comp c { in x: Int pub out y: Int ensure r: y = x %2 }

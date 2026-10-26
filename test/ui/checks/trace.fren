@@ -1,9 +1,9 @@
 -- `#fren_trace`: levels, derived evidence and `fren.requireEvidence`.
 --@ only: hosted
 
-comp shown { in x? pub out y? req r: y? iff x? }
-comp hidden { in x? pub out y? req r: y? iff x? }
-comp proved { in x? pub out y? req r: y? iff x? }
+comp shown { in x? pub out y? ensure r: y? iff x? }
+comp hidden { in x? pub out y? ensure r: y? iff x? }
+comp proved { in x? pub out y? ensure r: y? iff x? }
 comp derived { in x? inst p: proved { x? } expect same: p.y? iff x? }
 comp weakly { in x? inst h: hidden { x? } }
 

@@ -1,3 +1,3 @@
 -- A definition whose expression does not have its written type (F0342).
 -- fren-covers: lang::definition_type
-comp c { in x: Int pub out y? req r: let n: Int := x > 0 in y? iff n > 0 }
+comp c { in x: Int pub out y? ensure r: let n: Int := x > 0 in y? iff n > 0 }

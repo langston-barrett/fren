@@ -24,19 +24,19 @@ use view::Severity
 | `absurd_extreme_comparisons` | `F0763` | `suspicious` | `warn` | a comparison of a `len` or `card` that is always the same, since a length is never negative, such as `s.len < 0` (see [Comparisons](Lint/Suspicious/Comparisons.md)) |
 | `allow_attributes` | `F0780` | `restriction` | `allow` | a `set_option` that sets a lint or a group to `allow` (see [Allowed lints](Lint/Restriction.md#allowed-lints)) |
 | `almost_complete_range` | `F0757` | `suspicious` | `warn` | a range in a pattern one character short of an alphabet, such as `a-y` (see [Ranges of characters](Lint/Suspicious/Literals.md#ranges-of-characters)) |
-| `arbitrary_source_item_ordering` | `F0779` | `restriction` | `allow` | a component whose members are out of order, such as an `in` after a `req` (see [The order of members](Lint/Restriction.md#the-order-of-members)) |
-| `assertions_on_constants` | `F0761` | `style` | `warn` | an `assume`, `req` or `expect` that mentions no variable, such as `req r: true` (see [Constant constraints](Lint/Style.md#constant-constraints)) |
+| `arbitrary_source_item_ordering` | `F0779` | `restriction` | `allow` | a component whose members are out of order, such as an `in` after an `ensure` (see [The order of members](Lint/Restriction.md#the-order-of-members)) |
+| `assertions_on_constants` | `F0761` | `style` | `warn` | an `assume`, `ensure` or `expect` that mentions no variable, such as `ensure r: true` (see [Constant constraints](Lint/Style.md#constant-constraints)) |
 | `bool_equality` | `F0731` | `pedantic` | `allow` | `a = b` on `Bool`s (see [Boolean equality](Lint/Pedantic.md#boolean-equality)) |
 | `branches_sharing_code` | `F0778` | `pedantic` | `allow` | `if c then a op x else b op x`, whose branches share an operand (see [Branches sharing code](Lint/Pedantic.md#branches-sharing-code)) |
 | `card_zero` | `F0716` | `style` | `warn` | a comparison of a set's or relation's `card` with `0` or `1` that says whether it is empty, such as `s.card = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
-| `case_split_reqs` | `F0729` | `pedantic` | `allow` | two or more requirements `when T, y = e` of one output, whose tests are of which variant one scrutinee is (see [Variant tests](Lint/Pedantic/Matches.md#variant-tests)) |
+| `case_split_guarantees` | `F0729` | `pedantic` | `allow` | two or more guarantees `when T, y = e` of one output, whose tests are of which variant one scrutinee is (see [Variant tests](Lint/Pedantic/Matches.md#variant-tests)) |
 | `chainable_comparison` | `F0804` | `style` | `warn` | two adjacent conjuncts of an `and` that one chained comparison writes, such as `lo <= x and x < hi` (see [Chained comparisons](Lint/Style/Comparisons.md#chained-comparisons)) |
 | `collapsible_when` | `F0723` | `style` | `warn` | a `when` whose body is a `when`, or an `unless` whose body is an `unless` (see [Conditionals](Lint/Style.md#conditionals)) |
 | `const_is_empty` | `F0755` | `suspicious` | `warn` | a test of a literal whose value the literal fixes, such as `"ab".len = 0` (see [Tests of literals](Lint/Suspicious/Literals.md#tests-of-literals)) |
 | `constant_output` | `F0719` | `complexity` | `warn` | a defined output whose definition mentions no variable and no uninterpreted function (see [Constant outputs](Lint/Complexity.md#constant-outputs)) |
 | `contradictory_comparisons` | `F0766` | `suspicious` | `warn` | two comparisons of one operand that cannot both hold, joined by `and`, or of which one always holds, joined by `or`, such as `x < 3 and x > 5`, or in a chained comparison, such as `5 < x < 3` (see [Comparisons](Lint/Suspicious/Comparisons.md)) |
 | `dead_code` | `F0711` | `unused` | `warn` | a private enumeration, record, abstract type, function or constant that nothing in its file uses (see [Dead code](Lint/Unused.md#dead-code)) |
-| `definable_output` | `F0720` | `pedantic` | `allow` | an output that one requirement equates with an expression of other variables (see [Definable outputs](Lint/Pedantic.md#definable-outputs)) |
+| `definable_output` | `F0720` | `pedantic` | `allow` | an output that one guarantee equates with an expression of other variables (see [Definable outputs](Lint/Pedantic.md#definable-outputs)) |
 | `disallowed_names` | `F0752` | `style` | `warn` | a declared name that is a placeholder, such as `foo` (see [Names](Lint/Style.md#names)) |
 | `double_comparison` | `F0730` | `complexity` | `warn` | two comparisons of the same operands that are one, such as `a < b or a = b` (see [Double comparisons](Lint/Complexity/Comparisons.md#double-comparisons)) |
 | `double_neg` | `F0740` | `style` | `warn` | a negation of a negation, `- -x` (see [Negations](Lint/Style.md#negations)) |
@@ -172,7 +172,7 @@ pub comp severity {
     in level: Level
     pub det out result: Severity
 
-    req rule: result = match level { Allow | Expect => Silent, Warn => Warning, Deny | Forbid => Error }
+    ensure rule: result = match level { Allow | Expect => Silent, Warn => Warning, Deny | Forbid => Error }
 
     expect never_info: result != Info
     expect silent_below_warn: result = Silent iff level in {Allow, Expect}
@@ -233,7 +233,7 @@ pub comp group_default {
     in group: Group
     pub det out level: Level
 
-    req rule: level = match group {
+    ensure rule: level = match group {
         Group::Pedantic | Group::Restriction => Level::Allow,
         Group::Decidability => Level::Deny,
         _ => Level::Warn,
@@ -291,8 +291,8 @@ pub comp setting {
     pub det out accepted?
     pub det out level: Level
 
-    req forbidden: accepted? iff (current != Forbid or requested = Forbid)
-    req applied: level = if accepted? then requested else current
+    ensure forbidden: accepted? iff (current != Forbid or requested = Forbid)
+    ensure applied: level = if accepted? then requested else current
 
     expect forbid_is_final: when current = Forbid, level = Forbid
     expect forbid_is_always_accepted: when requested = Forbid, accepted?
@@ -314,8 +314,8 @@ pub comp group_setting {
     pub det out accepted?
     pub det out level: Level
 
-    req forbidden: accepted? iff (n_forbidden = 0 or requested = Level::Forbid)
-    req applied: level = if accepted? then requested else current
+    ensure forbidden: accepted? iff (n_forbidden = 0 or requested = Level::Forbid)
+    ensure applied: level = if accepted? then requested else current
 
     expect forbid_is_always_accepted: when requested = Level::Forbid, accepted? and level = Level::Forbid
     expect blocked_keeps_level: when n_forbidden > 0 and requested != Level::Forbid, level = current
@@ -338,7 +338,7 @@ pub comp outside_options {
     in group: Level
     pub det out level: Level
 
-    req rule: level = if default_level = Level::Forbid or (own_set? and own = Level::Forbid)
+    ensure rule: level = if default_level = Level::Forbid or (own_set? and own = Level::Forbid)
         or (group_set? and group = Level::Forbid) then Level::Forbid
         else if own_set? then own else if group_set? then group else default_level
 
@@ -364,7 +364,7 @@ pub comp history {
     out rest: Seq(Level) := settings.slice(settings.index_of([Forbid], 0) + 1, settings.len)
     pub det out accepted?
 
-    req rule: accepted? iff not (Forbid in settings
+    ensure rule: accepted? iff not (Forbid in settings
         and (Allow in rest or Expect in rest or Warn in rest or Deny in rest))
 
     expect forbid_last: when settings = [Warn, Forbid], accepted?
@@ -397,7 +397,7 @@ pub comp stepwise {
     inst second: setting { current := first.level, requested := settings[1] }
     inst third: setting { current := second.level, requested := settings[2] }
 
-    req rule: accepted? iff (first.accepted? and second.accepted? and third.accepted?)
+    ensure rule: accepted? iff (first.accepted? and second.accepted? and third.accepted?)
 
     expect unforbid_last: when settings = [Warn, Forbid, Allow], not accepted?
 }
@@ -423,11 +423,11 @@ pub comp effective {
 
     assume no_cli_expect: cli != Expect
 
-    req cli_rule: after_cli = if cli_set? and (default_level != Forbid or cli = Forbid)
+    ensure cli_rule: after_cli = if cli_set? and (default_level != Forbid or cli = Forbid)
         then cli else default_level
-    req level_rule: level = if src_set? and (after_cli != Forbid or src = Forbid)
+    ensure level_rule: level = if src_set? and (after_cli != Forbid or src = Forbid)
         then src else after_cli
-    req error_rule: error? iff (src_set? and after_cli = Forbid and src != Forbid)
+    ensure error_rule: error? iff (src_set? and after_cli = Forbid and src != Forbid)
 
     expect default_when_unset: when not cli_set? and not src_set?, level = default_level
     expect source_wins: when src_set? and not error?, level = src
@@ -453,6 +453,10 @@ A `set_option` naming a lint that does not exist is an error (`F0707`),
 and so is a level other than the five (`F0708`). In Lean, an option that
 does not exist is Lean's own error, worded differently. The `fren` command
 accepts no other `set_option` (see [Input files](Cli.md#input-files)).
+
+A lint that was renamed is unknown by its old name, and the `fren` command's
+error names the new one: `case_split_reqs` is now `case_split_guarantees`,
+since a constraint once written `req` is now a guarantee, written `ensure`.
 
 ## Messages
 
@@ -509,8 +513,8 @@ pub comp expectation {
     pub det out fulfilled?
     pub det out reported?
 
-    req fulfilled: fulfilled? iff n_fired > 0
-    req reported: reported? iff (not fulfilled? and not level in {Allow, Expect})
+    ensure fulfilled: fulfilled? iff n_fired > 0
+    ensure reported: reported? iff (not fulfilled? and not level in {Allow, Expect})
 
     expect fired_is_quiet: when n_fired > 0, not reported?
 }
@@ -609,7 +613,7 @@ and `struct_field_names` would need, would also have to rename every use
 of it, including uses in Lean code and in files that are not given, and so
 would removing a dead item, or a function applied once, which
 `single_call_fn` reports. Removing an unused variable, or the inputs of an
-unused assumption, would change its component's interface, and merging the requirements that `case_split_reqs`
+unused assumption, would change its component's interface, and merging the guarantees that `case_split_guarantees`
 reports would change what traces, claims and `impl`s name, and so would
 removing a constraint that `assertions_on_constants` reports. Writing a
 string literal in NFC, as `unicode_not_nfc` suggests, would change its
@@ -647,7 +651,7 @@ pub comp fix_selected {
     in skip: Set(Lint)   -- the lints given to `--skip`
     pub det out fixed?
 
-    req rule: fixed? iff ((only = {} or lint in only) and not lint in skip)
+    ensure rule: fixed? iff ((only = {} or lint in only) and not lint in skip)
 
     expect default_all: when only = {} and not lint in skip, fixed?
     expect only_excludes: unless only = {} or lint in only, not fixed?
@@ -687,7 +691,7 @@ pub comp import_fix {
     in n_used: Nat       -- distinct variants the file uses through it
     pub det out fix: ImportFix
 
-    req rule: fix = if unused? and fix_unused? then ImportFix::Remove
+    ensure rule: fix = if unused? and fix_unused? then ImportFix::Remove
         else if glob? and fix_glob? and not unused? and n_used > 0 then ImportFix::ByName
         else ImportFix::Keep
 
@@ -716,9 +720,9 @@ pub comp fix_exit {
     in unchanged?        -- no file changes: no lint that is fixed fires, and with `--fmt`, every file is formatted
     pub det out code: Int
 
-    req failed: unless loaded?, code = 2
-    req pending: when loaded? and check? and not unchanged?, code = 1
-    req fixed: when loaded? and (not check? or unchanged?), code = 0
+    ensure failed: unless loaded?, code = 2
+    ensure pending: when loaded? and check? and not unchanged?, code = 1
+    ensure fixed: when loaded? and (not check? or unchanged?), code = 0
 
     expect documented_codes: 0 <= code <= 2
 }

@@ -338,7 +338,7 @@ impl nat_place: lang::nat_place for (p : Fren.Core.TypePlace) {
 def toBrought : Fren.Core.Brought → lang.Brought
   | .nothing => .Nothing
   | .assumption => .Assumption
-  | .requirement => .Requirement
+  | .guarantee => .Guarantee
 
 impl nat_variable: lang::nat_variable for (o d : Bool) {
   own_output? := o,

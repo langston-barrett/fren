@@ -73,7 +73,7 @@ inductive Lint where
   | matchLikeMembership
   | wildcardSingleVariant
   | ifChainMatch
-  | caseSplitReqs
+  | caseSplitGuarantees
   | redundantBindings
   | eqOp
   | sameBranches
@@ -157,7 +157,7 @@ def Lint.all : Array Lint :=
     .unusedVariables, .deadCode, .nonminimalBool, .undecidable, .lengthZero, .cardZero,
     .singletonMembership, .membershipChain, .constantOutput, .definableOutput, .indexAfterUse, .unlessNot,
     .collapsibleWhen, .ifNotElse, .matchSameArms, .matchLikeMembership, .wildcardSingleVariant, .ifChainMatch,
-    .caseSplitReqs, .redundantBindings, .eqOp, .sameBranches, .duplicateElements, .emptyArgument, .doubleComparison,
+    .caseSplitGuarantees, .redundantBindings, .eqOp, .sameBranches, .duplicateElements, .emptyArgument, .doubleComparison,
     .boolEquality, .manualMethod, .elseExtends, .identityOp, .doubleParens, .doubleNeg, .intPlusOne, .negMultiply,
     .redundantMethodChain, .trivialPattern, .redundantBoolType, .trivialMatch,
     .zeroSizedMapValues, .manySingleCharNames, .similarNames, .tooManyLines, .moduleInception, .enumVariantNames,
@@ -199,7 +199,7 @@ def Lint.name : Lint → String
   | .matchLikeMembership => "match_like_membership"
   | .wildcardSingleVariant => "wildcard_single_variant"
   | .ifChainMatch => "if_chain_match"
-  | .caseSplitReqs => "case_split_reqs"
+  | .caseSplitGuarantees => "case_split_guarantees"
   | .redundantBindings => "redundant_bindings"
   | .eqOp => "eq_op"
   | .sameBranches => "same_branches"
@@ -302,7 +302,7 @@ def Lint.code : Lint → String
   | .matchLikeMembership => "F0726"
   | .wildcardSingleVariant => "F0728"
   | .ifChainMatch => "F0727"
-  | .caseSplitReqs => "F0729"
+  | .caseSplitGuarantees => "F0729"
   | .redundantBindings => "F0735"
   | .eqOp => "F0736"
   | .sameBranches => "F0737"
@@ -433,7 +433,7 @@ def Lint.group : Lint → Group
   | .invisibleCharacters | .negativePosition | .absurdExtremeComparisons | .erasingOp | .ifsSameCond
   | .contradictoryComparisons | .unrelatedBinders | .literalDotInPattern | .irrefutableIs => .suspicious
   | .membershipChain | .definableOutput | .ifNotElse | .matchSameArms | .wildcardSingleVariant | .ifChainMatch
-  | .caseSplitReqs | .boolEquality | .zeroSizedMapValues | .manySingleCharNames | .similarNames
+  | .caseSplitGuarantees | .boolEquality | .zeroSizedMapValues | .manySingleCharNames | .similarNames
   | .tooManyLines | .invalidUpcastComparisons | .unicodeNotNfc | .unnecessaryTrailingComma => .pedantic
   | .allowAttributes | .wildcardEnumMatchArm | .needlessRawStrings | .nonAsciiLiteral | .moduleNameRepetitions
   | .minIdentChars | .absolutePaths | .precedence | .arbitrarySourceItemOrdering
@@ -795,7 +795,7 @@ def writtenSame (a b : String) : Bool :=
 /-! ## Tests of variants -/
 
 /-- A test of which variant a scrutinee is, as `if_chain_match` and
-`case_split_reqs` read it: `x = E::V`, `x in {E::V, E::W}`, or an `or` of
+`case_split_guarantees` read it: `x = E::V`, `x in {E::V, E::W}`, or an `or` of
 such tests of one scrutinee, where each variant has no payload. -/
 structure VariantTest where
   /-- The scrutinee's text. -/
@@ -857,14 +857,14 @@ def ifChainMatchMsg (tests : Array VariantTest) (bodies : Array String) (final? 
     fixes := #[{ msg := "write it as a `match`"
                  replacement := s!"match {scrutineeText x} \{ {", ".intercalate arms.toList} }" }] }
 
-/-- Whether `case_split_reqs` fires on `n` requirements `when T, y = e`, for
-one output `y` and one scrutinee (`lint::case_split_reqs`). -/
-def caseSplitReqs (n nRepeated : Nat) : Bool := n ≥ 2 && nRepeated == 0
+/-- Whether `case_split_guarantees` fires on `n` requirements `when T, y = e`, for
+one output `y` and one scrutinee (`lint::case_split_guarantees`). -/
+def caseSplitGuarantees (n nRepeated : Nat) : Bool := n ≥ 2 && nRepeated == 0
 
 /-- The requirements `when T, y OP e` of one output `y` and scrutinee, as
 their names, tests and the texts of `e`, of which `nUntested` variants are
 not tested. -/
-def caseSplitReqsMsg (y op : String) (cases : Array (Name × VariantTest × String)) (nUntested : Nat) : Msg :=
+def caseSplitGuaranteesMsg (y op : String) (cases : Array (Name × VariantTest × String)) (nUntested : Nat) : Msg :=
   let x := (cases[0]?.map (·.2.1.scrutinee)).getD ""
   let arms := cases.map fun (_, t, e) => s!"{t.pattern} => {e}"
   let arms := if nUntested > 0 then arms.push s!"_ => {y}" else arms
@@ -874,11 +874,11 @@ def caseSplitReqsMsg (y op : String) (cases : Array (Name × VariantTest × Stri
     | _ => ", ".intercalate names
   { code? := some "F0729", headline := s!"{named} constrain `{y}` case by case on which variant `{x}` is"
     label? := some "one of the cases"
-    notes := #[s!"help: state them as one requirement, `{y} {op} match {scrutineeText x} \{ {", ".intercalate arms.toList} }`"]
+    notes := #[s!"help: state them as one guarantee, `{y} {op} match {scrutineeText x} \{ {", ".intercalate arms.toList} }`"]
       ++ (if nUntested > 0 then
-          #[s!"note: `_ => {y}` leaves `{y}` unconstrained where no requirement tests the variant, as they do"]
+          #[s!"note: `_ => {y}` leaves `{y}` unconstrained where no guarantee tests the variant, as they do"]
         else #[])
-      ++ #["note: `fren fix` does not merge requirements, which traces, claims and `impl`s name"] }
+      ++ #["note: `fren fix` does not merge guarantees, which traces, claims and `impl`s name"] }
 
 /-- Whether `redundant_bindings` fires on the binding, or field, `name :=
 value`, as the texts of both (`lint::redundant_bindings`). -/
@@ -913,11 +913,22 @@ name of a lint or a group. -/
 def similarLintMsg (s : String) : String :=
   s!"a {if (Group.ofName? s).isSome then "group" else "lint"} with a similar name exists: `{s}`"
 
+/-- The lints that Fren renamed, by their old names: `set_option` rejects
+an old name, with its new one as the fix. -/
+def renamedLints : List (String × String) :=
+  [("case_split_reqs", "case_split_guarantees")]
+
 def unknownLintMsg (n : String) : Msg :=
-  { code? := some "F0707", headline := s!"unknown lint `{n}`", label? := some "no such lint"
-    notes := removedLintNotes n ++ #[lintsNote, groupsNote]
-    fixes := (similarStr n lintTargetNames).toArray.map fun s =>
-      { msg := similarLintMsg s, replacement := s!"fren.lint.{s}" } }
+  match renamedLints.lookup n with
+  | some new =>
+    { code? := some "F0707", headline := s!"unknown lint `{n}`", label? := some "no such lint"
+      notes := #[s!"note: `{n}` was renamed to `{new}`"]
+      fixes := #[{ msg := s!"use the new name: `{new}`", replacement := s!"fren.lint.{new}" }] }
+  | none =>
+    { code? := some "F0707", headline := s!"unknown lint `{n}`", label? := some "no such lint"
+      notes := removedLintNotes n ++ #[lintsNote, groupsNote]
+      fixes := (similarStr n lintTargetNames).toArray.map fun s =>
+        { msg := similarLintMsg s, replacement := s!"fren.lint.{s}" } }
 
 def invalidLevelMsg (v : String) : Msg :=
   { code? := some "F0708", headline := s!"invalid lint level `{v}`", label? := some "not a lint level"
@@ -2477,13 +2488,13 @@ def eqOpConditionalMsg (negated : Bool) (v : EqOpValue) (c : String) : Msg :=
 /-- The kind of a constraint or a global expectation (`lint::ConstraintKind`). -/
 inductive ConstraintKind where
   | assume
-  | req
+  | ensure
   | expect
   deriving Inhabited, BEq, DecidableEq, Repr
 
 def ConstraintKind.keyword : ConstraintKind → String
   | .assume => "assume"
-  | .req => "req"
+  | .ensure => "ensure"
   | .expect => "expect"
 
 /-- Whether `duplicate_constraint` fires on a constraint, from whether it is
@@ -2504,7 +2515,7 @@ kind `earlier`. When the two are of one kind, the fix removes the later. -/
 def duplicateConstraintMsg (earlier later : ConstraintKind) (name : String) : Msg :=
   let notes := if earlier == later then #["help: remove it"]
     else if later == .expect then
-      #[s!"note: an `expect` that repeats a `{earlier.keyword}` tests nothing",
+      #[s!"note: an `expect` that repeats an `{earlier.keyword}` tests nothing",
         "help: the expectation was probably meant to say something stronger"]
     else #["note: one of them is probably not the constraint meant"]
   { code? := some Lint.duplicateConstraint.code, headline := s!"this is written the same as `{name}`"
@@ -4426,21 +4437,21 @@ def needlessMatchMsg (fixed : String) : Msg :=
 uninterpreted function (`lint::assertions_on_constants`). -/
 def assertionOnConstant (mentions : Bool) : Bool := !mentions
 
-/-- A constraint, an `assume`, `req` or `expect`, or a cover goal, that mentions no
+/-- A constraint, an `assume`, `ensure` or `expect`, or a cover goal, that mentions no
 variable, where `literal?` is its value if it is written `true` or
 `false`. -/
 def assertionOnConstantMsg (kind : String) (literal? : Option Bool) : Msg :=
   let what := match kind with
     | "assume" => "assumption"
-    | "req" => "requirement"
+    | "ensure" => "guarantee"
     | "cover" => "cover goal"
     | _ => "expectation"
   let (label, note) := match literal?, kind with
     | some true, "assume" => ("always `true`", "it rules out no input")
-    | some true, "req" => ("always `true`", "it constrains nothing")
+    | some true, "ensure" => ("always `true`", "it constrains nothing")
     | some true, _ => ("always `true`", "it claims nothing")
-    | some false, "assume" => ("always `false`", "no input meets it, so every requirement holds vacuously")
-    | some false, "req" => ("always `false`", "no behaviour meets it, so the component is not realizable")
+    | some false, "assume" => ("always `false`", "no input meets it, so every guarantee holds vacuously")
+    | some false, "ensure" => ("always `false`", "no behaviour meets it, so the component is not realizable")
     | some false, _ => ("always `false`", "it always fails")
     | none, _ => ("the same in every behaviour",
       "it is either always true, and says nothing, or always false")
@@ -4549,7 +4560,7 @@ inductive MemberKind where
   | output
   | assumption
   | inst
-  | requirement
+  | guarantee
   | expectation
   | cover
   deriving Inhabited, BEq, DecidableEq, Repr
@@ -4561,7 +4572,7 @@ def MemberKind.rank : MemberKind → Nat
   | .output => 2
   | .assumption => 3
   | .inst => 4
-  | .requirement => 5
+  | .guarantee => 5
   | .expectation => 6
   | .cover => 7
 
@@ -4571,7 +4582,7 @@ def MemberKind.describe : MemberKind → String
   | .output => "an output"
   | .assumption => "an assumption"
   | .inst => "an instance"
-  | .requirement => "a requirement"
+  | .guarantee => "a guarantee"
   | .expectation => "an expectation"
   | .cover => "a cover goal"
 
@@ -4657,7 +4668,7 @@ def memberOrderFix? (src : Array Char) (openStop : Nat) (members : Array Range) 
 def memberOrderMsg (member before : MemberKind) : Msg :=
   { code? := some Lint.arbitrarySourceItemOrdering.code, headline := s!"{member.describe} after {before.describe}"
     label? := some "out of order"
-    notes := #["note: the members of a component are written `use`, `in`, `out`, `assume`, `inst`, `req`, `expect`, then `cover`"] }
+    notes := #["note: the members of a component are written `use`, `in`, `out`, `assume`, `inst`, `ensure`, `expect`, then `cover`"] }
 
 /-! ## Expectations -/
 
@@ -4807,7 +4818,7 @@ def unusedAssumptionMsg (name : Name) (inputs linked : Array Name) : Msg :=
   { code? := some Lint.unusedAssumption.code
     headline := s!"the assumption `{name}` constrains only inputs that nothing uses"
     label? := some "constrains only unused inputs"
-    notes := #[s!"note: no requirement, expectation, definition or binding mentions {show_ inputs}, \
+    notes := #[s!"note: no guarantee, expectation, definition or binding mentions {show_ inputs}, \
         nor does another assumption tie them to a used variable"] ++ together ++
       #["help: remove the assumption and its inputs, or use them"] }
 

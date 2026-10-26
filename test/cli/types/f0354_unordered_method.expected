@@ -1,8 +1,8 @@
 error[F0354]: `Level` is not ordered, so it has no method `max`
- --> test/cli/types/f0354_unordered_method.fren:4:64
+ --> test/cli/types/f0354_unordered_method.fren:4:67
   |
-4 | comp c { in a: Level in b: Level pub out m: Level req r: m = a.max(b) }
-  |                                                                ^^^ `Level` is not ordered
+4 | comp c { in a: Level in b: Level pub out m: Level ensure r: m = a.max(b) }
+  |                                                                   ^^^ `Level` is not ordered
   |
   = note: only `Int`s and the values of an ordered enum have `min` and `max`
   = help: to order its variants as they are declared, declare it `ordered enum Level { ... }`

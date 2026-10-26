@@ -17,14 +17,14 @@ help: one side of `*` must mention no variable and no uninterpreted function, su
 comp squared {
     in x: Int
     pub out y: Int
-    req q: y = x * x
+    ensure q: y = x * x
 }
 
 pub comp conflict {
     in x: Int
     pub out y: Int
-    req a: y = x
-    req b: y = x + 1
+    ensure a: y = x
+    ensure b: y = x + 1
 }
 /--
 error: `static_errors_test::conflict` is not realizable: for the input x = 0, no outputs satisfy `a`, `b`

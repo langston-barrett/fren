@@ -9,6 +9,6 @@ pub comp c {
     pub out ok?
     pub out z?
 
-    req r: ok? = if s is Shape::Circle(_) then true else false
-    req q: z? iff not ((s is Shape::Circle(_)) = b?)
+    ensure r: ok? = if s is Shape::Circle(_) then true else false
+    ensure q: z? iff not ((s is Shape::Circle(_)) = b?)
 }

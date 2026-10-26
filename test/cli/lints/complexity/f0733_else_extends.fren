@@ -1,2 +1,2 @@
 -- `else_extends`, through a chain of `else if`s.
-comp c { in a? in x: Int pub out n: Int req r: n = 2 * if a? then x else if x > 0 then 1 else x - 1 }
+comp c { in a? in x: Int pub out n: Int ensure r: n = 2 * if a? then x else if x > 0 then 1 else x - 1 }

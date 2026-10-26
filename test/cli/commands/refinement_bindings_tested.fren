@@ -4,15 +4,15 @@
 pub comp exit_status {
     in ran?
     pub out code: Int
-    req not_run: code = 2 iff not ran?
-    req documented: code = 0 or code = 1 or code = 2 or code = 3
+    ensure not_run: code = 2 iff not ran?
+    ensure documented: code = 0 or code = 1 or code = 2 or code = 3
 }
 
 pub comp fmt_exit {
     in all_parsed?
     in changed?
     pub out code: Int
-    req r: code = (if not all_parsed? then 2 else if changed? then 1 else 0)
+    ensure r: code = (if not all_parsed? then 2 else if changed? then 1 else 0)
 }
 
 set_option fren.evidence "tested" in
@@ -21,7 +21,7 @@ refine fmt_exit_status: fmt_exit refines exit_status { ran? := all_parsed? }
 pub comp bad_exit {
     in all_parsed?
     pub out code: Int
-    req r: code = (if not all_parsed? then 2 else 4)
+    ensure r: code = (if not all_parsed? then 2 else 4)
 }
 
 set_option fren.evidence "tested" in

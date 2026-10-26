@@ -1,5 +1,5 @@
 x = 3
 y = 3
-req r: false
+ensure r: false
 status: violates
 exit=1

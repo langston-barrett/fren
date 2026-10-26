@@ -1,4 +1,4 @@
 -- Values of an enum that is not ordered, compared (F0352).
 enum Level { Low, Middle, High }
 
-comp c { in l: Level pub out high? req r: high? iff l > Level::Middle }
+comp c { in l: Level pub out high? ensure r: high? iff l > Level::Middle }

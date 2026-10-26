@@ -19,10 +19,10 @@ error[F0601]: `c` is not realizable: for the input pick.b? = false, no outputs s
   = note: instance variables are part of the system: whatever the instances do, the component must cope
 
 note: is false when pick.b? = false
- --> test/cli/results/f0601_instance.fren:6:9
+ --> test/cli/results/f0601_instance.fren:6:12
   |
-6 |     req lucky: pick.b? and x = 0
-  |         ^^^^^
+6 |     ensure lucky: pick.b? and x = 0
+  |            ^^^^^
 
 fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
 

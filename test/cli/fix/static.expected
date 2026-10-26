@@ -1,8 +1,8 @@
 error[F0201]: cannot find `Nope` in this scope
- --> test/cli/fix/static.fren:6:50
+ --> test/cli/fix/static.fren:6:53
   |
-6 | comp c { in m: Mode pub out h? req r: h? iff m = Nope }
-  |                                                  ^^^^ not found in this scope
+6 | comp c { in m: Mode pub out h? ensure r: h? iff m = Nope }
+  |                                                     ^^^^ not found in this scope
 
 error[F0701]: unused import `Mode::Cool`
  --> test/cli/fix/static.fren:5:5

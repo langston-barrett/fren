@@ -3,4 +3,4 @@ set_option fren.lint.zero_sized_map_values "warn"
 
 enum Mark { Marked }
 
-comp c { in r: Rel(Set(Int), Mark) pub out p? req q: p? iff r = {} }
+comp c { in r: Rel(Set(Int), Mark) pub out p? ensure q: p? iff r = {} }

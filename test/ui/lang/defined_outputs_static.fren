@@ -11,7 +11,7 @@ comp cycle {
     out b: Int := a
     pub out o: Int
 
-    req r: o = a
+    ensure r: o = a
 }
 
 comp in_assumption {
@@ -21,7 +21,7 @@ comp in_assumption {
     pub out p: Int
 
     assume a: d > 0                 --~ error: assumptions may only mention `in` variables, but `o` is an `out`
-    req r: p = o
+    ensure r: p = o
 }
 
 comp in_argument {
@@ -30,8 +30,8 @@ comp in_argument {
     out d: Int := o + x
     pub out p: Int
 
-    req r: p = f(d)                 --~ error: the arguments of a function may not mention an `out`, but `o` is one
-    req s: o = 0
+    ensure r: p = f(d)                 --~ error: the arguments of a function may not mention an `out`, but `o` is one
+    ensure s: o = 0
 }
 
 comp nonlinear {
@@ -40,7 +40,7 @@ comp nonlinear {
     out d: Int := x + 1
     pub out p: Int
 
-    req r: p = d * y                --~ error: nonlinear arithmetic is not supported
+    ensure r: p = d * y                --~ error: nonlinear arithmetic is not supported
 }
 
 comp unbounded {
@@ -48,7 +48,7 @@ comp unbounded {
     out l: IntList                     --~ error: output `l` has the unbounded type `IntList`
     pub out p?
 
-    req r: p? iff l = IntList::Nil
+    ensure r: p? iff l = IntList::Nil
 }
 
 comp typed {
@@ -72,6 +72,6 @@ comp unused {
     out d: Int := x                 --~ warning: unused variable `d`
     pub out p: Int
 
-    req r: p = x
+    ensure r: p = x
 }
 --@ exit: 2

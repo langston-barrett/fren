@@ -1,4 +1,4 @@
 -- `unrelated_binders`, which has no fix.
-comp c { in x: Int pub out y: Int req r: y = x + 1 }
+comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
 
 expect e: forall (a b: c), (when a.x = 0, a.y = 1) and (when b.x = 1, b.y = 2)

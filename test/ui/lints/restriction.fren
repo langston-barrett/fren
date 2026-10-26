@@ -24,8 +24,8 @@ comp wildcards {
     pub out level: Int
     pub out other: Int
 
-    req first: level = match mode { Mode::Heat => 1, _ => 2 }  --~ warning: `_` matches `climate::Mode::Cool`, `climate::Mode::Off` and `climate::Mode::Auto`
-    req second: other = match mode { Mode::Heat => 1, Mode::Cool => 2, Mode::Off => 3, _ => 4 }  --~ warning: `_` matches `climate::Mode::Auto`
+    ensure first: level = match mode { Mode::Heat => 1, _ => 2 }  --~ warning: `_` matches `climate::Mode::Cool`, `climate::Mode::Off` and `climate::Mode::Auto`
+    ensure second: other = match mode { Mode::Heat => 1, Mode::Cool => 2, Mode::Off => 3, _ => 4 }  --~ warning: `_` matches `climate::Mode::Auto`
 }
 
 comp literals {
@@ -35,10 +35,10 @@ comp literals {
     pub out accented?
     pub out astral?
 
-    req raw_rule: raw? iff text.matches?(r"[a-z]+")  --~ warning: this raw string literal needs no escapes
-    req quoted_rule: quoted? iff text.matches?(r#"a"[a-z]+"#)
-    req accented_rule: accented? iff text = "café"  --~ warning: this string literal contains a non-ASCII character, `U+00E9`
-    req astral_rule: astral? iff text = "a😀é"  --~ warning: this string literal contains non-ASCII characters: `U+1F600`, `U+00E9`
+    ensure raw_rule: raw? iff text.matches?(r"[a-z]+")  --~ warning: this raw string literal needs no escapes
+    ensure quoted_rule: quoted? iff text.matches?(r#"a"[a-z]+"#)
+    ensure accented_rule: accented? iff text = "café"  --~ warning: this string literal contains a non-ASCII character, `U+00E9`
+    ensure astral_rule: astral? iff text = "a😀é"  --~ warning: this string literal contains non-ASCII characters: `U+1F600`, `U+00E9`
 }
 
 comp paths {
@@ -46,8 +46,8 @@ comp paths {
     pub out inside?
     pub out side: Int
 
-    req inside_rule: inside? iff probe = sensors::Probe::Inside  --~ warning: `sensors::Probe::Inside` is a path of 3 segments
-    req side_rule: side = match probe { sensors::Probe::Outside => 1, sensors::Probe::Inside => 2 }  --~ warning: `sensors::Probe::Outside` is a path of 3 segments
+    ensure inside_rule: inside? iff probe = sensors::Probe::Inside  --~ warning: `sensors::Probe::Inside` is a path of 3 segments
+    ensure side_rule: side = match probe { sensors::Probe::Outside => 1, sensors::Probe::Inside => 2 }  --~ warning: `sensors::Probe::Outside` is a path of 3 segments
     --~^ warning: `sensors::Probe::Inside` is a path of 3 segments
 }
 
@@ -59,10 +59,10 @@ comp more_paths {
     pub out inside?
     pub out tested?
 
-    req near_rule: near = Reading { value := 1 }
-    req written_rule: written = self::sensors::Reading { value := 2 }  --~ warning: `self::sensors::Reading` is a path of 3 segments
-    req far_rule: when far = sensors::Probe::Inside, inside?  --~ warning: `sensors::Probe::Inside` is a path of 3 segments
-    req tested_rule: tested? iff far is sensors::Probe::Outside  --~ warning: `sensors::Probe::Outside` is a path of 3 segments
+    ensure near_rule: near = Reading { value := 1 }
+    ensure written_rule: written = self::sensors::Reading { value := 2 }  --~ warning: `self::sensors::Reading` is a path of 3 segments
+    ensure far_rule: when far = sensors::Probe::Inside, inside?  --~ warning: `sensors::Probe::Inside` is a path of 3 segments
+    ensure tested_rule: tested? iff far is sensors::Probe::Outside  --~ warning: `sensors::Probe::Outside` is a path of 3 segments
     --~^ warning: this pattern test is an equation
 }
 
@@ -70,7 +70,7 @@ comp climate_check {  --~ warning: component `climate_check` contains the name o
     in level: Int
     pub out high?
 
-    req high_rule: high? iff level > CLIMATE_LIMIT
+    ensure high_rule: high? iff level > CLIMATE_LIMIT
 }
 
 expect climate_holds: forall (check: climate_check), check.high? iff check.level > CLIMATE_LIMIT  --~ warning: global expectation `climate_holds` contains the name of its module `climate`
@@ -80,7 +80,7 @@ comp short {
     in ready?
     pub out y?  --~ warning: variable `y?` has a name of one character
 
-    req r: y? iff (ready? and x > 0)  --~ warning: constraint `r` has a name of one character
+    ensure r: y? iff (ready? and x > 0)  --~ warning: constraint `r` has a name of one character
 }
 
 comp grouping {
@@ -100,8 +100,8 @@ comp grouping {
     pub out joined: Set(Int) := left union right inter other  --~ warning: `inter` is an operand of `union` without parentheses
     pub out chained: Rel(Mode, Mode) := pairs union links join extra  --~ warning: `join` is an operand of `union` without parentheses
 
-    req loose_rule: loose? iff (first? or second? and third?)  --~ warning: `and` is an operand of `or` without parentheses
-    req tight_rule: tight? iff (first? or (second? and third?))
+    ensure loose_rule: loose? iff (first? or second? and third?)  --~ warning: `and` is an operand of `or` without parentheses
+    ensure tight_rule: tight? iff (first? or (second? and third?))
 }
 
 set_option fren.lint.glob_imports "allow"  --~ warning: `glob_imports` is allowed rather than expected

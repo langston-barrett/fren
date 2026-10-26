@@ -13,19 +13,19 @@ const WRONG: Bool := 1
 --~^ error: type mismatch: expected `Bool`, found `Int`
 const BAD_TYPE: comp_x := 1           --~ error: cannot find `comp_x` in this scope
 const NOT_TYPE: ONE := 1              --~ error: expected a type, but `ONE` is a constant
-comp c { in x: Int pub out y: Int req r: y = x * ONE + -ONE * x }  -- linear
-comp c2 { in ONE!: Int pub out y: Int req r: y = ONE * ONE }
+comp c { in x: Int pub out y: Int ensure r: y = x * ONE + -ONE * x }  -- linear
+comp c2 { in ONE!: Int pub out y: Int ensure r: y = ONE * ONE }
 --~^ error: nonlinear arithmetic is not supported
 --~^^ warning: variable `ONE` should have a snake case name
-comp d { in x: Int pub out y: Int req r: y = ONE.x }
+comp d { in x: Int pub out y: Int ensure r: y = ONE.x }
 --~^ error: `Int` has no method `x`
 const VALUE: E := E::A
-comp e { pub out y: Int req r: y = E }  --~ error: expected a value, but `E` is an enum
+comp e { pub out y: Int ensure r: y = E }  --~ error: expected a value, but `E` is an enum
 comp f { pub out y: ONE }             --~ error: expected a type, but `ONE` is a constant
 
 mod m
-comp g { pub out y: Int req r: y = ONE }  --~ error: cannot find `ONE` in this scope
-comp h { pub out y: Int req r: y = super_ONE }  --~ error: cannot find `super_ONE` in this scope
+comp g { pub out y: Int ensure r: y = ONE }  --~ error: cannot find `ONE` in this scope
+comp h { pub out y: Int ensure r: y = super_ONE }  --~ error: cannot find `super_ONE` in this scope
 
 mod n
 const SECRET: Int := 1

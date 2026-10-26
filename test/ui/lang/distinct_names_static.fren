@@ -3,7 +3,7 @@
 set_option fren.lint.match_like_membership "allow"
 
 comp constraint_first {
-    req x: true
+    ensure x: true
     in x: Int     --~ error: `x` is defined multiple times in this component
 }
 
@@ -13,7 +13,7 @@ comp wildcards {
     in s: Shape
     pub out paired?
 
-    req r: paired? iff match s { Shape::Pair(_, _) => true, Shape::Empty => false }
+    ensure r: paired? iff match s { Shape::Pair(_, _) => true, Shape::Empty => false }
 }
 
 -- A component reports only its first repeat, before any other problem of

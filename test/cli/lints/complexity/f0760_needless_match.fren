@@ -5,6 +5,6 @@ pub comp c {
     pub out t: Shape
     pub out u: Shape
 
-    req r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) }
-    req q: u = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
+    ensure r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) }
+    ensure q: u = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
 }

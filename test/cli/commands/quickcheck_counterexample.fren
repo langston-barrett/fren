@@ -15,9 +15,9 @@ pub comp thermostat {
 
     assume sane_target: 50 <= target and target <= 90
 
-    req heat: when temp < target - 2, mode = Heat
-    req cool: when temp > target + 2, mode = Cool
-    req idle: unless temp < target - 2 or temp > target + 2, mode = Off
+    ensure heat: when temp < target - 2, mode = Heat
+    ensure cool: when temp > target + 2, mode = Cool
+    ensure idle: unless temp < target - 2 or temp > target + 2, mode = Off
 
     expect cold_heats: when temp < 40, mode = Heat
     expect wrong: when temp < 60, mode = Heat
@@ -27,7 +27,7 @@ pub comp loose {
     in a?
     pub det out b?
 
-    req r: when a?, b?
+    ensure r: when a?, b?
 }
 
 expect same: forall (x y: loose), when x.a? = y.a?, x.b? = y.b?

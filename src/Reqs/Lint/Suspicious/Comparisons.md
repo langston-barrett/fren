@@ -31,8 +31,8 @@ pub comp absurd_extreme_comparisons {
     pub det out fires?
     pub det out value?   -- what the comparison always is, where it fires
 
-    req rule: fires? iff (bound < 0 or (bound = 0 and (if left? then op in {Lt, Ge} else op in {Gt, Le})))
-    req fixed: value? iff (if left? then op in {Ne, Gt, Ge} else op in {Ne, Lt, Le})
+    ensure rule: fires? iff (bound < 0 or (bound = 0 and (if left? then op in {Lt, Ge} else op in {Gt, Le})))
+    ensure fixed: value? iff (if left? then op in {Ne, Gt, Ge} else op in {Ne, Lt, Le})
 }
 
 comp absurd_extreme_comparisons_exact {
@@ -88,7 +88,7 @@ pub comp contradictory_comparisons {
     in second_bound: Int
     pub det out fires?
 
-    req rule: fires? iff (if conjunction?
+    ensure rule: fires? iff (if conjunction?
         then disjoint?(first, first_bound, second, second_bound)
         else disjoint?(complement_of(first), first_bound, complement_of(second), second_bound))
 }
@@ -117,7 +117,7 @@ pub comp contradictory_equalities {
     in distinct?         -- the values compared with are distinct
     pub det out fires?
 
-    req rule: fires? iff (distinct? and (if conjunction? then first = Eq and second = Eq else first = Ne and second = Ne))
+    ensure rule: fires? iff (distinct? and (if conjunction? then first = Eq and second = Eq else first = Ne and second = Ne))
 }
 ```
 
@@ -138,7 +138,7 @@ pub comp contradictory_chain {
     in second_bound: Int
     pub det out fires?
 
-    req rule: fires? iff disjoint?(mirror_of(first), first_bound, second, second_bound)
+    ensure rule: fires? iff disjoint?(mirror_of(first), first_bound, second, second_bound)
 }
 
 set_option fren.lint.contradictory_comparisons "allow" in

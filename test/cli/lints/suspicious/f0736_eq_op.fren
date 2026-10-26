@@ -1,2 +1,2 @@
 -- `eq_op`, which has no fix.
-comp c { in x: Int in y: Int pub out p? req r: p? iff (x < y or x = x) }
+comp c { in x: Int in y: Int pub out p? ensure r: p? iff (x < y or x = x) }

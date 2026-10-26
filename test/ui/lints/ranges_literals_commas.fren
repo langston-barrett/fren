@@ -8,7 +8,7 @@ comp quiet {
     pub out p?
     pub out m: Set(Int) := {x, 1,}
 
-    req r: p? iff (x.abs >= 0 or s = "café")
+    ensure r: p? iff (x.abs >= 0 or s = "café")
 }
 
 set_option fren.lint.pedantic "warn"

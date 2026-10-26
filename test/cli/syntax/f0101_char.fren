@@ -1,2 +1,2 @@
 -- A character that is not Fren syntax (F0101).
-comp c { in x: Int req r: x > 0 $ }
+comp c { in x: Int ensure r: x > 0 $ }

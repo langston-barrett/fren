@@ -15,8 +15,8 @@ pub comp heater {
     pub out mode: Mode
     out margin: Int
 
-    req r: mode = (if temp < 18 then Mode::Heat else Mode::Off)
-    req m: margin = 18 - temp
+    ensure r: mode = (if temp < 18 then Mode::Heat else Mode::Off)
+    ensure m: margin = 18 - temp
 
     cover heating: mode = Mode::Heat and margin > 2
 }
@@ -32,7 +32,7 @@ fun temp mode margin => mode = cover_test.Mode.Heat ∧ margin > 2
 /--
 info: cover_test.heater.cover.heating.met :
   ∃ temp mode margin,
-    (cover_test.heater.assumes temp mode margin ∧ cover_test.heater.reqs temp mode margin) ∧
+    (cover_test.heater.assumes temp mode margin ∧ cover_test.heater.ensures temp mode margin) ∧
       cover_test.heater.cover.heating temp mode margin
 -/
 #guard_msgs in #check cover_test.heater.cover.heating.met
@@ -46,7 +46,7 @@ pub comp named {
     in m: Name
     pub out same?
 
-    req r: same? iff n = m
+    ensure r: same? iff n = m
 
     cover distinct: not same?
 }

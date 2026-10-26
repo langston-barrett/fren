@@ -1,2 +1,2 @@
 -- `neg_multiply`.
-comp c { in x: Int pub out y: Int req r: y = (x + 1) * -1 }
+comp c { in x: Int pub out y: Int ensure r: y = (x + 1) * -1 }

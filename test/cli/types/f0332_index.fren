@@ -3,5 +3,5 @@ comp c {
     in s: Set(Int)
     pub out x: Int
 
-    req r: x = s[0]
+    ensure r: x = s[0]
 }

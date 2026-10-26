@@ -1,2 +1,2 @@
 -- A constraint name ending in `?` (F0211).
-comp c { in x: Int req r?: x > 0 }
+comp c { in x: Int ensure r?: x > 0 }

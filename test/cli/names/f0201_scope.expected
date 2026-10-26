@@ -1,13 +1,13 @@
 error[F0201]: cannot find `cuont` in this scope
- --> test/cli/names/f0201_scope.fren:2:50
+ --> test/cli/names/f0201_scope.fren:2:53
   |
-2 | comp c { in count: Int pub out y: Int req r: y = cuont }
-  |                                                  ^^^^^ not found in this scope
+2 | comp c { in count: Int pub out y: Int ensure r: y = cuont }
+  |                                                     ^^^^^ not found in this scope
   |
 help: a similar name exists: `count`
   |
-2 - comp c { in count: Int pub out y: Int req r: y = cuont }
-2 + comp c { in count: Int pub out y: Int req r: y = count }
+2 - comp c { in count: Int pub out y: Int ensure r: y = cuont }
+2 + comp c { in count: Int pub out y: Int ensure r: y = count }
   |
 
 error: could not check due to previous errors

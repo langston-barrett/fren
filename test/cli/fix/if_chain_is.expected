@@ -1,12 +1,12 @@
 --- test/cli/fix/if_chain_is.fren
 +++ test/cli/fix/if_chain_is.fren
 @@ -14,4 +14,4 @@
--    req r1: k = if s is Shade::Tinted(_) then 1 else if s is Shade::Dark | Shade::Light then 2 else 3
--    req r2: a? iff match n { 0 | 1 => true, _ => false }
--    req r3: b? iff match n { 0..=9 => true, _ => false }
--    req r4: d? iff match s { Shade::Tinted(0) => false, _ => true }
-+    req r1: k = match s { Shade::Tinted(_) => 1, Shade::Dark | Shade::Light => 2 }
-+    req r2: a? iff n in {0, 1}
-+    req r3: b? iff n is 0..=9
-+    req r4: d? iff not s is Shade::Tinted(0)
+-    ensure r1: k = if s is Shade::Tinted(_) then 1 else if s is Shade::Dark | Shade::Light then 2 else 3
+-    ensure r2: a? iff match n { 0 | 1 => true, _ => false }
+-    ensure r3: b? iff match n { 0..=9 => true, _ => false }
+-    ensure r4: d? iff match s { Shade::Tinted(0) => false, _ => true }
++    ensure r1: k = match s { Shade::Tinted(_) => 1, Shade::Dark | Shade::Light => 2 }
++    ensure r2: a? iff n in {0, 1}
++    ensure r3: b? iff n is 0..=9
++    ensure r4: d? iff not s is Shade::Tinted(0)
 exit=1

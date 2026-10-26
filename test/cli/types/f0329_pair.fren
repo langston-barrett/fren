@@ -4,5 +4,5 @@ comp c {
     in x: Int
     pub out p?
 
-    req s: p? iff (x, 1) = (1, x)
+    ensure s: p? iff (x, 1) = (1, x)
 }

@@ -21,5 +21,5 @@ Roughly in order, to be specified in Fren as each is started:
   a bare `when`, so parsing is unambiguous; readability is untested.
 - Should `x in {A, B}` membership exist? `in` is already a keyword.
 - `super::`, if relative paths beyond `self` turn out to be needed.
-- Does a component with no assumptions, requirements or expectations deserve a
+- Does a component with no assumptions, guarantees or expectations deserve a
   warning?

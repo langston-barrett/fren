@@ -2,4 +2,4 @@
 -- A quantifier that is an operand without parentheses does not parse, so
 -- the file is not formatted.
 enum Mode { Off, Heat }
-comp c { in x: Mode in p? pub out ok? req r: ok? iff p? and forall (m: Mode), m = x }
+comp c { in x: Mode in p? pub out ok? ensure r: ok? iff p? and forall (m: Mode), m = x }

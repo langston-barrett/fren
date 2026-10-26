@@ -1,26 +1,26 @@
 warning[F0766]: one of these two comparisons always holds
-  --> test/cli/lints/suspicious/f0766_contradictory_comparisons.fren:13:22
+  --> test/cli/lints/suspicious/f0766_contradictory_comparisons.fren:13:25
    |
-13 |     req r1: on? iff (m != Mode::Heat or m != Mode::Cool)
-   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ always `true`
+13 |     ensure r1: on? iff (m != Mode::Heat or m != Mode::Cool)
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ always `true`
    |
    = note: `and` and `or` may be swapped, or a value may not be the one meant
    = note: `contradictory_comparisons` is `warn` by default
    = help: to allow it, `set_option fren.lint.contradictory_comparisons "allow"`
 
 warning[F0766]: these two comparisons cannot both hold
-  --> test/cli/lints/suspicious/f0766_contradictory_comparisons.fren:14:20
+  --> test/cli/lints/suspicious/f0766_contradictory_comparisons.fren:14:23
    |
-14 |     req r2: y = if 5 < x and x < 3 then 1 else 0
-   |                    ^^^^^^^^^^^^^^^ always `false`
+14 |     ensure r2: y = if 5 < x and x < 3 then 1 else 0
+   |                       ^^^^^^^^^^^^^^^ always `false`
    |
    = note: `and` and `or` may be swapped, or a value may not be the one meant
 
 warning[F0766]: these two comparisons cannot both hold
-  --> test/cli/lints/suspicious/f0766_contradictory_comparisons.fren:15:20
+  --> test/cli/lints/suspicious/f0766_contradictory_comparisons.fren:15:23
    |
-15 |     req r3: z? iff 3 <= x <= 2
-   |                    ^^^^^^^^^^^ always `false`
+15 |     ensure r3: z? iff 3 <= x <= 2
+   |                       ^^^^^^^^^^^ always `false`
    |
    = note: a bound may not be the one meant, or the chain may order the wrong way
 

@@ -7,7 +7,7 @@ comp sensor {
     in x: Int
     pub out hot?
 
-    req r: hot? iff x > 100
+    ensure r: hot? iff x > 100
 
     cover warm: x = 50 and not hot?
     expect only_warm: x = 50

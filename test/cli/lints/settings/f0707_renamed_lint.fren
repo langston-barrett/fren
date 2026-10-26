@@ -1,0 +1,2 @@
+-- A lint that Fren renamed says its new name.
+set_option fren.lint.case_split_reqs "allow"

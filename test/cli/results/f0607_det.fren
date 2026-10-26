@@ -2,6 +2,6 @@
 comp c {
     in x: Int
     pub det out y: Int
-    req above: y >= x
-    req below: y <= x + 1
+    ensure above: y >= x
+    ensure below: y <= x + 1
 }

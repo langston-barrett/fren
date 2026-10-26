@@ -26,7 +26,7 @@ comp grant {
     assume admins_exist: Admin in roles.range
 
     -- A user holds their own roles and those of everyone they act for, directly or not.
-    req rule: granted? iff requested subset ((delegates.closure union {(user, user)}) join roles).image({user})
+    ensure rule: granted? iff requested subset ((delegates.closure union {(user, user)}) join roles).image({user})
 
     expect own_roles: when requested = {Viewer} and (user, Viewer) in roles, granted?
     expect delegated: when (user, b) in delegates and (b, c) in delegates and requested = {Admin}
@@ -43,7 +43,7 @@ comp direct {
     in c: User
     pub out admin?
 
-    req rule: admin? iff Admin in ((delegates union {(user, user)}) join roles).image({user})
+    ensure rule: admin? iff Admin in ((delegates union {(user, user)}) join roles).image({user})
 
     expect delegated: when (user, b) in delegates and (b, c) in delegates and (c, Admin) in roles, admin?
     --~^ error: expectation `direct::delegated` does not hold
@@ -54,7 +54,7 @@ comp shapes {
     in u: User
     pub out held?
 
-    req rule: held? iff u in r.domain
+    ensure rule: held? iff u in r.domain
 
     expect inverse_range: r.inverse.domain = r.range  --~ warning: this chain of methods has a shorter form
     expect inverse_twice: r.inverse.inverse = r  --~ warning: this chain of methods has a shorter form
@@ -69,7 +69,7 @@ comp ids {
     pub out p?
 
     assume one: (1, 2) in r
-    req rule: p? iff 1 in r.domain
+    ensure rule: p? iff 1 in r.domain
 
     expect has: p?
     expect two: 2 in r.range

@@ -6,10 +6,10 @@ comp exit {
     pub out code: Int
     out scratch: Int
     assume counts: n_fail >= 0 and n_inconc >= 0
-    req failures: when n_fail > 0, code = 1
-    req inconc: when n_inconc > 0, code = 3
-    req negative: when n_fail < 0, code = 4
-    req scratch_def: scratch = n_fail
+    ensure failures: when n_fail > 0, code = 1
+    ensure inconc: when n_inconc > 0, code = 3
+    ensure negative: when n_fail < 0, code = 4
+    ensure scratch_def: scratch = n_fail
     expect zero: when n_fail = 0, code = 0
 }
 
@@ -22,6 +22,6 @@ comp uses {
     inst first: exit { n_fail, n_inconc := 0 }
     inst second: exit { n_fail := first.code, n_inconc := n_fail }
     inst pick: chooser {}
-    req r: ok? iff pick.b?
-    req lucky: pick.b?
+    ensure r: ok? iff pick.b?
+    ensure lucky: pick.b?
 }

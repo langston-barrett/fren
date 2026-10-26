@@ -6,6 +6,6 @@ comp c {
     in b?
     pub out p?
     pub out q?
-    req r1: p? iff (b? and a? or a?)
-    req r2: q? iff not a? and a?
+    ensure r1: p? iff (b? and a? or a?)
+    ensure r2: q? iff not a? and a?
 }

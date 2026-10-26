@@ -13,16 +13,16 @@ comp bools {
     pub out p5?
     pub out p6?
 
-    req r1: p1? iff if a? then b? else not b?  --~ warning: this `if` gives a `Bool` or its negation
-    req r2: p2? iff if a? and b? then not (x > 0) else x > 0
+    ensure r1: p1? iff if a? then b? else not b?  --~ warning: this `if` gives a `Bool` or its negation
+    ensure r2: p2? iff if a? and b? then not (x > 0) else x > 0
     --~^ warning: this `if` gives a `Bool` or its negation
     --~^^ warning: this `Bool` expression can be simpler
-    req r3: p3? iff if a? then b? else (not (b?))  --~ warning: this `if` gives a `Bool` or its negation
+    ensure r3: p3? iff if a? then b? else (not (b?))  --~ warning: this `if` gives a `Bool` or its negation
     -- Not written the same, or not negated.
-    req r4: p4? iff if a? then b? else not a?
-    req r5: p5? iff if a? then not b? else not b?  --~ warning: both branches of `if` are written the same
+    ensure r4: p4? iff if a? then b? else not a?
+    ensure r5: p5? iff if a? then not b? else not b?  --~ warning: both branches of `if` are written the same
     -- A condition that ends in a conditional is put in parentheses.
-    req r6: p6? iff (if a? and if c? then b? else a? then b? else not b?)
+    ensure r6: p6? iff (if a? and if c? then b? else a? then b? else not b?)
     --~^ warning: write `(a? and if c? then b? else a?) iff b?`
 }
 
@@ -39,15 +39,15 @@ comp pattern_tests {
     pub out p3?
     pub out n: Int
 
-    req r1: p1? iff if s is Circle(_) then b? else not b?
+    ensure r1: p1? iff if s is Circle(_) then b? else not b?
     --~^ warning: write `(s is Circle(_) iff b?)`
-    req r2: n = if s is Dot then 1 else if s is Dot then 2 else 3
+    ensure r2: n = if s is Dot then 1 else if s is Dot then 2 else 3
     --~^ warning: `s is Dot` is already tested earlier in this chain
     --~^^ warning: this pattern test is an equation
     --~^^^ warning: this pattern test is an equation
     -- Not compared as values: a test of two variants is left as it is.
-    req r3: p2? iff (s is Dot and s is Circle(_))  --~ warning: this pattern test is an equation
-    req r4: p3? iff (if b? then s else s) is Dot  --~ warning: both branches of `if` are written the same
+    ensure r3: p2? iff (s is Dot and s is Circle(_))  --~ warning: this pattern test is an equation
+    ensure r4: p3? iff (if b? then s else s) is Dot  --~ warning: both branches of `if` are written the same
     --~^ warning: this pattern test is an equation
 }
 
@@ -62,15 +62,15 @@ comp rebuilt {
     pub out t5: Shape
     pub out t6: Shape
 
-    req r1: t1 = match s { Dot => Shape::Dot, Circle(r) => Circle(r), Rect(w, h) => Shape::Rect(w, h) }
+    ensure r1: t1 = match s { Dot => Shape::Dot, Circle(r) => Circle(r), Rect(w, h) => Shape::Rect(w, h) }
     --~^ warning: this `match` gives back its scrutinee
-    req r2: t2 = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
+    ensure r2: t2 = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
     --~^ warning: this `match` gives back its scrutinee
     -- The binders out of order, `_`, a value of another variant, and a `_` arm that is not the scrutinee.
-    req r3: t3 = match s { Rect(w, h) => Rect(h, w), _ => s }
-    req r4: t4 = match s { Rect(w, _) => Rect(w, 0), _ => s }
-    req r5: t5 = match s { Circle(r) => Circle(r), _ => Dot }
-    req r6: t6 = match s { Dot => Dot, Circle(r) => Circle(x), Rect(w, h) => Rect(w, h) }
+    ensure r3: t3 = match s { Rect(w, h) => Rect(h, w), _ => s }
+    ensure r4: t4 = match s { Rect(w, _) => Rect(w, 0), _ => s }
+    ensure r5: t5 = match s { Circle(r) => Circle(r), _ => Dot }
+    ensure r6: t6 = match s { Dot => Dot, Circle(r) => Circle(x), Rect(w, h) => Rect(w, h) }
 }
 
 const LIMIT: Int := 10
@@ -80,7 +80,7 @@ comp constants {
     pub out y: Int
 
     assume small: x < LIMIT
-    req r1: y = x
+    ensure r1: y = x
     expect e1: LIMIT > 0  --~ warning: this expectation mentions no variable
     expect e2: (true)  --~ warning: this expectation mentions no variable
 }

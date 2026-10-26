@@ -139,13 +139,13 @@ def natPlaceMsg (place : TypePlace) : Msg :=
 inductive Brought where
   | nothing
   | assumption
-  | requirement
+  | guarantee
   deriving Inhabited, DecidableEq, Repr
 
 /-- What a `Nat` variable brings, from whether it is an output of the
 component itself and whether it is defined (`lang::nat_variable`). -/
 def natBrought (ownOutput defined : Bool) : Brought :=
-  if defined then .nothing else if ownOutput then .requirement else .assumption
+  if defined then .nothing else if ownOutput then .guarantee else .assumption
 
 /-! ## Newtypes -/
 

@@ -5,7 +5,7 @@ comp counter {
     in n: Nat
     pub out empty?
 
-    req r: empty? iff n = 0
+    ensure r: empty? iff n = 0
 
     cover zero: n = 0 and empty?                   --~ info: cover goal `counter::zero` is met
     cover negative: n < 0                          --~ error: cover goal `counter::negative` cannot be met

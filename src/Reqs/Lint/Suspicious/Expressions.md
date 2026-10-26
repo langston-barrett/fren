@@ -38,8 +38,8 @@ pub comp eq_op {
     pub det out fires?
     pub out value: EqOpValue  -- what the expression is, where it fires
 
-    req rule: fires? iff (same? and not op in {Add, Mul, Concat, Join, In})
-    req values: when fires?, value = match op {
+    ensure rule: fires? iff (same? and not op in {Add, Mul, Concat, Join, In})
+    ensure values: when fires?, value = match op {
         Eq | Le | Ge | Iff | Subset => AlwaysTrue,
         Ne | Lt | Gt => AlwaysFalse,
         Sub => Zero,
@@ -64,8 +64,8 @@ pub comp eq_op_conditional {
     pub det out fires?
     pub out value: EqOpValue  -- what the expression is, where it fires
 
-    req rule: fires? iff same?
-    req values: when fires?, value = if unless? then Operand else AlwaysTrue
+    ensure rule: fires? iff same?
+    ensure values: when fires?, value = if unless? then Operand else AlwaysTrue
 }
 ```
 
@@ -96,7 +96,7 @@ pub comp erasing_op {
     in same?             -- the operands are written the same
     pub det out fires?
 
-    req rule: fires? iff (not (same? and op in {Inter, Minus, Subset}) and match op {
+    ensure rule: fires? iff (not (same? and op in {Inter, Minus, Subset}) and match op {
         Mul => left = Zero or right = Zero,
         Inter | Join => left = Empty or right = Empty,
         Minus | Subset => left = Empty,
@@ -172,7 +172,7 @@ pub comp same_branches {
     in same?             -- the branches are written the same
     pub det out fires?
 
-    req rule: fires? iff same?
+    ensure rule: fires? iff same?
 }
 ```
 
@@ -190,7 +190,7 @@ pub comp ifs_same_cond {
     in earlier?          -- an earlier test of the chain is written the same
     pub det out fires?
 
-    req rule: fires? iff earlier?
+    ensure rule: fires? iff earlier?
 }
 ```
 
@@ -209,6 +209,6 @@ pub comp duplicate_elements {
     in n_repeats: Nat    -- elements written the same as an earlier one
     pub det out fires?
 
-    req rule: fires? iff n_repeats > 0
+    ensure rule: fires? iff n_repeats > 0
 }
 ```

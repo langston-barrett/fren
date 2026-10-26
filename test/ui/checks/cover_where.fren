@@ -3,7 +3,7 @@ comp heater {
     in temp: Int
     pub out alarm?
 
-    req r: alarm? iff hot? where limit := 100, hot? := temp > limit
+    ensure r: alarm? iff hot? where limit := 100, hot? := temp > limit
 
     cover overheat: hot? and alarm? where hot? := temp > 100
     --~^ info: witness: temp = 101, alarm? = true

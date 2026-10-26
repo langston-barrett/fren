@@ -1,2 +1,2 @@
 -- A name not in scope, with nothing similar (F0201).
-comp c { in x: Int pub out y: Int req r: y = zzz }
+comp c { in x: Int pub out y: Int ensure r: y = zzz }

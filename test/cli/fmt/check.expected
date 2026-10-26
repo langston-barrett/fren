@@ -10,7 +10,7 @@
 -comp   c{
 -in t:Int -- the temperature
 -      pub out mode:Mode
--  req r :mode = if t< -18 then Mode::Heat else Mode::Cool
+-  ensure r :mode = if t< -18 then Mode::Heat else Mode::Cool
 -  inst h: d {
 -    x := 1
 -  }
@@ -20,7 +20,7 @@
 +comp c {
 +    in t: Int  -- the temperature
 +    pub out mode: Mode
-+    req r: mode = if t < -18 then Mode::Heat else Mode::Cool
++    ensure r: mode = if t < -18 then Mode::Heat else Mode::Cool
 +    inst h: d {
 +        x := 1,
 +    }

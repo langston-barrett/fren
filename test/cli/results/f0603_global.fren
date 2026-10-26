@@ -8,7 +8,7 @@ comp band {
     in target: Int
     pub out too_cold?
     assume sane: 0 <= target and target <= HIGH
-    req cold: too_cold? iff temp < target - 2
+    ensure cold: too_cold? iff temp < target - 2
 }
 
 expect same: forall (a b: band),

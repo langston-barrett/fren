@@ -9,23 +9,23 @@ fn twice(n: Int): Int := 2 * n
 struct P { x: Int, y: Int }
 enum S { A(Int), B }
 
-comp sub { in x: Int pub out z: Int req r: z = x }
+comp sub { in x: Int pub out z: Int ensure r: z = x }
 
-comp argument { in b? pub out y: Int req r: y = twice(b?) }
+comp argument { in b? pub out y: Int ensure r: y = twice(b?) }
 --~^ error: argument 1 of `twice` has type `Int`
-comp abstract_argument { pub out y: Int req r: y = arity(1) }
+comp abstract_argument { pub out y: Int ensure r: y = arity(1) }
 --~^ error: argument 1 of `arity` has type `Name`
-comp payload { in b? pub out s: S req r: s = S::A(b?) }
+comp payload { in b? pub out s: S ensure r: s = S::A(b?) }
 --~^ error: value 1 of the payload of `S::A` has type `Int`
-comp field { in b? pub out p: P req r: p = P { x := b?, y := 0 } }
+comp field { in b? pub out p: P ensure r: p = P { x := b?, y := 0 } }
 --~^ error: `x` of `P` has type `Int`
-comp update { in p: P in b? pub out o: P req r: o = { p with y := b? } }
+comp update { in p: P in b? pub out o: P ensure r: o = { p with y := b? } }
 --~^ error: `y` of `P` has type `Int`
 comp binding { in b? inst w: sub { x := b? } }
 --~^ error: `x` of `sub` has type `Int`
 comp definition { in b? pub out d: Int := b? }
 --~^ error: `d` has type `Int`, so its definition must too
-comp constraint { in x: Int req r: x + 1 }
+comp constraint { in x: Int ensure r: x + 1 }
 --~^ error: a constraint is a `Bool`
 comp assumption { in x: Int assume a: x }
 --~^ error: a constraint is a `Bool`
@@ -42,22 +42,22 @@ expect global: forall (w: sub), w.z
 
 -- A `Nat` widens to an `Int` wherever one is declared, as in a record
 -- update; an `Int` is never narrowed to a `Nat`.
-comp nat_update { in p: P in n: Nat pub out o: P req r: o = { p with x := n } }
+comp nat_update { in p: P in n: Nat pub out o: P ensure r: o = { p with x := n } }
 comp nat_definition { in x: Int pub out d: Nat := x }
 --~^ error: `d` has type `Nat`, so its definition must too
 
 -- The arms of a `match` have one type, after widening.
-comp nat_arms { in s: S in n: Nat pub out y: Int req r: y = match s { S::A(a) => a, S::B => n } }
-comp arms { in s: S pub out y: Int req r: y = match s { S::A(a) => a, S::B => "b" } }
+comp nat_arms { in s: S in n: Nat pub out y: Int ensure r: y = match s { S::A(a) => a, S::B => n } }
+comp arms { in s: S pub out y: Int ensure r: y = match s { S::A(a) => a, S::B => "b" } }
 --~^ error: the arms of `match` have different types: `Int` and `String`
-comp arms_note { in s: S pub out y: Int req r: y = match s { S::A(a) => a, S::B => true } }
+comp arms_note { in s: S pub out y: Int ensure r: y = match s { S::A(a) => a, S::B => true } }
 --~^ error: so all must have the same type, or be `Nat`s and `Int`s
 
 -- A branch `{}` takes its type from the other branch.
 comp empty_set { in c? in t: Set(Int) pub out s: Set(Int) := if c? then {} else t }
 comp empty_branch_set { in c? in t: Set(Int) pub out y: Int := if c? then {} else t }
 --~^ error: type mismatch: expected `Int`, found `Set(Int)`
-comp empty_branch_and { in b? in c? in t: Set(Int) pub out p? req r: p? iff b? and (if c? then {} else t) }
+comp empty_branch_and { in b? in c? in t: Set(Int) pub out p? ensure r: p? iff b? and (if c? then {} else t) }
 --~^ error: type mismatch: expected `Bool`, found `Set(Int)`
 
 --@ exit: 2

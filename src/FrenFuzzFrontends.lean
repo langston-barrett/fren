@@ -346,7 +346,7 @@ def genWide (avoidKnown : Bool := false) : R String := do
     for k in [0:← below 2] do
       out := out ++ s!"    assume a{k}: {← gen { csc with onlyIns := true } .bool 2}\n"
     for k in [0:(← below 3) + 1] do
-      out := out ++ s!"    req q{k}: {← gen csc .bool 3}\n"
+      out := out ++ s!"    ensure q{k}: {← gen csc .bool 3}\n"
     for k in [0:← below 3] do
       let tested := if ← chance 5 then "set_option fren.evidence \"tested\" in " else ""
       let e ← if ← chance 50 then pure s!"when {← gen csc .bool 1}, {← gen csc .bool 2}" else gen csc .bool 3

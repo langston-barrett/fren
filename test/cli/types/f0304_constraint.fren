@@ -1,2 +1,2 @@
 -- A constraint that is not a `Bool` (F0304).
-comp c { in x: Int pub out y: Int req r: y + x }
+comp c { in x: Int pub out y: Int ensure r: y + x }

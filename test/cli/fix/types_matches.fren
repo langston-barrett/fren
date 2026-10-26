@@ -14,6 +14,6 @@ pub comp c {
     pub out d?: Bool := ready?
     pub out y: Int
 
-    req r1: y = match e { _ => 1 } + match o { One::Only => x + 1 } * 2
-    req r2: y = match e { E::A | E::B => (x) } and match o { One::Only => d? }
+    ensure r1: y = match e { _ => 1 } + match o { One::Only => x + 1 } * 2
+    ensure r2: y = match e { E::A | E::B => (x) } and match o { One::Only => d? }
 }

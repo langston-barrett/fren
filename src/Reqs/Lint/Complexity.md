@@ -54,7 +54,7 @@ pub comp literal_comparison {
     in literal?          -- the literal is `true`
     pub det out negated?  -- the simpler form is `not A`, rather than `A`
 
-    req rule: negated? iff (equal? != literal?)
+    ensure rule: negated? iff (equal? != literal?)
 
     expect equal_true: when equal? and literal?, not negated?
     expect unequal_true: when not equal? and literal?, negated?
@@ -71,7 +71,7 @@ pub comp complement {
     in op: Comparison
     pub det out result: Comparison
 
-    req rule: result = match op { Eq => Ne, Ne => Eq, Lt => Ge, Ge => Lt, Gt => Le, Le => Gt }
+    ensure rule: result = match op { Eq => Ne, Ne => Eq, Lt => Ge, Ge => Lt, Gt => Le, Le => Gt }
 
     expect changes: result != op
 }
@@ -151,8 +151,8 @@ pub comp needless_bool_assign {
     pub det out fires?
     pub det out unequal?  -- the fix is `C != X`, rather than `C iff X`
 
-    req rule: fires? iff (else_negates? or then_negates?)
-    req fix: unequal? iff not else_negates?
+    ensure rule: fires? iff (else_negates? or then_negates?)
+    ensure fix: unequal? iff not else_negates?
 }
 
 set_option fren.lint.needless_bool_assign "allow" in
@@ -194,13 +194,13 @@ that is not defined but could be. `lint::output_lints` states both:
 pub comp output_lints {
     in defined?              -- the output is defined
     in mentions?             -- its definition mentions a variable or an uninterpreted function, if defined
-    in n_reqs: Nat           -- requirements that mention it, if not defined
+    in n_guarantees: Nat     -- guarantees that mention it, if not defined
     in equation?             -- the only one is `x = e` or `x? iff e`, with `e` not mentioning `x`
     pub det out constant?    -- `constant_output` fires
     pub det out definable?   -- `definable_output` fires
 
-    req constant: constant? iff (defined? and not mentions?)
-    req definable: definable? iff (not defined? and n_reqs = 1 and equation?)
+    ensure constant: constant? iff (defined? and not mentions?)
+    ensure definable: definable? iff (not defined? and n_guarantees = 1 and equation?)
 
     expect exclusive: not (constant? and definable?)
 }
@@ -234,7 +234,7 @@ pub comp unnecessary_struct_initialization {
 
     assume counts: n_fields >= 0
 
-    req rule: fires? iff (n_fields > 0 and reads_own? and same? and value? and same_type?)
+    ensure rule: fires? iff (n_fields > 0 and reads_own? and same? and value? and same_type?)
 }
 ```
 
@@ -297,8 +297,8 @@ pub comp zero_prefixed_literal {
 
     assume literal: lexeme.matches?(r"[0-9]([0-9_]*[0-9])?|0[xXbBoO][0-9a-fA-F_]*[0-9a-fA-F]")
 
-    req rule: fires? iff lexeme.matches?(r"0[0-9][0-9_]*")
-    req fix: is_fix? iff (fires? and lexeme.ends_with?(fixed) and zeros.matches?(r"[0_]*")
+    ensure rule: fires? iff lexeme.matches?(r"0[0-9][0-9_]*")
+    ensure fix: is_fix? iff (fires? and lexeme.ends_with?(fixed) and zeros.matches?(r"[0_]*")
         and (fixed = "0" or fixed.matches?(r"[1-9][0-9_]*")))
 
     expect based: when lexeme = "0x10", not fires?

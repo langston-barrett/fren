@@ -1,8 +1,8 @@
 warning[F0803]: this pattern test is always `true`
- --> test/cli/lints/suspicious/f0803_irrefutable_is.fren:4:43
+ --> test/cli/lints/suspicious/f0803_irrefutable_is.fren:4:46
   |
-4 | comp c { in e: E pub out p? req r: p? iff e is E::A | E::B(_) }
-  |                                           ^^^^^^^^^^^^^^^^^^^ matches every value of `E`
+4 | comp c { in e: E pub out p? ensure r: p? iff e is E::A | E::B(_) }
+  |                                              ^^^^^^^^^^^^^^^^^^^ matches every value of `E`
   |
   = note: `irrefutable_is` is `warn` by default
   = help: to allow it, `set_option fren.lint.irrefutable_is "allow"`

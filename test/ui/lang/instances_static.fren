@@ -8,8 +8,8 @@ comp sub {
     pub out z: Int
     out hidden: Int
 
-    req r: z = x
-    req h: hidden = x
+    ensure r: z = x
+    ensure h: hidden = x
 }
 
 enum E { A }
@@ -22,18 +22,18 @@ comp not_comp { inst s: E {} }                             --~ error: expected a
 comp q_name { in y? inst s?: sub { x := 1, y? } }          --~ error: instance names cannot end in `?`
 comp dup_name { in y? inst y?: sub { x := 1, y? } }        --~ error: `y?` is defined multiple times in this comp
 
-comp out_bound { in y? pub out o: Int inst s: sub { x := o, y? } req r: o = 0 }
+comp out_bound { in y? pub out o: Int inst s: sub { x := o, y? } ensure r: o = 0 }
 --~^ error: bindings may only mention `in` variables and earlier instances, but `o` is an `out`
 comp later { in y? inst a: sub { x := b.z, y? } inst b: sub { x := 1, y? } }
 --~^ error: instance `b` is not declared before this binding
 comp itself { in y? inst a: sub { x := a.z, y? } }         --~ error: instance `a` is not declared before this binding
-comp private_var { in y? pub out o: Int inst a: sub { x := 1, y? } req r: o = a.hidden }
+comp private_var { in y? pub out o: Int inst a: sub { x := 1, y? } ensure r: o = a.hidden }
 --~^ error: `a.hidden` is private to instance `a`
 comp assumes_inst { in y? inst a: sub { x := 1, y? } assume bad: a.z = 0 }
 --~^ error: assumptions may only mention `in` variables, but `a.z` belongs to instance `a`
-comp no_field { in y? pub out o: Int inst a: sub { x := 1, y? } req r: o = a.nope }
+comp no_field { in y? pub out o: Int inst a: sub { x := 1, y? } ensure r: o = a.nope }
 --~^ error: instance `a` has no `in` or `pub out` named `nope`
-comp not_inst { pub out o: Int req r: o = q.z }            --~ error: `q.z` is not a single name
+comp not_inst { pub out o: Int ensure r: o = q.z }            --~ error: `q.z` is not a single name
 comp mistyped { in y? inst a: sub { x := y?, y? } }
 --~^ error: type mismatch: expected `Int`, found `Bool`
 

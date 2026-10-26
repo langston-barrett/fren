@@ -17,7 +17,7 @@ instance : Fren.Finite Role :=
 def toPlace : Place → inst.Place
   | .assume => .Assume
   | .binding => .Binding
-  | .prop => .Req
+  | .prop => .Constraint
   | .argument => .Argument
 
 def toRole : Role → inst.Role

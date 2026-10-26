@@ -10,7 +10,7 @@ open Fren.Lang
 error: LiterateImported.md:4:0: expectation `dep::dep_gate::never` does not hold
 
 counterexample: a? = true, b? = true
-help: strengthen the requirements so that it follows, or correct the expectation
+help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: LiterateImported.md:4:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 -/
@@ -22,7 +22,7 @@ info: LiterateImported.md:4:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redun
 error: expectation `dep::dep_gate::never` does not hold
 
 counterexample: a? = true, b? = true
-help: strengthen the requirements so that it follows, or correct the expectation
+help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 -/

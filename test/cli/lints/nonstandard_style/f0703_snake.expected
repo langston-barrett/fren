@@ -25,15 +25,15 @@ help: rename it to `temp_c`
   |
 
 warning[F0703]: constraint `IsHot` should have a snake case name
- --> test/cli/lints/nonstandard_style/f0703_snake.fren:5:9
+ --> test/cli/lints/nonstandard_style/f0703_snake.fren:5:12
   |
-5 |     req IsHot: hot? iff tempC > 30
-  |         ^^^^^ not in snake_case
+5 |     ensure IsHot: hot? iff tempC > 30
+  |            ^^^^^ not in snake_case
   |
 help: rename it to `is_hot`
   |
-5 -     req IsHot: hot? iff tempC > 30
-5 +     req is_hot: hot? iff tempC > 30
+5 -     ensure IsHot: hot? iff tempC > 30
+5 +     ensure is_hot: hot? iff tempC > 30
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

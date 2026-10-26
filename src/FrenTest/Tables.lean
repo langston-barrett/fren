@@ -15,23 +15,23 @@ comp sign {
   in x: Int
   pub out s: Int
 
-  req r: s = table { x > 0 => 1, x < 0 => -1, x = 0 => 0 }
-  req w: s = table { x > 0 => 1, x < 0 => -1, _ => 0 }
+  ensure r: s = table { x > 0 => 1, x < 0 => -1, x = 0 => 0 }
+  ensure w: s = table { x > 0 => 1, x < 0 => -1, _ => 0 }
 }
 
 /--
-info: @[reducible] def table_test.sign.req.r : Int → Int → Prop :=
+info: @[reducible] def table_test.sign.ensure.r : Int → Int → Prop :=
 fun x s => s = if x > 0 then 1 else if x < 0 then -1 else if x = 0 then 0 else ∅.nth 0
 -/
 #guard_msgs in
-#print table_test.sign.req.r
+#print table_test.sign.ensure.r
 
 /--
-info: @[reducible] def table_test.sign.req.w : Int → Int → Prop :=
+info: @[reducible] def table_test.sign.ensure.w : Int → Int → Prop :=
 fun x s => s = if x > 0 then 1 else if x < 0 then -1 else 0
 -/
 #guard_msgs in
-#print table_test.sign.req.w
+#print table_test.sign.ensure.w
 
 -- The solver proves an `impl` of a component with a table.
 #guard_msgs in
@@ -44,14 +44,14 @@ impl sign_impl: sign for (x : Int) { x := x, s := if x > 0 then 1 else if x < 0 
 comp coincide {
   in x: Int
 
-  req r: x > 0 or table { x > 0 => 1 } = table { x > 0 => 2 }
+  ensure r: x > 0 or table { x > 0 => 1 } = table { x > 0 => 2 }
 }
 
 #guard_msgs in
 impl coincide_impl: coincide for (x : Int) { x := x }
 
-example (x : Int) : table_test.coincide.req.r x := by
-  by_cases h : x > 0 <;> simp [table_test.coincide.req.r, h]
+example (x : Int) : table_test.coincide.ensure.r x := by
+  by_cases h : x > 0 <;> simp [table_test.coincide.ensure.r, h]
 
 -- Where no row holds, a table's value is unknown to the solver, so this
 -- implementation is not proved: the solver cannot show that it is the
@@ -60,7 +60,7 @@ comp incomplete {
   in x: Int
   pub out s: Int
 
-  req r: s = table { x > 0 => 1 }
+  ensure r: s = table { x > 0 => 1 }
 }
 
 /--

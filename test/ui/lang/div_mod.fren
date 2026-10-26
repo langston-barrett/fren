@@ -24,9 +24,9 @@ comp parity {
     pub out half: Int
     pub out rest: Int
 
-    req e: even? iff x mod 2 = 0
-    req h: half = x div 2
-    req r: rest = x mod -4
+    ensure e: even? iff x mod 2 = 0
+    ensure h: half = x div 2
+    ensure r: rest = x mod -4
 
     expect euclidean: x = half * 2 + x mod 2
     expect even_halves: when even?, 2 * half = x

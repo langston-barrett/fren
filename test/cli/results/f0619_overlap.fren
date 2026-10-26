@@ -3,7 +3,7 @@ comp grade {
     in score: Int
     pub out pass?
 
-    req r: pass? iff table {
+    ensure r: pass? iff table {
         | score >= 50 => true,
         | score >= 0 => false,
         | _ => false,

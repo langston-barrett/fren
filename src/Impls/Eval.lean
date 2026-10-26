@@ -29,7 +29,7 @@ instance : Fren.Finite Status := ⟨[.Inadmissible, .Violates, .Meets], by intro
 impl status_of: eval::status for (a i r : Bool) {
   assumes? := a,
   insts? := i,
-  reqs? := r,
+  guarantees? := r,
   status := toStatus (statusOf a i r),
 } by
   intro a i r _

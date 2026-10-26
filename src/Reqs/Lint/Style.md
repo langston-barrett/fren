@@ -67,7 +67,7 @@ pub comp unless_not {
     in condition: Head
     pub det out fires?
 
-    req rule: fires? iff (unless? and condition in {Head::Not, Head::Unequal})
+    ensure rule: fires? iff (unless? and condition in {Head::Not, Head::Unequal})
 
     expect other: when condition = Head::Other, not fires?
 }
@@ -77,7 +77,7 @@ pub comp collapsible_when {
     in body: Head
     pub det out fires?
 
-    req rule: fires? iff body = (if unless? then Head::Unless else Head::When)
+    ensure rule: fires? iff body = (if unless? then Head::Unless else Head::When)
 
     expect mixed: when unless? and body = Head::When, not fires?
 }
@@ -115,10 +115,10 @@ pub comp length_zero {
     pub det out fires?
     pub det out empty?   -- the fix says that it is empty, rather than not
 
-    req rule: fires? iff (if left?
+    ensure rule: fires? iff (if left?
         then (bound = 0 and op in {Eq, Ne, Le, Gt}) or (bound = 1 and op in {Lt, Ge})
         else (bound = 0 and op in {Eq, Ne, Ge, Lt}) or (bound = 1 and op in {Gt, Le}))
-    req fix: empty? iff (if left? then op in {Eq, Le, Lt} else op in {Eq, Ge, Gt})
+    ensure fix: empty? iff (if left? then op in {Eq, Le, Lt} else op in {Eq, Ge, Gt})
 
     expect not_negative: when op = Lt and bound = 0 and left?, not fires?
 }
@@ -188,7 +188,7 @@ pub comp first_empty {
     in s: String
     pub det out empty?   -- `s.at(0) = ""`
 
-    req rule: empty? iff s = ""
+    ensure rule: empty? iff s = ""
 }
 ```
 
@@ -236,8 +236,8 @@ pub comp trivial_pattern {
     pub det out fires?
     pub det out fix: PatternFix
 
-    req rule: fires? iff pattern.matches?(r"(\.\*)?([^\\.\[\]()*+?{}|^]|\\[\\.\[\]()*+?{}|^-])+(\.\*)?")
-    req which: fix = if pattern.starts_with?(".*") then (if pattern.ends_with?(".*") then PatternFix::Contains
+    ensure rule: fires? iff pattern.matches?(r"(\.\*)?([^\\.\[\]()*+?{}|^]|\\[\\.\[\]()*+?{}|^-])+(\.\*)?")
+    ensure which: fix = if pattern.starts_with?(".*") then (if pattern.ends_with?(".*") then PatternFix::Contains
         else PatternFix::EndsWith)
         else if pattern.ends_with?(".*") then PatternFix::StartsWith
         else PatternFix::Equality
@@ -279,7 +279,7 @@ pub comp manual_pattern_char_comparison {
     in single?               -- each is a single character
     pub det out fires?
 
-    req rule: fires? iff (n_alternatives >= 2 and single?)
+    ensure rule: fires? iff (n_alternatives >= 2 and single?)
 }
 
 pub comp class_char {
@@ -288,7 +288,7 @@ pub comp class_char {
 
     assume one: c.len = 1
 
-    req rule: escaped? iff c in {"\\", "]", "^", "-"}
+    ensure rule: escaped? iff c in {"\\", "]", "^", "-"}
 }
 ```
 
@@ -313,7 +313,7 @@ pub comp redundant_bool_type {
     in annot: Annot
     pub det out fires?
 
-    req rule: fires? iff (name.ends_with?("?") and annot = Annot::BoolTy)
+    ensure rule: fires? iff (name.ends_with?("?") and annot = Annot::BoolTy)
 
     expect written: when fires?, annot != Annot::Missing
 }
@@ -379,9 +379,9 @@ pub comp match_like_membership {
     pub det out negated?  -- the fix is negated, of the `false` alternatives
     pub det out pattern_test?  -- the fix is a pattern test, rather than a comparison
 
-    req negated: negated? iff (if wildcard? then wildcard_true? else if disjoint? then n_true > n_false else false_first?)
-    req rule: fires? iff (bool_bodies? and not binds? and (disjoint? or (if negated? then false_first? else true_first?)))
-    req test: pattern_test? iff not (if negated? then equatable_false? else equatable_true?)
+    ensure negated: negated? iff (if wildcard? then wildcard_true? else if disjoint? then n_true > n_false else false_first?)
+    ensure rule: fires? iff (bool_bodies? and not binds? and (disjoint? or (if negated? then false_first? else true_first?)))
+    ensure test: pattern_test? iff not (if negated? then equatable_false? else equatable_true?)
 
     expect fewer_listed: when not wildcard? and disjoint? and negated?, n_false < n_true
 }
@@ -409,7 +409,7 @@ pub comp redundant_bindings {
     in value: String     -- the expression after `:=`
     pub det out fires?
 
-    req rule: fires? iff value = name
+    ensure rule: fires? iff value = name
 }
 ```
 
@@ -427,7 +427,7 @@ pub comp double_neg {
     in negated_operand?  -- the operand of the negation, through parentheses, is a negation
     pub det out fires?
 
-    req rule: fires? iff negated_operand?
+    ensure rule: fires? iff negated_operand?
 }
 
 pub comp neg_multiply {
@@ -436,8 +436,8 @@ pub comp neg_multiply {
     pub det out fires?
     pub det out negate_left?  -- the fix negates the left operand, rather than the right
 
-    req rule: fires? iff (left_minus_one? or right_minus_one?)
-    req fix: negate_left? iff right_minus_one?
+    ensure rule: fires? iff (left_minus_one? or right_minus_one?)
+    ensure fix: negate_left? iff right_minus_one?
 }
 ```
 
@@ -471,7 +471,7 @@ pub comp module_inception {
     in parent: String    -- its parent's last segment, or `""` for a top-level module
     pub det out fires?
 
-    req rule: fires? iff name = parent
+    ensure rule: fires? iff name = parent
 
     expect top_level: when parent = "" and name != "", not fires?
 }
@@ -511,7 +511,7 @@ pub comp enum_variant_names {
 
     assume counts: n_variants >= 0
 
-    req rule: fires? iff (n_variants >= 2 and (shared_first? or shared_last?))
+    ensure rule: fires? iff (n_variants >= 2 and (shared_first? or shared_last?))
 }
 
 pub comp variant_has_enum_name {
@@ -522,7 +522,7 @@ pub comp variant_has_enum_name {
 
     assume counts: n_words >= 0 and n_enum_words >= 0
 
-    req rule: fires? iff (contains? and n_words > n_enum_words)
+    ensure rule: fires? iff (contains? and n_words > n_enum_words)
 
     expect same_name: when n_words = n_enum_words, not fires?
 }
@@ -552,7 +552,7 @@ pub comp upper_case_acronyms {
 
     inst c: naming_case { what }
 
-    req rule: fires? iff (c.case = Camel and name.matches?(r"[A-Z]([^_]*[A-Z])?[A-Z][A-Z][^_]*"))
+    ensure rule: fires? iff (c.case = Camel and name.matches?(r"[A-Z]([^_]*[A-Z])?[A-Z][A-Z][^_]*"))
 
     expect constants: when what = Named::Constant, not fires?
 }
@@ -580,31 +580,31 @@ pub comp just_underscores_and_digits {
     in name: String
     pub det out fires?
 
-    req rule: fires? iff (name.matches?(r"[_0-9]+[?]?") and name != "_")
+    ensure rule: fires? iff (name.matches?(r"[_0-9]+[?]?") and name != "_")
 }
 
 pub comp disallowed_names {
     in name: String
     pub det out fires?
 
-    req rule: fires? iff name.matches?(r"([Ff][Oo][Oo]|[Bb][Aa][Zz]|[Qq][Uu][Uu][Xx])[?]?")
+    ensure rule: fires? iff name.matches?(r"([Ff][Oo][Oo]|[Bb][Aa][Zz]|[Qq][Uu][Uu][Xx])[?]?")
 }
 ```
 
 ## Constant constraints
 
-`assertions_on_constants` fires on an assumption, requirement,
+`assertions_on_constants` fires on an assumption, guarantee,
 expectation or cover goal, of a component or [global](../Lang/Global.md), whose
 expression mentions no variable and no uninterpreted function (see
 [Mentions](../Lang/Expressions.md#mentions)), as
 [`constant_output`](Complexity.md#constant-outputs) does on a
-definition, such as `req r: true` or `expect e: LIMIT > 0`. An
+definition, such as `ensure r: true` or `expect e: LIMIT > 0`. An
 application of an uninterpreted function counts, since its value depends
 on the [interpretation](../Lang/Components.md#interpretations).
 
 Such a constraint is the same in every behaviour. If it is always true,
-it says nothing. If it is always false, a requirement makes its component
-unrealizable, an assumption makes every requirement hold vacuously, and an
+it says nothing. If it is always false, a guarantee makes its component
+unrealizable, an assumption makes every guarantee hold vacuously, and an
 expectation always fails. The message says which where the expression is
 written `true` or `false`, in parentheses or not; otherwise only the
 solver could tell, and a lint never asks it, so the message says that the
@@ -622,6 +622,6 @@ pub comp assertions_on_constants {
     in mentions?         -- the expression mentions a variable or an uninterpreted function
     pub det out fires?
 
-    req rule: fires? iff not mentions?
+    ensure rule: fires? iff not mentions?
 }
 ```

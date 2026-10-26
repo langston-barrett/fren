@@ -1,8 +1,8 @@
 [1;93mwarning[F0606][0m[1m: `c::bigger` is redundant: it follows from `y_def`[0m
- [1;94m-->[0m test/cli/args/color_equals.fren:7:9
+ [1;94m-->[0m test/cli/args/color_equals.fren:7:12
   [1;94m|[0m
-[1;94m7[0m [1;94m|[0m     req bigger: y > x
-  [1;94m|[0m         [1;93m^^^^^^ redundant[0m
+[1;94m7[0m [1;94m|[0m     ensure bigger: y > x
+  [1;94m|[0m            [1;93m^^^^^^ redundant[0m
   [1;94m|[0m
   [1;94m=[0m [1;96mhelp:[0m if it is meant as a consequence, make it an `expect`, so that it is checked
 

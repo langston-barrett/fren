@@ -10,7 +10,7 @@ comp own_expectation {
     in x: Int
     pub out big?
 
-    req r: big? iff x > 10
+    ensure r: big? iff x > 10
 
     expect sized: size(x) >= 0
     cover big_one: big?                            --~ info: witness: x = 11, big? = true
@@ -21,7 +21,7 @@ comp other_goal {
     in x: Int
     pub out big?
 
-    req r: big? iff x > 10
+    ensure r: big? iff x > 10
 
     cover sized: big? and size(x) > 3              --~ info: the witness is not shown, since its query uses abstract types or functions
     cover big_two: big?                            --~ info: witness: x = 11, big? = true
@@ -34,7 +34,7 @@ comp through_defined {
     in x: Int
     pub out big?
 
-    req r: big? iff x > 10
+    ensure r: big? iff x > 10
 
     cover big_unnamed: big? and unnamed?({})       --~ info: the witness is not shown, since its query uses abstract types or functions
 }
@@ -47,7 +47,7 @@ comp sized {
     in k: Int
     pub out pos?
 
-    req r: pos? iff k > 0
+    ensure r: pos? iff k > 0
 
     expect sized: size(k) >= 0
 }
@@ -58,7 +58,7 @@ comp uses_sized {
 
     inst sz: sized { k := m }
 
-    req r: ok? iff sz.pos?
+    ensure r: ok? iff sz.pos?
 
     cover ok_one: ok? and m = 1                    --~ info: witness: m = 1, ok? = true, sz.pos? = true
 }

@@ -3,5 +3,5 @@ set_option fren.evidence "testing" in
 comp c {
     in x?
     pub det out y?
-    req r: y? iff x?
+    ensure r: y? iff x?
 }

@@ -1,8 +1,8 @@
 error[F0352]: `Level` is not ordered, so its values cannot be compared with `>`
- --> test/cli/types/f0352_unordered.fren:4:53
+ --> test/cli/types/f0352_unordered.fren:4:56
   |
-4 | comp c { in l: Level pub out high? req r: high? iff l > Level::Middle }
-  |                                                     ^ `Level` is not ordered
+4 | comp c { in l: Level pub out high? ensure r: high? iff l > Level::Middle }
+  |                                                        ^ `Level` is not ordered
   |
   = note: only `Int`s, `String`s and the values of an ordered enum are ordered
   = help: to order its variants as they are declared, declare it `ordered enum Level { ... }`

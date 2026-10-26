@@ -1,8 +1,8 @@
-warning[F0761]: this requirement mentions no variable
- --> test/cli/lints/style/f0761_assertions_on_constants.fren:8:12
+warning[F0761]: this guarantee mentions no variable
+ --> test/cli/lints/style/f0761_assertions_on_constants.fren:8:15
   |
-8 |     req s: true
-  |            ^^^^ always `true`
+8 |     ensure s: true
+  |               ^^^^ always `true`
   |
   = note: it constrains nothing
   = note: `assertions_on_constants` is `warn` by default
@@ -25,10 +25,10 @@ warning[F0761]: this expectation mentions no variable
    = note: it always fails
 
 warning[F0606]: `c::s` is redundant: it always holds
- --> test/cli/lints/style/f0761_assertions_on_constants.fren:8:9
+ --> test/cli/lints/style/f0761_assertions_on_constants.fren:8:12
   |
-8 |     req s: true
-  |         ^ redundant
+8 |     ensure s: true
+  |            ^ redundant
   |
   = help: if it is meant as a consequence, make it an `expect`, so that it is checked
 
@@ -36,10 +36,10 @@ error[F0603]: expectation `g` does not hold
   --> test/cli/lints/style/f0761_assertions_on_constants.fren:11:8
    |
 11 | expect g: (false)
-   |        ^ does not follow from the requirements
+   |        ^ does not follow from the guarantees
    |
    = counterexample: (any values)
-   = help: strengthen the requirements so that it follows, or correct the expectation
+   = help: strengthen the guarantees so that it follows, or correct the expectation
 
 fren: 3 passed, 1 failed, 0 inconclusive, 1 redundant
 

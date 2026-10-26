@@ -1,8 +1,8 @@
 error[F0109]: `forall` must be parenthesized here
- --> test/cli/syntax/f0109_quantifier.fren:3:61
+ --> test/cli/syntax/f0109_quantifier.fren:3:64
   |
-3 | comp c { in x: Mode in p? pub out ok? req r: ok? iff p? and forall (m: Mode), m = x }
-  |                                                             ^^^^^^ needs parentheses
+3 | comp c { in x: Mode in p? pub out ok? ensure r: ok? iff p? and forall (m: Mode), m = x }
+  |                                                                ^^^^^^ needs parentheses
   |
   = note: `forall` has the lowest precedence, and its body extends as far right as possible
   = help: wrap it in parentheses: `(forall (x: T), e)`

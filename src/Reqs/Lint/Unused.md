@@ -43,7 +43,7 @@ pub comp unused_import {
     in first?            -- no earlier `use` in its file and module opens the same enumeration
     pub det out unused?
 
-    req rule: unused? iff (n_paths = 0 or (glob? and not first?))
+    ensure rule: unused? iff (n_paths = 0 or (glob? and not first?))
 
     expect named_used: when not glob? and n_paths > 0, not unused?
     expect repeated_glob: when glob? and not first?, unused?
@@ -96,8 +96,8 @@ from its module's descendants, which later files may enter. Uses in Lean
 code do not count either. A use counts even when it is in an item that is
 itself unused.
 
-Components and global expectations are never dead: each is a requirement,
-or a claim about requirements, in its own right, and is checked and
+Components and global expectations are never dead: each is a guarantee,
+or a claim about guarantees, in its own right, and is checked and
 [traced](../Trace.md) whether or not anything uses it. `pub` items may be used
 by other files. `lint::Named` is what a name can name, which the
 [naming conventions](NonstandardStyle.md#naming-conventions) also use. `lint::dead_item`
@@ -129,7 +129,7 @@ pub comp dead_item {
     in n_uses: Nat       -- paths in its file that resolve to it, to one of its variants, or through it
     pub det out dead?
 
-    req rule: dead? iff (what in {Enumeration, Record, AbstractType, Function, Constant} and not pub? and n_uses = 0)
+    ensure rule: dead? iff (what in {Enumeration, Record, AbstractType, Function, Constant} and not pub? and n_uses = 0)
 
     expect public_lives: when pub?, not dead?
     expect components_live: when what = Component, not dead?
@@ -155,12 +155,12 @@ the abstraction's assumptions are its hypotheses, so an assumption can
 guard a binding: with `n := q.len` and `assume pos: n > 0`, `x := q[0]` is
 defined. An input is also used when another assumption mentions it and a
 used variable, since the assumption constrains the two together, and so
-on transitively: with `assume a: n > 0`, `assume b: m = 2 * n` and `req r:
+on transitively: with `assume a: n > 0`, `assume b: m = 2 * n` and `ensure r:
 y = m`, `m` is used, so `n` is, and without `a`, `y > 0` would not follow.
 An uninterpreted function links assumptions in the same way as a
 variable, through its values: it is *used* when one of the above applies
 it, and an assumption that applies a used function is used, as is an
-input it mentions. With `assume a: n = 3 and g(n) > 0` and `req r: y =
+input it mentions. With `assume a: n = 3 and g(n) > 0` and `ensure r: y =
 g(3)`, `a` says that `g(3) > 0`, so it is used. A constant's value and a
 defined function's body apply no uninterpreted function, so they link
 nothing. With these rules, removing a reported assumption together with
@@ -183,7 +183,7 @@ value to the type, extend each uninterpreted function to it, and give
 the counterexample still fails, and the assumption now holds. An unused
 input does not affect the component, as for an [unused variable](#unused-variables), but
 `unused_variables` does not report it, since the assumption mentions it:
-this is what is left after the last requirement that used the input is
+this is what is left after the last guarantee that used the input is
 removed. As for [dead code](#dead-code), only the file's global
 expectations, instances and refinements count. There is no fix: removing
 the inputs would change the component's interface.
@@ -199,7 +199,7 @@ pub comp unused_assumption {
 
     assume counts: n_mentioned >= 0
 
-    req rule: fires? iff (n_mentioned > 0 and all_inputs? and not mentioned? and not read?)
+    ensure rule: fires? iff (n_mentioned > 0 and all_inputs? and not mentioned? and not read?)
 }
 ```
 
@@ -247,6 +247,6 @@ pub comp unused_lint_setting {
 
     assume counts: n_places >= 0
 
-    req rule: fires? iff (n_places = 0 and not expect?)
+    ensure rule: fires? iff (n_places = 0 and not expect?)
 }
 ```

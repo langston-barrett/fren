@@ -7,5 +7,5 @@ comp area {
     in shape: Shape
     pub out size: Int
 
-    req rule: size = match shape { Shape::Circle(radius) => radius, _ => 1 }
+    ensure rule: size = match shape { Shape::Circle(radius) => radius, _ => 1 }
 }

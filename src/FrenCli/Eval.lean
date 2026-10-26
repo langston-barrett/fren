@@ -755,7 +755,7 @@ partial def Spec.instAtoms (sp : Spec) (pfx : Name) (i : Inst) : Array Atom :=
 /-- Everything a comp nested at `pfx` says of its variables: its
 assumptions, requirements and instances (`Reqs/Lang/Components#meaning`). -/
 partial def Spec.meaning (sp : Spec) (c : Comp) (pfx : Name := .anonymous) : Array Atom :=
-  c.defAtoms pfx ++ atomsOf pfx (c.ofKind .assume) ++ atomsOf pfx (c.ofKind .req) ++ c.insts.flatMap (sp.instAtoms pfx)
+  c.defAtoms pfx ++ atomsOf pfx (c.ofKind .assume) ++ atomsOf pfx (c.ofKind .ensure) ++ c.insts.flatMap (sp.instAtoms pfx)
 end
 
 /-- `I`, of the instances before `upTo`. -/
@@ -1028,7 +1028,7 @@ def Comp.refinement (path w : Name) (c a : Comp) (bindings : Array (Name × Ex) 
   { path
     vars := inputs
     constraints := (a.constraints.filter (·.kind == .assume)).map (fun p => { p with e := ren p.e })
-      ++ (a.constraints.filter (·.kind == .req)).map (fun p => { p with kind := .expect, e := ren p.e })
+      ++ (a.constraints.filter (·.kind == .ensure)).map (fun p => { p with kind := .expect, e := ren p.e })
       ++ a.defs.map fun (d, e) => { kind := .expect, name := d, e := .bin .eq (ren (.var d)) (ren e) }
     insts := #[{ name := w, comp := c.path, bindings := inputs.map fun v => (v.name, .var v.name) }]
       ++ a.insts.map fun i => { i with bindings := i.bindings.map fun (x, e) => (x, ren e) }

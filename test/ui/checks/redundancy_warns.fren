@@ -4,8 +4,8 @@ comp c {
     in x: Int
     pub out y: Int
 
-    req y_def: y = x + 1
-    req bigger: y > x  --~ warning: `c::bigger` is redundant: it follows from `y_def`
+    ensure y_def: y = x + 1
+    ensure bigger: y > x  --~ warning: `c::bigger` is redundant: it follows from `y_def`
 }
 --@ summary: 2 passed, 0 failed, 0 inconclusive, 1 redundant
 --@ exit: 3

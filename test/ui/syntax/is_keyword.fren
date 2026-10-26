@@ -1,5 +1,5 @@
 -- `is` is a reserved word, so it is not a name.
-comp keyword { in x: Int pub out z? req r: z? iff is = x }
+comp keyword { in x: Int pub out z? ensure r: z? iff is = x }
 --~^[cli] error: expected an expression, found keyword `is`
 --~^^[hosted] error: unexpected token 'is'
 --@ exit: 2

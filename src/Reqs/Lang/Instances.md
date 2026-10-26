@@ -29,8 +29,8 @@ pub comp band {
   pub out too_cold?
   pub out too_hot?
 
-  req cold: too_cold? iff temp < target - 2
-  req hot: too_hot? iff temp > target + 2
+  ensure cold: too_cold? iff temp < target - 2
+  ensure hot: too_hot? iff temp > target + 2
 }
 
 pub comp thermostat {
@@ -40,17 +40,17 @@ pub comp thermostat {
 
   inst range: band { temp, target }
 
-  req heat: when range.too_cold?, mode = Heat
-  req cool: when range.too_hot?, mode = Cool
-  req idle: unless range.too_cold? or range.too_hot?, mode = Off
+  ensure heat: when range.too_cold?, mode = Heat
+  ensure cool: when range.too_hot?, mode = Cool
+  ensure idle: unless range.too_cold? or range.too_hot?, mode = Off
 }
 ```
 
 `thermostat` can meet `heat` and `cool` together only because `band`'s
-requirements rule out a temperature that is both too cold and too hot. That
+guarantees rule out a temperature that is both too cold and too hot. That
 is how instances work in general: the instance's outputs are not the
 component's to choose, but they are known to satisfy the instantiated
-component's requirements (see [Components](Components.md#meaning)).
+component's guarantees (see [Components](Components.md#meaning)).
 
 ## Bindings
 
@@ -73,7 +73,7 @@ pub comp binding {
     in n: Nat            -- bindings of this name in the instance
     pub out accepted?
 
-    req rule: accepted? iff ((target = CompInput and n = 1) or (target != CompInput and n = 0))
+    ensure rule: accepted? iff ((target = CompInput and n = 1) or (target != CompInput and n = 0))
 
     expect inputs_bound_once: when target = CompInput and accepted?, n = 1
     expect outputs_not_bound: when target = CompOutput and n > 0, not accepted?
@@ -96,7 +96,7 @@ pub comp bindings {
 
     assume disjoint: (inputs inter outputs) = {}
 
-    req rule: accepted? iff (bound = inputs and n_repeated = 0)
+    ensure rule: accepted? iff (bound = inputs and n_repeated = 0)
 
     expect outputs_not_bound: when (bound inter outputs) != {}, not accepted?
     expect all_inputs: when accepted?, inputs subset bound
@@ -116,8 +116,8 @@ Which variables an expression may mention depends on where it is:
 |---|---|---|---|
 | assumption | yes | no | no |
 | binding of an instance | yes | no | only if `w` is declared earlier |
-| requirement, expectation, [cover goal](Components.md#cover-goals) | yes | yes | yes |
-| argument of a [function application](Expressions.md#function-applications) in a requirement, expectation or cover goal | yes | no | yes |
+| guarantee, expectation, [cover goal](Components.md#cover-goals) | yes | yes | yes |
+| argument of a [function application](Expressions.md#function-applications) in a guarantee, expectation or cover goal | yes | no | yes |
 
 A field read `p.x` mentions `p`, a binder of a [`match`
 arm](Expressions.md#matches) mentions what its scrutinee mentions, a name
@@ -157,7 +157,7 @@ pub comp earlier {
     -- Instance names are distinct.
     assume distinct: when owner = binder, k_owner = k_binder
 
-    req rule: earlier? iff k_owner < k_binder
+    ensure rule: earlier? iff k_owner < k_binder
 
     expect not_itself: when owner = binder, not earlier?
     -- The first instance's variables can be bound in the second's, and not
@@ -173,18 +173,18 @@ elaborator computes anyway. `distinct` states that the names are distinct
 only for the two at hand, which is all the rule needs.
 
 `inst::mention` states this rule. `Place` is where a variable is mentioned
-(`Req` covers requirements, expectations and cover goals, and `Argument` an
+(`Constraint` covers guarantees, expectations and cover goals, and `Argument` an
 argument within one of them), and `Role` is what the variable is: one of
 the component's own, or one of an instance's.
 `InstHidden` covers an instance's private outputs and the variables of the
 instance's own instances.
 
 ```fren
-pub enum Place { Assume, Binding, Req, Argument }
+pub enum Place { Assume, Binding, Constraint, Argument }
 
 pub enum Role { Input, Output, InstInput, InstOutput, InstHidden }
 
-use self::Place::{Argument, Assume, Binding, Req}
+use self::Place::{Argument, Assume, Binding, Constraint}
 use self::Role::{Input, InstHidden, InstInput, InstOutput, Output}
 
 pub comp mention {
@@ -193,11 +193,11 @@ pub comp mention {
     in earlier?          -- the variable's instance is declared before this binding
     pub out allowed?
 
-    req inputs: when role = Input, allowed?
-    req outputs: when role = Output, allowed? iff place = Req
-    req instances: when role = InstInput or role = InstOutput,
-        allowed? iff (place = Req or place = Argument or (place = Binding and earlier?))
-    req hidden: when role = InstHidden, not allowed?
+    ensure inputs: when role = Input, allowed?
+    ensure outputs: when role = Output, allowed? iff place = Constraint
+    ensure instances: when role = InstInput or role = InstOutput,
+        allowed? iff (place = Constraint or place = Argument or (place = Binding and earlier?))
+    ensure hidden: when role = InstHidden, not allowed?
 
     expect assume_sees_inputs_only: when place = Assume and allowed?, role = Input
     expect no_cycles: when place = Binding and role != Input and allowed?, earlier?

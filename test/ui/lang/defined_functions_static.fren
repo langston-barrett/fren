@@ -19,8 +19,8 @@ fn one(n: Int): Int := n
 
 const C: Int := one(3)
 
-comp product { in x: Int in z: Int pub out y: Int req r: y = one(x) * z }
+comp product { in x: Int in z: Int pub out y: Int ensure r: y = one(x) * z }
 --~^ error: nonlinear arithmetic is not supported
-comp scaled { in x: Int pub out y: Int req r: y = one(x) * C }
-comp too_many { in x: Int pub out y: Int req r: y = one(x, x) }
+comp scaled { in x: Int pub out y: Int ensure r: y = one(x) * C }
+comp too_many { in x: Int pub out y: Int ensure r: y = one(x, x) }
 --~^ error: `one` takes 1 argument, but 2 were given

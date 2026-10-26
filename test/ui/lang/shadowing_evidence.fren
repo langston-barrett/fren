@@ -19,7 +19,7 @@ pub comp members {
     set_option fren.evidence "tested" in
     inst p!: positive { k := 1 }
 
-    req r: y = n + p.k
+    ensure r: y = n + p.k
 }
 
 set_option fren.evidence "tested" in

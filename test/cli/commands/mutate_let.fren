@@ -5,6 +5,6 @@ pub comp c {
     in x: Int
     pub out y?
 
-    req r: y? iff big? where limit := 10, big? := x > limit and x < 2 * limit
-    req s: let k := x + 1 in when k > 0, y?
+    ensure r: y? iff big? where limit := 10, big? := x > limit and x < 2 * limit
+    ensure s: let k := x + 1 in when k > 0, y?
 }

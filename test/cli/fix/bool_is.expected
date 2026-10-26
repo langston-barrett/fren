@@ -1,8 +1,8 @@
 --- test/cli/fix/bool_is.fren
 +++ test/cli/fix/bool_is.fren
 @@ -12,2 +12,2 @@
--    req r: ok? = if s is Shape::Circle(_) then true else false
--    req q: z? iff not ((s is Shape::Circle(_)) = b?)
-+    req r: ok? = (s is Shape::Circle(_))
-+    req q: z? iff (s is Shape::Circle(_)) != b?
+-    ensure r: ok? = if s is Shape::Circle(_) then true else false
+-    ensure q: z? iff not ((s is Shape::Circle(_)) = b?)
++    ensure r: ok? = (s is Shape::Circle(_))
++    ensure q: z? iff (s is Shape::Circle(_)) != b?
 exit=1

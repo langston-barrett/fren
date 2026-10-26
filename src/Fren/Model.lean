@@ -162,18 +162,18 @@ structure Var where
 
 inductive PropKind where
   | assume
-  | req
+  | ensure
   | expect
   | cover
   deriving Inhabited, BEq, Repr
 
 def PropKind.keyword : PropKind → String
   | .assume => "assume"
-  | .req => "req"
+  | .ensure => "ensure"
   | .expect => "expect"
   | .cover => "cover"
 
-/-- An `assume`, `req`, `expect` or `cover`. Expressions are closed lambdas over all
+/-- An `assume`, `ensure`, `expect` or `cover`. Expressions are closed lambdas over all
 of the comp's variables (`CompInfo.vars`). -/
 structure PropInfo where
   kind : PropKind
@@ -239,7 +239,7 @@ structure CompInfo where
   deriving Inhabited
 
 def CompInfo.assumes (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .assume)
-def CompInfo.reqs (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .req)
+def CompInfo.ensures (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .ensure)
 def CompInfo.expects (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .expect)
 def CompInfo.covers (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .cover)
 
@@ -249,14 +249,14 @@ def CompInfo.meaning (c : CompInfo) (args : Array Expr) : Expr :=
   let defEq (d : Name) (e : Expr) : Expr := match c.vars.findIdx? (·.name == d) with
     | some i => mkApp3 (mkConst ``Eq [1]) (c.vars[i]!.type) args[i]! (e.beta args)
     | none => mkConst ``True
-  mkAndN <| c.defs.toList.map (fun (d, e) => defEq d e) ++ (c.assumes ++ c.reqs).toList.map (·.body.beta args)
+  mkAndN <| c.defs.toList.map (fun (d, e) => defEq d e) ++ (c.assumes ++ c.ensures).toList.map (·.body.beta args)
     ++ c.insts.toList.map fun i => mkAnd (i.bindings.beta args) (i.behaviour.beta args)
 
 /-- `CompInfo.meaning` as applications of the generated definitions, to the
 placeholders it uses. -/
 def CompInfo.meaningDecl (c : CompInfo) (args : Array Expr) : Expr :=
   let args := c.uses.map (mkConst ·) ++ args
-  mkAndN <| ((if c.defs.isEmpty then [] else [`defs]) ++ [`assumes, `reqs]).map (fun n => mkAppN (mkConst (c.decl ++ n)) args)
+  mkAndN <| ((if c.defs.isEmpty then [] else [`defs]) ++ [`assumes, `ensures]).map (fun n => mkAppN (mkConst (c.decl ++ n)) args)
     ++ c.insts.toList.map fun i => mkAppN (mkConst i.decl) args
 
 /-- An `impl` whose obligation was proved (or added as an axiom). -/

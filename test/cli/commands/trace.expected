@@ -1,7 +1,7 @@
 warning[F0506]: `hidden` has evidence `trusted`, below `tested` (`--require`)
  --> test/cli/commands/trace.fren:6:6
   |
-6 | comp hidden { in x? pub out y? req r: y? iff x? }
+6 | comp hidden { in x? pub out y? ensure r: y? iff x? }
   |      ^^^^^^ evidence `trusted`
   |
   = note: `--require` requires every component to have evidence `tested` or stronger
@@ -10,7 +10,7 @@ warning[F0506]: `hidden` has evidence `trusted`, below `tested` (`--require`)
 warning[F0506]: `untraced` has evidence `missing`, below `tested` (`--require`)
  --> test/cli/commands/trace.fren:8:6
   |
-8 | comp untraced { in x? pub out y? req r: y? iff not x? }
+8 | comp untraced { in x? pub out y? ensure r: y? iff not x? }
   |      ^^^^^^^^ evidence `missing`
   |
   = note: `--require` requires every component to have evidence `tested` or stronger

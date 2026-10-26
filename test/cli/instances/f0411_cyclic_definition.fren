@@ -4,5 +4,5 @@ comp c {
     out b: Int := a
     pub out y: Int
 
-    req r: y = a
+    ensure r: y = a
 }

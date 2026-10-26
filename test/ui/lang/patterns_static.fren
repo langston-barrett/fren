@@ -1,16 +1,16 @@
 -- Static rules for patterns.
 set_option fren.lint.unused_variables "allow"
 
-comp c0 { in s: String in p: String pub out a? req r: a? iff s.matches?(p) }
+comp c0 { in s: String in p: String pub out a? ensure r: a? iff s.matches?(p) }
 --~^ error: the argument of `matches?` must be a string literal
-comp c1 { in s: String in p: String pub out a? req r: a? iff s.matches?(r"[z-a]") }
+comp c1 { in s: String in p: String pub out a? ensure r: a? iff s.matches?(r"[z-a]") }
 --~^ error: the range `z-a` in a pattern is reversed
-comp c2 { in s: String in p: String pub out a? req r: a? iff s.matches?(r"^a") }
+comp c2 { in s: String in p: String pub out a? ensure r: a? iff s.matches?(r"^a") }
 --~^ error: invalid pattern: patterns have no anchors
-comp c3 { in s: String in p: String pub out a? req r: a? iff s.matches?(r"\d+") }
+comp c3 { in s: String in p: String pub out a? ensure r: a? iff s.matches?(r"\d+") }
 --~^ error: invalid pattern: unknown escape
-comp c4 { in s: String in p: String pub out a? req r: a? iff s.matches?(r"(a") }
+comp c4 { in s: String in p: String pub out a? ensure r: a? iff s.matches?(r"(a") }
 --~^ error: invalid pattern: unclosed `(`
-comp c5 { in s: String in p: String pub out a? req r: a? iff s.matches?(r"[]") }
+comp c5 { in s: String in p: String pub out a? ensure r: a? iff s.matches?(r"[]") }
 --~^ error: invalid pattern: an empty class matches no character
 --@ exit: 2

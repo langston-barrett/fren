@@ -8,7 +8,7 @@ pub comp c {
     pub out p?
     pub out q?
 
-    req r1: o? iff not not (let k := 2 in x > k)
-    req r2: p? iff (let b? := a? in b?) = true
-    req r3: q? iff (let k := 2 in not (x < k)) and a?
+    ensure r1: o? iff not not (let k := 2 in x > k)
+    ensure r2: p? iff (let b? := a? in b?) = true
+    ensure r3: q? iff (let k := 2 in not (x < k)) and a?
 }

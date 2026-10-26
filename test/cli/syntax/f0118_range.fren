@@ -2,5 +2,5 @@ comp c {
     in s: String
     pub out p?
 
-    req r: p? iff s.matches?(r"[z-a]+")
+    ensure r: p? iff s.matches?(r"[z-a]+")
 }

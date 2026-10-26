@@ -13,8 +13,8 @@ comp c {
     pub out p?
     pub out q?
 
-    req r1: o? iff not not Flag(a?).0  --~ warning: write `Flag(a?).0`
-    req r2: p? iff not (t = u)  --~ warning: write `t != u`
-    req r3: q? iff t < u or t = u  --~ warning: these two comparisons are `t <= u`
+    ensure r1: o? iff not not Flag(a?).0  --~ warning: write `Flag(a?).0`
+    ensure r2: p? iff not (t = u)  --~ warning: write `t != u`
+    ensure r3: q? iff t < u or t = u  --~ warning: these two comparisons are `t <= u`
     expect same: t.0 = t.0  --~ warning: both operands of `=` are written the same
 }

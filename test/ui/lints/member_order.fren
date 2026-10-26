@@ -13,7 +13,7 @@ enum Shape { Square, Circle }
 comp severity_of {
     in x: Int
     pub out v: Int
-    req r: v = x
+    ensure r: v = x
 }
 
 comp in_order {
@@ -24,14 +24,14 @@ comp in_order {
     out z: Int := x + 1
     assume small: x < 100
     inst w: severity_of { x }
-    req r: y = double(x) + triple(x) + triple(z) + half(x) + unknown(x) + w.v
+    ensure r: y = double(x) + triple(x) + triple(z) + half(x) + unknown(x) + w.v
     expect e: shape = Square or shape = Shape::Circle
 }
 
 comp unordered {
     in x: Int
-    req r: y = x
-    pub out y: Int   --~ warning: an output after a requirement
+    ensure r: y = x
+    pub out y: Int   --~ warning: an output after a guarantee
     assume small: x < 100
 }
 
@@ -41,7 +41,7 @@ comp evidence {
     expect e: x = y
     in x: Int   --~ warning: an input after an expectation
     pub out y: Int
-    req r: y = x
+    ensure r: y = x
 }
 
 -- Reported, but not fixed: in order, `z` would come before `w`.
@@ -50,14 +50,14 @@ comp mentions {
     inst w: severity_of { x }
     out z: Int := w.v   --~ warning: an output after an instance
     pub out y: Int
-    req r: y = z
+    ensure r: y = z
 }
 
 -- A cover goal comes last.
 comp covered {
     in x: Int
     pub out y: Int
-    req r: y = x
+    ensure r: y = x
     cover big: x > 10   --~ info: cover goal `covered::big` is met
     expect e: y >= x   --~ warning: an expectation after a cover goal
 }

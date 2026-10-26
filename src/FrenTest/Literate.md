@@ -13,7 +13,7 @@ pub comp gate {
     in a?
     pub out b?
 
-    req same: b? iff a?
+    ensure same: b? iff a?
 ```
 
 Blocks are concatenated, so an item can span them.

@@ -15,9 +15,9 @@ comp band {
     out secret: Int
 
     assume sane: LOW <= target and target <= HIGH
-    req cold: too_cold? iff temp < target - 2
-    req hot: too_hot? iff temp > target + 2
-    req s: secret = temp
+    ensure cold: too_cold? iff temp < target - 2
+    ensure hot: too_hot? iff temp > target + 2
+    ensure s: secret = temp
 }
 
 comp fast_band {
@@ -26,8 +26,8 @@ comp fast_band {
     pub out too_cold?
     pub out too_hot?
 
-    req cold: too_cold? iff temp + 2 < target
-    req hot: too_hot? iff temp - 2 > target
+    ensure cold: too_cold? iff temp + 2 < target
+    ensure hot: too_hot? iff temp - 2 > target
 }
 
 expect sane_range: LOW < HIGH

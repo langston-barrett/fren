@@ -5,5 +5,5 @@
 comp c {
     in a?b: Int    --~ error: `a?b` is not an identifier in Fren
     pub out y: Int
-    req r: y = 1
+    ensure r: y = 1
 }

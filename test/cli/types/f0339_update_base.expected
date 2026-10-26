@@ -1,8 +1,8 @@
 error[F0339]: cannot update the fields of `Int`
- --> test/cli/types/f0339_update_base.fren:2:48
+ --> test/cli/types/f0339_update_base.fren:2:51
   |
-2 | comp c { in n: Int pub out m: Int req r: m = { n with x := 1 } }
-  |                                                ^ not a record
+2 | comp c { in n: Int pub out m: Int ensure r: m = { n with x := 1 } }
+  |                                                   ^ not a record
   |
   = note: `{ r with x := e }` gives new values to fields of the record `r`
 

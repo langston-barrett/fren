@@ -4,7 +4,7 @@ A quantifier says that an expression holds for every value of a finite
 type, or for some value of one:
 
 ```text
-req all_quiet: forall (m: Method), not loud?(m)
+ensure all_quiet: forall (m: Method), not loud?(m)
 expect some_mode: exists (m: Mode), heats?(m)
 ```
 
@@ -74,7 +74,7 @@ pub comp quantified_type {
 
     assume enumerations_only: when type_kind != EnumTy, not recursive?
 
-    req rule: accepted? iff match type_kind {
+    ensure rule: accepted? iff match type_kind {
         BoolTy => true,
         EnumTy => parts? and not recursive?,
         RecordTy => parts?,
@@ -109,7 +109,7 @@ pub comp quantifier {
 
     assume some_instance: values != {}
 
-    req rule: holds? iff (if all? then not false in values else true in values)
+    ensure rule: holds? iff (if all? then not false in values else true in values)
 
     expect conjunction: when all?, holds? iff values = {true}
     expect disjunction: unless all?, holds? iff true in values
@@ -156,7 +156,7 @@ pub comp quantifier_size {
 
     assume some: n_instances >= 1
 
-    req rule: accepted? iff n_instances <= MAX_INSTANCES
+    ensure rule: accepted? iff n_instances <= MAX_INSTANCES
 
     expect at_limit: when n_instances = MAX_INSTANCES, accepted?
     expect beyond_limit: when n_instances > MAX_INSTANCES, not accepted?
@@ -214,8 +214,8 @@ pub comp quantifier_binder {
     pub det out accepted?
     pub det out behaviours?  -- it ranges over a component's behaviours, not a type's values
 
-    req rule: accepted? iff (target = ListedType or (global? and target = Component))
-    req ranges: behaviours? iff target = Component
+    ensure rule: accepted? iff (target = ListedType or (global? and target = Component))
+    ensure ranges: behaviours? iff target = Component
 
     expect values_anywhere: when target = ListedType, accepted? and not behaviours?
     expect behaviours_globally: when target = Component and accepted?, global?

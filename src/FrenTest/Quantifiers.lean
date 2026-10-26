@@ -18,23 +18,23 @@ comp c {
   pub out some_pair?
   pub out nested?
 
-  req all_other: all_other? iff (forall (m: Method), m != x)
-  req some_pair: some_pair? iff (exists (p: Pair), p.a? and not p.b?)
-  req nested: nested? iff (forall (a? b?: Bool), a? or b?)
+  ensure all_other: all_other? iff (forall (m: Method), m != x)
+  ensure some_pair: some_pair? iff (exists (p: Pair), p.a? and not p.b?)
+  ensure nested: nested? iff (forall (a? b?: Bool), a? or b?)
 }
 
 /--
-info: @[reducible] def quant.c.req.all_other : quant.Method → Bool → Bool → Bool → Prop :=
+info: @[reducible] def quant.c.ensure.all_other : quant.Method → Bool → Bool → Bool → Prop :=
 fun x all_other? some_pair? nested? =>
   all_other? = true ↔ quant.Method.Len ≠ x ∧ quant.Method.Card ≠ x ∧ quant.Method.Rev ≠ x
 -/
 #guard_msgs in
-#print quant.c.req.all_other
+#print quant.c.ensure.all_other
 
 -- A record's values are every combination of its fields', the last field
 -- fastest, and `Bool`'s are `true` then `false`.
 /--
-info: @[reducible] def quant.c.req.some_pair : quant.Method → Bool → Bool → Bool → Prop :=
+info: @[reducible] def quant.c.ensure.some_pair : quant.Method → Bool → Bool → Bool → Prop :=
 fun x all_other? some_pair? nested? =>
   some_pair? = true ↔
     ({ a? := true, b? := true }.a? = true ∧ ¬{ a? := true, b? := true }.b? = true ∨
@@ -43,15 +43,15 @@ fun x all_other? some_pair? nested? =>
         { a? := false, b? := false }.a? = true ∧ ¬{ a? := false, b? := false }.b? = true
 -/
 #guard_msgs in
-#print quant.c.req.some_pair
+#print quant.c.ensure.some_pair
 
 -- Two bound names: every combination, the last fastest, in one balanced tree.
 /--
-info: @[reducible] def quant.c.req.nested : quant.Method → Bool → Bool → Bool → Prop :=
+info: @[reducible] def quant.c.ensure.nested : quant.Method → Bool → Bool → Bool → Prop :=
 fun x all_other? some_pair? nested? =>
   nested? = true ↔
     ((true = true ∨ true = true) ∧ (true = true ∨ false = true)) ∧
       (false = true ∨ true = true) ∧ (false = true ∨ false = true)
 -/
 #guard_msgs in
-#print quant.c.req.nested
+#print quant.c.ensure.nested

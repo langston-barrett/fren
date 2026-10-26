@@ -4,6 +4,6 @@ pub comp c {
     pub out p?
     pub out q?
 
-    req r: p? iff x >- 1
-    req s: q? iff x <=- 1
+    ensure r: p? iff x >- 1
+    ensure s: q? iff x <=- 1
 }

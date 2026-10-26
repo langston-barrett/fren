@@ -8,8 +8,8 @@ comp c {
     pub out q?
     pub out w?
 
-    req r1: o? iff (if a? then b? else false)
-    req r2: p? iff (if a? or b? then true else b?)
-    req r3: q? iff (if a? then false else b? iff a?)
-    req r4: w? iff (if a? then b? else true)
+    ensure r1: o? iff (if a? then b? else false)
+    ensure r2: p? iff (if a? or b? then true else b?)
+    ensure r3: q? iff (if a? then false else b? iff a?)
+    ensure r4: w? iff (if a? then b? else true)
 }

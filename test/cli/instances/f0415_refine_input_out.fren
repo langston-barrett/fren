@@ -1,5 +1,5 @@
 -- A refinement whose binding of an input mentions an output of the
 -- concrete component.
-comp precise { in x: Int pub out y: Int req r: y = x }
-comp rough { in n: Int pub out y: Int req r: y >= n }
+comp precise { in x: Int pub out y: Int ensure r: y = x }
+comp rough { in n: Int pub out y: Int ensure r: y >= n }
 refine fits: precise refines rough { n := y }

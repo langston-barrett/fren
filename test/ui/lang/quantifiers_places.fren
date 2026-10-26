@@ -20,7 +20,7 @@ comp sub {
     in ok?
     pub out same?
 
-    req r: same? iff ok?
+    ensure r: same? iff ok?
 }
 
 comp places {
@@ -32,7 +32,7 @@ comp places {
     pub out all_cheap? := forall (m: Mode), cost(m) <= limit
 
     assume affordable: exists (m: Mode), m = mode and cost(m) <= limit
-    req r: free? iff (forall (m: Mode), when m = mode, cost(m) = 0)
+    ensure r: free? iff (forall (m: Mode), when m = mode, cost(m) = 0)
 
     -- An instance's binding.
     inst w: sub { ok? := (exists (m: Mode), m = mode) }

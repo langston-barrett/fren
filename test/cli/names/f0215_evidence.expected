@@ -1,4 +1,4 @@
-error[F0215]: `fren.evidence` cannot be set for a requirement
+error[F0215]: `fren.evidence` cannot be set for a guarantee
  --> test/cli/names/f0215_evidence.fren:5:5
   |
 5 |     set_option fren.evidence "tested" in

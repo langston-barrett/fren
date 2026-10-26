@@ -1,2 +1,2 @@
 -- A string pattern where an `Int` is matched.
-comp c { in n: Int pub out y: Int req r: y = match n { "zero" => 0, _ => 1 } }
+comp c { in n: Int pub out y: Int ensure r: y = match n { "zero" => 0, _ => 1 } }

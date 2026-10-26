@@ -5,8 +5,8 @@ comp heater {
     pub out alarm?
     out margin: Int
 
-    req r: alarm? iff temp > 100
-    req m: margin = temp - 100
+    ensure r: alarm? iff temp > 100
+    ensure m: margin = temp - 100
 
     cover overheat: temp > 100 and alarm?
 }

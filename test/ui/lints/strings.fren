@@ -55,16 +55,16 @@ pub comp patterns {
     pub out p2?
     pub out p3?
 
-    req t1: p1? iff (s.matches?(r"(a|b)+x") or s.matches?("x|\\.|-") or s.matches?(r#"(\]|\^|")?"#))
+    ensure t1: p1? iff (s.matches?(r"(a|b)+x") or s.matches?("x|\\.|-") or s.matches?(r#"(\]|\^|")?"#))
     --~^ warning: this alternation of single characters is a class
     --~^^ warning: this alternation of single characters is a class
     --~^^^ warning: this alternation of single characters is a class
-    req t2: p2? iff (s.matches?("[a-y]+") or s.matches?(r"[^B-Z0-8_]") or s.matches?("[A-Y]|[b-z]"))
+    ensure t2: p2? iff (s.matches?("[a-y]+") or s.matches?(r"[^B-Z0-8_]") or s.matches?("[A-Y]|[b-z]"))
     --~^ warning: the range `a-y` is one character short of `a-z`
     --~^^ warning: these ranges are each one character short of a whole alphabet
     --~^^^ warning: these ranges are each one character short of a whole alphabet
     -- Alternatives that are not single characters, and whole ranges.
-    req t3: p3? iff (s.matches?("ab|c") or s.matches?("(a|.)") or s.matches?("[1-9][0-9]*") or s.matches?("[a-z]"))
+    ensure t3: p3? iff (s.matches?("ab|c") or s.matches?("(a|.)") or s.matches?("[1-9][0-9]*") or s.matches?("[a-z]"))
 }
 
 -- A receiver that ends in a conditional keeps its parentheses where
@@ -78,13 +78,13 @@ pub comp open_receivers {
     pub out p3?
     pub out p4?
 
-    req r1: p1? iff "ab" = (s ++ if b? then t else s).slice(0, (s ++ if b? then t else s).len) ++ t
+    ensure r1: p1? iff "ab" = (s ++ if b? then t else s).slice(0, (s ++ if b? then t else s).len) ++ t
     --~^ warning: write `(s ++ if b? then t else s)`
-    req r2: p2? iff "ab" = (s ++ if b? then t else s).replace(t, t) ++ t
+    ensure r2: p2? iff "ab" = (s ++ if b? then t else s).replace(t, t) ++ t
     --~^ warning: write `(s ++ if b? then t else s)`
-    req r3: p3? iff (s ++ if b? then t else s).at(0) = ""
+    ensure r3: p3? iff (s ++ if b? then t else s).at(0) = ""
     --~^ warning: say whether it is empty with `""`, not `at`
-    req r4: p4? iff (s ++ t).at(0).len = 0 or (s ++ if b? then t else s).len != 0 or b?
+    ensure r4: p4? iff (s ++ t).at(0).len = 0 or (s ++ if b? then t else s).len != 0 or b?
     --~^ warning: say whether it is empty with `""`, not `len`
     --~^^ warning: say whether it is empty with `""`, not `len`
 }

@@ -4,5 +4,5 @@ comp c {
     pub out y?
     assume big: x > 10
     assume small: x < 5
-    req r: y? iff x > 7
+    ensure r: y? iff x > 7
 }

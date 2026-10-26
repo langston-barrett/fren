@@ -1,16 +1,16 @@
 warning[F0753]: this slice is the whole of its receiver
- --> test/cli/lints/complexity/f0753_redundant_slicing.fren:3:49
+ --> test/cli/lints/complexity/f0753_redundant_slicing.fren:3:52
   |
-3 | comp c { in s: String pub out n: Int req r: n = (s ++ s).slice(0, (s ++ s).len).len }
-  |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ from the start, as long as the receiver
+3 | comp c { in s: String pub out n: Int ensure r: n = (s ++ s).slice(0, (s ++ s).len).len }
+  |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ from the start, as long as the receiver
   |
   = help: `fren fix` can fix this
   = note: `redundant_slicing` is `warn` by default
   = help: to allow it, `set_option fren.lint.redundant_slicing "allow"`
 help: write `(s ++ s)`
   |
-3 - comp c { in s: String pub out n: Int req r: n = (s ++ s).slice(0, (s ++ s).len).len }
-3 + comp c { in s: String pub out n: Int req r: n = (s ++ s).len }
+3 - comp c { in s: String pub out n: Int ensure r: n = (s ++ s).slice(0, (s ++ s).len).len }
+3 + comp c { in s: String pub out n: Int ensure r: n = (s ++ s).len }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

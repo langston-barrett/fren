@@ -27,7 +27,7 @@ pub comp trivial_match {
 
     assume counts: n_arms >= 1
 
-    req rule: fires? iff (n_arms = 1 and not binds?)
+    ensure rule: fires? iff (n_arms = 1 and not binds?)
 }
 ```
 
@@ -64,6 +64,6 @@ pub comp needless_match {
     in trivial?          -- `trivial_match` fires on the `match`
     pub det out fires?
 
-    req rule: fires? iff (given_back? and (not wildcard? or scrutinee_back?) and not trivial?)
+    ensure rule: fires? iff (given_back? and (not wildcard? or scrutinee_back?) and not trivial?)
 }
 ```

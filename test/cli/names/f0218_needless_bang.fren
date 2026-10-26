@@ -3,14 +3,14 @@ pub comp c {
     in x!: Int
     pub out y: Int
 
-    req r: y = x
+    ensure r: y = x
 }
 
 pub comp d {
     in ready?!
     pub out go?
 
-    req r: go? iff ready?
+    ensure r: go? iff ready?
 }
 
 pub const LIMIT!: Int := 3

@@ -3,5 +3,5 @@ comp c {
     in x: Int
     pub out pos?
     assume never: x > 0 and x < 0
-    req r: pos? iff x > 0
+    ensure r: pos? iff x > 0
 }

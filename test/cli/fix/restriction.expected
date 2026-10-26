@@ -8,10 +8,10 @@ warning[F0780]: `unfulfilled_lint_expectations` is allowed rather than expected
   = note: for `unfulfilled_lint_expectations`, `"expect"` means `"allow"`, so it is never fulfilled
 
 warning[F0783]: this string literal contains non-ASCII characters: `U+1F600`, `U+00E9`
-  --> test/cli/fix/restriction.fren:46:41
+  --> test/cli/fix/restriction.fren:46:44
    |
-46 |     req astral_rule: astral? iff text = "😀é"
-   |                                         ^^^^ not ASCII
+46 |     ensure astral_rule: astral? iff text = "😀é"
+   |                                            ^^^^ not ASCII
    |
    = note: `U+1F600` is beyond `U+FFFF`, which `\uHHHH` cannot write, so this has no fix
 
@@ -26,24 +26,24 @@ warning[F0783]: this string literal contains non-ASCII characters: `U+1F600`, `U
 -    pub out sets: Set(Int) := left minus right inter other
 +    pub out sets: Set(Int) := left minus (right inter other)
 @@ -36 +35 @@
--    req wildcard: level = match mode { Heat => 1, Cool => 2, _ => 3 }
-+    req wildcard: level = match mode { Heat => 1, Cool => 2, Mode::Off | Mode::Auto => 3 }
+-    ensure wildcard: level = match mode { Heat => 1, Cool => 2, _ => 3 }
++    ensure wildcard: level = match mode { Heat => 1, Cool => 2, Mode::Off | Mode::Auto => 3 }
 @@ -38,3 +37,3 @@
--    req single_rule: single = match mode { Heat => 1, Cool => 2, Mode::Off => 3, _ => 4 }
--    req payloads: size = match shape { Shape::Dot => 0, _ => 1 }
--    req raw: lower? iff text.matches?(r"[a-z]+")
-+    req single_rule: single = match mode { Heat => 1, Cool => 2, Mode::Off => 3, Mode::Auto => 4 }
-+    req payloads: size = match shape { Shape::Dot => 0, Shape::Circle(_) | Shape::Rect(_, _) => 1 }
-+    req raw: lower? iff text.matches?("[a-z]+")
+-    ensure single_rule: single = match mode { Heat => 1, Cool => 2, Mode::Off => 3, _ => 4 }
+-    ensure payloads: size = match shape { Shape::Dot => 0, _ => 1 }
+-    ensure raw: lower? iff text.matches?(r"[a-z]+")
++    ensure single_rule: single = match mode { Heat => 1, Cool => 2, Mode::Off => 3, Mode::Auto => 4 }
++    ensure payloads: size = match shape { Shape::Dot => 0, Shape::Circle(_) | Shape::Rect(_, _) => 1 }
++    ensure raw: lower? iff text.matches?("[a-z]+")
 @@ -44 +43 @@
--    req accented_rule: accented? iff text.matches?(r"caf[éè]\.")
-+    req accented_rule: accented? iff text.matches?("caf[\u00E9\u00E8]\\.")
+-    ensure accented_rule: accented? iff text.matches?(r"caf[éè]\.")
++    ensure accented_rule: accented? iff text.matches?("caf[\u00E9\u00E8]\\.")
 @@ -47 +46 @@
--    req loose_rule: loose? iff (first? or second? and third?)
-+    req loose_rule: loose? iff (first? or (second? and third?))
+-    ensure loose_rule: loose? iff (first? or second? and third?)
++    ensure loose_rule: loose? iff (first? or (second? and third?))
 @@ -49 +48 @@
--    req open_ended_rule: open_ended? iff (first? or second? and if third? then first? else level > 0)
-+    req open_ended_rule: open_ended? iff (first? or (second? and if third? then first? else level > 0))
+-    ensure open_ended_rule: open_ended? iff (first? or second? and if third? then first? else level > 0)
++    ensure open_ended_rule: open_ended? iff (first? or (second? and if third? then first? else level > 0))
 Some errors have detailed explanations: F0780, F0783.
 For more information about an error, try `fren --explain F0780`.
 exit=1

@@ -10,7 +10,7 @@ import Fren.Elab
 comp `c` as a Lean term over the binders `xs`, and adds a theorem `n`
 stating that the interpretation satisfies `c` (`Reqs/Impl`, module `impls`):
 
-  `∀ xs, c.assumes ins outs default → ∃ hidden, c.defs ins outs hidden ∧ c.reqs ins outs hidden ∧ c.inst.w ... ∧ ...`
+  `∀ xs, c.assumes ins outs default → ∃ hidden, c.defs ins outs hidden ∧ c.ensures ins outs hidden ∧ c.inst.w ... ∧ ...`
 
 where `hidden` are `c`'s private `out`s and its instances' variables, which
 assumptions never mention, and `c.defs` is there only if `c` has defined
@@ -237,7 +237,7 @@ def mkObligation (c : CompInfo) (binders : Array Syntax) (maps : Array Syntax) (
           withDefaults := withDefaults.push (← mkAppOptM ``Inhabited.default #[v.type, none])
           k := k + 1
       let assumes := mkAppN (mkConst (c.decl ++ `assumes)) (ι ++ withDefaults)
-      let reqs := mkAppN (mkConst (c.decl ++ `reqs)) (ι ++ full)
+      let reqs := mkAppN (mkConst (c.decl ++ `ensures)) (ι ++ full)
       let defs := if c.defs.isEmpty then [] else [mkAppN (mkConst (c.decl ++ `defs)) (ι ++ full)]
       let body := mkAndN (defs ++ reqs :: c.insts.toList.map fun i => mkAppN (Lean.mkConst i.decl) (ι ++ full))
       let ex ← hs.foldrM (init := body) fun h acc => do mkAppM ``Exists #[← mkLambdaFVars #[h] acc]
@@ -259,7 +259,7 @@ def mkObligation (c : CompInfo) (binders : Array Syntax) (maps : Array Syntax) (
       let shown ← (xs.zip vals).mapM fun (x, v) => do return render (← inferType x) v
       let shown ← shown.mapM id
       let falsified ← if !hs.isEmpty then pure #[] else
-        c.reqs.filterM fun p => do
+        c.ensures.filterM fun p => do
           let r := mkAppN (mkConst p.decl) (ι ++ full)
           return (← evalDecide ((← mkArrow assumes r).replaceFVars xs vals)) == some false
       return { stmt, decideQ := .sat, failure? := some (names.zip shown, falsified.map (·.name)), never, found? }
@@ -268,7 +268,7 @@ def mkObligation (c : CompInfo) (binders : Array Syntax) (maps : Array Syntax) (
 def generatedDecls : MetaM NameSet := do
   let mut ns : NameSet := {}
   for (_, c) in (← getState).comps do
-    ns := ns.insert (c.decl ++ `assumes) |>.insert (c.decl ++ `reqs)
+    ns := ns.insert (c.decl ++ `assumes) |>.insert (c.decl ++ `ensures)
     for p in c.props do ns := ns.insert p.decl
     unless c.defs.isEmpty do ns := ns.insert (c.decl ++ `defs)
     for (d, _) in c.defs do ns := ns.insert (c.decl ++ `def ++ d)

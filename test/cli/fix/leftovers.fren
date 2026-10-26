@@ -16,8 +16,8 @@ comp copies {
     pub out q: Point
     pub out ok?
 
-    req r: q = Point { x := p.x, y := p.y }
-    req m: ok? iff s.matches?(r"v1.2") and s.matches?(".*file.txt")
+    ensure r: q = Point { x := p.x, y := p.y }
+    ensure m: ok? iff s.matches?(r"v1.2") and s.matches?(".*file.txt")
 }
 
 set_option fren.lint.style "warn"

@@ -5,7 +5,7 @@ error[F0401]: assumptions may only mention `in` variables, but `s.b` belongs to 
   |                                                     ^^^ a variable of instance `s`
   |
   = note: assumptions constrain the environment; instances are part of the system
-  = help: if it constrains the instance, make it a `req`
+  = help: if it constrains the instance, make it an `ensure`
 
 error: could not check due to previous errors
 

@@ -1,4 +1,4 @@
 -- A refinement that binds a variable of the abstract component twice.
-comp precise { in x: Int pub out y: Int req r: y = x }
-comp rough { in x: Int pub out z: Int req r: z >= x }
+comp precise { in x: Int pub out y: Int ensure r: y = x }
+comp rough { in x: Int pub out z: Int ensure r: z >= x }
 refine fits: precise refines rough { z := y, z := y + 1 }

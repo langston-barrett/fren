@@ -1,5 +1,5 @@
 -- Precedence and associativity: each expectation holds only if the
--- requirement parses as the manual says.
+-- guarantee parses as the manual says.
 -- fren-covers: lang::operand
 
 comp arith {
@@ -8,8 +8,8 @@ comp arith {
     in z: Int
     pub out a: Int
     pub out b: Int
-    req left: a = x - y - z
-    req tighter: b = x + y * 2
+    ensure left: a = x - y - z
+    ensure tighter: b = x + y * 2
     expect left_assoc: a = (x - y) - z
     expect times_first: b = x + (y * 2)
 }
@@ -23,9 +23,9 @@ comp logic {
     pub out o?
     pub out n?
     pub out e?
-    req unary: o? iff not p? and q? or r?
-    req nested: n? iff (when p?, when q?, r?)
-    req loose: e? iff (p? iff q? = r?)
+    ensure unary: o? iff not p? and q? or r?
+    ensure nested: n? iff (when p?, when q?, r?)
+    ensure loose: e? iff (p? iff q? = r?)
     expect not_binds_tightly: o? iff (((not p?) and q?) or r?)
     expect right_nested: n? iff (when p?, (when q?, r?))
     expect iff_loosest: e? iff (p? iff (q? = r?))

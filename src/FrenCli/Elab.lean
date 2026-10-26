@@ -196,7 +196,7 @@ def conj (fs : Array String) : String :=
 and instances. -/
 def CComp.meaning (c : CComp) : String :=
   conj <| c.defs.map (fun (d, e) => s!"(= {quote d.toString} {e})")
-    ++ (c.props.filter fun p => p.kind == .assume || p.kind == .req).map (·.smt)
+    ++ (c.props.filter fun p => p.kind == .assume || p.kind == .ensure).map (·.smt)
     ++ c.insts.map fun i => conj #[i.bindings, i.behaviour]
 
 /-- What the `Nat` variables of `c` bring (`Reqs/Check`): that each that is
@@ -206,7 +206,7 @@ are each query's own (`Fren.Core.natAppFacts`). -/
 def CComp.natFacts (c : CComp) (outputs : Bool) : Array String :=
   let vars := c.vars.filter fun v => v.ty == .nat && match Fren.Core.natBrought (v.role == .output) v.defn?.isSome with
     | .nothing => false
-    | .requirement => outputs
+    | .guarantee => outputs
     | .assumption => !outputs
   vars.map (s!"(>= {quote ·.name.toString} 0)")
 
@@ -296,7 +296,7 @@ def toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.sto
 compares it: not a cover goal, which states a scenario, not a constraint. -/
 def PropKind.core? : PropKind → Option Fren.Core.ConstraintKind
   | .assume => some .assume
-  | .req => some .req
+  | .ensure => some .ensure
   | .expect => some .expect
   | .cover => none
 
@@ -3046,7 +3046,7 @@ partial def elabDefinitions (cx : ExprCtx) (defs : Array (Ident × Option (Array
 end
 
 /-- Reports `assertions_on_constants` on the constraint `e`, an `assume`,
-`req` or `expect` as `kind` says (`lint::assertions_on_constants`). -/
+`ensure` or `expect` as `kind` says (`lint::assertions_on_constants`). -/
 def lintConstant (cx : ExprCtx) (kind : String) (e : Expr) : M Unit := do
   if Fren.Core.assertionOnConstant (← mentionsAny cx e) then
     lint .assertionsOnConstants e.span (Fren.Core.assertionOnConstantMsg kind (match e with | .bool _ b => some b | _ => none))
@@ -3215,12 +3215,12 @@ def testedOf (all : Bool) (members : Array Member) : M Fren.Core.Tested := do
     | .var false _ true x _ _, _ => dets := dets.push (Name.mkSimple (declaredIdent x).1.name, set?)
     | _, some (_, span) =>
       let what := match m with
-        | .prop .assume .. => "an assumption" | .prop .req .. => "a requirement"
+        | .prop .assume .. => "an assumption" | .prop .ensure .. => "a guarantee"
         | .var true .. => "an input" | .var .. => "an output that is not `det`" | _ => "a `use`"
       err span (Fren.Core.misplacedEvidenceMsg what)
     | _, none => pure ()
     match m with
-    | .prop .assume x _ | .prop .req x _ => constraints := constraints.push (Name.mkSimple x.name)
+    | .prop .assume x _ | .prop .ensure x _ => constraints := constraints.push (Name.mkSimple x.name)
     | .var false _ _ x _ (some _) => constraints := constraints.push (Name.mkSimple (declaredIdent x).1.name)
     | _ => pure ()
     pending := none
@@ -3246,7 +3246,7 @@ def lintMemberOrder (members : Array Member) (spans : Array Span) (openStop : Na
       | .inst x _ bs => (.inst, some x, bs.foldl (init := #[]) fun acc (b, e?) =>
           acc ++ ((e?.map mentions).getD #[Name.mkSimple (declaredIdent b).1.name]).map (·.getRoot))
       | .prop .assume x _ => (.assumption, some x, #[])
-      | .prop .req x _ => (.requirement, some x, #[])
+      | .prop .ensure x _ => (.guarantee, some x, #[])
       | .prop .expect x _ => (.expectation, some x, #[])
       | .prop .cover x _ => (.cover, some x, #[])
     if m matches .evidence .. then
@@ -3374,7 +3374,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
         let (smt, t) ← elabExpr cx e
         liftMsg e.span (Fren.Core.checkType .bool t (some "note: a constraint is a `Bool`"))
         lintBools e
-        lintConstant cx (match kind with | .assume => "assume" | .req => "req" | .expect => "expect" | .cover => "cover") e
+        lintConstant cx (match kind with | .assume => "assume" | .ensure => "ensure" | .expect => "expect" | .cover => "cover") e
         let trig ← trigger? cx e
         let place := if kind == .assume then Fren.Core.IndexPlace.assume else .prop
         return ({ kind, name := xn, span := x.span, smt, trigger? := trig.map (·.1), triggerSpan? := trig.map (·.2) : CProp },
@@ -3396,7 +3396,7 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
     else lint .duplicateConstraint x.span msg
   -- `constant_output` and `definable_output` (`lint::output_lints`).
   let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
-  let reqs := members.filterMap fun | .prop .req x e => some (Name.mkSimple x.name, e) | _ => none
+  let reqs := members.filterMap fun | .prop .ensure x e => some (Name.mkSimple x.name, e) | _ => none
   for v in vars.filter (fun v => v.role == .output && v.name.isAtomic) do
     let isX : Expr → Bool | .path _ #[seg] => Name.mkSimple seg.name == v.name | _ => false
     let about := reqs.filter fun (_, e) => (mentions e).contains v.name
@@ -3409,11 +3409,11 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
     let (constant, definable) := Fren.Core.outputLints v.defn?.isSome mentions about.size equation
     if constant then lint .constantOutput v.span (Fren.Core.constantOutputMsg v.name)
     if definable then lint .definableOutput v.span (Fren.Core.definableOutputMsg v.name about[0]!.1)
-  -- `case_split_reqs` (`lint::case_split_reqs`): each requirement `when T, y = e`, as its name, where it is
+  -- `case_split_guarantees` (`lint::case_split_guarantees`): each requirement `when T, y = e`, as its name, where it is
   -- reported, `y`, the operator, `T` and the text of `e`.
   let mut cases : Array (Name × Span × String × String × Fren.Core.VariantTest × String) := #[]
   for m in members do
-    let .prop .req x (.when _ false c (.bin _ op (.path _ #[y]) rhs)) := m | continue
+    let .prop .ensure x (.when _ false c (.bin _ op (.path _ #[y]) rhs)) := m | continue
     unless (op == "=" || op == "iff") && vars.any (fun v => v.role == .output && v.name == Name.mkSimple y.name) do continue
     let some t ← variantTest? lcx c | continue
     cases := cases.push (Name.mkSimple x.name, x.span, y.name, op, t, ← armBodyOf rhs)
@@ -3427,8 +3427,8 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
     let cs := group.map fun j => let (n, _, _, _, t, e) := cases[j]!; (n, t, e)
     let ts := cs.map (·.2.1)
     let n := (((← get).table.enums.get? t.enum).map (·.variants.size)).getD 0
-    if Fren.Core.caseSplitReqs cs.size (Fren.Core.repeatedVariants ts) then
-      lint .caseSplitReqs cases[group[1]!]!.2.1 (Fren.Core.caseSplitReqsMsg y op cs (Fren.Core.untestedVariants n ts))
+    if Fren.Core.caseSplitGuarantees cs.size (Fren.Core.repeatedVariants ts) then
+      lint .caseSplitGuarantees cases[group[1]!]!.2.1 (Fren.Core.caseSplitGuaranteesMsg y op cs (Fren.Core.untestedVariants n ts))
   -- The lints above are found despite a constraint's static error, as in
   -- Lean; `unused_variables`, and the rest, only without one.
   stopIfErrors
@@ -3581,7 +3581,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
     { i with bindings := ren i.bindings, behaviour := ren i.behaviour, assumes := #[] }
   -- Reported at the refinement (`Reqs/Lang/Refinement#the-obligation`).
   let props := (a.props.filter (·.kind == .assume)).map (fun p => { p with smt := ren p.smt, span := name.span, triggerSpan? := none })
-    ++ (a.props.filter (·.kind == .req)).map (fun p =>
+    ++ (a.props.filter (·.kind == .ensure)).map (fun p =>
       -- No triggers, as in Lean: vacuity does not run on a refinement.
       { p with kind := .expect, smt := ren p.smt, trigger? := none, span := name.span, triggerSpan? := none })
     ++ a.defs.map fun (d, e) =>

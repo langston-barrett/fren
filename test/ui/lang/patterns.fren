@@ -13,9 +13,9 @@ comp in_case {
     in name: String
     pub det out conventional?
 
-    req snake: when case = Case::Snake, conventional? iff not name.matches?(r".*[A-Z].*")
-    req camel: when case = Case::Camel, conventional? iff name.matches?(r"[A-Z][^_]*")
-    req upper: when case = Case::Upper, conventional? iff name.matches?(r"[A-Z][^a-z]*")
+    ensure snake: when case = Case::Snake, conventional? iff not name.matches?(r".*[A-Z].*")
+    ensure camel: when case = Case::Camel, conventional? iff name.matches?(r"[A-Z][^_]*")
+    ensure upper: when case = Case::Upper, conventional? iff name.matches?(r"[A-Z][^a-z]*")
 
     expect lowercase_is_snake: when not name.matches?(r".*[A-Z].*"), conventional? iff case = Case::Snake
     expect mixed_not_upper: when case = Case::Upper and name.matches?(r"[A-Z]+[a-z][A-Za-z]*"),
@@ -29,7 +29,7 @@ comp codes {
 
     assume well_formed: code.matches?(r"F0[1-7][0-9][0-9]")
 
-    req r: lint? iff code.starts_with?("F07")
+    ensure r: lint? iff code.starts_with?("F07")
 
     expect five: code.len = 5
     expect not_eight: not code.starts_with?("F08")

@@ -5,7 +5,7 @@ comp c {
     in y: Int
     pub out p?
 
-    req r1: unless not a?, p?
-    req r2: unless x != y, p?
-    req r3: unless x < 3, p?
+    ensure r1: unless not a?, p?
+    ensure r2: unless x != y, p?
+    ensure r3: unless x < 3, p?
 }

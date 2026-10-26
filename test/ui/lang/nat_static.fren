@@ -18,25 +18,25 @@ comp narrowed { in n: Nat pub out m: Nat := n - 1 }
 --~^ error: type mismatch: expected `Nat`, found `Int`
 comp negated { in n: Nat pub out m: Nat := -n + n }
 --~^ error: type mismatch: expected `Nat`, found `Int`
-comp argument { in x: Int pub out y: Nat req r: y = halve(x) }
+comp argument { in x: Int pub out y: Nat ensure r: y = halve(x) }
 --~^ error: type mismatch: expected `Nat`, found `Int`
 comp branch { in n: Nat pub out m: Nat := if n > 0 then n else -1 }
 --~^ error: type mismatch: expected `Nat`, found `Int`
 const MINUS: Nat := 2 - 1
 --~^ error: type mismatch: expected `Nat`, found `Int`
-comp inner { in n: Nat pub out m: Int req r: m = n }
+comp inner { in n: Nat pub out m: Int ensure r: m = n }
 comp bound { in x: Int inst w: inner { n := x } }
 --~^ error: type mismatch: expected `Nat`, found `Int`
 
 -- An implicit binding of a refinement widens in the direction values flow:
 -- an input from the abstract component, an output from the concrete one.
 -- A `Nat` input of the concrete component does not serve for an `Int`.
-comp wide { in n: Int pub out m: Int req r: m = n }
+comp wide { in n: Int pub out m: Int ensure r: m = n }
 refine nat_input: inner refines wide
 --~^ error: its `n` has another type
 -- Nor does an `Int` output for a `Nat`.
-comp nat_out { pub out m: Nat req r: m = 0 }
-comp int_out { pub out m: Int req r: m = 0 }
+comp nat_out { pub out m: Nat ensure r: m = 0 }
+comp int_out { pub out m: Int ensure r: m = 0 }
 refine int_output: int_out refines nat_out
 --~^ error: its `m` has another type
 
@@ -49,7 +49,7 @@ comp mixed_min { in n: Nat in x: Int pub out m: Nat := n.min(x) }
 --~^ error: type mismatch: expected `Nat`, found `Int`
 
 -- A `Nat` is not an enumeration, so no variant pattern tests it.
-comp tested_nat { in n: Nat pub out z? req r: z? iff n is Sign::Plus }
+comp tested_nat { in n: Nat pub out z? ensure r: z? iff n is Sign::Plus }
 --~^ error: expected a pattern of `Nat`, but this is a pattern of `Sign`
 
 -- A literal is a `Nat` where one is expected, and a `Nat` widens to an `Int`.

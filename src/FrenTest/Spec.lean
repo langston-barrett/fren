@@ -12,13 +12,13 @@ pub enum Mode { On, Off }
 pub comp switch {
   in mode: Mode
   pub out lit?
-  req lit: lit? iff mode = Mode::On
+  ensure lit: lit? iff mode = Mode::On
 }
 
-example : light.switch.reqs .On true := by decide
+example : light.switch.ensures .On true := by decide
 
 -- `decide` quantifies over enums and `Bool`.
-example : ∀ m lit?, light.switch.reqs m lit? ↔ (lit? = true ↔ m = .On) := by decide
+example : ∀ m lit?, light.switch.ensures m lit? ↔ (lit? = true ↔ m = .On) := by decide
 
 /-- info: false -/
 #guard_msgs in

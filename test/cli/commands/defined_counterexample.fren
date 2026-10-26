@@ -4,7 +4,7 @@ comp c {
     pub out next: Int := x + 1
     pub out y: Int
 
-    req r: y >= next
+    ensure r: y >= next
 
     expect e: y = next
 }

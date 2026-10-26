@@ -11,41 +11,41 @@ enum Boxed { Box(Int) }
 struct Pair { a?, b? }
 type Name
 
-comp valid { pub out ok? req r: ok? }
+comp valid { pub out ok? ensure r: ok? }
 
 comp ints {
     pub out ok?
-    req r: ok? iff (forall (n: Int), n = n)    --~ error: a quantifier cannot range over `Int`
+    ensure r: ok? iff (forall (n: Int), n = n)    --~ error: a quantifier cannot range over `Int`
 }
 
 comp nats {
     pub out ok?
-    req r: ok? iff (forall (n: Nat), n = n)    --~ error: a quantifier cannot range over `Nat`
+    ensure r: ok? iff (forall (n: Nat), n = n)    --~ error: a quantifier cannot range over `Nat`
 }
 
 comp strings {
     pub out ok?
-    req r: ok? iff (exists (s: String), s = "")  --~ error: a quantifier cannot range over `String`
+    ensure r: ok? iff (exists (s: String), s = "")  --~ error: a quantifier cannot range over `String`
 }
 
 comp names {
     pub out ok?
-    req r: ok? iff (exists (n: Name), n = n)   --~ error: a quantifier cannot range over `Name`
+    ensure r: ok? iff (exists (n: Name), n = n)   --~ error: a quantifier cannot range over `Name`
 }
 
 comp sets {
     pub out ok?
-    req r: ok? iff (exists (s: Set(Bool)), s = {})  --~ error: a quantifier cannot range over `Set(Bool)`
+    ensure r: ok? iff (exists (s: Set(Bool)), s = {})  --~ error: a quantifier cannot range over `Set(Bool)`
 }
 
 comp recursive {
     pub out ok?
-    req r: ok? iff (exists (t: Tree), t = Tree::Leaf)  --~ error: a quantifier cannot range over `Tree`
+    ensure r: ok? iff (exists (t: Tree), t = Tree::Leaf)  --~ error: a quantifier cannot range over `Tree`
 }
 
 comp payload {
     pub out ok?
-    req r: ok? iff (exists (b: Boxed), b = b)  --~ error: a quantifier cannot range over `Boxed`
+    ensure r: ok? iff (exists (b: Boxed), b = b)  --~ error: a quantifier cannot range over `Boxed`
 }
 
 -- At most 256 instances, counting those of the quantifiers around one:
@@ -54,13 +54,13 @@ comp payload {
 comp sizes {
     pub out ok?
     pub out also?
-    req r: ok? iff (exists (b: Byte), b = b)
-    req s: also? iff (forall (m k: Method) (p: Pair), m = m or k = k or (exists (n: Method), n = n or p = p))
+    ensure r: ok? iff (exists (b: Byte), b = b)
+    ensure s: also? iff (forall (m k: Method) (p: Pair), m = m or k = k or (exists (n: Method), n = n or p = p))
 }
 
 comp too_many_nested {
     pub out ok?
-    req r: ok? iff (forall (x?: Bool), exists (b: Byte), x? or b = b)
+    ensure r: ok? iff (forall (x?: Bool), exists (b: Byte), x? or b = b)
     --~^ error: with the quantifiers around it, this quantifier has 512 instances, more than 256
 }
 
@@ -69,52 +69,52 @@ enum Holder { Holds(Set(Bool)) }
 
 comp set_payload {
     pub out ok?
-    req r: ok? iff (exists (h: Holder), h = h)  --~ error: a quantifier cannot range over `Holder`
+    ensure r: ok? iff (exists (h: Holder), h = h)  --~ error: a quantifier cannot range over `Holder`
 }
 
 expect nat_binder: forall (n: Nat), n >= 0  --~ error: a quantifier cannot range over `Nat`
 
 comp too_many {
     pub out ok?
-    req r: ok? iff (exists (n: Nine), n = n)   --~ error: this quantifier has 512 instances, more than 256
+    ensure r: ok? iff (exists (n: Nine), n = n)   --~ error: this quantifier has 512 instances, more than 256
 }
 
 comp too_many_combined {
     pub out ok?
-    req r: ok? iff (exists (b: Byte) (x?: Bool), x?)  --~ error: this quantifier has 512 instances, more than 256
+    ensure r: ok? iff (exists (b: Byte) (x?: Bool), x?)  --~ error: this quantifier has 512 instances, more than 256
 }
 
 comp component {
     pub out ok?
-    req r: ok? iff (exists (c: valid), true)   --~ error: expected a type, but `valid` is a component
+    ensure r: ok? iff (exists (c: valid), true)   --~ error: expected a type, but `valid` is a component
 }
 
 comp twice {
     pub out ok?
-    req r: ok? iff (exists (m: Method) (m: Method), true)  --~ error: `m` is bound multiple times in this quantifier
+    ensure r: ok? iff (exists (m: Method) (m: Method), true)  --~ error: `m` is bound multiple times in this quantifier
 }
 
 comp bool_name {
     pub out ok?
-    req r: ok? iff (exists (b: Bool), b)       --~ error: `Bool` variable `b` must end in `?`
+    ensure r: ok? iff (exists (b: Bool), b)       --~ error: `Bool` variable `b` must end in `?`
 }
 
 comp shadows {
     in k: Method
     pub out ok?
-    req r: ok? iff (exists (k: Method), k = Method::Len)  --~ error: `k` shadows the input `k`
+    ensure r: ok? iff (exists (k: Method), k = Method::Len)  --~ error: `k` shadows the input `k`
 }
 
 comp shadows_explicitly {
     in k: Method  --~ warning: unused variable `k`
     pub out ok?
-    req r: ok? iff (exists (k!: Method), k = Method::Len)
+    ensure r: ok? iff (exists (k!: Method), k = Method::Len)
     expect e: ok?
 }
 
 comp not_bool {
     pub out ok?
-    req r: ok? iff (forall (m: Method), 1)  --~ error: type mismatch: expected `Bool`, found `Int`
+    ensure r: ok? iff (forall (m: Method), 1)  --~ error: type mismatch: expected `Bool`, found `Int`
 }
 
 --@ exit: 2

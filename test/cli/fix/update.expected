@@ -1,10 +1,10 @@
 --- test/cli/fix/update.fren
 +++ test/cli/fix/update.fren
 @@ -13,3 +13,3 @@
--    req r1: o? iff not not { s with on? := a? }.on?
--    req r2: p? iff not ({ s with n := 1 } = s)
--    req r3: q? iff { s with on? := a? }.on? = true
-+    req r1: o? iff { s with on? := a? }.on?
-+    req r2: p? iff { s with n := 1 } != s
-+    req r3: q? iff { s with on? := a? }.on?
+-    ensure r1: o? iff not not { s with on? := a? }.on?
+-    ensure r2: p? iff not ({ s with n := 1 } = s)
+-    ensure r3: q? iff { s with on? := a? }.on? = true
++    ensure r1: o? iff { s with on? := a? }.on?
++    ensure r2: p? iff { s with n := 1 } != s
++    ensure r3: q? iff { s with on? := a? }.on?
 exit=1

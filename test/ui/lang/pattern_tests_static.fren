@@ -4,29 +4,29 @@ set_option fren.lint.dead_code "allow"
 enum S { A(Int), B, C(Bool, Int) }
 enum T { X, Y }
 
-comp binds { in s: S pub out z? req r: z? iff s is S::A(n) }
+comp binds { in s: S pub out z? ensure r: z? iff s is S::A(n) }
 --~^ error: a pattern test cannot bind `n`
-comp binds_alt { in s: S pub out z? req r: z? iff s is S::B | S::C(_, n) }
+comp binds_alt { in s: S pub out z? ensure r: z? iff s is S::B | S::C(_, n) }
 --~^ error: a pattern test cannot bind `n`
-comp shadow { in n: Int in s: S pub out z? req r: z? iff s is S::A(n!) }
+comp shadow { in n: Int in s: S pub out z? ensure r: z? iff s is S::A(n!) }
 --~^ error: a pattern test cannot bind `n!`
-comp repeated { in s: S pub out z? req r: z? iff s is S::A(_) | S::A(_) }
+comp repeated { in s: S pub out z? ensure r: z? iff s is S::A(_) | S::A(_) }
 --~^ error: unreachable pattern
-comp not_enum { in i: Int pub out z? req r: z? iff i is S::A(_) }
+comp not_enum { in i: Int pub out z? ensure r: z? iff i is S::A(_) }
 --~^ error: expected a pattern of `Int`, but this is a pattern of `S`
-comp not_enum_bool { in b? pub out z? req r: z? iff b? is S::A(_) }
+comp not_enum_bool { in b? pub out z? ensure r: z? iff b? is S::A(_) }
 --~^ error: expected a pattern of `Bool`, but this is a pattern of `S`
-comp other { in s: S pub out z? req r: z? iff s is S::A(_) | T::X }
+comp other { in s: S pub out z? ensure r: z? iff s is S::A(_) | T::X }
 --~^ error: expected a variant of `S`, but this is a variant of `T`
-comp unapplied { in s: S pub out z? req r: z? iff s is S::A }
+comp unapplied { in s: S pub out z? ensure r: z? iff s is S::A }
 --~^ error: variant `S::A` must be applied to its payload
-comp arity { in s: S pub out z? req r: z? iff s is S::C(_) }
+comp arity { in s: S pub out z? ensure r: z? iff s is S::C(_) }
 --~^ error: `S::C` takes 2 patterns, but 1 was given
-comp unknown { in s: S pub out z? req r: z? iff s is S::D(_) }
+comp unknown { in s: S pub out z? ensure r: z? iff s is S::D(_) }
 --~^ error: no variant `D` in enum `S`
-comp not_variant { in s: S in i: Int pub out z? req r: z? iff s is i }
+comp not_variant { in s: S in i: Int pub out z? ensure r: z? iff s is i }
 --~^ error: a pattern test cannot bind `i`
-comp not_matched { in s: Set(Int) pub out z? req r: z? iff s is _ }
+comp not_matched { in s: Set(Int) pub out z? ensure r: z? iff s is _ }
 --~^ error: cannot test `Set(Int)` against a pattern
 
 --@ exit: 2

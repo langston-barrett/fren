@@ -1,2 +1,2 @@
 -- A row of a table after its `_` row.
-comp c { in x: Int pub out y: Int req r: y = table { _ => 0, x > 0 => 1 } }
+comp c { in x: Int pub out y: Int ensure r: y = table { _ => 0, x > 0 => 1 } }

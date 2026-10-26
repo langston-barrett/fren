@@ -8,6 +8,6 @@ comp c {
     pub out n: Int
     pub out m: Int
 
-    req r1: n = match e { E::A => 1, E::B => 2, E::C => 1, E::D => 1 }
-    req r2: m = match e { E::A => 1, E::B => 2, _ => 1 }
+    ensure r1: n = match e { E::A => 1, E::B => 2, E::C => 1, E::D => 1 }
+    ensure r2: m = match e { E::A => 1, E::B => 2, _ => 1 }
 }
