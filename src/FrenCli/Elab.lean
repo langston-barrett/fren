@@ -1458,8 +1458,8 @@ def orderedDecl : M (Name → Bool) := return (← get).orderedDecl
 /-- How values of `t` are compared, if it is ordered (`Fren.Core.orderPlan?`). -/
 def orderPlan? (t : Ty) : M (Option Fren.Core.OrderPlan) := do
   let s ← get
-  let fieldsOf (p : Name) := ((s.dataOf? p).filter (·.isRecord)).bind (·.ctors[0]?) |>.map (·.2) |>.getD #[]
-  return Fren.Core.orderPlan? s.orderedDecl fieldsOf t
+  let fieldsOf (p : Name) := ((s.dataOf? p).filter (·.isRecord)).bind (·.ctors[0]?) |>.map (·.2.toList) |>.getD []
+  return Fren.Core.orderPlan? s.orderedDecl fieldsOf (s.datatypes.size + s.newtypes.size) t
 
 /-- `x < y`, or `x <= y` if not `strict`, of values compared by `o`, as
 SMT-LIB: a record's lexicographically, by its fields in the order
@@ -1477,9 +1477,9 @@ partial def orderSmt (o : Fren.Core.OrderPlan) (strict : Bool) (x y : String) : 
     -- From the last field, compared as the whole is, back to the first,
     -- which decides unless the two are equal.
     let sel (f : Name) (v : String) := s!"({fieldSym p f} {v})"
-    let some (fl, ol) := fs.back? | return (if strict then "false" else "true")
+    let some (fl, ol) := fs.getLast? | return (if strict then "false" else "true")
     let mut acc ← orderSmt ol strict (sel fl x) (sel fl y)
-    for (f, of) in fs.pop.reverse do
+    for (f, of) in fs.dropLast.reverse do
       let (a, b) := (sel f x, sel f y)
       acc := s!"(or {← orderSmt of true a b} (and (= {a} {b}) {acc}))"
     return acc
@@ -4569,7 +4569,7 @@ partial def elabItem (item : Item) : M Unit := do
     -- Only an enumeration without payloads may be ordered
     -- (`lang::ordered_declaration`); the first payload is reported.
     let withPayload := variants.filter (·.2.isSome)
-    unless Fren.Core.orderedDeclAccepted isOrdered withPayload.size [] do
+    unless Fren.Core.orderedDeclAccepted isOrdered withPayload.size none do
       let (v, _) := withPayload[0]!
       err v.span (Fren.Core.orderedPayloadMsg n (Name.mkSimple v.name))
     unless isPub do
@@ -4624,9 +4624,9 @@ partial def elabItem (item : Item) : M Unit := do
     let st ← get
     -- An ordered record's fields are ordered (`lang::ordered_declaration`);
     -- the first that is not is reported.
-    let fieldsOrdered := fs.toList.map (·.2.ordered st.orderedDecl)
-    unless Fren.Core.orderedDeclAccepted isOrdered 0 fieldsOrdered do
-      if let some k := fs.findIdx? (!·.2.ordered st.orderedDecl) then
+    let first? := Fren.Core.PTy.firstUnordered? st.orderedDecl fieldTys.toList
+    unless Fren.Core.orderedDeclAccepted isOrdered 0 first? do
+      if let some k := first? then
         let (f, ty?) := fields[k]!
         err ((ty?.map fun segs => segs[0]!.span.to segs.back!.span).getD f.span)
           (Fren.Core.unorderedFieldMsg .record n fs[k]!.1 fs[k]!.2)
@@ -4657,7 +4657,7 @@ partial def elabItem (item : Item) : M Unit := do
     if let some p := t.abstractWithin? then err span (Fren.Core.abstractFieldMsg p false (!(t matches .abstract _)))
     -- An ordered newtype's underlying type is ordered
     -- (`lang::ordered_declaration`).
-    unless Fren.Core.orderedDeclAccepted isOrdered 0 [t.ordered (← get).orderedDecl] do
+    unless Fren.Core.orderedDeclAccepted isOrdered 0 (Fren.Core.PTy.firstUnordered? (← get).orderedDecl [pt]) do
       err span (Fren.Core.unorderedFieldMsg .newtype n (Name.mkSimple "0") t)
     unless isPub do
       modify fun s => { s with items := s.items.push ({ what := .record, path, level := s.levels.get .deadCode }, name.span) }

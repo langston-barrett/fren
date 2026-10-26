@@ -255,68 +255,50 @@ declaration whose field does not is an error that names the field
 (`F0371`). For now, only an enumeration without payloads may be ordered
 (`F0353`): ordering values with payloads, by their variants and then by
 their payloads, is left for later. So no ordered declaration is recursive,
-records never being so, and the unfolding of a comparison ends.
-`lang::ordered_declaration` states which declarations are accepted, from
-how many of an enumeration's variants have a payload, and how many of a
-record's or a newtype's fields have a type that is not ordered (see
-`lang::ordered_type`):
+records never being so, and the unfolding of a comparison ends. The error
+names the first field whose type is not ordered. `lang::ordered_declaration`
+states which declarations are accepted, from how many of an enumeration's
+variants have a payload, and from the types of a record's fields, or a
+newtype's underlying type, each ordered or not by `lang::ordered_in?` (see
+[Ordered types](Types.md#ordered-types)). `k` stands for any position, so
+`reported` and `earliest` hold of every field:
 
 ```fren
 pub mod lang
 
 pub enum Declaration { Enumeration, Record, Newtype }
 
+set_option fren.lint.undecidable "allow" in
 pub comp ordered_declaration {
     use self::Declaration::Enumeration
     in declaration: Declaration
-    in ordered?                  -- declared with `ordered`
-    in n_payloads: Nat           -- for an enumeration: its variants with a payload
-    in n_unordered: Nat          -- for a record or a newtype: its fields whose type is not ordered (`ordered_type`)
-    pub det out accepted?
+    in ordered?                       -- declared with `ordered`
+    in n_payloads: Nat                -- for an enumeration: its variants with a payload
+    in fields: Seq(Ty)                -- a record's fields' types, in order, or a newtype's underlying type, without patterns
+    in ordered_items: Set(TypeName)   -- the enumerations, records and newtypes declared `ordered`
+    in k: Int                         -- any position among the fields
+    pub out first_unordered: Int      -- the field reported: the first whose type is not ordered, `-1` if none is
+    pub out accepted?
 
-    assume enumerations_without_fields: when declaration = Enumeration, n_unordered = 0
+    assume enumerations_without_fields: when declaration = Enumeration, fields = []
     assume structs_without_payloads: when declaration != Enumeration, n_payloads = 0
 
-    ensure rule: accepted? iff (not ordered? or (n_payloads = 0 and n_unordered = 0))
+    ensure in_range: -1 <= first_unordered < fields.len
+    ensure reported: when k = first_unordered and k != -1,
+        not ordered_in?(kind(fields[k]), type_name(fields[k]), ordered_items)
+    ensure earliest: when 0 <= k < fields.len and not ordered_in?(kind(fields[k]), type_name(fields[k]), ordered_items), 0 <= first_unordered <= k
+    ensure rule: accepted? iff (not ordered? or (n_payloads = 0 and first_unordered = -1))
 
     expect plain: when not ordered?, accepted?
     expect no_payloads: when ordered? and n_payloads > 0, not accepted?
-    expect ordered_fields: when ordered? and n_unordered > 0, not accepted?
-    expect structs_of_ordered_fields: when declaration != Enumeration and n_unordered = 0, accepted?
+    expect ordered_fields: when ordered? and 0 <= k < fields.len and not ordered_in?(kind(fields[k]), type_name(fields[k]), ordered_items),
+        not accepted?
 }
 ```
 
-`lang::struct_order` states the laws of an ordered record's order, on an
-example: it is total, asymmetric, transitive and antisymmetric, as an
-ordered enumeration's is, `min` and `max` are a least and a greatest of
-their operands, and it is lexicographic. A newtype's order, of one field,
-is its field's:
-
-```fren
-pub ordered enum Stage { Alpha, Beta, Stable }
-pub ordered struct Version { major: Nat, minor: Int is 0..=99, stage: Stage }
-pub ordered struct Seconds(Nat)
-
-set_option fren.lint.unnecessary_min_or_max "allow" in
-pub comp struct_order {
-    in a: Version
-    in b: Version
-    in c: Version
-    in s: Seconds
-    in t: Seconds
-
-    expect total: a <= b or b <= a
-    expect asymmetric: not (a < b and b < a)
-    expect transitive: when a < b < c, a < c
-    expect antisymmetric: when a <= b <= a, a = b
-    expect flipped: (a > b iff b < a) and (a >= b iff b <= a)
-    expect min_below: a.min(b) <= a and a.min(b) <= b and (a.min(b) = a or a.min(b) = b)
-    expect max_above: a.max(b) >= a and a.max(b) >= b and (a.max(b) = a or a.max(b) = b)
-    expect lexicographic: a < b iff (a.major < b.major
-        or (a.major = b.major and (a.minor < b.minor or (a.minor = b.minor and a.stage < b.stage))))
-    expect newtype_as_field: (s < t iff s.0 < t.0) and (s <= t iff s.0 <= t.0)
-}
-```
+How two values of an ordered type compare is planned from the type, and
+a record's plan compares its fields lexicographically: see [Orderings of
+ordered types](Expressions.md#orderings-of-ordered-types).
 
 ## Distinct names
 

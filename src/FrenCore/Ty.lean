@@ -191,44 +191,60 @@ def unorderedFieldMsg (decl : OrderedDecl) (n f : Name) (ty : Ty) : Msg :=
       "note: only `Int`s, `Nat`s, `String`s and the types declared `ordered` are ordered", help] }
 
 /-- How two values of an ordered type are compared
-(`Reqs/Lang/Items#ordered-declarations`): numbers and strings by their own
-orders, an enumeration's variants by their positions, a newtype's values
-as their fields are, and a record's lexicographically, by its fields in
-the order declared, each by its own type's order. Both front ends build one
-with `orderPlan?` and render it in their own terms. -/
+(`Reqs/Lang/Items#ordered-declarations`, `lang::order_plan`): numbers and
+strings by their own orders, an enumeration's variants by their positions,
+a newtype's values as their fields are, and a record's lexicographically,
+by its fields in the order declared, each by its own type's order
+(`lang::lexicographic`). Both front ends build one with `orderPlan?` and
+render it in their own terms. -/
 inductive OrderPlan where
   | number
   | string
   | enum (path : Name)
-  /-- A record's fields, by name, each with how it is compared. -/
-  | record (path : Name) (fields : Array (Name × OrderPlan))
+  /-- A record's fields, by name, in the order declared, each with how it
+  is compared. -/
+  | record (path : Name) (fields : List (Name × OrderPlan))
   | newtype (path : Name) (under : OrderPlan)
   deriving Inhabited
 
-/-- How values of `t` are compared, `none` if it is not ordered:
-`orderedDecl` says which declarations are ordered, and `fieldsOf` gives a
-record's fields, by name, with their types. An ordered record's fields are
-ordered (`lang::ordered_declaration`), and records are never recursive, so
-this ends. -/
-partial def orderPlan? (orderedDecl : Name → Bool) (fieldsOf : Name → Array (Name × Ty)) : Ty → Option OrderPlan
-  | .int | .nat => some .number
-  | .string => some .string
-  | .enum p => if orderedDecl p then some (.enum p) else none
-  | .record p => do
-    unless orderedDecl p do none
-    return .record p (← (fieldsOf p).mapM fun (f, t) => return (f, ← orderPlan? orderedDecl fieldsOf t))
-  | .newtype p u => do
-    unless orderedDecl p do none
-    return .newtype p (← orderPlan? orderedDecl fieldsOf u)
-  | _ => none
+/-- How values of `t` are compared, `none` if it is not ordered or `depth`
+runs out: `orderedDecl` says which declarations are ordered, and
+`fieldsOf` gives a record's fields, by name, with their types, in order.
+Each record or newtype within `t` takes one of `depth`; records are never
+recursive, and their fields' types are declared before them, so a `depth`
+greater than the number of declarations never runs out. -/
+def orderPlanAt (orderedDecl : Name → Bool) (fieldsOf : Name → List (Name × Ty)) : Nat → Ty → Option OrderPlan
+  | 0, _ => none
+  | _ + 1, .int | _ + 1, .nat => some .number
+  | _ + 1, .string => some .string
+  | _ + 1, .enum p => if orderedDecl p then some (.enum p) else none
+  | n + 1, .record p =>
+    if orderedDecl p then
+      (.record p) <$> (fieldsOf p).mapM fun (f, t) => (f, ·) <$> orderPlanAt orderedDecl fieldsOf n t
+    else none
+  | n + 1, .newtype p u => if orderedDecl p then .newtype p <$> orderPlanAt orderedDecl fieldsOf n u else none
+  | _ + 1, _ => none
+
+/-- How values of `t` are compared, `none` if it is not ordered
+(`orderPlanAt`), where there are `nDecls` declarations. -/
+def orderPlan? (orderedDecl : Name → Bool) (fieldsOf : Name → List (Name × Ty)) (nDecls : Nat) (t : Ty) :
+    Option OrderPlan :=
+  orderPlanAt orderedDecl fieldsOf (nDecls + 2) t
 
 /-- Whether comparing by `o` compares strings, which the decidable core
-allows only with a constant (`Reqs/Lang/Decidability#strings`). -/
+allows only with a constant (`Reqs/Lang/Decidability#orderings`). -/
 partial def OrderPlan.strings : OrderPlan → Bool
   | .string => true
   | .record _ fs => fs.any (·.2.strings)
   | .newtype _ u => u.strings
   | _ => false
+
+/-- How two values compare whose fields, in the order declared, compare as
+`cs`: as the first field that is not equal, and equal if every one is
+(`lang::lexicographic`). -/
+def lexCompare : List Ordering → Ordering
+  | [] => .eq
+  | c :: cs => if c == .eq then lexCompare cs else c
 
 /-- The type that `t` is erased to: its underlying type, through every
 newtype, as the solver sees it (`Reqs/Lang/Expressions#newtypes`). -/

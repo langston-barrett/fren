@@ -1490,8 +1490,8 @@ core](Decidability.md) exactly when `x <= y` is. A variant is a receiver
 too, as in `Info.max(worst)` or `(Severity::Info).max(worst)`. An
 enumeration, record or newtype that is not ordered has neither, and its
 `x.min(y)` is an error that says to declare it `ordered`; nor has it any
-other method. `lang::enumeration_order` and `lang::struct_order` (see
-[Items](Items.md#ordered-declarations)) state their laws.
+other method. `lang::enumeration_order` and `lang::lexicographic` (see
+[Items](Items.md#ordered-declarations)) state their orders.
 
 The methods of `String`, where `s` is the receiver:
 
@@ -1779,13 +1779,93 @@ pub comp char_range {
 }
 ```
 
+## Orderings of ordered types
+
+How two values of an ordered type compare is planned from the type alone,
+before any value is compared, and the plan is what both front ends render
+and the evaluator follows: a number's and a string's own order, an
+enumeration's variants' positions, a newtype's field's plan, and, for a
+record, a plan for each of its fields, in the order declared. Where
+`lang::Plan` is the kind of a plan, `lang::plan_of` the kind that a type's
+plan has, and `lang::FieldName` a record's field's name (see
+[Records](#records)), `lang::order_plan` states it, from
+the type, the types declared `ordered`, and, for a record, its fields'
+names and types, and what its plan compares, which the plan gives:
+
+```fren
+-- `Number` is an `Int`'s or a `Nat`'s order, `Text` a `String`'s,
+-- `Position` that of an enumeration's variants, `AsField` a newtype's
+-- field's, and `Fields` a record's fields', lexicographically.
+pub enum Plan { Number, Text, Position, AsField, Fields }
+
+-- The kind of plan of a type of the kind `k`, a newtype if `wrapper?`.
+pub fn plan_of(k: ValueType, wrapper?): Plan := match k {
+    ValueType::IntTy | ValueType::NatTy => Plan::Number,
+    ValueType::StringTy => Plan::Text,
+    ValueType::EnumTy => Plan::Position,
+    _ => if wrapper? then Plan::AsField else Plan::Fields,
+}
+
+set_option fren.lint.undecidable "allow" in
+pub comp order_plan {
+    in t: Ty
+    in ordered_items: Set(TypeName)   -- the enumerations, records and newtypes declared `ordered`
+    in fields: Seq(FieldName)         -- for a record: its fields, in the order declared
+    in field_types: Seq(Ty)           -- their types, in the same order
+    in compared: Seq(FieldName)       -- for a record: the fields that its plan compares, in order
+    in field_plans: Seq(Plan)         -- and the kind of each one's plan
+    in k: Int                         -- any position among the fields
+    pub out planned?                  -- `t` has a plan
+    pub out plan: Plan
+
+    assume aligned: field_types.len = fields.len
+
+    ensure only_ordered: when planned?, ordered_in?(kind(t), type_name(t), ordered_items)
+    ensure kind_of_plan: when planned?, plan = plan_of(kind(t), newtype?(t))
+    ensure in_order: when planned? and plan = Plan::Fields, compared = fields and field_plans.len = fields.len
+    ensure each_field: when planned? and plan = Plan::Fields and 0 <= k < fields.len, field_plans[k] = plan_of(kind(field_types[k]), newtype?(field_types[k]))
+
+    expect unordered_unplanned: unless ordered_in?(kind(t), type_name(t), ordered_items), not planned?
+}
+```
+
+A record's plan compares its fields in turn: where `fields` says how each
+of one value's fields compares with the other's, in the order declared,
+the values compare as the first field that differs, and are equal when
+none does. `lang::lexicographic` states this, and so the laws of an
+order hold of an ordered record's, as they do of its fields' types: it is
+total, asymmetric, transitive and antisymmetric, and `min` and `max` are a
+least and a greatest of their operands, as `test/ui/lang/ordered_structs.fren`
+checks in both front ends:
+
+```fren
+pub enum Comparison { Less, Equal, Greater }
+
+set_option fren.lint.undecidable "allow" in
+pub comp lexicographic {
+    use self::Comparison::Equal
+    in fields: Seq(Comparison)    -- how each field of one value compares with the other's, in order
+    in k: Int                     -- any position among the fields
+    pub out decider: Int          -- the first field that differs, `-1` if none does
+    pub out result: Comparison    -- how the values compare
+
+    ensure decided: when decider != -1, 0 <= decider < fields.len and fields[decider] != Equal
+    ensure earliest: when 0 <= k < fields.len and fields[k] != Equal, 0 <= decider <= k
+    ensure rule: result = (if decider = -1 then Equal else fields[decider])
+
+    expect no_fields: when fields = [], result = Equal
+    expect first_decides: when k = 0 and fields != [] and fields[0] != Equal, result = fields[0]
+    expect differs: when 0 <= k < fields.len and fields[k] != Equal, result != Equal
+}
+```
+
 ## Types of operators
 
 `lang::operator_type` states the operand and result types of the
 [operators](#operators) and of conditionals. `a` and `b` are the types of
 the operands, or of a conditional's branches, and `cond` the type of its
 condition. For a prefix operator, `b` is `a`. `result` is the kind of the
-result's type, after [widening](#natural-numbers). `Ty`, `kind`, `declared_ordered?` and `ValueType` are declared in
+result's type, after [widening](#natural-numbers). `Ty`, `kind`, `type_name` and `ValueType` are declared in
 [Types](Types.md), where `ordered_type` says which types are ordered, and
 `newtype_operator` above says which operators a newtype has. A [pattern test](#pattern-tests), whose right is a
 pattern rather than an operand, is typed in its own section.
@@ -1836,19 +1916,18 @@ pub comp operator_type {
     in b: Ty
     in cond: Ty
     in inner_has?            -- for `+` or `-` of a newtype `a`: its underlying type is a newtype that has it itself
+    in ordered_items: Set(TypeName)  -- the enumerations, records and newtypes declared `ordered`
     pub out accepted?
     pub out result: ValueType
 
     -- There is one `Bool` type, one `Int` type and one `Nat` type.
     assume primitive_unique: when kind(a) = kind(b) and kind(a) in {BoolTy, IntTy, NatTy, StringTy}, a = b
-    assume declared_kinds: (when declared_ordered?(a), kind(a) in {EnumTy, RecordTy})
-        and (when declared_ordered?(b), kind(b) in {EnumTy, RecordTy})
     -- A newtype is a record.
     assume newtype_record: (when newtype?(a), kind(a) = RecordTy) and (when newtype?(b), kind(b) = RecordTy)
     assume inner_newtypes: when inner_has?, newtype?(under(a)) and kind(under(a)) = RecordTy
 
     -- Whether `a` is ordered, and whether a newtype `a` has `+` or `-`.
-    inst order: ordered_type { t := a, declared? := declared_ordered?(a) }
+    inst order: ordered_type { base := a, patterned? := false, ordered_items }
     inst sums: newtype_operator {
         op := if op = Subtraction then NewtypeOp::Subtraction else NewtypeOp::Addition,
         underlying := under(a),
@@ -1885,8 +1964,9 @@ pub comp operator_type {
     expect strings_ordered: when op = Ordering and kind(a) = StringTy and a = b, accepted?
     expect concat_closed: when op = Concat and accepted?, result = kind(a)
     expect sequences_unordered: when op = Ordering and kind(a) = SeqTy, not accepted?
-    expect unordered_enumerations: when op = Ordering and kind(a) = EnumTy and not declared_ordered?(a), not accepted?
-    expect records_opt_in: when op = Ordering and kind(a) = RecordTy and a = b, accepted? iff declared_ordered?(a)
+    expect unordered_enumerations: when op = Ordering and kind(a) = EnumTy and not type_name(a) in ordered_items,
+        not accepted?
+    expect records_opt_in: when op = Ordering and kind(a) = RecordTy and a = b, accepted? iff type_name(a) in ordered_items
     -- A value of an abstract type is only compared, or found in a set.
     expect abstract_equality_only: when accepted? and op != Conditional and kind(a) = AbstractTy,
         op in {Equality, Membership}
@@ -1895,7 +1975,8 @@ pub comp operator_type {
     expect same_types_equal: when op = Equality and a = b, accepted?
     expect bools_equal: when op = Equality and kind(a) = BoolTy and kind(b) = BoolTy, accepted?
     expect ints_ordered: when op = Ordering and kind(a) = IntTy and kind(b) = IntTy, accepted?
-    expect enumerations_ordered: when op = Ordering and declared_ordered?(a) and a = b, accepted?
+    expect enumerations_ordered: when op = Ordering and kind(a) = EnumTy and type_name(a) in ordered_items and a = b,
+        accepted?
     expect strings_concatenate: when op = Concat and kind(a) = StringTy and kind(b) = StringTy, accepted?
     expect sequences_concatenate: when op = Concat and kind(a) = SeqTy and a = b, accepted?
     expect set_members: when op = Membership and kind(b) = SetTy and elem(b) = a, accepted?
@@ -1912,7 +1993,7 @@ pub comp operator_type {
     -- A newtype has the orderings if it is declared `ordered`, an `Int`'s
     -- `+` and `-` and a `Nat`'s `+`, which give the newtype, but nothing
     -- else of its underlying type, and never mixes.
-    expect newtypes_ordered: when op = Ordering and a = b and newtype?(a), accepted? iff declared_ordered?(a)
+    expect newtypes_ordered: when op = Ordering and a = b and newtype?(a), accepted? iff type_name(a) in ordered_items
     expect nat_newtypes_add: when op = Addition and a = b and newtype?(a) and kind(under(a)) = NatTy, accepted?
     expect nat_newtypes_no_difference: when op = Subtraction and newtype?(a) and kind(under(a)) = NatTy, not accepted?
     expect newtype_sums: when op in {Addition, Subtraction} and newtype?(a) and accepted?, a = b and result = RecordTy

@@ -638,9 +638,9 @@ partial def orderTerm (o : Core.OrderPlan) (strict : Bool) (x y : Term) : TermEl
     -- From the last field, compared as the whole is, back to the first,
     -- which decides unless the two are equal.
     let sel (f : Name) (v : Term) : TermElabM Term := `($(mkCIdent (r.decl ++ f)) $v)
-    let some (fl, ol) := fs.back? | if strict then `(False) else `(True)
+    let some (fl, ol) := fs.getLast? | if strict then `(False) else `(True)
     let mut acc ← orderTerm ol strict (← sel fl x) (← sel fl y)
-    for (f, of) in fs.pop.reverse do
+    for (f, of) in fs.dropLast.reverse do
       let (a, b) := (← sel f x, ← sel f y)
       acc ← `($(← orderTerm of true a b) ∨ ($a = $b ∧ $acc))
     return acc
@@ -2029,7 +2029,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   -- Only an enumeration without payloads may be ordered
   -- (`lang::ordered_declaration`); the first payload is reported.
   let withPayload := variantStxs.filter (!·[1].isNone)
-  unless Core.orderedDeclAccepted isOrdered withPayload.size [] do
+  unless Core.orderedDeclAccepted isOrdered withPayload.size none do
     throwErrorAt withPayload[0]![0] (Core.orderedPayloadMsg n withPayload[0]![0].getId).text
   let ctors ← (variants.zip payloads).mapM fun (v, ts) => do
     let bs ← ts.mapIdxM fun k t => do
@@ -2110,9 +2110,9 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   let st ← getState
   -- An ordered record's fields are ordered (`lang::ordered_declaration`);
   -- the first that is not is reported.
-  let fieldsOrdered := ptys.toList.map (·.ty.ordered st.orderedDecl)
-  unless Core.orderedDeclAccepted isOrdered 0 fieldsOrdered do
-    if let some k := ptys.findIdx? (!·.ty.ordered st.orderedDecl) then
+  let first? := Core.PTy.firstUnordered? st.orderedDecl ptys.toList
+  unless Core.orderedDeclAccepted isOrdered 0 first? do
+    if let some k := first? then
       let f := fieldStxs[k]!
       throwErrorAt (if f[1].isNone then f[0] else f[1][1]) (Core.unorderedFieldMsg .record n fields[k]!.1 ptys[k]!.ty).text
   let unbounded := fields.any fun (_, t) => st.unbounded t
@@ -2146,7 +2146,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   let (under, pt) ← fieldType modName ty (some decl) false n
   -- An ordered newtype's underlying type is ordered
   -- (`lang::ordered_declaration`).
-  unless Core.orderedDeclAccepted isOrdered 0 [pt.ty.ordered (← getState).orderedDecl] do
+  unless Core.orderedDeclAccepted isOrdered 0 (Core.PTy.firstUnordered? (← getState).orderedDecl [pt]) do
     throwErrorAt ty (Core.unorderedFieldMsg .newtype n (Name.mkSimple "0") pt.ty).text
   let unbounded := Core.newtypeUnbounded ((← getState).unbounded under)
   -- One field, `«0»`, so that `x.0` in Fren is `x.«0»` in Lean.

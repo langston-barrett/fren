@@ -63,9 +63,8 @@ pub enum ValueType { BoolTy, IntTy, NatTy, StringTy, EnumTy, RecordTy, AbstractT
 `lang::Ty` is the types themselves, `lang::kind` gives the kind of
 each, `lang::elem` the element type of a set or a sequence type,
 `lang::left` and `lang::right` the types of the first and second elements
-of a relation's pairs, and `lang::declared_ordered?` whether a type is an
-enumeration, a record or a newtype [declared
-`ordered`](Items.md#ordered-declarations). Two enumerations, two
+of a relation's pairs (see [Ordered types](#ordered-types) for which are
+ordered). Two enumerations, two
 records, two abstract types, two set types or two relation types may have
 the same kind and still be different types. The
 [preconditions](Items.md#contracts) of `elem`, `left` and `right` say
@@ -81,7 +80,6 @@ pub fn left(t: Ty): Ty
     assume relation: kind(t) = ValueType::RelTy
 pub fn right(t: Ty): Ty
     assume relation: kind(t) = ValueType::RelTy
-pub fn declared_ordered?(Ty)  -- an enumeration, record or newtype declared `ordered`
 ```
 
 `lang::newtype?` says whether a type is a [newtype](Items.md#newtypes),
@@ -535,10 +533,30 @@ values asks it: an ordering's operands, a chain's, the receiver of `min`
 and `max`, and the fields of an ordered declaration. Comparing values of
 a type that is not ordered is an error (`F0352`), as is `min` or `max` of
 one (`F0354`); for an enumeration, a record or a newtype, the message says
-to declare it `ordered`. `lang::ordered_type` states which types are
-ordered:
+to declare it `ordered`.
+
+`lang::TypeName` is the path of an enumeration, record or newtype, which
+`lang::type_name` gives of its type, and `lang::ordered_in?` is the rule,
+from a type's kind and, for an enumeration, a record or a newtype, whether
+its name is among those declared `ordered`. `lang::ordered_type` states it
+of a declared type, from its *base*, the type that the type checker sees:
+a pattern type's base type, or the type that an alias names. Whether the
+type is written with a pattern, `patterned?`, does not change the rule,
+which `patterns_by_base` says:
 
 ```fren
+pub type TypeName
+
+pub fn type_name(Ty): TypeName  -- the path of an enumeration, record or newtype
+
+-- Whether a type of the kind `k`, named `name` if it is an enumeration, a
+-- record or a newtype, is ordered.
+pub fn ordered_in?(k: ValueType, name: TypeName, ordered_items: Set(TypeName)) := match k {
+    ValueType::IntTy | ValueType::NatTy | ValueType::StringTy => true,
+    ValueType::EnumTy | ValueType::RecordTy => name in ordered_items,
+    _ => false,
+}
+
 pub comp ordered_type {
     use self::ValueType::{
         AbstractTy,
@@ -552,19 +570,22 @@ pub comp ordered_type {
         SetTy,
         StringTy,
     }
-    in t: Ty
-    in declared?        -- an enumeration, record or newtype declared `ordered`
+    in base: Ty                       -- the type without its pattern: a pattern type's base, an alias's type
+    in patterned?                     -- written `T is P`, directly or through an alias
+    in ordered_items: Set(TypeName)   -- the enumerations, records and newtypes declared `ordered`
     pub det out ordered?
 
-    assume declarations: when declared?, kind(t) in {EnumTy, RecordTy}
+    ensure rule: ordered? iff ordered_in?(kind(base), type_name(base), ordered_items)
 
-    ensure rule: ordered? iff (kind(t) in {IntTy, NatTy, StringTy} or declared?)
-
-    expect numbers: when kind(t) in {IntTy, NatTy}, ordered?
-    expect strings: when kind(t) = StringTy, ordered?
-    expect opt_in: when kind(t) in {EnumTy, RecordTy}, ordered? iff declared?
-    expect never_unordered: when kind(t) in {BoolTy, SetTy, RelTy, SeqTy, AbstractTy}, not ordered?
+    expect numbers: when kind(base) in {IntTy, NatTy}, ordered?
+    expect strings: when kind(base) = StringTy, ordered?
+    expect opt_in: when kind(base) in {EnumTy, RecordTy}, ordered? iff type_name(base) in ordered_items
+    expect never_unordered: when kind(base) in {BoolTy, SetTy, RelTy, SeqTy, AbstractTy}, not ordered?
+    expect by_base: when patterned?, ordered? iff ordered_in?(kind(base), type_name(base), ordered_items)
 }
+
+expect patterns_by_base: forall (a b: ordered_type),
+    when a.base = b.base and a.ordered_items = b.ordered_items, a.ordered? iff b.ordered?
 ```
 
 ## Strings

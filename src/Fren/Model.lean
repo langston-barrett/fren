@@ -456,8 +456,8 @@ def State.orderedDecl (s : State) (path : Name) : Bool :=
 /-- How values of `t` are compared, if it is ordered (`Core.orderPlan?`). -/
 def State.orderPlan? (s : State) (t : Core.Ty) : Option Core.OrderPlan :=
   let fieldsOf (p : Name) := ((s.records.get? p).map fun r =>
-    r.fields.zipIdx.map fun ((f, _), k) => (f, ((r.shape.parts[0]?.bind (·[k]?)).map (·.ty)).getD .bool)).getD #[]
-  Core.orderPlan? s.orderedDecl fieldsOf t
+    r.fields.zipIdx.toList.map fun ((f, _), k) => (f, ((r.shape.parts[0]?.bind (·[k]?)).map (·.ty)).getD .bool)).getD []
+  Core.orderPlan? s.orderedDecl fieldsOf (s.records.size + s.newtypes.size) t
 
 /-- What is known of the record, newtype or enumeration at `path`, for
 the constraints of its values (`Core.DataShape`). -/

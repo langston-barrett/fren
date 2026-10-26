@@ -46,6 +46,18 @@ def PTy.plain (t : Ty) : PTy :=
   | .rel a b => { ty := t, elems := #[PTy.plain a, PTy.plain b] }
   | _ => { ty := t }
 
+/-- Whether the declared type `t` is ordered (`lang::ordered_type`): its
+type without patterns is, a pattern type's base type or the type an alias
+names (`Ty.ordered`). -/
+def PTy.ordered (orderedDecl : Name → Bool) (t : PTy) : Bool := t.ty.ordered orderedDecl
+
+/-- The position of the first of the declared types `ts`, a record's
+fields or a newtype's underlying type, that is not ordered, if one is not
+(`lang::ordered_declaration`). -/
+def PTy.firstUnordered? (orderedDecl : Name → Bool) : List PTy → Option Nat
+  | [] => none
+  | t :: ts => if t.ordered orderedDecl then (PTy.firstUnordered? orderedDecl ts).map (· + 1) else some 0
+
 /-- Whether `t` has a pattern, at the top or in an element type
 (`lang::pattern_widening`). -/
 partial def PTy.patterned (t : PTy) : Bool := t.pat?.isSome || t.elems.any (·.patterned)

@@ -41,7 +41,8 @@ comp lesser_greater {
     pub out m6: Int := if 0 < x then 0 else x                   --~ warning: write `x.min(0)`
     pub out m7: Int := if x + 1 < y then x + 1 else y           --~ warning: write `y.min(x + 1)`
     pub out m8: Int := if x < LIMIT then LIMIT else x           --~ warning: write `x.max(LIMIT)`
-    -- Strings have no `min`, literals on both sides would change type, and
+    -- The lint suggests `min` and `max` of numbers only, not of `String`s,
+    -- which have them too; literals on both sides would change type, and
     -- `=` or other branches are not `min` or `max`: no lint.
     pub out n1: Int := if x = y then x else y
     pub out n2: Int := if x < y then x else x + 1

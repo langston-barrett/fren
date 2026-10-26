@@ -461,10 +461,9 @@ partial def cmpV : Val → Val → Option Ordering
   | .ctor t i xs, .ctor u j ys => do
     unless t == u && xs.size == ys.size do none
     if i != j then return compare i j
-    for x in xs, y in ys do
-      let c ← cmpV x y
-      if c != .eq then return c
-    return .eq
+    -- Lexicographically, by the payloads or fields in order
+    -- (`Fren.Core.lexCompare`).
+    return Fren.Core.lexCompare (← (xs.zip ys).toList.mapM fun (x, y) => cmpV x y)
   | _, _ => none
 
 /-- An ordering, of values of an ordered type (`cmpV`). -/

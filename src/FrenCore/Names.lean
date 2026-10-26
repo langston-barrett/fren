@@ -1287,10 +1287,11 @@ inductive OrderedDecl where
 
 /-- Whether a declaration is accepted, from whether it is declared
 `ordered`, how many of its variants have a payload, if it is an
-enumeration, and whether the type of each of its fields, if it is a record
-or a newtype, is ordered (`lang::ordered_declaration`). -/
-def orderedDeclAccepted (ordered : Bool) (nPayloads : Nat) (fieldsOrdered : List Bool) : Bool :=
-  !ordered || (nPayloads == 0 && fieldsOrdered.all id)
+enumeration, and the position of the first of its fields whose type is not
+ordered, if it is a record or a newtype and has one
+(`lang::ordered_declaration`, `PTy.firstUnordered?`). -/
+def orderedDeclAccepted (ordered : Bool) (nPayloads : Nat) (firstUnordered? : Option Nat) : Bool :=
+  !ordered || (nPayloads == 0 && firstUnordered?.isNone)
 
 /-- The variant `v`, with a payload, of the ordered enumeration `n`. -/
 def orderedPayloadMsg (n v : Name) : Msg :=
