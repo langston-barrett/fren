@@ -33,7 +33,7 @@ help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 error: LiterateFirst.md:46:7: expectation `chapters::fails::below` does not hold
 
-counterexample: x = -1, precise.x = -1, precise.y = 0
+counterexample: x = 0, precise.x = 0, precise.y = 1
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: LiterateSecond.md:6:0: fren: 10 passed, 4 failed, 0 inconclusive, 0 redundant

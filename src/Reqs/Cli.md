@@ -246,7 +246,13 @@ lean-smt, but its scripts differ: lean-smt sets the logic `ALL`, and
 declares what each query's formulas mention; the front end sets every
 option above, whether or not the spec uses strings and sets, which
 changes how cvc5 searches, not what a query means; and it answers a
-query that a component asks again once, as `fren check` does.
+query that a component asks again once, as `fren check` does. Otherwise
+it poses each query as `fren check` does, so that cvc5 can decide the
+same queries: it asserts the hypotheses in the same order, since cvc5's
+answer may depend on it, and it sets back to cvc5's defaults the options
+that lean-smt sets for its proofs, which Fren does not ask for, such as
+turning off cvc5's simplification, which leaves some queries undecided,
+except that it still asks for unsat cores, which lean-smt reads.
 
 ## Limits
 
