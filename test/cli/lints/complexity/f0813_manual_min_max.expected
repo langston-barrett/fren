@@ -1,0 +1,19 @@
+warning[F0813]: this conditional is `min`
+ --> test/cli/lints/complexity/f0813_manual_min_max.fren:2:53
+  |
+2 | comp c { in x: Nat pub out n: Nat ensure r: n = 1 + if 3 < x then 3 else x }
+  |                                                     ^^^^^^^^^^^^^^^^^^^^^^ gives the lesser operand
+  |
+  = help: `fren fix` can fix this
+  = note: `manual_min_max` is `warn` by default
+  = help: to allow it, `set_option fren.lint.manual_min_max "allow"`
+help: write `x.min(3)`
+  |
+2 - comp c { in x: Nat pub out n: Nat ensure r: n = 1 + if 3 < x then 3 else x }
+2 + comp c { in x: Nat pub out n: Nat ensure r: n = 1 + x.min(3) }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0813`.
+exit=3

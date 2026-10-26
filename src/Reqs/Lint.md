@@ -64,19 +64,27 @@ use view::Severity
 | `just_underscores_and_digits` | `F0751` | `style` | `warn` | a declared name made only of `_` and digits, such as `_1` (see [Names](Lint/Style.md#names)) |
 | `length_zero` | `F0715` | `style` | `warn` | a comparison of a string's or sequence's `len` with `0` or `1`, or of its `at(0)` with `""` or `[]`, that says whether it is empty, such as `s.len = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
 | `literal_dot_in_pattern` | `F0794` | `suspicious` | `warn` | a `.` between two letters or digits in a pattern, such as `r"v1.2"` (see [Dots in patterns](Lint/Suspicious/Literals.md#dots-in-patterns)) |
+| `manual_abs` | `F0811` | `complexity` | `warn` | a conditional that is the absolute value, such as `if x < 0 then -x else x` (see [Absolute values](Lint/Complexity/Integers.md#absolute-values)) |
+| `manual_abs_diff` | `F0812` | `complexity` | `warn` | a conditional that is the absolute value of a difference, such as `if a > b then a - b else b - a` (see [Absolute values](Lint/Complexity/Integers.md#absolute-values)) |
 | `manual_at_most_one` | `F0840` | `complexity` | `warn` | a conjunction that negates each pair of three or more operands, such as `not (a? and b?) and not (a? and c?) and not (b? and c?)` (see [Cardinality](Lint/Complexity/Operators.md#cardinality)) |
+| `manual_clamp` | `F0814` | `complexity` | `warn` | a conditional that keeps its operand between two literals, such as `if x < 0 then 0 else if x > 9 then 9 else x` (see [Lesser and greater](Lint/Complexity/Integers.md#lesser-and-greater)) |
 | `manual_method` | `F0732` | `complexity` | `warn` | a search written with `index_of`, `slice` or `at`, such as `s.index_of(t, 0) >= 0` (see [Searches](Lint/Complexity/Methods.md#searches)) |
+| `manual_min_max` | `F0813` | `complexity` | `warn` | a conditional that is `min` or `max`, such as `if a < b then a else b` (see [Lesser and greater](Lint/Complexity/Integers.md#lesser-and-greater)) |
+| `manual_nat` | `F0810` | `style` | `warn` | an `Int` input or output that an assumption or a guarantee keeps at least 0, as in `assume counts: n >= 0` (see [Natural numbers](Lint/Style/Naturals.md#integers-kept-at-least-0)) |
 | `manual_ordering` | `F0841` | `pedantic` | `allow` | a membership in the first or last variants of an ordered enumeration, such as `s in {Severity::Silent, Severity::Info}` (see [Orderings written out](Lint/Pedantic/Comparisons.md#orderings-written-out)) |
 | `manual_pattern_char_comparison` | `F0756` | `style` | `warn` | an alternation of single characters in a pattern, such as `a\|b` (see [Classes of characters](Lint/Style.md#classes-of-characters)) |
 | `manual_pattern_test` | `F0805` | `style` | `warn` | two or more equations of one expression with values that patterns write, such as `x = 429 or x = 503`, or the disequations of its dual (see [Pattern tests written out](Lint/Style/Comparisons.md#pattern-tests-written-out)) |
 | `manual_record_update` | `F0818` | `style` | `warn` | a record literal that copies more fields from one value than it gives, such as `Point { x := 1, y := p.y, z := p.z }` (see [Record literals](Lint/Style/Records.md#record-literals)) |
+| `manual_rem_euclid` | `F0815` | `complexity` | `warn` | a remainder made non-negative by hand, `(a mod k + k) mod k` (see [Remainders](Lint/Complexity/Integers.md#remainders)) |
 | `many_single_char_names` | `F0795` | `pedantic` | `allow` | a component, function or global expectation that declares more than four single-character names (see [Names](Lint/Pedantic.md#names)) |
 | `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false`, and bind no name (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
 | `match_same_arms` | `F0725` | `pedantic` | `allow` | an arm of a `match` with the same body as another (see [Arms](Lint/Pedantic/Matches.md#arms)) |
 | `membership_chain` | `F0718` | `pedantic` | `allow` | `x = a or x = b or x = c`, or `x != a and x != b and x != c`, three or more, where some value is not one that a pattern writes (see [Membership chains](Lint/Pedantic.md#membership-chains)) |
 | `min_ident_chars` | `F0785` | `restriction` | `allow` | a declared name of one character, such as `x` (see [Names](Lint/Restriction.md#names)) |
+| `min_max` | `F0817` | `suspicious` | `warn` | a `min` and a `max` whose literal bounds leave one value, such as `x.min(0).max(9)` (see [Integers](Lint/Suspicious/Integers.md#remainders-and-bounds)) |
 | `module_inception` | `F0748` | `style` | `warn` | a module whose last segment repeats its parent's, as in `mod lint::lint` (see [Names](Lint/Style.md#names)) |
 | `module_name_repetitions` | `F0784` | `restriction` | `allow` | an item whose name contains its module's, such as `climate::ClimateMode` (see [Names](Lint/Restriction.md#names)) |
+| `modulo_one` | `F0816` | `suspicious` | `warn` | a remainder by `1` or `-1`, which is always `0` (see [Integers](Lint/Suspicious/Integers.md#remainders-and-bounds)) |
 | `needless_bool_assign` | `F0759` | `complexity` | `warn` | `if C then X else not X`, or `if C then not X else X` (see [Conditionals of `Bool`s](Lint/Complexity.md#conditionals-of-bools)) |
 | `needless_match` | `F0760` | `complexity` | `warn` | a `match` whose every arm gives back the value it matches, such as `match x { E::A => E::A, _ => x }` (see [Matches that give back the scrutinee](Lint/Complexity/Matches.md#matches-that-give-back-the-scrutinee)) |
 | `needless_raw_string_hashes` | `F0777` | `pedantic` | `allow` | a raw string literal with more `#`s than it needs, such as `r#"a"#` (see [Raw string literals](Lint/Pedantic.md#raw-string-literals)) |
@@ -571,12 +579,17 @@ what the spec means:
 | `is_equality` | replaces `x is E::A` with `x = E::A` |
 | `length_zero` | compares the string with `""`, or the sequence with `[]`, as the message suggests |
 | `literal_dot_in_pattern` | writes each `.` that it fires on as `[.]` |
+| `manual_abs` | replaces the conditional with `x.abs` |
+| `manual_abs_diff` | replaces the conditional with the `abs` of its `then` branch, `(a - b).abs` |
 | `manual_at_most_one` | replaces the conjuncts with `at_most_one?`, or with `exactly_one?` where the disjunction of the operands is among them |
+| `manual_clamp` | replaces the conditional with `x.max(lo).min(hi)` |
 | `manual_method` | replaces the comparison with a call of `contains?`, `starts_with?` or `ends_with?`, or `s.slice(i, 1)` with `s.at(i)`, as the message suggests |
+| `manual_min_max` | replaces the conditional with `a.min(b)` or `a.max(b)`, as the message suggests |
 | `manual_ordering` | replaces the test with a comparison with the last or first variant it names, as the message suggests |
 | `manual_pattern_char_comparison` | replaces the pattern with one that writes each alternation of single characters as a class |
 | `manual_pattern_test` | replaces the operands with a pattern test, `x is a \| b`, or `not x is a \| b` for the dual |
 | `manual_record_update` | replaces the literal with an update of the value it copies from, as the message suggests |
+| `manual_rem_euclid` | replaces `(a mod k + k) mod k` with `a mod k` |
 | `match_like_membership` | replaces the `match` with an equation, `x = E::A`, or a pattern test, `x is E::A \| E::B`, as the message suggests |
 | `match_same_arms` | merges the arms into one with an or-pattern, removes those with the body of the `_` arm, or replaces the `match` with its body, as the message suggests |
 | `membership_chain` | replaces the chain with a membership, `x in {a, b, c}`, or `not x in {a, b, c}` |
@@ -625,7 +638,10 @@ checks that each of them fires somewhere in it, though not that it fires
 on every form. `index_after_use` is left out: its fix only swaps the
 operands of `and`, which means the same either way round, and its written
 form has an index that may be out of range, which the
-[definedness](Check.md#definedness) check would report in the law itself. To keep the meaning, a fix
+[definedness](Check.md#definedness) check would report in the law itself. For `manual_abs`,
+`manual_abs_diff`, `manual_min_max`, `manual_clamp` and
+`manual_rem_euclid`, components as written and as fixed, and refinements
+between them, in the lint's section, check it instead. To keep the meaning, a fix
 puts parentheses where [Parentheses in fixes](#parentheses-in-fixes)
 says.
 

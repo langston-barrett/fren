@@ -162,12 +162,11 @@ comparison, not a chain:
 
 ```fren
 pub comp comparison_chain {
-    in n_ascending: Int     -- operators `<` and `<=`
-    in n_descending: Int    -- operators `>` and `>=`
-    in n_other: Int         -- operators `=`, `!=`, `in`, `subset` and `is`
+    in n_ascending: Nat     -- operators `<` and `<=`
+    in n_descending: Nat    -- operators `>` and `>=`
+    in n_other: Nat         -- operators `=`, `!=`, `in`, `subset` and `is`
     pub det out accepted?
 
-    assume counts: n_ascending >= 0 and n_descending >= 0 and n_other >= 0
     assume compares: n_ascending + n_descending + n_other >= 1
 
     ensure rule: accepted? iff (n_ascending + n_descending + n_other = 1
@@ -368,11 +367,14 @@ pub comp divisor {
 ```
 
 `lang::division` states the laws of `div` and `mod`, for a positive and a
-negative divisor:
+negative divisor. It allows `identity_op` and `modulo_one`, which fire on
+`x div 1` and `x mod 1`, since those laws are what the lints rely on:
 
 ```fren
 const NEGATIVE_DIVISOR: Int := -3
 
+set_option fren.lint.identity_op "allow" in
+set_option fren.lint.modulo_one "allow" in
 pub comp division {
     in x: Int
     in y: Int
@@ -721,10 +723,9 @@ pub comp record_update {
     in record?                       -- `r` has a record type
     in fields: Set(FieldName)        -- the fields of its record
     in given: Set(FieldName)         -- the names the update gives
-    in n_repeated: Int               -- names given more than once, counting each repeat
+    in n_repeated: Nat               -- names given more than once, counting each repeat
     pub det out accepted?
 
-    assume counts: n_repeated >= 0
     assume some_given: given != {}
 
     ensure rule: accepted? iff (record? and given subset fields and n_repeated = 0)
@@ -1081,8 +1082,9 @@ A *pattern test*, `e is P`, is `true` exactly when the pattern `P` matches
 enumeration, a `Bool`, an `Int`, a `Nat` or a `String`, as a `match`'s scrutinee is
 (`F0335`), and `P` is a [pattern](Patterns.md) as in a [`match`
 arm](#matches), nested, literal, range and or-patterns included, but it
-binds no names: each of its binders is `_` (`F0334`), since a test has no
-body in which a name could be mentioned. To read a payload, write a
+binds no names: each of its binders is `_` (`F0334`, which names a binder
+`n!` as `n`, the name it would declare), since a test has no body in which
+a name could be mentioned. To read a payload, write a
 `match`. The pattern matches some value, and each alternative of its
 or-patterns is reachable, as in a `match` (`F0318`): so `k is -5..=-1`, on
 a `Nat`, is an error, as an arm with that pattern would be. A pattern that
@@ -1408,9 +1410,11 @@ Each is a conditional, such as `if x < 0 then -x else x`, so each stays
 within linear arithmetic: `(a - b).abs <= TOLERANCE` and `2 * x.min(y)`
 are linear. A literal is not a receiver as written, since `3.abs` is not
 an identifier: write `(3).abs`, or `(-3).abs`. `lang::int_methods` states
-their laws:
+their laws. It allows `eq_op`, which fires on `x.min(x)` and `x.max(x)`,
+since those laws are what the lint relies on:
 
 ```fren
+set_option fren.lint.eq_op "allow" in
 pub comp int_methods {
     in x: Int
     in y: Int

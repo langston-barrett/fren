@@ -13,6 +13,18 @@ help: write `0 <= n < q.len`
 7 +     assume a: 0 <= n < q.len
   |
 
+warning[F0810]: `n` is never negative, so it can be a `Nat`
+ --> test/cli/lints/unused/f0792_linked_assumptions.fren:7:15
+  |
+7 |     assume a: n >= 0 and n < q.len
+  |               ^^^^^^ `n` is at least 0 by this assumption
+  |
+  = note: a `Nat` input brings this assumption with its type
+  = note: an instance must then bind `n` to a `Nat`
+  = help: declare `n: Nat`, and remove `n >= 0` from `a`, where nothing binds `n` to an `Int`
+  = note: `manual_nat` is `warn` by default
+  = help: to allow it, `set_option fren.lint.manual_nat "allow"`
+
 warning[F0792]: the assumption `a` constrains only inputs that nothing uses
  --> test/cli/lints/unused/f0792_linked_assumptions.fren:7:12
   |
@@ -37,6 +49,6 @@ warning[F0792]: the assumption `b` constrains only inputs that nothing uses
 
 fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
 
-Some errors have detailed explanations: F0792, F0804.
+Some errors have detailed explanations: F0792, F0804, F0810.
 For more information about an error, try `fren --explain F0792`.
 exit=3

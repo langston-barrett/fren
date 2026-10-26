@@ -1298,14 +1298,16 @@ def lintBools (e : Syntax) : TermElabM Unit := do
   let node := boolNode sub.str sub.startPos e
   for (l, ref, msg) in Core.rewriteReports src node fixable do
     recordLint l ref msg
-  let (boolEqs, variants, absEnds, mentioning, facts) :=
-    ((← getLocal).boolEqs, (← getLocal).variants, (← getLocal).absEnds, (← getLocal).mentioning, (← getLocal).facts)
-  modifyLocal fun l => { l with boolEqs := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
+  let (boolEqs, ordereds, variants, absEnds, mentioning, facts) :=
+    ((← getLocal).boolEqs, (← getLocal).ordereds, (← getLocal).variants, (← getLocal).absEnds, (← getLocal).mentioning,
+      (← getLocal).facts)
+  modifyLocal fun l => { l with boolEqs := #[], ordereds := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
   let variant? (s : Syntax) := (variants.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
   let fact? (s : Syntax) := (facts.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
+  let ordered? (s : Syntax) := (ordereds.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
   let help (msg : Core.Msg) := if fixable && !msg.fixes.isEmpty then #[Core.fixHelp] else #[]
-  let mentions (s : Syntax) := mentioning.contains (s.getPos?, s.getTailPos?)
-  for r in Core.opReports src (fun s => boolEqs.contains (s.getPos?, s.getTailPos?)) variant? (absEnds.contains ·.getTailPos?) mentions fact? node do
+  let at_ (rs : Array (Option String.Pos.Raw × Option String.Pos.Raw)) (s : Syntax) := rs.contains (s.getPos?, s.getTailPos?)
+  for r in Core.opReports src (at_ boolEqs) ordered? variant? (absEnds.contains ·.getTailPos?) (at_ mentioning) fact? node do
     -- A node's position is its first token's, and its tail its last's.
     let ref := match r.last? with | some l => mkNullNode #[r.ref, l] | none => r.ref
     recordLint r.lint ref { r.msg with notes := r.msg.notes ++ help r.msg }
@@ -2714,6 +2716,11 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
       checkNewtypeOp op tx? (← frenTypeOf? y)
       checkTermType b y operandTy (Core.opNote op operandTy)
       pure (x, y, operandTy, info?)
+  -- For the lints of integers, at the end of the expression: what it compares.
+  if cx.noteIndexes && !(tx? matches some (.newtype ..)) then
+    let compared : Core.Ordered := if operandTy matches .enum _ && info?.any (·.ordered) then .enumeration
+      else if operandTy == .int || operandTy == .nat then .number else .other
+    modifyLocal fun l => { l with ordereds := l.ordereds.push ((e.getPos?, e.getTailPos?), compared) }
   -- An ordered enumeration's values compare by their positions.
   if let (.enum _, some info) := (operandTy, info?) then
     let (i, j) := (← ordinalTerm info x, ← ordinalTerm info y)
@@ -4320,6 +4327,9 @@ def elabBindings (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) : TermElab
     let t ← if b[1].isNone then toTerm cx (← `(fren_expr| $(⟨x⟩):ident)) else toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk, expected? := ← coreTy? cx.vars[idx]!.type } b[1][1]
     checkDeclared (if b[1].isNone then x else b[1][1]) t cx.vars[idx]!.type fun ty =>
       s!"note: `{x.getId}` of `{Core.showPath pi.comp.path}` has type `{ty}`"
+    -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
+    if cx.vars[idx]!.type.isConstOf ``Int && (← frenTypeOf? t) == some .int then
+      modifyLocal fun l => { l with natKept := l.natKept.push (pi.comp.path, Core.nameText x.getId) }
     unless b[1].isNone do lintBools b[1][1]
     lintRedundant b false
     let fv := fvs[idx]!
@@ -4404,6 +4414,50 @@ def testedOf (all : Bool) (raw : Array Syntax) : CommandElabM (Array Syntax × C
         if !m[5].isNone then constraints := constraints.push y
       else misplaced (if m.isOfKind ``Lang.inMember then "an input" else "a `use`")
   return (members, Core.Tested.ofSettings all constraints expects insts dets)
+
+open Lang in
+/-- The conjuncts of `e`, a constraint: the operands of its `and`s, not
+through parentheses but its own, as the `fren` command sees them
+(`lint::manual_nat`). -/
+partial def constraintConjuncts (e : Syntax) : Array Syntax :=
+  let rec go (e : Syntax) : Array Syntax := if isBinOp e "and" then go e[0] ++ go e[2] else #[e]
+  go (unparen e)
+
+open Lang in
+/-- Records `manual_nat` in the component `compPath` of `members`
+(`lint::manual_nat`): for each variable it fires on, at its first bound,
+reported at the end of the file (`reportLints`). -/
+def lintManualNat (compPath : Name) (members : Array Syntax) : TermElabM Unit := do
+  let vars := members.filterMap fun m =>
+    if m.isOfKind ``Lang.inMember then some ((declaredIdent m[1]).1, (if m[2].isNone then none else some m[2][1]), true, false)
+    else if m.isOfKind ``Lang.outMember then
+      some ((declaredIdent m[3]).1, (if m[4].isNone then none else some m[4][1]), false, !m[5].isNone)
+    else none
+  let props := members.filterMap fun m => match m with
+    | `(fren_member| assume $x:ident : $e) => some (true, x.raw, constraintConjuncts e)
+    | `(fren_member| ensure $x:ident : $e) => some (false, x.raw, constraintConjuncts e)
+    | `(fren_member| expect $x:ident : $e) => some (false, x.raw, #[])
+    | `(fren_member| cover $x:ident : $e) => some (false, x.raw, #[])
+    | _ => none
+  let wf (e : Syntax) : String := Core.writtenForm (exactText (unparen e))
+  let conjunct (assumption : Bool) (e : Syntax) : Core.NatConjunct :=
+    let e := unparen e
+    if e.getNumArgs == 3 && e[1].isAtom && Core.binaryOps.contains e[1].getAtomVal.trimAscii.toString then
+      { assumption, op := .ofOp e[1].getAtomVal.trimAscii.toString, left := wf e[0], right := wf e[2] }
+    else { assumption, op := .otherOp, left := "", right := "" }
+  let isInt (ty? : Option Syntax) : Bool := ty?.any (exactText · == "Int")
+  let bounds := Core.manualNatBounds
+    (vars.map fun (x, ty?, isIn, defined) =>
+      { name := Core.nameText x.getId, role := if isIn then .input else if defined then .definedOutput else .output
+        int := isInt ty? })
+    (props.map fun (assumption, _, cs) => cs.map (conjunct assumption))
+  for (i, p, k) in bounds do
+    let (x, _, isIn, _) := vars[i]!
+    let (_, name, cs) := props[p]!
+    let msg := Core.manualNatMsg (Core.nameText x.getId) isIn (Core.nameText name.getId) (exactText (unparen cs[k]!))
+    let report := { lint := .manualNat, level := ← lintLevel .manualNat, ref := unparen cs[k]!
+                    msg }
+    modifyLocal fun l => { l with natReports := l.natReports.push (compPath, Core.nameText x.getId, report) }
 
 open Lang in
 /-- The name that a member declares, if any: a variable, an instance or a
@@ -4842,6 +4896,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   unless ok do return (false, #[])
   -- Bindings; assumptions, requirements and expectations
   let (props, insts, uses, values, indexes, ok) ← elabCompBody scope members vars pending declBase ok names
+  lintManualNat path members
   if ok then lintCompUnused scope path members vars instNames
   let mut generated := insts.map (·.decl) ++ props.map (·.decl) ++ #[declBase ++ `assumes, declBase ++ `ensures]
     ++ values.map (declBase ++ `def ++ ·.1) ++ (if values.isEmpty then #[] else #[declBase ++ `defs])
@@ -5141,6 +5196,12 @@ and the solver is asked nothing. -/
           else if cv.role == Core.Role.input then s!"its `{v.name}` is an input, not an output"
           else s!"its output `{v.name}` is not public"
       throwErrorAt stx[5] (Core.interfaceMsg c.path a.path v.name why).text
+    -- What it reads by name keeps an `Int` one (`lint::manual_nat`).
+    if let some cv := cv? then
+      let given (t : Expr) : Core.Given := if t.isConstOf ``Int then .givenInt else .givenNat
+      if let (concrete, .givenInt) := Core.refinementGiven input (given v.type) (given cv.type) then
+        let kept := (if concrete then c.path else a.path, Core.nameText v.name)
+        modifyLocal fun l => { l with natKept := l.natKept.push kept }
   let w := Name.mkSimple c.path.getString!
   if a.insts.any (·.name == w) then throwErrorAt stx[5] (Core.dupMemberMsg w).text
   -- `a`'s assumptions are hypotheses here, so it reads each input of `a`,
@@ -5174,6 +5235,9 @@ and the solver is asked nothing. -/
           else toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := v.type.isConstOf ``Nat, expected? := ← coreTy? v.type } b[1][1]
         checkDeclared (if b[1].isNone then x else b[1][1]) t v.type fun ty =>
           s!"note: `{x.getId}` of `{Core.showPath a.path}` has type `{ty}`"
+        -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
+        if v.type.isConstOf ``Int && (← frenTypeOf? t) == some .int then
+          modifyLocal fun l => { l with natKept := l.natKept.push (a.path, Core.nameText x.getId) }
         unless b[1].isNone do lintBools b[1][1]
         let e ← mkLambdaFVars cfvs (← elabProp t v.type)
         return (v, e, ← takeIndexes cfvs)

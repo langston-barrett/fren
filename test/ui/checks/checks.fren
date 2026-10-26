@@ -7,7 +7,8 @@ comp exit {   --~ error: `exit` is not realizable: for the input strict? = true,
     pub out code: Int
     out scratch: Int
 
-    assume counts: n_fail >= 0 and n_inconc >= 0
+    assume counts: n_fail >= 0 and n_inconc >= 0  --~ warning: `n_fail` is never negative
+    --~^ warning: `n_inconc` is never negative
 
     ensure failures: when n_fail > 0, code = 1                 --~ info: conflicts with `strict_inconc`
     ensure strict_inconc: when strict? and n_inconc > 0, code = 2  --~ info: conflicts with `failures`

@@ -28,6 +28,11 @@ comp precedence {
     ensure n: n? iff not s is Shape::Circle(_)
     ensure both: both? iff s is Shape::Circle(_) and t is | Shape::Rect(_, _) | Shape::Empty
 
+    -- One alternative per line, each after a `|`.
+    expect per_line: both? iff s is Shape::Circle(_) and t is
+        | Shape::Empty
+        | Shape::Rect(_, _)
+
     expect not_outside: n? iff not (s is Shape::Circle(_))
     expect and_outside: both? iff ((s is Shape::Circle(_)) and (t is Shape::Rect(_, _) | Shape::Empty))
 }
@@ -96,5 +101,5 @@ comp simpler {
     ensure q: z? iff not ((s is Shape::Circle(_)) = b?)  --~ warning: write `(s is Shape::Circle(_)) != b?`
 }
 
---@ summary: 48 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ summary: 49 passed, 1 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

@@ -8,6 +8,7 @@ type Small := Byte is ..=9   --~ error: `Byte` is a pattern type, so it cannot h
 enum Color { Red, Green }
 
 type Hue := Color is c   --~ error: a pattern type's pattern cannot bind `c`
+type Shade := Color is c!   --~ error: a pattern type's pattern cannot bind `c`
 type Odd := Int is Color::Red   --~ error: expected a pattern of `Int`, but this is a pattern of `Color`
 type Empty := Int is 5..=1   --~ error: the range `5..=1` matches no integer
 

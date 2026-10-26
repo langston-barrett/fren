@@ -28,6 +28,18 @@ help: write `x > 3`
 66 +     ensure exclusive: at_most_one?(x = 1, x = 2, x = 3) or x > 3
    |
 
+warning[F0810]: `x` is never negative, so it can be a `Nat`
+  --> test/cli/commands/mutate_list.fren:52:21
+   |
+52 |     assume bounded: x >= 0 and x <= LIMIT
+   |                     ^^^^^^ `x` is at least 0 by this assumption
+   |
+   = note: a `Nat` input brings this assumption with its type
+   = note: an instance must then bind `x` to a `Nat`
+   = help: declare `x: Nat`, and remove `x >= 0` from `bounded`, where nothing binds `x` to an `Int`
+   = note: `manual_nat` is `warn` by default
+   = help: to allow it, `set_option fren.lint.manual_nat "allow"`
+
 shift-integer-m::LIMIT-2ffd2ce22cf9 test/cli/commands/mutate_list.fren:30:21 `10` changed to `11`
 shift-integer-m::LIMIT-72787c09fdd2 test/cli/commands/mutate_list.fren:30:21 `10` changed to `9`
 swap-arithmetic-m::twice-363913c1041a test/cli/commands/mutate_list.fren:33:28 `+` changed to `-`

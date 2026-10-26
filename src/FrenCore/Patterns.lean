@@ -600,8 +600,17 @@ def isScrutineeMsg (ty : String) : Msg :=
     notes := #["note: `is` tests a value of an enum, `Bool`, `Int`, `Nat` or `String`",
       "help: for other types, compare with `=` or `in`"] }
 
-/-- A binder of the pattern of `e is P` that names its value. -/
+/-- The name that a binder `n` or `n!` would declare, as a message names
+it: without its `!` (`Reqs/Lang/Components#shadowing`). -/
+def binderName (n : Name) : Name :=
+  match n with
+  | .str p s => if s.endsWith "!" && s.length > 1 then .str p (s.dropEnd 1).toString else n
+  | _ => n
+
+/-- A binder of the pattern of `e is P` that names its value, named as
+`binderName` gives it. -/
 def isBinderMsg (n : Name) : Msg :=
+  let n := binderName n
   { code? := some "F0334", headline := s!"a pattern test cannot bind `{n}`", label? := some "binds a name"
     notes := #["note: a pattern test has no body in which to mention the name",
       "help: to read the payload, write a `match`"]

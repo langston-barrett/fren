@@ -237,9 +237,9 @@ each module is declared before it is used. -/
 def ownSpecFiles : Array String :=
   #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Let", "Lang/Quantifiers", "Lang/Expressions",
     "Lang/Modules", "Lang/Instances", "Check", "View", "Cli", "Lint", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style",
-    "Lint/Style/Comparisons", "Lint/Style/Records", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches", "Lint/Complexity/Updates",
+    "Lint/Style/Comparisons", "Lint/Style/Naturals", "Lint/Style/Records", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches", "Lint/Complexity/Integers", "Lint/Complexity/Updates",
     "Lint/Suspicious", "Lint/Suspicious/Expressions", "Lint/Suspicious/Methods", "Lint/Suspicious/Literals",
-    "Lint/Suspicious/Comparisons", "Lint/Pedantic", "Lint/Pedantic/Matches", "Lint/Pedantic/Records", "Lint/Pedantic/Text", "Lint/Pedantic/Comparisons", "Lint/Restriction", "Lint/Decidability", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
+    "Lint/Suspicious/Comparisons", "Lint/Suspicious/Integers", "Lint/Pedantic", "Lint/Pedantic/Matches", "Lint/Pedantic/Records", "Lint/Pedantic/Text", "Lint/Pedantic/Comparisons", "Lint/Restriction", "Lint/Decidability", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Trace"].map fun r => s!"src/Reqs/{r}.md"
 
 def ownSpec : IO (Array String) := do
   let (out, code) ← runCheck ownSpecFiles
@@ -653,6 +653,25 @@ def isSwap (m : FrenCli.Mutate.Mutant) : Bool :=
     .swapMinMax, .swapAffix].contains m.origin
     || (m.origin == .swapAndOr && !m.after.startsWith "(")
 
+deriving instance BEq for FrenCli.CClaim
+deriving instance BEq for Fren.Core.UseRecord
+deriving instance BEq for Fren.Core.ExpectationRecord
+deriving instance BEq for Fren.Core.LintReport
+deriving instance BEq for FrenCli.UseLoc
+deriving instance BEq for Fren.Core.ItemRecord
+deriving instance BEq for FrenCli.LintFix
+deriving instance BEq for FrenCli.NatReport
+deriving instance BEq for Fren.Core.SettingRecord
+deriving instance BEq for Fren.Core.AssumptionRecord
+
+/-- Whether `a` and `b` agree on what `fren mutate` reads of a mutant's
+state (`FrenCli.mutate`). -/
+def sameForMutate (a b : FrenCli.State) : Bool :=
+  let diag (d : FrenCli.Diag) := s!"{d.file} {d.span.start} {d.span.stop} {repr d.severity} {repr d.msg} {d.lint?.map (·.ctorIdx)} {d.fixed}"
+  a.diags.map diag == b.diags.map diag && a.comps == b.comps && a.globals == b.globals && a.refinements == b.refinements
+    && a.bodies == b.bodies && a.defs == b.defs && a.preludeText == b.preludeText && a.consts.toList == b.consts.toList
+    && a.constInts.toList == b.constInts.toList && FrenCli.sameForLater a b
+
 /-- Every mutant of the corpus:
 - **well-formed:** changes the text, and elaborates with no static error;
 - **identified:** has an identifier that no other mutant of its group has;
@@ -673,7 +692,9 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
   let mut failures := #[]
   let files ← readGroup paths
   let (before, all) := FrenCli.mutantsOf files #[]
-  let enums := FrenCli.Mutate.enumsOf (files.flatMap fun (_, chars) => match FrenCli.parseText chars with
+  let parsed := files.map (FrenCli.parseText ·.2)
+  let names := parsed.map FrenCli.writtenNames
+  let enums := FrenCli.Mutate.enumsOf (parsed.flatMap fun
     | .ok (_, items, _) => items
     | .error _ => #[])
   let ids := all.map (·.id)
@@ -692,6 +713,13 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
     -- Only the mutated file: mutants change no declaration, so the files
     -- after it elaborate as before.
     let st := FrenCli.elabParsed (before[m.file]?.getD {}) m.file chars' parsed'
+    -- Some of the mutants: `mutantState`, which elaborates again only the
+    -- files after it that it must, reads as elaborating all of them again.
+    if (i / slices) % 16 == 0 then
+      let all := (files.extract (m.file + 1)).zipIdx.foldl (init := st) fun s ((_, cs), k) =>
+        FrenCli.elabParsed s (m.file + 1 + k) cs parsed[m.file + 1 + k]!
+      unless sameForMutate (FrenCli.mutantState files parsed names before m chars' parsed') all do
+        failures := failures.push s!"{m.id}: `mutantState` differs from elaborating every file after it again"
     if let some d := (st.diags.filter fun d => d.severity == .error && d.file == m.file)[0]? then
       failures := failures.push s!"{m.id}: has a static error: {d.msg.headline}"
     let again := mutantsOfParsed m.file path chars' parsed' enums
@@ -716,6 +744,16 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
         let got := (sites'[k]?.map fun (_, e) => shapeWith src' (fun _ => none) e).getD "(missing)"
         if want != got then failures := failures.push s!"{m.id}: parses as {got}, not {want}"
       | none => failures := failures.push s!"{m.id}: is in no site of its item"
+  -- Each file elaborates as it does after a state whose fields that
+  -- `elabFile` sets before reading them are another file's, or the first's
+  -- (`State.withPerFileOf`), so `sameForLater` need not compare them.
+  if slice == 0 then
+    for (_, chars) in files, j in [0:files.size] do
+      let other := before[if j == 0 then files.size else 0]?.getD {}
+      let st := FrenCli.elabParsed (before[j]?.getD {}) j chars parsed[j]!
+      let st' := FrenCli.elabParsed ((before[j]?.getD {}).withPerFileOf other) j chars parsed[j]!
+      unless same_fields% FrenCli.State st st' except [] do
+        failures := failures.push s!"{files[j]!.1}: elaborates differently after a state with another file's per-file fields"
   if slice != 0 then return failures
   -- Formatting each file keeps the identifiers.
   for (path, chars) in files, i in [0:files.size] do
@@ -932,6 +970,37 @@ def decisions (path : String) : IO (Array String) := do
       failures := failures.push s!"{path}: {m.id} {outcomeName d.outcome}, but `fren check` fails it on {found.toList}"
   return failures
 
+/-- `fren mutate` elaborates a file again when a mutant of an earlier file
+changes a type alias or a pattern type that it uses (`FrenCli.skipFile?`):
+the mutant's state is then that of elaborating every file again, and
+differs from the original's. -/
+def laterFiles : IO (Array String) := do
+  let a := "pub mod a\n\npub type Byte := Int is 0..=255\npub enum Level { Low, Mid, High }\n" ++
+    "pub type Loud := Level is Level::Mid | Level::High\n"
+  let b := "pub mod b\n\nuse a::{Byte, Level, Loud}\n\ncomp c {\n    in x: Byte\n    in l: Loud\n    pub out y: Int\n\n" ++
+    "    ensure r: y = (if l = Level::High then x else x + 1)\n}\n"
+  let files := #[("a.fren", a.toList.toArray), ("b.fren", b.toList.toArray)]
+  let (states, _) := FrenCli.mutantsOf files #[]
+  let parsed := files.map (FrenCli.parseText ·.2)
+  let names := parsed.map FrenCli.writtenNames
+  let mut failures := #[]
+  if states.any (·.diags.any (·.severity == .error)) then
+    failures := failures.push "the files of `laterFiles` have a static error"
+  -- Mutants that `fren mutate` does not make, but that change only what the
+  -- later file sees through `Byte` and `Loud`.
+  for (item, before, after) in [(`a.Byte, "255", "25"), (`a.Loud, "Level::Mid | ", "")] do
+    let start := ((a.splitOn before)[0]!).length
+    let m : FrenCli.Mutate.Mutant :=
+      { origin := .shiftInteger, file := 0, item, comp? := none, span := ⟨start, start + before.length⟩, before, after }
+    let chars' := m.apply files[0]!.2
+    let parsed' := FrenCli.parseText chars'
+    let all := FrenCli.elabParsed (FrenCli.elabParsed (states[0]?.getD {}) 0 chars' parsed') 1 files[1]!.2 parsed[1]!
+    unless sameForMutate (FrenCli.mutantState files parsed names states m chars' parsed') all do
+      failures := failures.push s!"`{before}` to `{after}` in `{item}`: `mutantState` differs from elaborating `b.fren` again"
+    if sameForMutate all (states[2]?.getD {}) then
+      failures := failures.push s!"`{before}` to `{after}` in `{item}`: changes nothing that `b.fren` sees"
+  return failures
+
 /-! ## Jobs
 
 The tests are independent, so `main` runs them as jobs, in parallel, each
@@ -954,7 +1023,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"], ["leanTokens"]]
+    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"]]
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
 
@@ -976,6 +1045,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["fixing"] => fixing
   | ["libraries"] => libraries
   | ["decisions", path] => decisions path
+  | ["laterFiles"] => laterFiles
   | ["mutation", group, slice, slices] => do
     -- A slice out of range would check nothing, and pass.
     match (group.toNat?.bind ((← mutationCorpus)[·]?)), slice.toNat?, slices.toNat? with
