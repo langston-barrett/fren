@@ -2783,8 +2783,12 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     -- postcondition (`lang::contract_application`); it is not yet in scope.
     let own? := cx.contract?.filter fun (f, _, _) => segs.size == 1 && Name.mkSimple segs[0]!.name == Name.mkSimple f.getString!
     if let some (f, post, params) := own? then
-      let toParams := args.size == params.size && (args.zip params).all fun (a, x) =>
-        a matches .path _ #[_] && (match a with | .path _ ss => identName ss[0]!.name == x | _ => false) && (cx.binder? x).isNone
+      -- Each argument as written: a name of one segment, not hidden by a
+      -- binder, or another expression.
+      let written := args.map fun
+        | .path _ #[s] => if (cx.binder? (identName s.name)).isNone then some (identName s.name) else none
+        | _ => none
+      let toParams := Fren.Core.appliesToParams written params
       unless Fren.Core.contractApplicationAccepted (if post then .postcondition else .precondition) true toParams do
         err fnSpan (Fren.Core.contractSelfMsg f !post)
     -- A variable shadows a function, as it does any other item.

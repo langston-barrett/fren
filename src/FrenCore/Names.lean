@@ -1076,6 +1076,14 @@ its name, in order (`lang::contract_application`). -/
 def contractApplicationAccepted (clause : ClauseKind) (own toParams : Bool) : Bool :=
   !own || (clause == .postcondition && toParams)
 
+/-- Whether an application's arguments are the function's parameters
+`params`, each as its name, in order: `args` gives each argument that is a
+name of one segment, not hidden by a name of the clause's own, as that
+name, and any other as `none` (`lang::contract_arguments`). Both front ends
+read the arguments so. -/
+def appliesToParams (args : Array (Option Name)) (params : Array Name) : Bool :=
+  args.toList == params.toList.map some
+
 /-- A clause of `f`'s contract applies `f` in a precondition, or to
 arguments other than its parameters (`lang::contract_application`). -/
 def contractSelfMsg (f : Name) (precondition : Bool) : Msg :=

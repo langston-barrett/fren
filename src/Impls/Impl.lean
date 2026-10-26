@@ -43,6 +43,29 @@ impl interpretation_contract: impls::interpretation_contract for (p w wo u : Boo
   error? := !contractRecorded (contractProofOf p w wo u d s),
 }
 
+/-- The statement of an interpretation over two arguments, `decide`d, as
+`proveContract` decides its statement: at each argument that meets the
+preconditions `pre`, its value `at_` meets the postconditions `post`. -/
+def interpDecided (pre : Nat → Bool) (post : Nat → Nat → Bool) (at_ : Nat → Nat) : Answer :=
+  if (List.range 2).all fun a => !pre a || post a (at_ a) then .unsat else .sat
+
+def valueIndex : check.Value → Nat
+  | .V0 => 0
+  | .V1 => 1
+
+-- For every interpretation over two arguments and two values: recorded as
+-- `contractProofOf` decides, from `decide`'s answer on its statement.
+impl interpretation_at: impls::interpretation_at for (p0 p1 q00 q01 q10 q11 : Bool) (v0 v1 : check.Value) {
+  pres := argumentsOf p0 p1,
+  posts := Fren.FinSet.ofList ((if q00 then [{ arg := .A0, value := .V0 : check.Point }] else [])
+    ++ (if q01 then [{ arg := .A0, value := .V1 }] else []) ++ (if q10 then [{ arg := .A1, value := .V0 }] else [])
+    ++ (if q11 then [{ arg := .A1, value := .V1 }] else [])),
+  at_a0 := v0,
+  at_a1 := v1,
+  recorded? := contractRecorded (contractProofOf true false false false
+    (interpDecided (pre p0 p1) (post q00 q01 q10 q11) fun a => if a == 0 then valueIndex v0 else valueIndex v1) .unknown),
+}
+
 -- One variable, given `n` terms. Over `Nat`, so a proof by cases.
 impl mapping: impls::mapping for (r : Fren.Core.Role) (p : Bool) (n : Nat) {
   role := toRole r,

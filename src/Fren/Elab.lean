@@ -3260,10 +3260,15 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   -- postcondition (`lang::contract_application`); it is not yet in scope.
   let own? := cx.contract?.filter fun k => segs.size == 1 && segs[0]!.getId == Name.mkSimple k.path.getString!
   if let some k := own? then
-    let toParams := args.getElems.size == k.params.size && (args.getElems.zip k.params).all fun (a, x) =>
+    -- Each argument as written: a name of one segment, not hidden by a
+    -- binder, or another expression.
+    let written := args.getElems.map fun a =>
       let a := unparen a
       let a := if a.getNumArgs == 1 then a[0] else a
-      a.isOfKind ``Lang.fren_path && (pathSegs a).size == 1 && (pathSegs a)[0]!.getId == x && (cx.binder? x).isNone
+      if a.isOfKind ``Lang.fren_path && (pathSegs a).size == 1 && (cx.binder? (pathSegs a)[0]!.getId).isNone then
+        some (pathSegs a)[0]!.getId
+      else none
+    let toParams := Core.appliesToParams written k.params
     unless Core.contractApplicationAccepted (if k.post then .postcondition else .precondition) true toParams do
       throwErrorAt p (Core.contractSelfMsg k.path !k.post).text
   -- A variable shadows a function, as it does any other item.

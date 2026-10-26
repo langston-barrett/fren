@@ -1919,7 +1919,7 @@ comp c {
 
     assume grows: rate(n + 1) > rate(n)
 
-    ensure def: r = rate(n + 1) - rate(n)
+    ensure growth: r = rate(n + 1) - rate(n)
 
     expect positive: r > 0
 }

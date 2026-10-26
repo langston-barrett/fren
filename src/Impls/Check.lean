@@ -210,25 +210,83 @@ def finiteBackend : Fren.Core.Backend Id (Nat → Nat → Bool) Unit where
   samePrimed _ _ _ := true
   subst _ f := f
 
-/-- The verdict of the realizability check of the contract whose
+/-- The result of the realizability check of the contract whose
 preconditions hold at the arguments that `pre` says, and postconditions at
 those and the values that `post` says: on the component that both front
 ends build (`Core.contractComp`), with `finiteBackend`. -/
-def contractVerdict (pre : Nat → Bool) (post : Nat → Nat → Bool) : Verdict :=
+def contractResult (pre : Nat → Bool) (post : Nat → Nat → Bool) : Fren.Core.CheckResult :=
   (Fren.Core.checkRealizable finiteBackend
-    (Fren.Core.contractComp `m `f #[`x] `v #[(`p, fun a _ => pre a)] #[(`q, post)])).run.verdict
+    (Fren.Core.contractComp `m `f #[`x] `v #[(`p, fun a _ => pre a)] #[(`q, post)])).run
+
+/-- Whether a result reports a conflict, and whether contradictory
+assumptions (`Core.messages`). -/
+def reportsConflict (r : Fren.Core.CheckResult) : Bool := r.detail matches .conflict ..
+def reportsVacuous (r : Fren.Core.CheckResult) : Bool := r.detail matches .vacuousAssumptions ..
 
 def argumentOf (a : Nat) : check.Argument := if a == 0 then .A0 else .A1
 def valueOf (v : Nat) : check.Value := if v == 0 then .V0 else .V1
 
+/-- The set of the arguments that `p0` and `p1` say. -/
+def argumentsOf (p0 p1 : Bool) : Fren.FinSet check.Argument :=
+  Fren.FinSet.ofList ((if p0 then [check.Argument.A0] else []) ++ (if p1 then [.A1] else []))
+
+/-- What holds at the argument `a`, from what holds at each. -/
+def pre (p0 p1 : Bool) (a : Nat) : Bool := if a == 0 then p0 else p1
+
+/-- What holds at the argument `a` and the value `v`, from what holds at each. -/
+def post (q00 q01 q10 q11 : Bool) (a v : Nat) : Bool :=
+  if a == 0 then (if v == 0 then q00 else q01) else (if v == 0 then q10 else q11)
+
 -- For every contract over two arguments and two values.
 impl contract_realizability: check::contract_realizability for (p0 p1 q00 q01 q10 q11 : Bool) {
-  pres := Fren.FinSet.ofList ((if p0 then [check.Argument.A0] else []) ++ (if p1 then [.A1] else [])),
+  pres := argumentsOf p0 p1,
   posts := Fren.FinSet.ofList ((if q00 then [{ arg := .A0, value := .V0 : check.Point }] else [])
     ++ (if q01 then [{ arg := .A0, value := .V1 }] else []) ++ (if q10 then [{ arg := .A1, value := .V0 }] else [])
     ++ (if q11 then [{ arg := .A1, value := .V1 }] else [])),
-  verdict := toVerdict (contractVerdict (fun a => if a == 0 then p0 else p1)
-    (fun a v => if a == 0 then (if v == 0 then q00 else q01) else (if v == 0 then q10 else q11))),
+  verdict := toVerdict (contractResult (pre p0 p1) (post q00 q01 q10 q11)).verdict,
+  reports_cex? := reportsConflict (contractResult (pre p0 p1) (post q00 q01 q10 q11)),
+  reports_vacuous? := reportsVacuous (contractResult (pre p0 p1) (post q00 q01 q10 q11)),
+}
+
+/-- The component of the body of a defined function whose preconditions
+hold at the arguments that `pre` says, and its postcondition at those that
+`post` says, as both front ends build it, with `site`, a question about
+an application in it. -/
+def bodyComp (pre post : Nat → Bool) (sites : Array (Fren.Core.TableSite (Nat → Nat → Bool)) := #[]) :
+    Fren.Core.Comp (Nat → Nat → Bool) :=
+  { path := `m, vars := #[{ name := `x, role := .input, isPub := true }], assumes := #[(`f.p, fun a _ => pre a)]
+    reqs := #[], expects := #[], triggers := #[], posts := #[(`f.q, fun a _ => post a)], fn? := some `f, tables := sites }
+
+/-- The result of the precondition check at an application that is
+evaluated at the arguments `guard` says, of a function whose precondition
+holds at those that `pre` says: the question that both front ends build
+(`Core.preconditionQuestions`), asked by the real check. -/
+def preconditionResult (pre guard : Nat → Bool) : Fren.Core.CheckResult :=
+  let guarded (f : Nat → Nat → Bool) (a v : Nat) : Bool := !guard a || f a v
+  let (g, goal) := (Fren.Core.preconditionQuestions guarded `f #[(`p, fun (a _ : Nat) => pre a)])[0]!
+  let site : Fren.Core.TableSite (Nat → Nat → Bool) := { site := { prop := `r, k := 0, place := .prop, goal }, goal := g }
+  (Fren.Core.checkTable finiteBackend (bodyComp (fun _ => true) (fun _ => true)) site).run
+
+/-- The result of the postcondition check of a defined function whose
+preconditions hold at the arguments `pre` says, and postcondition at those
+`post` says, by the real check. -/
+def postconditionResult (pre post : Nat → Bool) : Fren.Core.CheckResult :=
+  (Fren.Core.checkPostcondition finiteBackend (bodyComp pre post) (`f.q, fun a _ => post a)).run
+
+-- For every precondition and guard over two arguments.
+impl precondition_at: check::precondition_at for (p0 p1 g0 g1 : Bool) {
+  pres := argumentsOf p0 p1,
+  guarded := argumentsOf g0 g1,
+  verdict := toVerdict (preconditionResult (pre p0 p1) (pre g0 g1)).verdict,
+  reports_cex? := (preconditionResult (pre p0 p1) (pre g0 g1)).detail matches .counterexample ..,
+}
+
+-- For every precondition and postcondition over two arguments.
+impl postcondition_at: check::postcondition_at for (p0 p1 q0 q1 : Bool) {
+  pres := argumentsOf p0 p1,
+  posts := argumentsOf q0 q1,
+  verdict := toVerdict (postconditionResult (pre p0 p1) (pre q0 q1)).verdict,
+  reports_cex? := (postconditionResult (pre p0 p1) (pre q0 q1)).detail matches .counterexample ..,
 }
 
 -- The two families of verdicts: `expectVerdict` for the checks that prove,
