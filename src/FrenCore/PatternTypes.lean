@@ -266,6 +266,7 @@ def nestedPatternMsg : Msg :=
 /-- A binder `x` in a pattern type's pattern, which binds no names
 (`Reqs/Lang/Types#pattern-types`). -/
 def patternTypeBinderMsg (x : Name) : Msg :=
+  let x := binderName x
   { code? := some "F0370", headline := s!"a pattern type's pattern cannot bind `{x}`"
     label? := some "binds a name"
     notes := #["note: a pattern type's pattern binds no names, and a name here would match every value",
