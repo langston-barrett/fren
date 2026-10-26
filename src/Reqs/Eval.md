@@ -97,8 +97,12 @@ outputs](Lang/Components.md#defined-outputs) whose definitions mention
 only inputs and such outputs, computed from them, then each instance's
 variables, the instance's inputs being its bindings' values, then the
 other outputs. It tries each variable's
-candidates in a random order, and backtracks when a constraint that can
-already be evaluated is false. A variable's candidates are:
+candidates in a random order, and goes back when a constraint that can
+already be evaluated is false (see [Backjumping](#backjumping)). The
+values that the constraints equate a variable with come first. The others,
+its *pool*, are drawn once in each search, random parts included, and
+shuffled again each time the search reaches the variable, in an order
+drawn from the values chosen before it. A variable's candidates are:
 
 - both `Bool`s, and each variant of an enumeration, with a payload built
   from the candidates of its types, to a bounded depth;
@@ -145,6 +149,91 @@ each type, the same for every such table and `match`.
 The search may miss a behaviour that exists, since it tries only some
 values, but every behaviour it reports is genuine: it is a behaviour of the
 component, with the status that the evaluator gives it.
+
+### Backjumping
+
+A search has a *budget*: it tries at most 4000 candidates in all, then
+gives up. A constraint that is already false before the search chooses
+anything stays false, so the search then gives up at once. Otherwise, when
+a variable has no candidate left, the search goes back to the last
+variable that its *conflict set* names, not to the one before it. The
+conflict set holds the earlier variables that the failure of every
+candidate depends on. A variable `j` before the variable that has run out
+is in it if:
+
+- an expression that the variable is equated with reads `j`, since its
+  candidates come from those expressions; or
+- for some candidate, what rejected it reads `j`. That is the constraint
+  that the candidate made false, the first that the search found. If the
+  search found no constraint false but went on to the next variable, it is
+  the conflict set that the search came back with, from there. At the last
+  variable, it is the first constraint that is not true once every
+  variable has a value.
+
+`eval::conflict` states this for one earlier variable. Membership in a
+sequence of unknown length is outside the [decidable
+core](Lang/Decidability.md), so the component opts out:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp conflict {
+    in position: Int            -- the variable's position among those the search chooses
+    in earlier: Int             -- another variable's position
+    in equated?                 -- an expression that the variable is equated with reads `earlier`
+    in rejections: Seq(Bool)    -- for each candidate tried, whether what rejected it reads `earlier`
+    pub det out member?         -- `earlier` is in the variable's conflict set
+
+    ensure rule: member? iff (0 <= earlier < position and (equated? or true in rejections))
+
+    expect earlier_only: when earlier >= position, not member?
+    expect unread: when not equated? and not (true in rejections), not member?
+}
+```
+
+The search resumes at the last variable of the conflict set, with its
+next candidate, and adds the rest of the conflict set to that variable's
+own. It goes back past the variables after that one without trying their
+other candidates, since no value of theirs changes what rejected each
+candidate. If the conflict set is empty, the search fails. `eval::backjump`
+states where it resumes:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp backjump {
+    in conflict: Seq(Bool)   -- for each earlier variable, in order, whether it is in the conflict set
+    in k: Int                -- an earlier variable's position
+    pub det out resumes?     -- the search resumes at `k`
+
+    ensure rule: resumes? iff (0 <= k < conflict.len and conflict[k] and not (true in conflict.slice(k + 1, conflict.len)))
+
+    expect members_only: when resumes?, 0 <= k and conflict[k]
+    expect empty_fails: when not (true in conflict), not resumes?
+}
+```
+
+So a search tries the candidates that going back one variable at a time,
+*backtracking*, would try over the same candidates, in the same order, but
+for those of the variables it goes back past. None of those leads to a
+behaviour, so it finds what backtracking finds. Both draw the same random
+numbers, so the tests after it are the same too. It may find more, since
+it reaches candidates that backtracking would have run out of budget
+before. `eval::backjumping` states this:
+
+```fren
+pub comp backjumping {
+    in by_backtracking?          -- backtracking over the same candidates finds a behaviour within the budget
+    in exhausted?                -- backtracking tries every candidate within the budget, and finds none
+    in backtracking_steps: Nat   -- the candidates that backtracking tries
+    pub out found?               -- the search finds a behaviour
+    pub out same?                -- it is the behaviour that backtracking finds
+    pub out steps: Nat           -- the candidates that the search tries
+
+    assume one_outcome: not (by_backtracking? and exhausted?)
+
+    ensure finds: when by_backtracking?, found? and same? and steps <= backtracking_steps
+    ensure fails: when exhausted?, not found? and steps <= backtracking_steps
+}
+```
 
 ## `fren eval`
 

@@ -1,4 +1,4 @@
-warning[F0609]: testing found no outputs of `c` for the input x = 0
+warning[F0609]: testing found no outputs of `c` for the input x = -1
  --> test/cli/results/f0609_no_outputs.fren:2:6
   |
 2 | comp c {
