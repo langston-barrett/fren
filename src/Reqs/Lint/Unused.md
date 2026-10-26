@@ -142,9 +142,10 @@ The message is reported at the item's name, at the end of the file.
 
 `unused_assumption` reports an assumption of a component that mentions
 only inputs, one or more, none of them used. An input is *used* when
-something mentions it: a requirement, expectation, definition, or binding
-of one of the component's instances; a global expectation in the same
-file that reads it through an instance of the component, as `a.x` with
+something mentions it: a constraint other than an assumption, cover goals
+among them, as for an [unused variable](#unused-variables); a definition;
+a binding of one of the component's instances; a global expectation in
+the same file that reads it through an instance of the component, as `a.x` with
 the binder `a`; an [instance](../Lang/Instances.md) of the component in
 the same file, which binds each of its inputs, and whose assumption check
 checks the assumption; or a [refinement](../Lang/Refinement.md) in the
