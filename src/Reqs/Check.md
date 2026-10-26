@@ -78,7 +78,10 @@ model of the hypotheses in which the goal is false (`Sat`), or gives no
 answer (`Unknown`). A timeout, a crash, an unparseable response, and a goal
 that cannot be translated for the solver are all `Unknown`. The time limit
 for each query is set by the `fren.timeout` option in Lean, or `--timeout`
-for the `fren` command; the default is 10 seconds.
+for the `fren` command; the default is 10 seconds. A limit on the solver's
+work, which unlike a time limit does not depend on the machine's load, is
+set by `fren.resourceLimit` or `--resource-limit`; by default there is
+none (see [Limits](Cli.md#limits)).
 
 From the solver's outcomes, each check reaches a verdict: `Pass`, `Fail` or
 `Inconclusive`. An `Unknown` outcome never leads to `Pass`. Results are

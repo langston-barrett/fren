@@ -1,0 +1,40 @@
+error[F0603]: expectation `a::positive` does not hold
+ --> test/cli/results/jobs.fren:8:12
+  |
+8 |     expect positive: y > 0
+  |            ^^^^^^^^ does not follow from the guarantees
+  |
+  = counterexample: x = 0, y = 0
+  = help: strengthen the guarantees so that it follows, or correct the expectation
+
+error[F0607]: `b::y` is not determined by the inputs: for the input x = -1, it can be -1 or 0
+  --> test/cli/results/jobs.fren:13:17
+   |
+13 |     pub det out y: Int
+   |                 ^ not determined
+   |
+   = note: a `det out` must have exactly one value for each input
+   = help: add guarantees that pin it down, or remove `det`
+
+note: cover goal `c::equal` is met
+  --> test/cli/results/jobs.fren:23:11
+   |
+23 |     cover equal: y = 0
+   |           ^^^^^ met
+   |
+   = witness: x = -1, y = 0
+
+error[F0602]: the assumptions of `d` are unsatisfiable: `small`, `big` contradict each other
+  --> test/cli/results/jobs.fren:26:6
+   |
+26 | comp d {
+   |      ^ no input satisfies its assumptions
+   |
+   = note: every guarantee would hold vacuously
+   = help: weaken or remove one of them
+
+fren: 9 passed, 3 failed, 0 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0602, F0603, F0607.
+For more information about an error, try `fren --explain F0602`.
+exit=1

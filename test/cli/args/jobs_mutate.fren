@@ -1,0 +1,2 @@
+-- `--jobs` is an option of `fren check` only.
+--@ args: mutate --jobs 2

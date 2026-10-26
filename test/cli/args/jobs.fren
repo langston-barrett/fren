@@ -1,0 +1,2 @@
+-- Too few jobs.
+--@ args: check --jobs 0

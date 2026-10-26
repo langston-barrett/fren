@@ -49,7 +49,8 @@ Set with `set_option`:
 
 | Option | Type | Default | Effect |
 |---|---|---|---|
-| `fren.timeout` | `Nat` | `10` | time limit in seconds for each solver query |
+| `fren.timeout` | `Nat` | `10` | time limit in seconds for each solver query; 0 means none |
+| `fren.resourceLimit` | `Nat` | `0` | limit on the solver's work for each query, in cvc5's resource units; 0 means none (see [Limits](Cli.md#limits)) |
 | `fren.requireEvidence` | `String` | `""` | warn about components with weaker evidence than this (see [Traceability](Trace.md)) |
 | `fren.testGlobs` | `String` | `""` | space-separated globs of tests that `#fren_trace` scans for `fren-covers:` markers (see [Traceability](Trace.md)) |
 | `fren.lint.LINT` | `String` | the lint's | the level of the [lint](Lint.md) `LINT`: `"allow"`, `"expect"`, `"warn"`, `"deny"` or `"forbid"` |

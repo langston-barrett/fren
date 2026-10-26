@@ -28,6 +28,18 @@ register_option fren.timeout : Nat := {
   descr := "time limit in seconds for each SMT query made by Fren"
 }
 
+register_option fren.resourceLimit : Nat := {
+  defValue := 0
+  descr := "limit on cvc5's work for each SMT query made by Fren, in its resource units; 0 means none"
+}
+
+/-- The cvc5 option that sets `fren.resourceLimit`, unless it is 0, as
+`fren check --resource-limit` sets it (`Reqs/Cli#limits`). -/
+def resourceLimitOptions (opts : Options) : List (String × String) :=
+  match fren.resourceLimit.get opts with
+  | 0 => []
+  | n => [("rlimit-per", toString n)]
+
 /-- Values for `Bool` variables come back as `True`/`False`. -/
 def fromModel (ty : Expr) (val : Expr) : Expr :=
   if ty.isConstOf ``Bool then
@@ -163,7 +175,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         let mv ← mkFreshExprMVar goal
         -- The options of a spec that uses strings and sets, as in the binary (`cli::logic`).
         match ← Smt.smt { trust := true, model, timeout := some timeout
-                          extraSolverOptions := Core.solverOptions true true ++ logic }
+                          extraSolverOptions := Core.solverOptions true true ++ logic ++ resourceLimitOptions (← getOptions) }
                   mv.mvarId! hs with
         | .sat (some m) =>
           return .sat <| m.values.filterMap fun (k, v) =>

@@ -2,7 +2,7 @@
 
 ```
 fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--sample N] [--seed N] [--list]
-    [--timeout SECONDS] [--tests N] [-A|-W|-D|-F LINT]... FILE...
+    [--timeout SECONDS] [--resource-limit N] [--tests N] [-A|-W|-D|-F LINT]... FILE...
 ```
 
 `fren mutate` makes small changes to a spec's constraints and definitions,
@@ -196,7 +196,7 @@ pub comp outcome {
 ### Choosing the checker
 
 `--by solver`, the default, checks mutants with the solver, as `fren
-check` does, with `--timeout` for each query. A query of a mutant that is
+check` does, with `--timeout` and `--resource-limit` for each query. A query of a mutant that is
 also a query of the spec, or of an earlier mutant, word for word, such as
 the consistency of assumptions that the mutant leaves alone, gets the
 answer that it got first, without the solver
