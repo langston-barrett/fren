@@ -6,45 +6,62 @@ comparison](../../Lang/Expressions.md#chained-comparisons) more clearly.
 
 ## Pattern tests
 
-A [pattern test](../../Lang/Expressions.md#pattern-tests), `e is P`, is for
-the [patterns](../../Lang/Patterns.md) that `=` and `in` cannot write:
-those with a payload, ranges and nested patterns. `is_equality` fires on
-`e is P` where each alternative of `P` is a variant without a payload,
-`true`, `false`, a string literal or an integer literal, and is fixable:
-`x is E::A` becomes `x = E::A`, `n is 0 | 1` becomes `n in {0, 1}`, and `x
-is E::A | E::B` becomes `x in {E::A, E::B}`, with each alternative written
-as `P` writes it. A range of one value, such as `3..=3`, and a literal
-written otherwise than its value, such as `0x10`, are left as they are,
-as is a pattern with any other alternative, such as `x is E::A | E::B(_)`
-or `n is 0 | 5..`. It does not fire where
+A [pattern test](../../Lang/Expressions.md#pattern-tests), `e is P`, is how
+Fren tests a value against several alternatives, as in `status is 429 |
+503`. It writes them in the syntax of a [pattern
+type](../../Lang/Types.md#pattern-types), as in `type Status := Nat is
+100..=599`, and a range or a payload extends it without rewriting, as in
+`status is 429 | 500..=599`. Its meaning is a disjunction of equations
+and comparisons, which the solver decides without the theory of sets that
+a membership such as `status in {429, 503}` brings in. So a test of one
+value is an equation, and a test of several is a pattern test:
+[`manual_pattern_test`](#pattern-tests-written-out) writes a disjunction of
+equations as one.
+
+`is_equality` fires on `e is P` where `P` is one alternative, a variant
+without a payload, `true`, `false`, a string literal or an integer literal,
+and is fixable: `x is E::A` becomes `x = E::A`, and `n is -1` becomes `n =
+-1`, with the alternative written as `P` writes it. A pattern of two or more
+alternatives, as in `x is E::A | E::B` or `n is 0 | 1`, is left as it is,
+and so is a range of one value, such as `3..=3`, a literal written otherwise
+than its value, such as `0x10`, and a pattern with a payload, such as `x is
+E::B(_)`. It does not fire where
 [`irrefutable_is`](../Suspicious.md#pattern-tests) does, since the test is
 then always `true`, however it is written. `e` keeps its text, in
-parentheses where [fixes need them](../../Lint.md#parentheses-in-fixes);
-an equation and a membership bind as a pattern test does, as comparisons,
-so the fix needs no parentheses that the test does not. `not x is E::A`
-becomes `not x = E::A`, and `b? is true` becomes `b? = true`, which
+parentheses where [fixes need them](../../Lint.md#parentheses-in-fixes); an
+equation binds as a pattern test does, as a comparison, so the fix needs no
+parentheses that the test does not. `not x is E::A` becomes `not x =
+E::A`, and `b? is true` becomes `b? = true`, which
 [`nonminimal_bool`](../Complexity.md#simpler-bool-expressions) then fixes
-to `x != E::A` and `b?`. `e` is evaluated where it was, and the
-alternatives guard nothing, so the fix keeps the guards.
+to `x != E::A` and `b?`. A variant without a payload, or a literal, matches
+its own value alone, so the equation holds exactly where the test does.
+`e` is evaluated where it was, and the alternative guards nothing, so the
+fix keeps the guards.
 [`match_like_membership`](../Style.md#matches-that-are-memberships)
-writes a pattern test only where this lint would not fire on it.
+writes a pattern test only where this lint would not fire on it, and
+`manual_pattern_test` writes one of two or more alternatives, so the lints
+never undo each other.
 
 Clippy's nearest lint, `equatable_if_let`, is in its `nursery` group, but
-that group is about a lint's maturity rather than a judgment of style.
+that group is about a lint's maturity rather than a judgment of style. It
+too rewrites only a pattern of one alternative, `if let A = x` as `if x ==
+A`: Clippy never suggests `[A, B].contains(&x)` for `matches!(x, A | B)`.
 `style`, and so `warn`, fits here: there should be one way to write each
-test, and Fren's other lints already write tests of variants without a
-payload with `=` and `in` (`membership_chain`, `match_like_membership`).
+test, and Fren's other lints already write a test of one value with `=`.
 `lint::is_equality` states when it fires:
 
 ```fren
 pub mod lint
 
 pub comp is_equality {
-    in equatable?        -- each alternative of the pattern is a variant without a payload or a literal
-    in irrefutable?      -- `irrefutable_is` fires on the test
+    in n_alternatives: Nat   -- the alternatives of the pattern
+    in equatable?            -- each is a variant without a payload or a literal
+    in irrefutable?          -- `irrefutable_is` fires on the test
     pub det out fires?
 
-    ensure rule: fires? iff (equatable? and not irrefutable?)
+    ensure rule: fires? iff (n_alternatives = 1 and equatable? and not irrefutable?)
+
+    expect several_stay: when n_alternatives >= 2, not fires?
 }
 ```
 
@@ -80,7 +97,7 @@ pub comp membership_test_fixed {
     pub det out shaded? := s != Shade::Light
     pub det out light? := s = Shade::Light
     pub det out untinted? := not s is Shade::Tinted(_)
-    pub det out small? := n in {0, 1}
+    pub det out small? := n is 0 | 1
     pub det out digit? := n is 0..=9
     pub det out clear? := s is Shade::Tinted(0)
     pub det out positive? := not n is ..=0
@@ -99,9 +116,8 @@ pub comp is_equality_written {
     in n: Int
     in b?
     pub det out light? := s is Shade::Light
-    pub det out plain? := s is Shade::Light | Shade::Dark
     pub det out dark? := not s is Shade::Dark
-    pub det out small? := n is 0 | 1
+    pub det out zero? := n is 0
     pub det out negative? := n is -1
     pub det out set? := b? is true
 }
@@ -112,15 +128,233 @@ pub comp is_equality_fixed {
     in n: Int
     in b?
     pub det out light? := s = Shade::Light
-    pub det out plain? := s in {Shade::Light, Shade::Dark}
     pub det out dark? := not s = Shade::Dark
-    pub det out small? := n in {0, 1}
+    pub det out zero? := n = 0
     pub det out negative? := n = -1
     pub det out set? := b? = true
 }
 
 refine is_equality_sound: is_equality_fixed refines is_equality_written
 refine is_equality_complete: is_equality_written refines is_equality_fixed
+```
+
+## Pattern tests written out
+
+`manual_pattern_test` fires on a run of two or more adjacent operands of
+`or`, each an equation of one expression with a value that a pattern
+writes, and is fixable: `x = a or x = b` becomes the [pattern
+test](../../Lang/Expressions.md#pattern-tests) `x is a | b`. On its De
+Morgan dual, a run of `and` of disequations, `x != a and x != b`, the fix
+is `not x is a | b`. A value that a pattern writes is an integer literal in
+decimal, possibly negated, a string literal without escape sequences, or a
+variant without a payload: `status = 429 or status = 503` becomes `status is
+429 | 503`, and `s = Shade::Light or s = Shade::Dark` becomes `s is
+Shade::Light | Shade::Dark`. Either operand of an equation may be the value,
+so `429 = status` is read as `status = 429`, and the other operand, the
+expression tested, is [written the same](../../Lint.md#written-the-same) in
+each equation of the run. A variable, a constant or a computed value is not
+such a value, and neither are `true` and `false`, whose equations
+[`bool_equality`](../Pedantic.md#boolean-equality) reports, nor a negative
+literal where the operands are `Nat`s, as an alternative that never matches
+is an error (`F0318`).
+
+A pattern test of the same expression in the run, or for `and` its
+negation, joins it, and its alternatives join the fix, in order: `status =
+429 or status is 500..=599` becomes `status is 429 | 500..=599`, and `n !=
+0 and not n is 10..` becomes `not n is 0 | 10..`. Such a test is read where
+each of its alternatives is an integer literal, a range whose bounds are
+integer literals, a string literal, or a variant, with a payload or
+without, whatever its payload's patterns are, as in
+`Shade::Tinted(1..=3)`; one with `_`, `true`, `false` or a constant as a
+bound is not read. A run has at least one equation: one of pattern tests
+alone is left as it is. Each alternative of a pattern must be reachable (`F0318`), so the lint
+fires only where each two alternatives of the fix are *disjoint*, as far as
+their text shows: two ranges of integers, a literal being a range of one,
+that share no integer, two string literals written differently, or two
+variants of different names, which a pattern of one type never names twice
+otherwise. So `x = 1 or x = 1` and `x is 0..=9 or x = 5` are left as they
+are.
+
+The run of `or`, or of `and`, is read as
+[`chainable_comparison`](#chained-comparisons) reads a run of `and`, through
+each left operand that is an `or` not in parentheses, and an operand may be
+in parentheses itself, as in `(x = 1) or (x = 2)`. Other operands may come
+before and after it: `p? or x = 1 or x = 2 or q?` fires at `x = 1 or x = 2`,
+and becomes `p? or x is 1 | 2 or q?`. Each longest run of adjacent operands
+of one expression is one message, reported from its first operand to its
+last, and there is no fix where a comment is within them, which the pattern
+test would lose; the message then suggests the test. The expression is
+written as its first operand writes it, in parentheses where [fixes need
+them](../../Lint.md#parentheses-in-fixes), and each alternative as the
+operands write it. Where the whole run is in parentheses as an operand of
+an operator, and the test needs none there, they go with it: `q != [] and
+(q[0] = 1 or q[0] = 2)` becomes `q != [] and q[0] is 1 | 2`. Elsewhere they
+stay, since they may belong to what the run is in, or be needed by what
+follows it: `match (x = 1 or x = 2) { ... }` becomes `match (x is 1 | 2) {
+... }`, as a scrutinee's `{` would otherwise follow the pattern, and `f(x
+= 1 or x = 2)` becomes `f(x is 1 | 2)`.
+
+It does not fire within a chain that
+[`membership_chain`](../Pedantic.md#membership-chains) reads: three or more
+equations, or disequations, of one expression on their left, through
+parentheses, with a value that a pattern does not write, such as `x = 1 or
+x = 2 or x = q`, which that lint writes as `x in {1, 2, q}`. This holds
+whatever that lint's level, and where a later value indexes a sequence, on
+which that lint does not fire either. Where every value is one that a
+pattern writes, this lint reports the chain and `membership_chain` does
+not, so the two never fire on the same chain.
+
+The fix keeps the meaning: a literal or a variant without a payload, as a
+pattern, matches its own value alone, so `x = a` holds exactly where the
+pattern `a` matches `x`, and an or-pattern matches where one of its
+alternatives does, so `x is a | b` holds exactly where `x = a or x = b`
+does, and where `x = a or x is P` does; the dual is the negation of the
+same, by De Morgan's law. It keeps the guards (see
+[Expressions](../../Lang/Expressions.md#sequences)): in the run, each
+operand is guarded by those before it, so `x = b` is evaluated only where
+`x = a` is `false`, and the fix evaluates `x` once, where the first operand
+did, under the guards of the operands before the run, as the run's first
+operand was. The values and the alternatives are literals and variants,
+which are defined everywhere. The expression itself may index a sequence,
+as in `q[0] = 1 or q[0] = 2`: it is written the same in each operand, so a
+later copy is defined exactly where the first is, and gives no obligation
+that the first does not, so evaluating it once changes neither where the
+test is defined nor its meaning. So, unlike `membership_chain`, which
+evaluates each value where the chain is, the lint fires whatever the
+expression and its operands before the run index.
+
+Clippy's nearest lint, `manual_pattern_char_comparison`, is in `style`: it
+writes `c == 'a' || c == 'b'` as the pattern `['a', 'b']`. A Fren pattern
+test is Rust's `matches!(x, A | B)`, and Clippy never pushes it toward a
+membership such as `[A, B].contains(&x)`. This lint is in `style` too, and
+`warn`: there should be one way to write each test, and a pattern test is
+the one that ranges and payloads extend.
+
+`lint::manual_pattern_test` models the run by its alternatives, in order,
+each a range of integers between two bounds, a string literal by its text,
+or a variant by its name, and states when it fires. `lint::alts_disjoint?`
+is the test of two alternatives, and `lint::disjoint_alternatives` states
+that two disjoint alternatives match no value in common, for every value:
+
+```fren
+-- A bound of a range of integers, `Open` where there is none.
+pub enum Bound { Open, At(Int) }
+
+-- An alternative: the integers between two bounds, as `Ints(At(k), At(k))`
+-- for the literal `k`, a string literal, or a variant, by its name.
+pub enum Alt { Ints(Bound, Bound), Text(String), Variant(String) }
+
+-- A value an alternative may match: an integer, a string, or a variant.
+pub enum Value { Number(Int), Word(String), Named(String) }
+
+-- A position in the alternatives of a run.
+pub type AltPosition := Int is 0..=7
+
+-- No integer is at most `hi` and at least `lo`.
+fn bound_below?(hi: Bound, lo: Bound) := match hi {
+    Bound::At(h) => match lo { Bound::At(l) => h < l, Bound::Open => false },
+    Bound::Open => false,
+}
+
+-- The alternatives match no value in common, as their text shows.
+fn alts_disjoint?(a: Alt, b: Alt) := match a {
+    Alt::Ints(l1, h1) => match b { Alt::Ints(l2, h2) => bound_below?(h1, l2) or bound_below?(h2, l1), _ => false },
+    Alt::Text(s) => match b { Alt::Text(t) => s != t and not s.contains?("\\") and not t.contains?("\\"), _ => false },
+    Alt::Variant(v) => match b { Alt::Variant(w) => v != w, _ => false },
+}
+
+-- `v` is at least `lo` and at most `hi`.
+fn bound_within?(lo: Bound, hi: Bound, v: Int) :=
+    (match lo { Bound::At(l) => l <= v, Bound::Open => true })
+    and (match hi { Bound::At(h) => v <= h, Bound::Open => true })
+
+-- The alternative matches the value, where a string literal's text is its
+-- value, as it is without escape sequences.
+fn alt_matches?(a: Alt, v: Value) := match a {
+    Alt::Ints(lo, hi) => match v { Value::Number(k) => bound_within?(lo, hi, k), _ => false },
+    Alt::Text(s) => match v { Value::Word(w) => s = w, _ => false },
+    Alt::Variant(n) => match v { Value::Named(m) => n = m, _ => false },
+}
+
+pub comp disjoint_alternatives {
+    in a: Alt
+    in b: Alt
+    in v: Value
+
+    expect apart: when alts_disjoint?(a, b), not (alt_matches?(a, v) and alt_matches?(b, v))
+    expect symmetric: alts_disjoint?(a, b) iff alts_disjoint?(b, a)
+}
+
+pub comp manual_pattern_test {
+    in alts: Seq(Alt)        -- the alternatives of the fix, in order: each equation's value, and each test's alternatives
+    in n_operands: Nat       -- the operands of the run
+    in n_equations: Nat      -- those that are equations, or disequations for `and`
+    in chain?                -- `membership_chain` reads the chain the run is in
+    pub det out fires?
+
+    -- The model's quantifiers range over the positions of eight alternatives.
+    assume short: alts.len <= 8
+
+    ensure rule: fires? iff (n_operands >= 2 and n_equations >= 1 and not chain?
+        and (forall (i: AltPosition) (j: AltPosition), when i < j < alts.len, alts_disjoint?(alts[i], alts[j])))
+
+    expect repeated: when alts = [Alt::Variant("A"), Alt::Variant("A")], not fires?
+    expect overlapping: when alts = [Alt::Ints(Bound::At(0), Bound::At(9)), Alt::Ints(Bound::At(5), Bound::At(5))], not fires?
+}
+```
+
+`lint::manual_pattern_test_keeps_meaning` states the fix as laws (see
+[Fixing lints](../../Lint.md#fixing-lints)), of an integer, with the value
+on either side, with a range, within a longer run, and of the dual:
+
+```fren
+set_option fren.lint.manual_pattern_test "expect" in
+pub comp manual_pattern_test_keeps_meaning {
+    in x: Int
+    in p?
+
+    expect two: (x = 429 or x = 503) iff x is 429 | 503
+    expect reversed: (429 = x or x = 503) iff x is 429 | 503
+    expect range: (x = 429 or x is 500..=599) iff x is 429 | 500..=599
+    expect within: (p? or x = 1 or x = 2) iff (p? or x is 1 | 2)
+    expect dual: (x != 429 and x != 503) iff not x is 429 | 503
+    expect dual_range: (x != 0 and not x is 10..) iff not x is 0 | 10..
+}
+```
+
+The refinements check the fixes of a variant, a string, a negative literal,
+and an expression that indexes a sequence:
+
+```fren
+set_option fren.lint.manual_pattern_test "allow" in
+pub comp manual_pattern_test_written {
+    in s: Shade
+    in n: Int
+    in t: String
+    in q: Seq(Int)
+    pub det out plain? := s = Shade::Light or s = Shade::Dark
+    pub det out tinted? := s = Shade::Light or s is Shade::Tinted(_)
+    pub det out dim? := s is Shade::Tinted(1..=3) or s = Shade::Dark
+    pub det out word? := t = "a" or "b" = t
+    pub det out sign? := n = -1 or n = 1
+    pub det out first? := q != [] and (q[0] = 1 or q[0] = 2)
+}
+
+pub comp manual_pattern_test_fixed {
+    in s: Shade
+    in n: Int
+    in t: String
+    in q: Seq(Int)
+    pub det out plain? := s is Shade::Light | Shade::Dark
+    pub det out tinted? := s is Shade::Light | Shade::Tinted(_)
+    pub det out dim? := s is Shade::Tinted(1..=3) | Shade::Dark
+    pub det out word? := t is "a" | "b"
+    pub det out sign? := n is -1 | 1
+    pub det out first? := q != [] and q[0] is 1 | 2
+}
+
+refine manual_pattern_test_sound: manual_pattern_test_fixed refines manual_pattern_test_written
+refine manual_pattern_test_complete: manual_pattern_test_written refines manual_pattern_test_fixed
 ```
 
 ## Chained comparisons

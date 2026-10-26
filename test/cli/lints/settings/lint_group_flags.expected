@@ -1,3 +1,18 @@
+warning[F0805]: this says that `e` matches one of these patterns
+  --> test/cli/lints/settings/lint_group_flags.fren:10:23
+   |
+10 |     ensure r: p? iff (e = E::A or e = E::B or e = E::C)
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ equations of one expression with values that patterns write
+   |
+   = help: `fren fix` can fix this
+   = note: `manual_pattern_test` is `warn` by default
+   = help: to allow it, `set_option fren.lint.manual_pattern_test "allow"`
+help: write `e is E::A | E::B | E::C`
+   |
+10 -     ensure r: p? iff (e = E::A or e = E::B or e = E::C)
+10 +     ensure r: p? iff e is E::A | E::B | E::C
+   |
+
 warning[F0720]: `r` could be the definition of `p?`
  --> test/cli/lints/settings/lint_group_flags.fren:8:13
   |
@@ -9,5 +24,6 @@ warning[F0720]: `r` could be the definition of `p?`
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
 
-For more information about this error, try `fren --explain F0720`.
+Some errors have detailed explanations: F0720, F0805.
+For more information about an error, try `fren --explain F0720`.
 exit=3

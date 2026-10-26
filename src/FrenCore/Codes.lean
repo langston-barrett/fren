@@ -3642,15 +3642,20 @@ Example:
 ```fren
 set_option fren.lint.membership_chain "warn"
 
-comp c { in x: Int pub out p? ensure r: p? iff (x = 1 or x = 2 or x = 3) }
+comp c { in x: Int in y: Int pub out p? ensure r: p? iff (x = 1 or x = 2 or x = y) }
 ```
 
 The chain is a membership in a set literal, and `x != 1 and x != 2 and x
-!= 3` is `not x in {1, 2, 3}`. `fren fix` can fix this:
+!= y` is `not x in {1, 2, y}`. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x in {1, 2, 3} }
+comp c { in x: Int in y: Int pub out p? ensure r: p? iff x in {1, 2, y} }
 ```
+
+Where every value is one that a pattern writes, a literal or a variant
+without a payload, the chain is a pattern test written out, which
+`manual_pattern_test` (`F0805`) reports instead: `x = 1 or x = 2 or x = 3`
+is `x is 1 | 2 | 3`.
 "# },
   { code := "F0719", explanation := r#"A defined output whose definition mentions no variable (a warning, `constant_output`).
 
@@ -3791,16 +3796,17 @@ comp c { in e: E pub out p? ensure r: p? iff match e { E::A => true, E::B => tru
 ```
 
 The `match` says whether its scrutinee is one of the variants whose arms
-are `true`, which a membership says directly. `fren fix` can fix this:
+are `true`, which a pattern test says directly. `fren fix` can fix this:
 
 ```fren
 enum E { A, B, C }
 
-comp c { in e: E pub out p? ensure r: p? iff e in {E::A, E::B} }
+comp c { in e: E pub out p? ensure r: p? iff e is E::A | E::B }
 ```
 
 Where most variants are `true`, or the `_` arm is, the fix is a negated
-membership of those that are `false`, such as `e != E::C`.
+test of those that are `false`, such as `e != E::C`, an equation for one
+variant.
 "# },
   { code := "F0728", explanation := r#"A `_` arm that matches only one variant (`wildcard_single_variant`, allowed by default).
 
@@ -5197,33 +5203,54 @@ enum Fan {
 }
 ```
 "# },
-  { code := "F0802", explanation := r#"A pattern test that names only variants without a payload (a warning, `is_equality`).
+  { code := "F0802", explanation := r#"A pattern test of one variant without a payload, or of one literal (a warning, `is_equality`).
 
 Example:
 
 ```fren
 enum E { A, B, C(Int) }
 
-comp c { in e: E pub out p? ensure r: p? iff e is E::A | E::B }
+comp c { in e: E pub out p? ensure r: p? iff e is E::A }
 ```
 
-`=` and `in` compare with values, and `is` is for the patterns they cannot
-write, those with a payload. `fren fix` can fix this:
+`=` compares with one value, and `is` tests against several, and against
+the patterns that `=` cannot write, those with a payload and ranges.
+`fren fix` can fix this:
 
 ```fren
 enum E { A, B, C(Int) }
 
-comp c { in e: E pub out p? ensure r: p? iff e in {E::A, E::B} }
+comp c { in e: E pub out p? ensure r: p? iff e = E::A }
 ```
 
-A test of one variant becomes an equation, `e = E::A`. A pattern with a
-payload stays a test:
+A test of several values, or of a pattern with a payload, stays a test:
 
 ```fren
 enum E { A, B, C(Int) }
 
 comp c { in e: E pub out p? ensure r: p? iff e is E::A | E::C(_) }
 ```
+"# },
+  { code := "F0805", explanation := r#"Equations of one expression with values that patterns write, joined by `or` (a warning, `manual_pattern_test`).
+
+Example:
+
+```fren
+comp c { in status: Int pub out retry? ensure r: retry? iff status = 429 or status = 503 }
+```
+
+A pattern test says that `status` is one of these values directly, and
+extends to a range as it is, as in `status is 429 | 500..=599`. Each value
+is an integer literal, a string literal or a variant without a payload.
+`fren fix` can fix this:
+
+```fren
+comp c { in status: Int pub out retry? ensure r: retry? iff status is 429 | 503 }
+```
+
+A pattern test of the same expression joins the test, and the dual, `x !=
+a and x != b`, becomes `not x is a | b`. A value that a pattern does not
+write, such as a variable, is left to a membership: `x = a or x = y` stays.
 "# },
   { code := "F0803", explanation := r#"A pattern test that is always `true` (a warning, `irrefutable_is`).
 

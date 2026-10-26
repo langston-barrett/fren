@@ -333,16 +333,18 @@ literals `true` and `false`, each at least once, and whose patterns bind
 no name. It says whether `x` is one of the values whose arms are `true`.
 If no `_` arm is `true`, and there is a `_` arm or no more alternatives are
 `true` than `false`, the fix tests for the alternatives whose arms are
-`true`; otherwise, for those whose arms are `false`, negated. Where each of
-those alternatives is a variant without a payload or a literal, as
-[`is_equality`](Style/Comparisons.md#pattern-tests) asks, the fix is `x in
-{E::A, E::B}`, or `x = E::A` for one, or `not x in {...}` and `x !=
-E::A`, negated. Otherwise it is a [pattern
+`true`; otherwise, for those whose arms are `false`, negated. Where that is
+one alternative, a variant without a payload or a literal, as
+[`is_equality`](Style/Comparisons.md#pattern-tests) asks, the fix is the
+equation `x = E::A`, or `x != E::A`, negated. Otherwise it is a [pattern
 test](../Lang/Expressions.md#pattern-tests) of those alternatives, `x is
-E::A(_) | E::B`, or `not x is ...`, so the two lints never undo each
-other. This is Clippy's `match_like_matches_macro`, also in `style`, and
-its `redundant_pattern_matching`: `match s { Shape::Circle(_) => true, _
-=> false }` becomes `s is Shape::Circle(_)`.
+E::A | E::B` or `x is E::A(_) | E::B`, or `not x is ...`, negated, so the
+two lints never undo each other: a test of several values is a pattern
+test, not a membership, as
+[`manual_pattern_test`](Style/Comparisons.md#pattern-tests-written-out)
+also writes it. This is Clippy's `match_like_matches_macro`, also in
+`style`, and its `redundant_pattern_matching`: `match s { Shape::Circle(_)
+=> true, _ => false }` becomes `s is Shape::Circle(_)`.
 
 An arm is matched only where no earlier arm matches, so the alternatives
 of one body stand for the values they match only if no arm of the other
@@ -382,13 +384,14 @@ pub comp match_like_membership {
     in n_false: Nat      -- and of arms whose body is `false`
     pub det out fires?
     pub det out negated?  -- the fix is negated, of the `false` alternatives
-    pub det out pattern_test?  -- the fix is a pattern test, rather than a comparison
+    pub det out pattern_test?  -- the fix is a pattern test, rather than an equation
 
     ensure negated: negated? iff (if wildcard? then wildcard_true? else if disjoint? then n_true > n_false else false_first?)
     ensure rule: fires? iff (bool_bodies? and not binds? and (disjoint? or (if negated? then false_first? else true_first?)))
-    ensure test: pattern_test? iff not (if negated? then equatable_false? else equatable_true?)
+    ensure test: pattern_test? iff not (if negated? then equatable_false? and n_false = 1 else equatable_true? and n_true = 1)
 
     expect fewer_listed: when not wildcard? and disjoint? and negated?, n_false < n_true
+    expect several_tested: when not negated? and n_true >= 2, pattern_test?
 }
 ```
 

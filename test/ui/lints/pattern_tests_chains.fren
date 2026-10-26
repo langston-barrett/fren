@@ -18,8 +18,8 @@ comp tests {
     pub out k: Int
 
     ensure r1: a? iff s is Shade::Light         --~ warning: this pattern test is an equation
-    ensure r2: b? iff s is Shade::Light | Shade::Dark  --~ warning: this pattern test is a membership
-    -- A payload stays a test.
+    -- Several variants, and a payload, stay a test.
+    ensure r2: b? iff s is Shade::Light | Shade::Dark
     ensure r3: c? iff s is Shade::Tinted(_)
     ensure r4: d? iff s is Shade::Light | Shade::Tinted(_)
     ensure r5: e? iff s is _                    --~ warning: this pattern test is always `true`
@@ -101,7 +101,7 @@ comp patterns {
     pub out m?
     pub out o?
 
-    ensure r1: a? iff n is 0 | 1                --~ warning: this pattern test is a membership
+    ensure r1: a? iff n is 0 | 1
     ensure r2: c? iff b? is true                --~ warning: this pattern test is an equation
     -- Ranges, a literal written otherwise than its value, and nested patterns stay tests.
     ensure r3: d? iff n is 0..=9
@@ -109,7 +109,7 @@ comp patterns {
     ensure r5: f? iff s is Shade::Tinted(0)
     ensure r6: g? iff n is ..=0 | 1..           --~ warning: this pattern test is always `true`
     ensure r7: h? iff b? is true | false        --~ warning: this pattern test is always `true`
-    -- A `match` of literals is a membership, and one of ranges or nested patterns a test.
+    -- A `match` of literals, ranges or nested patterns is a test.
     ensure r8: j? iff match n { 0 | 1 => true, _ => false }
     --~^ warning: this `match` only tests which of its patterns its scrutinee matches
     ensure r9: k? iff match n { 0..=9 => true, _ => false }

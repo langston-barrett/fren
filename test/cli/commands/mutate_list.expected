@@ -1,3 +1,18 @@
+warning[F0805]: this says that `x` matches one of these patterns
+  --> test/cli/commands/mutate_list.fren:56:28
+   |
+56 |     ensure chained: ok? or x = 4 or x = 6
+   |                            ^^^^^^^^^^^^^^ equations of one expression with values that patterns write
+   |
+   = help: `fren fix` can fix this
+   = note: `manual_pattern_test` is `warn` by default
+   = help: to allow it, `set_option fren.lint.manual_pattern_test "allow"`
+help: write `x is 4 | 6`
+   |
+56 -     ensure chained: ok? or x = 4 or x = 6
+56 +     ensure chained: ok? or x is 4 | 6
+   |
+
 warning[F0712]: this `Bool` expression can be simpler
   --> test/cli/commands/mutate_list.fren:66:60
    |

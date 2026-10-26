@@ -1,8 +1,9 @@
 --- test/cli/fix/pattern_tests_chains.fren
 +++ test/cli/fix/pattern_tests_chains.fren
-@@ -22,9 +22,9 @@
+@@ -22 +22 @@
 -    ensure r1: a? iff s is Shade::Light
--    ensure r2: b? iff not (s) is Shade::Light | Shade::Dark
++    ensure r1: a? iff s = Shade::Light
+@@ -24,7 +24,7 @@
 -    ensure r3: d? iff match s { Shade::Light => false, Shade::Dark | Shade::Tinted(_) => true }
 -    ensure r4: e? = match s { Shade::Tinted(_) => true, _ => false }
 -    ensure r5: f? iff p? and 0 <= i and i < n and m > 0
@@ -10,8 +11,6 @@
 -    ensure r7: h? iff 0 < i and i < n and n < m
 -    ensure r8: j? iff 0 <= i and i <= n - 1
 -    ensure r9: k? iff n - 1 >= i and i >= 0
-+    ensure r1: a? iff s = Shade::Light
-+    ensure r2: b? iff not (s) in {Shade::Light, Shade::Dark}
 +    ensure r3: d? iff s != Shade::Light
 +    ensure r4: e? = (s is Shade::Tinted(_))
 +    ensure r5: f? iff p? and 0 <= i < n and m > 0

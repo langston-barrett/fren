@@ -1,4 +1,4 @@
 -- `membership_chain`, which is allowed by default.
 set_option fren.lint.membership_chain "warn"
 
-comp c { in x: Int pub out p? ensure r: p? iff (x = 1 or x = 2 or x = 3) }
+comp c { in x: Int in y: Int pub out p? ensure r: p? iff (x = 1 or x = 2 or x = y) }

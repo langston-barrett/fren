@@ -1158,7 +1158,7 @@ pub comp copied {
     in symbol: Symbol
     pub det out copied?
 
-    ensure rule: copied? iff (symbol = Symbol::InstanceVariable or symbol = Symbol::Output)
+    ensure rule: copied? iff symbol is Symbol::InstanceVariable | Symbol::Output
 
     expect shared_interpretation: when symbol = Symbol::Function, not copied?
 }

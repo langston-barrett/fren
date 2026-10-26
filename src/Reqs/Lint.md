@@ -60,7 +60,7 @@ use view::Severity
 | `invalid_upcast_comparisons` | `F0798` | `pedantic` | `allow` | a comparison of a method's call that its least value fixes, such as `x.abs >= 0` or `s.index_of(t, i) < -1` (see [Ranges of methods](Lint/Pedantic.md#ranges-of-methods)) |
 | `invisible_characters` | `F0769` | `suspicious` | `warn` | a string literal with an invisible character, or a string literal or comment with a bidirectional control (see [Invisible characters](Lint/Suspicious/Literals.md#invisible-characters)) |
 | `irrefutable_is` | `F0803` | `suspicious` | `warn` | a pattern test whose pattern matches every value, such as `x is _` (see [Pattern tests](Lint/Suspicious.md#pattern-tests)) |
-| `is_equality` | `F0802` | `style` | `warn` | a pattern test that names only variants without a payload, such as `x is E::A` (see [Pattern tests](Lint/Style/Comparisons.md#pattern-tests)) |
+| `is_equality` | `F0802` | `style` | `warn` | a pattern test of one variant without a payload, or one literal, such as `x is E::A` (see [Pattern tests](Lint/Style/Comparisons.md#pattern-tests)) |
 | `just_underscores_and_digits` | `F0751` | `style` | `warn` | a declared name made only of `_` and digits, such as `_1` (see [Names](Lint/Style.md#names)) |
 | `length_zero` | `F0715` | `style` | `warn` | a comparison of a string's or sequence's `len` with `0` or `1`, or of its `at(0)` with `""` or `[]`, that says whether it is empty, such as `s.len = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
 | `literal_dot_in_pattern` | `F0794` | `suspicious` | `warn` | a `.` between two letters or digits in a pattern, such as `r"v1.2"` (see [Dots in patterns](Lint/Suspicious/Literals.md#dots-in-patterns)) |
@@ -73,12 +73,13 @@ use view::Severity
 | `manual_nat` | `F0810` | `style` | `warn` | an `Int` input or output that an assumption or a guarantee keeps at least 0, as in `assume counts: n >= 0` (see [Natural numbers](Lint/Style/Naturals.md#integers-kept-at-least-0)) |
 | `manual_ordering` | `F0841` | `pedantic` | `allow` | a membership in the first or last variants of an ordered enumeration, such as `s in {Severity::Silent, Severity::Info}` (see [Orderings written out](Lint/Pedantic/Comparisons.md#orderings-written-out)) |
 | `manual_pattern_char_comparison` | `F0756` | `style` | `warn` | an alternation of single characters in a pattern, such as `a\|b` (see [Classes of characters](Lint/Style.md#classes-of-characters)) |
+| `manual_pattern_test` | `F0805` | `style` | `warn` | two or more equations of one expression with values that patterns write, such as `x = 429 or x = 503`, or the disequations of its dual (see [Pattern tests written out](Lint/Style/Comparisons.md#pattern-tests-written-out)) |
 | `manual_record_update` | `F0818` | `style` | `warn` | a record literal that copies more fields from one value than it gives, such as `Point { x := 1, y := p.y, z := p.z }` (see [Record literals](Lint/Style/Records.md#record-literals)) |
 | `manual_rem_euclid` | `F0815` | `complexity` | `warn` | a remainder made non-negative by hand, `(a mod k + k) mod k` (see [Remainders](Lint/Complexity/Integers.md#remainders)) |
 | `many_single_char_names` | `F0795` | `pedantic` | `allow` | a component, function or global expectation that declares more than four single-character names (see [Names](Lint/Pedantic.md#names)) |
 | `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false`, and bind no name (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
 | `match_same_arms` | `F0725` | `pedantic` | `allow` | an arm of a `match` with the same body as another (see [Arms](Lint/Pedantic/Matches.md#arms)) |
-| `membership_chain` | `F0718` | `pedantic` | `allow` | `x = a or x = b or x = c`, or `x != a and x != b and x != c`, three or more (see [Membership chains](Lint/Pedantic.md#membership-chains)) |
+| `membership_chain` | `F0718` | `pedantic` | `allow` | `x = a or x = b or x = c`, or `x != a and x != b and x != c`, three or more, where some value is not one that a pattern writes (see [Membership chains](Lint/Pedantic.md#membership-chains)) |
 | `min_ident_chars` | `F0785` | `restriction` | `allow` | a declared name of one character, such as `x` (see [Names](Lint/Restriction.md#names)) |
 | `min_max` | `F0817` | `suspicious` | `warn` | a `min` and a `max` whose literal bounds leave one value, such as `x.min(0).max(9)` (see [Integers](Lint/Suspicious/Integers.md#remainders-and-bounds)) |
 | `module_inception` | `F0748` | `style` | `warn` | a module whose last segment repeats its parent's, as in `mod lint::lint` (see [Names](Lint/Style.md#names)) |
@@ -231,7 +232,12 @@ theirs is in the group of the same name: a Clippy lint in `pedantic` or
 - `is_equality`: its Clippy counterpart, `equatable_if_let`, is in
   `nursery`, which is about a lint's maturity rather than a judgement of
   style, so it is in `style` (see [Pattern
-  tests](Lint/Style/Comparisons.md#pattern-tests)), and `warn`.
+  tests](Lint/Style/Comparisons.md#pattern-tests)), and `warn`. Like
+  `equatable_if_let`, it rewrites only a pattern of one alternative: a test
+  of several values stays a pattern test, which
+  [`manual_pattern_test`](Lint/Style/Comparisons.md#pattern-tests-written-out)
+  writes, as Clippy never pushes `matches!(x, A | B)` toward
+  `[A, B].contains(&x)`.
 - `redundant_bool_type`: its Clippy counterpart, `redundant_type_annotations`,
   is in `restriction`, which is allowed by default. The `?` of a name
   already gives its type, so the `: Bool` only repeats it: it is in
@@ -254,7 +260,7 @@ pub comp group_default {
         _ => Level::Warn,
     }
 
-    expect never_expect: level != Level::Expect and level != Level::Forbid
+    expect never_expect: not level is Level::Expect | Level::Forbid
 }
 ```
 
@@ -570,7 +576,7 @@ what the spec means:
 | `index_after_use` | swaps the operands of the `and` |
 | `int_plus_one` | replaces the comparison with the strict one, without the offset, within its chained comparison if it is in one |
 | `invisible_characters` | writes each character as an escape in a literal, and removes it from a comment |
-| `is_equality` | replaces `x is E::A` with `x = E::A`, and `x is E::A \| E::B` with `x in {E::A, E::B}` |
+| `is_equality` | replaces `x is E::A` with `x = E::A` |
 | `length_zero` | compares the string with `""`, or the sequence with `[]`, as the message suggests |
 | `literal_dot_in_pattern` | writes each `.` that it fires on as `[.]` |
 | `manual_abs` | replaces the conditional with `x.abs` |
@@ -581,9 +587,10 @@ what the spec means:
 | `manual_min_max` | replaces the conditional with `a.min(b)` or `a.max(b)`, as the message suggests |
 | `manual_ordering` | replaces the test with a comparison with the last or first variant it names, as the message suggests |
 | `manual_pattern_char_comparison` | replaces the pattern with one that writes each alternation of single characters as a class |
+| `manual_pattern_test` | replaces the operands with a pattern test, `x is a \| b`, or `not x is a \| b` for the dual |
 | `manual_record_update` | replaces the literal with an update of the value it copies from, as the message suggests |
 | `manual_rem_euclid` | replaces `(a mod k + k) mod k` with `a mod k` |
-| `match_like_membership` | replaces the `match` with a membership, `x in {E::A, E::B}`, or a pattern test, `x is E::A(_) \| E::B`, as the message suggests |
+| `match_like_membership` | replaces the `match` with an equation, `x = E::A`, or a pattern test, `x is E::A \| E::B`, as the message suggests |
 | `match_same_arms` | merges the arms into one with an or-pattern, removes those with the body of the `_` arm, or replaces the `match` with its body, as the message suggests |
 | `membership_chain` | replaces the chain with a membership, `x in {a, b, c}`, or `not x in {a, b, c}` |
 | `needless_bool_assign` | replaces the conditional with `C iff X`, or `C != X` |
@@ -622,7 +629,8 @@ what the spec means:
 
 Each fix that rewrites an expression keeps what the expression means, for
 every value of what it mentions. For `nonminimal_bool`, `length_zero`,
-`card_zero`, `singleton_membership` and `membership_chain`, a component
+`card_zero`, `singleton_membership`, `membership_chain` and
+`manual_pattern_test`, a component
 in the lint's section states this as laws, which the solver checks: the
 written form, which the lint fires on, is on the left of each `iff`, and
 the fixed form on the right. Each component expects its lints, so it also

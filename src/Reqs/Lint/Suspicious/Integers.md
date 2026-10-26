@@ -24,7 +24,7 @@ pub comp modulo_one {
     in divisor: Int
     pub det out fires?
 
-    ensure rule: fires? iff (divisor = 1 or divisor = -1)
+    ensure rule: fires? iff divisor is 1 | -1
 }
 ```
 

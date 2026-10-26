@@ -376,7 +376,7 @@ pub comp test_verdict {
     in n_tests: Nat      -- the tests that reached the check (`reaches`)
     pub det out verdict: Verdict
 
-    assume testable: kind != Kind::Vacuity and kind != Kind::Redundancy
+    assume testable: not kind is Kind::Vacuity | Kind::Redundancy
     -- A cover goal is reached by its witnesses, which refute nothing.
     assume witnesses: when kind = Kind::Cover, not refuted?
 

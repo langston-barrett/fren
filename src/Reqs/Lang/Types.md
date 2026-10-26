@@ -679,9 +679,9 @@ pub comp bool_naming {
 
     assume identifier: name.matches?(r"[A-Za-z_][A-Za-z0-9_']*\??")
 
-    ensure q_is_bool: when name.ends_with?("?"), accepted? iff (annot = Missing or annot = BoolTy)
+    ensure q_is_bool: when name.ends_with?("?"), accepted? iff annot is Missing | BoolTy
     ensure bool_is_q: unless name.ends_with?("?"),
-        accepted? iff (annot = IntTy or annot = NatTy or annot = StringTy or annot = NamedTy)
+        accepted? iff annot is IntTy | NatTy | StringTy | NamedTy
 
     expect bool_needs_q: when annot = BoolTy and accepted?, name.ends_with?("?")
     expect untyped_needs_q: when annot = Missing and accepted?, name.ends_with?("?")
@@ -754,7 +754,7 @@ pub comp checked {
 
     expect declared_always: when position = Declared, checked?
     expect synthesized_never: when position = Synthesized, not checked?
-    expect sibling_suffices: when (position = Shared or position = Compared) and sibling?, checked?
+    expect sibling_suffices: when position is Shared | Compared and sibling?, checked?
 }
 ```
 

@@ -1,16 +1,16 @@
-warning[F0802]: this pattern test is a membership
+warning[F0802]: this pattern test is an equation
  --> test/cli/lints/style/f0802_is_equality.fren:4:46
   |
-4 | comp c { in e: E pub out p? ensure r: p? iff e is E::A | E::B }
-  |                                              ^^^^^^^^^^^^^^^^ names only variants without a payload, or literals
+4 | comp c { in e: E pub out p? ensure r: p? iff e is E::A }
+  |                                              ^^^^^^^^^ names a variant without a payload, or a literal
   |
   = help: `fren fix` can fix this
   = note: `is_equality` is `warn` by default
   = help: to allow it, `set_option fren.lint.is_equality "allow"`
-help: write `e in {E::A, E::B}`
+help: write `e = E::A`
   |
-4 - comp c { in e: E pub out p? ensure r: p? iff e is E::A | E::B }
-4 + comp c { in e: E pub out p? ensure r: p? iff e in {E::A, E::B} }
+4 - comp c { in e: E pub out p? ensure r: p? iff e is E::A }
+4 + comp c { in e: E pub out p? ensure r: p? iff e = E::A }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

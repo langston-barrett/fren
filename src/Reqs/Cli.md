@@ -346,7 +346,7 @@ pub comp exit_status {
     pub out code: Int
 
     ensure not_run: code = 2 iff not ran?
-    ensure documented: code = 0 or code = 1 or code = 2 or code = 3
+    ensure documented: code is 0 | 1 | 2 | 3
 }
 ```
 

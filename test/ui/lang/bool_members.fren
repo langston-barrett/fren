@@ -3,7 +3,7 @@
 -- `Bool`s reaches the solver in both.
 enum E { A, B, C }
 
-comp in_set { in s: E pub out p? ensure r: p? iff {s = E::A or s = E::B} = {true} }
+comp in_set { in s: E pub out p? ensure r: p? iff {s is E::A | E::B} = {true} }
 
 comp in_seq { in s: E in x? pub out p? ensure r: p? iff [s = E::A] = [x?] }
 

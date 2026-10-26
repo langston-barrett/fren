@@ -1,4 +1,4 @@
--- A pattern test of variants without a payload.
+-- A pattern test of one variant without a payload.
 enum E { A, B, C(Int) }
 
-comp c { in e: E pub out p? ensure r: p? iff e is E::A | E::B }
+comp c { in e: E pub out p? ensure r: p? iff e is E::A }

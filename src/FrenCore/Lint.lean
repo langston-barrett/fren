@@ -5,6 +5,7 @@ import FrenCore.Nfc
 import FrenCore.Patterns
 import FrenCore.Regex
 import FrenCore.Simplify
+import FrenCore.Str
 -- keep-sorted end
 
 /-!
@@ -163,6 +164,7 @@ inductive Lint where
   | manualRecordUpdate
   | needlessUpdate
   | trivialCover
+  | manualPatternTest
   -- `BEq` from `DecidableEq`, which makes it lawful at once; a derived `BEq`
   -- would need a proof over every pair of lints.
   deriving Inhabited, DecidableEq, Repr
@@ -190,7 +192,7 @@ def Lint.all : Array Lint :=
     .arbitrarySourceItemOrdering, .singleCallFn,
     .manualAtMostOne, .manualOrdering, .redundantNewtypeRoundtrip, .unnecessaryMinOrMax,
     .manualNat, .manualAbs, .manualAbsDiff, .manualMinMax, .manualClamp, .manualRemEuclid, .moduloOne, .minMax,
-    .manualRecordUpdate, .needlessUpdate, .trivialCover]
+    .manualRecordUpdate, .needlessUpdate, .trivialCover, .manualPatternTest]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -307,6 +309,7 @@ def Lint.name : Lint → String
   | .manualRemEuclid => "manual_rem_euclid"
   | .moduloOne => "modulo_one"
   | .minMax => "min_max"
+  | .manualPatternTest => "manual_pattern_test"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -425,6 +428,7 @@ def Lint.code : Lint → String
   | .manualRemEuclid => "F0815"
   | .moduloOne => "F0816"
   | .minMax => "F0817"
+  | .manualPatternTest => "F0805"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -471,7 +475,8 @@ def Lint.group : Lint → Group
   | .globImports | .lengthZero | .cardZero | .unlessNot | .collapsibleWhen | .matchLikeMembership | .redundantBindings
   | .doubleNeg | .negMultiply | .trivialPattern | .redundantBoolType | .moduleInception | .enumVariantNames
   | .upperCaseAcronyms | .justUnderscoresAndDigits | .disallowedNames | .assertionsOnConstants
-  | .manualPatternCharComparison | .isEquality | .chainableComparison | .manualNat | .manualRecordUpdate => .style
+  | .manualPatternCharComparison | .isEquality | .chainableComparison | .manualNat | .manualRecordUpdate
+  | .manualPatternTest => .style
   | .nonminimalBool | .singletonMembership | .constantOutput | .doubleComparison | .manualMethod | .elseExtends
   | .identityOp | .doubleParens | .intPlusOne | .redundantMethodChain | .trivialMatch | .needlessBoolAssign
   | .needlessMatch | .redundantSlicing | .redundantComparisons | .unnecessaryStructInitialization
@@ -682,8 +687,11 @@ def singletonMembershipMsg (x a : String) : Msg :=
 /-- Whether `membership_chain` fires on a chain of `n` operands of `or`, or
 of `and`, which all equate, or for `and` disequate, the same left operand if
 `sameLeft`, where `laterIndexes` says that a right operand but the first
-indexes a sequence (`lint::membership_chain`). -/
-def membershipChainFires (n : Nat) (sameLeft laterIndexes : Bool) : Bool := sameLeft && n ≥ 3 && !laterIndexes
+indexes a sequence, and `patterns` that each right operand is a value that
+a pattern writes (`patternValue`), which `manual_pattern_test` then
+reports (`lint::membership_chain`). -/
+def membershipChainFires (n : Nat) (sameLeft laterIndexes patterns : Bool) : Bool :=
+  sameLeft && n ≥ 3 && !laterIndexes && !patterns
 
 /-- `x = a or x = b or ...`, or `x != a and x != b and ...` if `negated`, as
 the texts of `x` and the others. -/
@@ -1907,6 +1915,16 @@ operand of an operator, since nothing follows its last operand. -/
 def BText.inPlace (t : BText) (slot : Option Slot) (followed : Bool := false) : String :=
   if t.sameKind then t.text else t.inSlot slot followed
 
+/-- Whether `t`, which replaces an expression in `slot` that is written
+in parentheses, can drop them (`Reqs/Lint#parentheses-in-fixes`): only in
+the slot of an operator's operand, and only where `inSlot` writes `t`
+without them. Elsewhere, as the scrutinee of a `match`, the condition of
+a table's row or an argument of an application, the parentheses may be the
+construct's own, or needed by what follows, as the `{` of a `match` follows
+its scrutinee, so they are kept. -/
+def BText.dropsParens (t : BText) (slot : Option Slot) (followed : Bool) : Bool :=
+  slot.isSome && t.inSlot slot followed == t.text
+
 /-- A report of a lint that rewrites an expression (`ExLint`): where, a
 label, and the rewritten form. -/
 structure BoolReport (α : Type) where
@@ -2214,12 +2232,13 @@ def sameArmsEdits (range : Range) (arms : Array ArmInfo) (armRanges patRanges bo
 
 /-- Whether `match_like_membership` fires, whether its fix is negated, of
 the alternatives whose arms are `false`, and whether it is a pattern test
-rather than a comparison (`lint::match_like_membership`). -/
+rather than an equation: unless it lists one alternative, which `=` can
+write (`lint::match_like_membership`). -/
 def matchMembership (boolBodies binds disjoint trueFirst falseFirst equatableTrue equatableFalse wildcard
     wildcardTrue : Bool) (nTrue nFalse : Nat) : Bool × Bool × Bool :=
   let negated := if wildcard then wildcardTrue else if disjoint then nTrue > nFalse else falseFirst
   (boolBodies && !binds && (disjoint || if negated then falseFirst else trueFirst), negated,
-    !(if negated then equatableFalse else equatableTrue))
+    !(if negated then equatableFalse else equatableTrue) || (if negated then nFalse else nTrue) != 1)
 
 /-- The fix of `match_like_membership`, if it fires, as the texts before
 and after the scrutinee, which is `scrutinee` as written, with the
@@ -2246,10 +2265,9 @@ def membershipParts? (arms : Array ArmInfo) (scrutinee : BText) (slot : Option S
   guard fires
   let vs := named !negated
   let (op, prec) := if test then (s!" is {" | ".intercalate vs.toList}", if negated then 4 else 5)
-    else if vs.size == 1 then (s!" {if negated then "!=" else "="} {vs[0]!}", 5)
-    else (s!" in \{{", ".intercalate vs.toList}}", if negated then 4 else 5)
+    else (s!" {if negated then "!=" else "="} {vs[0]!}", 5)
   let bareScrutinee := bareOperand 5 scrutinee.prec .nonAssoc false
-  let pre := (if negated && (test || vs.size > 1) then "not " else "") ++ (if bareScrutinee then "" else "(")
+  let pre := (if negated && test then "not " else "") ++ (if bareScrutinee then "" else "(")
   let post := (if bareScrutinee then "" else ")") ++ op
   let bare := match slot with | some s => bareOperand s.outer prec s.assoc s.right | none => true
   return if bare then (pre, post, test) else ("(" ++ pre, post ++ ")", test)
@@ -2259,7 +2277,7 @@ pattern test if `test`. -/
 def membershipMsg (replacement : String) (test : Bool) : Msg :=
   { code? := some Lint.matchLikeMembership.code, headline := "this `match` only tests which of its patterns its scrutinee matches"
     label? := some "each arm is `true` or `false`"
-    fixes := #[{ msg := if test then "write it as a pattern test" else "write it as a comparison", replacement }] }
+    fixes := #[{ msg := if test then "write it as a pattern test" else "write it as an equation", replacement }] }
 
 /-! ## Pattern tests -/
 
@@ -2303,19 +2321,18 @@ def disjointPat (p : Pat) (texts : Array String) : Bool :=
   p.top.size == texts.size && (p.top.zip texts).all fun (a, t) =>
     equatableAlt a t || match a with | .ctor _ args => args.all (· matches .wild false) | _ => false
 
-/-- Whether `is_equality` fires on `e is P`, from whether each alternative
-of `P` is a variant without a payload or a literal, and whether
-`irrefutable_is` fires on it (`lint::is_equality`). -/
-def isEquality (equatable irrefutable : Bool) : Bool := equatable && !irrefutable
+/-- Whether `is_equality` fires on `e is P`, from the number of
+alternatives of `P`, whether each is a variant without a payload or a
+literal, and whether `irrefutable_is` fires on it (`lint::is_equality`). -/
+def isEquality (nAlts : Nat) (equatable irrefutable : Bool) : Bool := nAlts == 1 && equatable && !irrefutable
 
 /-- `is_equality`'s message on `e is P`, from `e` as written, with the
-parentheses around it, and the alternatives of `P`. -/
-def isEqualityMsg (scrutinee : BText) (alts : Array String) : Msg :=
+parentheses around it, and the alternative that is `P`. -/
+def isEqualityMsg (scrutinee : BText) (alt : String) : Msg :=
   let x := scrutinee.inSlot (some ⟨5, .nonAssoc, false⟩)
-  let fixed := if let #[a] := alts then s!"{x} = {a}" else s!"{x} in \{{", ".intercalate alts.toList}}"
-  { code? := some Lint.isEquality.code
-    headline := if alts.size == 1 then "this pattern test is an equation" else "this pattern test is a membership"
-    label? := some "names only variants without a payload, or literals"
+  let fixed := s!"{x} = {alt}"
+  { code? := some Lint.isEquality.code, headline := "this pattern test is an equation"
+    label? := some "names a variant without a payload, or a literal"
     fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
 /-- Whether `single_match_else` fires on a `match` of `nArms` arms, from
@@ -3154,6 +3171,9 @@ structure OpReport (α : Type) where
   ref : α
   msg : Msg
   last? : Option α := none
+  /-- `fren fix` leaves this fix where it fixes this lint at this
+  expression, whose fix overlaps it. -/
+  unless? : Option (Lint × α) := none
   deriving Inhabited
 
 def BNode.kind : BNode α → BKind | .mk k .. => k
@@ -3904,6 +3924,8 @@ inductive NodeFact where
   /-- An `and` whose operands give a definedness obligation: an index, a
   table, or a name whose definition gives one (`Reqs/Lang/Expressions#sequences`). -/
   | obligations
+  /-- An equation or a disequation whose operands are `Nat`s. -/
+  | natOperands
   deriving Inhabited, BEq, Repr
 
 /-- Whether the text at `i` in `src` starts with `s`. -/
@@ -4138,6 +4160,273 @@ def manualOrderingAt? (src : Array Char) (fact? : α → Option NodeFact) (n : B
     guard (eqs.all fun (l, _) => writtenForm (textOf src l.range) == writtenForm (textOf src x.range))
     manualOrderingOf? src fact? n x (eqs.map (·.2)) (op == "and") slot parent
   | _, _ => none
+
+/-! ## Pattern tests written out -/
+
+/-- An alternative of a pattern, as `manual_pattern_test` reads it
+(`lint::Alt`): the integers from `lo` to `hi`, where `none` leaves that
+side unbounded, so that a literal is a range of one integer; a string
+literal, as written; or a variant, by its name, with or without a
+payload. -/
+inductive PatAlt where
+  | ints (lo hi : Option Int)
+  | str (s : String)
+  | variant (name : String)
+  deriving Inhabited, DecidableEq, Repr
+
+/-- Whether the bound `hi` is below the bound `lo`, so that no integer is
+at most `hi` and at least `lo`. -/
+def boundBelow : Option Int → Option Int → Bool
+  | some h, some l => h < l
+  | _, _ => false
+
+/-- Whether no value matches both `a` and `b`, as their text shows
+(`lint::disjoint?`): two ranges of integers that do not meet, two string
+literals written differently, without escape sequences, or two variants
+of different names. A pattern's alternatives are of one type, so two
+alternatives of different kinds are never both in a pattern that checks,
+and are not disjoint here. -/
+def PatAlt.disjoint : PatAlt → PatAlt → Bool
+  | .ints l1 h1, .ints l2 h2 => boundBelow h1 l2 || boundBelow h2 l1
+  | .str s, .str t => s != t && !Fren.Str.contains s "\\" && !Fren.Str.contains t "\\"
+  | .variant v, .variant w => v != w
+  | _, _ => false
+
+/-- Whether each two alternatives of `as` are disjoint (`PatAlt.disjoint`). -/
+def pairwiseDisjoint : List PatAlt → Bool
+  | [] => true
+  | a :: as => as.all (a.disjoint ·) && pairwiseDisjoint as
+
+/-- Whether `manual_pattern_test` fires on a run of `nOperands` adjacent
+operands of `or`, or of `and`, each an equation, or a disequation, of one
+expression with a value that a pattern writes, or a pattern test of it,
+or its negation, `nEquations` of them equations, whose alternatives are
+`alts`, in order, where `chain` says that `membership_chain` reads the
+chain they are in (`lint::manual_pattern_test`). -/
+def manualPatternTest (alts : List PatAlt) (nOperands nEquations : Nat) (chain : Bool) : Bool :=
+  nOperands ≥ 2 && nEquations ≥ 1 && !chain && pairwiseDisjoint alts
+
+/-- The last segment of a path written `p`, with `::` or `.` between its
+segments. -/
+def lastSegment (p : String) : String :=
+  let p := ((p.splitOn "::").getLast?.getD p)
+  (p.splitOn ".").getLast?.getD p
+
+/-- An integer literal written `t`, possibly negated, in decimal. -/
+def decimalLiteral? (t : String) : Option Int :=
+  let w := writtenForm t
+  if w.isEmpty || !(w.toList.all fun c => c.isDigit || c == '-') then none else w.toInt?
+
+/-- The value written `t` as a pattern's alternative, if a pattern writes it
+as `t` is written: a decimal integer literal, possibly negated, a string
+literal without `"` in it, or, where `variant?` gives its name, a variant
+without a payload. `true` and `false` are left to `bool_equality`. -/
+def valueAlt? (t : String) (variant? : Option String) : Option PatAlt :=
+  let t := t.trimAscii.toString
+  if let some k := decimalLiteral? t then some (.ints (some k) (some k))
+  else if t.length ≥ 2 && t.startsWith "\"" && t.endsWith "\"" && t.toList.count '"' == 2 then some (.str t)
+  else (variant?.map lastSegment).map .variant
+
+/-- Whether `t`, written as a value, is one that a pattern writes, as
+`membership_chain` asks of each value it puts in a set: as
+`valueAlt?` reads it, or `true` or `false`, where `variant` says that it
+is a variant without a payload. -/
+def patternValue (t : String) (variant : Bool) : Bool :=
+  let t := t.trimAscii.toString
+  t == "true" || t == "false" || (valueAlt? t (if variant then some t else none)).isSome
+
+/-- Splits `t` at each `|` outside parentheses and string literals. -/
+def splitAlternatives (t : String) : Array String := Id.run do
+  let mut out := #[]
+  let mut cur := ""
+  let mut depth : Nat := 0
+  let mut inStr := false
+  let mut esc := false
+  for c in t.toList do
+    if inStr then
+      cur := cur.push c
+      if esc then esc := false
+      else if c == '\\' then esc := true
+      else if c == '"' then inStr := false
+    else if c == '"' then
+      inStr := true
+      cur := cur.push c
+    else if c == '(' then
+      depth := depth + 1
+      cur := cur.push c
+    else if c == ')' then
+      depth := depth - 1
+      cur := cur.push c
+    else if c == '|' && depth == 0 then
+      out := out.push cur.trimAscii.toString
+      cur := ""
+    else cur := cur.push c
+  return out.push cur.trimAscii.toString
+
+/-- Whether `t` is a path: identifiers joined by `::`. -/
+def isPathText (t : String) : Bool :=
+  !t.isEmpty && (t.splitOn "::").all fun s =>
+    !s.isEmpty && (s.toList.all fun c => c.isAlphanum || c == '_') && !(s.toList.head?.any Char.isDigit)
+
+/-- A bound of a range written `t`, if it is a decimal integer literal:
+`some none` where it is left out. -/
+def rangeBound? (t : String) : Option (Option Int) :=
+  let t := t.trimAscii.toString
+  if t.isEmpty then some none else (decimalLiteral? t).map some
+
+/-- An alternative of a pattern test, written `t`, as `manual_pattern_test`
+reads it (`PatAlt`), if it can: an integer literal, a range whose bounds
+are integer literals, a string literal, or a variant, applied to patterns
+or not. `_`, `true`, `false`, and a range with a constant as a bound are
+not read. -/
+def patternAlt? (t : String) : Option PatAlt :=
+  let t := t.trimAscii.toString
+  -- A variant, applied or not, before a range, which a payload may hold.
+  let head := (t.splitOn "(").head!.trimAscii.toString
+  if t == "_" || t == "true" || t == "false" then none
+  else if let some k := decimalLiteral? t then some (.ints (some k) (some k))
+  else if t.startsWith "\"" then
+    if t.length ≥ 2 && t.endsWith "\"" && t.toList.count '"' == 2 then some (.str t) else none
+  else if isPathText head && (head == t || t.endsWith ")") then some (.variant (lastSegment head))
+  else if let [lo, hi] := t.splitOn "..=" then do
+    let (l, h) := (← rangeBound? lo, ← rangeBound? hi)
+    guard (h.isSome)
+    some (.ints l h)
+  else if let [lo, hi] := t.splitOn ".." then do
+    let (l, h) := (← rangeBound? lo, ← rangeBound? hi)
+    guard (l.isSome)
+    some (.ints l (h.map (· - 1)))
+  else none
+
+/-- The alternatives of the pattern written `t`, if `patternAlt?` reads
+each, with their texts. -/
+def patternAlts? (t : String) : Option (Array (PatAlt × String)) := do
+  guard (!hasComment t)
+  let t := t.trimAscii.toString
+  let t := if t.startsWith "|" then (t.drop 1).toString else t
+  (splitAlternatives t).mapM fun a => return (← patternAlt? a, a)
+
+/-- An operand of a run that `manual_pattern_test` reads: the expression it
+tests, as written, its alternatives, with their texts, and whether it is
+an equation, or a disequation, rather than a pattern test. -/
+structure PatternOperand (α : Type) where
+  scrutinee : BNode α
+  alts : Array (PatAlt × String)
+  equation : Bool
+
+/-- `d`, an operand of a run of `or`, or of `and` if `conj`, within `outer`,
+as `manual_pattern_test` reads it: `x = v` or `v = x`, `x != v` or `v !=
+x` for `and`, where `v` is a value that `valueAlt?` reads, and `x` is
+not, and `v` is not negative where `fact?` says that the operands are
+`Nat`s, for which a negative alternative is an error; or `x is P`, `not x
+is P` for `and`, where `patternAlts?` reads `P`. -/
+def patternOperand? (src : Array Char) (variant? : α → Option String) (fact? : α → Option NodeFact) (conj : Bool)
+    (d : BNode α) : Option (PatternOperand α) := do
+  let nat := fact? d.ref == some .natOperands
+  let value? (k : BNode α) : Option PatAlt := do
+    let a ← match k.kind with
+      | .atom | .neg => valueAlt? (textOf src k.range) (variant? k.ref)
+      | _ => none
+    if nat && a matches .ints (some (.negSucc _)) _ then none else some a
+  match d.kind, d.kids with
+  | .bin op, #[l, r] =>
+    guard (op == if conj then "!=" else "=")
+    match value? l, value? r with
+    | none, some a => return { scrutinee := l, alts := #[(a, textOf src r.range)], equation := true }
+    | some a, none => return { scrutinee := r, alts := #[(a, textOf src l.range)], equation := true }
+    | _, _ => none
+  | .not, #[t] =>
+    guard conj
+    test? t
+  | _, _ => if conj then none else test? d
+where
+  test? (t : BNode α) : Option (PatternOperand α) := do
+    let (.patternTest, #[x]) := (t.kind, t.kids) | none
+    let rest := (textOf src { start := (withParensIn src t.range x.range).stop, stop := t.range.stop }).trimAscii.toString
+    guard (rest.startsWith "is" && ((rest.drop 2).toString.toList.head?.any Char.isWhitespace))
+    return { scrutinee := x, alts := ← patternAlts? (rest.drop 2).toString, equation := false }
+
+/-- The operands of the chain of `op` that `n` is the top of, as
+`membership_chain` reads it: through each operand that is an `op`, in
+parentheses or not. -/
+partial def chainOperandsOf (op : String) (n : BNode α) : Array (BNode α) :=
+  match n.kind, n.kids with
+  | .bin o, #[l, r] => if o == op then chainOperandsOf op l ++ chainOperandsOf op r else #[n]
+  | _, _ => #[n]
+
+/-- Whether `membership_chain` reads the chain of `or`, or of `and` if
+`conj`, that `n` is the top of: three or more operands, each an equation,
+or a disequation, with the same left operand, and some value that is not
+one that a pattern writes (`patternValue`), whether or not a later value
+indexes a sequence, which that lint also asks. -/
+def membershipChainOf (src : Array Char) (variant? : α → Option String) (conj : Bool) (n : BNode α) : Bool := Id.run do
+  let ds := chainOperandsOf (if conj then "and" else "or") n
+  if ds.size < 3 then return false
+  let eqs := ds.filterMap fun d => match d.kind, d.kids with
+    | .bin op, #[l, r] => if op == (if conj then "!=" else "=") then some (l, r) else none
+    | _, _ => none
+  if eqs.size != ds.size then return false
+  let some (l0, _) := eqs[0]? | return false
+  let left := writtenForm (textOf src l0.range)
+  return eqs.all (fun (l, _) => writtenForm (textOf src l.range) == left)
+    && eqs.any fun (_, v) => !patternValue (textOf src v.range) (variant? v.ref).isSome
+
+/-- `manual_pattern_test`'s message, on `x` if `conj` is not set, and
+otherwise on its negation, whose fix is `fixed`, at `range`, the
+operands with the parentheses around them, or none but a note if a
+comment within them would be lost (`commented`). -/
+def manualPatternTestMsg (x fixed : String) (conj : Bool) (range : Range) (commented : Bool) : Msg :=
+  { code? := some Lint.manualPatternTest.code
+    headline := if conj then s!"this says that `{x}` matches none of these patterns" else s!"this says that `{x}` matches one of these patterns"
+    label? := some (if conj then "disequations of one expression with values that patterns write" else "equations of one expression with values that patterns write")
+    notes := if commented then #[s!"help: write `{fixed}`",
+      "note: `fren fix` leaves this, since the pattern test would lose the comment within the operands"] else #[]
+    fixes := if commented then #[] else #[{ msg := s!"write `{fixed}`", replacement := fixed, range? := some range }] }
+
+/-- `manual_pattern_test` on `n`, an `or`, or an `and` if `conj`, in `slot`
+within `parent`, if it is the top of a run of them, where `chain` says
+that `membershipChainOf` holds of the chain it is in
+(`lint::manual_pattern_test`): one report for each longest run of
+adjacent operands that `patternOperand?` reads, of an expression written
+the same, from the first to the last. -/
+def manualPatternTestAt [Inhabited α] (src : Array Char) (variant? : α → Option String) (fact? : α → Option NodeFact)
+    (n : BNode α) (conj : Bool) (chain : Bool) (slot : Option Slot) (parent : Range) : Array (OpReport α) := Id.run do
+  let op := if conj then "and" else "or"
+  unless runTop op src n slot parent do return #[]
+  let cs := runOperands op src n
+  let ps := cs.map (patternOperand? src variant? fact? conj)
+  let form (p : PatternOperand α) := writtenForm (textOf src p.scrutinee.range)
+  let mut out := #[]
+  let mut i := 0
+  while i < cs.size do
+    let some p := ps[i]! | i := i + 1; continue
+    let mut j := i
+    while j + 1 < cs.size && (ps[j + 1]!.any (form · == form p)) do j := j + 1
+    let run := (ps.extract i (j + 1)).filterMap id
+    let alts := run.flatMap (·.alts)
+    if manualPatternTest (alts.toList.map (·.1)) run.size (run.filter (·.equation)).size chain then
+      let x := (p.scrutinee.text src).inSlot (BKind.patternTest.slots[0]!)
+      let test := s!"{x} is {" | ".intercalate (alts.toList.map (·.2))}"
+      let t : BText := if conj then { text := s!"not {test}", prec := BKind.not.prec }
+        else { text := test, prec := BKind.patternTest.prec }
+      let whole := i == 0 && j + 1 == cs.size
+      -- The whole run, in parentheses that the test does not need, is
+      -- replaced with them.
+      let outer := withParensIn src parent n.range
+      let unwrapped := whole && outer != n.range && t.dropsParens slot (followedAt src outer)
+      let range : Range := if unwrapped then outer
+        else { start := (withParensIn src n.range cs[i]!.range).start, stop := (withParensIn src n.range cs[j]!.range).stop }
+      let fixed := if unwrapped then t.text else if whole then placed src n slot parent t
+        else t.inSlot (some ⟨(BKind.bin op).prec, .left, i > 0⟩) (j + 1 < cs.size)
+      -- Where `manual_ordering` reports the run too, its fix is made,
+      -- if `fren fix` makes it.
+      let unless? := if whole && (manualOrderingAt? src fact? n slot parent).isSome then some (.manualOrdering, n.ref)
+        else none
+      out := out.push { lint := .manualPatternTest, ref := cs[i]!.ref, last? := some cs[j]!.ref, unless?
+                        msg := manualPatternTestMsg (textOf src p.scrutinee.range) fixed conj range
+                          (hasComment (textOf src range)) }
+    i := j + 1
+  return out
 
 /-- The variant of an ordered enumeration that `k` is, or that the
 newtype `k` builds holds, as its position and the number of variants. -/
@@ -4579,12 +4868,21 @@ def eqOpMethodAt? (src : Array Char) (n : BNode α) : Option (OpReport α) := do
 
 /-- The messages of the operator and method lints in `n`, which is in
 `slot` within `parent`, outermost first, where `inElse` says that `n` is
-the `else` branch of a conditional, and `inClamp` that it is that of a
-clamp (`manualClampAt?`). -/
+the `else` branch of a conditional, `inClamp` that it is that of a clamp
+(`manualClampAt?`), and `chain` that `membership_chain` reads the chain of
+`or` or `and` that it is in, if it is one (`membershipChainOf`). -/
 partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool) (ordered? : α → Option Ordered)
     (variant? : α → Option String) (isAbs : α → Bool) (mentions : α → Bool) (fact? : α → Option NodeFact)
-    (n : BNode α) (slot : Option Slot) (parent : Range) (inElse inClamp : Bool := false) : Array (OpReport α) :=
+    (n : BNode α) (slot : Option Slot) (parent : Range) (inElse inClamp : Bool := false) (chain : Bool := false) :
+    Array (OpReport α) :=
   let slots := n.kind.slots
+  -- Whether `membership_chain` reads the chain of `or` or `and` that `n`
+  -- is in: decided at its top, an operand of no operator of its kind.
+  let chain := match n.kind with
+    | .bin op => if op != "or" && op != "and" then false
+      else if slot.any (·.outer == (BKind.bin op).prec) then chain
+      else membershipChainOf src variant? (op == "and") n
+    | _ => false
   let clamp := if n.kind == .ite then manualClampAt? src ordered? n slot parent else none
   let own := match n.kind with
     | .bin op =>
@@ -4602,6 +4900,8 @@ partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool)
         ++ (manualOrderingAt? src fact? n slot parent).toArray ++ (manualRemEuclidAt? src n slot parent).toArray
         ++ (moduloOneAt? src n).toArray ++ operands ++ precedenceAt src n
         ++ (if op == "and" then chainableAt src n slot parent ++ manualAtMostOneAt src fact? n slot parent else #[])
+        ++ (if op == "and" || op == "or" then manualPatternTestAt src variant? fact? n (op == "and") chain slot parent
+          else #[])
     | .ite =>
       (needlessBoolAssignAt? src n slot parent).toArray ++ (branchesSharingAt? src mentions n slot parent).toArray
         ++ (if inElse then #[] else ifsSameCondAt src n)
@@ -4621,7 +4921,7 @@ partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool)
     | _, _ => slots
   own ++ (n.kids.mapIdx fun i k =>
     opReportsIn src boolEq ordered? variant? isAbs mentions fact? k (slots[i]?.join) n.range (n.kind == .ite && i == 2)
-      (clamp.isSome && i == 2)).flatten
+      (clamp.isSome && i == 2) chain).flatten
 
 /-- The messages of the operator and method lints in an expression written
 in `src` (`Reqs/Lint/Complexity/Comparisons`), where `boolEq` says whether a

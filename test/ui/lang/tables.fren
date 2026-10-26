@@ -15,7 +15,7 @@ comp exit {
         | not ran? => 2,
         | ran? and worst = Error => 1,
         | ran? and worst = Warning => 3,
-        | ran? and (worst = Silent or worst = Info) => 0,
+        | ran? and worst is Silent | Info => 0,
     }
 
     expect documented: 0 <= code <= 3
@@ -92,7 +92,7 @@ comp naturals {
 
     ensure r: y = table { n = 0 => 0, n > 0 => 1 }
 
-    expect bit: y = 0 or y = 1
+    expect bit: y is 0 | 1
 }
 
 -- An index in a row is guarded by the earlier rows' not holding, and in a
@@ -156,7 +156,7 @@ comp lets {
     ensure r: y = (let k := table { x > 0 => 1, x <= 0 => 0 } in k + k)
     ensure s: z = table { a > 0 => a, a <= 0 => 0 } where a := x - 1
 
-    expect even: y = 0 or y = 2
+    expect even: y is 0 | 2
 }
 
 -- In a function's body and a constant's value, a table is checked for

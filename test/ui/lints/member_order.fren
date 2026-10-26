@@ -25,7 +25,7 @@ comp in_order {
     assume small: x < 100
     inst w: severity_of { x }
     ensure r: y = double(x) + triple(x) + triple(z) + half(x) + unknown(x) + w.v
-    expect e: shape = Square or shape = Shape::Circle
+    expect e: shape = Square or shape = Shape::Circle  --~ warning: this says that `shape` matches one of these patterns
 }
 
 comp unordered {

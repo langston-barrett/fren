@@ -69,10 +69,10 @@ pub comp identifier {
     expect primed: when lexeme = "x'", accepted?
     expect components: when lexeme = "w.x.y?", accepted?
     expect wildcard: when lexeme = "_", accepted?
-    expect capitals: when lexeme = "Heat" or lexeme = "x.Y", accepted?
-    expect question_last: when lexeme = "a?b" or lexeme = "a?.b", not accepted?
-    expect bang: when lexeme = "x!" or lexeme = "ready?!", accepted?
-    expect bang_last: when lexeme = "a!?" or lexeme = "a!b" or lexeme = "a!!", not accepted?
+    expect capitals: when lexeme is "Heat" | "x.Y", accepted?
+    expect question_last: when lexeme is "a?b" | "a?.b", not accepted?
+    expect bang: when lexeme is "x!" | "ready?!", accepted?
+    expect bang_last: when lexeme is "a!?" | "a!b" | "a!!", not accepted?
     expect letter_first: when lexeme.matches?(r"[0-9'.?!].*"), not accepted?
     expect no_trailing_dot: when lexeme.ends_with?("."), not accepted?
 }
@@ -219,12 +219,12 @@ pub comp reserved_word {
 
     ensure rule: reserved? iff lexeme in RESERVED
 
-    expect contextual: when lexeme = "when" or lexeme = "ensure" or lexeme = "cover" or lexeme = "out", not reserved?
+    expect contextual: when lexeme is "when" | "ensure" | "cover" | "out", not reserved?
     expect membership: when lexeme = "in", reserved?
     expect pattern_test: when lexeme = "is", reserved?
     expect record_update: when lexeme = "with", reserved?
     expect modifier: when lexeme = "ordered", reserved?
-    expect local_definitions: when lexeme = "let" or lexeme = "where", reserved?
+    expect local_definitions: when lexeme is "let" | "where", reserved?
     expect condition_table: when lexeme = "table", reserved?
 }
 ```
@@ -315,11 +315,11 @@ pub comp integer_literal {
         or lexeme.matches?(r"0[xX][0-9a-fA-F_]*[0-9a-fA-F]") or lexeme.matches?(r"0[bB][0-1_]*[0-1]")
         or lexeme.matches?(r"0[oO][0-7_]*[0-7]"))
 
-    expect decimal: when lexeme = "120" or lexeme = "0", accepted?
-    expect bases: when lexeme = "0x1F" or lexeme = "0b101" or lexeme = "0o17", accepted?
-    expect separated: when lexeme = "1_000" or lexeme = "0x_FF", accepted?
+    expect decimal: when lexeme is "120" | "0", accepted?
+    expect bases: when lexeme is "0x1F" | "0b101" | "0o17", accepted?
+    expect separated: when lexeme is "1_000" | "0x_FF", accepted?
     expect digit_last: when lexeme.ends_with?("_"), not accepted?
-    expect base_needs_digits: when lexeme = "0x" or lexeme = "0b", not accepted?
+    expect base_needs_digits: when lexeme is "0x" | "0b", not accepted?
     expect leading_zero_separator: when lexeme = "0_1", not accepted?
 }
 ```

@@ -58,10 +58,10 @@ comp arith {
     pub out e3? := s.len >= 0 and 0 <= q.len and t.card != 2 and q.len <= 1
     --~^ warning: this comparison is always `true`
     --~^^ warning: this comparison is always `true`
-    pub out m1? := x != 1 and x != 2 and x != 3 and x != 4  --~ warning: this is `x` not in a set of 4
-    pub out m2? := x = 1 or x = 2 or x = 3 or x = 4         --~ warning: this is `x` in a set of 4
+    pub out m1? := x != 1 and x != 2 and x != 3 and x != y  --~ warning: this is `x` not in a set of 4
+    pub out m2? := x = 1 or x = 2 or x = 3 or x = y         --~ warning: this is `x` in a set of 4
     -- A later value indexes a sequence: no lint.
     pub out m3? := when q != [], x != 1 and x != q[0] and x != 3
-    pub out m4? := when q != [], q[0] != 1 and q[0] != 2 and q[0] != 3
+    pub out m4? := when q != [], q[0] != 1 and q[0] != 2 and q[0] != y
     --~^ warning: this is `q[0]` not in a set of 3
 }

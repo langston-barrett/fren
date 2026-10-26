@@ -18,11 +18,12 @@ comp lints {
     ensure r1: p? iff s.len = 0     --~ warning: say whether it is empty with `""`, not `len`
     ensure r2: z? iff (t.card > 0 or e = E::A or e = E::B or e = E::C)
     --~^ warning: say whether it is empty with `{}`, not `card`
+    --~^^ warning: this says that `e` matches one of these patterns
     ensure r3: y = x + 1
     expect r4: when x in {1}, x = 1  --~ warning: membership in a set of one member is equality
     expect r5: when q.len > 0 and (e = E::A or e = E::B or e = E::C), q != []
     --~^ warning: say whether it is empty with `[]`, not `len`
-    --~^^ warning: this is `e` in a set of 3
+    --~^^ warning: this says that `e` matches one of these patterns
     expect r6: when q[0] = 1 and q.len > 0, true
     --~^ warning: the bound comes after the index it guards
     --~^^ warning: say whether it is empty with `[]`, not `len`

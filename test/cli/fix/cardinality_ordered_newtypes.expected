@@ -1,3 +1,31 @@
+warning[F0805]: this says that `l` matches one of these patterns
+  --> test/cli/fix/cardinality_ordered_newtypes.fren:38:24
+   |
+38 |     ensure r5: p5? iff l = Level::Top or l = Level::High
+   |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ equations of one expression with values that patterns write
+   |
+   = help: `fren fix` can fix this
+   = note: `manual_pattern_test` is `warn` by default
+   = help: to allow it, `set_option fren.lint.manual_pattern_test "allow"`
+help: write `l is Level::Top | Level::High`
+   |
+38 -     ensure r5: p5? iff l = Level::Top or l = Level::High
+38 +     ensure r5: p5? iff l is Level::Top | Level::High
+   |
+
+warning[F0805]: this says that `l` matches none of these patterns
+  --> test/cli/fix/cardinality_ordered_newtypes.fren:39:24
+   |
+39 |     ensure r6: p6? iff l != Level::Low and l != Level::Mid
+   |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ disequations of one expression with values that patterns write
+   |
+   = help: `fren fix` can fix this
+help: write `not l is Level::Low | Level::Mid`
+   |
+39 -     ensure r6: p6? iff l != Level::Low and l != Level::Mid
+39 +     ensure r6: p6? iff not l is Level::Low | Level::Mid
+   |
+
 warning[F0842]: this reads the field of a newtype just built
   --> test/cli/fix/cardinality_ordered_newtypes.fren:49:25
    |
@@ -33,5 +61,6 @@ warning[F0842]: this reads the field of a newtype just built
 +    ensure r10: m2 = Level::Low
 +    ensure r11: y = x
 +    ensure r12: k = 2 * (n + 1)
-For more information about this error, try `fren --explain F0842`.
+Some errors have detailed explanations: F0805, F0842.
+For more information about an error, try `fren --explain F0805`.
 exit=1

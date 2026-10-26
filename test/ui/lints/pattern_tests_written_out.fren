@@ -1,0 +1,88 @@
+-- `manual_pattern_test`, and the chains it leaves to `membership_chain`, in
+-- both front ends.
+set_option fren.lint.membership_chain "warn"
+
+enum Shade { Light, Dark, Tinted(Int) }
+
+const LIMIT: Int := 5
+
+comp fires {
+    in s: Shade
+    in x: Int
+    in t: String
+    in q: Seq(Int)
+    in p?
+    in r?
+    pub out a?
+    pub out b?
+    pub out c?
+    pub out d?
+    pub out e?
+    pub out f?
+    pub out g?
+    pub out h?
+    pub out j?
+    pub out k?
+
+    ensure r1: a? iff x = 429 or x = 503         --~ warning: this says that `x` matches one of these patterns
+    ensure r2: b? iff 429 = x or x = 503         --~ warning: this says that `x` matches one of these patterns
+    ensure r3: c? iff x = 429 or x is 500..=599  --~ warning: this says that `x` matches one of these patterns
+    ensure r4: d? iff p? or x = 1 or x = 2 or r?  --~ warning: this says that `x` matches one of these patterns
+    ensure r5: e? iff x != 0 and not x is 10..   --~ warning: this says that `x` matches none of these patterns
+    ensure r6: f? iff (x = 1) or (x = -1)        --~ warning: this says that `x` matches one of these patterns
+    ensure r7: g? iff s = Shade::Light or s is Shade::Tinted(_)
+    --~^ warning: this says that `s` matches one of these patterns
+    ensure r8: h? iff t = "a" or t = "b"         --~ warning: this says that `t` matches one of these patterns
+    -- The expression may index a sequence: it is evaluated once.
+    ensure r9: j? iff q != [] and (q[0] = 1 or q[0] = 2)
+    --~^ warning: this says that `q[0]` matches one of these patterns
+    -- Three equations of literals are a pattern test, not a membership.
+    ensure r10: k? iff x = 1 or x = 2 or x = 3   --~ warning: this says that `x` matches one of these patterns
+}
+
+fn count(b?): Int := if b? then 1 else 0
+
+-- Where the run is not an operand of an operator: a `match`'s scrutinee, a
+-- table's condition and an argument, and a payload's range.
+comp places {
+    in s: Shade
+    in x: Int
+    in p?
+    pub out a?
+    pub out b: Int
+    pub out c: Int
+    pub out d?
+
+    ensure r1: a? iff match (x = 1 or x = 2) { true => p?, false => false }
+    --~^ warning: this says that `x` matches one of these patterns
+    ensure r2: b = table { (x = 1 or x = 2) => 0, x > 5 => 1, _ => 2 }
+    --~^ warning: this says that `x` matches one of these patterns
+    ensure r3: c = count(x = 1 or x = 2)          --~ warning: this says that `x` matches one of these patterns
+    ensure r4: d? iff s is Shade::Tinted(1..=3) or s = Shade::Light
+    --~^ warning: this says that `s` matches one of these patterns
+}
+
+comp stays {
+    in x: Int
+    in y: Int
+    in n: Nat
+    pub out a?
+    pub out c?
+    pub out d?
+    pub out e?
+    pub out f?
+    pub out g?
+    pub out h?
+
+    -- An alternative that a later one repeats or overlaps.
+    ensure r1: a? iff x = 1 or x = 1             --~ warning: both operands of `or` are written the same
+    ensure r2: c? iff x is 0..=9 or x = 5
+    -- A constant, a variable, or two expressions.
+    ensure r3: d? iff x = 1 or x = LIMIT
+    ensure r4: e? iff x = 1 or y = 2
+    -- Pattern tests alone, and a negative literal of a `Nat`.
+    ensure r5: f? iff x is 1..=3 or x is 5..=9
+    ensure r6: g? iff n = -1 or n = 2
+    -- Three, with a variable: `membership_chain`'s.
+    ensure r7: h? iff x = 1 or x = 2 or x = y   --~ warning: this is `x` in a set of 3
+}

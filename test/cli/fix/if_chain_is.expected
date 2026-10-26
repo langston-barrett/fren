@@ -6,7 +6,7 @@
 -    ensure r3: b? iff match n { 0..=9 => true, _ => false }
 -    ensure r4: d? iff match s { Shade::Tinted(0) => false, _ => true }
 +    ensure r1: k = match s { Shade::Tinted(_) => 1, Shade::Dark | Shade::Light => 2 }
-+    ensure r2: a? iff n in {0, 1}
++    ensure r2: a? iff n is 0 | 1
 +    ensure r3: b? iff n is 0..=9
 +    ensure r4: d? iff not s is Shade::Tinted(0)
 exit=1

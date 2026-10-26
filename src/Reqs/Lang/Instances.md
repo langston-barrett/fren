@@ -195,8 +195,8 @@ pub comp mention {
 
     ensure inputs: when role = Input, allowed?
     ensure outputs: when role = Output, allowed? iff place = Constraint
-    ensure instances: when role = InstInput or role = InstOutput,
-        allowed? iff (place = Constraint or place = Argument or (place = Binding and earlier?))
+    ensure instances: when role is InstInput | InstOutput,
+        allowed? iff (place is Constraint | Argument or (place = Binding and earlier?))
     ensure hidden: when role = InstHidden, not allowed?
 
     expect assume_sees_inputs_only: when place = Assume and allowed?, role = Input

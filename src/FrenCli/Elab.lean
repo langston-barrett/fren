@@ -1437,7 +1437,7 @@ def lintBools (e : Expr) : M Unit := do
   let fact? (sp : Span) := (facts.find? (·.1 == sp)).map (·.2)
   let ordered? (sp : Span) := (ordereds.find? (·.1 == sp)).map (·.2)
   for r in Fren.Core.opReports src boolEqs.contains ordered? variant? (absEnds.contains ·.stop) mentioning.contains fact? root do
-    lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) (shift r.msg)
+    lintFix r.lint (match r.last? with | some l => r.ref.to l | none => r.ref) (shift r.msg) r.unless?
   for r in Fren.Core.arithReports src root do
     lintFix r.lint r.ref (shift r.msg)
   for sp in e.integerSpans do
@@ -2733,7 +2733,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let lefts ← eqs.mapM fun (l, _) => srcAt l.span
         let same := eqs.size == ds.size && lefts.all (· == lefts[0]!)
         let laterIndexes ← (eqs.extract 1).anyM fun (_, v) => return !(← indexedIn v).isEmpty
-        if Fren.Core.membershipChainFires ds.size same laterIndexes then
+        let patterns ← eqs.allM fun (_, v) => return Fren.Core.patternValue (← srcAt v.span) (← variantOf? cx v).isSome
+        if Fren.Core.membershipChainFires ds.size same laterIndexes patterns then
           lintFix .membershipChain span
             (Fren.Core.membershipChainMsg lefts[0]! (← eqs.mapM fun (_, r) => srcAt r.span) (op == "and"))
       -- `index_after_use` (`lint::index_after_use`).
@@ -2762,6 +2763,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
       let ((x, tx), (y, ty)) ← pair { cx with concatOk := cb } { cx with concatOk := ca } a b
       liftMsg span (Fren.Core.checkComparable op tx ty)
+      -- For `manual_pattern_test`, at the end of the expression.
+      if cx.noteIndexes && (tx == .nat || ty == .nat) then modify fun s => { s with facts := s.facts.push (span, .natOperands) }
       -- `const_is_empty` on a literal and an empty one (`lint::const_empty_equation`),
       -- after the sides and their types, as in Lean.
       if let (some (_, m), some (_, n), true) := (a.literalCount?, b.literalCount?, cx.noteIndexes) then
@@ -3418,8 +3421,8 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let irrefutable := Fren.Core.irrefutableIs (Fren.Core.matchesEvery (← patSigs) ts.patTy q)
       if irrefutable then lint .irrefutableIs span (Fren.Core.irrefutableIsMsg ts.show (q matches .wild _))
       let texts ← p.alts.mapM (srcAt ·.span)
-      if Fren.Core.isEquality (Fren.Core.equatable q texts) irrefutable then
-        lintFix .isEquality span (Fren.Core.isEqualityMsg (scrutinee.text (← get).src) texts)
+      if Fren.Core.isEquality texts.size (Fren.Core.equatable q texts) irrefutable then
+        lintFix .isEquality span (Fren.Core.isEqualityMsg (scrutinee.text (← get).src) texts[0]!)
     return (test.getD "true", .bool)
   | .«let» _ defs body isWhere =>
     let appMark := (← get).natApps.size

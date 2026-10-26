@@ -379,14 +379,15 @@ impl absurd_extreme_comparisons: lint::absurd_extreme_comparisons for (c : Compa
   intro c b l _
   cases c <;> cases l <;> simp [fren_spec, toComparison, Fren.Core.absurdComparison, Fren.Core.Comparison.mirror] <;> omega
 
-impl membership_chain: lint::membership_chain for (n : Nat) (same later : Bool) {
+impl membership_chain: lint::membership_chain for (n : Nat) (same later pats : Bool) {
   n := n,
   same_left? := same,
   later_indexes? := later,
-  fires? := Fren.Core.membershipChainFires n same later,
+  patterns? := pats,
+  fires? := Fren.Core.membershipChainFires n same later pats,
 } by
-  intro n same later _
-  cases same <;> cases later <;> simp [fren_spec, Fren.Core.membershipChainFires] <;> omega
+  intro n same later pats _
+  cases same <;> cases later <;> cases pats <;> simp [fren_spec, Fren.Core.membershipChainFires] <;> omega
 
 impl output_lints: lint::output_lints for (d v : Bool) (r : Nat) (eq : Bool) {
   defined? := d,
@@ -466,7 +467,8 @@ impl match_like_membership: lint::match_like_membership
   pattern_test? := (Fren.Core.matchMembership bb bs d tf ff et ef w wt t f).2.2,
 } by
   intro bb bs d tf ff et ef w wt t f _
-  simp [fren_spec, Fren.Core.matchMembership]
+  simp only [fren_spec, Fren.Core.matchMembership]
+  cases w <;> cases wt <;> cases d <;> cases ff <;> cases ef <;> cases et <;> by_cases h : f < t <;> simp [h] <;> omega
 
 impl wildcard_single_variant: lint::wildcard_single_variant for (n : Nat) {
   n_matched := n,
@@ -478,13 +480,14 @@ impl wildcard_single_variant: lint::wildcard_single_variant for (n : Nat) {
 
 -- Both front ends decide `is_equality` and `irrefutable_is` with
 -- `isEquality` and `irrefutableIs`, where they elaborate the test.
-impl is_equality: lint::is_equality for (e i : Bool) {
+impl is_equality: lint::is_equality for (n : Nat) (e i : Bool) {
+  n_alternatives := n,
   equatable? := e,
   irrefutable? := i,
-  fires? := Fren.Core.isEquality e i,
+  fires? := Fren.Core.isEquality n e i,
 } by
-  intro e i _
-  cases e <;> cases i <;> simp [fren_spec, Fren.Core.isEquality]
+  intro n e i _
+  cases e <;> cases i <;> simp [fren_spec, Fren.Core.isEquality] <;> omega
 
 impl irrefutable_is: lint::irrefutable_is for (m : Bool) {
   matches_every? := m,
@@ -1389,8 +1392,159 @@ trusted lint::nfc_fixed: "a model of a string literal, checked by the refinement
 trusted lint::trailing_comma_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::trailing_comma_fixed: "a model of an expression, checked by the refinements in its section"
 
+/-! ### Pattern tests written out -/
+
+def toBound : lint.Bound → Option Int
+  | .Open => none
+  | .At k => some k
+
+/-- An alternative of the model as `manual_pattern_test` reads one
+(`lint::Alt`). -/
+def toPatAlt : lint.Alt → Fren.Core.PatAlt
+  | .Ints l h => .ints (toBound l) (toBound h)
+  | .Text s => .str s
+  | .Variant v => .variant v
+
+theorem boundBelow_eq (h l : lint.Bound) : Fren.Core.boundBelow (toBound h) (toBound l) = lint.bound_below? h l := by
+  cases h <;> cases l <;> simp [fren_spec, toBound, Fren.Core.boundBelow, lint.bound_below?, lint.Bound.At.x0]
+
+theorem disjoint_eq (a b : lint.Alt) : (toPatAlt a).disjoint (toPatAlt b) = lint.alts_disjoint? a b := by
+  rw [Bool.eq_iff_iff]
+  cases a <;> cases b <;> simp only [toPatAlt, Fren.Core.PatAlt.disjoint, boundBelow_eq] <;>
+    simp [fren_spec, lint.alts_disjoint?, lint.bound_below?, lint.Alt.Ints.x0, lint.Alt.Ints.x1, lint.Alt.Text.x0,
+      lint.Alt.Variant.x0, lint.Bound.At.x0]
+
+theorem pairwiseDisjoint_iff (l : List Fren.Core.PatAlt) :
+    Fren.Core.pairwiseDisjoint l = true ↔ l.Pairwise (fun a b => a.disjoint b = true) := by
+  induction l with
+  | nil => simp [Fren.Core.pairwiseDisjoint]
+  | cons a as ih => simp [Fren.Core.pairwiseDisjoint, ih, List.pairwise_cons, List.all_eq_true]
+
+-- The alternatives are pairwise disjoint, by their positions in the model's
+-- sequence.
+theorem pairwise_nth (l : List lint.Alt) :
+    Fren.Core.pairwiseDisjoint (l.map toPatAlt) = true ↔
+      ∀ i j : Int, 0 ≤ i → i < j → j < (Fren.Seq.ofList l).len →
+        lint.alts_disjoint? ((Fren.Seq.ofList l).nth i) ((Fren.Seq.ofList l).nth j) = true := by
+  rw [pairwiseDisjoint_iff, List.pairwise_map, List.pairwise_iff_getElem]
+  simp only [disjoint_eq, Fren.Seq.len_eq, Fren.Seq.toList_ofList]
+  constructor
+  · intro h i j hi hij hj
+    rw [Fren.Seq.nth_of_lt _ _ hi (by simp; omega), Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega)]
+    simp only [Fren.Seq.toList_ofList]
+    exact h _ _ _ _ (by omega)
+  · intro h i j hi hj hij
+    have := h i j (by omega) (by omega) (by omega)
+    rwa [Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega), Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega)] at this
+
+theorem manualPatternTest_iff (l : List lint.Alt) (n e : Nat) (c : Bool) :
+    Fren.Core.manualPatternTest (l.map toPatAlt) n e c = true ↔
+      (((n : Int) ≥ 2 ∧ (e : Int) ≥ 1) ∧ ¬c = true) ∧
+        ∀ i j : Int, 0 ≤ i → i < j → j < (Fren.Seq.ofList l).len →
+          lint.alts_disjoint? ((Fren.Seq.ofList l).nth i) ((Fren.Seq.ofList l).nth j) = true := by
+  rw [← pairwise_nth]
+  simp only [Fren.Core.manualPatternTest, Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq]
+  cases c <;> simp <;> omega
+
+-- The spec's quantifiers over positions, expanded as Fren expands them, are
+-- the quantifier over every position of the sequence, which has at most
+-- eight.
+impl manual_pattern_test: lint::manual_pattern_test for (l : List lint.Alt) (n e : Nat) (c : Bool) {
+  alts := Fren.Seq.ofList l,
+  n_operands := n,
+  n_equations := e,
+  chain? := c,
+  fires? := Fren.Core.manualPatternTest (l.map toPatAlt) n e c,
+} by
+  intro l n e c hs
+  unfold lint.manual_pattern_test.ensures lint.manual_pattern_test.ensure.rule
+  rw [manualPatternTest_iff]
+  refine and_congr_right fun _ => ?_
+  have _hl : (Fren.Seq.ofList l).len ≤ 8 := hs
+  constructor
+  · intro h
+    and_intros <;> exact fun hc => h _ _ (by decide) hc.1 hc.2
+  · intro E i j hi hij hj
+    rcases E with
+      ⟨⟨⟨⟨⟨⟨_, h01⟩, ⟨h02, h03⟩⟩, ⟨⟨h04, h05⟩, ⟨h06, h07⟩⟩⟩,
+      ⟨⟨⟨_, _⟩, ⟨h12, h13⟩⟩, ⟨⟨h14, h15⟩, ⟨h16, h17⟩⟩⟩⟩,
+      ⟨⟨⟨⟨_, _⟩, ⟨_, h23⟩⟩, ⟨⟨h24, h25⟩, ⟨h26, h27⟩⟩⟩,
+      ⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨h34, h35⟩, ⟨h36, h37⟩⟩⟩⟩⟩,
+      ⟨⟨⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨_, h45⟩, ⟨h46, h47⟩⟩⟩,
+      ⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨_, _⟩, ⟨h56, h57⟩⟩⟩⟩,
+      ⟨⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨_, _⟩, ⟨_, h67⟩⟩⟩,
+      ⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨_, _⟩, ⟨_, _⟩⟩⟩⟩⟩⟩
+    have hi' : i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 ∨ i = 5 ∨ i = 6 ∨ i = 7 := by omega
+    have hj' : j = 0 ∨ j = 1 ∨ j = 2 ∨ j = 3 ∨ j = 4 ∨ j = 5 ∨ j = 6 ∨ j = 7 := by omega
+    rcases hi' with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      rcases hj' with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    · omega
+    · exact h01 ⟨by decide, hj⟩
+    · exact h02 ⟨by decide, hj⟩
+    · exact h03 ⟨by decide, hj⟩
+    · exact h04 ⟨by decide, hj⟩
+    · exact h05 ⟨by decide, hj⟩
+    · exact h06 ⟨by decide, hj⟩
+    · exact h07 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · exact h12 ⟨by decide, hj⟩
+    · exact h13 ⟨by decide, hj⟩
+    · exact h14 ⟨by decide, hj⟩
+    · exact h15 ⟨by decide, hj⟩
+    · exact h16 ⟨by decide, hj⟩
+    · exact h17 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · omega
+    · exact h23 ⟨by decide, hj⟩
+    · exact h24 ⟨by decide, hj⟩
+    · exact h25 ⟨by decide, hj⟩
+    · exact h26 ⟨by decide, hj⟩
+    · exact h27 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · omega
+    · omega
+    · exact h34 ⟨by decide, hj⟩
+    · exact h35 ⟨by decide, hj⟩
+    · exact h36 ⟨by decide, hj⟩
+    · exact h37 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · exact h45 ⟨by decide, hj⟩
+    · exact h46 ⟨by decide, hj⟩
+    · exact h47 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · exact h56 ⟨by decide, hj⟩
+    · exact h57 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · exact h67 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+
 -- The models of the expressions that the refinements of `match_like_membership`,
--- `is_equality`, `irrefutable_is`, `chainable_comparison`, and of `int_plus_one`
+-- `is_equality`, `manual_pattern_test`, `irrefutable_is`, `chainable_comparison`, and of `int_plus_one`
 -- and `contradictory_comparisons` in chains, compare.
 -- keep-sorted start
 trusted lint::chainable_fixed: "a model of an expression, checked by the refinements in its section"
@@ -1403,6 +1557,8 @@ trusted lint::irrefutable_is_value: "a model of an expression, checked by the re
 trusted lint::irrefutable_is_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::is_equality_fixed: "a model of an expression, checked by the refinements in its section"
 trusted lint::is_equality_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_pattern_test_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::manual_pattern_test_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::membership_test_fixed: "a model of an expression, checked by the refinements in its section"
 trusted lint::membership_test_written: "a model of an expression, checked by the refinements in its section"
 -- keep-sorted end
