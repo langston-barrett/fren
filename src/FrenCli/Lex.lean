@@ -2,6 +2,7 @@
 import FrenCore.Lexical
 import FrenCore.Syntax
 import Std.Data.HashMap
+import Std.Data.HashSet
 -- keep-sorted end
 
 /-!
@@ -66,6 +67,7 @@ def lexCommands : List String := ["#fren_check", "#fren_trace"]
 structure LexError where
   span : Span
   msg : Fren.Core.Msg
+  deriving Inhabited
 
 def unterminatedString : Fren.Core.Msg :=
   { code? := some "F0103", headline := "unterminated string literal", label? := some "string starts here"
@@ -111,124 +113,145 @@ where
   punctuatorsByFirst : Std.HashMap Char (List String) :=
     punctuators.foldr (init := {}) fun p m => m.alter p.front fun ps? => some (p :: ps?.getD [])
 
-/-- The tokens of `src`, and the spans of its comments. -/
-def lexWithComments (src : Array Char) : Except LexError (Array Token × Array Span) := Id.run do
+/-- `reserved`, as a set, which an identifier is looked up in. -/
+def reservedSet : Std.HashSet String := .ofList reserved
+
+/-- Where the block comment that starts at `start` ends, after its closer,
+counting the comments nested in it; `none` if it does not. -/
+def blockCommentEnd (src : Array Char) (start : Nat) : Option Nat := Id.run do
+  let mut i := start
+  let mut depth := 0
+  repeat
+    if i ≥ src.size then return none
+    if occursAt src i "/-" then depth := depth + 1; i := i + 2
+    else if occursAt src i "-/" then
+      depth := depth - 1; i := i + 2
+      if depth == 0 then break
+    else i := i + 1
+  return some i
+
+/-- The token that starts with `c`, at `i`, which neither whitespace nor a
+comment starts, and where it ends; or the error there. -/
+def tokenAt (src : Array Char) (i : Nat) (c : Char) : Except LexError (Token × Nat) := Id.run do
   let n := src.size
   let at? (i : Nat) : Option Char := src[i]?
   let startsWith := occursAt src
   -- `String.ofList (src.extract a b).toList`, without the list.
   let text (a b : Nat) : String := src.foldl (·.push ·) "" a b
-  let mut toks : Array Token := #[]
-  let mut comments := #[]
-  let mut i := 0
-  while i < n do
-    let c := src[i]!
-    if c.isWhitespace then
+  let mut i := i
+  if c == 'r' && (at? (i + 1) == some '"' || at? (i + 1) == some '#') then
+    -- A raw literal, `r"..."` or `r#"..."#`, with as many `#`s closing it.
+    let start := i
+    i := i + 1
+    let mut hashes := 0
+    while at? i == some '#' do hashes := hashes + 1; i := i + 1
+    if at? i != some '"' then
+      return .error { span := ⟨start, i⟩, msg := unterminatedString }
+    i := i + 1
+    let close := "\"" ++ String.ofList (List.replicate hashes '#')
+    let bodyStart := i
+    while i < n && !startsWith i close do
+      if src[i]! == '\n' then return .error { span := ⟨start, i⟩, msg := unterminatedString }
       i := i + 1
+    if i ≥ n then return .error { span := ⟨start, i⟩, msg := unterminatedString }
+    return .ok ({ tok := .str (text bodyStart i), span := ⟨start, i + close.length⟩ }, i + close.length)
+  else if Fren.Core.isLeanIdStart c then
+    let start := i
+    if Fren.Core.isIdStart c then i := Fren.Core.identEnd src i
+    -- Where Lean would read further, as it does all of an identifier that
+    -- Fren's rule does not start, the two front ends would differ.
+    let lean := Fren.Core.leanIdentEnd src start
+    if lean > i then
+      let lexeme := String.ofList (src.extract start lean).toList
+      -- An unclosed `«` runs to the end of the input: mark only its line.
+      let stop := ((src.extract start lean).findIdx? (· == '\n')).map (start + ·) |>.getD lean
+      return .error { span := ⟨start, stop⟩, msg := Fren.Core.leanIdentifierMsg lexeme (src[lean]? == some '=') }
+    let s := text start i
+    return .ok ({ tok := if reservedSet.contains s then .kw s else .ident s, span := ⟨start, i⟩ }, i)
+  else if c == '"' then
+    -- Lean's escapes (`Lang/Lexical.md`).
+    let start := i
+    i := i + 1
+    let mut s := ""
+    repeat
+      match at? i with
+      | none | some '\n' => return .error { span := ⟨start, i⟩, msg := unterminatedString }
+      | some '"' => i := i + 1; break
+      | some '\\' =>
+        let some (ch, k) := escapeAt src (i + 1)
+          | return .error { span := ⟨i, i + 2⟩, msg := {
+              code? := some "F0115", headline := "unknown escape in a string literal", label? := some "not an escape"
+              notes := #["note: the escapes are `\\\\`, `\\\"`, `\\'`, `\\n`, `\\t`, `\\r`, `\\xHH` and `\\uHHHH`",
+                "help: for a literal `\\`, write `\\\\`, or use a raw literal, `r\"...\"`"] } }
+        s := s.push ch
+        i := i + k
+      | some ch => s := s.push ch; i := i + 1
+    return .ok ({ tok := .str s, span := ⟨start, i⟩ }, i)
+  else if Fren.Core.isDecimalDigit c then
+    let start := i
+    i := Fren.Core.integerEnd src i
+    let s := text start i
+    -- Both halves of the rule: well formed, and Lean decodes it.
+    let some v := if Fren.Core.integerLiteral s then Fren.Core.integerValue? s else none
+      | return .error { span := ⟨start, i⟩, msg := Fren.Core.malformedIntegerMsg s }
+    return .ok ({ tok := .num s v, span := ⟨start, i⟩ }, i)
+  else
+    match lexCommands.find? (startsWith i) <|> punctuatorAt src i with
+    | some s => return .ok ({ tok := .kw s, span := ⟨i, i + s.length⟩ }, i + s.length)
+    | none =>
+      if startsWith i "//" then
+        return .error { span := ⟨i, i + 2⟩, msg := {
+          code? := some "F0101", headline := "unexpected characters `//`", label? := some "not a comment in Fren"
+          fixes := #[{ msg := "comments start with `--`", replacement := "--" }] } }
+      if c == '!' || c == '/' || c == '%' then
+        let spaceBefore := i == 0 || src[i - 1]!.isWhitespace
+        let spaceAfter := (src[i + 1]?.map Char.isWhitespace).getD true
+        return .error { span := ⟨i, i + 1⟩, msg := Fren.Core.foreignOpMsg c.toString spaceBefore spaceAfter }
+      let msg : Fren.Core.Msg :=
+        { code? := some "F0101", headline := s!"unexpected character `{c}`", label? := some "not part of Fren's syntax" }
+      let msg := match c with
+        | '#' => { msg with fixes := #[{ msg := "comments start with `--`", replacement := "--" }] }
+        | '&' => { msg with fixes := #[{ msg := "use `and`", replacement := "and" }] }
+        | ';' => { msg with notes := #["note: Fren has no statement separators"], fixes := #[{ msg := "remove it", replacement := "" }] }
+        | _ => msg
+      return .error { span := ⟨i, i + 1⟩, msg }
+
+/-- The tokens of `src` from `i` on, after `toks`, and the spans of its
+comments, after `comments`: a tail-recursive loop, which the compiler makes
+a loop without allocating a closure for each step. -/
+partial def lexFrom (src : Array Char) (i : Nat) (toks : Array Token) (comments : Array Span) :
+    Except LexError (Array Token × Array Span) :=
+  if h : i < src.size then
+    let c := src[i]
+    if c.isWhitespace then lexFrom src (i + 1) toks comments
     -- `startsWith i "--"` and `startsWith i "/-"`, from `c`.
-    else if c == '-' && at? (i + 1) == some '-' then
-      let start := i
-      while i < n && src[i]! != '\n' do i := i + 1
-      comments := comments.push ⟨start, i⟩
-    else if c == '/' && at? (i + 1) == some '-' then
-      let start := i
-      let mut depth := 0
-      repeat
-        if i ≥ n then return .error { span := ⟨start, start + 2⟩, msg := {
+    else if c == '-' && src[i + 1]? == some '-' then
+      let stop := lineEnd i
+      lexFrom src stop toks (comments.push ⟨i, stop⟩)
+    else if c == '/' && src[i + 1]? == some '-' then
+      match blockCommentEnd src i with
+      | some stop => lexFrom src stop toks (comments.push ⟨i, stop⟩)
+      | none => .error { span := ⟨i, i + 2⟩, msg := {
           code? := some "F0102", headline := "unterminated block comment", label? := some "comment starts here"
           notes := #["note: block comments nest, so each `/-` needs its own `-/`"] } }
-        if startsWith i "/-" then depth := depth + 1; i := i + 2
-        else if startsWith i "-/" then
-          depth := depth - 1; i := i + 2
-          if depth == 0 then break
-        else i := i + 1
-      comments := comments.push ⟨start, i⟩
-    else if c == 'r' && (at? (i + 1) == some '"' || at? (i + 1) == some '#') then
-      -- A raw literal, `r"..."` or `r#"..."#`, with as many `#`s closing it.
-      let start := i
-      i := i + 1
-      let mut hashes := 0
-      while at? i == some '#' do hashes := hashes + 1; i := i + 1
-      if at? i != some '"' then
-        return .error { span := ⟨start, i⟩, msg := unterminatedString }
-      i := i + 1
-      let close := "\"" ++ String.ofList (List.replicate hashes '#')
-      let bodyStart := i
-      while i < n && !startsWith i close do
-        if src[i]! == '\n' then return .error { span := ⟨start, i⟩, msg := unterminatedString }
-        i := i + 1
-      if i ≥ n then return .error { span := ⟨start, i⟩, msg := unterminatedString }
-      toks := toks.push { tok := .str (text bodyStart i), span := ⟨start, i + close.length⟩ }
-      i := i + close.length
-    else if Fren.Core.isLeanIdStart c then
-      let start := i
-      if Fren.Core.isIdStart c then i := Fren.Core.identEnd src i
-      -- Where Lean would read further, as it does all of an identifier that
-      -- Fren's rule does not start, the two front ends would differ.
-      let lean := Fren.Core.leanIdentEnd src start
-      if lean > i then
-        let lexeme := String.ofList (src.extract start lean).toList
-        -- An unclosed `«` runs to the end of the input: mark only its line.
-        let stop := ((src.extract start lean).findIdx? (· == '\n')).map (start + ·) |>.getD lean
-        return .error { span := ⟨start, stop⟩, msg := Fren.Core.leanIdentifierMsg lexeme (src[lean]? == some '=') }
-      let s := text start i
-      toks := toks.push { tok := if reserved.contains s then .kw s else .ident s, span := ⟨start, i⟩ }
-    else if c == '"' then
-      -- Lean's escapes (`Lang/Lexical.md`).
-      let start := i
-      i := i + 1
-      let mut s := ""
-      repeat
-        match at? i with
-        | none | some '\n' => return .error { span := ⟨start, i⟩, msg := unterminatedString }
-        | some '"' => i := i + 1; break
-        | some '\\' =>
-          let some (ch, k) := escapeAt src (i + 1)
-            | return .error { span := ⟨i, i + 2⟩, msg := {
-                code? := some "F0115", headline := "unknown escape in a string literal", label? := some "not an escape"
-                notes := #["note: the escapes are `\\\\`, `\\\"`, `\\'`, `\\n`, `\\t`, `\\r`, `\\xHH` and `\\uHHHH`",
-                  "help: for a literal `\\`, write `\\\\`, or use a raw literal, `r\"...\"`"] } }
-          s := s.push ch
-          i := i + k
-        | some ch => s := s.push ch; i := i + 1
-      toks := toks.push { tok := .str s, span := ⟨start, i⟩ }
-    else if Fren.Core.isDecimalDigit c then
-      let start := i
-      i := Fren.Core.integerEnd src i
-      let s := text start i
-      -- Both halves of the rule: well formed, and Lean decodes it.
-      let some v := if Fren.Core.integerLiteral s then Fren.Core.integerValue? s else none
-        | return .error { span := ⟨start, i⟩, msg := Fren.Core.malformedIntegerMsg s }
-      toks := toks.push { tok := .num s v, span := ⟨start, i⟩ }
-    else
-      match lexCommands.find? (startsWith i) <|> punctuatorAt src i with
-      | some s =>
-        toks := toks.push { tok := .kw s, span := ⟨i, i + s.length⟩ }
-        i := i + s.length
-      | none =>
-        if startsWith i "//" then
-          return .error { span := ⟨i, i + 2⟩, msg := {
-            code? := some "F0101", headline := "unexpected characters `//`", label? := some "not a comment in Fren"
-            fixes := #[{ msg := "comments start with `--`", replacement := "--" }] } }
-        if c == '!' || c == '/' || c == '%' then
-          let spaceBefore := i == 0 || src[i - 1]!.isWhitespace
-          let spaceAfter := (src[i + 1]?.map Char.isWhitespace).getD true
-          return .error { span := ⟨i, i + 1⟩, msg := Fren.Core.foreignOpMsg c.toString spaceBefore spaceAfter }
-        let msg : Fren.Core.Msg :=
-          { code? := some "F0101", headline := s!"unexpected character `{c}`", label? := some "not part of Fren's syntax" }
-        let msg := match c with
-          | '#' => { msg with fixes := #[{ msg := "comments start with `--`", replacement := "--" }] }
-          | '&' => { msg with fixes := #[{ msg := "use `and`", replacement := "and" }] }
-          | ';' => { msg with notes := #["note: Fren has no statement separators"], fixes := #[{ msg := "remove it", replacement := "" }] }
-          | _ => msg
-        return .error { span := ⟨i, i + 1⟩, msg }
-  toks := toks.push { tok := .eof, span := ⟨n, n⟩ }
+    else match tokenAt src i c with
+      | .ok (t, stop) => lexFrom src stop (toks.push t) comments
+      | .error e => .error e
+  else .ok (toks, comments)
+where
+  /-- Where the line of `i` ends, at its `\n` or the end of `src`. -/
+  lineEnd (i : Nat) : Nat := if i < src.size && src[i]! != '\n' then lineEnd (i + 1) else i
+
+/-- The tokens of `src`, and the spans of its comments. -/
+def lexWithComments (src : Array Char) : Except LexError (Array Token × Array Span) := do
+  let (toks, comments) ← lexFrom src 0 #[] #[]
+  let toks := toks.push { tok := .eof, span := ⟨src.size, src.size⟩ }
   -- Whether a line ends between a token and the one before it, read in
   -- place: `src.any` over the range is `contains` of its `extract`.
   let marked := toks.mapIdx fun k t =>
     let prev := if k == 0 then 0 else toks[k - 1]!.span.stop
     { t with nlBefore := src.any (· == '\n') prev t.span.start }
-  return .ok (marked, comments)
+  return (marked, comments)
 
 def lex (src : Array Char) : Except LexError (Array Token) := (·.1) <$> lexWithComments src
 
