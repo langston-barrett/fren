@@ -3453,8 +3453,15 @@ def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- A `Nat` is expected of `min`'s and `max`'s argument where one is of the
   -- whole (`lang::nat_result`).
   let natArg := natOk && rty.isConstOf ``Nat && (m == "min" || m == "max")
-  let as ← args.mapM fun a =>
-    return (← if pattern then patternTerm a else toTerm { cx with emptyOk := position.checked false false, natOk := natArg } a, a)
+  -- An enumeration's or record's `min` and `max` take the receiver's type,
+  -- so a variant of a generic type takes its type arguments, as in the
+  -- `fren` command.
+  let ordered? ← if m == "min" || m == "max" then
+      pure ((← frenTypeOf? r).filter (· matches .enum .. | .record ..)) else pure none
+  let as ← args.mapM fun a => do
+    let acx := { cx with emptyOk := position.checked false false, natOk := natArg }
+    let acx := match ordered? with | some t => { acx with expected? := some t } | none => acx
+    return (← if pattern then patternTerm a else toTerm acx a, a)
   if seq then
     let c := (Core.Method.ofName? m).map (·.seqConstruct) |>.getD .seqWord
     checkCore cx e c true true (#[recvStx] ++ args) ((← args.allM (isConstant cx ·)) && (← isConstant cx recvStx))

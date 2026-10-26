@@ -617,7 +617,11 @@ enumeration that is not generic, whose payload of a pattern type is
 allowed, under the [`undecidable` lint](../Lint/Decidability.md#undecidable-constructs)
 (see [Pattern types](Types.md#meaning)). It reaches records too: with
 `struct R { b: Byte }`, `List(R)` is an error, since a value of `R` brings
-that its field is in range, though `R` itself is not a pattern type. A
+that its field is in range, though `R` itself is not a pattern type. It
+reaches through instances too, once their arguments stand for their
+parameters: with `enum Wrap(T) { W(List(T)) }`, `Wrap(Byte)` is an error,
+and so is `S(Byte)`, with `struct S(T) { s: Set(List(T)) }`, through a
+set's, sequence's or relation's element types. A
 recursive generic enumeration's payload of a declared pattern type that
 mentions no parameter, as `Int is 0..=9` in
 `enum Tree(T) { Leaf, Node(Int is 0..=9, T, Tree(T)) }`, brings its

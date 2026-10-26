@@ -243,19 +243,25 @@ declared type arguments `args`, once they stand for its type parameters,
 the first type argument of an instance of a recursive enumeration whose
 values bring a constraint (`recursiveArgumentMsg`), with that enumeration:
 as `Byte` of `List(Byte)` within `Wrap(Byte)`, for
-`enum Wrap(T) { W(List(T)) }`. Each instance is looked into once. -/
+`enum Wrap(T) { W(List(T)) }`. A set's, sequence's or relation's element
+types are looked into too, as `List(Byte)` within `Set(List(Byte))`. Each
+instance is looked into once. -/
 partial def recursiveArgumentWithin? (shapes : Name → Option DataShape) (p : Name) (args : Array PTy)
     (seen : List Name := []) : Option (PTy × Name) := do
   if args.isEmpty || seen.contains p then none
   let d ← shapes p
-  let parts := (d.inst args).parts.flatten
-  parts.findSome? fun t =>
-    let inner (q : Name) : Option (PTy × Name) :=
+  (d.inst args).parts.flatten.findSome? within
+where
+  /-- The first such argument within the declared type `t`, a payload's or
+  field's type, or an element type within one. -/
+  within (t : PTy) : Option (PTy × Name) :=
+    match t.ty with
+    | .set _ | .seq _ | .rel .. => t.elems.findSome? within
+    | ty => ty.dataPath?.bind fun q =>
       if t.elems.isEmpty then none
       else if (shapes q).any (·.recursive) && q != p then
         (t.elems.find? fun e => (e.cons shapes).isSome).map (·, q)
       else recursiveArgumentWithin? shapes q t.elems (p :: seen)
-    t.ty.dataPath?.bind inner
 
 /-- Where a value is given for a declared type (`lang::ValuePlace`). -/
 inductive ValuePlace where

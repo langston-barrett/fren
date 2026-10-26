@@ -17,8 +17,11 @@ comp c {
     expect chained: when x = Level::Mid, Level::Low < x < Level::High
     expect chained_right: when x = Level::Low, x < Level::Mid < Level::High
     expect min: when x = Level::Low, x.min(y) <= Level::Low
+    -- A method's argument takes the receiver's type.
+    expect max: x.max(Level::Mid) >= Level::Mid
+    expect min_variant: x.min(Level::Mid) <= Level::Mid
     expect wrong: x < Level::Mid  --~ error: expectation `generics_ordering::c::wrong` does not hold
 }
 
---@ summary: 13 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ summary: 15 passed, 1 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

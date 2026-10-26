@@ -3086,6 +3086,9 @@ partial def elabMethodExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pa
       -- A `Nat` is expected of `min`'s and `max`'s argument where one is of
       -- the whole (`lang::nat_result`).
       | .nat, some .min | .nat, some .max => expected?.filter (· == .nat)
+      -- An enumeration's or record's `min` and `max` take the receiver's
+      -- type, so a variant of a generic type takes its type arguments.
+      | .enum .., some .min | .enum .., some .max | .record .., some .min | .record .., some .max => some t
       | _, _ => none
     let (x, ta) ← elabExpr { cx with expected? } a
     as := as.push (x, ta, a.span)

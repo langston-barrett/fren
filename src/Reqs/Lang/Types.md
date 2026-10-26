@@ -796,7 +796,9 @@ Where an expression is written decides whether it is checked:
   of an instance or of a refinement, a field of a record literal or of a
   record update, the value of a [newtype](Items.md#newtypes), as in
   `Ms(e)`, an argument of a function application, a variant's payload,
-  an argument of a sequence's method, a defined output's definition, a
+  an argument of a sequence's method, the argument of an enumeration's or
+  record's `min` or `max`, against the receiver's type, a defined
+  output's definition, a
   constant's value, and a definition of a [`let` or `where`](Let.md)
   whose type is written.
 - **Shared.** Its type follows from that of the expression it is a part
