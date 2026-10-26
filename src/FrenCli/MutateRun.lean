@@ -53,11 +53,13 @@ def todo (st : State) : Array Todo :=
   st.comps.map (⟨·, false, Fren.Core.CheckedItem.component.kinds, false, false⟩)
     ++ st.globals.map (⟨·, true, Fren.Core.CheckedItem.global.kinds, false, false⟩)
     ++ st.refinements.map (⟨·, false, Fren.Core.CheckKind.all.filter Fren.Core.refinementRuns, true, false⟩)
-    ++ st.bodies.map (⟨·, false, Fren.Core.CheckedItem.body.kinds, false, true⟩)
+    -- An uninterpreted function's contract has its value as an output.
+    ++ st.bodies.map fun b =>
+      ⟨b, false, (if b.vars.any (·.role == .output) then Fren.Core.CheckedItem.contract else .body).kinds, false, true⟩
 
 /-- The key of its results. -/
 def Todo.key (t : Todo) : String :=
-  if t.body then s!"body {t.comp.path}::{(t.comp.tables[0]?.map (·.1)).getD .anonymous}"
+  if t.body then s!"body {t.comp.path}::{t.comp.bodyOf?.getD .anonymous}"
   else if t.global then s!"expect {t.comp.path}::{(t.comp.props[0]?.map (·.name)).getD .anonymous}"
   else if t.refinement then s!"refine {t.comp.path}" else s!"comp {t.comp.path}"
 
@@ -72,7 +74,7 @@ def keyed (rs : Array CheckResult) : Array (String × CheckResult) := Id.run do
   let mut out : Array (String × CheckResult) := #[]
   for r in rs do
     let k := key r
-    unless r.kind == .definedness || r.kind == .completeness || r.kind == .disjointness do
+    unless r.kind == .definedness || r.kind == .completeness || r.kind == .disjointness || r.kind == .precondition do
       out := out.push (k, r)
       continue
     match out.findIdx? (·.1 == k) with

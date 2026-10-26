@@ -384,10 +384,14 @@ scoped syntax (name := typeCmd) ("pub ")? "type " frenIdent : command
 body (`lang::function_params`). -/
 syntax fren_param := fren_type (" : " fren_type)?
 
+/-- A clause of a function's contract: `assume n: e`, a precondition, or
+`ensure n: e`, a postcondition (`Reqs/Lang/Items#contracts`). -/
+syntax fren_clause := (&"assume " <|> &"ensure ") frenIdent " : " fren_expr (fren_where)?
+
 /-- `fn f(T, U): R`, an uninterpreted function, or `fn f(x: T): R := e`, a
-defined one. -/
+defined one, either followed by its contract's clauses. -/
 scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent noWs "(" sepBy1(fren_param, ", ") ")" (" : " fren_type)?
-  (" := " fren_expr (fren_where)?)? : command
+  (" := " fren_expr (fren_where)?)? fren_clause* : command
 
 /-- `const N: T := e`. -/
 scoped syntax (name := constCmd) ("pub ")? "const " frenIdent " : " fren_type " := " fren_expr (fren_where)? : command

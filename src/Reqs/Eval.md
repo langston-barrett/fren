@@ -122,7 +122,12 @@ already be evaluated is false. A variable's candidates are:
 
 The interpretation is chosen at random: each function's value at each
 argument is random, but the same wherever it is applied in the behaviour,
-and at least 0 if its result is a `Nat`. So is the value of each type that
+and at least 0 if its result is a `Nat`. Where the arguments meet the
+function's [preconditions](Lang/Items.md#contracts), the value is the first
+of a few random values that meets its postconditions; if none does, the
+application has no value that the evaluator knows, as an index out of
+range has none, since a value that does not meet them is no
+interpretation of the spec. So is the value of each type that
 a [table](Lang/Expressions.md#tables) without a `_` row has where no row
 holds, which the interpretation gives, as the solver's does: one value of
 each type, the same for every such table.
@@ -331,7 +336,15 @@ decides it. The goals of [completeness](Check.md#completeness) and
 table's conditions, and paired with the solver's by the place where each
 is reported in the source, and by its question: a table's `table` for its
 completeness, and the later row's condition for the disjointness of two
-rows. In the body of a function, the parameters are the variables. `eval::confirm` gives the result:
+rows. In the body of a function, the parameters are the variables. The
+goals of the [precondition](Check.md#preconditions) check are found in
+the same way, each at the applied function's name, as its precondition
+at the application's arguments, which the evaluator evaluates as it does
+the function's body, or under the model's interpretation of the functions
+that the precondition applies. A function's preconditions, and a defined
+function's [postconditions](Check.md#postconditions), are the hypotheses
+and goals of the checks of its body, over its parameters.
+`eval::confirm` gives the result:
 
 ```fren
 pub enum Confirmation { Confirmed, Refuted, Undecided }

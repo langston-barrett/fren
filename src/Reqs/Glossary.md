@@ -34,6 +34,10 @@ constraints, declared with `comp`. See [Components](Lang/Components.md).
 
 **Constraint.** An assumption, guarantee, expectation or cover goal.
 
+**Contract.** The preconditions and postconditions of a function, written
+after its signature with `assume` and `ensure`. See
+[Items](Lang/Items.md#contracts).
+
 **Counterexample.** Values of a component's variables that satisfy the
 hypotheses of a check but not its goal. See [Checks](Check.md).
 
@@ -146,6 +150,14 @@ pattern `P`, as of a `match` arm but binding no names, matches `e`. See
 
 **Payload.** The values that a variant carries, as in `Circle(Int)`. See
 [Items](Lang/Items.md#enumerations).
+
+**Postcondition.** A clause of a function's contract, declared with
+`ensure`: what the function gives, wherever its arguments meet its
+preconditions. See [Items](Lang/Items.md#contracts).
+
+**Precondition.** A clause of a function's contract, declared with
+`assume`: what each application's arguments must meet. See
+[Items](Lang/Items.md#contracts).
 
 **Quantifier.** An expression, `forall (x: T), e` or `exists (x: T), e`,
 that says that `e` holds for every value, or for some value, of a finite

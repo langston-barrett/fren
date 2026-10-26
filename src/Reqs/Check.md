@@ -12,21 +12,25 @@ Fren checks each component seven ways:
 | [Redundancy](#redundancy) | `redundancy` | no assumption or guarantee follows from the others |
 | [Determinism](#determinism) | `determinism` | each `det out` is determined by the inputs |
 
-and checks how its constraints are written three more ways, wherever they
-have an index or a [table](Lang/Expressions.md#tables):
+and checks how its constraints are written four more ways, wherever they
+have an index, a [table](Lang/Expressions.md#tables) or an application of a
+function with a [contract](Lang/Items.md#contracts):
 
 | Check | Confirms |
 |---|---|
 | [Definedness](#definedness) | each index is in range where it is evaluated |
 | [Completeness](#completeness) | some row of each table without a `_` row holds where it is evaluated |
 | [Disjointness](#disjointness) | no two rows of a table, other than `_`, hold at once where it is evaluated |
+| [Preconditions](#preconditions) | each application of a function meets the function's preconditions where it is evaluated |
 
 A [global expectation](Lang/Global.md) is checked two of the first six
 ways: the [expectation check](#global-expectations) confirms that it holds,
-and the [vacuity check](#vacuity) that its trigger can hold. The tables in
-the body of a [defined function](Lang/Items.md#defined-functions) or the
-value of a [constant](Lang/Items.md#constants) are checked for
-completeness and disjointness too.
+and the [vacuity check](#vacuity) that its trigger can hold. The body of a
+[defined function](Lang/Items.md#defined-functions), the value of a
+[constant](Lang/Items.md#constants), and the clauses of a function's
+[contract](Lang/Items.md#contracts) are checked for completeness,
+disjointness and preconditions too, and a defined function's
+[postconditions](#postconditions) are checked to hold.
 
 The formulas below use the notation of [Components](Lang/Components.md#meaning):
 `A` is the conjunction of the component's assumptions, `R` of its
@@ -35,11 +39,14 @@ variables `y` and the outputs `o`.
 `D` is the equations `d = e` of the component's [defined
 outputs](Lang/Components.md#defined-outputs), and `o` excludes them.
 `N` is the constraints that [natural
-numbers](Lang/Components.md#natural-numbers) bring: `N(i, y)` that each
-`Nat` input and instance variable, and each application of an
-uninterpreted function whose result is a `Nat` that the query's own
-hypotheses or goal mention, is at least 0, and `N(o)` that each `Nat`
-output is. So a query's facts about applications depend only on its
+numbers](Lang/Components.md#natural-numbers) and the
+[postconditions](Lang/Items.md#contracts) of uninterpreted functions
+bring: `N(i, y)` that each `Nat` input and instance variable, and each
+application of an uninterpreted function whose result is a `Nat` that the
+query's own hypotheses or goal mention, is at least 0, and that each such
+application of an uninterpreted function with postconditions meets each
+of them if its arguments meet the function's preconditions; and `N(o)`
+that each `Nat` output is at least 0. So a query's facts about applications depend only on its
 formulas: an instance's query has none about its component's
 expectations, which are not among them. Every query has both among its hypotheses,
 though the formulas below leave them implicit, and realizability also
@@ -103,6 +110,8 @@ pub enum Kind {
     Definedness,
     Completeness,
     Disjointness,
+    Precondition,
+    Postcondition,
 }
 
 use self::Outcome::{Sat, Unknown, Unsat}
@@ -148,20 +157,28 @@ pub comp satisfiable {
 `check::applies` gives which checks run on an item. A global expectation
 constrains nothing, so there is nothing to realize, determine or find
 redundant, and its binders' inputs have no obligations. The body of a
-function or the value of a constant is not a constraint either: only its
-tables are checked:
+function, its contract, or the value of a constant is not a constraint
+either: only its tables and the applications in it are checked, and the
+function's postconditions. A component has no postconditions, so their
+check has no results there. The contract of an uninterpreted function with
+postconditions is checked for [realizability](#realizability) too, as a
+component whose inputs are the function's parameters, whose one `det out`
+is its value, and whose assumptions and guarantees are its preconditions
+and postconditions (see [Contracts](#contracts-of-uninterpreted-functions)):
 
 ```fren
-pub enum CheckedItem { Component, GlobalExpectation, Body }
+pub enum CheckedItem { Component, GlobalExpectation, Body, Contract }
 
 pub comp applies {
-    use self::CheckedItem::{Body, Component, GlobalExpectation}
+    use self::CheckedItem::{Body, Component, Contract, GlobalExpectation}
     use self::Kind::{
         Completeness,
         Definedness,
         Determinism,
         Disjointness,
         Expectation,
+        Postcondition,
+        Precondition,
         Realizability,
         Vacuity,
     }
@@ -171,11 +188,13 @@ pub comp applies {
 
     ensure rule: runs? iff match item {
         Component => true,
-        GlobalExpectation => kind in {Expectation, Vacuity, Definedness, Completeness, Disjointness},
-        Body => kind in {Completeness, Disjointness},
+        GlobalExpectation => kind in {Expectation, Vacuity, Definedness, Completeness, Disjointness, Precondition},
+        Body => kind in {Completeness, Disjointness, Precondition, Postcondition},
+        Contract => kind in {Realizability, Completeness, Disjointness, Precondition},
     }
 
-    expect claims_only: when item != Component and runs?, not kind in {Realizability, Determinism}
+    expect claims_only: when item in {GlobalExpectation, Body} and runs?, not kind in {Realizability, Determinism}
+    expect determined: when item != Component, kind != Determinism or not runs?
 }
 ```
 
@@ -227,6 +246,77 @@ pub comp realizability {
 
     expect never_upgrades: when assume_q = Unknown or cex_q = Unknown, verdict != Pass
     expect fail_explains: when verdict = Fail, reports_cex? or reports_vacuous?
+}
+```
+
+### Contracts of uninterpreted functions
+
+An uninterpreted function's [postconditions](Lang/Items.md#contracts)
+are assumed at each of its applications, so if they cannot hold together,
+every check that applies the function holds vacuously. So its contract is
+checked as a component is: the inputs are its parameters `x`, the one
+output is its value `v`, `A` is its preconditions, and `R` its
+postconditions, with `v` for each application of the function to its
+parameters:
+
+  ∀ x. A(x) ⇒ ∃ v. R(x, v)
+
+The other functions that the clauses apply are free, as they are in any
+check, so a postcondition that says nothing of the function's value, and
+can be false, as `ensure c: n > 0` of `fn other(n: Int): Int`, fails. The
+functions that a contract applies are declared before it, so each
+function's contract is checked once all of theirs have been: an
+interpretation of each in turn meets them all. The two queries are those
+of a component, and so are the verdicts, but the failures are reported at
+the function's name: contradictory preconditions (`F0632`), and arguments
+for which no value meets the postconditions (`F0631`), with a note at each
+postcondition of a minimal set that conflicts on them.
+
+`check::contract_realizability` states the verdict, over a small domain:
+two arguments and two values, where the preconditions hold at the
+arguments `pres`, and the postconditions at the pairs `posts`. Where no
+argument meets the preconditions, they contradict each other, and the
+check fails. Its
+implementation builds the contract's component as both front ends do,
+and runs the realizability check on it, with a solver that decides by
+trying every argument and value:
+
+```fren
+pub enum Argument { A0, A1 }
+pub enum Value { V0, V1 }
+pub struct Point { arg: Argument, value: Value }
+
+pub comp contract_realizability {
+    in pres: Set(Argument)   -- the arguments that meet the preconditions
+    in posts: Set(Point)     -- the arguments and values that meet the postconditions
+    pub det out verdict: Verdict
+    pub det out reports_cex?       -- report the arguments and the conflicting postconditions
+    pub det out reports_vacuous?   -- report that the preconditions are contradictory
+
+    ensure rule: verdict = (if pres != {}
+        and (forall (a: Argument), when a in pres, exists (v: Value), Point { arg := a, value := v } in posts)
+        then Pass else Fail)
+    ensure vacuous: reports_vacuous? iff pres = {}
+    ensure cex: reports_cex? iff (pres != {} and verdict = Fail)
+
+    expect unrealizable: when posts = {}, verdict = Fail
+    expect contradictory_preconditions: when pres = {}, verdict = Fail
+    expect everywhere: when pres != {} and (forall (a: Argument), exists (v: Value), Point { arg := a, value := v } in posts),
+        verdict = Pass
+}
+```
+
+It refines `check::realizability`, the check of a component, whose
+queries' answers are those of the contract over this domain: the
+preconditions are contradictory exactly when no argument meets them, and
+the postconditions can be proved satisfiable exactly when every argument
+that meets the preconditions has a value that meets the postconditions:
+
+```fren
+refine contract_realizes: contract_realizability refines realizability {
+    assume_q := if pres = {} then Unsat else Sat,
+    cex_q := if forall (a: Argument), when a in pres, exists (v: Value), Point { arg := a, value := v } in posts
+        then Unsat else Sat,
 }
 ```
 
@@ -476,6 +566,9 @@ hypotheses of where it is written:
 | a guarantee, expectation, cover goal or definition | `A`, `I` and `R`, as for vacuity |
 | a binding of an instance | `A`, and the instances declared before it |
 | a global expectation | the meanings of its binders' components |
+| a precondition of a function | the function's other preconditions |
+| a function's body or postcondition | the function's preconditions |
+| the value of a constant | none |
 
 A guarantee's own `R` is among its hypotheses, so a guarantee can
 ensure its own definedness through another, such as `ensure long: q.len >
@@ -507,9 +600,10 @@ it is evaluated (read as an index's are, see
 [Sequences](Lang/Expressions.md#sequences)), Fren asks whether `C_1 or ...
 or C_n` can be proved from `G` and the hypotheses of where the table is
 written, as for [definedness](#definedness). In the body of a defined
-function or the value of a constant, there are no hypotheses but `G` and
-`N`, over the function's parameters: a function's body is checked for
-every argument, not only those that a component passes it. A table with a `_`
+function, there are no hypotheses but `G`, `N` and the function's
+preconditions, over its parameters, and in the value of a constant only
+`G` and `N`: a function's body is checked for every argument that meets
+its preconditions, not only those that a component passes it. A table with a `_`
 row is always complete, and has no completeness result.
 `check::completeness` decides each query like an expectation, and a model
 is a counterexample, a value of the variables for which no row holds,
@@ -570,6 +664,153 @@ definedness, `N` among them (see the [table above](#definedness)): a
 guarantee's own `R` is among its hypotheses, so a table in a
 guarantee may be complete only because another guarantee rules out
 the cases it leaves out.
+
+## Preconditions
+
+For each application `f(a_1, ..., a_n)` of a function `f` with
+[preconditions](Lang/Items.md#contracts), with its guard `G`, and each
+precondition `P` of `f`, Fren asks whether `P`, with the arguments for the
+parameters, can be proved from `G` and the hypotheses of where the
+application is written, as for [definedness](#definedness): this is the
+[instance check](#instance-assumptions) for a function. The guard is read
+as an index's is (see [Sequences](Lang/Expressions.md#sequences)), so in
+`kind(t) = SetTy and elem(t) = u`, `elem(t)` is evaluated only where
+`kind(t) = SetTy`. An application in a precondition of another function
+`g` is checked under `g`'s other preconditions, and one in `g`'s body or
+postconditions under all of them, for every value of `g`'s parameters
+that meets them. Each application and precondition is its own check, so
+the message can name the precondition. `check::precondition` decides each
+query like an expectation, and a model is a counterexample, reported at
+the name of the applied function:
+
+```fren
+pub comp precondition {
+    in q: Outcome          -- can `P(a_1, ..., a_n)` be proved from the guard and the hypotheses?
+    pub det out verdict: Verdict
+    pub det out reports_cex?
+
+    inst as_expect: expectation { q }
+
+    ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
+}
+```
+
+`check::precondition_at` states the check in detail, over the domain of
+[realizability](#contracts-of-uninterpreted-functions): an application
+whose arguments may be either argument, of a function whose precondition
+holds at the arguments `pres`, evaluated where its guard holds, at the
+arguments `guarded`. Its implementation asks the question that both front
+ends build (`check::application_contract`) with the real check, and a
+solver that tries every argument. It refines `check::precondition`, whose
+query is proved exactly when every guarded argument meets the
+precondition:
+
+```fren
+pub comp precondition_at {
+    in pres: Set(Argument)      -- the arguments that meet the precondition
+    in guarded: Set(Argument)   -- the arguments where the application's guard holds
+    pub det out verdict: Verdict
+    pub det out reports_cex?
+
+    ensure rule: verdict = (if guarded subset pres then Pass else Fail)
+    ensure cex: reports_cex? iff verdict = Fail
+
+    expect unguarded: when guarded = {}, verdict = Pass
+}
+
+refine precondition_detail: precondition_at refines precondition { q := if guarded subset pres then Unsat else Sat }
+```
+
+A precondition that fails is reported, and nothing more: the
+application's value is still the body's, for a defined function, or
+unknown, for an uninterpreted one, so a check that rests on it holds for
+every value the application could have, as for an index out of range.
+
+`check::application_contract` states what an application means to the
+checks, from the values, at its arguments, of the applied function's
+clauses, in order, and whether its guard holds: it asks a question of each
+precondition, whose goal holds where the guard fails or the precondition
+holds; and an application of an uninterpreted function brings a fact of
+each postcondition to its queries, which holds where some precondition
+fails or the postcondition holds (see [Postconditions](#postconditions)).
+`k` is any clause, so the rule is checked for each. Both front ends build
+the questions and facts with the same functions, which its implementation
+runs on these values. Membership in a sequence of unknown length, as
+`false in pres`, is outside the [decidable core](Lang/Decidability.md),
+so the component opts out:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp application_contract {
+    in pres: Seq(Bool)     -- the function's preconditions, in order, at the arguments
+    in posts: Seq(Bool)    -- its postconditions, in order, at the arguments and the application's value
+    in guarded?            -- the application's guard holds
+    in k: Int              -- any clause
+    pub det out asks?      -- the application asks a question of precondition `k`
+    pub det out question?  -- the question's goal holds
+    pub det out brings?    -- the application brings a fact of postcondition `k`
+    pub det out fact?      -- the fact holds
+
+    ensure asked: asks? iff 0 <= k < pres.len
+    ensure question: question? iff (asks? and (not guarded? or pres[k]))
+    ensure brought: brings? iff 0 <= k < posts.len
+    ensure fact: fact? iff (brings? and (false in pres or posts[k]))
+
+    expect unguarded: when asks? and not guarded?, question?
+    expect met: when brings? and not (false in pres), fact? iff posts[k]
+    expect vacuous: when brings? and false in pres, fact?
+}
+```
+
+## Postconditions
+
+For each postcondition `Q` of a [defined
+function](Lang/Items.md#defined-functions), Fren asks whether `Q` can be
+proved from the function's preconditions, with its parameters free: a
+claim about the body, which the solver sees through the function's
+definition, as an expectation is a claim about a component. The query
+has no quantifier, since the parameters are its variables. A model is a
+counterexample, the values of the parameters, reported at the
+postcondition's name. An uninterpreted function's postconditions are not
+checked: they are what is known of it, which each application brings to
+its queries as `N` (see [above](#checks)), and an
+[interpretation](Impl.md#interpretations) in Lean proves them.
+`check::postcondition` decides each query like an expectation:
+
+```fren
+pub comp postcondition {
+    in q: Outcome          -- can `Q` be proved from the function's preconditions?
+    pub det out verdict: Verdict
+    pub det out reports_cex?
+
+    inst as_expect: expectation { q }
+
+    ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
+}
+```
+
+`check::postcondition_at` states it in detail, over the same domain: a
+defined function whose preconditions hold at the arguments `pres`, and
+whose postcondition holds, of the body's value, at the arguments `posts`.
+Its implementation builds the body's component with the function's
+preconditions and postcondition, and runs the real check, with a solver
+that tries every argument. It refines `check::postcondition`:
+
+```fren
+pub comp postcondition_at {
+    in pres: Set(Argument)    -- the arguments that meet the preconditions
+    in posts: Set(Argument)   -- the arguments where the postcondition holds
+    pub det out verdict: Verdict
+    pub det out reports_cex?
+
+    ensure rule: verdict = (if pres subset posts then Pass else Fail)
+    ensure cex: reports_cex? iff verdict = Fail
+
+    expect everywhere: when posts = {Argument::A0, Argument::A1}, verdict = Pass
+}
+
+refine postcondition_detail: postcondition_at refines postcondition { q := if pres subset posts then Unsat else Sat }
+```
 
 ## Minimal sets
 
@@ -678,12 +919,12 @@ that of the member's checks, which takes precedence:
 
 | Before | Its checks |
 |---|---|
-| an expectation | the expectation, its vacuity, and the definedness, completeness and disjointness of what it reads |
-| a cover goal | the cover goal, and the definedness, completeness and disjointness of what it reads |
-| an instance | the instance's assumptions, and the definedness, completeness and disjointness of its bindings |
+| an expectation | the expectation, its vacuity, and the definedness, completeness, disjointness and preconditions of what it reads |
+| a cover goal | the cover goal, and the definedness, completeness, disjointness and preconditions of what it reads |
+| an instance | the instance's assumptions, and the definedness, completeness, disjointness and preconditions of its bindings |
 | a `det out` | its determinism |
 | a component | all of the component's checks |
-| a global expectation | its expectation, its vacuity, and the definedness, completeness and disjointness of what it reads |
+| a global expectation | its expectation, its vacuity, and the definedness, completeness, disjointness and preconditions of what it reads |
 | a [refinement](Lang/Refinement.md) | all of the checks of its obligation, including the definedness of the bindings of the abstract component's instances |
 
 As with a [lint setting](Lint.md), `set_option` without `in` sets the
@@ -713,7 +954,9 @@ disjointness, which, like definedness, are about where an expression is
 evaluated: a test only reaches behaviours in which the constraints have
 values, and a table where no row holds has none, so testing could never
 find a counterexample to completeness, and the checks of a table are run
-together. A test that reaches
+together; and preconditions, which, like definedness, are about where an
+application is evaluated, and whose failure leaves the application's
+value unknown. A test that reaches
 an expectation shows that its trigger can hold, which is what its vacuity
 check would show. A cover goal asks whether something can hold too, but
 testing can pass it: a test that finds a behaviour that meets the
@@ -736,7 +979,7 @@ check is not part of the [agreement with Lean](Cli.md#agreement-with-lean).
 pub enum Run { BySolver, ByTesting, Skipped }
 
 pub comp by_testing {
-    use self::Kind::{Completeness, Definedness, Disjointness, Redundancy, Vacuity}
+    use self::Kind::{Completeness, Definedness, Disjointness, Precondition, Redundancy, Vacuity}
     use self::Run::{BySolver, ByTesting, Skipped}
     in kind: Kind
     in tested?             -- the check's evidence is testing
@@ -744,8 +987,8 @@ pub comp by_testing {
 
     ensure rule: run = table {
         | not tested? => BySolver,
-        | tested? and not kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness} => ByTesting,
-        | tested? and kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness} => Skipped,
+        | tested? and not kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness, Precondition} => ByTesting,
+        | tested? and kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness, Precondition} => Skipped,
     }
 
     expect never_both: when tested?, run != BySolver
@@ -764,6 +1007,8 @@ refine instance_assumption_proves: instance_assumption refines proved
 refine definedness_proves: definedness refines proved
 refine completeness_proves: completeness refines proved
 refine disjointness_proves: disjointness refines proved
+refine precondition_proves: precondition refines proved
+refine postcondition_proves: postcondition refines proved
 refine determinism_proves: determinism refines proved
 refine vacuity_witnesses: non_vacuity refines satisfiable
 refine cover_witnesses: cover_goal refines satisfiable

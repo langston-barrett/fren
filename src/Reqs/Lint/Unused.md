@@ -58,7 +58,8 @@ suggests removing the `use`.
 `unused_variables` reports a variable of a component that nothing in the
 component mentions, a binder of a global expectation over a component's
 behaviours that its body never mentions, and a parameter of a defined
-function that its body never mentions. It does not report a
+function that neither its body nor its [contract](../Lang/Items.md#contracts)
+mentions. It does not report a
 [quantifier's](../Lang/Quantifiers.md) bound name, including a binder
 of a global expectation over a type's values. An input that nothing mentions does not affect the
 component, and an output that nothing mentions can take any value.

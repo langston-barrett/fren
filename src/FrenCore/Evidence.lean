@@ -25,12 +25,13 @@ inductive Run where
 /-- The checks that testing cannot decide (`check::by_testing`). -/
 def CheckKind.untestable (kind : CheckKind) : Bool :=
   kind == .vacuity || kind == .redundancy || kind == .definedness || kind == .completeness || kind == .disjointness
+    || kind == .precondition
 
 /-- How a check of kind `kind` is run, given whether its evidence is
 testing (`check::by_testing`). Vacuity and redundancy ask whether
 something can hold at all, which testing cannot decide; nor can it decide
-definedness, completeness or disjointness, which are about where an
-expression is evaluated, where its value may be unknown. -/
+definedness, completeness, disjointness or preconditions, which are about
+where an expression is evaluated, where its value may be unknown. -/
 def runOf (kind : CheckKind) (tested : Bool) : Run :=
   if !tested then .bySolver
   else if kind.untestable then .skipped
@@ -70,7 +71,8 @@ def Tested.covers (t : Tested) (r : CheckResult) : Bool :=
   | .realizable, _ => t.realizable
   | .redundancy, _ => t.redundancy
   | .expect, some n | .cover, some n | .vacuity, some n => t.props.contains n
-  | .definedness, some n | .completeness, some n | .disjointness, some n => t.props.contains n || t.insts.contains n
+  | .definedness, some n | .completeness, some n | .disjointness, some n | .precondition, some n =>
+    t.props.contains n || t.insts.contains n
   | .inst, some n => t.insts.contains n
   | .determinism, some n => t.dets.contains n
   | _, _ => false

@@ -120,6 +120,20 @@ def DataDecl.withPrelude (d : DataDecl) : DataDecl :=
   let ctors := d.ctors.flatMap fun (c, fs) => #[d.ctorSym c] ++ (List.range fs.size).toArray.map (d.selSym c)
   { d with text := d.decl, syms := (#[quote (showPath d.path)] ++ ctors).map unquote }
 
+/-- The contract of a function: the SMT-LIB symbols of its preconditions
+and postconditions, each with its name, which the prelude defines over the
+function's parameters, and whether the function is defined
+(`Reqs/Lang/Items#contracts`). -/
+structure Contract where
+  pres : Array (Name × String) := #[]
+  posts : Array (Name × String) := #[]
+  defined : Bool := false
+  deriving Inhabited
+
+/-- The SMT-LIB symbol of the clause `n` of the contract of the function at
+`path`: not a Fren path, which never contains `#`. -/
+def clauseSym (path n : Name) : String := quote s!"::{showPath path}#{n}"
+
 /-- A comp variable: one of its own, or one of an instance's (`w.x`). -/
 structure CVar where
   name : Name
@@ -184,9 +198,17 @@ structure CComp where
   (`Reqs/Check#checking-by-testing`). -/
   tested : Fren.Core.Tested := {}
   /-- The applications of uninterpreted functions whose result is a `Nat`,
-  in its constraints, definitions, bindings and instances: each is at
-  least 0 (`natFacts`). -/
+  or that have postconditions, in its constraints, definitions, bindings
+  and instances: each brings its facts (`Fren.Core.appFacts`). -/
   natApps : Array String := #[]
+  /-- For the body or contract of a function, or the value of a constant:
+  its name, which the evaluator's counterpart has (`Eval.Comp.body?`). -/
+  bodyOf? : Option Name := none
+  /-- For the body and contract of a function: the function, whose
+  preconditions are the comp's assumptions, and, if it is defined, whose
+  postconditions are its guarantees, each named after the function and
+  the clause (`check::postcondition`). -/
+  fn? : Option Name := none
   deriving Inhabited
 
 def conj (fs : Array String) : String :=
@@ -389,6 +411,12 @@ structure State where
   /-- Each defined function's parameters and result type, and its body over
   the parameters, in order. -/
   defs : Array (Name × Array (Name × Ty) × Ty × String) := #[]
+  /-- The contracts of the functions that have one, by path
+  (`Reqs/Lang/Items#contracts`). -/
+  contracts : NameMap Contract := {}
+  /-- Each clause of a contract, as its SMT-LIB symbol, the function's
+  parameters, and the clause over them, in order (`State.prelude`). -/
+  clauseDefs : Array (String × Array (Name × Ty) × String) := #[]
   /-- The enumerations and records, in order. -/
   datatypes : Array DataDecl := #[]
   /-- The newtypes, each with its underlying type. -/
@@ -773,6 +801,9 @@ structure ExprCtx where
   instances : Nat := 1
   /-- In a defined function's body, the function's name. -/
   selfFn : Option Name := none
+  /-- In a clause of a function's contract: the function, whether the
+  clause is a postcondition, and the parameters (`lang::contract_application`). -/
+  contract? : Option (Name × Bool × Array Name) := none
   /-- In a global expectation, whose instances are its binders. -/
   inGlobal : Bool := false
   /-- `++` here is in the decidable core: the receiver of a method, or a
@@ -1592,6 +1623,17 @@ def takeTables : M (Array (Span × Fren.Core.TableGoal × String)) := do
   modify fun s => { s with tables := #[] }
   return xs
 
+/-- Records the questions about the application at `span` of the function
+at `path` to the SMT-LIB arguments `args`, if the function has
+preconditions, for the precondition check (`check::precondition`): its
+guard implies each precondition at the arguments, in order. -/
+def notePreconditions (cx : ExprCtx) (span : Span) (path : Name) (args : Array String) : M Unit := do
+  unless cx.noteIndexes do return
+  let some k := (← get).contracts.find? path | return
+  let pres := k.pres.map fun (n, sym) => (n, s!"({sym} {" ".intercalate args.toList})")
+  for (q, goal) in Fren.Core.preconditionQuestions (guarded cx.guards) path pres do
+    modify fun s => { s with tables := s.tables.push (span, q, goal) }
+
 /-- Records the questions about the rows of the table at `span`, whose
 rows other than `_` have the SMT-LIB conditions `conds`, written at
 `starts`, whose indexes are in range where `defined` says, for its
@@ -1604,8 +1646,8 @@ def noteTable (cx : ExprCtx) (span : Span) (starts : Array Span) (conds : Array 
   let orF (cs : Array String) := if cs.size == 1 then cs[0]! else s!"(or {" ".intercalate cs.toList})"
   for (g, f) in Fren.Core.tableGoals orF andSmt (s!"(not {·})") conds defined wild do
     let at_ := match g with
-      | .completeness => { start := span.start, stop := span.start + "table".length }
       | .disjointness _ j => starts[j]!
+      | _ => { start := span.start, stop := span.start + "table".length }
     modify fun s => { s with tables := s.tables.push (at_, g, guarded cx.guards f) }
 
 /-- Records a `card`, of the receiver `recv` of type `t`: in a comp that
@@ -2737,8 +2779,24 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
           ites := ites.push s!"(ite {x} 1 0)"
         let count := if ites.size == 1 then ites[0]! else s!"(+ {" ".intercalate ites.toList})"
         return (s!"({c.smtOp} {count} 1)", .bool)
+    -- In its own contract, the function is applied to its parameters, in a
+    -- postcondition (`lang::contract_application`); it is not yet in scope.
+    let own? := cx.contract?.filter fun (f, _, _) => segs.size == 1 && Name.mkSimple segs[0]!.name == Name.mkSimple f.getString!
+    if let some (f, post, params) := own? then
+      -- Each argument as written: a name of one segment, not hidden by a
+      -- binder, or another expression.
+      let written := args.map fun
+        | .path _ #[s] => if (cx.binder? (identName s.name)).isNone then some (identName s.name) else none
+        | _ => none
+      let toParams := Fren.Core.appliesToParams written params
+      unless Fren.Core.contractApplicationAccepted (if post then .postcondition else .precondition) true toParams do
+        err fnSpan (Fren.Core.contractSelfMsg f !post)
     -- A variable shadows a function, as it does any other item.
-    let path ← match ← resolveWritten segs cx.shadowing cx.noteIndexes with
+    let module := (← get).module
+    let resolved ← match own? with
+      | some (f, _, _) => pure (.item { kind := .fnItem, path := f, isPub := true, owner := module })
+      | none => resolveWritten segs cx.shadowing cx.noteIndexes
+    let path ← match resolved with
       | .item { kind := .fnItem, path, .. } => pure path
       | .variant en idx =>
         -- A variant with a payload, built from its values.
@@ -2771,6 +2829,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
         let (x, ta) ← elabExpr { cx with expected? := some t } a
         liftMsg a.span (Fren.Core.checkType t ta (some s!"note: argument {k + 1} of `{showPath path}` has type `{t.show}`"))
         smts := smts.push x
+      notePreconditions cx fnSpan path smts
       return (s!"({itemSym path} {" ".intercalate smts.toList})", result)
     if cx.selfFn.isSome then err fnSpan (Fren.Core.appliesUninterpretedMsg path)
     modify fun s => { s with applied := s.applied.push span }
@@ -2789,9 +2848,13 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let (x, ta) ← elabExpr { acx with expected? := some t } a
       liftMsg a.span (Fren.Core.checkType t ta (some s!"note: argument {k + 1} of `{showPath path}` has type `{t.show}`"))
       smts := smts.push x
+    notePreconditions cx fnSpan path smts
     let app := s!"({itemSym path} {" ".intercalate smts.toList})"
-    -- At least 0, if a `Nat` (`Reqs/Lang/Items#uninterpreted-functions`).
-    if result == .nat then modify fun s => { s with natApps := s.natApps.push app }
+    -- At least 0, if a `Nat`, and meeting its postconditions where its
+    -- arguments meet its preconditions
+    -- (`Reqs/Lang/Items#uninterpreted-functions`).
+    let posts := (((← get).contracts.find? path).map (·.posts)).getD #[]
+    if result == .nat || !posts.isEmpty then modify fun s => { s with natApps := s.natApps.push app }
     return (app, result)
   | .field span a f =>
     lintChain
@@ -3886,15 +3949,67 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
                                 decidable := !s.outsideCore, natApps := s.natApps
                                 tested := Fren.Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] } }
 
+/-- Elaborates the clauses of the contract of the function `n` at `path`,
+whose parameters are `vars`, and records the contract, and each clause's
+definition for the prelude (`Reqs/Lang/Items#contracts`). Gives each
+clause as a constraint of the function's body's comp, named after the
+function and the clause, a postcondition only if the function is defined;
+and the questions about the tables and applications in them: a
+precondition's under the other preconditions, a postcondition's under all
+of them. -/
+def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses : Array (Bool × Ident × Expr)) (result : Ty)
+    (span : Span) : M (Array CVar × Array CProp × Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) := do
+  -- The clauses' names share one namespace with the parameters
+  -- (`lang::distinct_names`).
+  let names := vars.map (·.name) ++ clauses.map fun (_, x, _) => Name.mkSimple (declaredIdent x).1.name
+  if let some k := (Fren.Core.repeatsAt names)[0]? then
+    if k ≥ vars.size then err clauses[k - vars.size]!.2.1.span (Fren.Core.dupClauseMsg names[k]!)
+  let mut k : Contract := { defined }
+  let mut props := #[]
+  let mut sites := #[]
+  for (post, x, e) in clauses do
+    let cn := Name.mkSimple x.name
+    liftMsg x.span (Fren.Core.checkNoBang cn)
+    lintName .constraint cn x.span
+    if x.name.endsWith "?" then err x.span (Fren.Core.propNameMsg cn)
+    discard takeTables
+    let (smt, t) ← elabExpr { vars, place := .prop, contract? := some (path, post, vars.map (·.name)) } e
+    liftMsg e.span (Fren.Core.checkType .bool t (some "note: a clause of a contract is a `Bool`"))
+    let place := if post then Fren.Core.IndexPlace.body else .assume
+    sites := sites ++ (← takeTables).map fun (sp, q, g) => (n ++ cn, place, sp, q, g)
+    lintBools e
+    let sym := clauseSym path cn
+    modify fun s => { s with clauseDefs := s.clauseDefs.push (sym, vars.map fun v => (v.name, v.ty), smt) }
+    if post then k := { k with posts := k.posts.push (cn, sym) } else k := { k with pres := k.pres.push (cn, sym) }
+    -- An uninterpreted function's postcondition is of its value, for its
+    -- contract's realizability: the function applied to its parameters is
+    -- the value (`Reqs/Check#contracts-of-uninterpreted-functions`).
+    let app := s!"({itemSym path} {" ".intercalate (vars.toList.map fun v => quote v.name.toString)})"
+    let value := quote (Fren.Core.contractValueName n (vars.map (·.name))).toString
+    let smt := if post && !defined then smt.replace app value else smt
+    props := props.push ({ kind := if post then .ensure else .assume, name := n ++ cn, span := x.span, smt
+                           trigger? := none, triggerSpan? := none } : CProp)
+  modify fun s => { s with contracts := s.contracts.insert path k }
+  -- Without postconditions, an uninterpreted function's contract has
+  -- nothing to realize.
+  if defined || k.posts.isEmpty then return (vars, props.filter (defined || ·.kind == .assume), sites)
+  let v : CVar := { name := Fren.Core.contractValueName n (vars.map (·.name)), role := .output, isPub := true, ty := result, span }
+  return (vars.push v, props, sites)
+
 /-- Records the tables of the body of the function `n`, whose parameters
-are `vars`, or of the value of the constant `n`, just elaborated, as a comp
-for their checks (`State.bodies`), if it has any. -/
-def noteBody (n : Name) (span : Span) (vars : Array CVar) : M Unit := do
-  let tables ← takeTables
-  if tables.isEmpty then return
+are `vars`, or of the value of the constant `n`, just elaborated, and the
+questions about the tables and applications of the function's contract
+and its clauses, `contract`, as a comp for their checks (`State.bodies`),
+if it has any questions or postconditions to check. -/
+def noteBody (n : Name) (span : Span) (vars : Array CVar)
+    (contract : Array CProp × Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String) := (#[], #[]))
+    (fn? : Option Name := none) : M Unit := do
+  let tables := (← takeTables).map fun (sp, q, g) => (n, Fren.Core.IndexPlace.body, sp, q, g)
+  let (props, sites) := contract
+  if tables.isEmpty && sites.isEmpty && !props.any (·.kind == .ensure) then return
   modify fun s => { s with
-    bodies := s.bodies.push { path := s.module, file := s.file, span, vars, props := #[], decidable := !s.outsideCore
-                              tables := tables.map fun (sp, q, g) => (n, .body, sp, q, g), natApps := s.natApps } }
+    bodies := s.bodies.push { path := s.module, file := s.file, span, vars, props, decidable := !s.outsideCore
+                              tables := tables ++ sites, natApps := s.natApps, bodyOf? := some n, fn? } }
 
 /-- `fn_params_excessive_bools` on the function `n`, declared at `span`,
 whose parameters have the types `params` (`lint::fn_params_excessive_bools`). -/
@@ -4071,7 +4186,7 @@ partial def elabItem (item : Item) : M Unit := do
     modify fun s => { s with
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       sorts := s.sorts.push path }
-  | .function isPub name params result body last => do
+  | .function isPub name params result body clauses last => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkNoBang n)
     liftMsg name.span (Fren.Core.checkFnName n)
@@ -4080,23 +4195,16 @@ partial def elabItem (item : Item) : M Unit := do
     lintName .function n name.span
     startDeclared
     let path := module ++ n
+    let contract := !clauses.isEmpty
     -- A parameter is named if it has a type after `:`, or is a `Bool`
     -- written `x?` (`lang::function_params`).
     let named (p : Array Ident × Option (Array Ident)) :=
       p.2.isSome || (p.1.size == 1 && (declaredIdent p.1[0]!).1.name.endsWith "?")
-    unless Fren.Core.functionParamsAccepted body.isSome params.size (params.filter named).size do
-      let bad := (params.find? (named · != body.isSome)).map (·.1[0]!.span) |>.getD name.span
-      err bad (Fren.Core.functionParamsMsg path body.isSome)
-    match body with
-    | none =>
-      let ps ← params.mapM (elabTy ·.1)
-      lintFnBools n name.span ps
-      -- As for a variable, with the result type (`lang::bool_naming`),
-      -- after the parameters, in source order.
-      let r ← varTy result name
-      modify fun s => { s with funs := s.funs.push (path, ps, r) }
-    | some body =>
-      -- The parameters, declared like a comp's inputs.
+    unless Fren.Core.functionParamsAccepted body.isSome contract params.size (params.filter named).size do
+      let bad := (params.find? (named · != (body.isSome || contract))).map (·.1[0]!.span) |>.getD name.span
+      err bad (Fren.Core.functionParamsMsg path body.isSome contract)
+    -- The parameters, declared like a comp's inputs.
+    let paramVars : M (Array CVar) := do
       let mut vars : Array CVar := #[]
       -- Distinct names (`lang::distinct_names`).
       -- By the names they declare, without the `!` of shadowing.
@@ -4109,17 +4217,45 @@ partial def elabItem (item : Item) : M Unit := do
         lintName .variable xn x.span
         let t ← varTy ty? x
         vars := vars.push { name := xn, role := .input, isPub := true, ty := t, span := x.span }
+      return vars
+    match body with
+    | none =>
+      if !contract then
+        let ps ← params.mapM (elabTy ·.1)
+        lintFnBools n name.span ps
+        -- As for a variable, with the result type (`lang::bool_naming`),
+        -- after the parameters, in source order.
+        let r ← varTy result name
+        modify fun s => { s with funs := s.funs.push (path, ps, r) }
+      else
+        let vars ← paramVars
+        lintFnBools n name.span (vars.map (·.ty))
+        let r ← varTy result name
+        modify fun s => { s with funs := s.funs.push (path, vars.map (·.ty), r) }
+        discard takeTables
+        modify fun s => { s with outsideCore := false, natApps := #[] }
+        let (vars, props, sites) ← elabContract path n false vars clauses r name.span
+        noteBody n name.span vars (props, sites) path
+        lintDeclared .function n name.span
+        lintLines .function n name.span last
+    | some body =>
+      let vars ← paramVars
       lintFnBools n name.span (vars.map (·.ty))
       let r ← varTy result name
       discard takeTables
       modify fun s => { s with outsideCore := false, natApps := #[] }
       let (smt, t) ← elabExpr { vars, place := .prop, selfFn := some n, expected? := if r == .nat then some .nat else none } body
-      noteBody n name.span vars
+      let bodyTables ← takeTables
       liftMsg body.span (Fren.Core.checkType r t (some s!"note: `{n}` returns `{r.show}`"))
       lintBools body
-      for (x, v) in Fren.Core.unmentioned (vars.map fun v => (v.name, v)) ((mentions body).map (·.getRoot)) do
+      -- A parameter that only the contract mentions is used too.
+      let mentioned := (mentions body ++ clauses.flatMap fun (_, _, e) => mentions e).map (·.getRoot)
+      for (x, v) in Fren.Core.unmentioned (vars.map fun v => (v.name, v)) mentioned do
         lint .unusedVariables v.span (Fren.Core.unusedParamMsg x)
       modify fun s => { s with defs := s.defs.push (path, vars.map fun v => (v.name, v.ty), r, smt) }
+      let (_, props, sites) ← if contract then elabContract path n true vars clauses r name.span else pure (vars, #[], #[])
+      modify fun s => { s with tables := bodyTables }
+      noteBody n name.span vars (props, sites) path
       lintDeclared .function n name.span
       lintLines .function n name.span last
     unless isPub do
@@ -4359,7 +4495,7 @@ structure PreludeDecl where
 for every enum and record, in order, since each may contain those before
 it, `(declare-fun ...)` for every uninterpreted function, and
 `(define-fun ...)` for every defined function, in order, since each may
-apply those before it. -/
+apply those before it, and then for every clause of a contract. -/
 def State.prelude (s : State) : Array PreludeDecl :=
   let unquote (sym : String) : String := ((sym.drop 1).dropEnd 1).toString
   let sorts := s.sorts.map fun p => { text := s!"(declare-sort {itemSym p} 0)\n", syms := #[unquote (itemSym p)] }
@@ -4370,7 +4506,18 @@ def State.prelude (s : State) : Array PreludeDecl :=
   let defs := s.defs.map fun (p, ps, r, body) =>
     let ps := " ".intercalate (ps.toList.map fun (x, t) => s!"({quote x.toString} {t.sort})")
     { text := s!"(define-fun {itemSym p} ({ps}) {r.sort} {body})\n", syms := #[unquote (itemSym p)] }
-  sorts ++ enums ++ funs ++ defs
+  -- After every function, since a clause may apply its own and those
+  -- declared before it.
+  let clauses := s.clauseDefs.map fun (sym, ps, body) =>
+    let ps := " ".intercalate (ps.toList.map fun (x, t) => s!"({quote x.toString} {t.sort})")
+    { text := s!"(define-fun {sym} ({ps}) Bool {body})\n", syms := #[unquote sym] }
+  sorts ++ enums ++ funs ++ defs ++ clauses
+
+/-- Of each uninterpreted function, by its SMT-LIB symbol: whether its
+result is a `Nat`, and its contract, for the facts that its applications
+bring (`appFactsOf`). -/
+def State.appFuns (s : State) : Std.HashMap String (Bool × Contract) :=
+  s.funs.foldl (init := {}) fun m (p, _, r) => m.insert (itemSym p) (r == .nat, (s.contracts.find? p).getD {})
 
 /-- The whole prelude, as one script. -/
 def State.preludeText (s : State) : String := String.join (s.prelude.toList.map (·.text))

@@ -31,10 +31,15 @@ inductive CheckKind where
   | definedness
   | completeness
   | disjointness
+  /-- An application meets a precondition of the function it applies. -/
+  | precondition
+  /-- A defined function meets a postcondition. -/
+  | postcondition
   deriving Inhabited, DecidableEq, Repr
 
 def CheckKind.all : Array CheckKind :=
-  #[.realizable, .inst, .expect, .cover, .vacuity, .redundancy, .determinism, .definedness, .completeness, .disjointness]
+  #[.realizable, .inst, .expect, .cover, .vacuity, .redundancy, .determinism, .definedness, .completeness, .disjointness,
+    .precondition, .postcondition]
 
 inductive Verdict where
   | pass
@@ -73,7 +78,9 @@ structure CheckResult where
   /-- The constraint checked, the instance, or the `det out`; `none` for
   checks of a whole comp. -/
   prop? : Option Name
-  /-- For `inst`: the instantiated comp, and its assumption checked. -/
+  /-- For `inst`: the instantiated comp, and its assumption checked; for
+  `precondition`, the applied function and its precondition; for
+  `postcondition`, the function and its postcondition. -/
   target? : Option (Name × Name) := none
   /-- For `definedness`: which index of the constraint, in order. -/
   index? : Option Nat := none
@@ -221,8 +228,9 @@ inductive IndexPlace where
   | prop
   /-- A binding of the instance at this position. -/
   | binding (k : Nat)
-  /-- The body of a defined function, or the value of a constant: only the
-  conditions around it, which its goal already has. -/
+  /-- The body or a postcondition of a function, or the value of a
+  constant: the function's preconditions, and the conditions around it,
+  which its goal already has. -/
   | body
   deriving Inhabited, BEq, Repr
 
@@ -246,15 +254,23 @@ structure TableSite (F : Type) where
   goal : TableGoal
   deriving Inhabited
 
-/-- The check that answers a question about a table's rows. -/
+/-- The check that answers a question about a table's rows, or about an
+application's arguments. -/
 def TableGoal.kind : TableGoal → CheckKind
   | .completeness => .completeness
   | .disjointness .. => .disjointness
+  | .precondition .. => .precondition
 
 /-- The rows that a question is about, for `disjointness`. -/
 def TableGoal.rows? : TableGoal → Option (Nat × Nat)
-  | .completeness => none
   | .disjointness i j => some (i, j)
+  | _ => none
+
+/-- The function and precondition that a question is about, for
+`precondition`. -/
+def TableGoal.target? : TableGoal → Option (Name × Name)
+  | .precondition f p => some (f, p)
+  | _ => none
 
 /-- A comp, with its items as backend formulas over its variables. -/
 structure Comp (F : Type) where
@@ -274,8 +290,16 @@ structure Comp (F : Type) where
   /-- Some variable's type, its own or an instance's, is or contains an
   abstract type. -/
   typesInterpreted : Bool := false
-  /-- The questions about the rows of its tables. -/
+  /-- The questions about the rows of its tables, and about the arguments
+  of its applications of functions with preconditions. -/
   tables : Array (TableSite F) := #[]
+  /-- For the body of a defined function: its postconditions, each a claim
+  over its parameters (`check::postcondition`); its preconditions are its
+  `assumes`. -/
+  posts : Array (Name × F) := #[]
+  /-- For the body or contract of a function: the function, which the
+  results of `postcondition` name. -/
+  fn? : Option Name := none
 
 variable {m : Type → Type} [Monad m] {F V : Type} (b : Backend m F V)
 
@@ -343,7 +367,7 @@ satisfying the requirements, whatever the instances do
 definitions, so that they are never under `∃` (`check::definitions`). -/
 def checkRealizable (c : Comp F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
-    { kind := .realizable, comp := c.path, prop? := none, verdict, detail }
+    { kind := .realizable, comp := c.path, prop? := none, target? := c.fn?.map (·, .anonymous), verdict, detail }
   let sub := c.substHyps b
   let assumes := sub c.assumes
   let assumeQ ← b.query assumes b.falseF false
@@ -413,7 +437,7 @@ def Comp.siteHyps (c : Comp F) (b : Backend m F V) (site : IndexSite F) : Array 
   | .assume => c.assumes.filter (·.1 != site.prop)
   | .binding k => c.hyps b k
   | .prop => c.hyps b ++ c.reqs
-  | .body => #[]
+  | .body => c.assumes
 
 /-- `definedness`: the index is in range wherever it is evaluated, given the
 hypotheses of its place (`check::definedness`): for an assumption, the
@@ -440,8 +464,23 @@ its place, as for `definedness` (`check::completeness`,
 def checkTable (c : Comp F) (t : TableSite F) : m CheckResult := do
   let kind := t.goal.kind
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
-    { kind, comp := c.path, prop? := some t.site.prop, site? := some t.site.k, rows? := t.goal.rows?, verdict, detail }
+    { kind, comp := c.path, prop? := some t.site.prop, site? := some t.site.k, rows? := t.goal.rows?,
+      target? := t.goal.target?, verdict, detail }
   let q ← b.query (c.defEqs kind ++ c.siteHyps b t.site) t.site.goal true
+  match expectVerdict q.answer, q with
+  | (verdict, true), .sat model =>
+    return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
+  | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
+  | (verdict, _), _ => return result verdict
+
+/-- `postcondition`: the postcondition `p` of a defined function, named
+after the function and the clause, follows from its preconditions, its
+parameters free (`check::postcondition`). -/
+def checkPostcondition (c : Comp F) (p : Name × F) : m CheckResult := do
+  let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
+    { kind := .postcondition, comp := c.path, prop? := some p.1, target? := c.fn?.map (·, Name.mkSimple p.1.getString!),
+      verdict, detail }
+  let q ← b.query c.assumes p.2 true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
     return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
@@ -493,12 +532,21 @@ def checkDeterminism (c : Comp F) (x : Name) : m CheckResult := do
 /-- The checks of a global expectation (`Reqs/Lang/Global`), as a `Comp`
 whose path is the expectation's module, with one instance per binder (no
 bindings, and no assumptions as obligations) and the expectation itself. -/
-def globalKinds : Array CheckKind := #[.expect, .vacuity, .definedness, .completeness, .disjointness]
+def globalKinds : Array CheckKind := #[.expect, .vacuity, .definedness, .completeness, .disjointness, .precondition]
 
-/-- The checks of the tables in the body of a defined function or the value
-of a constant (`check::applies`), as a `Comp` whose path is its module,
-with its parameters as inputs. -/
-def bodyKinds : Array CheckKind := #[.completeness, .disjointness]
+/-- The checks of the tables and applications in the body and contract of
+a function or the value of a constant, and of a defined function's
+postconditions (`check::applies`), as a `Comp` whose path is its module,
+with its parameters as inputs and its preconditions as assumptions. -/
+def bodyKinds : Array CheckKind := #[.completeness, .disjointness, .precondition, .postcondition]
+
+/-- The checks of the contract of an uninterpreted function with
+postconditions (`check::applies`), as a `Comp` whose path is its module,
+with its parameters as inputs, its value as its one `out`, its
+preconditions as assumptions and its postconditions, of its value, as
+guarantees: whether they can hold together, and the tables and
+applications in its clauses. -/
+def contractKinds : Array CheckKind := #[.realizable, .completeness, .disjointness, .precondition]
 
 /-- The checks run on a global expectation if `global`, else on a component
 (`check::applies`). -/
@@ -509,8 +557,10 @@ def kindsFor (global : Bool) : Array CheckKind :=
 inductive CheckedItem where
   | component
   | global
-  /-- The body of a defined function, or the value of a constant. -/
+  /-- The body and contract of a function, or the value of a constant. -/
   | body
+  /-- The contract of an uninterpreted function with postconditions. -/
+  | contract
   deriving Inhabited, DecidableEq, Repr
 
 /-- The checks run on an item (`check::applies`). -/
@@ -518,6 +568,7 @@ def CheckedItem.kinds : CheckedItem → Array CheckKind
   | .component => kindsFor false
   | .global => kindsFor true
   | .body => bodyKinds
+  | .contract => contractKinds
 
 /-- The SMT-LIB logic of a check's queries (`cli::logic`): only
 realizability quantifies, over outputs; a spec that uses strings or sets
@@ -642,25 +693,60 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
   let defined ← ifSelected (kinds.contains .definedness) (c.indexes.mapM (checkDefinedness (bk .definedness) c))
   let complete ← ifSelected (kinds.contains .completeness) ((c.tablesOf .completeness).mapM (checkTable (bk .completeness) c))
   let disjoint ← ifSelected (kinds.contains .disjointness) ((c.tablesOf .disjointness).mapM (checkTable (bk .disjointness) c))
+  let pres ← ifSelected (kinds.contains .precondition) ((c.tablesOf .precondition).mapM (checkTable (bk .precondition) c))
+  let posts ← ifSelected (kinds.contains .postcondition) (c.posts.mapM (checkPostcondition (bk .postcondition) c))
   return realizable ++ insts ++ expects ++ covers ++ vacuities ++ redundancies ++ dets ++ defined ++ complete ++ disjoint
+    ++ pres ++ posts
 
-/-- What the applications of functions into `Nat` in a query bring
-(`Reqs/Check`): that each application that `appsOf` finds in the query's
-own hypotheses and goal is at least 0, each once, as hypotheses named
-`nat`, by `atLeast0`. They are in one order in both front ends: the
-hypotheses' in order and then the goal's, and within a formula in the
-order that `appsOf` gives, which is that of a walk of the formula that
-meets an application before its arguments and the arguments from left to
-right. Both front ends give a query these and no others, so
-that they depend only on its formulas: a query never has a fact about an
+/-- What the applications of uninterpreted functions in a query bring
+(`Reqs/Check`): for each application that `appsOf` finds in the query's
+own hypotheses and goal, each once, the facts that `factsOf` gives of it:
+that it is at least 0, named `nat`, if its result is a `Nat`, and that it
+meets each postcondition of its function where its arguments meet the
+preconditions, named by the postcondition. They are in one order in both
+front ends: the hypotheses' in order and then the goal's, and within a
+formula in the order that `appsOf` gives, which is that of a walk of the
+formula that meets an application before its arguments and the arguments
+from left to right; and of each application, in the order `factsOf`
+gives. Both front ends give a query these and no others, so that they
+depend only on its formulas: a query never has a fact about an
 application that it does not mention, as of an instantiated component's
 expectation, and the formulas that `coverInterpreted` reads are all it
 uses. -/
-def natAppFacts [Monad m] [BEq F] (appsOf : F → Array F) (atLeast0 : F → m F) (hyps : Array (Name × F))
+def appFacts [Monad m] [BEq F] (appsOf : F → Array F) (factsOf : F → m (Array (Name × F))) (hyps : Array (Name × F))
     (goal : F) : m (Array (Name × F)) := do
   let apps := (hyps.map (·.2) ++ #[goal]).foldl (init := #[]) fun acc f =>
     (appsOf f).foldl (init := acc) fun acc a => if acc.contains a then acc else acc.push a
-  apps.mapM fun a => return (`nat, ← atLeast0 a)
+  return (← apps.mapM factsOf).flatten
+
+/-- The questions that an application of the function `f` asks of its
+arguments, for the precondition check (`check::application_contract`):
+each of its preconditions `pres`, at the arguments, where the
+application's guard holds, as `guarded` puts it. Both front ends record
+these. -/
+def preconditionQuestions (guarded : F → F) (f : Name) (pres : Array (Name × F)) : Array (TableGoal × F) :=
+  pres.map fun (p, g) => (.precondition f p, guarded g)
+
+/-- The facts that an application of an uninterpreted function brings of
+its postconditions `posts`, each named by its postcondition, at the
+arguments and the application's value (`check::application_contract`):
+each holds where its preconditions `pres` imply it, as `implies` puts it.
+Both front ends' `factsOf` give these, after the application's `nat`. -/
+def postconditionFacts (implies : Array F → F → F) (pres : Array F) (posts : Array (Name × F)) : Array (Name × F) :=
+  posts.map fun (n, q) => (n, implies pres q)
+
+/-- The component that checks the realizability of the contract of the
+uninterpreted function `f` (`Reqs/Check#contracts-of-uninterpreted-functions`),
+whose path is its module `path`: its parameters `params` as inputs, its
+value `value` as its one output, and its preconditions `pres` and
+postconditions `posts`, of the value, as its assumptions and guarantees,
+with `sites`, the questions about the tables and applications in its
+clauses. Both front ends check this component. -/
+def contractComp (path f : Name) (params : Array Name) (value : Name) (pres posts : Array (Name × F))
+    (sites : Array (TableSite F) := #[]) : Comp F :=
+  { path, vars := params.map (fun x => { name := x, role := .input, isPub := true }) |>.push
+      { name := value, role := .output, isPub := true }
+    assumes := pres, reqs := posts, expects := #[], triggers := #[], tables := sites, fn? := some f }
 
 /-- The formulas of the query of the cover goal `g` (`checkCover`): the
 definitions, the assumptions, each instance's bindings and the meaning of
@@ -732,6 +818,10 @@ def rowsText : Option (Nat × Nat) → String
   | some (i, j) => s!"rows {i + 1} and {j + 1}"
   | none => "two rows"
 
+/-- The name of a clause of a contract, without its function's
+(`Comp.fn?`). -/
+def clauseName (n : Name) : Name := Name.mkSimple n.getString!
+
 def showComp (path : Name) : String :=
   "::".intercalate (path.components.map (·.toString))
 
@@ -773,6 +863,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
   | .inconclusive, d =>
     let why := match d with | .unknown w => s!": {w}" | _ => ""
     let what := match r.kind, r.target? with
+      | .realizable, some (f, _) => s!"the postconditions of `{showComp f}` can hold"
       | .realizable, _ => s!"{subject} is realizable"
       | .inst, some (sub, a) => s!"the assumption `{a}` of `{showComp sub}` holds for instance {subject}"
       | .inst, none => s!"{subject} holds"
@@ -784,6 +875,10 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       | .definedness, _ => s!"an index of {subject} is in range"
       | .completeness, _ => s!"some row of a table in {subject} holds"
       | .disjointness, _ => s!"{rowsText r.rows?} of a table in {subject} are disjoint"
+      | .precondition, some (f, p) => s!"the precondition `{p}` of `{showComp f}` holds at an application in {subject}"
+      | .precondition, none => s!"a precondition holds at an application in {subject}"
+      | .postcondition, some (f, p) => s!"the postcondition `{p}` of `{showComp f}` holds"
+      | .postcondition, none => s!"{subject} holds"
     let advice := match inconclusiveAdvice decidable with
       | .raiseTimeout => #["note: the solver gave up, so this check neither passed nor failed",
         "help: raise the time limit with `--timeout`, or simplify the constraints involved"]
@@ -792,10 +887,27 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         "help: bring it back into the decidable core, or raise the time limit with `--timeout`"]
     #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
   | .fail, .vacuousAssumptions core =>
+    if let some (f, _) := r.target? then
+      #[one "F0632" s!"the preconditions of `{showComp f}` are unsatisfiable: {showNames (core.map clauseName)} contradict each other"
+        (some "no arguments meet its preconditions") #["note: the function could never be applied where its contract says anything",
+          "help: weaken or remove one of them"] (item? := none)]
+    else
     #[one "F0602" s!"the assumptions of {subject} are unsatisfiable: {showNames core} contradict each other"
       (some "no input satisfies its assumptions") #["note: every guarantee would hold vacuously",
         "help: weaken or remove one of them"] (item? := none)]
   | .fail, .conflict input core =>
+    if let some (f, _) := r.target? then
+      let names := showNames (core.map clauseName)
+      #[one "F0631" s!"the postconditions of `{showComp f}` cannot all hold: for the arguments {showAssignment input}, no value of `{showComp f}` satisfies {names}"
+        (some "unrealizable contract")
+        #["note: an uninterpreted function's postconditions are assumed wherever it is applied, so if they cannot hold, every check that applies it would pass",
+          "help: weaken one of them, or add a precondition that rules these arguments out"] (item? := none)]
+      ++ core.map fun n =>
+        let others := (core.filter (· != n)).map clauseName
+        { severity := .info, item? := some n,
+          msg := { code? := none, headline := if others.isEmpty then s!"is false when {showAssignment input}"
+            else s!"conflicts with {showNames others} when {showAssignment input}" } }
+    else
     -- Instance variables (`w.x`) cannot be assumed about.
     let help := if input.all (·.1.isAtomic) then #["help: weaken one of them, or add an `assume` that rules this input out"]
       else #["help: weaken one of them",
@@ -825,6 +937,18 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         #[s!"witness: {showAssignment vals}",
           "note: where rows overlap, the first of them gives the table's value, so the order of the rows matters",
           "help: make the conditions exclusive, as in `a => x, not a and b => y`"]]
+    else
+    if let (.precondition, some (f, p)) := (r.kind, r.target?) then
+      #[one "F0629" s!"the precondition `{p}` of `{showComp f}` may not hold at this application in {subject}"
+        (some s!"may violate `{showComp f}::{p}`")
+        #[s!"counterexample: {showAssignment vals}",
+          "note: where a precondition fails, the application's value is unknown, or not what the function is for",
+          "help: guard the application, as in `p(x) and f(x) = y`, or assume what the precondition needs"]]
+    else
+    if let (.postcondition, some (f, p)) := (r.kind, r.target?) then
+      #[one "F0630" s!"the postcondition `{p}` of `{showComp f}` does not hold" (some "does not follow from the body")
+        #[s!"counterexample: {showAssignment vals}",
+          "help: correct the body or the postcondition, or add a precondition that rules this case out"]]
     else
     if let (.inst, some (sub, a)) := (r.kind, r.target?) then
       #[one "F0604" s!"the assumption `{a}` of `{showComp sub}` may not hold for instance {subject}"

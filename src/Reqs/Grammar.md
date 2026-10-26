@@ -31,7 +31,9 @@ record         := ["pub"] "struct" IDENT "{" field ("," field)* [","] "}"
 field          := IDENT [":" type]
 abstract-type  := ["pub"] "type" IDENT
 function       := ["pub"] "fn" IDENT "(" type ("," type)* ")" [":" type]
+                | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] [":=" top] clause+
                 | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] ":=" top
+clause         := ("assume" | "ensure") IDENT ":" top
 constant       := ["pub"] "const" IDENT ":" type ":=" top
 component      := ["pub"] "comp" IDENT "{" member* "}"
 expectation    := "expect" IDENT ":" ["forall" binder+ ","] top
@@ -50,7 +52,7 @@ implementation := "impl" IDENT ":" path ["for" lean-binder+]
                   "{" [map ("," map)* [","]] "}" ["by" TACTICS]
 lean-binder    := "(" IDENT+ ":" TERM ")"
 map            := IDENT ":=" TERM
-interpretation := "interp" path ":=" TERM
+interpretation := "interp" path ":=" TERM ["by" TACTICS]
 ```
 
 ## Components

@@ -1,0 +1,13 @@
+error[F0380]: a precondition of `rate` cannot apply `rate`
+ --> test/cli/types/f0380_own_precondition.fren:3:19
+  |
+3 |     assume small: rate(n) < 10
+  |                   ^^^^ applied in its own precondition
+  |
+  = note: a precondition says where the function may be applied, so it cannot depend on the function's value
+  = help: state what the value gives in a postcondition, with `ensure`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0380`.
+exit=2

@@ -1,0 +1,13 @@
+error[F0330]: the parameters of uninterpreted function `rate` must be named
+ --> test/cli/types/f0330_contract.fren:2:9
+  |
+2 | fn rate(Int): Int
+  |         ^^^ no name
+  |
+  = note: its contract mentions its parameters by name
+  = help: write the parameter as `x: T`, or `x?` for a `Bool`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0330`.
+exit=2

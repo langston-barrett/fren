@@ -80,7 +80,9 @@ including the definitions of their [`let`s and `where`
 clauses](Lang/Let.md), which are changed like any other expression. The
 expectations, both of components and [global](Lang/Global.md), and the
 [cover goals](Lang/Components.md#cover-goals) are what rejects mutants,
-and their text is not changed. An expectation rejects a mutant that
+and their text is not changed; nor is that of a function's
+[contract](Lang/Items.md#contracts), which a defined function's body is
+checked against. An expectation rejects a mutant that
 weakens what the spec says, and a cover goal one that strengthens it: a
 mutant that rules out a goal's scenario fails the goal, which kills it. But an expectation that
 reads a constant or function reads the mutant's: if a guarantee and an

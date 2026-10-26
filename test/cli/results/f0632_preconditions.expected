@@ -1,0 +1,13 @@
+error[F0632]: the preconditions of `rate` are unsatisfiable: `positive`, `negative` contradict each other
+ --> test/cli/results/f0632_preconditions.fren:2:8
+  |
+2 | pub fn rate(n: Int): Int
+  |        ^^^^ no arguments meet its preconditions
+  |
+  = note: the function could never be applied where its contract says anything
+  = help: weaken or remove one of them
+
+fren: 0 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0632`.
+exit=1

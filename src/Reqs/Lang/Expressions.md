@@ -1240,10 +1240,10 @@ pub comp relation_op {
     expect closure_endo: when op = Closure and accepted?, left(r) = right(r)
     expect only_relations: when accepted?, kind(r) = RelTy
     expect composable: when op = Join and kind(r) = RelTy and kind(s) = RelTy and right(r) = left(s), accepted?
-    expect not_composable: when op = Join and kind(s) = RelTy and right(r) != left(s), not accepted?
+    expect not_composable: when op = Join and kind(r) = RelTy and kind(s) = RelTy and right(r) != left(s), not accepted?
     expect join_relations_only: when op = Join and kind(s) != RelTy, not accepted?
     expect image_of_domain: when op = Image and kind(r) = RelTy and kind(s) = SetTy and elem(s) = left(r), accepted?
-    expect image_of_other: when op = Image and kind(s) = SetTy and elem(s) != left(r), not accepted?
+    expect image_of_other: when op = Image and kind(r) = RelTy and kind(s) = SetTy and elem(s) != left(r), not accepted?
     expect image_of_sets_only: when op = Image and kind(s) != SetTy, not accepted?
 }
 
@@ -1256,8 +1256,8 @@ pub comp pair_membership {
     ensure rule: accepted? iff (kind(r) = ValueType::RelTy and left(r) = x and right(r) = y)
 
     expect pair_of_relation: when kind(r) = ValueType::RelTy and left(r) = x and right(r) = y, accepted?
-    expect wrong_first: when left(r) != x, not accepted?
-    expect wrong_second: when right(r) != y, not accepted?
+    expect wrong_first: when kind(r) = ValueType::RelTy and left(r) != x, not accepted?
+    expect wrong_second: when kind(r) = ValueType::RelTy and right(r) != y, not accepted?
     expect relations_only: when kind(r) != ValueType::RelTy, not accepted?
 }
 ```

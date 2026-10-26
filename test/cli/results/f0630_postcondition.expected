@@ -1,0 +1,13 @@
+error[F0630]: the postcondition `positive_result` of `pred` does not hold
+ --> test/cli/results/f0630_postcondition.fren:5:12
+  |
+5 |     ensure positive_result: pred(n) > 0
+  |            ^^^^^^^^^^^^^^^ does not follow from the body
+  |
+  = counterexample: n = 1
+  = help: correct the body or the postcondition, or add a precondition that rules this case out
+
+fren: 0 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0630`.
+exit=1

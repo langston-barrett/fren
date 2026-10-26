@@ -124,7 +124,7 @@ pub comp interpreted {
 ## Interpretations
 
 ```
-interpretation := "interp" path ":=" TERM
+interpretation := "interp" path ":=" TERM ["by" TACTICS]
 ```
 
 An interpretation gives the Lean meaning of an [abstract
@@ -160,8 +160,19 @@ declarations](Generated.md)).
 Each abstract type and function is interpreted at most once, in a Lean file
 and the files it imports, so every implementation uses the same meaning.
 An interpretation is not checked against the spec, which states nothing
-about a function beyond its type: it says what the spec's author means by
-the function, and is reviewed as part of the spec. It is what makes an
+about a function beyond its type and its
+[postconditions](Lang/Items.md#contracts): it says what the spec's author
+means by the function, and is reviewed as part of the spec. A function's
+postconditions are proved of its interpretation: `interp p := t`, for a
+function with postconditions, adds the theorem `q.ensures`, that for all
+values of the parameters that meet the preconditions, `t` meets each
+postcondition, where the abstract types and functions that the contract
+uses are their interpretations. It is proved by the tactics after `by`, if
+there are any, and otherwise by `decide` or, failing that, by the solver,
+as an [implementation](#proof) is, in which case it is an axiom. An
+interpretation whose postconditions are not proved is an error, and adds
+nothing, so the function can be interpreted again; a proof that uses
+`sorry` proves nothing. An interpretation is what makes an
 implementation a claim about the code: the implementation of a component
 that applies `ends_in_q?` is proved against the interpretation, not
 against what the code computes. `impls::interpretation` decides whether an
@@ -182,6 +193,80 @@ pub comp interpretation {
 
     expect once: when earlier > 0, not accepted?
     expect only_open_items: when what = Interpreted::Other, not accepted?
+}
+```
+
+`impls::interpretation_contract` states how an
+interpretation of a function proves its postconditions, from whether it
+has any, its written proof, if any, and the answers of `decide` and the
+solver, which are asked in turn only when the earlier ones prove nothing:
+
+```fren
+pub enum ContractProof { NotNeeded, Theorem, Axiom, Unproved }
+
+pub comp interpretation_contract {
+    use self::ContractProof::{Axiom, NotNeeded, Theorem, Unproved}
+    in posts?            -- the function has postconditions
+    in written?          -- the interpretation has tactics after `by`
+    in written_ok?       -- they elaborate without an error
+    in uses_sorry?       -- the proof they give uses `sorry`
+    in decide_q: Outcome  -- `Unsat` if `decide` proves the statement, `Sat` if it evaluates it to false
+    in smt_q: Outcome    -- can the solver prove the statement?
+    pub det out proof: ContractProof
+    pub det out recorded?    -- the interpretation, and its theorem, are added
+    pub det out error?       -- an error is reported
+
+    ensure rule: proof = table {
+        | not posts? => NotNeeded,
+        | posts? and written? => if written_ok? and not uses_sorry? then Theorem else Unproved,
+        | posts? and not written? and decide_q = Unsat => Theorem,
+        | posts? and not written? and decide_q = Sat => Unproved,
+        | posts? and not written? and decide_q = Unknown => if smt_q = Unsat then Axiom else Unproved,
+    }
+    ensure records: recorded? iff proof != Unproved
+    ensure reports: error? iff proof = Unproved
+
+    expect sorry_proves_nothing: when posts? and written? and uses_sorry?, not recorded? and error?
+    expect failure_records_nothing: when error?, not recorded?
+}
+```
+
+`impls::interpretation_at` states what an interpretation without a
+written proof must meet, over the domain of [contract
+realizability](Check.md#contracts-of-uninterpreted-functions): the
+interpretation gives each argument a value, `at_a0` and `at_a1`, and is
+recorded exactly when, at each argument that meets the preconditions, its
+value meets the postconditions, which `decide` decides on so small a
+domain. Its implementation decides the statement over the domain and
+proves with the real decision. It refines
+`impls::interpretation_contract`:
+
+```fren
+use check::{Argument, Point, Value}
+
+pub comp interpretation_at {
+    in pres: Set(Argument)   -- the arguments that meet the preconditions
+    in posts: Set(Point)     -- the arguments and values that meet the postconditions
+    in at_a0: Value          -- the interpretation's value at `A0`
+    in at_a1: Value          -- at `A1`
+    pub det out recorded?
+
+    ensure rule: recorded? iff ((when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
+        and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts))
+
+    expect unconstrained: when pres = {}, recorded?
+}
+
+refine interpretation_detail: interpretation_at refines interpretation_contract {
+    posts? := true,
+    written? := false,
+    written_ok? := false,
+    uses_sorry? := false,
+    decide_q := if (when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
+        and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts) then Unsat else Sat,
+    smt_q := Unknown,
+    proof := if recorded? then ContractProof::Theorem else ContractProof::Unproved,
+    error? := not recorded?,
 }
 ```
 

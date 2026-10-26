@@ -347,12 +347,40 @@ def termsIn (terms : Array String) (f : String) : Array String := Id.run do
     i := i + 1
   return out
 
+/-- `t`, the SMT-LIB text that `wrapLets` makes of a term, as the `let`s
+around the term, the term, and the parentheses that close them. -/
+partial def splitLets (t : String) : String × String × String :=
+  let inner := peelLets t
+  if inner.length == t.length then ("", t, "") else
+  let n := t.length - inner.length
+  -- `(let BINDINGS ` before, and `)` after, for each `let`.
+  let closes := (t.toList.reverse.takeWhile (· == ')')).length - (inner.toList.reverse.takeWhile (· == ')')).length
+  ((t.take (n - closes)).toString, inner, (t.takeEnd closes).toString)
+
+/-- The facts that the application `app`, of an uninterpreted function into
+`Nat` or with postconditions, brings (`Fren.Core.appFacts`), from what
+`funs` says of its function (`State.appFuns`): that it is at least 0, if
+its result is a `Nat`, and that it meets each postcondition where its
+arguments meet the preconditions, named by the postcondition, within the
+`let`s around it, as the Lean front end's are. -/
+def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (app : String) : Array (Lean.Name × String) :=
+  let (pre, inner, post) := splitLets app
+  -- `(SYM ARGS)`.
+  let head := ((inner.drop 1).takeWhile (· != ' ')).toString
+  let args := ((inner.drop (head.length + 2)).dropEnd 1).toString
+  let (nat, k) := funs.getD head (false, {})
+  let implies (ps : Array String) (q : String) := if ps.isEmpty then q else s!"(=> {conj ps} {q})"
+  let posts := Fren.Core.postconditionFacts implies (k.pres.map fun (_, p) => s!"({p} {args})")
+    (k.posts.map fun (n, sym) => (n, s!"({sym} {args})"))
+  (if nat then #[(`nat, s!"(>= {app} 0)")] else #[]) ++ posts.map fun (n, f) => (n, pre ++ f ++ post)
+
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
 type that is not finite (`cli::logic`); answering from `cache?`, if any,
 the scripts asked before (`runQuery`). -/
 def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Limits) (dump? : Option (String → IO Unit) := none)
-    (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (kind : Fren.Core.CheckKind) :
+    (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none)
+    (funs : Std.HashMap String (Bool × Contract) := {}) (kind : Fren.Core.CheckKind) :
     Fren.Core.Backend IO String String where
   -- cvc5 refuses some string operations without `strings-exp`. Every query
   -- has what the `Nat` variables bring, of both copies, and what the
@@ -370,7 +398,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     -- there, and its fact is within the clause's `let`s.
     let peeled := apps.map peelLets
     let appsOf (f : String) := (termsIn peeled f).filterMap fun t => (peeled.idxOf? t).map (apps[·]!)
-    let appFacts ← Fren.Core.natAppFacts (m := Id) appsOf (s!"(>= {·} 0)") hyps goal
+    let appFacts ← Fren.Core.appFacts (m := Id) appsOf (appFactsOf funs) hyps goal
     runQuery (Fren.Core.logic kind (strings || sets) projection)
       (String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n"))
       prelude vars limits dump? (facts.map (`nat, ·) ++ appFacts ++ hyps) goal wantModel cache?
@@ -396,23 +424,35 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
 
 def toCore (c : CComp) : Fren.Core.Comp String :=
   let props (k : PropKind) := c.props.filter (·.kind == k) |>.map fun p => (p.name, p.smt)
-  { path := c.path
-    vars := c.vars.map fun v =>
-      { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
-    assumes := props .assume
-    reqs := props .ensure
-    expects := props .expect
-    covers := props .cover
-    insts := c.insts.map fun i =>
-      { name := i.name, comp := i.comp, bindings := i.bindings, behaviour := i.behaviour, assumes := i.assumes }
-    triggers := (c.props.filter fun p => p.kind == .ensure || p.kind == .expect).filterMap fun p =>
-      p.trigger?.map (p.name, ·)
-    defs := c.defs.map fun (d, e) => (d, s!"(= {quote d.toString} {e})", e)
-    -- Numbered in order within each item.
-    indexes := c.indexes.mapIdx fun j (n, place, _, goal) =>
-      { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal }
-    tables := c.tables.mapIdx fun j (n, place, _, q, goal) =>
-      { site := { prop := n, k := (c.tables.extract 0 j).filter (·.1 == n) |>.size, place, goal }, goal := q } }
+  -- The contract of an uninterpreted function, whose value is an output.
+  let contract := c.fn?.isSome && c.vars.any (·.role == .output)
+  let core : Fren.Core.Comp String :=
+    { path := c.path
+      vars := c.vars.map fun v =>
+        { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
+      assumes := props .assume
+      -- A function's postconditions are claims of its own
+      -- (`check::postcondition`), and the hypotheses of nothing.
+      reqs := if c.fn?.isNone || contract then props .ensure else #[]
+      posts := if c.fn?.isSome && !contract then props .ensure else #[]
+      fn? := c.fn?
+      expects := props .expect
+      covers := props .cover
+      insts := c.insts.map fun i =>
+        { name := i.name, comp := i.comp, bindings := i.bindings, behaviour := i.behaviour, assumes := i.assumes }
+      triggers := (c.props.filter fun p => p.kind == .ensure || p.kind == .expect).filterMap fun p =>
+        p.trigger?.map (p.name, ·)
+      defs := c.defs.map fun (d, e) => (d, s!"(= {quote d.toString} {e})", e)
+      -- Numbered in order within each item.
+      indexes := c.indexes.mapIdx fun j (n, place, _, goal) =>
+        { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal }
+      tables := c.tables.mapIdx fun j (n, place, _, q, goal) =>
+        { site := { prop := n, k := (c.tables.extract 0 j).filter (·.1 == n) |>.size, place, goal }, goal := q } }
+  -- An uninterpreted function's contract, as both front ends build it
+  -- (`Fren.Core.contractComp`).
+  match contract, c.fn?, c.vars.back? with
+  | true, some f, some v => Fren.Core.contractComp core.path f (c.vars.pop.map (·.name)) v.name core.assumes core.reqs core.tables
+  | _, _, _ => core
 
 /-- `rs`, results of `c`, with each cover goal's marked if its query uses
 an abstract type or an uninterpreted function, as the prelude declarations

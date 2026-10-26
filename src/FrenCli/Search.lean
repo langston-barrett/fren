@@ -107,11 +107,27 @@ partial def hashVal : Val → UInt64
   | .abs s k => mix (hash s) k.toUInt64
   | .ctor t i args => args.foldl (fun h a => mix h (hashVal a)) (mix (hash t) i.toUInt64)
 
+/-- The value of the function `f` at `args` in the interpretation `w`:
+random, but where the arguments meet `f`'s preconditions, the first of a
+few random values that meets its postconditions, and none if none does
+(`Reqs/Eval#searching-for-behaviours`). The clauses are evaluated with the
+other functions' values, to the depth `depth`, beyond which they are not
+checked. -/
+partial def World.value (sp : Spec) (w : World) (f : Name) (args : Array Val) (depth : Nat := 3) : Option Val := do
+  let (_, r) ← sp.funs.find? f
+  let h := args.foldl (fun h a => mix h (hashVal a)) (mix w.seed (hash f))
+  let some (ps, pres, posts) := sp.contracts.find? f | return valueOf sp w h 2 r
+  if depth == 0 then return valueOf sp w h 2 r
+  let others : Interp := { fn := fun g as => w.value sp g as (depth - 1) }
+  let locals := (ps.zip args).toList
+  unless pres.all (·.eval others (fun _ => none) locals == some (.bool true)) do return valueOf sp w h 2 r
+  let candidates := (List.range 8).map fun k => valueOf sp w (if k == 0 then h else mix h k.toUInt64) 2 r
+  candidates.find? fun v =>
+    let I : Interp := { fn := fun g as => if g == f && as == args then some v else w.value sp g as (depth - 1) }
+    posts.all (·.eval I (fun _ => none) locals == some (.bool true))
+
 def World.interp (sp : Spec) (w : World) : Interp where
-  fn f args := do
-    let (_, r) ← sp.funs.find? f
-    let h := args.foldl (fun h a => mix h (hashVal a)) (mix w.seed (hash f))
-    return valueOf sp w h 2 r
+  fn f args := w.value sp f args
   matchMemo p s := do return (← (← sp.matchMemo[p]?)[s]?).get
 
 /-! ## Candidates -/
@@ -131,7 +147,7 @@ partial def Pat.strLits : Pat → Array String
 partial def Ex.lits : Ex → Array Int
   | .lit (.int i) => #[i]
   | .lit _ | .var _ | .slot _ | .bound _ => #[]
-  | .not a | .neg a | .field a _ => a.lits
+  | .not a | .neg a | .field a _ | .pre _ _ _ a => a.lits
   | .bin _ a b | .when _ a b => a.lits ++ b.lits
   | .ite c a b => c.lits ++ a.lits ++ b.lits
   | .app _ args | .cardinality _ args | .ctor _ _ args => args.flatMap (·.lits)
@@ -153,7 +169,7 @@ partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .bin .eq (.slot y) e | .bin .iff (.slot y) e => (if y == x then #[e] else #[]) ++ e.equated x
   | .bin .eq e (.slot y) | .bin .iff e (.slot y) => (if y == x then #[e] else #[]) ++ e.equated x
   | .lit _ | .var _ | .slot _ | .bound _ => #[]
-  | .not a | .neg a | .field a _ => a.equated x
+  | .not a | .neg a | .field a _ | .pre _ _ _ a => a.equated x
   | .bin _ a b | .when _ a b => a.equated x ++ b.equated x
   | .ite c a b => c.equated x ++ a.equated x ++ b.equated x
   | .app _ args | .cardinality _ args | .ctor _ _ args => args.flatMap (·.equated x)
@@ -234,7 +250,7 @@ partial def VTy.readsInts (sp : Spec) (seen : List Name := []) : VTy → Bool
 partial def Ex.vars : Ex → Array Name
   | .var n => #[n]
   | .lit _ | .slot _ | .bound _ => #[]
-  | .not a | .neg a | .field a _ | .card a => a.vars
+  | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a => a.vars
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ => a.vars ++ b.vars
   | .ite c a b => c.vars ++ a.vars ++ b.vars
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.vars)
@@ -513,7 +529,7 @@ partial def Ex.strLits : Ex → Array String × Array String
   | .lit v => (v.strs, #[])
   | .var _ | .slot _ | .bound _ => (#[], #[])
   | .method .matches r #[.lit (.str p)] | .matches r p _ => let (ls, ps) := r.strLits; (ls, ps.push p)
-  | .not a | .neg a | .field a _ | .card a => a.strLits
+  | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a => a.strLits
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ => join #[a, b]
   | .ite c a b => join #[c, a, b]
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => join args

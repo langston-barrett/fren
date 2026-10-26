@@ -139,6 +139,29 @@ structure DefinedInfo where
   nParams : Nat
   deriving Inhabited
 
+/-- A clause of a function's contract, and the Lean definition generated
+for it (`Reqs/Generated#contracts`), which takes a parameter for each
+placeholder of `uses`, then one for each of the function's parameters. -/
+structure ClauseInfo where
+  name : Name
+  decl : Name
+  uses : Array Name
+  deriving Inhabited
+
+/-- The contract of the function at `path` (`Reqs/Lang/Items#contracts`). -/
+structure ContractInfo where
+  path : Name
+  pres : Array ClauseInfo
+  posts : Array ClauseInfo
+  /-- Whether the function is defined: an uninterpreted function's
+  postconditions are facts about its applications. -/
+  defined : Bool
+  deriving Inhabited
+
+/-- The clause `k`'s statement at the arguments `args`. -/
+def ClauseInfo.at (k : ClauseInfo) (args : Array Expr) : Expr :=
+  mkAppN (mkConst k.decl) (k.uses.map (mkConst ·) ++ args)
+
 /-- `e` with each placeholder of `uses` replaced by the corresponding
 expression of `xs`. -/
 def replaceUses (uses : Array Name) (xs : Array Expr) (e : Expr) : Expr :=
@@ -236,6 +259,10 @@ structure CompInfo where
   /-- The checks that only the `fren` command runs, by testing
   (`Reqs/Check#checking-by-testing`). -/
   tested : Core.Tested := {}
+  /-- For the body and contract of a function, the function: then its
+  assumptions are its preconditions, and its guarantees, if it is defined,
+  its postconditions, each named after the function and the clause. -/
+  fn? : Option Name := none
   deriving Inhabited
 
 def CompInfo.assumes (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .assume)
@@ -286,6 +313,7 @@ inductive Entry where
   | constInfo (c : ConstInfo)
   | abstractInfo (a : AbstractInfo)
   | definedInfo (d : DefinedInfo)
+  | contractInfo (c : ContractInfo)
   /-- An `interp` of the item at `path`, as the definition `decl`. -/
   | interpInfo (path decl : Name)
   /-- A global expectation, as a `CompInfo` whose path is its module, with
@@ -317,6 +345,8 @@ structure State where
   placeholders : NameMap Nat := {}
   /-- Defined functions, by path. -/
   defined : NameMap DefinedInfo := {}
+  /-- The contracts of functions that have one, by the function's path. -/
+  contracts : NameMap ContractInfo := {}
   /-- The definition of each abstract type's and function's interpretation,
   by path. -/
   interps : NameMap Name := {}
@@ -350,6 +380,7 @@ def State.add (s : State) : Entry → State
     { s with abstracts := s.abstracts.insert a.path a
              placeholders := s.placeholders.insert a.placeholder s.placeholders.size }
   | .definedInfo d => { s with defined := s.defined.insert d.path d }
+  | .contractInfo c => { s with contracts := s.contracts.insert c.path c }
   | .interpInfo p d => { s with interps := s.interps.insert p d }
   | .globalInfo p c => { s with globals := s.globals.insert p c }
   | .refinementInfo c => { s with refinements := s.refinements.insert c.path c }

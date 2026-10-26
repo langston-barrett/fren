@@ -180,18 +180,26 @@ instance of `c`, and the second part its [expectation
 checks](../Check.md#expectations). A failure is reported as for those
 checks, with a counterexample, at the refinement. `refinement::checks` gives
 which checks run on a refinement: those that check the obligation, and the
-[definedness](../Check.md#definedness), [completeness](../Check.md#completeness)
-and [disjointness](../Check.md#disjointness) of what it reads:
+[definedness](../Check.md#definedness), [completeness](../Check.md#completeness),
+[disjointness](../Check.md#disjointness) and
+[preconditions](../Check.md#preconditions) of what it reads:
 
 ```fren
 use check::Kind
 
 pub comp checks {
-    use check::Kind::{Completeness, Definedness, Disjointness, Expectation, InstanceAssumption}
+    use check::Kind::{
+        Completeness,
+        Definedness,
+        Disjointness,
+        Expectation,
+        InstanceAssumption,
+        Precondition,
+    }
     in kind: Kind
     pub det out runs?
 
-    ensure rule: runs? iff kind in {InstanceAssumption, Expectation, Definedness, Completeness, Disjointness}
+    ensure rule: runs? iff kind in {InstanceAssumption, Expectation, Definedness, Completeness, Disjointness, Precondition}
 }
 ```
 

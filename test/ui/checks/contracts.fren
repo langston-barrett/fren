@@ -1,0 +1,156 @@
+-- The precondition check at each application, and the postcondition
+-- check of a defined function (`check::precondition`,
+-- `check::postcondition`): where they fail, with a counterexample, at the
+-- applied function's name or at the postcondition's.
+set_option fren.lint.dead_code "allow"
+
+fn nth(q: Seq(Int), i: Int): Int := q[i]
+    assume in_range: 0 <= i < q.len
+
+comp unguarded {
+    in q: Seq(Int)
+    pub out y: Int
+
+    ensure r: y = nth(q, 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `unguarded::r`
+}
+
+-- An assumption's application is checked under the other assumptions.
+comp assumed {
+    in q: Seq(Int)
+    in i: Int
+    pub out y: Int
+
+    ensure r: y = nth(q, i)
+
+    assume valid: 0 <= i < q.len
+    assume positive: nth(q, i) > 0
+    assume first: nth(q, 1) > 0   --~ error: the precondition `in_range` of `nth` may not hold at this application in `assumed::first`
+}
+
+-- Each application of a function with two preconditions is two checks.
+fn ratio(a: Int, b: Int): Int := a + b
+    assume nonneg: a >= 0
+    assume nonzero: b != 0
+
+comp ratios {
+    in a: Int
+    in b: Int
+    pub out y: Int
+
+    assume a_nonneg: a >= 0
+    ensure r: y = ratio(a, b)   --~ error: the precondition `nonzero` of `ratio` may not hold at this application in `ratios::r`
+}
+
+-- A postcondition that the body does not meet.
+fn decrement(n: Int): Int := n - 1
+    assume positive: n > 0
+    ensure natural: decrement(n) >= 0
+    ensure wrong: decrement(n) > 0   --~ error: the postcondition `wrong` of `decrement` does not hold
+
+-- An application in a function's body is checked under its preconditions,
+-- and so is one in its postconditions.
+fn head(q: Seq(Int)): Int := nth(q, 0)
+    assume nonempty: q != []
+    ensure at_zero: head(q) = nth(q, 0)
+
+fn careless(q: Seq(Int)): Int := nth(q, 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `careless`
+
+-- A precondition's application is checked under the other preconditions.
+fn second(q: Seq(Int)): Int := q[1]
+    assume long: q.len > 1
+    assume sorted: nth(q, 0) <= nth(q, 1)
+
+-- In a global expectation, and under quantifiers.
+comp holder {
+    in q: Seq(Int)
+    pub out y: Int
+
+    ensure r: when q.len > 2, y = nth(q, 2)
+}
+
+expect read: forall (h: holder), when h.q.len > 2, h.y = h.q[2]
+
+-- Under a quantifier, the question holds in every instance; under `let`
+-- and `where`, an application in a definition is guarded where the name
+-- is mentioned; in a table, by the earlier rows.
+comp quantified {
+    in q: Seq(Int)
+    pub out ok?
+
+    ensure r: ok? iff (forall (b?: Bool), nth(q, if b? then 0 else 1) > 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `quantified::r`
+}
+
+comp named {
+    in q: Seq(Int)
+    pub out y: Int
+    pub out z: Int
+
+    ensure guarded: when q != [], y = x where x := nth(q, 0)
+    ensure unguarded: z = x where x := nth(q, 1)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `named::unguarded`
+}
+
+comp tabled {
+    in q: Seq(Int)
+    pub out y: Int
+
+    ensure r: y = table { q = [] => 0, _ => nth(q, 0) }
+}
+
+-- An instance's bindings, and a constant's value.
+comp reader {
+    in x: Int
+    pub out y: Int
+
+    ensure r: y = x
+}
+
+comp reading {
+    in q: Seq(Int)
+    pub out y: Int
+
+    inst w: reader { x := nth(q, 0) }   --~ error: the precondition `in_range` of `nth` may not hold at this application in `reading::w`
+
+    ensure r: y = w.y
+}
+
+const FIRST: Int := nth([1, 2], 0)
+const NONE: Int := nth([], 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `NONE`
+
+-- In a `match` arm, an application is guarded by the arm's pattern.
+enum Pick { First, Last, Neither }
+
+comp picked {
+    in p: Pick
+    in q: Seq(Int)
+    pub out y: Int
+
+    assume nonempty: q != []
+    ensure r: y = match p {
+        Pick::First => nth(q, 0),
+        Pick::Last => nth(q, q.len - 1),
+        Pick::Neither => nth(q, 1),   --~ error: the precondition `in_range` of `nth` may not hold at this application in `picked::r`
+    }
+}
+
+-- In a refinement's binding, under the concrete component's assumptions.
+comp abstract_reader {
+    in q: Seq(Int)
+    pub out y: Int
+
+    ensure r: when q.len > 3, y = q[3]
+}
+
+comp concrete_reader {
+    in q: Seq(Int)
+    pub out y: Int
+
+    ensure r: when q.len > 3, y = q[3]
+}
+
+refine reads_third: concrete_reader refines abstract_reader {
+    y := nth(q, 3),   --~ error: the precondition `in_range` of `nth` may not hold at this application in `reads_third::y`
+}
+
+-- A failing precondition in a global expectation.
+expect unguarded_read: forall (h: holder), h.y = nth(h.q, 2)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `unguarded_read`
+--~^ error: expectation `unguarded_read` does not hold

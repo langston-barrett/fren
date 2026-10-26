@@ -476,7 +476,7 @@ def Sound.AtSite (site : IndexSite F) (ρ : Env Val) : Prop :=
   | .assume => s.Defined ρ ∧ ∀ q ∈ c.assumes, q.1 ≠ site.prop → s.den q.2 ρ
   | .binding k => s.Admits ρ k
   | .prop => s.Behaves ρ
-  | .body => s.Defined ρ
+  | .body => s.Defined ρ ∧ ∀ q ∈ c.assumes, s.den q.2 ρ
 
 theorem Sound.holds_site {kd : CheckKind} (hk : kd.substitutes = false) (site : IndexSite F) {ρ : Env Val}
     (ht : s.Typed ρ) : s.Holds (c.defEqs kd ++ c.siteHyps b site) ρ ↔ s.AtSite site ρ := by
@@ -487,7 +487,7 @@ theorem Sound.holds_site {kd : CheckKind} (hk : kd.substitutes = false) (site : 
   · exact s.holds_behaves hk ht
   · exact s.holds_hyps hk _ ht
   · rw [s.holds_append, s.holds_defEqs hk]
-    exact ⟨fun h => h.1, fun h => ⟨h, fun _ hg => nomatch hg⟩⟩
+    exact .rfl
 
 /-- A `pass` means the index is in range wherever it is evaluated. -/
 theorem checkDefinedness_pass (site : IndexSite F) (h : (checkDefinedness b c site).run.verdict = .pass) :
@@ -887,6 +887,10 @@ theorem checkComp_eq (bk : CheckKind → Backend Id F V) (kinds : Array CheckKin
       (if kinds.contains .completeness then (c.tablesOf .completeness).map (checkTable (bk .completeness) c · |>.run)
         else #[]) ++
       (if kinds.contains .disjointness then (c.tablesOf .disjointness).map (checkTable (bk .disjointness) c · |>.run)
+        else #[]) ++
+      (if kinds.contains .precondition then (c.tablesOf .precondition).map (checkTable (bk .precondition) c · |>.run)
+        else #[]) ++
+      (if kinds.contains .postcondition then c.posts.map (checkPostcondition (bk .postcondition) c · |>.run)
         else #[]) := by
   unfold checkComp
   simp only [bind_eq, run_eq, pure_eq, ifSelected, map_eq, mapM_id']
@@ -910,10 +914,12 @@ theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKi
     (∃ v ∈ c.vars, v.isDet ∧ r = (checkDeterminism (bk .determinism) c v.name).run) ∨
     (∃ site ∈ c.indexes, r = (checkDefinedness (bk .definedness) c site).run) ∨
     (∃ t ∈ c.tablesOf .completeness, r = (checkTable (bk .completeness) c t).run) ∨
-    (∃ t ∈ c.tablesOf .disjointness, r = (checkTable (bk .disjointness) c t).run) := by
+    (∃ t ∈ c.tablesOf .disjointness, r = (checkTable (bk .disjointness) c t).run) ∨
+    (∃ t ∈ c.tablesOf .precondition, r = (checkTable (bk .precondition) c t).run) ∨
+    (∃ p ∈ c.posts, r = (checkPostcondition (bk .postcondition) c p).run) := by
   rw [checkComp_eq] at h
   simp only [Array.mem_append, or_assoc] at h
-  rcases h with h | h | h | h | h | h | h | h | h | h
+  rcases h with h | h | h | h | h | h | h | h | h | h | h | h
   · left; simpa using (mem_ite h).2
   · exact .inr (.inl (checkInsts_mem.1 (mem_ite h).2))
   · obtain ⟨e, he, rfl⟩ := Array.mem_map.1 (mem_ite h).2
@@ -931,7 +937,11 @@ theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKi
   · obtain ⟨t, ht, rfl⟩ := Array.mem_map.1 (mem_ite h).2
     exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨t, ht, rfl⟩)))))))))
   · obtain ⟨t, ht, rfl⟩ := Array.mem_map.1 (mem_ite h).2
-    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ⟨t, ht, rfl⟩)))))))))
+    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨t, ht, rfl⟩))))))))))
+  · obtain ⟨t, ht, rfl⟩ := Array.mem_map.1 (mem_ite h).2
+    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨t, ht, rfl⟩)))))))))))
+  · obtain ⟨p, hp, rfl⟩ := Array.mem_map.1 (mem_ite h).2
+    exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ⟨p, hp, rfl⟩)))))))))))
 
 /-- Each selected check runs: on the component, on each assumption of each
 instance, each expectation, each cover goal, each trigger, each `det out` and each index; and
@@ -969,38 +979,47 @@ theorem checkComp_runs {bk : CheckKind → Backend Id F V} {kinds : Array CheckK
     (kinds.contains .completeness → ∀ t ∈ c.tablesOf .completeness,
       (checkTable (bk .completeness) c t).run ∈ (checkComp bk c kinds).run) ∧
     (kinds.contains .disjointness → ∀ t ∈ c.tablesOf .disjointness,
-      (checkTable (bk .disjointness) c t).run ∈ (checkComp bk c kinds).run) := by
+      (checkTable (bk .disjointness) c t).run ∈ (checkComp bk c kinds).run) ∧
+    (kinds.contains .precondition → ∀ t ∈ c.tablesOf .precondition,
+      (checkTable (bk .precondition) c t).run ∈ (checkComp bk c kinds).run) ∧
+    (kinds.contains .postcondition → ∀ p ∈ c.posts,
+      (checkPostcondition (bk .postcondition) c p).run ∈ (checkComp bk c kinds).run) := by
   simp only [checkComp_eq, Array.mem_append]
   refine ⟨fun hk => ?_, fun hk k hk' a ha => ?_, fun hk e he => ?_, fun hk g hg => ?_, fun hk t ht => ?_,
     fun hk a ha hq => ?_, fun hk q hq hr => ?_, fun hk v hv hd => ?_, fun hk site hs => ?_, fun hk t ht => ?_,
-    fun hk t ht => ?_⟩
+    fun hk t ht => ?_, fun hk t ht => ?_, fun hk p hp => ?_⟩
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (Array.mem_singleton.2 rfl)))))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (Array.mem_singleton.2 rfl)))))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (checkInsts_mem.2 ⟨k, hk', a, ha, rfl⟩)))))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (checkInsts_mem.2 ⟨k, hk', a, ha, rfl⟩)))))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨e, he, rfl⟩))))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨e, he, rfl⟩))))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨g, hg, rfl⟩)))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨g, hg, rfl⟩)))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inr (checkRedundancies_mem.2 (.inl ⟨a, ha, hq, rfl⟩))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inr (checkRedundancies_mem.2 (.inl ⟨a, ha, hq, rfl⟩))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inl (.inr (checkRedundancies_mem.2 (.inr ⟨q, hq, hr, rfl⟩))))))
+    exact .inl (.inl (.inl (.inl (.inl (.inl (.inr (checkRedundancies_mem.2 (.inr ⟨q, hq, hr, rfl⟩))))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inl (.inr (checkDets_mem.2 ⟨v, hv, hd, rfl⟩))))
+    exact .inl (.inl (.inl (.inl (.inl (.inr (checkDets_mem.2 ⟨v, hv, hd, rfl⟩))))))
   · simp only [hk, if_true]
-    exact .inl (.inl (.inr (Array.mem_map.2 ⟨site, hs, rfl⟩)))
+    exact .inl (.inl (.inl (.inl (.inr (Array.mem_map.2 ⟨site, hs, rfl⟩)))))
+  · simp only [hk, if_true]
+    exact .inl (.inl (.inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩))))
+  · simp only [hk, if_true]
+    exact .inl (.inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩)))
   · simp only [hk, if_true]
     exact .inl (.inr (Array.mem_map.2 ⟨t, ht, rfl⟩))
   · simp only [hk, if_true]
-    exact .inr (Array.mem_map.2 ⟨t, ht, rfl⟩)
+    exact .inr (Array.mem_map.2 ⟨p, hp, rfl⟩)
 
 /-- What `fren` runs for a global expectation, and for a component
 (`check::applies`). -/
 theorem kindsFor_spec :
-    kindsFor true = #[.expect, .vacuity, .definedness, .completeness, .disjointness] ∧ kindsFor false = CheckKind.all :=
+    kindsFor true = #[.expect, .vacuity, .definedness, .completeness, .disjointness, .precondition] ∧
+      kindsFor false = CheckKind.all :=
   ⟨rfl, rfl⟩
 
 theorem checkRealizable_kind {b : Backend Id F V} : (checkRealizable b c).run.kind = .realizable := by
@@ -1105,7 +1124,7 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
     ((∀ ρ ρ', OnlyOuts c.vars ρ ρ' → (s .realizable).Possible ρ → (s .realizable).Possible ρ') →
       (∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Admits ρ) →
       ∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Behaves ρ ∧ ∀ e ∈ c.expects, (s .realizable).den e.2 ρ) := by
-  obtain ⟨hr, hi, he, hcv, hv, -, -, hd, hix, hcp, hdj⟩ := checkComp_runs (c := c) (bk := bk) (kinds := CheckKind.all)
+  obtain ⟨hr, hi, he, hcv, hv, -, -, hd, hix, hcp, hdj, hpre, -⟩ := checkComp_runs (c := c) (bk := bk) (kinds := CheckKind.all)
   have all : ∀ k, CheckKind.all.contains k := by intro k; cases k <;> simp +decide [CheckKind.all]
   have pass : ∀ r ∈ (checkComp bk c).run, r.kind ≠ .redundancy → r.verdict = .pass := h
   have hR := checkRealizable_pass (s .realizable) hdefs
@@ -1139,6 +1158,7 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
       cases hg : t.goal <;> rw [hg] at hmem
       · exact hcp (all _) t hmem
       · exact hdj (all _) t hmem
+      · exact hpre (all _) t hmem
     have := checkTable_pass (s t.goal.kind) t (pass _ hrun (by
       rw [checkTable_kind]; cases t.goal <;> intro h <;> cases h)) ρ
     obtain ⟨tT, -, -, tS⟩ := Sound.congr (s t.goal.kind) (s .realizable) (hsame _)
