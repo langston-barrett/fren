@@ -1,5 +1,5 @@
 -- keep-sorted start
-import Fren
+import Fren.Impl
 -- keep-sorted end
 open Fren.Lang
 
