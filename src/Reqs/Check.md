@@ -1151,7 +1151,15 @@ check is not part of the [agreement with Lean](Cli.md#agreement-with-lean).
 pub enum Run { BySolver, ByTesting, Skipped }
 
 pub comp by_testing {
-    use self::Kind::{Completeness, Definedness, Disjointness, Precondition, Reachability, Redundancy, Vacuity}
+    use self::Kind::{
+        Completeness,
+        Definedness,
+        Disjointness,
+        Precondition,
+        Reachability,
+        Redundancy,
+        Vacuity,
+    }
     use self::Run::{BySolver, ByTesting, Skipped}
     in kind: Kind
     in tested?             -- the check's evidence is testing
