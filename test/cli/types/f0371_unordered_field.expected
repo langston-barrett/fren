@@ -1,0 +1,14 @@
+error[F0371]: the field `tags` of the ordered struct `Entry` has the type `Set(Int)`, which is not ordered
+ --> test/cli/types/f0371_unordered_field.fren:2:40
+  |
+2 | ordered struct Entry { key: Int, tags: Set(Int) }
+  |                                        ^^^^^^^ `Set(Int)` is not ordered
+  |
+  = note: an ordered struct orders its values by their fields, in the order declared, so each field's type must be ordered
+  = note: only `Int`s, `Nat`s, `String`s and the types declared `ordered` are ordered
+  = help: give it an ordered type, or declare `Entry` without `ordered`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0371`.
+exit=2

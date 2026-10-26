@@ -4,7 +4,7 @@ error[F0353]: the ordered enum `Size` cannot have a variant with a payload
 2 | ordered enum Size { Small, Custom(Int) }
   |                            ^^^^^^ `Custom` has a payload
   |
-  = note: an ordered enum orders its variants as they are declared, which would not order their payloads
+  = note: an ordered enum orders its variants as they are declared, and does not yet order their payloads
   = help: remove the payload of `Custom`, or declare `Size` without `ordered`
 
 error: could not check due to previous errors

@@ -4,7 +4,7 @@ error[F0354]: `Level` is not ordered, so it has no method `max`
 4 | comp c { in a: Level in b: Level pub out m: Level ensure r: m = a.max(b) }
   |                                                                   ^^^ `Level` is not ordered
   |
-  = note: only `Int`s and the values of an ordered enum have `min` and `max`
+  = note: only `Int`s, `Nat`s, `String`s and the types declared `ordered` have `min` and `max`
   = help: to order its variants as they are declared, declare it `ordered enum Level { ... }`
 
 error: could not check due to previous errors

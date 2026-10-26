@@ -5,9 +5,9 @@ set_option fren.lint.manual_ordering "warn"
 pub ordered enum Severity { Silent, Info, Warning, Error }
 pub ordered enum Single { Only }
 pub enum Mode { Off, Heat, Cool }
-pub struct Ms(Int)
+pub ordered struct Ms(Int)
 pub struct Bytes(Int)
-pub struct Grade(Severity)
+pub ordered struct Grade(Severity)
 pub struct Qs(Seq(Int))
 pub struct Ss(Set(Int))
 

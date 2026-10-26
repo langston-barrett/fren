@@ -11,9 +11,9 @@ open Fren.Lang
 
 mod newtype_test
 
-pub struct Ms(Int)
+pub ordered struct Ms(Int)
 pub struct Bytes(Int)
-pub struct Name(String)
+pub ordered struct Name(String)
 
 /--
 info: structure newtype_test.Ms : Type

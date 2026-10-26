@@ -1,7 +1,7 @@
 -- Comparisons with the first or the last variant of an ordered
 -- enumeration, and through a newtype of one.
 pub ordered enum Level { Low, Mid, High }
-pub struct Grade(Level)
+pub ordered struct Grade(Level)
 
 comp c {
     in l: Level

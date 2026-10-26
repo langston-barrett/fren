@@ -490,11 +490,17 @@ it must have `op`, and both must be of it, as the `fren` command checks
 (`Core.checkNewtypeOperator`). -/
 def checkNewtypeOp (op : String) (tx? ty? : Option Core.Ty) (pre := false) : TermElabM Unit := do
   let (some tx, some ty) := (tx?, ty?) | return
-  let st ← getState
-  let ordered := match Core.newtypeOf? tx ty with
-    | some (_, .enum p) => (st.enums.get? p).any (·.ordered)
-    | _ => false
-  liftMsg (← getRef) (Core.checkNewtypeOperator op pre tx ty ordered)
+  liftMsg (← getRef) (Core.checkNewtypeOperator op pre tx ty (← getState).orderedDecl)
+
+/-- The newtypes that a value of the newtype `n` is, from the outermost
+in: `n`, then its underlying type, if that is a newtype, and so on. -/
+partial def newtypeChain (st : State) (n : NewtypeInfo) : Array NewtypeInfo :=
+  #[n] ++ ((st.newtypeOf? n.under).map (newtypeChain st)).getD #[]
+
+/-- `x`, a value of the newtypes `chain`, from the outermost in, read
+through each of their fields: the value that the solver sees. -/
+def unwrapTerm (chain : Array NewtypeInfo) (x : Term) : TermElabM Term :=
+  chain.foldlM (fun t n => `($(mkCIdent n.field) $t)) x
 
 /-- The Lean type of the Fren expression `t`, elaborated with the comp's
 variables in scope. -/
@@ -611,6 +617,55 @@ def ordinalTerm (info : EnumInfo) (s : Term) : TermElabM Term := do
   (List.range last).foldrM (init := ← `(($(Syntax.mkNumLit (toString last)) : Int))) fun k acc =>
     `(if $s = $(mkCIdent (info.decl ++ info.variants[k]!)) then ($(Syntax.mkNumLit (toString k)) : Int) else $acc)
 
+/-- `x < y`, or `x ≤ y` if not `strict`, of values compared by `o`, as a
+Lean proposition, as the `fren` command's `orderSmt` writes it: a record's
+lexicographically, by its fields in the order declared, and a newtype's as
+its field's. -/
+partial def orderTerm (o : Core.OrderPlan) (strict : Bool) (x y : Term) : TermElabM Term := do
+  let st ← getState
+  match o with
+  | .number => if strict then `($x < $y) else `($x ≤ $y)
+  | .string => if strict then `(Fren.Str.lt $x $y) else `(Fren.Str.le $x $y)
+  | .enum p =>
+    let some info := st.enums.get? p | throwError "internal error: unknown enum `{p}`"
+    let (i, j) := (← ordinalTerm info x, ← ordinalTerm info y)
+    if strict then `($i < $j) else `($i ≤ $j)
+  | .newtype p u =>
+    let some n := st.newtypes.get? p | throwError "internal error: unknown newtype `{p}`"
+    orderTerm u strict (← `($(mkCIdent n.field) $x)) (← `($(mkCIdent n.field) $y))
+  | .record p fs =>
+    let some r := st.records.get? p | throwError "internal error: unknown record `{p}`"
+    -- From the last field, compared as the whole is, back to the first,
+    -- which decides unless the two are equal.
+    let sel (f : Name) (v : Term) : TermElabM Term := `($(mkCIdent (r.decl ++ f)) $v)
+    let some (fl, ol) := fs.back? | if strict then `(False) else `(True)
+    let mut acc ← orderTerm ol strict (← sel fl x) (← sel fl y)
+    for (f, of) in fs.pop.reverse do
+      let (a, b) := (← sel f x, ← sel f y)
+      acc ← `($(← orderTerm of true a b) ∨ ($a = $b ∧ $acc))
+    return acc
+
+/-- The ordering `op` of `x` and `y`, compared by `o`: of a newtype, its
+field's; of numbers and enumerations, with `op` itself; otherwise as
+`orderTerm` writes it, with `>` and `≥` as `<` and `≤` of `y` and `x`. -/
+partial def orderingTerm (o : Core.OrderPlan) (op : String) (x y : Term) : TermElabM Term := do
+  match o with
+  | .newtype p u =>
+    let some n := (← getState).newtypes.get? p | throwError "internal error: unknown newtype `{p}`"
+    orderingTerm u op (← `($(mkCIdent n.field) $x)) (← `($(mkCIdent n.field) $y))
+  | .number => match op with
+    | "<" => `($x < $y) | "<=" => `($x ≤ $y) | ">" => `($x > $y) | _ => `($x ≥ $y)
+  | .enum p =>
+    let some info := (← getState).enums.get? p | throwError "internal error: unknown enum `{p}`"
+    let (i, j) := (← ordinalTerm info x, ← ordinalTerm info y)
+    match op with
+    | "<" => `($i < $j) | "<=" => `($i ≤ $j) | ">" => `($i > $j) | _ => `($i ≥ $j)
+  | _ => match op with
+    | "<" => orderTerm o true x y
+    | "<=" => orderTerm o false x y
+    | ">" => orderTerm o true y x
+    | _ => orderTerm o false y x
+
 /-- Calls the method `m` of the term `t` of Lean type `ty`, with the
 arguments `args`, each with its syntax (`lang::method_type`). -/
 def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array (Term × Syntax)) :
@@ -690,11 +745,30 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
       | .max => `(if $t ≥ $y then $t else $y)
       | _ => `(if $t < 0 then -$t else $t)
     return (term, Lean.mkConst (if nat then ``Nat else ``Int))
-  if let some info := ty.constName?.bind (← getState).enumOfDecl? then
+  -- `min` and `max` of an ordered record's, newtype's or `String`'s value,
+  -- by their order, and a record's or newtype's other methods, which it has
+  -- none of (`lang::method_type`, `lang::ordered_type`).
+  let st ← getState
+  if let some ct := (← coreTy? ty).filter (fun ct => ct matches .record _ | .newtype .. || (ct == .string && (m == "min" || m == "max"))) then
+    let name := ct.show
+    let ordered := ct.ordered st.orderedDecl
+    let some method := (Core.Method.ofName? m).filter (·.accepts false false (ordered := ordered))
+      | throwErrorAt ref (if ordered then Core.unknownMethodMsg m name false (ordered := true)
+          else if m == "min" || m == "max" then Core.unorderedMethodMsg (ct.orderedDecl?.getD .record) m name
+          else Core.noMethodsMsg m name).text
+    unless args.size == method.arity do throwErrorAt ref (Core.arityMsg (Name.mkSimple m) method.arity args.size).text
+    for (a, stx) in args do
+      let ta ← typeOf a
+      unless ← isDefEq ta ty do throwErrorAt stx s!"type mismatch: expected `{← typeName ty}`, found `{← typeName ta}`"
+    let y : Term := (args.map (·.1))[0]?.getD t
+    let some plan := st.orderPlan? ct | throwError "internal error: `{name}` is not ordered"
+    let cmp ← orderingTerm plan (if method == .min then "<=" else ">=") t y
+    return (← `(if $cmp then $t else $y), ty)
+  if let some info := ty.constName?.bind st.enumOfDecl? then
     let name := Core.showPath info.path
     let some method := (Core.Method.ofName? m).filter (·.accepts false false (ordered := info.ordered))
       | throwErrorAt ref (if info.ordered then Core.unknownMethodMsg m name false (ordered := true)
-          else if m == "min" || m == "max" then Core.unorderedMethodMsg m name
+          else if m == "min" || m == "max" then Core.unorderedMethodMsg .enumeration m name
           else Core.noMethodsMsg m name).text
     unless args.size == method.arity do throwErrorAt ref (Core.arityMsg (Name.mkSimple m) method.arity args.size).text
     for (a, stx) in args do
@@ -707,7 +781,7 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
     return (term, ty)
   unless ty.isConstOf ``String do throwErrorAt ref (Core.noMethodsMsg m (← typeName ty)).text
   let some method := (Core.Method.ofName? m).filter (·.accepts true false)
-    | throwErrorAt ref (Core.unknownMethodMsg m "String").text
+    | throwErrorAt ref (Core.unknownMethodMsg m "String" (ordered := true)).text
   unless args.size == method.arity do throwErrorAt ref (Core.arityMsg (Name.mkSimple m) method.arity args.size).text
   let leanTy : Core.MethodTy → Expr
     | .bool => Lean.mkConst ``Bool | .int => Lean.mkConst ``Int | _ => Lean.mkConst ``String
@@ -1951,9 +2025,9 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   for v in variantStxs, vn in variants do
     if let some msg := Core.variantNameMsg? n vn then recordLint .enumVariantNames v[0] msg
   -- Only an enumeration without payloads may be ordered
-  -- (`lang::ordered_enumeration`); the first payload is reported.
+  -- (`lang::ordered_declaration`); the first payload is reported.
   let withPayload := variantStxs.filter (!·[1].isNone)
-  unless Core.orderedEnumAccepted isOrdered withPayload.size do
+  unless Core.orderedDeclAccepted isOrdered withPayload.size [] do
     throwErrorAt withPayload[0]![0] (Core.orderedPayloadMsg n withPayload[0]![0].getId).text
   let ctors ← (variants.zip payloads).mapM fun (v, ts) => do
     let bs ← ts.mapIdxM fun k t => do
@@ -2001,7 +2075,8 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   lintTrailingCommas stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
-  let nameStx := stx[2]
+  let isOrdered := !stx[1].isNone
+  let nameStx := stx[3]
   let n ← checkItemName "record" nameStx
   checkFresh modName n nameStx
   lintName .record n nameStx
@@ -2009,7 +2084,7 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   let decl := (← getCurrNamespace) ++ path
   let mut fields : Array (Name × Expr) := #[]
   let mut ptys : Array Core.PTy := #[]
-  let fieldStxs := stx[4].getSepArgs
+  let fieldStxs := stx[5].getSepArgs
   for f in fieldStxs do discard (segName f[0])
   if let some k := (Core.repeatsAt (fieldStxs.map (·[0].getId)))[0]? then
     throwErrorAt fieldStxs[k]![0] (Core.dupFieldMsg fieldStxs[k]![0].getId).text
@@ -2025,19 +2100,26 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
     fields := fields.push (fn, t)
   -- `struct_field_names` (`lint::struct_field_names`, `lint::field_has_record_name`).
   if let some msg := Core.structFieldNamesMsg? n (fields.map (·.1)) then recordLint .structFieldNames nameStx msg
-  for f in stx[4].getSepArgs, (fn, _) in fields do
+  for f in stx[5].getSepArgs, (fn, _) in fields do
     if let some msg := Core.fieldNameMsg? n fn then recordLint .structFieldNames f[0] msg
   -- `struct_excessive_bools` (`lint::struct_excessive_bools`).
   let nBools := (fields.filter (·.2.isConstOf ``Bool)).size
   if Core.structExcessiveBools nBools then recordLint .structExcessiveBools nameStx (Core.structExcessiveBoolsMsg n nBools)
   let st ← getState
+  -- An ordered record's fields are ordered (`lang::ordered_declaration`);
+  -- the first that is not is reported.
+  let fieldsOrdered := ptys.toList.map (·.ty.ordered st.orderedDecl)
+  unless Core.orderedDeclAccepted isOrdered 0 fieldsOrdered do
+    if let some k := ptys.findIdx? (!·.ty.ordered st.orderedDecl) then
+      let f := fieldStxs[k]!
+      throwErrorAt (if f[1].isNone then f[0] else f[1][1]) (Core.unorderedFieldMsg .record n fields[k]!.1 ptys[k]!.ty).text
   let unbounded := fields.any fun (_, t) => st.unbounded t
   let bs ← fields.mapM fun (f, t) => `(Lean.Parser.Command.structExplicitBinder| ($(mkIdent f):ident : $(typeSyntax t)))
   elabCommand (← `(structure $(mkIdentFrom nameStx path):ident where
     $(mkIdent `«{}»):ident :: $bs:structExplicitBinder*
     deriving DecidableEq, Repr, Inhabited))
   record (.item { item := { kind := .recordItem, path, isPub, owner := modName }, ref := nameStx })
-  record (.recordInfo { path, decl, fields, unbounded, shape := { isRecord := true, parts := #[ptys] } })
+  record (.recordInfo { path, decl, fields, unbounded, shape := { isRecord := true, parts := #[ptys] }, ordered := isOrdered })
   unless isPub do recordItem .record path nameStx
 
 @[command_elab Lang.newtypeCmd] def elabNewtype : CommandElab := fun stx => do
@@ -2047,7 +2129,8 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   checkParsed stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
-  let nameStx := stx[2]
+  let isOrdered := !stx[1].isNone
+  let nameStx := stx[3]
   let n ← checkItemName "record" nameStx
   checkFresh modName n nameStx
   lintName .record n nameStx
@@ -2055,17 +2138,21 @@ def fieldType (modName : Name) (ty : Syntax) (own : Option Name) (payload : Bool
   let decl := (← getCurrNamespace) ++ path
   -- Exactly one field, whose type is accepted as a record's field's
   -- (`lang::newtype`).
-  let tys := stx[4].getSepArgs
+  let tys := stx[5].getSepArgs
   let some ty := tys[0]? | throwErrorAt nameStx (Core.newtypeFieldsMsg path 0).text
   unless Core.newtypeAccepted tys.size true do throwErrorAt nameStx (Core.newtypeFieldsMsg path tys.size).text
   let (under, pt) ← fieldType modName ty (some decl) false n
+  -- An ordered newtype's underlying type is ordered
+  -- (`lang::ordered_declaration`).
+  unless Core.orderedDeclAccepted isOrdered 0 [pt.ty.ordered (← getState).orderedDecl] do
+    throwErrorAt ty (Core.unorderedFieldMsg .newtype n (Name.mkSimple "0") pt.ty).text
   let unbounded := Core.newtypeUnbounded ((← getState).unbounded under)
   -- One field, `«0»`, so that `x.0` in Fren is `x.«0»` in Lean.
   elabCommand (← `(structure $(mkIdentFrom nameStx path):ident where
     $(mkIdent `mk):ident :: $(mkIdent (Name.mkSimple "0")):ident : $(typeSyntax under)
     deriving DecidableEq, Repr, Inhabited))
   record (.item { item := { kind := .recordItem, path, isPub, owner := modName }, ref := nameStx })
-  record (.newtypeInfo { path, decl, under, unbounded, shape := { isRecord := true, isNewtype := true, parts := #[#[pt]] } })
+  record (.newtypeInfo { path, decl, under, unbounded, shape := { isRecord := true, isNewtype := true, parts := #[#[pt]] }, ordered := isOrdered })
   unless isPub do recordItem .record path nameStx
 
 
@@ -2688,28 +2775,26 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
     else if !isConcat a && !isConcat b && (← string x) then
       checkCore cx e .stringCompare true (ca || cb || (isVariable cx a && isVariable cx b)) #[] (ca && cb)
     return ← if op == "=" then `($x = $y) else `($x ≠ $y)
-  -- An ordering compares `Int`s, `Nat`s, `String`s or the values of an
-  -- ordered enumeration, which the left operand gives, or two values of one
-  -- newtype of such a type, on its field, as the `fren` command checks
-  -- (`lang::operator_type`, `lang::newtype_operator`).
+  -- An ordering compares values of an ordered type, which the left operand
+  -- gives: `Int`s, `Nat`s, `String`s, or the values of an ordered
+  -- enumeration, record or newtype, as the `fren` command checks
+  -- (`lang::operator_type`, `lang::ordered_type`, `lang::newtype_operator`).
   let x ← toTerm cx a
   let tx? ← frenTypeOf? x
   let st ← getState
-  let (x, y, operandTy, info?) ← if let some (.newtype p u) := tx? then do
-      let y ← toTerm cx b
-      checkNewtypeOp op tx? (← frenTypeOf? y)
-      let n := st.newtypes.get! p
-      let (fx, fy) := (← `($(mkCIdent n.field) $x), ← `($(mkCIdent n.field) $y))
-      pure (fx, fy, u, n.under.constName?.bind st.enumOfDecl?)
-    else do
-      let info? := (← typeOf x).constName?.bind st.enumOfDecl?
-      let operandTy : Core.Ty ← match tx? with
-        | some tx => liftMsg a (Core.orderingType op tx (info?.any (·.ordered)))
-        | none => pure .int
-      let y ← toTerm cx b
-      checkNewtypeOp op tx? (← frenTypeOf? y)
-      checkTermType b y operandTy (Core.opNote op operandTy)
-      pure (x, y, operandTy, info?)
+  let info? := (← typeOf x).constName?.bind st.enumOfDecl?
+  let operandTy : Core.Ty ← match tx? with
+    | some tx => liftMsg a (Core.orderingType op tx st.orderedDecl)
+    | none => pure .int
+  let y ← toTerm cx b
+  checkNewtypeOp op tx? (← frenTypeOf? y)
+  checkTermType b y operandTy (Core.opNote op operandTy)
+  -- An ordered record's values compare by their fields, and a newtype's as
+  -- their fields do (`Reqs/Lang/Items#ordered-declarations`).
+  if operandTy matches .record _ | .newtype .. then
+    let some plan := st.orderPlan? operandTy | throwError "internal error: `{operandTy.show}` is not ordered"
+    if plan.strings then checkCore cx e .stringCompare true (ca || cb) #[a, b] (ca && cb)
+    return ← orderingTerm plan op x y
   -- An ordered enumeration's values compare by their positions.
   if let (.enum _, some info) := (operandTy, info?) then
     let (i, j) := (← ordinalTerm info x, ← ordinalTerm info y)
@@ -2733,31 +2818,23 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let names := ops.map (·.getAtomVal.trimAscii.toString)
   if let .error (k, msg) := Core.checkChain names then throwErrorAt ops[k]! msg.text
   let mut x ← toTerm cx xs[0]!
-  -- An `Int`, a `Nat`, widened, a `String`, or an ordered enumeration, or a
-  -- newtype of one, on its field, and every operand the first's type, as
-  -- the `fren` command checks (`lang::operator_type`, `lang::newtype_operator`).
+  -- A value of an ordered type, a `Nat` widened, and every operand the
+  -- first's type, as the `fren` command checks (`lang::operator_type`,
+  -- `lang::ordered_type`, `lang::newtype_operator`).
   let tx0? ← frenTypeOf? x
   let st ← getState
-  let nt := match tx0? with
-    | some (.newtype p _) => st.newtypes.get? p
-    | _ => none
-  if nt.isSome then withRef (mkNullNode #[xs[0]!, ops[0]!, xs[1]!]) (checkNewtypeOp names[0]! tx0? tx0?)
-  let underExpr ← match nt with
-    | some n => pure n.under
-    | none => typeOf x
-  let info? := underExpr.constName?.bind st.enumOfDecl?
-  let u? ← match tx0?.map fun | .newtype _ u => u | t => t with
-    | some u => some <$> liftMsg xs[0]! (Core.orderingType names[0]! u (info?.any (·.ordered)))
+  let info? := (← typeOf x).constName?.bind st.enumOfDecl?
+  let t0? ← match tx0? with
+    | some t => some <$> liftMsg xs[0]! (Core.orderingType names[0]! t st.orderedDecl)
     | none => pure none
-  let t0? := if nt.isSome then tx0? else u?
-  let string ← pure (underExpr.isConstOf ``String)
-  -- An ordered enumeration's values compare by their positions.
-  let ordinal := if u? matches some (.enum _) then info? else none
+  let string := t0? == some .string
+  -- An ordered enumeration's values compare by their positions, and an
+  -- ordered record's or newtype's by their fields.
+  let plan? := match t0? with
+    | some t@(.record _) | some t@(.newtype ..) => st.orderPlan? t
+    | _ => none
+  let ordinal := if t0? matches some (.enum _) then info? else none
   let pos (t : Term) : TermElabM Term := match ordinal with | some info => ordinalTerm info t | none => pure t
-  let field (t : Term) : TermElabM Term := match nt with
-    | some n => `($(mkCIdent n.field) $t)
-    | none => pure t
-  x ← field x
   let mut links := #[]
   for op in names, a in xs, b in xs.extract 1, opStx in ops do
     let y ← toTerm { cx with guards := cx.guards ++ links } b
@@ -2766,10 +2843,13 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let link := mkNullNode #[a, opStx, b]
     withRef link (checkNewtypeOp op t0? (← frenTypeOf? y))
     if let some t0 := t0? then checkTermType b y t0 (Core.opNote op t0)
-    let y ← field y
-    if string then
+    if string || plan?.any (·.strings) then
       let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
       checkCore cx link .stringCompare true (ca || cb) #[a, b] (ca && cb)
+    if let some plan := plan? then
+      links := links.push (← withRef link (orderingTerm plan op x y))
+      x := y
+      continue
     -- On strings, as `compareTerm` writes them.
     let (i, j) := (← pos x, ← pos y)
     links := links.push (← withRef link <| match op, string with
@@ -2839,9 +2919,20 @@ def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
       (literalOperand := args.any fun a => (unparen a).isOfKind ``Lang.seqExpr)
   if rty.isConstOf ``String then
     let constantArgs ← args.allM (isConstant cx ·)
+    let recvConstant ← isConstant cx recvStx
     let c := (Core.Method.ofName? m).map (·.construct) |>.getD .stringAtom
-    checkCore cx e c constantArgs true (#[recvStx] ++ args) (constantArgs && (← isConstant cx recvStx))
+    -- `min` and `max` compare their strings, as `<=` does.
+    let comparable := !(m == "min" || m == "max") || constantArgs || recvConstant
+    checkCore cx e c constantArgs comparable (#[recvStx] ++ args) (constantArgs && recvConstant)
   let t := (← callMethod ref r rty m as).1
+  -- `min` and `max` of an ordered record or newtype with a `String` within
+  -- compare strings (`Reqs/Lang/Decidability#orderings`).
+  if m == "min" || m == "max" then
+    let ct? := (← frenTypeOf? r).filter (· matches .record _ | .newtype ..)
+    if let some ct := ct? then
+      if (((← getState).orderPlan? ct).map (·.strings)).getD false then
+        let (ca, cb) := (← isConstant cx recvStx, ← args.allM (isConstant cx ·))
+        checkCore cx e .stringCompare true (ca || cb) (#[recvStx] ++ args) (ca && cb)
   -- `empty_argument` (`lint::empty_argument`).
   if let (some meth, true) := (Core.Method.ofName? m, cx.noteIndexes) then
     let recv := if ref.isOfKind ``Lang.fren_path then ((exactText ref).dropEnd (m.length + 1)).toString else exactText recvStx
@@ -3793,9 +3884,15 @@ def arithTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (n
   if let some (.newtype p _) := tx? then
     let y ← toTerm cx b
     checkNewtypeOp op tx? (← frenTypeOf? y)
-    let n := (← getState).newtypes.get! p
-    let (fx, fy) := (← `($(mkCIdent n.field) $x), ← `($(mkCIdent n.field) $y))
-    return ← if op == "+" then `($(mkCIdent n.ctor) ($fx + $fy)) else `($(mkCIdent n.ctor) ($fx - $fy))
+    -- `N(a.0 + b.0)`, through every newtype, each with its construction's
+    -- obligation, from the innermost out.
+    let st ← getState
+    let chain := newtypeChain st (st.newtypes.get! p)
+    let (fx, fy) := (← unwrapTerm chain x, ← unwrapTerm chain y)
+    let sum ← if op == "+" then `($fx + $fy) else `($fx - $fy)
+    return ← chain.foldrM (init := sum) fun n v => do
+      noteObligation cx .construction (← getRef) ((n.shape.parts[0]?.bind (·[0]?)).getD default) v
+      `($(mkCIdent n.ctor) $v)
   checkNumberTerm a x op
   let y ← toTerm { cx with natOk } b
   if let some (.newtype ..) ← frenTypeOf? y then checkNewtypeOp op tx? (← frenTypeOf? y)

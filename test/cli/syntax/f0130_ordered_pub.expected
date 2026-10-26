@@ -4,7 +4,7 @@ error[F0130]: `ordered` is written after `pub`
 2 | ordered pub enum Level { Low, High }
   | ^^^^^^^ before `pub`
   |
-  = note: an ordered enum is declared `pub ordered enum E { ... }`
+  = note: an ordered enum or struct is declared `pub ordered enum E { ... }` or `pub ordered struct R { ... }`
 
 error: could not check due to previous errors
 

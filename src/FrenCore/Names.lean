@@ -1277,36 +1277,51 @@ def illFoundedMsg (n : Name) : Msg :=
     notes := #[s!"note: every variant of `{n}` has a payload of type `{n}`, so no value can be built",
       "help: add a variant whose payload does not contain it, e.g. `Nil`"] }
 
-/-- Whether an enumeration is accepted, from whether it is declared
-`ordered` and how many of its variants have a payload
-(`lang::ordered_enumeration`). -/
-def orderedEnumAccepted (ordered : Bool) (nPayloads : Nat) : Bool := !ordered || nPayloads == 0
+/-- The declarations that may be declared `ordered`
+(`lang::ordered_declaration`). -/
+inductive OrderedDecl where
+  | enumeration
+  | record
+  | newtype
+  deriving Inhabited, DecidableEq, Repr
+
+/-- Whether a declaration is accepted, from whether it is declared
+`ordered`, how many of its variants have a payload, if it is an
+enumeration, and whether the type of each of its fields, if it is a record
+or a newtype, is ordered (`lang::ordered_declaration`). -/
+def orderedDeclAccepted (ordered : Bool) (nPayloads : Nat) (fieldsOrdered : List Bool) : Bool :=
+  !ordered || (nPayloads == 0 && fieldsOrdered.all id)
 
 /-- The variant `v`, with a payload, of the ordered enumeration `n`. -/
 def orderedPayloadMsg (n v : Name) : Msg :=
   { code? := some "F0353", headline := s!"the ordered enum `{n}` cannot have a variant with a payload"
     label? := some s!"`{v}` has a payload"
-    notes := #["note: an ordered enum orders its variants as they are declared, which would not order their payloads",
+    notes := #["note: an ordered enum orders its variants as they are declared, and does not yet order their payloads",
       s!"help: remove the payload of `{v}`, or declare `{n}` without `ordered`"] }
 
-/-- The help of a message about the enumeration `ty`, which is not
-ordered: its declaration, by the last segment of its path. -/
-def orderHelp (ty : String) : String :=
-  s!"help: to order its variants as they are declared, declare it `ordered enum {(ty.splitOn "::").getLast!} \{ ... }`"
+/-- The help of a message about the type `ty`, an enumeration, record or
+newtype that is not ordered: its declaration, by the last segment of its
+path. -/
+def orderHelp (decl : OrderedDecl) (ty : String) : String :=
+  let n := (ty.splitOn "::").getLast!
+  match decl with
+  | .enumeration => s!"help: to order its variants as they are declared, declare it `ordered enum {n} \{ ... }`"
+  | .record => s!"help: to order its values by their fields, in the order declared, declare it `ordered struct {n} \{ ... }`"
+  | .newtype => s!"help: to order its values as their fields are, declare it `ordered struct {n}(...)`"
 
-/-- `a OP b`, an ordering `op` of values of the enumeration `ty`, which is
-not ordered. -/
-def unorderedCompareMsg (op ty : String) : Msg :=
+/-- `a OP b`, an ordering `op` of values of the enumeration, record or
+newtype `ty`, which is not ordered. -/
+def unorderedCompareMsg (decl : OrderedDecl) (op ty : String) : Msg :=
   { code? := some "F0352", headline := s!"`{ty}` is not ordered, so its values cannot be compared with `{op}`"
     label? := some s!"`{ty}` is not ordered"
-    notes := #["note: only `Int`s, `String`s and the values of an ordered enum are ordered", orderHelp ty] }
+    notes := #["note: only `Int`s, `Nat`s, `String`s and the types declared `ordered` are ordered", orderHelp decl ty] }
 
-/-- `x.m(y)`, `min` or `max`, of a value of the enumeration `ty`, which is
-not ordered. -/
-def unorderedMethodMsg (m ty : String) : Msg :=
+/-- `x.m(y)`, `min` or `max`, of a value of the enumeration, record or
+newtype `ty`, which is not ordered. -/
+def unorderedMethodMsg (decl : OrderedDecl) (m ty : String) : Msg :=
   { code? := some "F0354", headline := s!"`{ty}` is not ordered, so it has no method `{m}`"
     label? := some s!"`{ty}` is not ordered"
-    notes := #["note: only `Int`s and the values of an ordered enum have `min` and `max`", orderHelp ty] }
+    notes := #["note: only `Int`s, `Nat`s, `String`s and the types declared `ordered` have `min` and `max`", orderHelp decl ty] }
 
 /-- Whether a variable's type is accepted, from whether it is an output,
 whether its type is unbounded, and whether it is defined
@@ -1623,6 +1638,7 @@ the decidable core; `at` and `slice` index, which is in it with constant
 positions. -/
 def Method.construct : Method → Construct
   | .at | .slice => .stringIndex
+  | .min | .max => .stringCompare
   | .indexOf | .replace | .replaceAll => .stringSearch
   | .card => .setAlgebra
   | .inverse | .closure | .image | .domain | .range => .relational
@@ -1660,7 +1676,7 @@ def unknownMethodMsg (m : String) (ty : String) (string := true) (set := false) 
 /-- `e.m`, where the type of `e`, `ty`, has no methods at all. -/
 def noMethodsMsg (m : String) (ty : String) : Msg :=
   { code? := some "F0322", headline := s!"`{ty}` has no methods, so it has no method `{m}`", label? := some "no methods"
-    notes := #["note: only `Int`s, `String`s, sets, relations, sequences and the values of an ordered enum have methods"] }
+    notes := #["note: only `Int`s, `String`s, sets, relations, sequences and the values of a type declared `ordered` have methods"] }
 
 /-- Whether a construct is in the decidable core (`lang::in_core`); one
 whose operands are all constants (`ground`) has a fixed value. -/

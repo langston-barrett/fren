@@ -4,7 +4,7 @@ error[F0321]: `String` has no method `length`
 5 |     ensure r: n = s.length
   |                     ^^^^^^ unknown method
   |
-  = note: the methods of `String` are `len`, `starts_with?`, `ends_with?`, `contains?`, `matches?`, `at`, `slice`, `index_of`, `replace`, `replace_all`
+  = note: the methods of `String` are `len`, `starts_with?`, `ends_with?`, `contains?`, `matches?`, `at`, `slice`, `index_of`, `replace`, `replace_all`, `min`, `max`
 help: the method is called `len`
   |
 5 -     ensure r: n = s.length

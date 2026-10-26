@@ -1,0 +1,4 @@
+-- `-` of a newtype of `Nat`, which would narrow an `Int` (F0362).
+ordered struct Seconds(Nat)
+
+comp c { in a: Seconds in b: Seconds pub out d: Seconds ensure r: d = a - b }

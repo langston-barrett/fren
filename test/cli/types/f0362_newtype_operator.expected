@@ -4,7 +4,7 @@ error[F0362]: newtype `Ms` has no operator `*`
 4 | comp c { in t: Ms pub out d: Ms ensure r: d = t * Ms(2) }
   |                                               ^^^^^^^^^ `*` of `Ms`
   |
-  = note: a newtype of `Int` has `=`, `!=`, `<`, `<=`, `>`, `>=`, and `+` and `-` of two of them
+  = note: a newtype of `Int` has `=`, `!=`, and `+` and `-` of two of them
   = help: read its `Int` with `.0`, as in `x.0`
 
 error: could not check due to previous errors

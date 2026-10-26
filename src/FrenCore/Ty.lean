@@ -159,14 +159,99 @@ def newtypeAccepted (nFields : Nat) (fieldAccepted : Bool) : Bool := nFields == 
 (`lang::newtype`). -/
 def newtypeUnbounded (underUnbounded : Bool) : Bool := underUnbounded
 
+/-! ## Ordered types -/
+
+/-- Whether the values of `t` are ordered, so that `<`, `<=`, `>`, `>=`,
+`min` and `max` apply to them (`lang::ordered_type`): an `Int`, a `Nat` or
+a `String`, and an enumeration, record or newtype declared `ordered`, which
+`orderedDecl` says of its path. A pattern type is its base type here, and
+a type alias the type it names, so each is ordered exactly when that is. -/
+def Ty.ordered (orderedDecl : Name → Bool) : Ty → Bool
+  | .int | .nat | .string => true
+  | .enum p | .record p | .newtype p _ => orderedDecl p
+  | _ => false
+
+/-- The kind of declaration that `t` is, if it can be declared `ordered`. -/
+def Ty.orderedDecl? : Ty → Option OrderedDecl
+  | .enum _ => some .enumeration
+  | .record _ => some .record
+  | .newtype .. => some .newtype
+  | _ => none
+
+/-- The field `f`, of the type `ty`, which is not ordered, of the ordered
+record or newtype `n` (`lang::ordered_declaration`). -/
+def unorderedFieldMsg (decl : OrderedDecl) (n f : Name) (ty : Ty) : Msg :=
+  let (headline, label) := if decl == .newtype then
+      (s!"the ordered newtype `{n}` has the underlying type `{ty.show}`, which is not ordered", s!"`{ty.show}` is not ordered")
+    else (s!"the field `{f}` of the ordered struct `{n}` has the type `{ty.show}`, which is not ordered", s!"`{ty.show}` is not ordered")
+  let help := if ty.orderedDecl?.isSome then s!"help: declare `{ty.show}` `ordered`, or declare `{n}` without `ordered`"
+    else s!"help: give it an ordered type, or declare `{n}` without `ordered`"
+  { code? := some "F0371", headline, label? := some label
+    notes := #["note: an ordered struct orders its values by their fields, in the order declared, so each field's type must be ordered",
+      "note: only `Int`s, `Nat`s, `String`s and the types declared `ordered` are ordered", help] }
+
+/-- How two values of an ordered type are compared
+(`Reqs/Lang/Items#ordered-declarations`): numbers and strings by their own
+orders, an enumeration's variants by their positions, a newtype's values
+as their fields are, and a record's lexicographically, by its fields in
+the order declared, each by its own type's order. Both front ends build one
+with `orderPlan?` and render it in their own terms. -/
+inductive OrderPlan where
+  | number
+  | string
+  | enum (path : Name)
+  /-- A record's fields, by name, each with how it is compared. -/
+  | record (path : Name) (fields : Array (Name × OrderPlan))
+  | newtype (path : Name) (under : OrderPlan)
+  deriving Inhabited
+
+/-- How values of `t` are compared, `none` if it is not ordered:
+`orderedDecl` says which declarations are ordered, and `fieldsOf` gives a
+record's fields, by name, with their types. An ordered record's fields are
+ordered (`lang::ordered_declaration`), and records are never recursive, so
+this ends. -/
+partial def orderPlan? (orderedDecl : Name → Bool) (fieldsOf : Name → Array (Name × Ty)) : Ty → Option OrderPlan
+  | .int | .nat => some .number
+  | .string => some .string
+  | .enum p => if orderedDecl p then some (.enum p) else none
+  | .record p => do
+    unless orderedDecl p do none
+    return .record p (← (fieldsOf p).mapM fun (f, t) => return (f, ← orderPlan? orderedDecl fieldsOf t))
+  | .newtype p u => do
+    unless orderedDecl p do none
+    return .newtype p (← orderPlan? orderedDecl fieldsOf u)
+  | _ => none
+
+/-- Whether comparing by `o` compares strings, which the decidable core
+allows only with a constant (`Reqs/Lang/Decidability#strings`). -/
+partial def OrderPlan.strings : OrderPlan → Bool
+  | .string => true
+  | .record _ fs => fs.any (·.2.strings)
+  | .newtype _ u => u.strings
+  | _ => false
+
+/-- The type that `t` is erased to: its underlying type, through every
+newtype, as the solver sees it (`Reqs/Lang/Expressions#newtypes`). -/
+def Ty.erased : Ty → Ty
+  | .newtype _ u => u.erased
+  | t => t
+
+/-- The newtypes that `t` is, from the outermost in: `t` itself, if it is a
+newtype, then its underlying type, if that is one, and so on. -/
+def Ty.newtypePaths : Ty → Array Name
+  | .newtype p u => #[p] ++ u.newtypePaths
+  | _ => #[]
+
 /-- The operators, as `lang::newtype_operator` groups them. -/
 inductive NewtypeOp where
   /-- `=` and `!=`. -/
   | equality
   /-- `<`, `<=`, `>` and `>=`. -/
   | order
-  /-- `+`, and `-` between two operands. -/
-  | sum
+  /-- `+`. -/
+  | add
+  /-- `-` between two operands. -/
+  | sub
   /-- Any other operator, such as `*`, `div`, `mod`, `++` or a prefix `-`. -/
   | other
   deriving Inhabited, DecidableEq, Repr
@@ -176,17 +261,23 @@ def NewtypeOp.ofOp (op : String) (pre := false) : NewtypeOp :=
   match op, pre with
   | "=", _ | "!=", _ => .equality
   | "<", _ | "<=", _ | ">", _ | ">=", _ => .order
-  | "+", false | "-", false => .sum
+  | "+", false => .add
+  | "-", false => .sub
   | _, _ => .other
 
-/-- Whether a newtype whose underlying type is `under`, an ordered
-enumeration if `ordered`, has the operator `op` (`lang::newtype_operator`). -/
-def newtypeOpAccepted (op : NewtypeOp) (under : Ty) (ordered := false) : Bool :=
-  match op with
-  | .equality => true
-  | .order => under == .int || under == .string || (ordered && under matches .enum _)
-  | .sum => under == .int
-  | .other => false
+/-- Whether a newtype whose underlying type is `under` has the operator `op`
+(`lang::newtype_operator`), where `ordered` says whether the newtype is
+ordered (`Ty.ordered`): the orderings if it is, and `+` and `-` exactly
+when `N(a.0 + b.0)` and `N(a.0 - b.0)` are accepted, which they are of an
+`Int`, of a `Nat` only for `+`, since `a.0 - b.0` is an `Int`, never
+narrowed to a `Nat`, and of a newtype that has them itself. -/
+def newtypeOpAccepted (op : NewtypeOp) (under : Ty) (ordered : Bool) : Bool :=
+  match op, under with
+  | .equality, _ => true
+  | .order, _ => ordered
+  | .add, .int | .add, .nat | .sub, .int => true
+  | .add, .newtype _ v | .sub, .newtype _ v => newtypeOpAccepted op v false
+  | _, _ => false
 
 /-- The newtype among `a` and `b`, with its underlying type: the first. -/
 def newtypeOf? (a b : Ty) : Option (Name × Ty) :=
@@ -212,15 +303,24 @@ def newtypeFieldsMsg (name : Name) (n : Nat) : Msg :=
         else #["help: for several fields, declare a record with named fields, as in `struct P { x: Int, y: Int }`"] }
 
 /-- The operator `op`, which `ty`, a newtype whose underlying type is
-`under`, does not have (`lang::newtype_operator`). -/
-def newtypeOpMsg (op : String) (ty : Name) (under : Ty) (ordered := false) : Msg :=
-  let has := if newtypeOpAccepted .sum under then "`=`, `!=`, `<`, `<=`, `>`, `>=`, and `+` and `-` of two of them"
-    else if newtypeOpAccepted .order under ordered then "`=`, `!=`, `<`, `<=`, `>` and `>=`"
-    else "`=` and `!=`"
+`under`, does not have (`lang::newtype_operator`), where `ordered` says
+whether it is ordered. -/
+def newtypeOpMsg (op : String) (ty : Name) (under : Ty) (ordered : Bool) : Msg :=
+  let accepts (o : NewtypeOp) := newtypeOpAccepted o under ordered
+  let has := match accepts .order, accepts .add, accepts .sub with
+    | true, true, true => "`=`, `!=`, `<`, `<=`, `>`, `>=`, and `+` and `-` of two of them"
+    | true, true, false => "`=`, `!=`, `<`, `<=`, `>`, `>=`, and `+` of two of them"
+    | true, _, _ => "`=`, `!=`, `<`, `<=`, `>` and `>=`"
+    | false, true, true => "`=`, `!=`, and `+` and `-` of two of them"
+    | false, true, false => "`=`, `!=`, and `+` of two of them"
+    | false, _, _ => "`=` and `!=`"
+  -- `-` of a newtype of `Nat` would be `N(a.0 - b.0)`, an `Int` where a
+  -- `Nat` is expected.
+  let why := if op == "-" && accepts .add then #[narrowingNote] else #[]
   { code? := some "F0362", headline := s!"newtype `{showPath ty}` has no operator `{op}`"
     label? := some s!"`{op}` of `{showPath ty}`"
-    notes := #[s!"note: a newtype of `{under.show}` has {has}"
-      , s!"help: read its `{under.show}` with `.0`, as in `x.0`"] }
+    notes := #[s!"note: a newtype of `{under.show}` has {has}"] ++ why
+      ++ #[s!"help: read its `{under.show}` with `.0`, as in `x.0`"] }
 
 /-- An operator `op` whose operands are of the types `a` and `b`, which
 differ, one of which is the newtype `nt` of `under`. -/

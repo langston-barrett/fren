@@ -506,6 +506,8 @@ structure State where
   datatypes : Array DataDecl := #[]
   /-- The newtypes, each with its underlying type. -/
   newtypes : NameMap Ty := {}
+  /-- The newtypes declared `ordered` (`Reqs/Lang/Items#ordered-declarations`). -/
+  orderedNewtypes : Array Name := #[]
   /-- The type aliases, each with the type it names (`Reqs/Lang/Items#type-aliases`). -/
   aliases : NameMap Fren.Core.PTy := {}
   /-- The fields of each record and newtype, and the payloads of each
@@ -1428,15 +1430,58 @@ def lintBools (e : Expr) : M Unit := do
       lintFix .zeroPrefixedLiteral { start := r.start, stop := r.stop } msg
   lintParens e
 
-/-- Whether `t` is an ordered enumeration (`Reqs/Lang/Items#enumerations`). -/
-def isOrdered (t : Ty) : M Bool := do
-  let .enum p := t | return false
-  return ((← get).dataOf? p).any (·.ordered)
+/-- Which enumerations, records and newtypes are declared `ordered`
+(`Reqs/Lang/Items#ordered-declarations`), for `Fren.Core.Ty.ordered`. -/
+def State.orderedDecl (s : State) (p : Name) : Bool :=
+  (s.dataOf? p).any (·.ordered) || s.orderedNewtypes.contains p
 
-/-- The ordered enumeration that `t` is, if it is one. -/
-def orderedData? (t : Ty) : M (Option DataDecl) := do
-  let .enum p := t | return none
-  return ((← get).dataOf? p).filter (·.ordered)
+/-- `State.orderedDecl` of the current state. -/
+def orderedDecl : M (Name → Bool) := return (← get).orderedDecl
+
+/-- How values of `t` are compared, if it is ordered (`Fren.Core.orderPlan?`). -/
+def orderPlan? (t : Ty) : M (Option Fren.Core.OrderPlan) := do
+  let s ← get
+  let fieldsOf (p : Name) := ((s.dataOf? p).filter (·.isRecord)).bind (·.ctors[0]?) |>.map (·.2) |>.getD #[]
+  return Fren.Core.orderPlan? s.orderedDecl fieldsOf t
+
+/-- `x < y`, or `x <= y` if not `strict`, of values compared by `o`, as
+SMT-LIB: a record's lexicographically, by its fields in the order
+declared, and a newtype's as its value's, which it is erased to. -/
+partial def orderSmt (o : Fren.Core.OrderPlan) (strict : Bool) (x y : String) : M String := do
+  let op := if strict then "<" else "<="
+  match o with
+  | .number => return s!"({op} {x} {y})"
+  | .string => return Fren.Core.strCompareSmt x y !strict
+  | .enum p =>
+    let some d := (← get).dataOf? p | return s!"({op} {x} {y})"
+    return s!"({op} {d.ordinal x} {d.ordinal y})"
+  | .newtype _ u => orderSmt u strict x y
+  | .record p fs =>
+    -- From the last field, compared as the whole is, back to the first,
+    -- which decides unless the two are equal.
+    let sel (f : Name) (v : String) := s!"({fieldSym p f} {v})"
+    let some (fl, ol) := fs.back? | return (if strict then "false" else "true")
+    let mut acc ← orderSmt ol strict (sel fl x) (sel fl y)
+    for (f, of) in fs.pop.reverse do
+      let (a, b) := (sel f x, sel f y)
+      acc := s!"(or {← orderSmt of true a b} (and (= {a} {b}) {acc}))"
+    return acc
+
+/-- The ordering `op` of `x` and `y`, compared by `o`, as SMT-LIB: as
+`orderSmt` writes it, with `>` and `>=` as `<` and `<=` of `y` and `x`, but
+of numbers and enumerations, and newtypes of them, with `op` itself. -/
+partial def orderingSmt (o : Fren.Core.OrderPlan) (op : String) (x y : String) : M String := do
+  match o with
+  | .newtype _ u => orderingSmt u op x y
+  | .number => return s!"({op} {x} {y})"
+  | .enum p =>
+    let some d := (← get).dataOf? p | return s!"({op} {x} {y})"
+    return s!"({op} {d.ordinal x} {d.ordinal y})"
+  | _ => match op with
+    | "<" => orderSmt o true x y
+    | "<=" => orderSmt o false x y
+    | ">" => orderSmt o true y x
+    | _ => orderSmt o false y x
 
 /-- `e` has type `found` where `expected` was required. -/
 def mismatch (e : Expr) (expected found : Ty) (why : Option String := none) : M α :=
@@ -1524,11 +1569,14 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
       | .min => s!"(ite (<= {recv} {y}) {recv} {y})"
       | .max => s!"(ite (>= {recv} {y}) {recv} {y})"
       | _ => s!"(ite (< {recv} 0) (- {recv}) {recv})", if nat then .nat else .int)
-  if let .enum p := t then
-    let some d := (← get).dataOf? p | internal span s!"unknown enum `{p}`"
-    let some method := (Fren.Core.Method.ofName? m).filter (·.accepts false false (ordered := d.ordered))
-      | if d.ordered then err span (Fren.Core.unknownMethodMsg m t.show false (ordered := true))
-        else if m == "min" || m == "max" then err span (Fren.Core.unorderedMethodMsg m t.show)
+  -- `min` and `max` of a value of an ordered type, and an enumeration's,
+  -- record's or newtype's other methods, which it has none of
+  -- (`lang::method_type`, `lang::ordered_type`).
+  if t.orderedDecl?.isSome || (t == .string && (m == "min" || m == "max")) then
+    let ordered := t.ordered (← get).orderedDecl
+    let some method := (Fren.Core.Method.ofName? m).filter (·.accepts false false (ordered := ordered))
+      | if ordered then err span (Fren.Core.unknownMethodMsg m t.show false (ordered := true))
+        else if m == "min" || m == "max" then err span (Fren.Core.unorderedMethodMsg (t.orderedDecl?.getD .record) m t.show)
         else err span (Fren.Core.noMethodsMsg m t.show)
     unless args.size == method.arity do err span (Fren.Core.arityMsg (Name.mkSimple m) method.arity args.size)
     for (_, ta, sp) in args do
@@ -1536,13 +1584,14 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
         err sp { code? := some "F0304", headline := s!"type mismatch: expected `{t.show}`, found `{ta.show}`"
                  label? := some s!"expected `{t.show}`, found `{ta.show}`"
                  notes := #[s!"note: the argument of `{m}` is a `{t.show}`, as its receiver is"] }
-    -- Conditionals on the variants' positions, as for an `Int`.
+    -- Conditionals on the order, as for an `Int`.
     let y := (args.map (·.1))[0]?.getD ""
-    let cmp := if method == .min then "<=" else ">="
-    return (s!"(ite ({cmp} {d.ordinal recv} {d.ordinal y}) {recv} {y})", t)
+    let some plan ← orderPlan? t | internal span s!"`{t.show}` is not ordered"
+    let cmp ← orderingSmt plan (if method == .min then "<=" else ">=") recv y
+    return (s!"(ite {cmp} {recv} {y})", t)
   unless t == .string do err span (Fren.Core.noMethodsMsg m t.show)
   let some method := (Fren.Core.Method.ofName? m).filter (·.accepts true false)
-    | err span (Fren.Core.unknownMethodMsg m t.show)
+    | err span (Fren.Core.unknownMethodMsg m t.show (ordered := true))
   unless args.size == method.arity do err span (Fren.Core.arityMsg (Name.mkSimple m) method.arity args.size)
   let tyOf : Fren.Core.MethodTy → Ty | .bool => .bool | .int => .int | _ => .string
   for (_, ta, sp) in args, p in method.params, k in [0:args.size] do
@@ -2359,10 +2408,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   -- `tx` and `ty`: if one is a newtype, it must have `op`, and both must be
   -- of it (`lang::newtype_operator`).
   let newtypeOp (op : String) (span : Span) (tx ty : Ty) (pre := false) : M Unit := do
-    let ordered ← match Fren.Core.newtypeOf? tx ty with
-      | some (_, u) => isOrdered u
-      | none => pure false
-    liftMsg span (Fren.Core.checkNewtypeOperator op pre tx ty ordered)
+    liftMsg span (Fren.Core.checkNewtypeOperator op pre tx ty (← orderedDecl))
   -- `length_zero`, `card_zero` and `absurd_extreme_comparisons` on `a op b`
   -- (`lint::length_zero`, `lint::absurd_extreme_comparisons`).
   let lintLength (op : String) (a b : Expr) : M Unit := do
@@ -2646,7 +2692,17 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     let res ← callMethod m.span r t m.name as
     if let (.string, some method) := (t, Fren.Core.Method.ofName? m.name) then
       let constantArgs ← args.allM (isConstant cx)
-      checkCore cx span method.construct constantArgs true (#[recv] ++ args) (constantArgs && (← isConstant cx recv))
+      let recvConstant ← isConstant cx recv
+      -- `min` and `max` compare their strings, as `<=` does.
+      let comparable := !(method matches .min | .max) || constantArgs || recvConstant
+      checkCore cx span method.construct constantArgs comparable (#[recv] ++ args) (constantArgs && recvConstant)
+    -- `min` and `max` of an ordered record or newtype with a `String`
+    -- within compare strings (`Reqs/Lang/Decidability#orderings`).
+    if (t matches .record _ | .newtype ..) && (m.name == "min" || m.name == "max") then
+      if let some plan ← orderPlan? t then
+        if plan.strings then
+          let (ca, cb) := (← isConstant cx recv, ← args.allM (isConstant cx))
+          checkCore cx span .stringCompare true (ca || cb) (#[recv] ++ args) (ca && cb)
     if let (.seq _, some method) := (t, Fren.Core.Method.ofName? m.name) then
       checkCore cx span method.seqConstruct true true (#[recv] ++ args)
         ((← args.allM (isConstant cx)) && (← isConstant cx recv)) (literalOperand := args.any (· matches .seq ..))
@@ -2671,27 +2727,21 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
     -- the comparisons before an operand guard it. The parser has checked
     -- its operators.
     let (x0, t0) ← elabExpr cx es[0]!
-    -- The first operand gives the operands' type, a `Nat` widened
-    -- (`lang::operator_type`); of a newtype, its underlying type's orderings,
-    -- on the erased values (`lang::newtype_operator`).
-    if let .newtype .. := t0 then newtypeOp ops[0]!.1 (es[0]!.span.to es[1]!.span) t0 t0
-    let under := match t0 with | .newtype _ u => u | t => t
-    let u ← liftMsg es[0]!.span (Fren.Core.orderingType ops[0]!.1 under (← isOrdered under))
-    let t0 := if t0 matches .newtype .. then t0 else u
-    -- An ordered enumeration's values compare by their positions.
-    let ordinal ← orderedData? u
-    let pos (smt : String) := match ordinal with | some d => d.ordinal smt | none => smt
+    -- The first operand gives the operands' type, a `Nat` widened, if it
+    -- is ordered (`lang::operator_type`, `lang::ordered_type`).
+    let u ← liftMsg es[0]!.span (Fren.Core.orderingType ops[0]!.1 t0 (← orderedDecl))
+    let plan := (← orderPlan? u).getD .number
     let mut (x, ca) := (x0, ← isConstant cx es[0]!)
     let mut links := #[]
     for (op, _) in ops, a in es, b in es.extract 1 do
       let (y, tb) ← elabExpr { cx with guards := cx.guards ++ links } b
-      newtypeOp op (a.span.to b.span) t0 tb
-      liftMsg b.span (Fren.Core.checkType t0 tb (Fren.Core.opNote op t0))
+      newtypeOp op (a.span.to b.span) u tb
+      liftMsg b.span (Fren.Core.checkType u tb (Fren.Core.opNote op u))
       let cb ← isConstant cx b
-      if u == .string then
+      if plan.strings then
         checkCore cx (a.span.to b.span) .stringCompare true (ca || cb) #[a, b] (ca && cb)
       -- SMT-LIB has only `str.<` and `str.<=`.
-      links := links.push <| if u != .string then s!"({op} {pos x} {pos y})" else match op with
+      links := links.push <| ← if u != .string then orderingSmt plan op x y else pure <| match op with
         | "<" => s!"(str.< {x} {y})"
         | "<=" => s!"(str.<= {x} {y})"
         | ">" => s!"(str.< {y} {x})"
@@ -2764,33 +2814,21 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       return (if op == "=" then s!"(= {x} {y})" else s!"(distinct {x} {y})", .bool)
     | "<" | "<=" | ">" | ">=" =>
       lintLength op a b
-      -- The left operand gives the operands' type (`lang::operator_type`).
+      -- The left operand gives the operands' type, if it is ordered
+      -- (`lang::operator_type`, `lang::ordered_type`); a newtype on either
+      -- side is the newtype's error (`lang::newtype_operator`).
       let (x, tx) ← elabExpr cx a
-      -- Of a newtype, its underlying type's ordering, on the erased values;
-      -- of another type, a newtype on the right is the newtype's error
-      -- (`lang::newtype_operator`).
-      let (y, t) ← match tx with
-        | .newtype _ u => do
-          let (y, ty) ← elabExpr cx b
-          newtypeOp op span tx ty
-          pure (y, u)
-        | _ => do
-          let t ← liftMsg a.span (Fren.Core.orderingType op tx (← isOrdered tx))
-          let (y, ty) ← elabExpr cx b
-          newtypeOp op span tx ty
-          liftMsg b.span (Fren.Core.checkType t ty (Fren.Core.opNote op t))
-          pure (y, t)
-      -- An ordered enumeration's values compare by their positions.
-      if let some d ← orderedData? t then return (s!"({op} {d.ordinal x} {d.ordinal y})", .bool)
-      unless t == .string do return (s!"({op} {x} {y})", .bool)
-      let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
-      checkCore cx span .stringCompare true (ca || cb) #[a, b] (ca && cb)
-      -- SMT-LIB has only `str.<` and `str.<=`.
-      return (match op with
-        | "<" => Fren.Core.strCompareSmt x y false
-        | "<=" => Fren.Core.strCompareSmt x y true
-        | ">" => Fren.Core.strCompareSmt y x false
-        | _ => Fren.Core.strCompareSmt y x true, .bool)
+      let t ← liftMsg a.span (Fren.Core.orderingType op tx (← orderedDecl))
+      let (y, ty) ← elabExpr cx b
+      newtypeOp op span tx ty
+      liftMsg b.span (Fren.Core.checkType t ty (Fren.Core.opNote op t))
+      let plan := (← orderPlan? t).getD .number
+      if plan.strings then
+        let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
+        checkCore cx span .stringCompare true (ca || cb) #[a, b] (ca && cb)
+      -- An ordered enumeration's values compare by their positions, and an
+      -- ordered record's by its fields (`Reqs/Lang/Items#ordered-declarations`).
+      return (← orderingSmt plan op x y, .bool)
     | "in" =>
       -- Before its operands, whose errors would hide it, as in Lean.
       checkCore cx span .setAlgebra true true #[a, b]
@@ -2890,12 +2928,20 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
       let nat := op != "-" && expected? == some .nat
       if nat && op == "+" then modify fun s => { s with natSums := s.natSums.push (s.file, span) }
       let (x, tx) ← elabExpr { cx with expected? := if nat then some .nat else none } a
-      -- Of a newtype, its underlying type's `+` or `-`, which it is erased
-      -- to; of a number, a newtype on the right is the newtype's error.
+      -- Of a newtype, the `+` or `-` of the type it is erased to, as
+      -- `N(a.0 + b.0)` is; of a number, a newtype on the right is the
+      -- newtype's error (`lang::newtype_operator`).
       if let .newtype .. := tx then
         let (y, ty) ← elabExpr cx b
         newtypeOp op span tx ty
-        return (s!"({op} {x} {y})", tx)
+        -- `+` of a newtype of `Nat`, whose `-` would be an error.
+        if op == "+" && tx.erased == .nat then modify fun s => { s with natSums := s.natSums.push (s.file, span) }
+        -- The obligations of `N(a.0 + b.0)`, of each newtype from the
+        -- innermost out, which is the erased sum at each.
+        let sum := s!"({op} {x} {y})"
+        for p in tx.newtypePaths.reverse do
+          noteObligation cx .construction span (← partPTy p 0 0) sum
+        return (sum, tx)
       number a tx op
       let (y, ty) ← elabExpr { cx with expected? := if nat then some .nat else none } b
       newtypeOp op span tx ty
@@ -4450,9 +4496,9 @@ partial def elabItem (item : Item) : M Unit := do
     for (v, _) in variants, vn in vs do
       if let some msg := Fren.Core.variantNameMsg? n vn then lint .enumVariantNames v.span msg
     -- Only an enumeration without payloads may be ordered
-    -- (`lang::ordered_enumeration`); the first payload is reported.
+    -- (`lang::ordered_declaration`); the first payload is reported.
     let withPayload := variants.filter (·.2.isSome)
-    unless Fren.Core.orderedEnumAccepted isOrdered withPayload.size do
+    unless Fren.Core.orderedDeclAccepted isOrdered withPayload.size [] do
       let (v, _) := withPayload[0]!
       err v.span (Fren.Core.orderedPayloadMsg n (Name.mkSimple v.name))
     unless isPub do
@@ -4470,7 +4516,7 @@ partial def elabItem (item : Item) : M Unit := do
         for k in [0:fs.size] do
           if let some c' := Fren.Core.readCons st.shapeOf path v k then
             modify fun s => { s with funFacts := s.funFacts.insert (d.selSym c k) (consSmt st.dataOf? c' factHole) }
-  | .record isPub name fields => do
+  | .record isPub name fields isOrdered => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "record" n)
     let module := (← get).module
@@ -4505,14 +4551,22 @@ partial def elabItem (item : Item) : M Unit := do
     let nBools := (fs.filter (·.2 == .bool)).size
     if Fren.Core.structExcessiveBools nBools then lint .structExcessiveBools name.span (Fren.Core.structExcessiveBoolsMsg n nBools)
     let st ← get
+    -- An ordered record's fields are ordered (`lang::ordered_declaration`);
+    -- the first that is not is reported.
+    let fieldsOrdered := fs.toList.map (·.2.ordered st.orderedDecl)
+    unless Fren.Core.orderedDeclAccepted isOrdered 0 fieldsOrdered do
+      if let some k := fs.findIdx? (!·.2.ordered st.orderedDecl) then
+        let (f, ty?) := fields[k]!
+        err ((ty?.map fun segs => segs[0]!.span.to segs.back!.span).getD f.span)
+          (Fren.Core.unorderedFieldMsg .record n fs[k]!.1 fs[k]!.2)
     let unbounded := fs.any fun (_, t) => st.unbounded t
     unless isPub do
       modify fun s => { s with items := s.items.push ({ what := .record, path, level := s.levels.get .deadCode }, name.span) }
     modify fun s => { s with
       table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
-      datatypes := s.datatypes.push { path, isRecord := true, ctors := #[(`«{}», fs)], unbounded : DataDecl }.withPrelude
+      datatypes := s.datatypes.push { path, isRecord := true, ctors := #[(`«{}», fs)], unbounded, ordered := isOrdered : DataDecl }.withPrelude
       shapes := s.shapes.insert path { isRecord := true, parts := #[fieldTys] } }
-  | .newtype isPub name fields => do
+  | .newtype isPub name fields isOrdered => do
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "record" n)
     let module := (← get).module
@@ -4530,11 +4584,16 @@ partial def elabItem (item : Item) : M Unit := do
     let pt ← elabPTy segs
     let t := pt.ty
     if let some p := t.abstractWithin? then err span (Fren.Core.abstractFieldMsg p false (!(t matches .abstract _)))
+    -- An ordered newtype's underlying type is ordered
+    -- (`lang::ordered_declaration`).
+    unless Fren.Core.orderedDeclAccepted isOrdered 0 [t.ordered (← get).orderedDecl] do
+      err span (Fren.Core.unorderedFieldMsg .newtype n (Name.mkSimple "0") t)
     unless isPub do
       modify fun s => { s with items := s.items.push ({ what := .record, path, level := s.levels.get .deadCode }, name.span) }
     modify fun s => { s with
       table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
       newtypes := s.newtypes.insert path t
+      orderedNewtypes := if isOrdered then s.orderedNewtypes.push path else s.orderedNewtypes
       shapes := s.shapes.insert path { isRecord := true, isNewtype := true, parts := #[#[pt]] } }
   | .typeAlias isPub name ty => do
     let n := Name.mkSimple name.name

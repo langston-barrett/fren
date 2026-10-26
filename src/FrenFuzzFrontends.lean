@@ -280,7 +280,7 @@ def genWide (avoidKnown : Bool := false) : R String := do
   if useEnum then
     out := out ++ s!"pub {if ordered then "ordered " else ""}enum E \{ {", ".intercalate ((List.range nVariants).map (s!"V{·}"))} }\n"
   let hasMs ← chance 40
-  if hasMs then out := out ++ "pub struct Ms(Int)\n"
+  if hasMs then out := out ++ "pub ordered struct Ms(Int)\n"
   let ms := if hasMs then #[WTy.ms] else #[]
   let mut sc : WScope := { nVariants, ordered, relElem, avoidKnown, hasMs }
   -- Constants, each over the earlier ones.

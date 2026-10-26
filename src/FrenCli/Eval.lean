@@ -450,12 +450,26 @@ def Val.setOf (vs : Array Val) : Val :=
   | some (.set a), some (.set b) => some (f a b)
   | _, _ => none
 
-/-- An ordering, of `Int`s, of `String`s, or of the variants of an ordered
-enumeration, by their positions. -/
+/-- How two values of one ordered type compare
+(`Reqs/Lang/Items#ordered-declarations`): `Int`s and `String`s by their own
+orders, and values of an ordered enumeration or record by their
+constructors' positions, then by their payloads or fields, in order,
+lexicographically. A newtype's value is its underlying type's. -/
+partial def cmpV : Val → Val → Option Ordering
+  | .int x, .int y => some (compare x y)
+  | .str x, .str y => some (compare x.toList y.toList)
+  | .ctor t i xs, .ctor u j ys => do
+    unless t == u && xs.size == ys.size do none
+    if i != j then return compare i j
+    for x in xs, y in ys do
+      let c ← cmpV x y
+      if c != .eq then return c
+    return .eq
+  | _, _ => none
+
+/-- An ordering, of values of an ordered type (`cmpV`). -/
 @[inline] def ordV (f : Ordering → Bool) : Option Val → Option Val → Option Val
-  | some (.int x), some (.int y) => boolV (f (compare x y))
-  | some (.str x), some (.str y) => boolV (f (compare x.toList y.toList))
-  | some (.ctor t i _), some (.ctor u j _) => if t == u then boolV (f (compare i j)) else none
+  | some x, some y => (cmpV x y).bind (boolV ∘ f)
   | _, _ => none
 
 /-- The pairs `(a, c)` for each `(a, b)` in `r` and `(b, c)` in `q`. -/
@@ -639,11 +653,12 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
         | .min, some (.int y) => some (.int (if x ≤ y then x else y))
         | .max, some (.int y) => some (.int (if x ≥ y then x else y))
         | _, _ => none
-    -- An ordered enumeration's methods, by the variants' positions.
-    if let .ctor t i _ := r then
+    -- `min` and `max` of an ordered enumeration's, record's or `String`'s
+    -- value, by their order (`cmpV`).
+    if r matches .ctor .. || m == .min || m == .max then
       return ← match m, (args[0]? : Option Val) with
-        | .min, some y@(.ctor u j _) => if t == u then some (if i ≤ j then r else y) else none
-        | .max, some y@(.ctor u j _) => if t == u then some (if i ≥ j then r else y) else none
+        | .min, some y => (cmpV r y).map fun c => if c != .gt then r else y
+        | .max, some y => (cmpV r y).map fun c => if c != .lt then r else y
         | _, _ => none
     let .str s := r | none
     let str (k : Nat) := match args[k]? with | some (Val.str a) => a | _ => ""
@@ -1700,7 +1715,7 @@ partial def lowerItem : Item → L Unit
     let parts ← variants.mapM fun (_, payload?) => (payload?.getD #[]).mapM lowerPTy
     let recursive := ctors.any (·.fields.any (·.2 == .data path))
     modify fun s => { s with spec.shapes := s.spec.shapes.insert path { recursive, parts } }
-  | .record isPub name fields => do
+  | .record isPub name fields _ => do
     let st ← get
     let path := st.module ++ Name.mkSimple name.name
     let mut fs := #[]
@@ -1712,7 +1727,7 @@ partial def lowerItem : Item → L Unit
       table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
       spec.data := s.spec.data.insert path { path, isRecord := true, ctors := #[{ name := `mk, fields := fs }] }
       spec.shapes := s.spec.shapes.insert path { isRecord := true, parts := #[parts] } }
-  | .newtype isPub name fields => do
+  | .newtype isPub name fields _ => do
     let path := (← get).module ++ Name.mkSimple name.name
     let some ty := fields[0]? | throw s!"`{showPath path}` has no field"
     let u ← lowerTy ty

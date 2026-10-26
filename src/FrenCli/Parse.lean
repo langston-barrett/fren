@@ -309,11 +309,12 @@ inductive Item where
   /-- `enum E { A, B(T, U) }`: each variant with its payload's types, if
   it has a payload; `ordered enum E { A, B }` if `isOrdered`. -/
   | enum (isPub : Bool) (name : Ident) (variants : Array (Ident × Option (Array (Array Ident)))) (isOrdered : Bool := false)
-  /-- `struct R { x: T, y? }`: each field with its type, if written. -/
-  | record (isPub : Bool) (name : Ident) (fields : Array (Ident × Option (Array Ident)))
+  /-- `struct R { x: T, y? }`: each field with its type, if written;
+  `ordered struct R { ... }` if `isOrdered`. -/
+  | record (isPub : Bool) (name : Ident) (fields : Array (Ident × Option (Array Ident))) (isOrdered : Bool := false)
   /-- `struct N(T)`: a newtype, with the types in its parentheses, which
-  must be one (`lang::newtype`). -/
-  | newtype (isPub : Bool) (name : Ident) (fields : Array (Array Ident))
+  must be one (`lang::newtype`); `ordered struct N(T)` if `isOrdered`. -/
+  | newtype (isPub : Bool) (name : Ident) (fields : Array (Array Ident)) (isOrdered : Bool := false)
   /-- `type T`, an abstract type. -/
   | abstractType (isPub : Bool) (name : Ident)
   /-- `type T := U`, a type alias. -/
@@ -1307,21 +1308,22 @@ partial def item : P Item := do
       | none => pure #[]
     return .global name bs (← top)
   let isPub := (← eatKw "pub").isSome
-  -- `ordered`, which only an enum takes, after `pub`.
+  -- `ordered`, which an enum or a struct takes, after `pub`
+  -- (`lang::ordered_declaration`).
   let ordered? ← eatKw "ordered"
   let t ← peek
   if let some o := ordered? then
-    unless isKw t "enum" do
+    unless isKw t "enum" || isKw t "struct" do
       let fix := { msg := "remove `ordered`", replacement := "", range? := some { start := o.span.start, stop := t.span.start } }
       if isKw t "pub" then
         err o.span "F0130" "`ordered` is written after `pub`" (some "before `pub`")
-          #["note: an ordered enum is declared `pub ordered enum E { ... }`"]
+          #["note: an ordered enum or struct is declared `pub ordered enum E { ... }` or `pub ordered struct R { ... }`"]
       let what := match t.tok with
-        | .kw "struct" => "records" | .kw "comp" => "components" | .kw "type" => "abstract types"
+        | .kw "comp" => "components" | .kw "type" => "types"
         | .kw "fn" => "functions" | .kw "const" => "constants" | .kw "mod" => "modules"
         | tok => tok.describe
-      err o.span "F0130" s!"`ordered` applies only to enums, not to {what}" (some "`ordered` must be followed by `enum`")
-        #["note: an ordered enum orders its variants as they are declared, and is declared `ordered enum E { ... }`"] #[fix]
+      err o.span "F0130" s!"`ordered` applies only to enums and structs, not to {what}" (some "`ordered` must be followed by `enum` or `struct`")
+        #["note: an ordered enum orders its variants as they are declared, and an ordered struct its values by their fields"] #[fix]
   if isKw t "mod" then
     discard bump
     return .mod isPub (← path false).1
@@ -1358,7 +1360,7 @@ partial def item : P Item := do
         ts := ts.push (← typeExpr)
         while (← eatKw ",").isSome do ts := ts.push (← typeExpr)
       discard (expectKw ")")
-      return .newtype isPub name ts
+      return .newtype isPub name ts ordered?.isSome
     markList
     discard (expectKw "{")
     let field : P (Ident × Option (Array Ident)) := do
@@ -1370,7 +1372,7 @@ partial def item : P Item := do
       if isKw (← peek) "}" then break
       fs := fs.push (← field)
     discard (expectKw "}")
-    return .record isPub name fs
+    return .record isPub name fs ordered?.isSome
   if isKw t "type" then
     discard bump
     let name ← ident

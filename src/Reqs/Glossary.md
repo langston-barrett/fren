@@ -143,10 +143,19 @@ its underlying type. See [Items](Lang/Items.md#newtypes).
 matches its pattern, which a check asks the solver. See
 [Types](Lang/Types.md#typing).
 
+**Ordered declaration.** An enumeration, record or newtype declared with
+`ordered`, as `ordered enum` or `ordered struct`, whose values are ordered:
+an enumeration's variants as they are declared, and a record's values by
+their fields, lexicographically. See [Items](Lang/Items.md#ordered-declarations).
+
 **Ordered enumeration.** An enumeration without payloads, declared with
 `ordered enum`, whose variants are ordered as they are declared, so that
 `<`, `<=`, `>`, `>=`, `min` and `max` apply to its values. See
 [Items](Lang/Items.md#enumerations).
+
+**Ordered type.** A type whose values `<`, `<=`, `>`, `>=`, `min` and `max`
+compare: `Int`, `Nat`, `String`, and the ordered declarations, with
+pattern types and type aliases of these. See [Types](Lang/Types.md#ordered-types).
 
 **Output.** A variable of a component chosen by the system, declared with
 `out`. A *public output* is declared with `pub out`; other outputs are

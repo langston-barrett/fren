@@ -399,7 +399,7 @@ def genSpec : R GSpec := do
   if useEnum then
     out := out ++ s!"pub {if ordered then "ordered " else ""}enum E \{ {", ".intercalate ((List.range nVariants).map (s!"V{·}"))} }\n"
   if useAbs then out := out ++ "pub type T\npub fn p?(T)\n"
-  if useWrap then out := out ++ "pub struct W(Int)\n"
+  if useWrap then out := out ++ "pub ordered struct W(Int)\n"
   let mut comps : Array GComp := #[]
   for i in [0:(← below 2) + 1] do
     comps := comps.push (← genComp i comps useEnum useAbs useWrap nVariants ordered collections)

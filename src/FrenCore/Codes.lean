@@ -447,21 +447,22 @@ comp c { in n: Int pub out y: Int ensure r: y = match n { ..=9 => 0, _ => 1 } }
 
 In Lean, Lean's own parser reports this, as a syntax error.
 "# },
-  { code := "F0130", explanation := r#"`ordered` modifies an item other than an enum, or is written before `pub`.
+  { code := "F0130", explanation := r#"`ordered` modifies an item other than an enum or a struct, or is written before `pub`.
 
 Erroneous code example:
 
 ```fren
-ordered struct Point { x: Int, y: Int }
+ordered fn f(Int): Int
 ```
 
-`ordered` orders the variants of an enum as they are declared, so that
-`<`, `<=`, `>`, `>=`, `min` and `max` apply to its values. It applies only
-to enums, and is written after `pub`, as in `pub ordered enum Level { Low,
-High }`. Remove it from any other item:
+`ordered` orders the variants of an enum as they are declared, and the
+values of a struct by their fields, in the order declared, so that `<`,
+`<=`, `>`, `>=`, `min` and `max` apply to its values. It applies only to
+enums and structs, and is written after `pub`, as in `pub ordered enum
+Level { Low, High }`. Remove it from any other item:
 
 ```fren
-struct Point { x: Int, y: Int }
+fn f(Int): Int
 ```
 "# },
   { code := "F0131", explanation := r#"The binders of a quantifier are not in parentheses.
@@ -1766,7 +1767,7 @@ constant other than `0`:
 comp c { in x: Int pub out r: Int := x mod 2 }
 ```
 "# },
-  { code := "F0352", explanation := r#"Values of an enum that is not ordered are compared with `<`, `<=`, `>` or `>=`.
+  { code := "F0352", explanation := r#"Values of an enum or struct that is not ordered are compared with `<`, `<=`, `>` or `>=`.
 
 Erroneous code example:
 
@@ -1785,6 +1786,13 @@ ordered enum Level { Low, Middle, High }
 
 comp c { in l: Level pub out high? ensure r: high? iff l > Level::Middle }
 ```
+
+Likewise, a struct, a newtype among them, is ordered only if it is
+declared `ordered`, even when its fields' types are: `struct Ms(Int)` has
+`=` and `!=`, and `ordered struct Ms(Int)` also `<`, `<=`, `>`, `>=`,
+`min` and `max`, which compare its values as their fields compare. An
+ordered struct with several fields orders its values by their fields, in
+the order declared.
 "# },
   { code := "F0353", explanation := r#"An ordered enum has a variant with a payload.
 
@@ -1794,15 +1802,15 @@ Erroneous code example:
 ordered enum Size { Small, Custom(Int) }
 ```
 
-An ordered enum orders its variants as they are declared, which says
-nothing of how values with payloads compare, so only an enum without
+An ordered enum orders its variants as they are declared, and does not
+yet order values with payloads by their payloads, so only an enum without
 payloads may be ordered. Remove the payload, or `ordered`:
 
 ```fren
 ordered enum Size { Small, Large }
 ```
 "# },
-  { code := "F0354", explanation := r#"`min` or `max` of a value of an enum that is not ordered.
+  { code := "F0354", explanation := r#"`min` or `max` of a value of an enum or struct that is not ordered.
 
 Erroneous code example:
 
@@ -1812,8 +1820,10 @@ enum Level { Low, High }
 comp c { in a: Level in b: Level pub out m: Level ensure r: m = a.max(b) }
 ```
 
-Only `Int`s and the values of an ordered enum have `min` and `max`.
-Declare the enum `ordered` to order its variants as they are declared:
+Only `Int`s, `Nat`s, `String`s and the values of a type declared
+`ordered` have `min` and `max`. Declare the enum `ordered` to order its
+variants as they are declared, or a struct `ordered` to order its values
+by their fields:
 
 ```fren
 ordered enum Level { Low, High }
@@ -2106,9 +2116,10 @@ comp c { in t: Ms pub out d: Ms ensure r: d = t * Ms(2) }
 ```
 
 A newtype has `=` and `!=`; the orderings `<`, `<=`, `>` and `>=` when
-its underlying type is an `Int` or a `String`; and `+` and `-` of two of
-its values when it is an `Int`. Any other operator applies to its value,
-read with `.0`, and the result is built again:
+it is declared `ordered`; and `+` and `-` of two of its values when its
+underlying type is an `Int`, `+` alone when it is a `Nat`, since `a.0 -
+b.0` is an `Int`, which is never narrowed to a `Nat`. Any other operator
+applies to its value, read with `.0`, and the result is built again:
 
 ```fren
 struct Ms(Int)
@@ -2121,7 +2132,7 @@ comp c { in t: Ms pub out d: Ms ensure r: d = Ms(t.0 * 2) }
 Erroneous code example:
 
 ```fren
-struct Ms(Int)
+ordered struct Ms(Int)
 struct Bytes(Int)
 
 comp c { in t: Ms in n: Bytes pub out late? ensure r: late? iff t > n }
@@ -2134,7 +2145,7 @@ not compared with a `Bytes`, nor with an `Int`, and no literal is an
 be, or compare their values, read with `.0`, if mixing them is meant:
 
 ```fren
-struct Ms(Int)
+ordered struct Ms(Int)
 struct Bytes(Int)
 
 comp c { in t: Ms in n: Bytes pub out late? ensure r: late? iff t > Ms(100) }
@@ -2195,6 +2206,26 @@ or a constant as a range's bound:
 ```fren
 const MAX: Int := 9
 type Digit := Int is 0..=MAX
+```
+"# },
+  { code := "F0371", explanation := r#"A field of an ordered struct has a type that is not ordered.
+
+Erroneous code example:
+
+```fren
+ordered struct Entry { key: Int, tags: Set(Int) }
+```
+
+An ordered struct orders its values by their fields, in the order
+declared: first by the first field, then, where those are equal, by the
+second, and so on. So each field's type must be ordered: an `Int`, a `Nat`,
+a `String`, a pattern type or alias of one of these, or an enum or struct
+declared `ordered`. A newtype's one field is its underlying type, which
+must be ordered too. Declare the field's type `ordered`, if it can be,
+drop the field, or declare the struct without `ordered`:
+
+```fren
+ordered struct Entry { key: Int, size: Nat }
 ```
 "# },
   { code := "F0401", explanation := r#"An assumption mentions a variable that is not an `in`.

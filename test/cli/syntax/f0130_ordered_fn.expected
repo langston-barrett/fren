@@ -1,0 +1,17 @@
+error[F0130]: `ordered` applies only to enums and structs, not to functions
+ --> test/cli/syntax/f0130_ordered_fn.fren:2:1
+  |
+2 | ordered fn f(Int): Int
+  | ^^^^^^^ `ordered` must be followed by `enum` or `struct`
+  |
+  = note: an ordered enum orders its variants as they are declared, and an ordered struct its values by their fields
+help: remove `ordered`
+  |
+2 - ordered fn f(Int): Int
+2 + fn f(Int): Int
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0130`.
+exit=2

@@ -97,27 +97,8 @@ that with `pub ordered enum Severity { Silent, Info, Warning, Error }`,
 they do to `Int`s. Comparing values of an enumeration that is not ordered
 is an error, whose message says to declare it `ordered`: the order in
 which a plain enumeration's variants are listed is not part of its
-meaning. Only an enumeration without payloads may be ordered: an order of
-values with payloads would compare their payloads too, which is harder to
-state and to check. `lang::ordered_enumeration` states which enumerations
-may be ordered, from how many of their variants have a payload:
-
-```fren
-pub mod lang
-
-pub comp ordered_enumeration {
-    in ordered?          -- declared with `ordered`
-    in n_payloads: Int   -- variants with a payload
-    pub det out accepted?
-
-    assume count: n_payloads >= 0
-
-    ensure rule: accepted? iff (not ordered? or n_payloads = 0)
-
-    expect plain: when not ordered?, accepted?
-    expect no_payloads: when ordered? and n_payloads > 0, not accepted?
-}
-```
+meaning. For now, only an enumeration without payloads may be ordered (see
+[Ordered declarations](#ordered-declarations)).
 
 `lang::enumeration_order` states the laws of the order, on an example: it
 is the order of declaration, and it is total:
@@ -147,8 +128,8 @@ pub comp enumeration_order {
 ## Records
 
 ```
-record := ["pub"] "struct" IDENT "{" field ("," field)* [","] "}"
-        | ["pub"] "struct" IDENT "(" [type ("," type)*] ")"
+record := ["pub"] ["ordered"] "struct" IDENT "{" field ("," field)* [","] "}"
+        | ["pub"] ["ordered"] "struct" IDENT "(" [type ("," type)*] ")"
 field  := IDENT [":" type]
 ```
 
@@ -168,13 +149,17 @@ the record would have no values. So records are never recursive
 themselves, though a field may have an [unbounded
 type](Types.md#recursive-and-unbounded-types).
 
+A record declared `ordered`, as `ordered struct Version { major: Nat,
+minor: Nat }`, orders its values by their fields (see [Ordered
+declarations](#ordered-declarations)).
+
 A record whose one field has no name, written `struct Ms(Int)`, is a
 [newtype](#newtypes).
 
 ## Newtypes
 
 ```
-record := ... | ["pub"] "struct" IDENT "(" [type ("," type)*] ")"
+record := ... | ["pub"] ["ordered"] "struct" IDENT "(" [type ("," type)*] ")"
 ```
 
 `struct Ms(Int)` declares the *newtype* `Ms`: a record with exactly one
@@ -206,7 +191,10 @@ type](Types.md#pattern-types), as in `struct Byte(Int is 0..=255)`: a value
 of it is then in range wherever it is read, and `Byte(e)` has the
 obligation that `e` is. Like any type, a newtype is
 [unbounded](Types.md#recursive-and-unbounded-types) exactly when its
-underlying type is.
+underlying type is. A newtype declared `ordered`, as `ordered struct
+Seconds(Nat)`, is ordered as its underlying type is (see [Ordered
+declarations](#ordered-declarations)); one declared without it is not
+ordered, even when its underlying type is.
 
 `lang::newtype` states which newtypes are accepted, from how many types
 its parentheses hold and whether its one field's type is accepted as a
@@ -231,8 +219,104 @@ pub comp newtype {
 ```
 
 Fren does not yet have a newtype over a type parameter, as in `struct
-Id(T)`, nor one whose values are restricted, as in `struct Byte(Int is
-0..=255)`.
+Id(T)`.
+
+## Ordered declarations
+
+The modifier `ordered`, written after `pub` if the item has both, makes an
+enumeration, a record or a newtype an [ordered
+type](Types.md#ordered-types), whose values the
+[orderings](Expressions.md#operators) `<`, `<=`, `>` and `>=`, their
+[chains](Expressions.md#chained-comparisons), and the
+[methods](Expressions.md#methods) `min` and `max` compare, as Rust's
+`#[derive(PartialOrd, Ord)]` does. It is opt-in: an enumeration, record or
+newtype declared without it has no orderings, whatever its fields' types,
+and comparing its values is an error that says to declare it `ordered`
+(`F0352`). `ordered` on any other item is an error (`F0130`).
+
+An ordered enumeration orders its variants as they are declared. An
+ordered record orders its values *lexicographically*, by its fields in the
+order declared: `a < b` exactly when, at the first field where `a` and `b`
+differ, `a`'s is less than `b`'s, each compared as its own type is. So with
+`ordered struct Version { major: Nat, minor: Nat }`, `Version { major := 1,
+minor := 9 } < Version { major := 2, minor := 0 }`. A newtype is the
+record of one field, so an ordered newtype orders its values as their
+fields are ordered: with `ordered struct Seconds(Nat)`, `Seconds(1) <
+Seconds(2)`. Each comparison unfolds, field by field, into comparisons of
+`Int`s, `String`s and variants' positions, joined by `and` and `or`, so it
+is quantifier-free, and is in the [decidable
+core](Decidability.md#strings) exactly when the comparisons that it
+unfolds into are: one whose type has a `String` within it is a comparison
+of strings.
+
+So that the order is defined, every field of an ordered record, and the
+underlying type of an ordered newtype, has an ordered type, and a
+declaration whose field does not is an error that names the field
+(`F0371`). For now, only an enumeration without payloads may be ordered
+(`F0353`): ordering values with payloads, by their variants and then by
+their payloads, is left for later. So no ordered declaration is recursive,
+records never being so, and the unfolding of a comparison ends.
+`lang::ordered_declaration` states which declarations are accepted, from
+how many of an enumeration's variants have a payload, and how many of a
+record's or a newtype's fields have a type that is not ordered (see
+`lang::ordered_type`):
+
+```fren
+pub mod lang
+
+pub enum Declaration { Enumeration, Record, Newtype }
+
+pub comp ordered_declaration {
+    use self::Declaration::Enumeration
+    in declaration: Declaration
+    in ordered?                  -- declared with `ordered`
+    in n_payloads: Nat           -- for an enumeration: its variants with a payload
+    in n_unordered: Nat          -- for a record or a newtype: its fields whose type is not ordered (`ordered_type`)
+    pub det out accepted?
+
+    assume enumerations_without_fields: when declaration = Enumeration, n_unordered = 0
+    assume structs_without_payloads: when declaration != Enumeration, n_payloads = 0
+
+    ensure rule: accepted? iff (not ordered? or (n_payloads = 0 and n_unordered = 0))
+
+    expect plain: when not ordered?, accepted?
+    expect no_payloads: when ordered? and n_payloads > 0, not accepted?
+    expect ordered_fields: when ordered? and n_unordered > 0, not accepted?
+    expect structs_of_ordered_fields: when declaration != Enumeration and n_unordered = 0, accepted?
+}
+```
+
+`lang::struct_order` states the laws of an ordered record's order, on an
+example: it is total, asymmetric, transitive and antisymmetric, as an
+ordered enumeration's is, `min` and `max` are a least and a greatest of
+their operands, and it is lexicographic. A newtype's order, of one field,
+is its field's:
+
+```fren
+pub ordered enum Stage { Alpha, Beta, Stable }
+pub ordered struct Version { major: Nat, minor: Int is 0..=99, stage: Stage }
+pub ordered struct Seconds(Nat)
+
+set_option fren.lint.unnecessary_min_or_max "allow" in
+pub comp struct_order {
+    in a: Version
+    in b: Version
+    in c: Version
+    in s: Seconds
+    in t: Seconds
+
+    expect total: a <= b or b <= a
+    expect asymmetric: not (a < b and b < a)
+    expect transitive: when a < b < c, a < c
+    expect antisymmetric: when a <= b <= a, a = b
+    expect flipped: (a > b iff b < a) and (a >= b iff b <= a)
+    expect min_below: a.min(b) <= a and a.min(b) <= b and (a.min(b) = a or a.min(b) = b)
+    expect max_above: a.max(b) >= a and a.max(b) >= b and (a.max(b) = a or a.max(b) = b)
+    expect lexicographic: a < b iff (a.major < b.major
+        or (a.major = b.major and (a.minor < b.minor or (a.minor = b.minor and a.stage < b.stage))))
+    expect newtype_as_field: (s < t iff s.0 < t.0) and (s <= t iff s.0 <= t.0)
+}
+```
 
 ## Distinct names
 

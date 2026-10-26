@@ -79,8 +79,12 @@ A [newtype](Lang/Items.md#newtypes) becomes `structure p`, with one field,
 `struct Ms(Int)` becomes `Ms`, with `Ms.mk : Int → Ms` and `Ms.«0» : Ms →
 Int`, so that `Ms(5)` is `Ms.mk 5` and `x.0` is `x.«0»`. Since `Ms` is a
 structure of its own, Lean too keeps an `Ms` apart from an `Int` and from
-other newtypes. A newtype's operators are those of its field: `a < b` is
-`a.«0» < b.«0»`, and `a + b` is `Ms.mk (a.«0» + b.«0»)`. The solver is
+other newtypes. A newtype's operators are those of its field: `a < b`,
+for an ordered newtype, is `a.«0» < b.«0»`, and `a + b` is `Ms.mk (a.«0» +
+b.«0»)`. An [ordered record](Lang/Items.md#ordered-declarations)'s `a <
+b` is unfolded, lexicographically, into its fields' comparisons, as `a.x <
+b.x ∨ (a.x = b.x ∧ a.y < b.y)`, so that Lean needs no order of its own on
+the structure. The solver is
 given the structure as a datatype of one constructor, whose values are
 those of its field, so the checks have the results that they have in the
 `fren` command, where it is its underlying type.

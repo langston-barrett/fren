@@ -1,0 +1,7 @@
+-- `ordered` applies only to enumerations and structs. Lean goes on at `fn`.
+set_option fren.lint.dead_code "allow"
+
+ordered fn f(Int): Int
+--~^[cli] error: `ordered` applies only to enums and structs, not to functions
+--~^^[hosted] error: expected 'enum' or 'struct'
+--@ exit: 2

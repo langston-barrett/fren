@@ -372,12 +372,13 @@ scoped syntax (name := enumCmd) ("pub ")? ("ordered ")? "enum " frenIdent " { " 
 /-- `x: T`, or `x?` for a `Bool`. -/
 syntax fren_field := frenIdent (" : " fren_type)?
 
-/-- `struct R { x: T, ... }`, a record. -/
-scoped syntax (name := structCmd) ("pub ")? "struct " frenIdent " { " sepBy1(fren_field, ", ", ", ", allowTrailingSep) " }" : command
+/-- `[pub] [ordered] struct R { x: T, ... }`, a record; `ordered` orders its
+values by their fields (`Reqs/Lang/Items#ordered-declarations`). -/
+scoped syntax (name := structCmd) ("pub ")? ("ordered ")? "struct " frenIdent " { " sepBy1(fren_field, ", ", ", ", allowTrailingSep) " }" : command
 
-/-- `struct N(T)`, a newtype; its parentheses must hold one type
-(`lang::newtype`), which the elaborator checks. -/
-scoped syntax (name := newtypeCmd) ("pub ")? "struct " frenIdent "(" sepBy(fren_type, ", ") ")" : command
+/-- `[pub] [ordered] struct N(T)`, a newtype; its parentheses must hold one
+type (`lang::newtype`), which the elaborator checks. -/
+scoped syntax (name := newtypeCmd) ("pub ")? ("ordered ")? "struct " frenIdent "(" sepBy(fren_type, ", ") ")" : command
 
 scoped syntax (name := compCmd) ("pub ")? "comp " frenIdent " { " fren_member* " }" : command
 

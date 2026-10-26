@@ -410,19 +410,53 @@ impl newtype: lang::newtype for (n : Nat) (f u : Bool) {
 def toNewtypeOp : Fren.Core.NewtypeOp → lang.NewtypeOp
   | .equality => .Equality
   | .order => .Order
-  | .sum => .Sum
+  | .add => .Addition
+  | .sub => .Subtraction
   | .other => .Other
 
--- For every operator and underlying type, with the check that both front
--- ends use.
+-- For every operator, underlying type and whether the newtype is ordered,
+-- with the check that both front ends use.
 impl newtype_operator: lang::newtype_operator for (op : Fren.Core.NewtypeOp) (u : Fren.Core.Ty) (o : Bool) {
   op := toNewtypeOp op,
-  underlying := kindOf u,
-  ordered? := o && u matches .enum _,
+  underlying := u,
+  ordered? := o,
+  inner_has? := match u with
+    | .newtype _ v => Fren.Core.newtypeOpAccepted op v false
+    | _ => false,
   accepted? := Fren.Core.newtypeOpAccepted op u o,
 } by
   intro op u o _
-  cases op <;> cases u <;> cases o <;> simp [fren_spec, toNewtypeOp, kindOf, Fren.Core.newtypeOpAccepted]
+  cases op <;> cases u <;> simp [fren_spec, toNewtypeOp, kindOf, Fren.Core.newtypeOpAccepted]
+
+-- For every type, where `od` says which declarations are declared
+-- `ordered`, with the function that both front ends ask.
+impl ordered_type: lang::ordered_type for (t : Fren.Core.Ty) (od : Lean.Name → Bool) {
+  t := t,
+  declared? := match t with
+    | .enum p | .record p | .newtype p _ => od p
+    | _ => false,
+  ordered? := t.ordered od,
+} by
+  intro t od _
+  cases t <;> simp [fren_spec, kindOf, Fren.Core.Ty.ordered]
+
+def toDeclaration : Fren.Core.OrderedDecl → lang.Declaration
+  | .enumeration => .Enumeration
+  | .record => .Record
+  | .newtype => .Newtype
+
+-- For every declaration, whether it is ordered, how many of its variants
+-- have a payload, and whether each of its fields' types is ordered, with
+-- the check that both front ends make.
+impl ordered_declaration: lang::ordered_declaration for (d : Fren.Core.OrderedDecl) (o : Bool) (n : Nat) (fs : List Bool) {
+  declaration := toDeclaration d,
+  ordered? := o,
+  n_payloads := n,
+  n_unordered := (fs.filter (!·)).length,
+  accepted? := Fren.Core.orderedDeclAccepted o n fs,
+} by
+  intro d o n fs _
+  cases o <;> simp [fren_spec, Fren.Core.orderedDeclAccepted, List.filter_eq_nil_iff, List.all_eq_true]
 
 /-- The variants of `vs` for which `p` holds are all of them exactly when
 there are as many. -/
@@ -455,16 +489,6 @@ impl well_founded: lang::well_founded for (vs : List Lean.Name) (p : Lean.Name �
 } by
   intro vs p _
   simp [fren_spec, Fren.Core.wellFounded, ofList_filter_eq]
-
--- For every enumeration, whether it is ordered and how many of its variants
--- have a payload, which both front ends give `Fren.Core.orderedEnumAccepted`.
-impl ordered_enumeration: lang::ordered_enumeration for (o : Bool) (n : Nat) {
-  ordered? := o,
-  n_payloads := n,
-  accepted? := Fren.Core.orderedEnumAccepted o n,
-} by
-  intro o n _
-  cases o <;> simp [fren_spec, Fren.Core.orderedEnumAccepted]
 
 interp lang::FieldName := Lean.Name
 
@@ -828,15 +852,15 @@ def toMethod : Fren.Core.Method → lang.Method
   | .max => .Max
 
 -- The table of methods that both front ends use, where `o` says that the
--- receiver is an ordered enumeration.
+-- receiver is of an ordered type other than a number.
 impl method_type: lang::method_type for (m : Fren.Core.Method) (k : lang.ValueType) (o : Bool) {
   method := toMethod m,
   receiver := k,
   ordered? := o,
   accepted? := m.accepts (k == .StringTy) (k == .SetTy) (k == .RelTy) (k == .SeqTy) (k == .IntTy || k == .NatTy) o,
-  -- `string` is the receiver's type, and `elem` is never a result; an
-  -- ordered enumeration's `min` and `max` give the receiver's type, as both
-  -- front ends' `callMethod` does.
+  -- `string` is the receiver's type, and `elem` is never a result; the
+  -- `min` and `max` of another ordered type give the receiver's type, as
+  -- both front ends' `callMethod` does.
   result := if o && (m matches .min | .max) then k else match m.result with
     | .bool => .BoolTy | .int => .IntTy | .string | .elem => k | .set => .SetTy | .rel => .RelTy,
   n_params := m.arity,
