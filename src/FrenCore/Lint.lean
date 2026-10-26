@@ -1915,6 +1915,16 @@ operand of an operator, since nothing follows its last operand. -/
 def BText.inPlace (t : BText) (slot : Option Slot) (followed : Bool := false) : String :=
   if t.sameKind then t.text else t.inSlot slot followed
 
+/-- Whether `t`, which replaces an expression in `slot` that is written
+in parentheses, can drop them (`Reqs/Lint#parentheses-in-fixes`): only in
+the slot of an operator's operand, and only where `inSlot` writes `t`
+without them. Elsewhere, as the scrutinee of a `match`, the condition of
+a table's row or an argument of an application, the parentheses may be the
+construct's own, or needed by what follows, as the `{` of a `match` follows
+its scrutinee, so they are kept. -/
+def BText.dropsParens (t : BText) (slot : Option Slot) (followed : Bool) : Bool :=
+  slot.isSome && t.inSlot slot followed == t.text
+
 /-- A report of a lint that rewrites an expression (`ExLint`): where, a
 label, and the rewritten form. -/
 structure BoolReport (α : Type) where
@@ -4271,10 +4281,13 @@ or not. `_`, `true`, `false`, and a range with a constant as a bound are
 not read. -/
 def patternAlt? (t : String) : Option PatAlt :=
   let t := t.trimAscii.toString
+  -- A variant, applied or not, before a range, which a payload may hold.
+  let head := (t.splitOn "(").head!.trimAscii.toString
   if t == "_" || t == "true" || t == "false" then none
   else if let some k := decimalLiteral? t then some (.ints (some k) (some k))
   else if t.startsWith "\"" then
     if t.length ≥ 2 && t.endsWith "\"" && t.toList.count '"' == 2 then some (.str t) else none
+  else if isPathText head && (head == t || t.endsWith ")") then some (.variant (lastSegment head))
   else if let [lo, hi] := t.splitOn "..=" then do
     let (l, h) := (← rangeBound? lo, ← rangeBound? hi)
     guard (h.isSome)
@@ -4283,9 +4296,7 @@ def patternAlt? (t : String) : Option PatAlt :=
     let (l, h) := (← rangeBound? lo, ← rangeBound? hi)
     guard (l.isSome)
     some (.ints l (h.map (· - 1)))
-  else
-    let head := (t.splitOn "(").head!.trimAscii.toString
-    if isPathText head && (head == t || t.endsWith ")") then some (.variant (lastSegment head)) else none
+  else none
 
 /-- The alternatives of the pattern written `t`, if `patternAlt?` reads
 each, with their texts. -/
@@ -4402,7 +4413,7 @@ def manualPatternTestAt [Inhabited α] (src : Array Char) (variant? : α → Opt
       -- The whole run, in parentheses that the test does not need, is
       -- replaced with them.
       let outer := withParensIn src parent n.range
-      let unwrapped := whole && outer != n.range && t.inSlot slot (followedAt src outer) == t.text
+      let unwrapped := whole && outer != n.range && t.dropsParens slot (followedAt src outer)
       let range : Range := if unwrapped then outer
         else { start := (withParensIn src n.range cs[i]!.range).start, stop := (withParensIn src n.range cs[j]!.range).stop }
       let fixed := if unwrapped then t.text else if whole then placed src n slot parent t

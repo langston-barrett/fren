@@ -4,6 +4,8 @@
 -- as a negated one.
 enum Shade { Light, Dark, Tinted(Int) }
 
+fn count(b?): Int := if b? then 1 else 0
+
 pub comp c {
     in s: Shade
     in x: Int
@@ -18,6 +20,11 @@ pub comp c {
     pub out g? := q != [] and (q[0] = 1 or q[0] = 2)
     pub out h? := not (t = "a" or t = "b") and p?
     pub out i? := x = 1 or x = 2 or x = 3
+    -- Parentheses that are not an operator's operand stay.
+    pub out k? := match (x = 1 or x = 2) { true => p?, false => false }
+    pub out l: Int := table { (x = 1 or x = 2) => 0, x > 5 => 1, _ => 2 }
+    pub out m: Int := count(x = 1 or x = 2)
+    pub out n? := s is Shade::Tinted(1..=3) or s = Shade::Light
     -- A comment within the operands: no fix.
     pub out j? := x = 1 or /- one more -/ x = 2
 }

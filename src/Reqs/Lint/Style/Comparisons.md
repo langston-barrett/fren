@@ -164,9 +164,10 @@ negation, joins it, and its alternatives join the fix, in order: `status =
 0 and not n is 10..` becomes `not n is 0 | 10..`. Such a test is read where
 each of its alternatives is an integer literal, a range whose bounds are
 integer literals, a string literal, or a variant, with a payload or
-without; one with `_`, `true`, `false` or a constant as a bound is not read.
-A run has at least one equation: one of pattern tests alone is left as it
-is. Each alternative of a pattern must be reachable (`F0318`), so the lint
+without, whatever its payload's patterns are, as in
+`Shade::Tinted(1..=3)`; one with `_`, `true`, `false` or a constant as a
+bound is not read. A run has at least one equation: one of pattern tests
+alone is left as it is. Each alternative of a pattern must be reachable (`F0318`), so the lint
 fires only where each two alternatives of the fix are *disjoint*, as far as
 their text shows: two ranges of integers, a literal being a range of one,
 that share no integer, two string literals written differently, or two
@@ -185,7 +186,13 @@ last, and there is no fix where a comment is within them, which the pattern
 test would lose; the message then suggests the test. The expression is
 written as its first operand writes it, in parentheses where [fixes need
 them](../../Lint.md#parentheses-in-fixes), and each alternative as the
-operands write it.
+operands write it. Where the whole run is in parentheses as an operand of
+an operator, and the test needs none there, they go with it: `q != [] and
+(q[0] = 1 or q[0] = 2)` becomes `q != [] and q[0] is 1 | 2`. Elsewhere they
+stay, since they may belong to what the run is in, or be needed by what
+follows it: `match (x = 1 or x = 2) { ... }` becomes `match (x is 1 | 2) {
+... }`, as a scrutinee's `{` would otherwise follow the pattern, and `f(x
+= 1 or x = 2)` becomes `f(x is 1 | 2)`.
 
 It does not fire within a chain that
 [`membership_chain`](../Pedantic.md#membership-chains) reads: three or more
@@ -327,6 +334,7 @@ pub comp manual_pattern_test_written {
     in q: Seq(Int)
     pub det out plain? := s = Shade::Light or s = Shade::Dark
     pub det out tinted? := s = Shade::Light or s is Shade::Tinted(_)
+    pub det out dim? := s is Shade::Tinted(1..=3) or s = Shade::Dark
     pub det out word? := t = "a" or "b" = t
     pub det out sign? := n = -1 or n = 1
     pub det out first? := q != [] and (q[0] = 1 or q[0] = 2)
@@ -339,6 +347,7 @@ pub comp manual_pattern_test_fixed {
     in q: Seq(Int)
     pub det out plain? := s is Shade::Light | Shade::Dark
     pub det out tinted? := s is Shade::Light | Shade::Tinted(_)
+    pub det out dim? := s is Shade::Tinted(1..=3) | Shade::Dark
     pub det out word? := t is "a" | "b"
     pub det out sign? := n is -1 | 1
     pub det out first? := q != [] and q[0] is 1 | 2
