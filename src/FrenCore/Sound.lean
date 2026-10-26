@@ -538,9 +538,9 @@ the case's place hold, but perhaps not the constraint it is in
 (`Comp.reachHyps`), and its goal, that it is not taken, is false: the case
 is taken there. -/
 theorem checkReach_pass (t : TableSite F) (h : (checkReach b c t).run.verdict = .pass) :
-    ∃ ρ, s.Typed ρ ∧ s.Holds (c.defEqs .reachability ++ c.reachHyps b t.site) ρ ∧ ¬s.den t.site.goal ρ := by
+    ∃ ρ, s.Typed ρ ∧ s.Holds (c.reachHyps b t.site) ρ ∧ ¬s.den t.site.goal ρ := by
   unfold checkReach at h
-  cases hq : b.query (c.defEqs .reachability ++ c.reachHyps b t.site) t.site.goal false <;>
+  cases hq : b.query (c.reachHyps b t.site) t.site.goal false <;>
     simp [hq, vacuityVerdict, Outcome.answer] at h
   obtain ⟨ρ, ht, hρ, hg, -⟩ := s.query_sat hq
   exact ⟨ρ, ht, hρ, hg⟩
@@ -549,9 +549,9 @@ theorem checkReach_pass (t : TableSite F) (h : (checkReach b c t).run.verdict = 
 place's hypotheses, but the constraint it is in, hold. Those include
 every environment where it is evaluated (`Sound.AtSite`). -/
 theorem checkReach_fail (t : TableSite F) (h : (checkReach b c t).run.verdict = .fail) :
-    ∀ ρ, s.Typed ρ → s.Holds (c.defEqs .reachability ++ c.reachHyps b t.site) ρ → s.den t.site.goal ρ := by
+    ∀ ρ, s.Typed ρ → s.Holds (c.reachHyps b t.site) ρ → s.den t.site.goal ρ := by
   unfold checkReach at h
-  cases hq : b.query (c.defEqs .reachability ++ c.reachHyps b t.site) t.site.goal false <;>
+  cases hq : b.query (c.reachHyps b t.site) t.site.goal false <;>
     simp [hq, vacuityVerdict, Outcome.answer] at h
   exact fun ρ ht hρ => s.query_unsat hq ρ ht hρ
 
@@ -1162,7 +1162,7 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
     (∀ t ∈ c.tables, t.goal.kind ≠ .reachability → ∀ ρ, (s .realizable).Typed ρ → (s .realizable).AtSite t.site ρ →
       (s .realizable).den t.site.goal ρ) ∧
     (∀ t ∈ c.tablesOf .reachability, ∃ ρ, (s .realizable).Typed ρ ∧
-      (s .realizable).Holds (c.defEqs .reachability ++ c.reachHyps (bk .reachability) t.site) ρ ∧
+      (s .realizable).Holds (c.reachHyps (bk .reachability) t.site) ρ ∧
       ¬(s .realizable).den t.site.goal ρ) ∧
     ((∀ ρ ρ', OnlyOuts c.vars ρ ρ' → (s .realizable).Possible ρ → (s .realizable).Possible ρ') →
       (∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Admits ρ) →

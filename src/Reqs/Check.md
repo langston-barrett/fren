@@ -754,7 +754,11 @@ guarantee may be complete only because another guarantee rules out
 the cases it leaves out, and an arm of one may be unreachable because
 another guarantee rules out every behaviour that takes it. Reachability
 alone leaves out the constraint, definition or binding that the `match`
-or table is in, as above; for an assumption, that is already so.
+or table is in, as above: a definition's equation in `D` too, so that in
+`out y: Int := match x { n if n > 0 => 1, _ => 2 }` beside `ensure q: y =
+1`, the last arm is reachable, as it would be in an `ensure`. For an
+assumption, and a binding, whose instance is not among its hypotheses,
+that is already so.
 `check::reach_hypothesis` states which of the hypotheses of definedness
 reachability asks under:
 

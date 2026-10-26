@@ -496,13 +496,15 @@ of definedness's at the case and whether it is the constraint, definition
 or binding that the case is in (`check::reach_hypothesis`). -/
 def reachUses (definedness enclosing : Bool) : Bool := definedness && !enclosing
 
-/-- The hypotheses of a case's reachability: those of its place, for
-`definedness`, but the constraint, definition or binding that it is in,
-which may rule out the behaviours that take the case only because the
-case is written in it, as in `ensure r: match k { A if ok? => true, _ =>
-false }` (`check::reachability`). -/
+/-- The hypotheses of a case's reachability: those of its place for
+`definedness`, the definitions among them, but the constraint, definition
+or binding that it is in, which may rule out the behaviours that take the
+case only because the case is written in it, as in `ensure r: match k { A
+if ok? => true, _ => false }`, or in the definition of `y` beside `ensure
+q: y = 1` (`check::reachability`). A binding's own instance is never
+among them. -/
 def Comp.reachHyps (c : Comp F) (b : Backend m F V) (site : IndexSite F) : Array (Name × F) :=
-  (c.siteHyps b site).filter fun h => reachUses true (h.1 == site.prop)
+  (c.defEqs .reachability ++ c.siteHyps b site).filter fun h => reachUses true (h.1 == site.prop)
 
 /-- `reachability`: the case of a table or a `match` that the question is
 about can be taken somewhere it is evaluated, given the hypotheses of its
@@ -513,7 +515,7 @@ def checkReach (c : Comp F) (t : TableSite F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .reachability, comp := c.path, prop? := some t.site.prop, site? := some t.site.k, goal? := some t.goal
       verdict, detail }
-  let q ← b.query (c.defEqs .reachability ++ c.reachHyps b t.site) t.site.goal false
+  let q ← b.query (c.reachHyps b t.site) t.site.goal false
   match vacuityVerdict q.answer with
   | .inconclusive => return result .inconclusive (.unknown q.reason)
   | verdict => return result verdict

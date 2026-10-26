@@ -91,6 +91,16 @@ comp itself {
     ensure r: match m { Mode::Off if ok? => true, _ => false }
 }
 
+-- Likewise the definition that the `match` is in: `q` pins `y`, and `y`'s
+-- definition would pin `x`, but the definition is left out, as `r` is
+-- above.
+comp d {
+    pub out x: Int
+    pub out y: Int := match x { n if n > 0 => 1, _ => 2 }
+
+    ensure q: y = 1
+}
+
 -- Another guarantee still counts.
 comp other_guarantee {
     pub out m: Mode
@@ -154,5 +164,5 @@ comp counter {
 expect bigger: forall (c: counter), match c.m { k if k > c.n => true, _ => false }
 --~^ error: arm 2 of a `match` in `bigger` is never taken
 
---@ summary: 63 passed, 16 failed, 0 inconclusive, 0 redundant
+--@ summary: 67 passed, 16 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

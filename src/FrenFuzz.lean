@@ -213,9 +213,24 @@ partial def genBool (sc : Scope) (depth : Nat) : R String := do
     unless (sc.of .wrap).isEmpty do kinds := kinds ++ #[9, 9]
     match ← pick kinds with
     | 1 =>
-      -- A `match` on a `Bool`, with literal patterns.
+      -- A `match` on a `Bool`, with literal patterns, sometimes with a
+      -- guard on `true` that falls through to its arm without one, or
+      -- with only guarded arms, which the completeness check asks about.
       if depth > 0 && (← chance 15) then
-        return s!"(match {← pick (sc.of .bool)} \{ true => {← genBool sc (depth - 1)}, false => {← genBool sc (depth - 1)} })"
+        let b ← pick (sc.of .bool)
+        if ← chance 40 then
+          let g ← genBool sc (depth - 1)
+          if ← chance 50 then
+            return s!"(match {b} \{ true if {g} => {← genBool sc (depth - 1)}, true => {← genBool sc (depth - 1)}, false => {← genBool sc (depth - 1)} })"
+          return s!"(match {b} \{ true if {g} => {← genBool sc (depth - 1)}, false if {← genBool sc (depth - 1)} => {← genBool sc (depth - 1)}, _ => {← genBool sc (depth - 1)} })"
+        return s!"(match {b} \{ true => {← genBool sc (depth - 1)}, false => {← genBool sc (depth - 1)} })"
+      -- A table, whose rows are guarded arms, sometimes without `_`.
+      if depth > 0 && (← chance 10) then
+        let rows := #[s!"{← genBool sc (depth - 1)} => {← genBool sc (depth - 1)}",
+          s!"{← genBool sc (depth - 1)} => {← genBool sc (depth - 1)}"]
+        let wild ← if ← chance 50 then pure #[s!"_ => {← genBool sc (depth - 1)}"] else pure #[]
+        let rows := rows ++ wild
+        return s!"table \{ {", ".intercalate rows.toList} }"
       pick (sc.of .bool)
     | 2 =>
       -- A pattern test of a literal or a range, or a `match` on an `Int`.

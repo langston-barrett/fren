@@ -1369,14 +1369,16 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       let (b, t) ← lowerExpr acx body
       ty := t
       out := out.push (pat, g?, b)
-    -- Whether some arm may not be taken, as the elaborator decides it
-    -- (`Fren.Core.checkMatch`), which has accepted the spec.
+    -- Whether some arm may not be taken, by the rule that the elaborators
+    -- decide it with (`Fren.Core.checkMatch`). They have accepted the spec,
+    -- so a rejection here is a disagreement with them, an internal error,
+    -- never a default.
     let st ← get
     let sigs : Fren.Core.Sigs := fun p =>
       ((st.spec.data.find? p).map fun d => d.ctors.map fun c => (c.name, c.fields.map (·.2.patTy))).getD #[]
-    let unguardedExhaustive := match Fren.Core.checkMatch sigs t.patTy (out.map (·.1.core)) (out.map (·.2.1.isSome)) with
-      | .ok u => u
-      | .error _ => true
+    let unguardedExhaustive ← match Fren.Core.checkMatch sigs t.patTy (out.map (·.1.core)) (out.map (·.2.1.isSome)) with
+      | .ok u => pure u
+      | .error (_, msg) => throw s!"the evaluator rejects a `match` that the elaborator accepted: {msg.headline}"
     let armPos := arms.map (·.1.span.start)
     if unguardedExhaustive then return (.match s out span.start armPos none, ty)
     -- The function of the interpretation for its type's unspecified value.
