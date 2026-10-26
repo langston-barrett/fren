@@ -133,7 +133,7 @@ refine bad_mention: shifted refines rough { x := w, y := w }
 /--
 error: expectation `refinement_test::fails::below` does not hold
 
-counterexample: x = -1, precise.x = -1, precise.y = 0
+counterexample: x = 0, precise.x = 0, precise.y = 1
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: the checks of `refinement_test::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
@@ -142,7 +142,7 @@ info: the checks of `refinement_test::same` set to testing are run by `fren chec
 ---
 error: expectation `refinement_test::bound_fails::below` does not hold
 
-counterexample: v = -1, shifted.v = -1, shifted.w = 0
+counterexample: v = 0, shifted.v = 0, shifted.w = 1
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: the checks of `refinement_test::bound_by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)

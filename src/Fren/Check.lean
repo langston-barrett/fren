@@ -174,13 +174,23 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       -- sets `ALL`, which the option overrides.
       let projects (e : Expr) := (e.find? fun x => x.isConstOf ``Fren.FinSet.domain || x.isConstOf ``Fren.FinSet.range).isSome
       let logic := if projects goal || hyps.any (projects ·.2) then [("force-logic", "HO_ALL")] else []
+      -- lean-smt's defaults for its proofs, which Fren does not ask for,
+      -- back to cvc5's, as the binary leaves them: without simplification,
+      -- cvc5 cannot decide some queries that it decides with it (#173).
+      -- lean-smt reads an unsat core of every `unsat`, so it keeps those.
+      let cvc5Defaults := [("simplification", "batch"), ("enum-inst", "false"), ("enum-inst-interleave", "false"),
+        ("cegqi-midpoint", "false")]
       -- Each attempt on a goal of its own.
       let solve (model : Bool) : MetaM (Core.Outcome Expr) := do
         let mv ← mkFreshExprMVar goal
         -- The options of a spec that uses strings and sets, as in the binary (`cli::logic`).
+        -- lean-smt asserts its hints in reverse order, and cvc5's answer
+        -- can depend on the order (#173), so they are given reversed, to be
+        -- asserted in the binary's order.
         match ← Smt.smt { trust := true, model, timeout := some timeout
-                          extraSolverOptions := Core.solverOptions true true ++ logic ++ resourceLimitOptions (← getOptions) }
-                  mv.mvarId! hs with
+                          extraSolverOptions := Core.solverOptions true true ++ logic ++ cvc5Defaults
+                            ++ resourceLimitOptions (← getOptions) }
+                  mv.mvarId! hs.reverse with
         | .sat (some m) =>
           return .sat <| m.values.filterMap fun (k, v) =>
             (vars.find? (·.2 == k)).map fun (var, _) => (var.name, v)
