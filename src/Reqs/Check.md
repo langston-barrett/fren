@@ -1736,8 +1736,9 @@ enumeration is run.
 
 ### Sizes and order
 
-Each type is unfolded, for the size bound `n`, into a *shape*, a finite
-tree: a recursive enumeration's payloads are unfolded `n` deep, since a
+The values are the [values](Lang/Meaning.md#values) of `lang::Val`, and
+an abstract type's values those of an interpretation. Each type is
+unfolded, for the size bound `n`, into a *shape*, a finite tree: a recursive enumeration's payloads are unfolded `n` deep, since a
 variant's payload is one smaller than it. Each value has a *size*:
 
 | Value | Size |
@@ -1846,8 +1847,9 @@ interpretation. Each slot holds the values of its type up to the bound,
 smallest first.
 
 Each query of the [checks](#checks) is answered by searching the
-assignments of the slots that its formulas read for one that makes its
-hypotheses true and its goal false: `sat`, with that assignment as its
+assignments of the slots that its formulas read, the variables that they
+mention (`lang::node`'s `mentioned`, see [Meaning](Lang/Meaning.md)), for
+one that makes its hypotheses true and its goal false: `sat`, with that assignment as its
 model, or `unsat` if there is none. The assignments are searched fairly,
 by *level*, the largest size of an assignment's values: every assignment
 of level 0, then of level 1, up to the bound, and within a level in the
