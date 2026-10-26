@@ -3285,30 +3285,15 @@ def lintMemberOrder (members : Array Member) (spans : Array Span) (openStop : Na
   | some edit => lintEdits .arbitrarySourceItemOrdering at_ msg #[edit]
   | none => lint .arbitrarySourceItemOrdering at_ msg
 
-def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Array Span) (openStop : Nat) : M Unit := do
-  let n := Name.mkSimple name.name
-  modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[], natApps := #[] }
-  liftMsg name.span (Fren.Core.checkItemName "component" n)
-  let module := (← get).module
-  liftMsg name.span ((← get).table.checkFresh module n)
-  lintName .component n name.span
-  startDeclared
-  declareMemberUses (module ++ n) members
-  -- Distinct names (`lang::distinct_names`): variables, instances and
-  -- constraints share one namespace.
-  let named := members.filterMap fun
-    | .var _ _ _ x _ _ | .inst x _ _ | .prop _ x _ => some x
-    | _ => none
-  -- By the names they declare, without the `!` of shadowing.
-  let declared := named.map fun x => Name.mkSimple (declaredIdent x).1.name
-  if let some k := (Fren.Core.repeatsAt declared)[0]? then
-    err named[k]!.span (Fren.Core.dupMemberMsg declared[k]!)
-  lintMemberOrder members spans openStop
-  modify fun s => { s with inCompBody := true }
-  -- Each variable, instance, binding, definition and constraint reports its
-  -- own first static error; after those of the variables, and of the
-  -- instances, the item stops, since what follows would only repeat them
-  -- (`Reqs/View#static-errors`).
+/-! ### `elabComp`, in parts
+
+Each part is a definition of its own, so that the compiler, whose time grows
+faster than the length of a `do` block, compiles several short ones, and
+in parallel. -/
+
+/-- A comp's variables, each reporting its own first static error, and one
+cycle of definitions. -/
+def elabCompVars (members : Array Member) : M (Array CVar) := do
   let mut vars := #[]
   for m in members do
     let .var isIn isPub' isDet x ty? defn? := m | continue
@@ -3327,8 +3312,12 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
   -- One cycle is reported.
   if let some (v, cycle) := vars.findSome? fun v => (defCycle? vars v.name).map (v, ·) then
     discard <| attempt (err (α := Unit) v.span (Fren.Core.cyclicDefinitionMsg cycle))
-  stopIfErrors
-  -- Instances, whose variables follow the comp's own
+  return vars
+
+/-- A comp's instances, whose variables follow the comp's own `vars`: the
+instances still to elaborate, and all the variables. -/
+def elabCompInsts (members : Array Member) (vars : Array CVar) : M (Array PendingInst × Array CVar) := do
+  let mut vars := vars
   let mut pending := #[]
   for m in members do
     let .inst x p bs := m | continue
@@ -3346,8 +3335,12 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
     -- instance's assumption check reads them (`unused_assumption`).
     let reads := (pi.comp.vars.filter fun v => v.name.isAtomic && v.role == Role.input).map (pi.comp.path, ·.name)
     modify fun s => { s with globalReads := s.globalReads ++ reads }
-  stopIfErrors
-  let instNames := pending.map (Name.mkSimple ·.name.name)
+  return (pending, vars)
+
+/-- The bindings of a comp's instances `pending`, with their indexes and
+questions about tables. -/
+def elabCompBindings (vars : Array CVar) (instNames : Array Name) (pending : Array PendingInst) :
+    M (Array CInst × Array (Name × Fren.Core.IndexPlace × Span × String) × Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) := do
   let mut insts := #[]
   let mut indexes : Array (Name × Fren.Core.IndexPlace × Span × String) := #[]
   let mut tables : Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String) := #[]
@@ -3362,7 +3355,14 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
     insts := insts.push i
     indexes := indexes ++ idx
     tables := tables ++ tbl
-  -- Definitions, each after those it mentions.
+  return (insts, indexes, tables)
+
+/-- A comp's definitions, each after those it mentions, with their indexes
+and questions about tables added to `indexes` and `tables`. -/
+def elabCompDefinitions (name : Ident) (vars : Array CVar) (instNames : Array Name) (indexes : Array (Name × Fren.Core.IndexPlace × Span × String))
+    (tables : Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) : M (Array (Name × String) × Array (Name × Fren.Core.IndexPlace × Span × String) × Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) := do
+  let mut indexes := indexes
+  let mut tables := tables
   let mut defs : Array (Name × String) := #[]
   let mut todo := vars.filter (·.defn?.isSome)
   while !todo.isEmpty do
@@ -3381,6 +3381,14 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
     defs := defs.push (v.name, smt)
     indexes := indexes ++ idx
     tables := tables ++ tbl
+  return (defs, indexes, tables)
+
+/-- A comp's assumptions, requirements, expectations and cover goals, with
+their indexes and questions about tables added to `indexes` and `tables`. -/
+def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames : Array Name) (indexes : Array (Name × Fren.Core.IndexPlace × Span × String))
+    (tables : Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) : M (Array CProp × Array (Name × Fren.Core.IndexPlace × Span × String) × Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) := do
+  let mut indexes := indexes
+  let mut tables := tables
   let mut props := #[]
   for m in members do
     let .prop kind x e := m | continue
@@ -3403,7 +3411,11 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
     props := props.push p
     indexes := indexes ++ idx
     tables := tables ++ tbl
-  -- `duplicate_constraint` (`lint::duplicate_constraint`).
+  return (props, indexes, tables)
+
+/-- `duplicate_constraint` (`lint::duplicate_constraint`), of a comp's
+constraints. -/
+def lintDuplicateConstraints (members : Array Member) : M Unit := do
   let src := (← get).src
   let constraints := members.filterMap fun | .prop k x e => k.core?.map (·, x, e) | _ => none
   for (i, j) in Fren.Core.repeatedConstraints (← constraints.mapM fun (_, _, e) => srcAt (e.writtenSpan src)) do
@@ -3414,8 +3426,10 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
       let stop := withLineComment src (Fren.Core.withParens src (toRange (e.writtenSpan src))).stop
       lintEdits .duplicateConstraint x.span msg #[(Fren.Core.deletionRange src { start := wordStart src x.span.start, stop }, "")]
     else lint .duplicateConstraint x.span msg
-  -- `constant_output` and `definable_output` (`lint::output_lints`).
-  let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
+
+/-- `constant_output` and `definable_output` (`lint::output_lints`), of a
+comp's outputs. -/
+def lintOutputs (lcx : ExprCtx) (members : Array Member) (vars : Array CVar) : M Unit := do
   let reqs := members.filterMap fun | .prop .ensure x e => some (Name.mkSimple x.name, e) | _ => none
   for v in vars.filter (fun v => v.role == .output && v.name.isAtomic) do
     let isX : Expr → Bool | .path _ #[seg] => Name.mkSimple seg.name == v.name | _ => false
@@ -3429,6 +3443,10 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
     let (constant, definable) := Fren.Core.outputLints v.defn?.isSome mentions about.size equation
     if constant then lint .constantOutput v.span (Fren.Core.constantOutputMsg v.name)
     if definable then lint .definableOutput v.span (Fren.Core.definableOutputMsg v.name about[0]!.1)
+
+/-- `case_split_guarantees` (`lint::case_split_guarantees`), of a comp's
+requirements. -/
+def lintCaseSplitGuarantees (lcx : ExprCtx) (members : Array Member) (vars : Array CVar) : M Unit := do
   -- `case_split_guarantees` (`lint::case_split_guarantees`): each requirement `when T, y = e`, as its name, where it is
   -- reported, `y`, the operator, `T` and the text of `e`.
   let mut cases : Array (Name × Span × String × String × Fren.Core.VariantTest × String) := #[]
@@ -3449,9 +3467,10 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
     let n := (((← get).table.enums.get? t.enum).map (·.variants.size)).getD 0
     if Fren.Core.caseSplitGuarantees cs.size (Fren.Core.repeatedVariants ts) then
       lint .caseSplitGuarantees cases[group[1]!]!.2.1 (Fren.Core.caseSplitGuaranteesMsg y op cs (Fren.Core.untestedVariants n ts))
-  -- The lints above are found despite a constraint's static error, as in
-  -- Lean; `unused_variables`, and the rest, only without one.
-  stopIfErrors
+
+/-- `unused_variables` and `unused_assumption` of the comp `n`, whose
+members had no static error. -/
+def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (instNames : Array Name) : M Unit := do
   let mentioned := members.foldl (init := #[]) fun acc m => match m with
     | .prop _ _ e | .var _ _ _ _ _ (some e) => acc ++ mentions e
     | .inst _ _ bs => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
@@ -3489,6 +3508,47 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
         { component := (← get).module ++ n, name := Name.mkSimple x.name, inputs := ms, links := ls
           level := (← get).levels.get .unusedAssumption }
       modify fun s => { s with assumptions := s.assumptions.push (r, x.span) }
+
+def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Array Span) (openStop : Nat) : M Unit := do
+  let n := Name.mkSimple name.name
+  modify fun s => { s with outsideCore := false, relationalUsed := false, countSpans := #[], natApps := #[] }
+  liftMsg name.span (Fren.Core.checkItemName "component" n)
+  let module := (← get).module
+  liftMsg name.span ((← get).table.checkFresh module n)
+  lintName .component n name.span
+  startDeclared
+  declareMemberUses (module ++ n) members
+  -- Distinct names (`lang::distinct_names`): variables, instances and
+  -- constraints share one namespace.
+  let named := members.filterMap fun
+    | .var _ _ _ x _ _ | .inst x _ _ | .prop _ x _ => some x
+    | _ => none
+  -- By the names they declare, without the `!` of shadowing.
+  let declared := named.map fun x => Name.mkSimple (declaredIdent x).1.name
+  if let some k := (Fren.Core.repeatsAt declared)[0]? then
+    err named[k]!.span (Fren.Core.dupMemberMsg declared[k]!)
+  lintMemberOrder members spans openStop
+  modify fun s => { s with inCompBody := true }
+  -- Each variable, instance, binding, definition and constraint reports its
+  -- own first static error; after those of the variables, and of the
+  -- instances, the item stops, since what follows would only repeat them
+  -- (`Reqs/View#static-errors`).
+  let vars ← elabCompVars members
+  stopIfErrors
+  let (pending, vars) ← elabCompInsts members vars
+  stopIfErrors
+  let instNames := pending.map (Name.mkSimple ·.name.name)
+  let (insts, indexes, tables) ← elabCompBindings vars instNames pending
+  let (defs, indexes, tables) ← elabCompDefinitions name vars instNames indexes tables
+  let (props, indexes, tables) ← elabCompConstraints members vars instNames indexes tables
+  lintDuplicateConstraints members
+  let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
+  lintOutputs lcx members vars
+  lintCaseSplitGuarantees lcx members vars
+  -- The lints above are found despite a constraint's static error, as in
+  -- Lean; `unused_variables`, and the rest, only without one.
+  stopIfErrors
+  lintCompUnused n members vars instNames
   let path := module ++ n
   let tested ← testedOf (← evidenceInEffect) members
   let (relational, counts) ← checkCounts
