@@ -4319,10 +4319,22 @@ def trailingCommas (toks : Array Token) : Array (Span × String) :=
   let texts := toks.map fun t => ((match t.tok with | .kw k => k | _ => ""), t.nlBefore)
   (Fren.Core.trailingCommas texts).map fun i => (toks[i]!.span, texts[i + 1]!.1)
 
+/-- The index of the first of `found`, which is in order of where each
+starts, that starts at `pos` or after, or its size if none does. -/
+def firstFrom (found : Array (Lint × Span × Msg)) (pos : Nat) : Nat :=
+  go 0 found.size
+where
+  go (lo hi : Nat) : Nat :=
+    if h : lo < hi then
+      let mid := (lo + hi) / 2
+      if found[mid]!.2.1.start < pos then go (mid + 1) hi else go lo mid
+    else lo
+  termination_by hi - lo
+
 /-- Elaborates the items of one file, whose text is `src`, and which start
 at `starts`, collecting an error per failed item, where `trailingCommas`
 are the commas that `unnecessary_trailing_comma` reports, and `found` the
-file's `literalLints`. `fren fix` fixes the lints `fixing` in it. -/
+file's `literalLints`, in order of where each starts. `fren fix` fixes the lints `fixing` in it. -/
 def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Array Nat)
     (trailingCommas : Array (Span × String)) (found : Array (Lint × Span × Msg)) (fixing : Array Lint := #[]) :
     StateM State Unit := do
@@ -4338,7 +4350,10 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
     let start := starts[k]?.getD 0
     let stop := starts[k + 1]?.getD src.size
     let left ← if k > 0 && items[k - 1]! matches .lintSetting .. then pure (← get).literals else pure #[]
-    let literals := left ++ found.filter fun (_, sp, _) => (k == 0 || start ≤ sp.start) && sp.start < stop
+    -- `found` is in order of where each starts, so those that start in
+    -- `[start, stop)` are a slice of it.
+    let lo := if k == 0 then 0 else firstFrom found start
+    let literals := left ++ found.extract lo (firstFrom found stop)
     modify fun s => { s with itemStart := start, literals, itemSpan := { start, stop } }
     let s ← get
     match (elabItem item).run s with
