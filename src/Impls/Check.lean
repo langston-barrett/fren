@@ -318,6 +318,236 @@ impl postcondition_at: check::postcondition_at for (p0 p1 q0 q1 : Bool) {
   reports_cex? := (postconditionResult (pre p0 p1) (pre q0 q1)).detail matches .counterexample ..,
 }
 
+/-! ## The position of the first of a value in a sequence -/
+
+theorem find?_range_getElem? [DecidableEq α] (l : List α) (x : α) :
+    (List.range (l.length + 1)).find? (fun k => l[k]? == some x) = l.findIdx? (· == x) := by
+  induction l with
+  | nil => simp
+  | cons a l ih =>
+    rw [List.length_cons, List.range_succ_eq_map, List.find?_cons, List.findIdx?_cons]
+    by_cases h : a = x
+    · simp [h]
+    · have hx : (a == x) = false := by simp [h]
+      simp [hx, List.find?_map, Function.comp_def, ih]
+
+theorem isPrefixOf_single [DecidableEq α] (l : List α) (x : α) (k : Nat) :
+    [x].isPrefixOf (l.drop k) = (l[k]? == some x) := by
+  have hd := List.head?_drop (l := l) (i := k)
+  cases h : l.drop k with
+  | nil => rw [h] at hd; simp at hd; simp [List.isPrefixOf, List.getElem?_eq_none hd]
+  | cons b bs =>
+    rw [h] at hd; simp at hd
+    simp only [List.isPrefixOf, ← hd, Bool.and_true]
+    by_cases hb : b = x
+    · simp [hb]
+    · have hb' : ¬x = b := fun e => hb e.symm
+      rw [beq_eq_false_iff_ne.2 hb']
+      simp [hb]
+
+/-- `q.index_of([x], 0)`, the position of the first `x` in `q`, `-1` if none. -/
+theorem indexOf_single [DecidableEq α] (l : List α) (x : α) :
+    Fren.Seq.indexOf (Fren.Seq.ofList l) (Fren.Seq.unit x) 0 = ((l.findIdx? (· == x)).map Int.ofNat).getD (-1) := by
+  unfold Fren.Seq.indexOf
+  simp only [Fren.Seq.toList_ofList, Fren.Seq.toList_unit, Int.toNat_zero, Nat.zero_add]
+  have hf : (fun k => [x].isPrefixOf (l.drop k)) = (fun k => l[k]? == some x) := funext (isPrefixOf_single l x)
+  simp only [show (0 : Int) ≤ 0 by omega, Int.natCast_nonneg, and_self, if_true, Nat.sub_zero, hf, find?_range_getElem?]
+  cases l.findIdx? (· == x) <;> simp
+
+/-! ## The goals of the questions about guarded arms -/
+
+/-- What a case does where the goal builder sees it (`Fren.Core.splitGoals`):
+`none` for one taken wherever it is tried, and otherwise whether it is
+taken. A `match`'s arm is its pattern's test and its guard; a table's row
+is its condition, and its `_` row `none`. -/
+def armAtOf : Option Bool → check.ArmAt
+  | some false => .NoMatch
+  | _ => .Taken
+
+theorem armAtOf_taken (t : Option Bool) : armAtOf t = .Taken ↔ t.getD true = true := by
+  rcases t with _ | _ | _ <;> simp [armAtOf]
+
+theorem foldr_and (l : List Bool) (x : Bool) : l.foldr (· && ·) x = (l.all id && x) := by
+  induction l <;> simp_all [Bool.and_assoc]
+
+/-- `allOf?` over `Bool`s is `all`, `true` of none. -/
+theorem allOf?_and (xs : Array Bool) : (Fren.Core.allOf? (· && ·) xs).getD true = xs.all id := by
+  rcases xs with ⟨l⟩
+  rcases List.eq_nil_or_concat l with rfl | ⟨l, x, rfl⟩
+  · simp [Fren.Core.allOf?]
+  · have : ({ toList := l.concat x } : Array Bool) = (l ++ [x]).toArray := by simp
+    rw [this, ← List.push_toArray]
+    simp [Fren.Core.allOf?, foldr_and]
+    rfl
+
+/-- The position of the first case taken, `-1` if none. -/
+def firstTaken (t : List (Option Bool)) : Int :=
+  (((t.map (·.getD true)).findIdx? id).map Int.ofNat).getD (-1)
+
+theorem reachGoal_bool (t : List (Option Bool)) (j : Nat) (hj : j < t.length) :
+    Fren.Core.reachGoal (· && ·) (!·) true t.toArray j = true ↔ firstTaken t ≠ j := by
+  -- `j` is the first case taken exactly when it is taken and none before it is.
+  have key : firstTaken t = j ↔
+      (t[j].getD true = true ∧ ∀ i (hi : i < j), (t[i]'(Nat.lt_trans hi hj)).getD true = false) := by
+    simp only [firstTaken]
+    constructor
+    · intro h
+      cases hf : List.findIdx? id (t.map (·.getD true)) with
+      | none => rw [hf] at h; simp at h
+      | some i =>
+        rw [hf] at h
+        simp only [Option.map_some, Option.getD_some, Int.ofNat_eq_natCast] at h
+        have hij : i = j := by omega
+        subst hij
+        obtain ⟨_, hp, hb⟩ := List.findIdx?_eq_some_iff_getElem.1 hf
+        exact ⟨by simpa using hp, fun k hk => by simpa using hb k hk⟩
+    · rintro ⟨hp, hb⟩
+      have : List.findIdx? id (t.map (·.getD true)) = some j :=
+        List.findIdx?_eq_some_iff_getElem.2 ⟨by simpa using hj, by simpa using hp, fun k hk => by simpa using hb k hk⟩
+      rw [this]
+      rfl
+  have hfails : (List.map (fun t? => !t?.getD true) (t.extract 0 j)).all id = true ↔
+      ∀ i (hi : i < j), (t[i]'(Nat.lt_trans hi hj)).getD true = false := by
+    have hx : t.extract 0 j = t.take j := by simp [List.extract_eq_take_drop]
+    rw [hx, List.all_eq_true]
+    constructor
+    · intro h i hi
+      have hm : t[i]'(Nat.lt_trans hi hj) ∈ t.take j := by
+        rw [List.mem_iff_getElem]
+        exact ⟨i, by simp; omega, by simp⟩
+      simpa using h _ (List.mem_map.2 ⟨_, hm, rfl⟩)
+    · intro h x hx
+      obtain ⟨y, hy, rfl⟩ := List.mem_map.1 hx
+      obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.1 hy
+      simp only [List.length_take] at hi
+      have := h i (by omega)
+      simp only [List.getElem_take] at this ⊢
+      simp [this]
+  have hB : (t[j].toArray.all id) = t[j].getD true := by
+    cases t[j] with
+    | none => simp
+    | some b => cases b <;> simp
+  have hval : Fren.Core.reachGoal (· && ·) (!·) true t.toArray j =
+      !((List.map (fun t? => !t?.getD true) (t.extract 0 j)).all id && t[j].getD true) := by
+    simp only [Fren.Core.reachGoal, allOf?_and, Array.all_append, List.extract_toArray, List.map_toArray,
+      List.all_toArray, List.getElem?_toArray, List.getElem?_eq_getElem hj, Option.join_some, hB]
+  rw [hval, ne_eq, key, ← hfails]
+  cases (List.map (fun t? => !t?.getD true) (t.extract 0 j)).all id <;> cases t[j].getD true <;> simp
+
+theorem completeGoal_bool (t : List (Option Bool)) :
+    Fren.Core.completeGoal (fun cs => cs.any id) true t.toArray = true ↔ firstTaken t ≥ 0 := by
+  simp only [Fren.Core.completeGoal, Fren.Core.someCase, firstTaken]
+  cases h : List.findIdx? id (List.map (fun x => x.getD true) t) with
+  | none =>
+    rw [List.findIdx?_eq_none_iff] at h
+    simp
+    intro x hx
+    simpa using h _ (List.mem_map.2 ⟨x, hx, rfl⟩)
+  | some i =>
+    obtain ⟨hlt, hp, _⟩ := List.findIdx?_eq_some_iff_getElem.1 h
+    simp only [List.getElem_map, id_eq] at hp
+    simp only [List.length_map] at hlt
+    simp only [List.map_toArray, List.any_toArray, List.any_map, List.any_eq_true, Option.map_some, Option.getD_some,
+      Int.ofNat_eq_natCast]
+    exact ⟨fun _ => by omega, fun _ => ⟨t[i], List.getElem_mem _, by simpa using hp⟩⟩
+
+impl split_questions: check::split_questions for (t : List (Option Bool)) (j k : Int) {
+  arms := Fren.Seq.ofList (t.map armAtOf),
+  j := j,
+  k := k,
+  first := firstTaken t,
+  reach_goal? := Fren.Core.reachGoal (· && ·) (!·) true t.toArray j.toNat,
+  complete_goal? := Fren.Core.completeGoal (fun cs => cs.any id) true t.toArray,
+} by
+  intro t j k hA
+  simp [check.split_questions.assumes] at hA
+  obtain ⟨hj0, hj1⟩ := hA
+  simp only [fren_spec]
+  have hj1' : j < t.length := by simpa [Fren.Seq.len_eq] using hj1
+  have hjn : j.toNat < t.length := by omega
+  refine ⟨?_, ?_, completeGoal_bool t⟩
+  · rw [indexOf_single, firstTaken, List.findIdx?_map, List.findIdx?_map]
+    congr 3
+    funext a
+    rcases a with _ | _ | _ <;> rfl
+  · rw [reachGoal_bool t j.toNat hjn]
+    constructor <;> intro h hc <;> apply h <;> omega
+
+/-- Whether an arm has a guard (`check::GuardOf`). -/
+def guardOf (g : Bool) : check.GuardOf := if g then .Guarded else .Unguarded
+
+/-- Some case at or before `j` is `true`, as `armAsked` reads it. -/
+theorem armAsked_iff (gs : List Bool) (j : Nat) :
+    Fren.Core.armAsked gs.toArray j = true ↔ ∃ k, ∃ h : k < gs.length, k ≤ j ∧ gs[k] = true := by
+  simp only [Fren.Core.armAsked, Fren.Core.reachabilityAsked, List.getElem?_toArray, List.extract_toArray,
+    List.any_toArray, Bool.or_eq_true]
+  have hx : gs.extract 0 j = gs.take j := by simp [List.extract_eq_take_drop]
+  rw [hx, List.any_eq_true]
+  constructor
+  · rintro (h | ⟨x, hx, hx'⟩)
+    · cases hg : gs[j]? with
+      | none => simp [hg] at h
+      | some b =>
+        rw [hg] at h
+        obtain ⟨hlt, he⟩ := List.getElem?_eq_some_iff.1 hg
+        exact ⟨j, hlt, Nat.le_refl _, by simpa [he] using h⟩
+    · obtain ⟨k, hk, rfl⟩ := List.mem_iff_getElem.1 hx
+      simp only [List.length_take] at hk
+      exact ⟨k, by omega, by omega, by simpa using hx'⟩
+  · rintro ⟨k, hk, hkj, hg⟩
+    by_cases hkj' : k = j
+    · subst hkj'
+      left
+      simp [List.getElem?_eq_getElem hk, hg]
+    · right
+      refine ⟨gs[k], List.mem_iff_getElem.2 ⟨k, by simp; omega, by simp⟩, by simpa using hg⟩
+
+/-- The first `true` is at or before `j` exactly when some `true` is. -/
+theorem findIdx?_le_iff (gs : List Bool) (j : Int) :
+    (0 ≤ ((gs.findIdx? id).map Int.ofNat).getD (-1) ∧ ((gs.findIdx? id).map Int.ofNat).getD (-1) ≤ j) ↔
+      (0 ≤ j ∧ ∃ k, ∃ h : k < gs.length, (k : Int) ≤ j ∧ gs[k] = true) := by
+  cases hf : gs.findIdx? id with
+  | none =>
+    rw [List.findIdx?_eq_none_iff] at hf
+    simp only [Option.map_none, Option.getD_none]
+    constructor
+    · intro h; omega
+    · rintro ⟨_, k, hk, _, hg⟩
+      exact absurd (hf _ (List.getElem_mem hk)) (by simp [hg])
+  | some i =>
+    obtain ⟨hlt, hp, hb⟩ := List.findIdx?_eq_some_iff_getElem.1 hf
+    simp only [Option.map_some, Option.getD_some, Int.ofNat_eq_natCast]
+    constructor
+    · rintro ⟨_, hij⟩
+      exact ⟨by omega, i, hlt, hij, by simpa using hp⟩
+    · rintro ⟨_, k, hk, hkj, hg⟩
+      have hik : i ≤ k := by
+        refine Nat.le_of_not_lt fun hki => ?_
+        exact hb k hki (by simpa using hg)
+      exact ⟨by omega, by omega⟩
+
+-- `splitGoals` asks about the arms that `armAsked` says, the guards
+-- read from the arms of a `match` in order (`check::arms_asked`).
+impl arms_asked: check::arms_asked for (gs : List Bool) (j : Int) {
+  guards := Fren.Seq.ofList (gs.map guardOf),
+  j := j,
+  asked? := decide (0 ≤ j) && Fren.Core.armAsked gs.toArray j.toNat,
+} by
+  intro gs j _
+  simp only [fren_spec]
+  have hm : List.findIdx? (· == check.GuardOf.Guarded) (gs.map guardOf) = gs.findIdx? id := by
+    rw [List.findIdx?_map]
+    congr 1
+    funext g
+    cases g <;> rfl
+  rw [indexOf_single, hm, findIdx?_le_iff, Bool.and_eq_true, decide_eq_true_eq]
+  constructor
+  · rintro ⟨hj, ha⟩
+    obtain ⟨k, hk, hkj, hg⟩ := (armAsked_iff gs j.toNat).1 ha
+    exact ⟨hj, k, hk, by omega, hg⟩
+  · rintro ⟨hj, k, hk, hkj, hg⟩
+    exact ⟨hj, (armAsked_iff gs j.toNat).2 ⟨k, hk, by omega, hg⟩⟩
+
 -- The two families of verdicts: `expectVerdict` for the checks that prove,
 -- `vacuityVerdict` for those that ask whether something can hold.
 impl proved: check::proved for (q : Answer) {

@@ -59,6 +59,35 @@ def reachabilityAsked (guarded afterGuard : Bool) : Bool := guarded || afterGuar
 without guards are exhaustive (`check::completeness_asked`). -/
 def completenessAsked (unguardedExhaustive : Bool) : Bool := !unguardedExhaustive
 
+/-- The case of a split whose cases are tried in turn that is taken, with
+its result (`lang::guarded_match`): `take c` is `none` where whether `c` is
+taken is unknown, `some none` where it is not, and `some (some r)` where
+it is, with `r`. Where none is taken, `some none`. The evaluator reads a
+`match` and a table by it. -/
+def firstCase : List α → (take : α → Option (Option β)) → Option (Option β)
+  | [], _ => some none
+  | c :: cs, take => match take c with
+    | none => none
+    | some none => firstCase cs take
+    | some (some r) => some (some r)
+
+/-- The goal of the reachability of case `j` of a split whose cases are
+taken where `taken` says (`none` for one taken wherever it is tried): not
+that no earlier case is taken and `j` is (`check::split_questions`). -/
+def reachGoal (andF : α → α → α) (notF : α → α) (trueF : α) (taken : Array (Option α)) (j : Nat) : α :=
+  let fails := (taken.extract 0 j).map fun t? => notF (t?.getD trueF)
+  notF ((allOf? andF (fails ++ (taken[j]?.join).toArray)).getD trueF)
+
+/-- The goal of the completeness of a split: that some case is taken
+(`check::split_questions`). -/
+def completeGoal (orF : Array α → α) (trueF : α) (taken : Array (Option α)) : α :=
+  someCase orF (taken.map (·.getD trueF))
+
+/-- Whether the reachability of case `j` is asked, of the cases of which
+those with a guard are `guarded` (`check::arms_asked`). -/
+def armAsked (guarded : Array Bool) (j : Nat) : Bool :=
+  reachabilityAsked (guarded[j]?.getD false) ((guarded.extract 0 j).any id)
+
 /-- The questions about a split of kind `s` whose cases are taken where
 `taken` says, each its test and guard, or `none` for a case that is taken
 wherever it is tried, and of which those that have a guard are `guarded`:
@@ -67,14 +96,10 @@ that has a guard or follows one, in order (`check::completeness`,
 `check::reachability`). `trueF` is the formula `true`. -/
 def splitGoals (s : Split) (orF : Array α → α) (andF : α → α → α) (notF : α → α) (trueF : α)
     (taken : Array (Option α)) (guarded : Array Bool) (complete : Bool) : Array (TableGoal × α) :=
-  let completeness := if complete then #[(TableGoal.completeness s, someCase orF (taken.map (·.getD trueF)))] else #[]
+  let completeness := if complete then #[(TableGoal.completeness s, completeGoal orF trueF taken)] else #[]
   let reach := (Array.range taken.size).filterMap fun j =>
-    let afterGuard := (guarded.extract 0 j).any id
-    if !reachabilityAsked (guarded[j]?.getD false) afterGuard then none else
-    -- No case before it is taken, and it is.
-    let fails := (taken.extract 0 j).map fun t? => notF (t?.getD trueF)
-    let both := allOf? andF (fails ++ taken[j]!.toArray) |>.getD trueF
-    some (TableGoal.reachability s j, notF both)
+    if !armAsked guarded j then none else
+    some (TableGoal.reachability s j, reachGoal andF notF trueF taken j)
   completeness ++ reach
 
 /-- The questions about a table whose rows other than `_` have the

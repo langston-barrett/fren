@@ -644,27 +644,36 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
     return .ctor ty idx vs
   -- The first row whose condition holds; where none does, the
   -- interpretation's unspecified value of its type.
+  -- As the arms `_ if C => v` and `_ => v` (`Fren.Core.firstCase`).
   | .table _ rows unspec? => do
-    for (_, c?, v) in rows do
-      match c? with
-      | none => return ← v.eval I look locals slots
-      | some c =>
-        let .bool b ← c.eval I look locals slots | none
-        if b then return ← v.eval I look locals slots
-    I.fn (← unspec?) #[]
+    let taken? ← Fren.Core.firstCase (rows.toList) fun (_, c?, v) => match c? with
+      | none => some (some v)
+      | some c => match c.eval I look locals slots with
+        | some (.bool true) => some (some v)
+        | some (.bool false) => some none
+        | _ => none
+    match taken? with
+    | some v => v.eval I look locals slots
+    | none => I.fn (← unspec?) #[]
   -- A closed expression, which neither variables nor binders reach.
   | .const _ e => e.eval I (fun _ => none)
   -- The first arm whose pattern matches and whose guard holds; where none
   -- is taken, the interpretation's unspecified value of its type.
+  -- The first arm that is taken: whose pattern matches and whose guard
+  -- holds (`Fren.Core.firstCase`, `lang::guarded_match`).
   | .match e arms _ _ unspec? => do
     let v ← e.eval I look locals slots
-    for (p, g?, body) in arms do
-      let some new := p.matchVal v | continue
-      if let some g := g? then
-        let .bool b ← g.eval I look (new ++ locals) slots | none
-        unless b do continue
-      return ← body.eval I look (new ++ locals) slots
-    I.fn (← unspec?) #[]
+    let taken? ← Fren.Core.firstCase arms.toList fun (p, g?, body) => match p.matchVal v with
+      | none => some none
+      | some new => match g? with
+        | none => some (some (new, body))
+        | some g => match g.eval I look (new ++ locals) slots with
+          | some (.bool true) => some (some (new, body))
+          | some (.bool false) => some none
+          | _ => none
+    match taken? with
+    | some (new, body) => body.eval I look (new ++ locals) slots
+    | none => I.fn (← unspec?) #[]
   -- The conjunction or disjunction of its instances, decided when one
   -- instance decides it.
   | .quant all names insts body =>
