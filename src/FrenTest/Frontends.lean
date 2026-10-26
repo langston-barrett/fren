@@ -15,10 +15,11 @@ fuzzing"). `fren_fuzz_frontends` compares the front ends with it;
   command: Lean must then report a parse error (`isLeanParseError`) in the
   same item, at or before the parse error's line, and nothing else is
   compared.
-- Lean's own errors (`isLeanOwn`, such as `Type mismatch`) stand for the
-  binary's static errors on the same line, as `--~[hosted]` does in the ui
-  tests, but not for its checks' results.
-  A Lean error with no error of the binary on its line is always reported.
+- A parse error of Lean's (`isLeanParseError`) stands for the binary's
+  static errors on the same line, as `--~[hosted]` does in the ui tests,
+  but not for its checks' results. Every other message must agree, type
+  errors included. A Lean error with no error of the binary on its line is
+  always reported.
 - Messages are compared by line, severity and first line, with the values
   of a model masked (`normHead`). So are the requirements that a
   realizability failure names, which are a minimal set that conflicts on
@@ -131,17 +132,6 @@ def isCheckResult (d : Diagnostic) : Bool :=
   | some c => c.startsWith "F06"
   | none => isCheckHeadline (headOf d)
 
-/-- Lean's own errors, which the Lean front end reports for parse and type
-errors that the binary reports with a Fren code (as `--~[hosted]` does in
-the ui tests). -/
-def leanOwn : List String :=
-  ["Type mismatch", "type mismatch", "Application type mismatch", "failed to synthesize",
-   "unexpected token", "unexpected identifier", "unknown identifier", "unknown constant",
-   "Function expected", "function expected", "invalid", "ambiguous", "elaboration function",
-   "typeclass instance problem", "don't know how to synthesize", "unterminated"]
-
-def isLeanOwn (d : Diagnostic) : Bool := d.severity == "error" && leanOwn.any ((headOf d).startsWith ·)
-
 /-- An error of Lean's parser, which Fren's grammar is written in: its
 messages start with `unexpected` (`unexpected token 'x'; expected term`,
 `unexpected identifier; expected '}'`, `unexpected end of input`), with
@@ -239,13 +229,13 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
     match cs.findIdx? fun c => c.line == h.line && c.severity == h.severity && normHead c.text == normHead h.text with
     | some i => cs := cs.eraseIdx! i
     | none => hostedOnly := hostedOnly.push h
-  -- Lean's own errors for the binary's errors on the same line.
-  -- Only static errors: a check that fails in the binary is not one that
-  -- Lean rejects.
+  -- Lean's parse errors for the binary's errors on the same line: only
+  -- those may be worded differently (`Reqs/View`). Only static errors: a
+  -- check that fails in the binary is not one that Lean rejects.
   let staticErr (c : Diagnostic) := c.severity == "error" && !isCheckResult c
   let cliErrorLines := cs.filter staticErr |>.map (·.line)
-  let leanLines := hostedOnly.filter isLeanOwn |>.map (·.line)
-  hostedOnly := hostedOnly.filter fun h => !(isLeanOwn h && cliErrorLines.contains h.line)
+  let leanLines := hostedOnly.filter isLeanParseError |>.map (·.line)
+  hostedOnly := hostedOnly.filter fun h => !(isLeanParseError h && cliErrorLines.contains h.line)
   cs := cs.filter fun c => !(staticErr c && leanLines.contains c.line)
   let mut out := stopped ++ sameInput ++ cs.map (render "fren") ++ hostedOnly.map (render "Lean")
   let undecided := cs.all isUndecided && hostedOnly.all isUndecided

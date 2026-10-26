@@ -14,10 +14,11 @@ A static error is a syntax error, a name that cannot be resolved or is not
 visible, a duplicate name, a type error, nonlinear arithmetic, or a
 violation of a rule such as [Boolean naming](Lang/Types.md#boolean-names).
 Each is an error at the offending source position. A denied
-[lint](Lint.md), such as an unused import, is a static error too. In
-Lean, syntax and type errors are Lean's own, and are worded differently,
-except for operators of other languages (`==`, `&&`, `||`, `!`), which
-both front ends report with what to write instead.
+[lint](Lint.md), such as an unused import, is a static error too. Both
+front ends report each static error with the same words, at the same
+position, except syntax errors. In Lean those are reported by Lean's
+parser, in its own words, though both front ends report the operators of
+other languages (`==`, `&&`, `||`, `!`) alike, with what to write instead.
 
 Any static error means that no check runs, with either front end: instead
 of the checks' results and summary, the `fren` command ends with `could

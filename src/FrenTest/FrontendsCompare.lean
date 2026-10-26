@@ -55,8 +55,11 @@ def expectationDiff : Array String :=
 #guard expectationDiff.any (·.startsWith "line 1: only fren reports error[F0603]")
 #guard expectationDiff.any (·.startsWith "line 1: only Lean reports error: Type mismatch")
 
--- ... but it stands for an error of the binary on the same line.
-#guard agrees constant { diags := #[err 1 "type mismatch: expected `Int`, found `Bool`" "F0304"], exit? := some 2 }
+-- Only a parse error of Lean's stands for an error of the binary on the
+-- same line: a type error must be worded as the binary's.
+#guard agrees constant { diags := #[err 1 "expected an expression, found keyword `with`" "F0102"], exit? := some 2 }
+  { diags := #[err 1 "unexpected token 'with'; expected term"] }
+#guard !agrees constant { diags := #[err 1 "type mismatch: expected `Int`, found `Bool`" "F0304"], exit? := some 2 }
   { diags := #[err 1 "Type mismatch\n  x\nhas type Bool"] }
 
 -- Both report the lints of an item with a static error (`Reqs/View`), and
