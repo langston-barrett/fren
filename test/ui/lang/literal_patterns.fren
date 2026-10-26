@@ -1,5 +1,7 @@
 -- Literal patterns, on `Bool`, `Int` and `String`, in `match` and `is`, in both front ends.
 set_option fren.lint.is_equality "allow"
+-- The or-patterns of literals are tested as written, not as ranges.
+set_option fren.lint.manual_range_patterns "allow"
 
 pub enum Reply { Ok(Int), Err(String) }
 

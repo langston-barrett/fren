@@ -123,6 +123,7 @@ comp counter {
 expect positive: forall (c: counter), table { c.m > 0 => true, c.n < -1 => true }
 --~^ error: a table in `positive` may have no row that holds
 --~^^ error: expectation `positive` does not hold
+--~^^^ warning: every row of this table has a value written the same
 
 -- Disjointness leaves out the constraint that the table is in, as
 -- reachability does: `r` rules out `y > 0`, where both rows hold, only

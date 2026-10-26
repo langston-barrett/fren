@@ -1506,6 +1506,91 @@ def operandSlot (p e : Syntax) : Option Core.Slot :=
     | 3, _, op => if op.isEmpty then none else at_ (.bin op) #[0, 2]
     | _, _, _ => none
 
+mutual
+/-- The pattern `p`, resolved as `q`, as written (`Core.PatNode`). -/
+partial def patNode (p : Syntax) (q : Core.Pat) : Core.PatNode Syntax :=
+  match q with
+  | .ctor _ qs => .mk q (exactText p) p (((patternArgs p).zip qs).map fun (a, q) => orNode a[0].getSepArgs q)
+  | _ => .mk q (exactText p) p #[]
+
+/-- The or-pattern of the alternatives `alts`, resolved as `q`, where its
+alternatives are, or its only pattern. -/
+partial def orNode (alts : Array Syntax) (q : Core.Pat) : Core.PatNode Syntax :=
+  match q with
+  | .or qs =>
+    let at_ := mkNullNode #[alts[0]!, alts.back!]
+    .mk q (exactText at_) at_ ((alts.zip qs).map fun (a, q) => patNode a q)
+  | _ => patNode alts[0]! q
+end
+
+/-- The lints of each or-pattern within the pattern `n`, of a `match` arm
+or of `is` (`Reqs/Lint/Complexity/Patterns`): `wildcard_in_or_patterns`,
+`manual_range_patterns` and `unnested_or_patterns`. -/
+def lintOrPatterns (n : Core.PatNode Syntax) : TermElabM Unit := do
+  -- `fren fix` reads Markdown specs, but not Lean files.
+  let fixable := (← getLocal).inMarkdown
+  let help (m : Core.Msg) := if fixable then m.note Core.fixHelp else m
+  for o in n.orPatterns do
+    let alts := o.kids
+    if Core.wildcardInOr (alts.any (·.pat matches .wild false)) then
+      recordLint .wildcardInOrPatterns o.at_ (help Core.wildcardInOrMsg)
+    else if let some fixed := Core.manualRangeFix? (alts.map fun a => (a.pat, a.text)) then
+      recordLint .manualRangePatterns o.at_ (help (Core.manualRangeMsg fixed))
+    else
+      for (i, j, fixed) in Core.unnestedRuns alts do
+        recordLint .unnestedOrPatterns (mkNullNode #[alts[i]!.at_, alts[j]!.at_]) (help (Core.unnestedOrMsg fixed))
+
+/-- The name that the binder `x` declares, without its `!`. -/
+def binderName (x : Syntax) : String := Core.nameText (Core.declaredName x.getId).1
+
+/-- `collapsible_match` on the arm `i` of the `match` whose arms are `arms`
+and patterns `pats` (`lint::collapsible_match`): the arm's pattern is one
+variant whose payload's patterns are `_` or binders, and its body a
+`match` on one of those binders. -/
+def lintCollapsible (cx : ExprCtx) (arms : Array Syntax) (pats : Array Core.Pat) (i : Nat) : TermElabM Unit := do
+  let arm := arms[i]!
+  let (alts, isOr) := topAlts arm[0]
+  let #[p] := alts | return
+  if isOr || !p.isOfKind ``Lang.variantPattern || p[1].isNone then return
+  let .ctor _ qs := pats[i]! | return
+  let body := unparen arm[3]
+  unless body.isOfKind ``Lang.matchExpr do return
+  let s := unparen body[1]
+  let s := if s.getNumArgs == 1 then s[0] else s
+  unless s.isOfKind ``Lang.fren_path && (pathSegs s).size == 1 do return
+  let x := Core.nameText (pathSegs s)[0]!.getId
+  let args := (patternArgs p).map (·[0].getSepArgs)
+  let binderOf : Array Syntax × Core.Pat → Option String
+    | (#[b], .wild true) => some (binderName (pathSegs b[0])[0]!)
+    | _ => none
+  let binders := (args.zip qs).filterMap binderOf
+  let some k := (args.zip qs).findIdx? (binderOf · == some x) | return
+  let flat := qs.all (· matches .wild _)
+  let innerArms := body[3].getSepArgs
+  -- An arm with a guard may not be taken where its pattern matches.
+  if (arms.any (!·[1].isNone)) || innerArms.any (!·[1].isNone) then return
+  let some d := innerArms.back? | return
+  let innerWildcard := match topAlts d[0] with
+    | (#[w], false) => w.isOfKind ``Lang.wildPattern
+    | _ => false
+  -- The first later arm that matches a value of the variant: one with `_`
+  -- or a binder among its alternatives, since an arm that names the variant
+  -- after this one is unreachable.
+  let wild? := ((List.range arms.size).filter (· > i)).find? fun j => pats[j]!.top.any (· matches .wild _)
+  let sameWildcard := wild?.any fun j => pats[j]! matches .wild false &&
+    Core.writtenSame (exactText arms[j]![3]) (exactText d[3])
+  -- The inner `_` arm's body is taken where the outer one's is after the
+  -- fix, outside the arm's pattern, so it must mention none of its binders.
+  let mentioned := Core.mentionsName (exactText body[3]) x || binders.any (Core.mentionsName (exactText d[3]) ·)
+  let innerBinders ← innerArms.flatMapM fun a => return (← topBinders cx a[0]).map binderName
+  let clash := innerBinders.any binders.contains
+  unless Core.collapsibleMatch true flat innerWildcard sameWildcard mentioned clash innerArms.size do return
+  let commented := Core.hasComment (exactText arm)
+  let innerTexts := innerArms.pop.map fun a => (" | ".intercalate ((topAlts a[0]).1.map exactText).toList, exactText a[3])
+  let fixed := Core.collapsedArms (exactText p[0]) ((patternArgs p).map exactText) k innerTexts
+  let msg := Core.collapsibleMatchMsg x (if commented then none else some fixed)
+  recordLint .collapsibleMatch body (if !commented && (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
+
 /-- The match lints of the `match` `e` on a value of type `ty`, whose arms'
 patterns are `pats`, where `slot` is (`Reqs/Lint/Style#matches-that-are-memberships`,
 `Reqs/Lint/Pedantic/Matches`). The lints that move or remove arms, or
@@ -1583,13 +1668,31 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
   if let some (pre, post, test) := membership? then
     recordLint .matchLikeMembership e (help (tm (Core.membershipMsg (pre ++ scrutinee.text ++ post) test)))
   -- `single_match_else` (`lint::single_match_else`).
+  let bool := ty.isConstOf ``Bool || ty.isProp
   if let some fixed := (if anyGuard then none else
-      Core.singleMatchElseFix? infos scrutinee slot (membership?.isSome || needless || trivial) (followedStx e)) then
+      Core.singleMatchElseFix? infos scrutinee slot (membership?.isSome || needless || trivial) (followedStx e) bool) then
     let msg := tm (Core.singleMatchElseMsg fixed (Core.hasComment (exactText e)))
     recordLint .singleMatchElse e (if msg.fixes.isEmpty then msg else help msg)
+  -- `match_bool` (`lint::match_bool`).
+  if bool && !anyGuard then
+    if let some fixed := Core.matchBoolFix? pats infos scrutinee.text slot (membership?.isSome || trivial) (followedStx e) then
+      let msg := tm (Core.matchBoolMsg fixed (Core.hasComment (exactText e)))
+      recordLint .matchBool e (if msg.fixes.isEmpty then msg else help msg)
+  let isTable := e.isOfKind ``Lang.tableMatchExpr
+  -- `match_overlapping_arm` (`lint::match_overlapping_arm`). An arm with a
+  -- guard is left out, as in Clippy; the arms of a table over a scrutinee
+  -- are checked to be disjoint instead.
+  let intervals := (pats.zip guarded).map fun (p, g) => p.top.map fun
+    | .int lo hi => if g || isTable then none else some (lo, hi)
+    | _ => none
+  for ((j, b), (i, a)) in Core.overlappingArms intervals do
+    recordLint .matchOverlappingArm (topAlts arms[j]![0]).1[b]! (Core.overlappingArmMsg (exactText (topAlts arms[i]![0]).1[a]!))
+  unless isTable do
+    for i in [0:arms.size] do lintCollapsible cx arms pats i
+  for arm in arms, q in pats do lintOrPatterns (orNode (topAlts arm[0]).1 q)
   -- In a table over a scrutinee, `_` also takes what the guards of the
   -- other arms leave, which no pattern can name without overlapping them.
-  unless flat && !(e.isOfKind ``Lang.tableMatchExpr && anyGuard) do return
+  unless flat && !(isTable && anyGuard) do return
   let some info := ty.constName?.bind (← getState).enumOfDecl? | return
   let some w := (Array.range infos.size).find? fun i => infos[i]!.wildcard && !guarded[i]! | return
   let names (p : Core.Pat) : Array Nat := match p with
@@ -2442,6 +2545,7 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
     -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`).
     let irrefutable := Core.irrefutableIs (Core.matchesEvery (← patSigs) pty q)
     if irrefutable then recordLint .irrefutableIs e (Core.irrefutableIsMsg (← patTypeName ty) (q matches .wild _))
+    lintOrPatterns (orNode (topAlts e[2]).1 q)
     let texts := (topAlts e[2]).1.map exactText
     if Core.isEquality texts.size (Core.equatable q texts) irrefutable then
       let msg := Core.isEqualityMsg { text := exactText scrutinee, prec := exprPrec scrutinee } texts[0]!
@@ -2528,8 +2632,13 @@ partial def ifChain (e : Syntax) : Array Syntax × Array Syntax × Syntax :=
 /-- The text of `e` as the body of a `match` arm. -/
 def armBodyOf (e : Syntax) : String := let e := unparen e; Core.armBody (srcText e) (isConditional e)
 
-/-- `if_chain_match` on the chain of `if` that starts at `e`
-(`lint::if_chain_match`). -/
+/-- The text of `e` as a row's condition or value in a table. -/
+def rowPartOf (e : Syntax) : String :=
+  let e := unparen e
+  Core.rowPart (srcText e) (isConditional e || e.isOfKind ``Lang.letExpr)
+
+/-- `if_chain_match` and `manual_table` on the chain of `if` that starts at
+`e` (`lint::if_chain_match`, `lint::manual_table`). -/
 def lintIfChain (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
   let (cs, as, z) := ifChain e
   let ts? := Core.sameScrutinee (← cs.mapM (variantTest? cx))
@@ -2537,6 +2646,9 @@ def lintIfChain (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
   let enums := (← getState).enums
   let n := ((ts[0]?.bind fun t => enums.get? t.enum).map (·.variants.size)).getD 0
   let (fires, wildcard) := Core.ifChainMatch cs.size ts?.isSome (Core.repeatedVariants ts) (Core.untestedVariants n ts)
+  -- `manual_table` (`lint::manual_table`).
+  if Core.manualTable cs.size ts?.isSome then
+    recordLint .manualTable e (Core.manualTableMsg (cs.map rowPartOf) (as.map rowPartOf) (rowPartOf z))
   if fires then
     recordLint .ifChainMatch e (Core.ifChainMatchMsg ts (as.map armBodyOf) (if wildcard then some (armBodyOf z) else none))
 
@@ -3258,7 +3370,8 @@ where `toTerm` translates its parts. Where no row holds, a table without a
 `_` row is an index out of range of the empty sequence, `Fren.Seq.nth ∅
 0`, as the solver sees it: one unspecified value of each type
 (`Reqs/Lang/Expressions#tables`). -/
-def tableTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
+def tableTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (slot : Option Core.Slot) :
+    TermElabM Term := withRef e do
   let rows := e[2].getSepArgs
   -- Only the last row may be `_` (`Reqs/Lang/Expressions#tables`).
   if let some k := Core.rowAfterWild? (rows.map isWildRow) then throwErrorAt rows[k]![1] Core.rowAfterWildMsg.text
@@ -3304,6 +3417,14 @@ def tableTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     if let some t0 := t0? then liftMsg r[3] (Core.checkRowType t0 t)
     t0? := some ((t0?.map (·.join t)).getD t)
   noteTable cx e refs conds defined wild
+  -- `same_branches` on a table (`lint::same_rows`).
+  if cx.noteIndexes then
+    let first := exactText rows[0]![3]
+    let (fires, _) := Core.sameRows rows.size (rows.all fun r => Core.writtenSame (exactText r[3]) first) wild
+    if fires then
+      let v : Core.BText := { text := first, prec := exprPrec rows[0]![3] }
+      let msg := Core.sameRowsMsg first (v.inSlot slot (followedStx e)) wild
+      recordLint .sameBranches e (if wild && (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
   let widened ← widenMixed values
   -- The first row whose condition holds.
   let mut out ← if wild then pure widened.back! else
@@ -3998,7 +4119,7 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
       lintManualUpdate toTerm cx e path
     return t
   else if isMatchLike e then matchTerm toTerm { cx with emptyOk, natOk, expected? } e (parent?.bind (operandSlot · e))
-  else if e.isOfKind ``Lang.tableExpr then tableTerm toTerm { cx with emptyOk, natOk, expected? } e
+  else if e.isOfKind ``Lang.tableExpr then tableTerm toTerm { cx with emptyOk, natOk, expected? } e (parent?.bind (operandSlot · e))
   else if e.isOfKind ``Lang.isExpr then isTerm toTerm cx e
   else if e.isOfKind ``Lang.updateExpr then do
     let t ← updateTerm toTerm cx e

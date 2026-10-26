@@ -1,5 +1,6 @@
 -- The pedantic lints ported from Clippy's `pedantic` group, and
 -- `branches_sharing_code`, in both front ends.
+-- fren-covers: lint::single_match_else
 set_option fren.lint.pedantic "warn"
 set_option fren.lint.definable_output "allow"
 set_option fren.lint.membership_chain "allow"
@@ -21,9 +22,9 @@ comp one_variant {
     pub out f: Mode
 
     ensure r1: a = match m { Mode::Heat => x + 1, _ => x }
-    --~^ warning: this `match` tests for one variant
+    --~^ warning: this `match` tests for one pattern
     ensure r2: b = 2 * match m { Mode::Cool => x, _ => 0 }
-    --~^ warning: this `match` tests for one variant
+    --~^ warning: this `match` tests for one pattern
     -- `match_like_membership`, not `single_match_else`.
     ensure r3: c? iff match m { Mode::Heat => true, _ => false }
     --~^ warning: this `match` only tests which of its patterns its scrutinee matches

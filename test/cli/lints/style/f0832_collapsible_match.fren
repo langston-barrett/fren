@@ -1,0 +1,10 @@
+-- `collapsible_match`, whose fix replaces the outer arm.
+-- fren-covers: lint::collapsible_match
+enum Shape { Circle(Int), Square(Int), Empty }
+enum Reply { Ok(Shape), Err(Int) }
+
+comp c {
+    in r: Reply
+    pub out n: Int
+    ensure rule: n = match r { Reply::Ok(s) => match s { Shape::Circle(_) => 1, Shape::Square(_) => 2, _ => 0 }, _ => 0 }
+}

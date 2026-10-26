@@ -118,6 +118,7 @@ comp patterns {
     --~^ warning: this `match` only tests which of its patterns its scrutinee matches
     -- An arm of the other body before an overlapping one: the order matters.
     ensure r11: m? iff match n { 0..=5 => false, 3..=9 => true, _ => false }
+    --~^ warning: this range overlaps `0..=5`, an earlier arm's pattern
     ensure r12: o? iff match s { Shade::Tinted(0) => false, Shade::Tinted(_) => true, _ => false }
 }
 

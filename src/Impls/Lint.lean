@@ -1600,16 +1600,6 @@ impl needless_raw_string_hashes: lint::needless_raw_string_hashes for (h : Nat) 
   intro h l _
   simp [fren_spec, Fren.Core.needlessRawHashes]
 
-impl single_match_else: lint::single_match_else for (n : Nat) (v w o : Bool) {
-  n_arms := n,
-  one_variant? := v,
-  wildcard? := w,
-  other? := o,
-  fires? := Fren.Core.singleMatchElse n v w o,
-} by
-  intro n v w o _
-  cases v <;> cases w <;> cases o <;> simp [fren_spec, Fren.Core.singleMatchElse] <;> omega
-
 impl inconsistent_struct_constructor: lint::inconsistent_struct_constructor for (b : Bool) {
   in_order? := b,
   fires? := Fren.Core.inconsistentStructConstructor b,
@@ -1705,7 +1695,6 @@ trusted lint::zero_prefixed_written: "a model of an expression, checked by the r
 trusted lint::zero_prefixed_fixed: "a model of an expression, checked by the refinements in its section"
 trusted lint::member_order_written: "a model of a component, checked by the refinements in its section"
 trusted lint::member_order_fixed: "a model of a component, checked by the refinements in its section"
-
 
 /-! ## Cardinality, ordered enumerations and newtypes -/
 
@@ -2248,5 +2237,57 @@ trusted lint::integer_values_written: "a model of an expression, checked by the 
 trusted lint::integer_values_fixed: "a model of an expression, checked by the refinements in its section"
 trusted lint::erasing_division_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::erasing_division_fixed: "a model of an expression, checked by the refinements in its section"
+
+/-! ## Patterns, matches and tables -/
+
+impl range_union: lint::range_union for (lo1 hi1 lo2 hi2 n : Int) {
+  lo1 := lo1,
+  hi1 := hi1,
+  lo2 := lo2,
+  hi2 := hi2,
+  n := n,
+  joined? := Fren.Core.lowerAtMost (some lo2) (some (hi1 + 1)),
+} by
+  intro lo1 hi1 lo2 hi2 n _
+  simp [fren_spec, Fren.Core.lowerAtMost]
+
+-- These components compute, over a model of patterns, arms and rows, what
+-- each front end reads from the syntax with `Fren.Core.PatNode` and the
+-- functions of `Fren.Core` that decide the lints; the ui tests run both
+-- front ends over the same cases, and the snapshots and fix tests the
+-- `fren` command. The components' expectations check each fix over the
+-- model.
+tested lint::collapsible_match: "test/ui/lints/patterns_tables.fren", "test/cli/lints/style/f0832_collapsible_match.fren",
+  "test/cli/fix/patterns_tables.fren"
+tested lint::match_overlapping_arm: "test/ui/lints/patterns_tables.fren", "test/cli/lints/style/f0835_match_overlapping_arm.fren"
+tested lint::wildcard_in_or_patterns: "test/ui/lints/patterns_tables.fren", "test/cli/lints/complexity/f0834_wildcard_in_or_patterns.fren",
+  "test/cli/fix/patterns_tables.fren"
+tested lint::manual_range_patterns: "test/ui/lints/patterns_tables.fren", "test/cli/lints/complexity/f0833_manual_range_patterns.fren",
+  "test/cli/fix/patterns_tables.fren"
+tested lint::unnested_or_patterns: "test/ui/lints/patterns_tables.fren", "test/cli/lints/pedantic/f0836_unnested_or_patterns.fren",
+  "test/cli/fix/patterns_tables.fren"
+tested lint::match_bool: "test/ui/lints/patterns_tables.fren", "test/cli/lints/pedantic/f0837_match_bool.fren",
+  "test/cli/fix/patterns_tables.fren"
+tested lint::single_match_else: "test/ui/lints/pedantic.fren", "test/cli/lints/pedantic/f0771_single_match_else.fren",
+  "test/cli/fix/patterns_tables.fren"
+tested lint::manual_table: "test/ui/lints/patterns_tables.fren", "test/cli/lints/pedantic/f0838_manual_table.fren"
+tested lint::same_rows: "test/ui/lints/patterns_tables.fren", "test/cli/fix/patterns_tables.fren"
+
+trusted lint::wildcard_in_or_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::wildcard_in_or_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::manual_range_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::manual_range_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::unnested_or_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::unnested_or_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::collapsible_match_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::collapsible_match_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::collapsible_shadow_written: "a model of an expression, checked against its nested form by the refinements in its section"
+trusted lint::collapsible_shadow_fixed: "a model of an expression, checked against its nested form by the refinements in its section"
+trusted lint::match_bool_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::match_bool_fixed: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::manual_table_written: "a model of an expression, checked against the table its message suggests by the refinements in its section"
+trusted lint::manual_table_fixed: "a model of an expression, checked against the table its message suggests by the refinements in its section"
+trusted lint::same_rows_written: "a model of an expression, checked against its fix by the refinements in its section"
+trusted lint::same_rows_fixed: "a model of an expression, checked against its fix by the refinements in its section"
 
 end Fren.Impls

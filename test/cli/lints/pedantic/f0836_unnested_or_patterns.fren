@@ -1,0 +1,7 @@
+-- `unnested_or_patterns`, of two values of the payload.
+-- fren-covers: lint::unnested_or_patterns
+set_option fren.lint.unnested_or_patterns "warn"
+
+enum Pair { Two(Int, Int), None }
+
+comp c { in p: Pair pub out m: Int ensure r: m = match p { Pair::Two(1, _) | Pair::Two(2, _) => 1, _ => 0 } }

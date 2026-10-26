@@ -34,7 +34,8 @@ comp wild {
     expect one: when x = 5, y = 1
 }
 
--- Only `_`.
+-- Only `_`, which `same_branches` reports.
+set_option fren.lint.same_branches "allow" in
 comp only_wild {
     in x: Int
     pub det out y: Int

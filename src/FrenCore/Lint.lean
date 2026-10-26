@@ -165,6 +165,13 @@ inductive Lint where
   | needlessUpdate
   | trivialCover
   | manualPatternTest
+  | collapsibleMatch
+  | manualRangePatterns
+  | wildcardInOrPatterns
+  | matchOverlappingArm
+  | unnestedOrPatterns
+  | matchBool
+  | manualTable
   -- `BEq` from `DecidableEq`, which makes it lawful at once; a derived `BEq`
   -- would need a proof over every pair of lints.
   deriving Inhabited, DecidableEq, Repr
@@ -192,7 +199,9 @@ def Lint.all : Array Lint :=
     .arbitrarySourceItemOrdering, .singleCallFn,
     .manualAtMostOne, .manualOrdering, .redundantNewtypeRoundtrip, .unnecessaryMinOrMax,
     .manualNat, .manualAbs, .manualAbsDiff, .manualMinMax, .manualClamp, .manualRemEuclid, .moduloOne, .minMax,
-    .manualRecordUpdate, .needlessUpdate, .trivialCover, .manualPatternTest]
+    .manualRecordUpdate, .needlessUpdate, .trivialCover, .manualPatternTest,
+    .collapsibleMatch, .manualRangePatterns, .wildcardInOrPatterns, .matchOverlappingArm, .unnestedOrPatterns,
+    .matchBool, .manualTable]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -310,6 +319,13 @@ def Lint.name : Lint → String
   | .moduloOne => "modulo_one"
   | .minMax => "min_max"
   | .manualPatternTest => "manual_pattern_test"
+  | .collapsibleMatch => "collapsible_match"
+  | .manualRangePatterns => "manual_range_patterns"
+  | .wildcardInOrPatterns => "wildcard_in_or_patterns"
+  | .matchOverlappingArm => "match_overlapping_arm"
+  | .unnestedOrPatterns => "unnested_or_patterns"
+  | .matchBool => "match_bool"
+  | .manualTable => "manual_table"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -429,6 +445,13 @@ def Lint.code : Lint → String
   | .moduloOne => "F0816"
   | .minMax => "F0817"
   | .manualPatternTest => "F0805"
+  | .collapsibleMatch => "F0832"
+  | .manualRangePatterns => "F0833"
+  | .wildcardInOrPatterns => "F0834"
+  | .matchOverlappingArm => "F0835"
+  | .unnestedOrPatterns => "F0836"
+  | .matchBool => "F0837"
+  | .manualTable => "F0838"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -476,12 +499,13 @@ def Lint.group : Lint → Group
   | .doubleNeg | .negMultiply | .trivialPattern | .redundantBoolType | .moduleInception | .enumVariantNames
   | .upperCaseAcronyms | .justUnderscoresAndDigits | .disallowedNames | .assertionsOnConstants
   | .manualPatternCharComparison | .isEquality | .chainableComparison | .manualNat | .manualRecordUpdate
-  | .manualPatternTest => .style
+  | .manualPatternTest | .collapsibleMatch | .matchOverlappingArm => .style
   | .nonminimalBool | .singletonMembership | .constantOutput | .doubleComparison | .manualMethod | .elseExtends
   | .identityOp | .doubleParens | .intPlusOne | .redundantMethodChain | .trivialMatch | .needlessBoolAssign
   | .needlessMatch | .redundantSlicing | .redundantComparisons | .unnecessaryStructInitialization
   | .zeroPrefixedLiteral | .manualAtMostOne | .redundantNewtypeRoundtrip | .unnecessaryMinOrMax | .manualAbs
-  | .manualAbsDiff | .manualMinMax | .manualClamp | .manualRemEuclid | .needlessUpdate => .complexity
+  | .manualAbsDiff | .manualMinMax | .manualClamp | .manualRemEuclid | .needlessUpdate
+  | .manualRangePatterns | .wildcardInOrPatterns => .complexity
   | .indexAfterUse | .eqOp | .sameBranches | .duplicateElements | .emptyArgument
   | .suspiciousUnaryOpFormatting | .noEffectReplace | .constIsEmpty | .almostCompleteRange | .duplicateConstraint
   | .invisibleCharacters | .negativePosition | .absurdExtremeComparisons | .erasingOp | .ifsSameCond
@@ -495,7 +519,7 @@ def Lint.group : Lint → Group
   | .singleCallFn => .restriction
   | .singleMatchElse | .inconsistentStructConstructor | .overlyComplexBoolExpr
   | .structFieldNames | .fnParamsExcessiveBools | .structExcessiveBools | .needlessRawStringHashes
-  | .branchesSharingCode | .manualOrdering => .pedantic
+  | .branchesSharingCode | .manualOrdering | .unnestedOrPatterns | .matchBool | .manualTable => .pedantic
   | .undecidable => .decidability
 
 def Lint.default (l : Lint) : LintLevel := l.group.default
@@ -2336,24 +2360,29 @@ def isEqualityMsg (scrutinee : BText) (alt : String) : Msg :=
     fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
 /-- Whether `single_match_else` fires on a `match` of `nArms` arms, from
-whether its first arm's pattern is one variant without a payload, whether
-the second is `_`, and whether `match_like_membership`, `needless_match`,
+whether its first arm's pattern is a test, a pattern other than `_` that
+binds nothing, on a scrutinee that is not a `Bool`, whether the second is
+`_`, and whether `match_like_membership`, `needless_match`,
 `trivial_match` or `match_same_arms` fires on it
 (`lint::single_match_else`). -/
-def singleMatchElse (nArms : Nat) (oneVariant wildcard other : Bool) : Bool :=
-  nArms == 2 && oneVariant && wildcard && !other
+def singleMatchElse (nArms : Nat) (test wildcard other : Bool) : Bool :=
+  nArms == 2 && test && wildcard && !other
 
 /-- The fix of `single_match_else`, if it fires, where `other` says that
-another match lint fires on it: `if x = V then a else b`, from the
+another match lint fires on it, and `bool` that the scrutinee is a `Bool`:
+`if x = V then a else b`, or with `x in {V, W}` for several variants
+without a payload or literals, or `x is P` for another pattern, from the
 scrutinee `x` as written, with the parentheses around it, in parentheses
 where `slot` requires them, or where it is `followed` (`BText.inSlot`). -/
 def singleMatchElseFix? (arms : Array ArmInfo) (scrutinee : BText) (slot : Option Slot) (other : Bool)
-    (followed : Bool := false) : Option String := do
+    (followed : Bool := false) (bool : Bool := false) : Option String := do
   let #[a, b] := arms | none
   let sameBodies := writtenSame a.body.text b.body.text
-  guard (singleMatchElse arms.size (a.alts.size == 1 && a.noPayload) b.wildcard (other || sameBodies))
-  let scr := scrutinee.inSlot (BKind.bin "=").slots[0]!
-  let t : BText := { text := s!"if {scr} = {a.alts[0]!} then {a.body.text} else {b.body.text}", prec := BKind.ite.prec }
+  guard (singleMatchElse arms.size (!a.wildcard && !a.binds && !bool) b.wildcard (other || sameBodies))
+  let test := if a.equatable && a.alts.size == 1 then s!"{scrutinee.inSlot (BKind.bin "=").slots[0]!} = {a.alts[0]!}"
+    else if a.equatable then s!"{scrutinee.inSlot (BKind.bin "in").slots[0]!} in \{{", ".intercalate a.alts.toList}}"
+    else s!"{scrutinee.inSlot BKind.patternTest.slots[0]!} is {a.pattern}"
+  let t : BText := { text := s!"if {test} then {a.body.text} else {b.body.text}", prec := BKind.ite.prec }
   return t.inSlot slot followed
 
 /-- A match lint's message about a table over a scrutinee, which means a
@@ -2368,8 +2397,8 @@ def Msg.ofTable (m : Msg) : Msg :=
 does not have where the `match` is `commented`: the fix would drop its
 comments. -/
 def singleMatchElseMsg (replacement : String) (commented : Bool := false) : Msg :=
-  { code? := some Lint.singleMatchElse.code, headline := "this `match` tests for one variant"
-    label? := some "one variant, then `_`"
+  { code? := some Lint.singleMatchElse.code, headline := "this `match` tests for one pattern"
+    label? := some "one pattern, then `_`"
     notes := if commented then #["note: the fix would drop the comments in the `match`, so it has none"] else #[]
     fixes := if commented then #[] else #[{ msg := "write it as an `if`", replacement }] }
 
@@ -2415,6 +2444,300 @@ def wildcardEnumMsg (vs : Array Name) (pattern? : Option String) : Msg :=
     notes := #["note: a variant added later is matched by `_` too, without notice"]
     fixes := pattern?.toArray.map fun p =>
       { msg := if vs.size == 1 then "name the variant" else "name the variants", replacement := p } }
+
+/-! ## Patterns as written -/
+
+/-- A pattern as written: what it resolves to, its text, where it is in a
+front end's representation (`α`), and its parts, an or-pattern's
+alternatives or a variant's payload's patterns. -/
+inductive PatNode (α : Type) where
+  | mk (pat : Pat) (text : String) (at_ : α) (kids : Array (PatNode α))
+
+instance [Inhabited α] : Inhabited (PatNode α) := ⟨.mk default "" default #[]⟩
+
+def PatNode.pat : PatNode α → Pat | .mk p .. => p
+def PatNode.text : PatNode α → String | .mk _ t .. => t
+def PatNode.at_ : PatNode α → α | .mk _ _ a _ => a
+def PatNode.kids : PatNode α → Array (PatNode α) | .mk _ _ _ k => k
+
+/-- The or-patterns of two or more alternatives within `n`, `n` too if it
+is one, in preorder. -/
+partial def PatNode.orPatterns (n : PatNode α) : Array (PatNode α) :=
+  (if n.pat matches .or _ && n.kids.size ≥ 2 then #[n] else #[]) ++ n.kids.flatMap PatNode.orPatterns
+
+/-- Whether `wildcard_in_or_patterns` fires on an or-pattern, from whether
+one of its alternatives is `_` (`lint::wildcard_in_or_patterns`). -/
+def wildcardInOr (wildcard : Bool) : Bool := wildcard
+
+/-- An or-pattern with a `_` alternative. -/
+def wildcardInOrMsg : Msg :=
+  { code? := some Lint.wildcardInOrPatterns.code, headline := "this or-pattern has `_` as an alternative"
+    label? := some "matches every value"
+    notes := #["note: `_` matches every value, so the other alternatives add nothing"]
+    fixes := #[{ msg := "write `_`", replacement := "_" }] }
+
+/-- Whether a bound of a range, written `s`, after the `..` and any `=`,
+is an integer literal, possibly negated, or absent, rather than a
+constant. -/
+def literalBound (s : String) : Bool :=
+  match s.toList.dropWhile (fun c => c == '=' || c.isWhitespace) with
+  | [] => true
+  | c :: rest => c.isDigit || (c == '-' && (rest.dropWhile Char.isWhitespace).head?.any Char.isDigit)
+
+/-- Whether the integer pattern written `text`, a literal or a range, has
+only literal bounds. -/
+def literalBounds (text : String) : Bool := (text.splitOn "..").all literalBound
+
+/-- Whether the lower bound `lo` is at most the upper bound `hi`, where
+`none` is unbounded. -/
+def lowerAtMost : Option Int → Option Int → Bool
+  | some l, some h => decide (l ≤ h)
+  | _, _ => true
+
+/-- The one interval that the intervals `ivs` make together, if they leave
+no gap between them. -/
+def unionInterval? (ivs : Array (Option Int × Option Int)) : Option (Option Int × Option Int) := do
+  let sorted := ivs.qsort fun a b => match a.1, b.1 with
+    | none, some _ => true
+    | some x, some y => decide (x < y)
+    | _, _ => false
+  let (lo, hi₀) ← sorted[0]?
+  let mut hi := hi₀
+  for (l, h) in sorted.extract 1 sorted.size do
+    let some h₀ := hi | continue
+    unless lowerAtMost l (some (h₀ + 1)) do failure
+    hi := h.map (max h₀)
+  return (lo, hi)
+
+/-- Whether `manual_range_patterns` fires on an or-pattern, from the number
+of its alternatives, whether each is an integer literal or a range with
+literal bounds, whether one is a range, and whether together they make
+one interval, bounded on some side (`lint::manual_range_patterns`). -/
+def manualRangePatterns (nAlts : Nat) (integers range interval : Bool) : Bool :=
+  integers && interval && (nAlts ≥ 3 || (nAlts ≥ 2 && range))
+
+/-- The range that matches the integers of the interval `iv`. -/
+def rangeText : Option Int × Option Int → String
+  | (some l, some h) => s!"{l}..={h}"
+  | (some l, none) => s!"{l}.."
+  | (none, some h) => s!"..={h}"
+  | (none, none) => "_"
+
+/-- The range that replaces an or-pattern whose alternatives are `alts`,
+each resolved and written, if `manual_range_patterns` fires on it. -/
+def manualRangeFix? (alts : Array (Pat × String)) : Option String :=
+  let ivs := alts.filterMap fun (p, t) => match p with
+    | .int lo hi => if literalBounds t then some (lo, hi) else none
+    | _ => none
+  let iv? := (unionInterval? ivs).filter fun iv => iv.1.isSome || iv.2.isSome
+  let range := ivs.any fun (lo, hi) => lo.isNone || hi.isNone || lo != hi
+  if manualRangePatterns alts.size (ivs.size == alts.size) range iv?.isSome then iv?.map rangeText else none
+
+/-- An or-pattern that matches the integers of the range `fixed`. -/
+def manualRangeMsg (fixed : String) : Msg :=
+  { code? := some Lint.manualRangePatterns.code, headline := s!"this or-pattern matches the range `{fixed}`"
+    label? := some "integers without a gap"
+    fixes := #[{ msg := "write the range", replacement := fixed }] }
+
+/-- Whether `unnested_or_patterns` fires on two alternatives of an
+or-pattern next to each other, from whether they name the same variant,
+and the number of values of its payload whose patterns are not written
+the same (`lint::unnested_or_patterns`). -/
+def unnestedOr (sameVariant : Bool) (nDiffer : Nat) : Bool := sameVariant && nDiffer == 1
+
+/-- The value of the payload at which two alternatives differ, if
+`unnested_or_patterns` fires on them. -/
+def differAt? [Inhabited α] (a b : PatNode α) : Option Nat :=
+  match a.pat, b.pat with
+  | .ctor i _, .ctor j _ =>
+    let n := a.kids.size
+    let ds := (Array.range n).filter fun k => (writtenForm ·.text) <$> a.kids[k]? != (writtenForm ·.text) <$> b.kids[k]?
+    if unnestedOr (i == j && b.kids.size == n) ds.size then ds[0]? else none
+  | _, _ => none
+
+/-- The alternatives `run`, of one variant, with the or-pattern of their
+patterns of the value `k` of its payload nested there. -/
+def nestedText [Inhabited α] (run : Array (PatNode α)) (k : Nat) : String :=
+  let a := run[0]!
+  let path := String.ofList (a.text.toList.takeWhile (· != '('))
+  let args := (Array.range a.kids.size).map fun m =>
+    if m == k then " | ".intercalate (run.map (·.kids[k]!.text)).toList else a.kids[m]!.text
+  s!"{path}({", ".intercalate args.toList})"
+
+/-- The runs of two or more alternatives of `alts`, next to each other,
+that `unnested_or_patterns` fires on: each differs from the first of its
+run at the same value of the payload. Each is its first and last index,
+and the pattern that replaces it. -/
+def unnestedRuns [Inhabited α] (alts : Array (PatNode α)) : Array (Nat × Nat × String) := Id.run do
+  let mut out := #[]
+  let mut i := 0
+  while i + 1 < alts.size do
+    match differAt? alts[i]! alts[i + 1]! with
+    | none => i := i + 1
+    | some k =>
+      let mut j := i + 1
+      while j + 1 < alts.size && differAt? alts[i]! alts[j + 1]! == some k do j := j + 1
+      out := out.push (i, j, nestedText (alts.extract i (j + 1)) k)
+      i := j + 1
+  return out
+
+/-- Alternatives of one variant that `fixed` writes as one. -/
+def unnestedOrMsg (fixed : String) : Msg :=
+  { code? := some Lint.unnestedOrPatterns.code, headline := "these alternatives differ only in one value of the payload"
+    label? := some "one variant, written more than once"
+    fixes := #[{ msg := "nest the or-pattern", replacement := fixed }] }
+
+/-- Whether two intervals have an integer in common. -/
+def intervalsMeet (a b : Option Int × Option Int) : Bool := lowerAtMost a.1 b.2 && lowerAtMost b.1 a.2
+
+/-- Whether `match_overlapping_arm` fires on a range of an arm and one of
+an earlier arm, from whether they have an integer in common, and whether
+the later is within the earlier, or contains it
+(`lint::match_overlapping_arm`). -/
+def matchOverlappingArm (meet within contains : Bool) : Bool := meet && !within && !contains
+
+/-- For the arms of a `match`, each its alternatives' intervals, `none`
+for an alternative that is not an integer pattern: each alternative that
+`match_overlapping_arm` fires on, by arm and alternative, with the first
+alternative of an earlier arm that it overlaps, by arm and alternative. -/
+def overlappingArms (arms : Array (Array (Option (Option Int × Option Int)))) : Array ((Nat × Nat) × (Nat × Nat)) :=
+  (Array.range arms.size).flatMap fun j => (Array.range arms[j]!.size).filterMap fun b => do
+    let J ← arms[j]![b]!
+    let earlier := (Array.range j).flatMap fun i => (Array.range arms[i]!.size).map (i, ·)
+    let hit ← earlier.find? fun (i, a) => match arms[i]![a]! with
+      | some I => matchOverlappingArm (intervalsMeet I J) (intervalWithin J I) (intervalWithin I J)
+      | none => false
+    return ((j, b), hit)
+
+/-- A range that overlaps `earlier`, an earlier arm's pattern, without
+either containing the other. -/
+def overlappingArmMsg (earlier : String) : Msg :=
+  { code? := some Lint.matchOverlappingArm.code, headline := s!"this range overlaps `{earlier}`, an earlier arm's pattern"
+    label? := some "overlaps an earlier arm"
+    notes := #[s!"note: where they overlap, the earlier arm is taken, so this arm matches only part of its range"] }
+
+/-! ## Matches on a binder -/
+
+/-- Whether the text `s` mentions the name `x`: has an identifier, outside
+comments and string literals, whose first segment is `x`, with or without
+`!`. A path `E::x` names an item, not `x`. An over-approximation, which
+keeps a lint that drops `x` from firing. -/
+def mentionsName (s : String) (x : String) : Bool := Id.run do
+  let cs := (withoutComments s).toList.toArray
+  let mut i := 0
+  while i < cs.size do
+    let c := cs[i]!
+    if c == '"' then
+      i := i + 1
+      while i < cs.size && cs[i]! != '"' do i := i + (if cs[i]! == '\\' then 2 else 1)
+      i := i + 1
+    else if isWordChar c then
+      let start := i
+      while i < cs.size && isWordChar cs[i]! do i := i + 1
+      let w := String.ofList (cs.extract start i).toList
+      let afterPath := start ≥ 2 && cs[start - 1]! == ':' && cs[start - 2]! == ':'
+      let afterDot := start ≥ 1 && cs[start - 1]! == '.'
+      if w == x && !afterPath && !afterDot then return true
+    else i := i + 1
+  return false
+
+/-- Whether `collapsible_match` fires on an arm whose body is a `match`:
+from whether its scrutinee is a binder of the arm's pattern, which is one
+variant whose payload's patterns are `_` or binders; whether the inner
+`match`'s last arm is `_`, and the first later arm of the outer `match`
+that matches the variant is `_` with a body written the same; whether the
+binder is mentioned elsewhere in the inner `match`, or the inner `_` arm's
+body mentions a binder of the arm's pattern; whether an inner
+pattern binds a name that the arm's pattern binds; and the number of
+inner arms (`lint::collapsible_match`). -/
+def collapsibleMatch (onBinder flat innerWildcard sameWildcard mentioned clash : Bool) (nInner : Nat) : Bool :=
+  onBinder && flat && innerWildcard && sameWildcard && !mentioned && !clash && nInner ≥ 2
+
+/-- The arms that replace an arm whose pattern is the variant written
+`path` with the payload's patterns `args`, whose body is a `match` on the
+binder at `k` with the arms `inner`, as their patterns and bodies, but for
+its last, `_`. -/
+def collapsedArms (path : String) (args : Array String) (k : Nat) (inner : Array (String × String)) : String :=
+  ", ".intercalate (inner.toList.map fun (p, b) => s!"{path}({", ".intercalate (args.modify k fun _ => p).toList}) => {b}")
+
+/-- A `match` on the binder `x` of its arm that the arm's pattern can
+match instead, with the arms `fixed?` that replace the arm, unless the
+arm has a comment. -/
+def collapsibleMatchMsg (x : String) (fixed? : Option String) : Msg :=
+  { code? := some Lint.collapsibleMatch.code, headline := s!"this `match` on `{x}` can be part of the arm's pattern"
+    label? := some s!"a `match` on `{x}`"
+    notes := #["note: its `_` arm has the body of the outer `match`'s `_` arm"] ++
+      (if fixed?.isNone then #["note: the fix would drop the comments in the arm, so it has none"] else #[])
+    fixes := fixed?.toArray.map fun r => { msg := "match the payload in the arm's pattern", replacement := r } }
+
+/-! ## Matches on a `Bool` -/
+
+/-- Whether `match_bool` fires on a `match` on a `Bool` of `nArms` arms,
+from whether the first is `true` or `false` and the second the other or
+`_`, and whether `match_like_membership`, `match_same_arms` or
+`trivial_match` fires on it (`lint::match_bool`). -/
+def matchBool (nArms : Nat) (literals other : Bool) : Bool := nArms == 2 && literals && !other
+
+/-- The fix of `match_bool`, if it fires, where `other` says that another
+match lint fires on it: `if x then a else b`, from the scrutinee `x` as
+written, and the bodies of the arms, `a` that of the arm that `true`
+takes, in parentheses where `slot` requires them, or where it is
+`followed` (`BText.inSlot`). -/
+def matchBoolFix? (pats : Array Pat) (arms : Array ArmInfo) (scrutinee : String) (slot : Option Slot) (other : Bool)
+    (followed : Bool := false) : Option String := do
+  let #[p, q] := pats | none
+  let #[a, b] := arms | none
+  let first? : Option Bool := match p with | .bool v => some v | _ => none
+  let literals := first?.any fun v => match q with
+    | .bool w => w != v
+    | .wild false => true
+    | _ => false
+  guard (matchBool pats.size literals (other || writtenSame a.body.text b.body.text))
+  let (t, f) := if first? == some true then (a, b) else (b, a)
+  let ite : BText := { text := s!"if {scrutinee} then {t.body.text} else {f.body.text}", prec := BKind.ite.prec }
+  return ite.inSlot slot followed
+
+/-- `match_bool` on a `match` whose fix is `replacement`, which it does not
+have where the `match` is `commented`. -/
+def matchBoolMsg (replacement : String) (commented : Bool := false) : Msg :=
+  { code? := some Lint.matchBool.code, headline := "this `match` on a `Bool` is an `if`"
+    label? := some "a `match` on a `Bool`"
+    notes := if commented then #["note: the fix would drop the comments in the `match`, so it has none"] else #[]
+    fixes := if commented then #[] else #[{ msg := "write it as an `if`", replacement }] }
+
+/-! ## Tables -/
+
+/-- Whether `manual_table` fires on a chain of `n` tests, from whether
+they are variant tests of one scrutinee, for `if_chain_match`
+(`lint::manual_table`). -/
+def manualTable (n : Nat) (variantTests : Bool) : Bool := n ≥ 2 && !variantTests
+
+/-- A row's condition or value as written in a table, where a top-level
+`when`, `unless` or quantifier, or a `let` (`open`), is in parentheses. -/
+def rowPart (e : String) (open_ : Bool) : String := if open_ then s!"({e})" else e
+
+/-- `if T1 then a else if T2 then b ... else z`, as its tests, the texts
+of its branches, and that of `z`, each as a table writes it (`rowPart`). -/
+def manualTableMsg (tests bodies : Array String) (final : String) : Msg :=
+  let rows := (tests.zip bodies).map fun (t, b) => s!"{t} => {b}"
+  { code? := some Lint.manualTable.code, headline := "this chain of `if` chooses a value by conditions, as a table does"
+    label? := some "a chain of `if`"
+    notes := #[s!"help: write it as a table, `table \{ {", ".intercalate (rows.push s!"_ => {final}").toList} }`",
+      "note: a table is checked for rows that may both hold, which the chain does not need, so `fren fix` does not rewrite it"] }
+
+/-- Whether `same_branches` fires on a table of `n` rows, from whether its
+values are all written the same and whether it has a `_` row, and whether
+it has a fix (`lint::same_rows`). -/
+def sameRows (n : Nat) (same wildcard : Bool) : Bool × Bool := (same && (n ≥ 2 || wildcard), wildcard)
+
+/-- A table whose rows all have the value `value`, which is `fixed` in
+place of the table (`BText.inSlot`), with a fix if it has a `_` row. -/
+def sameRowsMsg (value fixed : String) (wildcard : Bool) : Msg :=
+  { code? := some Lint.sameBranches.code, headline := "every row of this table has a value written the same"
+    label? := some s!"`{value}` whatever the conditions"
+    notes := if wildcard then #[]
+      else #["note: the table has no `_` row, so where no row holds its value is unspecified, and `fren fix` keeps it"]
+    fixes := if wildcard then #[{ msg := "remove the conditions, which decide nothing", replacement := fixed }] else #[] }
 
 /-! ## Suspicious expressions -/
 

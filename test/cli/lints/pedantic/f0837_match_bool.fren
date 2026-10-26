@@ -1,0 +1,5 @@
+-- `match_bool`, in parentheses where the `if` is an operand.
+-- fren-covers: lint::match_bool
+set_option fren.lint.match_bool "warn"
+
+comp c { in b? in x: Int pub out m: Int ensure r: m = 2 * match b? { false => x, _ => 1 } }

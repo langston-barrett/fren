@@ -31,6 +31,7 @@ use view::Severity
 | `card_zero` | `F0716` | `style` | `warn` | a comparison of a set's or relation's `card` with `0` or `1` that says whether it is empty, such as `s.card = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
 | `case_split_guarantees` | `F0729` | `pedantic` | `allow` | two or more guarantees `when T, y = e` of one output, whose tests are of which variant one scrutinee is (see [Variant tests](Lint/Pedantic/Matches.md#variant-tests)) |
 | `chainable_comparison` | `F0804` | `style` | `warn` | two adjacent conjuncts of an `and` that one chained comparison writes, such as `lo <= x and x < hi` (see [Chained comparisons](Lint/Style/Comparisons.md#chained-comparisons)) |
+| `collapsible_match` | `F0832` | `style` | `warn` | a `match` arm whose body is a `match` on one of its binders, which the arm's pattern can match instead (see [Collapsible matches](Lint/Style/Matches.md#collapsible-matches)) |
 | `collapsible_when` | `F0723` | `style` | `warn` | a `when` whose body is a `when`, or an `unless` whose body is an `unless` (see [Conditionals](Lint/Style.md#conditionals)) |
 | `const_is_empty` | `F0755` | `suspicious` | `warn` | a test of a literal whose value the literal fixes, such as `"ab".len = 0` (see [Tests of literals](Lint/Suspicious/Literals.md#tests-of-literals)) |
 | `constant_output` | `F0719` | `complexity` | `warn` | a defined output whose definition mentions no variable and no uninterpreted function (see [Constant outputs](Lint/Complexity.md#constant-outputs)) |
@@ -74,10 +75,14 @@ use view::Severity
 | `manual_ordering` | `F0841` | `pedantic` | `allow` | a membership in the first or last variants of an ordered enumeration, such as `s in {Severity::Silent, Severity::Info}` (see [Orderings written out](Lint/Pedantic/Comparisons.md#orderings-written-out)) |
 | `manual_pattern_char_comparison` | `F0756` | `style` | `warn` | an alternation of single characters in a pattern, such as `a\|b` (see [Classes of characters](Lint/Style.md#classes-of-characters)) |
 | `manual_pattern_test` | `F0805` | `style` | `warn` | two or more equations of one expression with values that patterns write, such as `x = 429 or x = 503`, or the disequations of its dual (see [Pattern tests written out](Lint/Style/Comparisons.md#pattern-tests-written-out)) |
+| `manual_range_patterns` | `F0833` | `complexity` | `warn` | an or-pattern of integer literals and ranges that is one range, such as `1 \| 2 \| 3` (see [Ranges written as alternatives](Lint/Complexity/Patterns.md#ranges-written-as-alternatives)) |
 | `manual_record_update` | `F0818` | `style` | `warn` | a record literal that copies more fields from one value than it gives, such as `Point { x := 1, y := p.y, z := p.z }` (see [Record literals](Lint/Style/Records.md#record-literals)) |
 | `manual_rem_euclid` | `F0815` | `complexity` | `warn` | a remainder made non-negative by hand, `(a mod k + k) mod k` (see [Remainders](Lint/Complexity/Integers.md#remainders)) |
+| `manual_table` | `F0838` | `pedantic` | `allow` | a chain of `if` of two or more tests that are not variant tests of one scrutinee, which a table writes (see [Chains of conditions](Lint/Pedantic/Matches.md#chains-of-conditions)) |
 | `many_single_char_names` | `F0795` | `pedantic` | `allow` | a component, function or global expectation that declares more than four single-character names (see [Names](Lint/Pedantic.md#names)) |
+| `match_bool` | `F0837` | `pedantic` | `allow` | a `match` on a `Bool` of `true` and `false`, or of one of them and `_` (see [Matches on a `Bool`](Lint/Pedantic/Matches.md#matches-on-a-bool)) |
 | `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false`, and bind no name (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
+| `match_overlapping_arm` | `F0835` | `style` | `warn` | a range of a `match` arm that has an integer in common with an earlier arm's pattern, neither within the other, such as `5..=15` after `0..=10` (see [Overlapping arms](Lint/Style/Matches.md#overlapping-arms)) |
 | `match_same_arms` | `F0725` | `pedantic` | `allow` | an arm of a `match` with the same body as another (see [Arms](Lint/Pedantic/Matches.md#arms)) |
 | `membership_chain` | `F0718` | `pedantic` | `allow` | `x = a or x = b or x = c`, or `x != a and x != b and x != c`, three or more, where some value is not one that a pattern writes (see [Membership chains](Lint/Pedantic.md#membership-chains)) |
 | `min_ident_chars` | `F0785` | `restriction` | `allow` | a declared name of one character, such as `x` (see [Names](Lint/Restriction.md#names)) |
@@ -106,10 +111,10 @@ use view::Severity
 | `redundant_method_chain` | `F0743` | `complexity` | `warn` | a chain of methods with a shorter form, such as `q.rev.rev` (see [Chains of methods](Lint/Complexity/Methods.md#chains-of-methods)) |
 | `redundant_newtype_roundtrip` | `F0842` | `complexity` | `warn` | a newtype built from the field of one, `Ms(x.0)`, or the field of one just built, `Ms(n).0` (see [Newtypes](Lint/Complexity.md#newtypes)) |
 | `redundant_slicing` | `F0753` | `complexity` | `warn` | `s.slice(0, s.len)` (see [Whole slices](Lint/Complexity/Methods.md#whole-slices)) |
-| `same_branches` | `F0737` | `suspicious` | `warn` | `if c then a else a` (see [Branches written the same](Lint/Suspicious/Expressions.md#branches-written-the-same)) |
+| `same_branches` | `F0737` | `suspicious` | `warn` | `if c then a else a`, or a table whose rows' values are all written the same (see [Branches written the same](Lint/Suspicious/Expressions.md#branches-written-the-same)) |
 | `similar_names` | `F0796` | `pedantic` | `allow` | a name declared in the same item as another that differs from it by one character, such as `level` and `levels` (see [Names](Lint/Pedantic.md#names)) |
 | `single_call_fn` | `F0788` | `restriction` | `allow` | a private defined function that one path in its file applies (see [Functions applied once](Lint/Restriction.md#functions-applied-once)) |
-| `single_match_else` | `F0771` | `pedantic` | `allow` | a `match` of one variant without a payload and `_`, such as `match x { E::A => a, _ => b }` (see [One variant and `_`](Lint/Pedantic/Matches.md#one-variant-and-_)) |
+| `single_match_else` | `F0771` | `pedantic` | `allow` | a `match` of one pattern that binds nothing and `_`, such as `match x { E::A => a, _ => b }` (see [One pattern and `_`](Lint/Pedantic/Matches.md#one-pattern-and-_)) |
 | `singleton_membership` | `F0717` | `complexity` | `warn` | `x in {a}` (see [Singleton membership](Lint/Complexity.md#singleton-membership)) |
 | `struct_excessive_bools` | `F0776` | `pedantic` | `allow` | a record with more than 3 `Bool` fields (see [Many `Bool`s](Lint/Pedantic/Records.md#many-bools)) |
 | `struct_field_names` | `F0774` | `pedantic` | `allow` | a record whose fields all start, or all end, with the same word, or a field that contains its record's name (see [Field names](Lint/Pedantic/Records.md#field-names)) |
@@ -125,6 +130,7 @@ use view::Severity
 | `unnecessary_min_or_max` | `F0843` | `complexity` | `warn` | a `min` or `max` with the first or last variant of an ordered enumeration, such as `s.max(Severity::Silent)` (see [Bounds of orderings](Lint/Complexity/Methods.md#bounds-of-orderings)) |
 | `unnecessary_struct_initialization` | `F0790` | `complexity` | `warn` | a record literal that copies each field of a value of its record, such as `Point { x := p.x, y := p.y }` (see [Copied records](Lint/Complexity.md#copied-records)) |
 | `unnecessary_trailing_comma` | `F0801` | `pedantic` | `allow` | a trailing comma on the line of the `}` or `]` that closes its list, as in `{a, b,}` (see [Trailing commas](Lint/Pedantic/Text.md#trailing-commas)) |
+| `unnested_or_patterns` | `F0836` | `pedantic` | `allow` | alternatives next to each other that name one variant and differ in one value of its payload, such as `E::V(1) \| E::V(2)` (see [Nested or-patterns](Lint/Pedantic/Matches.md#nested-or-patterns)) |
 | `unrelated_binders` | `F0793` | `suspicious` | `warn` | a global expectation whose binders fall into two or more groups that no atom relates (see [Unrelated binders](Lint/Suspicious.md#unrelated-binders)) |
 | `unused_assumption` | `F0792` | `unused` | `warn` | an assumption that mentions only inputs that nothing uses, even through other assumptions (see [Unused assumptions](Lint/Unused.md#unused-assumptions)) |
 | `unused_imports` | `F0701` | `unused` | `warn` | a `use` that nothing in its file uses (see [Unused imports](Lint/Unused.md#unused-imports)) |
@@ -132,6 +138,7 @@ use view::Severity
 | `unused_variables` | `F0710` | `unused` | `warn` | a variable or binder that nothing mentions (see [Unused variables](Lint/Unused.md#unused-variables)) |
 | `upper_case_acronyms` | `F0750` | `style` | `warn` | a name in `CamelCase` with three or more uppercase letters in a row, such as `HTTPStatus` (see [Names](Lint/Style.md#names)) |
 | `wildcard_enum_match_arm` | `F0781` | `restriction` | `allow` | a `_` arm of a `match` (see [Wildcard arms](Lint/Restriction.md#wildcard-arms)) |
+| `wildcard_in_or_patterns` | `F0834` | `complexity` | `warn` | an or-pattern with `_` among its alternatives, such as `E::A \| _` (see [Wildcards in or-patterns](Lint/Complexity/Patterns.md#wildcards-in-or-patterns)) |
 | `wildcard_single_variant` | `F0728` | `pedantic` | `allow` | a `_` arm that matches only one variant (see [Arms](Lint/Pedantic/Matches.md#arms)) |
 | `zero_prefixed_literal` | `F0758` | `complexity` | `warn` | a decimal integer literal with a leading `0`, such as `010` (see [Leading zeros](Lint/Complexity.md#leading-zeros)) |
 | `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel(A, B)` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
@@ -561,6 +568,7 @@ what the spec means:
 | `branches_sharing_code` | moves the shared operand out of the `if`, `(if c then a else b) op x` |
 | `card_zero` | compares the set with `{}`, as the message suggests |
 | `chainable_comparison` | replaces the conjuncts with the chained comparison |
+| `collapsible_match` | replaces the arm with one arm for each inner arm but `_`, with the inner pattern nested in the arm's |
 | `collapsible_when` | collapses the two conditionals into one, as the message suggests |
 | `double_comparison` | replaces the two comparisons with the one they are |
 | `double_neg` | replaces `- -x` with `x` |
@@ -588,8 +596,10 @@ what the spec means:
 | `manual_ordering` | replaces the test with a comparison with the last or first variant it names, as the message suggests |
 | `manual_pattern_char_comparison` | replaces the pattern with one that writes each alternation of single characters as a class |
 | `manual_pattern_test` | replaces the operands with a pattern test, `x is a \| b`, or `not x is a \| b` for the dual |
+| `manual_range_patterns` | replaces the or-pattern with the range |
 | `manual_record_update` | replaces the literal with an update of the value it copies from, as the message suggests |
 | `manual_rem_euclid` | replaces `(a mod k + k) mod k` with `a mod k` |
+| `match_bool` | replaces the `match` with `if c? then a else b` |
 | `match_like_membership` | replaces the `match` with an equation, `x = E::A`, or a pattern test, `x is E::A \| E::B`, as the message suggests |
 | `match_same_arms` | merges the arms into one with an or-pattern, removes those with the body of the `_` arm, or replaces the `match` with its body, as the message suggests |
 | `membership_chain` | replaces the chain with a membership, `x in {a, b, c}`, or `not x in {a, b, c}` |
@@ -609,8 +619,8 @@ what the spec means:
 | `redundant_method_chain` | replaces the chain with its shorter form |
 | `redundant_newtype_roundtrip` | replaces `Ms(x.0)` with `x`, and `Ms(n).0` with `n` |
 | `redundant_slicing` | replaces the slice with its receiver |
-| `same_branches` | replaces the conditional with its `then` branch |
-| `single_match_else` | replaces the `match` with `if x = E::A then a else b` |
+| `same_branches` | replaces the conditional with its `then` branch, or a table with a `_` row with its value |
+| `single_match_else` | replaces the `match` with `if x = E::A then a else b`, or with `x in {...}` or `x is P` as the test, as the message suggests |
 | `singleton_membership` | replaces `x in {a}` with `x = a` |
 | `suspicious_unary_op_formatting` | moves the whitespace after the `-` to before it: `x >=- 1` becomes `x >= -1` |
 | `trivial_match` | replaces the `match` with its arm's body |
@@ -620,9 +630,11 @@ what the spec means:
 | `unnecessary_min_or_max` | replaces the call with the operand it always is |
 | `unnecessary_struct_initialization` | replaces the literal with the value it copies |
 | `unnecessary_trailing_comma` | removes the comma |
+| `unnested_or_patterns` | replaces the alternatives with one, with the or-pattern nested |
 | `unused_imports` | removes the `use`, or the name from a grouped `use` |
 | `unused_lint_setting` | removes the `set_option`, or for `set_option ... in item`, removes `set_option ... in` and keeps the item |
 | `wildcard_enum_match_arm` | names the variants that `_` matches, `E::A \| E::B`, written as for `wildcard_single_variant` |
+| `wildcard_in_or_patterns` | replaces the or-pattern with `_` |
 | `wildcard_single_variant` | names the variant, `E::V`, or `E::V(_, _)` with one `_` per value of its payload |
 | `zero_prefixed_literal` | drops the leading `0`s |
 <!-- keep-sorted end -->

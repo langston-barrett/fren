@@ -2,6 +2,8 @@
 set_option fren.lint.pedantic "warn"
 set_option fren.lint.definable_output "allow"
 set_option fren.lint.many_single_char_names "allow"
+-- Its chains of tests that are not variant tests are `manual_table`'s.
+set_option fren.lint.manual_table "allow"
 
 enum E { A, B, C, D }
 enum S { Dot, Line(Int) }
