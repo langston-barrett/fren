@@ -7,11 +7,11 @@ warning[F0772]: the fields of this literal are not in the order `Cell` declares 
    = note: `Cell` declares `row` and `column`, in this order
    = note: a comment between the fields would not stay by its field, so this has no fix
 
-warning[F0771]: this `match` tests for one variant
+warning[F0771]: this `match` tests for one pattern
   --> test/cli/fix/pedantic.fren:51:21
    |
 51 |     ensure r10: s = match m {
-   |                     ^^^^^^^^^ one variant, then `_`
+   |                     ^^^^^^^^^ one pattern, then `_`
    |
    = note: the fix would drop the comments in the `match`, so it has none
 

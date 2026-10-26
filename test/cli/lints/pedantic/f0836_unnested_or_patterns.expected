@@ -1,0 +1,18 @@
+warning[F0836]: these alternatives differ only in one value of the payload
+ --> test/cli/lints/pedantic/f0836_unnested_or_patterns.fren:7:60
+  |
+7 | comp c { in p: Pair pub out m: Int ensure r: m = match p { Pair::Two(1, _) | Pair::Two(2, _) => 1, _ => 0 } }
+  |                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ one variant, written more than once
+  |
+  = help: `fren fix` can fix this
+  = note: `unnested_or_patterns` is set to `warn`
+help: nest the or-pattern
+  |
+7 - comp c { in p: Pair pub out m: Int ensure r: m = match p { Pair::Two(1, _) | Pair::Two(2, _) => 1, _ => 0 } }
+7 + comp c { in p: Pair pub out m: Int ensure r: m = match p { Pair::Two(1 | 2, _) => 1, _ => 0 } }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0836`.
+exit=3

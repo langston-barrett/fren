@@ -1,0 +1,26 @@
+--@ args: fix --check -W unnested_or_patterns -W match_bool -W single_match_else
+-- `fren fix` fixes the lints of nested, literal and range patterns, and of
+-- tables.
+-- fren-covers: lint::collapsible_match, lint::wildcard_in_or_patterns, lint::manual_range_patterns, lint::unnested_or_patterns, lint::match_bool, lint::single_match_else, lint::same_rows
+enum Shape { Circle(Int), Square(Int), Empty }
+enum Reply { Ok(Shape), Err(Int) }
+enum Pair { Two(Shape, Int), None }
+
+comp c {
+    in r: Reply
+    in p: Pair
+    in n: Int
+    in s: Shape
+    in b?
+    pub det out a: Int := match r {
+        Reply::Ok(x) => match x { Shape::Circle(_) => 1, Shape::Square(1 | 2) => 2, _ => 0 },
+        _ => 0,
+    }
+    pub det out d: Int := match p { Pair::Two(t, k) => match t { Shape::Empty => k, _ => 0 }, _ => 0 }
+    pub det out e: Int := match n { 1 | 2 | 3 => 1, 4 | 5 => 2, ..=0 | 6.. => 3 }
+    pub det out f: Int := match s { Shape::Circle(1) | Shape::Circle(2) => 1, Shape::Empty | _ => 0 }
+    pub det out g: Int := 3 * match b? { true => n, false => 0 }
+    pub det out h: Int := table { n > 0 => n + 1, _ => n + 1 } + 1
+    pub det out i: Int := match r { Reply::Ok(Shape::Circle(_)) => 1, _ => 0 }
+    pub det out j: Int := match n { 0..=9 => 1, _ => 0 }
+}

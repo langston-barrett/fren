@@ -599,6 +599,41 @@ register_option fren.lint.min_max : String := {
   descr := "the level of the lint `min_max`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.collapsible_match : String := {
+  defValue := "warn"
+  descr := "the level of the lint `collapsible_match`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.manual_range_patterns : String := {
+  defValue := "warn"
+  descr := "the level of the lint `manual_range_patterns`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.wildcard_in_or_patterns : String := {
+  defValue := "warn"
+  descr := "the level of the lint `wildcard_in_or_patterns`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.match_overlapping_arm : String := {
+  defValue := "warn"
+  descr := "the level of the lint `match_overlapping_arm`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.unnested_or_patterns : String := {
+  defValue := "allow"
+  descr := "the level of the lint `unnested_or_patterns`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.match_bool : String := {
+  defValue := "allow"
+  descr := "the level of the lint `match_bool`: allow, expect, warn, deny or forbid"
+}
+
+register_option fren.lint.manual_table : String := {
+  defValue := "allow"
+  descr := "the level of the lint `manual_table`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"

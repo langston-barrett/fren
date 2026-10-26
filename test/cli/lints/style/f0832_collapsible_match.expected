@@ -1,0 +1,20 @@
+warning[F0832]: this `match` on `s` can be part of the arm's pattern
+ --> test/cli/lints/style/f0832_collapsible_match.fren:9:48
+  |
+9 |     ensure rule: n = match r { Reply::Ok(s) => match s { Shape::Circle(_) => 1, Shape::Square(_) => 2, _ => 0 }, _ => 0 }
+  |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a `match` on `s`
+  |
+  = note: its `_` arm has the body of the outer `match`'s `_` arm
+  = help: `fren fix` can fix this
+  = note: `collapsible_match` is `warn` by default
+  = help: to allow it, `set_option fren.lint.collapsible_match "allow"`
+help: match the payload in the arm's pattern
+  |
+9 -     ensure rule: n = match r { Reply::Ok(s) => match s { Shape::Circle(_) => 1, Shape::Square(_) => 2, _ => 0 }, _ => 0 }
+9 +     ensure rule: n = match r { Reply::Ok(Shape::Circle(_)) => 1, Reply::Ok(Shape::Square(_)) => 2, _ => 0 }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0832`.
+exit=3

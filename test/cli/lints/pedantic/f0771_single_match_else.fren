@@ -1,4 +1,5 @@
 -- `single_match_else`, in parentheses where the `if` is an operand.
+-- fren-covers: lint::single_match_else
 set_option fren.lint.single_match_else "warn"
 
 enum Mode { Heat, Cool, Off }

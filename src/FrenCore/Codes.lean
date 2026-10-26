@@ -4104,7 +4104,7 @@ where the consequent was meant. And it fires on an argument of
 `exactly_one?` or `at_most_one?` written twice, as in `at_most_one?(a?,
 b?, a?)`, which holds only where `a?` is `false`.
 "# },
-  { code := "F0737", explanation := r#"A conditional whose two branches are written the same (a warning, `same_branches`).
+  { code := "F0737", explanation := r#"A conditional whose two branches are written the same, or a table whose rows' values are (a warning, `same_branches`).
 
 Example:
 
@@ -4113,7 +4113,9 @@ comp c { in a? in x: Int pub out y: Int ensure r: y = if a? then x + 1 else x + 
 ```
 
 The condition decides nothing. Either one branch is not the one meant, or
-the conditional is the branch. `fren fix` can fix this:
+the conditional is the branch. So does a table whose rows' values are all
+written the same, as `table { a? => x + 1, _ => x + 1 }`. `fren fix` can
+fix this:
 
 ```fren
 comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
@@ -4775,7 +4777,7 @@ Every `x` below `3` is below `5`, so the two comparisons are `x < 3`; with
 comp c { in x: Int pub out p? ensure r: p? iff x < 3 }
 ```
 "# },
-  { code := "F0771", explanation := r#"A `match` of one variant without a payload and `_` (`single_match_else`, allowed by default).
+  { code := "F0771", explanation := r#"A `match` of one pattern that binds nothing and `_` (`single_match_else`, allowed by default).
 
 Example:
 
@@ -4788,7 +4790,9 @@ comp c { in m: Mode in x: Int pub out y: Int ensure r: y = match m { Mode::Heat 
 ```
 
 The `match` tests whether `m` is `Mode::Heat`, which an `if` says
-directly. `fren fix` can fix this:
+directly. For a pattern that `=` and `in` cannot write, such as
+`Reply::Ok(_)` or `0..=9`, the `if` tests it with `is`. `fren fix` can fix
+this:
 
 ```fren
 enum Mode { Heat, Cool, Off }
@@ -5456,6 +5460,144 @@ fires too. `fren fix` can fix this:
 
 ```fren
 comp c { in i: Int in n: Int pub out p? ensure r: p? iff 0 <= i < n }
+```
+"# },
+  { code := "F0832", explanation := r#"A `match` on a binder of its arm that the arm's pattern can match instead (a warning, `collapsible_match`).
+
+Example:
+
+```fren
+enum Shape { Circle(Int), Square(Int), Empty }
+enum Reply { Ok(Shape), Err(Int) }
+
+comp c {
+    in r: Reply
+    pub out n: Int
+    ensure rule: n = match r { Reply::Ok(s) => match s { Shape::Circle(_) => 1, Shape::Square(_) => 2, _ => 0 }, _ => 0 }
+}
+```
+
+The inner `match` reads the payload of `Reply::Ok`, and its `_` arm has
+the body of the outer `_` arm, so a nested pattern says the same in one
+`match`. `fren fix` can fix this:
+
+```fren
+enum Shape { Circle(Int), Square(Int), Empty }
+enum Reply { Ok(Shape), Err(Int) }
+
+comp c {
+    in r: Reply
+    pub out n: Int
+    ensure rule: n = match r { Reply::Ok(Shape::Circle(_)) => 1, Reply::Ok(Shape::Square(_)) => 2, _ => 0 }
+}
+```
+"# },
+  { code := "F0833", explanation := r#"An or-pattern of integers that is one range (a warning, `manual_range_patterns`).
+
+Example:
+
+```fren
+comp c { in n: Int pub out m: Int ensure r: m = match n { 1 | 2 | 3 => 1, _ => 0 } }
+```
+
+The alternatives match the integers from 1 to 3, without a gap, which the
+range `1..=3` says at once. `fren fix` can fix this:
+
+```fren
+comp c { in n: Int pub out m: Int ensure r: m = match n { 1..=3 => 1, _ => 0 } }
+```
+"# },
+  { code := "F0834", explanation := r#"An or-pattern with `_` among its alternatives (a warning, `wildcard_in_or_patterns`).
+
+Example:
+
+```fren
+enum Signal { Stop, Slow, Go }
+
+comp c { in s: Signal pub out m: Int ensure r: m = match s { Signal::Stop => 0, Signal::Slow | _ => 1 } }
+```
+
+`_` matches every value, so the other alternatives add nothing. `fren fix`
+can fix this:
+
+```fren
+enum Signal { Stop, Slow, Go }
+
+comp c { in s: Signal pub out m: Int ensure r: m = match s { Signal::Stop => 0, _ => 1 } }
+```
+"# },
+  { code := "F0835", explanation := r#"A range of a `match` arm that overlaps an earlier arm's pattern, neither within the other (a warning, `match_overlapping_arm`).
+
+Example:
+
+```fren
+comp c { in n: Int pub out m: Int ensure r: m = match n { 0..=10 => 1, 5..=15 => 2, _ => 3 } }
+```
+
+The integers from 5 to 10 are matched by the first arm, so the second
+matches only those from 11 to 15, which its range does not say. Write the
+ranges so that they do not overlap, or so that the earlier one is within
+the later:
+
+```fren
+comp c { in n: Int pub out m: Int ensure r: m = match n { 0..=10 => 1, 11..=15 => 2, _ => 3 } }
+```
+"# },
+  { code := "F0836", explanation := r#"Alternatives of one variant that differ in one value of its payload (`unnested_or_patterns`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.unnested_or_patterns "warn"
+
+enum Light { Red, Amber, Green }
+enum Lamp { Lit(Light), Dark }
+
+comp c { in l: Lamp pub out m: Int ensure r: m = match l { Lamp::Lit(Light::Red) | Lamp::Lit(Light::Amber) => 1, _ => 0 } }
+```
+
+An or-pattern nested in the payload says the same once. `fren fix` can fix
+this:
+
+```fren
+enum Light { Red, Amber, Green }
+enum Lamp { Lit(Light), Dark }
+
+comp c { in l: Lamp pub out m: Int ensure r: m = match l { Lamp::Lit(Light::Red | Light::Amber) => 1, _ => 0 } }
+```
+"# },
+  { code := "F0837", explanation := r#"A `match` on a `Bool` (`match_bool`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.match_bool "warn"
+
+comp c { in b? in x: Int pub out m: Int ensure r: m = match b? { true => x, false => 0 } }
+```
+
+An `if` says the same. `fren fix` can fix this:
+
+```fren
+comp c { in b? in x: Int pub out m: Int ensure r: m = if b? then x else 0 }
+```
+"# },
+  { code := "F0838", explanation := r#"A chain of `if` that picks a value by conditions, as a table does (`manual_table`, allowed by default).
+
+Example:
+
+```fren
+set_option fren.lint.manual_table "warn"
+
+comp c { in x: Int pub out m: Int ensure r: m = if x > 10 then 2 else if x < 0 then 1 else 0 }
+```
+
+A table lists the cases one row each, and is checked for rows that may
+both hold. `fren fix` does not rewrite the chain, since a chain whose tests
+overlap would fail that check:
+
+```fren
+comp c { in x: Int pub out m: Int ensure r: m = table { x > 10 => 2, x < 0 => 1, _ => 0 } }
 ```
 "# },
   { code := "F0758", explanation := r#"A decimal integer literal with a leading `0`, such as `010` (a warning, `zero_prefixed_literal`).

@@ -1,0 +1,14 @@
+warning[F0835]: this range overlaps `0..=10`, an earlier arm's pattern
+ --> test/cli/lints/style/f0835_match_overlapping_arm.fren:3:72
+  |
+3 | comp c { in n: Int pub out m: Int ensure r: m = match n { 0..=10 => 1, 5..=15 => 2, _ => 3 } }
+  |                                                                        ^^^^^^ overlaps an earlier arm
+  |
+  = note: where they overlap, the earlier arm is taken, so this arm matches only part of its range
+  = note: `match_overlapping_arm` is `warn` by default
+  = help: to allow it, `set_option fren.lint.match_overlapping_arm "allow"`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0835`.
+exit=3

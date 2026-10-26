@@ -1,0 +1,3 @@
+-- `manual_range_patterns`, with a range among the alternatives.
+-- fren-covers: lint::manual_range_patterns
+comp c { in n: Int pub out m: Int ensure r: m = match n { -1 | 0 | 1..5 => 1, _ => 0 } }

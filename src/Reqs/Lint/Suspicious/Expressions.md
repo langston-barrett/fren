@@ -258,6 +258,70 @@ pub comp same_branches {
 }
 ```
 
+`same_branches` fires on a [table](../../Lang/Expressions.md#tables)
+whose rows' values are all written the same, of two or more rows, or of
+one row that is `_`: its conditions decide nothing either. Where the table
+has a `_` row, it has that value wherever it is evaluated, and the fix
+replaces it with the value, in parentheses where [fixes need
+them](../../Lint.md#parentheses-in-fixes); each row's copy of the value is guarded by the table's
+guard, the negations of the earlier rows' conditions and its own, and
+together they cover the table's guard, so the value's guard after the fix
+is no stronger. Without a `_` row, the table is unspecified where no row
+holds, which the value is not, so there is no fix. The message is at the table. The refinements below
+check the fix on one example:
+
+```fren
+set_option fren.lint.same_branches "allow" in
+pub comp same_rows_written {
+    in n: Int
+    pub det out v: Int := table { n > 0 => n + 1, n < -5 => n + 1, _ => n + 1 }
+}
+
+pub comp same_rows_fixed {
+    in n: Int
+    pub det out v: Int := n + 1
+}
+
+refine same_rows_sound: same_rows_fixed refines same_rows_written
+refine same_rows_complete: same_rows_written refines same_rows_fixed
+```
+
+`lint::same_rows` states when it fires, computing the facts from the rows, with each
+row's condition by whether it holds, and checks the fix: where there is a
+`_` row, the first row that holds, or `_`, has the value that every row
+has:
+
+```fren
+pub struct Row { holds?, value: Body }
+
+pub fn row_holds?(r: Row) := r.holds?
+
+pub fn row_value(r: Row): Body := r.value
+
+pub comp same_rows {
+    in rows: Seq(Row)
+    in wildcard?             -- the last row is `_`
+    in o: Int
+
+    assume size: 1 <= rows.len <= 4
+
+    pub det out fires?
+    pub det out fixed?   -- it has a fix
+
+    det out n_rows: Int := rows.len
+    -- the rows' values are written the same
+    det out same? := (forall (s: Slot), when pos(s) < rows.len, row_value(rows[pos(s)]) = row_value(rows[0]))
+
+    ensure rule: fires? iff (same? and (n_rows >= 2 or wildcard?))
+    ensure fix: fixed? iff wildcard?
+
+    expect keeps_meaning: forall (s: Slot), when fires? and fixed? and pos(s) < rows.len
+        and (row_holds?(rows[pos(s)]) or pos(s) = rows.len - 1)
+        and (forall (r: Slot), when pos(r) < pos(s), not row_holds?(rows[pos(r)])),
+        body_value(row_value(rows[pos(s)]), -1, 0, -1, 0, -1, 0, o) = body_value(row_value(rows[0]), -1, 0, -1, 0, -1, 0, o)
+}
+```
+
 `ifs_same_cond` fires on a test of a chain of `else if` written the same
 as an earlier test of the chain, as the second `x > 0` in `if x > 0 then a
 else if x > 0 then b else c`. Its branch is never taken: it is guarded by

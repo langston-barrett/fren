@@ -1,15 +1,15 @@
-warning[F0771]: this `match` tests for one variant
- --> test/cli/lints/pedantic/f0771_single_match_else.fren:6:64
+warning[F0771]: this `match` tests for one pattern
+ --> test/cli/lints/pedantic/f0771_single_match_else.fren:7:64
   |
-6 | comp c { in m: Mode in x: Int pub out y: Int ensure r: y = 2 * match m { Mode::Heat => x + 1, _ => x } }
-  |                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ one variant, then `_`
+7 | comp c { in m: Mode in x: Int pub out y: Int ensure r: y = 2 * match m { Mode::Heat => x + 1, _ => x } }
+  |                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ one pattern, then `_`
   |
   = help: `fren fix` can fix this
   = note: `single_match_else` is set to `warn`
 help: write it as an `if`
   |
-6 - comp c { in m: Mode in x: Int pub out y: Int ensure r: y = 2 * match m { Mode::Heat => x + 1, _ => x } }
-6 + comp c { in m: Mode in x: Int pub out y: Int ensure r: y = 2 * (if m = Mode::Heat then x + 1 else x) }
+7 - comp c { in m: Mode in x: Int pub out y: Int ensure r: y = 2 * match m { Mode::Heat => x + 1, _ => x } }
+7 + comp c { in m: Mode in x: Int pub out y: Int ensure r: y = 2 * (if m = Mode::Heat then x + 1 else x) }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

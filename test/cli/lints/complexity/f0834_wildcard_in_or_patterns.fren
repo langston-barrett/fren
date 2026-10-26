@@ -1,0 +1,6 @@
+-- `wildcard_in_or_patterns`, in a payload's pattern.
+-- fren-covers: lint::wildcard_in_or_patterns
+enum Signal { Stop, Slow, Go }
+enum Light { On(Signal), Off }
+
+comp c { in l: Light pub out m: Int ensure r: m = match l { Light::On(Signal::Stop | _) => 1, _ => 0 } }

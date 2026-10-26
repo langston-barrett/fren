@@ -1896,6 +1896,85 @@ def checkRelational (cx : ExprCtx) (span : Span) (tys : Array Ty) (operands : Ar
   modify fun s => { s with relationalUsed := true }
   checkCore cx span .relational true true operands (← operands.allM (isConstant cx)) (finiteRange := tys.all (!st.infinite ·))
 
+/-- The pattern `p`, resolved as `q`, as written (`Fren.Core.PatNode`): an
+or-pattern is where its alternatives are, without a leading `|`. -/
+partial def patNode (src : Array Char) (p : Pattern) (q : Fren.Core.Pat) : Fren.Core.PatNode Span :=
+  let ps : Array Pattern := match p with
+    | .or _ alts => alts
+    | .variant _ _ (some args) => args
+    | _ => #[]
+  let qs : Array Fren.Core.Pat := match q with
+    | .or qs | .ctor _ qs => qs
+    | _ => #[]
+  let sp := match p with
+    | .or _ alts => alts[0]!.span.to alts.back!.span
+    | p => p.span
+  .mk q (Fren.Core.textOf src (toRange sp)) sp ((ps.zip qs).map fun (a, b) => patNode src a b)
+
+/-- The lints of each or-pattern within the pattern `n`, of a `match` arm
+or of `is` (`Reqs/Lint/Complexity/Patterns`): `wildcard_in_or_patterns`,
+`manual_range_patterns` and `unnested_or_patterns`. -/
+def lintOrPatterns (n : Fren.Core.PatNode Span) : M Unit := do
+  for o in n.orPatterns do
+    let alts := o.kids
+    if Fren.Core.wildcardInOr (alts.any (·.pat matches .wild false)) then
+      lintFix .wildcardInOrPatterns o.at_ Fren.Core.wildcardInOrMsg
+    else if let some fixed := Fren.Core.manualRangeFix? (alts.map fun a => (a.pat, a.text)) then
+      lintFix .manualRangePatterns o.at_ (Fren.Core.manualRangeMsg fixed)
+    else
+      for (i, j, fixed) in Fren.Core.unnestedRuns alts do
+        lintFix .unnestedOrPatterns (alts[i]!.at_.to alts[j]!.at_) (Fren.Core.unnestedOrMsg fixed)
+
+/-- The name that the binder written `x` declares, without its `!`. -/
+def binderName (x : Ident) : String := (declaredIdent x).1.name
+
+/-- `collapsible_match` on the arm `i` of the `match` `e`, whose patterns
+are `pats` (`lint::collapsible_match`): the arm's pattern is one variant
+whose payload's patterns are `_` or binders, and its body a `match` on one
+of those binders. -/
+def lintCollapsible (cx : ExprCtx) (arms : Array (Pattern × Option Expr × Expr)) (pats : Array Fren.Core.Pat) (i : Nat) : M Unit := do
+  let src := (← get).src
+  let (p, _, body) := arms[i]!
+  let .variant _ segs (some args) := p | return
+  let .ctor _ qs := pats[i]! | return
+  let .match inner (.path _ #[x]) innerArms false := body | return
+  -- An arm with a guard may not be taken where its pattern matches.
+  if arms.any (·.2.1.isSome) || innerArms.any (·.2.1.isSome) then return
+  let binders := (args.zip qs).filterMap fun
+    | (.variant _ #[b] none, .wild true) => some (binderName b)
+    | _ => none
+  let isX : Pattern × Fren.Core.Pat → Bool
+    | (.variant _ #[b] none, .wild true) => binderName b == x.name
+    | _ => false
+  let some k := (args.zip qs).findIdx? isX | return
+  let flat := qs.all (· matches .wild _)
+  let innerWildcard := innerArms.back?.any (·.1 matches .wild _)
+  -- The first later arm that matches a value of the variant: one with `_`
+  -- or a binder among its alternatives, since an arm that names the variant
+  -- after this one is unreachable.
+  let wild? := ((List.range arms.size).filter (· > i)).find? fun j => pats[j]!.top.any (· matches .wild _)
+  let some d := innerArms.back? | return
+  let sameWildcard := wild?.any fun j => pats[j]! matches .wild false &&
+    Fren.Core.writtenSame (arms[j]!.2.2.text src).text (d.2.2.text src).text
+  -- The inner `_` arm's body is taken where the outer one's is after the
+  -- fix, outside the arm's pattern, so it must mention none of its binders.
+  let dText := (d.2.2.text src).text
+  let mentioned := Fren.Core.mentionsName (← srcAt { start := x.span.stop, stop := inner.stop }) x.name ||
+    binders.any (Fren.Core.mentionsName dText ·)
+  let innerBinders ← innerArms.flatMapM fun (q, _, _) => return (← patternBinders cx q).map binderName
+  let clash := innerBinders.any binders.contains
+  unless Fren.Core.collapsibleMatch true flat innerWildcard sameWildcard mentioned clash innerArms.size do return
+  let armRange : Fren.Core.Range := { start := p.span.start, stop := (Fren.Core.withParens src (toRange body.span)).stop }
+  let commented := Fren.Core.hasComment (Fren.Core.textOf src armRange)
+  let path ← srcAt (segs[0]!.span.to segs.back!.span)
+  let argTexts ← args.mapM (srcAt ·.span)
+  let innerTexts ← (innerArms.pop).mapM fun (q, _, b) => do
+    return (" | ".intercalate (← q.alts.mapM (srcAt ·.span)).toList, (b.text src).text)
+  let fixed := Fren.Core.collapsedArms path argTexts k innerTexts
+  let msg := Fren.Core.collapsibleMatchMsg x.name (if commented then none else some fixed)
+  -- The fix replaces the outer arm, and the message is at the inner `match`.
+  lintFix .collapsibleMatch inner { msg with fixes := msg.fixes.map ({ · with range? := some armRange }) }
+
 /-- The match lints of the `match` `e` on a value of type `ty`, whose arms'
 patterns are `pats`, where `slot` is (`Reqs/Lint/Style#matches-that-are-memberships`,
 `Reqs/Lint/Pedantic/Matches`). The lints that move or remove arms, or
@@ -1982,8 +2061,23 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
   -- `single_match_else` (`lint::single_match_else`).
   let followed ← followedSpan span
   if let some fixed := (if anyGuard then none else
-      Fren.Core.singleMatchElseFix? infos scr slot (membership?.isSome || needless || trivial) followed) then
+      Fren.Core.singleMatchElseFix? infos scr slot (membership?.isSome || needless || trivial) followed (ty == .bool)) then
     lintFix .singleMatchElse span (tm (Fren.Core.singleMatchElseMsg fixed (Fren.Core.hasComment (← srcAt span))))
+  -- `match_bool` (`lint::match_bool`).
+  if ty == .bool && !anyGuard then
+    if let some fixed := Fren.Core.matchBoolFix? pats infos scr.text slot (membership?.isSome || trivial) (← followedSpan span) then
+      lintFix .matchBool span (tm (Fren.Core.matchBoolMsg fixed (Fren.Core.hasComment (← srcAt span))))
+  -- `match_overlapping_arm` (`lint::match_overlapping_arm`). An arm with a
+  -- guard is left out, as in Clippy; the arms of a table over a scrutinee
+  -- are checked to be disjoint instead.
+  let intervals := (pats.zip guarded).map fun (p, g) => p.top.map fun
+    | .int lo hi => if g || isTable then none else some (lo, hi)
+    | _ => none
+  for ((j, b), (i, a)) in Fren.Core.overlappingArms intervals do
+    lint .matchOverlappingArm arms[j]!.1.alts[b]!.span (Fren.Core.overlappingArmMsg (← srcAt arms[i]!.1.alts[a]!.span))
+  unless isTable do
+    for i in [0:arms.size] do lintCollapsible cx arms pats i
+  for (p, _, _) in arms, q in pats do lintOrPatterns (patNode src p q)
   -- In a table over a scrutinee, `_` also takes what the guards of the
   -- other arms leave, which no pattern can name without overlapping them.
   unless flat && !(isTable && anyGuard) do return
@@ -2178,8 +2272,11 @@ partial def ifChain : Expr → Array Expr × Array Expr × Expr
 /-- The text of `e` as the body of a `match` arm. -/
 def armBodyOf (e : Expr) : M String := return Fren.Core.armBody (← srcAt e.span) (e matches .when .. | .quant ..)
 
-/-- `if_chain_match` on the chain of `if` that starts at `e`
-(`lint::if_chain_match`). -/
+/-- The text of `e` as a row's condition or value in a table. -/
+def rowPartOf (e : Expr) : M String := return Fren.Core.rowPart (← srcAt e.span) (e matches .when .. | .quant .. | .«let» ..)
+
+/-- `if_chain_match` and `manual_table` on the chain of `if` that starts at
+`e` (`lint::if_chain_match`, `lint::manual_table`). -/
 def lintIfChain (cx : ExprCtx) (e : Expr) : M Unit := do
   let (cs, as, z) := ifChain e
   let ts? := Fren.Core.sameScrutinee (← cs.mapM (variantTest? cx))
@@ -2188,6 +2285,9 @@ def lintIfChain (cx : ExprCtx) (e : Expr) : M Unit := do
   let n := ((ts[0]?.bind fun t => enums.get? t.enum).map (·.variants.size)).getD 0
   let (fires, wildcard) := Fren.Core.ifChainMatch cs.size ts?.isSome (Fren.Core.repeatedVariants ts)
     (Fren.Core.untestedVariants n ts)
+  -- `manual_table` (`lint::manual_table`).
+  if Fren.Core.manualTable cs.size ts?.isSome then
+    lint .manualTable e.span (Fren.Core.manualTableMsg (← cs.mapM rowPartOf) (← as.mapM rowPartOf) (← rowPartOf z))
   unless fires do return
   let final? ← if wildcard then some <$> armBodyOf z else pure none
   lintFix .ifChainMatch e.span (Fren.Core.ifChainMatchMsg ts (← as.mapM armBodyOf) final?)
@@ -2544,7 +2644,7 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   | .record span tySegs fields => elabRecordExpr cx span tySegs fields
   | .update span base fields => elabUpdateExpr cx span base fields
   | .match span scrutinee arms isTable => elabMatchExpr cx e expected? parent? span scrutinee arms isTable
-  | .table span rows => elabTableExpr cx expected? span rows
+  | .table span rows => elabTableExpr cx e expected? parent? span rows
   | .is span scrutinee p => elabIsExpr cx span scrutinee p
   | .«let» _ defs body isWhere => elabLetExpr cx concatOk expected? defs body isWhere
 
@@ -3559,7 +3659,8 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
   return (out, ty)
 
 /-- `elabExpr` on a table. -/
-partial def elabTableExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (rows : Array (Span × Option Expr × Expr)) : M (String × Ty) := do
+partial def elabTableExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (parent? : Option Expr) (span : Span)
+    (rows : Array (Span × Option Expr × Expr)) : M (String × Ty) := do
   -- Only the last row may be `_` (`Reqs/Lang/Expressions#tables`).
   if let some k := Fren.Core.rowAfterWild? (rows.map (·.2.1.isNone)) then err rows[k]!.1 Fren.Core.rowAfterWildMsg
   let wild := rows.back!.2.1.isNone
@@ -3609,6 +3710,15 @@ partial def elabTableExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (
     values := values.set! k x
   -- Each row's condition, or its `_`, which is last.
   noteTable cx span (rows.map fun (st, c?, _) => (c?.map (·.span)).getD st) conds defined wild
+  -- `same_branches` on a table (`lint::same_rows`).
+  if cx.noteIndexes then
+    let src := (← get).src
+    let v := rows[0]!.2.2
+    let first := (v.text src).text
+    let (fires, _) := Fren.Core.sameRows rows.size (rows.all fun r => Fren.Core.writtenSame (r.2.2.text src).text first) wild
+    if fires then
+      let fixed := (v.text src).inSlot (parent?.bind (Expr.operandSlot src · e)) (← followedSpan span)
+      lintFix .sameBranches span (Fren.Core.sameRowsMsg first fixed wild)
   let ty := ty?.get!
   -- The first row whose condition holds; with no `_` row, where none
   -- does, the table is unspecified, as an index out of range is.
@@ -3633,6 +3743,7 @@ partial def elabIsExpr (cx : ExprCtx) (span : Span) (scrutinee : Expr) (p : Patt
     -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`).
     let irrefutable := Fren.Core.irrefutableIs (Fren.Core.matchesEvery (← patSigs) ts.patTy q)
     if irrefutable then lint .irrefutableIs span (Fren.Core.irrefutableIsMsg ts.show (q matches .wild _))
+    lintOrPatterns (patNode (← get).src p q)
     let texts ← p.alts.mapM (srcAt ·.span)
     if Fren.Core.isEquality texts.size (Fren.Core.equatable q texts) irrefutable then
       lintFix .isEquality span (Fren.Core.isEqualityMsg (scrutinee.text (← get).src) texts[0]!)
