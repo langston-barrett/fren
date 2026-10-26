@@ -4,10 +4,10 @@ error[F0603]: expectation `climate::thermostat::wrong` does not hold
 23 |     expect wrong: when temp < 60, mode = Heat
    |            ^^^^^ does not follow from the guarantees
    |
-   = counterexample: temp = 49, target = 51, mode = Mode::Off
+   = counterexample: temp = 59, target = 59, mode = Mode::Off
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
-error[F0607]: `climate::loose::b?` is not determined by the inputs: for the input a? = false, it can be false or true
+error[F0607]: `climate::loose::b?` is not determined by the inputs: for the input a? = false, it can be true or false
   --> test/cli/commands/quickcheck_counterexample.fren:28:17
    |
 28 |     pub det out b?

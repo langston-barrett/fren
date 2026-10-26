@@ -4,7 +4,7 @@ error[F0603]: expectation `timer::fits` does not hold
 12 |     expect fits: left > Ms(5)
    |            ^^^^ does not follow from the guarantees
    |
-   = counterexample: job = Job { took := Ms(1), waits := {} }, took = Ms(6), left = Ms(4)
+   = counterexample: job = Job { took := Ms(0), waits := {Ms(1)} }, took = Ms(11), left = Ms(-1)
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
 error[F0603]: expectation `timer::waited` does not hold
@@ -13,7 +13,7 @@ error[F0603]: expectation `timer::waited` does not hold
 13 |     expect waited: job.took in job.waits
    |            ^^^^^^ does not follow from the guarantees
    |
-   = counterexample: job = Job { took := Ms(-1), waits := {Ms(0)} }, took = Ms(-1), left = Ms(11)
+   = counterexample: job = Job { took := Ms(2), waits := {Ms(-1)} }, took = Ms(2), left = Ms(8)
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
 fren: 2 passed (2 by testing), 2 failed, 0 inconclusive, 0 redundant

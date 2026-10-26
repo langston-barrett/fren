@@ -4,7 +4,7 @@ error[F0603]: expectation `words::word::no_zz` does not hold
 13 |     expect no_zz: when text.contains?("zz"), not accepted?
    |            ^^^^^ does not follow from the guarantees
    |
-   = counterexample: text = "zz", accepted? = true
+   = counterexample: text = "zza", accepted? = true
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
 error[F0603]: expectation `words::word::digit_first` does not hold
@@ -13,7 +13,7 @@ error[F0603]: expectation `words::word::digit_first` does not hold
 14 |     expect digit_first: when text.matches?(r"[0-9][a-z]*"), accepted?
    |            ^^^^^^^^^^^ does not follow from the guarantees
    |
-   = counterexample: text = "9xa", accepted? = false
+   = counterexample: text = "5ea", accepted? = false
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
 fren: 3 passed, 2 failed, 0 inconclusive, in 100 tests each

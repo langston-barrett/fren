@@ -97,6 +97,125 @@ impl confirmed: eval::confirmed_verdict for (v : Verdict) (c : Confirmation) {
   intro v c _
   cases v <;> cases c <;> decide
 
+/-! ## Backjumping
+
+The search's conflict sets are `Nat`s, bit `j` for the variable at
+position `j` (`FrenCli.Eval.conflictOf`). -/
+
+open FrenCli.Eval (conflictOf resumesAt)
+
+/-- The set of the positions of `cs` that are `true`. -/
+def bitsOf : List Bool → Nat
+  | [] => 0
+  | b :: cs => b.toNat + 2 * bitsOf cs
+
+theorem bitsOf_eq_zero (cs : List Bool) : bitsOf cs = 0 ↔ true ∉ cs := by
+  induction cs with
+  | nil => simp [bitsOf]
+  | cons b cs ih =>
+    cases b
+    · simp [bitsOf]; rw [← ih]; omega
+    · simp [bitsOf]
+
+theorem testBit_bitsOf (cs : List Bool) (n : Nat) : (bitsOf cs).testBit n = cs.getD n false := by
+  induction cs generalizing n with
+  | nil => simp [bitsOf]
+  | cons b cs ih =>
+    cases n with
+    | zero => cases b <;> simp [bitsOf, Nat.testBit_zero] <;> omega
+    | succ n =>
+      rw [Nat.testBit_succ]
+      have : (b.toNat + 2 * bitsOf cs) / 2 = bitsOf cs := by cases b <;> simp <;> omega
+      simp only [bitsOf, this, ih]
+      simp
+
+theorem bitsOf_lt (cs : List Bool) (n : Nat) : bitsOf cs < 2 ^ (n + 1) ↔ true ∉ cs.drop (n + 1) := by
+  induction cs generalizing n with
+  | nil => simp [bitsOf]; exact Nat.pow_pos (by omega)
+  | cons b cs ih =>
+    cases n with
+    | zero =>
+      have := bitsOf_eq_zero cs
+      cases b <;> simp [bitsOf] <;> rw [← this] <;> omega
+    | succ n =>
+      have h := ih n
+      have : 2 ^ (n + 1 + 1) = 2 * 2 ^ (n + 1) := by rw [Nat.pow_succ]; omega
+      rw [List.drop_succ_cons, ← h, this]
+      cases b <;> simp [bitsOf] <;> omega
+
+/-- A slice from just after `n` to the end is the rest of the list. -/
+theorem slice_rest (cs : List Bool) (n : Nat) (h : n < cs.length) :
+    ((Fren.Seq.ofList cs).slice ((n : Int) + 1) (cs.length : Int)).toList = cs.drop (n + 1) := by
+  unfold Fren.Seq.slice
+  by_cases h' : n + 1 < cs.length
+  · rw [if_pos (by simp; omega)]
+    simp
+    exact List.take_of_length_le (by simp)
+  · rw [if_neg (by simp; omega)]
+    simp [List.drop_eq_nil_of_le (by omega : cs.length ≤ n + 1)]
+
+theorem testBit_foldl_or (e : Nat) (rs : List Nat) (n : Nat) :
+    (rs.foldl (· ||| ·) e).testBit n = (e.testBit n || rs.any (·.testBit n)) := by
+  induction rs generalizing e with
+  | nil => simp
+  | cons r rs ih => simp [ih, Nat.testBit_or, Bool.or_assoc]
+
+/-- The set of `j` alone if `b`, else the empty set. -/
+def bitIf (j : Nat) (b : Bool) : Nat := if b then 2 ^ j else 0
+
+theorem testBit_bitIf (j : Nat) (b : Bool) : (bitIf j b).testBit j = b := by
+  cases b <;> simp [bitIf, Nat.testBit_two_pow_self]
+
+theorem member_conflictOf (i j : Nat) (e : Bool) (rs : List Bool) :
+    (conflictOf i (bitIf j e) (rs.map (bitIf j))).testBit j = (decide (j < i) && (e || true ∈ rs)) := by
+  have : rs.any ((fun x => x.testBit j) ∘ bitIf j) = decide (true ∈ rs) := by
+    induction rs with
+    | nil => simp
+    | cons r rs ih => cases r <;> simp_all [testBit_bitIf]
+  simp [conflictOf, Nat.testBit_mod_two_pow, testBit_foldl_or, testBit_bitIf, this]
+
+-- For every position of the variable and of an earlier one, over whether
+-- each rejection reads the earlier one.
+impl conflict_of: eval::conflict for (i : Nat) (j : Int) (e : Bool) (rs : List Bool) {
+  position := i,
+  earlier := j,
+  equated? := e,
+  rejections := Fren.Seq.ofList rs,
+  member? := decide (0 ≤ j) && (conflictOf i (bitIf j.toNat e) (rs.map (bitIf j.toNat))).testBit j.toNat,
+} by
+  intro i j e rs _
+  simp [fren_spec, member_conflictOf]
+  constructor
+  · rintro ⟨h0, h1, h2⟩
+    exact ⟨⟨h0, by omega⟩, h2⟩
+  · rintro ⟨⟨h0, h1⟩, h2⟩
+    exact ⟨h0, by omega, h2⟩
+
+-- At every position, over every conflict set: the search resumes at the
+-- last member, as `resumesAt` decides from the bits.
+impl backjump_at: eval::backjump for (cs : List Bool) (k : Int) {
+  conflict := Fren.Seq.ofList cs,
+  k := k,
+  resumes? := decide (0 ≤ k) && resumesAt (bitsOf cs) k.toNat,
+} by
+  intro cs k _
+  simp [fren_spec]
+  by_cases hk : 0 ≤ k
+  · obtain ⟨n, rfl⟩ := Int.eq_ofNat_of_zero_le hk
+    simp only [Int.toNat_natCast, resumesAt, testBit_bitsOf, Bool.and_eq_true, decide_eq_true_eq, bitsOf_lt]
+    by_cases hn : n < cs.length
+    · rw [Fren.Seq.nth_of_lt _ _ (by omega) (by simpa using hn), slice_rest cs n hn]
+      simp [hn, List.getD_eq_getElem?_getD]
+    · have : cs.getD n false = false := by
+        simp [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega : cs.length ≤ n)]
+      simp only [this]
+      constructor
+      · intro h
+        simp at h
+      · rintro ⟨⟨_, _⟩, _⟩
+        omega
+  · simp [hk]
+
 trusted eval::sound: "a counterexample from testing is a behaviour that the evaluator found to meet the component and to falsify the check, so it is genuine if the evaluator is right; `fren check` passes such a check only on an `Unsat` answer, which comes with no model to confirm, so this rests on the solver and Fren's translation being sound on `Unsat`, which is trusted, not checked"
 
 end Fren.Impls

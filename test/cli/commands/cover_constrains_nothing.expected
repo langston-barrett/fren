@@ -24,7 +24,7 @@ error[F0603]: expectation `sensor::only_warm` does not hold
 13 |     expect only_warm: x = 50
    |            ^^^^^^^^^ does not follow from the guarantees
    |
-   = counterexample: x = -11, hot? = false
+   = counterexample: x = 0, hot? = false
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
 note: cover goal `sensor::warm` is met

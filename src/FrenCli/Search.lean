@@ -1,15 +1,17 @@
 -- keep-sorted start
 import FrenCli.Eval
+import FrenCli.Verdicts
 import Std.Data.HashMap
 -- keep-sorted end
 
 /-!
 # Searching for behaviours (`Reqs/Eval#searching-for-behaviours`)
 
-A random, backtracking search for values of variables that make a set of
-constraints (`Eval.Atom`) true. Each variable's candidates are tried in a
-random order, and a branch is abandoned as soon as a constraint is
-`false`. The search is incomplete, but whatever it returns has been
+A random search for values of variables that make a set of constraints
+(`Eval.Atom`) true. Each variable's candidates are tried in a random order,
+a branch is abandoned as soon as a constraint is `false`, and a variable
+that runs out of candidates goes back to the last variable that its
+failure depends on (backjumping). The search is incomplete, but whatever it returns has been
 evaluated.
 -/
 
@@ -375,25 +377,18 @@ partial def Ex.unknownIf : Ex → UnknownIf
   | .quant _ _ insts body => if insts.isEmpty then .never else body.unknownIf
   | _ => .never
 
-/-- The candidates for a variable of type `ty`, given `equated`, what the
-constraints equate it with, each with its `Ex.unknownIf`, over the search's
-environment `slots`. `fixed?` is `Problem.fixedPool? sp w p ty`, computed
-once per search.
-
-An equated expression whose condition holds evaluates to `none`, which
-gives no candidate, so it is not evaluated. The two random integers are
-drawn whether or not they are read, so that the generator's stream does
-not change; they are added to `p.ints` only when they are read, that is,
-without `fixed?`, which is always the case for a sequence. -/
-def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (slots : Slots) (ty : VTy)
-    (equated : Array (Ex × UnknownIf)) (fixed? : Option (Array Val)) : R (Array Val) := do
-  -- Values that a constraint equates the variable with, first.
-  let eqs := equated.filterMap fun (e, u) => if u.holds slots then none else e.eval I (fun _ => none) [] slots
-  let r₁ ← below 41
-  let r₂ ← below 41
-  let mut pool ← match fixed? with
+/-- The values that a variable of type `ty` takes, other than those that the
+constraints equate it with (`Reqs/Eval#searching-for-behaviours`).
+`fixed?` is `Problem.fixedPool? sp w p ty`. Two random integers are added
+to `p.ints` where they are read: without `fixed?`, which is always the
+case for a sequence. A search draws each variable's pool once, from a
+generator of its own, and shuffles it at each visit (`Problem.search`). -/
+def Problem.pool (sp : Spec) (w : World) (p : Problem) (ty : VTy) (fixed? : Option (Array Val)) : R (Array Val) := do
+  let pool ← match fixed? with
     | some pool => pure pool
     | none => do
+      let r₁ ← below 41
+      let r₂ ← below 41
       let ints := (p.ints.push ((r₁ : Int) - 20)).push ((r₂ : Int) - 20)
       let mut pool := smallValues sp w ints p.strs 24 2 ty
       -- Longer sequences, of the lengths that the constraints mention.
@@ -404,7 +399,16 @@ def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (slots
             for _ in [0:6] do
               pool := pool.push (.seq (← (Array.range n).mapM fun _ => do return elems[← below elems.size]!))
       pure pool
-  pool ← shuffle pool
+  return pool
+
+/-- The candidates for a variable of type `ty`: the values that `equated`,
+what the constraints equate it with, each with its `Ex.unknownIf`, have in
+the search's environment `slots`, then the rest of its `pool`
+(`Problem.pool`). An equated expression whose condition holds evaluates
+to `none`, which gives no candidate, so it is not evaluated. -/
+def candidatesIn (I : Interp) (slots : Slots) (ty : VTy) (equated : Array (Ex × UnknownIf)) (pool : Array Val) :
+    Array Val := Id.run do
+  let eqs := equated.filterMap fun (e, u) => if u.holds slots then none else e.eval I (fun _ => none) [] slots
   if eqs.isEmpty then return pool
   -- A `Nat` is at least 0, whatever a constraint equates it with.
   let eqs := if ty == .nat then eqs.filter (fun | .int i => 0 ≤ i | _ => false) else eqs
@@ -418,9 +422,25 @@ def holdsIn (I : Interp) (slots : Slots) (e : Ex) : Option Bool :=
   | some (.bool b) => some b
   | _ => none
 
+/-- The slots that `e` reads (`Ex.slot`), each as often as it occurs. -/
+partial def Ex.slots : Ex → Array Nat
+  | .slot k => #[k]
+  | .lit _ | .var _ | .bound _ => #[]
+  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .const _ a => a.slots
+  | .bin _ a b | .when _ a b | .pair a b | .index a b _ => a.slots ++ b.slots
+  | .ite c a b => c.slots ++ a.slots ++ b.slots
+  | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.slots)
+  | .method _ r args => r.slots ++ args.flatMap (·.slots)
+  | .match e arms .. => e.slots ++ arms.flatMap fun (_, g?, b) => (g?.map (·.slots)).getD #[] ++ b.slots
+  | .update e fs => e.slots ++ fs.flatMap (·.2.slots)
+  | .quant _ _ _ b => b.slots
+  | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.slots)).getD #[] ++ v.slots
+  | .pre _ _ gs e => gs.flatMap (·.2.slots) ++ e.slots
+  | .typed _ _ e => e.slots
+
 /-- Values for `p.vars`, extending `env`, that make every constraint
-`true` under `I`, within `budget` steps. `w` gives the candidates of the
-abstract types.
+`true` under `I`, within `budget` steps, each step a candidate tried, and
+the steps it took. `w` gives the candidates of the abstract types.
 
 The constraints are compiled once per search: each variable `x` of a
 constraint nested at `pfx` is read as the full name `pfx.x`, and each full
@@ -440,9 +460,25 @@ again, which gives the same answer as evaluating them all, since evaluation
 is monotone (`FrenCli.Eval`). Those that become true are marked so for the
 branch and unmarked after it. A constraint whose `Ex.unknownIf` holds is
 unknown, so it is not evaluated: it would neither make the branch
-unviable nor become true. -/
-partial def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (budget : Nat := 4000) :
-    R (Option Env) := do
+unviable nor become true. If a constraint is `false` in `env` itself, it
+stays so, and the search finds nothing, at once.
+
+The search draws one random number, from which it draws each variable's
+pool (`Problem.pool`), once, and the pool's order at each visit, from the
+values chosen before it. So a variable's candidates, but for their order,
+are a function of the values of the variables that the expressions it is
+equated with read. With `backjump`, a variable that runs out of
+candidates goes back to the last variable in its conflict set
+(`resumesAt`), not to the one before it (`Reqs/Eval#backjumping`). Each
+rejection of a candidate reads only variables in the conflict set, and so
+do the candidates themselves, but for their order. So no value of a
+variable that it goes back past would let any of them through. The search
+tries the candidates that backtracking would try, in the same order, but
+for those, and finds the same values in no more steps, drawing the same
+random numbers. -/
+partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (budget : Nat := 4000)
+    (backjump := true) : R (Option Env × Nat) := do
+  let seed ← rand
   -- The names of the environment: the variables to choose, then those of
   -- the constraints; and the constraints that mention each, by index.
   let (names, index, byVar) := Id.run do
@@ -474,65 +510,98 @@ partial def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (en
   let varSlot := p.vars.map fun (x, _) => index[x]!
   let slots : Slots := names.map (env[·]?)
   -- Each constraint's value in `env`. A constraint that is `true` stays
-  -- so on that branch (evaluation is monotone), and is not evaluated again.
+  -- so on that branch (evaluation is monotone), and is not evaluated again;
+  -- one that is `false` stays so on every branch.
   let atRoot := full.map (holdsIn I slots ·)
-  let rootViable := !atRoot.any (· == some false)
+  if atRoot.any (· == some false) then return (none, 0)
   let rootTrue := atRoot.map (· == some true)
-  -- The constraints that become `true` when the variable `x`, by index,
-  -- gets its value in `slots`, or `none` if one becomes `false`.
-  let viable (slots : Slots) (x : Nat) (known : Array Bool) : Option (Array Nat) := Id.run do
-    if !rootViable then
-      return if full.any (holdsIn I slots · == some false) then none else some #[]
+  -- For each slot, the set of the variables to choose that it is: the
+  -- first position that names it, if the search chooses it.
+  let slotBit : Array Nat := Id.run do
+    let mut bits := Array.replicate names.size 0
+    for x in varSlot.reverse, i in (List.range varSlot.size).reverse do
+      bits := bits.set! x (if slots[x]!.isSome then 0 else 1 <<< i)
+    return bits
+  let readsOf (e : Ex) : Nat := e.slots.foldl (fun acc k => acc ||| slotBit[k]!) 0
+  -- The set of the variables that each constraint reads.
+  let reads := full.map readsOf
+  -- The first constraint that becomes `false` when the variable `x`, by
+  -- index, gets its value in `slots`, or those that become `true`.
+  let viable (slots : Slots) (x : Nat) (known : Array Bool) : Except Nat (Array Nat) := Id.run do
     let mut newly := #[]
     for k in byVar[x]! do
       if known[k]! || unknown[k]!.holds slots then continue
       match holdsIn I slots full[k]! with
-      | some false => return none
+      | some false => return .error k
       | some true => newly := newly.push k
       | none => pure ()
-    return some newly
-  -- What the constraints equate each variable with, computed when the
-  -- search first reaches it.
-  let equated : Array (Thunk (Array (Ex × UnknownIf))) :=
-    varSlot.map fun x => Thunk.mk fun _ => full.flatMap fun e => (e.equated x).map fun e => (e, e.unknownIf)
-  -- The values that each variable's candidates start from, where they do
-  -- not depend on the random integers, likewise.
-  let fixed : Array (Thunk (Option (Array Val))) := p.vars.map fun (_, ty) => Thunk.mk fun _ => p.fixedPool? sp w ty
-  -- Returns whether it found values, with `slots` and `known` as they were
-  -- given if it did not, and with the values found if it did.
-  let rec go (i : Nat) (slots : Slots) (known : Array Bool) (left : Nat) : R (Bool × Slots × Array Bool × Nat) := do
-    if left == 0 then return (false, slots, known, 0)
-    if h : i < p.vars.size then
+    return .ok newly
+  -- What the constraints equate each variable with, and the set of the
+  -- variables that those expressions read, computed when the search first
+  -- reaches it.
+  let equated : Array (Thunk (Array (Ex × UnknownIf) × Nat)) :=
+    varSlot.map fun x => Thunk.mk fun _ =>
+      let es := full.flatMap fun e => e.equated x
+      (es.map fun e => (e, e.unknownIf), es.foldl (fun acc e => acc ||| readsOf e) 0)
+  -- Each variable's pool, likewise.
+  let pools : Array (Thunk (Array Val)) := p.vars.mapIdx fun i (_, ty) => Thunk.mk fun _ =>
+    (p.pool sp w ty (p.fixedPool? sp w ty)).run' ⟨mix seed i.toUInt64⟩
+  -- Returns whether it found values, the conflict set if it did not, and
+  -- the steps left, with `slots` and `known` as they were given if it did
+  -- not, and with the values found if it did. Every member of the
+  -- conflict set is before `i`. Without steps left, the conflict set is
+  -- empty, and nothing is tried.
+  let rec go (i : Nat) (h : UInt64) (slots : Slots) (known : Array Bool) (left : Nat) :
+      Bool × Nat × Slots × Array Bool × Nat := Id.run do
+    if left == 0 then return (false, 0, slots, known, 0)
+    if hi : i < p.vars.size then
       let (_, ty) := p.vars[i]
       let x := varSlot[i]!
-      if slots[x]!.isSome then return ← go (i + 1) slots known left
+      if slots[x]!.isSome then return go (i + 1) h slots known left
+      let (eqs, eqReads) := (equated[i]!).get
+      -- The pool, in an order drawn from the values chosen so far.
+      let pool := (shuffle (pools[i]!).get).run' ⟨mix h i.toUInt64⟩
       let mut left := left
       let mut slots := slots
       let mut known := known
-      for v in ← p.candidates sp w I slots ty (equated[i]?.map (·.get) |>.getD #[]) (fixed[i]?.bind (·.get)) do
+      let mut rejections : List Nat := []
+      for v in candidatesIn I slots ty eqs pool do
         if left == 0 then break
         left := left - 1
         slots := slots.set! x (some v)
-        if let some newly := viable slots x known then
+        match viable slots x known with
+        | .error k => rejections := reads[k]! :: rejections
+        | .ok newly =>
           for k in newly do known := known.set! k true
-          let (found, slots', known', l) ← go (i + 1) slots known left
+          let (found, c, slots', known', l) := go (i + 1) (mix h (hashVal v)) slots known left
           slots := slots'
           known := known'
           left := l
-          if found then return (true, slots, known, left)
+          if found then return (true, 0, slots, known, left)
           for k in newly do known := known.set! k false
-      return (false, slots.set! x none, known, left)
+          if left == 0 then break
+          if backjump && !resumesAt c i then return (false, c, slots.set! x none, known, left)
+          rejections := c :: rejections
+      if left == 0 then return (false, 0, slots.set! x none, known, 0)
+      return (false, conflictOf i eqReads rejections, slots.set! x none, known, left)
     else
-      let all := (full.zip known).all fun (e, t) => t || holdsIn I slots e == some true
-      return (all, slots, known, left)
-  let (found, slots, _, _) ← go 0 slots rootTrue budget
-  if !found then return none
+      match (full.zip known).zipIdx.find? fun ((e, t), _) => !(t || holdsIn I slots e == some true) with
+      | none => return (true, 0, slots, known, left)
+      | some (_, k) => return (false, conflictOf i 0 [reads[k]!], slots, known, left)
+  let (found, _, slots, _, left) := go 0 seed slots rootTrue budget
+  if !found then return (none, budget - left)
   -- The values found, added in the order of `p.vars`, the order in which
   -- the search chose them.
-  return some <| p.vars.zipIdx.foldl (init := env) fun env ((x, _), i) =>
+  return (some <| p.vars.zipIdx.foldl (init := env) fun env ((x, _), i) =>
     if env.contains x then env else match slots[varSlot[i]!]! with
       | some v => env.insert x v
-      | none => env
+      | none => env, budget - left)
+
+/-- Values for `p.vars`, extending `env`, that make every constraint
+`true` under `I`, within `budget` steps (`Problem.search`). -/
+def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (budget : Nat := 4000) :
+    R (Option Env) :=
+  (·.1) <$> p.search sp w I env budget
 
 /-- The integers that `atoms` mention, their neighbours, and a few small
 ones. -/

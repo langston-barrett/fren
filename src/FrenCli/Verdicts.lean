@@ -56,4 +56,27 @@ def confirmation (hypFalse goalTrue allKnown : Bool) : Confirmation :=
 def confirmedVerdict (solver : Verdict) (result : Confirmation) : Verdict :=
   if result == .Refuted then .inconclusive else solver
 
+/-! ## Backjumping
+
+A search's *conflict set*, for a variable that has run out of candidates,
+is the set of the variables before it whose values its failure depends on
+(`Reqs/Eval#backjumping`). It is a `Nat` whose bit `j` is set when the
+variable at position `j` of those that the search chooses is in it. -/
+
+/-- The conflict set of the variable at position `i` of those that the
+search chooses, when it has run out of candidates (`eval::conflict`):
+`equated` is the set of the variables that the expressions it is equated
+with read, and `rejections` are, for each candidate it tried, the set of
+the variables that what rejected the candidate reads. Only the variables
+before it are kept. -/
+def conflictOf (i : Nat) (equated : Nat) (rejections : List Nat) : Nat :=
+  rejections.foldl (· ||| ·) equated % 2 ^ i
+
+/-- Whether the search, going back from a variable that has run out of
+candidates with the conflict set `c`, resumes at the variable at position
+`k`, trying its next candidate (`eval::backjump`): `k` is the last member
+of `c`. The search goes back past every variable after it without trying
+their other candidates, and, if `c` is empty, fails. -/
+def resumesAt (c k : Nat) : Bool := c.testBit k && c < 2 ^ (k + 1)
+
 end FrenCli.Eval

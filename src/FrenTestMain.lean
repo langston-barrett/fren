@@ -1001,6 +1001,64 @@ def laterFiles : IO (Array String) := do
       failures := failures.push s!"`{before}` to `{after}` in `{item}`: changes nothing that `b.fren` sees"
   return failures
 
+/-! ## Backjumping -/
+
+open FrenCli.Eval in
+/-- Whether the search with backjumping finds what backtracking over the
+same candidates finds, in no more steps, and draws the same random numbers
+(`Reqs/Eval#backjumping`), for every component of the spec in `paths`, or
+of each file of `test/ui` on its own if `paths` is empty. Its problems are
+those of a test's searches: a behaviour that meets the component, and one
+in which an expectation is false, each under two random interpretations.
+Returns the failures and the number of problems. -/
+def backjumpingOf (paths : Array String) : IO (Array String × Nat) := do
+  -- fren-covers: eval::backjumping
+  let files ← readGroup paths
+  -- Only a spec without static errors is tested, as `fren quickcheck` does.
+  let st := files.zipIdx.foldl (init := FrenCli.initialState #[]) fun st ((_, chars), i) =>
+    FrenCli.elabParsed st i chars (FrenCli.parseText chars)
+  if st.diags.any (·.severity == .error) then return (#[], 0)
+  let .ok sp := FrenCli.specOf files | return (#[], 0)
+  let mut failures := #[]
+  let mut problems := 0
+  for c in sp.comps do
+    let all := sp.meaning c
+    let expects := c.constraints.filter (·.kind == .expect)
+    let lits := all ++ atomsOf .anonymous expects
+    let ints := intsOf lits
+    let strs := (stringsOf lits).run' ⟨hash c.path⟩
+    let sp := sp.withMatchMemo lits strs
+    let goals := #[all] ++ expects.map fun e => all.push { label := e.name, pfx := .anonymous, e := .not e.e }
+    for atoms in goals, t in [0:goals.size] do
+      for k in [0:2] do
+        let (w, g) := (World.random sp).run ⟨mix (hash c.path) (2 * t + k).toUInt64⟩
+        let I := w.interp sp
+        let p : Problem := { vars := sp.order c, atoms, ints, strs }
+        let ((bt, n), g₁) := (p.search sp w I {} (backjump := false)).run g
+        let ((bj, m), g₂) := (p.search sp w I {} (backjump := true)).run g
+        problems := problems + 1
+        let shown (r : Option Env) := r.map fun env => p.vars.map fun (x, _) => env[x]?
+        let name := s!"{c.path} ({t}, {k})"
+        if g₁.s != g₂.s then failures := failures.push s!"{name}: backjumping draws other random numbers"
+        if m > n then failures := failures.push s!"{name}: backjumping takes {m} steps, backtracking {n}"
+        if bt.isSome && shown bj != shown bt then
+          failures := failures.push s!"{name}: backjumping finds other values than backtracking"
+        if bt.isNone && n < 4000 && bj.isSome then
+          failures := failures.push s!"{name}: backjumping finds values where backtracking tries every candidate"
+  return (failures, problems)
+
+/-- `backjumpingOf` Fren's own requirements, or each file of `test/ui`. -/
+def backjumping (corpus : String) : IO (Array String) := do
+  let groups : Array (Array String) ← if corpus == "reqs" then pure #[ownSpecFiles] else
+    do pure ((← sortedFiles ("test" / "ui") "fren").map fun f => #[f.toString])
+  let mut failures := #[]
+  let mut problems := 0
+  for g in groups do
+    let (fs, n) ← backjumpingOf g
+    failures := failures ++ fs
+    problems := problems + n
+  return if problems < 100 then failures.push s!"backjumping: only {problems} problems in `{corpus}`" else failures
+
 /-! ## Jobs
 
 The tests are independent, so `main` runs them as jobs, in parallel, each
@@ -1023,7 +1081,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"]]
+    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"]]
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
 
@@ -1044,6 +1102,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["formatting"] => formatting
   | ["fixing"] => fixing
   | ["libraries"] => libraries
+  | ["backjumping", corpus] => backjumping corpus
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
   | ["mutation", group, slice, slices] => do

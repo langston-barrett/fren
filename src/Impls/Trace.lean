@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Impls.Impl
 import Impls.View
+import Reqs.Eval
 import Reqs.Fmt
 import Reqs.Lint
 import Reqs.Modules
@@ -24,6 +25,7 @@ test changes: such claims are only here and in `Impls.Lint`, the modules of
 Impls whose library says so, with `Impls` (`lakefile.lean`). -/
 
 tested cli::agreement: "src/FrenTestMain.lean"
+tested eval::backjumping: "src/FrenTestMain.lean"
 tested cli::accepts: "test/ui/lean/lean_code.fren", "test/ui/lean/lean_impl.fren"
 tested modules::two_segments: "test/ui/lang/scoping.fren"
 tested lang::operand: "test/ui/lang/precedence.fren", "test/cli/syntax/f0107_iff.fren", "test/cli/syntax/f0109_operand.fren"
