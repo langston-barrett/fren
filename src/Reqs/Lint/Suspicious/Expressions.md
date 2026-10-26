@@ -76,16 +76,26 @@ it counts twice, so neither `exactly_one?` nor `at_most_one?` holds: the
 call holds only where it does not, which is seldom what a list of
 conditions meant, and one of the two is probably a typo for another. The
 message is reported at the later one, and says this. `true` and `false`
-are left to the lints of constants. `lint::eq_op_cardinality` states when
-it fires, and the refinements check what the message says, on a call with
-the repeated argument written once:
+are left to the lints of constants. `lint::eq_op_cardinality` models an
+argument as a literal or an [operand](../Complexity.md#simpler-bool-expressions)
+as written, and states when it fires at an argument, from the operands of
+the arguments before it, and the refinements check what the message
+says, on a call with the repeated argument written once:
 
 ```fren
+-- An argument of a cardinality operator: `true` or `false`, or another
+-- expression, as written.
+pub enum Argument { Literal(Bool), Written(Operand) }
+
 pub comp eq_op_cardinality {
-    in repeated?         -- an argument, not `true` or `false`, is written the same as an earlier one
+    in earlier: Set(Operand)  -- the arguments before it that are not literals
+    in argument: Argument
     pub det out fires?
 
-    ensure rule: fires? iff repeated?
+    ensure rule: fires? iff match argument {
+        Argument::Written(x) => x in earlier,
+        Argument::Literal(_) => false,
+    }
 }
 
 set_option fren.lint.eq_op "allow" in

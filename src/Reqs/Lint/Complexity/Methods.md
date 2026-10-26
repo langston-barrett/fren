@@ -231,19 +231,41 @@ written as a path; a variant as the receiver, as in `First.max(x)`, is
 left as it is. The fix evaluates only operands that the call did, where it
 did, so it keeps the guards. This is Clippy's `unnecessary_min_or_max`,
 in `complexity`, which fires on `x.min(u8::MIN)` and the like.
-`lint::unnecessary_min_or_max` states when it fires, and which operand the
-fix is:
+The lints of ordered enumerations model a variant by its position, as
+`lint::Position`, an ordered enumeration of five, enough to tell every
+case of their rules apart, and an enumeration by its last variant.
+`lint::unnecessary_min_or_max` states which operand the fix is, and that
+the call always has its value, whatever the receiver is:
 
 ```fren
-pub comp unnecessary_min_or_max {
-    in max?              -- `max`, rather than `min`
-    in first?            -- the argument is the first variant
-    in last?             -- the argument is the last variant
-    pub det out fires?
-    pub det out argument?  -- the fix is the argument, rather than the receiver
+pub ordered enum Position { V0, V1, V2, V3, V4 }
 
-    ensure rule: fires? iff (first? or last?)
-    ensure fix: argument? iff (first? != max?)
+-- Whether `x OP y`, for positions.
+pub fn orders?(op: Comparison, x: Position, y: Position) := match op {
+    Comparison::Eq => x = y,
+    Comparison::Ne => x != y,
+    Comparison::Lt => x < y,
+    Comparison::Le => x <= y,
+    Comparison::Gt => x > y,
+    Comparison::Ge => x >= y,
+}
+
+pub enum MinMaxFix { Unchanged, Receiver, Argument }
+
+pub comp unnecessary_min_or_max {
+    use self::MinMaxFix::{Argument, Receiver, Unchanged}
+    in max?              -- `max`, rather than `min`
+    in argument: Position  -- the variant that is the argument
+    in last: Position    -- the last variant of its enumeration
+    pub det out fix: MinMaxFix
+
+    assume within: argument <= last
+
+    ensure rule: fix = (if argument = Position::V0 then (if max? then Receiver else Argument)
+        else if argument = last then (if max? then Argument else Receiver) else Unchanged)
+
+    expect keeps_meaning: forall (x: Position), when x <= last and fix != Unchanged,
+        (if max? then x.max(argument) else x.min(argument)) = (if fix = Receiver then x else argument)
 }
 ```
 

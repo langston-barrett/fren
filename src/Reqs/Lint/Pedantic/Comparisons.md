@@ -12,7 +12,7 @@ membership in a set literal, `x in {...}`, a disjunction of equations of
 one operand, `x = Silent or x = Info`, or the conjunction of
 disequations that says the operand is none of them, `x != Error and x !=
 Warning`, which becomes `x < Warning`. Each variant is written as a path,
-the members may come in any order, and each is named once. The
+and the members may come in any order, or more than once. The
 disjunction or conjunction is the whole of a run of `or` or of `and`, read
 as [`chainable_comparison`](../Style/Comparisons.md#chained-comparisons)
 reads a run of `and`, with no other operand, and the operand is [written
@@ -27,24 +27,82 @@ author knows which is meant. Where the order means something, as a level
 of severity does, the comparison says what the membership spells out, and
 keeps holding as variants are added. Clippy has no counterpart. The fix
 keeps the guards: it evaluates the operand once, where the test first did,
-and every other operand of the test is a variant. `lint::manual_ordering`
-states when it fires, and the comparison of the fix:
+and every other operand of the test is a variant. `lint::manual_ordering` models the test by
+the variants it names, by their [positions](../Complexity/Methods.md#bounds-of-orderings),
+the last variant of the enumeration, and whether the test is that the
+operand is none of them. The fix compares with the last variant named,
+where they are the first, or the first named, where they are the last,
+and it holds exactly where the test does, for every value of the
+operand:
 
 ```fren
 pub mod lint
 
+pub enum OrderingFix { Unchanged, Compare(Comparison, Position) }
+
+-- The variants a test names: whether it names each position.
+pub struct NamedVariants { v0?, v1?, v2?, v3?, v4? }
+
+fn names?(named: NamedVariants, v: Position) := match v {
+    Position::V0 => named.v0?,
+    Position::V1 => named.v1?,
+    Position::V2 => named.v2?,
+    Position::V3 => named.v3?,
+    Position::V4 => named.v4?,
+}
+
+-- A function's body has no quantifier, so that `decide` evaluates it:
+-- each is over the five positions in turn.
+
+-- The number of variants named.
+fn count_named(named: NamedVariants): Int := (if named.v0? then 1 else 0) + (if named.v1? then 1 else 0)
+    + (if named.v2? then 1 else 0) + (if named.v3? then 1 else 0) + (if named.v4? then 1 else 0)
+
+-- The test names two variants or more, but not all of them.
+fn some_named?(named: NamedVariants, last: Position) :=
+    count_named(named) >= 2 and (not named.v0?
+    or (Position::V1 <= last and not named.v1?)
+    or (Position::V2 <= last and not named.v2?)
+    or (Position::V3 <= last and not named.v3?)
+    or (Position::V4 <= last and not named.v4?))
+
+-- Whether `v` is named exactly when it is up to `m`, if `up?`, or from `m`,
+-- for `v` a variant of the enumeration.
+fn bounded_at?(named: NamedVariants, last: Position, v: Position, m: Position, up?) :=
+    when v <= last, names?(named, v) iff (if up? then v <= m else v >= m)
+
+-- The variants named are those up to `m`, if `up?`, or from `m`.
+fn bounded?(named: NamedVariants, last: Position, m: Position, up?) :=
+    bounded_at?(named, last, Position::V0, m, up?)
+    and bounded_at?(named, last, Position::V1, m, up?)
+    and bounded_at?(named, last, Position::V2, m, up?)
+    and bounded_at?(named, last, Position::V3, m, up?)
+    and bounded_at?(named, last, Position::V4, m, up?)
+
+-- `x OP m` holds exactly where the test does, at `x`.
+fn agrees_at?(named: NamedVariants, last: Position, negated?, op: Comparison, m: Position, x: Position) :=
+    when x <= last, (names?(named, x) != negated?) iff orders?(op, x, m)
+
 pub comp manual_ordering {
     use self::Comparison::{Ge, Gt, Le, Lt}
-    in count: Int        -- the variants of the enumeration
-    in named: Int        -- the variants that the test names
-    in first?            -- they are the first variants
-    in last?             -- they are the last
-    in negated?          -- the test is that the operand is none of them
-    pub det out fires?
-    pub det out op: Comparison
+    use self::OrderingFix::{Compare, Unchanged}
+    in named: NamedVariants          -- the variants that the test names
+    in last: Position        -- the last variant of the enumeration
+    in negated?              -- the test is that the operand is none of them
+    pub det out fix: OrderingFix
 
-    ensure rule: fires? iff (2 <= named < count and (first? or last?))
-    ensure fix: op = if negated? then (if first? then Gt else Lt) else (if first? then Le else Ge)
+    assume within: forall (v: Position), when names?(named, v), v <= last
+
+    ensure first: forall (m: Position), when some_named?(named, last) and bounded?(named, last, m, true),
+        fix = Compare(if negated? then Gt else Le, m)
+    ensure last_variants: forall (m: Position), when some_named?(named, last) and bounded?(named, last, m, false),
+        fix = Compare(if negated? then Lt else Ge, m)
+    ensure otherwise: unless some_named?(named, last)
+        and (exists (m: Position), bounded?(named, last, m, true) or bounded?(named, last, m, false)),
+        fix = Unchanged
+
+    expect keeps_meaning: forall (op: Comparison) (m: Position), when fix = Compare(op, m),
+        names?(named, m) and (forall (x: Position), agrees_at?(named, last, negated?, op, m, x))
 }
 ```
 

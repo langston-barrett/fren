@@ -36,11 +36,12 @@ comp cardinality {
     --~^ warning: this is `exactly_one?` of 3 operands
     ensure r3: o3? iff d? and not (b? and a?) and not (c? and a?) and not (c? and b?) and (c? or b? or a?)
     --~^ warning: this is `exactly_one?` of 3 operands
-    -- A pair left out, two operands, a pair written twice, or a conjunct
-    -- in parentheses: none fires.
+    -- A pair left out, two operands, or a conjunct in parentheses: none
+    -- fires. A pair written twice is the same conjunction.
     ensure r4: o4? iff not (a? and b?) and not (a? and c?)
     ensure r5: o5? iff not (a? and b?)
     ensure r6: o6? iff not (a? and b?) and not (b? and a?) and not (a? and c?) and not (b? and c?)
+    --~^ warning: this is `at_most_one?` of 3 operands
     ensure r7: o7? iff not (a? and b?) and (not (a? and c?)) and not (b? and c?)
     -- Nor where an operand indexes, whose guards would change.
     ensure r8: when q.len > 1, o8? iff (not (q[0] > 0 and a?) and not (q[0] > 0 and q[1] > 0) and not (a? and q[1] > 0))
