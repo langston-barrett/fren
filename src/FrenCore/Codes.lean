@@ -2979,7 +2979,8 @@ comp size {
 An arm is taken where its pattern matches, its guard holds and no earlier
 arm is taken. Fren asks whether that can happen, under the conditions
 under which the `match` is evaluated and the hypotheses of where it is
-written, for each arm that has a guard or follows one. Here, every `x`
+written, but the constraint that it is in, for each arm that has a guard
+or follows one. Here, every `x`
 above 20 is above 10, so the first arm takes it, and the second arm is
 never taken. Correct the guards, or the order of the arms:
 
@@ -3008,7 +3009,8 @@ comp size {
 A table has the value of its first row that holds, and a row `_` holds
 wherever no earlier one does. Fren asks, for each row, whether it can be
 the first that holds, under the conditions under which the table is
-evaluated and the hypotheses of where it is written. Here, one of the
+evaluated and the hypotheses of where it is written, but the constraint
+that it is in. Here, one of the
 first two rows always holds, so the `_` row never gives the table's
 value. Remove the row, or correct the conditions before it:
 

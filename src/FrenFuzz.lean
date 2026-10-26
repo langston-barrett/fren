@@ -524,12 +524,15 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
   -- Definedness, of each index by its position, and the completeness and
   -- disjointness of each table and `match`, by where it is reported and the
   -- earlier row (`tableKey`): in every model of `ms`, its goal holds. The
-  -- reachability of an arm or a row: in some model, its goal fails.
-  let defined (o : Oracle) (p : Name) (e : Ex) (ms : Array (Interp × Array Env)) : Oracle :=
-    let always (g : Ex) := ms.all fun (I, ms) => ms.all (holds I · { label := p, pfx := .anonymous, e := g })
-    let o := e.indexGoals.foldl (init := o) fun o (pos, g) => put o .definedness (some (.num p pos)) (pass (always g))
+  -- reachability of an arm or a row: in some model of `rms`, the models
+  -- without the constraint itself (`Comp.reachHyps`), its goal fails.
+  let defined (o : Oracle) (p : Name) (e : Ex) (ms : Array (Interp × Array Env))
+      (rms : Array (Interp × Array Env) := ms) : Oracle :=
+    let always (ms : Array (Interp × Array Env)) (g : Ex) :=
+      ms.all fun (I, ms) => ms.all (holds I · { label := p, pfx := .anonymous, e := g })
+    let o := e.indexGoals.foldl (init := o) fun o (pos, g) => put o .definedness (some (.num p pos)) (pass (always ms g))
     e.tableGoals.foldl (init := o) fun o (pos, q, g) =>
-      put o q.kind (some (tableKey p pos q.rows?)) (pass (if q.kind == .reachability then !always g else always g))
+      put o q.kind (some (tableKey p pos q.rows?)) (pass (if q.kind == .reachability then !always rms g else always ms g))
   if c.isGlobal then
     let MG := Is.map fun I => (I, models sp size I order (sp.insts c))
     for e in es do out := put out .expect (some e.name) (pass (MG.all fun (I, ms) => ms.all (holds I · (atom e))))
@@ -563,7 +566,10 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
   for a in as, k in [0:as.size] do
     let others := (A.extract 0 k) ++ A.extract (k + 1)
     out := defined out a.name a.e (Is.map fun I => (I, models sp size I ownIns others))
-  for p in rs ++ es ++ gs do out := defined out p.name p.e MF
+  for p in es ++ gs do out := defined out p.name p.e MF
+  for p in rs do
+    let others := A ++ Iw ++ R.filter (·.label != p.name)
+    out := defined out p.name p.e MF (Is.map fun I => (I, models sp size I order others))
   for e in es do
     out := put out .expect (some e.name) (pass (MF.all fun (I, ms) => ms.all (holds I · (atom e))))
   -- A cover goal: some behaviour satisfies it (`check::cover_goal`).

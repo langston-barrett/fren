@@ -80,13 +80,24 @@ comp guarded {
     ensure s: when x <= 0, y = 0
 }
 
--- A guarantee that is the `match` itself rules out the behaviours that
--- take its last arm (`Reqs/Check#reachability`).
+-- Reachability leaves out the constraint that the `match` is in, which
+-- holds only where the `match` has the value it needs: `r`'s last arm is
+-- how it says what it rules out, and is reachable
+-- (`Reqs/Check#reachability`).
 comp itself {
     pub out m: Mode
     pub out ok?
 
-    ensure r: match m { Mode::Off if ok? => true, _ => false }   --~ error: arm 2 of a `match` in `itself::r` is never taken
+    ensure r: match m { Mode::Off if ok? => true, _ => false }
+}
+
+-- Another guarantee still counts.
+comp other_guarantee {
+    pub out m: Mode
+    pub out ok?
+
+    ensure s: ok?
+    ensure r: match m { Mode::Off if not ok? => false, _ => m != Mode::Heat }   --~ error: arm 1 of a `match` in `other_guarantee::r` is never taken
 }
 
 -- In a quantifier's body, a `match` is checked at each instance: an arm
@@ -143,5 +154,5 @@ comp counter {
 expect bigger: forall (c: counter), match c.m { k if k > c.n => true, _ => false }
 --~^ error: arm 2 of a `match` in `bigger` is never taken
 
---@ summary: 58 passed, 16 failed, 0 inconclusive, 0 redundant
+--@ summary: 63 passed, 16 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

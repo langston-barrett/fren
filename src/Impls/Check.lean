@@ -18,7 +18,7 @@ required. Each obligation is proved by `decide`.
 namespace Fren.Impls
 
 open Fren.Core (Answer Verdict CheckKind realizableVerdict expectVerdict vacuityVerdict coverVerdict
-  determinismVerdict redundancyAsked kindsFor reachabilityAsked completenessAsked)
+  determinismVerdict redundancyAsked kindsFor reachabilityAsked completenessAsked reachUses)
 
 instance : Fren.Finite Answer := ⟨[.sat, .unsat, .unknown], by intro x; cases x <;> simp⟩
 instance : Fren.Finite Verdict := ⟨[.pass, .fail, .inconclusive], by intro x; cases x <;> simp⟩
@@ -148,6 +148,14 @@ impl reachability_asked: check::reachability_asked for (g a : Bool) {
   guarded? := g,
   after_guard? := a,
   asked? := reachabilityAsked g a,
+}
+
+-- `Comp.reachHyps` keeps the hypotheses of definedness that `reachUses`
+-- keeps, the enclosing constraint being the one that the site names.
+impl reach_hypothesis: check::reach_hypothesis for (d e : Bool) {
+  definedness? := d,
+  enclosing? := e,
+  used? := reachUses d e,
 }
 
 impl completeness_asked: check::completeness_asked for (u : Bool) {

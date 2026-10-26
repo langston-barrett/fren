@@ -716,7 +716,13 @@ For arm `j`, with `P_k` and `C_k` as for [completeness](#completeness),
 `F_j` for `not T_1 and ... and not T_(j-1)`, and the `match`'s guard `G`,
 Fren asks whether `not (F_j and T_j)` can be proved from `G` and the
 hypotheses of where the `match` is written, as for
-[completeness](#completeness). If it can, no behaviour that they allow
+[completeness](#completeness), but without the constraint, definition
+or binding that the `match` is in. That constraint holds of a behaviour
+only where its `match` has the value it needs, so it would rule out the
+arms whose values it does not need: in `ensure r: match k { Kind::A if
+ok? => true, _ => false }`, `r` holds only where the first arm is taken,
+yet the last arm is how `r` says what it rules out, and is not dead. If
+it can be proved, no behaviour that the other hypotheses allow
 takes the arm, and the check fails, at the arm's pattern (`F0626`), or, for
 a table, at the row's condition or its `_` (`F0627`). So a guard that is
 `false`, or that contradicts the arm's pattern or the hypotheses, fails it,
@@ -746,9 +752,21 @@ definedness, `N` among them (see the [table above](#definedness)): a
 guarantee's own `R` is among its hypotheses, so a table or a `match` in a
 guarantee may be complete only because another guarantee rules out
 the cases it leaves out, and an arm of one may be unreachable because
-another guarantee, or the guarantee itself, rules out every behaviour
-that takes it, as in `ensure r: match k { Kind::A if ok? => true, _ => false
-}`, which no behaviour meets by its last arm: write it `k = Kind::A and ok?`.
+another guarantee rules out every behaviour that takes it. Reachability
+alone leaves out the constraint, definition or binding that the `match`
+or table is in, as above; for an assumption, that is already so.
+`check::reach_hypothesis` states which of the hypotheses of definedness
+reachability asks under:
+
+```fren
+pub comp reach_hypothesis {
+    in definedness?          -- the hypothesis is one of the definedness check's at the `match`
+    in enclosing?            -- it is the constraint, definition or binding that the `match` is in
+    pub det out used?
+
+    ensure rule: used? iff (definedness? and not enclosing?)
+}
+```
 
 ## Preconditions
 

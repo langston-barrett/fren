@@ -533,25 +533,27 @@ theorem checkTable_fail (t : TableSite F) (h : (checkTable b c t).run.verdict = 
   obtain ⟨ρ, ht, hρ, hg, hm⟩ := s.query_sat hq
   exact ⟨ρ, ht, (s.holds_site t.goal.kind_substitutes t.site ht).1 hρ, hg, _, hm, rfl⟩
 
-/-- A `pass` of `reachability` is an environment where the case is
-evaluated and its goal, that it is not taken, is false: the case is taken
-there. -/
+/-- A `pass` of `reachability` is an environment where the hypotheses of
+the case's place hold, but perhaps not the constraint it is in
+(`Comp.reachHyps`), and its goal, that it is not taken, is false: the case
+is taken there. -/
 theorem checkReach_pass (t : TableSite F) (h : (checkReach b c t).run.verdict = .pass) :
-    ∃ ρ, s.Typed ρ ∧ s.AtSite t.site ρ ∧ ¬s.den t.site.goal ρ := by
+    ∃ ρ, s.Typed ρ ∧ s.Holds (c.defEqs .reachability ++ c.reachHyps b t.site) ρ ∧ ¬s.den t.site.goal ρ := by
   unfold checkReach at h
-  cases hq : b.query (c.defEqs .reachability ++ c.siteHyps b t.site) t.site.goal false <;>
+  cases hq : b.query (c.defEqs .reachability ++ c.reachHyps b t.site) t.site.goal false <;>
     simp [hq, vacuityVerdict, Outcome.answer] at h
   obtain ⟨ρ, ht, hρ, hg, -⟩ := s.query_sat hq
-  exact ⟨ρ, ht, (s.holds_site (kd := .reachability) rfl t.site ht).1 hρ, hg⟩
+  exact ⟨ρ, ht, hρ, hg⟩
 
-/-- A `fail` of `reachability` means that the case is taken nowhere it is
-evaluated: its goal holds wherever its place's hypotheses do. -/
+/-- A `fail` of `reachability` means that the case is taken nowhere its
+place's hypotheses, but the constraint it is in, hold. Those include
+every environment where it is evaluated (`Sound.AtSite`). -/
 theorem checkReach_fail (t : TableSite F) (h : (checkReach b c t).run.verdict = .fail) :
-    ∀ ρ, s.Typed ρ → s.AtSite t.site ρ → s.den t.site.goal ρ := by
+    ∀ ρ, s.Typed ρ → s.Holds (c.defEqs .reachability ++ c.reachHyps b t.site) ρ → s.den t.site.goal ρ := by
   unfold checkReach at h
-  cases hq : b.query (c.defEqs .reachability ++ c.siteHyps b t.site) t.site.goal false <;>
+  cases hq : b.query (c.defEqs .reachability ++ c.reachHyps b t.site) t.site.goal false <;>
     simp [hq, vacuityVerdict, Outcome.answer] at h
-  exact fun ρ ht hρ => s.query_unsat hq ρ ht ((s.holds_site (kd := .reachability) rfl t.site ht).2 hρ)
+  exact fun ρ ht hρ => s.query_unsat hq ρ ht hρ
 
 /-! ## Realizability -/
 
@@ -1134,7 +1136,8 @@ behaviour, every trigger can hold, every
 front ends allow `det` only on `out`s), every index is in range where it
 is evaluated, every question about a table's rows or a `match`'s arms
 but reachability holds where it is evaluated, and every arm or row asked
-about is taken somewhere it is evaluated. This is for backends that agree on what formulas and sorts
+about is taken somewhere the hypotheses of its place, but the constraint
+it is in, hold (`Comp.reachHyps`). This is for backends that agree on what formulas and sorts
 mean, as the front ends' do (they differ only in the SMT-LIB logic they
 declare), and whose definitions realizability can substitute
 (`Sound.DefsOk`). And when changing the `out`s keeps an environment
@@ -1158,7 +1161,8 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
       (s .realizable).den site.goal ρ) ∧
     (∀ t ∈ c.tables, t.goal.kind ≠ .reachability → ∀ ρ, (s .realizable).Typed ρ → (s .realizable).AtSite t.site ρ →
       (s .realizable).den t.site.goal ρ) ∧
-    (∀ t ∈ c.tablesOf .reachability, ∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).AtSite t.site ρ ∧
+    (∀ t ∈ c.tablesOf .reachability, ∃ ρ, (s .realizable).Typed ρ ∧
+      (s .realizable).Holds (c.defEqs .reachability ++ c.reachHyps (bk .reachability) t.site) ρ ∧
       ¬(s .realizable).den t.site.goal ρ) ∧
     ((∀ ρ ρ', OnlyOuts c.vars ρ ρ' → (s .realizable).Possible ρ → (s .realizable).Possible ρ') →
       (∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Admits ρ) →
@@ -1206,8 +1210,8 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
     simpa only [tT, tS, (hsame _).1] using this
   · obtain ⟨ρ, ht, hρ, hg⟩ := checkReach_pass (s .reachability) t
       (pass _ (hrc (all _) t hs) (by rw [checkReach_kind]; intro h; cases h))
-    obtain ⟨tT, -, -, tS⟩ := Sound.congr (s .reachability) (s .realizable) (hsame _)
-    exact ⟨ρ, (tT ρ).1 ht, (tS _ ρ).1 hρ, by simpa only [(hsame _).1] using hg⟩
+    obtain ⟨tT, -, -, -⟩ := Sound.congr (s .reachability) (s .realizable) (hsame _)
+    exact ⟨ρ, (tT ρ).1 ht, by simpa only [Sound.Holds, (hsame _).1] using hρ, by simpa only [(hsame _).1] using hg⟩
   · obtain ⟨ρ', ht', -, hb⟩ := realizable_behaves (s .realizable) hdefs hindep
       (pass _ (hr (all _)) (by rw [checkRealizable_kind]; intro h; cases h)) ρ ht hρ
     exact ⟨ρ', ht', hb, fun e he' => hE e he' ρ' ht' hb⟩
