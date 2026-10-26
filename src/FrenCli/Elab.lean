@@ -343,20 +343,18 @@ def withLineComment (src : Array Char) (stop : Nat) : Nat := Id.run do
 reports (`lint::invisible_character`), and the string literals that
 `needless_raw_strings` and `non_ascii_literal` report, and the raw string
 literals that `needless_raw_string_hashes` reports, each with its lint and
-message, in order. -/
-def literalLints (src : Array Char) : Array (Lint × Span × Msg) :=
-  match lexWithComments src with
-  | .error _ => #[]
-  | .ok (toks, comments) =>
-    let lits := toks.filterMap fun t => if t.tok matches .str _ then some (t.span, false) else none
-    let all := (lits ++ comments.map (·, true)).qsort (·.1.start < ·.1.start)
-    all.flatMap fun (sp, comment) =>
-      let text := String.ofList (src.extract sp.start sp.stop).toList
-      let invisible := (Fren.Core.invisibleFix? comment text).toArray.map fun (found, fixed) =>
-        (Lint.invisibleCharacters, sp, Fren.Core.invisibleMsg comment found fixed)
-      let hashes := if comment then #[] else (Fren.Core.fewerHashes? text).toArray.map fun fixed =>
-        (Lint.needlessRawStringHashes, sp, Fren.Core.needlessRawHashesMsg fixed)
-      invisible ++ hashes ++ if comment then #[] else (Fren.Core.literalMsgs text).map fun (l, msg) => (l, sp, msg)
+message, in order, from its tokens `toks` and the spans of its comments,
+as `lexWithComments` gives them. -/
+def literalLints (src : Array Char) (toks : Array Token) (comments : Array Span) : Array (Lint × Span × Msg) :=
+  let lits := toks.filterMap fun t => if t.tok matches .str _ then some (t.span, false) else none
+  let all := (lits ++ comments.map (·, true)).qsort (·.1.start < ·.1.start)
+  all.flatMap fun (sp, comment) =>
+    let text := String.ofList (src.extract sp.start sp.stop).toList
+    let invisible := (Fren.Core.invisibleFix? comment text).toArray.map fun (found, fixed) =>
+      (Lint.invisibleCharacters, sp, Fren.Core.invisibleMsg comment found fixed)
+    let hashes := if comment then #[] else (Fren.Core.fewerHashes? text).toArray.map fun fixed =>
+      (Lint.needlessRawStringHashes, sp, Fren.Core.needlessRawHashesMsg fixed)
+    invisible ++ hashes ++ if comment then #[] else (Fren.Core.literalMsgs text).map fun (l, msg) => (l, sp, msg)
 
 /-- The edits that fix a lint's message, which `fren fix` makes where the
 message is reported. -/
@@ -711,8 +709,11 @@ def lintDeclared (what : Named) (n : Name) (span : Span) : M Unit := do
 /-- Reports `too_many_lines` on the `what` named `n`, at `name`, whose text
 runs from its name to the end of `last` (`lint::too_many_lines`). -/
 def lintLines (what : Named) (n : Name) (name last : Span) : M Unit := do
-  let text := String.ofList ((← get).src.extract name.start last.stop).toList
-  let k := Fren.Core.codeLines text
+  -- `codeLines` of the text from `name.start` up to `last.stop`, as
+  -- `Array.extract` would cut it, read in place.
+  let src := (← get).src
+  let stop := min last.stop src.size
+  let k := Fren.Core.codeLinesIn src (min name.start stop) stop
   if Fren.Core.tooManyLines k then lint .tooManyLines name (Fren.Core.tooManyLinesMsg what n k)
 
 /-- Reports a lint whose message's first fix replaces its text, or its own range, which
@@ -4174,16 +4175,16 @@ def trailingCommas (toks : Array Token) : Array (Span × String) :=
 
 /-- Elaborates the items of one file, whose text is `src`, and which start
 at `starts`, collecting an error per failed item, where `trailingCommas`
-are the commas that `unnecessary_trailing_comma` reports. `fren fix` fixes
-the lints `fixing` in it. -/
+are the commas that `unnecessary_trailing_comma` reports, and `found` the
+file's `literalLints`. `fren fix` fixes the lints `fixing` in it. -/
 def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Array Nat)
-    (trailingCommas : Array (Span × String)) (fixing : Array Lint := #[]) : StateM State Unit := do
+    (trailingCommas : Array (Span × String)) (found : Array (Lint × Span × Msg)) (fixing : Array Lint := #[]) :
+    StateM State Unit := do
   modify fun s => { s with file, src, fixing, module := .anonymous, scope := .anonymous, levels := s.cliLevels, useRecords := #[], evidence? := none,
                            used := #[], expectations := #[], lintReports := #[], useLocs := #[],
                            expectationRemovals := #[], items := #[], usedItems := #[], lintFixes := #[],
                            globalTexts := #[], settings := #[], settingRemovals := #[], seenSettings := #[],
                            assumptions := #[], globalReads := #[], trailingCommas }
-  let found := literalLints src
   for item in items, k in [0:items.size] do
     -- An item has the literals and comments up to the next item, and the
     -- first, those before it too, and those that a `set_option` before it

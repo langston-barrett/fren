@@ -274,24 +274,93 @@ def Problem.fixedPool? (sp : Spec) (w : World) (p : Problem) (ty : VTy) : Option
   | .seq _ => none
   | _ => if ty.readsInts sp then none else some (smallValues sp w p.ints p.strs 24 2 ty)
 
+/-- A condition on a search's environment under which an expression's value
+is surely unknown (`Ex.unknownIf`): that slot `k` has no value, or one or
+both of two conditions holds. -/
+inductive UnknownIf where
+  | never
+  | slot (k : Nat)
+  | any (a b : UnknownIf)
+  | all (a b : UnknownIf)
+  deriving Inhabited
+
+def UnknownIf.or : UnknownIf → UnknownIf → UnknownIf
+  | .never, b => b
+  | a, .never => a
+  | a, b => .any a b
+
+def UnknownIf.and : UnknownIf → UnknownIf → UnknownIf
+  | .never, _ | _, .never => .never
+  | a, b => .all a b
+
+/-- Whether the condition holds in `slots`. It allocates nothing, so it is
+cheaper than evaluating the expression. -/
+def UnknownIf.holds (slots : Slots) : UnknownIf → Bool
+  | .never => false
+  | .slot k => if h : k < slots.size then slots[k].isNone else true
+  | .any a b => a.holds slots || b.holds slots
+  | .all a b => a.holds slots && b.holds slots
+
+/-- A condition under which `e` evaluates to `none` (`Ex.eval`), whatever
+the interpretation, the look-up of names and the binders of `match` arms
+are, since it reads only the slots. By the cases of `Ex.eval`:
+- `.slot k` is `none` exactly when slot `k` has no value or is out of
+  range.
+- `and`, `or` and `when` are `none` when both operands are: `kleeneAnd`
+  and `kleeneOr` of two `none`s are `none`, and so is `notV none`.
+- The other operators (`binV`), and every expression that evaluates its
+  operands in `Option`'s `do`, are `none` when any operand is.
+- `ite c a b` is `none` when both branches are, and when `c` and one
+  branch are, since with an unknown condition it has a value only where
+  both branches have the same one.
+- A quantifier with instances folds `kleeneAnd` or `kleeneOr`, from a
+  known value, over its body's values. Each is `none` under the body's
+  condition, which no binder affects, and then so is the fold.
+- Everything else, such as a table or a constant, gets `never`. -/
+partial def Ex.unknownIf : Ex → UnknownIf
+  | .slot k => .slot k
+  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .match a _ => a.unknownIf
+  | .bin .and a b | .bin .or a b | .when _ a b => a.unknownIf.and b.unknownIf
+  | .bin _ a b | .pair a b | .index a b _ => a.unknownIf.or b.unknownIf
+  | .ite c a b =>
+    let (c, a, b) := (c.unknownIf, a.unknownIf, b.unknownIf)
+    (a.and b).or (c.and (a.or b))
+  | .app _ args | .ctor _ _ args | .setLit args | .seqLit args => args.foldl (fun u a => u.or a.unknownIf) .never
+  | .method _ r args => args.foldl (fun u a => u.or a.unknownIf) r.unknownIf
+  | .quant _ _ insts body => if insts.isEmpty then .never else body.unknownIf
+  | _ => .never
+
 /-- The candidates for a variable of type `ty`, given `equated`, what the
-constraints equate it with, over the search's environment `slots`.
-`fixed?` is `Problem.fixedPool? sp w p ty`, computed once per search. -/
+constraints equate it with, each with its `Ex.unknownIf`, over the search's
+environment `slots`. `fixed?` is `Problem.fixedPool? sp w p ty`, computed
+once per search.
+
+An equated expression whose condition holds evaluates to `none`, which
+gives no candidate, so it is not evaluated. The two random integers are
+drawn whether or not they are read, so that the generator's stream does
+not change; they are added to `p.ints` only when they are read, that is,
+without `fixed?`, which is always the case for a sequence. -/
 def Problem.candidates (sp : Spec) (w : World) (I : Interp) (p : Problem) (slots : Slots) (ty : VTy)
-    (equated : Array Ex) (fixed? : Option (Array Val)) : R (Array Val) := do
+    (equated : Array (Ex × UnknownIf)) (fixed? : Option (Array Val)) : R (Array Val) := do
   -- Values that a constraint equates the variable with, first.
-  let eqs := equated.filterMap (·.eval I (fun _ => none) [] slots)
-  let mut ints := p.ints
-  for _ in [0:2] do ints := ints.push (((← below 41) : Int) - 20)
-  let mut pool := fixed?.getD (smallValues sp w ints p.strs 24 2 ty)
-  -- Longer sequences, of the lengths that the constraints mention.
-  if let .seq t := ty then
-    let elems := smallValues sp w ints p.strs 24 2 t
-    unless elems.isEmpty do
-      for n in (ints.filterMap fun i => if 3 ≤ i && i ≤ 4 then some i.toNat else none).toList.eraseDups do
-        for _ in [0:6] do
-          pool := pool.push (.seq (← (Array.range n).mapM fun _ => do return elems[← below elems.size]!))
+  let eqs := equated.filterMap fun (e, u) => if u.holds slots then none else e.eval I (fun _ => none) [] slots
+  let r₁ ← below 41
+  let r₂ ← below 41
+  let mut pool ← match fixed? with
+    | some pool => pure pool
+    | none => do
+      let ints := (p.ints.push ((r₁ : Int) - 20)).push ((r₂ : Int) - 20)
+      let mut pool := smallValues sp w ints p.strs 24 2 ty
+      -- Longer sequences, of the lengths that the constraints mention.
+      if let .seq t := ty then
+        let elems := smallValues sp w ints p.strs 24 2 t
+        unless elems.isEmpty do
+          for n in (ints.filterMap fun i => if 3 ≤ i && i ≤ 4 then some i.toNat else none).toList.eraseDups do
+            for _ in [0:6] do
+              pool := pool.push (.seq (← (Array.range n).mapM fun _ => do return elems[← below elems.size]!))
+      pure pool
   pool ← shuffle pool
+  if eqs.isEmpty then return pool
   -- A `Nat` is at least 0, whatever a constraint equates it with.
   let eqs := if ty == .nat then eqs.filter (fun | .int i => 0 ≤ i | _ => false) else eqs
   let eqs := eqs.foldl (fun acc v => if acc.contains v then acc else acc.push v) #[]
@@ -324,7 +393,9 @@ environment with a value for `x` can change only the constraints that
 mention `x` and are not yet known to be true, so only they are evaluated
 again, which gives the same answer as evaluating them all, since evaluation
 is monotone (`FrenCli.Eval`). Those that become true are marked so for the
-branch and unmarked after it. -/
+branch and unmarked after it. A constraint whose `Ex.unknownIf` holds is
+unknown, so it is not evaluated: it would neither make the branch
+unviable nor become true. -/
 partial def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (budget : Nat := 4000) :
     R (Option Env) := do
   -- The names of the environment: the variables to choose, then those of
@@ -353,6 +424,8 @@ partial def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (en
   -- Every name looked up here was given an index above: each variable to
   -- choose, and each variable `pfx.n` of a constraint.
   let full := p.atoms.map fun a => a.e.substVars fun n => .slot index[a.pfx ++ n]!
+  -- When each constraint is surely unknown, so that it need not be evaluated.
+  let unknown := full.map (·.unknownIf)
   let varSlot := p.vars.map fun (x, _) => index[x]!
   let slots : Slots := names.map (env[·]?)
   -- Each constraint's value in `env`. A constraint that is `true` stays
@@ -367,7 +440,7 @@ partial def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (en
       return if full.any (holdsIn I slots · == some false) then none else some #[]
     let mut newly := #[]
     for k in byVar[x]! do
-      if known[k]! then continue
+      if known[k]! || unknown[k]!.holds slots then continue
       match holdsIn I slots full[k]! with
       | some false => return none
       | some true => newly := newly.push k
@@ -375,7 +448,8 @@ partial def Problem.solve (sp : Spec) (w : World) (I : Interp) (p : Problem) (en
     return some newly
   -- What the constraints equate each variable with, computed when the
   -- search first reaches it.
-  let equated : Array (Thunk (Array Ex)) := varSlot.map fun x => Thunk.mk fun _ => full.flatMap (·.equated x)
+  let equated : Array (Thunk (Array (Ex × UnknownIf))) :=
+    varSlot.map fun x => Thunk.mk fun _ => full.flatMap fun e => (e.equated x).map fun e => (e, e.unknownIf)
   -- The values that each variable's candidates start from, where they do
   -- not depend on the random integers, likewise.
   let fixed : Array (Thunk (Option (Array Val))) := p.vars.map fun (_, ty) => Thunk.mk fun _ => p.fixedPool? sp w ty
