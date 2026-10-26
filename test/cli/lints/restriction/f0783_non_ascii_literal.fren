@@ -6,6 +6,6 @@ comp greeting {
     pub out french?
     pub out smiling?
 
-    req french_rule: french? iff text = "café crème"
-    req smiling_rule: smiling? iff text.contains?("😀")
+    ensure french_rule: french? iff text = "café crème"
+    ensure smiling_rule: smiling? iff text.contains?("😀")
 }

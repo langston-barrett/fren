@@ -3,11 +3,11 @@
 pub comp first {
     in q: Seq(Int)
     pub out y: Int
-    req r: y = q[0]
+    ensure r: y = q[0]
 }
 pub comp exact {
     in q: Seq(Int)
     pub out y: Int
-    req r: when q != [], y = q[0]
+    ensure r: when q != [], y = q[0]
 }
 refine same: exact refines first

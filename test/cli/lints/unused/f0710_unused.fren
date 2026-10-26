@@ -3,7 +3,7 @@ pub comp sub {
     in a: Int
     pub out b: Int
 
-    req r: b = a
+    ensure r: b = a
 }
 
 pub comp c {
@@ -13,7 +13,7 @@ pub comp c {
     pub out loose?
     inst s: sub { a := x }
 
-    req r: y = x
+    ensure r: y = x
 }
 
 expect g: forall (p q: c), p.y = p.x

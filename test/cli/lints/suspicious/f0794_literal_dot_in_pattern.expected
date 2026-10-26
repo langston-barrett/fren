@@ -1,8 +1,8 @@
 warning[F0794]: the `.` in `1.2` matches any character, not only a dot
- --> test/cli/lints/suspicious/f0794_literal_dot_in_pattern.fren:2:59
+ --> test/cli/lints/suspicious/f0794_literal_dot_in_pattern.fren:2:62
   |
-2 | comp c { in s: String pub out p? req r: p? iff s.matches?("v1.2|[0-9]{3}.[0-9]{4}") }
-  |                                                           ^^^^^^^^^^^^^^^^^^^^^^^^ matches any character
+2 | comp c { in s: String pub out p? ensure r: p? iff s.matches?("v1.2|[0-9]{3}.[0-9]{4}") }
+  |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^ matches any character
   |
   = note: `1.2` also matches `1x2`; `[.]` matches only a dot
   = help: `fren fix` can fix this
@@ -10,8 +10,8 @@ warning[F0794]: the `.` in `1.2` matches any character, not only a dot
   = help: to allow it, `set_option fren.lint.literal_dot_in_pattern "allow"`
 help: write `"v1[.]2|[0-9]{3}.[0-9]{4}"`
   |
-2 - comp c { in s: String pub out p? req r: p? iff s.matches?("v1.2|[0-9]{3}.[0-9]{4}") }
-2 + comp c { in s: String pub out p? req r: p? iff s.matches?("v1[.]2|[0-9]{3}.[0-9]{4}") }
+2 - comp c { in s: String pub out p? ensure r: p? iff s.matches?("v1.2|[0-9]{3}.[0-9]{4}") }
+2 + comp c { in s: String pub out p? ensure r: p? iff s.matches?("v1[.]2|[0-9]{3}.[0-9]{4}") }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

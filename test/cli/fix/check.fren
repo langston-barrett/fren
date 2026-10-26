@@ -17,7 +17,7 @@ set_option fren.lint.non_snake_case "expect" in
 comp c {
     in x: Int
     pub out y?
-    req r: y? iff (x = MAX or Heat = Cool)
+    ensure r: y? iff (x = MAX or Heat = Cool)
 }
 -- Not fixed: a rename.
 comp Bad {}

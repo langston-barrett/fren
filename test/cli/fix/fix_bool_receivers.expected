@@ -1,10 +1,10 @@
 --- test/cli/fix/fix_bool_receivers.fren
 +++ test/cli/fix/fix_bool_receivers.fren
 @@ -13,3 +13,3 @@
--    req r1: o? iff not ((x - y).abs = 0)
--    req r2: p? iff not ((x - y).min(i) = 0)
--    req r3: when 0 <= i and i < q.len, r? iff not ((q)[i] = 1)
-+    req r1: o? iff (x - y).abs != 0
-+    req r2: p? iff (x - y).min(i) != 0
-+    req r3: when 0 <= i < q.len, r? iff (q)[i] != 1
+-    ensure r1: o? iff not ((x - y).abs = 0)
+-    ensure r2: p? iff not ((x - y).min(i) = 0)
+-    ensure r3: when 0 <= i and i < q.len, r? iff not ((q)[i] = 1)
++    ensure r1: o? iff (x - y).abs != 0
++    ensure r2: p? iff (x - y).min(i) != 0
++    ensure r3: when 0 <= i < q.len, r? iff (q)[i] != 1
 exit=1

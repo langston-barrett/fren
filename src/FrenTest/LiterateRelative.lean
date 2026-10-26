@@ -10,21 +10,21 @@ open Fren.Lang
 error: chapters/deep/LiterateDeep.md:12:11: expectation `deep_gate::never` does not hold
 
 counterexample: a? = true, b? = true
-help: strengthen the requirements so that it follows, or correct the expectation
+help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: chapters/deep/LiterateDeep.md:17:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 ---
 error: chapters/LiterateShared.md:9:11: expectation `shared_gate::never` does not hold
 
 counterexample: a? = true, b? = true
-help: strengthen the requirements so that it follows, or correct the expectation
+help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: chapters/deep/LiterateDeep.md:18:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 ---
 error: chapters/deep/LiterateDeep.md:19:0: expectation `dep::dep_gate::never` does not hold
 
 counterexample: a? = true, b? = true
-help: strengthen the requirements so that it follows, or correct the expectation
+help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: chapters/deep/LiterateDeep.md:19:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 -/
@@ -37,14 +37,14 @@ info: chapters/deep/LiterateDeep.md:19:0: fren: 3 passed, 1 failed, 0 inconclusi
 error: chapters/deep/LiterateDeep.md:12:11: expectation `deep_gate::never` does not hold
 
 counterexample: a? = true, b? = true
-help: strengthen the requirements so that it follows, or correct the expectation
+help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: chapters/LiterateSibling.md:4:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 ---
 error: chapters/LiterateShared.md:9:11: expectation `shared_gate::never` does not hold
 
 counterexample: a? = true, b? = true
-help: strengthen the requirements so that it follows, or correct the expectation
+help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: chapters/LiterateSibling.md:5:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 -/
@@ -60,7 +60,7 @@ info: chapters/LiterateSibling.md:5:0: fren: 3 passed, 1 failed, 0 inconclusive,
 #guard_msgs in
 run_cmd Fren.logAbout `deep_gate .missing m!"about an item with no position" .information
 
-comp lean_gate { in a? pub out b? req same: b? iff a? }
+comp lean_gate { in a? pub out b? ensure same: b? iff a? }
 
 /-- info: about an item with no position -/
 #guard_msgs in

@@ -8,6 +8,6 @@ comp c {
     pub out p?
     pub out q?
 
-    req r1: p? iff x < 010 or x = 00_1 or x = 01_000 or x = -00 or x = 0x10
-    req r2: q? iff x in {07, 0, LIMIT}
+    ensure r1: p? iff x < 010 or x = 00_1 or x = 01_000 or x = -00 or x = 0x10
+    ensure r2: q? iff x in {07, 0, LIMIT}
 }

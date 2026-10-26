@@ -5,5 +5,5 @@ comp c {
     in q: Rel(Int, Bool)
     pub out p?
 
-    req s: p? iff (1, true) in r join q
+    ensure s: p? iff (1, true) in r join q
 }

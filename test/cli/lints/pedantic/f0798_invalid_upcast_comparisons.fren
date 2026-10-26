@@ -5,4 +5,4 @@ set_option fren.lint.invalid_upcast_comparisons "warn"
 comp c { in x: Int pub out a? := x.abs >= 0 pub out b? := -1 > x.abs pub out c? := x.abs > 0 }
 
 set_option fren.lint.undecidable "allow" in
-comp d { in s: String pub out p? req r: p? iff s.index_of("a", 0) < -1 }
+comp d { in s: String pub out p? ensure r: p? iff s.index_of("a", 0) < -1 }

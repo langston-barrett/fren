@@ -1,6 +1,6 @@
 -- `tested` and `trusted` claims (`trace::tested_file`, `trace::trusted_claim`).
 
-comp shown { in x? pub out y? req r: y? iff x? }
+comp shown { in x? pub out y? ensure r: y? iff x? }
 
 tested shown: "test/fixtures/covers_shown.txt"
 -- A trailing comma.

@@ -1,3 +1,3 @@
 -- Equality is `=`.
-comp c { in x: Int req r: x == 1 }  --~ error: `==` is not an operator in Fren
+comp c { in x: Int ensure r: x == 1 }  --~ error: `==` is not an operator in Fren
 --@ exit: 2

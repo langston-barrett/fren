@@ -10,7 +10,7 @@
   only messages that may differ, parse errors, which the Lean front end gets
   from Lean's parser, and `--~?` allows a message without expecting
   it, for one that may be in one of several places, such as a conflict's
-  note at whichever requirement the solver's model picks. This is how
+  note at whichever guarantee the solver's model picks. This is how
   `cli::agreement` is tested. See
   `src/FrenTest/Ui.lean` for the format.
 - **Snapshots** (`lake test`): `test/cli/**/X.fren` must make the `fren` command print
@@ -126,7 +126,7 @@
   - Messages are compared by their first line, without the values of a
     model, which may differ, or the solver's reason for an undecided check.
     The names of the constraints that a message reports are compared,
-    except the requirements that a realizability failure names, and its
+    except the guarantees that a realizability failure names, and its
     notes at them: they are a minimal set that conflicts on its input, so
     they are compared only when both report the same input.
   - Checks by testing, which Lean does not run, are left out, and so are

@@ -31,18 +31,18 @@ comp c {
     pub out o12?
     pub out o13?
 
-    req collapsible: o1? iff (unless (p? or if q? then r? else s?), unless t?, d?)
-    req bool_eq: o2? iff ((p? or if q? then r? else s?) = t?)
-    req identity: o3? iff (if (x + if p? then 1 else 2) + 0 = y then q? else r?)
-    req identity_right: o4? iff (z = (x + if p? then 1 else 2) + 0 and q?)
-    req plus_one: o5? iff ((x + if p? then 1 else 2) >= y + 1 or q?)
-    req double_cmp: o6? iff ((x + if p? then 1 else 2) < y or (x + if p? then 1 else 2) = y) and q?
-    req pattern: o7? iff ((if p? then w else v).matches?("ab") and q?)
-    req trivial_match: o8? iff (z = match e { _ => x + if p? then 1 else 2 } and q?)
-    req same_arms: o9? iff (z = match e { E::A => x + if p? then 1 else 2, E::B => x + if p? then 1 else 2 } and q?)
-    req last: o10? iff (z = (x + if p? then 1 else 2) + 0)
-    req chain: o12? iff (([x] ++ if p? then [y] else [z]).rev.rev = [x] and q?)
-    req comment: o13? iff (z = (x + if p? then 1 else 2) + 0 -- a comment
+    ensure collapsible: o1? iff (unless (p? or if q? then r? else s?), unless t?, d?)
+    ensure bool_eq: o2? iff ((p? or if q? then r? else s?) = t?)
+    ensure identity: o3? iff (if (x + if p? then 1 else 2) + 0 = y then q? else r?)
+    ensure identity_right: o4? iff (z = (x + if p? then 1 else 2) + 0 and q?)
+    ensure plus_one: o5? iff ((x + if p? then 1 else 2) >= y + 1 or q?)
+    ensure double_cmp: o6? iff ((x + if p? then 1 else 2) < y or (x + if p? then 1 else 2) = y) and q?
+    ensure pattern: o7? iff ((if p? then w else v).matches?("ab") and q?)
+    ensure trivial_match: o8? iff (z = match e { _ => x + if p? then 1 else 2 } and q?)
+    ensure same_arms: o9? iff (z = match e { E::A => x + if p? then 1 else 2, E::B => x + if p? then 1 else 2 } and q?)
+    ensure last: o10? iff (z = (x + if p? then 1 else 2) + 0)
+    ensure chain: o12? iff (([x] ++ if p? then [y] else [z]).rev.rev = [x] and q?)
+    ensure comment: o13? iff (z = (x + if p? then 1 else 2) + 0 -- a comment
         and q?)
-    req same_branches: o11? iff (z = (if d? then x + if p? then 1 else 2 else x + if p? then 1 else 2) and q?)
+    ensure same_branches: o11? iff (z = (if d? then x + if p? then 1 else 2 else x + if p? then 1 else 2) and q?)
 }

@@ -19,7 +19,7 @@ warning[F0792]: the assumption `a` constrains only inputs that nothing uses
 7 |     assume a: n >= 0 and n < q.len
   |            ^ constrains only unused inputs
   |
-  = note: no requirement, expectation, definition or binding mentions `n`, `q`, nor does another assumption tie them to a used variable
+  = note: no guarantee, expectation, definition or binding mentions `n`, `q`, nor does another assumption tie them to a used variable
   = note: it is linked to `b`, reported too, which may need it: remove them together
   = help: remove the assumption and its inputs, or use them
   = note: `unused_assumption` is `warn` by default
@@ -31,7 +31,7 @@ warning[F0792]: the assumption `b` constrains only inputs that nothing uses
 8 |     assume b: q[n] > 0
   |            ^ constrains only unused inputs
   |
-  = note: no requirement, expectation, definition or binding mentions `q`, `n`, nor does another assumption tie them to a used variable
+  = note: no guarantee, expectation, definition or binding mentions `q`, `n`, nor does another assumption tie them to a used variable
   = note: it is linked to `a`, reported too, which may need it: remove them together
   = help: remove the assumption and its inputs, or use them
 

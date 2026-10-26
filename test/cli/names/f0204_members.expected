@@ -1,8 +1,8 @@
 error[F0204]: `Mode::Heat` is an enum variant and has no members
- --> test/cli/names/f0204_members.fren:3:64
+ --> test/cli/names/f0204_members.fren:3:67
   |
-3 | comp c { in m: Mode pub out on? req r: on? iff m = Mode::Heat::On }
-  |                                                                ^^ nothing can follow this
+3 | comp c { in m: Mode pub out on? ensure r: on? iff m = Mode::Heat::On }
+  |                                                                   ^^ nothing can follow this
   |
   = note: only modules (their items) and enums (their variants) have members
 

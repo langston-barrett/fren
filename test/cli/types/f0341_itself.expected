@@ -1,8 +1,8 @@
 error[F0341]: the definition of `n` mentions itself
- --> test/cli/types/f0341_itself.fren:3:47
+ --> test/cli/types/f0341_itself.fren:3:50
   |
-3 | comp c { in x: Int pub out y? req r: let n := n + x in y? iff n > 0 }
-  |                                               ^ in its own definition
+3 | comp c { in x: Int pub out y? ensure r: let n := n + x in y? iff n > 0 }
+  |                                                  ^ in its own definition
   |
   = note: the definitions of a `let` or `where` clause are read in order: each may mention only the ones before it
   = help: definitions are not recursive; name what the definition needs before it

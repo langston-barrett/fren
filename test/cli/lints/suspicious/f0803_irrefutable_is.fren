@@ -1,4 +1,4 @@
 -- A pattern test whose pattern names every variant.
 enum E { A, B(Int) }
 
-comp c { in e: E pub out p? req r: p? iff e is E::A | E::B(_) }
+comp c { in e: E pub out p? ensure r: p? iff e is E::A | E::B(_) }

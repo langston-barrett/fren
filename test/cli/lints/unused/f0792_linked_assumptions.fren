@@ -6,5 +6,5 @@ comp c {
     pub out y: Int
     assume a: n >= 0 and n < q.len
     assume b: q[n] > 0
-    req r: y = 1
+    ensure r: y = 1
 }

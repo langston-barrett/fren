@@ -12,7 +12,7 @@ indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md) and of
 
 `duplicate_constraint` fires on a constraint of a component that is
 written the same as an earlier one of the component, whatever their
-kinds, `assume`, `req` or `expect`, and on a global expectation written
+kinds, `assume`, `ensure` or `expect`, and on a global expectation written
 the same as an earlier one of its module in the same file. A cover goal
 is not a constraint, and is not compared. Two
 constraints are written the same if their expressions are (see
@@ -21,7 +21,7 @@ expectations if all they say after their names is, binders included. It is
 reported at the later one's name, and the message names the first one it
 repeats.
 
-Of two `req`s that say the same, the [redundancy
+Of two `ensure`s that say the same, the [redundancy
 check](../Check.md#redundancy) reports each as following from the other,
 which invites removing both; this lint says which to remove. Two
 expectations that say the same are reported by no check. Where the two are
@@ -30,16 +30,16 @@ on its last line, and for a global expectation any `set_option ... in`
 before it. This keeps the meaning: a constraint
 that repeats one of its kind adds nothing to the component, and an
 expectation that repeats one claims nothing more. An `expect` that repeats
-a `req` or an `assume` is not fixed: it tests nothing, since it follows
+an `ensure` or an `assume` is not fixed: it tests nothing, since it follows
 from what it repeats, and was probably meant to say something stronger,
-which the message says. Nor is a `req` that repeats an `assume`, or the
+which the message says. Nor is an `ensure` that repeats an `assume`, or the
 reverse, since the two mean different things. `lint::duplicate_constraint`
 states this:
 
 ```fren
 pub mod lint
 
-pub enum ConstraintKind { Assume, Req, Expect }
+pub enum ConstraintKind { Assume, Ensure, Expect }
 
 pub comp duplicate_constraint {
     in earlier: ConstraintKind
@@ -48,8 +48,8 @@ pub comp duplicate_constraint {
     pub det out fires?
     pub det out fixed?   -- the fix removes the later
 
-    req rule: fires? iff same?
-    req fix: fixed? iff (same? and earlier = later)
+    ensure rule: fires? iff same?
+    ensure fix: fixed? iff (same? and earlier = later)
 
     expect weaker_kept: when later = ConstraintKind::Expect and earlier != later, not fixed?
 }
@@ -79,7 +79,7 @@ pub comp suspicious_unary_op_formatting {
     in spaced?           -- whitespace directly follows the `-`
     pub det out fires?
 
-    req rule: fires? iff (punctuator? and adjacent? and spaced?)
+    ensure rule: fires? iff (punctuator? and adjacent? and spaced?)
 }
 ```
 
@@ -108,7 +108,7 @@ pub comp unrelated_binders {
 
     assume counts: n_groups >= 0
 
-    req rule: fires? iff n_groups >= 2
+    ensure rule: fires? iff n_groups >= 2
 }
 ```
 
@@ -135,7 +135,7 @@ pub comp irrefutable_is {
     in matches_every?    -- no value of the scrutinee's type is left for `_` after the pattern
     pub det out fires?
 
-    req rule: fires? iff matches_every?
+    ensure rule: fires? iff matches_every?
 }
 ```
 

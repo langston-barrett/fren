@@ -50,7 +50,7 @@ others:
 3. each instance: its name, then its component and the names it binds;
 4. the bindings of each instance, together;
 5. each definition, each after those it mentions;
-6. each assumption, requirement and expectation, in order.
+6. each assumption, guarantee and expectation, in order.
 
 An error that would only follow from an earlier one is not reported. After
 an error in a variable's declaration or in an instance, the component
@@ -73,7 +73,7 @@ hide them: a set literal, `in`, `union`, `inter`, `minus` and `subset`, and
 membership in a set of one member; a method call is checked after it is
 typed, and a constraint's name before its `?` error. A component with an
 error in its members (after step 1 above) still reports
-`constant_output`, `definable_output` and `case_split_reqs`, and its
+`constant_output`, `definable_output` and `case_split_guarantees`, and its
 declaration and line lints (`many_single_char_names`, `similar_names` and
 `too_many_lines`), but not `unused_variables`, which needs all of it. What
 it used before the error counts for the lints of the file, such as an
@@ -110,13 +110,13 @@ pub comp code_group {
         or code.starts_with?("F03") or code.starts_with?("F04") or code.starts_with?("F05")
         or code.starts_with?("F06") or code.starts_with?("F07") or code.starts_with?("F08"))
 
-    req syntax_codes: when code.starts_with?("F01"), group = Syntax
-    req names: when code.starts_with?("F02"), group = Names
-    req types: when code.starts_with?("F03"), group = Types
-    req instances: when code.starts_with?("F04"), group = Instances
-    req traceability: when code.starts_with?("F05"), group = Traceability
-    req results: when code.starts_with?("F06"), group = Results
-    req lints: when code.starts_with?("F07") or code.starts_with?("F08"), group = Lints
+    ensure syntax_codes: when code.starts_with?("F01"), group = Syntax
+    ensure names: when code.starts_with?("F02"), group = Names
+    ensure types: when code.starts_with?("F03"), group = Types
+    ensure instances: when code.starts_with?("F04"), group = Instances
+    ensure traceability: when code.starts_with?("F05"), group = Traceability
+    ensure results: when code.starts_with?("F06"), group = Results
+    ensure lints: when code.starts_with?("F07") or code.starts_with?("F08"), group = Lints
 
     expect syntax_example: when code = "F0105", group = Syntax
     expect lints_example: when code = "F0721", group = Lints
@@ -138,8 +138,8 @@ Each check yields one result for each thing it checks:
 | Expectations | expectation |
 | Cover goals | cover goal |
 | Instance assumptions | instance and assumption of the instantiated component |
-| Vacuity | requirement or expectation with a trigger |
-| Redundancy | assumption and requirement |
+| Vacuity | guarantee or expectation with a trigger |
+| Redundancy | assumption and guarantee |
 | Determinism | `det out` |
 | Definedness | index |
 | Completeness | table without a `_` row |
@@ -152,12 +152,12 @@ failure is reported at:
 
 | Failure | Position | Details |
 |---|---|---|
-| Unrealizable | the component's name | the input, a note at each conflicting requirement |
+| Unrealizable | the component's name | the input, a note at each conflicting guarantee |
 | Contradictory assumptions | the component's name | the contradictory assumptions |
 | Expectation does not hold | the expectation's name | a counterexample: the inputs and public outputs |
-| Cover goal cannot be met | the goal's name | the assumptions and requirements that rule it out |
+| Cover goal cannot be met | the goal's name | the assumptions and guarantees that rule it out |
 | Instance assumption may not hold | the instance's name | a counterexample: the inputs and earlier instances' public outputs |
-| Vacuous | the constraint's trigger | the assumptions and requirements that rule it out |
+| Vacuous | the constraint's trigger | the assumptions and guarantees that rule it out |
 | Redundant | the constraint's name | the constraints it follows from |
 | Not determined | the output's name | an input, and two values of the output for it |
 | Index may be out of range | the index's `[` | a counterexample: the public variables |
@@ -167,7 +167,7 @@ failure is reported at:
 A passing [cover goal](Check.md#cover-goals) is reported with its
 witness, the behaviour in which it holds, as a note at the goal's name:
 the inputs and public outputs, shown as a counterexample shows them. The
-note is information, like the notes at the requirements of an
+note is information, like the notes at the guarantees of an
 unrealizable component: the result itself is silent, so the note changes
 neither the summary's counts nor the exit status. A witness's values
 are not shown, and the note says so instead, when they depend on an
@@ -178,8 +178,8 @@ type](Lang/Types.md#abstract-types), or when a formula of the goal's
 [query](Check.md#cover-goals) uses an abstract type or an [uninterpreted
 function](Lang/Items.md#uninterpreted-functions), directly or through a
 defined function. Those formulas are the component's definitions,
-assumptions and requirements, each instance's bindings and the meaning of
-its component (its assumptions, requirements, definitions and instances,
+assumptions and guarantees, each instance's bindings and the meaning of
+its component (its assumptions, guarantees, definitions and instances,
 recursively), and the goal; no expectation or other cover goal is among
 them. Both front ends decide this by the same rule, and the Lean front
 end cannot read every such model.
@@ -202,7 +202,7 @@ value, so showing one would say nothing. That a `Nat` variable is at least
 so a `Nat` is shown even when nothing else mentions it. In
 
 ```text
-comp c { in a: Int in b: Int pub out p? req r: p? iff a > 0 expect e: p? }
+comp c { in a: Int in b: Int pub out p? ensure r: p? iff a > 0 expect e: p? }
 ```
 
 the counterexample of `e` is `a = 0, p? = false`, without `b`. Both front
@@ -237,7 +237,7 @@ pub comp inconclusive_advice {
     in decidable?            -- no construct of the component is outside the core
     pub det out advice: Advice
 
-    req rule: advice = (if decidable? then Advice::RaiseTimeout else Advice::NamesConstructs)
+    ensure rule: advice = (if decidable? then Advice::RaiseTimeout else Advice::NamesConstructs)
 }
 ```
 
@@ -276,10 +276,10 @@ pub comp severity {
     in verdict: Verdict
     pub det out level: Severity
 
-    req pass: when verdict = Pass, level = Silent
-    req fail: when verdict = Fail and kind != Redundancy, level = Error
-    req redundant: when verdict = Fail and kind = Redundancy, level = Warning
-    req inconclusive: when verdict = Inconclusive, level = Warning
+    ensure pass: when verdict = Pass, level = Silent
+    ensure fail: when verdict = Fail and kind != Redundancy, level = Error
+    ensure redundant: when verdict = Fail and kind = Redundancy, level = Warning
+    ensure inconclusive: when verdict = Inconclusive, level = Warning
 
     expect only_passes_are_silent: when level = Silent, verdict = Pass
     expect errors_are_failures: when level = Error, verdict = Fail
@@ -296,8 +296,8 @@ pub comp build {
     pub det out fails?     -- `lake build` fails
     pub det out fails_wfail?  -- `lake build --wfail` fails
 
-    req errors: fails? iff worst = Error
-    req warnings: fails_wfail? iff worst >= Warning
+    ensure errors: fails? iff worst = Error
+    ensure warnings: fails_wfail? iff worst >= Warning
 
     expect wfail_is_stricter: when fails?, fails_wfail?
 }
@@ -310,7 +310,7 @@ counts, so it has none as inputs:
 pub comp summary {
     pub det out level: Severity
 
-    req always_info: level = Info
+    ensure always_info: level = Info
 }
 ```
 
@@ -333,8 +333,8 @@ pub comp counted {
     in verdict: Verdict
     pub det out bucket: Bucket
 
-    req redundant: when kind = Redundancy and verdict = Fail, bucket = Redundant
-    req by_verdict: unless kind = Redundancy and verdict = Fail,
+    ensure redundant: when kind = Redundancy and verdict = Fail, bucket = Redundant
+    ensure by_verdict: unless kind = Redundancy and verdict = Fail,
         bucket = (if verdict = Pass then Passed else if verdict = Fail then Failed else InconclusiveBucket)
 }
 

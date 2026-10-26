@@ -7,7 +7,7 @@ comp handle {
     in name: String
     pub out accepted?
 
-    req shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
+    ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
 
     expect in_range: when accepted?, name >= "a" and name < "b"
 }

@@ -37,9 +37,9 @@ comp modes {
     pub out cooling?
     pub out idle?
 
-    req h: heating? iff mode = Mode::Heat
-    req c: cooling? iff mode = Mode::Cool
-    req i: idle? iff mode in {Mode::Off, Mode::Fan}
+    ensure h: heating? iff mode = Mode::Heat
+    ensure c: cooling? iff mode = Mode::Cool
+    ensure i: idle? iff mode in {Mode::Off, Mode::Fan}
 
     expect exclusive: exactly_one?(heating?, cooling?, idle?)
     expect expressions: exactly_one?(t > 0, t < 0, t = 0) and at_most_one?(t > 1, t < -1, t = 0)
@@ -61,7 +61,7 @@ comp lints {
     in c?
     pub out t?
 
-    req q: t? iff not not at_most_one?(a?, b? and c?)   --~ warning: write `at_most_one?(a?, b? and c?)`
+    ensure q: t? iff not not at_most_one?(a?, b? and c?)   --~ warning: write `at_most_one?(a?, b? and c?)`
 }
 
 -- Global expectations relate the behaviours of components.

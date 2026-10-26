@@ -17,17 +17,17 @@ comp ops {
     pub out p5?
     pub out p6?
 
-    req r1: p1? iff (x = x or y < y)
+    ensure r1: p1? iff (x = x or y < y)
     --~^ warning: both operands of `=` are written the same
     --~^^ warning: both operands of `<` are written the same
-    req r2: n1 = (x + 1) - (x + 1)  --~ warning: both operands of `-` are written the same
-    req r3: p2? iff a? and (a?)  --~ warning: both operands of `and` are written the same
-    req r4: p5? iff t inter t = t  --~ warning: both operands of `inter` are written the same
-    req r5: p3? iff t subset t  --~ warning: both operands of `subset` are written the same
+    ensure r2: n1 = (x + 1) - (x + 1)  --~ warning: both operands of `-` are written the same
+    ensure r3: p2? iff a? and (a?)  --~ warning: both operands of `and` are written the same
+    ensure r4: p5? iff t inter t = t  --~ warning: both operands of `inter` are written the same
+    ensure r5: p3? iff t subset t  --~ warning: both operands of `subset` are written the same
     -- Meaningful, or not written the same.
-    req r6: n2 = x + x + 2 * 2
-    req r7: p6? iff q ++ q = q
-    req r8: p4? iff x + 1 = 1 + x
+    ensure r6: n2 = x + x + 2 * 2
+    ensure r7: p6? iff q ++ q = q
+    ensure r8: p4? iff x + 1 = 1 + x
 }
 
 enum E { A, B }
@@ -42,13 +42,13 @@ comp branches {
     pub out p?
     pub out o?
 
-    req r1: n = if a? then x + 1 else x + 1  --~ warning: both branches of `if` are written the same
-    req r2: m = 2 * if a? then x else (x)  --~ warning: both branches of `if` are written the same
-    req r3: p? iff b? and if a? then b? or x > 0 else b? or x > 0
+    ensure r1: n = if a? then x + 1 else x + 1  --~ warning: both branches of `if` are written the same
+    ensure r2: m = 2 * if a? then x else (x)  --~ warning: both branches of `if` are written the same
+    ensure r3: p? iff b? and if a? then b? or x > 0 else b? or x > 0
     --~^ warning: both branches of `if` are written the same
     --~^^ warning: the `else` branch extends past the operator
     -- A `match` is left to other lints.
-    req r4: o? iff match e { E::A => b?, E::B => b? }
+    ensure r4: o? iff match e { E::A => b?, E::B => b? }
 }
 
 comp elements {
@@ -60,9 +60,9 @@ comp elements {
     pub out o?
     pub out k?
 
-    req r1: p? iff x in {1, y, 1, 2, y}  --~ warning: `1`, `y` are repeated in this literal
-    req r2: o? iff (x, y) in {(1, 2), (1, 2)}  --~ warning: `(1, 2)` is repeated in this literal
-    req r3: k? iff q = [x, x] and r != {}
+    ensure r1: p? iff x in {1, y, 1, 2, y}  --~ warning: `1`, `y` are repeated in this literal
+    ensure r2: o? iff (x, y) in {(1, 2), (1, 2)}  --~ warning: `(1, 2)` is repeated in this literal
+    ensure r3: k? iff q = [x, x] and r != {}
 }
 
 comp methods {
@@ -75,21 +75,21 @@ comp methods {
     pub out k?
     pub out l?
 
-    req r1: p? iff s.starts_with?("") or s.ends_with?("") or s.contains?("")
+    ensure r1: p? iff s.starts_with?("") or s.ends_with?("") or s.contains?("")
     --~^ warning: every string starts with `""`
     --~^^ warning: every string ends with `""`
     --~^^^ warning: every string contains `""`
-    req r2: k? iff s = s.replace("", "a") ++ s.replace_all("", "b")
+    ensure r2: k? iff s = s.replace("", "a") ++ s.replace_all("", "b")
     --~^ warning: replacing `""` puts the replacement before the string
     --~^^ warning: replacing each `""` leaves the string as it is
-    req r3: n = s.index_of("", i) + q.index_of([], i)
+    ensure r3: n = s.index_of("", i) + q.index_of([], i)
     --~^ warning: `""` occurs at every position
     --~^^ warning: `[]` occurs at every position
-    req r4: l? iff q = q.slice(i, 0) ++ q.replace([], [1])
+    ensure r4: l? iff q = q.slice(i, 0) ++ q.replace([], [1])
     --~^ warning: a slice of length 0 is empty
     --~^^ warning: replacing `[]` puts the replacement before the sequence
     -- Not empty, or not where it decides the value.
-    req r5: o? iff s.index_of("a", 0) = 0 and s.slice(0, 1) = "a" and q.starts_with?([0])
+    ensure r5: o? iff s.index_of("a", 0) = 0 and s.slice(0, 1) = "a" and q.starts_with?([0])
     --~^ warning: this is a call of `at`
     --~^^ warning: this is a call of `starts_with?`
 }

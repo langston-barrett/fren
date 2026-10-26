@@ -49,7 +49,7 @@ pub comp membership_chain {
 
     assume counts: n >= 2
 
-    req rule: fires? iff (same_left? and n >= 3 and not later_indexes?)
+    ensure rule: fires? iff (same_left? and n >= 3 and not later_indexes?)
 }
 ```
 
@@ -72,8 +72,8 @@ pub comp membership_chain_keeps_meaning {
 ## Definable outputs
 
 `definable_output`, `allow` by default, fires on an output, not defined,
-that exactly one requirement constrains, unconditionally, as `x = e` or
-`x? iff e`, where `e` does not mention `x`: the requirement could be its
+that exactly one guarantee constrains, unconditionally, as `x = e` or
+`x? iff e`, where `e` does not mention `x`: the guarantee could be its
 definition. [`lint::output_lints`](Complexity.md#constant-outputs) states
 when it fires, with `constant_output`.
 
@@ -97,7 +97,7 @@ pub comp if_not_else {
     in else_branch: Head
     pub det out fires?
 
-    req rule: fires? iff (condition in {Head::Not, Head::Unequal} and else_branch != Head::If)
+    ensure rule: fires? iff (condition in {Head::Not, Head::Unequal} and else_branch != Head::If)
 
     expect chain: when else_branch = Head::If, not fires?
 }
@@ -123,7 +123,7 @@ pub comp bool_equality {
     in literal?          -- an operand is `true` or `false`
     pub det out fires?
 
-    req rule: fires? iff (op = Eq and bools? and not literal?)
+    ensure rule: fires? iff (op = Eq and bools? and not literal?)
 }
 ```
 
@@ -146,7 +146,7 @@ pub comp zero_sized_map_values {
 
     assume counts: n_variants >= 0
 
-    req rule: fires? iff (enum? and n_variants = 1 and not payload?)
+    ensure rule: fires? iff (enum? and n_variants = 1 and not payload?)
 }
 ```
 
@@ -174,7 +174,7 @@ pub comp many_single_char_names {
 
     assume counts: n >= 0
 
-    req rule: fires? iff n > 4
+    ensure rule: fires? iff n > 4
 }
 ```
 
@@ -202,7 +202,7 @@ pub comp similar_names {
 
     assume counts: len_a >= 0 and len_b >= 0
 
-    req rule: fires? iff (len_a >= 3 and len_b >= 3 and one_edit? and not digits? and not word? and not allowed?)
+    ensure rule: fires? iff (len_a >= 3 and len_b >= 3 and one_edit? and not digits? and not word? and not allowed?)
 
     expect series: when digits?, not fires?
 }
@@ -235,7 +235,7 @@ pub comp too_many_lines {
 
     assume counts: n_lines >= 0
 
-    req rule: fires? iff n_lines > 100
+    ensure rule: fires? iff n_lines > 100
 }
 ```
 
@@ -301,8 +301,8 @@ pub comp invalid_upcast_comparisons {
     pub det out fires?
     pub det out value?   -- what the comparison always is, where it fires
 
-    req rule: fires? iff (bound < lowest or (bound = lowest and (if left? then op in {Lt, Ge} else op in {Gt, Le})))
-    req fixed: value? iff (if left? then op in {Ne, Gt, Ge} else op in {Ne, Lt, Le})
+    ensure rule: fires? iff (bound < lowest or (bound = lowest and (if left? then op in {Lt, Ge} else op in {Gt, Le})))
+    ensure fixed: value? iff (if left? then op in {Ne, Gt, Ge} else op in {Ne, Lt, Le})
 }
 ```
 
@@ -414,8 +414,8 @@ pub comp overly_complex_bool_expr {
     pub det out fires?
     pub det out kind: BoolRule
 
-    req rule: fires? iff (absorbs? or (negates? and not simpler_negation?))
-    req kind_rule: kind = if absorbs? then BoolRule::Absorption
+    ensure rule: fires? iff (absorbs? or (negates? and not simpler_negation?))
+    ensure kind_rule: kind = if absorbs? then BoolRule::Absorption
         else if conj? then BoolRule::Contradiction else BoolRule::ExcludedMiddle
 }
 ```
@@ -537,7 +537,7 @@ pub comp branches_sharing_code {
     in nonlinear?        -- the fix is outside Fren's arithmetic: `*` where the `if` and `X` both mention a variable or an uninterpreted function, or `div` or `mod` by the `if`
     pub det out fires?
 
-    req rule: fires? iff (same_op? and shared_left? != shared_right? and not nonlinear?)
+    ensure rule: fires? iff (same_op? and shared_left? != shared_right? and not nonlinear?)
 
     expect same_branches: when shared_left? and shared_right?, not fires?
 }
@@ -605,8 +605,8 @@ pub comp needless_raw_string_hashes {
     -- The literal ends where its `#`s say: no `"` in its body is followed by as many.
     assume counts: -1 <= longest < hashes
 
-    req fewest_rule: fewest = longest + 1
-    req rule: fires? iff hashes > fewest
+    ensure fewest_rule: fewest = longest + 1
+    ensure rule: fires? iff hashes > fewest
 
     expect enough: fewest <= hashes
     expect no_quote: when longest = -1, fewest = 0

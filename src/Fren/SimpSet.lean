@@ -5,7 +5,7 @@ import Lean
 /-!
 # `fren_spec`
 
-The definitions Fren generates for comps (`p.reqs`, `p.req.n`, ...) are in
+The definitions Fren generates for comps (`p.ensures`, `p.ensure.n`, ...) are in
 this simp set, so `simp [fren_spec]` unfolds a spec in a proof.
 -/
 

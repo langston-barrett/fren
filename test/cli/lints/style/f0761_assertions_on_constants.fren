@@ -4,8 +4,8 @@ pub comp c {
     in x: Int
     pub out y: Int
 
-    req r: y = x
-    req s: true
+    ensure r: y = x
+    ensure s: true
     expect e: LIMIT > 0
 }
 expect g: (false)

@@ -10,7 +10,7 @@ comp chain {
     in e: E
     pub out p?
 
-    req r: p? iff (e = E::A or e = E::B or e = E::C)  --~ warning: this is `e` in a set of 3
+    ensure r: p? iff (e = E::A or e = E::B or e = E::C)  --~ warning: this is `e` in a set of 3
 }
 
 set_option fren.lint.pedantic "expect" in
@@ -18,7 +18,7 @@ comp expected {
     in e: E
     pub out p?
 
-    req r: p? iff (e = E::A or e = E::B or e = E::C)
+    ensure r: p? iff (e = E::A or e = E::B or e = E::C)
 }
 
 set_option fren.lint.style "deny" in
@@ -26,7 +26,7 @@ comp denied {
     in s: String
     pub out p?
 
-    req r: p? iff (s.len = 0 or s = "a")  --~ error: say whether it is empty with `""`, not `len`
+    ensure r: p? iff (s.len = 0 or s = "a")  --~ error: say whether it is empty with `""`, not `len`
 }
 
 set_option fren.lint.unused "expect" in  --~ warning: this lint expectation is unfulfilled
@@ -34,7 +34,7 @@ comp unfulfilled {
     in x: Int
     pub out p?
 
-    req r: p? iff x > 0
+    ensure r: p? iff x > 0
 }
 
 set_option fren.lint.membership_chain "forbid"

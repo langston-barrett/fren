@@ -2,15 +2,15 @@
 -- and only the last row is `_` (`Reqs/Lang/Expressions#tables`).
 set_option fren.lint.dead_code "allow"
 
-comp after_wild { in x: Int pub out y: Int req r: y = table { _ => 0, x > 0 => 1 } }
+comp after_wild { in x: Int pub out y: Int ensure r: y = table { _ => 0, x > 0 => 1 } }
 --~^ error: a row after `_` can never be reached
-comp two_wild { in x: Int pub out y: Int req r: y = table { x > 0 => 1, _ => 0, _ => 2 } }
+comp two_wild { in x: Int pub out y: Int ensure r: y = table { x > 0 => 1, _ => 0, _ => 2 } }
 --~^ error: a row after `_` can never be reached
-comp condition { in x: Int pub out y: Int req r: y = table { x => 1, _ => 0 } }
+comp condition { in x: Int pub out y: Int ensure r: y = table { x => 1, _ => 0 } }
 --~^ error: type mismatch: expected `Bool`, found `Int`
-comp values { in x: Int pub out y: Int req r: y = table { x > 0 => 1, _ => true } }
+comp values { in x: Int pub out y: Int ensure r: y = table { x > 0 => 1, _ => true } }
 --~^ error: the rows of a table have values of different types: `Int` and `Bool`
-comp typed { in x: Int pub out y? req r: y? iff table { x > 0 => 1, _ => 0 } }
+comp typed { in x: Int pub out y? ensure r: y? iff table { x > 0 => 1, _ => 0 } }
 --~^ error: type mismatch: expected `Bool`, found `Int`
 -- A value of `{}` takes its type from another row's.
 comp empty_value { in x: Int pub out s: Set(Int) := table { x > 0 => {}, _ => {x} } }

@@ -7,7 +7,7 @@ comp reach {
     in b: User
     pub out reaches?
 
-    req rule: reaches? iff (a, b) in follows.closure
+    ensure rule: reaches? iff (a, b) in follows.closure
 
     expect direct_only: when reaches?, (a, b) in follows
 }

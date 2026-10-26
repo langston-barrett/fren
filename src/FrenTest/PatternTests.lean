@@ -22,38 +22,38 @@ comp kinds {
   pub out boxy?
   pub out any?
 
-  req round: round? iff s is Shape::Circle(_)
-  req boxy: boxy? iff s is Shape::Rect(_, _) | Shape::Empty
-  req any: any? iff s is _
+  ensure round: round? iff s is Shape::Circle(_)
+  ensure boxy: boxy? iff s is Shape::Rect(_, _) | Shape::Empty
+  ensure any: any? iff s is _
 }
 
 -- The scrutinee is equal to the variant built from its own payload, as in
 -- the test of a `match` arm.
 /--
-info: @[reducible] def pattern_test.kinds.req.round : pattern_test.Shape → Bool → Bool → Bool → Prop :=
+info: @[reducible] def pattern_test.kinds.ensure.round : pattern_test.Shape → Bool → Bool → Bool → Prop :=
 fun s round? boxy? any? => round? = true ↔ s = pattern_test.Shape.Circle (pattern_test.Shape.Circle.x0 s)
 -/
 #guard_msgs in
-#print pattern_test.kinds.req.round
+#print pattern_test.kinds.ensure.round
 
 -- An or-pattern is the disjunction of its alternatives' tests.
 /--
-info: @[reducible] def pattern_test.kinds.req.boxy : pattern_test.Shape → Bool → Bool → Bool → Prop :=
+info: @[reducible] def pattern_test.kinds.ensure.boxy : pattern_test.Shape → Bool → Bool → Bool → Prop :=
 fun s round? boxy? any? =>
   boxy? = true ↔
     s = pattern_test.Shape.Rect (pattern_test.Shape.Rect.x0 s) (pattern_test.Shape.Rect.x1 s) ∨
       s = pattern_test.Shape.Empty
 -/
 #guard_msgs in
-#print pattern_test.kinds.req.boxy
+#print pattern_test.kinds.ensure.boxy
 
 -- `_` matches every value.
 /--
-info: @[reducible] def pattern_test.kinds.req.any : pattern_test.Shape → Bool → Bool → Bool → Prop :=
+info: @[reducible] def pattern_test.kinds.ensure.any : pattern_test.Shape → Bool → Bool → Bool → Prop :=
 fun s round? boxy? any? => any? = true ↔ true = true
 -/
 #guard_msgs in
-#print pattern_test.kinds.req.any
+#print pattern_test.kinds.ensure.any
 
 -- A pattern test and a chained comparison bind as comparisons, which do not
 -- chain with each other, so a fix that writes one where the other's operand

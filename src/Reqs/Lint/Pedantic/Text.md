@@ -62,8 +62,8 @@ pub comp unicode_not_nfc {
     pub det out fires?
     pub det out suggested?  -- the message suggests the literal in NFC
 
-    req rule: fires? iff (assigned? and not nfc?)
-    req suggestion: suggested? iff (fires? and not escapes?)
+    ensure rule: fires? iff (assigned? and not nfc?)
+    ensure suggestion: suggested? iff (fires? and not escapes?)
 
     expect unknown: when not assigned?, not fires?
 }
@@ -144,7 +144,7 @@ pub comp unnecessary_trailing_comma {
     in line_break?       -- a line ends between the trailing comma and the `}` or `]`
     pub det out fires?
 
-    req rule: fires? iff not line_break?
+    ensure rule: fires? iff not line_break?
 }
 ```
 

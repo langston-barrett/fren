@@ -9,9 +9,9 @@ comp c {
     pub out w?
     pub out v?
 
-    req r1: o? iff not not (forall (k: Mode), k = m) and p?  --~ warning: this `Bool` expression can be simpler
-    req r2: w? iff (exists (k: Mode), not not p? or k = m)   --~ warning: this `Bool` expression can be simpler
-    req r3: v? iff (exists (k: Mode), ((k = m)))             --~ warning: parentheses directly around parentheses
+    ensure r1: o? iff not not (forall (k: Mode), k = m) and p?  --~ warning: this `Bool` expression can be simpler
+    ensure r2: w? iff (exists (k: Mode), not not p? or k = m)   --~ warning: this `Bool` expression can be simpler
+    ensure r3: v? iff (exists (k: Mode), ((k = m)))             --~ warning: parentheses directly around parentheses
 }
 
 --@ exit: 3

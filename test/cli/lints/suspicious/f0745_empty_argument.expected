@@ -1,18 +1,18 @@
 warning[F0745]: every string starts with `""`
- --> test/cli/lints/suspicious/f0745_empty_argument.fren:2:60
+ --> test/cli/lints/suspicious/f0745_empty_argument.fren:2:63
   |
-2 | comp c { in t: String pub out p? pub out q? req r1: p? iff t.starts_with?("") req r2: q? iff "ab".index_of("", 1) = 1 }
-  |                                                            ^^^^^^^^^^^^^^^^^^ always `true`
+2 | comp c { in t: String pub out p? pub out q? ensure r1: p? iff t.starts_with?("") ensure r2: q? iff "ab".index_of("", 1) = 1 }
+  |                                                               ^^^^^^^^^^^^^^^^^^ always `true`
   |
   = note: the argument is probably not the one meant
   = note: `empty_argument` is `warn` by default
   = help: to allow it, `set_option fren.lint.empty_argument "allow"`
 
 warning[F0745]: `""` occurs at every position
- --> test/cli/lints/suspicious/f0745_empty_argument.fren:2:94
+ --> test/cli/lints/suspicious/f0745_empty_argument.fren:2:100
   |
-2 | comp c { in t: String pub out p? pub out q? req r1: p? iff t.starts_with?("") req r2: q? iff "ab".index_of("", 1) = 1 }
-  |                                                                                              ^^^^^^^^^^^^^^^^^^^^ this is `1` if `0 <= 1 <= "ab".len`, and `-1` otherwise
+2 | comp c { in t: String pub out p? pub out q? ensure r1: p? iff t.starts_with?("") ensure r2: q? iff "ab".index_of("", 1) = 1 }
+  |                                                                                                    ^^^^^^^^^^^^^^^^^^^^ this is `1` if `0 <= 1 <= "ab".len`, and `-1` otherwise
   |
   = note: the argument is probably not the one meant
 

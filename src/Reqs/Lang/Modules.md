@@ -55,7 +55,7 @@ comp methods {
     use self::Method::*
     in method: Method
     pub out arity: Int
-    req rule: arity = match method { Len | Card => 0, _ => 1 }
+    ensure rule: arity = match method { Len | Card => 0, _ => 1 }
 }
 ```
 
@@ -99,7 +99,7 @@ pub comp item_visible {
     -- A submodule of a submodule is a submodule.
     assume transitive: when descends?(here, middle) and descends?(middle, owner), descends?(here, owner)
 
-    req rule: visible? iff (is_pub? or here = owner or descends?(here, owner))
+    ensure rule: visible? iff (is_pub? or here = owner or descends?(here, owner))
 
     expect private_hidden: when not is_pub? and here != owner and not descends?(here, owner), not visible?
     expect owner_sees_all: when here = owner, visible?
@@ -152,10 +152,10 @@ pub comp resolve {
     in n_glob: Nat       -- distinct items of this name opened by `use ...::*`
     pub out result: Resolution
 
-    req local_wins: when local?, result = Local
-    req glob: unless local?, when n_glob = 1, result = Glob
-    req ambiguous: unless local?, when n_glob > 1, result = Ambiguous
-    req unbound: unless local?, when n_glob = 0, result = Unbound
+    ensure local_wins: when local?, result = Local
+    ensure glob: unless local?, when n_glob = 1, result = Glob
+    ensure ambiguous: unless local?, when n_glob > 1, result = Ambiguous
+    ensure unbound: unless local?, when n_glob = 0, result = Unbound
 
     expect glob_is_unique: when result = Glob, n_glob = 1
 }
@@ -189,7 +189,7 @@ pub comp member {
     in visible?          -- for a module: that member is visible from here (`item_visible`)
     pub out accepted?
 
-    req rule: accepted? iff (found? and (if parent = Module then visible? else parent = Enum))
+    ensure rule: accepted? iff (found? and (if parent = Module then visible? else parent = Enum))
 
     expect only_modules_hide: when parent = Enum and found?, accepted?
     expect others_empty: when parent = Other, not accepted?
@@ -213,7 +213,7 @@ pub comp two_segments {
     inst seen: item_visible { is_pub? := b_pub?, owner := b_owner, here, middle := here }
     inst second: member { parent := a_kind, found? := b_found?, visible? := seen.visible? }
 
-    req rule: accepted? iff (first.result = Local and second.accepted?)
+    ensure rule: accepted? iff (first.result = Local and second.accepted?)
 
     expect variants_have_no_members: unless a_local?, not accepted?
     expect private_member: when a_kind = Module and not b_pub? and here != b_owner and not descends?(here, b_owner),

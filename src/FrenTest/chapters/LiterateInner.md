@@ -8,7 +8,7 @@ pub comp inner_gate {
     in a?
     pub out b?
 
-    req same: b? iff a?
+    ensure same: b? iff a?
     expect never: when a?, not b?
 }
 

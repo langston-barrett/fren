@@ -8,7 +8,7 @@ comp bools {
     in b?
     pub det out x: Int
 
-    req x_def: x = match (a? and b?) {
+    ensure x_def: x = match (a? and b?) {
         true => 1,
         false => 0,
     }
@@ -22,13 +22,13 @@ comp ints {
     pub det out name: Int
     pub det out small?
 
-    req name_def: name = match n {
+    ensure name_def: name = match n {
         0 => 0,
         1 | 2 => 1,
         -1 => -1,
         k => if k > 0 then 2 else -2,
     }
-    req small_def: small? iff n is 0 | 1 | 2
+    ensure small_def: small? iff n is 0 | 1 | 2
 
     expect zero_holds: when n = 0, name = 0
     expect two_holds: when n = 2, name = 1 and small?
@@ -43,12 +43,12 @@ comp strings {
     pub det out code: Int
     pub det out fatal?
 
-    req code_def: code = match s {
+    ensure code_def: code = match s {
         "ok" => 0,
         "warn" | "warning" => 1,
         _ => 2,
     }
-    req fatal_def: fatal? iff r is Reply::Err("fatal") | Reply::Ok(-1)
+    ensure fatal_def: fatal? iff r is Reply::Err("fatal") | Reply::Ok(-1)
 
     expect ok_holds: when s = "ok", code = 0
     expect warning_holds: when s = "warning", code = 1

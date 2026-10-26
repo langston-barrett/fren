@@ -10,7 +10,7 @@ pub comp c {
     pub out p?
     pub out q?
 
-    req r1: o? iff not not { s with on? := a? }.on?
-    req r2: p? iff not ({ s with n := 1 } = s)
-    req r3: q? iff { s with on? := a? }.on? = true
+    ensure r1: o? iff not not { s with on? := a? }.on?
+    ensure r2: p? iff not ({ s with n := 1 } = s)
+    ensure r3: q? iff { s with on? := a? }.on? = true
 }

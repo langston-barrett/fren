@@ -1,6 +1,6 @@
 -- The field of a newtype is named by decimal digits, without `_`.
 pub struct Ms(Int)
-comp c { in t: Ms pub out d: Int req r: d = t.1_000 }
+comp c { in t: Ms pub out d: Int ensure r: d = t.1_000 }
 --~^[cli] error: expected a field, found number `1_000`
 --~^^[hosted] error: unexpected identifier
 --@ exit: 2

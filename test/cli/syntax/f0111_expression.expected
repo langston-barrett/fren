@@ -1,14 +1,14 @@
 error[F0111]: `E.A` is not a single name
- --> test/cli/syntax/f0111_expression.fren:3:47
+ --> test/cli/syntax/f0111_expression.fren:3:50
   |
-3 | comp c { in e: E pub out y? req r: y? iff e = E.A }
-  |                                               ^^^ `.` reads an instance's variable, or a value's field or method
+3 | comp c { in e: E pub out y? ensure r: y? iff e = E.A }
+  |                                                  ^^^ `.` reads an instance's variable, or a value's field or method
   |
   = note: `E` is not an instance, a variable or a constant
 help: if it is a path, separate its segments with `::`
   |
-3 - comp c { in e: E pub out y? req r: y? iff e = E.A }
-3 + comp c { in e: E pub out y? req r: y? iff e = E::A }
+3 - comp c { in e: E pub out y? ensure r: y? iff e = E.A }
+3 + comp c { in e: E pub out y? ensure r: y? iff e = E::A }
   |
 
 error: could not check due to previous errors

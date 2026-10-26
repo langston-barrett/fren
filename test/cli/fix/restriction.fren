@@ -33,18 +33,18 @@ comp fixes {
     pub out sets: Set(Int) := left minus right inter other
 
     -- Written as the other arms write their variants.
-    req wildcard: level = match mode { Heat => 1, Cool => 2, _ => 3 }
+    ensure wildcard: level = match mode { Heat => 1, Cool => 2, _ => 3 }
     -- `wildcard_single_variant` has the same fix, made once.
-    req single_rule: single = match mode { Heat => 1, Cool => 2, Mode::Off => 3, _ => 4 }
-    req payloads: size = match shape { Shape::Dot => 0, _ => 1 }
-    req raw: lower? iff text.matches?(r"[a-z]+")
+    ensure single_rule: single = match mode { Heat => 1, Cool => 2, Mode::Off => 3, _ => 4 }
+    ensure payloads: size = match shape { Shape::Dot => 0, _ => 1 }
+    ensure raw: lower? iff text.matches?(r"[a-z]+")
     -- A `"` needs the raw literal.
-    req raw_quoted: quoted? iff text.matches?(r#"a"[a-z]"#)
+    ensure raw_quoted: quoted? iff text.matches?(r#"a"[a-z]"#)
     -- A raw literal becomes an ordinary one, with escapes.
-    req accented_rule: accented? iff text.matches?(r"caf[éè]\.")
+    ensure accented_rule: accented? iff text.matches?(r"caf[éè]\.")
     -- Beyond `U+FFFF`, there is no escape.
-    req astral_rule: astral? iff text = "😀é"
-    req loose_rule: loose? iff (first? or second? and third?)
+    ensure astral_rule: astral? iff text = "😀é"
+    ensure loose_rule: loose? iff (first? or second? and third?)
     -- An operand that ends in an `if` is put in parentheses whole.
-    req open_ended_rule: open_ended? iff (first? or second? and if third? then first? else level > 0)
+    ensure open_ended_rule: open_ended? iff (first? or second? and if third? then first? else level > 0)
 }

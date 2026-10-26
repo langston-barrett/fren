@@ -7,7 +7,7 @@ comp c {
     in x: Int
     pub out y: Int
 
-    req r: y = shift(x) + BASE
+    ensure r: y = shift(x) + BASE
     expect holds: y = x + 6
     expect fails: y = x + 5
     --~^ error: `c::fails` does not hold

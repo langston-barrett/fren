@@ -12,7 +12,7 @@ comp naming {
     in annotated?
     pub det out accepted?           -- a function of the inputs is determined
 
-    req rule: accepted? iff (ends_in_q?(name) or annotated?)
+    ensure rule: accepted? iff (ends_in_q?(name) or annotated?)
 
     expect q_accepted: when ends_in_q?(name), accepted?
     expect always: accepted?        --~ error: expectation `naming::always` does not hold
@@ -25,8 +25,8 @@ comp distinct {
     pub out first: Name             -- an output of an abstract type
 
     assume injective: when arity(a) = arity(b), a = b
-    req r: same? iff a = b
-    req pick: first = a
+    ensure r: same? iff a = b
+    ensure pick: first = a
 
     expect by_arity: when arity(a) = arity(b), same?
     expect congruence: when same?, rename(a) = rename(b)
@@ -40,7 +40,7 @@ comp renamed {
 
     inst w: naming { name := rename(n), annotated? := false }
 
-    req r: ok? iff w.accepted?
+    ensure r: ok? iff w.accepted?
     expect same_function: ok? iff ends_in_q?(rename(n))  -- the instance's function is this one
 }
 

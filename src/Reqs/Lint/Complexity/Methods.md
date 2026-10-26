@@ -50,11 +50,11 @@ pub comp method_chain {
     pub det out fix: ChainFix
     pub det out single: Method  -- for `Single`, the method of the shorter form
 
-    req rule: fix = if inner = outer and inner in {Rev, Inverse} then ChainFix::Receiver
+    ensure rule: fix = if inner = outer and inner in {Rev, Inverse} then ChainFix::Receiver
         else if (inner = Inverse and outer in {Domain, Range, Card}) or (inner = Rev and outer = Len)
         or (inner = Closure and outer in {Closure, Domain, Range}) then ChainFix::Single
         else ChainFix::Keep
-    req shorter: single = if inner = Inverse and outer = Domain then Range
+    ensure shorter: single = if inner = Inverse and outer = Domain then Range
         else if inner = Inverse and outer = Range then Domain
         else outer
 
@@ -129,9 +129,9 @@ pub comp one_character {
 
     assume one: t.len = 1
 
-    req first: first? iff s.starts_with?(t)
-    req last: last? iff s.ends_with?(t)
-    req sliced: slice? iff s.at(i) = u
+    ensure first: first? iff s.starts_with?(t)
+    ensure last: last? iff s.ends_with?(t)
+    ensure sliced: slice? iff s.at(i) = u
 }
 ```
 
@@ -152,7 +152,7 @@ pub comp index_test {
 
     assume positions: position >= -1
 
-    req rule: test = match op {
+    ensure rule: test = match op {
         Ge => if bound = 0 then Found else Other,
         Gt | Ne => if bound = -1 then Found else Other,
         Lt => if bound = 0 then Absent else Other,
@@ -210,7 +210,7 @@ pub comp redundant_slicing {
 
     assume written: when whole?, i = 0 and n = s.len
 
-    req rule: fires? iff whole?
-    req value: when fires?, slice? iff s = u
+    ensure rule: fires? iff whole?
+    ensure value: when fires?, slice? iff s = u
 }
 ```

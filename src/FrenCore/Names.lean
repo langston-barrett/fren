@@ -744,7 +744,7 @@ def definedLaterMsg (n : Name) (own : Bool) : Msg :=
 def outInAssumeMsg (n : Name) : Msg :=
   { code? := some "F0401", headline := s!"assumptions may only mention `in` variables, but `{n}` is an `out`"
     label? := some "an `out`"
-    notes := #["note: assumptions constrain the environment, not the system", "help: if it constrains the outputs, make it a `req`"] }
+    notes := #["note: assumptions constrain the environment, not the system", "help: if it constrains the outputs, make it an `ensure`"] }
 
 /-- `in x := e`: only outputs can be defined (`lang::modifiers`). -/
 def inputDefinitionMsg : Msg :=
@@ -760,7 +760,7 @@ def cyclicDefinitionMsg (cycle : Array Name) : Msg :=
   { code? := some "F0411", headline := s!"the definition of `{cycle[0]!}` mentions itself: {path}"
     label? := some "a cyclic definition"
     notes := #["note: a defined output stands for its definition, so the definitions must not form a cycle",
-      "help: define one of them in terms of the others' inputs, or constrain it with a `req` instead"] }
+      "help: define one of them in terms of the others' inputs, or constrain it with an `ensure` instead"] }
 
 /-- A variable's mention, `msg`, was not allowed because the defined output
 `d` mentions it. -/
@@ -781,13 +781,13 @@ def checkMention (place : Place) (role : Role) (earlier : Bool) (n : Name) : Exc
             headline := s!"the arguments of a function may not mention an `out`, but `{n}` is one"
             label? := some "an `out`"
             notes := #["note: a function is applied only to values the system does not choose, so that the checks stay decidable",
-              "help: apply the function to the inputs the output depends on, and relate the output to the result in a `req`"] }
+              "help: apply the function to the inputs the output depends on, and relate the output to the result in an `ensure`"] }
   | .output, .binding =>
     throw { code? := some "F0402"
             headline := s!"bindings may only mention `in` variables and earlier instances, but `{n}` is an `out`"
             label? := some "an `out`"
             notes := #["note: an instance's inputs are fixed before the component chooses its outputs",
-              "help: to connect an instance to an output, bind it to an `in` and add a `req` relating the two"] }
+              "help: to connect an instance to an output, bind it to an `in` and add an `ensure` relating the two"] }
   | .instHidden, _ =>
     throw { code? := some "F0403", headline := s!"`{n}` is private to instance `{inst}`", label? := some "private"
             notes := #["note: only the `in`s and `pub out`s of an instance can be mentioned",
@@ -798,7 +798,7 @@ def checkMention (place : Place) (role : Role) (earlier : Bool) (n : Name) : Exc
             headline := s!"assumptions may only mention `in` variables, but `{n}` belongs to instance `{inst}`"
             label? := some s!"a variable of instance `{inst}`"
             notes := #["note: assumptions constrain the environment; instances are part of the system",
-              "help: if it constrains the instance, make it a `req`"] }
+              "help: if it constrains the instance, make it an `ensure`"] }
   | _, .binding =>
     unless earlier do
       throw { code? := some "F0404", headline := s!"instance `{inst}` is not declared before this binding"
@@ -906,7 +906,7 @@ def checkBindings (comp : Name) (vars : Array (Name × Role)) (bound : Array Nam
     | some (_, .output) =>
       throw (some i, { code? := some "F0407", headline := s!"`{b}` is an `out` of `{c}`", label? := some "an `out`"
                        notes := #["note: only `in`s are bound; an instance chooses its own outputs",
-                         s!"help: to constrain it, add a `req` that mentions `w.{b}`, where `w` is the instance"] })
+                         s!"help: to constrain it, add an `ensure` that mentions `w.{b}`, where `w` is the instance"] })
     | _ =>
       throw (some i, { code? := some "F0408", headline := s!"`{c}` has no input `{b}`", label? := some "unknown input"
                        notes := #[s!"note: the inputs of `{c}` are {showNameList inputs}"]

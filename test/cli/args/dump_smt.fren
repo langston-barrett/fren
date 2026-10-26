@@ -6,6 +6,6 @@ comp c {
     in x: Int
     pub out y: Int
     assume pos: x > 0
-    req on: when m = Mode::On, y = x
-    req off: when m = Mode::Off, y = 0
+    ensure on: when m = Mode::On, y = x
+    ensure off: when m = Mode::Off, y = 0
 }

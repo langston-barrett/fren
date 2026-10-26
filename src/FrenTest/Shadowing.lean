@@ -17,19 +17,19 @@ pub comp scaled {
     in s: Shape
     pub out y: Int
 
-    req r: y = match s { Shape::Circle(RATE!) => RATE, _ => RATE }
+    ensure r: y = match s { Shape::Circle(RATE!) => RATE, _ => RATE }
 }
 
 pub fn bump(RATE!: Int): Int := RATE + 1
 
 /--
-info: @[reducible] def shadowing_test.scaled.req.r : Int → shadowing_test.Shape → Int → Prop :=
+info: @[reducible] def shadowing_test.scaled.ensure.r : Int → shadowing_test.Shape → Int → Prop :=
 fun RATE s y =>
   y =
     if s = shadowing_test.Shape.Circle (shadowing_test.Shape.Circle.x0 s) then shadowing_test.Shape.Circle.x0 s
     else RATE
 -/
-#guard_msgs in #print shadowing_test.scaled.req.r
+#guard_msgs in #print shadowing_test.scaled.ensure.r
 
 /--
 info: @[reducible] def shadowing_test.bump : Int → Int :=
@@ -56,7 +56,7 @@ open Lean Elab Command in
 note: Lean reads `s!` as a token of its own, not as `s` followed by `!`
 help: rename the declaration -/
 #guard_msgs in
-comp token { in s!: Int pub out y: Int req r: y = s }
+comp token { in s!: Int pub out y: Int ensure r: y = s }
 
 -- The fix for `!=` is offered only where `=` directly follows the `!`.
 /--
@@ -67,7 +67,7 @@ help: for `!=`, write a space before the `!`
 help: for the name `x`, remove the `!`
 -/
 #guard_msgs in
-comp compare { in x: Int pub out p? req r: p? iff x!=1 }
+comp compare { in x: Int pub out p? ensure r: p? iff x!=1 }
 
 /--
 error: cannot find `x!` in this scope
@@ -76,4 +76,4 @@ note: `!` is written only where a name is declared, to shadow another
 help: for the name `x`, remove the `!`
 -/
 #guard_msgs in
-comp bare { in x: Int pub out p? req r: p? iff x! }
+comp bare { in x: Int pub out p? ensure r: p? iff x! }

@@ -4,7 +4,7 @@ comp c {
     in x: Int
     pub out y: Int
 
-    req r: y = x + 1
+    ensure r: y = x + 1
 
     expect bigger: y > x
 }

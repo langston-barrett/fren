@@ -65,7 +65,7 @@ an error, whatever the lint levels.
 
 A [`Nat`](Types.md#natural-numbers) is an `Int` with the linear
 constraint that it is at least 0, so it is in the core wherever an `Int`
-is. The constraint on an output stays with the requirements under
+is. The constraint on an output stays with the guarantees under
 realizability's quantifier, and the one on an application of an
 uninterpreted function is about that application, so no query quantifies
 over a function's arguments.
@@ -267,7 +267,7 @@ pub comp in_core {
     in literal_operand?      -- for `SeqWord`: `x in L`, `starts_with?(L)` or `ends_with?(L)`, with `L` a literal
     pub det out decidable?
 
-    req rule: decidable? iff (ground? or (not infinite_output? and match construct {
+    ensure rule: decidable? iff (ground? or (not infinite_output? and match construct {
         StringAtom | StringIndex => constant_args?,
         StringCompare => comparable?,
         SetAlgebra | SeqArray => true,

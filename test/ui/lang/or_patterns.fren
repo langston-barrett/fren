@@ -9,7 +9,7 @@ comp arity {
     in method: Method
     pub det out n: Int
 
-    req rule: n = match method {
+    ensure rule: n = match method {
         | Len
         | Card
         | Rev => 0,
@@ -26,7 +26,7 @@ comp round {
     in s: Shape
     pub det out r?
 
-    req rule: r? iff match s { Shape::Circle(_) | Shape::Empty => true, _ => false }
+    ensure rule: r? iff match s { Shape::Circle(_) | Shape::Empty => true, _ => false }
 
     expect circle: when s = Shape::Circle(3), r?
     expect square: when s = Shape::Square(3), not r?
@@ -38,7 +38,7 @@ comp named {
     in s: Shape
     pub det out k: Int
 
-    req rule: k = match s { Circle(x) => x, Square(x) => 2 * x, Shape::Empty => 0 }
+    ensure rule: k = match s { Circle(x) => x, Square(x) => 2 * x, Shape::Empty => 0 }
 
     expect doubled: when s = Square(2), k = 4
 }

@@ -9,4 +9,4 @@ so this module reports nothing.
 -/
 
 mod dep
-pub comp dep_gate { in a? pub out b? req same: b? iff a? expect never: when a?, not b? }
+pub comp dep_gate { in a? pub out b? ensure same: b? iff a? expect never: when a?, not b? }

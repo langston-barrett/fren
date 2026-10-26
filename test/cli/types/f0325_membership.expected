@@ -1,8 +1,8 @@
 error[F0325]: `in` needs a `Set(Int)` on its right, found `Set(String)`
- --> test/cli/types/f0325_membership.fren:6:19
+ --> test/cli/types/f0325_membership.fren:6:22
   |
-6 |     req r: p? iff x in s
-  |                   ^^^^^^ `Int` and `Set(String)`
+6 |     ensure r: p? iff x in s
+  |                      ^^^^^^ `Int` and `Set(String)`
   |
   = note: `x in s` is membership: `s` is a set of values of `x`'s type
 

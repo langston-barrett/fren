@@ -1,8 +1,8 @@
 --- test/cli/fmt/table.fren
 +++ test/cli/fmt/table.fren
 @@ -7 +7 @@
--    req a: y = table {x > 0=>1,_=>0}
-+    req a: y = table { x > 0 => 1, _ => 0 }
+-    ensure a: y = table {x > 0=>1,_=>0}
++    ensure a: y = table { x > 0 => 1, _ => 0 }
 @@ -9,3 +9,3 @@
 -    | x > 0 => 1,
 -          | x <= 0 =>
@@ -11,6 +11,6 @@
 +        | x <= 0 =>
 +            0,
 @@ -13 +13 @@
--    req d: y = table { x > 0 => 1, _ => 0, }
-+    req d: y = table { x > 0 => 1, _ => 0 }
+-    ensure d: y = table { x > 0 => 1, _ => 0, }
++    ensure d: y = table { x > 0 => 1, _ => 0 }
 exit=1

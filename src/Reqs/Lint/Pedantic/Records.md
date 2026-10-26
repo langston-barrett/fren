@@ -22,7 +22,7 @@ pub comp inconsistent_struct_constructor {
     in in_order?         -- the literal's fields are written in the order its record declares them
     pub det out fires?
 
-    req rule: fires? iff not in_order?
+    ensure rule: fires? iff not in_order?
 }
 
 pub struct Cell { row: Int, column: Int }
@@ -81,7 +81,7 @@ pub comp struct_field_names {
 
     assume counts: n_fields >= 0
 
-    req rule: fires? iff (n_fields >= 2 and (shared_first? or shared_last?))
+    ensure rule: fires? iff (n_fields >= 2 and (shared_first? or shared_last?))
 }
 
 pub comp field_has_record_name {
@@ -92,7 +92,7 @@ pub comp field_has_record_name {
 
     assume counts: n_words >= 0 and n_record_words >= 0
 
-    req rule: fires? iff (contains? and n_words > n_record_words)
+    ensure rule: fires? iff (contains? and n_words > n_record_words)
 
     expect same_name: when n_words = n_record_words, not fires?
 }
@@ -119,7 +119,7 @@ pub comp struct_excessive_bools {
 
     assume counts: n_bools >= 0
 
-    req rule: fires? iff n_bools > 3
+    ensure rule: fires? iff n_bools > 3
 }
 
 pub comp fn_params_excessive_bools {
@@ -128,6 +128,6 @@ pub comp fn_params_excessive_bools {
 
     assume counts: n_bools >= 0
 
-    req rule: fires? iff n_bools > 3
+    ensure rule: fires? iff n_bools > 3
 }
 ```

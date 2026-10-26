@@ -1,4 +1,4 @@
 -- `=` does not chain (`lang::comparison_chain`).
-comp equal { in a? in b? pub out ok? req r: ok? iff a? = b? = true }
+comp equal { in a? in b? pub out ok? ensure r: ok? iff a? = b? = true }
 --~^ error: `=` cannot be chained
 --@ exit: 2

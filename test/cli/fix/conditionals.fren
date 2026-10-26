@@ -11,11 +11,11 @@ comp c {
     pub out m: Int
     pub out n: Int
 
-    req r1: unless not (a? or b?), p?
-    req r2: unless x != y, q?
-    req r3: when a?, when (b? or p?), q?
-    req r4: unless (a? iff b?), unless x = 1, p?
-    req r5: m = if not a? then x else y
-    req r6: n = if x != y then (if a? then x else y) else 0
-    req r7: p? or if not q? then a? else b?
+    ensure r1: unless not (a? or b?), p?
+    ensure r2: unless x != y, q?
+    ensure r3: when a?, when (b? or p?), q?
+    ensure r4: unless (a? iff b?), unless x = 1, p?
+    ensure r5: m = if not a? then x else y
+    ensure r6: n = if x != y then (if a? then x else y) else 0
+    ensure r7: p? or if not q? then a? else b?
 }

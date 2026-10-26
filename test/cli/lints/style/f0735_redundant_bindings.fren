@@ -5,7 +5,7 @@ comp sub {
     in x: Int
     pub out p?
 
-    req r: p? iff x > 0
+    ensure r: p? iff x > 0
 }
 
 comp c {
@@ -13,5 +13,5 @@ comp c {
     pub out q?
     inst s: sub { x := x }
 
-    req r: q? iff Point { x := x, y := 1 }.x > 0
+    ensure r: q? iff Point { x := x, y := 1 }.x > 0
 }

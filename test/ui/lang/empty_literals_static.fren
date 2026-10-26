@@ -5,25 +5,25 @@ set_option fren.lint.dead_code "allow"
 
 fn twice(n: Int): Int := 2 * n
 enum S { A(Int), B, C }
-comp sub { in x: Int pub out z: Int req r: z = x }
+comp sub { in x: Int pub out z: Int ensure r: z = x }
 
 -- Expected to be no collection: its type cannot be known.
-comp argument { pub out y: Int req r: y = twice({}) }
+comp argument { pub out y: Int ensure r: y = twice({}) }
 --~^ error: the type of `{}` cannot be known here
 comp binding { inst w: sub { x := ([]) } }
 --~^ error: the type of `[]` cannot be known here
 comp branch { in c? pub out y: Int := if c? then 1 else {} }
 --~^ error: the type of `{}` cannot be known here
-comp compared { pub out y: Int req r: y = {} }
+comp compared { pub out y: Int ensure r: y = {} }
 --~^ error: the type of `{}` cannot be known here
-comp arm { in s: S pub out y: Int req r: y = match s { S::A(a) => a, S::B => {}, S::C => 0 } }
+comp arm { in s: S pub out y: Int ensure r: y = match s { S::A(a) => a, S::B => {}, S::C => 0 } }
 --~^ error: the type of `{}` cannot be known here
 
 -- A `match` with an expected type checks its arms in order against it, so
 -- an error in a later arm comes after.
-comp first_arm { in s: S pub out y: Int req r: y = match s { S::B => {}, S::A(a) => a, S::C => true } }
+comp first_arm { in s: S pub out y: Int ensure r: y = match s { S::B => {}, S::A(a) => a, S::C => true } }
 --~^ error: the type of `{}` cannot be known here
-comp first_arm_later_error { in s: S pub out y: Int req r: y = match s { S::B => [], S::A(a) => nope, S::C => 1 } }
+comp first_arm_later_error { in s: S pub out y: Int ensure r: y = match s { S::B => [], S::A(a) => nope, S::C => 1 } }
 --~^ error: the type of `[]` cannot be known here
 
 -- Without one, an arm that does not synthesize its type waits for one that
@@ -38,19 +38,19 @@ comp sibling { in c? in t: Set(Int) pub out y: Int := if c? then {} else t }
 -- Expected to be a collection of the other kind: a type mismatch.
 comp set_for_seq { in c? pub out q: Seq(Int) := if c? then {} else [1] }
 --~^ error: type mismatch: expected `Seq(Int)`, found an empty set
-comp seq_for_set { in t: Set(Int) pub out p? req r: p? iff t = [] }
+comp seq_for_set { in t: Set(Int) pub out p? ensure r: p? iff t = [] }
 --~^ error: type mismatch: expected `Set(Int)`, found an empty sequence
-comp seq_note { in t: Set(Int) pub out p? req r: p? iff [] = t }
+comp seq_note { in t: Set(Int) pub out p? ensure r: p? iff [] = t }
 --~^ error: `[]` is an empty sequence
 comp union_seq { in t: Set(Int) pub out u: Set(Int) := [] union t }
 --~^ error: type mismatch: expected `Set(Int)`, found an empty sequence
-comp subset_seq { in t: Set(Int) pub out p? req r: p? iff t subset [] }
+comp subset_seq { in t: Set(Int) pub out p? ensure r: p? iff t subset [] }
 --~^ error: type mismatch: expected `Set(Int)`, found an empty sequence
 comp concat_set { in q: Seq(Int) pub out u: Seq(Int) := {} ++ q }
 --~^ error: type mismatch: expected `Seq(Int)`, found an empty set
 comp concat_set_right { in q: Seq(Int) pub out u: Seq(Int) := q ++ {} }
 --~^ error: type mismatch: expected `Seq(Int)`, found an empty set
-comp pair_in_seq { in x: Int pub out p? req r: p? iff (x, x) in [] }
+comp pair_in_seq { in x: Int pub out p? ensure r: p? iff (x, x) in [] }
 --~^ error: type mismatch: expected `Rel(Int, Int)`, found an empty sequence
 comp receiver { in c? pub out y: Int := (if c? then {} else [1]).len }
 --~^ error: type mismatch: expected `Seq(Int)`, found an empty set

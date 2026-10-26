@@ -1,10 +1,10 @@
 --- test/cli/fix/review.fren
 +++ test/cli/fix/review.fren
 @@ -14,2 +14,2 @@
--    req r1: p1? iff t = {(x), x}
--    req r2: p2? iff t = {x, (x)}
-+    req r1: p1? iff t = {(x)}
-+    req r2: p2? iff t = {x}
+-    ensure r1: p1? iff t = {(x), x}
+-    ensure r2: p2? iff t = {x, (x)}
++    ensure r1: p1? iff t = {(x)}
++    ensure r2: p2? iff t = {x}
 @@ -17 +17 @@
 -        if a? then x + 1 else x + 1
 +        (x + 1)

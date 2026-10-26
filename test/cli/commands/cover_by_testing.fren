@@ -3,7 +3,7 @@ comp heater {
     in temp: Int
     pub out alarm?
 
-    req r: alarm? iff temp > 100
+    ensure r: alarm? iff temp > 100
 
     set_option fren.evidence "tested" in
     cover overheat: temp > 100 and alarm?

@@ -6,5 +6,5 @@ comp c {
     in n: Int
     pub out y: Int
 
-    req r: y = n + 1
+    ensure r: y = n + 1
 }

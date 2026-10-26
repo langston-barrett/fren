@@ -59,7 +59,7 @@ interpretation := "interp" path ":=" TERM
 member         := "in" variable
                 | ["pub"] ["det"] "out" variable [":=" top]
                 | "assume" IDENT ":" top
-                | "req" IDENT ":" top
+                | "ensure" IDENT ":" top
                 | "expect" IDENT ":" top
                 | "cover" IDENT ":" top
                 | instance

@@ -12,7 +12,7 @@ pub comp c {
     in RATE: Int
     pub out y: Int
 
-    req r: y = RATE
+    ensure r: y = RATE
 }
 
 pub comp d {
@@ -20,7 +20,7 @@ pub comp d {
     in s: Shape
     pub out p?
 
-    req r: p? iff match s {
+    ensure r: p? iff match s {
         Shape::Circle(x) => x > 0,
         _ => x > 0,
     }

@@ -64,7 +64,7 @@ pub comp identifier {
     in lexeme: String
     pub det out accepted?
 
-    req rule: accepted? iff lexeme.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?[!]?")
+    ensure rule: accepted? iff lexeme.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?[!]?")
 
     expect primed: when lexeme = "x'", accepted?
     expect components: when lexeme = "w.x.y?", accepted?
@@ -92,14 +92,14 @@ pub comp identifier_shape {
     in lexeme: String
     pub out accepted?
 
-    req no_empty_component: when lexeme.contains?(".."), not accepted?
-    req letter_first: when lexeme.matches?(r"[0-9'.?!].*"), not accepted?
-    req no_trailing_dot: when lexeme.ends_with?("."), not accepted?
-    req question_last: when lexeme.contains?("?") and not (lexeme.ends_with?("?") or lexeme.ends_with?("?!")),
+    ensure no_empty_component: when lexeme.contains?(".."), not accepted?
+    ensure letter_first: when lexeme.matches?(r"[0-9'.?!].*"), not accepted?
+    ensure no_trailing_dot: when lexeme.ends_with?("."), not accepted?
+    ensure question_last: when lexeme.contains?("?") and not (lexeme.ends_with?("?") or lexeme.ends_with?("?!")),
         not accepted?
-    req one_question: when lexeme.contains?("??"), not accepted?
-    req bang_last: when lexeme.contains?("!") and not lexeme.ends_with?("!"), not accepted?
-    req one_bang: when lexeme.contains?("!!"), not accepted?
+    ensure one_question: when lexeme.contains?("??"), not accepted?
+    ensure bang_last: when lexeme.contains?("!") and not lexeme.ends_with?("!"), not accepted?
+    ensure one_bang: when lexeme.contains?("!!"), not accepted?
 
     expect first_characters: when lexeme in {"1", "1x", "'x", ".x", "?", "?x", "!", "!x"}, not accepted?
 }
@@ -122,7 +122,7 @@ pub comp identifier_end {
     in remaining: String     -- the input after the lexeme
     pub det out ends?
 
-    req maximal_munch: ends? iff (lexeme.ends_with?("!")
+    ensure maximal_munch: ends? iff (lexeme.ends_with?("!")
         or (lexeme.ends_with?("?") and not remaining.starts_with?("!"))
         or not (remaining.matches?(r"[A-Za-z0-9_'?!].*") or remaining.matches?(r"[.][A-Za-z_].*")))
 
@@ -157,8 +157,8 @@ pub comp longest_identifier {
     inst one: identifier { lexeme := lexeme ++ remaining.at(0) }
     inst two: identifier { lexeme := lexeme ++ remaining.slice(0, 2) }
 
-    req longest: when w.accepted? and remaining != "", ends? iff not (one.accepted? or two.accepted?)
-    req at_end: when remaining = "", ends?
+    ensure longest: when w.accepted? and remaining != "", ends? iff not (one.accepted? or two.accepted?)
+    ensure at_end: when remaining = "", ends?
 
     expect dotted: when lexeme = "w" and remaining = ".x", not ends?
     -- `w.x` is an identifier, so `w` does not end before the `.`; the space
@@ -193,7 +193,7 @@ pub comp path_shape {
     assume nonempty: segs != []
     assume identifiers: not "" in segs
 
-    req rule: accepted? iff not "self" in segs.slice(1, segs.len)
+    ensure rule: accepted? iff not "self" in segs.slice(1, segs.len)
 
     expect self_first: when segs = ["self", "Mode"], accepted?
     expect self_later: when segs.len >= 2 and segs[1] = "self", not accepted?
@@ -217,9 +217,9 @@ pub comp reserved_word {
     in lexeme: String        -- an identifier
     pub det out reserved?
 
-    req rule: reserved? iff lexeme in RESERVED
+    ensure rule: reserved? iff lexeme in RESERVED
 
-    expect contextual: when lexeme = "when" or lexeme = "req" or lexeme = "cover" or lexeme = "out", not reserved?
+    expect contextual: when lexeme = "when" or lexeme = "ensure" or lexeme = "cover" or lexeme = "out", not reserved?
     expect membership: when lexeme = "in", reserved?
     expect pattern_test: when lexeme = "is", reserved?
     expect record_update: when lexeme = "with", reserved?
@@ -239,8 +239,13 @@ have special meaning at the start of a construct, and are otherwise
 ordinary identifiers:
 
 ```
-when  unless  not  true  false  det  out  assume  req  cover  inst
+when  unless  not  true  false  det  out  assume  ensure  cover  inst
 ```
+
+`req`, which a guarantee was written with before `ensure`, is not a
+keyword of any kind, so it can be a name. Where a member of a component
+is expected, though, `req` is an error (`F0142`) that says to write
+`ensure`.
 
 `true` and `false` are the exception: they are the literals of type
 `Bool` wherever an expression is expected, at the start of one or not, so
@@ -292,7 +297,7 @@ pub comp integer_literal {
     in lexeme: String
     pub det out accepted?
 
-    req rule: accepted? iff ((lexeme.matches?(r"[0-9]([0-9_]*[0-9])?") and not lexeme.starts_with?("0_"))
+    ensure rule: accepted? iff ((lexeme.matches?(r"[0-9]([0-9_]*[0-9])?") and not lexeme.starts_with?("0_"))
         or lexeme.matches?(r"0[xX][0-9a-fA-F_]*[0-9a-fA-F]") or lexeme.matches?(r"0[bB][0-1_]*[0-1]")
         or lexeme.matches?(r"0[oO][0-7_]*[0-7]"))
 
@@ -322,11 +327,11 @@ pub comp escape_sequence {
     pub det out accepted?
     pub det out length: Int
 
-    req rule: accepted? iff remaining.matches?(r#"([nrt\\"']|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}).*"#)
-    req single: when accepted? and remaining.matches?(r#"[nrt\\"'].*"#), length = 2
-    req byte: when accepted? and remaining.starts_with?("x"), length = 4
-    req unicode: when accepted? and remaining.starts_with?("u"), length = 6
-    req rejected: when not accepted?, length = 0
+    ensure rule: accepted? iff remaining.matches?(r#"([nrt\\"']|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}).*"#)
+    ensure single: when accepted? and remaining.matches?(r#"[nrt\\"'].*"#), length = 2
+    ensure byte: when accepted? and remaining.starts_with?("x"), length = 4
+    ensure unicode: when accepted? and remaining.starts_with?("u"), length = 6
+    ensure rejected: when not accepted?, length = 0
 
     expect no_classes: when remaining.starts_with?("d"), not accepted?
     expect short_hex: when remaining = "x4", not accepted?
@@ -347,8 +352,8 @@ pub comp escape_text {
     pub out accepted?
     pub out length: Int
 
-    req exact: when accepted?, remaining.slice(0, length - 1).matches?(r#"[nrt\\"']|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}"#)
-    req rejected: when not accepted?, length = 0
+    ensure exact: when accepted?, remaining.slice(0, length - 1).matches?(r#"[nrt\\"']|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}"#)
+    ensure rejected: when not accepted?, length = 0
 }
 
 set_option fren.evidence "tested" in
@@ -366,7 +371,7 @@ pub comp escape_start {
     in remaining: String     -- the input after a `\` in a literal
     pub out accepted?
 
-    req escapes: accepted? iff (remaining.starts_with?("n") or remaining.starts_with?("r")
+    ensure escapes: accepted? iff (remaining.starts_with?("n") or remaining.starts_with?("r")
         or remaining.starts_with?("t") or remaining.starts_with?("\\") or remaining.starts_with?("\"")
         or remaining.starts_with?("'")
         or (remaining.starts_with?("x") and remaining.at(1).matches?(r"[0-9a-fA-F]")
@@ -428,7 +433,7 @@ pub comp punctuator {
     in lexeme: String
     pub det out accepted?
 
-    req rule: accepted? iff lexeme in PUNCTUATORS
+    ensure rule: accepted? iff lexeme in PUNCTUATORS
 
     -- The punctuators listed above, the three of other languages, and
     -- Lean's `<-`.
@@ -447,7 +452,7 @@ pub comp punctuator_end {
     assume a_punctuator: lexeme in PUNCTUATORS
 
     inst one: punctuator { lexeme := longer }
-    req maximal_munch: ends? iff (remaining = "" or not one.accepted?)
+    ensure maximal_munch: ends? iff (remaining = "" or not one.accepted?)
 
     expect path_glob: when lexeme = "::" and remaining.starts_with?("*"), not ends?
     expect no_triple: when lexeme.len = 3, ends?
@@ -477,8 +482,8 @@ pub comp longest_punctuator {
     inst one: punctuator { lexeme := lexeme ++ remaining.at(0) }
     inst two: punctuator { lexeme := lexeme ++ remaining.slice(0, 2) }
 
-    req longest: when remaining != "", ends? iff not (one.accepted? or two.accepted?)
-    req at_end: when remaining = "", ends?
+    ensure longest: when remaining != "", ends? iff not (one.accepted? or two.accepted?)
+    ensure at_end: when remaining = "", ends?
 }
 
 set_option fren.evidence "tested" in

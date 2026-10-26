@@ -1,16 +1,16 @@
 warning[F0741]: over integers, this is a strict comparison
- --> test/cli/lints/complexity/f0741_int_plus_one.fren:2:55
+ --> test/cli/lints/complexity/f0741_int_plus_one.fren:2:58
   |
-2 | comp c { in x: Int in y: Int pub out p? req r: p? iff x - 1 >= y }
-  |                                                       ^^^^^^^^^^ compares with an operand off by one
+2 | comp c { in x: Int in y: Int pub out p? ensure r: p? iff x - 1 >= y }
+  |                                                          ^^^^^^^^^^ compares with an operand off by one
   |
   = help: `fren fix` can fix this
   = note: `int_plus_one` is `warn` by default
   = help: to allow it, `set_option fren.lint.int_plus_one "allow"`
 help: write `x > y`
   |
-2 - comp c { in x: Int in y: Int pub out p? req r: p? iff x - 1 >= y }
-2 + comp c { in x: Int in y: Int pub out p? req r: p? iff x > y }
+2 - comp c { in x: Int in y: Int pub out p? ensure r: p? iff x - 1 >= y }
+2 + comp c { in x: Int in y: Int pub out p? ensure r: p? iff x > y }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

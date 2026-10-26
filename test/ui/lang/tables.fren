@@ -11,7 +11,7 @@ comp exit {
     in worst: Severity
     pub det out code: Int
 
-    req rule: code = table {
+    ensure rule: code = table {
         | not ran? => 2,
         | ran? and worst = Error => 1,
         | ran? and worst = Warning => 3,
@@ -28,7 +28,7 @@ comp wild {
     in x: Int
     pub det out y: Int
 
-    req r: y = table { x > 10 => 2, 0 < x <= 10 => 1, _ => 0 }
+    ensure r: y = table { x > 10 => 2, 0 < x <= 10 => 1, _ => 0 }
 
     expect zero: when x <= 0, y = 0
     expect one: when x = 5, y = 1
@@ -39,7 +39,7 @@ comp only_wild {
     in x: Int
     pub det out y: Int
 
-    req r: y = table { _ => x }
+    ensure r: y = table { _ => x }
 
     expect same: y = x
 }
@@ -54,8 +54,8 @@ comp operands {
     pub out s: Set(Int) := table { x > 0 => {}, _ => {x} }
     pub out q: Seq(Int) := table { x > 0 => [x], _ => [] }
 
-    req ry: y = 1 + table { x > 0 => n, _ => x }
-    req rb: b? iff not table { x > 0 => true, _ => false }
+    ensure ry: y = 1 + table { x > 0 => n, _ => x }
+    ensure rb: b? iff not table { x > 0 => true, _ => false }
 
     expect pos: when x > 0, y = n + 1 and not b? and s = {} and q = [x]
     expect neg: when x <= 0, y = x + 1 and b? and s = {x} and q = []
@@ -67,20 +67,20 @@ comp guarded {
     in x: Int
     pub out y: Int
 
-    req r: when x >= 0, y = table { x = 0 => 0, x > 0 => 1 }
-    req s: when x < 0, y = -1
+    ensure r: when x >= 0, y = table { x = 0 => 0, x > 0 => 1 }
+    ensure s: when x < 0, y = -1
 
     expect sign: y >= -1
 }
 
--- A requirement's own hypotheses make the table complete.
+-- A guarantee's own hypotheses make the table complete.
 comp hypotheses {
     in x: Int
     pub out y: Int
 
     assume small: 0 <= x <= 2
 
-    req r: y = table { x = 0 => 10, x = 1 => 11, x = 2 => 12 }
+    ensure r: y = table { x = 0 => 10, x = 1 => 11, x = 2 => 12 }
 
     expect range: 10 <= y <= 12
 }
@@ -90,7 +90,7 @@ comp naturals {
     in n: Nat
     pub det out y: Int
 
-    req r: y = table { n = 0 => 0, n > 0 => 1 }
+    ensure r: y = table { n = 0 => 0, n > 0 => 1 }
 
     expect bit: y = 0 or y = 1
 }
@@ -101,7 +101,7 @@ comp indexes {
     in q: Seq(Int)
     pub det out y: Int
 
-    req r: y = table { q = [] => 0, q != [] and q[0] > 0 => q[0], _ => -q[0] }
+    ensure r: y = table { q = [] => 0, q != [] and q[0] > 0 => q[0], _ => -q[0] }
 
     expect non_negative: y >= 0
 }
@@ -112,7 +112,7 @@ comp nested {
     in b?
     pub det out y: Int
 
-    req r: y = table {
+    ensure r: y = table {
         | a? => table { b? => 3, not b? => 2 },
         | not a? => table { b? => 1, _ => 0 },
     }
@@ -140,8 +140,8 @@ comp quantified {
     pub det out y: Int
     pub det out all?
 
-    req r: y = table { (forall (l: Level), l = Level::Low or x > 0) => 1, _ => 0 }
-    req s: all? iff (forall (l: Level), table { l = Level::Low => x >= 0, l = Level::High => x >= 1 })
+    ensure r: y = table { (forall (l: Level), l = Level::Low or x > 0) => 1, _ => 0 }
+    ensure s: all? iff (forall (l: Level), table { l = Level::Low => x >= 0, l = Level::High => x >= 1 })
 
     expect positive: when x > 0, y = 1 and all?
 }
@@ -153,8 +153,8 @@ comp lets {
     pub det out y: Int
     pub det out z: Int
 
-    req r: y = (let k := table { x > 0 => 1, x <= 0 => 0 } in k + k)
-    req s: z = table { a > 0 => a, a <= 0 => 0 } where a := x - 1
+    ensure r: y = (let k := table { x > 0 => 1, x <= 0 => 0 } in k + k)
+    ensure s: z = table { a > 0 => a, a <= 0 => 0 } where a := x - 1
 
     expect even: y = 0 or y = 2
 }
@@ -172,7 +172,7 @@ comp uses {
     in x: Int
     pub det out y: Int
 
-    req r: y = sign(x) * LIMIT
+    ensure r: y = sign(x) * LIMIT
 
     expect positive: when x > 0, y = 10
 }

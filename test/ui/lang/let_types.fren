@@ -9,7 +9,7 @@ comp c {
     in p: P
     pub out b: Int
 
-    req r: b = k + a + w where k: Nat := a + 1, w: Int := a
+    ensure r: b = k + a + w where k: Nat := a + 1, w: Int := a
     expect e: b >= 1
     expect u: let q := { p with x := 1 } in q.x = 1
     -- An application of a `Nat` function to a name is at least 0.

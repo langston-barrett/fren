@@ -1,11 +1,11 @@
 --- test/cli/fix/quantifier.fren
 +++ test/cli/fix/quantifier.fren
 @@ -13,2 +13,2 @@
--    req r1: o? iff not not (forall (k: Mode), k = m) and p?
--    req r2: w? iff (exists (k: Mode), not not (k = m))
-+    req r1: o? iff (forall (k: Mode), k = m) and p?
-+    req r2: w? iff (exists (k: Mode), k = m)
+-    ensure r1: o? iff not not (forall (k: Mode), k = m) and p?
+-    ensure r2: w? iff (exists (k: Mode), not not (k = m))
++    ensure r1: o? iff (forall (k: Mode), k = m) and p?
++    ensure r2: w? iff (exists (k: Mode), k = m)
 @@ -24 +24 @@
--    req r: u? iff if m = Mode::Heat then (forall (k: Mode), k = m or p?) else if m = Mode::Cool then p? else q?
-+    req r: u? iff match m { Mode::Heat => (forall (k: Mode), k = m or p?), Mode::Cool => p?, _ => q? }
+-    ensure r: u? iff if m = Mode::Heat then (forall (k: Mode), k = m or p?) else if m = Mode::Cool then p? else q?
++    ensure r: u? iff match m { Mode::Heat => (forall (k: Mode), k = m or p?), Mode::Cool => p?, _ => q? }
 exit=1

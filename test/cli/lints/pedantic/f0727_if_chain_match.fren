@@ -8,6 +8,6 @@ comp c {
     pub out y: Int
     pub out z: Int
 
-    req r: y = if m = Mode::Heat then 1 else if m = Mode::Cool or m = Mode::Off then 2 else 0
-    req s: z = if m = Mode::Heat then 1 else 0
+    ensure r: y = if m = Mode::Heat then 1 else if m = Mode::Cool or m = Mode::Off then 2 else 0
+    ensure s: z = if m = Mode::Heat then 1 else 0
 }

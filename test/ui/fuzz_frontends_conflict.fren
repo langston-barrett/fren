@@ -1,22 +1,22 @@
--- A realizability failure whose requirements depend on the input that the
+-- A realizability failure whose guarantees depend on the input that the
 -- solver's model gives (#99). Each front end's are minimal for its own
 -- input, as `cli::agreement` allows, so its note may be at either
--- requirement.
+-- guarantee.
 
 comp source {
     in b?
     --~^ warning: unused variable `b?`
     pub out o: Int
-    req q: o = 0
+    ensure q: o = 0
 }
 
 comp both {
     --~^ error: `both` is not realizable: for the input
     in s: String
     inst w: source { b? := s != "" }
-    req q0: w.b?
+    ensure q0: w.b?
     --~^? info: is false when
-    req q1: not w.b?
+    ensure q1: not w.b?
     --~^? info: is false when
 }
 --@ summary: 2 passed, 1 failed, 0 inconclusive, 0 redundant

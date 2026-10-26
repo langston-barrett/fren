@@ -16,17 +16,17 @@ comp same_arms {
     pub out d: Int
     pub out f: Int
 
-    req r1: a = match e { E::A => x + 1, E::B => 2, E::C => x + 1, E::D => x + 1 }
+    ensure r1: a = match e { E::A => x + 1, E::B => 2, E::C => x + 1, E::D => x + 1 }
     --~^ warning: this arm has the same body as the arm `E::A`
-    req r2: b = match e { E::A => 1, E::B | E::C => 2, _ => 1 }
+    ensure r2: b = match e { E::A => 1, E::B | E::C => 2, _ => 1 }
     --~^ warning: this arm has the same body as the `_` arm
     --~^^ warning: `_` matches only `E::D`
-    req r3: c? = match e { E::A => x > 1 or x < 0, E::B | E::C => x > 1 or x < 0, _ => x > 1 or x < 0 }
+    ensure r3: c? = match e { E::A => x > 1 or x < 0, E::B | E::C => x > 1 or x < 0, _ => x > 1 or x < 0 }
     --~^ warning: replace the `match` with its body, `(x > 1 or x < 0)`
     --~^^ warning: `_` matches only `E::D`
     -- Binders: not the same arms, though written the same.
-    req r4: d = match s { Shape::Circle(r) => r, Shape::Rect(r, _) => r, Shape::Dot => 0 }
-    req r5: f = match s { Shape::Circle(r) => r, Shape::Rect(_, _) => 0, _ => 0 }
+    ensure r4: d = match s { Shape::Circle(r) => r, Shape::Rect(r, _) => r, Shape::Dot => 0 }
+    ensure r5: f = match s { Shape::Circle(r) => r, Shape::Rect(_, _) => 0, _ => 0 }
     --~^ warning: this arm has the same body as the `_` arm
     --~^^ warning: `_` matches only `Shape::Dot`
 }
@@ -39,16 +39,16 @@ comp membership {
     pub out r?
     pub out t?
 
-    req r1: p? iff match e { A => true, B => false, C => true, D => false }
+    ensure r1: p? iff match e { A => true, B => false, C => true, D => false }
     --~^ warning: this `match` only tests which of its patterns its scrutinee matches
     --~^^ warning: this arm has the same body as the arm `A`
     --~^^^ warning: this arm has the same body as the arm `B`
-    req r2: q? = match e { A => false, _ => true }
+    ensure r2: q? = match e { A => false, _ => true }
     --~^ warning: this `match` only tests which of its patterns its scrutinee matches
-    req r3: r? iff match e { A | B | C => true, D => false }
+    ensure r3: r? iff match e { A | B | C => true, D => false }
     --~^ warning: this `match` only tests which of its patterns its scrutinee matches
     -- Every arm is `true`: `match_same_arms`, not a membership.
-    req r4: t? iff match e { A | B => true, _ => true }
+    ensure r4: t? iff match e { A | B => true, _ => true }
     --~^ warning: this arm has the same body as the arm `A | B`
 }
 
@@ -60,10 +60,10 @@ comp wildcard {
     pub out b: Int
     pub out c: Int
 
-    req r1: a = match e { A => 1, B => 2, C => 3, _ => 4 }  --~ warning: `_` matches only `E::D`
-    req r2: b = match s { Shape::Circle(n) => n, Shape::Dot => 0, _ => 1 }
+    ensure r1: a = match e { A => 1, B => 2, C => 3, _ => 4 }  --~ warning: `_` matches only `E::D`
+    ensure r2: b = match s { Shape::Circle(n) => n, Shape::Dot => 0, _ => 1 }
     --~^ warning: `_` matches only `Shape::Rect`
-    req r3: c = match e { A => 1, B => 2, _ => 3 }
+    ensure r3: c = match e { A => 1, B => 2, _ => 3 }
 }
 --@ summary: 15 passed, 0 failed, 0 inconclusive, 0 redundant
 --@ exit: 3

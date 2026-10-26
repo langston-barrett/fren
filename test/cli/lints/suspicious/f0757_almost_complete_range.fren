@@ -1,2 +1,2 @@
 -- `almost_complete_range`.
-comp c { in s: String pub out p? req r: p? iff s.matches?("[a-y_][0-8]*") }
+comp c { in s: String pub out p? ensure r: p? iff s.matches?("[a-y_][0-8]*") }

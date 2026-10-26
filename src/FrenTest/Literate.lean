@@ -8,7 +8,7 @@ open Fren.Lang
 error: Literate.md:22:11: expectation `lit::gate::never` does not hold
 
 counterexample: a? = true, b? = true
-help: strengthen the requirements so that it follows, or correct the expectation
+help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: Literate.md:25:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 -/

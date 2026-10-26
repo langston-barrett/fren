@@ -56,7 +56,7 @@ pub comp comparison_holds {
     in order: Order      -- how the left operand compares with the right
     pub det out holds?
 
-    req rule: holds? iff match op {
+    ensure rule: holds? iff match op {
         Eq => order = Order::Same,
         Ne => order != Order::Same,
         Lt => order = Order::Below,
@@ -74,10 +74,10 @@ pub comp double_comparison {
     pub det out fires?
     pub det out result: Comparison  -- the fix, if it fires; otherwise `first`
 
-    req fires: fires? iff first != second and (if conjunction?
+    ensure fires: fires? iff first != second and (if conjunction?
         then first in {Le, Ge, Ne} and second in {Le, Ge, Ne}
         else first in {Lt, Gt, Eq} and second in {Lt, Gt, Eq})
-    req fix: result = if not fires? then first
+    ensure fix: result = if not fires? then first
         else if conjunction? then (if first != Ne and second != Ne then Eq else if Le in {first, second} then Lt else Gt)
         else (if first != Eq and second != Eq then Ne else if Lt in {first, second} then Le else Ge)
 }
@@ -161,9 +161,9 @@ pub comp redundant_comparisons {
     pub det out fires?
     pub det out keep_first?  -- the fix keeps the first comparison, rather than the second
 
-    req fires: fires? iff (disjoint?(first, first_bound, complement_of(second), second_bound)
+    ensure fires: fires? iff (disjoint?(first, first_bound, complement_of(second), second_bound)
         or disjoint?(second, second_bound, complement_of(first), first_bound))
-    req fix: keep_first? iff (if conjunction?
+    ensure fix: keep_first? iff (if conjunction?
         then disjoint?(first, first_bound, complement_of(second), second_bound)
         else disjoint?(second, second_bound, complement_of(first), first_bound))
 }
@@ -219,10 +219,10 @@ pub comp int_plus_one {
     pub det out result: Comparison  -- the comparison of the fix
     pub det out drop_left?          -- the fix drops the offset of the left operand, rather than the right
 
-    req rule: fires? iff ((op = Ge and (right = PlusOne or left = MinusOne))
+    ensure rule: fires? iff ((op = Ge and (right = PlusOne or left = MinusOne))
         or (op = Le and (left = PlusOne or right = MinusOne)))
-    req strict: result = (if op = Ge then Gt else if op = Le then Lt else op)
-    req drop: drop_left? iff (if op = Ge then right != PlusOne else op = Le and left = PlusOne)
+    ensure strict: result = (if op = Ge then Gt else if op = Le then Lt else op)
+    ensure drop: drop_left? iff (if op = Ge then right != PlusOne else op = Le and left = PlusOne)
 }
 ```
 
@@ -270,7 +270,7 @@ pub comp int_plus_one_in_chain {
 
     assume position: comparison < n_comparisons
 
-    req rule: fires? iff (if drop_left? then comparison = 0 else comparison + 1 = n_comparisons)
+    ensure rule: fires? iff (if drop_left? then comparison = 0 else comparison + 1 = n_comparisons)
 }
 
 set_option fren.lint.int_plus_one "allow" in

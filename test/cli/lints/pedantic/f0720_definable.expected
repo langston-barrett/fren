@@ -1,7 +1,7 @@
 warning[F0720]: `r` could be the definition of `y`
  --> test/cli/lints/pedantic/f0720_definable.fren:4:28
   |
-4 | comp c { in x: Int pub out y: Int req r: y = x + 1 }
+4 | comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
   |                            ^ constrained by one equation
   |
   = help: write the expression as `y`'s definition, `out y := ...`, and remove `r`

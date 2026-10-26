@@ -4,7 +4,7 @@ pub comp sub {
     in i?
     pub out j?
 
-    req r: j? iff i?
+    ensure r: j? iff i?
 }
 
 pub comp c {
@@ -17,8 +17,8 @@ pub comp c {
     pub out w?
     inst s: sub { i? := if a? then true else false }
 
-    req r1: o? iff a? = true
-    req r2: when not not (a? or b?), w? or not (x < 3)
-    req r3: p? = (if b? then false else true) or false = a?
-    req r4: q? iff b? and not not (a? != true)
+    ensure r1: o? iff a? = true
+    ensure r2: when not not (a? or b?), w? or not (x < 3)
+    ensure r3: p? = (if b? then false else true) or false = a?
+    ensure r4: q? iff b? and not not (a? != true)
 }

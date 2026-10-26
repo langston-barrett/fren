@@ -1,8 +1,8 @@
 error[F0359]: a row after `_` can never be reached
- --> test/cli/types/f0359_row_after_wild.fren:2:62
+ --> test/cli/types/f0359_row_after_wild.fren:2:65
   |
-2 | comp c { in x: Int pub out y: Int req r: y = table { _ => 0, x > 0 => 1 } }
-  |                                                              ^ unreachable row
+2 | comp c { in x: Int pub out y: Int ensure r: y = table { _ => 0, x > 0 => 1 } }
+  |                                                                 ^ unreachable row
   |
   = note: `_` holds wherever no earlier row does, so it is the last row
   = help: remove this row, or move it before `_`

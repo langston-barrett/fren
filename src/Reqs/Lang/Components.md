@@ -8,7 +8,7 @@ component  := ["pub"] "comp" IDENT "{" member* "}"
 member     := "in" variable
             | ["pub"] ["det"] "out" variable [":=" top]
             | "assume" IDENT ":" top
-            | "req" IDENT ":" top
+            | "ensure" IDENT ":" top
             | "expect" IDENT ":" top
             | "cover" IDENT ":" top
             | instance
@@ -37,14 +37,14 @@ followed by a `where` clause (see [Local definitions](Let.md)).
   [Defined outputs](#defined-outputs).
 - **Assumptions** (`assume n: e`) constrain the environment. An assumption
   must mention only inputs.
-- **Requirements** (`req n: e`) constrain the system: every behaviour of the
+- **Guarantees** (`ensure n: e`) constrain the system: every behaviour of the
   system must satisfy them.
 - **Expectations** (`expect n: e`) are claims that follow from the
-  assumptions and requirements. They constrain nothing; the checks confirm
+  assumptions and guarantees. They constrain nothing; the checks confirm
   them. An expectation about several behaviours, or several components, is
   a [global expectation](Global.md) instead.
 - **Cover goals** (`cover n: e`) are scenarios that the component must
-  allow: some behaviour that meets the assumptions and requirements must
+  allow: some behaviour that meets the assumptions and guarantees must
   satisfy `e`. Like expectations, they constrain nothing; the [cover
   check](../Check.md#cover-goals) confirms them. See [Cover
   goals](#cover-goals).
@@ -70,7 +70,7 @@ pub comp modifiers {
     in defined?          -- written with `:= e`
     pub out accepted?
 
-    req rule: accepted? iff (member = Member::Output or not (pub? or det? or defined?))
+    ensure rule: accepted? iff (member = Member::Output or not (pub? or det? or defined?))
 
     expect plain_members: unless pub? or det? or defined?, accepted?
     expect outputs_take_all: when member = Member::Output, accepted?
@@ -98,7 +98,7 @@ pub comp variable_type {
 
     assume only_outputs: when defined?, output?
 
-    req rule: accepted? iff not (output? and unbounded? and not defined?)
+    ensure rule: accepted? iff not (output? and unbounded? and not defined?)
 
     expect inputs_any_type: unless output?, accepted?
     expect defined_any_type: when defined?, accepted?
@@ -107,7 +107,7 @@ pub comp variable_type {
 }
 ```
 
-Assumptions, requirements, expectations and cover goals are together
+Assumptions, guarantees, expectations and cover goals are together
 called *constraints*. Each constraint is an [expression](Expressions.md) of type
 `Bool`.
 
@@ -132,7 +132,7 @@ comp c {
     in s: Shape
     pub out p?
     -- `x!` declares a binder that shadows the input `x`; in the arm, `x` is the payload.
-    req r: p? iff match s {
+    ensure r: p? iff match s {
         Shape::Circle(x!) => x > 0,
         _ => x > 0,   -- the input
     }
@@ -206,7 +206,7 @@ pub comp shadowing {
 
     assume not_in_own_body: when own_function?, not hides?
 
-    req rule: accepted? iff (hides? iff bang?)
+    ensure rule: accepted? iff (hides? iff bang?)
 
     expect explicit: when hides? and bang?, accepted?
     expect implicit: when hides? and not bang?, not accepted?
@@ -221,18 +221,18 @@ pub comp shadowing {
 
 A component is a relation between its inputs `i` and its outputs `o`. Let
 `A(i)` be the conjunction of its assumptions and `R(i, o)` the conjunction
-of its requirements. The system meets the component if, whenever `A(i)`
+of its guarantees. The system meets the component if, whenever `A(i)`
 holds, its outputs satisfy `R(i, o)`. [Defined outputs](#defined-outputs)
 are first replaced by their definitions.
 
 A component with instances is an assume-guarantee composition. Each
 instance `w` contributes a constraint `I_w`: its bindings, and the
-assumptions, requirements and (recursively) instances of the component it
+assumptions, guarantees and (recursively) instances of the component it
 instantiates, over the instance's variables `y`. The instance is part of
 the system, but its variables are not the component's to choose: whatever
-the instantiated component does within its requirements, the component must
+the instantiated component does within its guarantees, the component must
 cope. So instance variables are treated like inputs, constrained by `I(i, y)
-= ⋀ I_w`, and the requirements become `R(i, y, o)`. The instantiated
+= ⋀ I_w`, and the guarantees become `R(i, y, o)`. The instantiated
 component's assumptions become obligations on the bindings, which the
 [instance check](../Check.md#instance-assumptions) confirms.
 
@@ -252,7 +252,7 @@ comp heater {
     in temp: Int
     pub out alarm?
 
-    req r: alarm? iff temp > 100
+    ensure r: alarm? iff temp > 100
 
     cover overheat: temp > 100 and alarm?
 }
@@ -286,7 +286,7 @@ pub comp handle {
     out long? := length > 40     -- a name for a condition
     pub det out accepted?
 
-    req rule: accepted? iff not (long? or taken?)
+    ensure rule: accepted? iff not (long? or taken?)
 }
 ```
 
@@ -319,7 +319,7 @@ A variable of type [`Nat`](Types.md#natural-numbers) brings the
 constraint that it is at least 0, as though it were written in the spec:
 
 - an input, an assumption;
-- an output, public or private, a requirement;
+- an output, public or private, a guarantee;
 - an instance's variable, a constraint of the instance, as its
   component's own variable does, even one that is a defined output there,
   where its definition already makes it at least 0;
@@ -332,7 +332,7 @@ check of their own: a binding or a definition of type `Nat` is at least 0
 by its type. `lang::nat_variable` states what a `Nat` variable brings:
 
 ```fren
-pub enum Brought { Nothing, Assumption, Requirement }
+pub enum Brought { Nothing, Assumption, Guarantee }
 
 pub comp nat_variable {
     in own_output?       -- an output of the component itself, rather than an input or an instance's variable
@@ -341,8 +341,8 @@ pub comp nat_variable {
 
     assume only_outputs: when defined?, own_output?
 
-    req rule: brought = (if defined? then Brought::Nothing
-        else if own_output? then Brought::Requirement
+    ensure rule: brought = (if defined? then Brought::Nothing
+        else if own_output? then Brought::Guarantee
         else Brought::Assumption)
 
     expect inputs_assumed: unless own_output?, brought = Brought::Assumption
@@ -382,6 +382,6 @@ trigger, and neither does one whose top level is a
 `where` at the top of a constraint is read through: the trigger of `when
 C, D where x := e` is `C`, with `x` standing for `e` (see [Local
 definitions](Let.md#meaning)). The [vacuity check](../Check.md#vacuity)
-confirms that the trigger of every requirement and expectation can hold.
+confirms that the trigger of every guarantee and expectation can hold.
 A cover goal's trigger is not checked: the [cover
 check](../Check.md#cover-goals) confirms the goal itself.

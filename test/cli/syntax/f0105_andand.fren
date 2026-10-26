@@ -1,2 +1,2 @@
 -- `&&` (F0105).
-comp c { in a? in b? pub out d? req r: d? iff a? && b? }
+comp c { in a? in b? pub out d? ensure r: d? iff a? && b? }

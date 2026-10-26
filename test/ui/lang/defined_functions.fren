@@ -21,7 +21,7 @@ comp doubler {
     in x: Int
     pub det out y: Int
 
-    req r: y = double(x)
+    ensure r: y = double(x)
 
     expect even: y = x + x
     expect constant: TWICE = 42
@@ -32,7 +32,7 @@ comp clamped {
     in x: Int
     pub out y: Int
 
-    req r: y = clamp(x, 0, 10)
+    ensure r: y = clamp(x, 0, 10)
 
     expect low: y >= 0
     expect high: y <= 10
@@ -45,8 +45,8 @@ comp from_output {
     out h?
     pub out on?
 
-    req h: h? iff m = Heat
-    req on: on? iff both?(h?, heating?(m))
+    ensure h: h? iff m = Heat
+    ensure on: on? iff both?(h?, heating?(m))
 
     expect same: on? iff m = Heat
 }
@@ -59,7 +59,7 @@ comp names {
     in a: Name
     pub out s?
 
-    req r: s? iff same?(a, a)
+    ensure r: s? iff same?(a, a)
 
     expect refl: s?
 }

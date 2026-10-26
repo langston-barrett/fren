@@ -17,7 +17,7 @@ its own inputs, chosen freely: the binders share no variables, and nothing
 binds their inputs. Within `E`, `a.x` refers to the variable `x` of `a`, as
 for an [instance](Instances.md#instance-variables), so only the component's
 inputs and public outputs can be mentioned: `inst::mention` applies, with
-`E` as a requirement.
+`E` as a guarantee.
 
 `E` may end with a [`where` clause](Let.md), whose definitions may
 mention the binders: `forall (a b: c), a.x <= b.x where ...`.
@@ -59,8 +59,8 @@ pub comp band {
   pub out too_cold?
   pub out too_hot?
 
-  req cold: too_cold? iff temp < target - 2
-  req hot: too_hot? iff temp > target + 2
+  ensure cold: too_cold? iff temp < target - 2
+  ensure hot: too_hot? iff temp > target + 2
 }
 
 expect colder_is_cold: forall (a b: band),
@@ -85,7 +85,7 @@ expect same_band: forall (f: fast_band) (b: band),
 
 Let `M_c(y)` be the [meaning](Components.md#meaning) of a component `c`
 over its variables `y`: the conjunction of its assumptions, its
-requirements, and the constraints of its instances. A global expectation
+guarantees, and the constraints of its instances. A global expectation
 with binders `w_1: c_1`, ..., `w_n: c_n` and body `E` holds if
 
   ∀ y_1 ... y_n. M_c_1(y_1) ∧ ... ∧ M_c_n(y_n) ⇒ E(y_1, ..., y_n)

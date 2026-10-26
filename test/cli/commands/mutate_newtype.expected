@@ -1,8 +1,8 @@
-swap-comparison-m::c::r-2debc8e53ad8 test/cli/commands/mutate_newtype.fren:13:14 `=` changed to `!=`
-swap-arithmetic-m::c::r-31c3c4a5995c test/cli/commands/mutate_newtype.fren:13:18 `+` changed to `-`
-swap-arithmetic-m::c::r-a1b46be2c92f test/cli/commands/mutate_newtype.fren:13:22 `-` changed to `+`
-shift-integer-m::c::r-dbfd940ca1b1 test/cli/commands/mutate_newtype.fren:13:27 `1` changed to `2`
-shift-integer-m::c::r-05fd8a3cdabb test/cli/commands/mutate_newtype.fren:13:27 `1` changed to `0`
-swap-comparison-m::c::s-50364f7b7b5c test/cli/commands/mutate_newtype.fren:14:16 `>=` changed to `>`
-shift-integer-m::c::s-ec0b4af3cccb test/cli/commands/mutate_newtype.fren:14:19 `0` changed to `1`
+swap-comparison-m::c::r-2debc8e53ad8 test/cli/commands/mutate_newtype.fren:13:17 `=` changed to `!=`
+swap-arithmetic-m::c::r-31c3c4a5995c test/cli/commands/mutate_newtype.fren:13:21 `+` changed to `-`
+swap-arithmetic-m::c::r-a1b46be2c92f test/cli/commands/mutate_newtype.fren:13:25 `-` changed to `+`
+shift-integer-m::c::r-dbfd940ca1b1 test/cli/commands/mutate_newtype.fren:13:30 `1` changed to `2`
+shift-integer-m::c::r-05fd8a3cdabb test/cli/commands/mutate_newtype.fren:13:30 `1` changed to `0`
+swap-comparison-m::c::s-50364f7b7b5c test/cli/commands/mutate_newtype.fren:14:19 `>=` changed to `>`
+shift-integer-m::c::s-ec0b4af3cccb test/cli/commands/mutate_newtype.fren:14:22 `0` changed to `1`
 exit=0

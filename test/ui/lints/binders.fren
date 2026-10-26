@@ -6,8 +6,8 @@ pub comp c {
     in x: Int
     pub out y: Int
     pub out b?
-    req r: y = x + 1
-    req s: b? iff x > 0
+    ensure r: y = x + 1
+    ensure s: b? iff x > 0
 }
 
 expect apart: forall (a b: c), a.y = a.x + 1 and b.y = b.x + 1  --~ warning: the binders of `apart` fall into 2 groups that nothing relates

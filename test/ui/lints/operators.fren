@@ -11,10 +11,10 @@ comp comparisons {
     pub out w?
     pub out z?
 
-    req r1: p? iff (a < b or a = b)          --~ warning: these two comparisons are `a <= b`
-    req r2: q? iff (a <= b and b <= a)       --~ warning: these two comparisons are `a = b`
-    req r3: w? iff (a + 1 >= b and b != a + 1)  --~ warning: these two comparisons are `a + 1 > b`
-    req r4: z? iff (u subset v and v subset u)  --~ warning: these two comparisons are `u = v`
+    ensure r1: p? iff (a < b or a = b)          --~ warning: these two comparisons are `a <= b`
+    ensure r2: q? iff (a <= b and b <= a)       --~ warning: these two comparisons are `a = b`
+    ensure r3: w? iff (a + 1 >= b and b != a + 1)  --~ warning: these two comparisons are `a + 1 > b`
+    ensure r4: z? iff (u subset v and v subset u)  --~ warning: these two comparisons are `u = v`
     -- Not the same operands, or not a single comparison other than the two.
     expect e1: when a < b or a = a + 1, true
     expect e2: when a <= b or a > b, true
@@ -28,8 +28,8 @@ comp bools {
     pub out p?
     pub out q?
 
-    req r1: p? iff (x? = y?) and x?          --~ warning: equality of `Bool`s is `iff`
-    req r2: q? = (x? or y?)                  --~ warning: equality of `Bool`s is `iff`
+    ensure r1: p? iff (x? = y?) and x?          --~ warning: equality of `Bool`s is `iff`
+    ensure r2: q? = (x? or y?)                  --~ warning: equality of `Bool`s is `iff`
     -- `!=`, literals and other types are left alone.
     expect e1: when x? != y?, true
     expect e2: when (x? = true) or y?, true
@@ -47,11 +47,11 @@ comp searches {
     pub out d?
     pub out e?
 
-    req r1: a? iff s.index_of(t, 0) != -1     --~ warning: this is a call of `contains?`
-    req r2: b? iff -1 = s.index_of(t, 0)      --~ warning: this is a call of `contains?`
-    req r3: c? iff s.index_of(t, 0) = 0       --~ warning: this is a call of `starts_with?`
-    req r4: d? iff s.slice(0, t.len) = t      --~ warning: this is a call of `starts_with?`
-    req r5: e? iff q.index_of([1, 2], 0) < 0  --~ warning: this is a call of `contains?`
+    ensure r1: a? iff s.index_of(t, 0) != -1     --~ warning: this is a call of `contains?`
+    ensure r2: b? iff -1 = s.index_of(t, 0)      --~ warning: this is a call of `contains?`
+    ensure r3: c? iff s.index_of(t, 0) = 0       --~ warning: this is a call of `starts_with?`
+    ensure r4: d? iff s.slice(0, t.len) = t      --~ warning: this is a call of `starts_with?`
+    ensure r5: e? iff q.index_of([1, 2], 0) < 0  --~ warning: this is a call of `contains?`
     -- From another position, or another bound.
     expect e1: when s.index_of(t, 1) >= 0 or s.index_of(t, 0) > 0, true
     expect e2: when s.slice(1, t.len) = t or s.slice(0, s.len) = t, true
@@ -67,14 +67,14 @@ comp conditionals {
     pub out k: Int
     pub out p?
 
-    req r1: n = 2 * if c? then x else y + 1  --~ warning: the `else` branch extends past the operator
-    req r2: m = 2 * if c? then x else if c? then y else y + 1
+    ensure r1: n = 2 * if c? then x else y + 1  --~ warning: the `else` branch extends past the operator
+    ensure r2: m = 2 * if c? then x else if c? then y else y + 1
     --~^ warning: the `else` branch extends past the operator
     --~^^ warning: `c?` is already tested earlier in this chain
-    req r3: p? iff c? and if c? then x > 0 else c? or y > 0
+    ensure r3: p? iff c? and if c? then x > 0 else c? or y > 0
     --~^ warning: the `else` branch extends past the operator
     -- The `else` branch binds more tightly, or is in parentheses.
-    req r4: k = x + if c? then x else y * 2
+    ensure r4: k = x + if c? then x else y * 2
     expect e1: when 2 * (if c? then x else y) + 1 > 0 or (2 * if c? then x else (y + 1)) > 0, true
 }
 
@@ -92,9 +92,9 @@ comp identities {
     pub out e: Seq(Int) := q ++ []           --~ warning: this operation has no effect
     pub out f: Set(Int) := u minus {}        --~ warning: this operation has no effect
 
-    req r1: a = (x - y) * 1                  --~ warning: this operation has no effect
-    req r2: b = 0 + x                        --~ warning: this operation has no effect
-    req r3: c = x + -y                       --~ warning: this negation can be the other operator
+    ensure r1: a = (x - y) * 1                  --~ warning: this operation has no effect
+    ensure r2: b = 0 + x                        --~ warning: this operation has no effect
+    ensure r3: c = x + -y                       --~ warning: this negation can be the other operator
     -- Not identities: they ignore an operand.
     expect e1: when x - 0 * y >= 1 - x or {} minus u = u, true
     --~^ warning: this `*` is always `0`

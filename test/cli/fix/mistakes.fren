@@ -2,7 +2,7 @@
 -- `fren fix` removes a constraint or global expectation that repeats one of
 -- its kind, writes invisible characters in a literal as escapes, removes
 -- them from a comment, and replaces `when true, D` and `unless false, D`
--- with `D`. An expectation that repeats a requirement is kept.
+-- with `D`. An expectation that repeats a guarantee is kept.
 comp c {
     in a?
     in b?
@@ -11,14 +11,14 @@ comp c {
     pub out q?
     pub out o?
 
-    req r1: p? iff a? or b?
-    req r2: p?  iff  a? or b?
+    ensure r1: p? iff a? or b?
+    ensure r2: p?  iff  a? or b?
     expect e1: p? iff a? or b?
     expect e2: when a?, p?
     expect e3: when a?,
         p?  -- a repeat
-    req r3: when true, q? iff a?
-    req r4: o? iff (unless false, b?) and s.matches?(r"a​[0-9]\\") and s != "‮"
+    ensure r3: when true, q? iff a?
+    ensure r4: o? iff (unless false, b?) and s.matches?(r"a​[0-9]\\") and s != "‮"
     -- a ⁦comment⁩
 }
 

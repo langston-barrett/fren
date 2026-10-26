@@ -1,8 +1,8 @@
 error[F0355]: a quantifier cannot range over `Int`
- --> test/cli/types/f0355_int.fren:2:59
+ --> test/cli/types/f0355_int.fren:2:62
   |
-2 | comp c { in x: Int pub out ok? req r: ok? iff (exists (n: Int), n = x) }
-  |                                                           ^^^ not a type whose values can be listed
+2 | comp c { in x: Int pub out ok? ensure r: ok? iff (exists (n: Int), n = x) }
+  |                                                              ^^^ not a type whose values can be listed
   |
   = note: a quantifier ranges over `Bool`, or an enum or record whose payloads and fields it ranges over
   = help: state it of a variable of that type instead, which the checks hold for every value of

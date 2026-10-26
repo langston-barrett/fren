@@ -1,7 +1,7 @@
 # Traceability
 
 Traceability relates each component of a spec to evidence that the system
-satisfies the component's requirements. Fren recognizes four kinds of
+satisfies the component's guarantees. Fren recognizes four kinds of
 evidence:
 
 - an [implementation](Impl.md) proved in Lean, with a written proof or by
@@ -24,7 +24,7 @@ Only components have evidence. A [global expectation](Lang/Global.md)
 constrains nothing, so there is nothing for the system to satisfy: the
 checks confirm it. Nor do a component's expectations and [cover
 goals](Lang/Components.md#cover-goals) add anything for the system to
-satisfy: evidence is about the assumptions and requirements, and a cover
+satisfy: evidence is about the assumptions and guarantees, and a cover
 goal's witness, shown by `fren check`, is evidence that the spec allows a
 scenario, not that the system does. Nor do [abstract types](Lang/Types.md#abstract-types) and
 [functions](Lang/Items.md#functions), which constrain nothing either: their
@@ -38,10 +38,10 @@ given files; in Lean, `#fren_trace` does the same. For example, with this
 spec in `thermostat.fren`:
 
 ```
-comp sensor { in raw: Int pub out reading: Int req r: reading = raw }
-comp heater { in cold? pub out on? req r: on? iff cold? }
+comp sensor { in raw: Int pub out reading: Int ensure r: reading = raw }
+comp heater { in cold? pub out on? ensure r: on? iff cold? }
 comp unit { in raw: Int inst s: sensor { raw } inst h: heater { cold? := s.reading < 18 } }
-comp display { in reading: Int pub out shown: Int req r: shown = reading }
+comp display { in reading: Int pub out shown: Int ensure r: shown = reading }
 
 tested sensor: "tests/test_sensor.py"
 trusted heater: "the relay is wired so that it closes exactly when the input is high"
@@ -146,7 +146,7 @@ pub comp rank {
     in level: Level
     pub out r: Int
 
-    req order: r = if level = Missing then 0 else if level = Trusted then 1
+    ensure order: r = if level = Missing then 0 else if level = Trusted then 1
         else if level = Tested then 2 else if level = Solver then 3 else 4
 
     expect proved_is_strongest: when level != Proved, r < 4
@@ -164,7 +164,7 @@ pub comp direct {
     in trusted?          -- a `trusted` claim
     pub out level: Level
 
-    req strongest: level = if proved? then Proved else if solver? then Solver
+    ensure strongest: level = if proved? then Proved else if solver? then Solver
         else if tested? then Tested else if trusted? then Trusted else Missing
 
     expect missing_means_none: when level = Missing,
@@ -189,7 +189,7 @@ pub comp evidence {
     inst o: rank { level := own }
     inst w: rank { level := weakest }
 
-    req derived: level = if has_outputs? or o.r >= w.r then own else weakest
+    ensure derived: level = if has_outputs? or o.r >= w.r then own else weakest
 
     expect outputs_need_own: when has_outputs?, level = own
     expect never_weaker: when level != own, not has_outputs?
@@ -240,7 +240,7 @@ pub comp required {
     inst l: rank { level }
     inst t: rank { level := threshold }
 
-    req below: severity = if enforced? and l.r < t.r then Warning else Silent
+    ensure below: severity = if enforced? and l.r < t.r then Warning else Silent
 
     expect opt_in: unless enforced?, severity = Silent
     expect proved_always_enough: when level = Proved, severity = Silent
@@ -265,7 +265,7 @@ pub comp tested_file {
     in covers?           -- it has a `fren-covers:` marker naming the component
     pub out accepted?
 
-    req rule: accepted? iff (exists? and covers?)
+    ensure rule: accepted? iff (exists? and covers?)
 }
 ```
 
@@ -278,7 +278,7 @@ pub comp covers_line {
     in claimed?          -- a `tested` claim for the component names this file
     pub out accepted?
 
-    req rule: accepted? iff (component_exists? and claimed?)
+    ensure rule: accepted? iff (component_exists? and claimed?)
 }
 ```
 
@@ -291,7 +291,7 @@ pub comp trusted_claim {
     in why: String       -- the justification, trimmed
     pub out accepted?
 
-    req rule: accepted? iff why != ""
+    ensure rule: accepted? iff why != ""
 
     expect empty_rejected: when why = "", not accepted?
 }
@@ -309,9 +309,9 @@ pub comp trace_exit {
     in stray?            -- some marker in a scanned file names no claim for it
     pub out code: Int
 
-    req not_run: unless ran?, code = 2
-    req failed: when ran? and (below? or stray?), code = 1
-    req passed: when ran? and not below? and not stray?, code = 0
+    ensure not_run: unless ran?, code = 2
+    ensure failed: when ran? and (below? or stray?), code = 1
+    ensure passed: when ran? and not below? and not stray?, code = 0
 
     expect zero_means_clean: when code = 0, ran? and not below? and not stray?
 }

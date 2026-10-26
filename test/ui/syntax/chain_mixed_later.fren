@@ -1,4 +1,4 @@
 -- A chained comparison cannot order both ways, however long (`lang::comparison_chain`).
-comp later { in x: Int in y: Int pub out ok? req r: ok? iff y >= x > 0 <= 9 }
+comp later { in x: Int in y: Int pub out ok? ensure r: ok? iff y >= x > 0 <= 9 }
 --~^ error: `>=` and `<=` cannot be chained together
 --@ exit: 2

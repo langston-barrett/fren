@@ -8,9 +8,9 @@ comp dots {
     pub out p3?
     pub out p4?
 
-    req r1: p1? iff s.matches?(r"v1.2")  --~ warning: the `.` in `1.2` matches any character, not only a dot
-    req r2: p2? iff s.matches?(".*file.txt|v1.2.3")  --~ warning: each of these `.` matches any character, not only a dot
+    ensure r1: p1? iff s.matches?(r"v1.2")  --~ warning: the `.` in `1.2` matches any character, not only a dot
+    ensure r2: p2? iff s.matches?(".*file.txt|v1.2.3")  --~ warning: each of these `.` matches any character, not only a dot
     -- Neither neighbour is a literal, or the `.` is escaped, in a class, or quantified.
-    req r3: p3? iff s.matches?(r"[0-9]{3}.[0-9]{4}|v1\.2|v1[.]2|[a.b]|a.*b|\..x")
-    req r4: p4? iff s.matches?(r#"a"b.c"#)  --~ warning: the `.` in `b.c` matches any character, not only a dot
+    ensure r3: p3? iff s.matches?(r"[0-9]{3}.[0-9]{4}|v1\.2|v1[.]2|[a.b]|a.*b|\..x")
+    ensure r4: p4? iff s.matches?(r#"a"b.c"#)  --~ warning: the `.` in `b.c` matches any character, not only a dot
 }

@@ -2,5 +2,5 @@
 comp TempSensor {
     in tempC: Int
     pub out hot?
-    req IsHot: hot? iff tempC > 30
+    ensure IsHot: hot? iff tempC > 30
 }

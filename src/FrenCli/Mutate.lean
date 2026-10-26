@@ -12,7 +12,7 @@ operators work on the parsed items, so every mutant parses: precedence is
 kept by parenthesizing where an operator binds more loosely than the one it
 replaces, and a hoisted operand keeps its own parentheses.
 
-Only what a spec asserts is changed: the expressions of `assume`s, `req`s,
+Only what a spec asserts is changed: the expressions of `assume`s, `ensure`s,
 defined outputs, instance bindings, constants and defined functions. The
 expectations, local and global, are what kills mutants, and are left alone.
 

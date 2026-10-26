@@ -7,12 +7,12 @@ pub comp c {
     in x: Int
     pub out y?
 
-    req r: y? iff (x > 1 and x < 9 and x != 5)
+    ensure r: y? iff (x > 1 and x < 9 and x != 5)
 }
 
 pub comp d {
     in x: Int
     pub out y?
 
-    req r: y? iff x > 1
+    ensure r: y? iff x > 1
 }

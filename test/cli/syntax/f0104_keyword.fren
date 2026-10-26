@@ -1,2 +1,2 @@
 -- A misspelled member keyword (F0104).
-comp c { in x: Int pub out y: Int requ r: y = x }
+comp c { in x: Int pub out y: Int ensur r: y = x }

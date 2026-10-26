@@ -1,5 +1,5 @@
 -- `is` does not chain, with a comparison after it.
 enum S { A(Int), B }
-comp chained { in s: S pub out z? req r: z? iff s is S::A(_) = true }
+comp chained { in s: S pub out z? ensure r: z? iff s is S::A(_) = true }
 --~^ error: `is` cannot be chained
 --@ exit: 2

@@ -11,7 +11,7 @@ pub comp moved {
     in n: Int
     pub det out q: Point
 
-    req r: q = { p with x := n }
+    ensure r: q = { p with x := n }
 
     expect keeps_y: q.y = p.y
     expect wrong: q = p

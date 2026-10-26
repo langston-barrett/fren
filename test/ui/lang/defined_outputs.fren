@@ -9,7 +9,7 @@ comp handle {
     out long? := length > 40
     pub det out accepted?
 
-    req rule: accepted? iff not (long? or taken?)
+    ensure rule: accepted? iff not (long? or taken?)
 
     expect short: when accepted?, length <= 40
 }
@@ -29,7 +29,7 @@ comp chained {
     pub out total: Int := twice + p
     out twice: Int := 2 * a
 
-    req pos: p >= 0
+    ensure pos: p >= 0
 
     expect at_least: total >= 2 * a
     expect exact: total = 2 * a     --~ error: expectation `chained::exact` does not hold
@@ -48,7 +48,7 @@ comp mentions {
 
     assume positive: k > 0
 
-    req r: f(k) = y
+    ensure r: f(k) = y
 
     expect through: w.total >= 2 * x + 2
 }
@@ -59,7 +59,7 @@ comp determined {
     inst w: listed { head := a }
     pub det out h: Int
 
-    req r: h = match w.l { IntList::Cons(x, _) => x, IntList::Nil => 0 }
+    ensure r: h = match w.l { IntList::Cons(x, _) => x, IntList::Nil => 0 }
 }
 
 -- A definition is not a constraint, so it is never reported as redundant
@@ -69,8 +69,8 @@ comp conflict {                     --~ error: `conflict` is not realizable
     out d: Int := a
     pub out o: Int
 
-    req r1: o = d                   --~ info: conflicts with `r2`
-    req r2: o != a                  --~ info: conflicts with `r1`
+    ensure r1: o = d                   --~ info: conflicts with `r2`
+    ensure r2: o != a                  --~ info: conflicts with `r1`
 }
 
 expect defined: forall (u: chained), u.total >= 2 * u.a

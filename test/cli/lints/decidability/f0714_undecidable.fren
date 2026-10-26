@@ -3,6 +3,6 @@ comp c {
     in b: String
     pub out p?
 
-    req r: p? iff a.starts_with?(b)
-    req s: a ++ b = b ++ a
+    ensure r: p? iff a.starts_with?(b)
+    ensure s: a ++ b = b ++ a
 }

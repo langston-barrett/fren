@@ -1,0 +1,17 @@
+error[F0707]: unknown lint `case_split_reqs`
+ --> test/cli/lints/settings/f0707_renamed_lint.fren:2:12
+  |
+2 | set_option fren.lint.case_split_reqs "allow"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^ no such lint
+  |
+  = note: `case_split_reqs` was renamed to `case_split_guarantees`
+help: use the new name: `case_split_guarantees`
+  |
+2 - set_option fren.lint.case_split_reqs "allow"
+2 + set_option fren.lint.case_split_guarantees "allow"
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0707`.
+exit=2

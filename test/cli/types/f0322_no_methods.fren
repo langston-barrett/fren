@@ -2,5 +2,5 @@ comp c {
     in b?
     pub out p?
 
-    req r: p? iff (b?).contains?(1)
+    ensure r: p? iff (b?).contains?(1)
 }

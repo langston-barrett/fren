@@ -8,7 +8,7 @@ struct Line { a: Point, b: Point }
 pub comp src {
     pub out x: Int
     pub out y: Int
-    req r: x = 1 and y = 2
+    ensure r: x = 1 and y = 2
 }
 
 comp copies {
@@ -25,13 +25,13 @@ comp copies {
     pub out h: Point
 
     -- A conversion, and an instance, which is not a value.
-    req ra: a = Pair { x := p.x, y := p.y }
-    req rb: b = Point { x := w.x, y := w.y }
-    req rd: d = Point { y := p.y, x := p.x }  --~ warning: this record literal is `p`
-    req re: e = Point { x := l.a.x, y := l.a.y }  --~ warning: this record literal is `l.a`
-    req rh: h = Point { x := (if c? then p else l.b).x, y := (if c? then p else l.b).y }
+    ensure ra: a = Pair { x := p.x, y := p.y }
+    ensure rb: b = Point { x := w.x, y := w.y }
+    ensure rd: d = Point { y := p.y, x := p.x }  --~ warning: this record literal is `p`
+    ensure re: e = Point { x := l.a.x, y := l.a.y }  --~ warning: this record literal is `l.a`
+    ensure rh: h = Point { x := (if c? then p else l.b).x, y := (if c? then p else l.b).y }
     --~^ warning: this record literal is `(if c? then p else l.b)`
     -- Fields of two values, or another field.
-    req rf: f = Point { x := p.x, y := l.a.y }
-    req rg: g = Point { x := p.y, y := p.x }
+    ensure rf: f = Point { x := p.x, y := l.a.y }
+    ensure rg: g = Point { x := p.y, y := p.x }
 }

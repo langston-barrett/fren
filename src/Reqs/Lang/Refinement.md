@@ -7,9 +7,9 @@ binding    := IDENT [":=" expr]
 
 `refine r: c refines a` states that the component `c` *refines* the
 component `a`: `c` accepts every input that `a` accepts, and on those
-inputs every behaviour of `c` meets `a`'s requirements. So whatever `a`
+inputs every behaviour of `c` meets `a`'s guarantees. So whatever `a`
 guarantees, `c` guarantees too, and every expectation that follows from
-`a`'s assumptions and requirements holds of `c`'s behaviours as well.
+`a`'s assumptions and guarantees holds of `c`'s behaviours as well.
 
 Refinement is a way to gain confidence in a spec where parts of it are hard
 for the solver (see [Decidability](Decidability.md#in-practice)): `a` can
@@ -35,7 +35,7 @@ of `a`. An input of `a` is given to `c`, so `a`'s type must widen to
 of `c` does not serve for an `Int` of `a`, since `c` need not accept the
 inputs below 0 that `a` does. The input then has `a`'s type, and the
 output `c`'s, for what a `Nat` brings. A private output of `a` must be a public output of `c` too: `a`'s
-requirements may mention it, and the refinement can read it only from
+guarantees may mention it, and the refinement can read it only from
 `c`'s public outputs, since a private output says nothing about how `c`
 computes it. `c` may have more inputs and outputs than `a`. An input of
 `c` that no variable of `a` reads, by name or through a binding (see
@@ -60,7 +60,7 @@ pub comp interface {
     in c_widens?         -- its type in `c` widens to its type in `a`
     pub det out accepted?
 
-    req rule: accepted? iff (in_concrete? and (if input? then a_widens? else c_widens?)
+    ensure rule: accepted? iff (in_concrete? and (if input? then a_widens? else c_widens?)
         and (if input? then concrete_input? else not concrete_input? and concrete_pub?))
 
     expect hidden_outputs: when not input? and not concrete_pub?, not accepted?
@@ -102,7 +102,7 @@ pub comp binding {
     in n: Nat            -- bindings of this name in the refinement
     pub det out accepted?
 
-    req rule: accepted? iff (n = 0 or (variable? and n = 1))
+    ensure rule: accepted? iff (n = 0 or (variable? and n = 1))
 
     expect bound_once: when accepted?, n <= 1
 }
@@ -128,7 +128,7 @@ pub comp mention {
     in concrete_pub?     -- it is public in `c`
     pub det out allowed?
 
-    req rule: allowed? iff (concrete_input? or (not input? and concrete_pub?))
+    ensure rule: allowed? iff (concrete_input? or (not input? and concrete_pub?))
 
     expect inputs_see_inputs: when input? and allowed?, concrete_input?
     expect private_hidden: when not concrete_input? and not concrete_pub?, not allowed?
@@ -170,7 +170,7 @@ and for all `i`, `y`, `o`, `w`:
 Fren checks this as it checks a component: the refinement is a component
 whose inputs are `c`'s, whose assumptions are `a`'s, with an instance of
 `c` named as `c` is, and `a`'s instances, and whose expectations are `a`'s
-requirements and the definitions of `a`'s defined outputs. Throughout,
+guarantees and the definitions of `a`'s defined outputs. Throughout,
 `a`'s variables are replaced by their bindings, or their names, with
 `c`'s outputs read from the instance of `c`. `a`'s instances are hypotheses there, as
 `I_a` is above: their assumptions are `a`'s own obligations, checked in
@@ -191,11 +191,11 @@ pub comp checks {
     in kind: Kind
     pub det out runs?
 
-    req rule: runs? iff kind in {InstanceAssumption, Expectation, Definedness, Completeness, Disjointness}
+    ensure rule: runs? iff kind in {InstanceAssumption, Expectation, Definedness, Completeness, Disjointness}
 }
 ```
 
-A refinement has no requirements of its own, so the other checks would
+A refinement has no guarantees of its own, so the other checks would
 only repeat those of `a` and `c`.
 
 ## Evidence

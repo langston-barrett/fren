@@ -10,7 +10,7 @@ comp thermostat {
     in cold?
     pub out heating?
 
-    req rule: heating? iff mode = Mode::Heat and cold?
+    ensure rule: heating? iff mode = Mode::Heat and cold?
 }
 
 expect only_heat: forall (t: thermostat) (m: Mode),

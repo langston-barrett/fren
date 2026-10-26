@@ -1,8 +1,8 @@
 error[F0118]: the range `z-a` in a pattern is reversed
- --> test/cli/syntax/f0118_range.fren:5:32
+ --> test/cli/syntax/f0118_range.fren:5:35
   |
-5 |     req r: p? iff s.matches?(r"[z-a]+")
-  |                                ^ reversed range
+5 |     ensure r: p? iff s.matches?(r"[z-a]+")
+  |                                   ^ reversed range
   |
   = note: a range is written from the lower character to the higher, as in `a-z`
 

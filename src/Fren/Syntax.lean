@@ -309,7 +309,7 @@ scoped syntax (name := inMember) "in " frenIdent (" : " fren_type)? (" := " fren
 `:= e` makes it a defined output. -/
 scoped syntax (name := outMember) ("pub ")? (&"det ")? &"out " frenIdent (" : " fren_type)? (" := " fren_expr (fren_where)?)? : fren_member
 scoped syntax (name := assumeMember) &"assume " frenIdent " : " fren_expr (fren_where)? : fren_member
-scoped syntax (name := reqMember) &"req " frenIdent " : " fren_expr (fren_where)? : fren_member
+scoped syntax (name := ensureMember) &"ensure " frenIdent " : " fren_expr (fren_where)? : fren_member
 scoped syntax (name := expectMember) &"expect " frenIdent " : " fren_expr (fren_where)? : fren_member
 /-- `cover n: e`, a scenario that the component must allow (`Reqs/Lang/Components#cover-goals`). -/
 scoped syntax (name := coverMember) &"cover " frenIdent " : " fren_expr (fren_where)? : fren_member

@@ -44,7 +44,7 @@ pub comp is_equality {
     in irrefutable?      -- `irrefutable_is` fires on the test
     pub det out fires?
 
-    req rule: fires? iff (equatable? and not irrefutable?)
+    ensure rule: fires? iff (equatable? and not irrefutable?)
 }
 ```
 
@@ -185,16 +185,16 @@ pub comp chainable_comparison {
 
     -- Each way to write the conjuncts: as written, the left the other way
     -- round, the right, or both.
-    req rule: fires? iff (((left_ascending? iff right_ascending?) and last_first? and not first_last?)
+    ensure rule: fires? iff (((left_ascending? iff right_ascending?) and last_first? and not first_last?)
         or (left_single? and not (left_ascending? iff right_ascending?) and first_first? and not last_last?)
         or (right_single? and not (left_ascending? iff right_ascending?) and last_last? and not first_first?)
         or (left_single? and right_single? and (left_ascending? iff right_ascending?) and first_last?
         and not last_first?))
-    req left: flip_left? iff ((left_single? and not (left_ascending? iff right_ascending?) and first_first?
+    ensure left: flip_left? iff ((left_single? and not (left_ascending? iff right_ascending?) and first_first?
         and not last_last?)
         or (left_single? and right_single? and (left_ascending? iff right_ascending?) and first_last?
         and not last_first?))
-    req right: flip_right? iff ((right_single? and not (left_ascending? iff right_ascending?) and last_last?
+    ensure right: flip_right? iff ((right_single? and not (left_ascending? iff right_ascending?) and last_last?
         and not first_first?)
         or (left_single? and right_single? and (left_ascending? iff right_ascending?) and first_last?
         and not last_first?))

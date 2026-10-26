@@ -18,32 +18,32 @@ error[F0601]: `exit` is not realizable: for the input n_fail = 1, n_inconc = 1, 
   = help: weaken one of them, or add an `assume` that rules this input out
 
 note: conflicts with `inconc` when n_fail = 1, n_inconc = 1
- --> test/cli/commands/report.fren:9:9
+ --> test/cli/commands/report.fren:9:12
   |
-9 |     req failures: when n_fail > 0, code = 1
-  |         ^^^^^^^^
+9 |     ensure failures: when n_fail > 0, code = 1
+  |            ^^^^^^^^
 
 note: conflicts with `failures` when n_fail = 1, n_inconc = 1
-  --> test/cli/commands/report.fren:10:9
+  --> test/cli/commands/report.fren:10:12
    |
-10 |     req inconc: when n_inconc > 0, code = 3
-   |         ^^^^^^
+10 |     ensure inconc: when n_inconc > 0, code = 3
+   |            ^^^^^^
 
 error[F0603]: expectation `exit::zero` does not hold
   --> test/cli/commands/report.fren:13:12
    |
 13 |     expect zero: when n_fail = 0, code = 0
-   |            ^^^^ does not follow from the requirements
+   |            ^^^^ does not follow from the guarantees
    |
    = counterexample: n_fail = 0, n_inconc = 0, code = 1
    = note: private `out`s are not shown
-   = help: strengthen the requirements so that it follows, or correct the expectation
+   = help: strengthen the guarantees so that it follows, or correct the expectation
 
 error[F0605]: `exit::negative` is vacuous: its condition can never hold, given `counts`
-  --> test/cli/commands/report.fren:11:19
+  --> test/cli/commands/report.fren:11:22
    |
-11 |     req negative: when n_fail < 0, code = 4
-   |                   ^^^^^^^^^^^^^^^ this condition is always false
+11 |     ensure negative: when n_fail < 0, code = 4
+   |                      ^^^^^^^^^^^^^^^ this condition is always false
    |
    = note: a constraint whose condition never holds says nothing
    = help: correct the condition, or the constraints that rule it out
@@ -58,10 +58,10 @@ error[F0601]: `uses` is not realizable: for the input n_fail = 0, first.code = 0
    = note: instance variables are part of the system: whatever the instances do, the component must cope
 
 note: is false when n_fail = 0, first.code = 0, second.code = 0, pick.b? = false
-  --> test/cli/commands/report.fren:26:9
+  --> test/cli/commands/report.fren:26:12
    |
-26 |     req lucky: pick.b?
-   |         ^^^^^
+26 |     ensure lucky: pick.b?
+   |            ^^^^^
 
 error[F0604]: the assumption `counts` of `exit` may not hold for instance `uses::first`
   --> test/cli/commands/report.fren:22:10

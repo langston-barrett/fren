@@ -1,8 +1,8 @@
 error[F0119]: `y!!` is not an identifier in Fren
- --> test/cli/syntax/f0119_identifier.fren:3:45
+ --> test/cli/syntax/f0119_identifier.fren:3:48
   |
-3 | comp c { in y: Int pub out z? req r: z? iff y!!=1 }
-  |                                             ^^^ not a Fren identifier
+3 | comp c { in y: Int pub out z? ensure r: z? iff y!!=1 }
+  |                                                ^^^ not a Fren identifier
   |
   = note: an identifier is ASCII letters, digits, `_` and `'`, with `.` between components, an optional `?` at the end, and then an optional `!`
   = help: an identifier ends at its first `!`; to compare, write `a != b`, with spaces

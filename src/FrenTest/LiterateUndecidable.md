@@ -9,6 +9,6 @@ mod undecidable_md
 comp mixed {
     in r: Rel(Int, Int)
     pub out y?
-    req q: y? iff r.range.card = 1
+    ensure q: y? iff r.range.card = 1
 }
 ```

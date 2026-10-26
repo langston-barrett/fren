@@ -1,10 +1,10 @@
-drop-conjunct-c::r-b75a9704792c test/cli/commands/mutate_unformatted.fren:8:21 `x > 0 and x < 9 and x in {1, 2, 3,}` changed to `x > 0 and x < 9`
-drop-conjunct-c::r-a113f40647bd test/cli/commands/mutate_unformatted.fren:8:21 `x > 0 and x < 9 and x in {1, 2, 3,}` changed to `x in {1, 2, 3,}`
-swap-and-or-c::r-75c3ab4057ac test/cli/commands/mutate_unformatted.fren:8:21 `x > 0 and x < 9` changed to `(x > 0 or x < 9)`
-drop-conjunct-c::r-a5d8ccf0b1b4 test/cli/commands/mutate_unformatted.fren:8:21 `x > 0 and x < 9` changed to `x > 0`
-drop-conjunct-c::r-50ea42835119 test/cli/commands/mutate_unformatted.fren:8:21 `x > 0 and x < 9` changed to `x < 9`
-swap-comparison-c::r-8e01863aea6c test/cli/commands/mutate_unformatted.fren:8:23 `>` changed to `>=`
-shift-integer-c::r-38939464efe4 test/cli/commands/mutate_unformatted.fren:8:25 `0` changed to `1`
+drop-conjunct-c::r-b75a9704792c test/cli/commands/mutate_unformatted.fren:8:24 `x > 0 and x < 9 and x in {1, 2, 3,}` changed to `x > 0 and x < 9`
+drop-conjunct-c::r-a113f40647bd test/cli/commands/mutate_unformatted.fren:8:24 `x > 0 and x < 9 and x in {1, 2, 3,}` changed to `x in {1, 2, 3,}`
+swap-and-or-c::r-75c3ab4057ac test/cli/commands/mutate_unformatted.fren:8:24 `x > 0 and x < 9` changed to `(x > 0 or x < 9)`
+drop-conjunct-c::r-a5d8ccf0b1b4 test/cli/commands/mutate_unformatted.fren:8:24 `x > 0 and x < 9` changed to `x > 0`
+drop-conjunct-c::r-50ea42835119 test/cli/commands/mutate_unformatted.fren:8:24 `x > 0 and x < 9` changed to `x < 9`
+swap-comparison-c::r-8e01863aea6c test/cli/commands/mutate_unformatted.fren:8:26 `>` changed to `>=`
+shift-integer-c::r-38939464efe4 test/cli/commands/mutate_unformatted.fren:8:28 `0` changed to `1`
 swap-comparison-c::r-f81443098a2f test/cli/commands/mutate_unformatted.fren:9:13 `<` changed to `<=`
 shift-integer-c::r-06df796bf294 test/cli/commands/mutate_unformatted.fren:9:15 `9` changed to `10`
 shift-integer-c::r-eae59df821af test/cli/commands/mutate_unformatted.fren:9:15 `9` changed to `8`

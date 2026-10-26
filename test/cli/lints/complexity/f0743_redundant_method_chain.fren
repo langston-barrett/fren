@@ -1,3 +1,3 @@
 -- `redundant_method_chain`.
 pub enum E { A, B }
-pub comp c { in r: Rel(E, E) pub out p? req d: p? iff r.inverse.inverse.domain = {} }
+pub comp c { in r: Rel(E, E) pub out p? ensure d: p? iff r.inverse.inverse.domain = {} }

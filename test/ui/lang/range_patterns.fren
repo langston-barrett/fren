@@ -14,7 +14,7 @@ comp sign {
     pub det out s: Sign
 
     -- Ranges that together cover every integer need no `_`.
-    req signs_def: s = match n {
+    ensure signs_def: s = match n {
         ..=-1 => Sign::Negative,
         0 => Sign::Zero,
         1.. => Sign::Positive,
@@ -32,14 +32,14 @@ comp bands {
     pub det out digit?
     pub det out ok?
 
-    req bands_def: band = match n {
+    ensure bands_def: band = match n {
         LOW..0 => 0,
         0..=HIGH => 1,
         -100..=-11 | 11..=100 => 2,
         _ => 3,
     }
-    req digit_def: digit? iff n is 0..=9
-    req ok_def: ok? iff r is Reading::Value(..=LIMIT)
+    ensure digit_def: digit? iff n is 0..=9
+    ensure ok_def: ok? iff r is Reading::Value(..=LIMIT)
 
     expect low_band_holds: when n = -10, band = 0
     expect exclusive_holds: when n = 0, band = 1
@@ -56,7 +56,7 @@ comp naturals {
     in k: Nat
     pub det out first?
 
-    req first_def: first? iff match k {
+    ensure first_def: first? iff match k {
         0 => true,
         1.. => false,
     }
@@ -66,7 +66,7 @@ comp naturals {
 
 -- An upper bound touches the `..`: here the next member follows on the
 -- line of `1..`.
-comp next_member { in n: Int pub out a? pub out b? req ra: a? iff n is 1.. req rb: b? iff n is ..=0 }
+comp next_member { in n: Int pub out a? pub out b? ensure ra: a? iff n is 1.. ensure rb: b? iff n is ..=0 }
 
 --@ summary: 38 passed, 0 failed, 0 inconclusive, 0 redundant
 --@ exit: 0

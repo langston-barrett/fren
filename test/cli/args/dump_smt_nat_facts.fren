@@ -9,7 +9,7 @@ comp sized {
     in k: Int
     pub out pos?
 
-    req r: pos? iff k > 0
+    ensure r: pos? iff k > 0
 
     expect sized: size(k) >= 0
 }
@@ -20,7 +20,7 @@ comp uses_sized {
 
     inst sz: sized { k := m }
 
-    req r: ok? iff sz.pos?
+    ensure r: ok? iff sz.pos?
 
     cover ok_one: ok? and m = 1
 }
@@ -30,7 +30,7 @@ comp quoted {
     in s: String
     pub out same?
 
-    req r: same? iff s = "(|::size| |k|)"
+    ensure r: same? iff s = "(|::size| |k|)"
 
     expect sized: size(k) + 1 > 0
 }

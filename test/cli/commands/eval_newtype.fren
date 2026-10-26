@@ -6,6 +6,6 @@ comp c {
     in took: Ms
     pub out left: Ms
 
-    req r: left = Ms(10) - took
+    ensure r: left = Ms(10) - took
     expect fits: left > Ms(5)
 }

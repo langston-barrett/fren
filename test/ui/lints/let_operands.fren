@@ -7,11 +7,11 @@ comp c {
     pub out p?
     pub out q?
 
-    req r1: o? iff not not (let k := 2 in x > k)
+    ensure r1: o? iff not not (let k := 2 in x > k)
     --~^ warning: write `(let k := 2 in x > k)`
-    req r2: p? iff (let b? := a? in b?) = true
+    ensure r2: p? iff (let b? := a? in b?) = true
     --~^ warning: write `(let b? := a? in b?)`
-    req r3: q? iff (let k := 2 in not (x < k)) and a?
+    ensure r3: q? iff (let k := 2 in not (x < k)) and a?
     --~^ warning: write `x >= k`
 }
 

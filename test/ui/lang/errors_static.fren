@@ -6,12 +6,12 @@
 comp several {
     in x: Int
     pub out y?
-    req r: y? iff x * x = 1
+    ensure r: y? iff x * x = 1
     --~^ error: nonlinear arithmetic is not supported
-    req s: y? iff nope = 1
+    ensure s: y? iff nope = 1
     --~^ error: cannot find `nope` in this scope
-    req t: y? iff x = 1
-    req u: y? iff x * x * x = 1 and nada = 1
+    ensure t: y? iff x = 1
+    ensure u: y? iff x * x * x = 1 and nada = 1
     --~^ error: nonlinear arithmetic is not supported
 }
 
@@ -21,15 +21,15 @@ comp defined {
     out d: Int := x * x
     --~^ error: nonlinear arithmetic is not supported
     pub out y?
-    req r: y? iff d = 1
-    req s: y? iff d = nope
+    ensure r: y? iff d = 1
+    ensure s: y? iff d = nope
     --~^ error: cannot find `nope` in this scope
 }
 
 comp source {
     in x: Int
     pub out y: Int
-    req q: y = x
+    ensure q: y = x
 }
 
 -- An error in an instance's bindings, and one in a constraint.
@@ -38,8 +38,8 @@ comp bound {
     inst w: source { x := x * x }
     --~^ error: nonlinear arithmetic is not supported
     pub out z?
-    req r: z? iff w.y = 1
-    req s: z? iff nope = 1
+    ensure r: z? iff w.y = 1
+    ensure s: z? iff nope = 1
     --~^ error: cannot find `nope` in this scope
 }
 
@@ -51,7 +51,7 @@ comp declared {
     in b: Nada
     --~^ error: cannot find `Nada` in this scope
     pub out y?
-    req r: y? iff a = b and x * x = 1
+    ensure r: y? iff a = b and x * x = 1
 }
 
 -- Errors in two instances: then the component stops.
@@ -62,7 +62,7 @@ comp instances {
     inst w: nada { x }
     --~^ error: cannot find `nada` in this scope
     pub out z?
-    req r: z? iff v.y = w.y and x * x = 1
+    ensure r: z? iff v.y = w.y and x * x = 1
 }
 
 -- A global expectation reports its first error only.

@@ -5,8 +5,8 @@ enum Shape { Circle(Int), Rect(Int, Int), Empty }
 comp c {
 in s: Shape
   pub out o?
-  req r :o? iff s is   Shape::Circle(_)|Shape::Rect(_,_)
-  req l: o? iff s is
+  ensure r :o? iff s is   Shape::Circle(_)|Shape::Rect(_,_)
+  ensure l: o? iff s is
   | Shape::Circle(_)
       | Shape::Empty
 }

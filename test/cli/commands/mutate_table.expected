@@ -1,4 +1,4 @@
-swap-comparison-m::c::r-690f0f04822d test/cli/commands/mutate_table.fren:10:14 `=` changed to `!=`
+swap-comparison-m::c::r-690f0f04822d test/cli/commands/mutate_table.fren:10:17 `=` changed to `!=`
 drop-row-m::c::r-8c79c06abc47 test/cli/commands/mutate_table.fren:11:9 `| x > 0 => 1,` removed
 swap-comparison-m::c::r-dffa478052ba test/cli/commands/mutate_table.fren:11:13 `>` changed to `>=`
 shift-integer-m::c::r-58f807c2608a test/cli/commands/mutate_table.fren:11:15 `0` changed to `1`

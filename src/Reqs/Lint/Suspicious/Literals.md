@@ -33,7 +33,7 @@ pub comp invisible_character {
 
     -- U+202A to U+202E, U+2066 to U+2069 and U+FEFF anywhere; U+00AD,
     -- U+200B and U+2060 in a literal.
-    req rule: fires? iff (8234 <= code <= 8238 or 8294 <= code <= 8297
+    ensure rule: fires? iff (8234 <= code <= 8238 or 8294 <= code <= 8297
         or code = 65279 or (not comment? and code in {173, 8203, 8288}))
 
     expect controls_in_comments: when code = 8238, fires?
@@ -94,8 +94,8 @@ pub comp const_is_empty {
 
     inst p: length_zero { op, bound, left? }
 
-    req rule: fires? iff (not set? or p.fires?)
-    req value: value? iff (if set? then (p.empty? iff n = 0)
+    ensure rule: fires? iff (not set? or p.fires?)
+    ensure value: value? iff (if set? then (p.empty? iff n = 0)
         else compares?(op, if left? then n else bound, if left? then bound else n))
 }
 
@@ -107,8 +107,8 @@ pub comp const_empty_equation {
 
     assume counts: n >= 0
 
-    req rule: fires? iff n > 0
-    req value: value? iff (equal? iff n = 0)
+    ensure rule: fires? iff n > 0
+    ensure value: value? iff (equal? iff n = 0)
 }
 ```
 
@@ -161,9 +161,9 @@ pub comp almost_complete_range {
     pub det out whole_low: Int   -- the range of the fix, from this code point
     pub det out whole_high: Int  -- to this one
 
-    req rule: fires? iff ((low in {97, 98, 65, 66} and high = low + 24) or (low = 48 and high = 56))
-    req fix_low: whole_low = (if fires? and low in {98, 66} then low - 1 else low)
-    req fix_high: whole_high = (if fires? and high in {121, 89, 56} then high + 1 else high)
+    ensure rule: fires? iff ((low in {97, 98, 65, 66} and high = low + 24) or (low = 48 and high = 56))
+    ensure fix_low: whole_low = (if fires? and low in {98, 66} then low - 1 else low)
+    ensure fix_high: whole_high = (if fires? and high in {121, 89, 56} then high + 1 else high)
 
     expect not_digits: when low = 49 and high = 57, not fires?
     expect whole: when fires?, whole_high - whole_low = 25 or (whole_low = 48 and whole_high = 57)
@@ -197,7 +197,7 @@ pub comp literal_dot_in_pattern {
     in after?            -- one is directly after it
     pub det out fires?
 
-    req rule: fires? iff (before? and after?)
+    ensure rule: fires? iff (before? and after?)
 }
 ```
 

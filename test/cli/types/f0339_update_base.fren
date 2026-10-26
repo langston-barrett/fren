@@ -1,2 +1,2 @@
 -- A record update of an `Int`.
-comp c { in n: Int pub out m: Int req r: m = { n with x := 1 } }
+comp c { in n: Int pub out m: Int ensure r: m = { n with x := 1 } }

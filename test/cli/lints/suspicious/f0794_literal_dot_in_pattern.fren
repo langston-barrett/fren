@@ -1,2 +1,2 @@
 -- `literal_dot_in_pattern`.
-comp c { in s: String pub out p? req r: p? iff s.matches?("v1.2|[0-9]{3}.[0-9]{4}") }
+comp c { in s: String pub out p? ensure r: p? iff s.matches?("v1.2|[0-9]{3}.[0-9]{4}") }

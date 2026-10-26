@@ -15,13 +15,13 @@ comp naming {
     in annotated?
     pub out accepted?
 
-    req rule: accepted? iff (q?(name) or annotated?)
+    ensure rule: accepted? iff (q?(name) or annotated?)
 }
 
 expect same: forall (a b: naming), when a.name = b.name and a.annotated? = b.annotated?, a.accepted? = b.accepted?
 
-/-- info: interp_test.naming.reqs : (Nm : Type) → (Nm → Bool) → Nm → Bool → Bool → Prop -/
-#guard_msgs in #check @interp_test.naming.reqs
+/-- info: interp_test.naming.ensures : (Nm : Type) → (Nm → Bool) → Nm → Bool → Bool → Prop -/
+#guard_msgs in #check @interp_test.naming.ensures
 
 /-- info: interp_test.same : (Nm : Type) → (Nm → Bool) → Prop -/
 #guard_msgs in #check @interp_test.same
@@ -80,7 +80,7 @@ comp ranked {
     pub out ok?
 
     assume nonneg: arity(k) >= 0
-    req rule: ok?
+    ensure rule: ok?
 }
 
 interp Key := Int

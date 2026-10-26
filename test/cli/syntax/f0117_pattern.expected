@@ -1,8 +1,8 @@
 error[F0117]: invalid pattern: unknown escape `\d`
- --> test/cli/syntax/f0117_pattern.fren:5:38
+ --> test/cli/syntax/f0117_pattern.fren:5:41
   |
-5 |     req r: p? iff s.matches?(r"[a-z]+\d")
-  |                                      ^ not an escape
+5 |     ensure r: p? iff s.matches?(r"[a-z]+\d")
+  |                                         ^ not an escape
   |
   = note: `\` escapes only `\ . [ ] ( ) * + ? { } | ^ -`; there are no classes such as `\d`
   = help: write a class, such as `[0-9]`

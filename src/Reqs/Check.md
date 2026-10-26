@@ -4,12 +4,12 @@ Fren checks each component seven ways:
 
 | Check | Reported as | Confirms |
 |---|---|---|
-| [Realizability](#realizability) | `realizable` | some system can meet the requirements, for every admissible input |
-| [Expectations](#expectations) | `expect` | each expectation follows from the assumptions and requirements |
-| [Cover goals](#cover-goals) | `cover` | some behaviour that meets the assumptions and requirements satisfies each cover goal |
+| [Realizability](#realizability) | `realizable` | some system can meet the guarantees, for every admissible input |
+| [Expectations](#expectations) | `expect` | each expectation follows from the assumptions and guarantees |
+| [Cover goals](#cover-goals) | `cover` | some behaviour that meets the assumptions and guarantees satisfies each cover goal |
 | [Instance assumptions](#instance-assumptions) | `instance` | each instance's bindings satisfy the instantiated component's assumptions |
-| [Vacuity](#vacuity) | `vacuity` | the trigger of each requirement and expectation can hold |
-| [Redundancy](#redundancy) | `redundancy` | no assumption or requirement follows from the others |
+| [Vacuity](#vacuity) | `vacuity` | the trigger of each guarantee and expectation can hold |
+| [Redundancy](#redundancy) | `redundancy` | no assumption or guarantee follows from the others |
 | [Determinism](#determinism) | `determinism` | each `det out` is determined by the inputs |
 
 and checks how its constraints are written three more ways, wherever they
@@ -30,7 +30,7 @@ completeness and disjointness too.
 
 The formulas below use the notation of [Components](Lang/Components.md#meaning):
 `A` is the conjunction of the component's assumptions, `R` of its
-requirements, and `I` of its instances, over the inputs `i`, the instances'
+guarantees, and `I` of its instances, over the inputs `i`, the instances'
 variables `y` and the outputs `o`.
 `D` is the equations `d = e` of the component's [defined
 outputs](Lang/Components.md#defined-outputs), and `o` excludes them.
@@ -43,7 +43,7 @@ output is. So a query's facts about applications depend only on its
 formulas: an instance's query has none about its component's
 expectations, which are not among them. Every query has both among its hypotheses,
 though the formulas below leave them implicit, and realizability also
-puts `N(o)` under its `∃`, with the requirements. Like `D`, they are never
+puts `N(o)` under its `∃`, with the guarantees. Like `D`, they are never
 candidates for redundancy, nor reported in a minimal set.
 
 ```fren
@@ -125,8 +125,8 @@ pub comp proved {
     in q: Outcome          -- can the goal be proved?
     pub det out verdict: Verdict
 
-    req proof: verdict = Pass iff q = Unsat
-    req counterexample: verdict = Fail iff q = Sat
+    ensure proof: verdict = Pass iff q = Unsat
+    ensure counterexample: verdict = Fail iff q = Sat
 
     expect conservative: when q = Unknown, verdict = Inconclusive
 }
@@ -135,8 +135,8 @@ pub comp satisfiable {
     in q: Outcome          -- can the negation of the goal be proved?
     pub det out verdict: Verdict
 
-    req witness: verdict = Pass iff q = Sat
-    req refuted: verdict = Fail iff q = Unsat
+    ensure witness: verdict = Pass iff q = Sat
+    ensure refuted: verdict = Fail iff q = Unsat
 
     expect conservative: when q = Unknown, verdict = Inconclusive
 }
@@ -166,7 +166,7 @@ pub comp applies {
     in kind: Kind
     pub det out runs?
 
-    req rule: runs? iff match item {
+    ensure rule: runs? iff match item {
         Component => true,
         GlobalExpectation => kind in {Expectation, Vacuity, Definedness, Completeness, Disjointness},
         Body => kind in {Completeness, Disjointness},
@@ -196,7 +196,7 @@ Fren asks two queries:
 - **Counterexample.** Can `∃ o. R(i, y, o)` be proved from `A` and `I`, with
   the inputs and instance variables free? A model is an input, together
   with a behaviour of the instances, that no system could answer. Fren
-  reports it, with a minimal set of requirements that conflict on it.
+  reports it, with a minimal set of guarantees that conflict on it.
 
 `check::realizability` gives the verdict and what is reported, from the
 outcomes of the two queries (`assume_q` and `cex_q`). Its table's rows
@@ -209,18 +209,18 @@ pub comp realizability {
     in assume_q: Outcome   -- can `False` be proved from A?
     in cex_q: Outcome      -- can `exists outputs, R` be proved from A and I?
     pub det out verdict: Verdict
-    pub det out reports_cex?   -- report the input and the conflicting requirements
+    pub det out reports_cex?   -- report the input and the conflicting guarantees
     pub det out reports_vacuous?  -- report that the assumptions are contradictory
 
-    req verdict_rule: verdict = table {
+    ensure verdict_rule: verdict = table {
         | assume_q = Unsat => Fail,
         | assume_q != Unsat and cex_q = Sat => Fail,
         | assume_q = Sat and cex_q = Unsat => Pass,
         | assume_q != Unsat and cex_q = Unknown => Inconclusive,
         | assume_q = Unknown and cex_q = Unsat => Inconclusive,
     }
-    req report_cex: reports_cex? iff (assume_q != Unsat and cex_q = Sat)
-    req report_vacuous: reports_vacuous? iff assume_q = Unsat
+    ensure report_cex: reports_cex? iff (assume_q != Unsat and cex_q = Sat)
+    ensure report_vacuous: reports_vacuous? iff assume_q = Unsat
 
     expect never_upgrades: when assume_q = Unknown or cex_q = Unknown, verdict != Pass
     expect fail_explains: when verdict = Fail, reports_cex? or reports_vacuous?
@@ -259,7 +259,7 @@ pub comp definitions {
     in kind: Kind
     pub det out substituted?     -- replaced by their definitions, rather than assumed as equations
 
-    req rule: substituted? iff kind = Kind::Realizability
+    ensure rule: substituted? iff kind = Kind::Realizability
 
     expect never_searched: when kind = Kind::Realizability, substituted?
 }
@@ -286,10 +286,10 @@ pub comp expectation {
     pub det out verdict: Verdict
     pub det out reports_cex?
 
-    req holds: when q = Unsat, verdict = Pass
-    req refuted: when q = Sat, verdict = Fail
-    req unknown: when q = Unknown, verdict = Inconclusive
-    req report_cex: reports_cex? iff q = Sat
+    ensure holds: when q = Unsat, verdict = Pass
+    ensure refuted: when q = Sat, verdict = Fail
+    ensure unknown: when q = Unknown, verdict = Inconclusive
+    ensure report_cex: reports_cex? iff q = Sat
 }
 ```
 
@@ -305,13 +305,13 @@ can be proved from `A`, `I` and `R`. A model is a *witness*: a behaviour
 that meets the component, in which the goal holds, and the goal passes.
 If `not e` is proved, no behaviour meets the goal, and it fails
 (`F0615`): Fren
-reports a minimal set of assumptions and requirements that rule it out,
+reports a minimal set of assumptions and guarantees that rule it out,
 as for [vacuity](#vacuity). If `A ∧ I ∧ R` is unsatisfiable, every cover
 goal fails, with the realizability check.
 
 So a cover goal is the converse of an expectation: an expectation holds if
 its negation is impossible, a cover goal if it is possible. And the
-vacuity check of a requirement or expectation with the trigger `C` is the
+vacuity check of a guarantee or expectation with the trigger `C` is the
 cover goal `C`, with the same query. A cover goal is checked only in its
 own component: an instance of the component does not check it again.
 
@@ -325,11 +325,11 @@ pub comp cover_goal {
     pub det out reports_witness?  -- report the model, in which the goal holds
     pub det out reports_core?     -- report the constraints that rule the goal out
 
-    req met: when q = Sat, verdict = Pass
-    req unmet: when q = Unsat, verdict = Fail
-    req unknown: when q = Unknown, verdict = Inconclusive
-    req report_witness: reports_witness? iff q = Sat
-    req report_core: reports_core? iff q = Unsat
+    ensure met: when q = Sat, verdict = Pass
+    ensure unmet: when q = Unsat, verdict = Fail
+    ensure unknown: when q = Unknown, verdict = Inconclusive
+    ensure report_witness: reports_witness? iff q = Sat
+    ensure report_core: reports_core? iff q = Unsat
 
     expect pass_shows: when verdict = Pass, reports_witness?
     expect fail_explains: when verdict = Fail, reports_core?
@@ -372,7 +372,7 @@ pub comp instance_assumption {
 
     inst as_expect: expectation { q }
 
-    req like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
+    ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 
     expect never_upgrades: when q = Unknown, verdict != Pass
 }
@@ -380,12 +380,12 @@ pub comp instance_assumption {
 
 ## Vacuity
 
-A requirement or expectation whose [trigger](Lang/Components.md#triggers)
+A guarantee or expectation whose [trigger](Lang/Components.md#triggers)
 can never hold is satisfied vacuously, which usually indicates a mistake.
-For each requirement and expectation with a trigger, Fren asks whether `not
+For each guarantee and expectation with a trigger, Fren asks whether `not
 trigger` can be proved from `A`, `I` and `R`. For a global expectation, the
 hypotheses are the meanings of its binders' components instead. If it can, the check fails,
-and Fren reports a minimal set of assumptions and requirements that rule
+and Fren reports a minimal set of assumptions and guarantees that rule
 the trigger out. Constraints without a trigger, and assumptions, are not
 checked.
 
@@ -396,22 +396,22 @@ pub comp non_vacuity {
     in q: Outcome          -- can `not trigger` be proved from A, I and R?
     pub det out verdict: Verdict
 
-    req fires: when q = Sat, verdict = Pass
-    req vacuous: when q = Unsat, verdict = Fail
-    req unknown: when q = Unknown, verdict = Inconclusive
+    ensure fires: when q = Sat, verdict = Pass
+    ensure vacuous: when q = Unsat, verdict = Fail
+    ensure unknown: when q = Unknown, verdict = Inconclusive
 }
 ```
 
 ## Redundancy
 
-An assumption or requirement that follows from the component's other
+An assumption or guarantee that follows from the component's other
 constraints adds nothing to its meaning. If it is meant as a consequence,
 it is better declared as an expectation, which the checks confirm rather
 than take for granted.
 
 For each assumption, Fren asks whether it can be proved from the other
-assumptions. For each requirement, Fren asks whether it can be proved from
-`A`, `I` and the other requirements. If it can, the check fails, and Fren
+assumptions. For each guarantee, Fren asks whether it can be proved from
+`A`, `I` and the other guarantees. If it can, the check fails, and Fren
 reports a minimal set of constraints it follows from. A redundant
 constraint is not a mistake in itself, so the failure is a
 [warning](View.md#severity), not an error.
@@ -422,9 +422,9 @@ inputs: removing such an assumption would make the [instance
 check](#instance-assumptions) fail.
 
 Contradictory constraints entail everything, so the assumptions are not
-checked if `A` is unsatisfiable, and the requirements are not checked if
-`A ∧ I ∧ R` is: the realizability check fails instead. Nor is a requirement
-checked if it failed the vacuity check, since a requirement that never
+checked if `A` is unsatisfiable, and the guarantees are not checked if
+`A ∧ I ∧ R` is: the realizability check fails instead. Nor is a guarantee
+checked if it failed the vacuity check, since a guarantee that never
 applies always follows from the others. `check::redundancy_asked` gives
 when a constraint is checked, from the outcome of asking whether `False`
 can be proved from the constraints it would be compared with and itself
@@ -436,7 +436,7 @@ pub comp redundancy_asked {
     in vacuous?            -- it failed the vacuity check
     pub det out asked?
 
-    req asked: asked? iff (consistent_q != Unsat and not vacuous?)
+    ensure asked: asked? iff (consistent_q != Unsat and not vacuous?)
 }
 ```
 
@@ -448,9 +448,9 @@ pub comp non_redundancy {
     in q: Outcome          -- can the constraint be proved from the others?
     pub det out verdict: Verdict
 
-    req independent: when q = Sat, verdict = Pass
-    req redundant: when q = Unsat, verdict = Fail
-    req unknown: when q = Unknown, verdict = Inconclusive
+    ensure independent: when q = Sat, verdict = Pass
+    ensure redundant: when q = Unsat, verdict = Fail
+    ensure unknown: when q = Unknown, verdict = Inconclusive
 }
 ```
 
@@ -467,13 +467,13 @@ hypotheses of where it is written:
 | Where | Hypotheses |
 |---|---|
 | an assumption | the other assumptions |
-| a requirement, expectation, cover goal or definition | `A`, `I` and `R`, as for vacuity |
+| a guarantee, expectation, cover goal or definition | `A`, `I` and `R`, as for vacuity |
 | a binding of an instance | `A`, and the instances declared before it |
 | a global expectation | the meanings of its binders' components |
 
-A requirement's own `R` is among its hypotheses, so a requirement can
-guarantee its own definedness through another, such as `req long: q.len >
-3` beside `req third: q[3] = x`: the system meets both or neither. A
+A guarantee's own `R` is among its hypotheses, so a guarantee can
+ensure its own definedness through another, such as `ensure long: q.len >
+3` beside `ensure third: q[3] = x`: the system meets both or neither. A
 component with no index has no definedness results. `check::definedness`
 decides each query like an expectation, and a model is a counterexample,
 reported at the `[` of the index:
@@ -486,7 +486,7 @@ pub comp definedness {
 
     inst as_expect: expectation { q }
 
-    req like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
+    ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 }
 ```
 
@@ -517,7 +517,7 @@ pub comp completeness {
 
     inst as_expect: expectation { q }
 
-    req like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
+    ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 }
 ```
 
@@ -549,7 +549,7 @@ pub comp disjointness {
 
     inst as_expect: expectation { q }
 
-    req like_expect: verdict = as_expect.verdict and (reports_witness? iff as_expect.reports_cex?)
+    ensure like_expect: verdict = as_expect.verdict and (reports_witness? iff as_expect.reports_cex?)
 }
 ```
 
@@ -561,8 +561,8 @@ overlap.
 Completeness and disjointness ask one query each, as definedness does, so
 they have no query order of their own. Their hypotheses are those of
 definedness, `N` among them (see the [table above](#definedness)): a
-requirement's own `R` is among its hypotheses, so a table in a
-requirement may be complete only because another requirement rules out
+guarantee's own `R` is among its hypotheses, so a table in a
+guarantee may be complete only because another guarantee rules out
 the cases it leaves out.
 
 ## Minimal sets
@@ -589,7 +589,7 @@ pub comp minimal {
     in dropped: ConstraintName          -- any one constraint, for the minimality condition
     pub det out minimal?
 
-    req rule: minimal? iff (core subset candidates and refutes?(core)
+    ensure rule: minimal? iff (core subset candidates and refutes?(core)
         and (when dropped in core, not refutes?(core minus {dropped})))
 
     expect within: when minimal?, core subset candidates
@@ -618,7 +618,7 @@ The instance variables are copied too, so an output that depends on an
 instance's output which is not itself determined is not determined either.
 The functions are not copied: both copies are under the same
 [interpretation](#interpretations), so an output that is a function of the
-inputs, as in `req r: x = f(i)`, is determined. `check::copied` gives what
+inputs, as in `ensure r: x = f(i)`, is determined. `check::copied` gives what
 the second copy renames:
 
 ```fren
@@ -628,7 +628,7 @@ pub comp copied {
     in symbol: Symbol
     pub det out copied?
 
-    req rule: copied? iff (symbol = Symbol::InstanceVariable or symbol = Symbol::Output)
+    ensure rule: copied? iff (symbol = Symbol::InstanceVariable or symbol = Symbol::Output)
 
     expect shared_interpretation: when symbol = Symbol::Function, not copied?
 }
@@ -647,7 +647,7 @@ pub comp determinism {
 
     inst as_expect: expectation { q }
 
-    req like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
+    ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 }
 ```
 
@@ -685,7 +685,7 @@ evidence of every later component, global expectation and
 [refinement](Lang/Refinement.md) in the file, and
 before any other item it sets nothing. Within a component, the setting must
 be followed by `in` and by a member whose checks it sets: before anything
-else, such as a requirement, it is an error (`F0215`), and so is a
+else, such as a guarantee, it is an error (`F0215`), and so is a
 `set_option` of any other option before a member (`F0216`). The setting is a
 statement that the solver cannot be relied on there, so it is never
 reported as unneeded. A value other than `"tested"` or `"solver"` is an
@@ -734,7 +734,7 @@ pub comp by_testing {
     in tested?             -- the check's evidence is testing
     pub det out run: Run
 
-    req rule: run = table {
+    ensure rule: run = table {
         | not tested? => BySolver,
         | tested? and not kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness} => ByTesting,
         | tested? and kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness} => Skipped,

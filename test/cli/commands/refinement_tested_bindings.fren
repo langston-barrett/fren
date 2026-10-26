@@ -4,7 +4,7 @@
 pub comp helper {
     in v: Int
     pub out w: Int
-    req r: w = v
+    ensure r: w = v
 }
 
 pub comp first {
@@ -12,14 +12,14 @@ pub comp first {
     pub out y: Int
     assume nonempty: q != []
     inst h: helper { v := q[0] }
-    req r: y = h.w
+    ensure r: y = h.w
 }
 
 pub comp exact {
     in q: Seq(Int)
     pub out y: Int
     assume nonempty: q != []
-    req r: y = q[0]
+    ensure r: y = q[0]
 }
 
 set_option fren.evidence "tested" in

@@ -398,7 +398,7 @@ def genSpec : R GSpec := do
       let bs := ", ".intercalate (i.bindings.toList.map fun (x, e) => s!"{x} := {e}")
       out := out ++ s!"    inst {i.name}: {comps[i.comp]!.name} \{ {bs} }\n"
     for (n, e) in c.assumes do out := out ++ s!"    assume {n}: {e}\n"
-    for (n, e) in c.reqs do out := out ++ s!"    req {n}: {e}\n"
+    for (n, e) in c.reqs do out := out ++ s!"    ensure {n}: {e}\n"
     for (n, e) in c.expects do out := out ++ s!"    expect {n}: {e}\n"
     for (n, e) in c.covers do out := out ++ s!"    cover {n}: {e}\n"
     out := out ++ "}\n"
@@ -507,7 +507,7 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
   let ownIns := c.vars.filter (·.role == .input) |>.map fun v => (v.name, v.ty)
   let atom (p : Constraint) (e := p.e) : Atom := { label := p.name, pfx := .anonymous, e }
   let as := c.ofKind .assume
-  let rs := c.ofKind .req
+  let rs := c.ofKind .ensure
   let es := c.ofKind .expect
   let gs := c.ofKind .cover
   let A := as.map (atom ·)
@@ -519,7 +519,7 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
     { o with verdicts := o.verdicts.push ((k, p, t), v) }
   let pass (b : Bool) : Verdict := if b then .pass else .fail
   let MF := Is.map fun I => (I, models sp size I order full)
-  let constraintsWithTrig := (c.constraints.filter fun p => p.kind == .req || p.kind == .expect).filterMap fun p =>
+  let constraintsWithTrig := (c.constraints.filter fun p => p.kind == .ensure || p.kind == .expect).filterMap fun p =>
     p.e.trigger?.map (p, ·)
   -- Definedness, of each index by its position, and the completeness and
   -- disjointness of each table, by where it is reported and the earlier
@@ -598,7 +598,7 @@ def oracle (sp : Spec) (c : Comp) : Oracle := Id.run do
 /-- The atoms named `names` among the hypotheses of `c`: assumptions,
 requirements and instances. -/
 def named (sp : Spec) (c : Comp) (names : Array Name) : Array Atom :=
-  (c.constraints.filter (fun p => (p.kind == .assume || p.kind == .req) && names.contains p.name)).map
+  (c.constraints.filter (fun p => (p.kind == .assume || p.kind == .ensure) && names.contains p.name)).map
     (fun p => { label := p.name, pfx := .anonymous, e := p.e })
   ++ (c.insts.filter (names.contains ·.name)).flatMap (sp.instAtoms .anonymous)
 
@@ -637,7 +637,7 @@ def checkDetail (st : LState) (c : Comp) (r : CheckResult) : Option String := Id
     -- Under the model's interpretation, which is not shown: wrong only if
     -- outputs satisfy the core under every interpretation.
     let some env := pinned st c flat input | return some s!"cannot read the input {input}"
-    let context := sp.meaning c |>.filter fun a => !(c.ofKind .req).any (·.name == a.label)
+    let context := sp.meaning c |>.filter fun a => !(c.ofKind .ensure).any (·.name == a.label)
     if Is.all fun I => !(models sp size I order (context ++ named sp c core) env).isEmpty then
       return some s!"on the input {input}, outputs satisfy {core}"
   | .vacuous core =>

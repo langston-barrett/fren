@@ -9,8 +9,8 @@ comp kinds {
     pub det out round?
     pub det out boxy?
 
-    req round: round? iff s is Shape::Circle(_)
-    req boxy: boxy? iff s is Shape::Rect(_, _) | Shape::Empty
+    ensure round: round? iff s is Shape::Circle(_)
+    ensure boxy: boxy? iff s is Shape::Rect(_, _) | Shape::Empty
 
     expect circle: when s = Shape::Circle(3), round? and not boxy?
     expect one_of: round? iff not boxy?
@@ -25,8 +25,8 @@ comp precedence {
     pub det out n?
     pub det out both?
 
-    req n: n? iff not s is Shape::Circle(_)
-    req both: both? iff s is Shape::Circle(_) and t is | Shape::Rect(_, _) | Shape::Empty
+    ensure n: n? iff not s is Shape::Circle(_)
+    ensure both: both? iff s is Shape::Circle(_) and t is | Shape::Rect(_, _) | Shape::Empty
 
     expect not_outside: n? iff not (s is Shape::Circle(_))
     expect and_outside: both? iff ((s is Shape::Circle(_)) and (t is Shape::Rect(_, _) | Shape::Empty))
@@ -38,7 +38,7 @@ comp imported {
     in s: Shape
     pub det out sized?
 
-    req r: sized? iff s is Circle(_) | Rect(_, _)
+    ensure r: sized? iff s is Circle(_) | Rect(_, _)
 
     expect sized: sized? iff s != Empty
     expect every: s is Circle(_) | Rect(_, _) | Empty
@@ -56,7 +56,7 @@ comp flagged {
     in round?
     pub det out sides: Int
 
-    req r: sides = (if round? then 0 else 4)
+    ensure r: sides = (if round? then 0 else 4)
 }
 
 comp places {
@@ -69,12 +69,12 @@ comp places {
 
     inst f: flagged { round? := s is Shape::Circle(_) }
 
-    req size_rule: size = (if s is Shape::Circle(_) then 1 else 2)
-    req doubled_rule: doubled = match s { Shape::Rect(w, _) => (if s is Shape::Rect(_, _) then w else 0), _ => 0 }
-    req measure_rule: when s is Shape::Rect(_, _) | Shape::Empty,
+    ensure size_rule: size = (if s is Shape::Circle(_) then 1 else 2)
+    ensure doubled_rule: doubled = match s { Shape::Rect(w, _) => (if s is Shape::Rect(_, _) then w else 0), _ => 0 }
+    ensure measure_rule: when s is Shape::Rect(_, _) | Shape::Empty,
         measure = Measure { sides := if s is Shape::Circle(_) then 0 else 4, size }
-    req other: unless s is Shape::Rect(_, _) | Shape::Empty, measure = Measure { sides := f.sides, size }
-    req by_fn_rule: by_fn? iff circle?(s)
+    ensure other: unless s is Shape::Rect(_, _) | Shape::Empty, measure = Measure { sides := f.sides, size }
+    ensure by_fn_rule: by_fn? iff circle?(s)
 
     expect constant: CIRCLE  --~ warning: this expectation mentions no variable
     expect same_fn: by_fn? iff round?
@@ -92,8 +92,8 @@ comp simpler {
     pub det out ok?
     pub det out z?
 
-    req r: ok? = if s is Shape::Circle(_) then true else false  --~ warning: write `(s is Shape::Circle(_))`
-    req q: z? iff not ((s is Shape::Circle(_)) = b?)  --~ warning: write `(s is Shape::Circle(_)) != b?`
+    ensure r: ok? = if s is Shape::Circle(_) then true else false  --~ warning: write `(s is Shape::Circle(_))`
+    ensure q: z? iff not ((s is Shape::Circle(_)) = b?)  --~ warning: write `(s is Shape::Circle(_)) != b?`
 }
 
 --@ summary: 48 passed, 1 failed, 0 inconclusive, 0 redundant

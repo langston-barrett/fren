@@ -17,7 +17,7 @@ comp doubler {
     in x: Int
     pub out y: Int
 
-    req r: y = double(x)
+    ensure r: y = double(x)
 }
 
 /-- info: defined_test.double : Int → Int -/

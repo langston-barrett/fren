@@ -18,24 +18,24 @@ comp modes {
   pub out one?
   pub out some?
 
-  req r: one? iff exactly_one?(a?, b?, x > 0)
-  req s: some? iff at_most_one?(a?)
+  ensure r: one? iff exactly_one?(a?, b?, x > 0)
+  ensure s: some? iff at_most_one?(a?)
 }
 
 /--
-info: @[reducible] def cardinality_test.modes.req.r : Bool → Bool → Int → Bool → Bool → Prop :=
+info: @[reducible] def cardinality_test.modes.ensure.r : Bool → Bool → Int → Bool → Bool → Prop :=
 fun a? b? x one? some? =>
   one? = true ↔ (((if a? = true then 1 else 0) + if b? = true then 1 else 0) + if x > 0 then 1 else 0) = 1
 -/
 #guard_msgs in
-#print cardinality_test.modes.req.r
+#print cardinality_test.modes.ensure.r
 
 /--
-info: @[reducible] def cardinality_test.modes.req.s : Bool → Bool → Int → Bool → Bool → Prop :=
+info: @[reducible] def cardinality_test.modes.ensure.s : Bool → Bool → Int → Bool → Bool → Prop :=
 fun a? b? x one? some? => some? = true ↔ (if a? = true then 1 else 0) ≤ 1
 -/
 #guard_msgs in
-#print cardinality_test.modes.req.s
+#print cardinality_test.modes.ensure.s
 
 -- The sum means what `List.count` of the `true` arguments does, for any
 -- number of arguments.

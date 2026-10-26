@@ -1,2 +1,2 @@
 -- A range whose lower bound is above its upper one.
-comp c { in n: Int pub out y: Int req r: y = match n { 9..=0 => 0, _ => 1 } }
+comp c { in n: Int pub out y: Int ensure r: y = match n { 9..=0 => 0, _ => 1 } }

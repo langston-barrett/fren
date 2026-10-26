@@ -27,7 +27,7 @@ pub comp else_extends {
 
     inst place: operand { outer, inner, assoc, right? }
 
-    req rule: fires? iff not place.bare?
+    ensure rule: fires? iff not place.bare?
 }
 ```
 
@@ -69,7 +69,7 @@ pub comp identity_op {
     in right: IdentityOperand
     pub det out rewrite: Rewrite  -- `Flip` is `x - y` for `x + -y`, and `x + y` for `x - -y`
 
-    req rule: rewrite = match op {
+    ensure rule: rewrite = match op {
         Add => if right = Zero then KeepLeft else if left = Zero then KeepRight
             else if right = Negation then Flip else Unchanged,
         Sub => if right = Zero then KeepLeft else if right = Negation then Flip else Unchanged,
@@ -103,6 +103,6 @@ pub comp double_parens {
 
     assume counts: depth >= 1
 
-    req rule: fires? iff depth >= 2
+    ensure rule: fires? iff depth >= 2
 }
 ```

@@ -5,7 +5,7 @@ error[F0607]: `c::y` is not determined by the inputs: for the input x = -1, it c
   |                 ^ not determined
   |
   = note: a `det out` must have exactly one value for each input
-  = help: add requirements that pin it down, or remove `det`
+  = help: add guarantees that pin it down, or remove `det`
 
 fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 

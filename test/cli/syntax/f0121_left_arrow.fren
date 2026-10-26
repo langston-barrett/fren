@@ -1,2 +1,2 @@
 -- `<-` is one token, as in Lean, not `<` and then a negation.
-comp c { in x: Int pub out p? req r: p? iff x <- 1 }
+comp c { in x: Int pub out p? ensure r: p? iff x <- 1 }

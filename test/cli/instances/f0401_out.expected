@@ -1,11 +1,11 @@
 error[F0401]: assumptions may only mention `in` variables, but `y` is an `out`
  --> test/cli/instances/f0401_out.fren:2:45
   |
-2 | comp c { in x: Int pub out y: Int assume a: y > 0 req r: y = x }
+2 | comp c { in x: Int pub out y: Int assume a: y > 0 ensure r: y = x }
   |                                             ^ an `out`
   |
   = note: assumptions constrain the environment, not the system
-  = help: if it constrains the outputs, make it a `req`
+  = help: if it constrains the outputs, make it an `ensure`
 
 error: could not check due to previous errors
 

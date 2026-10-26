@@ -1,7 +1,7 @@
 s = "hello"
 ok? = true
 assume five: true
-req r: true
+ensure r: true
 expect not_hello: false
 status: meets
 exit=1

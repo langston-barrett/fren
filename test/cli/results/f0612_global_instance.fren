@@ -6,7 +6,7 @@ mod m
 pub comp c {
     in x: Int
     pub out big?
-    req r: big? iff x > 1000
+    ensure r: big? iff x > 1000
 }
 
 expect g: forall (a: c), when 7 * a.x = 123459, a.big?

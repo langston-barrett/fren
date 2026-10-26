@@ -313,13 +313,13 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
       vars := c.vars.map fun v =>
         { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
       assumes := ← named c.assumes
-      reqs := ← named c.reqs
+      reqs := ← named c.ensures
       expects := ← named c.expects
       covers := ← named c.covers
       insts := ← c.insts.mapM fun i => return {
         name := i.name, comp := i.comp, bindings := ← beta i.bindings, behaviour := ← beta i.behaviour
         assumes := ← i.assumes.mapM fun (n, a) => return (n, ← beta a) }
-      triggers := ← (c.reqs ++ c.expects).filterMapM fun p => p.trigger?.mapM fun t => return (p.name, ← beta t)
+      triggers := ← (c.ensures ++ c.expects).filterMapM fun p => p.trigger?.mapM fun t => return (p.name, ← beta t)
       -- Numbered in order within each item.
       indexes := ← indexes.mapIdxM fun j (n, place, _, _, goal) => do
         let k := (indexes.extract 0 j).filter (·.1 == n) |>.size
@@ -337,7 +337,7 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     let natVars (outputs : Bool) := (c.vars.zip fvs).filter fun (v, _) =>
       v.type.isConstOf ``Nat && match Core.natBrought (v.role == .output) v.defn?.isSome with
         | .nothing => false
-        | .requirement => outputs
+        | .guarantee => outputs
         | .assumption => !outputs
     let outFacts ← (natVars true).mapM (atLeast0 ·.2)
     let facts ← (natVars false).mapM (atLeast0 ·.2)

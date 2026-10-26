@@ -4,6 +4,6 @@
 comp c {
     in x: Int
     pub out big?
-    req r: big? iff x > 1000
+    ensure r: big? iff x > 1000
     cover exact: 7 * x = 123459 and big?
 }

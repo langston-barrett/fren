@@ -14,16 +14,16 @@ comp c {
     pub out g: Int
 
     -- Written the same, ignoring whitespace.
-    req r1: a = match e { A => x  +  1, B => 2, C => x+1, _ => 3 }
+    ensure r1: a = match e { A => x  +  1, B => 2, C => x+1, _ => 3 }
     -- Removing `C` into `_` makes it cover two variants, so `_` stays.
-    req r2: b = match e { A => 1, B => 2, C => 3, _ => 3 }
-    req r3: c? = (match e { A | B => true, _ => false }) and x > 0
-    req r4: d? = match e {
+    ensure r2: b = match e { A => 1, B => 2, C => 3, _ => 3 }
+    ensure r3: c? = (match e { A | B => true, _ => false }) and x > 0
+    ensure r4: d? = match e {
         | A
         | B => false,
         C => true,
         _ => true,
     }
-    req r5: f = 2 * match e { A => x + 1, B => x + 1, _ => x + 1 }
-    req r6: g = match e { A => 1, B => 2, C => 3, _ => 4 }
+    ensure r5: f = 2 * match e { A => x + 1, B => x + 1, _ => x + 1 }
+    ensure r6: g = match e { A => 1, B => 2, C => 3, _ => 4 }
 }

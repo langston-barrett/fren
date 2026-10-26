@@ -7,6 +7,6 @@ pub comp c {
     pub out p?
     pub out k?
 
-    req r1: p? iff s.matches?("abc") and s.matches?(r"a\.b\\.*") and s.matches?(".*x") and s.matches?(r#".*"\(.*"#) and s.matches?("a\nb")
-    req r2: k? = (s ++ t).matches?("q") and not (s ++ t).matches?(".*q")
+    ensure r1: p? iff s.matches?("abc") and s.matches?(r"a\.b\\.*") and s.matches?(".*x") and s.matches?(r#".*"\(.*"#) and s.matches?("a\nb")
+    ensure r2: k? = (s ++ t).matches?("q") and not (s ++ t).matches?(".*q")
 }

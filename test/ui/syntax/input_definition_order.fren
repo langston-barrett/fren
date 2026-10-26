@@ -7,5 +7,5 @@ comp c {
     in s: S
     in a: Int := 3   --~ error: an input cannot have a definition
     pub out z: Int
-    req r: z = match s { S::A(x.y) => a, _ => 1 }
+    ensure r: z = match s { S::A(x.y) => a, _ => 1 }
 }

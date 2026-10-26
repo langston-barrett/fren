@@ -378,12 +378,12 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
     vars := c.vars.map fun v =>
       { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
     assumes := props .assume
-    reqs := props .req
+    reqs := props .ensure
     expects := props .expect
     covers := props .cover
     insts := c.insts.map fun i =>
       { name := i.name, comp := i.comp, bindings := i.bindings, behaviour := i.behaviour, assumes := i.assumes }
-    triggers := (c.props.filter fun p => p.kind == .req || p.kind == .expect).filterMap fun p =>
+    triggers := (c.props.filter fun p => p.kind == .ensure || p.kind == .expect).filterMap fun p =>
       p.trigger?.map (p.name, ·)
     defs := c.defs.map fun (d, e) => (d, s!"(= {quote d.toString} {e})", e)
     -- Numbered in order within each item.

@@ -265,7 +265,7 @@ structure Comp (F : Type) where
   expects : Array (Name × F)
   covers : Array (Name × F) := #[]
   insts : Array (Inst F) := #[]
-  /-- The triggers of the `req`s and `expect`s that have one. -/
+  /-- The triggers of the `ensure`s and `expect`s that have one. -/
   triggers : Array (Name × F)
   /-- Each defined output, with the equation `d = e` and its definition
   `e`, each mentioning only earlier ones (`check::definitions`). -/
@@ -742,7 +742,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
     #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
   | .fail, .vacuousAssumptions core =>
     #[one "F0602" s!"the assumptions of {subject} are unsatisfiable: {showNames core} contradict each other"
-      (some "no input satisfies its assumptions") #["note: every requirement would hold vacuously",
+      (some "no input satisfies its assumptions") #["note: every guarantee would hold vacuously",
         "help: weaken or remove one of them"] (item? := none)]
   | .fail, .conflict input core =>
     -- Instance variables (`w.x`) cannot be assumed about.
@@ -781,14 +781,14 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         #[s!"counterexample: {showAssignment vals}",
           "help: bind the instance's inputs so that the assumption holds, or add an `assume` that guarantees it"]]
     else
-    #[one "F0603" s!"expectation {subject} does not hold" (some "does not follow from the requirements")
+    #[one "F0603" s!"expectation {subject} does not hold" (some "does not follow from the guarantees")
       (#[s!"counterexample: {showAssignment vals}"] ++ priv ++
-        #["help: strengthen the requirements so that it follows, or correct the expectation"])]
+        #["help: strengthen the guarantees so that it follows, or correct the expectation"])]
   | .fail, .vacuous core =>
     if r.kind == .cover then
       let why := if core.isEmpty then "no behaviour satisfies it" else s!"it is ruled out by {showNames core}"
       #[one "F0615" s!"cover goal {subject} cannot be met: {why}" (some "no behaviour that meets the component satisfies this")
-        #["note: a cover goal is a scenario that some behaviour meeting the assumptions and requirements must allow",
+        #["note: a cover goal is a scenario that some behaviour meeting the assumptions and guarantees must allow",
           "help: weaken the constraints that rule it out, or correct the goal"]]
     else
     let others := core.filter (some · != r.prop?)
@@ -803,7 +803,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
   | .fail, .nondeterministic input v₁ v₂ =>
     #[one "F0607" s!"{subject} is not determined by the inputs: for the input {showAssignment input}, it can be {v₁} or {v₂}"
       (some "not determined") #["note: a `det out` must have exactly one value for each input",
-        "help: add requirements that pin it down, or remove `det`"]]
+        "help: add guarantees that pin it down, or remove `det`"]]
   | .fail, _ => #[{ severity := sev, item? := r.prop?, msg := Msg.internal s!"{subject} failed without details" }]
 
 /-- The help of a warning from testing: from `fren check`, testing a check
@@ -824,7 +824,7 @@ def untestedMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : Msg
   { code? := some "F0610", headline := s!"testing found no admissible behaviour of {subject} in {tests} tests"
     label? := some "untested"
     notes := #["note: so none of its checks were tested",
-      testingHelp byCheck "decide whether its assumptions and requirements can hold"] }
+      testingHelp byCheck "decide whether its assumptions and guarantees can hold"] }
 
 /-- Testing found admissible behaviours, but none in which a check's
 trigger held (`eval::reaches`). -/

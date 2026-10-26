@@ -116,11 +116,11 @@ pub comp operand {
     in right?            -- the operand is on the operator's right
     pub out bare?        -- the operand can be written without parentheses
 
-    req tighter: when inner > outer, bare?
-    req looser: when inner < outer, not bare?
-    req left: when inner = outer and assoc = Assoc::Left, bare? iff not right?
-    req right: when inner = outer and assoc = Assoc::Right, bare? iff right?
-    req non_assoc: when inner = outer and assoc = Assoc::NonAssoc, not bare?
+    ensure tighter: when inner > outer, bare?
+    ensure looser: when inner < outer, not bare?
+    ensure left: when inner = outer and assoc = Assoc::Left, bare? iff not right?
+    ensure right: when inner = outer and assoc = Assoc::Right, bare? iff right?
+    ensure non_assoc: when inner = outer and assoc = Assoc::NonAssoc, not bare?
 
     expect parenthesize_looser: when bare?, inner >= outer
     expect chains_by_assoc: when inner = outer and bare?,
@@ -170,7 +170,7 @@ pub comp comparison_chain {
     assume counts: n_ascending >= 0 and n_descending >= 0 and n_other >= 0
     assume compares: n_ascending + n_descending + n_other >= 1
 
-    req rule: accepted? iff (n_ascending + n_descending + n_other = 1
+    ensure rule: accepted? iff (n_ascending + n_descending + n_other = 1
         or (n_other = 0 and (n_ascending = 0 or n_descending = 0)))
 
     expect single: when n_ascending + n_descending + n_other = 1, accepted?
@@ -256,7 +256,7 @@ pub comp mentions {
     in parts?                -- one of its parts mentions a variable or an uninterpreted function
     pub det out mentions?    -- it mentions a variable or an uninterpreted function
 
-    req rule: mentions? iff match expr_kind {
+    ensure rule: mentions? iff match expr_kind {
         Literal | Constant | Bound => false,
         Variable | Uninterpreted => true,
         DefinedOutput | Binder | Construction | Method | Defined | Compound => parts?,
@@ -294,7 +294,7 @@ pub comp linear_product {
     in b_mentions?    -- the right operand mentions a variable or an uninterpreted function
     pub det out accepted?
 
-    req rule: accepted? iff not (a_mentions? and b_mentions?)
+    ensure rule: accepted? iff not (a_mentions? and b_mentions?)
 
     expect scaling: when not a_mentions?, accepted?
     expect no_variable_products: when a_mentions? and b_mentions?, not accepted?
@@ -359,7 +359,7 @@ pub comp divisor {
     in value: Int            -- its value, for a literal or a known constant
     pub det out accepted?
 
-    req rule: accepted? iff (form in {LiteralDivisor, KnownConstant} and value != 0)
+    ensure rule: accepted? iff (form in {LiteralDivisor, KnownConstant} and value != 0)
 
     expect no_zero: when value = 0, not accepted?
     expect literals: when form = LiteralDivisor and value != 0, accepted?
@@ -418,7 +418,7 @@ pub comp literal_type {
     in nat_expected?         -- a `Nat` is expected where the literal is
     pub det out result: ValueType
 
-    req rule: result = (if nat_expected? then ValueType::NatTy else ValueType::IntTy)
+    ensure rule: result = (if nat_expected? then ValueType::NatTy else ValueType::IntTy)
 
     expect a_number: result in {ValueType::IntTy, ValueType::NatTy}
 }
@@ -455,8 +455,8 @@ pub comp conditional {
     pub det out accepted?
     pub det out ty: Ty       -- the conditional's type: the wider of the two
 
-    req rule: accepted? iff condition_bool? and (then_widens? or else_widens?)
-    req typed: ty = (if then_widens? then else_ty else then_ty)
+    ensure rule: accepted? iff condition_bool? and (then_widens? or else_widens?)
+    ensure typed: ty = (if then_widens? then else_ty else then_ty)
 
     expect needs_bool: when not condition_bool?, not accepted?
     expect else_wider: when accepted? and not then_widens?, ty = then_ty
@@ -491,7 +491,7 @@ pub comp application {
 
     assume some_param: params != []
 
-    req rule: accepted? iff args = params
+    ensure rule: accepted? iff args = params
 
     expect arity: when args.len != params.len, not accepted?
     expect typed: when 0 <= k < args.len and k < params.len and args[k] != params[k], not accepted?
@@ -514,7 +514,7 @@ pub comp argument {
     in mentions_output?  -- the argument mentions an output of the enclosing component
     pub det out accepted?
 
-    req rule: accepted? iff (defined? or not mentions_output?)
+    ensure rule: accepted? iff (defined? or not mentions_output?)
 
     expect defined_any: when defined?, accepted?
 }
@@ -553,7 +553,7 @@ pub comp cardinality {
     assume some_argument: n_args >= 1
     assume counted: n_true <= n_args
 
-    req rule: value? iff match op {
+    ensure rule: value? iff match op {
         Exactly => n_true = 1,
         AtMost => n_true <= 1,
     }
@@ -601,7 +601,7 @@ pub comp cardinality_args {
 
     assume counted: n_bool <= n_args
 
-    req rule: accepted? iff (n_args >= 1 and n_bool = n_args)
+    ensure rule: accepted? iff (n_args >= 1 and n_bool = n_args)
 
     expect needs_one: when n_args = 0, not accepted?
     expect only_bools: when n_bool < n_args, not accepted?
@@ -648,7 +648,7 @@ pub comp field_init {
     in n: Nat            -- times the literal gives the name
     pub det out accepted?
 
-    req rule: accepted? iff ((field? and n = 1) or (not field? and n = 0))
+    ensure rule: accepted? iff ((field? and n = 1) or (not field? and n = 0))
 
     expect each_field_once: when field? and accepted?, n = 1
 }
@@ -667,7 +667,7 @@ pub comp record_literal {
     in n_repeated: Nat               -- names given more than once, counting each repeat
     pub det out accepted?
 
-    req rule: accepted? iff (given = fields and n_repeated = 0)
+    ensure rule: accepted? iff (given = fields and n_repeated = 0)
 
     expect missing_field: when not fields subset given, not accepted?
     expect unknown_field: when not given subset fields, not accepted?
@@ -724,7 +724,7 @@ pub comp record_update {
     assume counts: n_repeated >= 0
     assume some_given: given != {}
 
-    req rule: accepted? iff (record? and given subset fields and n_repeated = 0)
+    ensure rule: accepted? iff (record? and given subset fields and n_repeated = 0)
 
     expect records_only: when not record?, not accepted?
     expect unknown_field: when not given subset fields, not accepted?
@@ -808,7 +808,7 @@ pub comp newtype_operator {
 
     assume enumerations: when ordered?, underlying = ValueType::EnumTy
 
-    req rule: accepted? iff match op {
+    ensure rule: accepted? iff match op {
         Equality => true,
         Order => underlying in {IntTy, StringTy} or ordered?,
         Sum => underlying = IntTy,
@@ -847,7 +847,7 @@ pub comp variant_mention {
     in applied?              -- it is written with parentheses, around values or, in a pattern, patterns
     pub det out accepted?
 
-    req rule: accepted? iff (applied? iff payload > 0)
+    ensure rule: accepted? iff (applied? iff payload > 0)
 
     expect plain: when payload = 0 and not applied?, accepted?
     expect applied: when payload > 0 and applied?, accepted?
@@ -939,8 +939,8 @@ pub comp arm_type {
     pub det out accepted?
     pub det out ty: Ty       -- the type of the arms so far: the wider of the two
 
-    req rule: accepted? iff (arm_widens? or before_widens?)
-    req typed: ty = (if before_widens? then arm else before)
+    ensure rule: accepted? iff (arm_widens? or before_widens?)
+    ensure typed: ty = (if before_widens? then arm else before)
 
     expect same_type: when arm = before, ty = before
     expect arm_wider: when accepted? and not arm_widens?, ty = arm
@@ -969,7 +969,7 @@ pub comp match_arms {
     in exhaustive?                   -- `_` is not useful with respect to all the arms
     pub det out accepted?
 
-    req rule: accepted? iff (n_useless_arms = 0 and n_useless_alternatives = 0 and exhaustive?)
+    ensure rule: accepted? iff (n_useless_arms = 0 and n_useless_alternatives = 0 and exhaustive?)
 
     expect exhaustive: when accepted?, exhaustive?
     expect reachable: when accepted?, n_useless_arms = 0 and n_useless_alternatives = 0
@@ -1031,7 +1031,7 @@ pub comp pattern_test {
     in matches_some?                 -- some value matches the pattern
     pub det out accepted?
 
-    req rule: accepted? iff (n_bound = 0 and n_useless_alternatives = 0 and matches_some?)
+    ensure rule: accepted? iff (n_bound = 0 and n_useless_alternatives = 0 and matches_some?)
 
     expect binds_nothing: when accepted?, n_bound = 0
     expect every_alternative: when accepted?, n_useless_alternatives = 0
@@ -1053,7 +1053,7 @@ table {
 }
 ```
 
-A *table* chooses a value by conditions, as the tabular requirements of
+A *table* chooses a value by conditions, as the tabular guarantees of
 Parnas and of SCR do. Each row has a condition and a value, and the table
 has the value of the first row whose condition holds, as a chain of
 conditionals has. A last row `_ => e` holds wherever no earlier row does.
@@ -1178,7 +1178,7 @@ pub comp guard {
     in holds?                -- its condition holds
     pub det out evaluated?   -- it is evaluated: its guard holds
 
-    req rule: evaluated? iff match operand {
+    ensure rule: evaluated? iff match operand {
         WhenBody | ThenBranch | AndRight | ArmBody => holds?,
         UnlessBody | ElseBranch | OrRight => not holds?,
     }
@@ -1227,7 +1227,7 @@ pub comp relation_op {
     in s: Ty             -- the right operand of `join`, or the argument of `image`
     pub det out accepted?
 
-    req rule: accepted? iff match op {
+    ensure rule: accepted? iff match op {
         Join => kind(r) = RelTy and kind(s) = RelTy and right(r) = left(s),
         Closure => kind(r) = RelTy and left(r) = right(r),
         Image => kind(r) = RelTy and kind(s) = SetTy and elem(s) = left(r),
@@ -1250,7 +1250,7 @@ pub comp pair_membership {
     in r: Ty             -- the type of the right operand of `in`
     pub det out accepted?
 
-    req rule: accepted? iff (kind(r) = ValueType::RelTy and left(r) = x and right(r) = y)
+    ensure rule: accepted? iff (kind(r) = ValueType::RelTy and left(r) = x and right(r) = y)
 
     expect pair_of_relation: when kind(r) = ValueType::RelTy and left(r) = x and right(r) = y, accepted?
     expect wrong_first: when left(r) != x, not accepted?
@@ -1334,7 +1334,7 @@ pub comp nat_result {
     in positive?             -- the divisor of `div` or `mod` is positive
     pub det out nat?
 
-    req rule: nat? iff match op {
+    ensure rule: nat? iff match op {
         Div | Mod => a_nat? and positive?,
         Min | Max => a_nat? and b_nat?,
         Abs => false,
@@ -1548,7 +1548,7 @@ pub comp method_type {
 
     assume enumerations: when ordered?, receiver = EnumTy
 
-    req receivers: accepted? iff match method {
+    ensure receivers: accepted? iff match method {
         Card => receiver in {SetTy, RelTy},
         Inverse | Closure | Image | Domain | Range => receiver = RelTy,
         Update | Rev => receiver = SeqTy,
@@ -1557,7 +1557,7 @@ pub comp method_type {
         Min | Max => receiver in {IntTy, NatTy} or ordered?,
         _ => receiver in {StringTy, SeqTy},
     }
-    req results: result = match method {
+    ensure results: result = match method {
         StartsWith | EndsWith | Contains | Matches => BoolTy,
         Len | IndexOf | Card | Abs => IntTy,
         Min | Max => if ordered? then receiver else IntTy,
@@ -1565,7 +1565,7 @@ pub comp method_type {
         Image | Domain | Range => SetTy,
         _ => receiver,
     }
-    req arities: n_params = match method {
+    ensure arities: n_params = match method {
         Len | Card | Inverse | Closure | Domain | Range | Rev | Abs => 0,
         Slice | IndexOf | Replace | ReplaceAll | Update => 2,
         _ => 1,
@@ -1633,7 +1633,7 @@ pub comp char_range {
 
     assume characters: 0 <= low <= MAX_CHAR and 0 <= high <= MAX_CHAR
 
-    req rule: accepted? iff low <= high
+    ensure rule: accepted? iff low <= high
 
     expect singleton_ok: when low = high, accepted?
 }
@@ -1704,7 +1704,7 @@ pub comp operator_type {
     -- A newtype is a record.
     assume newtype_record: (when newtype?(a), kind(a) = RecordTy) and (when newtype?(b), kind(b) = RecordTy)
 
-    req accepted: accepted? iff match op {
+    ensure accepted: accepted? iff match op {
         Logic => kind(a) = BoolTy and kind(b) = BoolTy,
         Equality => a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}),
         Ordering => (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}) or (a = b and (kind(a) = StringTy or ordered_enum?(a)))
@@ -1717,7 +1717,7 @@ pub comp operator_type {
         SetAlgebra | Subset => a = b and kind(a) in {SetTy, RelTy},
         Conditional => kind(cond) = BoolTy and (a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy})),
     }
-    req results: result = match op {
+    ensure results: result = match op {
         Addition | Multiplication => if newtype?(a) then RecordTy else if kind(a) = NatTy and kind(b) = NatTy then NatTy else IntTy,
         Subtraction => if newtype?(a) then RecordTy else IntTy,
         Negation => IntTy,

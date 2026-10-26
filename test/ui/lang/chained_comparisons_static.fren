@@ -6,7 +6,7 @@ comp types {
     in x: Int
     pub out ok?
 
-    req r: ok? iff 0 <= x
+    ensure r: ok? iff 0 <= x
         < "a"
     --~^ error: type mismatch: expected `Int`, found `String`
 }

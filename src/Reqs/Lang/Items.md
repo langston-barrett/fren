@@ -31,7 +31,7 @@ pub comp declared_before {
         and k_user < items.len and items[k_user] = user
     assume distinct: when used = user, k_used = k_user
 
-    req rule: accepted? iff (used = user or k_used < k_user)
+    ensure rule: accepted? iff (used = user or k_used < k_user)
 
     expect self_reference: when used = user, accepted?
     -- The first item can be used by the second, and not the other way.
@@ -112,7 +112,7 @@ pub comp ordered_enumeration {
 
     assume count: n_payloads >= 0
 
-    req rule: accepted? iff (not ordered? or n_payloads = 0)
+    ensure rule: accepted? iff (not ordered? or n_payloads = 0)
 
     expect plain: when not ordered?, accepted?
     expect no_payloads: when ordered? and n_payloads > 0, not accepted?
@@ -220,8 +220,8 @@ pub comp newtype {
     pub det out accepted?
     pub det out unbounded?
 
-    req rule: accepted? iff (n_fields = 1 and field_accepted?)
-    req bounds: unbounded? iff underlying_unbounded?
+    ensure rule: accepted? iff (n_fields = 1 and field_accepted?)
+    ensure bounds: unbounded? iff underlying_unbounded?
 
     expect one_field: when n_fields != 1, not accepted?
     expect as_records: when not field_accepted?, not accepted?
@@ -247,7 +247,7 @@ repeated names and an unknown type reports the first repeat alone. The
 names of a component's members, of a function's parameters and of binders
 are compared without their `!` of [shadowing](Components.md#shadowing), so
 `in x: Int` and `in x!: Int` declare the same name, and so do `in x: Int`
-and `req x!: true`, even though a constraint never shadows. The names of
+and `ensure x!: true`, even though a constraint never shadows. The names of
 variants and fields are compared as written: neither ever shadows, and a
 `!` on one is an error of its own.
 `lang::distinct_names` states this, from how many names a list declares
@@ -265,7 +265,7 @@ pub comp distinct_names {
 
     assume counted: names.card <= count
 
-    req rule: accepted? iff names.card = count
+    ensure rule: accepted? iff names.card = count
 
     expect repeated: when names.card < count, not accepted?
     expect empty: when count = 0, accepted?
@@ -291,7 +291,7 @@ reported:
 
 So `A(x.y)` reports `x.y`, even in a pattern with the wrong number of
 binders or in an or-pattern, but `in s.t: S`, `in a: Int := 3` or
-`req q: x == 1` before it is reported instead, and so is `!x?` anywhere in
+`ensure q: x == 1` before it is reported instead, and so is `!x?` anywhere in
 the item.
 
 ## Fields and payloads
@@ -324,7 +324,7 @@ pub comp field_type {
     assume abstract_kind: when kind = ValueType::AbstractTy, abstract_within?
     assume in_set: when own_in_set?, kind = ValueType::SetTy and not own?
 
-    req rule: accepted? iff (not abstract_within? and not own_in_set? and (payload? or not own?))
+    ensure rule: accepted? iff (not abstract_within? and not own_in_set? and (payload? or not own?))
 
     expect no_abstract_fields: when kind = ValueType::AbstractTy, not accepted?
     expect records_not_recursive: when own? and not payload?, not accepted?
@@ -358,7 +358,7 @@ pub comp well_founded {
     assume some_variant: variants != {}
     assume among: recursive subset variants
 
-    req rule: accepted? iff recursive != variants
+    ensure rule: accepted? iff recursive != variants
 
     expect plain_enumerations: when recursive = {}, accepted?
     expect one_base_case: when (variants minus recursive).card = 1, accepted?
@@ -421,7 +421,7 @@ pub comp function_params {
 
     assume counts: n_params >= 1 and n_named <= n_params
 
-    req rule: accepted? iff n_named = (if defined? then n_params else 0)
+    ensure rule: accepted? iff n_named = (if defined? then n_params else 0)
 
     expect all_or_nothing: when accepted? and n_named > 0, n_named = n_params
 }
@@ -446,7 +446,7 @@ pub comp function_body {
     in applies_uninterpreted?  -- the body applies an uninterpreted function
     pub det out accepted?
 
-    req rule: accepted? iff (typed? and not applies_self? and not applies_uninterpreted?)
+    ensure rule: accepted? iff (typed? and not applies_self? and not applies_uninterpreted?)
 
     expect not_recursive: when applies_self?, not accepted?
     expect well_typed: when not typed?, not accepted?
@@ -459,7 +459,7 @@ parameter standing for the value of its argument (see [Function
 applications](Expressions.md#function-applications)). The body has a value
 for every argument, so there is nothing about the function itself to
 check: a defined function is like a component with an input for each
-parameter, and one `det out` that a single requirement makes equal to the
+parameter, and one `det out` that a single guarantee makes equal to the
 body, which always meets its checks. Unlike a component, it is applied in
 expressions rather than instantiated. Only how the body is written is
 checked: the [completeness](../Check.md#completeness) and
@@ -513,14 +513,14 @@ pub comp constant {
     in applies?          -- its value applies an uninterpreted function
     pub det out accepted?
 
-    req rule: accepted? iff (ty != ValueType::AbstractTy and not applies?)
+    ensure rule: accepted? iff (ty != ValueType::AbstractTy and not applies?)
 
     expect no_abstract_constants: when ty = ValueType::AbstractTy, not accepted?
 }
 ```
 
 A constant stands for its value wherever it is mentioned: in assumptions,
-requirements, expectations, bindings, and the values of other constants,
+guarantees, expectations, bindings, and the values of other constants,
 and as a record whose field is read or the receiver of a
 [method](Expressions.md#methods), as in `LOBBY.floor` or `GREETING.len`.
 There it is named by one identifier, since `a.b` is never a path (see

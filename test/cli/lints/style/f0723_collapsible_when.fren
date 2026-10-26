@@ -5,7 +5,7 @@ comp c {
     in x: Int
     pub out p?
 
-    req r1: when a?, when b?, p?
-    req r2: unless a? iff b?, unless x = 1, p?
-    req r3: unless a?, when b?, p?
+    ensure r1: when a?, when b?, p?
+    ensure r2: unless a? iff b?, unless x = 1, p?
+    ensure r3: unless a?, when b?, p?
 }

@@ -2,10 +2,10 @@ error[F0603]: expectation `lex::word::wrong` does not hold
   --> test/cli/commands/check_by_testing.fren:16:12
    |
 16 |     expect wrong: when text.contains?("x"), not accepted?
-   |            ^^^^^ does not follow from the requirements
+   |            ^^^^^ does not follow from the guarantees
    |
    = counterexample: text = "x", accepted? = true
-   = help: strengthen the requirements so that it follows, or correct the expectation
+   = help: strengthen the guarantees so that it follows, or correct the expectation
 
 error[F0604]: the assumption `pos` of `lex::positive` may not hold for instance `lex::caller::p`
   --> test/cli/commands/check_by_testing.fren:38:10
@@ -29,10 +29,10 @@ error[F0603]: expectation `lex::global_wrong` does not hold
   --> test/cli/commands/check_by_testing.fren:48:8
    |
 48 | expect global_wrong: forall (p: parity), when p.n = 2, not p.even?
-   |        ^^^^^^^^^^^^ does not follow from the requirements
+   |        ^^^^^^^^^^^^ does not follow from the guarantees
    |
    = counterexample: p.n = 2, p.even? = true
-   = help: strengthen the requirements so that it follows, or correct the expectation
+   = help: strengthen the guarantees so that it follows, or correct the expectation
 
 fren: 13 passed (4 by testing), 3 failed, 1 inconclusive, 0 redundant
 

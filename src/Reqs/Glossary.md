@@ -32,14 +32,14 @@ constraints, declared with `comp`. See [Components](Lang/Components.md).
 **Constant.** A name for a fixed value, declared with `const`. See
 [Items](Lang/Items.md#constants).
 
-**Constraint.** An assumption, requirement, expectation or cover goal.
+**Constraint.** An assumption, guarantee, expectation or cover goal.
 
 **Counterexample.** Values of a component's variables that satisfy the
 hypotheses of a check but not its goal. See [Checks](Check.md).
 
 **Cover goal.** A scenario that a component must allow, declared with
 `cover`: some behaviour that meets the component's assumptions and
-requirements must satisfy it. See [Components](Lang/Components.md#cover-goals).
+guarantees must satisfy it. See [Components](Lang/Components.md#cover-goals).
 
 **Defined output.** An output declared with a definition, `out x: T :=
 e`, which stands for `e`. See [Components](Lang/Components.md#defined-outputs).
@@ -66,7 +66,7 @@ constant, possibly negated or in parentheses, whose value is not `0`. See
 the pattern of some arm. See [Expressions](Lang/Expressions.md#matches).
 
 **Expectation.** A claim, declared with `expect`, that follows from a
-component's assumptions and requirements, and that the checks confirm.
+component's assumptions and guarantees, and that the checks confirm.
 
 **Function.** Declared with `fn`. A defined function, written with `:=
 e`, has the value of its body `e`. Of an uninterpreted function, the spec
@@ -76,6 +76,9 @@ says only its type. The cardinality operators are built-in functions. See
 **Global expectation.** A claim about one or more components as a whole,
 declared with `expect` outside any component, that the checks confirm. See
 [Global expectations](Lang/Global.md).
+
+**Guarantee.** A constraint on what the system must do, declared with
+`ensure`.
 
 **Implementation.** A Lean proof that Lean code meets a component, declared
 with `impl`. See [Implementations](Impl.md).
@@ -156,7 +159,7 @@ bounds, such as `0..=9`, `0..10`, `1..` and `..=-1`. See
 or-pattern: matching some value that no arm or alternative before it
 matches. See [Expressions](Lang/Expressions.md#matches).
 
-**Realizable.** Of a component: some system can meet its requirements for
+**Realizable.** Of a component: some system can meet its guarantees for
 every admissible input. See [Checks](Check.md#realizability).
 
 **Record.** A type whose values each have a value for each of its named
@@ -166,11 +169,11 @@ fields, declared with `struct`. See [Items](Lang/Items.md#records).
 record with `e` for `x` and `r`'s values for its other fields. See
 [Expressions](Lang/Expressions.md#record-updates).
 
-**Redundant.** Of an assumption or requirement: following from the
+**Redundant.** Of an assumption or guarantee: following from the
 component's other constraints. See [Checks](Check.md#redundancy).
 
-**Requirement.** A constraint on what the system must do, declared with
-`req`.
+**Requirement.** Anything a spec states about a system. What a component
+says the system must do is its *guarantees*.
 
 **Shadowing.** A declaration hiding a name in scope, so that within the
 declaration's scope the name means the declaration. It is written with

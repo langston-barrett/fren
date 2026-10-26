@@ -1,8 +1,8 @@
 warning[F0733]: the `else` branch extends past the operator
- --> test/cli/lints/complexity/f0733_else_extends.fren:2:56
+ --> test/cli/lints/complexity/f0733_else_extends.fren:2:59
   |
-2 | comp c { in a? in x: Int pub out n: Int req r: n = 2 * if a? then x else if x > 0 then 1 else x - 1 }
-  |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the `else` branch is `x - 1`
+2 | comp c { in a? in x: Int pub out n: Int ensure r: n = 2 * if a? then x else if x > 0 then 1 else x - 1 }
+  |                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the `else` branch is `x - 1`
   |
   = note: the conditional is an operand of `*`, but its `else` branch extends as far right as possible
   = help: `fren fix` can fix this
@@ -10,8 +10,8 @@ warning[F0733]: the `else` branch extends past the operator
   = help: to allow it, `set_option fren.lint.else_extends "allow"`
 help: put the `else` branch in parentheses, which keeps the meaning
   |
-2 - comp c { in a? in x: Int pub out n: Int req r: n = 2 * if a? then x else if x > 0 then 1 else x - 1 }
-2 + comp c { in a? in x: Int pub out n: Int req r: n = 2 * if a? then x else if x > 0 then 1 else (x - 1) }
+2 - comp c { in a? in x: Int pub out n: Int ensure r: n = 2 * if a? then x else if x > 0 then 1 else x - 1 }
+2 + comp c { in a? in x: Int pub out n: Int ensure r: n = 2 * if a? then x else if x > 0 then 1 else (x - 1) }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

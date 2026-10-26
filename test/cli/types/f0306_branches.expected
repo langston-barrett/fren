@@ -1,8 +1,8 @@
 error[F0306]: the branches of `if` have different types: `Int` and `Bool`
- --> test/cli/types/f0306_branches.fren:2:42
+ --> test/cli/types/f0306_branches.fren:2:45
   |
-2 | comp c { in b? pub out y: Int req r: y = if b? then 1 else true }
-  |                                          ^^^^^^^^^^^^^^^^^^^^^^ branches of different types
+2 | comp c { in b? pub out y: Int ensure r: y = if b? then 1 else true }
+  |                                             ^^^^^^^^^^^^^^^^^^^^^^ branches of different types
   |
   = note: `if c then a else b` is `a` or `b`, so both must have the same type, or be a `Nat` and an `Int`
 

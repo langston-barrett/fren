@@ -4,7 +4,7 @@ enum E { V0, V1 }
 
 const K1: String := "aaa"
 
-comp sub { in n: Int pub out m: Int req r: m = n }
+comp sub { in n: Int pub out m: Int ensure r: m = n }
 
 comp c {
     in s: E
@@ -12,8 +12,8 @@ comp c {
     pub out y?
     pub out z: Int
 
-    req r: y? iff match s { E::V0 => K1.matches?("a*"), _ => true }
-    req q: z = match s { E::V0 => w.m, _ => 0 }
+    ensure r: y? iff match s { E::V0 => K1.matches?("a*"), _ => true }
+    ensure q: z = match s { E::V0 => w.m, _ => 0 }
 }
 
 --@ summary: 5 passed, 0 failed, 0 inconclusive, 0 redundant

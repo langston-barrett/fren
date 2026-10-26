@@ -5,6 +5,6 @@ comp c {
     in s: String
     pub out p?
     pub out q?
-    req r1: p? iff s.matches?(r##"a+b"##)
-    req r2: q? iff s = r###"say "#hi"#"###
+    ensure r1: p? iff s.matches?(r##"a+b"##)
+    ensure r2: q? iff s = r###"say "#hi"#"###
 }

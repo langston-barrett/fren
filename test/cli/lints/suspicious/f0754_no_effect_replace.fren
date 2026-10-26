@@ -1,3 +1,3 @@
 -- `no_effect_replace`.
 set_option fren.lint.undecidable "allow"
-comp c { in s: String in a: String pub out p? req r: p? iff s.replace_all(a, a) = "x" }
+comp c { in s: String in a: String pub out p? ensure r: p? iff s.replace_all(a, a) = "x" }

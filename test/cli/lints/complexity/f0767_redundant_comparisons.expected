@@ -1,16 +1,16 @@
 warning[F0767]: these two comparisons are `5 > x`
- --> test/cli/lints/complexity/f0767_redundant_comparisons.fren:2:50
+ --> test/cli/lints/complexity/f0767_redundant_comparisons.fren:2:53
   |
-2 | comp c { in x: Int pub out p? req r: p? iff not (x < 3 or 5 > x) }
-  |                                                  ^^^^^^^^^^^^^^ one comparison implies the other
+2 | comp c { in x: Int pub out p? ensure r: p? iff not (x < 3 or 5 > x) }
+  |                                                     ^^^^^^^^^^^^^^ one comparison implies the other
   |
   = help: `fren fix` can fix this
   = note: `redundant_comparisons` is `warn` by default
   = help: to allow it, `set_option fren.lint.redundant_comparisons "allow"`
 help: remove the comparison that adds nothing
   |
-2 - comp c { in x: Int pub out p? req r: p? iff not (x < 3 or 5 > x) }
-2 + comp c { in x: Int pub out p? req r: p? iff not (5 > x) }
+2 - comp c { in x: Int pub out p? ensure r: p? iff not (x < 3 or 5 > x) }
+2 + comp c { in x: Int pub out p? ensure r: p? iff not (5 > x) }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

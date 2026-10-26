@@ -1,8 +1,8 @@
 error[F0363]: cannot compare `Ms` with `Bytes`
- --> test/cli/types/f0363_newtype_mix.fren:5:62
+ --> test/cli/types/f0363_newtype_mix.fren:5:65
   |
-5 | comp c { in t: Ms in n: Bytes pub out late? req r: late? iff t > n }
-  |                                                              ^^^^^ `Ms` and `Bytes`
+5 | comp c { in t: Ms in n: Bytes pub out late? ensure r: late? iff t > n }
+  |                                                                 ^^^^^ `Ms` and `Bytes`
   |
   = note: `Ms` is a newtype, a type distinct from every other, even from `Int`
 

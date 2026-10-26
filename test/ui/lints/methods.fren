@@ -42,16 +42,16 @@ pub comp patterns {
     pub out p3?
     pub out p4?
 
-    req t1: p1? iff s.matches?("abc")  --~ warning: this pattern has no operator but `.*`
-    req t2: p2? iff (s.matches?(r"a\.b.*") or s.matches?(".*x") or s.matches?(r".*y\\z.*"))
+    ensure t1: p1? iff s.matches?("abc")  --~ warning: this pattern has no operator but `.*`
+    ensure t2: p2? iff (s.matches?(r"a\.b.*") or s.matches?(".*x") or s.matches?(r".*y\\z.*"))
     --~^ warning: this pattern has no operator but `.*`
     --~^^ warning: this pattern has no operator but `.*`
     --~^^^ warning: this pattern has no operator but `.*`
-    req t3: p3? iff (not s.matches?("q\"") and s.matches?("a-b"))
+    ensure t3: p3? iff (not s.matches?("q\"") and s.matches?("a-b"))
     --~^ warning: this pattern has no operator but `.*`
     --~^^ warning: this pattern has no operator but `.*`
     -- Patterns with operators, and `.*` alone.
-    req t4: p4? iff (s.matches?("ab|c") or s.matches?("a.") or s.matches?(".*") or s.matches?("[a-z]"))
+    ensure t4: p4? iff (s.matches?("ab|c") or s.matches?("a.") or s.matches?(".*") or s.matches?("[a-z]"))
 }
 
 pub comp arms {
@@ -62,10 +62,10 @@ pub comp arms {
     pub out y2: Int
     pub out y3: Int
 
-    req m1: y1 = match e { _ => 1 } + match u { Lone::Only => x + 1 } * 2
+    ensure m1: y1 = match e { _ => 1 } + match u { Lone::Only => x + 1 } * 2
     --~^ warning: this `match` has one arm, which binds nothing
     --~^^ warning: this `match` has one arm, which binds nothing
-    req m2: y2 = match e { E::A | E::B => x }  --~ warning: this `match` has one arm, which binds nothing
+    ensure m2: y2 = match e { E::A | E::B => x }  --~ warning: this `match` has one arm, which binds nothing
     -- More than one arm.
-    req m3: y3 = match e { E::A => 1, _ => 2 }
+    ensure m3: y3 = match e { E::A => 1, _ => 2 }
 }

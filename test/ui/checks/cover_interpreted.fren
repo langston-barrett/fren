@@ -11,7 +11,7 @@ comp names {
     in b: Name
     pub out same?
 
-    req r: same? iff a = b
+    ensure r: same? iff a = b
 
     cover distinct: not same?                      --~ info: the witness is not shown, since its query uses abstract types or functions
 }
@@ -20,7 +20,7 @@ comp flags {
     in n: Name
     pub out flagged?
 
-    req r: flagged? iff long?(n)
+    ensure r: flagged? iff long?(n)
 
     cover flagged_long: flagged?                   --~ info: the witness is not shown, since its query uses abstract types or functions
 }
@@ -33,7 +33,7 @@ comp checker {
     in k: Int
     pub out pos?
 
-    req r: pos? iff k > 0
+    ensure r: pos? iff k > 0
 
     expect odd_pos: when odd?(k) and k > 0, pos?
 }
@@ -44,18 +44,18 @@ comp uses_checker {
 
     inst ch: checker { k := m }
 
-    req r: ok? iff ch.pos?
+    ensure r: ok? iff ch.pos?
 
     cover ok_one: ok? and m = 1                    --~ info: witness: m = 1
 }
 
--- An instantiated component's requirement is: a function used there
+-- An instantiated component's guarantee is: a function used there
 -- hides the witness.
 comp odd_checker {
     in k: Int
     pub out is_odd?
 
-    req r: is_odd? iff odd?(k)
+    ensure r: is_odd? iff odd?(k)
 }
 
 comp uses_odd {
@@ -64,7 +64,7 @@ comp uses_odd {
 
     inst ch: odd_checker { k := m }
 
-    req r: ok? iff ch.is_odd?
+    ensure r: ok? iff ch.is_odd?
 
     cover ok_odd: ok?                              --~ info: the witness is not shown, since its query uses abstract types or functions
 }
@@ -74,7 +74,7 @@ comp plain {
     in x: Int
     pub out big?
 
-    req r: big? iff x > 10
+    ensure r: big? iff x > 10
 
     cover big_one: big?                            --~ info: witness: x =
 }

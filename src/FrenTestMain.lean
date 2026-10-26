@@ -282,7 +282,7 @@ def stringCorpus (n : Nat) : String := Id.run do
         "s != t", s!"s.len + t.len = {i}", s!"({v} ++ {l}).len > {i}", s!"{v}.at({i}) = {l}",
         s!"{v}.slice(0, {i}) != {l}", s!"{v} < {l}"] 5
     out := out ++ s!"comp c{k} \{\n    in s: String\n    in t: String\n    pub out p?\n\n    \
-      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    req r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect e: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -305,7 +305,7 @@ def setCorpus (n : Nat) : String := Id.run do
         s!"{a}.card + {b}.card >= {i}", s!"e in es", "es = {E::A, E::B}", s!"es.card = {i}", "x in s and not x in t",
         "s = {}"] 5
     out := out ++ s!"comp c{k} \{\n    in s: Set(Int)\n    in t: Set(Int)\n    in x: Int\n    in es: Set(E)\n    in e: E\n    \
-      pub out p?\n\n    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    req r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      pub out p?\n\n    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -330,7 +330,7 @@ def relationCorpus (n : Nat) : String := Id.run do
         s!"(x, y) in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"x in {u}", s!"{u} subset s", s!"{u} != {b}.domain",
         s!"(x, x) in {a}", "r = {}", s!"{a} != \{}"] 5
     out := out ++ s!"comp c{k} \{\n    in r: Rel(E, E)\n    in q: Rel(E, E)\n    in s: Set(E)\n    in x: E\n    in y: E\n    \
-      pub out p?\n\n    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    req r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      pub out p?\n\n    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -353,7 +353,7 @@ def sequenceCorpus (n : Nat) : String := Id.run do
         s!"q.ends_with?([x, {j}])", s!"(q.len > {j} and q[{j}] = x)", s!"(0 <= i and i < r.len and r[i] > {j})",
         s!"{a}.len + {b}.len >= {j}"] 5
     out := out ++ s!"comp c{k} \{\n    in q: Seq(Int)\n    in r: Seq(Int)\n    in x: Int\n    in i: Int\n    \
-      pub out p?\n\n    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    req r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      pub out p?\n\n    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -411,7 +411,7 @@ def fixing : IO (Array String) := do
   let block (body : String) := s!"```fren\n{body}\n```\n"
   let spec (uses : String) :=
     "# Spec\n\nProse with `use`.\n\n" ++ block "pub mod m\n\npub enum Mode { Heat, Cool }" ++
-    "\nMore prose.\n\n" ++ block s!"mod n\n\n{uses}comp c \{\n    in x: Mode\n    pub out h?\n    req r: h? iff x = Heat\n}"
+    "\nMore prose.\n\n" ++ block s!"mod n\n\n{uses}comp c \{\n    in x: Mode\n    pub out h?\n    ensure r: h? iff x = Heat\n}"
   IO.FS.writeFile file (spec "use m::Mode\nuse m::Mode::*\nuse m::Mode::Cool\n\n")
   let (out, code) ← runFren ["fix", file]
   let written ← IO.FS.readFile file

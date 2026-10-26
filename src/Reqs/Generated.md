@@ -109,10 +109,10 @@ component's variables:
 
 | Definition | Meaning |
 |---|---|
-| `p.assume.n`, `p.req.n`, `p.expect.n`, `p.cover.n` | the assumption, requirement, expectation or cover goal `n` |
+| `p.assume.n`, `p.ensure.n`, `p.expect.n`, `p.cover.n` | the assumption, guarantee, expectation or cover goal `n` |
 | `p.inst.w` | the instance `w`: its bindings, and the [meaning](Lang/Components.md#meaning) of the instantiated component |
 | `p.assumes` | the conjunction of the assumptions |
-| `p.reqs` | the conjunction of the requirements |
+| `p.ensures` | the conjunction of the guarantees |
 | `p.def.d` | the definition of the [defined output](Lang/Components.md#defined-outputs) `d`, as the proposition `d = e` |
 | `p.defs` | the conjunction of the definitions |
 | `p.out.d` | when the definition of `d` mentions only inputs: its value, as a function of the inputs |
@@ -193,12 +193,12 @@ abstract type has the parameter for it as its Lean type. For example, with
 type Name
 fn ends_in_q?(Name)
 
-comp c { in n: Name pub out q? req r: q? iff ends_in_q?(n) }
+comp c { in n: Name pub out q? ensure r: q? iff ends_in_q?(n) }
 ```
 
-`c.reqs` has type `(Name : Type) → (Name → Bool) → Name → Bool → Prop`.
+`c.ensures` has type `(Name : Type) → (Name → Bool) → Name → Bool → Prop`.
 
-For example, `climate.thermostat.reqs` has type `Int → Int → climate.Mode →
+For example, `climate.thermostat.ensures` has type `Int → Int → climate.Mode →
 Prop`, for `temp`, `target` and `mode`.
 
 ## Cover goals
@@ -214,7 +214,7 @@ p.cover.n.met : ∃ x₁ … xₖ, M x⃗ ∧ p.cover.n x⃗
 
 where `x⃗` are the parameters of the component's definitions, as above,
 and `M` is what an implementation's obligation assumes and proves of
-them: `p.defs` (if there are defined outputs), `p.assumes`, `p.reqs` and
+them: `p.defs` (if there are defined outputs), `p.assumes`, `p.ensures` and
 `p.inst.w` for each instance `w`. Its proof gives the witness's values
 for `x⃗`, and `decide` proves the rest, in Lean's kernel. A variable
 whose value the model leaves out is given `default`. If a value cannot be

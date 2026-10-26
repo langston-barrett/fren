@@ -9,7 +9,7 @@ pub comp c {
     pub out p2?
     pub out p3?
 
-    req r1: p1? iff (r).s.len = 0 or (r).t.card > 0
-    req r2: p2? iff { r with x := 1 }.q.len != 0
-    req r3: p3? iff ("ab" ++ (r).s).len = 0
+    ensure r1: p1? iff (r).s.len = 0 or (r).t.card > 0
+    ensure r2: p2? iff { r with x := 1 }.q.len != 0
+    ensure r3: p3? iff ("ab" ++ (r).s).len = 0
 }

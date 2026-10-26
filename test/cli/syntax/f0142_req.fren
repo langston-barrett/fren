@@ -1,0 +1,2 @@
+-- `req`, where a member is expected (F0142).
+comp c { in x: Int pub out y? req r: y? iff x > 0 }

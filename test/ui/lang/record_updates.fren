@@ -10,8 +10,8 @@ comp moves {
     pub det out q: Point
     pub det out y: Int
 
-    req r: q = { p with x := n }
-    req read: y = { p with x := 1 }.y
+    ensure r: q = { p with x := n }
+    ensure read: y = { p with x := 1 }.y
 
     expect keeps_y: q.y = p.y
     expect sets_x: q.x = n
@@ -62,7 +62,7 @@ comp through_function {
     in n: Int
     pub det out q: Point
 
-    req r: q = moved(p, n)
+    ensure r: q = moved(p, n)
 
     expect keeps_y: q.y = p.y
     expect sets_x: q.x = n
@@ -74,8 +74,8 @@ comp guarded_base {
     pub det out a: Point
     pub det out b: Point
 
-    req ra: a = { ps[0] with x := 1 }  --~ error: an index of `guarded_base::ra` may be out of range
-    req rb: b = if ps != [] then { ps[0] with x := 1 } else Point { x := 1, y := 0 }
+    ensure ra: a = { ps[0] with x := 1 }  --~ error: an index of `guarded_base::ra` may be out of range
+    ensure rb: b = if ps != [] then { ps[0] with x := 1 } else Point { x := 1, y := 0 }
 
     expect sets: when ps != [], b.x = 1 and b.y = ps[0].y
 }
@@ -85,7 +85,7 @@ comp atoms {
     in s: State
     pub det out on?
 
-    req r: on? iff not { s with on? := false }.on?
+    ensure r: on? iff not { s with on? := false }.on?
 
     expect always_on: on?
 }
@@ -99,9 +99,9 @@ comp guarded {
     pub det out b: Point
     pub det out c: Point
 
-    req ra: a = if q != [] then { p with x := q[0] } else p
-    req rb: b = { p with x := q[0] }  --~ error: an index of `guarded::rb` may be out of range
-    req rc: c = { ps[0] with x := 1, y := 2 }  --~ error: an index of `guarded::rc` may be out of range
+    ensure ra: a = if q != [] then { p with x := q[0] } else p
+    ensure rb: b = { p with x := q[0] }  --~ error: an index of `guarded::rb` may be out of range
+    ensure rc: c = { ps[0] with x := 1, y := 2 }  --~ error: an index of `guarded::rc` may be out of range
 
     expect sets: when q != [], a.x = q[0]
     expect every_field: c = Point { x := 1, y := 2 }

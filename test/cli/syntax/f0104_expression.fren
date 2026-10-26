@@ -1,2 +1,2 @@
 -- A token where an expression was expected (F0104).
-comp c { in x: Int req r: x > }
+comp c { in x: Int ensure r: x > }

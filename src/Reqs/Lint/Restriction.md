@@ -23,7 +23,7 @@ at the level of `allow_attributes` in effect before the setting, so
 `set_option fren.lint.allow_attributes "allow"` is reported too, where the
 lint is not allowed already.
 
-The fix changes no requirement, check, trace or generated declaration,
+The fix changes no guarantee, check, trace or generated declaration,
 only which lint messages are reported: where the lint that the setting
 allows fires, both levels report nothing, and where it does not, `expect`
 adds a warning, `F0706`, which `allow` never gave. That warning is what the
@@ -45,8 +45,8 @@ pub comp allow_attributes {
     pub det out fires?
     pub det out fixed?   -- the fix applies
 
-    req rule: fires? iff requested = Allow
-    req fix: fixed? iff (fires? and not unfulfilled?)
+    ensure rule: fires? iff requested = Allow
+    ensure fix: fixed? iff (fires? and not unfulfilled?)
 
     expect only_allow: when requested = Expect, not fires?
 }
@@ -88,8 +88,8 @@ pub comp wildcard_enum_match_arm {
 
     assume counts: n_unnamed >= 0
 
-    req rule: fires? iff wildcard?
-    req fix: fixed? iff (wildcard? and n_unnamed = 0)
+    ensure rule: fires? iff wildcard?
+    ensure fix: fixed? iff (wildcard? and n_unnamed = 0)
 }
 ```
 
@@ -114,7 +114,7 @@ pub comp needless_raw_strings {
     in quote?            -- they have a `"`
     pub det out fires?
 
-    req rule: fires? iff (raw? and not backslash? and not quote?)
+    ensure rule: fires? iff (raw? and not backslash? and not quote?)
 }
 ```
 
@@ -138,8 +138,8 @@ pub comp non_ascii_literal {
 
     assume code_point: code >= 0
 
-    req rule: fires? iff code >= 128
-    req escape: escapable? iff code <= 65535
+    ensure rule: fires? iff code >= 128
+    ensure escape: escapable? iff code <= 65535
 
     expect ascii: when code < 128, not fires?
 }
@@ -177,7 +177,7 @@ pub comp module_name_repetitions {
 
     assume counts: n_words >= 0 and n_module_words >= 0
 
-    req rule: fires? iff (contains? and n_words > n_module_words)
+    ensure rule: fires? iff (contains? and n_words > n_module_words)
 }
 ```
 
@@ -193,7 +193,7 @@ pub comp min_ident_chars {
     in name: String      -- the declared name, without a final `?`
     pub det out fires?
 
-    req rule: fires? iff (name.len = 1 and name != "_")
+    ensure rule: fires? iff (name.len = 1 and name != "_")
 }
 ```
 
@@ -218,7 +218,7 @@ pub comp absolute_paths {
 
     assume counts: n_segments >= 1
 
-    req rule: fires? iff n_segments >= 3
+    ensure rule: fires? iff n_segments >= 3
 }
 ```
 
@@ -247,7 +247,7 @@ pub comp precedence {
     in parenthesized?    -- the operand is in parentheses
     pub det out fires?
 
-    req rule: fires? iff (not parenthesized?
+    ensure rule: fires? iff (not parenthesized?
         and ((outer = Or and inner = And) or (outer in {Union, Minus} and inner in {Inter, Join})))
 }
 ```
@@ -256,11 +256,11 @@ pub comp precedence {
 
 `arbitrary_source_item_ordering` fires on a component whose members are
 not in this order: `use`, `in`, `out`, defined or not, `assume`, `inst`,
-`req`, `expect`, then `cover`. Only kinds are ordered: the members of one kind may
+`ensure`, `expect`, then `cover`. Only kinds are ordered: the members of one kind may
 be in any order. A `set_option fren.evidence ... in` is part of the member
 after it. The components of these chapters, and of the others, write
 their members in this order. When the lint was added, all but two did:
-`cli::logic` had an `assume` between two `req`s, and
+`cli::logic` had an `assume` between two `ensure`s, and
 `lang::punctuator_end` a defined output after an `assume`. Both are now
 in order, which changes what neither means. Like Clippy's lint of the
 same name, which orders the items of a module, it is in `restriction`:
@@ -297,7 +297,7 @@ states when it fires, on two members written one after the other, and
 mentions:
 
 ```fren
-pub enum MemberKind { Use, Input, Output, Assumption, Instance, Requirement, Expectation, Cover }
+pub enum MemberKind { Use, Input, Output, Assumption, Instance, Guarantee, Expectation, Cover }
 
 pub fn rank(kind: MemberKind): Int := match kind {
     MemberKind::Use => 0,
@@ -305,7 +305,7 @@ pub fn rank(kind: MemberKind): Int := match kind {
     MemberKind::Output => 2,
     MemberKind::Assumption => 3,
     MemberKind::Instance => 4,
-    MemberKind::Requirement => 5,
+    MemberKind::Guarantee => 5,
     MemberKind::Expectation => 6,
     MemberKind::Cover => 7,
 }
@@ -315,7 +315,7 @@ pub comp arbitrary_source_item_ordering {
     in second: MemberKind    -- the member written after it
     pub det out fires?
 
-    req rule: fires? iff rank(first) > rank(second)
+    ensure rule: fires? iff rank(first) > rank(second)
 
     expect same_kind: when first = second, not fires?
 }
@@ -326,7 +326,7 @@ pub comp mention_kept {
     in earlier?                  -- the mentioned member is written before the other
     pub det out kept?
 
-    req rule: kept? iff (rank(mentioned) < rank(mentioner) or (rank(mentioned) = rank(mentioner) and earlier?))
+    ensure rule: kept? iff (rank(mentioned) < rank(mentioner) or (rank(mentioned) = rank(mentioner) and earlier?))
 
     expect instances_in_order: when mentioner = MemberKind::Instance and mentioned = MemberKind::Instance,
         kept? iff earlier?
@@ -342,7 +342,7 @@ that the solver checks that the two meet the same behaviours.
 set_option fren.lint.arbitrary_source_item_ordering "allow" in
 pub comp member_order_written {
     expect never_info: shown != Severity::Info
-    req rule: shown = warned.result
+    ensure rule: shown = warned.result
     inst warned: severity { level := Level::Warn }
     assume known: group != Group::Decidability
     pub det out shown: Severity
@@ -354,7 +354,7 @@ pub comp member_order_fixed {
     pub det out shown: Severity
     assume known: group != Group::Decidability
     inst warned: severity { level := Level::Warn }
-    req rule: shown = warned.result
+    ensure rule: shown = warned.result
     expect never_info: shown != Severity::Info
 }
 
@@ -389,7 +389,7 @@ pub comp single_call_fn {
 
     assume counts: n_uses >= 0
 
-    req rule: fires? iff (defined? and not pub? and n_uses = 1)
+    ensure rule: fires? iff (defined? and not pub? and n_uses = 1)
 
     expect public_never: when pub?, not fires?
 }

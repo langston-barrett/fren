@@ -11,13 +11,13 @@ comp nested {
     pub det out size: Int
     pub det out round?
 
-    req sized_def: size = match r {
+    ensure sized_def: size = match r {
         Reply::Ok(Shape::Circle(radius)) => 3 * radius,
         Reply::Ok(Shape::Square(side)) => side,
         Reply::Ok(Shape::Empty) => 0,
         Reply::Err(_) => -1,
     }
-    req round_def: round? iff r is Reply::Ok(Shape::Circle(_))
+    ensure round_def: round? iff r is Reply::Ok(Shape::Circle(_))
 
     expect circle_holds: when r = Reply::Ok(Shape::Circle(2)), size = 6 and round?
     expect err_holds: when r = Reply::Err(5), size = -1 and not round?
@@ -30,7 +30,7 @@ comp inner_or {
     in r: Reply
     pub det out kind: Int
 
-    req kinds_def: kind = match r {
+    ensure kinds_def: kind = match r {
         Reply::Ok(Shape::Circle(_) | Shape::Square(_)) => 1,
         Reply::Ok(_) => 2,
         Reply::Err(_) => 3,
@@ -45,7 +45,7 @@ comp pairs {
     in p: Pair
     pub det out same?
 
-    req same_def: same? iff match p {
+    ensure same_def: same? iff match p {
         Pair::Both(Shape::Empty, Shape::Empty) => true,
         Pair::Both(Shape::Circle(a), Shape::Circle(b)) => a = b,
         Pair::Both(Shape::Square(a), Shape::Square(b)) => a = b,
@@ -62,7 +62,7 @@ comp binders {
     in radius: Int
     pub det out x: Int
 
-    req xs_def: x = match r {
+    ensure xs_def: x = match r {
         Reply::Ok(Shape::Circle(radius!)) => radius,
         Reply::Ok(other) => match other { Shape::Square(s) => s, _ => radius },
         whole => match whole { Reply::Err(code) => code, _ => 0 },
@@ -85,7 +85,7 @@ comp guarded {
 
     assume long: match r { Request::Read(Size::Fixed(n)) => q.len > n and n >= 0, _ => q != [] }
 
-    req first_def: first = match r {
+    ensure first_def: first = match r {
         Request::Read(Size::Fixed(n)) => q[n],
         Request::Read(_) => q[0],
         Request::Stop => 0,

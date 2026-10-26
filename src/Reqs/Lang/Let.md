@@ -4,7 +4,7 @@
 condition is written once:
 
 ```text
-req heat: when cold?, mode = Heat
+ensure heat: when cold?, mode = Heat
     where cold? := temp < target - margin, margin := 2
 
 expect bounded: let lo := base - 2, hi := base + 2 in lo <= x and x <= hi
@@ -19,7 +19,7 @@ definition := DECL [":" type] ":=" iff
 A `let` is an [expression](Expressions.md), at the level of `when`: its
 body extends as far right as possible, and a `let` that is the operand of
 an operator is written in parentheses. A `where` clause is not an
-expression: it follows the whole expression of an assumption, requirement,
+expression: it follows the whole expression of an assumption, guarantee,
 expectation or [cover goal](Components.md#cover-goals), a [global expectation](Global.md) (after its `forall`), a
 [defined output's](Components.md#defined-outputs) definition, a
 [function's](Items.md#defined-functions) body or a
@@ -48,8 +48,8 @@ pub comp definition_type {
     pub det out accepted?
     pub det out ty: Ty   -- the type of the name
 
-    req rule: accepted? iff (not annotated? or annotation = value)
-    req typed: ty = value
+    ensure rule: accepted? iff (not annotated? or annotation = value)
+    ensure typed: ty = value
 
     expect inferred: unless annotated?, accepted?
     expect checked: when annotated? and accepted?, ty = annotation
@@ -75,7 +75,7 @@ pub comp definition_order {
 
     assume positions: 0 <= k_def < n and 0 <= k_use <= n
 
-    req rule: means? iff k_def < k_use
+    ensure rule: means? iff k_def < k_use
 
     expect body_sees_all: when k_use = n, means?
     expect not_itself: when k_use = k_def, not means?
@@ -129,7 +129,7 @@ pub comp definition_form {
     in in_let?           -- a definition of a `let`, rather than of a `where` clause
     pub det out accepted?
 
-    req rule: accepted? iff (form = Plain or (form = Membership and not in_let?))
+    ensure rule: accepted? iff (form = Plain or (form = Membership and not in_let?))
 
     expect plain: when form = Plain, accepted?
     expect open_ended: when form = OpenEnded, not accepted?

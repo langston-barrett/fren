@@ -3,5 +3,5 @@ comp c {
     in pat: String
     pub out p?
 
-    req r: p? iff s.matches?(pat)
+    ensure r: p? iff s.matches?(pat)
 }

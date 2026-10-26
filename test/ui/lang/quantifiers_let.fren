@@ -15,9 +15,9 @@ comp c {
     pub out none_above?
     pub out some_above?
 
-    req highest: highest? iff (let r := rank(x) in forall (m: Mode), rank(m) <= r)
-    req none: none_above? iff (forall (m: Mode), let d := rank(m) - limit in d <= 0)
-    req some: some_above? iff not all_below? where all_below? := (forall (m: Mode), rank(m) <= limit)
+    ensure highest: highest? iff (let r := rank(x) in forall (m: Mode), rank(m) <= r)
+    ensure none: none_above? iff (forall (m: Mode), let d := rank(m) - limit in d <= 0)
+    ensure some: some_above? iff not all_below? where all_below? := (forall (m: Mode), rank(m) <= limit)
 
     expect highest_is_cool: highest? iff x = Mode::Cool
     expect complementary: none_above? iff not some_above?

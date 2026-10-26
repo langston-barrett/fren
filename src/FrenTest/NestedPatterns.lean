@@ -22,17 +22,17 @@ comp tests {
   pub out y: Int
   pub out z: Int
 
-  req nested: x = match r {
+  ensure nested: x = match r {
     Reply::Ok(Shape::Circle(radius)) => radius,
     Reply::Err(0) => 1,
     _ => 2,
   }
-  req ranges: y = match n {
+  ensure ranges: y = match n {
     ..=-1 => 0,
     0..MAX => 1,
     _ => 2,
   }
-  req strings: z = match s {
+  ensure strings: z = match s {
     "a" => 1,
     _ => 2,
   }
@@ -41,7 +41,7 @@ comp tests {
 -- A nested pattern tests the payload, read with the selector, after the
 -- variant; a literal is an equality.
 /--
-info: @[reducible] def nested_pattern.tests.req.nested : nested_pattern.Reply → Int → String → Int → Int → Int → Prop :=
+info: @[reducible] def nested_pattern.tests.ensure.nested : nested_pattern.Reply → Int → String → Int → Int → Int → Prop :=
 fun r n s x y z =>
   x =
     if
@@ -53,20 +53,20 @@ fun r n s x y z =>
       if r = nested_pattern.Reply.Err (nested_pattern.Reply.Err.x0 r) ∧ nested_pattern.Reply.Err.x0 r = 0 then 1 else 2
 -/
 #guard_msgs in
-#print nested_pattern.tests.req.nested
+#print nested_pattern.tests.ensure.nested
 
 -- A range is comparisons with its bounds, a constant's by its value, and
 -- `0..MAX` excludes `MAX`.
 /--
-info: @[reducible] def nested_pattern.tests.req.ranges : nested_pattern.Reply → Int → String → Int → Int → Int → Prop :=
+info: @[reducible] def nested_pattern.tests.ensure.ranges : nested_pattern.Reply → Int → String → Int → Int → Int → Prop :=
 fun r n s x y z => y = if n ≤ -1 then 0 else if 0 ≤ n ∧ n ≤ 9 then 1 else 2
 -/
 #guard_msgs in
-#print nested_pattern.tests.req.ranges
+#print nested_pattern.tests.ensure.ranges
 
 /--
-info: @[reducible] def nested_pattern.tests.req.strings : nested_pattern.Reply → Int → String → Int → Int → Int → Prop :=
+info: @[reducible] def nested_pattern.tests.ensure.strings : nested_pattern.Reply → Int → String → Int → Int → Int → Prop :=
 fun r n s x y z => z = if s = Fren.Str.lit "a" then 1 else 2
 -/
 #guard_msgs in
-#print nested_pattern.tests.req.strings
+#print nested_pattern.tests.ensure.strings

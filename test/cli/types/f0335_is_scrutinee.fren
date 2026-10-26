@@ -1,2 +1,2 @@
 -- A pattern test on a set.
-comp c { in s: Set(Int) pub out empty? req r: empty? iff s is _ }
+comp c { in s: Set(Int) pub out empty? ensure r: empty? iff s is _ }

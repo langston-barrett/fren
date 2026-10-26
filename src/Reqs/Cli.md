@@ -86,17 +86,17 @@ part underlined, notes and help, and suggested edits:
 error[F0105]: `==` is not an operator in Fren
  --> spec.fren:2:47
   |
-2 | comp c { in x: Int pub out y? req r: y? iff x == 1 }
+2 | comp c { in x: Int pub out y? ensure r: y? iff x == 1 }
   |                                               ^^ not a Fren operator
   |
 help: use `=` to test for equality
   |
-2 - comp c { in x: Int pub out y? req r: y? iff x == 1 }
-2 + comp c { in x: Int pub out y? req r: y? iff x = 1 }
+2 - comp c { in x: Int pub out y? ensure r: y? iff x == 1 }
+2 + comp c { in x: Int pub out y? ensure r: y? iff x = 1 }
   |
 ```
 
-Information, such as the requirements that conflict in an unrealizable
+Information, such as the guarantees that conflict in an unrealizable
 component, is printed as a `note`. After the diagnostics come the summary
 of the checks, or, if there were static errors, that they stopped them, and then a
 pointer to `fren --explain` for the codes reported.
@@ -218,11 +218,11 @@ pub comp logic {
 
     assume relations_are_sets: when projection?, Sets in theories
 
-    req base: when theories = {},
+    ensure base: when theories = {},
         logic = (if kind = Realizability then Quantified else QuantifierFree)
-    req all: when theories != {}, logic = (if projection? then HigherOrder else All)
+    ensure all: when theories != {}, logic = (if projection? then HigherOrder else All)
     -- cvc5 decides sequences in its strings solver.
-    req options: (strings_exp? iff (Strings in theories or Sequences in theories))
+    ensure options: (strings_exp? iff (Strings in theories or Sequences in theories))
         and (sets_exp? iff (Sets in theories or Sequences in theories))
 
     expect quantifier_free_when_possible: when logic = QuantifierFree, kind != Realizability
@@ -275,8 +275,8 @@ pub comp exit_status {
     in ran?                -- the command could run
     pub out code: Int
 
-    req not_run: code = 2 iff not ran?
-    req documented: code = 0 or code = 1 or code = 2 or code = 3
+    ensure not_run: code = 2 iff not ran?
+    ensure documented: code = 0 or code = 1 or code = 2 or code = 3
 }
 ```
 
@@ -290,7 +290,7 @@ pub comp exit {
     in worst: Severity     -- the most severe level over all results and lints
     pub det out code: Int
 
-    req code_rule: code = table {
+    ensure code_rule: code = table {
         | not ran? => 2,
         | ran? and worst = Error => 1,
         | ran? and worst = Warning => 3,
@@ -313,7 +313,7 @@ pub comp worst_severity {
     pub det out worst: Severity
 
     -- The last row includes runs with no checks at all.
-    req rule: worst = table {
+    ensure rule: worst = table {
         | Error in present => Error,
         | not Error in present and Warning in present => Warning,
         | not (Error in present or Warning in present) => Silent,
@@ -337,7 +337,7 @@ pub comp run {
     inst counted: worst_severity { present }
     inst ends: exit { ran?, worst := counted.worst }
 
-    req exit_code: code = ends.code
+    ensure exit_code: code = ends.code
 
     expect error_exits_1: when ran? and Error in present, code = 1
     expect warning_exits_3: when ran? and not Error in present and Warning in present, code = 3
@@ -391,9 +391,9 @@ pub comp color {
     in dumb?       -- `TERM` is `dumb`
     pub out colored?
 
-    req always: when choice = Always, colored?
-    req never: when choice = Never, not colored?
-    req auto: when choice = Auto, colored? iff (tty? and not no_color? and not dumb?)
+    ensure always: when choice = Always, colored?
+    ensure never: when choice = Never, not colored?
+    ensure auto: when choice = Auto, colored? iff (tty? and not no_color? and not dumb?)
 
     -- Piped output, as in tests and logs, is plain unless asked for.
     expect pipes_plain: when not tty? and choice != Always, not colored?
@@ -436,7 +436,7 @@ pub comp accepts {
     in construct: Construct
     pub out accepted?
 
-    req fren_only: accepted? iff construct = Fren
+    ensure fren_only: accepted? iff construct = Fren
 }
 ```
 
@@ -444,7 +444,7 @@ On a spec that both accept, Lean and the `fren` command give every check
 the same verdict, except a [check by testing](Check.md#checking-by-testing),
 which only the `fren` command runs, and for failures name the same conflicting or ruling-out
 constraints. Counterexample values may differ, since each comes from its
-solver's model. So may the requirements that a realizability failure
+solver's model. So may the guarantees that a realizability failure
 names, which are a [minimal](Check.md#minimal-sets) set that conflicts on
 the input it reports: each front end's are minimal for its own input, and
 for the same input they are the same. `cli::agreement` states this:
@@ -456,7 +456,7 @@ pub comp agreement {
     in hosted: Verdict
     pub out standalone: Verdict
 
-    req same_verdict: standalone = hosted
+    ensure same_verdict: standalone = hosted
 }
 
 #fren_check

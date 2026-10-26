@@ -7,5 +7,5 @@ comp c {
     in e: E
     pub out p?
 
-    req r: p? iff (e = E::A or e = E::B or e = E::C)
+    ensure r: p? iff (e = E::A or e = E::B or e = E::C)
 }

@@ -7,7 +7,7 @@ comp bounds {
     in q: Seq(Int)
     pub out inside?
 
-    req rule: inside? iff 0 <= i < q.len
+    ensure rule: inside? iff 0 <= i < q.len
 
     expect expanded: inside? iff (0 <= i and i < q.len)
     expect guards: when 0 <= i < q.len, q[i] - 1 < q[i] < q[i] + 1
@@ -21,7 +21,7 @@ comp descending {
     in d: Int
     pub out down?
 
-    req rule: down? iff a > b >= c > d
+    ensure rule: down? iff a > b >= c > d
 
     expect expanded: down? iff (a > b and b >= c and c > d)
     expect transitive: when down?, a > d
@@ -31,7 +31,7 @@ comp strings {
     in s: String
     pub out lower?
 
-    req rule: lower? iff "a" <= s < "b"
+    ensure rule: lower? iff "a" <= s < "b"
 
     expect nonempty: when lower?, s != ""
 }
@@ -43,7 +43,7 @@ comp precedence {
     in p?
     pub out o?
 
-    req rule: o? iff not 0 <= x + 1 < 2 * x or p?
+    ensure rule: o? iff not 0 <= x + 1 < 2 * x or p?
 
     expect grouped: o? iff ((not (0 <= (x + 1) and (x + 1) < (2 * x))) or p?)
 }
@@ -55,7 +55,7 @@ comp later {
     in q: Seq(Int)
     pub out ok?
 
-    req rule: ok? iff 0 <= i < q.len < q[i]
+    ensure rule: ok? iff 0 <= i < q.len < q[i]
 
     expect positive: when ok?, q[i] > 0
 }
@@ -66,7 +66,7 @@ comp then_index {
     in q: Seq(Int)
     pub out ok?
 
-    req rule: ok? iff 0 <= i < q.len and q[i] > 0
+    ensure rule: ok? iff 0 <= i < q.len and q[i] > 0
 
     expect positive: when ok?, q[i] > 0
 }
@@ -80,7 +80,7 @@ comp gate {
     in x: Int
     pub out open?
 
-    req rule: open? iff x > 0
+    ensure rule: open? iff x > 0
 }
 
 comp places {
@@ -93,7 +93,7 @@ comp places {
     inst g: gate { x := y }
     inst h: gate { x := if 0 < y <= 3 then 1 else 0 }
 
-    req arg: a? iff between?(0, x, 10) = (0 <= x < 10)
+    ensure arg: a? iff between?(0, x, 10) = (0 <= x < 10)
 
     expect constant: IN_RANGE  --~ warning: this expectation mentions no variable
     expect defined: d? iff level = 1
@@ -111,7 +111,7 @@ comp slots {
     in x: Int
     pub out o?
 
-    req rule: o? iff x < match m { _ => if p? then 1 else 2 } <= 3
+    ensure rule: o? iff x < match m { _ => if p? then 1 else 2 } <= 3
     --~^ warning: write `(if p? then 1 else 2)`
 }
 
@@ -122,7 +122,7 @@ comp parenthesized {
     in p?
     pub out o?
 
-    req rule: o? iff (x < y) = p?
+    ensure rule: o? iff (x < y) = p?
 
     expect compared: o? iff (x < y iff p?)
 }
@@ -131,7 +131,7 @@ comp inclusive {
     in x: Int
     pub out ok?
 
-    req rule: ok? iff 0 <= x <= 10
+    ensure rule: ok? iff 0 <= x <= 10
 
     expect top: when ok?, x < 10  --~ error: expectation `inclusive::top` does not hold
 }

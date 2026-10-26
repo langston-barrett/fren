@@ -56,14 +56,14 @@ use self::Status::{Inadmissible, Meets, Violates}
 pub comp status {
     in assumes?          -- every assumption holds
     in insts?            -- every instance's constraint `I_w` holds
-    in reqs?             -- every requirement holds
+    in guarantees?      -- every guarantee holds
     pub det out status: Status
 
-    req inadmissible: unless assumes? and insts?, status = Inadmissible
-    req violates: when assumes? and insts? and not reqs?, status = Violates
-    req meets: when assumes? and insts? and reqs?, status = Meets
+    ensure inadmissible: unless assumes? and insts?, status = Inadmissible
+    ensure violates: when assumes? and insts? and not guarantees?, status = Violates
+    ensure meets: when assumes? and insts? and guarantees?, status = Meets
 
-    expect meets_all: when status = Meets, assumes? and insts? and reqs?
+    expect meets_all: when status = Meets, assumes? and insts? and guarantees?
 }
 ```
 
@@ -158,10 +158,10 @@ pub comp eval_exit {
     in expect_false?     -- some expectation is false
     pub det out code: Int
 
-    req not_run: unless ran?, code = 2
-    req incomplete: when ran? and not complete?, code = 3
-    req fails: when ran? and complete? and (status != Meets or expect_false?), code = 1
-    req passes: when ran? and complete? and status = Meets and not expect_false?, code = 0
+    ensure not_run: unless ran?, code = 2
+    ensure incomplete: when ran? and not complete?, code = 3
+    ensure fails: when ran? and complete? and (status != Meets or expect_false?), code = 1
+    ensure passes: when ran? and complete? and status = Meets and not expect_false?, code = 0
 
     expect zero_means_met: when code = 0, status = Meets and not expect_false?
 }
@@ -246,7 +246,7 @@ pub comp reaches {
     in trigger?          -- the trigger holds in what the test found
     pub det out reached?
 
-    req rule: reached? iff (found? and (not has_trigger? or trigger?))
+    ensure rule: reached? iff (found? and (not has_trigger? or trigger?))
 
     expect false_trigger_never: when has_trigger? and not trigger?, not reached?
 }
@@ -276,10 +276,10 @@ pub comp test_verdict {
     -- A cover goal is reached by its witnesses, which refute nothing.
     assume witnesses: when kind = Kind::Cover, not refuted?
 
-    req definite: when refuted? and kind != Kind::Realizability, verdict = Fail
-    req not_found: when refuted? and kind = Kind::Realizability, verdict = Inconclusive
-    req passes: when not refuted? and n_tests > 0, verdict = Pass
-    req untested: when not refuted? and n_tests = 0, verdict = Inconclusive
+    ensure definite: when refuted? and kind != Kind::Realizability, verdict = Fail
+    ensure not_found: when refuted? and kind = Kind::Realizability, verdict = Inconclusive
+    ensure passes: when not refuted? and n_tests > 0, verdict = Pass
+    ensure untested: when not refuted? and n_tests = 0, verdict = Inconclusive
 
     expect realizability_never_fails: when kind = Kind::Realizability, verdict != Fail
     expect cover_never_fails: when kind = Kind::Cover, verdict != Fail
@@ -296,7 +296,7 @@ pub comp sound {
     in by_testing: Verdict   -- the verdict of testing a check
     pub out checked: Verdict  -- the verdict of `fren check` for it
 
-    req no_false_pass: when by_testing = Fail, checked != Pass
+    ensure no_false_pass: when by_testing = Fail, checked != Pass
 }
 ```
 
@@ -344,9 +344,9 @@ pub comp confirm {
     in all_known?        -- the hypotheses and the goal all have values
     pub det out result: Confirmation
 
-    req refuted: when hyp_false? or goal_true?, result = Refuted
-    req confirmed: when not hyp_false? and not goal_true? and all_known?, result = Confirmed
-    req undecided: when not hyp_false? and not goal_true? and not all_known?, result = Undecided
+    ensure refuted: when hyp_false? or goal_true?, result = Refuted
+    ensure confirmed: when not hyp_false? and not goal_true? and all_known?, result = Confirmed
+    ensure undecided: when not hyp_false? and not goal_true? and not all_known?, result = Undecided
 }
 ```
 
@@ -363,8 +363,8 @@ pub comp confirmed_verdict {
     in result: Confirmation  -- the least confirmed of the check's models
     pub det out verdict: Verdict
 
-    req refuted: when result = Refuted, verdict = Inconclusive
-    req kept: when result != Refuted, verdict = solver
+    ensure refuted: when result = Refuted, verdict = Inconclusive
+    ensure kept: when result != Refuted, verdict = solver
 
     expect bad_models_never_pass: when result = Refuted, verdict != Pass
 }

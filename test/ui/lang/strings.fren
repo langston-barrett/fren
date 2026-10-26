@@ -18,7 +18,7 @@ comp handle {
 
     assume nonempty: name != ""
 
-    req shape: accepted? iff (name.len <= 20 and not taken? and not name.contains?(" ")
+    ensure shape: accepted? iff (name.len <= 20 and not taken? and not name.contains?(" ")
         and name.starts_with?("a"))
 
     expect short_enough: when accepted?, (PREFIX ++ name).len <= 25
@@ -50,7 +50,7 @@ comp lengths {
     in t: String
     pub out total: Int
 
-    req r: total = 2 * s.len + t.len
+    ensure r: total = 2 * s.len + t.len
 
     expect non_negative: total >= 0
 }
@@ -72,7 +72,7 @@ comp shown {
     in s: String
     pub out q?
 
-    req r: q? iff s = "a\nb"
+    ensure r: q? iff s = "a\nb"
 
     expect never: not q?                                  --~ error: expectation `shown::never` does not hold
 }

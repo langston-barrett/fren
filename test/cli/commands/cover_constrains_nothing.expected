@@ -12,10 +12,10 @@ error[F0603]: expectation `sensor::only_warm` does not hold
   --> test/cli/commands/cover_constrains_nothing.fren:13:12
    |
 13 |     expect only_warm: x = 50
-   |            ^^^^^^^^^ does not follow from the requirements
+   |            ^^^^^^^^^ does not follow from the guarantees
    |
    = counterexample: x = -11, hot? = false
-   = help: strengthen the requirements so that it follows, or correct the expectation
+   = help: strengthen the guarantees so that it follows, or correct the expectation
 
 note: cover goal `sensor::warm` is met
   --> test/cli/commands/cover_constrains_nothing.fren:12:11

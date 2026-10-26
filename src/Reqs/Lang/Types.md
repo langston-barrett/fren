@@ -116,7 +116,7 @@ pub comp widening {
     in expected: Ty      -- the type its place expects
     pub det out accepted?
 
-    req rule: accepted? iff (found = expected or (kind(found) = NatTy and kind(expected) = IntTy))
+    ensure rule: accepted? iff (found = expected or (kind(found) = NatTy and kind(expected) = IntTy))
 
     expect same_type: when found = expected, accepted?
     expect never_narrows: when kind(found) = IntTy and kind(expected) = NatTy, not accepted?
@@ -128,7 +128,7 @@ This is the rule wherever a type is declared: an argument of a function
 application, a value of a variant's payload, a field of a record literal
 or of a record update, a binding of an instance or of a refinement, a
 defined output's definition, a constant's value, and a defined function's
-body. An assumption, requirement, expectation or cover goal, and a global
+body. An assumption, guarantee, expectation or cover goal, and a global
 expectation, is declared a `Bool`. An expression that is not accepted is
 reported at the expression (`F0304`), with its type, the declared one, and
 a note that says where the type is declared, as in "`x` of `sub` has type
@@ -158,7 +158,7 @@ pub comp nat_place {
     in place: TypePlace      -- where the type `Nat` is written
     pub det out accepted?
 
-    req rule: accepted? iff not place in {Field, Payload, Element}
+    ensure rule: accepted? iff not place in {Field, Payload, Element}
 
     expect variables: when place = TypePlace::Variable, accepted?
     expect definitions: when place = TypePlace::Definition, accepted?
@@ -191,7 +191,7 @@ pub comp string_char {
     in code: Nat         -- the code point of a character of a literal
     pub det out accepted?
 
-    req rule: accepted? iff code <= MAX_CHAR
+    ensure rule: accepted? iff code <= MAX_CHAR
 
     expect ascii: when code < 128, accepted?
 }
@@ -262,7 +262,7 @@ pub comp finite {
     in part: Ty              -- any type, for `finite_parts`
     pub det out finite?
 
-    req rule: finite? iff ((parts.closure.image({ty}) union {ty}) inter (infinite union recursive)) = {}
+    ensure rule: finite? iff ((parts.closure.image({ty}) union {ty}) inter (infinite union recursive)) = {}
 
     expect not_infinite: when finite?, not ty in infinite
     -- A type that a finite type is built from is not infinite.
@@ -276,7 +276,7 @@ pub comp unbounded {
     in growing: Set(Ty)      -- `String`, every recursive enumeration, and every set, relation or sequence type
     pub det out unbounded?
 
-    req rule: unbounded? iff ((parts.closure.image({ty}) union {ty}) inter growing) != {}
+    ensure rule: unbounded? iff ((parts.closure.image({ty}) union {ty}) inter growing) != {}
 
     expect growing_unbounded: when ty in growing, unbounded?
 }
@@ -336,8 +336,8 @@ pub comp bool_naming {
 
     assume identifier: name.matches?(r"[A-Za-z_][A-Za-z0-9_']*\??")
 
-    req q_is_bool: when name.ends_with?("?"), accepted? iff (annot = Missing or annot = BoolTy)
-    req bool_is_q: unless name.ends_with?("?"),
+    ensure q_is_bool: when name.ends_with?("?"), accepted? iff (annot = Missing or annot = BoolTy)
+    ensure bool_is_q: unless name.ends_with?("?"),
         accepted? iff (annot = IntTy or annot = NatTy or annot = StringTy or annot = NamedTy)
 
     expect bool_needs_q: when annot = BoolTy and accepted?, name.ends_with?("?")
@@ -402,7 +402,7 @@ pub comp checked {
     in sibling?         -- another part that shares its type synthesizes one
     pub det out checked?
 
-    req rule: checked? iff match position {
+    ensure rule: checked? iff match position {
         Declared => true,
         Shared => expected? or sibling?,
         Compared => sibling?,
@@ -437,7 +437,7 @@ pub comp synthesizes {
     assume counted: synthesizing <= parts
     assume pair: when shape = Pair, parts = 2
 
-    req rule: synthesizes? iff match shape {
+    ensure rule: synthesizes? iff match shape {
         EmptyLiteral => false,
         SharedParts => synthesizing > 0,
         Pair => synthesizing = parts,
@@ -486,7 +486,7 @@ pub comp empty_literal {
     in expected: Expected
     pub det out outcome: EmptyOutcome
 
-    req rule: outcome = match expected {
+    ensure rule: outcome = match expected {
         NoType => Unknown,
         NotCollection => Unknown,
         SetOrRelation => if seq? then OtherKind else Typed,

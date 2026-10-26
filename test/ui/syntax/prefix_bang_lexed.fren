@@ -7,6 +7,6 @@ comp c {
     in s: S
     in x?
     pub out z: Int
-    req r: z = match s { S::A(a.b) => 0, _ => 1 }
-    req q: !x?   --~ error: `!` is not an operator in Fren
+    ensure r: z = match s { S::A(a.b) => 0, _ => 1 }
+    ensure q: !x?   --~ error: `!` is not an operator in Fren
 }

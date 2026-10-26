@@ -1,5 +1,5 @@
 comp c {
     pub out n: Int
 
-    req r: n = {}.card
+    ensure r: n = {}.card
 }

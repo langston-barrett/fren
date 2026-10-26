@@ -17,9 +17,9 @@ comp tolerance {
     pub out low: Int
     pub out high: Int
 
-    req c: close? iff (a - b).abs <= 2
-    req l: low = a.min(b)
-    req h: high = a.max(b)
+    ensure c: close? iff (a - b).abs <= 2
+    ensure l: low = a.min(b)
+    ensure h: high = a.max(b)
 
     expect low_below: low <= high
     expect sum: low + high = a + b
@@ -33,7 +33,7 @@ comp simpler {
     in a: Int
     pub out s?
 
-    req r: s? iff not ((a - 1).abs > a.max(0) mod 4)  --~ warning: write `(a - 1).abs <= a.max(0) mod 4`
+    ensure r: s? iff not ((a - 1).abs > a.max(0) mod 4)  --~ warning: write `(a - 1).abs <= a.max(0) mod 4`
 }
 
 -- `identity_op` keeps the operands of `div` and `mod` bound as written.
@@ -41,7 +41,7 @@ comp identity {
     in a: Int
     pub out t: Int
 
-    req r: t = 1 * (a + 1) mod 3                       --~ warning: write `(a + 1)`
+    ensure r: t = 1 * (a + 1) mod 3                       --~ warning: write `(a + 1)`
 }
 
 --@ summary: 17 passed, 1 failed, 0 inconclusive, 0 redundant

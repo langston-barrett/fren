@@ -1,3 +1,3 @@
 -- A `match` without an arm for `Empty`.
 enum Shape { Circle(Int), Square(Int), Empty }
-comp c { in s: Shape pub out a: Int req r: a = match s { Shape::Circle(r) => 3 * r, Shape::Square(w) => w } }
+comp c { in s: Shape pub out a: Int ensure r: a = match s { Shape::Circle(r) => 3 * r, Shape::Square(w) => w } }

@@ -10,6 +10,6 @@ pub comp c {
     in u: Ms
     pub out d: Ms
 
-    req r: d = t + u - Ms(1)
-    req s: d.0 >= 0
+    ensure r: d = t + u - Ms(1)
+    ensure s: d.0 >= 0
 }

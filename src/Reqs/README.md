@@ -3,12 +3,12 @@
 Fren is a language for formal requirements engineering. A Fren spec
 describes a system as *components*. Each component has inputs, chosen by its
 environment, and outputs, chosen by the system. *Assumptions* say what the
-environment promises, *requirements* say what the system must do, and
+environment promises, *guarantees* say what the system must do, and
 *expectations* state consequences that the author believes follow from them.
-Fren checks a spec with an SMT solver: that the requirements can always be
-met, that the expectations follow, that no requirement holds only vacuously,
+Fren checks a spec with an SMT solver: that the guarantees can always be
+met, that the expectations follow, that no guarantee holds only vacuously,
 that components used inside other components get the inputs they assume,
-that no assumption or requirement is redundant, and that outputs declared
+that no assumption or guarantee is redundant, and that outputs declared
 deterministic are determined by the inputs (see [Checks](Check.md)).
 
 A spec can be checked in two ways:

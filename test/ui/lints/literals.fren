@@ -17,12 +17,12 @@ comp literals {
     pub out e?
     pub det out d: Int := x * 010   --~ warning: `010` is 10; for octal write `0o10`
 
-    req r1: a? iff x < 00_1 or x > 0x10 or x = 0 or x = 0o17 or x = 0b01   --~ warning: `00_1` is 1
-    req r2: b? iff x in {7, 019}   --~ warning: `019` is 19
-    req r3: c? iff q.len > 7 and q[007] = shift(-00) and LIMIT > 0 and x in s   --~ warning: `007` is 7
+    ensure r1: a? iff x < 00_1 or x > 0x10 or x = 0 or x = 0o17 or x = 0b01   --~ warning: `00_1` is 1
+    ensure r2: b? iff x in {7, 019}   --~ warning: `019` is 19
+    ensure r3: c? iff q.len > 7 and q[007] = shift(-00) and LIMIT > 0 and x in s   --~ warning: `007` is 7
     --~^ warning: `00` is 0
     -- A `Nat` literal too.
-    req r4: e? iff n > 05   --~ warning: `05` is 5
+    ensure r4: e? iff n > 05   --~ warning: `05` is 5
     expect ten: d = 10 * x
 }
 
@@ -32,7 +32,7 @@ comp patterns {
     pub out y: Int
     pub out q?
 
-    req r1: y = match x { 07 => 1, -01 => 2, _ => 0 }   --~ warning: `07` is 7
+    ensure r1: y = match x { 07 => 1, -01 => 2, _ => 0 }   --~ warning: `07` is 7
     --~^ warning: `01` is 1
-    req r2: q? iff x is 0..=010   --~ warning: `010` is 10; for octal write `0o10`
+    ensure r2: q? iff x is 0..=010   --~ warning: `010` is 10; for octal write `0o10`
 }

@@ -1,14 +1,14 @@
 error[F0121]: `<-` is not an operator in Fren
- --> test/cli/syntax/f0121_left_arrow.fren:2:47
+ --> test/cli/syntax/f0121_left_arrow.fren:2:50
   |
-2 | comp c { in x: Int pub out p? req r: p? iff x <- 1 }
-  |                                               ^^ one token, as in Lean
+2 | comp c { in x: Int pub out p? ensure r: p? iff x <- 1 }
+  |                                                  ^^ one token, as in Lean
   |
   = note: Lean lexes `<-` as one token, so Fren does too: `x <- 1` is not `x < -1`
 help: write `< -` to compare with a negation
   |
-2 - comp c { in x: Int pub out p? req r: p? iff x <- 1 }
-2 + comp c { in x: Int pub out p? req r: p? iff x < - 1 }
+2 - comp c { in x: Int pub out p? ensure r: p? iff x <- 1 }
+2 + comp c { in x: Int pub out p? ensure r: p? iff x < - 1 }
   |
 
 error: could not check due to previous errors

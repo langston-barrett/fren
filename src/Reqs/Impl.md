@@ -40,7 +40,7 @@ It adds the theorem
 ```lean
 choose_mode_thermostat : ∀ (t g : Int),
   climate.thermostat.assumes t g (choose_mode t g) →
-  climate.thermostat.reqs t g (choose_mode t g)
+  climate.thermostat.ensures t g (choose_mode t g)
 ```
 
 ## Meaning
@@ -60,7 +60,7 @@ The implementation's *obligation* is a theorem named `n`, stated with the
 component's [generated definitions](Generated.md):
 
 ```
-∀ binders, c.assumes ι⃗ v⃗ d⃗ → ∃ h⃗, c.defs ι⃗ v⃗ h⃗ ∧ c.reqs ι⃗ v⃗ h⃗ ∧ c.inst.w₁ ι⃗ v⃗ h⃗ ∧ … ∧ c.inst.wₖ ι⃗ v⃗ h⃗
+∀ binders, c.assumes ι⃗ v⃗ d⃗ → ∃ h⃗, c.defs ι⃗ v⃗ h⃗ ∧ c.ensures ι⃗ v⃗ h⃗ ∧ c.inst.w₁ ι⃗ v⃗ h⃗ ∧ … ∧ c.inst.wₖ ι⃗ v⃗ h⃗
 ```
 
 `c.defs` is there only when `c` has [defined
@@ -73,7 +73,7 @@ where `ι⃗` are the [interpretations](#interpretations) of the abstract
 types and functions that `c` uses, if any, `v⃗` are the given terms, `h⃗` are the private outputs and instance
 variables, and `d⃗` are `default` values for them, which the assumptions
 never mention. When there are no private outputs or instances, as in the
-example, the obligation is `∀ binders, c.assumes v⃗ → c.reqs v⃗`. So an
+example, the obligation is `∀ binders, c.assumes v⃗ → c.ensures v⃗`. So an
 implementation meets the component for every input that the component's
 assumptions allow. Expectations and [cover
 goals](Lang/Components.md#cover-goals) are not part of the obligation.
@@ -96,7 +96,7 @@ pub comp mapping {
     in n: Nat            -- terms given for this variable
     pub out accepted?
 
-    req rule: accepted? iff n = (if role = Input or (role = Output and is_pub?) then 1 else 0)
+    ensure rule: accepted? iff n = (if role = Input or (role = Output and is_pub?) then 1 else 0)
 
     expect private_not_mapped: when role = Output and not is_pub? and accepted?, n = 0
     expect inputs_mapped: when role = Input and accepted?, n = 1
@@ -115,7 +115,7 @@ pub comp interpreted {
     in interpreted: Set(ItemName)    -- those interpreted earlier, in the file and its imports
     pub det out accepted?
 
-    req rule: accepted? iff used subset interpreted
+    ensure rule: accepted? iff used subset interpreted
 
     expect concrete_specs: when used = {}, accepted?
 }
@@ -177,7 +177,7 @@ pub comp interpretation {
     in types_interpreted?      -- for a function: each abstract type in its signature is interpreted
     pub det out accepted?
 
-    req rule: accepted? iff (what != Interpreted::Other and earlier = 0 and typed?
+    ensure rule: accepted? iff (what != Interpreted::Other and earlier = 0 and typed?
         and (what != Interpreted::Function or types_interpreted?))
 
     expect once: when earlier > 0, not accepted?
@@ -195,7 +195,7 @@ The obligation is proved in one of three ways:
    every binder's type has a `Fren.Finite` instance (see [Generated Lean
    declarations](Generated.md)). If `decide` finds that the obligation is
    false, the implementation fails, and Fren reports values of the binders
-   that falsify it, and which requirements they falsify.
+   that falsify it, and which guarantees they falsify.
 3. Otherwise by the solver, with Fren's generated definitions unfolded and
    the implementation's definitions left uninterpreted. A proof by the
    solver adds the theorem as an axiom, which `#print axioms` shows. Since
@@ -214,14 +214,14 @@ pub comp obligation {
     in decide_q: Outcome  -- `Unsat`: `decide` proves it; `Sat`: it evaluates to false; `Unknown`: it does not apply
     in smt_q: Outcome    -- the solver, asked only if `decide_q` is `Unknown`
     pub out verdict: Verdict
-    pub out names_failures?  -- report a counterexample and the requirements it falsifies
+    pub out names_failures?  -- report a counterexample and the guarantees it falsifies
     pub out axiom?         -- the statement is added as an axiom, on the solver's word
 
-    req written_proof: when written?, verdict = (if written_ok? then Pass else Fail)
-    req decided: unless written?, when decide_q != Unknown, verdict = (if decide_q = Unsat then Pass else Fail)
-    req solver: unless written?, when decide_q = Unknown, verdict = (if smt_q = Unsat then Pass else Inconclusive)
-    req failures: names_failures? iff (not written? and decide_q = Sat)
-    req by_solver: axiom? iff (not written? and decide_q = Unknown and smt_q = Unsat)
+    ensure written_proof: when written?, verdict = (if written_ok? then Pass else Fail)
+    ensure decided: unless written?, when decide_q != Unknown, verdict = (if decide_q = Unsat then Pass else Fail)
+    ensure solver: unless written?, when decide_q = Unknown, verdict = (if smt_q = Unsat then Pass else Inconclusive)
+    ensure failures: names_failures? iff (not written? and decide_q = Sat)
+    ensure by_solver: axiom? iff (not written? and decide_q = Unknown and smt_q = Unsat)
 
     expect fails_only_by_proof: when verdict = Fail, written? or decide_q = Sat
     expect kernel_unless_axiom: when verdict = Pass and not axiom?, written? or decide_q = Unsat
@@ -259,8 +259,8 @@ pub comp vacuity {
     pub det out vacuous?     -- warn that the implementation holds vacuously
     pub det out evidence?    -- the implementation is evidence for its component
 
-    req vacuous: vacuous? iff (added? and (if finite? then not found? else smt_q = Unsat))
-    req evidence: evidence? iff (added? and not vacuous?)
+    ensure vacuous: vacuous? iff (added? and (if finite? then not found? else smt_q = Unsat))
+    ensure evidence: evidence? iff (added? and not vacuous?)
 
     expect witnessed: when added? and finite? and found?, evidence?
     expect only_proofs_warn: when vacuous? and not finite?, smt_q = Unsat
@@ -286,7 +286,7 @@ pub comp statement {
 
     inst o: obligation { written?, written_ok?, decide_q, smt_q }
 
-    req added_iff_pass: added? iff o.verdict = Pass
+    ensure added_iff_pass: added? iff o.verdict = Pass
 
     expect solver_passes_are_axioms: when added? and not written? and decide_q = Unknown, o.axiom?
 }

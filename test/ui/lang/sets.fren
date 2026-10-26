@@ -16,7 +16,7 @@ comp fix_selected {
     in skip: Set(Lint)
     pub det out fixed?
 
-    req rule: fixed? iff ((only = {} or lint in only) and not lint in skip)
+    ensure rule: fixed? iff ((only = {} or lint in only) and not lint in skip)
 
     expect default_all: when only = {} and not lint in skip, fixed?
     expect skip_wins: when lint in skip, not fixed?
@@ -33,7 +33,7 @@ comp counts {
     pub out n: Int
     pub det out both: Set(Int) := s union t
 
-    req r: n = (s union t).card
+    ensure r: n = (s union t).card
 
     expect bound: n <= s.card + t.card
     expect intersection: (s inter t) subset s
@@ -48,7 +48,7 @@ comp lines {
     in x: Int
     in s: Set(Int)
     pub out ok?
-    req r: ok? iff x in s
+    ensure r: ok? iff x in s
     in y: Int                                             --~ warning: unused variable `y`
 }
 --@ summary: 19 passed, 1 failed, 0 inconclusive, 0 redundant

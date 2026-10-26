@@ -15,17 +15,17 @@ help: write `x`
    |
 
 warning[F0735]: `x := x` is `x`
-  --> test/cli/lints/style/f0735_redundant_bindings.fren:16:27
+  --> test/cli/lints/style/f0735_redundant_bindings.fren:16:30
    |
-16 |     req r: q? iff Point { x := x, y := 1 }.x > 0
-   |                           ^^^^^^ `x` alone means this
+16 |     ensure r: q? iff Point { x := x, y := 1 }.x > 0
+   |                              ^^^^^^ `x` alone means this
    |
    = note: a field `x` alone means `x := x`
    = help: `fren fix` can fix this
 help: write `x`
    |
-16 -     req r: q? iff Point { x := x, y := 1 }.x > 0
-16 +     req r: q? iff Point { x, y := 1 }.x > 0
+16 -     ensure r: q? iff Point { x := x, y := 1 }.x > 0
+16 +     ensure r: q? iff Point { x, y := 1 }.x > 0
    |
 
 fren: 4 passed, 0 failed, 0 inconclusive, 0 redundant

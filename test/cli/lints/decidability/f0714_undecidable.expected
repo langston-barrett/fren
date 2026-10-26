@@ -1,26 +1,26 @@
 error[F0714]: this is outside the decidable core: its argument is not a constant
- --> test/cli/lints/decidability/f0714_undecidable.fren:6:19
+ --> test/cli/lints/decidability/f0714_undecidable.fren:6:22
   |
-6 |     req r: p? iff a.starts_with?(b)
-  |                   ^^^^^^^^^^^^^^^^^ outside the decidable core
+6 |     ensure r: p? iff a.starts_with?(b)
+  |                      ^^^^^^^^^^^^^^^^^ outside the decidable core
   |
   = help: compare with a literal or a constant
   = note: `undecidable` is `deny` by default
   = help: to allow it, `set_option fren.lint.undecidable "allow"`
 
 error[F0714]: this is outside the decidable core: searching a string, or `++` here, which makes a word equation, may be undecidable
- --> test/cli/lints/decidability/f0714_undecidable.fren:7:12
+ --> test/cli/lints/decidability/f0714_undecidable.fren:7:15
   |
-7 |     req s: a ++ b = b ++ a
-  |            ^^^^^^ outside the decidable core
+7 |     ensure s: a ++ b = b ++ a
+  |               ^^^^^^ outside the decidable core
   |
   = help: compare a concatenation with a constant, or call a method on it; describe a search with `starts_with?`, `contains?` or a pattern
 
 error[F0714]: this is outside the decidable core: searching a string, or `++` here, which makes a word equation, may be undecidable
- --> test/cli/lints/decidability/f0714_undecidable.fren:7:21
+ --> test/cli/lints/decidability/f0714_undecidable.fren:7:24
   |
-7 |     req s: a ++ b = b ++ a
-  |                     ^^^^^^ outside the decidable core
+7 |     ensure s: a ++ b = b ++ a
+  |                        ^^^^^^ outside the decidable core
   |
   = help: compare a concatenation with a constant, or call a method on it; describe a search with `starts_with?`, `contains?` or a pattern
 

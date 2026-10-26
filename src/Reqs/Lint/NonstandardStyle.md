@@ -28,7 +28,7 @@ pub comp naming_case {
     in what: Named
     pub det out case: Case
 
-    req rule: case = match what {
+    ensure rule: case = match what {
         Enumeration | Variant | Record | AbstractType => Camel,
         Constant => Upper,
         _ => Snake,
@@ -42,19 +42,19 @@ it starts with an uppercase letter and has no lowercase letter. Letters
 are ASCII letters, and a variable's final `?` is ignored, which the
 [patterns](../Lang/Expressions.md#patterns) below do, since `?` is neither a
 letter nor `_`. `lint::in_case` states the rule, for any name, with a
-requirement for each case, so that each pattern is a requirement of its
-own, though `case_split_reqs` would suggest merging them:
+guarantee for each case, so that each pattern is a guarantee of its
+own, though `case_split_guarantees` would suggest merging them:
 
 ```fren
-set_option fren.lint.case_split_reqs "allow" in
+set_option fren.lint.case_split_guarantees "allow" in
 pub comp in_case {
     in case: Case
     in name: String
     pub det out conventional?
 
-    req snake: when case = Snake, conventional? iff not name.matches?(r".*[A-Z].*")
-    req camel: when case = Camel, conventional? iff name.matches?(r"[A-Z][^_]*")
-    req upper: when case = Upper, conventional? iff name.matches?(r"[A-Z][^a-z]*")
+    ensure snake: when case = Snake, conventional? iff not name.matches?(r".*[A-Z].*")
+    ensure camel: when case = Camel, conventional? iff name.matches?(r"[A-Z][^_]*")
+    ensure upper: when case = Upper, conventional? iff name.matches?(r"[A-Z][^a-z]*")
 
     expect lowercase_is_snake: when not name.matches?(r".*[A-Z].*"), conventional? iff case = Snake
     expect mixed_not_upper: when case = Upper and name.matches?(r"[A-Z]+[a-z][A-Za-z]*"),

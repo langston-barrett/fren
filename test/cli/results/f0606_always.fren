@@ -1,7 +1,7 @@
--- A requirement that always holds (F0606).
+-- A guarantee that always holds (F0606).
 comp c {
     in x: Int
     pub out y?
-    req y_def: y? iff x > 0
-    req trivial: y? or not y?
+    ensure y_def: y? iff x > 0
+    ensure trivial: y? or not y?
 }

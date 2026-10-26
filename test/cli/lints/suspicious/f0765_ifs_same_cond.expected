@@ -1,8 +1,8 @@
 warning[F0765]: `x > 0` is already tested earlier in this chain
- --> test/cli/lints/suspicious/f0765_ifs_same_cond.fren:2:92
+ --> test/cli/lints/suspicious/f0765_ifs_same_cond.fren:2:95
   |
-2 | comp c { in x: Int pub out y: Int req r: y = if x > 0 then 1 else if x < 0 then 2 else if (x > 0) then 3 else 4 }
-  |                                                                                            ^^^^^ the same as an earlier test
+2 | comp c { in x: Int pub out y: Int ensure r: y = if x > 0 then 1 else if x < 0 then 2 else if (x > 0) then 3 else 4 }
+  |                                                                                               ^^^^^ the same as an earlier test
   |
   = note: this branch is never taken: wherever `x > 0` holds, the earlier branch is taken
   = note: one of the tests is probably not the one meant

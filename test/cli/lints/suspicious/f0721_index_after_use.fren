@@ -1,2 +1,2 @@
 -- `index_after_use`, beside the failed definedness check.
-comp c { in q: Seq(Int) pub out p? req r: p? iff (q[0] = 1 and q.len > 0) }
+comp c { in q: Seq(Int) pub out p? ensure r: p? iff (q[0] = 1 and q.len > 0) }

@@ -1,7 +1,7 @@
 warning[F0506]: `c` has evidence `missing`, below `trusted` (`--require`)
  --> test/cli/traceability/f0506_below.fren:3:6
   |
-3 | comp c { in x? pub out y? req r: y? iff x? }
+3 | comp c { in x? pub out y? ensure r: y? iff x? }
   |      ^ evidence `missing`
   |
   = note: `--require` requires every component to have evidence `trusted` or stronger

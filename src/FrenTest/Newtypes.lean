@@ -67,7 +67,7 @@ comp spare {
     in budget: Ms
     pub out left: Ms
 
-    req r: left = budget + Ms(1)
+    ensure r: left = budget + Ms(1)
 }
 
 #guard_msgs in
@@ -82,7 +82,7 @@ note: the value of `newtype_test::Ms` has type `Int`
 help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`
 -/
 #guard_msgs in
-comp wrong_value { pub out c: Ms req r: c = Ms(true) }
+comp wrong_value { pub out c: Ms ensure r: c = Ms(true) }
 
 -- A counterexample shows newtypes as Fren builds them, as the `fren`
 -- command does (`test/cli/commands/counterexample_newtype.fren`).
@@ -102,7 +102,7 @@ comp shown {
 error: expectation `newtype_test::shown::small` does not hold
 
 counterexample: t = Ms(3), s = Slot { start := Ms(2), tags := {Ms(10), Ms(9)} }, next = Ms(4)
-help: strengthen the requirements so that it follows, or correct the expectation
+help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 -/

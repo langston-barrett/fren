@@ -4,6 +4,6 @@ comp c {
     in x: Int
     pub out pos?
 
-    req r: pos? iff (x > 0 and x >= 1)
+    ensure r: pos? iff (x > 0 and x >= 1)
     expect e: when x > 1, pos?
 }

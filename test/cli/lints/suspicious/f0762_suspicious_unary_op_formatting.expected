@@ -1,8 +1,8 @@
 warning[F0762]: `>-` looks like one operator
- --> test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren:7:19
+ --> test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren:7:22
   |
-7 |     req r: p? iff x >- 1
-  |                   ^^^^^^ `>`, then a negation
+7 |     ensure r: p? iff x >- 1
+  |                      ^^^^^^ `>`, then a negation
   |
   = note: there is no operator `>-`: this is `>`, whose right operand is negated
   = help: `fren fix` can fix this
@@ -10,22 +10,22 @@ warning[F0762]: `>-` looks like one operator
   = help: to allow it, `set_option fren.lint.suspicious_unary_op_formatting "allow"`
 help: write `x > -1`
   |
-7 -     req r: p? iff x >- 1
-7 +     req r: p? iff x > -1
+7 -     ensure r: p? iff x >- 1
+7 +     ensure r: p? iff x > -1
   |
 
 warning[F0762]: `<=-` looks like one operator
- --> test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren:8:19
+ --> test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren:8:22
   |
-8 |     req s: q? iff x <=- 1
-  |                   ^^^^^^^ `<=`, then a negation
+8 |     ensure s: q? iff x <=- 1
+  |                      ^^^^^^^ `<=`, then a negation
   |
   = note: there is no operator `<=-`: this is `<=`, whose right operand is negated
   = help: `fren fix` can fix this
 help: write `x <= -1`
   |
-8 -     req s: q? iff x <=- 1
-8 +     req s: q? iff x <= -1
+8 -     ensure s: q? iff x <=- 1
+8 +     ensure s: q? iff x <= -1
   |
 
 fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant

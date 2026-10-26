@@ -1,2 +1,2 @@
 -- `redundant_bool_type`.
-pub comp c { in ready?: Bool pub out p? req r: p? iff ready? }
+pub comp c { in ready?: Bool pub out p? ensure r: p? iff ready? }

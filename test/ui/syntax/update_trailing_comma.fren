@@ -3,7 +3,7 @@ struct P { x: Int, y: Int }
 comp c {
     in p: P
     pub det out q: P
-    req r: q = { p with y := 0, }
+    ensure r: q = { p with y := 0, }
     expect kept: q.x = p.x and q.y = 0
 }
 --@ summary: 4 passed, 0 failed, 0 inconclusive, 0 redundant

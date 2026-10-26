@@ -14,17 +14,17 @@ help: add the parentheses, which keep the meaning
    |
 
 warning[F0787]: `and` is an operand of `or` without parentheses
-  --> test/cli/lints/restriction/f0787_precedence.fren:14:48
+  --> test/cli/lints/restriction/f0787_precedence.fren:14:51
    |
-14 |     req ringing_rule: ringing? iff (moving? or armed? and open?)
-   |                                                ^^^^^^^^^^^^^^^^ binds more tightly than `or`
+14 |     ensure ringing_rule: ringing? iff (moving? or armed? and open?)
+   |                                                   ^^^^^^^^^^^^^^^^ binds more tightly than `or`
    |
    = note: `and` binds more tightly than `or`, so this is `(armed? and open?)` already
    = help: `fren fix` can fix this
 help: add the parentheses, which keep the meaning
    |
-14 -     req ringing_rule: ringing? iff (moving? or armed? and open?)
-14 +     req ringing_rule: ringing? iff (moving? or (armed? and open?))
+14 -     ensure ringing_rule: ringing? iff (moving? or armed? and open?)
+14 +     ensure ringing_rule: ringing? iff (moving? or (armed? and open?))
    |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

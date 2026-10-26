@@ -9,7 +9,7 @@ comp sub {
     in x: Int
     pub out o?
 
-    req r: o? iff x > 0
+    ensure r: o? iff x > 0
 }
 
 comp lints {
@@ -26,10 +26,10 @@ comp lints {
     }
     inst v: sub { x := /- a comment -/ x }  --~ warning: `x := x` is `x`
 
-    req r1: p1? iff x in {(1), 1}  --~ warning: `1` is repeated in this literal
-    req r2: p2? iff x in {1, (1)}  --~ warning: `(1)` is repeated in this literal
-    req r3: p3? iff s.len = (0)    --~ warning: say whether it is empty with `""`, not `len`
-    req r4: p4? iff q.len > (0)    --~ warning: say whether it is empty with `[]`, not `len`
+    ensure r1: p1? iff x in {(1), 1}  --~ warning: `1` is repeated in this literal
+    ensure r2: p2? iff x in {1, (1)}  --~ warning: `(1)` is repeated in this literal
+    ensure r3: p3? iff s.len = (0)    --~ warning: say whether it is empty with `""`, not `len`
+    ensure r4: p4? iff q.len > (0)    --~ warning: say whether it is empty with `[]`, not `len`
     expect r5: P { x := x  -- a comment
             , y := y }.x = x
     --~^^ warning: `x := x` is `x`

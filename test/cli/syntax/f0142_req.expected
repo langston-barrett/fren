@@ -1,0 +1,17 @@
+error[F0142]: `req` is now written `ensure`
+ --> test/cli/syntax/f0142_req.fren:2:31
+  |
+2 | comp c { in x: Int pub out y? req r: y? iff x > 0 }
+  |                               ^^^ not a keyword
+  |
+  = note: a guarantee is written `ensure name: e`, as an assumption is `assume name: e`
+help: write `ensure`
+  |
+2 - comp c { in x: Int pub out y? req r: y? iff x > 0 }
+2 + comp c { in x: Int pub out y? ensure r: y? iff x > 0 }
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0142`.
+exit=2

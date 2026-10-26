@@ -1,8 +1,8 @@
 -- A `where` definition cannot be a bare quantifier either.
 -- fren-covers: lang::definition_form
 enum Mode { Off, Heat }
-comp c { in x: Mode pub out y? req r: y? iff b? where b? := exists (m: Mode), m = x }
+comp c { in x: Mode pub out y? ensure r: y? iff b? where b? := exists (m: Mode), m = x }
 --~^[cli] error: `exists` must be parenthesized here
 --~^^[hosted] error: unexpected token at this precedence level; consider parenthesizing the term
-comp ok { in x: Mode pub out y? req r: y? iff b? where b? := (exists (m: Mode), m = x) }
+comp ok { in x: Mode pub out y? ensure r: y? iff b? where b? := (exists (m: Mode), m = x) }
 --@ exit: 2
