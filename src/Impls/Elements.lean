@@ -172,6 +172,34 @@ impl site_expanded: lang::site_expanded for (fs : List Fren.Core.Frame) (all rc 
 def failingAt (q : List Int) (good : Fren.FinSet Int) : Int :=
   (((List.range q.length).find? fun i => decide (q.getD i 0 ∉ good)).map Int.ofNat).getD 0
 
+/-- No element before `failingAt` fails. -/
+theorem failingAt_first (q : List Int) (good : Fren.FinSet Int) (i : Nat) (h : (i : Int) < failingAt q good) :
+    ∃ hi : i < q.length, q[i] ∈ good := by
+  unfold failingAt at h
+  cases e : (List.range q.length).find? (fun i => decide (q.getD i 0 ∉ good)) with
+  | none => rw [e] at h; simp at h; omega
+  | some k =>
+    rw [e] at h
+    simp only [Option.map_some, Option.getD_some, Int.ofNat_eq_natCast] at h
+    obtain ⟨_, hk, hlt⟩ := List.find?_range_eq_some.mp e
+    have hkl := List.mem_range.mp hk
+    have hik : i < k := by omega
+    refine ⟨by omega, ?_⟩
+    have := hlt i hik
+    simpa [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (by omega : i < q.length)] using this
+
+/-- Where every element is good, `failingAt` is `0`. -/
+theorem failingAt_none (q : List Int) (good : Fren.FinSet Int) (h : ∀ x ∈ q, x ∈ good) :
+    failingAt q good = 0 := by
+  have e : (List.range q.length).find? (fun i => decide (q.getD i 0 ∉ good)) = none := by
+    rw [List.find?_eq_none]
+    intro i hi
+    have hi := List.mem_range.mp hi
+    simpa [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi] using h _ (List.getElem_mem hi)
+  unfold failingAt
+  rw [e]
+  rfl
+
 -- For every sequence, set of elements, terms and value of the witness: the
 -- law by which a quantifier is replaced by its instances
 -- (`Fren.Core.all_iff_instances`).
@@ -201,7 +229,7 @@ impl element_witness: lang::element_witness for (q ix : List Int) (good : Fren.F
       obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
       have := h i ⟨by omega, by omega⟩
       rwa [nth _ hi] at this
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · simp [Fren.Seq.mem_iff, List.all_eq_true]
   · simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, Fren.Seq.mem_iff, Fren.Seq.toList_ofList,
       Fren.Seq.len_eq]
@@ -233,6 +261,13 @@ impl element_witness: lang::element_witness for (q ix : List Int) (good : Fren.F
     refine ⟨⟨by omega, by omega⟩, ?_⟩
     rw [nth _ hi]
     simpa [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi] using hp
+  · intro i ⟨h0, h1⟩
+    have hi : i = ((i.toNat : Nat) : Int) := by omega
+    obtain ⟨hl, hg⟩ := failingAt_first q good i.toNat (by rw [← hi]; exact h1)
+    rw [hi, nth _ hl]
+    exact hg
+  · intro h
+    exact failingAt_none q good (by simpa [List.all_eq_true] using h)
 
 interp lang::IndexTerm := Int
 
@@ -288,8 +323,9 @@ impl index_set: lang::index_set for (s : Fren.Core.IndexSources Int) {
       · exact .inl (.inl (.inl (.inr (List.mem_map_of_mem hu))))
       · exact .inl (.inr (List.mem_map_of_mem hu))
     · exact .inr h
-  · intro i j ⟨⟨h0, hij⟩, hj⟩ he
+  · intro i j ⟨⟨⟨h0, hi⟩, hj0, hj⟩, hij⟩ he
     have nd := Fren.Core.nodup_indexSet s
+    have hi' : i.toNat < (Fren.Core.indexSet s).length := by simp at hi; omega
     have hj' : j.toNat < (Fren.Core.indexSet s).length := by simp at hj; omega
     have hii : i = ((i.toNat : Nat) : Int) := by omega
     have hjj : j = ((j.toNat : Nat) : Int) := by omega
