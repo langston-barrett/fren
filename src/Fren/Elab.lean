@@ -588,6 +588,10 @@ structure ExprCtx where
   that this expression is directly the body of, which its quantifier may
   mention (`Core.ElementVerdict.mentionsBound`). -/
   elemChain : Array Name := #[]
+  /-- Translating a defined function's body a second time, for its Lean
+  definition, where a `match` is Lean's own where it can be
+  (`Reqs/Generated#matches`). -/
+  leanMatch : Bool := false
 
 /-- What the binder `b` is, for a declaration that hides it (`Core.bindingLocals`). -/
 def MatchBinder.what (b : MatchBinder) : Name × Core.BindingKind :=
@@ -2250,6 +2254,17 @@ partial def patTyOf (st : State) (t : Expr) : Core.PatTy :=
     | some e => .enum e.path ((e.frenArgs t.getAppArgs).toList.map (patTyOf st))
     | none => .other
 
+/-- The heads of the patterns within `p`, in preorder, as Lean's `match`
+sees them (`PatHead`): an or-pattern at the top (`top`) is its
+alternatives'. -/
+partial def patHeads (p : Core.Pat) (top := true) : Array PatHead :=
+  match p with
+  | .wild false => #[.wildcard]
+  | .wild true => #[.binder]
+  | .bool _ | .int _ _ | .str _ => #[.literal]
+  | .ctor _ args => #[.variant] ++ args.flatMap (patHeads · false)
+  | .or alts => if top then alts.flatMap (patHeads · true) else #[.orPattern]
+
 /-- The variants of each enumeration, with their payloads' types, as
 patterns see them. -/
 def patSigs : TermElabM Core.Sigs := do
@@ -2807,6 +2822,11 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
         else
           `(def $sel:ident $implicits:bracketedBinder* (v : $self) : $ty := match v with | $(mkCIdent ctor) $xs* => $x | _ => default)
       elabCommand cmd
+      -- So that `simp [fren_spec]` reads a payload of a variant that is
+      -- built (`Reqs/Generated#proofs`).
+      let names ← get
+      elabCommand (← `(attribute [fren_spec] $sel:ident))
+      modify fun t => { t with nextMacroScope := names.nextMacroScope, ngen := names.ngen }
   -- Each read of a recursive enumeration's payload brings the payload's
   -- constraint (`Core.readCons`), as an application does.
   let readFacts ← if !isRecursive then pure #[] else liftTermElabM do
@@ -3058,6 +3078,121 @@ def noteMatch (cx : ExprCtx) (e : Syntax) (pats : Array Syntax) (taken : Array (
     let goal ← cx.guards.foldrM (fun g acc => `($g → $acc)) f
     modifyLocal fun l => { l with tables := l.tables.push (ref, g, goal) }
 
+/-- The alternatives of the or-pattern `p` at the top of an arm's pattern,
+each its own Lean pattern, or `p` alone (`patHeads`). -/
+partial def topPats (p : Core.Pat) : Array Core.Pat :=
+  match p with
+  | .or alts => alts.flatMap topPats
+  | p => #[p]
+
+/-- The pattern `q` of a value of type `ty`, built from `_`, binders and
+variants (`matchForm`), as a pattern of Lean's `match`: each binder is
+named by the next of `names`, in preorder. -/
+partial def leanPattern (names : Array Name) (ty : Expr) (q : Core.Pat) : StateT Nat TermElabM Term := do
+  match q with
+  | .wild false => `(_)
+  | .wild true =>
+    let k ← get
+    set (k + 1)
+    let some n := names[k]? | throwError "internal error: a binder without a name"
+    pure ⟨mkIdent n⟩
+  | .ctor idx args =>
+    let some info := (← getState).enumOf? ty
+      | throwError "internal error: a variant's pattern of a value that is not of an enumeration"
+    let tys := (info.payloadsAt ty.getAppArgs)[idx]!
+    let ps ← (args.zip tys).mapM fun (a, t) => leanPattern names t a
+    if ps.isEmpty then pure ⟨mkCIdent (info.ctor idx)⟩ else `($(mkCIdent (info.ctor idx)) $ps*)
+  | _ => throwError "internal error: a pattern that is not Lean's"
+
+/-- The arms of a Lean `match`, each an alternative of a pattern of `ty`
+(`topPats`) with its right-hand side, but those that Lean would find
+redundant after the earlier ones, with `_` and `default` last where those
+are not exhaustive (`Reqs/Generated#matches`). -/
+def leanMatchAlts (pty : Core.PatTy) (arms : Array (Array (Core.Pat × Term) × Term)) (default : Term) :
+    TermElabM (Array (TSyntax ``Lean.Parser.Term.matchAlt)) := do
+  let sigs ← patSigs
+  let mut rows : Array (List Core.Pat) := #[]
+  let mut out := #[]
+  for (alts, rhs) in arms do
+    for (q, p) in alts do
+      unless Core.useful sigs [pty] rows [q] do continue
+      rows := rows.push [q]
+      out := out.push (← `(Lean.Parser.Term.matchAltExpr| | $p:term => $rhs))
+  if Core.useful sigs [pty] rows [.wild false] then
+    out := out.push (← `(Lean.Parser.Term.matchAltExpr| | _ => $default))
+  return out
+
+open Lang in
+/-- The `match` `e` on `s`, of type `ty`, whose arms' patterns are `pats`, as
+a Lean `match`, where `toTerm` translates its parts again, with each
+binder the local that its pattern binds (`Reqs/Generated#matches`): an
+arm with a guard is taken where its pattern matches and its guard holds,
+and otherwise the arms after it are tried, as `rest k ()`, which tries the
+arms from `k` on. `none` where its arms are propositions, which stay `if`s
+(`matchForm`). Each arm's context, binders and expected type are
+`armInfo`, as the `if`s' translation has them. -/
+def leanMatchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (s : Term) (ty : Expr)
+    (pty : Core.PatTy) (pats : Array Core.Pat) (armInfo : Array (ExprCtx × Array MatchBinder × Option Core.Ty)) :
+    TermElabM (Option Term) := do
+  let arms := e[3].getSepArgs
+  let mut bodies : Array Term := #[]
+  let mut guards : Array (Option Term) := #[]
+  let mut tys : Array (Option Expr) := #[]
+  for arm in arms, (acx, new, exp) in armInfo do
+    let decls := new.map fun b => (b.name, fun (_ : Array Expr) => pure b.type)
+    let (g?, body, ty?) ← withLocalDeclsD decls fun _ => do
+      let lcx : ExprCtx := { acx with binders := cx.binders ++ new.map fun (b : MatchBinder) => { b with term := ⟨mkIdent b.name⟩ } }
+      let g? ← if arm[1].isNone then pure none
+        else some <$> toTerm { lcx with natOk := false, emptyOk := false, expected? := none } arm[1][1]
+      let body ← toTerm { lcx with expected? := exp } arm[3]
+      let ty? ← try some <$> typeOf body catch _ => pure none
+      return (g?, body, ty?)
+    bodies := bodies.push body
+    guards := guards.push g?
+    tys := tys.push ty?
+  let armKind : ArmKind := if tys.any (·.any (·.isProp)) then .propositions else .values
+  let scrutineeKind : ScrutineeKind := if pty matches .enum .. then .enumeration else .other
+  unless matchForm scrutineeKind armKind (pats.flatMap patHeads) == .leanMatch do return none
+  -- An `Int` where another arm is a `Nat` (`widenMixed`).
+  let mixed := tys.any (·.any (·.isConstOf ``Int)) && tys.any (·.any (·.isConstOf ``Nat))
+  let widen (b : Term) (t? : Option Expr) : TermElabM Term :=
+    if mixed && t?.any (·.isConstOf ``Nat) then `(($b : Int)) else pure b
+  bodies ← (bodies.zip tys).mapM fun (b, t?) => widen b t?
+  let default ← `(Fren.Seq.nth (∅ : Fren.Seq _) 0)
+  let n := arms.size
+  let rests ← (Array.range (n + 1)).mapM fun k => return mkIdent (← mkFreshUserName (Name.mkSimple s!"rest{k}"))
+  let fallTo (k : Nat) : TermElabM Term := if k == n then pure default else `($(rests[k]!) ())
+  let names := armInfo.map fun (_, new, _) => new.map (·.name)
+  let altsOf (k : Nat) : TermElabM (Array (Core.Pat × Term)) :=
+    (topPats pats[k]!).mapM fun q => return (q, ← (leanPattern names[k]! ty q).run' 0)
+  -- The `match` of the arms from `start` on.
+  let build (start : Nat) : TermElabM Term := do
+    let mut out := #[]
+    for k in [start:n] do
+      let rhs ← match guards[k]! with
+        | some g => do
+          let r ← fallTo (k + 1)
+          `(if $g then $(bodies[k]!) else $r)
+        | none => pure bodies[k]!
+      out := out.push (← altsOf k, rhs)
+    let alts ← leanMatchAlts pty out default
+    `(match $s:term with $alts:matchAlt*)
+  -- Of the arms' type, so that a `match` of `Bool`s where a proposition is
+  -- expected is coerced as a whole, rather than each arm, which would leave
+  -- a `match` of propositions, with no `Decidable` instance.
+  let t? := if mixed then some (Lean.mkConst ``Int) else tys.findSome? id
+  let tStx? ← t?.mapM exprToSyntax
+  let typed (m : Term) : TermElabM Term := match tStx? with
+    | some t => `(($m : $t))
+    | none => pure m
+  let mut out ← typed (← build 0)
+  let needed := (Array.range n).filterMap fun k => if guards[k]!.isSome && k + 1 < n then some (k + 1) else none
+  unless needed.isEmpty do
+    let some tStx := tStx? | throwError "internal error: no type for the arms of a `match`"
+    for k in needed do
+      out ← `(let $(rests[k]!) : Unit → $tStx := fun _ => $(← build k); $out)
+  return some out
+
 open Lang in
 /-- Translates a `match` into a chain of `if`s that test its scrutinee
 against each arm's pattern, where `toTerm` translates its parts: a variant
@@ -3097,6 +3232,12 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     | .error (some (i, none), msg) => throwErrorAt arms[i]![0] msg.text
     | .error (none, msg) => throwError msg.text
   if cx.noteIndexes then lintMatch cx e ty pats slot
+  -- In a defined function's Lean definition, a Lean `match`, where its
+  -- patterns are Lean's (`Reqs/Generated#matches`).
+  let scrutineeKind : ScrutineeKind := if pty matches .enum .. then .enumeration else .other
+  let lean := cx.leanMatch && matchForm scrutineeKind .values (pats.flatMap patHeads) == .leanMatch
+  -- Each arm's context, binders and the type expected of its body.
+  let mut armInfo : Array (ExprCtx × Array MatchBinder × Option Core.Ty) := #[]
   let mut bodies : Array Term := #[]
   -- Where each arm is taken, if no earlier one is: its test and its guard;
   -- `none` for an arm taken wherever it is tried.
@@ -3164,6 +3305,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     -- as the `fren` command does: one that does not synthesize its own,
     -- before any has given one, waits for a later arm that does.
     let shared? := expected?.orElse fun _ => armsTy?.map (·.widen)
+    armInfo := armInfo.push (acx, new, shared?)
     if shared?.isNone && !(← synthesizes cx arm[3]) && (← arms.anyM (synthesizes cx ·[3])) then
       waiting := waiting.push (bodies.size, acx, arm[3])
       bodies := bodies.push (← `(sorry))
@@ -3172,11 +3314,14 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     armsTy? ← armType cx armsTy? arm[3] body shared?
     bodies := bodies.push body
   for (k, acx, b) in waiting do
+    armInfo := armInfo.modify k fun (c, n, _) => (c, n, armsTy?.map (·.widen))
     let body ← toTerm { acx with expected? := armsTy?.map (·.widen) } b
     if armsTy?.isSome then armsTy? ← armType cx armsTy? b body (armsTy?.map (·.widen))
     bodies := bodies.set! k body
   noteMatch cx e (arms.map (·[0])) taken guarded unguardedExhaustive (if isTable then some pairs else none) defined
   let widened ← widenMixed bodies
+  if lean then
+    if let some m ← leanMatchTerm toTerm cx e s ty pty pats armInfo then return m
   -- The first arm that is taken. Where the arms without guards are
   -- exhaustive, the last arm has none, and takes whatever is left;
   -- otherwise, where none is taken, the `match` is the index out of range
@@ -3240,6 +3385,13 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
     if Core.isEquality texts.size (Core.equatable q texts) irrefutable then
       let msg := Core.isEqualityMsg { text := exactText scrutinee, prec := exprPrec scrutinee } texts[0]!
       recordLint .isEquality e (if (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
+  -- In a defined function's Lean definition, a test that binds nothing is a
+  -- Lean `match` where its pattern is Lean's (`Reqs/Generated#matches`).
+  let scrutineeKind : ScrutineeKind := if pty matches .enum .. then .enumeration else .other
+  if cx.leanMatch && bs.isEmpty && matchForm scrutineeKind .values (patHeads q) == .leanMatch then
+    let alts ← (topPats q).mapM fun a => return (a, ← (leanPattern #[] ty a).run' 0)
+    let ms ← leanMatchAlts pty #[(alts, ← `(true))] (← `(false))
+    return ← `(((match $s:term with $ms:matchAlt*) : Bool) = true)
   match test with
   | some t => return t
   | none => `(true)
@@ -5638,9 +5790,50 @@ def takeIndexes (fvs : Array Expr) (subst : Expr → Expr := id) :
   return (← xs.mapM fun (ref, g) => return (ref, none, ← mkLambdaFVars fvs (subst (← elabProp g))))
     ++ (← ts.mapM fun (ref, q, g) => return (ref, some q, ← mkLambdaFVars fvs (subst (← elabProp g))))
 
+/-- Runs `k`, then puts back the name generators, the macro scopes and the
+metavariables and Lean's caches as they were before it, so that what is elaborated after it
+is named as it would be without it: the solver's queries, and so the
+checks' messages, depend on those names (`Reqs/Generated#matches`). What
+`k` returns must not mention its metavariables or locals. -/
+def keepingNames (k : TermElabM α) : TermElabM α := do
+  let s ← getThe Core.State
+  -- Its caches too, which may have seen the locals whose names are reused,
+  -- and the elaborator's pending metavariables.
+  let m ← getThe Meta.State
+  let t ← getThe Term.State
+  try k finally
+    set m
+    set t
+    modifyThe Core.State fun t => { t with nextMacroScope := s.nextMacroScope, ngen := s.ngen }
+
+/-- What compiled code that applies the constant `c` needs of it
+(`Mention`): a proof, which is erased, needs nothing. -/
+def mentionOf (c : Name) : MetaM Mention := do
+  if c == ``Classical.propDecidable then return .classicalDecision
+  if isNoncomputable (← getEnv) c then return .noncomputableDecl
+  match (← getEnv).find? c with
+  | some (.axiomInfo a) => return if ← isProp a.type then .computable else .dataAxiom
+  | _ => return .computable
+
+/-- Compiles the generated definition `name`, of type `type` and value
+`value`, or marks it `noncomputable`, as `definitionForm` says from what
+its value mentions (`Reqs/Generated#computable-definitions`). Compiled
+synchronously, so that a definition that Lean's compiler rejects, which
+the rule says it does not, is an error here. -/
+def compileGenerated (name : Name) (type value : Expr) : TermElabM Unit := keepingNames do
+  let kind : ValueKind ← forallTelescope type fun _ r => return if r.isProp then .proposition else .data
+  -- A proposition's mentions do not matter.
+  let mentions ← if kind == .proposition then pure #[] else
+    (value.foldConsts #[] fun c acc => acc.push c).mapM (liftM <| mentionOf ·)
+  match definitionForm kind mentions with
+  | .notCompiled => pure ()
+  | .markedNoncomputable => modifyEnv (addNoncomputable · name)
+  | .compiled => withOptions (Elab.async.set · false) (compileDecls #[name])
+
 /-- Adds the definition `name` of the closed `value`, generalized over the
-placeholders `uses` (`Reqs/Generated#procedures`). -/
-def addUsesDef (uses : Array Name) (name : Name) (value : Expr) : TermElabM Unit := do
+placeholders `uses` (`Reqs/Generated#procedures`), compiled unless
+`compile` is false (`compileGenerated`). -/
+def addUsesDef (uses : Array Name) (name : Name) (value : Expr) (compile := true) : TermElabM Unit := do
   let type ← inferType value
   let (type, value) ← withUses uses fun xs => do
     return (← mkForallFVars xs (replaceUses uses xs type), ← mkLambdaFVars xs (replaceUses uses xs value))
@@ -5648,6 +5841,37 @@ def addUsesDef (uses : Array Name) (name : Name) (value : Expr) : TermElabM Unit
   -- Reducible, like `abbrev`, so that instances such as `Decidable` see
   -- through them.
   setReducibleAttribute name
+  if compile then compileGenerated name type value
+
+/-- The name under which a defined function's Lean definition is
+elaborated, `decl`'s, so that its matchers are named under it, before
+`addLeanDef` adds them under `decl`: not a Fren name, which has no `#`. -/
+def leanDeclName (decl : Name) : Name := decl.str "#lean"
+
+/-- Adds the definition `name` of the closed `value`, a defined function's
+Lean definition, generalized over the placeholders `uses`, as `addUsesDef`
+does: with each of the matchers of its Lean `match`es, which Lean added
+under `leanDeclName name` over the placeholders, added again under `name`,
+generalized over them too, and registered as a matcher, so that `split`,
+`simp` and `#print` see a `match` (`Reqs/Generated#matches`). -/
+def addLeanDef (uses : Array Name) (name : Name) (value : Expr) : TermElabM Unit := do
+  let tmp := leanDeclName name
+  let ms := value.foldConsts #[] fun c acc => if c.getPrefix == tmp && !acc.contains c then acc.push c else acc
+  let mut value := value
+  for m in ms do
+    let some info ← Meta.getMatcherInfo? m | throwError "internal error: `{m}` is not a matcher"
+    let .defnInfo ci ← getConstInfo m | throwError "internal error: `{m}` is not a definition"
+    let m' := name ++ Name.mkSimple m.getString!
+    let (type, val) ← withUses uses fun xs => do
+      return (← mkForallFVars xs (replaceUses uses xs ci.type), ← mkLambdaFVars xs (replaceUses uses xs ci.value))
+    addDecl (.defnDecl { name := m', levelParams := ci.levelParams, type, value := val, hints := ci.hints, safety := .safe })
+    Meta.Match.addMatcherInfo m' { info with numParams := info.numParams + uses.size }
+    setInlineAttribute m'
+    let args := uses.map (Lean.mkConst ·)
+    value := value.replace fun e => match e with
+      | .const c ls => if c == m then some (mkAppN (.const m' ls) args) else none
+      | _ => none
+  addUsesDef uses name value
 
 /-! ## Abstract types and functions -/
 
@@ -5765,7 +5989,7 @@ def unfoldForSites (e : Expr) : TermElabM Expr := do
   let ds := s.defined.foldl (init := ({} : NameSet)) fun acc _ d =>
     d.oblDecls.foldl (fun a (o, _) => a.insert o) (acc.insert d.decl)
   let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
-  Meta.zetaReduce (← Lean.Core.betaReduce (← Meta.deltaExpand e ds.contains))
+  Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined s e ds.contains))
 
 /-- The obligations that the predicate `p` holds at each application of
 the function parameter `f` within `e`, under the guards and binders
@@ -6065,7 +6289,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     let fnVars := fnPs.map fun (_, x, _, ft, lty) => (x, ft, lty, placeholderName (path ++ x))
     let phs : Array Expr := fnVars.map fun p => Lean.mkConst p.2.2.2
     modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
-    let (lam, tables, obls) ← withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
+    let (lam, tables, obls, leanLam?) ← withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
         withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let all := fvs ++ fnFvs
       let cx : ExprCtx := { modName := scope, vars, insts := #[], place := .prop, selfFn := some n, natOk := result.isConstOf ``Nat
@@ -6081,13 +6305,34 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
       checkDeclared body t result fun ty => s!"note: `{n}` returns `{ty}`"
       -- A `Bool` body is decided, classically if need be: equality on an
       -- abstract type has no other `Decidable` instance.
-      let value ← if result.isConstOf ``Bool then do
+      let elabValue (t : Term) : TermElabM Expr := do
+        if result.isConstOf ``Bool then
           let p ← elabProp t
           let inst ← match ← trySynthInstance (mkApp (mkConst ``Decidable) p) with
             | .some i => pure i
             | _ => pure (mkApp (mkConst ``Classical.propDecidable) p)
           pure (mkApp2 (mkConst ``Decidable.decide) p inst)
         else elabProp t result
+      let value ← elabValue t
+      -- The Lean definition's value, where the body has a `match` or a
+      -- pattern test: the body translated again, with each `match` Lean's
+      -- where it can be (`Reqs/Generated#matches`). What that translation
+      -- records and reports is dropped, as the first's stands; where it
+      -- fails, the definition is the solver's.
+      let leanValue? ← if (body.find? fun x => isMatchLike x || x.isOfKind ``Lang.isExpr).isNone then pure none else
+        keepingNames <| withDeclName (leanDeclName decl) do
+          let saved ← saveState
+          try
+            let t' ← toTerm { cx with leanMatch := true } body
+            -- But the metavariables, which the terms of the types that `t'`
+            -- is written with stand for (`exprToSyntax`).
+            let mctx ← getMCtx
+            saved.restore
+            setMCtx mctx
+            some <$> (instantiateMVars (← elabValue t'))
+          catch _ =>
+            saved.restore
+            pure none
       -- For each function parameter, its closures' obligations: over the
       -- parameters and a predicate of the closure's parameters
       -- (`lang::closure_obligation`).
@@ -6098,7 +6343,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
           let gs ← siteGoals f pr [] unfolded
           let body := if gs.isEmpty then Lean.mkConst ``True else gs.pop.foldr mkAnd gs.back!
           mkLambdaFVars (all.push pr) body
-      return (← mkLambdaFVars all value, tables, obls)
+      return (← mkLambdaFVars all value, tables, obls, ← leanValue?.mapM (mkLambdaFVars all ·))
     lintBools body (← hidesIn { modName := scope, vars, insts := #[], place := .prop, selfFn := some n })
     -- A parameter that only the contract mentions is used too.
     let mentioned := (pathMentions body ++ clauses.flatMap fun c => pathMentions (withWhere c[3] c[4])).map (·.getRoot)
@@ -6112,7 +6357,22 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     for (x, ref) in Core.unmentioned paramRefs mentioned do
       recordLint .unusedVariables ref (Core.unusedParamMsg x)
     let uses ← usesOf #[lam]
-    addUsesDef uses decl lam
+    -- Where its Lean definition is a Lean `match`, the solver's is beside it
+    -- (`DefinedInfo.solver?`).
+    let solver? ← match leanLam? with
+      | none => addUsesDef uses decl lam; pure none
+      | some leanLam =>
+        let saved ← saveState
+        try
+          -- As many names as `addUsesDef uses decl lam` would take.
+          keepingNames (addLeanDef uses decl leanLam)
+          addUsesDef uses (solverName decl) lam (compile := false)
+          modifyEnv (addNoncomputable · (solverName decl))
+          pure (some (solverName decl))
+        catch _ =>
+          saved.restore
+          addUsesDef uses decl lam
+          pure none
     let oblDecls ← (obls.zip fnVars).mapM fun (o, x, _) => do
       let name := decl ++ `obligation ++ x
       let ouses ← usesOf #[o]
@@ -6129,7 +6389,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     record (.definedInfo { path, decl, uses, nParams := vars.size + fnPs.size, ptys := (ptys, rp)
                            guarded := (← getLocal).guardedUsed, typeParams := tps
                            declared := if hoParams.isEmpty then declared else hoParams.map (·.ty), result := resultTy, hoParams
-                           oblDecls })
+                           oblDecls, solver? })
     let (_, props, sites) ← if contract then elabContract scope path n decl true vars clauses fnVars (paramRefs.map (·.1)) else pure (vars, #[], #[])
     recordBody path nameStx decl vars (tables.map (fun (r, q, g) => (n, .body, r, q, g)) ++ sites) props path
   lintDeclared .function n nameStx
@@ -7237,6 +7497,7 @@ end
     lintBools valueStx (← hidesIn { modName, vars := #[], insts := #[], place := .prop })
     addDecl (.defnDecl { name := decl, levelParams := [], type, value, hints := .abbrev, safety := .safe })
     setReducibleAttribute decl
+    compileGenerated decl type value
     record (.item { item := { kind := .constItem, path, isPub, owner := modName }, ref := nameStx })
     let int? ← if type.isConstOf ``Int || type.isConstOf ``Nat then intConstValue? { modName, vars := #[], insts := #[], place := .prop } valueStx
       else pure none

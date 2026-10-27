@@ -337,6 +337,10 @@ structure DefinedInfo where
   domain, directly or through the functions and constants it applies,
   which sets `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
   guarded : Bool := false
+  /-- The definition of its body as the solver sees it, if `decl`'s is a
+  Lean `match` instead (`Reqs/Generated#matches`): the solver unfolds
+  this one (`deltaDefined`). -/
+  solver? : Option Name := none
   deriving Inhabited
 
 /-- A clause of a function's contract, and the Lean definition generated
@@ -924,6 +928,119 @@ where
       let bi := if isInhabitedName uses[i] then .instImplicit else .default
       Meta.withLocalDecl (Name.mkSimple uses[i].getString!) bi ty fun x => go (i + 1) (xs.push x)
     else k xs
+
+/-! ## The forms of generated definitions (`Reqs/Generated#computable-definitions`) -/
+
+/-- What a generated definition's value is (`generated::ValueKind`). -/
+inductive ValueKind where
+  /-- A proposition, or a function to one: a type, with nothing to run. -/
+  | proposition
+  /-- Data, or a function to it. -/
+  | data
+  deriving DecidableEq, Repr, Inhabited
+
+/-- A declaration that a generated definition's value mentions
+(`generated::Mention`). -/
+inductive Mention where
+  /-- One with code: a compiled definition, a constructor, and so on. -/
+  | computable
+  /-- `Classical.propDecidable`, which decides an unbounded quantifier, or
+  equality on an abstract type, where a `Bool` is needed of it. -/
+  | classicalDecision
+  /-- A definition marked `noncomputable`, such as another generated one. -/
+  | noncomputableDecl
+  /-- An axiom that is not a proposition, which has no code. -/
+  | dataAxiom
+  deriving DecidableEq, Repr, Inhabited
+
+/-- How a generated definition is added (`generated::DefinitionForm`). -/
+inductive DefinitionForm where
+  | notCompiled
+  | compiled
+  | markedNoncomputable
+  deriving DecidableEq, Repr, Inhabited
+
+/-- How a generated definition, whose value is `value` and mentions the
+declarations `mentions`, is added (`generated::definition_form`): a
+proposition is not compiled, and data is compiled unless it mentions a
+declaration without code, when it is `noncomputable`. -/
+def definitionForm (value : ValueKind) (mentions : Array Mention) : DefinitionForm :=
+  match value with
+  | .proposition => .notCompiled
+  | .data =>
+    if mentions.contains .classicalDecision || mentions.contains .noncomputableDecl || mentions.contains .dataAxiom then
+      .markedNoncomputable
+    else .compiled
+
+/-- What the head of a pattern is, where Lean's `match` sees it
+(`generated::Head`): an or-pattern at the top of an arm's pattern is its
+alternatives, each its own Lean pattern, and not an `orPattern`. -/
+inductive PatHead where
+  | wildcard
+  | binder
+  | variant
+  /-- A literal or a range. -/
+  | literal
+  | orPattern
+  deriving DecidableEq, Repr, Inhabited
+
+/-- What a `match`'s scrutinee is (`generated::Scrutinee`). -/
+inductive ScrutineeKind where
+  | enumeration
+  | other
+  deriving DecidableEq, Repr, Inhabited
+
+/-- What a `match`'s arms are (`generated::ArmKind`). -/
+inductive ArmKind where
+  | values
+  /-- Propositions, a `Bool`'s Lean form, which have no `Decidable`
+  instance as a Lean `match`, but do as an `if`. -/
+  | propositions
+  deriving DecidableEq, Repr, Inhabited
+
+/-- What a `match` becomes in a defined function's Lean definition
+(`generated::MatchForm`). -/
+inductive MatchForm where
+  | leanMatch
+  | ifChain
+  deriving DecidableEq, Repr, Inhabited
+
+/-- What a `match` on a `scrutinee`, whose arms are `arms` and whose
+patterns have the heads `heads`, becomes in a defined function's Lean
+definition (`generated::match_form`): a Lean `match` where its scrutinee is
+an enumeration, its arms are values, and each of its patterns is Lean's,
+with no literal, range or or-pattern within it; `if`s otherwise. -/
+def matchForm (scrutinee : ScrutineeKind) (arms : ArmKind) (heads : Array PatHead) : MatchForm :=
+  if scrutinee == .enumeration && arms == .values && !heads.contains .literal && !heads.contains .orPattern then
+    .leanMatch
+  else .ifChain
+
+/-- The name of the definition of a defined function's body as the solver
+sees it, beside its declaration `decl`, whose body is a Lean `match`
+(`DefinedInfo.solver?`): not a Fren name, which has no `#`. -/
+def solverName (decl : Name) : Name := decl.str "#solver"
+
+/-- `e` with the definitions that `p` holds of unfolded, as
+`Meta.deltaExpand` unfolds them, where a defined function with a solver
+form (`DefinedInfo.solver?`) is unfolded to that form instead of its
+declaration's body, so that the solver sees the same terms whatever form
+the declaration has. -/
+def deltaDefined (s : State) (e : Expr) (p : Name → Bool) : CoreM Expr := do
+  let redirect := s.defined.foldl (init := ({} : NameMap Name)) fun acc _ d =>
+    match d.solver? with
+    | some n => acc.insert d.decl n
+    | none => acc
+  if redirect.isEmpty then return ← Meta.deltaExpand e p
+  let solvers := redirect.foldl (init := ({} : NameSet)) fun acc _ n => acc.insert n
+  Core.transform e fun e => do
+    let e := match e.getAppFn with
+      | .const c ls => match redirect.get? c with
+        | some n => mkAppN (.const n ls) e.getAppArgs
+        | none => e
+      | _ => e
+    match ← Meta.delta? e fun n => p n || solvers.contains n with
+    | some e' => return .visit e'
+    | none => return .continue
 
 def getLocal : m LocalState := return localExt.getState (← getEnv)
 

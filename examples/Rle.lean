@@ -36,10 +36,10 @@ impl step_meets: step for (c : Option Run) (n : Int) {
 } by
   intro c n h
   cases c with
-  | none => simp [fren_spec, Rle.step, Fren.Prelude.Option.some.x0]
+  | none => simp [fren_spec, Rle.step]
   | some r =>
-    simp [fren_spec, Fren.Prelude.Option.some.x0] at h
-    by_cases hv : r.value = n <;> simp [fren_spec, Rle.step, Fren.Prelude.Option.some.x0, hv, h] <;> omega
+    simp [fren_spec] at h
+    by_cases hv : r.value = n <;> simp [fren_spec, Rle.step, hv, h] <;> omega
 
 /-- Encodes `xs` after the run `current`, by `step`, and emits the last run at
 the end. -/
