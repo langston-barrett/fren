@@ -143,6 +143,31 @@ def Encoding.kindText : Encoding → String
   | .opaque => "a paramorphism"
   | .unfolded => "not recursive"
 
+/-! ## Lean `match`es (`lang::recursive_match`) -/
+
+/-- Whether the pattern `p` is one that a Lean `match` has as it is, as
+`Fren.matchForm` decides (`Reqs/Generated#matches`): no literal or range,
+and no or-pattern but at the top. -/
+partial def Pat.leanPattern (p : Pat) (top := true) : Bool :=
+  match p with
+  | .wild _ => true
+  | .bool _ | .int _ _ | .str _ => false
+  | .ctor _ args => args.all (Pat.leanPattern · false)
+  | .or alts => top && alts.all (Pat.leanPattern · true)
+
+/-- The first of the patterns `pats` of a `match`'s arms that a Lean
+`match` does not have as it is. -/
+def firstNonLeanPattern? (pats : Array Pat) : Option Nat := pats.findIdx? (!·.leanPattern)
+
+/-- A structural recursion's application under a `match`, on a parameter or
+a binder bound from a payload of one, that its Lean definition cannot have
+as a Lean `match` (`lang::recursive_match`). -/
+def recursiveMatchMsg (f : Lean.Name) : Msg :=
+  { code? := some "F0449", headline := s!"recursive defined function `{showPath f}` has a `match` that Lean cannot see through"
+    label? := some "this pattern has a literal, a range, or an or-pattern within a payload"
+    notes := #["note: a structural recursion's Lean definition is a Lean `match`, which has patterns of variants, binders and `_` only, with or-patterns only at the top",
+      "help: match on the literal, range or alternatives in an inner `match` on the binder, under the arm"] }
+
 /-- A defined function's application of itself that is not structural
 recursion: `f` is the function, `param` the parameter at the position whose
 argument is reported, `arg` that argument's origin, and `form` the use's

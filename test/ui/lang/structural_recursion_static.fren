@@ -2,7 +2,7 @@
 -- structural recursion is recognized, as a catamorphism or a
 -- paramorphism (`lang::recursive_encoding`), and not yet supported; any other
 -- recursion is an error that names the application, in both front ends.
--- fren-covers: lang::structural_recursion, lang::recursive_encoding
+-- fren-covers: lang::structural_recursion, lang::recursive_encoding, lang::recursive_match
 set_option fren.lint.dead_code "allow"
 
 mod structural_recursion_static
@@ -35,6 +35,29 @@ fn under(e: Expr): Int := match e {
         k => ap1(|y| y + k, 0),
     },
     _ => 0,
+}
+
+-- A recursive application under a `match` on the parameter that Lean's
+-- `match` cannot have: a literal, or an or-pattern, within a payload
+-- (`lang::recursive_match`).
+fn literal(e: Expr): Int := match e {
+    Expr::Lit(0) => 0,  --~ error: recursive defined function `structural_recursion_static::literal` has a `match` that Lean cannot see through
+    Expr::Neg(x) => literal(x),
+    _ => 1,
+}
+fn nested_or(e: Expr): Int := match e {
+    Expr::Neg(Expr::Lit(_) | Expr::Var(_)) => 0,  --~ error: recursive defined function `structural_recursion_static::nested_or` has a `match` that Lean cannot see through
+    Expr::Neg(x) => nested_or(x),
+    _ => 1,
+}
+
+-- A literal in an inner `match` on a binder that is not the recursion's.
+-- TODO(#279): `collapsible_match` suggests the pattern that F0449 rejects.
+set_option fren.lint.collapsible_match "allow" in
+fn literal_inside(e: Expr): Int := match e {
+    Expr::Lit(n) => match n { 0 => 0, _ => 1 },
+    Expr::Neg(x) => literal_inside(x),  --~ error: recursive defined functions are not yet supported: `structural_recursion_static::literal_inside` is a catamorphism
+    _ => 1,
 }
 
 -- Structural at the second parameter, though the first is an `Expr` too.

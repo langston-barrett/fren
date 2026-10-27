@@ -3109,6 +3109,37 @@ pub fn size(e: Expr<Int>): Int := match e {
 }
 ```
 "# },
+  { code := "F0449", explanation := r#"A structural recursion applies itself under a `match` that its Lean definition cannot have as a Lean `match`.
+
+Erroneous code example:
+
+```fren
+pub enum Expr { Lit(Int), Neg(Expr) }
+
+pub fn depth(e: Expr): Int := match e {
+    Expr::Lit(0) => 0,
+    Expr::Lit(_) => 1,
+    Expr::Neg(x) => depth(x) + 1,
+}
+```
+
+A structurally recursive function's Lean definition is a Lean `match` on
+the parameter, which Lean's structural recursion sees through. A Lean
+`match` has patterns of variants, binders and `_`, with or-patterns only at
+the top; a literal, a range, or an or-pattern within a payload would make it
+a chain of `if`s, which Lean's structural recursion cannot see through.
+Match on the variant, and on the literal in an inner `match` on the binder
+(accepted once structural recursion is, #279):
+
+```text
+pub enum Expr { Lit(Int), Neg(Expr) }
+
+pub fn depth(e: Expr): Int := match e {
+    Expr::Lit(n) => match n { 0 => 0, _ => 1 },
+    Expr::Neg(x) => depth(x) + 1,
+}
+```
+"# },
   { code := "F0501", explanation := r#"A `tested` claim names a file that cannot be read.
 
 Erroneous code example:

@@ -872,6 +872,11 @@ structure LocalState where
   parameters and of the binders bound from their payloads, each by where
   it starts (`lang::recursive_encoding`). -/
   recOccs : Array (String.Pos.Raw × Core.PayloadOcc) := #[]
+  /-- In a defined function's body, the patterns of the `match`es on a
+  parameter, or on a binder bound from a payload of one, that are not a Lean
+  `match` and have a recursive application under them, each the first
+  pattern that a Lean `match` does not have (`lang::recursive_match`). -/
+  recMatches : Array Lean.Syntax := #[]
   /-- The memberships `x in e` of the guards of the quantifiers over elements
   being elaborated, by where `e` is: whether `e` is a sequence, and the
   `undecidable` report that `in` defers until the quantifier is known to

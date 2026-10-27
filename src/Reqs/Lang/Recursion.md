@@ -116,11 +116,42 @@ Lean to agree on:
   on the decreasing parameter), which Lean accepts as it is, with its
   equation lemmas and functional induction ([Generated](Generated.md)).
   A `match` that a recursive application is under must therefore be one
-  that the generator makes a Lean `match` of (`Reqs/Generated#matches`):
-  in a recursive function, a `match` that it would make an `if` of, and
-  that a recursive application is under, is an error (`F0449`), at the
-  `match`, naming the pattern that it cannot generate. Both front ends
-  report it, for exactly the same programs.
+  that the generator makes a Lean `match` of (`Reqs/Generated#matches`).
+
+`lang::recursive_match` states which `match`es are an error (`F0449`): one
+on a parameter, or on a binder bound from a payload of one, of an
+enumeration, with a recursive application under its arms (in a guard or a
+body), where some arm's pattern has a literal, a range, or an or-pattern
+other than at its top, which would make it a chain of `if`s. Both front
+ends report it, for a structural recursion, at the first such arm of the
+first such `match`, before any other report of the recursion. A
+`match` on another value, such as an `Int` payload, is unrestricted, as
+its arms bind nothing that the recursion decreases on.
+
+```fren
+-- What a `match`'s scrutinee is, relative to the function's parameters.
+pub enum MatchedOn { Parameter, Payload, Other }
+
+-- What a pattern has within it, as Lean's `match` sees it
+-- (`generated::Head`), with an or-pattern at its top its alternatives.
+pub enum PatPart { Wildcard, Binder, Variant, Literal, OrPattern }
+
+-- A `match` in a defined function's body.
+pub struct RecMatch {
+    on: MatchedOn,
+    enumeration?,              -- whether its scrutinee is an enumeration
+    arms: Seq<Set<PatPart>>,   -- each arm's pattern's parts
+    recursion_under?,          -- whether a recursive application is in an arm
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
+pub proc recursive_match(m: RecMatch): (det rejected?) {
+    ensure rule: rejected? = (m.on != MatchedOn::Other and m.enumeration? and m.recursion_under?
+        and (exists (k: Int), 0 <= k < m.arms.len
+        and (PatPart::Literal in m.arms[k] or PatPart::OrPattern in m.arms[k])))
+}
+```
 
 ## Kinds
 
@@ -291,4 +322,5 @@ no `#fren_check` of its Lean file comes after it:
 ```fren
 #fren_check structural_recursion
 #fren_check recursive_encoding
+#fren_check recursive_match
 ```

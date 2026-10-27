@@ -930,6 +930,11 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   parameters and of the binders bound from their payloads, each by where
   it starts (`lang::recursive_encoding`). -/
   recOccs : Array (Nat × Fren.Core.PayloadOcc) := #[]
+  /-- In a defined function's body, the patterns of the `match`es on a
+  parameter, or on a binder bound from a payload of one, that are not a Lean
+  `match` and have a recursive application under them, each the first
+  pattern that a Lean `match` does not have (`lang::recursive_match`). -/
+  recMatches : Array Span := #[]
   /-- The defined functions and constants whose bodies or values have such a
   quantifier, directly or through others. -/
   guardedItems : Std.HashSet Name := {}
@@ -4940,6 +4945,7 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
   -- (`lang::recursive_encoding`).
   if let some (j, _) := origin? then
     if pats.any Fren.Core.Pat.looksIntoPayload then noteRecOcc span { pos := j, occ := .other }
+  let usesBefore := (← get).recUses.size
   let guarded := arms.map (·.2.1.isSome)
   -- In a table over a scrutinee, only the last arm may be `_` without a
   -- guard, the otherwise (`Reqs/Lang/Expressions#tables-over-a-scrutinee`).
@@ -5034,6 +5040,12 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     bodies := bodies.set! k x
   let ty := ty?.get!
   noteMatch cx span (arms.map (·.1.span)) taken guarded unguardedExhaustive (if isTable then some pairs else none) defined
+  -- A recursive application under a `match` on an enumeration's parameter
+  -- or payload that is not a Lean `match` (`lang::recursive_match`).
+  if origin?.isSome && ts matches .enum .. then
+    if let some k := Fren.Core.firstNonLeanPattern? pats then
+      if (← get).recUses.size > usesBefore then
+        modify fun s => { s with recMatches := s.recMatches.push arms[k]!.1.span }
   -- The first arm that is taken. Where the arms without guards are
   -- exhaustive, the last arm has none, and takes whatever is left;
   -- otherwise, where none is taken, the `match` is unspecified, as a
@@ -6661,11 +6673,12 @@ partial def elabItem (item : Item) : M Unit := do
       let selfRec? := if tps.isEmpty && fnPs.isEmpty then
         some (vars.map (·.name), ({ params := vars.map (·.ty), result := r } : Fren.Core.FnTy), itemSym path) else none
       let cx : ExprCtx := { vars, place := .prop, selfFn := some n, expected? := if r == .nat then some .nat else none, fnParams, selfRec? }
-      modify fun s => { s with recUses := #[], recOccs := #[] }
+      modify fun s => { s with recUses := #[], recOccs := #[], recMatches := #[] }
       let (smt, t) ← elabExpr cx body
       let uses := (← get).recUses
       let recursion := Fren.Core.recursion vars.size (uses.toList.map (·.2))
       if let .structural i := recursion then
+        if let some m := (← get).recMatches[0]? then err m (Fren.Core.recursiveMatchMsg path)
         let enc := Fren.Core.recursiveEncoding recursion ((← get).recOccs.toList.map (·.2))
         err uses[0]!.1 (Fren.Core.structuralUnsupportedMsg path vars[i]!.name enc)
       noteObligation cx .body body.span rp smt

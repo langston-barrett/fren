@@ -59,6 +59,7 @@ tested lang::function_body: "test/ui/lang/defined_functions_static.fren", "test/
 tested lang::structural_recursion: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0447_count.fren",
   "test/cli/types/f0448_size.fren"
 tested lang::recursive_encoding: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0448_size.fren"
+tested lang::recursive_match: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0449_literal.fren"
 tested lang::argument: "test/ui/lang/defined_functions.fren", "test/ui/lang/functions_static.fren"
 tested lang::cardinality_args: "test/ui/lang/cardinality_static.fren", "test/cli/types/f0304_cardinality.fren",
   "test/cli/types/f0367_no_arguments.fren"

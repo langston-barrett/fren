@@ -3235,6 +3235,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- (`lang::recursive_encoding`).
   if let some (j, _) := origin? then
     if pats.any Core.Pat.looksIntoPayload then noteRecOcc e { pos := j, occ := .other }
+  let usesBefore := (← getLocal).recUses.size
   let guarded := arms.map (!·[1].isNone)
   let isTable := e.isOfKind ``Lang.tableMatchExpr
   -- In a table over a scrutinee, only the last arm may be `_` without a
@@ -3341,6 +3342,12 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     if armsTy?.isSome then armsTy? ← armType cx armsTy? b body (armsTy?.map (·.widen))
     bodies := bodies.set! k body
   noteMatch cx e (arms.map (·[0])) taken guarded unguardedExhaustive (if isTable then some pairs else none) defined
+  -- A recursive application under a `match` on an enumeration's parameter
+  -- or payload that is not a Lean `match` (`lang::recursive_match`).
+  if origin?.isSome && pty matches .enum .. then
+    if let some k := Core.firstNonLeanPattern? pats then
+      if (← getLocal).recUses.size > usesBefore then
+        modifyLocal fun l => { l with recMatches := l.recMatches.push arms[k]![0] }
   let widened ← widenMixed bodies
   if lean then
     if let some m ← leanMatchTerm toTerm cx e s ty pty pats armInfo then return m
@@ -6368,11 +6375,12 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
                             expected? := if result.isConstOf ``Nat then some .nat else none
                             fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)), selfRec? }
       discard (takeIndexes fvs)
-      modifyLocal fun l => { l with recUses := #[], recOccs := #[] }
+      modifyLocal fun l => { l with recUses := #[], recOccs := #[], recMatches := #[] }
       let t ← if recursive then withLocalDeclD selfName selfTy fun _ => toTerm cx body else toTerm cx body
       let uses := (← getLocal).recUses
       let recursion := Core.recursion vars.size (uses.toList.map (·.2))
       if let .structural i := recursion then
+        if let some m := (← getLocal).recMatches[0]? then throwErrorAt m (Core.recursiveMatchMsg path).text
         let enc := Core.recursiveEncoding recursion ((← getLocal).recOccs.toList.map (·.2))
         throwErrorAt uses[0]!.1 (Core.structuralUnsupportedMsg path vars[i]!.name enc).text
       noteObligation cx .body body rp t

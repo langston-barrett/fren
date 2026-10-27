@@ -1,0 +1,13 @@
+error[F0449]: recursive defined function `depth` has a `match` that Lean cannot see through
+ --> test/cli/types/f0449_literal.fren:5:37
+  |
+5 | fn depth(e: Expr): Int := match e { Expr::Lit(0) => 0, Expr::Lit(_) => 1, Expr::Neg(x) => depth(x) + 1 }
+  |                                     ^^^^^^^^^^^^ this pattern has a literal, a range, or an or-pattern within a payload
+  |
+  = note: a structural recursion's Lean definition is a Lean `match`, which has patterns of variants, binders and `_` only, with or-patterns only at the top
+  = help: match on the literal, range or alternatives in an inner `match` on the binder, under the arm
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0449`.
+exit=2
