@@ -8,12 +8,13 @@ pub mod lang
 ```
 
 `frame`: a specified layer reads its environment only at its own name. Two
-layers with the same head and parts' values that read the same there have
-the same value, whatever else their environments hold:
+layers of one program with the same head and parts' values that read the
+same there have the same value, whatever else their environments hold:
 
 ```fren
 expect frame: forall (p q: node),
-    when p.head = q.head and p.values = q.values and p.specified? and p.read = q.read, p.value = q.value
+    when p.program = q.program and p.head = q.head and p.values = q.values and p.specified? and p.read = q.read,
+    p.value = q.value
 ```
 
 `own_mentioned`: the name a layer reads at is one that it mentions, so a
@@ -29,7 +30,7 @@ give the same value, specified or not:
 
 ```fren
 expect same_written: forall (p q: node),
-    when p.head = q.head and p.values = q.values and p.env = q.env, p.value = q.value
+    when p.program = q.program and p.head = q.head and p.values = q.values and p.env = q.env, p.value = q.value
 ```
 
 `unevaluated`: the parts that a layer does not evaluate change neither its
@@ -44,7 +45,8 @@ most seven parts:
 
 ```fren
 expect unevaluated: forall (p q: node),
-    when p.head = q.head and p.env = q.env and p.values.len = q.values.len and p.values.len <= 7
+    when p.program = q.program and p.head = q.head and p.env = q.env and p.values.len = q.values.len
+    and p.values.len <= 7
     and (forall (j: PartAt), when not j in p.unevaluated, part(p.values, j) = part(q.values, j))
     and p.undefined_parts minus p.unevaluated = q.undefined_parts minus p.unevaluated,
     p.value = q.value and (p.defined? iff q.defined?)
@@ -64,7 +66,7 @@ instantiating them at the layer's own name:
 ```fren
 set_option fren.lint.undecidable "allow" in
 expect frame_mentioned: forall (p q: node),
-    when p.head = q.head and p.values = q.values and p.specified? and p.value != q.value,
+    when p.program = q.program and p.head = q.head and p.values = q.values and p.specified? and p.value != q.value,
     (exists (x: Id), Mention::Var(x) in p.mentioned and lookup(p.env, x) != lookup(q.env, x))
     or (exists (f: Id), Mention::Fn(f) in p.mentioned and meaning(p.env, f, p.values) != meaning(q.env, f, p.values))
 ```
@@ -85,6 +87,31 @@ pub fn construction?(head: Head) := head is Head::Construction(_, _)
 expect field_order: forall (p q: node),
     when construction?(p.head) and construction?(q.head) and built(p.head) = built(q.head) and p.values = q.values,
     p.value = q.value
+```
+
+## Declarations
+
+`constant_fixed`: a constant has the same value in every environment,
+where it is specified, which is why a constant may be a factor of a
+product or a divisor (see [Linear
+arithmetic](Expressions.md#linear-arithmetic)):
+
+```fren
+expect constant_fixed: forall (p q: node),
+    when p.program = q.program and p.head = q.head and p.head is Head::Constant(_) and p.values = q.values
+    and p.specified?,
+    p.value = q.value
+```
+
+`substitution`: where a constant or an application of a defined function
+is specified, its value is its definition's at the parts' values: the
+arguments substituted for the parameters, as [Defined
+functions](Items.md#defined-functions) states:
+
+```fren
+expect substitution: forall (p: node),
+    when (p.head is Head::Constant(_) | Head::Defined(_)) and p.specified?,
+    p.value = definition_value(p.program, declared(p.head), p.values)
 ```
 
 ## The whole tree
@@ -114,6 +141,8 @@ FrenCore's walks over expressions are bound to the layers by
 `lang::mentions` is. `lang::node` is proved of FrenCore's evaluation of
 one layer, which its evaluator folds over a tree, and the first induction
 above is proved in Lean of that evaluator, for an expression each of
-whose layers is specified there: one with no constants, defined
-functions, indexing or field reads. No front end evaluates through it
-yet, so that Fren follows the model is trusted until they do.
+whose layers is specified there: in the fragment that
+[Environments](Meaning.md#environments) lists. So is `fixed_value`'s
+`declared`, of every program, by the order of its declarations. No front
+end evaluates through it yet, so that Fren follows the model is trusted
+until they do.
