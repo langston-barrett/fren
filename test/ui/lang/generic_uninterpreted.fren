@@ -1,0 +1,78 @@
+-- Generic functions without a body
+-- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`): each
+-- instance is an unknown function of its own, whose applications bring its
+-- contract's postconditions and its result type's constraint at the
+-- instance. The contract is checked once, at the type parameters. In a
+-- module, since Lean has an `Option` of its own.
+set_option fren.lint.dead_code "allow"
+
+mod generic_uninterpreted
+
+pub enum Option<T> { None, Some(T) }
+
+fn pick<T>(T, T): T
+fn size<T>(Option<T>): Nat
+
+-- A contract, realizable for every type.
+fn choose<T>(a: T, b: T): T
+    ensure either: choose(a, b) = a or choose(a, b) = b
+
+-- Only a precondition, which each application's arguments must meet, at
+-- its instance.
+fn get<T>(o: Option<T>): T
+    assume present: o != Option::None
+
+-- A contract at an instance: its postconditions hold of each application,
+-- and decide the counterexample, which both front ends show alike.
+comp at_int {
+    in x: Int
+    in y: Int
+    assume pinned: x = 1 and y = 2
+    pub det out c: Int := choose(x, y)
+
+    expect from_inputs: c = x or c = y
+    expect first: c = x  --~ error: counterexample: x = 1, y = 2, c = 2
+}
+
+-- Two instances in one component, each a function of its own, related
+-- only to itself.
+comp two_instances {
+    in x: Int
+    in y: Int
+    in p?
+    in q?
+    pub det out i: Int := choose(x, y)
+    pub det out b? := choose(p?, q?)
+    pub det out n: Int := size(Option::Some(x))
+    pub det out m: Int := size(Option::Some(p?))
+
+    expect int_either: i = x or i = y
+    expect bool_either: b? = p? or b? = q?
+    expect congruent: when x = y, pick(x, y) = pick(y, x)
+    expect natural: n >= 0 and m >= 0
+    -- Nothing relates two instances.
+    expect apart: n = m  --~ error: expectation `generic_uninterpreted::two_instances::apart` does not hold
+}
+
+-- A precondition at an instance.
+comp payloads {
+    in o: Option<Int>
+    pub det out v: Int := get(o)  --~ error: the precondition `present` of `generic_uninterpreted::get` may not hold
+}
+
+-- A component that applies one is not enumerated: each instance is a
+-- function of its own.
+set_option fren.evidence "enumerated" in
+comp enumerated {  --~ error: cannot be enumerated: it applies the generic function `generic_uninterpreted::pick`, which has no body
+    in x: Int is 0..=3
+    pub det out y: Int := pick(x, 0)
+
+    expect congruent: y = pick(x, 0)
+}
+
+-- Within a generic defined function's contract, at its own type
+-- parameter, for every type.
+fn same<T>(a: T, b: T): T := a
+    ensure chosen: when a = b, same(a, b) = choose(a, b)
+--@ summary: 18 passed, 3 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

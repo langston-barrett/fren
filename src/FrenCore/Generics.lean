@@ -528,10 +528,10 @@ def Ty.asAbstract (fn : Name) (params : Array Name) (t : Ty) : Ty :=
   t.subst (params.mapIdx fun k n => .abstract (typeParamPath fn k n))
 
 /-- Whether a function may have `params` type parameters
-(`lang::generic_function`): if it has any, it is defined, and each is
-mentioned by its signature. -/
-def genericFunctionAccepted (defined : Bool) (params : Nat) (unmentioned : Bool) : Bool :=
-  params == 0 || (defined && !unmentioned)
+(`lang::generic_function`): if it has any, each is mentioned by its
+signature, whether the function is defined or not. -/
+def genericFunctionAccepted (params : Nat) (unmentioned : Bool) : Bool :=
+  params == 0 || !unmentioned
 
 /-- Whether the type parameter `k` is mentioned by one of the parameters'
 declared types `declared` or by the result's, `result`. -/
@@ -593,12 +593,139 @@ def callShape (n : Nat) (declared : Array Ty) (result : Ty) (shapes : Array Type
 type is `result`, with the type arguments `args` (`lang::call_instance`). -/
 def callType (result : Ty) (args : Array Ty) : Ty := result.subst args
 
-/-- The generic function `f`, which has no body (`lang::generic_function`). -/
-def uninterpretedGenericMsg (f : Name) : Msg :=
-  { code? := some "F0399", headline := s!"the generic function `{f}` must be defined"
-    label? := some "type parameters, but no body"
-    notes := #["note: SMT-LIB has no polymorphic `declare-fun`, so an uninterpreted function cannot have type parameters, for now",
-      "help: define it with `:= e`, or remove its type parameters"] }
+/-- The parameters' and result's types of the instance of a generic
+function whose parameters and result have the declared types `declared`
+and `result`, at the type arguments `args` (`lang::uninterpreted_instance`):
+each declared type instantiated with them. Of a generic function without a
+body, it is the signature of the unknown function that the solver sees for
+that instance. -/
+def instanceSig (declared : Array Ty) (result : Ty) (args : Array Ty) : Array Ty × Ty :=
+  (declared.map (·.subst args), result.subst args)
+
+/-- A type as it is written, but with each generic function's type
+parameter by its whole path, so that two functions' are told apart: the key
+of an instance of a generic function. -/
+partial def Ty.instKey : Ty → String
+  | .set t => s!"Set<{t.instKey}>"
+  | .rel a b => s!"Rel<{a.instKey}, {b.instKey}>"
+  | .seq t => s!"Seq<{t.instKey}>"
+  | .enum p [] | .record p [] => showPath p
+  | .enum p as | .record p as => s!"{showPath p}<{", ".intercalate (as.map Ty.instKey)}>"
+  | .abstract p => showPath p
+  | t => t.show
+
+/-- The type arguments `args` of an instance of a generic function, as its
+name has them after the function's (`Ty.instKey`), as in `<Int>`
+(`Reqs/Lang/GenericFunctions#meaning`). -/
+def instanceText (args : Array Ty) : String := s!"<{", ".intercalate (args.toList.map Ty.instKey)}>"
+
+/-- The name of the instance of the function at `path` with the type
+arguments `args`, as messages show it, as `pick<Int>`. -/
+def instanceName (path : Name) (args : Array Ty) : Name :=
+  match path with
+  | .str p s => .str p (s ++ instanceText args)
+  | p => .str p (instanceText args)
+
+/-- Whether `t` mentions a generic function's type parameter, an abstract
+type of its own (`typeParamPath`): an instance at it is checked with
+finite-model finding, as the function's own check at its type parameters'
+sorts is. -/
+partial def Ty.hasTypeParam : Ty → Bool
+  | .abstract p => (typeParamName? p).isSome
+  | .set t | .seq t => t.hasTypeParam
+  | .rel a b => a.hasTypeParam || b.hasTypeParam
+  | .enum _ as | .record _ as => as.any Ty.hasTypeParam
+  | _ => false
+
+/-- An application of the generic function `callee` at the type arguments
+`targs`, written in the item `item` (a component, global expectation,
+refinement or function, by its path) of the file `file`, and within the
+generic function `caller?`, if it is in one, whose type parameters `targs`
+may mention (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+Both front ends record each, in the order in which they elaborate them. -/
+structure GenericUse where
+  file : Nat
+  item : Name
+  caller? : Option Name
+  callee : Name
+  targs : Array Ty
+  deriving Inhabited, BEq
+
+/-- The instances that applying the instances `start` applies, them
+included: each, and, for an instance of a generic function, its
+applications within the function at that instance, and so on, each once,
+in the order found, where `tps` gives each generic function's type
+parameters. A function's applications at its own type parameters are its
+own, and lead nowhere else. -/
+partial def instancesThrough (uses : Array GenericUse) (tps : Name → Array Name) (start : Array (Name × Array Ty)) :
+    Array (Name × Array Ty) :=
+  go start #[]
+where
+  go (todo all : Array (Name × Array Ty)) : Array (Name × Array Ty) :=
+    if h : 0 < todo.size then
+      let (g, targs) := todo[0]
+      let todo := todo.extract 1
+      if all.contains (g, targs) then go todo all else
+      let all := all.push (g, targs)
+      let ps := tps g
+      let own := ps.mapIdx fun k p => Ty.abstract (typeParamPath g k p)
+      if targs == own then go todo all else
+      let more := uses.filterMap fun u =>
+        if u.caller? == some g then some (u.callee, u.targs.map fun t => (t.asParams g ps).subst targs) else none
+      go (todo ++ more) all
+    else all
+
+/-- Where the contract of an instance of a generic function without a body
+is checked, where its check at the type parameters' sorts does not pass
+(`lang::instance_site`): with the function's own, or with an item's. -/
+inductive InstanceSite where
+  | function
+  | item (file : Nat) (item : Name)
+  deriving Inhabited, BEq
+
+/-- Where an instance of a generic function without a body declared in the
+file `functionFile` is checked in a run of checks (`lang::instance_site`):
+nowhere if an earlier run checked it (`done`) or no item that this run
+checks uses it; with the function's own check if this run checks it
+(`functionChecked`) and the first item, in order, that this run checks and
+whose checks use the instance, `first?`, is in the function's file; and
+with that item's otherwise. The `fren` command checks every item in one
+run, so its site is the first item that uses it, or the function's. -/
+def siteOf (functionFile : Nat) (functionChecked done : Bool) : Option (Nat × Name) → Option InstanceSite
+  | none => none
+  | some (file, item) =>
+    if done then none
+    else some (if functionChecked && file == functionFile then .function else .item file item)
+
+/-- Each instance that the items that a run checks use, of a generic
+function that `fileOf` gives the file of, but its own, with where the run
+checks its contract (`siteOf`): an item's checks use the instances that its
+applications apply, through the generic functions' (`instancesThrough`).
+The items are taken in the order of their first applications; `checked`
+says which this run checks, by path, a function's by its own, and `done`
+which instances an earlier run checked. -/
+def instanceSites (uses : Array GenericUse) (tps : Name → Array Name) (fileOf : Name → Option Nat)
+    (checked : Name → Bool := fun _ => true) (done : Name → Array Ty → Bool := fun _ _ => false) :
+    Array (InstanceSite × Name × Array Ty) := Id.run do
+  let items := uses.foldl (init := #[]) fun acc u =>
+    if !checked u.item || acc.contains (u.file, u.item) then acc else acc.push (u.file, u.item)
+  let mut out : Array (InstanceSite × Name × Array Ty) := #[]
+  let mut seen : Array (Name × Array Ty) := #[]
+  for (file, item) in items do
+    let direct := uses.filterMap fun u => if u.file == file && u.item == item then some (u.callee, u.targs) else none
+    for (f, targs) in instancesThrough uses tps direct do
+      let some ff := fileOf f | continue
+      let own := (tps f).mapIdx fun k p => Ty.abstract (typeParamPath f k p)
+      if targs == own || seen.contains (f, targs) then continue
+      seen := seen.push (f, targs)
+      if let some site := siteOf ff (checked f) (done f targs) (some (file, item)) then out := out.push (site, f, targs)
+  return out
+
+/-- Whether each application of an instance of a generic function without
+a body, whose declared result type is `result`, brings that it is at least
+0 (`lang::uninterpreted_instance`): exactly when `result` is `Nat`, since a
+type argument is never a `Nat` (`expectedArgs`, `inferArg`). -/
+def instanceNat (result : Ty) : Bool := result == .nat
 
 /-- The type parameter `p` of the generic function `f`, which its signature
 does not mention (`lang::generic_function`). -/

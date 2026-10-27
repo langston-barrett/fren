@@ -158,6 +158,33 @@ def lineAt (src : Array Char) (off : Nat) : Nat × Nat × String := Id.run do
     text := text.push src[i]!
   return (n, start, text)
 
+/-- The offset at which each line of `src` starts: 0, and one past each
+newline. -/
+def lineStarts (src : Array Char) : Array Nat := Id.run do
+  let mut out := #[0]
+  for c in src, i in [0:src.size] do
+    if c == '\n' then out := out.push (i + 1)
+  return out
+
+/-- `lineAt src off`, where `starts` is `lineStarts src`, without reading
+`src` before the line: the line's number is that of the starts at most
+`off`, which are those of the newlines before it, and the line starts at
+the last of them. -/
+def lineAtIn (starts : Array Nat) (src : Array Char) (off : Nat) : Nat × Nat × String := Id.run do
+  let off := min off src.size
+  -- The number of starts at most `off`, at least 1 (`starts[0]` is 0).
+  let mut lo := 1
+  let mut hi := starts.size
+  while lo < hi do
+    let mid := (lo + hi) / 2
+    if starts[mid]! ≤ off then lo := mid + 1 else hi := mid
+  let start := starts[lo - 1]!
+  let mut text := ""
+  for i in [start:src.size] do
+    if src[i]! == '\n' then break
+    text := text.push src[i]!
+  return (lo, start, text)
+
 /-! ### Colour
 
 ANSI styles in rustc's colours: the severity's colour for the header and
@@ -223,9 +250,10 @@ def Fix.target (f : Fix) (r : Range) : Range :=
 
 /-- A fix as rustc shows a suggestion: `+` under an insertion, or the old and
 new lines of a replacement. -/
-def renderFix (p : Paint) (src : Array Char) (w : Nat) (r : Range) (f : Fix) : Array String :=
+def renderFix (p : Paint) (src : Array Char) (w : Nat) (r : Range) (f : Fix) (starts : Array Nat := lineStarts src) :
+    Array String :=
   let r := f.target r
-  let (n, lstart, text) := lineAt src r.start
+  let (n, lstart, text) := lineAtIn starts src r.start
   let col := r.start - lstart
   let stopCol := min (r.stop - lstart) text.length
   let before := String.ofList (text.toList.take col)
@@ -239,8 +267,9 @@ def renderFix (p : Paint) (src : Array Char) (w : Nat) (r : Range) (f : Fix) : A
 
 /-- The width of the gutter for a diagnostic: that of the largest line
 number it shows. -/
-def Diagnostic.gutterWidth (d : Diagnostic) (src : Array Char) (line : Nat := (lineAt src d.range.start).1) : Nat :=
-  let ns := #[line] ++ d.msg.fixes.map fun f => (lineAt src (f.target d.range).start).1
+def Diagnostic.gutterWidth (d : Diagnostic) (src : Array Char) (starts : Array Nat := lineStarts src)
+    (line : Nat := (lineAtIn starts src d.range.start).1) : Nat :=
+  let ns := #[line] ++ d.msg.fixes.map fun f => (lineAtIn starts src (f.target d.range).start).1
   (toString (ns.foldl max 0)).length
 
 /-- A note as rows after `indent`: `= note: text`, and the rest of its
@@ -255,15 +284,17 @@ def header (level : Severity) (msg : Msg) (p : Paint := {}) : String :=
   let code := msg.code?.map (s!"[{·}]") |>.getD ""
   p.level level s!"{level.label}{code}" ++ p.bold s!": {msg.headline}"
 
-/-- The text of a diagnostic about the file at `path`. Ranges spanning
-several lines are underlined to the end of the first. -/
-def Diagnostic.render (d : Diagnostic) (path : String) (src : Array Char) (p : Paint := {}) : String := Id.run do
+/-- The text of a diagnostic about the file at `path`, whose lines start
+at `starts` (`lineStarts`), computed once for the file's diagnostics.
+Ranges spanning several lines are underlined to the end of the first. -/
+def Diagnostic.render (d : Diagnostic) (path : String) (src : Array Char) (p : Paint := {})
+    (starts : Array Nat := lineStarts src) : String := Id.run do
   -- The line's number is `position`'s, and so is the column: the
   -- characters from the line's start to the offset, which is at most the
   -- text's end, plus one.
-  let (line, lstart, text) := lineAt src d.range.start
+  let (line, lstart, text) := lineAtIn starts src d.range.start
   let col := min d.range.start src.size - lstart + 1
-  let w := d.gutterWidth src line
+  let w := d.gutterWidth src starts line
   let mut out := #[header d.level d.msg p, s!"{spaces w}{p.blue "-->"} {path}:{line}:{col}", gutter p w,
     srcLine p w line "|" text]
   let startCol := d.range.start - lstart
@@ -278,7 +309,7 @@ def Diagnostic.render (d : Diagnostic) (path : String) (src : Array Char) (p : P
   else if !d.msg.fixes.isEmpty then
     out := out.push (gutter p w)
   for f in d.msg.fixes do
-    out := out ++ renderFix p src w d.range f
+    out := out ++ renderFix p src w d.range f starts
   return "\n".intercalate out.toList ++ "\n"
 
 /-- The text of a message with no source position, such as a file that

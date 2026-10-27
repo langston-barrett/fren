@@ -140,18 +140,21 @@ checked. -/
 partial def World.value (sp : Spec) (w : World) (f : Name) (args : Array Val) (depth : Nat := 3) : Option Val := do
   let (_, r) ← sp.funs.find? f
   let h := args.foldl (fun h a => mix h (hashVal a)) (mix w.seed (hash f))
+  -- An instance of a generic function has the function's declared result
+  -- type and contract, at its type arguments (`Spec.instanceOf`).
+  let base := (sp.instanceOf.find? f).getD f
   -- Its result is a value of its declared type (`Reqs/Lang/Items#uninterpreted-functions`).
-  let valueAt (h : UInt64) : Val := match sp.results.find? f with
+  let valueAt (h : UInt64) : Val := match sp.results.find? base with
     | some t => typedValueOf sp w h r t
     | none => valueOf sp w h 2 r
-  let some (ps, pres, posts) := sp.contracts.find? f | return valueAt h
+  let some (ps, pres, posts) := sp.contracts.find? base | return valueAt h
   if depth == 0 then return valueAt h
   let others : Interp := { fn := fun g as => w.value sp g as (depth - 1) }
   let locals := (ps.zip args).toList
   unless pres.all (·.eval others (fun _ => none) locals == some (.bool true)) do return valueAt h
   let candidates := (List.range 8).map fun k => valueAt (if k == 0 then h else mix h k.toUInt64)
   candidates.find? fun v =>
-    let I : Interp := { fn := fun g as => if g == f && as == args then some v else w.value sp g as (depth - 1) }
+    let I : Interp := { fn := fun g as => if (g == f || g == base) && as == args then some v else w.value sp g as (depth - 1) }
     posts.all (·.eval I (fun _ => none) locals == some (.bool true))
 
 /-- `sp.shapes`, in a hash map, in which `typeHolds` looks up a type more
@@ -184,7 +187,9 @@ partial def Pat.strLits : Pat → Array String
 
 partial def Ex.lits : Ex → Array Int
   | .lit (.int i) => #[i]
-  | .lit _ | .var _ | .slot _ | .bound _ => #[]
+  | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
+  | .memo lets e => e.lits ++ lets.flatMap (·.lits)
+  | .lifted lets e => e.lits ++ lets.flatten.flatMap (·.lits)
   | .not a | .neg a | .field a _ | .pre _ _ _ a => a.lits
   | .bin _ a b | .when _ a b => a.lits ++ b.lits
   | .ite c a b => c.lits ++ a.lits ++ b.lits
@@ -209,7 +214,9 @@ partial def Ex.lits : Ex → Array Int
 partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .bin .eq (.slot y) e | .bin .iff (.slot y) e => (if y == x then #[e] else #[]) ++ e.equated x
   | .bin .eq e (.slot y) | .bin .iff e (.slot y) => (if y == x then #[e] else #[]) ++ e.equated x
-  | .lit _ | .var _ | .slot _ | .bound _ => #[]
+  | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
+  | .memo lets e => e.equated x ++ lets.flatMap (·.equated x)
+  | .lifted lets e => e.equated x ++ lets.flatten.flatMap (·.equated x)
   | .not a | .neg a | .field a _ | .pre _ _ _ a => a.equated x
   | .bin _ a b | .when _ a b => a.equated x ++ b.equated x
   | .ite c a b => c.equated x ++ a.equated x ++ b.equated x
@@ -228,6 +235,16 @@ partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .const .. => #[]
   | .typed _ _ e => e.equated x
 
+/-- The small sets of the candidates `elems` of their elements: the empty
+set and singletons (`smallValues`). -/
+def smallSets (elems : Array Val) : Array Val := #[.set #[]] ++ (elems.extract 0 4).map (Val.setOf #[·])
+
+/-- The small sequences of the candidates `elems` of their elements: the
+empty sequence, singletons and pairs (`smallValues`). -/
+def smallSeqs (elems : Array Val) : Array Val :=
+  let vs := elems.extract 0 3
+  #[.seq #[]] ++ vs.map (Val.seq #[·]) ++ (vs.zip (vs.extract 1)).map fun (a, b) => .seq #[a, b]
+
 /-- Every value of `ty` up to `depth`, at most `cap` of them. -/
 partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array String) (cap : Nat) (depth : Nat) :
     VTy → Array Val
@@ -241,12 +258,10 @@ partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array
   | .string => (strs ++ #["", "a", "b"].filter (!strs.contains ·)).map .str
   -- The empty set and singletons; constraints that equate a variable with a
   -- set give the others.
-  | .set t => #[.set #[]] ++ ((smallValues sp w ints strs cap depth t).extract 0 4).map (Val.setOf #[·])
+  | .set t => smallSets (smallValues sp w ints strs cap depth t)
   -- The empty sequence, singletons and pairs of candidates, so that
   -- indexes at `0` and `1` have something to read.
-  | .seq t => Id.run do
-    let vs := (smallValues sp w ints strs cap depth t).extract 0 3
-    return #[.seq #[]] ++ vs.map (Val.seq #[·]) ++ (vs.zip (vs.extract 1)).map fun (a, b) => .seq #[a, b]
+  | .seq t => smallSeqs (smallValues sp w ints strs cap depth t)
   -- The empty relation, single pairs, and a chain of pairs, so that
   -- `closure` has something to close.
   | .rel a b => Id.run do
@@ -302,7 +317,9 @@ partial def VTy.readsInts (sp : Spec) (seen : List Name := []) : VTy → Bool
 /-- The variables of `e`. -/
 partial def Ex.vars : Ex → Array Name
   | .var n => #[n]
-  | .lit _ | .slot _ | .bound _ => #[]
+  | .lit _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
+  | .memo lets e => e.vars ++ lets.flatMap (·.vars)
+  | .lifted lets e => e.vars ++ lets.flatten.flatMap (·.vars)
   | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a => a.vars
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ => a.vars ++ b.vars
   | .ite c a b => c.vars ++ a.vars ++ b.vars
@@ -419,21 +436,29 @@ def Problem.pool (sp : Spec) (w : World) (p : Problem) (ty : VTy) (fixed? : Opti
       let r₁ ← below 41
       let r₂ ← below 41
       let ints := (p.ints.push ((r₁ : Int) - 20)).push ((r₂ : Int) - 20)
-      let mut pool := smallValues sp w ints p.strs 24 2 ty
+      -- A sequence's or a set's elements' values, from which its own are
+      -- made, computed once.
+      let elems? := match ty with
+        | .seq t | .set t => some (smallValues sp w ints p.strs 24 2 t)
+        | _ => none
+      let mut pool := match ty, elems? with
+        | .seq _, some elems => smallSeqs elems
+        | .set _, some elems => smallSets elems
+        | _, _ => smallValues sp w ints p.strs 24 2 ty
       -- Longer sequences, of the lengths that the constraints mention.
-      if let .seq t := ty then
-        let elems := smallValues sp w ints p.strs 24 2 t
+      if let (.seq _, some elems) := (ty, elems?) then
         unless elems.isEmpty do
           for n in (ints.filterMap fun i => if 3 ≤ i && i ≤ 4 then some i.toNat else none).toList.eraseDups do
             for _ in [0:6] do
               pool := pool.push (.seq (← (Array.range n).mapM fun _ => do return elems[← below elems.size]!))
       -- Larger sets: a few of two, three and four candidates of the elements.
-      if let .set t := ty then
-        let elems := smallValues sp w ints p.strs 24 2 t
+      if let (.set _, some elems) := (ty, elems?) then
         if elems.size ≥ 2 then
+          -- Each with its key, computed once.
+          let keyed := elems.map fun v => (Thunk.mk fun _ => v.setKey, v)
           for n in [2, 3, 4] do
             for _ in [0:4] do
-              pool := pool.push (Val.setOf (← (Array.range n).mapM fun _ => do return elems[← below elems.size]!))
+              pool := pool.push (Val.setOfKeyed (← (Array.range n).mapM fun _ => do return keyed[← below keyed.size]!))
       pure pool
   return pool
 
@@ -461,7 +486,9 @@ def holdsIn (I : Interp) (slots : Slots) (e : Ex) : Option Bool :=
 /-- The slots that `e` reads (`Ex.slot`), each as often as it occurs. -/
 partial def Ex.slots : Ex → Array Nat
   | .slot k => #[k]
-  | .lit _ | .var _ | .bound _ => #[]
+  | .lit _ | .var _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
+  | .memo lets e => lets.flatMap (·.slots) ++ e.slots
+  | .lifted lets e => lets.flatten.flatMap (·.slots) ++ e.slots
   | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .const _ a => a.slots
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ => a.slots ++ b.slots
   | .ite c a b => c.slots ++ a.slots ++ b.slots
@@ -542,6 +569,11 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
   -- Every name looked up here was given an index above: each variable to
   -- choose, and each variable `pfx.n` of a constraint.
   let full := p.atoms.map fun a => a.e.substVars fun n => .slot index[a.pfx ++ n]!
+  -- What is evaluated (`Ex.compile`), compiled with `I`'s shapes, or as
+  -- the atom was for searches like this one; what is read of the
+  -- constraints is read of `full`.
+  let run := p.atoms.map fun a =>
+    ((a.run?.map (·.get)).getD (a.e.compile I.shapes (some []))).substVars fun n => .slot index[a.pfx ++ n]!
   -- When each constraint is surely unknown, so that it need not be evaluated.
   let unknown := full.map (·.unknownIf)
   let varSlot := p.vars.map fun (x, _) => index[x]!
@@ -549,7 +581,7 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
   -- Each constraint's value in `env`. A constraint that is `true` stays
   -- so on that branch (evaluation is monotone), and is not evaluated again;
   -- one that is `false` stays so on every branch.
-  let atRoot := full.map (holdsIn I slots ·)
+  let atRoot := run.map (holdsIn I slots ·)
   if atRoot.any (· == some false) then return (none, 0)
   let rootTrue := atRoot.map (· == some true)
   -- For each slot, the set of the variables to choose that it is: the
@@ -568,7 +600,7 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
     let mut newly := #[]
     for k in byVar[x]! do
       if known[k]! || unknown[k]!.holds slots then continue
-      match holdsIn I slots full[k]! with
+      match holdsIn I slots run[k]! with
       | some false => return .error k
       | some true => newly := newly.push k
       | none => pure ()
@@ -579,7 +611,7 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
   let equated : Array (Thunk (Array (Ex × UnknownIf) × Nat)) :=
     varSlot.map fun x => Thunk.mk fun _ =>
       let es := full.flatMap fun e => e.equated x
-      (es.map fun e => (e, e.unknownIf), es.foldl (fun acc e => acc ||| readsOf e) 0)
+      (es.map fun e => (e.compile I.shapes (some []), e.unknownIf), es.foldl (fun acc e => acc ||| readsOf e) 0)
   -- Each variable's pool, likewise.
   let pools : Array (Thunk (Array Val)) := p.vars.mapIdx fun i (_, ty) => Thunk.mk fun _ =>
     (p.pool sp w ty (p.fixedPool? sp w ty)).run' ⟨mix seed i.toUInt64⟩
@@ -622,7 +654,7 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
       if left == 0 then return (false, 0, slots.set! x none, known, 0)
       return (false, conflictOf i eqReads rejections, slots.set! x none, known, left)
     else
-      match (full.zip known).zipIdx.find? fun ((e, t), _) => !(t || holdsIn I slots e == some true) with
+      match (run.zip known).zipIdx.find? fun ((e, t), _) => !(t || holdsIn I slots e == some true) with
       | none => return (true, 0, slots, known, left)
       | some (_, k) => return (false, conflictOf i 0 [reads[k]!], slots, known, left)
   let (found, _, slots, _, left) := go 0 seed slots rootTrue budget
@@ -662,7 +694,9 @@ partial def Val.strs : Val → Array String
 are not literals of strings that it constrains. -/
 partial def Ex.strLits : Ex → Array String × Array String
   | .lit v => (v.strs, #[])
-  | .var _ | .slot _ | .bound _ => (#[], #[])
+  | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => (#[], #[])
+  | .memo lets e => join (lets.push e)
+  | .lifted lets e => join (lets.flatten.push e)
   | .method .matches r #[.lit (.str p)] | .matches r p _ => let (ls, ps) := r.strLits; (ls, ps.push p)
   | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a => a.strLits
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ => join #[a, b]

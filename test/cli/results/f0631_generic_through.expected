@@ -1,0 +1,22 @@
+error[F0631]: the postconditions of `lib::other<mid::One>` cannot all hold
+ --> test/fixtures/generic_mid.fren:6:6
+  |
+6 | comp mid { in x: One pub det out y: One := other(x) }
+  |      ^^^ unrealizable contract
+  |
+  = note: for the arguments
+              x = One::A
+          no value of `lib::other<mid::One>` satisfies `diff`
+  = note: an uninterpreted function's postconditions are assumed wherever it is applied, so if they cannot hold, every check that applies it would pass
+  = help: weaken one of them, or add a precondition that rules these arguments out
+
+note: is false for this input
+ --> test/fixtures/generic_mid.fren:6:6
+  |
+6 | comp mid { in x: One pub det out y: One := other(x) }
+  |      ^^^
+
+fren: 9 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0631`.
+exit=1

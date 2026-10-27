@@ -949,10 +949,16 @@ def tooManyMsg (subject : String) (count n : Nat) : Msg :=
     notes := #[s!"note: enumeration searches at most {maxBehaviours} behaviours, counting a second copy of each for determinism",
       "help: lower `fren.enumeration.size`, or have the solver check it"] }
 
+/-- Why a component that applies the generic function `f`, which has no
+body, cannot be enumerated (`check::enumerable`): each instance is a
+function of its own, which enumeration does not enumerate. -/
+def genericNotEnumerable (f : Name) : String :=
+  s!"it applies the generic function `{showComp f}`, which has no body"
+
 /-- `subject` cannot be enumerated, for the reason `why` (`F0645`). -/
 def notEnumerableMsg (subject why : String) : Msg :=
   { code? := some "F0645", headline := s!"{subject} cannot be enumerated: {why}", label? := some "not enumerable"
-    notes := #["note: enumeration needs every variable's type to be enumerable, and no uninterpreted function with a contract, nor unbounded quantifier",
+    notes := #["note: enumeration needs every variable's type to be enumerable, and no uninterpreted function with a contract or type parameters, nor unbounded quantifier",
       "help: have the solver or testing check it"] }
 
 /-- The checks of `subject` that enumeration decided only up to the bound

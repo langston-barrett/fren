@@ -330,7 +330,8 @@ tests, not proved:
 
 ```fren
 comp manual_at_most_one_defined {
-    use lang::{Env, Head, Value, node}
+    use lang::{Env, Head, Program, Value, node}
+    in program: Program
     in env: Env
     in a: Value                      -- the operands' values
     in b: Value
@@ -340,6 +341,7 @@ comp manual_at_most_one_defined {
     assume no_obligation: unless obligation?, undefined_parts = {}
 
     inst conjunct: node {
+        program,
         head := Head::Op("and", ""),
         env,
         values := [a, b],
@@ -347,6 +349,7 @@ comp manual_at_most_one_defined {
         undefined_parts,
     }
     inst call: node {
+        program,
         head := Head::Op("at_most_one?", ""),
         env,
         values := [a, b],

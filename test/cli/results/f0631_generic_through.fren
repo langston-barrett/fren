@@ -1,0 +1,14 @@
+--@ argv: check test/fixtures/generic_lib.fren test/fixtures/generic_mid.fren test/cli/results/f0631_generic_through.fren
+-- An instance of a library's generic function without a body that a
+-- middle file applies first: its contract is checked with the first item
+-- that uses it, in the middle file, and not again here, as the
+-- Lean-hosted front end checks it when every item is checked (F0631).
+mod client
+use lib::other
+use mid::One
+comp c {
+    in x: One
+    in n: Int
+    pub det out y: One := other(x)
+    expect anything: n = 42
+}

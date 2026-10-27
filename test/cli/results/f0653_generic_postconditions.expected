@@ -1,0 +1,30 @@
+error[F0653]: the postconditions of `other` cannot all hold at some type
+ --> test/cli/results/f0653_generic_postconditions.fren:4:8
+  |
+4 | pub fn other<T>(x: T, y: T): T
+  |        ^^^^^ unrealizable contract
+  |
+  = note: for the arguments
+              x = T#0
+              y = T#0
+          no value of `other` satisfies `moves` and `stays`
+  = note: a generic function's contract is checked for every type, where nothing is known of a type parameter's values: they may be equal, and a type may have only one
+  = note: the spec applies it at no instance, where it would be checked instead
+  = help: weaken one of them, or add a precondition that rules these arguments out
+
+note: conflicts with `stays`
+ --> test/cli/results/f0653_generic_postconditions.fren:5:12
+  |
+5 |     ensure moves: other(x, y) != x
+  |            ^^^^^
+
+note: conflicts with `moves`
+ --> test/cli/results/f0653_generic_postconditions.fren:6:12
+  |
+6 |     ensure stays: other(x, y) = y
+  |            ^^^^^
+
+fren: 0 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0653`.
+exit=1

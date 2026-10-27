@@ -16,6 +16,7 @@ import FrenCore.Patterns
 import FrenCore.Quantifier
 import FrenCore.Refine
 import FrenCore.Regex
+import FrenCore.SeqElems
 import FrenCore.Sound
 import FrenCore.Str
 import FrenCore.Syntax

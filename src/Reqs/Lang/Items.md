@@ -626,7 +626,9 @@ function's arguments. So it relates values
 consistently wherever it is applied, across the constraints of a
 component, its instances, and the behaviours of a [global
 expectation](Global.md). What its values are is given by an
-[interpretation](Components.md#interpretations).
+[interpretation](Components.md#interpretations). A [generic
+one](GenericFunctions.md#uninterpreted-generic-functions) is an unknown
+function of its own at each instance.
 
 ### Contracts
 

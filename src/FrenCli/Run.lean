@@ -120,14 +120,25 @@ def usage : String :=
 def version : String := "fren 0.1.0"
 
 /-- Prints a message about a file to stderr, then a blank line, as rustc
-does. -/
+does. `starts` is `Fren.Core.lineStarts src`. -/
 def printAt (p : Paint) (path : String) (src : Array Char) (severity : Fren.Core.Severity) (msg : Msg)
-    (range : Fren.Core.Range) : IO Unit :=
-  IO.eprintln ({ level := severity, msg, range : Fren.Core.Diagnostic }.render path src p)
+    (range : Fren.Core.Range) (starts : Array Nat := Fren.Core.lineStarts src) : IO Unit :=
+  IO.eprintln ({ level := severity, msg, range : Fren.Core.Diagnostic }.render path src p starts)
 
-def printDiag (p : Paint) (files : Array (String × Array Char)) (d : Diag) : IO Unit := do
+/-- Prints `d`, about one of `files`, whose line starts `starts?` gives, if
+it is given (`linesOf`). -/
+def printDiag (p : Paint) (files : Array (String × Array Char)) (d : Diag)
+    (starts? : Option (Array (Thunk (Array Nat))) := none) : IO Unit := do
   let (path, src) := files[d.file]!
-  printAt p path src d.severity d.msg { start := d.span.start, stop := d.span.stop }
+  let starts := match starts? with
+    | some ss => ss[d.file]!.get
+    | none => Fren.Core.lineStarts src
+  printAt p path src d.severity d.msg { start := d.span.start, stop := d.span.stop } starts
+
+/-- The line starts of each of `files`, each computed when first needed,
+for printing many diagnostics about them (`printDiag`). -/
+def linesOf (files : Array (String × Array Char)) : Array (Thunk (Array Nat)) :=
+  files.map fun (_, src) => Thunk.mk fun _ => Fren.Core.lineStarts src
 
 /-- Prints rustc's pointer to `--explain` for the codes of `msgs`, if any. -/
 def printExplainHint (msgs : Array Msg) : IO Unit := do
@@ -502,7 +513,8 @@ states of `elaborateSourcesBefore`. -/
 def loadBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
     IO (Option (Array (String × Array Char) × Array State × State)) := do
   let some (files, states, st) ← elaborateBefore p paths lints | return none
-  for d in st.diags do printDiag p files d
+  let starts := linesOf files
+  for d in st.diags do printDiag p files d starts
   let errors := st.diags.filter (·.severity == .error) |>.size
   if errors > 0 then
     printStopped p st.diags
@@ -623,10 +635,10 @@ an internal error if the evaluator has no counterpart of `c`. `sy` is
 `symbolsOf spec?`, built once for the spec. `prelude` is `st`'s, indexed
 (`Prelude.ofDecls`), and `cache` holds the answers to the queries asked
 before (`QueryCache`). -/
-def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
+partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
-    (examples : Option Nat := some 1) :
+    (examples : Option Nat := some 1) (instances : Bool := true) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
   let bk := backend prelude st.datatypes { c with funFacts := st.funFacts, bounded := st.bounded c } limits dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache st.quantified
     st.appFuns
@@ -651,6 +663,43 @@ def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec)
       let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
       pure (← Fren.Core.checkComp bk core ks examples interprets, none)
   let (results, refuted) := applyRefutations raw (← log.get)
+  -- The contract of a generic function without a body, where its check at
+  -- its type parameters' sorts does not pass: its check at each instance
+  -- that the spec applies, in order of their names (`lang::generic_contract`).
+  if !instances then return (markInterpreted prelude c results, refuted, missing?)
+  let sites := st.instanceSites
+  -- The contract of the instance of `f` at `targs`, where `f`'s check at its
+  -- type parameters' sorts, `r`'s, does not pass: its realizability check.
+  let atInstance (f : Lean.Name) (targs : Array Fren.Core.Ty) : IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg)) := do
+    let some (_, ic) := ((st.instContracts.find? f).getD #[]).find? (·.1 == targs) | return (#[], #[])
+    let (rs, ref, _) ← solveComp st prelude spec? sy ic global #[.realizable] limits cache dump? body examples false
+    return (rs.filter (·.kind == .realizable), ref)
+  let mut results := results
+  let mut refuted := refuted
+  if let (true, some f, some r) := (c.generic, c.fn?, results.find? (·.kind == .realizable)) then
+    if r.verdict != .pass then
+      let mut instResults := #[]
+      for (site, g, targs) in sites do
+        unless site == .function && g == f do continue
+        let (rs, ref) ← atInstance f targs
+        instResults := instResults ++ rs
+        refuted := refuted ++ ref
+      let checked := Fren.Core.genericContract (·.verdict) r instResults
+      results := results.foldl (init := #[]) fun acc x => if x.kind == .realizable then acc ++ checked else acc.push x
+  -- The instances whose contracts this item's checks check, of functions
+  -- declared in earlier files (`lang::instance_site`), where the
+  -- function's check at its type parameters' sorts does not pass, reported
+  -- at the item, without notes at the clauses, which another file has.
+  let key := if body then c.path ++ c.bodyOf?.getD .anonymous
+    else if global then c.path ++ ((c.props[0]?.map (·.name)).getD .anonymous) else c.path
+  for (site, f, targs) in sites do
+    unless site == .item c.file key do continue
+    let some b := st.bodies.find? fun b => b.fn? == some f && b.generic | continue
+    let (rs, _, _) ← solveComp st prelude spec? sy b false #[.realizable] limits cache dump? true examples false
+    unless rs.any fun r => r.kind == .realizable && r.verdict != .pass do continue
+    let (rs, ref) ← atInstance f targs
+    results := results ++ rs.map fun r => { r with clashes := #[] }
+    refuted := refuted ++ ref
   return (markInterpreted prelude c results, refuted, missing?)
 
 /-- Which results of testing `c` `fren check` keeps, for the checks of
@@ -964,8 +1013,9 @@ prose blanked but keeps its lines. -/
 def applyFileEdits (src : String) (text : Array Char) (edits : Array (Fren.Core.Range × String)) : String :=
   let srcChars := src.toList.toArray
   let starts := (Fren.Core.lines srcChars).map (·.1)
+  let textStarts := Fren.Core.lineStarts text
   let move (off : Nat) :=
-    let (n, lstart, _) := Fren.Core.lineAt text off
+    let (n, lstart, _) := Fren.Core.lineAtIn textStarts text off
     starts[n - 1]! + (off - lstart)
   Fren.Core.applyEdits srcChars (edits.map fun (r, t) => ({ start := move r.start, stop := move r.stop }, t))
 
@@ -1009,7 +1059,8 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
   let errors := st.diags.filter fun d => d.severity == .error && d.lint?.isNone
   if !errors.isEmpty then
     -- Nothing is fixed.
-    for d in st.diags do printDiag args.paint files d
+    let starts := linesOf files
+    for d in st.diags do printDiag args.paint files d starts
     printStopped args.paint st.diags "fix"
     return Fren.Core.fixExit args.diffOnly false false
   -- One fix can overlap another, or leave something that another lint
@@ -1040,7 +1091,8 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
   let (files, left) ← if args.diffOnly then pure (files, st.diags.filter fun d => !(firstKept && d.fixed)) else do
     let (files, st) ← elaborateSources paths srcs args.lints #[] ignored
     pure (files, st.diags)
-  for d in left do printDiag args.paint files d
+  let starts := linesOf files
+  for d in left do printDiag args.paint files d starts
   let mut unchanged := true
   for path in paths, src in original, fixed in srcs, n in nFixed do
     let format := args.fmtAfter && !ignored path
@@ -1102,6 +1154,17 @@ deriving instance BEq for Ident, Bound, Pattern, Binder, Expr
 deriving instance BEq for CVar, CProp, CInst, CComp
 
 instance : Same Fren.Core.Table := ⟨fun a b => same_fields% Fren.Core.Table a b except []⟩
+
+/-- A generic function's: its declared result type by its type and its
+text, which say what it is with its patterns. -/
+instance : Same GenericFn := ⟨fun a b => same_fields% GenericFn a b except [resultP]
+  && a.resultP.ty == b.resultP.ty && a.resultP.text == b.resultP.text⟩
+
+/-- An instance's contract (`State.instContracts`), made of the function's
+contract's comp: by its formulas, which say what its checks ask. -/
+instance : Same CComp := ⟨fun a b => a.fn? == b.fn? && a.vars.map (·.ty) == b.vars.map (·.ty)
+  && a.vars.map (·.fact?) == b.vars.map (·.fact?) && a.props.map (·.smt) == b.props.map (·.smt)
+  && a.defs == b.defs && a.tables.map (·.2.2.2.2) == b.tables.map (·.2.2.2.2) && a.natApps == b.natApps⟩
 
 /-- The names that the file whose parse is `p` writes, as identifiers or
 keywords, with each part of a dotted identifier. A path resolves to an

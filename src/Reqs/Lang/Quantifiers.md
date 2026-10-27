@@ -216,9 +216,13 @@ the same, since quantifiers of one kind may be taken in any order.
 
 There is no other form of quantifier: one that ranges over the members of
 a set or the positions of a sequence is written with a guard, which
-bounds it (see [Guards](#guards)):
+bounds it (see [Guards](#guards)). One over a sequence's elements whose
+bound name is used only as a value, as the first below, is in the decidable
+core, and each query expands it (see [Quantifiers over
+elements](ElementQuantifiers.md)):
 
 ```text
+forall (x: T), when x in q, p(x)
 forall (x: T), when x in s, p(x)
 exists (i: Int), 0 <= i < q.len and q[i] = x
 forall (x: T), law(x)

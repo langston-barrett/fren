@@ -1,0 +1,15 @@
+--@ args: check --dump-smt
+-- `--dump-smt` of a generic function without a body: one `declare-fun` for
+-- the function itself, over a sort of its own for its type parameter, for
+-- the checks of its contract, and one for each instance that an
+-- application uses, with the instance's sorts, whose clauses are
+-- `define-fun`s at the instance
+-- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+pub fn choose<T>(a: T, b: T): T
+    ensure either: choose(a, b) = a or choose(a, b) = b
+comp c {
+    in x: Int
+    in p?
+    pub det out y: Int := choose(x, 0)
+    pub det out q? := choose(p?, true)
+}
