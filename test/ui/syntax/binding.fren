@@ -1,9 +1,13 @@
 -- A binding of a refinement cannot be a bare `when`, which would swallow
 -- the bindings after it.
 proc a(p?, q?) {}
+--~^[hosted] warning: unused variable `p?`
+--~^^[hosted] warning: unused variable `q?`
 proc c(x?) {}
+--~^[hosted] warning: unused variable `x?`
 refine r: c refines a { p? := when x?, x?, q? := x? }
 --~^[cli] error: `when` must be parenthesized here
---~^^[hosted] error:
+--~^^[hosted] error: unexpected identifier; expected '}'
 refine ok: c refines a { p? := (when x?, x?), q? := x? }
+--~^[hosted] warning: the condition and the body of `when` are written the same
 --@ exit: 2

@@ -1,14 +1,14 @@
 error[F0104]: expected a member or `}`, found `,`
- --> test/cli/syntax/f0104_comma_members.fren:2:19
+ --> test/cli/syntax/f0104_comma_members.fren:2:33
   |
-2 | comp c { in x: Int, in y: Int }
-  |                   ^ unexpected `,`
+2 | proc c(x: Int) { assume a: x > 0, assume b: x < 9 }
+  |                                 ^ unexpected `,`
   |
-  = note: the members of a component are not separated by commas
+  = note: the members of a procedure are not separated by commas
 help: remove it
   |
-2 - comp c { in x: Int, in y: Int }
-2 + comp c { in x: Int in y: Int }
+2 - proc c(x: Int) { assume a: x > 0, assume b: x < 9 }
+2 + proc c(x: Int) { assume a: x > 0 assume b: x < 9 }
   |
 
 error: could not check due to previous errors

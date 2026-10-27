@@ -3,7 +3,7 @@
 @@ -4 +4 @@
 -const LIMIT: Int := 0100
 +const LIMIT: Int := 100
-@@ -11,2 +11,2 @@
+@@ -7,2 +7,2 @@
 -    ensure r1: p? iff x < 010 or x = 00_1 or x = 01_000 or x = -00 or x = 0x10
 -    ensure r2: q? iff x in {07, 0, LIMIT}
 +    ensure r1: p? iff x < 10 or x = 1_000 or x = -0 or x = 0x10

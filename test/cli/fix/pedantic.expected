@@ -1,23 +1,23 @@
 warning[F0772]: the fields of this literal are not in the order `Cell` declares them
-  --> test/cli/fix/pedantic.fren:44:24
+  --> test/cli/fix/pedantic.fren:39:24
    |
-44 |     ensure r9: other = Cell {
+39 |     ensure r9: other = Cell {
    |                        ^^^^^^ fields out of order
    |
    = note: `Cell` declares `row` and `column`, in this order
    = note: a comment between the fields would not stay by its field, so this has no fix
 
 warning[F0771]: this `match` tests for one pattern
-  --> test/cli/fix/pedantic.fren:51:21
+  --> test/cli/fix/pedantic.fren:46:21
    |
-51 |     ensure r10: s = match m {
+46 |     ensure r10: s = match m {
    |                     ^^^^^^^^^ one pattern, then `_`
    |
    = note: the fix would drop the comments in the `match`, so it has none
 
 --- test/cli/fix/pedantic.fren
 +++ test/cli/fix/pedantic.fren
-@@ -30,6 +30,6 @@
+@@ -25,6 +25,6 @@
 -    ensure r1: y = 2 * match m { Mode::Heat => x + 1, _ => x }
 -    ensure r2: p? iff ((a? or b?) and a?) or not b?
 -    ensure r3: q? iff a? or not a?
@@ -30,10 +30,10 @@ warning[F0771]: this `match` tests for one pattern
 +    ensure r4: cell = Cell { row, column := x }
 +    ensure r5: z = (if a? then x else row) * 2
 +    ensure r6: t? iff r"a" = r##"a"#b"##
-@@ -38 +38 @@
+@@ -33 +33 @@
 -    ensure r7: w = 1 + match m { Mode::Cool => x, _ => row } and v = 3 * (if a? then x + if b? then 1 else 2 else row + if b? then 1 else 2)
 +    ensure r7: w = 1 + (if m = Mode::Cool then x else row) and v = 3 * ((if a? then x else row) + if b? then 1 else 2)
-@@ -49 +49 @@
+@@ -44 +44 @@
 -    ensure r11: d = if a? then scale(x) div 2 else scale(row) div 2
 +    ensure r11: d = (if a? then scale(x) else scale(row)) div 2
 Some errors have detailed explanations: F0771, F0772.

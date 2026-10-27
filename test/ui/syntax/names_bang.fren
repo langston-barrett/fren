@@ -4,6 +4,6 @@
 pub enum S { A(Int), B }
 
 proc c(s.t!: S): (z: Int) {
-    --~ error: `s.t!` is not a single name
+    --~^ error: `s.t!` is not a single name
     ensure r: z = match s { S::A(x.y!) => 0, _ => 1 }
 }

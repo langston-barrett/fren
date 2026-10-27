@@ -2,6 +2,6 @@
 -- A letter that Lean allows but Fren does not (F0119), in both front ends.
 
 proc c(xα: Int): (y: Int) {
-    --~ error: `xα` is not an identifier in Fren
+    --~^ error: `xα` is not an identifier in Fren
     ensure r: y = 1
 }

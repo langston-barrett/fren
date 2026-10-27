@@ -51,10 +51,10 @@ impl wrong: double for (n : Int) { n := n, m := n } by
   intro n _; exact ⟨n, rfl, rfl⟩   --~ error: type mismatch
 
 impl missing: double for (n : Int) { n := n }       --~ error: missing `m` of `double`
-impl private_: double for (n : Int) { n := n, m := n + n, scratch := n }   --~ error: `scratch` is a private `out` of `double`
+impl private_: double for (n : Int) { n := n, m := n + n, scratch := n }   --~ error: `scratch` is a private variable of `double`
 impl twice_: double for (n : Int) { n := n, n := n, m := n }   --~ error: `n` is mapped multiple times
 impl unknown: double for (n : Int) { n := n, k := n, m := n }   --~ error: `double` has no variable `k`
-impl not_comp: Verdict { }                          --~ error: expected a component, but `Verdict` is an enum
+impl not_comp: Verdict { }                          --~ error: expected a procedure, but `Verdict` is an enum
 
 -- No values of the binders satisfy the assumptions, so it proves nothing.
 proc gated(on?): (lit?) {

@@ -1,6 +1,6 @@
 --- test/cli/fix/fix_div_mod_ops.fren
 +++ test/cli/fix/fix_div_mod_ops.fren
-@@ -12,4 +12,4 @@
+@@ -5,4 +5,4 @@
 -    ensure ra: a = 3 * if c? then x mod 2 else x mod 2
 -    ensure rb: b = x div 2 * 1
 -    ensure rd: d = 1 * (x + 1) mod 3

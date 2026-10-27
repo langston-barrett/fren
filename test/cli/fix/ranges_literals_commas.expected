@@ -1,8 +1,8 @@
 warning[F0799]: this string literal is not in Unicode NFC
-  --> test/cli/fix/ranges_literals_commas.fren:15:23
+  --> test/cli/fix/ranges_literals_commas.fren:13:19
    |
-15 |     pub out a? := s = "café"
-   |                       ^^^^^^^ not in NFC
+13 |     out a? := s = "café"
+   |                   ^^^^^^^ not in NFC
    |
    = note: U+0065 U+0301 is U+00E9 in NFC
    = note: strings compare by code point, so it never equals text in NFC, which most text is in
@@ -11,10 +11,10 @@ warning[F0799]: this string literal is not in Unicode NFC
    = note: `unicode_not_nfc` is set to `warn` by its group, `pedantic`
 
 warning[F0799]: this string literal is not in Unicode NFC
-  --> test/cli/fix/ranges_literals_commas.fren:16:23
+  --> test/cli/fix/ranges_literals_commas.fren:14:19
    |
-16 |     pub out b? := s = r"café" or s = r#"é"#
-   |                       ^^^^^^^^ not in NFC
+14 |     out b? := s = r"café" or s = r#"é"#
+   |                   ^^^^^^^^ not in NFC
    |
    = note: U+0065 U+0301 is U+00E9 in NFC
    = note: strings compare by code point, so it never equals text in NFC, which most text is in
@@ -22,10 +22,10 @@ warning[F0799]: this string literal is not in Unicode NFC
    = note: `fren fix` does not, since that changes the literal's value
 
 warning[F0799]: this string literal is not in Unicode NFC
-  --> test/cli/fix/ranges_literals_commas.fren:16:39
+  --> test/cli/fix/ranges_literals_commas.fren:14:35
    |
-16 |     pub out b? := s = r"café" or s = r#"é"#
-   |                                       ^^^^^^^ not in NFC
+14 |     out b? := s = r"café" or s = r#"é"#
+   |                                   ^^^^^^^ not in NFC
    |
    = note: U+0065 U+0301 is U+00E9 in NFC
    = note: strings compare by code point, so it never equals text in NFC, which most text is in
@@ -33,10 +33,10 @@ warning[F0799]: this string literal is not in Unicode NFC
    = note: `fren fix` does not, since that changes the literal's value
 
 warning[F0799]: this string literal is not in Unicode NFC
-  --> test/cli/fix/ranges_literals_commas.fren:17:23
+  --> test/cli/fix/ranges_literals_commas.fren:15:19
    |
-17 |     pub out d? := s = "\u0065́"
-   |                       ^^^^^^^^^ not in NFC
+15 |     out d? := s = "\u0065́"
+   |                   ^^^^^^^^^ not in NFC
    |
    = note: U+0065 U+0301 is U+00E9 in NFC
    = note: strings compare by code point, so it never equals text in NFC, which most text is in
@@ -44,10 +44,10 @@ warning[F0799]: this string literal is not in Unicode NFC
    = note: `fren fix` does not, since that changes the literal's value
 
 warning[F0798]: this comparison is always `true`
-  --> test/cli/fix/ranges_literals_commas.fren:24:19
+  --> test/cli/fix/ranges_literals_commas.fren:22:15
    |
-24 |     pub out h? := x.abs >= 0
-   |                   ^^^^^^^^^^ `abs` is never below 0
+22 |     out h? := x.abs >= 0
+   |               ^^^^^^^^^^ `abs` is never below 0
    |
    = note: the bound or the operator is probably not the one meant
    = note: `invalid_upcast_comparisons` is set to `warn` by its group, `pedantic`
@@ -57,14 +57,14 @@ warning[F0798]: this comparison is always `true`
 @@ -5 +5 @@
 -pub enum Mode { Heat, Cool, }
 +pub enum Mode { Heat, Cool }
-@@ -16 +16 @@
--    pub out b? := s = r"café" or s = r#"é"#
-+    pub out b? := s = r"café" or s = r"é"
-@@ -18,2 +18,2 @@
--    pub out e: Set<Int> := {x, 1,}
--    pub out f: Seq<Int> := [x, 2, ]
-+    pub out e: Set<Int> := {x, 1}
-+    pub out f: Seq<Int> := [x, 2 ]
+@@ -14 +14 @@
+-    out b? := s = r"café" or s = r#"é"#
++    out b? := s = r"café" or s = r"é"
+@@ -16,2 +16,2 @@
+-    out e := {x, 1,}
+-    out f := [x, 2, ]
++    out e := {x, 1}
++    out f := [x, 2 ]
 Some errors have detailed explanations: F0798, F0799.
 For more information about an error, try `fren --explain F0798`.
 exit=1

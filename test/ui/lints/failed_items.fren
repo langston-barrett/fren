@@ -47,7 +47,7 @@ proc bad_constraint(x: Int): (p?) {
 -- Many single-character names, in a component with an error in its
 -- members: the component's own lints still run.
 set_option fren.lint.many_single_char_names "warn" in
-proc single(a: Int, b: Int, c: Int, d: Int): (e: Int) {  --~ warning: component `single` declares 5 single-character names
+proc single(a: Int, b: Int, c: Int, d: Int): (e: Int) {  --~ warning: procedure `single` declares 5 single-character names
     ensure r: e = a + b + c + d + nope  --~ error: cannot find `nope` in this scope
 }
 --@ exit: 2

@@ -1,39 +1,39 @@
 warning[F0805]: this says that `x` matches one of these patterns
-  --> test/cli/fix/manual_pattern_test.fren:29:19
+  --> test/cli/fix/manual_pattern_test.fren:38:15
    |
-29 |     pub out j? := x = 1 or /- one more -/ x = 2
-   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ equations of one expression with values that patterns write
+38 |     out j? := x = 1 or /- one more -/ x = 2
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ equations of one expression with values that patterns write
    |
    = help: write `x is 1 | 2`
    = note: `fren fix` leaves this, since the pattern test would lose the comment within the operands
 
 --- test/cli/fix/manual_pattern_test.fren
 +++ test/cli/fix/manual_pattern_test.fren
-@@ -15,8 +15,8 @@
--    pub out a? := x = 429 or 503 = x
--    pub out b? := x = 429 or x is 500..=599
--    pub out d? := p? or (x = 1) or x = 2 or t = "a"
--    pub out e? := x != 0 and not x is 10..
--    pub out f? := s = Shade::Light or s is Shade::Tinted(_)
--    pub out g? := q != [] and (q[0] = 1 or q[0] = 2)
--    pub out h? := not (t = "a" or t = "b") and p?
--    pub out i? := x = 1 or x = 2 or x = 3
-+    pub out a? := x is 429 | 503
-+    pub out b? := x is 429 | 500..=599
-+    pub out d? := p? or x is 1 | 2 or t = "a"
-+    pub out e? := not x is 0 | 10..
-+    pub out f? := s is Shade::Light | Shade::Tinted(_)
-+    pub out g? := q != [] and q[0] is 1 | 2
-+    pub out h? := not t is "a" | "b" and p?
-+    pub out i? := x is 1..=3
-@@ -24,4 +24,4 @@
--    pub out k? := match (x = 1 or x = 2) { true => p?, false => false }
--    pub out l: Int := table { (x = 1 or x = 2) => 0, x > 5 => 1, _ => 2 }
--    pub out m: Int := count(x = 1 or x = 2)
--    pub out n? := s is Shade::Tinted(1..=3) or s = Shade::Light
-+    pub out k? := match (x is 1 | 2) { true => p?, false => false }
-+    pub out l: Int := table { (x is 1 | 2) => 0, x > 5 => 1, _ => 2 }
-+    pub out m: Int := count(x is 1 | 2)
-+    pub out n? := s is Shade::Tinted(1..=3) | Shade::Light
+@@ -24,8 +24,8 @@
+-    out a? := x = 429 or 503 = x
+-    out b? := x = 429 or x is 500..=599
+-    out d? := p? or (x = 1) or x = 2 or t = "a"
+-    out e? := x != 0 and not x is 10..
+-    out f? := s = Shade::Light or s is Shade::Tinted(_)
+-    out g? := q != [] and (q[0] = 1 or q[0] = 2)
+-    out h? := not (t = "a" or t = "b") and p?
+-    out i? := x = 1 or x = 2 or x = 3
++    out a? := x is 429 | 503
++    out b? := x is 429 | 500..=599
++    out d? := p? or x is 1 | 2 or t = "a"
++    out e? := not x is 0 | 10..
++    out f? := s is Shade::Light | Shade::Tinted(_)
++    out g? := q != [] and q[0] is 1 | 2
++    out h? := not t is "a" | "b" and p?
++    out i? := x is 1..=3
+@@ -33,4 +33,4 @@
+-    out k? := match (x = 1 or x = 2) { true => p?, false => false }
+-    out l := table { (x = 1 or x = 2) => 0, x > 5 => 1, _ => 2 }
+-    out m := count(x = 1 or x = 2)
+-    out n? := s is Shade::Tinted(1..=3) or s = Shade::Light
++    out k? := match (x is 1 | 2) { true => p?, false => false }
++    out l := table { (x is 1 | 2) => 0, x > 5 => 1, _ => 2 }
++    out m := count(x is 1 | 2)
++    out n? := s is Shade::Tinted(1..=3) | Shade::Light
 For more information about this error, try `fren --explain F0805`.
 exit=1

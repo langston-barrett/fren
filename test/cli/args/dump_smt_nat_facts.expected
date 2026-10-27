@@ -143,9 +143,9 @@
 (reset)
 
 note: cover goal `uses_sized::ok_one` is met
-  --> test/cli/args/dump_smt_nat_facts.fren:25:11
+  --> test/cli/args/dump_smt_nat_facts.fren:19:11
    |
-25 |     cover ok_one: ok? and m = 1
+19 |     cover ok_one: ok? and m = 1
    |           ^^^^^^ met
    |
    = witness: m = 1, ok? = true, sz.pos? = true

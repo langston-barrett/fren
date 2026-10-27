@@ -1,14 +1,14 @@
 error[F0302]: `n?` ends in `?` but is not a `Bool`
- --> test/cli/types/f0302_q_not_bool.fren:2:13
+ --> test/cli/types/f0302_q_not_bool.fren:2:8
   |
-2 | comp c { in n?: Int }
-  |             ^^ ends in `?`
+2 | proc c(n?: Int) {}
+  |        ^^ ends in `?`
   |
   = note: a variable's name ends in `?` if and only if it is a `Bool`
 help: rename it to `n`
   |
-2 - comp c { in n?: Int }
-2 + comp c { in n: Int }
+2 - proc c(n?: Int) {}
+2 + proc c(n: Int) {}
   |
 
 error: could not check due to previous errors

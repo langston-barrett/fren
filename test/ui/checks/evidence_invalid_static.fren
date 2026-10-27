@@ -7,7 +7,9 @@ proc a(x: Int): (y: Int) {
     ensure r: y = x
 }
 
-proc b(x: Int): (set_option fren.evidence "guess" in  --~ error: invalid evidence `guess` y: Int) {
+proc b(x: Int): (
+    set_option fren.evidence "guess" in y: Int,  --~ error: invalid evidence `guess`
+) {
     ensure r: y = x
 }
 

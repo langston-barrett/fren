@@ -2,8 +2,8 @@
 -- inputs that nothing else mentions.
 
 proc left_over(x: Int, n: Int, t: Int): (y: Int) {
-    assume pos: n > 0  --~ warning: the assumption `pos` constrains only inputs that nothing uses
-    assume small: n < 10  --~ warning: the assumption `small` constrains only inputs that nothing uses
+    assume pos: n > 0  --~ warning: the assumption `pos` constrains only parameters that nothing uses
+    assume small: n < 10  --~ warning: the assumption `small` constrains only parameters that nothing uses
     -- `t` is used, and so `x` too.
     assume below: x < t
     ensure r: y = x + t
@@ -29,8 +29,8 @@ proc chained(k: Int, n: Int, m: Int): (y: Int) {
 
 -- A chain that reaches no used variable is reported link by link.
 proc unlinked(k: Int, n: Int): (y: Int) {
-    assume a: k > 0  --~ warning: the assumption `a` constrains only inputs that nothing uses
-    assume b: n = k + 1  --~ warning: the assumption `b` constrains only inputs that nothing uses
+    assume a: k > 0  --~ warning: the assumption `a` constrains only parameters that nothing uses
+    assume b: n = k + 1  --~ warning: the assumption `b` constrains only parameters that nothing uses
     ensure r: y = 1
 }
 
@@ -121,7 +121,7 @@ proc rooted(n: Color): (y: Int) {
 const THREE: Int := 3
 
 proc constant(n: Int): (y: Int) {
-    assume a: n = THREE  --~ warning: the assumption `a` constrains only inputs that nothing uses
+    assume a: n = THREE  --~ warning: the assumption `a` constrains only parameters that nothing uses
     ensure r: y = THREE
 }
 
@@ -130,13 +130,13 @@ proc constant(n: Int): (y: Int) {
 pub fn loss(Int): Int
 
 proc own_function(n: Int): (y: Int) {
-    assume a: loss(n) > 0  --~ warning: the assumption `a` constrains only inputs that nothing uses
+    assume a: loss(n) > 0  --~ warning: the assumption `a` constrains only parameters that nothing uses
     ensure r: y = gain(1)
 }
 
 -- A variant is a value, not a function or a constant.
 proc variant(n: Color): (y: Int) {
-    assume a: n = Color::Red  --~ warning: the assumption `a` constrains only inputs that nothing uses
+    assume a: n = Color::Red  --~ warning: the assumption `a` constrains only parameters that nothing uses
     ensure r: y = 1
 }
 
@@ -145,7 +145,7 @@ proc variant(n: Color): (y: Int) {
 type Key
 
 proc keyed(k1: Key, k2: Key, i: Key, j: Key): (same?) {
-    assume distinct: k1 != k2  --~ warning: the assumption `distinct` constrains only inputs that nothing uses
+    assume distinct: k1 != k2  --~ warning: the assumption `distinct` constrains only parameters that nothing uses
     ensure r: same? iff i = j
     expect equal: when i = j, same?
 }

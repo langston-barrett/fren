@@ -2,9 +2,12 @@
 -- into the bindings after it.
 enum E { A, B }
 proc a(p?, q?) {}
+--~^[hosted] warning: unused variable `p?`
+--~^^[hosted] warning: unused variable `q?`
 proc c(x: E) {}
+--~^[hosted] warning: unused variable `x`
 refine r: c refines a { p? := exists (e: E), e = x, q? := true }
 --~^[cli] error: `exists` must be parenthesized here
---~^^[hosted] error:
+--~^^[hosted] error: unexpected token at this precedence level; consider parenthesizing the term
 refine ok: c refines a { p? := (exists (e: E), e = x), q? := true }
 --@ exit: 2

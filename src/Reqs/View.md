@@ -296,7 +296,7 @@ For example, with `--examples 1`, the default:
 error[F0601]: `http::retry` is not realizable
  --> retry.fren:9:6
   |
-9 | comp retry {
+9 | proc retry(
   |      ^^^^^ not realizable
   |
   = note: for the input
@@ -308,21 +308,21 @@ error[F0601]: `http::retry` is not realizable
   = help: weaken one of them, or add an `assume` that rules this input out
 
 note: `transient` forces retry? = true, but `honor_server` and `latency_budget` force retry? = false
-  --> retry.fren:19:12
+  --> retry.fren:18:12
    |
-19 |     ensure transient: retry? iff (status = 429 or status = 503)
+18 |     ensure transient: retry? iff (status = 429 or status = 503)
    |            ^^^^^^^^^
 
 note: conflicts with `transient` and `latency_budget`
-  --> retry.fren:21:12
+  --> retry.fren:20:12
    |
-21 |     ensure honor_server: when retry?, delay >= retry_after
+20 |     ensure honor_server: when retry?, delay >= retry_after
    |            ^^^^^^^^^^^^
 
 note: conflicts with `transient` and `honor_server`
-  --> retry.fren:23:12
+  --> retry.fren:22:12
    |
-23 |     ensure latency_budget: delay <= MAX_DELAY
+22 |     ensure latency_budget: delay <= MAX_DELAY
    |            ^^^^^^^^^^^^^^
 ```
 

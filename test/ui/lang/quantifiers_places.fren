@@ -26,7 +26,7 @@ proc places(mode: Mode, limit: Nat): (free?, costly?, all_cheap?) {
     -- A defined output.
     out all_cheap? := forall (m: Mode), cost(m) <= limit
 
-    -- An instance's binding.
+    -- A call's argument.
     call w := sub((exists (m: Mode), m = mode))
     ensure r: free? iff (forall (m: Mode), when m = mode, cost(m) = 0)
 

@@ -1,7 +1,7 @@
 error[F0645]: `c` cannot be enumerated: `name` has the type `String`, which is not enumerable
  --> test/cli/results/f0645_string.fren:3:6
   |
-3 | comp c {
+3 | proc c(name: String): (empty?) {
   |      ^ not enumerable
   |
   = note: enumeration needs every variable's type to be enumerable, and no uninterpreted function with a contract, nor unbounded quantifier

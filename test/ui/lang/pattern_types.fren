@@ -22,7 +22,7 @@ proc router(p: Packet, hops: Int is 1..): (y: Int) {
 
 proc user(x: Int): (det d: Byte) {
     out d := x   --~ error: a value in `user::d` may not have the type `Byte`
-    call w := router(Packet { length := x, level := Severity::Warning }, x)   --~ error: the input `hops` of `router` may not have its type `Int is 1..` for instance `user::w`
+    call w := router(Packet { length := x, level := Severity::Warning }, x)   --~ error: the parameter `hops` of `router` may not have its type `Int is 1..` for call `user::w`
     --~^ error: a value in `user::w` may not have the type `Byte`
 }
 

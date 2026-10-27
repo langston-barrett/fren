@@ -21,7 +21,7 @@ proc twice(n: Int): (m: Int) {
 }
 
 proc unguarded(n: Int): (m: Int) {
-    call c := counter(n)  --~ error: the assumption `nonneg` of `counter` may not hold for instance `unguarded::c`
+    call c := counter(n)  --~ error: the assumption `nonneg` of `counter` may not hold for call `unguarded::c`
 
     ensure result: m = c.next
 }

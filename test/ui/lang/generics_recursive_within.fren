@@ -13,8 +13,8 @@ pub struct InSet<T> { s: Set<List<T>> }
 pub struct InSeq<T> { q: Seq<List<T>> }
 pub struct InRel<T> { r: Rel<Int, List<T>> }
 
-proc giver(n: Int): (det w: Wrap<Byte>) {
-    out w := Wrap::W(List::Cons(n, List::Nil))   --~ error: `Byte` cannot be a type argument of the recursive enumeration `generics_recursive_within::List`
+proc giver(n: Int): (det w: Wrap<Byte>) {  --~ error: `Byte` cannot be a type argument of the recursive enumeration `generics_recursive_within::List`
+    out w := Wrap::W(List::Cons(n, List::Nil))
 }
 
 proc deeper(
@@ -22,8 +22,8 @@ proc deeper(
 ) {}
 
 -- Through a set's, sequence's or relation's element types.
-proc in_set(n: Int): (det x: InSet<Byte>) {
-    out x := InSet { s := {List::Cons(n, List::Nil)} }   --~ error: `Byte` cannot be a type argument of the recursive enumeration `generics_recursive_within::List`
+proc in_set(n: Int): (det x: InSet<Byte>) {  --~ error: `Byte` cannot be a type argument of the recursive enumeration `generics_recursive_within::List`
+    out x := InSet { s := {List::Cons(n, List::Nil)} }
 }
 
 proc in_seq(

@@ -1,7 +1,7 @@
 warning[F0760]: this `match` gives back its scrutinee
- --> test/cli/lints/complexity/f0760_needless_match.fren:8:19
+ --> test/cli/lints/complexity/f0760_needless_match.fren:4:19
   |
-8 |     ensure r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) }
+4 |     ensure r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) }
   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ each arm gives back the value it matches
   |
   = help: `fren fix` can fix this
@@ -9,21 +9,21 @@ warning[F0760]: this `match` gives back its scrutinee
   = help: to allow it, `set_option fren.lint.needless_match "allow"`
 help: write `s`
   |
-8 -     ensure r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) }
-8 +     ensure r: t = s
+4 -     ensure r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) }
+4 +     ensure r: t = s
   |
 
 warning[F0760]: this `match` gives back its scrutinee
- --> test/cli/lints/complexity/f0760_needless_match.fren:9:19
+ --> test/cli/lints/complexity/f0760_needless_match.fren:5:19
   |
-9 |     ensure q: u = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
+5 |     ensure q: u = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ each arm gives back the value it matches
   |
   = help: `fren fix` can fix this
 help: write `s`
   |
-9 -     ensure q: u = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
-9 +     ensure q: u = s
+5 -     ensure q: u = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
+5 +     ensure q: u = s
   |
 
 fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant

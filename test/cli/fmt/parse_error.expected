@@ -1,13 +1,13 @@
 error[F0105]: `==` is not an operator in Fren
- --> test/cli/fmt/parse_error.fren:3:32
+ --> test/cli/fmt/parse_error.fren:3:30
   |
-3 | comp c { in x: Int ensure r: x == 1 }
-  |                                ^^ not a Fren operator
+3 | proc c(x: Int) { ensure r: x == 1 }
+  |                              ^^ not a Fren operator
   |
 help: use `=` to test for equality
   |
-3 - comp c { in x: Int ensure r: x == 1 }
-3 + comp c { in x: Int ensure r: x = 1 }
+3 - proc c(x: Int) { ensure r: x == 1 }
+3 + proc c(x: Int) { ensure r: x = 1 }
   |
 
 error: could not format 1 file

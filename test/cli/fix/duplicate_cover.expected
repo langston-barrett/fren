@@ -1,5 +1,5 @@
 --- test/cli/fix/duplicate_cover.fren
 +++ test/cli/fix/duplicate_cover.fren
-@@ -10 +9,0 @@
+@@ -7 +6,0 @@
 -    cover high: x < 0 and y < 0  -- a copy
 exit=1

@@ -52,7 +52,7 @@ proc gate(m: Mode): (det open?: Bool) {
 
 set_option fren.evidence "enumerated" in
 proc user(m: Mode) {
-    call g := gate(m)  --~ error: the assumption `on` of `gate` may not hold for instance `user::g`
+    call g := gate(m)  --~ error: the assumption `on` of `gate` may not hold for call `user::g`
     expect follows: when m = Mode::Heat, g.open?
 }
 
@@ -62,9 +62,9 @@ expect same_input: forall (x y: thermostat), when x.mode = y.mode and x.hot? = y
 -- A `det out` defined from an output that is not determined is not
 -- determined either: its definition's slots are searched.
 set_option fren.evidence "enumerated" in
-proc nd(a?): (o?, det d?) {
+proc nd(a?): (o?, det d?) {  --~ error: `nd::d?` is not determined by the inputs
     ensure r: when a?, o?
-    out d? := o?  --~ error: `nd::d?` is not determined by the inputs
+    out d? := o?
 }
 
 -- A quantifier over a listed type of many values, and a global

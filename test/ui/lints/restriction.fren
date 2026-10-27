@@ -48,7 +48,7 @@ proc more_paths(
     --~^ warning: this pattern test is an equation
 }
 
-proc climate_check(level: Int): (high?) {  --~ warning: component `climate_check` contains the name of its module `climate`
+proc climate_check(level: Int): (high?) {  --~ warning: procedure `climate_check` contains the name of its module `climate`
     ensure high_rule: high? iff level > CLIMATE_LIMIT
 }
 

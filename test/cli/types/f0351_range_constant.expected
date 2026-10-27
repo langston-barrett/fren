@@ -1,8 +1,8 @@
 error[F0351]: the value of `MAX` is not known where the range is checked
- --> test/cli/types/f0351_range_constant.fren:4:63
+ --> test/cli/types/f0351_range_constant.fren:4:56
   |
-4 | comp c { in n: Int pub out y: Int ensure r: y = match n { 0..=MAX => 0, _ => 1 } }
-  |                                                               ^^^ value not known
+4 | proc c(n: Int): (y: Int) { ensure r: y = match n { 0..=MAX => 0, _ => 1 } }
+  |                                                        ^^^ value not known
   |
   = note: a constant used as a range's bound has an integer constant expression as its value: integer literals and such constants, by `+`, `-`, `*`, `div`, `mod`, `abs`, `min` and `max`
 

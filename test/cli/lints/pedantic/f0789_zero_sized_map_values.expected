@@ -1,8 +1,8 @@
 warning[F0789]: `Rel<Set<Int>, Mark>` relates to `Mark`, which has one value
- --> test/cli/lints/pedantic/f0789_zero_sized_map_values.fren:6:16
+ --> test/cli/lints/pedantic/f0789_zero_sized_map_values.fren:6:11
   |
-6 | comp c { in r: Rel<Set<Int>, Mark> pub out p? ensure q: p? iff r = {} }
-  |                ^^^^^^^^^^^^^^^^^^^ `Mark` has only `Mark::Marked`
+6 | proc c(r: Rel<Set<Int>, Mark>): (p?) { ensure q: p? iff r = {} }
+  |           ^^^^^^^^^^^^^^^^^^^ `Mark` has only `Mark::Marked`
   |
   = note: such a relation says only which `Set<Int>`s it relates, as a set does
   = help: write `Set<Set<Int>>`

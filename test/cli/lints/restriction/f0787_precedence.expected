@@ -1,30 +1,30 @@
 warning[F0787]: `inter` is an operand of `minus` without parentheses
-  --> test/cli/lints/restriction/f0787_precedence.fren:12:43
-   |
-12 |     pub out loud: Set<Int> := zones minus quiet inter tripped
-   |                                           ^^^^^^^^^^^^^^^^^^^ binds more tightly than `minus`
-   |
-   = note: `inter` binds more tightly than `minus`, so this is `(quiet inter tripped)` already
-   = help: `fren fix` can fix this
-   = note: `precedence` is set to `warn`
+ --> test/cli/lints/restriction/f0787_precedence.fren:8:29
+  |
+8 |     out loud := zones minus quiet inter tripped
+  |                             ^^^^^^^^^^^^^^^^^^^ binds more tightly than `minus`
+  |
+  = note: `inter` binds more tightly than `minus`, so this is `(quiet inter tripped)` already
+  = help: `fren fix` can fix this
+  = note: `precedence` is set to `warn`
 help: add the parentheses, which keep the meaning
-   |
-12 -     pub out loud: Set<Int> := zones minus quiet inter tripped
-12 +     pub out loud: Set<Int> := zones minus (quiet inter tripped)
-   |
+  |
+8 -     out loud := zones minus quiet inter tripped
+8 +     out loud := zones minus (quiet inter tripped)
+  |
 
 warning[F0787]: `and` is an operand of `or` without parentheses
-  --> test/cli/lints/restriction/f0787_precedence.fren:14:51
+  --> test/cli/lints/restriction/f0787_precedence.fren:10:51
    |
-14 |     ensure ringing_rule: ringing? iff (moving? or armed? and open?)
+10 |     ensure ringing_rule: ringing? iff (moving? or armed? and open?)
    |                                                   ^^^^^^^^^^^^^^^^ binds more tightly than `or`
    |
    = note: `and` binds more tightly than `or`, so this is `(armed? and open?)` already
    = help: `fren fix` can fix this
 help: add the parentheses, which keep the meaning
    |
-14 -     ensure ringing_rule: ringing? iff (moving? or armed? and open?)
-14 +     ensure ringing_rule: ringing? iff (moving? or (armed? and open?))
+10 -     ensure ringing_rule: ringing? iff (moving? or armed? and open?)
+10 +     ensure ringing_rule: ringing? iff (moving? or (armed? and open?))
    |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

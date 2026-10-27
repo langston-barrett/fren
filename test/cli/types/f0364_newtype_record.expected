@@ -1,8 +1,8 @@
 error[F0364]: `Ms` is a newtype, not a record with named fields
- --> test/cli/types/f0364_newtype_record.fren:4:38
+ --> test/cli/types/f0364_newtype_record.fren:4:35
   |
-4 | comp c { pub out t: Ms ensure r: t = Ms { value := 5 } }
-  |                                      ^^ a newtype
+4 | proc c(): (t: Ms) { ensure r: t = Ms { value := 5 } }
+  |                                   ^^ a newtype
   |
   = note: a newtype has one unnamed field, its value: build it as `Ms(e)`, and read it as `x.0`
 

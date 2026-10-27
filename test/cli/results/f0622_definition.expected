@@ -1,8 +1,8 @@
 error[F0622]: a value in `c::b` may not have the type `Byte`
- --> test/cli/results/f0622_definition.fren:6:28
+ --> test/cli/results/f0622_definition.fren:5:14
   |
-6 |     pub det out b: Byte := x
-  |                            ^ may not have the type `Byte`
+5 |     out b := x
+  |              ^ may not have the type `Byte`
   |
   = counterexample: x = -1, b = -1
   = note: a value given where a pattern type is declared must match its pattern

@@ -1,7 +1,7 @@
 error[F0603]: expectation `shown::small` does not hold
-  --> test/cli/commands/counterexample_newtype.fren:13:12
+  --> test/cli/commands/counterexample_newtype.fren:10:12
    |
-13 |     expect small: next < Ms(4)
+10 |     expect small: next < Ms(4)
    |            ^^^^^ does not follow from the guarantees
    |
    = counterexample: t = Ms(3), s = Slot { start := Ms(2), tags := {Ms(10), Ms(9)} }, next = Ms(4)

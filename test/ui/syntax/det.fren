@@ -2,6 +2,6 @@
 proc c(x: Int) {
   det assume a: x > 0
   --~^[cli] error: `det` applies only to results, `exists` and `let`, not to a constraint
-  --~^^[hosted] error:
+  --~^^[hosted] error: unexpected identifier; expected 'exists', 'let' or 'out'
 }
 --@ exit: 2

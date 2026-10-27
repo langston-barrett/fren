@@ -1,11 +1,11 @@
-error[F0114]: an input cannot have a definition
- --> test/cli/syntax/f0114_input_definition.fren:3:15
+error[F0114]: a parameter cannot have a definition
+ --> test/cli/syntax/f0114_input_definition.fren:2:15
   |
-3 |     in x: Int := 3
-  |               ^^ inputs are chosen by the environment
+2 | proc c(x: Int := 3) {}
+  |               ^^ parameters are chosen by the environment
   |
-  = note: only an output can be defined, as `out x: T := e`
-  = help: make it an output, or state what it equals in an `assume`
+  = note: only an output can be defined, as `let x: T := e`, or as a result, `out r := e`
+  = help: make it a `let`, or state what it equals in an `assume`
 
 error: could not check due to previous errors
 

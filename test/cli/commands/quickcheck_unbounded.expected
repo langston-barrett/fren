@@ -1,7 +1,7 @@
 error[F0603]: expectation `pairs_only::r` does not hold
-  --> test/cli/commands/quickcheck_unbounded.fren:38:8
+  --> test/cli/commands/quickcheck_unbounded.fren:29:8
    |
-38 | refine pairs_only: sorted_pairs refines sorted_any
+29 | refine pairs_only: sorted_pairs refines sorted_any
    |        ^^^^^^^^^^ does not follow from the guarantees
    |
    = counterexample: q = [0, 2, 8, 1], sorted_pairs.sorted? = true

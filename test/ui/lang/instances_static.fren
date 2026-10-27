@@ -14,21 +14,21 @@ enum E { A }
 proc missing(y?) { call s := sub(y?) }                     --~ error: too few arguments: `sub` takes 2 arguments
 proc extra(y?) { call s := sub(1, y?, 2) }                 --~ error: too many arguments: `sub` takes 2 arguments
 proc old(y?) { inst s: sub { y?, x := 1 } }                --~ error: instances are written as calls
-proc not_comp() { call s := E() }                             --~ error: expected a component, but `E` is an enum
-proc q_name(y?) { call s? := sub(1, y?) }          --~ error: instance names cannot end in `?`
-proc dup_name(y?) { call y? := sub(1, y?) }        --~ error: `y?` is defined multiple times in this comp
+proc not_comp() { call s := E() }                             --~ error: expected a procedure, but `E` is an enum
+proc q_name(y?) { call s? := sub(1, y?) }          --~ error: call names cannot end in `?`
+proc dup_name(y?) { call y? := sub(1, y?) }        --~ error: `y?` is defined multiple times in this procedure
 
 proc out_bound(y?): (o: Int) { call s := sub(o, y?) ensure r: o = 0 }
---~^ error: bindings may only mention `in` variables and earlier instances, but `o` is an `out`
+--~^ error: the arguments of a call may only mention parameters and earlier calls, but `o` is an output
 proc later(y?) { call a := sub(b.z, y?) call b := sub(1, y?) }
---~^ error: instance `b` is not declared before this binding
-proc itself(y?) { call a := sub(a.z, y?) }         --~ error: instance `a` is not declared before this binding
+--~^ error: call `b` is not declared before these arguments
+proc itself(y?) { call a := sub(a.z, y?) }         --~ error: call `a` is not declared before these arguments
 proc private_var(y?): (o: Int) { call a := sub(1, y?) ensure r: o = a.hidden }
---~^ error: `a.hidden` is private to instance `a`
+--~^ error: `a.hidden` is private to call `a`
 proc assumes_inst(y?) { call a := sub(1, y?) assume bad: a.z = 0 }
---~^ error: assumptions may only mention `in` variables, but `a.z` belongs to instance `a`
+--~^ error: assumptions may only mention parameters, but `a.z` belongs to call `a`
 proc no_field(y?): (o: Int) { call a := sub(1, y?) ensure r: o = a.nope }
---~^ error: instance `a` has no `in` or `pub out` named `nope`
+--~^ error: call `a` has no parameter or result named `nope`
 proc not_inst(): (o: Int) { ensure r: o = q.z }            --~ error: `q.z` is not a single name
 proc mistyped(y?) { call a := sub(y?, y?) }
 --~^ error: type mismatch: expected `Int`, found `Bool`

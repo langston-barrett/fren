@@ -1,13 +1,9 @@
 --- test/cli/fmt/quantifier_unbounded.fren
 +++ test/cli/fmt/quantifier_unbounded.fren
-@@ -6,5 +6,5 @@
--  in q: Seq<Int>
--  pub out o?
+@@ -6,3 +6,3 @@
 -  ensure r:o? iff(forall(i:Int),when 0<=i<q.len,q[i]>0)
 -  ensure s: o? iff (exists (x : Int),x in q and
 -  x > 0)
-+    in q: Seq<Int>
-+    pub out o?
 +    ensure r: o? iff (forall (i: Int), when 0 <= i < q.len, q[i] > 0)
 +    ensure s: o? iff (exists (x: Int), x in q and
 +        x > 0)

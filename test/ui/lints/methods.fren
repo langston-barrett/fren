@@ -13,8 +13,8 @@ pub fn pos?(n: Int, big?: Bool) := n > 0 and big?  --~ warning: `big?` is a `Boo
 
 pub proc vars(
     ready?: Bool,    --~ warning: `ready?` is a `Bool` by its name
-): (done?: Bool) {
-    out done? := ready?  --~ warning: `done?` is a `Bool` by its name
+): (done?: Bool) {  --~ warning: `done?` is a `Bool` by its name
+    out done? := ready?
 }
 
 -- The chains are in functions' bodies, which no check reads.

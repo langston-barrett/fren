@@ -1,0 +1,17 @@
+error[F0110]: parameters cannot be declared `det`
+ --> test/cli/syntax/f0110_det_param.fren:2:8
+  |
+2 | proc c(det x: Int) {}
+  |        ^^^ not allowed on a parameter
+  |
+  = note: a parameter is an input: the environment chooses it, sees it, and determines it
+help: remove `det`
+  |
+2 - proc c(det x: Int) {}
+2 + proc c(x: Int) {}
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0110`.
+exit=2

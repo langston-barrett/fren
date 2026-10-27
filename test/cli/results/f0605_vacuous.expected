@@ -1,7 +1,7 @@
 error[F0605]: `c::never` is vacuous: its condition can never hold, given `r`
- --> test/cli/results/f0605_vacuous.fren:7:19
+ --> test/cli/results/f0605_vacuous.fren:5:19
   |
-7 |     ensure never: when x < 0, y = 0
+5 |     ensure never: when x < 0, y = 0
   |                   ^^^^^^^^^^ this condition is always false
   |
   = note: a constraint whose condition never holds says nothing

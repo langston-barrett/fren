@@ -2,10 +2,8 @@
 -- order, whatever kind of member comes first; `_` declares no name.
 set_option fren.lint.match_like_membership "allow"
 
-proc constraint_first(
-    x: Int,       --~ error: `x` is defined multiple times in this component
-) {
-    ensure x: true
+proc parameter_first(x: Int) {
+    ensure x: true  --~ error: `x` is defined multiple times in this procedure
 }
 
 enum Shape { Pair(Int, Int), Empty }
@@ -18,7 +16,7 @@ proc wildcards(s: Shape): (paired?) {
 -- its members, in both front ends.
 proc first_only(
     x: Int,
-    x: Int,       --~ error: `x` is defined multiple times in this component
+    x: Int,       --~ error: `x` is defined multiple times in this procedure
     y: Nope,
     y: Int,
 ) {}

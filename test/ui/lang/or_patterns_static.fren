@@ -27,7 +27,7 @@ enum U { Y, Z }
 -- A component's import shadows its module's.
 proc shadows(u: U): (y?) { use self::U::Y ensure r: y? iff u = Y }
 proc twice(t: T): (y?) { use self::T::X use self::T::X ensure r: y? iff t = X }
---~^ error: the name `X` is already imported into component `twice`
+--~^ error: the name `X` is already imported into procedure `twice`
 --~^^ warning: unused import `T::X`
 
 --@ exit: 2

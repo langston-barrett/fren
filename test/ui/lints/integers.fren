@@ -123,12 +123,12 @@ proc naturals(n: Int, k: Int, j: Int, i: Int, h: Int, c?): (m: Int, p: Int, q: I
     assume counts: n >= 0 and k > n                             --~ warning: `n` is never negative, so it can be a `Nat`
     --~^ warning: these comparisons can be chained
     assume order: (0 <= j)                                      --~ warning: `j` is never negative, so it can be a `Nat`
-    --~^ warning: the assumption `order` constrains only inputs that nothing uses
+    --~^ warning: the assumption `order` constrains only parameters that nothing uses
     -- Under `when` or `or`, or not `0`: no lint.
     assume guarded: when c?, i >= 0
     assume either: i >= 0 or k = 1
     assume shifted: h >= 1
-    --~^ warning: the assumption `shifted` constrains only inputs that nothing uses
+    --~^ warning: the assumption `shifted` constrains only parameters that nothing uses
 
     ensure r: m >= 0 and m <= n                                    --~ warning: `m` is never negative, so it can be a `Nat`
     --~^ warning: these comparisons can be chained

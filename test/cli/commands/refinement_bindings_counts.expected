@@ -1,7 +1,7 @@
 error[F0714]: this is outside the decidable core: the solver does not reliably combine counting with relational operators
-  --> test/cli/commands/refinement_bindings_counts.fren:17:47
+  --> test/cli/commands/refinement_bindings_counts.fren:14:47
    |
-17 | refine counts: related refines counted { n := s.card }
+14 | refine counts: related refines counted { n := s.card }
    |                                               ^^^^^^ outside the decidable core
    |
    = help: say what the members are, with `in` and `subset`, rather than how many there are

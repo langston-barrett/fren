@@ -1,7 +1,7 @@
 error[F0603]: expectation `shown::small` does not hold
- --> test/cli/commands/counterexample_generic.fren:9:12
+ --> test/cli/commands/counterexample_generic.fren:7:12
   |
-9 |     expect small: x = Option::None or p.fst = Option::Some(true)
+7 |     expect small: x = Option::None or p.fst = Option::Some(true)
   |            ^^^^^ does not follow from the guarantees
   |
   = counterexample: x = Option::Some(0), p = Pair { fst := Option::Some(false), snd := 0 }

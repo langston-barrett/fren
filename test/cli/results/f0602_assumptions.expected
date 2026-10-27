@@ -1,7 +1,7 @@
 error[F0602]: the assumptions of `c` are unsatisfiable: `big`, `small` contradict each other
  --> test/cli/results/f0602_assumptions.fren:2:6
   |
-2 | comp c {
+2 | proc c(x: Int): (y?) {
   |      ^ no input satisfies its assumptions
   |
   = note: every guarantee would hold vacuously

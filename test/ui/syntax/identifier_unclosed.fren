@@ -4,4 +4,4 @@
 
 proc c(«ab: Int) {}
 --~^[hosted] error: unterminated identifier escape
---~^^[cli] error: `«ab: Int }…` is not an identifier in Fren
+--~^^[cli] error: `«ab: Int) {}…` is not an identifier in Fren

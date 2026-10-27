@@ -39,7 +39,7 @@ proc bound(x: Int): (z?) {
 -- constraints that mention them are not reported.
 proc declared(a: Nope, b: Nada): (y?) {
     --~^ error: cannot find `Nope` in this scope
-    --~^ error: cannot find `Nada` in this scope
+    --~^^ error: cannot find `Nada` in this scope
     ensure r: y? iff a = b and x * x = 1
 }
 

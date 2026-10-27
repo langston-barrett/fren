@@ -1,7 +1,7 @@
 error[F0324]: the type of `{}` cannot be known here
- --> test/cli/types/f0324_empty_set.fren:4:19
+ --> test/cli/types/f0324_empty_set.fren:2:19
   |
-4 |     ensure r: n = {}.card
+2 |     ensure r: n = {}.card
   |                   ^^ a set of what?
   |
   = note: `{}` takes its type from where it is written, as the other side of `=` or a binding gives it one; here, nothing does

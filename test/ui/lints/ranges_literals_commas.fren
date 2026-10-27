@@ -101,6 +101,6 @@ proc lists(x: Int, mode: Mode, fan: Fan, vent: Vent): (
     ]
     out g := [x, 5]
 
-    call w := quiet(x, "a")         --~ warning: unnecessary trailing comma before `}`
+    call w := quiet(x, "a",)        --~ warning: unnecessary trailing comma before `)`
     expect used: fan != Fan::Low or vent != Vent::Open or mode in {Heat, Cool}
 }

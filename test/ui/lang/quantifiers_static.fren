@@ -75,7 +75,7 @@ proc too_many_combined(): (ok?) {
 }
 
 proc component(): (ok?) {
-    ensure r: ok? iff (exists (c: valid), true)   --~ error: expected a type, but `valid` is a component
+    ensure r: ok? iff (exists (c: valid), true)   --~ error: expected a type, but `valid` is a procedure
 }
 
 proc twice(): (ok?) {
@@ -87,7 +87,7 @@ proc bool_name(): (ok?) {
 }
 
 proc shadows(k: Method): (ok?) {
-    ensure r: ok? iff (exists (k: Method), k = Method::Len)  --~ error: `k` shadows the input `k`
+    ensure r: ok? iff (exists (k: Method), k = Method::Len)  --~ error: `k` shadows the parameter `k`
 }
 
 proc shadows_explicitly(

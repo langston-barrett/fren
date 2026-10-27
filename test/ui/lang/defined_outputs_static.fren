@@ -16,7 +16,7 @@ proc in_assumption(x: Int): (p: Int) {
     exists o: Int
     let d: Int := o + x
 
-    assume a: d > 0                 --~ error: assumptions may only mention `in` variables, but `o` is an `out`
+    assume a: d > 0                 --~ error: assumptions may only mention parameters, but `o` is an output
     ensure r: p = o
 }
 
@@ -24,7 +24,7 @@ proc in_argument(x: Int): (p: Int) {
     exists o: Int
     let d: Int := o + x
 
-    ensure r: p = f(d)                 --~ error: the arguments of a function may not mention an `out`, but `o` is one
+    ensure r: p = f(d)                 --~ error: the arguments of a function may not mention an output, but `o` is one
     ensure s: o = 0
 }
 

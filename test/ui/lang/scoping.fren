@@ -13,10 +13,10 @@ proc ambiguous(e: E) { ensure r: e = A }   --~ error: `A` is ambiguous: it could
 proc unknown(): (y: Int) { ensure r: y = z }  --~ error: cannot find `z` in this scope
 proc qualified(e: E, f: F): (o?) { ensure r: o? iff (e = B or f = C or e = E::A) }
 proc not_a_value(e: E) { ensure r: e = E }  --~ error: expected a value, but `E` is an enum
-proc not_a_type(x: qualified) {}        --~ error: expected a type, but `qualified` is a comp
+proc not_a_type(x: qualified) {}        --~ error: expected a type, but `qualified` is a procedure
 proc no_variant(e: E) { ensure r: e = E::Z }  --~ error: no variant `Z` in enum `E`
 
-use qualified::*    --~ error: only enums can be opened with `*`, but `qualified` is a comp
+use qualified::*    --~ error: only enums can be opened with `*`, but `qualified` is a procedure
 use nothing::here   --~ error: cannot find `nothing` in the root module
 use E               --~ error: the name `E` is already defined in the root module
 

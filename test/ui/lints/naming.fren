@@ -8,7 +8,7 @@ proc untyped(x) {}             --~ error: missing type for `x`
 proc bool_no_q(flag: Bool) {}  --~ error: `Bool` variable `flag` must end in `?`
 proc q_not_bool(n?: Int) {}    --~ error: `n?` ends in `?` but is not a `Bool`
 proc req_q(x: Int) { ensure r?: x > 0 }  --~ error: constraint names cannot end in `?`
-proc dup() { ensure d: true ensure d: false }   --~ error: `d` is defined multiple times in this comp
+proc dup() { ensure d: true ensure d: false }   --~ error: `d` is defined multiple times in this procedure
 
 enum E { A }
 enum E { B }                      --~ error: the name `E` is already defined in the root module (as an enum)

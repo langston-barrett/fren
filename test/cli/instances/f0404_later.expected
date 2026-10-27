@@ -1,11 +1,11 @@
-error[F0404]: instance `second` is not declared before this binding
- --> test/cli/instances/f0404_later.fren:3:43
+error[F0404]: call `second` is not declared before these arguments
+ --> test/cli/instances/f0404_later.fren:3:36
   |
-3 | comp c { in i: Int inst first: sub { a := second.b } inst second: sub { a := i } }
-  |                                           ^^^^^^^^ declared later, or this is its own binding
+3 | proc c(i: Int) { call first := sub(second.b) call second := sub(i) }
+  |                                    ^^^^^^^^ declared later, or these are its own arguments
   |
-  = note: bindings may only mention earlier instances, so that instances form no cycles
-  = help: declare `second` before the instance whose binding mentions it
+  = note: arguments may only mention earlier calls, so that calls form no cycles
+  = help: declare `second` before the call whose arguments mention it
 
 error: could not check due to previous errors
 

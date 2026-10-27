@@ -9,7 +9,7 @@ proc chooser(temp: Int): (
     det mode: Mode,
     fan?,                   -- not `det`: not checked
 ) {
-    --~^ warning: unused variable `fan?`
+    --~^^ warning: unused variable `fan?`
 
     ensure heat: when temp < 18, mode = Heat
     ensure cool: when temp > 24, mode = Cool

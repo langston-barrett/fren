@@ -1,11 +1,11 @@
-error[F0210]: expected a type, but `d` is a component
- --> test/cli/names/f0210_quantified_component.fren:3:52
+error[F0210]: expected a type, but `d` is a procedure
+ --> test/cli/names/f0210_quantified_component.fren:3:49
   |
-3 | comp c { pub out ok? ensure r: ok? iff (exists (w: d), true) }
-  |                                                    ^ not a type
+3 | proc c(): (ok?) { ensure r: ok? iff (exists (w: d), true) }
+  |                                                 ^ not a type
   |
   = note: a quantifier in an expression ranges over the values of a type
-  = help: only a global expectation's leading `forall` ranges over the behaviours of a component
+  = help: only a global expectation's leading `forall` ranges over the behaviours of a procedure
 
 error: could not check due to previous errors
 

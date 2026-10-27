@@ -1,8 +1,8 @@
 warning[F0751]: variable `_1` is named only with `_` and digits
- --> test/cli/lints/style/f0751_just_underscores_and_digits.fren:3:17
+ --> test/cli/lints/style/f0751_just_underscores_and_digits.fren:3:12
   |
-3 | pub comp c { in _1: Int pub out y: Int ensure r: y = _1 + 1 }
-  |                 ^^ says nothing of what it is
+3 | pub proc c(_1: Int): (y: Int) { ensure r: y = _1 + 1 }
+  |            ^^ says nothing of what it is
   |
   = help: give it a name that says what it is
   = note: `just_underscores_and_digits` is `warn` by default

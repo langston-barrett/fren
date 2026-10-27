@@ -1,32 +1,32 @@
 error[F0201]: cannot find `x!` in this scope
- --> test/cli/fix/bang_compare.fren:9:22
+ --> test/cli/fix/bang_compare.fren:6:22
   |
-9 |     ensure r: p? iff x!=1
+6 |     ensure r: p? iff x!=1
   |                      ^^ not found in this scope
   |
   = note: `!` is written only where a name is declared, to shadow another
 help: for `!=`, write a space before the `!`
   |
-9 -     ensure r: p? iff x!=1
-9 +     ensure r: p? iff x !=1
+6 -     ensure r: p? iff x!=1
+6 +     ensure r: p? iff x !=1
   |
 help: for the name `x`, remove the `!`
   |
-9 -     ensure r: p? iff x!=1
-9 +     ensure r: p? iff x=1
+6 -     ensure r: p? iff x!=1
+6 +     ensure r: p? iff x=1
   |
 
 error[F0201]: cannot find `x!` in this scope
-  --> test/cli/fix/bang_compare.fren:17:22
+  --> test/cli/fix/bang_compare.fren:11:22
    |
-17 |     ensure r: p? iff x!
+11 |     ensure r: p? iff x!
    |                      ^^ not found in this scope
    |
    = note: `!` is written only where a name is declared, to shadow another
 help: for the name `x`, remove the `!`
    |
-17 -     ensure r: p? iff x!
-17 +     ensure r: p? iff x
+11 -     ensure r: p? iff x!
+11 +     ensure r: p? iff x
    |
 
 error: could not fix due to previous errors

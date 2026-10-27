@@ -1,7 +1,7 @@
 error[F0603]: expectation `exits::bad_exit_status::documented` does not hold
-  --> test/cli/commands/refinement_bindings.fren:31:8
+  --> test/cli/commands/refinement_bindings.fren:24:8
    |
-31 | refine bad_exit_status: bad_exit refines exit_status { ran? := all_parsed? }
+24 | refine bad_exit_status: bad_exit refines exit_status { ran? := all_parsed? }
    |        ^^^^^^^^^^^^^^^ does not follow from the guarantees
    |
    = counterexample: all_parsed? = true, bad_exit.all_parsed? = true, bad_exit.code = 4

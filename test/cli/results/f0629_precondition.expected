@@ -1,12 +1,12 @@
 error[F0629]: the precondition `in_range` of `nth` may not hold at this application in `first::r`
-  --> test/cli/results/f0629_precondition.fren:10:19
-   |
-10 |     ensure r: x = nth(q, 0)
-   |                   ^^^ may violate `nth::in_range`
-   |
-   = counterexample: q = [], x = 0
-   = note: where a precondition fails, the application's value is unknown, or not what the function is for
-   = help: guard the application, as in `p(x) and f(x) = y`, or assume what the precondition needs
+ --> test/cli/results/f0629_precondition.fren:7:19
+  |
+7 |     ensure r: x = nth(q, 0)
+  |                   ^^^ may violate `nth::in_range`
+  |
+  = counterexample: q = [], x = 0
+  = note: where a precondition fails, the application's value is unknown, or not what the function is for
+  = help: guard the application, as in `p(x) and f(x) = y`, or assume what the precondition needs
 
 fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
 

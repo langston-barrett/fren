@@ -5,7 +5,7 @@ enum E { A }
 
 proc nonlinear(x: Int): (y: Int) { ensure r: y = x * x }   --~ error: nonlinear arithmetic is not supported
 proc linear(x: Int): (y: Int) { ensure r: y = 2 * x - x * (-3) }
-proc on_out(x: Int): (y: Int) { assume a: y > 0 }       --~ error: assumptions may only mention `in` variables, but `y` is an `out`
+proc on_out(x: Int): (y: Int) { assume a: y > 0 }       --~ error: assumptions may only mention parameters, but `y` is an output
 
 proc mismatch(x: Int) { ensure r: x + true = 1 }
 --~^ error: type mismatch: expected `Int`, found `Bool`

@@ -1,8 +1,8 @@
 warning[F0768]: this is written the same as `r1`
- --> test/cli/lints/suspicious/f0768_duplicate_constraint.fren:2:55
+ --> test/cli/lints/suspicious/f0768_duplicate_constraint.fren:2:48
   |
-2 | comp c { in a? pub out p? ensure r1: p? iff a? ensure r2: p? iff a? expect e: p? iff a? }
-  |                                                       ^^ the same as `r1`
+2 | proc c(a?): (p?) { ensure r1: p? iff a? ensure r2: p? iff a? expect e: p? iff a? }
+  |                                                ^^ the same as `r1`
   |
   = help: remove it
   = help: `fren fix` can fix this
@@ -10,27 +10,27 @@ warning[F0768]: this is written the same as `r1`
   = help: to allow it, `set_option fren.lint.duplicate_constraint "allow"`
 
 warning[F0768]: this is written the same as `r1`
- --> test/cli/lints/suspicious/f0768_duplicate_constraint.fren:2:76
+ --> test/cli/lints/suspicious/f0768_duplicate_constraint.fren:2:69
   |
-2 | comp c { in a? pub out p? ensure r1: p? iff a? ensure r2: p? iff a? expect e: p? iff a? }
-  |                                                                            ^ the same as `r1`
+2 | proc c(a?): (p?) { ensure r1: p? iff a? ensure r2: p? iff a? expect e: p? iff a? }
+  |                                                                     ^ the same as `r1`
   |
   = note: an `expect` that repeats an `ensure` tests nothing
   = help: the expectation was probably meant to say something stronger
 
 warning[F0606]: `c::r1` is redundant: it follows from `r2`
- --> test/cli/lints/suspicious/f0768_duplicate_constraint.fren:2:34
+ --> test/cli/lints/suspicious/f0768_duplicate_constraint.fren:2:27
   |
-2 | comp c { in a? pub out p? ensure r1: p? iff a? ensure r2: p? iff a? expect e: p? iff a? }
-  |                                  ^^ redundant
+2 | proc c(a?): (p?) { ensure r1: p? iff a? ensure r2: p? iff a? expect e: p? iff a? }
+  |                           ^^ redundant
   |
   = help: if it is meant as a consequence, make it an `expect`, so that it is checked
 
 warning[F0606]: `c::r2` is redundant: it follows from `r1`
- --> test/cli/lints/suspicious/f0768_duplicate_constraint.fren:2:55
+ --> test/cli/lints/suspicious/f0768_duplicate_constraint.fren:2:48
   |
-2 | comp c { in a? pub out p? ensure r1: p? iff a? ensure r2: p? iff a? expect e: p? iff a? }
-  |                                                       ^^ redundant
+2 | proc c(a?): (p?) { ensure r1: p? iff a? ensure r2: p? iff a? expect e: p? iff a? }
+  |                                                ^^ redundant
   |
   = help: if it is meant as a consequence, make it an `expect`, so that it is checked
 

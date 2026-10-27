@@ -263,15 +263,25 @@ def procText (src : Array Char) (start : Nat) (compTok : Range) (openBrace : Nat
     edits := edits.push (m.removal, "")
   for i in resultsOf olds do
     let v := vars[i]!
-    let evidence := if v.range.start < v.kwStart then (slice src v.range.start v.kwStart).trimAscii.toString ++ " " else ""
+    -- Its evidence setting, without the comments on its lines, the last of
+    -- which stays with the result.
+    let (evidence, comment?) := if v.range.start < v.kwStart then
+        let ls := (slice src v.range.start v.kwStart).splitOn "\n"
+        let code := ls.map fun l => ((l.splitOn "--").headD "").trimAscii.toString
+        let comment? := (ls.reverse.findSome? fun l => match l.splitOn "--" with
+          | _ :: c :: rest => some ("--" ++ "--".intercalate (c :: rest)).trimAsciiEnd.toString
+          | _ => none)
+        (" ".intercalate (code.filter (· != "")) ++ " ", comment?)
+      else ("", none)
+    let commented : Moved := { comment? := comment?.map (·, 0) }
     let text := evidence ++ (if v.isDet then "det " else "") ++ slice src v.nameStart v.declStop
     match placement olds[i]!, v.defnStart? with
     | .resultDefined, some d =>
-      results := results.push (text, {})
+      results := results.push (text, commented)
       edits := edits.push ({ start := v.range.start, stop := d }, s!"out {v.name} ")
     | _, _ =>
       let m := moved src openBrace v.range
-      results := results.push (text, m)
+      results := results.push (text, if m.comment?.isNone then { m with comment? := commented.comment? } else m)
       edits := edits.push (m.removal, "")
   for v in vars, o in olds do
     let kw := match placement o with
@@ -301,12 +311,14 @@ def procText (src : Array Char) (start : Nat) (compTok : Range) (openBrace : Nat
 /-- The text of the call that an instance migrates to (`F0420`): `call w
 := c(a, b)`, with `args` in the order of the callee's parameters, on one
 line, or with `vertical`, one to a line, indented by `indent` plus 4, with
-a trailing comma, as the instance's bindings were. -/
-def callText (indent : Nat) (w path : String) (args : List String) (vertical : Bool) : String :=
+a trailing comma, and each with the comment after its binding, as the
+instance's bindings were. -/
+def callText (indent : Nat) (w path : String) (args : List (String × Option String)) (vertical : Bool) : String :=
   if vertical && !args.isEmpty then
     let pad := String.ofList (List.replicate (indent + 4) ' ')
-    s!"call {w} := {path}(\n" ++ String.join (args.map fun a => pad ++ a ++ ",\n") ++ String.ofList (List.replicate indent ' ') ++ ")"
-  else s!"call {w} := {path}({", ".intercalate args})"
+    s!"call {w} := {path}(\n" ++ String.join (args.map fun (a, c?) =>
+      pad ++ a ++ "," ++ (c?.map ("  " ++ ·)).getD "" ++ "\n") ++ String.ofList (List.replicate indent ' ') ++ ")"
+  else s!"call {w} := {path}({", ".intercalate (args.map (·.1))})"
 
 /-! ## Messages -/
 

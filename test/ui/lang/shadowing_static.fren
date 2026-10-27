@@ -40,7 +40,7 @@ fn own_binder(s: Shape): Int := match s { Shape::Circle(own_binder) => own_binde
 -- A `match` binder over a variable, a constant, a function, another
 -- binder, a parameter and an instance.
 proc bind_var(x: Int, s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(x) => x > 0, _ => x > 0 } }
---~^ error: `x` shadows the input `x`
+--~^ error: `x` shadows the parameter `x`
 proc bind_var_ok(x: Int, s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(x!) => x > 0, _ => x > 0 } }
 proc bind_out(s: Shape): (n: Int) { ensure r: n = match s { Shape::Circle(n) => n, _ => 0 } }
 --~^ error: `n` shadows the output `n`
@@ -69,7 +69,7 @@ proc sub(v: Int): (w: Int) { ensure r: w = v }
 proc bind_inst(s: Shape): (p?) {
     call w := sub(1)
     ensure r: p? iff match s { Shape::Circle(w) => w > 0, _ => w.w > 0 }
-    --~^ error: `w` shadows the instance `w`
+    --~^ error: `w` shadows the call `w`
 }
 proc bind_bang(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(k!) => k > 0, _ => false } }
 --~^ error: `k!` shadows nothing
@@ -77,8 +77,8 @@ proc bind_bang(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(k!) =>
 -- An instance over a constant.
 proc inst_const(): (y: Int) { call ORIGIN := sub(1) ensure r: y = ORIGIN.w }
 --~^ error: `ORIGIN` shadows the constant `ORIGIN`
-proc inst_const_ok(): (y: Int) { call ORIGIN := sub(1) ensure r: y = ORIGIN.w }
-proc inst_bang(): (y: Int) { call u := sub(1) ensure r: y = u.w }  --~ error: `u!` shadows nothing
+proc inst_const_ok(): (y: Int) { call ORIGIN! := sub(1) ensure r: y = ORIGIN.w }
+proc inst_bang(): (y: Int) { call u! := sub(1) ensure r: y = u.w }  --~ error: `u!` shadows nothing
 
 -- The binders of a global expectation over a constant, and a binder of
 -- its body over them.
@@ -93,7 +93,7 @@ expect global_bind: forall (a: sub), match Shape::Circle(a.v) { Shape::Circle(a)
 proc bool_bang(ready?!): (go?) { ensure r: go? iff ready? }  --~ error: `ready?!` shadows nothing
 enum Flag { Set(Bool), Unset }
 proc bool_shadow(ok?, f: Flag): (go?) { ensure r: go? iff match f { Flag::Set(ok?) => ok?, _ => ok? } }
---~^ error: `ok?` shadows the input `ok?`
+--~^ error: `ok?` shadows the parameter `ok?`
 proc bool_shadow_ok(ok?, f: Flag): (go?) { ensure r: go? iff match f { Flag::Set(ok?!) => ok?, _ => ok? } }
 
 -- Items, constraints and fields never shadow.
@@ -123,11 +123,11 @@ proc token_field(): (y: Int) { ensure r: y = Point { x := 1, y := 2 }.s! }
 --~^ error: no field `s!`
 -- Where the name with `!` is a Lean token, F0217 says to rename it.
 proc token_hint(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(s) => s > 0, _ => false } }
---~^ error: `s` shadows the input `s`
+--~^ error: `s` shadows the parameter `s`
 
 -- A duplicate is reported as such, before what it would hide.
 proc dup_bang(x: Int, x!: Int): (y: Int) { ensure r: y = x }
---~^ error: `x` is defined multiple times in this component
+--~^ error: `x` is defined multiple times in this procedure
 enum Two { Pair(Int, Int) }
 proc dup_binder(t: Two): (y: Int) { ensure r: y = match t { Two::Pair(a, a!) => a } }
 --~^ error: `a` is bound multiple times in this pattern

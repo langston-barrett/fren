@@ -1,7 +1,7 @@
 warning[F0612]: testing never reached `c::e` in 100 tests: its trigger held in none of them
- --> test/cli/results/f0612_untriggered.fren:8:15
+ --> test/cli/results/f0612_untriggered.fren:6:15
   |
-8 |     expect e: when 7 * x = 123459, big?
+6 |     expect e: when 7 * x = 123459, big?
   |               ^^^^^^^^^^^^^^^^^^^ never held
   |
   = note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it

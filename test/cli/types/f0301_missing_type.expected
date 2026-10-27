@@ -1,19 +1,19 @@
 error[F0301]: missing type for `count`
- --> test/cli/types/f0301_missing_type.fren:2:13
+ --> test/cli/types/f0301_missing_type.fren:2:8
   |
-2 | comp c { in count }
-  |             ^^^^^ needs a type
+2 | proc c(count) {}
+  |        ^^^^^ needs a type
   |
   = note: only variables whose names end in `?` can omit their type, which is `Bool`
 help: add a type
   |
-2 | comp c { in count: Int }
-  |                  +++++
+2 | proc c(count: Int) {}
+  |             +++++
   |
 help: if it is a `Bool`, name it `count?`
   |
-2 - comp c { in count }
-2 + comp c { in count? }
+2 - proc c(count) {}
+2 + proc c(count?) {}
   |
 
 error: could not check due to previous errors

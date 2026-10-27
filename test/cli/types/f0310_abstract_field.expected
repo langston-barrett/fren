@@ -5,7 +5,7 @@ error[F0310]: a field cannot have the abstract type `Name`
   |                     ^^^^ an abstract type
   |
   = note: the values of records and enums are fully described by the spec
-  = help: make the value an input of the components that use it, or a function of the record
+  = help: make the value a parameter of the procedures that use it, or a function of the record
 
 error: could not check due to previous errors
 

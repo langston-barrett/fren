@@ -13,7 +13,7 @@ proc lints(x: Int, y: Int, s: String, q: Seq<Int>): (p1?, p2?, p3?, p4?) {
     call w := sub(
         x,
     )
-    call v := sub(x)  --~ warning: `x := x` is `x`
+    call v := sub(/- a comment -/ x)
 
     ensure r1: p1? iff x in {(1), 1}  --~ warning: `1` is repeated in this literal
     ensure r2: p2? iff x in {1, (1)}  --~ warning: `(1)` is repeated in this literal

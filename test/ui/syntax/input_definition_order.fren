@@ -6,8 +6,8 @@ pub enum S { A(Int), B }
 proc c(
     s: S,
     a: Int := 3,
-    --~^[cli] error: an input cannot have a definition
-    --~^^[hosted] error:
+    --~^[cli] error: a parameter cannot have a definition
+    --~^^[hosted] error: unexpected token ':='; expected ')'
 ): (z: Int) {
     ensure r: z = match s { S::A(x.y) => a, _ => 1 }
 }

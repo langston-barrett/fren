@@ -1,14 +1,10 @@
 --- test/cli/fmt/is.fren
 +++ test/cli/fmt/is.fren
-@@ -6,6 +6,6 @@
--in s: Shape
--  pub out o?
+@@ -6,4 +6,4 @@
 -  ensure r :o? iff s is   Shape::Circle(_)|Shape::Rect(_,_)
 -  ensure l: o? iff s is
 -  | Shape::Circle(_)
 -      | Shape::Empty
-+    in s: Shape
-+    pub out o?
 +    ensure r: o? iff s is Shape::Circle(_) | Shape::Rect(_, _)
 +    ensure l: o? iff s is
 +        | Shape::Circle(_)

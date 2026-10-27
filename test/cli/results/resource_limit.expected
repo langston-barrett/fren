@@ -1,16 +1,16 @@
 warning[F0608]: could not decide whether `c` is realizable: the solver returned unknown (RESOURCEOUT)
  --> test/cli/results/resource_limit.fren:4:6
   |
-4 | comp c {
+4 | proc c(x: Int): (y: Int) {
   |      ^ undecided
   |
   = note: the solver gave up, so this check neither passed nor failed
   = help: raise the time limit with `--timeout`, or simplify the constraints involved
 
 warning[F0608]: could not decide whether `c::r` is redundant: the solver returned unknown (RESOURCEOUT)
- --> test/cli/results/resource_limit.fren:7:12
+ --> test/cli/results/resource_limit.fren:5:12
   |
-7 |     ensure r: y = x + 1
+5 |     ensure r: y = x + 1
   |            ^ undecided
   |
   = note: the solver gave up, so this check neither passed nor failed

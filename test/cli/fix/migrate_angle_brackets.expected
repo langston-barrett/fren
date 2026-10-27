@@ -9,17 +9,17 @@
 -fn size(T)(o: Option(T)): Int := if o = Option::None then 0 else 1
 +fn size<T>(o: Option<T>): Int := if o = Option::None then 0 else 1
 @@ -12,5 +12,5 @@
--    in x: Option(Set(Int))
--    in p: Pair(Int, Option(Rel(Int, Bool)))
--    in s: Option(String is "a\"b" | r#"c"d"#)
--    in q: Seq(Option( -- a comment
--        Int))
-+    in x: Option<Set<Int>>
-+    in p: Pair<Int, Option<Rel<Int, Bool>>>
-+    in s: Option<String is "a\"b" | r#"c"d"#>
-+    in q: Seq<Option< -- a comment
-+        Int>>
-@@ -18 +18 @@
+-    x: Option(Set(Int)),
+-    p: Pair(Int, Option(Rel(Int, Bool))),
+-    s: Option(String is "a\"b" | r#"c"d"#),
+-    q: Seq(Option( -- a comment
+-        Int)),
++    x: Option<Set<Int>>,
++    p: Pair<Int, Option<Rel<Int, Bool>>>,
++    s: Option<String is "a\"b" | r#"c"d"#>,
++    q: Seq<Option< -- a comment
++        Int>>,
+@@ -19 +19 @@
 -    ensure positive: (((y > 0)))
 +    ensure positive: (y > 0)
 exit=1

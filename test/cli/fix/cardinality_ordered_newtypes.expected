@@ -1,7 +1,7 @@
 warning[F0805]: this says that `l` matches one of these patterns
-  --> test/cli/fix/cardinality_ordered_newtypes.fren:38:24
+  --> test/cli/fix/cardinality_ordered_newtypes.fren:29:24
    |
-38 |     ensure r5: p5? iff l = Level::Top or l = Level::High
+29 |     ensure r5: p5? iff l = Level::Top or l = Level::High
    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ equations of one expression with values that patterns write
    |
    = help: `fren fix` can fix this
@@ -9,34 +9,34 @@ warning[F0805]: this says that `l` matches one of these patterns
    = help: to allow it, `set_option fren.lint.manual_pattern_test "allow"`
 help: write `l is Level::Top | Level::High`
    |
-38 -     ensure r5: p5? iff l = Level::Top or l = Level::High
-38 +     ensure r5: p5? iff l is Level::Top | Level::High
+29 -     ensure r5: p5? iff l = Level::Top or l = Level::High
+29 +     ensure r5: p5? iff l is Level::Top | Level::High
    |
 
 warning[F0805]: this says that `l` matches none of these patterns
-  --> test/cli/fix/cardinality_ordered_newtypes.fren:39:24
+  --> test/cli/fix/cardinality_ordered_newtypes.fren:30:24
    |
-39 |     ensure r6: p6? iff l != Level::Low and l != Level::Mid
+30 |     ensure r6: p6? iff l != Level::Low and l != Level::Mid
    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ disequations of one expression with values that patterns write
    |
    = help: `fren fix` can fix this
 help: write `not l is Level::Low | Level::Mid`
    |
-39 -     ensure r6: p6? iff l != Level::Low and l != Level::Mid
-39 +     ensure r6: p6? iff not l is Level::Low | Level::Mid
+30 -     ensure r6: p6? iff l != Level::Low and l != Level::Mid
+30 +     ensure r6: p6? iff not l is Level::Low | Level::Mid
    |
 
 warning[F0842]: this reads the field of a newtype just built
-  --> test/cli/fix/cardinality_ordered_newtypes.fren:49:25
+  --> test/cli/fix/cardinality_ordered_newtypes.fren:40:25
    |
-49 |     ensure r14: g2? iff Qs([]).0.len = q.len
+40 |     ensure r14: g2? iff Qs([]).0.len = q.len
    |                         ^^^^^^^^ a round trip through `Qs`
    |
    = note: `fren fix` leaves this, since `[]` takes its type from the newtype, and has none without it
 
 --- test/cli/fix/cardinality_ordered_newtypes.fren
 +++ test/cli/fix/cardinality_ordered_newtypes.fren
-@@ -34,12 +34,12 @@
+@@ -25,12 +25,12 @@
 -    ensure r1: p1? iff not (a? and b?) and not (a? and c?) and not (b? and c?)
 -    ensure r2: p2? iff d? and (a? or b? or c?) and not (b? and a?) and not (c? and a?) and not (c? and b?)
 -    ensure r3: p3? iff not (a? and b?) and not (a? and c?) and not (b? and c?) and (c? or b? or a?) and d?

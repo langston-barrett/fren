@@ -1,17 +1,17 @@
 warning[F0781]: `_` matches `Shape::Rect` and `Shape::Dot`
-  --> test/cli/lints/restriction/f0781_wildcard_enum_match_arm.fren:10:72
-   |
-10 |     ensure rule: size = match shape { Shape::Circle(radius) => radius, _ => 1 }
-   |                                                                        ^ matches every variant that no other arm names
-   |
-   = note: a variant added later is matched by `_` too, without notice
-   = help: `fren fix` can fix this
-   = note: `wildcard_enum_match_arm` is set to `warn`
+ --> test/cli/lints/restriction/f0781_wildcard_enum_match_arm.fren:7:72
+  |
+7 |     ensure rule: size = match shape { Shape::Circle(radius) => radius, _ => 1 }
+  |                                                                        ^ matches every variant that no other arm names
+  |
+  = note: a variant added later is matched by `_` too, without notice
+  = help: `fren fix` can fix this
+  = note: `wildcard_enum_match_arm` is set to `warn`
 help: name the variants
-   |
-10 -     ensure rule: size = match shape { Shape::Circle(radius) => radius, _ => 1 }
-10 +     ensure rule: size = match shape { Shape::Circle(radius) => radius, Shape::Rect(_, _) | Shape::Dot => 1 }
-   |
+  |
+7 -     ensure rule: size = match shape { Shape::Circle(radius) => radius, _ => 1 }
+7 +     ensure rule: size = match shape { Shape::Circle(radius) => radius, Shape::Rect(_, _) | Shape::Dot => 1 }
+  |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
 

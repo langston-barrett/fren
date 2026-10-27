@@ -2,7 +2,7 @@
 -- `Bool`, like any constraint.
 
 proc named(x: Int) {
-    cover x: x > 0     --~ error: `x` is defined multiple times in this component
+    cover x: x > 0     --~ error: `x` is defined multiple times in this procedure
 }
 
 proc typed(x: Int) {

@@ -5,7 +5,7 @@ proc c(x: Int): (r: Int) {
     ensure e: r = x
     --~^[hosted] error: unexpected token 'mod'; expected '}'
         mod 2
-        --~^[cli] error: expected a member (`in`, `out`, `inst`, `assume`, `ensure`, `expect`, `cover` or `use`) or `}`, found keyword `mod`
+        --~^[cli] error: expected a member (`use`, `assume`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`, found keyword `mod`
         --~^^[hosted] error: expected identifier
 }
 --@ exit: 2

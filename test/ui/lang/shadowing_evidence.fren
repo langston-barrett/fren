@@ -13,7 +13,7 @@ pub proc positive(k: Int) {
 
 pub proc members(n: Int): (set_option fren.evidence "tested" in det y!: Int) {
     set_option fren.evidence "tested" in
-    call p := positive(1)
+    call p! := positive(1)
 
     ensure r: y = n + p.k
 }

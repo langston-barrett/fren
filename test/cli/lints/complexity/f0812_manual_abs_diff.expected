@@ -1,16 +1,16 @@
 warning[F0812]: this conditional is the absolute value of a difference
- --> test/cli/lints/complexity/f0812_manual_abs_diff.fren:2:59
+ --> test/cli/lints/complexity/f0812_manual_abs_diff.fren:2:50
   |
-2 | comp c { in x: Int in y: Int pub out n: Int ensure r: n = if x < y then y - x else x - y }
-  |                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ subtracts the lesser operand from the greater
+2 | proc c(x: Int, y: Int): (n: Int) { ensure r: n = if x < y then y - x else x - y }
+  |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ subtracts the lesser operand from the greater
   |
   = help: `fren fix` can fix this
   = note: `manual_abs_diff` is `warn` by default
   = help: to allow it, `set_option fren.lint.manual_abs_diff "allow"`
 help: write `(y - x).abs`
   |
-2 - comp c { in x: Int in y: Int pub out n: Int ensure r: n = if x < y then y - x else x - y }
-2 + comp c { in x: Int in y: Int pub out n: Int ensure r: n = (y - x).abs }
+2 - proc c(x: Int, y: Int): (n: Int) { ensure r: n = if x < y then y - x else x - y }
+2 + proc c(x: Int, y: Int): (n: Int) { ensure r: n = (y - x).abs }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

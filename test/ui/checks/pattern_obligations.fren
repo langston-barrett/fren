@@ -19,7 +19,7 @@ proc values(x: Int): (y: Int, det d: Byte, det guarded: Byte) {
     assume newtype: Level(x) != Level(0)   --~ error: a value in `values::newtype` may not have the type `Int is 0..=9`
     out d := x   --~ error: a value in `values::d` may not have the type `Byte`
     out guarded := if 0 <= x <= 255 then x else 0
-    call w := sub(x)   --~ error: the input `b` of `sub` may not have its type `Byte` for instance `values::w`
+    call w := sub(x)   --~ error: the parameter `b` of `sub` may not have its type `Byte` for call `values::w`
     call v := sub(guarded)
 
     ensure args: y = scale(x) + size(x)   --~ error: a value in `values::args` may not have the type `Byte`

@@ -42,7 +42,7 @@ proc body_comment(x?, s: Set<Int>, t: Set<Int>): (y?) { ensure r: y? iff (let b?
 
 -- Shadowing is explicit, as for any other declaration.
 proc implicit(x: Int): (y?) { ensure r: let x := 1 in y? iff x > 0 }
---~^ error: `x` shadows the input `x`
+--~^ error: `x` shadows the parameter `x`
 proc same_clause(): (y?) { ensure r: let a := 1, a := 2 in y? iff a > 0 }
 --~^ error: `a` shadows the definition `a`
 proc needless(): (y?) { ensure r: let z! := 1 in y? iff z > 0 }
@@ -58,9 +58,9 @@ proc clash_ok(x: Int): (y?) { ensure r: let g! := 4, LIMIT! := 5 in y? iff x > g
 
 -- A name mentions what its definition mentions.
 proc assumed(x: Int): (o: Int) { assume a: let v := o in v > x }
---~^ error: assumptions may only mention `in` variables, but `o` is an `out`
+--~^ error: assumptions may only mention parameters, but `o` is an output
 proc argument(x: Int): (o: Int) { ensure r: let v := o in f(v) = x }
---~^ error: the arguments of a function may not mention an `out`
+--~^ error: the arguments of a function may not mention an output, but `o` is one
 proc nonlinear(x: Int): (o: Int) { ensure r: let k := x in o = k * x }
 --~^ error: nonlinear arithmetic is not supported
 proc linear(x: Int): (o: Int) { ensure r: let k := 3 in o = k * x }
@@ -70,7 +70,7 @@ proc linear(x: Int): (o: Int) { ensure r: let k := 3 in o = k * x }
 proc unused_assumed(x: Int): (o: Int) { assume a: let v := o in x > 0 ensure r: o = x }
 proc unused_chain(x: Int): (o: Int) { assume a: let v := o, w := v in x > 0 ensure r: o = x }
 proc used_chain(x: Int): (o: Int) { assume a: let v := o, w := v in w > x ensure r: o = x }
---~^ error: assumptions may only mention `in` variables, but `o` is an `out`
+--~^ error: assumptions may only mention parameters, but `o` is an output
 proc unused_nested(x: Int): (o: Int) { assume a: let v := o in (let w := v in x > 0) ensure r: o = x }
 proc operator_type(x: Int): (y?) { ensure r: y? iff (let a := x in a and y?) }
 --~^ error: type mismatch: expected `Bool`, found `Int`

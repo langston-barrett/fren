@@ -3,6 +3,6 @@
 -- would not (F0119), in both front ends.
 
 proc c(a?b: Int): (y: Int) {
-    --~ error: `a?b` is not an identifier in Fren
+    --~^ error: `a?b` is not an identifier in Fren
     ensure r: y = 1
 }

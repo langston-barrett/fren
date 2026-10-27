@@ -1,7 +1,7 @@
 error[F0332]: cannot index a `Set<Int>`
- --> test/cli/types/f0332_index.fren:6:19
+ --> test/cli/types/f0332_index.fren:3:19
   |
-6 |     ensure r: x = s[0]
+3 |     ensure r: x = s[0]
   |                   ^ not a sequence
   |
   = note: only a sequence, `Seq<T>`, is indexed, as `q[i]`

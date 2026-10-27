@@ -1,16 +1,16 @@
 --- test/cli/fmt/table.fren
 +++ test/cli/fmt/table.fren
-@@ -7 +7 @@
+@@ -5 +5 @@
 -    ensure a: y = table {x > 0=>1,_=>0}
 +    ensure a: y = table { x > 0 => 1, _ => 0 }
-@@ -9,3 +9,3 @@
+@@ -7,3 +7,3 @@
 -    | x > 0 => 1,
 -          | x <= 0 =>
 -    0
 +        | x > 0 => 1,
 +        | x <= 0 =>
 +            0,
-@@ -13 +13 @@
+@@ -11 +11 @@
 -    ensure d: y = table { x > 0 => 1, _ => 0, }
 +    ensure d: y = table { x > 0 => 1, _ => 0 }
 exit=1

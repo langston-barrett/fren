@@ -39,7 +39,7 @@ proc user(t: Int): (cold?) {
 proc shadow(
     MAX_T!: Int,                              -- a variable shadows the constant, with `!`
 ): (y: Int) {
-    --~^ warning: variable `MAX_T` should have a snake case name
+    --~^^ warning: variable `MAX_T` should have a snake case name
     ensure r: y = MAX_T
     expect same: y = MAX_T  --~ warning: this is written the same as `r`
 }

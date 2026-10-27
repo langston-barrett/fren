@@ -1,8 +1,8 @@
 error[F0307]: nonlinear arithmetic is not supported
- --> test/cli/types/f0307_nonlinear.fren:2:49
+ --> test/cli/types/f0307_nonlinear.fren:2:42
   |
-2 | comp c { in x: Int pub out y: Int ensure r: y = x * x }
-  |                                                 ^^^^^ both sides mention variables or uninterpreted functions
+2 | proc c(x: Int): (y: Int) { ensure r: y = x * x }
+  |                                          ^^^^^ both sides mention variables or uninterpreted functions
   |
   = note: the left side mentions the variable `x`, and the right side the variable `x`
   = note: the solver decides only linear integer arithmetic

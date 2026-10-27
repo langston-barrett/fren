@@ -47,7 +47,7 @@ proc giver(n: Int): (
     out pair := Pair { fst := n, snd := n }   --~ error: a value in `generics_pattern_types::giver::pair` may not have the type `Pair<Byte, Int>`
     out marked := Tagged::Marked(n, 0)   --~ error: a value in `generics_pattern_types::giver::marked` may not have the type `Int is 0..=3`
     out some := if n > 0 then Option::None else Option::Some(n)   --~ error: a value in `generics_pattern_types::giver::some` may not have the type `Present`
-    call h := holder(Option::Some(n), Option::None, Pair { fst := 0, snd := Option::None }, Tagged::Plain(0), Option::Some(0), n)   --~ error: the input `x` of `generics_pattern_types::holder` may not have its type `Option<Byte>` for instance `generics_pattern_types::giver::h`
+    call h := holder(Option::Some(n), Option::None, Pair { fst := 0, snd := Option::None }, Tagged::Plain(0), Option::Some(0), n)   --~ error: the parameter `x` of `generics_pattern_types::holder` may not have its type `Option<Byte>` for call `generics_pattern_types::giver::h`
 }
 
 -- A quantifier ranges over an instance's values that meet its arguments'

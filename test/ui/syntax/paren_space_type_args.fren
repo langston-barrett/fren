@@ -3,5 +3,5 @@ mod m
 pub enum Option<T> { None, Some(T) }
 proc c(x: Option <Int>) {}
 --~^[cli] error: a space before the `<` of the type arguments of `Option`
---~^^[hosted] error: unexpected token '<'; expected '}'
+--~^^[hosted] error: unexpected token '<'; expected ')'
 --@ exit: 2

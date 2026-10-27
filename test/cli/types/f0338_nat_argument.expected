@@ -1,8 +1,8 @@
 error[F0338]: `Nat` cannot be a type argument
- --> test/cli/types/f0338_nat_argument.fren:4:23
+ --> test/cli/types/f0338_nat_argument.fren:4:18
   |
-4 | comp c { in x: Option<Nat> }
-  |                       ^^^ a `Nat`
+4 | proc c(x: Option<Nat>) {}
+  |                  ^^^ a `Nat`
   |
   = note: a type argument is never `Nat`, so that an instance's type arguments are those that a construction's values give, widened
   = help: use `Int`, and say where it is used that it is at least 0

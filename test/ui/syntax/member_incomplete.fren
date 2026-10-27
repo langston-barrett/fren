@@ -2,5 +2,5 @@
 -- Lean does not elaborate what it recovered of its procedure.
 pub proc c(x:) {}
 --~^[cli] error: expected a name, found `)`
---~^^[hosted] error:
+--~^^[hosted] error: unexpected token ')'; expected fren_type
 --@ exit: 2

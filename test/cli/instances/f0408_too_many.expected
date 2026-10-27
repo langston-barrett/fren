@@ -1,23 +1,18 @@
-error[F0408]: `sub` has no input `cuont`
- --> test/cli/instances/f0408_no_input.fren:3:24
+error[F0408]: too many arguments: `sub` takes 1 argument, `count`
+ --> test/cli/instances/f0408_too_many.fren:3:29
   |
-3 | comp c { inst s: sub { cuont := 1 } }
-  |                        ^^^^^ unknown input
+3 | proc c() { call s := sub(1, 2) }
+  |                             ^ 2 arguments
   |
-  = note: the inputs of `sub` are `count`
-help: an input with a similar name exists: `count`
-  |
-3 - comp c { inst s: sub { cuont := 1 } }
-3 + comp c { inst s: sub { count := 1 } }
-  |
+  = note: a call gives one argument for each parameter, in order
 
 warning[F0710]: unused variable `count`
- --> test/cli/instances/f0408_no_input.fren:2:15
+ --> test/cli/instances/f0408_too_many.fren:2:10
   |
-2 | comp sub { in count: Int }
-  |               ^^^^^ never mentioned
+2 | proc sub(count: Int) {}
+  |          ^^^^^ never mentioned
   |
-  = note: nothing in its component depends on it
+  = note: nothing in its procedure depends on it
   = help: remove it, or mention it in a constraint
   = note: `unused_variables` is `warn` by default
   = help: to allow it, `set_option fren.lint.unused_variables "allow"`

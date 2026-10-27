@@ -18,9 +18,9 @@ fn rate(Int): Int
 const R: Int := rate(1)             --~ error: a constant's value cannot apply an uninterpreted function
 
 proc outputs(x: Name): (y: Name) { ensure r: ok?(y) }
---~^ error: the arguments of a function may not mention an `out`, but `y` is one
+--~^ error: the arguments of a function may not mention an output, but `y` is one
 proc private_out(x: Name) { exists y: Name ensure r: ok?(if ok?(x) then y else x) }
---~^ error: the arguments of a function may not mention an `out`, but `y` is one
+--~^ error: the arguments of a function may not mention an output, but `y` is one
 proc arity_wrong(x: Name): (y: Int) { ensure r: y = arity(x, x) }
 --~^ error: `arity` takes 1 argument, but 2 were given
 proc unapplied(x: Name): (y: Int) { ensure r: y = arity }

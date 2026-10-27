@@ -1650,7 +1650,7 @@ def hidesIn (cx : ExprCtx) (extra : Array (Name × String) := #[]) : M (String �
 (`nonminimal_bool`), the operator and method lints, the arithmetic lints
 and double parentheses in it, once `e` is elaborated, where `hides` says
 whether a name declared there would hide something in scope. -/
-def lintBools (e : Expr) (hides : String → Bool) : M Unit := do
+def lintBools (e : Expr) (hides : String → Bool) (onlyArg : Bool := false) : M Unit := do
   -- Not a rewrite of an expression with a pattern test that binds names,
   -- which could move what mentions them out of their scope
   -- (`lang::test_scope`).
@@ -1701,7 +1701,9 @@ def lintBools (e : Expr) (hides : String → Bool) : M Unit := do
   for sp in e.integerSpans do
     if let some (r, msg) := Fren.Core.zeroPrefixedReport? full (toRange sp) then
       lintFix .zeroPrefixedLiteral { start := r.start, stop := r.stop } msg
-  lintParens e
+  -- The only argument of a call is in the call's parentheses, as a
+  -- function's is.
+  lintParens e onlyArg
 
 /-- Which enumerations, records and newtypes are declared `ordered`
 (`Reqs/Lang/Items#ordered-declarations`), for `Fren.Core.Ty.ordered`. -/
@@ -4625,12 +4627,29 @@ written as (`F0420`), if its bindings bind each of `c`'s parameters
 def instCallText (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)) (params : Array Name) (span : Span) :
     M (Option String) := do
   let src := (← get).src
-  let args ← bs.mapM fun (b, e?) => match e? with
-    | some e => return (b.name, Fren.Core.textOf src (Fren.Core.withParensIn src (toRange span) (toRange (e.writtenSpan src))))
-    | none => return (b.name, b.name)
+  let isSpace (c : Char) := c == ' ' || c == '\t'
+  let vertical := (src.extract span.start span.stop).any (· == '\n')
+  -- Each argument's text, as written after `:=`, comments and all, and in
+  -- a call written one argument to a line, the comment after its binding.
+  let args ← bs.mapM fun (b, e?) => do
+    let stop := match e? with
+      | some e => (Fren.Core.withParensIn src (toRange span) (toRange (e.writtenSpan src))).stop
+      | none => b.span.stop
+    let text := match e? with
+      | some _ =>
+        let after := (String.ofList (src.extract b.span.stop stop).toList).trimAsciiStart.toString
+        ((after.drop 2).trimAsciiStart).toString
+      | none => b.name
+    let mut i := stop
+    while i < span.stop && (isSpace src[i]! || src[i]! == ',') do i := i + 1
+    let comment? := if vertical && src[i]? == some '-' && src[i + 1]? == some '-' then Id.run do
+        let mut j := i
+        while j < src.size && src[j]! != '\n' do j := j + 1
+        return some (String.ofList (src.extract i j).toList).trimAsciiEnd.toString
+      else none
+    return (b.name, (text, comment?))
   let some ordered := Fren.Core.argumentOrder (params.toList.map Fren.Core.nameText) args.toList | return none
   let (_, ls, _) := Fren.Core.lineAt src span.start
-  let vertical := (src.extract span.start span.stop).any (· == '\n')
   return some (Fren.Core.callText (span.start - ls) (← srcAt x.span) (← srcAt (p[0]!.span.to p.back!.span)) ordered vertical)
 
 /-- Resolves the call `call x := p(args)`, or the instance `inst x: p { bs
@@ -4638,8 +4657,8 @@ def instCallText (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr
 with each argument bound to the parameter in its position (`F0408`,
 `F0409`). An instance is an error (`F0420`), whose fix writes it as a
 call. -/
-def resolveInst (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)) (named : Bool) (span : Span) :
-    M (PendingInst × Array CVar) := do
+def resolveInst (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)) (named : Bool) (span : Span)
+    (written : Ident := x) : M (PendingInst × Array CVar) := do
   let w := Name.mkSimple x.name
   let path ← match ← resolve p with
     | .item { kind := .compItem, path, .. } => pure path
@@ -4653,7 +4672,7 @@ def resolveInst (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)
   let params := c.vars.filter (fun v => v.role == .input && v.name.isAtomic) |>.map (·.name)
   let callee := showPath path
   if named then
-    let fixed? ← instCallText x p bs params span
+    let fixed? ← instCallText written p bs params span
     let msg := Fren.Core.instSyntaxMsg callee fixed?
     err { span with stop := x.span.stop } { msg with fixes := msg.fixes.map ({ · with range? := some (toRange span) }) }
   let some bound := Fren.Core.callBindings (params.map Fren.Core.nameText) bs
@@ -4682,7 +4701,7 @@ def elabInst (cx : ExprCtx) (pi : PendingInst) : M CInst := do
     liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{b.name}` of `{showPath c.path}` has type `{v.ty.show}`"))
     -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
     if v.ty == .int && t == .int then modify fun s => { s with natKept := s.natKept.push (c.path, b.name) }
-    lintBools e (← hidesIn cx)
+    lintBools e (← hidesIn cx) (pi.positional && pi.bindings.size == 1)
     eqs := eqs.push s!"(= {quote v.name.toString} {smt})"
   modify fun s => { s with natApps := s.natApps ++ c.natApps.map (rename w c.vars) }
   -- Each input whose type has an obligation assumes it, before the
@@ -4888,6 +4907,8 @@ def elabCompInsts (members : Array Member) (vars : Array CVar) : M (Array Pendin
   let mut pending := #[]
   for m in members do
     let .inst x p bs named span := m | continue
+    -- The name as written, with any `!`, for `F0420`'s fix.
+    let written := x
     -- Its name is checked once, whether or not it shadows.
     let x := (← attempt do
         let x ← declare x
@@ -4895,7 +4916,7 @@ def elabCompInsts (members : Array Member) (vars : Array CVar) : M (Array Pendin
         return x).getD (declaredIdent x).1
     let xn := Name.mkSimple x.name
     lintName .instance xn x.span
-    let some (pi, ivars) ← attempt (resolveInst x p bs named span) | continue
+    let some (pi, ivars) ← attempt (resolveInst x p bs named span written) | continue
     pending := pending.push pi
     vars := vars ++ ivars
     -- Its bindings give each input of its procedure a value, and the

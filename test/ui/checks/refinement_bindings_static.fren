@@ -12,7 +12,7 @@ proc a(n: Int): (z: Int) { ensure r: z >= n }
 refine unknown: c refines a { w := y }        --~ error: `a` has no variable `w`
 refine twice: c refines a { z := y, z := y }  --~ error: variable `z` of `a` is bound multiple times
 refine input_out: c refines a { n := y, z := y }
---~^ error: a binding of an input of `a` may only mention `in` variables of `c`, but `y` is an `out`
+--~^ error: a binding of a parameter of `a` may only mention parameters of `c`, but `y` is an output
 refine private_out: c refines a { n := x, z := hidden }  --~ error: `hidden` is private to `c`
 refine unbound: c refines a { z := y }        --~ error: `c` cannot refine `a`: it has no variable `n`
 refine mistyped: c refines a { n := b?, z := y }

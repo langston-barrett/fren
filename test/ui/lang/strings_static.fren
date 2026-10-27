@@ -35,5 +35,5 @@ proc output(x: Int): (n: Int) { exists o: Int let s: String := if o > x then "a"
 set_option fren.lint.undecidable "allow" in
 proc opted(a: String, b: String): (p?) { ensure r: p? iff a.starts_with?(b) }
 proc uses(x: String) { call w := opted(x, x) }
---~^ error: `opted` is outside the decidable core, and so is what instantiates it
+--~^ error: `opted` is outside the decidable core, and so is what calls it
 --@ exit: 2

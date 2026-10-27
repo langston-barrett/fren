@@ -61,12 +61,12 @@ proc upper_binder(s: S): (z: Int) { ensure r: z = match s { S::A(Big) => Big, _ 
 -- A binder mentions what its scrutinee mentions.
 fn f(Int): Int
 proc binder_output(i: Int): (z: Int) { exists s: S ensure r: z = match s { S::A(a) => f(a), _ => i } }
---~^ error: the arguments of a function may not mention an `out`, but `s` is one
+--~^ error: the arguments of a function may not mention an output, but `s` is one
 proc binder_input(s: S): (z: Int) { ensure r: z = match s { S::A(a) => f(a), _ => 0 } }
 proc field_output(i: Int): (z: Int) { exists p: P ensure r: z = f(p.x) + i }
---~^ error: the arguments of a function may not mention an `out`, but `p` is one
+--~^ error: the arguments of a function may not mention an output, but `p` is one
 proc binder_assume(i: Int) { exists s: S assume a: match s { S::A(a) => a > 0, _ => true } ensure r: s = S::B }
---~^ error: assumptions may only mention `in` variables, but `s` is an `out`
+--~^ error: assumptions may only mention parameters, but `s` is an output
 proc binder_linear(s: S, t: S): (z: Int) {
     ensure r: z = (match s { S::A(a) => a, _ => 0 }) * (match t { S::A(b) => b, _ => 0 }) }   --~ error: nonlinear arithmetic is not supported
 proc constant_linear(s: S): (z: Int) { ensure r: z = (match K4 { S::A(a) => a, _ => 1 }) * (match s { S::A(b) => b, _ => 0 }) }

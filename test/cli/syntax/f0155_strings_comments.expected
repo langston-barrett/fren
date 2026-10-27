@@ -1,14 +1,14 @@
 error[F0155]: type arguments are written in angle brackets
- --> test/cli/syntax/f0155_strings_comments.fren:3:16
+ --> test/cli/syntax/f0155_strings_comments.fren:3:11
   |
-3 | comp c { in x: Set(String is "a\"b" | r#"c"d"#) in y: Seq( -- a comment
-  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type arguments in parentheses
+3 | proc c(x: Set(String is "a\"b" | r#"c"d"#), y: Seq( -- a comment
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type arguments in parentheses
   |
   = note: a type's arguments follow its name in `<` and `>`, as in `Set<Int>` and `Option<Int>`
 help: write `Set<String is "a\"b" | r#"c"d"#>`
   |
-3 - comp c { in x: Set(String is "a\"b" | r#"c"d"#) in y: Seq( -- a comment
-3 + comp c { in x: Set<String is "a\"b" | r#"c"d"#> in y: Seq( -- a comment
+3 - proc c(x: Set(String is "a\"b" | r#"c"d"#), y: Seq( -- a comment
+3 + proc c(x: Set<String is "a\"b" | r#"c"d"#>, y: Seq( -- a comment
   |
 
 error: could not check due to previous errors

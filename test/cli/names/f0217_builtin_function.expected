@@ -1,14 +1,14 @@
 error[F0217]: `exactly_one?` shadows the built-in function `exactly_one?`
- --> test/cli/names/f0217_builtin_function.fren:2:13
+ --> test/cli/names/f0217_builtin_function.fren:2:8
   |
-2 | comp c { in exactly_one? pub out o? := exactly_one? }
-  |             ^^^^^^^^^^^^ shadows without `!`
+2 | proc c(exactly_one?): (o?) { out o? := exactly_one? }
+  |        ^^^^^^^^^^^^ shadows without `!`
   |
   = note: shadowing is explicit: a declaration that hides a name in scope is written with `!`, as `exactly_one?!`
 help: to shadow the built-in function `exactly_one?`, write `exactly_one?!`
   |
-2 - comp c { in exactly_one? pub out o? := exactly_one? }
-2 + comp c { in exactly_one?! pub out o? := exactly_one? }
+2 - proc c(exactly_one?): (o?) { out o? := exactly_one? }
+2 + proc c(exactly_one?!): (o?) { out o? := exactly_one? }
   |
 
 error: could not check due to previous errors

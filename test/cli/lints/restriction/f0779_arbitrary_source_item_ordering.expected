@@ -1,14 +1,2 @@
-warning[F0779]: an input after an output
- --> test/cli/lints/restriction/f0779_arbitrary_source_item_ordering.fren:7:5
-  |
-7 |     in x: Int
-  |     ^^^^^^^^^ out of order
-  |
-  = note: the members of a component are written `use`, `in`, `assume`, `out`, `inst`, `ensure`, `expect`, then `cover`
-  = help: `fren fix` can fix this
-  = note: `arbitrary_source_item_ordering` is set to `warn`
-
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
-
-For more information about this error, try `fren --explain F0779`.
-exit=3
+exit=0

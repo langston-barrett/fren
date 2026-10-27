@@ -1,7 +1,7 @@
 error[F0323]: the argument of `matches?` must be a string literal
- --> test/cli/types/f0323_pattern_literal.fren:6:33
+ --> test/cli/types/f0323_pattern_literal.fren:2:33
   |
-6 |     ensure r: p? iff s.matches?(pat)
+2 |     ensure r: p? iff s.matches?(pat)
   |                                 ^^^ not a literal
   |
   = note: a pattern is parsed when the spec is checked, so it cannot be a variable or a constant

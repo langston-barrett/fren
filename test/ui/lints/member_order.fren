@@ -23,26 +23,22 @@ proc in_order(x: Int, shape: Shape): (y: Int) {
     expect e: shape = Square or shape = Shape::Circle  --~ warning: this says that `shape` matches one of these patterns
 }
 
-proc unordered(x: Int): (
-    y: Int,          --~ warning: an output after a guarantee
-) {
+proc unordered(x: Int): (y: Int) {
     ensure r: y = x
-    assume small: x < 100
+    assume small: x < 100  --~ warning: an assumption after a guarantee
 }
 
 -- With an evidence setting, which is part of the member after it.
-proc evidence(
-    x: Int,     --~ warning: an input after an expectation
-): (y: Int) {
+proc evidence(x: Int): (y: Int) {
     set_option fren.evidence "solver" in
     expect e: x = y
-    ensure r: y = x
+    ensure r: y = x  --~ warning: a guarantee after an expectation
 }
 
 -- Reported, but not fixed: in order, `z` would come before `w`.
 proc mentions(x: Int): (y: Int) {
     call w := severity_of(x)
-    let z: Int := w.v   --~ warning: an output after an instance
+    let z: Int := w.v   --~ warning: a `let` after a call
     ensure r: y = z
 }
 

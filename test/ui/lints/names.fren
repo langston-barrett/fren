@@ -38,7 +38,7 @@ pub fn _1(_2: Int): Int := _2  --~ warning: function `_1` is named only with `_`
 pub enum Digits { _3 }  --~ warning: variant `_3` is named only with `_` and digits
 --~^ warning: variant `_3` should have a camel case name
 
-pub proc foo(
+pub proc foo(  --~ warning: procedure `foo` has a placeholder name
     Baz?,    --~ warning: variable `Baz?` has a placeholder name
     __: Int,    --~ warning: variable `__` is named only with `_` and digits
     _x: Int,
@@ -46,14 +46,14 @@ pub proc foo(
     foobar?,
 ): (
     quux?,         --~ warning: variable `quux?` has a placeholder name
-) {  --~ warning: component `foo` has a placeholder name
-    --~^ warning: variable `Baz?` should have a snake case name
+) {
+    --~^^^^^^^^ warning: variable `Baz?` should have a snake case name
 
     ensure _4: quux? iff (Baz? and bar? and foobar? and __ > _x)  --~ warning: constraint `_4` is named only with `_` and digits
 }
 
 pub proc user(v: Int): (w?) {
-    call _5 := foo(true, v, v, true, true)  --~ warning: instance `_5` is named only with `_` and digits
+    call _5 := foo(true, v, v, true, true)  --~ warning: call `_5` is named only with `_` and digits
 
     ensure r: w? iff _5.quux?
 }

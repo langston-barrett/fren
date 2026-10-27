@@ -1,7 +1,7 @@
 error[F0328]: cannot join `Rel<Int, String>` with `Rel<Int, Bool>`
- --> test/cli/types/f0328_join.fren:8:35
+ --> test/cli/types/f0328_join.fren:4:35
   |
-8 |     ensure s: p? iff (1, true) in r join q
+4 |     ensure s: p? iff (1, true) in r join q
   |                                   ^^^^^^^^ the middle types differ
   |
   = note: `r join q` composes `r: Rel<A, B>` with `q: Rel<B, C>`: the second type of `r` is the first of `q`

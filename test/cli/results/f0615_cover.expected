@@ -1,8 +1,8 @@
 error[F0615]: cover goal `heater::silent_overheat` cannot be met: it is ruled out by `r`
- --> test/cli/results/f0615_cover.fren:8:11
+ --> test/cli/results/f0615_cover.fren:5:11
   |
-8 |     cover silent_overheat: temp > 100 and not alarm?
-  |           ^^^^^^^^^^^^^^^ no behaviour that meets the component satisfies this
+5 |     cover silent_overheat: temp > 100 and not alarm?
+  |           ^^^^^^^^^^^^^^^ no behaviour that meets the procedure satisfies this
   |
   = note: a cover goal is a scenario that some behaviour meeting the assumptions and guarantees must allow
   = help: weaken the constraints that rule it out, or correct the goal

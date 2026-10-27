@@ -33,7 +33,7 @@ proc relations(
     ensure q: p? iff (r = MARKED and r in nested and two = {} and boxed = {} and flipped = {} and marked?(r))
 }
 
-proc singles(a: Int, b: Int, c?, e: Two, f: Int): (total: Int) {  --~ warning: component `singles` declares 5 single-character names
+proc singles(a: Int, b: Int, c?, e: Two, f: Int): (total: Int) {  --~ warning: procedure `singles` declares 5 single-character names
     ensure r: total = if c? then a + b + f else match e { Two::A => 0, Two::B => 1 }
 }
 
@@ -52,7 +52,7 @@ proc three(a: Int, b: Int): (s: Int) {
 }
 
 -- A `match` binder counts.
-proc with_binder(a: Int, b: Int, c: Int, x: Boxed): (total: Int) {  --~ warning: component `with_binder` declares 5 single-character names
+proc with_binder(a: Int, b: Int, c: Int, x: Boxed): (total: Int) {  --~ warning: procedure `with_binder` declares 5 single-character names
     ensure r: total = a + b + c + match x { Boxed::Box(n) => n }
 }
 
@@ -101,7 +101,9 @@ proc series(
 }
 
 -- 101 lines: blank lines and comments do not count.
-proc long(x: Int, w: Int, text: String): (
+proc long(  --~ warning: procedure `long` has 101 lines
+    x: Int, w: Int, text: String,
+): (
     -- A comment alone on its line.
     ok?,         -- a comment after code
     echo: Int,
@@ -151,7 +153,7 @@ proc long(x: Int, w: Int, text: String): (
     y43: Int,
     y44: Int,
     y45: Int,
-) {  --~ warning: component `long` has 101 lines
+) {
     -- `/-` and `--` in a string start no comment.
     ensure st: ok? iff text = "/- -- not a comment"
     /- a block comment /- nested -/ still in it
@@ -208,7 +210,9 @@ proc long(x: Int, w: Int, text: String): (
 }
 
 -- 100 lines, which is not too many: blank lines and comments do not count.
-proc long_enough(x: Int, text: String): (
+proc long_enough(
+    x: Int, text: String,
+): (
     -- A comment alone on its line.
     ok?,         -- a comment after code
     echo: Int,
@@ -256,8 +260,7 @@ proc long_enough(x: Int, text: String): (
     y41: Int,
     y42: Int,
     y43: Int,
-    y44: Int,
-    y45: Int,
+    y44: Int, y45: Int,
 ) {
     -- `/-` and `--` in a string start no comment.
     ensure st: ok? iff text = "/- -- not a comment"

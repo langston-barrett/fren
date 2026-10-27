@@ -2,6 +2,6 @@
 proc sub(a: Int): (b: Int) { ensure r: b = a }
 proc c(x: Int) { call s := sub(z where z := x) }
 --~^[cli] error: expected `)`, found keyword `where`
---~^^[hosted] error:
+--~^^[hosted] error: unexpected token 'where'; expected ')'
 proc ok(x: Int) { call s := sub(x + 1) }
 --@ exit: 2
