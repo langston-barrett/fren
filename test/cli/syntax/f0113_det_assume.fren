@@ -1,0 +1,3 @@
+-- `det` on an assumption (F0113).
+proc c(x: Int) { det assume a: x > 0 }
+-- fren-covers: lang::modifiers

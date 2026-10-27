@@ -1,5 +1,5 @@
 -- `req` is not a keyword: a guarantee is written `ensure` (F0142).
-comp c { in x: Int pub out y? req r: y? iff x > 0 }
+proc c(x: Int): (y?) { req r: y? iff x > 0 }
 --~^[cli] error: `req` is now written `ensure`
 --~^^[hosted] error: expected
 --@ exit: 2

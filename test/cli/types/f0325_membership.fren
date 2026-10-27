@@ -1,7 +1,3 @@
-comp c {
-    in x: Int
-    in s: Set<String>
-    pub out p?
-
+proc c(x: Int, s: Set<String>): (p?) {
     ensure r: p? iff x in s
 }

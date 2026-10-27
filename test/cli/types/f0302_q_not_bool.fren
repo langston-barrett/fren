@@ -1,2 +1,2 @@
 -- A non-`Bool` name ending in `?` (F0302).
-comp c { in n?: Int }
+proc c(n?: Int) {}

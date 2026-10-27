@@ -4,12 +4,7 @@ pub struct Point { x: Int, y: Int }
 
 pub struct State { count: Int, on?, tags: Set<Bool> }
 
-comp moves {
-    in p: Point
-    in n: Int
-    pub det out q: Point
-    pub det out y: Int
-
+proc moves(p: Point, n: Int): (det q: Point, det y: Int) {
     ensure r: q = { p with x := n }
     ensure read: y = { p with x := 1 }.y
 
@@ -23,11 +18,9 @@ comp moves {
 
 -- A field alone means `x := x`; `{}` takes its field's type; the updated
 -- value may be any record-valued expression.
-comp shorthand {
-    in s: State
-    in count: Int
-    pub out t: State := { s with count, tags := {} }
-    pub out u: State := { { s with on? := true } with count := count + 1 }
+proc shorthand(s: State, count: Int): (t: State, u: State) {
+    out t := { s with count, tags := {} }
+    out u := { { s with on? := true } with count := count + 1 }
 
     expect counted: t.count = count and t.on? = s.on? and t.tags = {}
     expect both: u.on? and u.count = count + 1 and u.tags = s.tags
@@ -37,15 +30,13 @@ comp shorthand {
 -- instance's variable as the updated value.
 pub struct Line { start: Point, stop: Point }
 
-comp held { in a: Point pub out b: Point := a }
+proc held(a: Point): (b: Point) { out b := a }
 
-comp nested {
-    in l: Line
-    in n: Int
-    pub out m: Line := { l with start := { l.start with x := n } }
-    pub out k: Point := { l.stop with y := 0 }
-    inst h: held { a := l.start }
-    pub out j: Point := { h.b with y := n }
+proc nested(l: Line, n: Int): (m: Line, k: Point, j: Point) {
+    out m := { l with start := { l.start with x := n } }
+    out k := { l.stop with y := 0 }
+    call h := held(l.start)
+    out j := { h.b with y := n }
 
     expect moved: m.start.x = n and m.start.y = l.start.y and m.stop = l.stop
     expect cleared: k = Point { x := l.stop.x, y := 0 }
@@ -57,11 +48,7 @@ comp nested {
 fn same_point(p: Point): Point := p
 fn moved(p: Point, n: Int): Point := { same_point(p) with x := n }
 
-comp through_function {
-    in p: Point
-    in n: Int
-    pub det out q: Point
-
+proc through_function(p: Point, n: Int): (det q: Point) {
     ensure r: q = moved(p, n)
 
     expect keeps_y: q.y = p.y
@@ -69,11 +56,7 @@ comp through_function {
 }
 
 -- An index in an updated value that is bound once.
-comp guarded_base {
-    in ps: Seq<Point>
-    pub det out a: Point
-    pub det out b: Point
-
+proc guarded_base(ps: Seq<Point>): (det a: Point, det b: Point) {
     ensure ra: a = { ps[0] with x := 1 }  --~ error: an index of `guarded_base::ra` may be out of range
     ensure rb: b = if ps != [] then { ps[0] with x := 1 } else Point { x := 1, y := 0 }
 
@@ -81,24 +64,14 @@ comp guarded_base {
 }
 
 -- An update is an atom: an operand of `=` and `not` without parentheses.
-comp atoms {
-    in s: State
-    pub det out on?
-
+proc atoms(s: State): (det on?) {
     ensure r: on? iff not { s with on? := false }.on?
 
     expect always_on: on?
 }
 
 -- An index within an update is guarded as anywhere else.
-comp guarded {
-    in q: Seq<Int>
-    in ps: Seq<Point>
-    in p: Point
-    pub det out a: Point
-    pub det out b: Point
-    pub det out c: Point
-
+proc guarded(q: Seq<Int>, ps: Seq<Point>, p: Point): (det a: Point, det b: Point, det c: Point) {
     ensure ra: a = if q != [] then { p with x := q[0] } else p
     ensure rb: b = { p with x := q[0] }  --~ error: an index of `guarded::rb` may be out of range
     ensure rc: c = { ps[0] with x := 1, y := 2 }  --~ error: an index of `guarded::rc` may be out of range

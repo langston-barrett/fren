@@ -1,8 +1,8 @@
 warning[F0842]: this reads the field of a newtype just built
- --> test/cli/lints/complexity/f0842_untyped.fren:4:53
+ --> test/cli/lints/complexity/f0842_untyped.fren:4:46
   |
-4 | comp c { in q: Seq<Int> pub out p? ensure r: p? iff Qs([]).0.len = q.len }
-  |                                                     ^^^^^^^^ a round trip through `Qs`
+4 | proc c(q: Seq<Int>): (p?) { ensure r: p? iff Qs([]).0.len = q.len }
+  |                                              ^^^^^^^^ a round trip through `Qs`
   |
   = note: `fren fix` leaves this, since `[]` takes its type from the newtype, and has none without it
   = note: `redundant_newtype_roundtrip` is `warn` by default

@@ -1,7 +1,7 @@
 error[F0603]: expectation `c::e` does not hold
- --> test/cli/commands/defined_counterexample.fren:9:12
+ --> test/cli/commands/defined_counterexample.fren:7:12
   |
-9 |     expect e: y = next
+7 |     expect e: y = next
   |            ^ does not follow from the guarantees
   |
   = counterexample: x = -2, next = -1, y = 0

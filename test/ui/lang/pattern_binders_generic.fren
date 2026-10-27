@@ -6,14 +6,7 @@ mod pattern_binders_generic
 enum Opt<T> { None, Some(T) }
 struct Ms(Int)
 
-comp c {
-    in o: Opt<Int>
-    in b: Opt<Bool>
-    in m: Opt<Ms>
-    pub det out positive?
-    pub det out set?
-    pub det out ms: Int
-
+proc c(o: Opt<Int>, b: Opt<Bool>, m: Opt<Ms>): (det positive?, det set?, det ms: Int) {
     ensure positive_rule: positive? iff o is Opt::Some(x) and x > 0
     ensure set_rule: set? iff (when b is Opt::Some(on?), on?)
     ensure ms_rule: ms = (if m is Opt::Some(n) then n.0 else 0)

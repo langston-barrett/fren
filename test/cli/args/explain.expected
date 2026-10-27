@@ -3,7 +3,7 @@ An operator from another language, which Fren does not have.
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff x == 1 }
+proc c(x: Int): (y?) { ensure r: y? iff x == 1 }
 ```
 
 Fren's operators are words where other languages use symbols:
@@ -15,6 +15,6 @@ Fren's operators are words where other languages use symbols:
 `!=` is inequality, as in other languages. There is no division.
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff x = 1 }
+proc c(x: Int): (y?) { ensure r: y? iff x = 1 }
 ```
 exit=0

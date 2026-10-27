@@ -26,12 +26,11 @@ mentions only what `r` does. `lint::field_copy` states when it fires on
 pub mod lint
 
 set_option fren.evidence "enumerated" in
-pub comp field_copy {
-    in path?     -- `r` is a name or a dotted path of names
-    in copy?     -- the value is written the same as `r`, then `.`, then the field's name
-    in others?   -- the update gives another field a value that is not such a copy
-    pub det out fires?
-
+pub proc field_copy(
+    path?,       -- `r` is a name or a dotted path of names
+    copy?,       -- the value is written the same as `r`, then `.`, then the field's name
+    others?,     -- the update gives another field a value that is not such a copy
+): (det fires?) {
     ensure rule: fires? iff (path? and copy? and others?)
 }
 ```
@@ -43,18 +42,14 @@ three fields:
 pub struct Triple { a: Int, b: Int, c: Int }
 
 set_option fren.lint.redundant_bindings "allow" in
-pub comp field_copy_written {
-    in t: Triple
-    in n: Int
-    pub det out u: Triple := { t with a := t.a, b := n }
-    pub det out v: Triple := { t with b := n, c := t.c }
+pub proc field_copy_written(t: Triple, n: Int): (det u: Triple, det v: Triple) {
+    out u := { t with a := t.a, b := n }
+    out v := { t with b := n, c := t.c }
 }
 
-pub comp field_copy_fixed {
-    in t: Triple
-    in n: Int
-    pub det out u: Triple := { t with b := n }
-    pub det out v: Triple := { t with b := n }
+pub proc field_copy_fixed(t: Triple, n: Int): (det u: Triple, det v: Triple) {
+    out u := { t with b := n }
+    out v := { t with b := n }
 }
 
 refine field_copy_sound: field_copy_fixed refines field_copy_written
@@ -91,12 +86,11 @@ mentions, and the other fields' values. `lint::manual_record_update`
 states when it fires:
 
 ```fren
-pub comp manual_record_update {
-    in n_fields: Nat   -- the fields of the record
-    in n_copied: Nat   -- the fields copied from `r`
-
+pub proc manual_record_update(
+    n_fields: Nat,     -- the fields of the record
+    n_copied: Nat,     -- the fields copied from `r`
+): (det fires?) {
     assume within: n_copied <= n_fields
-    pub det out fires?
 
     ensure rule: fires? iff n_copied < n_fields < 2 * n_copied
 
@@ -110,18 +104,14 @@ The fix's meaning is checked by refinement, each way:
 
 ```fren
 set_option fren.lint.manual_record_update "allow" in
-pub comp manual_record_update_written {
-    in t: Triple
-    in n: Int
-    pub det out u: Triple := Triple { a := n, b := t.b, c := t.c }
-    pub det out v: Triple := Triple { a := t.a, b := n + 1, c := t.c }
+pub proc manual_record_update_written(t: Triple, n: Int): (det u: Triple, det v: Triple) {
+    out u := Triple { a := n, b := t.b, c := t.c }
+    out v := Triple { a := t.a, b := n + 1, c := t.c }
 }
 
-pub comp manual_record_update_fixed {
-    in t: Triple
-    in n: Int
-    pub det out u: Triple := { t with a := n }
-    pub det out v: Triple := { t with b := n + 1 }
+pub proc manual_record_update_fixed(t: Triple, n: Int): (det u: Triple, det v: Triple) {
+    out u := { t with a := n }
+    out v := { t with b := n + 1 }
 }
 
 refine manual_record_update_sound: manual_record_update_fixed refines manual_record_update_written

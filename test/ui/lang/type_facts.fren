@@ -25,7 +25,6 @@ expect too_big: forall (p: P), p.x < 3    --~ error: expectation `type_facts::to
 
 -- A newtype over an infinite type is not listed.
 set_option fren.lint.undecidable "warn" in
-comp counts {
-    pub out ok?
+proc counts(): (ok?) {
     ensure r: ok? iff (forall (c: Count), c = c)    --~ warning: this is outside the decidable core: a quantifier over a type whose values cannot be listed
 }

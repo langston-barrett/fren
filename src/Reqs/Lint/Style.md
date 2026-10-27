@@ -65,22 +65,20 @@ pub mod lint
 
 pub enum Head { Not, Unequal, If, When, Unless, Other }
 
-pub comp unless_not {
-    in unless?           -- the conditional is `unless`, rather than `when`
-    in condition: Head
-    pub det out fires?
-
+pub proc unless_not(
+    unless?,             -- the conditional is `unless`, rather than `when`
+    condition: Head,
+): (det fires?) {
     ensure rule: fires? iff (unless? and condition in {Head::Not, Head::Unequal})
 
     expect other: when condition = Head::Other, not fires?
 }
 
 set_option fren.evidence "enumerated" in
-pub comp collapsible_when {
-    in unless?           -- the conditional is `unless`, rather than `when`
-    in body: Head
-    pub det out fires?
-
+pub proc collapsible_when(
+    unless?,             -- the conditional is `unless`, rather than `when`
+    body: Head,
+): (det fires?) {
     ensure rule: fires? iff body = (if unless? then Head::Unless else Head::When)
 
     expect mixed: when unless? and body = Head::When, not fires?
@@ -112,13 +110,14 @@ pub enum Comparison { Eq, Ne, Lt, Le, Gt, Ge }
 
 use self::Comparison::{Eq, Ge, Gt, Le, Lt, Ne}
 
-pub comp length_zero {
-    in op: Comparison
-    in bound: Int        -- the literal compared with
-    in left?             -- the length is the left operand, rather than the right
-    pub det out fires?
-    pub det out empty?   -- the fix says that it is empty, rather than not
-
+pub proc length_zero(
+    op: Comparison,
+    bound: Int,          -- the literal compared with
+    left?,               -- the length is the left operand, rather than the right
+): (
+    det fires?,
+    det empty?,          -- the fix says that it is empty, rather than not
+) {
     ensure rule: fires? iff (if left?
         then (bound = 0 and op in {Eq, Ne, Le, Gt}) or (bound = 1 and op in {Lt, Ge})
         else (bound = 0 and op in {Eq, Ne, Ge, Lt}) or (bound = 1 and op in {Gt, Le}))
@@ -142,13 +141,13 @@ fn compares?(op: Comparison, a: Int, b: Int) := match op {
     Ge => a >= b,
 }
 
-comp length_zero_exact {
-    in op: Comparison
-    in bound: Int
-    in left?
-    in n: Nat            -- the length
-
-    inst p: length_zero { op, bound, left? }
+proc length_zero_exact(
+    op: Comparison,
+    bound: Int,
+    left?,
+    n: Nat,              -- the length
+) {
+    call p := length_zero(op, bound, left?)
 
     expect exact: when p.fires?,
         compares?(op, if left? then n else bound, if left? then bound else n) iff (p.empty? iff n = 0)
@@ -161,12 +160,7 @@ sequences, sets and relations (see [Fixing lints](../Lint.md#fixing-lints)):
 ```fren
 set_option fren.lint.length_zero "expect" in
 set_option fren.lint.card_zero "expect" in
-pub comp length_zero_keeps_meaning {
-    in s: String
-    in q: Seq<Int>
-    in t: Set<Int>
-    in r: Rel<Bool, Bool>
-
+pub proc length_zero_keeps_meaning(s: String, q: Seq<Int>, t: Set<Int>, r: Rel<Bool, Bool>) {
     expect string_length_zero: ((s.len = 0) iff s = "") and ((s.len <= 0) iff s = "") and ((s.len > 0) iff s != "")
     expect sequence_length_zero: ((q.len = 0) iff q = []) and ((q.len <= 0) iff q = []) and ((q.len > 0) iff q != [])
     expect length_one: ((s.len < 1) iff s = "") and ((s.len >= 1) iff s != "") and ((s.len != 0) iff s != "")
@@ -188,10 +182,9 @@ guards. `lint::first_empty` states the value, which its `impl` proves for
 strings:
 
 ```fren
-pub comp first_empty {
-    in s: String
-    pub det out empty?   -- `s.at(0) = ""`
-
+pub proc first_empty(s: String): (
+    det empty?,          -- `s.at(0) = ""`
+) {
     ensure rule: empty? iff s = ""
 }
 ```
@@ -226,7 +219,7 @@ characters such as `\d`. So `trivial_pattern` is in `style`. For
 [decidability](../Lang/Decidability.md#strings), the four forms are the same:
 `matches?` with a literal pattern, `starts_with?`, `ends_with?` and
 `contains?` with a constant, and an equation with a constant are each in
-the decidable core, so the fix never changes whether a component is
+the decidable core, so the fix never changes whether a procedure is
 decidable.
 
 `lint::trivial_pattern` states when it fires, from the value of the
@@ -235,11 +228,9 @@ literal, and which fix it makes:
 ```fren
 pub enum PatternFix { Equality, StartsWith, EndsWith, Contains }
 
-pub comp trivial_pattern {
-    in pattern: String       -- the value of the literal
-    pub det out fires?
-    pub det out fix: PatternFix
-
+pub proc trivial_pattern(
+    pattern: String,         -- the value of the literal
+): (det fires?, det fix: PatternFix) {
     ensure rule: fires? iff pattern.matches?(r"(\.\*)?([^\\.\[\]()*+?{}|^]|\\[\\.\[\]()*+?{}|^-])+(\.\*)?")
     ensure which: fix = if pattern.starts_with?(".*") then (if pattern.ends_with?(".*") then PatternFix::Contains
         else PatternFix::EndsWith)
@@ -278,19 +269,19 @@ pattern has no `"`; otherwise it is not raw, with the escapes of
 `lint::class_char` how the fix writes a character in the class:
 
 ```fren
-pub comp manual_pattern_char_comparison {
-    in n_alternatives: Int   -- the alternatives of the alternation
-    in single?               -- each is a single character
-    pub det out fires?
-
+pub proc manual_pattern_char_comparison(
+    n_alternatives: Int,     -- the alternatives of the alternation
+    single?,                 -- each is a single character
+): (det fires?) {
     ensure rule: fires? iff (n_alternatives >= 2 and single?)
 }
 
-pub comp class_char {
-    in c: String         -- a character
-
+pub proc class_char(
+    c: String,           -- a character
+): (
+    det escaped?,         -- the fix writes it `\c`, rather than `c`
+) {
     assume one: c.len = 1
-    pub det out escaped?  -- the fix writes it `\c`, rather than `c`
 
     ensure rule: escaped? iff c in {"\\", "]", "^", "-"}
 }
@@ -298,11 +289,11 @@ pub comp class_char {
 
 ## Boolean types
 
-A name that ends in `?` is a `Bool`, so `in ready?: Bool` declares the same
-input as `in ready?` (see [Boolean names](../Lang/Types.md#boolean-names)).
+A name that ends in `?` is a `Bool`, so the parameter `ready?: Bool` is
+the same as `ready?` (see [Boolean names](../Lang/Types.md#boolean-names)).
 `redundant_bool_type` fires on a `: Bool` that the rule implies: on a
-variable, input or output, defined or not, on a field of a record, on a
-parameter of a defined function, and on a function's result type. It is
+variable of a procedure, a parameter, a result or an `exists` or `let`
+variable, on a field of a record, on a parameter of a defined function, and on a function's result type. It is
 reported at `: Bool`, and the fix removes it, with the spaces before it,
 from the end of the name, or of the `)` before a result type: `fn ok?(n:
 Int): Bool := n > 0` becomes `fn ok?(n: Int) := n > 0`. A declaration has no
@@ -312,11 +303,10 @@ that [`lang::bool_naming`](../Lang/Types.md#boolean-names) accepts:
 ```fren
 use lang::Annot
 
-pub comp redundant_bool_type {
-    in name: String      -- the declared name
-    in annot: Annot
-    pub det out fires?
-
+pub proc redundant_bool_type(
+    name: String,        -- the declared name
+    annot: Annot,
+): (det fires?) {
     ensure rule: fires? iff (name.ends_with?("?") and annot = Annot::BoolTy)
 
     expect written: when fires?, annot != Annot::Missing
@@ -371,22 +361,23 @@ are all `true`, or all `false`, is left to
 negated, and when it is a pattern test:
 
 ```fren
-pub comp match_like_membership {
-    in bool_bodies?      -- every body is `true` or `false`, and each is some body
-    in binds?            -- some pattern binds a name
-    in disjoint?         -- each pattern is `_`, a variant whose payload's patterns are `_`, a literal, or an or-pattern of these
-    in true_first?       -- every arm whose body is `true` comes before every arm but `_` whose body is `false`
-    in false_first?      -- and the other way round
-    in equatable_true?   -- each alternative of the arms whose body is `true` is a variant without a payload or a literal
-    in equatable_false?  -- and of those whose body is `false`
-    in wildcard?         -- there is a `_` arm
-    in wildcard_true?    -- its body is `true`
-    in n_true: Nat       -- alternatives of arms whose body is `true`
-    in n_false: Nat      -- and of arms whose body is `false`
-    pub det out fires?
-    pub det out negated?  -- the fix is negated, of the `false` alternatives
-    pub det out pattern_test?  -- the fix is a pattern test, rather than an equation
-
+pub proc match_like_membership(
+    bool_bodies?,        -- every body is `true` or `false`, and each is some body
+    binds?,              -- some pattern binds a name
+    disjoint?,           -- each pattern is `_`, a variant whose payload's patterns are `_`, a literal, or an or-pattern of these
+    true_first?,         -- every arm whose body is `true` comes before every arm but `_` whose body is `false`
+    false_first?,        -- and the other way round
+    equatable_true?,     -- each alternative of the arms whose body is `true` is a variant without a payload or a literal
+    equatable_false?,    -- and of those whose body is `false`
+    wildcard?,           -- there is a `_` arm
+    wildcard_true?,      -- its body is `true`
+    n_true: Nat,         -- alternatives of arms whose body is `true`
+    n_false: Nat,        -- and of arms whose body is `false`
+): (
+    det fires?,
+    det negated?,         -- the fix is negated, of the `false` alternatives
+    det pattern_test?,         -- the fix is a pattern test, rather than an equation
+) {
     ensure negated: negated? iff (if wildcard? then wildcard_true? else if disjoint? then n_true > n_false else false_first?)
     ensure rule: fires? iff (bool_bodies? and not binds? and (disjoint? or (if negated? then false_first? else true_first?)))
     ensure test: pattern_test? iff not (if negated? then equatable_false? and n_false = 1 else equatable_true? and n_true = 1)
@@ -401,11 +392,11 @@ a pattern test.
 
 ## Bindings
 
-`redundant_bindings` fires on a binding of an instance, or a field of a
-record literal, written `x := x`, and is fixable. The fix is `x`, which
-means `x := x` by definition, for [bindings](../Lang/Instances.md)
-and [fields](../Lang/Expressions.md#records) alike, so it keeps the meaning
-and the guards. The name and the expression after `:=` are compared as
+`redundant_bindings` fires on a field of a record literal written `x :=
+x`, and is fixable. The fix is `x`, which means `x := x` by definition
+(see [Records](../Lang/Expressions.md#records)), so it keeps the meaning
+and the guards. It fired on an instance's binding `x := x` too, before
+instances were calls, whose arguments are positional. The name and the expression after `:=` are compared as
 [written the same](../Lint.md#written-the-same), so a comment next to
 either is not part of it: `x := /- c -/ x` and `x := x -- c` fire too,
 and the fix removes a comment between the name and the expression.
@@ -413,11 +404,10 @@ and the fix removes a comment between the name and the expression.
 name and of the expression, each in the form that comparison uses:
 
 ```fren
-pub comp redundant_bindings {
-    in name: String      -- the name bound, or the field given
-    in value: String     -- the expression after `:=`
-    pub det out fires?
-
+pub proc redundant_bindings(
+    name: String,        -- the name bound, or the field given
+    value: String,       -- the expression after `:=`
+): (det fires?) {
     ensure rule: fires? iff value = name
 }
 ```
@@ -436,20 +426,20 @@ fixable:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp double_neg {
-    in negated_operand?  -- the operand of the negation, through parentheses, is a negation
-    pub det out fires?
-
+pub proc double_neg(
+    negated_operand?,    -- the operand of the negation, through parentheses, is a negation
+): (det fires?) {
     ensure rule: fires? iff negated_operand?
 }
 
 set_option fren.evidence "enumerated" in
-pub comp neg_multiply {
-    in left_minus_one?   -- the left operand, through parentheses, is `-1`
-    in right_minus_one?  -- the right operand is
-    pub det out fires?
-    pub det out negate_left?  -- the fix negates the left operand, rather than the right
-
+pub proc neg_multiply(
+    left_minus_one?,     -- the left operand, through parentheses, is `-1`
+    right_minus_one?,    -- the right operand is
+): (
+    det fires?,
+    det negate_left?,         -- the fix negates the left operand, rather than the right
+) {
     ensure rule: fires? iff (left_minus_one? or right_minus_one?)
     ensure fix: negate_left? iff right_minus_one?
 }
@@ -480,11 +470,10 @@ in it, repeats the name. It is reported at the segment that declares the
 module. `lint::module_inception` states when it fires:
 
 ```fren
-pub comp module_inception {
-    in name: String      -- the module's last segment
-    in parent: String    -- its parent's last segment, or `""` for a top-level module
-    pub det out fires?
-
+pub proc module_inception(
+    name: String,        -- the module's last segment
+    parent: String,      -- its parent's last segment, or `""` for a top-level module
+): (det fires?) {
     ensure rule: fires? iff name = parent
 
     expect top_level: when parent = "" and name != "", not fires?
@@ -517,21 +506,19 @@ enumeration's name. `lint::enum_variant_names` and
 `lint::variant_has_enum_name` state when it fires:
 
 ```fren
-pub comp enum_variant_names {
-    in n_variants: Nat
-    in shared_first?     -- every variant has two or more words, and all have the same first word
-    in shared_last?      -- every variant has two or more words, and all have the same last word
-    pub det out fires?
-
+pub proc enum_variant_names(
+    n_variants: Nat,
+    shared_first?,       -- every variant has two or more words, and all have the same first word
+    shared_last?,        -- every variant has two or more words, and all have the same last word
+): (det fires?) {
     ensure rule: fires? iff (n_variants >= 2 and (shared_first? or shared_last?))
 }
 
-pub comp variant_has_enum_name {
-    in n_words: Nat      -- the words of the variant's name
-    in n_enum_words: Nat  -- the words of its enumeration's name
-    in contains?         -- the variant's words have the enumeration's, one after another
-    pub det out fires?
-
+pub proc variant_has_enum_name(
+    n_words: Nat,        -- the words of the variant's name
+    n_enum_words: Nat,    -- the words of its enumeration's name
+    contains?,           -- the variant's words have the enumeration's, one after another
+): (det fires?) {
     ensure rule: fires? iff (contains? and n_words > n_enum_words)
 
     expect same_name: when n_words = n_enum_words, not fires?
@@ -555,12 +542,8 @@ with three uppercase letters in a row, written as one pattern rather than
 two, whose intersection the solver is slow to decide:
 
 ```fren
-pub comp upper_case_acronyms {
-    in what: Named
-    in name: String
-    pub det out fires?
-
-    inst c: naming_case { what }
+pub proc upper_case_acronyms(what: Named, name: String): (det fires?) {
+    call c := naming_case(what)
 
     ensure rule: fires? iff (c.case = Camel and name.matches?(r"[A-Z]([^_]*[A-Z])?[A-Z][A-Z][^_]*"))
 
@@ -572,8 +555,8 @@ pub comp upper_case_acronyms {
 other than the wildcard `_`, before a final `?` if it has one. An
 [identifier](../Lang/Lexical.md#identifiers) starts with a letter or `_`, so
 such a name starts with `_`, as `_1`, `__` and `_2?` do, and both front
-ends accept one wherever a name is declared: for a module, a component, a
-variable, a parameter, a field, a binder, a function, an instance, a
+ends accept one wherever a name is declared: for a module, a procedure, a
+variable, a parameter, a field, a binder, a function, a call, a
 constraint, a global expectation, an enumeration, a variant, a record, an
 abstract type or a constant. A name in `CamelCase` or `UPPER_CASE` starts
 with a letter, so `non_camel_case_types` or `non_upper_case_constants`
@@ -586,17 +569,11 @@ has `bar`, which is a word, as in a bar of a chart, and Fren's does not
 either.
 
 ```fren
-pub comp just_underscores_and_digits {
-    in name: String
-    pub det out fires?
-
+pub proc just_underscores_and_digits(name: String): (det fires?) {
     ensure rule: fires? iff (name.matches?(r"[_0-9]+[?]?") and name != "_")
 }
 
-pub comp disallowed_names {
-    in name: String
-    pub det out fires?
-
+pub proc disallowed_names(name: String): (det fires?) {
     ensure rule: fires? iff name.matches?(r"([Ff][Oo][Oo]|[Bb][Aa][Zz]|[Qq][Uu][Uu][Xx])[?]?")
 }
 ```
@@ -604,16 +581,16 @@ pub comp disallowed_names {
 ## Constant constraints
 
 `assertions_on_constants` fires on an assumption, guarantee,
-expectation or cover goal, of a component or [global](../Lang/Global.md), whose
+expectation or cover goal, of a procedure or [global](../Lang/Global.md), whose
 expression mentions no variable and no uninterpreted function (see
 [Mentions](../Lang/Expressions.md#mentions)), as
 [`constant_output`](Complexity.md#constant-outputs) does on a
 definition, such as `ensure r: true` or `expect e: LIMIT > 0`. An
 application of an uninterpreted function counts, since its value depends
-on the [interpretation](../Lang/Components.md#interpretations).
+on the [interpretation](../Lang/Procedures.md#interpretations).
 
 Such a constraint is the same in every behaviour. If it is always true,
-it says nothing. If it is always false, a guarantee makes its component
+it says nothing. If it is always false, a guarantee makes its procedure
 unrealizable, an assumption makes every guarantee hold vacuously, and an
 expectation always fails. The message says which where the expression is
 written `true` or `false`, in parentheses or not; otherwise only the
@@ -630,10 +607,9 @@ expression mentions, as [`lang::mentions`](../Lang/Expressions.md#mentions)
 gives it:
 
 ```fren
-pub comp assertions_on_constants {
-    in mentioned: Set<lang::Mention>  -- what the expression mentions
-    pub det out fires?
-
+pub proc assertions_on_constants(
+    mentioned: Set<lang::Mention>,    -- what the expression mentions
+): (det fires?) {
     ensure rule: fires? iff mentioned = {}
 }
 ```

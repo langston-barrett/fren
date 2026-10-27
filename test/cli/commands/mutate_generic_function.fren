@@ -5,9 +5,8 @@ mod m
 
 pub fn size<T>(o: Option<T>, n: Int): Int := match o { Option::Some(_) => n + 1, Option::None => n }
 
-pub comp c {
-    in x: Option<Bool>
-    pub det out y: Int := size(x, 0)
+pub proc c(x: Option<Bool>): (det y: Int) {
+    out y := size(x, 0)
 
     expect e: x = Option::None or y = 1
     expect f: x != Option::None or y = 0

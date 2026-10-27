@@ -1,4 +1,4 @@
 -- `similar_names`: names that differ by one character.
 set_option fren.lint.similar_names "warn"
 
-comp c { in count: Int in counts: Int pub out p? ensure r: p? iff count < counts }
+proc c(count: Int, counts: Int): (p?) { ensure r: p? iff count < counts }

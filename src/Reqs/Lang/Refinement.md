@@ -5,15 +5,15 @@ refinement := "refine" IDENT ":" path "refines" path ["{" [binding ("," binding)
 binding    := IDENT [":=" expr]
 ```
 
-`refine r: c refines a` states that the component `c` *refines* the
-component `a`: `c` accepts every input that `a` accepts, and on those
+`refine r: c refines a` states that the procedure `c` *refines* the
+procedure `a`: `c` accepts every input that `a` accepts, and on those
 inputs every behaviour of `c` meets `a`'s guarantees. So whatever `a`
 guarantees, `c` guarantees too, and every expectation that follows from
 `a`'s assumptions and guarantees holds of `c`'s behaviours as well.
 
 Refinement is a way to gain confidence in a spec where parts of it are hard
 for the solver (see [Decidability](Decidability.md#in-practice)): `a` can
-be a simpler component that the solver decides, whose expectations are
+be a simpler procedure that the solver decides, whose expectations are
 checked, and `c` the precise one. Whether `c` refines `a` is itself
 checked, by the solver, by [testing](../Check.md#checking-by-testing), or,
 in Lean, by a proof.
@@ -25,8 +25,8 @@ pub mod refinement
 ## The interface
 
 `a` and `c` are related through `a`'s variables. By default, each is
-read as the variable of `c` of the same name: each input of `a` must be
-an input of `c`, and each output of `a` a public output of `c`, of the same
+read as the variable of `c` of the same name: each parameter of `a` must be
+a parameter of `c`, and each output of `a` a result of `c`, of the same
 type, or one that [widens](Types.md#natural-numbers) in the direction its
 values flow. An output of `c` is read where `a`'s type is expected, so
 `c`'s type must widen to `a`'s: a `Nat` output of `c` serves for an `Int`
@@ -37,11 +37,11 @@ inputs below 0 that `a` does. The input then has `a`'s type, and the
 output `c`'s, for what a `Nat` brings. Types are compared without their
 [patterns](Types.md#pattern-types), as anywhere, and their constraints
 follow the values too: the refinement assumes what `a`'s inputs' pattern
-types bring, checks what `c`'s inputs' bring as `c`'s instance
+types bring, checks what `c`'s inputs' bring as `c`'s call
 assumptions, and checks what `a`'s outputs' bring as it checks `a`'s
-guarantees. A private output of `a` must be a public output of `c` too: `a`'s
+guarantees. An `exists` or `let` variable of `a` must be a result of `c` too: `a`'s
 guarantees may mention it, and the refinement can read it only from
-`c`'s public outputs, since a private output says nothing about how `c`
+`c`'s results, since an `exists` or `let` variable says nothing about how `c`
 computes it. `c` may have more inputs and outputs than `a`. An input of
 `c` that no variable of `a` reads, by name or through a binding (see
 [Bindings](#bindings)), is unconstrained by `a`'s assumptions, so an
@@ -49,22 +49,21 @@ assumption of `c` about such an input makes the refinement fail unless it
 holds, given `a`'s assumptions, whatever that input is (see [The
 obligation](#the-obligation)). An input that a binding reads is
 constrained through it: with `x := y - 1`, `a`'s assumption `x > 0` says
-`y - 1 > 0`, so `c` may assume `y > 1`. `a`'s instances are `a`'s own,
+`y - 1 > 0`, so `c` may assume `y > 1`. `a`'s calls are `a`'s own,
 and stay hidden. A variable of `a` that `c` does not have
 with the right role and type is an error (`F0412`). `refinement::interface`
 states the rule for one variable of `a` that the refinement does not bind
 (see [Bindings](#bindings)):
 
 ```fren
-pub comp interface {
-    in input?            -- the variable is an input of `a`, rather than an output
-    in in_concrete?      -- `c` has a variable of the same name
-    in concrete_input?   -- that variable is an input of `c`
-    in concrete_pub?     -- that variable is public in `c`
-    in a_widens?         -- its type in `a` widens to its type in `c` (`lang::widening`)
-    in c_widens?         -- its type in `c` widens to its type in `a`
-    pub det out accepted?
-
+pub proc interface(
+    input?,              -- the variable is an input of `a`, rather than an output
+    in_concrete?,        -- `c` has a variable of the same name
+    concrete_input?,     -- that variable is an input of `c`
+    concrete_pub?,       -- that variable is a result of `c`
+    a_widens?,           -- its type in `a` widens to its type in `c` (`lang::widening`)
+    c_widens?,           -- its type in `c` widens to its type in `a`
+): (det accepted?) {
     ensure rule: accepted? iff (in_concrete? and (if input? then a_widens? else c_widens?)
         and (if input? then concrete_input? else not concrete_input? and concrete_pub?))
 
@@ -78,8 +77,8 @@ pub comp interface {
 ## Bindings
 
 Where the names differ, or `a` is more abstract than `c`, a refinement
-can bind variables of `a`. The bindings are written as an
-[instance](Instances.md#bindings)'s are, in braces after `a`:
+can bind variables of `a`. The bindings are written in braces after `a`,
+as `x := e`, separated by commas:
 
 ```
 refine fmt_exit_status: fmt::exit refines cli::exit_status { ran? := all_parsed? }
@@ -89,24 +88,23 @@ Each binding `x := e` gives the variable `x` of `a` as the expression `e`
 over `c`'s variables, in place of `c`'s variable named `x`. `x` alone means
 `x := x`. Since `e` is an expression, not just a name, a binding can be an
 abstraction function, as in `{ forbidden? := level = Forbid }`. `e` must
-have the type of `x` in `a`, as an instance's binding must have the type of
-its input. It is written at the refinement, so other names in it resolve
+have the type of `x` in `a`, as a call's argument must have the type of
+its parameter. It is written at the refinement, so other names in it resolve
 as they do there.
 
 A refinement may bind any variable of `a`, input or output, each at most
 once, and nothing else: a name that is not a variable of `a` (`F0413`), or
-one bound twice (`F0414`), is an error. Unlike an instance, it need not
+one bound twice (`F0414`), is an error. Unlike a call, it need not
 bind every variable: the others are read by name, as in [The
 interface](#the-interface). `refinement::binding` states the rule for one
 name, given whether it is a variable of `a` and how many times the
 refinement binds it:
 
 ```fren
-pub comp binding {
-    in variable?         -- the name is a variable of `a`
-    in n: Nat            -- bindings of this name in the refinement
-    pub det out accepted?
-
+pub proc binding(
+    variable?,           -- the name is a variable of `a`
+    n: Nat,              -- bindings of this name in the refinement
+): (det accepted?) {
     ensure rule: accepted? iff (n = 0 or (variable? and n = 1))
 
     expect bound_once: when accepted?, n <= 1
@@ -114,25 +112,24 @@ pub comp binding {
 ```
 
 A binding sees `c` from outside, as `a`'s variable would. Only `c`'s own
-variables are in scope in it: the variables of `c`'s instances, such as
-`inner.y`, are not, and neither are its instances' names, so `inner.y`
+variables are in scope in it: the variables of `c`'s calls, such as
+`inner.y`, are not, and neither are its calls' names, so `inner.y`
 is a dotted name whose root is not in scope (`F0111`), as anywhere else.
-Of `c`'s own variables, a binding may mention the inputs and public
-outputs, and no private output. A binding of an input of `a` may mention
+Of `c`'s own variables, a binding may mention the parameters and
+results, and no `exists` or `let` variable. A binding of an input of `a` may mention
 `c`'s inputs only, since `a`'s inputs are chosen by the environment, before `c` chooses
 its outputs, and `a`'s assumptions, which mention them, constrain the
-environment. A defined output of `c` is an output here, whatever its
+environment. A result of `c` with a definition is an output here, whatever its
 definition mentions. A mention that breaks this rule is an error
 (`F0415`). `refinement::mention` states it, for one variable of `c`
 mentioned in a binding:
 
 ```fren
-pub comp mention {
-    in input?            -- the binding binds an input of `a`
-    in concrete_input?   -- the variable mentioned is an input of `c`, rather than an output
-    in concrete_pub?     -- it is public in `c`
-    pub det out allowed?
-
+pub proc mention(
+    input?,              -- the binding binds an input of `a`
+    concrete_input?,     -- the variable mentioned is an input of `c`, rather than an output
+    concrete_pub?,       -- it is a result of `c`
+): (det allowed?) {
     ensure rule: allowed? iff (concrete_input? or (not input? and concrete_pub?))
 
     expect inputs_see_inputs: when input? and allowed?, concrete_input?
@@ -140,9 +137,9 @@ pub comp mention {
 }
 ```
 
-A binding is part of the refinement, which is checked as a component (see
+A binding is part of the refinement, which is checked as a procedure (see
 [The obligation](#the-obligation)), so the [decidable
-core](Decidability.md#relations) is a component's: if the refinement
+core](Decidability.md#relations) is a procedure's: if the refinement
 applies a relational operator, in a binding or through `c` or `a`, then a
 `card` of anything but a constant in a binding is outside the core, and
 so are `c` and `a` if they count.
@@ -150,19 +147,19 @@ so are `c` and `a` if they count.
 The indexes of a binding are checked for
 [definedness](../Check.md#definedness) where it is read. An input's
 binding is checked under all of `a`'s assumptions, with the bindings
-substituted into them, and nothing else: not `c`'s instance, nor any
+substituted into them, and nothing else: not the call of `c`, nor any
 other hypothesis. An assumption on another binding can guard an index:
 with `n := q.len` and `assume pos: n > 0` in `a`, `x := q[0]` is defined.
 Without one, an input's binding is guarded within its own expression, as
 in `if q != [] then q[0] else 0`. An output's binding is
 checked under the hypotheses of the obligation's second part below: `a`'s
-assumptions, the instance of `c`, and `a`'s instances.
+assumptions, the call of `c`, and `a`'s calls.
 
 ## The obligation
 
-In the notation of [Components](Components.md#meaning), with `i` the
-inputs of `c`, `y` the variables of `c`'s instances, `o` its outputs, `w`
-the variables of `a`'s instances, and each variable of `a` read as its
+In the notation of [Procedures](Procedures.md#meaning), with `i` the
+inputs of `c`, `y` the variables of `c`'s calls, `o` its outputs, `w`
+the variables of `a`'s calls, and each variable of `a` read as its
 binding, over `i` and `o`, or else as `c`'s variable of the same name,
 `c` refines `a` when, for all `i`:
 
@@ -172,16 +169,16 @@ and for all `i`, `y`, `o`, `w`:
 
   A_a(i) ∧ I_c(i, y) ∧ R_c(i, y, o) ∧ D_c(i, y, o) ∧ I_a(i, w) → R_a(i, w, o) ∧ D_a(i, w, o)
 
-Fren checks this as it checks a component: the refinement is a component
-whose inputs are `c`'s, whose assumptions are `a`'s, with an instance of
-`c` named as `c` is, and `a`'s instances, and whose expectations are `a`'s
-guarantees and the definitions of `a`'s defined outputs. Throughout,
+Fren checks this as it checks a procedure: the refinement is a procedure
+whose parameters are `c`'s, whose assumptions are `a`'s, with a call of
+`c` named as `c` is, and `a`'s calls, and whose expectations are `a`'s
+guarantees and `a`'s definitions. Throughout,
 `a`'s variables are replaced by their bindings, or their names, with
-`c`'s outputs read from the instance of `c`. `a`'s instances are hypotheses there, as
+`c`'s outputs read from the call of `c`. `a`'s calls are hypotheses there, as
 `I_a` is above: their assumptions are `a`'s own obligations, checked in
 `a`. The first part of the obligation is then
-the [instance assumption](../Check.md#instance-assumptions) check of the
-instance of `c`, and the second part its [expectation
+the [call assumption](../Check.md#call-assumptions) check of the
+call of `c`, and the second part its [expectation
 checks](../Check.md#expectations). A failure is reported as for those
 checks, with a counterexample, at the refinement. `refinement::checks` gives
 which checks run on a refinement: those that check the obligation, and the
@@ -189,14 +186,14 @@ which checks run on a refinement: those that check the obligation, and the
 [disjointness](../Check.md#disjointness) and
 [preconditions](../Check.md#preconditions) of what it reads. Not
 [reachability](../Check.md#reachability): the bindings may narrow the
-abstract component's inputs, so that an arm or a row of one of its
+abstract procedure's inputs, so that an arm or a row of one of its
 `match`es or tables is never taken under them, which says nothing about
-how it is written, and the abstract component's own checks ask it:
+how it is written, and the abstract procedure's own checks ask it:
 
 ```fren
 use check::Kind
 
-pub comp checks {
+pub proc checks(kind: Kind): (det runs?) {
     use check::Kind::{
         Completeness,
         Definedness,
@@ -205,8 +202,6 @@ pub comp checks {
         InstanceAssumption,
         Precondition,
     }
-    in kind: Kind
-    pub det out runs?
 
     ensure rule: runs? iff kind in {InstanceAssumption, Expectation, Definedness, Completeness, Disjointness, Precondition}
 }
@@ -219,11 +214,11 @@ only repeat those of `a` and `c`.
 
 By default the solver decides the obligation. `set_option fren.evidence
 "tested" in` before the refinement has it tested instead (see [Checking by
-testing](../Check.md#checking-by-testing)). Where a precise component,
+testing](../Check.md#checking-by-testing)). Where a precise procedure,
 whose [unbounded quantifiers](Quantifiers.md#unbounded-quantifiers) put it
 outside the decidable core, cannot be proved of the code, as
 [Quantifiers](Quantifiers.md#unbounded-quantifiers) prefers, this is how
-it is related to a bounded one in the core: the tests evaluate the precise component's quantifiers on the
+it is related to a bounded one in the core: the tests evaluate the precise procedure's quantifiers on the
 behaviours of the refinement, as long as each has a
 [domain](Quantifiers.md#guards). A quantifier without one cannot be
 tested, which is an error (`F0639`).
@@ -235,7 +230,7 @@ proof that does not succeed is an error. The `fren` command does not run
 Lean, so `by` is a static error there, like any construct that needs Lean
 (see [The `fren` command](../Cli.md#agreement-with-lean)).
 
-A refinement is not a component: it has no evidence in the sense of
+A refinement is not a procedure: it has no evidence in the sense of
 [Traceability](../Trace.md), and does not change the evidence of `a` or `c`.
 
 #fren_check

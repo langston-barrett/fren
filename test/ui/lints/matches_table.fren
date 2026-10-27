@@ -9,16 +9,7 @@ set_option fren.lint.single_match_else "warn"
 
 enum E { A, B, C }
 
-comp lints {
-    in e: E
-    in ok?
-    pub out a: E
-    pub out b: Int
-    pub out c: Int
-    pub out d?
-    pub out f: Int
-    pub out g: Int
-
+proc lints(e: E, ok?): (a: E, b: Int, c: Int, d?, f: Int, g: Int) {
     ensure r1: a = table e { E::A => E::A, E::B => E::B, _ => e }
     --~^ warning: this table gives back its scrutinee
     --~^^ warning: `_` matches `E::C`

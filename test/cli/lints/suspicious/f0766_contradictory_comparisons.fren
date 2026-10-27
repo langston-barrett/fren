@@ -3,13 +3,7 @@ set_option fren.lint.chainable_comparison "allow"
 
 enum Mode { Heat, Cool, Off }
 
-comp c {
-    in m: Mode
-    in x: Int
-    pub out on?
-    pub out y: Int
-    pub out z?
-
+proc c(m: Mode, x: Int): (on?, y: Int, z?) {
     ensure r1: on? iff (m != Mode::Heat or m != Mode::Cool)
     ensure r2: y = if 5 < x and x < 3 then 1 else 0
     ensure r3: z? iff 3 <= x <= 2

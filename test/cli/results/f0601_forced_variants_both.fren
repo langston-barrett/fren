@@ -4,15 +4,12 @@
 -- fren-covers: check::clash_notes
 enum Shape { Circle(Int), Square(Int), Rect(Int, Int), Empty }
 
-comp variants {
-    pub out s: Shape
+proc variants(): (s: Shape) {
     ensure round: s is Shape::Circle(_)
     ensure square: s is Shape::Square(_)
 }
 
-comp mixed {
-    in x: Int
-    pub out s: Shape
+proc mixed(x: Int): (s: Shape) {
     ensure one: s = Shape::Circle(x)
     ensure boxy: s is Shape::Rect(_, _)
 }

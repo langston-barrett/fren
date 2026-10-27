@@ -1,6 +1,6 @@
 --- test/cli/fix/methods.fren
 +++ test/cli/fix/methods.fren
-@@ -9,2 +9,2 @@
+@@ -5,2 +5,2 @@
 -    ensure r1: p? iff (q ++ q).rev.rev = q and r.inverse.inverse.domain = {} and (q.rev).rev.len = 1
 -    ensure r2: q.rev.rev[0] = 1 and r.closure.closure.closure = r and q.rev.rev.rev = q
 +    ensure r1: p? iff q ++ q = q and r.domain = {} and q.len = 1

@@ -8,13 +8,7 @@ enum Mode { Off, Heat, Cool }
 
 fn rank(m: Mode): Int := match m { Mode::Off => 0, Mode::Heat => 1, Mode::Cool => 2 }
 
-comp c {
-    in x: Mode
-    in limit: Int
-    pub out highest?
-    pub out none_above?
-    pub out some_above?
-
+proc c(x: Mode, limit: Int): (highest?, none_above?, some_above?) {
     ensure highest: highest? iff (let r := rank(x) in forall (m: Mode), rank(m) <= r)
     ensure none: none_above? iff (forall (m: Mode), let d := rank(m) - limit in d <= 0)
     ensure some: some_above? iff not all_below? where all_below? := (forall (m: Mode), rank(m) <= limit)

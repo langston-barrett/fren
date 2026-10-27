@@ -1,2 +1,2 @@
 -- A variable without a type (F0301).
-comp c { in count }
+proc c(count) {}

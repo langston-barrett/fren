@@ -5,24 +5,20 @@ struct Point { x: Int, y: Int }
 struct Pair { x: Int, y: Int }
 struct Line { a: Point, b: Point }
 
-pub comp src {
-    pub out x: Int
-    pub out y: Int
+pub proc src(): (x: Int, y: Int) {
     ensure r: x = 1 and y = 2
 }
 
-comp copies {
-    in p: Point
-    in l: Line
-    in c?
-    pub out a: Pair
-    pub out b: Point
-    pub out d: Point
-    pub out e: Point
-    pub out f: Point
-    pub out g: Point
-    pub out h: Point
-    inst w: src {}
+proc copies(p: Point, l: Line, c?): (
+    a: Pair,
+    b: Point,
+    d: Point,
+    e: Point,
+    f: Point,
+    g: Point,
+    h: Point,
+) {
+    call w := src()
 
     -- A conversion, and an instance, which is not a value.
     ensure ra: a = Pair { x := p.x, y := p.y }

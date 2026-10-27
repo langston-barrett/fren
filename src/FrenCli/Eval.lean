@@ -221,7 +221,7 @@ partial def Pat.rename (f : Name → Name) : Pat → Pat
 /-- A resolved expression. -/
 inductive Ex where
   | lit (v : Val)
-  /-- A variable of the comp, such as `x` or `w.x`. -/
+  /-- A variable of the procedure, such as `x` or `w.x`. -/
   | var (n : Name)
   /-- A variable of a search, by its index in the search's environment
   (`Problem.solve`), which reads it without looking up its name. -/
@@ -331,20 +331,20 @@ structure Constraint where
   name : Name
   e : Ex
   /-- For what a variable's type brings, rather than a constraint of the
-  spec: that type, as written (`Reqs/Lang/Components#pattern-types`). -/
+  spec: that type, as written (`Reqs/Lang/Procedures#pattern-types`). -/
   typed? : Option String := none
   deriving Inhabited
 
 structure Inst where
   name : Name
   comp : Name
-  /-- Each input of `comp`, with the expression bound to it; empty for a
+  /-- Each parameter of `comp`, with its argument; empty for a
   binder of a global expectation. -/
   bindings : Array (Name × Ex)
   deriving Inhabited
 
-/-- A comp, or a global expectation: a comp whose path is its module, with
-an instance per binder and the expectation as its only constraint. -/
+/-- A procedure, or a global expectation: a procedure whose path is its module, with
+a call per binder and the expectation as its only constraint. -/
 structure Comp where
   path : Name
   /-- Its own variables, in declaration order. -/
@@ -355,11 +355,11 @@ structure Comp where
   /-- Each defined output, with its definition. -/
   defs : Array (Name × Ex) := #[]
   /-- A refinement's bindings, each bound variable of the abstract
-  component with the expression it is bound to, which reads the concrete
-  component's variables. The definedness of their indexes is checked. -/
+  procedure with the expression it is bound to, which reads the concrete
+  procedure's variables. The definedness of their indexes is checked. -/
   bindings : Array (Name × Ex) := #[]
   /-- For the body of a defined function or the value of a constant, as a
-  comp for the checks of its tables, the function or constant, and its body
+  procedure for the checks of its tables, the function or constant, and its body
   or value, over the parameters as its inputs. -/
   body? : Option (Name × Ex) := none
   deriving Inhabited
@@ -393,7 +393,7 @@ structure Spec where
   (`Spec.withMatchMemo`). -/
   matchMemo : Std.HashMap String (Std.HashMap String (Thunk Bool)) := {}
   /-- The bodies of defined functions and values of constants that have
-  tables, each as a comp (`Comp.body?`). -/
+  tables, each as a procedure (`Comp.body?`). -/
   bodies : Array Comp := #[]
   /-- The fields of each record and newtype, and the payloads of each
   enumeration, as declared (`Fren.Core.DataShape`). -/
@@ -428,7 +428,7 @@ partial def Spec.values (sp : Spec) : VTy → Array Val
   | .newtype _ u => sp.values u
   | _ => #[]
 
-/-- Every variable of `c`: its own, then each instance's, named `w.x`, in
+/-- Every variable of `c`: its own, then each call's, named `w.x`, in
 the order the elaborator gives them. -/
 partial def Spec.flatVars (sp : Spec) (c : Comp) : Array Var := Id.run do
   let mut vs := c.vars
@@ -974,7 +974,7 @@ partial def Ex.undomained? (e : Ex) : Option (Nat × Nat) :=
 
 /-- Where what testing `c` evaluates has a quantifier that the evaluator
 cannot evaluate (`Reqs/Eval#quantifiers`): its constraints, definitions and
-bindings, its instances' bindings and components, and so the bodies of the
+bindings, its calls' bindings and procedures, and so the bodies of the
 defined functions and values of the constants that they apply, which are
 part of them. -/
 partial def Spec.untestable? (sp : Spec) (c : Comp) (seen : List Name := []) : Option (Nat × Nat) :=
@@ -991,7 +991,7 @@ positions, and `Ex.trigger?` reads it as a `when`, which the `is` of a
 test (at position 0) and an `if` are not. -/
 def whenPos : Nat := 1
 
-/-- The trigger of a constraint (`Reqs/Lang/Components#triggers`): the
+/-- The trigger of a constraint (`Reqs/Lang/Procedures#triggers`): the
 conditions of its top-level `when`/`unless` chain, conjoined. -/
 partial def Ex.trigger? : Ex → Option Ex
   | .when negated c d =>
@@ -1437,10 +1437,10 @@ where
     .memo (lets.map go) (.table pos (rows.map fun (p, c?, v) => (p, c?.map go, go v)) u)
   | e => e
 
-/-- A constraint of a comp nested at `pfx`, such as `w.v` for instance `v`
-of instance `w`: `e` over the variables `pfx.x`. -/
+/-- A constraint of a procedure nested at `pfx`, such as `w.v` for call `v`
+of call `w`: `e` over the variables `pfx.x`. -/
 structure Atom where
-  /-- Where it comes from, such as `w.r` for requirement `r` of `w`'s comp,
+  /-- Where it comes from, such as `w.r` for requirement `r` of `w`'s procedure,
   or `w.x` for `w`'s binding of `x`. -/
   label : Name
   pfx : Name
@@ -1477,33 +1477,33 @@ def Comp.ofKind (c : Comp) (k : PropKind) : Array Constraint := c.constraints.fi
 def atomsOf (pfx : Name) (cs : Array Constraint) : Array Atom :=
   cs.map fun p => { label := pfx ++ p.name, pfx, e := p.e }
 
-/-- The definitions of a comp nested at `pfx`, as equations, each labelled
+/-- The definitions of a procedure nested at `pfx`, as equations, each labelled
 with its output. -/
 def Comp.defAtoms (c : Comp) (pfx : Name := .anonymous) : Array Atom :=
   c.defs.map fun (d, e) => { label := pfx ++ d, pfx, e := .bin .eq (.var d) e }
 
-/-- The bindings of instance `i` of a comp nested at `pfx`, as equations. -/
+/-- The bindings of call `i` of a procedure nested at `pfx`, as equations. -/
 def bindingAtoms (pfx : Name) (i : Inst) : Array Atom :=
   i.bindings.map fun (x, e) => { label := pfx ++ i.name ++ x, pfx, e := .bin .eq (.var (i.name ++ x)) e }
 
 mutual
-/-- What instance `i` of a comp nested at `pfx` contributes, `I_w`: its
+/-- What call `i` of a procedure nested at `pfx` contributes, `I_w`: its
 bindings, and the meaning of its comp. -/
 partial def Spec.instAtoms (sp : Spec) (pfx : Name) (i : Inst) : Array Atom :=
   match sp.comp? i.comp with
-  -- What its inputs' types bring is its assumption, which the instance
+  -- What its inputs' types bring is its assumption, which the call
   -- check asks of the bindings, rather than part of its behaviour.
   | some d => bindingAtoms pfx i ++ sp.meaning d (pfx ++ i.name) (typedInputs := false)
   | none => #[]
 
-/-- Everything a comp nested at `pfx` says of its variables: its
-assumptions, requirements and instances (`Reqs/Lang/Components#meaning`). -/
+/-- Everything a procedure nested at `pfx` says of its variables: its
+assumptions, requirements and calls (`Reqs/Lang/Procedures#meaning`). -/
 partial def Spec.meaning (sp : Spec) (c : Comp) (pfx : Name := .anonymous) (typedInputs : Bool := true) : Array Atom :=
   c.defAtoms pfx ++ atomsOf pfx ((c.ofKind .assume).filter fun a => typedInputs || a.typed?.isNone)
     ++ atomsOf pfx (c.ofKind .ensure) ++ c.insts.flatMap (sp.instAtoms pfx)
 end
 
-/-- `I`, of the instances before `upTo`. -/
+/-- `I`, of the calls before `upTo`. -/
 def Spec.insts (sp : Spec) (c : Comp) (upTo : Nat := c.insts.size) : Array Atom :=
   (c.insts.extract 0 upTo).flatMap (sp.instAtoms .anonymous)
 
@@ -1560,7 +1560,7 @@ partial def Val.showAs (sp : Spec) (ty : VTy) (v : Val) : String :=
 structure LState where
   table : Table := {}
   module : Name := .anonymous
-  /-- The scope that paths resolve in: the module, or the component being
+  /-- The scope that paths resolve in: the module, or the procedure being
   lowered, if it has `use`s. -/
   scope : Name := .anonymous
   spec : Spec := {}
@@ -1636,7 +1636,7 @@ def dataDef (path : Name) : L DataDef := do
   return d
 
 structure Cx where
-  /-- Every variable of the comp (`Spec.flatVars`). -/
+  /-- Every variable of the procedure (`Spec.flatVars`). -/
   vars : Array Var := #[]
   /-- The binders of the enclosing `match` arms, innermost first, each with
   its type and the name it is bound by in `Ex`, made unique so that a
@@ -1809,9 +1809,9 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .const p e => .const p e
   | .typed t is a => .typed t is (a.substVars f)
 
-/-- The comp that checks that `c` refines `a` (`Reqs/Lang/Refinement`): its
-inputs are `c`'s, its assumptions `a`'s, it has an instance `w` of `c` and
-`a`'s instances, and its expectations are `a`'s requirements and
+/-- The procedure that checks that `c` refines `a` (`Reqs/Lang/Refinement`): its
+parameters are `c`'s, its assumptions `a`'s, it has a call `w` of `c` and
+`a`'s calls, and its expectations are `a`'s requirements and
 definitions, with each variable of `a` read as its binding in `bindings`,
 over `c`'s variables, or else as `c`'s of the same name, and `c`'s outputs
 read from `w`'s. -/
@@ -2126,7 +2126,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
   | .path _ segs => do
     if segs.size == 1 then
       let parts := segs[0]!.name.splitOn "."
-      -- A binder shadows the comp's variables; otherwise the longest
+      -- A binder shadows the procedure's variables; otherwise the longest
       -- prefix that is a variable, then fields.
       if let some (_, ty, x) := cx.binders.find? (·.1 == Name.mkSimple parts.head!) then
         return ← readFields (.bound x) ty parts.tail
@@ -2139,7 +2139,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       if parts.length > 1 then
         -- A constant, then the fields read from its value, or the methods
         -- without arguments applied to it. The spec has been checked, so
-        -- the root is not an instance and nothing shadows it here.
+        -- the root is not a call and nothing shadows it here.
         let st ← get
         let .ok (.item { kind := .constItem, path, .. }) := st.table.resolvePath st.scope #[Name.mkSimple parts.head!]
           | throw s!"`{segs[0]!.name}` names no variable"
@@ -2369,7 +2369,7 @@ def varTy (ty? : Option (Array Ident)) : L VTy := do
   | none => return .bool
 
 /-- `x`'s constraint of its declared type `t`, if it has one: what its
-type brings, as a constraint (`Reqs/Lang/Components#pattern-types`). -/
+type brings, as a constraint (`Reqs/Lang/Procedures#pattern-types`). -/
 def typeConstraint (kind : PropKind) (x : Name) (t : Fren.Core.PTy) : L (Option Constraint) := do
   let sp := (← get).spec
   if (t.cons sp.shapes.find?).isNone then return none
@@ -2390,13 +2390,18 @@ def typeConstraint (kind : PropKind) (x : Name) (t : Fren.Core.PTy) : L (Option 
 marks it as shadowing one of the prelude's names (`Fren.Core.declaredName`). -/
 def itemName (x : Ident) : Name := (Fren.Core.declaredName (Name.mkSimple x.name)).1
 
-/-- Imports `segs` into the current module, or into the component `scope`. -/
+/-- Imports `segs` into the current module, or into the procedure `scope`. -/
 def declareUseIn (segs : Array Ident) (glob : Bool) (scope : Option Name) : L Unit := do
   let st ← get
   let u ← liftE (st.table.declareUse st.module (segNames segs) glob (scope.getD st.module))
   modify fun s => { s with table := s.table.addUse u, scope := scope.getD s.scope }
 
-def lowerComp (isPub : Bool) (name : Ident) (members : Array Member) : L Unit := do
+def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Unit := do
+  -- Each result with the definition that an `out` member gives it.
+  let defs := body.filterMap fun | .define x e => some (x.name, e) | _ => none
+  let members := header.map (fun
+    | .var false true det x ty none => .var false true det x ty ((defs.find? (·.1 == Fren.Core.nameText (declName x))).map (·.2))
+    | m => m) ++ body.filter (!· matches .define ..)
   let path := (← get).module ++ itemName name
   for m in members do
     match m with
@@ -2410,10 +2415,16 @@ def lowerComp (isPub : Bool) (name : Ident) (members : Array Member) : L Unit :=
     vars := vars.push { name := declName x, ty := ← varTy ty?, role := if isIn then .input else .output, isPub, isDet }
   let mut pending := #[]
   for m in members do
-    let .inst x p bs := m | continue
+    let .inst x p bs named _ := m | continue
     let cpath ← match ← resolve p with
       | .item { kind := .compItem, path, .. } => pure path
-      | r => throw s!"`{showPath r.path}` is not a component"
+      | r => throw s!"`{showPath r.path}` is not a procedure"
+    -- A call's arguments, in the order of the callee's parameters.
+    let bs ← if named then pure bs else do
+      let some callee := (← get).spec.comp? cpath | throw s!"unknown procedure `{showPath cpath}`"
+      let params := callee.vars.filter (fun v => v.role == .input && v.name.isAtomic) |>.map (Fren.Core.nameText ·.name)
+      let some bound := Fren.Core.callBindings params bs | throw s!"wrong number of arguments to `{showPath cpath}`"
+      pure (bound.map fun (n, (a, e?)) => ({ a with name := n }, e?))
     pending := pending.push (declName x, cpath, bs)
   let shell : Comp := { path, vars, constraints := #[], insts := pending.map fun (w, c, _) => { name := w, comp := c, bindings := #[] } }
   let cx : Cx := { vars := st.spec.flatVars shell }
@@ -2446,7 +2457,7 @@ def lowerComp (isPub : Bool) (name : Ident) (members : Array Member) : L Unit :=
     spec.comps := s.spec.comps.push c }
 
 /-- Records the body or value `e` of the function or constant `n`, over the
-inputs `vars`, as a comp for the checks of its tables and of the
+inputs `vars`, as a procedure for the checks of its tables and of the
 applications in it and in the function's contract (`Spec.bodies`). Each is
 recorded, since an application's question is the elaborator's alone. -/
 def noteBody (n : Name) (vars : Array Var) (e : Ex) (constraints : Array Constraint := #[]) : L Unit := do
@@ -2481,11 +2492,11 @@ def lowerContract (path n : Name) (defined : Bool) (ps : Array (Name × VTy)) (v
   return constraints
 
 
-/-- The path of the component that `segs` names. -/
+/-- The path of the procedure that `segs` names. -/
 def resolveComp (segs : Array Ident) : L Name := do
   match ← resolve segs with
   | .item { kind := .compItem, path, .. } => pure path
-  | r => throw s!"`{showPath r.path}` is not a component"
+  | r => throw s!"`{showPath r.path}` is not a procedure"
 
 def lowerGlobal (name : Ident) (binders : Array Binder) (body : Expr) : L Unit := do
   let mut insts := #[]
@@ -2604,7 +2615,7 @@ partial def lowerItem : Item → L Unit
       let ps ← params.mapM fun (p, ty?) => return (declName p[0]!, ← varTy ty?)
       let (b, _) ← lowerExpr { binders := ps.toList.reverse.map fun (n, t) => (n, t, n) } body
       -- Binders named after the function, so that substituting arguments
-      -- never captures a binder of theirs: theirs are a comp's or another
+      -- never captures a binder of theirs: theirs are a procedure's or another
       -- function's.
       let b := b.renameBound (path ++ ·)
       modify fun s => { s with spec.defs := s.spec.defs.insert path (ps.map (path ++ ·.1), b, r) }
@@ -2636,11 +2647,11 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with
       table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
       spec.consts := s.spec.consts.insert path (v, t) }
-  | .comp isPub name members .. => lowerComp isPub name members
+  | .comp isPub name header members .. => lowerComp isPub name header members
   | .global name binders body => lowerGlobal name binders body
   | .refine name concrete abstract bs => do
     let comp (segs : Array Ident) : L Comp := do
-      let some c := (← get).spec.comp? (← resolveComp segs) | throw s!"unknown component `{segNames segs}`"
+      let some c := (← get).spec.comp? (← resolveComp segs) | throw s!"unknown procedure `{segNames segs}`"
       return c
     let c ← comp concrete
     let a ← comp abstract

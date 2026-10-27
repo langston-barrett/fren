@@ -1,2 +1,2 @@
 -- `unused_assumption`, which has no fix.
-comp c { in x: Int in n: Int pub out y: Int assume pos: n > 0 ensure r: y = x + 1 }
+proc c(x: Int, n: Int): (y: Int) { assume pos: n > 0 ensure r: y = x + 1 }

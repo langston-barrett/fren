@@ -53,12 +53,11 @@ test, and Fren's other lints already write a test of one value with `=`.
 ```fren
 pub mod lint
 
-pub comp is_equality {
-    in n_alternatives: Nat   -- the alternatives of the pattern
-    in equatable?            -- each is a variant without a payload or a literal
-    in irrefutable?          -- `irrefutable_is` fires on the test
-    pub det out fires?
-
+pub proc is_equality(
+    n_alternatives: Nat,     -- the alternatives of the pattern
+    equatable?,              -- each is a variant without a payload or a literal
+    irrefutable?,            -- `irrefutable_is` fires on the test
+): (det fires?) {
     ensure rule: fires? iff (n_alternatives = 1 and equatable? and not irrefutable?)
 
     expect several_stay: when n_alternatives >= 2, not fires?
@@ -77,30 +76,44 @@ for every expression. `Shade` is an enumeration with a payload:
 pub enum Shade { Light, Dark, Tinted(Int) }
 
 set_option fren.lint.match_like_membership "allow" in
-pub comp membership_test_written {
-    in s: Shade
-    in n: Int
-    pub det out tinted? := match s { Shade::Tinted(_) => true, _ => false }
-    pub det out shaded? := match s { Shade::Light => false, Shade::Dark | Shade::Tinted(_) => true }
-    pub det out light? := match s { Shade::Light => true, _ => false }
-    pub det out untinted? := match s { Shade::Tinted(_) => false, _ => true }
-    pub det out small? := match n { 0 | 1 => true, _ => false }
-    pub det out digit? := match n { 0..=9 => true, _ => false }
-    pub det out clear? := match s { Shade::Tinted(0) => true, _ => false }
-    pub det out positive? := match n { ..=0 => false, _ => true }
+pub proc membership_test_written(s: Shade, n: Int): (
+    det tinted?,
+    det shaded?,
+    det light?,
+    det untinted?,
+    det small?,
+    det digit?,
+    det clear?,
+    det positive?,
+) {
+    out tinted? := match s { Shade::Tinted(_) => true, _ => false }
+    out shaded? := match s { Shade::Light => false, Shade::Dark | Shade::Tinted(_) => true }
+    out light? := match s { Shade::Light => true, _ => false }
+    out untinted? := match s { Shade::Tinted(_) => false, _ => true }
+    out small? := match n { 0 | 1 => true, _ => false }
+    out digit? := match n { 0..=9 => true, _ => false }
+    out clear? := match s { Shade::Tinted(0) => true, _ => false }
+    out positive? := match n { ..=0 => false, _ => true }
 }
 
-pub comp membership_test_fixed {
-    in s: Shade
-    in n: Int
-    pub det out tinted? := s is Shade::Tinted(_)
-    pub det out shaded? := s != Shade::Light
-    pub det out light? := s = Shade::Light
-    pub det out untinted? := not s is Shade::Tinted(_)
-    pub det out small? := n is 0 | 1
-    pub det out digit? := n is 0..=9
-    pub det out clear? := s is Shade::Tinted(0)
-    pub det out positive? := not n is ..=0
+pub proc membership_test_fixed(s: Shade, n: Int): (
+    det tinted?,
+    det shaded?,
+    det light?,
+    det untinted?,
+    det small?,
+    det digit?,
+    det clear?,
+    det positive?,
+) {
+    out tinted? := s is Shade::Tinted(_)
+    out shaded? := s != Shade::Light
+    out light? := s = Shade::Light
+    out untinted? := not s is Shade::Tinted(_)
+    out small? := n is 0 | 1
+    out digit? := n is 0..=9
+    out clear? := s is Shade::Tinted(0)
+    out positive? := not n is ..=0
 }
 
 refine membership_test_sound: membership_test_fixed refines membership_test_written
@@ -111,27 +124,33 @@ The refinements check the fixes of `is_equality`:
 
 ```fren
 set_option fren.lint.is_equality "allow" in
-pub comp is_equality_written {
-    in s: Shade
-    in n: Int
-    in b?
-    pub det out light? := s is Shade::Light
-    pub det out dark? := not s is Shade::Dark
-    pub det out zero? := n is 0
-    pub det out negative? := n is -1
-    pub det out set? := b? is true
+pub proc is_equality_written(s: Shade, n: Int, b?): (
+    det light?,
+    det dark?,
+    det zero?,
+    det negative?,
+    det set?,
+) {
+    out light? := s is Shade::Light
+    out dark? := not s is Shade::Dark
+    out zero? := n is 0
+    out negative? := n is -1
+    out set? := b? is true
 }
 
 set_option fren.lint.nonminimal_bool "allow" in
-pub comp is_equality_fixed {
-    in s: Shade
-    in n: Int
-    in b?
-    pub det out light? := s = Shade::Light
-    pub det out dark? := not s = Shade::Dark
-    pub det out zero? := n = 0
-    pub det out negative? := n = -1
-    pub det out set? := b? = true
+pub proc is_equality_fixed(s: Shade, n: Int, b?): (
+    det light?,
+    det dark?,
+    det zero?,
+    det negative?,
+    det set?,
+) {
+    out light? := s = Shade::Light
+    out dark? := not s = Shade::Dark
+    out zero? := n = 0
+    out negative? := n = -1
+    out set? := b? = true
 }
 
 refine is_equality_sound: is_equality_fixed refines is_equality_written
@@ -276,24 +295,19 @@ fn alt_matches?(a: Alt, v: Value) := match a {
     Alt::Variant(n) => match v { Value::Named(m) => n = m, _ => false },
 }
 
-pub comp disjoint_alternatives {
-    in a: Alt
-    in b: Alt
-    in v: Value
-
+pub proc disjoint_alternatives(a: Alt, b: Alt, v: Value) {
     expect apart: when alts_disjoint?(a, b), not (alt_matches?(a, v) and alt_matches?(b, v))
     expect symmetric: alts_disjoint?(a, b) iff alts_disjoint?(b, a)
 }
 
-pub comp manual_pattern_test {
-    in alts: Seq<Alt>        -- the alternatives of the fix, in order: each equation's value, and each test's alternatives
-    in n_operands: Nat       -- the operands of the run
-    in n_equations: Nat      -- those that are equations, or disequations for `and`
-    in chain?                -- `membership_chain` reads the chain the run is in
-
+pub proc manual_pattern_test(
+    alts: Seq<Alt>,          -- the alternatives of the fix, in order: each equation's value, and each test's alternatives
+    n_operands: Nat,         -- the operands of the run
+    n_equations: Nat,        -- those that are equations, or disequations for `and`
+    chain?,                  -- `membership_chain` reads the chain the run is in
+): (det fires?) {
     -- The model's quantifiers range over the positions of eight alternatives.
     assume short: alts.len <= 8
-    pub det out fires?
 
     ensure rule: fires? iff (n_operands >= 2 and n_equations >= 1 and not chain?
         and (forall (i: AltPosition) (j: AltPosition), when i < j < alts.len, alts_disjoint?(alts[i], alts[j])))
@@ -309,10 +323,7 @@ on either side, with a range, within a longer run, and of the dual:
 
 ```fren
 set_option fren.lint.manual_pattern_test "expect" in
-pub comp manual_pattern_test_keeps_meaning {
-    in x: Int
-    in p?
-
+pub proc manual_pattern_test_keeps_meaning(x: Int, p?) {
     expect two: (x = 429 or x = 503) iff x is 429 | 503
     expect reversed: (429 = x or x = 503) iff x is 429 | 503
     expect range: (x = 429 or x is 500..=599) iff x is 429 | 500..=599
@@ -327,30 +338,36 @@ and an expression that indexes a sequence:
 
 ```fren
 set_option fren.lint.manual_pattern_test "allow" in
-pub comp manual_pattern_test_written {
-    in s: Shade
-    in n: Int
-    in t: String
-    in q: Seq<Int>
-    pub det out plain? := s = Shade::Light or s = Shade::Dark
-    pub det out tinted? := s = Shade::Light or s is Shade::Tinted(_)
-    pub det out dim? := s is Shade::Tinted(1..=3) or s = Shade::Dark
-    pub det out word? := t = "a" or "b" = t
-    pub det out sign? := n = -1 or n = 1
-    pub det out first? := q != [] and (q[0] = 1 or q[0] = 2)
+pub proc manual_pattern_test_written(s: Shade, n: Int, t: String, q: Seq<Int>): (
+    det plain?,
+    det tinted?,
+    det dim?,
+    det word?,
+    det sign?,
+    det first?,
+) {
+    out plain? := s = Shade::Light or s = Shade::Dark
+    out tinted? := s = Shade::Light or s is Shade::Tinted(_)
+    out dim? := s is Shade::Tinted(1..=3) or s = Shade::Dark
+    out word? := t = "a" or "b" = t
+    out sign? := n = -1 or n = 1
+    out first? := q != [] and (q[0] = 1 or q[0] = 2)
 }
 
-pub comp manual_pattern_test_fixed {
-    in s: Shade
-    in n: Int
-    in t: String
-    in q: Seq<Int>
-    pub det out plain? := s is Shade::Light | Shade::Dark
-    pub det out tinted? := s is Shade::Light | Shade::Tinted(_)
-    pub det out dim? := s is Shade::Tinted(1..=3) | Shade::Dark
-    pub det out word? := t is "a" | "b"
-    pub det out sign? := n is -1 | 1
-    pub det out first? := q != [] and q[0] is 1 | 2
+pub proc manual_pattern_test_fixed(s: Shade, n: Int, t: String, q: Seq<Int>): (
+    det plain?,
+    det tinted?,
+    det dim?,
+    det word?,
+    det sign?,
+    det first?,
+) {
+    out plain? := s is Shade::Light | Shade::Dark
+    out tinted? := s is Shade::Light | Shade::Tinted(_)
+    out dim? := s is Shade::Tinted(1..=3) | Shade::Dark
+    out word? := t is "a" | "b"
+    out sign? := n is -1 | 1
+    out first? := q != [] and q[0] is 1 | 2
 }
 
 refine manual_pattern_test_sound: manual_pattern_test_fixed refines manual_pattern_test_written
@@ -404,19 +421,20 @@ Fren has no ranges, so a chained comparison is how it writes Clippy's
 them the fix writes the other way round:
 
 ```fren
-pub comp chainable_comparison {
-    in left_ascending?   -- the left conjunct orders with `<` and `<=`, rather than `>` and `>=`
-    in right_ascending?
-    in left_single?      -- it is one comparison, rather than a chain
-    in right_single?
-    in last_first?       -- the left's last operand is written the same as the right's first
-    in first_last?       -- the left's first as the right's last
-    in first_first?
-    in last_last?
-    pub det out fires?
-    pub det out flip_left?   -- the fix writes the left conjunct the other way round
-    pub det out flip_right?
-
+pub proc chainable_comparison(
+    left_ascending?,     -- the left conjunct orders with `<` and `<=`, rather than `>` and `>=`
+    right_ascending?,
+    left_single?,        -- it is one comparison, rather than a chain
+    right_single?,
+    last_first?,         -- the left's last operand is written the same as the right's first
+    first_last?,         -- the left's first as the right's last
+    first_first?,
+    last_last?,
+): (
+    det fires?,
+    det flip_left?,          -- the fix writes the left conjunct the other way round
+    det flip_right?,
+) {
     -- Each way to write the conjuncts: as written, the left the other way
     -- round, the right, or both.
     ensure rule: fires? iff (((left_ascending? iff right_ascending?) and last_first? and not first_last?)
@@ -442,30 +460,36 @@ of a chained comparison:
 
 ```fren
 set_option fren.lint.chainable_comparison "allow" in
-pub comp chainable_written {
-    in lo: Int
-    in x: Int
-    in hi: Int
-    in m: Int
-    pub det out kept? := lo <= x and x < hi
-    pub det out left? := x >= lo and x < hi
-    pub det out right? := x < hi and x > lo
-    pub det out both? := x >= lo and hi > x
-    pub det out longer? := lo < x and x < hi and hi < m
-    pub det out joined? := lo <= x < hi and hi <= m
+pub proc chainable_written(lo: Int, x: Int, hi: Int, m: Int): (
+    det kept?,
+    det left?,
+    det right?,
+    det both?,
+    det longer?,
+    det joined?,
+) {
+    out kept? := lo <= x and x < hi
+    out left? := x >= lo and x < hi
+    out right? := x < hi and x > lo
+    out both? := x >= lo and hi > x
+    out longer? := lo < x and x < hi and hi < m
+    out joined? := lo <= x < hi and hi <= m
 }
 
-pub comp chainable_fixed {
-    in lo: Int
-    in x: Int
-    in hi: Int
-    in m: Int
-    pub det out kept? := lo <= x < hi
-    pub det out left? := lo <= x < hi
-    pub det out right? := hi > x > lo
-    pub det out both? := lo <= x < hi
-    pub det out longer? := lo < x < hi < m
-    pub det out joined? := lo <= x < hi <= m
+pub proc chainable_fixed(lo: Int, x: Int, hi: Int, m: Int): (
+    det kept?,
+    det left?,
+    det right?,
+    det both?,
+    det longer?,
+    det joined?,
+) {
+    out kept? := lo <= x < hi
+    out left? := lo <= x < hi
+    out right? := hi > x > lo
+    out both? := lo <= x < hi
+    out longer? := lo < x < hi < m
+    out joined? := lo <= x < hi <= m
 }
 
 refine chainable_sound: chainable_fixed refines chainable_written

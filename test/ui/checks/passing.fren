@@ -7,13 +7,8 @@ mod climate
 pub enum Mode { Off, Heat, Cool }
 use self::Mode::{Cool, Heat, Off}
 
-pub comp thermostat {
-    in temp: Int
-    in target: Int
-
+pub proc thermostat(temp: Int, target: Int): (mode: Mode, fan?) {
     assume sane: -50 <= temp and temp <= 150 and 50 <= target and target <= 90
-    pub out mode: Mode
-    pub out fan?
 
     ensure heat: when temp < target - 2, mode = Heat
     ensure cool: when temp > target + 2, mode = Cool
@@ -28,19 +23,13 @@ mod display
 use climate::Mode
 use climate::Mode::Heat
 
-comp indicator {
-    in mode: Mode
-    pub out red?
+proc indicator(mode: Mode): (red?) {
     ensure red: red? iff mode = Heat
 }
 
 -- `if` is an operand without parentheses, including in a binding; its
 -- `else` branch extends to the end.
-comp brightness {
-    in mode: Mode
-    in dim?
-    pub out level: Int
-
+proc brightness(mode: Mode, dim?): (level: Int) {
     ensure rule: level = if mode = Heat then 3 else if dim? then 1 else 2
 
     expect bounded: level >= 1 and level <= 3
@@ -48,11 +37,8 @@ comp brightness {
 
 -- `nonminimal_bool` would write the binding of `dim?` with `or`.
 set_option fren.lint.nonminimal_bool "allow" in
-comp panel {
-    in mode: Mode
-    pub out level: Int
-
-    inst b: brightness { mode, dim? := if mode = Mode::Off then true else mode = Mode::Cool }
+proc panel(mode: Mode): (level: Int) {
+    call b := brightness(mode, if mode = Mode::Off then true else mode = Mode::Cool)
 
     ensure same: level = b.level
 

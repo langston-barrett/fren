@@ -1,10 +1,7 @@
 --@ args: mutate -A redundant_comparisons
 -- Every mutant is killed or equivalent, so the exit status is 0. A check
 -- that fails on the spec itself kills nothing.
-comp c {
-    in x: Int
-    pub out pos?
-
+proc c(x: Int): (pos?) {
     ensure r: pos? iff (x > 0 and x >= 1)
     expect zero: when x = 0, not pos?
     expect one: when x = 1, pos?

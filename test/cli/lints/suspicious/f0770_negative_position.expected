@@ -1,8 +1,8 @@
 warning[F0770]: a negative position does not count from the end
- --> test/cli/lints/suspicious/f0770_negative_position.fren:2:66
+ --> test/cli/lints/suspicious/f0770_negative_position.fren:2:57
   |
-2 | comp c { in s: String in q: Seq<Int> pub out p? ensure r: p? iff s.at(-1) = "." and q.update(-1, 0) = q }
-  |                                                                  ^^^^^^^^ always `""`
+2 | proc c(s: String, q: Seq<Int>): (p?) { ensure r: p? iff s.at(-1) = "." and q.update(-1, 0) = q }
+  |                                                         ^^^^^^^^ always `""`
   |
   = note: Fren has no negative indexing
   = help: to count from the end, write `s.at(s.len - 1)`
@@ -10,10 +10,10 @@ warning[F0770]: a negative position does not count from the end
   = help: to allow it, `set_option fren.lint.negative_position "allow"`
 
 warning[F0770]: a negative position does not count from the end
- --> test/cli/lints/suspicious/f0770_negative_position.fren:2:85
+ --> test/cli/lints/suspicious/f0770_negative_position.fren:2:76
   |
-2 | comp c { in s: String in q: Seq<Int> pub out p? ensure r: p? iff s.at(-1) = "." and q.update(-1, 0) = q }
-  |                                                                                     ^^^^^^^^^^^^^^^ always `q`
+2 | proc c(s: String, q: Seq<Int>): (p?) { ensure r: p? iff s.at(-1) = "." and q.update(-1, 0) = q }
+  |                                                                            ^^^^^^^^^^^^^^^ always `q`
   |
   = note: Fren has no negative indexing
   = help: to count from the end, write `q.update(q.len - 1, 0)`

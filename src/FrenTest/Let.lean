@@ -7,10 +7,7 @@ open Fren.Lang
 -- `where` clause goes around the expression it follows (`Reqs/Generated`).
 mod heating
 
-pub comp heater {
-  in temp: Int
-  pub out on?
-
+pub proc heater(temp: Int): (on?) {
   ensure heat: on? iff cold? where limit := 18, cold? := temp < limit
   expect warm: let hot? := temp > 30 in when hot?, not on?
 }

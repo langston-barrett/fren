@@ -1,8 +1,8 @@
 error[F0318]: unreachable arm
- --> test/cli/types/f0318_unreachable.fren:3:68
+ --> test/cli/types/f0318_unreachable.fren:3:61
   |
-3 | comp c { in m: Mode pub out y: Int ensure r: y = match m { _ => 0, Mode::On => 1 } }
-  |                                                                    ^^^^^^^^ never matches
+3 | proc c(m: Mode): (y: Int) { ensure r: y = match m { _ => 0, Mode::On => 1 } }
+  |                                                             ^^^^^^^^ never matches
   |
   = note: an earlier `_` arm matches every value
   = help: remove it

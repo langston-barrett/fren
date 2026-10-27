@@ -1,7 +1,7 @@
 error[F0637]: a table in `sign::r` may have no arm that is taken
- --> test/cli/results/f0637_table_incomplete.fren:6:19
+ --> test/cli/results/f0637_table_incomplete.fren:3:19
   |
-6 |     ensure r: s = table n { k if k > 0 => 1, k if k < 0 => -1 }
+3 |     ensure r: s = table n { k if k > 0 => 1, k if k < 0 => -1 }
   |                   ^^^^^ may have no arm that is taken
   |
   = counterexample: n = 0, s = 0

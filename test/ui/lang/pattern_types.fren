@@ -11,11 +11,7 @@ struct Packet { length: Byte, level: Loud }
 
 fn size(Int): Byte
 
-comp router {
-    in p: Packet
-    in hops: Int is 1..
-    pub out y: Int
-
+proc router(p: Packet, hops: Int is 1..): (y: Int) {
     ensure r: y = p.length + hops
 
     expect positive: y >= 1
@@ -24,10 +20,9 @@ comp router {
     expect loud: p.level != Severity::Info
 }
 
-comp user {
-    in x: Int
-    pub det out d: Byte := x   --~ error: a value in `user::d` may not have the type `Byte`
-    inst w: router { p := Packet { length := x, level := Severity::Warning }, hops := x }   --~ error: the input `hops` of `router` may not have its type `Int is 1..` for instance `user::w`
+proc user(x: Int): (det d: Byte) {
+    out d := x   --~ error: a value in `user::d` may not have the type `Byte`
+    call w := router(Packet { length := x, level := Severity::Warning }, x)   --~ error: the parameter `hops` of `router` may not have its type `Int is 1..` for call `user::w`
     --~^ error: a value in `user::w` may not have the type `Byte`
 }
 
@@ -38,10 +33,7 @@ fn clamped(x: Int): Byte := if x < 0 then 0 else if x > 255 then 255 else x  --~
 const BIG: Byte := 300   --~ error: a value in `BIG` may not have the type `Byte`
 const SMALL: Byte := 30
 
-comp uses {
-    in x: Byte
-    pub out y: Byte
-
+proc uses(x: Byte): (y: Byte) {
     ensure r: y = clamped(x + SMALL + BIG)
 
     expect in_range: y <= 255

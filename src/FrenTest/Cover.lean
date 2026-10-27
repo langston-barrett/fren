@@ -10,10 +10,8 @@ mod cover_test
 
 pub enum Mode { Off, Heat }
 
-pub comp heater {
-    in temp: Int
-    pub out mode: Mode
-    out margin: Int
+pub proc heater(temp: Int): (mode: Mode) {
+    exists margin: Int
 
     ensure r: mode = (if temp < 18 then Mode::Heat else Mode::Off)
     ensure m: margin = 18 - temp
@@ -41,11 +39,7 @@ info: Fren.Generated.cover_test.heater.cover.heating.met :
 -- `∃` cannot state, so no theorem is added.
 pub type Name
 
-pub comp named {
-    in n: Name
-    in m: Name
-    pub out same?
-
+pub proc named(n: Name, m: Name): (same?) {
     ensure r: same? iff n = m
 
     cover distinct: not same?

@@ -4,7 +4,7 @@ import Fren.Literate
 open Fren.Lang
 
 -- An item of the Lean file itself, which the second chapter checks too.
-comp lean_gate { in a? pub out b? ensure same: b? iff a? expect never: when a?, not b? }
+proc lean_gate(a?): (b?) { ensure same: b? iff a? expect never: when a?, not b? }
 
 -- A check in one chapter places a message about another chapter's comp,
 -- global expectation, refinement or item set to testing by that chapter's text: its file
@@ -19,19 +19,19 @@ error: expectation `lean_gate::never` does not hold
 counterexample: a? = true, b? = true
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-error: LiterateFirst.md:14:11: expectation `chapters::gate::never` does not hold
+error: LiterateFirst.md:11:11: expectation `chapters::gate::never` does not hold
 
 counterexample: a? = true, b? = true
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-info: LiterateFirst.md:21:9: the checks of `chapters::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: LiterateFirst.md:18:9: the checks of `chapters::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
-error: LiterateFirst.md:18:7: expectation `chapters::arithmetic` does not hold
+error: LiterateFirst.md:15:7: expectation `chapters::arithmetic` does not hold
 
 counterexample: (any values)
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-error: LiterateFirst.md:46:7: expectation `chapters::fails::below` does not hold
+error: LiterateFirst.md:34:7: expectation `chapters::fails::below` does not hold
 
 counterexample: x = 0, precise.x = 0, precise.y = 1
 help: strengthen the guarantees so that it follows, or correct the expectation
@@ -48,19 +48,19 @@ error: expectation `lean_gate::never` does not hold
 counterexample: a? = true, b? = true
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-error: LiterateFirst.md:14:11: expectation `chapters::gate::never` does not hold
+error: LiterateFirst.md:11:11: expectation `chapters::gate::never` does not hold
 
 counterexample: a? = true, b? = true
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-info: LiterateFirst.md:21:9: the checks of `chapters::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: LiterateFirst.md:18:9: the checks of `chapters::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
-error: LiterateFirst.md:18:7: expectation `chapters::arithmetic` does not hold
+error: LiterateFirst.md:15:7: expectation `chapters::arithmetic` does not hold
 
 counterexample: (any values)
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-error: LiterateFirst.md:46:7: expectation `chapters::fails::below` does not hold
+error: LiterateFirst.md:34:7: expectation `chapters::fails::below` does not hold
 
 counterexample: x = -1, precise.x = -1, precise.y = 0
 help: strengthen the guarantees so that it follows, or correct the expectation

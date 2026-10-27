@@ -1,6 +1,6 @@
 --- test/cli/fix/patterns.fren
 +++ test/cli/fix/patterns.fren
-@@ -10,2 +10,2 @@
+@@ -5,2 +5,2 @@
 -    ensure r1: p? iff s.matches?("abc") and s.matches?(r"a\.b\\.*") and s.matches?(".*x") and s.matches?(r#".*"\(.*"#) and s.matches?("a\nb")
 -    ensure r2: k? = (s ++ t).matches?("q") and not (s ++ t).matches?(".*q")
 +    ensure r1: p? iff s = "abc" and s.starts_with?("a.b\\") and s.ends_with?("x") and s.contains?("\"(") and s = "a\nb"

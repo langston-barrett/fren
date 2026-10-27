@@ -1,26 +1,19 @@
 -- A refinement with bindings set to testing (`Reqs/Lang/Refinement#bindings`):
 -- the evaluator reads the abstract component's variables through the
 -- bindings, as the solver does.
-pub comp exit_status {
-    in ran?
-    pub out code: Int
+pub proc exit_status(ran?): (code: Int) {
     ensure not_run: code = 2 iff not ran?
     ensure documented: code is 0..=3
 }
 
-pub comp fmt_exit {
-    in all_parsed?
-    in changed?
-    pub out code: Int
+pub proc fmt_exit(all_parsed?, changed?): (code: Int) {
     ensure r: code = (if not all_parsed? then 2 else if changed? then 1 else 0)
 }
 
 set_option fren.evidence "tested" in
 refine fmt_exit_status: fmt_exit refines exit_status { ran? := all_parsed? }
 
-pub comp bad_exit {
-    in all_parsed?
-    pub out code: Int
+pub proc bad_exit(all_parsed?): (code: Int) {
     ensure r: code = (if not all_parsed? then 2 else 4)
 }
 

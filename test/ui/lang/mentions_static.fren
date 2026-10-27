@@ -12,86 +12,86 @@ fn pick(b?): String := if b? then "a" else "b"
 
 -- Constants, defined functions applied to constants, variants and record
 -- literals without variables, and methods of constants mention nothing.
-comp constant { in x: Int pub out y: Int ensure r: y = x * RATE }
-comp defined { in x: Int pub out y: Int ensure r: y = 2 * double(3) + double(3) * x }
-comp variant { in x: Int pub out y: Int ensure r: y = match E::V(2) { E::V(k) => k, _ => 0 } * x }
-comp record_literal { in x: Int pub out y: Int ensure r: y = R { a := 2 }.a * x }
-comp record_update { in x: Int pub out y: Int ensure r: y = { R { a := 2 } with a := 3 }.a * x }
+proc constant(x: Int): (y: Int) { ensure r: y = x * RATE }
+proc defined(x: Int): (y: Int) { ensure r: y = 2 * double(3) + double(3) * x }
+proc variant(x: Int): (y: Int) { ensure r: y = match E::V(2) { E::V(k) => k, _ => 0 } * x }
+proc record_literal(x: Int): (y: Int) { ensure r: y = R { a := 2 }.a * x }
+proc record_update(x: Int): (y: Int) { ensure r: y = { R { a := 2 } with a := 3 }.a * x }
 --~^ warning: this update gives every field of `R`
-comp method { in x: Int pub out y: Int ensure r: y = "abc".len * x }
+proc method(x: Int): (y: Int) { ensure r: y = "abc".len * x }
 
 -- Variables, and what mentions them.
-comp shadowed { in RATE!: Int in x: Int pub out y: Int ensure r: y = x * RATE }
+proc shadowed(RATE!: Int, x: Int): (y: Int) { ensure r: y = x * RATE }
 --~^ error: the left side mentions the variable `x`, and the right side the variable `RATE`
 --~^^ warning: variable `RATE` should have a snake case name
-comp defined_arg { in x: Int in z: Int pub out y: Int ensure r: y = x * double(z) }
+proc defined_arg(x: Int, z: Int): (y: Int) { ensure r: y = x * double(z) }
 --~^ error: nonlinear arithmetic is not supported
-comp uninterpreted { in x: Int pub out y: Int ensure r: y = x * rate(1) }
+proc uninterpreted(x: Int): (y: Int) { ensure r: y = x * rate(1) }
 --~^ error: the left side mentions the variable `x`, and the right side the function `rate`
 -- Each mention once, in the order written, a variable apart from a function.
-comp mentions_named { in x: Int pub out y: Int ensure r: y = rate(x) * (x + x) }
+proc mentions_named(x: Int): (y: Int) { ensure r: y = rate(x) * (x + x) }
 --~^ error: the left side mentions the variable `x`, the function `rate`, and the right side the variable `x`
-comp record_field { in a: Int in x: Int pub out y: Int ensure r: y = R { a }.a * x }
+proc record_field(a: Int, x: Int): (y: Int) { ensure r: y = R { a }.a * x }
 --~^ error: nonlinear arithmetic is not supported
 -- An update mentions what its updated value mentions, even with every
 -- field given, and what its new values mention.
-comp update_base { in p: R in x: Int pub out y: Int ensure r: y = { p with a := 2 }.a * x }
+proc update_base(p: R, x: Int): (y: Int) { ensure r: y = { p with a := 2 }.a * x }
 --~^ error: nonlinear arithmetic is not supported
-comp update_field { in a: Int in x: Int pub out y: Int ensure r: y = { R { a := 2 } with a }.a * x }
+proc update_field(a: Int, x: Int): (y: Int) { ensure r: y = { R { a := 2 } with a }.a * x }
 --~^ error: nonlinear arithmetic is not supported
-comp variable_method { in s: String in x: Int pub out y: Int ensure r: y = s.len * x }
+proc variable_method(s: String, x: Int): (y: Int) { ensure r: y = s.len * x }
 --~^ error: nonlinear arithmetic is not supported
 
 -- A defined output mentions what its definition mentions.
-comp defined_constant { in x: Int pub out k: Int := 3 pub out y: Int ensure r: y = k * x }
+proc defined_constant(x: Int): (k: Int, y: Int) { out k := 3 ensure r: y = k * x }
 --~^ warning: defined output `k` is the same in every behaviour
-comp defined_input { in x: Int in z: Int pub out k: Int := z + 1 pub out y: Int ensure r: y = k * x }
+proc defined_input(x: Int, z: Int): (k: Int, y: Int) { out k := z + 1 ensure r: y = k * x }
 --~^ error: nonlinear arithmetic is not supported
 
 -- A binder mentions what its scrutinee mentions, whatever the arms.
-comp scrutinee { in e: E in x: Int pub out y: Int ensure r: y = match e { E::V(k) => 1, _ => 2 } * x }
+proc scrutinee(e: E, x: Int): (y: Int) { ensure r: y = match e { E::V(k) => 1, _ => 2 } * x }
 --~^ error: nonlinear arithmetic is not supported
-comp binder { in e: E in x: Int pub out y: Int ensure r: y = match e { E::V(k) => k * x, _ => 0 } }
+proc binder(e: E, x: Int): (y: Int) { ensure r: y = match e { E::V(k) => k * x, _ => 0 } }
 --~^ error: nonlinear arithmetic is not supported
 
 -- An instance's variable is a variable.
-comp inner { in a: Int pub out b: Int := a }
-comp instance_variable { in x: Int inst i: inner { a := x } pub out y: Int ensure r: y = i.b * x }
+proc inner(a: Int): (b: Int) { out b := a }
+proc instance_variable(x: Int): (y: Int) { call i := inner(x) ensure r: y = i.b * x }
 --~^ error: the left side mentions the variable `i.b`, and the right side the variable `x`
 
 -- A defined function applied to constants is a constant for the decidable
 -- core too; applied to a variable, it is not.
-comp core_constant { in s: String pub out p? ensure r: p? iff s.starts_with?(pick(true)) }
-comp core_variable { in s: String in b? pub out p? ensure r: p? iff s.starts_with?(pick(b?)) }
+proc core_constant(s: String): (p?) { ensure r: p? iff s.starts_with?(pick(true)) }
+proc core_variable(s: String, b?): (p?) { ensure r: p? iff s.starts_with?(pick(b?)) }
 --~^ error: outside the decidable core: its argument is not a constant
 
 -- Conditionals, indexing, and literals of sets and sequences mention what
 -- their parts mention.
-comp conditional { in x: Int pub out y: Int ensure r: y = (if true then 1 else 2) * x }
-comp conditional_variable { in c? in x: Int pub out y: Int ensure r: y = (if c? then 1 else 2) * x }
+proc conditional(x: Int): (y: Int) { ensure r: y = (if true then 1 else 2) * x }
+proc conditional_variable(c?, x: Int): (y: Int) { ensure r: y = (if c? then 1 else 2) * x }
 --~^ error: nonlinear arithmetic is not supported
-comp index { in x: Int pub out y: Int ensure r: y = [1, 2][0] * x }
-comp index_variable { in q: Seq<Int> in x: Int pub out y: Int ensure r: y = q[0] * x }
+proc index(x: Int): (y: Int) { ensure r: y = [1, 2][0] * x }
+proc index_variable(q: Seq<Int>, x: Int): (y: Int) { ensure r: y = q[0] * x }
 --~^ error: nonlinear arithmetic is not supported
-comp collections { in x: Int pub out y: Int ensure r: y = {1, 2}.card * x + [1, 2].len * x }
-comp sequence_variable { in z: Int in x: Int pub out y: Int ensure r: y = [z].len * x }
+proc collections(x: Int): (y: Int) { ensure r: y = {1, 2}.card * x + [1, 2].len * x }
+proc sequence_variable(z: Int, x: Int): (y: Int) { ensure r: y = [z].len * x }
 --~^ error: nonlinear arithmetic is not supported
 
 -- `when` and record literals in definitions, for `constant_output`.
-comp when_constant { pub out k? := (when RATE > 0, true) }
+proc when_constant(): (k?) { out k? := (when RATE > 0, true) }
 --~^ warning: defined output `k?` is the same in every behaviour
-comp when_variable { in c? pub out k? := (when c?, true) }
-comp record_constant { pub out k: R := R { a := 2 } }
+proc when_variable(c?): (k?) { out k? := (when c?, true) }
+proc record_constant(): (k: R) { out k := R { a := 2 } }
 --~^ warning: defined output `k` is the same in every behaviour
-comp record_shorthand { in a: Int pub out k: R := R { a } }
-comp update_constant { pub out k: R := { R { a := 1 } with a := 2 } }
+proc record_shorthand(a: Int): (k: R) { out k := R { a } }
+proc update_constant(): (k: R) { out k := { R { a := 1 } with a := 2 } }
 --~^ warning: defined output `k` is the same in every behaviour
 --~^^ warning: this update gives every field of `R`
-comp update_variable { in p: R pub out k: R := { p with a := 2 } }  --~ warning: this update gives every field of `R`
+proc update_variable(p: R): (k: R) { out k := { p with a := 2 } }  --~ warning: this update gives every field of `R`
 
 -- A table mentions what its conditions and values mention.
-comp table_constant { in x: Int pub out y: Int ensure r: y = table { RATE > 0 => 1, _ => 2 } * x }
-comp table_condition { in c? in x: Int pub out y: Int ensure r: y = table { c? => 1, _ => 2 } * x }
+proc table_constant(x: Int): (y: Int) { ensure r: y = table { RATE > 0 => 1, _ => 2 } * x }
+proc table_condition(c?, x: Int): (y: Int) { ensure r: y = table { c? => 1, _ => 2 } * x }
 --~^ error: nonlinear arithmetic is not supported
-comp table_value { in z: Int in x: Int pub out y: Int ensure r: y = table { RATE > 0 => z, _ => 2 } * x }
+proc table_value(z: Int, x: Int): (y: Int) { ensure r: y = table { RATE > 0 => z, _ => 2 } * x }
 --~^ error: nonlinear arithmetic is not supported

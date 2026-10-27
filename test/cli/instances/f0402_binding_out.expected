@@ -1,11 +1,11 @@
-error[F0402]: bindings may only mention `in` variables and earlier instances, but `o` is an `out`
- --> test/cli/instances/f0402_binding_out.fren:3:44
+error[F0402]: the arguments of a call may only mention parameters and earlier calls, but `o` is an output
+ --> test/cli/instances/f0402_binding_out.fren:3:36
   |
-3 | comp c { pub out o: Int inst s: sub { a := o } ensure r: o = 0 }
-  |                                            ^ an `out`
+3 | proc c(): (o: Int) { call s := sub(o) ensure r: o = 0 }
+  |                                    ^ an output
   |
-  = note: an instance's inputs are fixed before the component chooses its outputs
-  = help: to connect an instance to an output, bind it to an `in` and add an `ensure` relating the two
+  = note: a call's arguments are fixed before the procedure chooses its outputs
+  = help: to connect a call to an output, pass it a parameter and add an `ensure` relating the two
 
 error: could not check due to previous errors
 

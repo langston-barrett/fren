@@ -1,13 +1,13 @@
 # Language overview
 
 A spec is a sequence of *items*: modules, `use` declarations,
-enumerations, records, abstract types, type aliases, functions, constants, components
+enumerations, records, abstract types, type aliases, functions, constants, procedures
 and global expectations. Items are
-grouped into [modules](Modules.md). A [component](Components.md) declares
-its inputs and outputs, and constraints on them: assumptions,
+grouped into [modules](Modules.md). A [procedure](Procedures.md) declares
+its parameters and results, and constraints on them: assumptions,
 guarantees, expectations and cover goals. Constraints are
 [expressions](Expressions.md) of type `Bool`. A [global
-expectation](Global.md) relates behaviours of components.
+expectation](Global.md) relates behaviours of procedures.
 
 For example, this spec describes a thermostat that chooses a mode from the
 current temperature and a target:
@@ -21,11 +21,7 @@ use self::Mode::{Off, Heat, Cool}
 const MIN_TARGET: Int := 50
 const MAX_TARGET: Int := 90
 
-pub comp thermostat {
-  in temp: Int
-  in target: Int is MIN_TARGET..=MAX_TARGET
-  pub out mode: Mode
-
+pub proc thermostat(temp: Int, target: Int is MIN_TARGET..=MAX_TARGET): (mode: Mode) {
   ensure heat: when temp < target - 2, mode = Heat
   ensure cool: when temp > target + 2, mode = Cool
   ensure idle: unless temp < target - 2 or temp > target + 2, mode = Off
@@ -39,9 +35,9 @@ pub comp thermostat {
   self::Mode::*` makes them available by their bare names.
 - `MIN_TARGET` and `MAX_TARGET` are [constants](Items.md#constants): each
   stands for its value.
-- `thermostat` has two inputs, `temp` and `target`, and one public output,
+- `thermostat` has two parameters, `temp` and `target`, and one result,
   `mode`. `target`'s type is a [pattern type](Types.md#pattern-types): an
-  `Int` that matches the range `MIN_TARGET..=MAX_TARGET`, so the component
+  `Int` that matches the range `MIN_TARGET..=MAX_TARGET`, so the procedure
   assumes that the environment only ever sets a target between 50 and 90.
 - The guarantees `heat`, `cool` and `idle` say which mode the system must
   choose.

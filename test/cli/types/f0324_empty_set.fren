@@ -1,5 +1,3 @@
-comp c {
-    pub out n: Int
-
+proc c(): (n: Int) {
     ensure r: n = {}.card
 }

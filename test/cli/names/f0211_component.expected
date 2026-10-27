@@ -1,14 +1,14 @@
-error[F0211]: component names cannot end in `?`
+error[F0211]: procedure names cannot end in `?`
  --> test/cli/names/f0211_component.fren:2:6
   |
-2 | comp ready? {}
+2 | proc ready?() {}
   |      ^^^^^^ ends in `?`
   |
   = note: only `Bool` variables end in `?`
 help: rename it to `ready`
   |
-2 - comp ready? {}
-2 + comp ready {}
+2 - proc ready?() {}
+2 + proc ready() {}
   |
 
 error: could not check due to previous errors

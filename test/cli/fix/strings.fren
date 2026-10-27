@@ -1,20 +1,7 @@
 --@ args: fix --check -A undecidable
 -- `fren fix` rewrites methods of strings and sequences, and patterns, with
 -- parentheses only where an operand or a receiver needs them.
-pub comp c {
-    in s: String
-    in t: String
-    in q: Seq<Int>
-    in i: Int
-    in b?
-    pub out p?
-    pub out k?
-    pub out n: Int
-    pub out o1?
-    pub out o2?
-    pub out o3?
-    pub out o4?
-
+pub proc c(s: String, t: String, q: Seq<Int>, i: Int, b?): (p?, k?, n: Int, o1?, o2?, o3?, o4?) {
     ensure r1: p? iff s.at(0) = "a" and "b" != (s ++ t).at((s ++ t).len - 1) and q.at(0) != [1]
     ensure r2: k? iff s.at(0) = "" or not q.at(0) != [] or (s ++ t).at(0) = ""
     ensure r3: n = (q ++ q).slice(0, (q ++ q).len).len + s.slice(0, s.len).len

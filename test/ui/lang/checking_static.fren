@@ -6,43 +6,51 @@ pub enum E { V(Set<Int>), W }
 
 -- Checked: by the other side of `=`, by the expression it is a part of, or
 -- by another part that shares its type.
-pub comp checked {
-    in b?
-    in m: E
-    in s: Set<Int>
-    in q: Seq<Int>
-    in z: Set<Set<Int>>
-    in i: Int
-    pub out parens? := s = ({})
-    pub out branches? := s = (if b? then {} else {})   --~ warning: both branches of `if` are written the same
-    pub out operands? := s = {} union {}   --~ warning: both operands of `union` are written the same
+pub proc checked(b?, m: E, s: Set<Int>, q: Seq<Int>, z: Set<Set<Int>>, i: Int): (
+    parens?,
+    branches?,
+    operands?,
+    concat?,
+    in_sequence?,
+    pairs: Int,
+    left_empty?,
+    then_empty: Int,
+    arm_by_whole?,
+    arm_by_sibling: Int,
+    first_element: Int,
+    first_seq_element: Int,
+    nested?,
+) {
+    out parens? := s = ({})
+    out branches? := s = (if b? then {} else {})   --~ warning: both branches of `if` are written the same
+    out operands? := s = {} union {}   --~ warning: both operands of `union` are written the same
     --~^ warning: this operation has no effect
-    pub out concat? := q = [] ++ []   --~ warning: this operation has no effect
-    pub out in_sequence? := i in []   --~ warning: this `in` is always `false`
-    pub out pairs: Int := {(1, {}), (2, s)}.card
-    pub out left_empty? := [] = q
-    pub out then_empty: Int := (if b? then [] else q).len
-    pub out arm_by_whole? := s = match m { E::V(t) => t, E::W => {} }
-    pub out arm_by_sibling: Int := (match m { E::W => {}, E::V(t) => t }).card
-    pub out first_element: Int := {{}, s}.card
-    pub out first_seq_element: Int := [[], q].len
-    pub out nested? := z = {{}, s}
+    out concat? := q = [] ++ []   --~ warning: this operation has no effect
+    out in_sequence? := i in []   --~ warning: this `in` is always `false`
+    out pairs := {(1, {}), (2, s)}.card
+    out left_empty? := [] = q
+    out then_empty := (if b? then [] else q).len
+    out arm_by_whole? := s = match m { E::V(t) => t, E::W => {} }
+    out arm_by_sibling := (match m { E::W => {}, E::V(t) => t }).card
+    out first_element := {{}, s}.card
+    out first_seq_element := [[], q].len
+    out nested? := z = {{}, s}
 }
 
 -- Synthesized: nothing gives a type.
-pub comp receiver { pub out n: Int ensure r: n = {}.card }   --~ error: the type of `{}` cannot be known here
-pub comp in_left { in z: Set<Set<Int>> pub out p? ensure r: p? iff {} in z }   --~ error: the type of `{}` cannot be known here
-pub comp join_left { in r: Rel<Int, Int> pub out p? ensure q: p? iff r = {} join r }   --~ error: the type of `{}` cannot be known here
-pub comp join_right { in r: Rel<Int, Int> pub out p? ensure q: p? iff r = r join {} }   --~ error: the type of `{}` cannot be known here
-pub comp only_empty_parts { pub out n: Int ensure r: n = {{}}.card }   --~ error: the type of `{}` cannot be known here
-pub comp only_empty_elements { pub out n: Int ensure r: n = [[]].len }   --~ error: the type of `[]` cannot be known here
-pub comp neither_side { pub out p? ensure r: p? iff {} = {{}} }   --~ error: the type of `{}` cannot be known here
-pub comp empty_branches { in b? pub out n: Int ensure r: n = (if b? then {} else {{}}).card }
+pub proc receiver(): (n: Int) { ensure r: n = {}.card }   --~ error: the type of `{}` cannot be known here
+pub proc in_left(z: Set<Set<Int>>): (p?) { ensure r: p? iff {} in z }   --~ error: the type of `{}` cannot be known here
+pub proc join_left(r: Rel<Int, Int>): (p?) { ensure q: p? iff r = {} join r }   --~ error: the type of `{}` cannot be known here
+pub proc join_right(r: Rel<Int, Int>): (p?) { ensure q: p? iff r = r join {} }   --~ error: the type of `{}` cannot be known here
+pub proc only_empty_parts(): (n: Int) { ensure r: n = {{}}.card }   --~ error: the type of `{}` cannot be known here
+pub proc only_empty_elements(): (n: Int) { ensure r: n = [[]].len }   --~ error: the type of `[]` cannot be known here
+pub proc neither_side(): (p?) { ensure r: p? iff {} = {{}} }   --~ error: the type of `{}` cannot be known here
+pub proc empty_branches(b?): (n: Int) { ensure r: n = (if b? then {} else {{}}).card }
 --~^ error: the type of `{}` cannot be known here
-pub comp empty_arms { in m: E pub out n: Int ensure r: n = (match m { E::W => {}, E::V(_) => {{}} }).card }
+pub proc empty_arms(m: E): (n: Int) { ensure r: n = (match m { E::W => {}, E::V(_) => {{}} }).card }
 --~^ error: the type of `{}` cannot be known here
-pub comp pair_left { in r: Rel<Int, Set<Int>> pub out p? ensure q: p? iff (1, {}) in r }   --~ error: the type of `{}` cannot be known here
-pub comp image_argument { in r: Rel<Int, Int> pub out n: Int ensure q: n = r.image({}).card }   --~ error: the type of `{}` cannot be known here
-pub comp no_part_synthesizes { pub out n: Int ensure r: n = ({} inter {{}}).card }   --~ error: the type of `{}` cannot be known here
-pub comp indexed_literal { in s: Set<Int> pub out p? ensure r: p? iff s = [{}][0] }   --~ error: the type of `{}` cannot be known here
-pub comp at_literal { in s: Set<Int> pub out p? ensure r: p? iff s = [{}].at(0) }   --~ error: the type of `{}` cannot be known here
+pub proc pair_left(r: Rel<Int, Set<Int>>): (p?) { ensure q: p? iff (1, {}) in r }   --~ error: the type of `{}` cannot be known here
+pub proc image_argument(r: Rel<Int, Int>): (n: Int) { ensure q: n = r.image({}).card }   --~ error: the type of `{}` cannot be known here
+pub proc no_part_synthesizes(): (n: Int) { ensure r: n = ({} inter {{}}).card }   --~ error: the type of `{}` cannot be known here
+pub proc indexed_literal(s: Set<Int>): (p?) { ensure r: p? iff s = [{}][0] }   --~ error: the type of `{}` cannot be known here
+pub proc at_literal(s: Set<Int>): (p?) { ensure r: p? iff s = [{}].at(0) }   --~ error: the type of `{}` cannot be known here

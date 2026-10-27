@@ -2,10 +2,7 @@
 -- `fren fmt` spaces a record update's braces as a record literal's, and
 -- gives the fields of a vertical one a trailing comma.
 struct P { x: Int, y: Int }
-comp c {
-    in p: P
-    pub out q: P
-    pub out r: P
+proc c(p: P): (q: P, r: P) {
     ensure a: q = {p with x:=1,y}
     ensure b: r = {  p   with
     x := 2

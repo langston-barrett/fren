@@ -1,28 +1,28 @@
 warning[F0810]: `target` is never negative, so it can be a `Nat`
- --> test/cli/results/f0603_global.fren:9:18
+ --> test/cli/results/f0603_global.fren:7:18
   |
-9 |     assume sane: 0 <= target and target <= HIGH
+7 |     assume sane: 0 <= target and target <= HIGH
   |                  ^^^^^^^^^^^ `target` is at least 0 by this assumption
   |
-  = note: a `Nat` input brings this assumption with its type
-  = note: an instance must then bind `target` to a `Nat`
+  = note: a `Nat` parameter brings this assumption with its type
+  = note: a call must then pass a `Nat` for `target`
   = help: declare `target: Nat`, and remove `0 <= target` from `sane`, where nothing binds `target` to an `Int`
   = note: `manual_nat` is `warn` by default
   = help: to allow it, `set_option fren.lint.manual_nat "allow"`
 
 error[F0603]: expectation `same` does not hold
-  --> test/cli/results/f0603_global.fren:14:8
+  --> test/cli/results/f0603_global.fren:11:8
    |
-14 | expect same: forall (a b: band),
+11 | expect same: forall (a b: band),
    |        ^^^^ does not follow from the guarantees
    |
    = counterexample: a.temp = -2, a.target = 0, a.too_cold? = false, b.temp = -2, b.target = 1, b.too_cold? = true
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
 error[F0605]: `never` is vacuous: its condition can never hold, given `a`
-  --> test/cli/results/f0603_global.fren:16:33
+  --> test/cli/results/f0603_global.fren:13:33
    |
-16 | expect never: forall (a: band), when a.target > HIGH, a.too_cold?
+13 | expect never: forall (a: band), when a.target > HIGH, a.too_cold?
    |                                 ^^^^^^^^^^^^^^^^^^^^ this condition is always false
    |
    = note: a constraint whose condition never holds says nothing

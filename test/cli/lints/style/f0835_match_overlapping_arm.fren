@@ -1,3 +1,3 @@
 -- `match_overlapping_arm`, reported at the later range.
 -- fren-covers: lint::match_overlapping_arm
-comp c { in n: Int pub out m: Int ensure r: m = match n { 0..=10 => 1, 5..=15 => 2, _ => 3 } }
+proc c(n: Int): (m: Int) { ensure r: m = match n { 0..=10 => 1, 5..=15 => 2, _ => 3 } }

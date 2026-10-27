@@ -1,12 +1,9 @@
 -- Cover goals (`Reqs/Check#cover-goals`): scenarios that a component must
 -- allow, each met by a witness or ruled out by its constraints.
 
-comp heater {
-    in temp: Int
-
+proc heater(temp: Int): (alarm?) {
     assume sane: temp < 1000
-    pub out alarm?
-    out margin: Int
+    exists margin: Int
 
     ensure r: alarm? iff temp > 100
     ensure m: margin = temp - 100
@@ -21,13 +18,10 @@ comp heater {
 -- A goal is checked only in its own component: an instance of `heater`
 -- does not check `silent` again. A goal over an instance's variables
 -- checks the instance's guarantees in context.
-comp panel {
-    in t: Int
-
+proc panel(t: Int): (lit?) {
     assume sane: t < 1000
-    pub out lit?
 
-    inst h: heater { temp := t }
+    call h := heater(t)
 
     ensure shows: lit? iff h.alarm?
 
@@ -36,10 +30,7 @@ comp panel {
 }
 
 -- Contradictory guarantees rule out every goal, as they fail realizability.
-comp stuck {                                       --~ error: `stuck` is not realizable
-    in x: Int
-    pub out y: Int
-
+proc stuck(x: Int): (y: Int) {                                       --~ error: `stuck` is not realizable
     ensure a: y > x   --~ info: conflicts with `b`
     ensure b: y < x   --~ info: conflicts with `a`
 

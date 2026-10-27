@@ -37,14 +37,14 @@ prelude's variant, unless the module gives `Some` another meaning.
 
 - An import, by name or with `*`, takes precedence over the prelude
   without `!`: it is a rule of resolution, between two layers, as a
-  component's imports take precedence over its module's scope.
+  procedure's imports take precedence over its module's scope.
 - A declared item takes precedence too, but shadows, and is written with
   `!`: `enum Option!<T> { ... }` (see [Shadowing the
   prelude](Modules.md#shadowing-the-prelude)). Without it, the declaration
   is an error (`F0217`).
 - A variable, binder or parameter named like a variant of the prelude,
   `None`, hides it, and is written `None!`, as for any variant in scope
-  (see [Shadowing](Components.md#shadowing)).
+  (see [Shadowing](Procedures.md#shadowing)).
 
 ## Values
 
@@ -94,9 +94,8 @@ prints:
 pub mod lang
 
 set_option fren.lint.undecidable "allow" in
-pub comp prelude_sort {
-    in path: String
-    pub det out sort: String := if path in {"Option", "Except"} then "|::" ++ path ++ "|" else "|" ++ path ++ "|"
+pub proc prelude_sort(path: String): (det sort: String) {
+    out sort := if path in {"Option", "Except"} then "|::" ++ path ++ "|" else "|" ++ path ++ "|"
 
     expect apart: not sort is "|Option|" | "|Except|"
 }
@@ -110,14 +109,20 @@ the prelude's types:
 -- be: one for every instance.
 set_option fren.lint.undecidable "allow" in
 set_option fren.lint.constant_output "allow" in
-pub comp prelude_smt {
-    in a: String                   -- the sort of the first type argument
-    in b: String                   -- of the second, for `Result`
-    pub det out option_sort: String := "(Option " ++ a ++ ")"
-    pub det out result_sort: String := "(Except " ++ b ++ " " ++ a ++ ")"
-    pub det out option_declaration: String :=
+pub proc prelude_smt(
+    a: String,                     -- the sort of the first type argument
+    b: String,                     -- of the second, for `Result`
+): (
+    det option_sort: String,
+    det result_sort: String,
+    det option_declaration: String,
+    det result_declaration: String,
+) {
+    out option_sort := "(Option " ++ a ++ ")"
+    out result_sort := "(Except " ++ b ++ " " ++ a ++ ")"
+    out option_declaration :=
         "(declare-datatypes ((Option 1)) ((par (|α|) ((Option.none) (Option.some (Option.some.val |α|))))))\n"
-    pub det out result_declaration: String :=
+    out result_declaration :=
         "(declare-datatypes ((Except 2)) ((par (|ε| |α|) ((Except.error (Except.error.field1 |ε|)) (Except.ok (Except.ok.field1 |α|))))))\n"
 }
 ```

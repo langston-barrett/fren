@@ -9,26 +9,20 @@ mod prelude_use
 
 fn or_zero(o: Option<Int>): Int := match o { Some(n) => n, None => 0 }
 
-comp options {
-    in x: Option<Int>
-    pub out y: Int
+proc options(x: Option<Int>): (y: Int) {
     ensure r: y = or_zero(x)
     expect qualified: when x = Option::Some(2), y = 2
     expect some_three: y != 3  --~ error: counterexample: x = Option::Some(3), y = 3
 }
 
-comp results {
-    in r: Result<Int, Bool>
-    pub out code: Int
+proc results(r: Result<Int, Bool>): (code: Int) {
     ensure r1: code = match r { Ok(n) => n, Err(b?) => if b? then -1 else -2 }
     expect ok_keeps: when r = Result::Ok(5), code = 5
     expect err_negative: when r is Err(_), code < 0
     expect not_true: r != Err(true)  --~ error: counterexample: r = Result::Err(true), code = -1
 }
 
-comp finite {
-    in b: Option<Bool>
-    pub out n: Int
+proc finite(b: Option<Bool>): (n: Int) {
     ensure r: n = (if b = Some(true) then 1 else 0)
     -- Expanded over `Option::None`, `Option::Some(false)` and `Option::Some(true)`.
     expect all: n = 1 iff (exists (o: Option<Bool>), o = b and o is Some(true))

@@ -35,7 +35,7 @@ as written in its scope: its text, and the binders of pattern tests in
 scope where it is written, each by the `Id` of its declaration, as a
 `Binder` head names it (see [Layers](../Lang/Meaning.md#layers)). Names
 declared outside every pattern test are the same wherever the lints
-compare expressions, within one component or one global expectation, so
+compare expressions, within one procedure or one global expectation, so
 they are not part of the scope. Both front ends compare scopes as well as
 texts, with `writtenSameIn`, or leave the expressions whose scopes may
 differ.
@@ -79,26 +79,23 @@ Two texts in different scopes may have different values.
 `else` branch, the variable `v`, in one environment:
 
 ```fren
-pub comp written_scopes {
-    in program: lang::Program
-    in env: lang::Env
-
-    inst payload: lang::node {
+pub proc written_scopes(program: lang::Program, env: lang::Env) {
+    call payload := lang::node(
         program,
-        head := lang::Head::Binder("Reply::Value.0"),
+        lang::Head::Binder("Reply::Value.0"),
         env,
-        values := [lang::lookup(env, "r")],
-        parts_mentioned := {lang::Mention::Var("r")},
-        undefined_parts := {},
-    }
-    inst outer: lang::node {
+        [lang::lookup(env, "r")],
+        {lang::Mention::Var("r")},
+        {},
+    )
+    call outer := lang::node(
         program,
-        head := lang::Head::Variable("v"),
+        lang::Head::Variable("v"),
         env,
-        values := [],
-        parts_mentioned := {},
-        undefined_parts := {},
-    }
+        [],
+        {},
+        {},
+    )
 
     cover differ: payload.value != outer.value
 }

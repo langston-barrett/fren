@@ -29,14 +29,13 @@ enum Decision { GiveUp, RetryAfter(Seconds) }
 const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)
 
-comp retry {
+proc retry(
+    method: Method,
+    status: Status,
+    attempt: Nat is 1..,       -- attempts made so far
+    retry_after: Seconds,      -- the server's `Retry-After`, or 0
+): (decision: Decision) {
     use http::Decision::{GiveUp, RetryAfter}
-
-    in method: Method
-    in status: Status
-    in attempt: Nat is 1..     -- attempts made so far
-    in retry_after: Seconds    -- the server's `Retry-After`, or 0
-    pub out decision: Decision
 
     ensure transient:
         decision is RetryAfter(_)
@@ -64,7 +63,7 @@ $ fren check retry.fren
 error[F0601]: `http::retry` is not realizable
   --> retry.fren:11:6
    |
-11 | comp retry {
+11 | proc retry(
    |      ^^^^^ not realizable
    |
    = note: for the input
@@ -76,9 +75,9 @@ error[F0601]: `http::retry` is not realizable
    = help: weaken one of them, or add an `assume` that rules this input out
 
 note: `transient` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
-  --> retry.fren:20:12
+  --> retry.fren:19:12
    |
-20 |     ensure transient:
+19 |     ensure transient:
    |            ^^^^^^^^^
 
 ...
@@ -94,12 +93,12 @@ right fix is a nontrivial design question.
 - Automated, fast, and reliable checks of properties of requirements:
 
   - Realizability: some system can meet the requirements, for every admissible input
-  - Refinement: one component refines another
+  - Refinement: one procedure refines another
   - Vacuity, redundancy, determinism, and more!
 
 - Fallbacks for when SMT automation fails: randomized testing, exhaustive testing, and Lean proofs
 - `impl` blocks for proving that a Lean implementation meets the requirements
-- Composition: build components from others, using rely/guarantee reasoning
+- Composition: build procedures from others, using rely/guarantee reasoning
 - Extensive tooling: a formatter, linter with auto-fixes, and mutation testing tool
 
 ## Why Fren?

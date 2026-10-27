@@ -1,0 +1,5 @@
+-- A result defined twice (F0421).
+proc c(x: Int): (y: Int) {
+    out y := x
+    out y := x + 1
+}

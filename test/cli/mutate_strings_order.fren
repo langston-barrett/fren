@@ -3,10 +3,7 @@
 -- mutants that drop the bound on the length leave `name` of unbounded
 -- length, and `in_range` is still decided quickly rather than timing out.
 set_option fren.lint.chainable_comparison "allow"
-comp handle {
-    in name: String
-    pub out accepted?
-
+proc handle(name: String): (accepted?) {
     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
 
     expect in_range: when accepted?, name >= "a" and name < "b"

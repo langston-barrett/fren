@@ -1,13 +1,13 @@
-error[F0104]: expected a member (`in`, `out`, `inst`, `assume`, `ensure`, `expect`, `cover` or `use`) or `}`, found identifier `ensur`
- --> test/cli/syntax/f0104_keyword.fren:2:35
+error[F0104]: expected a member (`use`, `assume`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`, found identifier `ensur`
+ --> test/cli/syntax/f0104_keyword.fren:2:28
   |
-2 | comp c { in x: Int pub out y: Int ensur r: y = x }
-  |                                   ^^^^^ expected a member (`in`, `out`, `inst`, `assume`, `ensure`, `expect`, `cover` or `use`) or `}`
+2 | proc c(x: Int): (y: Int) { ensur r: y = x }
+  |                            ^^^^^ expected a member (`use`, `assume`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`
   |
 help: a keyword with a similar name exists: `ensure`
   |
-2 - comp c { in x: Int pub out y: Int ensur r: y = x }
-2 + comp c { in x: Int pub out y: Int ensure r: y = x }
+2 - proc c(x: Int): (y: Int) { ensur r: y = x }
+2 + proc c(x: Int): (y: Int) { ensure r: y = x }
   |
 
 error: could not check due to previous errors

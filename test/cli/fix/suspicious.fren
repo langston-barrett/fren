@@ -2,23 +2,17 @@
 -- `fren fix` removes a condition that decides nothing, parenthesizing the
 -- branch where `lang::operand` requires it, and removes repeated elements,
 -- with the separator before each. `eq_op` and `empty_argument` have no fix.
-comp c {
-    in a?
-    in b?
-    in x: Int
-    in t: Set<Int>
-    in r: Rel<Int, Int>
-    in s: String
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out p4?
-    pub out p5?
-    pub out n1: Int
-    pub out n2: Int
-    pub out n3: Int
-    pub out n4: Int
-
+proc c(a?, b?, x: Int, t: Set<Int>, r: Rel<Int, Int>, s: String): (
+    p1?,
+    p2?,
+    p3?,
+    p4?,
+    p5?,
+    n1: Int,
+    n2: Int,
+    n3: Int,
+    n4: Int,
+) {
     ensure r1: n1 = if a? then x+1 else x + 1
     ensure r2: n2 = 2 * if a? then x + 1 else (x + 1)
     ensure r3: n3 = x - if a? then -x else -x

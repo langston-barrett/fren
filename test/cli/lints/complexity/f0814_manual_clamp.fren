@@ -1,2 +1,2 @@
 -- `manual_clamp`.
-comp c { in x: Int pub out n: Int ensure r: n = if x > 9 then 9 else if x < -9 then -9 else x }
+proc c(x: Int): (n: Int) { ensure r: n = if x > 9 then 9 else if x < -9 then -9 else x }

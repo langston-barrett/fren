@@ -3,18 +3,12 @@
 
 -- A lint that needs the whole component, such as an unused variable, is
 -- not found where it stops.
-comp unused_input {
-    in x: Int
-    in z: Int
-    pub out y: Int
+proc unused_input(x: Int, z: Int): (y: Int) {
     ensure q: y = z * z  --~ error: nonlinear arithmetic is not supported
 }
 
 -- A lint in a part before its error, and one in another part.
-comp in_part {
-    in s: String
-    in n: Int
-    pub out p?
+proc in_part(s: String, n: Int): (p?) {
     ensure a: p? iff (s.len = 0 or n * n = 1)
     --~^ warning: say whether it is empty with `""`, not `len`
     --~^^ error: nonlinear arithmetic is not supported
@@ -22,21 +16,16 @@ comp in_part {
 }
 
 -- A denied `undecidable`, as by default, and an error elsewhere.
-comp mixed {
-    in r: Rel<Int, Int>
-    in n: Int
-    pub out p?
+proc mixed(r: Rel<Int, Int>, n: Int): (p?) {
     ensure a: p? iff r.range.card = 1
     --~^ error: a relational operator over a type that is not finite quantifies over its values
     ensure b: p? iff n * n = 1  --~ error: nonlinear arithmetic is not supported
 }
 
 -- A badly named variable whose type cannot be found.
-comp bad_type {
-    in BadName: Nope
+proc bad_type(BadName: Nope): (p?) {
     --~^ error: cannot find `Nope` in this scope
     --~^^ warning: variable `BadName` should have a snake case name
-    pub out p?
     ensure a: p? iff true
 }
 
@@ -44,16 +33,12 @@ comp bad_type {
 -- still a use (`dead_code`), and one that nothing uses.
 const TWO: Int := 2
 const THREE: Int := 3  --~ warning: constant `THREE` is never used
-comp uses_const {
-    in x: Int
-    pub out y: Int
+proc uses_const(x: Int): (y: Int) {
     ensure a: y = TWO + nope  --~ error: cannot find `nope` in this scope
 }
 
 -- A badly named constraint that cannot end in `?`.
-comp bad_constraint {
-    in x: Int
-    pub out p?
+proc bad_constraint(x: Int): (p?) {
     ensure Bad?: p? iff x > 0
     --~^ error: constraint names cannot end in `?`
     --~^^ warning: constraint `Bad?` should have a snake case name
@@ -62,12 +47,7 @@ comp bad_constraint {
 -- Many single-character names, in a component with an error in its
 -- members: the component's own lints still run.
 set_option fren.lint.many_single_char_names "warn" in
-comp single {  --~ warning: component `single` declares 5 single-character names
-    in a: Int
-    in b: Int
-    in c: Int
-    in d: Int
-    pub out e: Int
+proc single(a: Int, b: Int, c: Int, d: Int): (e: Int) {  --~ warning: procedure `single` declares 5 single-character names
     ensure r: e = a + b + c + d + nope  --~ error: cannot find `nope` in this scope
 }
 --@ exit: 2

@@ -1,7 +1,5 @@
 --@ args: quickcheck
-comp c {
-    in x: Int
-    pub out y: Int
+proc c(x: Int): (y: Int) {
     ensure above: y > x
     ensure below: y < x
 }

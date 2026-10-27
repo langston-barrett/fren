@@ -2,10 +2,7 @@
 -- guards hold where `x` is 0.
 enum Mode { Off, On(Int) }
 
-comp level {
-    in m: Mode
-    pub out y: Int
-
+proc level(m: Mode): (y: Int) {
     ensure r: y = table m {
         Mode::Off => 0,
         Mode::On(x) if x >= 0 => x,

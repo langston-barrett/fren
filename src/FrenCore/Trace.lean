@@ -7,7 +7,7 @@ import Lean.Data.NameMap
 /-!
 # Traceability (`Reqs/Trace`)
 
-The evidence for components, shared by `#fren_trace` and `fren trace`:
+The evidence for procedures, shared by `#fren_trace` and `fren trace`:
 levels, the checks of `tested` and `trusted` claims, the scan of tests for
 `fren-covers:` markers, and the report.
 -/
@@ -50,16 +50,16 @@ def unknownLevelMsg (s : String) : Msg :=
     notes := #["note: the levels are `trusted`, `tested`, `solver` and `proved`, weakest first"]
     fixes := similarFixes "a level with a similar name exists" (Name.mkSimple s) ((Level.all.filter (· != .missing)).map (Name.mkSimple ·.name)) }
 
-/-- A component's own evidence (`trace::direct`). -/
+/-- A procedure's own evidence (`trace::direct`). -/
 def directLevel (proved solver tested trusted : Bool) : Level :=
   if proved then .proved else if solver then .solver
   else if tested then .tested else if trusted then .trusted else .missing
 
-/-- A component's evidence, from its own and its instances' (`trace::evidence`). -/
+/-- A procedure's evidence, from its own and its calls' (`trace::evidence`). -/
 def evidenceLevel (own : Level) (hasOutputs : Bool) (weakest : Level) : Level :=
   if hasOutputs || own.rank >= weakest.rank then own else weakest
 
-/-- How a component is reported (`trace::required`). -/
+/-- How a procedure is reported (`trace::required`). -/
 def traceSeverity (level threshold : Level) (enforced : Bool) : Option Severity :=
   if enforced && level.rank < threshold.rank then some .warning else none
 
@@ -80,7 +80,7 @@ def traceExitCode (ran below stray : Bool) : UInt32 :=
 
 def marker : String := "fren-covers:"
 
-/-- The components named by the `fren-covers:` marker on a line, if any: a
+/-- The procedures named by the `fren-covers:` marker on a line, if any: a
 comma-separated list that ends the line, after any comment syntax. -/
 def coversOf (line : String) : Array String :=
   match line.splitOn marker with
@@ -90,7 +90,7 @@ def coversOf (line : String) : Array String :=
     (rest.splitOn ",").toArray.map (·.trimAscii.toString) |>.filter (!·.isEmpty)
   | _ => #[]
 
-/-- Checks one file of a `tested` claim for component `comp`, given its
+/-- Checks one file of a `tested` claim for procedure `comp`, given its
 contents if it could be read (`trace::tested_file`). -/
 def checkTestedFile (comp file : String) (src? : Option String) : Except Msg Unit := do
   let covers := src?.any fun src => (src.splitOn "\n").any (coversOf · |>.contains comp)
@@ -100,7 +100,7 @@ def checkTestedFile (comp file : String) (src? : Option String) : Except Msg Uni
                     notes := #["note: paths are relative to the directory Fren runs in, usually the project's root"] }
   | some _ => throw { code? := some "F0502", headline := s!"`{file}` does not say that it covers `{comp}`"
                       label? := some s!"no `{marker} {comp}` in this file"
-                      notes := #["note: a test names the components it covers, so that claims cannot silently go stale",
+                      notes := #["note: a test names the procedures it covers, so that claims cannot silently go stale",
                         s!"help: add a comment `{marker} {comp}` to `{file}`"] }
 
 /-- A justification, without surrounding whitespace (`trace::trusted_claim`). -/
@@ -110,20 +110,20 @@ def checkTrusted (why : String) : Except Msg Unit := do
   unless trustedAccepted (trimmedWhy why != "") do
     throw { code? := some "F0503", headline := "the justification of a `trusted` claim cannot be empty"
             label? := some "empty justification"
-            notes := #["note: a `trusted` claim records why the component holds without a proof or a test",
+            notes := #["note: a `trusted` claim records why the procedure holds without a proof or a test",
               "help: say why it can be trusted, e.g. `trusted c: \"checked by hand against the datasheet\"`"] }
 
-/-- The `tested` and `trusted` claims, by component path. -/
+/-- The `tested` and `trusted` claims, by procedure path. -/
 structure Claims where
   tested : NameMap (Array String) := {}
   trusted : NameMap (Array String) := {}
   deriving Inhabited
 
-/-- What the report needs to know about a component. -/
+/-- What the report needs to know about a procedure. -/
 structure TraceComp where
   path : Name
   hasOutputs : Bool
-  /-- The components of its instances. -/
+  /-- The procedures that it calls. -/
   insts : Array Name
   /-- Has an `impl` proved by Lean. -/
   proved : Bool := false
@@ -131,8 +131,8 @@ structure TraceComp where
   solver : Bool := false
   deriving Inhabited
 
-/-- The evidence for every component. Instances refer to components
-declared earlier, so each pass settles those whose instances are settled,
+/-- The evidence for every procedure. Calls refer to procedures
+declared earlier, so each pass settles those whose calls are settled,
 until a pass settles nothing. -/
 def levels (comps : Array TraceComp) (claims : Claims) : NameMap Level := Id.run do
   let mut out : NameMap Level := {}
@@ -158,13 +158,13 @@ def levels (comps : Array TraceComp) (claims : Claims) : NameMap Level := Id.run
 structure Stray where
   file : String
   line : Nat
-  /-- Where the component's name is in the line, in characters, and its
+  /-- Where the procedure's name is in the line, in characters, and its
   length. -/
   col : Nat
   len : Nat
   msg : Msg
 
-/-- The markers in `files` (path and contents) that do not name a component
+/-- The markers in `files` (path and contents) that do not name a procedure
 whose `tested` claim names that file. -/
 def strays (comps : Array Name) (claims : Claims) (files : Array (String × String)) : Array Stray := Id.run do
   let mut out := #[]
@@ -179,25 +179,25 @@ def strays (comps : Array Name) (claims : Claims) (files : Array (String × Stri
           let rest := (line.drop (before.length + marker.length)).toString
           let col := before.length + marker.length + (rest.splitOn c).head!.length
           out := out.push { file, line := i, col, len := c.length, msg := if path?.isNone
-            then { code? := some "F0504", headline := s!"`{marker}` names `{c}`, which is not a component"
-                   label? := some s!"no component `{c}`"
-                   notes := #["note: components are named by their full path, such as `a::b::c`"]
+            then { code? := some "F0504", headline := s!"`{marker}` names `{c}`, which is not a procedure"
+                   label? := some s!"no procedure `{c}`"
+                   notes := #["note: procedures are named by their full path, such as `a::b::c`"]
                    fixes := (similarStr c (comps.map showComp)).toArray.map fun s =>
-                     { msg := s!"a component with a similar name exists: `{s}`", replacement := s } }
+                     { msg := s!"a procedure with a similar name exists: `{s}`", replacement := s } }
             else { code? := some "F0505", headline := s!"`{marker}` names `{c}`, but no `tested` claim for it names `{file}`"
                    label? := s!"`{c}` does not claim this file"
-                   notes := #["note: a marker records that a test covers a component; a `tested` claim makes it count as evidence",
+                   notes := #["note: a marker records that a test covers a procedure; a `tested` claim makes it count as evidence",
                      s!"help: add `tested {c}: \"{file}\"`, or `\"{file}\"` to an existing `tested {c}` claim"] } }
   return out
 
-/-- A component below the required level. -/
+/-- A procedure below the required level. -/
 def belowMsg (path : Name) (l threshold : Level) (how : String) : Msg :=
   { code? := some "F0506", headline := s!"`{showComp path}` has evidence `{l.name}`, below `{threshold.name}` ({how})"
     label? := some s!"evidence `{l.name}`"
-    notes := #[s!"note: {how} requires every component to have evidence `{threshold.name}` or stronger",
+    notes := #[s!"note: {how} requires every procedure to have evidence `{threshold.name}` or stronger",
       "help: add an `impl`, a `tested` claim or a `trusted` claim for it"] }
 
-/-- The report: how many components are at each level, and those below
+/-- The report: how many procedures are at each level, and those below
 `proved` by level. -/
 def traceSummary (comps : Array Name) (ls : NameMap Level) : String :=
   let at_ (l : Level) := comps.filter (ls.getD · .missing == l)

@@ -1,8 +1,6 @@
 -- A record update may end with a comma, as a record literal may.
 struct P { x: Int, y: Int }
-comp c {
-    in p: P
-    pub det out q: P
+proc c(p: P): (det q: P) {
     ensure r: q = { p with y := 0, }
     expect kept: q.x = p.x and q.y = 0
 }

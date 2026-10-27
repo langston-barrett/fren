@@ -1,14 +1,14 @@
-error[F0405]: instance `s` has no `in` or `pub out` named `totl`
- --> test/cli/instances/f0405_no_var.fren:3:72
+error[F0405]: call `s` has no parameter or result named `totl`
+ --> test/cli/instances/f0405_no_var.fren:3:59
   |
-3 | comp c { in i: Int pub out o: Int inst s: sub { a := i } ensure r: o = s.totl }
-  |                                                                        ^^^^^^ unknown variable
+3 | proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.totl }
+  |                                                           ^^^^^^ unknown variable
   |
   = note: the variables of `s` are `a` and `total`
 help: a variable with a similar name exists: `s.total`
   |
-3 - comp c { in i: Int pub out o: Int inst s: sub { a := i } ensure r: o = s.totl }
-3 + comp c { in i: Int pub out o: Int inst s: sub { a := i } ensure r: o = s.total }
+3 - proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.totl }
+3 + proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.total }
   |
 
 error: could not check due to previous errors

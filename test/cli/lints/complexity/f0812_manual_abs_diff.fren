@@ -1,2 +1,2 @@
 -- `manual_abs_diff`.
-comp c { in x: Int in y: Int pub out n: Int ensure r: n = if x < y then y - x else x - y }
+proc c(x: Int, y: Int): (n: Int) { ensure r: n = if x < y then y - x else x - y }

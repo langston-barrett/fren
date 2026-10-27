@@ -1,7 +1,7 @@
 warning[F0799]: this string literal is not in Unicode NFC
- --> test/cli/lints/pedantic/f0799_unicode_not_nfc.fren:9:27
+ --> test/cli/lints/pedantic/f0799_unicode_not_nfc.fren:6:27
   |
-9 |     ensure r: p? iff (s = "café" or s = r#"é"# or s = "\u0065́" or s = "café")
+6 |     ensure r: p? iff (s = "café" or s = r#"é"# or s = "\u0065́" or s = "café")
   |                           ^^^^^^^ not in NFC
   |
   = note: U+0065 U+0301 is U+00E9 in NFC
@@ -11,9 +11,9 @@ warning[F0799]: this string literal is not in Unicode NFC
   = note: `unicode_not_nfc` is set to `warn`
 
 warning[F0799]: this string literal is not in Unicode NFC
- --> test/cli/lints/pedantic/f0799_unicode_not_nfc.fren:9:42
+ --> test/cli/lints/pedantic/f0799_unicode_not_nfc.fren:6:42
   |
-9 |     ensure r: p? iff (s = "café" or s = r#"é"# or s = "\u0065́" or s = "café")
+6 |     ensure r: p? iff (s = "café" or s = r#"é"# or s = "\u0065́" or s = "café")
   |                                          ^^^^^^^ not in NFC
   |
   = note: U+0065 U+0301 is U+00E9 in NFC
@@ -22,9 +22,9 @@ warning[F0799]: this string literal is not in Unicode NFC
   = note: `fren fix` does not, since that changes the literal's value
 
 warning[F0799]: this string literal is not in Unicode NFC
- --> test/cli/lints/pedantic/f0799_unicode_not_nfc.fren:9:57
+ --> test/cli/lints/pedantic/f0799_unicode_not_nfc.fren:6:57
   |
-9 |     ensure r: p? iff (s = "café" or s = r#"é"# or s = "\u0065́" or s = "café")
+6 |     ensure r: p? iff (s = "café" or s = r#"é"# or s = "\u0065́" or s = "café")
   |                                                         ^^^^^^^^^ not in NFC
   |
   = note: U+0065 U+0301 is U+00E9 in NFC

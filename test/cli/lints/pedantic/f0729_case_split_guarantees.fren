@@ -3,11 +3,7 @@ set_option fren.lint.case_split_guarantees "warn"
 
 enum Mode { Heat, Cool, Off }
 
-comp c {
-    in m: Mode
-    in t: Int
-    pub out y: Int
-
+proc c(m: Mode, t: Int): (y: Int) {
     ensure heat: when m = Mode::Heat, y = t + 1
     ensure cool: when m = Mode::Cool, y = t - 1
 }

@@ -1,13 +1,13 @@
 error[F0111]: `self.E` is not a single name
- --> test/cli/syntax/f0111_path.fren:3:16
+ --> test/cli/syntax/f0111_path.fren:3:11
   |
-3 | comp c { in e: self.E }
-  |                ^^^^^^ `.` reads an instance's variable, or a value's field or method
+3 | proc c(e: self.E) {}
+  |           ^^^^^^ `.` reads a call's variable, or a value's field or method
   |
 help: if it is a path, separate its segments with `::`
   |
-3 - comp c { in e: self.E }
-3 + comp c { in e: self::E }
+3 - proc c(e: self.E) {}
+3 + proc c(e: self::E) {}
   |
 
 error: could not check due to previous errors

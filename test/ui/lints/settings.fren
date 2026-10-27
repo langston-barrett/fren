@@ -10,17 +10,17 @@ set_option fren.lint.match_same_arms "allow"
 -- The inner setting wins.
 set_option fren.lint.non_snake_case "allow" in  --~ warning: this lint setting is replaced before any item
 set_option fren.lint.non_snake_case "warn" in
-comp Inner {}  --~ warning: component `Inner` should have a snake case name
+proc Inner() {}  --~ warning: procedure `Inner` should have a snake case name
 
 -- A lint's setting, then its group's.
 set_option fren.lint.non_snake_case "allow" in  --~ warning: this lint setting is replaced before any item
 set_option fren.lint.nonstandard_style "warn" in
-comp Grouped {}  --~ warning: component `Grouped` should have a snake case name
+proc Grouped() {}  --~ warning: procedure `Grouped` should have a snake case name
 
 -- An expectation is reported only if nothing fulfils it.
 set_option fren.lint.non_snake_case "expect" in
 set_option fren.lint.non_snake_case "allow" in
-comp Expected {}
+proc Expected() {}
 --~^^^ warning: this lint expectation is unfulfilled
 
 -- A file-level setting stays in effect after a setting of its item.

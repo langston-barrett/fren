@@ -1,0 +1,43 @@
+error[F0409]: too few arguments: `sub` takes 3 arguments, `a`, `b?`, `c`
+ --> test/cli/instances/f0409_too_few.fren:3:22
+  |
+3 | proc c() { call s := sub(1) }
+  |                      ^^^ 1 argument
+  |
+  = note: a call gives one argument for each parameter, in order
+  = help: add `b?`, `c`
+
+warning[F0710]: unused variable `a`
+ --> test/cli/instances/f0409_too_few.fren:2:10
+  |
+2 | proc sub(a: Int, b?, c: Int) {}
+  |          ^ never mentioned
+  |
+  = note: nothing in its procedure depends on it
+  = help: remove it, or mention it in a constraint
+  = note: `unused_variables` is `warn` by default
+  = help: to allow it, `set_option fren.lint.unused_variables "allow"`
+
+warning[F0710]: unused variable `b?`
+ --> test/cli/instances/f0409_too_few.fren:2:18
+  |
+2 | proc sub(a: Int, b?, c: Int) {}
+  |                  ^^ never mentioned
+  |
+  = note: nothing in its procedure depends on it
+  = help: remove it, or mention it in a constraint
+
+warning[F0710]: unused variable `c`
+ --> test/cli/instances/f0409_too_few.fren:2:22
+  |
+2 | proc sub(a: Int, b?, c: Int) {}
+  |                      ^ never mentioned
+  |
+  = note: nothing in its procedure depends on it
+  = help: remove it, or mention it in a constraint
+
+error: could not check due to previous errors
+
+Some errors have detailed explanations: F0409, F0710.
+For more information about an error, try `fren --explain F0409`.
+exit=2

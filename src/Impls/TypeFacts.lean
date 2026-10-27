@@ -7,7 +7,7 @@ open Fren.Lang
 /-!
 # Facts of types over their constituents (`Reqs/Lang/Types#finite-types`)
 
-The components that use the facts of a type closed over its constituents
+The procedures that use the facts of a type closed over its constituents
 (`lang::type_facts`), proved against `Fren.Core.typeFacts`, which both
 front ends call. The constituent relation is the one that
 `Fren.Core.Node.next` gives from the declarations, over every type that the
@@ -455,7 +455,7 @@ impl quantified_type: lang::quantified_type for (shapes : Lean.Name → Option D
     hof, hg, typeFacts_eq hF, Fren.Core.TypeFacts.listed, Bool.and_eq_true, Bool.not_eq_true']
   exact ⟨by simp, ⟨trivial, trivial⟩, trivial, hr, hf, hb⟩
 
-/-! ## Variables (`Reqs/Lang/Components#members`) -/
+/-! ## Variables (`Reqs/Lang/Procedures#members`) -/
 
 -- For every variable, and type and declarations whose facts are known:
 -- the check that both front ends call, with the facts that both compute.

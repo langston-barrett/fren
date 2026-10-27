@@ -11,24 +11,24 @@ fren.lint.undecidable "allow" in` before an item.
 
 ## What is promised
 
-Every query that Fren asks about a component or global expectation without
+Every query that Fren asks about a procedure or global expectation without
 an opt-out is in a fragment with a known decision procedure. That the
 fragment is decidable does not mean that the solver decides every query
 in it quickly, or at all: see [In practice](#in-practice) for where it
 does and where it does not. An `Inconclusive` verdict then means that the
 solver ran out of time, and the [message](../View.md#check-results) says
-to raise the time limit. In a component that opts out, it may also mean
+to raise the time limit. In a procedure that opts out, it may also mean
 that the solver gave up, and the message says that instead.
 
 The rest of the language is decidable by three rules:
 
 1. Every check but realizability asks a quantifier-free question.
 2. Realizability quantifies only over outputs, and outputs have bounded
-   types (see [Components](Components.md#members)), unless they are
-   [defined](Components.md#defined-outputs), in which case they are
+   types (see [Procedures](Procedures.md#members)), unless they are
+   [defined](Procedures.md#definitions), in which case they are
    replaced by their definitions.
 3. A function's arguments never mention an output (see
-   [Instances](Instances.md#instance-variables)), so the quantifier never
+   [Calls](Calls.md#call-variables)), so the quantifier never
    reaches under a function.
 
 A [quantifier](Quantifiers.md) over listed types adds no quantifier to a
@@ -134,7 +134,7 @@ variables, and lengths are used in linear arithmetic.
 | `s.index_of(t, i)`, `s.replace(a, b)`, `s.replace_all(a, b)` | never, unless every operand is a constant |
 | `s = t`, `s != t`, on strings | one side is a constant, or both are variables |
 | `s < t`, `s <= t`, `s > t`, `s >= t`, `s.min(t)`, `s.max(t)`, on strings, or on values of an ordered record or newtype with a `String` within | one side is a constant |
-| `a ++ b` | it is the receiver of a method, a side of `=` or `!=` whose other side is a constant, a [definition](Components.md#defined-outputs) or part of one, or itself a constant |
+| `a ++ b` | it is the receiver of a method, a side of `=` or `!=` whose other side is a constant, a [definition](Procedures.md#definitions) or part of one, or itself a constant |
 
 Here a *constant* is an expression that mentions no variable and no
 uninterpreted function, as [Mentions](Expressions.md#mentions) defines,
@@ -142,16 +142,16 @@ such as `"F0" ++ "1"`, or `pad("F0")` with `pad` a defined function. A
 binder mentions what its scrutinee mentions, so it is a constant if its
 scrutinee is, a name of a [`let` or `where`](Let.md) is a constant if its
 definition is, and a quantifier's bound name mentions nothing, so it is a
-constant. A *variable* is a variable of the component, of one of its
-instances, a field read from one, or a binder whose scrutinee is not a
-constant. A [definition](Components.md#defined-outputs) is an equation
-between the defined output and its definition, and an instance's binding
-an equation between the instance's input and its expression.
+constant. A *variable* is a variable of the procedure, of one of its
+calls, a field read from one, or a binder whose scrutinee is not a
+constant. A [definition](Procedures.md#definitions) is an equation
+between the defined variable and its expression, and a call's argument
+an equation between the called procedure's parameter and its expression.
 
-A definition assigns its output once, and definitions are acyclic, so a
+A definition assigns its variable once, and definitions are acyclic, so a
 `++` in one is a *straight-line* equation, which is decidable with regular
 constraints and length: substituting the definitions leaves only
-constraints on the variables that they mention. A defined output whose
+constraints on the variables that they mention. A defined variable whose
 definition has a `++` that is not a constant then stands for that `++` in
 the rows above: it may be compared with a constant, or be the receiver of
 a method, but not compared with another variable, which would be the word
@@ -206,9 +206,9 @@ the solver as its relational operators, which decide them directly, with
 one exception, found by the conformance corpus: the solver does not
 reliably combine relational operators with counting. Given both, it gives
 up, runs out of time, or even gives a wrong model, which Fren's model check
-then refutes. So in a component or global expectation that applies a
-relational operator, directly or through an instance, a `card` of anything
-but a constant is outside the core, and so is an instance of a component
+then refutes. So in a procedure or global expectation that applies a
+relational operator, directly or through a call, a `card` of anything
+but a constant is outside the core, and so is a call of a procedure
 that counts.
 
 ## Sequences
@@ -283,7 +283,7 @@ pub mod lang
 -- `replace_all`, and `++` outside the places the core allows; `SetAlgebra` is
 -- the operations on sets and relations; `SetFunction` is a function of a set
 -- or relation type; `Relational` is a relational operator; `RelationalCard` is
--- `card`, or an instance of a component that counts, where there is one;
+-- `card`, or a call of a procedure that counts, where there is one;
 -- `SeqArray` is a sequence's literals, `len`, indexing and `update`; `SeqWord`
 -- is the other operations on sequences; `Quantifier` is an unbounded
 -- quantifier's binder of a type that is not listed, of a quantifier that
@@ -293,7 +293,16 @@ pub enum Construct {
     SeqArray, SeqWord, Quantifier,
 }
 
-pub comp in_core {
+pub proc in_core(
+    construct: Construct,
+    constant_args?,          -- every operand but the receiver is a constant
+    comparable?,             -- for `StringCompare`: as the table above says
+    infinite_output?,        -- an operand other than of `=` or `!=` mentions an output of an infinite type
+    ground?,                 -- every operand, the receiver too, is a constant
+    infinite_elems?,         -- for `SetFunction`: the element types of its sets are infinite
+    finite_range?,           -- for `Relational`: the types it ranges over are finite
+    literal_operand?,        -- for `SeqWord`: `x in L`, `starts_with?(L)` or `ends_with?(L)`, with `L` a literal
+): (det decidable?) {
     use self::Construct::{
         Quantifier,
         Relational,
@@ -307,15 +316,6 @@ pub comp in_core {
         StringIndex,
         StringSearch,
     }
-    in construct: Construct
-    in constant_args?        -- every operand but the receiver is a constant
-    in comparable?           -- for `StringCompare`: as the table above says
-    in infinite_output?      -- an operand other than of `=` or `!=` mentions an output of an infinite type
-    in ground?               -- every operand, the receiver too, is a constant
-    in infinite_elems?       -- for `SetFunction`: the element types of its sets are infinite
-    in finite_range?         -- for `Relational`: the types it ranges over are finite
-    in literal_operand?      -- for `SeqWord`: `x in L`, `starts_with?(L)` or `ends_with?(L)`, with `L` a literal
-    pub det out decidable?
 
     ensure rule: decidable? iff (construct != Quantifier and (ground? or (not infinite_output? and match construct {
         StringAtom | StringIndex => constant_args?,

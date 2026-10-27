@@ -1,29 +1,29 @@
 warning[F0712]: this `Bool` expression can be simpler
- --> test/cli/lints/complexity/f0712_cardinality.fren:2:50
+ --> test/cli/lints/complexity/f0712_cardinality.fren:2:41
   |
-2 | comp c { in a? in b? pub out p? ensure r: p? iff exactly_one?(a?) and not at_most_one?(b?) }
-  |                                                  ^^^^^^^^^^^^^^^^ `exactly_one?` of one argument is that argument
+2 | proc c(a?, b?): (p?) { ensure r: p? iff exactly_one?(a?) and not at_most_one?(b?) }
+  |                                         ^^^^^^^^^^^^^^^^ `exactly_one?` of one argument is that argument
   |
   = help: `fren fix` can fix this
   = note: `nonminimal_bool` is `warn` by default
   = help: to allow it, `set_option fren.lint.nonminimal_bool "allow"`
 help: write `a?`
   |
-2 - comp c { in a? in b? pub out p? ensure r: p? iff exactly_one?(a?) and not at_most_one?(b?) }
-2 + comp c { in a? in b? pub out p? ensure r: p? iff a? and not at_most_one?(b?) }
+2 - proc c(a?, b?): (p?) { ensure r: p? iff exactly_one?(a?) and not at_most_one?(b?) }
+2 + proc c(a?, b?): (p?) { ensure r: p? iff a? and not at_most_one?(b?) }
   |
 
 warning[F0712]: this `Bool` expression can be simpler
- --> test/cli/lints/complexity/f0712_cardinality.fren:2:75
+ --> test/cli/lints/complexity/f0712_cardinality.fren:2:66
   |
-2 | comp c { in a? in b? pub out p? ensure r: p? iff exactly_one?(a?) and not at_most_one?(b?) }
-  |                                                                           ^^^^^^^^^^^^^^^^ `at_most_one?` of one argument always holds
+2 | proc c(a?, b?): (p?) { ensure r: p? iff exactly_one?(a?) and not at_most_one?(b?) }
+  |                                                                  ^^^^^^^^^^^^^^^^ `at_most_one?` of one argument always holds
   |
   = help: `fren fix` can fix this
 help: write `true`
   |
-2 - comp c { in a? in b? pub out p? ensure r: p? iff exactly_one?(a?) and not at_most_one?(b?) }
-2 + comp c { in a? in b? pub out p? ensure r: p? iff exactly_one?(a?) and not true }
+2 - proc c(a?, b?): (p?) { ensure r: p? iff exactly_one?(a?) and not at_most_one?(b?) }
+2 + proc c(a?, b?): (p?) { ensure r: p? iff exactly_one?(a?) and not true }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

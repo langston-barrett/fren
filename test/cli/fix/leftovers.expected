@@ -4,11 +4,11 @@
 -set_option fren.lint.disallowed_names "deny"
 @@ -11 +9,0 @@
 -set_option fren.lint.non_snake_case "allow" in
-@@ -19,2 +17,2 @@
+@@ -14,2 +12,2 @@
 -    ensure r: q = Point { x := p.x, y := p.y }
 -    ensure m: ok? iff s.matches?(r"v1.2") and s.matches?(".*file.txt")
 +    ensure r: q = p
 +    ensure m: ok? iff s.matches?(r"v1[.]2") and s.matches?(".*file[.]txt")
-@@ -23 +20,0 @@
+@@ -18 +15,0 @@
 -set_option fren.lint.style "warn"
 exit=1

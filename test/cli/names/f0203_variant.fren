@@ -1,3 +1,3 @@
 -- No such variant, with a similar one (F0203).
 enum Mode { Off, Heat, Cool }
-comp c { in m: Mode pub out on? ensure r: on? iff m = Mode::Hat }
+proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Hat }

@@ -1,6 +1,3 @@
-comp c {
-    in s: Set<Int>
-    pub out p?
-
+proc c(s: Set<Int>): (p?) {
     ensure r: p? iff s = {1, true}
 }

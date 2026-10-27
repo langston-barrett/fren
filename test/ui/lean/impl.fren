@@ -4,11 +4,7 @@
 enum Verdict { Pass, Fail, Inconclusive }
 use Verdict::{Pass, Fail, Inconclusive}
 
-comp exit {
-  in ran?
-  in worst: Verdict
-  pub out code: Int
-
+proc exit(ran?, worst: Verdict): (code: Int) {
   ensure not_run: unless ran?, code = 2
   ensure failed: when ran? and worst = Fail, code = 1
   ensure inconclusive: when ran? and worst = Inconclusive, code = 3
@@ -28,10 +24,8 @@ impl good_exit: exit for (ran : Bool) (v : Verdict) { ran? := ran, worst := v, c
 impl bad_exit: exit for (ran : Bool) (v : Verdict) { ran? := ran, worst := v, code := bad ran v }
 --~^ error: `bad_exit` does not implement `exit`: `inconclusive` is false when ran = true, v = Verdict::Inconclusive
 
-comp double {
-  in n: Int
-  pub out m: Int
-  out scratch: Int
+proc double(n: Int): (m: Int) {
+  exists scratch: Int
   assume nonneg: n >= 0
   ensure twice: m = 2 * n
   ensure copy: scratch = n
@@ -48,9 +42,7 @@ impl by_proof: double for (n : Int) { n := n, m := dbl n } by
 impl inlined: double for (n : Int) { n := n, m := n + n }
 
 -- The solver sees through a `where` clause, as it does through a `let`.
-comp shifted {
-  in n: Int
-  pub out m: Int
+proc shifted(n: Int): (m: Int) {
   ensure r: m = k + 1 where k := (let j := n in j)  --~ warning: this `let` only gives back its last definition
 }
 impl shifted_by_solver: shifted for (n : Int) { n := n, m := n + 1 }
@@ -59,15 +51,13 @@ impl wrong: double for (n : Int) { n := n, m := n } by
   intro n _; exact ⟨n, rfl, rfl⟩   --~ error: type mismatch
 
 impl missing: double for (n : Int) { n := n }       --~ error: missing `m` of `double`
-impl private_: double for (n : Int) { n := n, m := n + n, scratch := n }   --~ error: `scratch` is a private `out` of `double`
+impl private_: double for (n : Int) { n := n, m := n + n, scratch := n }   --~ error: `scratch` is a private variable of `double`
 impl twice_: double for (n : Int) { n := n, n := n, m := n }   --~ error: `n` is mapped multiple times
 impl unknown: double for (n : Int) { n := n, k := n, m := n }   --~ error: `double` has no variable `k`
-impl not_comp: Verdict { }                          --~ error: expected a component, but `Verdict` is an enum
+impl not_comp: Verdict { }                          --~ error: expected a procedure, but `Verdict` is an enum
 
 -- No values of the binders satisfy the assumptions, so it proves nothing.
-comp gated {
-  in on?
-  pub out lit?
+proc gated(on?): (lit?) {
   assume powered: on?
   ensure lit: lit? iff on?
 }

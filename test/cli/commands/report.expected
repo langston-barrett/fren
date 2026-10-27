@@ -1,8 +1,8 @@
 warning[F0710]: unused variable `b?`
-  --> test/cli/commands/report.fren:18:24
+  --> test/cli/commands/report.fren:15:18
    |
-18 | comp chooser { pub out b? }
-   |                        ^^ never mentioned
+15 | proc chooser(): (b?) {}
+   |                  ^^ never mentioned
    |
    = note: nothing constrains it, so it can take any value
    = help: remove it, or mention it in a constraint
@@ -12,7 +12,7 @@ warning[F0710]: unused variable `b?`
 error[F0601]: `exit` is not realizable
  --> test/cli/commands/report.fren:3:6
   |
-3 | comp exit {
+3 | proc exit(n_fail: Int, n_inconc: Int): (code: Int) {
   |      ^^^^ not realizable
   |
   = note: for the input
@@ -22,40 +22,40 @@ error[F0601]: `exit` is not realizable
   = help: weaken one of them, or add an `assume` that rules this input out
 
 note: `failures` forces code = 1, but `inconc` forces code = 3
- --> test/cli/commands/report.fren:9:12
+ --> test/cli/commands/report.fren:6:12
   |
-9 |     ensure failures: when n_fail > 0, code = 1
+6 |     ensure failures: when n_fail > 0, code = 1
   |            ^^^^^^^^
 
 note: conflicts with `failures`
-  --> test/cli/commands/report.fren:10:12
-   |
-10 |     ensure inconc: when n_inconc > 0, code = 3
-   |            ^^^^^^
+ --> test/cli/commands/report.fren:7:12
+  |
+7 |     ensure inconc: when n_inconc > 0, code = 3
+  |            ^^^^^^
 
 error[F0603]: expectation `exit::zero` does not hold
-  --> test/cli/commands/report.fren:13:12
+  --> test/cli/commands/report.fren:10:12
    |
-13 |     expect zero: when n_fail = 0, code = 0
+10 |     expect zero: when n_fail = 0, code = 0
    |            ^^^^ does not follow from the guarantees
    |
    = counterexample: n_fail = 0, n_inconc = 0, code = 1
-   = note: private `out`s are not shown
+   = note: private variables are not shown
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
 error[F0605]: `exit::negative` is vacuous: its condition can never hold, given `counts`
-  --> test/cli/commands/report.fren:11:22
-   |
-11 |     ensure negative: when n_fail < 0, code = 4
-   |                      ^^^^^^^^^^^^^^^ this condition is always false
-   |
-   = note: a constraint whose condition never holds says nothing
-   = help: correct the condition, or the constraints that rule it out
+ --> test/cli/commands/report.fren:8:22
+  |
+8 |     ensure negative: when n_fail < 0, code = 4
+  |                      ^^^^^^^^^^^^^^^ this condition is always false
+  |
+  = note: a constraint whose condition never holds says nothing
+  = help: correct the condition, or the constraints that rule it out
 
 error[F0601]: `uses` is not realizable
-  --> test/cli/commands/report.fren:19:6
+  --> test/cli/commands/report.fren:16:6
    |
-19 | comp uses {
+16 | proc uses(n_fail: Int): (ok?) {
    |      ^^^^ not realizable
    |
    = note: for the input
@@ -65,31 +65,31 @@ error[F0601]: `uses` is not realizable
                pick.b? = false
            no outputs satisfy `lucky`
    = help: weaken one of them
-   = note: instance variables are part of the system: whatever the instances do, the component must cope
+   = note: call variables are part of the system: whatever the calls do, the procedure must cope
 
 note: is false for this input
-  --> test/cli/commands/report.fren:26:12
+  --> test/cli/commands/report.fren:21:12
    |
-26 |     ensure lucky: pick.b?
+21 |     ensure lucky: pick.b?
    |            ^^^^^
 
-error[F0604]: the assumption `counts` of `exit` may not hold for instance `uses::first`
-  --> test/cli/commands/report.fren:22:10
+error[F0604]: the assumption `counts` of `exit` may not hold for call `uses::first`
+  --> test/cli/commands/report.fren:17:10
    |
-22 |     inst first: exit { n_fail, n_inconc := 0 }
+17 |     call first := exit(n_fail, 0)
    |          ^^^^^ may violate `exit::counts`
    |
    = counterexample: n_fail = -1
-   = help: bind the instance's inputs so that the assumption holds, or add an `assume` that guarantees it
+   = help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it
 
-error[F0604]: the assumption `counts` of `exit` may not hold for instance `uses::second`
-  --> test/cli/commands/report.fren:23:10
+error[F0604]: the assumption `counts` of `exit` may not hold for call `uses::second`
+  --> test/cli/commands/report.fren:18:10
    |
-23 |     inst second: exit { n_fail := first.code, n_inconc := n_fail }
+18 |     call second := exit(first.code, n_fail)
    |          ^^^^^^ may violate `exit::counts`
    |
    = counterexample: n_fail = 0, first.code = -1
-   = help: bind the instance's inputs so that the assumption holds, or add an `assume` that guarantees it
+   = help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it
 
 fren: 10 passed, 6 failed, 0 inconclusive, 0 redundant
 

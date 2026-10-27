@@ -11,11 +11,7 @@ struct Stock { item: Byte, count: Nat }
 enum Reading { Raw(Stock), Missing }
 struct Flag { on?: Bool is true }
 
-comp stocked {
-    in r: Reading
-    in a: Flag
-    in b: Flag
-
+proc stocked(r: Reading, a: Flag, b: Flag) {
     expect deep: match r { Reading::Raw(s) => s.item <= 255 and s.count >= 0, Reading::Missing => true }
     expect same: a = b
 }
@@ -23,19 +19,14 @@ comp stocked {
 -- A newtype of a pattern type.
 struct Level(Int is 1..=3)
 
-comp levels {
-    in l: Level
-    pub out y: Int
-
+proc levels(l: Level): (y: Int) {
     ensure r: y = l.0 + 1
 
     expect high: y <= 4
 }
 
 -- A quantifier ranges over a bounded pattern type.
-comp digits {
-    in d: Digit
-
+proc digits(d: Digit) {
     expect all: forall (k: Digit), k + d <= 18
     expect some: exists (k: Int is 0..=7), k = 7 and k > d - 3
     expect one: d < 10
@@ -44,10 +35,7 @@ comp digits {
 -- Elements bring their constraint for every element, outside the
 -- decidable core.
 set_option fren.lint.undecidable "allow" in
-comp collections {
-    in s: Set<Digit>
-    in q: Seq<Digit>
-
+proc collections(s: Set<Digit>, q: Seq<Digit>) {
     expect members: 12 in s or s != {}   --~ error: expectation `collections::members` does not hold
     expect index: when q != [], q[0] <= 9
     expect no_twelve: not 12 in s
@@ -57,9 +45,7 @@ comp collections {
 set_option fren.lint.undecidable "allow" in
 enum Chain { End, Link(Digit, Chain) }
 
-comp chained {
-    in c: Chain
-
+proc chained(c: Chain) {
     expect heads: match c { Chain::Link(d, Chain::Link(e, _)) => d + e <= 18, _ => true }
 }
 
@@ -68,6 +54,6 @@ expect positive: forall (a: levels), a.l.0 >= 1
 
 -- A refinement assumes what the abstract component's inputs bring, and
 -- checks what the concrete one's do.
-comp abstract_lvl { in n: Int is 0..=9 pub out y: Int ensure r: y >= n }
-comp concrete_lvl { in n: Int is 0.. pub out y: Int ensure r: y = n }
+proc abstract_lvl(n: Int is 0..=9): (y: Int) { ensure r: y >= n }
+proc concrete_lvl(n: Int is 0..): (y: Int) { ensure r: y = n }
 refine narrower: concrete_lvl refines abstract_lvl

@@ -1,7 +1,5 @@
 -- A `det out` that is not determined (F0607).
-comp c {
-    in x: Int
-    pub det out y: Int
+proc c(x: Int): (det y: Int) {
     ensure above: y >= x
     ensure below: y <= x + 1
 }

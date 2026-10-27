@@ -1,9 +1,8 @@
--- `arbitrary_source_item_ordering`, which is allowed by default: an input
--- after an output.
+-- `arbitrary_source_item_ordering`, which is allowed by default: an
+-- assumption after a guarantee.
 set_option fren.lint.arbitrary_source_item_ordering "warn"
 
-pub comp c {
-    pub out p?
-    in x: Int
+pub proc c(x: Int): (p?) {
     ensure r: p? iff x > 0
+    assume a: x < 10
 }

@@ -1,16 +1,16 @@
 error[F0221]: `at` is a Lean keyword, so it cannot be declared
- --> test/cli/names/f0221_lean_keyword.fren:9:23
+ --> test/cli/names/f0221_lean_keyword.fren:6:23
   |
-9 |         Shape::Circle(at) => at > 0,
+6 |         Shape::Circle(at) => at > 0,
   |                       ^^ a Lean keyword
   |
   = note: Lean reads `at` as a keyword, not as a name, so Fren reserves it
   = help: rename the declaration
 
 error[F0221]: `for` is a Lean keyword, so it cannot be declared
-  --> test/cli/names/f0221_lean_keyword.fren:14:14
+  --> test/cli/names/f0221_lean_keyword.fren:11:14
    |
-14 | pub fn twice(for: Int): Int := for + for
+11 | pub fn twice(for: Int): Int := for + for
    |              ^^^ a Lean keyword
    |
    = note: Lean reads `for` as a keyword, not as a name, so Fren reserves it

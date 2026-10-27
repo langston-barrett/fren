@@ -1,12 +1,12 @@
-error[F0623]: the input `b` of `sub` may not have its type `Byte` for instance `c::w`
- --> test/cli/results/f0623_instance.fren:8:10
+error[F0623]: the parameter `b` of `sub` may not have its type `Byte` for call `c::w`
+ --> test/cli/results/f0623_instance.fren:7:10
   |
-8 |     inst w: sub { b := x }
+7 |     call w := sub(x)
   |          ^ may not have the type `Byte`
   |
   = counterexample: x = -1
   = note: `sub` assumes that `b` has the type `Byte`
-  = help: bind the input to a value of its type, or add an `assume` that guarantees it
+  = help: pass the parameter a value of its type, or add an `assume` that guarantees it
 
 fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 

@@ -6,31 +6,22 @@ pub ordered enum Level { Low, Mid, High, Top }
 pub struct Ms(Int)
 pub struct Qs(Seq<Int>)
 
-pub comp c {
-    in a?
-    in b?
-    in c?
-    in d?
-    in l: Level
-    in x: Ms
-    in n: Int
-    in q: Seq<Int>
-    in i: Int
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out p4?
-    pub out p5?
-    pub out p6?
-    pub out p7?
-    pub out p8?
-    pub out m1: Level
-    pub out m2: Level
-    pub out y: Ms
-    pub out k: Int
-    pub out g1?
-    pub out g2?
-
+pub proc c(a?, b?, c?, d?, l: Level, x: Ms, n: Int, q: Seq<Int>, i: Int): (
+    p1?,
+    p2?,
+    p3?,
+    p4?,
+    p5?,
+    p6?,
+    p7?,
+    p8?,
+    m1: Level,
+    m2: Level,
+    y: Ms,
+    k: Int,
+    g1?,
+    g2?,
+) {
     ensure r1: p1? iff not (a? and b?) and not (a? and c?) and not (b? and c?)
     ensure r2: p2? iff d? and (a? or b? or c?) and not (b? and a?) and not (c? and a?) and not (c? and b?)
     ensure r3: p3? iff not (a? and b?) and not (a? and c?) and not (b? and c?) and (c? or b? or a?) and d?

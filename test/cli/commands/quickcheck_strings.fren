@@ -4,10 +4,7 @@
 -- so both false expectations are refuted.
 mod words
 
-pub comp word {
-    in text: String
-    pub det out accepted?
-
+pub proc word(text: String): (det accepted?) {
     ensure rule: accepted? iff text.matches?(r"[a-z]+")
 
     expect no_zz: when text.contains?("zz"), not accepted?

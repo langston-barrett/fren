@@ -1,8 +1,8 @@
-error[F0210]: expected a type, but `d` is a component
- --> test/cli/names/f0210_type.fren:3:16
+error[F0210]: expected a type, but `d` is a procedure
+ --> test/cli/names/f0210_type.fren:3:11
   |
-3 | comp c { in x: d }
-  |                ^ not a type
+3 | proc c(x: d) {}
+  |           ^ not a type
   |
   = note: types are `Bool`, `Int`, `Nat`, enums, records and abstract types
 

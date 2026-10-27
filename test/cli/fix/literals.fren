@@ -3,11 +3,7 @@
 -- fren-covers: lint::zero_prefixed_literal
 const LIMIT: Int := 0100
 
-comp c {
-    in x: Int
-    pub out p?
-    pub out q?
-
+proc c(x: Int): (p?, q?) {
     ensure r1: p? iff x < 010 or x = 00_1 or x = 01_000 or x = -00 or x = 0x10
     ensure r2: q? iff x in {07, 0, LIMIT}
 }

@@ -1,3 +1,3 @@
--- An enum where a component was expected (F0210).
+-- An enum where a procedure was expected (F0210).
 enum E { A }
-comp c { inst s: E {} }
+proc c() { call s := E() }

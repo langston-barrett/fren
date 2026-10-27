@@ -1,7 +1,7 @@
 warning[F0647]: could not decide whether `triples::e` holds: its quantifiers over sequences' elements would have more than 256 instances
- --> test/cli/results/f0647_element_instances.fren:6:12
+ --> test/cli/results/f0647_element_instances.fren:5:12
   |
-6 |     expect e: when q.len >= 3, q[1] + q[2] >= 0
+5 |     expect e: when q.len >= 3, q[1] + q[2] >= 0
   |            ^ undecided
   |
   = note: a quantifier over a sequence's elements is instantiated at each term of the query's index set, at most 256 instances in all

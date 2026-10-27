@@ -1,7 +1,4 @@
 -- An index that may be out of range is reported at its `[`.
-comp first {
-    in q: Seq<Int>
-    pub out x: Int
-
+proc first(q: Seq<Int>): (x: Int) {
     ensure r: x = q[0]
 }

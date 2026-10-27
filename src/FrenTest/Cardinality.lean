@@ -13,13 +13,7 @@ mod cardinality_test
 
 -- `at_most_one?(a?)` is always `true`, deliberately.
 set_option fren.lint.nonminimal_bool "allow" in
-comp modes {
-  in a?
-  in b?
-  in x: Int
-  pub out one?
-  pub out some?
-
+proc modes(a?, b?, x: Int): (one?, some?) {
   ensure r: one? iff exactly_one?(a?, b?, x > 0)
   ensure s: some? iff at_most_one?(a?)
 }

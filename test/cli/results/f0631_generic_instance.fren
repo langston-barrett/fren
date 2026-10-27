@@ -8,9 +8,7 @@ pub enum One { A }
 pub fn other<T>(x: T): T
     ensure diff: other(x) != x
 
-comp c {
-    in x: One
-    in p?
-    pub det out y: One := other(x)
-    pub det out q? := other(p?)
+proc c(x: One, p?): (det y: One, det q?) {
+    out y := other(x)
+    out q? := other(p?)
 }

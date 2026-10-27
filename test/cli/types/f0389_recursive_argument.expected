@@ -1,8 +1,8 @@
 error[F0389]: `Int is 0..=9` cannot be a type argument of the recursive enumeration `List`
- --> test/cli/types/f0389_recursive_argument.fren:4:22
+ --> test/cli/types/f0389_recursive_argument.fren:4:17
   |
-4 | comp c { in xs: List<Int is 0..=9> }
-  |                      ^^^^^^^^^^^^ its values bring a constraint
+4 | proc c(xs: List<Int is 0..=9>) {}
+  |                 ^^^^^^^^^^^^ its values bring a constraint
   |
   = note: for now, a type argument of a recursive enumeration brings no constraint, which would hold of every payload, at every depth
   = help: give the argument no pattern, and say of the payloads that the spec reads what it needs

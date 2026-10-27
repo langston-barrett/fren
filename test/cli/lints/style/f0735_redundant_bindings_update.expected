@@ -1,8 +1,8 @@
 warning[F0735]: `x := p.x` gives `x` the value it has in `p`
- --> test/cli/lints/style/f0735_redundant_bindings_update.fren:3:72
+ --> test/cli/lints/style/f0735_redundant_bindings_update.fren:3:63
   |
-3 | comp c { in p: Point in n: Int pub out q: Point ensure r: q = { p with x := p.x, y := n } }
-  |                                                                        ^^^^^^^^ the update keeps it without this
+3 | proc c(p: Point, n: Int): (q: Point) { ensure r: q = { p with x := p.x, y := n } }
+  |                                                               ^^^^^^^^ the update keeps it without this
   |
   = note: an update reads from `p` every field it does not give
   = help: remove the field

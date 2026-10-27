@@ -1,7 +1,4 @@
 -- Only a sequence is indexed.
-comp c {
-    in s: Set<Int>
-    pub out x: Int
-
+proc c(s: Set<Int>): (x: Int) {
     ensure r: x = s[0]
 }

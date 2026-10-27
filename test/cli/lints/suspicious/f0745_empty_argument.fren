@@ -1,2 +1,2 @@
 -- `empty_argument`, which has no fix.
-comp c { in t: String pub out p? pub out q? ensure r1: p? iff t.starts_with?("") ensure r2: q? iff "ab".index_of("", 1) = 1 }
+proc c(t: String): (p?, q?) { ensure r1: p? iff t.starts_with?("") ensure r2: q? iff "ab".index_of("", 1) = 1 }

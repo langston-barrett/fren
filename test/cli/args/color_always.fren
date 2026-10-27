@@ -1,3 +1,3 @@
 --@ args: check --color always
 -- `--color always`: every coloured part, with a note, a replacement and an insertion.
-comp c { in count }
+proc c(count) {}

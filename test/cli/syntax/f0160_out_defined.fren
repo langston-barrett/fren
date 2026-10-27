@@ -1,0 +1,6 @@
+-- A private defined output, `out x := e`, where `x` is not a result
+-- (F0160): it is `let`.
+proc c(x: Int): (y?) {
+    out big? := x > 9
+    ensure r: y? iff big?
+}

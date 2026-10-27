@@ -1,86 +1,62 @@
 -- `unused_assumption`, in both front ends: an assumption that mentions only
 -- inputs that nothing else mentions.
 
-comp left_over {
-    in x: Int
-    in n: Int
-    in t: Int
-
-    assume pos: n > 0  --~ warning: the assumption `pos` constrains only inputs that nothing uses
-    assume small: n < 10  --~ warning: the assumption `small` constrains only inputs that nothing uses
+proc left_over(x: Int, n: Int, t: Int): (y: Int) {
+    assume pos: n > 0  --~ warning: the assumption `pos` constrains only parameters that nothing uses
+    assume small: n < 10  --~ warning: the assumption `small` constrains only parameters that nothing uses
     -- `t` is used, and so `x` too.
     assume below: x < t
-    pub out y: Int
     ensure r: y = x + t
 }
 
 -- Another assumption ties `n` to `m`, which is used: without `a`, `pos`
 -- would not hold.
-comp linked {
-    in n: Int
-    in m: Int
+proc linked(n: Int, m: Int): (y: Int) {
     assume a: n > 0
     assume b: m = 2 * n
-    pub out y: Int
     ensure r: y = m
     expect pos: y > 0
 }
 
 -- A chain of three: `k` to `n` to `m`, which is used.
-comp chained {
-    in k: Int
-    in n: Int
-    in m: Int
+proc chained(k: Int, n: Int, m: Int): (y: Int) {
     assume a: k > 0
     assume b: n = k + 1
     assume c: m = 2 * n
-    pub out y: Int
     ensure r: y = m
     expect pos: y > 2
 }
 
 -- A chain that reaches no used variable is reported link by link.
-comp unlinked {
-    in k: Int
-    in n: Int
-    assume a: k > 0  --~ warning: the assumption `a` constrains only inputs that nothing uses
-    assume b: n = k + 1  --~ warning: the assumption `b` constrains only inputs that nothing uses
-    pub out y: Int
+proc unlinked(k: Int, n: Int): (y: Int) {
+    assume a: k > 0  --~ warning: the assumption `a` constrains only parameters that nothing uses
+    assume b: n = k + 1  --~ warning: the assumption `b` constrains only parameters that nothing uses
     ensure r: y = 1
 }
 
-pub comp sub {
-    in x: Int
+pub proc sub(x: Int): (y: Int) {
     assume pos: x > 0
-    pub out y: Int
     ensure r: y = x
 }
 
 -- The assumption feeds an instance's binding.
-comp bound {
-    in x: Int
+proc bound(x: Int): (y: Int) {
     assume pos: x > 0
-    pub out y: Int
-    inst w: sub { x }
+    call w := sub(x)
 
     ensure r: y = w.y
 }
 
 -- A definition is something else.
-comp defined {
-    in x: Int
-    in k: Int
+proc defined(x: Int, k: Int): (y: Int) {
     assume pos: k > 0
-    det out d: Int := k + 1
-    pub out y: Int
+    det let d: Int := k + 1
     ensure r: y = x + d
 }
 
 -- A global expectation in the file reads it.
-comp read_globally {
-    in z: Int
+proc read_globally(z: Int): (y: Int) {
     assume pos: z > 0
-    pub out y: Int
     ensure r: y = 1
 }
 
@@ -88,45 +64,34 @@ expect g: forall (a: read_globally), a.z > 0
 
 -- A refinement of it in the file reads its inputs, bound or by name, under
 -- its assumptions, which here guard the binding of `x`.
-comp first_of {
-    in n: Int
-    in x: Int
-    in m: Int
+proc first_of(n: Int, x: Int, m: Int): (y: Int) {
     assume pos: n > 0
     assume named: m > 0
-    pub out y: Int
     ensure r: y = x
 }
 
-comp heads {
-    in q: Seq<Int>
-    in m: Int
-    pub out s: Seq<Int> := q
-    pub out t: Int := m
+proc heads(q: Seq<Int>, m: Int): (s: Seq<Int>, t: Int) {
+    out s := q
+    out t := m
 }
 
 refine guarded: heads refines first_of { n := q.len, x := q[0], y := s[0] }
 
 -- An instance of it in the file binds its input, and the instance's
 -- assumption check checks the assumption.
-comp instanced {
-    in k: Int
+proc instanced(k: Int) {
     assume pos: k > 0
 }
 
-comp uses_instanced {
-    pub out y: Int
-    inst i: instanced { k := 1 }
+proc uses_instanced(): (y: Int) {
+    call i := instanced(1)
     ensure r: y = 1
 }
 
 -- A global expectation's read reaches the other assumptions too.
-comp read_through {
-    in k: Int
-    in z: Int
+proc read_through(k: Int, z: Int): (y: Int) {
     assume a: k > 0
     assume b: z = k + 1
-    pub out y: Int
     ensure r: y = 1
 }
 
@@ -136,10 +101,8 @@ expect h: forall (a: read_through), a.z > 1
 -- `gain(3) > 0`.
 pub fn gain(Int): Int
 
-comp pinned {
-    in n: Int
+proc pinned(n: Int): (y: Int) {
     assume a: n = 3 and gain(n) > 0
-    pub out y: Int
     ensure r: y = gain(3)
     expect pos: y > 0
 }
@@ -148,10 +111,8 @@ comp pinned {
 pub enum Color { Red, Green }
 pub fn f(Color): Int
 
-comp rooted {
-    in n: Color
+proc rooted(n: Color): (y: Int) {
     assume a: f(n) = 0
-    pub out y: Int
     ensure r: y = 1
     expect root: f(Color::Red) = 0 or f(Color::Green) = 0
 }
@@ -159,10 +120,8 @@ comp rooted {
 -- A constant's value is known, so it links nothing.
 const THREE: Int := 3
 
-comp constant {
-    in n: Int
-    assume a: n = THREE  --~ warning: the assumption `a` constrains only inputs that nothing uses
-    pub out y: Int
+proc constant(n: Int): (y: Int) {
+    assume a: n = THREE  --~ warning: the assumption `a` constrains only parameters that nothing uses
     ensure r: y = THREE
 }
 
@@ -170,18 +129,14 @@ comp constant {
 -- nothing.
 pub fn loss(Int): Int
 
-comp own_function {
-    in n: Int
-    assume a: loss(n) > 0  --~ warning: the assumption `a` constrains only inputs that nothing uses
-    pub out y: Int
+proc own_function(n: Int): (y: Int) {
+    assume a: loss(n) > 0  --~ warning: the assumption `a` constrains only parameters that nothing uses
     ensure r: y = gain(1)
 }
 
 -- A variant is a value, not a function or a constant.
-comp variant {
-    in n: Color
-    assume a: n = Color::Red  --~ warning: the assumption `a` constrains only inputs that nothing uses
-    pub out y: Int
+proc variant(n: Color): (y: Int) {
+    assume a: n = Color::Red  --~ warning: the assumption `a` constrains only parameters that nothing uses
     ensure r: y = 1
 }
 
@@ -189,43 +144,31 @@ comp variant {
 -- a counterexample without it extends to one with it.
 type Key
 
-comp keyed {
-    in k1: Key
-    in k2: Key
-    in i: Key
-    in j: Key
-    assume distinct: k1 != k2  --~ warning: the assumption `distinct` constrains only inputs that nothing uses
-    pub out same?
+proc keyed(k1: Key, k2: Key, i: Key, j: Key): (same?) {
+    assume distinct: k1 != k2  --~ warning: the assumption `distinct` constrains only parameters that nothing uses
     ensure r: same? iff i = j
     expect equal: when i = j, same?
 }
 
 -- A pair reported together: `a` guards the index in `b`, so `b` alone is not
 -- defined, and each message names the other.
-comp guarded_pair {
-    in n: Int
-    in q: Seq<Int>
+proc guarded_pair(n: Int, q: Seq<Int>): (y: Int) {
     assume a: n >= 0 and n < q.len  --~ warning: it is linked to `b`, reported too, which may need it: remove them together
     --~^ warning: these comparisons can be chained
     --~^^ warning: `n` is never negative, so it can be a `Nat`
     assume b: q[n] > 0  --~ warning: it is linked to `a`, reported too, which may need it: remove them together
-    pub out y: Int
     ensure r: y = 1
 }
 
 -- A cover goal is a use: whether it is reachable depends on the assumption.
-comp covered {
-    in n: Int
+proc covered(n: Int): (y: Int) {
     assume a: n > 0
-    pub out y: Int
     ensure r: y = 1
     cover g: n = 2  --~ info: cover goal `covered::g` is met
 }
 
 -- So is a guarantee with a `where` clause.
-comp where_clause {
-    in n: Int
+proc where_clause(n: Int): (y: Int) {
     assume a: n > 0
-    pub out y: Int
     ensure r: y = m where m := n
 }

@@ -1,32 +1,29 @@
 -- Static rules for a refinement's bindings (`refinement::binding`,
 -- `refinement::mention`): both front ends report them alike.
 
-comp c {
-    in x: Int
-    in b?
-    pub out y: Int
-    out hidden: Int
+proc c(x: Int, b?): (y: Int) {
+    exists hidden: Int
     ensure r: y = (if b? then x else 0)
     ensure h: hidden = x
 }
 
-comp a { in n: Int pub out z: Int ensure r: z >= n }
+proc a(n: Int): (z: Int) { ensure r: z >= n }
 
 refine unknown: c refines a { w := y }        --~ error: `a` has no variable `w`
 refine twice: c refines a { z := y, z := y }  --~ error: variable `z` of `a` is bound multiple times
 refine input_out: c refines a { n := y, z := y }
---~^ error: a binding of an input of `a` may only mention `in` variables of `c`, but `y` is an `out`
+--~^ error: a binding of a parameter of `a` may only mention parameters of `c`, but `y` is an output
 refine private_out: c refines a { n := x, z := hidden }  --~ error: `hidden` is private to `c`
 refine unbound: c refines a { z := y }        --~ error: `c` cannot refine `a`: it has no variable `n`
 refine mistyped: c refines a { n := b?, z := y }
 --~^ error: `n` of `a` has type `Int`
 
 -- `{ k }` alone means `k := k`, so it needs a variable `k` of `c`.
-comp b { in k: Int pub out z: Int ensure r: z >= k }
+proc b(k: Int): (z: Int) { ensure r: z >= k }
 refine shorthand: c refines b { z := y, k }  --~ error: cannot find `k` in this scope
 
 -- Only `c`'s own variables are in scope: not those of its instances.
-comp outer { in n: Int pub out z: Int inst inner: c { x := n, b? := true } ensure r: z = inner.y }
+proc outer(n: Int): (z: Int) { call inner := c(n, true) ensure r: z = inner.y }
 refine instance_var: outer refines a { z := inner.y }  --~ error: `inner.y` is not a single name
 
 --@ exit: 2

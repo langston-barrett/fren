@@ -4,17 +4,13 @@
 -- in range. Only the `fren` command tests.
 --@ only: cli
 
-comp first_of {
-    in n: Int
-    in x: Int
+proc first_of(n: Int, x: Int): (y: Int) {
     assume pos: n > 0
-    pub out y: Int
     ensure r: y = x
 }
 
-comp seqs {
-    in q: Seq<Int>
-    pub out s: Seq<Int> := q
+proc seqs(q: Seq<Int>): (s: Seq<Int>) {
+    out s := q
 }
 
 -- Not a definedness error, as it is with the solver

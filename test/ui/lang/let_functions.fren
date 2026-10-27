@@ -3,10 +3,7 @@
 pub fn shift(n: Int): Int := let k := n + 1 in k + offset where offset := 1
 pub const BASE: Int := b + b where b := 2
 
-comp c {
-    in x: Int
-    pub out y: Int
-
+proc c(x: Int): (y: Int) {
     ensure r: y = shift(x) + BASE
     expect holds: y = x + 6
     expect fails: y = x + 5

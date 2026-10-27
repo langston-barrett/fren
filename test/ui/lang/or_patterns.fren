@@ -4,10 +4,8 @@ set_option fren.lint.match_like_membership "allow"
 pub enum Method { Len, Card, Rev, Slice, Update }
 pub enum Shape { Circle(Int), Square(Int), Empty }
 
-comp arity {
+proc arity(method: Method): (det n: Int) {
     use self::Method::*   --~ warning: `use Method::*` imports every variant of `Method`
-    in method: Method
-    pub det out n: Int
 
     ensure rule: n = match method {
         | Len
@@ -22,10 +20,7 @@ comp arity {
 }
 
 -- Payloads are ignored with `_`.
-comp round {
-    in s: Shape
-    pub det out r?
-
+proc round(s: Shape): (det r?) {
     ensure rule: r? iff match s { Shape::Circle(_) | Shape::Empty => true, _ => false }
 
     expect circle: when s = Shape::Circle(3), r?
@@ -33,10 +28,8 @@ comp round {
 }
 
 -- A component's imports are its own.
-comp named {
+proc named(s: Shape): (det k: Int) {
     use self::Shape::{Circle, Square}
-    in s: Shape
-    pub det out k: Int
 
     ensure rule: k = match s { Circle(x) => x, Square(x) => 2 * x, Shape::Empty => 0 }
 

@@ -1,6 +1,6 @@
 --- test/cli/fix/comparisons.fren
 +++ test/cli/fix/comparisons.fren
-@@ -12,4 +12,4 @@
+@@ -5,4 +5,4 @@
 -    ensure r1: p? iff x < 3 and x < 5
 -    ensure r2: q? iff (x = 3 or x >= 0) = y?
 -    ensure r3: w? iff y? and (3 > x or x != 4)

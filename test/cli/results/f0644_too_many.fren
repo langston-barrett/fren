@@ -1,9 +1,6 @@
 -- A component with too many behaviours to enumerate (F0644).
 set_option fren.evidence "enumerated" in
-comp c {
-    in a: Int is 0..=99
-    in b: Int is 0..=99
-    in d: Int is 0..=99
-    pub det out sum: Int := a + b + d
+proc c(a: Int is 0..=99, b: Int is 0..=99, d: Int is 0..=99): (det sum: Int) {
+    out sum := a + b + d
     expect e: sum >= 0
 }

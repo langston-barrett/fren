@@ -5,72 +5,56 @@ fn f(Int): Int
 
 enum IntList { Nil, Cons(Int, IntList) }
 
-comp cycle {
-    in x: Int
-    out a: Int := b + x             --~ error: the definition of `a` mentions itself
-    out b: Int := a
-    pub out o: Int
+proc cycle(x: Int): (o: Int) {
+    let a: Int := b + x             --~ error: the definition of `a` mentions itself
+    let b: Int := a
 
     ensure r: o = a
 }
 
-comp in_assumption {
-    in x: Int
-    out o: Int
-    out d: Int := o + x
-    pub out p: Int
+proc in_assumption(x: Int): (p: Int) {
+    exists o: Int
+    let d: Int := o + x
 
-    assume a: d > 0                 --~ error: assumptions may only mention `in` variables, but `o` is an `out`
+    assume a: d > 0                 --~ error: assumptions may only mention parameters, but `o` is an output
     ensure r: p = o
 }
 
-comp in_argument {
-    in x: Int
-    out o: Int
-    out d: Int := o + x
-    pub out p: Int
+proc in_argument(x: Int): (p: Int) {
+    exists o: Int
+    let d: Int := o + x
 
-    ensure r: p = f(d)                 --~ error: the arguments of a function may not mention an `out`, but `o` is one
+    ensure r: p = f(d)                 --~ error: the arguments of a function may not mention an output, but `o` is one
     ensure s: o = 0
 }
 
-comp nonlinear {
-    in x: Int
-    in y: Int
-    out d: Int := x + 1
-    pub out p: Int
+proc nonlinear(x: Int, y: Int): (p: Int) {
+    let d: Int := x + 1
 
     ensure r: p = d * y                --~ error: nonlinear arithmetic is not supported
 }
 
-comp unbounded {
-    in x: Int
-    out l: IntList                     --~ error: output `l` has the unbounded type `IntList`
-    pub out p?
+proc unbounded(x: Int): (p?) {
+    exists l: IntList                     --~ error: output `l` has the unbounded type `IntList`
 
     ensure r: p? iff l = IntList::Nil
 }
 
-comp typed {
-    in x: Int
-    pub out d: Int := x > 0
+proc typed(x: Int): (d: Int) {
+    out d := x > 0
     --~^ error: type mismatch: expected `Int`, found `Bool`
 }
 
-comp source {
-    in a: Int
-    pub out d: Int := a
+proc source(a: Int): (d: Int) {
+    out d := a
 }
 
-comp binds {
-    in x: Int
-    inst w: source { a := x, d := x }  --~ error: `d` is an `out` of `source`
+proc binds(x: Int) {
+    call w := source(x, x)  --~ error: too many arguments: `source` takes 1 argument
 }
 
-comp unused {
-    in x: Int
-    out d: Int := x                 --~ warning: unused variable `d`
-    pub out p: Int
+proc unused(x: Int): (p: Int) {
+    let d: Int := x                 --~ warning: unused variable `d`
 
     ensure r: p = x
 }

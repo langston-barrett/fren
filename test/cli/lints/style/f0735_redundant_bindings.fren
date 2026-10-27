@@ -1,17 +1,6 @@
--- `redundant_bindings`, in an instance and in a record literal.
+-- `redundant_bindings`, in a record literal.
 struct Point { x: Int, y: Int }
 
-comp sub {
-    in x: Int
-    pub out p?
-
-    ensure r: p? iff x > 0
-}
-
-comp c {
-    in x: Int
-    pub out q?
-    inst s: sub { x := x }
-
+proc c(x: Int): (q?) {
     ensure r: q? iff Point { x := x, y := 1 }.x > 0
 }

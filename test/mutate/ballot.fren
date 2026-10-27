@@ -2,13 +2,7 @@
 -- unless it is vetoed.
 mod ballot
 
-pub comp ballot {
-    in a?
-    in b?
-    in c?
-    in veto?
-    pub det out passed?
-
+pub proc ballot(a?, b?, c?, veto?): (det passed?) {
     ensure majority: unless veto?, passed? iff not at_most_one?(a?, b?, c?)
     ensure vetoed: when veto?, not passed?
 

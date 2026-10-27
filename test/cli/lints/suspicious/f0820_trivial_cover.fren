@@ -1,8 +1,6 @@
 -- Cover goals that some behaviour meets whatever they meant (F0820).
-comp c {
-    in x: Int
+proc c(x: Int): (y: Int) {
     assume a: x > 0
-    pub out y: Int
     ensure r: y = x + 1
     cover triggered: when x > 10, y > 11
     cover restated: x > 0

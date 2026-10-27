@@ -6,9 +6,7 @@ open Fren.Lang
 -- `fren.examples` bounds the notes of guarantees that force an output to
 -- different values, as `fren check --examples` does (`Reqs/Lean#options`).
 
-comp pinned {
-    in x: Int
-    pub out y: Int
+proc pinned(x: Int): (y: Int) {
     ensure low: y = x
     ensure high: y = x + 1
 }

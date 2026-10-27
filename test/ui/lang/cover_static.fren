@@ -1,12 +1,10 @@
 -- A cover goal's name shares the component's namespace, and the goal is a
 -- `Bool`, like any constraint.
 
-comp named {
-    in x: Int
-    cover x: x > 0     --~ error: `x` is defined multiple times in this component
+proc named(x: Int) {
+    cover x: x > 0     --~ error: `x` is defined multiple times in this procedure
 }
 
-comp typed {
-    in x: Int
+proc typed(x: Int) {
     cover big: x + 1   --~ error: expected `Bool`, found `Int`
 }

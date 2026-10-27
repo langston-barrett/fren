@@ -6,9 +6,9 @@ fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [-
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
-fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
+fren eval --proc PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
-fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
+fren mutate [--by solver|testing|both] [--proc PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
     [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--examples N] [--tests N]
     [-A|-W|-D|-F LINT]... FILE...
 fren --explain CODE
@@ -20,11 +20,11 @@ Every form also takes `--color WHEN` (or `--color=WHEN`), anywhere among
 its arguments; see [Colour](#colour).
 
 `fren check` checks the spec in the given files, without Lean. `fren trace`
-reports the [evidence](Trace.md) for every component of the spec, and scans
+reports the [evidence](Trace.md) for every procedure of the spec, and scans
 the tests for `fren-covers:` markers that no claim names; it does not run
 the checks. `fren fmt` [formats](Fmt.md) the files, and `fren fix`
 [fixes](Lint.md#fixing-lints) the lints that it can. `fren eval`
-evaluates a component on one behaviour, and `fren quickcheck` tests the
+evaluates a procedure on one behaviour, and `fren quickcheck` tests the
 spec on random behaviours, both without the solver (see [Evaluation and
 testing](Eval.md)). `fren mutate` checks small changes to the spec, and
 reports those that no check rejects (see [Mutation
@@ -38,20 +38,20 @@ installation. It is built by `lake build fren`.
 |---|---|
 | `--timeout SECONDS` | `check` and `mutate`: time limit for each solver query (default 10; 0 means none); see [Limits](#limits) |
 | `--resource-limit N` | `check` and `mutate`: limit on the solver's work for each query, in cvc5's resource units (default 0, which means none); see [Limits](#limits) |
-| `--examples N` | `check` and `mutate`: the most notes of [forced outputs](#forced-outputs) to show for each unrealizable component, a whole number or `all` (default 1) |
-| `--jobs N` | `check`: how many components to check at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
+| `--examples N` | `check` and `mutate`: the most notes of [forced outputs](#forced-outputs) to show for each unrealizable procedure, a whole number or `all` (default 1) |
+| `--jobs N` | `check`: how many procedures to check at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
 | `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
 | `--tests GLOB` | `trace`: scan the matching files for markers; may be repeated |
-| `--require LEVEL` | `trace`: warn about, and fail on, components with weaker evidence than `trusted`, `tested`, `solver` or `proved` |
+| `--require LEVEL` | `trace`: warn about, and fail on, procedures with weaker evidence than `trusted`, `tested`, `solver` or `proved` |
 | `--check` | `fmt` and `fix`: change no file, and print a diff of what would change |
 | `--ignore GLOB` | `fmt`: skip the matching files; `fix`: leave them as they are; may be repeated |
 | `--fmt` | `fix`: then format the files, as `fren fmt` does |
 | `--only LINT`, `--skip LINT` | `fix`: fix only the lints given, or all but them; may be repeated |
 | `-A LINT`, `-W LINT`, `-D LINT`, `-F LINT` | `check`, `trace`, `fix`, `eval`, `quickcheck` and `mutate`: set the level of a [lint](Lint.md), or of each lint of a [group](Lint.md#groups), to `allow`, `warn`, `deny` or `forbid`; may be repeated. The long forms are `--allow`, `--warn`, `--deny` and `--forbid` |
-| `--comp PATH` | `eval`: the component to evaluate; `mutate`: the component whose mutants to check |
+| `--proc PATH` | `eval`: the procedure to evaluate; `mutate`: the procedure whose mutants to check |
 | `--set VAR=VALUE` | `eval`: the value of a variable; may be repeated |
 | `--seed N` | `eval`, `quickcheck`, `mutate`, and `check` for [checks by testing](Check.md#checking-by-testing): where the random search starts (default 0); `mutate`: also which mutants `--sample` takes |
-| `--tests N` | `quickcheck` and `mutate`: tests per component and global expectation; `check`: tests per component or global expectation with [checks by testing](Check.md#checking-by-testing) (default 100) |
+| `--tests N` | `quickcheck` and `mutate`: tests per procedure and global expectation; `check`: tests per procedure or global expectation with [checks by testing](Check.md#checking-by-testing) (default 100) |
 | `--by WHAT` | `mutate`: check mutants with the `solver` (the default), by `testing`, or `both` |
 | `--mutant ID` | `mutate`: check the mutant `ID`; may be repeated |
 | `--diff PATCH` | `mutate`: check the mutants of the items that the unified diff `PATCH` touches, or the one on standard input if `PATCH` is `-`; see [Patches](Mutate.md#patches) |
@@ -72,8 +72,8 @@ installation. It is built by `lake build fren`.
   items](Lang/Items.md#lean-only-items) and other options, is an error.
 - The files are processed in the order given, with one shared set of modules
   (see [Modules and visibility](Lang/Modules.md#across-files)). Then every
-  component and [global expectation](Lang/Global.md) is checked, or for
-  `fren trace`, the evidence for every component is reported. Unlike in
+  procedure and [global expectation](Lang/Global.md) is checked, or for
+  `fren trace`, the evidence for every procedure is reported. Unlike in
   Lean, this includes those that no `#fren_check` follows.
 
 ## Output
@@ -93,17 +93,17 @@ part underlined, notes and help, and suggested edits:
 error[F0105]: `==` is not an operator in Fren
  --> spec.fren:2:47
   |
-2 | comp c { in x: Int pub out y? ensure r: y? iff x == 1 }
+2 | proc c(x: Int): (y?) { ensure r: y? iff x == 1 }
   |                                               ^^ not a Fren operator
   |
 help: use `=` to test for equality
   |
-2 - comp c { in x: Int pub out y? ensure r: y? iff x == 1 }
-2 + comp c { in x: Int pub out y? ensure r: y? iff x = 1 }
+2 - proc c(x: Int): (y?) { ensure r: y? iff x == 1 }
+2 + proc c(x: Int): (y?) { ensure r: y? iff x = 1 }
   |
 ```
 
-Information, such as a guarantee of an unrealizable component that
+Information, such as a guarantee of an unrealizable procedure that
 forces an output to a value that the rest of its conflict rules out, is
 printed as a `note`. After the diagnostics come the summary
 of the checks, or, if there were static errors, that they stopped them, and then a
@@ -121,7 +121,7 @@ use view::Severity::{Error, Info, Silent, Warning}
 
 With `--dump-smt`, `fren check` writes each query it gives the solver to
 standard output, as an [SMT-LIB](https://smt-lib.org/) script, before the
-query runs. Each script starts with a comment naming its component and
+query runs. Each script starts with a comment naming its procedure and
 numbering the query within it, names each hypothesis in a comment after
 its `assert`, and ends with `(check-sat)` and `(reset)`, so the whole
 stream can be given to a solver such as cvc5:
@@ -140,17 +140,17 @@ theories, such as `abs`, `div`, `exp` or an instance's `str.len`, gets a
 Fren name contains `#`. A second
 copy of a variable, as used by the [determinism](Check.md#determinism)
 check, is primed: `|y'|`. A script declares every variable of its
-component, but of the spec's abstract types, enumerations, records and
+procedure, but of the spec's abstract types, enumerations, records and
 functions only those that its query mentions, directly or through
 another declaration: the others cannot change its answer, and declaring
 them all is most of the work of a small query. A [newtype](Lang/Items.md#newtypes)
 is erased: it is declared as its underlying type, `Ms(e)` is written as
 `e`, `x.0` as `x`, and its operators as its underlying type's. A `Nat` is declared as an `Int`, and what
-[natural numbers](Lang/Components.md#natural-numbers) bring is asserted
+[natural numbers](Lang/Procedures.md#natural-numbers) bring is asserted
 before the query's hypotheses, followed by the comment `; nat`.
 
 `fren check` asks the solver each distinct script once: some checks of a
-component ask the same query, such as the assumptions' consistency, and a
+procedure ask the same query, such as the assumptions' consistency, and a
 script asked again gets the answer that it got first, model and all. The
 one exception is a script whose first answer was `sat` without a model,
 because no model was wanted: asked again for a model, it is asked of the
@@ -158,7 +158,7 @@ solver again, and that answer is kept in place of the first, whatever it
 is, since under a time limit it can be `unknown`. The
 script is the whole query, with its logic, options and limits, so the
 same script is the same question. `--dump-smt` still writes each query,
-asked again or not. Two components that ask the same script at once, in
+asked again or not. Two procedures that ask the same script at once, in
 [parallel](#parallel-checking), may both ask the solver; a fresh solver
 gives the same script the same answer, model and all, unless it reaches a
 [limit](#limits). [`fren mutate`](Mutate.md) shares the answers between
@@ -187,7 +187,7 @@ not to `fren check`, so the two can write such a comparison differently;
 like any difference in how a query is written, it can only change
 whether the solver answers in time. Only the
 [realizability](Check.md#realizability) check quantifies, over outputs, which never occur in a function's arguments (see
-[Instances](Lang/Instances.md#instance-variables)), unless the spec has
+[Calls](Lang/Calls.md#call-variables)), unless the spec has
 an [unbounded quantifier](Lang/Quantifiers.md#unbounded-quantifiers),
 which every query that reads it gives the solver as a quantifier: each
 bound name of a type that is not listed is declared by the quantifier at
@@ -220,11 +220,11 @@ collection's elements, which a [pattern type](Lang/Types.md#meaning)
 within an element type brings, and which is outside the core, sets
 `fmf-bound`, with which cvc5 finds models of quantifiers bounded by
 membership, as each such quantifier is, rather than giving up; both front
-ends set it for exactly those queries. So does a component, global
+ends set it for exactly those queries. So does a procedure, global
 expectation or refinement whose queries have an unbounded quantifier with
 a bound name that has a [domain](Lang/Quantifiers.md#guards): in its
-own constraints, definitions and bindings, those of its instances'
-components, and the bodies of the defined functions that they apply. Its queries are still in the
+own constraints, definitions and arguments, those of its calls'
+procedures, and the bodies of the defined functions that they apply. Its queries are still in the
 [decidable core](Lang/Decidability.md), unless it opts out. A spec uses
 sets if it writes a `Set<…>` or `Rel<…>` type, or a set or relation
 literal such as `{1, 2}`, and sequences if it writes a `Seq<…>` type, a
@@ -241,19 +241,21 @@ pub enum Logic { QuantifierFree, Quantified, All, HigherOrder }
 
 pub enum Theory { Strings, Sets, Sequences }
 
-pub comp logic {
+pub proc logic(
+    kind: Kind,
+    theories: Set<Theory>,       -- beyond uninterpreted functions, datatypes and linear integer arithmetic
+    projection?,                 -- the spec takes the domain or range of a relation over a type that is not finite
+    quantified?,                 -- the spec has an unbounded quantifier
+): (
+    det logic: Logic,
+    det strings_exp?,            -- set cvc5's `strings-exp`, `re-inter-mode` and `re-elim` options
+    det sets_exp?,               -- set cvc5's `sets-exp` option
+) {
     use check::Kind::Realizability
     use self::Logic::{All, HigherOrder, Quantified, QuantifierFree}
     use self::Theory::{Sequences, Sets, Strings}
-    in kind: Kind
-    in theories: Set<Theory>     -- beyond uninterpreted functions, datatypes and linear integer arithmetic
-    in projection?               -- the spec takes the domain or range of a relation over a type that is not finite
-    in quantified?               -- the spec has an unbounded quantifier
 
     assume relations_are_sets: when projection?, Sets in theories
-    pub det out logic: Logic
-    pub det out strings_exp?     -- set cvc5's `strings-exp`, `re-inter-mode` and `re-elim` options
-    pub det out sets_exp?        -- set cvc5's `sets-exp` option
 
     ensure base: when theories = {},
         logic = (if kind = Realizability or quantified? then Quantified else QuantifierFree)
@@ -274,7 +276,7 @@ lean-smt, but its scripts differ: lean-smt sets the logic `ALL`, and
 declares what each query's formulas mention; the front end sets every
 option above, whether or not the spec uses strings and sets, which
 changes how cvc5 searches, not what a query means; and it answers a
-query that a component asks again once, as `fren check` does. Otherwise
+query that a procedure asks again once, as `fren check` does. Otherwise
 it poses each query as `fren check` does, so that cvc5 can decide the
 same queries: it asserts the hypotheses in the same order, since cvc5's
 answer may depend on it, and it sets back to cvc5's defaults the options
@@ -311,14 +313,14 @@ end and not in the other, as a query near a time limit can.
 
 ## Forced outputs
 
-An unrealizable component's error names the input on which its
+An unrealizable procedure's error names the input on which its
 guarantees conflict, and a minimal set of guarantees that conflict on it.
 A note at a guarantee of that set says which output it forces to a value
 that the rest of the set forces to another, or, for an output of an
 enumeration, to a value of a variant that the rest of the set rules out,
 where a side may force only the variant and not a whole value (see
 [Forced outputs](Check.md#forced-outputs)). `--examples N` shows at most `N` such
-notes for each unrealizable component, and asks the solver no more of
+notes for each unrealizable procedure, and asks the solver no more of
 their questions once it has found them: `--examples 0` asks none, and
 `--examples all` shows a note at every guarantee that has one. A note of
 variants counts as one note, as a note of values does. The
@@ -329,7 +331,7 @@ Lean-hosted front end has the option `fren.examples` (see
 
 ## Parallel checking
 
-`fren check` checks up to `--jobs` components and global expectations at
+`fren check` checks up to `--jobs` procedures and global expectations at
 once, each in a thread of its own, but reports them in the order in which
 it would check them one at a time. Its output is the same for every
 `--jobs`, and the same as checking them one at a time: the diagnostics and
@@ -339,7 +341,7 @@ run. A query that reaches a [limit](#limits) is the one exception: a busier
 machine can make a query reach `--timeout`, and running queries at once
 makes the machine busier. A resource limit does not depend on the load, so
 with `--timeout 0` and `--resource-limit`, the output is the same for every
-`--jobs` too. A component's [checks by
+`--jobs` too. A procedure's [checks by
 testing](Check.md#checking-by-testing) run with its solver queries, from
 a random stream of its own, so they do not depend on the order either.
 `--jobs` is at least 1.
@@ -361,10 +363,10 @@ could not run, and otherwise 0, 1 or 3, with 0 meaning that there is
 nothing to report. What 1 and 3 mean is each command's own:
 
 - `fren check` and `fren quickcheck`, the table above (`cli::exit`);
-- `fren eval`, a behaviour that does not meet the component or makes an
+- `fren eval`, a behaviour that does not meet the procedure or makes an
   expectation false, and one that could not be completed (see [Evaluation and
   testing](Eval.md#fren-eval), `eval::eval_exit`);
-- `fren trace`, a component below `--require` or an unclaimed marker
+- `fren trace`, a procedure below `--require` or an unclaimed marker
   (`trace::trace_exit`);
 - `fren fmt` and `fren fix`, with `--check`, a file that would change (see
   [Formatting](Fmt.md#exit-status) and [Fixing
@@ -377,10 +379,9 @@ whether the command could run in terms of what it read, `all_parsed?` and
 [Bindings](Lang/Refinement.md#bindings)).
 
 ```fren
-pub comp exit_status {
-    in ran?                -- the command could run
-    pub out code: Int
-
+pub proc exit_status(
+    ran?,                  -- the command could run
+): (code: Int) {
     ensure not_run: code = 2 iff not ran?
     ensure documented: code is 0..=3
 }
@@ -391,11 +392,10 @@ most severe [level](View.md#severity) of their results and of the
 [lints](Lint.md) reported along the way:
 
 ```fren
-pub comp exit {
-    in ran?                -- no static errors: checks ran
-    in worst: Severity     -- the most severe level over all results and lints
-    pub det out code: Int
-
+pub proc exit(
+    ran?,                  -- no static errors: checks ran
+    worst: Severity,       -- the most severe level over all results and lints
+): (det code: Int) {
     ensure code_rule: code = table {
         | not ran? => 2,
         | ran? and worst = Error => 1,
@@ -414,10 +414,9 @@ refine check_exit_status: exit refines exit_status
 lints of a run, from the levels present among them:
 
 ```fren
-pub comp worst_severity {
-    in present: Set<Severity>    -- the levels of the run's results and lints
-    pub det out worst: Severity
-
+pub proc worst_severity(
+    present: Set<Severity>,      -- the levels of the run's results and lints
+): (det worst: Severity) {
     -- The last row includes runs with no checks at all.
     ensure rule: worst = table {
         | Error in present => Error,
@@ -435,13 +434,9 @@ pub comp worst_severity {
 `cli::run` combines the two: the levels present decide the exit status.
 
 ```fren
-pub comp run {
-    in ran?
-    in present: Set<Severity>
-    pub det out code: Int
-
-    inst counted: worst_severity { present }
-    inst ends: exit { ran?, worst := counted.worst }
+pub proc run(ran?, present: Set<Severity>): (det code: Int) {
+    call counted := worst_severity(present)
+    call ends := exit(ran?, counted.worst)
 
     ensure exit_code: code = ends.code
 
@@ -491,13 +486,12 @@ pub enum ColorChoice { Auto, Always, Never }
 use self::ColorChoice::{Always, Auto, Never}
 
 set_option fren.evidence "enumerated" in
-pub comp color {
-    in choice: ColorChoice
-    in tty?        -- standard error is a terminal
-    in no_color?   -- `NO_COLOR` is set and not empty
-    in dumb?       -- `TERM` is `dumb`
-    pub out colored?
-
+pub proc color(
+    choice: ColorChoice,
+    tty?,          -- standard error is a terminal
+    no_color?,     -- `NO_COLOR` is set and not empty
+    dumb?,         -- `TERM` is `dumb`
+): (colored?) {
     ensure always: when choice = Always, colored?
     ensure never: when choice = Never, not colored?
     ensure auto: when choice = Auto, colored? iff (tty? and not no_color? and not dumb?)
@@ -518,11 +512,9 @@ and nonzero exactly when `lake build --wfail` fails (see
 ```fren
 use view::build
 
-pub comp agrees_with_build {
-    in worst: Severity
-
-    inst hosted: build { worst }
-    inst standalone: exit { ran? := true, worst }
+pub proc agrees_with_build(worst: Severity) {
+    call hosted := build(worst)
+    call standalone := exit(true, worst)
 
     expect failing: standalone.code = 1 iff hosted.fails?
     expect wfail: standalone.code != 0 iff hosted.fails_wfail?
@@ -540,10 +532,7 @@ pub enum Construct { Fren, LeanCode }
 use self::Construct::Fren
 
 set_option fren.evidence "enumerated" in
-pub comp accepts {
-    in construct: Construct
-    pub out accepted?
-
+pub proc accepts(construct: Construct): (accepted?) {
     ensure fren_only: accepted? iff construct = Fren
 }
 ```
@@ -565,10 +554,7 @@ with them. `cli::agreement` states this:
 pub enum FrontEnd { Hosted, Standalone }
 
 set_option fren.evidence "enumerated" in
-pub comp agreement {
-    in hosted: Verdict
-    pub out standalone: Verdict
-
+pub proc agreement(hosted: Verdict): (standalone: Verdict) {
     ensure same_verdict: standalone = hosted
 }
 

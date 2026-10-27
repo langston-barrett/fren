@@ -9,11 +9,9 @@ open Fren.Lang
 mod checked_client
 use lib::other
 use mid::One
-comp c1 { in x: One pub det out y: One := other(x) }
-comp c2 {
-    in x: One
-    in n: Int
-    pub det out y: One := other(x)
+proc c1(x: One): (det y: One) { out y := other(x) }
+proc c2(x: One, n: Int): (det y: One) {
+    out y := other(x)
     expect anything: n = 42
 }
 

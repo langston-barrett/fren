@@ -14,11 +14,10 @@ text, never at the solver:
 pub mod lint
 
 set_option fren.evidence "enumerated" in
-pub comp index_after_use {
-    in indexes_left?     -- `a` indexes a sequence `q`
-    in bounds_right?     -- `b` mentions `q.len`, or compares `q` with `[]`
-    pub det out fires?
-
+pub proc index_after_use(
+    indexes_left?,       -- `a` indexes a sequence `q`
+    bounds_right?,       -- `b` mentions `q.len`, or compares `q` with `[]`
+): (det fires?) {
     ensure rule: fires? iff (indexes_left? and bounds_right?)
 }
 ```
@@ -39,14 +38,14 @@ position was meant is not certain. `lint::negative_position` states when
 it fires:
 
 ```fren
-pub comp negative_position {
+pub proc negative_position(
+    index?,              -- the position is the index of `q[i]`, not an argument
+    method: Method,      -- the method, for an argument
+    arg: Nat,            -- the position of the argument, from 0
+    negative?,           -- it is written `-k`, for an integer literal `k` other than `0`
+): (det fires?) {
     use lang::Method
     use lang::Method::{At, IndexOf, Slice, Update}
-    in index?            -- the position is the index of `q[i]`, not an argument
-    in method: Method    -- the method, for an argument
-    in arg: Nat          -- the position of the argument, from 0
-    in negative?         -- it is written `-k`, for an integer literal `k` other than `0`
-    pub det out fires?
 
     ensure rule: fires? iff (negative? and (index? or match method {
         At | Slice | Update => arg = 0,
@@ -78,13 +77,13 @@ mistake and hide it. `lint::empty_argument` states when it fires, from the
 method and the position of an empty argument:
 
 ```fren
-pub comp empty_argument {
+pub proc empty_argument(
+    method: Method,
+    index: Nat,          -- the position of the argument, from 0
+    empty?,              -- it is written `""` or `[]`, or `0`
+): (det fires?) {
     use lang::Method
     use lang::Method::{Contains, EndsWith, IndexOf, Replace, ReplaceAll, Slice, StartsWith}
-    in method: Method
-    in index: Nat        -- the position of the argument, from 0
-    in empty?            -- it is written `""` or `[]`, or `0`
-    pub det out fires?
 
     ensure rule: fires? iff (empty? and match method {
         StartsWith | EndsWith | Contains | Replace | ReplaceAll | IndexOf => index = 0,
@@ -113,17 +112,18 @@ fires, and the values of the calls, compared with any string `u`, which its
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp no_effect_replace {
-    in same?             -- the arguments are written the same
-    in s: String         -- the receiver
-    in a: String         -- the first argument
-    in b: String         -- the second
-    in u: String         -- any string
-
+pub proc no_effect_replace(
+    same?,               -- the arguments are written the same
+    s: String,           -- the receiver
+    a: String,           -- the first argument
+    b: String,           -- the second
+    u: String,           -- any string
+): (
+    det fires?,
+    replaced?,           -- `s.replace(a, b) = u`
+    replaced_all?,         -- `s.replace_all(a, b) = u`
+) {
     assume written: when same?, a = b
-    pub det out fires?
-    pub out replaced?    -- `s.replace(a, b) = u`
-    pub out replaced_all?  -- `s.replace_all(a, b) = u`
 
     ensure rule: fires? iff same?
     ensure first: when fires?, replaced? iff s = u

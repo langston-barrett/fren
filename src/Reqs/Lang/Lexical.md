@@ -12,17 +12,16 @@ delimit a block comment, and block comments nest.
 Identifiers are ASCII: a letter or `_`, then letters, digits, `_` and
 `'`. An identifier may end in `?`, which is significant: see
 [Types](Types.md#boolean-names). It may then end in `!`, which marks a
-declaration that [shadows](Components.md#shadowing) a name in scope, and
+declaration that [shadows](Procedures.md#shadowing) a name in scope, and
 is not part of the name it declares: `x!` declares `x`, and `ready?!`
 declares `ready?`. A few identifiers ending in `!`, such as `s!` and `m!`,
-are Lean tokens, and so cannot be [declared](Components.md#shadowing).
+are Lean tokens, and so cannot be [declared](Procedures.md#shadowing).
 `_` alone is an identifier, the wildcard of a
 [pattern](Patterns.md).
 
 As in Lean, `a.b` (with no spaces) is a single token, an identifier with
-the components `a` and `b`, as is `a.b.c`. Where `a` is an instance, it
-refers to the instance's variable `b` (see
-[Instances](Instances.md#instance-variables)). Otherwise `a` is a value, a
+the components `a` and `b`, as is `a.b.c`. Where `a` is a call, it
+refers to the call's variable `b` (see [Calls](Calls.md#call-variables)). Otherwise `a` is a value, a
 variable or a [constant](Items.md#constants), and `a.b` reads its field
 `b` (see [Records](Expressions.md#records)) or applies the
 [method](Expressions.md#methods) `b` to it. It is never a path. A `!`
@@ -45,7 +44,7 @@ Some identifiers that end in `!` are Lean tokens, such as `s!` and `m!`,
 which Lean reads in preference to an identifier. Where Fren's syntax
 expects an identifier, the Lean front end reads these tokens as
 identifiers, so both front ends report a declaration of one (see
-[Shadowing](Components.md#shadowing)), and the use of an unknown name in
+[Shadowing](Procedures.md#shadowing)), and the use of an unknown name in
 `s!=1`. One case differs, where Lean's parser reports the lexeme before
 the Lean front end sees it: a `«` that is never closed is a syntax error
 in Lean, while the `fren` command reports that the lexeme is not an
@@ -60,10 +59,7 @@ accepts the declaration.
 ```fren
 pub mod lang
 
-pub comp identifier {
-    in lexeme: String
-    pub det out accepted?
-
+pub proc identifier(lexeme: String): (det accepted?) {
     ensure rule: accepted? iff lexeme.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?[!]?")
 
     expect primed: when lexeme = "x'", accepted?
@@ -88,10 +84,7 @@ within any time limit tried (see [Decidability](Decidability.md#in-practice)), s
 refinement is checked by testing:
 
 ```fren
-pub comp identifier_shape {
-    in lexeme: String
-    pub out accepted?
-
+pub proc identifier_shape(lexeme: String): (accepted?) {
     ensure no_empty_component: when lexeme.contains?(".."), not accepted?
     ensure letter_first: when lexeme.matches?(r"[0-9'.?!].*"), not accepted?
     ensure no_trailing_dot: when lexeme.ends_with?("."), not accepted?
@@ -117,11 +110,10 @@ after its `?`, and nothing after its `!`. `lang::identifier_end` states
 where an identifier ends, from the input that remains after it:
 
 ```fren
-pub comp identifier_end {
-    in lexeme: String
-    in remaining: String     -- the input after the lexeme
-    pub det out ends?
-
+pub proc identifier_end(
+    lexeme: String,
+    remaining: String,       -- the input after the lexeme
+): (det ends?) {
     ensure maximal_munch: ends? iff (lexeme.ends_with?("!")
         or (lexeme.ends_with?("?") and not remaining.starts_with?("!"))
         or not (remaining.matches?(r"[A-Za-z0-9_'?!].*") or remaining.matches?(r"[.][A-Za-z_].*")))
@@ -140,22 +132,21 @@ the identifier: `(lexeme ++ p)` is not one. That quantifies over prefixes,
 but the one or two characters after the identifier decide it, since a
 `.` continues it only before a letter or `_`. `lang::longest_identifier`
 states it so, against `identifier` itself, and `identifier_end` refines
-it. Its instances' bindings concatenate, which is outside the [decidable
-core](Decidability.md#strings) for a binding, and cvc5 does not decide
+it. Its calls' arguments concatenate, which is outside the [decidable
+core](Decidability.md#strings) for an argument, and cvc5 does not decide
 them in practice, so the refinement, and `longest_identifier`'s own
 checks, are tested:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-pub comp longest_identifier {
-    in lexeme: String
-    in remaining: String     -- the input after the lexeme
-    pub out ends?
-
-    inst w: identifier { lexeme }
-    inst one: identifier { lexeme := lexeme ++ remaining.at(0) }
-    inst two: identifier { lexeme := lexeme ++ remaining.slice(0, 2) }
+pub proc longest_identifier(
+    lexeme: String,
+    remaining: String,       -- the input after the lexeme
+): (ends?) {
+    call w := identifier(lexeme)
+    call one := identifier(lexeme ++ remaining.at(0))
+    call two := identifier(lexeme ++ remaining.slice(0, 2))
 
     ensure longest: when w.accepted? and remaining != "", ends? iff not (one.accepted? or two.accepted?)
     ensure at_end: when remaining = "", ends?
@@ -186,12 +177,11 @@ core](Decidability.md#sequences), so the rule opts out:
 pub mod lang
 
 set_option fren.lint.undecidable "allow" in
-pub comp path_shape {
-    in segs: Seq<String>         -- a path's segments
-
+pub proc path_shape(
+    segs: Seq<String>,           -- a path's segments
+): (det accepted?) {
     assume nonempty: segs != []
     assume identifiers: not "" in segs
-    pub det out accepted?
 
     ensure rule: accepted? iff not "self" in segs.slice(1, segs.len)
 
@@ -208,18 +198,18 @@ which:
 
 ```fren
 pub const RESERVED: Set<String> := {
-    "mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl",
+    "mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "proc", "comp", "expect", "impl",
     "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
     "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "refine", "with", "let", "where", "table",
 }
 
-pub comp reserved_word {
-    in lexeme: String        -- an identifier
-    pub det out reserved?
-
+pub proc reserved_word(
+    lexeme: String,          -- an identifier
+): (det reserved?) {
     ensure rule: reserved? iff lexeme in RESERVED
 
-    expect contextual: when lexeme is "when" | "ensure" | "cover" | "out", not reserved?
+    expect contextual: when lexeme is "when" | "ensure" | "cover" | "out" | "call" | "det", not reserved?
+    expect items: when lexeme is "proc" | "fn" | "enum" | "struct", reserved?
     expect membership: when lexeme = "in", reserved?
     expect pattern_test: when lexeme = "is", reserved?
     expect record_update: when lexeme = "with", reserved?
@@ -251,13 +241,13 @@ These *contextual keywords* have special meaning at the start of a
 construct, and are otherwise ordinary identifiers:
 
 ```
-when  unless  not  true  false  det  out  assume  ensure  cover  inst
+when  unless  not  true  false  det  out  call  assume  ensure  cover  inst
 ```
 
 `unless` is a keyword of Lean's too, so it cannot be declared.
 
 `req`, which a guarantee was written with before `ensure`, is not a
-keyword of any kind, so it can be a name. Where a member of a component
+keyword of any kind, so it can be a name. Where a member of a procedure
 is expected, though, `req` is an error (`F0142`) that says to write
 `ensure`.
 
@@ -267,10 +257,12 @@ in `x = true` the `true` is a literal. Nothing could then mention a
 declaration named `true` or `false`, so declaring either, as any kind of
 name, is an error (`F0220`).
 
-`in` is both the keyword of an input and the [membership
-operator](Expressions.md#sets). The `in` of a membership must be on the
-same line as the end of its left operand: an `in` at the start of a line
-starts an input. It is also the keyword that ends the definitions of a
+`in` is both the [membership operator](Expressions.md#sets) and the
+keyword that started an input as components declared them, which is an
+error now whose fix makes it a parameter (`F0159`; see
+[Migration](Procedures.md#migration)). The `in` of a membership must be on
+the same line as the end of its left operand: an `in` at the start of a
+line starts a member. It is also the keyword that ends the definitions of a
 [`let`](Let.md), so within them, outside brackets, `in` is never a
 membership. Likewise, `mod` is both the keyword of a module and the
 [remainder](Expressions.md#division-and-remainder) operator, and the `mod`
@@ -307,10 +299,7 @@ there, while the `fren` command reports all of them as not integer
 literals:
 
 ```fren
-pub comp integer_literal {
-    in lexeme: String
-    pub det out accepted?
-
+pub proc integer_literal(lexeme: String): (det accepted?) {
     ensure rule: accepted? iff ((lexeme.matches?(r"[0-9]([0-9_]*[0-9])?") and not lexeme.starts_with?("0_"))
         or lexeme.matches?(r"0[xX][0-9a-fA-F_]*[0-9a-fA-F]") or lexeme.matches?(r"0[bB][0-1_]*[0-1]")
         or lexeme.matches?(r"0[oO][0-7_]*[0-7]"))
@@ -336,11 +325,9 @@ a `\`, and the length of each in the source, the `\` included. Any other
 character after a `\` is an error:
 
 ```fren
-pub comp escape_sequence {
-    in remaining: String     -- the input after a `\` in a literal
-    pub det out accepted?
-    pub det out length: Int
-
+pub proc escape_sequence(
+    remaining: String,       -- the input after a `\` in a literal
+): (det accepted?, det length: Int) {
     ensure rule: accepted? iff remaining.matches?(r#"([nrt\\"']|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}).*"#)
     ensure single: when accepted? and remaining.matches?(r#"[nrt\\"'].*"#), length = 2
     ensure byte: when accepted? and remaining.starts_with?("x"), length = 4
@@ -361,11 +348,9 @@ allows it, and the refinement is checked by testing:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp escape_text {
-    in remaining: String     -- the input after a `\` in a literal
-    pub out accepted?
-    pub out length: Int
-
+pub proc escape_text(
+    remaining: String,       -- the input after a `\` in a literal
+): (accepted?, length: Int) {
     ensure exact: when accepted?, remaining.slice(0, length - 1).matches?(r#"[nrt\\"']|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}"#)
     ensure rejected: when not accepted?, length = 0
 }
@@ -381,10 +366,9 @@ the other does not breaks the refinement. `escape_sequence` refines it,
 and the solver decides it:
 
 ```fren
-pub comp escape_start {
-    in remaining: String     -- the input after a `\` in a literal
-    pub out accepted?
-
+pub proc escape_start(
+    remaining: String,       -- the input after a `\` in a literal
+): (accepted?) {
     ensure escapes: accepted? iff (remaining.starts_with?("n") or remaining.starts_with?("r")
         or remaining.starts_with?("t") or remaining.starts_with?("\\") or remaining.starts_with?("\"")
         or remaining.starts_with?("'")
@@ -475,10 +459,7 @@ pub const PUNCTUATORS: Set<String> := {
     "(", ")", "[", "]", ",", ":", ".", "*", "=", "<", ">", "++", "+", "-",
 }
 
-pub comp punctuator {
-    in lexeme: String
-    pub det out accepted?
-
+pub proc punctuator(lexeme: String): (det accepted?) {
     ensure rule: accepted? iff lexeme in PUNCTUATORS
 
     -- The punctuators listed above, the three of other languages, and
@@ -489,15 +470,14 @@ pub comp punctuator {
     }
 }
 
-pub comp punctuator_end {
-    in lexeme: String
-    in remaining: String     -- the input after the lexeme
-
+pub proc punctuator_end(
+    lexeme: String,
+    remaining: String,       -- the input after the lexeme
+): (det ends?) {
     assume a_punctuator: lexeme in PUNCTUATORS
-    pub det out ends?
-    out longer: String := lexeme ++ remaining.at(0)
+    let longer: String := lexeme ++ remaining.at(0)
 
-    inst one: punctuator { lexeme := longer }
+    call one := punctuator(longer)
     ensure maximal_munch: ends? iff (remaining = "" or not one.accepted?)
 
     expect path_glob: when lexeme = "::" and remaining.starts_with?("*"), not ends?
@@ -512,21 +492,20 @@ one nor two more characters make a longer one. `punctuator_end` refines
 it, so no punctuator that extends another is reached only through a
 string that is not one. Both rules are about extending a punctuator, and
 say nothing of `!=` and `&&`, which extend none.
-The instances' bindings concatenate, outside the core for a binding, so
+The calls' arguments concatenate, outside the core for an argument, so
 the refinement is tested:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-pub comp longest_punctuator {
-    in lexeme: String
-    in remaining: String     -- the input after the lexeme
-
+pub proc longest_punctuator(
+    lexeme: String,
+    remaining: String,       -- the input after the lexeme
+): (ends?) {
     assume a_punctuator: lexeme in PUNCTUATORS
-    pub out ends?
 
-    inst one: punctuator { lexeme := lexeme ++ remaining.at(0) }
-    inst two: punctuator { lexeme := lexeme ++ remaining.slice(0, 2) }
+    call one := punctuator(lexeme ++ remaining.at(0))
+    call two := punctuator(lexeme ++ remaining.slice(0, 2))
 
     ensure longest: when remaining != "", ends? iff not (one.accepted? or two.accepted?)
     ensure at_end: when remaining = "", ends?

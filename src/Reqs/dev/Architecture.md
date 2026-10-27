@@ -3,7 +3,7 @@
 Following the lessons of Veil ("Lessons from Building an Auto-Active
 Verifier in Lean", Dafny '26):
 
-- Fren keeps its own model of specs (modules, items, imports, enumerations, components)
+- Fren keeps its own model of specs (modules, items, imports, enumerations, procedures)
   in Lean environment extensions (`Fren.Model`). Only Fren's elaborators
   change it, and nothing is recovered by reading generated Lean declarations
   back.

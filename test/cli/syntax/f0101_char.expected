@@ -1,8 +1,8 @@
 error[F0101]: unexpected character `$`
- --> test/cli/syntax/f0101_char.fren:2:36
+ --> test/cli/syntax/f0101_char.fren:2:34
   |
-2 | comp c { in x: Int ensure r: x > 0 $ }
-  |                                    ^ not part of Fren's syntax
+2 | proc c(x: Int) { ensure r: x > 0 $ }
+  |                                  ^ not part of Fren's syntax
 
 error: could not check due to previous errors
 

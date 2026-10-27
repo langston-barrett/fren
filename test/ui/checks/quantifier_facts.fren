@@ -11,20 +11,14 @@ fn f(x: Int): Int
 fn h(Int): Nat
 
 set_option fren.lint.undecidable "allow" in
-comp posts {
-    in n: Int
-    pub out ok?
-
+proc posts(n: Int): (ok?) {
     ensure r: ok? iff (forall (i: Int), when 0 <= i < n, f(i) > 0)  --~ warning: could not decide whether `posts::r` is redundant
 
     expect holds: ok?
 }
 
 set_option fren.lint.undecidable "allow" in
-comp nats {
-    in n: Int
-    pub out ok?
-
+proc nats(n: Int): (ok?) {
     ensure r: ok? iff (forall (i: Int), when 0 <= i < n, h(i) >= 0)  --~ warning: could not decide whether `nats::r` is redundant
 
     expect holds: ok?
@@ -36,9 +30,6 @@ fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
 set_option fren.lint.undecidable "allow" in
-comp preconditions {
-    in q: Seq<Int>
-    pub out pos?
-
+proc preconditions(q: Seq<Int>): (pos?) {
     ensure r: pos? iff (forall (i: Int), when 0 <= i < q.len, nth(q, i) > 0)
 }

@@ -1,2 +1,2 @@
 -- `duplicate_constraint`, fixed only where the two are of one kind.
-comp c { in a? pub out p? ensure r1: p? iff a? ensure r2: p? iff a? expect e: p? iff a? }
+proc c(a?): (p?) { ensure r1: p? iff a? ensure r2: p? iff a? expect e: p? iff a? }

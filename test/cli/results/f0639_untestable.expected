@@ -1,11 +1,11 @@
 error[F0639]: this quantifier cannot be evaluated, so `unguarded` cannot be tested
-  --> test/cli/results/f0639_untestable.fren:12:25
-   |
-12 |     ensure r: pos? iff (forall (x: Int), not (x in s) or x > 0)
-   |                         ^^^^^^ a bound name without a domain
-   |
-   = note: testing enumerates a bound name of a type that is not listed over its domain: the members in `x in s`, or the integers between a lower and an upper bound, as in `0 <= i < n`, in the guard
-   = help: guard the bound name, as in `forall (x: T), when x in s, ...` or `exists (i: Int), 0 <= i < q.len and ...`, or check it with the solver
+ --> test/cli/results/f0639_untestable.fren:9:25
+  |
+9 |     ensure r: pos? iff (forall (x: Int), not (x in s) or x > 0)
+  |                         ^^^^^^ a bound name without a domain
+  |
+  = note: testing enumerates a bound name of a type that is not listed over its domain: the members in `x in s`, or the integers between a lower and an upper bound, as in `0 <= i < n`, in the guard
+  = help: guard the bound name, as in `forall (x: T), when x in s, ...` or `exists (i: Int), 0 <= i < q.len and ...`, or check it with the solver
 
 fren: 1 passed (1 by testing), 0 failed, 0 inconclusive, 0 redundant
 

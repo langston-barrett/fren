@@ -1,24 +1,24 @@
 warning[F0783]: this string literal contains non-ASCII characters: `U+00E9`, `U+00E8`
- --> test/cli/lints/restriction/f0783_non_ascii_literal.fren:9:44
+ --> test/cli/lints/restriction/f0783_non_ascii_literal.fren:5:44
   |
-9 |     ensure french_rule: french? iff text = "café crème"
+5 |     ensure french_rule: french? iff text = "café crème"
   |                                            ^^^^^^^^^^^^ not ASCII
   |
   = help: `fren fix` can fix this
   = note: `non_ascii_literal` is set to `warn`
 help: write them as escapes
   |
-9 -     ensure french_rule: french? iff text = "café crème"
-9 +     ensure french_rule: french? iff text = "caf\u00E9 cr\u00E8me"
+5 -     ensure french_rule: french? iff text = "café crème"
+5 +     ensure french_rule: french? iff text = "caf\u00E9 cr\u00E8me"
   |
 
 warning[F0783]: this string literal contains a non-ASCII character, `U+1F600`
-  --> test/cli/lints/restriction/f0783_non_ascii_literal.fren:10:54
-   |
-10 |     ensure smiling_rule: smiling? iff text.contains?("😀")
-   |                                                      ^^^ not ASCII
-   |
-   = note: `U+1F600` is beyond `U+FFFF`, which `\uHHHH` cannot write, so this has no fix
+ --> test/cli/lints/restriction/f0783_non_ascii_literal.fren:6:54
+  |
+6 |     ensure smiling_rule: smiling? iff text.contains?("😀")
+  |                                                      ^^^ not ASCII
+  |
+  = note: `U+1F600` is beyond `U+FFFF`, which `\uHHHH` cannot write, so this has no fix
 
 fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
 

@@ -1,9 +1,6 @@
---@ args: eval --comp c --set x=3
+--@ args: eval --proc c --set x=3
 -- `y` is found by the search.
-comp c {
-    in x: Int
-    pub out y: Int
-
+proc c(x: Int): (y: Int) {
     ensure r: y = x + 1
 
     expect bigger: y > x

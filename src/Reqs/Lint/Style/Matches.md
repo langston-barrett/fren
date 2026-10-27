@@ -173,35 +173,33 @@ review, `Pair::Two(x, y!) => match x { Shape::Empty => 1, _ => y }, _ =>
 y`, is a counterexample:
 
 ```fren
-pub comp collapsible_match {
-    in tag: Int              -- the variant of the arm's pattern
-    in first: Leaf           -- its pattern of the first value of the payload, which the inner `match` reads
-    in second: Leaf          -- of the second
-    in inner: Seq<LeafArm>   -- the arms of the inner `match`
-    in outer: Body           -- the body of the outer `_` arm, the first later arm that matches the variant
-    in x: Val                -- a value of the scrutinee
-    in o: Int                -- the value of a name outside the patterns
-
+pub proc collapsible_match(
+    tag: Int,                -- the variant of the arm's pattern
+    first: Leaf,             -- its pattern of the first value of the payload, which the inner `match` reads
+    second: Leaf,            -- of the second
+    inner: Seq<LeafArm>,     -- the arms of the inner `match`
+    outer: Body,             -- the body of the outer `_` arm, the first later arm that matches the variant
+    x: Val,                  -- a value of the scrutinee
+    o: Int,                  -- the value of a name outside the patterns
+): (det fires?) {
     assume size: 1 <= inner.len <= 4
 
-    pub det out fires?
-
     -- the arm's body is a `match` on a binder of the arm's pattern
-    det out on_binder? := first is Leaf::Binder(_, _)
+    det let on_binder? := first is Leaf::Binder(_, _)
     -- the arm's pattern is one variant, whose payload's patterns are `_` or binders
-    det out flat? := second is Leaf::Wild | Leaf::Binder(_, _)
+    det let flat? := second is Leaf::Wild | Leaf::Binder(_, _)
     -- the inner `match`'s last arm is `_`
-    det out inner_wildcard? := leaf_arm_pat(inner[inner.len - 1]) = Leaf::Wild
+    det let inner_wildcard? := leaf_arm_pat(inner[inner.len - 1]) = Leaf::Wild
     -- the first later arm that matches the variant is `_`, with the body of the inner `_` arm
-    det out same_wildcard? := leaf_arm_body(inner[inner.len - 1]) = outer
+    det let same_wildcard? := leaf_arm_body(inner[inner.len - 1]) = outer
     -- the binder is mentioned elsewhere in the inner `match`, or the inner `_` arm's body mentions a binder of the arm's pattern
-    det out mentioned? := (exists (s: Slot), pos(s) < inner.len and body_names?(leaf_arm_body(inner[pos(s)]), leaf_name(first)))
+    det let mentioned? := (exists (s: Slot), pos(s) < inner.len and body_names?(leaf_arm_body(inner[pos(s)]), leaf_name(first)))
         or body_names?(leaf_arm_body(inner[inner.len - 1]), leaf_name(second))
     -- an inner pattern binds a name that the arm's pattern binds
-    det out clash? := (exists (s: Slot), pos(s) < inner.len and leaf_name(leaf_arm_pat(inner[pos(s)])) >= 0
+    det let clash? := (exists (s: Slot), pos(s) < inner.len and leaf_name(leaf_arm_pat(inner[pos(s)])) >= 0
         and leaf_name(leaf_arm_pat(inner[pos(s)])) in {leaf_name(first), leaf_name(second)})
     -- arms of the inner `match`
-    det out n_inner: Int := inner.len
+    det let n_inner: Int := inner.len
 
     ensure rule: fires? iff (on_binder? and flat? and inner_wildcard? and same_wildcard? and not mentioned?
         and not clash? and n_inner >= 2)
@@ -223,17 +221,15 @@ pub enum Grade { Low, High, Off }
 pub enum Gauge { Read(Grade, Int), Missing }
 
 set_option fren.lint.collapsible_match "allow" in
-pub comp collapsible_match_written {
-    in g: Gauge
-    pub det out v: Int := match g {
+pub proc collapsible_match_written(g: Gauge): (det v: Int) {
+    out v := match g {
         Gauge::Read(l, n) => match l { Grade::Low => n, Grade::High => n + 1, _ => 0 },
         _ => 0,
     }
 }
 
-pub comp collapsible_match_fixed {
-    in g: Gauge
-    pub det out v: Int := match g {
+pub proc collapsible_match_fixed(g: Gauge): (det v: Int) {
+    out v := match g {
         Gauge::Read(Grade::Low, n) => n, Gauge::Read(Grade::High, n) => n + 1,
         _ => 0,
     }
@@ -251,19 +247,15 @@ names the input:
 
 ```fren
 set_option fren.lint.collapsible_match "allow" in
-pub comp collapsible_shadow_written {
-    in g: Gauge
-    in n: Int
-    pub det out v: Int := match g {
+pub proc collapsible_shadow_written(g: Gauge, n: Int): (det v: Int) {
+    out v := match g {
         Gauge::Read(t, n!) => match t { Grade::Low => 1, _ => n },
         _ => n,
     }
 }
 
-pub comp collapsible_shadow_fixed {
-    in g: Gauge
-    in n: Int
-    pub det out v: Int := match g {
+pub proc collapsible_shadow_fixed(g: Gauge, n: Int): (det v: Int) {
+    out v := match g {
         Gauge::Read(Grade::Low, _) => 1, Gauge::Read(_, n!) => n,
         _ => n,
     }
@@ -326,21 +318,19 @@ pattern and the later range, by their bounds, and checks them against
 the integers that each matches:
 
 ```fren
-pub comp match_overlapping_arm {
-    in earlier: Pat          -- an integer literal or range of an earlier arm
-    in later: Pat            -- a range of a later arm
-    in v: Int
-
+pub proc match_overlapping_arm(
+    earlier: Pat,            -- an integer literal or range of an earlier arm
+    later: Pat,              -- a range of a later arm
+    v: Int,
+): (det fires?) {
     assume kinds: earlier is Pat::Lit(_) | Pat::Range(_, _) and later is Pat::Range(_, _)
 
-    pub det out fires?
-
     -- they have an integer in common
-    det out meet? := reaches?(lower_of(earlier), upper_of(later)) and reaches?(lower_of(later), upper_of(earlier))
+    det let meet? := reaches?(lower_of(earlier), upper_of(later)) and reaches?(lower_of(later), upper_of(earlier))
     -- the range is within the earlier pattern
-    det out within? := lower_le?(lower_of(earlier), lower_of(later)) and upper_le?(upper_of(later), upper_of(earlier))
+    det let within? := lower_le?(lower_of(earlier), lower_of(later)) and upper_le?(upper_of(later), upper_of(earlier))
     -- the range contains the earlier pattern
-    det out contains? := lower_le?(lower_of(later), lower_of(earlier)) and upper_le?(upper_of(earlier), upper_of(later))
+    det let contains? := lower_le?(lower_of(later), lower_of(earlier)) and upper_le?(upper_of(earlier), upper_of(later))
 
     ensure rule: fires? iff (meet? and not within? and not contains?)
 

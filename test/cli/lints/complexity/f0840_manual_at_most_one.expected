@@ -1,7 +1,7 @@
 warning[F0840]: this is `at_most_one?` of 3 operands
- --> test/cli/lints/complexity/f0840_manual_at_most_one.fren:9:22
+ --> test/cli/lints/complexity/f0840_manual_at_most_one.fren:4:22
   |
-9 |     ensure r: p? iff not (a? and b?) and not (a? and c?) and not (b? and c?)
+4 |     ensure r: p? iff not (a? and b?) and not (a? and c?) and not (b? and c?)
   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ negates each pair of 3 operands
   |
   = help: `fren fix` can fix this
@@ -9,22 +9,22 @@ warning[F0840]: this is `at_most_one?` of 3 operands
   = help: to allow it, `set_option fren.lint.manual_at_most_one "allow"`
 help: write `at_most_one?(a?, b?, c?)`
   |
-9 -     ensure r: p? iff not (a? and b?) and not (a? and c?) and not (b? and c?)
-9 +     ensure r: p? iff at_most_one?(a?, b?, c?)
+4 -     ensure r: p? iff not (a? and b?) and not (a? and c?) and not (b? and c?)
+4 +     ensure r: p? iff at_most_one?(a?, b?, c?)
   |
 
 warning[F0840]: this is `exactly_one?` of 3 operands
-  --> test/cli/lints/complexity/f0840_manual_at_most_one.fren:10:23
-   |
-10 |     ensure s: q? iff (a? or b? or c?) and not (a? and b?) and not (a? and c?) and not (b? and c?)
-   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ says that one of 3 operands holds, and negates each pair
-   |
-   = help: `fren fix` can fix this
+ --> test/cli/lints/complexity/f0840_manual_at_most_one.fren:5:23
+  |
+5 |     ensure s: q? iff (a? or b? or c?) and not (a? and b?) and not (a? and c?) and not (b? and c?)
+  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ says that one of 3 operands holds, and negates each pair
+  |
+  = help: `fren fix` can fix this
 help: write `exactly_one?(a?, b?, c?)`
-   |
-10 -     ensure s: q? iff (a? or b? or c?) and not (a? and b?) and not (a? and c?) and not (b? and c?)
-10 +     ensure s: q? iff exactly_one?(a?, b?, c?)
-   |
+  |
+5 -     ensure s: q? iff (a? or b? or c?) and not (a? and b?) and not (a? and c?) and not (b? and c?)
+5 +     ensure s: q? iff exactly_one?(a?, b?, c?)
+  |
 
 fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
 

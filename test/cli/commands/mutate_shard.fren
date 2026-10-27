@@ -4,9 +4,6 @@
 set_option fren.lint.chainable_comparison "allow"
 mod m
 
-pub comp c {
-    in x: Int
-    pub out y?
-
+pub proc c(x: Int): (y?) {
     ensure r: y? iff (x > 1 and x < 9 and x != 5)
 }

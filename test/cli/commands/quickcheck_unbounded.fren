@@ -7,27 +7,18 @@
 -- the bounded model without its bound: it agrees with the precise statement
 -- on every sequence of up to three, so testing refutes its refinement only
 -- on a longer one.
-comp sorted3 {
-    in q: Seq<Int>
-
+proc sorted3(q: Seq<Int>): (sorted?) {
     assume short: q.len <= 3
-    pub out sorted?
 
     ensure r: sorted? iff ((q.len < 2 or q[0] <= q[1]) and (q.len < 3 or q[1] <= q[2]))
 }
 
 set_option fren.lint.undecidable "allow" in
-comp sorted_any {
-    in q: Seq<Int>
-    pub out sorted?
-
+proc sorted_any(q: Seq<Int>): (sorted?) {
     ensure r: sorted? iff (forall (i: Int), when 0 <= i < q.len - 1, q[i] <= q[i + 1])
 }
 
-comp sorted_pairs {
-    in q: Seq<Int>
-    pub out sorted?
-
+proc sorted_pairs(q: Seq<Int>): (sorted?) {
     ensure r: sorted? iff ((q.len < 2 or q[0] <= q[1]) and (q.len < 3 or q[1] <= q[2]))
 }
 

@@ -8,10 +8,7 @@ enum Mode { Off, On(Int) }
 
 -- The issue's example, with its overlap removed: the value is that of the
 -- one arm that is taken.
-comp level {
-    in m: Mode
-    pub det out y: Int
-
+proc level(m: Mode): (det y: Int) {
     ensure r: y = table m {
         Mode::Off => 0,
         Mode::On(x) if x > 0 => x,
@@ -25,11 +22,7 @@ comp level {
 
 -- The order of the arms does not matter: the same arms, reversed, mean the
 -- same.
-comp reordered {
-    in m: Mode
-    pub det out y: Int
-    pub det out z: Int
-
+proc reordered(m: Mode): (det y: Int, det z: Int) {
     ensure r: y = table m { Mode::Off => 0, Mode::On(x) if x > 0 => x, Mode::On(x) if x <= 0 => 1 }
     ensure s: z = table m { Mode::On(x) if x <= 0 => 1, Mode::On(x) if x > 0 => x, Mode::Off => 0 }
 
@@ -38,10 +31,7 @@ comp reordered {
 
 -- A last `_` is otherwise: it takes what no other arm does, including
 -- where a guard fails, and overlaps no arm.
-comp otherwise {
-    in m: Mode
-    pub det out y: Int
-
+proc otherwise(m: Mode): (det y: Int) {
     ensure r: y = table m { Mode::On(x) if x > 10 => 2, _ => 0 }
 
     expect small: when m = Mode::On(3), y = 0
@@ -49,12 +39,7 @@ comp otherwise {
 }
 
 -- Ranges and literals that do not overlap, of an `Int` and a `Nat`.
-comp ranges {
-    in n: Int
-    in k: Nat
-    pub det out s: Int
-    pub det out t: Int
-
+proc ranges(n: Int, k: Nat): (det s: Int, det t: Int) {
     ensure r: s = table n { ..=-1 => -1, 0 => 0, 1.. => 1 }
     ensure q: t = table k { 0 => 0, 1..=9 => 1, 10.. => 2 }
 
@@ -63,11 +48,7 @@ comp ranges {
 }
 
 -- A `Bool` scrutinee, and a table as an operand, without parentheses.
-comp booleans {
-    in b?
-    in x: Int
-    pub det out y: Int
-
+proc booleans(b?, x: Int): (det y: Int) {
     ensure r: y = 1 + table b? { true if x > 0 => x, true if x <= 0 => 0, false => -1 }
 
     expect off: when not b?, y = 0
@@ -84,11 +65,8 @@ fn wait(l: Light, n: Int): Int := table l {
     Light::Green => 0,
 }
 
-comp places {
-    in l: Light
-    in n: Int
-    pub det out a: Int := table (if n > 0 then l else Light::Red) { Light::Red => 2, _ => 3 }
-    pub det out b?
+proc places(l: Light, n: Int): (det a: Int, det b?) {
+    out a := table (if n > 0 then l else Light::Red) { Light::Red => 2, _ => 3 }
 
     ensure r: b? iff (forall (m: Light), let w := table m { Light::Green => 0, _ => 1 } in w <= 1)
 

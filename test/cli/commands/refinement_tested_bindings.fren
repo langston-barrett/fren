@@ -1,24 +1,18 @@
 -- A refinement set to testing asks the solver nothing, not even the
 -- definedness of the bindings of the abstract component's instances: its
 -- only results are the two passes by testing in the summary.
-pub comp helper {
-    in v: Int
-    pub out w: Int
+pub proc helper(v: Int): (w: Int) {
     ensure r: w = v
 }
 
-pub comp first {
-    in q: Seq<Int>
+pub proc first(q: Seq<Int>): (y: Int) {
     assume nonempty: q != []
-    pub out y: Int
-    inst h: helper { v := q[0] }
+    call h := helper(q[0])
     ensure r: y = h.w
 }
 
-pub comp exact {
-    in q: Seq<Int>
+pub proc exact(q: Seq<Int>): (y: Int) {
     assume nonempty: q != []
-    pub out y: Int
     ensure r: y = q[0]
 }
 

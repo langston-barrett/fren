@@ -5,9 +5,7 @@ set_option fren.lint.dead_code "allow"
 
 enum S { A(Int), B, C(Bool, Int) }
 
-comp earlier {
-    in s: S
-    pub out z: Int
+proc earlier(s: S): (z: Int) {
     ensure q: nope
     ensure r: z = match s { S::A(a.b) => a.b, _ => 0 }   --~ error: `a.b` is not a single name
 }

@@ -1,5 +1,5 @@
-drop-conjunct-m::c::r-1f732e9940a7 test/cli/commands/mutate_shard.fren:11:23 `x > 1 and x < 9` changed to `x < 9`
-swap-comparison-m::c::r-a46d7af64a5b test/cli/commands/mutate_shard.fren:11:25 `>` changed to `>=`
-shift-integer-m::c::r-139835221fe2 test/cli/commands/mutate_shard.fren:11:37 `9` changed to `10`
-shift-integer-m::c::r-898ea35d6527 test/cli/commands/mutate_shard.fren:11:48 `5` changed to `6`
+drop-conjunct-m::c::r-1f732e9940a7 test/cli/commands/mutate_shard.fren:8:23 `x > 1 and x < 9` changed to `x < 9`
+swap-comparison-m::c::r-a46d7af64a5b test/cli/commands/mutate_shard.fren:8:25 `>` changed to `>=`
+shift-integer-m::c::r-139835221fe2 test/cli/commands/mutate_shard.fren:8:37 `9` changed to `10`
+shift-integer-m::c::r-898ea35d6527 test/cli/commands/mutate_shard.fren:8:48 `5` changed to `6`
 exit=0

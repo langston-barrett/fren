@@ -3,17 +3,14 @@
 -- input, as `cli::agreement` allows, so its note may be at either
 -- guarantee.
 
-comp source {
-    in b?
+proc source(b?): (o: Int) {
     --~^ warning: unused variable `b?`
-    pub out o: Int
     ensure q: o = 0
 }
 
-comp both {
+proc both(s: String) {
     --~^ error: `both` is not realizable
-    in s: String
-    inst w: source { b? := s != "" }
+    call w := source(s != "")
     ensure q0: w.b?
     --~^? info: is false for this input
     ensure q1: not w.b?

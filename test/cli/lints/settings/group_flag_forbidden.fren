@@ -3,9 +3,6 @@
 --@ args: check -F match_same_arms -W pedantic
 enum E { A, B, C }
 
-comp c {
-    in e: E
-    pub out n: Int
-
+proc c(e: E): (n: Int) {
     ensure r: n = match e { E::A => 1, E::B => 2, E::C => 1 }
 }

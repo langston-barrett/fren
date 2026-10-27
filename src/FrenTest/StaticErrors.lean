@@ -15,15 +15,11 @@ note: the solver decides only linear integer arithmetic
 help: one side of `*` must mention no variable and no uninterpreted function, such as `2 * x` or `(MAX - MIN) * x`
 -/
 #guard_msgs in
-comp squared {
-    in x: Int
-    pub out y: Int
+proc squared(x: Int): (y: Int) {
     ensure q: y = x * x
 }
 
-pub comp conflict {
-    in x: Int
-    pub out y: Int
+pub proc conflict(x: Int): (y: Int) {
     ensure a: y = x
     ensure b: y = x + 1
 }

@@ -1,4 +1,4 @@
 -- Type arguments in parentheses in a quantifier's binder (`F0155`).
-comp c { in s: Set<Int> pub out p? ensure r: p? iff (forall (t: Set(Int)), t = s) }
+proc c(s: Set<Int>): (p?) { ensure r: p? iff (forall (t: Set(Int)), t = s) }
 --~^ error: type arguments are written in angle brackets
 --@ exit: 2

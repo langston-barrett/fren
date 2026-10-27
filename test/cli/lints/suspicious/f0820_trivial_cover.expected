@@ -1,7 +1,7 @@
 warning[F0820]: cover goal `triggered` has a trigger
- --> test/cli/lints/suspicious/f0820_trivial_cover.fren:7:11
+ --> test/cli/lints/suspicious/f0820_trivial_cover.fren:5:11
   |
-7 |     cover triggered: when x > 10, y > 11
+5 |     cover triggered: when x > 10, y > 11
   |           ^^^^^^^^^ met by any behaviour in which the trigger is false
   |
   = help: write the scenario as a conjunction, such as `c? and d?` for `when c?, d?`
@@ -9,25 +9,25 @@ warning[F0820]: cover goal `triggered` has a trigger
   = help: to allow it, `set_option fren.lint.trivial_cover "allow"`
 
 warning[F0820]: cover goal `restated` is written the same as the assumption `a`
- --> test/cli/lints/suspicious/f0820_trivial_cover.fren:8:11
+ --> test/cli/lints/suspicious/f0820_trivial_cover.fren:6:11
   |
-8 |     cover restated: x > 0
-  |           ^^^^^^^^ holds in every behaviour that meets the component
+6 |     cover restated: x > 0
+  |           ^^^^^^^^ holds in every behaviour that meets the procedure
   |
-  = note: it is met unless the component allows no behaviour, which the vacuity check reports
+  = note: it is met unless the procedure allows no behaviour, which the vacuity check reports
 
 note: cover goal `c::triggered` is met
- --> test/cli/lints/suspicious/f0820_trivial_cover.fren:7:11
+ --> test/cli/lints/suspicious/f0820_trivial_cover.fren:5:11
   |
-7 |     cover triggered: when x > 10, y > 11
+5 |     cover triggered: when x > 10, y > 11
   |           ^^^^^^^^^ met
   |
   = witness: x = 1, y = 2
 
 note: cover goal `c::restated` is met
- --> test/cli/lints/suspicious/f0820_trivial_cover.fren:8:11
+ --> test/cli/lints/suspicious/f0820_trivial_cover.fren:6:11
   |
-8 |     cover restated: x > 0
+6 |     cover restated: x > 0
   |           ^^^^^^^^ met
   |
   = witness: x = 1, y = 2

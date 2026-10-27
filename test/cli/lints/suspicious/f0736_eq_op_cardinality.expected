@@ -1,8 +1,8 @@
 warning[F0736]: `a?` is an argument of `at_most_one?` more than once
- --> test/cli/lints/suspicious/f0736_eq_op_cardinality.fren:2:71
+ --> test/cli/lints/suspicious/f0736_eq_op_cardinality.fren:2:62
   |
-2 | comp c { in a? in b? pub out p? ensure r: p? iff at_most_one?(a?, b?, a?) }
-  |                                                                       ^^ written the same as an earlier argument
+2 | proc c(a?, b?): (p?) { ensure r: p? iff at_most_one?(a?, b?, a?) }
+  |                                                              ^^ written the same as an earlier argument
   |
   = note: the call holds only where `a?` is `false`, so one of the two is probably not the one meant
   = note: `eq_op` is `warn` by default

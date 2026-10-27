@@ -6,8 +6,6 @@ fn rank(i: Id): Int
     ensure positive: rank(i) > 0
 
 set_option fren.evidence "enumerated" in
-comp c {
-    in x: Id
-    pub det out top?
+proc c(x: Id): (det top?) {
     ensure r: top? iff rank(x) = 1
 }

@@ -1,14 +1,14 @@
 error[F0303]: `Bool` variable `flag` must end in `?`
- --> test/cli/types/f0303_bool_no_q.fren:2:13
+ --> test/cli/types/f0303_bool_no_q.fren:2:8
   |
-2 | comp c { in flag: Bool }
-  |             ^^^^ does not end in `?`
+2 | proc c(flag: Bool) {}
+  |        ^^^^ does not end in `?`
   |
   = note: a variable's name ends in `?` if and only if it is a `Bool`
 help: rename it to `flag?`
   |
-2 - comp c { in flag: Bool }
-2 + comp c { in flag?: Bool }
+2 - proc c(flag: Bool) {}
+2 + proc c(flag?: Bool) {}
   |
 
 error: could not check due to previous errors

@@ -18,21 +18,18 @@ struct R { a: Small }
 fn other<T>(x: T): T  --~ error: the postconditions of `generic_uninterpreted_instances::other<generic_uninterpreted_instances::One>` cannot all hold
     ensure diff: other(x) != x  --~ info: is false for this input
 
-comp at_one {
-    in x: One
-    pub det out y: One := other(x)
+proc at_one(x: One): (det y: One) {
+    out y := other(x)
 }
 
-comp at_bool {
-    in p?
-    pub det out q? := other(p?)
+proc at_bool(p?): (det q?) {
+    out q? := other(p?)
 
     expect flips: q? != p?
 }
 
-comp at_int {
-    in i: Int
-    pub det out j: Int := other(i)
+proc at_int(i: Int): (det j: Int) {
+    out j := other(i)
 
     expect moved: j != i
 }
@@ -42,9 +39,8 @@ comp at_int {
 fn flip<T>(x: T): T
     ensure diff: flip(x) != x
 
-comp flipped {
-    in p?
-    pub det out q? := flip(p?)
+proc flipped(p?): (det q?) {
+    out q? := flip(p?)
 
     expect flips: q? != p?
 }
@@ -55,10 +51,9 @@ comp flipped {
 fn pickr<T>(T): T
 fn pick1(R): R
 
-comp records {
-    in r: R
-    pub det out s: R := pickr(r)
-    pub det out t: R := pick1(r)
+proc records(r: R): (det s: R, det t: R) {
+    out s := pickr(r)
+    out t := pick1(r)
 
     expect generic_field: s.a <= 9
     expect plain_field: t.a <= 9

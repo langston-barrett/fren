@@ -1,11 +1,11 @@
 error[F0411]: the definition of `a` mentions itself: `a` -> `b` -> `a`
- --> test/cli/instances/f0411_cyclic_definition.fren:3:9
+ --> test/cli/instances/f0411_cyclic_definition.fren:2:9
   |
-3 |     out a: Int := b + x
+2 |     let a: Int := b + x
   |         ^ a cyclic definition
   |
   = note: a defined output stands for its definition, so the definitions must not form a cycle
-  = help: define one of them in terms of the others' inputs, or constrain it with an `ensure` instead
+  = help: define one of them in terms of the parameters, or constrain it with an `ensure` instead
 
 error: could not check due to previous errors
 

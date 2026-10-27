@@ -3,21 +3,14 @@
 set_option fren.lint.bool_equality "warn"
 set_option fren.lint.undecidable "allow"
 
-pub comp c {
-    in a: Int
-    in b: Int
-    in x?
-    in y?
-    in s: String
-    in t: String
-    in u: Set<Int>
-    pub out n: Int
-    pub out m: Int
-    pub out p?
-    pub out q?
-    pub out w?
-    pub out z?
-
+pub proc c(a: Int, b: Int, x?, y?, s: String, t: String, u: Set<Int>): (
+    n: Int,
+    m: Int,
+    p?,
+    q?,
+    w?,
+    z?,
+) {
     ensure r1: p? iff (a > b or b > a) and (x? = y?)
     ensure r2: q? iff s.index_of(t, 0) <= -1 or s.slice(0, t.len) = t
     ensure r3: n = 1 * a + if x? then b else b + 1

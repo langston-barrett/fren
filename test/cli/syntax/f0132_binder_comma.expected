@@ -1,14 +1,14 @@
 error[F0132]: expected `,` after the binders of `exists`, found identifier `m`
- --> test/cli/syntax/f0132_binder_comma.fren:3:69
+ --> test/cli/syntax/f0132_binder_comma.fren:3:62
   |
-3 | comp c { in x: Mode pub out ok? ensure r: ok? iff (exists (m: Mode) m = x) }
-  |                                                                     ^ expected `,`
+3 | proc c(x: Mode): (ok?) { ensure r: ok? iff (exists (m: Mode) m = x) }
+  |                                                              ^ expected `,`
   |
   = note: the binders of `exists` end with a comma, before its body
 help: add a comma
   |
-3 | comp c { in x: Mode pub out ok? ensure r: ok? iff (exists (m: Mode), m = x) }
-  |                                                                    +
+3 | proc c(x: Mode): (ok?) { ensure r: ok? iff (exists (m: Mode), m = x) }
+  |                                                             +
   |
 
 error: could not check due to previous errors

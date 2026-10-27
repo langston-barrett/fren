@@ -1,0 +1,12 @@
+-- A component, as procedures were written before (F0158): the fix writes
+-- it as a procedure, with its inputs as parameters, its public outputs as
+-- results, and its private outputs as `exists` and `let`.
+pub comp c {
+    in x: Int      -- a comment, kept
+    in y?
+    out aux: Int
+    out next: Int := x + 1
+    pub det out z: Int
+    pub out big? := z > 9
+    ensure r: z = aux + next
+}

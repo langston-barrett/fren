@@ -1,2 +1,2 @@
 -- `=>` for implication (F0105).
-comp c { in a? pub out d? ensure r: a? => d? }
+proc c(a?): (d?) { ensure r: a? => d? }

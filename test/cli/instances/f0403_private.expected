@@ -1,11 +1,11 @@
-error[F0403]: `s.hidden` is private to instance `s`
- --> test/cli/instances/f0403_private.fren:3:72
+error[F0403]: `s.hidden` is private to call `s`
+ --> test/cli/instances/f0403_private.fren:3:59
   |
-3 | comp c { in i: Int pub out o: Int inst s: sub { a := i } ensure r: o = s.hidden }
-  |                                                                        ^^^^^^^^ private
+3 | proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.hidden }
+  |                                                           ^^^^^^^^ private
   |
-  = note: only the `in`s and `pub out`s of an instance can be mentioned
-  = help: to mention it, declare it `pub out` in the instantiated component
+  = note: only the parameters and results of a call can be mentioned
+  = help: to mention it, make it a result of the called procedure
 
 error: could not check due to previous errors
 

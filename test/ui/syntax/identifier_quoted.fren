@@ -2,8 +2,7 @@
 -- A quoted identifier, which Lean allows but Fren does not (F0119), in both
 -- front ends.
 
-comp c {
-    in «a b»: Int    --~ error: `«a b»` is not an identifier in Fren
-    pub out y: Int
+proc c(«a b»: Int): (y: Int) {
+    --~^ error: `«a b»` is not an identifier in Fren
     ensure r: y = 1
 }

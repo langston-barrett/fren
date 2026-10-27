@@ -1,8 +1,8 @@
 error[F0319]: expected a variant of `Mode`, but this is a variant of `Fan`
- --> test/cli/types/f0319_other_enum.fren:4:60
+ --> test/cli/types/f0319_other_enum.fren:4:53
   |
-4 | comp c { in m: Mode pub out y: Int ensure r: y = match m { Fan::Slow => 1, _ => 0 } }
-  |                                                            ^^^^^^^^^ not a variant of `Mode`
+4 | proc c(m: Mode): (y: Int) { ensure r: y = match m { Fan::Slow => 1, _ => 0 } }
+  |                                                     ^^^^^^^^^ not a variant of `Mode`
   |
   = note: the scrutinee is a `Mode`
 

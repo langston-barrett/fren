@@ -1,2 +1,2 @@
 -- A chained comparison with an operator that does not chain (F0108).
-comp c { in a? in b? pub out ok? ensure r: ok? iff a? = b? = true }
+proc c(a?, b?): (ok?) { ensure r: ok? iff a? = b? = true }

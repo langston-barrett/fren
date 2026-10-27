@@ -11,75 +11,73 @@ const NAME: String := "a"
 
 const LENGTH: Int := "abc".len
 
-comp missing_nested { in r: Reply pub out z: Int ensure q: z = match r { Reply::Ok(Shape::Circle(_)) => 0, Reply::Err(_) => 1 } }
+proc missing_nested(r: Reply): (z: Int) { ensure q: z = match r { Reply::Ok(Shape::Circle(_)) => 0, Reply::Err(_) => 1 } }
 --~^ error: non-exhaustive match: `Reply::Ok(Shape::Square(_))`, `Reply::Ok(Shape::Empty)` not covered
-comp missing_int { in r: Reply pub out z: Int ensure q: z = match r { Reply::Ok(_) => 0, Reply::Err(..=-1) => 1, Reply::Err(1..) => 2 } }
+proc missing_int(r: Reply): (z: Int) { ensure q: z = match r { Reply::Ok(_) => 0, Reply::Err(..=-1) => 1, Reply::Err(1..) => 2 } }
 --~^ error: non-exhaustive match: `Reply::Err(0)` not covered
-comp missing_bool { in b? pub out z: Int ensure q: z = match b? { true => 0 } }
+proc missing_bool(b?): (z: Int) { ensure q: z = match b? { true => 0 } }
 --~^ error: non-exhaustive match: `false` not covered
-comp missing_string { in s: String pub out z: Int ensure q: z = match s { "a" => 0, "b" => 1 } }
+proc missing_string(s: String): (z: Int) { ensure q: z = match s { "a" => 0, "b" => 1 } }
 --~^ error: non-exhaustive match: `_` not covered
-comp missing_ranges { in n: Int pub out z: Int ensure q: z = match n { ..=0 => 0, 2.. => 1 } }
+proc missing_ranges(n: Int): (z: Int) { ensure q: z = match n { ..=0 => 0, 2.. => 1 } }
 --~^ error: non-exhaustive match: `1` not covered
-comp missing_nat { in k: Nat pub out z: Int ensure q: z = match k { 0 => 0, 2.. => 1 } }
+proc missing_nat(k: Nat): (z: Int) { ensure q: z = match k { 0 => 0, 2.. => 1 } }
 --~^ error: non-exhaustive match: `1` not covered
-comp negative_nat { in k: Nat pub out z: Int ensure q: z = match k { ..=-1 => 0, _ => 1 } }
+proc negative_nat(k: Nat): (z: Int) { ensure q: z = match k { ..=-1 => 0, _ => 1 } }
 --~^ error: unreachable arm
-comp within { in n: Int pub out z: Int ensure q: z = match n { 0..=9 => 0, 5 => 1, _ => 2 } }
+proc within(n: Int): (z: Int) { ensure q: z = match n { 0..=9 => 0, 5 => 1, _ => 2 } }
 --~^ error: unreachable arm
-comp covered_bool { in b? pub out z: Int ensure q: z = match b? { true => 0, false => 1, _ => 2 } }
+proc covered_bool(b?): (z: Int) { ensure q: z = match b? { true => 0, false => 1, _ => 2 } }
 --~^ error: unreachable arm
-comp after_binder { in n: Int pub out z: Int ensure q: z = match n { k => k, 0 => 1 } }
+proc after_binder(n: Int): (z: Int) { ensure q: z = match n { k => k, 0 => 1 } }
 --~^ error: unreachable arm
-comp inner_alternative { in r: Reply pub out z: Int ensure q: z = match r { Reply::Ok(Shape::Empty | Shape::Empty) => 0, _ => 1 } }
+proc inner_alternative(r: Reply): (z: Int) { ensure q: z = match r { Reply::Ok(Shape::Empty | Shape::Empty) => 0, _ => 1 } }
 --~^ error: unreachable pattern
-comp inner_binder { in r: Reply pub out z: Int ensure q: z = match r { Reply::Ok(Shape::Circle(n) | Shape::Square(_)) => 0, _ => 1 } }
+proc inner_binder(r: Reply): (z: Int) { ensure q: z = match r { Reply::Ok(Shape::Circle(n) | Shape::Square(_)) => 0, _ => 1 } }
 --~^ error: an or-pattern cannot bind `n`
-comp twice { in r: Reply pub out z: Int ensure q: z = match r { Reply::Ok(Shape::Circle(n)) | Reply::Err(n) => n, _ => 0 } }
+proc twice(r: Reply): (z: Int) { ensure q: z = match r { Reply::Ok(Shape::Circle(n)) | Reply::Err(n) => n, _ => 0 } }
 --~^ error: an or-pattern cannot bind `n`
-comp wrong_literal { in n: Int pub out z: Int ensure q: z = match n { "a" => 0, _ => 1 } }
+proc wrong_literal(n: Int): (z: Int) { ensure q: z = match n { "a" => 0, _ => 1 } }
 --~^ error: expected a pattern of `Int`, but this is a pattern of `String`
-comp wrong_variant { in n: Int pub out z: Int ensure q: z = match n { Shape::Empty => 0, _ => 1 } }
+proc wrong_variant(n: Int): (z: Int) { ensure q: z = match n { Shape::Empty => 0, _ => 1 } }
 --~^ error: expected a pattern of `Int`, but this is a pattern of `Shape`
-comp wrong_payload { in r: Reply pub out z: Int ensure q: z = match r { Reply::Err(true) => 0, _ => 1 } }
+proc wrong_payload(r: Reply): (z: Int) { ensure q: z = match r { Reply::Err(true) => 0, _ => 1 } }
 --~^ error: expected a pattern of `Int`, but this is a pattern of `Bool`
-comp wrong_range { in s: String pub out z: Int ensure q: z = match s { 0..=9 => 0, _ => 1 } }
+proc wrong_range(s: String): (z: Int) { ensure q: z = match s { 0..=9 => 0, _ => 1 } }
 --~^ error: expected a pattern of `String`, but this is a pattern of `Int`
-comp empty_range { in n: Int pub out z: Int ensure q: z = match n { 9..=0 => 0, _ => 1 } }
+proc empty_range(n: Int): (z: Int) { ensure q: z = match n { 9..=0 => 0, _ => 1 } }
 --~^ error: the range `9..=0` matches no integer
-comp empty_exclusive { in n: Int pub out z: Int ensure q: z = match n { MAX..9 => 0, _ => 1 } }
+proc empty_exclusive(n: Int): (z: Int) { ensure q: z = match n { MAX..9 => 0, _ => 1 } }
 --~^ error: the range `MAX..9` matches no integer
-comp variable_bound { in n: Int in m: Int pub out z: Int ensure q: z = match n { 0..=m => 0, _ => 1 } }
+proc variable_bound(n: Int, m: Int): (z: Int) { ensure q: z = match n { 0..=m => 0, _ => 1 } }
 --~^ error: a range's bound must be an integer or a constant of `Int` or `Nat`, but this is a variable
-comp string_bound { in n: Int pub out z: Int ensure q: z = match n { 0..=NAME => 0, _ => 1 } }
+proc string_bound(n: Int): (z: Int) { ensure q: z = match n { 0..=NAME => 0, _ => 1 } }
 --~^ error: a range's bound must be an integer or a constant of `Int` or `Nat`, but this is a constant of `String`
-comp unknown_value { in n: Int pub out z: Int ensure q: z = match n { 0..=LENGTH => 0, _ => 1 } }
+proc unknown_value(n: Int): (z: Int) { ensure q: z = match n { 0..=LENGTH => 0, _ => 1 } }
 --~^ error: the value of `LENGTH` is not known where the range is checked
-comp constant_binder { in n: Int pub out z: Int ensure q: z = match n { MAX => 0 } }
+proc constant_binder(n: Int): (z: Int) { ensure q: z = match n { MAX => 0 } }
 --~^ error: `MAX` shadows the constant `MAX`
-comp is_nothing { in k: Nat pub out z? ensure q: z? iff k is -5..=-1 }
+proc is_nothing(k: Nat): (z?) { ensure q: z? iff k is -5..=-1 }
 --~^ error: unreachable pattern
-comp is_nothing_or { in k: Nat pub out z? ensure q: z? iff k is -1 | -2 }
+proc is_nothing_or(k: Nat): (z?) { ensure q: z? iff k is -1 | -2 }
 --~^ error: unreachable pattern
-comp not_matched { in s: Set<Int> pub out z: Int ensure q: z = match s { _ => 0 } }
+proc not_matched(s: Set<Int>): (z: Int) { ensure q: z = match s { _ => 0 } }
 --~^ error: cannot match on `Set<Int>`
-comp is_binder { in r: Reply pub out z? ensure q: z? iff r is Reply::Ok(Shape::Circle(n)) }
+proc is_binder(r: Reply): (z?) { ensure q: z? iff r is Reply::Ok(Shape::Circle(n)) }
 --~^ error: a pattern test cannot bind `n`
-comp is_alternative { in n: Int pub out z? ensure q: z? iff n is 0..=9 | 5 }
+proc is_alternative(n: Int): (z?) { ensure q: z? iff n is 0..=9 | 5 }
 --~^ error: unreachable pattern
-comp is_set { in s: Set<Int> pub out z? ensure q: z? iff s is _ }
+proc is_set(s: Set<Int>): (z?) { ensure q: z? iff s is _ }
 --~^ error: cannot test `Set<Int>` against a pattern
 
-comp too_many {
-    in w: Wide
-    pub out z: Int
+proc too_many(w: Wide): (z: Int) {
     ensure q: z = match w {
         Wide::V(B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y) => 0,
         --~^ error: this pattern stands for 512 cases, more than 256
         _ => 1,
     }
 }
-comp too_many_is { in w: Wide pub out z? ensure q: z? iff w is Wide::V(B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y) }
+proc too_many_is(w: Wide): (z?) { ensure q: z? iff w is Wide::V(B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y) }
 --~^ error: this pattern stands for 512 cases, more than 256
 
 --@ exit: 2

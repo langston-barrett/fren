@@ -1,6 +1,6 @@
 -- `impl` links to Lean code, so the binary rejects it (`cli::accepts`).
 -- fren-covers: cli::accepts
-comp c { in x? }
+proc c(x?) {}
 impl i: c for (b : Bool) { x? := b }  --~ error: Lean code is not supported in .fren files
 --@ only: cli
 --@ exit: 2

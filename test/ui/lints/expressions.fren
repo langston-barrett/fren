@@ -1,18 +1,7 @@
 -- The expression and constraint lints, in both front ends:
 -- `needless_bool_assign`, `needless_match` and `assertions_on_constants`;
 -- `suspicious_unary_op_formatting` is in `unary_formatting.fren`.
-comp bools {
-    in a?
-    in b?
-    in c?
-    in x: Int
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out p4?
-    pub out p5?
-    pub out p6?
-
+proc bools(a?, b?, c?, x: Int): (p1?, p2?, p3?, p4?, p5?, p6?) {
     ensure r1: p1? iff if a? then b? else not b?  --~ warning: this `if` gives a `Bool` or its negation
     ensure r2: p2? iff if a? and b? then not (x > 0) else x > 0
     --~^ warning: this `if` gives a `Bool` or its negation
@@ -30,14 +19,8 @@ enum Shape { Dot, Circle(Int), Rect(Int, Int) }
 
 -- A pattern test is an opaque test: the lints look inside it only at its
 -- scrutinee.
-comp pattern_tests {
+proc pattern_tests(s: Shape, b?): (p1?, p2?, p3?, n: Int) {
     use self::Shape::{Circle, Dot}
-    in s: Shape
-    in b?
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out n: Int
 
     ensure r1: p1? iff if s is Circle(_) then b? else not b?
     --~^ warning: write `(s is Circle(_) iff b?)`
@@ -51,16 +34,8 @@ comp pattern_tests {
     --~^ warning: this pattern test is an equation
 }
 
-comp rebuilt {
+proc rebuilt(s: Shape, x: Int): (t1: Shape, t2: Shape, t3: Shape, t4: Shape, t5: Shape, t6: Shape) {
     use self::Shape::{Circle, Dot, Rect}
-    in s: Shape
-    in x: Int
-    pub out t1: Shape
-    pub out t2: Shape
-    pub out t3: Shape
-    pub out t4: Shape
-    pub out t5: Shape
-    pub out t6: Shape
 
     ensure r1: t1 = match s { Dot => Shape::Dot, Circle(r) => Circle(r), Rect(w, h) => Shape::Rect(w, h) }
     --~^ warning: this `match` gives back its scrutinee
@@ -75,11 +50,8 @@ comp rebuilt {
 
 const LIMIT: Int := 10
 
-comp constants {
-    in x: Int
-
+proc constants(x: Int): (y: Int) {
     assume small: x < LIMIT
-    pub out y: Int
     ensure r1: y = x
     expect e1: LIMIT > 0  --~ warning: this expectation mentions no variable
     expect e2: (true)  --~ warning: this expectation mentions no variable

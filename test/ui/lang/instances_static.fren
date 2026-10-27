@@ -1,12 +1,9 @@
--- Static rules for instances (`inst::binding`, `inst::mention`).
--- fren-covers: inst::earlier
+-- Static rules for calls (`inst::binding`, `inst::mention`).
+-- fren-covers: call::earlier
 
-comp sub {
-    in x: Int
-    in y?
+proc sub(x: Int, y?): (z: Int) {
     --~^ warning: unused variable `y?`
-    pub out z: Int
-    out hidden: Int
+    exists hidden: Int
 
     ensure r: z = x
     ensure h: hidden = x
@@ -14,34 +11,33 @@ comp sub {
 
 enum E { A }
 
-comp missing { in y? inst s: sub { y? } }                  --~ error: missing input `x` of `sub`
-comp extra { in y? inst s: sub { x := 1, y?, w := 2 } }    --~ error: `sub` has no input `w`
-comp bound_out { in y? inst s: sub { x := 1, y?, z := 2 } }  --~ error: `z` is an `out` of `sub`
-comp bound_twice { in y? inst s: sub { x := 1, x := 2, y? } }  --~ error: input `x` is bound multiple times
-comp not_comp { inst s: E {} }                             --~ error: expected a component, but `E` is an enum
-comp q_name { in y? inst s?: sub { x := 1, y? } }          --~ error: instance names cannot end in `?`
-comp dup_name { in y? inst y?: sub { x := 1, y? } }        --~ error: `y?` is defined multiple times in this comp
+proc missing(y?) { call s := sub(y?) }                     --~ error: too few arguments: `sub` takes 2 arguments
+proc extra(y?) { call s := sub(1, y?, 2) }                 --~ error: too many arguments: `sub` takes 2 arguments
+proc old(y?) { inst s: sub { y?, x := 1 } }                --~ error: instances are written as calls
+proc not_comp() { call s := E() }                             --~ error: expected a procedure, but `E` is an enum
+proc q_name(y?) { call s? := sub(1, y?) }          --~ error: call names cannot end in `?`
+proc dup_name(y?) { call y? := sub(1, y?) }        --~ error: `y?` is defined multiple times in this procedure
 
-comp out_bound { in y? pub out o: Int inst s: sub { x := o, y? } ensure r: o = 0 }
---~^ error: bindings may only mention `in` variables and earlier instances, but `o` is an `out`
-comp later { in y? inst a: sub { x := b.z, y? } inst b: sub { x := 1, y? } }
---~^ error: instance `b` is not declared before this binding
-comp itself { in y? inst a: sub { x := a.z, y? } }         --~ error: instance `a` is not declared before this binding
-comp private_var { in y? pub out o: Int inst a: sub { x := 1, y? } ensure r: o = a.hidden }
---~^ error: `a.hidden` is private to instance `a`
-comp assumes_inst { in y? inst a: sub { x := 1, y? } assume bad: a.z = 0 }
---~^ error: assumptions may only mention `in` variables, but `a.z` belongs to instance `a`
-comp no_field { in y? pub out o: Int inst a: sub { x := 1, y? } ensure r: o = a.nope }
---~^ error: instance `a` has no `in` or `pub out` named `nope`
-comp not_inst { pub out o: Int ensure r: o = q.z }            --~ error: `q.z` is not a single name
-comp mistyped { in y? inst a: sub { x := y?, y? } }
+proc out_bound(y?): (o: Int) { call s := sub(o, y?) ensure r: o = 0 }
+--~^ error: the arguments of a call may only mention parameters and earlier calls, but `o` is an output
+proc later(y?) { call a := sub(b.z, y?) call b := sub(1, y?) }
+--~^ error: call `b` is not declared before these arguments
+proc itself(y?) { call a := sub(a.z, y?) }         --~ error: call `a` is not declared before these arguments
+proc private_var(y?): (o: Int) { call a := sub(1, y?) ensure r: o = a.hidden }
+--~^ error: `a.hidden` is private to call `a`
+proc assumes_inst(y?) { call a := sub(1, y?) assume bad: a.z = 0 }
+--~^ error: assumptions may only mention parameters, but `a.z` belongs to call `a`
+proc no_field(y?): (o: Int) { call a := sub(1, y?) ensure r: o = a.nope }
+--~^ error: call `a` has no parameter or result named `nope`
+proc not_inst(): (o: Int) { ensure r: o = q.z }            --~ error: `q.z` is not a single name
+proc mistyped(y?) { call a := sub(y?, y?) }
 --~^ error: type mismatch: expected `Int`, found `Bool`
 
 mod m
-comp secret {}
+proc secret() {}
 
 mod n
 use m                                                      --~ warning: unused import `m`
-comp outside { inst s: m::secret {} }                      --~ error: `secret` is private to module `m`
+proc outside() { call s := m::secret() }                      --~ error: `secret` is private to module `m`
 
 --@ exit: 2

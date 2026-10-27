@@ -19,7 +19,7 @@ value of `x` and `y` of type `T` and every value of `z` of type `U`, and
 `exists (x: T), e` if `e` holds for some value of `x`. Each name that a
 binder declares is a *bound name*. The body must be a `Bool`, and so is
 the quantifier. Binders are written as a [global
-expectation's](Global.md) are, with a type in place of a component.
+expectation's](Global.md) are, with a type in place of a procedure.
 
 A quantifier is an [expression](Expressions.md), at the level of `when`:
 the binders end at the first `,` after them, and the body extends as far
@@ -29,8 +29,8 @@ operator is written in parentheses, as in `(forall (m: Method), p(m)) or
 r?` (`F0109`). The body may itself be a quantifier, or a `when`, without
 parentheses: `forall (a: Mode), forall (b: Mode), when a != b, differ?(a,
 b)`. For the same reason as a `when`, a quantifier is not the top-level
-body of a [`match` arm](Expressions.md#matches), nor the expression of an
-instance's binding or of a record literal's field: those are written in
+body of a [`match` arm](Expressions.md#matches), nor an argument of a
+call or the expression of a record literal's field: those are written in
 parentheses. `forall` and `exists` are [reserved
 words](Lexical.md#keywords).
 
@@ -49,7 +49,7 @@ sequence type is unbounded, even where its element type is finite, as in
 (see [Unbounded quantifiers](#unbounded-quantifiers)), which is outside
 the decidable core. A binder's type is written and resolved as a
 variable's is, so a path that names no type is an error, and so is one
-that names a component, except in a global expectation's leading
+that names a procedure, except in a global expectation's leading
 `forall` (see [Global expectations](#global-expectations)).
 A [pattern type](Types.md#pattern-types) is listed when it is finite and
 not unbounded, as `lang::pattern_finite` says: `forall (x: Int is
@@ -72,7 +72,10 @@ S(Int is 0..=2), T }`, `Option<Int is 0..=2>` or `Pair<Bool, Int is
 pub mod lang
 
 set_option fren.lint.undecidable "allow" in
-pub comp quantified_type {
+pub proc quantified_type(
+    ty: DeclaredTy,
+    constituents: Rel<DeclaredTy, DeclaredTy>,      -- (t, u): t has a field, payload or element of type u
+): (det listed?) {
     use self::ValueType::{
         AbstractTy,
         BoolTy,
@@ -85,13 +88,10 @@ pub comp quantified_type {
         SetTy,
         StringTy,
     }
-    in ty: DeclaredTy
-    in constituents: Rel<DeclaredTy, DeclaredTy>    -- (t, u): t has a field, payload or element of type u
 
     -- A type of a former that has no constituents has none.
     assume leaf: unless former(declared_kind(ty)).composite?, constituents.image({ty}) = {}
-    pub det out listed?
-    inst facts: type_facts { ty, constituents }
+    call facts := type_facts(ty, constituents)
 
     ensure rule: listed? iff (facts.finite? and not facts.unbounded?)
 
@@ -133,12 +133,11 @@ has a value, so every quantifier has an instance: a `forall` implies the
 values of the instances:
 
 ```fren
-pub comp quantifier {
-    in all?                  -- `forall`, rather than `exists`
-    in values: Set<Bool>     -- the values of its instances
-
+pub proc quantifier(
+    all?,                    -- `forall`, rather than `exists`
+    values: Set<Bool>,       -- the values of its instances
+): (det holds?) {
     assume some_instance: values != {}
-    pub det out holds?
 
     ensure rule: holds? iff (if all? then not false in values else true in values)
 
@@ -156,7 +155,7 @@ combination of the values of its payload; and every combination of a
 record's fields. The bound names vary in the order that they are written,
 the last fastest. The order changes no meaning: it is the order in which
 the instances are conjoined, which the [generated Lean
-declarations](../Generated.md#components) show.
+declarations](../Generated.md#procedures) show.
 
 Both front ends expand a quantifier over listed types while elaborating
 it, so the solver's queries stay quantifier-free (see
@@ -187,11 +186,10 @@ Method), e` has as many instances as `forall (m: Method), e`.
 ```fren
 pub const MAX_INSTANCES: Int := 256
 
-pub comp quantifier_size {
-    in n_instances: Int      -- the combinations of the values of its bound names and those around it
-
+pub proc quantifier_size(
+    n_instances: Int,        -- the combinations of the values of its bound names and those around it
+): (det accepted?) {
     assume some: n_instances >= 1
-    pub det out accepted?
 
     ensure rule: accepted? iff n_instances <= MAX_INSTANCES
 
@@ -239,11 +237,11 @@ quantifies so opts out of the core where it does. Its checks are then
 asked of the solver, which may not decide them, and are
 `Inconclusive` where it does not; they may be [tested](../Check.md#checking-by-testing)
 instead, where the evaluator can evaluate the quantifier (see
-[Evaluation](../Eval.md#quantifiers)), or a component's evidence may be a
+[Evaluation](../Eval.md#quantifiers)), or a procedure's evidence may be a
 `trusted` claim.
 
 This is how a precise spec is written beside a decidable one. A
-component that states a rule over any number of things, with unbounded
+procedure that states a rule over any number of things, with unbounded
 quantifiers, is bound by an [implementation](../Impl.md) to the code and
 proved in Lean, where each `forall` is a `∀` of the theorem, for every
 input. A bounded model of it, over a listed type, stays in the decidable
@@ -317,15 +315,13 @@ fn guard_bound_of(lhs: GuardOperand, relation: GuardRelation, rhs: GuardOperand)
     | _ => GuardBound::NoBound,
 }
 
-pub comp guard_bound {
+pub proc guard_bound(lhs: GuardOperand, relation: GuardRelation, rhs: GuardOperand): (
+    det bound: GuardBound,
+    det strict?,             -- the bound itself is not in range
+) {
     use self::GuardBound::{Members, NoBound}
     use self::GuardOperand::Name
     use self::GuardRelation::{Gt, In, Lt}
-    in lhs: GuardOperand
-    in relation: GuardRelation
-    in rhs: GuardOperand
-    pub det out bound: GuardBound
-    pub det out strict?      -- the bound itself is not in range
 
     ensure rule: bound = guard_bound_of(lhs, relation, rhs)
     ensure strictness: strict? iff relation in {Lt, Gt}
@@ -385,14 +381,16 @@ pub enum DomainShape { Members, Range, FromZero, Unbounded }
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-pub comp guard_domain {
+pub proc guard_domain(
+    conjuncts: Seq<GuardConjunct>,    -- the conjuncts of the guard, in order
+    k: Nat,                           -- the position of the bound name
+    nat?,                             -- the bound name is a `Nat`
+): (
+    det shape: DomainShape,
+    det lo: Int,                      -- the position of the conjunct that gives the members or the lower bound, or -1
+    det hi: Int,                      -- the position of the conjunct that gives the upper bound, or -1
+) {
     use self::GuardBound::{Lower, Members, Upper}
-    in conjuncts: Seq<GuardConjunct>  -- the conjuncts of the guard, in order
-    in k: Nat                         -- the position of the bound name
-    in nat?                           -- the bound name is a `Nat`
-    pub det out shape: DomainShape
-    pub det out lo: Int               -- the position of the conjunct that gives the members or the lower bound, or -1
-    pub det out hi: Int               -- the position of the conjunct that gives the upper bound, or -1
 
     ensure members: forall (j: Int), when 0 <= j < conjuncts.len and first_at?(conjuncts, k, Members, j),
         shape = DomainShape::Members and lo = j and hi = -1
@@ -418,7 +416,7 @@ A quantifier's guard says nothing about its meaning, which is the same
 however it is written: a domain only lets the evaluator enumerate the
 values at which the guard can hold (see
 [Evaluation](../Eval.md#quantifiers)), and lets the solver know that the
-quantifier is bounded: a component, global expectation or refinement
+quantifier is bounded: a procedure, global expectation or refinement
 whose queries have an unbounded quantifier with a bound name that has a
 domain sets cvc5's `fmf-bound` (see [Solver
 queries](../Cli.md#solver-queries)), with which it finds models of
@@ -430,10 +428,10 @@ A bound name is in scope in the body, and nowhere else. The names of one
 quantifier, across all of its binders, are [distinct](Items.md#distinct-names)
 (`F0213`), and follow the [Boolean names](Types.md#boolean-names) rule for
 their type: `forall (b?: Bool)`, and `forall (m: Method)`. A bound name
-may [shadow](Components.md#shadowing) another, written with `!`: a
-variable, a parameter, an instance, a binder of a global expectation or a
+may [shadow](Procedures.md#shadowing) another, written with `!`: a
+variable, a parameter, a call, a binder of a global expectation or a
 pattern, a bound name of an enclosing quantifier, a constant, a function
-or a variant, as in `forall (m!: Method), ...` within a component with a
+or a variant, as in `forall (m!: Method), ...` within a procedure with a
 variable `m`. A mention of it in the body is not a mention of what it
 shadows.
 
@@ -457,12 +455,12 @@ definedness is quantified as the body is, whether the quantifier is a
 `forall` or an `exists`: in `exists (i: Int), 0 <= i < q.len and q[i] =
 x`, the goal is that `q[i]` is in range for every `i` with `0 <= i <
 q.len`, which holds. A quantifier at the top of a constraint is not a `when`,
-so the constraint has no [trigger](Components.md#triggers).
+so the constraint has no [trigger](Procedures.md#triggers).
 
 ## Global expectations
 
 In a [global expectation's](Global.md) leading `forall`, a binder whose
-path names a component ranges over its behaviours, and one whose type is a
+path names a procedure ranges over its behaviours, and one whose type is a
 type ranges over its values, listed or not, and one `forall` may have both: in `expect
 n: forall (a: c) (m: Method), E`, `E` holds for every behaviour `a` of
 `c` and every value `m` of `Method`. The binders over values are a
@@ -474,16 +472,18 @@ binder's type names and whether it is in a global expectation's leading
 `forall`:
 
 ```fren
--- `TypeName` is a type, listed or not, and `Component` a component.
+-- `TypeName` is a type, listed or not, and `Component` a procedure.
 pub enum BinderTarget { TypeName, Component }
 
 set_option fren.evidence "enumerated" in
-pub comp quantifier_binder {
+pub proc quantifier_binder(
+    target: BinderTarget,
+    global?,                 -- it is in a global expectation's leading `forall`
+): (
+    det accepted?,
+    det behaviours?,         -- it ranges over a procedure's behaviours, not a type's values
+) {
     use self::BinderTarget::{Component, TypeName}
-    in target: BinderTarget
-    in global?               -- it is in a global expectation's leading `forall`
-    pub det out accepted?
-    pub det out behaviours?  -- it ranges over a component's behaviours, not a type's values
 
     ensure rule: accepted? iff (target = TypeName or (global? and target = Component))
     ensure ranges: behaviours? iff target = Component

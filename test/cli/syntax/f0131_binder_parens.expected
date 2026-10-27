@@ -1,8 +1,8 @@
 error[F0131]: the binders of `forall` must be in parentheses
- --> test/cli/syntax/f0131_binder_parens.fren:3:59
+ --> test/cli/syntax/f0131_binder_parens.fren:3:52
   |
-3 | comp c { in x: Mode pub out ok? ensure r: ok? iff (forall m: Mode, m = x) }
-  |                                                           ^ expected `(`
+3 | proc c(x: Mode): (ok?) { ensure r: ok? iff (forall m: Mode, m = x) }
+  |                                                    ^ expected `(`
   |
   = note: a binder is written `(x: T)`, or `(x y: T)` for several names of one type
   = help: write `forall (x: T), e`

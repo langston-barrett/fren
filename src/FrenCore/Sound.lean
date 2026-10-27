@@ -7,7 +7,7 @@ import FrenCore.Check
 
 The check algorithms (`FrenCore.Check`) give the verdicts that `Reqs/Check`
 says they give, provided the solver is sound: these theorems say what each
-verdict, and what a failure reports, means about the component's behaviours,
+verdict, and what a failure reports, means about the procedure's behaviours,
 whatever the solver answers. An `inconclusive` verdict means nothing, so no
 theorem mentions it.
 
@@ -15,7 +15,7 @@ A backend's formulas are interpreted as predicates on environments, which give
 every name a value (`Sound`): variables, and also the uninterpreted functions
 a formula may use. A solver is typed, so only well-typed environments
 (`Sound.Typed`) are behaviours, and only on them must formulas mean what they
-say. What a component means (`Sound.Admits`, `Sound.Behaves`) is defined
+say. What a procedure means (`Sound.Admits`, `Sound.Behaves`) is defined
 from its items, its defined outputs' equations among them, not from the
 hypotheses the checks build, so the theorems also check that each check asks
 the right query. Realizability replaces the defined outputs by their
@@ -26,8 +26,8 @@ what it means when they all pass; `realizable_behaves` says what a passing
 
 Not covered: the theorems are over `Id`, and the front ends run the same
 code in `MetaM` and `IO`; that a front end builds the `Comp` (its formulas,
-instances' behaviours and triggers) faithfully from the source; that an
-instance's behaviour is possible because its component is realizable; a
+calls' behaviours and triggers) faithfully from the source; that an
+call's behaviour is possible because its procedure is realizable; a
 solver that sizes a sort's domain per query (`Sound.HasType`); that cores
 are minimal (`minimize`); that a front end's `subst` meets `Sound.DefsOk`;
 that a definedness goal says its index is in range; and that a table's
@@ -55,27 +55,27 @@ theorem hasRole_iff_any {vars : Array VarSig} {p : Role → Bool} {n : Name} :
 instance (vars : Array VarSig) (p : Role → Bool) (n : Name) : Decidable (HasRole vars p n) :=
   decidable_of_iff _ hasRole_iff_any.symm
 
-/-- `n` is the name of an `out` of the component, which the component
+/-- `n` is the name of an output of the procedure, which the procedure
 chooses. -/
 abbrev IsOut (vars : Array VarSig) : Name → Prop := HasRole vars (· == .output)
 
-/-- `n` is the name of a variable that is not an own `in`: an `out`, or a
-variable of an instance. `determinism` gives these a second copy, as the
+/-- `n` is the name of a variable that is not an own parameter: an output, or a
+variable of a call. `determinism` gives these a second copy, as the
 backends choose them (`check::copied`). -/
 abbrev IsCopied (vars : Array VarSig) : Name → Prop := HasRole vars fun r => (Symbol.ofRole r).copied
 
 /-- `n` is the name of the second copy of a copied variable. -/
 def IsPrimed (vars : Array VarSig) (n : Name) : Prop := ∃ m, IsCopied vars m ∧ primed m = n
 
-/-- `ρ'` differs from `ρ` at most in the `out`s. -/
+/-- `ρ'` differs from `ρ` at most in the outputs. -/
 def OnlyOuts (vars : Array VarSig) (ρ ρ' : Env Val) : Prop := ∀ n, ¬IsOut vars n → ρ' n = ρ n
 
-/-- `ρ` with each variable that is not an own `in` read from its second copy,
+/-- `ρ` with each variable that is not an own parameter read from its second copy,
 as `Backend.prime` renames them. -/
 def primeEnv (vars : Array VarSig) (ρ : Env Val) : Env Val :=
   fun n => if IsCopied vars n then ρ (primed n) else ρ n
 
-/-- What it means for a backend to be sound, for a component with variables
+/-- What it means for a backend to be sound, for a procedure with variables
 `vars`: an interpretation `den` of its formulas, `value` of its model values
 and `HasType` of the names' sorts, under which each formula builder means
 what it says in well-typed environments, and the solver's answers are true
@@ -99,7 +99,7 @@ structure Sound (b : Backend Id F V) (vars : Array VarSig) (Val : Type) where
   falseF : (∀ n, HasType n (ρ n)) → ¬den b.falseF ρ
   notF : (∀ n, HasType n (ρ n)) → (den (b.notF f) ρ ↔ ¬den f ρ)
   conj : (∀ n, HasType n (ρ n)) → (den (b.conj fs) ρ ↔ ∀ f ∈ fs, den f ρ)
-  /-- `∃ outputs, f`: `f` holds after changing only the `out`s, to values
+  /-- `∃ outputs, f`: `f` holds after changing only the outputs, to values
   of their sorts. -/
   existsOutputs : (∀ n, HasType n (ρ n)) →
     (den (b.existsOutputs f) ρ ↔ ∃ ρ', (∀ n, HasType n (ρ' n)) ∧ OnlyOuts vars ρ ρ' ∧ den f ρ')
@@ -130,17 +130,17 @@ def Sound.Holds (hs : Array (Name × F)) (ρ : Env Val) : Prop := ∀ h ∈ hs, 
 /-- `ρ` meets the definitions: each defined output is its definition. -/
 def Sound.Defined (ρ : Env Val) : Prop := ∀ d ∈ c.defs, s.den d.2.1 ρ
 
-/-- `ρ` meets the assumptions, and its first `k` instances are bound as the
-component says and behave as their components do. -/
+/-- `ρ` meets the assumptions, and its first `k` calls are bound as the
+procedure says and behave as their procedures do. -/
 def Sound.Possible (ρ : Env Val) (k : Nat := c.insts.size) : Prop :=
   (∀ a ∈ c.assumes, s.den a.2 ρ) ∧
     ∀ (j : Nat) (hj : j < c.insts.size), j < k → s.den c.insts[j].bindings ρ ∧ s.den c.insts[j].behaviour ρ
 
-/-- `ρ` is a possible environment of the component: it meets the
+/-- `ρ` is a possible environment of the procedure: it meets the
 definitions, and is `Possible`. -/
 def Sound.Admits (ρ : Env Val) (k : Nat := c.insts.size) : Prop := s.Defined ρ ∧ s.Possible ρ k
 
-/-- `ρ` is a behaviour of the component: a possible environment, in which the
+/-- `ρ` is a behaviour of the procedure: a possible environment, in which the
 requirements hold. -/
 def Sound.Behaves (ρ : Env Val) : Prop := s.Admits ρ ∧ ∀ r ∈ c.reqs, s.den r.2 ρ
 
@@ -167,7 +167,7 @@ theorem Sound.holds_defEqs {kd : CheckKind} (hk : kd.substitutes = false) (ρ : 
   · rintro h _ ⟨d, hd, rfl⟩
     exact h d hd
 
-/-- The assumptions and instances mean what the component means. -/
+/-- The assumptions and calls mean what the procedure means. -/
 theorem Sound.holds_possible (k : Nat) {ρ : Env Val} (hρ : s.Typed ρ) :
     s.Holds (c.hyps b k) ρ ↔ s.Possible ρ k := by
   rw [Comp.hyps, s.holds_append, Sound.Possible]
@@ -180,7 +180,7 @@ theorem Sound.holds_possible (k : Nat) {ρ : Env Val} (hρ : s.Typed ρ) :
     simp only [Array.getElem_extract, Nat.zero_add, Array.size_extract] at hj ⊢
     simpa [s.conj hρ] using h j (by omega) (by omega)
 
-/-- The checks' hypotheses mean what the component means. -/
+/-- The checks' hypotheses mean what the procedure means. -/
 theorem Sound.holds_hyps {kd : CheckKind} (hk : kd.substitutes = false) (k : Nat) {ρ : Env Val} (hρ : s.Typed ρ) :
     s.Holds (c.defEqs kd ++ c.hyps b k) ρ ↔ s.Admits ρ k := by
   rw [s.holds_append, s.holds_defEqs hk, s.holds_possible _ hρ]; rfl
@@ -471,10 +471,10 @@ theorem checkRedundant_req_fail (r : Name × F)
   (checkRedundant_fail s _ r h).1 ρ ht ha.1 <|
     (s.holds_append _ _ ρ).2 ⟨(s.holds_possible _ ht).2 ha.2, (holds_others s _ r ρ).2 hr⟩
 
-/-! ## Instance assumptions -/
+/-! ## Call assumptions -/
 
-/-- A `pass` means the instance's assumption follows from the assumptions,
-the earlier instances and the instance's bindings. -/
+/-- A `pass` means the call's assumption follows from the assumptions,
+the earlier calls and the call's bindings. -/
 theorem checkInst_pass (k : Nat) (i : Inst F) (a : Name × F) (h : (checkInst b c k i a).run.verdict = .pass) :
     ∀ ρ, s.Typed ρ → s.Admits ρ k → s.den i.bindings ρ → s.den a.2 ρ := by
   unfold checkInst at h
@@ -486,7 +486,7 @@ theorem checkInst_pass (k : Nat) (i : Inst F) (a : Name × F) (h : (checkInst b 
   · exact (s.holds_possible k ht).2 hρ.2 g hg
   · exact hb
 
-/-- A `fail` is an environment in which the instance's assumption is false,
+/-- A `fail` is an environment in which the call's assumption is false,
 which the counterexample shows. -/
 theorem checkInst_fail (k : Nat) (i : Inst F) (a : Name × F) (h : (checkInst b c k i a).run.verdict = .fail) :
     ∃ ρ model, s.Typed ρ ∧ s.Admits ρ k ∧ s.den i.bindings ρ ∧ ¬s.den a.2 ρ ∧ s.Agrees ρ model ∧
@@ -504,7 +504,7 @@ theorem checkInst_fail (k : Nat) (i : Inst F) (a : Name × F) (h : (checkInst b 
 
 /-- What the place of an index or a table says of the environments where it
 is evaluated: for an assumption, the definitions and the other assumptions
-hold; for a binding of instance `k`, the environment is possible up to
+hold; for a binding of call `k`, the environment is possible up to
 `k`; in a function's body or a constant's value, the definitions hold;
 otherwise it is a behaviour. -/
 def Sound.AtSite (site : IndexSite F) (ρ : Env Val) : Prop :=
@@ -670,7 +670,7 @@ private theorem Sound.den_subst_reqs (hd : s.DefsOk) {ρ : Env Val} (ht : s.Type
     exact h r hr⟩
 
 /-- A `pass` means the assumptions are satisfiable, and every possible
-environment, whatever the instances do, can be changed in its `out`s alone
+environment, whatever the calls do, can be changed in its outputs alone
 to meet the definitions and the requirements. -/
 theorem checkRealizable_pass (hd : s.DefsOk) (h : (checkRealizable b c).run.verdict = .pass) :
     (∃ ρ, s.Typed ρ ∧ s.Defined ρ ∧ ∀ a ∈ c.assumes, s.den a.2 ρ) ∧
@@ -694,7 +694,7 @@ theorem checkRealizable_pass (hd : s.DefsOk) (h : (checkRealizable b c).run.verd
 
 /-- A `fail` means the assumptions contradict each other wherever the
 definitions hold, and the reported ones do; or some possible environment
-cannot be changed in its `out`s to meet the definitions and the
+cannot be changed in its outputs to meet the definitions and the
 requirements, and cannot be to meet the reported ones, with the
 definitions substituted. Its input is shown. -/
 theorem checkRealizable_fail (hd : s.DefsOk) (h : (checkRealizable b c).run.verdict = .fail) :
@@ -760,7 +760,7 @@ theorem checkRealizable_fail (hd : s.DefsOk) (h : (checkRealizable b c).run.verd
         exact hno ⟨ρ'', ht'', fun n hn => (hsame' n fun hdn => hn (hd.out n hdn)).trans (hout n hn), hdef'',
           (hd.holds_subst _ ht'' hdef'').1 ((hd.holds_free _ fun n hn => (hsame' n hn).symm).1 hkeep)⟩
       -- Something was dropped, so the pins and the core contradict each other; and the
-      -- pins hold whatever the outputs, since no pinned variable is an `out`.
+      -- pins hold whatever the outputs, since no pinned variable is an output.
       refine s.falseF ht' (hent ρ' ht' ((s.holds_append _ _ ρ').2 ⟨fun q hq => ?_, hkeep⟩))
       simp only [pinned, pins] at hq
       rw [filterMapM_id] at hq
@@ -770,11 +770,11 @@ theorem checkRealizable_fail (hd : s.DefsOk) (h : (checkRealizable b c).run.verd
       exact (s.pin hf ht').2 ((hout n (hinput _ hin).2).trans (hagree _ hin))
 
 /-- If `realizable` passes, every possible environment is completed to a
-behaviour by choosing the `out`s, provided that changing the `out`s keeps
-the environment `Possible`: assumptions and bindings cannot mention `out`s
+behaviour by choosing the outputs, provided that changing the outputs keeps
+the environment `Possible`: assumptions and bindings cannot mention outputs
 (`inst::binding`). So `expect` and `determinism` do not pass vacuously,
 provided some environment is possible: one that meets the definitions and
-the assumptions, if the component has no instances. -/
+the assumptions, if the procedure has no calls. -/
 theorem realizable_behaves (hd : s.DefsOk) (hindep : ∀ ρ ρ', OnlyOuts c.vars ρ ρ' → s.Possible ρ → s.Possible ρ')
     (h : (checkRealizable b c).run.verdict = .pass) :
     ∀ ρ, s.Typed ρ → s.Admits ρ → ∃ ρ', s.Typed ρ' ∧ OnlyOuts c.vars ρ ρ' ∧ s.Behaves ρ' := fun ρ ht hρ =>
@@ -797,7 +797,7 @@ theorem Sound.holds_twice (hs : Array (Name × F)) {ρ : Env Val} (ht : s.Typed 
     · exact h₁ g hg
     · exact (s.prime ht).2 (h₂ g hg)
 
-/-- The second copy of an environment agrees with it on the own `in`s. -/
+/-- The second copy of an environment agrees with it on the own parameters. -/
 theorem primeEnv_of_not_copied {vars : Array VarSig} {ρ : Env Val} {n : Name} (hn : ¬IsCopied vars n) :
     primeEnv vars ρ n = ρ n := by
   simp [primeEnv, hn]
@@ -849,7 +849,7 @@ theorem checkDeterminism_fail (x : Name) (hx : IsOut c.vars x)
 
 /-- A `pass` means any two behaviours that agree on everything but the
 copied variables agree on `x`: the same inputs, and the same interpretation
-of any functions, whatever the instances do. This needs the behaviours not
+of any functions, whatever the calls do. This needs the behaviours not
 to depend on the second copies, and second copies' names to be distinct and
 not `x`. -/
 theorem checkDeterminism_pass (x : Name) (hx : IsOut c.vars x)
@@ -979,8 +979,8 @@ theorem checkComp_eq (bk : CheckKind → Backend Id F V) (kinds : Array CheckKin
   split <;> rfl
 
 /-- Every result of `checkComp` is the result of one of the checks, on an
-item of the component: its instances' own assumptions, its expectations,
-cover goals and triggers, the comparison sets of `redundancy`, its `det out`s and its
+item of the procedure: its calls' own assumptions, its expectations,
+cover goals and triggers, the comparison sets of `redundancy`, its `det` variables and its
 indexes. `checkComp_eq` says exactly which, and when. -/
 theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKind} {r : CheckResult}
     (h : r ∈ (checkComp bk c kinds).run) :
@@ -1028,8 +1028,8 @@ theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKi
   · obtain ⟨t, ht, rfl⟩ := Array.mem_map.1 (mem_ite h).2
     exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ⟨t, ht, rfl⟩))))))))))))
 
-/-- Each selected check runs: on the component, on each assumption of each
-instance, each expectation, each cover goal, each trigger, each `det out` and each index; and
+/-- Each selected check runs: on the procedure, on each assumption of each
+call, each expectation, each cover goal, each trigger, each `det` variable and each index; and
 `redundancy` on each assumption and each requirement it is asked about
 (`check::redundancy_asked`): not if they are contradictory, nor for a
 requirement whose `vacuity` check failed. Whether they are contradictory is
@@ -1104,7 +1104,7 @@ theorem checkComp_runs {bk : CheckKind → Backend Id F V} {kinds : Array CheckK
   · simp only [hk, if_true]
     exact .inr (Array.mem_map.2 ⟨t, ht, rfl⟩)
 
-/-- What `fren` runs for a global expectation, and for a component
+/-- What `fren` runs for a global expectation, and for a procedure
 (`check::applies`). -/
 theorem kindsFor_spec :
     kindsFor true = #[.expect, .vacuity, .definedness, .completeness, .disjointness, .precondition, .reachability] ∧
@@ -1169,7 +1169,7 @@ theorem checkReach_kind {b : Backend Id F V} {t : TableSite F} :
   all_goals rfl
 
 /-- Interpretations with the same meaning of formulas and sorts mean the
-same by a component. -/
+same by a procedure. -/
 private theorem Sound.congr {b b' : Backend Id F V} (s : Sound b c.vars Val) (s' : Sound b' c.vars Val)
     (h : s.den = s'.den ∧ s.HasType = s'.HasType) :
     (∀ ρ, s.Typed ρ ↔ s'.Typed ρ) ∧ (∀ ρ k, s.Admits ρ k ↔ s'.Admits ρ k) ∧
@@ -1186,19 +1186,19 @@ private theorem Sound.congr {b b' : Backend Id F V} (s : Sound b c.vars Val) (s'
   · exact hB ρ
   · simp [Sound.Defined, hd]
 
-/-- When every check of a component passes, except perhaps `redundancy`,
-whose failures are only warnings: it is realizable, every instance's
+/-- When every check of a procedure passes, except perhaps `redundancy`,
+whose failures are only warnings: it is realizable, every call's
 assumptions hold, every expectation holds, every cover goal is met by some
 behaviour, every trigger can hold, every
-`det out`'s check passes, so that `checkDeterminism_pass` applies to it (the
-front ends allow `det` only on `out`s), every index is in range where it
+`det` variable's check passes, so that `checkDeterminism_pass` applies to it (the
+front ends allow `det` only on outputs), every index is in range where it
 is evaluated, every question about a table's rows or a `match`'s arms
 but reachability holds where it is evaluated, and every arm or row asked
 about is taken somewhere the hypotheses of its place, but the constraint
 it is in, hold (`Comp.reachHyps`). This is for backends that agree on what formulas and sorts
 mean, as the front ends' do (they differ only in the SMT-LIB logic they
 declare), and whose definitions realizability can substitute
-(`Sound.DefsOk`). And when changing the `out`s keeps an environment
+(`Sound.DefsOk`). And when changing the outputs keeps an environment
 `Possible` (as for `realizable_behaves`), and some environment is possible,
 some behaviour meets every expectation: they do not hold vacuously. -/
 theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk k) c.vars Val)

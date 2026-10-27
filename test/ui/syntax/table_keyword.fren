@@ -1,6 +1,6 @@
 -- `table` is a reserved word, so it is not a name: it starts a table,
 -- whose scrutinee, if it has one, is an expression.
-comp keyword { in x: Int pub out z? ensure r: z? iff table = x }
+proc keyword(x: Int): (z?) { ensure r: z? iff table = x }
 --~^[cli] error: expected an expression, found `=`
 --~^^[hosted] error: expected
 --@ exit: 2

@@ -3,10 +3,7 @@ set_option fren.lint.manual_ordering "warn"
 
 pub ordered enum Level { Low, Mid, High, Top }
 
-comp c {
-    in l: Level
-    pub out p?
-    pub out q?
+proc c(l: Level): (p?, q?) {
     ensure r: p? iff l in {Level::Low, Level::Mid}
     ensure s: q? iff l != Level::Top and l != Level::High
 }

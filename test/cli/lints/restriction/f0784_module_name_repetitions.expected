@@ -8,10 +8,10 @@ warning[F0784]: enum `ClimateMode` contains the name of its module `climate`
   = help: remove `climate` from its name
   = note: `module_name_repetitions` is set to `warn`
 
-warning[F0784]: component `climate_reading` contains the name of its module `climate`
+warning[F0784]: procedure `climate_reading` contains the name of its module `climate`
  --> test/cli/lints/restriction/f0784_module_name_repetitions.fren:8:10
   |
-8 | pub comp climate_reading {
+8 | pub proc climate_reading(mode: ClimateMode): (heating?) {
   |          ^^^^^^^^^^^^^^^ contains `climate`
   |
   = note: a path to it names the module already, as `climate::climate_reading` does

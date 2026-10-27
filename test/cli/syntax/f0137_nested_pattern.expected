@@ -1,8 +1,8 @@
 error[F0137]: a pattern type cannot have a second pattern
- --> test/cli/syntax/f0137_nested_pattern.fren:2:27
+ --> test/cli/syntax/f0137_nested_pattern.fren:2:22
   |
-2 | comp c { in n: Int is 0.. is ..=9 }
-  |                           ^^ a second `is`
+2 | proc c(n: Int is 0.. is ..=9) {}
+  |                      ^^ a second `is`
   |
   = note: pattern types are not nested: the base type of `T is P` is never itself a pattern type
   = help: write one pattern, which matches what both patterns do

@@ -1,8 +1,8 @@
 warning[F0835]: this range overlaps `0..=10`, an earlier arm's pattern
- --> test/cli/lints/style/f0835_match_overlapping_arm.fren:3:72
+ --> test/cli/lints/style/f0835_match_overlapping_arm.fren:3:65
   |
-3 | comp c { in n: Int pub out m: Int ensure r: m = match n { 0..=10 => 1, 5..=15 => 2, _ => 3 } }
-  |                                                                        ^^^^^^ overlaps an earlier arm
+3 | proc c(n: Int): (m: Int) { ensure r: m = match n { 0..=10 => 1, 5..=15 => 2, _ => 3 } }
+  |                                                                 ^^^^^^ overlaps an earlier arm
   |
   = note: where they overlap, the earlier arm is taken, so this arm matches only part of its range
   = note: `match_overlapping_arm` is `warn` by default

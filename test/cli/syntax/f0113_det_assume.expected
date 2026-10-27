@@ -1,0 +1,17 @@
+error[F0113]: `det` applies only to results, `exists` and `let`, not to a constraint
+ --> test/cli/syntax/f0113_det_assume.fren:2:18
+  |
+2 | proc c(x: Int) { det assume a: x > 0 }
+  |                  ^^^ `det` is not allowed here
+  |
+  = note: `det` is written on a result, `det r: T`, or on `det exists x: T` or `det let x: T := e`
+help: remove `det`
+  |
+2 - proc c(x: Int) { det assume a: x > 0 }
+2 + proc c(x: Int) { assume a: x > 0 }
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0113`.
+exit=2

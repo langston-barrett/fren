@@ -2,8 +2,6 @@
 -- without type arguments (`Reqs/Lang/Generics#printing`).
 pub struct Pair<A, B> { fst: A, snd: B }
 
-comp shown {
-    in x: Option<Int>
-    in p: Pair<Option<Bool>, Int>
+proc shown(x: Option<Int>, p: Pair<Option<Bool>, Int>) {
     expect small: x = Option::None or p.fst = Option::Some(true)
 }

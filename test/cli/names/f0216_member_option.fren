@@ -1,7 +1,5 @@
 -- Before a member, `set_option` sets only `fren.evidence`.
-comp c {
-    in x?
-    pub out y?
+proc c(x?): (y?) {
     set_option fren.lint.nonminimal_bool "allow" in
     ensure r: y? iff x?
 }

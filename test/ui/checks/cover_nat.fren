@@ -1,10 +1,7 @@
 -- A cover goal's query assumes what the natural numbers bring, as every
 -- check's does: a `Nat` input is at least 0 in every witness.
 
-comp counter {
-    in n: Nat
-    pub out empty?
-
+proc counter(n: Nat): (empty?) {
     ensure r: empty? iff n = 0
 
     cover zero: n = 0 and empty?                   --~ info: cover goal `counter::zero` is met

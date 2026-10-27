@@ -1,2 +1,2 @@
 -- A `match` on a set.
-comp c { in s: Set<Int> pub out y: Int ensure r: y = match s { _ => 0 } }
+proc c(s: Set<Int>): (y: Int) { ensure r: y = match s { _ => 0 } }

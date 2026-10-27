@@ -147,7 +147,7 @@ another `let`, whose restriction its body keeps. -/
 scoped syntax:10 (name := letExpr) "let " sepBy1(fren_let_def, ", ") withoutForbidden(" in ") fren_expr:10 : fren_expr
 
 /-- `(x y: T)`: a binder of a quantifier, over the values of `T`, or of a
-global expectation's leading `forall`, where it may name a component and
+global expectation's leading `forall`, where it may name a procedure and
 range over its behaviours (`Reqs/Lang/Quantifiers`). -/
 syntax fren_binder := "(" frenIdent+ " : " fren_type ")"
 
@@ -361,21 +361,33 @@ scoped syntax:10 (name := patType) fren_type:11 " is " fren_top_pattern : fren_t
 
 declare_syntax_cat fren_member (behavior := both)
 
-/-- `in x: T`; a definition, `:= e`, is parsed only to report that inputs
-cannot have one. -/
+/-- `in x: T`, an input as components declared them, parsed only so that
+the elaborator reports it (`F0159`); a definition, `:= e`, is parsed only
+to report that inputs cannot have one. -/
 scoped syntax (name := inMember) "in " frenIdent (" : " fren_type)? (" := " fren_expr)? : fren_member
-/-- `[pub] [det] out x: T [:= e]`: `det` asks for the determinism check, and
-`:= e` makes it a defined output. -/
+/-- `out r := e`, the definition of the result `r`; any other form, `[pub]
+[det] out x: T [:= e]`, is an output as components declared them, which the
+elaborator reports (`F0160`). -/
 scoped syntax (name := outMember) ("pub ")? (&"det ")? &"out " frenIdent (" : " fren_type)? (" := " fren_expr (fren_where)?)? : fren_member
 scoped syntax (name := assumeMember) &"assume " frenIdent " : " fren_expr (fren_where)? : fren_member
 scoped syntax (name := ensureMember) &"ensure " frenIdent " : " fren_expr (fren_where)? : fren_member
 scoped syntax (name := expectMember) &"expect " frenIdent " : " fren_expr (fren_where)? : fren_member
-/-- `cover n: e`, a scenario that the component must allow (`Reqs/Lang/Components#cover-goals`). -/
+/-- `cover n: e`, a scenario that the procedure must allow (`Reqs/Lang/Procedures#cover-goals`). -/
 scoped syntax (name := coverMember) &"cover " frenIdent " : " fren_expr (fren_where)? : fren_member
 
-/-- `inst w: c { x := e, ... }`: an instance `w` of comp `c`. -/
+/-- `[det] exists x: T`: a private variable that the system chooses
+(`Reqs/Lang/Procedures#members`). -/
+scoped syntax (name := existsMember) (&"det ")? "exists " frenIdent (" : " fren_type)? : fren_member
+/-- `[det] let x: T := e`: a private variable defined by `e`. -/
+scoped syntax (name := letMember) (&"det ")? "let " frenIdent (" : " fren_type)? " := " fren_expr (fren_where)? : fren_member
+/-- `call w := p(a, b)`: a call `w` of the procedure `p`, with an argument
+for each of its parameters, in order. -/
+scoped syntax (name := callMember) &"call " frenIdent " := " fren_path noWs "("
+  withoutForbidden(sepBy(fren_expr, ", ", ", ", allowTrailingSep)) ")" : fren_member
+/-- `inst w: c { x := e, ... }`: an instance, as calls were written before
+they were calls, parsed only so that the elaborator reports it (`F0420`). -/
 scoped syntax (name := instMember) &"inst " frenIdent " : " fren_path " { " sepBy(fren_binding, ", ", ", ", allowTrailingSep) " }" : fren_member
-/-- `use`, as a member: its names are in scope in the component only. -/
+/-- `use`, as a member: its names are in scope in the procedure only. -/
 scoped syntax (name := useMember) "use " fren_path ("::*")? : fren_member
 scoped syntax (name := useGroupMember) "use " fren_path "::{" sepBy1(fren_path, ", ", ", ", allowTrailingSep) "}" : fren_member
 /-- `set_option fren.evidence "tested" in`, before a member whose checks it
@@ -423,7 +435,29 @@ scoped syntax (name := structCmd) ("pub ")? ("ordered ")? "struct " frenIdent (n
 type (`lang::newtype`), which the elaborator checks. -/
 scoped syntax (name := newtypeCmd) ("pub ")? ("ordered ")? "struct " frenIdent noWs "(" sepBy(fren_type, ", ") ")" : command
 
+/-- `comp c { members }`, a component, as procedures were written before
+they were procedures, parsed only so that the elaborator reports it
+(`F0158`). -/
 scoped syntax (name := compCmd) ("pub ")? "comp " frenIdent " { " fren_member* " }" : command
+
+/-- `x: T`, or `x?` for a `Bool`: a parameter of a procedure. A modifier,
+`pub` or `det`, and a definition, `:= e`, are parsed only so that the
+elaborator reports them (`F0110`, `F0114`). -/
+syntax fren_proc_param := ("pub " <|> atomic(&"det " lookahead(frenIdent)))? frenIdent (" : " fren_type)? (" := " fren_expr)?
+
+/-- `set_option fren.evidence "tested" in`, before a result, which sets the
+evidence of its determinism check (`Reqs/Check#checking-by-testing`). -/
+syntax fren_result_evidence := "set_option " ident ppSpace str " in "
+
+/-- `[det] r: T`, a result of a procedure, after any evidence setting. -/
+syntax fren_result := (fren_result_evidence)? (&"det ")? frenIdent (" : " fren_type)?
+
+/-- `[pub] proc p(x: T, ...): (r: U, ...) { members }`, a procedure
+(`Reqs/Lang/Procedures`): its inputs are its parameters, its public
+outputs its named results, and its other members are in its block. -/
+scoped syntax (name := procCmd) ("pub ")? "proc " frenIdent noWs "("
+  sepBy(fren_proc_param, ", ", ", ", allowTrailingSep) ")"
+  (" : " "(" sepBy1(fren_result, ", ", ", ", allowTrailingSep) ")")? " { " fren_member* " }" : command
 
 /-- `type T`, an abstract type, or `type T := U`, a type alias. -/
 scoped syntax (name := typeCmd) ("pub ")? "type " frenIdent (" := " fren_type)? : command

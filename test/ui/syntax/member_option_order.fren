@@ -4,9 +4,7 @@
 
 pub enum S { A(Int), B }
 
-comp c {
-    in s: S
+proc c(s: S): (z: Int) {
     set_option fren.lint.dead_code "allow" in   --~ error: `fren.lint.dead_code` cannot be set before a member
-    pub out z: Int
     ensure r: z = match s { S::A(x.y) => 0, _ => 1 }
 }

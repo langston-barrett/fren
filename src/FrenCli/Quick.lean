@@ -8,7 +8,7 @@ import FrenCli.Verdicts
 # Testing specs on random behaviours (`Reqs/Eval#fren-quickcheck`)
 
 Each test chooses an interpretation, an admissible input, behaviours of
-the instances and outputs, by the search of `FrenCli.Search`, and reports
+the calls and outputs, by the search of `FrenCli.Search`, and reports
 what it refutes as the checks would (`eval::test_verdict`). Every
 counterexample has been evaluated, so it is genuine (`eval::sound`).
 -/
@@ -36,21 +36,21 @@ def Spec.shown (sp : Spec) (vars : Array Var) (env : Env) (keep : Var → Bool) 
 /-- The variables of `vars` to choose, in `order`, other than those in `env`. -/
 def remaining (order : Array (Name × VTy)) (env : Env) : Array (Name × VTy) := order.filter (!env.contains ·.1)
 
-/-- An admissible input, with behaviours of the instances: the instance
-assumptions that a test refutes, and the instance whose behaviour was not
+/-- An admissible input, with behaviours of the calls: the call
+assumptions that a test refutes, and the call whose behaviour was not
 found, if any. -/
 structure Admitted where
   env : Env
-  /-- Counterexamples to instance assumptions: the instance, the
-  instantiated comp, its assumption, and the shown values. -/
+  /-- Counterexamples to call assumptions: the call, the
+  called procedure, its assumption, and the shown values. -/
   instFails : Array (Name × Name × Name × Assignment) := #[]
-  /-- The instances reached, by index, for counting. -/
+  /-- The calls reached, by index, for counting. -/
   reached : Nat := 0
   complete : Bool := false
 
 /-- The constraints that `Spec.admit` searches with, for `c`: its
-assumptions, the definitions of its defined outputs that the inputs give,
-and each instance's bindings and meaning, compiled for searches whose
+assumptions, the definitions of its defined variables that the inputs give,
+and each call's arguments and meaning, compiled for searches whose
 interpretations' shapes are `shapes` (`Atom.compiled`). -/
 structure AdmitAtoms where
   assumes : Array Atom
@@ -65,7 +65,7 @@ def Spec.admitAtoms (sp : Spec) (c : Comp) (shapes : Name → Option Fren.Core.D
     binds := c.insts.map fun i => (bindingAtoms .anonymous i).map (·.compiled shapes)
     insts := c.insts.map fun i => (sp.instAtoms .anonymous i).map (·.compiled shapes) }
 
-/-- Searches for an admissible input, then for each instance in turn
+/-- Searches for an admissible input, then for each call in turn
 confirms its assumptions on its inputs and searches for its behaviour.
 `ints` and `strs` are the integers and strings to try (`intsOf`,
 `stringsOf`); `shapes?` is as for `World.interp`, and `pre` is
@@ -92,7 +92,7 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
     let some env' ← ({ vars := ins, atoms := binds, ints := intsOf binds, strs : Problem }.solve sp w I env) | return some out
     env := env'
     out := { out with env, reached := k + 1 }
-    -- Inputs and the earlier instances' public outputs (`checkInst`).
+    -- Inputs and the earlier calls' public outputs (`checkInst`).
     let later := (c.insts.extract k).map (·.name)
     let shown := sp.shown vars env fun v => v.role.isUniversal && v.isPub && !later.contains v.name.getRoot
     let mut failed := false
@@ -118,7 +118,7 @@ structure Report where
   admissible behaviours (`F0612`). -/
   untriggered : Array CheckResult := #[]
   /-- The cover goals for which no test found a witness, though some found
-  behaviours that meet the comp (`F0616`). -/
+  behaviours that meet the procedure (`F0616`). -/
   unwitnessed : Array CheckResult := #[]
 
 def verdictOf (kind : CheckKind) (t : Tally) : Fren.Core.Verdict := testVerdict kind t.refuted?.isSome t.tests
@@ -128,7 +128,7 @@ whether the check's trigger, if any, holds there (`eval::reaches`). -/
 def reaches (I : Interp) (pfx : Name) (trigger? : Option Ex) (env : Env) : Bool :=
   reached true trigger?.isSome (trigger?.any fun t => ({ label := .anonymous, pfx, e := t } : Atom).eval I env.look == some true)
 
-/-- Tests the comp `c` (`eval::test_verdict`). -/
+/-- Tests the procedure `c` (`eval::test_verdict`). -/
 def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let vars := sp.flatVars c
   let expects := c.ofKind .expect
@@ -143,14 +143,14 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let mut covW : Array (Option Assignment) := covers.map fun _ => none
   let mut detT : Array Tally := dets.map fun _ => {}
   let mut instT : Array Tally := instAssumes.map fun _ => {}
-  -- The tests that reached each instance, whether or not the trigger held.
+  -- The tests that reached each call, whether or not the trigger held.
   let mut instFound : Array Nat := instAssumes.map fun _ => 0
   let mut noOutputs? := none
   let mut behaviours := 0
   -- The definitions, so that the search computes defined outputs.
   let reqs := c.defAtoms ++ atomsOf .anonymous (c.ofKind .ensure)
   let all := sp.meaning c
-  -- The literals of the whole component, its expectations and cover goals too.
+  -- The literals of the whole procedure, its expectations and cover goals too.
   let lits := all ++ atomsOf .anonymous expects ++ atomsOf .anonymous covers
   let ints := intsOf lits
   let strs ← stringsOf lits
@@ -193,8 +193,8 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
           continue
       let trigger? := e.e.trigger?
       -- A behaviour in which the trigger holds, searched for from a new
-      -- input if this one's does not. It need only meet the component,
-      -- which is what an expectation is about, so instance assumptions are
+      -- input if this one's does not. It need only meet the procedure,
+      -- which is what an expectation is about, so call assumptions are
       -- hypotheses there, as in the solver's query, not obligations.
       let env? ← if reaches I .anonymous trigger? env then pure (some env) else
         -- Once refuted, an expectation needs no more searching.
@@ -215,7 +215,7 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       let some envG := env? | continue
       covT := covT.modify k Tally.reach
       covW := covW.set! k (some (sp.shown vars envG (·.isPub)))
-    -- A second behaviour on the same input, differing on the `det out`.
+    -- A second behaviour on the same input, differing on the `det` variable.
     let inputs : Env := c.vars.foldl (init := {}) fun acc v =>
       if v.role == .input then (env[v.name]?.map (acc.insert v.name ·)).getD acc else acc
     for x in dets, k in [0:dets.size] do
@@ -261,13 +261,13 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
   let some body := g.constraints[0]? | return {}
   let trigger := body.e.trigger?
   let ds := g.insts.filterMap fun i => (sp.comp? i.comp).map (i, ·)
-  -- A binder whose comp is unknown leaves it untested.
+  -- A binder whose procedure is unknown leaves it untested.
   if ds.size != g.insts.size then
     return { results := #[{ kind := .expect, comp := g.path, prop? := some body.name, verdict := .inconclusive, detail := .none }]
              untested := true }
   let order := ds.flatMap fun (i, d) => sp.order d i.name
   let meaning := ds.flatMap fun (i, d) => sp.meaning d i.name
-  -- The literals of the body too, as of a component's expectations.
+  -- The literals of the body too, as of a procedure's expectations.
   let lits := meaning.push { label := body.name, pfx := .anonymous, e := body.e }
   let strs ← stringsOf lits
   let ints := intsOf lits
@@ -315,7 +315,7 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
 
 /-! ## `fren eval` -/
 
-/-- The value of each constraint and instance of `c` in `env`, and the
+/-- The value of each constraint and call of `c` in `env`, and the
 behaviour's status (`eval::status`), `none` if unknown. -/
 structure Evaluation where
   lines : Array (String × Option Bool)

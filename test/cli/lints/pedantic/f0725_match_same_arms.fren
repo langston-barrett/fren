@@ -3,11 +3,7 @@ set_option fren.lint.match_same_arms "warn"
 
 enum E { A, B, C, D }
 
-comp c {
-    in e: E
-    pub out n: Int
-    pub out m: Int
-
+proc c(e: E): (n: Int, m: Int) {
     ensure r1: n = match e { E::A => 1, E::B => 2, E::C => 1, E::D => 1 }
     ensure r2: m = match e { E::A => 1, E::B => 2, _ => 1 }
 }

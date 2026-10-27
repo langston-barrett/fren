@@ -10,13 +10,13 @@ shown as edits:
 error[F0105]: `==` is not an operator in Fren
  --> test.fren:2:29
   |
-2 | comp c { in x: Int ensure r: x == 1 }
+2 | proc c(x: Int) { ensure r: x == 1 }
   |                             ^^ not a Fren operator
   |
 help: use `=` to test for equality
   |
-2 - comp c { in x: Int ensure r: x == 1 }
-2 + comp c { in x: Int ensure r: x = 1 }
+2 - proc c(x: Int) { ensure r: x == 1 }
+2 + proc c(x: Int) { ensure r: x = 1 }
   |
 ```
 -/

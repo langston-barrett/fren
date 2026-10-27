@@ -1,18 +1,18 @@
 warning[F0764]: this `*` is always `0`
- --> test/cli/lints/suspicious/f0764_erasing_op.fren:4:77
+ --> test/cli/lints/suspicious/f0764_erasing_op.fren:4:61
   |
-4 | comp c { in x: Int in r: Rel<E, E> pub out y: Int pub out p? ensure r1: y = 0 * x + 1 ensure r2: p? iff r inter {} = r }
-  |                                                                             ^^^^^ ignores its other operand
+4 | proc c(x: Int, r: Rel<E, E>): (y: Int, p?) { ensure r1: y = 0 * x + 1 ensure r2: p? iff r inter {} = r }
+  |                                                             ^^^^^ ignores its other operand
   |
   = note: the literal is probably not the operand meant
   = note: `erasing_op` is `warn` by default
   = help: to allow it, `set_option fren.lint.erasing_op "allow"`
 
 warning[F0764]: this `inter` is always `{}`
- --> test/cli/lints/suspicious/f0764_erasing_op.fren:4:105
+ --> test/cli/lints/suspicious/f0764_erasing_op.fren:4:89
   |
-4 | comp c { in x: Int in r: Rel<E, E> pub out y: Int pub out p? ensure r1: y = 0 * x + 1 ensure r2: p? iff r inter {} = r }
-  |                                                                                                         ^^^^^^^^^^ ignores its other operand
+4 | proc c(x: Int, r: Rel<E, E>): (y: Int, p?) { ensure r1: y = 0 * x + 1 ensure r2: p? iff r inter {} = r }
+  |                                                                                         ^^^^^^^^^^ ignores its other operand
   |
   = note: the literal is probably not the operand meant
 

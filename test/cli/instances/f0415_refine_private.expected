@@ -4,8 +4,8 @@ error[F0415]: `hidden` is private to `precise`
 5 | refine fits: precise refines rough { z := hidden }
   |                                           ^^^^^^ private
   |
-  = note: a refinement's bindings see only the `in`s and `pub out`s of `precise`
-  = help: to mention it, declare it `pub out` in `precise`
+  = note: a refinement's bindings see only the parameters and results of `precise`
+  = help: to mention it, make it a result of `precise`
 
 error: could not check due to previous errors
 

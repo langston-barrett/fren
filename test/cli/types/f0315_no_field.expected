@@ -1,14 +1,14 @@
 error[F0315]: record `Point` has no field `z`
- --> test/cli/types/f0315_no_field.fren:3:53
+ --> test/cli/types/f0315_no_field.fren:3:46
   |
-3 | comp c { in p: Point pub out z: Int ensure r: z = p.z }
-  |                                                     ^ unknown field
+3 | proc c(p: Point): (z: Int) { ensure r: z = p.z }
+  |                                              ^ unknown field
   |
   = note: the fields of `Point` are `x` and `y`
 help: a field with a similar name exists: `x`
   |
-3 - comp c { in p: Point pub out z: Int ensure r: z = p.z }
-3 + comp c { in p: Point pub out z: Int ensure r: z = p.x }
+3 - proc c(p: Point): (z: Int) { ensure r: z = p.z }
+3 + proc c(p: Point): (z: Int) { ensure r: z = p.x }
   |
 
 error: could not check due to previous errors

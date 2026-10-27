@@ -1,4 +1,2 @@
--- fren-covers: lang::modifiers
-comp c {
-    in x: Int := 3
-}
+-- A parameter with a definition (F0114).
+proc c(x: Int := 3) {}

@@ -1,21 +1,21 @@
 --- test/cli/fix/patterns_tables.fren
 +++ test/cli/fix/patterns_tables.fren
-@@ -16 +16 @@
+@@ -20 +20 @@
 -        Reply::Ok(x) => match x { Shape::Circle(_) => 1, Shape::Square(1 | 2) => 2, _ => 0 },
 +        Reply::Ok(Shape::Circle(_)) => 1, Reply::Ok(Shape::Square(1 | 2)) => 2,
-@@ -19,7 +19,7 @@
--    pub det out d: Int := match p { Pair::Two(t, k) => match t { Shape::Empty => k, _ => 0 }, _ => 0 }
--    pub det out e: Int := match n { 1 | 2 | 3 => 1, 4 | 5 => 2, ..=0 | 6.. => 3 }
--    pub det out f: Int := match s { Shape::Circle(1) | Shape::Circle(2) => 1, Shape::Empty | _ => 0 }
--    pub det out g: Int := 3 * match b? { true => n, false => 0 }
--    pub det out h: Int := table { n > 0 => n + 1, _ => n + 1 } + 1
--    pub det out i: Int := match r { Reply::Ok(Shape::Circle(_)) => 1, _ => 0 }
--    pub det out j: Int := match n { 0..=9 => 1, _ => 0 }
-+    pub det out d: Int := match p { Pair::Two(Shape::Empty, k) => k, _ => 0 }
-+    pub det out e: Int := match n { 1..=3 => 1, 4 | 5 => 2, ..=0 | 6.. => 3 }
-+    pub det out f: Int := if s is Shape::Circle(1 | 2) then 1 else 0
-+    pub det out g: Int := 3 * (if b? then n else 0)
-+    pub det out h: Int := n + 1 + 1
-+    pub det out i: Int := if r is Reply::Ok(Shape::Circle(_)) then 1 else 0
-+    pub det out j: Int := if n is 0..=9 then 1 else 0
+@@ -23,7 +23,7 @@
+-    out d := match p { Pair::Two(t, k) => match t { Shape::Empty => k, _ => 0 }, _ => 0 }
+-    out e := match n { 1 | 2 | 3 => 1, 4 | 5 => 2, ..=0 | 6.. => 3 }
+-    out f := match s { Shape::Circle(1) | Shape::Circle(2) => 1, Shape::Empty | _ => 0 }
+-    out g := 3 * match b? { true => n, false => 0 }
+-    out h := table { n > 0 => n + 1, _ => n + 1 } + 1
+-    out i := match r { Reply::Ok(Shape::Circle(_)) => 1, _ => 0 }
+-    out j := match n { 0..=9 => 1, _ => 0 }
++    out d := match p { Pair::Two(Shape::Empty, k) => k, _ => 0 }
++    out e := match n { 1..=3 => 1, 4 | 5 => 2, ..=0 | 6.. => 3 }
++    out f := if s is Shape::Circle(1 | 2) then 1 else 0
++    out g := 3 * (if b? then n else 0)
++    out h := n + 1 + 1
++    out i := if r is Reply::Ok(Shape::Circle(_)) then 1 else 0
++    out j := if n is 0..=9 then 1 else 0
 exit=1

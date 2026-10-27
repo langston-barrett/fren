@@ -1,5 +1,5 @@
 --- a/mutate_diff_elsewhere.fren
 +++ b/mutate_diff_elsewhere.fren
-@@ -9 +9 @@
+@@ -7 +7 @@
 -    ensure r: y? iff x > 2
 +    ensure r: y? iff x > 1

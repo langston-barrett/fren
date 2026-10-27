@@ -4,7 +4,7 @@ error[F0502]: `test/fixtures/covers_shown.txt` does not say that it covers `othe
 3 | tested other: "test/fixtures/covers_shown.txt"
   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `fren-covers: other` in this file
   |
-  = note: a test names the components it covers, so that claims cannot silently go stale
+  = note: a test names the procedures it covers, so that claims cannot silently go stale
   = help: add a comment `fren-covers: other` to `test/fixtures/covers_shown.txt`
 
 error: could not check due to previous errors

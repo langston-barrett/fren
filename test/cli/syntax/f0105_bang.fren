@@ -1,2 +1,2 @@
 -- `!` for negation (F0105).
-comp c { in a? pub out d? ensure r: d? iff !a? }
+proc c(a?): (d?) { ensure r: d? iff !a? }

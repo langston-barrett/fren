@@ -1,11 +1,7 @@
 --@ args: fix --check -A undecidable
 -- `fren fix` shortens chains of methods, receivers in parentheses too.
 pub enum E { A, B }
-pub comp c {
-    in q: Seq<Int>
-    in r: Rel<E, E>
-    pub out p?
-
+pub proc c(q: Seq<Int>, r: Rel<E, E>): (p?) {
     ensure r1: p? iff (q ++ q).rev.rev = q and r.inverse.inverse.domain = {} and (q.rev).rev.len = 1
     ensure r2: q.rev.rev[0] = 1 and r.closure.closure.closure = r and q.rev.rev.rev = q
 }

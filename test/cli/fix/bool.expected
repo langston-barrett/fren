@@ -1,9 +1,9 @@
 --- test/cli/fix/bool.fren
 +++ test/cli/fix/bool.fren
-@@ -18 +18 @@
--    inst s: sub { i? := if a? then true else false }
-+    inst s: sub { i? := a? }
-@@ -20,4 +20,4 @@
+@@ -8 +8 @@
+-    call s := sub(if a? then true else false)
++    call s := sub(a?)
+@@ -10,4 +10,4 @@
 -    ensure r1: o? iff a? = true
 -    ensure r2: when not not (a? or b?), w? or not (x < 3)
 -    ensure r3: p? = (if b? then false else true) or false = a?

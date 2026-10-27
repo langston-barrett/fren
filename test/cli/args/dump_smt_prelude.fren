@@ -9,18 +9,13 @@
 -- fren-covers: lang::prelude_smt
 pub enum Option!<T> { Nothing, Just(T) }
 
-comp user {
-    in x: Option<Int>
-    pub out y?
+proc user(x: Option<Int>): (y?) {
     ensure r: y? iff x = Option::Nothing
 }
 
 mod m
 
-comp prelude {
-    in x: Option<Int>
-    in r: Result<Int, Bool>
-    pub out y: Int
+proc prelude(x: Option<Int>, r: Result<Int, Bool>): (y: Int) {
     ensure a: y = match x { Some(n) => n, None => 0 }
     expect e: r != Result::Err(true) or y >= 0
 }

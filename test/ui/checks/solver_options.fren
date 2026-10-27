@@ -5,10 +5,9 @@
 set_option fren.lint.assertions_on_constants "allow"
 set_option fren.lint.constant_output "allow"
 
-comp c {
+proc c(): (det g?) {
     --~^ error: `c` is not realizable
-    out s: Set<Int> := {1, 2}
-    pub det out g?
+    let s: Set<Int> := {1, 2}
 
     ensure r: {(0, 0), (1, 2)}.image(s inter {1}).card = 2   --~ info: is false for this input
     cover goal: g?

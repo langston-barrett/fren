@@ -3,13 +3,7 @@
 -- is an atom: its fixes need no parentheses around it.
 struct S { on?, n: Int }
 
-pub comp c {
-    in a?
-    in s: S
-    pub out o?
-    pub out p?
-    pub out q?
-
+pub proc c(a?, s: S): (o?, p?, q?) {
     ensure r1: o? iff not not { s with on? := a? }.on?
     ensure r2: p? iff not ({ s with n := 1 } = s)
     ensure r3: q? iff { s with on? := a? }.on? = true

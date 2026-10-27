@@ -1,11 +1,11 @@
 error[F0313]: output `l` has the unbounded type `List`
- --> test/cli/types/f0313_unbounded_output.fren:3:28
+ --> test/cli/types/f0313_unbounded_output.fren:3:18
   |
-3 | comp c { in x: Int pub out l: List ensure r: l = List::Cons(x, List::Nil) }
-  |                            ^ an unbounded type
+3 | proc c(x: Int): (l: List) { ensure r: l = List::Cons(x, List::Nil) }
+  |                  ^ an unbounded type
   |
   = note: the realizability check asks whether outputs exist, which the solver cannot decide for values of unbounded size
-  = help: define it, as `out x: T := e`, make it an input, or describe it by outputs of bounded types
+  = help: define it, as `let x: T := e` or `out r := e`, make it a parameter, or describe it by outputs of bounded types
 
 error: could not check due to previous errors
 

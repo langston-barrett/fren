@@ -1,6 +1,6 @@
 --- test/cli/fix/open_ended.fren
 +++ test/cli/fix/open_ended.fren
-@@ -34,12 +34,12 @@
+@@ -22,12 +22,12 @@
 -    ensure collapsible: o1? iff (unless (p? or if q? then r? else s?), unless t?, d?)
 -    ensure bool_eq: o2? iff ((p? or if q? then r? else s?) = t?)
 -    ensure identity: o3? iff (if (x + if p? then 1 else 2) + 0 = y then q? else r?)
@@ -25,7 +25,7 @@
 +    ensure last: o10? iff (z = x + if p? then 1 else 2)
 +    ensure chain: o12? iff (([x] ++ if p? then [y] else [z]) = [x] and q?)
 +    ensure comment: o13? iff (z = (x + if p? then 1 else 2) -- a comment
-@@ -47 +47 @@
+@@ -35 +35 @@
 -    ensure same_branches: o11? iff (z = (if d? then x + if p? then 1 else 2 else x + if p? then 1 else 2) and q?)
 +    ensure same_branches: o11? iff (z = (x + if p? then 1 else 2) and q?)
 exit=1

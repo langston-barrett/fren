@@ -11,13 +11,9 @@ enum Decision { GiveUp, RetryAfter(Seconds) }
 const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)
 
-comp retry {
-    in method: Method
-    in status: Status
-    in attempt: Nat is 1..
-    in retry_after: Seconds
-    pub out decision: Decision
-
+proc retry(method: Method, status: Status, attempt: Nat is 1.., retry_after: Seconds): (
+    decision: Decision,
+) {
     ensure transient:
         decision != Decision::GiveUp iff status is 429 | 503
         and method != Method::Post

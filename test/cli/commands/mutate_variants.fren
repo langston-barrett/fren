@@ -19,32 +19,19 @@ use self::A::X
 use self::B::W
 use self::Mode::{Cool, Heat}
 
-pub comp c {
-    in a: A
-    in b: B
-    in m: Mode
-    in k: Int
-    pub out ok?
-    pub out y: Int
-
+pub proc c(a: A, b: B, m: Mode, k: Int): (ok?, y: Int) {
     ensure r: ok? iff a = X
     ensure s: ok? or b = W
     ensure t: ok? or m = Cool or a = A::W
     ensure u: y = match k { 0 => 5, Heat! => Heat + 1 }
 }
 
-pub comp d {
-    in g: C
-    pub out ok?
-
+pub proc d(g: C): (ok?) {
     ensure r: ok? iff g = C::P
 }
 
-pub comp e {
+pub proc e(a: A, g: C): (ok?) {
     use self::C::P
-    in a: A
-    in g: C
-    pub out ok?
 
     ensure r: ok? iff (a = A::W and g = P)
 }

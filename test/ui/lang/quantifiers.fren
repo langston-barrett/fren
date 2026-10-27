@@ -10,10 +10,7 @@ enum Shape { Dot, Line(Bool), Square(Bool, Bool) }
 
 struct Pair { a?, b? }
 
-comp enumerations {
-    in m: Method
-    pub out quiet?
-
+proc enumerations(m: Method): (quiet?) {
     ensure rule: quiet? iff (forall (k: Method), when k = m, not loud?(k))
 
     expect expanded: quiet? iff m != Method::Rev
@@ -23,11 +20,7 @@ comp enumerations {
 
 -- `Bool` has two values, a record every combination of its fields', and an
 -- enumeration every variant with every payload: `Shape` has 1 + 2 + 4.
-comp counts {
-    in s: Shape
-    in p: Pair
-    pub out ok?
-
+proc counts(s: Shape, p: Pair): (ok?) {
     ensure rule: ok? iff (exists (t: Shape), t = s)
 
     expect always: ok?
@@ -38,9 +31,7 @@ comp counts {
 }
 
 -- Nested quantifiers, and a body that is a `when`.
-comp nested {
-    pub out ok?
-
+proc nested(): (ok?) {
     ensure rule: ok? iff (forall (a: Method), exists (b: Method), a = b)
 
     expect holds: ok?
@@ -52,10 +43,7 @@ comp nested {
 -- A bound name mentions nothing, so it may be a factor of a product.
 fn weight(m: Method): Int := match m { Method::Len => 1, Method::Card => 2, Method::Rev => 3 }
 
-comp mentions {
-    in x: Int
-    pub out total: Int
-
+proc mentions(x: Int): (total: Int) {
     ensure rule: total = 6 * x
 
     expect linear: forall (m: Method), weight(m) * x <= 3 * x or x < 0
@@ -63,11 +51,7 @@ comp mentions {
 
 -- An index in the body is guarded in each instance by what comes before it
 -- in the body.
-comp guards {
-    in q: Seq<Int>
-    in x: Int
-    pub out ok?
-
+proc guards(q: Seq<Int>, x: Int): (ok?) {
     ensure rule: ok? iff (forall (b?: Bool), when q != [], q[0] = x or b?)
     expect unguarded: forall (b?: Bool), b? or q[0] = 0 or not b?  --~ error: an index of `guards::unguarded` may be out of range
 }

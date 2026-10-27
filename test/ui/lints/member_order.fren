@@ -10,53 +10,40 @@ fn unknown(Int): Int
 
 enum Shape { Square, Circle }
 
-comp severity_of {
-    in x: Int
-    pub out v: Int
+proc severity_of(x: Int): (v: Int) {
     ensure r: v = x
 }
 
-comp in_order {
+proc in_order(x: Int, shape: Shape): (y: Int) {
     use self::Shape::Square
-    in x: Int
-    in shape: Shape
     assume small: x < 100
-    pub out y: Int
-    out z: Int := x + 1
-    inst w: severity_of { x }
+    let z: Int := x + 1
+    call w := severity_of(x)
     ensure r: y = double(x) + triple(x) + triple(z) + half(x) + unknown(x) + w.v
     expect e: shape = Square or shape = Shape::Circle  --~ warning: this says that `shape` matches one of these patterns
 }
 
-comp unordered {
-    in x: Int
+proc unordered(x: Int): (y: Int) {
     ensure r: y = x
-    pub out y: Int   --~ warning: an output after a guarantee
-    assume small: x < 100
+    assume small: x < 100  --~ warning: an assumption after a guarantee
 }
 
 -- With an evidence setting, which is part of the member after it.
-comp evidence {
+proc evidence(x: Int): (y: Int) {
     set_option fren.evidence "solver" in
     expect e: x = y
-    in x: Int   --~ warning: an input after an expectation
-    pub out y: Int
-    ensure r: y = x
+    ensure r: y = x  --~ warning: a guarantee after an expectation
 }
 
 -- Reported, but not fixed: in order, `z` would come before `w`.
-comp mentions {
-    in x: Int
-    inst w: severity_of { x }
-    out z: Int := w.v   --~ warning: an output after an instance
-    pub out y: Int
+proc mentions(x: Int): (y: Int) {
+    call w := severity_of(x)
+    let z: Int := w.v   --~ warning: a `let` after a call
     ensure r: y = z
 }
 
 -- A cover goal comes last.
-comp covered {
-    in x: Int
-    pub out y: Int
+proc covered(x: Int): (y: Int) {
     ensure r: y = x
     cover big: x > 10   --~ info: cover goal `covered::big` is met
     expect e: y >= x   --~ warning: an expectation after a cover goal
