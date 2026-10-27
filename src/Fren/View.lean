@@ -199,7 +199,7 @@ where
       liftCoreM <| addCoverWitness d
     for r in results do
       report p c r
-    if c.tested.any then
+    if (c.tested.minus c.enumerated).any then
       logAbout p c.ref m!"the checks of `{Core.showComp p}` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)" .information
     all := all ++ results
     -- The checks set to enumeration (`Reqs/Check#checking-by-enumeration`).
@@ -209,10 +209,9 @@ where
       for r in e.results do
         report p c r
       all := all ++ e.results
-      let bounded := e.results.filter fun r => r.verdict == .pass && r.bounded?.isSome
-      byBound := byBound + bounded.size
-      if !bounded.isEmpty then
-        logAbout p c.ref (Core.Enumeration.boundedMsg s!"`{Core.showComp p}`" bounded.size e.bound).text .information
+      byBound := byBound + (e.results.filter fun r => r.verdict == .pass && r.bounded?.isSome).size
+      if let some msg := e.boundedMsg? s!"`{Core.showComp p}`" c.tested then
+        logAbout p c.ref msg.text .information
     | none => pure ()
   match Core.summarySeverity all with
   | .info => logInfo (Core.summary all 0 byBound)

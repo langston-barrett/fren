@@ -208,6 +208,11 @@ partial def shapeOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : E
         -- A finite integer pattern type: all of its integers, of size 0.
         match p.intCount? (if nat then some 0 else none), Pat.intValues? p with
         | some _, some vs => return .ints (vs.toList.filter fun i => !nat || 0 ≤ i)
+        -- A `Nat` pattern bounded only above, as `Nat is ..=5`: from 0 to
+        -- its largest bound.
+        | some _, none =>
+          let top := (p.bounds.foldl max 0).toNat
+          return .ints (((List.range (top + 1)).map fun (k : Nat) => (k : Int)).filter fun i => p.matchesVal (.int i))
         | _, _ => pure (if nat then .nat else .int)
     | .abstract _ => pure .abstract
     | .enum p _ | .record p _ | .newtype p _ =>
@@ -235,6 +240,108 @@ partial def shapeOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : E
 
 /-- How many values of size at most `n` a shape has. -/
 def Shape.count (s : Shape) (n : Nat) : Nat := (s.vals n).length
+
+/-! ## Random values, for testing beyond the bound -/
+
+/-- How many variants there are. -/
+def Ctors.size : Ctors → Nat
+  | .nil => 0
+  | .cons _ rest => rest.size + 1
+
+/-- A step of SplitMix64: the next state and a number. -/
+def splitMix (state : UInt64) : UInt64 × UInt64 :=
+  let s := state + 0x9E3779B97F4A7C15
+  let z := (s ^^^ (s >>> 30)) * 0xBF58476D1CE4E5B9
+  let z := (z ^^^ (z >>> 27)) * 0x94D049BB133111EB
+  (s, z ^^^ (z >>> 31))
+
+/-- A number below `n`, and the next state; 0 if `n` is 0. -/
+def below (state : UInt64) (n : Nat) : Nat × UInt64 :=
+  let (s, z) := splitMix state
+  (if n == 0 then 0 else z.toNat % n, s)
+
+mutual
+/-- A random value of `s`, of size at most `m`, with its size, from the
+state `st`; `none` where none was found in a few tries. -/
+partial def Shape.random (s : Shape) (m : Nat) (st : UInt64) : Option (EVal × Nat) × UInt64 :=
+  match s with
+  | .bool => let (b, st) := below st 2; (some (.bool (b == 1), 0), st)
+  | .int =>
+    let (k, st) := below st (m + 1)
+    let (neg, st) := below st 2
+    let i : Int := if neg == 1 then -(k : Int) else k
+    (some (.int i, valueSize .int i 0), st)
+  | .nat => let (k, st) := below st (m + 1); (some (.int k, valueSize .nat k 0), st)
+  | .ints vs => let (k, st) := below st vs.length; ((vs[k]?).map fun i => (.int i, 0), st)
+  | .abstract => let (k, st) := below st (m + 1); (some (.abs k, valueSize .abstract k 0), st)
+  | .ctors cs =>
+    let (k, st) := below st cs.size
+    cs.random k 0 m st
+  | .record fs =>
+    let (r, st) := fs.random m st
+    (r.map fun (vs, k) => (.ctor 0 vs, valueSize .record 0 k), st)
+  | .filter s keep =>
+    let rec go (tries : Nat) (st : UInt64) : Option (EVal × Nat) × UInt64 :=
+      match tries with
+      | 0 => (none, st)
+      | t + 1 =>
+        let (r, st) := s.random m st
+        match r with
+        | some (v, k) => if keep v then (some (v, k), st) else go t st
+        | none => go t st
+    go 8 st
+  | .empty => (none, st)
+
+/-- Random values of each of `ss`, with the largest of their sizes. -/
+partial def Shapes.random (ss : Shapes) (m : Nat) (st : UInt64) : Option (List EVal × Nat) × UInt64 :=
+  match ss with
+  | .nil => (some ([], 0), st)
+  | .cons s rest =>
+    let (a, st) := s.random m st
+    let (b, st) := rest.random m st
+    ((do let (v, k) ← a; let (vs, l) ← b; return (v :: vs, max k l)), st)
+
+/-- A random value of the `k`th of the variants `cs`, the first numbered
+`i`. -/
+partial def Ctors.random (cs : Ctors) (k i m : Nat) (st : UInt64) : Option (EVal × Nat) × UInt64 :=
+  match cs, k with
+  | .nil, _ => (none, st)
+  | .cons .nil _, 0 => (some (.ctor i [], valueSize .nullary i 0), st)
+  | .cons ps _, 0 =>
+    match m with
+    | 0 => (none, st)
+    | m' + 1 =>
+      let (r, st) := ps.random m' st
+      (r.map fun (vs, l) => (.ctor i vs, valueSize .variant i l), st)
+  | .cons _ rest, k + 1 => rest.random k (i + 1) m st
+end
+
+/-- The largest size of the values that testing draws, beyond the bound `n`. -/
+def testSize (n : Nat) : Nat := 10 * (n + 1)
+
+/-- How many random tests a check set to `"enumerated+tested"` runs. -/
+def testCount : Nat := 100
+
+/-- Up to `count` random values of the declared type `t` of size more than
+the bound `n`, at most `testSize n`, from the state `st`, for testing
+beyond the bound (`Reqs/Check#enumeration-then-testing`): none for a type
+whose values are all within the bound. -/
+def extrasOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) (count : Nat) (st : UInt64) :
+    Array (EVal × Nat) := Id.run do
+  let m := testSize n
+  let .ok s := shapeOf shapes m t | return #[]
+  let mut out := #[]
+  let mut st := st
+  for _ in [0:count] do
+    -- A few tries for a value beyond the bound.
+    for _ in [0:8] do
+      let (r, st') := s.random m st
+      st := st'
+      if let some (v, k) := r then
+        if k > n then
+          out := out.push (v, k)
+          break
+  return out
 
 /-! ## Formulas -/
 
@@ -292,33 +399,39 @@ structure Atoms where
   /-- Whether the defined output `d` has the same value in two
   assignments. -/
   sameDefined : Name → Array Nat → Array Nat → Bool := fun _ _ _ => true
+  /-- The slots that each defined output's definition reads, through the
+  definitions of the defined outputs that it mentions too. -/
+  defSlots : Name → Array Nat := fun _ => #[]
 
 instance : Inhabited Atoms := ⟨{ slots := #[], eval := fun _ _ => false }⟩
 
 def Space.slotOf? (sp : Space) (n : Name) : Option Nat := sp.names.idxOf? n
 
 /-- `env` with each copied slot holding its second copy's value. -/
-def Space.primedEnv (sp : Space) (env : Array Nat) : Array Nat := Id.run do
-  let mut out := env
-  for x in [0:sp.primeOf.size] do
-    if let some p := sp.primeOf[x]! then out := out.set! x (env[p]!)
-  return out
+def Space.primedEnv (sp : Space) (env : Array Nat) : Array Nat :=
+  env.mapIdx fun i v => match sp.primeOf[i]?.join with
+    | some p => env.getD p 0
+    | none => v
 
-/-- The slots that `f` reads. -/
-partial def EF.slots (sp : Space) (ats : Atoms) : EF → Array Nat
-  | .atom k => ats.slots[k]?.getD #[]
-  | .tt | .ff => #[]
+/-- The slots that `f` reads, perhaps more than once. -/
+def EF.slots (sp : Space) (ats : Atoms) : EF → List Nat
+  | .atom k => (ats.slots[k]?.getD #[]).toList
+  | .tt | .ff => []
   | .not f => f.slots sp ats
-  | .conj fs => fs.foldl (init := #[]) fun acc f => (f.slots sp ats).foldl (fun a x => if a.contains x then a else a.push x) acc
+  | .conj fs => (fs.attach.toList.map fun ⟨f, _⟩ => f.slots sp ats).flatten
   | .exOutputs f => (f.slots sp ats).filter (!sp.outputs.contains ·)
-  | .pin x _ => #[x]
+  | .pin x _ => [x]
   | .primed f => (f.slots sp ats).map fun x => (sp.primeOf[x]?.join).getD x
   | .same x => match sp.slotOf? x with
-    | some s => #[s] ++ (sp.primeOf[s]?.join).toArray
+    | some s => s :: (sp.primeOf[s]?.join).toList
     | none =>
-      -- A defined output: the slots of the atoms that mention it.
-      let ss := (List.range ats.defs.size).toArray.filter (ats.defs[·]!.contains x) |>.flatMap (ats.slots[·]!)
+      -- A defined output: the slots that its definition reads, and their
+      -- second copies.
+      let ss := (ats.defSlots x).toList
       ss ++ ss.filterMap (sp.primeOf[·]?.join)
+
+/-- `xs` without repeats, in order of first occurrence. -/
+def dedup (xs : List Nat) : List Nat := xs.foldl (fun a x => if a.contains x then a else a ++ [x]) []
 
 /-- The defined outputs that `f` mentions, each with whether it is the
 second copy's. -/
@@ -330,38 +443,46 @@ partial def EF.defsOf (ats : Atoms) : EF → Array (Name × Bool)
   | .same x => #[(x, false), (x, true)]
   | _ => #[]
 
-/-- The values of the slots `slots`, in order, the last varying fastest,
-that make `parts` true, each part tried as soon as the slots it reads are
-set: the first, among those whose values are within the `lim`th of each
-slot's, `none` if none. Other slots keep their values in `env`. -/
-partial def firstSat (slots : Array Nat) (parts : Array (Array Nat × (Array Nat → Bool)))
-    (env : Array Nat) (lim : Nat → Nat) : Option (Array Nat) :=
-  -- Each part at the position of the last of its slots, or before any.
-  let pos (p : Array Nat × (Array Nat → Bool)) : Option Nat :=
-    p.1.foldl (init := none) fun acc s => match slots.idxOf? s, acc with
-      | some i, some j => some (max i j)
-      | some i, none => some i
-      | none, acc => acc
-  let byPos : Array (Array (Array Nat → Bool)) :=
-    parts.foldl (init := Array.replicate slots.size #[]) fun acc p => match pos p with
-      | some i => acc.modify i (·.push p.2)
-      | none => acc
-  let early := parts.filter (pos · |>.isNone) |>.map (·.2)
-  let rec go (i : Nat) (env : Array Nat) : Option (Array Nat) :=
-    if h : i < slots.size then
-      let s := slots[i]
-      let rec try_ (j : Nat) : Option (Array Nat) :=
-        if j < lim s then
-          let env := env.set! s j
-          if byPos[i]!.all (· env) then
-            match go (i + 1) env with
-            | some r => some r
-            | none => try_ (j + 1)
-          else try_ (j + 1)
-        else none
-      try_ 0
-    else some env
-  if early.all (· env) then go 0 env else none
+/-! ## Searching -/
+
+/-- Every choice of a value for each of a list of slots, of `lims` values
+each, in order, the last varying fastest (`check::fair_order`). -/
+def lexAll : List Nat → List (List Nat)
+  | [] => [[]]
+  | l :: ls => (List.range l).flatMap fun j => (lexAll ls).map (j :: ·)
+
+/-- The first choice, after `pre`, of a value for each of the slots with
+`lims` values each, in the order of `lexAll`, each of whose prefixes `ok`
+accepts as it is made: a prefix that `ok` refuses is not extended
+(`check::search_first`). -/
+def dfs (ok : List Nat → Bool) (pre : List Nat) : List Nat → Option (List Nat)
+  | [] => some pre
+  | l :: ls => (List.range l).findSome? fun j => if ok (pre ++ [j]) then dfs ok (pre ++ [j]) ls else none
+
+/-- `base` with the slots `slots` holding the values `choice`. -/
+def setAll (base : Array Nat) (slots choice : List Nat) : Array Nat :=
+  (slots.zip choice).foldl (fun e (s, j) => e.set! s j) base
+
+/-- After how many of `slots` are chosen a part that reads `ss` can be
+tried: once the last of them is; 0 if it reads none of them. -/
+def readyAt (slots ss : List Nat) : Nat :=
+  ss.foldl (fun m s => if slots.contains s then max m (slots.idxOf s + 1) else m) 0
+
+/-- Whether the parts `parts`, each with where it can be tried
+(`readyAt`), that can be tried once `choice` is made, and not before,
+hold in `base` with `slots` holding `choice`: each part is tried once,
+as soon as it can be (`check::pruning`). -/
+def newlyHold (base : Array Nat) (slots : List Nat) (parts : List (Nat × (Array Nat → Bool))) (choice : List Nat) : Bool :=
+  let ready := parts.filter (·.1 == choice.length)
+  ready.isEmpty || (let e := setAll base slots choice; ready.all (·.2 e))
+
+/-- The first choice of values for `slots`, of `lims` values each, in the
+order of `lexAll`, with which `base` makes `parts` true, each part tried
+as soon as the slots it reads are chosen (`dfs`); `base` with it. -/
+def firstChoice (base : Array Nat) (slots lims : List Nat) (parts : List (List Nat × (Array Nat → Bool))) :
+    Option (Array Nat) :=
+  let ps := parts.map fun (ss, f) => (readyAt slots ss, f)
+  if newlyHold base slots ps [] then (dfs (newlyHold base slots ps) [] lims).map (setAll base slots) else none
 
 /-- How many of the slot `s`'s values have size at most `k`: they are
 smallest first, so these are the first. -/
@@ -369,19 +490,22 @@ def Space.within (sp : Space) (s k : Nat) : Nat :=
   ((sp.sizes[s]?.getD #[]).toList.takeWhile (· ≤ k)).length
 
 /-- The value of `f` in `env`. -/
-partial def EF.eval (sp : Space) (ats : Atoms) (env : Array Nat) : EF → Bool
+def EF.eval (sp : Space) (ats : Atoms) (env : Array Nat) : EF → Bool
   | .atom k => ats.eval k env
   | .tt => true
   | .ff => false
   | .not f => !f.eval sp ats env
-  | .conj fs => fs.all (·.eval sp ats env)
+  | .conj fs => fs.attach.all fun ⟨f, _⟩ => f.eval sp ats env
+  | .exOutputs (.conj fs) =>
+    -- Some values of the outputs make `f` true: searched with each
+    -- conjunct tried as soon as it can be.
+    let outs := sp.outputs.toList.filter fun o => (EF.conj fs).slots sp ats |>.contains o
+    let lims := outs.map fun s => (sp.sizes[s]?.getD #[]).size
+    (firstChoice env outs lims (fs.attach.toList.map fun ⟨g, _⟩ => (g.slots sp ats, fun e => g.eval sp ats e))).isSome
   | .exOutputs f =>
-    -- Some values of the outputs, within the bound, make `f` true: searched
-    -- with each conjunct tried as soon as it can be.
-    let parts := (match f with | .conj fs => fs | f => #[f]).map fun (g : EF) => (g.slots sp ats, fun e => g.eval sp ats e)
-    let outs := sp.outputs.filter fun o => parts.any (·.1.contains o)
-    -- The conjuncts that read no output need not wait for them.
-    (firstSat outs parts env fun s => (sp.sizes[s]?.getD #[]).size).isSome
+    let outs := sp.outputs.toList.filter fun o => (f.slots sp ats).contains o
+    let lims := outs.map fun s => (sp.sizes[s]?.getD #[]).size
+    (firstChoice env outs lims [(f.slots sp ats, fun e => f.eval sp ats e)]).isSome
   | .pin x v => env[x]? == some v
   | .primed f => f.eval sp ats (sp.primedEnv env)
   | .same x => match sp.slotOf? x with
@@ -390,25 +514,89 @@ partial def EF.eval (sp : Space) (ats : Atoms) (env : Array Nat) : EF → Bool
       | none => true
     | none => ats.sameDefined x env (sp.primedEnv env)
 
+/-- The slots that `parts` read, in order. -/
+def slotsOf (sp : Space) (ats : Atoms) (parts : Array EF) : List Nat :=
+  (dedup (parts.toList.flatMap (·.slots sp ats))).mergeSort
+
+/-- Each of `parts`, with the slots it reads, as a function of an
+assignment. -/
+def partsOf (sp : Space) (ats : Atoms) (parts : Array EF) : List (List Nat × (Array Nat → Bool)) :=
+  parts.toList.map fun f => (f.slots sp ats, fun e => f.eval sp ats e)
+
+/-- The size of the `j`th value of the slot `s`. -/
+def Space.sizeAt (sp : Space) (s j : Nat) : Nat := (sp.sizes[s]?.getD #[])[j]?.getD 0
+
+/-- That some of `slots` holds a value of size `k`, in an assignment: the
+part that makes an assignment's level `k`. -/
+def Space.levelPart (sp : Space) (slots : List Nat) (k : Nat) : List Nat × (Array Nat → Bool) :=
+  (slots, fun e => slots.any fun s => sp.sizeAt s (e[s]?.getD 0) == k)
+
+/-- The level of the choice `a` of values for `slots`: the largest size of
+its values (`check::fair_order`). -/
+def Space.levelOf (sp : Space) (slots a : List Nat) : Nat :=
+  (slots.zip a).foldl (fun m (p : Nat × Nat) => max m (sp.sizeAt p.1 p.2)) 0
+
+/-- The assignments of the slots `slots`, `lims k` values each at the
+level `k`, by level, from 0 to `bound`, and in the order of `lexAll` within
+a level, where `atLevel k` says that one is of level `k`
+(`check::fair_order`). -/
+def fairList (bound : Nat) (lims : Nat → List Nat) (atLevel : Nat → List Nat → Bool) : List (List Nat) :=
+  (List.range (bound + 1)).flatMap fun k => (lexAll (lims k)).filter (atLevel k)
+
+/-- The fair order of the assignments of `slots` up to the bound, set in
+`base`: by level, the largest size of their values, then in the order of
+the slots and of each slot's values, the last varying fastest. -/
+def Space.fairList (sp : Space) (base : Array Nat) (slots : List Nat) : List (List Nat) :=
+  Fren.Core.Enumeration.fairList sp.bound (fun k => slots.map (sp.within · k))
+    (fun k a => (sp.levelPart slots k).2 (setAll base slots a))
+
 /-- The first assignment of the slots that `parts` read that makes them
-all true, smallest first and fairly (`Reqs/Check#sizes-and-order`): for
-each level `k` from 0 to the bound, the assignments whose largest size is
-`k`, in the order of the slots and of each slot's values, the last
-varying fastest. With the level, if one is found. -/
-def search (sp : Space) (ats : Atoms) (parts : Array EF) : Option (Array Nat × Nat) := Id.run do
-  let ps := parts.map fun f => (f.slots sp ats, fun e => f.eval sp ats e)
-  let slots := (ps.foldl (init := #[]) fun acc (ss, _) => ss.foldl (fun a s => if a.contains s then a else a.push s) acc).qsort (· < ·)
+all true, smallest first and fairly (`Reqs/Check#searching`): the first
+of `Space.fairList` (`check::search_first`), each level searched with
+`firstChoice`. With the level. -/
+def search (sp : Space) (ats : Atoms) (parts : Array EF) : Option (Array Nat × Nat) :=
+  let ps := partsOf sp ats parts
+  let slots := slotsOf sp ats parts
   let env0 := Array.replicate sp.names.size 0
   if slots.isEmpty then
-    return if ps.all (·.2 env0) then some (env0, 0) else none
-  let sizeAt (s j : Nat) := (sp.sizes[s]?.getD #[])[j]?.getD 0
-  for k in [0:sp.bound + 1] do
-    -- Only levels that some slot's value has.
-    unless slots.any (fun s => (sp.sizes[s]?.getD #[]).contains k) do continue
-    -- The assignments of level `k`: within `k`, and some value of size `k`.
-    let level := (slots, fun (e : Array Nat) => slots.any fun s => sizeAt s e[s]! == k)
-    if let some env := firstSat slots (ps.push level) env0 (sp.within · k) then return some (env, k)
+    if ps.all (·.2 env0) then some (env0, 0) else none
+  else
+    (List.range (sp.bound + 1)).findSome? fun k =>
+      (firstChoice env0 slots (slots.map (sp.within · k)) (ps ++ [sp.levelPart slots k])).map (·, k)
+
+/-- Testing beyond the bound (`Reqs/Check#enumeration-then-testing`): for
+each of `testCount` tests, an assignment of the slots that `parts` read,
+each slot's value one of its random values beyond the bound, the `t`th for
+test `t` (a second copy's, another), or, for a slot whose values are all
+within it, one drawn from `seed`; the first that makes them all true. -/
+def testSearch (sp : Space) (ats : Atoms) (parts : Array EF) (seed : UInt64) : Option (Array Nat) := Id.run do
+  let ps := partsOf sp ats parts
+  let slots := slotsOf sp ats parts
+  let primes := sp.primeOf.filterMap id
+  let mut st := seed
+  for t in [0:testCount] do
+    let mut env := Array.replicate sp.names.size 0
+    for s in slots do
+      let all := (sp.sizes[s]?.getD #[]).size
+      let within := sp.within s sp.bound
+      let extra := all - within
+      if extra > 0 then
+        let k := if primes.contains s then (t + extra / 2 + 1) % extra else t % extra
+        env := env.set! s (within + k)
+      else
+        let (j, st') := below st all
+        st := st'
+        env := env.set! s j
+    if ps.all (·.2 env) then return some env
   return none
+
+/-- The answer to a query (`check::enumerated_answer`): the search's
+model up to the bound, if it found one, else, if `testing`, testing's
+beyond it; with whether it is testing's. -/
+def answerOf (found? : Option α) (testing : Bool) (test : Unit → Option α) : Option (α × Bool) :=
+  match found? with
+  | some a => some (a, false)
+  | none => if testing then (test ()).map (·, true) else none
 
 /-! ## The backend -/
 
@@ -422,20 +610,22 @@ structure EV where
 
 /-- The checks' backend over the space `sp`, whose atoms are `ats`
 (`Reqs/Check#checking-by-enumeration`): each query is answered by `search`,
-`unsat` if no assignment within the bound refutes it, and otherwise `sat`
-with the first that does, which gives the slots it reads, but the hidden
+`unsat` if no assignment within the bound refutes it, nor, with
+`testing?`'s seed, any of `testSearch`'s, and otherwise `sat` with the
+first that does, which gives the slots it reads, but the hidden
 ones, and the defined outputs that its formulas mention, as `render` and
 `defValue` show them. -/
 def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m String)
-    (defValue : Name → Array Nat → m (Option String)) : Backend m EF EV where
+    (defValue : Name → Array Nat → m (Option String)) (testing? : Option UInt64 := none) : Backend m EF EV where
   query hyps goal _ := do
     let parts := (hyps.map (·.2)).push (.not goal)
-    match search sp ats parts with
+    let found := answerOf ((search sp ats parts).map (·.1)) testing?.isSome fun _ =>
+      testSearch sp ats parts (testing?.getD 0)
+    match found with
     | none => return .unsat
     | some (env, _) =>
-      let slots := parts.foldl (init := #[]) fun acc f =>
-        (f.slots sp ats).foldl (fun a x => if a.contains x then a else a.push x) acc
-      let shown ← ((slots.qsort (· < ·)).filter (· < sp.names.size - sp.hidden)).mapM fun x => do
+      let slots := slotsOf sp ats parts
+      let shown ← (slots.toArray.filter (· < sp.names.size - sp.hidden)).mapM fun x => do
         return (sp.names[x]!, ({ at? := some (x, env[x]!), shown := ← render x env[x]! } : EV))
       let defs := (parts.flatMap (·.defsOf ats)).foldl (init := #[]) fun acc d => if acc.contains d then acc else acc.push d
       let defd ← defs.filterMapM fun (d, primed) => do
@@ -515,12 +705,14 @@ postconditions of defined functions, which only their bodies have
 def enumerable (kind : CheckKind) : Bool :=
   !(kind == .definedness || kind == .postcondition)
 
-/-- How a check of kind `kind` is run, given its evidence
-(`check::by_evidence`). -/
-def methodOf (kind : CheckKind) (ev : Evidence) : Method :=
-  if ev.enumerated then
+/-- How a check of kind `kind` is run, given its evidence, and whether it
+is the definedness of a value given where a pattern type is declared,
+which the solver always checks (`check::by_evidence`). -/
+def methodOf (kind : CheckKind) (ev : Evidence) (obligation : Bool := false) : Method :=
+  if obligation then .solver
+  else if ev.enumerated then
     if !enumerable kind then .skipped
-    else if ev.tested && !kind.untestable then .enumerationThenTesting
+    else if ev.tested then .enumerationThenTesting
     else .enumeration
   else if ev.tested then (if kind.untestable then .skipped else .testing)
   else .solver
@@ -574,28 +766,6 @@ def classify (n : Nat) (exact outputsExact : Bool) (r : CheckResult) : CheckResu
       | _, _ => s!"no witness up to size {n}, but a larger one may exist"
     { r with verdict, detail := .unknown why, bounded? := some n }
   else { r with verdict, bounded? := some n }
-
-/-! ## Enumeration then testing -/
-
-/-- The verdict of a check whose evidence is `"enumerated+tested"`, from
-enumeration's, whether that is bounded, and testing's, if testing ran
-(`check::combined_evidence`): enumeration's counterexample, or its decided
-verdict, stands; otherwise testing's counterexample fails the check, and
-testing's pass passes one that enumeration left inconclusive. With whether
-the result is testing's. -/
-def combinedVerdict (enumerated : Verdict) (bounded : Bool) (tested? : Option Verdict) : Verdict × Bool :=
-  if enumerated == .fail || !bounded then (enumerated, false)
-  else match tested? with
-    | some .fail => (.fail, true)
-    | some .pass => if enumerated == .inconclusive then (.pass, true) else (enumerated, false)
-    | _ => (enumerated, false)
-
-/-- The result of a check whose evidence is `"enumerated+tested"`, from
-enumeration's `e` and testing's `t?` (`combinedVerdict`). -/
-def combine (e : CheckResult) (t? : Option CheckResult) : CheckResult :=
-  match combinedVerdict e.verdict e.bounded?.isSome (t?.map (·.verdict)), t? with
-  | (_, true), some t => t
-  | (v, _), _ => { e with verdict := v }
 
 /-! ## The space of a component -/
 
@@ -665,12 +835,13 @@ def tablesBySize (domain : Nat) (sizes : Array Nat) (limit : Nat) : Option (Arra
   some (tables.qsort fun a b => a.2 < b.2 || (a.2 == b.2 && a.1 < b.1))
 
 /-- The space of a component for the bound `n` (`Space`), with each slot's
-values, smallest first, and its shape, and the slots of its uninterpreted
-functions `funs`, after the others; or the variable whose type is not
+values, smallest first, then, if `tests` is not 0, as many random values
+beyond the bound (`extrasOf`), and its shape, and the slots of its
+uninterpreted functions `funs`, after the others; or the variable whose type is not
 enumerable, and why. `hidden` are the types whose unspecified values some
 atom reads, each with what names it. -/
 def spaceOf (shapes : Name → Option DataShape) (n : Nat) (vars : Array SlotVar) (hidden : Array (Name × PTy))
-    (funs : Array FunVar := #[]) :
+    (funs : Array FunVar := #[]) (tests : Nat := 0) (seed : UInt64 := 0) :
     Except (Option Name × String) (Space × Array (Array EVal) × Array Shape × Array FunSlot) := do
   let own := vars.filter (!·.defined)
   let copied := own.filter fun v => (Symbol.ofRole v.sig.role).copied
@@ -679,7 +850,15 @@ def spaceOf (shapes : Name → Option DataShape) (n : Nat) (vars : Array SlotVar
   let shapesOf ← all.zipIdx.mapM fun ((x, t), i) => match shapeOf shapes n t with
     | .ok s => pure s
     | .error why => throw (if i < visible then some x else none, why)
-  let ordered := shapesOf.map (·.ordered n)
+  -- With testing, each slot's values are followed by random ones beyond
+  -- the bound; a second copy has its original's.
+  let extras := all.zipIdx.map fun ((_, t), i) =>
+    if tests == 0 then #[] else extrasOf shapes n t tests (splitMix (seed + i.toUInt64 * 0x2545F4914F6CDD1D)).2
+  let ordered : Array (List (EVal × Nat)) := (shapesOf.zip extras).zipIdx.map fun ((sh, ex), i) =>
+    let ex := if own.size ≤ i && i < visible then
+        (own.findIdx? (fun (v : SlotVar) => v.sig.name == copied[i - own.size]!.sig.name)).map (extras[·]!) |>.getD ex
+      else ex
+    sh.ordered n ++ ex.toList
   let primeOf := (List.range (all.size + funs.size)).toArray.map fun i =>
     if h : i < own.size then
       (copied.findIdx? (·.sig.name == own[i].sig.name)).map (own.size + ·)
@@ -719,7 +898,8 @@ def Space.behaviours (sp : Space) (determinism : Bool) (funs : Array FunSlot := 
     if !determinism && primes.contains i then acc
     else match funs.find? (·.slot == i) with
       | some f => acc * f.count
-      | none => acc * (sp.sizes[i]!.size)
+      -- Not the random values beyond the bound, which testing draws from.
+      | none => acc * sp.within i sp.bound
 
 /-- Whether every slot of `slots` holds every value of its type within the
 bound. -/
@@ -733,7 +913,18 @@ structure Enumerated where
   bound : Nat := 0
   /-- Every slot's values are all of its type's: the results are decided. -/
   exact : Bool := true
+  /-- Some checks were tested beyond the bound too. -/
+  tested : Bool := false
   deriving Inhabited
+
+/-- The results of enumerating the checks of `alone`, without testing, and
+of `both`, with testing beyond the bound, together; `keep` selects the
+results to report. -/
+def Enumerated.merge (n : Nat) (alone both : Option Enumerated) (keep : CheckResult → Bool) : Enumerated :=
+  { results := ((alone.map (·.results)).getD #[] ++ (both.map (·.results)).getD #[]).filter keep, bound := n
+    exact := (alone.map (·.exact)).getD true && (both.map (·.exact)).getD true
+    tested := both.any (!·.exact) }
+
 
 /-! ## Messages -/
 
@@ -770,6 +961,15 @@ def notEnumerableWhy (x? : Option Name) (why : String) : String :=
   match x? with
   | none => s!"a table or `match` has a value of the type {why}, which is not enumerable"
   | some x => s!"`{x}` has the type {why}, which is not enumerable"
+
+/-- The message about the checks that hold up to the bound, if any
+(`F0646`), of `e`'s results, of a component shown as `subject`, whose
+checks of `tested` were tested beyond the bound too. -/
+def Enumerated.boundedMsg? (e : Enumerated) (subject : String) (tested : Tested) : Option Msg :=
+  let bounded := e.results.filter fun r => r.verdict == .pass && r.bounded?.isSome
+  if bounded.isEmpty then none
+  else some (boundedMsg subject bounded.size e.bound
+    (if e.tested && bounded.any tested.covers then some testCount else none))
 
 /-- The size bound, `fren.enumeration.size`, is too large (`F0154`). -/
 def sizeTooLargeMsg (n : Nat) : Msg :=

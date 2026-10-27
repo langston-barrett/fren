@@ -74,11 +74,12 @@ def evalOf (sp : Spec) (ty : VTy) (v : EVal) : Val :=
 /-- Enumerates the checks of `c`, the evaluator's `ec`, that its evidence
 sets to enumeration, of the kinds `kinds` (`Reqs/Check#checking-by-enumeration`).
 `subject` is `c` as messages show it. -/
-def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.Core.CheckKind) (subject : String) :
+def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.Core.CheckKind) (subject : String)
+    (t : Fren.Core.Tested := c.enumerated) (testing : Bool := false) :
     Except Fren.Core.Msg Enumerated := do
   let n := c.enumSize
   let paired := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
-  let (core, ks) := paired.only c.enumerated kinds
+  let (core, ks) := paired.only t kinds
   let (ecomp, atoms) := core.atoms
   let some exprs := atoms.mapM (·.2.exprs?)
     | throw (Fren.Core.Msg.internal s!"the evaluator does not know the meaning of a formula of `{Fren.Core.showComp c.path}`")
@@ -107,7 +108,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
        -- without patterns (`Reqs/Check#enumerable-types`).
        pty := if v.fact?.isSome then v.ptype else Fren.Core.PTy.plain v.ptype.ty
        defined := v.defn?.isSome } : SlotVar)
-  let (space, values, shapes, fslots) ← match spaceOf sp.shapes.find? n vars hidden funs with
+  let (space, values, shapes, fslots) ← match spaceOf sp.shapes.find? n vars hidden funs (if testing then testCount else 0) (hash c.path) with
     | .ok r => pure r
     | .error (x, why) =>
       throw (notEnumerableMsg subject (notEnumerableWhy x why))
@@ -167,10 +168,11 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   let ats : Atoms := {
     slots := atomSlots, defs := atomDefs
     eval := fun k env => evalFm (atoms[k]!.2) env
-    sameDefined := fun d e₁ e₂ => look e₁ fuel d == look e₂ fuel d }
+    sameDefined := fun d e₁ e₂ => look e₁ fuel d == look e₂ fuel d
+    defSlots := fun d => (reads fuel d).foldl (fun a s => if a.contains s then a else a.push s) #[] }
   let render (s j : Nat) : String := ((vals[s]?.bind (·[j]?)).map (·.showAs sp (tyOf space.names[s]!))).getD "?"
   let defValue (d : Name) (env : Array Nat) : Option String := (look env fuel d).map (·.showAs sp (tyOf d))
-  let raw := Id.run (Fren.Core.checkComp (m := Id) (fun _ => Fren.Core.Enumeration.backend space ats (fun s j => pure (render s j)) (fun d e => pure (defValue d e))) ecomp ks)
+  let raw := Id.run (Fren.Core.checkComp (m := Id) (fun _ => Fren.Core.Enumeration.backend space ats (fun s j => pure (render s j)) (fun d e => pure (defValue d e)) (if testing then some (hash c.path) else none)) ecomp ks)
   let ownOutputs := space.outputs
   let exact := exhaustedAll shapes n (List.range space.names.size).toArray && fslots.all (·.exhausted)
   let outputsExact := exhaustedAll shapes n ownOutputs

@@ -38,3 +38,21 @@ comp contracted {  --~ error: `contracted` cannot be enumerated: it applies the 
     pub det out big?
     ensure r: big? iff positive(x) > 1
 }
+
+-- A defined output's value in a counterexample, through a table's
+-- unspecified value and an interpretation, the same in both front ends.
+fn level(Bool): Int is 0..=2
+
+set_option fren.evidence "enumerated" in
+comp tabled {  --~ info: 2 checks of `tabled` hold for every behaviour up to size 3
+    in a?
+    pub det out y: Int := table { | a? => 5 }  --~ error: a table in `tabled::y` may have no row that holds
+    expect e: y != 1  --~ error: counterexample: a? = false, y = 1
+}
+
+set_option fren.evidence "enumerated" in
+comp applied {
+    in a?
+    pub det out y: Int := level(a?)
+    expect e: y != 2  --~ error: counterexample: a? = false, y = 2
+}

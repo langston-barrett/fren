@@ -87,7 +87,9 @@ def Comp.untested (t : Tested) (c : Comp F) (kinds : Array CheckKind) : Comp F �
       triggers := c.triggers.filter (!t.props.contains ·.1)
       insts := c.insts.map fun i => if t.insts.contains i.name then { i with assumes := #[] } else i
       vars := c.vars.map fun v => if t.dets.contains v.name then { v with isDet := false } else v
-      indexes := c.indexes.filter fun s => !t.props.contains s.prop && !t.insts.contains s.prop
+      -- A value given where a pattern type is declared is the solver's to
+      -- check, whatever the evidence (`check::by_evidence`).
+      indexes := c.indexes.filter fun s => s.patTy?.isSome || (!t.props.contains s.prop && !t.insts.contains s.prop)
       tables := c.tables.filter fun s => !t.props.contains s.site.prop && !t.insts.contains s.site.prop },
     kinds.filter fun k => !(k == .realizable && t.realizable) && !(k == .redundancy && t.redundancy))
 
@@ -136,6 +138,18 @@ def evidenceTested? (v : String) : Option Bool := (evidenceOf? v).map (·.tested
 /-- The value of `set_option fren.evidence`: whether it is enumeration, or
 `none` if the value is invalid. -/
 def evidenceEnumerated? (v : String) : Option Bool := (evidenceOf? v).map (·.enumerated)
+
+/-- The checks of both. -/
+def Tested.inter (a b : Tested) : Tested :=
+  { realizable := a.realizable && b.realizable, redundancy := a.redundancy && b.redundancy
+    props := a.props.filter b.props.contains, insts := a.insts.filter b.insts.contains
+    dets := a.dets.filter b.dets.contains }
+
+/-- The checks of `a` but not of `b`. -/
+def Tested.minus (a b : Tested) : Tested :=
+  { realizable := a.realizable && !b.realizable, redundancy := a.redundancy && !b.redundancy
+    props := a.props.filter (!b.props.contains ·), insts := a.insts.filter (!b.insts.contains ·)
+    dets := a.dets.filter (!b.dets.contains ·) }
 
 /-- The checks of either. -/
 def Tested.union (a b : Tested) : Tested :=

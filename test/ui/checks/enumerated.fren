@@ -70,4 +70,27 @@ comp user {
 set_option fren.evidence "enumerated" in
 expect same_input: forall (x y: thermostat), when x.mode = y.mode and x.hot? = y.hot?, x.on? = y.on?
 
---@ summary: 27 passed, 8 failed, 0 inconclusive, 2 redundant
+-- A `det out` defined from an output that is not determined is not
+-- determined either: its definition's slots are searched.
+set_option fren.evidence "enumerated" in
+comp nd {
+    in a?
+    pub out o?
+    ensure r: when a?, o?
+    pub det out d? := o?  --~ error: `nd::d?` is not determined by the inputs
+}
+
+-- A quantifier over a listed type of many values, and a global
+-- expectation, shown by its name.
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+comp wide_quantifier {
+    in x?
+    expect e: forall (k: Int is 0..=63), k < 63 or x?  --~ error: expectation `wide_quantifier::e` does not hold
+}
+
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+expect constant: forall (x: Int is 0..=200), x < 200  --~ error: expectation `constant` does not hold
+
+--@ summary: 31 passed, 11 failed, 0 inconclusive, 2 redundant

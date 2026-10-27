@@ -28,6 +28,16 @@ comp everywhere {  --~ error: `everywhere` cannot be enumerated: it has an unbou
     ensure r: all? iff (forall (x: Int), x != k)
 }
 
+-- The unspecified value of a table's type that a definition reads is a
+-- slot too, counted alike in both front ends.
+set_option fren.evidence "enumerated" in
+comp hidden {  --~ error: `hidden` has 458752 behaviours up to size 3, too many to enumerate
+    in x: Int is 0..=255
+    in y: Int is 0..=255
+    pub det out d: Int := table { | x = 0 => 1 }
+    expect e: x + y >= 0
+}
+
 -- Only its expectation is enumerated; the solver checks the rest.
 comp partly {  --~ error: `partly` cannot be enumerated
     in name: String

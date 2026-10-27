@@ -1078,7 +1078,8 @@ def enumerationCorpus : IO (Array FilePath) := do
 /-- Each verdict of enumeration on the ui tests matches the solver's on the
 same check (`Reqs/Check#verdicts-of-enumeration`): a failure is genuine, so
 the solver must not pass the check, and a pass that is not bounded is a
-decision, so the solver must not fail it. -/
+decision, so the solver must not fail it; and the obligations of pattern
+types, which stay the solver's, keep their results. -/
 def enumerationAgrees : IO (Array String) := do
   let mut failures := #[]
   let mut compared := 0
@@ -1100,6 +1101,13 @@ def enumerationAgrees : IO (Array String) := do
         if bad then
           let bounded := if r.bounded?.isSome then " up to the bound" else ""
           failures := failures.push s!"{f}: `{item}` {k}: enumeration {repr r.verdict}{bounded}, but the solver {repr s.verdict}"
+    -- A value given where a pattern type is declared stays the solver's
+    -- (`check::by_evidence`): its result is not dropped.
+    for (item, ss) in solver do
+      for (k, s) in ss do
+        unless s.kind == .definedness && s.patTy?.isSome do continue
+        let same := ((enumerated.getD item #[]).find? (·.1 == k)).any (·.2.verdict == s.verdict)
+        unless same do failures := failures.push s!"{f}: `{item}` {k}: the solver's obligation is missing with enumeration"
   return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
 
 /-! ## Jobs

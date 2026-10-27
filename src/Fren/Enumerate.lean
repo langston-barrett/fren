@@ -108,6 +108,22 @@ partial def hasQuantifier (e : Expr) : MetaM Bool := do
   | .mdata _ b | .proj _ _ b => hasQuantifier b
   | _ => return false
 
+/-- A `Decidable` instance for the proposition `p`, built along its
+connectives, so that a quantifier over a listed type, which is expanded
+into as many conjuncts as it has instances, needs no search of the size
+of the whole; each other proposition's is synthesized. -/
+partial def decidableOf (p : Expr) : MetaM Expr := do
+  match p.getAppFn.constName?, p.getAppArgs with
+  | some ``And, #[a, b] => return mkApp4 (mkConst ``instDecidableAnd) a b (← decidableOf a) (← decidableOf b)
+  | some ``Or, #[a, b] => return mkApp4 (mkConst ``instDecidableOr) a b (← decidableOf a) (← decidableOf b)
+  | some ``Not, #[a] => return mkApp2 (mkConst ``instDecidableNot) a (← decidableOf a)
+  | some ``Iff, #[a, b] => return mkApp4 (mkConst ``instDecidableIff) a b (← decidableOf a) (← decidableOf b)
+  | _, _ =>
+    if let .forallE _ a b _ := p then
+      if !b.hasLooseBVars && (← isProp a) then
+        return mkApp4 (mkConst ``instDecidableForall) a b (← decidableOf a) (← decidableOf b)
+    synthInstance (mkApp (mkConst ``Decidable) p)
+
 /-- Compiles `fs`, each a closed function, with Lean's evaluator. -/
 unsafe def compileUnsafe (α : Type) [Inhabited α] (ty : Expr) (fs : Array Expr) : MetaM (Array α) := do
   if fs.isEmpty then return #[]
@@ -126,12 +142,15 @@ instance : Inhabited (Array Nat → Array Nat → Bool) := ⟨fun _ _ => false�
 (`EnumHook`): `full` is its comp, over the locals `fvs` of its variables
 and `ufs` of the abstract types and functions it uses, of which `fns` are
 the functions. -/
-def enumerate (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) (fns : Array (Name × Expr × Nat × Bool))
-    (kinds : Array CheckKind) : MetaM (Except Core.Msg Enumerated) := do
+def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) (fns : Array (Name × Expr × Nat × Bool))
+    (kinds : Array CheckKind) (t : Core.Tested) (testing : Bool) : MetaM (Except Core.Msg Enumerated) := do
   let st ← getState
-  let subject := s!"`{Core.showComp c.path}`"
+  -- A global expectation is shown by its module and name, as the `fren`
+  -- command shows it.
+  let global := st.globals.toList.any fun (_, g) => g.decl == c.decl
+  let subject := s!"`{Core.showComp (if global then c.path ++ ((c.props[0]?.map (·.name)).getD .anonymous) else c.path)}`"
   let n := c.enumSize
-  let (core, ks) := full.only c.enumerated kinds
+  let (core, ks) := full.only t kinds
   let (ecomp, atoms0) := core.atoms
   -- The defined outputs, by their definitions, the last first, since each
   -- mentions only earlier ones.
@@ -139,19 +158,24 @@ def enumerate (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) (fns
   let defined := full.defs.filterMap fun (d, _, e) => (varFv d).map (d, ·, e)
   let substDefs (e : Expr) : Expr := defined.foldr (init := e) fun (_, fv, de) acc => acc.replaceFVar fv de
   let atoms ← atoms0.mapM fun a => unfoldDefined (substDefs a)
+  -- And each defined output's definition, which `same` reads, and whose
+  -- unspecified values and functions are enumerated as the atoms' are,
+  -- as the `fren` command's are.
+  let defExprs ← defined.mapM fun (_, fv, _) => unfoldDefined (substDefs fv)
+  let scanned := atoms ++ defExprs
   -- The uninterpreted functions that the atoms apply, whose interpretations
   -- are enumerated, but not of one with a contract, which constrains them
   -- (`check::enumerable`).
   let mut used : Array (Name × Expr × Bool × FunVar) := #[]
   for (u, x, _, nat) in fns do
-    if atoms.any (·.containsFVar x.fvarId!) then
+    if scanned.any (·.containsFVar x.fvarId!) then
       let some a := st.abstracts.foldl (init := none) fun acc _ a => if a.placeholder == u then some a else acc | continue
       if ((st.contracts.get? a.path).map (!·.posts.isEmpty)).getD false then
         return .error (notEnumerableMsg subject
           s!"it applies the uninterpreted function `{Core.showComp a.path}`, which has a contract")
       used := used.push (a.path, x, nat,
         { name := a.path, params := a.ptys.1.map (Core.PTy.plain ·.ty), result := a.ptys.2 })
-  if ← atoms.anyM hasQuantifier then
+  if ← scanned.anyM hasQuantifier then
     return .error (notEnumerableMsg subject "it has an unbounded quantifier")
   -- The abstract types become `Nat`, and their `Inhabited` instances `Nat`'s.
   let mut absTys : Array (Expr × Name) := #[]
@@ -167,7 +191,7 @@ def enumerate (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) (fns
     (e.replaceFVars (absTys.map (·.1)) (absTys.map fun _ => mkConst ``Nat)).replaceFVars absInsts
       (absInsts.map fun _ => mkConst ``instInhabitedNat)
   -- The hidden slots: each type whose unspecified value is read.
-  let unspec := atoms.foldl (init := #[]) fun acc a =>
+  let unspec := scanned.foldl (init := #[]) fun acc a =>
     (unspecifiedIn a).foldl (fun acc u => if acc.any (·.getArg! 0 == u.getArg! 0) then acc else acc.push u) acc
   let ptyOfLean (t : Expr) : Option Core.PTy :=
     match absTys.find? (·.1 == t) with
@@ -182,7 +206,7 @@ def enumerate (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) (fns
     ({ sig := { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
        pty := if v.fact?.isSome then v.ptype else Core.PTy.plain v.ptype.ty
        defined := v.defn?.isSome } : SlotVar)
-  let (space, values, shapes, fslots) ← match spaceOf st.shapeOf n vars hidden (used.map (·.2.2.2)) with
+  let (space, values, shapes, fslots) ← match spaceOf st.shapeOf n vars hidden (used.map (·.2.2.2)) (if testing then testCount else 0) (hash c.path) with
     | .ok r => pure r
     | .error (x, why) => return .error (notEnumerableMsg subject (notEnumerableWhy x why))
   let determinism := ks.contains .determinism && ecomp.vars.any (·.isDet)
@@ -228,8 +252,7 @@ def enumerate (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) (fns
     return e.replaceFVars slotFvs picks
   let arrNat := mkApp (mkConst ``Array [0]) (mkConst ``Nat)
   let decideOf (p : Expr) : MetaM Expr := do
-    let inst ← synthInstance (mkApp (mkConst ``Decidable) p)
-    return mkApp2 (mkConst ``Decidable.decide) p inst
+    return mkApp2 (mkConst ``Decidable.decide) p (← decidableOf p)
   try
     let atomFns ← atoms.mapM fun a => withLocalDeclD `env arrNat fun env => do
       mkLambdaFVars #[env] (← decideOf (← over env a))
@@ -241,34 +264,57 @@ def enumerate (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) (fns
     let sames ← compile (Array Nat → Array Nat → Bool) (← mkArrow arrNat (← mkArrow arrNat (mkConst ``Bool))) sameFns
     -- What each atom reads: the slots of the locals it mentions, and the
     -- defined outputs it mentions.
-    let atomSlots := atoms.map fun a =>
+    let slotsOf (a : Expr) : Array Nat :=
       let a := unspec.zip hfvs |>.foldl (init := a) fun acc (u, h) => acc.replace fun x => if x == u then some h else none
       (slotFvs.zipIdx.filter fun (x, _) => a.containsFVar x.fvarId!).map (fun (_, j) => slotIdx[j]!)
         ++ (used.zip fslots).filterMap fun ((_, x, _, _), f) => if a.containsFVar x.fvarId! then some f.slot else none
+    let atomSlots := atoms.map slotsOf
     let atomDefs := atoms0.map fun a => defined.filterMap fun (d, fv, _) => if a.containsFVar fv.fvarId! then some d else none
     let ats : Atoms := {
       slots := atomSlots, defs := atomDefs, eval := fun k env => evals[k]! env
       sameDefined := fun d e₁ e₂ => match defined.findIdx? (·.1 == d) with
         | some i => sames[i]! e₁ e₂
-        | none => true }
+        | none => true
+      defSlots := fun d => match defined.findIdx? (·.1 == d) with
+        | some i => slotsOf defExprs[i]!
+        | none => #[] }
     let varTy (x : Name) : Expr :=
       let base := if x.isStr && x.getString!.endsWith "'" then Name.mkStr x.getPrefix (x.getString!.dropEnd 1).toString else x
       ((c.vars.find? (·.name == base)).map (·.type)).getD (mkConst ``Bool)
     let renderSlot (s j : Nat) : MetaM String := do
       let some v := slotVals[s]?.bind (·[j]?) | return "?"
       Fren.render slotTys[s]! v
+    -- A defined output's value in `env`: its definition, over the
+    -- assignment, with the functions' interpretations and the unspecified
+    -- values, reduced.
     let defValue (d : Name) (env : Array Nat) : MetaM (Option String) := do
-      let some (_, _, de) := defined.find? (·.1 == d) | return none
-      let de ← unfoldDefined de
-      let vals := slotFvs.zipIdx.map fun (_, j) => let i := slotIdx[j]!; (slotVals[i]!)[env[i]!]!
-      let v ← withTransparency .all <| Meta.reduce (natTy (de.replaceFVars slotFvs vals))
+      let some i := defined.findIdx? (·.1 == d) | return none
+      let envE ← mkArrayLit (mkConst ``Nat) (env.toList.map mkNatLit)
+      let v ← withTransparency .all <| Meta.reduce (← over envE defExprs[i]!)
       return some (← Fren.render (varTy d) (← normInts v))
-    let raw ← Core.checkComp (fun _ => backend space ats renderSlot defValue) ecomp ks
+    let raw ← Core.checkComp (fun _ => backend space ats renderSlot defValue (if testing then some (hash c.path) else none)) ecomp ks
     let exact := exhaustedAll shapes n (List.range space.names.size).toArray && fslots.all (·.exhausted)
     let outputsExact := exhaustedAll shapes n space.outputs
     return .ok { results := raw.map (classify n exact outputsExact), bound := n, exact }
   catch ex =>
-    return .error (Core.Msg.internal s!"enumerating `{Core.showComp c.path}` in Lean failed: {← ex.toMessageData.toString}")
+    return .error (Core.Msg.internal s!"enumerating {subject} in Lean failed: {← ex.toMessageData.toString}")
+
+/-- Enumerates the checks of `c` set to enumeration
+(`Reqs/Check#checking-by-enumeration`), as `checkComp`'s hook
+(`EnumHook`), those also set to testing tested beyond the bound too
+(`Reqs/Check#enumeration-then-testing`), as the `fren` command does. -/
+def enumerate (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) (fns : Array (Name × Expr × Nat × Bool))
+    (kinds : Array CheckKind) : MetaM (Except Core.Msg Enumerated) := do
+  let run (t : Core.Tested) (testing : Bool) : MetaM (Except Core.Msg (Option Enumerated)) := do
+    if !t.any then return .ok none
+    return (← enumerateOnly c full fvs ufs fns kinds t testing).map some
+  match ← run (c.enumerated.minus c.tested) false with
+  | .error m => return .error m
+  | .ok a =>
+  match ← run (c.enumerated.inter c.tested) true with
+  | .error m => return .error m
+  | .ok b =>
+  return .ok (Enumerated.merge c.enumSize a b c.enumerated.covers)
 
 end Enumerate
 

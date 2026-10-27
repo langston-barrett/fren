@@ -669,24 +669,21 @@ def sameCheck (a b : Fren.Core.CheckResult) : Bool :=
   a.kind == b.kind && a.prop? == b.prop? && a.target? == b.target?
 
 /-- The checks of `c` set to enumeration, enumerated
-(`Reqs/Check#checking-by-enumeration`), with those also set to testing
-combined with testing's results, `tested`, if enumeration is not complete
-(`check::combined_evidence`); or the error that stopped it. Only the
-results of the kinds `kinds`, and for a refinement those about its
-obligation, are kept. -/
-def enumerated (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global refinement : Bool) (kinds : Array Fren.Core.CheckKind)
-    (tested : Option Eval.Report) : Except Msg (Fren.Core.Enumeration.Enumerated × Nat) := do
-  let e ← enumerateComp sp ec c kinds (subjectOf c global)
+(`Reqs/Check#checking-by-enumeration`), those also set to testing tested
+beyond the bound too (`Reqs/Check#enumeration-then-testing`); or the error
+that stopped it. Only the results of the kinds `kinds`, and for a
+refinement those about its obligation, are kept. -/
+def enumerated (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global refinement : Bool) (kinds : Array Fren.Core.CheckKind) :
+    Except Msg Fren.Core.Enumeration.Enumerated := do
+  let subject := subjectOf c global
+  let alone := c.enumerated.minus c.tested
+  let both := c.enumerated.inter c.tested
+  let run (t : Fren.Core.Tested) (testing : Bool) : Except Msg (Option Fren.Core.Enumeration.Enumerated) :=
+    if !t.any then pure none else some <$> enumerateComp sp ec c kinds subject t testing
+  let a? ← run alone false
+  let b? ← run both true
   let keep (r : Fren.Core.CheckResult) := c.enumerated.covers r && (!refinement || refinementKeeps c r)
-  -- With how many passes are testing's.
-  let combined := e.results.filter keep |>.map fun r =>
-    if e.exact || !c.tested.covers r || r.kind.untestable then (r, false)
-    else
-      let t? := (tested.map (·.results)).bind (·.find? (sameCheck r))
-      let (_, byTests) := Fren.Core.Enumeration.combinedVerdict r.verdict r.bounded?.isSome (t?.map (·.verdict))
-      let r' := Fren.Core.Enumeration.combine r t?
-      (r', byTests && r'.verdict == .pass)
-  return ({ e with results := combined.map (·.1) }, (combined.filter (·.2)).size)
+  return Fren.Core.Enumeration.Enumerated.merge c.enumSize a? b? keep
 
 /-- `f` of each of `xs`, taken in order by at most `jobs` threads at
 once: for each, in the order of `xs`, an action that waits for it. With
@@ -751,14 +748,14 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       else none
     let r ← solveComp st prelude spec? sy c global kinds args.limits cache dump? body args.examples
     -- The checks set to testing, tested (`Reqs/Check#checking-by-testing`).
-    let tested? := if !c.tested.any then none else match spec? with
+    let tested? := if !(c.tested.minus c.enumerated).any then none else match spec? with
       | .ok sp => (sp.counterpart? c global).map fun ec =>
         -- Not tested if it cannot be (`testComp`).
         (ec, if (sp.untestable? ec).isSome then {} else testReport sp ec c global args.seed args.nTests)
       | .error _ => none
     -- And those set to enumeration, enumerated (`Reqs/Check#checking-by-enumeration`).
     let enumerated? := if !c.enumerated.any then none else match spec? with
-      | .ok sp => (sp.counterpart? c global).map fun ec => enumerated sp ec c global refinement kinds (tested?.map (·.2))
+      | .ok sp => (sp.counterpart? c global).map fun ec => enumerated sp ec c global refinement kinds
       | .error _ => none
     return (r, ← dumped.get, tested?, enumerated?)
   let solving ← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
@@ -791,17 +788,13 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       printDiag args.paint files { file := c.file, span := c.span, msg }
       shown := shown.push msg
       enumErrors := enumErrors + 1
-    | some (.ok (e, tests)) =>
-      byTesting := byTesting + tests
+    | some (.ok e) =>
       for r in e.results do
         shown := shown ++ (← printResult args.paint files c r)
       all := all ++ e.results
       if let some r := record? then r.modify (· ++ e.results.map (key, ·))
-      let bounded := e.results.filter fun r => r.verdict == .pass && r.bounded?.isSome
-      byBound := byBound + bounded.size
-      if !bounded.isEmpty then
-        let tests := if c.tested.any && bounded.any (fun r => c.tested.covers r && !r.kind.untestable) then some args.nTests else none
-        let msg := Fren.Core.Enumeration.boundedMsg (subjectOf c global) bounded.size e.bound tests
+      byBound := byBound + (e.results.filter fun r => r.verdict == .pass && r.bounded?.isSome).size
+      if let some msg := e.boundedMsg? (subjectOf c global) c.tested then
         printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
         shown := shown.push msg
     | none => pure ()
