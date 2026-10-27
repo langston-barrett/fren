@@ -1381,7 +1381,8 @@ def recursiveRecordMsg (n : Name) : Msg :=
       "help: use an enum with a variant whose payload does not contain it, e.g. `enum List { Nil, Cons(Int, List) }`"] }
 
 /-- Whether an enumeration has values, from its number of variants and of
-those with a payload of its own type (`lang::well_founded`). -/
+those with a payload of its own type, the only type of a payload that the
+enumeration can be built from (`lang::well_founded`). -/
 def wellFounded (nVariants nRecursive : Nat) : Bool := nRecursive < nVariants
 
 def illFoundedMsg (n : Name) : Msg :=

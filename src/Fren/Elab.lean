@@ -16,6 +16,7 @@ import FrenCore.Quantifier
 import FrenCore.Regex
 import FrenCore.Syntax
 import FrenCore.Ty
+import FrenCore.TypeFacts
 import FrenCore.Typing
 -- keep-sorted end
 
@@ -650,6 +651,17 @@ def dataSig (s : State) (p : Name) : Option Core.DataSig :=
   | none, some r => some { isRecord := true, unbounded := r.unbounded, ctors := #[tys r.params (r.fields.map (·.2))] }
   | none, none => none
 
+/-- The facts of the declared type `t` (`lang::type_facts`), from the
+declarations as both front ends give them to `Core.typeFacts`. -/
+def factsOf (s : State) (t : Core.PTy) : Core.TypeFacts := Core.typeFacts s.shapeOf t.node
+
+/-- The facts of the Lean type `ty` (`factsOf`), which accept the least if
+it stands for no Fren type. -/
+def exprFacts (s : State) (ty : Expr) : Core.TypeFacts :=
+  match coreTyOf s ty with
+  | some t => factsOf s (.plain t)
+  | none => .unknown
+
 /-- The Fren name of the type whose Lean type is `t`. -/
 partial def typeName (t : Expr) : TermElabM String := do
   -- A comparison or connective is a `Prop` in Lean, and a `Bool` in Fren.
@@ -817,11 +829,11 @@ partial def valuesOf? (ty : Expr) (cap : Nat := 64) : TermElabM (Option (Array T
   let targs := ty.getAppArgs
   let ctors : Array (Name × Array Expr) ←
     if let some e := s.enumOf? ty then
-      if s.unbounded ty then return none
+      if (exprFacts s ty).unbounded then return none
       let ps := e.payloadsAt targs
       pure (e.variants.mapIdx fun i _ => (e.ctor i, ps[i]?.getD #[]))
     else if let some r := s.recordOf? ty then
-      if s.unbounded ty then return none
+      if (exprFacts s ty).unbounded then return none
       pure #[(r.ctor, (r.fieldsAt targs).map (·.2))]
     -- A newtype's values are its underlying type's, as the `fren` command
     -- has them.
@@ -1341,21 +1353,9 @@ partial def applications (cx : ExprCtx) (e : Syntax) : TermElabM (Array Syntax) 
   return inner
 
 /-- Whether the Lean type of a Fren type has infinitely many values
-(`Reqs/Lang/Decidability#outputs`): an abstract type may, so it counts. -/
-partial def infiniteType (ty : Expr) : TermElabM Bool := do
-  if ty.isConstOf ``Bool then return false
-  if ty.isAppOfArity ``Fren.FinSet 1 then return ← infiniteType ty.appArg!
-  if ty.isAppOfArity ``Fren.Seq 1 then return true
-  if ty.isAppOfArity ``Prod 2 then return (← infiniteType ty.appFn!.appArg!) || (← infiniteType ty.appArg!)
-  let s ← getState
-  -- An instance, by its payloads' or fields' types (`Reqs/Lang/Generics`).
-  if let some e := s.enumOf? ty then return e.unbounded || (← (e.payloadsAt ty.getAppArgs).anyM (·.anyM infiniteType))
-  if let some r := s.recordOf? ty then return r.unbounded || (← (r.fieldsAt ty.getAppArgs).anyM (infiniteType ·.2))
-  let some d := ty.constName? | return true
-  -- A newtype has its underlying type's values, as the `fren` command has
-  -- it: a newtype of a set of a finite type is finite, though unbounded.
-  if let some n := s.newtypeOfDecl? d then return ← infiniteType n.under
-  return true
+(`Reqs/Lang/Decidability#outputs`): it is not finite (`lang::type_facts`),
+so an abstract type counts. -/
+def infiniteType (ty : Expr) : TermElabM Bool := return !(exprFacts (← getState) ty).finite
 
 /-- Whether `e` mentions an output of an infinite type, directly, through a
 definition or through a binder. -/
@@ -2671,9 +2671,13 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
     let tys := if v[1].isNone then #[] else v[1][1].getSepArgs
     let tps ← tys.mapM fun t => fieldType modName t decl .payload n params
     let ts := tps.map (·.1)
-    if ts.any (·.getAppFn.isConstOf decl) then nRecursive := nRecursive + 1
     let st ← getState
-    unbounded := unbounded || ts.any fun t => t.getAppFn.isConstOf decl || st.unbounded t
+    -- Recursive if a payload's type is the enumeration or built from it
+    -- (`lang::well_founded`).
+    let own := (Core.PTy.plain (.enum path (params.toList.zipIdx.map fun (p, k) => .param k p))).node
+    let nodes := tps.toList.map fun (t, pt) => if t.getAppFn.isConstOf decl then own else pt.node
+    if Core.recursiveVariant st.shapeOf own nodes then nRecursive := nRecursive + 1
+    unbounded := unbounded || tps.any fun (t, pt) => t.getAppFn.isConstOf decl || (factsOf st pt).unbounded
     payloads := payloads.push ts
     ptys := ptys.push (tps.zip tys |>.map fun ((_, pt), t) => (pt, t))
   unless Core.wellFounded variants.size nRecursive do throwErrorAt nameStx (Core.illFoundedMsg n).text
@@ -2804,7 +2808,7 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
     if let some k := first? then
       let f := fieldStxs[k]!
       throwErrorAt (if f[1].isNone then f[0] else f[1][1]) (Core.unorderedFieldMsg .record n fields[k]!.1 ptys[k]!.ty).text
-  let unbounded := fields.any fun (_, t) => st.unbounded t
+  let unbounded := ptys.any fun pt => (factsOf st pt).unbounded
   let bs ← fields.mapM fun (f, t) => `(Lean.Parser.Command.structExplicitBinder| ($(mkIdent f):ident : $(typeSyntax t params)))
   let binders ← paramBinders params false
   elabCommand (← `(structure $(mkIdentFrom nameStx (leanName .anonymous path)):ident $binders:bracketedBinder* where
@@ -2839,7 +2843,7 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
   -- (`lang::ordered_declaration`).
   unless Core.orderedDeclAccepted isOrdered 0 (Core.PTy.firstUnordered? (← getState).orderedDecl [pt]) do
     throwErrorAt ty (Core.unorderedFieldMsg .newtype n (Name.mkSimple "0") pt.ty).text
-  let unbounded := Core.newtypeUnbounded ((← getState).unbounded under)
+  let unbounded := Core.newtypeUnbounded (factsOf (← getState) pt).unbounded
   -- One field, `«0»`, so that `x.0` in Fren is `x.«0»` in Lean.
   elabCommand (← `(structure $(mkIdentFrom nameStx (leanName .anonymous path)):ident where
     $(mkIdent `mk):ident :: $(mkIdent (Name.mkSimple "0")):ident : $(typeSyntax under)
@@ -4777,6 +4781,8 @@ and how many there are, if a quantifier ranges over it, as the `fren`
 command's `binderValues`. -/
 def binderValues (ty : Expr) (pt : Core.PTy) : TermElabM (Option (Nat × Array Term)) := do
   let st ← getState
+  -- Only a listed type's values are listed (`lang::quantified_type`).
+  unless (factsOf st pt).listed do return none
   if (pt.cons st.shapeOf).isNone then
     let some n ← valueCount? ty | return none
     return some (n, (← valuesOf? ty Core.maxInstances).getD #[])
@@ -5999,7 +6005,7 @@ def elabCompVars (scope : Name) (members : Array Syntax) : TermElabM (Array Var 
     try
       let (ty, ptype) ← varPType scope x ty?
       let st ← getState
-      unless Core.variableTypeAccepted (role == .output) (st.unbounded ty) defn?.isSome do
+      unless Core.variableTypeAccepted (role == .output) (factsOf st ptype).unbounded defn?.isSome do
         throwErrorAt x (Core.unboundedOutputMsg x.getId ptype.text).text
       let fact? ← factPred? ty ptype
       vars := vars.push { name := x.getId, role, isPub, isDet, «type» := ty, ref := x, defn?, ptype, fact? }

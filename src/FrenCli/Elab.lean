@@ -17,6 +17,7 @@ import FrenCore.Regex
 import FrenCore.SeqElems
 import FrenCore.Trace
 import FrenCore.Ty
+import FrenCore.TypeFacts
 import FrenCore.Typing
 -- keep-sorted end
 
@@ -959,25 +960,16 @@ def internal (span : Span) (what : String) : M α := err span (Msg.internal what
 
 def State.dataOf? (s : State) (p : Name) : Option DataDecl := s.datatypes.find? (·.path == p)
 
-partial def State.unbounded (s : State) : Ty → Bool
-  | .string | .set _ | .rel .. | .seq _ => true
-  | .enum p args | .record p args => (s.dataOf? p).any fun d =>
-    -- An instance by its payloads' or fields' types (`Reqs/Lang/Generics`).
-    d.unbounded || (d.instCtors args).any fun (_, fs) => !args.isEmpty && fs.any (s.unbounded ·.2)
-  | .newtype _ u => Fren.Core.newtypeUnbounded (s.unbounded u)
-  | _ => false
+/-- The facts of the declared type `t` (`lang::type_facts`), from the
+declarations as both front ends give them to `Fren.Core.typeFacts`. -/
+def State.typeFacts (s : State) (t : Fren.Core.PTy) : Fren.Core.TypeFacts := Fren.Core.typeFacts s.shapeOf t.node
+
+/-- Whether `t` is unbounded (`Reqs/Lang/Types`). -/
+def State.unbounded (s : State) (t : Ty) : Bool := (s.typeFacts (.plain t)).unbounded
 
 /-- Whether a type has infinitely many values (`Reqs/Lang/Decidability#outputs`):
-an abstract type may, so it counts. -/
-partial def State.infinite (s : State) : Ty → Bool
-  | .bool => false
-  | .int | .nat | .string | .abstract _ | .seq _ | .param .. => true
-  | .set t => s.infinite t
-  | .rel a b => s.infinite a || s.infinite b
-  | .newtype _ u => s.infinite u
-  | .enum p args | .record p args => match s.dataOf? p with
-    | some d => d.unbounded || (d.instCtors args).any fun (_, fs) => fs.any fun (_, t) => s.infinite t
-    | none => true
+it is not finite (`lang::type_facts`), so an abstract type counts. -/
+def State.infinite (s : State) (t : Ty) : Bool := !(s.typeFacts (.plain t)).finite
 
 /-- Every value of a finite type, as SMT-LIB terms, if there are at most
 `cap` of them. -/
@@ -3087,6 +3079,8 @@ values bring no constraint as `State.values` lists them, and one that does,
 those that meet it (`Fren.Core.PTy.values`). -/
 def binderValues (t : Fren.Core.PTy) : M (Option (Nat × Array String)) := do
   let st ← get
+  -- Only a listed type's values are listed (`lang::quantified_type`).
+  unless (st.typeFacts t).listed do return none
   if (t.cons st.shapeOf).isNone then
     let some n := st.valueCount t.ty | return none
     return some (n, (st.values Fren.Core.maxInstances t.ty).getD #[])
@@ -5860,7 +5854,6 @@ partial def elabItem (item : Item) : M Unit := do
       vs := vs.push vn
       let mut fs := #[]
       let mut pts := #[]
-      let mut recursive := false
       for segs in payload?.getD #[], k in [0:(payload?.getD #[]).size] do
         -- The enum's own name, which is not declared yet (`lang::field_type`).
         let (_, ownInSet) := ownIn segs name
@@ -5879,10 +5872,12 @@ partial def elabItem (item : Item) : M Unit := do
         let abstract := t.abstractWithin?
         unless Fren.Core.fieldTypeAccepted abstract.isSome own ownInSet true do
           err tspan (Fren.Core.abstractFieldMsg (abstract.getD path) true (!(t matches .abstract _)))
-        recursive := recursive || own
         unbounded := unbounded || own || (← get).unbounded t
         fs := fs.push (Name.mkSimple (toString k), t)
-      if recursive then nRecursive := nRecursive + 1
+      -- Recursive if a payload's type is the enumeration or built from it
+      -- (`lang::well_founded`).
+      let own := (Fren.Core.PTy.plain (Ty.enum path (params.toList.zipIdx.map fun (p, k) => .param k p))).node
+      if Fren.Core.recursiveVariant (← get).shapeOf own (pts.toList.map (·.1.node)) then nRecursive := nRecursive + 1
       ctors := ctors.push (vn, fs)
       payloadTys := payloadTys.push pts
     unless Fren.Core.wellFounded variants.size nRecursive do err name.span (Fren.Core.illFoundedMsg n)

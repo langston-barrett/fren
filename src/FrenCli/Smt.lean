@@ -200,6 +200,11 @@ def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) : IO (O
   let r ← cvc5.Env.run do
     let tm ← cvc5.TermManager.new
     let solver ← cvc5.Solver.new tm
+    -- cvc5 warns on stderr when a model's value of a quantified formula
+    -- cannot be evaluated (`Could not evaluate ... in getValue.`), which the
+    -- model then holds as that formula: the warning is not an outcome, and
+    -- only cvc5's own diagnostics are silenced.
+    solver.setOption "verbosity" "-1"
     let parser ← cvc5.InputParser.new solver
     let sm ← parser.getSymbolManager
     parser.setStringInput script .SMT_LIB_2_6

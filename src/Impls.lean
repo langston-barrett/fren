@@ -19,6 +19,7 @@ import Impls.Mutate
 import Impls.PatternTypes
 import Impls.Refine
 import Impls.Trace
+import Impls.TypeFacts
 import Impls.View
 import Reqs
 -- keep-sorted end

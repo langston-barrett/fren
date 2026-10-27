@@ -86,25 +86,31 @@ An input may have any type, but an output's type is bounded unless the
 output is defined, so that the solver never has to find an unbounded
 value (see [Recursive and unbounded
 types](Types.md#recursive-and-unbounded-types)). A defined output is never
-searched for. `lang::variable_type` states this; `only_outputs` is an
-assumption because `lang::modifiers` rejects a defined input first:
+searched for. `lang::variable_type` states this, with the variable's type
+unbounded by the closure of the constituent relation (`lang::type_facts`);
+`only_outputs` is an assumption because `lang::modifiers` rejects a
+defined input first:
 
 ```fren
-set_option fren.evidence "enumerated" in
+set_option fren.lint.undecidable "allow" in
 pub comp variable_type {
-    in output?           -- the variable is an output, public or private
-    in unbounded?        -- its type is unbounded
-    in defined?          -- it is declared with `:= e`
+    in output?                                       -- the variable is an output, public or private
+    in ty: DeclaredTy                                -- its type
+    in constituents: Rel<DeclaredTy, DeclaredTy>     -- (t, u): t has a field, payload or element of type u
+    in defined?                                      -- it is declared with `:= e`
 
     assume only_outputs: when defined?, output?
     pub det out accepted?
+    inst facts: type_facts { ty, constituents }
 
-    ensure rule: accepted? iff not (output? and unbounded? and not defined?)
+    ensure rule: accepted? iff not (output? and facts.unbounded? and not defined?)
 
     expect inputs_any_type: unless output?, accepted?
     expect defined_any_type: when defined?, accepted?
+    expect strings_defined: when output? and declared_kind(ty) = ValueType::StringTy, accepted? iff defined?
+    expect bool_outputs: when declared_kind(ty) = ValueType::BoolTy and constituents = {}, accepted?
 
-    cover unbounded_defined: output? and unbounded? and defined? and accepted?
+    cover unbounded_defined: output? and facts.unbounded? and defined? and accepted?
 }
 ```
 
