@@ -17,9 +17,9 @@
   spec for readers, and is checked as a ui test, so its annotations
   (usually none) must match both front ends' messages. The example specs
   are also in the ui tests' backjumping and enumeration corpora.
-  An example's Lean implementation, `examples/*.lean`, reads its spec with
-  `#fren_md` and proves it meets the spec; `lake build` checks the proofs
-  (the `Examples` library).
+  An example's Lean implementation, such as `examples/Rle.lean`, reads its
+  spec with `#fren_md` and proves it meets the spec; `lake build` checks
+  the proofs of those listed in the `Examples` library.
 - **Snapshots** (`lake test`): `test/cli/**/X.fren` must make the `fren` command print
   `test/cli/**/X.expected` exactly, for formatting that annotations don't cover.
   Each distinct message has one, named after its code (`f0105_eqeq.fren`).

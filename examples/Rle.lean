@@ -51,9 +51,11 @@ def encode (xs : List Int) : List Run := encodeFrom none xs
 /-- The values that `runs` encode. -/
 def decode (runs : List Run) : List Int := runs.flatMap fun r => List.replicate r.count r.value
 
+/-- `decode` distributes over `++`. -/
 theorem decode_append (a b : List Run) : decode (a ++ b) = decode a ++ decode b := by
   simp [decode]
 
+/-- Encoding after `current` decodes to `current`'s values, then the input. -/
 theorem decode_encodeFrom (current : Option Run) (xs : List Int) :
     decode (encodeFrom current xs) = decode current.toList ++ xs := by
   induction xs generalizing current with
@@ -76,7 +78,9 @@ def adjacentDiffer : List Run → Prop
   | a :: b :: l => a.value ≠ b.value ∧ adjacentDiffer (b :: l)
   | _ => True
 
-theorem encodeFrom_adjacentDiffer (r : Run) (xs : List Int) :
+/-- Encoding after the run `r` gives runs whose adjacent values differ, the
+first with `r`'s value. -/
+theorem encodeFrom_adjacentDiffer_head (r : Run) (xs : List Int) :
     adjacentDiffer (encodeFrom (some r) xs) ∧
       (encodeFrom (some r) xs).head?.map (·.value) = some r.value := by
   induction xs generalizing r with
@@ -99,9 +103,10 @@ in two. -/
 theorem encode_adjacentDiffer (xs : List Int) : adjacentDiffer (encode xs) := by
   cases xs with
   | nil => simp [encode, encodeFrom, adjacentDiffer]
-  | cons x xs => simpa [encode, encodeFrom, step] using (encodeFrom_adjacentDiffer (Run.«{}» x 1) xs).1
+  | cons x xs => simpa [encode, encodeFrom, step] using (encodeFrom_adjacentDiffer_head (Run.«{}» x 1) xs).1
 
-/-- Every run has at least one value. -/
+/-- Encoding after a run with at least one value gives runs with at least one
+value each. -/
 theorem encodeFrom_count (current : Option Run) (xs : List Int)
     (h : ∀ r ∈ current, 1 ≤ r.count) : ∀ r ∈ encodeFrom current xs, 1 ≤ r.count := by
   induction xs generalizing current with
@@ -118,6 +123,7 @@ theorem encodeFrom_count (current : Option Run) (xs : List Int)
       | none => simp [step]
       | some c => by_cases hv : c.value = x <;> simp [step, hv]
 
+/-- Every run has at least one value. -/
 theorem encode_count (xs : List Int) : ∀ r ∈ encode xs, 1 ≤ r.count :=
   encodeFrom_count none xs (by simp)
 

@@ -145,8 +145,10 @@ lean_lib ImplsProofs where
 -- Regression tests: each file checks its own messages with `#guard_msgs`.
 @[default_target] lean_lib FrenTest where globs := #[`FrenTest.+]
 
--- The example specs' Lean implementations (`examples/*.lean`), each proved
--- to meet the spec it reads with `#fren_md`, hence `needs`.
+-- The example specs' Lean implementations, each proved to meet the spec it
+-- reads with `#fren_md`, hence `needs` (the `.fren` specs only: an example
+-- that reads a Markdown spec needs that file too). Each is listed in
+-- `globs`, as there is no root module.
 @[default_target] lean_lib Examples where
   srcDir := "../examples"
   globs := #[`Rle]
