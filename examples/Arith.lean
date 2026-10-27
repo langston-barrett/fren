@@ -34,14 +34,13 @@ instance : Inhabited Tree := ⟨.roll (.Val 0)⟩
 def Tree.top : Tree → Expr Tree
   | .roll e => e
 
-/-- An expression's value, by `eval` at each layer. The spec's definitions
-are for proofs, not compiled, hence `noncomputable`. -/
-noncomputable def value : Tree → Int
+/-- An expression's value, by `eval` at each layer. -/
+def value : Tree → Int
   | .roll (.Val n) => eval (.Val n)
   | .roll (.Add a b) => eval (.Add (value a) (value b))
 
 /-- Constant folding, from the leaves up, by `fold_add` at each `Add`. -/
-noncomputable def cfold : Tree → Tree
+def cfold : Tree → Tree
   | .roll (.Val n) => .roll (.Val n)
   | .roll (.Add a b) => .roll (fold_add Tree (cfold a).top (cfold b).top .roll)
 
@@ -52,7 +51,7 @@ theorem roll_top (t : Tree) : Tree.roll t.top = t := by
 /-- Folding one `Add` keeps its value. -/
 theorem value_fold_add (a b : Expr Tree) :
     value (.roll (fold_add Tree a b .roll)) = value (.roll a) + value (.roll b) := by
-  cases a <;> cases b <;> simp [fold_add, value, eval, Expr.Val.x0, Expr.Add.x0, Expr.Add.x1] <;> omega
+  cases a <;> cases b <;> simp [value, eval] <;> omega
 
 /-- Folding keeps every expression's value. -/
 theorem value_cfold (t : Tree) : value (cfold t) = value t := by
@@ -60,7 +59,7 @@ theorem value_cfold (t : Tree) : value (cfold t) = value t := by
   | case1 n => rfl
   | case2 a b iha ihb =>
     rw [cfold, value_fold_add, roll_top, roll_top, iha, ihb]
-    simp [value, eval, Expr.Add.x0, Expr.Add.x1]
+    simp [value, eval]
 
 /-- Whether a layer is a value. -/
 def isVal : Expr Tree → Bool
@@ -80,6 +79,16 @@ theorem fullyFolded_cfold (t : Tree) : fullyFolded (cfold t) := by
     rw [cfold]
     revert iha ihb
     cases cfold a with | roll ea => cases cfold b with | roll eb =>
-    cases ea <;> cases eb <;> simp_all [fold_add, fullyFolded, isVal, Tree.top, Expr.Val.x0]
+    cases ea <;> cases eb <;> simp_all [fold_add, fullyFolded, isVal, Tree.top]
+
+/-- `(1 + 2) + (3 + 4)`. -/
+def sample : Tree :=
+  .roll (.Add (.roll (.Add (.roll (.Val 1)) (.roll (.Val 2)))) (.roll (.Add (.roll (.Val 3)) (.roll (.Val 4)))))
+
+/-- Folding `(1 + 2) + (3 + 4)` gives `10`, by Lean's kernel. -/
+example : cfold sample = .roll (.Val 10) := rfl
+
+-- And by the compiled code.
+#guard value (cfold sample) == 10 && (cfold sample).top matches .Val 10
 
 end Arith

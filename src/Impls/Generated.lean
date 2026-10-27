@@ -102,5 +102,72 @@ impl prelude_variant: generated::prelude_variant for (v : generated.PreludeVaria
   cases v <;> simp [fren_spec, ho, hr, preludeVariantOf, preludeTypeOfVariant, dotted, Fren.Core.leanTypes, Fren.Seq.ext_iff] <;>
     first | rfl | decide
 
+/-! # The forms of generated definitions (`Reqs/Generated#matches`, `Reqs/Generated#computable-definitions`)
+
+`Fren.matchForm`, which decides whether a `match` in a defined function's
+Lean definition is Lean's, and `Fren.definitionForm`, which decides whether
+a generated definition is compiled, over their inputs as the spec models
+them. -/
+
+def headOf : Fren.PatHead → generated.Head
+  | .wildcard => .Wildcard | .binder => .Binder | .variant => .Variant | .literal => .Literal | .orPattern => .OrPattern
+
+def scrutineeOf : Fren.ScrutineeKind → generated.Scrutinee
+  | .enumeration => .Enumeration | .other => .Other
+
+def armKindOf : Fren.ArmKind → generated.ArmKind
+  | .values => .Values | .propositions => .Propositions
+
+def matchFormOf : Fren.MatchForm → generated.MatchForm
+  | .leanMatch => .LeanMatch | .ifChain => .IfChain
+
+theorem headOf_eq_literal (h : Fren.PatHead) : headOf h = .Literal ↔ h = .literal := by
+  cases h <;> simp [headOf]
+
+theorem headOf_eq_orPattern (h : Fren.PatHead) : headOf h = .OrPattern ↔ h = .orPattern := by
+  cases h <;> simp [headOf]
+
+impl match_form: generated::match_form for (s : Fren.ScrutineeKind) (a : Fren.ArmKind) (hs : List Fren.PatHead) {
+  scrutinee := scrutineeOf s,
+  arms := armKindOf a,
+  heads := Fren.FinSet.ofList (hs.map headOf),
+  form := matchFormOf (Fren.matchForm s a hs.toArray),
+} by
+  intro s a hs _
+  cases s <;> cases a <;>
+    simp [fren_spec, Fren.matchForm, scrutineeOf, armKindOf, matchFormOf, headOf_eq_literal, headOf_eq_orPattern] <;>
+    split <;> simp_all
+
+def valueKindOf : Fren.ValueKind → generated.ValueKind
+  | .proposition => .Proposition | .data => .Data
+
+def mentionOf : Fren.Mention → generated.Mention
+  | .computable => .Computable | .classicalDecision => .ClassicalDecision
+  | .noncomputableDecl => .NoncomputableDecl | .dataAxiom => .DataAxiom
+
+def definitionFormOf : Fren.DefinitionForm → generated.DefinitionForm
+  | .notCompiled => .NotCompiled | .compiled => .Compiled | .markedNoncomputable => .MarkedNoncomputable
+
+theorem mentionOf_eq_classicalDecision (m : Fren.Mention) : mentionOf m = .ClassicalDecision ↔ m = .classicalDecision := by
+  cases m <;> simp [mentionOf]
+
+theorem mentionOf_eq_noncomputableDecl (m : Fren.Mention) : mentionOf m = .NoncomputableDecl ↔ m = .noncomputableDecl := by
+  cases m <;> simp [mentionOf]
+
+theorem mentionOf_eq_dataAxiom (m : Fren.Mention) : mentionOf m = .DataAxiom ↔ m = .dataAxiom := by
+  cases m <;> simp [mentionOf]
+
+impl definition_form: generated::definition_form for (v : Fren.ValueKind) (ms : List Fren.Mention) {
+  value := valueKindOf v,
+  mentions := Fren.FinSet.ofList (ms.map mentionOf),
+  form := definitionFormOf (Fren.definitionForm v ms.toArray),
+} by
+  intro v ms _
+  cases v <;>
+    simp [fren_spec, Fren.definitionForm, valueKindOf, definitionFormOf, mentionOf_eq_classicalDecision,
+      mentionOf_eq_noncomputableDecl, mentionOf_eq_dataAxiom] <;>
+    by_cases h : (Fren.Mention.classicalDecision ∈ ms ∨ Fren.Mention.noncomputableDecl ∈ ms) ∨ Fren.Mention.dataAxiom ∈ ms <;>
+    simp_all [definitionFormOf]
+
 end Fren.Impls.Generated
 
