@@ -150,7 +150,7 @@ under any guard. Clippy has no counterpart.
 (a and b)` it reads, each with its two operands and whether the `and` gives a
 definedness obligation, and the operands of the disjunction just before or
 after it, if there is one. Operands are the four of
-[`lint::Operand`](../Complexity.md#simpler-bool-expressions), enough to
+[`lint::Operand`](../Meaning.md#expressions-as-written), enough to
 tell every case of the rule apart. The component states when
 the lint fires, which call the fix is, and that the fix holds exactly where
 the conjuncts do, for every set of operands that hold:

@@ -28,6 +28,7 @@
 - [Checks](Check.md)
 - [Diagnostics](View.md)
 - [Lints](Lint.md)
+  - [Meaning](Lint/Meaning.md)
   - [Unused](Lint/Unused.md)
   - [Nonstandard style](Lint/NonstandardStyle.md)
   - [Style](Lint/Style.md)

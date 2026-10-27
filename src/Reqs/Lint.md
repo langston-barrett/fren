@@ -94,7 +94,7 @@ use view::Severity
 | `modulo_one` | `F0816` | `suspicious` | `warn` | a remainder by `1` or `-1`, which is always `0` (see [Integers](Lint/Suspicious/Integers.md#remainders-and-bounds)) |
 | `needless_bool_assign` | `F0759` | `complexity` | `warn` | `if C then X else not X`, or `if C then not X else X` (see [Conditionals of `Bool`s](Lint/Complexity.md#conditionals-of-bools)) |
 | `needless_match` | `F0760` | `complexity` | `warn` | a `match` whose every arm gives back the value it matches, such as `match x { E::A => E::A, _ => x }` (see [Matches that give back the scrutinee](Lint/Complexity/Matches.md#matches-that-give-back-the-scrutinee)) |
-| `needless_raw_string_hashes` | `F0777` | `pedantic` | `allow` | a raw string literal with more `#`s than it needs, such as `r#"a"#` (see [Raw string literals](Lint/Pedantic.md#raw-string-literals)) |
+| `needless_raw_string_hashes` | `F0777` | `pedantic` | `allow` | a raw string literal with more `#`s than it needs, such as `r#"a"#` (see [Raw string literals](Lint/Pedantic/Text.md#raw-string-literals)) |
 | `needless_raw_strings` | `F0782` | `restriction` | `allow` | a raw string literal with no `\` and no `"` (see [Literals](Lint/Restriction.md#literals)) |
 | `needless_update` | `F0819` | `complexity` | `warn` | a record update that gives every field (see [Needless updates](Lint/Complexity/Updates.md#needless-updates)) |
 | `neg_multiply` | `F0742` | `style` | `warn` | a product with `-1`, `x * -1` or `-1 * x` (see [Negations](Lint/Style.md#negations)) |

@@ -751,8 +751,8 @@ structure State where
   boolEqs : Array Span := #[]
   /-- Where the conditions of `if`s and the operands of `*` in the
   expression being elaborated that mention a variable or an uninterpreted
-  function are, for `branches_sharing_code`. -/
-  mentioning : Array Span := #[]
+  function are, and what each mentions, for `branches_sharing_code`. -/
+  mentioning : Array (Span × List Fren.Core.Mention) := #[]
   /-- Where the variants without payloads in the expression being
   elaborated are, with their paths, for `contradictory_comparisons`. -/
   variants : Array (Span × String) := #[]
@@ -1662,12 +1662,13 @@ def lintBools (e : Expr) (hides : String → Bool) : M Unit := do
   let variant? (sp : Span) := (variants.find? (·.1 == sp)).map (·.2)
   let fact? (sp : Span) := (facts.find? (·.1 == sp)).map (·.2)
   let ordered? (sp : Span) := (ordereds.find? (·.1 == sp)).map (·.2)
+  let mentioned (sp : Span) := ((mentioning.find? (·.1 == sp)).map (·.2)).getD []
   let st ← get
   let fcx : Fren.Core.ForallCx :=
     { variants? := fun p => (st.dataOf? p.toName).bind fun d =>
         if d.isRecord || d.ctors.any (!·.2.isEmpty) then none else some d.ctors.size
       declared := e.declaredNames, hides, unguarded := !Fren.Core.hasGuarded (String.ofList src.toList) }
-  for r in Fren.Core.opReports src boolEqs.contains ordered? variant? (absEnds.contains ·.stop) mentioning.contains fact? fcx root do
+  for r in Fren.Core.opReports src boolEqs.contains ordered? variant? (absEnds.contains ·.stop) mentioned fact? fcx root do
     let ref := match r.last? with | some l => r.ref.to l | none => r.ref
     if keeps ref then lintFix r.lint ref (shift r.msg) r.unless?
   for r in Fren.Core.arithReports src root do
@@ -3242,7 +3243,9 @@ partial def elabIteExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (inEls
       let .mk kind .. := a.boolNode
       lintFix .sameBranches span (Fren.Core.sameBranchesMsg ta kind.prec (← srcAt { start := 0, stop := span.start })
         (← srcAt { start := span.stop, stop := (← get).src.size }))
-  if cx.noteIndexes && (← mentionsAny cx c) then modify fun s => { s with mentioning := s.mentioning.push c.span }
+  if cx.noteIndexes then
+    let ms ← mentionedNames cx c
+    unless ms.isEmpty do modify fun s => { s with mentioning := s.mentioning.push (c.span, ms) }
   -- The names that the condition's pattern tests bind, which the `then`
   -- branch sees (`lang::test_scope`).
   let (c, new) ← withBound do
@@ -3742,7 +3745,7 @@ partial def elabArithExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (
     unless cx.unmentioned || Fren.Core.productAccepted ma mb do err span (Fren.Core.nonlinearMsg ma mb)
     -- For `branches_sharing_code`.
     if cx.noteIndexes then
-      modify fun s => { s with mentioning := s.mentioning ++ ([(ma, a.span), (mb, b.span)].filter (!·.1.isEmpty) |>.map (·.2)) }
+      modify fun s => { s with mentioning := s.mentioning ++ ([(ma, a.span), (mb, b.span)].filter (!·.1.isEmpty) |>.map fun (m, sp) => (sp, m)) }
   -- `+` and `*` of `Nat`s are `Nat`s; `-` is always an `Int`, so that
   -- nothing truncates (`lang::operator_type`).
   let nat := op != "-" && expected? == some .nat
@@ -4491,7 +4494,7 @@ end
 /-- Reports `assertions_on_constants` on the constraint `e`, an `assume`,
 `ensure` or `expect` as `kind` says (`lint::assertions_on_constants`). -/
 def lintConstant (cx : ExprCtx) (kind : String) (e : Expr) : M Unit := do
-  if Fren.Core.assertionOnConstant (← mentionsAny cx e) then
+  if Fren.Core.assertionOnConstant (← mentionedNames cx e) then
     lint .assertionsOnConstants e.span (Fren.Core.assertionOnConstantMsg kind (match e with | .bool _ b => some b | _ => none))
 
 /-- The conditions of a top-level `when`/`unless` chain, and their span. -/
@@ -4943,8 +4946,8 @@ def lintOutputs (lcx : ExprCtx) (members : Array Member) (vars : Array CVar) : M
       | #[(_, .bin _ op l r)] => (op == "=" || op == "iff") &&
           ((isX l && !(mentions r).contains v.name) || (isX r && !(mentions l).contains v.name))
       | _ => false
-    let mentions ← match v.defn? with | some d => mentionsAny lcx d | none => pure true
-    let (constant, definable) := Fren.Core.outputLints v.defn?.isSome mentions about.size equation
+    let mentioned ← match v.defn? with | some d => mentionedNames lcx d | none => pure []
+    let (constant, definable) := Fren.Core.outputLints v.defn?.isSome mentioned about.size equation
     if constant then lint .constantOutput v.span (Fren.Core.constantOutputMsg v.name)
     if definable then lint .definableOutput v.span (Fren.Core.definableOutputMsg v.name about[0]!.1)
 

@@ -9,6 +9,7 @@ open Fren.Lang
 -- The requirements are in Lint.md and in the chapters under Lint/, one for
 -- each group of lints, which share the module `lint`.
 #fren_md "Lint.md"
+#fren_md "Lint/Meaning.md"
 #fren_md "Lint/Unused.md"
 #fren_md "Lint/NonstandardStyle.md"
 #fren_md "Lint/Style.md"

@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Lexical
+import FrenCore.Mentions
 import FrenCore.Names
 import FrenCore.Nfc
 import FrenCore.Patterns
@@ -740,10 +741,11 @@ def membershipChainMsg (x : String) (vals : Array String) (negated : Bool) : Msg
     fixes := #[{ msg := "write it as a membership"
                  replacement := if negated then s!"not {x} in {set}" else s!"{x} in {set}" }] }
 
-/-- Whether `constant_output` and `definable_output` fire on an output
+/-- Whether `constant_output` and `definable_output` fire on an output,
+where `mentioned` is what its definition mentions, if it is defined
 (`lint::output_lints`). -/
-def outputLints (defined mentions : Bool) (nReqs : Nat) (equation : Bool) : Bool × Bool :=
-  (defined && !mentions, !defined && nReqs == 1 && equation)
+def outputLints (defined : Bool) (mentioned : List Mention) (nReqs : Nat) (equation : Bool) : Bool × Bool :=
+  (defined && mentioned.isEmpty, !defined && nReqs == 1 && equation)
 
 def constantOutputMsg (x : Name) : Msg :=
   { code? := some "F0719", headline := s!"defined output `{x}` is the same in every behaviour"
@@ -3904,12 +3906,13 @@ def branchesSharingCode (sameOp sharedLeft sharedRight nonlinear : Bool) : Bool 
 
 /-- Whether the fix of `branches_sharing_code` for the operator `op`, whose
 shared operand is on the left if `left`, is outside the arithmetic that
-Fren accepts: for `*`, both the `if` that the fix moves out and the shared
-operand mention a variable or an uninterpreted function
-(`lang::linear_product`); for `div` and `mod`, the `if` would be the
-divisor, which must be a literal or a constant (`lang::divisor`). -/
-def branchesSharingNonlinear (op : String) (left ifMentions sharedMentions : Bool) : Bool :=
-  if op == "div" || op == "mod" then left else op == "*" && ifMentions && sharedMentions
+Fren accepts: for `*`, the product of the `if` that the fix moves out,
+which mentions `ifMentioned`, with the shared operand, which mentions
+`sharedMentioned`, is not accepted (`lang::linear_product`); for `div` and
+`mod`, the `if` would be the divisor, which must be a literal or a
+constant (`lang::divisor`). -/
+def branchesSharingNonlinear (op : String) (left : Bool) (ifMentioned sharedMentioned : List Mention) : Bool :=
+  if op == "div" || op == "mod" then left else op == "*" && !productAccepted ifMentioned sharedMentioned
 
 /-- `if C then A op X else B op X`, or the mirror form if `left`, whose
 shared operand is written `x`, as the text of its fix. -/
@@ -3922,9 +3925,10 @@ def branchesSharingCodeMsg (op x fixed : String) (left : Bool) : Msg :=
     fixes := #[{ msg := "move it out of the `if`", replacement := fixed }] }
 
 /-- `branches_sharing_code` on `n`, a conditional in `slot` within `parent`,
-where `mentions` says whether an expression mentions a variable or an
-uninterpreted function (`lint::branches_sharing_code`). -/
-def branchesSharingAt? (src : Array Char) (mentions : α → Bool) (n : BNode α) (slot : Option Slot) (parent : Range) :
+where `mentioned` is what an expression mentions, as far as the lint needs
+it: what a condition or an operand of `*` mentions
+(`lint::branches_sharing_code`). -/
+def branchesSharingAt? (src : Array Char) (mentioned : α → List Mention) (n : BNode α) (slot : Option Slot) (parent : Range) :
     Option (OpReport α) := do
   let #[c, a, b] := n.kids | none
   let .bin op := a.kind | none
@@ -3934,7 +3938,7 @@ def branchesSharingAt? (src : Array Char) (mentions : α → Bool) (n : BNode α
   let left := same a1 b1
   -- The operands that the fix moves into an `if`, and the shared one.
   let (ka, kb, kx) := if left then (a2, b2, a1) else (a1, b1, a2)
-  let nonlinear := branchesSharingNonlinear op left (mentions c.ref || mentions ka.ref || mentions kb.ref) (mentions kx.ref)
+  let nonlinear := branchesSharingNonlinear op left (mentioned c.ref ++ mentioned ka.ref ++ mentioned kb.ref) (mentioned kx.ref)
   unless branchesSharingCode (b.kind == .bin op) left (same a2 b2) nonlinear do none
   let k := BKind.bin op
   -- The branches without the shared operand, with the parentheses they are written with.
@@ -5554,7 +5558,7 @@ the `else` branch of a conditional, `inClamp` that it is that of a clamp
 (`manualClampAt?`), and `chain` that `membership_chain` reads the chain of
 `or` or `and` that it is in, if it is one (`membershipChainOf`). -/
 partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool) (ordered? : α → Option Ordered)
-    (variant? : α → Option String) (isAbs : α → Bool) (mentions : α → Bool) (fact? : α → Option NodeFact)
+    (variant? : α → Option String) (isAbs : α → Bool) (mentioned : α → List Mention) (fact? : α → Option NodeFact)
     (fcx : ForallCx) (n : BNode α) (slot : Option Slot) (parent : Range) (inElse inClamp : Bool := false) (chain : Bool := false)
     (delimited : Bool := false) : Array (OpReport α) :=
   let slots := n.kind.slots
@@ -5586,7 +5590,7 @@ partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool)
         ++ (if op == "and" || op == "or" then manualPatternTestAt src variant? fact? n (op == "and") chain slot parent
           else #[])
     | .ite =>
-      (needlessBoolAssignAt? src n slot parent).toArray ++ (branchesSharingAt? src mentions n slot parent).toArray
+      (needlessBoolAssignAt? src n slot parent).toArray ++ (branchesSharingAt? src mentioned n slot parent).toArray
         ++ (if inElse then #[] else ifsSameCondAt src n)
         ++ clamp.toArray ++ (manualAbsAt? src ordered? n slot parent).toArray
         ++ (manualAbsDiffAt? src ordered? n slot parent).toArray
@@ -5607,21 +5611,21 @@ partial def opReportsIn [Inhabited α] (src : Array Char) (boolEq : α → Bool)
   -- delimited (`delimitedSlot`).
   let atomic := n.kind matches .method _ | .atom
   own ++ (n.kids.mapIdx fun i k =>
-    opReportsIn src boolEq ordered? variant? isAbs mentions fact? fcx k (slots[i]?.join) n.range (n.kind == .ite && i == 2)
+    opReportsIn src boolEq ordered? variant? isAbs mentioned fact? fcx k (slots[i]?.join) n.range (n.kind == .ite && i == 2)
       (clamp.isSome && i == 2) chain (atomic && !(receiver && i == 0))).flatten
 
 /-- The messages of the operator and method lints in an expression written
 in `src` (`Reqs/Lint/Complexity/Comparisons`), where `boolEq` says whether a
 comparison compares `Bool`s, `ordered?` what type an ordering compares,
-`variant?` which variant without a payload a path is, if it is one, `isAbs` whether an expression is a call of `abs`, `mentions` whether
-an expression mentions a variable or an uninterpreted function, and
+`variant?` which variant without a payload a path is, if it is one, `isAbs` whether an expression is a call of `abs`, `mentioned` what
+an expression mentions, for the conditions and the operands of `*`, and
 `fact?` what is known of an expression of an ordered enumeration or a
 newtype; `fcx` is what `manual_forall` needs to know of the
 constraint. -/
 def opReports [Inhabited α] (src : Array Char) (boolEq : α → Bool) (ordered? : α → Option Ordered)
-    (variant? : α → Option String) (isAbs : α → Bool) (mentions : α → Bool) (fact? : α → Option NodeFact)
+    (variant? : α → Option String) (isAbs : α → Bool) (mentioned : α → List Mention) (fact? : α → Option NodeFact)
     (fcx : ForallCx) (root : BNode α) : Array (OpReport α) :=
-  opReportsIn (upTo src root.range) boolEq ordered? variant? isAbs mentions fact? fcx root none root.range
+  opReportsIn (upTo src root.range) boolEq ordered? variant? isAbs mentioned fact? fcx root none root.range
 
 /-! ## Arithmetic and parentheses -/
 
@@ -6414,9 +6418,9 @@ def needlessMatchMsg (fixed : String) : Msg :=
     fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
 /-- Whether `assertions_on_constants` fires on a constraint, where
-`mentions` is whether its expression mentions a variable or an
-uninterpreted function (`lint::assertions_on_constants`). -/
-def assertionOnConstant (mentions : Bool) : Bool := !mentions
+`mentioned` is what its expression mentions
+(`lint::assertions_on_constants`). -/
+def assertionOnConstant (mentioned : List Mention) : Bool := mentioned.isEmpty
 
 /-- A constraint, an `assume`, `ensure` or `expect`, or a cover goal, that mentions no
 variable, where `literal?` is its value if it is written `true` or
