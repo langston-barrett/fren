@@ -250,6 +250,12 @@ structure DefinedInfo where
   Its definition takes its value parameters first, then its function
   parameters. -/
   hoParams : Array Core.HoParam := #[]
+  /-- For each of its function parameters, in order, the definition of the
+  obligations of a closure given for it, and the placeholders that it uses:
+  over the parameters and a predicate of the closure's parameters, that the
+  predicate holds at each application of the function parameter, under its
+  guards (`lang::closure_obligation`). -/
+  oblDecls : Array (Name × Array Name) := #[]
   /-- Its body has an unbounded quantifier with a bound name that has a
   domain, directly or through the functions and constants it applies,
   which sets `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/

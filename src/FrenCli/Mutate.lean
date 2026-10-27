@@ -213,6 +213,7 @@ def exprChildren : Expr → Array Expr
   | .is _ sc _ => #[sc]
   | .table _ rows => tableParts rows
   | .method _ r _ as => #[r] ++ as
+  | .closure _ _ b => #[b]
   | _ => #[]
 
 /-- Every expression of `items`, and their subexpressions. -/
@@ -578,6 +579,8 @@ where
     | .is _ sc _ => #[edits s sc]
     -- The body once, not each instance.
     | .quant _ _ _ b => #[edits s b]
+    -- A closure's body once, not at each application of it.
+    | .closure _ _ b => #[edits s b]
     | .pair _ a b | .index _ a b => #[edits s a, edits s b]
     | .method _ r _ as => #[edits s r] ++ as.map (edits s ·)
     | .«let» _ defs body _ => defs.map (edits s ·.2.2) |>.push (edits s body)

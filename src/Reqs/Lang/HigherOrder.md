@@ -214,12 +214,57 @@ unbounded quantifier's bound name does, for the rules of [linear
 arithmetic](Expressions.md#linear-arithmetic) and of constant divisors:
 `|x| x * 2` is linear, and `|x| x * y` is not where `y` is a variable.
 
-A closure's body's tables, the preconditions of the functions it
-applies, its indexes and its pattern types' obligations are checked for
-every value of its parameters, of their types, under the conditions where
-the closure is written: as the higher-order function's body is checked
-once for every function, a closure's body is checked once for every
-argument, not at each application within the body.
+A closure's body's *obligations*, its tables' questions, the
+preconditions of the functions it applies, its indexes and its pattern
+types' obligations, are checked where it is unfolded: at each application
+`f(e1, ..., en)` of its function parameter within the higher-order
+function's body, unfolded as at the application, under the guards around
+it there (`lang::guard`), and with the closure's parameters standing for
+`e1` to `en`; under the conditions where the closure is written too. Since
+closures are always unfolded and nothing is recursive, this is exact: a
+closure applied only where its argument is in range, as in `if q.len > 0
+then f(0) else 0` with `|i| q[i]`, has no index out of range, and one that
+is never applied has nothing to check. An obligation is reported at the
+closure, and its counterexample shows the values that reach it. The
+higher-order function's own checks still treat its function parameters as
+uninterpreted functions.
+
+`lang::closure_obligation` states this of one application, from the
+guarded operands around it, outermost first, with their conditions'
+values, and whether the obligation holds at its arguments: it is checked
+there exactly where the application is evaluated, which is where each
+guard holds, as `lang::guard` states for each. The obligation of the
+closure is the conjunction of this over the applications. Here an
+application has three guards around it at most, and the rule is the same
+for more:
+
+```fren
+-- Whether the operand `o`, whose condition has the value `c?`, is evaluated
+-- (`lang::guard`).
+pub fn guard_holds?(o: GuardedOperand, c?) := match o {
+    GuardedOperand::WhenBody | GuardedOperand::ThenBranch | GuardedOperand::AndRight
+    | GuardedOperand::ArmGuard | GuardedOperand::ArmBody => c?,
+    _ => not c?,
+}
+
+set_option fren.lint.length_zero "allow" in
+pub comp closure_obligation {
+    in frames: Seq<GuardedOperand>   -- the guarded operands around the application, outermost first
+    in conditions: Seq<Bool>         -- their conditions' values, in the same order
+    in at_args?                      -- the obligation holds at the application's arguments
+
+    assume same: frames.len = conditions.len and frames.len <= 3
+    pub det out evaluated? := (frames.len <= 0 or guard_holds?(frames[0], conditions[0]))
+        and (frames.len <= 1 or guard_holds?(frames[1], conditions[1]))
+        and (frames.len <= 2 or guard_holds?(frames[2], conditions[2]))
+    pub det out holds?               -- the obligation, as it is checked there
+
+    ensure rule: holds? iff (not evaluated? or at_args?)
+
+    expect unguarded: when frames.len = 0, holds? iff at_args?
+    expect unevaluated: when frames = [GuardedOperand::ThenBranch] and conditions = [false], holds?
+}
+```
 
 Function parameters and closures are not values, so neither is compared:
 `=` and `!=` with an operand that is a closure, a function's name or a

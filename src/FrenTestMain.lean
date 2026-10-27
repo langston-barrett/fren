@@ -611,6 +611,7 @@ partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e :
       s!"({if w then "where" else "let"} {defs.toList.map fun (x, _, d) => (x.name, go d)} {go body})"
     | .quant _ all bs b => s!"({if all then "forall" else "exists"} {bs.toList.map fun x => Mutate.idText (s.text x.span)} {go b})"
     | .table _ rows => s!"(table {rows.toList.map fun (_, c?, v) => (c?.map go, go v)})"
+    | .closure _ ps b => s!"(closure {ps.toList.map fun (x, _) => x.name} {go b})"
     | e => Mutate.idText (s.text e.span)
 
 open FrenCli in

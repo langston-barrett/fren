@@ -629,6 +629,14 @@ structure GenericFn where
   calls : Array (Name × Array Ty) := #[]
   deriving Inhabited, BEq
 
+/-- A closure given for a function parameter, as the solver sees it, with
+its body's obligations over its parameters' symbols (`elabClosure`). -/
+structure ClosureArg where
+  closure : Fren.Core.SClosure
+  indexes : Array (Span × String × Option (String × Bool)) := #[]
+  tables : Array (Span × Fren.Core.TableGoal × String) := #[]
+  deriving Inhabited
+
 /-- A higher-order defined function (`Reqs/Lang/HigherOrder`): what its
 applications need to unfold it. -/
 structure HigherOrderFn where
@@ -1795,7 +1803,7 @@ def Expr.text (src : Array Char) (e : Expr) : Fren.Core.BText :=
 something in scope (`lang::shadowing`). -/
 def hidesIn (cx : ExprCtx) (extra : Array (Name × String) := #[]) : M (String → Bool) := do
   let st ← get
-  let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+  let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
     (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal ++ extra
   return fun n => (st.table.hidden? st.scope locals (Name.mkSimple n)).isSome
 
@@ -3136,7 +3144,7 @@ def quantBinders (cx : ExprCtx) (bs : Array Binder) (defer : Bool := false) :
         modify fun s => { s with quantified := true }
         checkCore cx b.span .quantifier true true #[]
     for x in b.names do
-      let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+      let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
         ((cx.binders ++ out).map (·.what)) cx.selfFn.isSome cx.inGlobal
       let y ← declare x locals
       let bn := Name.mkSimple y.name
@@ -4382,10 +4390,10 @@ whose result's is `r?` if it is known: the closure as the solver sees it,
 its parameters' types and its body's (`Reqs/Lang/HigherOrder#arguments`).
 The name of a function `g` is the closure `|x1, ..., xn| g(x1, ..., xn)`. -/
 partial def elabFnArg (cx : ExprCtx) (f : String) (ft : Fren.Core.FnTy) (ps : Array (Option Ty)) (r? : Option Ty)
-    (e : Expr) : M (Fren.Core.SClosure × Array Ty × Ty) := do
+    (e : Expr) : M (ClosureArg × Array Ty × Ty) := do
   match e with
   | .closure span params body =>
-    unless params.size == ps.size do err span (Fren.Core.closureArityMsg ft params.size)
+    if let some msg := Fren.Core.argumentMsg? ft (.closure params.size) then err span msg
     -- Distinct names (`lang::distinct_names`).
     let declared := params.map fun (x, _) => Name.mkSimple (declaredIdent x).1.name
     if let some k := (Fren.Core.repeatsAt declared)[0]? then err params[k]!.1.span (Fren.Core.dupBoundMsg declared[k]!)
@@ -4409,28 +4417,31 @@ partial def elabFnArg (cx : ExprCtx) (f : String) (ft : Fren.Core.FnTy) (ps : Ar
       let st ← get
       match st.table.resolvePath st.scope (segNames segs) cx.shadowing with
       | .ok (.item { kind := .fnItem, path, .. }) =>
-        unless st.defs.any (·.1 == path) || st.hofs.contains path do err span (Fren.Core.uninterpretedArgMsg path)
-      | _ => err span (Fren.Core.notAClosureMsg ft)
+        let shape := if st.defs.any (·.1 == path) || st.hofs.contains path then .definedName else .uninterpretedName
+        if let some msg := Fren.Core.argumentMsg? ft shape path then err span msg
+      | _ => err span ((Fren.Core.argumentMsg? ft .other).getD default)
     let some tys := ps.mapM id | err span (Fren.Core.closureParamUnknownMsg f)
     let xs := (List.range tys.size).toArray.map fun k => ({ name := s!"#{k}", span } : Ident)
     let call := Expr.app span segs (xs.map fun x => .path span #[x])
     elabClosure cx (xs.zip tys) call r? true
-  | _ => err e.span (Fren.Core.notAClosureMsg ft)
+  | _ => err e.span ((Fren.Core.argumentMsg? ft .other).getD default)
 
 /-- The closure whose parameters are `params`, of their types, and whose
 body is `body`, of the type `r?` if it is known: its parameters are
 declared as a quantifier's bound names are, but not where `synthetic`, as
-those of a function's name are, and its body's indexes, tables and
-applications with preconditions are checked for every value of them. -/
+those of a function's name are. Its body's indexes, tables and
+applications with preconditions are its obligations, over its
+parameters' symbols, which the application of the higher-order function
+puts at each application of the function parameter (`lang::closure_obligation`). -/
 partial def elabClosure (cx : ExprCtx) (params : Array (Ident × Ty)) (body : Expr) (r? : Option Ty) (synthetic : Bool) :
-    M (Fren.Core.SClosure × Array Ty × Ty) := do
+    M (ClosureArg × Array Ty × Ty) := do
   let n := (← get).nextClosure
   modify fun s => { s with nextClosure := s.nextClosure + 1 }
   let mut new : Array CBinder := #[]
   let mut free : Array FreeBound := #[]
   for (x, t) in params do
     let bn ← if synthetic then pure (Name.mkSimple x.name) else do
-      let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+      let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
         ((cx.binders ++ new).map (·.what)) cx.selfFn.isSome cx.inGlobal
       let y ← declare x locals
       let bn := Name.mkSimple y.name
@@ -4446,9 +4457,10 @@ partial def elabClosure (cx : ExprCtx) (params : Array (Ident × Ty)) (body : Ex
   let (b, tb) ← elabExpr { cx with binders := cx.binders ++ new, expected? := r?, inClosure := true } body
   let inner ← takeIndexes
   let innerTables ← takeTables
-  modify fun s => { s with indexes := outer ++ inner.map (fun (sp, g, t) => (sp, bindFree free true g, t)),
-                           tables := outerTables ++ innerTables.map fun (sp, q, g) => (sp, q, bindFree free true g) }
-  return ({ params := new.toList.map (·.smt), body := Fren.Core.STerm.parse b }, new.map (·.ty), tb)
+  modify fun s => { s with indexes := outer, tables := outerTables }
+  let _ := free
+  return ({ closure := { params := new.toList.map (·.smt), body := Fren.Core.STerm.parse b }, indexes := inner
+            tables := innerTables }, new.map (·.ty), tb)
 
 /-- `elabExpr` on an application of the higher-order function `h` at
 `path` (`Reqs/Lang/HigherOrder#applications`): its body, unfolded at its
@@ -4459,7 +4471,7 @@ partial def elabHigherOrderApp (cx : ExprCtx) (expected? : Option Ty) (span fnSp
   unless args.size == h.params.size do err span (Fren.Core.arityMsg path h.params.size args.size)
   let synth ← args.mapM (synthesizes cx)
   let f := showPath path
-  let go : StateT (Array String × Array (Option Fren.Core.SClosure)) M (Array Ty) :=
+  let go : StateT (Array String × Array (Option ClosureArg)) M (Array Ty) :=
     Fren.Core.inferHigherOrder h.typeParams (h.params.map (·.2.2)) h.result synth expected?
       (err span (Fren.Core.cannotInferCallMsg f) : M Unit)
       (fun k x? => do
@@ -4482,7 +4494,7 @@ partial def elabHigherOrderApp (cx : ExprCtx) (expected? : Option Ty) (span fnSp
   for a in args, x in smts, k in [0:args.size] do
     if h.params[k]!.2.2 matches .value _ then noteObligation cx .argument a.span (ptys[k]?.getD default) x
   let values := (h.params.zip smts).toList.filterMap fun ((_, sym, p), x) => if p matches .value _ then some (sym, x) else none
-  let fns := (h.params.zip closures).toList.filterMap fun ((_, sym, _), c?) => c?.map (sym, ·)
+  let fns := (h.params.zip closures).toList.filterMap fun ((_, sym, _), c?) => c?.map (sym, ·.closure)
   let globals ← globalSyms
   let isLocal (s : String) : Bool := s.startsWith "|" && !globals.contains s
   -- Its preconditions, at the arguments, with the closures unfolded.
@@ -4494,7 +4506,33 @@ partial def elabHigherOrderApp (cx : ExprCtx) (expected? : Option Ty) (span fnSp
       pres := pres.push (pn, pre)
     for (q, goal) in Fren.Core.preconditionQuestions (guarded cx.guards) path pres do
       modify fun s => { s with tables := s.tables.push (fnSpan, q, goal) }
-  let (smt, next) := Fren.Core.inlineCall (← hofText path h targs h.body) values fns isLocal (← get).nextCapture
+  let body ← hofText path h targs h.body
+  -- Each closure's obligations, at each application of its function
+  -- parameter in the body, with the other closures unfolded there
+  -- (`lang::closure_obligation`).
+  if cx.noteIndexes then
+    for (fsym, c?) in (h.params.map (·.2.1)).zip closures do
+      let some c := c? | continue
+      let others := fns.filter (·.1 != fsym)
+      let at_ (g : String) : M (Option String) := do
+        let (b, next) := Fren.Core.inlineCall body [] others isLocal (← get).nextCapture
+        modify fun s => { s with nextCapture := next }
+        -- Its free names, as the closure's, are captured outside the body.
+        let (g', lets, next) := Fren.Core.captureFree (Fren.Core.STerm.parse g) c.closure.params isLocal (← get).nextCapture
+        modify fun s => { s with nextCapture := next }
+        -- Where the body never applies it, the closure is never evaluated.
+        let o := (Fren.Core.closureObligation (Fren.Core.STerm.parse b) fsym c.closure.params g').getD (.atom "true")
+        -- With the closure unfolded where the arguments and the guards
+        -- apply it too, and the other parameters at their arguments.
+        let (t, next) := Fren.Core.inlineCall o.print values [(fsym, c.closure)] isLocal (← get).nextCapture
+        modify fun s => { s with nextCapture := next }
+        if lets.isEmpty then return some t
+        return some s!"(let ({" ".intercalate (lets.map fun (x, v) => s!"({x} {v})")}) {t})"
+      for (sp, g, t) in c.indexes do
+        if let some o ← at_ g then modify fun s => { s with indexes := s.indexes.push (sp, o, t) }
+      for (sp, q, g) in c.tables do
+        if let some o ← at_ g then modify fun s => { s with tables := s.tables.push (sp, q, o) }
+  let (smt, next) := Fren.Core.inlineCall body values fns isLocal (← get).nextCapture
   modify fun s => { s with nextCapture := next }
   if (← get).guardedItems.contains path then modify fun s => { s with guardedUsed := true }
   return (smt, h.result.subst targs)
@@ -4703,7 +4741,7 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
       err bs[k]!.ident.span (Fren.Core.dupPatternBinderMsg declared[k]!)
     let mut new : Array CBinder := #[]
     for b in bs do
-      let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+      let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
         (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
       let x ← declare b.ident locals
       let bn := Name.mkSimple x.name
@@ -4867,7 +4905,7 @@ partial def elabIsExpr (cx : ExprCtx) (test : Fren.Core.TestContext × Option (N
       err bs[k]!.ident.span (Fren.Core.dupPatternBinderMsg declared[k]!)
     let mut new : Array CBinder := #[]
     for b in bs do
-      let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+      let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
         (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
       let x ← declare b.ident locals
       let bn := Name.mkSimple x.name
@@ -4924,7 +4962,7 @@ partial def elabDefinitions (cx : ExprCtx) (defs : Array (Ident × Option (Array
   let mut cx := cx
   let mut binds := #[]
   for (x, ty?, e) in defs, k in [0:defs.size] do
-    let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+    let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
       (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
     let y ← declare x locals
     let n := Name.mkSimple y.name
@@ -5941,10 +5979,11 @@ def elabFnTy (segs : Array Ident) : M Fren.Core.FnTy := do
   let mut tys := #[]
   for part in parts do
     if part.isEmpty then internal (typeSpan segs) "a function type's part"
-    if part.any (·.name == Parser.fnSeg) then err (typeSpan part) (Fren.Core.fnTypePlaceMsg .definedParameter true)
+    if part.any (·.name == Parser.fnSeg) then
+      if let some msg := Fren.Core.fnPartMsg? .function then err (typeSpan part) msg
     let pt ← elabPTy part
-    if pt.ty == .nat then err (typeSpan part) (Fren.Core.fnPartMsg "a `Nat`")
-    if pt.pat?.isSome then err (typeSpan part) (Fren.Core.fnPartMsg "a pattern type")
+    let k : Fren.Core.FnPart := if pt.ty == .nat then .nat else if pt.pat?.isSome then .pattern else .plain
+    if let some msg := Fren.Core.fnPartMsg? k then err (typeSpan part) msg
     tys := tys.push pt.ty
   return { params := tys.pop, result := tys.back! }
 

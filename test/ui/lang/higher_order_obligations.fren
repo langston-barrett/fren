@@ -1,0 +1,35 @@
+-- A closure's body is checked where it is unfolded (`lang::closure_obligation`):
+-- at each application of its function parameter, under the guards around
+-- it in the higher-order function's body, and at its arguments.
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.length_zero "allow"
+
+mod higher_order_obligations
+
+fn guarded(q: Seq<Int>, f: fn(Int) -> Int): Int := if q.len > 0 then f(0) else 0
+fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
+fn twice(f: fn(Int) -> Int, x: Int): Int := f(f(x))
+fn never(f: fn(Int) -> Int, x: Int): Int := x  --~ warning: unused parameter `f`
+fn pos(n: Int): Int := n
+    assume p: n > 0
+
+-- Each holds where the closure is applied, though not for every argument.
+comp holds {
+    in q: Seq<Int>
+    in k: Int
+    pub det out a: Int := guarded(q, |i| q[i]) + k
+    pub det out b: Int := apply(|n| pos(n), 3) + k
+    pub det out c: Int := apply(pos, 3) + k
+    pub det out d: Int := never(|n| q[n], k)
+}
+
+comp fails {
+    in q: Seq<Int>
+    in k: Int
+    pub det out a: Int := apply(|i| q[i], k)  --~ error: an index of `higher_order_obligations::fails::a` may be out of range
+    pub det out b: Int := apply(pos, k)  --~ error: the precondition `p` of `higher_order_obligations::pos` may not hold at this application in `higher_order_obligations::fails::b`
+    pub det out d: Int := twice(|n| table { n > 100 => n, n < 50 => 0 - n }, k)  --~ error: a table in `higher_order_obligations::fails::d` may have no row that holds
+    pub det out e: Int := apply(|n| table { n > 0 => 1, n <= 0 => 2, _ => 3 }, k)  --~ error: row 3 of a table in `higher_order_obligations::fails::e` is never the first that holds
+}
+--@ summary: 20 passed, 4 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

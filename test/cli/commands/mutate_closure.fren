@@ -1,0 +1,11 @@
+--@ args: mutate
+-- A closure's body is mutated where it is written, and each mutant is
+-- checked with the closure unfolded into the higher-order function.
+pub fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
+
+pub comp c {
+    in x: Int
+    pub det out y: Int := apply(|n| n + 1, x)
+
+    expect e: y = x + 1
+}

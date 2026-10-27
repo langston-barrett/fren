@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Closures
+import Impls.Lang
 import Reqs.Lang
 -- keep-sorted end
 open Fren.Lang
@@ -228,5 +229,48 @@ impl closure_capture: lang::closure_capture
           = (Fren.Core.captureNames next captured ++ values ++ around).length + (j + 1).toNat by simp; omega]
       rw [List.drop_append, List.drop_of_length_le (by omega), List.nil_append, Nat.add_sub_cancel_left]
       exact hjb
+
+/-! ## Obligations of closures -/
+
+/-- `Core.siteHolds` is the obligation, or that some guard fails. -/
+theorem siteHolds_eq (fs : List (Fren.Core.GuardedOperand × Bool)) (p : Bool) :
+    Fren.Core.siteHolds fs p = (!(fs.all fun (o, c) => o.guard c !c) || p) := by
+  induction fs with
+  | nil => simp [Fren.Core.siteHolds, Fren.Core.siteGoal]
+  | cons f fs ih =>
+    obtain ⟨o, c⟩ := f
+    simp only [Fren.Core.siteHolds, List.map_cons, Fren.Core.siteGoal] at ih ⊢
+    rw [ih]
+    cases h : o.guard c !c <;> simp [h]
+
+theorem guard_holds_eq (o : Fren.Core.GuardedOperand) (c : Bool) :
+    (if toGuardedOperand o = lang.GuardedOperand.WhenBody ∨ toGuardedOperand o = lang.GuardedOperand.ThenBranch ∨
+        toGuardedOperand o = lang.GuardedOperand.AndRight ∨ toGuardedOperand o = lang.GuardedOperand.ArmGuard ∨
+        toGuardedOperand o = lang.GuardedOperand.ArmBody then c else !c) = (o.guard c !c) := by
+  cases o <;> simp [toGuardedOperand, Fren.Core.GuardedOperand.guard, Fren.Core.GuardedOperand.whenHolds]
+
+-- For every application with at most three guards around it, the
+-- obligation as both front ends ask it (`Core.siteGoal`, here over the
+-- conditions' values).
+impl closure_obligation: lang::closure_obligation for (fs : List (Fren.Core.GuardedOperand × Bool)) (p : Bool) {
+  frames := Fren.Seq.ofList (fs.map fun (o, _) => toGuardedOperand o),
+  conditions := Fren.Seq.ofList (fs.map (·.2)),
+  at_args? := p,
+  evaluated? := fs.all fun (o, c) => o.guard c !c,
+  holds? := Fren.Core.siteHolds fs p,
+} by
+  intro fs p h
+  simp only [fren_spec] at h ⊢
+  have hl : fs.length ≤ 3 := by simp at h; omega
+  rw [siteHolds_eq]
+  match fs, hl with
+  | [], _ => simp
+  | [(o, c)], _ => simp [guard_holds_eq]
+  | [(o, c), (o', c')], _ =>
+    simp [guard_holds_eq]
+    cases o.guard c !c <;> cases o'.guard c' !c' <;> simp
+  | [(o, c), (o', c'), (o'', c'')], _ =>
+    simp [guard_holds_eq, Bool.and_assoc]
+    cases o.guard c !c <;> cases o'.guard c' !c' <;> cases o''.guard c'' !c'' <;> simp
 
 end Fren.Impls

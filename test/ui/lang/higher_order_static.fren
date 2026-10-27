@@ -99,4 +99,15 @@ comp compare_closures {
     pub out a?
     ensure r: a? iff (|x| x) = (|y| y)  --~ error: functions cannot be compared with `=`
 }
+
+-- A function parameter is shadowed only with `!`, as any parameter is.
+fn shadow(g: fn(Int) -> Int): Int := apply(|g| g + 1, 2) + g(0)  --~ error: `g` shadows the parameter `g`
+fn shadow_ok(g: fn(Int) -> Int): Int := apply(|g!| g + 1, 2) + g(0)
+fn no_shadow(g: fn(Int) -> Int): Int := apply(|h!| h + 1, 2) + g(0)  --~ error: `h!` shadows nothing
+
+-- A bound name is never a function.
+comp bound_function {
+    in x: Int
+    expect e: forall (h: fn(Int) -> Int), x = x  --~ error: a function type is only the type of a defined function's parameter
+}
 --@ exit: 2

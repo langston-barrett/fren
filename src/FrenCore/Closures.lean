@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Generics
+import FrenCore.Guards
 -- keep-sorted end
 
 /-!
@@ -187,6 +188,25 @@ def closureArityMsg (t : FnTy) (n : Nat) : Msg :=
   let ps (k : Nat) := if k == 1 then "1 parameter" else s!"{k} parameters"
   { code? := some "F0436", headline := s!"expected a closure of {ps t.params.size}, of type `{t.show}`, but it has {ps n}"
     label? := some s!"expected {ps t.params.size}" }
+
+/-- The error of the argument `shape` for a function parameter of type `t`,
+if it is not accepted (`argumentCode?`, `lang::function_argument`): `g` is
+the function that a name names. -/
+def argumentMsg? (t : FnTy) (shape : ArgShape) (g : Lean.Name := .anonymous) : Option Msg :=
+  (argumentCode? (.function t.params.size) shape).map fun _ =>
+    match shape with
+    | .closure n => closureArityMsg t n
+    | .uninterpretedName => uninterpretedArgMsg g
+    | _ => notAClosureMsg t
+
+/-- The error of a function type's parameter's or result's type, of the
+kind `k`, if it is not accepted (`fnPartsAccepted`, `lang::function_type_parts`). -/
+def fnPartMsg? (k : FnPart) : Option Msg :=
+  if fnPartsAccepted [k] then none
+  else some (match k with
+    | .nat => fnPartMsg "a `Nat`"
+    | .pattern => fnPartMsg "a pattern type"
+    | _ => fnTypePlaceMsg .definedParameter true)
 
 /-- The closure's body applies the uninterpreted function `g`. -/
 def closureUninterpretedMsg (g : Lean.Name) : Msg :=
@@ -432,6 +452,17 @@ partial def STerm.inlineApps (f : String) (c : SClosure) : STerm → STerm
       | _ => .list [.atom "let", .list ((c.params.zip args).map fun (p, a) => .list [.atom p, a]), c.body]
     | _ => .list ts
 
+/-- `t`, whose free symbols in `locals` other than `params` are renamed to
+capture symbols numbered from `next`: the term, the capture symbols each
+with the name it stands for, and the next number (`lang::closure_capture`). -/
+def captureFree (t : STerm) (params : List String) (locals : String → Bool) (next : Nat) :
+    STerm × List (String × String) × Nat :=
+  let captured := t.free.filter fun s => locals s && !params.contains s
+  let t' := t.renameFree fun s =>
+    let r := captureRename next captured params s
+    if r == s then none else some r
+  (t', (captureNames next captured).zip captured, next + captured.length)
+
 /-- An application of the higher-order function whose body is `body`
 (SMT-LIB text), unfolded (`Reqs/Lang/HigherOrder#meaning`): `values` are
 its other parameters' symbols with their arguments' terms, and `fns` its
@@ -444,17 +475,87 @@ def inlineCall (body : String) (values : List (String × String)) (fns : List (S
   let mut next := next
   let mut lets : List (String × String) := []
   for (f, c) in fns do
-    let captured := (c.body.free.filter fun s => locals s && !c.params.contains s)
-    let syms := captureNames next captured
-    let c' := { c with body := c.body.renameFree fun s =>
-      let r := captureRename next captured c.params s
-      if r == s then none else some r }
-    lets := lets ++ syms.zip captured
-    next := next + captured.length
-    t := t.inlineApps f c'
+    let (b, ls, n) := captureFree c.body c.params locals next
+    lets := lets ++ ls
+    next := n
+    t := t.inlineApps f { c with body := b }
   let binds := lets ++ values
   if binds.isEmpty then return (t.print, next)
   let bs := " ".intercalate (binds.map fun (x, v) => s!"({x} {v})")
   return (s!"(let ({bs}) {t.print})", next)
+
+/-! ## Obligations of closures (`lang::closure_obligation`)
+
+A closure's body is checked where it is unfolded: at each application of
+its function parameter within the higher-order function's body, under the
+guards around it there and at its arguments. -/
+
+/-- What lies between a term and an application within it: an operand
+evaluated only under a condition (`lang::guard`), or a binder, such as a
+`let` or a quantifier's, which the front end reads. -/
+inductive SiteFrame (α β : Type) where
+  | guard (o : GuardedOperand) (c : α)
+  | binder (b : β)
+  deriving Inhabited
+
+/-- The obligation `goal` at an application within a term, the frames
+around which, outermost first, are `frames`: under each guard and binder.
+`notF` negates a condition, `impF` makes an implication, and `bind` puts a
+term under a binder. -/
+def siteGoal (notF : α → α) (impF : α → α → α) (bind : β → α → α) : List (SiteFrame α β) → α → α
+  | [], g => g
+  | .guard o c :: fs, g => impF (o.guard c (notF c)) (siteGoal notF impF bind fs g)
+  | .binder b :: fs, g => bind b (siteGoal notF impF bind fs g)
+
+/-- Whether an obligation holds at an application under guards whose
+conditions have the values of `frames`, where it holds there exactly when
+`p`: as `siteGoal` gives it, of `Bool`s. -/
+def siteHolds (frames : List (GuardedOperand × Bool)) (p : Bool) : Bool :=
+  siteGoal (fun c => !c) (fun c a => !c || a) (fun (_ : Unit) a => a) (frames.map fun (o, c) => .guard o c) p
+
+/-- The applications of the symbol `f` in `t`, each with the frames around
+it, outermost first, and its arguments: `ite`'s branches, `=>`'s
+conclusion, and `and`'s and `or`'s later operands are guarded; `let`s and
+quantifiers are binders, each as the list `[kw, bindings]`, whose
+definitions are not under them. -/
+partial def STerm.sites (f : String) : STerm → List (List (SiteFrame STerm (List STerm)) × List STerm)
+  | .atom _ => []
+  | .list ts =>
+    let inArgs := fun (xs : List STerm) => xs.flatMap (STerm.sites f)
+    match ts with
+    | .atom g :: args =>
+      if g == f then ([], args) :: inArgs args
+      else if g == "ite" then match args with
+        | [c, a, b] => c.sites f ++ (a.sites f).map (fun (fs, xs) => (.guard .thenBranch c :: fs, xs))
+            ++ (b.sites f).map (fun (fs, xs) => (.guard .elseBranch c :: fs, xs))
+        | _ => inArgs args
+      else if g == "=>" then match args with
+        | [c, d] => c.sites f ++ (d.sites f).map (fun (fs, xs) => (.guard .whenBody c :: fs, xs))
+        | _ => inArgs args
+      else if g == "and" || g == "or" then
+        let op : GuardedOperand := if g == "and" then .andRight else .orRight
+        (args.zipIdx.flatMap fun (a, k) =>
+          (a.sites f).map fun (fs, xs) => ((args.take k).map (SiteFrame.guard op) ++ fs, xs))
+      else if (g == "let" || g == "forall" || g == "exists") then match args with
+        | [.list bs, body] =>
+          let defs := if g == "let" then bs.flatMap (fun | .list (_ :: d) => d.flatMap (STerm.sites f) | _ => []) else []
+          defs ++ (body.sites f).map fun (fs, xs) => (.binder [.atom (if g == "let" then "let" else "forall"), .list bs] :: fs, xs)
+        | _ => inArgs args
+      else inArgs args
+    | _ => inArgs ts
+
+/-- An obligation `goal` of a closure whose parameters' symbols are
+`params`, at each application of `f` in `body`, as one term: the
+conjunction over the applications of `siteGoal`, at the application's
+arguments, or `none` if `body` never applies `f`. -/
+def closureObligation (body : STerm) (f : String) (params : List String) (goal : STerm) : Option STerm :=
+  let gs := (body.sites f).map fun (fs, args) =>
+    siteGoal (fun c => .list [.atom "not", c]) (fun c a => .list [.atom "=>", c, a])
+      (fun b a => .list (b ++ [a])) fs
+      (.list [.atom "let", .list ((params.zip args).map fun (p, a) => .list [.atom p, a]), goal])
+  match gs with
+  | [] => none
+  | [g] => some g
+  | gs => some (.list (.atom "and" :: gs))
 
 end Fren.Core

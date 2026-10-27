@@ -1280,7 +1280,12 @@ as an index's is (see [Sequences](Lang/Expressions.md#sequences)), so in
 `kind(t) = SetTy`. An application in a precondition of another function
 `g` is checked under `g`'s other preconditions, and one in `g`'s body or
 postconditions under all of them, for every value of `g`'s parameters
-that meets them. Each application and precondition is its own check, so
+that meets them. An application, or an index or a table, in a
+[closure's](Lang/HigherOrder.md#arguments) body is checked where the
+closure is unfolded: at each application of the function parameter that it
+is given for, under the guards around it in the higher-order function's
+body and at its arguments (`lang::closure_obligation`), and is reported at
+the closure. Each application and precondition is its own check, so
 the message can name the precondition. `check::precondition` decides each
 query like an expectation, and a model is a counterexample, reported at
 the name of the applied function:
