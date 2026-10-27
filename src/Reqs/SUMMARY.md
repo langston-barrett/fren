@@ -11,6 +11,8 @@
   - [Generic types](Lang/Generics.md)
   - [Generic functions](Lang/GenericFunctions.md)
   - [The prelude](Lang/Prelude.md)
+- [Scope](Lang/Scope.md)
+  - [Laws of scope](Lang/ScopeLaws.md)
 - [Procedures](Lang/Procedures.md)
 - [Meaning](Lang/Meaning.md)
   - [Laws of meaning](Lang/MeaningLaws.md)

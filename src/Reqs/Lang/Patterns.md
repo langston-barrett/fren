@@ -58,14 +58,20 @@ the value's is `F0319`.
 Each part of a pattern is read as a variant, a literal or a binder from what
 it is: a path of more than one segment, or one that is applied, names a
 variant. An identifier of one segment, not applied, is the literal `true`
-or `false`, a variant if it resolves to one in scope, as `V` does after
-`use E::*`, and a binder otherwise. A binder that shadows a name in scope is
+or `false`, a variant if it resolves to one among the items and imports in
+scope (scopes 3 and 4 of [Scopes](Scope.md#scopes)), as `V` does after
+`use E::*`, and a binder otherwise. The names that the constructs around
+the pattern declare, and the procedure's variables, are not looked up, so
+a binder or a variable named like a variant does not stop the identifier
+naming the variant. A binder that shadows a name in scope is
 written with `!` (see [Shadowing](Procedures.md#shadowing)), and an
 identifier with `!` is always a binder, even if, without it, it would name
 a variant; `true!` and `false!` are binders too, which, as declarations of
 `true` and `false`, are errors. So `MAX` in a pattern, where `MAX` is a constant, is an error
 unless written `MAX!`: it would be a binder, not a comparison with the
-constant. `lang::pattern_name` states this:
+constant. `lang::pattern_name` states this, with an instance of
+[`lang::scope`](Scope.md#resolution) over the items and imports in scope,
+`item_scope`:
 
 ```fren
 pub mod lang
@@ -73,16 +79,38 @@ pub mod lang
 -- What an identifier of one segment, not applied, is in a pattern.
 pub enum PatternName { BoolLiteral, Variant, Binder }
 
+-- It instantiates `lang::scope`, which quantifies over bindings.
+set_option fren.lint.undecidable "allow" in
 pub proc pattern_name(
-    bool_word?,              -- it is `true` or `false`
+    items: Set<Binding>,     -- the scope where it is written, `item_scope` of its context
+    name: Id,                -- the identifier, without its `!`
     bang?,                   -- it ends in `!`
-    variant?,                -- without the `!`, it resolves to a variant in scope
-): (det reading: PatternName) {
+): (det bool_word?, det variant?, det reading: PatternName) {
+    out bool_word? := name in {"true", "false"}
+    -- Without the `!`, it resolves to a variant in scope.
+    out variant? := match found.result {
+        Lookup::Found(k) => names_variant?(k),
+        _ => false,
+    }
+
+    call found := scope(items, name)
+
     ensure rule: reading = if bool_word? and not bang? then PatternName::BoolLiteral
         else if variant? and not bang? then PatternName::Variant else PatternName::Binder
 
     expect explicit_shadowing: when bang?, reading = PatternName::Binder
     expect unresolved: when not bool_word? and not variant?, reading = PatternName::Binder
+    expect literals: when name in {"true", "false"} and not bang?, reading = PatternName::BoolLiteral
+    expect no_items: when items = {} and not bool_word?, reading = PatternName::Binder
+    -- A constant is no variant: without `!`, it is read as a binder.
+    expect constant: when found.result = Lookup::Found(BindingKind::Constant) and not bool_word?,
+        reading = PatternName::Binder
+    expect imported: when found.result = Lookup::Found(BindingKind::Variant) and not bool_word? and not bang?,
+        reading = PatternName::Variant
+    expect function: when found.result = Lookup::Found(BindingKind::Function) and not bool_word?,
+        reading = PatternName::Binder
+    expect opened: when found.result = Lookup::Found(BindingKind::Opened) and not bool_word? and not bang?,
+        reading = PatternName::Variant
 }
 ```
 

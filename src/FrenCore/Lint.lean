@@ -1225,7 +1225,7 @@ a name through, if any: the declaration depends on it, so it counts as
 used, by `unused_imports` and by a glob that `glob_imports` narrows
 (`Reqs/Lint/Unused#unused-imports`). A local of `locals` that it hides instead
 hides the import too, so the import is not needed. -/
-def Table.shadowedImport? (t : Table) (scope : Name) (locals : Array (Name × String)) (n : Name) (bang : Bool) :
+def Table.shadowedImport? (t : Table) (scope : Name) (locals : Locals) (n : Name) (bang : Bool) :
     Option UsedName :=
   if bang && !locals.any (·.1 == n) && (t.hidden? scope #[] n).isSome then t.importVia scope #[n] else none
 

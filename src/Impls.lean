@@ -19,6 +19,7 @@ import Impls.Mutate
 import Impls.PatternTypes
 import Impls.Procedures
 import Impls.Refine
+import Impls.Scope
 import Impls.Trace
 import Impls.TypeFacts
 import Impls.View

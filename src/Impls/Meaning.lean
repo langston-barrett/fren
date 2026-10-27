@@ -321,6 +321,13 @@ interp lang::step := fun (p : Fren.Core.Meaning.Program) h (e : Fren.Core.Meanin
     lang.Head.Variable.x0, lang.Head.Definition.x0, lang.Head.Construction.x0, lang.Head.Construction.x1,
     lang.Head.Uninterpreted.x0, apply_ite Meaning.toValue]
 
+-- No front end or evaluator builds a layer from a name yet: both front ends
+-- evaluate their own syntax, and `Fren.Core.Meaning.Expr` is built only by
+-- its tests. So there is no code to bind `lang::named` to; its expectations
+-- are checked by the solver, and the front ends' translation to the core
+-- (#281) is to read a name's layer from its binding by it.
+trusted lang::named: "no front end builds a layer of the core from a name yet, so there is no code to bind it to; its expectations are checked by the solver"
+
 -- For every layer and parts' values: which arms of a choice are open and
 -- fire, and which of their guards and bodies are not evaluated, by
 -- `Fren.Core.Meaning`'s rule over every arm.
