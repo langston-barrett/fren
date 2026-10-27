@@ -624,6 +624,82 @@ def instanceName (path : Name) (args : Array Ty) : Name :=
   | .str p s => .str p (s ++ instanceText args)
   | p => .str p (instanceText args)
 
+/-- An application of the generic function `callee` at the type arguments
+`targs`, written in the item `item` (a component, global expectation,
+refinement or function, by its path) of the file `file`, and within the
+generic function `caller?`, if it is in one, whose type parameters `targs`
+may mention (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+Both front ends record each, in the order in which they elaborate them. -/
+structure GenericUse where
+  file : Nat
+  item : Name
+  caller? : Option Name
+  callee : Name
+  targs : Array Ty
+  deriving Inhabited, BEq
+
+/-- The instances that applying the instances `start` applies, them
+included: each, and, for an instance of a generic function, its
+applications within the function at that instance, and so on, each once,
+in the order found, where `tps` gives each generic function's type
+parameters. A function's applications at its own type parameters are its
+own, and lead nowhere else. -/
+partial def instancesThrough (uses : Array GenericUse) (tps : Name → Array Name) (start : Array (Name × Array Ty)) :
+    Array (Name × Array Ty) :=
+  go start #[]
+where
+  go (todo all : Array (Name × Array Ty)) : Array (Name × Array Ty) :=
+    if h : 0 < todo.size then
+      let (g, targs) := todo[0]
+      let todo := todo.extract 1
+      if all.contains (g, targs) then go todo all else
+      let all := all.push (g, targs)
+      let ps := tps g
+      let own := ps.mapIdx fun k p => Ty.abstract (typeParamPath g k p)
+      if targs == own then go todo all else
+      let more := uses.filterMap fun u =>
+        if u.caller? == some g then some (u.callee, u.targs.map fun t => (t.asParams g ps).subst targs) else none
+      go (todo ++ more) all
+    else all
+
+/-- Where the contract of an instance of a generic function without a body
+is checked, where its check at the type parameters' sorts does not pass
+(`lang::instance_site`): with the function's own, or with an item's. -/
+inductive InstanceSite where
+  | function
+  | item (file : Nat) (item : Name)
+  deriving Inhabited, BEq
+
+/-- Where an instance of a generic function without a body declared in the
+file `functionFile` is checked, from the first item, in order, whose
+checks use it, if one does (`lang::instance_site`): with the function's
+own check if that item is in the function's file, and with that item's
+otherwise, since the function's own check, in its file, does not know of
+it. -/
+def siteOf (functionFile : Nat) : Option (Nat × Name) → Option InstanceSite
+  | none => none
+  | some (file, item) => some (if file == functionFile then .function else .item file item)
+
+/-- Each instance that the spec's items use, of a generic function that
+`fileOf` gives the file of, but its own, with where its contract is
+checked (`siteOf`): an item's checks use the instances that its
+applications apply, through the generic functions' (`instancesThrough`).
+The items are taken in the order of their first applications. -/
+def instanceSites (uses : Array GenericUse) (tps : Name → Array Name) (fileOf : Name → Option Nat) :
+    Array (InstanceSite × Name × Array Ty) := Id.run do
+  let items := uses.foldl (init := #[]) fun acc u => if acc.contains (u.file, u.item) then acc else acc.push (u.file, u.item)
+  let mut out : Array (InstanceSite × Name × Array Ty) := #[]
+  let mut seen : Array (Name × Array Ty) := #[]
+  for (file, item) in items do
+    let direct := uses.filterMap fun u => if u.file == file && u.item == item then some (u.callee, u.targs) else none
+    for (f, targs) in instancesThrough uses tps direct do
+      let some ff := fileOf f | continue
+      let own := (tps f).mapIdx fun k p => Ty.abstract (typeParamPath f k p)
+      if targs == own || seen.contains (f, targs) then continue
+      seen := seen.push (f, targs)
+      if let some site := siteOf ff (some (file, item)) then out := out.push (site, f, targs)
+  return out
+
 /-- Whether each application of an instance of a generic function without
 a body, whose declared result type is `result`, brings that it is at least
 0 (`lang::uninterpreted_instance`): exactly when `result` is `Nat`, since a

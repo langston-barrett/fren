@@ -376,19 +376,56 @@ arguments are equal, which every type allows: `fn other<T>(x: T): T` with
 
 Where that check does not pass, whether it fails or is not decided, the
 contract is checked at each instance that the spec applies instead, with
-the instance's types: those of its applications, and, for each instance of
-a generic function that applies it, there, at that instance, in the order
-of their names, but the function's own. Each is then the check of a
-function without type parameters, named after the instance, as
-`other<One>`: a failure is the error `F0631`, an undecided check is
-`F0608`, and its postconditions are assumed at that instance, as a function
-without type parameters' are whatever its check finds. So a contract that
-fails only at a type that the spec does not apply it at is accepted. A
-contract whose check at its type parameters fails, of a function that the
-spec applies at no instance, is the error `F0653`, whose note says why.
-`lang::generic_contract` states which checks are reported, from that at
-the type parameters' sorts and those at the instances, each as it is
-decided:
+the instance's types. Each is then the check of a function without type
+parameters, named after the instance, as `other<One>`: a failure is the
+error `F0631`, an undecided check is `F0608`, and its postconditions are
+assumed at that instance, as a function without type parameters' are
+whatever its check finds. So a contract that fails only at types that the
+spec does not apply it at is accepted.
+
+An item's checks use the instances that its applications apply: those it
+writes, and, for each instance of a generic function among them, those
+that the function's body and contract apply, at that instance, and so on
+(transitively). A generic function's own items are its body and contract,
+whose applications at its own type parameters are its own. Each instance is
+checked once, with the first item, in the order of the files and of the
+items in each, whose checks use it: with the function's own check, if that
+item is in the function's file, and otherwise with that item's, and
+reported at that item. A file's checks know only of it and the files
+before it, which the Lean-hosted front end's imports are, so a function's
+own check cannot know of an instance that only a later file applies, as
+`other<client::One>` in a module that imports `other`'s and applies it at
+its own `One`: that file's first item that uses it checks it.
+`lang::instance_site` states where an instance's contract is checked, from
+the function's file and the items whose checks use the instance, in order
+(`Core.instanceSites` finds them, through `Core.instancesThrough`, and both
+front ends call it):
+
+```fren
+pub struct ItemAt { file: Int, item: Int }   -- an item, by its file and its position in it
+pub enum CheckSite { Unchecked, AtFunction, AtItem(ItemAt) }
+
+-- `users.len < 1` rather than `users = []`, which compares sequences.
+set_option fren.lint.length_zero "allow" in
+pub comp instance_site {
+    in function_file: Int     -- the file that declares the function
+    in users: Seq<ItemAt>     -- the items whose checks use the instance, in order
+    pub det out site: CheckSite := if users.len < 1 then CheckSite::Unchecked
+        else if users[0].file = function_file then CheckSite::AtFunction
+        else CheckSite::AtItem(users[0])
+
+    expect unused: when users.len < 1, site = CheckSite::Unchecked
+    expect later_file: when users.len > 0 and users[0].file != function_file, site = CheckSite::AtItem(users[0])
+}
+```
+
+The instances checked with the function's own check are those at
+`AtFunction`.
+`lang::generic_contract` states which of the function's own checks are
+reported, from that at the type parameters' sorts and those at the
+instances at `AtFunction`, each as it is decided: an item's are reported
+with its own results, when the check at the type parameters' sorts does
+not pass.
 
 ```fren
 pub enum Decided { Holds, Fails, Undecided }

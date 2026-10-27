@@ -4026,6 +4026,13 @@ def usesTerms (uses : Array Name) (path : Name) (tps : Array Name) (targs : Arra
       if u == inhabitedName ph then return ← `((inferInstance : Inhabited $(typeSyntax (← leanTypeOf targs[k]!))))
     return ⟨(mkCIdent u).raw⟩
 
+/-- Records an application of the generic function at `path` at the type
+arguments `targs`, in the current item (`Core.GenericUse`). -/
+def recordGenericUse (path : Name) (targs : Array Core.Ty) : TermElabM Unit := do
+  let l ← getLocal
+  record (.genericUse (← getMainModule)
+    { file := 0, item := l.currentItem, caller? := l.fnTypeParams.map (·.1), callee := path, targs })
+
 /-- Records the questions about the application at `ref` of the function at
 `path` to the arguments `args`, if the function has preconditions, for
 the precondition check (`check::precondition`): its guard implies each
@@ -4623,7 +4630,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       for a in elems, t in ts, k in [0:ts.size] do
         noteObligation cx .argument a (d.ptys.1[k]?.getD default) t
       notePreconditions cx p path ts (some (d.typeParams, targs))
-      record (.genericUse ((← getLocal).fnTypeParams.map (·.1)) path targs)
+      recordGenericUse path targs
       if d.guarded then modifyLocal fun l => { l with guardedUsed := true }
       return ← `(@$(mkCIdentFrom p d.decl) $(← usesTerms d.uses path d.typeParams targs)* $ts*)
     let tys := paramTypes (← instantiateForall (← getConstInfo d.decl).type (d.uses.map mkConst))
@@ -4664,7 +4671,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     for x in elems, t in ts, k in [0:ts.size] do
       noteObligation acx .argument x (a.ptys.1[k]?.getD default) t
     notePreconditions cx p path ts (some (a.typeParams, targs))
-    record (.genericUse ((← getLocal).fnTypeParams.map (·.1)) path targs)
+    recordGenericUse path targs
     let tyArgs ← targs.flatMapM fun t => do
       let ty := typeSyntax (← leanTypeOf t)
       return #[ty, ← `((inferInstance : Inhabited $ty))]
@@ -5390,7 +5397,8 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) (ptys : Array
   addDecl (.axiomDecl { name := placeholder, levelParams := [], type, isUnsafe := false })
   let s ← getState
   let deps := type.foldConsts #[] fun c acc => if s.placeholders.contains c && !acc.contains c then acc.push c else acc
-  record (.abstractInfo { path, placeholder, isType, deps, ptys, fact?, typeParams, declared, result, resultP })
+  record (.abstractInfo { path, placeholder, isType, deps, ptys, fact?, typeParams, declared, result, resultP
+                          module := ← getMainModule })
   -- An abstract type has a value, so its placeholder has an `Inhabited`
   -- instance, itself a placeholder, which an index of a sequence of it
   -- needs; an implementation gives the interpretation's own.
@@ -5575,6 +5583,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   lintName .function n nameStx
   startDeclared
   let path := modName ++ n
+  modifyLocal fun l => { l with currentItem := path }
   let params := stx[5].getSepArgs
   let body? := if stx[8].isNone then none else some (withWhere stx[8][1] stx[8][2])
   let clauses := stx[9].getArgs
@@ -6353,6 +6362,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   lintName .component n nameStx
   startDeclared
   let path := modName ++ n
+  modifyLocal fun l => { l with currentItem := path }
   let declBase ← generatedName path
   -- The evidence settings, apart from the members they set.
   let (members, tested, enumerated) ← testedOf (← evidenceInEffect) stx[4].getArgs
@@ -6565,6 +6575,7 @@ def globalText (stx : Syntax) : String :=
   checkFresh modName n nameStx
   lintName .global n nameStx
   startDeclared
+  modifyLocal fun l => { l with currentItem := modName ++ n }
   -- `duplicate_constraint` (`lint::duplicate_constraint`), against the
   -- earlier ones of its module.
   let text := globalText stx
@@ -6609,6 +6620,7 @@ and the solver is asked nothing. -/
   liftMsg nameStx (Core.checkItemName "refinement" n)
   checkFresh modName n nameStx
   let path := modName ++ n
+  modifyLocal fun l => { l with currentItem := path }
   let decl ← generatedName path
   let compOf (p : Syntax) : CommandElabM CompInfo := do
     let r ← resolvePath modName (pathSegs p)

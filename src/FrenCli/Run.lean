@@ -638,7 +638,7 @@ before (`QueryCache`). -/
 partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
-    (examples : Option Nat := some 1) :
+    (examples : Option Nat := some 1) (instances : Bool := true) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
   let bk := backend prelude st.datatypes { c with funFacts := st.funFacts, bounded := st.bounded c } limits dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache st.quantified
     st.appFuns
@@ -666,19 +666,40 @@ partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Ev
   -- The contract of a generic function without a body, where its check at
   -- its type parameters' sorts does not pass: its check at each instance
   -- that the spec applies, in order of their names (`lang::generic_contract`).
+  if !instances then return (markInterpreted prelude c results, refuted, missing?)
+  let sites := st.instanceSites
+  -- The contract of the instance of `f` at `targs`, where `f`'s check at its
+  -- type parameters' sorts, `r`'s, does not pass: its realizability check.
+  let atInstance (f : Lean.Name) (targs : Array Fren.Core.Ty) : IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg)) := do
+    let some (_, ic) := ((st.instContracts.find? f).getD #[]).find? (·.1 == targs) | return (#[], #[])
+    let (rs, ref, _) ← solveComp st prelude spec? sy ic global #[.realizable] limits cache dump? body examples false
+    return (rs.filter (·.kind == .realizable), ref)
+  let mut results := results
+  let mut refuted := refuted
   if let (true, some f, some r) := (c.generic, c.fn?, results.find? (·.kind == .realizable)) then
     if r.verdict != .pass then
-      let insts := ((st.instContracts.find? f).getD #[]).qsort fun a b =>
-        Fren.Core.instanceText a.1 < Fren.Core.instanceText b.1
       let mut instResults := #[]
-      let mut refuted := refuted
-      for (_, ic) in insts do
-        let (rs, ref, _) ← solveComp st prelude spec? sy ic global #[.realizable] limits cache dump? body examples
-        instResults := instResults ++ rs.filter (·.kind == .realizable)
+      for (site, g, targs) in sites do
+        unless site == .function && g == f do continue
+        let (rs, ref) ← atInstance f targs
+        instResults := instResults ++ rs
         refuted := refuted ++ ref
       let checked := Fren.Core.genericContract (·.verdict) r instResults
-      let results := results.foldl (init := #[]) fun acc x => if x.kind == .realizable then acc ++ checked else acc.push x
-      return (markInterpreted prelude c results, refuted, missing?)
+      results := results.foldl (init := #[]) fun acc x => if x.kind == .realizable then acc ++ checked else acc.push x
+  -- The instances whose contracts this item's checks check, of functions
+  -- declared in earlier files (`lang::instance_site`), where the
+  -- function's check at its type parameters' sorts does not pass, reported
+  -- at the item, without notes at the clauses, which another file has.
+  let key := if body then c.path ++ c.bodyOf?.getD .anonymous
+    else if global then c.path ++ ((c.props[0]?.map (·.name)).getD .anonymous) else c.path
+  for (site, f, targs) in sites do
+    unless site == .item c.file key do continue
+    let some b := st.bodies.find? fun b => b.fn? == some f && b.generic | continue
+    let (rs, _, _) ← solveComp st prelude spec? sy b false #[.realizable] limits cache dump? true examples false
+    unless rs.any fun r => r.kind == .realizable && r.verdict != .pass do continue
+    let (rs, ref) ← atInstance f targs
+    results := results ++ rs.map fun r => { r with clashes := #[] }
+    refuted := refuted ++ ref
   return (markInterpreted prelude c results, refuted, missing?)
 
 /-- Which results of testing `c` `fren check` keeps, for the checks of

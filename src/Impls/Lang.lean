@@ -2847,6 +2847,37 @@ impl generic_contract: lang::generic_contract for (o : Fren.Core.Verdict) (vs : 
   intro o vs _
   cases o <;> cases vs <;> simp [fren_spec, Fren.Core.genericContract, decidedOf, Fren.Seq.ext_iff]
 
+/-- An item as `lang::instance_site` has it, from a file and the name that
+`Core.siteOf` is given: the position, as a numeric name. -/
+def itemName (i : Nat) : Lean.Name := .num .anonymous i
+
+/-- A site as `lang::instance_site` has it. -/
+def siteOf' : Option Fren.Core.InstanceSite → lang.CheckSite
+  | none => .Unchecked
+  | some .function => .AtFunction
+  | some (.item f (.num _ i)) => .AtItem { file := f, item := i }
+  | some (.item f _) => .AtItem { file := f, item := 0 }
+
+-- For every file of a function, and every list of the items whose checks
+-- use an instance of it, in order: where both front ends check the
+-- instance's contract (`Core.siteOf`, which `Core.instanceSites` gives the
+-- first of them).
+impl instance_site: lang::instance_site for (ff : Nat) (us : List (Nat × Nat)) {
+  function_file := ff,
+  users := Fren.Seq.ofList (us.map fun (f, i) => ({ file := f, item := i } : lang.ItemAt)),
+  site := siteOf' (Fren.Core.siteOf ff (us.head?.map fun (f, i) => (f, itemName i))),
+} by
+  intro ff us _
+  cases us with
+  | nil => simp [fren_spec, Fren.Core.siteOf, siteOf']
+  | cons u rest =>
+    obtain ⟨f, i⟩ := u
+    have hl : ¬ ((rest.length : Int) + 1 < 1) := by omega
+    by_cases h : f = ff
+    · simp [fren_spec, Fren.Core.siteOf, siteOf', itemName, h, Fren.Seq.nth_of_lt]; omega
+    · have h' : ¬ ((f : Int) = ff) := by exact_mod_cast h
+      simp [fren_spec, Fren.Core.siteOf, siteOf', itemName, h, Fren.Seq.nth_of_lt, hl, h']
+
 /-! ## The overlap of patterns -/
 
 section PatternOverlap

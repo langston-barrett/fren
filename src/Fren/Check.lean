@@ -577,7 +577,7 @@ abbrev EnumHook := CompInfo → Core.Comp Expr → Array Expr → Array Expr →
 that its cover goals are met (`coverWitness`), for the caller to add, and
 what enumerating the checks set to enumeration found, by `enumerate`. -/
 partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) (enumerate? : Option EnumHook := none)
-    (hooks? : Option ElabHooks := none) :
+    (hooks? : Option ElabHooks := none) (key? : Option Name := none) :
     MetaM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated)) := do
   let c := { c with uses := ← checkUses c }
   -- As elaborated, for its contract's instances (`instanceContract`).
@@ -798,13 +798,29 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       | true, some f, some hooks, some r =>
         if r.verdict == .pass then pure results else do
         let mut instResults := #[]
-        for targs in st0.appliedInstances f do
+        for (site, g, targs) in st0.instanceSites (← getMainModule) do
+          unless site == .function && g == f do continue
           let ic ← instanceContract hooks elaborated f targs
           let (rs, _, _) ← checkComp ic #[.realizable] none hooks?
           instResults := instResults ++ rs.filter (·.kind == .realizable)
         let checked := Core.genericContract (·.verdict) r instResults
         pure (results.foldl (init := #[]) fun acc x => if x.kind == .realizable then acc ++ checked else acc.push x)
       | _, _, _, _ => pure results
+    -- The instances whose contracts this item's checks check, of functions
+    -- declared in modules that this one imports (`lang::instance_site`),
+    -- where the function's check at its type parameters' sorts does not
+    -- pass, reported at the item, without notes at the clauses, which
+    -- another file has.
+    let mut results := results
+    if let (some key, some hooks) := (key?, hooks?) then
+      for (site, f, targs) in st0.instanceSites (← getMainModule) do
+        unless site == .item 1 key do continue
+        let some b := st0.bodies.get? f | continue
+        let (rs, _, _) ← checkComp b #[.realizable]
+        unless rs.any fun r => r.kind == .realizable && r.verdict != .pass do continue
+        let ic ← instanceContract hooks b f targs
+        let (rs, _, _) ← checkComp ic #[.realizable] none hooks?
+        results := results ++ (rs.filter (·.kind == .realizable)).map fun r => { r with clashes := #[] }
     let mut witnesses := #[]
     for g in c.covers do
       let passed := results.any fun r => r.kind == .cover && r.prop? == some g.name && r.verdict == .pass

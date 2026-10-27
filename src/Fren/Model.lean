@@ -183,6 +183,8 @@ structure AbstractInfo where
   /-- And its result's declared type, with its patterns, which mentions the
   type parameters as `Core.Ty.param`. -/
   resultP : Core.PTy := default
+  /-- The Lean module that declares it. -/
+  module : Name := .anonymous
   deriving Inhabited
 
 /-- The Lean namespace, under the current one, of every declaration generated
@@ -497,10 +499,9 @@ inductive Entry where
   | aliasInfo (path : Name) (ty : Expr) (pty : Core.PTy)
   | implInfo (i : ImplInfo)
   | claimInfo (c : ClaimInfo)
-  /-- An application of the generic function `callee` at the type arguments
-  `targs`, within the generic function `caller?`, if it is in one, whose
-  type parameters `targs` may mention (`State.genericUses`). -/
-  | genericUse (caller? : Option Name) (callee : Name) (targs : Array Core.Ty)
+  /-- An application of a generic function, in the Lean module `module`
+  (`State.genericUses`). -/
+  | genericUse (module : Name) (u : Core.GenericUse)
   deriving Inhabited
 
 /-- Everything declared so far, across all imported Lean files. -/
@@ -544,7 +545,7 @@ structure State where
   /-- The applications of generic functions, in order (`Entry.genericUse`),
   from which the instances that the spec applies follow
   (`State.appliedInstances`). -/
-  genericUses : Array (Option Name × Name × Array Core.Ty) := #[]
+  genericUses : Array (Name × Core.GenericUse) := #[]
   deriving Inhabited
 
 def State.add (s : State) : Entry → State
@@ -560,7 +561,7 @@ def State.add (s : State) : Entry → State
     { s with abstracts := s.abstracts.insert a.path a
              placeholders := s.placeholders.insert a.placeholder s.placeholders.size }
   | .definedInfo d => { s with defined := s.defined.insert d.path d }
-  | .genericUse c f targs => { s with genericUses := s.genericUses.push (c, f, targs) }
+  | .genericUse m u => { s with genericUses := s.genericUses.push (m, u) }
   | .contractInfo c => { s with contracts := s.contracts.insert c.path c }
   | .interpInfo p d => { s with interps := s.interps.insert p d }
   | .globalInfo p c => { s with globals := s.globals.insert p c }
@@ -581,31 +582,15 @@ def State.typeParamsOf (s : State) (path : Name) : Array Name :=
   | none, some a => a.typeParams
   | none, none => #[]
 
-/-- The instances of the generic function `f` that the spec applies, but its
-own, in order of their names (`Core.instanceText`): those of its
-applications (`State.genericUses`), and, for each instance of a generic
-function that applies it, its applications there, at that instance, as the
-`fren` command makes them (`instantiate`). Its contract is checked at each
-where its check at its type parameters' sorts does not pass
-(`lang::generic_contract`). -/
-partial def State.appliedInstances (s : State) (f : Name) : Array (Array Core.Ty) := Id.run do
-  let mut all : Array (Name × Array Core.Ty) := #[]
-  let mut todo : Array (Name × Array Core.Ty) := s.genericUses.map fun (_, g, targs) => (g, targs)
-  while h : 0 < todo.size do
-    let (g, targs) := todo[0]
-    todo := todo.extract 1
-    if all.contains (g, targs) then continue
-    all := all.push (g, targs)
-    let tps := s.typeParamsOf g
-    let own := tps.mapIdx fun k p => Core.Ty.abstract (Core.typeParamPath g k p)
-    if targs == own then continue
-    for (caller?, callee, cargs) in s.genericUses do
-      if caller? == some g then
-        todo := todo.push (callee, cargs.map fun t => (t.asParams g tps).subst targs)
-  let tps := s.typeParamsOf f
-  let own := tps.mapIdx fun k p => Core.Ty.abstract (Core.typeParamPath f k p)
-  return ((all.filter fun (g, targs) => g == f && targs != own).map (·.2)).qsort fun a b =>
-    Core.instanceText a < Core.instanceText b
+/-- Each instance that the spec's items use of a generic function without a
+body, with where its contract is checked (`Core.instanceSites`), from the
+Lean module `main` being checked: the modules that it imports are earlier
+files, as the `fren` command's are, and a function declared in one of them
+does not know of the instances that `main` applies. -/
+def State.instanceSites (s : State) (main : Name) : Array (Core.InstanceSite × Name × Array Core.Ty) :=
+  let file (m : Name) : Nat := if m == main then 1 else 0
+  Core.instanceSites (s.genericUses.map fun (m, u) => { u with file := file m }) s.typeParamsOf
+    fun g => (s.abstracts.get? g).bind fun a => if a.typeParams.isEmpty then none else some (file a.module)
 
 initialize frenExt : SimplePersistentEnvExtension Entry State ←
   registerSimplePersistentEnvExtension {
@@ -690,6 +675,9 @@ structure LocalState where
   /-- The generic function being declared, with its type parameters, which
   are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   fnTypeParams : Option (Name × Array Name) := none
+  /-- The item being elaborated, by its path, which an application is in
+  (`Core.GenericUse`). -/
+  currentItem : Name := .anonymous
   /-- Comps declared in this file, in order. -/
   comps : Array Name := #[]
   /-- Global expectations declared in this file, in order. -/

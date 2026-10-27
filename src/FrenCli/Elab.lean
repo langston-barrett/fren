@@ -620,6 +620,8 @@ structure GenericFn where
   /-- Its result's declared type, with its patterns, which mentions the
   type parameters as `Ty.param`. -/
   resultP : Fren.Core.PTy := default
+  /-- The file that declares it. -/
+  file : Nat := 0
   /-- It has a body. One without is uninterpreted: each of its instances is
   an unknown function of its own, a `declare-fun`
   (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`). -/
@@ -805,6 +807,12 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   contract's own comp at the instance's sorts, which is checked where the
   check at the type parameters' sorts does not pass (`lang::generic_contract`). -/
   instContracts : NameMap (Array (Array Ty × CComp)) := {}
+  /-- The applications of generic functions, in order (`Fren.Core.GenericUse`),
+  from which follow the instances whose contracts are checked, and where
+  (`Fren.Core.instanceSites`). -/
+  genericUses : Array Fren.Core.GenericUse := #[]
+  /-- The item being elaborated, by its path, which an application is in. -/
+  item : Name := .anonymous
   /-- Some type is a set. -/
   usesSets : Bool := false
   /-- Some quantifier is unbounded, so every query may quantify
@@ -4251,7 +4259,9 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
     for a in args, x in smts, k in [0:args.size] do
       noteObligation acx .argument a.span (ptys[k]?.getD default) x
     let sym ← instantiate path targs
-    modify fun s => { s with genericCalls := s.genericCalls.push (path, targs) }
+    modify fun s => { s with genericCalls := s.genericCalls.push (path, targs)
+                             genericUses := s.genericUses.push
+                               { file := s.file, item := s.item, caller? := s.fnTypeParams.map (·.1), callee := path, targs } }
     notePreconditions cx fnSpan path smts targs
     if (← get).guardedItems.contains path then modify fun s => { s with guardedUsed := true }
     let app := s!"({sym} {" ".intercalate smts.toList})"
@@ -5982,6 +5992,7 @@ partial def elabItem (item : Item) : M Unit := do
     lintName .function n name.span
     startDeclared
     let path := module ++ n
+    modify fun s => { s with item := path }
     -- Its type parameters, which are abstract types within it, whether it
     -- is defined or not (`lang::generic_function`).
     let tps ← elabTypeParams typeParams
@@ -6021,7 +6032,8 @@ partial def elabItem (item : Item) : M Unit := do
       let declared := ps.map (·.asParams path tps)
       if let some k := Fren.Core.firstUnmentioned? declared (r.asParams path tps) tps.size then
         err typeParams[k]!.span (Fren.Core.unmentionedTypeParamMsg n tps[k]!)
-      let g : GenericFn := { params := tps, declared, result := r.asParams path tps, resultP := rp.asParams path tps, defined }
+      let g : GenericFn := { params := tps, declared, result := r.asParams path tps, resultP := rp.asParams path tps, defined
+                             file := (← get).file }
       modify fun s => { s with genericFns := s.genericFns.insert path g }
     match body with
     | none =>
@@ -6106,6 +6118,7 @@ partial def elabItem (item : Item) : M Unit := do
         { s with items := s.items.push (r, name.span) }
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
   | .comp isPub name members close spans openStop => do
+    modify fun s => { s with item := s.module ++ Name.mkSimple name.name }
     -- Its `use`s end with it, even when it has an error.
     modify fun s => { s with inCompBody := false }
     try elabComp isPub name members spans openStop
@@ -6153,8 +6166,12 @@ partial def elabItem (item : Item) : M Unit := do
       consts := s.consts.insert path (smt, t)
       guardedItems := if s.guardedUsed then s.guardedItems.insert path else s.guardedItems
       constInts := match int? with | some v => s.constInts.insert path v | none => s.constInts }
-  | .global name binders body => elabGlobal name binders body
-  | .refine name c a bs => elabRefine name c a bs
+  | .global name binders body => do
+    modify fun s => { s with item := s.module ++ Name.mkSimple name.name }
+    elabGlobal name binders body
+  | .refine name c a bs => do
+    modify fun s => { s with item := s.module ++ Name.mkSimple name.name }
+    elabRefine name c a bs
   | .claim tested segs texts => do
     let path ← match ← resolve segs with
       | .item { kind := .compItem, path, .. } => pure path
@@ -6417,6 +6434,12 @@ bring (`appFactsOf`). -/
 def State.appFuns (s : State) : Std.HashMap String (Bool × Contract) :=
   s.funs.foldl (init := {}) fun m (p, _, r) =>
     m.insert ((s.instSyms.find? p).getD (itemSym p)) (r == .nat, (s.contracts.find? p).getD {})
+
+/-- Each instance that the spec's items use of a generic function without a
+body, with where its contract is checked (`Fren.Core.instanceSites`). -/
+def State.instanceSites (s : State) : Array (Fren.Core.InstanceSite × Name × Array Ty) :=
+  Fren.Core.instanceSites s.genericUses (fun g => ((s.genericFns.find? g).map (·.params)).getD #[])
+    fun g => (s.genericFns.find? g).bind fun gf => if gf.defined then none else some gf.file
 
 /-- The whole prelude, as one script. -/
 def State.preludeText (s : State) : String := String.join (s.prelude.toList.map (·.text))
