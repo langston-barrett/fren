@@ -1533,14 +1533,15 @@ impl type_bracket: lang::type_bracket for (b : lang.Bracket) (a : Bool) {
   intro b a _
   cases b <;> cases a <;> simp [fren_spec, toBracket, ofAfterName, Fren.Core.afterName]
 
--- For every lexeme: how both front ends write it in a suggested type.
-impl lexeme_text: lang::lexeme_text for (s : String) {
-  lexeme := s,
-  text := Fren.Core.lexemeText s,
+-- For every character: how both front ends write it in a suggestion.
+impl angle_char: lang::angle_char for (s : String) (b : Bool) {
+  ch := s,
+  swapped? := b,
+  text := Fren.Core.angleChar s b,
 } by
-  intro s _
-  simp only [fren_spec, Fren.Core.lexemeText, Fren.Str.lit]
-  by_cases h1 : s = "," <;> by_cases h2 : s = "is" <;> by_cases h3 : s = "|" <;> simp_all
+  intro s b _
+  simp only [fren_spec, Fren.Core.angleChar, Fren.Str.lit]
+  cases b <;> by_cases h1 : s = "(" <;> by_cases h2 : s = ")" <;> simp_all
 
 namespace Lexical
 

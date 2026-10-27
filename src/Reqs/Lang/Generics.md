@@ -106,23 +106,27 @@ in both front ends; `x: Set<Int>:= e` is `>` and `:=`, as it is in Lean.
 parentheses of each type within it that is written so too made angle
 brackets, as `Option<Set<Int>>` for `Option(Set(Int))`; that of `F0156`
 writes the declaration's name with its type parameters, as `Option<T>`.
-Both front ends write the type from its lexemes, as `lang::lexeme_text`
-states, so that they suggest the same text:
+Both front ends copy the source as written, so that a string literal keeps
+its escapes and its `r` and `#`s, and a comment within the type is kept,
+and change only those parentheses, as `lang::angle_char` states of each
+character:
 
 ```fren
-pub comp lexeme_text {
-    in lexeme: String
-    -- How it is written after the lexemes before it.
-    pub det out text: String := match lexeme {
-        "," => ", ",
-        "is" => " is ",
-        "|" => " | ",
-        _ => lexeme,
+pub comp angle_char {
+    in ch: String                -- a character of the type or declaration as written
+    in swapped?                  -- whether it opens or closes type arguments or type parameters
+    pub det out text: String := match ch {
+        "(" if swapped? => "<",
+        ")" if swapped? => ">",
+        _ => ch,
     }
 
-    expect brackets_tight: when lexeme is "<" | ">", text = lexeme
+    expect copied: unless swapped?, text = ch
 }
 ```
+
+`fren fix` makes these fixes, so that it migrates a spec written with
+parentheses (see [Fixing lints](../Lint.md#fixing-lints)).
 
 ## Ordered records
 

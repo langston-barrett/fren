@@ -138,19 +138,16 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
       -- The parentheses of it and of each type within it written so too,
       -- written `<` and `>` in the suggestion, as the `fren` command does.
       let parens := (parenTypes stx).flatMap fun t => #[t[1].getPos?, t[3].getPos?]
-      let lexemes := (tokensOf stx).map fun t =>
-        if t.isAtom && parens.contains t.getPos? then (if t.getAtomVal == "(" then "<" else ">")
-        else lexemeOf t
-      throwErrorAt stx (Core.parenTypeArgsMsg (Core.lexemesText lexemes)).text
+      throwErrorAt stx (Core.parenTypeArgsMsg (← angleSource stx parens)).text
     else if stx.isOfKind ``Lang.enumCmd || stx.isOfKind ``Lang.structCmd || stx.isOfKind ``Lang.fnCmd then
       -- Its type parameters follow its name.
       let k := if stx.isOfKind ``Lang.fnCmd then 3 else 4
       for i in [0:stx.getNumArgs] do
         let ps := stx[k]
         if i == k && !ps.isNone && ps[0].isOfKind ``Lang.fren_paren_type_params then
-          let name := stx[k - 1]
-          let lexemes := #[lexemeOf name, "<"] ++ ((ps[0][1].getSepArgs.map lexemeOf).toList.intersperse ",").toArray
-          throwErrorAt (mkNullNode #[name, ps]) (Core.parenTypeParamsMsg (Core.lexemesText (lexemes.push ">"))).text
+          let ref := mkNullNode #[stx[k - 1], ps]
+          let written ← angleSource ref #[ps[0][0].getPos?, ps[0][2].getPos?]
+          throwErrorAt ref (Core.parenTypeParamsMsg written).text
         checkParsed stx[i]
     else stx.getArgs.forM checkParsed
 where
@@ -158,12 +155,18 @@ where
   parentheses. -/
   parenTypes (stx : Syntax) : Array Syntax :=
     (if stx.isOfKind ``Lang.parenType then #[stx] else #[]) ++ stx.getArgs.flatMap parenTypes
-  /-- The token `t` as written. -/
-  lexemeOf (t : Syntax) : String :=
-    match t with
-    | .ident _ raw _ _ => raw.toString
-    | .atom _ v => v.trimAscii.toString
-    | _ => ""
+  /-- The source of `ref`, as written, comments and all, with the
+  parentheses at `parens` written as angle brackets, as the `fren` command
+  writes it (`Core.angleText`). -/
+  angleSource (ref : Syntax) (parens : Array (Option String.Pos.Raw)) : CommandElabM String := do
+    let src := (← getFileMap).source
+    let (some a, some b) := (ref.getPos?, ref.getTailPos?) | return ""
+    let mut out := #[]
+    let mut p := a
+    while p < b do
+      out := out.push (p.get src, parens.contains (some p))
+      p := p.next src
+    return Core.angleText out
 
 /-- Records `unnecessary_trailing_comma` on the commas of the command `stx`
 that end a list on the line of its `}` or `]`

@@ -735,6 +735,43 @@ in the files as fixed, or with `--check`, which writes nothing, those that
 the first pass does not fix, in the files as given. The fixes do not change the layout of what they
 leave behind, which may then need formatting, as `--fmt` does.
 
+### Migrations
+
+Before it fixes lints, `fren fix` makes the fixes of the parse errors that
+mark a spec written in an earlier syntax: `F0155` and `F0156`, a type or a
+declaration written with parentheses for its type arguments or type
+parameters (see [Angle brackets](Lang/Generics.md#angle-brackets)). The
+parser stops at the first, so `fren fix` makes its fix, parses the file
+again, and so on, until the file parses or its parse error is another,
+which it then reports, as `fren check` would, and writes nothing. Each
+fix rewrites one outermost type, the types within it too, so a file with
+`n` of them takes at most `n` rounds; there are at most 1000, which only a
+bug would reach. These fixes are made whatever `--only` and `--skip`
+give, in the files that `--ignore` does not match, and then the lints are
+fixed in the files as migrated. `lint::migration_step` gives what
+`fren fix` does next:
+
+```fren
+pub enum MigrationStep {
+    Parsed,      -- the file parses: its lints are fixed next
+    Apply,       -- make the parse error's fix, and parse again
+    Stop,        -- report the parse error
+}
+
+pub comp migration_step {
+    in parse_error?      -- the file, as fixed so far, does not parse
+    in migration?        -- its parse error is `F0155` or `F0156`, with a fix
+    in round: Nat        -- how many fixes have been made
+    pub det out step: MigrationStep
+
+    ensure parsed: step = MigrationStep::Parsed iff not parse_error?
+    ensure apply: step = MigrationStep::Apply iff (parse_error? and migration? and round < 1000)
+
+    expect bounded: when round >= 1000, step != MigrationStep::Apply
+    expect others_reported: when parse_error? and not migration?, step = MigrationStep::Stop
+}
+```
+
 `lint::import_fix` gives the fix of one `use` that is not in a group,
 from the lints that fire at it and whether each is fixed. For a glob that
 is both unused and fixed by `unused_imports`, removing it wins. A glob that

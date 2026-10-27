@@ -472,7 +472,7 @@ def specStateOf (files : Array (String × Array Char)) : Except String LState :=
   let items ← files.mapM fun (_, chars) =>
     match lex chars with
     | .error e => throw e.msg.headline
-    | .ok toks => match parse toks with
+    | .ok toks => match parse toks chars with
       | .error e => throw e.msg.headline
       | .ok items => pure items
   lowerAll items

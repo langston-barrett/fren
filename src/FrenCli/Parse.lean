@@ -390,6 +390,8 @@ structure Layout where
 
 structure PState where
   toks : Array Token
+  /-- The source, which a suggestion copies as written (`F0155`, `F0156`). -/
+  src : Array Char
   pos : Nat := 0
   layout : Layout := {}
   /-- In a `match`'s scrutinee, where `R {` starts the arms rather than a
@@ -541,12 +543,12 @@ def spacedAngle (name what : String) : P α := do
     #["note: the `<` that opens a type's arguments or a declaration's type parameters follows the name directly",
       s!"help: remove the space: `{name}<`"]
 
-/-- The text of the token `t`, as written. -/
-def lexeme (t : Token) : String :=
-  match t.tok with
-  | .ident s | .num s _ | .kw s => s
-  | .str s => s!"\"{s}\""
-  | .eof => ""
+/-- The source from `start` to `stop`, with the parentheses at the offsets
+`parens` written as angle brackets (`Fren.Core.angleText`). -/
+def angleSource (start stop : Nat) (parens : Array Nat) : P String := do
+  let src := (← get).src
+  return Fren.Core.angleText ((List.range (stop - start)).toArray.map fun i =>
+    (src[start + i]?.getD ' ', parens.contains (start + i)))
 
 /-- The `>` that closes type arguments or type parameters, recorded for
 the formatter as a call's `)` is. -/
@@ -850,10 +852,9 @@ partial def parenArgs (start : Nat) (p : Array Ident) : P (Array Ident) := do
   modify fun s => { s with parens := s.parens.map (·.push openAt |>.push closeAt) }
   unless outer do return p
   let s ← get
-  let parens := s.parens.getD #[]
-  let lexemes := (s.toks.extract start (closeAt + 1)).mapIdx fun i t =>
-    if parens.contains (start + i) then (if isKw t "(" then "<" else ">") else lexeme t
-  throw { span := s.toks[start]!.span.to close.span, msg := Fren.Core.parenTypeArgsMsg (Fren.Core.lexemesText lexemes) }
+  let parens := (s.parens.getD #[]).map (s.toks[·]!.span.start)
+  let span := s.toks[start]!.span.to close.span
+  throw { span, msg := Fren.Core.parenTypeArgsMsg (← angleSource span.start span.stop parens) }
 
 end
 
@@ -1280,11 +1281,11 @@ def generic : P Bool := do
   return false
 
 /-- Reports the type parameters of the declaration of `name`, written in
-parentheses from the next token, `(A, B)`, as they were before they were
-written in angle brackets (`F0156`). -/
-def parenParams (name : Ident) (params : Array Ident) (close : Span) : P α := do
-  let lexemes := #[name.name, "<"] ++ ((params.map (·.name)).toList.intersperse ",").toArray |>.push ">"
-  throw { span := name.span.to close, msg := Fren.Core.parenTypeParamsMsg (Fren.Core.lexemesText lexemes) }
+parentheses, `(A, B)`, from `openSpan` to `close`, as they were before
+they were written in angle brackets (`F0156`). -/
+def parenParams (name : Ident) (openSpan close : Span) : P α := do
+  let span := name.span.to close
+  throw { span, msg := Fren.Core.parenTypeParamsMsg (← angleSource span.start span.stop #[openSpan.start, close.start]) }
 
 /-- The type parameters of an enumeration or record named `name`, `<A, B>`,
 if any. -/
@@ -1296,10 +1297,10 @@ def typeParams (name : Ident) : P (Array Ident) := do
   | .parenthesized =>
     -- A newtype's types, unless a `{` follows them.
     unless ← generic do return #[]
-    discard bump
-    let mut ps := #[← ident]
-    while (← eatKw ",").isSome do ps := ps.push (← ident)
-    parenParams name ps (← expectKw ")").span
+    let o ← bump
+    discard ident
+    while (← eatKw ",").isSome do discard ident
+    parenParams name o.span (← expectKw ")").span
   | .opens => pure ()
   markCall
   discard bump
@@ -1590,7 +1591,7 @@ partial def item : P Item := do
     | _ => pure ()
     noSpaceBeforeParen name.name s!"the parameters of `{name.name}`"
     markCall
-    discard (expectKw "(")
+    let firstOpen ← expectKw "("
     let param : P (Array Ident × Option (Array Ident)) := do
       let p ← typeExpr
       return (p, ← type?)
@@ -1606,7 +1607,7 @@ partial def item : P Item := do
     let s ← get
     if typeParams.isEmpty && (s.toks[s.pos]?).any (isKw · "(") && (s.toks[s.pos - 1]?).any (·.span.stop == s.toks[s.pos]!.span.start)
         && params.all fun (p, ty?) => p.size == 1 && ty?.isNone then
-      parenParams name (params.map (·.1[0]!)) (← lastSpan)
+      parenParams name firstOpen.span (← lastSpan)
     let result ← if (← eatKw ":").isSome then some <$> typeExpr else pure none
     let body ← if (← eatKw ":=").isSome then some <$> top else pure none
     -- Its contract (`Reqs/Lang/Items#contracts`), each clause continuing it.
@@ -1680,15 +1681,15 @@ def file : P (Array Item) := do
 
 end Parser
 
-def parse (toks : Array Token) : Except ParseError (Array Item) :=
-  (Parser.file).run' { toks }
+def parse (toks : Array Token) (src : Array Char) : Except ParseError (Array Item) :=
+  (Parser.file).run' { toks, src }
 
 /-- The items of a file, with where each starts in the source. -/
-def parseItems (toks : Array Token) : Except ParseError (Array Item × Array Nat) :=
-  (fun (items, s) => (items, s.itemStarts)) <$> (Parser.file).run { toks }
+def parseItems (toks : Array Token) (src : Array Char) : Except ParseError (Array Item × Array Nat) :=
+  (fun (items, s) => (items, s.itemStarts)) <$> (Parser.file).run { toks, src }
 
 /-- The layout of a file that parses. -/
-def parseLayout (toks : Array Token) : Except ParseError Layout :=
-  (·.2.layout) <$> (Parser.file).run { toks }
+def parseLayout (toks : Array Token) (src : Array Char) : Except ParseError Layout :=
+  (·.2.layout) <$> (Parser.file).run { toks, src }
 
 end FrenCli

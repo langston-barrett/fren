@@ -10,7 +10,8 @@ open Fren.Lang
 namespace Fren.Impls
 
 open Fren.Core (LintLevel Group Case Named ImportFix setLevel effectiveLevel groupAccepted outsideLevel unusedImport
-  inCase expectationFulfilled expectationReported importFix fixExit fixSelected Comparison deadItem literalNegated Head)
+  inCase expectationFulfilled expectationReported importFix fixExit fixSelected Comparison deadItem literalNegated Head
+  MigrationStep migrationStep maxMigrations)
 
 instance : Fren.Finite LintLevel :=
   ⟨[.allow, .expect, .warn, .deny, .forbid], by intro x; cases x <;> simp⟩
@@ -294,6 +295,23 @@ impl lint_import_fix: lint::import_fix for (u g fu fg : Bool) (n : Nat) {
 } by
   intro u g fu fg n _
   cases u <;> cases g <;> cases fu <;> cases fg <;> rcases n with _ | n <;> simp [fren_spec, importFix, toImportFix]
+
+/-- A migration step, as the spec writes it. -/
+def toMigrationStep : MigrationStep → lint.MigrationStep
+  | .parsed => .Parsed
+  | .apply => .Apply
+  | .stop => .Stop
+
+-- For every file's state: what `fren fix` does next to migrate it.
+impl lint_migration_step: lint::migration_step for (e m : Bool) (r : Nat) {
+  parse_error? := e,
+  migration? := m,
+  round := r,
+  step := toMigrationStep (migrationStep e m r),
+} by
+  intro e m r _
+  cases e <;> cases m <;> by_cases h : r < 1000 <;>
+    simp [fren_spec, migrationStep, toMigrationStep, maxMigrations, h] <;> omega
 
 impl lint_fix_exit: lint::fix_exit for (c l f : Bool) {
   check? := c,

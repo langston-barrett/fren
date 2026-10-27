@@ -330,15 +330,18 @@ def afterName (b : Bracket) (adjacent : Bool) : AfterName :=
   | .paren => if adjacent then .parenthesized else .ends
   | .other => .ends
 
-/-- How a lexeme is written in a type that both front ends suggest, after
-the lexemes before it (`lang::lexeme_text`): a space after `,`, and around
-`is` and `|`. -/
-def lexemeText (lexeme : String) : String :=
-  if lexeme == "," then ", " else if lexeme == "is" || lexeme == "|" then " " ++ lexeme ++ " " else lexeme
+/-- A character of a type or a declaration written with parentheses, as
+both front ends write it in the suggestion that replaces it
+(`lang::angle_char`): a parenthesis that opened or closed type arguments or
+type parameters (`swapped`) is an angle bracket, and any other character,
+comments' and string literals' included, is copied. -/
+def angleChar (ch : String) (swapped : Bool) : String :=
+  if swapped && ch == "(" then "<" else if swapped && ch == ")" then ">" else ch
 
-/-- The text of a type written as the lexemes `lexemes`, as both front ends
-suggest it in place of one written with parentheses (`lang::lexeme_text`). -/
-def lexemesText (lexemes : Array String) : String := lexemes.foldl (· ++ lexemeText ·) ""
+/-- The text of a type or a declaration, from its source's characters, each
+with whether it is one of the parentheses to write as an angle bracket. -/
+def angleText (chars : Array (Char × Bool)) : String :=
+  chars.foldl (fun out (c, b) => out ++ angleChar (String.singleton c) b) ""
 
 /-- A type written with its type arguments in parentheses, as `Option(Int)`
 was before they were written in angle brackets: `written` is the type

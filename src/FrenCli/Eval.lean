@@ -2195,7 +2195,7 @@ def parseValue (st : LState) (module : Name) (ty : VTy) (text : String) : Except
   let toks ← match lex text.toList.toArray with
     | .ok toks => pure toks
     | .error e => throw e.msg.headline
-  let (e, ps) ← match (Parser.expr).run { toks } with
+  let (e, ps) ← match (Parser.expr).run { toks, src := text.toList.toArray } with
     | .ok r => pure r
     | .error e => throw e.msg.headline
   unless ps.toks[ps.pos]?.any (·.tok == .eof) do throw s!"`{text}` is not a value"

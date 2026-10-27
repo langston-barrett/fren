@@ -381,7 +381,7 @@ abbrev Error := Span × Msg
 
 def parseAll (src : Array Char) : Except Error (Array Token × Array Span × Layout) := do
   let (toks, comments) ← (lexWithComments src).mapError fun e => (e.span, e.msg)
-  let lay ← (parseLayout toks).mapError fun e => (e.span, e.msg)
+  let lay ← (parseLayout toks src).mapError fun e => (e.span, e.msg)
   return (toks, comments, lay)
 
 /-- Formats Fren source, as lines, each with the line of `src` it comes

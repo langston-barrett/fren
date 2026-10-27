@@ -289,7 +289,7 @@ def fmtKept (path src : String) : Option (Array String × Array (Array String) �
   let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
   let chars := src.toList.toArray
   let (toks, comments) ← (FrenCli.lexWithComments chars).toOption
-  let lay ← (FrenCli.parseLayout toks).toOption
+  let lay ← (FrenCli.parseLayout toks chars).toOption
   let inUse (k : Nat) : Bool := lay.uses.any fun (f, l) => f ≤ k && k ≤ l
   let isStr (k : Nat) : Bool := toks[k]?.any (·.tok matches .str _)
   let mut kept := #[]
