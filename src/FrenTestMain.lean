@@ -1,6 +1,8 @@
 -- keep-sorted start
 import Fren
+import FrenCli.Eval
 import FrenCli.Run
+import FrenCore.Meaning
 import FrenTest.Messages
 import FrenTest.Ui
 import Lean.Elab.Frontend
@@ -27,6 +29,10 @@ import Lean.Elab.Frontend
   stable and, for a swap, involutive (`mutation`).
 - **Lean's tokens:** the tokens that both front ends read as identifiers,
   and reject as declarations, are Lean's (`leanTokens`).
+- **Evaluation:** the binary's evaluator, `Ex.eval`, and the core's,
+  `Fren.Core.Meaning.Expr.eval`, agree on random expressions of the
+  fragment that both state (`evaluation`), a step toward both front ends
+  evaluating through the core (`Reqs/Lang/Meaning`).
 - **Decisions of `fren mutate`:** on each example of `test/mutate/`, it is
   adequate, decides a mutant as a sample or a shard does, needs every expectation, and
   selects the components to check, and decides each check, soundly
@@ -1123,6 +1129,117 @@ runs first, alone. -/
 process that imports `Fren` once. -/
 def uiBatch : Nat := 8
 
+/-! ## Evaluation
+
+The binary's evaluator and the core's agree on random expressions over
+integers and `Bool`s: literals, variables, `not`, negation, the
+connectives, conditionals, comparisons, arithmetic, `div` and `mod` by a
+literal other than `0`, and the cardinality operators. Each expression is
+translated into the core's layers (`toCore`), and evaluated by both in one
+behaviour. -/
+
+namespace Evaluation
+
+open FrenCli.Eval (Ex Op Val)
+open Fren.Core.Meaning (Value)
+
+/-- A pseudo-random state: a linear congruential generator. -/
+abbrev R := StateM Nat
+
+def next (n : Nat) : R Nat := modifyGet fun s =>
+  let s := (s * 6364136223846793005 + 1442695040888963407) % 18446744073709551616
+  ((s / 65536) % n, s)
+
+def intVars : Array String := #["x", "y"]
+def boolVars : Array String := #["p", "q"]
+
+/-- A small integer, from `-5` to `5`. -/
+def small : R Int := do
+  let n ← next 11
+  return (n : Int) - 5
+
+mutual
+/-- An expression of type `Int`, at most `d` deep. -/
+partial def genInt (d : Nat) : R Ex := do
+  let k ← next (if d = 0 then 2 else 6)
+  if k = 0 then return .lit (.int (← small))
+  else if k = 1 then return .var (.mkSimple intVars[← next intVars.size]!)
+  else if k = 2 then return .neg (← genInt (d - 1))
+  else if k = 3 then return .bin #[Op.add, .sub, .mul][← next 3]! (← genInt (d - 1)) (← genInt (d - 1))
+  else if k = 4 then
+    let divisor ← small
+    return .bin #[Op.div, .mod][← next 2]! (← genInt (d - 1)) (.lit (.int (if divisor = 0 then 4 else divisor)))
+  else return .ite (← genBool (d - 1)) (← genInt (d - 1)) (← genInt (d - 1))
+
+/-- An expression of type `Bool`, at most `d` deep. -/
+partial def genBool (d : Nat) : R Ex := do
+  let k ← next (if d = 0 then 2 else 8)
+  if k = 0 then return .lit (.bool ((← next 2) = 0))
+  else if k = 1 then return .var (.mkSimple boolVars[← next boolVars.size]!)
+  else if k = 2 then return .not (← genBool (d - 1))
+  else if k = 3 then return .bin #[Op.and, .or, .iff, .eq, .ne][← next 5]! (← genBool (d - 1)) (← genBool (d - 1))
+  else if k = 4 then return .bin #[Op.lt, .le, .gt, .ge, .eq, .ne][← next 6]! (← genInt (d - 1)) (← genInt (d - 1))
+  else if k = 5 then return .when ((← next 2) = 0) (← genBool (d - 1)) (← genBool (d - 1))
+  else if k = 6 then return .ite (← genBool (d - 1)) (← genBool (d - 1)) (← genBool (d - 1))
+  else
+    let c := #[Fren.Core.Cardinality.atMostOne, .exactlyOne][← next 2]!
+    return .cardinality c #[← genBool (d - 1), ← genBool (d - 1), ← genBool (d - 1)]
+end
+
+def opName : Op → Option String
+  | .and => "and" | .or => "or" | .iff => "iff" | .eq => "=" | .ne => "!=" | .lt => "<" | .le => "<="
+  | .gt => ">" | .ge => ">=" | .add => "+" | .sub => "-" | .mul => "*" | .div => "div" | .mod => "mod"
+  | _ => none
+
+def toValue : Val → Option Value
+  | .bool b => some (.b b)
+  | .int i => some (.i i)
+  | .str s => some (.s s)
+  | _ => none
+
+/-- `e` as the core's layers, for the fragment above. -/
+partial def toCore : Ex → Option Fren.Core.Meaning.Expr
+  | .lit v => return .node (.literal (← toValue v)) []
+  | .var n => return .node (.variable n.toString) []
+  | .not a => return .node (.op "not" "") [← toCore a]
+  | .neg a => return .node (.op "-" "") [← toCore a]
+  | .bin op a b => return .node (.op (← opName op) "") [← toCore a, ← toCore b]
+  | .when negated c d => return .node (.op (if negated then "unless" else "when") "") [← toCore c, ← toCore d]
+  | .ite c a b => return .node (.op "if" "") [← toCore c, ← toCore a, ← toCore b]
+  | .cardinality c args =>
+    return .node (.op (if c == .atMostOne then "at_most_one?" else "exactly_one?") "") (← args.toList.mapM toCore)
+  | _ => none
+
+/-- One behaviour: each variable's value. -/
+def behaviour : R (List (String × Val)) := do
+  let ints ← intVars.toList.mapM fun x => do return (x, Val.int (← small))
+  let bools ← boolVars.toList.mapM fun x => do return (x, Val.bool ((← next 2) = 0))
+  return ints ++ bools
+
+end Evaluation
+
+/-- `Ex.eval` and `Fren.Core.Meaning.Expr.eval` agree on 2000 random
+expressions, each in a random behaviour (`evaluation`). -/
+def evaluation : IO (Array String) := do
+  let mut failures := #[]
+  let mut seed := 2026
+  for k in [0:2000] do
+    let ((e, b), s) := (do
+      let e ← (if k % 2 = 0 then Evaluation.genBool 4 else Evaluation.genInt 4)
+      return (e, ← Evaluation.behaviour)).run seed
+    seed := s
+    let look : FrenCli.Eval.Look := fun n => b.lookup n.toString
+    let env : Fren.Core.Meaning.Env := ⟨fun x => ((b.lookup x).bind Evaluation.toValue).getD .nil, fun _ _ => .nil,
+      fun _ _ => .nil⟩
+    match Evaluation.toCore e, e.eval {} look with
+    | some c, some v =>
+      let w := c.eval .empty env
+      unless Evaluation.toValue v == some w do
+        failures := failures.push s!"evaluation: {repr c} in {repr b} is {repr v} by `Ex.eval`, but {repr w} by the core"
+    | some c, none => failures := failures.push s!"evaluation: `Ex.eval` does not know {repr c} in {repr b}"
+    | none, _ => failures := failures.push s!"evaluation: expression {k} is outside the core's fragment"
+  return failures
+
 /-- The jobs, as the arguments of `--job`, the slowest first. -/
 def jobs : IO (Array (List String)) := do
   let ui ← sortedFiles ("test" / "ui") "fren"
@@ -1132,7 +1249,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["evaluation"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"]]
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -1147,6 +1264,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["leanTokens"] => leanTokens
   | ["snapshots"] => snapshots bless
   | ["errorCodes"] => errorCodes
+  | ["evaluation"] => evaluation
   | ["ownSpec"] => ownSpec
   | ["conformance", name] => match corpora.lookup name with
     | some corpus => conformance name corpus

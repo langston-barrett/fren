@@ -75,7 +75,7 @@ Here `p` and `q` are the constraints' root layers:
 
 ```fren
 expect duplicate_constraint_value: forall (d: duplicate_constraint) (p q: lang::node),
-    when d.fires? and p.env = q.env and p.head = written_head(d.earlier_text)
+    when d.fires? and p.env = q.env and p.program = q.program and p.head = written_head(d.earlier_text)
     and p.values = written_values(p.env, d.earlier_text) and q.head = written_head(d.later_text)
     and q.values = written_values(q.env, d.later_text),
     p.value = q.value
