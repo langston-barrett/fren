@@ -145,6 +145,18 @@ lean_lib ImplsProofs where
 -- Regression tests: each file checks its own messages with `#guard_msgs`.
 @[default_target] lean_lib FrenTest where globs := #[`FrenTest.+]
 
+-- The example specs' Lean implementations (`examples/*.lean`), each proved
+-- to meet the spec it reads with `#fren_md`, hence `needs`.
+@[default_target] lean_lib Examples where
+  srcDir := "../examples"
+  globs := #[`Rle]
+  needs := #[`@/examples_fren]
+
+input_dir examples_fren where
+  path := "examples"
+  text := true
+  filter := .extension #["fren"]
+
 -- `__isoc23_strtol` and `__isoc23_fscanf`, which cvc5's static Linux release
 -- calls but the older glibc that Lean links executables against lacks
 -- (`c/glibc_c23.c`). Linked into every executable; unused elsewhere. Lean
