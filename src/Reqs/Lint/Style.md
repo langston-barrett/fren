@@ -622,13 +622,28 @@ too, but only a repeat of an earlier constraint of its kind, written the
 same: the one it repeats stays, with its checks and its name, so all that
 goes is a second copy, which checks nothing more. A constant constraint
 repeats nothing, so removing it would lose its checks and its name.
-`lint::assertions_on_constants` states when it fires:
+`lint::assertions_on_constants` states when it fires, from what the
+expression mentions, as [`lang::mentions`](../Lang/Expressions.md#mentions)
+gives it:
 
 ```fren
 pub comp assertions_on_constants {
-    in mentions?         -- the expression mentions a variable or an uninterpreted function
+    in mentioned: Set(lang::Mention)  -- what the expression mentions
     pub det out fires?
 
-    ensure rule: fires? iff not mentions?
+    ensure rule: fires? iff mentioned = {}
 }
+```
+
+What it fires on is the same in every behaviour, by
+[`mentions_nothing`](Meaning.md#expressions-that-mention-nothing), where each
+of its layers that is evaluated is specified, as the [definedness
+check](../Check.md#definedness) ensures of a spec that passes its checks.
+Here `p` is the root layer of the expression in one environment and `q` the
+same layer, with the same parts' values, in any other:
+
+```fren
+expect constant_constraint: forall (c: assertions_on_constants) (p q: lang::node),
+    when c.fires? and p.mentioned = c.mentioned and p.specified? and q.head = p.head and q.values = p.values,
+    q.value = p.value
 ```

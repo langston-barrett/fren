@@ -25,3 +25,30 @@ comp plain {
 
     ensure same: w = (if r is Reply::Value(_) then v else v)   --~ warning: both branches of `if` are written the same
 }
+
+-- Nor does `branches_sharing_code` move `v` out of the branches, where the
+-- two are the payload and the input (`lint::branches_sharing_code`), nor
+-- `same_branches` compare branches that mention no binder.
+set_option fren.lint.branches_sharing_code "warn" in
+comp shared_binders {
+    in r: Reply
+    in v: Int
+    pub out w: Int
+    pub out u: Int
+
+    ensure sum: w = (if r is Reply::Value(v!) then 1 + v else 2 + v)
+    ensure constant: u = (if r is Reply::Value(v!) and v > 0 then 1 else 1)
+
+    expect payload: when r = Reply::Value(3), w = 4
+    expect input: when r = Reply::Empty, w = 2 + v
+}
+
+-- Without a binder, `branches_sharing_code` reports it.
+set_option fren.lint.branches_sharing_code "warn" in
+comp shared_plain {
+    in r: Reply
+    in v: Int
+    pub out w: Int
+
+    ensure sum: w = (if r is Reply::Value(_) then 1 + v else 2 + v)   --~ warning: both branches of this `if` end with `+ v`
+}

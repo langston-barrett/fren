@@ -38,7 +38,7 @@ an `ensure` or an `assume` is not fixed: it tests nothing, since it follows
 from what it repeats, and was probably meant to say something stronger,
 which the message says. Nor is an `ensure` that repeats an `assume`, or the
 reverse, since the two mean different things. `lint::duplicate_constraint`
-states this:
+states this, from the two as [written](Meaning.md#expressions-as-written):
 
 ```fren
 pub mod lint
@@ -48,10 +48,12 @@ pub enum ConstraintKind { Assume, Ensure, Expect, Cover }
 pub comp duplicate_constraint {
     in earlier: ConstraintKind
     in later: ConstraintKind
-    in same?             -- the later is written the same as the earlier
+    in earlier_text: Scoped  -- the earlier's expression, as written in its scope
+    in later_text: Scoped    -- the later's
 
     -- A cover goal is compared only with cover goals.
     assume covers_apart: (earlier = ConstraintKind::Cover) iff (later = ConstraintKind::Cover)
+    pub det out same? := earlier_text = later_text
     pub det out fires?
     pub det out fixed?   -- the fix removes the later
 
@@ -60,6 +62,23 @@ pub comp duplicate_constraint {
 
     expect weaker_kept: when later = ConstraintKind::Expect and earlier != later, not fixed?
 }
+```
+
+A constraint that repeats one adds nothing because the two have the same
+value in every behaviour: they are written the same, in one component, so
+by [`written_same`](Meaning.md#expressions-as-written) they have the same
+value in each environment. A global expectation is not one layer, since
+it is a [quantifier](../Lang/Quantifiers.md), but the bodies of two written
+the same, under the same binders, have the same value at each value of the
+binders, and so the two do.
+Here `p` and `q` are the constraints' root layers:
+
+```fren
+expect duplicate_constraint_value: forall (d: duplicate_constraint) (p q: lang::node),
+    when d.fires? and p.env = q.env and p.head = written_head(d.earlier_text)
+    and p.values = written_values(p.env, d.earlier_text) and q.head = written_head(d.later_text)
+    and q.values = written_values(q.env, d.later_text),
+    p.value = q.value
 ```
 
 ## Negations after operators

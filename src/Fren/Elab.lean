@@ -1541,7 +1541,7 @@ partial def lintParens (fixable : Bool) (str : String) (e : Syntax) (inParens : 
 /-- Records `assertions_on_constants` on the constraint `e`, an `assume`,
 `ensure` or `expect` as `kind` says (`lint::assertions_on_constants`). -/
 def lintConstant (cx : ExprCtx) (kind : String) (e : Syntax) : TermElabM Unit := do
-  if Core.assertionOnConstant (← mentionsAny cx e) then
+  if Core.assertionOnConstant (← mentionedNames cx e) then
     let literal? := match boolNode "" 0 (unparen e) with | .mk (.lit b) .. => some b | _ => none
     recordLint .assertionsOnConstants e (Core.assertionOnConstantMsg kind literal?)
 
@@ -1606,6 +1606,7 @@ def lintBools (e : Syntax) (hides : String → Bool) : TermElabM Unit := do
   let variant? (s : Syntax) := (variants.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
   let fact? (s : Syntax) := (facts.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
   let ordered? (s : Syntax) := (ordereds.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
+  let mentioned (s : Syntax) := ((mentioning.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)).getD []
   let help (msg : Core.Msg) := if fixable && !msg.fixes.isEmpty then #[Core.fixHelp] else #[]
   let at_ (rs : Array (Option String.Pos.Raw × Option String.Pos.Raw)) (s : Syntax) := rs.contains (s.getPos?, s.getTailPos?)
   let st ← getState
@@ -1613,7 +1614,7 @@ def lintBools (e : Syntax) (hides : String → Bool) : TermElabM Unit := do
     { variants? := fun p => (st.enums.get? p.toName).bind fun info =>
         if (List.range info.variants.size).all (info.payloads[·]?.all (·.isEmpty)) then some info.variants.size else none
       declared := declaredNames e, hides, unguarded := !Core.hasGuarded (e.reprint.getD "") }
-  for r in Core.opReports src (at_ boolEqs) ordered? variant? (absEnds.contains ·.getTailPos?) (at_ mentioning) fact? fcx node do
+  for r in Core.opReports src (at_ boolEqs) ordered? variant? (absEnds.contains ·.getTailPos?) mentioned fact? fcx node do
     -- A node's position is its first token's, and its tail its last's.
     let ref := match r.last? with | some l => mkNullNode #[r.ref, l] | none => r.ref
     if keeps r.ref (r.last?.getD r.ref) then recordLint r.lint ref { r.msg with notes := r.msg.notes ++ help r.msg }
@@ -3255,10 +3256,11 @@ def lintEqOp (e : Syntax) : TermElabM Unit := do
   if let some v := Core.eqOp op (Core.writtenSame a (exactText (unparen e[2]))) then
     recordLint .eqOp e (Core.eqOpMsg op v a)
 
-/-- `same_branches` on `e`, `if c then a else b` (`lint::same_branches`). -/
-def lintSameBranches (e a b : Syntax) : TermElabM Unit := do
+/-- `same_branches` on `e`, `if c then a else b`, where `binds` is whether
+`c`'s pattern tests bind names (`lint::same_branches`). -/
+def lintSameBranches (binds : Bool) (e a b : Syntax) : TermElabM Unit := do
   let (a, b) := (unparen a, unparen b)
-  unless Core.sameBranches (Core.writtenSame (exactText a) (exactText b)) do return
+  unless Core.sameBranches binds (Core.writtenSame (exactText a) (exactText b)) do return
   let some sub := e.getSubstring? false false | return
   let .mk kind .. := boolNode "" 0 a
   recordLint .sameBranches e (Core.sameBranchesMsg (exactText a) kind.prec (String.Pos.Raw.extract sub.str 0 sub.startPos)
@@ -4820,10 +4822,12 @@ def iteTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
   if cx.noteIndexes && !cx.inElse then lintIfChain cx e
   -- Not where the condition's pattern tests bind names, which the `then`
   -- branch sees and the `else` branch does not, so that the same text may
-  -- mean different values (`lang::test_scope`).
-  if cx.noteIndexes && !(← chainBinds cx c') then lintSameBranches e a b
-  if cx.noteIndexes && (← mentionsAny cx c') then
-    modifyLocal fun l => { l with mentioning := l.mentioning.push ((unparen c').getPos?, (unparen c').getTailPos?) }
+  -- mean different values (`lang::test_scope`), as `sameBranches` decides.
+  if cx.noteIndexes then lintSameBranches (← chainBinds cx c') e a b
+  if cx.noteIndexes then
+    let ms ← mentionedNames cx c'
+    unless ms.isEmpty do
+      modifyLocal fun l => { l with mentioning := l.mentioning.push (((unparen c').getPos?, (unparen c').getTailPos?), ms) }
   -- The names that the condition's pattern tests bind, which the `then`
   -- branch sees (`lang::test_scope`).
   let (c, new) ← withBound (toTerm { cx with inElse := false, testContext := .ifCondition } c')
@@ -4854,7 +4858,7 @@ def arithTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (n
     -- For `branches_sharing_code`, without parentheses, as `boolNode` has them.
     if cx.noteIndexes then
       let at_ (s : Syntax) := ((unparen s).getPos?, (unparen s).getTailPos?)
-      modifyLocal fun l => { l with mentioning := l.mentioning ++ ([(ma, a), (mb, b)].filter (!·.1.isEmpty) |>.map (at_ ·.2)) }
+      modifyLocal fun l => { l with mentioning := l.mentioning ++ ([(ma, a), (mb, b)].filter (!·.1.isEmpty) |>.map fun (m, s) => (at_ s, m)) }
   let natOk := natOk && op != "-"
   let x ← toTerm { cx with natOk } a
   -- Of a newtype, its underlying type's `+` or `-`, on its field, which is
@@ -5813,8 +5817,8 @@ def lintOutputs (lcx : ExprCtx) (members : Array Syntax) (vars : Array Var) : Te
         (isBinOp e "=" || isBinOp e "iff")
           && ((isX e[0] && !(pathMentions e[2]).contains v.name) || (isX e[2] && !(pathMentions e[0]).contains v.name))
       | _ => false
-    let mentions ← match v.defn? with | some d => mentionsAny lcx d | none => pure true
-    let (constant, definable) := Core.outputLints v.defn?.isSome mentions about.size equation
+    let mentioned ← match v.defn? with | some d => mentionedNames lcx d | none => pure []
+    let (constant, definable) := Core.outputLints v.defn?.isSome mentioned about.size equation
     if constant then recordLint .constantOutput v.ref (Core.constantOutputMsg v.name)
     if definable then recordLint .definableOutput v.ref (Core.definableOutputMsg v.name about[0]!.1)
 
