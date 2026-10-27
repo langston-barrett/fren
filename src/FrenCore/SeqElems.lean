@@ -330,7 +330,7 @@ def elementReasonNotes? (reason : String) : Option (String × Array String) :=
       "help: bind fewer names in one quantifier, or read fewer positions of its sequence where the check uses it"])
   else if reason == elementUnconfirmedReason then
     some ("F0648", #["note: the instances at the index set do not hold of every element of the solver's model, and no model has every element satisfy them at the same lengths",
-      "help: compare the sequences by their elements rather than with `=`, or check it by testing"])
+      "help: state the property by the elements, within the decidable core, or check it by testing"])
   else none
 
 /-! ## Completeness: the projection (`lang::element_projection`)

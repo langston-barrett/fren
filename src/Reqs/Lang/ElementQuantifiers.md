@@ -41,8 +41,8 @@ pub mod lang
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
 pub comp element_meaning {
-    in q: Seq(Int)
-    in good: Set(Int)
+    in q: Seq<Int>
+    in good: Set<Int>
     pub det out holds?
 
     ensure by_elements: holds? iff (forall (x: Int), when x in q, x in good)
@@ -115,7 +115,7 @@ pub struct ElementBinder {
     members: ElementMembers,
     receiver_bound?,             -- its sequence mentions a bound name
     receiver_output?,            -- its sequence mentions an output that is not defined
-    uses: Set(ElementUse),       -- how the body uses it
+    uses: Set<ElementUse>,       -- how the body uses it
 }
 
 -- Within no quantifier over elements, directly the body of one of the same kind, or elsewhere within one.
@@ -141,7 +141,7 @@ set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
 pub comp element_quantifier {
     use self::ElementVerdict::{InCore, Nested}
-    in binders: Seq(ElementBinder)  -- its bound names of types that are not listed, in order
+    in binders: Seq<ElementBinder>  -- its bound names of types that are not listed, in order
     in nesting: ElementNesting
     pub det out verdict: ElementVerdict
 
@@ -202,13 +202,13 @@ set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
 pub comp index_set {
     in zero: IndexTerm
-    in lasts: Seq(IndexTerm)       -- each quantifier's sequence's last position
-    in reads: Seq(IndexTerm)       -- each index's position
-    in positions: Seq(IndexTerm)   -- each update's position
-    in before: Seq(IndexTerm)      -- each update's position less one
-    in after: Seq(IndexTerm)       -- each update's position plus one
-    in witnesses: Seq(IndexTerm)
-    in terms: Seq(IndexTerm)       -- the index set
+    in lasts: Seq<IndexTerm>       -- each quantifier's sequence's last position
+    in reads: Seq<IndexTerm>       -- each index's position
+    in positions: Seq<IndexTerm>   -- each update's position
+    in before: Seq<IndexTerm>      -- each update's position less one
+    in after: Seq<IndexTerm>       -- each update's position plus one
+    in witnesses: Seq<IndexTerm>
+    in terms: Seq<IndexTerm>       -- the index set
     assume neighbours: before.len = positions.len and after.len = positions.len
     pub det out index_set?         -- `terms` is the index set of the others
 
@@ -218,7 +218,7 @@ pub comp index_set {
         and (forall (i: Int), when 0 <= i < positions.len, before[i] in terms and positions[i] in terms and after[i] in terms)
         and (forall (t: IndexTerm), when t in witnesses, t in terms)
         and (forall (t: IndexTerm), when t in terms, t = zero or t in lasts or t in reads or t in positions or t in before
-            or t in after or t in witnesses)
+        or t in after or t in witnesses)
         and (forall (i j: Int), when 0 <= i < j < terms.len, terms[i] != terms[j]))
 }
 ```
@@ -255,20 +255,20 @@ and `updated` are made so:
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
 pub comp element_projection {
-    in q: Seq(Int)
-    in ix: Seq(Int)             -- the values of the index set's terms
-    in good: Set(Int)           -- the elements at which the body holds
+    in q: Seq<Int>
+    in ix: Seq<Int>             -- the values of the index set's terms
+    in good: Set<Int>           -- the elements at which the body holds
     in i: Int                   -- the position of an update
     in v: Int                   -- its value
-    in projected: Seq(Int)      -- each element replaced by the element at the last value of `ix` at or before its position
-    in updated: Seq(Int)        -- the same of `q.update(i, v)`
+    in projected: Seq<Int>      -- each element replaced by the element at the last value of `ix` at or before its position
+    in updated: Seq<Int>        -- the same of `q.update(i, v)`
     assume zero: 0 in ix
     pub det out projection?     -- `projected` and `updated` are made so
 
     ensure rule: projection? iff (projected.len = q.len
         and (forall (t: Int), when t in ix and 0 <= t < q.len, projected[t] = q[t])
         and (when (forall (t: Int), when t in ix and 0 <= t < q.len, q[t] in good),
-            forall (x: Int), when x in projected, x in good)
+        forall (x: Int), when x in projected, x in good)
         and (when i in ix and i + 1 in ix and 0 <= i < q.len, updated = projected.update(i, v)))
 }
 ```

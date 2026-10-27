@@ -3845,7 +3845,7 @@ Erroneous code example:
 
 ```fren
 comp c {
-    in q: Seq(Int)
+    in q: Seq<Int>
     assume r: forall (x y z: Int), when x in q and y in q and z in q, x + y + z >= 0
     expect e: when q.len >= 3, q[1] + q[2] >= 0
 }
@@ -3864,7 +3864,7 @@ constraint so that fewer indexes meet it:
 
 ```fren
 comp c {
-    in q: Seq(Int)
+    in q: Seq<Int>
     assume r: forall (x: Int), when x in q, x >= 0
     expect e: when q.len >= 3, q[1] + q[2] >= 0
 }
@@ -3877,7 +3877,7 @@ Erroneous code example:
 ```fren
 set_option fren.lint.undecidable "allow" in
 comp c {
-    in q: Seq(Int)
+    in q: Seq<Int>
     assume zeros: forall (x: Int), when x in q, x = 0
     expect e: not (1 in q)
 }
@@ -3897,7 +3897,7 @@ State the property in the core, by the elements:
 
 ```fren
 comp c {
-    in q: Seq(Int)
+    in q: Seq<Int>
     assume zeros: forall (x: Int), when x in q, x = 0
     expect e: forall (x: Int), when x in q, x != 1
 }

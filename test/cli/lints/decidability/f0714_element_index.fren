@@ -1,7 +1,7 @@
 -- A quantifier over a sequence's elements whose bound name is used as an
 -- index is outside the array property fragment, and so outside the core.
 comp lookup {
-    in q: Seq(Int)
-    in r: Seq(Int)
+    in q: Seq<Int>
+    in r: Seq<Int>
     ensure a: forall (i: Int), when i in q, r[i] > 0
 }

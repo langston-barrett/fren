@@ -3,7 +3,7 @@
 -- index set.
 set_option fren.lint.undecidable "allow" in
 comp zeros {
-    in q: Seq(Int)
+    in q: Seq<Int>
     assume all_zero: forall (x: Int), when x in q, x = 0
     expect no_one: not (1 in q)
 }
