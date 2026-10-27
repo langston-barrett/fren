@@ -1766,10 +1766,22 @@ partial def patternNames : Pattern → Array String
   | .or _ alts => alts.flatMap patternNames
   | _ => #[]
 
+/-- The names that the pattern tests within `e` may bind: those of each
+`x is P`'s pattern, which are in scope in a `when`'s body, the later
+operands of an `and` and an `if`'s `then` branch
+(`Reqs/Lang/Expressions#pattern-tests`). -/
+partial def isNames : Expr → Array String
+  | .is _ a p => isNames a ++ patternNames p
+  | .bin _ _ a b => isNames a ++ isNames b
+  | .not _ a => isNames a
+  | .chain _ es _ => es.flatMap isNames
+  | _ => #[]
+
 /-- The spans of the applications in `e` of the function `f` to its
 parameters `params`, each written as its name, in order, outside every
 binder that hides a parameter: a quantifier's, a `let`'s or `where`'s, a
-`match` arm's pattern's or a closure's. Each is the function's value, its
+`match` arm's pattern's, a closure's, or a pattern test's, over a `when`'s
+body, the later operands of an `and` and an `if`'s `then` branch. Each is the function's value, its
 result in a block (`F0164`). An application within one is left alone. -/
 partial def selfApps (f : String) (params : Array String) (e : Expr) : Array Span :=
   let go := selfApps f params
@@ -1784,8 +1796,10 @@ partial def selfApps (f : String) (params : Array String) (e : Expr) : Array Spa
   | .«let» _ defs body _ => if hides (defs.map (·.1.name)) then #[] else defs.flatMap (go ·.2.2) ++ go body
   | .match _ sc arms _ => arms.foldl (init := go sc) fun acc (p, g?, b) =>
       if hides (patternNames p) then acc else acc ++ (g?.map go).getD #[] ++ go b
-  | .when _ _ c d | .bin _ _ c d | .pair _ c d | .index _ c d => go c ++ go d
-  | .ite _ c a b => go c ++ go a ++ go b
+  | .when _ _ c d => go c ++ (if hides (isNames c) then #[] else go d)
+  | .bin _ "and" c d => go c ++ (if hides (isNames c) then #[] else go d)
+  | .ite _ c a b => go c ++ (if hides (isNames c) then #[] else go a) ++ go b
+  | .bin _ _ c d | .pair _ c d | .index _ c d => go c ++ go d
   | .not _ a | .neg _ a | .field _ a _ | .is _ a _ => go a
   | .set _ args | .seq _ args | .chain _ args _ => args.flatMap go
   | .method _ r _ args => go r ++ args.flatMap go

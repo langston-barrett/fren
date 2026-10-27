@@ -1087,7 +1087,11 @@ def resolve (segs : Array Ident) (extra : Array Name := #[]) : M Resolved := do
 
 /-- Reports a lint at the level in effect. -/
 def lint (lint : Lint) (span : Span) (msg : Msg) : M Unit :=
-  modify fun s => { s with lintReports := s.lintReports.push { lint, level := s.levels.get lint, ref := span, msg } }
+  -- Once at a place: a function's block gives a `let` to each expression
+  -- that needs it, which elaborates it again (`Reqs/Lang/Items#function-blocks`).
+  modify fun s =>
+    if s.lintReports.any fun r => r.lint == lint && r.ref == span && r.msg.headline == msg.headline then s
+    else { s with lintReports := s.lintReports.push { lint, level := s.levels.get lint, ref := span, msg } }
 
 /-- `resolve` for a path written in an expression, a pattern or a type,
 which also reports `absolute_paths` (`lint::absolute_paths`) if `report`:
