@@ -268,8 +268,6 @@ interp lang::unspecified := fun (e : Fren.Core.Meaning.Env) h vs => Meaning.toVa
 -- before it. The values that the spec fixes are where
 -- `Fren.Core.Meaning.fixedValue?` states them, and unspecified elsewhere.
 interp lang::Program := Fren.Core.Meaning.Program
-interp lang::parameters := fun (p : Fren.Core.Meaning.Program) x =>
-  Fren.Seq.ofList (((Fren.Core.Meaning.Program.definition p x).map (·.2.1)).getD [])
 interp lang::definition_value := fun (p : Fren.Core.Meaning.Program) x vs =>
   Meaning.toValue ((Fren.Core.Meaning.Definition.value (Fren.Core.Meaning.Program.definition p x) (Meaning.ofValues vs)).getD .nil)
 interp lang::fixed_specified? := fun (p : Fren.Core.Meaning.Program) h vs =>

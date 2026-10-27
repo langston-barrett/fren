@@ -165,7 +165,8 @@ patterns, with a binder written `_`, a variant by its qualified path, as
 its construction names it, and the arms' patterns separated by `;`:
 `Option::Some(_); Option::None` (`Reqs/Lang/Patterns#patterns-as-text`).
 A name of one segment, not applied, is a constant, matched by its value
-in the declarations before the layer (`Ctx`). `Pattern.decode` reads only
+in the declarations before the layer (`Ctx`); applied, as `Some(_)`, it
+does not decode, since a variant is written qualified. `Pattern.decode` reads only
 `_`, `true` and `false`, integer literals, ranges with literal bounds,
 string literals without escapes, variants, constants and or-patterns. Any
 other text does not decode, and then no arm matches, so the choice is
@@ -301,9 +302,12 @@ def readPrimary : Nat → List Char → Option (Pattern × List Char)
         else if s == "true" then some (.lit (.b true), rest)
         else if s == "false" then some (.lit (.b false), rest)
         else match skipWs rest with
-          | '(' :: rest => do
-            let (ps, rest) ← readArgs fuel rest
-            some (.ctor s ps, rest)
+          -- A variant is written by its qualified path, as its construction
+          -- names it: an applied name of one segment does not decode, since
+          -- it would match no construction.
+          | '(' :: rest =>
+            if (s.splitOn "::").length ≤ 1 then none
+            else (readArgs fuel rest).map fun (ps, rest) => (.ctor s ps, rest)
           -- A name of one segment, not applied, is a constant: a binder is
           -- written `_`.
           | _ => some (if (s.splitOn "::").length ≤ 1 then .const s else .ctor s [], rest)
@@ -340,6 +344,10 @@ end Pattern
 
 -- A name of one segment is a constant.
 #guard (Pattern.decode "ZERO; _").isSome
+-- An unqualified variant does not decode, so the choice is unspecified
+-- rather than matching nothing.
+#guard (Pattern.decode "Some(_); _").isNone
+#guard (Pattern.decode "Option::Some(Pair(_, _)); _").isNone
 -- An escape is not its text: `"\n"` does not decode, so it matches no `"n"`.
 #guard (Pattern.decode "\"\\n\"").isNone
 #guard (Pattern.decode "Option::Some(_); Option::None | 0..=5; \"a;b\"").isSome
@@ -525,6 +533,7 @@ def opValue? (ctx : Ctx) (o s : String) (vs : List Value) : Option Value :=
   | ">=", [.i a, .i b] => some (.b (decide (a ≥ b)))
   | "=", [a, b] => if a.plain && b.plain then some (.b (a == b)) else none
   | "!=", [a, b] => if a.plain && b.plain then some (.b (a != b)) else none
+  | "[..]", vs => some (Value.ofList vs)
   | "[]", [q, .i k] => q.toList?.bind fun l => if 0 ≤ k then l[k.toNat]? else none
   | ".", [v] => fieldValue? ctx s v
   | "++", [.s a, .s b] => some (.s (a ++ b))
@@ -958,6 +967,12 @@ theorem step_constant {c : String} {vs : List Value} (e₁ e₂ : Env) (hs : spe
     step ctx (.constant c) e₁ vs = step ctx (.constant c) e₂ vs :=
   step_frame hs rfl
 
+-- The choices whose patterns do not decode are unspecified, not wrong: with
+-- `Some(_)` unqualified, `match o { Some(_) => 1, _ => 2 }` is not `2`.
+#guard specified .empty (.op "match" "Some(_); _") [.c "Option::Some" (.cons (.i 0) .nil), .b true, .i 1, .b true, .i 2]
+  == false
+#guard fixedValue? .empty (.op "match" "Option::Some(_); _") [.c "Option::Some" (.cons (.i 0) .nil), .b true, .i 1,
+  .b true, .i 2] == some (.i 1)
 -- The choices whose patterns do not decode are unspecified, not wrong.
 #guard specified .empty (.op "match" "ZERO; _") [.i 0, .b true, .i 1, .b true, .i 2] == false
 #guard armMatches .empty (.op "match" "\"\\n\"") 0 (.s "n") == false

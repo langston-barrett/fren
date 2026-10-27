@@ -81,7 +81,7 @@ the layer `Op("+", "")` with parts `x` and `f(y)`, and `f(y)` is the layer
   field read from an expression that is not a name, as `Op(".", f)` with
   the field `f`, a [record
   update](Expressions.md#record-updates) (with the fields it sets), a
-  literal of a set, pair or sequence, and a `let` (whose only part is its
+  literal of a set, pair or sequence (as `Op("[..]", "")`), and a `let` (whose only part is its
   body).
 
 A [quantifier](Quantifiers.md) is not one layer: its body is evaluated at
@@ -141,23 +141,26 @@ function's body is unspecified, or applies a function outside its
 [Definedness](../Check.md#definedness)). Neither function takes an `Env`,
 so neither differs between behaviours. Their values are stated by the
 chapters on each construct, and this chapter states those of constants and
-defined functions: `parameters(program, x)` are the parameters of the
-constant or defined function `x`, none for a constant, and
-`definition_value(program, x, args)` is the value of its definition, its
-body, as an expression, in every environment that binds its parameters
-to the arguments `args`: a body reads only its parameters, so every such
-environment gives it one value, where it is specified. Where
-`fixed_specified?` holds, `step` gives `Constant(c)` the value of `c`'s
-definition, and `Defined(f)` that of `f`'s body at the parts' values: the parameters substituted by the arguments, as [Defined
+defined functions: `definition_value(program, x, args)` is the value of
+the definition of the constant or defined function `x`, its body, as an
+expression, in every environment that binds its parameters to the
+arguments `args`, none for a constant: a body reads only its parameters,
+so every such environment gives it one value, where it is specified.
+Where `fixed_specified?` holds, `step` gives `Constant(c)` the value of
+`c`'s definition, and `Defined(f)` that of `f`'s body at the parts'
+values: the parameters substituted by the arguments, as [Defined
 functions](Items.md#defined-functions) states. A body applies only
 earlier declarations, so its value is well-founded on the order of the
-declarations.
+declarations. Recursion in defined functions (#279) would break that
+order, and the evaluation would need another measure.
 
 Two features would each add one case here. A parameter of a function type
 (#305) is bound to a closure, whose body is substituted for its
 applications, rather than to a value: `definition_value` then takes such
 an argument as a closure, and the environment of the body binds it in
-the program, not as a variable. An uninterpreted function with type
+the program, not as a variable. A body then reads more than its
+parameters, which is the premise of `frame` for a definition, so the
+closure's own mentions join the application's. An uninterpreted function with type
 parameters (#300) is one unknown function for each instance of them: its
 `Uninterpreted(f)` head names the instance in `f`, so that `meaning`, which
 is read at that name, is one function for each.
@@ -173,8 +176,13 @@ from `Bool`s, integers and strings by variants, records and newtypes;
 the pattern test; indexing in range, `Op("[]", "")`, and a field read,
 `Op(".", f)`, of a record or a newtype; the methods `abs`, `min` and
 `max` of integers and `len` of a string or a sequence; a binder; a
-choice, by the arm that fires; and constants and defined functions whose
-definitions are in that fragment. `=` over sets, relations and sequences,
+choice, by the arm that fires; a sequence literal, `Op("[..]", "")`; and
+constants and defined functions whose definitions are in that fragment.
+It takes a definition to be specified only where each of its body's
+layers is, including those that the body does not evaluate, so it is
+stricter than the language: `fn safe(q: Seq<Int>, i: Int): Int := if 0 <= i
+< q.len then q[i] else 0` is unspecified there where `i` is out of range,
+though the language gives it `0`. `=` over sets, relations and sequences,
 `<` over strings, and the operators of sets and relations are unspecified
 there.
 
@@ -196,7 +204,6 @@ pub fn unspecified(Env, Head, Seq<Value>): Value
 -- The spec being read: its declarations.
 pub type Program
 
-pub fn parameters(Program, Id): Seq<Id>
 pub fn definition_value(Program, Id, Seq<Value>): Value
 
 -- The name of a constant or of a defined function, and `""` for any other layer.

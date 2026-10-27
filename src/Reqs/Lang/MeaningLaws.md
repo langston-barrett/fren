@@ -106,7 +106,12 @@ expect constant_fixed: forall (p q: node),
 `substitution`: where a constant or an application of a defined function
 is specified, its value is its definition's at the parts' values: the
 arguments substituted for the parameters, as [Defined
-functions](Items.md#defined-functions) states:
+functions](Items.md#defined-functions) states. With `constant_fixed`, it
+records the interface that `step` gives declared layers, and cannot fail
+here, since `definition_value` is uninterpreted: its content is in the
+Lean interpretation, where `Fren.Core.Meaning.definition_eval` proves that
+a definition's value is its body's in every environment that binds its
+parameters:
 
 ```fren
 expect substitution: forall (p: node),
