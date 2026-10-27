@@ -265,13 +265,61 @@ def hostedSpecFiles : IO (Array String) := do
         if let some name := (rest.splitOn "\"").head? then files := files.push s!"src/Reqs/{name}"
   return files
 
+/-- The lines of the `fren` blocks of the Markdown text `md`. -/
+def frenBlockLines (md : String) : Array String := Id.run do
+  let mut out := #[]
+  let mut inBlock := false
+  for line in md.splitOn "\n" do
+    if line.startsWith "```" then inBlock := line.startsWith "```fren"
+    else if inBlock then out := out.push line
+  return out
+
+/-- The procedures and global expectations that the `fren` block lines
+`ls` declare, which a `#fren_check` checks: each by its name. -/
+def checkedItems (ls : Array String) : Array String :=
+  ls.filterMap fun l =>
+    let l := ((l.dropPrefix? "pub ").map (·.toString)).getD l
+    let word (pre : String) : Option String := (l.dropPrefix? pre).map fun r =>
+      (r.toString.takeWhile fun c => c.isAlphanum || c == '_' || c == '?').toString
+    (word "proc ").orElse fun _ => word "expect "
+
+/-- The problems of Lean's checks of `src/Reqs`: each chapter that a Lean file
+reads by `#fren_md`, and that declares procedures or global expectations, is
+checked by a `#fren_check` without a path in it or in a later chapter of
+that file, or by a `#fren_check` of each of them in it. A `#fren_check`
+checks what is declared before it in its file (`Reqs/Lean#commands`), so a
+chapter after a file's last one is not checked in Lean at all: the hosted
+counterpart of `ownSpecFiles`. -/
+def hostedChecks : IO (Array String) := do
+  let mut failures := #[]
+  for entry in ← System.FilePath.readDir "src/Reqs" do
+    if entry.path.extension != some "lean" then continue
+    let chapters := (← IO.FS.readFile entry.path).splitOn "\n" |>.filterMap fun line =>
+      match line.splitOn "#fren_md \"" with
+      | [_, rest] => (rest.splitOn "\"").head?
+      | _ => none
+    let texts ← chapters.toArray.mapM fun (c : String) => IO.FS.readFile (("src" : FilePath) / "Reqs" / c)
+    -- A chapter's `#fren_check`s, in its `fren` blocks or on lines of their own.
+    let checks := texts.map fun t => (t.splitOn "\n").toArray.filter (·.trimAscii.toString.startsWith "#fren_check")
+    for c in chapters.toArray, t in texts, k in [0:texts.size] do
+      let items := checkedItems (frenBlockLines t)
+      if items.isEmpty then continue
+      let bare := (checks.extract k checks.size).any (·.any (·.trimAscii.toString == "#fren_check"))
+      let named := checks[k]!.filterMap fun l => (l.trimAscii.toString.dropPrefix? "#fren_check ").map (·.toString.trimAscii.toString)
+      for i in items do
+        unless bare || named.contains i do
+          failures := failures.push s!"src/Reqs/{c}: `{i}` is checked by no `#fren_check` in Lean, as the chapter comes after its file's last `#fren_check`: name it, as `#fren_check {i}`"
+  return failures
+
 /-- Fren's own requirements pass under the binary, and it checks every
-chapter that the Lean front end does. -/
+chapter that the Lean front end does; and Lean checks every chapter too
+(`hostedChecks`). -/
 def ownSpec : IO (Array String) := do
   let missing := (← hostedSpecFiles).filter (!ownSpecFiles.contains ·)
   let (out, code) ← runCheck ownSpecFiles
   return (missing.map (s!"{·} is read by `#fren_md` but not in `ownSpecFiles`, so the binary does not check it"))
     ++ (if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"])
+    ++ (← hostedChecks)
 
 /-! ## Formatting -/
 
