@@ -19,7 +19,12 @@ rewrite can repair. It does not fire on `+`, `*`, `++` or `join`, where `x
 + x` and `r join r` mean something, nor on `in`, nor on the comparisons
 of a [chained comparison](../../Lang/Expressions.md#chained-comparisons),
 such as `x < x < y`, which it leaves to a later lint on chains.
-`lint::eq_op` states this:
+Operands are compared in their scopes: the right operand of `and` sees the
+binders of the left's pattern tests, which the left does not, so in `(v > 1
+and r is Reply::Value(v!)) and (v > 1 and r is Reply::Value(v!))` the two
+first `v`s differ, and it does not fire. `lint::eq_op` states this, from the
+operands as [written](../Meaning.md#expressions-as-written) in their
+scopes:
 
 ```fren
 pub mod lint
@@ -31,10 +36,12 @@ pub enum InfixOp {
 pub enum EqOpValue { AlwaysTrue, AlwaysFalse, Zero, Empty, Operand }
 
 pub comp eq_op {
-    use self::EqOpValue::{AlwaysFalse, AlwaysTrue, Empty, Operand, Zero}
+    use self::EqOpValue::{AlwaysFalse, AlwaysTrue, Empty, Zero}
     use self::InfixOp::{Add, Concat, Eq, Ge, Gt, Iff, In, Join, Le, Lt, Minus, Mul, Ne, Sub, Subset}
     in op: InfixOp
-    in same?             -- the operands are written the same
+    in left: Scoped      -- the left operand, as written in its scope
+    in right: Scoped     -- the right operand
+    pub det out same? := left = right
     pub det out fires?
     pub out value: EqOpValue  -- what the expression is, where it fires
 
@@ -44,28 +51,92 @@ pub comp eq_op {
         Ne | Lt | Gt => AlwaysFalse,
         Sub => Zero,
         Minus => Empty,
-        _ => Operand,
+        _ => EqOpValue::Operand,
     }
 
     expect needs_same: when fires?, same?
 }
 ```
 
+The message is right because the two operands have the same value: they
+are written the same, in the same scope, and in one environment, so by
+[`written_same`](../Meaning.md#expressions-as-written) their root layers
+have the same head and parts' values, and so the same value, specified or
+not. Here `p` and `q` are the operands' root layers:
+
+```fren
+expect eq_op_operands: forall (e: eq_op) (p q: lang::node),
+    when e.fires? and p.env = q.env and p.head = written_head(e.left) and p.values = written_values(p.env, e.left)
+    and q.head = written_head(e.right) and q.values = written_values(q.env, e.right),
+    p.value = q.value
+```
+
+What the message says the expression then is, `lint::eq_op_values`
+checks on Fren's own evaluation, at any value of the operand of each type
+the operator applies to:
+
+```fren
+-- `nonminimal_bool` would write `not (x < x)` as `x >= x`, another case.
+set_option fren.lint.eq_op "allow" in
+set_option fren.lint.nonminimal_bool "allow" in
+pub comp eq_op_values {
+    use self::EqOpValue::{AlwaysFalse, AlwaysTrue, Empty, Zero}
+    use self::InfixOp::{And, Eq, Ge, Gt, Iff, Inter, Le, Lt, Minus, Ne, Or, Sub, Subset, Union}
+    in op: InfixOp
+    in x: Int
+    in a?
+    in s: Set(Int)
+
+    inst e: eq_op { op, left := Scoped { text := Operand::P, scope := {} }, right := Scoped { text := Operand::P, scope := {} } }
+
+    expect said: when e.fires?, match e.value {
+        AlwaysTrue => (op = Eq and x = x) or (op = Le and x <= x) or (op = Ge and x >= x)
+            or (op = Iff and (a? iff a?)) or (op = Subset and s subset s),
+        AlwaysFalse => (op = Ne and not (x != x)) or (op = Lt and not (x < x)) or (op = Gt and not (x > x)),
+        Zero => op = Sub and x - x = 0,
+        Empty => op = Minus and s minus s = {},
+        EqOpValue::Operand => (op = And and ((a? and a?) iff a?)) or (op = Or and ((a? or a?) iff a?))
+            or (op = Union and s union s = s) or (op = Inter and s inter s = s),
+    }
+}
+```
+
 `eq_op` also fires on `when C, D` and `unless C, D` where `C` and `D` are
 written the same. `when C, C` is always `true`, and `unless C, C` is `C`.
 The body is then almost always a copy of the condition, pasted where the
-consequent was meant. `lint::eq_op_conditional` states this:
+consequent was meant. The body of `when` sees the binders of the
+condition's pattern tests, and the condition does not, so they are
+compared in their scopes, as the operands of `and` are.
+`lint::eq_op_conditional` states this; that `C` and `D` have the same
+value is `written_same`, as for `eq_op`:
 
 ```fren
 pub comp eq_op_conditional {
-    use self::EqOpValue::{AlwaysTrue, Operand}
+    use self::EqOpValue::AlwaysTrue
     in unless?           -- `unless`, rather than `when`
-    in same?             -- the condition and the body are written the same
+    in condition: Scoped  -- the condition, as written in its scope
+    in body: Scoped       -- the body
     pub det out fires?
     pub out value: EqOpValue  -- what the expression is, where it fires
 
-    ensure rule: fires? iff same?
-    ensure values: when fires?, value = if unless? then Operand else AlwaysTrue
+    ensure rule: fires? iff condition = body
+    ensure values: when fires?, value = if unless? then EqOpValue::Operand else AlwaysTrue
+}
+
+set_option fren.lint.eq_op "allow" in
+pub comp eq_op_conditional_values {
+    in unless?
+    in a?
+
+    inst e: eq_op_conditional {
+        unless?,
+        condition := Scoped { text := Operand::P, scope := {} },
+        body := Scoped { text := Operand::P, scope := {} },
+    }
+
+    -- What the message says `when a?, a?` and `unless a?, a?` are.
+    expect said: when e.fires?, if unless? then e.value = EqOpValue::Operand and ((unless a?, a?) iff a?)
+        else e.value = EqOpValue::AlwaysTrue and (when a?, a?)
 }
 ```
 
@@ -77,7 +148,7 @@ call holds only where it does not, which is seldom what a list of
 conditions meant, and one of the two is probably a typo for another. The
 message is reported at the later one, and says this. `true` and `false`
 are left to the lints of constants. `lint::eq_op_cardinality` models an
-argument as a literal or an [operand](../Complexity.md#simpler-bool-expressions)
+argument as a literal or an [operand](../Meaning.md#expressions-as-written)
 as written, and states when it fires at an argument, from the operands of
 the arguments before it, and the refinements check what the message
 says, on a call with the repeated argument written once:
@@ -247,15 +318,38 @@ both defined exactly when `a` is defined under the guard of the
 conditional, which is `a`'s guard after the fix, and removing `c` only
 removes something that is evaluated. A `match` whose arms are all written
 the same is left to other lints. `lint::same_branches` states when it
-fires:
+fires, from the branches as [written](../Meaning.md#expressions-as-written)
+in their scopes. It does not fire where the condition's pattern tests bind
+names, which the `then` branch sees and the `else` branch does not (see
+[`lang::test_scope`](../../Lang/Expressions.md#pattern-tests)): in `if r
+is Reply::Value(v!) then v else v`, the same text means the payload in one
+branch and the variable `v` in the other, so the fix would change the
+value. It leaves such a conditional even where the branches mention none
+of those names, rather than compare what they mention:
 
 ```fren
 pub comp same_branches {
-    in same?             -- the branches are written the same
+    in binders: Set(lang::Id)  -- the binders of the condition's pattern tests
+    in then_branch: Scoped     -- the branches, as written in their scopes
+    in else_branch: Scoped
     pub det out fires?
 
-    ensure rule: fires? iff same?
+    ensure rule: fires? iff (binders = {} and then_branch = else_branch)
+
+    expect no_binders: when fires?, binders = {} and then_branch.scope = else_branch.scope
 }
+```
+
+The fix has the conditional's value because the branches have the same
+value, whichever is taken, by [`written_same`](../Meaning.md#expressions-as-written).
+Here `p` and `q` are their root layers:
+
+```fren
+expect same_branches_value: forall (b: same_branches) (p q: lang::node),
+    when b.fires? and p.env = q.env and p.head = written_head(b.then_branch)
+    and p.values = written_values(p.env, b.then_branch) and q.head = written_head(b.else_branch)
+    and q.values = written_values(q.env, b.else_branch),
+    p.value = q.value
 ```
 
 `same_branches` fires on a [table](../../Lang/Expressions.md#tables)

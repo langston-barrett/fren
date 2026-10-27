@@ -130,13 +130,8 @@ pub comp nonminimal_bool_keeps_meaning {
 ```
 
 The lints of cardinality operators model their operands by
-`lint::Operand`, of four: two operands are the same exactly when they are
-[written the same](../Lint.md#written-the-same), and four are enough to
-tell every case of their rules apart.
-
-```fren
-pub enum Operand { P, Q, R, S }
-```
+[`lint::Operand`](Meaning.md#expressions-as-written), an expression as
+written.
 
 `nonminimal_bool` also fires on a [cardinality
 operator](../Lang/Expressions.md#cardinality) of one argument:
@@ -250,22 +245,39 @@ whose definition mentions no variable and no uninterpreted function (see
 [Mentions](../Lang/Expressions.md#mentions)): it is the same in every behaviour,
 so it is a constant. Its counterpart in the `pedantic` group,
 [`definable_output`](Pedantic.md#definable-outputs), fires on an output
-that is not defined but could be. `lint::output_lints` states both:
+that is not defined but could be. `lint::output_lints` states both, from
+what the definition mentions, as [`lang::mentions`](../Lang/Expressions.md#mentions)
+gives it:
 
 ```fren
 pub comp output_lints {
-    in defined?              -- the output is defined
-    in mentions?             -- its definition mentions a variable or an uninterpreted function, if defined
-    in n_guarantees: Nat     -- guarantees that mention it, if not defined
-    in equation?             -- the only one is `x = e` or `x? iff e`, with `e` not mentioning `x`
-    pub det out constant?    -- `constant_output` fires
-    pub det out definable?   -- `definable_output` fires
+    in defined?                       -- the output is defined
+    in mentioned: Set(lang::Mention)  -- what its definition mentions, if defined, and `{}` if not
+    in n_guarantees: Nat              -- guarantees that mention it, if not defined
+    in equation?                      -- the only one is `x = e` or `x? iff e`, with `e` not mentioning `x`
+    pub det out constant?             -- `constant_output` fires
+    pub det out definable?            -- `definable_output` fires
 
-    ensure constant: constant? iff (defined? and not mentions?)
+    ensure constant: constant? iff (defined? and mentioned = {})
     ensure definable: definable? iff (not defined? and n_guarantees = 1 and equation?)
 
     expect exclusive: not (constant? and definable?)
 }
+```
+
+A defined output is the layer `Definition(x)`, whose one part is its
+definition, so its value is its definition's. Where `constant_output`
+fires, that value is the same in every behaviour, by
+[`mentions_nothing`](Meaning.md#expressions-that-mention-nothing), where each
+layer of the definition that is evaluated is specified, as the [definedness
+check](../Check.md#definedness) ensures of a spec that passes its checks.
+Here `p` is the root layer of the definition in one behaviour and `q` the
+same layer, with the same parts' values, in any other:
+
+```fren
+expect constant_output_fixed: forall (o: output_lints) (p q: lang::node),
+    when o.constant? and p.mentioned = o.mentioned and p.specified? and q.head = p.head and q.values = p.values,
+    q.value = p.value
 ```
 
 ## Copied records

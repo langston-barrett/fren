@@ -28,6 +28,7 @@
 - [Checks](Check.md)
 - [Diagnostics](View.md)
 - [Lints](Lint.md)
+  - [Meaning](Lint/Meaning.md)
   - [Unused](Lint/Unused.md)
   - [Nonstandard style](Lint/NonstandardStyle.md)
   - [Style](Lint/Style.md)
@@ -55,6 +56,7 @@
     - [Records and functions](Lint/Pedantic/Records.md)
     - [Source text](Lint/Pedantic/Text.md)
     - [Comparisons](Lint/Pedantic/Comparisons.md)
+    - [Conditionals](Lint/Pedantic/Conditionals.md)
   - [Restriction](Lint/Restriction.md)
   - [Decidability](Lint/Decidability.md)
 

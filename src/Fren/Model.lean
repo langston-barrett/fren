@@ -674,8 +674,8 @@ structure LocalState where
   boolEqs : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
   /-- Where the conditions of `if`s and the operands of `*` in the
   expression being elaborated that mention a variable or an uninterpreted
-  function are, for `branches_sharing_code`. -/
-  mentioning : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
+  function are, and what each mentions, for `branches_sharing_code`. -/
+  mentioning : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × List Fren.Core.Mention) := #[]
   /-- Where the variants without payloads in the expression being
   elaborated are, with their paths, for `contradictory_comparisons`. -/
   variants : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × String) := #[]
