@@ -69,7 +69,8 @@ not. Here `p` and `q` are the operands' root layers:
 
 ```fren
 expect eq_op_operands: forall (e: eq_op) (p q: lang::node),
-    when e.fires? and p.env = q.env and p.head = written_head(e.left) and p.values = written_values(p.env, e.left)
+    when e.fires? and p.env = q.env and p.program = q.program and p.head = written_head(e.left)
+    and p.values = written_values(p.env, e.left)
     and q.head = written_head(e.right) and q.values = written_values(q.env, e.right),
     p.value = q.value
 ```
@@ -337,7 +338,7 @@ Here `p` and `q` are their root layers:
 
 ```fren
 expect same_branches_value: forall (b: same_branches) (p q: lang::node),
-    when b.fires? and p.env = q.env and p.head = written_head(b.then_branch)
+    when b.fires? and p.env = q.env and p.program = q.program and p.head = written_head(b.then_branch)
     and p.values = written_values(p.env, b.then_branch) and q.head = written_head(b.else_branch)
     and q.values = written_values(q.env, b.else_branch),
     p.value = q.value

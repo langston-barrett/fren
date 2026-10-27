@@ -48,30 +48,47 @@ structure Admitted where
   reached : Nat := 0
   complete : Bool := false
 
+/-- The constraints that `Spec.admit` searches with, for `c`: its
+assumptions, the definitions of its defined variables that the inputs give,
+and each call's arguments and meaning, compiled for searches whose
+interpretations' shapes are `shapes` (`Atom.compiled`). -/
+structure AdmitAtoms where
+  assumes : Array Atom
+  early : Array Atom
+  binds : Array (Array Atom)
+  insts : Array (Array Atom)
+
+def Spec.admitAtoms (sp : Spec) (c : Comp) (shapes : Name → Option Fren.Core.DataShape) : AdmitAtoms :=
+  let early := c.earlyDefs
+  { assumes := (atomsOf .anonymous (c.ofKind .assume)).map (·.compiled shapes)
+    early := (c.defAtoms.filter (early.contains ·.label)).map (·.compiled shapes)
+    binds := c.insts.map fun i => (bindingAtoms .anonymous i).map (·.compiled shapes)
+    insts := c.insts.map fun i => (sp.instAtoms .anonymous i).map (·.compiled shapes) }
+
 /-- Searches for an admissible input, then for each call in turn
 confirms its assumptions on its inputs and searches for its behaviour.
 `ints` and `strs` are the integers and strings to try (`intsOf`,
-`stringsOf`); `shapes?` is as for `World.interp`. -/
+`stringsOf`); `shapes?` is as for `World.interp`, and `pre` is
+`sp.admitAtoms c`, for the shapes of `w.interp sp shapes?`. -/
 def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Array String)
-    (shapes? : Option (Std.HashMap Name Fren.Core.DataShape) := none) : R (Option Admitted) := do
+    (shapes? : Option (Std.HashMap Name Fren.Core.DataShape)) (pre : AdmitAtoms) : R (Option Admitted) := do
   let I := w.interp sp shapes?
-  let assumes := atomsOf .anonymous (c.ofKind .assume)
   let inputs := c.vars.filter (·.role == .input) |>.map fun v => (v.name, v.ty)
-  let some env ← ({ vars := inputs, atoms := assumes, ints, strs : Problem }.solve sp w I {})
+  let some env ← ({ vars := inputs, atoms := pre.assumes, ints, strs : Problem }.solve sp w I {})
     | return none
   -- The defined outputs that the inputs give, which bindings may read
   -- (`Reqs/Eval#searching-for-behaviours`).
   let early := c.earlyDefs
   -- If they have no value, the outputs' search reports it, as before.
   let env := (← ({ vars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
-                   atoms := c.defAtoms.filter (early.contains ·.label), ints, strs : Problem }.solve sp w I env)).getD env
+                   atoms := pre.early, ints, strs : Problem }.solve sp w I env)).getD env
   let vars := sp.flatVars c
   let mut env := env
   let mut out : Admitted := { env }
   for i in c.insts, k in [0:c.insts.size] do
     let some d := sp.comp? i.comp | return none
     let ins := d.vars.filter (·.role == .input) |>.map fun v => (i.name ++ v.name, v.ty)
-    let binds := bindingAtoms .anonymous i
+    let binds := pre.binds[k]!
     let some env' ← ({ vars := ins, atoms := binds, ints := intsOf binds, strs : Problem }.solve sp w I env) | return some out
     env := env'
     out := { out with env, reached := k + 1 }
@@ -84,7 +101,7 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
         out := { out with instFails := out.instFails.push (i.name, d.path, a.name, shown) }
         failed := true
     if failed then return some out
-    let atoms := sp.instAtoms .anonymous i
+    let atoms := pre.insts[k]!
     let some env' ← ({ vars := remaining (sp.order d i.name) env, atoms, ints := intsOf atoms, strs : Problem }.solve sp w I env)
       | return some out
     env := env'
@@ -139,10 +156,19 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let strs ← stringsOf lits
   let sp := sp.withMatchMemo lits strs
   let shapes := sp.shapeMap
+  -- The constraints of the searches, each compiled once, with the shapes
+  -- of every interpretation below (`World.interp`).
+  let compiled := Atom.compiled fun p => shapes[p]?
+  let pre := sp.admitAtoms c fun p => shapes[p]?
+  let reqs := reqs.map compiled
+  let all := all.map compiled
+  let negations := expects.map fun e => compiled { label := e.name, pfx := .anonymous, e := .not e.e }
+  let triggers := expects.map fun e => e.e.trigger?.map fun t => compiled { label := e.name, pfx := .anonymous, e := t }
+  let goals := covers.map fun g => compiled { label := g.name, pfx := .anonymous, e := g.e }
   for _ in [0:tests] do
     let w ← World.random sp
     let I := w.interp sp (some shapes)
-    let some adm ← sp.admit w c ints strs (some shapes) | continue
+    let some adm ← sp.admit w c ints strs (some shapes) pre | continue
     for (x, k) in instAssumes.zipIdx do
       let reached := (c.insts.findIdx? (·.name == x.1)).any (· < adm.reached)
       if reached then instFound := instFound.modify k (· + 1)
@@ -161,7 +187,7 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
     for e in expects, k in [0:expects.size] do
       -- A counterexample, searched for directly (`Reqs/Eval#fren-quickcheck`).
       if (expT[k]?.bind (·.refuted?)).isNone then
-        let atoms := all.push { label := e.name, pfx := .anonymous, e := .not e.e }
+        let atoms := all.push negations[k]!
         if let some cex ← ({ vars := sp.order c, atoms, ints, strs : Problem }.solve sp w I {}) then
           expT := expT.modify k fun t => (t.reach).refute (.counterexample (sp.shown vars cex (·.isPub)))
           continue
@@ -172,9 +198,9 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       -- hypotheses there, as in the solver's query, not obligations.
       let env? ← if reaches I .anonymous trigger? env then pure (some env) else
         -- Once refuted, an expectation needs no more searching.
-        let some t := trigger? | pure none
+        let some t := triggers[k]! | pure none
         if (expT[k]?.bind (·.refuted?)).isSome then pure none else
-        let atoms := all.push { label := e.name, pfx := .anonymous, e := t }
+        let atoms := all.push t
         ({ vars := sp.order c, atoms, ints, strs : Problem }.solve sp w I {})
       let some envE := env? | continue
       expT := expT.modify k Tally.reach
@@ -182,9 +208,8 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
         expT := expT.modify k (·.refute (.counterexample (sp.shown vars envE (·.isPub))))
     -- A witness of each cover goal that has none yet: this behaviour, or
     -- one searched for from a new input (`Reqs/Eval#fren-quickcheck`).
-    for g in covers, k in [0:covers.size] do
+    for goal in goals, k in [0:goals.size] do
       if (covW[k]?.join).isSome then continue
-      let goal : Atom := { label := g.name, pfx := .anonymous, e := g.e }
       let env? ← if goal.eval I env.look == some true then pure (some env) else
         ({ vars := sp.order c, atoms := all.push goal, ints, strs : Problem }.solve sp w I {})
       let some envG := env? | continue
@@ -248,6 +273,13 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
   let ints := intsOf lits
   let sp := sp.withMatchMemo lits strs
   let shapes := sp.shapeMap
+  -- Compiled once, as in `Spec.quickComp`.
+  let compiled := Atom.compiled fun p => shapes[p]?
+  let meaning := meaning.map compiled
+  let withTrigger := match trigger with
+    | some t => meaning.push (compiled { label := body.name, pfx := .anonymous, e := t })
+    | none => meaning
+  let negated := meaning.push (compiled { label := body.name, pfx := .anonymous, e := .not body.e })
   let mut t : Tally := {}
   let mut found := false
   for _ in [0:tests] do
@@ -255,9 +287,7 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
     let I := w.interp sp (some shapes)
     -- The binders' behaviours, chosen together, so that the body's
     -- trigger can be among the constraints (`eval::reaches`).
-    let atoms := match trigger with
-      | some t => meaning.push { label := body.name, pfx := .anonymous, e := t }
-      | none => meaning
+    let atoms := withTrigger
     -- The budget that each binder had when they were chosen in turn.
     let budget := 4000 * max 1 ds.size
     let some env ← ({ vars := order, atoms, ints, strs : Problem }.solve sp w I {} budget)
@@ -268,7 +298,6 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
     found := true
     -- A counterexample, searched for directly (`Reqs/Eval#fren-quickcheck`).
     if t.refuted?.isNone then
-      let negated := meaning.push { label := body.name, pfx := .anonymous, e := .not body.e }
       if let some cex ← ({ vars := order, atoms := negated, ints, strs : Problem }.solve sp w I {} budget) then
         t := (t.reach).refute (.counterexample (sp.shown vars cex (·.isPub)))
         continue

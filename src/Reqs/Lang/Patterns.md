@@ -388,10 +388,13 @@ The [model of meaning](Meaning.md#layers) holds a pattern as text, in the
 static part `s` of a layer: of a pattern test, `Op("is", s)`, its pattern,
 and of a `match`, `Op("match", s)`, its arms' patterns, joined by `;`.
 Each is written as Fren writes it, with every binder written `_` and each
-variant by its path, as in `Option::Some(_); Option::None`. Nothing
-produces this text yet: the front ends will, once they evaluate through
-the model. Its interpretation in Lean reads only `_`, `true` and `false`,
-integer literals, ranges whose bounds are literals, string literals
-without escapes, variants by paths of more than one segment, and
-or-patterns; no arm matches where a pattern is any other text, such as a
-name of one segment, which may be a constant.
+variant by its qualified path, as its construction names it, as in
+`Option::Some(_); Option::None`, and a name of one segment, not applied,
+is a constant. Nothing produces this text yet: the front ends will, once
+they evaluate through the model. Its interpretation in Lean reads only
+`_`, `true` and `false`, integer literals, ranges whose bounds are
+literals, string literals without escapes, variants by paths of more than
+one segment, constants whose values are known, and or-patterns. Any other
+text, such as an applied name of one segment, `Some(_)`, decodes to no
+patterns, and then no arm of the `match` is open, so its value is
+unspecified rather than that of a later arm.

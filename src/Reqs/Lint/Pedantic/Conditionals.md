@@ -123,7 +123,7 @@ environment. Here `p` and `q` are their root layers:
 
 ```fren
 expect branches_sharing_value: forall (b: branches_sharing_code) (p q: lang::node),
-    when b.fires? and p.env = q.env
+    when b.fires? and p.env = q.env and p.program = q.program
     and p.head = written_head(if b.shared_left? then b.then_left else b.then_right)
     and p.values = written_values(p.env, if b.shared_left? then b.then_left else b.then_right)
     and q.head = written_head(if b.shared_left? then b.else_left else b.else_right)

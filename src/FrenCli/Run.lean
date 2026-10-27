@@ -120,14 +120,25 @@ def usage : String :=
 def version : String := "fren 0.1.0"
 
 /-- Prints a message about a file to stderr, then a blank line, as rustc
-does. -/
+does. `starts` is `Fren.Core.lineStarts src`. -/
 def printAt (p : Paint) (path : String) (src : Array Char) (severity : Fren.Core.Severity) (msg : Msg)
-    (range : Fren.Core.Range) : IO Unit :=
-  IO.eprintln ({ level := severity, msg, range : Fren.Core.Diagnostic }.render path src p)
+    (range : Fren.Core.Range) (starts : Array Nat := Fren.Core.lineStarts src) : IO Unit :=
+  IO.eprintln ({ level := severity, msg, range : Fren.Core.Diagnostic }.render path src p starts)
 
-def printDiag (p : Paint) (files : Array (String × Array Char)) (d : Diag) : IO Unit := do
+/-- Prints `d`, about one of `files`, whose line starts `starts?` gives, if
+it is given (`linesOf`). -/
+def printDiag (p : Paint) (files : Array (String × Array Char)) (d : Diag)
+    (starts? : Option (Array (Thunk (Array Nat))) := none) : IO Unit := do
   let (path, src) := files[d.file]!
-  printAt p path src d.severity d.msg { start := d.span.start, stop := d.span.stop }
+  let starts := match starts? with
+    | some ss => ss[d.file]!.get
+    | none => Fren.Core.lineStarts src
+  printAt p path src d.severity d.msg { start := d.span.start, stop := d.span.stop } starts
+
+/-- The line starts of each of `files`, each computed when first needed,
+for printing many diagnostics about them (`printDiag`). -/
+def linesOf (files : Array (String × Array Char)) : Array (Thunk (Array Nat)) :=
+  files.map fun (_, src) => Thunk.mk fun _ => Fren.Core.lineStarts src
 
 /-- Prints rustc's pointer to `--explain` for the codes of `msgs`, if any. -/
 def printExplainHint (msgs : Array Msg) : IO Unit := do
@@ -502,7 +513,8 @@ states of `elaborateSourcesBefore`. -/
 def loadBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
     IO (Option (Array (String × Array Char) × Array State × State)) := do
   let some (files, states, st) ← elaborateBefore p paths lints | return none
-  for d in st.diags do printDiag p files d
+  let starts := linesOf files
+  for d in st.diags do printDiag p files d starts
   let errors := st.diags.filter (·.severity == .error) |>.size
   if errors > 0 then
     printStopped p st.diags
@@ -964,8 +976,9 @@ prose blanked but keeps its lines. -/
 def applyFileEdits (src : String) (text : Array Char) (edits : Array (Fren.Core.Range × String)) : String :=
   let srcChars := src.toList.toArray
   let starts := (Fren.Core.lines srcChars).map (·.1)
+  let textStarts := Fren.Core.lineStarts text
   let move (off : Nat) :=
-    let (n, lstart, _) := Fren.Core.lineAt text off
+    let (n, lstart, _) := Fren.Core.lineAtIn textStarts text off
     starts[n - 1]! + (off - lstart)
   Fren.Core.applyEdits srcChars (edits.map fun (r, t) => ({ start := move r.start, stop := move r.stop }, t))
 
@@ -1023,7 +1036,8 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
   let errors := st.diags.filter fun d => d.severity == .error && d.lint?.isNone
   if !errors.isEmpty then
     -- No lint is fixed, but the migrations are made.
-    for d in st.diags do printDiag args.paint files d
+    let starts := linesOf files
+    for d in st.diags do printDiag args.paint files d starts
     printStopped args.paint st.diags "fix"
     for path in paths, src in original, fixed in srcs, n in migrated do
       if n == 0 || fixed == src then continue
@@ -1060,7 +1074,8 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
   let (files, left) ← if args.diffOnly then pure (files, st.diags.filter fun d => !(firstKept && d.fixed)) else do
     let (files, st) ← elaborateSources paths srcs args.lints #[] ignored
     pure (files, st.diags)
-  for d in left do printDiag args.paint files d
+  let starts := linesOf files
+  for d in left do printDiag args.paint files d starts
   let mut unchanged := true
   for path in paths, src in original, fixed in srcs, n in nFixed do
     let format := args.fmtAfter && !ignored path

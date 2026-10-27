@@ -17,149 +17,6 @@ namespace FrenCli
 
 open Fren.Core (Outcome)
 
-/-- The prelude (`State.prelude`), with the declarations that each one
-mentions. -/
-structure Prelude where
-  decls : Array PreludeDecl
-  /-- The declaration of each symbol. -/
-  owner : Std.HashMap String Nat
-  /-- The declarations that each declaration mentions. -/
-  deps : Array (Array Nat)
-  deriving Inhabited
-
-def Prelude.ofDecls (decls : Array PreludeDecl) : Prelude :=
-  let owner := decls.zipIdx.foldl (init := {}) fun m (d, i) => d.syms.foldl (·.insert · i) m
-  { decls, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get? }
-
-/-- The declarations that a script whose quoted symbols are `syms` needs:
-those of its symbols, and of theirs in turn, in the order of the prelude.
-The others cannot change its answer, and declaring them is most of the
-work of a small query. -/
-def Prelude.needed (p : Prelude) (syms : Array String) : String := Id.run do
-  let mut keep := Array.replicate p.decls.size false
-  let mut work := syms.filterMap p.owner.get?
-  while h : work.size > 0 do
-    let i := work[work.size - 1]
-    work := work.pop
-    if keep[i]! then continue
-    keep := keep.set! i true
-    work := work ++ p.deps[i]!
-  return String.join (p.decls.zipIdx.toList.filterMap fun (d, i) => if keep[i]! then some d.text else none)
-
-/-- Whether a script whose quoted symbols are `syms` needs an abstract type
-or an uninterpreted function, directly or through another declaration. -/
-def Prelude.interprets (p : Prelude) (syms : Array String) : Bool := Id.run do
-  let mut seen := Array.replicate p.decls.size false
-  let mut work := syms.filterMap p.owner.get?
-  while h : work.size > 0 do
-    let i := work[work.size - 1]
-    work := work.pop
-    if seen[i]! then continue
-    seen := seen.set! i true
-    let text := p.decls[i]!.text
-    if text.startsWith "(declare-sort" || text.startsWith "(declare-fun" then return true
-    work := work ++ p.deps[i]!
-  return false
-
-/-- The limits of each solver query (`Reqs/Cli#limits`): `timeoutSecs`
-seconds of wall-clock time (`--timeout`), and `resources` of cvc5's
-resource units (`--resource-limit`), which do not depend on the machine's
-load. Either is none when 0. -/
-structure Limits where
-  timeoutSecs : Nat := 10
-  resources : Nat := 0
-  deriving Inhabited
-
-/-- The options that set `limits`. A script without a resource limit sets
-none, so that it is the script that `fren` wrote before the limit
-existed. -/
-def Limits.options (limits : Limits) : String :=
-  s!"(set-option :tlimit-per {limits.timeoutSecs * 1000})\n" ++
-    if limits.resources == 0 then "" else s!"(set-option :rlimit-per {limits.resources})\n"
-
-/-- The SMT-LIB script that asserts `hyps` and the negation of `goal`, each
-hypothesis followed by a comment with its name; without `(check-sat)`. It
-declares only what the prelude needs to (`Prelude.needed`). -/
-def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
-    (hyps : Array (Lean.Name × String)) (goal : String) : String :=
-  let decls := String.join (vars.toList.map fun v => s!"(declare-const {quote v.name.toString} {v.ty.sort})\n")
-  let asserts := String.join (hyps.toList.map fun (n, h) => s!"(assert {h}) ; {n}\n")
-  let body := s!"{decls}{asserts}(assert (not {goal}))\n"
-  let script := s!"(set-logic {logic})\n(set-option :produce-models true)\n\
-    {limits.options}{options}{prelude.needed (quotedSymbols body)}{body}"
-  mapQuoted Fren.Core.smtName script
-
-/-- The answers to the queries asked so far, by script, each with whether
-it has a model: a script asked again gets the same answer without the
-solver (`Reqs/Cli#solver-queries`). The script is the whole query, with its
-logic, options and limits, so the same script means the same question. The
-checks of several procedures may share it at once (`Reqs/Cli#parallel-checking`). -/
-abbrev QueryCache := IO.Ref (Std.HashMap String (Outcome String × Bool))
-
-/-- Checks the satisfiability of `script`, a query over `vars`, with values
-of `vars` if `wantModel`. -/
-def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) : IO (Outcome String) := do
-  let r ← cvc5.Env.run do
-    let tm ← cvc5.TermManager.new
-    let solver ← cvc5.Solver.new tm
-    let parser ← cvc5.InputParser.new solver
-    let sm ← parser.getSymbolManager
-    parser.setStringInput script .SMT_LIB_2_6
-    repeat
-      let cmd ← parser.nextCommand
-      if cmd.isNull then break
-      -- A command that fails reports an error as its output, rather than
-      -- throwing; ignoring it could let a dropped assertion give `sat`.
-      let out ← cmd.invoke solver sm
-      if out.trimAscii.toString.startsWith "(error" then
-        throw (.error out)
-    let res ← solver.checkSat
-    if res.isUnsat then return Outcome.unsat
-    if !res.isSat then return .unknown s!"the solver returned unknown ({res.getUnknownExplanation})"
-    if !wantModel then return .sat #[]
-    let mut model := #[]
-    for t in ← sm.getDeclaredTerms do
-      let n := (toString t).replace "|" ""
-      if let some v := vars.find? (Fren.Core.smtName ·.name.toString == n) then
-        model := model.push (v.name, toString (← solver.getValue t))
-    return .sat model
-  match r with
-  | .ok o => return o
-  | .error e => return .unknown s!"solver error: {e}"
-
-/-- Asserts `hyps` and the negation of `goal` and checks satisfiability,
-first passing the script to `dump?`, if any, and answering from `cache?`,
-if any, a script asked before. -/
-def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
-    (dump? : Option (String → IO Unit)) (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool)
-    (cache? : Option QueryCache := none) : IO (Outcome String) := do
-  let script := queryScript logic options prelude vars limits hyps goal
-  if let some dump := dump? then dump script
-  let some cache := cache? | solveScript script vars wantModel
-  -- A model's variables are those that the script declares, which are `vars`.
-  match (← cache.get)[script]? with
-  | some (o@(.sat _), hasModel) =>
-    if !wantModel then return .sat #[]
-    if hasModel then return o
-  | some (o, _) => return o
-  | none => pure ()
-  let o ← solveScript script vars wantModel
-  cache.modify (·.insert script (o, wantModel))
-  return o
-
-/-- A value of an abstract type, as cvc5 writes it, such as
-`(as @|::lang::Name|_0 |::lang::Name|)`, as Fren writes it: `Name#0`. -/
-def renderAbstract? (v : String) : Option String := do
-  let v := v.replace "|" ""
-  let v := if v.startsWith "(as " then (v.drop 4).toString else v
-  guard (v.startsWith "@")
-  let tok := ((v.drop 1).takeWhile (· != ' ')).toString
-  let digits := (tok.toList.reverse.takeWhile Char.isDigit).reverse
-  guard !digits.isEmpty
-  let sort := ((tok.dropEnd digits.length).dropEndWhile (· == '_')).toString
-  let name := (sort.splitOn "::").getLast?.getD sort
-  return s!"{name}#{String.ofList digits}"
-
 /-- A value as cvc5 writes it: an atom, with any `|` quotes removed, or a
 list. -/
 inductive Term where
@@ -238,6 +95,163 @@ def usedParams (decls : Array PreludeDecl) : Std.HashMap String (Array Bool) := 
       | Term.list #[Term.atom x, _] => inBody.contains x
       | _ => true)
   return used
+
+/-- The prelude (`State.prelude`), with the declarations that each one
+mentions. -/
+structure Prelude where
+  decls : Array PreludeDecl
+  /-- The declaration of each symbol. -/
+  owner : Std.HashMap String Nat
+  /-- The declarations that each declaration mentions. -/
+  deps : Array (Array Nat)
+  /-- `usedParams decls`, computed once, when first needed, rather than at
+  each query. -/
+  used : Thunk (Std.HashMap String (Array Bool))
+  /-- Each declaration's text as a query has it, with each quoted symbol
+  in the solver's name (`queryScript`), computed once, when first needed. -/
+  smtTexts : Array (Thunk String)
+  deriving Inhabited
+
+def Prelude.ofDecls (decls : Array PreludeDecl) : Prelude :=
+  let owner := decls.zipIdx.foldl (init := {}) fun m (d, i) => d.syms.foldl (·.insert · i) m
+  { decls, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get?
+    used := Thunk.mk fun _ => usedParams decls
+    smtTexts := decls.map fun d => Thunk.mk fun _ => mapQuoted Fren.Core.smtName d.text }
+
+/-- The positions of the declarations that a script whose quoted symbols
+are `syms` needs: those of its symbols, and of theirs in turn, in the
+order of the prelude.
+The others cannot change its answer, and declaring them is most of the
+work of a small query. -/
+def Prelude.neededDecls (p : Prelude) (syms : Array String) : Array Nat := Id.run do
+  let mut keep := Array.replicate p.decls.size false
+  let mut work := syms.filterMap p.owner.get?
+  while h : work.size > 0 do
+    let i := work[work.size - 1]
+    work := work.pop
+    if keep[i]! then continue
+    keep := keep.set! i true
+    work := work ++ p.deps[i]!
+  return (Array.range p.decls.size).filter (keep[·]!)
+
+/-- Whether a script whose quoted symbols are `syms` needs an abstract type
+or an uninterpreted function, directly or through another declaration. -/
+def Prelude.interprets (p : Prelude) (syms : Array String) : Bool := Id.run do
+  let mut seen := Array.replicate p.decls.size false
+  let mut work := syms.filterMap p.owner.get?
+  while h : work.size > 0 do
+    let i := work[work.size - 1]
+    work := work.pop
+    if seen[i]! then continue
+    seen := seen.set! i true
+    let text := p.decls[i]!.text
+    if text.startsWith "(declare-sort" || text.startsWith "(declare-fun" then return true
+    work := work ++ p.deps[i]!
+  return false
+
+/-- The limits of each solver query (`Reqs/Cli#limits`): `timeoutSecs`
+seconds of wall-clock time (`--timeout`), and `resources` of cvc5's
+resource units (`--resource-limit`), which do not depend on the machine's
+load. Either is none when 0. -/
+structure Limits where
+  timeoutSecs : Nat := 10
+  resources : Nat := 0
+  deriving Inhabited
+
+/-- The options that set `limits`. A script without a resource limit sets
+none, so that it is the script that `fren` wrote before the limit
+existed. -/
+def Limits.options (limits : Limits) : String :=
+  s!"(set-option :tlimit-per {limits.timeoutSecs * 1000})\n" ++
+    if limits.resources == 0 then "" else s!"(set-option :rlimit-per {limits.resources})\n"
+
+/-- The SMT-LIB script that asserts `hyps` and the negation of `goal`, each
+hypothesis followed by a comment with its name; without `(check-sat)`. It
+declares only what the prelude needs to (`Prelude.neededDecls`). -/
+def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
+    (hyps : Array (Lean.Name × String)) (goal : String) : String :=
+  let decls := String.join (vars.toList.map fun v => s!"(declare-const {quote v.name.toString} {v.ty.sort})\n")
+  let asserts := String.join (hyps.toList.map fun (n, h) => s!"(assert {h}) ; {n}\n")
+  let body := s!"{decls}{asserts}(assert (not {goal}))\n"
+  -- `mapQuoted` of the whole script, piece by piece: each piece is whole
+  -- commands, which close their quoted symbols and string literals, so
+  -- the pieces' are the script's, and the prelude's are computed once.
+  let head := s!"(set-logic {logic})\n(set-option :produce-models true)\n{limits.options}{options}"
+  mapQuoted Fren.Core.smtName head
+    ++ String.join ((prelude.neededDecls (quotedSymbols body)).toList.map (prelude.smtTexts[·]!.get))
+    ++ mapQuoted Fren.Core.smtName body
+
+/-- The answers to the queries asked so far, by script, each with whether
+it has a model: a script asked again gets the same answer without the
+solver (`Reqs/Cli#solver-queries`). The script is the whole query, with its
+logic, options and limits, so the same script means the same question. The
+checks of several components may share it at once (`Reqs/Cli#parallel-checking`). -/
+abbrev QueryCache := IO.Ref (Std.HashMap String (Outcome String × Bool))
+
+/-- Checks the satisfiability of `script`, a query over `vars`, with values
+of `vars` if `wantModel`. -/
+def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) : IO (Outcome String) := do
+  let r ← cvc5.Env.run do
+    let tm ← cvc5.TermManager.new
+    let solver ← cvc5.Solver.new tm
+    let parser ← cvc5.InputParser.new solver
+    let sm ← parser.getSymbolManager
+    parser.setStringInput script .SMT_LIB_2_6
+    repeat
+      let cmd ← parser.nextCommand
+      if cmd.isNull then break
+      -- A command that fails reports an error as its output, rather than
+      -- throwing; ignoring it could let a dropped assertion give `sat`.
+      let out ← cmd.invoke solver sm
+      if out.trimAscii.toString.startsWith "(error" then
+        throw (.error out)
+    let res ← solver.checkSat
+    if res.isUnsat then return Outcome.unsat
+    if !res.isSat then return .unknown s!"the solver returned unknown ({res.getUnknownExplanation})"
+    if !wantModel then return .sat #[]
+    let mut model := #[]
+    for t in ← sm.getDeclaredTerms do
+      let n := (toString t).replace "|" ""
+      if let some v := vars.find? (Fren.Core.smtName ·.name.toString == n) then
+        model := model.push (v.name, toString (← solver.getValue t))
+    return .sat model
+  match r with
+  | .ok o => return o
+  | .error e => return .unknown s!"solver error: {e}"
+
+/-- Asserts `hyps` and the negation of `goal` and checks satisfiability,
+first passing the script to `dump?`, if any, and answering from `cache?`,
+if any, a script asked before. -/
+def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
+    (dump? : Option (String → IO Unit)) (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool)
+    (cache? : Option QueryCache := none) : IO (Outcome String) := do
+  let script := queryScript logic options prelude vars limits hyps goal
+  if let some dump := dump? then dump script
+  let some cache := cache? | solveScript script vars wantModel
+  -- A model's variables are those that the script declares, which are `vars`.
+  match (← cache.get)[script]? with
+  | some (o@(.sat _), hasModel) =>
+    if !wantModel then return .sat #[]
+    if hasModel then return o
+  | some (o, _) => return o
+  | none => pure ()
+  let o ← solveScript script vars wantModel
+  cache.modify (·.insert script (o, wantModel))
+  return o
+
+/-- A value of an abstract type, as cvc5 writes it, such as
+`(as @|::lang::Name|_0 |::lang::Name|)`, as Fren writes it: `Name#0`. -/
+def renderAbstract? (v : String) : Option String := do
+  let v := v.replace "|" ""
+  let v := if v.startsWith "(as " then (v.drop 4).toString else v
+  guard (v.startsWith "@")
+  let tok := ((v.drop 1).takeWhile (· != ' ')).toString
+  let digits := (tok.toList.reverse.takeWhile Char.isDigit).reverse
+  guard !digits.isEmpty
+  let sort := ((tok.dropEnd digits.length).dropEndWhile (· == '_')).toString
+  let name := (sort.splitOn "::").getLast?.getD sort
+  return s!"{name}#{String.ofList digits}"
+
 
 /-- `check::Verdict::Pass` ↦ `Verdict::Pass`: a variant or record by its
 type's name, without its module. -/
@@ -528,7 +542,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     let vars := (c.vars ++ primes c).filter (mentioned.contains ·.name.toString)
     -- A model shows those that the formulas mention once their definitions
     -- are unfolded, as Lean's does (`termMentions`).
-    let used := usedParams prelude.decls
+    let used := prelude.used.get
     let shown : Std.HashSet String :=
       .ofArray (formulas.flatMap fun f => (parseTerms f.toList.toArray 0).1.flatMap (termMentions used))
     let apps := c.natApps ++ (c.natApps.map (prime c)).filter (!c.natApps.contains ·)

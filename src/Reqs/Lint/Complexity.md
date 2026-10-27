@@ -266,7 +266,8 @@ same layer, with the same parts' values, in any other:
 
 ```fren
 expect constant_output_fixed: forall (o: output_lints) (p q: lang::node),
-    when o.constant? and p.mentioned = o.mentioned and p.specified? and q.head = p.head and q.values = p.values,
+    when o.constant? and p.mentioned = o.mentioned and p.specified? and q.program = p.program and q.head = p.head
+    and q.values = p.values,
     q.value = p.value
 ```
 

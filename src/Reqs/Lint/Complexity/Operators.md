@@ -325,17 +325,19 @@ tests, not proved:
 
 ```fren
 proc manual_at_most_one_defined(
+    program: Program,
     env: Env,
     a: Value,                        -- the operands' values
     b: Value,
     undefined_parts: Set<Int>,       -- which operands, `0` and `1`, are not defined
     obligation?,                     -- the `and` gives a definedness obligation
 ) {
-    use lang::{Env, Head, Value, node}
+    use lang::{Env, Head, Program, Value, node}
 
     assume no_obligation: unless obligation?, undefined_parts = {}
 
     call conjunct := node(
+        program,
         Head::Op("and", ""),
         env,
         [a, b],
@@ -343,6 +345,7 @@ proc manual_at_most_one_defined(
         undefined_parts,
     )
     call call := node(
+        program,
         Head::Op("at_most_one?", ""),
         env,
         [a, b],

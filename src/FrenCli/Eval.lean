@@ -185,8 +185,26 @@ inductive Ex where
   /-- A variable of a search, by its index in the search's environment
   (`Problem.solve`), which reads it without looking up its name. -/
   | slot (k : Nat)
-  /-- A binder of an enclosing `match` arm. -/
+  /-- A binder of an enclosing `match` arm or quantifier, by its name. -/
   | bound (n : Name)
+  /-- A binder of an enclosing `match` arm or quantifier, by its position:
+  the `k`th binding from the innermost, as `Ex.compile` resolves `.bound`.
+  It reads the binding without looking up its name. -/
+  | boundAt (k : Nat)
+  /-- The `k`th of the expressions shared by the innermost enclosing
+  `memo` (`Ex.compile`). -/
+  | shared (k : Nat)
+  /-- `e`, in which `.shared` reads the value of each of `lets`, which is
+  evaluated once, when it is first read (`Ex.compile`). -/
+  | memo (lets : Array Ex) (e : Ex)
+  /-- A value known before evaluation, which it is, with nothing to
+  allocate (`Ex.compile`). -/
+  | known (v : Option Val)
+  /-- `q`, a quantifier, in whose body `.shared` reads the value of each
+  of `lets[k]`, which reads only the bound names before the `k`th, each
+  evaluated once for each of their values, when first read
+  (`Ex.compile`). -/
+  | lifted (lets : Array (Array Ex)) (q : Ex)
   | not (a : Ex)
   | neg (a : Ex)
   | bin (op : Op) (a b : Ex)
@@ -473,9 +491,21 @@ def Val.setKey (v : Val) : String :=
 sets are equal values. Each member is printed once, not at each
 comparison. -/
 def Val.setOf (vs : Array Val) : Val :=
+  -- Without repeats already.
+  if vs.size ≤ 1 then .set vs else
   let ms := vs.toList.eraseDups.toArray
   if ms.size ≤ 1 then .set ms else
     .set ((ms.map fun v => (v.setKey, v)).qsort (·.1 < ·.1) |>.map (·.2))
+
+/-- `Val.setOf` of the values of `kvs`, each with its key (`Val.setKey`),
+computed when first needed, so that values that are members of many sets
+are printed once: the same members, without repeats, the first of each
+kept, and sorted by the same keys in the same way. -/
+def Val.setOfKeyed (kvs : Array (Thunk String × Val)) : Val :=
+  let ms := kvs.foldl (init := #[]) fun (ms : Array (Thunk String × Val)) kv =>
+    if ms.any (·.2 == kv.2) then ms else ms.push kv
+  if ms.size ≤ 1 then .set (ms.map (·.2)) else
+    .set ((ms.map fun (k, v) => (k.get, v)).qsort (·.1 < ·.1) |>.map (·.2))
 
 @[inline] def setOp (f : Array Val → Array Val → Val) : Option Val → Option Val → Option Val
   | some (.set a), some (.set b) => some (f a b)
@@ -584,62 +614,112 @@ partial def typeHolds (shapes : Name → Option Fren.Core.DataShape) (t : Fren.C
       ((shapes p).bind (·.inst t.parts |>.parts[idx]?)).all fun ts => (ts.zip args).all fun (u, w) => typeHolds shapes u w
     | _, _ => true
 
+/-- `Fren.Core.firstCase xs.toList take`, the case of `xs` that is taken,
+read from the array, from case `i` (`firstCaseIn_eq`): `take` of each
+case in turn, until one is taken or whether one is is unknown. -/
+@[specialize] def firstCaseIn (xs : Array α) (take : α → Option (Option β)) (i : Nat := 0) : Option (Option β) :=
+  if h : i < xs.size then
+    match take xs[i] with
+    | none => none
+    | some none => firstCaseIn xs take (i + 1)
+    | some (some r) => some (some r)
+  else some none
+termination_by xs.size - i
+
+theorem firstCaseIn_eq (xs : Array α) (take : α → Option (Option β)) (i : Nat) :
+    firstCaseIn xs take i = Fren.Core.firstCase (xs.toList.drop i) take := by
+  induction i using firstCaseIn.induct xs take with
+  | case1 i h hn =>
+    rw [firstCaseIn, dif_pos h, List.drop_eq_getElem_cons (by simpa using h)]
+    simp [Fren.Core.firstCase, hn]
+  | case2 i h hn ih =>
+    rw [firstCaseIn, dif_pos h, List.drop_eq_getElem_cons (by simpa using h)]
+    simp [Fren.Core.firstCase, hn, ih]
+  | case3 i h r hn =>
+    rw [firstCaseIn, dif_pos h, List.drop_eq_getElem_cons (by simpa using h)]
+    simp [Fren.Core.firstCase, hn]
+  | case4 i h =>
+    rw [firstCaseIn, dif_neg h, List.drop_eq_nil_of_le (by simpa using h)]
+    rfl
+
+/-- A binding of a binder of a `match` arm or a quantifier, in the frame
+that `Ex.eval` keeps of them, the innermost last. -/
+abbrev Binding := Name × Option Val
+
 /-- The value of an expression, as far as it is known: each variable as
-`look` gives it, each binder of a `match` arm as `locals` does, and each
-`slot k` as `slots[k]` does. Its arguments are borrowed (`@&`), so that a
-call, at each node, neither counts nor uncounts a reference to them. -/
+`look` gives it, each binder of an enclosing `match` arm or quantifier as
+its binding in `frame` does, the innermost first, and else as `locals`
+does, and each `slot k` as `slots[k]` does. `memos` is the shared
+expressions of the enclosing `memo`s, the innermost last. Its arguments
+are borrowed (`@&`), so that a call, at each node, neither counts nor
+uncounts a reference to them.
+
+Looked up by its name, a binder has the value of its innermost binding,
+which is what it had when each binding was put in front of `locals`: a
+quantifier binds each of its names in turn, and a `match` arm the binders
+of its pattern, the first innermost, as `new ++ locals` puts them. -/
 partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := [])
-    (slots : @& Array (Option Val) := #[]) (e : @& Ex) : Option Val :=
+    (slots : @& Array (Option Val) := #[]) (frame : @& Array Binding := #[])
+    (memos : @& Array (Thunk (Option Val)) := #[]) (e : @& Ex) : Option Val :=
   match e with
   | .lit v => some v
   | .var n => look n
   | .slot k => if h : k < slots.size then slots[k] else none
-  | .bound n => locals.lookup n
-  | .not a => notV (a.eval I look locals slots)
-  | .neg a => match a.eval I look locals slots with
+  | .bound n => match frame.findRev? (·.1 == n) with
+    | some (_, v) => v
+    | none => locals.lookup n
+  | .boundAt k => if k < frame.size then frame[frame.size - 1 - k]!.2 else none
+  | .shared k => if k < memos.size then memos[memos.size - 1 - k]!.get else none
+  | .known v => v
+  | .memo lets e =>
+    -- The first of `lets` innermost, as `.shared 0`.
+    let ms := lets.foldr (init := memos) fun x ms => ms.push (Thunk.mk fun _ => x.eval I look locals slots frame memos)
+    e.eval I look locals slots frame ms
+  | .not a => notV (a.eval I look locals slots frame memos)
+  | .neg a => match a.eval I look locals slots frame memos with
     | some (.int x) => some (.int (-x))
     | _ => none
   -- Membership in a set literal, without building the set, which does
   -- not change which values are members.
   | .bin .member a (.setLit es) => do
-    let x ← a.eval I look locals slots
-    boolV ((← es.mapM (·.eval I look locals slots)).contains x)
+    let x ← a.eval I look locals slots frame memos
+    boolV ((← es.mapM (·.eval I look locals slots frame memos)).contains x)
   -- `and`, `or` and `when` evaluate their second operand only when the
   -- first does not decide them, which gives the same value: `kleeneAnd`
   -- is `false` whatever its second operand when its first is `false`, and
   -- `kleeneOr` likewise `true`. Evaluation has no other effect.
-  | .bin .and a b => match a.eval I look locals slots with
+  | .bin .and a b => match a.eval I look locals slots frame memos with
     | some (.bool false) => some (.bool false)
-    | x => kleeneAnd x (b.eval I look locals slots)
-  | .bin .or a b => match a.eval I look locals slots with
+    | x => kleeneAnd x (b.eval I look locals slots frame memos)
+  | .bin .or a b => match a.eval I look locals slots frame memos with
     | some (.bool true) => some (.bool true)
-    | x => kleeneOr x (b.eval I look locals slots)
-  | .bin op a b => binV op (a.eval I look locals slots) (b.eval I look locals slots)
+    | x => kleeneOr x (b.eval I look locals slots frame memos)
+  | .bin op a b => binV op (a.eval I look locals slots frame memos) (b.eval I look locals slots frame memos)
   | .when negated c d =>
-    let c := c.eval I look locals slots
+    let c := c.eval I look locals slots frame memos
     match notV (if negated then notV c else c) with
     | some (.bool true) => some (.bool true)
-    | x => kleeneOr x (d.eval I look locals slots)
-  | .ite c a b => match c.eval I look locals slots with
-    | some (.bool true) => a.eval I look locals slots
-    | some (.bool false) => b.eval I look locals slots
+    | x => kleeneOr x (d.eval I look locals slots frame memos)
+  | .ite c a b => match c.eval I look locals slots frame memos with
+    | some (.bool true) => a.eval I look locals slots frame memos
+    | some (.bool false) => b.eval I look locals slots frame memos
     | _ =>
-      let x := a.eval I look locals slots
-      if x.isSome && x == b.eval I look locals slots then x else none
-  | .app f args => do I.fn f (← args.mapM (·.eval I look locals slots))
-  | .pre _ _ _ e => e.eval I look locals slots
+      let x := a.eval I look locals slots frame memos
+      if x.isSome && x == b.eval I look locals slots frame memos then x else none
+  | .app f args => do I.fn f (← args.mapM (·.eval I look locals slots frame memos))
+  | .pre _ _ _ e => e.eval I look locals slots frame memos
   -- Known once the unknown arguments cannot change it: with two `true`,
   -- whatever the rest are.
   | .cardinality c args =>
-    let vs := args.map (·.eval I look locals slots)
+    let vs := args.map (·.eval I look locals slots frame memos)
     let trues := (vs.filter (· == some (.bool true))).size
     let unknown := (vs.filter fun v => !(v matches some (.bool _))).size
     if unknown == 0 || trues ≥ 2 then some (.bool (c.holds trues))
     else if c == .atMostOne && trues + unknown ≤ 1 then some (.bool true)
     else none
   | .method m recv args => do
-    let r ← recv.eval I look locals slots
-    let args ← args.mapM (·.eval I look locals slots)
+    let r ← recv.eval I look locals slots frame memos
+    let args ← args.mapM (·.eval I look locals slots frame memos)
     -- A relation's methods.
     if let .set ps := r then
       let fsts := ps.filterMap fun | .pair a _ => some a | _ => none
@@ -709,93 +789,111 @@ partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × 
       | .replaceAll => .str (Fren.Str.replaceAll s (str 0) (str 1))
       | _ => .int 0
   | .matches recv p re => do
-    let .str s ← recv.eval I look locals slots | none
+    let .str s ← recv.eval I look locals slots frame memos | none
     -- `re` is `p`'s parse, so a remembered answer is `re`'s.
     match I.matchMemo p s with
     | some b => boolV b
     | none => boolV (re.matches s)
-  | .pair a b => do return .pair (← a.eval I look locals slots) (← b.eval I look locals slots)
-  | .seqLit es => do return .seq (← es.mapM (·.eval I look locals slots))
+  | .pair a b => do return .pair (← a.eval I look locals slots frame memos) (← b.eval I look locals slots frame memos)
+  | .seqLit es => do return .seq (← es.mapM (·.eval I look locals slots frame memos))
   -- Out of range, an index is part of the interpretation, which is unknown.
   | .index q i _ => do
-    let .seq es ← q.eval I look locals slots | none
-    let .int k ← i.eval I look locals slots | none
+    let .seq es ← q.eval I look locals slots frame memos | none
+    let .int k ← i.eval I look locals slots frame memos | none
     if 0 ≤ k && k < es.size then es[k.toNat]? else none
-  | .ctor ty idx args => do return .ctor ty idx (← args.mapM (·.eval I look locals slots))
-  | .setLit es => do return Val.setOf (← es.mapM (·.eval I look locals slots))
+  | .ctor ty idx args => do return .ctor ty idx (← args.mapM (·.eval I look locals slots frame memos))
+  | .setLit es => do return Val.setOf (← es.mapM (·.eval I look locals slots frame memos))
   | .card s => do
-    let .set ms ← s.eval I look locals slots | none
+    let .set ms ← s.eval I look locals slots frame memos | none
     return .int ms.size
-  | .field e idx => match e.eval I look locals slots with
+  | .field e idx => match e.eval I look locals slots frame memos with
     | some (.ctor _ _ vs) => vs[idx]?
     | _ => none
   | .update e fs => do
-    let .ctor ty idx vs ← e.eval I look locals slots | none
+    let .ctor ty idx vs ← e.eval I look locals slots frame memos | none
     let mut vs := vs
-    for (k, x) in fs do vs := vs.set! k (← x.eval I look locals slots)
+    for (k, x) in fs do vs := vs.set! k (← x.eval I look locals slots frame memos)
     return .ctor ty idx vs
   -- The first row whose condition holds; where none does, the
   -- interpretation's unspecified value of its type.
   -- As the arms `_ if C => v` and `_ => v` (`Fren.Core.firstCase`).
   | .table _ rows unspec? => do
-    let taken? ← Fren.Core.firstCase (rows.toList) fun (_, c?, v) => match c? with
+    let taken? ← firstCaseIn rows fun (_, c?, v) => match c? with
       | none => some (some v)
-      | some c => match c.eval I look locals slots with
+      | some c => match c.eval I look locals slots frame memos with
         | some (.bool true) => some (some v)
         | some (.bool false) => some none
         | _ => none
     match taken? with
-    | some v => v.eval I look locals slots
+    | some v => v.eval I look locals slots frame memos
     | none => I.fn (← unspec?) #[]
   -- A closed expression, which neither variables nor binders reach.
   | .const _ e => e.eval I (fun _ => none)
-  | .typed t _ e => return .bool (typeHolds I.shapes t (← e.eval I look locals slots))
+  | .typed t _ e => return .bool (typeHolds I.shapes t (← e.eval I look locals slots frame memos))
   -- The first arm whose pattern matches and whose guard holds; where none
   -- is taken, the interpretation's unspecified value of its type.
   -- The first arm that is taken: whose pattern matches and whose guard
   -- holds (`Fren.Core.firstCase`, `lang::guarded_match`).
   | .match e arms _ _ unspec? _ => do
-    let v ← e.eval I look locals slots
-    let taken? ← Fren.Core.firstCase arms.toList fun (p, g?, body) => match p.matchVal v with
+    let v ← e.eval I look locals slots frame memos
+    let taken? ← firstCaseIn arms fun (p, g?, body) => match p.matchVal v with
       | none => some none
-      | some new => match g? with
-        | none => some (some (new, body))
-        | some g => match g.eval I look (new ++ locals) slots with
-          | some (.bool true) => some (some (new, body))
+      | some new =>
+        -- The binders in the frame, the first innermost.
+        let fr := new.foldr (init := frame) fun (n, v) fr => fr.push (n, some v)
+        match g? with
+        | none => some (some (fr, body))
+        | some g => match g.eval I look locals slots fr memos with
+          | some (.bool true) => some (some (fr, body))
           | some (.bool false) => some none
           | _ => none
     match taken? with
-    | some (new, body) => body.eval I look (new ++ locals) slots
+    | some (fr, body) => body.eval I look locals slots fr memos
     | none => I.fn (← unspec?) #[]
   | .range lo hi => do
-    let .int a ← lo.eval I look locals slots | none
-    let .int b ← hi.eval I look locals slots | none
+    let .int a ← lo.eval I look locals slots frame memos | none
+    let .int b ← hi.eval I look locals slots frame memos | none
     if b - a > maxEnumerated then none
     return .seq ((Array.range (b - a).toNat).map fun (k : Nat) => Val.int (a + k))
   -- The conjunction or disjunction of its instances, decided when one
   -- instance decides it: the body at each combination of the values of its
   -- bound names' domains, of their types.
-  | .quant _ _ all names doms tys body =>
-    let rec go (k : Nat) (locals : List (Name × Val)) : Option Val :=
-      if h : k < names.size then
-        match doms[k]?.bind id |>.bind (·.eval I look locals slots) with
-        | some (.seq vs) | some (.set vs) => Id.run do
-          -- Once an instance decides it, the rest would leave it as it is,
-          -- so they are not looked at.
-          let mut acc : Option Val := some (.bool all)
-          for v in vs do
-            if (match acc with | some (.bool b) => b != all | _ => false) then break
-            if tys[k]?.all (typeHolds I.shapes · v) then
-              let x := go (k + 1) ((names[k], v) :: locals)
-              acc := if all then kleeneAnd acc x else kleeneOr acc x
-          return acc
-        | _ => none
-      else body.eval I look locals slots
-    go 0 locals
+  | .quant _ _ all names doms tys body => quantV I look locals slots all names doms tys body #[] 0 frame memos
+  | .lifted lets q => match q with
+    | .quant _ _ all names doms tys body => quantV I look locals slots all names doms tys body lets 0 frame memos
+    | q => q.eval I look locals slots frame memos
+where
+  /-- A quantifier's value, from its `k`th bound name, with those before it
+  in `frame`: the conjunction or disjunction of the instances at each of
+  the `k`th's values, of its type, given which the next are bound, and
+  `lets[k]` shared from where the `k`th is bound (`.lifted`). -/
+  quantV (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) (slots : @& Array (Option Val))
+      (all : Bool) (names : @& Array Name) (doms : @& Array (Option Ex)) (tys : @& Array Fren.Core.PTy) (body : @& Ex)
+      (lets : @& Array (Array Ex)) (k : Nat) (frame : Array Binding) (memos : Array (Thunk (Option Val))) :
+      Option Val :=
+    let memos := match lets[k]? with
+      | some ls => ls.foldl (init := memos) fun ms x => ms.push (Thunk.mk fun _ => x.eval I look locals slots frame memos)
+      | none => memos
+    if h : k < names.size then
+      match doms[k]?.bind id |>.bind (·.eval I look locals slots frame memos) with
+      | some (.seq vs) | some (.set vs) => Id.run do
+        -- Once an instance decides it, the rest would leave it as it is,
+        -- so they are not looked at.
+        let mut acc : Option Val := some (.bool all)
+        for v in vs do
+          if (match acc with | some (.bool b) => b != all | _ => false) then break
+          if tys[k]?.all (typeHolds I.shapes · v) then
+            let x := quantV I look locals slots all names doms tys body lets (k + 1) (frame.push (names[k], some v)) memos
+            acc := if all then kleeneAnd acc x else kleeneOr acc x
+        return acc
+      | _ => none
+    else body.eval I look locals slots frame memos
 
 /-- The expressions directly within `e`. -/
 def Ex.children : Ex → Array Ex
-  | .lit _ | .var _ | .slot _ | .bound _ => #[]
+  | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
+  | .memo lets e => lets.push e
+  | .lifted lets q => lets.flatten.push q
   | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .const _ a | .typed _ _ a => #[a]
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ | .range a b => #[a, b]
   | .ite c a b => #[c, a, b]
@@ -871,7 +969,9 @@ around `e`. -/
 partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Option Fren.Core.TableGoal × Ex) :=
   let go (e : Ex) (w : Ex → Ex := wrap) := e.siteGoals w
   match e with
-  | .lit _ | .var _ | .slot _ | .bound _ => #[]
+  | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
+  -- Only evaluation reads what `Ex.compile` gives.
+  | .memo _ e | .lifted _ e => go e
   | .not a | .neg a | .field a _ | .card a => go a
   | .update a fs => go a ++ fs.flatMap (go ·.2)
   | .when negated c d => go c ++ go d (fun g => wrap (.when negated c g))
@@ -970,6 +1070,320 @@ is reported and its formula, read as `Ex.siteGoals` reads them. -/
 def Ex.tableGoals (e : Ex) : Array (Nat × Fren.Core.TableGoal × Ex) :=
   e.siteGoals.filterMap fun (pos, g?, f) => g?.map (pos, ·, f)
 
+/-! ## Compiling constraints
+
+A search evaluates its constraints many times, so it evaluates them as
+`Ex.compile` gives them, with the same values (`Ex.eval`), compiled once
+for each constraint of the spec (`Spec.withRuns`). -/
+
+/-- Whether two arrays have the same elements, by `same`. -/
+@[inline] def sameAll (same : α → α → Bool) (xs ys : Array α) : Bool :=
+  xs.size == ys.size && (xs.zip ys).all fun (x, y) => same x y
+
+/-- Whether two options are both `none`, or the same, by `same`. -/
+@[inline] def sameOpt (same : α → α → Bool) : Option α → Option α → Bool
+  | none, none => true
+  | some x, some y => same x y
+  | _, _ => false
+
+/-- Whether two patterns are the same. -/
+partial def Pat.same : Pat → Pat → Bool
+  | .wild, .wild => true
+  | .bind n, .bind m => n == m
+  | .bool b, .bool c => b == c
+  | .int lo hi, .int lo' hi' => lo == lo' && hi == hi'
+  | .str s, .str t => s == t
+  | .ctor i ps, .ctor j qs => i == j && sameAll Pat.same ps qs
+  | .alts ps, .alts qs => sameAll Pat.same ps qs
+  | _, _ => false
+
+/-- Whether two patterns of pattern types are the same. -/
+partial def corePatSame : Fren.Core.Pat → Fren.Core.Pat → Bool
+  | .wild b, .wild c => b == c
+  | .bool b, .bool c => b == c
+  | .int lo hi, .int lo' hi' => lo == lo' && hi == hi'
+  | .str s, .str t => s == t
+  | .ctor i ps, .ctor j qs => i == j && sameAll corePatSame ps qs
+  | .or ps, .or qs => sameAll corePatSame ps qs
+  | _, _ => false
+
+/-- Whether two declared types are the same. -/
+partial def ptySame (t u : Fren.Core.PTy) : Bool :=
+  t.ty == u.ty && sameOpt corePatSame t.pat? u.pat? && sameAll ptySame t.elems u.elems && t.text == u.text
+
+/-- Whether two expressions are the same, and so have the same value
+wherever both are evaluated in the same environment. -/
+partial def Ex.same : Ex → Ex → Bool
+  | .lit v, .lit w => v == w
+  | .var n, .var m | .bound n, .bound m => n == m
+  | .slot k, .slot j | .boundAt k, .boundAt j | .shared k, .shared j => k == j
+  | .known v, .known w => v == w
+  | .not a, .not b | .neg a, .neg b | .card a, .card b => a.same b
+  | .bin o a b, .bin o' a' b' => o == o' && a.same a' && b.same b'
+  | .when n c d, .when n' c' d' => n == n' && c.same c' && d.same d'
+  | .ite c a b, .ite c' a' b' => c.same c' && a.same a' && b.same b'
+  | .app f as, .app g bs => f == g && sameAll Ex.same as bs
+  | .ctor t i as, .ctor u j bs => t == u && i == j && sameAll Ex.same as bs
+  | .field e i, .field f j => i == j && e.same f
+  | .update e fs, .update f gs => e.same f && sameAll (fun (k, x) (j, y) => k == j && x.same y) fs gs
+  | .match e arms pos ps u pairs?, .match e' arms' pos' ps' u' pairs?' =>
+    pos == pos' && ps == ps' && u == u' && pairs? == pairs?' && e.same e'
+      && sameAll (fun (p, g?, b) (p', g?', b') => p.same p' && sameOpt Ex.same g? g?' && b.same b') arms arms'
+  | .method m r as, .method m' r' bs => m == m' && r.same r' && sameAll Ex.same as bs
+  | .matches r p re, .matches r' p' re' => p == p' && re == re' && r.same r'
+  | .setLit as, .setLit bs | .seqLit as, .seqLit bs => sameAll Ex.same as bs
+  | .pair a b, .pair a' b' | .range a b, .range a' b' => a.same a' && b.same b'
+  | .index q i pos, .index q' i' pos' => pos == pos' && q.same q' && i.same i'
+  | .cardinality c as, .cardinality c' bs => c == c' && sameAll Ex.same as bs
+  | .quant file pos all ns ds ts b, .quant file' pos' all' ns' ds' ts' b' =>
+    file == file' && pos == pos' && all == all' && ns == ns' && sameAll (sameOpt Ex.same) ds ds'
+      && sameAll ptySame ts ts' && b.same b'
+  | .table pos rows u, .table pos' rows' u' =>
+    pos == pos' && u == u' && sameAll (fun (p, c?, v) (p', c?', v') => p == p' && sameOpt Ex.same c? c?' && v.same v') rows rows'
+  | .const p e, .const p' e' => p == p' && e.same e'
+  | .pre pos f gs e, .pre pos' f' gs' e' =>
+    pos == pos' && f == f' && sameAll (fun (n, g) (n', g') => n == n' && g.same g') gs gs' && e.same e'
+  | .typed t is e, .typed t' is' e' => ptySame t t' && is == is' && e.same e'
+  | .memo ls e, .memo ls' e' => sameAll Ex.same ls ls' && e.same e'
+  | .lifted ls e, .lifted ls' e' => sameAll (sameAll Ex.same) ls ls' && e.same e'
+  | _, _ => false
+
+/-- Whether evaluating `e` may cost more than reading a few values and
+comparing them: it builds a value, looks one up in a set or a sequence,
+applies a function or method, or has a quantifier, a table, a `match` or a
+constant. -/
+partial def Ex.costly (e : Ex) : Bool :=
+  match e with
+  | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => false
+  | .not _ | .neg _ | .field .. | .card _ | .when .. | .ite .. | .index .. => e.children.any (·.costly)
+  | .bin op .. =>
+    !(op matches .and | .or | .iff | .eq | .ne | .lt | .le | .gt | .ge | .add | .sub | .mul | .div | .mod)
+      || e.children.any (·.costly)
+  | _ => true
+
+/-- Whether `e` binds names or starts a scope of its own (a quantifier, a
+`match`, a table's shared expressions or a constant), within which an
+expression may not mean what it means outside. -/
+def Ex.scoped : Ex → Bool
+  | .quant .. | .match .. | .table .. | .const .. | .memo .. | .lifted .. => true
+  | _ => false
+
+/-- The costly expressions in `e` (`Ex.costly`), outside its scopes
+(`Ex.scoped`), outermost first. -/
+partial def Ex.costlyParts (e : Ex) : Array Ex :=
+  if !e.costly then #[]
+  else if e.scoped then #[e]
+  else e.children.foldl (init := #[e]) fun acc c => acc ++ c.costlyParts
+
+/-- `e` with each costly expression, outermost first and outside scopes,
+that `pick` picks replaced by `.shared k`, reading the `k`th of the
+shared expressions `lets`, which it extends. -/
+partial def Ex.share (pick : Ex → Bool) (lets : Array Ex) (e : Ex) : Ex × Array Ex :=
+  if !e.costly then (e, lets) else
+  if pick e then
+    match lets.findIdx? (·.same e) with
+    | some k => (.shared k, lets)
+    | none => (.shared lets.size, lets.push e)
+  else if e.scoped then (e, lets) else
+  match e with
+  | .not a => let (a, l) := a.share pick lets; (.not a, l)
+  | .neg a => let (a, l) := a.share pick lets; (.neg a, l)
+  | .card a => let (a, l) := a.share pick lets; (.card a, l)
+  | .field a i => let (a, l) := a.share pick lets; (.field a i, l)
+  | .matches a p re => let (a, l) := a.share pick lets; (.matches a p re, l)
+  | .typed t is a => let (a, l) := a.share pick lets; (.typed t is a, l)
+  | .bin op a b => let (a, l) := a.share pick lets; let (b, l) := b.share pick l; (.bin op a b, l)
+  | .when n c d => let (c, l) := c.share pick lets; let (d, l) := d.share pick l; (.when n c d, l)
+  | .ite c a b =>
+    let (c, l) := c.share pick lets; let (a, l) := a.share pick l; let (b, l) := b.share pick l; (.ite c a b, l)
+  | .app f args => let (args, l) := all args lets; (.app f args, l)
+  | .ctor t i args => let (args, l) := all args lets; (.ctor t i args, l)
+  | .setLit args => let (args, l) := all args lets; (.setLit args, l)
+  | .seqLit args => let (args, l) := all args lets; (.seqLit args, l)
+  | .cardinality c args => let (args, l) := all args lets; (.cardinality c args, l)
+  | .method m r args => let (r, l) := r.share pick lets; let (args, l) := all args l; (.method m r args, l)
+  | .pair a b => let (a, l) := a.share pick lets; let (b, l) := b.share pick l; (.pair a b, l)
+  | .range a b => let (a, l) := a.share pick lets; let (b, l) := b.share pick l; (.range a b, l)
+  | .index q i pos => let (q, l) := q.share pick lets; let (i, l) := i.share pick l; (.index q i pos, l)
+  | .update a fs =>
+    let (a, l) := a.share pick lets
+    let (fs, l) := fs.foldl (init := (#[], l)) fun (acc, l) (k, x) => let (x, l) := x.share pick l; (acc.push (k, x), l)
+    (.update a fs, l)
+  | .pre pos f gs a =>
+    let (gs, l) := gs.foldl (init := (#[], lets)) fun (acc, l) (n, g) => let (g, l) := g.share pick l; (acc.push (n, g), l)
+    let (a, l) := a.share pick l
+    (.pre pos f gs a, l)
+  | e => (e, lets)
+where
+  all (es : Array Ex) (lets : Array Ex) : Array Ex × Array Ex :=
+    es.foldl (init := (#[], lets)) fun (acc, l) x => let (x, l) := x.share pick l; (acc.push x, l)
+
+/-- Whether an or-pattern within `p` binds a name, so that the names that
+`p` binds when it matches (`Pat.matchVal`) may not be `Pat.binders p`. -/
+partial def Pat.altsBind : Pat → Bool
+  | .alts ps => ps.any (!·.binders.isEmpty)
+  | .ctor _ ps => ps.any Pat.altsBind
+  | _ => false
+
+/-- The binders that `e` reads and does not bind, by name, before
+`Ex.compile`. Those of the arms of a pattern whose or-pattern binds names,
+which it may not bind, count as read. -/
+partial def Ex.freeBound (e : Ex) : Array Name :=
+  match e with
+  | .bound n => #[n]
+  -- Evaluated on its own, where no binder has a value.
+  | .const .. => #[]
+  | .quant _ _ _ ns ds _ b =>
+    (ds.mapIdx fun k d? => (d?.map fun d => d.freeBound.filter (!(ns.extract 0 k).contains ·)).getD #[]).flatten
+      ++ b.freeBound.filter (!ns.contains ·)
+  | .match s arms .. =>
+    s.freeBound ++ arms.flatMap fun (p, g?, b) =>
+      let reads := (g?.map (·.freeBound)).getD #[] ++ b.freeBound
+      if p.altsBind then reads else reads.filter (!p.binders.contains ·)
+  | e => e.children.flatMap (·.freeBound)
+
+/-- `e` with each `.shared k` read as `.shared (f k)`, outside scopes
+(`Ex.scoped`), within which `Ex.share` puts none. -/
+partial def Ex.renumberShared (f : Nat → Nat) (e : Ex) : Ex :=
+  let go := Ex.renumberShared f
+  match e with
+  | .shared k => .shared (f k)
+  | .not a => .not (go a)
+  | .neg a => .neg (go a)
+  | .card a => .card (go a)
+  | .field a i => .field (go a) i
+  | .matches a p re => .matches (go a) p re
+  | .typed t is a => .typed t is (go a)
+  | .bin op a b => .bin op (go a) (go b)
+  | .when n c d => .when n (go c) (go d)
+  | .ite c a b => .ite (go c) (go a) (go b)
+  | .app f' args => .app f' (args.map go)
+  | .ctor t i args => .ctor t i (args.map go)
+  | .setLit args => .setLit (args.map go)
+  | .seqLit args => .seqLit (args.map go)
+  | .cardinality c args => .cardinality c (args.map go)
+  | .method m r args => .method m (go r) (args.map go)
+  | .pair a b => .pair (go a) (go b)
+  | .range a b => .range (go a) (go b)
+  | .index q i pos => .index (go q) (go i) pos
+  | .update a fs => .update (go a) (fs.map fun (k, x) => (k, go x))
+  | .pre pos f' gs a => .pre pos f' (gs.map fun (n, g) => (n, go g)) (go a)
+  | e => e
+
+/-- `e`, evaluated by `Ex.eval` in less time, to the same value under any
+interpretation whose records', newtypes' and enumerations' parts are
+`shapes`, as every search's are, the spec's (`World.interp`,
+`readModel`), from an empty frame and no shared expressions:
+- Each binder that `scope` names, the innermost first, is read by its
+  position (`.boundAt`), as the frame has it: a quantifier binds its names
+  in turn, and a `match` arm the binders of its pattern, the first
+  innermost. With `scope` `none`, such as within an arm whose or-pattern
+  binds names, binders are read by name, as everywhere else.
+- A quantifier's domain that is a literal, a listed type's values, keeps
+  only the values of its declared type, which are those that `Ex.eval`
+  instantiates, so that it does not check them at each evaluation.
+- The costly expressions that a table's rows share, such as an argument
+  of a defined function that its body reads in each row, are each
+  evaluated once, when first read (`.memo`, `Ex.share`).
+- The costly expressions in a quantifier's body that do not read its last
+  bound name are evaluated once for each value of the names that they
+  read, when first read, rather than at each instance (`.lifted`).
+- An expression whose parts are all known is known, but for one that
+  reads the interpretation's functions: its value, which needs no
+  environment, is computed once (`.known`). -/
+partial def Ex.compile (shapes : Name → Option Fren.Core.DataShape) (scope : Option (List Name)) (e : Ex) : Ex :=
+  match e with
+  | .bound n => match scope.bind (·.idxOf? n) with
+    | some k => .boundAt k
+    | none => .bound n
+  | .lit v => .known (some v)
+  | .var _ | .slot _ | .boundAt _ | .shared _ | .known _ => e
+  | e => fold (compound e)
+where
+  /-- An expression all of whose parts are known is too, unless it applies
+  a function, or is a constant or a table or `match` without a value
+  where nothing holds, whose values are the interpretation's: its value,
+  whatever the environment, under any interpretation with `shapes`. -/
+  fold (e : Ex) : Ex :=
+    let readsFns := e matches .app .. | .const .. | .table _ _ (some _) | .match _ _ _ _ (some _) _
+    if !readsFns && e.children.all (· matches .known _) then .known (e.eval { shapes } fun _ => none) else e
+  /-- `e`, an expression with parts, with its parts compiled. -/
+  compound (e : Ex) : Ex :=
+  let go (x : Ex) := x.compile shapes scope
+  match e with
+  | .not a => .not (go a)
+  | .neg a => .neg (go a)
+  | .card a => .card (go a)
+  | .field a i => .field (go a) i
+  | .matches a p re => .matches (go a) p re
+  | .typed t is a => .typed t is (go a)
+  | .bin op a b => .bin op (go a) (go b)
+  | .when n c d => .when n (go c) (go d)
+  | .ite c a b => .ite (go c) (go a) (go b)
+  | .app f args => .app f (args.map go)
+  | .ctor t i args => .ctor t i (args.map go)
+  | .setLit args => .setLit (args.map go)
+  | .seqLit args => .seqLit (args.map go)
+  | .cardinality c args => .cardinality c (args.map go)
+  | .method m r args => .method m (go r) (args.map go)
+  | .pair a b => .pair (go a) (go b)
+  | .range a b => .range (go a) (go b)
+  | .index q i pos => .index (go q) (go i) pos
+  | .update a fs => .update (go a) (fs.map fun (k, x) => (k, go x))
+  | .pre pos f gs a => .pre pos f (gs.map fun (n, g) => (n, go g)) (go a)
+  -- Evaluated on its own, from an empty frame.
+  | .const p a => .const p (a.compile shapes (some []))
+  | .memo lets a => .memo (lets.map go) (go a)
+  | .match s arms pos ps u pairs? =>
+    .match (go s) (arms.map fun (p, g?, b) =>
+      let inner := if p.altsBind then none else scope.map (p.binders.toList ++ ·)
+      (p, g?.map (·.compile shapes inner), b.compile shapes inner)) pos ps u pairs?
+  | .quant file pos all ns ds ts b =>
+    -- The `k`th domain is evaluated with the names before it bound.
+    let ds := ds.mapIdx fun k d? => d?.map fun d =>
+      match d with
+      | .lit (.seq vs) => .lit (.seq (vs.filter fun v => ts[k]?.all (typeHolds shapes · v)))
+      | .lit (.set vs) => .lit (.set (vs.filter fun v => ts[k]?.all (typeHolds shapes · v)))
+      | d => d.compile shapes (scope.map ((ns.extract 0 k).toList.reverse ++ ·))
+    let listed (d? : Option Ex) : Bool := d? matches some (.lit (.seq _)) | some (.lit (.set _))
+    -- A literal domain's values are of their type already: a `Bool`, with
+    -- no pattern, holds of any value (`typeHolds`).
+    let ts := if ds.all listed then #[] else ts.mapIdx fun k t => if listed ds[k]! then { ty := .bool } else t
+    -- The position after the last of the bound names that `x` reads: the
+    -- first at which its value is known.
+    let level (x : Ex) : Nat := x.freeBound.foldl (init := 0) fun l n =>
+      (ns.zipIdx.foldl (init := l) fun l (m, i) => if m == n then max l (i + 1) else l)
+    let (b, found) := b.share (fun x => level x < ns.size) #[]
+    let inner := scope.map (ns.toList.reverse ++ ·)
+    if found.isEmpty then .quant file pos all ns ds ts (b.compile shapes inner) else
+    -- Pushed level by level, each level's in order, so that the body reads
+    -- the `p`th pushed as the `found.size - 1 - p`th from the last.
+    let levels := (List.range ns.size).toArray.map fun j => (found.zipIdx.filter (level ·.1 == j)).map (·.2)
+    let pushed := levels.flatten
+    let b := b.renumberShared fun k => found.size - 1 - (pushed.idxOf? k).getD 0
+    let lets := levels.mapIdx fun j ks => ks.map fun k => found[k]!.compile shapes (scope.map ((ns.extract 0 j).toList.reverse ++ ·))
+    .lifted lets (.quant file pos all ns ds ts (b.compile shapes inner))
+  | .table pos rows u =>
+    let parts := rows.flatMap fun (_, c?, v) => (c?.map (·.costlyParts)).getD #[] ++ v.costlyParts
+    -- Those that occur more than once.
+    let twice := Id.run do
+      let mut seen : Array Ex := #[]
+      let mut twice : Array Ex := #[]
+      for x in parts do
+        if seen.any (·.same x) then
+          unless twice.any (·.same x) do twice := twice.push x
+        else seen := seen.push x
+      return twice
+    if twice.isEmpty then .table pos (rows.map fun (p, c?, v) => (p, c?.map go, go v)) u else
+    let (rows, lets) := rows.foldl (init := (#[], #[])) fun (acc, lets) (p, c?, v) =>
+      let (c?, lets) := match c? with
+        | some c => let (c, l) := c.share (fun x => twice.any (·.same x)) lets; (some c, l)
+        | none => (none, lets)
+      let (v, lets) := v.share (fun x => twice.any (·.same x)) lets
+      (acc.push (p, c?, v), lets)
+    .memo (lets.map go) (.table pos (rows.map fun (p, c?, v) => (p, c?.map go, go v)) u)
+  | e => e
+
 /-- A constraint of a procedure nested at `pfx`, such as `w.v` for call `v`
 of call `w`: `e` over the variables `pfx.x`. -/
 structure Atom where
@@ -978,7 +1392,17 @@ structure Atom where
   label : Name
   pfx : Name
   e : Ex
+  /-- `e` as a search evaluates it (`Ex.compile`), if it is compiled
+  already, for searches whose interpretations have the shapes that it was
+  compiled with (`Atom.compiled`); else each search compiles it. -/
+  run? : Option (Thunk Ex) := none
   deriving Inhabited
+
+/-- `a`, compiled for searches whose interpretations' shapes are
+`shapes`, when a search first needs it (`Ex.compile`), so that the
+searches that share it compile it once. -/
+def Atom.compiled (shapes : Name → Option Fren.Core.DataShape) (a : Atom) : Atom :=
+  { a with run? := some (Thunk.mk fun _ => a.e.compile shapes (some [])) }
 
 def Atom.eval (a : Atom) (I : Interp) (look : Look) : Option Bool :=
   match a.e.eval I (fun n => look (a.pfx ++ n)) with
@@ -1228,6 +1652,11 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .lit v => .lit v
   | .var n => .var n
   | .slot k => .slot k
+  | .boundAt k => .boundAt k
+  | .shared k => .shared k
+  | .known v => .known v
+  | .lifted lets q => .lifted (lets.map (·.map (·.renameBound f))) (q.renameBound f)
+  | .memo lets e => .memo (lets.map (·.renameBound f)) (e.renameBound f)
   | .bound n => .bound (f n)
   | .not a => .not (a.renameBound f)
   | .neg a => .neg (a.renameBound f)
@@ -1260,6 +1689,11 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .lit v => .lit v
   | .var n => .var (f n)
   | .slot k => .slot k
+  | .boundAt k => .boundAt k
+  | .shared k => .shared k
+  | .known v => .known v
+  | .lifted lets q => .lifted (lets.map (·.map (·.renameVars f))) (q.renameVars f)
+  | .memo lets e => .memo (lets.map (·.renameVars f)) (e.renameVars f)
   | .bound n => .bound n
   | .not a => .not (a.renameVars f)
   | .neg a => .neg (a.renameVars f)
@@ -1291,6 +1725,11 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .lit v => .lit v
   | .var n => f n
   | .slot k => .slot k
+  | .boundAt k => .boundAt k
+  | .shared k => .shared k
+  | .known v => .known v
+  | .lifted lets q => .lifted (lets.map (·.map (·.substVars f))) (q.substVars f)
+  | .memo lets e => .memo (lets.map (·.substVars f)) (e.substVars f)
   | .bound n => .bound n
   | .not a => .not (a.substVars f)
   | .neg a => .neg (a.substVars f)
@@ -1345,6 +1784,11 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .lit v => .lit v
   | .var n => .var n
   | .slot k => .slot k
+  | .boundAt k => .boundAt k
+  | .shared k => .shared k
+  | .known v => .known v
+  | .lifted lets q => .lifted (lets.map (·.map (·.subst σ))) (q.subst σ)
+  | .memo lets e => .memo (lets.map (·.subst σ)) (e.subst σ)
   | .bound n => (σ.lookup n).getD (.bound n)
   | .not a => .not (a.subst σ)
   | .neg a => .neg (a.subst σ)
@@ -1439,7 +1883,9 @@ partial def Ex.readsUnspecified : Ex → Bool
   | .index .. | .table _ _ (some _) | .const .. => true
   | .typed _ _ a => a.readsUnspecified
   | .table _ rows none => rows.any fun (_, c?, v) => c?.any (·.readsUnspecified) || v.readsUnspecified
-  | .lit _ | .var _ | .slot _ | .bound _ => false
+  | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => false
+  | .memo lets a => a.readsUnspecified || lets.any (·.readsUnspecified)
+  | .lifted lets a => a.readsUnspecified || lets.any (·.any (·.readsUnspecified))
   | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .pre _ _ _ a => a.readsUnspecified
   | .quant _ _ _ _ ds _ a => a.readsUnspecified || ds.any (·.any (·.readsUnspecified))
   | .range lo hi => lo.readsUnspecified || hi.readsUnspecified

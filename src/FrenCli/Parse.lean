@@ -1475,13 +1475,18 @@ def member (legacy : Bool := false) : P Member := do
     if !isPub && !isDet && ty.isNone && results.contains x.name then
       if let some e := defn then return .define x e
     return ← outputMember start isPub isDet t.span x declStop (d?.map fun d => (d.span, defn.get!))
-  if !legacy && (isKw t "exists" || isKw t "let") && pub?.isNone then
+  -- In a component too, as a merge may leave it half migrated.
+  if (isKw t "exists" || isKw t "let") && pub?.isNone then
     discard bump
     let x ← ident
     let ty ← type?
-    if isKw t "exists" then return .var false false isDet x ty none
-    discard (expectKw ":=")
-    return .var false false isDet x ty (some (← top))
+    let declStop := (← lastSpan).stop
+    let d? ← if isKw t "exists" then pure none else some <$> expectKw ":="
+    if legacy then
+      modify fun s => { s with varMarks := s.varMarks.push (x.span.start, declStop, d?.map (·.span.start)) }
+    match d? with
+    | none => return .var false false isDet x ty none
+    | some _ => return .var false false isDet x ty (some (← top))
   if let some m := det? <|> pub? then
     let mod := if isDet then "det" else "pub"
     let what := if isKw t "in" then "an input"
@@ -1500,7 +1505,7 @@ def member (legacy : Bool := false) : P Member := do
     discard (expectKw ":")
     let (comp, _) ← path false
     return .inst x comp (← bindings) true (start.to (← lastSpan))
-  if !legacy && isWord t "call" then
+  if isWord t "call" then
     discard bump
     let x ← ident
     discard (expectKw ":=")

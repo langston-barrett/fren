@@ -68,7 +68,7 @@ between them. Here `p` and `q` are their root layers:
 -- It quantifies over scopes, which are sets of names.
 set_option fren.lint.undecidable "allow" in
 expect written_same: forall (x y: Scoped) (p q: lang::node),
-    when x = y and p.env = q.env and p.head = written_head(x) and p.values = written_values(p.env, x)
+    when x = y and p.env = q.env and p.program = q.program and p.head = written_head(x) and p.values = written_values(p.env, x)
     and q.head = written_head(y) and q.values = written_values(q.env, y),
     p.value = q.value
 ```
@@ -79,8 +79,9 @@ Two texts in different scopes may have different values.
 `else` branch, the variable `v`, in one environment:
 
 ```fren
-pub proc written_scopes(env: lang::Env) {
+pub proc written_scopes(program: lang::Program, env: lang::Env) {
     call payload := lang::node(
+        program,
         lang::Head::Binder("Reply::Value.0"),
         env,
         [lang::lookup(env, "r")],
@@ -88,6 +89,7 @@ pub proc written_scopes(env: lang::Env) {
         {},
     )
     call outer := lang::node(
+        program,
         lang::Head::Variable("v"),
         env,
         [],
@@ -117,5 +119,6 @@ parts' values, in any other:
 
 ```fren
 expect mentions_nothing: forall (p q: lang::node),
-    when p.mentioned = {} and p.specified? and q.head = p.head and q.values = p.values, q.value = p.value
+    when p.mentioned = {} and p.specified? and q.program = p.program and q.head = p.head and q.values = p.values,
+    q.value = p.value
 ```

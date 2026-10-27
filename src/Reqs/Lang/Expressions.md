@@ -325,12 +325,12 @@ environment; that the parts' values are the same follows by induction
 ```fren
 expect fixed_factor: forall (p: linear_product) (a a2: node),
     when p.accepted? and p.b_mentioned != {} and p.a_mentioned = a.mentioned
-    and a2.head = a.head and a2.values = a.values and a.specified?,
+    and a2.program = a.program and a2.head = a.head and a2.values = a.values and a.specified?,
     a2.value = a.value
 
 expect fixed_factor_right: forall (p: linear_product) (b b2: node),
     when p.accepted? and p.a_mentioned != {} and p.b_mentioned = b.mentioned
-    and b2.head = b.head and b2.values = b.values and b.specified?,
+    and b2.program = b.program and b2.head = b.head and b2.values = b.values and b.specified?,
     b2.value = b.value
 ```
 
