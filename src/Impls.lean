@@ -11,6 +11,7 @@ import Impls.Impl
 import Impls.Inst
 import Impls.Lang
 import Impls.Lint
+import Impls.Meaning
 import Impls.Modules
 import Impls.Mutate
 import Impls.PatternTypes
