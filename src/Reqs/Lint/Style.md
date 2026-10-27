@@ -392,11 +392,11 @@ a pattern test.
 
 ## Bindings
 
-`redundant_bindings` fires on a binding of a refinement, or a field of a
-record literal, written `x := x`, and is fixable. The fix is `x`, which
-means `x := x` by definition, for [bindings](../Lang/Refinement.md#bindings)
-and [fields](../Lang/Expressions.md#records) alike, so it keeps the meaning
-and the guards. The name and the expression after `:=` are compared as
+`redundant_bindings` fires on a field of a record literal written `x :=
+x`, and is fixable. The fix is `x`, which means `x := x` by definition
+(see [Records](../Lang/Expressions.md#records)), so it keeps the meaning
+and the guards. It fired on an instance's binding `x := x` too, before
+instances were calls, whose arguments are positional. The name and the expression after `:=` are compared as
 [written the same](../Lint.md#written-the-same), so a comment next to
 either is not part of it: `x := /- c -/ x` and `x := x -- c` fire too,
 and the fix removes a comment between the name and the expression.

@@ -1,14 +1,6 @@
--- `redundant_bindings`, in a refinement and in a record literal.
+-- `redundant_bindings`, in a record literal.
 struct Point { x: Int, y: Int }
 
-proc sub(x: Int): (p?) {
-    ensure r: p? iff x > 0
-}
-
 proc c(x: Int): (q?) {
-    call s := sub(x)
-
     ensure r: q? iff Point { x := x, y := 1 }.x > 0
 }
-
-refine sub_c: sub refines c { x := x, q? := p? }

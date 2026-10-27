@@ -1,20 +1,20 @@
 warning[F0735]: `x := x` is `x`
-  --> test/cli/lints/style/f0735_redundant_bindings.fren:11:30
-   |
-11 |     ensure r: q? iff Point { x := x, y := 1 }.x > 0
-   |                              ^^^^^^ `x` alone means this
-   |
-   = note: a field `x` alone means `x := x`
-   = help: `fren fix` can fix this
-   = note: `redundant_bindings` is `warn` by default
-   = help: to allow it, `set_option fren.lint.redundant_bindings "allow"`
+ --> test/cli/lints/style/f0735_redundant_bindings.fren:5:30
+  |
+5 |     ensure r: q? iff Point { x := x, y := 1 }.x > 0
+  |                              ^^^^^^ `x` alone means this
+  |
+  = note: a field `x` alone means `x := x`
+  = help: `fren fix` can fix this
+  = note: `redundant_bindings` is `warn` by default
+  = help: to allow it, `set_option fren.lint.redundant_bindings "allow"`
 help: write `x`
-   |
-11 -     ensure r: q? iff Point { x := x, y := 1 }.x > 0
-11 +     ensure r: q? iff Point { x, y := 1 }.x > 0
-   |
+  |
+5 -     ensure r: q? iff Point { x := x, y := 1 }.x > 0
+5 +     ensure r: q? iff Point { x, y := 1 }.x > 0
+  |
 
-fren: 4 passed, 0 failed, 0 inconclusive, 0 redundant
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
 
 For more information about this error, try `fren --explain F0735`.
 exit=3

@@ -4345,7 +4345,7 @@ proc c(m: Mode): (y: Int) {
 }
 ```
 "# },
-  { code := "F0735", explanation := r#"A binding or field `x := x` (a warning, `redundant_bindings`).
+  { code := "F0735", explanation := r#"A field `x := x` (a warning, `redundant_bindings`).
 
 Example:
 
@@ -4355,8 +4355,8 @@ struct P { x: Int }
 proc c(x: Int): (p: P) { ensure r: p = P { x := x } }
 ```
 
-In a binding of a refinement, or a field of a record literal, `x` alone
-means `x := x`. `fren fix` can fix this:
+In a field of a record literal, `x` alone means `x := x`. `fren fix` can
+fix this:
 
 ```fren
 struct P { x: Int }
