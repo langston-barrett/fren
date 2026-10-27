@@ -1,0 +1,9 @@
+-- A model of the expansion that no sequence of its length makes a model of
+-- the quantifier: `1 in q`, outside the core, reads elements outside the
+-- index set.
+set_option fren.lint.undecidable "allow" in
+comp zeros {
+    in q: Seq(Int)
+    assume all_zero: forall (x: Int), when x in q, x = 0
+    expect no_one: not (1 in q)
+}

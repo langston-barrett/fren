@@ -1,0 +1,58 @@
+-- Quantifiers over elements outside the decidable core: the `undecidable`
+-- lint says why, at each binder of a type that is not listed.
+-- fren-covers: lang::element_quantifier
+
+fn positive?(x: Int) := x > 0
+fn at_pos(s: Seq(Int), i: Int): Int := s[i]
+fn weight(Int): Nat
+
+-- A set's members are not a sequence's elements.
+comp over_set {
+    in s: Set(Int)
+    ensure r: forall (x: Int), when x in s, positive?(x)  --~ error: a quantifier over a set's members
+}
+
+-- The bound name as an index is outside the array property fragment.
+comp as_index {
+    in q: Seq(Int)
+    in r: Seq(Int)
+    ensure a: forall (i: Int), when i in q, r[i] > 0  --~ error: its bound name is used as an index
+    --~^ error: an operation on sequences other than indexing
+    ensure b: forall (i: Int), when i in q, at_pos(r, i) > 0  --~ error: its bound name is an argument of a function of a sequence
+    --~^ error: an operation on sequences other than indexing
+}
+
+-- A sequence within the bound name's guard, or a function whose applications
+-- bring facts.
+comp nested_receiver {
+    in qs: Seq(Seq(Int))
+    in q: Seq(Int)
+    ensure a: forall (s: Seq(Int)), when s in qs, forall (x: Int), when x in s, x > 0  --~ error: its bound name is the sequence of a quantifier within it
+    --~^ error: its members' sequence mentions a bound name
+    --~^^ error: an operation on sequences other than indexing
+    --~^^^ error: an operation on sequences other than indexing
+    ensure b: forall (x: Int), when x in q, weight(x) < 3  --~ error: whose applications bring facts
+    --~^ error: an operation on sequences other than indexing
+}
+
+-- Quantifiers of the two kinds, one within the other, alternate.
+comp alternating {
+    in q: Seq(Int)
+    in r: Seq(Int)
+    ensure a: forall (x: Int), when x in q, exists (y: Int), y in r and x = y  --~ error: alternates quantifiers
+    --~^ error: an operation on sequences other than indexing
+}
+
+-- The bound name's membership must be the first conjunct that names it.
+comp late_membership {
+    in q: Seq(Int)
+    ensure a: forall (x: Int), when x > 0 and x in q, x < 10  --~ error: a quantifier over a type whose values cannot be listed
+    --~^ error: an operation on sequences other than indexing
+}
+
+-- A sequence outside the core is reported where it is written.
+comp concatenated {
+    in a: Seq(Int)
+    in b: Seq(Int)
+    ensure c: forall (x: Int), when x in a ++ b, x > 0  --~ error: an operation on sequences other than indexing
+}

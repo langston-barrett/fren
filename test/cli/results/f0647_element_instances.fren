@@ -1,0 +1,7 @@
+-- A query whose quantifiers over elements would have more than 256
+-- instances: three bound names over an index set of seven terms.
+comp triples {
+    in q: Seq(Int)
+    assume r: forall (x y z: Int), when x in q and y in q and z in q, x + y + z >= 0
+    expect e: when q.len >= 3, q[1] + q[2] >= 0
+}

@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Fren.Lint
 import Fren.Model
+import Fren.SeqElems
 import Fren.SmtTranslate
 import FrenCore.Check
 import FrenCore.Ty
@@ -168,17 +169,12 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
     ({ v with name := Core.primed v.name }, p)
   let varOf? (n : Name) := vars.find? (·.1.name == n)
-  -- The answer, and whether to cache it: not if it leaves out a model that
-  -- lean-smt could not read.
-  let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr × Bool) :=
-    withoutModifyingState do
-    -- With the `have`s of `let`s and `where` clauses substituted, so that an
-    -- application to a name mentions no bound variable.
-    let appFacts ← Core.appFacts appsOf factsOf (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
-      (← zetaReduce goal)
-    let hyps ← (facts ++ appFacts ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
-    let goal ← smtBinders (← unfoldDefined goal)
-    let hyps ← hyps.mapM fun (n, t) => return (n, ← smtBinders t)
+  -- The answer to the query of `hyps` and `goal`, as the solver knows them,
+  -- whose model also has the values of the locals `extra`, by their names,
+  -- and whether to cache it: not if it leaves out a model that lean-smt
+  -- could not read.
+  let askSmt (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) (extra : Array Expr := #[]) :
+      MetaM (Core.Outcome Expr × Bool) := do
     withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do
     -- The locals named as the solver knows them, as their binders are.
     let lctx := (← getLCtx).foldl (init := ← getLCtx) fun l d => l.setUserName d.fvarId (smtUserName d.userName)
@@ -213,7 +209,9 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
                   mv.mvarId! hs.reverse with
         | .sat (some m) =>
           return .sat <| m.values.filterMap fun (k, v) =>
-            (vars.find? (·.2 == k)).map fun (var, _) => (var.name, v)
+            match (vars.find? (·.2 == k)).map (·.1.name) with
+            | some n => some (n, v)
+            | none => if extra.contains k then some (k.fvarId!.name, v) else none
         | .sat none => return .sat #[]
         | .unsat .. => return .unsat
         | .unknown r => return .unknown r
@@ -223,6 +221,44 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         let failed : Core.Outcome Expr := .unknown (← ex.toMessageData.toString)
         unless wantModel && modelOptional do return (failed, true)
         try return (← solve false, false) catch _ => return (failed, true)
+  -- With its quantifiers over elements expanded (`Fren.Elems.withExpanded`):
+  -- at the index set, with the lengths of their sequences in the model;
+  -- and, if that has a model, again at every position, with the lengths
+  -- pinned to the model's, whose model is real
+  -- (`Reqs/Lang/ElementQuantifiers#expansion`), as the binary's
+  -- `solveExpanded` asks.
+  let askElems (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr × Bool) := do
+    let first ← Elems.withExpanded hyps goal none fun ex => do
+      let (o, c) ← askSmt ex.hyps ex.goal (wantModel || !ex.lengths.isEmpty) (ex.lengths.map (·.1))
+      let .sat m := o | return ((o, c), none)
+      let ids := ex.locals.map (·.fvarId!.name)
+      let model := m.filter fun (n, _) => !ids.contains n
+      if ex.lengths.isEmpty then return ((.sat model, c), none)
+      let pins := ex.lengths.filterMap fun (l, q) => do
+        let (_, v) ← m.find? (·.1 == l.fvarId!.name)
+        let k ← v.int?
+        guard (0 ≤ k)
+        pure (q, k.toNat)
+      return ((.sat model, c), some pins)
+    match first with
+    | .error n => return (.unknown (Core.elementLimitReason n), true)
+    | .ok (r, none) => return r
+    | .ok (_, some pins) =>
+      match ← Elems.withExpanded hyps goal (some pins) fun ex => askSmt ex.hyps ex.goal wantModel with
+      | .error n => return (.unknown (Core.elementLimitReason n), true)
+      | .ok (.unsat, c) => return (.unknown Core.elementUnconfirmedReason, c)
+      | .ok r => return r
+  let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr × Bool) :=
+    withoutModifyingState do
+    -- With the `have`s of `let`s and `where` clauses substituted, so that an
+    -- application to a name mentions no bound variable.
+    let appFacts ← Core.appFacts appsOf factsOf (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
+      (← zetaReduce goal)
+    let hyps ← (facts ++ appFacts ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
+    let goal ← smtBinders (← unfoldDefined goal)
+    let hyps ← hyps.mapM fun (n, t) => return (n, ← smtBinders t)
+    if Elems.hasMark goal || hyps.any (Elems.hasMark ·.2) then askElems hyps goal wantModel
+    else askSmt hyps goal wantModel
   { query := fun hyps goal wantModel => do
       -- The same formulas, in the same local context and with the same
       -- options, are the same query.
