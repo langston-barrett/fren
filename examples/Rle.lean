@@ -25,8 +25,10 @@ open rle
 emit the current. -/
 def step (current : Option Run) (next : Int) : Run × Option Run :=
   match current with
-  | some r => if r.value = next then (Run.«{}» next (r.count + 1), none) else (Run.«{}» next 1, some r)
-  | none => (Run.«{}» next 1, none)
+  | some r =>
+    if r.value = next then ({ value := next, count := r.count + 1 }, none)
+    else ({ value := next, count := 1 }, some r)
+  | none => ({ value := next, count := 1 }, none)
 
 -- `step` is the spec's procedure, resolved from the spec's module, `rle`.
 impl step_meets: step for (c : Option Run) (n : Int) {
@@ -87,11 +89,11 @@ theorem encodeFrom_adjacentDiffer_head (r : Run) (xs : List Int) :
   | nil => simp [encodeFrom, adjacentDiffer]
   | cons x xs ih =>
     by_cases hv : r.value = x
-    · simpa [encodeFrom, step, hv] using ih (Run.«{}» x (r.count + 1))
-    · obtain ⟨hc, hh⟩ := ih (Run.«{}» x 1)
+    · simpa [encodeFrom, step, hv] using ih { value := x, count := r.count + 1 }
+    · obtain ⟨hc, hh⟩ := ih { value := x, count := 1 }
       simp only [encodeFrom, step, hv, if_false, Option.toList_some, List.singleton_append]
       refine ⟨?_, by simp⟩
-      cases h : encodeFrom (some (Run.«{}» x 1)) xs with
+      cases h : encodeFrom (some { value := x, count := 1 }) xs with
       | nil => simp [h] at hh
       | cons b l =>
         rw [h] at hc hh
@@ -103,7 +105,8 @@ in two. -/
 theorem encode_adjacentDiffer (xs : List Int) : adjacentDiffer (encode xs) := by
   cases xs with
   | nil => simp [encode, encodeFrom, adjacentDiffer]
-  | cons x xs => simpa [encode, encodeFrom, step] using (encodeFrom_adjacentDiffer_head (Run.«{}» x 1) xs).1
+  | cons x xs =>
+    simpa [encode, encodeFrom, step] using (encodeFrom_adjacentDiffer_head { value := x, count := 1 } xs).1
 
 /-- Encoding after a run with at least one value gives runs with at least one
 value each. -/
@@ -127,6 +130,8 @@ theorem encodeFrom_count (current : Option Run) (xs : List Int)
 theorem encode_count (xs : List Int) : ∀ r ∈ encode xs, 1 ≤ r.count :=
   encodeFrom_count none xs (by simp)
 
-example : encode [7, 7, 3, 7] = [Run.«{}» 7 2, Run.«{}» 3 1, Run.«{}» 7 1] := by decide
+example :
+    encode [7, 7, 3, 7] = [{ value := 7, count := 2 }, { value := 3, count := 1 }, { value := 7, count := 1 }] := by
+  decide
 
 end Rle
