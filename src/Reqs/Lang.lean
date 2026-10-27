@@ -25,6 +25,7 @@ open Fren.Lang
 #fren_md "Lang/Patterns.md"
 #fren_md "Lang/Let.md"
 #fren_md "Lang/Quantifiers.md"
+#fren_md "Lang/ElementQuantifiers.md"
 #fren_md "Lang/Meaning.md"
 #fren_md "Lang/MeaningLaws.md"
 #fren_md "Lang/Expressions.md"

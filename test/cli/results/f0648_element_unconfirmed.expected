@@ -1,0 +1,13 @@
+warning[F0648]: could not decide whether `zeros::no_one` holds: the solver's model does not satisfy the quantifiers over sequences' elements, and none does with the same lengths
+ --> test/cli/results/f0648_element_unconfirmed.fren:8:12
+  |
+8 |     expect no_one: not (1 in q)
+  |            ^^^^^^ undecided
+  |
+  = note: the instances at the index set do not hold of every element of the solver's model, and no model has every element satisfy them at the same lengths
+  = help: state the property by the elements, within the decidable core, or check it by testing
+
+fren: 2 passed, 0 failed, 1 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0648`.
+exit=3

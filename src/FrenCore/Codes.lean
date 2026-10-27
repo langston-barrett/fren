@@ -3825,6 +3825,70 @@ set_option fren.evidence "enumerated" in
 comp c { in x: Int is -3..=3 pub det out y: Int := x + 1 expect e: y > x }
 ```
 "# },
+  { code := "F0647", explanation := r#"A check whose quantifiers over sequences' elements would have too many instances.
+
+Erroneous code example:
+
+```fren
+comp c {
+    in q: Seq<Int>
+    assume r: forall (x y z: Int), when x in q and y in q and z in q, x + y + z >= 0
+    expect e: when q.len >= 3, q[1] + q[2] >= 0
+}
+```
+
+A quantifier over a sequence's elements, `forall (x: T), when x in q, P`, is
+in the decidable core: each query instantiates it at every term of its
+index set, which has `0`, the last position of each quantifier's sequence,
+each index that the query reads, each position of an `update` and its
+neighbours, and a witness for each bound name. A quantifier of `n` bound
+names has the index set's size to the power `n` instances, and a query has
+at most 256 in all. Here the expectation's query reads `q[1]` and `q[2]`,
+so its index set has seven terms, and the quantifier 343 instances: the
+check is inconclusive. Bind fewer names in one quantifier, or state the
+constraint so that fewer indexes meet it:
+
+```fren
+comp c {
+    in q: Seq<Int>
+    assume r: forall (x: Int), when x in q, x >= 0
+    expect e: when q.len >= 3, q[1] + q[2] >= 0
+}
+```
+"# },
+  { code := "F0648", explanation := r#"A check whose solver's model the quantifiers over sequences' elements refute.
+
+Erroneous code example:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+comp c {
+    in q: Seq<Int>
+    assume zeros: forall (x: Int), when x in q, x = 0
+    expect e: not (1 in q)
+}
+```
+
+A quantifier over a sequence's elements is instantiated at the query's
+index set, which is enough for the constructs of the decidable core: a
+model of the instances is then a model of the quantifier, once each
+element outside the index set is replaced by one inside it. When the
+solver finds a model, the query is asked again with each sequence's length
+pinned to its length in that model, and the quantifier instantiated at
+every position, so that the counterexample is a real one. Where a
+construct outside the core reads the sequence's elements, as `1 in q` does
+here, the model of the instances may not be one of the quantifier at any
+length, and the second query is unsatisfiable: the check is inconclusive.
+State the property in the core, by the elements:
+
+```fren
+comp c {
+    in q: Seq<Int>
+    assume zeros: forall (x: Int), when x in q, x = 0
+    expect e: forall (x: Int), when x in q, x != 1
+}
+```
+"# },
   { code := "F0701", explanation := r#"An import that nothing uses (the lint `unused_imports`, a warning by default).
 
 Erroneous code example:

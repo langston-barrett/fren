@@ -3,6 +3,7 @@ import Fren.FinSet
 import Fren.Finite
 import Fren.Lint
 import Fren.Model
+import Fren.SeqElems
 import Fren.SimpSet
 import Fren.Syntax
 import FrenCore.Checking
@@ -535,6 +536,19 @@ structure ExprCtx where
   /-- For an operand of a chain of `and`, its position in the chain and the
   chain's number of operands. -/
   testAt? : Option (Nat × Nat) := none
+  /-- The members' expressions of the guards of the quantifiers over
+  elements around this expression, by where they are
+  (`LocalState.elemMembers`). -/
+  elemGuards : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
+  /-- Within the body of a quantifier over elements: whether it is a
+  `forall`; and the quantifiers that are directly its body, or the body of
+  one of those (`Core.ElementNesting`). -/
+  elemKind? : Option Bool := none
+  elemDirect : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
+  /-- The bound names of the quantifiers over elements, of the same kind,
+  that this expression is directly the body of, which its quantifier may
+  mention (`Core.ElementVerdict.mentionsBound`). -/
+  elemChain : Array Name := #[]
 
 /-- What the binder `b` is, for a declaration that hides it (`Core.bindingLocals`). -/
 def MatchBinder.what (b : MatchBinder) : Name × String :=
@@ -1378,6 +1392,29 @@ partial def isVariable (cx : ExprCtx) (e : Syntax) : Bool :=
   else if e.isOfKind ``Lang.fieldExpr then isVariable cx e[0]
   else if e.isOfKind ``Lang.appExpr then (methodApp? cx e).isNone
   else e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(" && isVariable cx e[1]
+
+/-- Where `e` is written, without its parentheses: how the memberships of
+quantifiers over elements are found again (`ExprCtx.elemGuards`). -/
+def elemKey (e : Syntax) : Option String.Pos.Raw × Option String.Pos.Raw :=
+  let e := unparen e
+  (e.getPos?, e.getTailPos?)
+
+/-- Whether the names `ns`, as mentioned, are an output that is not
+defined, or mention one, through a definition or through a binder: one
+that the realizability check quantifies over, as the `fren` command's
+`mentionsOutput`. -/
+partial def mentionsOutputOf (cx : ExprCtx) (ns : Array Name) : TermElabM Bool := do
+  for n in ns do
+    if let some b := cx.binder? n then
+      if let some sc := b.scrutinee then
+        if ← mentionsOutputOf (cx.at b) (pathMentions sc) then return true
+      continue
+    let some v := cx.vars.find? (·.name == n) | continue
+    if (defDeps cx.vars v).any fun u => u.role == .output && u.defn?.isNone then return true
+  return false
+
+/-- `mentionsOutputOf` of the names that `e` mentions. -/
+def mentionsOutput (cx : ExprCtx) (e : Syntax) : TermElabM Bool := mentionsOutputOf cx (pathMentions e)
 
 /-- Reports `undecidable` if construct `c`, with `operands` other than of
 `=` and `!=`, is outside the decidable core (`lang::in_core`). -/
@@ -3827,6 +3864,16 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     -- `ts` is taken apart only once it is known to be a `Seq`: a `(← ...)`
     -- after `&&` would run, and panic, for any other type.
     let isSeq ← if ts.isAppOfArity ``Fren.Seq 1 then isDefEq ts.appArg! tx else pure false
+    -- The membership of a quantifier over elements' guard: its report
+    -- waits for the quantifier's verdict (`quantTerm`).
+    if cx.elemGuards.contains (elemKey b) then
+      let infinite ← #[a, b].anyM (mentionsInfiniteOutput cx)
+      let ground ← isConstant cx e
+      let report := if !isSeq || cx.unmentioned || Core.inCore .seqWord true true infinite ground
+          (literalOperand := (unparen b).isOfKind ``Lang.seqExpr) then none
+        else some (e, Core.undecidableMsg .seqWord infinite)
+      modifyLocal fun l => { l with elemMembers := l.elemMembers.push (elemKey b, isSeq, report) }
+      if isSeq then return ← `($x ∈ $s)
     if isSeq then
       checkCore cx e .seqWord true true #[a, b] (← isConstant cx e) (literalOperand := (unparen b).isOfKind ``Lang.seqExpr)
       return ← `($x ∈ $s)
@@ -4779,6 +4826,74 @@ def lintQuant (e : Syntax) (all : Bool) (binders ids : Array Syntax) (bound : Ar
   let msg := Core.trivialQuantifierMsg all bound[i]!.1 (exactText bs[i]![3]) values[i]! quant fixed?
   recordLint .trivialQuantifier bs[i]! (if (← getLocal).inMarkdown && fixed?.isSome then msg.note Core.fixHelp else msg)
 
+/-- Whether the declaration `decl` of a defined function has a quantifier
+over a type that is not listed, Lean's `∀` over a value or `∃`, directly or
+through another defined function that it applies, to a depth of `fuel`,
+beyond which it is taken to have one, as the `fren` command's
+`fnQuantifies` (`Core.ElementUse.quantifiedArgument`). -/
+partial def defQuantifies (env : Environment) (s : State) (fuel : Nat) (decl : Name) : Bool :=
+  if fuel == 0 then true else
+  match (env.find? decl).bind (·.value?) with
+  | none => false
+  | some v =>
+    let dependent : Expr → Bool
+      | .forallE _ _ b _ => b.hasLooseBVars
+      | _ => false
+    let quantified := (v.find? fun x => x.isAppOf ``Exists || dependent x).isSome
+    let decls := s.defined.foldl (init := #[]) fun acc _ d => if d.decl != decl then acc.push d.decl else acc
+    quantified || decls.any fun d => (v.find? (·.isConstOf d)).isSome && defQuantifies env s (fuel - 1) d
+
+/-- How the expression `e`, within the body of a quantifier, uses the bound
+name `x`, where `inner` are the names that the body declares, which may
+stand for `x` (`Core.ElementUse`), as the `fren` command's `elementUses`. -/
+partial def elementUses (cx : ExprCtx) (x : Name) (inner : Array Name) (e : Syntax) :
+    TermElabM (Array Core.ElementUse) := do
+  let names (e : Syntax) : Bool := (pathMentions e).any fun n => n.getRoot == x || inner.contains n.getRoot
+  let st ← getState
+  let positions (m : String) : Nat := match m with | "update" | "at" => 1 | "slice" => 2 | _ => 0
+  let own : Array Core.ElementUse ← do
+    if e.isOfKind ``Lang.indexExpr then
+      pure (if names e[2] && !(← isConstant cx e[0]) then #[.index] else #[])
+    else if e.isOfKind ``Lang.methodExpr then
+      let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
+      let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
+      pure (if (e[4].getSepArgs.extract 0 (positions m)).any names && !(← isConstant cx e[0]) then #[.index] else #[])
+    else if e.isOfKind ``Lang.appExpr then
+      let args := e[2].getSepArgs
+      if !args.any names then pure #[]
+      else if let some (_, m) := methodApp? cx e then
+        pure (if (args.extract 0 (positions m.toString)).any names then #[.index] else #[])
+      else
+        let some names' ← (try some <$> segNames (pathSegs e[0]) catch _ => pure none) | pure #[]
+        match st.table.resolvePath cx.modName names' cx.shadowing with
+        | .ok (.item { kind := .fnItem, path, .. }) =>
+          if let some d := st.defined.get? path then
+            let ps := if d.typeParams.isEmpty then d.ptys.1.map (·.ty) else d.declared
+            if ps.any (Core.hasSeqWithin st.shapeOf 8) then pure #[.seqArgument]
+            else pure (if defQuantifies (← getEnv) st 8 d.decl then #[.quantifiedArgument] else #[])
+          else
+            let facts := (st.abstracts.get? path).any fun a =>
+              a.ptys.2.ty == .nat || a.fact?.isSome || st.contracts.contains path
+            pure (if facts then #[.factArgument] else #[])
+        | _ => pure #[]
+    else if e.isOfKind ``Lang.quantExpr then
+      let receivers := (guardConjuncts (isForall e) e[3]).filterMap fun
+        | some (_, .mem, r) => some r
+        | _ => none
+      pure (if receivers.any names then #[.receiver] else #[])
+    else pure #[]
+  return own ++ (← e.getArgs.flatMapM (elementUses cx x inner))
+
+/-- The quantifier that is directly the body `e` of a quantifier over
+elements, a `forall` if `all`, if any, by where it is (`elemKey`), as the
+`fren` command's `elementSpine`. -/
+partial def elementSpine (all : Bool) (e : Syntax) : Option (Option String.Pos.Raw × Option String.Pos.Raw) :=
+  let e := unparen e
+  if let some (_, d) := whenOf? e then (if all then elementSpine all d else none)
+  else if let .conj _ b := guardNode e then (if all then none else elementSpine all b)
+  else if e.isOfKind ``Lang.quantExpr && isForall e == all then some (elemKey e)
+  else none
+
 open Lang in
 /-- `forall (x: T), e`, or `exists` unless `all`, with the binders
 `binders` and the body `body`: expanded over the bound names of listed
@@ -4807,10 +4922,12 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- its type is listed.
   let mut bound : Array (Name × Expr × Core.PTy × Option (Array Term)) := #[]
   let mut sizes := #[]
+  let mut unlisted := #[]
   for b in binders do
     let (ty, pt) ← binderType cx.modName b[3]
     let values? ← binderValues ty pt
-    if values?.isNone then checkCore cx b .quantifier true true #[]
+    -- Reported once the quantifier's verdict is known.
+    if values?.isNone then unlisted := unlisted.push b
     for x in b[1].getArgs do
       let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
         (cx.binders.map (·.what) ++ bound.map (·.1, "the bound name")) cx.selfFn.isSome cx.inGlobal
@@ -4823,11 +4940,32 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let n := cx.instances * Core.instanceCount sizes
   unless Core.quantifierSizeAccepted n do
     throwErrorAt (mkNullNode binders) (Core.quantifierSizeMsg n (cx.instances > 1)).text
-  -- A bound name of a type that is not listed, with a domain, makes the
-  -- queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`).
   let names := bound.map (·.1)
-  if bound.zipIdx.any (fun ((_, ty, _, vs?), k) => vs?.isNone && domainOf all names body k (ty.isConstOf ``Nat) != .unbounded) then
-    modifyLocal fun l => { l with guardedUsed := true }
+  -- A quantifier over a sequence's elements (`lang::element_quantifier`):
+  -- each bound name of a type that is not listed has the members of `x in
+  -- e` as its domain, by the first conjunct of the guard that names it, as
+  -- the `fren` command finds them.
+  let conjuncts := guardConjuncts all body
+  let parts := Core.guardPartsBy guardNode whenOf? all body
+  let members : Array (Option Syntax) := bound.zipIdx.filterMap fun ((bn, ty, _, vs?), k) =>
+    if vs?.isSome then none else some <|
+      match domainOf all names body k (ty.isConstOf ``Nat) with
+      | .members j =>
+        if (parts.extract 0 j).any (·.any (namesBound bn)) then none
+        else match conjuncts[j]? with
+          | some (some (_, .mem, m)) => some m
+          | _ => none
+      | _ => none
+  let candidate := !members.isEmpty && members.all Option.isSome
+  let nesting : Core.ElementNesting := match cx.elemKind? with
+    | none => .top
+    | some k => if k == all && cx.elemDirect.contains (elemKey e) then .direct else .other
+  let bodyCx := if candidate then
+      { cx with elemGuards := cx.elemGuards ++ members.filterMap (·.map elemKey), elemKind? := some all
+                elemDirect := cx.elemDirect ++ (elementSpine all body).toArray
+                elemChain := (if nesting == .direct then cx.elemChain else #[])
+                  ++ (bound.filter (·.2.2.2.isNone)).map (·.1) }
+    else cx
   let values ← bound.filterMapM fun (_, ty, _, vs?) => vs?.mapM (·.mapM (elabProp · ty))
   let combos := values.foldl (fun acc vs => acc.flatMap fun pre => vs.map pre.push) #[#[]]
   let localName (k : Nat) (bn : Name) (listed : Bool) : Name :=
@@ -4842,7 +4980,48 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let outerTables := (← getLocal).tables
     modifyLocal fun l => { l with indexes := #[], tables := #[] }
     let mark := (← getLocal).boundMentions.size
-    let t ← toTerm { cx with binders := cx.binders ++ new, natOk := false, instances := cx.instances * combos.size } body
+    let t ← toTerm { bodyCx with binders := cx.binders ++ new, natOk := false, instances := cx.instances * combos.size } body
+    -- Its verdict, from its bound names of types that are not listed, in
+    -- order, as the `fren` command decides it.
+    let verdict ← if !candidate then pure Core.ElementVerdict.notMembers else do
+      let recorded := (← getLocal).elemMembers
+      let inner := (declaredNames body).map Name.mkSimple
+      let unbounded := bound.filter (·.2.2.2.isNone)
+      let mut infos := #[]
+      for (bn, _, _, _) in unbounded, m? in members, k in [0:unbounded.size] do
+        let some m := m? | continue
+        let seq := (recorded.find? (·.1 == elemKey m)).any (·.2.1)
+        let earlier := (unbounded.extract 0 k).map (·.1) ++ (cx.binders.filter (·.unbounded)).map (·.name)
+        infos := infos.push
+          { members := if seq then .seq else .set
+            receiverBound := (pathMentions m).any (earlier.contains ·.getRoot)
+            uses := (← elementUses cx bn inner body).toList : Core.ElementBinder }
+      -- What the quantifier mentions, once its own bound names are not.
+      let chain := if nesting == .direct then cx.elemChain else #[]
+      let bodyNames := (pathMentions body).filter fun n => !names.contains n.getRoot
+      let boundNames := bodyNames.any fun n =>
+        let r := n.getRoot
+        !chain.contains r && (cx.binder? r).any (·.unbounded)
+      let output ← mentionsOutputOf cx bodyNames
+      pure (Core.elementVerdict nesting output boundNames infos.toList)
+    let inCore := verdict == .inCore
+    -- The reports that its guard's memberships deferred, and its binders'.
+    let keys := members.filterMap (·.map elemKey)
+    let deferred := (← getLocal).elemMembers.filter (keys.contains ·.1)
+    modifyLocal fun l => { l with elemMembers := l.elemMembers.filter (!keys.contains ·.1) }
+    unless inCore || cx.unmentioned do
+      for (_, _, r?) in deferred do
+        if let some (ref, msg) := r? then
+          modifyLocal fun l => { l with outsideCore := true }
+          recordLint .undecidable ref msg
+      for b in unlisted do
+        modifyLocal fun l => { l with outsideCore := true }
+        recordLint .undecidable b ((Core.elementUndecidableMsg verdict).getD (Core.undecidableMsg .quantifier false))
+    -- A bound name of a type that is not listed, with a domain, makes the
+    -- queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`), unless the
+    -- quantifier is expanded.
+    if !inCore && bound.zipIdx.any (fun ((_, ty, _, vs?), k) => vs?.isNone && domainOf all names body k (ty.isConstOf ``Nat) != .unbounded) then
+      modifyLocal fun l => { l with guardedUsed := true }
     -- Each bound name's number of values, 0 for a type that is not listed.
     if cx.noteIndexes then
       lintQuant e all binders ids (bound.map fun (bn, ty, _, _) => (bn, ty))
@@ -4857,13 +5036,16 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     -- conjunct, and without `have`s, which lean-smt does not translate.
     let bindFree (forall? : Bool) (x : Expr) : TermElabM Expr := do
       if free.isEmpty then return x
+      -- A quantifier over elements in the core is marked, for each query
+      -- to expand (`Fren.Elems`).
+      let marked (q : Expr) : Expr := if inCore then Elems.mark free.size q else q
       let cons ← free.filterMapM fun (fv, ty, pt) => return (← factPred? ty pt).map (·.beta #[fv])
       let x ← zetaReduce x
       if forall? then
-        mkForallFVars (free.map (·.1)) (cons.foldr mkArrow' x)
+        return marked (← mkForallFVars (free.map (·.1)) (cons.foldr mkArrow' x))
       else
-        free.foldrM (init := cons.foldr mkAnd x) fun (fv, _, _) acc => do
-          mkAppM ``Exists #[← mkLambdaFVars #[fv] acc]
+        return marked (← free.foldrM (init := cons.foldr mkAnd x) fun (fv, _, _) acc => do
+          mkAppM ``Exists #[← mkLambdaFVars #[fv] acc])
     -- The names of enclosing `let`s and `where`s are locals here, which the
     -- `have`s that define them bind again: what mentions them is closed
     -- over them, and applied to their names.
