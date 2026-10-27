@@ -87,7 +87,7 @@ pub proc function_type_place(
 
     expect parameter: when site = DefinedParameter and within = [], accepted?
     expect nested: when within != [], not accepted?
-    expect not_in_data: when site in {Field, Payload}, code = "F0432"
+    expect not_in_data: when site in {Field, Payload} and within = [], code = "F0432"
 }
 ```
 
@@ -355,37 +355,24 @@ functions that run).
 
 `lang::closure_capture` states this of a mention of a name `x` in the
 closure's body, from the binders around it once the body is unfolded,
-outermost first: the outer `let`'s capture symbols and the other
-parameters, the higher-order body's binders around the application, the
-inner `let`'s closure parameters, and the closure body's own binders
-around the mention. A mention means the innermost binder of its name
-(`lang::means?`). Where `x` is captured, the mention means the capture
-symbol bound to `x`, and so the value that `x` has where the closure is
-written; where it is a parameter of the closure, the closure's parameter;
-and where the closure's body binds it, that binder:
+outermost first: the outer `let`'s capture symbols, `symbols`, and the
+other parameters, `values`; the higher-order body's binders around the
+application, `around`; the inner `let`'s closure parameters, `params`; and
+the closure body's own binders around the mention, `inner`. A mention
+means the innermost binder of its name. Where `x` is captured, the mention
+is the capture symbol bound to `x`, and no later binder has that symbol,
+so it means that binding, and so the value that `x` has where the closure
+is written; where it is a parameter of the closure, it means the
+closure's parameter; and where the closure's body binds it, that binder.
+The capture symbols are `Core.captureNames`'s, one for each name captured,
+told apart by their numbers (proved in Lean), and new: numbered from where
+the query's count of them is, which no binder of the query has yet:
 
 ```fren
--- A mention of `x` means the binder at position `i` among those around
--- it, outermost first: the innermost of its name.
-set_option fren.lint.undecidable "allow" in
-pub fn means?(around: Seq<Id>, x: Id, i: Int) := 0 <= i < around.len and around[i] = x
-    and not x in around.slice(i + 1, around.len)
-
--- The capture symbols of the names `captured`, numbered from `next`, in order.
-pub fn capture_symbols(Nat, Seq<Id>): Seq<Id>
-
--- The capture symbol numbered `k`, which is at least 0.
-pub fn capture_symbol(Int): Id
-
--- What a mention of `x` in the closure's body is renamed to, where the
--- closure's parameters are `params` and the names it captures `captured`,
--- whose capture symbols are numbered from `next`.
-pub fn renamed(Nat, Seq<Id>, Seq<Id>, Id): Id
-
 set_option fren.lint.undecidable "allow" in
 pub proc closure_capture(
-    next: Nat,               -- the first capture symbol that the query does not yet have
     captured: Seq<Id>,       -- the names that the closure's body mentions free, other than its parameters
+    symbols: Seq<Id>,        -- their capture symbols, in order
     params: Seq<Id>,         -- the closure's parameters' symbols
     values: Seq<Id>,         -- the higher-order function's other parameters
     around: Seq<Id>,         -- the higher-order body's binders around the application, outermost first
@@ -393,28 +380,33 @@ pub proc closure_capture(
     x: Id,                   -- the name mentioned
     k: Int,                  -- where `x` is first among `captured`, if it is captured
     j: Int,                  -- where `x` is last among `params`, if it is a parameter
-): (det symbols: Seq<Id>, det mention: Id, det binders: Seq<Id>) {
-    -- The capture symbols from `next` on are new: no other binder has one.
-    assume fresh: forall (n: Nat), when n >= next,
-        not capture_symbol(n) in values and not capture_symbol(n) in around
-        and not capture_symbol(n) in params and not capture_symbol(n) in inner
+): (det mention: Id) {
+    -- One capture symbol for each name captured, each its own.
+    assume named: symbols.len = captured.len
+        and (forall (a b: Int), when 0 <= a < symbols.len and 0 <= b < symbols.len and a != b, symbols[a] != symbols[b])
+    -- The capture symbols are new: no other binder has one.
+    assume fresh: forall (s: Id), when s in symbols,
+        not s in values and not s in around and not s in params and not s in inner
     -- A free name is captured, a parameter or bound within the body.
     assume free: x in captured or x in params or x in inner
-    assume first: when x in captured, 0 <= k < captured.len and captured[k] = x and not x in captured.slice(0, k)
-    assume last: when x in params, 0 <= j < params.len and params[j] = x and not x in params.slice(j + 1, params.len)
+    assume first: when x in captured, 0 <= k < captured.len and captured[k] = x
+        and (forall (a: Int), when 0 <= a < k, captured[a] != x)
+    assume last: when x in params, 0 <= j < params.len and params[j] = x
+        and (forall (a: Int), when j < a < params.len, params[a] != x)
     -- The parameters and the names captured are told apart.
     assume apart: not (x in captured and x in params)
 
-    out symbols := capture_symbols(next, captured)
-    out mention := if x in inner then x else renamed(next, captured, params, x)
-    out binders := symbols ++ values ++ around ++ params ++ inner
+    -- What the mention is renamed to (`Core.captureRename`).
+    out mention := if x in inner or x in params then x else symbols[k]
 
-    ensure symbols_named: symbols.len = captured.len
-        and (forall (i: Int), when 0 <= i < captured.len, symbols[i] = capture_symbol(next + i))
-    ensure own_binders: when x in inner, mention = x
-    ensure captures: when not x in inner and x in captured, means?(binders, mention, k)
-    ensure parameters: when not x in inner and x in params,
-        means?(binders, mention, symbols.len + values.len + around.len + j)
+    expect own_binders: when x in inner, mention = x
+    -- Captured: the capture symbol, which no later binder has.
+    expect captures: when not x in inner and x in captured, 0 <= k < symbols.len and mention = symbols[k]
+        and (forall (a: Int), when k < a < symbols.len, symbols[a] != mention)
+        and not mention in values and not mention in around and not mention in params and not mention in inner
+    -- A parameter: the inner `let`'s, which no later binder has.
+    expect parameters: when not x in inner and x in params, 0 <= j < params.len and mention = params[j]
+        and (forall (a: Int), when j < a < params.len, params[a] != mention) and not mention in inner
 }
 ```
 
@@ -422,3 +414,16 @@ The front ends unfold alike, so they ask the same queries of the same
 formulas, and report the same counterexamples, which never show a
 function: a closure's parameters are bound within the queries, and a
 function parameter is never a variable of a component.
+
+This chapter comes after the last `#fren_check` of the chapters that share
+its Lean file, so it names its own procedures, which the Lean-hosted front
+end then checks, as the `fren` command checks every procedure:
+
+```fren
+#fren_check function_type_place
+#fren_check function_type_parts
+#fren_check function_argument
+#fren_check closure_obligation
+#fren_check function_comparison
+#fren_check closure_capture
+```
