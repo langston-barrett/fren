@@ -1,7 +1,8 @@
 /-!
 # ui tests
 
-Expectations written as comments in `test/ui/**/*.fren`, in the style of rustc's
+Expectations written as comments in `test/ui/**/*.fren` and
+`examples/**/*.fren`, in the style of rustc's
 ui tests, checked against the messages of either front end:
 
 - `--~ SEV: TEXT` expects a message of severity `SEV` (`error`, `warning` or

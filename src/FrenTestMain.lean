@@ -1039,7 +1039,7 @@ open FrenCli.Eval in
 /-- Whether the search with backjumping finds what backtracking over the
 same candidates finds, in no more steps, and draws the same random numbers
 (`Reqs/Eval#backjumping`), for every component of the spec in `paths`, or
-of each file of `test/ui` on its own if `paths` is empty. Its problems are
+of each ui test (`uiFiles`) on its own if `paths` is empty. Its problems are
 those of a test's searches: a behaviour that meets the component, and one
 in which an expectation is false, each under two random interpretations.
 Returns the failures and the number of problems. -/

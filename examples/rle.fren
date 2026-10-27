@@ -1,12 +1,13 @@
 -- Run-length encoding, as a streaming encoder. Each step reads one value of
--- the input: a value equal to the current run's extends it, and any other
--- value starts a new run and emits the current one.
+-- the input: a value equal to the current run's value extends that run, and
+-- any other value starts a new run and emits the current one. At the end of
+-- the input, the caller emits the current run.
 mod rle
 
 -- `count` copies of `value`.
 pub struct Run { value: Int, count: Nat is 1.. }
 
--- The number of values in a run that may not have started.
+-- The number of values in a run, or 0 when there is none.
 fn size(o: Option<Run>): Nat := match o { Some(r) => r.count, None => 0 }
 
 pub proc step(current: Option<Run>, next: Int): (run: Run, emitted: Option<Run>) {
@@ -17,14 +18,17 @@ pub proc step(current: Option<Run>, next: Int): (run: Run, emitted: Option<Run>)
         unless current is Some(r) and r.value = next,
         run = Run { value := next, count := 1 } and emitted = current
 
+    -- The current run holds the value just read.
+    expect fresh: run.value = next
     -- No value is lost or duplicated.
     expect conserves: size(emitted) + run.count = size(current) + 1
     -- A run ends only where the value changes.
-    expect maximal: when emitted is Some(e), e.value != next
+    expect differs: when emitted is Some(e), e.value != run.value
 }
 
--- Two runs emitted one after the other hold different values, so the
--- encoding never splits a run in two.
+-- The next run emitted after `a`'s, however long it grows first, holds a
+-- different value, so the encoding never splits a run in two.
 expect adjacent_differ: forall (a b: step),
-    when b.current = Some(a.run) and a.emitted is Some(d) and b.emitted is Some(e),
+    when b.current is Some(c) and c.value = a.run.value
+    and a.emitted is Some(d) and b.emitted is Some(e),
     d.value != e.value
