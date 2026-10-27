@@ -54,7 +54,10 @@ proc holder(q: Seq<Int>): (y: Int) {
     ensure r: when q.len > 2, y = nth(q, 2)
 }
 
-expect read: forall (h: holder), when h.q.len > 2, h.y = h.q[2]
+expect read(h_q: Seq<Int>) {
+    call h := holder(h_q)
+    expect read: when h.q.len > 2, h.y = h.q[2]
+}
 
 -- Under a quantifier, the question holds in every instance; under `let`
 -- and `where`, an application in a definition is guarded where the name
@@ -112,5 +115,8 @@ refine reads_third: concrete_reader refines abstract_reader {
 }
 
 -- A failing precondition in a global expectation.
-expect unguarded_read: forall (h: holder), h.y = nth(h.q, 2)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `unguarded_read`
---~^ error: expectation `unguarded_read` does not hold
+expect unguarded_read(h_q: Seq<Int>) {
+    call h := holder(h_q)
+    expect unguarded_read: h.y = nth(h.q, 2)  --~ error: the precondition `in_range` of `nth` may not hold at this application in `unguarded_read::unguarded_read`
+    --~^ error: expectation `unguarded_read::unguarded_read` does not hold
+}

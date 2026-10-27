@@ -377,7 +377,7 @@ positions (see [Check results](View.md#check-results)):
 |---|---|
 | Expectations | a behaviour that meets the procedure, in which the expectation is false |
 | Cover goals | a behaviour that meets the procedure, in which the goal holds: a witness, which passes it |
-| Global expectations | behaviours of the binders in which the body is false |
+| Global expectations | as for a procedure: values of the parameters, with behaviours of the calls, in which an expectation is false; in the short form, none, since it has no variables |
 | Call assumptions | an admissible input, with behaviours of the earlier calls, on which an assumption of the called procedure is false |
 | Determinism | two behaviours on the same input, with different values of the `det` output |
 | Realizability | an admissible input, with behaviours of the calls, for which the search found no outputs |
@@ -402,8 +402,8 @@ seldom satisfies a narrow trigger, testing searches for one that does:
 - for an expectation with a trigger, each test whose behaviour does not
   reach it searches again, from a new input, for a behaviour that meets the
   procedure and in which the trigger holds;
-- a global expectation's test searches for behaviours of the binders in
-  which the body's trigger holds;
+- a global expectation is tested as a procedure is, its parameters as
+  inputs;
 - for a cover goal without a witness yet, each test searches, from a new
   input, for a behaviour that meets the procedure and in which the goal
   holds. A cover goal is reached by a test that finds a witness: it is

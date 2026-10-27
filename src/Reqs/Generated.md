@@ -52,8 +52,18 @@ pub proc lean_name(
 }
 
 set_option fren.lint.undecidable "allow" in
-expect distinct_paths: forall (a b: lean_name),
-    when a.current = b.current and a.path != b.path, a.name != b.name
+expect distinct_paths(
+    a_current: Seq<String>,
+    a_path: Seq<String>,
+    b_current: Seq<String>,
+    b_path: Seq<String>,
+) {
+    assume a_item: a_path != []
+    assume b_item: b_path != []
+    call a := lean_name(a_current, a_path)
+    call b := lean_name(b_current, b_path)
+    expect distinct_paths: when a.current = b.current and a.path != b.path, a.name != b.name
+}
 ```
 
 `generated::distinct_paths` claims that two items never share a Lean name:
@@ -483,12 +493,13 @@ theorem: the check finds a witness under *some* interpretation, which an
 
 ## Global expectations
 
-A global expectation becomes `def p : Prop`: for all values of the
-binders' variables, if the [meaning](Lang/Global.md#meaning) of each
-binder's procedure holds, then so does the body. Each binder's variables
-are named `w.x`. Like a procedure's definitions, it first takes a
-parameter for each abstract type and function it uses: those that its
-body mentions and that its binders' procedures use.
+A global expectation with a block becomes what a procedure does, its
+assumptions, calls and expectations among them, each named under `p` as
+a procedure's are (see [Procedures](#procedures)); nothing calls it, so
+nothing else uses them. A global expectation in the short form, `expect
+n: e`, becomes `def p : Prop`, which is `True → e`. Like a procedure's
+definitions, each first takes a parameter for each abstract type and
+function it uses.
 
 ## Proofs
 

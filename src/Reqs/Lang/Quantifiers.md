@@ -18,8 +18,7 @@ binder := "(" DECL+ ":" type ")"
 value of `x` and `y` of type `T` and every value of `z` of type `U`, and
 `exists (x: T), e` if `e` holds for some value of `x`. Each name that a
 binder declares is a *bound name*. The body must be a `Bool`, and so is
-the quantifier. Binders are written as a [global
-expectation's](Global.md) are, with a type in place of a procedure.
+the quantifier.
 
 A quantifier is an [expression](Expressions.md), at the level of `when`:
 the binders end at the first `,` after them, and the body extends as far
@@ -49,8 +48,7 @@ sequence type is unbounded, even where its element type is finite, as in
 (see [Unbounded quantifiers](#unbounded-quantifiers)), which is outside
 the decidable core. A binder's type is written and resolved as a
 variable's is, so a path that names no type is an error, and so is one
-that names a procedure, except in a global expectation's leading
-`forall` (see [Global expectations](#global-expectations)).
+that names a procedure (see [Global expectations](#global-expectations)).
 A [pattern type](Types.md#pattern-types) is listed when it is finite and
 not unbounded, as `lang::pattern_finite` says: `forall (x: Int is
 0..=7), e` has eight instances, for 0 to 7 in increasing order, and
@@ -145,8 +143,13 @@ pub proc quantifier(
     expect disjunction: unless all?, holds? iff true in values
 }
 
-expect forall_implies_exists: forall (a e: quantifier),
-    when a.all? and not e.all? and a.values = e.values and a.holds?, e.holds?
+expect forall_implies_exists(a_all?, a_values: Set<Bool>, e_all?, e_values: Set<Bool>) {
+    assume a_some_instance: a_values != {}
+    assume e_some_instance: e_values != {}
+    call a := quantifier(a_all?, a_values)
+    call e := quantifier(e_all?, e_values)
+    expect forall_implies_exists: when a.all? and not e.all? and a.values = e.values and a.holds?, e.holds?
+}
 ```
 
 The values of a type are listed in order: `true` then `false`; the
@@ -429,8 +432,7 @@ quantifier, across all of its binders, are [distinct](Items.md#distinct-names)
 (`F0213`), and follow the [Boolean names](Types.md#boolean-names) rule for
 their type: `forall (b?: Bool)`, and `forall (m: Method)`. A bound name
 may [shadow](Procedures.md#shadowing) another, written with `!`: a
-variable, a parameter, a call, a binder of a global expectation or a
-pattern, a bound name of an enclosing quantifier, a constant, a function
+variable, a parameter, a call, a binder of a pattern, a bound name of an enclosing quantifier, a constant, a function
 or a variant, as in `forall (m!: Method), ...` within a procedure with a
 variable `m`. A mention of it in the body is not a mention of what it
 shadows.
@@ -459,17 +461,15 @@ so the constraint has no [trigger](Procedures.md#triggers).
 
 ## Global expectations
 
-In a [global expectation's](Global.md) leading `forall`, a binder whose
-path names a procedure ranges over its behaviours, and one whose type is a
-type ranges over its values, listed or not, and one `forall` may have both: in `expect
-n: forall (a: c) (m: Method), E`, `E` holds for every behaviour `a` of
-`c` and every value `m` of `Method`. The binders over values are a
-quantifier around `E`, as if written `expect n: forall (a: c), forall (m:
-Method), E`, with the rules of this chapter: they are counted, expanded,
-named and scoped as a quantifier's. Everywhere else, a quantifier ranges
-over values only. `lang::quantifier_binder` states this, from what a
-binder's type names and whether it is in a global expectation's leading
-`forall`:
+A [global expectation's](Global.md) short form, `expect n: forall (m:
+Method), E`, is a quantifier like any other, around `E` with any `where`
+clause. Before global expectations had parameters, a binder of their
+leading `forall` could name a procedure, and range over its behaviours:
+that is an error now (`F0416`), whose help says how to write the global
+expectation with parameters and calls (see [Migration](Global.md#migration)).
+Everywhere, a quantifier ranges over values only. `lang::quantifier_binder`
+states this, from what a binder's type names and whether it is in a global
+expectation's leading `forall`:
 
 ```fren
 -- `TypeName` is a type, listed or not, and `Component` a procedure.
@@ -481,19 +481,14 @@ pub proc quantifier_binder(
     global?,                 -- it is in a global expectation's leading `forall`
 ): (
     det accepted?,
-    det behaviours?,         -- it ranges over a procedure's behaviours, not a type's values
+    det migrated?,           -- it is of the form that global expectations were written in before (`F0416`)
 ) {
     use self::BinderTarget::{Component, TypeName}
 
-    ensure rule: accepted? iff (target = TypeName or (global? and target = Component))
-    ensure ranges: behaviours? iff target = Component
+    ensure rule: accepted? iff target = TypeName
+    ensure old: migrated? iff (global? and target = Component)
 
-    expect values_anywhere: when target = TypeName, accepted? and not behaviours?
-    expect behaviours_globally: when target = Component and accepted?, global?
+    expect values_anywhere: when target = TypeName, accepted? and not migrated?
+    expect migrated_globally: when migrated?, not accepted?
 }
-
--- One leading `forall` may range over values and over behaviours.
-expect mixed_binders: forall (v b: quantifier_binder),
-    when v.global? and b.global? and v.target = BinderTarget::TypeName and b.target = BinderTarget::Component,
-    v.accepted? and b.accepted? and not v.behaviours? and b.behaviours?
 ```

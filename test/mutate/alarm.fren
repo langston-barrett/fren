@@ -19,4 +19,7 @@ pub proc alarm(temp: Int): (det ring?) {
     expect hot: when temp = 41, ring?
 }
 
-expect quiet: forall (a: alarm), when a.temp <= 40, not a.ring?
+expect quiet(a_temp: Int) {
+    call a := alarm(a_temp)
+    expect quiet: when a.temp <= 40, not a.ring?
+}

@@ -37,7 +37,10 @@ pub const LIMIT: Int := 3
 -- Without `in`, it sets every later component and global expectation.
 set_option fren.evidence "tested"
 
-expect global_wrong: forall (p: parity), when p.n = 2, not p.even?
+expect global_wrong(p_n: Int) {
+    call p := parity(p_n)
+    expect global_wrong: when p.n = 2, not p.even?
+}
 
 -- A check set to testing whose trigger never held: the help does not send
 -- the user back to `fren check`.

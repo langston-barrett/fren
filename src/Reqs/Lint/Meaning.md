@@ -67,10 +67,32 @@ between them. Here `p` and `q` are their root layers:
 ```fren
 -- It quantifies over scopes, which are sets of names.
 set_option fren.lint.undecidable "allow" in
-expect written_same: forall (x y: Scoped) (p q: lang::node),
-    when x = y and p.env = q.env and p.program = q.program and p.head = written_head(x) and p.values = written_values(p.env, x)
-    and q.head = written_head(y) and q.values = written_values(q.env, y),
-    p.value = q.value
+expect written_same(
+    x: Scoped,
+    y: Scoped,
+    p_program: lang::Program,
+    p_head: lang::Head,
+    p_env: lang::Env,
+    p_values: Seq<lang::Value>,
+    p_parts_mentioned: Set<lang::Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: lang::Program,
+    q_head: lang::Head,
+    q_env: lang::Env,
+    q_values: Seq<lang::Value>,
+    q_parts_mentioned: Set<lang::Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    assume p_leaves: when p_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        p_parts_mentioned = {}
+    assume q_leaves: when q_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        q_parts_mentioned = {}
+    call p := lang::node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := lang::node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect written_same: when x = y and p.env = q.env and p.program = q.program and p.head = written_head(x) and p.values = written_values(p.env, x)
+        and q.head = written_head(y) and q.values = written_values(q.env, y),
+        p.value = q.value
+}
 ```
 
 Two texts in different scopes may have different values.
@@ -118,7 +140,27 @@ is the root layer in one environment and `q` the same layer, with the same
 parts' values, in any other:
 
 ```fren
-expect mentions_nothing: forall (p q: lang::node),
-    when p.mentioned = {} and p.specified? and q.program = p.program and q.head = p.head and q.values = p.values,
-    q.value = p.value
+expect mentions_nothing(
+    p_program: lang::Program,
+    p_head: lang::Head,
+    p_env: lang::Env,
+    p_values: Seq<lang::Value>,
+    p_parts_mentioned: Set<lang::Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: lang::Program,
+    q_head: lang::Head,
+    q_env: lang::Env,
+    q_values: Seq<lang::Value>,
+    q_parts_mentioned: Set<lang::Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    assume p_leaves: when p_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        p_parts_mentioned = {}
+    assume q_leaves: when q_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        q_parts_mentioned = {}
+    call p := lang::node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := lang::node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect mentions_nothing: when p.mentioned = {} and p.specified? and q.program = p.program and q.head = p.head and q.values = p.values,
+        q.value = p.value
+}
 ```

@@ -8,6 +8,15 @@ proc band(temp: Int, target: Int): (too_cold?) {
     ensure cold: too_cold? iff temp < target - 2
 }
 
-expect same: forall (a b: band),
-    when a.temp = b.temp, a.too_cold? iff b.too_cold?
-expect never: forall (a: band), when a.target > HIGH, a.too_cold?
+expect same(a_temp: Int, a_target: Int, b_temp: Int, b_target: Int) {
+    assume a_sane: 0 <= a_target and a_target <= HIGH
+    assume b_sane: 0 <= b_target and b_target <= HIGH
+    call a := band(a_temp, a_target)
+    call b := band(b_temp, b_target)
+    expect same: when a.temp = b.temp, a.too_cold? iff b.too_cold?
+}
+expect never(a_temp: Int, a_target: Int) {
+    assume a_sane: 0 <= a_target and a_target <= HIGH
+    call a := band(a_temp, a_target)
+    expect never: when a.target > HIGH, a.too_cold?
+}

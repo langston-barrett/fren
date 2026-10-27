@@ -456,18 +456,28 @@ which a check is inconclusive and nothing worse is reported exits with 3:
 ```fren
 use view::severity
 
-expect failing_check_exits_1: forall (s: severity) (r: run),
-    when r.ran? and s.level in r.present and s.verdict = Verdict::Fail and s.kind != Kind::Redundancy,
-    r.code = 1
+expect failing_check_exits_1(s_kind: Kind, s_verdict: Verdict, r_ran?, r_present: Set<Severity>) {
+    call s := severity(s_kind, s_verdict)
+    call r := run(r_ran?, r_present)
+    expect failing_check_exits_1: when r.ran? and s.level in r.present and s.verdict = Verdict::Fail
+        and s.kind != Kind::Redundancy,
+        r.code = 1
+}
 
-expect passing_checks_exit_0: forall (s: severity) (r: run),
-    when r.ran? and s.verdict = Verdict::Pass and r.present subset {s.level, Info},
-    s.level = Silent and r.code = 0
+expect passing_checks_exit_0(s_kind: Kind, s_verdict: Verdict, r_ran?, r_present: Set<Severity>) {
+    call s := severity(s_kind, s_verdict)
+    call r := run(r_ran?, r_present)
+    expect passing_checks_exit_0: when r.ran? and s.verdict = Verdict::Pass and r.present subset {s.level, Info},
+        s.level = Silent and r.code = 0
+}
 
-expect inconclusive_exits_3: forall (s: severity) (r: run),
-    when r.ran? and s.verdict = Verdict::Inconclusive and s.level in r.present
-    and r.present subset {s.level, Info},
-    r.code = 3
+expect inconclusive_exits_3(s_kind: Kind, s_verdict: Verdict, r_ran?, r_present: Set<Severity>) {
+    call s := severity(s_kind, s_verdict)
+    call r := run(r_ran?, r_present)
+    expect inconclusive_exits_3: when r.ran? and s.verdict = Verdict::Inconclusive and s.level in r.present
+        and r.present subset {s.level, Info},
+        r.code = 3
+}
 ```
 
 ## Colour

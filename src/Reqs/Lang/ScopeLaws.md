@@ -53,7 +53,7 @@ applied, or a path's first segment, and is a `Constant` by its path too.
 ```fren
 pub fn named_head(b: Binding): Head := match b.kind {
     BindingKind::Input | BindingKind::Output | BindingKind::Parameter | BindingKind::Instance
-    | BindingKind::ExpectBinder | BindingKind::BoundName => Head::Variable(b.name),
+    | BindingKind::BoundName => Head::Variable(b.name),
     BindingKind::Definition => Head::Definition(b.name),
     BindingKind::PatternBinder => Head::Binder(b.target),
     _ => Head::Constant(b.target),

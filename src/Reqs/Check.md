@@ -27,9 +27,12 @@ where a [pattern type](Lang/Types.md#pattern-types) is declared:
 | [Preconditions](#preconditions) | each application of a function meets the function's preconditions where it is evaluated |
 | [Reachability](#reachability) | each arm of a `match` that has a guard or follows one, and each row of a table, can be taken where it is evaluated |
 
-A [global expectation](Lang/Global.md) is checked two of the first six
-ways: the [expectation check](#global-expectations) confirms that it holds,
-and the [vacuity check](#vacuity) that its trigger can hold. The body of a
+A [global expectation](Lang/Global.md) is checked five of the first seven
+ways, as a procedure is: the realizability check confirms that its
+assumptions can hold, and the others its [expectations](#global-expectations),
+its cover goals, its calls' assumptions, and the vacuity of its
+expectations.
+The body of a
 [defined function](Lang/Items.md#defined-functions), the value of a
 [constant](Lang/Items.md#constants), and the clauses of a function's
 [contract](Lang/Items.md#contracts) are checked for completeness,
@@ -170,8 +173,14 @@ pub proc satisfiable(
 ```
 
 `check::applies` gives which checks run on an item. A global expectation
-constrains nothing, so there is nothing to realize, determine or find
-redundant, and its binders' inputs have no obligations. The body of a
+constrains nothing, so there is nothing to determine or find redundant:
+it has no outputs, no guarantees and no `det` members, and its assumptions
+say what it is about rather than constrain a system. With no outputs, its
+realizability is only that its assumptions are satisfiable, which is still
+asked, since contradictory assumptions would make every expectation hold
+vacuously. Its calls' arguments have obligations, as a procedure's do. A
+global expectation in the [short form](Lang/Global.md#the-short-form),
+`ShortExpectation`, has no assumptions, so it is not asked that either. The body of a
 function, its contract, or the value of a constant is not a constraint
 either: only its tables, its `match`es with guards, the applications in
 it, and its values given where pattern types are declared are checked, and
@@ -186,32 +195,40 @@ result is its value, and whose assumptions and guarantees are its preconditions
 and postconditions (see [Contracts](#contracts-of-uninterpreted-functions)):
 
 ```fren
-pub enum CheckedItem { Component, GlobalExpectation, Body, Contract }
+pub enum CheckedItem { Component, GlobalExpectation, ShortExpectation, Body, Contract }
 
 set_option fren.evidence "enumerated" in
 pub proc applies(item: CheckedItem, kind: Kind): (det runs?) {
-    use self::CheckedItem::{Body, Component, Contract, GlobalExpectation}
+    use self::CheckedItem::{Body, Component, Contract, GlobalExpectation, ShortExpectation}
     use self::Kind::{
         Completeness,
+        Cover,
         Definedness,
         Determinism,
         Disjointness,
         Expectation,
+        InstanceAssumption,
         Postcondition,
         Precondition,
         Reachability,
         Realizability,
+        Redundancy,
         Vacuity,
     }
 
     ensure rule: runs? iff match item {
         Component => true,
-        GlobalExpectation => kind in {Expectation, Vacuity, Definedness, Completeness, Disjointness, Precondition, Reachability},
+        GlobalExpectation => kind in {Realizability, InstanceAssumption, Expectation, Cover, Vacuity, Definedness,
+            Completeness, Disjointness, Precondition, Reachability},
+        ShortExpectation => kind in {InstanceAssumption, Expectation, Cover, Vacuity, Definedness, Completeness,
+            Disjointness, Precondition, Reachability},
         Body => kind in {Definedness, Completeness, Disjointness, Precondition, Postcondition, Reachability},
         Contract => kind in {Realizability, Completeness, Disjointness, Precondition, Reachability},
     }
 
-    expect claims_only: when item in {GlobalExpectation, Body} and runs?, not kind in {Realizability, Determinism}
+    expect claims_only: when item in {GlobalExpectation, ShortExpectation, Body} and runs?,
+        not kind in {Determinism, Redundancy}
+    expect assumptions_satisfiable: when item = GlobalExpectation and kind = Realizability, runs?
     expect determined: when item != Component, kind != Determinism or not runs?
 }
 ```
@@ -355,12 +372,20 @@ and reports as always asking both. `always` is the check with the solver's
 answer to `cex_q`, and `asked` the check as Fren runs it:
 
 ```fren
-expect realizability_protocol: forall (asked always: realizability),
-    when asked.assume_q = always.assume_q
-    and asked.cex_q = (if always.assume_q = Unsat then Unknown else always.cex_q),
-    asked.verdict = always.verdict
-    and (asked.reports_cex? iff always.reports_cex?)
-    and (asked.reports_vacuous? iff always.reports_vacuous?)
+expect realizability_protocol(
+    asked_assume_q: Outcome,
+    asked_cex_q: Outcome,
+    always_assume_q: Outcome,
+    always_cex_q: Outcome,
+) {
+    call asked := realizability(asked_assume_q, asked_cex_q)
+    call always := realizability(always_assume_q, always_cex_q)
+    expect realizability_protocol: when asked.assume_q = always.assume_q
+        and asked.cex_q = (if always.assume_q = Unsat then Unknown else always.cex_q),
+        asked.verdict = always.verdict
+        and (asked.reports_cex? iff always.reports_cex?)
+        and (asked.reports_vacuous? iff always.reports_vacuous?)
+}
 ```
 
 ### Forced outputs
@@ -719,15 +744,26 @@ returns `Unsat`: its queries ask for no model.
 
 ## Global expectations
 
-For a global expectation with binders `w_1: c_1`, ..., `w_n: c_n` and body
-`E`, Fren asks whether `E` can be proved from the meanings `M_c_k(y_k)` of
-the binders' procedures (see [Global expectations](Lang/Global.md#meaning)).
-A model is a counterexample: Fren reports the values of the inputs and
-results of each binder, as `w_k.x`. `check::expectation` gives the
-verdict, as for an expectation of a procedure.
+A global expectation is checked as a procedure with its parameters as
+inputs, its assumptions, its calls, its expectations and its cover goals,
+and no outputs or guarantees (see [Global
+expectations](Lang/Global.md#meaning)): `R` is empty, and `A` and `I` are
+its own. For each expectation `E`, Fren asks whether `E` can be proved
+from `A` and `I`; a model is a counterexample, in which Fren reports the
+parameters and the calls' results, and `check::expectation` gives the
+verdict. Its calls' assumptions are checked as a procedure's are, from
+`A` and the earlier calls, and so are its cover goals and the vacuity of
+its expectations' triggers. A global expectation in the short form,
+`expect n: e`, is one with no parameters and no calls, whose `A` and `I`
+are empty.
 
-If some `M_c_k` is unsatisfiable, the global expectation passes vacuously.
-The realizability check then fails for `c_k`.
+Its realizability check is a procedure's with no outputs: its
+counterexample query proves `∃ o. R` at once, so it fails just where `A`
+is unsatisfiable, with the procedure's message (`F0602`), naming the
+assumptions that contradict each other. That `A ∧ I` is satisfiable
+wherever `A` is follows from its other checks: each call's arguments meet
+its procedure's assumptions, by the call checks, and the procedure is
+realizable, by its own checks, so its constraints can hold.
 
 ## Call assumptions
 
@@ -758,8 +794,8 @@ pub proc instance_assumption(
 A guarantee or expectation whose [trigger](Lang/Procedures.md#triggers)
 can never hold is satisfied vacuously, which usually indicates a mistake.
 For each guarantee and expectation with a trigger, Fren asks whether `not
-trigger` can be proved from `A`, `I` and `R`. For a global expectation, the
-hypotheses are the meanings of its binders' procedures instead. If it can, the check fails,
+trigger` can be proved from `A`, `I` and `R`, which are a global
+expectation's own, its `R` empty. If it can, the check fails,
 and Fren reports a minimal set of assumptions and guarantees that rule
 the trigger out. Constraints without a trigger, and assumptions, are not
 checked.
@@ -847,7 +883,7 @@ hypotheses of where it is written:
 | an assumption | the other assumptions |
 | a guarantee, expectation, cover goal or definition | `A`, `I` and `R`, as for vacuity |
 | an argument of a call | `A`, and the calls declared before it |
-| a global expectation | the meanings of its binders' procedures |
+| a global expectation's expectation, cover goal or definition | `A` and `I`, as for vacuity |
 | a precondition of a function | the function's other preconditions |
 | a function's body or postcondition | the function's preconditions |
 | the value of a constant | none |
@@ -1511,7 +1547,7 @@ or result, that of its checks, which takes precedence:
 | a call | the call's assumptions, and the definedness, completeness, disjointness, reachability and preconditions of its arguments |
 | a `det` output | its determinism |
 | a procedure | all of the procedure's checks |
-| a global expectation | its expectation, its vacuity, and the definedness, completeness, disjointness, reachability and preconditions of what it reads |
+| a global expectation | all of its checks, as before a procedure |
 | a [refinement](Lang/Refinement.md) | all of the checks of its obligation, including the definedness of the arguments of the abstract procedure's calls |
 
 As with a [lint setting](Lint.md), `set_option` without `in` sets the

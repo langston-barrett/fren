@@ -29,7 +29,10 @@ pub proc step(current: Option<Run>, next: Int): (run: Run, emitted: Option<Run>)
 
 -- The next run emitted after `a`'s, however long it grows first, holds a
 -- different value, so the encoding never splits a run in two.
-expect adjacent_differ: forall (a b: step),
-    when b.current is Some(c) and c.value = a.run.value
-    and a.emitted is Some(d) and b.emitted is Some(e),
-    d.value != e.value
+expect adjacent_differ(a_current: Option<Run>, a_next: Int, b_current: Option<Run>, b_next: Int) {
+    call a := step(a_current, a_next)
+    call b := step(b_current, b_next)
+    expect adjacent_differ: when b.current is Some(c) and c.value = a.run.value
+        and a.emitted is Some(d) and b.emitted is Some(e),
+        d.value != e.value
+}

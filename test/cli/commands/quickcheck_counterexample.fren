@@ -23,4 +23,8 @@ pub proc loose(a?): (det b?) {
     ensure r: when a?, b?
 }
 
-expect same: forall (x y: loose), when x.a? = y.a?, x.b? = y.b?
+expect same(x_a?, y_a?) {
+    call x := loose(x_a?)
+    call y := loose(y_a?)
+    expect same: when x.a? = y.a?, x.b? = y.b?
+}

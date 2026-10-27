@@ -8,20 +8,56 @@ proc sub(x: Int): (z: Int) {
 enum E { A }
 const LIMIT: Int := 3
 
-expect hides: forall (a: sub), a.hidden = a.x  --~ error: `a.hidden` is private to call `a`
-expect no_var: forall (a: sub), a.nope = 0     --~ error: call `a` has no parameter or result named `nope`
-expect not_comp: forall (a: LIMIT), true       --~ error: expected a procedure or a type, but `LIMIT` is a constant
-expect over_values: forall (a: E), a = E::A  --~ warning: this expectation mentions no variable
---~^ warning: this `forall` ranges over one value
-expect twice: forall (a: sub) (a: sub), true   --~ error: `a` is bound multiple times in this expectation
-expect twice2: forall (a a: sub), true         --~ error: `a` is bound multiple times in this expectation
-expect q?: forall (a: sub), true               --~ error: constraint names cannot end in `?`
-expect q_binder: forall (a?: sub), true        --~ error: binder names cannot end in `?`
-expect no_binder: x = 0                        --~ error: cannot find `x` in this scope
-expect not_bool: forall (a: sub), a.z
---~^ error: type mismatch: expected `Bool`, found `Int`
-expect sub: true                               --~ error: the name `sub` is already defined in the root module
-expect ok: forall (a: sub), a.z = a.x
-expect ok: true                                --~ error: the name `ok` is already defined in the root module
-expect unknown: forall (a: nothing), true      --~ error: cannot find `nothing` in this scope
-proc uses(): (y: Int) { ensure r: y = ok }     --~ error: expected a value, but `ok` is a global expectation
+expect hides(x: Int) {
+    call a := sub(x)
+    expect hides: a.hidden = a.x  --~ error: `a.hidden` is private to call `a`
+}
+expect no_var(x: Int) {
+    call a := sub(x)
+    expect no_var: a.nope = 0  --~ error: call `a` has no parameter or result named `nope`
+}
+expect not_comp: forall (a: LIMIT), true  --~ error: expected a procedure or a type, but `LIMIT` is a constant
+expect over_values: forall (a: E), a = E::A  --~ warning: this `forall` ranges over one value
+--~^ warning: this expectation mentions no variable
+expect twice: forall (a: E) (a: E), true  --~ error: `a` is bound multiple times in this expectation
+expect twice2(x: Int) {
+    call a := sub(x)
+    call a := sub(x)  --~ error: `a` is defined multiple times in this global expectation
+    expect twice2: true
+}
+expect q?: true  --~ error: constraint names cannot end in `?`
+expect q_call(x: Int) {
+    call a? := sub(x)  --~ error: call names cannot end in `?`
+    expect q_call: true
+}
+expect no_binder: x = 0  --~ error: cannot find `x` in this scope
+expect not_bool(x: Int) {
+    call a := sub(x)
+    expect not_bool: a.z  --~ error: type mismatch: expected `Bool`, found `Int`
+}
+expect sub: true  --~ error: the name `sub` is already defined in the root module (as a procedure)
+expect ok(x: Int) {
+    call a := sub(x)
+    expect ok: a.z = a.x
+}
+expect ok: true  --~ error: the name `ok` is already defined in the root module (as a global expectation)
+expect unknown: forall (a: nothing), true  --~ error: cannot find `nothing` in this scope
+proc uses(): (y: Int) { ensure r: y = ok }  --~ error: expected a value, but `ok` is a global expectation
+-- A global expectation constrains nothing, and nothing calls it.
+expect results(x: Int): (y: Int) {  --~ error: global expectations have no results
+    expect results: x = x
+}
+expect guarantee(x: Int) {
+    ensure g: x > 0  --~ error: global expectations have no `ensure` members
+}
+expect determined(x: Int) {
+    det let y: Int := x  --~ error: global expectations have no `det` members
+    expect determined: y = x
+}
+expect hidden(x: Int) {
+    exists y: Int  --~ error: global expectations have no `exists` members
+    expect hidden: y = x
+}
+proc caller(x: Int) {
+    call g := ok(x)  --~ error: expected a procedure, but `ok` is a global expectation
+}

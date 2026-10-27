@@ -464,9 +464,12 @@ pub proc counted(kind: Kind, verdict: Verdict): (det bucket: Bucket) {
         bucket = (if verdict = Pass then Passed else if verdict = Fail then Failed else InconclusiveBucket)
 }
 
-expect failures_are_errors: forall (c: counted) (s: severity),
-    when c.kind = s.kind and c.verdict = s.verdict,
-    c.bucket = Bucket::Failed iff s.level = Error
+expect failures_are_errors(c_kind: Kind, c_verdict: Verdict, s_kind: Kind, s_verdict: Verdict) {
+    call c := counted(c_kind, c_verdict)
+    call s := severity(s_kind, s_verdict)
+    expect failures_are_errors: when c.kind = s.kind and c.verdict = s.verdict,
+        c.bucket = Bucket::Failed iff s.level = Error
+}
 
 #fren_check
 ```

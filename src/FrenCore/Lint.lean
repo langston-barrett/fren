@@ -1749,14 +1749,14 @@ def moduleNameMsg? (what : Named) (mod n : Name) : Option Msg := do
 
 /-! ## Unused variables -/
 
-/-- The message of `unused_variables` for a variable of a procedure
-(`binder` false) or a binder of a global expectation. -/
-def unusedVariableMsg (n : Name) (binder : Bool) (output : Bool) : Msg :=
+/-- The message of `unused_variables` for a variable of a procedure, or
+with `global`, of a global expectation, that nothing mentions. -/
+def unusedVariableMsg (n : Name) (global : Bool) (output : Bool) : Msg :=
   { code? := some Lint.unusedVariables.code
-    headline := s!"unused {if binder then "binder" else "variable"} `{n}`", label? := some "never mentioned"
-    notes := (if binder then #[] else if output then #["note: nothing constrains it, so it can take any value"]
-        else #["note: nothing in its procedure depends on it"])
-      ++ #[s!"help: remove it, or mention it in {if binder then "the expectation" else "a constraint"}"] }
+    headline := s!"unused variable `{n}`", label? := some "never mentioned"
+    notes := (if output then #["note: nothing constrains it, so it can take any value"]
+        else #[s!"note: nothing in its {if global then "global expectation" else "procedure"} depends on it"])
+      ++ #["help: remove it, or mention it in a constraint"] }
 
 /-- A parameter of a defined function that its body never mentions. -/
 def unusedParamMsg (n : Name) : Msg :=
@@ -6915,10 +6915,10 @@ def unrelatedBinders (nGroups : Nat) : Bool := nGroups ≥ 2
 def unrelatedBindersMsg (name : String) (groups : Array (Array Name)) : Msg :=
   let show_ (g : Array Name) := ", ".intercalate (g.toList.map (s!"`{·}`"))
   { code? := some Lint.unrelatedBinders.code
-    headline := s!"the binders of `{name}` fall into {groups.size} groups that nothing relates"
+    headline := s!"the calls of `{name}` fall into {groups.size} groups that nothing relates"
     label? := some s!"{groups.size} claims in one"
-    notes := #[s!"note: no atom mentions both a binder of {show_ groups[0]!} and one of {show_ groups[1]!}",
-      "help: relate the binders, or write one expectation for each group"] }
+    notes := #[s!"note: no atom, argument or parameter relates a call of {show_ groups[0]!} and one of {show_ groups[1]!}",
+      "help: relate the calls, or write one global expectation for each group"] }
 
 /-! ## Record literals -/
 

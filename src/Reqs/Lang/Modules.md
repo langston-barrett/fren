@@ -105,10 +105,24 @@ pub proc item_visible(
 }
 
 -- What a module sees, its submodules see.
-expect visible_below: forall (a b: item_visible),
-    when a.owner = b.owner and a.is_pub? = b.is_pub? and b.middle = a.here
-    and descends?(b.here, a.here) and a.visible?,
-    b.visible?
+expect visible_below(
+    a_is_pub?,
+    a_owner: ModuleName,
+    a_here: ModuleName,
+    a_middle: ModuleName,
+    b_is_pub?,
+    b_owner: ModuleName,
+    b_here: ModuleName,
+    b_middle: ModuleName,
+) {
+    assume a_transitive: when descends?(a_here, a_middle) and descends?(a_middle, a_owner), descends?(a_here, a_owner)
+    assume b_transitive: when descends?(b_here, b_middle) and descends?(b_middle, b_owner), descends?(b_here, b_owner)
+    call a := item_visible(a_is_pub?, a_owner, a_here, a_middle)
+    call b := item_visible(b_is_pub?, b_owner, b_here, b_middle)
+    expect visible_below: when a.owner = b.owner and a.is_pub? = b.is_pub? and b.middle = a.here
+        and descends?(b.here, a.here) and a.visible?,
+        b.visible?
+}
 ```
 
 `descends?` is an uninterpreted function, so `transitive` states what
@@ -325,8 +339,18 @@ pub proc item_shadowing(
 
 -- The item hides a name exactly when its name, fresh, resolves to the prelude's.
 set_option fren.lint.undecidable "allow" in
-expect hides_prelude: forall (s: item_shadowing) (f: first_segment),
-    when f.declared = [] and f.opened = s.opened and f.prelude = s.prelude, s.hides? iff f.result = Prelude
+expect hides_prelude(
+    s_opened: Seq<Path>,
+    s_prelude: Seq<Path>,
+    s_bang?,
+    f_declared: Seq<Path>,
+    f_opened: Seq<Path>,
+    f_prelude: Seq<Path>,
+) {
+    call s := item_shadowing(s_opened, s_prelude, s_bang?)
+    call f := first_segment(f_declared, f_opened, f_prelude)
+    expect hides_prelude: when f.declared = [] and f.opened = s.opened and f.prelude = s.prelude, s.hides? iff f.result = Prelude
+}
 ```
 
 Each later segment names a member of what the previous segment resolved

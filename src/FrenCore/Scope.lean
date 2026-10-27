@@ -20,7 +20,6 @@ inductive BindingKind where
   | output
   | parameter
   | inst
-  | expectBinder
   | patternBinder
   | boundName
   | definition
@@ -51,7 +50,6 @@ def BindingKind.describe : BindingKind → String
   | .output => "the output"
   | .parameter => "the parameter"
   | .inst => "the call"
-  | .expectBinder => "the global expectation's binder"
   | .patternBinder => "the binder"
   | .boundName => "the bound name"
   | .definition => "the definition"

@@ -1,7 +1,7 @@
 warning[F0710]: unused variable `spare`
- --> test/cli/lints/unused/f0710_unused.fren:6:20
+ --> test/cli/lints/unused/f0710_unused.fren:7:20
   |
-6 | pub proc c(x: Int, spare: Int): (y: Int, loose?) {
+7 | pub proc c(x: Int, spare: Int): (y: Int, loose?) {
   |                    ^^^^^ never mentioned
   |
   = note: nothing in its procedure depends on it
@@ -10,23 +10,15 @@ warning[F0710]: unused variable `spare`
   = help: to allow it, `set_option fren.lint.unused_variables "allow"`
 
 warning[F0710]: unused variable `loose?`
- --> test/cli/lints/unused/f0710_unused.fren:6:42
+ --> test/cli/lints/unused/f0710_unused.fren:7:42
   |
-6 | pub proc c(x: Int, spare: Int): (y: Int, loose?) {
+7 | pub proc c(x: Int, spare: Int): (y: Int, loose?) {
   |                                          ^^^^^^ never mentioned
   |
   = note: nothing constrains it, so it can take any value
   = help: remove it, or mention it in a constraint
 
-warning[F0710]: unused binder `q`
-  --> test/cli/lints/unused/f0710_unused.fren:12:21
-   |
-12 | expect g: forall (p q: c), p.y = p.x
-   |                     ^ never mentioned
-   |
-   = help: remove it, or mention it in the expectation
-
-fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
+fren: 6 passed, 0 failed, 0 inconclusive, 0 redundant
 
 For more information about this error, try `fren --explain F0710`.
 exit=3

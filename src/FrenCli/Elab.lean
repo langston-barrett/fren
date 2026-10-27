@@ -6,6 +6,7 @@ import FrenCore.Closures
 import FrenCore.Enumeration
 import FrenCore.Evidence
 import FrenCore.Generics
+import FrenCore.Global
 import FrenCore.Guards
 import FrenCore.Lint
 import FrenCore.Mentions
@@ -355,6 +356,12 @@ structure CComp where
   path : Name
   file : Nat
   span : Span
+  /-- A global expectation in the short form, `expect n: e`, whose path is
+  its module and whose one constraint is named after it, rather than one
+  with a block, which is checked as a procedure is. -/
+  short : Bool := false
+  /-- A global expectation with a block (`Fren.Core.Comp.global`). -/
+  global : Bool := false
   /-- Its own variables in declaration order, then each call's. -/
   vars : Array CVar
   props : Array CProp
@@ -1177,8 +1184,6 @@ structure ExprCtx where
   /-- In a clause of a function's contract: the function, whether the
   clause is a postcondition, and the parameters (`lang::contract_application`). -/
   contract? : Option (Name × Bool × Array Name) := none
-  /-- In a global expectation, whose calls are its binders. -/
-  inGlobal : Bool := false
   /-- `++` here is in the decidable core: the receiver of a method, or a
   side of `=` or `!=` whose other side is a constant. -/
   concatOk : Bool := false
@@ -1855,7 +1860,7 @@ something in scope (`lang::shadowing`). -/
 def hidesIn (cx : ExprCtx) (extra : Fren.Core.Locals := #[]) : M (String → Bool) := do
   let st ← get
   let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-    (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal ++ extra
+    (cx.binders.map (·.what)) cx.selfFn.isSome ++ extra
   return fun n => (st.table.hidden? st.scope locals (Name.mkSimple n)).isSome
 
 /-- Reports the expressions in `e` that the lints that rewrite them
@@ -3245,7 +3250,7 @@ def quantBinders (cx : ExprCtx) (bs : Array Binder) (defer : Bool := false) :
         checkCore cx b.span .quantifier true true #[]
     for x in b.names do
       let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-        ((cx.binders ++ out).map (·.what)) cx.selfFn.isSome cx.inGlobal
+        ((cx.binders ++ out).map (·.what)) cx.selfFn.isSome
       let y ← declare x locals
       let bn := Name.mkSimple y.name
       liftMsg y.span (Fren.Core.checkVarName bn (some (t == .bool)))
@@ -4568,7 +4573,7 @@ partial def elabClosure (cx : ExprCtx) (params : Array (Ident × Ty)) (body : Ex
   for (x, t) in params do
     let bn ← if synthetic then pure (Name.mkSimple x.name) else do
       let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-        ((cx.binders ++ new).map (·.what)) cx.selfFn.isSome cx.inGlobal
+        ((cx.binders ++ new).map (·.what)) cx.selfFn.isSome
       let y ← declare x locals
       let bn := Name.mkSimple y.name
       liftMsg y.span (Fren.Core.checkVarName bn (some (t == .bool)))
@@ -4868,7 +4873,7 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     let mut new : Array CBinder := #[]
     for b in bs do
       let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-        (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map (·.what)) cx.selfFn.isSome
       let x ← declare b.ident locals
       let bn := Name.mkSimple x.name
       liftMsg x.span (Fren.Core.checkVarName bn (some (b.ty == .bool)))
@@ -5032,7 +5037,7 @@ partial def elabIsExpr (cx : ExprCtx) (test : Fren.Core.TestContext × Option (N
     let mut new : Array CBinder := #[]
     for b in bs do
       let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-        (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map (·.what)) cx.selfFn.isSome
       let x ← declare b.ident locals
       let bn := Name.mkSimple x.name
       liftMsg x.span (Fren.Core.checkVarName bn (some (b.ty == .bool)))
@@ -5089,7 +5094,7 @@ partial def elabDefinitions (cx : ExprCtx) (defs : Array (Ident × Option (Array
   let mut binds := #[]
   for (x, ty?, e) in defs, k in [0:defs.size] do
     let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-      (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
+      (cx.binders.map (·.what)) cx.selfFn.isSome
     let y ← declare x locals
     let n := Name.mkSimple y.name
     -- This name and the later ones that hide nothing are not in scope yet.
@@ -5682,7 +5687,8 @@ def lintCaseSplitGuarantees (lcx : ExprCtx) (members : Array Member) (vars : Arr
 
 /-- `unused_variables` and `unused_assumption` of the procedure `n`, whose
 members had no static error. -/
-def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (instNames : Array Name) : M Unit := do
+def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (instNames : Array Name)
+    (global : Bool := false) : M Unit := do
   let mentioned := members.foldl (init := #[]) fun acc m => match m with
     | .prop _ _ e | .var _ _ _ _ _ (some e) => acc ++ mentions e
     | .inst _ _ bs .. => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
@@ -5690,7 +5696,7 @@ def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (inst
   -- A public definition says what the output is, so it is used.
   let candidates := vars.filter fun v => v.role == .input || (v.role == .output && !(v.isPub && v.defn?.isSome))
   for (x, v) in Fren.Core.unmentioned (candidates.map fun v => (v.name, v)) mentioned do
-    lint .unusedVariables v.span (Fren.Core.unusedVariableMsg x false (v.role == .output))
+    lint .unusedVariables v.span (Fren.Core.unusedVariableMsg x global (v.role == .output))
   -- `unused_assumption` (`lint::unused_assumption`), unless the file reads
   -- one of the inputs (`finishLints`), or one that another assumption ties to
   -- a used variable, transitively.
@@ -5736,15 +5742,70 @@ def procMembers (header body : Array Member) : M (Array Member) := do
     | m => m
   return header ++ body.filter (!· matches .define ..)
 
-def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans : Array Span) (openStop : Nat) : M Unit := do
+/-- `unrelated_binders` (`lint::unrelated_binders`) of the global
+expectation `name` with the members `members`: whether its calls fall
+into groups that nothing relates. An atom of a constraint relates the
+calls it mentions and those whose arguments mention a parameter it
+mentions; a call relates itself to the calls its arguments mention; and a
+parameter relates the calls whose arguments mention it. -/
+def lintUnrelatedCalls (name : Ident) (members : Array Member) : M Unit := do
+  let calls := members.filterMap fun
+    | .inst x _ bs .. => some (Name.mkSimple (declaredIdent x).1.name, bs.flatMap fun (b, e?) =>
+        match e? with
+        | some e => (mentions e).map (·.getRoot)
+        | none => #[Name.mkSimple b.name])
+    | _ => none
+  let params := members.filterMap fun
+    | .var true _ _ x _ _ => some (Name.mkSimple (declaredIdent x).1.name)
+    | _ => none
+  let names := calls.map (·.1)
+  let reading (p : Name) := (calls.filter (·.2.contains p)).map (·.1)
+  let expand (roots : Array Name) := roots.filter names.contains ++ (roots.filter params.contains).flatMap reading
+  let atoms := members.flatMap (fun
+      | .prop _ _ e => (boolAtoms e).map fun a => expand ((mentions a).map (·.getRoot))
+      | _ => #[])
+    -- A relation of one call alone puts it in no group.
+    ++ (calls.map (fun ((w, roots) : Name × Array Name) => #[w] ++ roots.filter names.contains) ++ params.map reading).filter (fun (a : Array Name) => a.size ≥ 2)
+  let groups := Fren.Core.binderGroups names atoms
+  if Fren.Core.unrelatedBinders groups.size then
+    lint .unrelatedBinders name.span (Fren.Core.unrelatedBindersMsg name.name groups)
+
+/-- A member of a global expectation's block that it does not accept
+(`lang::block_member`), with where it is reported. -/
+def blockMemberError? (header body : Array Member) (spans : Array Span) : Option (Span × Fren.Core.BlockMember × Bool) :=
+  let results := header.filterMap fun
+    | .var false _ det x _ _ => some (x.span, Fren.Core.BlockMember.result, det)
+    | _ => none
+  let others := (body.zip spans).filterMap fun (m, sp) => match m with
+    | .var _ _ det _ _ none => some (sp, Fren.Core.BlockMember.exists, det)
+    | .var _ _ det _ _ (some _) => some (sp, .let, det)
+    | .define .. => some (sp, .define, false)
+    | .prop .assume .. => some (sp, .assume, false)
+    | .prop .ensure .. => some (sp, .ensure, false)
+    | .prop .expect .. => some (sp, .expect, false)
+    | .prop .cover .. => some (sp, .cover, false)
+    | .inst .. => some (sp, .call, false)
+    | .use .. | .useGroup .. => some (sp, .use, false)
+    | .evidence .. => none
+  (results ++ others).find? fun (_, m, det) => !Fren.Core.blockMemberAccepted m det
+
+def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans : Array Span) (openStop : Nat)
+    (global : Bool := false) : M Unit := do
   let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
   let n := Name.mkSimple name.name
   modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
-  liftMsg name.span (Fren.Core.checkItemName "procedure" n)
+  if global then
+    liftMsg name.span (Fren.Core.checkNoBang n)
+    if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
+  else liftMsg name.span (Fren.Core.checkItemName "procedure" n)
   let module := (← get).module
   liftMsg written ((← get).table.checkFreshItem module n bang)
-  lintName .component n name.span
+  lintName (if global then .global else .component) n name.span
   startDeclared
+  -- What a global expectation's block accepts (`lang::block_member`).
+  if global then
+    if let some (sp, m, det) := blockMemberError? header body spans then
+      err sp (Fren.Core.blockMemberMsg m det)
   let members ← procMembers header body
   declareMemberUses (module ++ n) members
   -- Distinct names (`lang::distinct_names`): variables, calls and
@@ -5755,7 +5816,7 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   -- By the names they declare, without the `!` of shadowing.
   let declared := named.map fun x => Name.mkSimple (declaredIdent x).1.name
   if let some k := (Fren.Core.repeatsAt declared)[0]? then
-    err named[k]!.span (Fren.Core.dupMemberMsg declared[k]!)
+    err named[k]!.span (Fren.Core.dupMemberMsg declared[k]! global)
   lintMemberOrder body spans openStop
   modify fun s => { s with inCompBody := true }
   -- Each variable, call, binding, definition and constraint reports its
@@ -5776,19 +5837,29 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   lintOutputs lcx members vars
   lintTrivialCover lcx members
   lintCaseSplitGuarantees lcx members vars
+  if global then lintUnrelatedCalls name members
   -- The lints above are found despite a constraint's static error, as in
   -- Lean; `unused_variables`, and the rest, only without one.
   stopIfErrors
-  lintCompUnused n members vars instNames
+  lintCompUnused n members vars instNames global
   let path := module ++ n
   let (tested, enumerated) ← testedOf (← evidenceOfEffect) members
   let (relational, counts) ← checkCounts
-  modify fun s => { s with
-    table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
-    scope := s.module
-    comps := s.comps.push { path, file := s.file, span := name.span, vars, props, insts, defs, indexes, tables, decidable := !s.outsideCore
-                            relational, counts, tested, enumerated, enumSize := s.enumSize, natApps := s.natApps
-                            guarded := s.guardedUsed } }
+  let c : CComp := { path, file := (← get).file, span := name.span, vars, props, insts, defs, indexes, tables
+                     decidable := !(← get).outsideCore, relational, counts, tested, enumerated, enumSize := (← get).enumSize
+                     natApps := (← get).natApps, guarded := (← get).guardedUsed, global }
+  -- A global expectation is an item that nothing calls
+  -- (`Reqs/Lang/Global`).
+  if global then
+    modify fun s => { s with
+      table := s.table.addItem { kind := .expectItem, path, isPub := false, owner := s.module }
+      scope := s.module
+      globals := s.globals.push c }
+  else
+    modify fun s => { s with
+      table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
+      scope := s.module
+      comps := s.comps.push c }
 
 /-- Elaborates `refine name: concrete refines abstract { bindings }` into
 the procedure that checks it (`Reqs/Lang/Refinement`): `concrete`'s inputs,
@@ -5992,42 +6063,23 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
     lintEdits .duplicateConstraint name.span (Fren.Core.duplicateConstraintMsg .expect .expect earlier)
       #[(Fren.Core.deletionRange src { start := st.settingStart?.getD st.itemStart, stop }, "")]
   modify fun s => { s with globalTexts := s.globalTexts.push (st.module, name.name, text) }
-  let mut vars : Array CVar := #[]
-  let mut insts : Array CInst := #[]
   -- Distinct names (`lang::distinct_names`).
   let binderIds := binders.flatMap (·.names)
   -- By the names they declare, without the `!` of shadowing.
   let declared := binderIds.map fun x => Name.mkSimple (declaredIdent x).1.name
   if let some k := (Fren.Core.repeatsAt declared)[0]? then
     err binderIds[k]!.span (Fren.Core.dupBinderMsg declared[k]!)
-  -- The binders over values, a quantifier around the body (`lang::quantifier_binder`).
-  let mut valueBinders := #[]
-  for b in binders do
-    let p := b.ty
-    let path ← match ← globalBinderComp? p with
-      | some path => pure path
-      | none => valueBinders := valueBinders.push b; continue
-    let xs := b.names
-    let some c := (← get).comps.find? (·.path == path) | internal p[0]!.span s!"unknown comp `{path}`"
-    unless c.decidable do
-      modify fun s => { s with outsideCore := true }
-      lint .undecidable (p[0]!.span.to p.back!.span) (Fren.Core.undecidableInstMsg path)
-    noteCounts c (p[0]!.span.to p.back!.span)
-    for x in xs do
-      let x ← declare x
-      let w := Name.mkSimple x.name
-      liftMsg x.span (Fren.Core.checkItemName "binder" w)
-      lintName .instance w x.span
-      -- Like a call's, but its inputs are shown in counterexamples.
-      vars := vars ++ c.vars.map fun v =>
-        let role := Role.ofInst v.role v.isPub
-        { name := w ++ v.name, role, isPub := role != .instHidden, ty := v.ty, span := x.span, ptype := v.ptype
-          fact? := v.fact?.map (rename w c.vars) }
-      -- Its assumptions are hypotheses, not obligations.
-      insts := insts.push { name := w, comp := path, span := x.span, bindings := "true",
-                            behaviour := rename w c.vars c.meaning, assumes := #[] }
-      modify fun s => { s with natApps := s.natApps ++ c.natApps.map (rename w c.vars) }
-  let cx : ExprCtx := { vars, insts := insts.map (·.name), place := .prop, inGlobal := true }
+  -- A binder over a procedure's behaviours is the form that global
+  -- expectations were written in before (`F0416`), and the binders over
+  -- values alone a quantifier around the body (`lang::quantifier_binder`).
+  let resolved ← binders.mapM fun b => return (b, ← globalBinderComp? b.ty)
+  if let some (b, _) := resolved.find? fun (_, p?) =>
+      (Fren.Core.quantifierBinder (if p?.isSome then .component else .typeName) true).2 then
+    err (b.ty[0]!.span.to b.ty.back!.span) Fren.Core.oldGlobalMsg
+  -- Without a binder over behaviours, it mentions no variables
+  -- (`Reqs/Lang/Global#the-short-form`).
+  let valueBinders := binders
+  let cx : ExprCtx := { vars := #[], place := .prop }
   discard takeIndexes
   discard takeTables
   let quantified := if valueBinders.isEmpty then body
@@ -6040,22 +6092,6 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
   lintBools body (← hidesIn cx (valueBinders.flatMap (·.names) |>.map fun x =>
     (Name.mkSimple (declaredIdent x).1.name, .boundName)))
   lintConstant cx "expect" body
-  let binders := insts.map fun i => (i.name, i.span)
-  for (w, sp) in Fren.Core.unmentioned binders ((mentions body).map (·.getRoot)) do
-    lint .unusedVariables sp (Fren.Core.unusedVariableMsg w true false)
-  -- What it reads through calls (`unused_assumption`).
-  let reads := (mentions body).filterMap fun m => match m.components with
-    | [w, x] => (insts.find? (·.name == w)).map fun i => (i.comp, x)
-    | _ => none
-  -- And the uninterpreted functions it applies, which its binders'
-  -- assumptions may constrain.
-  let fns ← appliedFns cx body
-  let reads := reads ++ insts.flatMap fun i => fns.map (i.comp, ·)
-  modify fun s => { s with globalReads := s.globalReads ++ reads }
-  -- `unrelated_binders` (`lint::unrelated_binders`).
-  let groups := Fren.Core.binderGroups (insts.map (·.name)) ((boolAtoms body).map fun a => (mentions a).map (·.getRoot))
-  if Fren.Core.unrelatedBinders groups.size then
-    lint .unrelatedBinders name.span (Fren.Core.unrelatedBindersMsg name.name groups)
   let trig ← trigger? cx quantified
   lintDeclared .global n name.span
   let prop : CProp := { kind := .expect, name := n, span := name.span, smt
@@ -6063,7 +6099,8 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
   discard checkCounts
   modify fun s => { s with
     table := s.table.addItem { kind := .expectItem, path := module ++ n, isPub := false, owner := s.module }
-    globals := s.globals.push { path := s.module, file := s.file, span := name.span, vars, props := #[prop], insts, indexes, tables
+    globals := s.globals.push { path := s.module, file := s.file, span := name.span, vars := #[], props := #[prop], indexes, tables
+                                short := true
                                 decidable := !s.outsideCore, natApps := s.natApps, guarded := s.guardedUsed
                                 tested := Fren.Core.Tested.ofSettings all.tested #[] #[(n, none)] #[] #[]
                                 enumerated := Fren.Core.Tested.ofSettings all.enumerated #[] #[(n, none)] #[] #[]
@@ -6668,6 +6705,19 @@ partial def elabItem (item : Item) : M Unit := do
   | .global name binders body => do
     modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
     elabGlobal name binders body
+  | .globalBlock name header members close spans openStop => do
+    let shown := (declaredIdent name).1
+    modify fun s => { s with item := s.module ++ Name.mkSimple shown.name }
+    modify fun s => { s with inCompBody := false }
+    try elabComp false name header members spans openStop (global := true)
+    catch e =>
+      modify (fun s => { s.keepLints e.state with scope := s.module })
+      if e.state.inCompBody then
+        lintDeclared .global (Name.mkSimple shown.name) shown.span
+        lintLines .global (Name.mkSimple shown.name) shown.span close
+      throw { e with state := ← get }
+    lintDeclared .global (Name.mkSimple shown.name) shown.span
+    lintLines .global (Name.mkSimple shown.name) shown.span close
   | .refine name c a bs => do
     modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
     elabRefine name c a bs

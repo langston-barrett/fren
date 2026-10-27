@@ -53,6 +53,10 @@ proc names(a: Name): (s?) {
     expect refl: s?
 }
 
-expect monotone: forall (p q: doubler), when p.x <= q.x, p.y <= q.y
+expect monotone(p_x: Int, q_x: Int) {
+    call p := doubler(p_x)
+    call q := doubler(q_x)
+    expect monotone: when p.x <= q.x, p.y <= q.y
+}
 
---@ summary: 19 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ summary: 20 passed, 1 failed, 0 inconclusive, 0 redundant
