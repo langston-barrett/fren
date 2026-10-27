@@ -180,6 +180,9 @@ structure AbstractInfo where
   typeParams : Array Name := #[]
   declared : Array Core.Ty := #[]
   result : Core.Ty := .bool
+  /-- And its result's declared type, with its patterns, which mentions the
+  type parameters as `Core.Ty.param`. -/
+  resultP : Core.PTy := default
   deriving Inhabited
 
 /-- The Lean namespace, under the current one, of every declaration generated
@@ -225,6 +228,15 @@ that imports a spec names its items' declarations by their paths, as
   let before := (← getOpenDecls).filter isLang |>.length
   elabOpen stx
   if ((← getOpenDecls).filter isLang |>.length) > before then openGenerated
+
+/-- What the checks need of the elaborator, which runs them: the Lean type
+of a type, the constraint that a value of a declared type brings as a
+predicate, over an `Int` for a `Nat` if asked, as `resultFact?` gives it,
+and the type that a Lean type stands for, if one does. -/
+structure ElabHooks where
+  leanType : Core.Ty → MetaM Expr
+  fact : Core.PTy → Bool → MetaM (Option Expr)
+  coreTy : Expr → MetaM (Option Core.Ty)
 
 /-- The placeholder for the item at `path`. -/
 def placeholderName (path : Name) : Name := `Fren.Abstract ++ path
@@ -485,6 +497,10 @@ inductive Entry where
   | aliasInfo (path : Name) (ty : Expr) (pty : Core.PTy)
   | implInfo (i : ImplInfo)
   | claimInfo (c : ClaimInfo)
+  /-- An application of the generic function `callee` at the type arguments
+  `targs`, within the generic function `caller?`, if it is in one, whose
+  type parameters `targs` may mention (`State.genericUses`). -/
+  | genericUse (caller? : Option Name) (callee : Name) (targs : Array Core.Ty)
   deriving Inhabited
 
 /-- Everything declared so far, across all imported Lean files. -/
@@ -525,6 +541,10 @@ structure State where
   tested : NameMap (Array String) := {}
   /-- The justifications of each component's `trusted` claims. -/
   trusted : NameMap (Array String) := {}
+  /-- The applications of generic functions, in order (`Entry.genericUse`),
+  from which the instances that the spec applies follow
+  (`State.appliedInstances`). -/
+  genericUses : Array (Option Name × Name × Array Core.Ty) := #[]
   deriving Inhabited
 
 def State.add (s : State) : Entry → State
@@ -540,6 +560,7 @@ def State.add (s : State) : Entry → State
     { s with abstracts := s.abstracts.insert a.path a
              placeholders := s.placeholders.insert a.placeholder s.placeholders.size }
   | .definedInfo d => { s with defined := s.defined.insert d.path d }
+  | .genericUse c f targs => { s with genericUses := s.genericUses.push (c, f, targs) }
   | .contractInfo c => { s with contracts := s.contracts.insert c.path c }
   | .interpInfo p d => { s with interps := s.interps.insert p d }
   | .globalInfo p c => { s with globals := s.globals.insert p c }
@@ -552,6 +573,39 @@ def State.add (s : State) : Entry → State
   | .claimInfo c =>
     if c.tested then { s with tested := s.tested.insert c.comp (s.tested.getD c.comp #[] ++ c.texts) }
     else { s with trusted := s.trusted.insert c.comp (s.trusted.getD c.comp #[] ++ c.texts) }
+
+/-- The type parameters of the generic function at `path`, defined or not. -/
+def State.typeParamsOf (s : State) (path : Name) : Array Name :=
+  match s.defined.get? path, s.abstracts.get? path with
+  | some d, _ => d.typeParams
+  | none, some a => a.typeParams
+  | none, none => #[]
+
+/-- The instances of the generic function `f` that the spec applies, but its
+own, in order of their names (`Core.instanceText`): those of its
+applications (`State.genericUses`), and, for each instance of a generic
+function that applies it, its applications there, at that instance, as the
+`fren` command makes them (`instantiate`). Its contract is checked at each
+where its check at its type parameters' sorts does not pass
+(`lang::generic_contract`). -/
+partial def State.appliedInstances (s : State) (f : Name) : Array (Array Core.Ty) := Id.run do
+  let mut all : Array (Name × Array Core.Ty) := #[]
+  let mut todo : Array (Name × Array Core.Ty) := s.genericUses.map fun (_, g, targs) => (g, targs)
+  while h : 0 < todo.size do
+    let (g, targs) := todo[0]
+    todo := todo.extract 1
+    if all.contains (g, targs) then continue
+    all := all.push (g, targs)
+    let tps := s.typeParamsOf g
+    let own := tps.mapIdx fun k p => Core.Ty.abstract (Core.typeParamPath g k p)
+    if targs == own then continue
+    for (caller?, callee, cargs) in s.genericUses do
+      if caller? == some g then
+        todo := todo.push (callee, cargs.map fun t => (t.asParams g tps).subst targs)
+  let tps := s.typeParamsOf f
+  let own := tps.mapIdx fun k p => Core.Ty.abstract (Core.typeParamPath f k p)
+  return ((all.filter fun (g, targs) => g == f && targs != own).map (·.2)).qsort fun a b =>
+    Core.instanceText a < Core.instanceText b
 
 initialize frenExt : SimplePersistentEnvExtension Entry State ←
   registerSimplePersistentEnvExtension {

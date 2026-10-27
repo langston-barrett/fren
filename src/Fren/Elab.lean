@@ -2485,6 +2485,18 @@ def factPred? (ty : Expr) (pt : Core.PTy) (nat : Bool := false) : TermElabM (Opt
   let some c := pt.cons (← getState).shapeOf nat | return none
   some <$> predOf ty c
 
+/-- What the checks need of the elaborator (`ElabHooks`): for the instances
+of generic functions without a body, the Lean types of their signatures,
+and the constraints of their result types (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`). -/
+def elabHooks : ElabHooks where
+  leanType t := (leanTypeOf t).run'
+  fact pt nat := (do
+    if (pt.cons (← getState).shapeOf).isNone then return none
+    let nat := nat && pt.ty == Core.Ty.nat
+    let ty ← if nat then pure (Lean.mkConst ``Int) else leanTypeOf pt.ty
+    factPred? ty pt nat).run'
+  coreTy e := return coreTyOf (← getState) e
+
 /-- The declared type of the variable, parameter or function `name`,
 written `ty?`, which is `Bool` if it is not written: its Lean type, and the
 type with its patterns, as `varType` checks it. -/
@@ -4564,6 +4576,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       for a in elems, t in ts, k in [0:ts.size] do
         noteObligation cx .argument a (d.ptys.1[k]?.getD default) t
       notePreconditions cx p path ts (some (d.typeParams, targs))
+      record (.genericUse ((← getLocal).fnTypeParams.map (·.1)) path targs)
       if d.guarded then modifyLocal fun l => { l with guardedUsed := true }
       return ← `(@$(mkCIdentFrom p d.decl) $(← usesTerms d.uses path d.typeParams targs)* $ts*)
     let tys := paramTypes (← instantiateForall (← getConstInfo d.decl).type (d.uses.map mkConst))
@@ -4604,6 +4617,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     for x in elems, t in ts, k in [0:ts.size] do
       noteObligation acx .argument x (a.ptys.1[k]?.getD default) t
     notePreconditions cx p path ts (some (a.typeParams, targs))
+    record (.genericUse ((← getLocal).fnTypeParams.map (·.1)) path targs)
     let tyArgs ← targs.flatMapM fun t => do
       let ty := typeSyntax (← leanTypeOf t)
       return #[ty, ← `((inferInstance : Inhabited $ty))]
@@ -5189,12 +5203,12 @@ def recordBody (path : Name) (ref : Syntax) (decl : Name) (vars : Array Var)
 (`AbstractInfo`). -/
 def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) (ptys : Array Core.PTy × Core.PTy := (#[], default))
     (fact? : Option Expr := none) (typeParams : Array Name := #[]) (declared : Array Core.Ty := #[])
-    (result : Core.Ty := .bool) : TermElabM Unit := do
+    (result : Core.Ty := .bool) (resultP : Core.PTy := default) : TermElabM Unit := do
   let placeholder := placeholderName path
   addDecl (.axiomDecl { name := placeholder, levelParams := [], type, isUnsafe := false })
   let s ← getState
   let deps := type.foldConsts #[] fun c acc => if s.placeholders.contains c && !acc.contains c then acc.push c else acc
-  record (.abstractInfo { path, placeholder, isType, deps, ptys, fact?, typeParams, declared, result })
+  record (.abstractInfo { path, placeholder, isType, deps, ptys, fact?, typeParams, declared, result, resultP })
   -- An abstract type has a value, so its placeholder has an `Inhabited`
   -- instance, itself a placeholder, which an index of a sequence of it
   -- needs; an implementation gives the interpretation's own.
@@ -5417,7 +5431,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   let placeholder (params : Array Expr) (ptys : Array Core.PTy) (result : Expr) (rp : Core.PTy) : TermElabM Unit := do
     let (declared, resultTy) ← signature params result
     let type ← withTypeParams path tps (← mkArrowN params result)
-    declarePlaceholder path type false (ptys, rp) (← resultFact? result rp) tps declared resultTy
+    declarePlaceholder path type false (ptys, rp) (← resultFact? result rp) tps declared resultTy (rp.asParams path tps)
   let some body := body? | do
     liftTermElabM do
       if contract then

@@ -206,14 +206,17 @@ unknown function of its own (`lang::uninterpreted_instance`), declared, as
 the `fren` command declares it, before the variables. An instance whose
 result is a `Nat` is a local into `Int`, as `withNatUses` makes one. -/
 def withInstances {α : Type} (generics : Array (Name × Nat × Bool)) (insts : Array (Name × Array Expr))
-    (k : Array Expr → MetaM α) : MetaM α :=
+    (types : Array (Option Expr)) (k : Array Expr → MetaM α) : MetaM α :=
   go 0 #[]
 where
   go (i : Nat) (xs : Array Expr) : MetaM α := do
     if h : i < insts.size then
       let (u, pre) := insts[i]
       let nat := (generics.find? (·.1 == u)).any (·.2.2)
-      let ty ← instantiateForall (← getConstInfo u).type pre
+      -- Its signature, `Core.instanceSig`'s, where the elaborator gives it.
+      let ty ← match types[i]?.join with
+        | some t => pure t
+        | none => instantiateForall (← getConstInfo u).type pre
       let name := Name.mkSimple s!"{u.getString!}<{i}>"
       Meta.withLocalDeclD name (if nat then intResult ty else ty) fun x => go (i + 1) (xs.push x)
     else k xs
@@ -232,7 +235,7 @@ answer is not cached. -/
 def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (facts : Array (Name × Expr) := #[])
     (outFacts : Array Expr := #[]) (appsOf : Expr → Array Expr := fun _ => #[])
     (factsOf : Expr → MetaM (Array (Name × Expr)) := fun _ => pure #[]) (modelOptional : Bool := false)
-    (bounded : Bool := false) (instances : Expr → Expr := id) :
+    (bounded : Bool := false) (instances : Expr → Expr := id) (finiteModel : Bool := false) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -282,7 +285,8 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         match ← Smt.smt { trust := true, model, timeout := some timeout
                           -- `fmf-bound` right after the options both front ends set, as the
                           -- binary sets it.
-                          extraSolverOptions := Core.solverOptions true true ++ bounded ++ logic ++ cvc5Defaults
+                          extraSolverOptions := Core.solverOptions true true ++ bounded
+                            ++ (if finiteModel then Core.finiteModelOptions else []) ++ logic ++ cvc5Defaults
                             ++ resourceLimitOptions (← getOptions) }
                   mv.mvarId! hs.reverse with
         | .sat (some m) =>
@@ -395,6 +399,27 @@ where
         let r ← Meta.forallTelescope ty fun xs _ => do mkLambdaFVars xs (mkApp (mkConst ``Fren.natResult) (mkAppN x xs))
         go (i + 1) (reps.push r) fns
     else k reps fns
+
+/-- The contract `c` of the generic function `f` without a body, at its
+instance with the type arguments `targs`: its parameters, value and
+clauses at the instance's types, with their types' constraints there, named
+after the instance (`Core.instanceName`), as the `fren` command makes it
+(`instantiate`), for the check of its realizability there
+(`lang::generic_contract`). -/
+def instanceContract (hooks : ElabHooks) (c : CompInfo) (f : Name) (targs : Array Core.Ty) : MetaM CompInfo := do
+  let some a := (← getState).abstracts.get? f | return c
+  let targExprs ← targs.flatMapM fun t => do
+    let ty ← hooks.leanType t
+    return #[ty, ← synthInstance (mkApp (mkConst ``Inhabited [Level.one]) ty)]
+  let atI := atInstance f a.typeParams targExprs
+  let vars ← c.vars.mapM fun v => do
+    let ptype := Core.instanceResult (v.ptype.asParams f a.typeParams) targs
+    return { v with type := atI v.type, ptype, fact? := ← hooks.fact ptype false }
+  let props := c.props.map fun p => { p with body := atI p.body, trigger? := p.trigger?.map atI }
+  let indexes := c.indexes.map fun (n, pl, r, q, g) => (n, pl, r, q, atI g)
+  let defs := c.defs.map fun (d, e) => (d, atI e)
+  let uses ← usesOf (props.map (·.body) ++ indexes.map (·.2.2.2.2) ++ defs.map (·.2))
+  return { c with vars, props, indexes, defs, uses, fn? := some (Core.instanceName f targs) }
 
 /-- The placeholders that the checks of `c` use: those of its formulas and
 of its questions' goals, which apply the clauses of contracts to the
@@ -512,9 +537,12 @@ abbrev EnumHook := CompInfo → Core.Comp Expr → Array Expr → Array Expr →
 /-- All selected checks for one comp, in reporting order, with the theorems
 that its cover goals are met (`coverWitness`), for the caller to add, and
 what enumerating the checks set to enumeration found, by `enumerate`. -/
-def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) (enumerate? : Option EnumHook := none) :
+partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) (enumerate? : Option EnumHook := none)
+    (hooks? : Option ElabHooks := none) :
     MetaM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated)) := do
   let c := { c with uses := ← checkUses c }
+  -- As elaborated, for its contract's instances (`instanceContract`).
+  let elaborated := c
   let st0 ← getState
   -- The generic functions without a body that it uses, each with the
   -- number of type arguments and instances that it takes first.
@@ -543,7 +571,22 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) (en
     let k := st0.contracts.get? a.path
     for cl in ((k.map (·.pres)).getD #[]) ++ ((k.map (·.posts)).getD #[]) do
       insts := instancesIn gens (← unfoldDefined (← rep (cl.atInst a.path a.typeParams pre #[]))) insts
-  withInstances gens insts fun ixs => do
+  -- Each instance's signature and result type's constraint, at its type
+  -- arguments (`lang::uninterpreted_instance`), as the elaborator gives
+  -- them, over the locals.
+  let consts := (c.uses.zip ufs).filter (·.2.isFVar)
+  let unrep (e : Expr) : Expr := e.replaceFVars (consts.map (·.2)) (consts.map (mkConst ·.1))
+  let sigs : Array (Option (Expr × Option Expr)) ← insts.mapM fun (u, pre) => do
+    let some hooks := hooks? | return none
+    let some (a, m) := generics.find? (·.1.placeholder == u) | return none
+    let some tys ← ((List.range (m / 2)).toArray.mapM fun i => hooks.coreTy (unrep pre[2 * i]!)) <&> (·.mapM id)
+      | return none
+    let (ps, r) := Core.instanceSig a.declared a.result tys
+    let nat := Core.instanceNat a.result
+    let ty ← mkArrowN (← ps.mapM hooks.leanType) (← if nat then pure (mkConst ``Int) else hooks.leanType r)
+    let fact? ← (← hooks.fact (Core.instanceResult a.resultP tys) nat).mapM rep
+    return some (← rep ty, fact?)
+  withInstances gens insts (sigs.map (·.map (·.1))) fun ixs => do
   let instances := replaceInstances gens insts ixs
   let c := { c with vars := ← c.vars.mapM fun v => return { v with type := ← rep v.type } }
   withLocalDeclsD (c.vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
@@ -670,8 +713,15 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) (en
       let nat := Core.instanceNat a.result
       -- Over an `Int`, as the solver sees a function into `Nat`.
       let v := if nat then mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) app else app
-      let typeFact ← match a.fact? with
-        | some p => pure #[(`type, ← rep ((atInstance a.path a.typeParams targs p).beta #[v]))]
+      -- The constraint of its instance's result type, which the
+      -- elaborator gives at the instance.
+      let j? := insts.findIdx? fun (u, pre) => u == a.placeholder
+        && (List.range (m / 2)).all fun i => pre[2 * i]! == targs[2 * i]!
+      let fact? : Option (Option Expr) := match j? with
+        | some j => (sigs[j]?.join).map fun (x : Expr × Option Expr) => x.2
+        | none => none
+      let typeFact ← match fact?.join <|> (if hooks?.isSome then none else (a.fact?.map (atInstance a.path a.typeParams targs))) with
+        | some p => pure #[(`type, ← rep (p.beta #[v]))]
         | none => pure #[]
       let k := st0.contracts.get? a.path
       let pres ← ((k.map (·.pres)).getD #[]).mapM fun c => rep (c.atInst a.path a.typeParams targs vals)
@@ -692,11 +742,9 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) (en
       return natFact ++ typeFact ++ posts
     let bk (k : CheckKind) :=
       let heads := factFns.map (fun (_, x, n, _) => (x, n)) ++ typedApps.map (fun (x, n, _, _) => (x, n))
-        ++ (generics.filter fun (a, _) => Core.instanceNat a.result || a.fact?.isSome
-            || ((st0.contracts.get? a.path).map (!·.posts.isEmpty)).getD false).map
-          fun (a, m) => (mkConst a.placeholder, m + a.declared.size)
+        ++ generics.map fun (a, m) => (mkConst a.placeholder, m + a.declared.size)
       let b := leanBackend c fvs primes cache facts outFacts (natApps heads ·) (closedFacts factsOf)
-        (modelOptional := k == .cover) bounded instances
+        (modelOptional := k == .cover) bounded instances (finiteModel := generic)
       if k != .cover then b else
       { b with query := fun hyps goal wantModel => do
           let o ← b.query hyps goal wantModel
@@ -704,6 +752,20 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) (en
           return o }
     let examples := fren.examples.get (← getOptions)
     let results := Core.withInterpreted full interprets (← Core.checkComp bk comp kinds (some examples) interprets)
+    -- The contract of a generic function without a body, where its check
+    -- at its type parameters' sorts does not pass: its check at each
+    -- instance that the spec applies (`lang::generic_contract`).
+    let results ← match generic, c.fn?, hooks?, results.find? (·.kind == .realizable) with
+      | true, some f, some hooks, some r =>
+        if r.verdict == .pass then pure results else do
+        let mut instResults := #[]
+        for targs in st0.appliedInstances f do
+          let ic ← instanceContract hooks elaborated f targs
+          let (rs, _, _) ← checkComp ic #[.realizable] none hooks?
+          instResults := instResults ++ rs.filter (·.kind == .realizable)
+        let checked := Core.genericContract (·.verdict) r instResults
+        pure (results.foldl (init := #[]) fun acc x => if x.kind == .realizable then acc ++ checked else acc.push x)
+      | _, _, _, _ => pure results
     let mut witnesses := #[]
     for g in c.covers do
       let passed := results.any fun r => r.kind == .cover && r.prop? == some g.name && r.verdict == .pass

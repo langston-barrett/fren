@@ -3845,11 +3845,15 @@ fn other<T>(x: T, y: T): T
 
 An uninterpreted function's postconditions are assumed wherever it is
 applied, so they must be able to hold (`F0631`). A generic function's
-contract is checked once, for every type: its type parameters are types of
+contract is checked first for every type: its type parameters are types of
 which nothing is known but that they have values, so one may have a single
-value, and two arguments may be equal at any type. Here, where `x` and `y`
-are equal, no value of `other` is both `y` and not `x`. Add a precondition
-that rules such arguments out, or weaken a postcondition:
+value, and two arguments may be equal at any type. Where that check does
+not pass, the contract is checked at each instance that the spec applies
+it at instead, as `other<Int>`, as a function without type parameters is
+(`F0631`); this error is for a function that the spec applies at no
+instance. Here, where `x` and `y` are equal, no value of `other` is both
+`y` and not `x`. Add a precondition that rules such arguments out, or
+weaken a postcondition:
 
 ```fren
 fn other<T>(x: T, y: T): T

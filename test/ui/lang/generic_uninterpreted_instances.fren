@@ -1,0 +1,67 @@
+-- The contract of a generic function without a body, where its check at
+-- its type parameters' sorts does not pass, is checked at each instance
+-- that the spec applies, with the instance's types, and a failing instance
+-- is reported as a function without type parameters is (`F0631`)
+-- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`). And each
+-- application brings its instance's result type's constraint. In a
+-- module, as the other tests of generic functions are.
+set_option fren.lint.dead_code "allow"
+
+mod generic_uninterpreted_instances
+
+pub enum One { A }
+type Small := Int is 0..=9
+struct R { a: Small }
+
+-- Not realizable at a type with a single value, which the spec applies it
+-- at: reported there, and realizable at `Bool` and `Int`.
+fn other<T>(x: T): T  --~ error: the postconditions of `generic_uninterpreted_instances::other<generic_uninterpreted_instances::One>` cannot all hold
+    ensure diff: other(x) != x  --~ info: is false for this input
+
+comp at_one {
+    in x: One
+    pub det out y: One := other(x)
+}
+
+comp at_bool {
+    in p?
+    pub det out q? := other(p?)
+
+    expect flips: q? != p?
+}
+
+comp at_int {
+    in i: Int
+    pub det out j: Int := other(i)
+
+    expect moved: j != i
+}
+
+-- Not realizable at a type with a single value either, but applied only
+-- where it is: accepted.
+fn flip<T>(x: T): T
+    ensure diff: flip(x) != x
+
+comp flipped {
+    in p?
+    pub det out q? := flip(p?)
+
+    expect flips: q? != p?
+}
+
+-- An application brings its instance's result type's constraint: here,
+-- `R`'s field's pattern type, as a function without type parameters'
+-- application does.
+fn pickr<T>(T): T
+fn pick1(R): R
+
+comp records {
+    in r: R
+    pub det out s: R := pickr(r)
+    pub det out t: R := pick1(r)
+
+    expect generic_field: s.a <= 9
+    expect plain_field: t.a <= 9
+}
+--@ exit: 1
+--@ summary: 19 passed, 1 failed, 0 inconclusive, 0 redundant

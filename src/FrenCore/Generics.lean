@@ -617,6 +617,13 @@ name has them after the function's (`Ty.instKey`), as in `<Int>`
 (`Reqs/Lang/GenericFunctions#meaning`). -/
 def instanceText (args : Array Ty) : String := s!"<{", ".intercalate (args.toList.map Ty.instKey)}>"
 
+/-- The name of the instance of the function at `path` with the type
+arguments `args`, as messages show it, as `pick<Int>`. -/
+def instanceName (path : Name) (args : Array Ty) : Name :=
+  match path with
+  | .str p s => .str p (s ++ instanceText args)
+  | p => .str p (instanceText args)
+
 /-- Whether each application of an instance of a generic function without
 a body, whose declared result type is `result`, brings that it is at least
 0 (`lang::uninterpreted_instance`): exactly when `result` is `Nat`, since a

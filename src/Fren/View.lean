@@ -140,7 +140,7 @@ def checkItems (items : Array (CompInfo × Array CheckKind)) (cancel : IO.Cancel
     CommandElabM (Array (Task (Except Exception CheckOutcome))) := do
   let run ← wrapAsync (cancelTk? := some cancel) fun ((c, kinds) : CompInfo × Array CheckKind) => do
     modify fun s => { s with messages := {}, traceState.traces := {}, infoState.trees := {} }
-    let r ← try .ok <$> liftTermElabM (checkComp c kinds (some Enumerate.enumerate)) catch ex => pure (.error ex)
+    let r ← try .ok <$> liftTermElabM (checkComp c kinds (some Enumerate.enumerate) (some elabHooks)) catch ex => pure (.error ex)
     let s ← get
     return (r, s.messages, s.traceState.traces, s.infoState.trees)
   items.mapM fun i => (EIO.asTask (run i) : BaseIO _)

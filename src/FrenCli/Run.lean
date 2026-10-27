@@ -635,7 +635,7 @@ an internal error if the evaluator has no counterpart of `c`. `sy` is
 `symbolsOf spec?`, built once for the spec. `prelude` is `st`'s, indexed
 (`Prelude.ofDecls`), and `cache` holds the answers to the queries asked
 before (`QueryCache`). -/
-def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
+partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
     (examples : Option Nat := some 1) :
@@ -663,6 +663,22 @@ def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec)
       let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
       pure (← Fren.Core.checkComp bk core ks examples interprets, none)
   let (results, refuted) := applyRefutations raw (← log.get)
+  -- The contract of a generic function without a body, where its check at
+  -- its type parameters' sorts does not pass: its check at each instance
+  -- that the spec applies, in order of their names (`lang::generic_contract`).
+  if let (true, some f, some r) := (c.generic, c.fn?, results.find? (·.kind == .realizable)) then
+    if r.verdict != .pass then
+      let insts := ((st.instContracts.find? f).getD #[]).qsort fun a b =>
+        Fren.Core.instanceText a.1 < Fren.Core.instanceText b.1
+      let mut instResults := #[]
+      let mut refuted := refuted
+      for (_, ic) in insts do
+        let (rs, ref, _) ← solveComp st prelude spec? sy ic global #[.realizable] limits cache dump? body examples
+        instResults := instResults ++ rs.filter (·.kind == .realizable)
+        refuted := refuted ++ ref
+      let checked := Fren.Core.genericContract (·.verdict) r instResults
+      let results := results.foldl (init := #[]) fun acc x => if x.kind == .realizable then acc ++ checked else acc.push x
+      return (markInterpreted prelude c results, refuted, missing?)
   return (markInterpreted prelude c results, refuted, missing?)
 
 /-- Which results of testing `c` `fren check` keeps, for the checks of
@@ -1117,6 +1133,17 @@ deriving instance BEq for Ident, Bound, Pattern, Binder, Expr
 deriving instance BEq for CVar, CProp, CInst, CComp
 
 instance : Same Fren.Core.Table := ⟨fun a b => same_fields% Fren.Core.Table a b except []⟩
+
+/-- A generic function's: its declared result type by its type and its
+text, which say what it is with its patterns. -/
+instance : Same GenericFn := ⟨fun a b => same_fields% GenericFn a b except [resultP]
+  && a.resultP.ty == b.resultP.ty && a.resultP.text == b.resultP.text⟩
+
+/-- An instance's contract (`State.instContracts`), made of the function's
+contract's comp: by its formulas, which say what its checks ask. -/
+instance : Same CComp := ⟨fun a b => a.fn? == b.fn? && a.vars.map (·.ty) == b.vars.map (·.ty)
+  && a.vars.map (·.fact?) == b.vars.map (·.fact?) && a.props.map (·.smt) == b.props.map (·.smt)
+  && a.defs == b.defs && a.tables.map (·.2.2.2.2) == b.tables.map (·.2.2.2.2) && a.natApps == b.natApps⟩
 
 /-- The names that the file whose parse is `p` writes, as identifiers or
 keywords, with each part of a dotted identifier. A path resolves to an

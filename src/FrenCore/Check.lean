@@ -854,6 +854,24 @@ elements, which a pattern type within an element type brings
 quantifiers that membership bounds. -/
 def boundedOptions : List (String × String) := [("fmf-bound", "true")]
 
+/-- The cvc5 option for the contract of a generic function without a body,
+checked once at its type parameters' sorts
+(`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`):
+`finite-model-find`, with which cvc5 finds the small domains, such as one
+of a single value, on which the contract may fail, rather than giving up. -/
+def finiteModelOptions : List (String × String) := [("finite-model-find", "true")]
+
+/-- The checks reported of the contract of a generic function without a
+body (`lang::generic_contract`), from its check at its type parameters'
+sorts, `atSorts`, and, where that does not pass, its check at each instance
+that the spec applies, `instances`, which `fren` and the hosted front end
+run only then: the opaque check if it passes or the spec applies no
+instance, and otherwise each instance's. -/
+def genericContract {α : Type} (verdict : α → Verdict) (atSorts : α) (instances : Array α) : Array α :=
+  match verdict atSorts with
+  | .pass => #[atSorts]
+  | _ => if instances.isEmpty then #[atSorts] else instances
+
 /-- `inst` for each assumption of each instance, in order. -/
 def checkInsts (c : Comp F) : m (Array CheckResult) := do
   return (← c.insts.zipIdx.mapM fun (i, k) => i.assumes.mapM (checkInst b c k i)).flatten
@@ -1132,7 +1150,9 @@ def rowsText (rows? : Option (Nat × Nat)) (arms : Bool := false) : String :=
 def clauseName (n : Name) : Name := Name.mkSimple n.getString!
 
 def showComp (path : Name) : String :=
-  "::".intercalate (path.components.map (·.toString))
+  -- Unescaped, so that an instance of a generic function shows as `pick<Int>`
+  -- (`instanceName`).
+  "::".intercalate (path.components.map (·.toString (escape := false)))
 
 inductive Advice where
   | raiseTimeout
@@ -1226,7 +1246,8 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
     if let (some f, true) := (contract, r.generic) then
       #[one "F0653" s!"the postconditions of `{showComp f}` cannot all hold at some type" (some "unrealizable contract")
         #[conflictNote "arguments" input s!"no value of `{showComp f}` satisfies {showNamesAnd names}",
-          "note: a generic function's contract is checked once, for every type: nothing is known of a type parameter but that it has values, so it may have a single one",
+          "note: a generic function's contract is checked for every type, where nothing is known of a type parameter's values: they may be equal, and a type may have only one",
+          "note: the spec applies it at no instance, where it would be checked instead",
           "help: weaken one of them, or add a precondition that rules these arguments out"] (item? := none)]
       ++ clashNotes
     else

@@ -318,7 +318,10 @@ a defined generic function.
 `lang::uninterpreted_instance` states the instance that an application of a
 generic function without a body applies: its parameters' and result's
 declared types, instantiated with the application's type arguments
-(`lang::instantiation`), which are the sorts of its unknown function, and
+(`lang::instantiation`), which are the sorts of its unknown function, the
+type whose constraint each of its applications brings, which is the
+instance's result type, with its patterns, not the declared one, so that
+`pick(r)` of an `r: R` brings what `R`'s fields' pattern types do, and
 whether each of its applications is at least 0. A type argument is never a
 `Nat`, since an inferred one is widened (see [Applications](#applications)),
 so it is at least 0 exactly when the declared result type is `Nat`. Here a
@@ -346,28 +349,63 @@ pub comp uninterpreted_instance {
         ++ (if declared.len > 1 then [instantiated(declared[1], arguments)] else [])
         ++ (if declared.len > 2 then [instantiated(declared[2], arguments)] else [])
     pub det out result_type: Ty := instantiated(result, arguments)
+    pub det out fact_type: Ty    -- the type whose constraint each of its applications brings
     pub det out nat?             -- each of its applications is at least 0
 
+    ensure facts_at_instance: fact_type = result_type
     ensure nat_rule: nat? iff kind(result_type) = ValueType::NatTy
 
     expect each_param: params.len = declared.len
 }
 ```
 
-Its contract is checked once, for every type, at its type parameters,
-each a sort of which nothing is known, as a defined generic function's
-body and contract are: the [contract
+Its contract is checked first at its type parameters, each a sort of
+which nothing is known, as a defined generic function's body and contract
+are: the [contract
 realizability](../Check.md#contracts-of-uninterpreted-functions) check,
 whose two queries ask whether its preconditions can hold and whether, for
 all arguments that meet them, some value meets every postcondition. A
 formula that holds over a sort of which nothing is known holds at every
 instance, since it cannot use any type's structure. So a contract that
-passes holds at every instance, and one that fails may fail only where a
-type has a single value, or two arguments are equal, which every type
-allows: its postconditions that cannot all hold are the error `F0653`, not
-`F0631`, whose note says so. So `fn other<T>(x: T, y: T): T` with `ensure
-moves: other(x, y) != x` and `ensure stays: other(x, y) = y` fails, where
-`x = y`, until a precondition rules that out.
+passes there holds at every instance, and is assumed at each. The solver
+looks there for a small domain on which it fails (`finite-model-find`),
+since one may fail only where a type has a single value, or where
+arguments are equal, which every type allows: `fn other<T>(x: T): T` with
+`ensure diff: other(x) != x` fails at a type with one value, but holds at
+`Bool` and at `Int`.
+
+Where that check does not pass, whether it fails or is not decided, the
+contract is checked at each instance that the spec applies instead, with
+the instance's types: those of its applications, and, for each instance of
+a generic function that applies it, there, at that instance, in the order
+of their names, but the function's own. Each is then the check of a
+function without type parameters, named after the instance, as
+`other<One>`: a failure is the error `F0631`, an undecided check is
+`F0608`, and its postconditions are assumed at that instance, as a function
+without type parameters' are whatever its check finds. So a contract that
+fails only at a type that the spec does not apply it at is accepted. A
+contract whose check at its type parameters fails, of a function that the
+spec applies at no instance, is the error `F0653`, whose note says why.
+`lang::generic_contract` states which checks are reported, from that at
+the type parameters' sorts and those at the instances, each as it is
+decided:
+
+```fren
+pub enum Decided { Holds, Fails, Undecided }
+
+-- `in` on a sequence is outside the decidable core.
+set_option fren.lint.undecidable "allow" in
+pub comp generic_contract {
+    in at_sorts: Decided           -- the check at the type parameters' sorts
+    in instances: Seq<Decided>     -- the check at each instance that the spec applies, in order
+    -- The checks reported, in order.
+    pub det out reported: Seq<Decided> := if at_sorts = Decided::Holds or instances = [] then [at_sorts] else instances
+
+    expect fast: when at_sorts = Decided::Holds, reported = [Decided::Holds]
+    expect accepted: when instances = [Decided::Holds, Decided::Holds], not Decided::Fails in reported
+    expect unapplied: when instances = [], reported = [at_sorts]
+}
+```
 
 A generic defined function's body applies no uninterpreted function,
 generic or not (`F0331`), so that its values are fully known (see

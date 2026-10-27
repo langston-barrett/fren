@@ -8,7 +8,8 @@ error[F0653]: the postconditions of `other` cannot all hold at some type
               x = T#0
               y = T#0
           no value of `other` satisfies `moves` and `stays`
-  = note: a generic function's contract is checked once, for every type: nothing is known of a type parameter but that it has values, so it may have a single one
+  = note: a generic function's contract is checked for every type, where nothing is known of a type parameter's values: they may be equal, and a type may have only one
+  = note: the spec applies it at no instance, where it would be checked instead
   = help: weaken one of them, or add a precondition that rules these arguments out
 
 note: conflicts with `stays`

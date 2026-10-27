@@ -557,6 +557,9 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     -- A component whose queries may quantify sets `fmf-bound`
     -- (`State.bounded`).
     let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
+      -- The contract of a generic function without a body, at its type
+      -- parameters' sorts, with finite-model finding.
+      ++ (if c.generic then Fren.Core.finiteModelOptions else [])
     let o ← runQuery (Fren.Core.logic kind (strings || sets) projection quantified)
       (String.join (options.map fun (o, v) => s!"(set-option :{o} {v})\n"))
       prelude vars limits dump? (facts ++ appFacts ++ hyps) goal wantModel cache?

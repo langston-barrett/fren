@@ -616,11 +616,14 @@ structure GenericFn where
   /-- The generic functions that its body and contract apply, each with
   its type arguments, which may mention its own type parameters. -/
   calls : Array (Name × Array Ty) := #[]
+  /-- Its result's declared type, with its patterns, which mentions the
+  type parameters as `Ty.param`. -/
+  resultP : Fren.Core.PTy := default
   /-- It has a body. One without is uninterpreted: each of its instances is
   an unknown function of its own, a `declare-fun`
   (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`). -/
   defined : Bool := true
-  deriving Inhabited, BEq
+  deriving Inhabited
 
 structure State where
   table : Table := {}
@@ -796,6 +799,11 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   each of its clauses, that `defs` and `clauseDefs` hold, by the name that
   they hold it under. -/
   instSyms : NameMap String := {}
+  /-- The contract of each instance of a generic function without a body,
+  by the function, each with the instance's type arguments, as the
+  contract's own comp at the instance's sorts, which is checked where the
+  check at the type parameters' sorts does not pass (`lang::generic_contract`). -/
+  instContracts : NameMap (Array (Array Ty × CComp)) := {}
   /-- Some type is a set. -/
   usesSets : Bool := false
   /-- Some quantifier is unbounded, so every query may quantify
@@ -2060,6 +2068,16 @@ def takeTables : M (Array (Span × Fren.Core.TableGoal × String)) := do
   modify fun s => { s with tables := #[] }
   return xs
 
+/-- Records what each application of the uninterpreted function whose
+symbol is `sym`, whose result has the declared type `rp`, brings: what its
+result's type does, a `Nat`'s among it (`State.funFacts`). -/
+def noteResultFactAt (sym : String) (rp : Fren.Core.PTy) : M Unit := do
+  let st ← get
+  if (rp.cons st.shapeOf).isNone then return
+  let some c := rp.cons st.shapeOf (rp.ty == .nat) | return
+  modify fun s => { s with funFacts := s.funFacts.insert sym (consSmt st.dataOf? c factHole)
+                           quantifiedFns := if c.quantifies then s.quantifiedFns.insert sym else s.quantifiedFns }
+
 /-- The symbol of the clause whose symbol is `csym`, of the generic
 function at `path`, at its instance with the type arguments `args`. -/
 def clauseInstSym (path : Name) (args : Array Ty) (csym : String) : String :=
@@ -2107,11 +2125,27 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
       instSyms := s.instSyms.insert name sym
       funs := s.funs.push (name, ps, r)
       contracts := s.contracts.insert name { k with pres := atInst k.pres, posts := atInst k.posts }
-      funFacts := match s.funFacts[itemSym path]? with
-        | some f => s.funFacts.insert sym (replaceSymbols f repl)
-        | none => s.funFacts
-      quantifiedFns := if s.quantifiedFns.contains (itemSym path) then s.quantifiedFns.insert sym else s.quantifiedFns
       clauseDefs := s.clauseDefs ++ clauses }
+    -- Its result type's constraint is the instance's.
+    noteResultFactAt sym (Fren.Core.instanceResult g.resultP args)
+    -- Its contract at the instance's sorts, with the instance for the
+    -- function, for the check of its realizability where the one at the
+    -- type parameters' sorts does not pass.
+    if let some b := (← get).bodies.find? fun b => b.fn? == some path && b.generic then
+      let instP (t : Fren.Core.PTy) := Fren.Core.instanceResult (t.asParams path g.params) args
+      let vars ← b.vars.mapM fun v => do
+        let ptype := instP v.ptype
+        let st ← get
+        return { v with ty := inst v.ty, ptype, fact? := (ptype.cons st.shapeOf).map (consSmt st.dataOf? · (quote v.name.toString)) }
+      let rs (t : String) := replaceSymbols t repl
+      let ic : CComp := { b with
+        vars, generic := false, fn? := some (Fren.Core.instanceName path args)
+        props := b.props.map fun p => { p with smt := rs p.smt, trigger? := p.trigger?.map rs }
+        defs := b.defs.map fun (d, e) => (d, rs e)
+        indexes := b.indexes.map fun (n, pl, sp, g, t) => (n, pl, sp, rs g, t)
+        tables := b.tables.map fun (n, pl, sp, q, g) => (n, pl, sp, q, rs g)
+        natApps := b.natApps.map rs }
+      modify fun s => { s with instContracts := s.instContracts.insert path (((s.instContracts.find? path).getD #[]).push (args, ic)) }
     return sym
   let vars := g.vars.map fun (x, t) => (x, inst t)
   modify fun s => { s with
@@ -4052,7 +4086,7 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
     -- preconditions, at its instance (`lang::uninterpreted_instance`).
     if !g.defined then
       let posts := (((← get).contracts.find? path).map (·.posts)).getD #[]
-      if Fren.Core.instanceNat g.result || !posts.isEmpty || (← get).funFacts.contains (itemSym path) then
+      if Fren.Core.instanceNat g.result || !posts.isEmpty || (← get).funFacts.contains sym then
         modify fun s => { s with natApps := s.natApps.push app }
     return (app, Fren.Core.callType g.result targs)
   if let some (_, params, result, _) := (← get).defs.find? (·.1 == path) then
@@ -5495,12 +5529,7 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
 /-- Records what each application of the uninterpreted function at `path`,
 whose result has the declared type `rp`, brings: what its result's type
 does, a `Nat`'s among it (`State.funFacts`). -/
-def noteResultFact (path : Name) (rp : Fren.Core.PTy) : M Unit := do
-  let st ← get
-  if (← consOf rp).isNone then return
-  let some c := rp.cons st.shapeOf (rp.ty == .nat) | return
-  modify fun s => { s with funFacts := s.funFacts.insert (itemSym path) (consSmt st.dataOf? c factHole)
-                           quantifiedFns := if c.quantifies then s.quantifiedFns.insert (itemSym path) else s.quantifiedFns }
+def noteResultFact (path : Name) (rp : Fren.Core.PTy) : M Unit := noteResultFactAt (itemSym path) rp
 
 /-- Records the tables of the body of the function `n`, whose parameters
 are `vars`, or of the value of the constant `n`, just elaborated, its
@@ -5812,12 +5841,14 @@ partial def elabItem (item : Item) : M Unit := do
     -- A generic function's signature, with its type parameters as
     -- `Ty.param`, each inferred at applications from it
     -- (`lang::generic_signature`).
-    let signature (ps : Array Ty) (r : Ty) (defined : Bool) : M Unit := do
+    let signature (ps : Array Ty) (rp : Fren.Core.PTy) (defined : Bool) : M Unit := do
       if tps.isEmpty then return
+      let r := rp.ty
       let declared := ps.map (·.asParams path tps)
       if let some k := Fren.Core.firstUnmentioned? declared (r.asParams path tps) tps.size then
         err typeParams[k]!.span (Fren.Core.unmentionedTypeParamMsg n tps[k]!)
-      modify fun s => { s with genericFns := s.genericFns.insert path { params := tps, declared, result := r.asParams path tps, defined } }
+      let g : GenericFn := { params := tps, declared, result := r.asParams path tps, resultP := rp.asParams path tps, defined }
+      modify fun s => { s with genericFns := s.genericFns.insert path g }
     match body with
     | none =>
       -- Generic or not, the `declare-fun` of the function itself; a generic
@@ -5831,14 +5862,14 @@ partial def elabItem (item : Item) : M Unit := do
         -- As for a variable, with the result type (`lang::bool_naming`),
         -- after the parameters, in source order.
         let rp ← varPTy result name
-        signature ps rp.ty false
+        signature ps rp false
         noteResultFact path rp
         modify fun s => { s with funs := s.funs.push (path, ps, rp.ty), funPTys := s.funPTys.insert path (pps, rp) }
       else
         let vars ← paramVars
         lintFnBools n name.span (vars.map (·.ty))
         let rp ← varPTy result name
-        signature (vars.map (·.ty)) rp.ty false
+        signature (vars.map (·.ty)) rp false
         noteResultFact path rp
         modify fun s => { s with funs := s.funs.push (path, vars.map (·.ty), rp.ty)
                                  funPTys := s.funPTys.insert path (vars.map (·.ptype), rp) }
@@ -5862,7 +5893,7 @@ partial def elabItem (item : Item) : M Unit := do
       let rp ← varPTy result name
       let r := rp.ty
       modify fun s => { s with funPTys := s.funPTys.insert path (vars.map (·.ptype), rp) }
-      signature (vars.map (·.ty)) r true
+      signature (vars.map (·.ty)) rp true
       discard takeTables
       discard takeIndexes
       modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }

@@ -1,0 +1,22 @@
+error[F0631]: the postconditions of `other<One>` cannot all hold
+ --> test/cli/results/f0631_generic_instance.fren:8:8
+  |
+8 | pub fn other<T>(x: T): T
+  |        ^^^^^ unrealizable contract
+  |
+  = note: for the arguments
+              x = One::A
+          no value of `other<One>` satisfies `diff`
+  = note: an uninterpreted function's postconditions are assumed wherever it is applied, so if they cannot hold, every check that applies it would pass
+  = help: weaken one of them, or add a precondition that rules these arguments out
+
+note: is false for this input
+ --> test/cli/results/f0631_generic_instance.fren:9:12
+  |
+9 |     ensure diff: other(x) != x
+  |            ^^^^
+
+fren: 4 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0631`.
+exit=1

@@ -2801,20 +2801,23 @@ parameters' declared types (`firstTys`), as an array. -/
 abbrev firstArr (d : Fin 4) (ts : Fin 3 → Fren.Core.Ty) : Array Fren.Core.Ty := (firstTys d ts).toArray
 
 -- For every function with at most three parameters, every declared result
--- type, and every application of it with at most three type arguments:
--- the sorts of the instance's unknown function, and whether its
--- applications are at least 0, as both front ends give them
--- (`Core.instanceSig`, `Core.instanceNat`).
+-- type, with its patterns, and every application of it with at most three
+-- type arguments: the sorts of the instance's unknown function, the type
+-- whose constraint its applications bring, and whether they are at least
+-- 0, as both front ends give them (`Core.instanceSig`, `Core.instanceResult`,
+-- `Core.instanceNat`).
 impl uninterpreted_instance: lang::uninterpreted_instance
-    for (d : Fin 4) (ts : Fin 3 → Fren.Core.Ty) (r : Fren.Core.Ty) (na : Fin 4) (as : Fin 3 → Fren.Core.Ty) {
+    for (d : Fin 4) (ts : Fin 3 → Fren.Core.Ty) (rp : Fren.Core.PTy) (na : Fin 4) (as : Fin 3 → Fren.Core.Ty) {
   declared := Fren.Seq.ofList (firstTys d ts),
-  result := r,
+  result := rp.ty,
   arguments := Fren.Seq.ofList (firstTys na as),
-  params := Fren.Seq.ofList (Fren.Core.instanceSig (firstArr d ts) r (firstArr na as)).1.toList,
-  result_type := (Fren.Core.instanceSig (firstArr d ts) r (firstArr na as)).2,
-  nat? := Fren.Core.instanceNat r,
+  params := Fren.Seq.ofList (Fren.Core.instanceSig (firstArr d ts) rp.ty (firstArr na as)).1.toList,
+  result_type := (Fren.Core.instanceSig (firstArr d ts) rp.ty (firstArr na as)).2,
+  fact_type := (Fren.Core.instanceResult rp (firstArr na as)).ty,
+  nat? := Fren.Core.instanceNat rp.ty,
 } by
-  intro d ts r na as hw
+  intro d ts rp na as hw
+  have hfact : (Fren.Core.instanceResult rp (firstArr na as)).ty = rp.ty.subst (firstArr na as) := rfl
   have hk (t : Fren.Core.Ty) : kindOf t = lang.ValueType.NatTy ↔ t = .nat := by cases t <;> simp [kindOf]
   simp only [fren_spec, Fren.Seq.ext_iff, hk] at hw ⊢
   -- The type arguments are not `Nat`s, as the assumption says.
@@ -2824,7 +2827,25 @@ impl uninterpreted_instance: lang::uninterpreted_instance
   refine ⟨⟨?_, by simp [Fren.Core.instanceSig, firstArr]⟩, ?_⟩
   · obtain ⟨_ | _ | _ | _ | d, hd⟩ := d <;> first | omega | skip
     all_goals simp [Fren.Core.instanceSig, firstArr, firstTys, List.ofFn_succ, Fren.Seq.nth_of_lt]
-  · simp only [Fren.Core.instanceSig, Fren.Core.instanceNat, subst_nat_iff _ hargs, beq_iff_eq]
+  · simp only [hfact, Fren.Core.instanceSig, Fren.Core.instanceNat, subst_nat_iff _ hargs, beq_iff_eq]
+    simp
+
+/-- A check's verdict, as `lang::generic_contract` has it. -/
+def decidedOf : Fren.Core.Verdict → lang.Decided
+  | .pass => .Holds
+  | .fail => .Fails
+  | .inconclusive => .Undecided
+
+-- For every verdict of the check of a generic function's contract at its
+-- type parameters' sorts, and of its checks at the instances that the spec
+-- applies: the checks that both front ends report (`Core.genericContract`).
+impl generic_contract: lang::generic_contract for (o : Fren.Core.Verdict) (vs : List Fren.Core.Verdict) {
+  at_sorts := decidedOf o,
+  instances := Fren.Seq.ofList (vs.map decidedOf),
+  reported := Fren.Seq.ofList ((Fren.Core.genericContract id o vs.toArray).toList.map decidedOf),
+} by
+  intro o vs _
+  cases o <;> cases vs <;> simp [fren_spec, Fren.Core.genericContract, decidedOf, Fren.Seq.ext_iff]
 
 /-! ## The overlap of patterns -/
 
