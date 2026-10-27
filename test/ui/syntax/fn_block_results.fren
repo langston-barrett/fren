@@ -1,0 +1,5 @@
+-- A function has one result for now (`F0445`).
+pub fn f(x: Int): (r: Int, s: Int) {   --~ error: a function has one result for now
+    out r := x
+}
+--@ exit: 2

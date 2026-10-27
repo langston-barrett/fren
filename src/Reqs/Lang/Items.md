@@ -518,9 +518,9 @@ since pattern types are not nested (`F0369`).
 
 ```
 function := ["pub"] "fn" declared-type "(" type ("," type)* ")" [":" type]
-          | ["pub"] "fn" declared-type "(" variable ("," variable)* ")" [":" type] [":=" top] clause+
           | ["pub"] "fn" declared-type "(" variable ("," variable)* ")" [":" type] ":=" top
-clause   := ("assume" | "ensure") IDENT ":" top
+          | ["pub"] "fn" declared-type "(" variable ("," variable)* ")" ":" "(" variable [","] ")"
+            "{" member* "}"
 ```
 
 `fn arity(Name): Int` declares the function `arity`, from values of type
@@ -540,9 +540,9 @@ defined function's parameter may be a function, as in `fn twice(f: fn(Int)
 [higher-order](HigherOrder.md); the rest of this section is about
 functions without them.
 
-A function written with `:= e` is *defined*, and any other is
-*uninterpreted*. Either may have a [contract](#contracts): the clauses
-after its signature, and after its body if it has one.
+A function written with `:= e`, or with a [block](#function-blocks) that
+defines its result, is *defined*, and any other is *uninterpreted*.
+Either may have a [contract](#contracts), written in its block.
 
 `exactly_one?` and `at_most_one?` are built-in functions, the
 [cardinality operators](Expressions.md#cardinality), and no function may
@@ -646,19 +646,21 @@ function of its own at each instance.
 
 ### Contracts
 
-A function's *contract* is the clauses written after its signature, and
-after its body for a defined function, one per line: `assume n: e`
-declares the *precondition* `n`, and `ensure n: e` the *postcondition*
-`n`, each a `Bool` expression `e`, optionally followed by a [`where`
-clause](Let.md):
+A function's *contract* is the `assume` and `ensure` members of its
+[block](#function-blocks): `assume n: e` declares the *precondition* `n`,
+and `ensure n: e` the *postcondition* `n`, each a `Bool` expression `e`,
+optionally followed by a [`where` clause](Let.md):
 
 ```text
-fn at(q: Seq<Int>, i: Int): Int := q[i]
+fn at(q: Seq<Int>, i: Int): (r: Int) {
     assume in_range: 0 <= i < q.len
+    out r := q[i]
+}
 
 pub type Name
-pub fn arity(n: Name): Nat
-    ensure positive: arity(n) > 0
+pub fn arity(n: Name): (r: Nat) {
+    ensure positive: r > 0
+}
 ```
 
 A contract states what a function needs of its arguments and what it
@@ -670,11 +672,12 @@ the parameters (see [Distinct names](#distinct-names)). A clause mentions
 what a procedure's constraint may, but for variables: the parameters,
 binders and names of its own, constants, variants, and functions declared
 before the function, so that a precondition of `elem` can say what `kind`
-its argument has. A postcondition may also mention the function's value, by
-applying the function to its parameters, each written as its name, in
-order, as `arity(n)` above. A precondition does not apply the function
-itself: it says where the function may be applied, so it cannot depend on
-the function's value. `lang::contract_application` states which
+its argument has, and the `let`s of its block. A postcondition may also
+mention the function's value: its result, as `r` above, or the function
+applied to its parameters, each written as its name, in order, as
+`arity(n)`, which means the same. A precondition mentions neither: it says
+where the function may be applied, so it cannot depend on the function's
+value. `lang::contract_application` states which
 applications of the function itself a clause may have:
 
 ```fren
@@ -760,6 +763,93 @@ Every function is used by [applying it](Expressions.md#function-applications),
 as in `arity(n) > 0`. Like any other item, a function or abstract type is
 visible according to `pub`, and can be brought into scope with `use` (see
 [Modules and visibility](Modules.md)).
+
+### Function blocks
+
+A function with a contract is written with its result named in its
+signature and a *block* of members, as a
+[procedure](Procedures.md) is: `fn f(x: T): (r: U) { ... }`, or `(r?)` for
+a `Bool` result. Its members are, in this order, as a procedure's are:
+
+- `use a::b`, which imports into the function alone, as a procedure's
+  `use` does into the procedure (see [Modules](Modules.md)), so that its
+  signature and its block may mention what it brings in;
+- `assume n: e`, a precondition;
+- `let y := e`, or `let y: T := e`, a local definition;
+- `out r := e`, which defines the result: `e` is the function's body, and
+  makes it defined, and a function without one is uninterpreted;
+- `ensure n: e`, a postcondition.
+
+A function's value is determined by its arguments, so its block takes
+no `exists`, no `call`, no `det`, which every value of a function is, and
+no evidence settings (`F0442`); nor yet an `expect` or a `cover`
+(`F0443`). In it, `out` defines the result alone (`F0444`), at most once
+(`F0421`), and a function has one result (`F0445`). `lang::fn_member`
+states which members a function's block takes:
+
+```fren
+pub enum FnMemberKind { Use, Assumption, Exists, Let, Define, Call, Guarantee, Claim, Evidence }
+pub enum FnVerdict {
+    Accepted,
+    NotFunctions,    -- `F0442`
+    NotYet,          -- `F0443`
+}
+
+set_option fren.evidence "enumerated" in
+pub proc fn_member(
+    member: FnMemberKind,
+    det?,                    -- it is written `det`
+): (det verdict: FnVerdict) {
+    ensure rule: verdict = (if member = FnMemberKind::Claim then FnVerdict::NotYet
+        else if det? or member in {FnMemberKind::Exists, FnMemberKind::Call, FnMemberKind::Evidence}
+        then FnVerdict::NotFunctions else FnVerdict::Accepted)
+
+    expect contract: when not det? and member in {FnMemberKind::Assumption, FnMemberKind::Guarantee}, verdict = FnVerdict::Accepted
+    expect determined: when det? and verdict != FnVerdict::NotYet, verdict = FnVerdict::NotFunctions
+}
+```
+
+The result and the `let`s stand for their definitions, as a [`where`
+clause's](Let.md) do, and the result's definition is the function applied
+to its parameters. Each member's expression has, before its own `where`
+clause, the definitions that it needs, in the order they are written,
+the result's first: those it mentions, and those that they mention, and
+so on. So the `let`s are read in order, as a `where` clause's definitions
+are, and a `let` that no expression needs is unused, as a procedure's is
+(`unused_variables`). The lints of `where` clauses read the block as
+written, not these clauses. The body and the preconditions do not need the result
+(`F0165`): the body defines it, and a precondition cannot depend on it.
+`lang::fn_definitions` states which definitions an expression is rightly
+given:
+
+```fren
+pub type DefName
+
+set_option fren.lint.undecidable "allow" in
+pub proc fn_definitions(
+    defs: Set<DefName>,                 -- the result's and the `let`s' names
+    mentions: Rel<DefName, DefName>,    -- `(a, b)`: the definition of `a` mentions `b`
+    mentioned: Set<DefName>,            -- the names that the expression mentions
+    given: Set<DefName>,                -- the definitions that the expression is given
+): (det right?) {
+    assume definitions_mention: mentions.domain subset defs
+
+    ensure rule: right? iff (forall (d: DefName), d in given iff (d in defs
+        and (d in mentioned or (exists (m: DefName), m in mentioned and (m, d) in mentions.closure))))
+}
+```
+
+So a function written with a block means what the function written with
+its body after `:=` and its contract's clauses after its signature means,
+each with those definitions as a `where` clause, as functions were written
+before they had blocks. That form, with clauses, is now an error
+(`F0164`), whose fix `fren fix` makes: it writes the block, with the body
+as the `out` member after the preconditions, and, in a postcondition of a
+function that is not generic, the function applied to its parameters as
+the result, but under no binder that hides a parameter, where the
+application is another. The meaning is unchanged. In a generic function's
+postcondition, the application is kept, since it may be at another
+instance than the result's.
 
 ## Constants
 

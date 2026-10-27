@@ -14,9 +14,11 @@ refuted.
 
 open FrenCli FrenCli.Eval
 
-def contractSrc : String := "fn nth(q: Seq<Int>, i: Int): Int := q[i]
+def contractSrc : String := "fn nth(q: Seq<Int>, i: Int): (r: Int) {
     assume in_range: 0 <= i < q.len
-    ensure same: nth(q, i) = q[i]
+    out r := q[i]
+    ensure same: r = q[i]
+}
 
 proc c(
     q: Seq<Int>,

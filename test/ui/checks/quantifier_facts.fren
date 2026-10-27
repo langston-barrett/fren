@@ -5,8 +5,9 @@
 -- every integer leaves cvc5 no finite model, so it gives up on whether the
 -- guarantee is redundant, which needs one, in both front ends alike.
 
-fn f(x: Int): Int
-    ensure pos: f(x) > 0
+fn f(x: Int): (r: Int) {
+    ensure pos: r > 0
+}
 
 fn h(Int): Nat
 
@@ -26,8 +27,10 @@ proc nats(n: Int): (ok?) {
 
 -- A precondition is asked where the application is, for every value of the
 -- bound name where its guard holds.
-fn nth(q: Seq<Int>, i: Int): Int := q[i]
+fn nth(q: Seq<Int>, i: Int): (r: Int) {
     assume in_range: 0 <= i < q.len
+    out r := q[i]
+}
 
 set_option fren.lint.undecidable "allow" in
 proc preconditions(q: Seq<Int>): (pos?) {

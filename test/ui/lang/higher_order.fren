@@ -32,9 +32,11 @@ fn pass(o: Option<Int>, g: fn(Int) -> Int): Option<Int> := map(o, g)
 fn combine(f: fn(Int, Bool) -> Int, n: Int): Int := f(n, n > 0)
 
 -- A contract that applies the function parameter.
-fn positive_at(f: fn(Int) -> Int, x: Int): Int := f(x)
+fn positive_at(f: fn(Int) -> Int, x: Int): (r: Int) {
     assume positive: f(x) > 0
-    ensure value: positive_at(f, x) = f(x)
+    out r := f(x)
+    ensure value: r = f(x)
+}
 
 proc c(o: Option<Int>, step: Int): (
     det p: Option<Int>,

@@ -12,13 +12,15 @@ fn pick<T>(T, T): T
 fn size<T>(Option<T>): Nat
 
 -- A contract, realizable for every type.
-fn choose<T>(a: T, b: T): T
+fn choose<T>(a: T, b: T): (r: T) {
     ensure either: choose(a, b) = a or choose(a, b) = b
+}
 
 -- Only a precondition, which each application's arguments must meet, at
 -- its instance.
-fn get<T>(o: Option<T>): T
+fn get<T>(o: Option<T>): (r: T) {
     assume present: o != Option::None
+}
 
 -- A contract at an instance: its postconditions hold of each application,
 -- and decide the counterexample, which both front ends show alike.
@@ -62,7 +64,9 @@ proc enumerated(x: Int is 0..=3): (det y: Int) {  --~ error: cannot be enumerate
 
 -- Within a generic defined function's contract, at its own type
 -- parameter, for every type.
-fn same<T>(a: T, b: T): T := a
+fn same<T>(a: T, b: T): (r: T) {
+    out r := a
     ensure chosen: when a = b, same(a, b) = choose(a, b)
+}
 --@ summary: 18 passed, 3 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

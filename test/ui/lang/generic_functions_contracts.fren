@@ -7,21 +7,27 @@ set_option fren.lint.dead_code "allow"
 mod generic_functions_contracts
 
 -- Defined only on a `Some`.
-fn get<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => d }
+fn get<T>(o: Option<T>, d: T): (r: T) {
     assume present: o != Option::None
+    out r := match o { Option::Some(x) => x, Option::None => d }
     ensure from_some: Option::Some(get(o, d)) = o
+}
 
 -- A postcondition that does not hold, whatever the type.
-fn pick<T>(a: T, b: T): T := a
+fn pick<T>(a: T, b: T): (r: T) {
+    out r := a
     ensure second: pick(a, b) = b  --~ error: counterexample: a = T#0, b = T#1
+}
 
 -- A generic body that applies `get` without its precondition: a value of a
 -- type parameter is shown by its name.
 fn get_any<T>(o: Option<T>, d: T): T := get(o, d)  --~ error: counterexample: o = Option::None
 
 -- A guarantee that applies the function at another instance than its own.
-fn nothing<T>(n: Int): Option<T> := let r: Option<T> := Option::None in r
+fn nothing<T>(n: Int): (result: Option<T>) {
+    out result := let r: Option<T> := Option::None in r
     ensure empty: let r: Option<Bool> := nothing(n) in r = Option::None
+}
 
 proc guarded(x: Option<Int>): (det y: Int) {
     assume some: x != Option::None

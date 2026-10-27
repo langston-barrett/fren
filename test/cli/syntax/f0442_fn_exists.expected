@@ -1,0 +1,12 @@
+error[F0442]: a function's block takes no `exists`
+ --> test/cli/syntax/f0442_fn_exists.fren:3:5
+  |
+3 |     exists y: Int
+  |     ^^^^^^ not a function's member
+  |
+  = note: a function's value is determined by its arguments: its block takes `use`, `assume`, `let`, `out` and `ensure`, and no `exists`, `call` or `det`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0442`.
+exit=2

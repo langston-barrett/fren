@@ -21,10 +21,10 @@ Consider the following specification of the retry policy of an HTTP client:
 ```fren
 mod http
 
-enum Method { Get, Put, Post, Delete }   -- Rust-style enums (can have payloads)
-type Status := Nat is 100..=599          -- a pattern type
-ordered struct Seconds(Nat)              -- a newtype with derived ordering
-enum Decision { GiveUp, RetryAfter(Seconds) }
+ordered struct Seconds(Nat)          -- a newtype with derived ordering
+enum Decision { GiveUp, RetryAfter(Seconds) }  -- Rust-style enums
+enum Method { Get, Put, Post, Delete }
+type Status := Nat is 100..=599      -- a pattern type
 
 const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)
@@ -32,14 +32,14 @@ const MAX_DELAY: Seconds := Seconds(30)
 proc retry(
     method: Method,
     status: Status,
-    attempt: Nat is 1..,       -- attempts made so far
-    retry_after: Seconds,      -- the server's `Retry-After`, or 0
+    attempt: Nat is 1..,             -- attempts made so far
+    retry_after: Seconds,            -- the server's `Retry-After`, or 0
 ): (decision: Decision) {
     use http::Decision::{GiveUp, RetryAfter}
 
     ensure transient:
-        decision is RetryAfter(_)
-        iff status is 429 | 503
+        decision is RetryAfter(_)    -- `is` matches against a pattern
+        iff status is 429 | 503      -- `|` is an or-pattern
         and method != Method::Post
         and attempt < MAX_ATTEMPTS
     ensure honor_server: when decision is RetryAfter(d), d >= retry_after
@@ -50,21 +50,15 @@ proc retry(
 }
 
 -- Once the client gives up, a later attempt doesn't start retrying again.
-expect gives_up_for_good(
-    a_method: Method,
-    a_status: Status,
-    a_attempt: Nat is 1..,
-    a_retry_after: Seconds,
-    b_method: Method,
-    b_status: Status,
-    b_attempt: Nat is 1..,
-    b_retry_after: Seconds,
-) {
-    call a := retry(a_method, a_status, a_attempt, a_retry_after)
-    call b := retry(b_method, b_status, b_attempt, b_retry_after)
-    expect gives_up_for_good: when a.method = b.method and a.status = b.status and a.retry_after = b.retry_after
-        and a.attempt <= b.attempt and b.decision is Decision::RetryAfter(_),
-        a.decision is Decision::RetryAfter(_)
+expect gives_up_for_good(method: Method, status: Status, retry_after: Seconds, early: Nat is 1.., late: Nat is 1..) {
+    use http::Decision::RetryAfter
+
+    assume later: early <= late
+
+    call a := retry(method, status, early, retry_after)
+    call b := retry(method, status, late, retry_after)
+
+    expect stays_given_up: when b.decision is RetryAfter(_), a.decision is RetryAfter(_)
 }
 ```
 

@@ -1,7 +1,7 @@
 error[F0631]: the postconditions of `other<One>` cannot all hold
  --> test/cli/results/f0631_generic_instance.fren:8:8
   |
-8 | pub fn other<T>(x: T): T
+8 | pub fn other<T>(x: T): (r: T) {
   |        ^^^^^ unrealizable contract
   |
   = note: for the arguments

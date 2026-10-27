@@ -1,0 +1,12 @@
+error[F0444]: `y` is not the function's result
+ --> test/cli/syntax/f0444_fn_out.fren:3:5
+  |
+3 |     out y := x
+  |     ^^^^^ not the result
+  |
+  = note: `out` defines the function's result, `r`; a local definition is written `let y := e`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0444`.
+exit=2

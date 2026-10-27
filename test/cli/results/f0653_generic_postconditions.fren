@@ -1,6 +1,7 @@
 -- Postconditions of a generic function without a body that cannot all
 -- hold at some type, checked once, at its type parameter, at the
 -- function's name, with a note at each (F0653).
-pub fn other<T>(x: T, y: T): T
+pub fn other<T>(x: T, y: T): (r: T) {
     ensure moves: other(x, y) != x
     ensure stays: other(x, y) = y
+}

@@ -1309,8 +1309,10 @@ def fixSelected (only skip : Array Lint) (l : Lint) : Bool :=
 
 /-- The parse errors whose fixes `fren fix` makes, which migrate a spec from
 an earlier syntax: types and declarations written with parentheses for
-their type arguments and type parameters (`lint::migration_step`). -/
-def migrationCodes : List String := ["F0155", "F0156", "F0158", "F0159", "F0160"]
+their type arguments and type parameters, components and their members,
+and functions' contracts written after their signatures
+(`lint::migration_step`). -/
+def migrationCodes : List String := ["F0155", "F0156", "F0158", "F0159", "F0160", "F0164"]
 
 /-- The most migration fixes that `fren fix` makes in a file. Each makes
 the file's earlier syntax shorter, so this bounds only a bug. -/

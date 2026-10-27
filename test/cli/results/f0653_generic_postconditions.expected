@@ -1,7 +1,7 @@
 error[F0653]: the postconditions of `other` cannot all hold at some type
  --> test/cli/results/f0653_generic_postconditions.fren:4:8
   |
-4 | pub fn other<T>(x: T, y: T): T
+4 | pub fn other<T>(x: T, y: T): (r: T) {
   |        ^^^^^ unrealizable contract
   |
   = note: for the arguments

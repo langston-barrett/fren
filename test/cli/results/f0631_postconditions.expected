@@ -1,7 +1,7 @@
 error[F0631]: the postconditions of `rate` cannot all hold
  --> test/cli/results/f0631_postconditions.fren:3:8
   |
-3 | pub fn rate(n: Int): Int
+3 | pub fn rate(n: Int): (r: Int) {
   |        ^^^^ unrealizable contract
   |
   = note: for the arguments
@@ -13,13 +13,13 @@ error[F0631]: the postconditions of `rate` cannot all hold
 note: conflicts with `negative`
  --> test/cli/results/f0631_postconditions.fren:4:12
   |
-4 |     ensure positive: rate(n) > 0
+4 |     ensure positive: r > 0
   |            ^^^^^^^^
 
 note: conflicts with `positive`
  --> test/cli/results/f0631_postconditions.fren:5:12
   |
-5 |     ensure negative: rate(n) < n
+5 |     ensure negative: r < n
   |            ^^^^^^^^
 
 fren: 0 passed, 1 failed, 0 inconclusive, 0 redundant

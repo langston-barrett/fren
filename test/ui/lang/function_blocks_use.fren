@@ -1,0 +1,23 @@
+-- A function's block takes `use`, which imports into the function alone:
+-- its signature and its members may mention what it brings in.
+mod fn_block_use
+
+pub enum Color { Red, Green }
+
+pub fn red?(c: Color): (r?) {
+    use self::Color::Red
+    out r? := c = Red
+    ensure exact: r? iff c = Red
+}
+
+pub fn green?(c: Color): (r?) {
+    use self::Color::{Green, Red}
+    let g := Green
+    out r? := c = g and c != Red
+}
+
+-- Not in the module's scope.
+pub proc p(c: Color): (y?) {
+    ensure q: y? iff c = Red   --~ error: cannot find `Red` in this scope
+}
+--@ exit: 2

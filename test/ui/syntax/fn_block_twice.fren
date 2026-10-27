@@ -1,0 +1,6 @@
+-- A function's result is defined once (`F0421`).
+pub fn f(x: Int): (r: Int) {
+    out r := x
+    out r := x + 1   --~ error: result `r` is defined more than once
+}
+--@ exit: 2

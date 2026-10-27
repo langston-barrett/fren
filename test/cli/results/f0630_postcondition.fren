@@ -1,5 +1,7 @@
 -- A defined function's postcondition that its body does not meet, at the
 -- postcondition's name, with the parameters (F0630).
-pub fn pred(n: Int): Int := n - 1
+pub fn pred(n: Int): (r: Int) {
     assume positive: n > 0
-    ensure positive_result: pred(n) > 0
+    out r := n - 1
+    ensure positive_result: r > 0
+}

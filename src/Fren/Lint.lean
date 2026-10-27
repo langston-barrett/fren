@@ -745,6 +745,11 @@ def recordUse (u : Core.UseDef) (ref : Syntax) : m Unit := do
 /-- Records a lint's message at `ref`, at the level here. -/
 def recordLint (lint : Core.Lint) (ref : Syntax) (msg : Core.Msg) : m Unit := do
   let level ← lintLevel lint
+  -- Once at a place: a function's block gives a `let` to each expression
+  -- that needs it, which elaborates it again (`Reqs/Lang/Items#function-blocks`).
+  let same (r : Core.LintReport Syntax) := r.lint == lint && r.ref.getPos? == ref.getPos? && r.ref.getTailPos? == ref.getTailPos?
+    && r.msg.headline == msg.headline
+  if ref.getPos?.isSome && (← getLocal).lintReports.any same then return
   modifyLocal fun l => { l with lintReports := l.lintReports.push { lint, level, ref, msg } }
   if lint == .undecidable && level.level.severity? == some .error then
     modifyLocal fun l => { l with undecidableDenied := true }

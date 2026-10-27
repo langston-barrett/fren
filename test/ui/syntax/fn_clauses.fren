@@ -1,0 +1,6 @@
+-- A function's contract is written in its block (`F0164`), which the
+-- fix writes.
+pub fn f(x: Int): Int := x + 1
+    assume pos: x > 0   --~ error: a function's contract is written in its block
+    ensure bigger: f(x) > x
+--@ exit: 2

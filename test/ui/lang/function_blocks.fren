@@ -1,0 +1,45 @@
+-- Functions written with a result and a block (`Reqs/Lang/Items#function-blocks`):
+-- the `out` member is the body, the `assume`s and `ensure`s the contract,
+-- and the result and the `let`s are definitions of each that mentions them.
+-- fren-covers: lang::fn_definitions
+
+pub fn get(q: Seq<Int>, i: Int): (r: Int) {
+    assume in_range: 0 <= i < q.len
+    out r := q[i]
+}
+
+pub fn inc(x: Int): (r: Int) {
+    assume pos: x > 0
+    let one := 1
+    let two := one + one
+    out r := x + one
+    ensure bigger: r > x
+    ensure by_two: r < x + two
+    ensure wrong: r > five where five := 5   --~ error: the postcondition `wrong` of `inc` does not hold
+}
+
+pub fn even?(n: Int): (r?) {
+    out r? := n mod 2 = 0
+    ensure e: r? iff n mod 2 = 0
+}
+
+-- With a function as a parameter: each application meets the
+-- precondition, which a closure's body is checked against.
+pub fn ap(g: fn(Int) -> Int, x: Int): (r: Int) {
+    assume ok: g(x) > 0
+    out r := g(x)
+    ensure pos: r > 0
+}
+
+-- An uninterpreted function, whose postconditions are all that is known
+-- of it.
+pub type Name
+pub fn arity(n: Name): (r: Nat) {
+    ensure positive: r > 0
+}
+
+pub proc use_it(x: Int, n: Name): (det y: Int) {
+    assume p: x > 0
+    out y := inc(x) + ap(|z| z + 1, x) + ap(|z| z - 5, x) + arity(n)   --~ error: the precondition `ok` of `ap` may not hold at this application in `use_it::y`
+    expect big: y > 1   --~ error: expectation `use_it::big` does not hold
+}

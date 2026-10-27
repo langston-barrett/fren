@@ -49,8 +49,9 @@ example : generic_functions.unwrap_or Int (.Some 3) 0 = 3 := by decide
 -- function of its own (`Reqs/Impl#interpretations`).
 mod generic_uninterpreted
 
-fn choose<T>(a: T, b: T): T
+fn choose<T>(a: T, b: T): (r: T) {
     ensure either: choose(a, b) = a or choose(a, b) = b
+}
 
 proc at_int(x: Int): (det y: Int) {
   out y := choose(x, 0)

@@ -296,8 +296,9 @@ them. So with
 
 ```text
 fn pick<T>(T, T): T
-fn choose<T>(a: T, b: T): T
-    ensure either: choose(a, b) = a or choose(a, b) = b
+fn choose<T>(a: T, b: T): (r: T) {
+    ensure either: r = a or r = b
+}
 ```
 
 `pick(x, y) = pick(x, y)` holds at any instance, and `choose(1, 2)` is `1`

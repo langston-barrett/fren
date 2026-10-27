@@ -420,29 +420,30 @@ defined function applies no uninterpreted function (see [Defined
 functions](Items.md#defined-functions)). Its postcondition determines it:
 
 ```fren
-pub fn step(program: Program, head: Head, env: Env, values: Seq<Value>): Value
-    ensure layer: step(program, head, env, values) = match head {
-    Head::Literal(v) => v,
-    Head::Bound(v) => v,
-    Head::Variable(x) => lookup(env, x),
-    Head::Definition(_) => part(values, 0),
-    Head::Construction(c, _) => construct(c, values),
-    Head::Uninterpreted(f) => meaning(env, f, values),
-    Head::Op(o, _) => if connective?(o) then connective_value(o, values)
-        else if choice?(o) then (if fires_at?(values, open0?, open1?, open2?, 0) then arm_body(values, 0)
-        else if fires_at?(values, open0?, open1?, open2?, 1) then arm_body(values, 1)
-        else if fires_at?(values, open0?, open1?, open2?, 2) then arm_body(values, 2)
-        else if more_arms?(head, values) and fixed_specified?(program, head, values) then fixed_value(program, head, values)
-        else unspecified(env, head, []))
-        else if total?(o) or fixed_specified?(program, head, values) then fixed_value(program, head, values)
-        else unspecified(env, head, values),
-    Head::Constant(_) | Head::Defined(_) => if fixed_specified?(program, head, values)
-        then definition_value(program, declared(head), values) else unspecified(env, head, values),
-    _ => if fixed_specified?(program, head, values) then fixed_value(program, head, values) else unspecified(env, head, values),
+pub fn step(program: Program, head: Head, env: Env, values: Seq<Value>): (r: Value) {
+    ensure layer: r = match head {
+        Head::Literal(v) => v,
+        Head::Bound(v) => v,
+        Head::Variable(x) => lookup(env, x),
+        Head::Definition(_) => part(values, 0),
+        Head::Construction(c, _) => construct(c, values),
+        Head::Uninterpreted(f) => meaning(env, f, values),
+        Head::Op(o, _) => if connective?(o) then connective_value(o, values)
+            else if choice?(o) then (if fires_at?(values, open0?, open1?, open2?, 0) then arm_body(values, 0)
+            else if fires_at?(values, open0?, open1?, open2?, 1) then arm_body(values, 1)
+            else if fires_at?(values, open0?, open1?, open2?, 2) then arm_body(values, 2)
+            else if more_arms?(head, values) and fixed_specified?(program, head, values) then fixed_value(program, head, values)
+            else unspecified(env, head, []))
+            else if total?(o) or fixed_specified?(program, head, values) then fixed_value(program, head, values)
+            else unspecified(env, head, values),
+        Head::Constant(_) | Head::Defined(_) => if fixed_specified?(program, head, values)
+            then definition_value(program, declared(head), values) else unspecified(env, head, values),
+        _ => if fixed_specified?(program, head, values) then fixed_value(program, head, values) else unspecified(env, head, values),
+    }
+        where open0? := arm_open?(head, values, 0, arm_matches?(program, head, 0, part(values, 0))),
+        open1? := arm_open?(head, values, 1, arm_matches?(program, head, 1, part(values, 0))),
+        open2? := arm_open?(head, values, 2, arm_matches?(program, head, 2, part(values, 0)))
 }
-    where open0? := arm_open?(head, values, 0, arm_matches?(program, head, 0, part(values, 0))),
-    open1? := arm_open?(head, values, 1, arm_matches?(program, head, 1, part(values, 0))),
-    open2? := arm_open?(head, values, 2, arm_matches?(program, head, 2, part(values, 0)))
 ```
 
 What a layer *mentions* is the set of the variables and uninterpreted
