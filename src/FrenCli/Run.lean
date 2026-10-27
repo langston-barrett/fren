@@ -528,8 +528,8 @@ def load (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget
 
 /-- Prints the messages of result `r` of `c`, at the positions of the items
 they are about; returns them. -/
-def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (r : Fren.Core.CheckResult) :
-    IO (Array Msg) := do
+def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (r : Fren.Core.CheckResult)
+    (vias : Array (Span × Lean.Name) := #[]) : IO (Array Msg) := do
   let mut shown := #[]
   for m in Fren.Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) r c.decidable do
     let prop? := m.item?.bind fun n => c.props.find? (·.name == n)
@@ -540,8 +540,12 @@ def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (
       | none, some n => (c.insts.find? (·.name == n)).map (·.span)
         |>.orElse (fun _ => (c.vars.find? (·.name == n)).map (·.span)) |>.getD c.span
       | none, none => c.span
-    printDiag p files { file := c.file, span, severity := m.severity, msg := m.msg }
-    shown := shown.push m.msg
+    -- A closure's obligation names the function that applies it.
+    let msg := match (index?.orElse fun _ => site?).bind fun sp => vias.find? (·.1 == sp) with
+      | some (_, f) => if m.severity == .error then m.msg.note (Fren.Core.viaNote f) else m.msg
+      | none => m.msg
+    printDiag p files { file := c.file, span, severity := m.severity, msg }
+    shown := shown.push msg
   return shown
 
 /-- Tests `c`, the evaluator's `ec`, on `n` random behaviours from `seed`
@@ -561,7 +565,7 @@ that the evaluator cannot evaluate: one is an error (`F0639`), at the
 quantifier, and none of its checks is run (`Reqs/Eval#quantifiers`). -/
 def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spec) (c : CComp) (ec : Eval.Comp)
     (global : Bool) (keep : Fren.Core.CheckResult → Bool) (prelude : Prelude) (byCheck : Bool := false)
-    (rep : Eval.Report := testReport sp ec c global args.seed args.nTests) :
+    (rep : Eval.Report := testReport sp ec c global args.seed args.nTests) (vias : Array (Span × Lean.Name) := #[]) :
     IO (Array Fren.Core.CheckResult × Array Msg × Bool) := do
   let subject := s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
   if let some (file, pos) := sp.untestable? ec then
@@ -581,7 +585,7 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     -- Inconclusive results are reported below, once for the comp; a
     -- cover goal's pass shows its witness.
     if r.verdict == .fail || (r.kind == .cover && r.verdict == .pass) then
-      shown := shown ++ (← printResult args.paint files c r)
+      shown := shown ++ (← printResult args.paint files c r vias)
   let warn (msg : Msg) : IO Unit := printDiag args.paint files { file := c.file, span := c.span, severity := .warning, msg }
   if let some input := rep.noOutputs? then
     -- It explains why the checks it selects were not reached, too.
@@ -819,13 +823,13 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       printDiag args.paint files { file := c.file, span, msg }
       internal := internal.push msg
     for r in results do
-      shown := shown ++ (← printResult args.paint files c r)
+      shown := shown ++ (← printResult args.paint files c r st.vias)
     all := all ++ results
     if let some r := record? then r.modify (· ++ results.map (key, ·))
     -- The evaluator's internal error, printed above, explains why the
     -- checks set to testing are missing from the summary.
     if let (.ok sp, some (ec, rep)) := (spec?, tested?) then
-      let (tested, msgs, failed) ← testComp args files sp c ec global (testedKeeps c kinds refinement) prelude (byCheck := true) rep
+      let (tested, msgs, failed) ← testComp args files sp c ec global (testedKeeps c kinds refinement) prelude (byCheck := true) rep st.vias
       shown := shown ++ msgs
       if failed then internal := internal.push msgs[0]!
       all := all ++ tested
@@ -839,7 +843,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       enumErrors := enumErrors + 1
     | some (.ok e) =>
       for r in e.results do
-        shown := shown ++ (← printResult args.paint files c r)
+        shown := shown ++ (← printResult args.paint files c r st.vias)
       all := all ++ e.results
       if let some r := record? then r.modify (· ++ e.results.map (key, ·))
       byBound := byBound + (e.results.filter fun r => r.verdict == .pass && r.bounded?.isSome).size
@@ -874,7 +878,7 @@ def quickcheck (args : Args) : IO UInt32 := do
         printDiag args.paint files { file := c.file, span := c.span, msg }
         sevs := sevs.push .error
     let keep (r : Fren.Core.CheckResult) := !refinement || refinementKeeps c r
-    let (results, msgs, failed) ← testComp args files sp c ec global keep prelude
+    let (results, msgs, failed) ← testComp args files sp c ec global keep prelude (vias := st.vias)
     shown := shown ++ msgs
     if failed then sevs := sevs.push .error
     all := all ++ results

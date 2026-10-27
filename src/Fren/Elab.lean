@@ -249,6 +249,10 @@ partial def typeSegs (ty : Syntax) : Array String :=
   else if ty.isOfKind ``Lang.setType then #[Core.setSeg] ++ typeSegs ty[2]
   else if ty.isOfKind ``Lang.seqType then #[Core.seqSeg] ++ typeSegs ty[2]
   else if ty.isOfKind ``Lang.relType then #[Core.relSeg] ++ typeSegs ty[2] ++ #[Core.relSep] ++ typeSegs ty[4]
+  -- A function type (`Reqs/Lang/HigherOrder#function-types`).
+  else if ty.isOfKind ``Lang.fnType then
+    let ps := (ty[2].getSepArgs.map typeSegs).toList.intersperse #[Core.fnSep]
+    #[Core.fnSeg] ++ ps.foldl (· ++ ·) #[] ++ #[Core.fnArrow] ++ typeSegs ty[5]
   else if ty.isOfKind ``Lang.instanceType then
     let args := (ty[2].getSepArgs.map typeSegs).toList.intersperse #[Core.argsSep]
     (pathSegs ty[0]).map (·.getId.toString) ++ #[Core.argsOpen] ++ args.foldl (· ++ ·) #[] ++ #[Core.argsClose]
@@ -312,7 +316,7 @@ partial def hasFnType (ty : Syntax) : Bool := ty.isOfKind ``Lang.fnType || ty.ge
 (`lang::function_type_place`); a function type within another is reported
 where that one is elaborated. -/
 def checkFnTypeSite [Monad m] [MonadError m] (site : Core.TypeSite) (ty : Syntax) : m Unit := do
-  if ty.isOfKind ``Lang.fnType then throwErrorAt ty (Core.fnTypePlaceMsg site false).text
+  if ty.isOfKind ``Lang.fnType then throwErrorAt ty (Core.fnTypePlaceMsg site []).text
 
 /-- The Lean type of the Fren type `ty`. Within the declaration of a generic
 type, its type parameters `params` are types, the `k`th the loose bound
@@ -321,8 +325,7 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
     (params : Array Name := #[]) : m Expr := do
   -- A function type is only a defined function's parameter's, which
   -- `fnParamType` elaborates (`lang::function_type_place`).
-  if ty.isOfKind ``Lang.fnType then throwErrorAt ty (Core.fnTypePlaceMsg .constant false).text
-  if hasFnType ty then throwErrorAt ty (Core.fnTypePlaceMsg .constant true).text
+  if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   -- A pattern type's Lean type is its base type's.
   if ty.isOfKind ``Lang.patType then return ← elabType modName ty[0] params
   -- `Set<T>`: `"Set" "<" T ">"`; `Rel<A, B>`: `"Rel" "<" A "," B ">"`.
@@ -2404,8 +2407,7 @@ partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]
   if ty.hasMissing then throwAbortTerm
   -- A function type is only a defined function's parameter's
   -- (`lang::function_type_place`).
-  if ty.isOfKind ``Lang.fnType then throwErrorAt ty (Core.fnTypePlaceMsg .constant false).text
-  if hasFnType ty then throwErrorAt ty (Core.fnTypePlaceMsg .constant true).text
+  if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   let text := Core.typeText (exactText ty)
   if ty.isOfKind ``Lang.patType then
     let (t, base) ← elabPType modName ty[0] params
@@ -4767,6 +4769,7 @@ def hoAppTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       for (ref, q?, pred) in c.obligations do
         let g ← if generic then `(@$(mkCIdent decl) $(← usesTerms uses path d.typeParams targs)* $inOrder* $pred)
           else `($(mkCIdent decl) $(uses.map fun u => ⟨(mkCIdent u).raw⟩)* $inOrder* $pred)
+        modifyLocal fun l => { l with vias := l.vias.push (ref.getPos?, path) }
         match q? with
         | some q => modifyLocal fun l => { l with tables := l.tables.push (ref, q, g) }
         | none => modifyLocal fun l => { l with indexes := l.indexes.push (ref, g) }

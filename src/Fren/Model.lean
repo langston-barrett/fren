@@ -747,6 +747,9 @@ structure LocalState where
   /-- The item being elaborated, by its path, which an application is in
   (`Core.GenericUse`). -/
   currentItem : Name := .anonymous
+  /-- Where each closure's obligation is checked, by its position, with the
+  higher-order function that its closure is given to (`Core.viaNote`). -/
+  vias : Array (Option String.Pos.Raw × Name) := #[]
   /-- Comps declared in this file, in order. -/
   comps : Array Name := #[]
   /-- Global expectations declared in this file, in order. -/

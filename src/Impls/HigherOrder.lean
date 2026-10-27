@@ -22,14 +22,20 @@ def toTypeSite : Fren.Core.TypeSite → lang.TypeSite
   | .alias => .Alias
   | .closureParameter => .ClosureParameter
 
+def toWithin : Fren.Core.Within → lang.Within
+  | .element => .Element
+  | .argument => .Argument
+  | .fnParameter => .FnParameter
+  | .fnResult => .FnResult
+
 -- For every place where a type is written and every way down to a function
--- type within it: the code that both front ends report (`Core.fnTypeCode?`),
--- which reads only whether the function type is within another.
-impl function_type_place: lang::function_type_place for (site : Fren.Core.TypeSite) (w : List lang.Within) {
+-- type within it, as both front ends find it (`Core.fnTypeWithin`): the
+-- code that they report (`Core.fnTypeCode?`).
+impl function_type_place: lang::function_type_place for (site : Fren.Core.TypeSite) (w : List Fren.Core.Within) {
   site := toTypeSite site,
-  within := Fren.Seq.ofList w,
-  accepted? := (Fren.Core.fnTypeCode? site !w.isEmpty).isNone,
-  code := (Fren.Core.fnTypeCode? site !w.isEmpty).getD "",
+  within := Fren.Seq.ofList (w.map toWithin),
+  accepted? := (Fren.Core.fnTypeCode? site w).isNone,
+  code := (Fren.Core.fnTypeCode? site w).getD "",
 } by
   intro site w _
   cases site <;> cases w <;> simp [fren_spec, toTypeSite, Fren.Core.fnTypeCode?, Fren.Seq.ext_iff]
@@ -229,6 +235,243 @@ impl closure_capture: lang::closure_capture
           = (Fren.Core.captureNames next captured ++ values ++ around).length + (j + 1).toNat by simp; omega]
       rw [List.drop_append, List.drop_of_length_le (by omega), List.nil_append, Nat.add_sub_cancel_left]
       exact hjb
+
+/-! ## Capture, end to end
+
+What `Core.captureFree` gives a closure's body, through `Core.STerm.free`
+and `Core.STerm.renameFree`, which `Core.inlineCall` runs: each free symbol
+of the renamed body is one of the closure's parameters, one of its capture
+symbols, or not local, so that, with the capture symbols new
+(`lang::closure_capture`), no binder of the higher-order body captures it. -/
+
+open Fren.Core in
+/-- Renaming keeps the names that a `let` binds. -/
+theorem names_renameDefs (σ : String → Option String) : (bs : List STerm) →
+    (STerm.renameDefs σ bs).filterMap bindName = bs.filterMap bindName
+  | [] => by simp [STerm.renameDefs]
+  | .list (.atom x :: rest) :: bs => by simp [STerm.renameDefs, bindName, names_renameDefs σ bs]
+  | .list (.list l :: rest) :: bs => by simp [STerm.renameDefs, bindName, names_renameDefs σ bs]
+  | .list [] :: bs => by simp [STerm.renameDefs, STerm.renameFree, STerm.renameL, bindName, names_renameDefs σ bs]
+  | .atom a :: bs => by simp [STerm.renameDefs, STerm.renameFree, bindName, names_renameDefs σ bs]
+
+open Fren.Core in
+theorem bound_renameDefs (σ : String → Option String) (bs : List STerm) :
+    STerm.bound (STerm.renameDefs σ bs) = STerm.bound bs := by
+  funext s
+  simp only [STerm.bound, names_renameDefs]
+
+open Fren.Core in
+mutual
+/-- Each free symbol of a renamed term is a free symbol of the term,
+renamed, where `σ` never names a binder form. -/
+theorem free_renameFree (σ : String → Option String) (hσ : ∀ x y, σ x = some y → binderKw y = false) :
+    (t : STerm) → ∀ s ∈ (t.renameFree σ).free, ∃ x ∈ t.free, s = (σ x).getD x
+  | .atom a => by
+    intro s hs
+    simp only [STerm.renameFree, STerm.free, List.mem_singleton] at hs ⊢
+    exact ⟨a, rfl, hs⟩
+  | .list ts => by
+    intro s hs
+    simp only [STerm.renameFree, STerm.free] at hs ⊢
+    exact freeL_renameL σ hσ ts s hs
+
+theorem freeL_renameL (σ : String → Option String) (hσ : ∀ x y, σ x = some y → binderKw y = false) :
+    (ts : List STerm) → ∀ s ∈ STerm.freeL (STerm.renameL σ ts), ∃ x ∈ STerm.freeL ts, s = (σ x).getD x
+  | [.atom kw, .list bs, body] => by
+    intro s hs
+    by_cases hk : binderKw kw = true
+    · have hb' : STerm.bound (if (kw == "let") = true then STerm.renameDefs σ bs else bs) = STerm.bound bs := by
+        split
+        · exact bound_renameDefs σ bs
+        · rfl
+      simp only [STerm.renameL, hk, if_true, STerm.freeL, hb', List.mem_append, List.mem_filter] at hs
+      simp only [STerm.freeL, hk, if_true, List.mem_append, List.mem_filter]
+      rcases hs with hs | ⟨hs, hn⟩
+      · by_cases hl : (kw == "let") = true
+        · simp only [hl, if_true] at hs ⊢
+          obtain ⟨x, hx, rfl⟩ := freeDefs_renameDefs σ hσ bs s hs
+          exact ⟨x, Or.inl hx, rfl⟩
+        · simp [hl] at hs
+      · have hσ' : ∀ x y, (if STerm.bound bs x then none else σ x) = some y → binderKw y = false := by
+          intro x y h
+          split at h
+          · cases h
+          · exact hσ x y h
+        obtain ⟨x, hx, rfl⟩ := free_renameFree _ hσ' body _ hs
+        by_cases hb : STerm.bound bs x = true
+        · simp only [hb, if_true, Option.getD_none] at hn
+          simp at hn
+        · refine ⟨x, Or.inr ⟨hx, by simp [hb]⟩, by simp [hb]⟩
+    · simp only [STerm.renameL, hk, Bool.false_eq_true, if_false] at hs
+      have hk' : binderKw ((σ kw).getD kw) = false := by
+        cases h : σ kw with
+        | none => simpa [h] using hk
+        | some y => simpa using hσ kw y h
+      simp only [STerm.freeL, hk', Bool.false_eq_true, if_false, List.mem_cons, List.mem_append] at hs
+      simp only [STerm.freeL, hk, Bool.false_eq_true, if_false, List.mem_cons, List.mem_append]
+      rcases hs with hs | hs | hs
+      · exact ⟨kw, Or.inl rfl, hs⟩
+      · obtain ⟨x, hx, rfl⟩ := freeL_renameL σ hσ bs s hs
+        exact ⟨x, Or.inr (Or.inl hx), rfl⟩
+      · obtain ⟨x, hx, rfl⟩ := free_renameFree σ hσ body s hs
+        exact ⟨x, Or.inr (Or.inr hx), rfl⟩
+  | [] => by simp [STerm.renameL, STerm.freeL]
+  | .list x :: ts => by
+    intro s hs
+    simp only [STerm.renameL, STerm.freeL, STerm.renameFree, List.mem_append] at hs
+    simp only [STerm.freeL, List.mem_append]
+    rcases hs with hs | hs
+    · obtain ⟨y, hy, rfl⟩ := free_renameFree σ hσ (.list x) s (by simpa [STerm.renameFree] using hs)
+      exact ⟨y, Or.inl hy, rfl⟩
+    · obtain ⟨y, hy, rfl⟩ := freeEach_renameEach σ hσ ts s hs
+      exact ⟨y, Or.inr hy, rfl⟩
+  | .atom a :: [] => by
+    intro s hs
+    simp only [STerm.renameL, STerm.renameEach, STerm.freeL, STerm.freeEach, STerm.renameFree, STerm.free,
+      List.append_nil, List.mem_singleton] at hs ⊢
+    exact ⟨a, rfl, hs⟩
+  | .atom a :: [u] => by
+    intro s hs
+    rw [STerm.renameL, STerm.renameEach, STerm.renameEach, STerm.freeL, STerm.freeEach, STerm.freeEach] at hs
+    rw [STerm.freeL, STerm.freeEach, STerm.freeEach]
+    simp only [STerm.renameFree, STerm.free, List.append_nil, List.mem_append, List.mem_singleton] at hs ⊢
+    rcases hs with hs | hs
+    · exact ⟨a, Or.inl rfl, hs⟩
+    · obtain ⟨y, hy, rfl⟩ := free_renameFree σ hσ u s hs
+      exact ⟨y, Or.inr hy, rfl⟩
+    all_goals (intro _ _ _ _ h2; simp at h2)
+  | .atom a :: .atom b :: [body] => by
+    intro s hs
+    simp only [STerm.renameL, STerm.renameEach, STerm.freeL, STerm.freeEach, STerm.renameFree, STerm.free,
+      List.append_nil, List.singleton_append, List.mem_cons] at hs ⊢
+    rcases hs with hs | hs | hs
+    · exact ⟨a, Or.inl rfl, hs⟩
+    · exact ⟨b, Or.inr (Or.inl rfl), hs⟩
+    · obtain ⟨y, hy, rfl⟩ := free_renameFree σ hσ body s hs
+      exact ⟨y, Or.inr (Or.inr hy), rfl⟩
+  | .atom a :: u :: v :: w :: rest => by
+    intro s hs
+    rw [STerm.renameL, STerm.freeL] at hs
+    rw [STerm.freeL]
+    simp only [STerm.renameFree, STerm.free, List.mem_append, List.mem_singleton] at hs ⊢
+    rcases hs with hs | hs
+    · exact ⟨a, Or.inl rfl, hs⟩
+    · obtain ⟨y, hy, rfl⟩ := freeEach_renameEach σ hσ (u :: v :: w :: rest) s hs
+      exact ⟨y, Or.inr hy, rfl⟩
+    all_goals (intro _ _ _ _ h2; have := congrArg List.length h2; simp [STerm.renameEach] at this)
+
+theorem freeEach_renameEach (σ : String → Option String) (hσ : ∀ x y, σ x = some y → binderKw y = false) :
+    (ts : List STerm) → ∀ s ∈ STerm.freeEach (STerm.renameEach σ ts), ∃ x ∈ STerm.freeEach ts, s = (σ x).getD x
+  | [] => by simp [STerm.renameEach, STerm.freeEach]
+  | t :: ts => by
+    intro s hs
+    simp only [STerm.renameEach, STerm.freeEach, List.mem_append] at hs ⊢
+    rcases hs with hs | hs
+    · obtain ⟨x, hx, rfl⟩ := free_renameFree σ hσ t s hs
+      exact ⟨x, Or.inl hx, rfl⟩
+    · obtain ⟨x, hx, rfl⟩ := freeEach_renameEach σ hσ ts s hs
+      exact ⟨x, Or.inr hx, rfl⟩
+
+theorem freeDefs_renameDefs (σ : String → Option String) (hσ : ∀ x y, σ x = some y → binderKw y = false) :
+    (bs : List STerm) → ∀ s ∈ STerm.freeDefs (STerm.renameDefs σ bs), ∃ x ∈ STerm.freeDefs bs, s = (σ x).getD x
+  | [] => by simp [STerm.renameDefs, STerm.freeDefs]
+  | .list (x :: rest) :: bs => by
+    intro s hs
+    simp only [STerm.renameDefs, STerm.freeDefs, List.mem_append] at hs ⊢
+    rcases hs with hs | hs
+    · obtain ⟨y, hy, rfl⟩ := freeEach_renameEach σ hσ rest s hs
+      exact ⟨y, Or.inl hy, rfl⟩
+    · obtain ⟨y, hy, rfl⟩ := freeDefs_renameDefs σ hσ bs s hs
+      exact ⟨y, Or.inr hy, rfl⟩
+  | .list [] :: bs => by
+    intro s hs
+    simp only [STerm.renameDefs, STerm.freeDefs, STerm.renameFree, STerm.renameL, STerm.free, STerm.freeL,
+      List.nil_append] at hs ⊢
+    exact freeDefs_renameDefs σ hσ bs s hs
+  | .atom a :: bs => by
+    intro s hs
+    simp only [STerm.renameDefs, STerm.renameFree, STerm.freeDefs, STerm.free, List.mem_append,
+      List.mem_singleton] at hs ⊢
+    rcases hs with hs | hs
+    · exact ⟨a, Or.inl rfl, hs⟩
+    · obtain ⟨y, hy, rfl⟩ := freeDefs_renameDefs σ hσ bs s hs
+      exact ⟨y, Or.inr hy, rfl⟩
+end
+
+open Fren.Core in
+/-- No capture symbol starts a binder form. -/
+theorem binderKw_captureSym (k : Nat) : binderKw (captureSym k) = false := by
+  have h (w : String) (c : Char) (hw : w.toList.head? = some c) (hc : c ≠ '|') : captureSym k ≠ w := by
+    intro e
+    have := congrArg (fun s : String => s.toList.head?) e
+    simp [captureSym, hw] at this
+    exact hc this.symm
+  simp only [binderKw, Bool.or_eq_false_iff, beq_eq_false_iff_ne]
+  exact ⟨⟨⟨h "let" 'l' rfl (by decide), h "forall" 'f' rfl (by decide)⟩, h "exists" 'e' rfl (by decide)⟩,
+    h "lambda" 'l' rfl (by decide)⟩
+
+open Fren.Core in
+-- The whole renaming of a closure's body, as `Core.inlineCall` runs it
+-- (`Core.captureFree`): each free symbol of the renamed body is a parameter
+-- of the closure, one of its capture symbols, or not local. With the
+-- capture symbols new (`lang::closure_capture`'s `fresh`), no binder of the
+-- higher-order body around the unfolded closure binds any of them.
+theorem captureFree_free (t : STerm) (params : List String) (locals : String → Bool) (next : Nat) :
+    ∀ s ∈ (captureFree t params locals next).1.free, s ∈ params
+      ∨ s ∈ captureNames next (t.free.eraseDups.filter fun s => locals s && !params.contains s)
+      ∨ locals s = false := by
+  intro s hs
+  let captured := t.free.eraseDups.filter fun s => locals s && !params.contains s
+  have hcases : ∀ x, captureRename next captured params x = x ∨ ∃ k, captureRename next captured params x = captureSym k := by
+    intro x
+    unfold captureRename
+    split
+    · exact Or.inl rfl
+    · split
+      · exact Or.inr ⟨_, rfl⟩
+      · exact Or.inl rfl
+  have hσ : ∀ x y, (let r := captureRename next captured params x; if r == x then none else some r) = some y →
+      binderKw y = false := by
+    intro x y h
+    simp only at h
+    split at h
+    · cases h
+    · rename_i hne
+      cases h
+      rcases hcases x with he | ⟨k, hk⟩
+      · simp [he] at hne
+      · rw [hk]
+        exact binderKw_captureSym k
+  obtain ⟨x, hx, rfl⟩ := free_renameFree _ hσ t s hs
+  by_cases hp : x ∈ params
+  · left
+    simp [captureRename, hp]
+  · cases hi : captured.idxOf? x with
+    | some k =>
+      right; left
+      have hk := (List.idxOf?_eq_some_iff.mp hi).1
+      have hr : captureRename next captured params x = captureSym (next + k) := by simp [captureRename, hp, hi]
+      have hmem : captureSym (next + k) ∈ captureNames next captured := by
+        simp only [captureNames, List.mem_map, List.mem_range]
+        exact ⟨k, hk, rfl⟩
+      by_cases he : captureSym (next + k) = x
+      · simp only [hr, he, beq_self_eq_true, if_true, Option.getD_none]
+        exact he ▸ hmem
+      · simp only [hr, beq_iff_eq, he, if_false, Option.getD_some]
+        exact hmem
+    | none =>
+      right; right
+      have hr : captureRename next captured params x = x := by simp [captureRename, hp, hi]
+      simp only [hr, beq_self_eq_true, if_true, Option.getD_none]
+      have hnc : x ∉ captured := fun h => by
+        have := List.idxOf?_eq_none_iff.mp hi
+        exact this h
+      cases hl : locals x
+      · rfl
+      · exfalso
+        apply hnc
+        simp only [captured, List.mem_filter, List.mem_eraseDups, Bool.and_eq_true, hl, true_and]
+        exact ⟨hx, by simpa using hp⟩
 
 /-! ## Obligations of closures -/
 

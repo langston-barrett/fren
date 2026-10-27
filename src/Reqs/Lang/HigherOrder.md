@@ -48,7 +48,8 @@ alias's or a closure's parameter's (`F0434`), and never within another
 type, as an element type, a type argument, or a function type's parameter
 or result (`F0435`). `lang::function_type_place` states where it may be
 written, from where the type is written and the steps from that type down
-to the function type within it:
+to the function type within it, which both front ends read from the type
+as written (`Core.fnTypeWithin`):
 
 ```fren
 pub mod lang
@@ -344,6 +345,20 @@ name of the closure's body. Unfolding is *capture-avoiding*:
   those names by the outer `let`, beside the parameters. A closure's
   parameters' symbols are their names with a number of their own, so that
   neither is ever a symbol of another binder.
+
+The names that the `fren` command gives the solver are of two kinds:
+quoted symbols, `|x|`, and the symbols `let@N` of the definitions of `let`s
+and `where`s. Each `let@N` is numbered as its definition is elaborated, by
+one count that only grows, so each is bound by exactly one definition of the
+spec, which a body's text binds wherever it is copied. A higher-order
+function's body is elaborated before any application of it, since a
+function is declared before it is used and is never recursive, so its text
+binds no `let@N` that a closure at an application mentions. The `fren`
+command does not rely on this: a closure's free `let@N`s are captured as
+its quoted local symbols are. Each free symbol of the renamed closure's body
+is then one of its parameters, one of its capture symbols, or a symbol of
+the prelude, which nothing binds (`Core.captureFree`, proved in Lean of the
+functions that run).
 
 `lang::closure_capture` states this of a mention of a name `x` in the
 closure's body, from the binders around it once the body is unfolded,

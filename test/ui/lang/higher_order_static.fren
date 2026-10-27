@@ -1,10 +1,8 @@
 -- Static rules for higher-order functions (`Reqs/Lang/HigherOrder`), in
--- both front ends. In a module, since Lean has an `Option` of its own.
+-- both front ends, over the prelude's `Option`.
 set_option fren.lint.dead_code "allow"
 
 mod higher_order_static
-
-pub enum Option<T> { None, Some(T) }
 
 fn map<T, U>(o: Option<T>, f: fn(T) -> U): Option<U> := match o {
     Option::Some(x) => Option::Some(f(x)),

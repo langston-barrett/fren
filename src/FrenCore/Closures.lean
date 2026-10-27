@@ -80,21 +80,48 @@ inductive TypeSite where
   | closureParameter
   deriving Inhabited, DecidableEq, Repr
 
-/-- The code of the error of a function type written at `site`, within
-another type if `nested`, or `none` if it may be written there
-(`lang::function_type_place`). -/
-def fnTypeCode? (site : TypeSite) (nested : Bool) : Option String :=
-  if site == .definedParameter && !nested then none
-  else if nested then some "F0435"
+/-- A step from a type into one that it is built from (`lang::Within`). -/
+inductive Within where
+  | element
+  | argument
+  | fnParameter
+  | fnResult
+  deriving Inhabited, DecidableEq, Repr
+
+/-- The steps from the type whose segments are `segs` (`setSeg`) down to
+the first function type within it, outermost first, if there is one: each
+element type of a set, relation or sequence, each type argument of an
+instance, and each parameter or result of a function type on the way. -/
+def fnTypeWithin (segs : List String) : Option (List Within) :=
+  go segs []
+where
+  /-- `stack` holds the steps so far, innermost first, each with whether it
+  is an instance's argument, which `argsSep` and `argsClose` end. -/
+  go : List String → List Within → Option (List Within)
+    | [], _ => none
+    | s :: rest, stack =>
+      if s == fnSeg then some stack.reverse
+      else if s == setSeg || s == seqSeg || s == relSeg then go rest (.element :: stack)
+      else if s == argsOpen then go rest (.argument :: stack)
+      else if s == argsSep then go rest (.argument :: (stack.dropWhile (· != .argument)).drop 1)
+      else if s == argsClose then go rest ((stack.dropWhile (· != .argument)).drop 1)
+      else go rest stack
+
+/-- The code of the error of a function type written at `site`, at the
+steps `within` from the written type down to it, or `none` if it may be
+written there (`lang::function_type_place`). -/
+def fnTypeCode? (site : TypeSite) (within : List Within) : Option String :=
+  if site == .definedParameter && within.isEmpty then none
+  else if !within.isEmpty then some "F0435"
   else match site with
     | .field | .payload => some "F0432"
     | .variable => some "F0433"
     | _ => some "F0434"
 
-/-- A function type written at `site`, within another type if `nested`,
-where it may not be (`fnTypeCode?`). -/
-def fnTypePlaceMsg (site : TypeSite) (nested : Bool) : Msg :=
-  let code := (fnTypeCode? site nested).getD "F0434"
+/-- A function type written at `site`, at the steps `within` from the
+written type down to it, where it may not be (`fnTypeCode?`). -/
+def fnTypePlaceMsg (site : TypeSite) (within : List Within) : Msg :=
+  let code := (fnTypeCode? site within).getD "F0434"
   let note := "note: functions are not values: a function type is only the whole type of a defined function's parameter, which an application gives a closure or a function's name"
   if code == "F0435" then
     { code? := some code, headline := "a function type cannot be within another type"
@@ -206,7 +233,7 @@ def fnPartMsg? (k : FnPart) : Option Msg :=
   else some (match k with
     | .nat => fnPartMsg "a `Nat`"
     | .pattern => fnPartMsg "a pattern type"
-    | _ => fnTypePlaceMsg .definedParameter true)
+    | _ => fnTypePlaceMsg .definedParameter [.fnParameter])
 
 /-- The closure's body applies the uninterpreted function `g`. -/
 def closureUninterpretedMsg (g : Lean.Name) : Msg :=
@@ -297,6 +324,11 @@ def inferHigherOrder [Monad m] (params : Array Lean.Name) (declared : Array HoPa
     if let some f ← elabValue k (some x) then check k x f
   if b.any (·.isNone) then unknown
   return current b
+
+/-- The note of a check of a closure's obligation, which the higher-order
+function `f` gives it where it applies the closure (`lang::closure_obligation`). -/
+def viaNote (f : Lean.Name) : String :=
+  s!"note: in a closure given to `{showPath f}`, checked where `{showPath f}` applies it"
 
 /-! ## Comparisons -/
 
@@ -402,30 +434,74 @@ def STerm.binds? : List STerm → Option (List String × List STerm × STerm)
     else none
   | _ => none
 
-/-- The atoms of `t` that no binder of `t` around them binds, in order of
-first occurrence. A `let`'s definitions are outside its binders, a
-quantifier's sorts too. -/
-partial def STerm.free : STerm → List String
-  | .atom s => [s]
-  | .list ts => match STerm.binds? ts with
-    | some (xs, defs, body) =>
-      let inDefs := if ts.head? == some (.atom "let") then defs.flatMap STerm.free else []
-      (inDefs ++ (body.free.filter (!xs.contains ·))).eraseDups
-    | none => (ts.flatMap STerm.free).eraseDups
+/-- Whether `kw` starts a binder form: `let`, or a quantifier. -/
+def binderKw (kw : String) : Bool := kw == "let" || kw == "forall" || kw == "exists" || kw == "lambda"
 
+/-- The symbol that a binding `(x ...)` of a binder form binds. -/
+def bindName : STerm → Option String
+  | .list (.atom x :: _) => some x
+  | _ => none
+
+/-- Whether the bindings `bs` of a binder form bind the symbol `s`. -/
+def STerm.bound (bs : List STerm) (s : String) : Bool := (bs.filterMap bindName).contains s
+
+mutual
+/-- The atoms of `t` that no binder of `t` around them binds, in order. A
+`let`'s definitions are outside its binders, a quantifier's sorts too. -/
+def STerm.free : STerm → List String
+  | .atom s => [s]
+  | .list ts => STerm.freeL ts
+
+/-- The free atoms of the list term `(ts)`, which may be a binder form. -/
+def STerm.freeL : List STerm → List String
+  | [.atom kw, .list bs, body] =>
+    if binderKw kw then
+      (if kw == "let" then STerm.freeDefs bs else []) ++ body.free.filter fun s => !STerm.bound bs s
+    else kw :: (STerm.freeL bs ++ body.free)
+  | [] => []
+  | t :: ts => t.free ++ STerm.freeEach ts
+
+/-- The free atoms of each of `ts`. -/
+def STerm.freeEach : List STerm → List String
+  | [] => []
+  | t :: ts => t.free ++ STerm.freeEach ts
+
+/-- The free atoms of the definitions of a `let`'s bindings `bs`. -/
+def STerm.freeDefs : List STerm → List String
+  | [] => []
+  | .list (_ :: rest) :: bs => STerm.freeEach rest ++ STerm.freeDefs bs
+  | b :: bs => b.free ++ STerm.freeDefs bs
+end
+
+mutual
 /-- `t` with each atom that no binder of `t` around it binds renamed by
 `σ`, where `σ` gives a new name: the new names are bound by no binder of
 `t`, so that none is captured (`lang::closure_capture`). -/
-partial def STerm.renameFree (σ : String → Option String) : STerm → STerm
+def STerm.renameFree (σ : String → Option String) : STerm → STerm
   | .atom s => .atom ((σ s).getD s)
-  | .list ts => match STerm.binds? ts, ts with
-    | some (xs, _, _), [kw, .list bs, body] =>
-      let σ' := fun s => if xs.contains s then none else σ s
-      let bs := bs.map fun
-        | .list (x :: rest) => if kw == .atom "let" then .list (x :: rest.map (STerm.renameFree σ)) else .list (x :: rest)
-        | b => b
-      .list [kw, .list bs, body.renameFree σ']
-    | _, _ => .list (ts.map (STerm.renameFree σ))
+  | .list ts => .list (STerm.renameL σ ts)
+
+/-- `renameFree` of the list term `(ts)`, which may be a binder form. -/
+def STerm.renameL (σ : String → Option String) : List STerm → List STerm
+  | [.atom kw, .list bs, body] =>
+    if binderKw kw then
+      [.atom kw, .list (if kw == "let" then STerm.renameDefs σ bs else bs),
+        body.renameFree fun s => if STerm.bound bs s then none else σ s]
+    else [.atom ((σ kw).getD kw), .list (STerm.renameL σ bs), body.renameFree σ]
+  | [] => []
+  | t :: ts => t.renameFree σ :: STerm.renameEach σ ts
+
+/-- `renameFree` of each of `ts`. -/
+def STerm.renameEach (σ : String → Option String) : List STerm → List STerm
+  | [] => []
+  | t :: ts => t.renameFree σ :: STerm.renameEach σ ts
+
+/-- `renameFree` of the definitions of a `let`'s bindings `bs`. -/
+def STerm.renameDefs (σ : String → Option String) : List STerm → List STerm
+  | [] => []
+  | .list (x :: rest) :: bs => .list (x :: STerm.renameEach σ rest) :: STerm.renameDefs σ bs
+  | b :: bs => b.renameFree σ :: STerm.renameDefs σ bs
+end
 
 /-- A closure, as the solver sees it: its parameters' symbols and its body. -/
 structure SClosure where
@@ -433,31 +509,41 @@ structure SClosure where
   body : STerm
   deriving Inhabited, Repr
 
+/-- The list term `(ts)`, whose parts are unfolded already, unfolded if it
+applies `f` (`STerm.inlineApps`). -/
+def STerm.inlineList (f : String) (c : SClosure) (ts : List STerm) : STerm :=
+  match ts with
+  | .atom g :: args =>
+    if g != f then .list ts else
+    match c.body with
+    | .list (.atom h :: xs) =>
+      if xs == c.params.map .atom then .list (.atom h :: args)
+      else .list [.atom "let", .list ((c.params.zip args).map fun (p, a) => .list [.atom p, a]), c.body]
+    | _ => .list [.atom "let", .list ((c.params.zip args).map fun (p, a) => .list [.atom p, a]), c.body]
+  | _ => .list ts
+
+mutual
 /-- `t` with each application of `f` replaced by the closure `c`: a `let` of
 its parameters, at the application's arguments, around its body; or, if
 `c` only applies `g` to its parameters, in order, the application of `g`.
 The arguments are unfolded first. `c`'s free symbols other than its
 parameters are capture symbols or global, which no binder of `t` binds. -/
-partial def STerm.inlineApps (f : String) (c : SClosure) : STerm → STerm
+def STerm.inlineApps (f : String) (c : SClosure) : STerm → STerm
   | .atom s => .atom s
-  | .list ts =>
-    let ts := ts.map (STerm.inlineApps f c)
-    match ts with
-    | .atom g :: args =>
-      if g != f then .list ts else
-      match c.body with
-      | .list (.atom h :: xs) =>
-        if xs == c.params.map .atom then .list (.atom h :: args)
-        else .list [.atom "let", .list ((c.params.zip args).map fun (p, a) => .list [.atom p, a]), c.body]
-      | _ => .list [.atom "let", .list ((c.params.zip args).map fun (p, a) => .list [.atom p, a]), c.body]
-    | _ => .list ts
+  | .list ts => STerm.inlineList f c (STerm.inlineEach f c ts)
+
+/-- `inlineApps` of each of `ts`. -/
+def STerm.inlineEach (f : String) (c : SClosure) : List STerm → List STerm
+  | [] => []
+  | t :: ts => t.inlineApps f c :: STerm.inlineEach f c ts
+end
 
 /-- `t`, whose free symbols in `locals` other than `params` are renamed to
 capture symbols numbered from `next`: the term, the capture symbols each
 with the name it stands for, and the next number (`lang::closure_capture`). -/
 def captureFree (t : STerm) (params : List String) (locals : String → Bool) (next : Nat) :
     STerm × List (String × String) × Nat :=
-  let captured := t.free.filter fun s => locals s && !params.contains s
+  let captured := t.free.eraseDups.filter fun s => locals s && !params.contains s
   let t' := t.renameFree fun s =>
     let r := captureRename next captured params s
     if r == s then none else some r

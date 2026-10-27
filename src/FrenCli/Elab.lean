@@ -883,6 +883,9 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   of the next closure, whose parameters' symbols have it. -/
   nextCapture : Nat := 0
   nextClosure : Nat := 0
+  /-- Where each closure's obligation is checked, with the higher-order
+  function that its closure is given to (`Fren.Core.viaNote`). -/
+  vias : Array (Span × Name) := #[]
   /-- The contract of each instance of a generic function without a body,
   by the function, each with the instance's type arguments, as the
   contract's own comp at the instance's sorts, which is checked where the
@@ -3041,7 +3044,7 @@ def instanceTy (segs : Array Ident) (args : Array Fren.Core.PTy) (span : Span) :
 (`lang::function_type_place`); a function type within another is reported
 where that one is elaborated. -/
 def checkFnTypeSite (site : Fren.Core.TypeSite) (segs : Array Ident) : M Unit := do
-  if segs[0]?.any (·.name == Parser.fnSeg) then err (typeSpan segs) (Fren.Core.fnTypePlaceMsg site false)
+  if segs[0]?.any (·.name == Parser.fnSeg) then err (typeSpan segs) (Fren.Core.fnTypePlaceMsg site [])
 
 mutual
 /-- The declared type written `segs`, with the patterns of the pattern
@@ -3049,8 +3052,8 @@ types within it (`Reqs/Lang/Types#pattern-types`). -/
 partial def elabPTy (segs : Array Ident) : M Fren.Core.PTy := do
   -- A function type is only a defined function's parameter's, which
   -- `elabFnTy` elaborates (`lang::function_type_place`).
-  if let some i := segs.findIdx? (·.name == Parser.fnSeg) then
-    err (typeSpan segs) (Fren.Core.fnTypePlaceMsg .constant (i > 0))
+  if let some w := Fren.Core.fnTypeWithin (segs.toList.map (·.name)) then
+    err (typeSpan segs) (Fren.Core.fnTypePlaceMsg .constant w)
   let (base, seg?) := splitPatternType segs
   let t ← elabBasePTy base
   let text := Fren.Core.typeText (← srcAt (← writtenTypeSpan segs))
@@ -4616,7 +4619,7 @@ partial def elabHigherOrderApp (cx : ExprCtx) (expected? : Option Ty) (span fnSp
   let values := (h.params.zip smts).toList.filterMap fun ((_, sym, p), x) => if p matches .value _ then some (sym, x) else none
   let fns := (h.params.zip closures).toList.filterMap fun ((_, sym, _), c?) => c?.map (sym, ·.closure)
   let globals ← globalSyms
-  let isLocal (s : String) : Bool := s.startsWith "|" && !globals.contains s
+  let isLocal (s : String) : Bool := (s.startsWith "|" || s.startsWith "let@") && !globals.contains s
   -- Its preconditions, at the arguments, with the closures unfolded.
   if cx.noteIndexes then
     let mut pres := #[]
@@ -4649,9 +4652,9 @@ partial def elabHigherOrderApp (cx : ExprCtx) (expected? : Option Ty) (span fnSp
         if lets.isEmpty then return some t
         return some s!"(let ({" ".intercalate (lets.map fun (x, v) => s!"({x} {v})")}) {t})"
       for (sp, g, t) in c.indexes do
-        if let some o ← at_ g then modify fun s => { s with indexes := s.indexes.push (sp, o, t) }
+        if let some o ← at_ g then modify fun s => { s with indexes := s.indexes.push (sp, o, t), vias := s.vias.push (sp, path) }
       for (sp, q, g) in c.tables do
-        if let some o ← at_ g then modify fun s => { s with tables := s.tables.push (sp, q, o) }
+        if let some o ← at_ g then modify fun s => { s with tables := s.tables.push (sp, q, o), vias := s.vias.push (sp, path) }
   let (smt, next) := Fren.Core.inlineCall body values fns isLocal (← get).nextCapture
   modify fun s => { s with nextCapture := next }
   if (← get).guardedItems.contains path then modify fun s => { s with guardedUsed := true }

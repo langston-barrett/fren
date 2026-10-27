@@ -26,7 +26,7 @@ comp holds {
 comp fails {
     in q: Seq<Int>
     in k: Int
-    pub det out a: Int := apply(|i| q[i], k)  --~ error: an index of `higher_order_obligations::fails::a` may be out of range
+    pub det out a: Int := apply(|i| q[i], k)  --~ error: note: in a closure given to `higher_order_obligations::apply`, checked where `higher_order_obligations::apply` applies it
     pub det out b: Int := apply(pos, k)  --~ error: the precondition `p` of `higher_order_obligations::pos` may not hold at this application in `higher_order_obligations::fails::b`
     pub det out d: Int := twice(|n| table { n > 100 => n, n < 50 => 0 - n }, k)  --~ error: a table in `higher_order_obligations::fails::d` may have no row that holds
     pub det out e: Int := apply(|n| table { n > 0 => 1, n <= 0 => 2, _ => 3 }, k)  --~ error: row 3 of a table in `higher_order_obligations::fails::e` is never the first that holds
