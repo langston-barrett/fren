@@ -107,5 +107,5 @@ proc enclosing(): (y: Int) {
     }
 }
 
---@ summary: 57 passed, 20 failed, 0 inconclusive, 0 redundant
+--@ summary: 58 passed, 20 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

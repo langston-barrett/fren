@@ -43,4 +43,4 @@ expect consistent(x_name: Name, x_annotated?, y_name: Name, y_annotated?) {
     expect consistent: when x.name = y.name and x.annotated? = y.annotated?, x.accepted? = y.accepted?
 }
 
---@ summary: 18 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ summary: 19 passed, 2 failed, 0 inconclusive, 0 redundant

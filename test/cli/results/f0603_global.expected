@@ -34,10 +34,10 @@ error[F0603]: expectation `same::same` does not hold
   --> test/cli/results/f0603_global.fren:16:12
    |
 16 |     expect same: when a.temp = b.temp, a.too_cold? iff b.too_cold?
-   |            ^^^^ does not follow from the guarantees
+   |            ^^^^ does not follow from the assumptions and calls
    |
    = counterexample: a_temp = -2, a_target = 0, b_temp = -2, b_target = 1, a.too_cold? = false, b.too_cold? = true
-   = help: strengthen the guarantees so that it follows, or correct the expectation
+   = help: correct the expectation, or assume what it needs
 
 error[F0605]: `never::never` is vacuous: its condition can never hold, given `a`
   --> test/cli/results/f0603_global.fren:21:19
@@ -48,7 +48,7 @@ error[F0605]: `never::never` is vacuous: its condition can never hold, given `a`
    = note: a constraint whose condition never holds says nothing
    = help: correct the condition, or the constraints that rule it out
 
-fren: 8 passed, 2 failed, 0 inconclusive, 0 redundant
+fren: 10 passed, 2 failed, 0 inconclusive, 0 redundant
 
 Some errors have detailed explanations: F0603, F0605, F0810.
 For more information about an error, try `fren --explain F0603`.

@@ -29,12 +29,12 @@ error[F0603]: expectation `lex::global_wrong::global_wrong` does not hold
   --> test/cli/commands/check_by_testing.fren:42:12
    |
 42 |     expect global_wrong: when p.n = 2, not p.even?
-   |            ^^^^^^^^^^^^ does not follow from the guarantees
+   |            ^^^^^^^^^^^^ does not follow from the assumptions and calls
    |
    = counterexample: p_n = 2, p.even? = true
-   = help: strengthen the guarantees so that it follows, or correct the expectation
+   = help: correct the expectation, or assume what it needs
 
-fren: 13 passed (4 by testing), 3 failed, 1 inconclusive, 0 redundant
+fren: 14 passed (5 by testing), 3 failed, 1 inconclusive, 0 redundant
 
 Some errors have detailed explanations: F0603, F0604, F0612.
 For more information about an error, try `fren --explain F0603`.

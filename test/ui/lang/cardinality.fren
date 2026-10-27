@@ -66,5 +66,5 @@ proc functions(a?, b?) {
     expect defined: one_of?(a?, b?, false) = (a? != b?)
 }
 
---@ summary: 36 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ summary: 37 passed, 2 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

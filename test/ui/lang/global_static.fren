@@ -22,7 +22,7 @@ expect over_values: forall (a: E), a = E::A  --~ warning: this `forall` ranges o
 expect twice: forall (a: E) (a: E), true  --~ error: `a` is bound multiple times in this expectation
 expect twice2(x: Int) {
     call a := sub(x)
-    call a := sub(x)  --~ error: `a` is defined multiple times in this procedure
+    call a := sub(x)  --~ error: `a` is defined multiple times in this global expectation
     expect twice2: true
 }
 expect q?: true  --~ error: constraint names cannot end in `?`

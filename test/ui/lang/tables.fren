@@ -142,5 +142,5 @@ expect exit_codes(e_ran?, e_worst: Severity) {
     expect exit_codes: table { e.ran? => e.code != 2, not e.ran? => e.code = 2 }
 }
 
---@ summary: 166 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ summary: 167 passed, 0 failed, 0 inconclusive, 0 redundant
 --@ exit: 0

@@ -18,7 +18,7 @@ warning[F0710]: unused variable `loose?`
   = note: nothing constrains it, so it can take any value
   = help: remove it, or mention it in a constraint
 
-fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
+fren: 6 passed, 0 failed, 0 inconclusive, 0 redundant
 
 For more information about this error, try `fren --explain F0710`.
 exit=3

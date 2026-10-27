@@ -5705,7 +5705,8 @@ def lintCaseSplitGuarantees (lcx : ExprCtx) (members : Array Member) (vars : Arr
 
 /-- `unused_variables` and `unused_assumption` of the procedure `n`, whose
 members had no static error. -/
-def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (instNames : Array Name) : M Unit := do
+def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (instNames : Array Name)
+    (global : Bool := false) : M Unit := do
   let mentioned := members.foldl (init := #[]) fun acc m => match m with
     | .prop _ _ e | .var _ _ _ _ _ (some e) => acc ++ mentions e
     | .inst _ _ bs .. => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
@@ -5713,7 +5714,7 @@ def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (inst
   -- A public definition says what the output is, so it is used.
   let candidates := vars.filter fun v => v.role == .input || (v.role == .output && !(v.isPub && v.defn?.isSome))
   for (x, v) in Fren.Core.unmentioned (candidates.map fun v => (v.name, v)) mentioned do
-    lint .unusedVariables v.span (Fren.Core.unusedVariableMsg x false (v.role == .output))
+    lint .unusedVariables v.span (Fren.Core.unusedVariableMsg x global (v.role == .output))
   -- `unused_assumption` (`lint::unused_assumption`), unless the file reads
   -- one of the inputs (`finishLints`), or one that another assumption ties to
   -- a used variable, transitively.
@@ -5952,7 +5953,7 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   -- The lints above are found despite a constraint's static error, as in
   -- Lean; `unused_variables`, and the rest, only without one.
   stopIfErrors
-  lintCompUnused n members vars instNames
+  lintCompUnused n members vars instNames global
   let path := module ++ n
   let (tested, enumerated) ← testedOf (← evidenceOfEffect) members
   let (relational, counts) ← checkCounts

@@ -53,4 +53,4 @@ expect binder(RATE_v: Int) {
     expect binder: RATE.w = RATE.v + scale(RATE.v)
 }
 
---@ summary: 19 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ summary: 20 passed, 2 failed, 0 inconclusive, 0 redundant

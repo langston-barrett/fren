@@ -6726,8 +6726,8 @@ def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pen
 of a procedure whose items were all elaborated: the latter is recorded, to be
 reported unless the file reads one of the inputs (`reportLints`), or one
 that another assumption ties to a used variable, transitively. -/
-def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Var) (instNames : Array Name) :
-    TermElabM Unit := do
+def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Var) (instNames : Array Name)
+    (global : Bool := false) : TermElabM Unit := do
   let mut mentioned := #[]
   for m in members do
     match m with
@@ -6744,7 +6744,7 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
   -- A public definition says what the output is, so it is used.
   let own := vars.filter fun v => v.role == .input || (v.role == .output && !(v.isPub && v.defn?.isSome))
   for (x, v) in Core.unmentioned (own.map fun v => (v.name, v)) mentioned do
-    recordLint .unusedVariables v.ref (Core.unusedVariableMsg x false (v.role == .output))
+    recordLint .unusedVariables v.ref (Core.unusedVariableMsg x global (v.role == .output))
   let mut others := #[]
   for m in members do
     match m with
@@ -6850,7 +6850,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   -- Bindings; assumptions, requirements and expectations
   let (props, insts, uses, values, indexes, ok) ← elabCompBody scope members vars pending declBase ok names
   lintManualNat path members
-  if ok then lintCompUnused scope path members vars instNames
+  if ok then lintCompUnused scope path members vars instNames global
   let mut generated := insts.map (·.decl) ++ props.map (·.decl) ++ #[declBase ++ `assumes, declBase ++ `ensures]
     ++ values.map (declBase ++ `def ++ ·.1) ++ (if values.isEmpty then #[] else #[declBase ++ `defs])
   let env ← getEnv

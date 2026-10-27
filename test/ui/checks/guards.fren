@@ -130,5 +130,5 @@ expect bigger(c_n: Int) {
     expect bigger: match c.m { k if k > c.n => true, _ => false }  --~ error: arm 2 of a `match` in `bigger::bigger` is never taken
 }
 
---@ summary: 71 passed, 16 failed, 0 inconclusive, 0 redundant
+--@ summary: 72 passed, 16 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

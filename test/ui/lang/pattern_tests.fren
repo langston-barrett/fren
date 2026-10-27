@@ -86,5 +86,5 @@ proc simpler(s: Shape, b?): (det ok?, det z?) {
     ensure q: z? iff not ((s is Shape::Circle(_)) = b?)  --~ warning: write `(s is Shape::Circle(_)) != b?`
 }
 
---@ summary: 49 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ summary: 50 passed, 1 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

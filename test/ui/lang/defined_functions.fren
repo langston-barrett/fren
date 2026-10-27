@@ -59,4 +59,4 @@ expect monotone(p_x: Int, q_x: Int) {
     expect monotone: when p.x <= q.x, p.y <= q.y
 }
 
---@ summary: 19 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ summary: 20 passed, 1 failed, 0 inconclusive, 0 redundant

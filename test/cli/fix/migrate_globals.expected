@@ -11,10 +11,9 @@ warning[F0710]: unused variable `m`
 
 --- test/cli/fix/migrate_globals.fren
 +++ test/cli/fix/migrate_globals.fren
-@@ -26,3 +26,14 @@
+@@ -26,2 +26,12 @@
 -expect colder_is_cold: forall (a b: band),   -- monotone
 -    when a.target = b.target and a.temp <= b.temp and b.too_cold?, a.too_cold? or unused = 1
--        where unused := 1  -- the `where` goes with it, with its comment
 +expect colder_is_cold(
 +    a_temp: Int,
 +    a_target: Int is 50..=90,
@@ -27,7 +26,7 @@ warning[F0710]: unused variable `m`
 +    call a := band(a_temp, a_target)
 +    call b := band(b_temp, b_target)
 +    expect colder_is_cold: when a.target = b.target and a.temp <= b.temp and b.too_cold?, a.too_cold? or unused = 1  -- monotone
-+            where unused := 1  -- the `where` goes with it, with its comment
+@@ -28,0 +39 @@
 +}
 @@ -30 +41,6 @@
 -expect mixed: forall (a: band) (m: Mode), when m = Mode::Heat, a.too_cold? or not a.too_cold?

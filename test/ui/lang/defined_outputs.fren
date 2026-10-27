@@ -66,5 +66,5 @@ expect defined(u_a: Int) {
     expect defined: u.total >= 2 * u.a
 }
 
---@ summary: 19 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ summary: 20 passed, 2 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

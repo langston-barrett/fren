@@ -151,5 +151,5 @@ proc empty_branch(c?, s: Set<Int>, n: Nat): (t: Set<Int>) {
     expect member: when not c? and n in s, n in t
 }
 
---@ summary: 62 passed, 4 failed, 0 inconclusive, 1 redundant
+--@ summary: 63 passed, 4 failed, 0 inconclusive, 1 redundant
 --@ exit: 1

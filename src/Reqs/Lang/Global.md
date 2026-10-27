@@ -235,10 +235,10 @@ pub proc callee_fix(
 
     ensure rule: fix = (if callee.module != module then CalleeFix::OtherModule
         else if (exists (x: Id), x in callee.assumes.names and x in callee.others)
-            or (exists (x: Id), x in callee.assumes.bangs and x in callee.params)
+        or (exists (x: Id), x in callee.assumes.bangs and x in callee.params)
         then CalleeFix::NotClosed
         else if (exists (x: Id), (x in callee.types.names or x in callee.assumes.names) and not x in callee.params
-            and x in block)
+        and x in block)
         then CalleeFix::Captured
         else CalleeFix::Fixable)
 

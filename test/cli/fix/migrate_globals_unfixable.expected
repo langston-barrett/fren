@@ -1,0 +1,31 @@
+error[F0416]: global expectations are written with parameters and calls
+  --> test/cli/fix/migrate_globals_unfixable.fren:19:24
+   |
+19 | expect cap: forall (b: band) (LIM!: Int), when LIM < 0, b.target > 5
+   |                        ^^^^ a binder over the behaviours of a procedure
+   |
+   = note: a global expectation takes parameters, and relates procedures by calling them, as in `expect n(x: T) { call a := p(x) ... }`
+   = note: the types or assumptions of the procedure of `b` mention a name that a parameter or call of the fix would hide, so it has no fix
+
+error[F0416]: global expectations are written with parameters and calls
+  --> test/cli/fix/migrate_globals_unfixable.fren:20:25
+   |
+20 | expect bang: forall (s: shadowed), s.y > 0
+   |                         ^^^^^^^^ a binder over the behaviours of a procedure
+   |
+   = note: a global expectation takes parameters, and relates procedures by calling them, as in `expect n(x: T) { call a := p(x) ... }`
+   = note: an assumption of the procedure of `s` mentions a variable or call of its own other than a parameter, or declares a name that a parameter has, so it has no fix
+
+error[F0416]: global expectations are written with parameters and calls
+  --> test/cli/fix/migrate_globals_unfixable.fren:21:26
+   |
+21 | expect inner: forall (a: band), forall (b: band), a.y = b.y
+   |                          ^^^^ a binder over the behaviours of a procedure
+   |
+   = note: a global expectation takes parameters, and relates procedures by calling them, as in `expect n(x: T) { call a := p(x) ... }`
+   = note: a quantifier in its body ranges over a procedure, which the fix would leave an error, so it has no fix
+
+error: could not fix due to previous errors
+
+For more information about this error, try `fren --explain F0416`.
+exit=2

@@ -5,7 +5,7 @@ error[F0416]: global expectations are written with parameters and calls
    |                               ^^^^^^ a binder over the behaviours of a procedure
    |
    = note: a global expectation takes parameters, and relates procedures by calling them, as in `expect n(x: T) { call a := p(x) ... }`
-   = note: a procedure it binds is in another module, or its assumptions mention variables other than its parameters, or a name the fix would declare is taken, so it has no fix
+   = note: the procedure of `a` is in another module, where the names of its types and assumptions may mean something else, so it has no fix
 
 error: could not check due to previous errors
 

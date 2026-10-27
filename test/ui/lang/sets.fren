@@ -53,5 +53,5 @@ proc lines(
 ): (ok?) {
     ensure r: ok? iff x in s
 }
---@ summary: 19 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ summary: 20 passed, 1 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

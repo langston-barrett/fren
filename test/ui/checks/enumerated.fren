@@ -87,4 +87,4 @@ set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 expect constant: forall (x: Int is 0..=200), x < 200  --~ error: expectation `constant` does not hold
 
---@ summary: 31 passed, 11 failed, 0 inconclusive, 2 redundant
+--@ summary: 32 passed, 11 failed, 0 inconclusive, 2 redundant
