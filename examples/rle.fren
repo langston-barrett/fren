@@ -10,6 +10,7 @@ pub struct Run { value: Int, count: Nat is 1.. }
 -- The number of values in a run, or 0 when there is none.
 fn size(o: Option<Run>): Nat := match o { Some(r) => r.count, None => 0 }
 
+-- TODO(#313): make `step` a `fn` once functions can have `expect` clauses.
 pub proc step(current: Option<Run>, next: Int): (run: Run, emitted: Option<Run>) {
     ensure extend:
         when current is Some(r) and r.value = next,
