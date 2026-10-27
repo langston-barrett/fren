@@ -1688,18 +1688,30 @@ def lintBools (e : Syntax) (hides : String → Bool) : TermElabM Unit := do
     ((← getLocal).boolEqs, (← getLocal).ordereds, (← getLocal).variants, (← getLocal).absEnds, (← getLocal).mentioning,
       (← getLocal).facts)
   modifyLocal fun l => { l with boolEqs := #[], ordereds := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
-  let variant? (s : Syntax) := (variants.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
-  let fact? (s : Syntax) := (facts.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
-  let ordered? (s : Syntax) := (ordereds.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)
-  let mentioned (s : Syntax) := ((mentioning.find? (·.1 == (s.getPos?, s.getTailPos?))).map (·.2)).getD []
+  -- Looked up by where they are, in maps, rather than by reading the
+  -- arrays, which would take time quadratic in the expression's size: the
+  -- first entry for each, as `find?` gives it, and whether one is there,
+  -- as `contains` says. A position is its byte offset.
+  let key (p : Option String.Pos.Raw × Option String.Pos.Raw) := (p.1.map (·.byteIdx), p.2.map (·.byteIdx))
+  let firstAt {α : Type} (xs : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × α)) :
+      Std.HashMap (Option Nat × Option Nat) α :=
+    xs.foldl (init := {}) fun m (p, a) => if m.contains (key p) then m else m.insert (key p) a
+  let (variants, facts, ordereds, mentioning) := (firstAt variants, firstAt facts, firstAt ordereds, firstAt mentioning)
+  let boolEqs := Std.HashSet.ofArray (boolEqs.map key)
+  let absEnds := Std.HashSet.ofArray (absEnds.map (·.map (·.byteIdx)))
+  let spanOf (s : Syntax) := key (s.getPos?, s.getTailPos?)
+  let variant? (s : Syntax) := variants[spanOf s]?
+  let fact? (s : Syntax) := facts[spanOf s]?
+  let ordered? (s : Syntax) := ordereds[spanOf s]?
+  let mentioned (s : Syntax) := mentioning[spanOf s]?.getD []
   let help (msg : Core.Msg) := if fixable && !msg.fixes.isEmpty then #[Core.fixHelp] else #[]
-  let at_ (rs : Array (Option String.Pos.Raw × Option String.Pos.Raw)) (s : Syntax) := rs.contains (s.getPos?, s.getTailPos?)
   let st ← getState
   let fcx : Core.ForallCx :=
     { variants? := fun p => (st.enums.get? p.toName).bind fun info =>
         if (List.range info.variants.size).all (info.payloads[·]?.all (·.isEmpty)) then some info.variants.size else none
       declared := declaredNames e, hides, unguarded := !Core.hasGuarded (e.reprint.getD "") }
-  for r in Core.opReports src (at_ boolEqs) ordered? variant? (absEnds.contains ·.getTailPos?) mentioned fact? fcx node do
+  for r in Core.opReports src (boolEqs.contains <| spanOf ·) ordered? variant? (absEnds.contains <| ·.getTailPos?.map (·.byteIdx))
+      mentioned fact? fcx node do
     -- A node's position is its first token's, and its tail its last's.
     let ref := match r.last? with | some l => mkNullNode #[r.ref, l] | none => r.ref
     if keeps r.ref (r.last?.getD r.ref) then recordLint r.lint ref { r.msg with notes := r.msg.notes ++ help r.msg }

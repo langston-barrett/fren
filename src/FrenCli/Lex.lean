@@ -18,7 +18,7 @@ namespace FrenCli
 structure Span where
   start : Nat
   stop : Nat
-  deriving Inhabited, Repr, BEq
+  deriving Inhabited, Repr, BEq, Hashable
 
 def Span.to (a b : Span) : Span := { start := a.start, stop := b.stop }
 

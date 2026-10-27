@@ -1729,10 +1729,20 @@ def lintBools (e : Expr) (hides : String → Bool) : M Unit := do
   let (boolEqs, ordereds, variants, absEnds, mentioning, facts) :=
     ((← get).boolEqs, (← get).ordereds, (← get).variants, (← get).absEnds, (← get).mentioning, (← get).facts)
   modify fun s => { s with boolEqs := #[], ordereds := #[], variants := #[], absEnds := #[], mentioning := #[], facts := #[] }
-  let variant? (sp : Span) := (variants.find? (·.1 == sp)).map (·.2)
-  let fact? (sp : Span) := (facts.find? (·.1 == sp)).map (·.2)
-  let ordered? (sp : Span) := (ordereds.find? (·.1 == sp)).map (·.2)
-  let mentioned (sp : Span) := ((mentioning.find? (·.1 == sp)).map (·.2)).getD []
+  -- Looked up by span, in maps, rather than by reading the arrays, which
+  -- would take time quadratic in the expression's size: the first entry
+  -- for each span, as `find?` gives it, and whether one has the span, as
+  -- `contains` says.
+  let firstBySpan {α : Type} (xs : Array (Span × α)) : Std.HashMap Span α :=
+    xs.foldl (init := {}) fun m (sp, a) => if m.contains sp then m else m.insert sp a
+  let (variants, facts, ordereds) := (firstBySpan variants, firstBySpan facts, firstBySpan ordereds)
+  let mentioning := firstBySpan mentioning
+  let boolEqs := Std.HashSet.ofArray boolEqs
+  let absEnds := Std.HashSet.ofArray absEnds
+  let variant? (sp : Span) := variants[sp]?
+  let fact? (sp : Span) := facts[sp]?
+  let ordered? (sp : Span) := ordereds[sp]?
+  let mentioned (sp : Span) := mentioning[sp]?.getD []
   let st ← get
   let fcx : Fren.Core.ForallCx :=
     { variants? := fun p => (st.dataOf? p.toName).bind fun d =>
