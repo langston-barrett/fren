@@ -4,14 +4,12 @@
 mod rle
 
 -- `count` copies of `value`.
-pub struct Run { value: Int, count: Nat }
+pub struct Run { value: Int, count: Nat is 1.. }
 
 -- The number of values in a run that may not have started.
 fn size(o: Option<Run>): Nat := match o { Some(r) => r.count, None => 0 }
 
 pub proc step(current: Option<Run>, next: Int): (run: Run, emitted: Option<Run>) {
-    assume nonempty: when current is Some(r), r.count >= 1
-
     ensure extend:
         when current is Some(r) and r.value = next,
         run = Run { value := next, count := r.count + 1 } and emitted = None
@@ -19,8 +17,6 @@ pub proc step(current: Option<Run>, next: Int): (run: Run, emitted: Option<Run>)
         unless current is Some(r) and r.value = next,
         run = Run { value := next, count := 1 } and emitted = current
 
-    expect stays_nonempty: run.count >= 1
-    expect emits_nonempty: when emitted is Some(e), e.count >= 1
     -- No value is lost or duplicated.
     expect conserves: size(emitted) + run.count = size(current) + 1
     -- A run ends only where the value changes.
