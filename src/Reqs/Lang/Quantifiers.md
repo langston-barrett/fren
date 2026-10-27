@@ -58,45 +58,34 @@ not unbounded, as `lang::pattern_finite` says: `forall (x: Int is
 variants that match in their declaration's order. Its values are those of
 its base type that match its pattern, and are counted so. Within a binder's
 type, as anywhere, a pattern type's alias stands for it.
-`lang::quantified_type` states which types are listed, from the kind of
-the type, whether it is a recursive enumeration, and whether the types of
-its payloads or fields are all listed:
+`lang::quantified_type` states which types are listed, by the closure of
+the constituent relation (`lang::type_facts`): a type is listed when it is
+finite and not unbounded, so when every type it is built from has a former
+that is finite and not growing, and none of them is recursive. A type of a
+former that has no constituents, such as `Bool`, has none:
 
 ```fren
 pub mod lang
 
-set_option fren.evidence "enumerated" in
+set_option fren.lint.undecidable "allow" in
 pub comp quantified_type {
-    use self::ValueType::{
-        AbstractTy,
-        BoolTy,
-        EnumTy,
-        IntTy,
-        NatTy,
-        RecordTy,
-        RelTy,
-        SeqTy,
-        SetTy,
-        StringTy,
-    }
-    in type_kind: ValueType      -- the kind of the type
-    in recursive?                -- it is a recursive enumeration
-    in parts?                    -- the type of each of its payloads or fields is listed
+    use self::ValueType::{AbstractTy, BoolTy, IntTy, NatTy, RelTy, SeqTy, SetTy, StringTy}
+    in ty: Ty
+    in constituents: Rel<Ty, Ty>    -- (t, u): t has a field, payload or element of type u
 
-    assume enumerations_only: when type_kind != EnumTy, not recursive?
+    -- A type of a former that has no constituents has none.
+    assume leaf: unless former(kind(ty)).composite?, constituents.image({ty}) = {}
     pub det out listed?
+    inst facts: type_facts { ty, constituents }
 
-    ensure rule: listed? iff match type_kind {
-        BoolTy => true,
-        EnumTy => parts? and not recursive?,
-        RecordTy => parts?,
-        _ => false,
-    }
+    ensure rule: listed? iff (facts.finite? and not facts.unbounded?)
 
-    expect bool: when type_kind = BoolTy, listed?
-    expect infinite: when type_kind in {IntTy, NatTy, StringTy, AbstractTy}, not listed?
-    expect collections: when type_kind in {SetTy, RelTy, SeqTy}, not listed?
-    expect parts_listed: when listed? and type_kind != BoolTy, parts?
+    expect bool: when kind(ty) = BoolTy, listed?
+    expect infinite: when kind(ty) in {IntTy, NatTy, StringTy, AbstractTy}, not listed?
+    expect collections: when kind(ty) in {SetTy, RelTy, SeqTy}, not listed?
+    expect not_recursive: when facts.recursive?, not listed?
+    expect constituents_listed: when listed?, (forall (u: Ty), when u in constituents.image({ty}),
+        former(kind(u)).finite? and not former(kind(u)).growing? and not (u, u) in constituents.closure)
 }
 ```
 

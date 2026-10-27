@@ -317,7 +317,12 @@ def kindOf : Fren.Core.Ty → lang.ValueType
 
 interp lang::kind := kindOf
 
-interp lang::newtype? := fun (t : Fren.Core.Ty) => t matches .newtype ..
+/-- Whether a type is a newtype (`lang::newtype?`). -/
+def isNewtype : Fren.Core.Ty → Bool
+  | .newtype .. => true
+  | _ => false
+
+interp lang::newtype? := isNewtype
 
 /-- The underlying type of a newtype, and any other type itself. -/
 def underOf : Fren.Core.Ty → Fren.Core.Ty
@@ -436,39 +441,12 @@ impl field_type: lang::field_type for (k : lang.ValueType) (a own s pay : Bool) 
   intro k a own s pay _
   cases a <;> cases own <;> cases s <;> cases pay <;> simp [fren_spec, Fren.Core.fieldTypeAccepted]
 
--- For every newtype, with the check that both front ends use, and how
--- both decide its boundedness.
-impl newtype: lang::newtype for (n : Nat) (f u : Bool) {
-  n_fields := n,
-  field_accepted? := f,
-  underlying_unbounded? := u,
-  accepted? := Fren.Core.newtypeAccepted n f,
-  unbounded? := Fren.Core.newtypeUnbounded u,
-} by
-  intro n f u _
-  simp [fren_spec, Fren.Core.newtypeAccepted, Fren.Core.newtypeUnbounded]
-  omega
-
 def toNewtypeOp : Fren.Core.NewtypeOp → lang.NewtypeOp
   | .equality => .Equality
   | .order => .Order
   | .add => .Addition
   | .sub => .Subtraction
   | .other => .Other
-
--- For every operator, underlying type and whether the newtype is ordered,
--- with the check that both front ends use.
-impl newtype_operator: lang::newtype_operator for (op : Fren.Core.NewtypeOp) (u : Fren.Core.Ty) (o : Bool) {
-  op := toNewtypeOp op,
-  underlying := u,
-  ordered? := o,
-  inner_has? := match u with
-    | .newtype _ v => Fren.Core.newtypeOpAccepted op v false
-    | _ => false,
-  accepted? := Fren.Core.newtypeOpAccepted op u o,
-} by
-  intro op u o _
-  cases op <;> cases u <;> simp [fren_spec, toNewtypeOp, kindOf, Fren.Core.newtypeOpAccepted]
 
 interp lang::TypeName := Lean.Name
 
@@ -604,14 +582,14 @@ def planKind : Fren.Core.OrderPlan → lang.Plan
 gives of it. -/
 theorem plan_kind (od : Lean.Name → Bool) (fieldsOf : Lean.Name → List (Lean.Name × Fren.Core.Ty)) :
     ∀ (m : Nat) (t : Fren.Core.Ty) (p : Fren.Core.OrderPlan), Fren.Core.orderPlanAt od fieldsOf m t = some p →
-      planKind p = lang.plan_of (kindOf t) (t matches .newtype ..) ∧ t.ordered od = true
+      planKind p = lang.plan_of (kindOf t) (isNewtype t) ∧ t.ordered od = true
   | 0, _, _, h => by simp [Fren.Core.orderPlanAt] at h
   | m + 1, t, p, h => by
     cases t <;> simp only [Fren.Core.orderPlanAt] at h <;> try simp at h
     all_goals first
       | (subst h; simp [planKind, lang.plan_of, kindOf, Fren.Core.Ty.ordered])
       | (obtain ⟨hd, rfl⟩ := h; simp [planKind, lang.plan_of, kindOf, Fren.Core.Ty.ordered, hd])
-      | (obtain ⟨hd, _, _, rfl⟩ := h; simp [planKind, lang.plan_of, kindOf, Fren.Core.Ty.ordered, hd])
+      | (obtain ⟨hd, _, _, rfl⟩ := h; simp [planKind, lang.plan_of, kindOf, isNewtype, Fren.Core.Ty.ordered, hd])
 
 /-- A record's plan has its fields' names, in order, and each field's plan
 is its type's. -/
@@ -679,14 +657,14 @@ impl order_plan: lang::order_plan
     · cases t <;> simp_all [kindOf, typeNameOf, Fren.Core.Ty.ordered]
     · intro hf
       obtain ⟨q, as, rfl⟩ : ∃ q as, t = .record q as := by
-        cases t <;> first | exact ⟨_, _, rfl⟩ | simp [lang.plan_of, kindOf, Fren.Core.orderPlanAt] at hf hp
+        cases t <;> first | exact ⟨_, _, rfl⟩ | simp [lang.plan_of, kindOf, isNewtype, Fren.Core.orderPlanAt] at hf hp
       · obtain ⟨r, rfl, hr⟩ := record_plan _ fieldsOf (n + 1) q as p hp
         obtain ⟨hn, _⟩ := fields_plan _ (fieldsOf q) r hr
         have hlen : r.length = (fieldsOf q).length := by simpa using congrArg List.length hn
         exact ⟨by simp [typeNameOf, hn], by simp [typeNameOf, hlen]⟩
     · intro ⟨hf, h0, hkl⟩
       obtain ⟨q, as, rfl⟩ : ∃ q as, t = .record q as := by
-        cases t <;> first | exact ⟨_, _, rfl⟩ | simp [lang.plan_of, kindOf, Fren.Core.orderPlanAt] at hf hp
+        cases t <;> first | exact ⟨_, _, rfl⟩ | simp [lang.plan_of, kindOf, isNewtype, Fren.Core.orderPlanAt] at hf hp
       · obtain ⟨r, rfl, hr⟩ := record_plan _ fieldsOf (n + 1) q as p hp
         obtain ⟨_, hi⟩ := fields_plan _ (fieldsOf q) r hr
         have hkl' : k < (fieldsOf q).length := by simp [typeNameOf] at hkl; omega
@@ -807,15 +785,6 @@ theorem ofList_filter_eq (vs : List Lean.Name) (p : Lean.Name → Bool) :
 
 interp lang::VariantName := Lean.Name
 
--- For every enumeration, its variants `vs` and which are recursive, `p`,
--- with the count that both front ends compare.
-impl well_founded: lang::well_founded for (vs : List Lean.Name) (p : Lean.Name → Bool) {
-  variants := Fren.FinSet.ofList vs,
-  recursive := Fren.FinSet.ofList (vs.filter p),
-  accepted? := Fren.Core.wellFounded vs.length (vs.filter p).length,
-} by
-  intro vs p _
-  simp [fren_spec, Fren.Core.wellFounded, ofList_filter_eq]
 
 
 -- For every literal, with the check that both front ends use.
@@ -847,13 +816,6 @@ impl record_update: lang::record_update for (r : Bool) (fields given : Array Lea
   simp only [fren_spec, Fren.Core.recordUpdateAccepted, Fren.FinSet.subset_def, Fren.FinSet.mem_ofArray,
     Bool.and_eq_true, Array.all_eq_true', Array.contains_iff_mem, beq_iff_eq]
   simp
-
-impl variable_type: lang::variable_type for (o u d : Bool) {
-  output? := o,
-  unbounded? := u,
-  defined? := d,
-  accepted? := Fren.Core.variableTypeAccepted o u d,
-}
 
 -- For every declaration: its name `n`, what it hides if anything (`w`, when
 -- `h`), and whether it has `!`, through the check that both front ends call.
@@ -1153,17 +1115,6 @@ def toQuantifiedKind : lang.ValueType → Fren.Core.QuantifiedKind
   | .EnumTy => .enum
   | .RecordTy => .record
   | .IntTy | .NatTy | .StringTy | .AbstractTy | .SetTy | .RelTy | .SeqTy => .other
-
--- For every type, by its kind, which both front ends compute from the type
--- they quantify over.
-impl quantified_type: lang::quantified_type for (k : lang.ValueType) (r p : Bool) {
-  type_kind := k,
-  recursive? := r,
-  parts? := p,
-  listed? := Fren.Core.quantifiedTypeAccepted (toQuantifiedKind k) r p,
-} by
-  intro k r p _
-  cases k <;> cases r <;> cases p <;> simp [fren_spec, toQuantifiedKind, Fren.Core.quantifiedTypeAccepted]
 
 -- For every number of instances, which both front ends count.
 impl quantifier_size: lang::quantifier_size for (n : Nat) {

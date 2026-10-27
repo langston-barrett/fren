@@ -57,7 +57,6 @@ tested lang::cardinality_args: "test/ui/lang/cardinality_static.fren", "test/cli
   "test/cli/types/f0367_no_arguments.fren"
 tested lang::relation_op: "test/ui/lang/relations.fren", "test/ui/lang/relations_static.fren", "test/cli/types/f0328_join.fren"
 tested lang::pair_membership: "test/ui/lang/relations.fren", "test/ui/lang/relations_static.fren", "test/cli/types/f0329_pair.fren"
-tested lang::finite: "test/ui/lang/relations_static.fren", "test/ui/lang/sets.fren"
 tested lang::quantifier: "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_places.fren"
 tested lang::quantified_type: "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_static.fren",
   "test/ui/lang/quantifiers_unbounded.fren"
@@ -92,7 +91,12 @@ tested lang::punctuator_end: "test/ui/syntax/lexical.fren", "test/cli/syntax/f01
 tested lang::escape_text: "test/ui/syntax/lexical.fren"
 tested lang::escape_start: "test/ui/syntax/lexical.fren", "test/cli/syntax/f0115_escape.fren"
 tested lang::longest_punctuator: "test/ui/syntax/lexical.fren"
-tested lang::unbounded: "test/ui/lang/relations_static.fren", "test/ui/lang/datatypes_static.fren"
+-- Each front end computes the facts of `lang::type_facts` by its own
+-- recursion over its own types (`State.unbounded`, `State.infinite`,
+-- `infiniteType`), which are `partial`, so the closure is tested here; each
+-- layer of it is proved where a component uses it, in `Impls.Lang`.
+tested lang::type_facts: "test/ui/lang/relations_static.fren", "test/ui/lang/sets.fren",
+  "test/ui/lang/datatypes_static.fren"
 tested fmt::safe: "src/FrenTestMain.lean"
 -- `lake test` checks that every code is well formed and in its group.
 tested view::code_group: "src/FrenTestMain.lean"

@@ -686,45 +686,95 @@ enumeration that is not recursive and whose payloads have finite types, a
 record whose fields have finite types, a set or relation type whose
 element types are finite, and a pattern type that `lang::pattern_finite`
 says is. `Int`, `Nat`, `String` and abstract types are not
-finite, and neither is any sequence type. Where a type is built from others, its *parts* are the types of
-its fields, payloads and elements, those of an instance of a generic type
-with its arguments for its parameters, and a type is built from everything
-that the closure of the parts relation reaches from it. `lang::finite`
-and `lang::unbounded` state the two notions by that reachability:
+finite, and neither is any sequence type.
+
+A type's *constituents* are the types of its fields, payloads and
+elements, those of an instance of a generic type with its arguments for
+its parameters, and a newtype's underlying type: the types that its values
+are made of. They are not its [parts](Generics.md#instantiation), the
+types that it is written with: an instance of `struct Tagged(T) { n: Int
+}` has the constituent `Int`, and not its argument. A type is *built
+from* itself and every type that the closure of the constituent relation
+reaches from it, as `lang::built_from` gives, and it is *recursive* when that
+closure reaches it from itself, as it reaches `List` from `List`.
+Every fact of this section is a fact of a type's kind, its *former*, closed
+over the types it is built from: a type is finite when each of them has a
+finite former and none is recursive, and unbounded when one of them has a
+growing former or is recursive.
+
+`lang::former` gives what a former gives a type by itself, whatever its
+constituents: whether a type of it is finite when its constituents are
+(`finite?`), whether its values can be arbitrarily large whatever its
+constituents (`growing?`), and whether it may have constituents at all
+(`composite?`). A new type former is one more variant of `ValueType` and
+one more arm of `former`: what is finite, unbounded or
+[listed](Quantifiers.md#types), and so which
+[outputs](Components.md#members), [newtypes](Items.md#newtypes) and
+[enumerations](Items.md#enumerations) are accepted, follows from it. A
+pattern type is a `Ty` of its base type's kind, so whether a pattern type
+is finite is `lang::pattern_finite`'s, not `former`'s:
+
+```fren
+pub struct Former {
+    finite?,
+    growing?,
+    composite?,
+}
+
+pub fn former(k: ValueType): Former := match k {
+    ValueType::BoolTy => Former { finite? := true, growing? := false, composite? := false },
+    ValueType::IntTy => Former { finite? := false, growing? := false, composite? := false },
+    ValueType::NatTy => Former { finite? := false, growing? := false, composite? := false },
+    ValueType::StringTy => Former { finite? := false, growing? := true, composite? := false },
+    ValueType::EnumTy => Former { finite? := true, growing? := false, composite? := true },
+    ValueType::RecordTy => Former { finite? := true, growing? := false, composite? := true },
+    ValueType::AbstractTy => Former { finite? := false, growing? := false, composite? := false },
+    ValueType::SetTy => Former { finite? := true, growing? := true, composite? := true },
+    ValueType::RelTy => Former { finite? := true, growing? := true, composite? := true },
+    ValueType::SeqTy => Former { finite? := false, growing? := true, composite? := true },
+}
+
+-- The types that `ty` is built from, where `(t, u)` is in `constituents`
+-- when `t` has a field, payload or element of type `u`.
+set_option fren.lint.undecidable "allow" in
+pub fn built_from(ty: Ty, constituents: Rel<Ty, Ty>): Set<Ty> := constituents.closure.image({ty}) union {ty}
+```
+
+`lang::type_facts` states the three facts by that closure:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp finite {
+pub comp type_facts {
     in ty: Ty
-    in parts: Rel<Ty, Ty>    -- (t, u): t has a field, payload or element of type u
-    in infinite: Set<Ty>     -- `Int`, `Nat`, `String`, every sequence type and every abstract type
-    in recursive: Set<Ty>    -- the recursive enumerations
-    in part: Ty              -- any type, for `finite_parts`
+    in constituents: Rel<Ty, Ty>    -- (t, u): t has a field, payload or element of type u
+    pub det out recursive?
     pub det out finite?
-
-    ensure rule: finite? iff ((parts.closure.image({ty}) union {ty}) inter (infinite union recursive)) = {}
-
-    expect not_infinite: when finite?, not ty in infinite
-    -- A type that a finite type is built from is not infinite.
-    expect finite_parts: when finite? and (ty, part) in parts, not part in infinite and not part in recursive
-}
-
-set_option fren.lint.undecidable "allow" in
-pub comp unbounded {
-    in ty: Ty
-    in parts: Rel<Ty, Ty>
-    in growing: Set<Ty>      -- `String`, every recursive enumeration, and every set, relation or sequence type
     pub det out unbounded?
 
-    ensure rule: unbounded? iff ((parts.closure.image({ty}) union {ty}) inter growing) != {}
+    ensure recursion: recursive? iff (ty, ty) in constituents.closure
+    ensure finiteness: finite? iff (forall (u: Ty), when u in built_from(ty, constituents),
+        former(kind(u)).finite? and not (u, u) in constituents.closure)
+    ensure bounds: unbounded? iff (exists (u: Ty), u in built_from(ty, constituents)
+        and (former(kind(u)).growing? or (u, u) in constituents.closure))
 
-    expect growing_unbounded: when ty in growing, unbounded?
+    expect own_infinite: unless former(kind(ty)).finite?, not finite?
+    expect own_growing: when former(kind(ty)).growing?, unbounded?
+    expect recursive_unbounded: when recursive?, unbounded? and not finite?
+    -- Each constituent of a finite type has a finite former and is not recursive.
+    expect finite_constituents: when finite?, (forall (u: Ty), when u in constituents.image({ty}),
+        former(kind(u)).finite? and not (u, u) in constituents.closure)
+    -- A type of a former that has no constituents has the former's facts.
+    expect leaves: when not former(kind(ty)).composite? and constituents.image({ty}) = {},
+        (finite? iff former(kind(ty)).finite?) and (unbounded? iff former(kind(ty)).growing?)
 }
 ```
 
-Both are about reachability over the graph of all types, which is not
-finite, so they are outside the [decidable core](Decidability.md#relations)
-and opt out.
+The graph of all types is not finite, so these are outside the [decidable
+core](Decidability.md#relations) and opt out. Each fact is also one layer
+over the facts of its constituents, since a type is built from itself and
+from what each of them is built from. Both front ends compute the facts
+so, one layer at a time, and the `impl`s of the components that use them
+prove each layer against the closure.
 
 ## Abstract types
 
