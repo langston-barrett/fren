@@ -85,9 +85,12 @@ Empty }` gives `Shape.Circle : Int → Shape`. A recursive enumeration
 becomes a recursive inductive type. The `k`th value of a payload, counted
 from 0, is the constructor's parameter `xk`, and is read by the selector
 `p.V.xk`, such as `Shape.Circle.x0 : Shape → Int`, which gives `default`
-for any other variant. A [`match`](Lang/Expressions.md#matches) becomes
-`if`s that test the scrutinee against each arm's pattern, rather than
-Lean's own `match`, whose rules for exhaustiveness differ from Fren's: a
+for any other variant, and which is in the simp set `fren_spec`, so that
+`simp [fren_spec]` reads `Shape.Circle.x0 (Shape.Circle n)` as `n`. In a
+defined function's definition, a [`match`](Lang/Expressions.md#matches) is
+Lean's own `match` where it can be (see [Matches](#matches)). Elsewhere,
+and where it cannot be, a `match` becomes
+`if`s that test the scrutinee against each arm's pattern: a
 variant by comparing the value with the variant built from its own payload,
 and then its payload's patterns on the values the selectors read; a literal
 by equality; a range by comparisons with its bounds, a constant's by its
@@ -275,6 +278,131 @@ example, `fn double(n: Int): Int := 2 * n` becomes `double : Int → Int`.
 Like a procedure's definitions, it first takes a parameter for each
 abstract type it uses: those that its parameter and result types, and its
 body, mention.
+
+### Matches
+
+A defined function whose body has a `match` or a [pattern
+test](Lang/Expressions.md#pattern-tests) has two definitions: `p`, for
+Lean code, in which they are Lean's own `match`es where they can be, and
+`p.«#solver»`, in which they are `if`s, as everywhere else, which the solver
+unfolds wherever a query applies `p`, so that the checks and their
+messages are the same whatever form `p` has. The two are built to have the
+same value for all arguments, as the rules below say, though no theorem
+states it. For example, `fn eval(e: Expr<Int>): Int := match e {
+Expr::Val(n) => n, Expr::Add(a, b) => a + b }` becomes `eval e = match e
+with | Expr.Val n => n | Expr.Add a b => a + b`, which `simp`, `rfl` and
+`decide` reduce on a constructor, and which needs no `Decidable` instance
+of equality on `Expr T`, which a generic `T` has only classically.
+
+`generated::match_form` states which `match`es are Lean's, from what Lean's
+`match` sees of their patterns: the kinds of the heads of the patterns of
+their arms, and of the patterns within them, where an or-pattern at the
+top of an arm's pattern is its alternatives, each a Lean pattern of its
+own. A
+`match` is Lean's where its scrutinee is an enumeration, its arms are
+values, and no pattern within it is a literal, a range or an or-pattern,
+which Lean's `match` either lacks or reads otherwise. Its arms are values
+unless they are propositions, the Lean form of a `Bool`, whose `if`s have
+a `Decidable` instance that a Lean `match` would not.
+
+```fren
+-- The head of a pattern, where Lean's `match` sees it.
+pub enum Head { Wildcard, Binder, Variant, Literal, OrPattern }
+pub enum Scrutinee { Enumeration, Other }
+pub enum ArmKind { Values, Propositions }
+pub enum MatchForm { LeanMatch, IfChain }
+
+pub proc match_form(
+    scrutinee: Scrutinee,
+    arms: ArmKind,
+    heads: Set<Head>,   -- of the arms' patterns, and of the patterns within them
+): (det form: MatchForm) {
+    out form := if scrutinee = Scrutinee::Enumeration and arms = ArmKind::Values
+            and not (Head::Literal in heads) and not (Head::OrPattern in heads)
+        then MatchForm::LeanMatch else MatchForm::IfChain
+
+    expect by_heads: when scrutinee = Scrutinee::Enumeration and arms = ArmKind::Values,
+        form = MatchForm::LeanMatch iff heads subset {Head::Wildcard, Head::Binder, Head::Variant}
+    expect literals_ifs: when Head::Literal in heads, form = MatchForm::IfChain
+    expect propositions_ifs: when arms = ArmKind::Propositions, form = MatchForm::IfChain
+    expect fold_add: when scrutinee = Scrutinee::Enumeration and arms = ArmKind::Values
+        and heads = {Head::Variant, Head::Binder, Head::Wildcard},
+        form = MatchForm::LeanMatch
+}
+```
+
+A Lean `match` has the meaning of the `if`s, arm by arm. Its arms are
+Fren's, in order, each alternative of an or-pattern at the top its own
+Lean arm, with the same right-hand side; a binder is a variable of the
+Lean pattern, of the same name. Lean takes the first arm whose pattern
+matches, as Fren does, so an order-independent [table over a
+scrutinee](Lang/Expressions.md#tables-over-a-scrutinee), whose rows are
+tried in order in the `if`s too, keeps its meaning. An arm with a guard
+is `if C then x else rest k ()`, where `rest k`, bound by a `let` around
+the `match`, is the `match` of the arms from the next one, `k`, on, so that
+where its guard fails, the arms after it are tried, as in the `if`s. Lean
+reads an arm with a guard as taken wherever its pattern matches, so a
+`match` leaves out an alternative that the arms before it already match,
+which only a failing guard reaches, through `rest`; where its arms do not
+match every value, its last arm is `_ => Fren.Seq.nth ∅ 0`, the `if`s'
+value where no arm is taken. A pattern test that binds no names, `x is
+P`, is `(match x with | P => true | _ => false) = true` where the same
+rule makes a `match` of `P` Lean's.
+
+The `match`es of a definition are elaborated under the name `p.«#lean»`, and
+then generalized, as `p` is, over the abstract types and functions that
+`p` uses, as the matchers `p.match_1`, `p.match_2`, and so on, so that
+`split` and `#print` see a `match`. Where Lean rejects the `match` form,
+which the rule above should never let happen, `p` is the solver's
+definition, and there is no `p.«#solver»`.
+
+## Computable definitions
+
+Each generated definition that has something to run is compiled, so that
+Lean code that applies it can be compiled too, and `#eval` and `#guard`
+run it; one that Lean cannot compile is marked `noncomputable`.
+`generated::definition_form` states which, from what its value is and
+what compiled code would need of the declarations that its value mentions: a proposition, or a function to one,
+is a type, with nothing to run, and is not compiled; data is compiled
+unless its value mentions a declaration that has no code, when it is
+`noncomputable`. Those are `Classical.propDecidable`, by which an
+[unbounded quantifier](Lang/Quantifiers.md#unbounded-quantifiers), or
+equality on an abstract type, is decided where a `Bool` is needed of it
+(see [Procedures](#procedures)); a definition marked `noncomputable`, such
+as another generated one that needs it; and an axiom that is not a
+proposition. A proof has no code to need, so a theorem, or an axiom that
+is a proposition, as `propext`, is like any declaration with code. Lean's
+compiler checks the rule: a definition that it says to compile and that
+does not compile is an error.
+
+```fren
+-- What a generated definition's value is: a proposition, or a function to
+-- one, or data, or a function to it.
+pub enum ValueKind { Proposition, Data }
+-- What compiled code needs of a declaration that a value mentions.
+pub enum Mention { Computable, ClassicalDecision, NoncomputableDecl, DataAxiom }
+pub enum DefinitionForm { NotCompiled, Compiled, MarkedNoncomputable }
+
+pub proc definition_form(value: ValueKind, mentions: Set<Mention>): (det form: DefinitionForm) {
+    out form := if value = ValueKind::Proposition then DefinitionForm::NotCompiled
+        else if Mention::ClassicalDecision in mentions or Mention::NoncomputableDecl in mentions
+            or Mention::DataAxiom in mentions then DefinitionForm::MarkedNoncomputable
+        else DefinitionForm::Compiled
+
+    expect by_mentions: when value = ValueKind::Data,
+        form = DefinitionForm::Compiled iff mentions subset {Mention::Computable}
+    expect classical: when value = ValueKind::Data and Mention::ClassicalDecision in mentions,
+        form = DefinitionForm::MarkedNoncomputable
+    expect propositions: form = DefinitionForm::NotCompiled iff value = ValueKind::Proposition
+}
+```
+
+So a defined function, a constant and a procedure's `p.out.d` are compiled
+where they need nothing classical: `arith.eval` and `arith.fold_add`
+above are, and so is a function over an abstract type's values that never
+compares them. A procedure's other definitions, a contract's clauses and a
+global expectation are propositions. The solver's definition `p.«#solver»`
+is never compiled, and is marked `noncomputable`.
 
 ## Higher-order functions
 
@@ -494,7 +622,11 @@ body mentions and that its binders' procedures use.
 
 The definitions are reducible, so that `decide` and type-class instances see
 through them. They are also in the simp set `fren_spec`, so `simp
-[fren_spec]` unfolds them. Where `Fren.Lang` is open, `decide` also decides
+[fren_spec]` unfolds them, and so are the selectors of the payloads of
+enumerations' variants, the prelude's among them, so that it reads a
+payload of a variant that is built: `Fren.Prelude.Option.some.x0 (some r)`
+is `r`. A defined function's `match` that is Lean's (see
+[Matches](#matches)) is split by `split`, or by `cases` on its scrutinee. Where `Fren.Lang` is open, `decide` also decides
 `∀` and `∃` over `Bool`, enumerations, and any type with a `Fren.Finite`
 instance.
 

@@ -123,7 +123,7 @@ def unfoldDefined (e : Expr) : MetaM Expr := do
   -- And the clauses of contracts, which the questions about applications
   -- and the facts about them apply.
   let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
-  Meta.zetaReduce (← Lean.Core.betaReduce (← Meta.deltaExpand e ds.contains))
+  Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined s e ds.contains))
 
 /-- The answers to a procedure's queries so far, by hypotheses, goal and
 whether a model was wanted: some checks of a procedure ask the same

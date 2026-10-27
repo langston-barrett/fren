@@ -79,7 +79,7 @@ impl function_argument: lang::function_argument for (p : Fren.Core.ParamKind) (a
   intro p a _
   cases p <;> cases a <;> simp [fren_spec, toParamKind, toArgShape, Fren.Core.argumentCode?]
   all_goals rename_i m n _
-  all_goals by_cases h : m = n <;> simp [h, lang.ParamKind.Function.x0] <;> omega
+  all_goals by_cases h : m = n <;> simp [h] <;> omega
 
 def toComparand : Fren.Core.Comparand → lang.Comparand
   | .value => .Value
