@@ -5,8 +5,6 @@ set_option fren.lint.single_call_fn "warn"
 
 mod generic_functions_unused
 
-pub enum Option<T> { None, Some(T) }
-
 fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => d }  --~ warning: function `unwrap_or` is applied only once
 fn never<T>(o: Option<T>): Option<T> := o  --~ warning: function `never` is never used
 fn first<T>(o: Option<T>, d: T): Option<T> := o  --~ warning: unused parameter `d`

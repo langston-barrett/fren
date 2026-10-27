@@ -224,6 +224,10 @@ preconditions. See [Items](Lang/Items.md#contracts).
 `assume`: what each application's arguments must meet. See
 [Items](Lang/Items.md#contracts).
 
+**Prelude.** The items that every spec can use without declaring or
+importing them, `Option<T>` and `Result<T, E>` and their variants, which
+both front ends load before every spec. See [The prelude](Lang/Prelude.md).
+
 **Procedure.** A part of a system, described by its parameters, results
 and constraints, declared with `proc`. See [Procedures](Lang/Procedures.md).
 

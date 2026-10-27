@@ -30,7 +30,7 @@ error[F0218]: `LIMIT!` shadows nothing
 10 | pub const LIMIT!: Int := 3
    |           ^^^^^^ nothing to shadow
    |
-   = note: `!` marks a declaration that hides a name in scope, but only variables, parameters, calls and binders shadow
+   = note: `!` marks a declaration that hides a name in scope, but no `LIMIT` that a use could mean is in scope here
 help: remove the `!`
    |
 10 - pub const LIMIT!: Int := 3

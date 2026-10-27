@@ -1,5 +1,5 @@
-swap-comparison-m::c::r-a2e5458cb329 test/cli/commands/mutate_generic.fren:9:17 `=` changed to `!=`
-swap-arithmetic-m::c::r-1e8bc56b9d7f test/cli/commands/mutate_generic.fren:9:64 `+` changed to `-`
-shift-integer-m::c::r-4478ec3735cc test/cli/commands/mutate_generic.fren:9:66 `1` changed to `2`
-shift-integer-m::c::r-9a78f607d642 test/cli/commands/mutate_generic.fren:9:66 `1` changed to `0`
+swap-comparison-m::c::r-a2e5458cb329 test/cli/commands/mutate_generic.fren:7:17 `=` changed to `!=`
+swap-arithmetic-m::c::r-1e8bc56b9d7f test/cli/commands/mutate_generic.fren:7:64 `+` changed to `-`
+shift-integer-m::c::r-4478ec3735cc test/cli/commands/mutate_generic.fren:7:66 `1` changed to `2`
+shift-integer-m::c::r-9a78f607d642 test/cli/commands/mutate_generic.fren:7:66 `1` changed to `0`
 exit=0

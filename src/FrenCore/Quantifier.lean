@@ -28,9 +28,9 @@ inductive QuantifiedKind where
   deriving Inhabited, BEq, DecidableEq, Repr
 
 /-- Whether a type of kind `k` is listed, so that a quantifier over it is
-expanded, from whether it is a recursive enumeration and whether the
-types of all of its payloads or fields are listed
-(`lang::quantified_type`). -/
+expanded, from whether it is a recursive enumeration and whether all of
+its constituents, the types of its payloads or fields, are listed: one
+layer of the closure that `lang::quantified_type` states. -/
 def quantifiedTypeAccepted (k : QuantifiedKind) (recursive parts : Bool) : Bool :=
   match k with
   | .bool => true

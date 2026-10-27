@@ -3,6 +3,12 @@ error[F0201]: cannot find `Nope` in this scope
   |
 6 | proc c(m: Mode): (h?) { ensure r: h? iff m = Nope }
   |                                              ^^^^ not found in this scope
+  |
+help: a similar name exists: `None`
+  |
+6 - proc c(m: Mode): (h?) { ensure r: h? iff m = Nope }
+6 + proc c(m: Mode): (h?) { ensure r: h? iff m = None }
+  |
 
 error[F0701]: unused import `Mode::Cool`
  --> test/cli/fix/static.fren:5:5

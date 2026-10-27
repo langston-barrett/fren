@@ -1,11 +1,10 @@
 -- Quantifiers over a sequence's elements: in the decidable core, and
 -- expanded at each query over the index set of the array property fragment.
 
--- In a module, since Lean has an `Option` of its own.
+-- `Option` is the prelude's.
 mod quantifiers_elements
 
 enum Mode { Off, On }
-enum Option<T> { None, Some(T) }
 
 fn positive?(x: Int) := x > 0
 fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(v) => v, Option::None => d }

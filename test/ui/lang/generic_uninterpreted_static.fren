@@ -5,8 +5,6 @@ set_option fren.lint.dead_code "allow"
 
 mod generic_uninterpreted_static
 
-pub enum Option<T> { None, Some(T) }
-
 fn pick<T>(T, T): T
 fn first<T>(o: Option<T>): T
     assume present: o != Option::None

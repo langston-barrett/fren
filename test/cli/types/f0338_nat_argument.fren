@@ -1,4 +1,3 @@
 -- `Nat` as a type argument, which is a payload's type.
-pub enum Option<T> { None, Some(T) }
 
 proc c(x: Option<Nat>) {}

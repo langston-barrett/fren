@@ -20,6 +20,7 @@ import Impls.PatternTypes
 import Impls.Procedures
 import Impls.Refine
 import Impls.Trace
+import Impls.TypeFacts
 import Impls.View
 import Reqs
 -- keep-sorted end

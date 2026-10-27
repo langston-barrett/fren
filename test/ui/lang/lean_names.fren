@@ -3,7 +3,7 @@
 -- them apart from Lean's, in `Fren.Generated` (`Reqs/Generated#names`).
 
 -- The repro of issue #249, without type parameters.
-pub enum Option { None, Some(Int) }
+pub enum Option! { None, Some(Int) }
 pub struct List { x: Int }
 
 proc c(x: Option, l: List) {
@@ -47,7 +47,7 @@ proc uses(x: Option, p: Prod, f?): (n: Int, q: Prod, t: Int) {
 
 -- And in a module, where each was always apart from Lean's.
 mod option
-pub enum Option { None, Some(Int) }
+pub enum Option! { None, Some(Int) }
 pub struct List { x: Int }
 proc m(x: Option, l: List) {
     expect some: when x = Option::Some(3), x != Option::None

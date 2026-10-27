@@ -1,6 +1,6 @@
 -- Sets: literals, `{}`, operators, `card`, and the `in` line rule, in both
 -- front ends.
--- fren-covers: lang::finite
+-- fren-covers: lang::type_facts
 
 -- Expectations about constants test what the language computes.
 set_option fren.lint.assertions_on_constants "allow"

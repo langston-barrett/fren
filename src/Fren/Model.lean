@@ -72,17 +72,71 @@ structure EnumInfo where
   /-- Its type parameters (`Reqs/Lang/Generics`), which its payloads' types
   mention as loose bound variables: `.bvar k` for the `k`th. -/
   params : Array Name := #[]
+  /-- The Lean type that it is, if it is one of the prelude's types, rather
+  than an inductive type generated for it (`Reqs/Lang/Prelude#lean`). -/
+  lean? : Option Core.LeanType := none
   deriving Inhabited
 
-/-- The Lean types of each variant's payload, in the instance with the
-arguments `args` (`lang::instantiation`). -/
+/-- The type arguments of an instance, in the order of the enumeration's
+type parameters, from those of its Lean type, `args`: a prelude type's Lean
+type may order them otherwise (`Core.LeanType.frenArgs`). -/
+def EnumInfo.frenArgs (e : EnumInfo) (args : Array α) [Inhabited α] : Array α :=
+  match e.lean? with
+  | some l => l.frenArgs args
+  | none => args
+
+/-- The arguments of its Lean type, from the instance's type arguments: the
+inverse of `frenArgs`. -/
+def EnumInfo.leanArgs (e : EnumInfo) (args : Array α) [Inhabited α] : Array α :=
+  match e.lean? with
+  | some l => l.leanArgs args
+  | none => args
+
+/-- The Lean types of each variant's payload, in the instance whose Lean
+type has the arguments `args` (`lang::instantiation`). -/
 def EnumInfo.payloadsAt (e : EnumInfo) (args : Array Expr) : Array (Array Expr) :=
-  if e.params.isEmpty then e.payloads else e.payloads.map (·.map (·.instantiate args))
+  if e.params.isEmpty then e.payloads else e.payloads.map (·.map (·.instantiate (e.frenArgs args)))
+
+/-- Its Lean type, at universe 0 if it is universe polymorphic, as Lean's
+`Option` is: once for each type parameter. -/
+def EnumInfo.const (e : EnumInfo) : Expr :=
+  mkConst e.decl (if e.lean?.isSome then e.params.toList.map fun _ => .zero else [])
+
+/-- The Lean constructor of the variant at position `idx`: the one generated
+for it, or the Lean type's (`Core.LeanType.ctors`). -/
+def EnumInfo.ctor (e : EnumInfo) (idx : Nat) : Name :=
+  match e.lean? with
+  | some l => l.ctors[idx]!
+  | none => e.decl ++ e.variants[idx]!
+
+/-- `ctor idx` as a constant, at universe 0, as `const` is. -/
+def EnumInfo.ctorConst (e : EnumInfo) (idx : Nat) : Expr :=
+  mkConst (e.ctor idx) (if e.lean?.isSome then e.params.toList.map fun _ => .zero else [])
+
+/-- The position of the variant whose Lean constructor is `c`, if it is
+one of the enumeration's. -/
+def EnumInfo.ctorIdx? (e : EnumInfo) (c : Name) : Option Nat :=
+  match e.lean? with
+  | some l => l.variantOf? c
+  | none => if c.getPrefix == e.decl then e.variants.idxOf? (Name.mkSimple c.getString!) else none
 
 /-- The selector of the `k`th value of the payload of the constructor
 `ctor`, generated for an enum. Its name is that of lean-smt's selector of
 the constructor's field, which is named `xk`. -/
 def selectorName (ctor : Name) (k : Nat) : Name := ctor ++ Name.mkSimple s!"x{k}"
+
+/-- The namespace of the selectors of the Lean constructors of the
+prelude's types (`Fren/Prelude.lean`), which Lean's own namespaces do not
+get. -/
+def preludeSelectors : Name := `Fren.Prelude
+
+/-- The selector of the `k`th value of the payload of the variant at
+position `idx`: `selectorName` of its constructor, or for a prelude type's,
+the one under `preludeSelectors`. -/
+def EnumInfo.sel (e : EnumInfo) (idx k : Nat) : Name :=
+  match e.lean? with
+  | some l => preludeSelectors ++ selectorName l.ctors[idx]! k
+  | none => selectorName (e.ctor idx) k
 
 /-- A record and the Lean structure generated for it. -/
 structure RecordInfo where
@@ -661,18 +715,6 @@ def State.enumOf? (s : State) (ty : Expr) : Option EnumInfo := ty.getAppFn.const
 
 /-- The record whose Lean type, or an instance of it, is `ty`. -/
 def State.recordOf? (s : State) (ty : Expr) : Option RecordInfo := ty.getAppFn.constName?.bind s.recordOfDecl?
-
-/-- Whether the Lean type of a Fren type is unbounded (`Reqs/Lang/Types`):
-an instance of a generic type by its payloads' or fields' types too
-(`Reqs/Lang/Generics#recursive-unbounded-and-finite-instances`). -/
-partial def State.unbounded (s : State) (ty : Expr) : Bool :=
-  let args := ty.getAppArgs
-  let inst := !args.isEmpty && !ty.isAppOf ``Fren.FinSet && !ty.isAppOf ``Fren.Seq
-  ty.isConstOf ``String || ty.isAppOf ``Fren.FinSet || ty.isAppOf ``Fren.Seq || match ty.getAppFn.constName? with
-  | some d => (s.enumOfDecl? d).any (fun e => e.unbounded || inst && (e.payloadsAt args).any (·.any s.unbounded))
-    || (s.recordOfDecl? d).any (fun r => r.unbounded || inst && (r.fieldsAt args).any (s.unbounded ·.2))
-    || (s.newtypeOfDecl? d).any (·.unbounded)
-  | none => false
 
 /-- Per-file state; not visible to importing files. -/
 structure LocalState where

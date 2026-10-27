@@ -1,7 +1,7 @@
 error[F0400]: cannot infer the type arguments of `is_none?`
- --> test/cli/types/f0400_cannot_infer_call.fren:7:37
+ --> test/cli/types/f0400_cannot_infer_call.fren:6:37
   |
-7 | proc c(): (ok?) { ensure r: ok? iff is_none?(Option::None) }
+6 | proc c(): (ok?) { ensure r: ok? iff is_none?(Option::None) }
   |                                     ^^^^^^^^^^^^^^^^^^^^^^ which instance of `is_none?`?
   |
   = note: `is_none?` is generic, and neither what is expected here nor its arguments say what its type arguments are

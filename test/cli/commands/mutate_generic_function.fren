@@ -3,8 +3,6 @@
 -- each mutant is checked at the instances that its applications use.
 mod m
 
-pub enum Option<T> { None, Some(T) }
-
 pub fn size<T>(o: Option<T>, n: Int): Int := match o { Option::Some(_) => n + 1, Option::None => n }
 
 pub proc c(x: Option<Bool>): (det y: Int) {

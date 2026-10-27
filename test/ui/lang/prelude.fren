@@ -1,0 +1,32 @@
+-- The prelude's `Option` and `Result`, used without being declared, with
+-- their variants qualified and bare, as Rust's prelude gives them
+-- (`Reqs/Lang/Prelude`). Counterexamples print Fren's spelling in both front
+-- ends, `Option::Some(3)` and `Result::Err(true)`, though in Lean they are
+-- `Option.some 3` and `Except.error true`, whose parameters are `Result`'s
+-- swapped. `Option<Bool>` is finite, so a quantifier over it is expanded.
+-- fren-covers: modules::two_segments
+mod prelude_use
+
+fn or_zero(o: Option<Int>): Int := match o { Some(n) => n, None => 0 }
+
+proc options(x: Option<Int>): (y: Int) {
+    ensure r: y = or_zero(x)
+    expect qualified: when x = Option::Some(2), y = 2
+    expect some_three: y != 3  --~ error: counterexample: x = Option::Some(3), y = 3
+}
+
+proc results(r: Result<Int, Bool>): (code: Int) {
+    ensure r1: code = match r { Ok(n) => n, Err(b?) => if b? then -1 else -2 }
+    expect ok_keeps: when r = Result::Ok(5), code = 5
+    expect err_negative: when r is Err(_), code < 0
+    expect not_true: r != Err(true)  --~ error: counterexample: r = Result::Err(true), code = -1
+}
+
+proc finite(b: Option<Bool>): (n: Int) {
+    ensure r: n = (if b = Some(true) then 1 else 0)
+    -- Expanded over `Option::None`, `Option::Some(false)` and `Option::Some(true)`.
+    expect all: n = 1 iff (exists (o: Option<Bool>), o = b and o is Some(true))
+    expect nested: n = 0 iff (forall (o: Option<Option<Bool>>), when o = Some(b), o != Some(Some(true)))
+}
+--@ summary: 14 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

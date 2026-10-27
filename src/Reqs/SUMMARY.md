@@ -10,6 +10,7 @@
 - [Items](Lang/Items.md)
   - [Generic types](Lang/Generics.md)
   - [Generic functions](Lang/GenericFunctions.md)
+  - [The prelude](Lang/Prelude.md)
 - [Procedures](Lang/Procedures.md)
 - [Meaning](Lang/Meaning.md)
   - [Laws of meaning](Lang/MeaningLaws.md)

@@ -7,7 +7,6 @@ set_option fren.lint.redundant_bool_type "allow"
 enum Mode { Off, Heat, Cool }
 enum Level { Low, High }
 struct Reading { level: Level, valid?: Bool }
-enum Option<T> { None, Some(T) }
 
 set_option fren.evidence "enumerated" in
 proc thermostat(mode: Mode, hot?): (det on?) {

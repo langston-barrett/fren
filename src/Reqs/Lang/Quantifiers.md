@@ -58,18 +58,23 @@ not unbounded, as `lang::pattern_finite` says: `forall (x: Int is
 variants that match in their declaration's order. Its values are those of
 its base type that match its pattern, and are counted so. Within a binder's
 type, as anywhere, a pattern type's alias stands for it.
-`lang::quantified_type` states which types are listed, from the kind of
-the type, whether it is a recursive enumeration, and whether the types of
-its payloads or fields are all listed:
+`lang::quantified_type` states which types are listed, by the closure of
+the constituent relation (`lang::type_facts`): a type is listed when it is
+finite and not unbounded, so when every type it is built from is finite by
+itself, has a former that is not growing, and is not recursive. A type of
+a former that has no constituents, such as `Bool`, has none. A pattern
+type whose pattern matches finitely many integers is listed, and so is a
+type built from it, such as `struct P { x: Int is 0..=3 }`, `enum Small {
+S(Int is 0..=2), T }`, `Option<Int is 0..=2>` or `Pair<Bool, Int is
+1..=2>`:
 
 ```fren
 pub mod lang
 
-set_option fren.evidence "enumerated" in
+set_option fren.lint.undecidable "allow" in
 pub proc quantified_type(
-    type_kind: ValueType,        -- the kind of the type
-    recursive?,                  -- it is a recursive enumeration
-    parts?,                      -- the type of each of its payloads or fields is listed
+    ty: DeclaredTy,
+    constituents: Rel<DeclaredTy, DeclaredTy>,      -- (t, u): t has a field, payload or element of type u
 ): (det listed?) {
     use self::ValueType::{
         AbstractTy,
@@ -84,19 +89,33 @@ pub proc quantified_type(
         StringTy,
     }
 
-    assume enumerations_only: when type_kind != EnumTy, not recursive?
+    -- A type of a former that has no constituents has none.
+    assume leaf: unless former(declared_kind(ty)).composite?, constituents.image({ty}) = {}
+    call facts := type_facts(ty, constituents)
 
-    ensure rule: listed? iff match type_kind {
-        BoolTy => true,
-        EnumTy => parts? and not recursive?,
-        RecordTy => parts?,
-        _ => false,
-    }
+    ensure rule: listed? iff (facts.finite? and not facts.unbounded?)
 
-    expect bool: when type_kind = BoolTy, listed?
-    expect infinite: when type_kind in {IntTy, NatTy, StringTy, AbstractTy}, not listed?
-    expect collections: when type_kind in {SetTy, RelTy, SeqTy}, not listed?
-    expect parts_listed: when listed? and type_kind != BoolTy, parts?
+    expect bool: when declared_kind(ty) = BoolTy, listed?
+    expect infinite: when declared_kind(ty) in {StringTy, AbstractTy}, not listed?
+    expect integers: when declared_kind(ty) in {IntTy, NatTy}, listed? iff pattern_bounded?(ty)
+    expect collections: when declared_kind(ty) in {SetTy, RelTy, SeqTy}, not listed?
+    expect not_recursive: when facts.recursive?, not listed?
+    expect constituents_listed: when listed?, (forall (u: DeclaredTy), when u in constituents.image({ty}),
+        own_finite?(declared_kind(u), pattern_bounded?(u)) and not former(declared_kind(u)).growing?
+        and not (u, u) in constituents.closure)
+    -- `struct P { x: Int is 0..=3 }`, `enum Small { S(Int is 0..=2), T }` and `Option<Int is 0..=2>`.
+    expect bounded_field: forall (x: DeclaredTy),
+        when declared_kind(ty) in {RecordTy, EnumTy} and constituents = {(ty, x)}
+        and declared_kind(x) = IntTy and pattern_bounded?(x),
+        listed?
+    -- `Pair<Bool, Int is 1..=2>`.
+    expect bounded_pair: forall (b: DeclaredTy) (x: DeclaredTy),
+        when declared_kind(ty) = RecordTy and constituents = {(ty, b), (ty, x)}
+        and declared_kind(b) = BoolTy and declared_kind(x) = IntTy and pattern_bounded?(x),
+        listed?
+    expect unbounded_field: forall (x: DeclaredTy),
+        when declared_kind(ty) = RecordTy and constituents = {(ty, x)} and declared_kind(x) = IntTy and not pattern_bounded?(x),
+        not listed?
 }
 ```
 

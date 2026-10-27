@@ -1,7 +1,7 @@
 error[F0603]: expectation `c::same` does not hold
-  --> test/cli/commands/quickcheck_generic_uninterpreted.fren:19:12
+  --> test/cli/commands/quickcheck_generic_uninterpreted.fren:18:12
    |
-19 |     expect same: i = j
+18 |     expect same: i = j
    |            ^^^^ does not follow from the guarantees
    |
    = counterexample: x = 0, p? = true, i = 3, j = 2, n = 2

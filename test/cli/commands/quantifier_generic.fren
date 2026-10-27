@@ -1,6 +1,5 @@
 -- A quantifier ranges over an instance of a generic type whose values are
 -- finite: `Option<Bool>` has three (`Reqs/Lang/Generics`).
-pub enum Option<T> { None, Some(T) }
 
 proc c(x: Option<Bool>) {
     expect each: exists (o: Option<Bool>), o = x

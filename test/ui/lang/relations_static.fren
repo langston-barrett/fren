@@ -1,5 +1,5 @@
 -- Static rules for relations: typing, pairs, and the decidable core.
--- fren-covers: lang::relation_op, lang::pair_membership, lang::finite, lang::unbounded
+-- fren-covers: lang::relation_op, lang::pair_membership, lang::type_facts
 set_option fren.lint.unused_variables "allow"
 
 type Name

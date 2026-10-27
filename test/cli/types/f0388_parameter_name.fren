@@ -1,4 +1,4 @@
 -- A type parameter with the name of a type in scope.
 pub enum Mode { Off, On }
 
-pub enum Option<Mode> { None, Some(Mode) }
+pub enum Option!<Mode> { None, Some(Mode) }

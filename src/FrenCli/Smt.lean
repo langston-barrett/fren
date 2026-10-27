@@ -122,7 +122,7 @@ def Prelude.ofDecls (decls : Array PreludeDecl) : Prelude :=
   let owner := decls.zipIdx.foldl (init := {}) fun m (d, i) => d.syms.foldl (·.insert · i) m
   { decls, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get?
     used := Thunk.mk fun _ => usedParams decls
-    smtTexts := decls.map fun d => Thunk.mk fun _ => mapQuoted Fren.Core.smtName d.text, marked }
+    smtTexts := decls.map fun d => Thunk.mk fun _ => solverText d.text, marked }
 
 /-- The positions of the declarations that a script whose quoted symbols
 are `syms` needs: those of its symbols, and of theirs in turn, in the
@@ -183,9 +183,9 @@ def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar)
   -- commands, which close their quoted symbols and string literals, so
   -- the pieces' are the script's, and the prelude's are computed once.
   let head := s!"(set-logic {logic})\n(set-option :produce-models true)\n{limits.options}{options}"
-  mapQuoted Fren.Core.smtName head
+  solverText head
     ++ String.join ((prelude.neededDecls (quotedSymbols body)).toList.map (prelude.smtTexts[·]!.get))
-    ++ mapQuoted Fren.Core.smtName body
+    ++ solverText body
 
 /-- The answers to the queries asked so far, by script, each with whether
 it has a model: a script asked again gets the same answer without the
@@ -200,6 +200,11 @@ def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) : IO (O
   let r ← cvc5.Env.run do
     let tm ← cvc5.TermManager.new
     let solver ← cvc5.Solver.new tm
+    -- cvc5 warns on stderr when a model's value of a quantified formula
+    -- cannot be evaluated (`Could not evaluate ... in getValue.`), which the
+    -- model then holds as that formula: the warning is not an outcome, and
+    -- only cvc5's own diagnostics are silenced.
+    solver.setOption "verbosity" "-1"
     let parser ← cvc5.InputParser.new solver
     let sm ← parser.getSymbolManager
     parser.setStringInput script .SMT_LIB_2_6
@@ -298,16 +303,28 @@ generic type's constructor `c`, which is a simple symbol with `~` for `::`
 def genericCtor (c : String) : String :=
   if c.endsWith "~" then ((c.dropEnd 1).toString.replace "~" "::") ++ "{}" else c.replace "~" "::"
 
+/-- The symbol that a variant of one of the prelude's types would have if it
+were a user's, `Option::Some`, for lean-smt's constructor `c` of the Lean
+type that it is, `Option.some` (`Reqs/Lang/Prelude#smt`). -/
+def preludeCtor? (c : String) : Option String :=
+  Fren.Core.leanTypes.findSome? fun l =>
+    (l.ctors.idxOf? c.toName).map fun i => s!"{l.name}::{l.variants[i]!}"
+
 /-- `t`, with a generic type's constructor, which cvc5 writes qualified by
-its sort, `(as C (D Int))`, as a constructor of any other type. -/
+its sort, `(as C (D Int))`, as a constructor of any other type, and a
+prelude type's, which is a Lean constructor, as Fren names it. -/
 def unqualify : Term → Term
-  | .atom c => if !c.startsWith "\"" && c.contains '~' then .atom (genericCtor c) else .atom c
+  | .atom c => if let some f := preludeCtor? c then .atom f
+    else if !c.startsWith "\"" && c.contains '~' then .atom (genericCtor c) else .atom c
   | .list ts => match ts[0]? with
     | some (Term.atom "as") => match ts[1]? with
-      | some (Term.atom c) => if c.contains '~' then .atom (genericCtor c) else .list ts
+      | some (Term.atom c) => if let some f := preludeCtor? c then .atom f
+        else if c.contains '~' then .atom (genericCtor c) else .list ts
       | _ => .list ts
     | some (Term.list #[.atom "as", .atom c, _]) =>
-      if c.contains '~' then .list (#[.atom (genericCtor c)] ++ ts.extract 1) else .list ts
+      if let some f := preludeCtor? c then .list (#[.atom f] ++ ts.extract 1)
+      else if c.contains '~' then .list (#[.atom (genericCtor c)] ++ ts.extract 1) else .list ts
+    | some (Term.atom c) => if let some f := preludeCtor? c then .list (#[.atom f] ++ ts.extract 1) else .list ts
     | _ => .list ts
 
 /-- A value as Fren builds it (`Reqs/View`), where `dts` are the

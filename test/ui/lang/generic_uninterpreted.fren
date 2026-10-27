@@ -8,8 +8,6 @@ set_option fren.lint.dead_code "allow"
 
 mod generic_uninterpreted
 
-pub enum Option<T> { None, Some(T) }
-
 fn pick<T>(T, T): T
 fn size<T>(Option<T>): Nat
 

@@ -1,4 +1,3 @@
 -- A payload whose type does not match the instance expected.
-pub enum Option<T> { None, Some(T) }
 
 proc c(): (x: Option<Int>) { ensure r: x = Option::Some(true) }

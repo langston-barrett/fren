@@ -4,7 +4,6 @@
 -- one of an element type quantifies over the elements, with `fmf-bound`.
 set_option fren.lint.undecidable "allow"
 
-pub enum Option<T> { None, Some(T) }
 type Byte := Int is 0..=255
 
 proc c(x: Option<Byte>, s: Option<Set<Int is 0..=9>>) {

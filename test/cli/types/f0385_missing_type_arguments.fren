@@ -1,4 +1,3 @@
 -- A generic type written without its type arguments.
-pub enum Option<T> { None, Some(T) }
 
 proc c(x: Option) {}

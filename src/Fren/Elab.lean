@@ -17,6 +17,7 @@ import FrenCore.Quantifier
 import FrenCore.Regex
 import FrenCore.Syntax
 import FrenCore.Ty
+import FrenCore.TypeFacts
 import FrenCore.Typing
 -- keep-sorted end
 
@@ -55,15 +56,23 @@ partial def fieldName (s : Syntax) : Name :=
   else if s.getNumArgs == 1 then fieldName s[0]
   else .anonymous
 
-/-- Checks the name of a module, enum, variant or comp. -/
+/-- The name that the item declaration `id` declares, without the `!` that
+marks it as shadowing one of the prelude's names (`Core.declaredName`). -/
+def itemSegName (id : Syntax) : CommandElabM Name := return (Core.declaredName (← segName id)).1
+
+/-- Checks the name of a module, enum, variant or comp; an item's, but a
+variant's, without its `!` (`itemSegName`). -/
 def checkItemName (what : String) (id : Syntax) : CommandElabM Name := do
-  let n ← segName id
+  let n ← if what == "variant" then segName id else itemSegName id
   liftMsg id (Core.checkItemName what n)
   return n
 
-/-- Fails if `n` is already declared or imported by name in module `modName`. -/
+/-- Fails if `n` is already declared or imported by name in module `modName`,
+or if its declaration `ref`, written `n!` if it shadows, does not mark
+that it hides one of the prelude's names exactly when it does
+(`Core.Table.checkFreshItem`). -/
 def checkFresh (modName n : Name) (ref : Syntax) : CommandElabM Unit := do
-  liftMsg ref ((← getState).table.checkFresh modName n)
+  liftMsg ref ((← getState).table.checkFreshItem modName n (Core.declaredName ref.getId).2)
 
 open Lang in
 /-- Reports the first identifier or integer literal of `stx` that Lean read
@@ -290,8 +299,9 @@ def instanceType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFi
       throwErrorAt ref (Core.typeArgsMsg (Core.showPath path) ps args.size).text
   match ← resolveWritten modName segs with
   | .item { kind := .enumItem, path, .. } =>
-    arity .data path ((((← getState).enums.get? path).map (·.params)).getD #[])
-    return mkAppN (Lean.mkConst (← enumDecl path)) args
+    let some e := (← getState).enums.get? path | throwError "internal error: unknown enum `{path}`"
+    arity .data path e.params
+    return mkAppN e.const (e.leanArgs args)
   | .item { kind := .recordItem, path, .. } =>
     if let some n := (← getState).newtypes.get? path then
       arity .other path #[]
@@ -633,7 +643,7 @@ partial def coreTyOf (s : State) (t : Expr) (params : Array Name := #[]) : Optio
       return .rel (← go e.appFn!.appArg!) (← go e.appArg!)
     else (go e).map .set
   else if let some e := s.enumOf? t then do
-    return .enum e.path (← t.getAppArgs.toList.mapM go)
+    return .enum e.path (← (e.frenArgs t.getAppArgs).toList.mapM go)
   else if let some r := s.recordOf? t then do
     return .record r.path (← t.getAppArgs.toList.mapM go)
   else match t.constName? with
@@ -651,6 +661,17 @@ def dataSig (s : State) (p : Name) : Option Core.DataSig :=
   | some e, _ => some { isRecord := false, unbounded := e.unbounded, ctors := e.payloads.map (tys e.params) }
   | none, some r => some { isRecord := true, unbounded := r.unbounded, ctors := #[tys r.params (r.fields.map (·.2))] }
   | none, none => none
+
+/-- The facts of the declared type `t` (`lang::type_facts`), from the
+declarations as both front ends give them to `Core.typeFacts`. -/
+def factsOf (s : State) (t : Core.PTy) : Core.TypeFacts := Core.typeFacts s.shapeOf t.node
+
+/-- The facts of the Lean type `ty` (`factsOf`), which accept the least if
+it stands for no Fren type. -/
+def exprFacts (s : State) (ty : Expr) : Core.TypeFacts :=
+  match coreTyOf s ty with
+  | some t => factsOf s (.plain t)
+  | none => .unknown
 
 /-- The Fren name of the type whose Lean type is `t`. -/
 partial def typeName (t : Expr) : TermElabM String := do
@@ -819,11 +840,11 @@ partial def valuesOf? (ty : Expr) (cap : Nat := 64) : TermElabM (Option (Array T
   let targs := ty.getAppArgs
   let ctors : Array (Name × Array Expr) ←
     if let some e := s.enumOf? ty then
-      if s.unbounded ty then return none
+      if (exprFacts s ty).unbounded then return none
       let ps := e.payloadsAt targs
-      pure (e.variants.mapIdx fun i v => (e.decl ++ v, ps[i]?.getD #[]))
+      pure (e.variants.mapIdx fun i _ => (e.ctor i, ps[i]?.getD #[]))
     else if let some r := s.recordOf? ty then
-      if s.unbounded ty then return none
+      if (exprFacts s ty).unbounded then return none
       pure #[(r.ctor, (r.fieldsAt targs).map (·.2))]
     -- A newtype's values are its underlying type's, as the `fren` command
     -- has them.
@@ -849,7 +870,7 @@ positions without quantifiers. -/
 def ordinalTerm (info : EnumInfo) (s : Term) : TermElabM Term := do
   let last := info.variants.size - 1
   (List.range last).foldrM (init := ← `(($(Syntax.mkNumLit (toString last)) : Int))) fun k acc =>
-    `(if $s = $(mkCIdent (info.decl ++ info.variants[k]!)) then ($(Syntax.mkNumLit (toString k)) : Int) else $acc)
+    `(if $s = $(mkCIdent (info.ctor k)) then ($(Syntax.mkNumLit (toString k)) : Int) else $acc)
 
 /-- `x < y`, or `x ≤ y` if not `strict`, of values compared by `o`, as a
 Lean proposition, as the `fren` command's `orderSmt` writes it: a record's
@@ -1343,21 +1364,9 @@ partial def applications (cx : ExprCtx) (e : Syntax) : TermElabM (Array Syntax) 
   return inner
 
 /-- Whether the Lean type of a Fren type has infinitely many values
-(`Reqs/Lang/Decidability#outputs`): an abstract type may, so it counts. -/
-partial def infiniteType (ty : Expr) : TermElabM Bool := do
-  if ty.isConstOf ``Bool then return false
-  if ty.isAppOfArity ``Fren.FinSet 1 then return ← infiniteType ty.appArg!
-  if ty.isAppOfArity ``Fren.Seq 1 then return true
-  if ty.isAppOfArity ``Prod 2 then return (← infiniteType ty.appFn!.appArg!) || (← infiniteType ty.appArg!)
-  let s ← getState
-  -- An instance, by its payloads' or fields' types (`Reqs/Lang/Generics`).
-  if let some e := s.enumOf? ty then return e.unbounded || (← (e.payloadsAt ty.getAppArgs).anyM (·.anyM infiniteType))
-  if let some r := s.recordOf? ty then return r.unbounded || (← (r.fieldsAt ty.getAppArgs).anyM (infiniteType ·.2))
-  let some d := ty.constName? | return true
-  -- A newtype has its underlying type's values, as the `fren` command has
-  -- it: a newtype of a set of a finite type is finite, though unbounded.
-  if let some n := s.newtypeOfDecl? d then return ← infiniteType n.under
-  return true
+(`Reqs/Lang/Decidability#outputs`): it is not finite (`lang::type_facts`),
+so an abstract type counts. -/
+def infiniteType (ty : Expr) : TermElabM Bool := return !(exprFacts (← getState) ty).finite
 
 /-- Whether `e` mentions an output of an infinite type, directly, through a
 definition or through a binder. -/
@@ -1788,7 +1797,7 @@ partial def leanTypeOf (t : Core.Ty) : TermElabM Expr := do
   | .seq e => return mkApp (Lean.mkConst ``Fren.Seq [Level.zero]) (← leanTypeOf e)
   | .enum p as =>
     let some e := s.enums.get? p | throwError "internal error: unknown enum `{p}`"
-    return mkAppN (Lean.mkConst e.decl) (← as.toArray.mapM leanTypeOf)
+    return mkAppN e.const (e.leanArgs (← as.toArray.mapM leanTypeOf))
   | .record p as =>
     let some r := s.records.get? p | throwError "internal error: unknown record `{p}`"
     return mkAppN (Lean.mkConst r.decl) (← as.toArray.mapM leanTypeOf)
@@ -2191,7 +2200,7 @@ partial def patTyOf (st : State) (t : Expr) : Core.PatTy :=
   -- A type parameter, in a payload's type (`Core.Sigs`).
   else if let .bvar k := t then .param k
   else match st.enumOf? t with
-    | some e => .enum e.path (t.getAppArgs.toList.map (patTyOf st))
+    | some e => .enum e.path ((e.frenArgs t.getAppArgs).toList.map (patTyOf st))
     | none => .other
 
 /-- The variants of each enumeration, with their payloads' types, as
@@ -2296,8 +2305,8 @@ partial def resolvePattern (cx : ExprCtx) (ty : Expr) (x : Term) (inOr test : Bo
   if let some msg := Core.variantMentionMsg? v tys.size (!p[1].isNone) then throwErrorAt p msg.text
   let args := patternArgs p
   unless args.size == tys.size do throwErrorAt p (Core.arityMsg v tys.size args.size "pattern").text
-  let ctor := info.decl ++ info.variants[idx]!
-  let sels ← (Array.range tys.size).mapM fun k => `($(mkCIdent (selectorName ctor k)) $x)
+  let ctor := info.ctor idx
+  let sels ← (Array.range tys.size).mapM fun k => `($(mkCIdent (info.sel idx k)) $x)
   let mut pats := #[]
   let mut bs := #[]
   let mut tests := #[← `($x = $(← ctorApp ctor ty.getAppArgs sels))]
@@ -2452,10 +2461,10 @@ partial def patTerm (ty : Core.Ty) (p : Core.Pat) (x : Term) : TermElabM Term :=
   | .ctor idx args =>
     let .enum ep targs := ty | `(True)
     let some info := (← getState).enums.get? ep | `(True)
-    let ctor := info.decl ++ info.variants[idx]!
+    let ctor := info.ctor idx
     -- With an instance's arguments for its type parameters.
     let tys := (info.shape.inst (targs.toArray.map .plain)).parts[idx]?.getD #[]
-    let sels ← (Array.range (info.payloads[idx]!.size)).mapM fun k => `($(mkCIdent (selectorName ctor k)) $x)
+    let sels ← (Array.range (info.payloads[idx]!.size)).mapM fun k => `($(mkCIdent (info.sel idx k)) $x)
     let mut tests := #[← `($x = $(mkCIdent ctor) $sels*)]
     for a in args, k in [0:args.size] do
       unless a matches .wild _ do
@@ -2485,8 +2494,8 @@ partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM T
   | .payloads path _ cs =>
     let some info := st.enums.get? path | `(True)
     let ts ← cs.mapM fun (v, k, c) => do
-      let ctor := info.decl ++ info.variants[v]!
-      let sels ← (Array.range (info.payloads[v]!.size)).mapM fun j => `($(mkCIdent (selectorName ctor j)) $x)
+      let ctor := info.ctor v
+      let sels ← (Array.range (info.payloads[v]!.size)).mapM fun j => `($(mkCIdent (info.sel v j)) $x)
       `($x = $(mkCIdent ctor) $sels* → $(← consTerm c sels[k]! depth))
     return (← conjTerm ts).getD (← `(True))
   | .elems seq _ c =>
@@ -2673,9 +2682,13 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
     let tys := if v[1].isNone then #[] else v[1][1].getSepArgs
     let tps ← tys.mapM fun t => fieldType modName t decl .payload n params
     let ts := tps.map (·.1)
-    if ts.any (·.getAppFn.isConstOf decl) then nRecursive := nRecursive + 1
     let st ← getState
-    unbounded := unbounded || ts.any fun t => t.getAppFn.isConstOf decl || st.unbounded t
+    -- Recursive if a payload's type is the enumeration or built from it
+    -- (`lang::well_founded`).
+    let own := (Core.PTy.plain (.enum path (params.toList.zipIdx.map fun (p, k) => .param k p))).node
+    let nodes := tps.toList.map fun (t, pt) => if t.getAppFn.isConstOf decl then own else pt.node
+    if Core.recursiveVariant st.shapeOf own nodes then nRecursive := nRecursive + 1
+    unbounded := unbounded || tps.any fun (t, pt) => t.getAppFn.isConstOf decl || (factsOf st pt).unbounded
     payloads := payloads.push ts
     ptys := ptys.push (tps.zip tys |>.map fun ((_, pt), t) => (pt, t))
   unless Core.wellFounded variants.size nRecursive do throwErrorAt nameStx (Core.illFoundedMsg n).text
@@ -2700,6 +2713,12 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
   let withPayload := variantStxs.filter (!·[1].isNone)
   unless Core.orderedDeclAccepted isOrdered withPayload.size none do
     throwErrorAt withPayload[0]![0] (Core.orderedPayloadMsg n withPayload[0]![0].getId).text
+  -- One of the prelude's types is the Lean type that it is, for which
+  -- nothing is generated (`Reqs/Lang/Prelude#lean`).
+  if let some l := Core.leanTypeOf? path then
+    record (.item { item := { kind := .enumItem, path, isPub, owner := modName }, ref := nameStx })
+    record (.enumInfo { path, decl := l.lean, variants, payloads, unbounded, ordered := isOrdered, shape, params, lean? := some l })
+    return
   let own : Term ← if params.isEmpty then pure (mkIdent decl) else `(($(mkIdent decl) $(params.map fun p => (mkIdent p : Term))*))
   let ctors ← (variants.zip payloads).mapM fun (v, ts) => do
     let bs ← ts.mapIdxM fun k t => do
@@ -2800,7 +2819,7 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
     if let some k := first? then
       let f := fieldStxs[k]!
       throwErrorAt (if f[1].isNone then f[0] else f[1][1]) (Core.unorderedFieldMsg .record n fields[k]!.1 ptys[k]!.ty).text
-  let unbounded := fields.any fun (_, t) => st.unbounded t
+  let unbounded := ptys.any fun pt => (factsOf st pt).unbounded
   let bs ← fields.mapM fun (f, t) => `(Lean.Parser.Command.structExplicitBinder| ($(mkIdent f):ident : $(typeSyntax t params)))
   let binders ← paramBinders params false
   elabCommand (← `(structure $(mkIdentFrom nameStx (leanName .anonymous path)):ident $binders:bracketedBinder* where
@@ -2835,7 +2854,7 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
   -- (`lang::ordered_declaration`).
   unless Core.orderedDeclAccepted isOrdered 0 (Core.PTy.firstUnordered? (← getState).orderedDecl [pt]) do
     throwErrorAt ty (Core.unorderedFieldMsg .newtype n (Name.mkSimple "0") pt.ty).text
-  let unbounded := Core.newtypeUnbounded ((← getState).unbounded under)
+  let unbounded := Core.newtypeUnbounded (factsOf (← getState) pt).unbounded
   -- One field, `«0»`, so that `x.0` in Fren is `x.«0»` in Lean.
   elabCommand (← `(structure $(mkIdentFrom nameStx (leanName .anonymous path)):ident where
     $(mkIdent `mk):ident :: $(mkIdent (Name.mkSimple "0")):ident : $(typeSyntax under)
@@ -4506,8 +4525,8 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
     if let some c ← construction? cx e then
       let (_, targs) ← constructionTerms (fun _ v => toTerm cx v) cx expected? e c #[]
         (Core.showPath (en.path ++ en.variants[idx]!)) fun _ _ => ""
-      return ← ctorApp (info.decl ++ en.variants[idx]!) (← targs.mapM leanTypeOf) #[] e
-    return mkCIdentFrom e (info.decl ++ en.variants[idx]!)
+      return ← ctorApp (info.ctor idx) (info.leanArgs (← targs.mapM leanTypeOf)) #[] e
+    return mkCIdentFrom e (info.ctor idx)
   | .item { kind := .constItem, path, .. } =>
     let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
     -- Its value's quantifiers are part of the queries
@@ -4607,14 +4626,14 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       -- Each value's obligation, of its type with the enumeration's arguments.
       for a in args.getElems, t in ts, k in [0:ts.size] do
         noteObligation cx .payload a (partPType info.shape idx k targs) t
-      return ← ctorApp (info.decl ++ en.variants[idx]!) (← targs.mapM leanTypeOf) ts p
+      return ← ctorApp (info.ctor idx) (info.leanArgs (← targs.mapM leanTypeOf)) ts p
     let args ← args.getElems.zipIdx.mapM fun (a, k) => do
       let t ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := info.payloads[idx]![k]!.isConstOf ``Nat,
                                 expected? := ← coreTy? info.payloads[idx]![k]! } a
       checkDeclared a t info.payloads[idx]![k]! (note k)
       noteObligation cx .payload a (partPType info.shape idx k) t
       return t
-    return ← `($(mkCIdentFrom p (info.decl ++ en.variants[idx]!)) $args*)
+    return ← `($(mkCIdentFrom p (info.ctor idx)) $args*)
   let .item { kind := .fnItem, path, .. } := r | throwErrorAt p (Core.notAFunctionMsg r).text
   if let some d := (← getState).defined.get? path then
     -- Its definition, applied to the placeholders it uses; its arguments
@@ -4761,7 +4780,7 @@ partial def valueTerm (ty : Expr) (v : Core.PVal) : TermElabM Term := do
     -- With an instance's arguments for its type parameters.
     let targs := ty.getAppArgs
     let (c, ts) :=
-      if let some e := s.enumOfDecl? d then (e.decl ++ e.variants[idx]!, (e.payloadsAt targs)[idx]?.getD #[])
+      if let some e := s.enumOfDecl? d then (e.ctor idx, (e.payloadsAt targs)[idx]?.getD #[])
       else if let some r := s.recordOfDecl? d then (r.ctor, (r.fieldsAt targs).map (·.2))
       else if let some n := s.newtypeOfDecl? d then (n.ctor, #[n.under])
       else (.anonymous, #[])
@@ -4773,6 +4792,8 @@ and how many there are, if a quantifier ranges over it, as the `fren`
 command's `binderValues`. -/
 def binderValues (ty : Expr) (pt : Core.PTy) : TermElabM (Option (Nat × Array Term)) := do
   let st ← getState
+  -- Only a listed type's values are listed (`lang::quantified_type`).
+  unless (factsOf st pt).listed do return none
   if (pt.cons st.shapeOf).isNone then
     let some n ← valueCount? ty | return none
     return some (n, (← valuesOf? ty Core.maxInstances).getD #[])
@@ -5587,7 +5608,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
-  let n ← segName nameStx
+  let n ← itemSegName nameStx
   liftMsg nameStx (Core.checkNoBang n)
   liftMsg nameStx (Core.checkFnName n)
   checkFresh modName n nameStx
@@ -6013,7 +6034,7 @@ def elabCompVars (scope : Name) (members : Array Syntax) : TermElabM (Array Var 
     try
       let (ty, ptype) ← varPType scope x ty?
       let st ← getState
-      unless Core.variableTypeAccepted (role == .output) (st.unbounded ty) defn?.isSome do
+      unless Core.variableTypeAccepted (role == .output) (factsOf st ptype).unbounded defn?.isSome do
         throwErrorAt x (Core.unboundedOutputMsg x.getId ptype.text).text
       let fact? ← factPred? ty ptype
       vars := vars.push { name := x.getId, role, isPub, isDet, «type» := ty, ref := x, defn?, ptype, fact? }
@@ -6510,7 +6531,7 @@ end
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
   let valueStx := withWhere stx[6] stx[7]
-  let n ← segName nameStx
+  let n ← itemSegName nameStx
   liftMsg nameStx (Core.checkConstName n)
   checkFresh modName n nameStx
   lintName .constant n nameStx
@@ -6674,7 +6695,7 @@ def globalText (stx : Syntax) : String :=
   lintTrailingCommas stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
-  let n ← segName nameStx
+  let n ← itemSegName nameStx
   liftMsg nameStx (Core.checkNoBang n)
   if n.toString.endsWith "?" then throwErrorAt nameStx (Core.propNameMsg n).text
   checkFresh modName n nameStx
@@ -6721,7 +6742,7 @@ and the solver is asked nothing. -/
   lintTrailingCommas (mkNullNode spec)
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
-  let n ← segName nameStx
+  let n ← itemSegName nameStx
   liftMsg nameStx (Core.checkItemName "refinement" n)
   checkFresh modName n nameStx
   let path := modName ++ n

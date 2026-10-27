@@ -1,0 +1,111 @@
+; user: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(assert (not false))
+(check-sat)
+(reset)
+
+; user: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((|::Option| 1)) ((par (|T|) ((Option~Nothing) (Option~Just (|Option::Just::0| |T|))))))
+(declare-const |x| (|::Option| Int))
+(declare-const |y?| Bool)
+(assert (not (exists ((|y?| Bool)) (= |y?| (= |x| (as Option~Nothing (|::Option| Int)))))))
+(check-sat)
+(reset)
+
+; user: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((|::Option| 1)) ((par (|T|) ((Option~Nothing) (Option~Just (|Option::Just::0| |T|))))))
+(declare-const |x| (|::Option| Int))
+(declare-const |y?| Bool)
+(assert (= |y?| (= |x| (as Option~Nothing (|::Option| Int))))) ; r
+(assert (not false))
+(check-sat)
+(reset)
+
+; user: query 4
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((|::Option| 1)) ((par (|T|) ((Option~Nothing) (Option~Just (|Option::Just::0| |T|))))))
+(declare-const |x| (|::Option| Int))
+(declare-const |y?| Bool)
+(assert (not (= |y?| (= |x| (as Option~Nothing (|::Option| Int))))))
+(check-sat)
+(reset)
+
+; m.prelude: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(assert (not false))
+(check-sat)
+(reset)
+
+; m.prelude: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((Option 1)) ((par (|α|) ((Option.none) (Option.some (Option.some.val |α|))))))
+(declare-const |x| (Option Int))
+(declare-const |y| Int)
+(assert (not (exists ((|y| Int)) (= |y| (ite (= |x| ((as Option.some (Option Int)) (Option.some.val |x|))) (Option.some.val |x|) 0)))))
+(check-sat)
+(reset)
+
+; m.prelude: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((Option 1)) ((par (|α|) ((Option.none) (Option.some (Option.some.val |α|))))))
+(declare-datatypes ((Except 2)) ((par (|ε| |α|) ((Except.error (Except.error.field1 |ε|)) (Except.ok (Except.ok.field1 |α|))))))
+(declare-const |x| (Option Int))
+(declare-const |r| (Except Bool Int))
+(declare-const |y| Int)
+(assert (= |y| (ite (= |x| ((as Option.some (Option Int)) (Option.some.val |x|))) (Option.some.val |x|) 0))) ; a
+(assert (not (or (distinct |r| ((as Except.error (Except Bool Int)) true)) (>= |y| 0))))
+(check-sat)
+(reset)
+
+; m.prelude: query 4
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((Option 1)) ((par (|α|) ((Option.none) (Option.some (Option.some.val |α|))))))
+(declare-const |x| (Option Int))
+(declare-const |y| Int)
+(assert (= |y| (ite (= |x| ((as Option.some (Option Int)) (Option.some.val |x|))) (Option.some.val |x|) 0))) ; a
+(assert (not false))
+(check-sat)
+(reset)
+
+; m.prelude: query 5
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatypes ((Option 1)) ((par (|α|) ((Option.none) (Option.some (Option.some.val |α|))))))
+(declare-const |x| (Option Int))
+(declare-const |y| Int)
+(assert (not (= |y| (ite (= |x| ((as Option.some (Option Int)) (Option.some.val |x|))) (Option.some.val |x|) 0))))
+(check-sat)
+(reset)
+
+error[F0603]: expectation `m::prelude::e` does not hold
+  --> test/cli/args/dump_smt_prelude.fren:20:12
+   |
+20 |     expect e: r != Result::Err(true) or y >= 0
+   |            ^ does not follow from the guarantees
+   |
+   = counterexample: x = Option::Some(-1), r = Result::Err(true), y = -1
+   = help: strengthen the guarantees so that it follows, or correct the expectation
+
+fren: 4 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0603`.
+exit=1

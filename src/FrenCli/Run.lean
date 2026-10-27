@@ -453,7 +453,7 @@ def elabParsed (st : State) (file : Nat) (chars : Array Char) (p : Parsed) : Sta
 
 /-- The state before any file, with the lint levels `lints`. -/
 def initialState (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) : State :=
-  { cliLevels := Fren.Core.Levels.ofFlags lints }
+  ({ cliLevels := Fren.Core.Levels.ofFlags lints } : State).withPrelude
 
 /-- Elaborates the files at `paths`, whose contents are `srcs`, with the
 state before each file and after the last, before the claims are checked,
@@ -1357,7 +1357,7 @@ def itemsOf (parsed : Array Parsed) : Except String (Array (Array Item)) :=
 (`Eval.lowerFrom`), and after the last; past a file that does not parse,
 an error that no mutant reads (`mutantSpec`). -/
 def lowerPrefixes (parsed : Array Parsed) : Array (Except String Eval.LState) := Id.run do
-  let mut out : Array (Except String Eval.LState) := #[.ok {}]
+  let mut out : Array (Except String Eval.LState) := #[Eval.preludeState]
   for p in parsed do
     out := out.push <| match out.back!, p with
       | .ok st, .ok (_, items, _) => Eval.lowerFrom st #[items]

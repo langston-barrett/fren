@@ -248,6 +248,8 @@ def countIn (sigs : Name → Option DataSig) : (fuel : Nat) → List (Option Nat
       let counts := d.ctors.map (·.map (countIn sigs n cs))
       unless quantifiedTypeAccepted (if d.isRecord then .record else .enum) false (counts.all (·.all Option.isSome)) do none
       return counts.foldl (fun acc c => acc + c.foldl (fun m x => m * x.getD 0) 1) 0
+    -- A newtype has its underlying type's values (`Reqs/Lang/Items#newtypes`).
+    | .newtype _ u => countIn sigs n env u
     | _ => none
 
 /-- How deep `countIn` looks: deeper than any type a spec writes. -/

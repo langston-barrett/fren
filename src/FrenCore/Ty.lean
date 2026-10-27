@@ -170,6 +170,24 @@ def Ty.showAll : List Ty → List String
   | t :: ts => t.show :: Ty.showAll ts
 end
 
+/-- `t` as written, but with each of the prelude's types as
+`prelude::Option`, for a message about two types that print alike, one of
+them a user's `Option!` (`Ty.showApart`). -/
+partial def Ty.showQualified : Ty → String
+  | .set t => s!"Set<{t.showQualified}>"
+  | .rel a b => s!"Rel<{a.showQualified}, {b.showQualified}>"
+  | .seq t => s!"Seq<{t.showQualified}>"
+  | .enum p args | .record p args =>
+    (if inPrelude p then "prelude::" else "") ++ showPath p
+      ++ (if args.isEmpty then "" else "<" ++ ", ".intercalate (args.map (·.showQualified)) ++ ">")
+  | t => t.show
+
+/-- `a` and `b` as written, or, if they are different types that print
+alike, as a user's `Option!` and the prelude's `Option` do, with the
+prelude's types qualified, so that a message tells them apart. -/
+def Ty.showApart (a b : Ty) : String × String :=
+  if a.show == b.show && !(a == b) then (a.showQualified, b.showQualified) else (a.show, b.show)
+
 /-- Whether an expression of type `found` is accepted where `expected` is:
 the same type, or a `Nat` widened to an `Int` (`lang::widening`). -/
 def Ty.widens (found expected : Ty) : Bool := found == expected || (found == .nat && expected == .int)

@@ -4,7 +4,7 @@
 -- qualified by their sorts (`Reqs/Lang/Generics#meaning`), as
 -- `lang::smt_encoding` states for these examples.
 -- fren-covers: lang::smt_encoding
-pub enum Option<T> { None, Some(T) }
+pub enum Option!<T> { None, Some(T) }
 pub struct Pair<A, B> { fst: A, snd: B }
 pub enum List<T> { Nil, Cons(T, List<T>) }
 proc c(x: Option<Int>, p: Pair<Int, Bool>, l: List<Int>): (y: Option<Bool>) {

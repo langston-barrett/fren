@@ -8,7 +8,6 @@ mod generics_pattern_types
 
 type Byte := Int is 0..=255
 
-pub enum Option<T> { None, Some(T) }
 pub struct Pair<A, B> { fst: A, snd: B }
 pub enum Tagged<T> { Plain(T), Marked(Int is 0..=3, T) }
 type Present := Option<Int> is Option::Some(_)

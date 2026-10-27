@@ -137,24 +137,30 @@ A parameter may have any type, but an output's type is bounded unless the
 output is defined, so that the solver never has to find an unbounded
 value (see [Recursive and unbounded
 types](Types.md#recursive-and-unbounded-types)). A defined output is never
-searched for. `lang::variable_type` states this; `only_outputs` is an
-assumption because a parameter cannot be defined:
+searched for. `lang::variable_type` states this, with the variable's type
+unbounded by the closure of the constituent relation (`lang::type_facts`);
+`only_outputs` is an assumption because a parameter cannot be defined:
 
 ```fren
-set_option fren.evidence "enumerated" in
+set_option fren.lint.undecidable "allow" in
 pub proc variable_type(
-    output?,             -- the variable is an output: a result, an `exists` or a `let`
-    unbounded?,          -- its type is unbounded
-    defined?,            -- it is a `let`, or a result that an `out` member defines
+    output?,                                         -- the variable is an output: a result, an `exists` or a `let`
+    ty: DeclaredTy,                                  -- its type
+    constituents: Rel<DeclaredTy, DeclaredTy>,       -- (t, u): t has a field, payload or element of type u
+    defined?,                                        -- it is a `let`, or a result that an `out` member defines
 ): (det accepted?) {
     assume only_outputs: when defined?, output?
 
-    ensure rule: accepted? iff not (output? and unbounded? and not defined?)
+    call facts := type_facts(ty, constituents)
+
+    ensure rule: accepted? iff not (output? and facts.unbounded? and not defined?)
 
     expect inputs_any_type: unless output?, accepted?
     expect defined_any_type: when defined?, accepted?
+    expect strings_defined: when output? and declared_kind(ty) = ValueType::StringTy, accepted? iff defined?
+    expect bool_outputs: when declared_kind(ty) = ValueType::BoolTy and constituents = {}, accepted?
 
-    cover unbounded_defined: output? and unbounded? and defined? and accepted?
+    cover unbounded_defined: output? and facts.unbounded? and defined? and accepted?
 }
 ```
 

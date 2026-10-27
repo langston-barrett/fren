@@ -1,5 +1,6 @@
 -- keep-sorted start
 import Fren.Elab
+import Fren.Prelude
 import FrenCore.Trace
 -- keep-sorted end
 

@@ -6,14 +6,12 @@ parameters*, written in angle brackets right after its name, before its
 parameters, as a [generic type's](Generics.md) are after its name:
 
 ```text
-pub enum Option<T> { None, Some(T) }
-
 fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => d }
 fn swap<A, B>(p: Pair<A, B>): Pair<B, A> := Pair { fst := p.snd, snd := p.fst }
 fn pick<T>(T, T): T
 ```
 
-Such a function is *generic*. Its parameters' and result's types, and the
+`Option` is the [prelude's](Prelude.md). Such a function is *generic*. Its parameters' and result's types, and the
 types written in its body and its contract, may mention its type
 parameters, which stand for types there, so that `unwrap_or` is a function
 from an `Option<T>` and a `T` to a `T`, for every type `T`. A function with
