@@ -529,8 +529,6 @@ structure ExprCtx where
   inClosure : Bool := false
   /-- In a clause of a function's contract, the function. -/
   contract? : Option ContractCx := none
-  /-- In a global expectation, whose calls are its binders. -/
-  inGlobal : Bool := false
   /-- `++` here is in the decidable core: the receiver of a method, or a
   side of `=` or `!=` whose other side is a constant. -/
   concatOk : Bool := false
@@ -1703,7 +1701,7 @@ something in scope (`lang::shadowing`). -/
 def hidesIn (cx : ExprCtx) (extra : Core.Locals := #[]) : TermElabM (String → Bool) := do
   let table := (← getState).table
   let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-    (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal ++ extra
+    (cx.binders.map (·.what)) cx.selfFn.isSome ++ extra
   return fun n => (table.hidden? cx.modName locals (Name.mkSimple n)).isSome
 
 /-- The names that `e` declares, without their `!`: those of its `let`s and
@@ -3125,7 +3123,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let mut new : Array MatchBinder := #[]
     for b in bs do
       let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-        (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map (·.what)) cx.selfFn.isSome
       let y ← declare b.ident cx.modName locals
       let bn := y.getId
       liftMsg y (Core.checkVarName bn (some (b.type.isConstOf ``Bool || b.type.isProp)))
@@ -3220,7 +3218,7 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
     let mut new := #[]
     for b in bs do
       let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-        (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map (·.what)) cx.selfFn.isSome
       let y ← declare b.ident cx.modName locals
       let bn := y.getId
       liftMsg y (Core.checkVarName bn (some (b.type.isConstOf ``Bool || b.type.isProp)))
@@ -4289,7 +4287,7 @@ partial def withDefinitions (toTerm : ExprCtx → Syntax → TermElabM Term) (cx
     (binds : Array (Ident × Term × Term) := #[]) : TermElabM α := do
   let some d := defs[k]? | body cx binds
   let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-    (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
+    (cx.binders.map (·.what)) cx.selfFn.isSome
   let x ← declare d[0] cx.modName locals
   let n := x.getId
   -- This name and the later ones that hide nothing are not in scope yet.
@@ -4656,7 +4654,7 @@ def closureTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   for (x, t) in params, i in [0:params.size] do
     let bn ← if synthetic then pure x.getId else do
       let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-        (cx.binders.map (·.what) ++ named.map fun (bn, _) => (bn, Core.BindingKind.boundName)) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map (·.what) ++ named.map fun (bn, _) => (bn, Core.BindingKind.boundName)) cx.selfFn.isSome
       let y ← declare x cx.modName locals
       liftMsg y (Core.checkVarName y.getId (some (t == .bool)))
       lintName .binder y.getId y
@@ -5243,7 +5241,7 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     if values?.isNone then unlisted := unlisted.push b
     for x in b[1].getArgs do
       let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-        (cx.binders.map (·.what) ++ bound.map (·.1, Core.BindingKind.boundName)) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map (·.what) ++ bound.map (·.1, Core.BindingKind.boundName)) cx.selfFn.isSome
       let x ← declare x cx.modName locals
       let bn := x.getId
       liftMsg x (Core.checkVarName bn (some (ty.isConstOf ``Bool)))
@@ -6814,18 +6812,26 @@ def lintUnrelatedCalls (nameStx : Syntax) (n : String) (members : Array Syntax) 
   if Core.unrelatedBinders groups.size then
     recordLint .unrelatedBinders nameStx (Core.unrelatedBindersMsg n groups)
 
-/-- What an old global expectation's fix needs of a procedure with the
-members `members` and variables `vars` (`Core.Callee`): whether its
-assumptions mention none of its own variables but its parameters, and
-declare no name that a parameter has. -/
-def procSourceOf (members : Array Syntax) (vars : Array Var) (instNames : Array Name) : Bool :=
-  let params := (vars.filter fun v => v.role == .input && v.name.isAtomic).map (·.name)
-  let own := vars.map (·.name.getRoot) ++ instNames
-  members.all fun m => match constraint? m with
-    | some (.assume, _, e) =>
-      (pathMentions e).all (fun n => !own.contains n.getRoot || params.contains n.getRoot)
-        && !(declaredNames e).any fun d => params.any (Core.nameText · == d)
-    | _ => true
+/-- The source text from the start of `a` to the end of `b`, as written. -/
+def textBetween (a b : Syntax) : String :=
+  match a.getSubstring? (withLeading := false) (withTrailing := false), b.getTailPos? with
+  | some sub, some stop => String.Pos.Raw.extract sub.str sub.startPos stop
+  | some sub, none => sub.toString
+  | _, _ => ""
+
+/-- What an old global expectation's fix needs of the procedure at `path`
+with the members `members`, as a component's, and variables `vars`
+(`Core.Callee`): its parameters, its other variables and calls, and what
+its parameters' types and its assumptions read and declare, from their
+text, as the `fren` command reads it. -/
+def calleeOf (path : Name) (members : Array Syntax) (vars : Array Var) (instNames : Array Name) : Core.Callee :=
+  let params := (vars.filter fun v => v.role == .input && v.name.isAtomic).map (Core.nameText ·.name)
+  let others := ((vars.map (Core.nameText ·.name.getRoot)) ++ instNames.map Core.nameText).filter (!params.contains ·)
+  let types := members.foldl (init := {}) fun acc m =>
+    if m.isOfKind ``Lang.inMember && !m[2].isNone then acc ++ Core.copiedOf (textBetween m[2][1] m[2][1]) else acc
+  let assumes := members.foldl (init := {}) fun acc m =>
+    if m.isOfKind ``Lang.assumeMember then acc ++ Core.copiedOf (textBetween m[3] m) else acc
+  { module := path.getPrefix.toString, params, others, types, assumes }
 
 /-- A procedure's members, elaborated, with the procedure recorded if all were: whether
 they were, and the generated declarations. -/
@@ -6851,11 +6857,11 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   generated := generated ++ (values.map (declBase ++ `out ++ ·.1)).filter env.contains
   if ok then
     let (relational, counts) ← checkCounts
-    let closed := procSourceOf members vars instNames
+    let source := calleeOf path members vars instNames
     let info : CompInfo := { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
                              decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
                              relational, counts, indexes, tested, enumerated, enumSize, guarded := (← getLocal).guardedUsed
-                             closed }
+                             source, global }
     -- A global expectation is an item that nothing calls
     -- (`Reqs/Lang/Global`).
     if global then
@@ -7032,7 +7038,7 @@ nothing calls. -/
   for x in named do discard (segName x)
   let declared := named.map fun x => (declaredIdent x).1.getId
   if let some k := (Core.repeatsAt declared)[0]? then
-    throwErrorAt named[k]! (Core.dupMemberMsg declared[k]!).text
+    throwErrorAt named[k]! (Core.dupMemberMsg declared[k]! (global := true)).text
   let raw := stx[8].getArgs
   let body ← raw.mapM fun m => return (← unwrapEvidence m).1
   lintMemberOrder stx stx[7] raw body
@@ -7116,34 +7122,29 @@ def globalBinderComp? (modName : Name) (ty : Syntax) : TermElabM (Option Name) :
   | .item { kind := .enumItem, .. } | .item { kind := .recordItem, .. } | .item { kind := .typeItem, .. } => return none
   | r => throwErrorAt ty (Core.wrongKindMsg "a procedure or a type" r).text
 
-/-- Whether the old global expectation `expect n: forall binders, e` in
-`modName` has a fix (`F0416`): each binder with the procedure it ranges
-over the behaviours of, if any. The names it would declare are those that
-the `fren` command's fix writes (`Reqs/Lang/Global#migration`). -/
-def oldGlobalFixed (modName n : Name) (binders : Array (Syntax × Option Name)) : TermElabM Bool := do
+/-- Why the old global expectation `expect n: forall binders, e` in
+`modName` has no fix, if it has none (`F0416`): each binder with the
+procedure it ranges over the behaviours of, if any, as the `fren`
+command's fix decides (`Core.globalFix`). -/
+partial def quantBinderTypes (e : Syntax) : Array Syntax :=
+  (if e.isOfKind ``Lang.quantExpr then e[1].getArgs.map (·[3]) else #[]) ++ e.getArgs.flatMap quantBinderTypes
+
+def oldGlobalNoFix (modName n : Name) (binders : Array (Syntax × Option Name)) (body : Syntax) :
+    TermElabM (Option Core.NoFix) := do
   let st ← getState
-  let mut declared : Array String := #[]
-  let mut newParams : Array String := #[]
-  let mut callees : Array Core.Callee := #[]
+  let mut olds : Array Core.OldBinder := #[]
+  let mut assumeNames : Array (Array String) := #[]
   for (b, path?) in binders do
-    let xs := b[1].getArgs.map fun x => Core.nameText (declaredIdent x).1.getId
-    match path? with
-    | none => declared := declared ++ xs
-    | some path =>
-      let some c := st.comps.get? path | return false
-      callees := callees.push { module := path.getPrefix.toString, closed := c.closed }
-      let params := (c.vars.filter fun v => v.role == .input && v.name.isAtomic).map (Core.nameText ·.name)
-      for w in xs do
-        declared := declared.push w
-        for p in params do
-          declared := declared.push (Core.migratedParam w p)
-          newParams := newParams.push (Core.migratedParam w p)
-        for a in c.assumes do declared := declared.push (Core.migratedParam w (Core.nameText a.name))
-  declared := declared.push (Core.nameText n)
-  let repeats := Core.repeatsAt (declared.map Name.mkSimple)
-  let fresh := declared.mapIdx (fun i _ => !repeats.contains i)
-    ++ newParams.map fun q => (st.table.hidden? modName #[] (Name.mkSimple q)).isNone
-  return Core.globalFixOffered modName.toString callees fresh
+    let c? := path?.bind st.comps.get?
+    for x in b[1].getArgs do
+      olds := olds.push { name := Core.nameText (declaredIdent x).1.getId, callee? := c?.map (·.source) }
+      assumeNames := assumeNames.push ((c?.map fun c => c.assumes.map (Core.nameText ·.name)).getD #[])
+  let hides (q : String) := (st.table.hidden? modName #[] (Name.mkSimple q)).isSome
+  -- A quantifier in the body over a procedure stays an error (`F0210`).
+  let nested ← (quantBinderTypes body).anyM fun ty => do
+    let r ← try globalBinderComp? modName ty catch _ => pure none
+    return r.isSome
+  return Core.globalFix modName.toString (Core.nameText n) olds assumeNames hides nested
 
 /-- Elaborates a global expectation in its short form, `expect n: e`, into
 a `CompInfo` whose path is its module (`Model.Entry.globalInfo`),
@@ -7163,8 +7164,8 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   let resolved ← binderStxs.mapM fun b => return (b, ← globalBinderComp? modName b[3])
   if let some (b, _) := resolved.find? fun (_, p?) =>
       (Core.quantifierBinder (if p?.isSome then .component else .typeName) true).2 then
-    let fixed ← oldGlobalFixed modName n resolved
-    throwErrorAt b[3] (Core.oldGlobalMsg (if fixed then some "" else none)).text
+    let why ← oldGlobalNoFix modName n resolved body
+    throwErrorAt b[3] (Core.oldGlobalMsg (match why with | some w => .error w | none => .ok "")).text
   let valueBinders := binderStxs
   let cx : ExprCtx := { modName, vars := #[], insts := #[], place := .prop }
   discard (takeIndexes #[])

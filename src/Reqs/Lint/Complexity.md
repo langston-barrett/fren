@@ -527,7 +527,9 @@ each value of the other bound names, so the bound name could be its value
 instead. The message is at the binder of the first such name. It is
 fixable where every bound name's type is an enumeration with one variant
 without a payload, `T::V`, and the quantifier is not a global
-expectation's, whose binders over procedures stay: the fix writes the
+expectation's leading `forall`, which is part of the item's syntax rather
+than an expression, so that the fix, which rewrites a quantifier
+expression, does not apply to it: the fix writes the
 body, with `T::V`, `T` as the binder writes it, in place of each mention
 of a bound name, so `forall (u: Solo), u in s` becomes `Solo::Only in s`.
 That is the quantifier's one instance, so the fix keeps the meaning, and

@@ -531,7 +531,7 @@ they are about; returns them. -/
 def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (r : Fren.Core.CheckResult)
     (vias : Array (Span × Lean.Name) := #[]) : IO (Array Msg) := do
   let mut shown := #[]
-  for m in Fren.Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) r c.decidable do
+  for m in Fren.Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) { r with global := c.global } c.decidable do
     let prop? := m.item?.bind fun n => c.props.find? (·.name == n)
     let index? := m.atIndex?.bind fun k => m.item?.bind fun n => (c.indexes.filter (·.1 == n))[k]?.map (·.2.2.1)
     let site? := m.atSite?.bind fun k => m.item?.bind fun n => (c.tables.filter (·.1 == n))[k]?.map (·.2.2.1)

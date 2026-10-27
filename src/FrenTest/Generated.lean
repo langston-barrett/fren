@@ -186,7 +186,7 @@ example (l : check.Level) :
     (if l = .Low then (0 : Int) else if l = .Middle then 1 else 2) = l.ctorIdx := by
   cases l <;> rfl
 
-/-- info: fren: 25 passed, 0 failed, 0 inconclusive, 0 redundant -/
+/-- info: fren: 26 passed, 0 failed, 0 inconclusive, 0 redundant -/
 #guard_msgs in
 #fren_check
 

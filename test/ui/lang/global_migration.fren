@@ -24,3 +24,26 @@ mod n
 use m::double
 expect elsewhere: forall (a: double), a.y = 2 * a.x
 --~^ error: so it has no fix
+
+mod p
+const LIM: Int := 5
+
+proc band(target: Int): (y: Int) {
+    assume sane: target > LIM
+    ensure r: y = target
+}
+
+proc shadowed(x: Int): (y: Int) {
+    assume a1: match x { y! => y > 0 }
+    ensure r: y = x
+}
+
+-- A binder over values that would hide what an assumption reads.
+expect cap: forall (b: band) (LIM!: Int), when LIM < 0, b.target > 5
+--~^ error: would hide, so it has no fix
+-- An assumption that declares a variable of its own with `!`.
+expect bang: forall (s: shadowed), s.y > 0
+--~^ error: or declares a name that a parameter has, so it has no fix
+-- A quantifier in the body over a procedure.
+expect inner: forall (a: band), forall (b: band), a.y = b.y
+--~^ error: a quantifier in its body ranges over a procedure

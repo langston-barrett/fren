@@ -5,6 +5,7 @@ import FrenCore.Check
 import FrenCore.Closures
 import FrenCore.Enumeration
 import FrenCore.Evidence
+import FrenCore.Global
 import FrenCore.Lint
 import FrenCore.Names
 import FrenCore.PatternTypes
@@ -503,10 +504,11 @@ structure CompInfo where
   assumptions are its preconditions, and its guarantees, if it is defined,
   its postconditions, each named after the function and the clause. -/
   fn? : Option Name := none
-  /-- Its assumptions mention none of its own variables but its
-  parameters, and declare no name that a parameter has: what an old global
-  expectation's fix needs to copy them (`Core.Callee`, `F0416`). -/
-  closed : Bool := true
+  /-- What an old global expectation's fix needs to know to copy its
+  types and assumptions (`Core.Callee`, `F0416`). -/
+  source : Core.Callee := default
+  /-- A global expectation with a block (`Core.Comp.global`). -/
+  global : Bool := false
   deriving Inhabited
 
 def CompInfo.assumes (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .assume)

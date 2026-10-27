@@ -8,7 +8,7 @@ open Fren.Lang
 
 namespace Fren.Impls
 
-open Fren.Core (BlockMember Callee blockMemberAccepted calleeFixable migratedParam)
+open Fren.Core (BlockMember Callee CalleeFix Copied blockMemberAccepted calleeFix migratedParam)
 
 def toBlockMember : BlockMember → lang.BlockMember
   | .result => .Result
@@ -32,18 +32,55 @@ impl block_member: lang::block_member for (m : BlockMember) (d : Bool) {
   intro m d
   cases m <;> cases d <;> simp [fren_spec, toBlockMember, blockMemberAccepted]
 
-def toCallee (c : Callee) : lang.Callee :=
-  { module := c.module, «closed?» := c.closed }
+def toCopied (c : Copied) : lang.Copied :=
+  { names := Fren.FinSet.ofArray c.names, bangs := Fren.FinSet.ofArray c.bangs }
 
--- For every module and procedure: whether the fix of an old global
--- expectation can copy the procedure's text.
-impl callee_fix: lang::callee_fix for (md : String) (c : Callee) {
+def toCallee (c : Callee) : lang.Callee :=
+  { module := c.module, params := Fren.FinSet.ofArray c.params, others := Fren.FinSet.ofArray c.others
+    types := toCopied c.types, assumes := toCopied c.assumes }
+
+def toCalleeFix : CalleeFix → lang.CalleeFix
+  | .fixable => .Fixable
+  | .otherModule => .OtherModule
+  | .notClosed => .NotClosed
+  | .captured => .Captured
+
+theorem any_contains_iff (a b : Array String) : (a.any b.contains = true) ↔ ∃ x, x ∈ a ∧ x ∈ b := by
+  constructor
+  · intro h
+    obtain ⟨x, hx, hc⟩ := Array.any_eq_true'.1 h
+    exact ⟨x, hx, by simpa using hc⟩
+  · rintro ⟨x, hx, hb⟩
+    exact Array.any_eq_true'.2 ⟨x, hx, by simpa using hb⟩
+
+theorem any_captured_iff (ns ms ps bs : Array String) :
+    ((ns ++ ms).any (fun n => !ps.contains n && bs.contains n) = true) ↔
+      ∃ x, (x ∈ ns ∨ x ∈ ms) ∧ x ∉ ps ∧ x ∈ bs := by
+  constructor
+  · intro h
+    obtain ⟨x, hx, hc⟩ := Array.any_eq_true'.1 h
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hc
+    exact ⟨x, by simpa using hx, by simpa using hc.1, by simpa using hc.2⟩
+  · rintro ⟨x, hx, hp, hb⟩
+    exact Array.any_eq_true'.2 ⟨x, by simpa using hx, by simp [hp, hb]⟩
+
+-- For every module, block and procedure: whether the fix of an old global
+-- expectation can copy the procedure's text, and if not, why.
+impl callee_fix: lang::callee_fix for (md : String) (block : Array String) (c : Callee) {
   module := md,
+  block := Fren.FinSet.ofArray block,
   callee := toCallee c,
-  «fixable?» := calleeFixable md c,
+  fix := toCalleeFix (calleeFix md block c),
 } by
-  intro md c
-  simp [fren_spec, toCallee, calleeFixable]
+  intro md block c _
+  simp only [fren_spec, toCallee, toCopied, Fren.FinSet.mem_ofArray, ← any_contains_iff]
+  unfold calleeFix
+  cases c.assumes.names.any c.others.contains <;> cases c.assumes.bangs.any c.params.contains <;>
+    cases h3 : (c.types.names ++ c.assumes.names).any (fun n => !c.params.contains n && block.contains n) <;>
+    by_cases hm : c.module = md <;> simp [hm, toCalleeFix]
+  all_goals first
+    | exact (any_captured_iff _ _ _ _).1 h3
+    | intro x hx hp hb; have := (any_captured_iff _ _ _ _).2 ⟨x, hx, hp, hb⟩; rw [h3] at this; cases this
 
 -- For every binder, parameter and set of taken names: the name that the
 -- fix declares, and whether it is fresh.

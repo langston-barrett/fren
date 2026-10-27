@@ -80,7 +80,7 @@ def quantifiedComponentMsg (c : String) : Msg :=
   { code? := some "F0210", headline := s!"expected a type, but `{c}` is a procedure"
     label? := some "not a type"
     notes := #["note: a quantifier in an expression ranges over the values of a type",
-      "help: only a global expectation's leading `forall` ranges over the behaviours of a procedure"] }
+      "help: to relate behaviours of a procedure, call it in a global expectation, as in `expect n(x: T) { call a := p(x) ... }`"] }
 
 /-- A name bound twice by one quantifier. -/
 def dupBoundMsg (n : Name) : Msg :=

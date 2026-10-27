@@ -60,6 +60,18 @@ expect never(a_temp: Int, a_target: Int) {
     call a := band(a_temp, a_target)
     expect never: when a.target > HIGH, a.too_hot?  --~ error: `never::never` is vacuous: its condition can never hold, given `a`
 }
+-- Contradictory assumptions make every expectation hold vacuously.
+expect contra(a: Int) {  --~ error: the assumptions of `contra` are unsatisfiable: `lo`, `hi` contradict each other
+    assume lo: a > 5
+    assume hi: a < 3
+    call c := band(a, LOW)
+    expect claim: c.too_cold?
+}
+expect contra_alone(a: Int) {  --~ error: the assumptions of `contra_alone` are unsatisfiable: `lo`, `hi` contradict each other
+    assume lo: a > 5
+    assume hi: a < 3
+    expect claim: a = 0
+}
 expect false_const: HIGH < LOW               --~ error: expectation `false_const` does not hold
 
 mod m
@@ -72,4 +84,4 @@ expect nested(a_temp: Int, a_target: Int) {
     expect nested: when a.temp > 100, a.too_hot?
 }
 
---@ summary: 28 passed, 3 failed, 0 inconclusive, 0 redundant
+--@ summary: 38 passed, 5 failed, 0 inconclusive, 0 redundant

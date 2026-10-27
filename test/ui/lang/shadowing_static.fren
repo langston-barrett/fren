@@ -128,6 +128,14 @@ const panic!: Int := 1                   --~ error: `panic!` is a Lean token, so
 expect token_global(using!: Int) {  --~ error: `using!` is a Lean token, so it cannot be declared
     expect token_global: true
 }
+-- A call named so: the Lean front end also reports the name without its
+-- `!` as a keyword, as it does for a procedure's call, a known difference
+-- between the front ends.
+expect token_call(v: Int) {
+    call using! := sub(v)  --~ error: `using!` is a Lean token, so it cannot be declared
+    --~^[hosted] error: `using` is a Lean keyword, so it cannot be declared
+    expect token_call: true
+}
 proc token_use(s: Int): (y: Int) { ensure r: y = s! }  --~ error: cannot find `s!` in this scope
 -- A refinement's name, and a field read, take the tokens as identifiers too.
 refine s!: sub refines sub               --~ error: `s!` is a Lean token, so it cannot be declared

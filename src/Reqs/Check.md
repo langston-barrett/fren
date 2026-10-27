@@ -27,9 +27,11 @@ where a [pattern type](Lang/Types.md#pattern-types) is declared:
 | [Preconditions](#preconditions) | each application of a function meets the function's preconditions where it is evaluated |
 | [Reachability](#reachability) | each arm of a `match` that has a guard or follows one, and each row of a table, can be taken where it is evaluated |
 
-A [global expectation](Lang/Global.md) is checked four of the first seven
-ways, as a procedure is: its [expectations](#global-expectations), its
-cover goals, its calls' assumptions, and the vacuity of its expectations.
+A [global expectation](Lang/Global.md) is checked five of the first seven
+ways, as a procedure is: the realizability check confirms that its
+assumptions can hold, and the others its [expectations](#global-expectations),
+its cover goals, its calls' assumptions, and the vacuity of its
+expectations.
 The body of a
 [defined function](Lang/Items.md#defined-functions), the value of a
 [constant](Lang/Items.md#constants), and the clauses of a function's
@@ -171,10 +173,14 @@ pub proc satisfiable(
 ```
 
 `check::applies` gives which checks run on an item. A global expectation
-constrains nothing, so there is nothing to realize, determine or find
-redundant: it has no outputs, no guarantees and no `det` members, and its
-assumptions say what it is about rather than constrain a system. Its
-calls' arguments have obligations, as a procedure's do. The body of a
+constrains nothing, so there is nothing to determine or find redundant:
+it has no outputs, no guarantees and no `det` members, and its assumptions
+say what it is about rather than constrain a system. With no outputs, its
+realizability is only that its assumptions are satisfiable, which is still
+asked, since contradictory assumptions would make every expectation hold
+vacuously. Its calls' arguments have obligations, as a procedure's do. A
+global expectation in the [short form](Lang/Global.md#the-short-form),
+`ShortExpectation`, has no assumptions, so it is not asked that either. The body of a
 function, its contract, or the value of a constant is not a constraint
 either: only its tables, its `match`es with guards, the applications in
 it, and its values given where pattern types are declared are checked, and
@@ -189,11 +195,11 @@ result is its value, and whose assumptions and guarantees are its preconditions
 and postconditions (see [Contracts](#contracts-of-uninterpreted-functions)):
 
 ```fren
-pub enum CheckedItem { Component, GlobalExpectation, Body, Contract }
+pub enum CheckedItem { Component, GlobalExpectation, ShortExpectation, Body, Contract }
 
 set_option fren.evidence "enumerated" in
 pub proc applies(item: CheckedItem, kind: Kind): (det runs?) {
-    use self::CheckedItem::{Body, Component, Contract, GlobalExpectation}
+    use self::CheckedItem::{Body, Component, Contract, GlobalExpectation, ShortExpectation}
     use self::Kind::{
         Completeness,
         Cover,
@@ -212,13 +218,17 @@ pub proc applies(item: CheckedItem, kind: Kind): (det runs?) {
 
     ensure rule: runs? iff match item {
         Component => true,
-        GlobalExpectation => kind in {InstanceAssumption, Expectation, Cover, Vacuity, Definedness, Completeness,
+        GlobalExpectation => kind in {Realizability, InstanceAssumption, Expectation, Cover, Vacuity, Definedness,
+            Completeness, Disjointness, Precondition, Reachability},
+        ShortExpectation => kind in {InstanceAssumption, Expectation, Cover, Vacuity, Definedness, Completeness,
             Disjointness, Precondition, Reachability},
         Body => kind in {Definedness, Completeness, Disjointness, Precondition, Postcondition, Reachability},
         Contract => kind in {Realizability, Completeness, Disjointness, Precondition, Reachability},
     }
 
-    expect claims_only: when item in {GlobalExpectation, Body} and runs?, not kind in {Realizability, Determinism, Redundancy}
+    expect claims_only: when item in {GlobalExpectation, ShortExpectation, Body} and runs?,
+        not kind in {Determinism, Redundancy}
+    expect assumptions_satisfiable: when item = GlobalExpectation and kind = Realizability, runs?
     expect determined: when item != Component, kind != Determinism or not runs?
 }
 ```
@@ -747,8 +757,13 @@ its expectations' triggers. A global expectation in the short form,
 `expect n: e`, is one with no parameters and no calls, whose `A` and `I`
 are empty.
 
-If `A ∧ I` is unsatisfiable, every expectation passes vacuously, and every
-cover goal fails.
+Its realizability check is a procedure's with no outputs: its
+counterexample query proves `∃ o. R` at once, so it fails just where `A`
+is unsatisfiable, with the procedure's message (`F0602`), naming the
+assumptions that contradict each other. That `A ∧ I` is satisfiable
+wherever `A` is follows from its other checks: each call's arguments meet
+its procedure's assumptions, by the call checks, and the procedure is
+realizable, by its own checks, so its constraints can hold.
 
 ## Call assumptions
 
